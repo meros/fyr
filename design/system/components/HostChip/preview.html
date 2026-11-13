@@ -1,0 +1,12 @@
+<!-- @dsCard group="Status" height=56 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>HostChip — preview</title></head>
+<body>
+<div id="root" class="fy-pad"></div>
+<script>
+  var F = window.Fyr, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div', {className:'fy-hstack', style:{gap:'16px'}}, h(F.HostChip,{name:'desk'}), h(F.HostChip,{name:'laptop'}), h(F.HostChip,{name:'build-01',offline:true})));
+</script>
+</body>
+</html>

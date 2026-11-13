@@ -1,0 +1,12 @@
+<!-- @dsCard group="Inbox" height=300 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>ThreadRow — preview</title></head>
+<body>
+<div id="root" class="fy-pad"></div>
+<script>
+  var F = window.Fyr, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div', {role:'listbox', style:{border:'1px solid var(--line)', borderRadius:'10px', overflow:'hidden'}}, h(F.ThreadRow,{state:'asking',title:'Fix map lasso on mobile',reason:'2 questions',summary:'Which gesture should close the sheet?',pr:{number:4182,state:'open'},host:'desk',time:'2 min'}), h(F.ThreadRow,{state:'failed',title:'Speed up e2e suite',reason:'API error \u00b7 retry',summary:'Run stopped after 14 min',host:'build-01',time:'9 min'}), h(F.ThreadRow,{state:'blocked',title:'Listing cards v2',reason:'CI failed',pr:{number:4177,state:'failed'},host:'desk',time:'21 min',selected:true}), h(F.ThreadRow,{state:'done',title:'Triage sprint issues',summary:'Filed 6 issues, closed 2 duplicates',time:'1 h'}), h(F.ThreadRow,{state:'working',title:'Babysit PR #4170',summary:'Rebasing on main',pr:{number:4170,state:'pending'},host:'laptop',time:'now'})));
+</script>
+</body>
+</html>

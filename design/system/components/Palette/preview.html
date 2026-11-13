@@ -1,0 +1,12 @@
+<!-- @dsCard group="Navigation" height=300 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Palette — preview</title></head>
+<body>
+<div id="root" class="fy-pad"></div>
+<script>
+  var F = window.Fyr, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(F.Palette,{query:'lasso',groups:[{title:'Threads',items:[{label:'Fix map lasso on mobile',sub:'2 questions',state:'asking',host:'desk',selected:true},{label:'Lasso polygon perf',sub:'settled yesterday',state:'settled',host:'laptop'}]},{title:'Actions',items:[{label:'Snooze until tomorrow 06:00',kbd:'S'},{label:'New thread with this as context',kbd:'N'}]}]}));
+</script>
+</body>
+</html>

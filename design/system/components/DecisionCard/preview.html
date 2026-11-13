@@ -1,0 +1,12 @@
+<!-- @dsCard group="Decisions" height=520 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>DecisionCard — preview</title></head>
+<body>
+<div id="root" class="fy-pad"></div>
+<script>
+  var F = window.Fyr, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(F.DecisionCard,{from:'Fix map lasso on mobile',unblocks:'2 threads',price:'20 s',defaultText:'Default in 2 h: keep the current gesture',questions:[{text:'Which gesture should close the filter sheet?',options:[{label:'Swipe down',desc:'Matches the iOS sheet the app already uses.'},{label:'Tap outside',desc:'Simpler; conflicts with the lasso on small screens.'},{label:'Both',desc:'Most forgiving; two code paths to test.'}]},{text:'Which screens should get the new sheet?',multi:true,options:[{label:'Map'},{label:'List'},{label:'Saved searches'}]}]}));
+</script>
+</body>
+</html>

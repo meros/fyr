@@ -1,0 +1,12 @@
+<!-- @dsCard group="Actions" height=72 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Button — preview</title></head>
+<body>
+<div id="root" class="fy-pad"></div>
+<script>
+  var F = window.Fyr, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div', {className:'fy-hstack'}, h(F.Button,{variant:'primary',kbd:'\u23ce'},'Answer'), h(F.Button,{kbd:'E'},'Settle'), h(F.Button,{variant:'ghost',kbd:'S'},'Snooze'), h(F.Button,{variant:'danger'},'Archive'), h(F.Button,{disabled:true,reason:'A run is in progress'},'Settle')));
+</script>
+</body>
+</html>
