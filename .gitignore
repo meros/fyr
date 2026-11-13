@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+/spikes/protocol/npm/
+/spikes/protocol/run/

@@ -1,0 +1,12 @@
+<!-- @dsCard group="Status" height=72 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>PRBadge — preview</title></head>
+<body>
+<div id="root" class="fy-pad"></div>
+<script>
+  var F = window.Fyr, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div', {className:'fy-hstack'}, h(F.PRBadge,{number:4182,state:'draft'}), h(F.PRBadge,{number:4182,state:'pending'}), h(F.PRBadge,{number:4182,state:'failed'}), h(F.PRBadge,{number:4182,state:'passing'}), h(F.PRBadge,{number:4182,state:'merged'})));
+</script>
+</body>
+</html>

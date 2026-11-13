@@ -1,0 +1,12 @@
+<!-- @dsCard group="Inbox" height=140 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>SectionHeader — preview</title></head>
+<body>
+<div id="root" class="fy-pad"></div>
+<script>
+  var F = window.Fyr, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div', null, h(F.SectionHeader,{title:'Needs you',count:4,kind:'attention'}), h(F.SectionHeader,{title:'Working',count:7,open:false,hint:'7 runs \u00b7 2 waiting for a build slot'}), h(F.SectionHeader,{title:'Snoozed',count:3,open:false})));
+</script>
+</body>
+</html>

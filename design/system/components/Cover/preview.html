@@ -1,0 +1,41 @@
+<!-- @dsCard height=300 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Cover</title>
+<style>
+  html, body { margin: 0; background: var(--surface); }
+  .cv { position: relative; width: 960px; height: 300px; overflow: hidden; font-family: var(--font-sans); }
+  .cv svg { position: absolute; left: 480px; top: 0; width: 480px; height: 300px; }
+  .night { fill: var(--night); } .beam { fill: var(--beam); } .wash { fill: var(--beam-wash); }
+  .harbour { fill: var(--harbour); } .sunk { fill: var(--surface-sunken); }
+  .dot { fill: var(--ink-faint); } .dotl { fill: var(--beam); }
+  .t { position: absolute; left: 40px; bottom: 40px; width: 420px; }
+  .name { font: 600 120px/0.92 var(--font-sans); letter-spacing: -0.03em; color: var(--ink); margin: 0; }
+  .tag { font: 400 14px/20px var(--font-sans); color: var(--ink-muted); margin: 16px 0 0; }
+</style></head>
+<body>
+<div class="cv">
+  <!-- blocks: night slab 288x300 (the tower), beam 96x96 (the lamp), beam-wash band 192x120, harbour 96x48, surface-sunken 192x72
+       arrangement: one tall slab bleeding off top and bottom with the lamp set into its upper edge; satellites stepped to the right
+       pattern: precise, mono, a 4px grid -> a dot grid at space-6 (24px) pitch; dots inside the beam-wash band light up in beam (the light falling on the water)
+       steps and radii: blocks sized in multiples of space-6; corners radius-sm (3px) on satellites, square on the slab -->
+  <svg viewBox="0 0 480 300" aria-hidden="true">
+    <rect class="sunk" x="0" y="216" width="192" height="72" rx="3"/>
+    <rect class="night" x="192" y="-12" width="168" height="324"/>
+    <rect class="beam" x="228" y="36" width="96" height="96" rx="3"/>
+    <rect class="wash" x="360" y="60" width="120" height="120" rx="3"/>
+    <rect class="harbour" x="360" y="204" width="96" height="48" rx="3"/>
+    <g>
+      <circle class="dot" cx="24" cy="24" r="1.6"/><circle class="dot" cx="48" cy="24" r="1.6"/><circle class="dot" cx="72" cy="24" r="1.6"/><circle class="dot" cx="96" cy="24" r="1.6"/><circle class="dot" cx="120" cy="24" r="1.6"/><circle class="dot" cx="144" cy="24" r="1.6"/>
+      <circle class="dot" cx="24" cy="48" r="1.6"/><circle class="dot" cx="48" cy="48" r="1.6"/><circle class="dot" cx="72" cy="48" r="1.6"/><circle class="dot" cx="96" cy="48" r="1.6"/><circle class="dot" cx="120" cy="48" r="1.6"/><circle class="dot" cx="144" cy="48" r="1.6"/>
+      <circle class="dot" cx="24" cy="72" r="1.6"/><circle class="dot" cx="48" cy="72" r="1.6"/><circle class="dot" cx="72" cy="72" r="1.6"/><circle class="dot" cx="96" cy="72" r="1.6"/><circle class="dot" cx="120" cy="72" r="1.6"/><circle class="dot" cx="144" cy="72" r="1.6"/>
+      <circle class="dotl" cx="384" cy="84" r="2"/><circle class="dotl" cx="408" cy="84" r="2"/><circle class="dotl" cx="432" cy="84" r="2"/><circle class="dotl" cx="456" cy="84" r="2"/>
+      <circle class="dotl" cx="384" cy="108" r="2"/><circle class="dotl" cx="408" cy="108" r="2"/><circle class="dotl" cx="432" cy="108" r="2"/><circle class="dotl" cx="456" cy="108" r="2"/>
+      <circle class="dotl" cx="384" cy="132" r="2"/><circle class="dotl" cx="408" cy="132" r="2"/><circle class="dotl" cx="432" cy="132" r="2"/><circle class="dotl" cx="456" cy="132" r="2"/>
+      <circle class="dotl" cx="384" cy="156" r="2"/><circle class="dotl" cx="408" cy="156" r="2"/><circle class="dotl" cx="432" cy="156" r="2"/><circle class="dotl" cx="456" cy="156" r="2"/>
+    </g>
+  </svg>
+  <div class="t"><h1 class="name">Fyr</h1><p class="tag">A calm control room for coding agents. It shines only when you must act.</p></div>
+</div>
+</body>
+</html>
