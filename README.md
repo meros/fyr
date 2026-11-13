@@ -13,7 +13,7 @@ Fyr runs Claude Code sessions on your own machines and shows one list: what need
 | [`docs/FYR-V1.md`](docs/FYR-V1.md) | What v1 is, the acceptance checklist, architecture, build plan, roadmap |
 | [`docs/SPEC.md`](docs/SPEC.md) | The full spec (concepts, data model, Actions, Rules, Attention, modules, UX, technology) |
 | [`docs/REVIEW-LOG.md`](docs/REVIEW-LOG.md) | Five adversarial review rounds and a consistency pass, with every resolution |
-| [`design/screens.html`](design/screens.html) | Static mock of the key screens (first draft; FYR-V1 section 6 lists the binding changes) |
+| [`design/screens-v1.html`](design/screens-v1.html) | The v1 screens: inbox after a break, the question card, phone answer and capture, bulk settle |
 | [`design/`](design/README.md) | The Fyr design system (tokens, components, brand book), screen mocks and their generators |
 | [`research/`](research/) | T3 Code feature map, the owner's T3 usage, competitors, coordinator agents, vision ideas |
 | [`spikes/`](spikes/) | Proven assumptions: Go client for the `claude` control protocol; PSI and cgroup behaviour |

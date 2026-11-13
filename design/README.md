@@ -8,7 +8,8 @@
 | `system/components/bundle.js`, `bundle.css`, `index.d.ts` | Reference components (plain React `createElement`, global `window.Fyr`) and their props |
 | `system/components/<Name>/` | Each component's usage rules (`README.md`) and a live preview (`preview.html`) |
 | `system/components/Cover/preview.html` | The visual identity sheet: palette blocks, dot grid, name |
-| `screens.html` | Static mock of the key screens, built from the system |
+| `screens-v1.html` | The v1 screens with the round-5 UX changes applied (current) |
+| `screens.html` | First-draft mock, generated from the system (superseded) |
 | `generators/make_ds.py` | Writes everything under `system/` |
 | `generators/make_mocks.py` | Builds `screens.html` from `system/` |
 
