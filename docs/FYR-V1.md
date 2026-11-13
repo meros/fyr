@@ -227,6 +227,6 @@ Each step adds modules or turns on parts of the core that already exist. None ne
 ## What follows
 
 - **Unblocked now:** M0 can start. The stack, protocol, data model and design system are decided.
-- **Open, owned by you:** whether to publish the Fyr design system as a shared artifact (the publish was blocked by the permission check; the files are in `../design/system/`); whether v1.1 or v1.2 comes first.
+- **Open, owned by you:** whether v1.1 or v1.2 comes first.
 - **Done:** spec v0.6.1 with the round 4 and round 5 fixes, the async-effects principle (D5), multi-user readiness (R19) and the consistency pass.
 - **Separately needed before v1.2:** the TLA+ model of move and residence.

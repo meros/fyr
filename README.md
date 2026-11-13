@@ -14,7 +14,7 @@ Fyr runs Claude Code sessions on your own machines and shows one list: what need
 | [`docs/SPEC.md`](docs/SPEC.md) | The full spec (concepts, data model, Actions, Rules, Attention, modules, UX, technology) |
 | [`docs/REVIEW-LOG.md`](docs/REVIEW-LOG.md) | Five adversarial review rounds and a consistency pass, with every resolution |
 | [`design/screens.html`](design/screens.html) | Static mock of the key screens (first draft; FYR-V1 section 6 lists the binding changes) |
-| [`design/system/`](design/system/) | The Fyr design system: tokens, components, brand book |
+| [`design/`](design/README.md) | The Fyr design system (tokens, components, brand book), screen mocks and their generators |
 | [`research/`](research/) | T3 Code feature map, the owner's T3 usage, competitors, coordinator agents, vision ideas |
 | [`spikes/`](spikes/) | Proven assumptions: Go client for the `claude` control protocol; PSI and cgroup behaviour |
 
@@ -26,9 +26,3 @@ Fyr runs Claude Code sessions on your own machines and shows one list: what need
 - Async effects: merges and similar effects are requested by the agent, approved by you, run by Fyr, and reported back as context.
 - Ready for several users per host (owner, visibility, per-user view state), but v1 has one user.
 
-## Regenerating the design files
-
-```sh
-python3 design/generators/make_ds.py     # rebuilds design/system/ from the generator
-python3 design/generators/make_mocks.py  # rebuilds the screens page from design/system/
-```

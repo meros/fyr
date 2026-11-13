@@ -529,10 +529,4 @@ cover = """<!-- @dsCard height=300 -->
 """
 w("components/Cover/preview.html", cover)
 
-now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-index = {"v": 3, "layout": "files", "createdOnFiles": {"v": 1, "at": now}, "title": "Fyr",
-         "namespace": "Fyr", "libraries": [{"name": "react", "version": "18"}, {"name": "react-dom", "version": "18"}],
-         "sections": {}, "groups": [], "assetGroups": {}, "blobs": {}, "docs": {"sections": []},
-         "lastChange": {"by": "Claude", "at": now, "via": "Claude Code", "note": "First version of the Fyr design system."}}
-w("design-system.json", json.dumps(index, indent=2))
 print("ok")
