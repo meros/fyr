@@ -11,19 +11,21 @@ const Owner = "owner"
 
 // Thread is one conversation with one agent session in one directory.
 type Thread struct {
-	ID         string    `json:"id"`
-	Title      string    `json:"title"`
-	Cwd        string    `json:"cwd"`
-	Project    string    `json:"project"`
-	ProjectID  string    `json:"projectId,omitempty"` // V0.23
-	Owner      string    `json:"owner"`
-	Visibility string    `json:"visibility"`
-	Profile    string    `json:"profile"`
-	Model      string    `json:"model"`
-	SessionID  string    `json:"sessionId"`
-	Branch     string    `json:"branch,omitempty"` // read with git after each run
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Cwd       string `json:"cwd"`
+	Project   string `json:"project"`
+	ProjectID string `json:"projectId,omitempty"` // V0.23
+	// ProjectManual: the user filed the thread; folder matching keeps it.
+	ProjectManual bool      `json:"projectManual,omitempty"`
+	Owner         string    `json:"owner"`
+	Visibility    string    `json:"visibility"`
+	Profile       string    `json:"profile"`
+	Model         string    `json:"model"`
+	SessionID     string    `json:"sessionId"`
+	Branch        string    `json:"branch,omitempty"` // read with git after each run
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 
 	// Run state, written only by observations from the agent.
 	Running      bool       `json:"running"`

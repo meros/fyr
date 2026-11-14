@@ -230,6 +230,14 @@ func (e *Engine) Command(c Cmd) Reply {
 	if act == nil {
 		return Reply{Error: "unknown action " + c.Action, Status: 400}
 	}
+	if c.Action == "thread.setProject" {
+		e.mu.Lock()
+		ok := e.projects[c.Args.Str("projectId")] != nil
+		e.mu.Unlock()
+		if !ok {
+			return Reply{Error: "no project " + c.Args.Str("projectId"), Status: 400}
+		}
+	}
 	if c.Action == "thread.create" || c.Action == "thread.send" {
 		for _, id := range core.AttachmentIDs(c.Args) {
 			if e.AttachmentExists == nil || !e.AttachmentExists(id) {
