@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.33: message delivery in the conversation fold.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildConversation, deliveryLabel, type Item } from "../src/conversation.ts";
+import { buildConversation, deliveryLabel, viewChat, type Item } from "../src/conversation.ts";
 
 let seq = 0;
 const ev = (type: string, data: unknown) => ({ seq: ++seq, at: new Date(1_700_000_000_000 + seq * 1000).toISOString(), subject: "t", type, data });
@@ -70,4 +70,43 @@ test("V0.33: messages from before delivery tracking have no state and stay where
   assert.equal(u[0].pending, false);
   assert.equal(deliveryLabel(u[0]), "");
   assert.equal(items[0].kind, "user");
+});
+
+// SPEC 0.5 V0.33: the thread's outbox is the truth about what still waits. A message the host no
+// longer holds never shows as Waiting, even when its read event never reached this device
+// (found live: two answered messages stayed "Waiting" on the phone and could not be cancelled).
+test("a message not in the outbox is not waiting, even without its read event", () => {
+  const T = Date.parse("2026-11-14T17:39:00Z");
+  let seq = 0;
+  const ev = (type: string, data: unknown) => ({ seq: ++seq, at: new Date(T + seq * 1000).toISOString(), subject: "t", type, data });
+  const evs = [ev("user", { id: "m1", text: "Where do we present quota?" }), ev("message.state", { id: "m1", state: "queued" })];
+  const stale = buildConversation(evs);
+  assert.equal(stale.find((i) => i.kind === "user" && i.id === "m1" && i.pending) !== undefined, true, "setup: without the outbox it looks waiting");
+  const fixed = buildConversation(evs, { outbox: [] });
+  const it = fixed.find((i) => i.kind === "user" && i.id === "m1") as Extract<Item, { kind: "user" }>;
+  assert.equal(it.pending, false);
+  assert.equal(it.delivery, "read");
+  const still = buildConversation(evs, { outbox: ["m1"] });
+  assert.equal((still.find((i) => i.kind === "user" && i.id === "m1") as Extract<Item, { kind: "user" }>).pending, true, "in the outbox: still waiting");
+});
+
+// SPEC 0.5 V0.49: the View tab shows the last message typed there and the agent's spoken reply.
+test("the View tab's chat: my last message there and the reply after it", () => {
+  const T = Date.parse("2026-11-14T18:00:00Z");
+  let seq = 0;
+  const ev = (type: string, data: unknown) => ({ seq: ++seq, at: new Date(T + seq * 1000).toISOString(), subject: "t", type, data });
+  const say = (text: string) => ev("msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text }] } });
+  const evs = [
+    ev("user", { id: "a", text: "first, in conversation" }), ev("message.state", { id: "a", state: "read" }), say("ok"),
+    ev("user", { id: "b", text: "Can you also check iPad?", from: "view-typed" }), ev("message.state", { id: "b", state: "read" }),
+    say("Yes, I'll run the iPad layout next and add it to the view."), say("Done: the iPad layout passes."),
+  ];
+  const c = viewChat(buildConversation(evs, { outbox: [] }));
+  assert.equal(c?.mine.text, "Can you also check iPad?");
+  assert.equal(c?.reply, "Yes, I'll run the iPad layout next and add it to the view.", "the first spoken answer after it");
+  const waiting = viewChat(buildConversation([...evs.slice(0, 3), ev("user", { id: "c", text: "and Android", from: "view-typed" }), ev("message.state", { id: "c", state: "queued" })], { outbox: ["c"] }));
+  assert.equal(waiting?.mine.text, "and Android");
+  assert.equal(waiting?.mine.delivery, "queued");
+  assert.equal(waiting?.reply, null);
+  assert.equal(viewChat(buildConversation(evs.slice(0, 3))), null, "nothing typed on the View tab yet");
 });

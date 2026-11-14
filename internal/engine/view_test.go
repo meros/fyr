@@ -287,3 +287,22 @@ func TestViewBridgeGivesPressFeedback(t *testing.T) {
 		}
 	}
 }
+
+// SPEC 0.5 V0.49: a message typed on the View tab reaches the agent labelled, so it answers in plain
+// words first; the log keeps the plain text and the mark.
+func TestViewTypedMessageIsLabelled(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("hello")
+	h.wait(id, "done", state(core.Done))
+	if r := h.cmd("thread.send", id, core.Args{"text": "Can you also check iPad?", "from": "view-typed"}); !r.OK {
+		t.Fatalf("send: %+v", r)
+	}
+	th := h.wait(id, "echo", func(t core.Thread, _ core.Attention) bool { return strings.Contains(t.Summary, "iPad") })
+	if th.Summary != "echo: [Typed on the live view tab] Can you also check iPad?" {
+		t.Fatalf("agent read %q", th.Summary)
+	}
+	users := viewEvents(h, id, "user")
+	if last := users[len(users)-1]; last["from"] != "view-typed" || last["text"] != "Can you also check iPad?" {
+		t.Fatalf("user event %v", last)
+	}
+}

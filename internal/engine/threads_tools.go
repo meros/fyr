@@ -75,6 +75,8 @@ func threadText(evs []json.RawMessage, types []string) string {
 			who := "User"
 			if u.From == "view" {
 				who = "User (live view)"
+			} else if u.From == "view-typed" {
+				who = "User (View tab)"
 			} else if u.From != "" {
 				who = "Thread " + u.From
 			}

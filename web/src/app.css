@@ -874,3 +874,12 @@ button.ptag{padding:0}
 @property --p{syntax:"<percentage>";inherits:false;initial-value:100%}
 @keyframes ahc{from{--p:100%}to{--p:0%}}
 @media (prefers-reduced-motion: reduce){.sec .ahc{animation:none}}
+
+/* SPEC 0.5 V0.49: the View tab's chat: your last message there and the agent's spoken reply */
+.vchat{display:flex;flex-direction:column;gap:6px;align-items:stretch;margin:8px 16px 0;padding:0;border:0;background:none;text-align:left;cursor:pointer;color:inherit;font:inherit;min-width:0}
+.vchat-me{align-self:flex-end;display:flex;flex-direction:column;align-items:flex-end;gap:2px;max-width:80%}
+.vchat-b{padding:7px 12px;border-radius:14px 14px 4px 14px;background:var(--select);color:var(--ink);font:400 14px/20px var(--ui);overflow-wrap:anywhere}
+.vchat-s{font:400 11px/14px var(--ui);color:var(--ink-faint)}
+.vchat-re{align-self:flex-start;max-width:85%;padding:7px 12px;border-radius:14px 14px 14px 4px;background:var(--raised);border:1px solid var(--line);font:400 14px/20px var(--ui);color:var(--ink);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.vchat-live{color:var(--ink-muted);font-size:13px}
+.you .vtag{display:block;font:500 11px/14px var(--ui);color:var(--ink-muted);margin-bottom:2px}

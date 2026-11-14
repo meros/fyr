@@ -22,7 +22,7 @@ import { colorVar, makeProjectLabel, projectName, projectOf, suggestionFor } fro
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
-import { LiveViewBar, LiveViewPanel } from "./view-ui.tsx";
+import { LiveViewBar, LiveViewPanel, ViewChat } from "./view-ui.tsx";
 import { defaultTab, liveViewOf, showsDecision } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
@@ -178,10 +178,12 @@ export function ThreadPane(p: ThreadPaneProps) {
       </div>
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} />}
+      {tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
       {tab === "conv" && <LiveViewBar t={t} now={p.now} onOpen={() => setTab("view")} />}
       {tab === "conv" && <Filmstrip cards={previews} />}
       {tab === "conv" && (
         <Conversation
+          outbox={(t.outbox ?? []).map((o) => o.id)}
           events={p.events}
           onAtEnd={p.onAtEnd}
           threadId={t.id}
@@ -193,7 +195,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {tab === "changes" && <ChangesView threadId={t.id} />}
       {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}
       {showsDecision(tab) && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
-      <Composer key={t.id} t={t} now={p.now} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
+      <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
   );
 }
@@ -397,9 +399,10 @@ const DeliveryCtx = createContext<DeliveryActions | null>(null);
 /** The host's profiles, for the handover divider's names (V0.45). */
 export const ProfilesContext = createContext<Profile[]>([]);
 
-export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions }) {
+export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions }) {
   const details = useToolDetails();
-  const all = useMemo(() => buildConversation(events ?? [], { details, cwd }), [events, details, cwd]);
+  const outKey = outbox ? outbox.join(",") : null;
+  const all = useMemo(() => buildConversation(events ?? [], { details, cwd, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, outKey]);
   // V0.33: messages the agent has not read stand after "Agent is here".
   const [items, pending] = useMemo(() => [all.filter((i) => !(i.kind === "user" && i.pending)), all.filter((i) => i.kind === "user" && i.pending)], [all]);
   const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
@@ -672,6 +675,17 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
               <span class="vk">View</span>
               <span class="ell">{it.text}</span>
             </span>
+            <DeliveryLine it={it} />
+          </div>
+        );
+      if (it.from === "view-typed")
+        // V0.49: typed on the View tab: a normal bubble with a small label.
+        return (
+          <div class={`youw${cls}`}>
+            <div class="you prose">
+              <span class="vtag">from the View tab</span>
+              {it.text}
+            </div>
             <DeliveryLine it={it} />
           </div>
         );
@@ -1035,8 +1049,8 @@ function AskCard(p: CardProps & { card: CardState }) {
 export interface SendArgs {
   text: string;
   attachments?: string[];
-  /** V0.37: a press in the live view */
-  from?: "view";
+  /** V0.37: a press in the live view; V0.49: typed on the View tab */
+  from?: "view" | "view-typed";
 }
 
 interface ComposerProps {
