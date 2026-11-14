@@ -11,12 +11,13 @@ self:
 let
   cfg = config.services.fyr;
   home = config.users.users.${cfg.user}.home;
-  configFile = pkgs.writeText "fyr-config.json" (builtins.toJSON {
+  configJSON = builtins.toJSON {
     listen = "127.0.0.1:${toString cfg.port}";
     permissionMode = cfg.permissionMode;
     idleStopMinutes = cfg.idleStopMinutes;
     profiles = cfg.profiles;
-  });
+    scanRoots = cfg.scanRoots;
+  };
 in
 {
   options.services.fyr = {
@@ -55,6 +56,16 @@ in
         threads keep their profile.
       '';
     };
+    scanRoots = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "~/git" "~/src" ];
+      description = ''
+        Extra folders the host folder picker scans for git repositories, two
+        levels deep (SPEC V0.42). The projects' folders are always scanned.
+        `~` is the user's home folder; only folders inside it are scanned.
+      '';
+    };
     path = lib.mkOption {
       type = lib.types.listOf lib.types.package;
       default = [ ];
@@ -87,7 +98,7 @@ in
 
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [ cfg.package ];
-    environment.etc."fyr/config.json".source = configFile;
+    environment.etc."fyr/config.json".text = configJSON;
 
     # Tailscale Serve keeps its config in tailscaled; this unit sets it at boot
     # so the address is declared here, not in a manual command.

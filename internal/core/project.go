@@ -30,16 +30,51 @@ type Source struct {
 	Host string `json:"host,omitempty"` // folder
 	Path string `json:"path,omitempty"` // folder
 	URL  string `json:"url,omitempty"`  // repo: host/owner/repo
+	// Main marks the folder new threads start in on its host (SPEC 0.5
+	// V0.42); without one, the first folder on the host is main.
+	Main bool `json:"main,omitempty"`
 }
 
-// Folder is the project's folder on host, or "".
+// Folder is the project's main folder on host, or "" (V0.42).
 func (p Project) Folder(host string) string {
-	for _, s := range p.Sources {
-		if s.Kind == "folder" && s.Host == host {
-			return s.Path
-		}
+	if i := p.MainIndex(host); i >= 0 {
+		return p.Sources[i].Path
 	}
 	return ""
+}
+
+// MainIndex is the index of the main folder on host: the one marked main,
+// else the first folder there; -1 when the project has no folder there.
+func (p Project) MainIndex(host string) int {
+	first := -1
+	for i, s := range p.Sources {
+		if s.Kind != "folder" || s.Host != host {
+			continue
+		}
+		if s.Main {
+			return i
+		}
+		if first < 0 {
+			first = i
+		}
+	}
+	return first
+}
+
+// SetMain marks source i main and clears the mark on the other folders on
+// its host. It reports false when i is not a folder source.
+func (p *Project) SetMain(i int) bool {
+	if i < 0 || i >= len(p.Sources) || p.Sources[i].Kind != "folder" {
+		return false
+	}
+	src := append([]Source(nil), p.Sources...)
+	for k := range src {
+		if src[k].Kind == "folder" && src[k].Host == src[i].Host {
+			src[k].Main = k == i
+		}
+	}
+	p.Sources = src
+	return true
 }
 
 // Icon is a monogram (Value empty: derived from the name), an emoji, or a
