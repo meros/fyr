@@ -1,6 +1,7 @@
 // Thread pane: header with chips and tabs, conversation, docked decision card and composer
 // (design/directions/04-rail.html).
 
+import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
 import { buildConversation, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall } from "./conversation.ts";
@@ -318,8 +319,15 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { ev
             Show earlier messages
           </button>
         )}
+        {crashProbe() && (
+          <Boundary name="This message">
+            <CrashProbe />
+          </Boundary>
+        )}
         {items.map((it) => (
-          <ItemView key={it.key} it={it} previews={previews} />
+          <Boundary key={it.key} name="This message">
+            <ItemView it={it} previews={previews} />
+          </Boundary>
         ))}
       </div>
     </div>

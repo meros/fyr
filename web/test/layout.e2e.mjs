@@ -339,6 +339,19 @@ try {
   failures.push(`U8 settle from the thread: ${e.message}`);
 }
 
+// V0.24: a message that fails to render shows an error card; the thread, its composer and the
+// rest of the conversation stay. (Found live: one bad field blanked the whole client.)
+try {
+  await openScreen({ url: "?mock=rail&open=t_mapperf&crash=1" }, 390, 844);
+  await sleep(300);
+  const r = await evaluate(`({ card: document.querySelector('.crash')?.textContent ?? '', header: !!document.querySelector('.m-tth'), composer: !!document.querySelector('.m-cmp'), body: document.body.innerText.length })`);
+  check(/could not be shown/.test(r.card), `V0.24 crash card: no error card ("${r.card}")`);
+  check(r.header && r.composer, `V0.24 crash card: the thread did not stay (header ${r.header}, composer ${r.composer})`);
+  check(r.body > 200, `V0.24 crash card: the page is nearly empty (${r.body} characters)`);
+} catch (e) {
+  failures.push(`V0.24 crash card: ${e.message}`);
+}
+
 clearTimeout(watchdog);
 cleanup();
 if (pageErrors.length) failures.push(...pageErrors.map((e) => `page error: ${e}`));

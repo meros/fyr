@@ -1,4 +1,5 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
+import { decodeProject, decodeState, decodeThread } from "./decode.ts";
 
 import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, ThreadDTO } from "./types.ts";
 
@@ -57,7 +58,8 @@ export function newer(cur: ThreadDTO | undefined, next: ThreadDTO): boolean {
   return ts(next.updatedAt) >= ts(cur.updatedAt);
 }
 
-export function applySnapshot(s: Store, dto: StateDTO, clientNow: number): Store {
+export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store {
+  const dto = decodeState(raw);
   const threads: Record<string, ThreadDTO> = {};
   for (const t of dto.threads ?? []) threads[t.id] = t;
   // An upsert that arrived on the stream after subscribing but before the snapshot may be newer.
@@ -79,7 +81,9 @@ export function applySnapshot(s: Store, dto: StateDTO, clientNow: number): Store
   };
 }
 
-export function upsertThread(s: Store, t: ThreadDTO): Store {
+export function upsertThread(s: Store, raw: ThreadDTO): Store {
+  const t = decodeThread(raw);
+  if (!t.id) return s;
   if (!newer(s.threads[t.id], t)) return s;
   return { ...s, threads: { ...s.threads, [t.id]: t } };
 }
@@ -255,7 +259,8 @@ export function snoozePresets(now: Date): SnoozePreset[] {
 }
 
 /** A project from the stream (`event: project`, V0.23): replace by id, or add. */
-export function upsertProject(s: Store, p: Project): Store {
+export function upsertProject(s: Store, raw: Project): Store {
+  const p = decodeProject(raw);
   const i = s.projects.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
   const projects = i >= 0 ? s.projects.map((x, j) => (j === i ? p : x)) : [...s.projects, p];
   return { ...s, projects };
