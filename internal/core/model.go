@@ -42,6 +42,8 @@ type Thread struct {
 	Failure   *Failure   `json:"failure,omitempty"`
 	Decisions []Decision `json:"decisions,omitempty"`
 	PR        *PR        `json:"pr,omitempty"`
+	// Outbox holds the messages the agent has not read yet (V0.33).
+	Outbox []OutMsg `json:"outbox,omitempty"`
 
 	SettledAt        *time.Time `json:"settledAt,omitempty"`
 	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
@@ -51,6 +53,14 @@ type Thread struct {
 	Source string `json:"source"`           // "fyr" or "t3"
 	Parent string `json:"parent,omitempty"` // the thread whose agent started it (V0.22)
 	T3ID   string `json:"t3Id,omitempty"`
+}
+
+// OutMsg is a message sent to the agent and not read yet (SPEC 0.5 V0.33).
+// State is "sent" (written, no report from the agent) or "queued" (in the
+// agent's queue).
+type OutMsg struct {
+	ID    string `json:"id"`
+	State string `json:"state"`
 }
 
 // View is the per-user state of one entity (R19): snooze and read watermark.
