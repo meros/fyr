@@ -35,17 +35,24 @@ test("PNG encoder rejects a wrong buffer size; crc32 matches the PNG reference v
   assert.equal(crc32(new TextEncoder().encode("IEND")), 0xae426082);
 });
 
-test("the mark: night tile with an amber lamp; maskable is full bleed; badge is white on transparent", () => {
+test("the mark: a lighthouse on a night tile, amber lamp and beams; maskable is full bleed; badge is white on transparent", () => {
   const n = 64;
   const at = (px: Uint8Array, x: number, y: number) => [...px.subarray((y * n + x) * 4, (y * n + x) * 4 + 4)];
   const any = drawMark(n);
+  const P = (x: number, y: number) => at(any, Math.round(n * x), Math.round(n * y));
+  const luma = (c: number[]) => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
   assert.equal(at(any, 0, 0)[3], 0, "rounded corner is transparent");
-  assert.deepEqual(at(any, 4, n / 2), [0x14, 0x21, 0x2d, 255], "night background");
-  assert.deepEqual(at(any, Math.round(n * 0.4), Math.round(n * 0.6)), [0xe8, 0x96, 0x0f, 255], "amber lamp");
+  assert.ok(luma(at(any, 4, n / 2)) < 60 && at(any, 4, n / 2)[3] === 255, "night background");
+  const lamp = P(0.5, 0.35);
+  assert.ok(lamp[0] > 220 && lamp[1] > 150 && lamp[2] < 140, `amber lamp ${lamp}`);
+  const tower = P(0.5, 0.66);
+  assert.ok(tower[0] > 200 && tower[1] > 200 && tower[2] > 200, `light tower ${tower}`);
+  const beam = P(0.24, 0.35);
+  assert.ok(beam[0] > beam[2] + 20 && luma(beam) > luma(at(any, 4, n / 2)) + 15, `beam is lit amber ${beam}`);
   assert.equal(at(drawMark(n, { maskable: true }), 0, 0)[3], 255, "maskable fills the square");
   const badge = drawMark(n, { badge: true });
-  assert.equal(at(badge, 4, n / 2)[3], 0);
-  assert.deepEqual(at(badge, Math.round(n * 0.4), Math.round(n * 0.6)), [255, 255, 255, 255]);
+  assert.equal(at(badge, 4, n / 2)[3], 0, "badge has no tile");
+  assert.deepEqual(at(badge, Math.round(n * 0.5), Math.round(n * 0.66)), [255, 255, 255, 255], "badge tower is white");
 });
 
 test("manifest has the fields installability needs", () => {

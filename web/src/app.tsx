@@ -1,3 +1,5 @@
+import { shouldClearNotification } from "./push.ts";
+import { clearThreadNotification } from "./pwa.ts";
 // The app shell: state, commands and the keyboard.
 
 import { render } from "preact";
@@ -220,7 +222,10 @@ function App() {
     });
     api.start({
       state: (dto) => setStore((s) => applySnapshot(s, dto, Date.now())),
-      thread: (t) => setStore((s) => upsertThread(s, t)),
+      thread: (t) => {
+        if (shouldClearNotification(t.attention.state)) clearThreadNotification(t.id);
+        setStore((s) => upsertThread(s, t));
+      },
       event: (e) => setStore((s) => liveEvent(s, e)),
       conn: (c) => setStore((s) => setConn(s, c)),
     });
