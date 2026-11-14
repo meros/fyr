@@ -116,8 +116,9 @@ export function pressReply(id: string | number, ok: boolean) {
 
 /** SPEC 0.5 V0.37: the tab a thread opens on. A live view opens on View; an explicit
  *  choice wins; View does not exist without a view. */
-export function defaultTab(t: Pick<ThreadDTO, "live">, requested: string | undefined): string {
+export function defaultTab(t: Pick<ThreadDTO, "live" | "pr">, requested: string | undefined): string {
   const has = !!liveViewOf(t);
   if (requested === "view") return has ? "view" : "conv";
+  if (requested === "pr" && !t.pr) return "conv"; // V0.36: no PR, no PR tab
   return requested ?? (has ? "view" : "conv");
 }

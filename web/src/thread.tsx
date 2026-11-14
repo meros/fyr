@@ -81,6 +81,9 @@ export function ThreadPane(p: ThreadPaneProps) {
   useEffect(() => {
     if (tab === "view" && !hasView) setTab("conv");
   }, [hasView]);
+  useEffect(() => {
+    if (tab === "pr" && !t.pr) setTab("conv"); // V0.36: a dismissed PR takes its tab with it
+  }, [!!t.pr]);
   const profile = p.profiles.find((x) => x.id === t.profile);
   const decision = t.decisions?.[0] ?? null;
   const st = t.attention.state;
@@ -156,9 +159,11 @@ export function ThreadPane(p: ThreadPaneProps) {
           <span class={tab === "changes" ? "on" : ""} role="tab" onClick={() => setTab("changes")}>
             Changes
           </span>
-          <span class={tab === "pr" ? "on" : ""} role="tab" onClick={() => setTab("pr")}>
-            PR
-          </span>
+          {t.pr && (
+            <span class={tab === "pr" ? "on" : ""} role="tab" onClick={() => setTab("pr")}>
+              PR
+            </span>
+          )}
         </div>
       </div>
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}

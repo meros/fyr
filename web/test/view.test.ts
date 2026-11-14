@@ -98,3 +98,11 @@ test("the start tab follows the live view", () => {
   assert.equal(defaultTab(plain, undefined), "conv");
   assert.equal(defaultTab(plain, "view"), "conv", "no view: the View tab does not exist");
 });
+
+// SPEC 0.5 V0.36: the PR tab exists only with a PR; asking for it without one opens Conversation.
+test("no PR, no PR tab", () => {
+  const plain = thread("c", "done", "needs");
+  assert.equal(defaultTab(plain, "pr"), "conv");
+  const withPr = thread("p", "done", "needs", { pr: { url: "u", number: 1, state: "OPEN" } });
+  assert.equal(defaultTab(withPr, "pr"), "pr");
+});
