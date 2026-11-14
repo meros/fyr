@@ -105,3 +105,16 @@ Actions and their args:
 ## `GET /api/t3/candidates`
 
 `{"threads": [{"t3Id": "…", "title": "…", "cwd": "…", "profile": "claudeAlt", "model": "…", "sessionId": "…", "prUrl": "…", "updatedAt": "…", "hasTranscript": true}]}`, open top-level T3 threads not yet adopted.
+
+## Web Push (SPEC 0.5 V0.15)
+
+| Call | Body | Reply |
+|---|---|---|
+| `GET /api/push/key` | – | `{"publicKey": "<base64url VAPID public key>"}` |
+| `POST /api/push/subscribe` | `{"subscription": PushSubscription.toJSON(), "device": "Pixel 9 · Chrome"}` | `{"ok": true}` |
+| `POST /api/push/unsubscribe` | `{"endpoint": "…"}` | `{"ok": true}` |
+| `POST /api/push/test` | – | `{"delivered": 1}` |
+
+All POSTs need `X-Fyr: 1`. The host pushes `{"title", "body", "threadId", "state"}` when a thread enters `asking` or `failed`; the service worker shows it with `tag = threadId` and opens `/?open=<threadId>` on a tap.
+
+The PWA files: `/manifest.webmanifest` (`application/manifest+json`) and `/sw.js` are served with `Cache-Control: no-cache`.

@@ -420,3 +420,60 @@ func TestMCPTokenValidAtStartup(t *testing.T) {
 		t.Fatalf("summary %q", th.Summary)
 	}
 }
+
+// SPEC 0.5 V0.15: the host pushes when a thread enters asking or failed,
+// once per transition; a snapshot or a visit does not push again.
+func TestAttentionTransitionsNotify(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	var mu sync.Mutex
+	got := []string{}
+	h.e.OnAttention = func(d DTO, prev core.State) {
+		mu.Lock()
+		got = append(got, string(prev)+"→"+string(d.Attention.State))
+		mu.Unlock()
+	}
+	count := func(to string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, g := range got {
+			if strings.HasSuffix(g, "→"+to) {
+				n++
+			}
+		}
+		return n
+	}
+	id := h.create("ask")
+	th := h.wait(id, "asking", state(core.Asking))
+	h.e.Snapshot()
+	h.cmd("thread.markSeen", id, nil)
+	if count("asking") != 1 {
+		t.Fatalf("asking notified %d times: %v", count("asking"), got)
+	}
+	h.cmd("thread.answer", id, core.Args{"decisionId": th.Decisions[0].ID, "answers": map[string]any{"Which colour?": "Red"}})
+	h.wait(id, "done", state(core.Done))
+	id2 := h.create("fail")
+	h.wait(id2, "failed", state(core.Failed))
+	if count("failed") != 1 {
+		t.Fatalf("failed notified %d times: %v", count("failed"), got)
+	}
+}
+
+// SPEC 0.5 V0.15: a host restart does not push old states again.
+func TestRestartDoesNotRenotify(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("fail")
+	h.wait(id, "failed", state(core.Failed))
+	h.m.StopAll()
+	h.e.st.Close()
+	st, _ := store.Open(h.db)
+	defer st.Close()
+	e2 := New(st)
+	e2.Load()
+	n := 0
+	e2.OnAttention = func(DTO, core.State) { n++ }
+	e2.Tick()
+	if n != 0 {
+		t.Fatalf("restart re-notified %d threads", n)
+	}
+}

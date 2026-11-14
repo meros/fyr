@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS threads(id TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS views(user TEXT NOT NULL, entity TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(user, entity));
 CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, at TEXT NOT NULL, result TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, user TEXT NOT NULL, device TEXT NOT NULL, sub TEXT NOT NULL, created TEXT NOT NULL);
 `
 
 func Open(path string) (*Store, error) {
@@ -222,4 +223,42 @@ func (s *Store) SetKV(k, v string) error {
 func (s *Store) Snapshot(path string) error {
 	_, err := s.db.Exec(`VACUUM INTO ?`, path)
 	return err
+}
+
+// PushSub is one stored Web Push subscription (SPEC 0.5 V0.15).
+type PushSub struct {
+	Endpoint, User, Device string
+	Sub                    json.RawMessage
+}
+
+// PutPushSub stores or replaces a subscription by its endpoint.
+func (s *Store) PutPushSub(user, endpoint, device string, sub []byte) error {
+	_, err := s.db.Exec(`INSERT INTO push_subs(endpoint,user,device,sub,created) VALUES(?,?,?,?,?)
+ON CONFLICT(endpoint) DO UPDATE SET user=excluded.user, device=excluded.device, sub=excluded.sub`,
+		endpoint, user, device, string(sub), time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+func (s *Store) DeletePushSub(endpoint string) error {
+	_, err := s.db.Exec(`DELETE FROM push_subs WHERE endpoint=?`, endpoint)
+	return err
+}
+
+func (s *Store) PushSubs(user string) ([]PushSub, error) {
+	rows, err := s.db.Query(`SELECT endpoint,user,device,sub FROM push_subs WHERE user=? ORDER BY created`, user)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PushSub
+	for rows.Next() {
+		var p PushSub
+		var sub string
+		if err := rows.Scan(&p.Endpoint, &p.User, &p.Device, &sub); err != nil {
+			return nil, err
+		}
+		p.Sub = json.RawMessage(sub)
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/t3"
@@ -242,11 +243,25 @@ func main() {
 		}
 	}()
 
+	// Web Push (V0.15). The VAPID subject goes to the push services, so it
+	// carries no personal data.
+	pusher := &push.Pusher{DB: st, Subject: "mailto:push@fyr.invalid"}
+	if err := pusher.Init(); err != nil {
+		log.Printf("push: %v", err)
+	}
+	eng.OnAttention = func(d engine.DTO, prev core.State) {
+		st := d.Attention.State
+		if st != core.Asking && st != core.Failed {
+			return
+		}
+		go pusher.Notify(core.Owner, push.PayloadFor(d.ID, d.Title, string(st), attentionDetail(d)))
+	}
+
 	var webFS fs.FS = web.Dist()
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
 	}
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin,
+	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher,
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
 			if err != nil {
@@ -388,4 +403,23 @@ func lastSummary(h []agent.Ev) string {
 		}
 	}
 	return ""
+}
+
+// attentionDetail is the notification body for asking or failed.
+func attentionDetail(d engine.DTO) string {
+	if d.Failure != nil && d.Attention.State == core.Failed {
+		return d.Failure.Message
+	}
+	if len(d.Decisions) > 0 {
+		x := d.Decisions[0]
+		switch {
+		case x.Kind == "ask" && len(x.Questions) > 0:
+			return x.Questions[0].Question
+		case x.Kind == "effect" && x.Effect != nil:
+			return "approve " + x.Effect.Action
+		case x.Kind == "approval":
+			return "allow " + x.Tool
+		}
+	}
+	return d.Attention.Reason
 }
