@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -346,4 +347,65 @@ func TestEffectDeclined(t *testing.T) {
 	if h.r.n() != 0 {
 		t.Fatal("a declined effect ran")
 	}
+}
+
+// SPEC 0.5 V0.2: rev increases on every change, also across a restart.
+func TestRevIsMonotonic(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("hello")
+	h.wait(id, "done", state(core.Done))
+	rev := func(e *Engine) int64 {
+		for _, d := range e.Snapshot() {
+			if d.ID == id {
+				return d.Rev
+			}
+		}
+		return 0
+	}
+	r1 := rev(h.e)
+	h.cmd("thread.markSeen", id, nil)
+	r2 := rev(h.e)
+	if r1 == 0 || r2 <= r1 {
+		t.Fatalf("rev %d → %d", r1, r2)
+	}
+	h.m.StopAll()
+	h.e.st.Close()
+	st, _ := store.Open(h.db)
+	defer st.Close()
+	e2 := New(st)
+	e2.Load()
+	if r3 := rev(e2); r3 <= r2 {
+		t.Fatalf("rev after restart %d <= %d", r3, r2)
+	}
+}
+
+// SPEC 0.5 V0.2: events page back with before.
+func TestEventsBefore(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("hello")
+	h.wait(id, "done", state(core.Done))
+	all := h.events(id)
+	if len(all) < 4 {
+		t.Fatalf("only %d events", len(all))
+	}
+	last := all[len(all)-1].Seq
+	page, err := h.e.EventsBefore(id, last, 2)
+	if err != nil || len(page) != 2 || page[1].Seq >= last || page[0].Seq >= page[1].Seq {
+		t.Fatalf("page %+v %v", page, err)
+	}
+}
+
+// SPEC 0.5 V0.2: the branch of the checkout is read after each run.
+func TestBranchObserved(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	for _, args := range [][]string{{"init", "-q", "-b", "feat/lasso"}, {"commit", "-q", "--allow-empty", "-m", "x"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = h.dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git: %v %s", err, out)
+		}
+	}
+	id := h.create("hello")
+	h.wait(id, "branch", func(t core.Thread, _ core.Attention) bool { return t.Branch == "feat/lasso" })
 }

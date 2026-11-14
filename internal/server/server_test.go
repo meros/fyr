@@ -117,12 +117,13 @@ func TestStateHasThreadsAndActions(t *testing.T) {
 	r := do(t, "GET", hs.URL+"/api/state", "", nil, "")
 	var s struct {
 		BuildID  string           `json:"buildId"`
+		Host     string           `json:"host"`
 		Threads  []map[string]any `json:"threads"`
 		Actions  []map[string]any `json:"actions"`
 		Projects []map[string]any `json:"projects"`
 	}
 	json.NewDecoder(r.Body).Decode(&s)
-	if s.BuildID != "b1" || len(s.Threads) != 1 || len(s.Actions) < 10 || len(s.Projects) != 1 {
+	if s.Host == "" || s.BuildID != "b1" || len(s.Threads) != 1 || len(s.Actions) < 10 || len(s.Projects) != 1 {
 		t.Fatalf("%+v", s)
 	}
 }

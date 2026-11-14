@@ -284,3 +284,21 @@ func TestProcessLostKeepsEffectDecisions(t *testing.T) {
 		t.Fatal("an idle thread with only an effect Decision lost nothing and must not fail")
 	}
 }
+
+// SPEC 0.5 V0.2, 6.4: markSeen up to what the client showed; a later result stays done.
+func TestMarkSeenUpTo(t *testing.T) {
+	th, v := &Thread{ActivityAt: at(5)}, &View{}
+	apply(t, "thread.markSeen", th, v, Args{"upTo": at(3).Format(time.RFC3339Nano)}, at(6))
+	if Compute(th, v, at(6)).State != Done {
+		t.Fatal("a result newer than upTo was marked seen")
+	}
+	apply(t, "thread.markSeen", th, v, Args{"upTo": at(5).Format(time.RFC3339Nano)}, at(6))
+	if Compute(th, v, at(6)).State != Seen {
+		t.Fatal("upTo equal to activityAt must mark seen")
+	}
+	th2, v2 := &Thread{ActivityAt: at(5)}, &View{}
+	apply(t, "thread.markSeen", th2, v2, Args{"upTo": at(90).Format(time.RFC3339Nano)}, at(6))
+	if !v2.SeenAt.Equal(at(6)) {
+		t.Fatalf("upTo in the future must clamp to now, got %v", v2.SeenAt)
+	}
+}

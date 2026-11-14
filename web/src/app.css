@@ -256,3 +256,5 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .mi:hover{background:var(--sunken)}
 .mi .when{font:400 12px/16px var(--mono);color:var(--ink-muted);white-space:nowrap}
 .sys.wide{max-width:none}
+
+.earlier { align-self: center; margin: 4px 0 12px; }

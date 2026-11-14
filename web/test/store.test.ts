@@ -6,6 +6,7 @@ import {
   initialStore,
   liveEvent,
   mergeEvents,
+  newer,
   recordUndo,
   sections,
   snoozePresets,
@@ -126,4 +127,13 @@ test("snooze presets: 3 h, tomorrow 06:00, next Monday 06:00", () => {
   assert.deepEqual([mon.until.getDay(), mon.until.getDate(), mon.until.getHours()], [1, 16, 6]);
   const monday = new Date(2026, 10, 16, 9, 0);
   assert.equal(snoozePresets(monday)[2].until.getDate(), 23, "on a Monday: next week's Monday");
+});
+
+// API v0: rev decides which copy wins, also when updatedAt says otherwise.
+test("upsert keeps the higher rev", () => {
+  const base = thread("r1", "done", "needs");
+  const a = { ...base, rev: 10, updatedAt: "2026-11-14T10:00:00Z", title: "new" };
+  const b = { ...base, rev: 9, updatedAt: "2026-11-14T11:00:00Z", title: "old" };
+  assert.equal(newer(a, b), false);
+  assert.equal(newer(b, a), true);
 });

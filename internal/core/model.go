@@ -20,6 +20,7 @@ type Thread struct {
 	Profile    string    `json:"profile"`
 	Model      string    `json:"model"`
 	SessionID  string    `json:"sessionId"`
+	Branch     string    `json:"branch,omitempty"` // read with git after each run
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
 

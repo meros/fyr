@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -71,6 +72,7 @@ type Manager struct {
 
 type session struct {
 	thread    string
+	cwd       string
 	token     string
 	c         *claude.Client
 	turns     int
@@ -214,7 +216,7 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 		mode = "auto"
 	}
 	args = append(args, "--permission-mode", mode)
-	s := &session{thread: threadID, asks: map[string]chan core.Effect{}, reqs: map[string]string{}, digest: newDigest()}
+	s := &session{thread: threadID, cwd: t.Cwd, asks: map[string]chan core.Effect{}, reqs: map[string]string{}, digest: newDigest()}
 	if m.cfg.MCPURL != "" {
 		s.token = randHex(24)
 		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"fyr": map[string]any{
@@ -356,11 +358,13 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			f = &core.Failure{Class: classify(text), Message: clip(firstLine(text), 300)}
 		}
 		data := map[string]any{"interrupted": interrupted, "costUsd": msg["total_cost_usd"], "durationMs": msg["duration_ms"], "failure": f}
+		branch := gitBranch(s.cwd)
 		m.host.Observe(s.thread, func(t *core.Thread, now time.Time) {
 			if f != nil {
 				f.At = now
 			}
 			core.RunEnded(t, f, now)
+			t.Branch = branch
 		}, Ev{"run.ended", data})
 		m.armIdle(s)
 	}
@@ -561,4 +565,15 @@ func (m *Manager) StopAll() {
 	for _, id := range ids {
 		m.Stop(id)
 	}
+}
+
+// gitBranch is the current branch of a checkout, or "" (SPEC 0.5 V0.2).
+func gitBranch(dir string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "branch", "--show-current").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

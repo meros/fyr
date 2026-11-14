@@ -349,8 +349,21 @@ func init() {
 		}})
 
 	register(&Action{Name: "thread.markSeen", Label: "Mark seen",
-		Apply: func(_ *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
-			v.SeenAt = now
+		// SPEC 6.4: up to the activityAt the client showed, never past now.
+		Apply: func(_ *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
+			upTo := now
+			if s := a.Str("upTo"); s != "" {
+				t, err := time.Parse(time.RFC3339Nano, s)
+				if err != nil {
+					return nil, fmt.Errorf("%w: upTo must be RFC 3339", ErrBadArgs)
+				}
+				if t.Before(now) {
+					upTo = t
+				}
+			}
+			if upTo.After(v.SeenAt) {
+				v.SeenAt = upTo
+			}
 			return nil, nil
 		}})
 

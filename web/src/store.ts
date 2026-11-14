@@ -50,9 +50,10 @@ function ts(s: string | null | undefined): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
-/** Keep the newer of two versions of a thread. Equal updatedAt replaces: attention can change with time alone. */
-function newer(cur: ThreadDTO | undefined, next: ThreadDTO): boolean {
+/** Keep the newer of two versions of a thread: by rev when both carry one, else by updatedAt (equal replaces). */
+export function newer(cur: ThreadDTO | undefined, next: ThreadDTO): boolean {
   if (!cur) return true;
+  if (typeof cur.rev === "number" && typeof next.rev === "number") return next.rev >= cur.rev;
   return ts(next.updatedAt) >= ts(cur.updatedAt);
 }
 
@@ -63,7 +64,7 @@ export function applySnapshot(s: Store, dto: StateDTO, clientNow: number): Store
   // Threads missing from the snapshot are dropped (stale from an earlier connection).
   for (const id of Object.keys(threads)) {
     const cur = s.threads[id];
-    if (cur && ts(cur.updatedAt) > ts(threads[id].updatedAt)) threads[id] = cur;
+    if (cur && cur !== threads[id] && !newer(cur, threads[id])) threads[id] = cur;
   }
   return {
     ...s,

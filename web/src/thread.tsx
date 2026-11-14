@@ -42,6 +42,8 @@ export interface ThreadPaneProps {
   onSend(text: string, images: ImageArg[]): Promise<boolean>;
   onAtEnd(atEnd: boolean): void;
   onFocusZone(): void;
+  /** Loads older events; absent when the start of the thread is loaded. */
+  onEarlier?: () => void;
 }
 
 type Tab = "conv" | "changes" | "pr";
@@ -117,7 +119,7 @@ export function ThreadPane(p: ThreadPaneProps) {
           </span>
         </div>
       </div>
-      {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} />}
+      {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} />}
       {tab === "changes" && <div class="pane-note">The branch diff comes in a later version (v0.x). The Conversation tab lists every edit.</div>}
       {tab === "pr" && <PrTab t={t} />}
       {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} />}
@@ -177,7 +179,7 @@ function PrChip({ pr }: { pr: PullRequest }) {
 
 // ---- conversation ----
 
-function Conversation({ events, onAtEnd, threadId }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string }) {
+function Conversation({ events, onAtEnd, threadId, onEarlier }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void }) {
   const items = useMemo(() => buildConversation(events ?? []), [events]);
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -217,6 +219,11 @@ function Conversation({ events, onAtEnd, threadId }: { events: FyrEvent[] | unde
       <div class="convo-in">
         {events === undefined && <div class="sys">Loading…</div>}
         {events !== undefined && items.length === 0 && <div class="sys">No messages yet.</div>}
+        {onEarlier && events && events.length > 0 && (
+          <button class="btn ghost earlier" onClick={onEarlier}>
+            Show earlier messages
+          </button>
+        )}
         {items.map((it) => (
           <ItemView key={it.key} it={it} />
         ))}

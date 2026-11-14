@@ -67,6 +67,8 @@ export interface PullRequest {
 }
 
 export interface ThreadDTO {
+  /** Increases on every change, also across host restarts: keep the higher (API v0). */
+  rev?: number;
   id: string;
   title: string;
   cwd: string;
@@ -90,7 +92,7 @@ export interface ThreadDTO {
   settleWhenDone?: boolean;
   settleWhenMerged?: boolean;
   source?: "fyr" | "t3" | string;
-  /** Not in API v0 yet: the branch chip shows only when the host sends it. */
+  /** The checkout branch, read after each run; empty when not a git checkout. */
   branch?: string | null;
   attention: Attention;
   view?: { seenAt?: string | null; snoozeUntil?: string | null } | null;
@@ -122,7 +124,7 @@ export interface StateDTO {
   now: string;
   /** SPEC V0.13: a different buildId after a reconnect reloads the page */
   buildId?: string;
-  /** Not in API v0 yet: the host name for the rail's bottom indicator. */
+  /** The host name for the rail's bottom indicator. */
   host?: string;
   user: string;
   threads: ThreadDTO[];
