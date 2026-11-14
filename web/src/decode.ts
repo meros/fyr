@@ -50,6 +50,7 @@ export function decodeProject(raw: unknown): Project {
     icon: { kind: str(icon.kind) || "monogram", value: str(icon.value) },
     sources: arr(p.sources),
     cwd: str(p.cwd),
+    repos: arr<unknown>(p.repos).filter((r): r is string => typeof r === "string" && r !== ""),
   };
 }
 
