@@ -4,7 +4,7 @@
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
-import { buildConversation, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall } from "./conversation.ts";
+import { buildConversation, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { duration, relTime, shortModel } from "./format.ts";
@@ -57,6 +57,8 @@ export interface ThreadPaneProps {
   now: number;
   /** Phone layout: back to the inbox. */
   onBack?: () => void;
+  /** Opens the project picker for this thread (V0.26); absent: no ⋯ menu. */
+  onMoveProject?: () => void;
 }
 
 type Tab = "conv" | "changes" | "pr";
@@ -95,6 +97,7 @@ export function ThreadPane(p: ThreadPaneProps) {
             <button class="btn" disabled={!!settleReason} title={settleReason ?? (t.running ? "Settle when done (e)" : "Settle (e)")} onClick={() => p.onRun("thread.settle")}>
               Settle <kbd>e</kbd>
             </button>
+            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} />}
           </div>
         </div>
         <div class="chips">
@@ -148,6 +151,58 @@ export function ThreadPane(p: ThreadPaneProps) {
       {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} />}
       <Composer key={t.id} t={t} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
+  );
+}
+
+/** The thread ⋯ menu (V0.26): opens on click or Enter, arrows move, Esc closes and returns focus. */
+function ThreadMenu({ onMove }: { onMove(): void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    ref.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+    const away = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  const run = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    // The menu owns its keys: the inbox shortcuts must not act while it has focus.
+    e.stopPropagation();
+    if (!open) return;
+    const items = [...(ref.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+      btn.current?.focus();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const n = items.length;
+      items[(i + (e.key === "ArrowDown" ? 1 : n - 1) + n) % n]?.focus();
+    } else if (e.key === "Tab") setOpen(false);
+  };
+  return (
+    <div class="tmenu" ref={ref} onKeyDown={onKey}>
+      <button ref={btn} class="btn tmenu-b" aria-haspopup="menu" aria-expanded={open} aria-label="More actions" title="More actions" onClick={() => setOpen(!open)}>
+        ⋯
+      </button>
+      {open && (
+        <div class="tmenu-l" role="menu" aria-label="Thread actions">
+          <button class="mi" role="menuitem" onClick={run(onMove)}>
+            <kbd>p</kbd>
+            <span class="ell">Move to project…</span>
+            <span />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -442,8 +497,10 @@ function ToolCard({ calls, nested }: { calls: ToolCall[]; nested?: boolean }) {
 function FoldGroup({ calls }: { calls: ToolCall[] }) {
   const details = useToolDetails();
   const [open, setOpen] = useState<boolean | null>(null);
+  const [all, setAll] = useState(false);
   const isOpen = open ?? details;
   const st = groupStats(calls);
+  const showAll = () => setAll(true);
   const toggle = () => setOpen(!isOpen);
   const text = calls.length === 1 ? calls[0].label : groupSummary(calls);
   return (
@@ -458,7 +515,18 @@ function FoldGroup({ calls }: { calls: ToolCall[] }) {
           {st.durationMs !== null ? duration(st.durationMs) : ""} {isOpen ? "▾" : "▸"}
         </span>
       </div>
-      {isOpen && calls.map((c) => <CallRow c={c} key={c.id} />)}
+      {isOpen &&
+        capCalls(calls, all).map((r) =>
+          r.kind === "more" ? (
+            <div class="tl row more" key="more" role="button" tabIndex={0} data-keys="self" title="Show every call" onClick={showAll} onKeyDown={keyActivate(showAll)}>
+              <span class="tlm">⋯</span>
+              <span class="tlt ell">{r.label}</span>
+              <span class="d" />
+            </div>
+          ) : (
+            <CallRow c={r.call} key={r.call.id} />
+          ),
+        )}
     </>
   );
 }
