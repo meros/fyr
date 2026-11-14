@@ -691,6 +691,32 @@ try {
   failures.push(`V0.40 list: ${e.message}`);
 }
 
+// V0.32: a screen change on the phone is quick, transition included (found live: open and Back
+// took 4 s each, because the transition's update waited for a frame that a transition never draws).
+try {
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+  await send("Emulation.setTouchEmulationEnabled", { enabled: true });
+  await send("Page.navigate", { url: `${origin}/?mock=rail` });
+  await sleep(1500);
+  const inVT = `(() => { try { return document.documentElement.matches(':active-view-transition'); } catch { return false; } })()`;
+  const tapAndWait = async (sel, cond) => {
+    const c = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
+    if (!c) return -1;
+    const t0 = Date.now();
+    await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: c.x, y: c.y }] });
+    await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await evaluate(`new Promise((ok) => { const t0 = performance.now(); const tick = () => { if ((${cond}) && !${inVT}) ok(); else if (performance.now() - t0 > 6000) ok(); else requestAnimationFrame(tick); }; requestAnimationFrame(tick); })`);
+    return Date.now() - t0;
+  };
+  const open = await tapAndWait(".m-app .m-mv", "!!document.querySelector('.m-tth')");
+  await sleep(300);
+  const back = await tapAndWait(".m-tth .b44", "!document.querySelector('.m-tth')");
+  check(open >= 0 && open < 800, `V0.32 phone: opening a thread took ${open} ms`);
+  check(back >= 0 && back < 800, `V0.32 phone: Back to the list took ${back} ms`);
+} catch (e) {
+  failures.push(`V0.32 phone navigation: ${e.message}`);
+}
+
 clearTimeout(watchdog);
 cleanup();
 if (pageErrors.length) failures.push(...pageErrors.map((e) => `page error: ${e}`));
