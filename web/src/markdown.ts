@@ -7,6 +7,8 @@ import { attachmentUrl } from "./attach.ts";
 
 // V0.38: a message renders once; a new event does not parse the old ones again.
 const memo = new Map<string, string>();
+// V0.54: the host of the thread being rendered; its attachments load from there.
+let curHost: string | undefined;
 
 /** The page's origin; tests set one. */
 let originOverride: string | null = null;
@@ -61,7 +63,7 @@ const md = new Marked({
     image({ href, text }: Tokens.Image) {
       // A same-origin attachment renders inline (V0.19); every other image stays a link.
       const id = inlineAttachmentId(href, mdOrigin());
-      if (id) return `<img class="md-img" src="${escapeHtml(attachmentUrl(id))}" alt="${escapeHtml(text || "")}" loading="lazy">`;
+      if (id) return `<img class="md-img" src="${escapeHtml(attachmentUrl(id, curHost))}" alt="${escapeHtml(text || "")}" loading="lazy">`;
       const h = safeHref(href);
       const label = escapeHtml(text || "image");
       return h ? `<a href="${escapeHtml(h)}" target="_blank" rel="noopener noreferrer">[${label}]</a>` : `[${label}]`;
@@ -69,15 +71,22 @@ const md = new Marked({
   },
 });
 
-export function renderMarkdown(src: string): string {
-  const hit = memo.get(src);
+export function renderMarkdown(src: string, host?: string): string {
+  const key = host ? `${host}\u0000${src}` : src;
+  const hit = memo.get(key);
   if (hit !== undefined) {
-    memo.delete(src); // keep recently used entries last
-    memo.set(src, hit);
+    memo.delete(key); // keep recently used entries last
+    memo.set(key, hit);
     return hit;
   }
-  const html = md.parse(src, { async: false }) as string;
-  memo.set(src, html);
+  curHost = host;
+  let html: string;
+  try {
+    html = md.parse(src, { async: false }) as string;
+  } finally {
+    curHost = undefined;
+  }
+  memo.set(key, html);
   if (memo.size > 600) memo.delete(memo.keys().next().value as string);
   return html;
 }

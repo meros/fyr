@@ -374,3 +374,7 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 /* SPEC 0.5 V0.50: Settings screen; the last row clears the home indicator */
 .m-settings .m-nbody{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
 .set.phone .qsum{min-height:44px;width:100%;text-align:left}
+/* V0.54: an offline host's thread says so under the header chips; rows name the host with more than one */
+.m-offl{margin:0 16px 8px;padding:8px 12px;border-radius:8px;background:var(--sunken);color:var(--ink-muted);font:500 13px/18px var(--ui);overflow-wrap:anywhere}
+.m-off{color:var(--ink-muted);font-weight:600}
+.m-hostn{font-family:var(--mono);font-size:12px}

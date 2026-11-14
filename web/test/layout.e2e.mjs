@@ -192,6 +192,9 @@ const SCREENS = [
   // SPEC 0.5 V0.50: Settings → Providers from the phone menu: the providers, Found on this host with Import, Add
   // provider; every target 44 px and inside the safe areas.
   { name: "settings providers", url: "?mock=rail&settings" },
+  // V0.54: a front with two hosts, one offline: rows name the host; the offline thread says so under its chips.
+  { name: "inbox with two hosts", url: "?mock=rail&hosts=2" },
+  { name: "thread on an offline host", url: "?mock=rail&hosts=2&open=t_triage", field: ".m-cmp .in" },
 ];
 
 // What must be visible, and where, on the current screen.
@@ -786,6 +789,32 @@ try {
   }
 } catch (e) {
   failures.push(`V0.39 banner: ${e.message}`);
+}
+
+// V0.54: with two hosts the phone rows name each thread's host and an offline host's rows say so; the offline
+// thread's header carries "<host> offline since HH:MM · read-only" inside the screen; one host shows no host at all.
+try {
+  await openScreen({ url: "?mock=rail&hosts=2" }, 390, 844);
+  const rows = await evaluate(`[...document.querySelectorAll('.m-mv')].map(r => ({ label: r.getAttribute('aria-label'), off: r.querySelector('.m-off')?.textContent ?? '', host: r.querySelector('.m-hostn')?.textContent ?? '', right: r.getBoundingClientRect().right }))`);
+  const off = rows.filter((r) => r.off);
+  check(off.length >= 1 && off.every((r) => r.off === "host-b offline"), `V0.54 rows: offline host not named (${JSON.stringify(off)})`);
+  check(rows.some((r) => r.host === "desk"), `V0.54 rows: no row names its host (${JSON.stringify(rows.slice(0, 3))})`);
+  check(rows.every((r) => r.right <= 390), "V0.54 rows: a row runs past the edge");
+  await openScreen({ url: "?mock=rail&hosts=2&open=t_triage" }, 390, 844);
+  const b = await evaluate(`(() => { const e = document.querySelector('.m-offl'); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, left: r.left, right: r.right, bottom: r.bottom, text: e.textContent, vh: innerHeight }; })()`);
+  check(!!b, "V0.54 header: no offline line on the phone");
+  if (b) {
+    check(b.top >= INSETS.top && b.left >= 0 && b.right <= 390 && b.bottom < b.vh, `V0.54 header: offline line outside the screen (${JSON.stringify(b)})`);
+    check(/^host-b offline since \d\d:\d\d · read-only$/.test(b.text), `V0.54 header: text "${b.text}"`);
+  }
+  await openScreen({ url: "?mock=rail&hosts=2&open=t_mapperf" }, 390, 844);
+  const chip = await evaluate(`document.querySelector('.m-hostc')?.textContent ?? ''`);
+  check(chip === "desk", `V0.54 header: an online thread's host chip reads "${chip}"`);
+  await openScreen({ url: "?mock=rail&open=t_mapperf" }, 390, 844);
+  const none = await evaluate(`!document.querySelector('.m-hostc, .m-hostn, .m-offl')`);
+  check(none, "V0.54: one host still shows a host on the phone");
+} catch (e) {
+  failures.push(`V0.54 hosts: ${e.message}`);
 }
 
 // V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.

@@ -34,7 +34,6 @@ import (
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/mcp"
-	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/preview"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/push"
@@ -160,7 +159,7 @@ func main() {
 	list := fl.Bool("list", false, "import-t3: only list the candidates")
 	role := fl.String("role", "", "host, front or both (default from config role, else both)")
 	hostsFlag := fl.String("hosts", "", "front: other hosts as name=url,… (default from config hosts)")
-	hostListen := fl.String("host-listen", "", "host: also serve fronts on this tailnet address (default from config hostListen)")
+	hostListen := fl.String("host-listen", "", "host: also serve fronts on this tailnet address, or tailnet:PORT (default from config hostListen)")
 	fl.Parse(args)
 
 	os.MkdirAll(*data, 0o700)
@@ -219,7 +218,7 @@ func main() {
 		if cmd != "serve" {
 			log.Fatalf("%s needs the host role", cmd)
 		}
-		serveFront(cfg, webFS, hostName)
+		serveFront(cfg, webFS, hostName, *data)
 		return
 	}
 
@@ -388,44 +387,10 @@ func main() {
 		}
 	}()
 
-	// Web Push (V0.15). The VAPID subject goes to the push services, so it
-	// carries no personal data.
-	pusher := &push.Pusher{DB: st, Subject: "mailto:push@fyr.invalid"}
-	if err := pusher.Init(); err != nil {
-		log.Printf("push: %v", err)
-	}
-	// V0.20: push for asking, failed, blocked and done; done and blocked wait
-	// 20 s and push only if still true; never for a thread being watched or
-	// in its project's quiet hours (V0.46).
-	presence := &notify.Presence{}
-	eng.OnAttention = func(d engine.DTO, prev core.State) {
-		next := d.Attention.State
-		send := func() {
-			// V0.46: no push in the project's quiet hours, none queued.
-			now := time.Now()
-			if !notify.Allowed(presence.Watched(d.ID, now), d.QuietUntil, now) {
-				return
-			}
-			meta, detail := attentionDetail(d)
-			pusher.Notify(core.Owner, push.PayloadFor(d.ID, d.Title, string(next), meta, detail))
-		}
-		switch notify.PlanFor(string(prev), string(next)) {
-		case notify.Now:
-			go send()
-		case notify.Later:
-			time.AfterFunc(notify.Delay, func() {
-				for _, cur := range eng.Snapshot() {
-					if cur.ID == d.ID && cur.Attention.State == next {
-						d = cur
-						send()
-					}
-				}
-			})
-		}
-	}
-
+	// V0.54 (decision 0016): a host sends no push; the front that serves
+	// the devices does, for the threads of all its hosts.
 	// V0.51: the host never serves the client; a front does.
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence, FS: folders, PR: prDetails,
+	srv := &server.Server{Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
@@ -441,6 +406,7 @@ func main() {
 			return out, nil
 		}}
 	var servers []*http.Server
+	frontDone := make(chan struct{})
 	serve := func(l net.Listener, h http.Handler) {
 		hs := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		servers = append(servers, hs)
@@ -459,14 +425,25 @@ func main() {
 		link := listenLoopback("127.0.0.1:0")
 		serve(link, hostHandler)
 		hosts := append([]front.HostConfig{{Name: hostName, URL: "http://" + link.Addr().String()}}, cfg.Hosts...)
-		fr := front.New(front.Options{Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS}, hosts)
-		go fr.Run(ctx)
+		// The front's device data (push keys and subscriptions) stays in
+		// this machine's database, where the host kept it before V0.54.
+		fr := front.New(front.Options{Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
+			Push: newPusher(st), CacheDir: filepath.Join(*data, "front"), Local: hostName}, hosts)
+		go func() { fr.Run(ctx); close(frontDone) }()
 		mux := http.NewServeMux()
 		mux.Handle("/mcp", hostHandler)
 		mux.Handle("/", fr.Handler())
 		serve(ln, mux)
 	}
 	if cfg.HostListen != "" {
+		// V0.54: "tailnet:PORT" is this machine's tailnet address.
+		if port, ok := strings.CutPrefix(cfg.HostListen, "tailnet:"); ok {
+			ip, err := tailnet.IPv4(tailnet.DefaultSocket)
+			if err != nil {
+				log.Fatalf("hostListen %s: %v", cfg.HostListen, err)
+			}
+			cfg.HostListen = net.JoinHostPort(ip, port)
+		}
 		serve(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: tailnet.DefaultSocket}))
 		log.Printf("serving fronts on the tailnet at %s", cfg.HostListen)
 	}
@@ -481,21 +458,32 @@ func main() {
 	for _, hs := range servers {
 		hs.Shutdown(sctx)
 	}
+	if cfg.Role != "host" {
+		<-frontDone // the front's cache is written
+	}
 	mgr.StopAll()
 	os.Exit(dep.ExitCode())
 }
 
 // serveFront runs fyrd as a front only (V0.51): the client and the browser
 // API, from the configured hosts; no threads, no store.
-func serveFront(cfg config, webFS fs.FS, name string) {
+func serveFront(cfg config, webFS fs.FS, name, data string) {
 	if len(cfg.Hosts) == 0 {
 		log.Fatal("a front needs hosts (config hosts or -hosts name=url,…)")
 	}
+	// V0.54: a front keeps device data only (push keys and subscriptions).
+	st, err := store.Open(filepath.Join(data, "fyr.db"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer st.Close()
 	ln := listenLoopback(cfg.Listen)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	fr := front.New(front.Options{Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS}, cfg.Hosts)
-	go fr.Run(ctx)
+	fr := front.New(front.Options{Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
+		Push: newPusher(st), CacheDir: filepath.Join(data, "front")}, cfg.Hosts)
+	done := make(chan struct{})
+	go func() { fr.Run(ctx); close(done) }()
 	hs := &http.Server{Handler: fr.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -508,6 +496,17 @@ func serveFront(cfg config, webFS fs.FS, name string) {
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	hs.Shutdown(sctx)
+	<-done // the cache is written
+}
+
+// newPusher is a front's Web Push (V0.15). The VAPID subject goes to the push
+// services, so it carries no personal data.
+func newPusher(st *store.Store) *push.Pusher {
+	p := &push.Pusher{DB: st, Subject: "mailto:push@fyr.invalid"}
+	if err := p.Init(); err != nil {
+		log.Printf("push: %v", err)
+	}
+	return p
 }
 
 // listenLoopback listens on a loopback address only (decision 0002).
@@ -683,37 +682,6 @@ func lastSummary(h []agent.Ev) string {
 		}
 	}
 	return ""
-}
-
-// attentionDetail is the meta word and the text of a push, matching the
-// inbox row (design/mobile rule 12, SPEC 0.5 V0.20).
-func attentionDetail(d engine.DTO) (meta, detail string) {
-	switch d.Attention.State {
-	case core.Failed:
-		if d.Failure != nil {
-			return "Failed", d.Failure.Message
-		}
-	case core.Done:
-		return "Done", d.Summary
-	case core.Blocked:
-		return "Blocked", d.Attention.Reason
-	}
-	if len(d.Decisions) > 0 {
-		x := d.Decisions[0]
-		switch {
-		case x.Kind == "ask" && len(x.Questions) > 0:
-			meta = "1 question"
-			if n := len(x.Questions); n > 1 {
-				meta = fmt.Sprintf("%d questions", n)
-			}
-			return meta, x.Questions[0].Question
-		case x.Kind == "effect" && x.Effect != nil:
-			return "Fyr action", "approve " + x.Effect.Action
-		case x.Kind == "approval":
-			return "Approval", "allow " + x.Tool
-		}
-	}
-	return "", d.Attention.Reason
 }
 
 // providerAPI adapts the registry to the server.

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { addChips, attachmentUrl, chipDone, chipError, chipProgress, fileLabel, formatSize, isImage, removeChip, type Chip } from "./attach.ts";
 import type { UploadResult } from "./api.ts";
 
-type Uploader = (file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal) => Promise<UploadResult>;
+type Uploader = (file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal, host?: string) => Promise<UploadResult>;
 let uploader: Uploader | null = null;
 /** The app hands in api.uploadAttachment once (api.ts stays the only HTTP module). */
 export function setUploader(fn: Uploader): void {
@@ -13,9 +13,12 @@ export function setUploader(fn: Uploader): void {
 
 let keySeq = 0;
 
-/** Chips for one composer: add files (picked, pasted, dropped), each uploads at once. */
-export function useAttachments() {
+/** Chips for one composer: add files (picked, pasted, dropped), each uploads at once, to `host` (V0.54: the
+ *  thread's host, or the one a new thread starts on; the front routes by it). */
+export function useAttachments(host?: string) {
   const [chips, setChips] = useState<Chip[]>([]);
+  const hostRef = useRef(host);
+  hostRef.current = host;
   const aborts = useRef(new Map<string, AbortController>());
   const previews = useRef(new Set<string>());
   useEffect(
@@ -43,7 +46,7 @@ export function useAttachments() {
       const ac = new AbortController();
       aborts.current.set(nf.key, ac);
       const named = file.name ? file : new File([file], nf.name, { type: file.type });
-      void uploader(named, (l, t) => setChips((c) => chipProgress(c, nf.key, l, t)), ac.signal).then((r) => {
+      void uploader(named, (l, t) => setChips((c) => chipProgress(c, nf.key, l, t)), ac.signal, hostRef.current).then((r) => {
         aborts.current.delete(nf.key);
         if (ac.signal.aborted) return;
         setChips((c) => (r.ok ? chipDone(c, nf.key, r.reply) : chipError(c, nf.key, r.status, r.error)));
@@ -176,7 +179,7 @@ export interface SentAttachment {
 }
 
 /** A user message's attachments: image thumbnails (tap: full screen) and file chips (open in a new tab). */
-export function SentAttachments({ items }: { items: SentAttachment[] }) {
+export function SentAttachments({ items, host }: { items: SentAttachment[]; host?: string }) {
   const [full, setFull] = useState<SentAttachment | null>(null);
   if (!items.length) return null;
   return (
@@ -184,10 +187,10 @@ export function SentAttachments({ items }: { items: SentAttachment[] }) {
       {items.map((a) =>
         isImage(a.mediaType) ? (
           <button class="att-img" onClick={() => setFull(a)} aria-label={`Open ${a.name}`}>
-            <img src={attachmentUrl(a.id)} alt={a.name} loading="lazy" />
+            <img src={attachmentUrl(a.id, host)} alt={a.name} loading="lazy" />
           </button>
         ) : (
-          <a class="att-file" href={attachmentUrl(a.id)} target="_blank" rel="noopener noreferrer" title={a.name}>
+          <a class="att-file" href={attachmentUrl(a.id, host)} target="_blank" rel="noopener noreferrer" title={a.name}>
             <span class="att-th lab">{fileLabel(a.mediaType, a.name)}</span>
             <span class="att-tx">
               <span class="att-n">{a.name}</span>
@@ -198,7 +201,7 @@ export function SentAttachments({ items }: { items: SentAttachment[] }) {
       )}
       {full && (
         <div class="att-full" role="dialog" aria-label={full.name} onClick={() => setFull(null)}>
-          <img src={attachmentUrl(full.id)} alt={full.name} />
+          <img src={attachmentUrl(full.id, host)} alt={full.name} />
           <button class="att-close" aria-label="Close" onClick={() => setFull(null)}>
             ×
           </button>

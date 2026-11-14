@@ -103,7 +103,7 @@ export function LiveViewPanel({ t, now, onPress, full }: { t: ThreadDTO; now: nu
         <iframe
           ref={frame}
           class="lv-f"
-          src={previewUrl(v.pageId)}
+          src={previewUrl(v.pageId, t.host)}
           sandbox="allow-scripts"
           allow={FRAME_ALLOW}
           allowFullScreen

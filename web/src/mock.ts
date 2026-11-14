@@ -925,7 +925,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     const q = withQuiet(projects.find((p) => p.id === pid) ?? { name: "" }).quietUntil;
     // V0.33: the outbox is what the mock agent has not read yet, as the host sends it.
     const outbox = [...unread].filter(([, tid]) => tid === t.id).map(([id]) => ({ id, state: "queued" }));
-    return { ...t, projectId: pid, newProject: draftFor(t), quietUntil: q, outbox: outbox.length ? outbox : undefined };
+    return mockHostOf({ ...t, projectId: pid, newProject: draftFor(t), quietUntil: q, outbox: outbox.length ? outbox : undefined }, clock());
   };
   let nextId = 1;
 
@@ -1186,6 +1186,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         buildId: "mock",
         deploy: mockDeploy(),
         threads: [...threads.values()].map(dtoOf),
+        ...(MOCK_HOSTS ? { hosts: mockHosts(clock()) } : {}),
         actions: [
           { name: "thread.settle", label: "Settle", key: "e", bulk: true },
           { name: "thread.snooze", label: "Snooze", key: "s" },
@@ -1389,6 +1390,23 @@ function mockDeploy() {
   if (!ph) return null;
   const started = new Date(Date.now() - 4 * 60_000).toISOString();
   return { phase: ph, startedAt: started, at: new Date().toISOString(), build: "20261114-160324", blocking: ph === "drain" ? ["t_mapperf", "t_lasso"] : undefined, detail: ph === "failed" ? "tests failed, nothing was switched: exit status 2\nFAIL TestX" : undefined };
+}
+
+/** V0.54: ?hosts=2 in the mock shows a front with two hosts, the second (host-b, with t_lasso and t_triage)
+ *  offline for 25 minutes (the layout test uses it). Read once at load, as ?deploy=. */
+const MOCK_HOSTS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("hosts") === "2" : false;
+const MOCK_REMOTE = new Set(["t_lasso", "t_triage"]);
+function mockHosts(now: number) {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  return [
+    { name: "desk", online: true, since: iso(now - 3 * 3600_000) },
+    { name: "host-b", online: false, since: iso(now - 25 * 60_000), error: "unreachable" },
+  ];
+}
+function mockHostOf(t: ThreadDTO, now: number): ThreadDTO {
+  if (!MOCK_HOSTS) return t;
+  if (!MOCK_REMOTE.has(t.id)) return { ...t, host: "desk" };
+  return { ...t, host: "host-b", hostOffline: new Date(now - 25 * 60_000).toISOString() };
 }
 
 /** SPEC 0.5 V0.44: provider quota for the mock profiles; "work" is busy and stale. */
