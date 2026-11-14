@@ -94,3 +94,30 @@ func TestViewFold(t *testing.T) {
 		t.Fatalf("unchanged: %+v", th.Live)
 	}
 }
+
+// SPEC 0.5 V0.52: a running turn with a live view gets a reminder after
+// ViewNudgeAfter without a view_* call, and at most one per interval.
+func TestViewNudgeDue(t *testing.T) {
+	t0 := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+	n := ViewNudge{Flag: true, RunStarted: t0}
+	if n.Due(t0.Add(ViewNudgeAfter - time.Second)) {
+		t.Fatal("due before the interval")
+	}
+	if !n.Due(t0.Add(ViewNudgeAfter)) {
+		t.Fatal("not due after the interval with no view call")
+	}
+	n.Checked = t0.Add(3 * time.Minute)
+	if n.Due(t0.Add(ViewNudgeAfter + time.Minute)) {
+		t.Fatal("due although the view changed 2 minutes ago")
+	}
+	n.Checked, n.Nudged = time.Time{}, t0.Add(ViewNudgeAfter)
+	if n.Due(t0.Add(ViewNudgeAfter + time.Minute)) {
+		t.Fatal("a second reminder within the interval")
+	}
+	if (ViewNudge{RunStarted: t0}).Due(t0.Add(time.Hour)) {
+		t.Fatal("due without a live view")
+	}
+	if (ViewNudge{Flag: true}).Due(t0) {
+		t.Fatal("due outside a run")
+	}
+}

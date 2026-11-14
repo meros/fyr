@@ -111,3 +111,33 @@ type ViewStop struct {
 func (s ViewStop) Block() bool {
 	return s.Flag && !s.Touched && !s.Blocked && !s.Active && s.Tasks == 0
 }
+
+// ViewNudgeAfter is how long a running turn with a live view may go without
+// a view_* call before Fyr reminds the agent (SPEC 0.5 V0.52).
+const ViewNudgeAfter = 4 * time.Minute
+
+// ViewNudgeReason is the reminder, added to the context after a tool call.
+const ViewNudgeReason = "The live view has not changed for a few minutes while you work. Update it now with view_state (the headline and the items that moved), or call view_unchanged with a reason, then continue."
+
+// ViewNudge decides the mid-turn reminder (SPEC 0.5 V0.52).
+type ViewNudge struct {
+	Flag       bool      // the thread has a live view and this process has its tools
+	RunStarted time.Time // zero outside a run
+	Checked    time.Time // the last view_* call
+	Nudged     time.Time // the last reminder
+}
+
+// Due reports whether the reminder goes out now: ViewNudgeAfter since the
+// latest of the run start, the last view call and the last reminder.
+func (n ViewNudge) Due(now time.Time) bool {
+	if !n.Flag || n.RunStarted.IsZero() {
+		return false
+	}
+	last := n.RunStarted
+	for _, t := range []time.Time{n.Checked, n.Nudged} {
+		if t.After(last) {
+			last = t
+		}
+	}
+	return now.Sub(last) >= ViewNudgeAfter
+}

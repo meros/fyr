@@ -129,6 +129,7 @@ const ViewPrompt = `This thread has a live view: a small page pinned above the c
 - In the page, window.fyr.state is the current state; fyr.onState(fn) runs fn now and on every change; an element with data-text="field.path" shows that field. Fragments get the Fyr theme (CSS variables --bg --fg --muted --line --accent, light and dark). The page cannot call Fyr or other hosts; it may load libraries from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com and ajax.googleapis.com.
 - Buttons send messages: fyr.send(text), or an element with data-send="text", sends that text to you as a message from the view, as if the user typed it. Use buttons for choices and next steps; they never run anything by themselves.
 - A message marked [Typed on the live view tab] was written while the user looks at the view, not the conversation. Answer it first in one or two plain, spoken sentences (the answer, or what you will do now); that reply is shown next to their message on the View tab. Then do the work and update the view.
+- Update the view as the work moves, not only at the end: when you start or finish an item, change the headline and the items that moved. Fyr reminds you after a few minutes without an update.
 - Before you end a turn, update the view if anything it shows changed, or call mcp__fyr__view_unchanged {reason}. Keep it short and current; it is the first thing the user reads.`
 
 // FromView marks a message sent by a press in the live view (V0.37).
@@ -180,9 +181,11 @@ type session struct {
 	// still queued for handle, so the summary comes from the hook's input
 	// and the forced turn counts from the synthetic message onward.
 	viewBlocked bool
-	summary     string
-	inForced    bool
-	forcedWork  bool
+	// viewNudged is the last mid-turn reminder (V0.52).
+	viewNudged time.Time
+	summary    string
+	inForced   bool
+	forcedWork bool
 	// refresh: end the process after this run, so the next one starts
 	// with the current flag.
 	refresh bool
@@ -563,6 +566,9 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 			if id == "view" {
 				return m.viewStop(s, in)
 			}
+			if id == "viewnudge" {
+				return m.viewNudge(s)
+			}
 			name, _ := in["tool_name"].(string)
 			ti, _ := in["tool_input"].(map[string]any)
 			if r := core.Gate(name, ti); r != "" {
@@ -816,6 +822,30 @@ func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
 	}
 	s.viewBlocked, s.summary, s.inForced, s.forcedWork = true, summary, false, false
 	return claude.Msg{"decision": "block", "reason": core.ViewStopReason}
+}
+
+// viewNudge answers the PostToolUse hook (SPEC 0.5 V0.52): when a turn has
+// run ViewNudgeAfter without a view_* call, add a reminder to the context.
+func (m *Manager) viewNudge(s *session) claude.Msg {
+	t, ok := m.host.Thread(s.thread)
+	if !ok {
+		return nil
+	}
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := core.ViewNudge{Flag: s.viewTools && t.LiveView, Nudged: s.viewNudged}
+	if t.RunStartedAt != nil {
+		n.RunStarted = *t.RunStartedAt
+	}
+	if t.Live != nil {
+		n.Checked = t.Live.CheckedAt
+	}
+	if !n.Due(now) {
+		return nil
+	}
+	s.viewNudged = now
+	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": core.ViewNudgeReason}}
 }
 
 func orNil(v any) any {
@@ -1097,6 +1127,8 @@ func initHooks(view bool) claude.Msg {
 	h := claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}
 	if view {
 		h["Stop"] = []claude.Msg{{"hookCallbackIds": []string{"view"}}}
+		// V0.52: after any tool call, remind the agent when the view went stale mid-turn.
+		h["PostToolUse"] = []claude.Msg{{"hookCallbackIds": []string{"viewnudge"}}}
 	}
 	return h
 }
