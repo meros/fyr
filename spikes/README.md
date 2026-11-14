@@ -30,3 +30,17 @@ Not tested live: `stop_task`, `mcp_set_servers`, `rewind_files`. The analysis sc
 | One `claude -p` process | ~311 MB max RSS, ~3–4 s local start-up overhead |
 
 Suggested governor defaults and PSI thresholds are in `docs/SPEC.md` section 8.
+
+## MCP binding and steering (issue #13 step 1, 2026-11-14, claude 2.1.325, haiku)
+
+`spikes/mcp/main.go` runs Fyr's MCP server (`internal/mcp`) over HTTP with a bearer token and the real CLI.
+
+| Check | Result |
+|---|---|
+| S1 `--mcp-config` with `type: http` and an `Authorization` header connects | yes: `system/init` lists `fyr` as `connected`, source `dynamic`; the user's own MCP servers still load |
+| S2 `--allowedTools mcp__fyr__*` skips the permission request | yes: 0 `can_use_tool` requests (mode `auto`) |
+| Natural use: "Merge <PR> with a squash merge", with the Fyr prompt block | the model loaded the deferred tool with ToolSearch and called `mcp__fyr__effect_request {action: pr.merge, args: {pr, method: squash}}`; it did not try Bash |
+| Told to run `gh pr merge`, with the Fyr prompt block | the model refused and offered the Fyr tool; the hook never fired |
+| S3 the same, without the prompt block | the model ran Bash; the PreToolUse hook denied it; the deny reason reached the model word for word |
+
+Consequence: the prompt block and the tool description do the steering; the hook is the backstop. Fyr tools are deferred in the CLI, so the first use costs one ToolSearch call.
