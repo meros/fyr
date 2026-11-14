@@ -73,7 +73,9 @@ func threadText(evs []json.RawMessage, types []string) string {
 			json.Unmarshal(raw, &u)
 			flush()
 			who := "User"
-			if u.From != "" {
+			if u.From == "view" {
+				who = "User (live view)"
+			} else if u.From != "" {
 				who = "Thread " + u.From
 			}
 			fmt.Fprintf(&b, "%s: %s\n", who, strings.TrimSpace(u.Text))
