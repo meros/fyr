@@ -58,3 +58,7 @@ The owner refined: "A provider abstracts away auth mechanism and cli handling me
 | Secrets | **One store behind a swappable backend** (`internal/secrets`): files 0600 in a 0700 folder now; age, sops or systemd-creds later without provider changes. Providers name a secret; no provider code touches the files. |
 
 Slice 1 (SPEC 0.5 V0.50): the provider store, the claude adapter, the secret store, detection with Import, the one-time cut-over of today's three profiles (same ids), effort on threads, and Settings → Providers. Not yet: the login flow in the page, model discovery from the CLI, other hosts, project defaults.
+
+### As built: login through Fyr (SPEC 0.5 V0.53)
+
+The login row holds, with two findings from the CLI (claude 2.1.322, checked in a throwaway HOME). `claude /login` is the interactive screen; the CLI also has `claude auth login`, which prints the link and reads the code as plain lines, so Fyr runs that in the account's folder. `claude setup-token` draws only in a terminal, so Fyr runs it on a pseudo-terminal; because a token account's folder may hold another account's login (V0.50), it runs in a throwaway folder and its token goes into the secret store. A login runs at most 10 minutes, one per provider, and can be cancelled.
