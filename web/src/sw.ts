@@ -5,7 +5,7 @@
 // - Never touches /api or /mcp.
 // - Shows pushes and opens the thread on a tap.
 
-import { parsePayload } from "./push.ts";
+import { parsePayload, notificationOptions } from "./push.ts";
 
 declare const __BUILD_ID__: string;
 declare const __PRECACHE__: string[];
@@ -105,18 +105,7 @@ sw.addEventListener("fetch", (e: FetchEvt) => {
 
 sw.addEventListener("push", (e: PushEvt) => {
   const p = parsePayload(e.data ? e.data.text() : null);
-  const opts: Record<string, unknown> = {
-    body: p.body ?? "",
-    icon: "/icons/icon-192.png",
-    badge: "/icons/badge-96.png",
-    data: { threadId: p.threadId },
-  };
-  if (p.threadId) {
-    // One notification per thread: a newer push replaces the older one and alerts again.
-    opts.tag = p.threadId;
-    opts.renotify = true;
-  }
-  e.waitUntil(sw.registration.showNotification(p.title, opts));
+  e.waitUntil(sw.registration.showNotification(p.title, notificationOptions(p, Date.now())));
 });
 
 sw.addEventListener("notificationclick", (e: NotificationEvt) => {

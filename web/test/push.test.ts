@@ -56,3 +56,26 @@ test("push status reconciliation with the host", async () => {
   assert.deepEqual(reconcilePush(true, false), { unsubscribe: true, subscribed: false }, "the host deleted it: drop it locally");
   assert.deepEqual(reconcilePush(true, null), { unsubscribe: false, subscribed: true }, "host unreachable: keep it");
 });
+
+// SPEC 0.5 V0.15, design/mobile rule 12: notification presentation per state.
+import { notificationOptions, shouldClearNotification } from "../src/push.ts";
+test("notification options per state", () => {
+  const ask = notificationOptions({ title: "Fix lasso", body: "2 questions · Which gesture?", threadId: "t1", state: "asking" }, 1000);
+  assert.equal(ask.tag, "t1");
+  assert.equal(ask.renotify, true);
+  assert.equal(ask.requireInteraction, true);
+  assert.equal(ask.timestamp, 1000);
+  assert.deepEqual(ask.actions, [{ action: "open", title: "Answer" }]);
+  const failed = notificationOptions({ title: "x", body: "Failed · API", threadId: "t2", state: "failed" }, 1);
+  assert.equal(failed.requireInteraction, false);
+  assert.deepEqual(failed.actions, [{ action: "open", title: "Open" }]);
+  const test = notificationOptions({ title: "Fyr", body: "works", state: "test" }, 1);
+  assert.equal(test.tag, undefined);
+  assert.deepEqual(test.actions, []);
+});
+
+test("a thread's notification closes when it no longer needs the user", () => {
+  assert.equal(shouldClearNotification("asking"), false);
+  assert.equal(shouldClearNotification("failed"), false);
+  for (const s of ["working", "waiting", "done", "seen", "settled", "snoozed", "archived"]) assert.equal(shouldClearNotification(s), true, s);
+});

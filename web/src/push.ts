@@ -120,3 +120,29 @@ export function parsePayload(text: string | null | undefined): PushPayload {
   }
   return { title: "Fyr", body: text ?? undefined };
 }
+
+/** The options for showNotification (SPEC 0.5 V0.15, design/mobile rule 12). A question stays on screen until handled. */
+export function notificationOptions(p: PushPayload, now: number): Record<string, unknown> {
+  const opts: Record<string, unknown> = {
+    body: p.body ?? "",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/badge-96.png",
+    data: { threadId: p.threadId },
+    timestamp: now,
+    vibrate: [60, 40, 60],
+    requireInteraction: p.state === "asking",
+    actions: [] as { action: string; title: string }[],
+  };
+  if (p.threadId) {
+    // One notification per thread: a newer push replaces the older one and alerts again.
+    opts.tag = p.threadId;
+    opts.renotify = true;
+    opts.actions = [{ action: "open", title: p.state === "asking" ? "Answer" : "Open" }];
+  }
+  return opts;
+}
+
+/** A thread's notification closes once the thread no longer needs the user (answered elsewhere, retried, settled). */
+export function shouldClearNotification(state: string): boolean {
+  return state !== "asking" && state !== "failed";
+}

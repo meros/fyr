@@ -167,3 +167,12 @@ export async function promptInstall(): Promise<boolean> {
   await d.prompt();
   return (await d.userChoice).outcome === "accepted";
 }
+
+/** Closes a thread's notification once it no longer needs the user (design/mobile rule 12). */
+export function clearThreadNotification(threadId: string): void {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  void navigator.serviceWorker.ready
+    .then((r) => r.getNotifications({ tag: threadId }))
+    .then((ns) => ns.forEach((n) => n.close()))
+    .catch(() => undefined);
+}
