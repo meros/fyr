@@ -18,7 +18,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "threads": [ThreadDTO],
   "actions": [{"name": "thread.settle", "label": "Settle", "key": "e", "bulk": true}],
   "profiles": [{"id": "claude", "name": "Claude", "color": "#d97757", "models": ["claude-opus-5-5"], "defaultModel": "claude-opus-5-5"}],
-  "projects": [{"id": "p_…", "name": "app", "color": "teal", "icon": {"kind": "monogram|emoji|line", "value": "…"}, "sources": [{"kind": "folder", "host": "host-a", "path": "/home/me/src/app"}, {"kind": "repo", "url": "github.com/me/app"}], "profile": "", "model": "", "threads": 4, "lastUsed": "…", "cwd": "/home/me/src/app", "quiet": [{"from": "17:00", "to": "06:00", "days": ["mon", "tue", "wed", "thu", "fri", "sun"]}, {"from": "00:00", "to": "00:00", "days": ["sat", "sun"]}], "quietUntil": "2026-11-16T06:00:00+01:00"}]
+  "projects": [{"id": "p_…", "name": "app", "color": "teal", "icon": {"kind": "monogram|emoji|line", "value": "…"}, "folder": "/home/me/src/app", "profile": "", "model": "", "threads": 4, "lastUsed": "…", "quiet": [{"from": "17:00", "to": "06:00", "days": ["mon", "tue", "wed", "thu", "fri", "sun"]}, {"from": "00:00", "to": "00:00", "days": ["sat", "sun"]}], "quietUntil": "2026-11-16T06:00:00+01:00"}]
 }
 ```
 
@@ -107,7 +107,7 @@ Actions and their args:
 
 | action | args |
 |---|---|
-| `thread.create` (no `threadId`) | `cwd?`, `text`, `projectId?` (file it there by hand; without `cwd` it starts in the project's main folder here, V0.42), `images?`, `profile?`, `model?`, `effort?` (V0.50: `low`…`max`; empty is the provider's default when the model takes effort), `title?`, `view?: true` (start with a live view, V0.37). Without `cwd` and without a project folder here the host makes a fresh `~/.local/share/fyr/scratch/<YYYYMMDD-HHMMSS>-<slug>` (V0.42) |
+| `thread.create` (no `threadId`) | `cwd?`, `text`, `projectId?` (file it there by hand; without `cwd` it starts in the project's folder, V0.42, V0.55), `images?`, `profile?`, `model?`, `effort?` (V0.50: `low`…`max`; empty is the provider's default when the model takes effort), `title?`, `view?: true` (start with a live view, V0.37). Without `cwd` and without a project folder the host makes a fresh `~/.local/share/fyr/scratch/<YYYYMMDD-HHMMSS>-<slug>` (V0.42) |
 | `thread.send` | `text`, `images?`, `from?: "view"` (a press in the live view, V0.37) |
 | `thread.setView` | `on: bool`: turn the live view on or off (V0.37). The agent's next process gets the view's prompt and tools |
 | `thread.answer` | `decisionId`, then `answers: {question: label}` for `ask` (multi-select: labels joined with ", "; Other: the free text), or `allow: bool` for `approval` and `effect` |
@@ -177,24 +177,22 @@ A view page is an HTML preview: `<iframe src="/api/previews/{pageId}" sandbox="a
 | page → client | `{"jsonrpc": "2.0", "method": "ui/notifications/size-changed", "params": {"height": 312}}` |
 | page → client | `{"jsonrpc": "2.0", "id": "m1", "method": "ui/message", "params": {"role": "user", "content": [{"type": "text", "text": "Open the PR"}]}}`; the client sends `thread.send {text, from: "view"}` and answers `{"jsonrpc": "2.0", "id": "m1", "result": {}}` (or an `error` when the send failed) |
 
-## Projects (SPEC 0.5 V0.23)
+## Projects (SPEC 0.5 V0.23, V0.55)
+
+A project is a name, a colour, an icon and one folder on its host (V0.55, decision 0017), with optional defaults and quiet hours. `folder` is a full path on the project's host, or absent: then threads are only filed in it by hand.
 
 Commands (through `POST /api/command`, no `threadId`):
 
 | action | args |
 |---|---|
-| `project.update` | `id`, then any of `name`, `color` (a palette name: slate blue sky teal green olive violet indigo rose brown), `icon` `{kind: monogram\|emoji\|line, value}`, `profile`, `model`, `quiet` `[{from: "17:00", to: "06:00", days?: ["mon"…"sun"]}, …]` (at most 14 windows; a single object is read as a list of one) or `null` or `[]` to clear (V0.46, decision 0014 addendum) |
-| `project.create` | `name`, `sources?: [Source]` (a project may have no source: a label), `threadId?`: file that thread into the new project by hand in the same write (V0.30). Reply `result: {id}` |
-| `project.createFrom` | `threadId`: make the thread's `suggest` project and file every unfiled thread it matches (V0.28) |
-| `project.addSource` | `id`, `source` |
-| `project.removeSource` | `id`, `index` (0-based, into `sources`) |
-| `project.setMain` | `id`, `index` (0-based, a folder in `sources`): new threads start in this folder; the mark moves from the project's other folders on that host (V0.42) |
+| `project.update` | `id`, then any of `name`, `color` (a palette name: slate blue sky teal green olive violet indigo rose brown), `icon` `{kind: monogram\|emoji\|line, value}`, `folder` (a full path; `""` clears it, V0.55), `profile`, `model`, `quiet` `[{from: "17:00", to: "06:00", days?: ["mon"…"sun"]}, …]` (at most 14 windows; a single object is read as a list of one) or `null` or `[]` to clear (V0.46, decision 0014 addendum) |
+| `project.create` | `name`, `folder?`, `threadId?`: file that thread into the new project by hand in the same write (V0.30). Reply `result: {id}` |
 
-A folder source needs a full path (`~/…` is expanded); on this host the folder must exist, else `400` with the reason. `host` may be left out: the host fills in its own name. After `project.create`, `project.addSource` or `project.removeSource` the host re-matches threads and sends the changed ones on the stream. An icon's `value` is left out when empty.
+A folder needs a full path (`~/…` is expanded) and must exist on the host, else `400` with the reason. After `project.create` or a change of `folder` the host matches again every thread not filed by hand and sends the changed ones on the stream: a thread lands in the project whose folder is its folder or contains it, the longest folder first; matching never takes a project away. An icon's `value` is left out when empty. A thread with no `cwd` and a `projectId` starts in the project's folder.
 
-A folder source may carry `main: true` (V0.42); without one, the first folder on a host is main. A project's `cwd` in the state is its main folder on this host. Every project carries `repos: ["github.com/me/app"]`: the normalised `origin` remotes of its folders on this host and its repo sources, deduplicated, read-only; a derived repo matches clones elsewhere like a repo source.
+The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. Threads carry `projectId`; `project` stays the display name. A thread may carry `newProject: {name, folder}`: what "New project from this thread" starts with (V0.30, V0.55): its folder and the folder's name; absent for a scratch folder, the home folder, `/`, and a folder a project already has.
 
-The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. Threads carry `projectId`; `project` stays the display name. A thread without a project and in a clone with a remote carries `suggest: {name, sources}` (V0.28). Every thread with a workspace may carry `newProject: {name, sources}`: what "New project from this thread" starts with (V0.30): the suggestion for a clone with a remote, else the folder's name and folder; absent for a scratch folder, the home folder and `/`, and without the sources an existing project already has.
+Removed in V0.55: `sources`, `main`, `repos`, `cwd` on a project; `suggest` and `workspaceId` on a thread; `project.createFrom`, `project.addSource`, `project.removeSource`, `project.setMain` (`400 unknown action`).
 
 Quiet hours (V0.46, decision 0014 addendum): a project's `quiet` is a list of windows; each holds `from` and `to` as `HH:MM` in the host's local time zone, and optional `days` (`mon tue wed thu fri sat sun`, the days a window starts on; absent or empty is every day). A window whose `to` is not after `from` crosses midnight; `from` equal to `to` is 24 hours (all day). The project is quiet while any window holds. A project stored before the addendum has one object; the host reads it as a list of one and always sends a list. While a project is quiet, the project and each of its threads carry `quietUntil` (RFC 3339, the end of the current quiet stretch, where windows that overlap or follow on without a gap join, at most a week ahead); otherwise the field is absent. The host sends the project and its threads on the stream when a window starts or ends. A thread with `quietUntil` gets no Web Push, and none is sent when the window ends. Clients leave such threads out of the inbox sections and counts unless the project filter picks that project or a search is typed.
 

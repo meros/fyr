@@ -24,7 +24,7 @@ import { clearThreadNotification } from "./pwa.ts";
 
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, ProjectSource, StateDTO, ThreadDTO } from "./types.ts";
+import type { Decision, StateDTO, ThreadDTO } from "./types.ts";
 import { createApi } from "./api.ts";
 import { setQuotaSource } from "./quota-ui.tsx";
 import { setChangesSource } from "./changes-ui.tsx";
@@ -250,12 +250,10 @@ function App() {
     }
   };
   const [projectId, setProjectId] = useState<string | null>(null);
-  // The project picker (V0.30): the threads it files, and whether it opens on New project.
+  // The project picker (V0.30): the threads it files.
   const [pickIds, setPickIds] = useState<string[]>([]);
-  const [pickNew, setPickNew] = useState(false);
-  const openPicker = (ids: string[], startNew = false) => {
+  const openPicker = (ids: string[]) => {
     setPickIds(ids);
-    setPickNew(startNew);
     setDialog("picker");
   };
   // V0.46: quiet hours. One timer to the nearest quietUntil re-renders when a window ends (the host also sends the
@@ -777,14 +775,12 @@ function App() {
   };
   const projectActions = {
     update: (id: string, patch: ProjectPatch) => projectCommand("project.update", { id, ...patch }),
-    /** V0.42: a folder from the picker; the host fills in its own name. */
-    addFolder: (id: string, path: string) => projectCommand("project.addSource", { id, source: { kind: "folder", path } }),
-    removeSource: (id: string, index: number) => projectCommand("project.removeSource", { id, index }),
-    setMain: (id: string, index: number) => projectCommand("project.setMain", { id, index }),
+    /** V0.55: the project's one folder, from the picker. */
+    setFolder: (id: string, path: string) => projectCommand("project.update", { id, folder: path }),
     /** New project (V0.30): with threadIds, the host files one thread in the same write; more are filed after. */
-    create: async (name: string, sources: ProjectSource[], threadIds: string[] = []): Promise<{ error: string | null; id?: string }> => {
+    create: async (name: string, folder: string, threadIds: string[] = []): Promise<{ error: string | null; id?: string }> => {
       const args: Record<string, unknown> = { name };
-      if (sources.length) args.sources = sources; // a folder without a host: the host fills in its own name
+      if (folder) args.folder = folder;
       if (threadIds.length === 1) args.threadId = threadIds[0];
       const r = await api.command("project.create", undefined, args);
       if (!r.ok) return { error: r.error ?? "That did not work" };
@@ -853,12 +849,12 @@ function App() {
     projects: store.projects,
     openThread: (id) => (phoneRef.current ? navGo({ screen: { name: "thread", id }, sheet: null }) : openThread(id, "open")),
     openProject: openProjectScreen,
-    pickProject: (id, startNew) => (phoneRef.current ? navGo({ ...navRef.current, sheet: { kind: "project", ids: [id], startNew } }) : openPicker([id], startNew)),
+    pickProject: (id) => (phoneRef.current ? navGo({ ...navRef.current, sheet: { kind: "project", ids: [id] } }) : openPicker([id])),
     host: store.host,
   };
 
   const create = async (a: NewThreadArgs): Promise<string | null> => {
-    // V0.42: no cwd starts in the project's main folder, or in a fresh scratch folder; the host files the project.
+    // V0.42: no cwd starts in the project's folder, or in a fresh scratch folder; the host files the project.
     const args: Record<string, unknown> = { text: a.text, profile: a.profile, model: a.model };
     if (a.cwd) args.cwd = a.cwd;
     if (a.projectId) args.projectId = a.projectId;
@@ -942,7 +938,7 @@ function App() {
     if (mod || e.altKey) return;
 
     const el = e.target as HTMLElement | null;
-    // A focused button (the project chip, the suggestion chip) takes Enter and Space itself.
+    // A focused button (the project chip) takes Enter and Space itself.
     if ((k === "Enter" || k === " ") && el?.tagName === "BUTTON") return;
     if (isTextTarget(e.target)) {
       if (el?.dataset?.other && decision?.kind === "ask" && card && k === "Tab") {
@@ -1443,19 +1439,16 @@ function App() {
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} projects={store.projects} host={store.host} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, sources) => projectActions.create(name, sources)} />}
+      {dialog === "new" && <NewThreadDialog profiles={store.profiles} projects={store.projects} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
       {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
         <Modal title="Project" onClose={() => setDialog(null)} wide>
           <div class="db">
             <ProjectEditor
               project={store.projects.find((p) => p.id === projectId)!}
               profiles={store.profiles}
-              host={store.host}
               now={now}
               onSave={(patch) => projectActions.update(projectId, patch)}
-              onAddFolder={(v) => projectActions.addFolder(projectId, v)}
-              onRemoveSource={(i) => projectActions.removeSource(projectId, i)}
-              onSetMain={(i) => projectActions.setMain(projectId, i)}
+              onSetFolder={(v) => projectActions.setFolder(projectId, v)}
             />
           </div>
         </Modal>
@@ -1466,15 +1459,13 @@ function App() {
             <ProjectPicker
               projects={store.projects}
               threads={pickIds.map((id) => store.threads[id]).filter(Boolean)}
-              host={store.host}
-              startNew={pickNew}
               onPick={async (p) => {
                 const e = await projectActions.move(pickIds, p?.id ?? null);
                 if (e) showError(e);
                 else setDialog(null);
               }}
-              onCreate={async (name, sources) => {
-                const r = await projectActions.create(name, sources, pickIds);
+              onCreate={async (name, folder) => {
+                const r = await projectActions.create(name, folder, pickIds);
                 if (!r.error) setDialog(null);
                 return r.error;
               }}

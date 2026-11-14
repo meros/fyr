@@ -1,12 +1,12 @@
 // New thread, Adopt from T3, and the snooze menu.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Profile, Project, ProjectSource, T3Candidate } from "./types.ts";
+import type { Profile, Project, T3Candidate } from "./types.ts";
 import { ProfileQuota, quotaSuffix, useQuotas } from "./quota-ui.tsx";
 import { ChipStrip, ClipPicker, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { NewProjectStep, ProjectIcon, ProjectList } from "./project-ui.tsx";
-import { LAST_PROJECT_KEY, colorVar, localProject, newThreadFolder, projectDefaults, projectFolders, projectSubtitle, startProject } from "./projects.ts";
+import { LAST_PROJECT_KEY, colorVar, localProject, newThreadFolder, projectDefaults, projectSubtitle, startProject } from "./projects.ts";
 import { useFolderPick, type PickOptions } from "./folder-picker.tsx";
 import { relTime, shortModel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
@@ -56,15 +56,16 @@ export function lastProject(): string | null {
   }
 }
 
-/** "Change" in a new thread offers the project's other folders first (V0.42). */
-export function changeOptions(pr: Project | undefined, host: string, current: string): PickOptions {
-  const dirs = pr ? projectFolders(pr.sources ?? [], host).filter((f) => f.here && f.path !== current).map((f) => ({ name: f.path.split("/").pop() || f.path, path: f.path })) : [];
-  return { title: "Folder for this thread", first: dirs.length ? { title: `${pr!.name}'s folders`, dirs } : undefined };
+/** "Change" in a new thread offers the project's folder first when another one is picked (V0.42, V0.55). */
+export function changeOptions(pr: Project | undefined, current: string): PickOptions {
+  const f = pr?.folder;
+  const dirs = f && f !== current ? [{ name: f.split("/").pop() || f, path: f }] : [];
+  return { title: "Folder for this thread", first: dirs.length ? { title: `${pr!.name}'s folder`, dirs } : undefined };
 }
 
-/** SPEC 0.5 V0.30, V0.42: Project first; the folder follows from the project's main folder here, else a fresh scratch
+/** SPEC 0.5 V0.30, V0.42: Project first; the folder follows from the project's folder, else a fresh scratch
  *  folder; "Change" opens the folder picker. */
-export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; host: string; projectFilter: string | null; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, sources: ProjectSource[]): Promise<{ error: string | null; id?: string }> }) {
+export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; projectFilter: string | null; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, folder: string): Promise<{ error: string | null; id?: string }> }) {
   const [made, setMade] = useState<Project | null>(null);
   const projects = made && !p.projects.some((x) => x.id === made.id) ? [...p.projects, made] : p.projects;
   const [projectId, setProjectId] = useState<string | undefined>(() => startProject(p.projects, p.projectFilter, lastProject()));
@@ -116,7 +117,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
     }
   };
   const change = async () => {
-    const path = await picker.pick(changeOptions(cur, p.host, folder.cwd ?? ""));
+    const path = await picker.pick(changeOptions(cur, folder.cwd ?? ""));
     if (path) setPicked(path);
     promptRef.current?.focus();
   };
@@ -151,22 +152,21 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
               selectedId={projectId ?? null}
               autoFocus
               allLabel="No project"
-              newRow={{ fromThread: false, sub: "A name, and folders if you like", onNew: (q) => setCreating(q.trim()) }}
+              newRow={{ fromThread: false, sub: "A name, and a folder if you like", onNew: (q) => setCreating(q.trim()) }}
               onPick={choose}
             />
           )}
           {creating !== null && (
             <NewProjectStep
               initialName={creating}
-              initialSources={[]}
-              host={p.host}
+              initialFolder=""
               fromThread={false}
               onCancel={() => setCreating(null)}
-              onCreate={async (name, sources) => {
-                const r = await p.onNewProject(name, sources);
+              onCreate={async (name, folder) => {
+                const r = await p.onNewProject(name, folder);
                 if (r.error) return r.error;
                 if (r.id) {
-                  const np = localProject(r.id, name, sources, p.host);
+                  const np = localProject(r.id, name, folder);
                   setMade(np);
                   choose(np);
                 }
@@ -185,7 +185,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
               Change
             </button>
           </div>
-          <span class="srcl">{folderHint(cur, folder, p.host)}</span>
+          <span class="srcl">{folderHint(cur, folder)}</span>
         </div>
         <div class="row2">
           <label class="fld">
@@ -264,12 +264,11 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
   );
 }
 
-/** One line under the folder: how the folder and the project relate (V0.42). */
-export function folderHint(cur: Project | undefined, folder: { cwd?: string; scratch: boolean }, host: string): string {
-  if (folder.scratch) return cur ? `${cur.name} has no folder here; the thread is filed in it anyway.` : "No project: a new folder just for this thread.";
+/** One line under the folder: how the folder and the project relate (V0.42, V0.55). */
+export function folderHint(cur: Project | undefined, folder: { cwd?: string; scratch: boolean }): string {
+  if (folder.scratch) return cur ? `${cur.name} has no folder; the thread is filed in it anyway.` : "No project: a new folder just for this thread.";
   if (!cur) return "No project.";
-  const main = projectFolders(cur.sources ?? [], host).find((f) => f.main);
-  return main && main.path === folder.cwd ? `${cur.name}'s main folder.` : `Filed in ${cur.name}.`;
+  return cur.folder && cur.folder === folder.cwd ? `${cur.name}'s folder.` : `Filed in ${cur.name}.`;
 }
 
 export function AdoptDialog(p: { load(): Promise<T3Candidate[]>; now: number; onClose(): void; onAdopt(ids: string[]): Promise<string | null> }) {

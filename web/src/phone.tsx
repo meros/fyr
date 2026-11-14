@@ -7,7 +7,7 @@ import { haptic } from "./native.ts";
 import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, FyrEvent, Profile, Project, ProjectSource, ThreadDTO } from "./types.ts";
+import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts";
 import { SECTIONS, isAvailable, sections, unavailableReason, type SectionKey, type Sections } from "./store.ts";
 import { quietNote } from "./quiet.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
@@ -24,7 +24,7 @@ import { HandoverForm } from "./handover-ui.tsx";
 import { rowSummary } from "./view.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
-import { colorVar, localProject, makeProjectLabel, newThreadFolder, projectDefaults, projectName, projectOf, projectSubtitle, startProject, suggestionFor } from "./projects.ts";
+import { colorVar, localProject, newThreadFolder, projectDefaults, projectName, projectOf, projectSubtitle, startProject } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { changeOptions, folderHint, lastProject } from "./dialogs.tsx";
 import { setToolDetails, toolDetails } from "./prefs.ts";
@@ -198,10 +198,8 @@ export interface PhoneProps {
   overlay?: ComponentChildren;
   projectActions: {
     update(id: string, patch: ProjectPatch): Promise<string | null>;
-    addFolder(id: string, path: string): Promise<string | null>;
-    removeSource(id: string, index: number): Promise<string | null>;
-    setMain(id: string, index: number): Promise<string | null>;
-    create(name: string, sources: ProjectSource[], threadIds?: string[]): Promise<{ error: string | null; id?: string }>;
+    setFolder(id: string, path: string): Promise<string | null>;
+    create(name: string, folder: string, threadIds?: string[]): Promise<{ error: string | null; id?: string }>;
     /** null: No project */
     move(ids: string[], projectId: string | null): Promise<string | null>;
   };
@@ -1113,7 +1111,7 @@ function MNew(p: PhoneProps) {
   const projects = made && !p.projects.some((x) => x.id === made.id) ? [...p.projects, made] : p.projects;
   // undefined: No project; null: not chosen yet (the projects may still be loading).
   const [projectId, setProjectId] = useState<string | undefined | null>(null);
-  // V0.42: a folder picked for this thread; "" follows the project (its main folder, else a scratch folder).
+  // V0.42: a folder picked for this thread; "" follows the project (its folder, else a scratch folder).
   const [picked, setPicked] = useState("");
   const picker = useFolderPick();
   const [combo, setCombo] = useState(`${defs.profile}\u0000${defs.model}`);
@@ -1200,7 +1198,7 @@ function MNew(p: PhoneProps) {
                 projects={projects}
                 selectedId={projectId ?? null}
                 allLabel="No project"
-                newRow={{ fromThread: false, sub: "A name, and folders if you like", onNew: (q) => setCreating(q.trim()) }}
+                newRow={{ fromThread: false, sub: "A name, and a folder if you like", onNew: (q) => setCreating(q.trim()) }}
                 onPick={(pr) => choose(pr)}
               />
             </div>
@@ -1209,15 +1207,14 @@ function MNew(p: PhoneProps) {
             <div class="m-pickpanel">
               <NewProjectStep
                 initialName={creating}
-                initialSources={[]}
-                host={p.host}
+                initialFolder=""
                 fromThread={false}
                 onCancel={() => setCreating(null)}
-                onCreate={async (name, sources) => {
-                  const r = await p.projectActions.create(name, sources);
+                onCreate={async (name, folder) => {
+                  const r = await p.projectActions.create(name, folder);
                   if (r.error) return r.error;
                   if (r.id) {
-                    const np = localProject(r.id, name, sources, p.host);
+                    const np = localProject(r.id, name, folder);
                     setMade(np);
                     choose(np);
                   }
@@ -1230,13 +1227,13 @@ function MNew(p: PhoneProps) {
           <div class={`m-dchip m-fline${folder.scratch ? " scratch" : ""}`}>
             <span class="ell">{folder.label}</span>
             <button class="m-fchg" onClick={async () => {
-              const path = await picker.pick(changeOptions(cur, p.host, folder.cwd ?? ""));
+              const path = await picker.pick(changeOptions(cur, folder.cwd ?? ""));
               if (path) setPicked(path);
             }}>
               Change
             </button>
           </div>
-          <div class="m-fhint">{folderHint(cur, folder, p.host)}</div>
+          <div class="m-fhint">{folderHint(cur, folder)}</div>
         </div>
         <div class="m-capr">
           <button class="m-capb" onClick={() => void paste()}>
@@ -1376,14 +1373,12 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
           <ProjectPicker
             projects={p.projects}
             threads={ids.map((id) => p.threads[id]).filter(Boolean)}
-            host={p.host}
-            startNew={sheet.startNew}
             onPick={async (pr) => {
               const e = await p.projectActions.move(ids, pr?.id ?? null);
               if (!e) close();
             }}
-            onCreate={async (name, sources) => {
-              const r = await p.projectActions.create(name, sources, ids);
+            onCreate={async (name, folder) => {
+              const r = await p.projectActions.create(name, folder, ids);
               if (!r.error) close();
               return r.error;
             }}
@@ -1404,7 +1399,6 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
   if (!t) return null;
   const reason = (a: string) => unavailableReason(t, a);
   const avail = swipeAvail(t);
-  const sug = suggestionFor(t, p.projects);
   if (sheet.kind === "actions" || sheet.kind === "thread-menu") {
     const peek = sheet.kind === "actions";
     const d = t.decisions?.[0];
@@ -1448,7 +1442,6 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
           onClick={() => p.replace({ ...p.nav, sheet: { kind: "snooze", ids: [t.id] } })}
         />
         <Item label="Project…" icon={<ProjectIcon project={projectOf(t, p.projects)} name={projectName(t, p.projects)} size={18} />} right={projectName(t, p.projects)} onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id] } })} />
-        {sug && <Item label={makeProjectLabel(sug)} sub="From this thread's repository" onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id], startNew: true } })} />}
         <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => p.actions.setView(t.id, !t.liveView))} />
         <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another profile"} disabled={!!reason("thread.handover")} onClick={() => p.replace({ ...p.nav, sheet: { kind: "handover", ids: [t.id] } })} />
         <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
@@ -1490,11 +1483,6 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
                     {pr ? <ProjectTag project={pr} name={pr.name} /> : <span>No project</span>}
                     <span class="m-plc">Change</span>
                   </button>
-                  {sug && (
-                    <button class="m-bt m-mkp" onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id], startNew: true } })}>
-                      {makeProjectLabel(sug)}
-                    </button>
-                  )}
                 </span>
               );
             })(),
@@ -1586,7 +1574,7 @@ function MProjectChip({ t, projects, onClick }: { t: ThreadDTO; projects: Projec
   );
 }
 
-/** The project screen: identity, defaults and sources. */
+/** The project screen (V0.55): name, folder, quiet hours, colour, icon and defaults. */
 function MProject(p: PhoneProps & { id: string }) {
   const pr = p.projects.find((x) => x.id === p.id);
   return (
@@ -1597,12 +1585,9 @@ function MProject(p: PhoneProps & { id: string }) {
           <ProjectEditor
             project={pr}
             profiles={p.profiles}
-            host={p.host}
             now={p.now}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
-            onAddFolder={(v) => p.projectActions.addFolder(pr.id!, v)}
-            onRemoveSource={(i) => p.projectActions.removeSource(pr.id!, i)}
-            onSetMain={(i) => p.projectActions.setMain(pr.id!, i)}
+            onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}
           />
         ) : (
           <div class="m-empty">{p.projects.length ? "This project is not here anymore." : "Loading…"}</div>

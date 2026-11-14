@@ -37,8 +37,8 @@ func stable(b []byte, home string) []byte {
 // SPEC 0.5 V0.24: the client is tested against what the host really sends.
 // This test writes the host's /api/state for a few edge cases to
 // web/test/fixtures/host-state.json; the web tests decode that file and
-// drop every optional field in turn. V0.28 adds workspace ids and a
-// suggestion. (Found live: the host omitted an empty
+// drop every optional field in turn. V0.55: a project's one folder and a
+// thread's newProject. (Found live: the host omitted an empty
 // icon value and the whole client failed to start.)
 func TestStateContractFixture(t *testing.T) {
 	home := t.TempDir()
@@ -77,7 +77,7 @@ func TestStateContractFixture(t *testing.T) {
 	// V0.46: a project in its quiet hours (a whole day, every day) and its thread carry quietUntil.
 	work := filepath.Join(home, "src", "work")
 	os.MkdirAll(work, 0o755)
-	post(`{"commandId":"k6","action":"project.create","args":{"name":"Work","sources":[{"kind":"folder","path":"` + work + `"}]}}`)
+	post(`{"commandId":"k6","action":"project.create","args":{"name":"Work","folder":"` + work + `"}}`)
 	for _, p := range e.Projects() {
 		if p.Name == "Work" {
 			post(`{"commandId":"k7","action":"project.update","args":{"id":"` + p.ID + `","quiet":[{"from":"00:00","to":"00:00"}]}}`)

@@ -4,10 +4,10 @@
 
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
-import type { Profile, Project, ProjectSource, QuietHours, ThreadDTO } from "./types.ts";
+import type { Profile, Project, QuietHours, ThreadDTO } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, quietLine, quietList, quietNote, setAllDay, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDERS_LINE, MAIN_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, colorVar, createFolderLine, matchProjects, monogram, newProjectDraft, newRowLabel, projectFolders, projectName, projectOf, projectRepos, projectSubtitle, repoLine, resolveIcon, shortPath, sourceText } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { shortModel } from "./format.ts";
 
@@ -17,9 +17,9 @@ export interface Directory {
   projects: Project[];
   openThread(id: string): void;
   openProject(id: string): void;
-  /** Open the project picker for a thread (V0.30); startNew focuses New project from this thread. */
-  pickProject(threadId: string, startNew?: boolean): void;
-  /** this host's name, for source lines */
+  /** Open the project picker for a thread (V0.30). */
+  pickProject(threadId: string): void;
+  /** this host's name */
   host: string;
 }
 export const DirectoryContext = createContext<Directory>({ threads: {}, projects: [], openThread: () => {}, openProject: () => {}, pickProject: () => {}, host: "" });
@@ -119,13 +119,12 @@ export interface NewRow {
 
 /** A searchable project list: the picker (Project…), the new-thread picker and the filter. Rows: New project, the
  *  null row (No project, All projects), the projects by last use, then any extra rows. */
-export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus, newRow, focusNew, extra }: { projects: Project[]; selectedId?: string | null; onPick(p: Project | null): void; allLabel?: string; autoFocus?: boolean; newRow?: NewRow; focusNew?: boolean; extra?: ComponentChildren }) {
+export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus, newRow, extra }: { projects: Project[]; selectedId?: string | null; onPick(p: Project | null): void; allLabel?: string; autoFocus?: boolean; newRow?: NewRow; extra?: ComponentChildren }) {
   const [q, setQ] = useState("");
   const ref = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (focusNew) box.current?.querySelector<HTMLElement>(".pli.new")?.focus();
-    else if (autoFocus) ref.current?.focus();
+    if (autoFocus) ref.current?.focus();
   }, []);
   const list = matchProjects(projects, q);
   // Keyboard: Enter in the search picks the first match, or names a new project when nothing matches; arrows walk the
@@ -188,22 +187,53 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
   );
 }
 
-/** New project, one step (V0.30, V0.42): a name (required), the folders it starts with (each says what it does; ×
- *  leaves it out), "Add folder…" through the folder picker, and the repo line the host will derive. The rest is on the
- *  project screen. */
-export function NewProjectStep({ initialName, initialSources, host, fromThread, onCreate, onCancel }: { initialName: string; initialSources: ProjectSource[]; host: string; fromThread: boolean; onCreate(name: string, sources: ProjectSource[]): Promise<string | null>; onCancel(): void }) {
+/** A project's one folder (V0.55): the short path and what it does with "Change…" through the host folder picker, or
+ *  that threads are filed by hand with "Choose folder…". × leaves the folder out where onClear is given. */
+export function FolderField({ folder, title, onPick, onClear }: { folder: string; title: string; onPick(path: string): void; onClear?(): void }) {
+  const picker = useFolderPick();
+  const pick = async () => {
+    const path = await picker.pick({ title });
+    if (path) onPick(path);
+  };
+  return (
+    <div class="fld">
+      <span>Folder</span>
+      {folder ? (
+        <div class="src pfolder">
+          <span class="srcb">
+            <span class="ell" title={folder}>
+              {shortPath(folder)}
+            </span>
+            <span class="srcl">{FOLDER_LINE}</span>
+          </span>
+          {onClear && (
+            <button class="src-x" aria-label={`Leave out ${shortPath(folder)}`} title="Leave out" onClick={onClear}>
+              ×
+            </button>
+          )}
+        </div>
+      ) : (
+        <p class="lede">{NO_FOLDER_LINE}.</p>
+      )}
+      <button class="btn sm pfchg" onClick={() => void pick()}>
+        {folder ? "Change…" : "Choose folder…"}
+      </button>
+    </div>
+  );
+}
+
+/** New project, one step (V0.30, V0.55): a name (required) and the one folder, prefilled from the thread. The rest is
+ *  on the project screen. */
+export function NewProjectStep({ initialName, initialFolder, fromThread, onCreate, onCancel }: { initialName: string; initialFolder: string; fromThread: boolean; onCreate(name: string, folder: string): Promise<string | null>; onCancel(): void }) {
   const [name, setName] = useState(initialName);
-  // V0.42: folders only; the repo follows from them.
-  const [folders, setFolders] = useState(() => initialSources.filter((s) => s.kind === "folder"));
+  const [folder, setFolder] = useState(initialFolder);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
-  const picker = useFolderPick();
   useEffect(() => {
     nameRef.current?.focus();
     nameRef.current?.select();
   }, []);
-  const repos = folders.length ? projectRepos({ sources: initialSources }) : [];
   const submit = async () => {
     if (busy) return;
     if (!name.trim()) {
@@ -212,13 +242,9 @@ export function NewProjectStep({ initialName, initialSources, host, fromThread, 
     }
     setBusy(true);
     setErr(null);
-    const e = await onCreate(name.trim(), folders);
+    const e = await onCreate(name.trim(), folder);
     setBusy(false);
     if (e) setErr(e);
-  };
-  const add = async () => {
-    const path = await picker.pick({ title: "Add folder" });
-    if (path && !folders.some((f) => (f as { path?: string }).path === path)) setFolders([...folders, { kind: "folder", host: "", path }]);
   };
   return (
     <div class="pform">
@@ -235,30 +261,7 @@ export function NewProjectStep({ initialName, initialSources, host, fromThread, 
           autocapitalize="sentences"
         />
       </label>
-      <div class="fld">
-        <span>Folders</span>
-        {folders.length ? (
-          <ul class="srcs">
-            {folders.map((f, i) => (
-              <li class="src">
-                <span class="srcb">
-                  <span class="ell">{sourceText(f, host)}</span>
-                  <span class="srcl">{createFolderLine(String((f as { path?: string }).path ?? ""))}</span>
-                </span>
-                <button class="src-x" aria-label={`Leave out ${sourceText(f, host)}`} title="Leave out" onClick={() => setFolders(folders.filter((_, k) => k !== i))}>
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p class="lede">{NO_FOLDER_LINE}.</p>
-        )}
-        {repos.length > 0 && <p class="srcl">{repoLine(repos)}.</p>}
-        <button class="btn sm addf" onClick={() => void add()}>
-          Add folder…
-        </button>
-      </div>
+      <FolderField folder={folder} title="Project folder" onPick={setFolder} onClear={() => setFolder("")} />
       <p class="lede">Icon, colour and defaults are on the project screen, later.</p>
       {err && <div class="err prose">{err}</div>}
       <div class="pformb">
@@ -273,52 +276,22 @@ export function NewProjectStep({ initialName, initialSources, host, fromThread, 
   );
 }
 
-/** A project's folders (V0.42): the main one starred, a star makes another main, × removes; folders on another host
- *  show it and have no star. */
-export function FolderList({ sources, host, onRemove, onSetMain }: { sources: ProjectSource[]; host: string; onRemove(i: number): void; onSetMain(i: number): void }) {
-  const folders = projectFolders(sources, host);
-  return (
-    <ul class="srcs folders">
-      {folders.map((f) => (
-        <li class={`src${f.main ? " main" : ""}`}>
-          {f.here ? (
-            <button class={`star${f.main ? " on" : ""}`} aria-pressed={f.main} aria-label={f.main ? MAIN_LINE : `Make ${shortPath(f.path)} the main folder`} title={f.main ? MAIN_LINE : "Make this the main folder"} onClick={() => !f.main && onSetMain(f.index)}>
-              {f.main ? "★" : "☆"}
-            </button>
-          ) : (
-            <span class="star off" aria-hidden="true" />
-          )}
-          <span class="srcb">
-            <span class="ell">{sourceText(sources[f.index], host)}</span>
-            {f.main && <span class="srcl">{MAIN_LINE}</span>}
-          </span>
-          <button class="src-x" aria-label={`Remove ${sourceText(sources[f.index], host)}`} title="Remove" onClick={() => onRemove(f.index)}>
-            ×
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 /** The one project picker (V0.30): file a thread, unfile it, or make a project from it in one step. */
-export function ProjectPicker({ projects, threads, host, startNew, onPick, onCreate, onEdit }: { projects: Project[]; threads: ThreadDTO[]; host: string; startNew?: boolean; onPick(p: Project | null): void; onCreate(name: string, sources: ProjectSource[]): Promise<string | null>; onEdit?(p: Project): void }) {
+export function ProjectPicker({ projects, threads, onPick, onCreate, onEdit }: { projects: Project[]; threads: ThreadDTO[]; onPick(p: Project | null): void; onCreate(name: string, folder: string): Promise<string | null>; onEdit?(p: Project): void }) {
   const one = threads.length === 1 ? threads[0] : undefined;
-  const base = one ? newProjectDraft(one) : { name: "", sources: [] };
-  const [draft, setDraft] = useState<{ name: string; sources: ProjectSource[] } | null>(null);
+  const base = one ? newProjectDraft(one) : { name: "", folder: "" };
+  const [draft, setDraft] = useState<{ name: string; folder: string } | null>(null);
   const cur = one ? projectOf(one, projects) : undefined;
-  if (draft) return <NewProjectStep initialName={draft.name} initialSources={draft.sources} host={host} fromThread={threads.length > 0} onCreate={onCreate} onCancel={() => setDraft(null)} />;
-  const baseFolders = base.sources.filter((s) => s.kind === "folder");
-  const sub = baseFolders.length ? `${base.name} · threads in ${baseFolders.map((s) => sourceText(s, host)).join(" and ")} land there` : "Just a name; file threads here by hand";
+  if (draft) return <NewProjectStep initialName={draft.name} initialFolder={draft.folder} fromThread={threads.length > 0} onCreate={onCreate} onCancel={() => setDraft(null)} />;
+  const sub = base.folder ? `${base.name} · threads in ${shortPath(base.folder)} land there` : "Just a name; file threads here by hand";
   return (
     <>
       <ProjectList
         projects={projects}
         selectedId={one ? (cur?.id ?? null) : undefined}
         autoFocus
-        focusNew={startNew}
         allLabel="No project"
-        newRow={{ fromThread: !!one, sub, onNew: (q) => setDraft({ name: q.trim() || base.name, sources: base.sources }) }}
+        newRow={{ fromThread: !!one, sub, onNew: (q) => setDraft({ name: q.trim() || base.name, folder: base.folder }) }}
         onPick={onPick}
       />
       {cur && onEdit && (
@@ -430,10 +403,9 @@ export function QuietRow({ value, onChange, note }: { value: QuietHours[]; onCha
 
 const quietKey = (q: QuietHours[]) => JSON.stringify(q.map(cleanWindow));
 
-/** Edit a project's identity and defaults, and its folders (V0.42: the main star, ×, Add folder… through the picker;
- *  the repo line is read-only). */
-export function ProjectEditor({ project, profiles, host, now, onSave, onAddFolder, onRemoveSource, onSetMain }: { project: Project; profiles: Profile[]; host: string; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onAddFolder(path: string): Promise<string | null>; onRemoveSource(index: number): Promise<string | null>; onSetMain(index: number): Promise<string | null> }) {
-  const picker = useFolderPick();
+/** Edit a project (V0.55): name, its one folder (Change… through the folder picker), quiet hours, colour, icon and
+ *  defaults. */
+export function ProjectEditor({ project, profiles, now, onSave, onSetFolder }: { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null> }) {
   const [name, setName] = useState(project.name);
   const [color, setColor] = useState(colorName(project.color, project.name));
   const [kind, setKind] = useState<"monogram" | "emoji" | "line">(resolveIcon(project.icon, project.name).kind);
@@ -455,9 +427,6 @@ export function ProjectEditor({ project, profiles, host, now, onSave, onAddFolde
     const e = await onSave(patch);
     setMsg(e ? { text: e, err: true } : { text: "Saved", err: false });
   };
-  const sources = project.sources ?? [];
-  const folders = projectFolders(sources, host);
-  const repos = projectRepos(project);
   return (
     <div class="pedit" style={{ "--pc": colorVar(color, name) }}>
       <div class="phead">
@@ -471,34 +440,14 @@ export function ProjectEditor({ project, profiles, host, now, onSave, onAddFolde
         <span>Name</span>
         <input value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
       </label>
-      <div class="fld">
-        <span>Folders</span>
-        <p class="lede">{folders.length ? FOLDERS_LINE : `${NO_FOLDER_LINE}.`}</p>
-        <FolderList
-          sources={sources}
-          host={host}
-          onRemove={async (i) => {
-            const e = await onRemoveSource(i);
-            setMsg(e ? { text: e, err: true } : null);
-          }}
-          onSetMain={async (i) => {
-            const e = await onSetMain(i);
-            setMsg(e ? { text: e, err: true } : null);
-          }}
-        />
-        {repos.length > 0 && <p class="srcl">{repoLine(repos)}.</p>}
-        <button
-          class="btn sm addf"
-          onClick={async () => {
-            const path = await picker.pick({ title: `Add folder to ${project.name}` });
-            if (!path) return;
-            const e = await onAddFolder(path);
-            setMsg(e ? { text: e, err: true } : null);
-          }}
-        >
-          Add folder…
-        </button>
-      </div>
+      <FolderField
+        folder={project.folder ?? ""}
+        title={`Folder for ${project.name}`}
+        onPick={async (path) => {
+          const e = await onSetFolder(path);
+          setMsg(e ? { text: e, err: true } : null);
+        }}
+      />
       <QuietRow value={quiet} onChange={setQuiet} note={quietNote(project, now)} />
       <div class="fld">
         <span>Colour</span>

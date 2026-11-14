@@ -16,9 +16,9 @@ type Thread struct {
 	Cwd       string `json:"cwd"`
 	Project   string `json:"project"`
 	ProjectID string `json:"projectId,omitempty"` // V0.23
-	// ProjectManual: the user filed the thread; folder matching keeps it.
+	// ProjectManual: the thread was filed by hand; folder matching never
+	// moves it again (V0.55).
 	ProjectManual bool      `json:"projectManual,omitempty"`
-	WorkspaceID   string    `json:"workspaceId,omitempty"` // V0.28: where it runs
 	Owner         string    `json:"owner"`
 	Visibility    string    `json:"visibility"`
 	Profile       string    `json:"profile"`
