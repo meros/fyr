@@ -1,4 +1,12 @@
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
+import { rememberOpen, takeOpen } from "./push.ts";
+const sessionStore = () => {
+  try {
+    return typeof sessionStorage !== "undefined" ? sessionStorage : null;
+  } catch {
+    return null;
+  }
+};
 import { navTransition } from "./native.ts";
 import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
 import { ContextMenu } from "./menu-ui.tsx";
@@ -255,7 +263,16 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    registerServiceWorker((id) => setPendingOpen(id));
+    registerServiceWorker((id) => {
+      rememberOpen(sessionStore(), id);
+      setPendingOpen(id);
+    });
+    // A tap that arrived just before a reload for a new build (V0.15).
+    const carried = takeOpen(sessionStore());
+    if (carried) {
+      rememberOpen(sessionStore(), carried);
+      setPendingOpen(carried);
+    }
     watchInstall((can) => setCanInstall(can));
     // Reconcile with the host at start and whenever the app comes back to the foreground.
     void syncPushStatus(api).then(setPushSt);
@@ -891,6 +908,7 @@ function App() {
     if (!pendingOpen || !store.threads[pendingOpen]) return;
     if (phone) navGo({ screen: { name: "thread", id: pendingOpen }, sheet: null });
     else openThread(pendingOpen, "open");
+    takeOpen(sessionStore()); // on screen now: done
     setPendingOpen(null);
   }, [pendingOpen, store.threads]);
 
