@@ -10,6 +10,7 @@ import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { count, relTime, untilLabel, whenLabel } from "./format.ts";
 import { prLabel } from "./thread.tsx";
 import { groupTasks, workingLine } from "./tasks.ts";
+import { rowSummary } from "./view.ts";
 import type { ConnState } from "./api.ts";
 
 export type Theme = "system" | "light" | "dark";
@@ -75,7 +76,7 @@ function needsMeta(t: ThreadDTO): string {
   }
   if (st === "failed") return `${t.failure?.message ?? ""} · r to retry`;
   if (st === "working") return t.activity ?? "";
-  return t.summary ?? "";
+  return rowSummary(t);
 }
 
 function stateWord(t: ThreadDTO): string {

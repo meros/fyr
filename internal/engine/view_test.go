@@ -246,3 +246,15 @@ func TestViewPressSendsMessage(t *testing.T) {
 		t.Fatalf("user event %v", last)
 	}
 }
+
+// SPEC 0.5 V0.37: the client's mock serves the same bridge the host puts in
+// every view page, so the layout test exercises the real one.
+func TestMockBridgeMatches(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "mock.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "export const VIEW_BRIDGE = `"+viewBridge+"`;") {
+		t.Fatal("web/src/mock.ts VIEW_BRIDGE differs from viewBridge; copy it over")
+	}
+}

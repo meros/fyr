@@ -288,6 +288,29 @@ function fullFixture(now: number): Fixture {
       unavailable: NOT_RUNNING,
     }),
   );
+  // V0.37: a thread with a live view; the log has an earlier press from the view.
+  {
+    const st = { headline: "E2e green on mobile; PR not opened yet", steps: [{ label: "Reproduce", state: "done" }, { label: "Fix the lasso", state: "done" }, { label: "E2e on mobile", state: "done" }, { label: "Open the PR", state: "now" }], next: "Open the PR when you say so" };
+    const at = iso(now - 12 * 60_000);
+    const evs = simpleEvents("t_view", now, "Fix the lasso on mobile and keep a live view", "Fixed; the mobile e2e run is green.");
+    let s = evs.length;
+    evs.push(
+      ev(++s, now - 20 * 60_000, "t_view", "view.published", { pageId: "pv_view", state: st }),
+      ev(++s, now - 14 * 60_000, "t_view", "user", { id: "m_v1", text: "Run the e2e suite again", from: "view" }),
+      ev(++s, now - 14 * 60_000, "t_view", "message.state", { id: "m_v1", state: "read" }),
+      ev(++s, now - 13 * 60_000, "t_view", "msg", assistantText("The mobile e2e run is green: 48 passed.")),
+    );
+    add(
+      base("t_view", "Lasso fix with a live view", now, 12, {
+        attention: { state: "done", section: "needs", reason: "Done" },
+        summary: "The mobile e2e run is green: 48 passed.",
+        liveView: true,
+        live: { pageId: "pv_view", state: st, updatedAt: at, checkedAt: at, headline: st.headline },
+        unavailable: NOT_RUNNING,
+      }),
+      evs,
+    );
+  }
   add(
     base("t_fix", "Fix", now, 75, {
       project: LONG_PROJECT,
@@ -615,6 +638,50 @@ const m=Math.max(...d.map(x=>x[1]));c.innerHTML=d.map(([f,s])=>'<div class=r><sp
 requestAnimationFrame(()=>document.querySelectorAll(".b").forEach(b=>b.style.width=b.dataset.w+"%"));n.textContent="Scripts run in the sandbox; the page has no origin.";
 </script>`;
 
+
+// V0.37: the live view page as the host stores it: the Fyr theme around a fragment, the bridge first in <head>.
+// TestMockBridgeMatches (Go) keeps VIEW_BRIDGE equal to the host's bridge.
+export const VIEW_BRIDGE = `<script>(function(){
+var state={},subs=[],n=0;
+function post(m){m.jsonrpc="2.0";parent.postMessage(m,"*")}
+function pick(o,p){return p.split(".").reduce(function(a,k){return a==null?a:a[k]},o)}
+function fill(){var els=document.querySelectorAll("[data-text]");for(var i=0;i<els.length;i++){var v=pick(state,els[i].getAttribute("data-text"));els[i].textContent=v==null?"":typeof v=="object"?JSON.stringify(v):String(v)}}
+window.fyr={get state(){return state},onState:function(f){subs.push(f);try{f(state)}catch(e){console.error(e)}},
+send:function(t){t=String(t||"").trim();if(t)post({id:"m"+(++n),method:"ui/message",params:{role:"user",content:[{type:"text",text:t}]}})}};
+addEventListener("message",function(e){if(e.source!==parent)return;var d=e.data;if(!d||d.method!=="ui/notifications/state")return;
+state=(d.params&&d.params.state)||{};fill();subs.forEach(function(f){try{f(state)}catch(x){console.error(x)}})});
+document.addEventListener("click",function(e){var b=e.target&&e.target.closest&&e.target.closest("[data-send]");if(b){e.preventDefault();fyr.send(b.getAttribute("data-send")||b.textContent)}});
+var last=-1;function size(){var h=Math.ceil(document.documentElement.getBoundingClientRect().height);if(h!==last){last=h;post({method:"ui/notifications/size-changed",params:{height:h}})}}
+if(window.ResizeObserver)new ResizeObserver(size).observe(document.documentElement);addEventListener("load",size);
+document.addEventListener("DOMContentLoaded",function(){fill();size()});
+post({method:"ui/notifications/initialized",params:{}});
+})();</script>`;
+const VIEW_THEME = `
+:root{--bg:#ffffff;--fg:#111820;--muted:#56616d;--line:#dde1e6;--accent:#e8960f;--surface:#f6f7f8;color-scheme:light dark}
+@media (prefers-color-scheme: dark){:root{--bg:#161d24;--fg:#e8ecf0;--muted:#9aa6b2;--line:#26303a;--accent:#f5a524;--surface:#0f1419}}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+body{padding:16px}*{box-sizing:border-box}img,svg,canvas,video{max-width:100%;height:auto}
+table{border-collapse:collapse}td,th{border:1px solid var(--line);padding:4px 8px}
+`;
+const VIEW_FRAGMENT = `<style>
+.hd{font:600 17px/24px system-ui,sans-serif;margin:0 0 10px}
+.st{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 12px;padding:0;list-style:none;font-size:13px}
+.st li{display:flex;align-items:center;gap:6px}.st i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.st .done i{background:#2f9e5b}.st .now i{background:var(--accent)}.st .now{font-weight:600}
+.nx{color:var(--muted);font-size:13px;margin:0 0 12px}
+.bt{display:flex;gap:8px;flex-wrap:wrap}.bt button{font:500 13px/18px system-ui,sans-serif;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.bt button.p{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+body{padding:12px 16px}
+</style>
+<p class="hd" data-text="headline"></p>
+<ul class="st" id="steps"></ul>
+<p class="nx">Next: <span data-text="next"></span></p>
+<div class="bt"><button class="p" data-send="Open the PR">Open the PR</button><button data-send="Run the e2e suite again">Run e2e again</button><button data-send="Pause; I will look first">Pause</button></div>
+<script>
+fyr.onState(function(s){var el=document.getElementById("steps");el.innerHTML="";(s.steps||[]).forEach(function(x){var li=document.createElement("li");li.className=x.state;li.innerHTML="<i></i>";li.appendChild(document.createTextNode(x.label));el.appendChild(li)})});
+</script>`;
+const VIEW_HTML = `<!doctype html><html><head>${VIEW_BRIDGE}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Live view</title><style>${VIEW_THEME}</style></head><body>${VIEW_FRAGMENT}</body></html>`;
+
 export const MOCK_SHOTS: Record<string, string> = {
   pv_phone: svgShot(390, 844, "Filter sheet, iPhone mini"),
   pv_desk: svgShot(1280, 800, "Map, desktop 1280 × 800"),
@@ -622,6 +689,7 @@ export const MOCK_SHOTS: Record<string, string> = {
 };
 export const MOCK_PREVIEWS: Record<string, string> = {
   pv_chart: "data:text/html;charset=utf-8," + encodeURIComponent(CHART_HTML),
+  pv_view: "data:text/html;charset=utf-8," + encodeURIComponent(VIEW_HTML),
 };
 
 function previewEvents(subject: string, start: number, now: number, stress: boolean): FyrEvent[] {
@@ -801,7 +869,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   const deliver = (tid: string, text: string, args: Record<string, unknown>, running: boolean) => {
     const id = `m_new${nextId++}`;
     const imgs = Array.isArray(args.images) ? args.images.length : 0;
-    emit(tid, "user", { id, text, images: imgs, attachments: attachmentsOf(args) });
+    emit(tid, "user", { id, text, images: imgs, attachments: attachmentsOf(args), ...(args.from === "view" ? { from: "view" } : {}) });
     if (!running) {
       emit(tid, "message.state", { id, state: "read" });
       return id;
@@ -829,7 +897,10 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       if (!cur.running) return;
       emit(id, "msg", assistantText(reply));
       emit(id, "run.ended", { failure: null, interrupted: false, costUsd: 0.01, durationMs: 1800 });
+      // V0.37: a view thread's run updates its view at the end.
+      const live = cur.liveView && cur.live ? { ...cur.live, state: { ...cur.live.state, headline: reply }, headline: reply, updatedAt: new Date(clock()).toISOString(), checkedAt: new Date(clock()).toISOString() } : cur.live;
       put(cur, {
+        live,
         running: false,
         activity: "",
         summary: reply,
@@ -850,6 +921,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         project: cwd.split("/").slice(-2).join("/"),
         profile: String(args.profile ?? "claude"),
         model: String(args.model ?? "claude-opus-5-5"),
+        liveView: args.view === true,
       });
       threads.set(id, nt);
       events[id] = [];
@@ -988,6 +1060,9 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         put(t, { projectId: p.id, project: p.name });
         break;
       }
+      case "thread.setView":
+        put(t, { liveView: args.on === true });
+        break;
       case "thread.setModel":
         put(t, { model: String(args.model ?? t.model) });
         break;
