@@ -85,7 +85,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 | `decision.opened` | `{"decision": Decision}` |
 | `decision.closed` | `{"id": "…", "answer": "text shown in the log"}` |
 | `task` | `{"kind": "started" \| "ended", "id", "description", "status", "summary"}` a subagent or background task started or ended (V0.16) |
-| `preview` | `{"kind": "image" \| "html", "attachmentId", "title", "caption", "width", "height", "url"?}` something the agent showed with the `show` tool (V0.19). Images load from `/api/attachments/{id}`; HTML loads in an iframe from `/api/previews/{id}` |
+| `preview` | `{"kind": "image" \| "html", "attachmentId", "title", "caption", "width", "height", "url"?}` something the agent showed with the `show` tool (V0.19). Images load from `/api/attachments/{id}`; HTML loads in an iframe from `/api/previews/{id}`; an HTML preview without `size` has no `width` and `height` (V0.47: the card is 16:10) |
 | `effect.result` | `{"action": "pr.merge", "ok": true, "text": "…", "by"?: "owner"}`; `by: owner` marks a merge or re-run the owner started in the PR tab (V0.43) |
 | `view.published` | `{"pageId": "…", "state": {…}}` the agent published its live view's page (V0.37); the page loads from `/api/previews/{pageId}` |
 | `view.state` | `{"state": {…}}` the live view's full state after a patch (V0.37) |
@@ -155,7 +155,15 @@ The PWA files: `/manifest.webmanifest` (`application/manifest+json`) and `/sw.js
 
 ## Previews (SPEC 0.5 V0.19)
 
-`GET /api/previews/{id}` serves an HTML preview with `Content-Security-Policy: sandbox allow-scripts; …; connect-src 'none'`. Embed it as `<iframe src="/api/previews/{id}" sandbox="allow-scripts">`: scripts run, but the page has no origin, so it cannot call the API.
+`GET /api/previews/{id}` serves an HTML preview. Embed it as `<iframe src="/api/previews/{id}" sandbox="allow-scripts" allow="fullscreen; xr-spatial-tracking; accelerometer; gyroscope">`: scripts run, but the page has no origin, so it cannot call the API.
+
+A folder preview (V0.47) redirects `GET /api/previews/{id}` to `/api/previews/{id}/{entry}`; `GET /api/previews/{id}/{path}` serves its files with their media types (`.glb` `model/gltf-binary`, `.wasm` `application/wasm`, …), `404` for `..`, a missing file or a single-page preview. Every preview response carries `Access-Control-Allow-Origin: *`, `X-Content-Type-Options: nosniff` and this CSP, where `{base}` is `http(s)://<Host>/api/previews/{id}/` (the page has no origin, so `'self'` would match nothing):
+
+```
+sandbox allow-scripts; default-src 'none'; script-src {base} {cdn} 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src {base} {cdn} 'unsafe-inline'; img-src {base} {cdn} data: blob:; font-src {base} {cdn} data:; media-src {base} {cdn} data: blob:; connect-src {base} {cdn} data: blob:; worker-src {base} blob:; frame-ancestors 'self'
+```
+
+`{cdn}` is `https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://esm.sh https://ajax.googleapis.com https://www.gstatic.com`. A page may report its height with `{"jsonrpc": "2.0", "method": "ui/notifications/size-changed", "params": {"height": 480}}` to its parent, as a live view does.
 
 ## Live views (SPEC 0.5 V0.37)
 

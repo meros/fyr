@@ -28,9 +28,25 @@ if (!existsSync(join(dist, "index.html"))) {
   process.exit(1);
 }
 
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".png": "image/png", ".webmanifest": "application/manifest+json" };
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json" };
+// V0.47: the mock folder preview, served as the host serves one: its files under /api/previews/pv_site/, with the
+// host's CSP (TestPreviewCSP keeps preview-csp.txt equal to it) and Access-Control-Allow-Origin.
+const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
+const site = join(fixtures, "preview-site");
+const [cspTemplate, cdns] = readFileSync(join(fixtures, "preview-csp.txt"), "utf8").trim().split("\n");
 const server = createServer((req, res) => {
   const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
+  if (path.startsWith("/api/previews/pv_site/")) {
+    const file = join(site, path.slice("/api/previews/pv_site/".length));
+    if (!file.startsWith(site + "/") || !existsSync(file) || statSync(file).isDirectory()) {
+      res.writeHead(404).end();
+      return;
+    }
+    const csp = cspTemplate.replaceAll("{base}", `http://${req.headers.host}/api/previews/pv_site/`).replaceAll("{cdn}", cdns);
+    res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream", "Content-Security-Policy": csp, "Access-Control-Allow-Origin": "*", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" });
+    res.end(readFileSync(file));
+    return;
+  }
   let file = join(dist, path === "/" ? "index.html" : path);
   if (!file.startsWith(dist) || !existsSync(file) || statSync(file).isDirectory()) file = join(dist, "index.html");
   res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream", "Cache-Control": "no-store" });
@@ -42,7 +58,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 const chromeBin = process.env.FYR_CHROME || "google-chrome";
 const profile = mkdtempSync(join(tmpdir(), "fyr-layout-"));
 const port = 9400 + Math.floor(Math.random() * 400);
-const chrome = spawn(chromeBin, ["--headless=new", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore", detached: true });
+const chrome = spawn(chromeBin, ["--headless=new", "--disable-gpu", "--enable-unsafe-swiftshader", "--no-sandbox", "--hide-scrollbars", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore", detached: true });
 const cleanup = () => {
   try {
     process.kill(-chrome.pid, "SIGKILL"); // the whole group: the wrapper script leaves Chrome's children otherwise
@@ -849,6 +865,45 @@ try {
   await send("Target.setAutoAttach", { autoAttach: false, waitForDebuggerOnStart: false, flatten: true });
 } catch (e) {
   failures.push(`V0.37 desktop: ${e.message}`);
+}
+
+// SPEC 0.5 V0.47: previews run real pages. A WebGL canvas draws inside the sandboxed frame, and a folder preview
+// loads its own script, module, JSON and image by relative URL while the rest of the host stays closed to it.
+try {
+  await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  attached.length = 0;
+  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_w3` });
+  await sleep(1200);
+  await evaluate(`(() => { const f = [...document.querySelectorAll('.th .pv.html')].pop(); f?.scrollIntoView({ block: "end" }); return !!f; })()`);
+  await sleep(1500);
+  const cards = await evaluate(`[...document.querySelectorAll('.th .pv.html')].map((f) => { const i = f.querySelector('iframe'); return { t: f.querySelector('.pv-t')?.textContent ?? '', w: Math.round(i.getBoundingClientRect().width), h: Math.round(i.getBoundingClientRect().height), allow: i.getAttribute('allow') ?? '', fs: !!f.querySelector('.pv-fs') }; })`);
+  const glCard = cards.find((c) => c.t === "WebGL triangle");
+  const siteCard = cards.find((c) => c.t === "Folder preview");
+  check(!!glCard && Math.abs(glCard.h - Math.round((glCard.w * 10) / 16)) <= 1, `V0.47 desktop: the WebGL card is not 16:10 of its width (${JSON.stringify(glCard)})`);
+  check(!!siteCard && siteCard.h === 300, `V0.47 desktop: the folder preview is not as tall as its page reported (${JSON.stringify(siteCard)})`);
+  check(cards.every((c) => /fullscreen/.test(c.allow) && /xr-spatial-tracking/.test(c.allow) && c.fs), `V0.47 desktop: a frame lacks allow="fullscreen; xr-spatial-tracking" or the Full screen button (${JSON.stringify(cards)})`);
+  // A frame target is attached before it navigates; its URL comes from the current target list.
+  const live = (await send("Target.getTargets")).result?.targetInfos ?? [];
+  const urlOf = (a) => live.find((x) => x.targetId === a.targetInfo.targetId)?.url ?? a.targetInfo.url;
+  const frameOf = (re) => attached.filter((a) => a.targetInfo.type === "iframe" && re.test(urlOf(a))).pop();
+  const inFrame = async (f, expr) => (await send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true }, f.sessionId)).result?.result?.value;
+  const gl = frameOf(/^data:text\/html.*webgl/);
+  const st = frameOf(/\/api\/previews\/pv_site\//);
+  check(!!gl && !!st, `V0.47 desktop: no frame target for the WebGL or the folder preview (${attached.map((a) => urlOf(a).slice(0, 40)).join(" | ")})`);
+  if (gl) {
+    const v = await inFrame(gl, `document.body.dataset.gl ?? ''`);
+    check(v === "ok", `V0.47 desktop: the WebGL triangle did not draw in the sandbox (${v})`);
+  }
+  if (st) {
+    const v = await inFrame(st, `new Promise((ok) => setTimeout(() => ok({ js: document.body.dataset.js, fetch: document.body.dataset.fetch, api: document.body.dataset.api, img: document.getElementById('dot')?.naturalWidth ?? 0, blocked: document.body.dataset.blocked ?? '', origin: String(self.origin) }), 300))`);
+    check(v?.js === "1" && v?.fetch === "ok" && v?.img > 0, `V0.47 desktop: the folder preview did not load its own files (${JSON.stringify(v)})`);
+    check(v?.api === "closed" && /\/api\/state/.test(v?.blocked ?? "") && v?.origin === "null", `V0.47 desktop: the folder preview reached the host outside its folder or has an origin (${JSON.stringify(v)})`);
+  }
+  await send("Target.setAutoAttach", { autoAttach: false, waitForDebuggerOnStart: false, flatten: true });
+} catch (e) {
+  failures.push(`V0.47 desktop: ${e.message}`);
 }
 
 // V0.38: never block the main thread. While a burst of 300 thread updates and 300 messages streams in
