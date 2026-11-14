@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildConversation, callLabel, runLabel, cutOutput, friendlyName, groupStats, groupSummary, hiddenCall, middleTruncate, pastTense, relPath, segments, type Item } from "../src/conversation.ts";
+import { buildConversation, callLabel, fullOutputOf, runLabel, cutOutput, friendlyName, groupStats, groupSummary, hiddenCall, middleTruncate, pastTense, relPath, segments, type Item } from "../src/conversation.ts";
 
 let seq = 0;
 const T0 = Date.parse("2026-11-14T09:00:00Z");
@@ -145,4 +145,17 @@ test("the forced view turn is a quiet line", () => {
   ]);
   const kinds = items.map((i) => (i.kind === "assistant" ? `assistant${i.quiet ? ":quiet" : ""}` : i.kind));
   assert.deepEqual(kinds, ["user", "assistant", "assistant:quiet", "run", "user", "assistant"]);
+});
+
+// SPEC 0.5 V0.38: a tool output the host cut keeps the event's seq, and the full event
+// gives the whole output back for that call.
+test("a cut tool output can be loaded whole", () => {
+  const use = ev("msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id: "u1", name: "Bash", input: { command: "ls" } }] } });
+  const res = ev("msg", { type: "user", parent_tool_use_id: null, cut: true, message: { content: [{ type: "tool_result", tool_use_id: "u1", content: "head\n… [30 KB more; open the full output]" }] } });
+  const items = buildConversation([ev("user", { text: "go" }), use, res]);
+  const card = items.find((i) => i.kind === "tools") as Extract<Item, { kind: "tools" }>;
+  assert.equal(card.calls[0].cutSeq, res.seq);
+  const full = { seq: res.seq, data: { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "u1", content: [{ type: "text", text: "the whole output" }] }] } } };
+  assert.equal(fullOutputOf(full, "u1"), "the whole output");
+  assert.equal(fullOutputOf(full, "other"), null);
 });

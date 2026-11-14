@@ -208,3 +208,9 @@ The stream sends `event: project` with a project (same shape as in the state) wh
 ```
 
 The patch is cut at 400 KB at a line end (`truncated: true`). A path without changes returns `"patch": ""`. The path is matched literally; an untracked file is read only when git lists it as untracked.
+
+## Speed (SPEC 0.5 V0.38)
+
+- Responses with a text body are gzipped when the request has `Accept-Encoding: gzip` (`Vary: Accept-Encoding`); `/api/stream` too, flushed per event.
+- `msg` events in `/api/threads/{id}/events` and on the stream are lean: a `tool_result` text over 16 KB (4 KB when `parent_tool_use_id` is set) is cut, base64 image data is left out (`source.omitted: true`, `source.bytes`), and the event data has `"cut": true`.
+- `GET /api/threads/{id}/events/{seq}` returns that one event whole (`404` when the thread has no such event).

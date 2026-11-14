@@ -9,7 +9,7 @@ import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createContext } from "preact";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
-import { buildConversation, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel } from "./conversation.ts";
+import { buildConversation, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { duration, relTime, shortModel } from "./format.ts";
@@ -447,6 +447,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
     }
   };
   return (
+    <ThreadIdContext.Provider value={threadId}>
     <div class="convo" ref={ref} onScroll={check} onClick={onCodeCopy}>
       <div class="convo-in">
         {events === undefined && <div class="sys">Loading…</div>}
@@ -480,6 +481,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
         </DeliveryCtx.Provider>
       </div>
     </div>
+    </ThreadIdContext.Provider>
   );
 }
 
@@ -721,11 +723,33 @@ function FoldGroup({ calls }: { calls: ToolCall[] }) {
 }
 
 /** One call: its label; a tap shows the exact input and output (output cut at 200 lines). */
+let fullEventSource: { fullEvent(threadId: string, seq: number): Promise<FyrEvent | null> } | null = null;
+/** V0.38: where a cut tool output is loaded from (the app sets the API). */
+export function setFullEventSource(s: typeof fullEventSource): void {
+  fullEventSource = s;
+}
+export const ThreadIdContext = createContext("");
+
 function CallRow({ c }: { c: ToolCall }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
+  const threadId = useContext(ThreadIdContext);
+  const [whole, setWhole] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const loadWhole = async () => {
+    if (!c.cutSeq || !fullEventSource) return;
+    setLoading(true);
+    const ev = await fullEventSource.fullEvent(threadId, c.cutSeq).catch(() => null);
+    const text = ev ? fullOutputOf(ev, c.id) : null;
+    setLoading(false);
+    if (text !== null) {
+      setWhole(text);
+      setAll(true);
+    }
+  };
   const toggle = () => setOpen(!open);
-  const out = all ? { text: c.output, hidden: 0 } : cutOutput(c.output);
+  const full = whole ?? c.output;
+  const out = all ? { text: full, hidden: 0 } : cutOutput(full);
   return (
     <div class={`tlr${open ? " open" : ""}`}>
       <div class="tl row" role="button" tabIndex={0} aria-expanded={open} data-keys="self" onClick={toggle} onKeyDown={keyActivate(toggle)}>
@@ -743,6 +767,11 @@ function CallRow({ c }: { c: ToolCall }) {
           {c.output ? (
             <>
               <CopyPre cls={`tlout${c.isError ? " err" : ""}`} text={out.text} copy={c.output} />
+              {c.cutSeq && whole === null && (
+                <button class="btn sm tlall" disabled={loading} onClick={loadWhole}>
+                  {loading ? "Loading…" : "Load the full output"}
+                </button>
+              )}
               {out.hidden > 0 && (
                 <button class="btn sm tlall" onClick={() => setAll(true)}>
                   Show all ({out.hidden.toLocaleString()} more lines)

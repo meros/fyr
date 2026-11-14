@@ -1,4 +1,5 @@
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
+import { setFullEventSource } from "./thread.tsx";
 import { rememberOpen, takeOpen } from "./push.ts";
 const sessionStore = () => {
   try {
@@ -131,6 +132,7 @@ setUploader(api.uploadAttachment);
 setAttachmentUrl(api.attachmentUrl);
 setPreviewUrl(api.previewUrl);
 setChangesSource(api);
+setFullEventSource(api);
 const params = new URLSearchParams(location.search);
 
 type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | null;

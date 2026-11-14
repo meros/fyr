@@ -62,6 +62,6 @@ func (h *Hub) Project(p ProjectDTO) { h.send("project", p) }
 
 func (h *Hub) Events(evs []store.Event) {
 	for _, ev := range evs {
-		h.send("event", ev)
+		h.send("event", Lean(ev)) // V0.38: large tool output is cut on the wire
 	}
 }

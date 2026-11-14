@@ -26,6 +26,8 @@ export interface Api {
   events(threadId: string, after?: number, limit?: number): Promise<FyrEvent[]>;
   /** The newest `limit` events older than `before`, to page back. */
   eventsBefore(threadId: string, before: number, limit?: number): Promise<FyrEvent[]>;
+  /** V0.38: one event whole (the stream and the list cut large tool output) */
+  fullEvent(threadId: string, seq: number): Promise<FyrEvent | null>;
   t3Candidates(): Promise<T3Candidate[]>;
   /** Web Push (SPEC V0.15): the host's VAPID public key, base64url. */
   pushKey(): Promise<string>;
@@ -201,6 +203,10 @@ function createHttpApi(): Api {
       const j = (await r.json()) as { events?: FyrEvent[] };
       return j.events ?? [];
     },
+    async fullEvent(threadId, seq) {
+      const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/events/${seq}`);
+      return r.ok ? ((await r.json()) as FyrEvent) : null;
+    },
     async eventsBefore(threadId, before, limit = 400) {
       const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/events?before=${before}&limit=${limit}`);
       if (!r.ok) throw new Error(`events ${r.status}`);
@@ -315,6 +321,9 @@ function createMockApi(scenario: string): Api {
     },
     async events(threadId, after = 0, limit = 400) {
       return server.events(threadId, after, limit);
+    },
+    async fullEvent() {
+      return null; // the mock never cuts
     },
     async eventsBefore(threadId, before, limit = 400) {
       const all = server.events(threadId, 0, 1_000_000).filter((e) => e.seq < before);
