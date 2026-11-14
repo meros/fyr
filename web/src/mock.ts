@@ -118,8 +118,8 @@ function assistantText(text: string, parent: string | null = null) {
 function toolUse(id: string, name: string, input: unknown, parent: string | null = null) {
   return { type: "assistant", parent_tool_use_id: parent, message: { content: [{ type: "tool_use", id, name, input }] } };
 }
-function toolResult(id: string, isError = false, parent: string | null = null) {
-  return { type: "user", parent_tool_use_id: parent, message: { content: [{ type: "tool_result", tool_use_id: id, content: "ok", is_error: isError }] } };
+function toolResult(id: string, isError = false, parent: string | null = null, content = "ok") {
+  return { type: "user", parent_tool_use_id: parent, message: { content: [{ type: "tool_result", tool_use_id: id, content, is_error: isError }] } };
 }
 
 function askEvents(id: string, now: number): FyrEvent[] {
@@ -545,7 +545,7 @@ function railFixture(now: number): Fixture {
   push(130, "msg", assistantText("The lasso no longer closes the sheet, and the tests pass. Before I wire the close gesture, two choices for you."));
   push(131, "decision.opened", { decision: ask });
   events.t_lasso = ev2;
-  events.t_mapperf = [...events.t_mapperf, ...previewEvents("t_mapperf", events.t_mapperf.length, now, false)];
+  events.t_mapperf = calmTurn("t_mapperf", now);
   return { threads, events, t3: [] };
 }
 
@@ -595,6 +595,65 @@ function previewEvents(subject: string, start: number, now: number, stress: bool
       ev(++seq, Date.parse(at(6)), subject, "preview", { kind: "image", attachmentId: "pv_tall", title: LONG_TITLE, caption: "Full page at 390 px: " + LONG_URL, width: 390, height: 2600, url: LONG_URL }),
       ev(++seq, Date.parse(at(5)), subject, "msg", assistantText("Inline: ![the sheet](/api/attachments/pv_phone) and an outside image stays a link: ![remote](https://example.com/x.png)")),
     );
+  return out;
+}
+
+
+/** V0.21: one turn with every kind of machine line, plumbing, card tools and a mixed group (?mock=rail, Map perf). */
+function calmTurn(subject: string, now: number): FyrEvent[] {
+  const out: FyrEvent[] = [];
+  let seq = 0;
+  const T = now - 20 * 60_000;
+  const e = (sec: number, type: string, data: unknown) => out.push(ev(++seq, T + sec * 1000, subject, type, data));
+  const cwd = "/home/owner/src/norban/web";
+  e(0, "user", { text: "Map perf: the vitest suite for src/map takes 38 s. Find the slow tests and fix them.", images: 0 });
+  e(0, "run.started", {});
+  e(1, "msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "thinking", thinking: "The suite is slow; profile first." }] } });
+  e(2, "msg", toolUse("ts0", "Bash", { command: 'settask "[web] map perf"' }));
+  e(2.1, "msg", toolResult("ts0"));
+  e(2.2, "msg", toolUse("td0", "TodoWrite", { todos: [{ content: "Profile", status: "in_progress" }] }));
+  e(2.3, "msg", toolResult("td0"));
+  e(3, "msg", assistantText("Three files take 31 of the 38 seconds. Let me look at them."));
+  const calls: [string, string, Record<string, unknown>, number, boolean, string?][] = [
+    ["m1", "Read", { file_path: `${cwd}/src/map/lasso.test.ts` }, 0.3, false],
+    ["m2", "Read", { file_path: `${cwd}/src/map/tiles/very/deeply/nested/folder/structure/tiles.test.ts` }, 0.2, false],
+    ["m3", "Read", { file_path: `${cwd}/src/map/snapshot.test.ts` }, 0.2, false],
+    ["m4", "Grep", { pattern: "beforeEach", path: `${cwd}/src/map` }, 0.4, false],
+    ["m5", "Bash", { command: "yarn vitest src/map --reporter=verbose --pool=forks 2>&1 | tee /tmp/vitest.log", description: "Run the map tests with timings" }, 38, false, "✓ lasso.test.ts (14.2 s)\n✓ tiles.test.ts (9.8 s)\n✓ snapshot.test.ts (7.1 s)"],
+    ["m6", "WebSearch", { query: "vitest isolate false speed up jsdom" }, 2.1, false],
+    ["m7", "Edit", { file_path: `${cwd}/src/map/lasso.test.ts`, old_string: "a\nb\nc", new_string: Array.from({ length: 12 }, (_, i) => `l${i}`).join("\n") }, 0.6, false],
+    ["m8", "Bash", { command: "yarn vitest src/map 2>&1 | tail -n 400", description: "Run the map tests again" }, 31, true, Array.from({ length: 400 }, (_, i) => (i === 399 ? "FAIL src/map/snapshot.test.ts > renders the sheet: snapshot mismatch" : `  ✓ src/map/case-${i}.test.ts > renders tile ${i} (${(i % 9) + 1} ms)`)).join("\n")],
+  ];
+  // Calls run one after another: each result lands its duration after its call.
+  let t = 4;
+  for (const [id, name, input, dur, err, text] of calls) {
+    e((t += 0.1), "msg", toolUse(id, name, input));
+    e((t += dur), "msg", toolResult(id, err, null, text ?? "ok"));
+  }
+  e((t += 1), "task", { kind: "started", id: "mt1", description: "Profile the map render", status: "running" });
+  e((t += 40), "task", { kind: "ended", id: "mt1", description: "Profile the map render", status: "completed", summary: "Render takes 4 ms a tile" });
+  e((t += 1), "task", { kind: "ended", id: "mt2", description: "Bisect the snapshot failure", status: "failed", summary: "Could not start a browser" });
+  // show: tool loading and the call itself are hidden; only the cards remain
+  e((t += 1), "msg", toolUse("q1", "ToolSearch", { query: "select:mcp__fyr__show" }));
+  e((t += 0.2), "msg", toolResult("q1"));
+  for (const [id, pv, title, w, h, kind] of [
+    ["s1", "pv_phone", "Filter sheet on iPhone mini", 390, 844, "image"],
+    ["s2", "pv_chart", "Test durations by file", 640, 300, "html"],
+  ] as const) {
+    e((t += 0.3), "msg", toolUse(id, "mcp__fyr__show", { path: kind === "image" ? "/tmp/shot.png" : undefined, html: kind === "html" ? "<div>…</div>" : undefined, title }));
+    e((t += 0.6), "msg", toolResult(id, false, null, `attachment ${pv} · ${w}×${h}`));
+    e((t += 0.1), "preview", { kind, attachmentId: pv, title, caption: kind === "image" ? "After the fix: the lasso no longer closes the sheet." : "lasso.test.ts takes 37 % of the run.", width: w, height: h });
+  }
+  // effect_request: the decision and its result, never the call
+  e((t += 1), "msg", toolUse("ef1", "mcp__fyr__effect_request", { action: "deploy.staging", args: { ref: "map-perf" }, reason: "Tests pass" }));
+  e((t += 0.2), "msg", toolResult("ef1", false, null, "Requested; the owner decides."));
+  e((t += 30), "decision.closed", { id: "d_dep", answer: "Approve" });
+  e((t += 60), "effect.result", { action: "deploy.staging", ok: true, text: "Deploy succeeded · build 20261114-112026\n\nhttps://staging.example/build/20261114-112026\n12 services restarted, 0 errors." });
+  e((t += 0.1), "user", { text: "[Fyr] Your effect_request deploy.staging succeeded: Deploy succeeded · build 20261114-112026", images: 0 });
+  e((t += 2), "msg", toolUse("pl1", "mcp__fyr__pr_link", { url: "https://github.com/norban/web/pull/4182" }));
+  e((t += 0.2), "msg", toolResult("pl1"));
+  e((t += 1), "msg", assistantText("Snapshot test still fails on the sheet; the other two files now take 9 s instead of 24 s."));
+  e((t += 1), "run.ended", { failure: null, interrupted: false, costUsd: 0.42, durationMs: 840_000 });
   return out;
 }
 

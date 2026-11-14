@@ -250,3 +250,9 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .pv-open,.m-app .pv-more{height:44px;line-height:42px;padding:0 14px}
 .m-app .fs-item{width:88px}
 .m-app .fs-item img,.m-app .fs-html{width:88px;height:64px}
+/* calm tool output on the phone: 44 px targets */
+.m-app .tl{height:44px;font-size:14px}
+.m-app .tl.row{padding-left:20px}
+.m-app .tld{margin-left:20px}
+.m-app .qlh.click,.m-app .rm{min-height:44px}
+.m-app .qlh{font-size:13px}

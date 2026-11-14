@@ -13,6 +13,7 @@ import { AgentsStrip, Conversation, PrTab, effectSentence, prLabel, type SendArg
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
+import { setToolDetails, toolDetails } from "./prefs.ts";
 import { previewsOf } from "./conversation.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
 import { ADVANCE_MS, activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, phoneSnoozePresets, stepLabel, stripCount, type Choice } from "./mobile.ts";
@@ -703,7 +704,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
       ) : p.tab === "conv" ? (
-        <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} />
+        <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} cwd={t.cwd} />
       ) : p.tab === "changes" ? (
         <div class="pane-note">The branch diff comes in a later version (v0.x). The Conversation tab lists every edit.</div>
       ) : (
@@ -1169,6 +1170,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
         <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.setSelecting(true))} />
         <Item label="Adopt from T3" onClick={() => p.replace({ ...p.nav, sheet: { kind: "adopt" } })} />
         <Item label="Notifications" right={p.push} onClick={() => p.replace({ ...p.nav, sheet: { kind: "push" } })} />
+        <Item label="Show tool details" sub="Every tool group open, every machine line in full" right={toolDetails() ? "on" : "off"} onClick={after(() => setToolDetails(!toolDetails()))} />
         {(["system", "light", "dark"] as Theme[]).map((th) => (
           <Item label={`Theme: ${th === "system" ? "auto" : th}`} right={p.theme === th ? "✓" : ""} onClick={() => p.setTheme(th)} />
         ))}

@@ -44,7 +44,7 @@ test("markdown escapes raw HTML and unsafe links", () => {
 });
 
 test("consecutive Task calls fold into one subagents row; Edit shows a diff stat", () => {
-  const call = (id: string, name: string) => ({ id, name, summary: "", isError: false, done: true, startedAt: 0, durationMs: 1, subMessages: 0, subCalls: [], subTexts: [] });
+  const call = (id: string, name: string) => ({ id, name, summary: "", label: name, description: "", input: {}, output: "", isError: false, done: true, startedAt: 0, durationMs: 1, subMessages: 0, subCalls: [], subTexts: [] });
   const rows = toolRows([call("1", "Read"), call("2", "Task"), call("3", "Task"), call("4", "Agent"), call("5", "Bash"), call("6", "Task")]);
   assert.deepEqual(rows.map((r) => (r.kind === "agents" ? `agents:${r.calls.length}` : r.call.name)), ["Read", "agents:3", "Bash", "agents:1"]);
   assert.equal(summarizeInput("Edit", { file_path: "a.ts", old_string: "x\ny", new_string: "z" }), "a.ts +1 −2");
