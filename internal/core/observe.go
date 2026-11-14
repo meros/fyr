@@ -77,6 +77,11 @@ func DecisionClosed(t *Thread, id string) {
 // PRObserved stores a new PR snapshot. It moves ActivityAt only when the PR
 // starts to block, merges or closes, so polling alone never marks a thread done.
 func PRObserved(t *Thread, p PR, now time.Time) {
+	for _, u := range t.DismissedPRs {
+		if p.URL != "" && u == p.URL {
+			return // the owner dismissed this PR (V0.36)
+		}
+	}
 	old := t.PR
 	t.PR = &p
 	changed := old == nil || old.State != p.State || old.Blocking() != p.Blocking()

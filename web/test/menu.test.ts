@@ -35,3 +35,11 @@ test("the target decides the menu", () => {
   assert.deepEqual(labels(menuFor({ kind: "link", href: "https://x.y", selection: "x" })!), ["Copy", "—", "Open link", "Copy link"]);
   assert.deepEqual(labels(menuFor({ kind: "image", src: "/api/attachments/a" })!), ["Open image"]);
 });
+
+// SPEC 0.5 V0.36: a merged PR can be dismissed from the menu; an open one is not offered.
+test("Dismiss PR for a merged PR only", () => {
+  const merged = thread("t6", "seen", "seen", { pr: { url: "u", number: 15, state: "MERGED" } });
+  assert.ok(labels(threadMenu(merged)).includes("Dismiss PR"));
+  const open = thread("t7", "seen", "seen", { pr: { url: "u", number: 16, state: "OPEN" } });
+  assert.ok(!labels(threadMenu(open)).includes("Dismiss PR"));
+});

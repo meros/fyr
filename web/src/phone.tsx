@@ -122,6 +122,8 @@ export interface PhoneActions {
   markUnseen(id: string): void;
   retry(id: string): void;
   interrupt(id: string): void;
+  /** V0.36: put away a merged or closed PR */
+  dismissPR(id: string): void;
   setModel(id: string, model: string): void;
   send(id: string, args: SendArgs): Promise<boolean>;
   /** V0.33: withdraw a message the agent has not read */
@@ -764,7 +766,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
       ) : p.tab === "changes" ? (
         <ChangesView threadId={t.id} />
       ) : (
-        <PrTab t={t} />
+        <PrTab t={t} onDismiss={() => p.actions.dismissPR(t.id)} />
       )}
       {decision && decision.kind === "ask" && p.card && p.card.decisionId === decision.id && (
         <MAsk d={decision} card={p.card} onCard={p.onCard} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} submit={() => p.actions.submitAsk(decision).then(afterAnswer)} />
