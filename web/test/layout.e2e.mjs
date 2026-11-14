@@ -256,7 +256,9 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     if (m.liveView && m.header) check(m.liveView.top >= m.header.bottom - 0.5, `${ctx}: the live view starts under the header (${m.liveView.top.toFixed(1)} < ${m.header.bottom.toFixed(1)})`);
     if (m.liveFrame) {
       const fh = m.liveFrame.bottom - m.liveFrame.top;
-      check(fh >= 40 && fh <= m.innerHeight * 0.6 + 1, `${ctx}: the live view is ${fh.toFixed(0)} px tall (40 to 60 % of ${m.innerHeight})`);
+      // V0.37: in its View tab the view fills the pane down to the composer (nothing else shares the tab).
+      check(fh >= 40, `${ctx}: the live view is only ${fh.toFixed(0)} px tall`);
+      if (m.composer) check(m.composer.top - m.liveFrame.bottom <= 24, `${ctx}: the live view leaves ${(m.composer.top - m.liveFrame.bottom).toFixed(0)} px empty above the composer`);
       if (m.composer) check(m.liveFrame.bottom <= m.composer.top + 0.5, `${ctx}: the live view overlaps the composer`);
     }
   }

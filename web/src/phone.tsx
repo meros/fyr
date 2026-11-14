@@ -738,7 +738,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
               <span>{t.branch}</span>
             </span>
           )}
-          {t.pr ? <span class={`m-chip prc ${prLabel(t.pr).cls}`}>{prLabel(t.pr).text}</span> : <span class="m-chip m prc">no PR</span>}
+          {t.pr && <span class={`m-chip prc ${prLabel(t.pr).cls}`}>{prLabel(t.pr).text}</span>}
           </button>
         </div>
         {!cardOpen && (
@@ -754,9 +754,11 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
             <button class={p.tab === "changes" ? "on" : ""} onClick={() => setTab("changes")}>
               Changes
             </button>
-            <button class={p.tab === "pr" ? "on" : ""} onClick={() => setTab("pr")}>
-              PR
-            </button>
+            {t.pr && (
+              <button class={p.tab === "pr" ? "on" : ""} onClick={() => setTab("pr")}>
+                PR
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -777,9 +779,9 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
         />
       ) : p.tab === "changes" ? (
         <ChangesView threadId={t.id} />
-      ) : (
+      ) : p.tab === "pr" ? (
         <PrTab t={t} onDismiss={() => p.actions.dismissPR(t.id)} />
-      )}
+      ) : null}
       {decision && decision.kind === "ask" && p.card && p.card.decisionId === decision.id && (
         <MAsk d={decision} card={p.card} onCard={p.onCard} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} submit={() => p.actions.submitAsk(decision).then(afterAnswer)} />
       )}
