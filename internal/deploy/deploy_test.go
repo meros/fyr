@@ -159,3 +159,80 @@ func TestDeployUsesNixDevelopWithFlake(t *testing.T) {
 		t.Fatalf("steps %v", *steps)
 	}
 }
+
+// gitRunner answers git like a repository where HEAD is head and old is an
+// ancestor of new; everything else succeeds.
+func gitRunner(head string, ancestors map[string]bool, steps *[]string) Runner {
+	return func(_ context.Context, dir string, args ...string) ([]byte, error) {
+		*steps = append(*steps, strings.Join(args, " "))
+		if args[0] == "git" && strings.Contains(strings.Join(args, " "), " rev-parse ") {
+			return []byte(head + "\n"), nil
+		}
+		if args[0] == "git" && strings.Contains(strings.Join(args, " "), " merge-base ") {
+			n := len(args)
+			if ancestors[args[n-2]+">"+args[n-1]] {
+				return nil, nil
+			}
+			return nil, errors.New("exit 1")
+		}
+		return []byte("ok"), nil
+	}
+}
+
+// SPEC 0.5 V0.24: a deploy never switches to a commit older than the live
+// build. (Found live: an approved deploy of an older commit replaced a newer
+// build that had been switched in by hand.)
+func TestDeployRefusesOlderCommit(t *testing.T) {
+	d, _, _ := newDeployer(t, "")
+	steps := &[]string{}
+	d.Live = "2feec023d240"
+	d.Run = gitRunner("2f67e4d59d58aaaa", map[string]bool{"2f67e4d59d58aaaa>2feec023d240": true}, steps)
+	_, err := d.Deploy(context.Background(), "t1", req, "/src/fyr")
+	if err == nil || !strings.Contains(err.Error(), "older than the live build") {
+		t.Fatalf("err %v", err)
+	}
+	for _, s := range *steps {
+		if strings.Contains(s, "make") {
+			t.Fatalf("built an older commit: %v", *steps)
+		}
+	}
+	// The same commit again, or a newer one, is allowed.
+	d.Run = gitRunner("2feec023d240bbbb", nil, steps)
+	if _, err := d.Deploy(context.Background(), "t1", req, "/src/fyr"); !errors.Is(err, core.ErrReportLater) {
+		t.Fatalf("same commit refused: %v", err)
+	}
+}
+
+// SPEC 0.5 V0.24: a newer deploy cancels one that has not switched yet.
+func TestNewerDeployCancelsPending(t *testing.T) {
+	d, h, _ := newDeployer(t, "")
+	h.running = []string{"busy"}
+	first := make(chan error, 1)
+	go func() {
+		_, err := d.Deploy(context.Background(), "t1", req, "/src/fyr")
+		first <- err
+	}()
+	time.Sleep(50 * time.Millisecond) // the first one now drains
+	second := make(chan error, 1)
+	go func() {
+		_, err := d.Deploy(context.Background(), "t2", req, "/src/fyr")
+		second <- err
+	}()
+	select {
+	case err := <-first:
+		if err == nil || !strings.Contains(err.Error(), "newer deploy") {
+			t.Fatalf("first: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the first deploy was not cancelled")
+	}
+	h.mu.Lock()
+	h.running = nil
+	h.mu.Unlock()
+	if err := <-second; !errors.Is(err, core.ErrReportLater) {
+		t.Fatalf("second: %v", err)
+	}
+	if p, _ := d.DB.GetKV("pending_deploy"); !strings.Contains(p, `"thread":"t2"`) {
+		t.Fatalf("pending %q", p)
+	}
+}
