@@ -34,11 +34,16 @@ type Launcher struct {
 	Env          []string // added to the environment
 	ReadyTimeout time.Duration
 	Probation    time.Duration
+	// Seed is a known-good fyrd outside Data (the Nix store path from the
+	// NixOS module, decision 0007). It runs when there is no current build,
+	// when the file <Data>/pin exists, and after a rollback with no previous.
+	Seed string
 
 	mu        sync.Mutex
 	child     *os.Process
 	stopping  bool
-	maxStarts int // tests only
+	maxStarts int    // tests only
+	lastExe   string // tests only
 }
 
 func (l *Launcher) path(name string) string { return filepath.Join(l.Data, name) }
@@ -95,15 +100,22 @@ func (l *Launcher) Run() error {
 		if l.maxStarts > 0 && starts >= l.maxStarts {
 			return nil
 		}
-		if !l.exists("current") {
-			return errors.New("no current build: " + l.path("current"))
+		exe, build := "", "seed"
+		switch {
+		case !l.exists("pin") && l.exists("current"):
+			exe = filepath.Join(l.path("current"), "fyrd")
+			build, _ = os.Readlink(l.path("current"))
+		case l.Seed != "":
+			exe = l.Seed
+		default:
+			return errors.New("no current build and no seed: " + l.path("current"))
 		}
-		build, _ := os.Readlink(l.path("current"))
+		l.lastExe = exe
 		ready := l.path("ready")
 		os.Remove(ready)
 		logPath := l.path("daemon.log")
 		logf, _ := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-		cmd := exec.Command(filepath.Join(l.path("current"), "fyrd"), l.Args...)
+		cmd := exec.Command(exe, l.Args...)
 		cmd.Env = append(append(os.Environ(), "FYR_LAUNCHER=1", "FYR_READY_FILE="+ready), l.Env...)
 		cmd.Stdout, cmd.Stderr = logf, logf
 		if err := cmd.Start(); err != nil {
@@ -166,8 +178,14 @@ func (l *Launcher) Run() error {
 			}
 			promoted = false
 			switch {
+			case code == ExitDeploy && l.exists("next") && l.exists("pin"):
+				log.Printf("fyr: pinned to the seed; not switching to next")
 			case code == ExitDeploy && l.exists("next"):
-				l.relink("previous", "current")
+				if l.exists("current") {
+					l.relink("previous", "current")
+				} else {
+					os.Remove(l.path("previous")) // the seed is the floor
+				}
 				l.relink("current", "next")
 				os.Remove(l.path("next"))
 				promoted = true
@@ -192,6 +210,8 @@ func (l *Launcher) rollback(build, reason, logPath string) {
 	log.Printf("fyr: %s %s; rolling back", build, reason)
 	if l.exists("previous") {
 		l.relink("current", "previous")
+	} else {
+		os.Remove(l.path("current")) // back to the seed
 	}
 	b, _ := json.Marshal(failure{Build: filepath.Base(build), Reason: reason, Log: tailFile(logPath, 2000), At: time.Now()})
 	os.WriteFile(l.path("deploy-failed.json"), b, 0o600)

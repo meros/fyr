@@ -25,6 +25,7 @@ func main() {
 	home, _ := os.UserHomeDir()
 	fl := flag.NewFlagSet("fyr", flag.ExitOnError)
 	data := fl.String("data", filepath.Join(home, ".local", "share", "fyr"), "data directory")
+	seed := fl.String("seed", "", "known-good fyrd to run when there is no current build or when pinned")
 	args := os.Args[1:]
 	if len(args) > 0 && args[0] == "install" {
 		fl.Parse(args[1:])
@@ -37,7 +38,7 @@ func main() {
 		return
 	}
 	fl.Parse(args)
-	l := &deploy.Launcher{Data: *data, Args: append([]string{"serve", "-data", *data}, fl.Args()...)}
+	l := &deploy.Launcher{Data: *data, Seed: *seed, Args: append([]string{"serve", "-data", *data}, fl.Args()...)}
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() { l.Signal(<-sig) }()

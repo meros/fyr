@@ -83,11 +83,19 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return "", err
 	}
-	if b, err := run(ctx, dir, "make", "-C", dir, "build", "OUT="+out); err != nil {
+	// Decision 0007: build with the checkout's own pinned toolchain when it
+	// has a flake, so the system profile is never touched.
+	build := []string{"make", "-C", dir, "build", "OUT=" + out}
+	test := []string{"make", "-C", dir, "test"}
+	if _, err := os.Stat(filepath.Join(dir, "flake.nix")); err == nil {
+		build = append([]string{"nix", "develop", dir, "--command"}, build...)
+		test = append([]string{"nix", "develop", dir, "--command"}, test...)
+	}
+	if b, err := run(ctx, dir, build...); err != nil {
 		os.RemoveAll(out)
 		return "", fmt.Errorf("build failed: %v\n%s", err, tail(b, 3000))
 	}
-	if b, err := run(ctx, dir, "make", "-C", dir, "test"); err != nil {
+	if b, err := run(ctx, dir, test...); err != nil {
 		os.RemoveAll(out)
 		return "", fmt.Errorf("tests failed, nothing was switched: %v\n%s", err, tail(b, 3000))
 	}

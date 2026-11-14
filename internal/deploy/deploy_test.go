@@ -146,3 +146,14 @@ func TestDeployNeedsLauncher(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+// Decision 0007: a checkout with a flake builds inside its own dev shell.
+func TestDeployUsesNixDevelopWithFlake(t *testing.T) {
+	d, _, steps := newDeployer(t, "")
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "flake.nix"), []byte("{}"), 0o644)
+	d.Deploy(context.Background(), "t1", req, dir)
+	if len(*steps) < 2 || !strings.HasPrefix((*steps)[0], "nix develop "+dir+" --command make -C "+dir+" build") {
+		t.Fatalf("steps %v", *steps)
+	}
+}
