@@ -1,6 +1,7 @@
 // Thread pane: header with chips and tabs, conversation, docked decision card and composer
 // (design/directions/04-rail.html).
 
+import { copySource, copyToClipboard } from "./copy.ts";
 import { useDraft } from "./drafts.ts";
 import { liveLine } from "./tasks.ts";
 import { describeEffect, type EffectText } from "./effects.ts";
@@ -383,8 +384,19 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { ev
     return () => ro.disconnect();
   }, []);
 
+  // V0.34: Copy on code blocks inside rendered markdown (their buttons are plain HTML).
+  const onCodeCopy = async (e: MouseEvent) => {
+    const b = (e.target as Element | null)?.closest?.("[data-cpy]") as HTMLButtonElement | null;
+    if (!b) return;
+    e.stopPropagation();
+    const code = b.parentElement?.querySelector("pre")?.textContent ?? "";
+    if (await copyToClipboard(copySource({ kind: "block", text: code }))) {
+      b.textContent = "Copied";
+      setTimeout(() => (b.textContent = "Copy"), 1200);
+    }
+  };
   return (
-    <div class="convo" ref={ref} onScroll={check}>
+    <div class="convo" ref={ref} onScroll={check} onClick={onCodeCopy}>
       <div class="convo-in">
         {events === undefined && <div class="sys">Loading…</div>}
         {events !== undefined && items.length === 0 && <div class="sys">No messages yet.</div>}
@@ -429,7 +441,7 @@ function QuietLine({ icon, line, full, fail }: { icon: "settled" | "failed" | "s
         <StateIcon state={icon} size={12} />
         <span class="ell">{line}</span>
       </div>
-      {open && full && <pre class="qlx">{full}</pre>}
+      {open && full && <CopyPre cls="qlx" text={full} />}
     </div>
   );
 }
@@ -462,6 +474,38 @@ function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
   );
 }
 
+/** V0.34: a Copy button that says "Copied" for a moment. */
+function CopyButton({ text, label = "Copy", cls = "" }: { text: string; label?: string; cls?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      class={`cpy ${cls}`}
+      aria-label={label}
+      title={label}
+      onClick={async (e) => {
+        e.stopPropagation();
+        if (await copyToClipboard(text)) {
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
+        }
+      }}
+    >
+      {done ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
+/** A preformatted block with Copy; `copy` is the full text when the shown one is cut. */
+function CopyPre({ cls, text, copy }: { cls: string; text: string; copy?: string }) {
+  return (
+    <div class="codeb">
+      <CopyButton text={copySource({ kind: "block", text: copy ?? text })} label="Copy" />
+      <pre class={cls}>{text}</pre>
+    </div>
+  );
+}
+
 function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
   switch (it.kind) {
     case "user":
@@ -483,7 +527,12 @@ function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
         </div>
       );
     case "assistant":
-      return <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text) }} />;
+      return (
+        <div class="msgw">
+          <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text) }} />
+          <CopyButton text={copySource({ kind: "message", text: it.text })} label="Copy message" cls="msgcp" />
+        </div>
+      );
     case "tools":
       return <ToolCard calls={it.calls} />;
     case "run":
@@ -571,10 +620,10 @@ function CallRow({ c }: { c: ToolCall }) {
             {friendlyName(c.name)}
             {c.isError ? " · failed" : ""}
           </div>
-          <pre class="tlin">{fullInput(c.name, c.input)}</pre>
+          <CopyPre cls="tlin" text={fullInput(c.name, c.input)} />
           {c.output ? (
             <>
-              <pre class={`tlout${c.isError ? " err" : ""}`}>{out.text}</pre>
+              <CopyPre cls={`tlout${c.isError ? " err" : ""}`} text={out.text} copy={c.output} />
               {out.hidden > 0 && (
                 <button class="btn sm tlall" onClick={() => setAll(true)}>
                   Show all ({out.hidden.toLocaleString()} more lines)

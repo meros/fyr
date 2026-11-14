@@ -39,6 +39,11 @@ const md = new Marked({
       const t = title ? ` title="${escapeHtml(title)}"` : "";
       return `<a href="${escapeHtml(h)}"${t} target="_blank" rel="noopener noreferrer">${inner}</a>`;
     },
+    code({ text, lang }: Tokens.Code) {
+      // V0.34: each code block has its own Copy button (the click is handled in the conversation).
+      const cls = lang ? ` class="language-${escapeHtml(lang.split(/\s/)[0])}"` : "";
+      return `<div class="codeb"><button type="button" class="cpy" data-cpy aria-label="Copy code">Copy</button><pre><code${cls}>${escapeHtml(text)}\n</code></pre></div>`;
+    },
     image({ href, text }: Tokens.Image) {
       // A same-origin attachment renders inline (V0.19); every other image stays a link.
       const id = inlineAttachmentId(href, mdOrigin());

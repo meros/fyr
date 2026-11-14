@@ -589,6 +589,7 @@ function App() {
   };
 
   const jump = (k: SectionKey) => {
+    if (!sec[k].length) return; // an empty section is not a place to go
     setSectionOpen((o) => ({ ...o, [k]: true }));
     const first = sec[k][0];
     document.getElementById(`sec-${k}`)?.scrollIntoView({ block: "start" });

@@ -32,7 +32,7 @@ export function Rail(p: RailProps) {
       {SECTIONS.map((s, i) => {
         const n = p.sec[s.key].length;
         return (
-          <button class={`ri${s.key === "needs" && n > 0 ? " att" : ""}${p.active === s.key ? " on" : ""}`} title={`${s.label}: ${n} (g${i + 1})`} onClick={() => p.onJump(s.key)}>
+          <button class={`ri${s.key === "needs" && n > 0 ? " att" : ""}${p.active === s.key && n > 0 ? " on" : ""}`} title={n ? `${s.label}: ${n} (g${i + 1})` : `${s.label}: none`} disabled={n === 0} onClick={() => p.onJump(s.key)}>
             <StateIcon state={s.state} />
             <span class="n">{count(n)}</span>
             <span class="l">{s.short}</span>
@@ -43,7 +43,7 @@ export function Rail(p: RailProps) {
       {p.extra && <div class="railx">{p.extra}</div>}
       <div class={`foot ${p.conn}`} title={title}>
         <i />
-        {p.host}
+        <span class="hn">{p.host}</span>
       </div>
     </nav>
   );
