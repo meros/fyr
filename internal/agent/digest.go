@@ -56,7 +56,9 @@ func (d *digest) feed(m map[string]any) digestOut {
 			if !top {
 				continue
 			}
-			o.Activity = strings.TrimSpace(name + " " + short(in))
+			if a := activityLabel(name, in); a != "" {
+				o.Activity = a
+			}
 			if name == "Task" || name == "Agent" {
 				o.Subagents++
 			}
@@ -182,4 +184,71 @@ func taskList(m map[string]any) []core.Task {
 		out = append(out, core.Task{ID: id, Description: d, Type: ty, Status: "running"})
 	}
 	return out
+}
+
+// activityLabel is the live, human-readable line for a tool call (SPEC 0.5
+// V0.21): the agent's own description when there is one, else a short
+// present-tense sentence. Bookkeeping calls return "" and leave the line.
+func activityLabel(name string, in map[string]any) string {
+	str := func(k string) string { s, _ := in[k].(string); return strings.TrimSpace(s) }
+	if d := str("description"); d != "" && (name == "Bash" || name == "Task" || name == "Agent") {
+		return clip(firstLine(d), 80)
+	}
+	base := func(p string) string {
+		if i := strings.LastIndex(p, "/"); i >= 0 {
+			return p[i+1:]
+		}
+		return p
+	}
+	switch name {
+	case "ToolSearch", "TodoWrite", "ListMcpResourcesTool", "ReadMcpResourceTool":
+		return ""
+	case "Bash":
+		return "Running " + clip(firstLine(str("command")), 70)
+	case "Read":
+		return "Reading " + base(str("file_path"))
+	case "Edit", "MultiEdit", "NotebookEdit":
+		return "Editing " + base(str("file_path"))
+	case "Write":
+		return "Writing " + base(str("file_path"))
+	case "Grep":
+		return "Searching for " + clip(str("pattern"), 60)
+	case "Glob":
+		return "Listing " + clip(str("pattern"), 60)
+	case "WebSearch":
+		return "Searching the web for " + clip(str("query"), 60)
+	case "WebFetch":
+		u := str("url")
+		if i := strings.Index(u, "://"); i >= 0 {
+			u = u[i+3:]
+		}
+		if i := strings.Index(u, "/"); i >= 0 {
+			u = u[:i]
+		}
+		return "Reading " + u
+	case "Task", "Agent":
+		return clip(firstLine(str("prompt")), 80)
+	}
+	if strings.HasPrefix(name, "mcp__") {
+		parts := strings.SplitN(strings.TrimPrefix(name, "mcp__"), "__", 2)
+		if len(parts) == 2 {
+			if parts[0] == "fyr" && parts[1] == "show" {
+				if t := str("title"); t != "" {
+					return "Showing " + clip(t, 60)
+				}
+				return "Showing a preview"
+			}
+			server := parts[0]
+			switch server {
+			case "github":
+				server = "GitHub"
+			default:
+				if server != "" {
+					server = strings.ToUpper(server[:1]) + server[1:]
+				}
+			}
+			return server + " " + strings.ReplaceAll(parts[1], "_", " ")
+		}
+	}
+	return name
 }
