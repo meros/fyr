@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.37: the live view's fold, headline, staleness and the bridge's message checks.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PRESS_MAX, bridgeMessage, defaultTab, liveViewOf, rowSummary, staleLabel, stateMessage, viewDimmed, viewHeight } from "../src/view.ts";
+import { PRESS_MAX, bridgeMessage, defaultTab, showsDecision, liveViewOf, rowSummary, staleLabel, stateMessage, viewDimmed, viewHeight } from "../src/view.ts";
 import { threadMenu } from "../src/menu.ts";
 import { buildConversation } from "../src/conversation.ts";
 import { decodeThread } from "../src/decode.ts";
@@ -105,4 +105,12 @@ test("no PR, no PR tab", () => {
   assert.equal(defaultTab(plain, "pr"), "conv");
   const withPr = thread("p", "done", "needs", { pr: { url: "u", number: 1, state: "OPEN" } });
   assert.equal(defaultTab(withPr, "pr"), "pr");
+});
+
+// SPEC 0.5 V0.37: a question or approval is never hidden behind the View tab.
+test("a decision card shows on the View tab too", () => {
+  assert.equal(showsDecision("view"), true);
+  assert.equal(showsDecision("conv"), true);
+  assert.equal(showsDecision("changes"), false);
+  assert.equal(showsDecision("pr"), false);
 });
