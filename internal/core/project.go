@@ -10,18 +10,18 @@ import (
 // Project is an identity that does not depend on a host; it points at its
 // work through sources (SPEC 0.5 V0.23).
 type Project struct {
-	ID        string    `json:"id"`
-	Sources   []Source  `json:"sources"`
-	Edited    bool      `json:"edited,omitempty"` // the user changed it; seeds leave it alone
-	Auto      bool      `json:"auto,omitempty"`   // made by matching before V0.28; migration only
-	Seeded    bool      `json:"seeded,omitempty"` // came from another source (T3); kept when empty
-	Name      string    `json:"name"`
-	Color     string    `json:"color"` // a name from Palette
-	Icon      Icon      `json:"icon"`
-	Profile   string    `json:"profile,omitempty"`
-	Model     string    `json:"model,omitempty"`
-	Quiet     *Quiet    `json:"quiet,omitempty"` // quiet hours (V0.46)
-	CreatedAt time.Time `json:"createdAt"`
+	ID        string     `json:"id"`
+	Sources   []Source   `json:"sources"`
+	Edited    bool       `json:"edited,omitempty"` // the user changed it; seeds leave it alone
+	Auto      bool       `json:"auto,omitempty"`   // made by matching before V0.28; migration only
+	Seeded    bool       `json:"seeded,omitempty"` // came from another source (T3); kept when empty
+	Name      string     `json:"name"`
+	Color     string     `json:"color"` // a name from Palette
+	Icon      Icon       `json:"icon"`
+	Profile   string     `json:"profile,omitempty"`
+	Model     string     `json:"model,omitempty"`
+	Quiet     QuietHours `json:"quiet,omitempty"` // quiet hours (V0.46): a list of windows
+	CreatedAt time.Time  `json:"createdAt"`
 }
 
 // Source is where a project's work lives: a folder on one host, or a

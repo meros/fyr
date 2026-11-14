@@ -5,7 +5,7 @@
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, ProjectSource, QuietHours, ThreadDTO } from "./types.ts";
-import { DEFAULT_QUIET, WEEK, quietLine, quietNote, toggleDay } from "./quiet.ts";
+import { DEFAULT_QUIET, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, quietLine, quietList, quietNote, setAllDay, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import { FOLDERS_LINE, MAIN_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, colorVar, createFolderLine, matchProjects, monogram, newProjectDraft, newRowLabel, projectFolders, projectName, projectOf, projectRepos, projectSubtitle, repoLine, resolveIcon, shortPath, sourceText } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -338,48 +338,97 @@ export interface ProjectPatch {
   icon?: { kind: string; value: string };
   profile?: string;
   model?: string;
-  /** V0.46: quiet hours; null turns them off */
-  quiet?: QuietHours | null;
+  /** V0.46: quiet hours, a list of windows (decision 0014 addendum); null turns them off */
+  quiet?: QuietHours[] | null;
 }
 
-/** V0.46: the project screen's Quiet hours row: off, or from–to with the day toggles, and one line that says what it does. */
-export function QuietRow({ value, onChange, note }: { value: QuietHours | null; onChange(q: QuietHours | null): void; note?: string | null }) {
-  const days = new Set(value?.days?.length ? value.days : WEEK.map((w) => w.key));
-  const time = (k: "from" | "to") => (e: Event) => {
-    const v = (e.target as HTMLInputElement).value;
-    if (value && /^\d\d:\d\d$/.test(v)) onChange({ ...value, [k]: v });
-  };
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
+
+/** A 24-hour HH:MM picker from two selects, so no browser locale turns it into AM/PM (decision 0014 addendum). */
+function TimePick({ value, label, onChange }: { value: string; label: string; onChange(v: string): void }) {
+  const m = /^(\d{1,2}):(\d\d)$/.exec(value);
+  const h = m ? m[1].padStart(2, "0") : "00";
+  const mm = m ? m[2] : "00";
+  const mins = MINUTES.includes(mm) ? MINUTES : [...MINUTES, mm].sort();
+  return (
+    <span class="qtime" role="group" aria-label={label}>
+      <select value={h} aria-label={`${label}, hour`} onChange={(e) => onChange(`${(e.target as HTMLSelectElement).value}:${mm}`)}>
+        {HOURS.map((x) => (
+          <option value={x}>{x}</option>
+        ))}
+      </select>
+      <span aria-hidden="true">:</span>
+      <select value={mm} aria-label={`${label}, minutes`} onChange={(e) => onChange(`${h}:${(e.target as HTMLSelectElement).value}`)}>
+        {mins.map((x) => (
+          <option value={x}>{x}</option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+/** V0.46 and the decision 0014 addendum: the project screen's Quiet hours. Each row is one window: from–to in
+ *  24-hour time or All day, the seven day toggles, and × to remove it. "+ Add quiet hours" and the presets add rows;
+ *  no rows is off. One line says what all the rows do. */
+export function QuietRow({ value, onChange, note }: { value: QuietHours[]; onChange(q: QuietHours[]): void; note?: string | null }) {
+  const set = (i: number, w: QuietHours) => onChange(value.map((x, k) => (k === i ? w : x)));
+  const presets = QUIET_PRESETS.filter((p) => !hasWindow(value, p.window));
   return (
     <div class="fld qfld">
       <span>Quiet hours</span>
-      <div class="qrow">
-        <label class="qtog">
-          <input type="checkbox" checked={!!value} onChange={(e) => onChange((e.target as HTMLInputElement).checked ? { ...DEFAULT_QUIET } : null)} />
-          <span>{value ? "On" : "Off"}</span>
-        </label>
-        {value && (
-          <span class="qtimes">
-            <input type="time" value={value.from} aria-label="Quiet from" onChange={time("from")} />
-            <span aria-hidden="true">–</span>
-            <input type="time" value={value.to} aria-label="Quiet until" onChange={time("to")} />
-          </span>
-        )}
+      {value.map((w, i) => {
+        const days = new Set(w.days?.length ? w.days : WEEK.map((d) => d.key));
+        const all = isAllDay(w);
+        return (
+          <div class="qwin" key={i}>
+            <div class="qrow">
+              {all ? (
+                <span class="qall">All day</span>
+              ) : (
+                <span class="qtimes">
+                  <TimePick value={w.from} label="Quiet from" onChange={(v) => set(i, { ...w, from: v })} />
+                  <span aria-hidden="true">–</span>
+                  <TimePick value={w.to} label="Quiet until" onChange={(v) => set(i, { ...w, to: v })} />
+                </span>
+              )}
+              <label class="qtog">
+                <input type="checkbox" checked={all} onChange={(e) => set(i, setAllDay(w, (e.target as HTMLInputElement).checked))} />
+                <span>All day</span>
+              </label>
+              <button class="qrm" aria-label="Remove these quiet hours" title="Remove" onClick={() => onChange(value.filter((_, k) => k !== i))}>
+                ×
+              </button>
+            </div>
+            <div class="seg qdays" role="group" aria-label="Days">
+              {WEEK.map((d) => (
+                <button class={days.has(d.key) ? "on" : ""} aria-pressed={days.has(d.key)} onClick={() => set(i, { ...w, days: toggleDay(w.days, d.key) })}>
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      <div class="qadd">
+        <button class="btn sm" onClick={() => onChange([...value, { ...DEFAULT_QUIET }])}>
+          + Add quiet hours
+        </button>
+        {presets.map((p) => (
+          <button class="btn sm qpre" onClick={() => onChange([...value, { ...p.window, days: p.window.days && [...p.window.days] }])}>
+            {p.label} <span>{p.hint}</span>
+          </button>
+        ))}
       </div>
-      {value && (
-        <div class="seg qdays" role="group" aria-label="Days">
-          {WEEK.map((w) => (
-            <button class={days.has(w.key) ? "on" : ""} aria-pressed={days.has(w.key)} onClick={() => onChange({ ...value, days: toggleDay(value.days, w.key) })}>
-              {w.label}
-            </button>
-          ))}
-        </div>
-      )}
-      <p class="lede">{value ? quietLine(value) : "Off: threads show and notify as usual."}{note ? ` ${note}.` : ""}</p>
+      <p class="lede">
+        {quietLine(value)}
+        {note ? ` ${note}.` : ""}
+      </p>
     </div>
   );
 }
 
-const quietKey = (q: QuietHours | null | undefined) => (q ? JSON.stringify({ from: q.from, to: q.to, days: q.days?.length ? q.days : undefined }) : "");
+const quietKey = (q: QuietHours[]) => JSON.stringify(q.map(cleanWindow));
 
 /** Edit a project's identity and defaults, and its folders (V0.42: the main star, ×, Add folder… through the picker;
  *  the repo line is read-only). */
@@ -392,7 +441,7 @@ export function ProjectEditor({ project, profiles, host, now, onSave, onAddFolde
   const [line, setLine] = useState(resolveIcon(project.icon, project.name).kind === "line" ? resolveIcon(project.icon, project.name).value : "folder");
   const [profile, setProfile] = useState(project.profile ?? "");
   const [model, setModel] = useState(project.model ?? "");
-  const [quiet, setQuiet] = useState<QuietHours | null>(project.quiet ?? null);
+  const [quiet, setQuiet] = useState<QuietHours[]>(quietList(project.quiet));
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   useEffect(() => {
     setName(project.name);
@@ -402,7 +451,7 @@ export function ProjectEditor({ project, profiles, host, now, onSave, onAddFolde
   const preview: Project = { ...project, name: name || project.name, color, icon };
   const save = async () => {
     const patch: ProjectPatch = { name: name.trim() || project.name, color, icon, profile, model };
-    if (quietKey(quiet) !== quietKey(project.quiet)) patch.quiet = quiet ? { from: quiet.from, to: quiet.to, ...(quiet.days?.length ? { days: quiet.days } : {}) } : null;
+    if (quietKey(quiet) !== quietKey(quietList(project.quiet))) patch.quiet = quiet.length ? quiet.map(cleanWindow) : null;
     const e = await onSave(patch);
     setMsg(e ? { text: e, err: true } : { text: "Saved", err: false });
   };

@@ -17,4 +17,4 @@ The owner decisions D1–D5 from the design phase stay in `../SPEC.md` 0.3. Reco
 | [0010](0010-live-views.md) | Live views: a page plus a merge-patched state, kept current by a once-per-run Stop hook | proposed |
 | [0011](0011-visual-pacing.md) | Visual pacing: the outcome at full weight, the work muted and folded into one line per stretch | proposed |
 | [0013](0013-handover.md) | Handover: the owner moves a thread to another profile; resume, else the new agent reads the old conversation, else a handover the old agent writes | accepted |
-| [0014](0014-quiet-hours.md) | Quiet hours per project: hidden from the inbox and no push; back silently; reachable through the project filter | accepted |
+| [0014](0014-quiet-hours.md) | Quiet hours per project: hidden from the inbox and no push; back silently; reachable through the project filter; addendum: several windows, presets, 24-hour times | accepted |

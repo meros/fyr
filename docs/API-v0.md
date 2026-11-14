@@ -18,7 +18,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "threads": [ThreadDTO],
   "actions": [{"name": "thread.settle", "label": "Settle", "key": "e", "bulk": true}],
   "profiles": [{"id": "claude", "name": "Claude", "color": "#d97757", "models": ["claude-opus-5-5"], "defaultModel": "claude-opus-5-5"}],
-  "projects": [{"id": "p_…", "name": "app", "color": "teal", "icon": {"kind": "monogram|emoji|line", "value": "…"}, "sources": [{"kind": "folder", "host": "meros-laptop", "path": "/home/me/src/app"}, {"kind": "repo", "url": "github.com/me/app"}], "profile": "", "model": "", "threads": 4, "lastUsed": "…", "cwd": "/home/me/src/app", "quiet": {"from": "17:00", "to": "06:00"}, "quietUntil": "2026-11-15T06:00:00+01:00"}]
+  "projects": [{"id": "p_…", "name": "app", "color": "teal", "icon": {"kind": "monogram|emoji|line", "value": "…"}, "sources": [{"kind": "folder", "host": "meros-laptop", "path": "/home/me/src/app"}, {"kind": "repo", "url": "github.com/me/app"}], "profile": "", "model": "", "threads": 4, "lastUsed": "…", "cwd": "/home/me/src/app", "quiet": [{"from": "17:00", "to": "06:00", "days": ["mon", "tue", "wed", "thu", "fri", "sun"]}, {"from": "00:00", "to": "00:00", "days": ["sat", "sun"]}], "quietUntil": "2026-11-16T06:00:00+01:00"}]
 }
 ```
 
@@ -182,7 +182,7 @@ Commands (through `POST /api/command`, no `threadId`):
 
 | action | args |
 |---|---|
-| `project.update` | `id`, then any of `name`, `color` (a palette name: slate blue sky teal green olive violet indigo rose brown), `icon` `{kind: monogram\|emoji\|line, value}`, `profile`, `model`, `quiet` `{from: "17:00", to: "06:00", days?: ["mon"…"sun"]}` or `null` to clear (V0.46) |
+| `project.update` | `id`, then any of `name`, `color` (a palette name: slate blue sky teal green olive violet indigo rose brown), `icon` `{kind: monogram\|emoji\|line, value}`, `profile`, `model`, `quiet` `[{from: "17:00", to: "06:00", days?: ["mon"…"sun"]}, …]` (at most 14 windows; a single object is read as a list of one) or `null` or `[]` to clear (V0.46, decision 0014 addendum) |
 | `project.create` | `name`, `sources?: [Source]` (a project may have no source: a label), `threadId?`: file that thread into the new project by hand in the same write (V0.30). Reply `result: {id}` |
 | `project.createFrom` | `threadId`: make the thread's `suggest` project and file every unfiled thread it matches (V0.28) |
 | `project.addSource` | `id`, `source` |
@@ -195,7 +195,7 @@ A folder source may carry `main: true` (V0.42); without one, the first folder on
 
 The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. Threads carry `projectId`; `project` stays the display name. A thread without a project and in a clone with a remote carries `suggest: {name, sources}` (V0.28). Every thread with a workspace may carry `newProject: {name, sources}`: what "New project from this thread" starts with (V0.30): the suggestion for a clone with a remote, else the folder's name and folder; absent for a scratch folder, the home folder and `/`, and without the sources an existing project already has.
 
-Quiet hours (V0.46): a project's `quiet` holds `from` and `to` as `HH:MM` in the host's local time zone, and optional `days` (`mon tue wed thu fri sat sun`, the days a window starts on; absent or empty is every day). A window whose `to` is not after `from` crosses midnight; `from` equal to `to` is 24 hours. While a project is quiet, the project and each of its threads carry `quietUntil` (RFC 3339, the end of the current window); otherwise the field is absent. The host sends the project and its threads on the stream when a window starts or ends. A thread with `quietUntil` gets no Web Push, and none is sent when the window ends. Clients leave such threads out of the inbox sections and counts unless the project filter picks that project or a search is typed.
+Quiet hours (V0.46, decision 0014 addendum): a project's `quiet` is a list of windows; each holds `from` and `to` as `HH:MM` in the host's local time zone, and optional `days` (`mon tue wed thu fri sat sun`, the days a window starts on; absent or empty is every day). A window whose `to` is not after `from` crosses midnight; `from` equal to `to` is 24 hours (all day). The project is quiet while any window holds. A project stored before the addendum has one object; the host reads it as a list of one and always sends a list. While a project is quiet, the project and each of its threads carry `quietUntil` (RFC 3339, the end of the current quiet stretch, where windows that overlap or follow on without a gap join, at most a week ahead); otherwise the field is absent. The host sends the project and its threads on the stream when a window starts or ends. A thread with `quietUntil` gets no Web Push, and none is sent when the window ends. Clients leave such threads out of the inbox sections and counts unless the project filter picks that project or a search is typed.
 
 ## Folders (SPEC 0.5 V0.42)
 

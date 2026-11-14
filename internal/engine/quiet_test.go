@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,7 +46,7 @@ func TestQuietHours(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	p := projectOf(h.e, id)
-	if p.Quiet == nil || p.Quiet.From != "17:00" || p.Quiet.To != "06:00" || len(p.Quiet.Days) != 2 {
+	if len(p.Quiet) != 1 || p.Quiet[0].From != "17:00" || p.Quiet[0].To != "06:00" || len(p.Quiet[0].Days) != 2 {
 		t.Fatalf("quiet not stored: %+v", p.Quiet)
 	}
 
@@ -107,5 +108,30 @@ func TestQuietHours(t *testing.T) {
 	}
 	if fs := drain(ch, "thread"); len(fs) != 1 || fs[0]["quietUntil"] != nil {
 		t.Fatalf("clearing sent %v", fs)
+	}
+
+	// Decision 0014 addendum: a list of windows. Weeknights and the weekend
+	// join from Friday 17:00 to Monday 06:00; a bad row is refused by number.
+	weeknights := map[string]any{"from": "17:00", "to": "06:00", "days": []any{"sun", "mon", "tue", "wed", "thu", "fri"}}
+	weekend := map[string]any{"from": "00:00", "to": "00:00", "days": []any{"sat", "sun"}}
+	if r := h.cmd("project.update", "", core.Args{"id": pid, "quiet": []any{weeknights, map[string]any{"from": "9", "to": "10:00"}}}); r.OK || r.Status != 400 || !strings.Contains(r.Error, "window 2") {
+		t.Fatalf("a bad second window: %+v", r)
+	}
+	if r := h.cmd("project.update", "", core.Args{"id": pid, "quiet": "17:00"}); r.OK || r.Status != 400 {
+		t.Fatalf("a string accepted: %+v", r)
+	}
+	if r := h.cmd("project.update", "", core.Args{"id": pid, "quiet": []any{weeknights, weekend}}); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	if q := projectOf(h.e, id).Quiet; len(q) != 2 || q[1].From != "00:00" {
+		t.Fatalf("list not stored: %+v", q)
+	}
+	h.e.Tick()
+	mon := time.Date(2026, 11, 16, 6, 0, 0, 0, time.Local)
+	if d := dtoOf(h.e, id); d.QuietUntil == nil || !d.QuietUntil.Equal(mon) {
+		t.Fatalf("joined quietUntil %v want %v", d.QuietUntil, mon)
+	}
+	if r := h.cmd("project.update", "", core.Args{"id": pid, "quiet": []any{}}); !r.OK || projectOf(h.e, id).Quiet != nil {
+		t.Fatalf("an empty list did not clear: %+v", r)
 	}
 }
