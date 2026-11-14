@@ -3,6 +3,9 @@ package server
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
+	"io"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -73,5 +76,57 @@ func TestStreamSendsThreadPatches(t *testing.T) {
 	json.NewDecoder(g.Body).Decode(&whole)
 	if g.StatusCode != 200 || whole["title"] != "Renamed" || whole["attention"] == nil {
 		t.Fatalf("GET thread: %d %v", g.StatusCode, whole["title"])
+	}
+}
+
+// SPEC 0.5 V0.38: GET /api/state?since=REV lists only threads changed after REV,
+// so a client with a stored copy fetches the difference.
+func TestStateSince(t *testing.T) {
+	hs, _ := newServer(t)
+	post := func(body string) map[string]any {
+		r := do(t, "POST", hs.URL+"/api/command", "", map[string]string{"X-Fyr": "1"}, body)
+		var m map[string]any
+		json.NewDecoder(r.Body).Decode(&m)
+		return m
+	}
+	a := post(`{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"a"}}`)["threadId"].(string)
+	post(`{"commandId":"c2","action":"thread.create","args":{"cwd":"/tmp","text":"b"}}`)
+	get := func(q string) (threads []map[string]any, partial bool) {
+		r := do(t, "GET", hs.URL+"/api/state"+q, "", nil, "")
+		var s struct {
+			Threads []map[string]any `json:"threads"`
+			Partial bool             `json:"partial"`
+		}
+		json.NewDecoder(r.Body).Decode(&s)
+		return s.Threads, s.Partial
+	}
+	all, partial := get("")
+	if len(all) != 2 || partial {
+		t.Fatalf("full state: %d threads, partial %v", len(all), partial)
+	}
+	var maxRev string
+	for _, th := range all {
+		if r := fmt.Sprint(th["rev"]); r > maxRev {
+			maxRev = r
+		}
+	}
+	// Exact digits: the rev is above 2^53.
+	r := do(t, "GET", hs.URL+"/api/state", "", nil, "")
+	raw, _ := io.ReadAll(r.Body)
+	revs := regexp.MustCompile(`"rev":(\d+)`).FindAllStringSubmatch(string(raw), -1)
+	max := "0"
+	for _, m := range revs {
+		if len(m[1]) > len(max) || (len(m[1]) == len(max) && m[1] > max) {
+			max = m[1]
+		}
+	}
+	none, partial := get("?since=" + max)
+	if len(none) != 0 || !partial {
+		t.Fatalf("since the newest rev: %d threads, partial %v", len(none), partial)
+	}
+	post(`{"commandId":"c3","action":"thread.rename","threadId":"` + a + `","args":{"title":"A2"}}`)
+	one, _ := get("?since=" + max)
+	if len(one) != 1 || one[0]["title"] != "A2" {
+		t.Fatalf("after one change: %v", one)
 	}
 }

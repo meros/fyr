@@ -1,6 +1,7 @@
 import { isTransient, sendWithRetry } from "./retry.ts";
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead.
 
+import { cache, mergeStateDelta, sinceRev } from "./cache.ts";
 import type { ThreadPatch } from "./store.ts";
 import type { CommandReply, FyrEvent, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { UploadReply } from "./attach.ts";
@@ -74,6 +75,7 @@ export function createApi(search: string = location.search): Api {
 
 function createHttpApi(): Api {
   let watch = initialBuildWatch();
+  let fromNetwork = false;
   let handlers: ApiHandlers | null = null;
   let es: EventSource | null = null;
   let backoff = 500;
@@ -103,9 +105,14 @@ function createHttpApi(): Api {
       }
       if (checkBuild(hello.buildId)) return;
       try {
-        const r = await fetch("/api/state", { headers: { Accept: "application/json" } });
+        // V0.38: with a stored copy, ask only for threads changed since it.
+        const stored = await cache.state();
+        const since = stored ? sinceRev(stored) : 0;
+        const r = await fetch(since ? `/api/state?since=${since}` : "/api/state", { headers: { Accept: "application/json" } });
         if (!r.ok) throw new Error(`state ${r.status}`);
-        const dto = (await r.json()) as StateDTO & { buildId?: string };
+        let dto = (await r.json()) as StateDTO & { buildId?: string; partial?: boolean };
+        if (dto.partial && stored) dto = mergeStateDelta(stored, dto) as StateDTO & { buildId?: string };
+        fromNetwork = true;
         if (gen !== generation) return;
         if (checkBuild(dto.buildId)) return;
         backoff = 500;
@@ -181,6 +188,10 @@ function createHttpApi(): Api {
     mock: false,
     start(h) {
       handlers = h;
+      // V0.38: draw the device's copy at once (offline too); the network state replaces it.
+      void cache.state().then((stored) => {
+        if (stored && !fromNetwork) h.state({ ...stored, now: new Date().toISOString() });
+      });
       connect();
     },
     async command(action, threadId, args) {

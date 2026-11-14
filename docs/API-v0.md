@@ -215,3 +215,4 @@ The patch is cut at 400 KB at a line end (`truncated: true`). A path without cha
 - `msg` events in `/api/threads/{id}/events` and on the stream are lean: a `tool_result` text over 16 KB (4 KB when `parent_tool_use_id` is set) is cut, base64 image data is left out (`source.omitted: true`, `source.bytes`), and the event data has `"cut": true`.
 - `GET /api/threads/{id}/events/{seq}` returns that one event whole (`404` when the thread has no such event).
 - Stream: after a connection has a thread whole, changes come as `event: thread.patch` `data: {"id", "rev", "base", "patch"}`; apply `patch` (RFC 7396) only when your copy has `rev === base`, else `GET /api/threads/{id}` (the ThreadDTO). A thread is sent at most every 100 ms per connection; the newest version wins.
+- `GET /api/state?since=REV` lists only threads with `rev > REV` and adds `"partial": true`; the other fields are whole. Revs grow across host restarts.

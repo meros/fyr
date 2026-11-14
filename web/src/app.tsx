@@ -1,4 +1,7 @@
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
+/** Run when the browser is idle (V0.38: storing never competes with input). */
+const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
+import { cache, mergeEventLists } from "./cache.ts";
 import { setFullEventSource } from "./thread.tsx";
 import { rememberOpen, takeOpen } from "./push.ts";
 const sessionStore = () => {
@@ -18,7 +21,7 @@ import { clearThreadNotification } from "./pwa.ts";
 
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, ProjectSource, ThreadDTO } from "./types.ts";
+import type { Decision, ProjectSource, StateDTO, ThreadDTO } from "./types.ts";
 import { createApi } from "./api.ts";
 import { setChangesSource } from "./changes-ui.tsx";
 import {
@@ -377,18 +380,50 @@ function App() {
     let cancelled = false;
     const after = lastSeq(store, openId);
     const known = !!store.events[openId];
-    api.events(openId, known ? after : 0, PAGE).then(
-      (evs) => {
+    const id = openId;
+    void (async () => {
+      // V0.38: the device's copy draws at once; the host sends only what is newer.
+      const stored = !known && !api.mock ? await cache.events(id) : null;
+      if (cancelled) return;
+      if (stored?.length) setStore((s) => (s.events[id] ? s : mergeEvents(s, id, stored, true)));
+      const from = known ? after : stored?.length ? stored[stored.length - 1].seq : 0;
+      try {
+        const evs = await api.events(id, from, PAGE);
         if (cancelled) return;
-        if (!known) setEarlier((m) => ({ ...m, [openId]: evs.length >= PAGE }));
-        setStore((s) => mergeEvents(s, openId, evs, !known));
-      },
-      () => !cancelled && !known && setStore((s) => mergeEvents(s, openId, [], true)),
-    );
+        if (!known && !stored?.length) setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
+        if (!known && stored?.length) {
+          const merged = mergeEventLists(stored, evs, PAGE, evs.length >= PAGE);
+          if (evs.length >= PAGE) setEarlier((m) => ({ ...m, [id]: true }));
+          setStore((s) => mergeEvents(s, id, merged, true));
+        } else setStore((s) => mergeEvents(s, id, evs, !known));
+      } catch {
+        if (!cancelled && !known && !stored?.length) setStore((s) => mergeEvents(s, id, [], true));
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, [openId, store.loaded, store.conn === "live"]);
+
+  // V0.38: keep the open thread's events and the state on the device, when the browser is idle.
+  const openEvents = openId ? store.events[openId] : undefined;
+  useEffect(() => {
+    if (!openId || !openEvents || api.mock) return;
+    const id = openId;
+    const t = setTimeout(() => idle(() => void cache.saveEvents(id, openEvents.slice(-PAGE))), 2000);
+    return () => clearTimeout(t);
+  }, [openId, openEvents]);
+  useEffect(() => {
+    if (!store.loaded || api.mock) return;
+    const t = setTimeout(
+      () =>
+        idle(() =>
+          void cache.saveState({ now: new Date().toISOString(), user: store.user, host: store.host, threads: Object.values(store.threads), actions: store.actions, profiles: store.profiles, projects: store.projects } as StateDTO),
+        ),
+      2000,
+    );
+    return () => clearTimeout(t);
+  }, [store.threads, store.projects, store.loaded]);
 
   // Decision card state follows the open decision.
   const decision: Decision | null = viewThread?.decisions?.[0] ?? null;
