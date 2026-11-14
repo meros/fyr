@@ -1060,6 +1060,7 @@ function App() {
               void runAction(a, [view.id], args);
             }}
             onSnooze={() => openSnooze([view.id])}
+            onMoveProject={() => (setMoveIds([view.id]), setDialog("move"))}
             onSend={send}
             onAtEnd={(b) => setTracker((tr) => setAtEnd(tr, b))}
             onFocusZone={() => {

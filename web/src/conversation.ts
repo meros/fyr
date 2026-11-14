@@ -406,6 +406,22 @@ export function segments(calls: ToolCall[]): Segment[] {
   return out;
 }
 
+/** V0.26: an opened tool group shows at most this many calls (the last ones) before "+N more tools". */
+export const VISIBLE_CALLS = 3;
+
+export type CallView = { kind: "call"; call: ToolCall } | { kind: "more"; count: number; label: string };
+
+/** The rows of an opened group: the last calls and every failed call; the rest behind one "+N more tools" row. */
+export function capCalls(calls: ToolCall[], expanded: boolean, max = VISIBLE_CALLS): CallView[] {
+  const all = calls.map((call): CallView => ({ kind: "call", call }));
+  if (expanded || calls.length <= max) return all;
+  const keep = calls.map((c, i) => c.isError || i >= calls.length - max);
+  const hidden = keep.filter((k) => !k).length;
+  if (!hidden) return all;
+  const shown = all.filter((_, i) => keep[i]);
+  return [{ kind: "more", count: hidden, label: `+${hidden} more ${hidden === 1 ? "tool" : "tools"}` }, ...shown];
+}
+
 export const OUTPUT_LINES = 200;
 /** Long output is cut at 200 lines behind "Show all". */
 export function cutOutput(text: string, max = OUTPUT_LINES): { text: string; hidden: number } {
