@@ -106,8 +106,15 @@ func (e *Engine) Tools(s *mcp.Server) {
 		}})
 }
 
+// obj builds an object schema. "required" is left out when empty: null is
+// not valid JSON Schema, and the CLI drops every tool of a server when one
+// schema is invalid.
 func obj(props map[string]any, required ...string) map[string]any {
-	return map[string]any{"type": "object", "properties": props, "required": required}
+	s := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		s["required"] = required
+	}
+	return s
 }
 
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }

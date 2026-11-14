@@ -138,3 +138,44 @@ func TestShowURL(t *testing.T) {
 		t.Fatalf("rate limit: %v %q", isErr, text)
 	}
 }
+
+// SPEC 16.2: every tool schema is valid JSON Schema; one invalid schema
+// made the CLI drop all Fyr tools (found live after the V0.19 deploy).
+func TestToolSchemasValid(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	e := New(st)
+	srv := mcp.New(func(string) (string, bool) { return "t", true })
+	e.Tools(srv)
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(b))
+	req.Header.Set("Authorization", "Bearer x")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	var out struct {
+		Result struct {
+			Tools []struct {
+				Name        string
+				InputSchema map[string]any
+			}
+		}
+	}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	if len(out.Result.Tools) < 4 {
+		t.Fatalf("tools %d", len(out.Result.Tools))
+	}
+	for _, tl := range out.Result.Tools {
+		s := tl.InputSchema
+		if s["type"] != "object" {
+			t.Errorf("%s: type %v", tl.Name, s["type"])
+		}
+		if r, ok := s["required"]; ok {
+			if _, isList := r.([]any); !isList {
+				t.Errorf("%s: required must be an array, got %v", tl.Name, r)
+			}
+		}
+		if _, ok := s["properties"].(map[string]any); !ok {
+			t.Errorf("%s: properties must be an object", tl.Name)
+		}
+	}
+}
