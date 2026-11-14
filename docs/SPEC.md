@@ -1507,7 +1507,7 @@ Row, CompactRow, DecisionRow, Section, AwayStrip, Group, Badge, Panel, Card, Dec
 - **Tabs.** Conversation · Changes · PR.
   - **Conversation:** messages, runs with tools and subagents collapsed, a filmstrip per run, `effect.result` lines, and the Decision card docked at the end. The filmstrip shows the image content blocks of the run's `tool_result` messages, from any tool (for example the agent's own Playwright MCP server); the `claude` module stores them as attachments of the run.
   - **Changes:** the branch diff against its base, from checkpoints and git (`git` module).
-  - **PR:** checks, review threads and the external Action "Merge" (`github` module).
+  - **PR:** checks, review threads and the external Action "Merge" (`github` module; v0: 0.5 V0.43).
 - **Composer.** U15.
 
 ## 14. Workflow module (probe for R16, post-v1)

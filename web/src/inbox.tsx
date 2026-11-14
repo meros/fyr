@@ -110,7 +110,7 @@ function PrBadge({ t, short }: { t: ThreadDTO; short?: boolean }) {
   if (!t.pr) return <span class="pr none" aria-label="no pull request" />;
   const l = prLabel(t.pr, short);
   return (
-    <span class={`pr ${l.cls}`} title={t.pr.title || t.pr.url}>
+    <span class={`pr ${l.cls}`} title={l.title}>
       {l.text}
     </span>
   );

@@ -159,6 +159,9 @@ const SCREENS = [
   { name: "thread with a live view", url: "?mock=1&open=t_view", field: ".m-cmp .in" },
   // SPEC 0.5 V0.25: the Changes tab with one file's diff open.
   { name: "changes with a diff", url: "?mock=rail&open=t_mapperf&tab=changes", openDiff: true },
+  // SPEC 0.5 V0.43: the PR tab with a failing check and 2 unresolved review threads, and the Merge dialog.
+  { name: "PR tab with a failing check", url: "?mock=1&open=t_block&tab=pr", prTab: true },
+  { name: "PR merge dialog", url: "?mock=1&open=t_s2&tab=pr", sheet: "merge" },
 ];
 
 // What must be visible, and where, on the current screen.
@@ -198,6 +201,18 @@ const MEASURE = `(() => {
     newProject: document.querySelector('.m-new .m-ppick .pln')?.textContent ?? null,
     folderField: !!document.querySelector('.m-new input.m-dchip'),
     startDisabled: !!document.querySelector('.m-new .m-abar .m-bt')?.disabled,
+    pr: (() => {
+      const v = document.querySelector('.prv'); if (!v) return null;
+      const targets = [...v.querySelectorAll('button, .prv-det, .prv-thh a, a.btn')].filter(e => e.getBoundingClientRect().height > 0);
+      const small = targets.map(e => ({ t: e.textContent.trim().slice(0, 30), h: e.getBoundingClientRect().height })).filter(x => x.h < 43.5);
+      const status = v.querySelector('.prv-st')?.textContent ?? '';
+      const right = Math.max(0, ...[...v.querySelectorAll('*')].map(e => e.getBoundingClientRect().right));
+      return { status, failed: v.querySelectorAll('.prv-ck.fail').length, ask: v.querySelectorAll('.prv-ask').length, threads: v.querySelectorAll('.prv-th').length,
+        askAll: v.querySelector('.prv-askall')?.textContent ?? '', merge: !!v.querySelector('.prv-merge'), mergeDisabled: !!v.querySelector('.prv-merge')?.disabled, small, right };
+    })(),
+    dlg: rect('.dlg'),
+    dlgButton: (() => { const b = document.querySelector('.dlg .df .btn.p'); if (!b) return null; const r = b.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: r.height, text: b.textContent }; })(),
+    dlgRows: [...document.querySelectorAll('.dlg .prv-m')].map(e => e.getBoundingClientRect().height),
     liveView: rect('.m-thread .lv'),
     liveFrame: rect('.m-thread .lv-f'),
     innerHeight: window.innerHeight,
@@ -267,6 +282,26 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     check(m.diffLines >= 5, `${ctx}: the opened file shows no diff lines (${m.diffLines})`);
     check(m.changeRight <= window_innerWidth(m) + 0.5, `${ctx}: the changes list or diff runs ${(m.changeRight - window_innerWidth(m)).toFixed(1)} px past the right edge`);
   }
+  if (ctx.startsWith("PR tab")) {
+    check(!!m.pr, `${ctx}: no PR tab`);
+    if (m.pr) {
+      check(m.pr.status === "Blocked: 2 failing checks" || m.pr.status === "Blocked: 1 failing check", `${ctx}: status line "${m.pr.status}"`);
+      check(m.pr.failed === 1 && m.pr.ask === 1, `${ctx}: expected 1 failed check with its Ask button (${m.pr.failed}, ${m.pr.ask})`);
+      check(m.pr.threads === 2 && /address 2 review comments/.test(m.pr.askAll), `${ctx}: expected 2 open review threads and the ask button (${m.pr.threads}, "${m.pr.askAll}")`);
+      check(m.pr.merge && m.pr.mergeDisabled, `${ctx}: Merge must show and be disabled on a blocked PR`);
+      check(m.pr.small.length === 0, `${ctx}: targets under 44 px: ${JSON.stringify(m.pr.small)}`);
+      check(m.pr.right <= window_innerWidth(m) + 0.5, `${ctx}: the PR tab runs ${(m.pr.right - window_innerWidth(m)).toFixed(1)} px past the right edge`);
+    }
+  }
+  if (ctx.startsWith("PR merge dialog")) {
+    check(!!m.dlg && !!m.dlgButton, `${ctx}: the merge dialog did not open`);
+    if (m.dlgButton) {
+      check(m.dlgButton.text === "Squash and merge #57", `${ctx}: the confirm button reads "${m.dlgButton.text}"`);
+      check(m.dlgButton.h >= 43.5 && m.dlgRows.length === 3 && m.dlgRows.every((h) => h >= 43.5), `${ctx}: dialog targets under 44 px (${m.dlgButton.h}, ${m.dlgRows})`);
+      check(m.dlgButton.bottom <= m.bottom - (keyboard ? 0 : INSETS.bottom) + 0.5, `${ctx}: the confirm button bottom ${m.dlgButton.bottom.toFixed(1)} is below the bottom inset`);
+    }
+    if (m.dlg) check(m.dlg.top >= m.top + INSETS.top - 0.5, `${ctx}: the dialog starts above the top inset (${m.dlg.top.toFixed(1)})`);
+  }
   check(m.pageOverflow <= 0, `${ctx}: the page scrolls sideways by ${m.pageOverflow} px`);
   if (ctxWantsChips(ctx)) check(m.chipCount >= 2 && !!m.chips && !!m.camera, `${ctx}: expected 2 uploaded chips and the Camera button (chips ${m.chipCount})`);
   if (m.sheet) check(m.sheet.bottom <= visBottom + 0.5, `${ctx}: sheet runs below the viewport`);
@@ -335,6 +370,10 @@ async function openScreen(s, w, h) {
     await tapCenter(".m-pjb");
     if (s.sheet === "newproject") await tapCenter(".m-sheet .pli.new");
     await sleep(300);
+  } else if (s.sheet === "merge") {
+    await sleep(300);
+    await tapCenter(".prv-merge");
+    await sleep(200);
   } else if (s.sheet === "actions") {
     await tapCenter("#m-sec-needs .m-swp .m-mv", 600);
   }
@@ -511,6 +550,27 @@ try {
   check(!r.dlg && /Hemmet/.test(r.chip), `V0.26 desktop: Enter in the picker does not move the thread to the first match (chip "${r.chip}")`);
 } catch (e) {
   failures.push(`V0.26 desktop: ${e.message}`);
+}
+
+// V0.43: on the desktop, "Ask the agent to fix this check" posts the owner's message to the thread.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_block&tab=pr` });
+  await sleep(1200);
+  const before = await evaluate(`({ ask: document.querySelector('.th .prv-ask')?.textContent ?? '', status: document.querySelector('.th .prv-st')?.textContent ?? '' })`);
+  check(before.ask === "Ask the agent to fix this check", `V0.43 desktop: no "Ask the agent to fix this check" on the failed check ("${before.ask}")`);
+  check(/^Blocked: /.test(before.status), `V0.43 desktop: status line "${before.status}"`);
+  await evaluate(`document.querySelector('.th .prv-ask')?.click()`);
+  await sleep(500);
+  const note = await evaluate(`document.querySelector('.th .prv-note')?.textContent ?? ''`);
+  check(/Sent to the agent: fix lint/.test(note), `V0.43 desktop: no confirmation after asking ("${note}")`);
+  await evaluate(`[...document.querySelectorAll('.th .tabs [role=tab]')].find(e => e.textContent === 'Conversation')?.click()`);
+  await sleep(400);
+  const posted = await evaluate(`[...document.querySelectorAll('.th .you')].map(e => e.textContent).find(t => t.includes('The check lint failed')) ?? ''`);
+  check(/The check lint failed: https:\/\/github\.com\/.*\. Find the cause and fix it\./.test(posted), `V0.43 desktop: the owner's message is not in the conversation ("${posted.slice(0, 120)}")`);
+} catch (e) {
+  failures.push(`V0.43 desktop: ${e.message}`);
 }
 
 // V0.39: the update banner is below the top safe area and inside the screen, and names the threads it waits for.
