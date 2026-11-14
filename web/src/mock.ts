@@ -1,7 +1,7 @@
 // Fixtures for ?mock=1 (full stress set) and ?mock=2 (sparse: empty sections). A tiny in-memory fyrd:
 // commands change the fixtures and push thread upserts, so the UI can be clicked through without a host.
 
-import type { CommandReply, Decision, Project, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { CommandReply, Decision, FsDir, FsListing, Project, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 
 export function mockScenario(search: string): string | null {
@@ -784,7 +784,7 @@ export function mockProjects(now: number): Project[] {
   const folder = (path: string) => ({ kind: "folder", host: "desk", path });
   const repo = (url: string) => ({ kind: "repo", url });
   return [
-    { id: "p_web", name: "acme/web", color: "teal", icon: { kind: "line", value: "Globe" }, sources: [folder("/home/owner/src/acme/web"), repo("github.com/acme/web")], profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1), cwd: "/home/owner/src/acme/web" },
+    { id: "p_web", name: "acme/web", color: "teal", icon: { kind: "line", value: "Globe" }, sources: [folder("/home/owner/src/acme/web"), folder("/home/owner/src/acme/web-docs"), repo("github.com/acme/web")], profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1), cwd: "/home/owner/src/acme/web" },
     { id: "p_ops", name: "acme/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, sources: [folder("/home/owner/src/acme/ops")], threads: 2, lastUsed: ago(1), cwd: "/home/owner/src/acme/ops" },
     { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram" }, sources: [folder("/home/owner/src/" + LONG_PROJECT), repo("github.com/acme/" + LONG_PROJECT)], threads: 3, lastUsed: ago(5), cwd: "/home/owner/src/" + LONG_PROJECT },
     { id: "p_dot", name: "dotfiles", color: "olive", icon: { kind: "line", value: "terminal" }, sources: [folder("/home/owner/dotfiles")], threads: 1, lastUsed: ago(2), cwd: "/home/owner/dotfiles" },
@@ -794,7 +794,47 @@ export function mockProjects(now: number): Project[] {
     { id: "p_infra", name: "acme/infra", color: "slate", icon: { kind: "line", value: "no-such-icon" }, sources: [folder("/home/owner/src/acme/infra")], threads: 1, lastUsed: ago(10), cwd: "/home/owner/src/acme/infra" },
     { id: "p_maplab", name: "Map perf lab", color: "blue", icon: { kind: "line", value: "map" }, sources: [folder("/home/owner/src/maplab")], threads: 0, lastUsed: ago(70), cwd: "/home/owner/src/maplab" },
     { id: "p_book", name: "Bokföring åt Åsa", icon: { kind: "monogram" }, color: "brown", sources: [folder("/home/owner/ekonomi")], threads: 0, lastUsed: ago(200), cwd: "/home/owner/ekonomi" },
-  ];
+  ].map(withRepos);
+}
+
+// V0.42: the repo each mock folder's git origin names.
+const MOCK_ORIGIN: Record<string, string> = {
+  "/home/owner/src/acme/web": "github.com/acme/web",
+  "/home/owner/src/acme/web-docs": "github.com/acme/web-docs",
+  "/home/owner/src/acme/ops": "github.com/acme/ops",
+  "/home/owner/src/acme/api": "github.com/acme/api",
+  "/home/owner/src/acme/infra": "github.com/acme/infra",
+  ["/home/owner/src/" + LONG_PROJECT]: "github.com/acme/" + LONG_PROJECT,
+  "/home/owner/src/lasso-app": "github.com/owner/lasso-app",
+  "/home/owner/dotfiles": "github.com/owner/dotfiles",
+  "/home/owner/git/fyr": "github.com/meros/fyr",
+  "/home/owner/git/fyr-folders": "github.com/meros/fyr",
+  "/home/owner/git/solidcraft": "github.com/meros/solidcraft",
+};
+
+/** The host's derived fields (V0.42): cwd is the main folder here, repos come from the folders' origins and repo sources. */
+function withRepos(p: Project): Project {
+  const folders = (p.sources ?? []).filter((s) => s.kind === "folder") as { path: string; main?: boolean }[];
+  const main = folders.find((f) => f.main) ?? folders[0];
+  const repos: string[] = [];
+  for (const s of p.sources ?? []) {
+    const r = s.kind === "folder" ? MOCK_ORIGIN[(s as { path: string }).path] : s.kind === "repo" ? String((s as { url?: string }).url ?? "") : "";
+    if (r && !repos.includes(r)) repos.push(r);
+  }
+  return { ...p, cwd: main?.path, repos };
+}
+
+const MOCK_HOME = "/home/owner";
+/** A small home folder for the folder picker (V0.42). */
+function mockTree(extra: string[]): { dirs: Set<string>; repos: Set<string> } {
+  const repos = new Set(Object.keys(MOCK_ORIGIN));
+  const dirs = new Set<string>();
+  const add = (p: string) => {
+    for (let at = p; at.startsWith(MOCK_HOME); at = at.slice(0, at.lastIndexOf("/"))) dirs.add(at);
+  };
+  for (const p of [...repos, ...extra]) add(p);
+  for (const p of ["Documents", "Downloads", "notes", "ekonomi", "git/fyr/web", "git/fyr/internal", "src/maplab", ".config/nvim", ".local/share/fyr/scratch", "src/acme/web/node_modules"]) add(`${MOCK_HOME}/${p}`);
+  return { dirs, repos };
 }
 
 export interface MockServer {
@@ -810,6 +850,11 @@ export interface MockServer {
   pushTest(): { ok: boolean; error?: string };
   /** subscriptions stored in memory, by endpoint */
   pushSubscriptions(): { endpoint: string; device: string }[];
+  /** V0.42: the host folder picker over a small mock home folder */
+  fsList(path: string): FsListing;
+  fsRecent(): FsDir[];
+  fsRepos(): FsDir[];
+  fsMkdir(parent: string, name: string): string;
   /** the in-memory attachment store (V0.18) */
   putAttachment(name: string, mediaType: string, size: number): { id: string; name: string; size: number; mediaType: string; path: string };
 }
@@ -832,7 +877,11 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     (Array.isArray(args.attachments) ? (args.attachments as string[]) : []).map((aid) => files.get(aid)).filter((x): x is NonNullable<typeof x> => !!x);
   let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void } | null = null;
   let projects = mockProjects(now0);
-  const putProject = (p: Project) => {
+  const tree = mockTree([...fx.threads.map((t) => t.cwd), ...projects.flatMap((p) => (p.sources ?? []).map((s) => String((s as { path?: string }).path ?? "")))].filter((p) => p.startsWith(MOCK_HOME)));
+  const expand = (p: string) => (p.trim() === "~" || p.trim() === "" ? MOCK_HOME : p.trim().startsWith("~/") ? MOCK_HOME + p.trim().slice(1) : p.trim()).replace(/\/+$/, "") || "/";
+  const dirOf = (p: string): FsDir => ({ name: p.split("/").pop() ?? p, path: p, repo: tree.repos.has(p) || undefined });
+  const putProject = (p0: Project) => {
+    const p = withRepos(p0);
     projects = projects.some((x) => x.id === p.id) ? projects.map((x) => (x.id === p.id ? p : x)) : [...projects, p];
     setTimeout(() => sub?.project?.(p), 30);
     return p;
@@ -918,10 +967,15 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   const exec = (action: string, t: ThreadDTO | undefined, args: Record<string, unknown>): CommandReply => {
     if (action === "thread.create") {
       const id = `t_new${nextId++}`;
-      const cwd = String(args.cwd ?? "");
+      // V0.42: a project's main folder, else a fresh scratch folder.
+      const pr = args.projectId ? projects.find((x) => x.id === args.projectId) : undefined;
+      if (args.projectId && !pr) return { ok: false, error: `no project ${args.projectId}` };
+      const slug = String(args.text ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "thread";
+      const cwd = String(args.cwd || pr?.cwd || `${MOCK_HOME}/.local/share/fyr/scratch/20261114-093005-${slug}`);
       const nt = base(id, String(args.title || args.text || "New thread").slice(0, 80), clock(), 0, {
         cwd,
-        project: cwd.split("/").slice(-2).join("/"),
+        project: pr?.name ?? "",
+        projectId: pr?.id,
         profile: String(args.profile ?? "claude"),
         model: String(args.model ?? "claude-opus-5-5"),
         liveView: args.view === true,
@@ -970,7 +1024,17 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     if (action === "project.addSource") {
       const p = projects.find((x) => x.id === args.id);
       if (!p) return { ok: false, error: "No such project" };
-      putProject({ ...p, sources: [...(p.sources ?? []), args.source as NonNullable<Project["sources"]>[number]] });
+      const src = { ...(args.source as Record<string, unknown>) } as NonNullable<Project["sources"]>[number];
+      if (src.kind === "folder") Object.assign(src, { host: "desk", path: expand(String((src as { path?: string }).path ?? "")) });
+      putProject({ ...p, sources: [...(p.sources ?? []), src] });
+      return { ok: true };
+    }
+    if (action === "project.setMain") {
+      const p = projects.find((x) => x.id === args.id);
+      const i = Number(args.index);
+      const srcs = p?.sources ?? [];
+      if (!p || !Number.isInteger(i) || srcs[i]?.kind !== "folder") return { ok: false, error: "index must point at one of the project's folders" };
+      putProject({ ...p, sources: srcs.map((s, k) => (s.kind === "folder" ? { ...s, main: k === i } : s)) });
       return { ok: true };
     }
     if (action === "t3.adopt") {
@@ -1114,6 +1178,33 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     },
     t3Candidates() {
       return fx.t3;
+    },
+    fsList(path) {
+      const p = expand(path);
+      if (!(p === MOCK_HOME || p.startsWith(MOCK_HOME + "/")) || !tree.dirs.has(p)) throw new Error(`outside the home folder: no folder ${path}`);
+      const dirs = [...tree.dirs].filter((d) => d.slice(0, d.lastIndexOf("/")) === p).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).map(dirOf);
+      return { path: p, parent: p === MOCK_HOME ? "" : p.slice(0, p.lastIndexOf("/")), dirs };
+    },
+    fsRecent() {
+      const seen = new Set<string>();
+      return [...threads.values()]
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map((t) => t.cwd)
+        .filter((c) => tree.dirs.has(c) && !seen.has(c) && !!seen.add(c))
+        .slice(0, 30)
+        .map(dirOf);
+    },
+    fsRepos() {
+      return [...tree.repos].filter((r) => tree.dirs.has(r)).sort().map(dirOf);
+    },
+    fsMkdir(parent, name) {
+      const p = expand(parent);
+      const n = name.trim();
+      if (!tree.dirs.has(p)) throw new Error(`outside the home folder: no folder ${parent}`);
+      if (!n || n.includes("/") || n === "." || n === "..") throw new Error("a folder name cannot be empty or contain /");
+      if (tree.dirs.has(`${p}/${n}`)) throw new Error(`${p}/${n} already exists`);
+      tree.dirs.add(`${p}/${n}`);
+      return `${p}/${n}`;
     },
     pushKey() {
       return MOCK_VAPID_KEY;

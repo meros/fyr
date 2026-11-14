@@ -100,13 +100,6 @@ export function resolveIcon(icon: ProjectIconSpec | undefined, name: string): Re
   return { kind: "monogram", value: monogram(name) };
 }
 
-/** One input adds a source: a path (/… or ~…) is a folder on this host, anything else a repo URL. The host checks and cleans it. */
-export function sourceFromInput(v: string): { kind: "folder"; path: string } | { kind: "repo"; url: string } | null {
-  const t = v.trim();
-  if (!t) return null;
-  return t.startsWith("/") || t.startsWith("~") ? { kind: "folder", path: t } : { kind: "repo", url: t };
-}
-
 /** The name to show for a thread's project; "No project" when it has none. */
 export function projectName(t: Pick<ThreadDTO, "projectId" | "project">, projects: Project[]): string {
   return projectOf(t, projects)?.name || t.project || "No project";
@@ -136,14 +129,15 @@ export function filterByProject(threads: Record<string, ThreadDTO>, projectId: s
   return out;
 }
 
-/** Where a project lives, for a subtitle: its folder here, else its repo, else that it is a label. */
+/** Where a project lives, for a subtitle: its main folder here, else its repo, else a folder elsewhere, else that it is
+ *  a label. */
 export function projectSubtitle(p: Project): string {
   if (p.cwd) return p.cwd.replace(/^\/home\/[^/]+(?=\/|$)/, "~");
-  const repo = p.sources?.find((s) => s.kind === "repo") as { url?: string } | undefined;
-  if (repo?.url) return repo.url;
+  const repo = projectRepos(p)[0];
+  if (repo) return repo;
   const folder = p.sources?.find((s) => s.kind === "folder") as { host?: string; path?: string } | undefined;
   if (folder?.path) return `${folder.host ?? "another host"}: ${folder.path}`;
-  return "No source: filed by hand";
+  return "No folder: filed by hand";
 }
 
 /** The new-thread picker: projects by last use (newest first), then by name. */
@@ -190,26 +184,60 @@ export function newProjectDraft(t: Pick<ThreadDTO, "newProject" | "suggest">): {
   return { name: d?.name ?? "", sources: [...(d?.sources ?? [])] };
 }
 
-/** One plain line of what a source does. */
-export function sourceLine(s: ProjectSource, host: string): string {
-  if (s.kind === "folder") {
-    const h = String((s as { host?: string }).host ?? "");
-    return h && host && h !== host ? `Threads started in this folder on ${h} land here` : "Threads started in this folder land here";
-  }
-  if (s.kind === "repo") return "Threads in any clone of this repo land here, on any computer";
-  return "";
-}
-export const NO_SOURCE_LINE = "No source: you file threads here by hand";
+// ---- V0.42: folders, the main folder, the automatic repo line ----
 
-/** A source as text: a folder here as a short path, a folder elsewhere with its host, a repo as its URL. */
+/** A project with no folder: the words for it. */
+export const NO_FOLDER_LINE = "No folder: you file threads here by hand";
+export const FOLDERS_LINE = "Threads started in these folders land here.";
+export const MAIN_LINE = "Main folder: new threads start here.";
+
+/** The project's folders with their index into sources, and which one is main on this host (the marked one, else the
+ *  first here). */
+export function projectFolders(sources: ProjectSource[], host: string): { index: number; path: string; host: string; main: boolean; here: boolean }[] {
+  const out = sources.flatMap((s, index) => (s.kind === "folder" ? [{ index, path: String((s as { path?: string }).path ?? ""), host: String((s as { host?: string }).host ?? ""), main: false, here: false, marked: !!(s as { main?: boolean }).main }] : []));
+  for (const f of out) f.here = !f.host || !host || f.host === host;
+  const here = out.filter((f) => f.here);
+  const main = here.find((f) => f.marked) ?? here[0];
+  return out.map(({ marked: _m, ...f }) => ({ ...f, main: f.index === main?.index }));
+}
+
+/** The repos a project also matches: the host's list, else (an older host) its repo sources. */
+export function projectRepos(p: Pick<Project, "repos" | "sources">): string[] {
+  if (p.repos?.length) return p.repos;
+  return (p.sources ?? []).flatMap((s) => (s.kind === "repo" && (s as { url?: string }).url ? [String((s as { url?: string }).url)] : []));
+}
+
+/** "Also matches clones of a", "… of a and b", "… of a, b and c"; "" for none. */
+export function repoLine(repos: string[]): string {
+  if (!repos.length) return "";
+  const list = repos.length === 1 ? repos[0] : `${repos.slice(0, -1).join(", ")} and ${repos.at(-1)}`;
+  return `Also matches clones of ${list}`;
+}
+
+/** The create step's line for one folder. */
+export function createFolderLine(path: string): string {
+  return `Threads started in ${shortPath(path)} land in this project.`;
+}
+
+export function shortPath(p: string): string {
+  return p.replace(/^\/home\/[^/]+(?=\/|$)/, "~");
+}
+
+/** A folder as text: a folder here as a short path, a folder elsewhere with its host, a repo as its URL. */
 export function sourceText(s: ProjectSource, host: string): string {
   if (s.kind === "folder") {
     const h = String((s as { host?: string }).host ?? "");
     const p = String((s as { path?: string }).path ?? "");
-    return h && host && h !== host ? `${h}: ${p}` : p.replace(/^\/home\/[^/]+(?=\/|$)/, "~");
+    return h && host && h !== host ? `${h}: ${p}` : shortPath(p);
   }
   if (s.kind === "repo") return String((s as { url?: string }).url ?? "");
   return JSON.stringify(s);
+}
+
+/** The new thread's folder (V0.42): the picked one, else the project's main folder here, else a fresh scratch folder. */
+export function newThreadFolder(picked: string, project: Pick<Project, "cwd"> | undefined): { cwd?: string; label: string; scratch: boolean } {
+  const cwd = picked.trim() || project?.cwd || "";
+  return cwd ? { cwd, label: shortPath(cwd), scratch: false } : { label: "A fresh scratch folder", scratch: true };
 }
 
 /** The picker's first row: from a thread "New project from this thread"; typed text that matches nothing names it. */
@@ -229,8 +257,8 @@ export function startProject(projects: Project[], filterId: string | null | unde
 /** The project of the last new thread on this device (V0.30); "" for No project. */
 export const LAST_PROJECT_KEY = "fyr.lastProject";
 
-/** A project the client just made, until the host's copy arrives: its folder here is its cwd (V0.30). */
+/** A project the client just made, until the host's copy arrives: its main folder here is its cwd (V0.30, V0.42). */
 export function localProject(id: string, name: string, sources: ProjectSource[], host: string): Project {
-  const here = sources.find((s) => s.kind === "folder" && (!(s as { host?: string }).host || (s as { host?: string }).host === host)) as { path?: string } | undefined;
-  return { id, name, sources, threads: 0, lastUsed: new Date().toISOString(), cwd: here?.path };
+  const main = projectFolders(sources, host).find((f) => f.main);
+  return { id, name, sources, threads: 0, lastUsed: new Date().toISOString(), cwd: main?.path, repos: projectRepos({ sources }) };
 }

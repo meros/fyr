@@ -5,7 +5,8 @@ import type { Profile, Project, ProjectSource, T3Candidate } from "./types.ts";
 import { ChipStrip, ClipPicker, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { NewProjectStep, ProjectIcon, ProjectList } from "./project-ui.tsx";
-import { LAST_PROJECT_KEY, colorVar, localProject, projectDefaults, projectSubtitle, startProject } from "./projects.ts";
+import { LAST_PROJECT_KEY, colorVar, localProject, newThreadFolder, projectDefaults, projectFolders, projectSubtitle, startProject } from "./projects.ts";
+import { useFolderPick, type PickOptions } from "./folder-picker.tsx";
 import { relTime, shortModel } from "./format.ts";
 import type { SnoozePreset } from "./store.ts";
 
@@ -26,7 +27,8 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
 }
 
 export interface NewThreadArgs {
-  cwd: string;
+  /** "" or missing: the project's main folder, else a fresh scratch folder (V0.42) */
+  cwd?: string;
   text: string;
   /** uploaded attachment ids (SPEC V0.18) */
   attachments?: string[];
@@ -50,7 +52,14 @@ export function lastProject(): string | null {
   }
 }
 
-/** SPEC 0.5 V0.30: Project first; the folder follows from the project's folder on this host, else it is asked. */
+/** "Change" in a new thread offers the project's other folders first (V0.42). */
+export function changeOptions(pr: Project | undefined, host: string, current: string): PickOptions {
+  const dirs = pr ? projectFolders(pr.sources ?? [], host).filter((f) => f.here && f.path !== current).map((f) => ({ name: f.path.split("/").pop() || f.path, path: f.path })) : [];
+  return { title: "Folder for this thread", first: dirs.length ? { title: `${pr!.name}'s folders`, dirs } : undefined };
+}
+
+/** SPEC 0.5 V0.30, V0.42: Project first; the folder follows from the project's main folder here, else a fresh scratch
+ *  folder; "Change" opens the folder picker. */
 export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; host: string; projectFilter: string | null; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, sources: ProjectSource[]): Promise<{ error: string | null; id?: string }> }) {
   const [made, setMade] = useState<Project | null>(null);
   const projects = made && !p.projects.some((x) => x.id === made.id) ? [...p.projects, made] : p.projects;
@@ -58,8 +67,10 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
   const cur = projects.find((x) => x.id === projectId);
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
-  const [folderOpen, setFolderOpen] = useState(false);
-  const [cwd, setCwd] = useState(cur?.cwd ?? "");
+  // V0.42: a folder picked for this thread; "" follows the project.
+  const [picked, setPicked] = useState("");
+  const folder = newThreadFolder(picked, cur);
+  const picker = useFolderPick();
   const startDefs = cur ? projectDefaults(cur, p.profiles) : {};
   const [profile, setProfile] = useState(startDefs.profile ?? p.profiles[0]?.id ?? "");
   const prof = p.profiles.find((x) => x.id === profile);
@@ -71,8 +82,6 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
   const [busy, setBusy] = useState(false);
   const att = useAttachments();
   const promptRef = useRef<HTMLTextAreaElement>(null);
-  const folderRef = useRef<HTMLInputElement>(null);
-  const askFolder = !cur?.cwd || folderOpen;
 
   useEffect(() => {
     promptRef.current?.focus();
@@ -87,8 +96,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
     setPicking(false);
     setCreating(null);
     setProjectId(pr?.id);
-    setFolderOpen(false);
-    setCwd(pr?.cwd ?? "");
+    setPicked("");
     if (pr) {
       const d = projectDefaults(pr, p.profiles);
       if (d.profile) {
@@ -96,20 +104,20 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
         if (d.model) setModel(d.model);
       }
     }
-    if (pr && !pr.cwd) setTimeout(() => folderRef.current?.focus(), 0);
+  };
+  const change = async () => {
+    const path = await picker.pick(changeOptions(cur, p.host, folder.cwd ?? ""));
+    if (path) setPicked(path);
+    promptRef.current?.focus();
   };
 
   const submit = async () => {
     if (busy) return;
-    if (!cwd.trim()) {
-      folderRef.current?.focus();
-      return setErr(cur ? `${cur.name} has no folder on this computer: pick one for this thread.` : "Pick a folder for this thread.");
-    }
     const plan = sendArgs(text, att.chips);
     if (!plan.ok) return setErr(plan.reason === "Nothing to send" ? "Write a prompt or attach a file." : plan.reason);
     setBusy(true);
     setErr(null);
-    const e = await p.onCreate({ cwd: cwd.trim(), text, attachments: plan.args.attachments, profile, model, title: title.trim() || undefined, projectId, view: liveView || undefined });
+    const e = await p.onCreate({ cwd: folder.cwd, text, attachments: plan.args.attachments, profile, model, title: title.trim() || undefined, projectId, view: liveView || undefined });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -123,7 +131,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
             {cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
             <span class="plt">
               <span class="ell pln">{cur?.name ?? "No project"}</span>
-              <span class="ell pls2">{cur ? projectSubtitle(cur) : "Not filed; pick a folder below"}</span>
+              <span class="ell pls2">{cur ? projectSubtitle(cur) : "Not filed"}</span>
             </span>
             <span class="chev">{picking ? "▾" : "▸"}</span>
           </button>
@@ -133,17 +141,8 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
               selectedId={projectId ?? null}
               autoFocus
               allLabel="No project"
-              newRow={{ fromThread: false, sub: "Just a name; add a folder or repo if you like", onNew: (q) => setCreating(q.trim()) }}
+              newRow={{ fromThread: false, sub: "A name, and folders if you like", onNew: (q) => setCreating(q.trim()) }}
               onPick={choose}
-              extra={
-                <button class="pli more" onClick={() => (choose(null), setFolderOpen(true), setTimeout(() => folderRef.current?.focus(), 0))}>
-                  <span class="pi all">…</span>
-                  <span class="plt">
-                    <span class="ell pln">Pick a folder…</span>
-                    <span class="ell pls2">No project; type the folder</span>
-                  </span>
-                </button>
-              }
             />
           )}
           {creating !== null && (
@@ -166,23 +165,18 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
             />
           )}
         </div>
-        {askFolder ? (
-          <label class="fld">
-            <span>Folder</span>
-            <input ref={folderRef} value={cwd} onInput={(e) => setCwd((e.target as HTMLInputElement).value)} placeholder="~/src/app" spellcheck={false} />
-            {cur && !cur.cwd && <span class="srcl">{cur.name} has no folder on this computer. This thread runs here; add the folder to the project on its screen to make it the default.</span>}
-          </label>
-        ) : (
-          <div class="fld">
-            <span>Folder</span>
-            <div class="fline">
-              <span class="ell">{cwd.replace(/^\/home\/[^/]+(?=\/|$)/, "~")}</span>
-              <button class="btn sm" onClick={() => (setFolderOpen(true), setTimeout(() => folderRef.current?.focus(), 0))}>
-                Change
-              </button>
-            </div>
+        <div class="fld">
+          <span>Folder</span>
+          <div class={`fline${folder.scratch ? " scratch" : ""}`}>
+            <span class="ell" title={folder.cwd}>
+              {folder.label}
+            </span>
+            <button class="btn sm" onClick={() => void change()}>
+              Change
+            </button>
           </div>
-        )}
+          <span class="srcl">{folderHint(cur, folder, p.host)}</span>
+        </div>
         <div class="row2">
           <label class="fld">
             <span>Profile</span>
@@ -244,6 +238,14 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
       </div>
     </Modal>
   );
+}
+
+/** One line under the folder: how the folder and the project relate (V0.42). */
+export function folderHint(cur: Project | undefined, folder: { cwd?: string; scratch: boolean }, host: string): string {
+  if (folder.scratch) return cur ? `${cur.name} has no folder here; the thread is filed in it anyway.` : "No project: a new folder just for this thread.";
+  if (!cur) return "No project.";
+  const main = projectFolders(cur.sources ?? [], host).find((f) => f.main);
+  return main && main.path === folder.cwd ? `${cur.name}'s main folder.` : `Filed in ${cur.name}.`;
 }
 
 export function AdoptDialog(p: { load(): Promise<T3Candidate[]>; now: number; onClose(): void; onAdopt(ids: string[]): Promise<string | null> }) {

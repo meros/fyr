@@ -21,8 +21,9 @@ import { defaultTab, liveViewOf } from "./view.ts";
 import { rowSummary } from "./view.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
-import { colorVar, localProject, makeProjectLabel, projectDefaults, projectName, projectOf, projectSubtitle, startProject, suggestionFor } from "./projects.ts";
-import { lastProject } from "./dialogs.tsx";
+import { colorVar, localProject, makeProjectLabel, newThreadFolder, projectDefaults, projectName, projectOf, projectSubtitle, startProject, suggestionFor } from "./projects.ts";
+import { useFolderPick } from "./folder-picker.tsx";
+import { changeOptions, folderHint, lastProject } from "./dialogs.tsx";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import { previewsOf } from "./conversation.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
@@ -181,10 +182,13 @@ export interface PhoneProps {
   /** projects (V0.23) */
   projectFilter: string | null;
   onProjectFilter(id: string | null): void;
+  /** V0.42: the folder picker sheet, over everything */
+  overlay?: ComponentChildren;
   projectActions: {
     update(id: string, patch: ProjectPatch): Promise<string | null>;
-    addSource(id: string, value: string): Promise<string | null>;
+    addFolder(id: string, path: string): Promise<string | null>;
     removeSource(id: string, index: number): Promise<string | null>;
+    setMain(id: string, index: number): Promise<string | null>;
     create(name: string, sources: ProjectSource[], threadIds?: string[]): Promise<{ error: string | null; id?: string }>;
     /** null: No project */
     move(ids: string[], projectId: string | null): Promise<string | null>;
@@ -232,6 +236,7 @@ export function PhoneApp(p: PhoneProps) {
       {bottomBar && <MBottomBar {...p} />}
       <MToast {...p} bottomBar={bottomBar} />
       {p.nav.sheet && <MSheets {...p} sheet={p.nav.sheet} t={sheetThread} />}
+      {p.overlay}
     </div>
   );
 }
@@ -1080,8 +1085,9 @@ function MNew(p: PhoneProps) {
   const projects = made && !p.projects.some((x) => x.id === made.id) ? [...p.projects, made] : p.projects;
   // undefined: No project; null: not chosen yet (the projects may still be loading).
   const [projectId, setProjectId] = useState<string | undefined | null>(null);
-  const [folderOpen, setFolderOpen] = useState(false);
-  const [folder, setFolder] = useState("");
+  // V0.42: a folder picked for this thread; "" follows the project (its main folder, else a scratch folder).
+  const [picked, setPicked] = useState("");
+  const picker = useFolderPick();
   const [combo, setCombo] = useState(`${defs.profile}\u0000${defs.model}`);
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
@@ -1091,14 +1097,13 @@ function MNew(p: PhoneProps) {
   const [busy, setBusy] = useState(false);
   const att = useAttachments();
   const ta = useRef<HTMLTextAreaElement>(null);
-  const folderRef = useRef<HTMLInputElement>(null);
   const cur = projectId ? projects.find((x) => x.id === projectId) : undefined;
-  const choose = (pr: Project | null, openFolder = false) => {
+  const folder = newThreadFolder(picked, cur);
+  const choose = (pr: Project | null) => {
     setPicking(false);
     setCreating(null);
     setProjectId(pr?.id);
-    setFolderOpen(openFolder);
-    setFolder(pr ? "" : (last.cwd ?? ""));
+    setPicked("");
     if (pr) {
       const d = projectDefaults(pr, p.profiles);
       if (d.profile && d.model) setCombo(`${d.profile}\u0000${d.model}`);
@@ -1113,11 +1118,9 @@ function MNew(p: PhoneProps) {
     }
     if (!combo.split("\u0000")[0] && defs.profile) setCombo(`${defs.profile}\u0000${defs.model}`);
   }, [p.projects.length, defs.profile]);
-  const askFolder = !cur?.cwd || folderOpen;
-  const cwd = askFolder ? folder : (cur?.cwd ?? "");
   const [profile, model] = combo.split("\u0000");
   const plan = sendArgs(text, att.chips);
-  const ready = !!cwd.trim() && plan.ok;
+  const ready = plan.ok;
 
   const paste = async () => {
     setErr(null);
@@ -1139,8 +1142,8 @@ function MNew(p: PhoneProps) {
   const start = async () => {
     if (!ready || busy) return;
     setBusy(true);
-    store(STORAGE_LAST, JSON.stringify({ cwd: cwd.trim(), profile, model }));
-    const e = await p.actions.create({ cwd: cwd.trim(), text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, projectId: projectId ?? undefined, view: liveView || undefined });
+    store(STORAGE_LAST, JSON.stringify({ cwd: folder.cwd ?? "", profile, model }));
+    const e = await p.actions.create({ cwd: folder.cwd, text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, projectId: projectId ?? undefined, view: liveView || undefined });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -1165,17 +1168,8 @@ function MNew(p: PhoneProps) {
                 projects={projects}
                 selectedId={projectId ?? null}
                 allLabel="No project"
-                newRow={{ fromThread: false, sub: "Just a name; add a folder or repo if you like", onNew: (q) => setCreating(q.trim()) }}
+                newRow={{ fromThread: false, sub: "A name, and folders if you like", onNew: (q) => setCreating(q.trim()) }}
                 onPick={(pr) => choose(pr)}
-                extra={
-                  <button class="pli more" onClick={() => (choose(null, true), setTimeout(() => folderRef.current?.focus(), 0))}>
-                    <span class="pi all">…</span>
-                    <span class="plt">
-                      <span class="ell pln">Pick a folder…</span>
-                      <span class="ell pls2">No project; type the folder</span>
-                    </span>
-                  </button>
-                }
               />
             </div>
           )}
@@ -1201,19 +1195,16 @@ function MNew(p: PhoneProps) {
             </div>
           )}
           <div class="m-dl">Folder</div>
-          {askFolder ? (
-            <>
-              <input ref={folderRef} class="m-dchip" value={folder} placeholder="e.g. ~/src/app" spellcheck={false} autocapitalize="off" onInput={(e) => setFolder((e.target as HTMLInputElement).value)} />
-              {cur && !cur.cwd && <div class="m-fhint">{cur.name} has no folder on this computer. Pick one for this thread.</div>}
-            </>
-          ) : (
-            <div class="m-dchip m-fline">
-              <span class="ell">{cwd.replace(/^\/home\/[^/]+(?=\/|$)/, "~")}</span>
-              <button class="m-fchg" onClick={() => (setFolder(cwd), setFolderOpen(true), setTimeout(() => folderRef.current?.focus(), 0))}>
-                Change
-              </button>
-            </div>
-          )}
+          <div class={`m-dchip m-fline${folder.scratch ? " scratch" : ""}`}>
+            <span class="ell">{folder.label}</span>
+            <button class="m-fchg" onClick={async () => {
+              const path = await picker.pick(changeOptions(cur, p.host, folder.cwd ?? ""));
+              if (path) setPicked(path);
+            }}>
+              Change
+            </button>
+          </div>
+          <div class="m-fhint">{folderHint(cur, folder, p.host)}</div>
         </div>
         <div class="m-capr">
           <button class="m-capb" onClick={() => void paste()}>
@@ -1539,8 +1530,9 @@ function MProject(p: PhoneProps & { id: string }) {
             profiles={p.profiles}
             host={p.host}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
-            onAddSource={(v) => p.projectActions.addSource(pr.id!, v)}
+            onAddFolder={(v) => p.projectActions.addFolder(pr.id!, v)}
             onRemoveSource={(i) => p.projectActions.removeSource(pr.id!, i)}
+            onSetMain={(i) => p.projectActions.setMain(pr.id!, i)}
           />
         ) : (
           <div class="m-empty">{p.projects.length ? "This project is not here anymore." : "Loading…"}</div>
