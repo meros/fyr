@@ -591,3 +591,78 @@ func TestEffectDeadlines(t *testing.T) {
 		t.Fatalf("merge deadline %s", d)
 	}
 }
+
+// SPEC 0.5 V0.43: the owner merges from the PR tab through the command path; the
+// result is an effect.result by the owner and the agent is not woken.
+func TestOwnerMergeFromTab(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("pr")
+	h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.PR != nil })
+	h.wait(id, "done", state(core.Done))
+	h.e.Observe(id, func(t *core.Thread, now time.Time) {
+		core.PRObserved(t, core.PR{URL: t.PR.URL, Repo: t.PR.Repo, Number: t.PR.Number, State: "OPEN", Checks: "pass"}, now)
+	})
+	if r := h.cmd("pr.merge", id, core.Args{"method": "fast"}); r.OK || r.Status != 400 {
+		t.Fatalf("bad method: %+v", r)
+	}
+	r1 := h.cmdID("m1", "pr.merge", id, core.Args{"method": "rebase"})
+	r2 := h.cmdID("m1", "pr.merge", id, core.Args{"method": "rebase"})
+	if !r1.OK || !r2.OK {
+		t.Fatalf("merge %+v %+v", r1, r2)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !hasEvent(h.events(id), "effect.result", `"by":"owner"`) {
+		if time.Now().After(deadline) {
+			t.Fatal("no effect.result by the owner")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if h.r.n() != 1 {
+		t.Fatalf("runner ran %d times, want 1 (receipt)", h.r.n())
+	}
+	h.r.mu.Lock()
+	req := h.r.calls[0]
+	h.r.mu.Unlock()
+	if req.Action != "pr.merge" || req.Args["method"] != "rebase" || req.Args["pr"] != "https://github.com/acme/app/pull/42" {
+		t.Fatalf("request %+v", req)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if th, _ := h.e.Thread(id); strings.Contains(th.Summary, "[Fyr]") {
+		t.Fatalf("the agent was told: %q", th.Summary)
+	}
+}
+
+// SPEC 0.5 V0.43: Merge and Re-run are unavailable without an open, mergeable PR.
+func TestOwnerPRActionsUnavailable(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("hello")
+	h.wait(id, "done", state(core.Done))
+	if r := h.cmd("pr.merge", id, nil); r.OK || r.Status != 409 {
+		t.Fatalf("no PR: %+v", r)
+	}
+	if r := h.cmd("pr.rerunFailed", id, nil); r.OK || r.Status != 409 {
+		t.Fatalf("no PR rerun: %+v", r)
+	}
+	set := func(p core.PR) {
+		h.e.Observe(id, func(t *core.Thread, now time.Time) { core.PRObserved(t, p, now) })
+	}
+	url := "https://github.com/acme/app/pull/9"
+	set(core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Conflict: true})
+	if r := h.cmd("pr.merge", id, nil); r.OK || !strings.Contains(r.Error, "conflict") {
+		t.Fatalf("conflict: %+v", r)
+	}
+	if r := h.cmd("pr.rerunFailed", id, nil); !r.OK {
+		t.Fatalf("rerun on an open PR: %+v", r)
+	}
+	set(core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Review: "CHANGES_REQUESTED"})
+	if r := h.cmd("pr.merge", id, nil); r.OK || !strings.Contains(r.Error, "Changes requested") {
+		t.Fatalf("changes requested: %+v", r)
+	}
+	set(core.PR{URL: url, Repo: "acme/app", Number: 9, State: "MERGED"})
+	if r := h.cmd("pr.merge", id, nil); r.OK || r.Status != 409 {
+		t.Fatalf("merged: %+v", r)
+	}
+	if r := h.cmd("pr.rerunFailed", id, nil); r.OK {
+		t.Fatalf("rerun on a merged PR: %+v", r)
+	}
+}
