@@ -564,3 +564,18 @@ button.ptag{padding:0}
 .ctxm-i:hover:not([aria-disabled=true]),.ctxm-i:focus-visible{background:var(--select);outline:none}
 .ctxm-i[aria-disabled=true]{color:var(--ink-faint)}
 .ctxm-sep{height:1px;margin:4px 6px;background:var(--line)}
+
+/* The rail: an empty section cannot be selected; the host name stays on one line. */
+.ri:disabled,.ri:disabled:hover:not(.on){opacity:.45;cursor:default;background:none;box-shadow:none}
+.rail .foot .hn{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px}
+
+/* SPEC 0.5 V0.34: Copy on every output */
+.codeb{position:relative;min-width:0}
+.codeb>.cpy{position:absolute;top:6px;right:6px;z-index:1}
+.cpy{font:500 11px/16px var(--ui);padding:2px 8px;border-radius:6px;border:1px solid var(--line);background:var(--raised);color:var(--ink-muted);cursor:pointer;opacity:0;transition:opacity .12s}
+.codeb:hover>.cpy,.msgw:hover>.cpy,.cpy:focus-visible{opacity:1}
+.msgw{position:relative;min-width:0}
+.msgw>.msgcp{position:absolute;right:0;bottom:-22px}
+.cpy:hover{color:var(--ink);border-color:var(--line-strong)}
+@media (hover:none){.cpy{opacity:.7}.msgw>.msgcp{position:static;display:block;margin:4px 0 0 auto}}
+.md .codeb pre{padding-right:56px}
