@@ -668,3 +668,9 @@ button.ptag{padding:0}
 .dbn-b{border:0;background:none;color:var(--ink-muted);font:inherit;cursor:pointer;padding:2px 6px;min-height:28px}
 .dbn.m .dbn-b{min-height:44px;min-width:44px}
 .dbn-more{flex-basis:100%;margin:0;max-height:40vh;overflow:auto;padding:8px;border-radius:8px;background:var(--sunken);font:400 12px/17px var(--mono);white-space:pre-wrap}
+
+/* SPEC 0.5 V0.40: the thread list can be hidden; the open thread then takes its room. */
+.app.nolist{grid-template-columns:76px minmax(0,1fr)}
+.app.nolist>.ib{display:none}
+.ri.lt{margin-top:6px}
+.ri.lt svg{display:block;margin:0 auto 2px}

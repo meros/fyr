@@ -672,6 +672,25 @@ try {
   failures.push(`V0.38 main thread: ${e.message}`);
 }
 
+// V0.40: in a narrow desktop window the thread list starts hidden; \\ shows it, and the thread keeps its room.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 900, height: 800, deviceScaleFactor: 1, mobile: false });
+  await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_triage` });
+  await sleep(1200);
+  const a = await evaluate(`({ list: !!document.querySelector('.ib') && getComputedStyle(document.querySelector('.ib')).display !== 'none', th: Math.round(document.querySelector('.th')?.getBoundingClientRect().width ?? 0) })`);
+  check(!a.list && a.th > 700, `V0.40 list: a narrow window does not start with the list hidden (list ${a.list}, thread ${a.th} px)`);
+  await evaluate(`document.activeElement?.blur(); true`);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "\\", code: "Backslash", text: "\\" });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "\\", code: "Backslash" });
+  await sleep(300);
+  const b = await evaluate(`!!document.querySelector('.ib') && getComputedStyle(document.querySelector('.ib')).display !== 'none'`);
+  check(b, "V0.40 list: the \\ key does not show the list");
+  await evaluate(`try { localStorage.removeItem("fyr.list") } catch {} true`);
+} catch (e) {
+  failures.push(`V0.40 list: ${e.message}`);
+}
+
 clearTimeout(watchdog);
 cleanup();
 if (pageErrors.length) failures.push(...pageErrors.map((e) => `page error: ${e}`));

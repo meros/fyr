@@ -23,6 +23,9 @@ interface RailProps {
   /** the bell and Install controls (desktop) */
   extra?: ComponentChildren;
   onJump(k: SectionKey): void;
+  /** V0.40: show or hide the thread list */
+  listOn?: boolean;
+  onToggleList?(): void;
 }
 
 export function Rail(p: RailProps) {
@@ -41,6 +44,16 @@ export function Rail(p: RailProps) {
           </button>
         );
       })}
+      {p.onToggleList && (
+        <button class={`ri lt${p.listOn ? " on" : ""}`} aria-pressed={p.listOn} title={p.listOn ? "Hide the thread list (\\)" : "Show the thread list (\\)"} onClick={p.onToggleList}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16" />
+          </svg>
+          <span class="l">List</span>
+          <span class="k">\</span>
+        </button>
+      )}
       {p.extra && <div class="railx">{p.extra}</div>}
       <div class={`foot ${p.conn}`} title={title}>
         <i />

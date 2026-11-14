@@ -1,6 +1,7 @@
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
 /** Run when the browser is idle (V0.38: storing never competes with input). */
 const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
+import { listPref, listShown, setListPref } from "./prefs.ts";
 import { DeployBanner } from "./deploy-ui.tsx";
 import { cache, mergeEventLists } from "./cache.ts";
 import { setFullEventSource } from "./thread.tsx";
@@ -684,8 +685,26 @@ function App() {
     openThread(list[j], "open");
   };
 
+  // ---- the thread list (V0.40): hideable, hidden by default in a narrow window ----
+  const [listPrefState, setListPrefState] = useState<boolean | null>(() => listPref());
+  const [winW, setWinW] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1440));
+  useEffect(() => {
+    const on = () => setWinW(window.innerWidth);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const listOn = listShown(listPrefState, winW, !!view);
+  const toggleList = () => {
+    setListPrefState(!listOn);
+    setListPref(!listOn);
+  };
+
   const jump = (k: SectionKey) => {
     if (!sec[k].length) return; // an empty section is not a place to go
+    if (!listOn) {
+      setListPrefState(true); // jumping to a section shows the list (V0.40)
+      setListPref(true);
+    }
     setSectionOpen((o) => ({ ...o, [k]: true }));
     const first = sec[k][0];
     document.getElementById(`sec-${k}`)?.scrollIntoView({ block: "start" });
@@ -953,6 +972,10 @@ function App() {
         e.preventDefault();
         setHelp((h) => !h);
         return;
+      case "\\":
+        e.preventDefault();
+        toggleList();
+        return;
       case "Escape": {
         e.preventDefault();
         if (view?.mode === "peek") return closePeek();
@@ -1186,8 +1209,8 @@ function App() {
       {ctxMenu}
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>
-      <div class={view ? "app open" : "app"}>
-        <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} />
+      <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
+        <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} />
         <Boundary name="The inbox">
         <Inbox
           sec={sec}
