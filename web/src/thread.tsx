@@ -9,7 +9,7 @@ import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createContext } from "preact";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
-import { buildConversation, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
+import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { duration, relTime, shortModel } from "./format.ts";
@@ -402,6 +402,8 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
   // V0.33: messages the agent has not read stand after "Agent is here".
   const [items, pending] = useMemo(() => [all.filter((i) => !(i.kind === "user" && i.pending)), all.filter((i) => i.kind === "user" && i.pending)], [all]);
   const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
+  // V0.41: outcome at full weight, the work quiet and folded.
+  const entries = useMemo(() => pace(items, { details }), [items, details]);
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -467,9 +469,9 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
           </Boundary>
         )}
         <DeliveryCtx.Provider value={delivery ?? null}>
-          {items.map((it) => (
-            <Boundary key={it.key} name="This message">
-              <ItemView it={it} previews={previews} />
+          {entries.map((en) => (
+            <Boundary key={en.key} name="This message">
+              <EntryView en={en} previews={previews} />
             </Boundary>
           ))}
           {pending.length > 0 && (
@@ -479,7 +481,9 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
           )}
           {pending.map((it) => (
             <Boundary key={it.key} name="This message">
-              <ItemView it={it} previews={previews} />
+              <div class="cv out own">
+                <ItemView it={it} previews={previews} />
+              </div>
             </Boundary>
           ))}
         </DeliveryCtx.Provider>
@@ -611,7 +615,51 @@ function CopyPre({ cls, text, copy }: { cls: string; text: string; copy?: string
   );
 }
 
-function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
+/** V0.41: one paced entry. The wrapper's class carries the rhythm: more room before an outcome, little between steps. */
+function EntryView({ en, previews }: { en: Entry; previews: PreviewCard[] }) {
+  if (en.kind === "fold") return <div class="cv proc"><Fold en={en} previews={previews} /></div>;
+  const cls = en.role === "outcome" ? (en.item.kind === "user" ? "out own" : "out") : en.role === "end" ? "end" : "proc";
+  return (
+    <div class={`cv ${cls}`}>
+      <ItemView it={en.item} previews={previews} process={en.role === "process"} />
+    </div>
+  );
+}
+
+/** V0.41: the agent's steps between two outcomes as one quiet line; a tap shows every step in order. */
+function Fold({ en, previews }: { en: Extract<Entry, { kind: "fold" }>; previews: PreviewCard[] }) {
+  const [open, setOpen] = useState(false);
+  const toggle = () => setOpen(!open);
+  const time = en.durationMs !== null ? duration(en.durationMs) : "";
+  return (
+    <div class={`foldw${open ? " open" : ""}`}>
+      <div class="tl fold" role="button" tabIndex={0} aria-expanded={open} data-keys="self" title={en.text} onClick={toggle} onKeyDown={keyActivate(toggle)}>
+        <StateIcon state={en.failed ? "failed" : en.running ? "working" : "settled"} size={12} />
+        <span class="tlt ell">
+          {en.text}
+          {en.failed > 0 && <b class="tlerr"> · {en.failed} failed</b>}
+        </span>
+        <span class="d">
+          <span class="fst">
+            {en.steps} steps{time ? " · " : ""}
+          </span>
+          {time} {open ? "▾" : "▸"}
+        </span>
+      </div>
+      {open && (
+        <div class="foldb">
+          {en.items.map((it) => (
+            <div class="cv proc" key={it.key}>
+              <ItemView it={it} previews={previews} process />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]; process?: boolean }) {
   switch (it.kind) {
     case "user": {
       // V0.33: unread messages are dimmed; a cancelled or lost one is struck through.
@@ -653,7 +701,7 @@ function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
     case "assistant":
       if (it.quiet) return <QuietLine icon="seen" line={it.text.split("\n").find((x) => x.trim()) ?? ""} full={it.text} />;
       return (
-        <div class="msgw">
+        <div class={`msgw${process ? " proc" : ""}`}>
           <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text) }} />
           <CopyButton text={copySource({ kind: "message", text: it.text })} label="Copy message" cls="msgcp" />
         </div>
