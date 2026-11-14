@@ -202,7 +202,7 @@ export function ProjectEditor({ project, profiles, onSave, onAddRepo, onMoveThre
   const [name, setName] = useState(project.name);
   const [color, setColor] = useState(colorName(project.color, project.name));
   const [kind, setKind] = useState<"monogram" | "emoji" | "line">(resolveIcon(project.icon, project.name).kind);
-  const [emoji, setEmoji] = useState(project.icon?.kind === "emoji" ? project.icon.value : "");
+  const [emoji, setEmoji] = useState(project.icon?.kind === "emoji" ? (project.icon.value ?? "") : "");
   const [line, setLine] = useState(resolveIcon(project.icon, project.name).kind === "line" ? resolveIcon(project.icon, project.name).value : "folder");
   const [profile, setProfile] = useState(project.profile ?? "");
   const [model, setModel] = useState(project.model ?? "");

@@ -676,14 +676,14 @@ export function mockProjects(now: number): Project[] {
   return [
     { id: "p_web", name: "acme/web", color: "teal", icon: { kind: "line", value: "Globe" }, sources: [folder("/home/owner/src/acme/web"), repo("github.com/acme/web")], profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1), cwd: "/home/owner/src/acme/web" },
     { id: "p_ops", name: "acme/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, sources: [folder("/home/owner/src/acme/ops")], threads: 2, lastUsed: ago(1), cwd: "/home/owner/src/acme/ops" },
-    { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram", value: "" }, sources: [folder("/home/owner/src/" + LONG_PROJECT), repo("github.com/acme/" + LONG_PROJECT)], threads: 3, lastUsed: ago(5), cwd: "/home/owner/src/" + LONG_PROJECT },
+    { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram" }, sources: [folder("/home/owner/src/" + LONG_PROJECT), repo("github.com/acme/" + LONG_PROJECT)], threads: 3, lastUsed: ago(5), cwd: "/home/owner/src/" + LONG_PROJECT },
     { id: "p_dot", name: "dotfiles", color: "olive", icon: { kind: "line", value: "terminal" }, sources: [folder("/home/owner/dotfiles")], threads: 1, lastUsed: ago(2), cwd: "/home/owner/dotfiles" },
     { id: "p_api", name: "acme/api", color: "sky", icon: { kind: "line", value: "server" }, sources: [folder("/home/owner/src/acme/api")], threads: 0, lastUsed: ago(30), cwd: "/home/owner/src/acme/api" },
     { id: "p_fyr", name: "fyr", color: "violet", icon: { kind: "line", value: "FolderGit2" }, sources: [repo("github.com/meros/fyr")], threads: 0, lastUsed: ago(48) },
     { id: "p_home", name: "Garden", color: "green", icon: { kind: "emoji", value: "🏡" }, sources: [], threads: 1, lastUsed: ago(3) },
     { id: "p_infra", name: "acme/infra", color: "slate", icon: { kind: "line", value: "no-such-icon" }, sources: [folder("/home/owner/src/acme/infra")], threads: 1, lastUsed: ago(10), cwd: "/home/owner/src/acme/infra" },
     { id: "p_maplab", name: "Map perf lab", color: "blue", icon: { kind: "line", value: "map" }, sources: [folder("/home/owner/src/maplab")], threads: 0, lastUsed: ago(70), cwd: "/home/owner/src/maplab" },
-    { id: "p_book", name: "Bokföring åt Åsa", icon: { kind: "monogram", value: "" }, color: "brown", sources: [folder("/home/owner/ekonomi")], threads: 0, lastUsed: ago(200), cwd: "/home/owner/ekonomi" },
+    { id: "p_book", name: "Bokföring åt Åsa", icon: { kind: "monogram" }, color: "brown", sources: [folder("/home/owner/ekonomi")], threads: 0, lastUsed: ago(200), cwd: "/home/owner/ekonomi" },
   ];
 }
 

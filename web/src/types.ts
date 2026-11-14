@@ -138,7 +138,8 @@ export type ProjectSource = { kind: "folder"; host: string; path: string } | { k
 
 export interface ProjectIconSpec {
   kind: "monogram" | "emoji" | "line" | string;
-  value: string;
+  /** Missing when empty: the host omits it. */
+  value?: string;
 }
 
 /** A project: a host-independent identity with sources (V0.23). A project may have no source (a label). */
