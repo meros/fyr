@@ -5,11 +5,13 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -17,6 +19,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/push"
@@ -42,7 +45,9 @@ type Server struct {
 	// Empty refuses every tailnet request.
 	OwnerLogin string
 	// Push serves the Web Push endpoints (V0.15); optional.
-	Push     Pusher
+	Push Pusher
+	// Attach stores uploaded files (V0.18); optional.
+	Attach   *attach.Store
 	Profiles []agent.Profile
 	// T3Candidates lists adoptable T3 threads; optional.
 	T3Candidates func() (any, error)
@@ -55,6 +60,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/events", s.events)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
+	if s.Attach != nil {
+		mux.HandleFunc("POST /api/attachments", s.upload)
+		mux.HandleFunc("GET /api/attachments/{id}", s.download)
+	}
 	if s.Push != nil {
 		mux.HandleFunc("GET /api/push/key", func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, map[string]string{"publicKey": s.Push.PublicKey()})
@@ -307,4 +316,40 @@ func (s *Server) pushUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Push.Unsubscribe(b.Endpoint)
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
+	name, err := url.PathUnescape(r.Header.Get("X-Fyr-Filename"))
+	if err != nil {
+		name = r.Header.Get("X-Fyr-Filename")
+	}
+	m, err := s.Attach.Save(name, r.Header.Get("Content-Type"), r.Body)
+	if errors.Is(err, attach.ErrTooLarge) {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, m)
+}
+
+func (s *Server) download(w http.ResponseWriter, r *http.Request) {
+	m, err := s.Attach.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := os.Open(m.Path)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", m.MediaType)
+	w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.PathEscape(m.Name))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox")
+	http.ServeContent(w, r, m.Name, time.Time{}, f)
 }

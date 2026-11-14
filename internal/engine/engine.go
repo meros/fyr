@@ -45,6 +45,8 @@ type Engine struct {
 	Now     func() time.Time
 	// Adopt handles t3.adopt; set by main.
 	Adopt func(ids []string) (int, error)
+	// AttachmentExists checks ids in thread.create and thread.send (V0.18).
+	AttachmentExists func(id string) bool
 	// OnPR is called when a thread gets a new PR, so the poller looks now.
 	OnPR func(threadID string)
 	// OnAttention is called, outside the lock, when a thread's attention
@@ -186,6 +188,13 @@ func (e *Engine) Command(c Cmd) Reply {
 	act := core.Registry[c.Action]
 	if act == nil {
 		return Reply{Error: "unknown action " + c.Action, Status: 400}
+	}
+	if c.Action == "thread.create" || c.Action == "thread.send" {
+		for _, id := range core.AttachmentIDs(c.Args) {
+			if e.AttachmentExists == nil || !e.AttachmentExists(id) {
+				return Reply{Error: "unknown attachment " + id, Status: 400}
+			}
+		}
 	}
 	e.mu.Lock()
 	if prev, err := e.st.Receipt(c.CommandID); err != nil {

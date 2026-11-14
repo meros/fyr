@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/claude/fake"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
@@ -49,6 +50,7 @@ type harness struct {
 	dir string
 	db  string
 	seq int
+	att *attach.Store
 }
 
 func newHarness(t *testing.T, idle time.Duration) *harness {
@@ -66,7 +68,7 @@ func startHarness(t *testing.T, dir, db string, idle time.Duration) *harness {
 	if err := e.Load(); err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{t: t, e: e, r: &runner{}, dir: dir, db: db}
+	h := &harness{t: t, e: e, r: &runner{}, dir: dir, db: db, att: &attach.Store{Dir: filepath.Join(dir, "attachments")}}
 	var m *agent.Manager
 	srv := mcp.New(func(tok string) (string, bool) { return m.ThreadForToken(tok) })
 	e.Tools(srv)
@@ -76,8 +78,10 @@ func startHarness(t *testing.T, dir, db string, idle time.Duration) *harness {
 			return agent.Profile{ID: "fake", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}}
 		},
 		IdleStop: idle, MCPURL: hs.URL + "/mcp",
+		Attachments: h.att.Get,
 	})
 	e.Agents, e.Effects, h.m = m, h.r, m
+	e.AttachmentExists = func(id string) bool { _, err := h.att.Get(id); return err == nil }
 	t.Cleanup(func() { m.StopAll(); hs.Close(); st.Close() })
 	return h
 }
@@ -544,5 +548,34 @@ func TestRunningIncludesBackgroundTasks(t *testing.T) {
 	busy := h.e.Running()
 	if len(busy) != 1 || busy[0] != id {
 		t.Fatalf("busy %v", busy)
+	}
+}
+
+// SPEC 0.5 V0.18: an image goes inline and every attachment is listed with
+// its path; the user event records them.
+func TestAttachmentsReachTheAgent(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	png, _ := h.att.Save("shot.png", "image/png", strings.NewReader("\x89PNG fake"))
+	pdf, _ := h.att.Save("report.pdf", "application/pdf", strings.NewReader("%PDF-1.7"))
+	r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "look", "attachments": []any{png.ID, pdf.ID}})
+	if !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	h.wait(r.ThreadID, "done", state(core.Done))
+	evs := h.events(r.ThreadID)
+	if !hasEvent(evs, "msg", "[image]") || hasEvent(evs, "msg", "[image] [image]") {
+		t.Fatal("exactly one image block expected")
+	}
+	if !hasEvent(evs, "msg", "Attached: shot.png (image/png") || !hasEvent(evs, "msg", "Attached: report.pdf (application/pdf") || !hasEvent(evs, "msg", pdf.Path) {
+		t.Fatal("attachments not listed with their paths")
+	}
+	if !hasEvent(evs, "user", `"name":"report.pdf"`) {
+		t.Fatal("the user event does not record the attachments")
+	}
+	if r := h.cmd("thread.send", r.ThreadID, core.Args{"attachments": []any{pdf.ID}}); !r.OK {
+		t.Fatalf("a message with only an attachment was refused: %+v", r)
+	}
+	if r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "x", "attachments": []any{"0123456789abcdef0123"}}); r.OK {
+		t.Fatal("an unknown attachment id was accepted")
 	}
 }

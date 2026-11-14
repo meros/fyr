@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/engine"
@@ -201,6 +202,8 @@ func main() {
 	for _, p := range cfg.Profiles {
 		profileByID[p.ID] = p
 	}
+	att := &attach.Store{Dir: filepath.Join(*data, "attachments")}
+	eng.AttachmentExists = func(id string) bool { _, err := att.Get(id); return err == nil }
 	var mgr *agent.Manager
 	mcpSrv := mcp.New(func(tok string) (string, bool) { return mgr.ThreadForToken(tok) })
 	eng.Tools(mcpSrv)
@@ -214,9 +217,10 @@ func main() {
 			}
 			return cfg.Profiles[0]
 		},
-		IdleStop: time.Duration(cfg.IdleStopMinutes) * time.Minute,
-		MCPURL:   mcpURL,
-		LogDir:   filepath.Join(*data, "logs"),
+		IdleStop:    time.Duration(cfg.IdleStopMinutes) * time.Minute,
+		MCPURL:      mcpURL,
+		LogDir:      filepath.Join(*data, "logs"),
+		Attachments: att.Get,
 	})
 	eng.Agents = mgr
 	eng.Adopt = adopt
@@ -262,7 +266,7 @@ func main() {
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
 	}
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher,
+	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att,
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
 			if err != nil {

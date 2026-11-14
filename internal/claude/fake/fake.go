@@ -152,12 +152,19 @@ func Main() {
 			mm, _ := m["message"].(msg)
 			text := ""
 			if cs, ok := mm["content"].([]any); ok {
+				var parts []string
+				images := 0
 				for _, c := range cs {
 					if b, _ := c.(msg); b["type"] == "text" {
-						text, _ = b["text"].(string)
+						t, _ := b["text"].(string)
+						parts = append(parts, t)
 					} else if b["type"] == "image" {
-						text += " [image]"
+						images++
 					}
+				}
+				text = strings.Join(parts, "\n")
+				for i := 0; i < images; i++ {
+					text += " [image]"
 				}
 			}
 			turns <- text

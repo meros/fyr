@@ -121,3 +121,12 @@ Actions and their args:
 All POSTs need `X-Fyr: 1`. The host pushes `{"title", "body", "threadId", "state"}` when a thread enters `asking` or `failed`; the service worker shows it with `tag = threadId` and opens `/?open=<threadId>` on a tap.
 
 The PWA files: `/manifest.webmanifest` (`application/manifest+json`) and `/sw.js` are served with `Cache-Control: no-cache`.
+
+## Attachments (SPEC 0.5 V0.18)
+
+| Call | Body | Reply |
+|---|---|---|
+| `POST /api/attachments` | the raw file; headers `X-Fyr: 1`, `X-Fyr-Filename: <percent-encoded name>`, `Content-Type` | `{"id", "name", "size", "mediaType", "path"}`; `413` over 25 MB |
+| `GET /api/attachments/{id}` | – | the file, with its media type |
+
+`thread.create` and `thread.send` take `attachments: [id…]`; a message may be attachments only. The `user` event then has `attachments: [{id, name, mediaType, size}]`.

@@ -16,13 +16,15 @@ func (a Args) Str(k string) string { s, _ := a[k].(string); return s }
 // Effect is work an Action asks the host to do after its state change is
 // stored. Apply never performs effects itself, so it stays pure.
 type Effect struct {
-	Kind       string            `json:"kind"` // send, answer, interrupt, stop, setModel
-	Text       string            `json:"text,omitempty"`
-	Images     []Image           `json:"images,omitempty"`
-	DecisionID string            `json:"decisionId,omitempty"`
-	Answers    map[string]string `json:"answers,omitempty"`
-	Allow      bool              `json:"allow,omitempty"`
-	Model      string            `json:"model,omitempty"`
+	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel
+	Text   string  `json:"text,omitempty"`
+	Images []Image `json:"images,omitempty"`
+	// Attachments are ids of stored files (SPEC 0.5 V0.18).
+	Attachments []string          `json:"attachments,omitempty"`
+	DecisionID  string            `json:"decisionId,omitempty"`
+	Answers     map[string]string `json:"answers,omitempty"`
+	Allow       bool              `json:"allow,omitempty"`
+	Model       string            `json:"model,omitempty"`
 	// Request is the approved effect for Kind "effect".
 	Request *EffectReq `json:"request,omitempty"`
 }
@@ -100,7 +102,8 @@ func sendAction(name, label string) *Action {
 		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
 			text := strings.TrimSpace(a.Str("text"))
 			imgs := images(a)
-			if text == "" && len(imgs) == 0 {
+			atts := AttachmentIDs(a)
+			if text == "" && len(imgs) == 0 && len(atts) == 0 {
 				return nil, fmt.Errorf("%w: empty message", ErrBadArgs)
 			}
 			if name == "thread.create" {
@@ -117,7 +120,7 @@ func sendAction(name, label string) *Action {
 				}
 			}
 			revive(t, v, now)
-			return []Effect{{Kind: "send", Text: text, Images: imgs}}, nil
+			return []Effect{{Kind: "send", Text: text, Images: imgs, Attachments: atts}}, nil
 		},
 	}
 }
@@ -418,4 +421,16 @@ func TitleFrom(text string) string {
 		return string(r[:79]) + "…"
 	}
 	return line
+}
+
+// AttachmentIDs reads args.attachments, a list of stored file ids.
+func AttachmentIDs(a Args) []string {
+	raw, _ := a["attachments"].([]any)
+	var out []string
+	for _, x := range raw {
+		if s, ok := x.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
