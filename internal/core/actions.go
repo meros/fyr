@@ -27,6 +27,8 @@ type Effect struct {
 	Answers     map[string]string `json:"answers,omitempty"`
 	Allow       bool              `json:"allow,omitempty"`
 	Model       string            `json:"model,omitempty"`
+	// Effort is the effort level of a setModel (V0.47); nil leaves it.
+	Effort *string `json:"effort,omitempty"`
 	// Profile is the target of a handover (V0.45).
 	Profile string `json:"profile,omitempty"`
 	// Request is the approved effect for Kind "effect".
@@ -125,6 +127,7 @@ func sendAction(name, label string) *Action {
 				}
 				t.Project = ProjectName(t.Cwd)
 				t.Model = a.Str("model")
+				t.Effort = a.Str("effort")
 				t.Profile = a.Str("profile")
 				t.Title = a.Str("title")
 				t.Parent = a.Str("parent")
@@ -484,11 +487,20 @@ func init() {
 		Available: notArchived,
 		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
 			m := a.Str("model")
-			if m == "" {
+			_, hasEffort := a["effort"]
+			if m == "" && !hasEffort {
 				return nil, fmt.Errorf("%w: empty model", ErrBadArgs)
 			}
+			if m == "" {
+				m = t.Model
+			}
 			t.Model = m
-			return []Effect{{Kind: "setModel", Model: m}}, nil
+			e := Effect{Kind: "setModel", Model: m}
+			if hasEffort {
+				eff := a.Str("effort")
+				t.Effort, e.Effort = eff, &eff
+			}
+			return []Effect{e}, nil
 		}})
 }
 

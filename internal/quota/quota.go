@@ -54,6 +54,26 @@ type Profile struct {
 	Binary string
 	Env    []string // KEY=VALUE, as the profile starts its agent
 	Spec   *Spec
+	// Identity names the account behind the profile (decision 0015): two
+	// profiles with one identity share one quota entry and one provider
+	// read. Empty means Identity(spec).
+	Identity string
+	// Key reads the API key from Fyr's secret store (V0.47); it wins over
+	// keyFile and keyEnv. Optional.
+	Key func() (string, error)
+}
+
+// Identity is the default quota identity of a resolved spec: the login
+// folder for anthropic-oauth, else the kind, key source and endpoint.
+func Identity(s Spec) string {
+	if s.Kind == KindAnthropic {
+		return "login:" + filepath.Clean(s.ConfigDir)
+	}
+	src := "file:" + s.KeyFile
+	if s.KeyFile == "" {
+		src = "env:" + s.KeyEnv
+	}
+	return s.Kind + ":" + src + "@" + s.BaseURL
 }
 
 var defaultBase = map[string]string{
@@ -155,9 +175,10 @@ const (
 var Backoff = []time.Duration{5 * time.Minute, 10 * time.Minute, 20 * time.Minute, 30 * time.Minute}
 
 type target struct {
-	id   string
+	id   string // the identity
 	spec Spec
 	env  []string
+	key  func() (string, error)
 }
 
 type entry struct {
@@ -174,23 +195,50 @@ type Service struct {
 	Getenv func(string) string
 	Logf   func(format string, args ...any)
 
-	targets []target
+	home    string
+	targets []target          // one per identity
+	order   []string          // profile ids, in profile order
+	ident   map[string]string // profile id → identity
 	mu      sync.Mutex
-	ent     map[string]*entry
+	ent     map[string]*entry // by identity
 }
 
 // New resolves the profiles' specs; profiles of kind none are left out.
 func New(profiles []Profile, home string) *Service {
-	s := &Service{ent: map[string]*entry{}}
+	s := &Service{ent: map[string]*entry{}, home: home}
+	s.SetProfiles(profiles)
+	return s
+}
+
+// SetProfiles replaces the profiles (providers changed, V0.47); the data of
+// an identity that stays is kept.
+func (s *Service) SetProfiles(profiles []Profile) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ent := map[string]*entry{}
+	s.targets, s.order, s.ident = nil, nil, map[string]string{}
 	for _, p := range profiles {
-		sp := Resolve(p, home)
+		sp := Resolve(p, s.home)
 		if sp.Kind == KindNone {
 			continue
 		}
-		s.targets = append(s.targets, target{id: p.ID, spec: sp, env: p.Env})
-		s.ent[p.ID] = &entry{st: Status{Profile: p.ID, Kind: sp.Kind}}
+		id := p.Identity
+		if id == "" {
+			id = Identity(sp)
+		}
+		s.order = append(s.order, p.ID)
+		s.ident[p.ID] = id
+		if ent[id] != nil {
+			continue
+		}
+		s.targets = append(s.targets, target{id: id, spec: sp, env: p.Env, key: p.Key})
+		if e := s.ent[id]; e != nil && e.st.Kind == sp.Kind {
+			ent[id] = e
+		} else {
+			ent[id] = &entry{st: Status{Kind: sp.Kind}}
+		}
 	}
-	return s
+	s.ent = ent
 }
 
 func (s *Service) now() time.Time {
@@ -242,9 +290,10 @@ func (s *Service) Get(ctx context.Context) []Status {
 func (s *Service) Snapshot() []Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]Status, 0, len(s.targets))
-	for _, t := range s.targets {
-		st := s.ent[t.id].st
+	out := make([]Status, 0, len(s.order))
+	for _, pid := range s.order {
+		st := s.ent[s.ident[pid]].st
+		st.Profile = pid
 		st.Windows = append([]Window(nil), st.Windows...)
 		out = append(out, st)
 	}
@@ -278,11 +327,14 @@ func (s *Service) apply(t target, r result) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	e := s.ent[t.id]
+	if e == nil {
+		return // the providers changed while this read ran
+	}
 	e.fetching = false
 	if r.err == nil {
 		e.limited = 0
 		e.next = now.Add(TTL)
-		e.st = Status{Profile: t.id, Kind: t.spec.Kind, Windows: r.windows, Balance: r.balance, UpdatedAt: &now}
+		e.st = Status{Kind: t.spec.Kind, Windows: r.windows, Balance: r.balance, UpdatedAt: &now}
 		return
 	}
 	s.logf("quota %s: %s", t.id, r.err.msg)
@@ -312,7 +364,7 @@ func (s *Service) Observe(profile string, info map[string]any) {
 	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	e, ok := s.ent[profile]
+	e, ok := s.ent[s.ident[profile]]
 	if !ok || e.st.Kind != KindAnthropic {
 		return
 	}
@@ -508,6 +560,11 @@ func (s *Service) fetchAnthropic(ctx context.Context, t target) result {
 }
 
 func (s *Service) key(t target) (string, *fail) {
+	if t.key != nil {
+		if k, err := t.key(); err == nil && strings.TrimSpace(k) != "" {
+			return strings.TrimSpace(k), nil
+		}
+	}
 	if t.spec.KeyFile != "" {
 		b, err := os.ReadFile(t.spec.KeyFile)
 		if err != nil {
