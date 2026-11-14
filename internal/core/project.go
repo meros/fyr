@@ -13,6 +13,7 @@ type Project struct {
 	ID        string    `json:"id"`
 	Sources   []Source  `json:"sources"`
 	Edited    bool      `json:"edited,omitempty"` // the user changed it; seeds leave it alone
+	Auto      bool      `json:"auto,omitempty"`   // made by matching; removed when empty and unedited
 	Name      string    `json:"name"`
 	Color     string    `json:"color"` // a name from Palette
 	Icon      Icon      `json:"icon"`

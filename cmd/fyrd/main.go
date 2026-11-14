@@ -163,6 +163,7 @@ func main() {
 	if seeds, err := t3.Projects(t3DB, eng.HostID); err == nil {
 		eng.SeedProjects(seeds)
 	}
+	eng.Rematch() // seeded projects win over ones made before them
 	adopt := func(ids []string) (int, error) { return adoptT3(eng, t3DB, cfg.Profiles, ids) }
 
 	switch cmd {

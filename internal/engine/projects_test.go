@@ -135,3 +135,49 @@ func TestProjectWithoutSourceAndManualFiling(t *testing.T) {
 		t.Fatal("an unknown project was accepted")
 	}
 }
+
+// SPEC 0.5 V0.23: seeding after threads exist re-matches them; empty auto
+// projects go; a hand-filed thread stays. (Found live: the first start
+// filed threads before the T3 seed.)
+func TestSeedThenRematch(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	ws := filepath.Join(h.dir, "acme")
+	os.MkdirAll(filepath.Join(ws, "web"), 0o755)
+	r := h.cmd("thread.create", "", core.Args{"cwd": filepath.Join(ws, "web"), "text": "x"})
+	auto := projectOf(h.e, r.ThreadID)
+	label := h.e.Command(Cmd{CommandID: "l", Action: "project.create", Args: core.Args{"name": "Garden"}})
+	pid := label.Result.(map[string]any)["id"].(string)
+	m := h.cmd("thread.create", "", core.Args{"cwd": filepath.Join(ws, "web"), "text": "y"})
+	h.cmd("thread.setProject", m.ThreadID, core.Args{"projectId": pid})
+
+	h.e.SeedProjects([]core.Project{{Name: "acme", Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: ws}}}})
+	h.e.Rematch()
+	if p := projectOf(h.e, r.ThreadID); p.Name != "acme" {
+		t.Fatalf("not moved to the seeded project: %+v", p)
+	}
+	if p := projectOf(h.e, m.ThreadID); p.Name != "Garden" {
+		t.Fatalf("a hand-filed thread moved: %+v", p)
+	}
+	for _, p := range h.e.Projects() {
+		if p.ID == auto.ID {
+			t.Fatalf("the empty auto project stayed: %+v", p)
+		}
+		if p.Name == "Garden" && p.Threads != 1 {
+			t.Fatal("the label project lost its thread")
+		}
+	}
+}
+
+// SPEC 0.5 V0.23: a git repository in the home folder is not a project root.
+func TestHomeGitRootIgnored(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	home := filepath.Join(h.dir, "home")
+	gitInit(t, home)
+	t.Setenv("HOME", home)
+	folder := filepath.Join(home, "notes", "trip")
+	os.MkdirAll(folder, 0o755)
+	r := h.cmd("thread.create", "", core.Args{"cwd": folder, "text": "x"})
+	if p := projectOf(h.e, r.ThreadID); p.Folder(h.e.HostID) != folder || p.Name != "trip" {
+		t.Fatalf("home repo swallowed the folder: %+v", p)
+	}
+}
