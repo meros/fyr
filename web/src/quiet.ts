@@ -12,8 +12,39 @@ export const WEEK: { key: string; label: string }[] = [
   { key: "sun", label: "Sun" },
 ];
 
-/** The default window when quiet hours are turned on: the owner's example. */
+/** The default window "+ Add quiet hours" adds: the owner's example. */
 export const DEFAULT_QUIET: QuietHours = { from: "17:00", to: "06:00" };
+
+/** Decision 0014 addendum: one-tap windows. Weeknights start Sunday to Friday, so with All weekend the quiet runs
+ *  from Friday 17:00 to Monday 06:00 without a gap (days are the start days of a window). */
+export const QUIET_PRESETS: { key: string; label: string; hint: string; window: QuietHours }[] = [
+  { key: "weeknights", label: "Weeknights", hint: "17:00–06:00", window: { from: "17:00", to: "06:00", days: ["mon", "tue", "wed", "thu", "fri", "sun"] } },
+  { key: "weekend", label: "All weekend", hint: "Sat–Sun", window: { from: "00:00", to: "00:00", days: ["sat", "sun"] } },
+];
+
+/** A project's quiet hours as a list: the list, the single object a host from before the addendum sends, or nothing. */
+export function quietList(q: unknown): QuietHours[] {
+  const ok = (w: unknown): w is QuietHours => !!w && typeof w === "object" && typeof (w as QuietHours).from === "string" && typeof (w as QuietHours).to === "string";
+  if (Array.isArray(q)) return q.filter(ok);
+  return ok(q) ? [q] : [];
+}
+
+/** A window in the shape the host stores: days left out when every day. */
+export function cleanWindow(w: QuietHours): QuietHours {
+  return { from: w.from, to: w.to, ...(w.days?.length && w.days.length < 7 ? { days: WEEK.map((d) => d.key).filter((k) => w.days!.includes(k)) } : {}) };
+}
+
+/** All day is from equal to to; the toggle writes 00:00–00:00 and, turned off, the default evening. */
+export const isAllDay = (w: QuietHours) => w.from === w.to;
+export function setAllDay(w: QuietHours, on: boolean): QuietHours {
+  return on ? { ...w, from: "00:00", to: "00:00" } : { ...w, from: DEFAULT_QUIET.from, to: DEFAULT_QUIET.to };
+}
+
+/** Whether the list already holds a preset's window, so its chip can step aside. */
+export function hasWindow(list: QuietHours[], w: QuietHours): boolean {
+  const k = JSON.stringify(cleanWindow(w));
+  return list.some((x) => JSON.stringify(cleanWindow(x)) === k);
+}
 
 function until(x: { quietUntil?: string } | undefined): number {
   const t = x?.quietUntil ? Date.parse(x.quietUntil) : NaN;
@@ -56,18 +87,51 @@ export function quietNote(p: Pick<Project, "quietUntil"> | undefined, now: numbe
   return `Quiet until ${day}${hm(end)}`;
 }
 
-function dayText(days: string[] | undefined): string {
-  const idx = (days ?? []).map((d) => WEEK.findIndex((w) => w.key === d)).filter((i) => i >= 0).sort((a, b) => a - b);
-  if (!idx.length || idx.length === 7) return "";
-  const run = idx.every((v, i) => i === 0 || v === idx[i - 1] + 1);
-  if (run && idx.length > 1) return `, ${WEEK[idx[0]].label}–${WEEK[idx[idx.length - 1]].label}`;
-  return `, ${idx.map((i) => WEEK[i].label).join(", ")}`;
+/** The chosen days in week order (Monday first) as indexes; [] when every day. */
+function dayIdx(days: string[] | undefined): number[] {
+  const idx = [...new Set((days ?? []).map((d) => WEEK.findIndex((w) => w.key === d)).filter((i) => i >= 0))].sort((a, b) => a - b);
+  return idx.length === 7 ? [] : idx;
 }
 
-/** The project screen's one line. */
-export function quietLine(q: QuietHours): string {
-  const when = q.from === q.to ? "all day" : `from ${q.from} to ${q.to}`;
-  return `Threads hide and send no notifications ${when}${dayText(q.days)}.`;
+const same = (idx: number[], keys: string[]) => idx.length === keys.length && keys.every((k) => idx.includes(WEEK.findIndex((w) => w.key === k)));
+
+/** "Mon–Fri", "Sun–Fri" (a run may wrap past Sunday), "Mon, Wed"; "" for every day. */
+export function dayText(days: string[] | undefined): string {
+  const idx = dayIdx(days);
+  if (!idx.length) return "";
+  if (idx.length > 1) {
+    const set = new Set(idx);
+    const start = idx.find((i) => !set.has((i + 6) % 7));
+    if (start !== undefined && idx.every((_, k) => set.has((start + k) % 7)))
+      return `${WEEK[start].label}–${WEEK[(start + idx.length - 1) % 7].label}`;
+  }
+  return idx.map((i) => WEEK[i].label).join(", ");
+}
+
+/** One window in plain words: "weeknights 17:00–06:00", "all weekend", "Mon, Wed 09:00–12:00". alone: the only
+ *  window, which keeps the words of before the addendum ("from 17:00 to 06:00"). */
+export function windowWords(w: QuietHours, alone = false): string {
+  const idx = dayIdx(w.days);
+  const days = dayText(w.days);
+  if (isAllDay(w)) {
+    if (same(idx, ["sat", "sun"])) return "all weekend";
+    return days ? `all day ${days}` : "all day";
+  }
+  const span = `${w.from}–${w.to}`;
+  const overnight = w.to <= w.from;
+  if (!days) return alone ? `from ${w.from} to ${w.to}` : `daily ${span}`;
+  if (overnight && [["mon", "tue", "wed", "thu", "fri"], ["sun", "mon", "tue", "wed", "thu", "fri"], ["sun", "mon", "tue", "wed", "thu"]].some((k) => same(idx, k))) return `weeknights ${span}`;
+  if (same(idx, ["sat", "sun"])) return `weekends ${span}`;
+  return `${days} ${span}`;
+}
+
+/** The project screen's one line, every window in plain words. */
+export function quietLine(q: QuietHours[] | QuietHours): string {
+  const list = quietList(q);
+  if (!list.length) return "Off: threads show and notify as usual.";
+  const words = list.map((w) => windowWords(w, list.length === 1));
+  const all = words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}` : words[0];
+  return `Threads hide and send no notifications ${all}.`;
 }
 
 /** Toggle one day; days absent means every day. All seven become absent again; the last day cannot be turned off. */
