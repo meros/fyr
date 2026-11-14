@@ -50,6 +50,8 @@ type Thread struct {
 	LiveView bool `json:"liveView,omitempty"`
 	// Live is the view itself: page, state, times, headline (V0.37).
 	Live *LiveView `json:"live,omitempty"`
+	// Handover is set while the thread moves to another profile (V0.45).
+	Handover *Handover `json:"handover,omitempty"`
 
 	SettledAt        *time.Time `json:"settledAt,omitempty"`
 	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
@@ -59,6 +61,13 @@ type Thread struct {
 	Source string `json:"source"`           // "fyr" or "t3"
 	Parent string `json:"parent,omitempty"` // the thread whose agent started it (V0.22)
 	T3ID   string `json:"t3Id,omitempty"`
+}
+
+// Handover is a move to another profile that is going on (SPEC 0.5 V0.45).
+type Handover struct {
+	To    string    `json:"to"`
+	Model string    `json:"model,omitempty"`
+	At    time.Time `json:"at"`
 }
 
 // OutMsg is a message sent to the agent and not read yet (SPEC 0.5 V0.33).
