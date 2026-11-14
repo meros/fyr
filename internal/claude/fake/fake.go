@@ -12,13 +12,18 @@
 //	pr       runs `gh pr create` and prints a PR URL
 //	crash    exits with code 3 during the run
 //	sub      runs one subagent (Task tool) before it answers
+//	merge U  calls mcp__fyr__effect_request {action pr.merge, args {pr: U}}
+//	         over HTTP from --mcp-config and reports the tool's text
+//	gate     asks the PreToolUse hook about "gh pr merge 1" and reports it
 //	other    replies "echo: <text>"
 package fake
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -33,6 +38,8 @@ var (
 	pending   = map[string]chan msg{}
 	interrupt = make(chan struct{}, 1)
 	session   = "fake-session"
+	mcpURL    string
+	mcpAuth   string
 	model     = "fake-model"
 )
 
@@ -72,6 +79,16 @@ func Main() {
 	for i, a := range os.Args {
 		if (a == "--session-id" || a == "--resume") && i+1 < len(os.Args) {
 			session = os.Args[i+1]
+		}
+		if a == "--mcp-config" && i+1 < len(os.Args) {
+			var cfg struct {
+				MCPServers map[string]struct {
+					URL     string            `json:"url"`
+					Headers map[string]string `json:"headers"`
+				} `json:"mcpServers"`
+			}
+			json.Unmarshal([]byte(os.Args[i+1]), &cfg)
+			mcpURL, mcpAuth = cfg.MCPServers["fyr"].URL, cfg.MCPServers["fyr"].Headers["Authorization"]
 		}
 		if a == "--model" && i+1 < len(os.Args) {
 			model = os.Args[i+1]
@@ -190,6 +207,19 @@ func turn(text string) {
 			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_task", "content": "found it"}}}})
 		assistant(msg{"type": "text", "text": "The subagent found it."})
 		result(false, "success", "done")
+	case "merge":
+		url := strings.TrimSpace(strings.TrimPrefix(text, "merge"))
+		assistant(msg{"type": "tool_use", "id": "tu_m", "name": "mcp__fyr__effect_request",
+			"input": msg{"action": "pr.merge", "args": msg{"pr": url, "method": "squash"}}})
+		out := callMCP("effect_request", msg{"action": "pr.merge", "args": msg{"pr": url, "method": "squash"}, "reason": "asked"})
+		assistant(msg{"type": "text", "text": "tool said: " + out})
+		result(false, "success", "requested")
+	case "gate":
+		r := request("hook1", msg{"subtype": "hook_callback", "callback_id": "gate",
+			"input": msg{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": msg{"command": "gh pr merge 1 --squash"}}})
+		hso, _ := r["hookSpecificOutput"].(msg)
+		assistant(msg{"type": "text", "text": fmt.Sprintf("hook: %v %v", hso["permissionDecision"], hso["permissionDecisionReason"])})
+		result(false, "success", "done")
 	case "crash":
 		fmt.Fprintln(os.Stderr, "boom")
 		os.Exit(3)
@@ -197,6 +227,31 @@ func turn(text string) {
 		assistant(msg{"type": "text", "text": "echo: " + text})
 		result(false, "success", "echo: "+text)
 	}
+}
+
+func callMCP(tool string, args msg) string {
+	if mcpURL == "" {
+		return "no mcp server"
+	}
+	b, _ := json.Marshal(msg{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": msg{"name": tool, "arguments": args}})
+	req, _ := http.NewRequest("POST", mcpURL, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", mcpAuth)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "mcp error: " + err.Error()
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Result struct {
+			Content []struct{ Text string } `json:"content"`
+		} `json:"result"`
+	}
+	json.NewDecoder(resp.Body).Decode(&out)
+	if resp.StatusCode != 200 || len(out.Result.Content) == 0 {
+		return fmt.Sprintf("mcp status %d", resp.StatusCode)
+	}
+	return out.Result.Content[0].Text
 }
 
 func mustWd() string { d, _ := os.Getwd(); return d }

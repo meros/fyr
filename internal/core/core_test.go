@@ -213,3 +213,74 @@ func stringsRepeat(s string, n int) string {
 	}
 	return out
 }
+
+// SPEC 13.1 `e`: on a thread without a current run and with an open PR,
+// settle arms "settle when merged"; bulk settle (Shift+E, U11) settles now.
+func TestSettleWithOpenPRArmsSettleWhenMerged(t *testing.T) {
+	th, v := &Thread{PR: &PR{State: "OPEN", Checks: "pass"}}, &View{}
+	if _, err := apply(t, "thread.settle", th, v, nil, at(1)); err != nil {
+		t.Fatal(err)
+	}
+	if th.SettledAt != nil || !th.SettleWhenMerged {
+		t.Fatalf("e with an open PR must arm settle when merged, got settled=%v armed=%v", th.SettledAt != nil, th.SettleWhenMerged)
+	}
+	th2, v2 := &Thread{PR: &PR{State: "OPEN"}}, &View{}
+	if _, err := apply(t, "thread.settle", th2, v2, Args{"now": true}, at(1)); err != nil {
+		t.Fatal(err)
+	}
+	if th2.SettledAt == nil {
+		t.Fatal("bulk settle must settle now")
+	}
+}
+
+// SPEC 12.3, 0.5 V0.12: the gate denies gh pr merge and names the Fyr tool.
+func TestGate(t *testing.T) {
+	deny := []string{"gh pr merge 12 --squash", "cd x && gh pr merge 12", "gh  pr merge", "(gh pr merge 1)"}
+	allow := []string{"gh pr view 12", "gh pr create --fill", "echo gh pr merged", "git merge main", "ghx pr merge"}
+	for _, c := range deny {
+		if r := Gate("Bash", map[string]any{"command": c}); r == "" {
+			t.Errorf("allowed %q", c)
+		}
+	}
+	for _, c := range allow {
+		if r := Gate("Bash", map[string]any{"command": c}); r != "" {
+			t.Errorf("denied %q", c)
+		}
+	}
+	if Gate("Read", map[string]any{"command": "gh pr merge"}) != "" {
+		t.Error("gate applies to Bash only")
+	}
+}
+
+// SPEC 5.10: approving an effect Decision yields an effect for Fyr to run.
+func TestApproveEffectDecision(t *testing.T) {
+	th, v := &Thread{}, &View{}
+	req := &EffectReq{Action: "pr.merge", Args: map[string]any{"pr": "u", "method": "squash"}}
+	DecisionOpened(th, Decision{ID: "e1", Kind: "effect", Effect: req, CreatedAt: at(0)})
+	eff, err := apply(t, "thread.answer", th, v, Args{"decisionId": "e1", "allow": true}, at(1))
+	if err != nil || len(eff) != 1 || eff[0].Kind != "effect" || !eff[0].Allow || eff[0].Request.Action != "pr.merge" {
+		t.Fatalf("got %+v %v", eff, err)
+	}
+	if _, err := apply(t, "thread.answer", th, v, Args{"decisionId": "e1", "allow": true}, at(2)); err == nil {
+		t.Fatal("a second approve must fail: the decision is gone")
+	}
+}
+
+// SPEC 5.10: an effect Decision does not need the agent process, so it
+// survives a process loss; ask and approval Decisions do not.
+func TestProcessLostKeepsEffectDecisions(t *testing.T) {
+	th := &Thread{}
+	RunStarted(th, at(0))
+	DecisionOpened(th, Decision{ID: "a", Kind: "ask", CreatedAt: at(1)})
+	DecisionOpened(th, Decision{ID: "e", Kind: "effect", CreatedAt: at(1)})
+	ProcessLost(th, "process", "exit", at(2))
+	if len(th.Decisions) != 1 || th.Decisions[0].ID != "e" || th.Failure == nil {
+		t.Fatalf("decisions %+v failure %v", th.Decisions, th.Failure)
+	}
+	th2 := &Thread{}
+	DecisionOpened(th2, Decision{ID: "e", Kind: "effect", CreatedAt: at(1)})
+	ProcessLost(th2, "process", "exit", at(2))
+	if th2.Failure != nil || len(th2.Decisions) != 1 {
+		t.Fatal("an idle thread with only an effect Decision lost nothing and must not fail")
+	}
+}

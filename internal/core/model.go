@@ -65,13 +65,21 @@ type Failure struct {
 // Decision is a question or an approval that waits for the user.
 type Decision struct {
 	ID        string     `json:"id"`
-	Kind      string     `json:"kind"` // "ask" or "approval"
+	Kind      string     `json:"kind"` // "ask", "approval" or "effect"
 	Assignee  string     `json:"assignee"`
 	Questions []Question `json:"questions,omitempty"`
 	Tool      string     `json:"tool,omitempty"`
 	Input     any        `json:"input,omitempty"`
 	Agent     string     `json:"agent,omitempty"` // which subagent asked, when known
+	Effect    *EffectReq `json:"effect,omitempty"`
 	CreatedAt time.Time  `json:"createdAt"`
+}
+
+// EffectReq is an effect the agent asked Fyr to run (SPEC 5.10, V0.12).
+type EffectReq struct {
+	Action string         `json:"action"`
+	Args   map[string]any `json:"args"`
+	Reason string         `json:"reason,omitempty"`
 }
 
 type Question struct {
