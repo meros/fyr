@@ -103,6 +103,7 @@ Actions and their args:
 | `thread.settle` | `now?: true` for bulk settle |
 | `thread.snooze` | `until` (RFC 3339, future) |
 | `thread.rename` | `title` |
+| `thread.setProject` | `projectId`: file the thread into a project by hand; folder matching keeps it (V0.23) |
 | `thread.setModel` | `model` |
 | `t3.adopt` (no `threadId`) | `t3Ids: [..]` |
 
@@ -144,7 +145,7 @@ Commands (through `POST /api/command`, no `threadId`):
 | action | args |
 |---|---|
 | `project.update` | `id`, then any of `name`, `color` (a palette name: slate blue sky teal green olive violet indigo rose brown), `icon` `{kind: monogram\|emoji\|line, value}`, `profile`, `model` |
-| `project.create` | `name?`, `sources: [Source]` |
+| `project.create` | `name`, `sources?: [Source]` (a project may have no source: a label) |
 | `project.addSource` | `id`, `source` |
 
 The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. Threads carry `projectId`; `project` stays the display name.

@@ -104,3 +104,34 @@ func TestProjectsPersistAndBackfill(t *testing.T) {
 		t.Fatalf("after load %+v", p)
 	}
 }
+
+// SPEC 0.5 V0.23: a project needs no git and no source; threads are filed
+// into it by hand, and folder matching keeps the choice.
+func TestProjectWithoutSourceAndManualFiling(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	r := h.e.Command(Cmd{CommandID: "p1", Action: "project.create", Args: core.Args{"name": "Hemmet"}})
+	if !r.OK {
+		t.Fatalf("a project without sources was refused: %+v", r)
+	}
+	pid := r.Result.(map[string]any)["id"].(string)
+	th := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "recept"})
+	if mv := h.cmd("thread.setProject", th.ThreadID, core.Args{"projectId": pid}); !mv.OK {
+		t.Fatalf("%+v", mv)
+	}
+	if p := projectOf(h.e, th.ThreadID); p.Name != "Hemmet" {
+		t.Fatalf("not filed: %+v", p)
+	}
+	h.cmd("thread.send", th.ThreadID, core.Args{"text": "again"})
+	h.m.StopAll()
+	h.e.st.Close()
+	st, _ := store.Open(h.db)
+	defer st.Close()
+	e2 := New(st)
+	e2.Load()
+	if p := projectOf(e2, th.ThreadID); p.Name != "Hemmet" {
+		t.Fatalf("folder matching moved the thread back: %+v", p)
+	}
+	if bad := h.e.Command(Cmd{CommandID: "x", Action: "thread.setProject", ThreadID: th.ThreadID, Args: core.Args{"projectId": "p_nope"}}); bad.OK {
+		t.Fatal("an unknown project was accepted")
+	}
+}

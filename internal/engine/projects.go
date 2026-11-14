@@ -184,12 +184,12 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		p = &core.Project{ID: NewID("p_"), Name: name, Icon: core.Icon{Kind: "monogram"}, CreatedAt: e.Now(), Edited: true}
 		raw, _ := json.Marshal(c.Args["sources"])
 		json.Unmarshal(raw, &p.Sources)
-		if len(p.Sources) == 0 {
-			e.mu.Unlock()
-			return bad("a project needs at least one source")
-		}
-		if p.Name == "" {
+		if p.Name == "" && len(p.Sources) > 0 {
 			p.Name = filepath.Base(p.Sources[0].Path + p.Sources[0].URL)
+		}
+		if strings.TrimSpace(p.Name) == "" {
+			e.mu.Unlock()
+			return bad("a project needs a name or a source")
 		}
 		p.Color = core.DefaultColor(p.Name)
 		e.projects[p.ID] = p

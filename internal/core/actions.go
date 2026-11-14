@@ -382,6 +382,17 @@ func init() {
 			return nil, nil
 		}})
 
+	register(&Action{Name: "thread.setProject", Label: "Move to project",
+		// SPEC 0.5 V0.23: the engine checks that the project exists.
+		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
+			id := a.Str("projectId")
+			if id == "" {
+				return nil, fmt.Errorf("%w: projectId is required", ErrBadArgs)
+			}
+			t.ProjectID, t.ProjectManual = id, true
+			return nil, nil
+		}})
+
 	register(&Action{Name: "thread.rename", Label: "Rename",
 		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
 			s := strings.TrimSpace(a.Str("title"))
