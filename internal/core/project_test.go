@@ -2,22 +2,6 @@ package core
 
 import "testing"
 
-// SPEC 0.5 V0.23: remotes normalise to host/owner/repo.
-func TestNormalizeRemote(t *testing.T) {
-	cases := map[string]string{
-		"git@github.com:meros/fyr.git":        "github.com/meros/fyr",
-		"https://github.com/meros/fyr":        "github.com/meros/fyr",
-		"ssh://git@github.com/Meros/Fyr.git/": "github.com/meros/fyr",
-		"git+ssh://git@github.com/meros/fyr":  "github.com/meros/fyr",
-		"":                                    "",
-	}
-	for in, want := range cases {
-		if got := NormalizeRemote(in); got != want {
-			t.Errorf("%q: got %q want %q", in, got, want)
-		}
-	}
-}
-
 // SPEC 0.5 V0.23: the default colour is stable for a name and never the beam.
 func TestDefaultColor(t *testing.T) {
 	if DefaultColor("norban") != DefaultColor("norban") {
@@ -48,26 +32,33 @@ func TestMonogram(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.42: the main folder is the one marked main on the host, else
-// the first folder there; SetMain moves the mark within that host only.
-func TestMainFolder(t *testing.T) {
-	p := Project{Sources: []Source{
-		{Kind: "repo", URL: "github.com/me/app"},
-		{Kind: "folder", Host: "b", Path: "/b/app"},
-		{Kind: "folder", Host: "a", Path: "/a/one"},
-		{Kind: "folder", Host: "a", Path: "/a/two"},
-	}}
-	if p.Folder("a") != "/a/one" || p.Folder("b") != "/b/app" || p.Folder("c") != "" || p.MainIndex("c") != -1 {
-		t.Fatalf("default main: %q %q", p.Folder("a"), p.Folder("b"))
+// SPEC 0.5 V0.55: a thread lands in the project whose folder is its folder
+// or contains it; the longest folder wins, ties by id; a folder never
+// covers a sibling with the same prefix.
+func TestMatchFolder(t *testing.T) {
+	ps := []*Project{
+		{ID: "p_home", Folder: "/home/me"},
+		{ID: "p_fyr", Folder: "/home/me/git/fyr"},
+		{ID: "p_b", Folder: "/home/me/git/fyr/web/"},
+		{ID: "p_a", Folder: "/home/me/git/fyr/web"},
+		{ID: "p_label"},
 	}
-	orig := p.Sources
-	if !p.SetMain(3) || p.Folder("a") != "/a/two" || p.Folder("b") != "/b/app" || orig[3].Main {
-		t.Fatalf("set main: %+v (original changed: %v)", p.Sources, orig[3].Main)
+	cases := map[string]string{
+		"/home/me/git/fyr":         "p_fyr",
+		"/home/me/git/fyr/":        "p_fyr",
+		"/home/me/git/fyr/cmd":     "p_fyr",
+		"/home/me/git/fyr/web/src": "p_a",
+		"/home/me/git/fyr-projcut": "p_home",
+		"/home/me":                 "p_home",
+		"/tmp/x":                   "",
+		"":                         "",
 	}
-	if !p.SetMain(2) || p.Sources[3].Main || !p.Sources[2].Main {
-		t.Fatalf("move main: %+v", p.Sources)
+	for dir, want := range cases {
+		if got := MatchFolder(ps, dir); got != want {
+			t.Errorf("%q: got %q want %q", dir, got, want)
+		}
 	}
-	if p.SetMain(0) || p.SetMain(4) || p.SetMain(-1) {
-		t.Fatal("a repo or a bad index became main")
+	if got := MatchFolder([]*Project{{ID: "p_root", Folder: "/"}}, "/srv/x"); got != "p_root" {
+		t.Errorf("root folder: %q", got)
 	}
 }
