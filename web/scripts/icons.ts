@@ -63,23 +63,26 @@ export interface MarkOptions {
 }
 
 /**
- * The Fyr mark: a lighthouse-amber disc (the lamp) with a short beam to the upper right,
- * on a night square with rounded corners (or full bleed when maskable).
+ * The Fyr mark: a lighthouse. A light tower with a gallery and a pointed cap
+ * stands on a dark headland; its amber lamp throws two beams to the sides.
+ * The tile is night with a soft vertical gradient. The badge is the same
+ * silhouette in white on transparent; the maskable icon scales the mark into
+ * the safe zone and fills the square.
  */
 export function drawMark(size: number, opts: MarkOptions = {}): Uint8Array {
   const px = new Uint8Array(size * size * 4);
-  const bg = hex(NIGHT);
-  const fg: RGB = opts.badge ? [255, 255, 255] : hex(AMBER);
-  // Geometry in unit coordinates (0..1). The maskable icon shrinks the mark into the safe zone.
-  const k = opts.maskable ? 0.78 : 1;
-  const cx = 0.5 - 0.1 * k;
-  const cy = 0.5 + 0.1 * k;
-  const r = 0.17 * k;
-  const beamLen = 0.27 * k;
-  const ang = -Math.PI / 4; // towards the upper right
-  const half = 0.22; // half-angle of the beam in radians
-  const radius = opts.maskable || opts.badge ? 0 : 0.22; // corner radius of the tile
-  const S = 4; // supersampling per axis
+  const k = opts.maskable ? 0.8 : 1;
+  // Map unit coordinates of the drawing into the (possibly shrunk) mark box.
+  const toMark = (x: number, y: number): [number, number] => [(x - 0.5) / k + 0.5, (y - 0.5) / k + 0.5];
+  const radius = opts.maskable || opts.badge ? 0 : 0.225;
+  const top = hex("#22374b");
+  const bottom = hex("#0d151d");
+  const tower = hex("#eef1f4");
+  const shade = hex("#c3ccd5");
+  const lampCore = hex("#ffbf3d");
+  const amber = hex(AMBER);
+  const land = hex("#1c2c3b");
+  const S = 4;
 
   const inTile = (x: number, y: number) => {
     if (opts.badge) return false;
@@ -88,41 +91,72 @@ export function drawMark(size: number, opts: MarkOptions = {}): Uint8Array {
     const dy = Math.max(radius - y, 0, y - (1 - radius));
     return dx * dx + dy * dy <= radius * radius;
   };
-  /** 0 outside, 1 on the disc, 0..1 along the beam (fades out) */
-  const markAlpha = (x: number, y: number): number => {
-    const dx = x - cx;
-    const dy = y - cy;
-    const d = Math.hypot(dx, dy);
-    if (d <= r) return 1;
-    if (d > r + beamLen) return 0;
-    let a = Math.atan2(dy, dx) - ang;
-    a = Math.atan2(Math.sin(a), Math.cos(a));
-    if (Math.abs(a) > half) return 0;
-    const t = (d - r) / beamLen;
-    return 0.8 * (1 - 0.75 * t);
+  const LX = 0.5, LY = 0.35; // the lamp
+  const inTower = (x: number, y: number) => {
+    if (y < 0.425 || y > 0.8) return false;
+    const t = (y - 0.425) / (0.8 - 0.425);
+    return Math.abs(x - 0.5) <= 0.052 + 0.048 * t;
+  };
+  const inGallery = (x: number, y: number) => y >= 0.4 && y <= 0.43 && Math.abs(x - 0.5) <= 0.085;
+  const inLantern = (x: number, y: number) => y >= 0.305 && y <= 0.4 && Math.abs(x - 0.5) <= 0.045;
+  const inCap = (x: number, y: number) => y >= 0.25 && y <= 0.31 && Math.abs(x - 0.5) <= 0.06 * ((y - 0.25) / 0.06);
+  const inLamp = (x: number, y: number) => Math.hypot(x - LX, y - LY) <= 0.036;
+  const inBand = (_x: number, y: number) => y >= 0.575 && y <= 0.625;
+  const inLand = (x: number, y: number) => ((x - 0.5) / 0.62) ** 2 + ((y - 1.02) / 0.24) ** 2 <= 1;
+  /** beam alpha: two wedges from the lamp, left and right, fading out */
+  const beam = (x: number, y: number) => {
+    const dx = x - LX, dy = y - LY, d = Math.hypot(dx, dy);
+    if (d < 0.04 || d > 0.46) return 0;
+    const a = Math.abs(Math.atan2(dy, Math.abs(dx)));
+    const half = 0.17;
+    if (a > half) return 0;
+    const edge = Math.min(1, (half - a) / 0.05);
+    return 0.78 * edge * Math.pow(1 - (d - 0.04) / 0.42, 1.3);
+  };
+  const glow = (x: number, y: number) => {
+    const d = Math.hypot(x - LX, y - LY);
+    return d > 0.13 ? 0 : 0.45 * (1 - d / 0.13) ** 2;
   };
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      let tile = 0;
-      let mark = 0;
+      let r = 0, g = 0, b = 0, a = 0;
       for (let sy = 0; sy < S; sy++) {
         for (let sx = 0; sx < S; sx++) {
           const ux = (x + (sx + 0.5) / S) / size;
           const uy = (y + (sy + 0.5) / S) / size;
-          if (inTile(ux, uy)) tile++;
-          mark += markAlpha(ux, uy);
+          const [mx, my] = toMark(ux, uy);
+          // Paint back to front into one sample.
+          let c: RGB = [0, 0, 0];
+          let al = 0;
+          const over = (col: RGB, alpha: number) => {
+            if (alpha <= 0) return;
+            const out = alpha + al * (1 - alpha);
+            for (let i = 0; i < 3; i++) c[i] = (col[i] * alpha + c[i] * al * (1 - alpha)) / out;
+            al = out;
+          };
+          if (opts.badge) {
+            const solid = inTower(mx, my) || inGallery(mx, my) || inLantern(mx, my) || inCap(mx, my);
+            over([255, 255, 255], Math.max(solid ? 1 : 0, Math.min(1, beam(mx, my) * 1.4)));
+          } else if (inTile(ux, uy)) {
+            const t = Math.min(1, Math.max(0, uy));
+            over([0, 1, 2].map((i) => top[i] + (bottom[i] - top[i]) * t) as RGB, 1);
+            over(amber, beam(mx, my));
+            over(amber, glow(mx, my));
+            if (inLand(mx, my)) over(land, 1);
+            if (inTower(mx, my)) over(inBand(mx, my) ? shade : tower, 1);
+            if (inGallery(mx, my) || inLantern(mx, my) || inCap(mx, my)) over(tower, 1);
+            if (inLamp(mx, my)) over(lampCore, 1);
+          }
+          r += c[0] * al; g += c[1] * al; b += c[2] * al; a += al;
         }
       }
-      const n = S * S;
-      const ta = tile / n;
-      const ma = mark / n;
-      // Composite the mark over the tile, the tile over transparent.
-      const outA = ma + ta * (1 - ma);
       const i = (y * size + x) * 4;
-      if (outA <= 0) continue;
-      for (let c = 0; c < 3; c++) px[i + c] = Math.round((fg[c] * ma + bg[c] * ta * (1 - ma)) / outA);
-      px[i + 3] = Math.round(outA * 255);
+      if (a <= 0) continue;
+      px[i] = Math.round(r / a);
+      px[i + 1] = Math.round(g / a);
+      px[i + 2] = Math.round(b / a);
+      px[i + 3] = Math.round((a / (S * S)) * 255);
     }
   }
   return px;
