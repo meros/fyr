@@ -339,6 +339,49 @@ try {
   failures.push(`U8 settle from the thread: ${e.message}`);
 }
 
+// SPEC 0.5 V0.26: on the desktop, a long tool group shows the last 3 calls behind "+N more tools",
+// and the thread ⋯ menu moves the thread to a project from the keyboard.
+const key = async (k, code = k) => {
+  const vk = { Enter: 13, Escape: 27, ArrowDown: 40, ArrowUp: 38 }[k] ?? 0;
+  await send("Input.dispatchKeyEvent", k === "Enter" ? { type: "keyDown", key: k, code, text: "\r", windowsVirtualKeyCode: vk } : { type: "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code });
+  await sleep(150);
+};
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_mapperf` });
+  await sleep(900);
+  await evaluate(`document.querySelector('.th .tl.grp')?.click()`);
+  await sleep(150);
+  const g = await evaluate(`({ more: document.querySelector('.th .tl.more')?.textContent ?? '', rows: document.querySelectorAll('.th .tl.row').length })`);
+  check(/\+5 more tools/.test(g.more), `V0.26 desktop: no "+5 more tools" row in the 8-call group ("${g.more}")`);
+  check(g.rows === 4, `V0.26 desktop: the opened group shows ${g.rows} rows, expected the more row and 3 calls`);
+  await evaluate(`document.querySelector('.th .tl.more')?.click()`);
+  await sleep(150);
+  const g2 = await evaluate(`({ more: !!document.querySelector('.th .tl.more'), rows: document.querySelectorAll('.th .tl.row').length })`);
+  check(!g2.more && g2.rows === 8, `V0.26 desktop: "+N more tools" does not show every call (${g2.rows} rows)`);
+
+  await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_triage` });
+  await sleep(900);
+  await evaluate(`document.querySelector('.thh .tmenu-b')?.focus()`);
+  await key("Enter");
+  const m = await evaluate(`({ menu: !!document.querySelector('.thh [role=menu]'), focused: document.activeElement?.textContent ?? '' })`);
+  check(m.menu, "V0.26 desktop: the thread ⋯ menu does not open from the keyboard");
+  check(/Move to project/.test(m.focused), `V0.26 desktop: the ⋯ menu does not focus "Move to project…" ("${m.focused}")`);
+  await key("Enter");
+  const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .plist'), focus: document.activeElement?.classList.contains('pq') })`);
+  check(d.dlg && d.focus, "V0.26 desktop: Move to project… does not open the project picker with the search focused");
+  await send("Input.insertText", { text: "Hemm" });
+  await sleep(150);
+  await key("Enter");
+  await sleep(300);
+  const r = await evaluate(`({ dlg: !!document.querySelector('.dlg'), chip: document.querySelector('.thh .chip.proj')?.textContent ?? '' })`);
+  check(!r.dlg && /Garden/.test(r.chip), `V0.26 desktop: Enter in the picker does not move the thread to the first match (chip "${r.chip}")`);
+} catch (e) {
+  failures.push(`V0.26 desktop: ${e.message}`);
+}
+
 clearTimeout(watchdog);
 cleanup();
 if (pageErrors.length) failures.push(...pageErrors.map((e) => `page error: ${e}`));
