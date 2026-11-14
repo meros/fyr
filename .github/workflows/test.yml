@@ -29,3 +29,6 @@ jobs:
         env:
           FYR_CHROME: /usr/bin/google-chrome
         run: nix develop --command make test
+      # The package NixOS installs runs the Go tests in the Nix sandbox (found live: a test needed git there).
+      - name: nix build .#fyr
+        run: nix build .#fyr --no-link --print-build-logs
