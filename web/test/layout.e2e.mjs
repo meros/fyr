@@ -940,6 +940,26 @@ try {
   failures.push(`U15 desktop: ${e.message}`);
 }
 
+// V0.48: Settled opened from its header shows a clock and closes by itself (30 s; the test
+// fast-forwards with a short wait on a patched clock is not possible, so it checks the clock and
+// that the rail's g5 keeps it open without one).
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await send("Page.navigate", { url: `${origin}/?mock=rail` });
+  await sleep(1000);
+  await evaluate(`[...document.querySelectorAll('.sec.tog')].find((x) => /Settled/.test(x.textContent))?.click()`);
+  await sleep(300);
+  const a = await evaluate(`({ clock: !!document.querySelector('#sec-settled .ahc'), rows: document.querySelectorAll('#sec-settled [data-id]').length })`);
+  check(a.clock && a.rows > 0, `V0.48 settled: opened from its header without a clock (${JSON.stringify(a)})`);
+  await evaluate(`[...document.querySelectorAll('.rail .ri')].find((x) => /Settled/.test(x.textContent))?.click()`);
+  await sleep(300);
+  const b = await evaluate(`({ clock: !!document.querySelector('#sec-settled .ahc'), rows: document.querySelectorAll('#sec-settled [data-id]').length })`);
+  check(!b.clock && b.rows > 0, `V0.48 settled: chosen in the rail it still runs down (${JSON.stringify(b)})`);
+} catch (e) {
+  failures.push(`V0.48 settled: ${e.message}`);
+}
+
 clearTimeout(watchdog);
 cleanup();
 if (pageErrors.length) failures.push(...pageErrors.map((e) => `page error: ${e}`));

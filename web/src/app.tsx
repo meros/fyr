@@ -1,6 +1,7 @@
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
 /** Run when the browser is idle (V0.38: storing never competes with input). */
 const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
+import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
 import { listPref, listShown, setListPref } from "./prefs.ts";
 import { DeployBanner } from "./deploy-ui.tsx";
 import { cache, mergeEventLists } from "./cache.ts";
@@ -729,8 +730,25 @@ function App() {
     setListPref(!listOn);
   };
 
+  // V0.48: Settled opened from its header closes again after 30 s unless it is selected in the rail.
+  const [settledDeadline, setSettledDeadline] = useState<number | null>(null);
+  const [ahTick, setAhTick] = useState(0);
+  const activeForHide: SectionKey | null = sel && store.threads[sel] ? sectionOf(store.threads[sel]) : null;
+  useEffect(() => {
+    const r = autoHide({ open: isOpen("settled", sectionOpen), deadline: settledDeadline, active: activeForHide }, Date.now());
+    if (r.close) {
+      setSectionOpen((o) => ({ ...o, settled: false }));
+      setSettledDeadline(null);
+      return;
+    }
+    if (r.wait === null) return;
+    const t = setTimeout(() => setAhTick((x) => x + 1), r.wait + 20);
+    return () => clearTimeout(t);
+  }, [settledDeadline, sectionOpen, activeForHide, ahTick]);
+
   const jump = (k: SectionKey) => {
     if (!sec[k].length) return; // an empty section is not a place to go
+    if (k === "settled") setSettledDeadline(null); // chosen in the rail: stays open (V0.48)
     if (!listOn) {
       setListPrefState(true); // jumping to a section shows the list (V0.40)
       setListPref(true);
@@ -1309,7 +1327,16 @@ function App() {
           query={query}
           searchRef={searchRef}
           onQuery={setQuery}
-          onToggle={(k) => setSectionOpen((o) => ({ ...o, [k]: !isOpen(k, o) }))}
+          onToggle={(k) => {
+            const opening = !isOpen(k, sectionOpen);
+            if (k === "settled") setSettledDeadline(opening ? Date.now() + AUTO_HIDE_MS : null);
+            setSectionOpen((o) => ({ ...o, [k]: !isOpen(k, o) }));
+          }}
+          autoHideAt={settledDeadline !== null && activeSection !== "settled" ? { settled: settledDeadline } : undefined}
+          onSectionActivity={(k) => {
+            // Using the section restarts its time (at most a few times a second).
+            if (k === "settled" && settledDeadline !== null && settledDeadline - Date.now() < AUTO_HIDE_MS - 500) setSettledDeadline(Date.now() + AUTO_HIDE_MS);
+          }}
           onClick={(id) => openThread(id, "open")}
           onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
           onNew={() => setDialog("new")}
