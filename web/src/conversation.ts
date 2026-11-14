@@ -21,6 +21,8 @@ export interface ToolCall {
   output: string;
   /** subagent messages folded under a Task/Agent tool use */
   subMessages: number;
+  /** V0.38: the host cut this output; the event with this seq has it whole */
+  cutSeq?: number;
   subCalls: ToolCall[];
   subTexts: string[];
 }
@@ -233,7 +235,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
               calls.set(c.id, c);
               host.subCalls.push(c);
             } else if (b.type === "tool_result") {
-              finish(calls.get(b.tool_use_id ?? ""), b, at);
+              finish(calls.get(b.tool_use_id ?? ""), b, at, d.cut ? e.seq : undefined);
             } else if (b.type === "text" && d.type === "assistant" && b.text?.trim()) {
               host.subTexts.push(b.text);
             }
@@ -252,7 +254,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
             }
             group.calls.push(c);
           } else if (b.type === "tool_result") {
-            finish(calls.get(b.tool_use_id ?? ""), b, at);
+            finish(calls.get(b.tool_use_id ?? ""), b, at, d.cut ? e.seq : undefined);
           }
           // thinking and image blocks are not shown in v0
         }
@@ -337,8 +339,9 @@ function calmTools(items: Item[]): Item[] {
   return out;
 }
 
-function finish(c: ToolCall | undefined, b: Block, at: number) {
+function finish(c: ToolCall | undefined, b: Block, at: number, cutSeq?: number) {
   if (!c) return;
+  if (cutSeq) c.cutSeq = cutSeq;
   c.done = true;
   c.isError = !!b.is_error;
   c.output = resultText(b.content);
@@ -630,4 +633,13 @@ export function runLabel(it: Extract<Item, { kind: "run" }>): { text: string; mo
   if (it.failure) return { text: `Failed (${it.failure.class}): ${it.failure.message}`, more: [d, cost].filter(Boolean).join(" · ") };
   const text = it.interrupted ? (d ? `Stopped after ${d}` : "Stopped") : d ? `Finished in ${d}` : "Finished";
   return { text, more: cost };
+}
+
+/** V0.38: the whole output of one call, from the full event the host returns. */
+export function fullOutputOf(ev: { data?: unknown }, toolUseId: string): string | null {
+  const d = (ev?.data ?? {}) as { message?: { content?: Block[] } };
+  for (const b of d.message?.content ?? []) {
+    if (b.type === "tool_result" && b.tool_use_id === toolUseId) return resultText(b.content);
+  }
+  return null;
 }

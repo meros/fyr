@@ -62,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/stream", s.stream)
 	mux.HandleFunc("GET /api/threads/{id}/events", s.events)
+	mux.HandleFunc("GET /api/threads/{id}/events/{seq}", s.fullEvent)
 	mux.HandleFunc("GET /api/threads/{id}/changes", s.changes)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
@@ -108,7 +109,7 @@ func (s *Server) Handler() http.Handler {
 	if s.Web != nil {
 		mux.Handle("/", noCacheIndex(http.FileServerFS(s.Web)))
 	}
-	return guard(s.OwnerLogin, mux)
+	return guard(s.OwnerLogin, withGzip(mux))
 }
 
 // guard refuses requests that are neither local nor the owner over the
@@ -268,7 +269,27 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	if evs == nil {
 		evs = []store.Event{} // JSON [] instead of null
 	}
-	writeJSON(w, 200, map[string]any{"events": evs})
+	writeJSON(w, 200, map[string]any{"events": engine.LeanAll(evs)})
+}
+
+// fullEvent returns one event whole (V0.38): the stream and the list cut
+// large tool output.
+func (s *Server) fullEvent(w http.ResponseWriter, r *http.Request) {
+	seq, err := strconv.ParseInt(r.PathValue("seq"), 10, 64)
+	if err != nil || seq <= 0 {
+		writeJSON(w, 400, map[string]any{"error": "seq must be a positive number"})
+		return
+	}
+	evs, err := s.Engine.Events(r.PathValue("id"), seq-1, 1)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	if len(evs) == 0 || evs[0].Seq != seq {
+		writeJSON(w, 404, map[string]any{"error": "no such event"})
+		return
+	}
+	writeJSON(w, 200, evs[0])
 }
 
 // changes serves the Changes tab (SPEC 0.5 V0.25): the branch diff of the
