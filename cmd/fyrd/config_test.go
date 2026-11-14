@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,5 +31,26 @@ func TestConfigQuotaByProfile(t *testing.T) {
 	qs := quotaProfiles(ps)
 	if qs[1].Binary != "claude-norban" || qs[2].Spec.Kind != "deepseek" {
 		t.Fatalf("%+v", qs)
+	}
+}
+
+// SPEC 0.5 V0.51: -hosts lists a front's hosts; hostListen is a tailnet
+// address only.
+func TestRoleFlags(t *testing.T) {
+	hs, err := parseHosts("meros-server=http://meros-server:7778, laptop=http://100.64.0.5:7778")
+	if err != nil || len(hs) != 2 || hs[0].Name != "meros-server" || hs[1].URL != "http://100.64.0.5:7778" {
+		t.Fatalf("%+v %v", hs, err)
+	}
+	if _, err := parseHosts("nourl"); err == nil {
+		t.Fatal("a host without a url was accepted")
+	}
+	for ip, want := range map[string]bool{"100.101.2.3": true, "fd7a:115c:a1e0::1": true, "192.168.1.2": false, "127.0.0.1": false} {
+		if got := tailnetIP(net.ParseIP(ip)); got != want {
+			t.Errorf("tailnetIP(%s) = %v", ip, got)
+		}
+	}
+	c := loadConfig(filepath.Join(t.TempDir(), "none.json"), "")
+	if c.Role != "" || len(c.Hosts) != 0 || c.HostListen != "" {
+		t.Fatalf("a missing config must leave the role to the default (both): %+v", c)
 	}
 }
