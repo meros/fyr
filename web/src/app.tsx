@@ -546,6 +546,7 @@ function App() {
       else if (it.id === "markUnseen") markUnseen(id);
       else if (it.id === "project") openPicker([id]);
       else if (it.id === "copyLink") copyText(`${location.origin}/?open=${id}`);
+      else if (it.id === "liveView") void runAction("thread.setView", [id], { on: !target.t.liveView });
       else if (MENU_ACTION[it.id]) void runAction(MENU_ACTION[it.id], [id]);
       return;
     }
@@ -665,6 +666,7 @@ function App() {
     const args: Record<string, unknown> = { cwd: a.cwd, text: a.text, profile: a.profile, model: a.model };
     if (a.attachments?.length) args.attachments = a.attachments;
     if (a.title) args.title = a.title;
+    if (a.view) args.view = true;
     const r = await api.command("thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
@@ -966,6 +968,7 @@ function App() {
     retry: (id) => void runAction("thread.retry", [id]),
     interrupt: (id) => void runAction("thread.interrupt", [id]),
     dismissPR: (id) => void runAction("thread.dismissPR", [id]),
+    setView: (id, on) => void runAction("thread.setView", [id], { on }),
     setModel: (id, model) => void runAction("thread.setModel", [id], { model }),
     send: async (id, args) => {
       const r = await api.command("thread.send", id, { ...args });

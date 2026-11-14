@@ -16,6 +16,8 @@ import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
+import { LiveViewPanel } from "./view-ui.tsx";
+import { rowSummary } from "./view.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
 import { colorVar, localProject, makeProjectLabel, projectDefaults, projectName, projectOf, projectSubtitle, startProject, suggestionFor } from "./projects.ts";
@@ -124,6 +126,8 @@ export interface PhoneActions {
   interrupt(id: string): void;
   /** V0.36: put away a merged or closed PR */
   dismissPR(id: string): void;
+  /** V0.37: turn the live view on or off */
+  setView(id: string, on: boolean): void;
   setModel(id: string, model: string): void;
   send(id: string, args: SendArgs): Promise<boolean>;
   /** V0.33: withdraw a message the agent has not read */
@@ -487,7 +491,7 @@ function needsMeta(t: ThreadDTO): string {
     return effectSentence(d);
   }
   if (t.attention.state === "failed") return t.failure?.message ?? "";
-  return t.summary ?? "";
+  return rowSummary(t);
 }
 
 function oneMeta(t: ThreadDTO, now: number): string {
@@ -751,6 +755,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
         )}
       </div>
       {t.tasks && t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      {!cardOpen && p.tab === "conv" && <LiveViewPanel t={t} now={p.now} onPress={(text) => p.actions.send(t.id, { text, from: "view" })} />}
       {!cardOpen && p.tab === "conv" && <Filmstrip cards={previews} collapsible />}
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
@@ -1072,6 +1077,7 @@ function MNew(p: PhoneProps) {
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
   const [text, setText] = useState("");
+  const [liveView, setLiveView] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const att = useAttachments();
@@ -1125,7 +1131,7 @@ function MNew(p: PhoneProps) {
     if (!ready || busy) return;
     setBusy(true);
     store(STORAGE_LAST, JSON.stringify({ cwd: cwd.trim(), profile, model }));
-    const e = await p.actions.create({ cwd: cwd.trim(), text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, projectId: projectId ?? undefined });
+    const e = await p.actions.create({ cwd: cwd.trim(), text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, projectId: projectId ?? undefined, view: liveView || undefined });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -1232,6 +1238,10 @@ function MNew(p: PhoneProps) {
                 )),
               )}
             </select>
+          </label>
+          <label class="m-dchip m-lvc">
+            <input type="checkbox" checked={liveView} onChange={(e) => setLiveView((e.target as HTMLInputElement).checked)} />
+            <span class="ell">Live view</span>
           </label>
         </div>
         {err && <div class="err prose">{err}</div>}
@@ -1393,6 +1403,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
         />
         <Item label="Project…" icon={<ProjectIcon project={projectOf(t, p.projects)} name={projectName(t, p.projects)} size={18} />} right={projectName(t, p.projects)} onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id] } })} />
         {sug && <Item label={makeProjectLabel(sug)} sub="From this thread's repository" onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id], startNew: true } })} />}
+        <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => p.actions.setView(t.id, !t.liveView))} />
         <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
         {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.setSelecting(true), p.setPicked(new Set([t.id]))))} />}
         {!peek && <Item label="Details" icon={I.right} onClick={() => p.replace({ ...p.nav, sheet: { kind: "details", ids: [t.id] } })} />}

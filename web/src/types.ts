@@ -119,6 +119,10 @@ export interface ThreadDTO {
   /** The checkout branch, read after each run; empty when not a git checkout. */
   branch?: string | null;
   tasks?: TaskDTO[] | null;
+  /** V0.37: the agent keeps a live view */
+  liveView?: boolean;
+  /** V0.37: the live view; read it through liveViewOf (view.ts) */
+  live?: { pageId?: string; state?: Record<string, unknown>; updatedAt?: string; checkedAt?: string; headline?: string } | null;
   attention: Attention;
   view?: { seenAt?: string | null; snoozeUntil?: string | null } | null;
   unavailable?: Record<string, string> | null;

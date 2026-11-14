@@ -31,6 +31,7 @@ export function threadMenu(t: ThreadDTO): MenuEntry[] {
   out.push(unseen ? item(t, "markSeen", "thread.markSeen", "Mark seen") : item(t, "markUnseen", "thread.markUnseen", "Mark unseen", "u"));
   out.push(archived ? item(t, "unarchive", "thread.unarchive", "Unarchive") : item(t, "archive", "thread.archive", "Archive", "#"));
   out.push(SEP, item(t, "project", "thread.setProject", "Project…", "p"));
+  out.push(item(t, "liveView", "thread.setView", t.liveView ? "Turn off live view" : "Turn on live view"));
   if (t.running) out.push(item(t, "interrupt", "thread.interrupt", "Stop run", "Esc"));
   if (t.pr && (t.pr.state === "MERGED" || t.pr.state === "CLOSED")) out.push(item(t, "dismissPR", "thread.dismissPR", "Dismiss PR"));
   out.push(SEP, { id: "copyLink", label: "Copy link" });

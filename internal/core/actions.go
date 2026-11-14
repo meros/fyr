@@ -16,7 +16,7 @@ func (a Args) Str(k string) string { s, _ := a[k].(string); return s }
 // Effect is work an Action asks the host to do after its state change is
 // stored. Apply never performs effects itself, so it stays pure.
 type Effect struct {
-	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel
+	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel, refresh
 	Text   string  `json:"text,omitempty"`
 	Images []Image `json:"images,omitempty"`
 	// From is the thread whose agent sent this message (V0.22).
@@ -120,6 +120,7 @@ func sendAction(name, label string) *Action {
 				t.Profile = a.Str("profile")
 				t.Title = a.Str("title")
 				t.Parent = a.Str("parent")
+				t.LiveView, _ = a["view"].(bool)
 				if t.Title == "" {
 					t.Title = TitleFrom(text)
 				}
@@ -421,6 +422,22 @@ func init() {
 			}
 			t.Title = s
 			return nil, nil
+		}})
+
+	register(&Action{Name: "thread.setView", Label: "Live view",
+		// SPEC 0.5 V0.37: the agent's prompt and tools change with the next
+		// process, so the host restarts an idle one.
+		Available: notArchived,
+		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
+			on, ok := a["on"].(bool)
+			if !ok {
+				return nil, fmt.Errorf("%w: on must be true or false", ErrBadArgs)
+			}
+			if t.LiveView == on {
+				return nil, nil
+			}
+			t.LiveView = on
+			return []Effect{{Kind: "refresh"}}, nil
 		}})
 
 	register(&Action{Name: "thread.setModel", Label: "Change model",

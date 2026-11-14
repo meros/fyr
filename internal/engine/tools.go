@@ -78,6 +78,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 		}})
 
 	s.Add(e.showTool())
+	e.viewTools(s)
 	e.threadTools(s)
 
 	s.Add(mcp.Tool{Name: "settle_when",
