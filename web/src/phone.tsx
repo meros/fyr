@@ -40,6 +40,7 @@ import type { PushStatus } from "./push.ts";
 import type { ConnState } from "./api.ts";
 import type { NewThreadArgs } from "./dialogs.tsx";
 import { QuotaList } from "./quota-ui.tsx";
+import { hostForProject, hostTag, offlineLine, profilesOn, type HostInfo } from "./hosts.ts";
 
 // ---- icons ----
 const I = {
@@ -163,6 +164,8 @@ export interface PhoneProps {
   onEarlier?: () => void;
   onAtEnd(atEnd: boolean): void;
   profiles: Profile[];
+  /** V0.51/V0.54: the front's hosts; with more than one, rows and headers name each thread's host */
+  hosts?: HostInfo[];
   projects: Project[];
   card: CardState | null;
   onCard(fn: (cs: CardState) => CardState): void;
@@ -528,6 +531,13 @@ function oneMeta(t: ThreadDTO, now: number): string {
   return t.project;
 }
 
+/** V0.54: a row names the thread's host when the front has more than one; an offline host says so on any front. */
+function MHost({ t, hosts }: { t: ThreadDTO; hosts?: HostInfo[] }) {
+  if (t.hostOffline) return <><b class="m-off">{t.host || "host"} offline</b> · </>;
+  const h = hostTag(t, hosts);
+  return h ? <><span class="m-hostn">{h}</span> · </> : null;
+}
+
 function MPr({ t, short }: { t: ThreadDTO; short?: boolean }) {
   if (!t.pr) return <span />;
   const l = prLabel(t.pr, short);
@@ -626,7 +636,7 @@ function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) 
       <span class="t ell">{t.title || "Untitled"}</span>
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, p.now)}</span>
       <span class="m ell">
-        <b class={stateClass(st)}>{needsWord(t)}</b> · {t.parent && <><StartedBy parentId={t.parent} link={false} /> · </>}<ThreadProject t={t} /> · {needsMeta(t)}
+        <b class={stateClass(st)}>{needsWord(t)}</b> · <MHost t={t} hosts={p.hosts} />{t.parent && <><StartedBy parentId={t.parent} link={false} /> · </>}<ThreadProject t={t} /> · {needsMeta(t)}
       </span>
       <MPr t={t} />
     </div>
@@ -636,6 +646,7 @@ function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) 
       <span class="t">
         <span class="tn ell">{t.title || "Untitled"}</span>
         <i class="ell">
+          <MHost t={t} hosts={p.hosts} />
           {t.parent && (
             <>
               <StartedBy parentId={t.parent} link={false} /> ·{" "}
@@ -721,7 +732,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => setCollapsed(false), [decision?.id]);
   const cardOpen = !!decision && !collapsed;
-  const previews = useMemo(() => previewsOf(p.events ?? []), [p.events]);
+  const previews = useMemo(() => previewsOf(p.events ?? [], t.host), [p.events, t.host]);
   const st = t.attention.state;
   const setTab = (tab: string) => p.replace({ screen: { name: "thread", id: t.id, tab }, sheet: null });
   const [nextOffer, setNextOffer] = useState<ThreadDTO | null>(null);
@@ -765,6 +776,11 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
             </span>
             <span>{stateLabel(st)}</span>
           </span>
+          {hostTag(t, p.hosts) && !t.hostOffline && (
+            <span class="m-chip m m-hostc">
+              <span>{t.host}</span>
+            </span>
+          )}
           {t.branch && (
             <span class="m-chip m brn">
               <span>{t.branch}</span>
@@ -773,6 +789,11 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
           {t.pr && <span class={`m-chip prc ${prLabel(t.pr).cls}`} title={prLabel(t.pr).title}>{prLabel(t.pr).text}</span>}
           </button>
         </div>
+        {t.hostOffline && (
+          <div class="m-offl" role="status" title="The front shows this thread from its last copy; commands wait until the host is back">
+            {offlineLine(t)}
+          </div>
+        )}
         {!cardOpen && (
           <div class="m-tabs" role="tablist">
             {liveViewOf(t) && (
@@ -809,6 +830,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
           threadId={t.id}
           onEarlier={p.onEarlier}
           cwd={t.cwd}
+          host={t.host}
           delivery={{ cancel: (messageId) => p.actions.cancelMessage(t.id, messageId), resend: (args) => p.actions.send(t.id, args) }}
         />
       ) : p.tab === "changes" ? (
@@ -836,7 +858,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
 
 function MComposer({ t, p, onView }: { t: ThreadDTO; p: PhoneProps; onView?: boolean }) {
   const [text, setText] = useDraft(t.id);
-  const att = useAttachments();
+  const att = useAttachments(t.host);
   const ta = useRef<HTMLTextAreaElement>(null);
   const reason = unavailableReason(t, "thread.send");
   const plan = sendArgs(text, att.chips);
@@ -1124,18 +1146,24 @@ function MNew(p: PhoneProps) {
   const [liveView, setLiveView] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const att = useAttachments();
   const ta = useRef<HTMLTextAreaElement>(null);
   const cur = projectId ? projects.find((x) => x.id === projectId) : undefined;
+  // V0.54: a thread starts on its project's host, with that host's profiles; its files upload there.
+  const target = hostForProject(cur?.host, p.hosts);
+  const profiles = profilesOn(target, p.hosts, p.profiles);
+  const att = useAttachments(target);
   const folder = newThreadFolder(picked, cur);
   const choose = (pr: Project | null) => {
     setPicking(false);
     setCreating(null);
     setProjectId(pr?.id);
     setPicked("");
-    if (pr) {
-      const d = projectDefaults(pr, p.profiles);
-      if (d.profile && d.model) setCombo(`${d.profile}\u0000${d.model}`);
+    const there = profilesOn(hostForProject(pr?.host, p.hosts), p.hosts, p.profiles);
+    const d = pr ? projectDefaults(pr, there) : {};
+    if (d.profile && d.model) setCombo(`${d.profile}\u0000${d.model}`);
+    else if (!there.some((x) => x.id === combo.split("\u0000")[0])) {
+      const np = there.find((x) => !x.unavailable);
+      if (np) setCombo(`${np.id}\u0000${np.defaultModel ?? np.models[0] ?? ""}`);
     }
   };
   useEffect(() => {
@@ -1149,7 +1177,7 @@ function MNew(p: PhoneProps) {
   }, [p.projects.length, defs.profile]);
   const [profile, model] = combo.split("\u0000");
   const [effortPick, setEffort] = useState("");
-  const prof = p.profiles.find((x) => x.id === profile);
+  const prof = profiles.find((x) => x.id === profile);
   const efforts = effortsFor(prof, model);
   const effort = startEffort(prof, model, effortPick);
   const plan = sendArgs(text, att.chips);
@@ -1259,11 +1287,11 @@ function MNew(p: PhoneProps) {
         <div class="m-defs">
           <label class="m-dchip">
             <span class="ell">
-              {p.profiles.find((x) => x.id === profile)?.name ?? profile} · {shortModel(model)}
+              {profiles.find((x) => x.id === profile)?.name ?? profile} · {shortModel(model)}
             </span>
             {I.down}
             <select value={combo} aria-label="Profile and model" onChange={(e) => setCombo((e.target as HTMLSelectElement).value)}>
-              {p.profiles.flatMap((pr) =>
+              {profiles.flatMap((pr) =>
                 pr.models.map((m) => (
                   <option value={`${pr.id}\u0000${m}`}>
                     {pr.name} · {shortModel(m)}
@@ -1288,7 +1316,7 @@ function MNew(p: PhoneProps) {
             <input type="checkbox" checked={liveView} onChange={(e) => setLiveView((e.target as HTMLInputElement).checked)} />
             <span class="ell">Live view</span>
           </label>
-          <QuotaList profiles={p.profiles} />
+          <QuotaList profiles={profiles} />
         </div>
         {err && <div class="err prose">{err}</div>}
       </div>

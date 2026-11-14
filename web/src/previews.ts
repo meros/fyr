@@ -1,7 +1,7 @@
 // In-thread previews (SPEC 0.5 V0.19): the card model for a `preview` event, frame heights, and
 // which markdown image sources render inline. Pure.
 
-import { attachmentUrl } from "./attach.ts";
+import { attachmentUrl, hostQuery } from "./attach.ts";
 
 export interface PreviewData {
   kind: "image" | "html";
@@ -29,14 +29,14 @@ export const FRAME_START_MAX = 600;
 export const FRAME_MAX = 2000;
 const FRAME_DEFAULT = 400;
 
-let previewUrlFor: (id: string) => string = (id) => `/api/previews/${encodeURIComponent(id)}`;
-/** Where an HTML page loads from: a preview or a live view (V0.37). */
-export function previewUrl(id: string): string {
-  return previewUrlFor(id);
+let previewUrlFor: (id: string, host?: string) => string = (id, host) => `/api/previews/${encodeURIComponent(id)}${hostQuery(host)}`;
+/** Where an HTML page loads from: a preview or a live view (V0.37), on the thread's host (V0.54). */
+export function previewUrl(id: string, host?: string): string {
+  return previewUrlFor(id, host);
 }
 
 /** The app sets this (mock mode serves data: pages). */
-export function setPreviewUrl(fn: (id: string) => string): void {
+export function setPreviewUrl(fn: (id: string, host?: string) => string): void {
   previewUrlFor = fn;
 }
 
@@ -46,7 +46,7 @@ function num(v: unknown): number {
 }
 
 /** The card for a `preview` event, or null when the event is not usable. */
-export function previewCard(seq: number, at: string, data: unknown): PreviewCard | null {
+export function previewCard(seq: number, at: string, data: unknown, host?: string): PreviewCard | null {
   const d = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
   const kind = d.kind === "html" ? "html" : d.kind === "image" ? "image" : null;
   const id = typeof d.attachmentId === "string" ? d.attachmentId : "";
@@ -61,7 +61,7 @@ export function previewCard(seq: number, at: string, data: unknown): PreviewCard
     width: num(d.width),
     height: num(d.height),
     url: typeof d.url === "string" && /^https?:\/\//i.test(d.url) ? d.url : undefined,
-    src: kind === "image" ? attachmentUrl(id) : previewUrlFor(id),
+    src: kind === "image" ? attachmentUrl(id, host) : previewUrlFor(id, host),
   };
 }
 
