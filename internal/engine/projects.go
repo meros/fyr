@@ -112,6 +112,27 @@ func (e *Engine) suggestion(t *core.Thread) *core.Suggestion {
 	return nil
 }
 
+// draft is what "New project from this thread" starts with (V0.30), without
+// the sources an existing project already has. Call with e.mu held.
+func (e *Engine) draft(t *core.Thread) *core.Suggestion {
+	w := e.workspaces[t.WorkspaceID]
+	if w == nil {
+		return nil
+	}
+	home, _ := os.UserHomeDir()
+	return core.Draft(*w, home, func(s core.Source) bool {
+		ref := s.Ref()
+		for _, p := range e.projects {
+			for _, ps := range p.Sources {
+				if ps.Ref() == ref {
+					return true
+				}
+			}
+		}
+		return false
+	})
+}
+
 // migrateAuto ends auto projects (SPEC 0.5 V0.28): one that holds threads
 // becomes a normal project; an empty one that was never edited goes.
 func (e *Engine) migrateAuto() error {
@@ -308,6 +329,15 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 			return bad("a project needs a name or a source")
 		}
 		p.Color = core.DefaultColor(p.Name)
+		// V0.30: file the thread it was made from, by hand, in the same write.
+		if tid := c.Args.Str("threadId"); tid != "" {
+			t := e.threads[tid]
+			if t == nil {
+				e.mu.Unlock()
+				return Reply{Error: "no thread " + tid, Status: 404}
+			}
+			t.ProjectID, t.ProjectManual, t.Project = p.ID, true, ""
+		}
 		e.projects[p.ID] = p
 	case "project.createFrom":
 		// SPEC 0.5 V0.28: the thread's suggestion becomes a project, and

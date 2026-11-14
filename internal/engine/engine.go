@@ -247,7 +247,7 @@ func (e *Engine) Command(c Cmd) Reply {
 	if act == nil {
 		return Reply{Error: "unknown action " + c.Action, Status: 400}
 	}
-	if c.Action == "thread.setProject" {
+	if c.Action == "thread.setProject" && c.Args.Str("projectId") != "" {
 		e.mu.Lock()
 		ok := e.projects[c.Args.Str("projectId")] != nil
 		e.mu.Unlock()
@@ -479,6 +479,8 @@ type DTO struct {
 	Unavailable map[string]string `json:"unavailable"`
 	// Suggest is the project a thread without one could get (V0.28).
 	Suggest *core.Suggestion `json:"suggest,omitempty"`
+	// NewProject is what "New project from this thread" starts with (V0.30).
+	NewProject *core.Suggestion `json:"newProject,omitempty"`
 
 	prev core.State // the state before this change; not sent
 }
@@ -511,7 +513,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	}
 	att := core.Compute(t, v, now)
 	vc := *v
-	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, Suggest: e.suggestion(t)}
+	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, Suggest: e.suggestion(t), NewProject: e.draft(t)}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.

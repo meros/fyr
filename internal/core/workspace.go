@@ -248,3 +248,48 @@ func (c CloneProvider) Identify(host, dir string) ([]Ref, string, bool) {
 func (CloneProvider) Prepare(p Project, host string) (Workspace, bool) {
 	return folderPrepare("clone", p, host)
 }
+
+// Draft is what "New project from this thread" starts with (SPEC 0.5
+// V0.30): the suggestion for a clone with a remote, else the folder's name
+// with the folder as source. A scratch workspace, the home folder and / give
+// no folder source; a source that taken reports (an existing project has it)
+// is left out; nil when no source is left.
+func Draft(w Workspace, home string, taken func(Source) bool) *Suggestion {
+	if w.Provider == "scratch" {
+		return nil
+	}
+	var repo, folder *Ref
+	for i := range w.Refs {
+		r := &w.Refs[i]
+		if r.Kind == "repo" && repo == nil && r.Key != "" {
+			repo = r
+		}
+		if r.Kind == "folder" && folder == nil {
+			folder = r
+		}
+	}
+	var srcs []Source
+	if folder != nil {
+		if _, p := folder.Folder(); p != "/" && p != "" && p != path.Clean(home) {
+			srcs = append(srcs, SourceOf(*folder))
+		}
+	}
+	if repo != nil {
+		srcs = append(srcs, SourceOf(*repo))
+	}
+	s := &Suggestion{}
+	for _, src := range srcs {
+		if !taken(src) {
+			s.Sources = append(s.Sources, src)
+		}
+	}
+	if len(s.Sources) == 0 {
+		return nil
+	}
+	if repo != nil {
+		s.Name = path.Base(repo.Key)
+	} else {
+		s.Name = path.Base(s.Sources[0].Path)
+	}
+	return s
+}

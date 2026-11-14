@@ -384,12 +384,12 @@ func init() {
 
 	register(&Action{Name: "thread.setProject", Label: "Move to project",
 		// SPEC 0.5 V0.23: the engine checks that the project exists.
+		// V0.30: "" unfiles the thread, still by hand, so matching leaves it.
 		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
-			id := a.Str("projectId")
-			if id == "" {
-				return nil, fmt.Errorf("%w: projectId is required", ErrBadArgs)
+			if _, ok := a["projectId"].(string); !ok {
+				return nil, fmt.Errorf("%w: projectId is required (\"\" for no project)", ErrBadArgs)
 			}
-			t.ProjectID, t.ProjectManual = id, true
+			t.ProjectID, t.ProjectManual = a.Str("projectId"), true
 			return nil, nil
 		}})
 
