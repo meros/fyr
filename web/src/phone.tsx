@@ -123,6 +123,8 @@ export interface PhoneActions {
   interrupt(id: string): void;
   setModel(id: string, model: string): void;
   send(id: string, args: SendArgs): Promise<boolean>;
+  /** V0.33: withdraw a message the agent has not read */
+  cancelMessage(id: string, messageId: string): Promise<boolean>;
   submitAsk(d: Decision): Promise<boolean>;
   allow(d: Decision, ok: boolean): Promise<boolean>;
   create(a: NewThreadArgs): Promise<string | null>;
@@ -748,7 +750,14 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
       ) : p.tab === "conv" ? (
-        <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} cwd={t.cwd} />
+        <Conversation
+          events={p.events}
+          onAtEnd={p.onAtEnd}
+          threadId={t.id}
+          onEarlier={p.onEarlier}
+          cwd={t.cwd}
+          delivery={{ cancel: (messageId) => p.actions.cancelMessage(t.id, messageId), resend: (args) => p.actions.send(t.id, args) }}
+        />
       ) : p.tab === "changes" ? (
         <ChangesView threadId={t.id} />
       ) : (

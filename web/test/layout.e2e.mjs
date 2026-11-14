@@ -380,6 +380,37 @@ try {
   failures.push(`V0.29 draft: ${e.message}`);
 }
 
+// V0.33: on the phone, a message the agent has not read waits after "Agent is here", dimmed, with
+// Waiting and a Cancel that fits the screen; Cancel strikes it through with Send again.
+try {
+  await openScreen({ url: "?mock=rail&open=t_mapperf" }, 390, 844);
+  await sleep(300);
+  const r = await evaluate(`(() => {
+    const here = document.querySelector('.m-app .here');
+    const pend = [...document.querySelectorAll('.m-app .youw.pend')];
+    const last = pend[pend.length - 1];
+    const btn = last?.querySelector('.dlb');
+    const b = btn?.getBoundingClientRect();
+    const hereAbove = !!here && !!last && (here.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    const read = [...document.querySelectorAll('.m-app .youw:not(.pend) .dl')].map((x) => x.textContent);
+    return { here: here?.textContent ?? '', pend: pend.length, hereAbove, word: last?.querySelector('.dl span')?.textContent ?? '', btn: btn?.textContent ?? '',
+      box: b ? { left: b.left, right: b.right, top: b.top, bottom: b.bottom, h: b.height } : null, vw: innerWidth, vh: visualViewport.height,
+      cmp: document.querySelector('.m-cmp')?.getBoundingClientRect().top ?? 0, opacity: last ? getComputedStyle(last.querySelector('.you')).opacity : '', read };
+  })()`);
+  check(/Agent is here/.test(r.here) && r.pend === 1 && r.hereAbove, `V0.33 phone: no pending message after "Agent is here" (${JSON.stringify(r)})`);
+  check(r.word === "Waiting" && r.btn === "Cancel", `V0.33 phone: the pending message does not say Waiting with Cancel ("${r.word}", "${r.btn}")`);
+  check(Number(r.opacity) < 1, `V0.33 phone: the pending message is not dimmed (opacity ${r.opacity})`);
+  check(!!r.box && r.box.left >= 0 && r.box.right <= r.vw + 0.5 && r.box.bottom <= r.cmp + 0.5 && r.box.h >= 36, `V0.33 phone: Cancel is out of reach ${JSON.stringify(r.box)} (composer at ${r.cmp})`);
+  check(r.read.length === 1 && r.read[0] === "Read", `V0.33 phone: only the last read message says Read (${JSON.stringify(r.read)})`);
+  await tapCenter(".m-app .youw.pend .dlb");
+  await sleep(300);
+  const c = await evaluate(`(() => { const g = document.querySelector('.m-app .youw.gone'); return { pend: document.querySelectorAll('.m-app .youw.pend').length, here: !!document.querySelector('.m-app .here'), word: g?.querySelector('.dl span')?.textContent ?? '', again: g?.querySelector('.dlb')?.textContent ?? '', strike: g ? getComputedStyle(g.querySelector('.you')).textDecorationLine : '' }; })()`);
+  check(c.pend === 0 && !c.here, `V0.33 phone: after Cancel the message still waits (${JSON.stringify(c)})`);
+  check(c.word === "Cancelled" && c.again === "Send again" && /line-through/.test(c.strike), `V0.33 phone: a cancelled message is not struck through with Send again (${JSON.stringify(c)})`);
+} catch (e) {
+  failures.push(`V0.33 phone delivery: ${e.message}`);
+}
+
 // V0.24: a message that fails to render shows an error card; the thread, its composer and the
 // rest of the conversation stay. (Found live: one bad field blanked the whole client.)
 try {

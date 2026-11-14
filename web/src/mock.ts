@@ -644,7 +644,8 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   const T = now - 20 * 60_000;
   const e = (sec: number, type: string, data: unknown) => out.push(ev(++seq, T + sec * 1000, subject, type, data));
   const cwd = "/home/owner/src/acme/web";
-  e(0, "user", { text: "Map perf: the vitest suite for src/map takes 38 s. Find the slow tests and fix them.", images: 0 });
+  e(0, "user", { id: "m_map1", text: "Map perf: the vitest suite for src/map takes 38 s. Find the slow tests and fix them.", images: 0 });
+  e(0, "message.state", { id: "m_map1", state: "read" });
   e(0, "run.started", {});
   e(1, "msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "thinking", thinking: "The suite is slow; profile first." }] } });
   e(2, "msg", toolUse("ts0", "Bash", { command: 'settask "[web] map perf"' }));
@@ -692,6 +693,13 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   e((t += 0.2), "msg", toolResult("pl1"));
   e((t += 1), "msg", assistantText("Snapshot test still fails on the sheet; the other two files now take 9 s instead of 24 s."));
   e((t += 1), "run.ended", { failure: null, interrupted: false, costUsd: 0.42, durationMs: 840_000 });
+  // V0.33: a second run reads one message; the next one waits in the agent's queue.
+  e((t += 60), "user", { id: "m_map2", text: "Fix the snapshot test too.", images: 0 });
+  e(t, "message.state", { id: "m_map2", state: "read" });
+  e(t, "run.started", {});
+  e((t += 2), "msg", toolUse("sn1", "Bash", { command: "yarn vitest src/map/snapshot", description: "Run the snapshot test" }));
+  e((t += 30), "user", { id: "m_map3", text: "Keep the snapshot itself; only make the test faster.", images: 0 });
+  e(t, "message.state", { id: "m_map3", state: "queued" });
   return out;
 }
 
@@ -771,6 +779,27 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     setTimeout(() => sub?.event(e), 20);
   };
   const quiet = { ...NOT_RUNNING };
+  // V0.33: messages the mock agent has not read; a running thread reads them after a step.
+  const unread = new Map<string, string>(Object.entries(events).flatMap(([tid, list]) => {
+    const st = new Map<string, string>();
+    for (const e of list) if (e.type === "message.state") st.set(String((e.data as { id?: string })?.id), String((e.data as { state?: string })?.state));
+    return [...st].filter(([, v]) => v === "queued" || v === "sent").map(([mid]) => [mid, tid] as [string, string]);
+  }));
+  const deliver = (tid: string, text: string, args: Record<string, unknown>, running: boolean) => {
+    const id = `m_new${nextId++}`;
+    const imgs = Array.isArray(args.images) ? args.images.length : 0;
+    emit(tid, "user", { id, text, images: imgs, attachments: attachmentsOf(args) });
+    if (!running) {
+      emit(tid, "message.state", { id, state: "read" });
+      return id;
+    }
+    emit(tid, "message.state", { id, state: "queued" });
+    unread.set(id, tid);
+    setTimeout(() => {
+      if (unread.delete(id)) emit(tid, "message.state", { id, state: "read" });
+    }, 6000);
+    return id;
+  };
   const runFor = (id: string, reply: string) => {
     const t = threads.get(id)!;
     put(t, {
@@ -811,10 +840,9 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       });
       threads.set(id, nt);
       events[id] = [];
-      const imgs = Array.isArray(args.images) ? args.images.length : 0;
-      emit(id, "user", { text: String(args.text ?? ""), images: imgs, attachments: attachmentsOf(args) });
+      const mid = deliver(id, String(args.text ?? ""), args, false);
       runFor(id, "Started on it. (mock)");
-      return { ok: true, threadId: id };
+      return { ok: true, threadId: id, result: { messageId: mid } };
     }
     if (action === "project.update") {
       const p = projects.find((x) => x.id === args.id);
@@ -875,9 +903,15 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       put(t, { attention: { state, section, reason: "" }, ...extra });
     switch (action) {
       case "thread.send": {
-        const imgs = Array.isArray(args.images) ? args.images.length : 0;
-        emit(t.id, "user", { text: String(args.text ?? ""), images: imgs, attachments: attachmentsOf(args) });
-        runFor(t.id, "Got it. Working on that now. (mock reply)");
+        deliver(t.id, String(args.text ?? ""), args, t.running);
+        if (!t.running) runFor(t.id, "Got it. Working on that now. (mock reply)");
+        break;
+      }
+      case "thread.cancelMessage": {
+        const mid = String(args.messageId ?? "");
+        if (unread.get(mid) !== t.id) return { ok: false, error: "The agent has already read this message" };
+        unread.delete(mid);
+        emit(t.id, "message.state", { id: mid, state: "cancelled" });
         break;
       }
       case "thread.answer": {

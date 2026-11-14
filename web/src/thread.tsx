@@ -5,9 +5,10 @@ import { useDraft } from "./drafts.ts";
 import { liveLine } from "./tasks.ts";
 import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { createContext } from "preact";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
-import { buildConversation, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel } from "./conversation.ts";
+import { buildConversation, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { duration, relTime, shortModel } from "./format.ts";
@@ -149,7 +150,16 @@ export function ThreadPane(p: ThreadPaneProps) {
       </div>
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {tab === "conv" && <Filmstrip cards={previews} />}
-      {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} cwd={t.cwd} />}
+      {tab === "conv" && (
+        <Conversation
+          events={p.events}
+          onAtEnd={p.onAtEnd}
+          threadId={t.id}
+          onEarlier={p.onEarlier}
+          cwd={t.cwd}
+          delivery={{ cancel: async (messageId) => p.onRun("thread.cancelMessage", { messageId }), resend: p.onSend }}
+        />
+      )}
       {tab === "changes" && <ChangesView threadId={t.id} />}
       {tab === "pr" && <PrTab t={t} />}
       {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} pr={t.pr} />}
@@ -346,9 +356,18 @@ export function useToolDetails(): boolean {
   return on;
 }
 
-export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string }) {
+/** SPEC 0.5 V0.33: what a message's Cancel and Send again do. */
+export interface DeliveryActions {
+  cancel(messageId: string): Promise<unknown>;
+  resend(args: SendArgs): Promise<unknown>;
+}
+const DeliveryCtx = createContext<DeliveryActions | null>(null);
+
+export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions }) {
   const details = useToolDetails();
-  const items = useMemo(() => buildConversation(events ?? [], { details, cwd }), [events, details, cwd]);
+  const all = useMemo(() => buildConversation(events ?? [], { details, cwd }), [events, details, cwd]);
+  // V0.33: messages the agent has not read stand after "Agent is here".
+  const [items, pending] = useMemo(() => [all.filter((i) => !(i.kind === "user" && i.pending)), all.filter((i) => i.kind === "user" && i.pending)], [all]);
   const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -370,7 +389,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { ev
     if (!el) return;
     if (stick.current) el.scrollTop = el.scrollHeight;
     check();
-  }, [items, threadId]);
+  }, [all, threadId]);
 
   useEffect(() => {
     const el = ref.current;
@@ -398,12 +417,60 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { ev
             <CrashProbe />
           </Boundary>
         )}
-        {items.map((it) => (
-          <Boundary key={it.key} name="This message">
-            <ItemView it={it} previews={previews} />
-          </Boundary>
-        ))}
+        <DeliveryCtx.Provider value={delivery ?? null}>
+          {items.map((it) => (
+            <Boundary key={it.key} name="This message">
+              <ItemView it={it} previews={previews} />
+            </Boundary>
+          ))}
+          {pending.length > 0 && (
+            <div class="here" role="separator" aria-label="The agent has read everything above this line">
+              <span>Agent is here</span>
+            </div>
+          )}
+          {pending.map((it) => (
+            <Boundary key={it.key} name="This message">
+              <ItemView it={it} previews={previews} />
+            </Boundary>
+          ))}
+        </DeliveryCtx.Provider>
       </div>
+    </div>
+  );
+}
+
+/** V0.33: the quiet delivery word under a message, with Cancel while it waits and Send again once it is gone. */
+function DeliveryLine({ it }: { it: Extract<Item, { kind: "user" }> }) {
+  const acts = useContext(DeliveryCtx);
+  const [busy, setBusy] = useState(false);
+  const word = deliveryLabel(it);
+  if (!word) return null;
+  const gone = it.delivery === "cancelled" || it.delivery === "lost";
+  return (
+    <div class={`dl${it.from ? " from" : ""}`}>
+      <span>{busy ? "Cancelling…" : word}</span>
+      {it.delivery === "queued" && it.id && acts && (
+        <button
+          class="dlb"
+          disabled={busy}
+          title="Take this message back before the agent reads it"
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await acts.cancel(it.id!);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Cancel
+        </button>
+      )}
+      {gone && !it.from && acts && (
+        <button class="dlb" onClick={() => void acts.resend(it.attachments.length ? { text: it.text, attachments: it.attachments.map((a) => a.id) } : { text: it.text })}>
+          Send again
+        </button>
+      )}
     </div>
   );
 }
@@ -464,24 +531,33 @@ function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
 
 function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
   switch (it.kind) {
-    case "user":
+    case "user": {
+      // V0.33: unread messages are dimmed; a cancelled or lost one is struck through.
+      const cls = it.pending ? " pend" : it.delivery === "cancelled" || it.delivery === "lost" ? " gone" : "";
       if (it.from)
         return (
-          <FromThreadMessage fromId={it.from} text={it.text}>
-            {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
-          </FromThreadMessage>
+          <div class={`youw from${cls}`}>
+            <FromThreadMessage fromId={it.from} text={it.text}>
+              {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
+            </FromThreadMessage>
+            <DeliveryLine it={it} />
+          </div>
         );
       return (
-        <div class="you prose">
-          {it.text}
-          {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
-          {it.images > 0 && !it.attachments.length && (
-            <span class="imgchip">
-              {it.images} {it.images === 1 ? "image" : "images"}
-            </span>
-          )}
+        <div class={`youw${cls}`}>
+          <div class="you prose">
+            {it.text}
+            {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
+            {it.images > 0 && !it.attachments.length && (
+              <span class="imgchip">
+                {it.images} {it.images === 1 ? "image" : "images"}
+              </span>
+            )}
+          </div>
+          <DeliveryLine it={it} />
         </div>
       );
+    }
     case "assistant":
       return <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text) }} />;
     case "tools":
