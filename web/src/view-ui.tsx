@@ -8,6 +8,7 @@ import { FRAME_ALLOW, previewUrl } from "./previews.ts";
 import type { FyrEvent, ThreadDTO } from "./types.ts";
 import { buildConversation, deliveryLabel, viewChat } from "./conversation.ts";
 import { liveLine } from "./tasks.ts";
+import { chatHidden, chatKey, loadDismissed, saveDismissed } from "./view-chat.ts";
 
 const COLLAPSED_KEY = "fyr.view.collapsed";
 
@@ -120,20 +121,33 @@ export function LiveViewPanel({ t, now, onPress, full }: { t: ThreadDTO; now: nu
 export function ViewChat({ t, events, now, onOpen }: { t: ThreadDTO; events: FyrEvent[] | undefined; now: number; onOpen(): void }) {
   const outKey = (t.outbox ?? []).map((o) => o.id).join(",");
   const c = useMemo(() => viewChat(buildConversation(events ?? [], { outbox: outKey ? outKey.split(",") : [] })), [events, outKey]);
+  const [dismissed, setDismissed] = useState(loadDismissed);
   if (!c) return null;
+  const key = chatKey(c.mine);
+  if (chatHidden(dismissed, t.id, key)) return null; // V0.57
   const state = deliveryLabel(c.mine);
   const working = !c.reply && t.running;
+  const dismiss = () => {
+    const d = { ...loadDismissed(), [t.id]: key };
+    saveDismissed(d);
+    setDismissed(d);
+  };
   return (
-    <button class="vchat" onClick={onOpen} title="Open the conversation">
-      <span class="vchat-me">
-        <span class="vchat-b">{c.mine.text}</span>
-        {state && <span class="vchat-s">{state}</span>}
-      </span>
-      {c.reply ? (
-        <span class="vchat-re">{c.reply}</span>
-      ) : working ? (
-        <span class="vchat-re vchat-live">{liveLine(t, now)}</span>
-      ) : null}
-    </button>
+    <div class="vchat">
+      <button class="vchat-x" onClick={dismiss} title="Dismiss" aria-label="Dismiss">
+        ×
+      </button>
+      <button class="vchat-o" onClick={onOpen} title="Open the conversation">
+        <span class="vchat-me">
+          <span class="vchat-b">{c.mine.text}</span>
+          {state && <span class="vchat-s">{state}</span>}
+        </span>
+        {c.reply ? (
+          <span class="vchat-re">{c.reply}</span>
+        ) : working ? (
+          <span class="vchat-re vchat-live">{liveLine(t, now)}</span>
+        ) : null}
+      </button>
+    </div>
   );
 }
