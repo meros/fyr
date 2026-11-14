@@ -16,7 +16,7 @@ func (a Args) Str(k string) string { s, _ := a[k].(string); return s }
 // Effect is work an Action asks the host to do after its state change is
 // stored. Apply never performs effects itself, so it stays pure.
 type Effect struct {
-	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel, refresh
+	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel, refresh, handover
 	Text   string  `json:"text,omitempty"`
 	Images []Image `json:"images,omitempty"`
 	// From is the thread whose agent sent this message (V0.22).
@@ -27,6 +27,8 @@ type Effect struct {
 	Answers     map[string]string `json:"answers,omitempty"`
 	Allow       bool              `json:"allow,omitempty"`
 	Model       string            `json:"model,omitempty"`
+	// Profile is the target of a handover (V0.45).
+	Profile string `json:"profile,omitempty"`
 	// Request is the approved effect for Kind "effect".
 	Request *EffectReq `json:"request,omitempty"`
 	// ByOwner marks an effect the owner started (V0.43): its result is
@@ -103,6 +105,9 @@ func sendAction(name, label string) *Action {
 			}
 			if len(t.Decisions) > 0 {
 				return "Answer the open question first"
+			}
+			if t.Handover != nil {
+				return "Wait for the handover to finish"
 			}
 			return ""
 		},
@@ -441,6 +446,38 @@ func init() {
 			}
 			t.LiveView = on
 			return []Effect{{Kind: "refresh"}}, nil
+		}})
+
+	register(&Action{Name: "thread.handover", Label: "Hand over",
+		// SPEC 0.5 V0.45, decision 0013: only the owner starts it; the host
+		// moves the context by the first rung that works.
+		Available: func(t *Thread, v *View, now time.Time) string {
+			if r := notArchived(t, v, now); r != "" {
+				return r
+			}
+			switch {
+			case t.Handover != nil:
+				return "A handover is already going"
+			case t.Running:
+				return "Wait for the run to end"
+			case len(t.Decisions) > 0:
+				return "Answer the open question first"
+			case len(t.Outbox) > 0:
+				return "Wait until the agent has read your message"
+			}
+			return ""
+		},
+		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
+			p := a.Str("profile")
+			if p == "" {
+				return nil, fmt.Errorf("%w: profile is required", ErrBadArgs)
+			}
+			if p == t.Profile {
+				return nil, fmt.Errorf("%w: the thread already runs on %s", ErrBadArgs, p)
+			}
+			t.Handover = &Handover{To: p, Model: a.Str("model"), At: now}
+			v.SeenAt = now
+			return []Effect{{Kind: "handover", Profile: p, Model: a.Str("model")}}, nil
 		}})
 
 	register(&Action{Name: "thread.setModel", Label: "Change model",

@@ -849,3 +849,16 @@ button.ptag{padding:0}
 .qline .qdet{margin:4px 0 0;padding:0 0 0 14px;list-style:none;font:400 12px/17px var(--ui);color:var(--ink-muted)}
 .qline .hot,.rail .rq .hot{color:var(--signal-ink);font-weight:600}
 .qlist{display:flex;flex-direction:column;gap:2px;min-width:0}
+/* V0.45: the handover dialog and the divider in the conversation */
+.ho-from{font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.ho-from b{color:var(--ink);font-weight:600}
+.ho-rung{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:500 13px/18px var(--ui);color:var(--ink)}
+.ho-rung small{font-weight:400;color:var(--ink-muted)}
+.ho-wait{color:var(--ink-faint);font-weight:400}
+.db.ho-ph{overflow:visible;padding:4px 16px 8px}
+.df.ho-ph{border-top:0;padding:8px 16px 0}
+.df.ho-ph .btn{min-height:44px;flex:1}
+.hodiv{display:flex;align-items:center;gap:10px;margin:14px 0 6px;color:var(--ink-muted);font:500 12px/16px var(--ui)}
+.hodiv::before,.hodiv::after{content:"";flex:1;height:1px;background:var(--line)}
+.hodiv .hot{display:flex;flex-direction:column;align-items:center;text-align:center;max-width:80%;min-width:0}
+.hodiv small{font-weight:400;color:var(--ink-faint)}

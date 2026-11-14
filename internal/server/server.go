@@ -65,6 +65,8 @@ type Server struct {
 	PR PRDetails
 	// Quota lists the profiles' provider quota (V0.44); optional.
 	Quota func(ctx context.Context) any
+	// HandoverPlan says which rung a handover would use (V0.45); optional.
+	HandoverPlan func(threadID, profile string) agent.Plan
 }
 
 // PRDetails is what the PR tab needs (*github.Details implements it).
@@ -81,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/events/{seq}", s.fullEvent)
 	mux.HandleFunc("GET /api/threads/{id}/changes", s.changes)
 	mux.HandleFunc("GET /api/threads/{id}/pr", s.prDetail)
+	mux.HandleFunc("GET /api/threads/{id}/handover", s.handoverPlan)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	mux.HandleFunc("GET /api/quota", s.quota)
@@ -444,6 +447,20 @@ func (s *Server) prDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, d)
+}
+
+// handoverPlan answers which rung a handover to ?profile= would use (V0.45).
+func (s *Server) handoverPlan(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.Engine.Thread(id); !ok {
+		writeJSON(w, 404, map[string]any{"error": "no such thread"})
+		return
+	}
+	if s.HandoverPlan == nil {
+		writeJSON(w, 200, agent.Plan{Rung: agent.RungAdopt})
+		return
+	}
+	writeJSON(w, 200, s.HandoverPlan(id, r.URL.Query().Get("profile")))
 }
 
 func (s *Server) command(w http.ResponseWriter, r *http.Request) {

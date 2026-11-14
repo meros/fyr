@@ -1184,6 +1184,15 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         setTimeout(() => emit(t.id, "effect.result", { action: "pr.rerunFailed", by: "owner", ok: true, text: `You re-ran the failed checks of #${n}.\n\nRe-ran 1 failed workflow run of 9c1e0b7: CI.` }), 400);
         break;
       }
+      case "thread.handover": {
+        // V0.45: the mock hands over at once, with full history.
+        const to = String(args.profile ?? "");
+        if (!to || to === t.profile) return { ok: false, error: "Pick another profile" };
+        const from = t.profile;
+        put(t, { profile: to, model: String(args.model ?? "") });
+        emit(t.id, "handover", { from, to, model: args.model ?? "", rung: "resume" });
+        break;
+      }
       default:
         return { ok: false, error: `Unknown action ${action}` };
     }

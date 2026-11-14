@@ -171,6 +171,10 @@ const SCREENS = [
   { name: "inbox with a quiet project", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "" } },
   { name: "quiet project through the filter", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "p_home" } },
   { name: "project screen with quiet hours", url: "?mock=rail&project=p_home&quiet=p_home", storage: { "fyr.projectFilter": "" } },
+}
+
+  // SPEC 0.5 V0.45: the handover sheet from the thread's ⋯; its buttons stay above the bottom inset.
+  { name: "handover sheet", url: "?mock=rail&open=t_triage", sheet: "handover" },
 ];
 
 // What must be visible, and where, on the current screen.
@@ -179,6 +183,9 @@ const MEASURE = `(() => {
   const top = vv.offsetTop, bottom = vv.offsetTop + vv.height;
   const rect = (sel) => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return r.height ? { top: r.top, bottom: r.bottom } : null; };
   const lastSheetItem = (() => { const items = document.querySelectorAll('.m-sheet .m-mi, .m-sheet .m-bt, .m-sheet .pformb .btn, .m-sheet .fbar .btn'); const el = items[items.length - 1]; if (!el) return null; el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; })();
+}
+
+  const lastSheetItem = (() => { const items = document.querySelectorAll('.m-sheet .m-mi, .m-sheet .m-bt, .m-sheet .pformb .btn, .m-sheet .df .btn'); const el = items[items.length - 1]; if (!el) return null; el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; })();
   const active = document.activeElement && document.activeElement !== document.body ? document.activeElement.getBoundingClientRect() : null;
   return {
     top, bottom,
@@ -402,6 +409,10 @@ async function openScreen(s, w, h) {
     await tapCenter(".m-tr1 .b44:last-child");
     await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('Snooze'))?.click()`);
     await sleep(300);
+  } else if (s.sheet === "handover") {
+    await tapCenter(".m-tr1 .b44:last-child");
+    await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('Hand over'))?.click()`);
+    await sleep(300);
   } else if (s.sheet === "details") {
     await tapCenter(".m-chipsd");
     await sleep(300);
@@ -430,6 +441,10 @@ for (const [w, h] of SIZES) {
       await openScreen(s, w, h);
       // 1. At rest.
       assertLayout(await evaluate(MEASURE), `${ctx} at rest`);
+      if (s.sheet === "handover") {
+        const ho = await evaluate(`({ rung: document.querySelector('.m-sheet .ho-rung')?.textContent ?? '', btn: [...document.querySelectorAll('.m-sheet .df .btn')].map(b => b.textContent.trim()) })`);
+        check(!!ho.rung && ho.btn.includes("Hand over"), `${ctx}: the handover sheet has no rung line or no Hand over button ${JSON.stringify(ho)}`);
+      }
       if (s.sheet === "details") {
         const mk = await evaluate(`(() => { const b = document.querySelector('.m-sheet .m-mkp'); if (!b) return null; const r = b.getBoundingClientRect(); return { left: r.left, right: r.right, h: r.height, text: b.textContent, vw: innerWidth }; })()`);
         check(!!mk && mk.text.includes("lasso-app") && mk.left >= 0 && mk.right <= mk.vw && mk.h >= 44, `${ctx}: Make project button missing or out of bounds ${JSON.stringify(mk)}`);
@@ -669,6 +684,27 @@ try {
   check(/The check lint failed: https:\/\/github\.com\/.*\. Find the cause and fix it\./.test(posted), `V0.43 desktop: the owner's message is not in the conversation ("${posted.slice(0, 120)}")`);
 } catch (e) {
   failures.push(`V0.43 desktop: ${e.message}`);
+}
+
+// SPEC 0.5 V0.45: the thread ⋯ menu offers Hand over…; the dialog says how the context goes over, and a
+// confirmed handover leaves a divider that names both profiles.
+try {
+  await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_triage` });
+  await sleep(900);
+  await evaluate(`document.querySelector('.thh .tmenu-b')?.click()`);
+  await sleep(150);
+  const it = await evaluate(`[...document.querySelectorAll('.thh [role=menuitem]')].map(b => b.textContent)`);
+  check(it.some((x) => /Hand over…/.test(x)), `V0.45 desktop: no Hand over… in the ⋯ menu (${JSON.stringify(it)})`);
+  await evaluate(`[...document.querySelectorAll('.thh [role=menuitem]')].find(b => /Hand over/.test(b.textContent))?.click()`);
+  await sleep(400);
+  const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .ho-rung'), rung: document.querySelector('.dlg .ho-rung b')?.textContent ?? '', to: document.querySelector('.dlg select')?.selectedOptions[0]?.textContent ?? '' })`);
+  check(d.dlg && /Full history|reads the old conversation|writes a handover/.test(d.rung) && d.to !== "", `V0.45 desktop: the dialog does not show the target and the rung (${JSON.stringify(d)})`);
+  await evaluate(`[...document.querySelectorAll('.dlg .df .btn')].find(b => b.textContent.trim() === 'Hand over')?.click()`);
+  await sleep(400);
+  const r = await evaluate(`({ dlg: !!document.querySelector('.dlg'), div: document.querySelector('.th .hodiv')?.textContent ?? '' })`);
+  check(!r.dlg && r.div.startsWith("Handed over from ") && r.div.includes(` to ${d.to}`), `V0.45 desktop: no divider after the handover (${JSON.stringify(r)})`);
+} catch (e) {
+  failures.push(`V0.45 desktop: ${e.message}`);
 }
 
 // V0.39: the update banner is below the top safe area and inside the screen, and names the threads it waits for.
