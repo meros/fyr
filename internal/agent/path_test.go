@@ -6,7 +6,7 @@ import "testing"
 func TestUserPath(t *testing.T) {
 	exists := func(p string) bool { return p != "/home/u/.nix-profile/bin" }
 	got := UserPath("/nix/store/x/bin:/run/current-system/sw/bin", "/home/u", "u", exists)
-	want := "/nix/store/x/bin:/run/current-system/sw/bin:/run/wrappers/bin:/etc/profiles/per-user/u/bin"
+	want := "/nix/store/x/bin:/run/current-system/sw/bin:/run/wrappers/bin:/home/u/.local/bin:/etc/profiles/per-user/u/bin"
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}
