@@ -68,8 +68,8 @@ test("snooze presets: this evening only before 17:00", () => {
 
 test("New screen defaults: last used on this device, else the host's most recent", () => {
   const projects = [
-    { cwd: "/a", name: "a", lastUsed: "2026-11-01" },
-    { cwd: "/b", name: "b", lastUsed: "2026-11-10" },
+    { folder: "/a", name: "a", lastUsed: "2026-11-01" },
+    { folder: "/b", name: "b", lastUsed: "2026-11-10" },
   ];
   const profiles = [
     { id: "claude", name: "Claude", color: "#000", models: ["opus", "sonnet"], defaultModel: "opus" },
