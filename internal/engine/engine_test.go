@@ -579,3 +579,15 @@ func TestAttachmentsReachTheAgent(t *testing.T) {
 		t.Fatal("an unknown attachment id was accepted")
 	}
 }
+
+// SPEC 0.5 V0.13: a deploy may wait for a long drain; its deadline is its
+// own, not the 10 minutes of other effects (found live: "context deadline
+// exceeded" while the requesting thread was still working).
+func TestEffectDeadlines(t *testing.T) {
+	if d := EffectTimeout("fyr.deploy"); d < 45*time.Minute {
+		t.Fatalf("deploy deadline %s is shorter than build, test and a 30 min drain", d)
+	}
+	if d := EffectTimeout("pr.merge"); d > 15*time.Minute || d < time.Minute {
+		t.Fatalf("merge deadline %s", d)
+	}
+}

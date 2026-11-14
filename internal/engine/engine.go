@@ -297,6 +297,15 @@ func (e *Engine) run(threadID string, effects []core.Effect) {
 	}
 }
 
+// EffectTimeout is the deadline of one approved effect. A deploy builds,
+// tests and then drains for up to 30 minutes (SPEC 0.5 V0.13).
+func EffectTimeout(action string) time.Duration {
+	if action == "fyr.deploy" {
+		return 60 * time.Minute
+	}
+	return 10 * time.Minute
+}
+
 // runEffect runs an approved or declined async effect and reports the result
 // to the thread as context for the agent (SPEC 5.10, 0.5 V0.12).
 func (e *Engine) runEffect(threadID string, ef core.Effect) {
@@ -309,7 +318,7 @@ func (e *Engine) runEffect(threadID string, ef core.Effect) {
 		if e.Effects == nil {
 			text = "No effect runner is configured."
 		} else {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), EffectTimeout(req.Action))
 			out, err := e.Effects.Run(ctx, threadID, *req)
 			cancel()
 			if errors.Is(err, core.ErrReportLater) {
