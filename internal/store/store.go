@@ -187,7 +187,18 @@ func (s *Store) GetKV(k string) (string, error) {
 	return v, err
 }
 
+// SetKV stores a value; an empty value deletes the key.
 func (s *Store) SetKV(k, v string) error {
+	if v == "" {
+		_, err := s.db.Exec(`DELETE FROM kv WHERE k=?`, k)
+		return err
+	}
 	_, err := s.db.Exec(`INSERT INTO kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`, k, v)
+	return err
+}
+
+// Snapshot writes a consistent copy of the database to path (VACUUM INTO).
+func (s *Store) Snapshot(path string) error {
+	_, err := s.db.Exec(`VACUUM INTO ?`, path)
 	return err
 }

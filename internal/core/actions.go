@@ -48,6 +48,10 @@ type Action struct {
 
 var ErrBadArgs = errors.New("bad arguments")
 
+// ErrReportLater tells the engine that an effect reports its own result
+// later (a deploy reports from the new daemon, SPEC 0.5 V0.13).
+var ErrReportLater = errors.New("the effect reports its result later")
+
 func always(*Thread, *View, time.Time) string { return "" }
 
 func notArchived(t *Thread, _ *View, _ time.Time) string {
