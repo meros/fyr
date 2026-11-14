@@ -42,6 +42,9 @@ type Engine struct {
 	last     map[string]core.State    // last broadcast state, for time-driven changes
 	revs     map[string]int64         // per-thread rev (SPEC 0.5 V0.2)
 	projects map[string]*core.Project // V0.23
+
+	// quietSent is the quiet hours the clients last got, per project (V0.46).
+	quietSent map[string]string
 	// workspaces are where threads run (V0.28), by id.
 	workspaces map[string]*core.Workspace
 	// ScratchRoots are the scratch folders' roots (V0.28); nil: the defaults.
@@ -80,7 +83,7 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, workspaces: map[string]*core.Workspace{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
+		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, quietSent: map[string]string{}, workspaces: map[string]*core.Workspace{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
 		newLimit: hourly{max: 5}, sendLimit: hourly{max: 30}}
 }
 
@@ -618,6 +621,9 @@ type DTO struct {
 	Suggest *core.Suggestion `json:"suggest,omitempty"`
 	// NewProject is what "New project from this thread" starts with (V0.30).
 	NewProject *core.Suggestion `json:"newProject,omitempty"`
+	// QuietUntil is the end of the quiet hours of the thread's project, while
+	// they hold (V0.46).
+	QuietUntil *time.Time `json:"quietUntil,omitempty"`
 
 	prev core.State // the state before this change; not sent
 }
@@ -650,7 +656,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	}
 	att := core.Compute(t, v, now)
 	vc := *v
-	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, Suggest: e.suggestion(t), NewProject: e.draft(t)}
+	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, Suggest: e.suggestion(t), NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now)}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.
@@ -680,19 +686,43 @@ func (e *Engine) Running() []string {
 	return out
 }
 
+// quietKey is what the clients last got for a project's quiet hours.
+func quietKey(u *time.Time) string {
+	if u == nil {
+		return ""
+	}
+	return u.UTC().Format(time.RFC3339)
+}
+
 // Tick broadcasts threads whose attention changed with time alone (a snooze
-// ended). Call it every few seconds.
+// ended), and the projects whose quiet hours started or ended with their
+// threads (V0.46; not an attention change, so never a push). Call it every
+// few seconds.
 func (e *Engine) Tick() {
 	e.mu.Lock()
 	now := e.Now()
+	quiet := map[string]bool{}
+	for pid := range e.projects {
+		if k := quietKey(e.quietUntil(pid, now)); k != e.quietSent[pid] {
+			e.quietSent[pid] = k
+			quiet[pid] = true
+		}
+	}
 	var changed []DTO
 	for id, t := range e.threads {
-		if core.Compute(t, e.view(id), now).State != e.last[id] {
+		if core.Compute(t, e.view(id), now).State != e.last[id] || quiet[t.ProjectID] {
 			e.bump(id)
 			changed = append(changed, e.dto(clone(t), now))
 		}
 	}
 	e.mu.Unlock()
+	if len(quiet) > 0 {
+		for _, p := range e.Projects() {
+			if quiet[p.ID] {
+				e.Hub.Project(p)
+			}
+		}
+	}
 	for _, d := range changed {
 		e.Hub.Thread(d)
 		e.notify(d)
