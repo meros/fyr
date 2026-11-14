@@ -23,6 +23,8 @@ type Effect struct {
 	Answers    map[string]string `json:"answers,omitempty"`
 	Allow      bool              `json:"allow,omitempty"`
 	Model      string            `json:"model,omitempty"`
+	// Request is the approved effect for Kind "effect".
+	Request *EffectReq `json:"request,omitempty"`
 }
 
 // Image is a pasted image, base64 encoded, sent to the agent as a content block.
@@ -174,6 +176,10 @@ func init() {
 			} else {
 				e.Allow, _ = a["allow"].(bool)
 			}
+			if d.Kind == "effect" {
+				// SPEC 5.10: the agent is not waiting; Fyr runs the effect itself.
+				e.Kind, e.Request = "effect", d.Effect
+			}
 			t.Decisions = append(t.Decisions[:idx:idx], t.Decisions[idx+1:]...)
 			if len(t.Decisions) == 0 {
 				t.Decisions = nil
@@ -229,11 +235,20 @@ func init() {
 			}
 			return notArchived(t, v, now)
 		},
-		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
-			if t.Running {
+		// SPEC 13.1 `e`: running → settle when done; idle with an open PR →
+		// settle when merged; else now. Args{"now": true} (bulk, U11) settles now.
+		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
+			force, _ := a["now"].(bool)
+			if t.Running { // also for bulk: a live run is never hidden as settled
 				t.SettleWhenDone = true
 				return nil, nil
 			}
+			if !force && t.PR != nil && t.PR.State == "OPEN" && !t.SettleWhenMerged {
+				t.SettleWhenMerged = true
+				v.SeenAt = now
+				return nil, nil
+			}
+			t.SettleWhenDone = false
 			t.SettledAt = &now
 			t.Failure = nil
 			t.SettleWhenMerged = false
