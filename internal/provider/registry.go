@@ -33,10 +33,21 @@ type Registry struct {
 	InUse func(id string) int
 	// OnChange runs after a provider changed (quota, clients).
 	OnChange func()
+	// V0.53 login through Fyr. LoginBinary is the CLI ("" is claude on
+	// PATH), LoginEnv its base environment (nil: fyrd's), LoginTemp where a
+	// token login's throwaway folder goes ("" is the system's), and
+	// LoginTimeout ends an unfinished login (0: LoginTimeout).
+	LoginBinary  string
+	LoginEnv     []string
+	LoginTemp    string
+	LoginTimeout time.Duration
 
 	mu   sync.Mutex
 	list []Provider
 	seen map[string]engine.Reply
+
+	lmu    sync.Mutex
+	logins map[string]*loginRun
 }
 
 // Load reads the stored providers.
@@ -233,13 +244,13 @@ func (r *Registry) status(p Provider) (string, string) {
 			return Ready, ""
 		}
 		if p.TokenLogin {
-			return NeedsLogin, "This account logs in with a token. Run `claude setup-token` while logged in to it and paste the token as its key."
+			return NeedsLogin, "This account logs in with a token. Press Log in to get one here (Fyr keeps it), or paste a token from `claude setup-token` as its key."
 		}
 		cmd := "claude"
 		if p.Auth.ConfigDir != "" {
 			cmd = "CLAUDE_CONFIG_DIR=" + p.Auth.ConfigDir + " claude"
 		}
-		return NeedsLogin, "Log in once in a terminal on this host: run `" + cmd + "` and type /login. Or paste a token from `claude setup-token` as its key."
+		return NeedsLogin, "Press Log in to sign in to this account here. Or run `" + cmd + "` in a terminal on this host and type /login."
 	}
 	return Ready, ""
 }
@@ -271,6 +282,10 @@ type DTO struct {
 	Imported      string            `json:"imported,omitempty"`
 	TokenLogin    bool              `json:"tokenLogin,omitempty"`
 	Threads       int               `json:"threads"`
+	// V0.53: the account can log in through Fyr; Login is its current or
+	// recent login (the link and state only).
+	CanLogin bool      `json:"canLogin,omitempty"`
+	Login    *LoginDTO `json:"login,omitempty"`
 }
 
 // List is GET /api/providers.
@@ -290,6 +305,8 @@ func (r *Registry) List() []DTO {
 		if r.InUse != nil {
 			d.Threads = r.InUse(p.ID)
 		}
+		d.CanLogin = p.Auth.Kind == cli.CLILogin
+		d.Login = r.login(p.ID)
 		out = append(out, d)
 	}
 	return out
@@ -408,6 +425,12 @@ func (r *Registry) run(c engine.Cmd) engine.Reply {
 		}
 		p.KeyRef = "" // the stored key wins from now on
 		return r.replace(p)
+	case "provider.login":
+		return r.startLogin(id)
+	case "provider.loginCode":
+		return r.loginCode(id, a.Str("code"))
+	case "provider.loginCancel":
+		return r.cancelLogin(id)
 	case "provider.delete":
 		p, ok := r.get(id)
 		if !ok {
@@ -424,6 +447,7 @@ func (r *Registry) run(c engine.Cmd) engine.Reply {
 		if p.Auth.Secret != "" {
 			r.Secrets.Delete(p.Auth.Secret)
 		}
+		r.cancelLogin(id)
 		r.mu.Lock()
 		for i, x := range r.list {
 			if x.ID == id {
