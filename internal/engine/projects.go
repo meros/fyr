@@ -23,6 +23,21 @@ type ProjectDTO struct {
 	// Repos are the normalised origin remotes of the project's folders on
 	// this host and its repo sources, deduplicated (V0.42); read-only.
 	Repos []string `json:"repos"`
+	// QuietUntil is the end of the quiet hours the project is in (V0.46).
+	QuietUntil *time.Time `json:"quietUntil,omitempty"`
+}
+
+// quietUntil is the end of the quiet hours project id is in at now, in the
+// host's time zone, or nil (SPEC 0.5 V0.46). Call with e.mu held.
+func (e *Engine) quietUntil(id string, now time.Time) *time.Time {
+	p := e.projects[id]
+	if p == nil || p.Quiet == nil {
+		return nil
+	}
+	if u, ok := core.QuietUntil(p.Quiet, now.In(time.Local)); ok {
+		return &u
+	}
+	return nil
 }
 
 // runGit runs git in dir with a short timeout, for the clone provider.
@@ -356,8 +371,9 @@ func (e *Engine) Projects() []ProjectDTO {
 		}
 	}
 	out := make([]ProjectDTO, 0, len(e.projects))
+	now := e.Now()
 	for _, p := range e.projects {
-		out = append(out, ProjectDTO{Project: *p, Threads: counts[p.ID], LastUsed: last[p.ID], Repos: e.repos(p)})
+		out = append(out, ProjectDTO{Project: *p, Threads: counts[p.ID], LastUsed: last[p.ID], Repos: e.repos(p), QuietUntil: e.quietUntil(p.ID, now)})
 	}
 	return out
 }
@@ -600,6 +616,24 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 			if v, ok := c.Args["model"].(string); ok {
 				p.Model = v
 			}
+			// V0.46: quiet hours; null clears them.
+			if raw, ok := c.Args["quiet"]; ok {
+				if raw == nil {
+					p.Quiet = nil
+				} else {
+					var q core.Quiet
+					b, _ := json.Marshal(raw)
+					if err := json.Unmarshal(b, &q); err != nil {
+						e.mu.Unlock()
+						return bad("quiet must be {from, to, days?}")
+					}
+					if err := q.Validate(); err != nil {
+						e.mu.Unlock()
+						return bad(err.Error())
+					}
+					p.Quiet = &q
+				}
+			}
 		}
 		p.Edited = true
 		e.projects[p.ID] = p
@@ -607,11 +641,16 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		e.mu.Unlock()
 		return bad("unknown action " + c.Action)
 	}
-	// The name shows on threads: refresh them.
+	// The name and the quiet hours show on threads: refresh them.
 	var touched []DTO
 	now := e.Now()
+	_, quietChanged := c.Args["quiet"]
+	quietChanged = quietChanged && c.Action == "project.update"
+	if quietChanged {
+		e.quietSent[p.ID] = quietKey(e.quietUntil(p.ID, now))
+	}
 	for _, t := range e.threads {
-		if t.ProjectID == p.ID && t.Project != p.Name {
+		if t.ProjectID == p.ID && (t.Project != p.Name || quietChanged) {
 			t.Project = p.Name
 			e.bump(t.ID)
 			touched = append(touched, e.dto(t, now))

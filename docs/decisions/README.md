@@ -16,3 +16,4 @@ The owner decisions D1–D5 from the design phase stay in `../SPEC.md` 0.3. Reco
 | [0009](0009-message-delivery.md) | Message delivery follows the CLI's own queue: `command_lifecycle` receipts, `cancel_async_message` | accepted |
 | [0010](0010-live-views.md) | Live views: a page plus a merge-patched state, kept current by a once-per-run Stop hook | proposed |
 | [0011](0011-visual-pacing.md) | Visual pacing: the outcome at full weight, the work muted and folded into one line per stretch | proposed |
+| [0014](0014-quiet-hours.md) | Quiet hours per project: hidden from the inbox and no push; back silently; reachable through the project filter | accepted |

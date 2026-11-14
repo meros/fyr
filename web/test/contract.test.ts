@@ -10,6 +10,7 @@ import { applySnapshot, flatOrder, initialStore, sections, unavailableReason, up
 import { colorName, filterByProject, makeProjectLabel, matchProjects, projectName, projectOf, projectSubtitle, resolveIcon, suggestionFor } from "../src/projects.ts";
 import { relTime, whenLabel } from "../src/format.ts";
 import { decodeThread } from "../src/decode.ts";
+import { hideQuiet, nextQuietEnd, quietLine, quietNote } from "../src/quiet.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/host-state.json", import.meta.url), "utf8"));
 const REQUIRED = new Set(["id"]); // a thread or project without an id is not data
@@ -47,8 +48,9 @@ function render(state: any) {
   let s = applySnapshot(initialStore(), state, now);
   for (const t of state.threads ?? []) s = upsertThread(s, structuredClone({ ...t, rev: (t.rev ?? 0) + 1 }));
   for (const p of state.projects ?? []) s = upsertProject(s, structuredClone(p));
-  const sec = sections(s.threads);
+  const sec = sections(hideQuiet(s.threads, false, now));
   flatOrder(sec);
+  nextQuietEnd(s.threads, s.projects, now);
   for (const t of Object.values(s.threads)) {
     const p = projectOf(t, s.projects);
     const name = projectName(t, s.projects);
@@ -72,6 +74,8 @@ function render(state: any) {
     resolveIcon(p.icon, p.name);
     projectSubtitle(p);
     filterByProject(s.threads, p.id ?? null, s.projects);
+    quietNote(p, now);
+    if (p.quiet?.from && p.quiet?.to) quietLine(p.quiet);
   }
   matchProjects(s.projects, "a");
 }
@@ -82,6 +86,9 @@ test("the host fixture has the edge cases (a thread with no project, an icon wit
   // V0.28: workspaces and a suggestion for a thread in a clone.
   assert.ok(fixture.threads.every((t: any) => typeof t.workspaceId === "string" && t.workspaceId), "a workspace per thread");
   assert.ok(fixture.threads.some((t: any) => !t.projectId && t.suggest?.name === "lib"), "a suggestion");
+  // V0.46: a project in its quiet hours and its thread carry quietUntil.
+  assert.ok(fixture.projects.some((p: any) => p.quiet && p.quietUntil), "a quiet project");
+  assert.ok(fixture.threads.some((t: any) => t.quietUntil), "a thread in quiet hours");
 });
 
 test("SPEC 0.5 V0.28: decode keeps a suggestion with a name and drops one without", () => {

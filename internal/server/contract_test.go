@@ -74,6 +74,16 @@ func TestStateContractFixture(t *testing.T) {
 			})
 		}
 	}
+	// V0.46: a project in its quiet hours (a whole day, every day) and its thread carry quietUntil.
+	work := filepath.Join(home, "src", "work")
+	os.MkdirAll(work, 0o755)
+	post(`{"commandId":"k6","action":"project.create","args":{"name":"Work","sources":[{"kind":"folder","path":"` + work + `"}]}}`)
+	for _, p := range e.Projects() {
+		if p.Name == "Work" {
+			post(`{"commandId":"k7","action":"project.update","args":{"id":"` + p.ID + `","quiet":{"from":"00:00","to":"00:00"}}}`)
+		}
+	}
+	post(`{"commandId":"k8","action":"thread.create","args":{"cwd":"` + work + `","text":"a thread in a quiet project"}}`)
 	r := do(t, "GET", hs.URL+"/api/state", "", nil, "")
 	var v any
 	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
