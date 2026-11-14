@@ -4,7 +4,8 @@
 
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
-import type { Profile, Project, ProjectSource, ThreadDTO } from "./types.ts";
+import type { Profile, Project, ProjectSource, QuietHours, ThreadDTO } from "./types.ts";
+import { DEFAULT_QUIET, WEEK, quietLine, quietNote, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import { FOLDERS_LINE, MAIN_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, colorVar, createFolderLine, matchProjects, monogram, newProjectDraft, newRowLabel, projectFolders, projectName, projectOf, projectRepos, projectSubtitle, repoLine, resolveIcon, shortPath, sourceText } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -337,11 +338,52 @@ export interface ProjectPatch {
   icon?: { kind: string; value: string };
   profile?: string;
   model?: string;
+  /** V0.46: quiet hours; null turns them off */
+  quiet?: QuietHours | null;
 }
+
+/** V0.46: the project screen's Quiet hours row: off, or from–to with the day toggles, and one line that says what it does. */
+export function QuietRow({ value, onChange, note }: { value: QuietHours | null; onChange(q: QuietHours | null): void; note?: string | null }) {
+  const days = new Set(value?.days?.length ? value.days : WEEK.map((w) => w.key));
+  const time = (k: "from" | "to") => (e: Event) => {
+    const v = (e.target as HTMLInputElement).value;
+    if (value && /^\d\d:\d\d$/.test(v)) onChange({ ...value, [k]: v });
+  };
+  return (
+    <div class="fld qfld">
+      <span>Quiet hours</span>
+      <div class="qrow">
+        <label class="qtog">
+          <input type="checkbox" checked={!!value} onChange={(e) => onChange((e.target as HTMLInputElement).checked ? { ...DEFAULT_QUIET } : null)} />
+          <span>{value ? "On" : "Off"}</span>
+        </label>
+        {value && (
+          <span class="qtimes">
+            <input type="time" value={value.from} aria-label="Quiet from" onChange={time("from")} />
+            <span aria-hidden="true">–</span>
+            <input type="time" value={value.to} aria-label="Quiet until" onChange={time("to")} />
+          </span>
+        )}
+      </div>
+      {value && (
+        <div class="seg qdays" role="group" aria-label="Days">
+          {WEEK.map((w) => (
+            <button class={days.has(w.key) ? "on" : ""} aria-pressed={days.has(w.key)} onClick={() => onChange({ ...value, days: toggleDay(value.days, w.key) })}>
+              {w.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <p class="lede">{value ? quietLine(value) : "Off: threads show and notify as usual."}{note ? ` ${note}.` : ""}</p>
+    </div>
+  );
+}
+
+const quietKey = (q: QuietHours | null | undefined) => (q ? JSON.stringify({ from: q.from, to: q.to, days: q.days?.length ? q.days : undefined }) : "");
 
 /** Edit a project's identity and defaults, and its folders (V0.42: the main star, ×, Add folder… through the picker;
  *  the repo line is read-only). */
-export function ProjectEditor({ project, profiles, host, onSave, onAddFolder, onRemoveSource, onSetMain }: { project: Project; profiles: Profile[]; host: string; onSave(patch: ProjectPatch): Promise<string | null>; onAddFolder(path: string): Promise<string | null>; onRemoveSource(index: number): Promise<string | null>; onSetMain(index: number): Promise<string | null> }) {
+export function ProjectEditor({ project, profiles, host, now, onSave, onAddFolder, onRemoveSource, onSetMain }: { project: Project; profiles: Profile[]; host: string; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onAddFolder(path: string): Promise<string | null>; onRemoveSource(index: number): Promise<string | null>; onSetMain(index: number): Promise<string | null> }) {
   const picker = useFolderPick();
   const [name, setName] = useState(project.name);
   const [color, setColor] = useState(colorName(project.color, project.name));
@@ -350,6 +392,7 @@ export function ProjectEditor({ project, profiles, host, onSave, onAddFolder, on
   const [line, setLine] = useState(resolveIcon(project.icon, project.name).kind === "line" ? resolveIcon(project.icon, project.name).value : "folder");
   const [profile, setProfile] = useState(project.profile ?? "");
   const [model, setModel] = useState(project.model ?? "");
+  const [quiet, setQuiet] = useState<QuietHours | null>(project.quiet ?? null);
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   useEffect(() => {
     setName(project.name);
@@ -358,7 +401,9 @@ export function ProjectEditor({ project, profiles, host, onSave, onAddFolder, on
   const icon = kind === "emoji" ? { kind, value: emoji } : kind === "line" ? { kind, value: line } : { kind, value: "" };
   const preview: Project = { ...project, name: name || project.name, color, icon };
   const save = async () => {
-    const e = await onSave({ name: name.trim() || project.name, color, icon, profile, model });
+    const patch: ProjectPatch = { name: name.trim() || project.name, color, icon, profile, model };
+    if (quietKey(quiet) !== quietKey(project.quiet)) patch.quiet = quiet ? { from: quiet.from, to: quiet.to, ...(quiet.days?.length ? { days: quiet.days } : {}) } : null;
+    const e = await onSave(patch);
     setMsg(e ? { text: e, err: true } : { text: "Saved", err: false });
   };
   const sources = project.sources ?? [];
@@ -405,6 +450,7 @@ export function ProjectEditor({ project, profiles, host, onSave, onAddFolder, on
           Add folder…
         </button>
       </div>
+      <QuietRow value={quiet} onChange={setQuiet} note={quietNote(project, now)} />
       <div class="fld">
         <span>Colour</span>
         <div class="swatches" role="radiogroup" aria-label="Colour">

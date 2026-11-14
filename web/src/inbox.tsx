@@ -12,6 +12,7 @@ import { count, relTime, untilLabel, whenLabel } from "./format.ts";
 import { prLabel } from "./thread.tsx";
 import { groupTasks, workingLine } from "./tasks.ts";
 import { rowSummary } from "./view.ts";
+import { quietNote } from "./quiet.ts";
 import type { ConnState } from "./api.ts";
 
 export type Theme = "system" | "light" | "dark";
@@ -249,7 +250,7 @@ export function Inbox(p: InboxProps) {
           {PLUS}
         </button>
       </div>
-      <ProjectFilterRow projects={p.projects} selected={p.projectFilter} onPick={p.onProjectFilter} />
+      <ProjectFilterRow projects={p.projects} selected={p.projectFilter} onPick={p.onProjectFilter} now={p.now} />
       <div class="list" role="listbox" aria-label="Threads">
         {SECTIONS.map((s) => {
           const list = p.sec[s.key];
@@ -285,7 +286,7 @@ export function Inbox(p: InboxProps) {
 }
 
 /** Desktop: a compact row of projects under the search field; one click filters, the × clears. */
-function ProjectFilterRow({ projects, selected, onPick }: { projects: Project[]; selected: string | null; onPick(id: string | null): void }) {
+function ProjectFilterRow({ projects, selected, onPick, now }: { projects: Project[]; selected: string | null; onPick(id: string | null): void; now: number }) {
   const list = pickerOrder(projects).filter((p) => (p.threads ?? 0) > 0 || p.id === selected);
   if (!list.length) return null;
   return (
@@ -295,12 +296,17 @@ function ProjectFilterRow({ projects, selected, onPick }: { projects: Project[];
           ×
         </button>
       )}
-      {list.map((p) => (
-        <button class={`pfc${p.id === selected ? " on" : ""}`} aria-pressed={p.id === selected} style={{ "--pc": colorVar(p.color, p.name) }} title={`${p.name}: ${p.threads ?? 0} threads`} onClick={() => onPick(p.id === selected ? null : p.id ?? null)}>
-          <ProjectIcon project={p} name={p.name} size={16} />
-          <span class="ell">{p.name}</span>
-        </button>
-      ))}
+      {list.map((p) => {
+        // V0.46: a project in its quiet hours says so; its threads show only while it is picked here.
+        const note = quietNote(p, now);
+        return (
+          <button class={`pfc${p.id === selected ? " on" : ""}${note ? " quiet" : ""}`} aria-pressed={p.id === selected} style={{ "--pc": colorVar(p.color, p.name) }} title={`${p.name}: ${p.threads ?? 0} threads${note ? ` · ${note}, hidden from the inbox` : ""}`} onClick={() => onPick(p.id === selected ? null : p.id ?? null)}>
+            <ProjectIcon project={p} name={p.name} size={16} />
+            <span class="ell">{p.name}</span>
+            {note && p.id === selected && <span class="pfq">{note}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

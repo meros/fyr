@@ -111,6 +111,32 @@
   "profiles": [],
   "projects": [
     {
+      "color": "green",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "cwd": "/home/owner/src/work",
+      "edited": true,
+      "icon": {
+        "kind": "monogram"
+      },
+      "id": "p_1",
+      "lastUsed": "2026-01-01T00:00:00Z",
+      "name": "Work",
+      "quiet": {
+        "from": "00:00",
+        "to": "00:00"
+      },
+      "quietUntil": "2026-01-01T00:00:00Z",
+      "repos": [],
+      "sources": [
+        {
+          "host": "host",
+          "kind": "folder",
+          "path": "/home/owner/src/work"
+        }
+      ],
+      "threads": 1
+    },
+    {
       "color": "slate",
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "",
@@ -118,7 +144,7 @@
       "icon": {
         "kind": "monogram"
       },
-      "id": "p_1",
+      "id": "p_2",
       "lastUsed": "2026-01-01T00:00:00Z",
       "name": "A label",
       "repos": [],
@@ -134,8 +160,50 @@
         "state": "seen"
       },
       "createdAt": "2026-01-01T00:00:00Z",
+      "cwd": "/home/owner/src/work",
+      "id": "t_3",
+      "model": "",
+      "owner": "owner",
+      "profile": "claude",
+      "project": "Work",
+      "projectId": "p_1",
+      "quietUntil": "2026-01-01T00:00:00Z",
+      "rev": 1,
+      "running": false,
+      "sessionId": "",
+      "source": "fyr",
+      "title": "a thread in a quiet project",
+      "unavailable": {
+        "pr.merge": "No PR",
+        "pr.rerunFailed": "No PR",
+        "thread.answer": "Nothing to answer",
+        "thread.dismiss": "No failure to dismiss",
+        "thread.dismissPR": "No PR",
+        "thread.interrupt": "No run is going",
+        "thread.retry": "The last run did not fail",
+        "thread.settleWhenMerged": "No open PR",
+        "thread.unarchive": "Not archived",
+        "thread.unsettle": "Not settled",
+        "thread.unsnooze": "Not snoozed"
+      },
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "view": {
+        "entity": "t_3",
+        "seenAt": "2026-01-01T00:00:00Z",
+        "user": "owner"
+      },
+      "visibility": "private",
+      "workspaceId": "w_4"
+    },
+    {
+      "activityAt": "2026-01-01T00:00:00Z",
+      "attention": {
+        "section": "seen",
+        "state": "seen"
+      },
+      "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner/src/app",
-      "id": "t_2",
+      "id": "t_5",
       "live": {
         "checkedAt": "2026-01-01T00:00:00Z",
         "headline": "Tests pass",
@@ -184,12 +252,12 @@
       },
       "updatedAt": "2026-01-01T00:00:00Z",
       "view": {
-        "entity": "t_2",
+        "entity": "t_5",
         "seenAt": "2026-01-01T00:00:00Z",
         "user": "owner"
       },
       "visibility": "private",
-      "workspaceId": "w_3"
+      "workspaceId": "w_6"
     },
     {
       "activityAt": "2026-01-01T00:00:00Z",
@@ -199,7 +267,7 @@
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner/src/lib",
-      "id": "t_4",
+      "id": "t_7",
       "model": "",
       "newProject": {
         "name": "lib",
@@ -252,12 +320,12 @@
       },
       "updatedAt": "2026-01-01T00:00:00Z",
       "view": {
-        "entity": "t_4",
+        "entity": "t_7",
         "seenAt": "2026-01-01T00:00:00Z",
         "user": "owner"
       },
       "visibility": "private",
-      "workspaceId": "w_5"
+      "workspaceId": "w_8"
     },
     {
       "activityAt": "2026-01-01T00:00:00Z",
@@ -267,7 +335,7 @@
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner",
-      "id": "t_6",
+      "id": "t_9",
       "model": "",
       "owner": "owner",
       "profile": "claude",
@@ -292,12 +360,12 @@
       },
       "updatedAt": "2026-01-01T00:00:00Z",
       "view": {
-        "entity": "t_6",
+        "entity": "t_9",
         "seenAt": "2026-01-01T00:00:00Z",
         "user": "owner"
       },
       "visibility": "private",
-      "workspaceId": "w_7"
+      "workspaceId": "w_10"
     },
     {
       "activityAt": "2026-01-01T00:00:00Z",
@@ -307,7 +375,7 @@
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner/src/app",
-      "id": "t_8",
+      "id": "t_11",
       "model": "",
       "newProject": {
         "name": "app",
@@ -342,12 +410,12 @@
       },
       "updatedAt": "2026-01-01T00:00:00Z",
       "view": {
-        "entity": "t_8",
+        "entity": "t_11",
         "seenAt": "2026-01-01T00:00:00Z",
         "user": "owner"
       },
       "visibility": "private",
-      "workspaceId": "w_3"
+      "workspaceId": "w_6"
     }
   ],
   "user": "owner"

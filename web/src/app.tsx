@@ -72,6 +72,7 @@ import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, LAST_PROJECT_KEY, filterByProject } from "./projects.ts";
+import { hideQuiet, nextQuietEnd } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
@@ -252,16 +253,29 @@ function App() {
     setPickNew(startNew);
     setDialog("picker");
   };
+  // V0.46: quiet hours. One timer to the nearest quietUntil re-renders when a window ends (the host also sends the
+  // threads then); no polling.
+  const [quietClock, setQuietClock] = useState(0);
+  useEffect(() => {
+    const next = nextQuietEnd(store.threads, store.projects, Date.now() + store.clockOffset);
+    if (next === null) return;
+    const t = setTimeout(() => setQuietClock((n) => n + 1), Math.min(next - (Date.now() + store.clockOffset) + 250, 2 ** 31 - 1));
+    return () => clearTimeout(t);
+  }, [store.threads, store.projects, store.clockOffset, quietClock]);
+  const filterOn = !!projectFilter && store.projects.some((p) => p.id === projectFilter);
+  // What search may find: the project filter only, quiet threads included (V0.46).
+  const searchable = useMemo(() => filterByProject(store.threads, filterOn ? projectFilter : null, store.projects), [store.threads, store.projects, projectFilter, filterOn]);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const base = filterByProject(store.threads, projectFilter && store.projects.some((p) => p.id === projectFilter) ? projectFilter : null, store.projects);
+    // V0.46: a quiet project's threads leave the inbox and its counts, unless the filter picks it or a search is typed.
+    const base = hideQuiet(searchable, filterOn || !!q, Date.now() + store.clockOffset);
     if (!q) return base;
     const out: Record<string, ThreadDTO> = {};
     for (const t of Object.values(base)) {
       if (`${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(q)) out[t.id] = t;
     }
     return out;
-  }, [store.threads, store.projects, query, projectFilter]);
+  }, [searchable, filterOn, query, quietClock, store.clockOffset]);
   const sec = useMemo(() => sections(shown), [shown]);
   const limits = useMemo(() => {
     const l: Partial<Record<SectionKey, number>> = {};
@@ -1188,6 +1202,7 @@ function App() {
           back={navBack}
           threads={store.threads}
           sec={sec}
+          searchable={searchable}
           now={now}
           host={store.host || (api.mock ? "mock" : "local")}
           conn={store.conn}
@@ -1363,6 +1378,7 @@ function App() {
               project={store.projects.find((p) => p.id === projectId)!}
               profiles={store.profiles}
               host={store.host}
+              now={now}
               onSave={(patch) => projectActions.update(projectId, patch)}
               onAddFolder={(v) => projectActions.addFolder(projectId, v)}
               onRemoveSource={(i) => projectActions.removeSource(projectId, i)}

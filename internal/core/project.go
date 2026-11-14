@@ -20,6 +20,7 @@ type Project struct {
 	Icon      Icon      `json:"icon"`
 	Profile   string    `json:"profile,omitempty"`
 	Model     string    `json:"model,omitempty"`
+	Quiet     *Quiet    `json:"quiet,omitempty"` // quiet hours (V0.46)
 	CreatedAt time.Time `json:"createdAt"`
 }
 

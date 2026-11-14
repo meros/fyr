@@ -891,13 +891,24 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     (Array.isArray(args.attachments) ? (args.attachments as string[]) : []).map((aid) => files.get(aid)).filter((x): x is NonNullable<typeof x> => !!x);
   let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void } | null = null;
   let projects = mockProjects(now0);
+  // V0.46: ?quiet=<projectId> puts that project in quiet hours that started an hour ago and end in two hours.
+  if (MOCK_QUIET) {
+    const hm = (ms: number) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+    projects = projects.map((p) => (p.id === MOCK_QUIET ? { ...p, quiet: { from: hm(now0 - 3600_000), to: hm(now0 + 2 * 3600_000) } } : p));
+  }
+  // V0.46: the host computes quietUntil; the mock does the same for its own clock.
+  const withQuiet = (p: Project): Project => {
+    const u = mockQuietUntil(p.quiet, clock());
+    const { quietUntil: _, ...rest } = p;
+    return u ? { ...rest, quietUntil: u } : rest;
+  };
   const tree = mockTree([...fx.threads.map((t) => t.cwd), ...projects.flatMap((p) => (p.sources ?? []).map((s) => String((s as { path?: string }).path ?? "")))].filter((p) => p.startsWith(MOCK_HOME)));
   const expand = (p: string) => (p.trim() === "~" || p.trim() === "" ? MOCK_HOME : p.trim().startsWith("~/") ? MOCK_HOME + p.trim().slice(1) : p.trim()).replace(/\/+$/, "") || "/";
   const dirOf = (p: string): FsDir => ({ name: p.split("/").pop() ?? p, path: p, repo: tree.repos.has(p) || undefined });
   const putProject = (p0: Project) => {
     const p = withRepos(p0);
     projects = projects.some((x) => x.id === p.id) ? projects.map((x) => (x.id === p.id ? p : x)) : [...projects, p];
-    setTimeout(() => sub?.project?.(p), 30);
+    setTimeout(() => sub?.project?.(withQuiet(p)), 30);
     return p;
   };
   const projectIdFor = (t: ThreadDTO) => t.projectId ?? projects.find((p) => p.name === t.project)?.id;
@@ -909,7 +920,11 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     const sources = (base?.sources ?? []).filter((x) => !taken(x as { kind: string }));
     return base && sources.length ? { name: base.name, sources } : undefined;
   };
-  const dtoOf = (t: ThreadDTO): ThreadDTO => ({ ...t, projectId: projectIdFor(t), suggest: projectIdFor(t) ? undefined : t.suggest, newProject: draftFor(t) });
+  const dtoOf = (t: ThreadDTO): ThreadDTO => {
+    const pid = projectIdFor(t);
+    const q = withQuiet(projects.find((p) => p.id === pid) ?? { name: "" }).quietUntil;
+    return { ...t, projectId: pid, suggest: pid ? undefined : t.suggest, newProject: draftFor(t), quietUntil: q };
+  };
   let nextId = 1;
 
   const put = (t: ThreadDTO, patch: Partial<ThreadDTO>) => {
@@ -1004,8 +1019,10 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const p = projects.find((x) => x.id === args.id);
       if (!p) return { ok: false, error: "No such project" };
       const patch: Partial<Project> = {};
-      for (const k of ["name", "color", "icon", "profile", "model"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k];
-      putProject({ ...p, ...patch });
+      for (const k of ["name", "color", "icon", "profile", "model", "quiet"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k] ?? undefined;
+      const np = putProject({ ...p, ...patch });
+      // V0.46: the threads carry the project's quietUntil, so they change with it.
+      if ("quiet" in args) for (const t of threads.values()) if (projectIdFor(t) === np.id) setTimeout(() => sub?.thread(dtoOf(t)), 40);
       return { ok: true };
     }
     if (action === "project.create") {
@@ -1192,7 +1209,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
           { id: "claude", name: "Claude", color: "#d97757", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5"], defaultModel: "claude-opus-5-5" },
           { id: "work", name: "Claude (work account)", color: "#2f6fb0", models: ["claude-sonnet-5-5"], defaultModel: "claude-sonnet-5-5" },
         ],
-        projects,
+        projects: projects.map(withQuiet),
       } as StateDTO;
     },
     subscribe(h) {
@@ -1334,6 +1351,37 @@ export function mockFilePatch(path: string): FilePatchDTO {
     "   ctx.stroke();\n" +
     "\\ No newline at end of file\n";
   return { path, patch, binary: false, truncated: false };
+}
+
+// V0.46: ?quiet=<projectId> (read once at load, like ?deploy).
+const MOCK_QUIET = typeof location !== "undefined" ? new URLSearchParams(location.search).get("quiet") : null;
+
+/** The host's QuietUntil (internal/core/quiet.go) on the device's clock, for the mock only. */
+export function mockQuietUntil(q: Project["quiet"], now: number): string | undefined {
+  const hm = (s: string) => /^(\d{1,2}):(\d\d)$/.exec(s ?? "");
+  const f = q && hm(q.from), t = q && hm(q.to);
+  if (!q || !f || !t) return undefined;
+  const span = +t[1] * 60 + +t[2] <= +f[1] * 60 + +f[2] ? 1 : 0;
+  const keys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const window = (at: number): number | null => {
+    const d = new Date(at);
+    for (const back of [1, 0]) {
+      const day = new Date(d.getFullYear(), d.getMonth(), d.getDate() - back, 12);
+      if (q.days?.length && !q.days.includes(keys[day.getDay()])) continue;
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - back, +f[1], +f[2]).getTime();
+      const end = new Date(d.getFullYear(), d.getMonth(), d.getDate() - back + span, +t[1], +t[2]).getTime();
+      if (at >= start && at < end) return end;
+    }
+    return null;
+  };
+  let end = window(now);
+  if (end === null) return undefined;
+  for (let i = 0; i < 7; i++) {
+    const next = window(end);
+    if (next === null) break;
+    end = next;
+  }
+  return new Date(end).toISOString();
 }
 
 /** V0.39: ?deploy=<phase> in the mock shows an update in progress (the layout test uses it). */

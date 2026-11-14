@@ -114,6 +114,8 @@ export interface ThreadDTO {
   suggest?: ProjectSuggestion;
   /** what "New project from this thread" starts with (V0.30); absent: a name only */
   newProject?: ProjectSuggestion;
+  /** V0.46: the end of the quiet hours of the thread's project, while they hold (RFC 3339) */
+  quietUntil?: string;
   /** the thread whose agent started this one (V0.22) */
   parent?: string | null;
   /** The checkout branch, read after each run; empty when not a git checkout. */
@@ -174,6 +176,17 @@ export interface Project {
   cwd?: string;
   /** V0.42: the repos its folders' clones are matched by (from git origin, and repo sources made by hand); read-only */
   repos?: string[];
+  /** V0.46: quiet hours, in the host's time zone */
+  quiet?: QuietHours;
+  /** V0.46: the end of the quiet hours the project is in now (RFC 3339); absent when not quiet */
+  quietUntil?: string;
+}
+
+/** A project's quiet hours (V0.46): HH:MM; to not after from crosses midnight; days are the start days, absent = every day. */
+export interface QuietHours {
+  from: string;
+  to: string;
+  days?: string[];
 }
 
 /** A folder in the host folder picker (V0.42). */
