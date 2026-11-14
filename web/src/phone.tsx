@@ -5,7 +5,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts";
+import type { Decision, FyrEvent, Profile, Project, ProjectSource, ThreadDTO } from "./types.ts";
 import { SECTIONS, isAvailable, unavailableReason, type SectionKey, type Sections } from "./store.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
@@ -15,8 +15,9 @@ import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
 import { ChangesView } from "./changes-ui.tsx";
-import { NewProjectForm, ProjectEditor, ProjectIcon, ProjectList, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
-import { colorVar, makeProjectLabel, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, suggestionFor } from "./projects.ts";
+import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
+import { colorVar, localProject, makeProjectLabel, projectDefaults, projectName, projectOf, projectSubtitle, startProject, suggestionFor } from "./projects.ts";
+import { lastProject } from "./dialogs.tsx";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import { previewsOf } from "./conversation.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
@@ -173,9 +174,9 @@ export interface PhoneProps {
     update(id: string, patch: ProjectPatch): Promise<string | null>;
     addSource(id: string, value: string): Promise<string | null>;
     removeSource(id: string, index: number): Promise<string | null>;
-    create(name: string, folder: string, repo: string): Promise<string | null>;
-    move(ids: string[], projectId: string): Promise<string | null>;
-    createFrom(threadId: string): Promise<string | null>;
+    create(name: string, sources: ProjectSource[], threadIds?: string[]): Promise<{ error: string | null; id?: string }>;
+    /** null: No project */
+    move(ids: string[], projectId: string | null): Promise<string | null>;
   };
 }
 
@@ -712,21 +713,23 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
             {I.more}
           </button>
         </div>
-        <button class="m-chips" onClick={() => p.go({ ...p.nav, sheet: { kind: "details", ids: [t.id] } })} aria-label="Thread details">
+        <div class="m-chips">
+          <MProjectChip t={t} projects={p.projects} onClick={() => p.go({ ...p.nav, sheet: { kind: "project", ids: [t.id] } })} />
+          <button class="m-chipsd" onClick={() => p.go({ ...p.nav, sheet: { kind: "details", ids: [t.id] } })} aria-label="Thread details">
           <span class={`m-chip st ${stateClass(st)}`}>
             <span class={t.running ? "spin icw" : "icw"}>
               <StateIcon state={st} size={14} />
             </span>
             <span>{stateLabel(st)}</span>
           </span>
-          <MProjectChip t={t} projects={p.projects} />
           {t.branch && (
             <span class="m-chip m brn">
               <span>{t.branch}</span>
             </span>
           )}
           {t.pr ? <span class={`m-chip prc ${prLabel(t.pr).cls}`}>{prLabel(t.pr).text}</span> : <span class="m-chip m prc">no PR</span>}
-        </button>
+          </button>
+        </div>
         {!cardOpen && (
           <div class="m-tabs" role="tablist">
             <button class={p.tab === "conv" ? "on" : ""} onClick={() => setTab("conv")}>
@@ -1041,23 +1044,48 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
 
 // ---- new thread ----
 
+/** SPEC 0.5 V0.30: Project first; the folder follows from the project's folder on this host, else it is asked. */
 function MNew(p: PhoneProps) {
   const last = useMemo(() => parseLastUsed(load(STORAGE_LAST)), []);
   const defs = useMemo(() => newDefaults(last, p.projects, p.profiles), [p.projects, p.profiles]);
-  const [cwd, setCwd] = useState(defs.cwd);
+  const [made, setMade] = useState<Project | null>(null);
+  const projects = made && !p.projects.some((x) => x.id === made.id) ? [...p.projects, made] : p.projects;
+  // undefined: No project; null: not chosen yet (the projects may still be loading).
+  const [projectId, setProjectId] = useState<string | undefined | null>(null);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [folder, setFolder] = useState("");
   const [combo, setCombo] = useState(`${defs.profile}\u0000${defs.model}`);
-  const [custom, setCustom] = useState(false);
   const [picking, setPicking] = useState(false);
-  const [projectId, setProjectId] = useState<string | undefined>(undefined);
+  const [creating, setCreating] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const att = useAttachments();
   const ta = useRef<HTMLTextAreaElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
+  const cur = projectId ? projects.find((x) => x.id === projectId) : undefined;
+  const choose = (pr: Project | null, openFolder = false) => {
+    setPicking(false);
+    setCreating(null);
+    setProjectId(pr?.id);
+    setFolderOpen(openFolder);
+    setFolder(pr ? "" : (last.cwd ?? ""));
+    if (pr) {
+      const d = projectDefaults(pr, p.profiles);
+      if (d.profile && d.model) setCombo(`${d.profile}\u0000${d.model}`);
+    }
+  };
   useEffect(() => {
-    if (!cwd && defs.cwd) setCwd(defs.cwd);
+    if (projectId === null && p.projects.length) {
+      const id = startProject(p.projects, p.projectFilter, lastProject());
+      const pr = p.projects.find((x) => x.id === id);
+      if (pr) choose(pr);
+      else setProjectId(undefined);
+    }
     if (!combo.split("\u0000")[0] && defs.profile) setCombo(`${defs.profile}\u0000${defs.model}`);
-  }, [defs.cwd, defs.profile]);
+  }, [p.projects.length, defs.profile]);
+  const askFolder = !cur?.cwd || folderOpen;
+  const cwd = askFolder ? folder : (cur?.cwd ?? "");
   const [profile, model] = combo.split("\u0000");
   const plan = sendArgs(text, att.chips);
   const ready = !!cwd.trim() && plan.ok;
@@ -1083,7 +1111,7 @@ function MNew(p: PhoneProps) {
     if (!ready || busy) return;
     setBusy(true);
     store(STORAGE_LAST, JSON.stringify({ cwd: cwd.trim(), profile, model }));
-    const e = await p.actions.create({ cwd: cwd.trim(), text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, projectId: projectId ?? p.projects.find((x) => x.cwd === cwd.trim())?.id });
+    const e = await p.actions.create({ cwd: cwd.trim(), text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, projectId: projectId ?? undefined });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -1092,6 +1120,72 @@ function MNew(p: PhoneProps) {
     <div class="m-screen m-new">
       <MHeader onBack={p.back} title="New thread" close />
       <div class="m-nbody" onDrop={att.onDrop} onDragOver={att.onDragOver}>
+        <div class="m-defs">
+          <div class="m-dl">Project</div>
+          <button class="m-dchip m-ppick" onClick={() => (setPicking(!picking), setCreating(null))} aria-expanded={picking} style={cur ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
+            {cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
+            <span class="plt">
+              <span class="ell pln">{cur?.name ?? "No project"}</span>
+              <span class="ell pls2">{cur ? projectSubtitle(cur) : "Not filed"}</span>
+            </span>
+            {picking ? I.up : I.down}
+          </button>
+          {picking && creating === null && (
+            <div class="m-pickpanel">
+              <ProjectList
+                projects={projects}
+                selectedId={projectId ?? null}
+                allLabel="No project"
+                newRow={{ fromThread: false, sub: "Just a name; add a folder or repo if you like", onNew: (q) => setCreating(q.trim()) }}
+                onPick={(pr) => choose(pr)}
+                extra={
+                  <button class="pli more" onClick={() => (choose(null, true), setTimeout(() => folderRef.current?.focus(), 0))}>
+                    <span class="pi all">…</span>
+                    <span class="plt">
+                      <span class="ell pln">Pick a folder…</span>
+                      <span class="ell pls2">No project; type the folder</span>
+                    </span>
+                  </button>
+                }
+              />
+            </div>
+          )}
+          {creating !== null && (
+            <div class="m-pickpanel">
+              <NewProjectStep
+                initialName={creating}
+                initialSources={[]}
+                host={p.host}
+                fromThread={false}
+                onCancel={() => setCreating(null)}
+                onCreate={async (name, sources) => {
+                  const r = await p.projectActions.create(name, sources);
+                  if (r.error) return r.error;
+                  if (r.id) {
+                    const np = localProject(r.id, name, sources, p.host);
+                    setMade(np);
+                    choose(np);
+                  }
+                  return null;
+                }}
+              />
+            </div>
+          )}
+          <div class="m-dl">Folder</div>
+          {askFolder ? (
+            <>
+              <input ref={folderRef} class="m-dchip" value={folder} placeholder="e.g. ~/src/app" spellcheck={false} autocapitalize="off" onInput={(e) => setFolder((e.target as HTMLInputElement).value)} />
+              {cur && !cur.cwd && <div class="m-fhint">{cur.name} has no folder on this computer. Pick one for this thread.</div>}
+            </>
+          ) : (
+            <div class="m-dchip m-fline">
+              <span class="ell">{cwd.replace(/^\/home\/[^/]+(?=\/|$)/, "~")}</span>
+              <button class="m-fchg" onClick={() => (setFolder(cwd), setFolderOpen(true), setTimeout(() => folderRef.current?.focus(), 0))}>
+                Change
+              </button>
+            </div>
+          )}
+        </div>
         <div class="m-capr">
           <button class="m-capb" onClick={() => void paste()}>
             {I.paste}
@@ -1110,43 +1204,6 @@ function MNew(p: PhoneProps) {
           onPaste={att.onPaste}
         />
         <div class="m-defs">
-          <div class="m-dl">
-            Starts in<span>{last.cwd ? "last used" : "most recent"}</span>
-          </div>
-          {(() => {
-            const pr = p.projects.find((x) => x.id === projectId) ?? (cwd ? p.projects.find((x) => x.cwd === cwd) : undefined);
-            return (
-              <button class="m-dchip m-ppick" onClick={() => setPicking(!picking)} aria-expanded={picking} style={{ "--pc": colorVar(pr?.color, pr?.name ?? "") }}>
-                {pr ? <ProjectIcon project={pr} name={pr.name} size={28} /> : null}
-                <span class="plt">
-                  <span class="ell pln">{pr?.name ?? (cwd || "Pick a project")}</span>
-                  {pr && <span class="ell pls2">{projectSubtitle(pr)}</span>}
-                </span>
-                {picking ? I.up : I.down}
-              </button>
-            );
-          })()}
-          {picking && (
-            <div class="m-pickpanel">
-              <ProjectList
-                projects={pickerOrder(p.projects)}
-                selectedId={projectId}
-                onPick={(pr) => {
-                  setPicking(false);
-                  if (!pr) return;
-                  setProjectId(pr.id);
-                  const d = projectDefaults(pr, p.profiles);
-                  setCwd(d.cwd ?? "");
-                  setCustom(!d.cwd);
-                  if (d.profile && d.model) setCombo(`${d.profile}\u0000${d.model}`);
-                }}
-              />
-              <button class="m-more" onClick={() => (setPicking(false), setCustom(true), setProjectId(undefined))}>
-                Other folder…
-              </button>
-            </div>
-          )}
-          {custom && <input class="m-dchip" value={cwd} placeholder="Folder for this thread, e.g. /home/me/src/app" spellcheck={false} onInput={(e) => setCwd((e.target as HTMLInputElement).value)} />}
           <label class="m-dchip">
             <span class="ell">
               {p.profiles.find((x) => x.id === profile)?.name ?? profile} · {shortModel(model)}
@@ -1240,35 +1297,27 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
       </MSheet>
     );
   }
-  if (sheet.kind === "move") {
+  if (sheet.kind === "project") {
+    // SPEC 0.5 V0.30: the one picker: file, unfile, or New project from this thread.
     return (
-      <MSheet onClose={close} label="Move to project">
-        <div class="m-shh">{ids.length > 1 ? `Move ${ids.length} threads` : "Move to project"}</div>
-        <ProjectList
-          projects={p.projects}
-          selectedId={ids.length === 1 ? p.threads[ids[0]]?.projectId : null}
-          onPick={async (pr) => {
-            if (!pr?.id) return;
-            const e = await p.projectActions.move(ids, pr.id);
-            if (!e) close();
-          }}
-          onNew={() => p.replace({ ...p.nav, sheet: { kind: "newproject", ids } })}
-        />
-      </MSheet>
-    );
-  }
-  if (sheet.kind === "newproject") {
-    return (
-      <MSheet onClose={close} label="New project">
-        <div class="m-shh">New project</div>
+      <MSheet onClose={close} label="Project">
+        <div class="m-shh">{ids.length > 1 ? `Project for ${ids.length} threads` : "Project"}</div>
         <div class="m-pform">
-          <NewProjectForm
-            onCancel={close}
-            onCreate={async (name, folder, repo) => {
-              const e = await p.projectActions.create(name, folder, repo);
+          <ProjectPicker
+            projects={p.projects}
+            threads={ids.map((id) => p.threads[id]).filter(Boolean)}
+            host={p.host}
+            startNew={sheet.startNew}
+            onPick={async (pr) => {
+              const e = await p.projectActions.move(ids, pr?.id ?? null);
               if (!e) close();
-              return e;
             }}
+            onCreate={async (name, sources) => {
+              const r = await p.projectActions.create(name, sources, ids);
+              if (!r.error) close();
+              return r.error;
+            }}
+            onEdit={(pr) => pr.id && p.replace({ screen: { name: "project", id: pr.id }, sheet: null })}
           />
         </div>
       </MSheet>
@@ -1328,8 +1377,8 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
           right={peek ? "← swipe" : undefined}
           onClick={() => p.replace({ ...p.nav, sheet: { kind: "snooze", ids: [t.id] } })}
         />
-        <Item label="Move to project…" icon={<ProjectIcon project={projectOf(t, p.projects)} name={projectName(t, p.projects)} size={18} />} onClick={() => p.replace({ ...p.nav, sheet: { kind: "move", ids: [t.id] } })} />
-        {sug && <Item label={makeProjectLabel(sug)} sub="From this thread's repository" onClick={after(() => p.projectActions.createFrom(t.id))} />}
+        <Item label="Project…" icon={<ProjectIcon project={projectOf(t, p.projects)} name={projectName(t, p.projects)} size={18} />} right={projectName(t, p.projects)} onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id] } })} />
+        {sug && <Item label={makeProjectLabel(sug)} sub="From this thread's repository" onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id], startNew: true } })} />}
         <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
         {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.setSelecting(true), p.setPicked(new Set([t.id]))))} />}
         {!peek && <Item label="Details" icon={I.right} onClick={() => p.replace({ ...p.nav, sheet: { kind: "details", ids: [t.id] } })} />}
@@ -1355,21 +1404,18 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
             "Project",
             (() => {
               const pr = projectOf(t, p.projects);
-              if (!pr)
-                return (
-                  <span class="m-nopj">
-                    <span>{projectName(t, p.projects)}</span>
-                    {sug && (
-                      <button class="m-bt m-mkp" onClick={after(() => p.projectActions.createFrom(t.id))}>
-                        {makeProjectLabel(sug)}
-                      </button>
-                    )}
-                  </span>
-                );
               return (
-                <button class="m-plink" onClick={() => pr?.id && p.replace({ screen: { name: "project", id: pr.id }, sheet: null })}>
-                  <ProjectTag project={pr} name={projectName(t, p.projects)} />
-                </button>
+                <span class="m-nopj">
+                  <button class="m-plink" onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id] } })} aria-label={`Project: ${projectName(t, p.projects)}. Change`}>
+                    {pr ? <ProjectTag project={pr} name={pr.name} /> : <span>No project</span>}
+                    <span class="m-plc">Change</span>
+                  </button>
+                  {sug && (
+                    <button class="m-bt m-mkp" onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id], startNew: true } })}>
+                      {makeProjectLabel(sug)}
+                    </button>
+                  )}
+                </span>
               );
             })(),
           )}
@@ -1433,13 +1479,16 @@ function SnoozeSheet({ ids, title, onClose, onPick }: { ids: string[]; title?: s
 
 // ---- projects (V0.23) ----
 
-function MProjectChip({ t, projects }: { t: ThreadDTO; projects: Project[] }) {
+/** The thread header's project chip (V0.30): a tap opens the picker. */
+function MProjectChip({ t, projects, onClick }: { t: ThreadDTO; projects: Project[]; onClick(): void }) {
   const pr = projectOf(t, projects);
   return (
-    <span class="m-chip pj proj" style={{ "--pc": colorVar(pr?.color, projectName(t, projects)) }}>
-      <ProjectIcon project={pr} name={projectName(t, projects)} size={16} />
-      <span>{projectName(t, projects)}</span>
-    </span>
+    <button class="m-pjb" onClick={onClick} aria-label={`Project: ${projectName(t, projects)}. Change`}>
+      <span class={`m-chip pj${pr ? " proj" : " nopj"}`} style={pr ? { "--pc": colorVar(pr.color, pr.name) } : undefined}>
+        {pr && <ProjectIcon project={pr} name={pr.name} size={16} />}
+        <span>{projectName(t, projects)}</span>
+      </span>
+    </button>
   );
 }
 
@@ -1454,10 +1503,10 @@ function MProject(p: PhoneProps & { id: string }) {
           <ProjectEditor
             project={pr}
             profiles={p.profiles}
+            host={p.host}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
             onAddSource={(v) => p.projectActions.addSource(pr.id!, v)}
             onRemoveSource={(i) => p.projectActions.removeSource(pr.id!, i)}
-            onNewProject={() => p.go({ ...p.nav, sheet: { kind: "newproject" } })}
           />
         ) : (
           <div class="m-empty">{p.projects.length ? "This project is not here anymore." : "Loading…"}</div>

@@ -6,7 +6,7 @@ import { clearThreadNotification } from "./pwa.ts";
 
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, ThreadDTO } from "./types.ts";
+import type { Decision, ProjectSource, ThreadDTO } from "./types.ts";
 import { createApi } from "./api.ts";
 import { setChangesSource } from "./changes-ui.tsx";
 import {
@@ -49,8 +49,8 @@ import { disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, p
 import { unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
-import { DirectoryContext, NewProjectForm, ProjectEditor, ProjectList, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, filterByProject, sourceFromInput } from "./projects.ts";
+import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
+import { FILTER_KEY, LAST_PROJECT_KEY, filterByProject, sourceFromInput } from "./projects.ts";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
@@ -122,7 +122,7 @@ setPreviewUrl(api.previewUrl);
 setChangesSource(api);
 const params = new URLSearchParams(location.search);
 
-type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "move" | "newproject" | null;
+type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | null;
 type Zone = "list" | "thread";
 
 interface Toast {
@@ -219,7 +219,14 @@ function App() {
     }
   };
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [moveIds, setMoveIds] = useState<string[]>([]);
+  // The project picker (V0.30): the threads it files, and whether it opens on New project.
+  const [pickIds, setPickIds] = useState<string[]>([]);
+  const [pickNew, setPickNew] = useState(false);
+  const openPicker = (ids: string[], startNew = false) => {
+    setPickIds(ids);
+    setPickNew(startNew);
+    setDialog("picker");
+  };
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     const base = filterByProject(store.threads, projectFilter && store.projects.some((p) => p.id === projectFilter) ? projectFilter : null, store.projects);
@@ -571,22 +578,23 @@ function App() {
       return source ? projectCommand("project.addSource", { id, source }) : Promise.resolve("Type a folder path or a repo URL.");
     },
     removeSource: (id: string, index: number) => projectCommand("project.removeSource", { id, index }),
-    create: async (name: string, folder: string, repo: string): Promise<string | null> => {
-      const sources: Record<string, unknown>[] = [];
-      if (folder) sources.push({ kind: "folder", path: folder }); // the host fills in its own name
-      if (repo) sources.push({ kind: "repo", url: repo });
-      return projectCommand("project.create", sources.length ? { name, sources } : { name });
+    /** New project (V0.30): with threadIds, the host files one thread in the same write; more are filed after. */
+    create: async (name: string, sources: ProjectSource[], threadIds: string[] = []): Promise<{ error: string | null; id?: string }> => {
+      const args: Record<string, unknown> = { name };
+      if (sources.length) args.sources = sources; // a folder without a host: the host fills in its own name
+      if (threadIds.length === 1) args.threadId = threadIds[0];
+      const r = await api.command("project.create", undefined, args);
+      if (!r.ok) return { error: r.error ?? "That did not work" };
+      const id = r.result?.id;
+      if (threadIds.length > 1 && id) await Promise.all(threadIds.map((t) => projectCommand("thread.setProject", { projectId: id }, t)));
+      setToast({ text: threadIds.length ? `Made project ${name} and filed ${threadIds.length === 1 ? "this thread" : `${threadIds.length} threads`}` : `Made project ${name}`, undo: false, at: Date.now() });
+      return { error: null, id };
     },
-    createFrom: async (threadId: string): Promise<string | null> => {
-      const name = store.threads[threadId]?.suggest?.name;
-      const err = await projectCommand("project.createFrom", { threadId });
-      if (err) showError(err);
-      else setToast({ text: `Made project ${name ?? ""}`.trim(), undo: false, at: Date.now() });
-      return err;
-    },
-    move: async (ids: string[], projectId: string): Promise<string | null> => {
-      const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId }, id)))).filter(Boolean);
-      if (!errs.length) setToast({ text: ids.length === 1 ? `Moved to ${store.projects.find((p) => p.id === projectId)?.name ?? "the project"}` : `Moved ${ids.length} threads`, undo: false, at: Date.now() });
+    /** File threads into a project; null: No project. */
+    move: async (ids: string[], projectId: string | null): Promise<string | null> => {
+      const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId: projectId ?? "" }, id)))).filter(Boolean);
+      const where = projectId ? (store.projects.find((p) => p.id === projectId)?.name ?? "the project") : null;
+      if (!errs.length) setToast({ text: ids.length === 1 ? (where ? `Filed in ${where}` : "No project now") : where ? `Filed ${ids.length} threads in ${where}` : `${ids.length} threads have no project now`, undo: false, at: Date.now() });
       return errs[0] ?? null;
     },
   };
@@ -602,7 +610,8 @@ function App() {
     projects: store.projects,
     openThread: (id) => (phoneRef.current ? navGo({ screen: { name: "thread", id }, sheet: null }) : openThread(id, "open")),
     openProject: openProjectScreen,
-    createProjectFrom: (id) => void projectActions.createFrom(id),
+    pickProject: (id, startNew) => (phoneRef.current ? navGo({ ...navRef.current, sheet: { kind: "project", ids: [id], startNew } }) : openPicker([id], startNew)),
+    host: store.host,
   };
 
   const create = async (a: NewThreadArgs): Promise<string | null> => {
@@ -613,6 +622,9 @@ function App() {
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
     if (r.threadId && a.projectId) void api.command("thread.setProject", r.threadId, { projectId: a.projectId });
+    try {
+      localStorage.setItem(LAST_PROJECT_KEY, a.projectId ?? "");
+    } catch {}
     if (r.threadId) {
       const id = r.threadId;
       // The upsert may arrive after the reply; open once it is there.
@@ -676,6 +688,8 @@ function App() {
     if (mod || e.altKey) return;
 
     const el = e.target as HTMLElement | null;
+    // A focused button (the project chip, the suggestion chip) takes Enter and Space itself.
+    if ((k === "Enter" || k === " ") && el?.tagName === "BUTTON") return;
     if (isTextTarget(e.target)) {
       if (el?.dataset?.other && decision?.kind === "ask" && card && k === "Tab") {
         e.preventDefault();
@@ -785,10 +799,7 @@ function App() {
       }
       case "p":
         e.preventDefault();
-        if (tgt) {
-          setMoveIds(picked.size ? [...picked] : [tgt]);
-          setDialog("move");
-        }
+        if (tgt) openPicker(picked.size ? [...picked] : [tgt]);
         return;
       case "c":
         e.preventDefault();
@@ -1070,7 +1081,7 @@ function App() {
               void runAction(a, [view.id], args);
             }}
             onSnooze={() => openSnooze([view.id])}
-            onMoveProject={() => (setMoveIds([view.id]), setDialog("move"))}
+            onMoveProject={() => openPicker([view.id])}
             onSend={send}
             onAtEnd={(b) => setTracker((tr) => setAtEnd(tr, b))}
             onFocusZone={() => {
@@ -1114,50 +1125,40 @@ function App() {
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} projects={store.projects} onClose={() => setDialog(null)} onCreate={create} onNewProject={projectActions.create} />}
+      {dialog === "new" && <NewThreadDialog profiles={store.profiles} projects={store.projects} host={store.host} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, sources) => projectActions.create(name, sources)} />}
       {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
         <Modal title="Project" onClose={() => setDialog(null)} wide>
           <div class="db">
             <ProjectEditor
               project={store.projects.find((p) => p.id === projectId)!}
               profiles={store.profiles}
+              host={store.host}
               onSave={(patch) => projectActions.update(projectId, patch)}
               onAddSource={(v) => projectActions.addSource(projectId, v)}
               onRemoveSource={(i) => projectActions.removeSource(projectId, i)}
-              onMoveThread={view ? () => (setMoveIds([view.id]), setDialog("move")) : undefined}
-              onNewProject={() => setDialog("newproject")}
             />
           </div>
         </Modal>
       )}
-      {dialog === "move" && (
-        <Modal title={moveIds.length > 1 ? `Move ${moveIds.length} threads to a project` : "Move to project"} onClose={() => setDialog(null)} wide>
+      {dialog === "picker" && (
+        <Modal title={pickIds.length > 1 ? `Project for ${pickIds.length} threads` : "Project"} onClose={() => setDialog(null)} wide>
           <div class="db">
-            <ProjectList
+            <ProjectPicker
               projects={store.projects}
-              autoFocus
-              selectedId={moveIds.length === 1 ? store.threads[moveIds[0]]?.projectId : null}
+              threads={pickIds.map((id) => store.threads[id]).filter(Boolean)}
+              host={store.host}
+              startNew={pickNew}
               onPick={async (p) => {
-                if (!p?.id) return;
-                const e = await projectActions.move(moveIds, p.id);
+                const e = await projectActions.move(pickIds, p?.id ?? null);
                 if (e) showError(e);
                 else setDialog(null);
               }}
-              onNew={() => setDialog("newproject")}
-            />
-          </div>
-        </Modal>
-      )}
-      {dialog === "newproject" && (
-        <Modal title="New project" onClose={() => setDialog(null)} wide>
-          <div class="db">
-            <NewProjectForm
-              onCancel={() => setDialog(null)}
-              onCreate={async (name, folder, repo) => {
-                const e = await projectActions.create(name, folder, repo);
-                if (!e) setDialog(null);
-                return e;
+              onCreate={async (name, sources) => {
+                const r = await projectActions.create(name, sources, pickIds);
+                if (!r.error) setDialog(null);
+                return r.error;
               }}
+              onEdit={(p) => p.id && openProjectScreen(p.id)}
             />
           </div>
         </Modal>
