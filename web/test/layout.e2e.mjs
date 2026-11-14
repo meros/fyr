@@ -140,6 +140,7 @@ const SCREENS = [
   { name: "composer with chips", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in", files: ".m-cmp input[data-picker=files]" },
   { name: "question Q1", url: "?mock=rail&open=t_lasso", openOther: true },
   { name: "approval", url: "?mock=1&open=t_approval" },
+  { name: "effect card (V0.27)", url: "?mock=1&open=t_update" },
   { name: "effect", url: "?mock=1&open=t_effect" },
   { name: "new thread", url: "?mock=rail&new", field: ".m-ta" },
   { name: "snooze sheet", url: "?mock=rail&open=t_mapperf", sheet: "snooze" },

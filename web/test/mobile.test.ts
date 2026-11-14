@@ -45,8 +45,10 @@ test("approval and Fyr action commits", () => {
   assert.deepEqual(allowCommit(ap, null), { label: "Allow or deny", enabled: false, act: "none" });
   assert.equal(allowCommit(ap, "allow").label, "Allow");
   assert.equal(allowCommit(ap, "deny").label, "Deny");
-  assert.equal(allowCommit(ef, "allow").label, "Approve");
-  assert.equal(allowCommit(ef, "deny").label, "Decline");
+  // SPEC 0.5 V0.27: an effect's buttons are verbs.
+  assert.equal(allowCommit(ef, "allow").label, "Merge");
+  assert.equal(allowCommit(ef, "deny").label, "Not now");
+  assert.deepEqual(allowCommit(ef, null), { label: "Pick one", enabled: false, act: "none" });
 });
 
 test("step dots up to 5 questions, counts in the strip", () => {

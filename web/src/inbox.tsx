@@ -1,5 +1,6 @@
 // Rail and inbox list, as design/directions/04-rail.html draws them.
 
+import { describeEffect } from "./effects.ts";
 import type { ComponentChildren, Ref } from "preact";
 import type { Project, ThreadDTO } from "./types.ts";
 import { ProjectIcon, StartedBy, ThreadProject } from "./project-ui.tsx";
@@ -67,7 +68,10 @@ function needsMeta(t: ThreadDTO): string {
       const cmd = typeof d.input?.command === "string" ? ` ${d.input.command}` : "";
       return `${who}Allow ${d.tool ?? "tool"}${cmd}`;
     }
-    if (d.kind === "effect") return `${who}${d.effect?.action ?? "action"} · ${d.effect?.reason ?? ""}`;
+    if (d.kind === "effect") {
+      const x = describeEffect(d, t.pr);
+      return `${who}${x.title}${x.why ? " · " + x.why : ""}`;
+    }
   }
   if (st === "failed") return `${t.failure?.message ?? ""} · r to retry`;
   if (st === "working") return t.activity ?? "";
@@ -83,7 +87,7 @@ function stateWord(t: ThreadDTO): string {
       return n === 1 ? "1 question" : `${n} questions`;
     }
     if (d?.kind === "approval") return "Approval";
-    if (d?.kind === "effect") return "Action";
+    if (d?.kind === "effect") return describeEffect(d, t.pr).label;
   }
   return t.attention.reason || stateLabel(st);
 }

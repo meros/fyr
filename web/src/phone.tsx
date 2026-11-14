@@ -9,7 +9,8 @@ import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts
 import { SECTIONS, isAvailable, unavailableReason, type SectionKey, type Sections } from "./store.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
-import { AgentsStrip, Conversation, PrTab, effectSentence, prLabel, type SendArgs } from "./thread.tsx";
+import { AgentsStrip, Conversation, EffectBody, PrTab, effectSentence, prLabel, type SendArgs } from "./thread.tsx";
+import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
@@ -465,7 +466,7 @@ function needsWord(t: ThreadDTO): string {
       const n = d.questions?.length ?? 1;
       return n === 1 ? "1 question" : `${n} questions`;
     }
-    return d.kind === "approval" ? "Approval" : "Fyr action";
+    return d.kind === "approval" ? "Approval" : describeEffect(d, t.pr).label;
   }
   return t.attention.reason || stateLabel(t.attention.state);
 }
@@ -990,6 +991,7 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
   const [choice, setChoice] = useState<Choice>(null);
   useEffect(() => setChoice(null), [d.id]);
   const approval = d.kind === "approval";
+  const x = approval ? null : describeEffect(d, t.pr);
   const c = allowCommit(d, choice);
   const cmd = approval && typeof d.input?.command === "string" ? (d.input.command as string) : null;
   const rest = approval && d.input ? Object.fromEntries(Object.entries(d.input).filter(([k]) => k !== "command" && k !== "cwd")) : {};
@@ -999,7 +1001,7 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
       <i class="mk" />
       <span class="ot">
         <span class="a">{label}</span>
-        <span class="d">{desc}</span>
+        {desc && <span class="d">{desc}</span>}
       </span>
     </button>
   );
@@ -1007,15 +1009,12 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
     <>
       <div class={`m-ask${collapsed ? " collapsed" : ""}`}>
         <CardHead collapsed={collapsed} onCollapse={onCollapse}>
-          <b>{approval ? "Approval" : "Fyr action"}</b>
+          <b>{x ? x.label : "Approval"}</b>
         </CardHead>
         {!collapsed && (
           <div class="m-abody">
-            <div class="m-asker">
-              {d.agent ? `Asked by subagent “${d.agent}”` : "Asked by the thread"}
-              {!approval && " · the agent does not wait"}
-            </div>
-            <div class="m-q">{approval ? `Allow ${d.tool ?? "this tool"}?` : effectSentence(d)}</div>
+            {approval && <div class="m-asker">{d.agent ? `Asked by subagent “${d.agent}”` : "Asked by the thread"}</div>}
+            <div class="m-q">{x ? x.title : `Allow ${d.tool ?? "this tool"}?`}</div>
             {approval ? (
               <>
                 {cmd && <pre class="m-pre">{cmd}</pre>}
@@ -1025,11 +1024,11 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
                 </div>
               </>
             ) : (
-              <pre class="m-pre">{JSON.stringify(d.effect?.args ?? {}, null, 1)}</pre>
+              x && <EffectBody d={d} x={x} cls="m-eff" />
             )}
             <div class="m-opts" role="radiogroup">
-              {tile("allow", approval ? "Allow" : "Approve", approval ? "Run it once." : `${d.effect?.reason ? d.effect.reason + " " : ""}Fyr runs it; the agent does not wait.`)}
-              {tile("deny", approval ? "Deny" : "Decline", approval ? "The agent is told no and continues." : "Nothing is run.")}
+              {tile("allow", x ? x.yes : "Allow", x ? "" : "Run it once.")}
+              {tile("deny", x ? x.no : "Deny", x ? "Nothing happens; the agent is told." : "The agent is told no and continues.")}
             </div>
           </div>
         )}
