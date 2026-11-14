@@ -2,7 +2,8 @@
 
 import { describeEffect } from "./effects.ts";
 import type { ComponentChildren, Ref } from "preact";
-import type { Project, ThreadDTO } from "./types.ts";
+import type { Profile, Project, ThreadDTO } from "./types.ts";
+import { QuotaRail } from "./quota-ui.tsx";
 import { ProjectIcon, StartedBy, ThreadProject } from "./project-ui.tsx";
 import { colorVar, pickerOrder } from "./projects.ts";
 import { SECTIONS, type SectionKey, type Sections } from "./store.ts";
@@ -26,6 +27,8 @@ interface RailProps {
   /** V0.40: show or hide the thread list */
   listOn?: boolean;
   onToggleList?(): void;
+  /** V0.44: profiles, for the quota in the footer */
+  profiles?: Profile[];
 }
 
 export function Rail(p: RailProps) {
@@ -54,6 +57,7 @@ export function Rail(p: RailProps) {
           <span class="k">\</span>
         </button>
       )}
+      {p.profiles && <QuotaRail profiles={p.profiles} />}
       {p.extra && <div class="railx">{p.extra}</div>}
       <div class={`foot ${p.conn}`} title={title}>
         <i />

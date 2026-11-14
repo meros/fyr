@@ -826,3 +826,16 @@ button.ptag{padding:0}
 .star.on{color:var(--pc,var(--harbour))}
 .star:hover{background:var(--hover)}
 .star.off{display:inline-block}
+/* SPEC 0.5 V0.44: provider quota, calm: colour only from 80 %. */
+.rail .rq{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:2px;font:400 10px/14px var(--mono);color:var(--ink-muted)}
+.rail .rq+.railx,.rail .rq+.foot{margin-top:8px}
+.rail .rqr{display:flex;align-items:center;gap:4px;cursor:default}
+.rail .rqr i{width:6px;height:6px;border-radius:50%;flex:none}
+.rail .rqr.stale span{opacity:.6}
+.qline{min-width:0;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.qline .qsum{display:flex;align-items:center;gap:6px;max-width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0}
+.qline .qsum i{width:8px;height:8px;border-radius:50%;flex:none}
+.qline.stale .qsum .ell{opacity:.7}
+.qline .qdet{margin:4px 0 0;padding:0 0 0 14px;list-style:none;font:400 12px/17px var(--ui);color:var(--ink-muted)}
+.qline .hot,.rail .rq .hot{color:var(--signal-ink);font-weight:600}
+.qlist{display:flex;flex-direction:column;gap:2px;min-width:0}
