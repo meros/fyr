@@ -1,0 +1,15 @@
+name: Spec change
+description: New behaviour, a gap or a contradiction in the spec
+labels: ["type:spec"]
+body:
+  - type: input
+    id: section
+    attributes: {label: Section, description: "Spec section to change or add"}
+    validations: {required: true}
+  - type: textarea
+    id: change
+    attributes: {label: Change, description: "The new text or the rule, and why."}
+    validations: {required: true}
+  - type: textarea
+    id: tests
+    attributes: {label: Tests, description: "Tests to add or change. They go red before the code changes."}

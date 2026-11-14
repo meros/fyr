@@ -9,9 +9,11 @@
 | `system/components/<Name>/` | Each component's usage rules (`README.md`) and a live preview (`preview.html`) |
 | `system/components/Cover/preview.html` | The visual identity sheet: palette blocks, dot grid, name |
 | `screens-v1.html` | The v1 screens with the round-5 UX changes applied (current) |
+| `directions/` | Five visual directions with long-text stress tests (`index.html`, comparison in `README.md`); the choice is issue #11 |
 | `screens.html` | First-draft mock, generated from the system (superseded) |
 | `generators/make_ds.py` | Writes everything under `system/` |
 | `generators/make_mocks.py` | Builds `screens.html` from `system/` |
+| `generators/make_directions.py` | Builds the five files in `directions/` |
 
 Edit the generators, not the generated files, then run:
 

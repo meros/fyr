@@ -1,0 +1,19 @@
+name: Work item
+description: A slice of the plan with acceptance criteria
+labels: ["type:work"]
+body:
+  - type: input
+    id: spec
+    attributes: {label: Spec, description: "Spec IDs this implements, e.g. 0.5 V0.3, 6.2", placeholder: "6.2"}
+    validations: {required: true}
+  - type: textarea
+    id: what
+    attributes: {label: What, description: One paragraph, product words.}
+    validations: {required: true}
+  - type: textarea
+    id: acceptance
+    attributes: {label: Acceptance, description: "Checkable statements. Each one becomes a test that names the spec ID.", value: "- [ ] "}
+    validations: {required: true}
+  - type: textarea
+    id: notes
+    attributes: {label: Notes, description: Links, decisions, risks.}

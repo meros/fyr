@@ -1,0 +1,15 @@
+name: Decision
+description: A choice that needs options and a recorded reason
+labels: ["type:decision"]
+body:
+  - type: textarea
+    id: context
+    attributes: {label: Context, description: What forces the choice now.}
+    validations: {required: true}
+  - type: textarea
+    id: options
+    attributes: {label: Options, description: "Each option with its cost and risk. Recommended first."}
+    validations: {required: true}
+  - type: textarea
+    id: outcome
+    attributes: {label: Outcome, description: "Filled when decided. The PR adds docs/decisions/NNNN-*.md."}
