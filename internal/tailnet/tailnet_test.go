@@ -66,3 +66,20 @@ func TestPeersWhois(t *testing.T) {
 		t.Fatal("an unknown peer got a login")
 	}
 }
+
+// SPEC 0.5 V0.54: hostListen "tailnet:PORT" listens on this node's tailnet
+// IPv4 address, read from tailscaled.
+func TestIPv4FromLocalAPI(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "ts.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"TailscaleIPs":["fd7a:115c:a1e0::1","100.101.102.103"]}`))
+	}))
+	if ip, err := IPv4(sock); err != nil || ip != "100.101.102.103" {
+		t.Fatalf("%q %v", ip, err)
+	}
+}
