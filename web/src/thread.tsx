@@ -26,15 +26,12 @@ import { defaultTab, liveViewOf } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
+import { prChip } from "./pr.ts";
+import { PrView } from "./pr-ui.tsx";
 
-export function prLabel(pr: PullRequest, short = false): { text: string; cls: string } {
-  if (pr.state === "MERGED") return { text: short ? "merged" : `#${pr.number} merged`, cls: "merged" };
-  if (pr.state === "CLOSED") return { text: short ? "closed" : `#${pr.number} closed`, cls: "merged" };
-  if (pr.conflict) return { text: `#${pr.number} ✗ conflict`, cls: "fail" };
-  if (pr.checks === "fail") return { text: `#${pr.number} ✗ CI`, cls: "fail" };
-  if (pr.checks === "pass") return { text: `#${pr.number} ✓`, cls: "ok" };
-  if (pr.checks === "pending") return { text: `#${pr.number} …`, cls: "" };
-  return { text: `#${pr.number}`, cls: "" };
+/** The PR chip's short label, its class and the merge status words as its title (V0.43). */
+export function prLabel(pr: PullRequest, short = false): { text: string; cls: string; title: string } {
+  return prChip(pr, short);
 }
 
 export interface AnswerField {
@@ -71,11 +68,19 @@ export interface ThreadPaneProps {
 
 type Tab = "view" | "conv" | "changes" | "pr";
 
+/** A deep link `/?open=<id>&tab=pr` opens that tab on the desktop too. */
+function urlTab(id: string): string | undefined {
+  if (typeof location === "undefined") return undefined;
+  const q = new URLSearchParams(location.search);
+  const tab = q.get("tab");
+  return q.get("open") === id && tab && ["view", "conv", "changes", "pr"].includes(tab) ? tab : undefined;
+}
+
 export function ThreadPane(p: ThreadPaneProps) {
   const t = p.thread;
   const [tab, setTab] = useState<Tab>("conv");
   const previews = useMemo(() => previewsOf(p.events ?? []), [p.events]);
-  useEffect(() => setTab(defaultTab(t, undefined) as Tab), [t.id]);
+  useEffect(() => setTab(defaultTab(t, urlTab(t.id)) as Tab), [t.id]);
   const hasView = !!liveViewOf(t);
   // A view that appears or goes away while the thread is open keeps the tabs valid.
   useEffect(() => {
@@ -181,7 +186,7 @@ export function ThreadPane(p: ThreadPaneProps) {
         />
       )}
       {tab === "changes" && <ChangesView threadId={t.id} />}
-      {tab === "pr" && <PrTab t={t} onDismiss={() => p.onRun("thread.dismissPR")} />}
+      {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}
       {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} pr={t.pr} />}
       <Composer key={t.id} t={t} now={p.now} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
@@ -268,34 +273,10 @@ function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: str
   );
 }
 
-export function PrTab({ t, onDismiss }: { t: ThreadDTO; onDismiss?: () => void }) {
+/** The PR tab (V0.43). */
+export function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: ThreadDTO; now: number; onSend(text: string): Promise<boolean>; onDismiss(): void; onChanges(): void; phone?: boolean }) {
   if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
-  const pr = t.pr;
-  return (
-    <div class="pane-note prose">
-      <p>
-        <a href={pr.url} target="_blank" rel="noopener noreferrer">
-          {pr.repo ? `${pr.repo}#${pr.number}` : `#${pr.number}`}
-        </a>
-        {pr.title ? ` · ${pr.title}` : ""}
-      </p>
-      <p>
-        State {pr.state ?? "unknown"} · checks {pr.checks ?? "none"}
-        {pr.review ? ` · review ${pr.review}` : ""}
-        {pr.conflict ? " · merge conflict" : ""}
-      </p>
-      {onDismiss && isAvailable(t, "thread.dismissPR") && (pr.state === "MERGED" || pr.state === "CLOSED") ? (
-        <p>
-          <button class="btn sm" onClick={onDismiss}>
-            Dismiss PR
-          </button>{" "}
-          The thread goes on; this PR is no longer shown.
-        </p>
-      ) : (
-        <p>Checks, review threads and Merge in this tab come in a later version (v0.x).</p>
-      )}
-    </div>
-  );
+  return <PrView key={t.id} t={t} now={now} onSend={onSend} onDismiss={onDismiss} onChanges={onChanges} phone={phone} />;
 }
 
 function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
@@ -322,7 +303,7 @@ function PrChip({ pr, onDismiss }: { pr: PullRequest; onDismiss?: () => void }) 
   const done = pr.state === "MERGED" || pr.state === "CLOSED";
   return (
     <span class="prw">
-      <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={pr.title || pr.url}>
+      <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={l.title}>
         {l.text}
       </a>
       {done && onDismiss && (
