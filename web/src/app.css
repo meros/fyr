@@ -379,3 +379,31 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .pv-nav.l{left:8px}.pv-nav.r{right:8px}
 .pv-fframe{flex:1;min-height:0;width:100%;border:0;background:var(--raised)}
 .pv-fc{flex:none;padding:10px 16px 14px;font:400 14px/20px var(--ui);opacity:.9}
+
+/* Calm tool output (SPEC V0.21): folded groups, rows with details on demand, quiet machine lines. */
+.tl{display:grid;grid-template-columns:16px minmax(0,1fr) auto;column-gap:10px;align-items:center;height:28px;padding:0 12px;font:400 13px/18px var(--ui);color:var(--ink-muted);cursor:pointer;min-width:0}
+.tl:hover{background:var(--surface)}
+.tl:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+.tl.grp .tlt{color:var(--ink)}
+.tl.row{padding-left:26px}
+.tlt{min-width:0}
+.tlt.err,.tlerr{color:var(--signal-ink);font-weight:500}
+.tl .d{font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink-muted)}
+.tld{margin:2px 12px 6px 52px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.tldh{font:500 12px/16px var(--ui);color:var(--ink-muted)}
+.tlin,.tlout{margin:0;padding:8px 10px;border-radius:8px;background:var(--sunken);font:400 12px/18px var(--mono);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto}
+.tlout.err{color:var(--signal-ink)}
+.tlall{align-self:flex-start}
+.ql{display:flex;flex-direction:column;gap:4px;max-width:680px;min-width:0;flex:none}
+.qlh{display:flex;align-items:center;gap:6px;min-height:20px;font:400 12px/16px var(--ui);color:var(--ink-muted);min-width:0}
+.qlh .ic{flex:none}
+.qlh.click{cursor:pointer}
+.qlh.click:hover span{text-decoration:underline}
+.ql.fail .qlh{color:var(--signal-ink)}
+.qlx{margin:0 0 0 18px;padding:8px 10px;border-radius:8px;background:var(--sunken);font:400 12px/18px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.runmark{display:flex;align-items:center;gap:8px;min-height:20px;flex:none;min-width:0}
+.rm{display:inline-flex;align-items:center;gap:6px;min-width:20px;height:20px;padding:0 4px;border-radius:6px;color:var(--ink-muted);font:400 12px/16px var(--ui)}
+.rm:hover{background:var(--sunken)}
+.runmark.fail .rm{color:var(--signal-ink)}
+.rmx{font:400 12px/16px var(--mono);color:var(--ink-muted)}
+.kh.details{font:400 12px/16px var(--mono)}

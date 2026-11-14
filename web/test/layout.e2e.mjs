@@ -133,6 +133,7 @@ const SIZES = [
 const SCREENS = [
   { name: "inbox", url: "?mock=rail" },
   { name: "thread", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in" },
+  { name: "opened tool group", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in", openTools: true },
   { name: "thread with previews", url: "?mock=1&open=t_w3", field: ".m-cmp .in", previews: true },
   { name: "composer with chips", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in", files: ".m-cmp input[data-picker=files]" },
   { name: "question Q1", url: "?mock=rail&open=t_lasso", openOther: true },
@@ -164,6 +165,8 @@ const MEASURE = `(() => {
     previewCards: document.querySelectorAll('.pv').length,
     previewOverflow: Math.max(0, ...[...document.querySelectorAll('.pv, .pv-frame, .pv-img img, .fs')].map(e => e.getBoundingClientRect().right)) - window.innerWidth,
     pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+    innerWidth: window.innerWidth,
+    toolOutput: (() => { const o = document.querySelector('.tlout'); if (!o) return null; const r = o.getBoundingClientRect(); return { right: r.right, lines: o.textContent.split(String.fromCharCode(10)).length }; })(),
     focused: active ? { top: active.top, bottom: active.bottom } : null,
   };
 })()`;
@@ -175,6 +178,7 @@ const check = (ok, what) => {
   if (!ok) failures.push(what);
 };
 
+const window_innerWidth = (m) => m.innerWidth;
 const ctxWantsChips = (ctx) => ctx.startsWith("composer with chips");
 
 function assertLayout(m, ctx, { keyboard = false } = {}) {
@@ -198,6 +202,13 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   if (ctx.startsWith("thread with previews")) {
     check(m.previewCards >= 4, `${ctx}: expected the 4 preview cards (found ${m.previewCards})`);
     check(m.previewOverflow <= 0.5, `${ctx}: a preview card runs ${m.previewOverflow.toFixed(1)} px past the right edge`);
+  }
+  if (ctx.startsWith("opened tool group")) {
+    check(!!m.toolOutput, `${ctx}: the opened row shows no output`);
+    if (m.toolOutput) {
+      check(m.toolOutput.lines === 200, `${ctx}: long output shows ${m.toolOutput.lines} lines, expected the 200-line cut`);
+      check(m.toolOutput.right <= window_innerWidth(m) + 0.5, `${ctx}: the output block runs past the right edge`);
+    }
   }
   check(m.pageOverflow <= 0, `${ctx}: the page scrolls sideways by ${m.pageOverflow} px`);
   if (ctxWantsChips(ctx)) check(m.chipCount >= 2 && !!m.chips && !!m.camera, `${ctx}: expected 2 uploaded chips and the Camera button (chips ${m.chipCount})`);
@@ -234,6 +245,13 @@ async function openScreen(s, w, h) {
     const q = await send("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: s.files });
     await send("DOM.setFileInputFiles", { nodeId: q.result.nodeId, files: [join(profile, "shot.png"), join(profile, "build-output-with-a-very-long-name-that-does-not-fit.log")] });
     await sleep(900);
+  }
+  if (s.openTools) {
+    await evaluate(`document.querySelector('.tl.grp')?.click()`);
+    await sleep(150);
+    await evaluate(`(() => { const rows = document.querySelectorAll('.tl.row'); rows[rows.length - 1]?.click(); })()`);
+    await sleep(200);
+    await evaluate(`document.querySelector('.tlout')?.scrollIntoView({ block: 'nearest' })`);
   }
   if (s.sheet === "snooze") {
     await tapCenter(".m-tr1 .b44:last-child");

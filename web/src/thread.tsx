@@ -3,12 +3,13 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
-import { buildConversation, previewsOf, toolRows, type Item, type ToolCall } from "./conversation.ts";
+import { buildConversation, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { duration, relTime, shortModel } from "./format.ts";
 import { pick, questionsOf, goTo, type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
+import { onToolDetails, toolDetails } from "./prefs.ts";
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
@@ -136,7 +137,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       </div>
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {tab === "conv" && <Filmstrip cards={previews} />}
-      {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} />}
+      {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} cwd={t.cwd} />}
       {tab === "changes" && <div class="pane-note">The branch diff comes in a later version (v0.x). The Conversation tab lists every edit.</div>}
       {tab === "pr" && <PrTab t={t} />}
       {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} />}
@@ -247,8 +248,16 @@ export function AgentsStrip({ tasks, now }: { tasks: TaskDTO[]; now: number }) {
 
 // ---- conversation ----
 
-export function Conversation({ events, onAtEnd, threadId, onEarlier }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void }) {
-  const items = useMemo(() => buildConversation(events ?? []), [events]);
+/** "Show tool details" (V0.21): every group open and every machine line in full. */
+export function useToolDetails(): boolean {
+  const [on, setOn] = useState(toolDetails());
+  useEffect(() => onToolDetails(setOn), []);
+  return on;
+}
+
+export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string }) {
+  const details = useToolDetails();
+  const items = useMemo(() => buildConversation(events ?? [], { details, cwd }), [events, details, cwd]);
   const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -301,6 +310,58 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier }: { events:
   );
 }
 
+/** Enter and Space activate a focused group or row (they are divs with role=button). */
+function keyActivate(fn: () => void) {
+  return (e: KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      e.stopPropagation();
+      fn();
+    }
+  };
+}
+
+/** A quiet machine line: one line, the exact text one tap away. */
+function QuietLine({ icon, line, full, fail }: { icon: "settled" | "failed" | "seen" | "working"; line: string; full?: string; fail?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const more = !!full && full.trim() !== line.trim();
+  return (
+    <div class={`ql${fail ? " fail" : ""}`}>
+      <div class={`qlh${more ? " click" : ""}`} role={more ? "button" : undefined} tabIndex={more ? 0 : undefined} aria-expanded={more ? open : undefined} onClick={more ? () => setOpen(!open) : undefined} onKeyDown={more ? keyActivate(() => setOpen(!open)) : undefined}>
+        <StateIcon state={icon} size={12} />
+        <span class="ell">{line}</span>
+      </div>
+      {open && full && <pre class="qlx">{full}</pre>}
+    </div>
+  );
+}
+
+/** The end of a turn: a small mark; a tap shows time, cost and the failure. A failure keeps its text in one line. */
+function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
+  const [open, setOpen] = useState(false);
+  const facts = [it.durationMs !== undefined ? duration(it.durationMs) : "", it.costUsd !== undefined ? `$${it.costUsd.toFixed(2)}` : ""].filter(Boolean).join(" · ");
+  const icon = it.failure ? "failed" : it.interrupted ? "seen" : "settled";
+  const word = it.failure ? `Failed (${it.failure.class}): ${it.failure.message}` : it.interrupted ? "Interrupted" : "Finished";
+  if (!it.compact) {
+    return (
+      <div class={`sys prose${it.failure ? " fail" : ""}`}>
+        <StateIcon state={icon} size={14} />
+        <span>{word}</span>
+        {facts && <span class="tnum">{facts}</span>}
+      </div>
+    );
+  }
+  return (
+    <div class={`runmark${it.failure ? " fail" : ""}`}>
+      <button class="rm" aria-expanded={open} aria-label={`${word}${facts ? ", " + facts : ""}`} title={`${word}${facts ? " · " + facts : ""}`} onClick={() => setOpen(!open)}>
+        <StateIcon state={icon} size={12} />
+        {it.failure && <span class="prose">{word}</span>}
+      </button>
+      {open && <span class="rmx tnum">{it.failure ? facts : [word, facts].filter(Boolean).join(" · ")}</span>}
+    </div>
+  );
+}
+
 function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
   switch (it.kind) {
     case "user":
@@ -320,46 +381,17 @@ function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
     case "tools":
       return <ToolCard calls={it.calls} />;
     case "run":
-      if (it.failure)
-        return (
-          <div class="sys fail prose">
-            <StateIcon state="failed" size={14} />
-            <span>
-              Failed ({it.failure.class}): {it.failure.message}
-            </span>
-          </div>
-        );
-      return (
-        <div class="sys">
-          <span>{it.interrupted ? "Interrupted" : "Run ended"}</span>
-          {it.durationMs !== undefined && <span class="tnum">{duration(it.durationMs)}</span>}
-          {it.costUsd !== undefined && <span class="tnum">${it.costUsd.toFixed(2)}</span>}
-        </div>
-      );
+      return <RunMark it={it} />;
     case "effect":
-      return (
-        <div class={`sys prose ${it.ok ? "" : "fail"}`}>
-          <StateIcon state={it.ok ? "settled" : "failed"} size={14} />
-          <span>
-            <code>{it.action}</code> {it.text}
-          </span>
-        </div>
-      );
+      return <QuietLine icon={it.ok ? "settled" : "failed"} line={it.line} full={`${it.action}\n\n${it.text}`} fail={!it.ok} />;
+    case "note":
+      return <QuietLine icon="seen" line={`Fyr: ${it.line}`} full={it.text} />;
     case "preview":
       return <PreviewCardView card={it.card} all={previews} />;
     case "task":
-      return (
-        <div class={`sys prose${it.status === "failed" ? " fail" : ""}`}>
-          <StateIcon state={it.started ? "working" : TASK_ICON[it.status] ?? "settled"} size={14} />
-          <span>{it.text}</span>
-        </div>
-      );
+      return <QuietLine icon={it.started ? "working" : TASK_ICON[it.status] ?? "settled"} line={it.text} fail={it.status === "failed"} />;
     case "answer":
-      return (
-        <div class="sys prose">
-          <span>Answered: {it.text}</span>
-        </div>
-      );
+      return <QuietLine icon="settled" line={`Answered: ${it.text}`} />;
   }
 }
 
@@ -367,25 +399,74 @@ function callIcon(c: ToolCall) {
   return c.isError ? "failed" : c.done ? "settled" : "working";
 }
 
-/** One bordered card for consecutive tool calls; the name column fits the longest name. */
+/** One bordered card for consecutive tool calls: folded summary lines, with subagent rows as they were (V0.16). */
 function ToolCard({ calls, nested }: { calls: ToolCall[]; nested?: boolean }) {
-  const rows = toolRows(calls);
-  const longest = Math.max(4, ...rows.map((r) => (r.kind === "agents" ? r.calls[0].name.length : r.call.name.length)));
-  const nmw = Math.min(140, Math.ceil(longest * 7.4));
   return (
-    <div class={nested ? "act nested" : "act"} style={{ "--nmw": `${nmw}px` }}>
-      {rows.map((r) => (r.kind === "agents" ? <AgentsRow calls={r.calls} /> : <ToolLine c={r.call} />))}
+    <div class={nested ? "act nested" : "act"}>
+      {segments(calls).map((s) => (s.kind === "agents" ? <AgentsRow calls={s.calls} /> : <FoldGroup calls={s.calls} />))}
     </div>
   );
 }
 
-function ToolLine({ c }: { c: ToolCall }) {
+/** "Read 3 files · ran 2 commands", total time, an error mark; a tap opens the rows. */
+function FoldGroup({ calls }: { calls: ToolCall[] }) {
+  const details = useToolDetails();
+  const [open, setOpen] = useState<boolean | null>(null);
+  const isOpen = open ?? details;
+  const st = groupStats(calls);
+  const toggle = () => setOpen(!isOpen);
+  const text = calls.length === 1 ? calls[0].label : groupSummary(calls);
   return (
-    <div class="al" title={c.summary}>
-      <StateIcon state={callIcon(c)} size={14} />
-      <span class="nm ell">{c.name}</span>
-      <span class={`ell${c.isError ? " err" : ""}`}>{c.summary}</span>
-      <span class="d">{c.done ? duration(c.durationMs) : ""}</span>
+    <>
+      <div class="tl grp" role="button" tabIndex={0} aria-expanded={isOpen} data-keys="self" title={text} onClick={toggle} onKeyDown={keyActivate(toggle)}>
+        <StateIcon state={st.failed ? "failed" : st.running ? "working" : "settled"} size={14} />
+        <span class="tlt ell">
+          {text}
+          {st.failed > 0 && <b class="tlerr"> · {st.failed} failed</b>}
+        </span>
+        <span class="d">
+          {st.durationMs !== null ? duration(st.durationMs) : ""} {isOpen ? "▾" : "▸"}
+        </span>
+      </div>
+      {isOpen && calls.map((c) => <CallRow c={c} key={c.id} />)}
+    </>
+  );
+}
+
+/** One call: its label; a tap shows the exact input and output (output cut at 200 lines). */
+function CallRow({ c }: { c: ToolCall }) {
+  const [open, setOpen] = useState(false);
+  const [all, setAll] = useState(false);
+  const toggle = () => setOpen(!open);
+  const out = all ? { text: c.output, hidden: 0 } : cutOutput(c.output);
+  return (
+    <div class={`tlr${open ? " open" : ""}`}>
+      <div class="tl row" role="button" tabIndex={0} aria-expanded={open} data-keys="self" onClick={toggle} onKeyDown={keyActivate(toggle)}>
+        <StateIcon state={callIcon(c)} size={14} />
+        <span class={`tlt ell${c.isError ? " err" : ""}`}>{c.label}</span>
+        <span class="d">{c.done ? duration(c.durationMs) : "running"}</span>
+      </div>
+      {open && (
+        <div class="tld">
+          <div class="tldh">
+            {friendlyName(c.name)}
+            {c.isError ? " · failed" : ""}
+          </div>
+          <pre class="tlin">{fullInput(c.name, c.input)}</pre>
+          {c.output ? (
+            <>
+              <pre class={`tlout${c.isError ? " err" : ""}`}>{out.text}</pre>
+              {out.hidden > 0 && (
+                <button class="btn sm tlall" onClick={() => setAll(true)}>
+                  Show all ({out.hidden.toLocaleString()} more lines)
+                </button>
+              )}
+            </>
+          ) : (
+            <div class="tldh">{c.done ? "No output" : "Running…"}</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -395,11 +476,11 @@ function AgentsRow({ calls }: { calls: ToolCall[] }) {
   const failed = calls.some((c) => c.isError);
   const done = calls.every((c) => c.done);
   const ms = done ? Math.max(...calls.map((c) => c.durationMs ?? 0)) : null;
-  const desc = calls[0].summary;
+  const desc = calls[0].description || calls[0].summary;
   const n = calls.length;
   return (
     <>
-      <div class="al click" onClick={() => setOpen(!open)} title={calls.map((c) => c.summary).join("\n")}>
+      <div class="al click" onClick={() => setOpen(!open)} title={calls.map((c) => c.description || c.summary).join("\n")}>
         <StateIcon state={failed ? "failed" : done ? "settled" : "working"} size={14} />
         <span class="nm ell">{calls[0].name}</span>
         <span class="s ell">
@@ -412,7 +493,7 @@ function AgentsRow({ calls }: { calls: ToolCall[] }) {
           {calls.map((c) => (
             <div class="subw">
               <div class="subh ell">
-                {c.summary} · {c.subMessages} {c.subMessages === 1 ? "message" : "messages"}
+                {c.description || c.summary} · {c.subMessages} {c.subMessages === 1 ? "message" : "messages"}
               </div>
               {c.subCalls.length > 0 && <ToolCard calls={c.subCalls} nested />}
               {c.subTexts.length > 0 && <div class="subtext prose">{c.subTexts[c.subTexts.length - 1]}</div>}

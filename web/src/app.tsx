@@ -35,7 +35,8 @@ import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, 
 import { answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
-import { ThreadPane, type SendArgs } from "./thread.tsx";
+import { ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
+import { setToolDetails } from "./prefs.ts";
 import { setAttachmentUrl } from "./attach.ts";
 import { setPreviewUrl } from "./previews.ts";
 import { PreviewViewer } from "./preview-ui.tsx";
@@ -178,6 +179,7 @@ function App() {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tick, setTick] = useState(Date.now());
   const [inText, setInText] = useState(false);
+  const toolDetailsOn = useToolDetails();
   // Phone (design/mobile): screens and sheets are history entries.
   const phone = usePhone();
   const phoneRef = useRef(phone);
@@ -981,6 +983,9 @@ function App() {
           ))}
           <button class="kh theme" onClick={cycleTheme} title="Theme">
             theme: {theme === "system" ? "auto" : theme}
+          </button>
+          <button class="kh details" onClick={() => setToolDetails(!toolDetailsOn)} aria-pressed={toolDetailsOn} title="Show tool details: every tool group open, every machine line in full">
+            tool details: {toolDetailsOn ? "on" : "off"}
           </button>
           <span class="kh">
             <kbd>?</kbd>close

@@ -12,6 +12,13 @@ export interface ToolCall {
   done: boolean;
   startedAt: number;
   durationMs: number | null;
+  /** the human-readable row label (V0.21): the agent's description, else a sentence */
+  label: string;
+  /** the agent's own description of the call, when it gave one */
+  description: string;
+  /** the tool input and the result text, for the details view */
+  input: unknown;
+  output: string;
   /** subagent messages folded under a Task/Agent tool use */
   subMessages: number;
   subCalls: ToolCall[];
@@ -22,11 +29,19 @@ export type Item =
   | { kind: "user"; key: string; text: string; images: number; attachments: { id: string; name: string; mediaType: string; size: number }[] }
   | { kind: "assistant"; key: string; text: string }
   | { kind: "tools"; key: string; calls: ToolCall[] }
-  | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number }
-  | { kind: "effect"; key: string; action: string; ok: boolean; text: string }
+  | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number; compact: boolean }
+  | { kind: "effect"; key: string; action: string; ok: boolean; text: string; line: string }
+  | { kind: "note"; key: string; text: string; line: string }
   | { kind: "answer"; key: string; text: string }
   | { kind: "preview"; key: string; card: PreviewCard }
   | { kind: "task"; key: string; text: string; status: string; started: boolean };
+
+export interface BuildOptions {
+  /** "Show tool details": every machine line in full (V0.21) */
+  details?: boolean;
+  /** the thread's folder, for relative paths in labels */
+  cwd?: string;
+}
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
@@ -91,6 +106,7 @@ interface Block {
   input?: unknown;
   tool_use_id?: string;
   is_error?: boolean;
+  content?: unknown;
 }
 
 function blocksOf(data: any): Block[] {
@@ -111,7 +127,9 @@ export function previewsOf(events: FyrEvent[]): PreviewCard[] {
   return out;
 }
 
-export function buildConversation(events: FyrEvent[]): Item[] {
+export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): Item[] {
+  const details = !!opts.details;
+  const cwd = opts.cwd ?? "";
   const items: Item[] = [];
   const calls = new Map<string, ToolCall>();
   let group: { kind: "tools"; key: string; calls: ToolCall[] } | null = null;
@@ -124,6 +142,10 @@ export function buildConversation(events: FyrEvent[]): Item[] {
     id: b.id ?? "",
     name: b.name ?? "tool",
     summary: summarizeInput(b.name ?? "", b.input),
+    label: callLabel(b.name ?? "", b.input, cwd),
+    description: descriptionOf(b.input),
+    input: b.input,
+    output: "",
     isError: false,
     done: false,
     startedAt: at,
@@ -137,7 +159,13 @@ export function buildConversation(events: FyrEvent[]): Item[] {
     const at = Date.parse(e.at) || 0;
     const key = String(e.seq);
     switch (e.type) {
-      case "user":
+      case "user": {
+        const text = str(e.data?.text);
+        // Fyr's own messages to the agent are system notes, not the user's words: hidden unless details are on.
+        if (/^\[Fyr\]/.test(text)) {
+          if (details) pushItem({ kind: "note", key, text, line: firstLine(text.replace(/^\[Fyr\]\s*/, "")) });
+          break;
+        }
         pushItem({
           kind: "user",
           key,
@@ -148,6 +176,7 @@ export function buildConversation(events: FyrEvent[]): Item[] {
             .map((a: any) => ({ id: a.id, name: str(a.name) || "file", mediaType: str(a.mediaType), size: Number(a.size) || 0 })),
         });
         break;
+      }
       case "msg": {
         const d = e.data ?? {};
         const parent: string | null = d.parent_tool_use_id ?? null;
@@ -196,6 +225,7 @@ export function buildConversation(events: FyrEvent[]): Item[] {
           interrupted: !!d.interrupted,
           costUsd: typeof d.costUsd === "number" ? d.costUsd : undefined,
           durationMs: typeof d.durationMs === "number" ? d.durationMs : undefined,
+          compact: !details,
         });
         break;
       }
@@ -204,12 +234,17 @@ export function buildConversation(events: FyrEvent[]): Item[] {
         if (card) pushItem({ kind: "preview", key, card });
         break;
       }
-      case "task":
-        pushItem({ kind: "task", key, text: taskEventText(e.data ?? {}), status: str(e.data?.status), started: e.data?.kind === "started" });
+      case "task": {
+        // The Agents strip carries starts and finishes; only a failed agent gets a line by default.
+        const failed = e.data?.kind === "ended" && e.data?.status === "failed";
+        if (details || failed) pushItem({ kind: "task", key, text: taskEventText(e.data ?? {}), status: str(e.data?.status), started: e.data?.kind === "started" });
         break;
-      case "effect.result":
-        pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text: str(e.data?.text) });
+      }
+      case "effect.result": {
+        const text = str(e.data?.text);
+        pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text, line: firstLine(text) || (e.data?.ok ? "Done" : "Failed") });
         break;
+      }
       case "decision.closed":
         if (str(e.data?.answer)) pushItem({ kind: "answer", key, text: str(e.data?.answer) });
         break;
@@ -217,13 +252,28 @@ export function buildConversation(events: FyrEvent[]): Item[] {
         break; // run.started, decision.opened and unknown types are not shown in the log
     }
   }
-  return items;
+  return calmTools(items);
+}
+
+/** V0.21: drop calls that have their own card or are plumbing (unless they failed); drop groups left empty. */
+function calmTools(items: Item[]): Item[] {
+  const out: Item[] = [];
+  for (const it of items) {
+    if (it.kind !== "tools") {
+      out.push(it);
+      continue;
+    }
+    const calls = it.calls.filter((c) => !hiddenCall(c));
+    if (calls.length) out.push({ ...it, calls });
+  }
+  return out;
 }
 
 function finish(c: ToolCall | undefined, b: Block, at: number) {
   if (!c) return;
   c.done = true;
   c.isError = !!b.is_error;
+  c.output = resultText(b.content);
   c.durationMs = c.startedAt && at ? Math.max(0, at - c.startedAt) : null;
 }
 
@@ -242,4 +292,240 @@ export function toolRows(calls: ToolCall[]): ToolRow[] {
     } else rows.push({ kind: "call", call: c });
   }
   return rows;
+}
+
+// ---- V0.21: calm tool output ----
+
+/** Calls whose result has its own card in the log: the call itself never shows (unless it failed). */
+export const CARD_TOOLS = new Set(["mcp__fyr__show", "mcp__fyr__effect_request", "mcp__fyr__pr_link", "mcp__fyr__settle_when", "AskUserQuestion"]);
+/** Plumbing: tool loading and bookkeeping. Extend here. */
+export const PLUMBING_TOOLS = new Set(["ToolSearch", "TodoWrite", "TodoRead", "ListMcpResourcesTool", "ReadMcpResourceTool"]);
+/** Shell bookkeeping: a Bash call whose whole command is one of these. */
+export const PLUMBING_COMMANDS = [/^\s*settask\b/];
+
+export function hiddenCall(c: Pick<ToolCall, "name" | "isError" | "input">): boolean {
+  if (c.isError) return false; // a failed hidden call is shown
+  if (CARD_TOOLS.has(c.name) || PLUMBING_TOOLS.has(c.name)) return true;
+  if (c.name === "Bash") {
+    const cmd = (c.input as { command?: unknown } | undefined)?.command;
+    if (typeof cmd === "string" && PLUMBING_COMMANDS.some((r) => r.test(cmd))) return true;
+  }
+  return false;
+}
+
+/** A tool_result's content as text. */
+export function resultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content))
+    return content
+      .map((b) => (b && typeof b === "object" && (b as Block).type === "text" ? str((b as Block).text) : b && typeof b === "object" && (b as Block).type === "image" ? "[image]" : ""))
+      .filter(Boolean)
+      .join("\n");
+  return "";
+}
+
+const SERVERS: Record<string, string> = { github: "GitHub", gitlab: "GitLab", playwright: "Playwright", fyr: "", t3: "T3", slack: "Slack", linear: "Linear", sentry: "Sentry" };
+const BUILTIN: Record<string, string> = { WebSearch: "Web search", WebFetch: "Web fetch", MultiEdit: "Edit", NotebookEdit: "Notebook edit", NotebookRead: "Notebook read", TodoWrite: "Todo list", AskUserQuestion: "Question", BashOutput: "Shell output", KillShell: "Stop shell", KillBash: "Stop shell" };
+
+/** Tool names as words: mcp__fyr__show → Show, mcp__github__get_pr → GitHub get pr, mcp__x__y → X y. */
+export function friendlyName(name: string): string {
+  const m = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(name);
+  if (m) {
+    const server = m[1].toLowerCase();
+    const words = m[2].replace(/[_-]+/g, " ").trim().toLowerCase();
+    const label = server in SERVERS ? SERVERS[server] : m[1].charAt(0).toUpperCase() + m[1].slice(1).replace(/[_-]+/g, " ");
+    const text = label ? `${label} ${words}` : words;
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+  return BUILTIN[name] ?? name;
+}
+
+type Kind = { key: string; one: string; many: (n: number) => string };
+const KINDS: Record<string, Kind> = {
+  read: { key: "read", one: "read 1 file", many: (n) => `read ${n} files` },
+  edit: { key: "edit", one: "edited 1 file", many: (n) => `edited ${n} files` },
+  bash: { key: "bash", one: "ran 1 command", many: (n) => `ran ${n} commands` },
+  search: { key: "search", one: "searched the code", many: (n) => `searched the code ${n} times` },
+  web: { key: "web", one: "searched the web", many: (n) => `searched the web ${n} times` },
+  fetch: { key: "fetch", one: "fetched 1 page", many: (n) => `fetched ${n} pages` },
+};
+const KIND_OF: Record<string, string> = { Read: "read", NotebookRead: "read", Edit: "edit", MultiEdit: "edit", Write: "edit", NotebookEdit: "edit", Bash: "bash", BashOutput: "bash", Grep: "search", Glob: "search", LS: "search", WebSearch: "web", WebFetch: "fetch" };
+
+/** "Read 3 files · ran 2 commands · searched the web · edited 1 file", in order of first use. */
+export function groupSummary(calls: (Pick<ToolCall, "name"> & { description?: string })[]): string {
+  const counts = new Map<string, { kind?: Kind; label?: string; described?: string; n: number }>();
+  for (const c of calls) {
+    const k = KIND_OF[c.name];
+    const id = k ?? `other:${c.name}`;
+    const cur = counts.get(id) ?? (k ? { kind: KINDS[k], n: 0 } : { label: friendlyName(c.name), n: 0 });
+    // Commands are named by the agent's first description: "Ran the Go tests and 2 more".
+    if (k === "bash" && !cur.described && c.description) cur.described = pastTense(c.description);
+    cur.n++;
+    counts.set(id, cur);
+  }
+  const parts = [...counts.values()].map((v) => {
+    if (v.described) return lowerFirst(v.n === 1 ? v.described : `${v.described} and ${v.n - 1} more`);
+    return v.kind ? (v.n === 1 ? v.kind.one : v.kind.many(v.n)) : v.n === 1 ? `used ${v.label}` : `used ${v.label} ${v.n} times`;
+  });
+  const text = parts.join(" · ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function lowerFirst(s: string): string {
+  // Keep proper nouns and acronyms ("Go", "CI") as written after the first word.
+  return s.charAt(0).toLowerCase() + s.slice(1);
+}
+
+export interface GroupStats {
+  failed: number;
+  running: number;
+  /** wall time from the first start to the last finish, when every call finished */
+  durationMs: number | null;
+}
+
+export function groupStats(calls: ToolCall[]): GroupStats {
+  const failed = calls.filter((c) => c.isError).length;
+  const running = calls.filter((c) => !c.done).length;
+  if (running || !calls.length) return { failed, running, durationMs: null };
+  const start = Math.min(...calls.map((c) => c.startedAt));
+  const end = Math.max(...calls.map((c) => c.startedAt + (c.durationMs ?? 0)));
+  return { failed, running, durationMs: start ? Math.max(0, end - start) : null };
+}
+
+/** A tool group splits into folded runs of plain calls and the subagent rows, which stay as they are (V0.16). */
+export type Segment = { kind: "fold"; calls: ToolCall[] } | { kind: "agents"; calls: ToolCall[] };
+export function segments(calls: ToolCall[]): Segment[] {
+  const out: Segment[] = [];
+  for (const r of toolRows(calls)) {
+    const last = out[out.length - 1];
+    if (r.kind === "agents") out.push({ kind: "agents", calls: r.calls });
+    else if (last?.kind === "fold") last.calls.push(r.call);
+    else out.push({ kind: "fold", calls: [r.call] });
+  }
+  return out;
+}
+
+export const OUTPUT_LINES = 200;
+/** Long output is cut at 200 lines behind "Show all". */
+export function cutOutput(text: string, max = OUTPUT_LINES): { text: string; hidden: number } {
+  const lines = text.split("\n");
+  if (lines.length <= max) return { text, hidden: 0 };
+  return { text: lines.slice(0, max).join("\n"), hidden: lines.length - max };
+}
+
+/** The full input of a call, for the details view: the command for Bash, else readable JSON. */
+export function fullInput(name: string, input: unknown): string {
+  const i = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  if (name === "Bash" && typeof i.command === "string") return i.command;
+  try {
+    return JSON.stringify(input ?? {}, null, 2);
+  } catch {
+    return String(input);
+  }
+}
+
+// ---- V0.21: human-readable labels ----
+
+function firstLine(text: string, max = 100): string {
+  const l = text.split("\n").find((x) => x.trim()) ?? "";
+  return oneLine(l, max);
+}
+
+function descriptionOf(input: unknown): string {
+  const d = (input as { description?: unknown } | undefined)?.description;
+  return typeof d === "string" ? oneLine(d, 120) : "";
+}
+
+/** Shorten in the middle, keeping the start and the more telling end: "src/…/FilterSheet.tsx". */
+export function middleTruncate(s: string, max = 40): string {
+  if (s.length <= max) return s;
+  const keep = max - 1;
+  const tail = Math.ceil(keep * 0.6);
+  return s.slice(0, keep - tail) + "…" + s.slice(s.length - tail);
+}
+
+/** A path relative to the thread's folder (or ~ for home), shortened in the middle. */
+export function relPath(path: string, cwd: string, max = 40): string {
+  let p = path;
+  const base = cwd.replace(/\/+$/, "");
+  if (base && (p === base || p.startsWith(base + "/"))) p = p.slice(base.length + 1) || ".";
+  else p = p.replace(/^\/home\/[^/]+(?=\/|$)/, "~");
+  return middleTruncate(p, max);
+}
+
+function short(v: string, max = 40): string {
+  return middleTruncate(oneLine(v, 400), max);
+}
+
+/** A row label: the agent's description when there is one, else a sentence from the tool and its key input. */
+export function callLabel(name: string, input: unknown, cwd: string): string {
+  const desc = descriptionOf(input);
+  if (desc) return desc;
+  const i = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const path = str(i.file_path) || str(i.notebook_path) || str(i.path);
+  switch (name) {
+    case "Read":
+    case "NotebookRead":
+      return path ? `Read ${relPath(path, cwd)}` : "Read a file";
+    case "Edit":
+    case "MultiEdit":
+    case "NotebookEdit": {
+      const st = diffStat(name, input);
+      return `Edited ${path ? relPath(path, cwd) : "a file"}${st ? ` (${st})` : ""}`;
+    }
+    case "Write":
+      return `Wrote ${path ? relPath(path, cwd) : "a file"}`;
+    case "Grep":
+      return `Searched for "${short(str(i.pattern), 32)}"${path ? ` in ${relPath(path, cwd, 28)}` : ""}`;
+    case "Glob":
+      return `Found files matching ${short(str(i.pattern), 36)}`;
+    case "LS":
+      return `Listed ${path ? relPath(path, cwd) : "the folder"}`;
+    case "WebSearch":
+      return `Searched the web for "${short(str(i.query), 36)}"`;
+    case "WebFetch": {
+      const u = str(i.url).replace(/^https?:\/\//, "");
+      return `Fetched ${u ? middleTruncate(u, 40) : "a page"}`;
+    }
+    case "Bash": {
+      const head = commandHead(str(i.command));
+      return head ? `Ran ${head}` : "Ran a command";
+    }
+    case "Task":
+    case "Agent":
+      return "Started a subagent";
+    default: {
+      const key = str(i.title) || str(i.query) || str(i.url) || path || str(i.name);
+      return key ? `${friendlyName(name)} ${short(key, 32)}` : friendlyName(name);
+    }
+  }
+}
+
+/** The first words of a shell command, readable: "yarn test", "go test", "git rebase". */
+function commandHead(cmd: string): string {
+  const first = cmd.split(/&&|\|\||;|\|/)[0].trim();
+  const words = first.split(/\s+/).filter((w) => !/^[A-Z_]+=/.test(w));
+  const head: string[] = [];
+  for (const w of words) {
+    if (head.length >= 2 || w.startsWith("-") || /[\/"'$`]/.test(w)) break;
+    head.push(w);
+  }
+  return middleTruncate(head.join(" "), 32);
+}
+
+const PAST: Record<string, string> = {
+  run: "ran", check: "checked", build: "built", install: "installed", list: "listed", show: "showed", find: "found", get: "got",
+  fetch: "fetched", test: "tested", start: "started", stop: "stopped", create: "created", update: "updated", read: "read",
+  view: "viewed", verify: "verified", open: "opened", push: "pushed", commit: "committed", rebase: "rebased", deploy: "deployed",
+  kill: "killed", wait: "waited", search: "searched", count: "counted", print: "printed", compile: "compiled", format: "formatted",
+  lint: "linted", inspect: "inspected", look: "looked", copy: "copied", move: "moved", remove: "removed", delete: "deleted",
+  make: "made", write: "wrote", add: "added", clean: "cleaned", restart: "restarted", watch: "watched", take: "took", capture: "captured",
+};
+
+/** "Run the Go tests" → "Ran the Go tests"; unknown verbs are kept as written. */
+export function pastTense(description: string): string {
+  const m = /^(\w+)(.*)$/s.exec(description);
+  if (!m) return description;
+  const p = PAST[m[1].toLowerCase()];
+  return p ? p.charAt(0).toUpperCase() + p.slice(1) + m[2] : description;
 }
