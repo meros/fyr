@@ -959,6 +959,7 @@ function App() {
       if (!r.ok) showError(r.error ?? "Could not send");
       return r.ok;
     },
+    cancelMessage: async (id, messageId) => (await runAction("thread.cancelMessage", [id], { messageId })) > 0,
     submitAsk: async (d) => {
       const cs = cards[d.id];
       const answers = cs ? answersOf(cs, d) : null;

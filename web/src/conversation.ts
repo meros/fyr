@@ -25,8 +25,25 @@ export interface ToolCall {
   subTexts: string[];
 }
 
+/** SPEC 0.5 V0.33: where a message is on its way to the agent; "" for messages from before tracking. */
+export type Delivery = "" | "sent" | "queued" | "read" | "cancelled" | "lost";
+
 export type Item =
-  | { kind: "user"; key: string; text: string; images: number; from?: string; attachments: { id: string; name: string; mediaType: string; size: number }[] }
+  | {
+      kind: "user";
+      key: string;
+      text: string;
+      images: number;
+      from?: string;
+      attachments: { id: string; name: string; mediaType: string; size: number }[];
+      /** the message id (V0.33) */
+      id?: string;
+      delivery: Delivery;
+      /** not read yet: it renders after "Agent is here" */
+      pending: boolean;
+      /** the owner's last message the agent read: the only one that says "Read" */
+      lastRead: boolean;
+    }
   | { kind: "assistant"; key: string; text: string }
   | { kind: "tools"; key: string; calls: ToolCall[] }
   | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number; compact: boolean }
@@ -132,6 +149,9 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
   const cwd = opts.cwd ?? "";
   const items: Item[] = [];
   const calls = new Map<string, ToolCall>();
+  // V0.33: a message with an id waits here until the agent reads it (or it is
+  // cancelled or lost); it then takes its place in the log at that point.
+  const held = new Map<string, Extract<Item, { kind: "user" }>>();
   let group: { kind: "tools"; key: string; calls: ToolCall[] } | null = null;
 
   const pushItem = (it: Item) => {
@@ -166,7 +186,8 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           if (details) pushItem({ kind: "note", key, text, line: firstLine(text.replace(/^\[Fyr\]\s*/, "")) });
           break;
         }
-        pushItem({
+        const id = str(e.data?.id);
+        const it: Extract<Item, { kind: "user" }> = {
           kind: "user",
           key,
           text: str(e.data?.text),
@@ -175,7 +196,25 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           attachments: (Array.isArray(e.data?.attachments) ? e.data.attachments : [])
             .filter((a: any) => a && typeof a.id === "string")
             .map((a: any) => ({ id: a.id, name: str(a.name) || "file", mediaType: str(a.mediaType), size: Number(a.size) || 0 })),
-        });
+          id: id || undefined,
+          delivery: id ? "sent" : "",
+          pending: false,
+          lastRead: false,
+        };
+        if (id) held.set(id, it);
+        else pushItem(it);
+        break;
+      }
+      case "message.state": {
+        const it = held.get(str(e.data?.id));
+        const st = str(e.data?.state);
+        if (!it) break;
+        if (st === "queued") it.delivery = "queued";
+        else if (st === "read" || st === "cancelled" || st === "lost") {
+          it.delivery = st;
+          held.delete(it.id!);
+          pushItem(it);
+        }
         break;
       }
       case "msg": {
@@ -253,7 +292,29 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         break; // run.started, decision.opened and unknown types are not shown in the log
     }
   }
-  return calmTools(items);
+  const out = calmTools(items);
+  let last: Extract<Item, { kind: "user" }> | undefined;
+  for (const it of out) if (it.kind === "user" && it.delivery === "read" && !it.from) last = it;
+  if (last) last.lastRead = true;
+  for (const it of held.values()) out.push({ ...it, pending: true });
+  return out;
+}
+
+/** V0.33: the quiet word under a message: Waiting, Sent, Read (the last read one only), Cancelled, Not delivered. */
+export function deliveryLabel(it: Extract<Item, { kind: "user" }>): string {
+  switch (it.delivery) {
+    case "queued":
+      return "Waiting";
+    case "sent":
+      return "Sent";
+    case "read":
+      return it.lastRead ? "Read" : "";
+    case "cancelled":
+      return "Cancelled";
+    case "lost":
+      return "Not delivered";
+  }
+  return "";
 }
 
 /** V0.21: drop calls that have their own card or are plumbing (unless they failed); drop groups left empty. */

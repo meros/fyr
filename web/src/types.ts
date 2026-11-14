@@ -193,6 +193,8 @@ export interface CommandReply {
   ok: boolean;
   threadId?: string;
   error?: string;
+  /** thread.send and thread.create: { messageId } (V0.33) */
+  result?: Record<string, unknown>;
 }
 
 export interface T3Candidate {
