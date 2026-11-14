@@ -1,4 +1,5 @@
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
+import { navTransition } from "./native.ts";
 import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
 import { ContextMenu } from "./menu-ui.tsx";
 import { Boundary } from "./boundary.tsx";
@@ -893,7 +894,9 @@ function App() {
   // ---- phone navigation ----
   const navGo = (n: Nav) => {
     history.pushState(n, "", urlFor(n, location.search));
-    setNav(n);
+    // A sheet opens over the screen; only a new screen slides (V0.32).
+    if (n.screen !== nav.screen && JSON.stringify(n.screen) !== JSON.stringify(nav.screen)) navTransition("fwd", () => setNav(n));
+    else setNav(n);
   };
   navGoRef.current = navGo;
   const navRef = useRef(nav);
@@ -926,7 +929,11 @@ function App() {
     history.replaceState(entries[0], "", urlFor(entries[0], location.search));
     for (const e of entries.slice(1)) history.pushState(e, "", urlFor(e, location.search));
     setNav(entries[entries.length - 1]);
-    const onPop = (e: PopStateEvent) => setNav(navFromHistory(e.state, location.search));
+    const onPop = (e: PopStateEvent) => {
+      const n = navFromHistory(e.state, location.search);
+      if (JSON.stringify(n.screen) !== JSON.stringify(navRef.current.screen)) navTransition("back", () => setNav(n));
+      else setNav(n);
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [phone]);
