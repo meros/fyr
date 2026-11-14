@@ -49,3 +49,11 @@ test("U8: settle or archive of the open thread returns to the inbox, unless it s
   assert.equal(leavesThread("archive", { running: true }), true);
   assert.equal(leavesThread("settle", undefined), false);
 });
+
+// SPEC 0.5 V0.47: Settings has its own URL; Back leaves it for the inbox.
+test("settings screen url", () => {
+  const n = { screen: { name: "settings" as const }, sheet: null };
+  assert.equal(urlFor(n, "?mock=rail"), "/?mock=rail&settings");
+  assert.deepEqual(parseUrl("?settings"), n);
+  assert.deepEqual(backTarget(n), INBOX);
+});

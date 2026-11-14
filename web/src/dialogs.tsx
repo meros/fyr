@@ -9,6 +9,7 @@ import { NewProjectStep, ProjectIcon, ProjectList } from "./project-ui.tsx";
 import { LAST_PROJECT_KEY, colorVar, localProject, newThreadFolder, projectDefaults, projectFolders, projectSubtitle, startProject } from "./projects.ts";
 import { useFolderPick, type PickOptions } from "./folder-picker.tsx";
 import { relTime, shortModel } from "./format.ts";
+import { effortsFor, startEffort } from "./providers.ts";
 import type { SnoozePreset } from "./store.ts";
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose(): void; children: any; wide?: boolean }) {
@@ -40,6 +41,8 @@ export interface NewThreadArgs {
   projectId?: string;
   /** V0.37: start with a live view */
   view?: boolean;
+  /** V0.47: effort; "" is the provider's default */
+  effort?: string;
 }
 
 
@@ -77,6 +80,9 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
   const prof = p.profiles.find((x) => x.id === profile);
   const quotas = useQuotas();
   const [model, setModel] = useState(startDefs.model ?? prof?.defaultModel ?? prof?.models[0] ?? "");
+  const [effortPick, setEffort] = useState("");
+  const efforts = effortsFor(prof, model);
+  const effort = startEffort(prof, model, effortPick);
   const [text, setText] = useState("");
   const [title, setTitle] = useState("");
   const [liveView, setLiveView] = useState(false);
@@ -119,7 +125,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
     if (!plan.ok) return setErr(plan.reason === "Nothing to send" ? "Write a prompt or attach a file." : plan.reason);
     setBusy(true);
     setErr(null);
-    const e = await p.onCreate({ cwd: folder.cwd, text, attachments: plan.args.attachments, profile, model, title: title.trim() || undefined, projectId, view: liveView || undefined });
+    const e = await p.onCreate({ cwd: folder.cwd, text, attachments: plan.args.attachments, profile, model, effort: effortPick && effort ? effort : undefined, title: title.trim() || undefined, projectId, view: liveView || undefined });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -197,6 +203,17 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
               ))}
             </select>
           </label>
+          {efforts.length > 0 && (
+            <label class="fld">
+              <span>Effort</span>
+              <select value={effort} onChange={(e) => setEffort((e.target as HTMLSelectElement).value)}>
+                {!effort && <option value="">CLI default</option>}
+                {efforts.map((x) => (
+                  <option value={x}>{x}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
         <ProfileQuota profile={profile} profiles={p.profiles} />
         <label class="fld">
