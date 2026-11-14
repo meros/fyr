@@ -55,7 +55,8 @@ test("needs you sorts by state precedence asking, failed, blocked, done, then ne
   assert.deepEqual(sec.needs.map((t) => t.id), ["ask-new", "ask-old", "failed", "blocked", "done-new", "done-old"]);
 });
 
-test("working sorts by runStartedAt (start order); seen, snoozed, settled by newest activity", () => {
+// SPEC 0.5 V0.26: Working sorts by run start, newest first; seen, snoozed, settled by newest activity
+test("working sorts by runStartedAt (newest started first); seen, snoozed, settled by newest activity", () => {
   const ts = [
     thread("w-late", "working", "working", { runStartedAt: at(30), activityAt: at(59) }),
     thread("w-early", "working", "working", { runStartedAt: at(5), activityAt: at(10) }),
@@ -65,11 +66,27 @@ test("working sorts by runStartedAt (start order); seen, snoozed, settled by new
     thread("x-new", "settled", "settled", { activityAt: at(8) }),
   ];
   const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
-  assert.deepEqual(sec.working.map((t) => t.id), ["w-early", "w-late"]);
+  assert.deepEqual(sec.working.map((t) => t.id), ["w-late", "w-early"]);
   assert.deepEqual(sec.seen.map((t) => t.id), ["s-new", "s-old"]);
   assert.deepEqual(sec.settled.map((t) => t.id), ["x-new", "x-old"]);
-  assert.deepEqual(flatOrder(sec), ["w-early", "w-late", "s-new", "s-old", "x-new", "x-old"]);
-  assert.deepEqual(flatOrder(sec, { seen: 1 }), ["w-early", "w-late", "s-new", "x-new", "x-old"]);
+  assert.deepEqual(flatOrder(sec), ["w-late", "w-early", "s-new", "s-old", "x-new", "x-old"]);
+  assert.deepEqual(flatOrder(sec, { seen: 1 }), ["w-late", "w-early", "s-new", "x-new", "x-old"]);
+});
+
+// SPEC 0.5 V0.26: the Working order is stable; activity never moves a row, a waiting thread sorts by its agents' start
+test("working order does not follow activity; waiting threads use the earliest running agent start; id breaks ties", () => {
+  const task = (id: string, startedAt: string, status: "running" | "completed" = "running") => ({ id, description: id, status, startedAt });
+  const ts = [
+    thread("w-b", "working", "working", { runStartedAt: at(10), activityAt: at(11) }),
+    thread("w-a", "working", "working", { runStartedAt: at(10), activityAt: at(58) }),
+    thread("w-new", "working", "working", { runStartedAt: at(20), activityAt: at(21) }),
+    thread("wait", "waiting", "working", { runStartedAt: null, activityAt: at(59), tasks: [task("t1", at(30)), task("t2", at(15)), task("t0", at(1), "completed")] }),
+  ];
+  let s = applySnapshot(initialStore(), snap(ts), 0);
+  assert.deepEqual(sections(s.threads).working.map((t) => t.id), ["w-new", "wait", "w-a", "w-b"]);
+  // New activity on w-b (a later update) leaves the order as it was.
+  s = upsertThread(s, { ...s.threads["w-b"], activityAt: at(59), updatedAt: at(59), activity: "Reading app.tsx" });
+  assert.deepEqual(sections(s.threads).working.map((t) => t.id), ["w-new", "wait", "w-a", "w-b"]);
 });
 
 test("an older upsert never overwrites a newer thread; an equal one does (time-driven attention)", () => {
