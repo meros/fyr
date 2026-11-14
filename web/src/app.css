@@ -160,6 +160,40 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .pane-note p{margin:0 0 8px}
 .pane-note a{color:var(--harbour)}
 
+/* Changes tab (SPEC 0.5 V0.25): file rows, then each file's diff in place. */
+.chg{flex:1;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;padding:12px 24px 16px;scrollbar-width:thin;--add-wash:color-mix(in srgb,var(--calm) 13%,transparent);--del-wash:color-mix(in srgb,var(--signal-ink) 11%,transparent)}
+.chg-head{display:flex;align-items:center;gap:12px;min-width:0;margin-bottom:8px}
+.chg-sum{flex:1;font:500 13px/18px var(--ui);color:var(--ink-muted);font-variant-numeric:tabular-nums}
+.chg-ref{height:26px;padding:0 10px}
+.chg-empty{padding:16px 0;font:400 14px/21px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.chg-empty.fail,.chg-note.fail{color:var(--signal-ink)}
+.chg-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:var(--raised);overflow:hidden;min-width:0}
+.chg-item{min-width:0}
+.chg-item+.chg-item{border-top:1px solid var(--line)}
+.chg-file{display:flex;align-items:center;gap:10px;width:100%;min-width:0;height:34px;padding:0 12px}
+.chg-file:hover{background:var(--select)}
+.chg-item.open .chg-file{background:var(--sunken);border-bottom:1px solid var(--line)}
+.chg-st{flex:none;width:18px;height:18px;border-radius:4px;display:grid;place-items:center;font:600 11px/1 var(--mono);color:var(--ink-muted);border:1px solid var(--line)}
+.chg-st.added{color:var(--calm)}.chg-st.deleted{color:var(--signal-ink)}.chg-st.renamed{color:var(--harbour)}
+.chg-path{flex:1;min-width:0;display:flex;font:400 12.5px/18px var(--mono);white-space:nowrap}
+.chg-dir{min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;color:var(--ink-muted)}
+.chg-name{flex:0 1 auto;min-width:min(12ch,100%);overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.chg-n{flex:none;font:400 12px/18px var(--mono)}
+.chg-n .a{color:var(--calm)}.chg-n .d{color:var(--signal-ink)}.chg-bin{color:var(--ink-faint)}
+.chg-note{padding:8px 12px;font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.chg-diff{overflow-x:auto;overflow-y:hidden;min-width:0;background:var(--raised);scrollbar-width:thin}
+.chg-lines{display:inline-block;min-width:100%;padding:4px 0;font:400 12px/18px var(--mono);font-variant-ligatures:none}
+.dl{display:flex;white-space:pre;tab-size:4}
+.dl .ln{flex:none;width:5ch;padding-right:1ch;text-align:right;color:var(--ink-faint);user-select:none;font-variant-numeric:tabular-nums}
+.dl .tx{flex:1;padding:0 12px 0 6px}
+.dl .sg{display:inline-block;width:1.5ch;color:var(--ink-faint);user-select:none}
+.dl.add{background:var(--add-wash)}.dl.add .sg{color:var(--calm)}
+.dl.del{background:var(--del-wash)}.dl.del .sg{color:var(--signal-ink)}
+.dl.h{background:var(--harbour-wash);color:var(--ink-muted)}
+.dl.h .tx{padding:2px 12px 2px 6px}
+.dl.nt{color:var(--ink-faint);font-style:italic}
+.chg-more{margin:8px 12px}
+
 .convo{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;scrollbar-width:thin}
 .convo-in{margin-top:auto;display:flex;flex-direction:column;gap:12px;padding:12px 24px;min-width:0}
 .you{align-self:flex-end;max-width:72%;padding:8px 12px;border-radius:14px 14px 4px 14px;background:var(--night);color:var(--on-night);font:400 14px/21px var(--ui);white-space:pre-wrap}

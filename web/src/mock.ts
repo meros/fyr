@@ -2,6 +2,7 @@
 // commands change the fixtures and push thread upserts, so the UI can be clicked through without a host.
 
 import type { CommandReply, Decision, Project, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 
 export function mockScenario(search: string): string | null {
   const m = /[?&]mock=([^&]*)/.exec(search);
@@ -969,4 +970,71 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       return [...subs.values()];
     },
   };
+}
+
+// ---- Changes tab (V0.25) ----
+
+const LONG_CHANGE_PATH = `infrastructure/${LONG_PROJECT}/modules/opensearch/cluster/variables-for-the-search-cluster-and-its-dashboards.tf`;
+
+/** The branch diff of a mock thread; t_deploy is outside git. */
+export function mockChanges(threadId: string): ChangesDTO {
+  if (threadId === "t_deploy") return { git: false };
+  return {
+    git: true,
+    root: "/home/owner/src/norban/web",
+    branch: "fix/map-lasso-mobile",
+    base: "origin/main",
+    mergeBase: "3f2a9c1d0e",
+    commits: 3,
+    truncated: false,
+    files: [
+      { path: "docs/old-notes.md", status: "deleted", additions: 0, deletions: 12, binary: false },
+      { path: LONG_CHANGE_PATH, status: "modified", additions: 4, deletions: 2, binary: false },
+      { path: "web/public/marker.png", status: "added", additions: 0, deletions: 0, binary: true },
+      { path: "web/src/map/lasso.ts", oldPath: "web/src/map/select.ts", status: "renamed", additions: 6, deletions: 2, binary: false },
+      { path: "web/src/map/render.ts", status: "modified", additions: 42, deletions: 18, binary: false },
+      { path: "web/test/map.test.ts", status: "added", additions: 64, deletions: 0, binary: false },
+    ],
+  };
+}
+
+/** One mock file's unified diff. */
+export function mockFilePatch(path: string): FilePatchDTO {
+  const head = (extra = "") => `diff --git a/${path} b/${path}\n${extra}--- a/${path}\n+++ b/${path}\n`;
+  if (path.endsWith(".png")) return { path, patch: `diff --git a/${path} b/${path}\nnew file mode 100644\nBinary files /dev/null and b/${path} differ\n`, binary: true, truncated: false };
+  if (path === LONG_CHANGE_PATH) {
+    const patch =
+      head("index 1a2b3c4..5d6e7f8 100644\n") +
+      "@@ -12,7 +12,9 @@ variable \"cluster\" {\n" +
+      '   type = object({\n     name = string\n-    size = number\n+    size          = number\n+    dedicated_master_count_for_the_cluster_when_it_runs_in_three_availability_zones = optional(number, 3)\n' +
+      `+    description = "${"A very long description line without breaks that must scroll sideways inside the diff and never widen the page. ".repeat(3)}"\n` +
+      "     zones = list(string)\n-    tier  = string\n+    tier  = optional(string, \"hot\")\n+    warm  = optional(bool, false)\n   })\n }\n";
+    return { path, patch, binary: false, truncated: false };
+  }
+  if (path === "docs/old-notes.md") {
+    const lines = Array.from({ length: 12 }, (_, i) => `-Note ${i + 1}: the old map notes.`).join("\n");
+    return { path, patch: `diff --git a/${path} b/${path}\ndeleted file mode 100644\n--- a/${path}\n+++ /dev/null\n@@ -1,12 +0,0 @@\n${lines}\n`, binary: false, truncated: false };
+  }
+  if (path === "web/test/map.test.ts") {
+    const lines = Array.from({ length: 20 }, (_, i) => `+test("map case ${i + 1}", () => expect(render(${i})).toMatchSnapshot());`).join("\n");
+    return { path, patch: `diff --git a/${path} b/${path}\nnew file mode 100644\n--- /dev/null\n+++ b/${path}\n@@ -0,0 +1,20 @@\n${lines}\n`, binary: false, truncated: false };
+  }
+  const patch =
+    head("index 0f1e2d3..4c5b6a7 100644\n") +
+    "@@ -40,9 +40,12 @@ export function renderMap(map: MapState, opts: RenderOptions) {\n" +
+    "   const layer = map.layers.find((l) => l.id === opts.layer);\n" +
+    "   if (!layer) return;\n" +
+    "-  for (const f of layer.features) drawFeature(ctx, f);\n" +
+    "+  const visible = layer.features.filter((f) => inView(map.view, f.bbox));\n" +
+    "+  for (const f of visible) drawFeature(ctx, f);\n" +
+    "+  stats.drawn = visible.length;\n" +
+    "   ctx.restore();\n" +
+    " }\n" +
+    "@@ -120,6 +123,6 @@ function drawFeature(ctx: CanvasRenderingContext2D, f: Feature) {\n" +
+    "   ctx.beginPath();\n" +
+    "-  ctx.lineWidth = 2;\n" +
+    "+  ctx.lineWidth = f.selected ? 3 : 2;\n" +
+    "   ctx.stroke();\n" +
+    "\\ No newline at end of file\n";
+  return { path, patch, binary: false, truncated: false };
 }

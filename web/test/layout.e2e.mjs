@@ -281,7 +281,8 @@ async function openScreen(s, w, h) {
   }
   if (s.openDiff) {
     await sleep(300);
-    await evaluate(`document.querySelector('.chg-file.long')?.click() ?? document.querySelector('.chg-file')?.click()`);
+    // The file with the longest path: its row must ellipsize, its long lines scroll inside the diff.
+    await evaluate(`[...document.querySelectorAll('.chg-file')].sort((a, b) => b.title.length - a.title.length)[0]?.click()`);
     await sleep(400);
   }
   if (s.sheet === "snooze") {
