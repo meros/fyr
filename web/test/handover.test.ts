@@ -60,3 +60,10 @@ test("the thread menu offers Hand over…, disabled with the host's reason", () 
   assert.equal(it.label, "Hand over…");
   assert.equal(it.disabled, "Wait for the run to end");
 });
+
+// SPEC 0.5 V0.50 (found live): a provider that cannot run (no token yet) is not a Hand over target.
+test("V0.50 an unavailable provider is no handover target", () => {
+  const t = thread("t1", "seen", "seen", { profile: "claude" });
+  const ps: Profile[] = [...profiles, { id: "x", name: "X", color: "", models: [], unavailable: "Paste the token" }];
+  assert.deepEqual(handoverTargets(t, ps).map((p) => p.id), ["norban", "bare"]);
+});

@@ -76,7 +76,9 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
   const folder = newThreadFolder(picked, cur);
   const picker = useFolderPick();
   const startDefs = cur ? projectDefaults(cur, p.profiles) : {};
-  const [profile, setProfile] = useState(startDefs.profile ?? p.profiles[0]?.id ?? "");
+  // V0.50: a provider that cannot run (no token yet) is shown but not picked.
+  const firstOk = p.profiles.find((x) => !x.unavailable)?.id ?? "";
+  const [profile, setProfile] = useState(startDefs.profile && !p.profiles.find((x) => x.id === startDefs.profile)?.unavailable ? startDefs.profile : firstOk);
   const prof = p.profiles.find((x) => x.id === profile);
   const quotas = useQuotas();
   const [model, setModel] = useState(startDefs.model ?? prof?.defaultModel ?? prof?.models[0] ?? "");
@@ -191,6 +193,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
             <select value={profile} onChange={(e) => pickProfile((e.target as HTMLSelectElement).value)}>
               {p.profiles.map((pr) => {
                 const q = quotaSuffix(quotas, pr.id); // V0.44
+                if (pr.unavailable) return <option value={pr.id} disabled title={pr.unavailable}>{`${pr.name} · needs setup`}</option>;
                 return <option value={pr.id}>{q ? `${pr.name} · ${q}` : pr.name}</option>;
               })}
             </select>

@@ -34,7 +34,7 @@ export function rungDone(r: string): string {
 
 /** The profiles a thread can go to: every other one. */
 export function handoverTargets(t: ThreadDTO, profiles: Profile[]): Profile[] {
-  return profiles.filter((p) => p.id !== t.profile);
+  return profiles.filter((p) => p.id !== t.profile && !p.unavailable);
 }
 
 /** The model a target starts with: its default, else its first, else the CLI's own (""). */

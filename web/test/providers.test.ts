@@ -50,3 +50,8 @@ test("only finds not imported get an Import button", () => {
   const f = (id: string, imported: boolean) => ({ id, name: id, kind: "endpoint" as const, source: "", models: [], status: "ready" as const, imported });
   assert.deepEqual(importable([f("a", true), f("b", false)]).map((x) => x.id), ["b"]);
 });
+
+// SPEC 0.5 V0.50: a token account shows that it logs in with a token, not a folder.
+test("V0.50 a token account's where text names the token", () => {
+  assert.equal(whereText({ kind: "claude-account", configDir: "~/.claude", tokenLogin: true }), "token login");
+});

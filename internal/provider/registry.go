@@ -201,7 +201,11 @@ func (r *Registry) Providers() []Provider {
 func (r *Registry) Profiles() []agent.Profile {
 	out := []agent.Profile{}
 	for _, p := range r.Providers() {
-		out = append(out, p.Profile(r.keyFn(p.ID), r.PermissionMode))
+		pr := p.Profile(r.keyFn(p.ID), r.PermissionMode)
+		if st, need := r.status(p); st != Ready {
+			pr.Unavailable = need
+		}
+		out = append(out, pr)
 	}
 	return out
 }

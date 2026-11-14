@@ -61,7 +61,7 @@ export function kindLabel(kind: string): string {
 }
 
 /** "~/.claude" for the main account, the folder otherwise, or the endpoint's host. */
-export function whereText(p: { kind: string; configDir?: string; baseURL?: string }): string {
+export function whereText(p: { kind: string; configDir?: string; baseURL?: string; tokenLogin?: boolean }): string {
   if (p.kind === "endpoint") {
     try {
       return p.baseURL ? new URL(p.baseURL).host : "no endpoint";
@@ -69,6 +69,7 @@ export function whereText(p: { kind: string; configDir?: string; baseURL?: strin
       return p.baseURL ?? "";
     }
   }
+  if (p.tokenLogin) return "token login"; // V0.50: the token is the account, not the folder
   return p.configDir || "~/.claude";
 }
 

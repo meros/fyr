@@ -54,6 +54,9 @@ type Profile struct {
 	// KeyRequired: the profile does not start without its key (an endpoint,
 	// or an account that logs in with a token).
 	KeyRequired bool `json:"-"`
+	// Unavailable says why the provider cannot run now (V0.50: no token or
+	// key yet); clients do not offer it for new threads or Hand over.
+	Unavailable string `json:"unavailable,omitempty"`
 	// ModelCaps: the offered models with their effort levels; DefaultEffort
 	// is used when the thread names none and the model takes it.
 	ModelCaps     []cli.Model `json:"modelCaps,omitempty"`

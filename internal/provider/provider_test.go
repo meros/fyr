@@ -287,3 +287,31 @@ func TestUpdateDeleteAndQuotaIdentity(t *testing.T) {
 		t.Fatal("bad id accepted")
 	}
 }
+
+// SPEC 0.5 V0.50 (found live 14 Nov): an account that logs in with a token
+// never shares the quota of the login folder it points at, and it is not
+// offered for new threads or Hand over until its token is set.
+func TestTokenLoginOwnIdentityAndUnavailable(t *testing.T) {
+	f := newFixture(t)
+	r := newReg(t, f)
+	main := Provider{ID: "claudeAgent", Auth: cli.Auth{Kind: cli.CLILogin}}
+	tok := Provider{ID: "claudeNorban", Auth: cli.Auth{Kind: cli.CLILogin, ConfigDir: "~/.claude"}, TokenLogin: true}
+	if main.identity(f.home) == tok.identity(f.home) {
+		t.Fatalf("token account shares the folder's quota: %q", tok.identity(f.home))
+	}
+	if s := tok.quotaSpec(); !s.Token {
+		t.Fatalf("token account reads the folder's login for quota: %+v", s)
+	}
+	r.Cutover(r.Found(), []string{"claudeAgent", "claudeNorban"})
+	p, _ := r.get("claudeNorban")
+	p.TokenLogin = true
+	r.put(p, -1)
+	for _, pr := range r.Profiles() {
+		if pr.ID == "claudeNorban" && pr.Unavailable == "" {
+			t.Fatal("a token account without its token is offered")
+		}
+		if pr.ID == "claudeAgent" && pr.Unavailable != "" {
+			t.Fatalf("a ready account is unavailable: %q", pr.Unavailable)
+		}
+	}
+}

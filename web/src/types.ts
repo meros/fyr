@@ -157,6 +157,8 @@ export interface Profile {
   modelCaps?: { id: string; name?: string; efforts?: string[] }[];
   defaultEffort?: string;
   cli?: string;
+  /** V0.50: why it cannot run now (no token or key yet); not offered in pickers */
+  unavailable?: string;
 }
 
 /** Where a project's work lives (V0.23). */

@@ -120,12 +120,17 @@ func (p Provider) quotaSpec() *quota.Spec {
 	s := &quota.Spec{Kind: kind}
 	if kind == quota.KindAnthropic {
 		s.ConfigDir = p.Auth.ConfigDir
+		s.Token = p.TokenLogin // V0.50: its own token, never the folder's login
 	}
 	return s
 }
 
 // identity: two providers on one account share one quota entry.
 func (p Provider) identity(home string) string {
+	if p.TokenLogin {
+		// The token is the account (V0.50); the folder may be another account's.
+		return "token:" + p.ID
+	}
 	if p.Auth.Kind == cli.CLILogin {
 		dir := p.Auth.ConfigDir
 		if dir == "" {

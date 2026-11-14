@@ -37,6 +37,9 @@ type Spec struct {
 	// wins; KeyEnv is looked up in the profile's env, then the daemon's.
 	KeyEnv  string `json:"keyEnv,omitempty"`
 	KeyFile string `json:"keyFile,omitempty"`
+	// Token (anthropic-oauth, V0.50): the account logs in with a token from
+	// Fyr's secret store; usage is read with that token, never the folder's login.
+	Token bool `json:"token,omitempty"`
 	// BaseURL overrides the provider's API root.
 	BaseURL string `json:"baseURL,omitempty"`
 }
@@ -511,18 +514,29 @@ func (s *Service) get(ctx context.Context, url, token string, hdr map[string]str
 const loginExpired = "Login expired; run this profile once"
 
 func (s *Service) fetchAnthropic(ctx context.Context, t target) result {
-	b, err := os.ReadFile(filepath.Join(t.spec.ConfigDir, ".credentials.json"))
-	if err != nil {
-		return result{err: &fail{errOther, "No Claude login found; run this profile once"}}
-	}
 	var cred struct {
 		OAuth struct {
 			AccessToken string  `json:"accessToken"`
 			ExpiresAt   float64 `json:"expiresAt"` // Unix milliseconds
 		} `json:"claudeAiOauth"`
 	}
-	if json.Unmarshal(b, &cred) != nil || cred.OAuth.AccessToken == "" {
-		return result{err: &fail{errOther, "No Claude login found; run this profile once"}}
+	if t.spec.Token {
+		// A token account (V0.50): its own token or nothing.
+		var k string
+		if t.key != nil {
+			k, _ = t.key()
+		}
+		if cred.OAuth.AccessToken = strings.TrimSpace(k); cred.OAuth.AccessToken == "" {
+			return result{err: &fail{errOther, "No token yet; paste it in Settings → Providers"}}
+		}
+	} else {
+		b, err := os.ReadFile(filepath.Join(t.spec.ConfigDir, ".credentials.json"))
+		if err != nil {
+			return result{err: &fail{errOther, "No Claude login found; run this profile once"}}
+		}
+		if json.Unmarshal(b, &cred) != nil || cred.OAuth.AccessToken == "" {
+			return result{err: &fail{errOther, "No Claude login found; run this profile once"}}
+		}
 	}
 	if ms := cred.OAuth.ExpiresAt; ms > 0 && s.now().After(time.UnixMilli(int64(ms))) {
 		return result{err: &fail{errOther, loginExpired}}
