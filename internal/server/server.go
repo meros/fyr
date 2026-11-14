@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -18,8 +19,17 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
 )
+
+// Pusher is what the push endpoints need (*push.Pusher implements it).
+type Pusher interface {
+	PublicKey() string
+	Subscribe(user string, sub push.Subscription, device string) error
+	Unsubscribe(endpoint string) error
+	Notify(user string, pl push.Payload) int
+}
 
 type Server struct {
 	Engine  *engine.Engine
@@ -30,7 +40,9 @@ type Server struct {
 	// OwnerLogin is the Tailscale login allowed over the tailnet (V0.14).
 	// Empty refuses every tailnet request.
 	OwnerLogin string
-	Profiles   []agent.Profile
+	// Push serves the Web Push endpoints (V0.15); optional.
+	Push     Pusher
+	Profiles []agent.Profile
 	// T3Candidates lists adoptable T3 threads; optional.
 	T3Candidates func() (any, error)
 }
@@ -42,6 +54,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/events", s.events)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
+	if s.Push != nil {
+		mux.HandleFunc("GET /api/push/key", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, 200, map[string]string{"publicKey": s.Push.PublicKey()})
+		})
+		mux.HandleFunc("POST /api/push/subscribe", s.pushSubscribe)
+		mux.HandleFunc("POST /api/push/unsubscribe", s.pushUnsubscribe)
+		mux.HandleFunc("POST /api/push/test", func(w http.ResponseWriter, r *http.Request) {
+			n := s.Push.Notify(core.Owner, push.Payload{Title: "Fyr", Body: "Notifications work on this device.", State: "test"})
+			writeJSON(w, 200, map[string]int{"delivered": n})
+		})
+	}
 	if s.MCP != nil {
 		mux.Handle("/mcp", s.MCP)
 	}
@@ -90,10 +113,18 @@ func guard(owner string, next http.Handler) http.Handler {
 	})
 }
 
+func init() { mime.AddExtensionType(".webmanifest", "application/manifest+json") }
+
+// noCacheIndex keeps the page, the manifest and the service worker fresh,
+// so a new build is picked up at the next load (V0.13, V0.15).
 func noCacheIndex(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") {
+		p := r.URL.Path
+		if p == "/" || strings.HasSuffix(p, ".html") || p == "/sw.js" || p == "/manifest.webmanifest" {
 			w.Header().Set("Cache-Control", "no-cache")
+		}
+		if p == "/manifest.webmanifest" {
+			w.Header().Set("Content-Type", "application/manifest+json")
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -240,4 +271,32 @@ func (s *Server) t3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"threads": c})
+}
+
+func (s *Server) pushSubscribe(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Subscription push.Subscription `json:"subscription"`
+		Device       string            `json:"device"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b); err != nil {
+		writeJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON"})
+		return
+	}
+	if err := s.Push.Subscribe(core.Owner, b.Subscription, b.Device); err != nil {
+		writeJSON(w, 400, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+func (s *Server) pushUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b); err != nil || b.Endpoint == "" {
+		writeJSON(w, 400, map[string]any{"ok": false, "error": "endpoint is required"})
+		return
+	}
+	s.Push.Unsubscribe(b.Endpoint)
+	writeJSON(w, 200, map[string]any{"ok": true})
 }

@@ -47,6 +47,9 @@ type Engine struct {
 	Adopt func(ids []string) (int, error)
 	// OnPR is called when a thread gets a new PR, so the poller looks now.
 	OnPR func(threadID string)
+	// OnAttention is called, outside the lock, when a thread's attention
+	// state changes (push, SPEC 0.5 V0.15). prev is "" for a new thread.
+	OnAttention func(d DTO, prev core.State)
 }
 
 func New(st *store.Store) *Engine {
@@ -78,6 +81,13 @@ func (e *Engine) Load() error {
 		e.bump(t.ID)
 	}
 	e.views = vs
+	// Clients and push already know these states; only changes notify.
+	defer func() {
+		now := e.Now()
+		for id, t := range e.threads {
+			e.last[id] = core.Compute(t, e.view(id), now).State
+		}
+	}()
 	now := e.Now()
 	for _, t := range e.threads {
 		if !t.Running && !hasLiveDecision(t) {
@@ -245,6 +255,7 @@ func (e *Engine) Command(c Cmd) Reply {
 	e.mu.Unlock()
 	e.Hub.Thread(dto)
 	e.Hub.Events(evs)
+	e.notify(dto)
 	if len(effects) > 0 {
 		go e.run(t.ID, effects)
 	}
@@ -352,6 +363,7 @@ func (e *Engine) Observe(threadID string, fn func(t *core.Thread, now time.Time)
 	e.mu.Unlock()
 	e.Hub.Thread(dto)
 	e.Hub.Events(written)
+	e.notify(dto)
 	if !hadPR && t.PR != nil && e.OnPR != nil {
 		e.OnPR(threadID)
 	}
@@ -375,9 +387,26 @@ type DTO struct {
 	Attention   core.Attention    `json:"attention"`
 	View        *core.View        `json:"view"`
 	Unavailable map[string]string `json:"unavailable"`
+
+	prev core.State // the state before this change; not sent
+}
+
+// notify reports an attention change; call it without e.mu held.
+func (e *Engine) notify(d DTO) {
+	if e.OnAttention != nil && d.Attention.State != d.prev {
+		e.OnAttention(d, d.prev)
+	}
 }
 
 func (e *Engine) dto(t *core.Thread, now time.Time) DTO {
+	d := e.build(t, now)
+	d.prev = e.last[t.ID]
+	e.last[t.ID] = d.Attention.State
+	return d
+}
+
+// build makes a DTO without recording it as seen by clients.
+func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	v := e.view(t.ID)
 	un := map[string]string{}
 	for name, a := range core.Registry {
@@ -389,7 +418,6 @@ func (e *Engine) dto(t *core.Thread, now time.Time) DTO {
 		}
 	}
 	att := core.Compute(t, v, now)
-	e.last[t.ID] = att.State
 	vc := *v
 	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un}
 }
@@ -401,7 +429,7 @@ func (e *Engine) Snapshot() []DTO {
 	now := e.Now()
 	out := make([]DTO, 0, len(e.threads))
 	for _, t := range e.threads {
-		out = append(out, e.dto(clone(t), now))
+		out = append(out, e.build(clone(t), now))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
 	return out
@@ -435,6 +463,7 @@ func (e *Engine) Tick() {
 	e.mu.Unlock()
 	for _, d := range changed {
 		e.Hub.Thread(d)
+		e.notify(d)
 	}
 }
 

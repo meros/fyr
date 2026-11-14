@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -155,5 +156,68 @@ func TestTailnetIdentity(t *testing.T) {
 	defer hs2.Close()
 	if r := do(t, "GET", hs2.URL+"/api/state", ts, map[string]string{"Tailscale-User-Login": "owner@example.com"}, ""); r.StatusCode != 403 {
 		t.Fatalf("no owner configured must refuse tailnet: %d", r.StatusCode)
+	}
+}
+
+type fakePush struct{ subs map[string]string }
+
+func (f *fakePush) PublicKey() string { return "BPUB" }
+func (f *fakePush) Subscribe(user string, sub push.Subscription, device string) error {
+	f.subs[sub.Endpoint] = user + "/" + device
+	return nil
+}
+func (f *fakePush) Unsubscribe(endpoint string) error       { delete(f.subs, endpoint); return nil }
+func (f *fakePush) Notify(user string, pl push.Payload) int { return len(f.subs) }
+
+// SPEC 0.5 V0.15: key, subscribe, test and unsubscribe.
+func TestPushEndpoints(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	fp := &fakePush{subs: map[string]string{}}
+	s := &Server{Engine: engine.New(st), BuildID: "b1", Push: fp}
+	hs := httptest.NewServer(s.Handler())
+	defer hs.Close()
+	r := do(t, "GET", hs.URL+"/api/push/key", "", nil, "")
+	var k map[string]string
+	json.NewDecoder(r.Body).Decode(&k)
+	if k["publicKey"] != "BPUB" {
+		t.Fatalf("key %v", k)
+	}
+	h := map[string]string{"X-Fyr": "1"}
+	body := `{"subscription":{"endpoint":"https://push/e1","keys":{"p256dh":"p","auth":"a"}},"device":"phone"}`
+	if r := do(t, "POST", hs.URL+"/api/push/subscribe", "", nil, body); r.StatusCode != 403 {
+		t.Fatalf("subscribe without X-Fyr: %d", r.StatusCode)
+	}
+	if r := do(t, "POST", hs.URL+"/api/push/subscribe", "", h, body); r.StatusCode != 200 || fp.subs["https://push/e1"] != "owner/phone" {
+		t.Fatalf("subscribe: %d %v", r.StatusCode, fp.subs)
+	}
+	r = do(t, "POST", hs.URL+"/api/push/test", "", h, "")
+	var res map[string]int
+	json.NewDecoder(r.Body).Decode(&res)
+	if res["delivered"] != 1 {
+		t.Fatalf("test: %v", res)
+	}
+	do(t, "POST", hs.URL+"/api/push/unsubscribe", "", h, `{"endpoint":"https://push/e1"}`)
+	if len(fp.subs) != 0 {
+		t.Fatal("unsubscribe")
+	}
+}
+
+// SPEC 0.5 V0.15: the manifest has its media type; the service worker is
+// never cached, so a new build's worker is picked up.
+func TestPWAFiles(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	s := &Server{Engine: engine.New(st), BuildID: "b1", Web: fstest.MapFS{
+		"index.html": {Data: []byte("x")}, "manifest.webmanifest": {Data: []byte("{}")}, "sw.js": {Data: []byte("//")}}}
+	hs := httptest.NewServer(s.Handler())
+	defer hs.Close()
+	r := do(t, "GET", hs.URL+"/manifest.webmanifest", "", nil, "")
+	if ct := r.Header.Get("Content-Type"); ct != "application/manifest+json" {
+		t.Fatalf("manifest type %q", ct)
+	}
+	r = do(t, "GET", hs.URL+"/sw.js", "", nil, "")
+	if r.Header.Get("Cache-Control") != "no-cache" || !strings.Contains(r.Header.Get("Content-Type"), "javascript") {
+		t.Fatalf("sw headers %v", r.Header)
 	}
 }
