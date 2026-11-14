@@ -32,6 +32,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "activityAt": "…", "summary": "last assistant text, one line",
   "failure": {"class": "api", "message": "…", "at": "…"},
   "decisions": [Decision],
+  "outbox": [{"id": "…", "state": "sent|queued"}],
   "tasks": [{"id": "a803…", "description": "Design mobile translation", "type": "local_agent", "status": "running|completed|failed|stopped", "activity": "Running build", "summary": "…", "toolUses": 14, "tokens": 143218, "startedAt": "…", "updatedAt": "…"}],
   "pr": {"url": "…", "repo": "acme/app", "number": 42, "title": "…", "state": "OPEN", "checks": "pass|fail|pending|none", "review": "APPROVED", "conflict": false},
   "settledAt": null, "archivedAt": null, "settleWhenDone": false, "settleWhenMerged": false,
@@ -71,7 +72,8 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 
 | type | data |
 |---|---|
-| `user` | `{"text": "…", "images": 1, "from": "t_…"?}` what the user sent; with `from`, another thread's agent sent it (V0.22) |
+| `user` | `{"id": "…", "text": "…", "images": 1, "from": "t_…"?}` what the user sent; with `from`, another thread's agent sent it (V0.22). `id` is the message id (V0.33); older events have none |
+| `message.state` | `{"id": "…", "state": "queued" \| "read" \| "cancelled" \| "lost"}` the delivery of a message changed (V0.33). A `user` event with an `id` starts as `sent` |
 | `msg` | a raw `claude` stream message: `{"type": "assistant" \| "user", "parent_tool_use_id": null \| "…", "message": {"content": [blocks]}}`. Blocks: `text`, `thinking`, `tool_use {id, name, input}`, `tool_result {tool_use_id, content, is_error}`, `image`. A non-null `parent_tool_use_id` is a subagent message: fold it under that tool use. |
 | `run.started` | `{}` |
 | `run.ended` | `{"failure": Failure \| null, "interrupted": false, "costUsd": 0.01, "durationMs": 1200}` |
@@ -105,6 +107,7 @@ Actions and their args:
 | `thread.rename` | `title` |
 | `thread.setProject` | `projectId`: file the thread into a project by hand; folder matching keeps it (V0.23) |
 | `thread.setModel` | `model` |
+| `thread.cancelMessage` | `messageId`: withdraw a message the agent has not read (V0.33). `409` when it was read already, is unknown, or the agent cannot withdraw it |
 | `t3.adopt` (no `threadId`) | `t3Ids: [..]` |
 
 ## `GET /api/t3/candidates`
