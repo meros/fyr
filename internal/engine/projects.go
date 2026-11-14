@@ -45,12 +45,23 @@ func gitInfo(cwd string) (root, remote string) {
 	return root, remote
 }
 
+// homeOrRoot reports whether a folder is the home folder or /: never an
+// auto project, because it would hold every folder below it.
+func homeOrRoot(dir string) bool {
+	dir = filepath.Clean(dir)
+	home, _ := os.UserHomeDir()
+	return dir == "/" || (home != "" && dir == filepath.Clean(home))
+}
+
 // bestProject prefers seeded or user-made projects over auto ones: an auto
 // project only matches when no other project does (SPEC 0.5 V0.23).
 func (e *Engine) bestProject(cwd, remote string) string {
 	var chosen, auto []core.Project
 	for _, p := range e.projects {
 		if p.Auto && !p.Edited {
+			if homeOrRoot(p.Folder(e.HostID)) {
+				continue
+			}
 			auto = append(auto, *p)
 		} else {
 			chosen = append(chosen, *p)
@@ -87,6 +98,10 @@ func (e *Engine) assignProject(t *core.Thread, now time.Time) *core.Project {
 	root, remote := gitInfo(t.Cwd)
 	if id := e.bestProject(root, remote); id != "" {
 		t.ProjectID, t.Project = id, e.projects[id].Name
+		return nil
+	}
+	if homeOrRoot(root) {
+		t.ProjectID, t.Project = "", ""
 		return nil
 	}
 	name := filepath.Base(root)
@@ -148,11 +163,13 @@ func (e *Engine) SeedProjects(seeds []core.Project) {
 			if sd.Icon.Kind != "" {
 				hit.Icon = sd.Icon
 			}
+			hit.Seeded, hit.Auto = true, false
 			changed = append(changed, hit)
 			continue
 		}
 		p := sd
 		p.ID = NewID("p_")
+		p.Seeded, p.Auto = true, false
 		p.CreatedAt = now
 		for i := range p.Sources {
 			if p.Sources[i].Kind == "folder" {
@@ -367,14 +384,26 @@ func hostname() string {
 func (e *Engine) Rematch() {
 	e.mu.Lock()
 	now := e.Now()
+	// A project from before the auto flag (not auto, not edited, not
+	// seeded) was made by matching: it is an auto project.
+	var made []*core.Project
+	for _, p := range e.projects {
+		if !p.Auto && !p.Edited && !p.Seeded {
+			p.Auto = true
+			made = append(made, p)
+		}
+	}
 	var moved []*core.Thread
 	for _, t := range e.threads {
 		if t.ProjectManual || t.Cwd == "" {
 			continue
 		}
-		id := e.bestProject(t.Cwd, "")
-		if id != "" && id != t.ProjectID {
-			t.ProjectID, t.Project = id, e.projects[id].Name
+		old := t.ProjectID
+		t.ProjectID = ""
+		if p := e.assignProject(t, now); p != nil {
+			made = append(made, p)
+		}
+		if t.ProjectID != old {
 			e.bump(t.ID)
 			moved = append(moved, t)
 		}
@@ -394,8 +423,19 @@ func (e *Engine) Rematch() {
 	for _, t := range moved {
 		dtos = append(dtos, e.dto(t, now))
 	}
+	var keep []*core.Project
+	for _, p := range made {
+		if _, ok := e.projects[p.ID]; ok {
+			keep = append(keep, p)
+		}
+	}
 	e.mu.Unlock()
 	e.st.Write(func(tx *store.Tx) error {
+		for _, p := range keep {
+			if err := tx.PutProject(p); err != nil {
+				return err
+			}
+		}
 		for _, t := range moved {
 			if err := tx.PutThread(t); err != nil {
 				return err
@@ -408,6 +448,11 @@ func (e *Engine) Rematch() {
 		}
 		return nil
 	})
+	if len(keep) > 0 {
+		for _, d := range e.Projects() {
+			e.Hub.Project(d)
+		}
+	}
 	for _, d := range dtos {
 		e.Hub.Thread(d)
 	}

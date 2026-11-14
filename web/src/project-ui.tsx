@@ -5,7 +5,7 @@ import { createContext } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, ThreadDTO } from "./types.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { PALETTE_NAMES, colorName, colorVar, matchProjects, monogram, projectOf, projectSubtitle, resolveIcon } from "./projects.ts";
+import { PALETTE_NAMES, colorName, colorVar, matchProjects, monogram, projectName, projectOf, projectSubtitle, resolveIcon } from "./projects.ts";
 import { shortModel } from "./format.ts";
 
 /** Threads and projects for labels deep in the tree, and a way to open a thread or a project. */
@@ -60,7 +60,7 @@ export function ProjectTag({ project, name, onClick, title }: { project?: Projec
 /** A thread's project tag from the directory. */
 export function ThreadProject({ t }: { t: Pick<ThreadDTO, "project" | "projectId"> }) {
   const dir = useDirectory();
-  return <ProjectTag project={projectOf(t, dir.projects)} name={t.project} />;
+  return <ProjectTag project={projectOf(t, dir.projects)} name={projectName(t, dir.projects)} />;
 }
 
 /** "from <parent title>" (V0.22), linked to the parent. */

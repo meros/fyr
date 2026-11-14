@@ -107,6 +107,11 @@ export function sourceFromInput(v: string): { kind: "folder"; path: string } | {
   return t.startsWith("/") || t.startsWith("~") ? { kind: "folder", path: t } : { kind: "repo", url: t };
 }
 
+/** The name to show for a thread's project; "No project" when it has none. */
+export function projectName(t: Pick<ThreadDTO, "projectId" | "project">, projects: Project[]): string {
+  return projectOf(t, projects)?.name || t.project || "No project";
+}
+
 /** The project of a thread: by id, else by its display name. */
 export function projectOf(t: Pick<ThreadDTO, "projectId" | "project">, projects: Project[]): Project | undefined {
   return (t.projectId ? projects.find((p) => p.id === t.projectId) : undefined) ?? projects.find((p) => p.name === t.project);
