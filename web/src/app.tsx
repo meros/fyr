@@ -1279,6 +1279,7 @@ function App() {
             <Settings
               api={api}
               host={store.host}
+              hosts={store.hosts}
               phone
               push={
                 <button class="btn sbtn" onClick={() => navGo({ ...nav, sheet: { kind: "push" } })}>
@@ -1489,7 +1490,7 @@ function App() {
       {dialog === "push" && pushDialog(() => setDialog(null))}
       {dialog === "settings" && (
         <Modal title="Settings" wide onClose={() => setDialog(null)}>
-          <Settings api={api} host={store.host} push={pwaControls} appearance={themeControl} onChanged={reloadProfiles} />
+          <Settings api={api} host={store.host} hosts={store.hosts} push={pwaControls} appearance={themeControl} onChanged={reloadProfiles} />
         </Modal>
       )}
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}

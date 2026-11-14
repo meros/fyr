@@ -93,6 +93,8 @@
         assert conf.scanRoots == [ "~/git" ];
         assert conf.quota == { claudeDeepseek = { kind = "deepseek"; keyFile = "/run/secrets/deepseek"; }; };
         assert nixpkgs.lib.hasInfix "--https=7443 http://127.0.0.1:7777" tn.ExecStart;
+        # V0.51: the default role (both) writes no role, hosts or hostListen.
+        assert !(conf ? role) && !(conf ? hosts) && !(conf ? hostListen);
         nixpkgs.legacyPackages.x86_64-linux.runCommand "fyr-module-check" { } "touch $out";
 
       nixosModules.fyr = import ./nix/module.nix self;

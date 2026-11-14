@@ -1,4 +1,5 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
+import type { HostInfo } from "./hosts.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { decodeProject, decodeState, decodeThread } from "./decode.ts";
 
@@ -23,6 +24,8 @@ export interface Store {
   clockOffset: number;
   user: string;
   host: string;
+  /** V0.51 */
+  hosts: HostInfo[];
   threads: Record<string, ThreadDTO>;
   actions: ActionInfo[];
   profiles: Profile[];
@@ -40,6 +43,7 @@ export function initialStore(): Store {
     clockOffset: 0,
     user: "",
     host: "",
+    hosts: [],
     threads: {},
     actions: [],
     profiles: [],
@@ -78,6 +82,7 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     clockOffset: ts(dto.now) ? ts(dto.now) - clientNow : s.clockOffset,
     user: dto.user ?? "",
     host: dto.host ?? "",
+    hosts: dto.hosts ?? [],
     threads,
     actions: dto.actions ?? [],
     profiles: dto.profiles ?? [],
