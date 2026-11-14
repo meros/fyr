@@ -185,6 +185,18 @@ type actionMeta struct {
 
 func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	threads := s.Engine.Snapshot()
+	// V0.38: ?since=REV lists only threads changed after REV (revs grow
+	// across restarts), for a client with a stored copy.
+	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	if since > 0 {
+		changed := threads[:0:0]
+		for _, d := range threads {
+			if d.Rev > since {
+				changed = append(changed, d)
+			}
+		}
+		threads = changed
+	}
 	var acts []actionMeta
 	for _, a := range core.Ordered() {
 		acts = append(acts, actionMeta{a.Name, a.Label, a.Key, a.Bulk})
@@ -207,6 +219,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"now": time.Now().UTC(), "user": core.Owner, "buildId": s.BuildID, "host": s.hostName(),
 		"threads": threads, "actions": acts, "profiles": profiles, "projects": projects,
+		"partial": since > 0,
 	})
 }
 
