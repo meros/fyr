@@ -340,3 +340,24 @@ Commands (`POST /api/command`, no `threadId`; `400` bad arguments, `404` unknown
 - `updatedAt` is when the data was read (from the provider, or from a running session's `rate_limit_event`); missing when nothing was ever read.
 - `stale: true`: the last read failed and the data is older. `error` says why in plain words ("Login expired; run this profile once", "No API key: set keyFile or keyEnv", "Rate limited by the provider; trying again later"). `retryAt` is the next try during a rate-limit wait.
 - Never contains a token or key. The profiles in `GET /api/state` carry only `quota.kind`.
+
+## Fronts and hosts (SPEC 0.5 V0.51, decision 0016)
+
+The browser talks to a **front**; the front talks to its **hosts** over the **host protocol**, which is this API without the web client. The browser API above does not change; the front adds:
+
+- `GET /api/state`: every thread and project carries `host` (its host's name); a thread whose host is unreachable carries `hostOffline` (RFC 3339, since when). The state adds `hosts: [{"name": "host-a", "online": true, "since": "…", "error"?: "…"}]`.
+- Commands and thread calls (`/api/threads/{id}/…`) go to the thread's host. A call without a thread goes to `args.host` (command) or `?host=` (other calls) when given, a `project.*` command to the project's host, else to the first host. A thread on an offline host is read-only: `503 {"ok": false, "error": "host-a is offline since 19:40; its threads are read-only"}`.
+- Attachments and previews are looked up on each host in turn; an upload goes to `?host=` or the first host.
+- `POST /api/presence` goes to every online host.
+
+The host protocol (front → host):
+
+| Call | Use |
+|---|---|
+| `GET /api/stream` | subscribe first (`hello`, then `thread`, `thread.patch`, `event`, `project`, `deploy`), sent without gzip |
+| `GET /api/state` | the snapshot after `hello`; again after every reconnect |
+| `GET /api/threads/{id}` | a whole thread when a patch's `base` does not match |
+| `POST /api/command` | with `X-Fyr: 1`, the client's `commandId` unchanged (I7 holds across the hop) |
+| everything else | passed through with the browser's `Host`, so previews keep their CSP base |
+
+Guard on the host: the loopback guard as above; on a `hostListen` tailnet address only peers whose Tailscale identity (whois of the connection) is the owner's login, and `Tailscale-User-Login` headers are ignored there. A host role never serves the web client.
