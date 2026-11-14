@@ -83,6 +83,10 @@ export interface TaskDTO {
 export interface ThreadDTO {
   /** Increases on every change, also across host restarts: keep the higher (API v0). */
   rev?: number;
+  /** V0.51: the name of the host that runs the thread */
+  host?: string;
+  /** V0.51: the host is unreachable since then (RFC 3339): the front shows its cached copy, read-only */
+  hostOffline?: string;
   id: string;
   title: string;
   cwd: string;
@@ -228,6 +232,8 @@ export interface StateDTO {
   projects: Project[];
   /** V0.39: where an update of Fyr is, while one runs or just ended */
   deploy?: import("./deploy.ts").DeployProgress | null;
+  /** V0.51: the front's hosts; missing from a host older than the split */
+  hosts?: import("./hosts.ts").HostInfo[];
 }
 
 export interface FyrEvent {

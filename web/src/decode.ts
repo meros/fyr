@@ -1,6 +1,7 @@
 // The one place where host JSON becomes client types (SPEC 0.5 V0.24). The host
 // omits empty fields (Go omitempty), so every field a screen reads without a
 // check gets its empty value here, and nothing past this point needs `?? ""`.
+import { decodeHosts } from "./hosts.ts";
 import type { Attention, Project, ProjectSuggestion, StateDTO, ThreadDTO } from "./types.ts";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -65,6 +66,7 @@ export function decodeState(raw: unknown): StateDTO {
     projects: arr(s.projects).map(decodeProject),
     actions: arr(s.actions),
     profiles: arr(s.profiles),
+    hosts: decodeHosts(s.hosts),
     deploy: s.deploy && typeof s.deploy === "object" && typeof (s.deploy as { phase?: unknown }).phase === "string" ? s.deploy : null,
   };
 }
