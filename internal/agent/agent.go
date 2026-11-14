@@ -88,6 +88,13 @@ type session struct {
 	interrupt bool
 	asks      map[string]chan core.Effect // decision id → answer
 	reqs      map[string]string           // control request id → decision id
+	// out holds unread messages: id → "sent" or "queued" (V0.33);
+	// cancelling marks the ones a cancel request is out for.
+	out        map[string]string
+	cancelling map[string]bool
+	// lifecycle is true once the CLI reported command_lifecycle; without
+	// it a message counts as read when its turn ends.
+	lifecycle bool
 	digest    *digest
 	idle      *time.Timer
 	log       io.Closer
@@ -144,6 +151,8 @@ func (m *Manager) Do(threadID string, e core.Effect) error {
 	case "stop":
 		m.Stop(threadID)
 		return nil
+	case "cancelMessage":
+		return m.cancelMessage(threadID, e.MessageID)
 	case "setModel":
 		m.mu.Lock()
 		s := m.sessions[threadID]
@@ -213,11 +222,20 @@ func content(e core.Effect) []claude.Msg {
 }
 
 func (m *Manager) send(threadID string, e core.Effect) error {
+	if e.MessageID == "" {
+		e.MessageID = newUUID()
+	}
 	s, err := m.ensure(threadID)
 	if err != nil {
+		// V0.33: the message stays in the log, marked lost.
+		ud := map[string]any{"id": e.MessageID, "text": e.Text, "images": len(e.Images)}
+		if e.From != "" {
+			ud["from"] = e.From
+		}
 		m.host.Observe(threadID, func(t *core.Thread, now time.Time) {
 			core.RunEnded(t, &core.Failure{Class: "process", Message: "Could not start the agent: " + err.Error(), At: now}, now)
-		}, Ev{"run.ended", map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}})
+		}, Ev{"user", ud}, Ev{"message.state", map[string]any{"id": e.MessageID, "state": "lost"}},
+			Ev{"run.ended", map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}})
 		return err
 	}
 	m.mu.Lock()
@@ -226,6 +244,7 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 	if s.idle != nil {
 		s.idle.Stop()
 	}
+	s.out[e.MessageID] = "sent"
 	m.mu.Unlock()
 	userText := e.Text
 	if e.From != "" {
@@ -237,7 +256,7 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 		e.Text = "[From thread " + label + "] " + e.Text
 	}
 	e, metas := m.withAttachments(e)
-	ud := map[string]any{"text": userText, "images": len(e.Images)}
+	ud := map[string]any{"id": e.MessageID, "text": userText, "images": len(e.Images)}
 	if metas != nil {
 		ud["attachments"] = metas
 	}
@@ -248,12 +267,73 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 	if first {
 		evs = append(evs, Ev{"run.started", map[string]any{}})
 	}
+	id := e.MessageID
 	m.host.Observe(threadID, func(t *core.Thread, now time.Time) {
 		if first {
 			core.RunStarted(t, now)
 		}
+		core.SetOutbox(t, id, "sent")
 	}, evs...)
-	return s.c.SendUser(content(e))
+	return s.c.SendUser(content(e), id)
+}
+
+// delivered moves a message to a new state (V0.33) and records it once.
+// It ignores a message that is no longer unread, and a "cancelled" report
+// for a message whose cancel request is still out (cancelMessage records it).
+func (m *Manager) delivered(s *session, id, state string) {
+	m.mu.Lock()
+	cur := s.out[id]
+	if cur == "" || cur == state || (state == "cancelled" && s.cancelling[id]) {
+		m.mu.Unlock()
+		return
+	}
+	if state == "queued" {
+		s.out[id] = state
+	} else {
+		delete(s.out, id)
+	}
+	m.mu.Unlock()
+	m.host.Observe(s.thread, func(t *core.Thread, _ time.Time) { core.SetOutbox(t, id, state) },
+		Ev{"message.state", map[string]any{"id": id, "state": state}})
+}
+
+// unread lists the messages the agent has not read.
+func (m *Manager) unread(s *session) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ids := make([]string, 0, len(s.out))
+	for id := range s.out {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// cancelMessage withdraws a message from the CLI's queue (V0.33).
+func (m *Manager) cancelMessage(threadID, id string) error {
+	m.mu.Lock()
+	s := m.sessions[threadID]
+	waiting := s != nil && s.out[id] != ""
+	if waiting {
+		s.cancelling[id] = true
+	}
+	m.mu.Unlock()
+	if !waiting {
+		return fmt.Errorf("The agent has already read this message")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	ok, err := s.c.CancelMessage(ctx, id)
+	m.mu.Lock()
+	delete(s.cancelling, id)
+	m.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("The agent cannot withdraw this message: %v", err)
+	}
+	if !ok {
+		return fmt.Errorf("The agent has already read this message")
+	}
+	m.delivered(s, id, "cancelled")
+	return nil
 }
 
 var mcpNameRe = regexp.MustCompile(`[^A-Za-z0-9_-]`)
@@ -285,7 +365,8 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 		mode = "auto"
 	}
 	args = append(args, "--permission-mode", mode)
-	s := &session{thread: threadID, cwd: t.Cwd, asks: map[string]chan core.Effect{}, reqs: map[string]string{}, digest: newDigest()}
+	s := &session{thread: threadID, cwd: t.Cwd, asks: map[string]chan core.Effect{}, reqs: map[string]string{}, digest: newDigest(),
+		out: map[string]string{}, cancelling: map[string]bool{}}
 	if m.cfg.MCPURL != "" {
 		s.token = randHex(24)
 		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"fyr": map[string]any{
@@ -372,6 +453,10 @@ func (m *Manager) read(s *session) {
 	if s.log != nil {
 		s.log.Close()
 	}
+	// V0.33: the CLI's queue died with the process.
+	for _, id := range m.unread(s) {
+		m.delivered(s, id, "lost")
+	}
 	if live {
 		msg := "The agent process exited during the run"
 		if err := s.c.Err(); err != nil {
@@ -389,6 +474,23 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		m.turnStarted(s)
 	}
 	switch typ {
+	case "command_lifecycle":
+		id, _ := msg["command_uuid"].(string)
+		if id == "" {
+			id, _ = msg["uuid"].(string)
+		}
+		m.mu.Lock()
+		s.lifecycle = true
+		m.mu.Unlock()
+		switch msg["state"] {
+		case "queued":
+			m.delivered(s, id, "queued")
+		case "started", "completed":
+			m.delivered(s, id, "read")
+		case "cancelled":
+			m.delivered(s, id, "cancelled")
+		}
+		return
 	case "system":
 		if msg["subtype"] == "background_tasks_changed" {
 			for _, k := range taskList(msg) {
@@ -439,6 +541,15 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		interrupted := s.interrupt
 		s.live, s.interrupt = false, false
 		m.mu.Unlock()
+		m.mu.Lock()
+		noReports := !s.lifecycle
+		m.mu.Unlock()
+		if noReports {
+			// An older CLI reports no delivery: its turn read every message.
+			for _, id := range m.unread(s) {
+				m.delivered(s, id, "read")
+			}
+		}
 		if !ended {
 			return // a stray result outside a turn
 		}

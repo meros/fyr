@@ -21,7 +21,13 @@
 //	gate     asks the PreToolUse hook about "gh pr merge 1" and reports it
 //	mcpstatus reports whether the MCP server answered at startup, as the
 //	         real CLI connects its MCP servers before the first turn
+//	slow N   runs a tool for N ms, then takes in every queued message at
+//	         that tool boundary and replies "took in: <texts>" (V0.33)
 //	other    replies "echo: <text>"
+//
+// As the real CLI does, a user message with a uuid waits in a queue and is
+// reported as command_lifecycle queued, started (taken in), completed (its
+// turn ended) or cancelled (control request cancel_async_message).
 package fake
 
 import (
@@ -48,7 +54,67 @@ var (
 	mcpAuth    string
 	mcpAtStart = "none"
 	model      = "fake-model"
+
+	qmu   sync.Mutex
+	queue []queued
+	qsig  = make(chan struct{}, 1)
 )
+
+type queued struct{ uuid, text string }
+
+func lifecycle(uuid, state string) {
+	if uuid != "" {
+		write(msg{"type": "command_lifecycle", "command_uuid": uuid, "state": state, "session_id": session})
+	}
+}
+
+func enqueue(q queued) {
+	qmu.Lock()
+	queue = append(queue, q)
+	lifecycle(q.uuid, "queued")
+	qmu.Unlock()
+	select {
+	case qsig <- struct{}{}:
+	default:
+	}
+}
+
+// takeAll empties the queue, reporting each message as started.
+func takeAll() []queued {
+	qmu.Lock()
+	defer qmu.Unlock()
+	out := queue
+	queue = nil
+	for _, q := range out {
+		lifecycle(q.uuid, "started")
+	}
+	return out
+}
+
+func takeOne() (queued, bool) {
+	qmu.Lock()
+	defer qmu.Unlock()
+	if len(queue) == 0 {
+		return queued{}, false
+	}
+	q := queue[0]
+	queue = queue[1:]
+	lifecycle(q.uuid, "started")
+	return q, true
+}
+
+func cancelQueued(uuid string) bool {
+	qmu.Lock()
+	defer qmu.Unlock()
+	for i, q := range queue {
+		if q.uuid == uuid {
+			queue = append(queue[:i:i], queue[i+1:]...)
+			lifecycle(uuid, "cancelled")
+			return true
+		}
+	}
+	return false
+}
 
 func write(m msg) {
 	b, _ := json.Marshal(m)
@@ -109,10 +175,18 @@ func Main() {
 			mcpAtStart = out
 		}
 	}
-	turns := make(chan string, 16)
 	go func() {
-		for text := range turns {
-			turn(text)
+		for {
+			q, ok := takeOne()
+			if !ok {
+				<-qsig
+				continue
+			}
+			took := turn(q.text)
+			lifecycle(q.uuid, "completed")
+			for _, t := range took {
+				lifecycle(t.uuid, "completed")
+			}
 		}
 	}()
 	sc := bufio.NewScanner(os.Stdin)
@@ -133,6 +207,10 @@ func Main() {
 				}
 			}
 			resp := msg{}
+			if req["subtype"] == "cancel_async_message" {
+				uuid, _ := req["message_uuid"].(string)
+				resp = msg{"cancelled": cancelQueued(uuid)}
+			}
 			if req["subtype"] == "initialize" {
 				resp = msg{"commands": []any{}, "models": []any{msg{"value": "fake-model"}}}
 			}
@@ -167,12 +245,14 @@ func Main() {
 					text += " [image]"
 				}
 			}
-			turns <- text
+			uuid, _ := m["uuid"].(string)
+			enqueue(queued{uuid: uuid, text: text})
 		}
 	}
 }
 
-func turn(text string) {
+// turn runs one scripted turn; it returns the messages it took in on the way.
+func turn(text string) (took []queued) {
 	// drain a stale interrupt from an earlier turn
 	select {
 	case <-interrupt:
@@ -265,6 +345,22 @@ func turn(text string) {
 			time.Sleep(150 * time.Millisecond)
 			result(false, "success", "turn 2")
 		}()
+	case "slow":
+		ms := 500
+		if f := strings.Fields(text); len(f) > 1 {
+			fmt.Sscan(f[1], &ms)
+		}
+		assistant(msg{"type": "tool_use", "id": "tu_s", "name": "Bash", "input": msg{"command": "sleep 1"}})
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+		write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
+			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_s", "content": "slept"}}}})
+		took = takeAll()
+		var texts []string
+		for _, q := range took {
+			texts = append(texts, q.text)
+		}
+		assistant(msg{"type": "text", "text": "took in: " + strings.Join(texts, ", ")})
+		result(false, "success", "done")
 	case "crash":
 		fmt.Fprintln(os.Stderr, "boom")
 		os.Exit(3)
@@ -272,6 +368,7 @@ func turn(text string) {
 		assistant(msg{"type": "text", "text": "echo: " + text})
 		result(false, "success", "echo: "+text)
 	}
+	return took
 }
 
 func callMCP(tool string, args msg) string {

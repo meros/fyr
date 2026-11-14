@@ -91,7 +91,7 @@ Other types may appear; the client ignores them.
 {"commandId": "client-made unique id", "action": "thread.send", "threadId": "t_…", "args": {"text": "…", "images": [{"mediaType": "image/png", "data": "<base64>"}]}}
 ```
 
-Reply `200 {"ok": true, "threadId": "t_…"}`, or `409 {"ok": false, "error": "reason"}` when the action is unavailable, `400` for bad arguments. The same `commandId` twice returns the first reply and changes nothing (I7).
+Reply `200 {"ok": true, "threadId": "t_…"}` (`thread.send` and `thread.create` add `"result": {"messageId": "…"}`, the id of the message's `user` event, V0.33), or `409 {"ok": false, "error": "reason"}` when the action is unavailable, `400` for bad arguments. The same `commandId` twice returns the first reply and changes nothing (I7).
 
 Actions and their args:
 
