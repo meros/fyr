@@ -340,3 +340,42 @@ func TestGetReturnsWhenContextEnds(t *testing.T) {
 		t.Fatalf("Get waited %v", time.Since(start))
 	}
 }
+
+// SPEC 0.5 V0.44: the usage response may carry fields that are not windows
+// (numbers, flags, other objects); both windows are still read. Found live: the
+// 5 h window was missing while the 7 d one showed.
+func TestAnthropicUsageToleratesOtherFields(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"five_hour":{"utilization":12.5,"resets_at":"2026-11-14T20:00:00Z"},"seven_day":{"utilization":91,"resets_at":"2026-11-16T03:00:00Z"},"seven_day_opus":null,"extra_usage":{"is_enabled":false,"monthly_limit":null},"tier":"max_20x","limited":false,"version":2}`)
+	}))
+	defer srv.Close()
+	c, log := newClock(), &bytes.Buffer{}
+	dir := t.TempDir()
+	credentials(t, dir, c.t.Add(time.Hour))
+	s := svc(c, log, Profile{ID: "claudeAlt", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}})
+	st := s.Get(context.Background())[0]
+	if st.Error != "" || len(st.Windows) != 2 || st.Windows[0].Name != "5 h" || st.Windows[0].UsedPct != 12.5 || st.Windows[1].UsedPct != 91 {
+		t.Fatalf("%+v", st)
+	}
+}
+
+// SPEC 0.5 V0.44: a stream event updates windows but never hides the API's error.
+func TestStreamEventKeepsAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500) }))
+	defer srv.Close()
+	c, log := newClock(), &bytes.Buffer{}
+	dir := t.TempDir()
+	credentials(t, dir, c.t.Add(time.Hour))
+	s := svc(c, log, Profile{ID: "claudeAlt", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}})
+	if st := s.Get(context.Background())[0]; st.Error == "" {
+		t.Fatalf("setup: no error %+v", st)
+	}
+	s.Observe("claudeAlt", map[string]any{"rateLimitType": "seven_day", "utilization": 0.91, "resetsAt": float64(c.t.Add(48 * time.Hour).Unix())})
+	st := s.Snapshot()[0]
+	if st.Error == "" {
+		t.Fatalf("the stream event hid the API error: %+v", st)
+	}
+	if len(st.Windows) != 1 || st.Windows[0].UsedPct != 91 {
+		t.Fatalf("windows %+v", st.Windows)
+	}
+}
