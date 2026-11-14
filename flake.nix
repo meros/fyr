@@ -42,8 +42,11 @@
           # The tests start child processes (a fake claude, fake daemons)
           # and pass in the sandbox; they also run in `make test`.
           doCheck = true;
+          # Some tests make throwaway git repos (workspaces, the contract fixture).
+          nativeCheckInputs = [ pkgs.git ];
           checkPhase = ''
             runHook preCheck
+            export HOME=$TMPDIR GIT_AUTHOR_NAME=fyr GIT_AUTHOR_EMAIL=fyr@localhost GIT_COMMITTER_NAME=fyr GIT_COMMITTER_EMAIL=fyr@localhost
             go test ./internal/...
             runHook postCheck
           '';
