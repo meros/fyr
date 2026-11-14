@@ -22,7 +22,7 @@ import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
 import { LiveViewBar, LiveViewPanel } from "./view-ui.tsx";
-import { defaultTab, liveViewOf } from "./view.ts";
+import { defaultTab, liveViewOf, showsDecision } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
@@ -182,7 +182,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       )}
       {tab === "changes" && <ChangesView threadId={t.id} />}
       {tab === "pr" && <PrTab t={t} onDismiss={() => p.onRun("thread.dismissPR")} />}
-      {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} pr={t.pr} />}
+      {showsDecision(tab) && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} pr={t.pr} />}
       <Composer key={t.id} t={t} now={p.now} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
   );

@@ -122,3 +122,8 @@ export function defaultTab(t: Pick<ThreadDTO, "live" | "pr">, requested: string 
   if (requested === "pr" && !t.pr) return "conv"; // V0.36: no PR, no PR tab
   return requested ?? (has ? "view" : "conv");
 }
+
+/** SPEC 0.5 V0.37: the tabs a question or approval card shows on; never hidden behind View. */
+export function showsDecision(tab: string): boolean {
+  return tab === "conv" || tab === "view";
+}
