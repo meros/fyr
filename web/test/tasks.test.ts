@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentsSummary, compactCount, groupTasks, orderTasks, taskEventText, taskLine, taskStats, visibleTasks, workingLine } from "../src/tasks.ts";
+import { agentsSummary, compactCount, groupTasks, liveLine, orderTasks, taskEventText, taskLine, taskStats, visibleTasks, workingLine } from "../src/tasks.ts";
 import type { TaskDTO } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -53,4 +53,15 @@ test("task events become log lines", () => {
   assert.equal(taskEventText({ kind: "started", description: "Design mobile" }), "Agent started: Design mobile");
   assert.equal(taskEventText({ kind: "ended", description: "Design mobile", status: "completed", summary: "Design delivered" }), "Agent finished: Design delivered");
   assert.equal(taskEventText({ kind: "ended", description: "Build", status: "failed" }), "Agent failed: Build");
+});
+
+// SPEC 0.5 V0.21: the live line while a thread works, the same on desktop and phone:
+// what it does now, how many agents run, for how long. Never the bare word alone when
+// there is an activity.
+test("live line while working", () => {
+  const now = Date.parse("2026-01-01T12:12:00Z");
+  const t = thread("t", "working", "working", { running: true, runStartedAt: "2026-01-01T12:00:00Z", activity: "Run the map tests" });
+  assert.equal(liveLine(t, now), "Run the map tests · 12 min");
+  const withAgents = thread("w", "working", "working", { running: true, runStartedAt: "2026-01-01T12:00:00Z", activity: "", tasks: [{ id: "a", description: "x", status: "running" }] });
+  assert.equal(liveLine(withAgents, now), "Working · 1 agent · 12 min");
 });

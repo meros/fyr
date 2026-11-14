@@ -546,3 +546,21 @@ export function pastTense(description: string): string {
   const p = PAST[m[1].toLowerCase()];
   return p ? p.charAt(0).toUpperCase() + p.slice(1) + m[2] : description;
 }
+
+/** A duration as people say it: "40 s", "14 min", "1 h 5 min". */
+function spoken(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s} s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+}
+
+/** SPEC 0.5 V0.21: the words for the end of a run, and what one tap adds. */
+export function runLabel(it: Extract<Item, { kind: "run" }>): { text: string; more: string } {
+  const cost = it.costUsd !== undefined ? `$${it.costUsd.toFixed(2)}` : "";
+  const d = it.durationMs !== undefined ? spoken(it.durationMs) : "";
+  if (it.failure) return { text: `Failed (${it.failure.class}): ${it.failure.message}`, more: [d, cost].filter(Boolean).join(" · ") };
+  const text = it.interrupted ? (d ? `Stopped after ${d}` : "Stopped") : d ? `Finished in ${d}` : "Finished";
+  return { text, more: cost };
+}

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildConversation, callLabel, cutOutput, friendlyName, groupStats, groupSummary, hiddenCall, middleTruncate, pastTense, relPath, segments, type Item } from "../src/conversation.ts";
+import { buildConversation, callLabel, runLabel, cutOutput, friendlyName, groupStats, groupSummary, hiddenCall, middleTruncate, pastTense, relPath, segments, type Item } from "../src/conversation.ts";
 
 let seq = 0;
 const T0 = Date.parse("2026-11-14T09:00:00Z");
@@ -118,4 +118,14 @@ test("machine lines are quiet by default and full with tool details", () => {
   assert.deepEqual(full.map((i) => i.kind), ["user", "assistant", "task", "task", "task", "answer", "effect", "note", "run"]);
   assert.equal((full.at(-1) as Extract<Item, { kind: "run" }>).compact, false);
   assert.equal((full.find((i) => i.kind === "note") as Extract<Item, { kind: "note" }>).line, "Your effect_request deploy.staging succeeded");
+});
+
+// SPEC 0.5 V0.21: the end of a run reads as words, never as a bare symbol (the owner
+// found a lone check mark under the last message odd).
+test("run end label", () => {
+  const run = (o: Partial<Extract<Item, { kind: "run" }>>) => ({ kind: "run", key: "k", failure: null, interrupted: false, compact: true, ...o }) as Extract<Item, { kind: "run" }>;
+  assert.deepEqual(runLabel(run({ durationMs: 840000, costUsd: 0.42 })), { text: "Finished in 14 min", more: "$0.42" });
+  assert.deepEqual(runLabel(run({ interrupted: true, durationMs: 120000 })), { text: "Stopped after 2 min", more: "" });
+  assert.deepEqual(runLabel(run({})), { text: "Finished", more: "" });
+  assert.equal(runLabel(run({ failure: { class: "api", message: "overloaded" } as never })).text, "Failed (api): overloaded");
 });
