@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS views(user TEXT NOT NULL, entity TEXT NOT NULL, data 
 CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, at TEXT NOT NULL, result TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, data TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY, data TEXT NOT NULL);
+DROP TABLE IF EXISTS workspaces; -- V0.55: workspaces are gone (decision 0017)
+CREATE TABLE IF NOT EXISTS providers(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, user TEXT NOT NULL, device TEXT NOT NULL, sub TEXT NOT NULL, created TEXT NOT NULL);
 `
 
@@ -303,31 +304,67 @@ func (tx *Tx) DeleteProject(id string) error {
 	return err
 }
 
-// PutWorkspace stores where a thread runs (SPEC 0.5 V0.28). The table is
-// additive: an older build ignores it.
-func (tx *Tx) PutWorkspace(w *core.Workspace) error {
-	b, _ := json.Marshal(w)
-	_, err := tx.tx.Exec(`INSERT INTO workspaces(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, w.ID, string(b))
-	return err
+// OldSource is a source of a project stored before V0.55 (decision 0017);
+// only the migration at start reads it.
+type OldSource struct {
+	Kind string `json:"kind"` // folder, repo
+	Host string `json:"host,omitempty"`
+	Path string `json:"path,omitempty"`
+	URL  string `json:"url,omitempty"`
+	Main bool   `json:"main,omitempty"`
 }
 
-func (s *Store) Workspaces() ([]*core.Workspace, error) {
-	rows, err := s.db.Query(`SELECT data FROM workspaces`)
+// OldProjectSources returns, by project id, the sources of the projects
+// still stored with them (before V0.55).
+func (s *Store) OldProjectSources() (map[string][]OldSource, error) {
+	rows, err := s.db.Query(`SELECT data FROM projects`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []*core.Workspace
+	out := map[string][]OldSource{}
 	for rows.Next() {
 		var d string
 		if err := rows.Scan(&d); err != nil {
 			return nil, err
 		}
-		w := &core.Workspace{}
-		if err := json.Unmarshal([]byte(d), w); err != nil {
-			return nil, err
+		var p struct {
+			ID      string      `json:"id"`
+			Sources []OldSource `json:"sources"`
 		}
-		out = append(out, w)
+		if json.Unmarshal([]byte(d), &p) == nil && p.Sources != nil {
+			out[p.ID] = p.Sources
+		}
 	}
 	return out, rows.Err()
+}
+
+// PutProvider stores a provider's settings as JSON at a position (SPEC 0.5
+// V0.50). The caller passes data without secrets; the table is additive.
+func (s *Store) PutProvider(id string, pos int, data []byte) error {
+	_, err := s.db.Exec(`INSERT INTO providers(id,pos,data) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET pos=excluded.pos, data=excluded.data`, id, pos, string(data))
+	return err
+}
+
+// Providers returns the stored providers' JSON in position order.
+func (s *Store) Providers() ([][]byte, error) {
+	rows, err := s.db.Query(`SELECT data FROM providers ORDER BY pos, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out [][]byte
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		out = append(out, []byte(d))
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteProvider(id string) error {
+	_, err := s.db.Exec(`DELETE FROM providers WHERE id=?`, id)
+	return err
 }

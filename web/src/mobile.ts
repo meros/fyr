@@ -106,7 +106,7 @@ export function parseLastUsed(raw: string | null): LastUsed {
 /** The folder, profile and model a New screen starts with: the last used on this device when still valid, else the host's most recent. */
 export function newDefaults(last: LastUsed, projects: Project[], profiles: Profile[]): { cwd: string; profile: string; model: string } {
   const recent = [...projects].sort((a, b) => (b.lastUsed ?? "").localeCompare(a.lastUsed ?? ""));
-  const cwd = last.cwd || recent[0]?.cwd || "";
+  const cwd = last.cwd || recent[0]?.folder || "";
   const prof = profiles.find((p) => p.id === last.profile) ?? profiles[0];
   const model = prof && last.model && prof.models.includes(last.model) ? last.model : (prof?.defaultModel ?? prof?.models[0] ?? "");
   return { cwd, profile: prof?.id ?? "", model };

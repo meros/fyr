@@ -2,22 +2,6 @@ package core
 
 import "testing"
 
-// SPEC 0.5 V0.23: remotes normalise to host/owner/repo.
-func TestNormalizeRemote(t *testing.T) {
-	cases := map[string]string{
-		"git@github.com:meros/fyr.git":        "github.com/meros/fyr",
-		"https://github.com/meros/fyr":        "github.com/meros/fyr",
-		"ssh://git@github.com/Meros/Fyr.git/": "github.com/meros/fyr",
-		"git+ssh://git@github.com/meros/fyr":  "github.com/meros/fyr",
-		"":                                    "",
-	}
-	for in, want := range cases {
-		if got := NormalizeRemote(in); got != want {
-			t.Errorf("%q: got %q want %q", in, got, want)
-		}
-	}
-}
-
 // SPEC 0.5 V0.23: the default colour is stable for a name and never the beam.
 func TestDefaultColor(t *testing.T) {
 	if DefaultColor("acme") != DefaultColor("acme") {
@@ -45,5 +29,36 @@ func TestMonogram(t *testing.T) {
 		if got := Monogram(in); got != want {
 			t.Errorf("%q: got %q want %q", in, got, want)
 		}
+	}
+}
+
+// SPEC 0.5 V0.55: a thread lands in the project whose folder is its folder
+// or contains it; the longest folder wins, ties by id; a folder never
+// covers a sibling with the same prefix.
+func TestMatchFolder(t *testing.T) {
+	ps := []*Project{
+		{ID: "p_home", Folder: "/home/me"},
+		{ID: "p_fyr", Folder: "/home/me/git/fyr"},
+		{ID: "p_b", Folder: "/home/me/git/fyr/web/"},
+		{ID: "p_a", Folder: "/home/me/git/fyr/web"},
+		{ID: "p_label"},
+	}
+	cases := map[string]string{
+		"/home/me/git/fyr":         "p_fyr",
+		"/home/me/git/fyr/":        "p_fyr",
+		"/home/me/git/fyr/cmd":     "p_fyr",
+		"/home/me/git/fyr/web/src": "p_a",
+		"/home/me/git/fyr-projcut": "p_home",
+		"/home/me":                 "p_home",
+		"/tmp/x":                   "",
+		"":                         "",
+	}
+	for dir, want := range cases {
+		if got := MatchFolder(ps, dir); got != want {
+			t.Errorf("%q: got %q want %q", dir, got, want)
+		}
+	}
+	if got := MatchFolder([]*Project{{ID: "p_root", Folder: "/"}}, "/srv/x"); got != "p_root" {
+		t.Errorf("root folder: %q", got)
 	}
 }

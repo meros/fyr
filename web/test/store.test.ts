@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   applySnapshot,
+  applyThreadPatch,
   flatOrder,
   initialStore,
   liveEvent,
@@ -153,4 +154,21 @@ test("upsert keeps the higher rev", () => {
   const b = { ...base, rev: 9, updatedAt: "2026-11-14T11:00:00Z", title: "old" };
   assert.equal(newer(a, b), false);
   assert.equal(newer(b, a), true);
+});
+
+// SPEC 0.5 V0.38: a thread patch applies only on the copy it was made against;
+// otherwise the client asks for the whole thread and shows nothing wrong meanwhile.
+test("thread patches apply on the matching rev only", () => {
+  const t0 = thread("t1", "working", "working", { rev: 5, title: "a", activity: "Reading x", tasks: [{ id: "k", description: "d", status: "running" }] });
+  let s = upsertThread(initialStore(), t0);
+  const r = applyThreadPatch(s, { id: "t1", rev: 6, base: 5, patch: { rev: 6, activity: null, tasks: [{ id: "k", description: "d", status: "completed" }] } });
+  assert.equal(r.needFull, false);
+  assert.equal(r.store.threads.t1.rev, 6);
+  assert.equal(r.store.threads.t1.activity, undefined, "a removed field is gone");
+  assert.equal(r.store.threads.t1.tasks?.[0].status, "completed");
+  assert.equal(r.store.threads.t1.title, "a");
+  const stale = applyThreadPatch(r.store, { id: "t1", rev: 9, base: 8, patch: { title: "b" } });
+  assert.equal(stale.needFull, true);
+  assert.equal(stale.store.threads.t1.title, "a", "a patch on another base changes nothing");
+  assert.equal(applyThreadPatch(r.store, { id: "nope", rev: 1, base: 0, patch: {} }).needFull, true);
 });

@@ -152,3 +152,24 @@ export function chooseOther(cs: CardState, d: Decision): CardState {
   const opened = openOther(cs);
   return q && !q.multiSelect ? { ...opened, picks: replaceAt(opened.picks, cs.index, []) } : opened;
 }
+
+/** SPEC U15: what the card's button does now: nothing yet, the next open question, or send. */
+export function submitState(cs: CardState, d: Decision): { label: string; act: "none" | "next" | "submit"; answered: number; total: number } {
+  const qs = questionsOf(d);
+  const done = qs.map((_, i) => answerOf(cs, d, i) !== null);
+  const answered = done.filter(Boolean).length;
+  const total = qs.length;
+  if (answered === total) return { label: total === 1 ? "Send answer" : `Send ${total} answers`, act: "submit", answered, total };
+  if (done[cs.index]) return { label: "Next question", act: "next", answered, total };
+  return { label: "Pick an answer", act: "none", answered, total };
+}
+
+/** The first question without an answer, after the current one (wrapping). */
+export function nextOpen(cs: CardState, d: Decision): number {
+  const n = questionsOf(d).length;
+  for (let k = 1; k <= n; k++) {
+    const i = (cs.index + k) % n;
+    if (answerOf(cs, d, i) === null) return i;
+  }
+  return cs.index;
+}

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ type EffectRunner interface {
 }
 
 type Engine struct {
+	deploy   *deployState // V0.39
 	mu       sync.Mutex
 	st       *store.Store
 	threads  map[string]*core.Thread
@@ -40,10 +42,15 @@ type Engine struct {
 	last     map[string]core.State    // last broadcast state, for time-driven changes
 	revs     map[string]int64         // per-thread rev (SPEC 0.5 V0.2)
 	projects map[string]*core.Project // V0.23
-	// workspaces are where threads run (V0.28), by id.
-	workspaces map[string]*core.Workspace
-	// ScratchRoots are the scratch folders' roots (V0.28); nil: the defaults.
+
+	// quietSent is the quiet hours the clients last got, per project (V0.46).
+	quietSent map[string]string
+	// ScratchRoots are the scratch folders' roots (V0.28): their threads get
+	// no "New project from this thread"; nil: the defaults.
 	ScratchRoots []string
+	// ScratchDir is where thread.create makes a scratch folder (V0.42);
+	// "": ~/.local/share/fyr/scratch.
+	ScratchDir string
 	// HostID names this host in folder sources (V0.23); default the hostname.
 	HostID  string
 	lastRev int64
@@ -63,6 +70,9 @@ type Engine struct {
 	sendLimit hourly
 	// AttachmentExists checks ids in thread.create and thread.send (V0.18).
 	AttachmentExists func(id string) bool
+	// ProfileExists checks the target of thread.handover (V0.45); nil
+	// accepts any.
+	ProfileExists func(id string) bool
 	// OnPR is called when a thread gets a new PR, so the poller looks now.
 	OnPR func(threadID string)
 	// OnAttention is called, outside the lock, when a thread's attention
@@ -72,7 +82,7 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, workspaces: map[string]*core.Workspace{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
+		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, quietSent: map[string]string{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
 		newLimit: hourly{max: 5}, sendLimit: hourly{max: 30}}
 }
 
@@ -80,6 +90,16 @@ func NewID(prefix string) string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return prefix + hex.EncodeToString(b)
+}
+
+// NewMessageID is a random UUID; the CLI takes it as a user message's uuid
+// (SPEC 0.5 V0.33).
+func NewMessageID() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 // Load reads the projections and repairs live work that the last run of the
@@ -107,34 +127,26 @@ func (e *Engine) Load() error {
 	for _, p := range ps {
 		e.projects[p.ID] = p
 	}
-	ws, err := e.st.Workspaces()
+	old, err := e.st.OldProjectSources()
 	if err != nil {
 		return err
 	}
-	for _, w := range ws {
-		e.workspaces[w.ID] = w
+	if err := e.migrateFolders(old); err != nil {
+		return err
 	}
 	if err := e.migrateAuto(); err != nil {
 		return err
 	}
-	// Threads from before workspaces (V0.28) get one now; a thread without
-	// a project gets the one matching finds, if any.
+	// V0.55: threads land in the project whose folder covers theirs; a
+	// thread whose project is gone loses it. Only changed threads are
+	// written.
 	for _, t := range e.threads {
-		if e.workspaces[t.WorkspaceID] != nil && (t.ProjectID == "" || e.projects[t.ProjectID] != nil) {
-			if p := e.projects[t.ProjectID]; p != nil {
-				t.Project = p.Name
-			}
+		pid, name, manual := t.ProjectID, t.Project, t.ProjectManual
+		e.assignProject(t)
+		if t.ProjectID == pid && t.Project == name && t.ProjectManual == manual {
 			continue
 		}
-		nw := e.assignProject(t, e.Now())
-		if _, err := e.st.Write(func(tx *store.Tx) error {
-			if nw != nil {
-				if err := tx.PutWorkspace(nw); err != nil {
-					return err
-				}
-			}
-			return tx.PutThread(t)
-		}); err != nil {
+		if _, err := e.st.Write(func(tx *store.Tx) error { return tx.PutThread(t) }); err != nil {
 			return err
 		}
 	}
@@ -146,6 +158,44 @@ func (e *Engine) Load() error {
 		}
 	}()
 	now := e.Now()
+	for _, t := range e.threads {
+		// V0.33: the agent's queue died with the old host; unread messages
+		// are lost, never resent by themselves.
+		if len(t.Outbox) == 0 {
+			continue
+		}
+		lost := t.Outbox
+		t.Outbox = nil
+		if _, err := e.st.Write(func(tx *store.Tx) error {
+			if err := tx.PutThread(t); err != nil {
+				return err
+			}
+			for _, m := range lost {
+				if err := tx.Append(t.ID, "message.state", map[string]any{"id": m.ID, "state": "lost"}, now); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	for _, t := range e.threads {
+		// V0.45: a handover dies with the host; the thread keeps the
+		// profile it had, and the owner can start it again.
+		if t.Handover == nil {
+			continue
+		}
+		t.Handover = nil
+		if _, err := e.st.Write(func(tx *store.Tx) error {
+			if err := tx.PutThread(t); err != nil {
+				return err
+			}
+			return tx.Append(t.ID, "effect.error", map[string]any{"kind": "handover", "error": "Fyr restarted during the handover"}, now)
+		}); err != nil {
+			return err
+		}
+	}
 	for _, t := range e.threads {
 		if !t.Running && !hasLiveDecision(t) && t.RunningTasks() == 0 {
 			continue
@@ -243,17 +293,23 @@ func (e *Engine) Command(c Cmd) Reply {
 	if strings.HasPrefix(c.Action, "project.") {
 		return e.projectCommand(c)
 	}
+	if c.Action == "thread.cancelMessage" {
+		return e.cancelMessage(c)
+	}
 	act := core.Registry[c.Action]
 	if act == nil {
 		return Reply{Error: "unknown action " + c.Action, Status: 400}
 	}
-	if c.Action == "thread.setProject" {
+	if c.Action == "thread.setProject" && c.Args.Str("projectId") != "" {
 		e.mu.Lock()
 		ok := e.projects[c.Args.Str("projectId")] != nil
 		e.mu.Unlock()
 		if !ok {
 			return Reply{Error: "no project " + c.Args.Str("projectId"), Status: 400}
 		}
+	}
+	if c.Action == "thread.handover" && e.ProfileExists != nil && c.Args.Str("profile") != "" && !e.ProfileExists(c.Args.Str("profile")) {
+		return Reply{Error: "no profile " + c.Args.Str("profile"), Status: 400}
 	}
 	if c.Action == "thread.create" || c.Action == "thread.send" {
 		for _, id := range core.AttachmentIDs(c.Args) {
@@ -294,7 +350,40 @@ func (e *Engine) Command(c Cmd) Reply {
 	if c.Args == nil {
 		c.Args = core.Args{}
 	}
+	// V0.42: thread.create files into projectId; without a cwd it starts in
+	// the project's folder (V0.55), else in a fresh scratch folder.
+	var fileIn, scratch string
+	if c.Action == "thread.create" {
+		if pid := c.Args.Str("projectId"); pid != "" {
+			pr := e.projects[pid]
+			if pr == nil {
+				e.mu.Unlock()
+				return Reply{Error: "no project " + pid, Status: 400}
+			}
+			fileIn = pid
+			if strings.TrimSpace(c.Args.Str("cwd")) == "" {
+				if pr.Folder != "" {
+					c.Args["cwd"] = pr.Folder
+				}
+			}
+		}
+		if strings.TrimSpace(c.Args.Str("cwd")) == "" {
+			dir, err := e.makeScratch(c.Args.Str("text"), now)
+			if err != nil {
+				e.mu.Unlock()
+				return Reply{Error: "could not make a scratch folder: " + err.Error(), Status: 500}
+			}
+			scratch = dir
+			c.Args["cwd"] = dir
+		}
+	}
 	effects, err := act.Apply(t, &v, c.Args, now)
+	if err == nil && fileIn != "" {
+		t.ProjectID, t.ProjectManual = fileIn, true
+	}
+	if err != nil && scratch != "" {
+		os.Remove(scratch)
+	}
 	if err != nil {
 		e.mu.Unlock()
 		status := 400
@@ -306,15 +395,18 @@ func (e *Engine) Command(c Cmd) Reply {
 	if t.Profile == "" {
 		t.Profile = "claude"
 	}
-	newWS := e.assignProject(t, now)
+	e.assignProject(t)
 	t.UpdatedAt = now
 	reply := Reply{OK: true, ThreadID: t.ID, Status: 200}
-	evs, err := e.st.Write(func(tx *store.Tx) error {
-		if newWS != nil {
-			if err := tx.PutWorkspace(newWS); err != nil {
-				return err
-			}
+	for i := range effects {
+		// V0.33: the message id is known before the agent writes it, so the
+		// client can follow its delivery.
+		if effects[i].Kind == "send" && effects[i].MessageID == "" {
+			effects[i].MessageID = NewMessageID()
+			reply.Result = map[string]any{"messageId": effects[i].MessageID}
 		}
+	}
+	evs, err := e.st.Write(func(tx *store.Tx) error {
 		if err := tx.PutThread(t); err != nil {
 			return err
 		}
@@ -376,6 +468,10 @@ func (e *Engine) runEffect(threadID string, ef core.Effect) {
 	if req == nil {
 		return
 	}
+	if ef.ByOwner {
+		e.runOwnerEffect(threadID, *req)
+		return
+	}
 	ok, text := false, "The user declined it."
 	if ef.Allow {
 		if e.Effects == nil {
@@ -394,6 +490,55 @@ func (e *Engine) runEffect(threadID string, ef core.Effect) {
 		}
 	}
 	e.Report(threadID, *req, ef.Allow, ok, text)
+}
+
+// runOwnerEffect runs a PR action the owner started in the PR tab (SPEC 0.5
+// V0.43). The result is a line in the thread; the agent is not woken. The
+// poller looks at the PR again at once.
+func (e *Engine) runOwnerEffect(threadID string, req core.EffectReq) {
+	ok, text := false, "No effect runner is configured."
+	if e.Effects != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), EffectTimeout(req.Action))
+		out, err := e.Effects.Run(ctx, threadID, req)
+		cancel()
+		ok, text = err == nil, out
+		if err != nil {
+			text = err.Error()
+		}
+	}
+	text = ownerLine(req, ok, text)
+	e.Observe(threadID, func(*core.Thread, time.Time) {}, agent.Ev{Type: "effect.result",
+		Data: map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": text, "by": "owner"}})
+	if e.OnPR != nil {
+		e.OnPR(threadID)
+	}
+}
+
+// ownerLine starts an owner effect's result with one plain sentence.
+func ownerLine(req core.EffectReq, ok bool, text string) string {
+	url, _ := req.Args["pr"].(string)
+	pr := "the PR"
+	if _, n, found := agent.ParsePR(url); found {
+		pr = fmt.Sprintf("#%d", n)
+	}
+	var first string
+	switch {
+	case req.Action == "pr.merge" && ok:
+		method, _ := req.Args["method"].(string)
+		first = fmt.Sprintf("You merged %s (%s).", pr, method)
+	case req.Action == "pr.merge":
+		first = fmt.Sprintf("Merging %s failed.", pr)
+	case req.Action == "pr.rerunFailed" && ok:
+		first = fmt.Sprintf("You re-ran the failed checks of %s.", pr)
+	case req.Action == "pr.rerunFailed":
+		first = fmt.Sprintf("Re-running the failed checks of %s failed.", pr)
+	default:
+		return text
+	}
+	if strings.TrimSpace(text) == "" {
+		return first
+	}
+	return first + "\n\n" + strings.TrimSpace(text)
 }
 
 // Report records an effect result and sends it to the agent as context.
@@ -477,8 +622,12 @@ type DTO struct {
 	Attention   core.Attention    `json:"attention"`
 	View        *core.View        `json:"view"`
 	Unavailable map[string]string `json:"unavailable"`
-	// Suggest is the project a thread without one could get (V0.28).
-	Suggest *core.Suggestion `json:"suggest,omitempty"`
+	// NewProject is what "New project from this thread" starts with (V0.30,
+	// V0.55).
+	NewProject *NewProject `json:"newProject,omitempty"`
+	// QuietUntil is the end of the quiet hours of the thread's project, while
+	// they hold (V0.46).
+	QuietUntil *time.Time `json:"quietUntil,omitempty"`
 
 	prev core.State // the state before this change; not sent
 }
@@ -511,7 +660,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	}
 	att := core.Compute(t, v, now)
 	vc := *v
-	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, Suggest: e.suggestion(t)}
+	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now)}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.
@@ -541,19 +690,43 @@ func (e *Engine) Running() []string {
 	return out
 }
 
+// quietKey is what the clients last got for a project's quiet hours.
+func quietKey(u *time.Time) string {
+	if u == nil {
+		return ""
+	}
+	return u.UTC().Format(time.RFC3339)
+}
+
 // Tick broadcasts threads whose attention changed with time alone (a snooze
-// ended). Call it every few seconds.
+// ended), and the projects whose quiet hours started or ended with their
+// threads (V0.46; not an attention change, so never a push). Call it every
+// few seconds.
 func (e *Engine) Tick() {
 	e.mu.Lock()
 	now := e.Now()
+	quiet := map[string]bool{}
+	for pid := range e.projects {
+		if k := quietKey(e.quietUntil(pid, now)); k != e.quietSent[pid] {
+			e.quietSent[pid] = k
+			quiet[pid] = true
+		}
+	}
 	var changed []DTO
 	for id, t := range e.threads {
-		if core.Compute(t, e.view(id), now).State != e.last[id] {
+		if core.Compute(t, e.view(id), now).State != e.last[id] || quiet[t.ProjectID] {
 			e.bump(id)
 			changed = append(changed, e.dto(clone(t), now))
 		}
 	}
 	e.mu.Unlock()
+	if len(quiet) > 0 {
+		for _, p := range e.Projects() {
+			if quiet[p.ID] {
+				e.Hub.Project(p)
+			}
+		}
+	}
 	for _, d := range changed {
 		e.Hub.Thread(d)
 		e.notify(d)
@@ -600,14 +773,9 @@ func (e *Engine) adopt(c Cmd) Reply {
 // its history, in one transaction.
 func (e *Engine) Insert(t *core.Thread, v *core.View, history []agent.Ev, at []time.Time) error {
 	e.mu.Lock()
-	nw := e.assignProject(t, e.Now())
+	e.assignProject(t)
 	e.mu.Unlock()
 	if _, err := e.st.Write(func(tx *store.Tx) error {
-		if nw != nil {
-			if err := tx.PutWorkspace(nw); err != nil {
-				return err
-			}
-		}
 		if err := tx.PutThread(t); err != nil {
 			return err
 		}

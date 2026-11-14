@@ -118,3 +118,24 @@ func TestActivityLabels(t *testing.T) {
 		}
 	}
 }
+
+// SPEC 0.5 V0.37: only a process started with the live view registers the
+// Stop hook; other threads pay no extra round trip at the end of each turn.
+func TestInitHooksStopOnlyWithView(t *testing.T) {
+	if _, ok := initHooks(false)["Stop"]; ok {
+		t.Fatal("a thread without the live view registers the Stop hook")
+	}
+	if _, ok := initHooks(true)["Stop"]; !ok {
+		t.Fatal("a live view thread has no Stop hook")
+	}
+	if _, ok := initHooks(false)["PreToolUse"]; !ok {
+		t.Fatal("the gate hook is gone")
+	}
+	// V0.52: the mid-turn reminder rides on PostToolUse, also only with the view.
+	if _, ok := initHooks(false)["PostToolUse"]; ok {
+		t.Fatal("a thread without the live view registers the reminder hook")
+	}
+	if _, ok := initHooks(true)["PostToolUse"]; !ok {
+		t.Fatal("a live view thread has no reminder hook")
+	}
+}

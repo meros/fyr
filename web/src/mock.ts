@@ -1,14 +1,22 @@
 // Fixtures for ?mock=1 (full stress set) and ?mock=2 (sparse: empty sections). A tiny in-memory fyrd:
 // commands change the fixtures and push thread upserts, so the UI can be clicked through without a host.
 
-import type { CommandReply, Decision, Project, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { CommandReply, Decision, FsDir, FsListing, Project, QuietHours, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
+import type { PrReply } from "./pr.ts";
+import type { Quota } from "./quota.ts";
+import { mockPrDetail } from "./mock-pr.ts";
+import { quietList } from "./quiet.ts";
 
 export function mockScenario(search: string): string | null {
   const m = /[?&]mock=([^&]*)/.exec(search);
   if (!m || m[1] === "0" || m[1] === "") return null;
   return decodeURIComponent(m[1]);
 }
+
+// V0.35: a table that squeezed on the phone (a commit column, long change text).
+const TRIAGE_TABLE =
+  "Filed 6 issues, closed 2 duplicates.\n\n| Commit | Change |\n|---|---|\n| `3d0a470` | Finished in 14 min in place of the lone check; a live working line on the desktop |\n| `a0e8242` | Drafts survive a new message, a screen change and a reload |\n| `20d4939` | Fyr's own right-click menu; text fields keep the browser menu |\n";
 
 const LONG_TITLE =
   "Migrate the listing search from the legacy Elasticsearch cluster to OpenSearch without downtime and keep the old index readable for rollback";
@@ -284,6 +292,29 @@ function fullFixture(now: number): Fixture {
       unavailable: NOT_RUNNING,
     }),
   );
+  // V0.37: a thread with a live view; the log has an earlier press from the view.
+  {
+    const st = { headline: "E2e green on mobile; PR not opened yet", steps: [{ label: "Reproduce", state: "done" }, { label: "Fix the lasso", state: "done" }, { label: "E2e on mobile", state: "done" }, { label: "Open the PR", state: "now" }], next: "Open the PR when you say so" };
+    const at = iso(now - 12 * 60_000);
+    const evs = simpleEvents("t_view", now, "Fix the lasso on mobile and keep a live view", "Fixed; the mobile e2e run is green.");
+    let s = evs.length;
+    evs.push(
+      ev(++s, now - 20 * 60_000, "t_view", "view.published", { pageId: "pv_view", state: st }),
+      ev(++s, now - 14 * 60_000, "t_view", "user", { id: "m_v1", text: "Run the e2e suite again", from: "view" }),
+      ev(++s, now - 14 * 60_000, "t_view", "message.state", { id: "m_v1", state: "read" }),
+      ev(++s, now - 13 * 60_000, "t_view", "msg", assistantText("The mobile e2e run is green: 48 passed.")),
+    );
+    add(
+      base("t_view", "Lasso fix with a live view", now, 12, {
+        attention: { state: "done", section: "needs", reason: "Done" },
+        summary: "The mobile e2e run is green: 48 passed.",
+        liveView: true,
+        live: { pageId: "pv_view", state: st, updatedAt: at, checkedAt: at, headline: st.headline },
+        unavailable: NOT_RUNNING,
+      }),
+      evs,
+    );
+  }
   add(
     base("t_fix", "Fix", now, 75, {
       project: LONG_PROJECT,
@@ -333,14 +364,22 @@ function fullFixture(now: number): Fixture {
       unavailable: NOT_RUNNING,
     }),
   );
-  add(base("t_s2", "Nix flake update", now, 115, { project: "dotfiles", summary: "Updated nixpkgs to 26.05.", unavailable: NOT_RUNNING }));
-  // V0.28: a thread with no project whose folder is a clone suggests one.
+  // V0.43: an open PR that is ready to merge (the PR tab's Merge dialog).
+  add(
+    base("t_s2", "Nix flake update", now, 115, {
+      project: "dotfiles",
+      summary: "Updated nixpkgs to 26.05.",
+      branch: "chore/flake-update",
+      pr: { url: "https://github.com/meros/dotfiles/pull/57", repo: "meros/dotfiles", number: 57, state: "OPEN", checks: "pass", review: "APPROVED", conflict: false },
+      unavailable: NOT_RUNNING,
+    }),
+  );
+  // V0.55: a thread with no project offers New project from its folder.
   add(
     base("t_s4", "Sketch the lasso tool", now, 320, {
       project: "",
       cwd: "/home/owner/src/lasso-app",
       summary: "Drew a first lasso over the map.",
-      suggest: { name: "lasso-app", sources: [{ kind: "folder", host: "desk", path: "/home/owner/src/lasso-app" }, { kind: "repo", url: "github.com/owner/lasso-app" }] },
       unavailable: NOT_RUNNING,
     }),
   );
@@ -547,7 +586,7 @@ function railFixture(now: number): Fixture {
       }),
     );
   }
-  for (const t of threads) if (t.id !== "t_lasso") events[t.id] = simpleEvents(t.id, now, `Work on: ${t.title}`, t.summary || "Done.", t.failure);
+  for (const t of threads) if (t.id !== "t_lasso") events[t.id] = simpleEvents(t.id, now, `Work on: ${t.title}`, t.id === "t_triage" ? TRIAGE_TABLE : t.summary || "Done.", t.failure);
 
   // The conversation of the design's thread.
   const ev2: FyrEvent[] = [];
@@ -611,6 +650,62 @@ const m=Math.max(...d.map(x=>x[1]));c.innerHTML=d.map(([f,s])=>'<div class=r><sp
 requestAnimationFrame(()=>document.querySelectorAll(".b").forEach(b=>b.style.width=b.dataset.w+"%"));n.textContent="Scripts run in the sandbox; the page has no origin.";
 </script>`;
 
+
+// V0.47: a WebGL page (one red triangle; headless Chrome draws it with SwiftShader). It marks body[data-gl] with what it saw.
+const GL_HTML = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#111}canvas{display:block;width:100%;height:100%;touch-action:none}</style><canvas id=c></canvas><script>
+const c=document.getElementById("c");c.width=c.clientWidth||320;c.height=c.clientHeight||200;const g=c.getContext("webgl",{preserveDrawingBuffer:true});
+if(!g){document.body.dataset.gl="no-webgl"}else{const sh=(t,src)=>{const s=g.createShader(t);g.shaderSource(s,src);g.compileShader(s);return s};const p=g.createProgram();
+g.attachShader(p,sh(g.VERTEX_SHADER,"attribute vec2 a;void main(){gl_Position=vec4(a,0,1);}"));g.attachShader(p,sh(g.FRAGMENT_SHADER,"precision mediump float;void main(){gl_FragColor=vec4(1,0,0,1);}"));
+g.linkProgram(p);g.useProgram(p);g.bindBuffer(g.ARRAY_BUFFER,g.createBuffer());g.bufferData(g.ARRAY_BUFFER,new Float32Array([-.8,-.8,.8,-.8,0,.8]),g.STATIC_DRAW);
+g.enableVertexAttribArray(0);g.vertexAttribPointer(0,2,g.FLOAT,false,0,0);g.viewport(0,0,c.width,c.height);g.clearColor(0,0,0,1);g.clear(g.COLOR_BUFFER_BIT);g.drawArrays(g.TRIANGLES,0,3);
+const px=new Uint8Array(4);g.readPixels(c.width>>1,c.height>>1,1,1,g.RGBA,g.UNSIGNED_BYTE,px);document.body.dataset.gl=px[0]>200&&px[1]<50?"ok":"pixel "+px.join(",")}
+</script>`;
+
+// V0.37: the live view page as the host stores it: the Fyr theme around a fragment, the bridge first in <head>.
+// TestMockBridgeMatches (Go) keeps VIEW_BRIDGE equal to the host's bridge.
+export const VIEW_BRIDGE = `<script>(function(){
+var state={},subs=[],n=0,wait={};
+function post(m){m.jsonrpc="2.0";parent.postMessage(m,"*")}
+function pick(o,p){return p.split(".").reduce(function(a,k){return a==null?a:a[k]},o)}
+function fill(){var els=document.querySelectorAll("[data-text]");for(var i=0;i<els.length;i++){var v=pick(state,els[i].getAttribute("data-text"));els[i].textContent=v==null?"":typeof v=="object"?JSON.stringify(v):String(v)}}
+window.fyr={get state(){return state},onState:function(f){subs.push(f);try{f(state)}catch(e){console.error(e)}},
+send:function(t){t=String(t||"").trim();if(!t)return Promise.resolve(false);var id="m"+(++n);return new Promise(function(r){wait[id]=r;setTimeout(function(){if(wait[id]){delete wait[id];r(false)}},15000);post({id:id,method:"ui/message",params:{role:"user",content:[{type:"text",text:t}]}})})}};
+addEventListener("message",function(e){if(e.source!==parent)return;var d=e.data;if(d&&d.id&&wait[d.id]){var r=wait[d.id];delete wait[d.id];r(!d.error);return}if(!d||d.method!=="ui/notifications/state")return;
+state=(d.params&&d.params.state)||{};fill();subs.forEach(function(f){try{f(state)}catch(x){console.error(x)}})});
+document.addEventListener("click",function(e){var b=e.target&&e.target.closest&&e.target.closest("[data-send]");if(!b)return;e.preventDefault();if(b.getAttribute("data-fyr")==="busy")return;
+b.setAttribute("data-fyr","busy");b.setAttribute("aria-busy","true");
+fyr.send(b.getAttribute("data-send")||b.textContent).then(function(ok){b.removeAttribute("aria-busy");b.setAttribute("data-fyr",ok?"sent":"failed");setTimeout(function(){if(b.getAttribute("data-fyr")!=="busy")b.removeAttribute("data-fyr")},ok?1800:3000)})});
+var last=-1;function size(){var h=Math.ceil(document.documentElement.getBoundingClientRect().height);if(h!==last){last=h;post({method:"ui/notifications/size-changed",params:{height:h}})}}
+if(window.ResizeObserver)new ResizeObserver(size).observe(document.documentElement);addEventListener("load",size);
+document.addEventListener("DOMContentLoaded",function(){fill();size()});
+post({method:"ui/notifications/initialized",params:{}});
+})();</script><style>[data-send]{transition:opacity .12s}[data-send]:active{transform:scale(.97)}[data-fyr=busy]{opacity:.55;cursor:progress;pointer-events:none}[data-fyr=sent]::after{content:" ✓ Sent"}[data-fyr=failed]::after{content:" · Not sent";color:#c0392b}</style>`;
+const VIEW_THEME = `
+:root{--bg:#ffffff;--fg:#111820;--muted:#56616d;--line:#dde1e6;--accent:#e8960f;--surface:#f6f7f8;color-scheme:light dark}
+@media (prefers-color-scheme: dark){:root{--bg:#161d24;--fg:#e8ecf0;--muted:#9aa6b2;--line:#26303a;--accent:#f5a524;--surface:#0f1419}}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+body{padding:16px}*{box-sizing:border-box}img,svg,canvas,video{max-width:100%;height:auto}
+table{border-collapse:collapse}td,th{border:1px solid var(--line);padding:4px 8px}
+`;
+const VIEW_FRAGMENT = `<style>
+.hd{font:600 17px/24px system-ui,sans-serif;margin:0 0 10px}
+.st{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 12px;padding:0;list-style:none;font-size:13px}
+.st li{display:flex;align-items:center;gap:6px}.st i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.st .done i{background:#2f9e5b}.st .now i{background:var(--accent)}.st .now{font-weight:600}
+.nx{color:var(--muted);font-size:13px;margin:0 0 12px}
+.bt{display:flex;gap:8px;flex-wrap:wrap}.bt button{font:500 13px/18px system-ui,sans-serif;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.bt button.p{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+body{padding:12px 16px}
+</style>
+<p class="hd" data-text="headline"></p>
+<ul class="st" id="steps"></ul>
+<p class="nx">Next: <span data-text="next"></span></p>
+<div class="bt"><button class="p" data-send="Open the PR">Open the PR</button><button data-send="Run the e2e suite again">Run e2e again</button><button data-send="Pause; I will look first">Pause</button></div>
+<script>
+fyr.onState(function(s){var el=document.getElementById("steps");el.innerHTML="";(s.steps||[]).forEach(function(x){var li=document.createElement("li");li.className=x.state;li.innerHTML="<i></i>";li.appendChild(document.createTextNode(x.label));el.appendChild(li)})});
+</script>`;
+const VIEW_HTML = `<!doctype html><html><head>${VIEW_BRIDGE}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Live view</title><style>${VIEW_THEME}</style></head><body>${VIEW_FRAGMENT}</body></html>`;
+
 export const MOCK_SHOTS: Record<string, string> = {
   pv_phone: svgShot(390, 844, "Filter sheet, iPhone mini"),
   pv_desk: svgShot(1280, 800, "Map, desktop 1280 × 800"),
@@ -618,6 +713,10 @@ export const MOCK_SHOTS: Record<string, string> = {
 };
 export const MOCK_PREVIEWS: Record<string, string> = {
   pv_chart: "data:text/html;charset=utf-8," + encodeURIComponent(CHART_HTML),
+  pv_view: "data:text/html;charset=utf-8," + encodeURIComponent(VIEW_HTML),
+  pv_gl: "data:text/html;charset=utf-8," + encodeURIComponent(GL_HTML),
+  // V0.47: a folder preview; the layout test serves web/test/fixtures/preview-site here (with the host's CSP).
+  pv_site: "/api/previews/pv_site/index.html",
 };
 
 function previewEvents(subject: string, start: number, now: number, stress: boolean): FyrEvent[] {
@@ -632,6 +731,8 @@ function previewEvents(subject: string, start: number, now: number, stress: bool
     out.push(
       ev(++seq, Date.parse(at(6)), subject, "preview", { kind: "image", attachmentId: "pv_tall", title: LONG_TITLE, caption: "Full page at 390 px: " + LONG_URL, width: 390, height: 2600, url: LONG_URL }),
       ev(++seq, Date.parse(at(5)), subject, "msg", assistantText("Inline: ![the sheet](/api/attachments/pv_phone) and an outside image stays a link: ![remote](https://example.com/x.png)")),
+      ev(++seq, Date.parse(at(4)), subject, "preview", { kind: "html", attachmentId: "pv_gl", title: "WebGL triangle", caption: "A 3D canvas in the sandbox." }),
+      ev(++seq, Date.parse(at(3)), subject, "preview", { kind: "html", attachmentId: "pv_site", title: "Folder preview", caption: "index.html with its own script, module, JSON and image." }),
     );
   return out;
 }
@@ -644,7 +745,8 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   const T = now - 20 * 60_000;
   const e = (sec: number, type: string, data: unknown) => out.push(ev(++seq, T + sec * 1000, subject, type, data));
   const cwd = "/home/owner/src/acme/web";
-  e(0, "user", { text: "Map perf: the vitest suite for src/map takes 38 s. Find the slow tests and fix them.", images: 0 });
+  e(0, "user", { id: "m_map1", text: "Map perf: the vitest suite for src/map takes 38 s. Find the slow tests and fix them.", images: 0 });
+  e(0, "message.state", { id: "m_map1", state: "read" });
   e(0, "run.started", {});
   e(1, "msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "thinking", thinking: "The suite is slow; profile first." }] } });
   e(2, "msg", toolUse("ts0", "Bash", { command: 'settask "[web] map perf"' }));
@@ -692,26 +794,60 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   e((t += 0.2), "msg", toolResult("pl1"));
   e((t += 1), "msg", assistantText("Snapshot test still fails on the sheet; the other two files now take 9 s instead of 24 s."));
   e((t += 1), "run.ended", { failure: null, interrupted: false, costUsd: 0.42, durationMs: 840_000 });
+  // V0.33: a second run reads one message; the next one waits in the agent's queue.
+  e((t += 60), "user", { id: "m_map2", text: "Fix the snapshot test too.", images: 0 });
+  e(t, "message.state", { id: "m_map2", state: "read" });
+  e(t, "run.started", {});
+  e((t += 1), "msg", assistantText("The snapshot differs only in the sheet's shadow. I'll run that test alone first."));
+  e((t += 2), "msg", toolUse("sn1", "Bash", { command: "yarn vitest src/map/snapshot", description: "Run the snapshot test" }));
+  e((t += 30), "user", { id: "m_map3", text: "Keep the snapshot itself; only make the test faster.", images: 0 });
+  e(t, "message.state", { id: "m_map3", state: "queued" });
   return out;
 }
 
-// ---- projects (V0.23): every colour and icon kind, a repo-only project and a label ----
+// ---- projects (V0.23, V0.55): every colour and icon kind, one folder each, and a label without a folder ----
 export function mockProjects(now: number): Project[] {
   const ago = (h: number) => iso(now - h * 3600_000);
-  const folder = (path: string) => ({ kind: "folder", host: "desk", path });
-  const repo = (url: string) => ({ kind: "repo", url });
   return [
-    { id: "p_web", name: "acme/web", color: "teal", icon: { kind: "line", value: "Globe" }, sources: [folder("/home/owner/src/acme/web"), repo("github.com/acme/web")], profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1), cwd: "/home/owner/src/acme/web" },
-    { id: "p_ops", name: "acme/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, sources: [folder("/home/owner/src/acme/ops")], threads: 2, lastUsed: ago(1), cwd: "/home/owner/src/acme/ops" },
-    { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram" }, sources: [folder("/home/owner/src/" + LONG_PROJECT), repo("github.com/acme/" + LONG_PROJECT)], threads: 3, lastUsed: ago(5), cwd: "/home/owner/src/" + LONG_PROJECT },
-    { id: "p_dot", name: "dotfiles", color: "olive", icon: { kind: "line", value: "terminal" }, sources: [folder("/home/owner/dotfiles")], threads: 1, lastUsed: ago(2), cwd: "/home/owner/dotfiles" },
-    { id: "p_api", name: "acme/api", color: "sky", icon: { kind: "line", value: "server" }, sources: [folder("/home/owner/src/acme/api")], threads: 0, lastUsed: ago(30), cwd: "/home/owner/src/acme/api" },
-    { id: "p_fyr", name: "fyr", color: "violet", icon: { kind: "line", value: "FolderGit2" }, sources: [repo("github.com/meros/fyr")], threads: 0, lastUsed: ago(48) },
-    { id: "p_home", name: "Garden", color: "green", icon: { kind: "emoji", value: "🏡" }, sources: [], threads: 1, lastUsed: ago(3) },
-    { id: "p_infra", name: "acme/infra", color: "slate", icon: { kind: "line", value: "no-such-icon" }, sources: [folder("/home/owner/src/acme/infra")], threads: 1, lastUsed: ago(10), cwd: "/home/owner/src/acme/infra" },
-    { id: "p_maplab", name: "Map perf lab", color: "blue", icon: { kind: "line", value: "map" }, sources: [folder("/home/owner/src/maplab")], threads: 0, lastUsed: ago(70), cwd: "/home/owner/src/maplab" },
-    { id: "p_book", name: "Bokföring åt Åsa", icon: { kind: "monogram" }, color: "brown", sources: [folder("/home/owner/ekonomi")], threads: 0, lastUsed: ago(200), cwd: "/home/owner/ekonomi" },
+    { id: "p_web", name: "acme/web", color: "teal", icon: { kind: "line", value: "Globe" }, folder: "/home/owner/src/acme/web", profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1) },
+    { id: "p_ops", name: "acme/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, folder: "/home/owner/src/acme/ops", threads: 2, lastUsed: ago(1) },
+    { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram" }, folder: "/home/owner/src/" + LONG_PROJECT, threads: 3, lastUsed: ago(5) },
+    { id: "p_dot", name: "dotfiles", color: "olive", icon: { kind: "line", value: "terminal" }, folder: "/home/owner/dotfiles", threads: 1, lastUsed: ago(2) },
+    { id: "p_api", name: "acme/api", color: "sky", icon: { kind: "line", value: "server" }, folder: "/home/owner/src/acme/api", threads: 0, lastUsed: ago(30) },
+    { id: "p_fyr", name: "fyr", color: "violet", icon: { kind: "line", value: "FolderGit2" }, folder: "/home/owner/git/fyr", threads: 0, lastUsed: ago(48) },
+    { id: "p_home", name: "Garden", color: "green", icon: { kind: "emoji", value: "🏡" }, threads: 1, lastUsed: ago(3) },
+    { id: "p_infra", name: "acme/infra", color: "slate", icon: { kind: "line", value: "no-such-icon" }, folder: "/home/owner/src/acme/infra", threads: 1, lastUsed: ago(10) },
+    { id: "p_maplab", name: "Map perf lab", color: "blue", icon: { kind: "line", value: "map" }, folder: "/home/owner/src/maplab", threads: 0, lastUsed: ago(70) },
+    { id: "p_book", name: "Bokföring åt Åsa", icon: { kind: "monogram" }, color: "brown", folder: "/home/owner/ekonomi", threads: 0, lastUsed: ago(200) },
   ];
+}
+
+// V0.42: the mock folders that are git repositories (the folder picker's "Repos found").
+const MOCK_REPOS = [
+  "/home/owner/src/acme/web",
+  "/home/owner/src/acme/web-docs",
+  "/home/owner/src/acme/ops",
+  "/home/owner/src/acme/api",
+  "/home/owner/src/acme/infra",
+  "/home/owner/src/" + LONG_PROJECT,
+  "/home/owner/src/lasso-app",
+  "/home/owner/dotfiles",
+  "/home/owner/git/fyr",
+  "/home/owner/git/fyr-folders",
+  "/home/owner/git/solidcraft",
+];
+
+const MOCK_HOME = "/home/owner";
+/** A small home folder for the folder picker (V0.42). */
+function mockTree(extra: string[]): { dirs: Set<string>; repos: Set<string> } {
+  const repos = new Set(MOCK_REPOS);
+  const dirs = new Set<string>();
+  const add = (p: string) => {
+    for (let at = p; at.startsWith(MOCK_HOME); at = at.slice(0, at.lastIndexOf("/"))) dirs.add(at);
+  };
+  for (const p of [...repos, ...extra]) add(p);
+  for (const p of ["Documents", "Downloads", "notes", "ekonomi", "git/fyr/web", "git/fyr/internal", "src/maplab", ".config/nvim", ".local/share/fyr/scratch", "src/acme/web/node_modules"]) add(`${MOCK_HOME}/${p}`);
+  return { dirs, repos };
 }
 
 export interface MockServer {
@@ -727,8 +863,15 @@ export interface MockServer {
   pushTest(): { ok: boolean; error?: string };
   /** subscriptions stored in memory, by endpoint */
   pushSubscriptions(): { endpoint: string; device: string }[];
+  /** V0.42: the host folder picker over a small mock home folder */
+  fsList(path: string): FsListing;
+  fsRecent(): FsDir[];
+  fsRepos(): FsDir[];
+  fsMkdir(parent: string, name: string): string;
   /** the in-memory attachment store (V0.18) */
   putAttachment(name: string, mediaType: string, size: number): { id: string; name: string; size: number; mediaType: string; path: string };
+  /** the PR tab's detail (V0.43) */
+  prDetail(threadId: string): PrReply;
 }
 
 /** A P-256 public key in the VAPID format; the mock has no private key and never pushes. */
@@ -749,19 +892,48 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     (Array.isArray(args.attachments) ? (args.attachments as string[]) : []).map((aid) => files.get(aid)).filter((x): x is NonNullable<typeof x> => !!x);
   let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void } | null = null;
   let projects = mockProjects(now0);
+  // V0.46: ?quiet=<projectId> puts that project in quiet hours that started an hour ago and end in two hours, and
+  // gives it a second window (weekends, ten hours ahead) so the project screen shows two rows (decision 0014 addendum).
+  if (MOCK_QUIET) {
+    const hm = (ms: number) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+    const quiet = [{ from: hm(now0 - 3600_000), to: hm(now0 + 2 * 3600_000) }, { from: hm(now0 + 10 * 3600_000), to: hm(now0 + 11 * 3600_000), days: ["sat", "sun"] }];
+    projects = projects.map((p) => (p.id === MOCK_QUIET ? { ...p, quiet } : p));
+  }
+  // V0.46: the host computes quietUntil; the mock does the same for its own clock.
+  const withQuiet = (p: Project): Project => {
+    const u = mockQuietUntil(p.quiet, clock());
+    const { quietUntil: _, ...rest } = p;
+    return u ? { ...rest, quietUntil: u } : rest;
+  };
+  const tree = mockTree([...fx.threads.map((t) => t.cwd), ...projects.map((p) => p.folder ?? "")].filter((p) => p.startsWith(MOCK_HOME)));
+  const expand = (p: string) => (p.trim() === "~" || p.trim() === "" ? MOCK_HOME : p.trim().startsWith("~/") ? MOCK_HOME + p.trim().slice(1) : p.trim()).replace(/\/+$/, "") || "/";
+  const dirOf = (p: string): FsDir => ({ name: p.split("/").pop() ?? p, path: p, repo: tree.repos.has(p) || undefined });
   const putProject = (p: Project) => {
     projects = projects.some((x) => x.id === p.id) ? projects.map((x) => (x.id === p.id ? p : x)) : [...projects, p];
-    setTimeout(() => sub?.project?.(p), 30);
+    setTimeout(() => sub?.project?.(withQuiet(p)), 30);
     return p;
   };
   const projectIdFor = (t: ThreadDTO) => t.projectId ?? projects.find((p) => p.name === t.project)?.id;
+  // V0.30, V0.55: what "New project from this thread" starts with, as the host computes it (no scratch, no home, no
+  // folder a project has).
+  const draftFor = (t: ThreadDTO): ThreadDTO["newProject"] => {
+    if (!t.cwd || t.cwd.includes("/scratch/") || t.cwd === MOCK_HOME || projects.some((p) => p.folder === t.cwd)) return undefined;
+    return { name: t.cwd.split("/").pop() ?? "", folder: t.cwd };
+  };
+  const dtoOf = (t: ThreadDTO): ThreadDTO => {
+    const pid = projectIdFor(t);
+    const q = withQuiet(projects.find((p) => p.id === pid) ?? { name: "" }).quietUntil;
+    // V0.33: the outbox is what the mock agent has not read yet, as the host sends it.
+    const outbox = [...unread].filter(([, tid]) => tid === t.id).map(([id]) => ({ id, state: "queued" }));
+    return mockHostOf({ ...t, projectId: pid, newProject: draftFor(t), quietUntil: q, outbox: outbox.length ? outbox : undefined }, clock());
+  };
   let nextId = 1;
 
   const put = (t: ThreadDTO, patch: Partial<ThreadDTO>) => {
     const n: ThreadDTO = { ...t, ...patch, updatedAt: new Date(clock()).toISOString() };
     n.projectId = n.projectId ?? projectIdFor(n);
     threads.set(n.id, n);
-    setTimeout(() => sub?.thread(n), 30);
+    setTimeout(() => sub?.thread(dtoOf(n)), 30);
     return n;
   };
   const emit = (id: string, type: string, data: unknown) => {
@@ -771,6 +943,33 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     setTimeout(() => sub?.event(e), 20);
   };
   const quiet = { ...NOT_RUNNING };
+  // V0.33: messages the mock agent has not read; a running thread reads them after a step.
+  const unread = new Map<string, string>(Object.entries(events).flatMap(([tid, list]) => {
+    const st = new Map<string, string>();
+    for (const e of list) if (e.type === "message.state") st.set(String((e.data as { id?: string })?.id), String((e.data as { state?: string })?.state));
+    return [...st].filter(([, v]) => v === "queued" || v === "sent").map(([mid]) => [mid, tid] as [string, string]);
+  }));
+  const deliver = (tid: string, text: string, args: Record<string, unknown>, running: boolean) => {
+    const id = `m_new${nextId++}`;
+    const imgs = Array.isArray(args.images) ? args.images.length : 0;
+    emit(tid, "user", { id, text, images: imgs, attachments: attachmentsOf(args), ...(args.from === "view" ? { from: "view" } : {}) });
+    if (!running) {
+      emit(tid, "message.state", { id, state: "read" });
+      return id;
+    }
+    emit(tid, "message.state", { id, state: "queued" });
+    unread.set(id, tid);
+    const th = threads.get(tid);
+    if (th) put(th, {});
+    setTimeout(() => {
+      if (unread.delete(id)) {
+        emit(tid, "message.state", { id, state: "read" });
+        const t2 = threads.get(tid);
+        if (t2) put(t2, {});
+      }
+    }, 6000);
+    return id;
+  };
   const runFor = (id: string, reply: string) => {
     const t = threads.get(id)!;
     put(t, {
@@ -787,7 +986,10 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       if (!cur.running) return;
       emit(id, "msg", assistantText(reply));
       emit(id, "run.ended", { failure: null, interrupted: false, costUsd: 0.01, durationMs: 1800 });
+      // V0.37: a view thread's run updates its view at the end.
+      const live = cur.liveView && cur.live ? { ...cur.live, state: { ...cur.live.state, headline: reply }, headline: reply, updatedAt: new Date(clock()).toISOString(), checkedAt: new Date(clock()).toISOString() } : cur.live;
       put(cur, {
+        live,
         running: false,
         activity: "",
         summary: reply,
@@ -802,57 +1004,45 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   const exec = (action: string, t: ThreadDTO | undefined, args: Record<string, unknown>): CommandReply => {
     if (action === "thread.create") {
       const id = `t_new${nextId++}`;
-      const cwd = String(args.cwd ?? "");
+      // V0.42, V0.55: the project's folder, else a fresh scratch folder.
+      const pr = args.projectId ? projects.find((x) => x.id === args.projectId) : undefined;
+      if (args.projectId && !pr) return { ok: false, error: `no project ${args.projectId}` };
+      const slug = String(args.text ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "thread";
+      const cwd = String(args.cwd || pr?.folder || `${MOCK_HOME}/.local/share/fyr/scratch/20261114-093005-${slug}`);
       const nt = base(id, String(args.title || args.text || "New thread").slice(0, 80), clock(), 0, {
         cwd,
-        project: cwd.split("/").slice(-2).join("/"),
+        project: pr?.name ?? "",
+        projectId: pr?.id,
         profile: String(args.profile ?? "claude"),
         model: String(args.model ?? "claude-opus-5-5"),
+        liveView: args.view === true,
       });
       threads.set(id, nt);
       events[id] = [];
-      const imgs = Array.isArray(args.images) ? args.images.length : 0;
-      emit(id, "user", { text: String(args.text ?? ""), images: imgs, attachments: attachmentsOf(args) });
+      const mid = deliver(id, String(args.text ?? ""), args, false);
       runFor(id, "Started on it. (mock)");
-      return { ok: true, threadId: id };
+      return { ok: true, threadId: id, result: { messageId: mid } };
     }
     if (action === "project.update") {
       const p = projects.find((x) => x.id === args.id);
       if (!p) return { ok: false, error: "No such project" };
       const patch: Partial<Project> = {};
-      for (const k of ["name", "color", "icon", "profile", "model"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k];
-      putProject({ ...p, ...patch });
+      for (const k of ["name", "color", "icon", "profile", "model", "quiet"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k] ?? undefined;
+      if ("folder" in args) patch.folder = args.folder ? expand(String(args.folder)) : undefined;
+      const np = putProject({ ...p, ...patch });
+      // V0.46: the threads carry the project's quietUntil, so they change with it.
+      if ("quiet" in args) for (const t of threads.values()) if (projectIdFor(t) === np.id) setTimeout(() => sub?.thread(dtoOf(t)), 40);
       return { ok: true };
     }
     if (action === "project.create") {
       const name = String(args.name ?? "").trim();
       if (!name) return { ok: false, error: "A project needs a name" };
-      const sources = Array.isArray(args.sources) ? (args.sources as Project["sources"]) : [];
-      const folder = sources?.find((x) => x.kind === "folder") as { path?: string } | undefined;
-      putProject({ id: `p_new${nextId++}`, name, sources, threads: 0, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
-      return { ok: true };
-    }
-    if (action === "project.createFrom") {
-      const t = threads.get(String(args.threadId ?? ""));
-      const sug = t?.suggest;
-      if (!t || !sug || projectIdFor(t)) return { ok: false, error: "This thread has no project to make" };
-      const folder = sug.sources.find((x) => x.kind === "folder") as { path?: string } | undefined;
-      const p = putProject({ id: `p_new${nextId++}`, name: sug.name, sources: sug.sources, threads: 1, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
-      put(t, { projectId: p.id, project: p.name, suggest: undefined });
-      return { ok: true };
-    }
-    if (action === "project.removeSource") {
-      const p = projects.find((x) => x.id === args.id);
-      const i = Number(args.index);
-      if (!p || !Number.isInteger(i) || i < 0 || i >= (p.sources ?? []).length) return { ok: false, error: "No such source" };
-      putProject({ ...p, sources: (p.sources ?? []).filter((_, k) => k !== i) });
-      return { ok: true };
-    }
-    if (action === "project.addSource") {
-      const p = projects.find((x) => x.id === args.id);
-      if (!p) return { ok: false, error: "No such project" };
-      putProject({ ...p, sources: [...(p.sources ?? []), args.source as NonNullable<Project["sources"]>[number]] });
-      return { ok: true };
+      const folder = args.folder ? expand(String(args.folder)) : undefined;
+      const ft = args.threadId ? threads.get(String(args.threadId)) : undefined;
+      if (args.threadId && !ft) return { ok: false, error: `no thread ${args.threadId}` };
+      const p = putProject({ id: `p_new${nextId++}`, name, folder, threads: ft ? 1 : 0, lastUsed: new Date(clock()).toISOString() });
+      if (ft) put(ft, { projectId: p.id, project: p.name });
+      return { ok: true, result: { id: p.id } };
     }
     if (action === "t3.adopt") {
       const ids = (args.t3Ids as string[]) ?? [];
@@ -875,9 +1065,16 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       put(t, { attention: { state, section, reason: "" }, ...extra });
     switch (action) {
       case "thread.send": {
-        const imgs = Array.isArray(args.images) ? args.images.length : 0;
-        emit(t.id, "user", { text: String(args.text ?? ""), images: imgs, attachments: attachmentsOf(args) });
-        runFor(t.id, "Got it. Working on that now. (mock reply)");
+        deliver(t.id, String(args.text ?? ""), args, t.running);
+        if (!t.running) runFor(t.id, "Got it. Working on that now. (mock reply)");
+        break;
+      }
+      case "thread.cancelMessage": {
+        const mid = String(args.messageId ?? "");
+        if (unread.get(mid) !== t.id) return { ok: false, error: "The agent has already read this message" };
+        unread.delete(mid);
+        emit(t.id, "message.state", { id: mid, state: "cancelled" });
+        put(t, {});
         break;
       }
       case "thread.answer": {
@@ -928,14 +1125,51 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         put(t, { title: String(args.title ?? t.title) });
         break;
       case "thread.setProject": {
+        if (args.projectId === "") {
+          // V0.30: No project, by hand.
+          put(t, { projectId: "", project: "" });
+          break;
+        }
         const p = projects.find((x) => x.id === args.projectId);
         if (!p) return { ok: false, error: "No such project" };
         put(t, { projectId: p.id, project: p.name });
         break;
       }
+      case "thread.setView":
+        put(t, { liveView: args.on === true });
+        break;
       case "thread.setModel":
         put(t, { model: String(args.model ?? t.model) });
         break;
+      case "thread.dismissPR":
+        if (!t.pr || t.pr.state === "OPEN") return { ok: false, error: "The PR is still open" };
+        put(t, { pr: null });
+        break;
+      // V0.43: the owner's PR actions report as an effect.result by the owner.
+      case "pr.merge": {
+        if (!t.pr || (t.pr.state ?? "OPEN") !== "OPEN") return { ok: false, error: "The PR is not open" };
+        const pr = t.pr;
+        setTimeout(() => {
+          emit(t.id, "effect.result", { action: "pr.merge", by: "owner", ok: true, text: `You merged #${pr.number} (${String(args.method ?? "squash")}).\n\n✓ Merged pull request ${pr.repo}#${pr.number}` });
+          put(t, { pr: { ...pr, state: "MERGED" } });
+        }, 600);
+        break;
+      }
+      case "pr.rerunFailed": {
+        if (!t.pr || (t.pr.state ?? "OPEN") !== "OPEN") return { ok: false, error: "The PR is not open" };
+        const n = t.pr.number;
+        setTimeout(() => emit(t.id, "effect.result", { action: "pr.rerunFailed", by: "owner", ok: true, text: `You re-ran the failed checks of #${n}.\n\nRe-ran 1 failed workflow run of 9c1e0b7: CI.` }), 400);
+        break;
+      }
+      case "thread.handover": {
+        // V0.45: the mock hands over at once, with full history.
+        const to = String(args.profile ?? "");
+        if (!to || to === t.profile) return { ok: false, error: "Pick another profile" };
+        const from = t.profile;
+        put(t, { profile: to, model: String(args.model ?? "") });
+        emit(t.id, "handover", { from, to, model: args.model ?? "", rung: "resume" });
+        break;
+      }
       default:
         return { ok: false, error: `Unknown action ${action}` };
     }
@@ -950,17 +1184,20 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         host: "desk",
         user: "owner",
         buildId: "mock",
-        threads: [...threads.values()].map((t) => ({ ...t, projectId: projectIdFor(t) })),
+        deploy: mockDeploy(),
+        threads: [...threads.values()].map(dtoOf),
+        ...(MOCK_HOSTS ? { hosts: mockHosts(clock()) } : {}),
         actions: [
           { name: "thread.settle", label: "Settle", key: "e", bulk: true },
           { name: "thread.snooze", label: "Snooze", key: "s" },
           { name: "thread.archive", label: "Archive", key: "#" },
         ],
         profiles: [
-          { id: "claude", name: "Claude", color: "#d97757", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5"], defaultModel: "claude-opus-5-5" },
+          { id: "claude", name: "Claude", color: "#d97757", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5"], defaultModel: "claude-opus-5-5", defaultEffort: "high",
+            modelCaps: [{ id: "claude-opus-5-5", efforts: ["low", "medium", "high", "xhigh", "max"] }, { id: "claude-sonnet-5-5", efforts: ["low", "medium", "high", "xhigh", "max"] }, { id: "claude-haiku-5" }] },
           { id: "work", name: "Claude (work account)", color: "#2f6fb0", models: ["claude-sonnet-5-5"], defaultModel: "claude-sonnet-5-5" },
         ],
-        projects,
+        projects: projects.map(withQuiet),
       } as StateDTO;
     },
     subscribe(h) {
@@ -973,6 +1210,9 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       replies.set(commandId, r);
       return r;
     },
+    prDetail(threadId) {
+      return mockPrDetail(threads.get(threadId), clock());
+    },
     events(threadId, after, limit) {
       const list = events[threadId] ?? [];
       if (after > 0) return list.filter((e) => e.seq > after).slice(0, limit);
@@ -980,6 +1220,33 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     },
     t3Candidates() {
       return fx.t3;
+    },
+    fsList(path) {
+      const p = expand(path);
+      if (!(p === MOCK_HOME || p.startsWith(MOCK_HOME + "/")) || !tree.dirs.has(p)) throw new Error(`outside the home folder: no folder ${path}`);
+      const dirs = [...tree.dirs].filter((d) => d.slice(0, d.lastIndexOf("/")) === p).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).map(dirOf);
+      return { path: p, parent: p === MOCK_HOME ? "" : p.slice(0, p.lastIndexOf("/")), dirs };
+    },
+    fsRecent() {
+      const seen = new Set<string>();
+      return [...threads.values()]
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map((t) => t.cwd)
+        .filter((c) => tree.dirs.has(c) && !seen.has(c) && !!seen.add(c))
+        .slice(0, 30)
+        .map(dirOf);
+    },
+    fsRepos() {
+      return [...tree.repos].filter((r) => tree.dirs.has(r)).sort().map(dirOf);
+    },
+    fsMkdir(parent, name) {
+      const p = expand(parent);
+      const n = name.trim();
+      if (!tree.dirs.has(p)) throw new Error(`outside the home folder: no folder ${parent}`);
+      if (!n || n.includes("/") || n === "." || n === "..") throw new Error("a folder name cannot be empty or contain /");
+      if (tree.dirs.has(`${p}/${n}`)) throw new Error(`${p}/${n} already exists`);
+      tree.dirs.add(`${p}/${n}`);
+      return `${p}/${n}`;
     },
     pushKey() {
       return MOCK_VAPID_KEY;
@@ -1072,4 +1339,81 @@ export function mockFilePatch(path: string): FilePatchDTO {
     "   ctx.stroke();\n" +
     "\\ No newline at end of file\n";
   return { path, patch, binary: false, truncated: false };
+}
+
+// V0.46: ?quiet=<projectId> (read once at load, like ?deploy).
+const MOCK_QUIET = typeof location !== "undefined" ? new URLSearchParams(location.search).get("quiet") : null;
+
+/** The host's QuietUntil (internal/core/quiet.go) on the device's clock, for the mock only: any window holds, and
+ *  windows that follow on join, at most a week ahead. */
+export function mockQuietUntil(q: Project["quiet"], now: number): string | undefined {
+  const hm = (s: string) => /^(\d{1,2}):(\d\d)$/.exec(s ?? "");
+  const keys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const one = (w: QuietHours, at: number): number | null => {
+    const f = hm(w.from), t = hm(w.to);
+    if (!f || !t) return null;
+    const span = +t[1] * 60 + +t[2] <= +f[1] * 60 + +f[2] ? 1 : 0;
+    const d = new Date(at);
+    for (const back of [1, 0]) {
+      const day = new Date(d.getFullYear(), d.getMonth(), d.getDate() - back, 12);
+      if (w.days?.length && !w.days.includes(keys[day.getDay()])) continue;
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - back, +f[1], +f[2]).getTime();
+      const end = new Date(d.getFullYear(), d.getMonth(), d.getDate() - back + span, +t[1], +t[2]).getTime();
+      if (at >= start && at < end) return end;
+    }
+    return null;
+  };
+  const list = quietList(q);
+  const window = (at: number): number | null => {
+    let best: number | null = null;
+    for (const w of list) {
+      const e = one(w, at);
+      if (e !== null && (best === null || e > best)) best = e;
+    }
+    return best;
+  };
+  let end = window(now);
+  if (end === null) return undefined;
+  for (let i = 0; i < 64 && end - now < 7 * 24 * 3600_000; i++) {
+    const next = window(end);
+    if (next === null || next <= end) break;
+    end = next;
+  }
+  return new Date(end).toISOString();
+}
+
+/** V0.39: ?deploy=<phase> in the mock shows an update in progress (the layout test uses it). */
+// Read once at load: the phone app rewrites the URL when it starts.
+const MOCK_DEPLOY = typeof location !== "undefined" ? new URLSearchParams(location.search).get("deploy") : null;
+function mockDeploy() {
+  const ph = MOCK_DEPLOY;
+  if (!ph) return null;
+  const started = new Date(Date.now() - 4 * 60_000).toISOString();
+  return { phase: ph, startedAt: started, at: new Date().toISOString(), build: "20261114-160324", blocking: ph === "drain" ? ["t_mapperf", "t_lasso"] : undefined, detail: ph === "failed" ? "tests failed, nothing was switched: exit status 2\nFAIL TestX" : undefined };
+}
+
+/** V0.54: ?hosts=2 in the mock shows a front with two hosts, the second (host-b, with t_lasso and t_triage)
+ *  offline for 25 minutes (the layout test uses it). Read once at load, as ?deploy=. */
+const MOCK_HOSTS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("hosts") === "2" : false;
+const MOCK_REMOTE = new Set(["t_lasso", "t_triage"]);
+function mockHosts(now: number) {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  return [
+    { name: "desk", online: true, since: iso(now - 3 * 3600_000) },
+    { name: "host-b", online: false, since: iso(now - 25 * 60_000), error: "unreachable" },
+  ];
+}
+function mockHostOf(t: ThreadDTO, now: number): ThreadDTO {
+  if (!MOCK_HOSTS) return t;
+  if (!MOCK_REMOTE.has(t.id)) return { ...t, host: "desk" };
+  return { ...t, host: "host-b", hostOffline: new Date(now - 25 * 60_000).toISOString() };
+}
+
+/** SPEC 0.5 V0.44: provider quota for the mock profiles; "work" is busy and stale. */
+export function mockQuota(now: number): Quota[] {
+  const at = (min: number) => new Date(now + min * 60_000).toISOString();
+  return [
+    { profile: "claude", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34, resetsAt: at(140) }, { name: "7 d", usedPct: 61, resetsAt: at(3 * 1440) }], updatedAt: at(-2) },
+    { profile: "work", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 86, resetsAt: at(45) }, { name: "7 d", usedPct: 40, resetsAt: at(5 * 1440) }], updatedAt: at(-14), stale: true, error: "Rate limited by the provider; trying again later", retryAt: at(6) },
+  ];
 }

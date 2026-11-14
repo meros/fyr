@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, makeProjectLabel, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, sourceFromInput, startedBy, suggestionFor } from "../src/projects.ts";
+import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
 test("a thread without a project shows No project (a thread in the home folder, V0.23)", () => {
   assert.equal(projectName({ project: "", projectId: undefined }, []), "No project");
-  const app = { id: "p1", name: "App", color: "teal", icon: { kind: "monogram" }, sources: [], threads: 1, lastUsed: "", cwd: "" } as unknown as Project;
+  const app = { id: "p1", name: "App", color: "teal", icon: { kind: "monogram" }, threads: 1, lastUsed: "", folder: "" } as unknown as Project;
   assert.equal(projectName({ project: "app", projectId: "p1" }, [app]), "App");
 });
 
@@ -66,20 +66,20 @@ test("icons: emoji, curated line icons (T3 names too), else the monogram", () =>
 });
 
 const projects: Project[] = [
-  { id: "p_web", name: "acme/web", cwd: "/home/o/src/web", lastUsed: "2026-11-14T10:00:00Z", profile: "claude", model: "sonnet" },
-  { id: "p_fyr", name: "fyr", sources: [{ kind: "repo", url: "github.com/meros/fyr" }], lastUsed: "2026-11-10T10:00:00Z" },
-  { id: "p_home", name: "Garden", sources: [], lastUsed: "2026-11-13T10:00:00Z" },
+  { id: "p_web", name: "acme/web", folder: "/home/o/src/web", lastUsed: "2026-11-14T10:00:00Z", profile: "claude", model: "sonnet" },
+  { id: "p_fyr", name: "fyr", folder: "/home/owner/git/fyr", lastUsed: "2026-11-10T10:00:00Z" },
+  { id: "p_home", name: "Garden", lastUsed: "2026-11-13T10:00:00Z" },
   { id: "p_old", name: "archive" },
 ];
 
 test("picker order, subtitles and search", () => {
   assert.deepEqual(pickerOrder(projects).map((p) => p.id), ["p_web", "p_home", "p_fyr", "p_old"]);
   assert.equal(projectSubtitle(projects[0]), "~/src/web");
-  assert.equal(projectSubtitle({ name: "x", cwd: "/home/owner/src/x" }), "~/src/x");
-  assert.equal(projectSubtitle(projects[1]), "github.com/meros/fyr");
-  assert.equal(projectSubtitle(projects[2]), "No source: a label");
-  assert.deepEqual(matchProjects(projects, "meros").map((p) => p.id), ["p_fyr"]);
-  assert.deepEqual(matchProjects(projects, "label").map((p) => p.id), ["p_home", "p_old"]);
+  assert.equal(projectSubtitle({ name: "x", folder: "/home/owner/src/x" }), "~/src/x");
+  assert.equal(projectSubtitle(projects[1]), "~/git/fyr");
+  assert.equal(projectSubtitle(projects[2]), "No folder: filed by hand");
+  assert.deepEqual(matchProjects(projects, "git/fyr").map((p) => p.id), ["p_fyr"]);
+  assert.deepEqual(matchProjects(projects, "by hand").map((p) => p.id), ["p_home", "p_old"]);
 });
 
 test("project filter and a thread's project", () => {
@@ -109,21 +109,45 @@ test("started-by and cross-thread messages", () => {
   assert.equal(messageFrom(undefined, ts, projects), null);
 });
 
-test("one input adds a folder or a repo; the host fills in its own name", () => {
-  assert.deepEqual(sourceFromInput(" /home/me/src/fyr/ "), { kind: "folder", path: "/home/me/src/fyr/" });
-  assert.deepEqual(sourceFromInput("~/src/fyr"), { kind: "folder", path: "~/src/fyr" });
-  assert.deepEqual(sourceFromInput("github.com/me/fyr"), { kind: "repo", url: "github.com/me/fyr" });
-  assert.deepEqual(sourceFromInput("git@github.com:me/fyr.git"), { kind: "repo", url: "git@github.com:me/fyr.git" });
-  assert.equal(sourceFromInput("   "), null);
+test("SPEC 0.5 V0.55: New project from this thread starts from the host's folder, else a name only", async () => {
+  const { newProjectDraft } = await import("../src/projects.ts");
+  assert.deepEqual(newProjectDraft({ newProject: { name: "Garden", folder: "/home/o/Garden" } }), { name: "Garden", folder: "/home/o/Garden" });
+  // A scratch folder, the home folder or a folder a project has: just a name field.
+  assert.deepEqual(newProjectDraft({}), { name: "", folder: "" });
 });
 
-test("SPEC 0.5 V0.28: a thread without a project offers its suggestion; a filed thread does not", () => {
-  const sug = { name: "lasso-app", sources: [{ kind: "repo", url: "github.com/owner/lasso-app" }] };
-  assert.deepEqual(suggestionFor({ project: "", projectId: "", suggest: sug }, []), sug);
-  assert.equal(makeProjectLabel(sug), "Make project “lasso-app”");
-  const app = { id: "p1", name: "lasso-app", sources: [] } as unknown as Project;
-  // The suggestion arrives before the thread update that files it: the project wins.
-  assert.equal(suggestionFor({ project: "lasso-app", projectId: "p1", suggest: sug }, [app]), null);
-  assert.equal(suggestionFor({ project: "", projectId: "", suggest: undefined }, []), null);
-  assert.equal(suggestionFor({ project: "", projectId: "", suggest: { name: "", sources: [] } }, []), null);
+test("SPEC 0.5 V0.55: one folder, its words, the scratch default", async () => {
+  const projects = await import("../src/projects.ts");
+  const { newThreadFolder, NO_FOLDER_LINE, FOLDER_LINE, localProject } = projects;
+  assert.equal(FOLDER_LINE, "Threads started in this folder or below land here.");
+  assert.deepEqual(newThreadFolder("", undefined), { label: "A fresh scratch folder", scratch: true });
+  assert.deepEqual(newThreadFolder("", { folder: "/home/owner/src/a" }), { cwd: "/home/owner/src/a", label: "~/src/a", scratch: false });
+  assert.deepEqual(newThreadFolder(" /home/owner/x ", { folder: "/home/owner/src/a" }), { cwd: "/home/owner/x", label: "~/x", scratch: false });
+  assert.match(NO_FOLDER_LINE, /by hand/);
+  assert.doesNotMatch(NO_FOLDER_LINE + FOLDER_LINE, /source|main|clones/i);
+  assert.equal(localProject("p", "A", "/home/owner/src/a").folder, "/home/owner/src/a");
+  assert.equal(localProject("p", "A", "").folder, undefined);
+  // The model of several folders, the main star and the repo line is gone.
+  for (const gone of ["projectFolders", "projectRepos", "repoLine", "sourceText", "MAIN_LINE", "FOLDERS_LINE", "createFolderLine", "suggestionFor", "makeProjectLabel"]) assert.ok(!(gone in projects), gone);
+});
+
+test("SPEC 0.5 V0.30: the picker's first row names what it makes", async () => {
+  const { newRowLabel } = await import("../src/projects.ts");
+  assert.equal(newRowLabel("", 3, true), "New project from this thread");
+  assert.equal(newRowLabel("", 3, false), "New project");
+  assert.equal(newRowLabel("hem", 1, true), "New project from this thread");
+  assert.equal(newRowLabel("Kök ", 0, true), "New project “Kök”");
+  assert.equal(newRowLabel("Kök", 0, false), "New project “Kök”");
+});
+
+test("SPEC 0.5 V0.30: a new thread starts on the inbox filter, else the last project used, else the most recent", async () => {
+  const { startProject } = await import("../src/projects.ts");
+  const ps = [
+    { id: "a", name: "A", lastUsed: "2026-11-10T00:00:00Z" },
+    { id: "b", name: "B", lastUsed: "2026-11-14T00:00:00Z" },
+  ] as Project[];
+  assert.equal(startProject(ps, "a", "b"), "a");
+  assert.equal(startProject(ps, null, "a"), "a");
+  assert.equal(startProject(ps, "gone", "gone"), "b");
+  assert.equal(startProject([], null, null), undefined);
 });

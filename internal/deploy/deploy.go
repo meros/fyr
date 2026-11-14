@@ -48,6 +48,8 @@ type Deployer struct {
 	Poll      time.Duration // drain poll interval
 	Drain     time.Duration // max drain wait
 	Probation time.Duration // wait before reporting success
+	// OnProgress hears each phase as it happens (SPEC 0.5 V0.39).
+	OnProgress func(Progress)
 	// Live is the build id of this daemon (a commit, maybe with -dirty-…).
 	// A deploy of an older commit is refused (SPEC 0.5 V0.24).
 	Live string
@@ -56,6 +58,24 @@ type Deployer struct {
 	mu     sync.Mutex
 	gen    int
 	cancel context.CancelFunc
+}
+
+// Progress is where a deploy is (SPEC 0.5 V0.39): build, test, drain (with
+// the threads it waits for), switch, then done or failed.
+type Progress struct {
+	Phase     string    `json:"phase"`
+	Detail    string    `json:"detail,omitempty"`
+	Blocking  []string  `json:"blocking,omitempty"`
+	Build     string    `json:"build,omitempty"`
+	StartedAt time.Time `json:"startedAt"`
+	At        time.Time `json:"at"`
+}
+
+func (d *Deployer) report(p *Progress, phase, detail string, blocking []string) {
+	p.Phase, p.Detail, p.Blocking, p.At = phase, detail, blocking, time.Now()
+	if d.OnProgress != nil {
+		d.OnProgress(*p)
+	}
 }
 
 var errReplaced = errors.New("a newer deploy replaced this one; nothing was switched")
@@ -130,10 +150,17 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		}
 		return "", err
 	}
-	if why := d.olderThanLive(ctx, run, dir); why != "" {
-		return "", errors.New(why)
-	}
 	id := time.Now().Format("20060102-150405")
+	prog := &Progress{Build: id, StartedAt: time.Now()}
+	failed := func(err error) (string, error) {
+		if err != nil && !errors.Is(err, core.ErrReportLater) {
+			d.report(prog, "failed", err.Error(), nil)
+		}
+		return "", err
+	}
+	if why := d.olderThanLive(ctx, run, dir); why != "" {
+		return failed(errors.New(why))
+	}
 	out := filepath.Join(d.Data, "builds", id)
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return "", err
@@ -146,16 +173,18 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		build = append([]string{"nix", "develop", dir, "--command"}, build...)
 		test = append([]string{"nix", "develop", dir, "--command"}, test...)
 	}
+	d.report(prog, "build", "", nil)
 	if b, err := run(ctx, dir, build...); err != nil {
 		os.RemoveAll(out)
-		return fail(fmt.Errorf("build failed: %v\n%s", err, tail(b, 3000)))
+		return failed(firstErr(fail(fmt.Errorf("build failed: %v\n%s", err, tail(b, 3000)))))
 	}
+	d.report(prog, "test", "", nil)
 	if b, err := run(ctx, dir, test...); err != nil {
 		os.RemoveAll(out)
-		return fail(fmt.Errorf("tests failed, nothing was switched: %v\n%s", err, tail(b, 3000)))
+		return failed(firstErr(fail(fmt.Errorf("tests failed, nothing was switched: %v\n%s", err, tail(b, 3000)))))
 	}
 	if err := d.DB.Snapshot(filepath.Join(out, "pre.db")); err != nil {
-		return "", fmt.Errorf("database snapshot: %w", err)
+		return failed(fmt.Errorf("database snapshot: %w", err))
 	}
 	poll, max := d.Poll, d.Drain
 	if poll == 0 {
@@ -168,16 +197,20 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	for {
 		// Every run must end, the requester's too: the switch stops the
 		// process, and a live turn would die with it (SPEC 0.5 V0.13).
-		others := len(d.Host.Running())
+		running := d.Host.Running()
+		others := len(running)
 		if others == 0 {
 			break
 		}
+		if strings.Join(running, ",") != strings.Join(prog.Blocking, ",") || prog.Phase != "drain" {
+			d.report(prog, "drain", "", append([]string(nil), running...))
+		}
 		if time.Now().After(deadline) {
-			return "", fmt.Errorf("%d other threads were still running after %s; nothing was switched", others, max)
+			return failed(fmt.Errorf("%d other threads were still running after %s; nothing was switched", others, max))
 		}
 		select {
 		case <-ctx.Done():
-			return fail(ctx.Err())
+			return failed(firstErr(fail(ctx.Err())))
 		case <-time.After(poll):
 		}
 	}
@@ -200,6 +233,7 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	}
 	d.exit = ExitDeploy
 	d.mu.Unlock()
+	d.report(prog, "switch", "", nil)
 	if d.Quit != nil {
 		d.Quit()
 	}
@@ -229,9 +263,11 @@ func (d *Deployer) ReportPending() {
 		if f.Log != "" {
 			msg += "\nLog tail:\n" + tail([]byte(f.Log), 1500)
 		}
+		d.report(&Progress{Build: f.Build, StartedAt: time.Now()}, "failed", msg, nil)
 		go d.Host.Report(p.Thread, p.Req, true, false, msg)
 		return
 	}
+	d.report(&Progress{Build: p.Build, StartedAt: time.Now()}, "done", "", nil)
 	wait := d.Probation
 	if wait == 0 {
 		wait = 65 * time.Second
@@ -242,3 +278,5 @@ func (d *Deployer) ReportPending() {
 		d.Host.Report(p.Thread, p.Req, true, true, "Fyr now runs build "+p.Build+".")
 	}()
 }
+
+func firstErr(_ string, err error) error { return err }

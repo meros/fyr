@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardKey, initCard, setOther, type CardState } from "../src/question.ts";
+import { cardKey, initCard, pick, setOther, type CardState, submitState } from "../src/question.ts";
 import type { Decision } from "../src/types.ts";
 
 const d: Decision = {
@@ -81,4 +81,20 @@ test("clearing the Other text drops it, so the question is unanswered again", ()
   cs = setOther(cs, d, "");
   assert.equal(cs.other[0], null);
   assert.equal(cardKey(cs, d, "Enter").submit, undefined);
+});
+
+// SPEC U15: the question card always shows how to finish: a button that says what it does.
+test("the card's submit button follows the answers", () => {
+  const d = { id: "d", kind: "ask", questions: [
+    { question: "A?", options: [{ label: "x" }, { label: "y" }] },
+    { question: "B?", options: [{ label: "p" }, { label: "q" }] },
+  ] } as unknown as Decision;
+  let cs = initCard(d);
+  assert.deepEqual(submitState(cs, d), { label: "Pick an answer", act: "none", answered: 0, total: 2 });
+  cs = pick(cs, d, 0); // answers A and moves to B
+  assert.deepEqual(submitState({ ...cs, index: 0 }, d), { label: "Next question", act: "next", answered: 1, total: 2 });
+  cs = pick(cs, d, 1);
+  assert.deepEqual(submitState(cs, d), { label: "Send 2 answers", act: "submit", answered: 2, total: 2 });
+  const one = { id: "e", kind: "ask", questions: [{ question: "C?", options: [{ label: "z" }] }] } as unknown as Decision;
+  assert.equal(submitState(pick(initCard(one), one, 0), one).label, "Send answer");
 });

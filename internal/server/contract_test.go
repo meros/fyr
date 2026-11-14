@@ -10,6 +10,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/meros/fyr/internal/core"
 )
 
 // stable makes the fixture the same on every run: ids, times, revs, the
@@ -34,13 +37,13 @@ func stable(b []byte, home string) []byte {
 // SPEC 0.5 V0.24: the client is tested against what the host really sends.
 // This test writes the host's /api/state for a few edge cases to
 // web/test/fixtures/host-state.json; the web tests decode that file and
-// drop every optional field in turn. V0.28 adds workspace ids and a
-// suggestion. (Found live: the host omitted an empty
+// drop every optional field in turn. V0.55: a project's one folder and a
+// thread's newProject. (Found live: the host omitted an empty
 // icon value and the whole client failed to start.)
 func TestStateContractFixture(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	hs, _ := newServer(t)
+	hs, e := newServer(t)
 	post := func(body string) {
 		r := do(t, "POST", hs.URL+"/api/command", "", map[string]string{"X-Fyr": "1"}, body)
 		if r.StatusCode != 200 {
@@ -62,6 +65,25 @@ func TestStateContractFixture(t *testing.T) {
 		}
 	}
 	post(`{"commandId":"k4","action":"thread.create","args":{"cwd":"` + lib + `","text":"a thread in a clone"}}`)
+	// V0.37: a thread with a live view carries the flag and the view.
+	post(`{"commandId":"k5","action":"thread.create","args":{"cwd":"` + src + `","text":"a thread with a live view","view":true}}`)
+	for _, d := range e.Snapshot() {
+		if d.Title == "a thread with a live view" {
+			e.Observe(d.ID, func(t *core.Thread, now time.Time) {
+				core.ViewPublished(t, "a_page", map[string]any{"headline": "Tests pass", "steps": []any{"build", "test"}}, now)
+			})
+		}
+	}
+	// V0.46: a project in its quiet hours (a whole day, every day) and its thread carry quietUntil.
+	work := filepath.Join(home, "src", "work")
+	os.MkdirAll(work, 0o755)
+	post(`{"commandId":"k6","action":"project.create","args":{"name":"Work","folder":"` + work + `"}}`)
+	for _, p := range e.Projects() {
+		if p.Name == "Work" {
+			post(`{"commandId":"k7","action":"project.update","args":{"id":"` + p.ID + `","quiet":[{"from":"00:00","to":"00:00"}]}}`)
+		}
+	}
+	post(`{"commandId":"k8","action":"thread.create","args":{"cwd":"` + work + `","text":"a thread in a quiet project"}}`)
 	r := do(t, "GET", hs.URL+"/api/state", "", nil, "")
 	var v any
 	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {

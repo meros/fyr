@@ -140,7 +140,10 @@
 .m-chip.st span{color:var(--ink)}
 .m-chip .icw{display:inline-flex;flex:none;overflow:visible}
 .m-chip.m{font-family:var(--mono);font-weight:400;font-size:12px}
-.m-chip.pj{max-width:36%}
+.m-pjb{flex:0 1 auto;max-width:40%;min-width:0;height:44px;display:flex;align-items:center;padding:0}
+.m-pjb .m-chip{max-width:100%}
+.m-chip.nopj{background:transparent;border:1px dashed var(--line-strong);color:var(--ink-muted)}
+.m-chipsd{flex:1;display:flex;gap:6px;align-items:center;height:44px;min-width:0;padding:0}
 .m-chip.brn{flex:1 1 0;max-width:max-content;min-width:48px}
 .m-chip.prc{flex:none;font:500 12px/16px var(--mono)}
 .m-chip.prc.ok{color:var(--calm)}.m-chip.prc.fail{color:var(--signal-ink)}
@@ -156,6 +159,8 @@
 .m-app .convo{background:var(--surface)}
 .m-app .convo-in{padding:12px 16px}
 .m-app .you{max-width:85%;padding:10px 14px;border-radius:18px 18px 4px 18px;font:400 15px/22px var(--ui)}
+.m-app .dl{font:400 13px/18px var(--ui)}
+.m-app .dlb{min-height:36px;padding:0 12px;margin:-6px -8px -6px 0;font:500 13px/18px var(--ui)}
 .m-app .cl{font:400 16px/24px var(--ui)}
 .m-app .act{max-width:none}
 .m-app .al{grid-template-columns:14px max(40px,calc(var(--nmw,40px) * 1.12)) minmax(0,1fr) 52px;column-gap:8px;height:32px}
@@ -248,10 +253,17 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .pv{max-width:none}
 .m-app .pv-img img{width:100%;max-height:560px;object-fit:cover;object-position:top}
 .m-app .pv-open,.m-app .pv-more{height:44px;line-height:42px;padding:0 14px}
+.m-app .pv-h .pv-fs{width:44px;height:44px;line-height:42px}
 .m-app .fs-item{width:88px}
 .m-app .fs-item img,.m-app .fs-html{width:88px;height:64px}
 /* calm tool output on the phone: 44 px targets */
 .m-app .tl{height:44px;font-size:14px}
+/* SPEC 0.5 V0.41: quieter steps on the phone; the fold line and step rows keep 44 px targets */
+.m-app .msgw.proc .cl{font:400 14px/21px var(--ui)}
+.m-app .tl.fold{height:44px;font-size:13px}
+.m-app .tl.fold .fst{display:none}
+.m-app .act .tl,.m-app .act .al.click{height:44px}
+.m-app .foldb{margin-left:4px;padding-left:12px}
 .m-app .tl.row{padding-left:20px}
 .m-app .tld{margin-left:20px}
 .m-app .qlh.click,.m-app .rm{min-height:44px}
@@ -264,6 +276,7 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-chip.proj span{color:var(--pc)}
 .m-pfline{flex:none;display:flex;align-items:center;gap:8px;min-height:44px;padding:0 4px 0 12px;background:color-mix(in srgb,var(--pc) 10%,var(--raised));border-bottom:1px solid var(--line);min-width:0}
 .m-pfn{flex:1;display:flex;align-items:center;gap:8px;min-width:0;min-height:44px;font:500 14px/20px var(--ui);color:var(--pc)}
+.m-pfq{flex:none;font:400 12px/16px var(--ui);color:var(--ink-muted);white-space:nowrap}
 .m-ppick{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;text-align:left;height:auto;min-height:56px}
 .m-pickpanel{display:flex;flex-direction:column;gap:6px}
 .m-app .pli{min-height:56px}
@@ -271,9 +284,23 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .pls{max-height:50vh}
 .m-sheet .plist{padding:0 16px 8px}
 .m-pform{padding:0 16px 8px}
-.m-plink{padding:0;min-height:44px;display:flex;align-items:center}
+.m-pform .plist{padding:0}
+.m-plink{padding:0;min-height:44px;display:flex;align-items:center;gap:10px;min-width:0}
+.m-plc{font:500 14px/20px var(--ui);color:var(--harbour)}
+.m-app .plfoot{min-height:44px;font-size:15px}
+.m-app .pform .fld input{height:44px;font-size:16px}
+.m-app .pformb .btn{height:44px;padding:0 16px;font-size:15px}
+.m-sheet .pformb{position:sticky;bottom:0;margin:0 -16px;padding:8px 16px 0;background:var(--raised)}
+.m-fline{justify-content:space-between;font:400 15px/20px var(--mono)}
+.m-fchg{flex:none;height:44px;margin-right:-8px;padding:0 8px;font:500 15px/20px var(--ui);color:var(--harbour)}
+.m-fhint{font:400 13px/18px var(--ui);color:var(--ink-muted);padding:0 4px}
 .m-app .sw{width:40px;height:40px;border-radius:20px}
 .m-app .seg button{height:44px}
+.m-app .qtog{min-height:44px;font-size:16px}
+.m-app .fld .qtog input{width:22px;height:22px}
+.m-app .fld .qtime select{height:44px;font-size:16px;padding:0 8px}
+.m-app .qrm{width:44px;height:44px;margin-right:-6px;font-size:22px}
+.m-app .qadd .btn{height:44px;padding:0 14px;font-size:15px}
 .m-app .ig{height:44px}
 .m-app .igrid{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
 .m-app .addsrc input{height:44px;font-size:16px}
@@ -291,6 +318,63 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .chg-file{height:44px;padding:0 16px}
 .m-app .chg-path{font-size:13px}
 .m-app .chg-note{padding:8px 16px}
+/* PR tab (V0.43): 44 px targets, the lists run edge to edge. */
+.m-app .prv{padding:12px 16px 16px;background:var(--surface);gap:14px}
+.m-app .prv-t{font-size:17px;line-height:23px}
+.m-app .prv-status{padding:8px 12px}
+.m-app .prv-ref{min-height:44px;margin:-6px -6px -6px 0}
+.m-app .prv-acts .btn{min-height:44px;border-radius:12px;padding:0 14px;font-size:15px}
+.m-app .prv-size{display:inline-block;line-height:44px;border-bottom:0;text-decoration:underline dashed var(--line-strong);text-underline-offset:3px}
+.m-app .prv-ckl,.m-app .prv-more,.m-app .prv-fh,.m-app .prv-revs li,.m-app .prv-fold{min-height:44px}
+.m-app .prv-ask{min-height:44px;margin:-8px 12px 0 34px;font-size:14px}
+.m-app .prv-askall{min-height:44px}
+.m-app .prv-det{padding:14px 0 14px 8px;margin-right:-4px}
+.m-app .prv-thh a{padding:14px 0}
+.m-app .prv-m{min-height:56px;align-items:center}
+.m-app .prv-m input{margin:0;width:20px;height:20px}
 /* V0.28: a thread without a project, and the action that makes its suggested one */
 .m-nopj{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0}
-.m-bt.m-mkp{height:44px;border-radius:12px;padding:0 14px;font:500 15px/20px var(--ui);max-width:100%}
+
+/* SPEC 0.5 V0.32: native feel. No pull-to-refresh or page bounce, no double-tap zoom,
+   no tap flash, no callout or text selection on the app's own controls; text people
+   read stays selectable. Presses react at once. No scrollbars, no mouse focus rings. */
+html:has(.m-app),html:has(.m-app) body{overscroll-behavior:none}
+.m-app{touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.m-app :is(.msg,.prose,pre,code,.m-kvrow,.m-q,.eff p,.dl,input,textarea,[contenteditable]){user-select:text;-webkit-user-select:text;-webkit-touch-callout:default}
+.m-app img{-webkit-user-drag:none}
+.m-app button:not(:disabled):active,.m-app .m-mv:active{background-color:var(--select);transition:none}
+.m-app .m-bt.p:not(:disabled):active{filter:brightness(.92);transform:scale(.985)}
+.m-app *{scrollbar-width:none}
+.m-app *::-webkit-scrollbar{display:none}
+.m-app :focus:not(:focus-visible){outline:none}
+/* Screen changes slide: forward from the right, back to the right. */
+::view-transition-old(root),::view-transition-new(root){animation-duration:.24s;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
+html[data-nav=fwd]::view-transition-new(root){animation-name:m-in-r}
+html[data-nav=fwd]::view-transition-old(root){animation-name:m-out-l}
+html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
+html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
+@keyframes m-in-r{from{transform:translateX(100%)}}
+@keyframes m-out-l{to{transform:translateX(-25%);opacity:.6}}
+@keyframes m-in-l{from{transform:translateX(-25%);opacity:.6}}
+@keyframes m-out-r{to{transform:translateX(100%)}}
+@media (prefers-reduced-motion: reduce){::view-transition-old(root),::view-transition-new(root){animation:none}}
+/* V0.42: the folder picker as a sheet */
+.fsheet{height:88%}
+.fsh{display:flex;align-items:center;justify-content:space-between;padding:0 16px 0 4px;flex:none}
+.fsheet .fpick{padding:0 16px;flex:1;min-height:0}
+.fsheet .fps{max-height:none;flex:1;min-height:0}
+.m-app .fpr,.fsheet .fpr{min-height:52px}
+.fsheet .pq{height:44px;font-size:16px}
+.fsheet .fbar .btn{height:44px;padding:0 14px;font-size:15px}
+.fsheet .fname{height:44px;font-size:16px}
+.fsheet .fcrumb{min-height:36px;padding:0 6px}
+.m-fline.scratch .ell{font-family:var(--ui);color:var(--ink-muted)}
+/* SPEC 0.5 V0.44: quota lines on the new-thread screen, 44 px targets. */
+.m-new .qlist .qsum{min-height:44px;font-size:13px}
+/* SPEC 0.5 V0.50: Settings screen; the last row clears the home indicator */
+.m-settings .m-nbody{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+.set.phone .qsum{min-height:44px;width:100%;text-align:left}
+/* V0.54: an offline host's thread says so under the header chips; rows name the host with more than one */
+.m-offl{margin:0 16px 8px;padding:8px 12px;border-radius:8px;background:var(--sunken);color:var(--ink-muted);font:500 13px/18px var(--ui);overflow-wrap:anywhere}
+.m-off{color:var(--ink-muted);font-weight:600}
+.m-hostn{font-family:var(--mono);font-size:12px}

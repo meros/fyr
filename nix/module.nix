@@ -11,12 +11,21 @@ self:
 let
   cfg = config.services.fyr;
   home = config.users.users.${cfg.user}.home;
-  configFile = pkgs.writeText "fyr-config.json" (builtins.toJSON {
+  configJSON = builtins.toJSON ({
     listen = "127.0.0.1:${toString cfg.port}";
     permissionMode = cfg.permissionMode;
     idleStopMinutes = cfg.idleStopMinutes;
     profiles = cfg.profiles;
-  });
+    scanRoots = cfg.scanRoots;
+    quota = lib.mapAttrs (_: q: lib.filterAttrs (_: v: v != null) q) cfg.quota;
+  } // lib.optionalAttrs (cfg.role != "both") { role = cfg.role; }
+    // lib.optionalAttrs (cfg.hosts != [ ]) { hosts = cfg.hosts; }
+    // lib.optionalAttrs (hostListen != null) { hostListen = hostListen; });
+  # V0.54: hostPort listens on this machine's tailnet address, which fyrd
+  # reads from tailscaled at start; hostListen names an address by hand.
+  hostListen = if cfg.hostListen != null then cfg.hostListen
+    else if cfg.hostPort != null then "tailnet:${toString cfg.hostPort}" else null;
+  optStr = description: lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; inherit description; };
 in
 {
   options.services.fyr = {
@@ -45,6 +54,47 @@ in
       default = 10;
       description = "Stop an agent process after this long without a run (SPEC V0.7).";
     };
+    role = lib.mkOption {
+      type = lib.types.enum [ "both" "host" "front" ];
+      default = "both";
+      description = ''
+        What this fyrd does (SPEC 0.5 V0.51, decision 0016): `host` runs
+        threads and serves no page; `front` serves the client from `hosts`;
+        `both` is a host with its own front, which reaches it over a loopback
+        link through the host protocol.
+      '';
+    };
+    hosts = lib.mkOption {
+      type = lib.types.listOf (lib.types.submodule {
+        options = {
+          name = lib.mkOption { type = lib.types.str; description = "The host's name, shown in the client."; };
+          url = lib.mkOption { type = lib.types.str; example = "http://host-b:7778"; description = "Where the host serves fronts (its `hostListen`) on the tailnet."; };
+        };
+      });
+      default = [ ];
+      description = "A front's other hosts (V0.51). In `both` the local host comes first and needs no entry.";
+    };
+    hostListen = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "100.101.102.103:7778";
+      description = ''
+        A tailnet address where this host also serves fronts on other
+        machines (V0.51), or `tailnet:PORT` for this machine's tailnet IPv4
+        address (V0.54). Only peers whose Tailscale identity is the owner's
+        login are served. Null: loopback only (or `hostPort`).
+      '';
+    };
+    hostPort = lib.mkOption {
+      type = lib.types.nullOr lib.types.port;
+      default = null;
+      example = 7778;
+      description = ''
+        Serve fronts on other machines on this port of this machine's
+        tailnet address (V0.54): sets `hostListen` to `tailnet:PORT` and
+        opens the port on the tailscale0 interface only. `hostListen` wins.
+      '';
+    };
     profiles = lib.mkOption {
       type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
       default = [ ];
@@ -53,6 +103,59 @@ in
         colour and model list. Empty means: read T3 Code's provider instances,
         else plain `claude`. Ids should match T3's instance ids so adopted
         threads keep their profile.
+      '';
+    };
+    scanRoots = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "~/git" "~/src" ];
+      description = ''
+        Extra folders the host folder picker scans for git repositories, two
+        levels deep (SPEC V0.42). The projects' folders are always scanned.
+        `~` is the user's home folder; only folders inside it are scanned.
+      '';
+    };
+    quota = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule {
+        options = {
+          kind = lib.mkOption {
+            type = lib.types.enum [ "anthropic-oauth" "deepseek" "openrouter" "none" ];
+            description = ''
+              anthropic-oauth: a Claude subscription, read with the CLI's stored
+              login. deepseek, openrouter: a prepaid balance, read with an API key.
+              none: show nothing.
+            '';
+          };
+          configDir = optStr ''
+            anthropic-oauth: the CLI config folder holding .credentials.json.
+            Default: the profile's CLAUDE_CONFIG_DIR, else ~/.claude.
+          '';
+          keyFile = optStr ''
+            deepseek, openrouter: a file holding the API key (a runtime path such
+            as /run/secrets/deepseek, never a Nix path: that would copy the key
+            into the store). Wins over keyEnv. `~` is the user's home folder.
+          '';
+          keyEnv = optStr ''
+            deepseek, openrouter: the environment variable with the API key,
+            looked up in the profile's env, then the daemon's. Default
+            DEEPSEEK_API_KEY or OPENROUTER_API_KEY.
+          '';
+          baseURL = optStr "Overrides the provider's API root.";
+        };
+      });
+      default = { };
+      example = lib.literalExpression ''
+        {
+          claudeAcme = { kind = "anthropic-oauth"; configDir = "~/.claude-acme"; };
+          claudeDeepseek = { kind = "deepseek"; keyFile = "/run/secrets/deepseek-api-key"; };
+        }
+      '';
+      description = ''
+        Where each profile's provider quota is read (SPEC 0.5 V0.44), by
+        profile id. Wins over a profile's own `quota`. A profile in neither is
+        anthropic-oauth when its binary is plain `claude` and its env sets no
+        ANTHROPIC_BASE_URL, else none. fyrd reads the logins at runtime and
+        never sends a token or key to the client.
       '';
     };
     path = lib.mkOption {
@@ -86,8 +189,14 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      { assertion = cfg.role != "front" || cfg.hosts != [ ]; message = "services.fyr: role front needs hosts."; }
+      { assertion = !(cfg.tailnet.enable && cfg.role == "host"); message = "services.fyr: tailnet publishes the front; role host serves no page."; }
+      { assertion = hostListen == null || cfg.role != "front"; message = "services.fyr: hostListen and hostPort need the host role (host or both)."; }
+    ];
+    networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkIf (cfg.hostPort != null && cfg.hostListen == null) [ cfg.hostPort ];
     environment.systemPackages = [ cfg.package ];
-    environment.etc."fyr/config.json".source = configFile;
+    environment.etc."fyr/config.json".text = configJSON;
 
     # Tailscale Serve keeps its config in tailscaled; this unit sets it at boot
     # so the address is declared here, not in a manual command.
@@ -106,8 +215,10 @@ in
 
     systemd.services.fyr = {
       description = "Fyr host daemon";
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
+      # A host on the tailnet listens on its tailnet address: tailscaled first.
+      # Until the address is up fyrd exits and the unit restarts it.
+      after = [ "network-online.target" ] ++ lib.optional (hostListen != null) "tailscaled.service";
+      wants = [ "network-online.target" ] ++ lib.optional (hostListen != null) "tailscaled.service";
       wantedBy = [ "multi-user.target" ];
       # A switch must not restart Fyr: that ends every running agent turn.
       # Changes apply at the next manual restart or boot, as with t3code.

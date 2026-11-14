@@ -1,4 +1,6 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
+import type { HostInfo } from "./hosts.ts";
+import type { DeployProgress } from "./deploy.ts";
 import { decodeProject, decodeState, decodeThread } from "./decode.ts";
 
 import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, ThreadDTO } from "./types.ts";
@@ -22,10 +24,14 @@ export interface Store {
   clockOffset: number;
   user: string;
   host: string;
+  /** V0.51 */
+  hosts: HostInfo[];
   threads: Record<string, ThreadDTO>;
   actions: ActionInfo[];
   profiles: Profile[];
   projects: Project[];
+  /** V0.39 */
+  deploy: DeployProgress | null;
   /** timeline events per thread, oldest first; only for threads the client has loaded */
   events: Record<string, FyrEvent[]>;
 }
@@ -37,11 +43,13 @@ export function initialStore(): Store {
     clockOffset: 0,
     user: "",
     host: "",
+    hosts: [],
     threads: {},
     actions: [],
     profiles: [],
     projects: [],
     events: {},
+    deploy: null,
   };
 }
 
@@ -74,10 +82,12 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     clockOffset: ts(dto.now) ? ts(dto.now) - clientNow : s.clockOffset,
     user: dto.user ?? "",
     host: dto.host ?? "",
+    hosts: dto.hosts ?? [],
     threads,
     actions: dto.actions ?? [],
     profiles: dto.profiles ?? [],
     projects: dto.projects ?? [],
+    deploy: dto.deploy ?? null,
   };
 }
 
@@ -271,4 +281,35 @@ export function upsertProject(s: Store, raw: Project): Store {
   const i = s.projects.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
   const projects = i >= 0 ? s.projects.map((x, j) => (j === i ? p : x)) : [...s.projects, p];
   return { ...s, projects };
+}
+
+/** RFC 7396 JSON Merge Patch: objects merge key by key, null deletes, anything else replaces. */
+export function mergePatch(target: unknown, patch: unknown): unknown {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return patch;
+  const out: Record<string, unknown> = target && typeof target === "object" && !Array.isArray(target) ? { ...(target as Record<string, unknown>) } : {};
+  for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
+    if (v === null) delete out[k];
+    else out[k] = mergePatch(out[k], v);
+  }
+  return out;
+}
+
+export interface ThreadPatch {
+  id: string;
+  rev: number;
+  base: number;
+  patch: Record<string, unknown>;
+}
+
+/** SPEC 0.5 V0.38: apply a thread patch only on the copy it was made against; else ask for the whole thread. */
+export function applyThreadPatch(s: Store, p: ThreadPatch): { store: Store; needFull: boolean } {
+  const cur = s.threads[p.id];
+  if (!cur || cur.rev !== p.base) return { store: s, needFull: true };
+  const next = decodeThread(mergePatch(cur, p.patch));
+  return { store: { ...s, threads: { ...s.threads, [p.id]: next } }, needFull: false };
+}
+
+/** V0.39: a deploy progress from the stream. */
+export function setDeploy(s: Store, p: DeployProgress | null): Store {
+  return { ...s, deploy: p };
 }

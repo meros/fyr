@@ -3,7 +3,7 @@ export CGO_ENABLED := 0
 OUT ?= bin
 BUILD_ID ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null)$(shell git diff --quiet 2>/dev/null || echo -dirty-$$(date +%s))
 
-.PHONY: build web go test test-go test-web install run
+.PHONY: build web web-deps go test test-go test-web install run
 
 build: web go
 
@@ -21,7 +21,11 @@ test-go:
 	go vet ./...
 	go test ./...
 
-test-web:
+# A fresh checkout (CI) has no web/node_modules; install them from the lock file once.
+web-deps:
+	cd web && { [ -d node_modules ] || npm ci --no-audit --no-fund --silent; }
+
+test-web: web-deps
 	cd web && npm run typecheck && npm test && npm run build && npm run test:layout
 
 # First install: put the build under ~/.local/share/fyr; then run `bin/fyr`.

@@ -1,35 +1,40 @@
 // Thread pane: header with chips and tabs, conversation, docked decision card and composer
 // (design/directions/04-rail.html).
 
+import { copySource, copyToClipboard } from "./copy.ts";
+import { useDraft } from "./drafts.ts";
 import { liveLine } from "./tasks.ts";
 import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { createContext } from "preact";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
-import { buildConversation, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel } from "./conversation.ts";
+import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
-import { duration, relTime, shortModel } from "./format.ts";
-import { pick, questionsOf, goTo, type CardState } from "./question.ts";
+import { clockTime, duration, relTime, shortModel } from "./format.ts";
+import { effortsFor, startEffort } from "./providers.ts";
+import { dividerLine, rungDone } from "./handover.ts";
+import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
+import { offlineLine } from "./hosts.ts";
 import { onToolDetails, toolDetails } from "./prefs.ts";
 import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
-import { makeProjectLabel, projectName, projectOf, suggestionFor } from "./projects.ts";
+import { colorVar, projectName, projectOf } from "./projects.ts";
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
+import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
+import { defaultTab, liveViewOf, showsDecision } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
+import { prChip } from "./pr.ts";
+import { PrView } from "./pr-ui.tsx";
 
-export function prLabel(pr: PullRequest, short = false): { text: string; cls: string } {
-  if (pr.state === "MERGED") return { text: short ? "merged" : `#${pr.number} merged`, cls: "merged" };
-  if (pr.state === "CLOSED") return { text: short ? "closed" : `#${pr.number} closed`, cls: "merged" };
-  if (pr.conflict) return { text: `#${pr.number} ✗ conflict`, cls: "fail" };
-  if (pr.checks === "fail") return { text: `#${pr.number} ✗ CI`, cls: "fail" };
-  if (pr.checks === "pass") return { text: `#${pr.number} ✓`, cls: "ok" };
-  if (pr.checks === "pending") return { text: `#${pr.number} …`, cls: "" };
-  return { text: `#${pr.number}`, cls: "" };
+/** The PR chip's short label, its class and the merge status words as its title (V0.43). */
+export function prLabel(pr: PullRequest, short = false): { text: string; cls: string; title: string } {
+  return prChip(pr, short);
 }
 
 export interface AnswerField {
@@ -41,6 +46,8 @@ export interface AnswerField {
 }
 
 export interface ThreadPaneProps {
+  /** U15: send the answers of the open question card */
+  onSubmitAsk?(d: Decision): void;
   thread: ThreadDTO;
   mode: "open" | "peek";
   events: FyrEvent[] | undefined;
@@ -60,17 +67,35 @@ export interface ThreadPaneProps {
   now: number;
   /** Phone layout: back to the inbox. */
   onBack?: () => void;
-  /** Opens the project picker for this thread (V0.26); absent: no ⋯ menu. */
+  /** Opens the project picker for this thread (V0.26, V0.30); absent: no ⋯ menu. */
   onMoveProject?: () => void;
+  /** Opens the handover dialog (V0.45). */
+  onHandover?: () => void;
 }
 
-type Tab = "conv" | "changes" | "pr";
+type Tab = "view" | "conv" | "changes" | "pr";
+
+/** A deep link `/?open=<id>&tab=pr` opens that tab on the desktop too. */
+function urlTab(id: string): string | undefined {
+  if (typeof location === "undefined") return undefined;
+  const q = new URLSearchParams(location.search);
+  const tab = q.get("tab");
+  return q.get("open") === id && tab && ["view", "conv", "changes", "pr"].includes(tab) ? tab : undefined;
+}
 
 export function ThreadPane(p: ThreadPaneProps) {
   const t = p.thread;
   const [tab, setTab] = useState<Tab>("conv");
-  const previews = useMemo(() => previewsOf(p.events ?? []), [p.events]);
-  useEffect(() => setTab("conv"), [t.id]);
+  const previews = useMemo(() => previewsOf(p.events ?? [], t.host), [p.events, t.host]);
+  useEffect(() => setTab(defaultTab(t, urlTab(t.id)) as Tab), [t.id]);
+  const hasView = !!liveViewOf(t);
+  // A view that appears or goes away while the thread is open keeps the tabs valid.
+  useEffect(() => {
+    if (tab === "view" && !hasView) setTab("conv");
+  }, [hasView]);
+  useEffect(() => {
+    if (tab === "pr" && !t.pr) setTab("conv"); // V0.36: a dismissed PR takes its tab with it
+  }, [!!t.pr]);
   const profile = p.profiles.find((x) => x.id === t.profile);
   const decision = t.decisions?.[0] ?? null;
   const st = t.attention.state;
@@ -100,7 +125,7 @@ export function ThreadPane(p: ThreadPaneProps) {
             <button class="btn" disabled={!!settleReason} title={settleReason ?? (t.running ? "Settle when done (e)" : "Settle (e)")} onClick={() => p.onRun("thread.settle")}>
               Settle <kbd>e</kbd>
             </button>
-            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} />}
+            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} liveView={!!t.liveView} onLiveView={() => p.onRun("thread.setView", { on: !t.liveView })} onHandover={p.onHandover} handoverReason={unavailableReason(t, "thread.handover")} />}
           </div>
         </div>
         <div class="chips">
@@ -121,13 +146,19 @@ export function ThreadPane(p: ThreadPaneProps) {
               <StartedBy parentId={t.parent} />
             </span>
           )}
+          {t.hostOffline && (
+            <span class="chip m" title="The front shows this thread from its last copy; commands wait until the host is back">
+              <span>{offlineLine(t)}</span>
+            </span>
+          )}
           {t.branch && (
             <span class="chip m brn" title={t.branch}>
               <span>{t.branch}</span>
             </span>
           )}
           <ModelChip t={t} profile={profile} onRun={p.onRun} />
-          {t.pr && <PrChip pr={t.pr} />}
+          <EffortChip t={t} profile={profile} onRun={p.onRun} />
+          {t.pr && <PrChip pr={t.pr} onDismiss={isAvailable(t, "thread.dismissPR") ? () => p.onRun("thread.dismissPR") : undefined} />}
           {(t.settleWhenDone || t.settleWhenMerged) && (
             <span class="chip">
               <span>{t.settleWhenDone ? "settles when done" : "settles when merged"}</span>
@@ -135,30 +166,50 @@ export function ThreadPane(p: ThreadPaneProps) {
           )}
         </div>
         <div class="tabs" role="tablist">
+          {hasView && (
+            <span class={tab === "view" ? "on" : ""} role="tab" onClick={() => setTab("view")}>
+              View
+            </span>
+          )}
           <span class={tab === "conv" ? "on" : ""} role="tab" onClick={() => setTab("conv")}>
             Conversation
           </span>
           <span class={tab === "changes" ? "on" : ""} role="tab" onClick={() => setTab("changes")}>
             Changes
           </span>
-          <span class={tab === "pr" ? "on" : ""} role="tab" onClick={() => setTab("pr")}>
-            PR
-          </span>
+          {t.pr && (
+            <span class={tab === "pr" ? "on" : ""} role="tab" onClick={() => setTab("pr")}>
+              PR
+            </span>
+          )}
         </div>
       </div>
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      {tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} />}
+      {tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
       {tab === "conv" && <Filmstrip cards={previews} />}
-      {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} cwd={t.cwd} />}
+      {tab === "conv" && (
+        <Conversation
+          outbox={(t.outbox ?? []).map((o) => o.id)}
+          events={p.events}
+          onAtEnd={p.onAtEnd}
+          threadId={t.id}
+          onEarlier={p.onEarlier}
+          cwd={t.cwd}
+          host={t.host}
+          delivery={{ cancel: async (messageId) => p.onRun("thread.cancelMessage", { messageId }), resend: p.onSend }}
+        />
+      )}
       {tab === "changes" && <ChangesView threadId={t.id} />}
-      {tab === "pr" && <PrTab t={t} />}
-      {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} pr={t.pr} />}
-      <Composer key={t.id} t={t} now={p.now} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
+      {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}
+      {showsDecision(tab) && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
+      <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
   );
 }
 
 /** The thread ⋯ menu (V0.26): opens on click or Enter, arrows move, Esc closes and returns focus. */
-function ThreadMenu({ onMove }: { onMove(): void }) {
+function ThreadMenu({ onMove, liveView, onLiveView, onHandover, handoverReason }: { onMove(): void; liveView: boolean; onLiveView(): void; onHandover?: () => void; handoverReason?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
@@ -200,61 +251,44 @@ function ThreadMenu({ onMove }: { onMove(): void }) {
         <div class="tmenu-l" role="menu" aria-label="Thread actions">
           <button class="mi" role="menuitem" onClick={run(onMove)}>
             <kbd>p</kbd>
-            <span class="ell">Move to project…</span>
+            <span class="ell">Project…</span>
             <span />
           </button>
+          <button class="mi" role="menuitem" onClick={run(onLiveView)}>
+            <span />
+            <span class="ell">{liveView ? "Turn off live view" : "Turn on live view"}</span>
+            <span />
+          </button>
+          {onHandover && (
+            <button class="mi" role="menuitem" disabled={!!handoverReason} title={handoverReason} onClick={run(onHandover)}>
+              <span />
+              <span class="ell">Hand over…</span>
+              <span />
+            </button>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-/** The project chip: icon and name in the project colour; a click opens the project screen. A thread without a
- *  project shows "No project" and, when its folder is a git clone, Make project “<repo>” (V0.28). */
+/** The project chip (V0.30): icon and name in the project colour, or "No project"; a click opens the picker. */
 function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: string }) {
   const dir = useDirectory();
   const p = projectOf(t, dir.projects);
-  const sug = suggestionFor(t, dir.projects);
-  if (!p)
-    return (
-      <>
-        <span class="chip pj" title={`${t.cwd}${profileName ? ` · ${profileName}` : ""}`}>
-          <span>{projectName(t, dir.projects)}</span>
-        </span>
-        {sug && (
-          <button class="chip mkp" title={`A project for ${sug.sources.map((s) => ("url" in s && s.url) || ("path" in s && s.path) || "").filter(Boolean).join(" and ")}`} onClick={() => dir.createProjectFrom(t.id)}>
-            <span>{makeProjectLabel(sug)}</span>
-          </button>
-        )}
-      </>
-    );
+  const where = `${t.cwd}${profileName ? ` · ${profileName}` : ""}`;
   return (
-    <button class="chip pj proj" style={{ "--pc": `var(--p-${p?.color ?? "slate"})` }} title={`${t.cwd}${profileName ? ` · ${profileName}` : ""} · open the project`} onClick={() => p?.id && dir.openProject(p.id)}>
-      <ProjectIcon project={p} name={projectName(t, dir.projects)} size={16} />
+    <button class={`chip pj${p ? " proj" : " nopj"}`} style={p ? { "--pc": colorVar(p.color, p.name) } : undefined} title={`${where} · Project… (p)`} aria-label={`Project: ${projectName(t, dir.projects)}. Change`} onClick={() => dir.pickProject(t.id)}>
+      {p && <ProjectIcon project={p} name={p.name} size={16} />}
       <span>{projectName(t, dir.projects)}</span>
     </button>
   );
 }
 
-export function PrTab({ t }: { t: ThreadDTO }) {
+/** The PR tab (V0.43). */
+export function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: ThreadDTO; now: number; onSend(text: string): Promise<boolean>; onDismiss(): void; onChanges(): void; phone?: boolean }) {
   if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
-  const pr = t.pr;
-  return (
-    <div class="pane-note prose">
-      <p>
-        <a href={pr.url} target="_blank" rel="noopener noreferrer">
-          {pr.repo ? `${pr.repo}#${pr.number}` : `#${pr.number}`}
-        </a>
-        {pr.title ? ` · ${pr.title}` : ""}
-      </p>
-      <p>
-        State {pr.state ?? "unknown"} · checks {pr.checks ?? "none"}
-        {pr.review ? ` · review ${pr.review}` : ""}
-        {pr.conflict ? " · merge conflict" : ""}
-      </p>
-      <p>Checks, review threads and Merge in this tab come in a later version (v0.x).</p>
-    </div>
-  );
+  return <PrView key={t.id} t={t} now={now} onSend={onSend} onDismiss={onDismiss} onChanges={onChanges} phone={phone} />;
 }
 
 function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
@@ -276,12 +310,41 @@ function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | und
   );
 }
 
-function PrChip({ pr }: { pr: PullRequest }) {
-  const l = prLabel(pr);
+/** V0.50: the thread's effort, when its model takes one. */
+function EffortChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
+  const efforts = effortsFor(profile, t.model);
+  if (!efforts.length) return null;
+  const cur = startEffort(profile, t.model, t.effort);
+  const reason = unavailableReason(t, "thread.setModel");
   return (
-    <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={pr.title || pr.url}>
-      {l.text}
-    </a>
+    <span class={`chip m${reason ? "" : " msel"}`} title={reason ? `Effort ${cur || "default"} · ${reason}` : `Effort ${cur || "default"} · change effort`}>
+      <span>{cur || "effort"}</span>
+      {!reason && (
+        <select value={cur} aria-label="Effort" onChange={(e) => onRun("thread.setModel", { effort: (e.target as HTMLSelectElement).value })}>
+          {!cur && <option value="">CLI default</option>}
+          {efforts.map((x) => (
+            <option value={x}>{x}</option>
+          ))}
+        </select>
+      )}
+    </span>
+  );
+}
+
+function PrChip({ pr, onDismiss }: { pr: PullRequest; onDismiss?: () => void }) {
+  const l = prLabel(pr);
+  const done = pr.state === "MERGED" || pr.state === "CLOSED";
+  return (
+    <span class="prw">
+      <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={l.title}>
+        {l.text}
+      </a>
+      {done && onDismiss && (
+        <button class="chip prx" aria-label="Dismiss PR" title="Dismiss PR: the thread goes on" onClick={onDismiss}>
+          ×
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -345,10 +408,28 @@ export function useToolDetails(): boolean {
   return on;
 }
 
-export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string }) {
+/** SPEC 0.5 V0.33: what a message's Cancel and Send again do. */
+export interface DeliveryActions {
+  cancel(messageId: string): Promise<unknown>;
+  resend(args: SendArgs): Promise<unknown>;
+}
+const DeliveryCtx = createContext<DeliveryActions | null>(null);
+
+/** V0.54: the thread's host: its attachments and previews load from there. */
+const HostContext = createContext<string | undefined>(undefined);
+
+/** The host's profiles, for the handover divider's names (V0.45). */
+export const ProfilesContext = createContext<Profile[]>([]);
+
+export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: string }) {
   const details = useToolDetails();
-  const items = useMemo(() => buildConversation(events ?? [], { details, cwd }), [events, details, cwd]);
+  const outKey = outbox ? outbox.join(",") : null;
+  const all = useMemo(() => buildConversation(events ?? [], { details, cwd, host, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, host, outKey]);
+  // V0.33: messages the agent has not read stand after "Agent is here".
+  const [items, pending] = useMemo(() => [all.filter((i) => !(i.kind === "user" && i.pending)), all.filter((i) => i.kind === "user" && i.pending)], [all]);
   const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
+  // V0.41: outcome at full weight, the work quiet and folded.
+  const entries = useMemo(() => pace(items, { details }), [items, details]);
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -367,9 +448,13 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { ev
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (stick.current) el.scrollTop = el.scrollHeight;
-    check();
-  }, [items, threadId]);
+    // V0.38: at the bottom, follow new content without reading the layout first (a read forces a
+    // layout of the whole conversation on every update); away from the bottom, nothing moves.
+    if (stick.current) {
+      el.scrollTop = 1e9;
+      onAtEnd(true);
+    }
+  }, [all, threadId]);
 
   useEffect(() => {
     const el = ref.current;
@@ -382,8 +467,21 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { ev
     return () => ro.disconnect();
   }, []);
 
+  // V0.34: Copy on code blocks inside rendered markdown (their buttons are plain HTML).
+  const onCodeCopy = async (e: MouseEvent) => {
+    const b = (e.target as Element | null)?.closest?.("[data-cpy]") as HTMLButtonElement | null;
+    if (!b) return;
+    e.stopPropagation();
+    const code = b.parentElement?.querySelector("pre")?.textContent ?? "";
+    if (await copyToClipboard(copySource({ kind: "block", text: code }))) {
+      b.textContent = "Copied";
+      setTimeout(() => (b.textContent = "Copy"), 1200);
+    }
+  };
   return (
-    <div class="convo" ref={ref} onScroll={check}>
+    <ThreadIdContext.Provider value={threadId}>
+    <HostContext.Provider value={host}>
+    <div class="convo" ref={ref} onScroll={check} onClick={onCodeCopy}>
       <div class="convo-in">
         {events === undefined && <div class="sys">Loading…</div>}
         {events !== undefined && items.length === 0 && <div class="sys">No messages yet.</div>}
@@ -397,12 +495,64 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { ev
             <CrashProbe />
           </Boundary>
         )}
-        {items.map((it) => (
-          <Boundary key={it.key} name="This message">
-            <ItemView it={it} previews={previews} />
-          </Boundary>
-        ))}
+        <DeliveryCtx.Provider value={delivery ?? null}>
+          {entries.map((en) => (
+            <Boundary key={en.key} name="This message">
+              <EntryView en={en} previews={previews} />
+            </Boundary>
+          ))}
+          {pending.length > 0 && (
+            <div class="here" role="separator" aria-label="The agent has read everything above this line">
+              <span>Agent is here</span>
+            </div>
+          )}
+          {pending.map((it) => (
+            <Boundary key={it.key} name="This message">
+              <div class="cv out own">
+                <ItemView it={it} previews={previews} />
+              </div>
+            </Boundary>
+          ))}
+        </DeliveryCtx.Provider>
       </div>
+    </div>
+    </HostContext.Provider>
+    </ThreadIdContext.Provider>
+  );
+}
+
+/** V0.33: the quiet delivery word under a message, with Cancel while it waits and Send again once it is gone. */
+function DeliveryLine({ it }: { it: Extract<Item, { kind: "user" }> }) {
+  const acts = useContext(DeliveryCtx);
+  const [busy, setBusy] = useState(false);
+  const word = deliveryLabel(it);
+  if (!word) return null;
+  const gone = it.delivery === "cancelled" || it.delivery === "lost";
+  return (
+    <div class={`dl${it.from ? " from" : ""}`}>
+      <span>{busy ? "Cancelling…" : word}</span>
+      {it.delivery === "queued" && it.id && acts && (
+        <button
+          class="dlb"
+          disabled={busy}
+          title="Take this message back before the agent reads it"
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await acts.cancel(it.id!);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Cancel
+        </button>
+      )}
+      {gone && !it.from && acts && (
+        <button class="dlb" onClick={() => void acts.resend(it.attachments.length ? { text: it.text, attachments: it.attachments.map((a) => a.id) } : { text: it.text })}>
+          Send again
+        </button>
+      )}
     </div>
   );
 }
@@ -428,7 +578,7 @@ function QuietLine({ icon, line, full, fail }: { icon: "settled" | "failed" | "s
         <StateIcon state={icon} size={12} />
         <span class="ell">{line}</span>
       </div>
-      {open && full && <pre class="qlx">{full}</pre>}
+      {open && full && <CopyPre cls="qlx" text={full} />}
     </div>
   );
 }
@@ -461,28 +611,131 @@ function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
   );
 }
 
-function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
+/** V0.34: a Copy button that says "Copied" for a moment. */
+function CopyButton({ text, label = "Copy", cls = "" }: { text: string; label?: string; cls?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      class={`cpy ${cls}`}
+      aria-label={label}
+      title={label}
+      onClick={async (e) => {
+        e.stopPropagation();
+        if (await copyToClipboard(text)) {
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
+        }
+      }}
+    >
+      {done ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
+/** A preformatted block with Copy; `copy` is the full text when the shown one is cut. */
+function CopyPre({ cls, text, copy }: { cls: string; text: string; copy?: string }) {
+  return (
+    <div class="codeb">
+      <CopyButton text={copySource({ kind: "block", text: copy ?? text })} label="Copy" />
+      <pre class={cls}>{text}</pre>
+    </div>
+  );
+}
+
+/** V0.41: one paced entry. The wrapper's class carries the rhythm: more room before an outcome, little between steps. */
+function EntryView({ en, previews }: { en: Entry; previews: PreviewCard[] }) {
+  if (en.kind === "fold") return <div class="cv proc"><Fold en={en} previews={previews} /></div>;
+  const cls = en.role === "outcome" ? (en.item.kind === "user" ? "out own" : "out") : en.role === "end" ? "end" : "proc";
+  return (
+    <div class={`cv ${cls}`}>
+      <ItemView it={en.item} previews={previews} process={en.role === "process"} />
+    </div>
+  );
+}
+
+/** V0.41: the agent's steps between two outcomes as one quiet line; a tap shows every step in order. */
+function Fold({ en, previews }: { en: Extract<Entry, { kind: "fold" }>; previews: PreviewCard[] }) {
+  const [open, setOpen] = useState(false);
+  const toggle = () => setOpen(!open);
+  const time = en.durationMs !== null ? duration(en.durationMs) : "";
+  return (
+    <div class={`foldw${open ? " open" : ""}`}>
+      <div class="tl fold" role="button" tabIndex={0} aria-expanded={open} data-keys="self" title={en.text} onClick={toggle} onKeyDown={keyActivate(toggle)}>
+        <StateIcon state={en.failed ? "failed" : en.running ? "working" : "settled"} size={12} />
+        <span class="tlt ell">
+          {en.text}
+          {en.failed > 0 && <b class="tlerr"> · {en.failed} failed</b>}
+        </span>
+        <span class="d">
+          <span class="fst">
+            {en.steps} steps{time ? " · " : ""}
+          </span>
+          {time} {open ? "▾" : "▸"}
+        </span>
+      </div>
+      {open && (
+        <div class="foldb">
+          {en.items.map((it) => (
+            <div class="cv proc" key={it.key}>
+              <ItemView it={it} previews={previews} process />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]; process?: boolean }) {
+  const host = useContext(HostContext);
   switch (it.kind) {
-    case "user":
+    case "user": {
+      // V0.33: unread messages are dimmed; a cancelled or lost one is struck through.
+      const cls = it.pending ? " pend" : it.delivery === "cancelled" || it.delivery === "lost" ? " gone" : "";
+      if (it.from === "view" || it.from === "view-typed")
+        // V0.37 a press, V0.49 a message typed on the View tab: one bubble with the same View tag.
+        return (
+          <div class={`youw${cls}`}>
+            <div class={`you prose vmsg${it.from === "view" ? " vchip" : ""}`} title={it.from === "view" ? "Pressed in the live view" : "Typed on the View tab"}>
+              <span class="vk">View</span>
+              {it.text}
+            </div>
+            <DeliveryLine it={it} />
+          </div>
+        );
       if (it.from)
         return (
-          <FromThreadMessage fromId={it.from} text={it.text}>
-            {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
-          </FromThreadMessage>
+          <div class={`youw from${cls}`}>
+            <FromThreadMessage fromId={it.from} text={it.text}>
+              {it.attachments.length > 0 && <SentAttachments items={it.attachments} host={host} />}
+            </FromThreadMessage>
+            <DeliveryLine it={it} />
+          </div>
         );
       return (
-        <div class="you prose">
-          {it.text}
-          {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
-          {it.images > 0 && !it.attachments.length && (
-            <span class="imgchip">
-              {it.images} {it.images === 1 ? "image" : "images"}
-            </span>
-          )}
+        <div class={`youw${cls}`}>
+          <div class="you prose">
+            {it.text}
+            {it.attachments.length > 0 && <SentAttachments items={it.attachments} host={host} />}
+            {it.images > 0 && !it.attachments.length && (
+              <span class="imgchip">
+                {it.images} {it.images === 1 ? "image" : "images"}
+              </span>
+            )}
+          </div>
+          <DeliveryLine it={it} />
         </div>
       );
+    }
     case "assistant":
-      return <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text) }} />;
+      if (it.quiet) return <QuietLine icon="seen" line={it.text.split("\n").find((x) => x.trim()) ?? ""} full={it.text} />;
+      return (
+        <div class={`msgw${process ? " proc" : ""}`}>
+          <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text, host) }} />
+          <CopyButton text={copySource({ kind: "message", text: it.text })} label="Copy message" cls="msgcp" />
+        </div>
+      );
     case "tools":
       return <ToolCard calls={it.calls} />;
     case "run":
@@ -497,7 +750,25 @@ function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
       return <QuietLine icon={it.started ? "working" : TASK_ICON[it.status] ?? "settled"} line={it.text} fail={it.status === "failed"} />;
     case "answer":
       return <QuietLine icon="settled" line={`Answered: ${it.text}`} />;
+    case "handover":
+      return <HandoverDivider it={it} />;
   }
+}
+
+/** V0.45: "Handed over from Claude to Claude (acme) · 17:20", and how the context went over. */
+function HandoverDivider({ it }: { it: Extract<Item, { kind: "handover" }> }) {
+  const profiles = useContext(ProfilesContext);
+  return (
+    <div class="hodiv" role="separator">
+      <span class="hot">
+        <span>{dividerLine(it, profiles, clockTime(it.atIso))}</span>
+        <small title={it.note}>
+          {rungDone(it.rung)}
+          {it.note ? ` · ${it.note}` : ""}
+        </small>
+      </span>
+    </div>
+  );
 }
 
 function callIcon(c: ToolCall) {
@@ -552,11 +823,33 @@ function FoldGroup({ calls }: { calls: ToolCall[] }) {
 }
 
 /** One call: its label; a tap shows the exact input and output (output cut at 200 lines). */
+let fullEventSource: { fullEvent(threadId: string, seq: number): Promise<FyrEvent | null> } | null = null;
+/** V0.38: where a cut tool output is loaded from (the app sets the API). */
+export function setFullEventSource(s: typeof fullEventSource): void {
+  fullEventSource = s;
+}
+export const ThreadIdContext = createContext("");
+
 function CallRow({ c }: { c: ToolCall }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
+  const threadId = useContext(ThreadIdContext);
+  const [whole, setWhole] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const loadWhole = async () => {
+    if (!c.cutSeq || !fullEventSource) return;
+    setLoading(true);
+    const ev = await fullEventSource.fullEvent(threadId, c.cutSeq).catch(() => null);
+    const text = ev ? fullOutputOf(ev, c.id) : null;
+    setLoading(false);
+    if (text !== null) {
+      setWhole(text);
+      setAll(true);
+    }
+  };
   const toggle = () => setOpen(!open);
-  const out = all ? { text: c.output, hidden: 0 } : cutOutput(c.output);
+  const full = whole ?? c.output;
+  const out = all ? { text: full, hidden: 0 } : cutOutput(full);
   return (
     <div class={`tlr${open ? " open" : ""}`}>
       <div class="tl row" role="button" tabIndex={0} aria-expanded={open} data-keys="self" onClick={toggle} onKeyDown={keyActivate(toggle)}>
@@ -570,10 +863,15 @@ function CallRow({ c }: { c: ToolCall }) {
             {friendlyName(c.name)}
             {c.isError ? " · failed" : ""}
           </div>
-          <pre class="tlin">{fullInput(c.name, c.input)}</pre>
+          <CopyPre cls="tlin" text={fullInput(c.name, c.input)} />
           {c.output ? (
             <>
-              <pre class={`tlout${c.isError ? " err" : ""}`}>{out.text}</pre>
+              <CopyPre cls={`tlout${c.isError ? " err" : ""}`} text={out.text} copy={c.output} />
+              {c.cutSeq && whole === null && (
+                <button class="btn sm tlall" disabled={loading} onClick={loadWhole}>
+                  {loading ? "Loading…" : "Load the full output"}
+                </button>
+              )}
               {out.hidden > 0 && (
                 <button class="btn sm tlall" onClick={() => setAll(true)}>
                   Show all ({out.hidden.toLocaleString()} more lines)
@@ -631,6 +929,8 @@ interface CardProps {
   card: CardState | null;
   onCard(cs: CardState): void;
   onAllow(d: Decision, allow: boolean): void;
+  /** U15: send the answers of an ask card */
+  onSubmitAsk?(d: Decision): void;
   /** the thread's PR, to name it in a merge card */
   pr?: PullRequest | null;
 }
@@ -734,6 +1034,25 @@ function AskCard(p: CardProps & { card: CardState }) {
             <span class="d">{other ?? ""}</span>
           </button>
         </div>
+        {(() => {
+          // U15: always a visible way to finish (Enter still works).
+          const st = submitState(card, d);
+          return (
+            <div class="askf">
+              <span class="askp">
+                {st.total > 1 ? `${st.answered} of ${st.total} answered` : st.answered ? "Answered" : ""}
+              </span>
+              <button
+                class={`btn ${st.act === "submit" ? "p" : ""}`}
+                disabled={st.act === "none"}
+                onClick={() => (st.act === "submit" ? p.onSubmitAsk?.(d) : st.act === "next" && p.onCard(goTo(card, d, nextOpen(card, d))))}
+              >
+                {st.label}
+                {st.act === "submit" && <kbd>↵</kbd>}
+              </button>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -745,6 +1064,8 @@ function AskCard(p: CardProps & { card: CardState }) {
 export interface SendArgs {
   text: string;
   attachments?: string[];
+  /** V0.37: a press in the live view; V0.49: typed on the View tab */
+  from?: "view" | "view-typed";
 }
 
 interface ComposerProps {
@@ -761,8 +1082,8 @@ interface ComposerProps {
  * Files: the paperclip, paste and drop, any type; each uploads at once and shows a chip.
  */
 function Composer({ t, now, answer, onSend, onInterrupt }: ComposerProps) {
-  const [draft, setDraft] = useState("");
-  const att = useAttachments();
+  const [draft, setDraft] = useDraft(t.id);
+  const att = useAttachments(t.host);
   const ta = useRef<HTMLTextAreaElement>(null);
   const sendReason = unavailableReason(t, "thread.send");
   const text = answer ? answer.text : draft;

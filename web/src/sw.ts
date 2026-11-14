@@ -5,7 +5,7 @@
 // - Never touches /api or /mcp.
 // - Shows pushes and opens the thread on a tap.
 
-import { parsePayload, notificationOptions } from "./push.ts";
+import { parsePayload, notificationOptions, openTargets } from "./push.ts";
 
 declare const __BUILD_ID__: string;
 declare const __PRECACHE__: string[];
@@ -113,11 +113,11 @@ sw.addEventListener("notificationclick", (e: NotificationEvt) => {
   const threadId = e.notification.data?.threadId;
   e.waitUntil(
     (async () => {
-      const wins = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
-      const mine = wins.find((c) => new URL(c.url).origin === sw.location.origin);
-      if (mine) {
-        await mine.focus();
-        if (threadId) mine.postMessage({ type: "open", threadId });
+      const wins = openTargets(await sw.clients.matchAll({ type: "window", includeUncontrolled: true }), sw.location.origin);
+      if (wins.length) {
+        // Tell every Fyr window; focus the most recently used one (matchAll lists it first).
+        if (threadId) for (const w of wins) w.postMessage({ type: "open", threadId });
+        await wins[0].focus();
         return;
       }
       await sw.clients.openWindow(threadId ? `/?open=${encodeURIComponent(threadId)}` : "/");

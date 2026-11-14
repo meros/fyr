@@ -83,12 +83,18 @@ export interface TaskDTO {
 export interface ThreadDTO {
   /** Increases on every change, also across host restarts: keep the higher (API v0). */
   rev?: number;
+  /** V0.51: the name of the host that runs the thread */
+  host?: string;
+  /** V0.51: the host is unreachable since then (RFC 3339): the front shows its cached copy, read-only */
+  hostOffline?: string;
   id: string;
   title: string;
   cwd: string;
   project: string;
   profile: string;
   model: string;
+  /** V0.50: "" or missing is the provider's default */
+  effort?: string;
   sessionId?: string;
   createdAt: string;
   updatedAt: string;
@@ -108,15 +114,23 @@ export interface ThreadDTO {
   source?: "fyr" | "t3" | string;
   /** the project this thread belongs to (V0.23); `project` stays the display name */
   projectId?: string;
-  /** where the thread runs (V0.28) */
-  workspaceId?: string;
-  /** a project the thread could get, when it has none and its folder is a git clone (V0.28) */
-  suggest?: ProjectSuggestion;
+  /** what "New project from this thread" starts with (V0.30, V0.55): the thread's folder; absent: a name only */
+  newProject?: NewProjectDraft;
+  /** V0.46: the end of the quiet hours of the thread's project, while they hold (RFC 3339) */
+  quietUntil?: string;
   /** the thread whose agent started this one (V0.22) */
   parent?: string | null;
   /** The checkout branch, read after each run; empty when not a git checkout. */
   branch?: string | null;
   tasks?: TaskDTO[] | null;
+  /** V0.37: the agent keeps a live view */
+  liveView?: boolean;
+  /** V0.45: a handover to another profile is going on */
+  handover?: { to: string; model?: string; at: string } | null;
+  /** V0.37: the live view; read it through liveViewOf (view.ts) */
+  live?: { pageId?: string; state?: Record<string, unknown>; updatedAt?: string; checkedAt?: string; headline?: string } | null;
+  /** V0.33: messages the host still holds (queued or sent, not yet read) */
+  outbox?: { id: string; state: string }[] | null;
   attention: Attention;
   view?: { seenAt?: string | null; snoozeUntil?: string | null } | null;
   unavailable?: Record<string, string> | null;
@@ -135,15 +149,18 @@ export interface Profile {
   color: string;
   models: string[];
   defaultModel?: string;
+  /** V0.50: the models with the effort levels each takes */
+  modelCaps?: { id: string; name?: string; efforts?: string[] }[];
+  defaultEffort?: string;
+  cli?: string;
+  /** V0.50: why it cannot run now (no token or key yet); not offered in pickers */
+  unavailable?: string;
 }
 
-/** Where a project's work lives (V0.23). */
-export type ProjectSource = { kind: "folder"; host: string; path: string } | { kind: "repo"; url: string } | { kind: string; [k: string]: unknown };
-
-/** A project made from a thread's workspace (V0.28): `project.createFrom {threadId}`. */
-export interface ProjectSuggestion {
+/** What "New project from this thread" starts with (V0.55): a name and the thread's folder. */
+export interface NewProjectDraft {
   name: string;
-  sources: ProjectSource[];
+  folder: string;
 }
 
 export interface ProjectIconSpec {
@@ -152,20 +169,49 @@ export interface ProjectIconSpec {
   value?: string;
 }
 
-/** A project: a host-independent identity with sources (V0.23). A project may have no source (a label). */
+/** A project: a name, a colour and one folder on its host (V0.55, decision 0017). Without a folder threads are filed
+ *  in it by hand. */
 export interface Project {
   id?: string;
+  /** V0.51: the host the project lives on (a front stamps it) */
+  host?: string;
   name: string;
   /** a palette name: slate blue sky teal green olive violet indigo rose brown */
   color?: string;
   icon?: ProjectIconSpec;
-  sources?: ProjectSource[];
+  /** the one folder on the project's host; threads there or below land in it (V0.55) */
+  folder?: string;
   profile?: string;
   model?: string;
   threads?: number;
   lastUsed?: string;
-  /** the project's folder on this host, when it has one */
-  cwd?: string;
+  /** V0.46: quiet hours, in the host's time zone: a list of windows (decision 0014 addendum); absent is off.
+   *  A host from before the addendum sends one window as an object; quietList reads both. */
+  quiet?: QuietHours[] | QuietHours;
+  /** V0.46: the end of the quiet hours the project is in now (RFC 3339); absent when not quiet */
+  quietUntil?: string;
+}
+
+/** One window of a project's quiet hours (V0.46): HH:MM; to not after from crosses midnight, from equal to to is
+ *  all day; days are the start days, absent = every day. */
+export interface QuietHours {
+  from: string;
+  to: string;
+  days?: string[];
+}
+
+/** A folder in the host folder picker (V0.42). */
+export interface FsDir {
+  name: string;
+  path: string;
+  repo?: boolean;
+}
+
+/** GET /api/fs/list (V0.42): a folder and its subfolders; parent is "" at the home folder. */
+export interface FsListing {
+  path: string;
+  parent: string;
+  dirs: FsDir[];
 }
 
 export interface StateDTO {
@@ -179,6 +225,10 @@ export interface StateDTO {
   actions: ActionInfo[];
   profiles: Profile[];
   projects: Project[];
+  /** V0.39: where an update of Fyr is, while one runs or just ended */
+  deploy?: import("./deploy.ts").DeployProgress | null;
+  /** V0.51: the front's hosts; missing from a host older than the split */
+  hosts?: import("./hosts.ts").HostInfo[];
 }
 
 export interface FyrEvent {
@@ -193,6 +243,8 @@ export interface CommandReply {
   ok: boolean;
   threadId?: string;
   error?: string;
+  /** project.create: the new project's id; thread.send and thread.create: { messageId } (V0.33) */
+  result?: { id?: string; messageId?: string; [k: string]: unknown };
 }
 
 export interface T3Candidate {
