@@ -1,6 +1,14 @@
 {
   "actions": [
     {
+      "label": "Merge PR",
+      "name": "pr.merge"
+    },
+    {
+      "label": "Re-run failed checks",
+      "name": "pr.rerunFailed"
+    },
+    {
       "label": "Answer",
       "name": "thread.answer"
     },
@@ -161,6 +169,8 @@
       "source": "fyr",
       "title": "a thread with a live view",
       "unavailable": {
+        "pr.merge": "No PR",
+        "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
@@ -227,6 +237,8 @@
       },
       "title": "a thread in a clone",
       "unavailable": {
+        "pr.merge": "No PR",
+        "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
@@ -265,6 +277,8 @@
       "source": "fyr",
       "title": "a thread in the home folder",
       "unavailable": {
+        "pr.merge": "No PR",
+        "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
@@ -313,6 +327,8 @@
       "source": "fyr",
       "title": "a thread in a folder",
       "unavailable": {
+        "pr.merge": "No PR",
+        "pr.rerunFailed": "No PR",
         "thread.answer": "Nothing to answer",
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",

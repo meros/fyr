@@ -254,7 +254,9 @@ func main() {
 
 	dep := &deploy.Deployer{Data: *data, DB: st, Host: eng, Quit: stop, Live: BuildID()}
 	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
-	eng.Effects = effects{dep: dep}
+	// V0.43: the PR tab's details, cached 30 s.
+	prDetails := &github.Details{Gh: github.Gh}
+	eng.Effects = effects{dep: dep, pr: prDetails}
 
 	poller := &github.Poller{Gh: github.Gh, Src: prSource{eng}}
 	eng.OnPR = poller.Kick
@@ -309,7 +311,7 @@ func main() {
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
 	}
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence,
+	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence, PR: prDetails,
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
 			if err != nil {
@@ -343,14 +345,23 @@ func main() {
 }
 
 // effects runs approved async effects (SPEC 5.10).
-type effects struct{ dep *deploy.Deployer }
+type effects struct {
+	dep *deploy.Deployer
+	pr  *github.Details
+}
 
 func (x effects) Run(ctx context.Context, threadID string, req core.EffectReq) (string, error) {
 	switch req.Action {
 	case "pr.merge":
 		url, _ := req.Args["pr"].(string)
 		method, _ := req.Args["method"].(string)
-		return github.Merge(ctx, github.Gh, url, method)
+		defer x.pr.Forget(url)
+		// V0.43: read the PR again and refuse what GitHub would refuse.
+		return github.MergeChecked(ctx, github.Gh, url, method)
+	case "pr.rerunFailed":
+		url, _ := req.Args["pr"].(string)
+		defer x.pr.Forget(url)
+		return github.RerunFailed(ctx, github.Gh, url)
 	case "fyr.deploy":
 		dir, _ := req.Args["dir"].(string)
 		return x.dep.Deploy(ctx, threadID, req, dir)

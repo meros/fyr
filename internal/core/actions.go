@@ -29,6 +29,9 @@ type Effect struct {
 	Model       string            `json:"model,omitempty"`
 	// Request is the approved effect for Kind "effect".
 	Request *EffectReq `json:"request,omitempty"`
+	// ByOwner marks an effect the owner started (V0.43): its result is
+	// recorded in the thread and not sent to the agent.
+	ByOwner bool `json:"byOwner,omitempty"`
 	// MessageID names the message of a send, or the one to cancel (V0.33).
 	MessageID string `json:"messageId,omitempty"`
 }
