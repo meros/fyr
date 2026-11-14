@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
@@ -47,8 +48,37 @@ type Deployer struct {
 	Poll      time.Duration // drain poll interval
 	Drain     time.Duration // max drain wait
 	Probation time.Duration // wait before reporting success
+	// Live is the build id of this daemon (a commit, maybe with -dirty-…).
+	// A deploy of an older commit is refused (SPEC 0.5 V0.24).
+	Live string
 
-	exit int
+	exit   int
+	mu     sync.Mutex
+	gen    int
+	cancel context.CancelFunc
+}
+
+var errReplaced = errors.New("a newer deploy replaced this one; nothing was switched")
+
+// olderThanLive reports why dir's HEAD must not replace the live build, or "".
+func (d *Deployer) olderThanLive(ctx context.Context, run Runner, dir string) string {
+	live, _, _ := strings.Cut(d.Live, "-")
+	if live == "" {
+		return ""
+	}
+	b, err := run(ctx, dir, "git", "-C", dir, "rev-parse", "HEAD")
+	head := strings.TrimSpace(string(b))
+	if err != nil || head == "" || strings.HasPrefix(head, live) {
+		return ""
+	}
+	if _, err := run(ctx, dir, "git", "-C", dir, "merge-base", "--is-ancestor", head, live); err == nil {
+		short := head
+		if len(short) > 12 {
+			short = short[:12]
+		}
+		return fmt.Sprintf("commit %s is older than the live build %s; nothing was switched", short, live)
+	}
+	return ""
 }
 
 type pending struct {
@@ -78,6 +108,31 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	if run == nil {
 		run = execRunner
 	}
+	// One deploy at a time: a newer one cancels one that has not switched.
+	d.mu.Lock()
+	if d.cancel != nil {
+		d.cancel()
+	}
+	d.gen++
+	gen := d.gen
+	ctx, cancel := context.WithCancel(ctx)
+	d.cancel = cancel
+	d.mu.Unlock()
+	defer cancel()
+	replaced := func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return d.gen != gen
+	}
+	fail := func(err error) (string, error) {
+		if replaced() {
+			return "", errReplaced
+		}
+		return "", err
+	}
+	if why := d.olderThanLive(ctx, run, dir); why != "" {
+		return "", errors.New(why)
+	}
 	id := time.Now().Format("20060102-150405")
 	out := filepath.Join(d.Data, "builds", id)
 	if err := os.MkdirAll(out, 0o755); err != nil {
@@ -93,11 +148,11 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	}
 	if b, err := run(ctx, dir, build...); err != nil {
 		os.RemoveAll(out)
-		return "", fmt.Errorf("build failed: %v\n%s", err, tail(b, 3000))
+		return fail(fmt.Errorf("build failed: %v\n%s", err, tail(b, 3000)))
 	}
 	if b, err := run(ctx, dir, test...); err != nil {
 		os.RemoveAll(out)
-		return "", fmt.Errorf("tests failed, nothing was switched: %v\n%s", err, tail(b, 3000))
+		return fail(fmt.Errorf("tests failed, nothing was switched: %v\n%s", err, tail(b, 3000)))
 	}
 	if err := d.DB.Snapshot(filepath.Join(out, "pre.db")); err != nil {
 		return "", fmt.Errorf("database snapshot: %w", err)
@@ -122,20 +177,29 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		}
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return fail(ctx.Err())
 		case <-time.After(poll):
 		}
 	}
+	d.mu.Lock()
+	if d.gen != gen {
+		d.mu.Unlock()
+		return "", errReplaced
+	}
+	d.cancel = nil // past this point the switch happens; nothing cancels it
 	b, _ := json.Marshal(pending{Thread: threadID, Build: id, Req: req})
 	if err := d.DB.SetKV("pending_deploy", string(b)); err != nil {
+		d.mu.Unlock()
 		return "", err
 	}
 	next := filepath.Join(d.Data, "next")
 	os.Remove(next)
 	if err := os.Symlink(filepath.Join("builds", id), next); err != nil {
+		d.mu.Unlock()
 		return "", err
 	}
 	d.exit = ExitDeploy
+	d.mu.Unlock()
 	if d.Quit != nil {
 		d.Quit()
 	}

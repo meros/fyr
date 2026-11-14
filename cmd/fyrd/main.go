@@ -244,7 +244,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	dep := &deploy.Deployer{Data: *data, DB: st, Host: eng, Quit: stop}
+	dep := &deploy.Deployer{Data: *data, DB: st, Host: eng, Quit: stop, Live: BuildID()}
 	eng.Effects = effects{dep: dep}
 
 	poller := &github.Poller{Gh: github.Gh, Src: prSource{eng}}
