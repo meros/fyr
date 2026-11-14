@@ -7,8 +7,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { applySnapshot, flatOrder, initialStore, sections, unavailableReason, upsertProject, upsertThread } from "../src/store.ts";
-import { colorName, filterByProject, matchProjects, projectName, projectOf, projectSubtitle, resolveIcon } from "../src/projects.ts";
+import { colorName, filterByProject, makeProjectLabel, matchProjects, projectName, projectOf, projectSubtitle, resolveIcon, suggestionFor } from "../src/projects.ts";
 import { relTime, whenLabel } from "../src/format.ts";
+import { decodeThread } from "../src/decode.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/host-state.json", import.meta.url), "utf8"));
 const REQUIRED = new Set(["id"]); // a thread or project without an id is not data
@@ -52,6 +53,11 @@ function render(state: any) {
     const p = projectOf(t, s.projects);
     const name = projectName(t, s.projects);
     assert.equal(typeof name, "string");
+    const sug = suggestionFor(t, s.projects);
+    if (sug) {
+      makeProjectLabel(sug);
+      assert.ok(Array.isArray(sug.sources), "suggestion sources");
+    }
     resolveIcon(p?.icon, name);
     colorName(p?.color, name);
     relTime(t.activityAt, now);
@@ -73,6 +79,17 @@ function render(state: any) {
 test("the host fixture has the edge cases (a thread with no project, an icon without value)", () => {
   assert.ok(fixture.threads.some((t: any) => !t.projectId), "a thread with no project");
   assert.ok(fixture.projects.some((p: any) => p.icon && !("value" in p.icon)), "an icon without value");
+  // V0.28: workspaces and a suggestion for a thread in a clone.
+  assert.ok(fixture.threads.every((t: any) => typeof t.workspaceId === "string" && t.workspaceId), "a workspace per thread");
+  assert.ok(fixture.threads.some((t: any) => !t.projectId && t.suggest?.name === "lib"), "a suggestion");
+});
+
+test("SPEC 0.5 V0.28: decode keeps a suggestion with a name and drops one without", () => {
+  const t = fixture.threads.find((x: any) => x.suggest);
+  assert.equal(decodeThread(t).suggest?.name, "lib");
+  assert.equal(decodeThread({ ...t, suggest: { sources: [] } }).suggest, undefined);
+  assert.deepEqual(decodeThread({ ...t, suggest: { name: "lib" } }).suggest, { name: "lib", sources: [] });
+  assert.equal(decodeThread({ id: "t" }).workspaceId, "");
 });
 
 test("every screen function survives the host state with any optional field missing", () => {

@@ -1,6 +1,6 @@
 // Projects (SPEC 0.5 V0.23): palette, icons, ordering, filtering; and started-by labels (V0.22). Pure.
 
-import type { Profile, Project, ProjectIconSpec, ThreadDTO } from "./types.ts";
+import type { Profile, Project, ProjectIconSpec, ProjectSuggestion, ThreadDTO } from "./types.ts";
 import { LINE_ICONS } from "./lucide.ts";
 
 /** Ten hues tuned to the Rail tokens, light and dark. Never amber: the beam marks only what needs the user. */
@@ -115,6 +115,17 @@ export function projectName(t: Pick<ThreadDTO, "projectId" | "project">, project
 /** The project of a thread: by id, else by its display name. */
 export function projectOf(t: Pick<ThreadDTO, "projectId" | "project">, projects: Project[]): Project | undefined {
   return (t.projectId ? projects.find((p) => p.id === t.projectId) : undefined) ?? projects.find((p) => p.name === t.project);
+}
+
+/** The project a thread without one could get (V0.28): its suggestion, only while it has no project. */
+export function suggestionFor(t: Pick<ThreadDTO, "projectId" | "project" | "suggest">, projects: Project[]): ProjectSuggestion | null {
+  if (projectOf(t, projects)) return null;
+  return t.suggest?.name ? t.suggest : null;
+}
+
+/** The action's label: Make project “name”. */
+export function makeProjectLabel(s: ProjectSuggestion): string {
+  return `Make project “${s.name}”`;
 }
 
 /** The inbox filter: only this project's threads; null shows all. */

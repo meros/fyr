@@ -13,7 +13,7 @@ import { pick, questionsOf, goTo, type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { onToolDetails, toolDetails } from "./prefs.ts";
 import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
-import { projectName, projectOf } from "./projects.ts";
+import { makeProjectLabel, projectName, projectOf, suggestionFor } from "./projects.ts";
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
@@ -208,10 +208,25 @@ function ThreadMenu({ onMove }: { onMove(): void }) {
   );
 }
 
-/** The project chip: icon and name in the project colour; a click opens the project screen. */
+/** The project chip: icon and name in the project colour; a click opens the project screen. A thread without a
+ *  project shows "No project" and, when its folder is a git clone, Make project “<repo>” (V0.28). */
 function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: string }) {
   const dir = useDirectory();
   const p = projectOf(t, dir.projects);
+  const sug = suggestionFor(t, dir.projects);
+  if (!p)
+    return (
+      <>
+        <span class="chip pj" title={`${t.cwd}${profileName ? ` · ${profileName}` : ""}`}>
+          <span>{projectName(t, dir.projects)}</span>
+        </span>
+        {sug && (
+          <button class="chip mkp" title={`A project for ${sug.sources.map((s) => ("url" in s && s.url) || ("path" in s && s.path) || "").filter(Boolean).join(" and ")}`} onClick={() => dir.createProjectFrom(t.id)}>
+            <span>{makeProjectLabel(sug)}</span>
+          </button>
+        )}
+      </>
+    );
   return (
     <button class="chip pj proj" style={{ "--pc": `var(--p-${p?.color ?? "slate"})` }} title={`${t.cwd}${profileName ? ` · ${profileName}` : ""} · open the project`} onClick={() => p?.id && dir.openProject(p.id)}>
       <ProjectIcon project={p} name={projectName(t, dir.projects)} size={16} />

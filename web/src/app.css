@@ -469,6 +469,9 @@ button.ptag{padding:0}
 .chip.fromc .from{overflow:hidden;text-overflow:ellipsis}
 .chip.proj{color:var(--pc);background:color-mix(in srgb,var(--pc) 10%,var(--sunken));cursor:pointer}
 .chip.proj span{color:var(--pc)}
+/* V0.28: Make project “<repo>” next to "No project" */
+.chip.mkp{background:transparent;border:1px dashed var(--line-strong);color:var(--ink);cursor:pointer;max-width:40%}
+.chip.mkp:hover{background:var(--sunken)}
 .fromthread{align-self:flex-start;max-width:72%;min-width:0;border:1px solid var(--line);border-left:3px solid var(--harbour);border-radius:4px 14px 14px 14px;background:var(--raised);padding:8px 12px;display:flex;flex-direction:column;gap:4px}
 .fth{display:flex;align-items:center;gap:6px;min-width:0;padding:0;font:500 12px/16px var(--ui);color:var(--ink-muted);cursor:pointer}
 .fth .ell{color:var(--ink)}

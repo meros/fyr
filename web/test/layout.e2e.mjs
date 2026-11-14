@@ -145,6 +145,8 @@ const SCREENS = [
   { name: "new thread", url: "?mock=rail&new", field: ".m-ta" },
   { name: "snooze sheet", url: "?mock=rail&open=t_mapperf", sheet: "snooze" },
   { name: "action sheet", url: "?mock=rail", sheet: "actions" },
+  // SPEC 0.5 V0.28: a thread without a project; its details offer Make project “lasso-app”.
+  { name: "details with a project suggestion", url: "?mock=1&open=t_s4", sheet: "details" },
   // SPEC 0.5 V0.25: the Changes tab with one file's diff open.
   { name: "changes with a diff", url: "?mock=rail&open=t_mapperf&tab=changes", openDiff: true },
 ];
@@ -290,6 +292,9 @@ async function openScreen(s, w, h) {
     await tapCenter(".m-tr1 .b44:last-child");
     await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('Snooze'))?.click()`);
     await sleep(300);
+  } else if (s.sheet === "details") {
+    await tapCenter(".m-chips");
+    await sleep(300);
   } else if (s.sheet === "actions") {
     await tapCenter("#m-sec-needs .m-swp .m-mv", 600);
   }
@@ -303,6 +308,10 @@ for (const [w, h] of SIZES) {
       await openScreen(s, w, h);
       // 1. At rest.
       assertLayout(await evaluate(MEASURE), `${ctx} at rest`);
+      if (s.sheet === "details") {
+        const mk = await evaluate(`(() => { const b = document.querySelector('.m-sheet .m-mkp'); if (!b) return null; const r = b.getBoundingClientRect(); return { left: r.left, right: r.right, h: r.height, text: b.textContent, vw: innerWidth }; })()`);
+        check(!!mk && mk.text.includes("lasso-app") && mk.left >= 0 && mk.right <= mk.vw && mk.h >= 44, `${ctx}: Make project button missing or out of bounds ${JSON.stringify(mk)}`);
+      }
 
       // 2. Keyboard: focus the field, shrink the visual viewport (iOS also scrolls the layout viewport).
       if (!s.sheet) {
