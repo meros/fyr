@@ -1,6 +1,7 @@
 // Thread pane: header with chips and tabs, conversation, docked decision card and composer
 // (design/directions/04-rail.html).
 
+import { useDraft } from "./drafts.ts";
 import { liveLine } from "./tasks.ts";
 import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
@@ -761,7 +762,7 @@ interface ComposerProps {
  * Files: the paperclip, paste and drop, any type; each uploads at once and shows a chip.
  */
 function Composer({ t, now, answer, onSend, onInterrupt }: ComposerProps) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useDraft(t.id);
   const att = useAttachments();
   const ta = useRef<HTMLTextAreaElement>(null);
   const sendReason = unavailableReason(t, "thread.send");

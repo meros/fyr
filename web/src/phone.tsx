@@ -3,6 +3,7 @@
 // Desktop components are reused where the README says they carry over (Conversation, AgentsStrip,
 // PrTab, image paste); everything else here uses its own m- classes so the desktop CSS never applies.
 
+import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts";
@@ -771,7 +772,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
 }
 
 function MComposer({ t, p }: { t: ThreadDTO; p: PhoneProps }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft(t.id);
   const att = useAttachments();
   const ta = useRef<HTMLTextAreaElement>(null);
   const reason = unavailableReason(t, "thread.send");

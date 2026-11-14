@@ -365,6 +365,21 @@ try {
   failures.push(`U8 settle from the thread: ${e.message}`);
 }
 
+// V0.29: a draft survives a reload (a deploy reloads the page); clearing it removes it.
+try {
+  const typeIn = (v) => evaluate(`(() => { const el = document.querySelector('.m-cmp .in'); el.value = ${JSON.stringify(v)}; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
+  await typeIn("half a sentence");
+  await sleep(150);
+  await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
+  const v = await evaluate(`document.querySelector('.m-cmp .in')?.value ?? ''`);
+  check(v === "half a sentence", `V0.29 draft: lost after a reload ("${v}")`);
+  await typeIn("");
+  await sleep(150);
+} catch (e) {
+  failures.push(`V0.29 draft: ${e.message}`);
+}
+
 // V0.24: a message that fails to render shows an error card; the thread, its composer and the
 // rest of the conversation stay. (Found live: one bad field blanked the whole client.)
 try {
