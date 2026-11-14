@@ -1,0 +1,34 @@
+# 0015 Hosts, providers, models, projects and workspaces
+
+Date: 2026-11-14 · Status: accepted (owner, three-round walk-through) · Builds on 0008, 0012, 0013
+
+**Context.** Fyr grew "profiles" (claudeAgent, claudeNorban, claudeDeepseek) that mix an account, an endpoint and a CLI, defined in NixOS and T3 wrappers. Quota (V0.44) and handover (V0.45) need a clear unit, and a second host is coming. The owner asked to plan how hosts, providers, workspaces and projects relate, and to be grilled.
+
+**The model.**
+
+| Concept | Is | Has |
+|---|---|---|
+| Host | a machine running `fyrd` | folders, CLIs, provider logins, workspaces |
+| Provider | an account behind an endpoint, on a host | a login or API key, curated models, quota |
+| Model | what a provider runs (Opus, Sonnet, DeepSeek Flash) | an id, a display name |
+| Project | a topic | a name, folders on hosts (one main), an automatic repo line, quiet hours, a default provider + model |
+| Workspace | the folder or worktree a thread runs in, on one host | path, branch, host |
+| Thread | one conversation | one host, one workspace, one provider + model (Hand over… changes the provider) |
+
+**Decisions.**
+
+| Question | Decision |
+|---|---|
+| Vocabulary | **Providers + models.** The UI talks about providers (accounts) and models, shown as "Claude (norban) · Opus". "Profile" disappears from the UI; the CLI is an internal detail. |
+| Providers and hosts | **Per host.** Each host has its own providers (its logins and CLIs). The same account on two hosts shows as one provider "available on laptop, server" with one shared quota. |
+| Where providers are configured | **In Fyr's UI**, in one **Settings** screen (gear in the rail on desktop, in the phone menu) with sections Providers, Hosts, Notifications, Appearance. |
+| Claude subscription login | **Fyr runs the CLI's own login**: each account gets its own config folder (`~/.local/share/fyr/providers/<id>`), Fyr runs `claude /login` there and shows the link/code in the page; the CLI keeps and refreshes the token. |
+| API keys | **A private file per key**: `~/.local/share/fyr/secrets/<provider>.key`, mode 0600, never in the database, never sent to clients; the UI shows only "set · ••••4f2a" and can replace it. |
+| Migration | **Import once, then the UI.** Fyr imports today's three profiles as providers pointing at their existing logins/keys; afterwards the UI is the place, and the NixOS wrappers can go later. |
+| Models | **Discovered, then curated**: Fyr asks the CLI (its startup handshake lists models) at login/test; the owner ticks which ones show in pickers and can add a custom id. |
+| Projects and providers | **A default per project** (provider + model) for new threads; changeable per thread; nothing switches automatically. |
+| Quota shows | On the **Providers page** (full detail), **where a provider is picked** (new thread, Hand over…, model change), and **on the thread** (its provider's quota when high, with a Hand over… shortcut). |
+| Which host a thread runs on | **Where its folder is**: the host follows the picked folder (the project's main folder on a host); the new-thread screen shows "on meros-laptop" and offers other hosts that have a folder for the project. |
+| Workspace visibility | **A quiet line in the thread header**: "fyr-polish · branch ui-polish · meros-laptop"; a tap shows the full path and actions. |
+
+**Consequences.** `Profile` becomes `Provider` (+ curated models) in the store and API, with an import step at start; T3/NixOS profile seeding is replaced by the import. Quota (V0.44) attaches to providers. Handover (V0.45) picks provider + model. Secrets live in files under `~/.local/share/fyr/secrets/` (0600). The Settings screen is new. Hosts other than the local one come with the tailnet transport (M0); until then the Hosts section shows this host only.
