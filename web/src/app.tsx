@@ -1,4 +1,5 @@
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
+import { Boundary } from "./boundary.tsx";
 import { shouldClearNotification } from "./push.ts";
 import { clearThreadNotification } from "./pwa.ts";
 // The app shell: state, commands and the keyboard.
@@ -932,6 +933,7 @@ function App() {
   if (phone) {
     return (
       <DirectoryContext.Provider value={directory}>
+        <Boundary name="Fyr">
         <PreviewViewer />
         <PhoneApp
           nav={nav}
@@ -989,6 +991,7 @@ function App() {
             }}
           />
         )}
+        </Boundary>
       </DirectoryContext.Provider>
     );
   }
@@ -1014,6 +1017,7 @@ function App() {
       <DirectoryContext.Provider value={directory}>
       <div class={view ? "app open" : "app"}>
         <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} />
+        <Boundary name="The inbox">
         <Inbox
           sec={sec}
           now={now}
@@ -1035,7 +1039,9 @@ function App() {
           extra={pwaControls}
           onFocusZone={() => setZone("list")}
         />
+        </Boundary>
         {viewThread && view ? (
+          <Boundary name="This thread" resetKey={view.id}>
           <ThreadPane
             thread={viewThread}
             mode={view.mode}
@@ -1061,6 +1067,7 @@ function App() {
               if (view.mode === "peek") openThread(view.id, "open");
             }}
           />
+          </Boundary>
         ) : (
           <section class="th empty-th">
             <div class="sys">{store.loaded ? "Pick a thread with j / k and Enter, or start one with c." : store.conn === "offline" ? "Fyr is not reachable. Retrying…" : "Connecting…"}</div>

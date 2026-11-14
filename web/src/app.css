@@ -476,3 +476,10 @@ button.ptag{padding:0}
 .src.none{font-family:var(--ui);color:var(--ink-muted)}
 .addsrc{display:flex;gap:8px;min-width:0}
 .addsrc input{flex:1;min-width:0;height:32px;padding:0 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);font:400 13px/18px var(--mono)}
+
+/* SPEC 0.5 V0.24: a part of the screen that failed to render */
+.crash { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--signal-ink); border-radius: 6px; background: var(--raised); color: var(--ink); font-size: 13px; min-width: 0; }
+.crash b { font-weight: 600; }
+.crash-msg { color: var(--ink-muted); overflow-wrap: anywhere; min-width: 0; flex: 1 1 200px; font-family: var(--mono); font-size: 12px; }
+.crash-btns { display: flex; gap: 8px; }
+.crash-btns button { font: inherit; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; }

@@ -1,0 +1,206 @@
+{
+  "actions": [
+    {
+      "label": "Answer",
+      "name": "thread.answer"
+    },
+    {
+      "bulk": true,
+      "key": "#",
+      "label": "Archive",
+      "name": "thread.archive"
+    },
+    {
+      "label": "New thread",
+      "name": "thread.create"
+    },
+    {
+      "label": "Dismiss failure",
+      "name": "thread.dismiss"
+    },
+    {
+      "key": "Escape",
+      "label": "Stop run",
+      "name": "thread.interrupt"
+    },
+    {
+      "label": "Mark seen",
+      "name": "thread.markSeen"
+    },
+    {
+      "bulk": true,
+      "key": "u",
+      "label": "Mark unseen",
+      "name": "thread.markUnseen"
+    },
+    {
+      "label": "Rename",
+      "name": "thread.rename"
+    },
+    {
+      "key": "r",
+      "label": "Retry",
+      "name": "thread.retry"
+    },
+    {
+      "label": "Send",
+      "name": "thread.send"
+    },
+    {
+      "label": "Change model",
+      "name": "thread.setModel"
+    },
+    {
+      "label": "Move to project",
+      "name": "thread.setProject"
+    },
+    {
+      "bulk": true,
+      "key": "e",
+      "label": "Settle",
+      "name": "thread.settle"
+    },
+    {
+      "key": "m",
+      "label": "Settle when merged",
+      "name": "thread.settleWhenMerged"
+    },
+    {
+      "bulk": true,
+      "key": "s",
+      "label": "Snooze",
+      "name": "thread.snooze"
+    },
+    {
+      "bulk": true,
+      "label": "Unarchive",
+      "name": "thread.unarchive"
+    },
+    {
+      "bulk": true,
+      "label": "Unsettle",
+      "name": "thread.unsettle"
+    },
+    {
+      "bulk": true,
+      "label": "Unsnooze",
+      "name": "thread.unsnooze"
+    }
+  ],
+  "buildId": "b1",
+  "host": "host",
+  "now": "2026-01-01T00:00:00Z",
+  "profiles": [],
+  "projects": [
+    {
+      "auto": true,
+      "color": "sky",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "cwd": "/home/owner/src/app",
+      "icon": {
+        "kind": "monogram"
+      },
+      "id": "p_1",
+      "lastUsed": "2026-01-01T00:00:00Z",
+      "name": "app",
+      "sources": [
+        {
+          "host": "host",
+          "kind": "folder",
+          "path": "/home/owner/src/app"
+        }
+      ],
+      "threads": 1
+    },
+    {
+      "color": "slate",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "cwd": "",
+      "edited": true,
+      "icon": {
+        "kind": "monogram"
+      },
+      "id": "p_2",
+      "lastUsed": "2026-01-01T00:00:00Z",
+      "name": "A label",
+      "sources": null,
+      "threads": 0
+    }
+  ],
+  "threads": [
+    {
+      "activityAt": "2026-01-01T00:00:00Z",
+      "attention": {
+        "section": "seen",
+        "state": "seen"
+      },
+      "createdAt": "2026-01-01T00:00:00Z",
+      "cwd": "/home/owner",
+      "id": "t_3",
+      "model": "",
+      "owner": "owner",
+      "profile": "claude",
+      "project": "",
+      "rev": 1,
+      "running": false,
+      "sessionId": "",
+      "source": "fyr",
+      "title": "a thread in the home folder",
+      "unavailable": {
+        "thread.answer": "Nothing to answer",
+        "thread.dismiss": "No failure to dismiss",
+        "thread.interrupt": "No run is going",
+        "thread.retry": "The last run did not fail",
+        "thread.settleWhenMerged": "No open PR",
+        "thread.unarchive": "Not archived",
+        "thread.unsettle": "Not settled",
+        "thread.unsnooze": "Not snoozed"
+      },
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "view": {
+        "entity": "t_3",
+        "seenAt": "2026-01-01T00:00:00Z",
+        "user": "owner"
+      },
+      "visibility": "private"
+    },
+    {
+      "activityAt": "2026-01-01T00:00:00Z",
+      "attention": {
+        "section": "seen",
+        "state": "seen"
+      },
+      "createdAt": "2026-01-01T00:00:00Z",
+      "cwd": "/home/owner/src/app",
+      "id": "t_4",
+      "model": "",
+      "owner": "owner",
+      "profile": "claude",
+      "project": "app",
+      "projectId": "p_1",
+      "rev": 1,
+      "running": false,
+      "sessionId": "",
+      "source": "fyr",
+      "title": "a thread in a folder",
+      "unavailable": {
+        "thread.answer": "Nothing to answer",
+        "thread.dismiss": "No failure to dismiss",
+        "thread.interrupt": "No run is going",
+        "thread.retry": "The last run did not fail",
+        "thread.settleWhenMerged": "No open PR",
+        "thread.unarchive": "Not archived",
+        "thread.unsettle": "Not settled",
+        "thread.unsnooze": "Not snoozed"
+      },
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "view": {
+        "entity": "t_4",
+        "seenAt": "2026-01-01T00:00:00Z",
+        "user": "owner"
+      },
+      "visibility": "private"
+    }
+  ],
+  "user": "owner"
+}
