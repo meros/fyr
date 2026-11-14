@@ -1,4 +1,6 @@
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
+import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
+import { ContextMenu } from "./menu-ui.tsx";
 import { Boundary } from "./boundary.tsx";
 import { shouldClearNotification } from "./push.ts";
 import { clearThreadNotification } from "./pwa.ts";
@@ -502,6 +504,49 @@ function App() {
     if (view?.id === id) setTracker((tr) => markedUnseen(tr));
     void runAction("thread.markUnseen", [id]);
   };
+
+  // ---- right-click menu (V0.31) ----
+  const [ctx, setCtx] = useState<{ x: number; y: number; items: MenuEntry[]; target: MenuTarget } | null>(null);
+  useEffect(() => {
+    const on = (e: MouseEvent) => {
+      const selection = String(window.getSelection?.() ?? "").trim();
+      const target = targetAt(e.target as Element | null, selection, threadsRef.current);
+      const items = menuFor(target);
+      if (items === null) return; // text fields keep the browser menu (spelling, Paste)
+      e.preventDefault();
+      if (phone || !items.length) return;
+      setCtx({ x: e.clientX, y: e.clientY, items, target });
+    };
+    document.addEventListener("contextmenu", on);
+    return () => document.removeEventListener("contextmenu", on);
+  }, [phone]);
+  const copyText = (text: string) => {
+    void navigator.clipboard?.writeText(text).then(
+      () => setToast({ text: "Copied", undo: false, at: Date.now() }),
+      () => showError("Could not copy"),
+    );
+  };
+  const MENU_ACTION: Record<string, string> = { unsettle: "thread.unsettle", unsnooze: "thread.unsnooze", markSeen: "thread.markSeen", unarchive: "thread.unarchive", interrupt: "thread.interrupt" };
+  const pickMenu = (it: MenuItem, target: MenuTarget) => {
+    setCtx(null);
+    if (target.kind === "thread") {
+      const id = target.t.id;
+      if (it.id === "open") openThread(id, "open");
+      else if (it.id === "settle") settle(id);
+      else if (it.id === "archive") archive([id]);
+      else if (it.id === "snooze") openSnooze([id]);
+      else if (it.id === "markUnseen") markUnseen(id);
+      else if (it.id === "project") (setMoveIds([id]), setDialog("move"));
+      else if (it.id === "copyLink") copyText(`${location.origin}/?open=${id}`);
+      else if (MENU_ACTION[it.id]) void runAction(MENU_ACTION[it.id], [id]);
+      return;
+    }
+    if (it.id === "copy" && (target.kind === "text" || target.kind === "link")) copyText(target.kind === "text" ? target.selection : (target.selection ?? ""));
+    else if (it.id === "openLink" && target.kind === "link") window.open(target.href, "_blank", "noopener");
+    else if (it.id === "copyLink" && target.kind === "link") copyText(target.href);
+    else if (it.id === "openImage" && target.kind === "image") window.open(target.src, "_blank", "noopener");
+  };
+  const ctxMenu = ctx && <ContextMenu x={ctx.x} y={ctx.y} items={ctx.items} onPick={(it) => pickMenu(it, ctx.target)} onClose={() => setCtx(null)} />;
 
   const submitAsk = (d: Decision) => {
     const cs = cards[d.id];
@@ -1023,6 +1068,7 @@ function App() {
 
   return (
     <div class="shell">
+      {ctxMenu}
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>
       <div class={view ? "app open" : "app"}>
