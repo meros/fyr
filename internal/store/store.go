@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, at TEXT NOT NULL, resul
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS providers(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, user TEXT NOT NULL, device TEXT NOT NULL, sub TEXT NOT NULL, created TEXT NOT NULL);
 `
 
@@ -330,4 +331,34 @@ func (s *Store) Workspaces() ([]*core.Workspace, error) {
 		out = append(out, w)
 	}
 	return out, rows.Err()
+}
+
+// PutProvider stores a provider's settings as JSON at a position (SPEC 0.5
+// V0.50). The caller passes data without secrets; the table is additive.
+func (s *Store) PutProvider(id string, pos int, data []byte) error {
+	_, err := s.db.Exec(`INSERT INTO providers(id,pos,data) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET pos=excluded.pos, data=excluded.data`, id, pos, string(data))
+	return err
+}
+
+// Providers returns the stored providers' JSON in position order.
+func (s *Store) Providers() ([][]byte, error) {
+	rows, err := s.db.Query(`SELECT data FROM providers ORDER BY pos, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out [][]byte
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		out = append(out, []byte(d))
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteProvider(id string) error {
+	_, err := s.db.Exec(`DELETE FROM providers WHERE id=?`, id)
+	return err
 }

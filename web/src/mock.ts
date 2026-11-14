@@ -1242,7 +1242,8 @@ export function createMockServer(scenario: string, real0: number): MockServer {
           { name: "thread.archive", label: "Archive", key: "#" },
         ],
         profiles: [
-          { id: "claude", name: "Claude", color: "#d97757", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5"], defaultModel: "claude-opus-5-5" },
+          { id: "claude", name: "Claude", color: "#d97757", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5"], defaultModel: "claude-opus-5-5", defaultEffort: "high",
+            modelCaps: [{ id: "claude-opus-5-5", efforts: ["low", "medium", "high", "xhigh", "max"] }, { id: "claude-sonnet-5-5", efforts: ["low", "medium", "high", "xhigh", "max"] }, { id: "claude-haiku-5" }] },
           { id: "work", name: "Claude (work account)", color: "#2f6fb0", models: ["claude-sonnet-5-5"], defaultModel: "claude-sonnet-5-5" },
         ],
         projects: projects.map(withQuiet),

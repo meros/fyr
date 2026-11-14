@@ -2,8 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"io"
-	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,6 +9,8 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/claude"
+	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 )
 
@@ -64,32 +64,9 @@ func expandHome(p string) string {
 	return p
 }
 
-// sessionFile finds <config>/projects/<dir>/<session>.jsonl. It prefers the
-// dir the CLI derives from cwd, and else takes any (long paths are cut).
-func sessionFile(cfgDir, cwd, sid string) string {
-	if sid == "" || strings.ContainsAny(sid, "/\\*?[") {
-		return ""
-	}
-	exact := filepath.Join(cfgDir, "projects", nonAlnum(cwd), sid+".jsonl")
-	if _, err := os.Stat(exact); err == nil {
-		return exact
-	}
-	m, _ := filepath.Glob(filepath.Join(cfgDir, "projects", "*", sid+".jsonl"))
-	if len(m) == 0 {
-		return ""
-	}
-	return m[0]
-}
-
-func nonAlnum(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9') {
-			b[i] = '-'
-		}
-	}
-	return string(b)
-}
+// sessionFile finds <config>/projects/<dir>/<session>.jsonl (the claude
+// adapter's layout, V0.50).
+func sessionFile(cfgDir, cwd, sid string) string { return claudecli.SessionFile(cfgDir, cwd, sid) }
 
 func sameDir(a, b string) bool {
 	if filepath.Clean(a) == filepath.Clean(b) {
@@ -123,66 +100,6 @@ func (m *Manager) HandoverPlan(threadID, profile string) Plan {
 		return Plan{Rung: RungAdopt, Note: err.Error()}
 	}
 	return Plan{Rung: RungResume}
-}
-
-// copySession puts the transcript, the session folder and its file history
-// into the target's config dir under the same project dir.
-func copySession(src, fromDir, toDir, sid string) error {
-	proj := filepath.Base(filepath.Dir(src))
-	dstProj := filepath.Join(toDir, "projects", proj)
-	if err := os.MkdirAll(dstProj, 0o700); err != nil {
-		return err
-	}
-	if err := copyFile(src, filepath.Join(dstProj, sid+".jsonl")); err != nil {
-		return err
-	}
-	if err := copyTree(strings.TrimSuffix(src, ".jsonl"), filepath.Join(dstProj, sid)); err != nil {
-		return err
-	}
-	return copyTree(filepath.Join(fromDir, "file-history", sid), filepath.Join(toDir, "file-history", sid))
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	tmp := dst + ".fyr-tmp"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dst)
-}
-
-// copyTree copies a folder if it exists; a missing one is not an error.
-func copyTree(src, dst string) error {
-	if _, err := os.Stat(src); err != nil {
-		return nil
-	}
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(src, p)
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o700)
-		}
-		if !d.Type().IsRegular() {
-			return nil
-		}
-		return copyFile(p, target)
-	})
 }
 
 func (m *Manager) handoverDir() string {
@@ -269,17 +186,22 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 	// Rung 1: resume the same session on the target.
 	if src, err := resumable(t, from); err != nil {
 		notes = append(notes, err.Error())
+	} else if from.CLI != to.CLI {
+		notes = append(notes, "The target runs another CLI")
+	} else if ad, aerr := m.adapter(to); aerr != nil {
+		notes = append(notes, aerr.Error())
 	} else {
 		fromDir, toDir := from.ConfigDirPath(), to.ConfigDirPath()
 		var cerr error
 		if !sameDir(fromDir, toDir) {
-			cerr = copySession(src, fromDir, toDir, t.SessionID)
+			cerr = ad.CopySession(src, fromDir, toDir, t.SessionID)
 		}
 		if cerr != nil {
 			notes = append(notes, "Could not copy the session: "+cerr.Error())
 		} else {
 			m.stopNow(threadID)
-			if _, err := m.ensureAs(threadID, &as{profile: to, model: model, session: t.SessionID, resume: true}); err != nil {
+			if _, err := m.ensureAs(threadID, &as{profile: to, model: model, session: t.SessionID, resume: true,
+				effort: cli.EffortFor(to.ModelCaps, model, t.Effort, to.DefaultEffort)}); err != nil {
 				notes = append(notes, "Resume failed: "+clip(firstLine(err.Error()), 300))
 			} else {
 				done(RungResume, t.SessionID, "", "")

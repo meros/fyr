@@ -89,6 +89,8 @@ export interface ThreadDTO {
   project: string;
   profile: string;
   model: string;
+  /** V0.50: "" or missing is the provider's default */
+  effort?: string;
   sessionId?: string;
   createdAt: string;
   updatedAt: string;
@@ -147,6 +149,10 @@ export interface Profile {
   color: string;
   models: string[];
   defaultModel?: string;
+  /** V0.50: the models with the effort levels each takes */
+  modelCaps?: { id: string; name?: string; efforts?: string[] }[];
+  defaultEffort?: string;
+  cli?: string;
 }
 
 /** Where a project's work lives (V0.23). */

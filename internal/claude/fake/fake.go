@@ -24,6 +24,7 @@
 //	slow N   runs a tool for N ms, then takes in every queued message at
 //	         that tool boundary and replies "took in: <texts>" (V0.33)
 //	view H   publishes a live view with headline H over MCP during the turn
+//	launch   replies "launch: base=… token=set-<last 2>|unset effort=… model=…"
 //	recall   replies "recall: <first user message of the session transcript>"
 //	other    replies "echo: <text>"
 //
@@ -363,6 +364,21 @@ func turn(text string) (took []queued) {
 	record("user", text)
 	word := strings.Fields(text + " x")[0]
 	switch word {
+	case "launch":
+		// V0.50: what the adapter launched with (the key only as set or not).
+		tok := "unset"
+		if os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" {
+			tok = "set-" + os.Getenv("ANTHROPIC_AUTH_TOKEN")[len(os.Getenv("ANTHROPIC_AUTH_TOKEN"))-2:]
+		}
+		effort := ""
+		for i, a := range os.Args {
+			if a == "--effort" && i+1 < len(os.Args) {
+				effort = os.Args[i+1]
+			}
+		}
+		line := fmt.Sprintf("launch: base=%s token=%s effort=%s model=%s", os.Getenv("ANTHROPIC_BASE_URL"), tok, effort, model)
+		assistant(msg{"type": "text", "text": line})
+		result(false, "success", line)
 	case "recall":
 		assistant(msg{"type": "text", "text": "recall: " + firstUser()})
 		result(false, "success", "done")

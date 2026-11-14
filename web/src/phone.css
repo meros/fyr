@@ -373,3 +373,6 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-fline.scratch .ell{font-family:var(--ui);color:var(--ink-muted)}
 /* SPEC 0.5 V0.44: quota lines on the new-thread screen, 44 px targets. */
 .m-new .qlist .qsum{min-height:44px;font-size:13px}
+/* SPEC 0.5 V0.50: Settings screen; the last row clears the home indicator */
+.m-settings .m-nbody{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+.set.phone .qsum{min-height:44px;width:100%;text-align:left}
