@@ -1420,7 +1420,7 @@ type HoursBody = {
   - Sound is off.
   - `beam` is never used on toasts or decoration.
 - **U7. Undo instead of confirm.** Settle, archive and snooze go through a deferred Rule with a 5 s undo (7.5). A rejected deferred Action shows a toast with the reason. Dialogs appear only for the levels `confirm` and `verified`.
-- **U8. Phone parity.** The phone has the same inbox, Actions and Decisions. At 760 px or less the layout has one column, touch targets are at least 44 px, and option tiles are full width and at least 56 px high. The translation rules are in `design/mobile/README.md`.
+- **U8. Phone parity.** The phone has the same inbox, Actions and Decisions. At 760 px or less the layout has one column, touch targets are at least 44 px, and option tiles are full width and at least 56 px high. On a phone, settling or archiving the open thread (from its header, ⋯ menu or a key) returns to the inbox through Back history, and the Undo toast shows there; undo reopens the thread. The translation rules are in `design/mobile/README.md`.
 - **U9. Visual system.**
   - Geist and Geist Mono (decision 0006), self-hosted in the PWA (no outside font requests).
   - Four type sizes: 12, 14, 16 and 20 px. 12 px is the floor.
