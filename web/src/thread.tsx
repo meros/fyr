@@ -24,7 +24,7 @@ import { colorVar, makeProjectLabel, projectName, projectOf, suggestionFor } fro
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
-import { LiveViewBar, LiveViewPanel, ViewChat } from "./view-ui.tsx";
+import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
 import { defaultTab, liveViewOf, showsDecision } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
@@ -187,7 +187,6 @@ export function ThreadPane(p: ThreadPaneProps) {
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} />}
       {tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
-      {tab === "conv" && <LiveViewBar t={t} now={p.now} onOpen={() => setTab("view")} />}
       {tab === "conv" && <Filmstrip cards={previews} />}
       {tab === "conv" && (
         <Conversation

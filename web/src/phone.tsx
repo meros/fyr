@@ -18,7 +18,7 @@ import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
-import { LiveViewBar, LiveViewPanel, ViewChat } from "./view-ui.tsx";
+import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
 import { defaultTab, liveViewOf } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
 import { rowSummary } from "./view.ts";
@@ -797,7 +797,6 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
       {t.tasks && t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {!cardOpen && p.tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.actions.send(t.id, { text, from: "view" })} />}
       {!cardOpen && p.tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
-      {!cardOpen && p.tab === "conv" && <LiveViewBar t={t} now={p.now} onOpen={() => setTab("view")} />}
       {!cardOpen && p.tab === "conv" && <Filmstrip cards={previews} collapsible />}
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
