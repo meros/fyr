@@ -40,6 +40,10 @@ type Engine struct {
 	last     map[string]core.State    // last broadcast state, for time-driven changes
 	revs     map[string]int64         // per-thread rev (SPEC 0.5 V0.2)
 	projects map[string]*core.Project // V0.23
+	// workspaces are where threads run (V0.28), by id.
+	workspaces map[string]*core.Workspace
+	// ScratchRoots are the scratch folders' roots (V0.28); nil: the defaults.
+	ScratchRoots []string
 	// HostID names this host in folder sources (V0.23); default the hostname.
 	HostID  string
 	lastRev int64
@@ -68,7 +72,7 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
+		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, workspaces: map[string]*core.Workspace{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
 		newLimit: hourly{max: 5}, sendLimit: hourly{max: 30}}
 }
 
@@ -103,16 +107,29 @@ func (e *Engine) Load() error {
 	for _, p := range ps {
 		e.projects[p.ID] = p
 	}
-	// Threads from before projects (V0.23) get one now.
+	ws, err := e.st.Workspaces()
+	if err != nil {
+		return err
+	}
+	for _, w := range ws {
+		e.workspaces[w.ID] = w
+	}
+	if err := e.migrateAuto(); err != nil {
+		return err
+	}
+	// Threads from before workspaces (V0.28) get one now; a thread without
+	// a project gets the one matching finds, if any.
 	for _, t := range e.threads {
-		if t.ProjectID != "" && e.projects[t.ProjectID] != nil {
-			t.Project = e.projects[t.ProjectID].Name
+		if e.workspaces[t.WorkspaceID] != nil && (t.ProjectID == "" || e.projects[t.ProjectID] != nil) {
+			if p := e.projects[t.ProjectID]; p != nil {
+				t.Project = p.Name
+			}
 			continue
 		}
-		np := e.assignProject(t, e.Now())
+		nw := e.assignProject(t, e.Now())
 		if _, err := e.st.Write(func(tx *store.Tx) error {
-			if np != nil {
-				if err := tx.PutProject(np); err != nil {
+			if nw != nil {
+				if err := tx.PutWorkspace(nw); err != nil {
 					return err
 				}
 			}
@@ -289,12 +306,12 @@ func (e *Engine) Command(c Cmd) Reply {
 	if t.Profile == "" {
 		t.Profile = "claude"
 	}
-	newProject := e.assignProject(t, now)
+	newWS := e.assignProject(t, now)
 	t.UpdatedAt = now
 	reply := Reply{OK: true, ThreadID: t.ID, Status: 200}
 	evs, err := e.st.Write(func(tx *store.Tx) error {
-		if newProject != nil {
-			if err := tx.PutProject(newProject); err != nil {
+		if newWS != nil {
+			if err := tx.PutWorkspace(newWS); err != nil {
 				return err
 			}
 		}
@@ -460,6 +477,8 @@ type DTO struct {
 	Attention   core.Attention    `json:"attention"`
 	View        *core.View        `json:"view"`
 	Unavailable map[string]string `json:"unavailable"`
+	// Suggest is the project a thread without one could get (V0.28).
+	Suggest *core.Suggestion `json:"suggest,omitempty"`
 
 	prev core.State // the state before this change; not sent
 }
@@ -492,7 +511,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	}
 	att := core.Compute(t, v, now)
 	vc := *v
-	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un}
+	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, Suggest: e.suggestion(t)}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.
@@ -581,11 +600,11 @@ func (e *Engine) adopt(c Cmd) Reply {
 // its history, in one transaction.
 func (e *Engine) Insert(t *core.Thread, v *core.View, history []agent.Ev, at []time.Time) error {
 	e.mu.Lock()
-	np := e.assignProject(t, e.Now())
+	nw := e.assignProject(t, e.Now())
 	e.mu.Unlock()
 	if _, err := e.st.Write(func(tx *store.Tx) error {
-		if np != nil {
-			if err := tx.PutProject(np); err != nil {
+		if nw != nil {
+			if err := tx.PutWorkspace(nw); err != nil {
 				return err
 			}
 		}

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS views(user TEXT NOT NULL, entity TEXT NOT NULL, data 
 CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, at TEXT NOT NULL, result TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, user TEXT NOT NULL, device TEXT NOT NULL, sub TEXT NOT NULL, created TEXT NOT NULL);
 `
 
@@ -300,4 +301,33 @@ func (s *Store) Projects() ([]*core.Project, error) {
 func (tx *Tx) DeleteProject(id string) error {
 	_, err := tx.tx.Exec(`DELETE FROM projects WHERE id=?`, id)
 	return err
+}
+
+// PutWorkspace stores where a thread runs (SPEC 0.5 V0.28). The table is
+// additive: an older build ignores it.
+func (tx *Tx) PutWorkspace(w *core.Workspace) error {
+	b, _ := json.Marshal(w)
+	_, err := tx.tx.Exec(`INSERT INTO workspaces(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, w.ID, string(b))
+	return err
+}
+
+func (s *Store) Workspaces() ([]*core.Workspace, error) {
+	rows, err := s.db.Query(`SELECT data FROM workspaces`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*core.Workspace
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		w := &core.Workspace{}
+		if err := json.Unmarshal([]byte(d), w); err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
 }

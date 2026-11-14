@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -24,6 +25,13 @@ func gitInit(t *testing.T, dir string) {
 	}
 }
 
+// dtoOf is a thread as clients see it.
+func dtoOf(e *Engine, id string) DTO {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.build(e.threads[id], e.Now())
+}
+
 func projectOf(e *Engine, threadID string) core.Project {
 	th, _ := e.Thread(threadID)
 	for _, p := range e.Projects() {
@@ -34,28 +42,112 @@ func projectOf(e *Engine, threadID string) core.Project {
 	return core.Project{}
 }
 
-// SPEC 0.5 V0.23: a thread in a worktree belongs to the main repository's
-// project, made on first use with a stable colour and a monogram.
-func TestProjectFromGitRoot(t *testing.T) {
+func gitRemote(t *testing.T, dir, url string) {
+	t.Helper()
+	if out, err := exec.Command("git", "-C", dir, "remote", "add", "origin", url).CombinedOutput(); err != nil {
+		t.Skipf("git remote: %v %s", err, out)
+	}
+}
+
+// SPEC 0.5 V0.28: Fyr makes no project by matching. A thread in a clone or
+// in its worktree has "No project" and a suggestion named after the
+// repository; project.createFrom makes it (edited) and files both threads.
+func TestNoAutoProjectSuggestAndCreateFrom(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	repo := filepath.Join(h.dir, "lasso-app")
 	gitInit(t, repo)
-	wt := filepath.Join(repo, ".claude", "worktrees", "fix")
+	gitRemote(t, repo, "git@github.com:meros/Lasso-App.git")
+	wt := filepath.Join(h.dir, "lasso-app--fix")
 	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "fix", wt).CombinedOutput(); err != nil {
 		t.Skipf("worktree: %v %s", err, out)
 	}
-	r1 := h.cmd("thread.create", "", core.Args{"cwd": filepath.Join(repo), "text": "a"})
+	plain := filepath.Join(h.dir, "notes")
+	os.MkdirAll(plain, 0o755)
+	r1 := h.cmd("thread.create", "", core.Args{"cwd": repo, "text": "a"})
 	r2 := h.cmd("thread.create", "", core.Args{"cwd": wt, "text": "b"})
+	r3 := h.cmd("thread.create", "", core.Args{"cwd": plain, "text": "c"})
+	if n := len(h.e.Projects()); n != 0 {
+		t.Fatalf("matching made %d projects", n)
+	}
+	want := &core.Suggestion{Name: "lasso-app", Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: repo}, {Kind: "repo", URL: "github.com/meros/lasso-app"}}}
+	for _, id := range []string{r1.ThreadID, r2.ThreadID} {
+		d := dtoOf(h.e, id)
+		if d.ProjectID != "" || !reflect.DeepEqual(d.Suggest, want) || d.WorkspaceID == "" {
+			t.Fatalf("%s: project %q suggest %+v ws %q", id, d.ProjectID, d.Suggest, d.WorkspaceID)
+		}
+	}
+	if d := dtoOf(h.e, r3.ThreadID); d.Suggest != nil {
+		t.Fatalf("a folder without git got a suggestion: %+v", d.Suggest)
+	}
+	if bad := h.e.Command(Cmd{CommandID: "cf0", Action: "project.createFrom", Args: core.Args{"threadId": r3.ThreadID}}); bad.OK || bad.Status != 400 {
+		t.Fatalf("createFrom without a suggestion: %+v", bad)
+	}
+	r := h.e.Command(Cmd{CommandID: "cf1", Action: "project.createFrom", Args: core.Args{"threadId": r2.ThreadID}})
+	if !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	pid := r.Result.(map[string]any)["id"].(string)
 	p1, p2 := projectOf(h.e, r1.ThreadID), projectOf(h.e, r2.ThreadID)
-	if p1.ID == "" || p1.ID != p2.ID || p1.Folder(h.e.HostID) != repo || p1.Name != "lasso-app" {
+	if p1.ID != pid || p2.ID != pid || p1.Name != "lasso-app" || !p1.Edited || p1.Auto || p1.Color != core.DefaultColor("lasso-app") {
 		t.Fatalf("%+v %+v", p1, p2)
 	}
-	if p1.Color != core.DefaultColor("lasso-app") || p1.Icon.Kind != "monogram" {
-		t.Fatalf("identity %+v", p1)
+	if d := dtoOf(h.e, r1.ThreadID); d.Suggest != nil || d.Project != "lasso-app" {
+		t.Fatalf("a filed thread still suggests: %+v %q", d.Suggest, d.Project)
 	}
-	th, _ := h.e.Thread(r2.ThreadID)
-	if th.Project != "lasso-app" {
-		t.Fatalf("the thread's project name is %q", th.Project)
+	// A new thread in the clone now matches the project at once.
+	r4 := h.cmd("thread.create", "", core.Args{"cwd": filepath.Join(repo), "text": "d"})
+	if projectOf(h.e, r4.ThreadID).ID != pid {
+		t.Fatal("a new thread in the clone did not match")
+	}
+	if again := h.e.Command(Cmd{CommandID: "cf2", Action: "project.createFrom", Args: core.Args{"threadId": r1.ThreadID}}); again.OK {
+		t.Fatal("createFrom on a thread that has a project")
+	}
+}
+
+// SPEC 0.5 V0.28: a repo source covers the same remote on every host: two
+// hosts' clones of one repository belong to one project.
+func TestSameRemoteTwoHosts(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	a := filepath.Join(h.dir, "a", "fyr")
+	b := filepath.Join(h.dir, "b", "fyr-clone")
+	gitInit(t, a)
+	gitInit(t, b)
+	gitRemote(t, a, "https://github.com/meros/fyr.git")
+	gitRemote(t, b, "git@github.com:meros/fyr.git")
+	h.e.HostID = "laptop"
+	ra := h.cmd("thread.create", "", core.Args{"cwd": a, "text": "x"})
+	r := h.e.Command(Cmd{CommandID: "cf", Action: "project.createFrom", Args: core.Args{"threadId": ra.ThreadID}})
+	if !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	h.e.HostID = "server"
+	rb := h.cmd("thread.create", "", core.Args{"cwd": b, "text": "y"})
+	pa, pb := projectOf(h.e, ra.ThreadID), projectOf(h.e, rb.ThreadID)
+	if pa.ID == "" || pa.ID != pb.ID {
+		t.Fatalf("two hosts, two projects: %+v %+v", pa, pb)
+	}
+	h.e.mu.Lock()
+	wb := h.e.workspaces[h.e.threads[rb.ThreadID].WorkspaceID]
+	h.e.mu.Unlock()
+	if wb.Host != "server" || wb.Provider != "clone" {
+		t.Fatalf("workspace %+v", wb)
+	}
+}
+
+// SPEC 0.5 V0.28: a scratch folder has no refs: it matches no project even
+// when a project has its root as a folder source, and it suggests nothing.
+func TestScratchMatchesNothing(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	root := filepath.Join(h.dir, "scratch")
+	one := filepath.Join(root, "2026-11-14-x")
+	gitInit(t, one)
+	gitRemote(t, one, "github.com/meros/x")
+	h.e.ScratchRoots = []string{root}
+	h.e.Command(Cmd{CommandID: "c", Action: "project.create", Args: core.Args{"name": "Scratch", "sources": []any{map[string]any{"kind": "folder", "path": root}}}})
+	r := h.cmd("thread.create", "", core.Args{"cwd": one, "text": "x"})
+	d := dtoOf(h.e, r.ThreadID)
+	if d.ProjectID != "" || d.Suggest != nil {
+		t.Fatalf("scratch: project %q suggest %+v", d.ProjectID, d.Suggest)
 	}
 }
 
@@ -88,11 +180,20 @@ func TestProjectSeedAndUpdate(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.23: projects persist; threads made before projects get one at load.
-func TestProjectsPersistAndBackfill(t *testing.T) {
+// SPEC 0.5 V0.28: a thread from before workspaces gets one at load, and,
+// without a project, the project that matching finds; its workspace is
+// stored and reused.
+func TestWorkspaceBackfillAtLoad(t *testing.T) {
 	h := newHarness(t, time.Minute)
+	c := h.e.Command(Cmd{CommandID: "p", Action: "project.create", Args: core.Args{"name": "Here", "sources": []any{map[string]any{"kind": "folder", "path": h.dir}}}})
+	pid := c.Result.(map[string]any)["id"].(string)
 	r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "x"})
 	h.m.StopAll()
+	// Make the thread look as an older build stored it.
+	th, _ := h.e.Thread(r.ThreadID)
+	old := th
+	old.WorkspaceID, old.ProjectID, old.Project = "", "", ""
+	h.e.st.Write(func(tx *store.Tx) error { return tx.PutThread(&old) })
 	h.e.st.Close()
 	st, _ := store.Open(h.db)
 	defer st.Close()
@@ -100,8 +201,13 @@ func TestProjectsPersistAndBackfill(t *testing.T) {
 	if err := e2.Load(); err != nil {
 		t.Fatal(err)
 	}
-	if p := projectOf(e2, r.ThreadID); p.ID == "" || p.Folder(e2.HostID) != h.dir {
-		t.Fatalf("after load %+v", p)
+	d, _ := e2.Thread(r.ThreadID)
+	if d.WorkspaceID != th.WorkspaceID || d.ProjectID != pid {
+		t.Fatalf("after load: ws %q (was %q) project %q", d.WorkspaceID, th.WorkspaceID, d.ProjectID)
+	}
+	ws, _ := st.Workspaces()
+	if len(ws) != 1 || ws[0].Path != h.dir || ws[0].Provider != "folder" {
+		t.Fatalf("workspaces %+v", ws)
 	}
 }
 
@@ -136,15 +242,13 @@ func TestProjectWithoutSourceAndManualFiling(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.23: seeding after threads exist re-matches them; empty auto
-// projects go; a hand-filed thread stays. (Found live: the first start
-// filed threads before the T3 seed.)
+// SPEC 0.5 V0.23, V0.28: seeding (now only an import) and Rematch move
+// threads to the matching project; a hand-filed thread stays.
 func TestSeedThenRematch(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	ws := filepath.Join(h.dir, "norban")
 	os.MkdirAll(filepath.Join(ws, "web"), 0o755)
 	r := h.cmd("thread.create", "", core.Args{"cwd": filepath.Join(ws, "web"), "text": "x"})
-	auto := projectOf(h.e, r.ThreadID)
 	label := h.e.Command(Cmd{CommandID: "l", Action: "project.create", Args: core.Args{"name": "Hemmet"}})
 	pid := label.Result.(map[string]any)["id"].(string)
 	m := h.cmd("thread.create", "", core.Args{"cwd": filepath.Join(ws, "web"), "text": "y"})
@@ -159,17 +263,16 @@ func TestSeedThenRematch(t *testing.T) {
 		t.Fatalf("a hand-filed thread moved: %+v", p)
 	}
 	for _, p := range h.e.Projects() {
-		if p.ID == auto.ID {
-			t.Fatalf("the empty auto project stayed: %+v", p)
-		}
 		if p.Name == "Hemmet" && p.Threads != 1 {
 			t.Fatal("the label project lost its thread")
 		}
 	}
 }
 
-// SPEC 0.5 V0.23: a git repository in the home folder is not a project root.
-func TestHomeGitRootIgnored(t *testing.T) {
+// SPEC 0.5 V0.28: a git repository in the home folder has no rule of its
+// own: it makes no project, and a folder below it matches only a project
+// that has the home folder.
+func TestHomeGitRootMakesNoProject(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	home := filepath.Join(h.dir, "home")
 	gitInit(t, home)
@@ -177,8 +280,8 @@ func TestHomeGitRootIgnored(t *testing.T) {
 	folder := filepath.Join(home, "notes", "trip")
 	os.MkdirAll(folder, 0o755)
 	r := h.cmd("thread.create", "", core.Args{"cwd": folder, "text": "x"})
-	if p := projectOf(h.e, r.ThreadID); p.Folder(h.e.HostID) != folder || p.Name != "trip" {
-		t.Fatalf("home repo swallowed the folder: %+v", p)
+	if p := projectOf(h.e, r.ThreadID); p.ID != "" || len(h.e.Projects()) != 0 {
+		t.Fatalf("a project was made: %+v", p)
 	}
 }
 
@@ -221,11 +324,11 @@ func TestFolderSourceChecksAndRematch(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.23: projects made by matching before the auto flag existed
-// (no auto, no edit, no seed) are auto projects: they stop shadowing seeded
-// ones and go when empty. (Found live: per-scratch-folder projects and a
-// "meros" home project kept their threads after the re-match.)
-func TestLegacyAutoProjectsRetired(t *testing.T) {
+// SPEC 0.5 V0.28: at start, auto projects that hold threads become normal
+// projects, empty unedited ones go, and filed threads stay where they are
+// (a scratch thread in a seeded Scratch project keeps it; a thread in the
+// home folder keeps "No project").
+func TestAutoProjectMigration(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	home := filepath.Join(h.dir, "home")
 	t.Setenv("HOME", home)
@@ -237,36 +340,53 @@ func TestLegacyAutoProjectsRetired(t *testing.T) {
 	a := h.cmd("thread.create", "", core.Args{"cwd": one, "text": "x"})
 	b := h.cmd("thread.create", "", core.Args{"cwd": app, "text": "y"})
 	c := h.cmd("thread.create", "", core.Args{"cwd": home, "text": "z"})
-	// Make every project legacy, and add a legacy home project that holds b and c.
-	h.e.mu.Lock()
-	legacyHome := &core.Project{ID: "p_home", Name: "home", Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: home}}}
-	h.e.projects[legacyHome.ID] = legacyHome
-	for _, p := range h.e.projects {
-		p.Auto = false
+	put := func(p *core.Project) {
+		h.e.st.Write(func(tx *store.Tx) error { return tx.PutProject(p) })
 	}
-	h.e.threads[b.ThreadID].ProjectID = "p_home"
-	h.e.threads[c.ThreadID].ProjectID = "p_home"
-	h.e.mu.Unlock()
-
-	h.e.SeedProjects([]core.Project{{Name: "Scratch", Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: scratch}}}})
-	h.e.Rematch()
-	if p := projectOf(h.e, a.ThreadID); p.Name != "Scratch" {
-		t.Fatalf("a legacy folder project shadowed the seeded one: %+v", p)
+	put(&core.Project{ID: "p_scratch", Name: "Scratch", Seeded: true, Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: scratch}}})
+	put(&core.Project{ID: "p_app", Name: "app", Auto: true, Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: app}}})
+	put(&core.Project{ID: "p_empty", Name: "empty", Auto: true, Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: filepath.Join(home, "gone")}}})
+	put(&core.Project{ID: "p_kept", Name: "kept", Auto: true, Edited: true})
+	h.m.StopAll()
+	for id, pid := range map[string]string{a.ThreadID: "p_scratch", b.ThreadID: "p_app"} {
+		th, _ := h.e.Thread(id)
+		cp := th
+		cp.ProjectID = pid
+		h.e.st.Write(func(tx *store.Tx) error { return tx.PutThread(&cp) })
 	}
-	if p := projectOf(h.e, b.ThreadID); p.Name != "app" {
-		t.Fatalf("the home project kept a thread from a folder below it: %+v", p)
+	h.e.st.Close()
+	st, _ := store.Open(h.db)
+	defer st.Close()
+	e2 := New(st)
+	if err := e2.Load(); err != nil {
+		t.Fatal(err)
 	}
-	if id := h.e.threads[c.ThreadID].ProjectID; id != "" {
-		t.Fatalf("a thread in the home folder got a project: %s", id)
+	if p := projectOf(e2, a.ThreadID); p.ID != "p_scratch" {
+		t.Fatalf("the scratch thread moved: %+v", p)
 	}
-	for _, p := range h.e.Projects() {
-		if f := p.Folder(h.e.HostID); f == home || f == one {
-			t.Fatalf("a legacy project stayed: %+v", p)
+	if p := projectOf(e2, b.ThreadID); p.ID != "p_app" || p.Auto {
+		t.Fatalf("the auto project with a thread: %+v", p)
+	}
+	if p := projectOf(e2, c.ThreadID); p.ID != "" {
+		t.Fatalf("a thread in the home folder got a project: %+v", p)
+	}
+	ids := map[string]bool{}
+	for _, p := range e2.Projects() {
+		ids[p.ID] = true
+		if p.Auto {
+			t.Fatalf("an auto flag stayed: %+v", p)
 		}
+	}
+	if ids["p_empty"] || !ids["p_kept"] || !ids["p_app"] || !ids["p_scratch"] {
+		t.Fatalf("projects after migration: %v", ids)
+	}
+	stored, _ := st.Projects()
+	if len(stored) != 3 {
+		t.Fatalf("stored projects: %d", len(stored))
 	}
 }
 
-// SPEC 0.5 V0.23: the home folder and / are never an auto project.
+// SPEC 0.5 V0.23, V0.28: a thread in the home folder has no project, and none is made.
 func TestHomeFolderThreadHasNoProject(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	home := filepath.Join(h.dir, "home")

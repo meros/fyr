@@ -13,7 +13,7 @@ type Project struct {
 	ID        string    `json:"id"`
 	Sources   []Source  `json:"sources"`
 	Edited    bool      `json:"edited,omitempty"` // the user changed it; seeds leave it alone
-	Auto      bool      `json:"auto,omitempty"`   // made by matching; removed when empty and unedited
+	Auto      bool      `json:"auto,omitempty"`   // made by matching before V0.28; migration only
 	Seeded    bool      `json:"seeded,omitempty"` // came from another source (T3); kept when empty
 	Name      string    `json:"name"`
 	Color     string    `json:"color"` // a name from Palette
@@ -84,37 +84,6 @@ func Monogram(name string) string {
 		return "?"
 	}
 	return string(out)
-}
-
-// ProjectFor returns the id of the project whose folder source on host is
-// the longest root containing cwd; failing that, the project with a repo
-// source equal to remote (normalised); else "".
-func ProjectFor(ps []Project, host, cwd, remote string) string {
-	cwd = strings.TrimRight(cwd, "/")
-	best, bestLen := "", -1
-	byRepo := ""
-	for _, p := range ps {
-		for _, s := range p.Sources {
-			switch s.Kind {
-			case "folder":
-				root := strings.TrimRight(s.Path, "/")
-				if s.Host != host || root == "" {
-					continue
-				}
-				if (cwd == root || strings.HasPrefix(cwd, root+"/")) && len(root) > bestLen {
-					best, bestLen = p.ID, len(root)
-				}
-			case "repo":
-				if remote != "" && s.URL == remote && byRepo == "" {
-					byRepo = p.ID
-				}
-			}
-		}
-	}
-	if best != "" {
-		return best
-	}
-	return byRepo
 }
 
 // NormalizeRemote turns a git remote URL into host/owner/repo, lower case.

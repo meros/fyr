@@ -19,6 +19,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"syscall"
 	"time"
 
@@ -78,6 +79,9 @@ type config struct {
 	IdleStopMinutes int             `json:"idleStopMinutes"`
 	OwnerLogin      string          `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)
 	Profiles        []agent.Profile `json:"profiles"`
+	// ScratchRoots: folders whose children are scratch workspaces (V0.28);
+	// empty means ~/.t3/scratch and ~/.local/share/fyr/scratch.
+	ScratchRoots []string `json:"scratchRoots"`
 }
 
 func home() string { h, _ := os.UserHomeDir(); return h }
@@ -156,14 +160,18 @@ func main() {
 	}
 	defer st.Close()
 	eng := engine.New(st)
+	for _, r := range cfg.ScratchRoots {
+		if r == "~" || strings.HasPrefix(r, "~/") {
+			r = home() + r[1:]
+		}
+		eng.ScratchRoots = append(eng.ScratchRoots, r)
+	}
+	// V0.28: Load gives threads their workspaces and ends auto projects. The
+	// start no longer seeds projects from T3 (t3.Projects stays for a later
+	// "Import from T3").
 	if err := eng.Load(); err != nil {
 		log.Fatal(err)
 	}
-	// V0.23: T3's projects seed Fyr's (an edited project is left alone).
-	if seeds, err := t3.Projects(t3DB, eng.HostID); err == nil {
-		eng.SeedProjects(seeds)
-	}
-	eng.Rematch() // seeded projects win over ones made before them
 	adopt := func(ids []string) (int, error) { return adoptT3(eng, t3DB, cfg.Profiles, ids) }
 
 	switch cmd {
