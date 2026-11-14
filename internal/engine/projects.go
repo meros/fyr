@@ -21,56 +21,30 @@ type ProjectDTO struct {
 	LastUsed time.Time `json:"lastUsed"`
 }
 
-// gitInfo returns the main repository root and the normalised origin remote
-// of a folder; outside git it returns the folder and "".
-func gitInfo(cwd string) (root, remote string) {
+// runGit runs git in dir with a short timeout, for the clone provider.
+func runGit(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
-	if err != nil {
-		return filepath.Clean(cwd), ""
-	}
-	common := strings.TrimSpace(string(out))
-	root = common
-	if filepath.Base(common) == ".git" {
-		root = filepath.Dir(common)
-	}
-	// A dotfiles repository in the home folder is not a project root.
-	if home, _ := os.UserHomeDir(); root == "/" || (home != "" && root == filepath.Clean(home)) {
-		return filepath.Clean(cwd), ""
-	}
-	if r, err := exec.CommandContext(ctx, "git", "-C", cwd, "remote", "get-url", "origin").Output(); err == nil {
-		remote = core.NormalizeRemote(string(r))
-	}
-	return root, remote
+	out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
+	return strings.TrimSpace(string(out)), err
 }
 
-// homeOrRoot reports whether a folder is the home folder or /: never an
-// auto project, because it would hold every folder below it.
-func homeOrRoot(dir string) bool {
-	dir = filepath.Clean(dir)
+// scratchRoots are the folders whose children are throwaway places (SPEC 0.5
+// V0.28): ScratchRoots when set, else T3's and Fyr's scratch roots.
+func (e *Engine) scratchRoots() []string {
+	if e.ScratchRoots != nil {
+		return e.ScratchRoots
+	}
 	home, _ := os.UserHomeDir()
-	return dir == "/" || (home != "" && dir == filepath.Clean(home))
+	if home == "" {
+		return nil
+	}
+	return []string{filepath.Join(home, ".t3", "scratch"), filepath.Join(home, ".local", "share", "fyr", "scratch")}
 }
 
-// bestProject prefers seeded or user-made projects over auto ones: an auto
-// project only matches when no other project does (SPEC 0.5 V0.23).
-func (e *Engine) bestProject(cwd, remote string) string {
-	var chosen, auto []core.Project
-	for _, p := range e.projects {
-		if p.Auto && !p.Edited {
-			if homeOrRoot(p.Folder(e.HostID)) {
-				continue
-			}
-			auto = append(auto, *p)
-		} else {
-			chosen = append(chosen, *p)
-		}
-	}
-	if id := core.ProjectFor(chosen, e.HostID, cwd, remote); id != "" {
-		return id
-	}
-	return core.ProjectFor(auto, e.HostID, cwd, remote)
+// providers identify a folder, in order (SPEC 0.5 V0.28).
+func (e *Engine) providers() []core.Provider {
+	return []core.Provider{core.ScratchProvider{Roots: e.scratchRoots()}, core.CloneProvider{Git: runGit}, core.FolderProvider{}}
 }
 
 func (e *Engine) projectList() []core.Project {
@@ -81,38 +55,101 @@ func (e *Engine) projectList() []core.Project {
 	return out
 }
 
-// assignProject gives t a project, making one when none matches. Call with
-// e.mu held; it returns a new project to persist, or nil.
-func (e *Engine) assignProject(t *core.Thread, now time.Time) *core.Project {
+// workspaceOf finds or identifies the workspace of a folder on this host.
+// Call with e.mu held; it returns the workspace and whether it is new.
+func (e *Engine) workspaceOf(cwd string) (*core.Workspace, bool) {
+	dir := filepath.Clean(cwd)
+	for _, w := range e.workspaces {
+		if w.Host == e.HostID && w.Path == dir {
+			return w, false
+		}
+	}
+	w := core.Identify(e.providers(), e.HostID, dir)
+	w.ID = NewID("w_")
+	e.workspaces[w.ID] = &w
+	return &w, true
+}
+
+// assignProject gives t its workspace and, when the workspace is new to the
+// thread and it has no project, the project that matching finds; it never
+// makes a project (SPEC 0.5 V0.28). Call with e.mu held; it returns a new
+// workspace to persist, or nil.
+func (e *Engine) assignProject(t *core.Thread, now time.Time) *core.Workspace {
 	if t.Cwd == "" {
 		return nil
 	}
+	var made *core.Workspace
+	ws := e.workspaces[t.WorkspaceID]
+	fresh := ws == nil
+	if fresh {
+		w, isNew := e.workspaceOf(t.Cwd)
+		ws, t.WorkspaceID = w, w.ID
+		if isNew {
+			made = w
+		}
+	}
+	if t.ProjectID != "" && e.projects[t.ProjectID] == nil {
+		t.ProjectID, t.ProjectManual = "", false
+	}
+	if t.ProjectID == "" && fresh {
+		t.ProjectID = core.MatchProject(e.projectList(), ws.Refs)
+	}
+	t.Project = ""
+	if p := e.projects[t.ProjectID]; p != nil {
+		t.Project = p.Name
+	}
+	return made
+}
+
+// suggestion is the project a thread without one could get (V0.28).
+func (e *Engine) suggestion(t *core.Thread) *core.Suggestion {
 	if t.ProjectID != "" && e.projects[t.ProjectID] != nil {
-		t.Project = e.projects[t.ProjectID].Name
 		return nil
 	}
-	if id := e.bestProject(t.Cwd, ""); id != "" {
-		t.ProjectID, t.Project = id, e.projects[id].Name
+	if w := e.workspaces[t.WorkspaceID]; w != nil {
+		return core.Suggest(*w)
+	}
+	return nil
+}
+
+// migrateAuto ends auto projects (SPEC 0.5 V0.28): one that holds threads
+// becomes a normal project; an empty one that was never edited goes.
+func (e *Engine) migrateAuto() error {
+	used := map[string]bool{}
+	for _, t := range e.threads {
+		used[t.ProjectID] = true
+	}
+	var keep []*core.Project
+	var gone []string
+	for id, p := range e.projects {
+		if !p.Auto {
+			continue
+		}
+		if !used[id] && !p.Edited {
+			gone = append(gone, id)
+			delete(e.projects, id)
+			continue
+		}
+		p.Auto = false
+		keep = append(keep, p)
+	}
+	if len(keep)+len(gone) == 0 {
 		return nil
 	}
-	root, remote := gitInfo(t.Cwd)
-	if id := e.bestProject(root, remote); id != "" {
-		t.ProjectID, t.Project = id, e.projects[id].Name
+	_, err := e.st.Write(func(tx *store.Tx) error {
+		for _, p := range keep {
+			if err := tx.PutProject(p); err != nil {
+				return err
+			}
+		}
+		for _, id := range gone {
+			if err := tx.DeleteProject(id); err != nil {
+				return err
+			}
+		}
 		return nil
-	}
-	if homeOrRoot(root) {
-		t.ProjectID, t.Project = "", ""
-		return nil
-	}
-	name := filepath.Base(root)
-	p := &core.Project{ID: NewID("p_"), Auto: true, Name: name, Color: core.DefaultColor(name), Icon: core.Icon{Kind: "monogram"},
-		Sources: []core.Source{{Kind: "folder", Host: e.HostID, Path: root}}, CreatedAt: now}
-	if remote != "" {
-		p.Sources = append(p.Sources, core.Source{Kind: "repo", URL: remote})
-	}
-	e.projects[p.ID] = p
-	t.ProjectID, t.Project = p.ID, p.Name
-	return p
+	})
+	return err
 }
 
 // Projects lists projects with their thread counts.
@@ -239,8 +276,8 @@ func (e *Engine) checkSource(s *core.Source) error {
 	return nil
 }
 
-// projectCommand handles project.update, project.create, project.addSource
-// and project.removeSource.
+// projectCommand handles project.update, project.create, project.createFrom,
+// project.addSource and project.removeSource.
 func (e *Engine) projectCommand(c Cmd) Reply {
 	if prev, _ := e.st.Receipt(c.CommandID); prev != nil {
 		var r Reply
@@ -272,6 +309,35 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		}
 		p.Color = core.DefaultColor(p.Name)
 		e.projects[p.ID] = p
+	case "project.createFrom":
+		// SPEC 0.5 V0.28: the thread's suggestion becomes a project, and
+		// every thread without a project that it matches is filed.
+		tid := c.Args.Str("threadId")
+		if tid == "" {
+			tid = c.ThreadID
+		}
+		t := e.threads[tid]
+		if t == nil {
+			e.mu.Unlock()
+			return Reply{Error: "no thread " + tid, Status: 404}
+		}
+		sug := e.suggestion(t)
+		if sug == nil {
+			e.mu.Unlock()
+			return bad("this thread has no project to make: it has a project, or its folder has no git remote")
+		}
+		p = &core.Project{ID: NewID("p_"), Name: sug.Name, Color: core.DefaultColor(sug.Name), Icon: core.Icon{Kind: "monogram"},
+			Sources: sug.Sources, CreatedAt: e.Now(), Edited: true}
+		e.projects[p.ID] = p
+		list := e.projectList()
+		for _, o := range e.threads {
+			if o.ProjectManual || (o.ProjectID != "" && e.projects[o.ProjectID] != nil) {
+				continue
+			}
+			if w := e.workspaces[o.WorkspaceID]; w != nil && core.MatchProject(list, w.Refs) == p.ID {
+				o.ProjectID = p.ID
+			}
+		}
 	case "project.update", "project.addSource", "project.removeSource":
 		cur := e.projects[c.Args.Str("id")]
 		if cur == nil {
@@ -367,7 +433,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 	for _, d := range touched {
 		e.Hub.Thread(d)
 	}
-	if c.Action != "project.update" {
+	if c.Action != "project.update" && c.Action != "project.createFrom" {
 		e.Rematch() // the sources changed: threads may belong elsewhere now
 	}
 	return reply
@@ -378,61 +444,42 @@ func hostname() string {
 	return h
 }
 
-// Rematch moves every thread not filed by hand to the best folder project
-// and removes auto projects that are left empty and were never edited
-// (SPEC 0.5 V0.23). Call it after SeedProjects at start.
+// Rematch runs matching for every thread not filed by hand after a change
+// to the projects' sources (SPEC 0.5 V0.28): a thread moves to the project
+// that matching finds; a thread that nothing matches keeps its project.
+// Threads without a workspace get one.
 func (e *Engine) Rematch() {
 	e.mu.Lock()
 	now := e.Now()
-	// A project from before the auto flag (not auto, not edited, not
-	// seeded) was made by matching: it is an auto project.
-	var made []*core.Project
-	for _, p := range e.projects {
-		if !p.Auto && !p.Edited && !p.Seeded {
-			p.Auto = true
-			made = append(made, p)
-		}
-	}
+	list := e.projectList()
+	var made []*core.Workspace
 	var moved []*core.Thread
 	for _, t := range e.threads {
-		if t.ProjectManual || t.Cwd == "" {
+		if t.Cwd == "" {
 			continue
 		}
-		old := t.ProjectID
-		t.ProjectID = ""
-		if p := e.assignProject(t, now); p != nil {
-			made = append(made, p)
+		old, oldWS := t.ProjectID, t.WorkspaceID
+		if w := e.assignProject(t, now); w != nil {
+			made = append(made, w)
 		}
-		if t.ProjectID != old {
+		if !t.ProjectManual {
+			if id := core.MatchProject(list, e.workspaces[t.WorkspaceID].Refs); id != "" {
+				t.ProjectID, t.Project = id, e.projects[id].Name
+			}
+		}
+		if t.ProjectID != old || t.WorkspaceID != oldWS {
 			e.bump(t.ID)
 			moved = append(moved, t)
-		}
-	}
-	used := map[string]bool{}
-	for _, t := range e.threads {
-		used[t.ProjectID] = true
-	}
-	var gone []string
-	for id, p := range e.projects {
-		if p.Auto && !p.Edited && !used[id] {
-			gone = append(gone, id)
-			delete(e.projects, id)
 		}
 	}
 	var dtos []DTO
 	for _, t := range moved {
 		dtos = append(dtos, e.dto(t, now))
 	}
-	var keep []*core.Project
-	for _, p := range made {
-		if _, ok := e.projects[p.ID]; ok {
-			keep = append(keep, p)
-		}
-	}
 	e.mu.Unlock()
 	e.st.Write(func(tx *store.Tx) error {
-		for _, p := range keep {
-			if err := tx.PutProject(p); err != nil {
+		for _, w := range made {
+			if err := tx.PutWorkspace(w); err != nil {
 				return err
 			}
 		}
@@ -441,18 +488,8 @@ func (e *Engine) Rematch() {
 				return err
 			}
 		}
-		for _, id := range gone {
-			if err := tx.DeleteProject(id); err != nil {
-				return err
-			}
-		}
 		return nil
 	})
-	if len(keep) > 0 {
-		for _, d := range e.Projects() {
-			e.Hub.Project(d)
-		}
-	}
 	for _, d := range dtos {
 		e.Hub.Thread(d)
 	}

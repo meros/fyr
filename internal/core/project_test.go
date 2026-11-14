@@ -2,39 +2,6 @@ package core
 
 import "testing"
 
-// SPEC 0.5 V0.23: the longest containing root wins; siblings do not match.
-func TestProjectFor(t *testing.T) {
-	f := func(path string) []Source { return []Source{{Kind: "folder", Host: "h1", Path: path}} }
-	ps := []Project{
-		{ID: "acme", Sources: f("/home/m/locked/acme")},
-		{ID: "web", Sources: f("/home/m/locked/acme/web")},
-		{ID: "nix", Sources: append(f("/home/m/nixos"), Source{Kind: "folder", Host: "h2", Path: "/home/m/elsewhere"})},
-		{ID: "fyr", Sources: []Source{{Kind: "repo", URL: "github.com/meros/fyr"}}},
-	}
-	cases := map[string]string{
-		"/home/m/locked/acme/api":                       "acme",
-		"/home/m/locked/acme/web":                       "web",
-		"/home/m/locked/acme/web/.claude/worktrees/fix": "web",
-		"/home/m/nixos":                                   "nix",
-		"/home/m/nixos-old":                               "",
-		"/home/m":                                         "",
-	}
-	for cwd, want := range cases {
-		if got := ProjectFor(ps, "h1", cwd, ""); got != want {
-			t.Errorf("%s: got %q want %q", cwd, got, want)
-		}
-	}
-	if got := ProjectFor(ps, "h1", "/home/m/elsewhere", ""); got != "" {
-		t.Errorf("another host's folder matched: %q", got)
-	}
-	if got := ProjectFor(ps, "h1", "/tmp/clone-of-fyr", "github.com/meros/fyr"); got != "fyr" {
-		t.Errorf("repo source did not match: %q", got)
-	}
-	if got := ProjectFor(ps, "h1", "/home/m/nixos/x", "github.com/meros/fyr"); got != "nix" {
-		t.Errorf("a folder source must win over a repo source: %q", got)
-	}
-}
-
 // SPEC 0.5 V0.23: remotes normalise to host/owner/repo.
 func TestNormalizeRemote(t *testing.T) {
 	cases := map[string]string{

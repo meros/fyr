@@ -130,7 +130,7 @@ func TestStateHasThreadsAndActions(t *testing.T) {
 		Projects []map[string]any `json:"projects"`
 	}
 	json.NewDecoder(r.Body).Decode(&s)
-	if s.Host == "" || s.BuildID != "b1" || len(s.Threads) != 1 || len(s.Actions) < 10 || len(s.Projects) != 1 {
+	if s.Host == "" || s.BuildID != "b1" || len(s.Threads) != 1 || len(s.Actions) < 10 || len(s.Projects) != 0 { // V0.28: no auto project
 		t.Fatalf("%+v", s)
 	}
 }
