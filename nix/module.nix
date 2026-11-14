@@ -17,7 +17,9 @@ let
     idleStopMinutes = cfg.idleStopMinutes;
     profiles = cfg.profiles;
     scanRoots = cfg.scanRoots;
+    quota = lib.mapAttrs (_: q: lib.filterAttrs (_: v: v != null) q) cfg.quota;
   };
+  optStr = description: lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; inherit description; };
 in
 {
   options.services.fyr = {
@@ -64,6 +66,49 @@ in
         Extra folders the host folder picker scans for git repositories, two
         levels deep (SPEC V0.42). The projects' folders are always scanned.
         `~` is the user's home folder; only folders inside it are scanned.
+      '';
+    };
+    quota = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule {
+        options = {
+          kind = lib.mkOption {
+            type = lib.types.enum [ "anthropic-oauth" "deepseek" "openrouter" "none" ];
+            description = ''
+              anthropic-oauth: a Claude subscription, read with the CLI's stored
+              login. deepseek, openrouter: a prepaid balance, read with an API key.
+              none: show nothing.
+            '';
+          };
+          configDir = optStr ''
+            anthropic-oauth: the CLI config folder holding .credentials.json.
+            Default: the profile's CLAUDE_CONFIG_DIR, else ~/.claude.
+          '';
+          keyFile = optStr ''
+            deepseek, openrouter: a file holding the API key (a runtime path such
+            as /run/secrets/deepseek, never a Nix path: that would copy the key
+            into the store). Wins over keyEnv. `~` is the user's home folder.
+          '';
+          keyEnv = optStr ''
+            deepseek, openrouter: the environment variable with the API key,
+            looked up in the profile's env, then the daemon's. Default
+            DEEPSEEK_API_KEY or OPENROUTER_API_KEY.
+          '';
+          baseURL = optStr "Overrides the provider's API root.";
+        };
+      });
+      default = { };
+      example = lib.literalExpression ''
+        {
+          claudeNorban = { kind = "anthropic-oauth"; configDir = "~/.claude-norban"; };
+          claudeDeepseek = { kind = "deepseek"; keyFile = "/run/secrets/deepseek-api-key"; };
+        }
+      '';
+      description = ''
+        Where each profile's provider quota is read (SPEC 0.5 V0.44), by
+        profile id. Wins over a profile's own `quota`. A profile in neither is
+        anthropic-oauth when its binary is plain `claude` and its env sets no
+        ANTHROPIC_BASE_URL, else none. fyrd reads the logins at runtime and
+        never sends a token or key to the client.
       '';
     };
     path = lib.mkOption {

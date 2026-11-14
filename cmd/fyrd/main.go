@@ -28,12 +28,13 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/engine"
-	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/github"
+	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/preview"
 	"github.com/meros/fyr/internal/push"
+	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/t3"
@@ -86,6 +87,9 @@ type config struct {
 	// ScanRoots: extra folders the folder picker scans for git repositories,
 	// two levels deep (V0.42); `~` is the home folder.
 	ScanRoots []string `json:"scanRoots"`
+	// Quota: per profile id, where its provider allowance is read (V0.44);
+	// wins over the profile's own quota.
+	Quota map[string]*quota.Spec `json:"quota"`
 }
 
 // expandHome turns "~" and "~/x" into paths under the home folder.
@@ -117,6 +121,9 @@ func loadConfig(path, t3Settings string) config {
 	for i := range c.Profiles {
 		if c.Profiles[i].PermissionMode == "" {
 			c.Profiles[i].PermissionMode = c.PermissionMode
+		}
+		if q := c.Quota[c.Profiles[i].ID]; q != nil {
+			c.Profiles[i].Quota = q
 		}
 	}
 	return c
@@ -248,6 +255,10 @@ func main() {
 	} else {
 		log.Printf("show: no Chrome on PATH; screenshots are off")
 	}
+	// V0.44: provider quota, read with the logins on this host.
+	quotas := quota.New(quotaProfiles(cfg.Profiles), home())
+	quotas.Client = &http.Client{Timeout: 10 * time.Second}
+	quotas.Logf = log.Printf
 	var mgr *agent.Manager
 	mcpSrv := mcp.New(func(tok string) (string, bool) { return mgr.ThreadForToken(tok) })
 	eng.Tools(mcpSrv)
@@ -265,6 +276,7 @@ func main() {
 		MCPURL:      mcpURL,
 		LogDir:      filepath.Join(*data, "logs"),
 		Attachments: att.Get,
+		OnRateLimit: quotas.Observe,
 	})
 	eng.Agents = mgr
 	eng.Adopt = adopt
@@ -332,6 +344,7 @@ func main() {
 		webFS = os.DirFS(*webDir)
 	}
 	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence, FS: folders, PR: prDetails,
+		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
 			if err != nil {
@@ -513,4 +526,12 @@ func attentionDetail(d engine.DTO) (meta, detail string) {
 		}
 	}
 	return "", d.Attention.Reason
+}
+
+func quotaProfiles(ps []agent.Profile) []quota.Profile {
+	out := make([]quota.Profile, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, quota.Profile{ID: p.ID, Binary: p.Binary, Env: p.Env, Spec: p.Quota})
+	}
+	return out
 }

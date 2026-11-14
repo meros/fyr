@@ -25,8 +25,8 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/gitdiff"
-	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/github"
+	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
@@ -63,6 +63,8 @@ type Server struct {
 	FS *hostfs.FS
 	// PR reads PR details for the PR tab (V0.43); optional.
 	PR PRDetails
+	// Quota lists the profiles' provider quota (V0.44); optional.
+	Quota func(ctx context.Context) any
 }
 
 // PRDetails is what the PR tab needs (*github.Details implements it).
@@ -81,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/pr", s.prDetail)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
+	mux.HandleFunc("GET /api/quota", s.quota)
 	if s.Presence != nil {
 		mux.HandleFunc("POST /api/presence", func(w http.ResponseWriter, r *http.Request) {
 			var b struct {
@@ -586,4 +589,15 @@ func (s *Server) fsRoutes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]any{"ok": true, "path": p})
 	})
+}
+
+// quota answers GET /api/quota (V0.44): due providers are read, at most 8 s.
+func (s *Server) quota(w http.ResponseWriter, r *http.Request) {
+	if s.Quota == nil {
+		writeJSON(w, 200, []any{})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	writeJSON(w, 200, s.Quota(ctx))
 }
