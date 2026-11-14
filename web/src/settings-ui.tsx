@@ -4,6 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Api } from "./api.ts";
+import { hostStatus, type HostInfo } from "./hosts.ts";
 import type { Quota } from "./quota.ts";
 import { quotaFor } from "./quota.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
@@ -27,6 +28,8 @@ import {
 export interface SettingsProps {
   api: Pick<Api, "providers" | "providersFound" | "command">;
   host: string;
+  /** V0.51: the front's hosts with their state */
+  hosts?: HostInfo[];
   phone?: boolean;
   /** the push control (Notifications) */
   push?: ComponentChildren;
@@ -42,10 +45,19 @@ export function Settings(p: SettingsProps) {
       <ProvidersSection {...p} />
       <section class="sets">
         <h3>Hosts</h3>
-        <div class="setrow">
-          <span class="setn">{p.host || "This host"}</span>
-          <span class="setd">this host · other hosts come with the tailnet</span>
-        </div>
+        {p.hosts && p.hosts.length > 0 ? (
+          p.hosts.map((h) => (
+            <div class="setrow" key={h.name} title={h.error}>
+              <span class="setn">{h.name}</span>
+              <span class="setd">{hostStatus(h, p.host)}</span>
+            </div>
+          ))
+        ) : (
+          <div class="setrow">
+            <span class="setn">{p.host || "This host"}</span>
+            <span class="setd">this host</span>
+          </div>
+        )}
       </section>
       <section class="sets">
         <h3>Notifications</h3>

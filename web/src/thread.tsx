@@ -17,6 +17,7 @@ import { effortsFor, startEffort } from "./providers.ts";
 import { dividerLine, rungDone } from "./handover.ts";
 import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
+import { offlineLine } from "./hosts.ts";
 import { onToolDetails, toolDetails } from "./prefs.ts";
 import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
 import { colorVar, makeProjectLabel, projectName, projectOf, suggestionFor } from "./projects.ts";
@@ -143,6 +144,11 @@ export function ThreadPane(p: ThreadPaneProps) {
           {t.parent && (
             <span class="chip fromc">
               <StartedBy parentId={t.parent} />
+            </span>
+          )}
+          {t.hostOffline && (
+            <span class="chip m" title="The front shows this thread from its last copy; commands wait until the host is back">
+              <span>{offlineLine(t)}</span>
             </span>
           )}
           {t.branch && (

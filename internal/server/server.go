@@ -89,7 +89,15 @@ type PRDetails interface {
 	Get(ctx context.Context, url string, fresh bool) (github.Detail, error)
 }
 
-func (s *Server) Handler() http.Handler {
+func (s *Server) Handler() http.Handler { return guard(s.OwnerLogin, withGzip(s.routes())) }
+
+// PeerHandler serves the host protocol on a tailnet listener (V0.51): the
+// same routes as Handler, guarded by the peer's Tailscale identity.
+func (s *Server) PeerHandler(peers PeerAuth) http.Handler {
+	return PeerGuard(s.OwnerLogin, peers, withGzip(s.routes()))
+}
+
+func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/stream", s.stream)
@@ -151,9 +159,9 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/mcp", s.MCP)
 	}
 	if s.Web != nil {
-		mux.Handle("/", noCacheIndex(http.FileServerFS(s.Web)))
+		mux.Handle("/", WebClient(s.Web))
 	}
-	return guard(s.OwnerLogin, withGzip(mux))
+	return mux
 }
 
 // guard refuses requests that are neither local nor the owner over the
@@ -191,6 +199,41 @@ func guard(owner string, next http.Handler) http.Handler {
 			http.Error(w, "missing X-Fyr header", http.StatusForbidden)
 			return
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Browser wraps a browser-facing handler (the host's own, or a front's,
+// V0.51) in the loopback and tailnet guard and gzip.
+func Browser(owner string, next http.Handler) http.Handler { return guard(owner, withGzip(next)) }
+
+// WebClient serves the built web client with fresh pages (V0.13, V0.15).
+func WebClient(web fs.FS) http.Handler { return noCacheIndex(http.FileServerFS(web)) }
+
+// PeerAuth names the Tailscale login that owns the peer at a remote address
+// (tailscaled whois; V0.51).
+type PeerAuth interface {
+	Login(ctx context.Context, remoteAddr string) (string, error)
+}
+
+// PeerGuard guards a host's tailnet listener (SPEC 0.5 V0.51): a front on
+// another machine is served only when its connection's Tailscale identity is
+// the owner's login. Headers are not trusted there: no Tailscale Serve sits in
+// front of this listener. POSTs still need X-Fyr.
+func PeerGuard(owner string, peers PeerAuth, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		login, err := peers.Login(ctx, r.RemoteAddr)
+		cancel()
+		if err != nil || owner == "" || login != owner {
+			http.Error(w, "this Fyr host serves only its owner's devices", http.StatusForbidden)
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path != "/mcp" && r.Header.Get("X-Fyr") != "1" {
+			http.Error(w, "missing X-Fyr header", http.StatusForbidden)
+			return
+		}
+		r.Header.Del("Tailscale-User-Login")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -280,16 +323,23 @@ func (s *Server) hostName() string {
 }
 
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
+	ch := s.Engine.Hub.Subscribe()
+	defer s.Engine.Hub.Unsubscribe(ch)
+	ServeStream(w, r, ch, s.BuildID)
+}
+
+// ServeStream writes a hub subscription as the SSE stream of the API (V0.2,
+// V0.38): hello, then the frames, threads as merge patches against what this
+// connection already has. The host and the front (V0.51) both use it.
+func ServeStream(w http.ResponseWriter, r *http.Request, ch <-chan engine.Frame, buildID string) {
 	fl, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", 500)
 		return
 	}
-	ch := s.Engine.Hub.Subscribe()
-	defer s.Engine.Hub.Unsubscribe(ch)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	hello, _ := json.Marshal(map[string]any{"now": time.Now().UTC(), "buildId": s.BuildID})
+	hello, _ := json.Marshal(map[string]any{"now": time.Now().UTC(), "buildId": buildID})
 	fmt.Fprintf(w, "event: hello\ndata: %s\n\n", hello)
 	fl.Flush()
 	ping := time.NewTicker(25 * time.Second)
