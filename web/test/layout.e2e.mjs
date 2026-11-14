@@ -307,6 +307,9 @@ async function openScreen(s, w, h) {
     await sleep(900);
   }
   if (s.openTools) {
+    // V0.41: the run's steps are folded into one line first
+    await evaluate(`document.querySelector('.tl.fold')?.click()`);
+    await sleep(150);
     await evaluate(`document.querySelector('.tl.grp')?.click()`);
     await sleep(150);
     await evaluate(`(() => { const rows = document.querySelectorAll('.tl.row'); rows[rows.length - 1]?.click(); })()`);
@@ -472,6 +475,12 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_mapperf` });
   await sleep(900);
+  // V0.41: the finished run is one folded line; its steps show after one tap
+  const f = await evaluate(`({ folds: document.querySelectorAll('.th .tl.fold').length, grp: document.querySelectorAll('.th .tl.grp').length, out: [...document.querySelectorAll('.th .cv.out .cl')].pop()?.textContent ?? '' })`);
+  check(f.folds === 1 && f.grp === 1, `V0.41 desktop: expected one folded line and only the live step open (${JSON.stringify(f)})`);
+  check(/run that test alone/.test(f.out), `V0.41 desktop: the live run's newest message is not an outcome ("${f.out}")`);
+  await evaluate(`document.querySelector('.th .tl.fold')?.click()`);
+  await sleep(150);
   await evaluate(`document.querySelector('.th .tl.grp')?.click()`);
   await sleep(150);
   const g = await evaluate(`({ more: document.querySelector('.th .tl.more')?.textContent ?? '', rows: document.querySelectorAll('.th .tl.row').length })`);

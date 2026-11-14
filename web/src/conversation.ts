@@ -30,7 +30,13 @@ export interface ToolCall {
 /** SPEC 0.5 V0.33: where a message is on its way to the agent; "" for messages from before tracking. */
 export type Delivery = "" | "sent" | "queued" | "read" | "cancelled" | "lost";
 
-export type Item =
+/** V0.41: when the event arrived and which run it belongs to (undefined outside a run). */
+export interface ItemMeta {
+  at?: number;
+  run?: number;
+}
+
+export type Item = (
   | {
       kind: "user";
       key: string;
@@ -53,7 +59,9 @@ export type Item =
   | { kind: "note"; key: string; text: string; line: string }
   | { kind: "answer"; key: string; text: string }
   | { kind: "preview"; key: string; card: PreviewCard }
-  | { kind: "task"; key: string; text: string; status: string; started: boolean };
+  | { kind: "task"; key: string; text: string; status: string; started: boolean }
+) &
+  ItemMeta;
 
 export interface BuildOptions {
   /** "Show tool details": every machine line in full (V0.21) */
@@ -156,11 +164,17 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
   // V0.33: a message with an id waits here until the agent reads it (or it is
   // cancelled or lost); it then takes its place in the log at that point.
   const held = new Map<string, Extract<Item, { kind: "user" }>>();
-  let group: { kind: "tools"; key: string; calls: ToolCall[] } | null = null;
+  let group: Extract<Item, { kind: "tools" }> | null = null;
+  // V0.41: runs are numbered from 1; `inRun` is false between run.ended and the next run.started.
+  let run = 0;
+  let inRun = false;
+  let now = 0;
+  const meta = (): ItemMeta => (inRun ? { at: now, run } : { at: now });
 
   const pushItem = (it: Item) => {
     group = null;
-    items.push(it);
+    // a held message keeps the time it was sent; it joins the run that read it
+    items.push({ ...meta(), ...it, ...(inRun ? { run } : {}) });
   };
   const newCall = (b: Block, at: number): ToolCall => ({
     id: b.id ?? "",
@@ -181,8 +195,13 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
 
   for (const e of events) {
     const at = Date.parse(e.at) || 0;
+    now = at;
     const key = String(e.seq);
     switch (e.type) {
+      case "run.started":
+        run++;
+        inRun = true;
+        break;
       case "user": {
         const text = str(e.data?.text);
         // Fyr's own messages to the agent are system notes, not the user's words: hidden unless details are on.
@@ -249,7 +268,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
             const c = newCall(b, at);
             calls.set(c.id, c);
             if (!group) {
-              group = { kind: "tools", key: `${key}.${items.length}`, calls: [] };
+              group = { kind: "tools", key: `${key}.${items.length}`, calls: [], ...meta() };
               items.push(group);
             }
             group.calls.push(c);
@@ -275,6 +294,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           durationMs: typeof d.durationMs === "number" ? d.durationMs : undefined,
           compact: !details,
         });
+        inRun = false;
         break;
       }
       case "preview": {
@@ -297,7 +317,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         if (str(e.data?.answer)) pushItem({ kind: "answer", key, text: str(e.data?.answer) });
         break;
       default:
-        break; // run.started, decision.opened and unknown types are not shown in the log
+        break; // decision.opened and unknown types are not shown in the log
     }
   }
   const out = calmTools(items);
@@ -419,8 +439,9 @@ const KINDS: Record<string, Kind> = {
   search: { key: "search", one: "searched the code", many: (n) => `searched the code ${n} times` },
   web: { key: "web", one: "searched the web", many: (n) => `searched the web ${n} times` },
   fetch: { key: "fetch", one: "fetched 1 page", many: (n) => `fetched ${n} pages` },
+  agent: { key: "agent", one: "started 1 subagent", many: (n) => `started ${n} subagents` },
 };
-const KIND_OF: Record<string, string> = { Read: "read", NotebookRead: "read", Edit: "edit", MultiEdit: "edit", Write: "edit", NotebookEdit: "edit", Bash: "bash", BashOutput: "bash", Grep: "search", Glob: "search", LS: "search", WebSearch: "web", WebFetch: "fetch" };
+const KIND_OF: Record<string, string> = { Read: "read", NotebookRead: "read", Edit: "edit", MultiEdit: "edit", Write: "edit", NotebookEdit: "edit", Bash: "bash", BashOutput: "bash", Grep: "search", Glob: "search", LS: "search", WebSearch: "web", WebFetch: "fetch", Task: "agent", Agent: "agent" };
 
 /** "Read 3 files · ran 2 commands · searched the web · edited 1 file", in order of first use. */
 export function groupSummary(calls: (Pick<ToolCall, "name"> & { description?: string })[]): string {
@@ -642,4 +663,122 @@ export function fullOutputOf(ev: { data?: unknown }, toolUseId: string): string 
     if (b.type === "tool_result" && b.tool_use_id === toolUseId) return resultText(b.content);
   }
   return null;
+}
+
+// ---- V0.41: pacing. What the owner reads (outcome) at full weight; the work (process) quiet and folded ----
+
+/** outcome: read at full weight; process: quiet; end: the small line that closes a run. */
+export type Role = "outcome" | "process" | "end";
+
+export type Entry =
+  | { kind: "item"; key: string; item: Item; role: Role }
+  | { kind: "fold"; key: string; items: Item[]; text: string; steps: number; failed: number; running: number; durationMs: number | null };
+
+function turnOf(it: Item, users: number): string {
+  return it.run !== undefined ? `r${it.run}` : `o${users}`;
+}
+
+/**
+ * The role of each item. Outcome: the owner's messages, the agent's last message of a run (the
+ * newest one while the run goes on), previews, and failures (a failed run, effect or agent).
+ * Process: everything the agent did on the way there, its earlier messages included.
+ */
+export function roles(items: Item[]): Role[] {
+  const lastText = new Map<string, number>();
+  let users = 0;
+  const turns = items.map((it, i) => {
+    if (it.kind === "user" && it.run === undefined) users++;
+    const t = turnOf(it, users);
+    if (it.kind === "assistant" && !it.quiet) lastText.set(t, i);
+    return t;
+  });
+  return items.map((it, i): Role => {
+    switch (it.kind) {
+      case "user":
+      case "preview":
+        return "outcome";
+      case "assistant":
+        return !it.quiet && lastText.get(turns[i]) === i ? "outcome" : "process";
+      case "run":
+        return it.failure ? "outcome" : "end";
+      case "effect":
+        return it.ok ? "process" : "outcome";
+      case "task":
+        return it.status === "failed" ? "outcome" : "process";
+      default:
+        return "process";
+    }
+  });
+}
+
+/** The run still going: the newest run with items and no end yet. */
+export function liveRun(items: Item[]): number | undefined {
+  let max: number | undefined;
+  for (const it of items) if (it.run !== undefined && (max === undefined || it.run > max)) max = it.run;
+  if (max === undefined) return undefined;
+  return items.some((it) => it.kind === "run" && it.run === max) ? undefined : max;
+}
+
+/**
+ * V0.41: consecutive process items fold into one line ("Read 3 files · ran 2 commands · 2 min"),
+ * one tap from every step. Not folded: a single step, a stretch of system lines only (they are one
+ * line each already), the newest stretch of the live run (what is happening now), and everything
+ * when tool details are on.
+ */
+export function pace(items: Item[], opts: { details?: boolean } = {}): Entry[] {
+  const rs = roles(items);
+  const live = liveRun(items);
+  const out: Entry[] = [];
+  let stretch: Item[] = [];
+  const flush = (atEnd: boolean) => {
+    const s = stretch;
+    stretch = [];
+    if (!s.length) return;
+    const work = s.some((it) => it.kind === "tools" || it.kind === "assistant");
+    const liveTail = atEnd && live !== undefined && s[s.length - 1].run === live;
+    if (opts.details || s.length < 2 || !work || liveTail) {
+      for (const it of s) out.push({ kind: "item", key: it.key, item: it, role: "process" });
+      return;
+    }
+    out.push(foldOf(s));
+  };
+  items.forEach((it, i) => {
+    if (rs[i] === "process") {
+      stretch.push(it);
+      return;
+    }
+    flush(false);
+    out.push({ kind: "item", key: it.key, item: it, role: rs[i] });
+  });
+  flush(true);
+  return out;
+}
+
+function foldOf(s: Item[]): Extract<Entry, { kind: "fold" }> {
+  const calls = s.flatMap((it) => (it.kind === "tools" ? it.calls : []));
+  const steps = calls.length + s.filter((it) => it.kind !== "tools").length;
+  let start = Infinity;
+  let end = 0;
+  for (const it of s) {
+    if (it.at) {
+      start = Math.min(start, it.at);
+      end = Math.max(end, it.at);
+    }
+    if (it.kind === "tools")
+      for (const c of it.calls) {
+        if (c.startedAt) start = Math.min(start, c.startedAt);
+        end = Math.max(end, c.startedAt + (c.durationMs ?? 0));
+      }
+  }
+  const st = groupStats(calls);
+  return {
+    kind: "fold",
+    key: `${s[0].key}.fold`,
+    items: s,
+    text: calls.length ? groupSummary(calls) : `${steps} steps`,
+    steps,
+    failed: st.failed,
+    running: st.running,
+    durationMs: start !== Infinity && end >= start && !st.running ? end - start : null,
+  };
 }

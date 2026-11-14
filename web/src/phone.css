@@ -257,6 +257,12 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .fs-item img,.m-app .fs-html{width:88px;height:64px}
 /* calm tool output on the phone: 44 px targets */
 .m-app .tl{height:44px;font-size:14px}
+/* SPEC 0.5 V0.41: quieter steps on the phone; the fold line and step rows keep 44 px targets */
+.m-app .msgw.proc .cl{font:400 14px/21px var(--ui)}
+.m-app .tl.fold{height:44px;font-size:13px}
+.m-app .tl.fold .fst{display:none}
+.m-app .act .tl,.m-app .act .al.click{height:44px}
+.m-app .foldb{margin-left:4px;padding-left:12px}
 .m-app .tl.row{padding-left:20px}
 .m-app .tld{margin-left:20px}
 .m-app .qlh.click,.m-app .rm{min-height:44px}
