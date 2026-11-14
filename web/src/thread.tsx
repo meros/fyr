@@ -1,40 +1,31 @@
-// Thread pane: header, conversation, docked decision card and composer.
+// Thread pane: header with chips and tabs, conversation, docked decision card and composer
+// (design/directions/04-rail.html).
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, ImageArg, Profile, PullRequest, ThreadDTO } from "./types.ts";
-import { buildConversation, type Item, type ToolCall } from "./conversation.ts";
+import { buildConversation, toolRows, type Item, type ToolCall } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { duration, shortModel } from "./format.ts";
-import { answerOf, goTo, oneColumn, openOther, pick, questionsOf, setOther, type CardState } from "./question.ts";
+import { pick, questionsOf, goTo, type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 
-export function prLabel(pr: PullRequest): { text: string; cls: string } {
-  if (pr.state === "MERGED") return { text: `#${pr.number} merged`, cls: "merged" };
-  if (pr.state === "CLOSED") return { text: `#${pr.number} closed`, cls: "merged" };
-  if (pr.conflict) return { text: `#${pr.number} conflict`, cls: "fail" };
+export function prLabel(pr: PullRequest, short = false): { text: string; cls: string } {
+  if (pr.state === "MERGED") return { text: short ? "merged" : `#${pr.number} merged`, cls: "merged" };
+  if (pr.state === "CLOSED") return { text: short ? "closed" : `#${pr.number} closed`, cls: "merged" };
+  if (pr.conflict) return { text: `#${pr.number} ✗ conflict`, cls: "fail" };
   if (pr.checks === "fail") return { text: `#${pr.number} ✗ CI`, cls: "fail" };
   if (pr.checks === "pass") return { text: `#${pr.number} ✓`, cls: "ok" };
   if (pr.checks === "pending") return { text: `#${pr.number} …`, cls: "" };
   return { text: `#${pr.number}`, cls: "" };
 }
 
-interface ActBtnProps {
-  t: ThreadDTO;
-  action: string;
-  label: string;
-  k: string;
-  onRun(action: string): void;
-  primary?: boolean;
-}
-
-function ActBtn({ t, action, label, k, onRun, primary }: ActBtnProps) {
-  const reason = unavailableReason(t, action);
-  return (
-    <button class={`btn${primary ? " p" : ""}`} disabled={!!reason} title={reason ?? `${label} (${k})`} onClick={() => onRun(action)}>
-      {label} <kbd>{k}</kbd>
-    </button>
-  );
+export interface AnswerField {
+  index: number;
+  text: string;
+  setText(text: string): void;
+  /** Enter: take the text as this question's answer, then submit or move on */
+  submit(): void;
 }
 
 export interface ThreadPaneProps {
@@ -43,9 +34,8 @@ export interface ThreadPaneProps {
   events: FyrEvent[] | undefined;
   profiles: Profile[];
   card: CardState | null;
-  focusOther: number;
+  answerField: AnswerField | null;
   onCard(cs: CardState): void;
-  onAnswerAsk(d: Decision): void;
   onAllow(d: Decision, allow: boolean): void;
   onRun(action: string, args?: Record<string, unknown>): void;
   onSnooze(): void;
@@ -54,90 +44,133 @@ export interface ThreadPaneProps {
   onFocusZone(): void;
 }
 
+type Tab = "conv" | "changes" | "pr";
+
 export function ThreadPane(p: ThreadPaneProps) {
   const t = p.thread;
+  const [tab, setTab] = useState<Tab>("conv");
+  useEffect(() => setTab("conv"), [t.id]);
   const profile = p.profiles.find((x) => x.id === t.profile);
   const decision = t.decisions?.[0] ?? null;
   const st = t.attention.state;
+  const settleReason = unavailableReason(t, "thread.settle");
+  const snoozeReason = unavailableReason(t, "thread.snooze");
   return (
     <section class="th" onMouseDown={p.onFocusZone}>
-      <header class="thh">
+      <div class="thh">
         <div class="tr">
-          <h1 class="tt" title={t.title}>
+          <div class="tt" title={t.title}>
             {t.title || "Untitled"}
-          </h1>
+          </div>
           <div class="acts">
-            {st === "failed" && <ActBtn t={t} action="thread.retry" label="Retry" k="r" onRun={(a) => p.onRun(a)} />}
-            <button class="btn" disabled={!!unavailableReason(t, "thread.snooze")} title={unavailableReason(t, "thread.snooze") ?? "Snooze (s)"} onClick={p.onSnooze}>
+            {st === "failed" && (
+              <button class="btn" disabled={!isAvailable(t, "thread.retry")} title={unavailableReason(t, "thread.retry") ?? "Retry (r)"} onClick={() => p.onRun("thread.retry")}>
+                Retry <kbd>r</kbd>
+              </button>
+            )}
+            <button class="btn" disabled={!!snoozeReason} title={snoozeReason ?? "Snooze (s)"} onClick={p.onSnooze}>
               Snooze <kbd>s</kbd>
             </button>
-            <ActBtn t={t} action="thread.settle" label={t.running ? "Settle when done" : "Settle"} k="e" onRun={(a) => p.onRun(a)} />
-            <ActBtn t={t} action="thread.archive" label="Archive" k="#" onRun={(a) => p.onRun(a)} />
+            <button class="btn" disabled={!!settleReason} title={settleReason ?? (t.running ? "Settle when done (e)" : "Settle (e)")} onClick={() => p.onRun("thread.settle")}>
+              Settle <kbd>e</kbd>
+            </button>
           </div>
         </div>
         <div class="chips">
           <span class={`chip st ${stateClass(st)}`} title={t.attention.reason || stateLabel(st)}>
-            <span class={t.running ? "spin" : ""}>
+            <span class={t.running ? "spin" : "icw"}>
               <StateIcon state={st} size={14} />
             </span>
-            <span class="lab">{stateLabel(st)}</span>
+            <span style="color:var(--ink)">{stateLabel(st)}</span>
           </span>
-          {p.mode === "peek" && <span class="chip peek">Peek · ⏎ opens</span>}
-          <span class="chip pj" title={t.cwd}>
-            <i class="dot" style={{ background: profile?.color ?? "var(--ink-faint)" }} title={profile?.name ?? t.profile} />
+          {p.mode === "peek" && (
+            <span class="chip peek">
+              <span>Peek · ⏎ opens</span>
+            </span>
+          )}
+          <span class="chip pj" title={`${t.cwd}${profile ? ` · ${profile.name}` : ""}`}>
+            {profile && <i class="dot" style={{ background: profile.color }} />}
             <span>{t.project || t.cwd}</span>
           </span>
+          {t.branch && (
+            <span class="chip m brn" title={t.branch}>
+              <span>{t.branch}</span>
+            </span>
+          )}
           <ModelChip t={t} profile={profile} onRun={p.onRun} />
           {t.pr && <PrChip pr={t.pr} />}
-          {t.settleWhenDone && <span class="chip">settles when done</span>}
-          {t.settleWhenMerged && <span class="chip">settles when merged</span>}
-          {t.source === "t3" && <span class="chip m">T3</span>}
+          {(t.settleWhenDone || t.settleWhenMerged) && (
+            <span class="chip">
+              <span>{t.settleWhenDone ? "settles when done" : "settles when merged"}</span>
+            </span>
+          )}
         </div>
-      </header>
-      <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} />
-      {decision && (
-        <DecisionCard
-          d={decision}
-          more={(t.decisions?.length ?? 1) - 1}
-          card={p.card}
-          focusOther={p.focusOther}
-          onCard={p.onCard}
-          onAnswerAsk={p.onAnswerAsk}
-          onAllow={p.onAllow}
-        />
-      )}
-      <Composer t={t} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} hasDecision={!!decision} />
+        <div class="tabs" role="tablist">
+          <span class={tab === "conv" ? "on" : ""} role="tab" onClick={() => setTab("conv")}>
+            Conversation
+          </span>
+          <span class={tab === "changes" ? "on" : ""} role="tab" onClick={() => setTab("changes")}>
+            Changes
+          </span>
+          <span class={tab === "pr" ? "on" : ""} role="tab" onClick={() => setTab("pr")}>
+            PR
+          </span>
+        </div>
+      </div>
+      {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} />}
+      {tab === "changes" && <div class="pane-note">The branch diff comes in a later version (v0.x). The Conversation tab lists every edit.</div>}
+      {tab === "pr" && <PrTab t={t} />}
+      {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} />}
+      <Composer key={t.id} t={t} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
+  );
+}
+
+function PrTab({ t }: { t: ThreadDTO }) {
+  if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
+  const pr = t.pr;
+  return (
+    <div class="pane-note prose">
+      <p>
+        <a href={pr.url} target="_blank" rel="noopener noreferrer">
+          {pr.repo ? `${pr.repo}#${pr.number}` : `#${pr.number}`}
+        </a>
+        {pr.title ? ` · ${pr.title}` : ""}
+      </p>
+      <p>
+        State {pr.state ?? "unknown"} · checks {pr.checks ?? "none"}
+        {pr.review ? ` · review ${pr.review}` : ""}
+        {pr.conflict ? " · merge conflict" : ""}
+      </p>
+      <p>Checks, review threads and Merge in this tab come in a later version (v0.x).</p>
+    </div>
   );
 }
 
 function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
   const models = profile?.models ?? [];
   const reason = unavailableReason(t, "thread.setModel");
-  if (models.length < 2 || reason) {
-    return (
-      <span class="chip m" title={reason ? `${t.model} · ${reason}` : t.model}>
-        <span>{shortModel(t.model)}</span>
-      </span>
-    );
-  }
+  const can = models.length > 1 && !reason;
   return (
-    <label class="chip m sel" title="Change model">
-      <select value={t.model} onChange={(e) => onRun("thread.setModel", { model: (e.target as HTMLSelectElement).value })}>
-        {!models.includes(t.model) && <option value={t.model}>{shortModel(t.model)}</option>}
-        {models.map((m) => (
-          <option value={m}>{shortModel(m)}</option>
-        ))}
-      </select>
-    </label>
+    <span class={`chip m${can ? " msel" : ""}`} title={can ? `${t.model} · change model` : reason ? `${t.model} · ${reason}` : t.model}>
+      <span>{shortModel(t.model)}</span>
+      {can && (
+        <select value={t.model} aria-label="Model" onChange={(e) => onRun("thread.setModel", { model: (e.target as HTMLSelectElement).value })}>
+          {!models.includes(t.model) && <option value={t.model}>{shortModel(t.model)}</option>}
+          {models.map((m) => (
+            <option value={m}>{shortModel(m)}</option>
+          ))}
+        </select>
+      )}
+    </span>
   );
 }
 
 function PrChip({ pr }: { pr: PullRequest }) {
   const l = prLabel(pr);
   return (
-    <a class={`chip prc ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={pr.title || pr.url}>
-      <span>{l.text}</span>
+    <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={pr.title || pr.url}>
+      {l.text}
     </a>
   );
 }
@@ -208,13 +241,7 @@ function ItemView({ it }: { it: Item }) {
     case "assistant":
       return <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text) }} />;
     case "tools":
-      return (
-        <div class="act">
-          {it.calls.map((c) => (
-            <ToolLine c={c} key={c.id} />
-          ))}
-        </div>
-      );
+      return <ToolCard calls={it.calls} />;
     case "run":
       if (it.failure)
         return (
@@ -234,7 +261,7 @@ function ItemView({ it }: { it: Item }) {
       );
     case "effect":
       return (
-        <div class={`sys prose ${it.ok ? "ok" : "fail"}`}>
+        <div class={`sys prose ${it.ok ? "" : "fail"}`}>
           <StateIcon state={it.ok ? "settled" : "failed"} size={14} />
           <span>
             <code>{it.action}</code> {it.text}
@@ -250,33 +277,61 @@ function ItemView({ it }: { it: Item }) {
   }
 }
 
-function ToolLine({ c, nested }: { c: ToolCall; nested?: boolean }) {
+function callIcon(c: ToolCall) {
+  return c.isError ? "failed" : c.done ? "settled" : "working";
+}
+
+/** One bordered card for consecutive tool calls; the name column fits the longest name. */
+function ToolCard({ calls, nested }: { calls: ToolCall[]; nested?: boolean }) {
+  const rows = toolRows(calls);
+  const longest = Math.max(4, ...rows.map((r) => (r.kind === "agents" ? r.calls[0].name.length : r.call.name.length)));
+  const nmw = Math.min(140, Math.ceil(longest * 7.4));
+  return (
+    <div class={nested ? "act nested" : "act"} style={{ "--nmw": `${nmw}px` }}>
+      {rows.map((r) => (r.kind === "agents" ? <AgentsRow calls={r.calls} /> : <ToolLine c={r.call} />))}
+    </div>
+  );
+}
+
+function ToolLine({ c }: { c: ToolCall }) {
+  return (
+    <div class="al" title={c.summary}>
+      <StateIcon state={callIcon(c)} size={14} />
+      <span class="nm ell">{c.name}</span>
+      <span class={`ell${c.isError ? " err" : ""}`}>{c.summary}</span>
+      <span class="d">{c.done ? duration(c.durationMs) : ""}</span>
+    </div>
+  );
+}
+
+function AgentsRow({ calls }: { calls: ToolCall[] }) {
   const [open, setOpen] = useState(false);
-  const hasSub = c.subMessages > 0;
-  const icon = c.isError ? "failed" : c.done ? "settled" : "working";
+  const failed = calls.some((c) => c.isError);
+  const done = calls.every((c) => c.done);
+  const ms = done ? Math.max(...calls.map((c) => c.durationMs ?? 0)) : null;
+  const desc = calls[0].summary;
+  const n = calls.length;
   return (
     <>
-      <div class={`al${nested ? " nested" : ""}${hasSub ? " click" : ""}`} onClick={hasSub ? () => setOpen(!open) : undefined} title={c.summary}>
-        <StateIcon state={icon} size={14} />
-        <span class="nm ell">{c.name}</span>
-        <span class={`ell${c.isError ? " err" : ""}`}>
-          {hasSub ? (
-            <span class="s">
-              {c.subMessages} subagent {c.subMessages === 1 ? "message" : "messages"} · {c.summary} {open ? "▾" : "▸"}
-            </span>
-          ) : (
-            c.summary
-          )}
-          {c.isError && <b class="errtag"> error</b>}
+      <div class="al click" onClick={() => setOpen(!open)} title={calls.map((c) => c.summary).join("\n")}>
+        <StateIcon state={failed ? "failed" : done ? "settled" : "working"} size={14} />
+        <span class="nm ell">{calls[0].name}</span>
+        <span class="s ell">
+          {n} {n === 1 ? "subagent" : "subagents"} · {desc} {open ? "▾" : "▸"}
         </span>
-        <span class="d">{c.done ? duration(c.durationMs) : ""}</span>
+        <span class="d">{ms !== null ? duration(ms) : ""}</span>
       </div>
       {open && (
         <div class="sub">
-          {c.subCalls.map((s) => (
-            <ToolLine c={s} nested key={s.id} />
+          {calls.map((c) => (
+            <div class="subw">
+              <div class="subh ell">
+                {c.summary} · {c.subMessages} {c.subMessages === 1 ? "message" : "messages"}
+              </div>
+              {c.subCalls.length > 0 && <ToolCard calls={c.subCalls} nested />}
+              {c.subTexts.length > 0 && <div class="subtext prose">{c.subTexts[c.subTexts.length - 1]}</div>}
+            </div>
           ))}
-          {c.subTexts.length > 0 && <div class="subtext prose">{c.subTexts[c.subTexts.length - 1]}</div>}
         </div>
       )}
     </>
@@ -289,14 +344,12 @@ interface CardProps {
   d: Decision;
   more: number;
   card: CardState | null;
-  focusOther: number;
   onCard(cs: CardState): void;
-  onAnswerAsk(d: Decision): void;
   onAllow(d: Decision, allow: boolean): void;
 }
 
-function Asker({ d }: { d: Decision }) {
-  return d.agent ? <span class="ell">asked by subagent “{d.agent}”</span> : <span class="ell">asked by the thread</span>;
+function asker(d: Decision): string {
+  return d.agent ? `asked by subagent “${d.agent}”` : "asked by this thread";
 }
 
 export function effectSentence(d: Decision): string {
@@ -313,135 +366,76 @@ export function effectSentence(d: Decision): string {
 
 function DecisionCard(p: CardProps) {
   const { d } = p;
-  if (d.kind === "ask" && p.card && p.card.decisionId === d.id) return <AskCard {...p} card={p.card} />;
-  if (d.kind === "approval" || d.kind === "effect") {
-    const approval = d.kind === "approval";
-    const cmd = approval ? (typeof d.input?.command === "string" ? (d.input.command as string) : null) : null;
-    const rest = approval && d.input ? Object.fromEntries(Object.entries(d.input).filter(([k]) => k !== "command")) : null;
-    return (
-      <div class="ask">
-        <div class="ah">
-          <StateIcon state="asking" size={14} />
-          <b>{approval ? "Approval" : "Fyr action"}</b>
-          <Asker d={d} />
-          {p.more > 0 && <span class="ml">+{p.more} more</span>}
+  if (d.kind === "ask") return p.card && p.card.decisionId === d.id ? <AskCard {...p} card={p.card} /> : null;
+  const approval = d.kind === "approval";
+  const cmd = approval && typeof d.input?.command === "string" ? (d.input.command as string) : null;
+  const rest = approval && d.input ? Object.fromEntries(Object.entries(d.input).filter(([k]) => k !== "command")) : {};
+  return (
+    <div class="ask">
+      <div class="ah">
+        <StateIcon state="asking" size={14} />
+        <b>{approval ? "Approval" : "Fyr action"}</b>
+        <span class="ell">{asker(d)}</span>
+        {p.more > 0 && <span class="ml">+{p.more} more</span>}
+      </div>
+      <div class="ab">
+        <div class="q">{approval ? <>Allow {d.tool}?</> : effectSentence(d)}</div>
+        <div class="payload">
+          {cmd && <pre class="cmd">{cmd}</pre>}
+          {approval && Object.keys(rest).length > 0 && <pre>{JSON.stringify(rest, null, 2)}</pre>}
+          {!approval && <pre>{JSON.stringify(d.effect?.args ?? {}, null, 2)}</pre>}
         </div>
-        <div class="ab">
-          {approval ? (
-            <>
-              <div class="q">
-                Allow <code>{d.tool}</code>?
-              </div>
-              <div class="payload">
-                {cmd && <pre class="cmd">{cmd}</pre>}
-                {rest && Object.keys(rest).length > 0 && <pre>{JSON.stringify(rest, null, 2)}</pre>}
-              </div>
-            </>
-          ) : (
-            <>
-              <div class="q prose">{effectSentence(d)}</div>
-              <div class="payload">
-                <pre>{JSON.stringify(d.effect?.args ?? {}, null, 2)}</pre>
-              </div>
-              {d.effect?.reason && <div class="reason prose">{d.effect.reason}</div>}
-              <div class="note">Fyr runs this after you approve. The agent does not wait for it.</div>
-            </>
-          )}
-          <div class="grid2">
-            <button class="op op-b" onClick={() => p.onAllow(d, true)}>
-              <span class="a">{approval ? "Allow" : "Approve"}</span>
-              <kbd>1</kbd>
-            </button>
-            <button class="op op-b" onClick={() => p.onAllow(d, false)}>
-              <span class="a">{approval ? "Deny" : "Decline"}</span>
-              <kbd>2</kbd>
-            </button>
-          </div>
+        <div class="grid4">
+          <button class="op" onClick={() => p.onAllow(d, true)}>
+            <span class="a ell">{approval ? "Allow" : "Approve"}</span>
+            <kbd>1</kbd>
+            <span class="d">{approval ? "Run it once." : `${d.effect?.reason ? d.effect.reason + " " : ""}Fyr runs it; the agent does not wait.`}</span>
+          </button>
+          <button class="op" onClick={() => p.onAllow(d, false)}>
+            <span class="a ell">{approval ? "Deny" : "Decline"}</span>
+            <kbd>2</kbd>
+            <span class="d">{approval ? "The agent is told no and continues." : "Nothing is run."}</span>
+          </button>
         </div>
       </div>
-    );
-  }
-  return null;
+    </div>
+  );
 }
 
 function AskCard(p: CardProps & { card: CardState }) {
   const { d, card } = p;
   const qs = questionsOf(d);
   const q = qs[card.index];
-  const otherRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (card.otherOpen) otherRef.current?.focus();
-  }, [card.otherOpen, card.index, p.focusOther]);
   if (!q) return null;
-  const one = oneColumn(q);
   const picks = card.picks[card.index] ?? [];
-  const otherChosen = card.other[card.index] !== null;
-  const ready = qs.every((_, i) => answerOf(card, d, i) !== null);
-  const set = (cs: CardState) => p.onCard(cs);
+  const other = card.other[card.index];
   return (
     <div class="ask">
       <div class="ah">
         <StateIcon state="asking" size={14} />
-        <b>
+        <b class="qn" onClick={() => qs.length > 1 && p.onCard(goTo(card, d, (card.index + 1) % qs.length))} title={qs.length > 1 ? "Next question (Tab)" : undefined}>
           Question {card.index + 1} of {qs.length}
         </b>
-        {q.header && <span class="qh ell">{q.header}</span>}
-        <Asker d={d} />
+        <span class="ell">{asker(d)}</span>
         <span class="ml">
-          {q.multiSelect ? "multi-select · " : ""}
-          {qs.length > 1 && (
-            <>
-              <kbd>Tab</kbd> next
-            </>
-          )}
-          {p.more > 0 && ` · +${p.more} more`}
+          {p.more > 0 && `+${p.more} more · `}
+          <kbd>Tab</kbd> multi-select next
         </span>
       </div>
       <div class="ab">
-        <div class="q prose">{q.question}</div>
-        <div class={one ? "grid1" : "grid4"}>
-          {q.options.map((o, i) => {
-            const on = picks.includes(o.label);
-            return (
-              <button
-                class={`op${on ? " on" : ""}`}
-                title={o.label}
-                onClick={() => set(pick(card, d, i))}
-              >
-                <span class="a ell">{o.label}</span>
-                <kbd>{i + 1}</kbd>
-                <span class="d">{o.description ?? ""}</span>
-              </button>
-            );
-          })}
-          <button class={`op${otherChosen ? " on" : ""}`} onClick={() => set(openOther(card))}>
+        <div class="q">{q.question}</div>
+        <div class="grid4">
+          {q.options.map((o, i) => (
+            <button class={`op${picks.includes(o.label) ? " on" : ""}`} title={`${o.label}${o.description ? `\n${o.description}` : ""}`} onClick={() => p.onCard(pick(card, d, i))}>
+              <span class="a ell">{o.label}</span>
+              <kbd>{i + 1}</kbd>
+              <span class="d">{o.description ?? ""}</span>
+            </button>
+          ))}
+          <button class={`op${other ? " on" : ""}`} onClick={() => document.getElementById("composer")?.focus()} title="Answer in your own words in the field below (0)">
             <span class="a ell">Other…</span>
             <kbd>0</kbd>
-            <span class="d">{otherChosen && card.other[card.index] ? card.other[card.index] : "Answer in your own words."}</span>
-          </button>
-        </div>
-        {card.otherOpen && (
-          <input
-            ref={otherRef}
-            class="other"
-            data-other="1"
-            placeholder={`Answer question ${card.index + 1} in your own words…`}
-            value={card.other[card.index] ?? ""}
-            onInput={(e) => set(setOther(card, d, (e.target as HTMLInputElement).value))}
-          />
-        )}
-        <div class="afoot">
-          <span class="dots">
-            {qs.map((_, i) => (
-              <button
-                class={`qd${i === card.index ? " cur" : ""}${answerOf(card, d, i) !== null ? " done" : ""}`}
-                title={`Question ${i + 1}`}
-                onClick={() => set(goTo(card, d, i))}
-              />
-            ))}
-          </span>
-          <button class="btn p" disabled={!ready} title={ready ? "Send all answers" : "Answer every question first"} onClick={() => p.onAnswerAsk(d)}>
-            Answer <kbd>⏎</kbd>
+            <span class="d">{other ?? ""}</span>
           </button>
         </div>
       </div>
@@ -450,13 +444,6 @@ function AskCard(p: CardProps & { card: CardState }) {
 }
 
 // ---- composer ----
-
-interface ComposerProps {
-  t: ThreadDTO;
-  hasDecision: boolean;
-  onSend(text: string, images: ImageArg[]): Promise<boolean>;
-  onInterrupt(): void;
-}
 
 export function readImages(files: Iterable<File>): Promise<ImageArg[]> {
   const list = [...files].filter((f) => f.type.startsWith("image/"));
@@ -497,7 +484,6 @@ export function useImagePaste() {
   const add = async (files: Iterable<File>) => {
     const got = await readImages(files);
     if (got.length) setImages((cur) => [...cur, ...got]);
-    return got.length > 0;
   };
   const onPaste = (e: ClipboardEvent) => {
     const files = [...(e.clipboardData?.files ?? [])];
@@ -519,12 +505,25 @@ export function useImagePaste() {
   return { images, setImages, onPaste, onDrop, onDragOver, remove: (i: number) => setImages((c) => c.filter((_, j) => j !== i)) };
 }
 
-function Composer({ t, onSend, onInterrupt, hasDecision }: ComposerProps) {
-  const [text, setText] = useState("");
+interface ComposerProps {
+  t: ThreadDTO;
+  answer: AnswerField | null;
+  onSend(text: string, images: ImageArg[]): Promise<boolean>;
+  onInterrupt(): void;
+}
+
+/**
+ * Enter sends (steers a running thread). While a question is open the composer is the answer field
+ * for the active question's "Other" (U15): Enter answers, ⌘Enter queues the text as a message instead.
+ */
+function Composer({ t, answer, onSend, onInterrupt }: ComposerProps) {
+  const [draft, setDraft] = useState("");
   const img = useImagePaste();
   const ta = useRef<HTMLTextAreaElement>(null);
   const sendReason = unavailableReason(t, "thread.send");
-  const canInterrupt = t.running && isAvailable(t, "thread.interrupt");
+  const text = answer ? answer.text : draft;
+  const setText = answer ? answer.setText : setDraft;
+  const disabled = !answer && !!sendReason;
 
   useLayoutEffect(() => {
     const el = ta.current;
@@ -542,10 +541,10 @@ function Composer({ t, onSend, onInterrupt, hasDecision }: ComposerProps) {
     }
   };
 
-  const placeholder = sendReason
-    ? sendReason
-    : hasDecision
-      ? "Message the thread (the card above takes the answer)…"
+  const placeholder = answer
+    ? `Answer question ${answer.index + 1} in your own words…`
+    : sendReason
+      ? sendReason
       : t.running
         ? "Steer the running thread…"
         : "Message…";
@@ -553,32 +552,42 @@ function Composer({ t, onSend, onInterrupt, hasDecision }: ComposerProps) {
   return (
     <div class="cmpw" onDrop={img.onDrop} onDragOver={img.onDragOver}>
       <ImageStrip images={img.images} onRemove={img.remove} />
-      <div class={`cmp${sendReason ? " off" : ""}`}>
+      <div class={`cmp${disabled ? " off" : ""}`}>
         <textarea
           ref={ta}
           id="composer"
+          class="in"
           rows={1}
           value={text}
-          disabled={!!sendReason}
+          disabled={disabled}
           placeholder={placeholder}
-          title={sendReason}
+          title={disabled ? sendReason : undefined}
+          data-other={answer ? "1" : undefined}
           onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
           onPaste={img.onPaste}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-              e.preventDefault();
-              void send();
-            }
+            if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (answer && !(e.metaKey || e.ctrlKey)) answer.submit();
+            else void send();
           }}
         />
+        {answer && !sendReason && <span class="hint">⌘⏎ queue</span>}
         {t.running && (
-          <button class="btn" disabled={!canInterrupt} title={unavailableReason(t, "thread.interrupt") ?? "Interrupt (Esc)"} onClick={onInterrupt}>
+          <button class="btn" disabled={!isAvailable(t, "thread.interrupt")} title={unavailableReason(t, "thread.interrupt") ?? "Interrupt (Esc)"} onClick={onInterrupt}>
             Interrupt <kbd>Esc</kbd>
           </button>
         )}
-        <button class="btn p" disabled={!!sendReason || (!text.trim() && !img.images.length)} title={sendReason ?? "Send (Enter)"} onClick={() => void send()}>
-          Send <kbd>⏎</kbd>
-        </button>
+        {answer ? (
+          <button class="btn p" title="Answer (Enter)" onClick={answer.submit}>
+            Answer <kbd>⏎</kbd>
+          </button>
+        ) : (
+          <button class="btn p" disabled={!!sendReason || (!text.trim() && !img.images.length)} title={sendReason ?? "Send (Enter)"} onClick={() => void send()}>
+            Send <kbd>⏎</kbd>
+          </button>
+        )}
       </div>
     </div>
   );

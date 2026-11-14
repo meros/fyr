@@ -90,6 +90,8 @@ export interface ThreadDTO {
   settleWhenDone?: boolean;
   settleWhenMerged?: boolean;
   source?: "fyr" | "t3" | string;
+  /** Not in API v0 yet: the branch chip shows only when the host sends it. */
+  branch?: string | null;
   attention: Attention;
   view?: { seenAt?: string | null; snoozeUntil?: string | null } | null;
   unavailable?: Record<string, string> | null;
@@ -120,6 +122,8 @@ export interface StateDTO {
   now: string;
   /** SPEC V0.13: a different buildId after a reconnect reloads the page */
   buildId?: string;
+  /** Not in API v0 yet: the host name for the rail's bottom indicator. */
+  host?: string;
   user: string;
   threads: ThreadDTO[];
   actions: ActionInfo[];

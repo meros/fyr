@@ -20,6 +20,7 @@ export interface Store {
   /** server clock minus client clock, ms */
   clockOffset: number;
   user: string;
+  host: string;
   threads: Record<string, ThreadDTO>;
   actions: ActionInfo[];
   profiles: Profile[];
@@ -34,6 +35,7 @@ export function initialStore(): Store {
     conn: "connecting",
     clockOffset: 0,
     user: "",
+    host: "",
     threads: {},
     actions: [],
     profiles: [],
@@ -68,6 +70,7 @@ export function applySnapshot(s: Store, dto: StateDTO, clientNow: number): Store
     loaded: true,
     clockOffset: ts(dto.now) ? ts(dto.now) - clientNow : s.clockOffset,
     user: dto.user ?? "",
+    host: dto.host ?? "",
     threads,
     actions: dto.actions ?? [],
     profiles: dto.profiles ?? [],
