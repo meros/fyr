@@ -44,6 +44,8 @@ export interface ThreadPaneProps {
   onFocusZone(): void;
   /** Loads older events; absent when the start of the thread is loaded. */
   onEarlier?: () => void;
+  /** Phone layout: back to the inbox. */
+  onBack?: () => void;
 }
 
 type Tab = "conv" | "changes" | "pr";
@@ -61,6 +63,11 @@ export function ThreadPane(p: ThreadPaneProps) {
     <section class="th" onMouseDown={p.onFocusZone}>
       <div class="thh">
         <div class="tr">
+          {p.onBack && (
+            <button class="btn back" onClick={p.onBack} aria-label="Back to the inbox">
+              ‹
+            </button>
+          )}
           <div class="tt" title={t.title}>
             {t.title || "Untitled"}
           </div>

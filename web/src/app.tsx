@@ -147,7 +147,9 @@ function App() {
     didInit.current = true;
     const want = params.get("open");
     const first = want && store.threads[want] ? want : order[0];
-    if (first) {
+    // On a phone the inbox comes first; open a thread only when asked (?open=).
+    const phone = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 760px)").matches;
+    if (first && (!phone || want)) {
       setSel(first);
       setView({ id: first, mode: "open" });
       setZone("thread");
@@ -628,7 +630,7 @@ function App() {
 
   return (
     <div class="shell">
-      <div class="app">
+      <div class={view ? "app open" : "app"}>
         <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} />
         <Inbox
           sec={sec}
@@ -653,6 +655,7 @@ function App() {
             mode={view.mode}
             events={store.events[view.id]}
             onEarlier={earlier[view.id] ? () => loadEarlier(view.id) : undefined}
+            onBack={closePeek}
             profiles={store.profiles}
             card={card}
             answerField={answerField}

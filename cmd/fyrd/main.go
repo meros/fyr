@@ -31,6 +31,7 @@ import (
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/t3"
+	"github.com/meros/fyr/internal/tailnet"
 	"github.com/meros/fyr/web"
 )
 
@@ -71,6 +72,7 @@ type config struct {
 	Listen          string          `json:"listen"`
 	PermissionMode  string          `json:"permissionMode"`
 	IdleStopMinutes int             `json:"idleStopMinutes"`
+	OwnerLogin      string          `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)
 	Profiles        []agent.Profile `json:"profiles"`
 }
 
@@ -113,6 +115,7 @@ func main() {
 	cfgPath := fl.String("config", filepath.Join(home(), ".config", "fyr", "config.json"), "config file")
 	listen := fl.String("listen", "", "listen address (loopback only), default from config or 127.0.0.1:7777")
 	webDir := fl.String("web", "", "serve the client from this directory instead of the embedded build (development)")
+	ownerLogin := fl.String("owner-login", "", "Tailscale login allowed over the tailnet (default from config ownerLogin)")
 	t3Dir := fl.String("t3", filepath.Join(home(), ".t3", "userdata"), "T3 Code user data directory")
 	list := fl.Bool("list", false, "import-t3: only list the candidates")
 	fl.Parse(args)
@@ -121,6 +124,18 @@ func main() {
 	cfg := loadConfig(*cfgPath, filepath.Join(*t3Dir, "settings.json"))
 	if *listen != "" {
 		cfg.Listen = *listen
+	}
+	if *ownerLogin != "" {
+		cfg.OwnerLogin = *ownerLogin
+	}
+	if cfg.OwnerLogin == "" {
+		// V0.14: the Tailscale user of this machine owns it over the tailnet.
+		if login, dns, err := tailnet.Self(tailnet.DefaultSocket); err == nil {
+			cfg.OwnerLogin = login
+			log.Printf("tailnet owner %s on %s", login, dns)
+		} else {
+			log.Printf("tailnet: %v; serving loopback only", err)
+		}
 	}
 	t3DB := filepath.Join(*t3Dir, "statev2.sqlite")
 
@@ -224,7 +239,7 @@ func main() {
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
 	}
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles,
+	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin,
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
 			if err != nil {

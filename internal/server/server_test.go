@@ -127,3 +127,33 @@ func TestStateHasThreadsAndActions(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+// SPEC 0.5 V0.14: over the tailnet (Tailscale Serve) the identity header
+// must be the owner's login; any other login, or none from a non-loopback
+// host, is refused.
+func TestTailnetIdentity(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	s := &Server{Engine: engine.New(st), BuildID: "b1", OwnerLogin: "owner@example.com"}
+	hs := httptest.NewServer(s.Handler())
+	defer hs.Close()
+	ts := "meros-laptop.example.ts.net"
+	if r := do(t, "GET", hs.URL+"/api/state", ts, map[string]string{"Tailscale-User-Login": "owner@example.com"}, ""); r.StatusCode != 200 {
+		t.Fatalf("owner over tailnet: %d", r.StatusCode)
+	}
+	if r := do(t, "GET", hs.URL+"/api/state", ts, map[string]string{"Tailscale-User-Login": "guest@example.com"}, ""); r.StatusCode != 403 {
+		t.Fatalf("other login: %d", r.StatusCode)
+	}
+	if r := do(t, "GET", hs.URL+"/api/state", ts, nil, ""); r.StatusCode != 403 {
+		t.Fatalf("no login from tailnet host: %d", r.StatusCode)
+	}
+	if r := do(t, "POST", hs.URL+"/api/command", ts, map[string]string{"Tailscale-User-Login": "owner@example.com"}, `{}`); r.StatusCode != 403 {
+		t.Fatalf("POST without X-Fyr over tailnet: %d", r.StatusCode)
+	}
+	s2 := &Server{Engine: engine.New(st), BuildID: "b1"}
+	hs2 := httptest.NewServer(s2.Handler())
+	defer hs2.Close()
+	if r := do(t, "GET", hs2.URL+"/api/state", ts, map[string]string{"Tailscale-User-Login": "owner@example.com"}, ""); r.StatusCode != 403 {
+		t.Fatalf("no owner configured must refuse tailnet: %d", r.StatusCode)
+	}
+}
