@@ -34,6 +34,9 @@ type Profile struct {
 	DefaultModel   string   `json:"defaultModel"`
 	PermissionMode string   `json:"permissionMode,omitempty"`
 	Env            []string `json:"env,omitempty"`
+	// ConfigDir is the CLI's config dir (CLAUDE_CONFIG_DIR) when the
+	// profile has its own; Fyr then sets it. See ConfigDirPath (V0.45).
+	ConfigDir string `json:"configDir,omitempty"`
 }
 
 // Ev is a timeline event the agent adds to a thread.
@@ -57,6 +60,9 @@ type Config struct {
 	Prompt   string        // appended system prompt
 	// Attachments resolves stored files by id (SPEC 0.5 V0.18).
 	Attachments func(id string) (attach.Meta, error)
+	// HandoverDir holds the files a handover starts from (V0.45); empty
+	// means a folder in the system temp dir.
+	HandoverDir string
 }
 
 // FyrPrompt is the short block that steers agents to Fyr tools (V0.12).
@@ -77,6 +83,9 @@ const ViewPrompt = `This thread has a live view: a small page pinned above the c
 
 // FromView marks a message sent by a press in the live view (V0.37).
 const FromView = "view"
+
+// FromHandover marks the messages Fyr sends during a handover (V0.45).
+const FromHandover = "handover"
 
 type Manager struct {
 	host Host
@@ -123,9 +132,12 @@ type session struct {
 	// refresh: end the process after this run, so the next one starts
 	// with the current flag.
 	refresh bool
+	// results get the result message of each turn (a handover waits on
+	// the source's turn, V0.45).
+	results []chan claude.Msg
 	digest  *digest
-	idle      *time.Timer
-	log       io.Closer
+	idle    *time.Timer
+	log     io.Closer
 }
 
 func New(host Host, cfg Config) *Manager {
@@ -184,6 +196,9 @@ func (m *Manager) Do(threadID string, e core.Effect) error {
 		return nil
 	case "cancelMessage":
 		return m.cancelMessage(threadID, e.MessageID)
+	case "handover":
+		m.handover(threadID, e)
+		return nil
 	case "setModel":
 		m.mu.Lock()
 		s := m.sessions[threadID]
@@ -278,7 +293,9 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 	s.out[e.MessageID] = "sent"
 	m.mu.Unlock()
 	userText := e.Text
-	if e.From == FromView {
+	if e.From == FromHandover {
+		// V0.45: Fyr's own words, no prefix.
+	} else if e.From == FromView {
 		// V0.37: a press in the live view; the user pressed it.
 		e.Text = "[From the live view] " + e.Text
 	} else if e.From != "" {
@@ -374,6 +391,20 @@ var mcpNameRe = regexp.MustCompile(`[^A-Za-z0-9_-]`)
 
 // ensure returns the live session of a thread, starting the process if needed.
 func (m *Manager) ensure(threadID string) (*session, error) {
+	return m.ensureAs(threadID, nil)
+}
+
+// as starts a thread's process on another profile than its own: a
+// handover starts its target before the thread moves (V0.45).
+type as struct {
+	profile Profile
+	model   string
+	session string
+	resume  bool
+	addDirs []string
+}
+
+func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 	m.mu.Lock()
 	if s := m.sessions[threadID]; s != nil {
 		m.mu.Unlock()
@@ -384,15 +415,24 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 	if !ok {
 		return nil, fmt.Errorf("no thread %s", threadID)
 	}
-	p := m.cfg.Profile(t.Profile)
-	args := []string{}
-	if t.Model != "" {
-		args = append(args, "--model", t.Model)
+	if o == nil {
+		o = &as{profile: m.cfg.Profile(t.Profile), model: t.Model, session: t.SessionID, resume: t.SessionID != ""}
+		if o.session == "" {
+			o.session = newUUID()
+		}
 	}
-	if t.SessionID != "" {
-		args = append(args, "--resume", t.SessionID)
+	p := o.profile
+	args := []string{}
+	if o.model != "" {
+		args = append(args, "--model", o.model)
+	}
+	if o.resume {
+		args = append(args, "--resume", o.session)
 	} else {
-		args = append(args, "--session-id", newUUID())
+		args = append(args, "--session-id", o.session)
+	}
+	for _, d := range o.addDirs {
+		args = append(args, "--add-dir", d)
 	}
 	mode := p.PermissionMode
 	if mode == "" {
@@ -418,7 +458,11 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 	if prompt != "" {
 		args = append(args, "--append-system-prompt", prompt)
 	}
-	spec := claude.Spec{Binary: p.Binary, Args: args, Dir: t.Cwd, Env: p.Env}
+	env := p.Env
+	if p.ConfigDir != "" {
+		env = append(append([]string{}, env...), "CLAUDE_CONFIG_DIR="+expandHome(p.ConfigDir))
+	}
+	spec := claude.Spec{Binary: p.Binary, Args: args, Dir: t.Cwd, Env: env}
 	if m.cfg.LogDir != "" {
 		os.MkdirAll(m.cfg.LogDir, 0o700)
 		f, err := os.OpenFile(filepath.Join(m.cfg.LogDir, threadID+".log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -467,6 +511,10 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 		c.Kill()
 		<-c.Done()
 		dropToken()
+		if perr := c.Err(); perr != nil {
+			// The CLI's own words, e.g. "No conversation found" (V0.45).
+			return nil, fmt.Errorf("initialize: %w (%s)", err, strings.TrimSpace(perr.Error()))
+		}
 		return nil, fmt.Errorf("initialize: %w", err)
 	}
 	m.mu.Lock()
@@ -487,6 +535,10 @@ func (m *Manager) read(s *session) {
 	}
 	delete(m.tokens, s.token)
 	live := s.live || len(s.asks) > 0
+	for _, ch := range s.results {
+		close(ch)
+	}
+	s.results = nil
 	for id, ch := range s.asks {
 		close(ch)
 		delete(s.asks, id)
@@ -627,6 +679,13 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 				text, _ = msg["subtype"].(string)
 			}
 			f = &core.Failure{Class: classify(text), Message: clip(firstLine(text), 300)}
+		}
+		m.mu.Lock()
+		waiters := s.results
+		s.results = nil
+		m.mu.Unlock()
+		for _, ch := range waiters {
+			ch <- msg
 		}
 		data := map[string]any{"interrupted": interrupted, "costUsd": msg["total_cost_usd"], "durationMs": msg["duration_ms"], "failure": f}
 		branch := gitBranch(s.cwd)

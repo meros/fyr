@@ -89,6 +89,8 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 | `view.published` | `{"pageId": "…", "state": {…}}` the agent published its live view's page (V0.37); the page loads from `/api/previews/{pageId}` |
 | `view.state` | `{"state": {…}}` the live view's full state after a patch (V0.37) |
 | `view.unchanged` | `{"reason": "…"}` the agent said the view is current (V0.37) |
+| `handover` | `{"from": "claudeAlt", "to": "claudeAcme", "model": "claude-opus-5-5", "rung": "resume" \| "adopt" \| "brief", "path"?: "…", "note"?: "why an earlier rung was skipped"}` the thread moved to another profile (V0.45); `path` is the file the new agent started from (`adopt`, `brief`) |
+| `effect.error` | `{"kind": "handover", "error": "…"}` an effect failed; for a handover the thread stays on its profile |
 
 Other types may appear; the client ignores them.
 
@@ -115,8 +117,13 @@ Actions and their args:
 | `thread.rename` | `title` |
 | `thread.setProject` | `projectId`: file the thread into a project by hand; folder matching keeps it (V0.23). `""` unfiles it: no project, still filed by hand, so matching leaves it unfiled (V0.30) |
 | `thread.setModel` | `model` |
+| `thread.handover` | `profile`, `model?` (default: the profile's default model): hand the thread over to another profile (V0.45). `409` while a run is live, a question is open, a handover is going or the thread is archived; `400` for an unknown profile or the thread's own. While it runs the thread has `"handover": {"to": "…", "model": "…", "at": "…"}` and sends are unavailable |
 | `thread.cancelMessage` | `messageId`: withdraw a message the agent has not read (V0.33). `409` when it was read already, is unknown, or the agent cannot withdraw it |
 | `t3.adopt` (no `threadId`) | `t3Ids: [..]` |
+
+## `GET /api/threads/{id}/handover?profile=P` (SPEC 0.5 V0.45)
+
+`{"rung": "resume" | "adopt" | "brief", "note"?: "why rung 1 does not apply"}`: the rung a handover to `P` would use now. The handover itself still falls back when the rung fails.
 
 ## `GET /api/t3/candidates`
 

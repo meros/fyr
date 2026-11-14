@@ -24,6 +24,7 @@
 //	slow N   runs a tool for N ms, then takes in every queued message at
 //	         that tool boundary and replies "took in: <texts>" (V0.33)
 //	view H   publishes a live view with headline H over MCP during the turn
+//	recall   replies "recall: <first user message of the session transcript>"
 //	other    replies "echo: <text>"
 //
 // When initialize registers a Stop hook (callback "view"), every turn that
@@ -31,6 +32,12 @@
 // synthetic user message and the stop-hook-error notification, then runs a
 // forced turn that publishes a view with headline "after stop hook", and
 // asks again with stop_hook_active true (V0.37).
+//
+// With CLAUDE_CONFIG_DIR set, the fake keeps a session transcript as the CLI
+// does, in <dir>/projects/<cwd with every non-alphanumeric as ->/<session>.jsonl
+// plus a <session>/tool-results/ folder, and --resume of a session without a
+// transcript there exits at once with "No conversation found" (V0.45).
+// FYR_FAKE_NORESUME=1 makes every --resume fail that way.
 //
 // As the real CLI does, a user message with a uuid waits in a queue and is
 // reported as command_lifecycle queued, started (taken in), completed (its
@@ -44,6 +51,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -148,7 +157,60 @@ func request(id string, req msg) msg {
 	}
 }
 
+var nonAlnum = regexp.MustCompile(`[^A-Za-z0-9]`)
+
+// transcript is the session's transcript file, or "" without a config dir.
+func transcript() string {
+	dir := os.Getenv("CLAUDE_CONFIG_DIR")
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "projects", nonAlnum.ReplaceAllString(mustWd(), "-"), session+".jsonl")
+}
+
+func record(role, text string) {
+	p := transcript()
+	if p == "" {
+		return
+	}
+	os.MkdirAll(filepath.Join(strings.TrimSuffix(p, ".jsonl"), "tool-results"), 0o700)
+	os.WriteFile(filepath.Join(strings.TrimSuffix(p, ".jsonl"), "tool-results", "fake.txt"), []byte("saved tool output"), 0o600)
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	b, _ := json.Marshal(msg{"type": role, "sessionId": session, "message": msg{"role": role, "content": text}})
+	f.Write(append(b, '\n'))
+}
+
+// firstUser is the first user text of the transcript.
+func firstUser() string {
+	b, err := os.ReadFile(transcript())
+	if err != nil {
+		return "no transcript"
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		var m struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal([]byte(l), &m) == nil && m.Type == "user" {
+			return m.Message.Content
+		}
+	}
+	return "empty transcript"
+}
+
 func assistant(content ...msg) {
+	for _, c := range content {
+		if c["type"] == "text" {
+			t, _ := c["text"].(string)
+			record("assistant", t)
+		}
+	}
 	write(msg{"type": "assistant", "session_id": session, "parent_tool_use_id": nil,
 		"message": msg{"role": "assistant", "content": content}})
 }
@@ -177,9 +239,11 @@ func result(isErr bool, subtype, text string) {
 }
 
 func Main() {
+	resume := false
 	for i, a := range os.Args {
 		if (a == "--session-id" || a == "--resume") && i+1 < len(os.Args) {
 			session = os.Args[i+1]
+			resume = a == "--resume"
 		}
 		if a == "--mcp-config" && i+1 < len(os.Args) {
 			var cfg struct {
@@ -193,6 +257,13 @@ func Main() {
 		}
 		if a == "--model" && i+1 < len(os.Args) {
 			model = os.Args[i+1]
+		}
+	}
+	if resume {
+		if _, err := os.Stat(transcript()); os.Getenv("FYR_FAKE_NORESUME") == "1" || (os.Getenv("CLAUDE_CONFIG_DIR") != "" && err != nil) {
+			fmt.Fprintln(os.Stderr, "No conversation found with session ID: "+session)
+			write(msg{"type": "result", "subtype": "error_during_execution", "is_error": true, "session_id": session})
+			os.Exit(1)
 		}
 	}
 	if mcpURL != "" {
@@ -289,8 +360,12 @@ func turn(text string) (took []queued) {
 	default:
 	}
 	write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model, "cwd": mustWd()})
+	record("user", text)
 	word := strings.Fields(text + " x")[0]
 	switch word {
+	case "recall":
+		assistant(msg{"type": "text", "text": "recall: " + firstUser()})
+		result(false, "success", "done")
 	case "ask":
 		r := request("ask1", msg{"subtype": "can_use_tool", "tool_name": "AskUserQuestion", "tool_use_id": "tu_ask",
 			"input": msg{"questions": []any{
