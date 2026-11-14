@@ -4,7 +4,7 @@ A calm control room for Claude coding agents. Like a lighthouse (*fyr* in Swedis
 
 Fyr runs Claude Code sessions on your own machines and shows one list: what needs you on top, running work below. It is built for one person who runs many agents in parallel against GitHub, and it is meant to replace T3 Code for that use.
 
-**Status:** design complete for v1, no product code yet. Next step: milestone M0 in `docs/FYR-V1.md`.
+**Status:** building milestone `v0 first viable` (spec 0.5). Status lives in [GitHub milestones](https://github.com/meros/fyr/milestones); how work flows is in [`docs/PROCESS.md`](docs/PROCESS.md).
 
 ## Start here
 
@@ -12,6 +12,8 @@ Fyr runs Claude Code sessions on your own machines and shows one list: what need
 |---|---|
 | [`docs/FYR-V1.md`](docs/FYR-V1.md) | What v1 is, the acceptance checklist, architecture, build plan, roadmap |
 | [`docs/SPEC.md`](docs/SPEC.md) | The full spec (concepts, data model, Actions, Rules, Attention, modules, UX, technology) |
+| [`docs/PROCESS.md`](docs/PROCESS.md) | Spec → red test → code; where plan, status and decisions live |
+| [`docs/decisions/`](docs/decisions/README.md) | Decision records |
 | [`docs/REVIEW-LOG.md`](docs/REVIEW-LOG.md) | Five adversarial review rounds and a consistency pass, with every resolution |
 | [`design/screens-v1.html`](design/screens-v1.html) | The v1 screens: inbox after a break, the question card, phone answer and capture, bulk settle |
 | [`design/`](design/README.md) | The Fyr design system (tokens, components, brand book), screen mocks and their generators |

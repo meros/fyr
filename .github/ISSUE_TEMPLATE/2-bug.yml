@@ -1,0 +1,15 @@
+name: Bug
+description: The code breaks the spec
+labels: ["type:bug"]
+body:
+  - type: input
+    id: spec
+    attributes: {label: Spec, description: "The spec ID the code breaks. If the spec is wrong, file a Spec change instead."}
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes: {label: Steps and result, description: "What you did, what happened, what the spec says should happen."}
+    validations: {required: true}
+  - type: textarea
+    id: test
+    attributes: {label: Red test, description: The test that fails now and passes after the fix.}

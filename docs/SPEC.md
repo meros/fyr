@@ -1,6 +1,6 @@
 # Fyr spec
 
-Version: 0.6.1 (after review rounds 4 and 5, owner decision D5, R19, and a consistency pass)
+Version: 0.7 (adds 0.5 v0; earlier: review rounds 4 and 5, owner decision D5, R19, a consistency pass)
 Owner: single user (the **user**)
 
 ## 0. Purpose and scope
@@ -95,6 +95,26 @@ Measured from the owner's T3 Code database, 3–13 Nov 2026 (11 days):
 | Sending Documents | – | the `email` and `deliver` modules, `document.send` |
 | Cut-over | `fyr import-t3`: reads T3 Code's database read-only and adopts its open threads by their Claude session id (title, cwd, PR links) | – |
 | Everything else in this spec | as written, unless the text says post-v1 | – |
+
+### 0.5 v0: the first viable version
+
+v0 is the smallest Fyr the owner can work in every day. It is binding for milestone `v0 first viable` (`PLAN.md`). Everything not listed here is as 0.4 says, or later.
+
+| ID | v0 requirement |
+|---|---|
+| V0.1 | One host, one desktop browser client on the same machine. The daemon listens on 127.0.0.1 only (decision 0002). |
+| V0.2 | Transport: `POST /api/command` with a client-made `commandId` (exactly once per id, I7); `GET /api/state` snapshot; `GET /api/stream` Server-Sent Events with thread upserts and events; `GET /api/threads/{id}/events`. Requests with a non-loopback `Host` are refused; commands need the header `X-Fyr: 1`. |
+| V0.3 | Threads run the `claude` CLI over the control protocol (16.2): start, resume by session id, send, steer while running (the CLI queues it), interrupt, change model, AskUserQuestion as an `ask` Decision, other permission requests as an `approval` Decision. |
+| V0.4 | Attention as 6.1–6.2 with the states asking, failed, blocked, done, working, seen, snoozed, settled, archived. `waiting` is not produced in v0 (no governor). `blocked` comes only from the PR (CI failed, conflict, changes requested). |
+| V0.5 | The Actions of 5.3 that v0 needs, in one registry: create, send, answer, interrupt, retry, dismiss failure, settle (13.1 `e` semantics), unsettle, snooze, unsnooze, archive, unarchive, mark seen, mark unseen, rename, change model. Each has `available` with a reason. |
+| V0.6 | A host restart never shows a wrong state: a run or a question that was live when the host stopped becomes `failed` with class `restart`; Retry resumes the session. |
+| V0.7 | An agent process with no run and no open Decision for 10 minutes is stopped; the next message resumes it (8.3, process stop). |
+| V0.8 | PR: a URL printed by `gh pr create` links the PR to the thread; open PRs are polled with `gh` every 2 minutes; badge on rows; settle when merged. |
+| V0.9 | T3 adoption (decision 0004): adopt open top-level T3 threads, with history from the Claude transcript. |
+| V0.10 | Desktop UI: inbox sections (6.3), thread view with the conversation, collapsed tool calls and subagent count, the docked question card (13.2), a composer that accepts pasted images, the keys of 13.1 that apply, and a new-thread dialog with folder, profile and model. |
+| V0.11 | Agent profiles: a profile is a `claude`-compatible binary with a name, a colour and a model list. Profiles come from `~/.config/fyr/config.json`, or from T3's provider instances when that file is missing. |
+
+Not in v0: phone, tailnet, pairing, push, hours, governor, policy file, async effects, handover, away strip, palette.
 
 ## 1. Concepts
 
