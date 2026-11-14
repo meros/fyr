@@ -19,6 +19,8 @@ type Effect struct {
 	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel
 	Text   string  `json:"text,omitempty"`
 	Images []Image `json:"images,omitempty"`
+	// From is the thread whose agent sent this message (V0.22).
+	From string `json:"from,omitempty"`
 	// Attachments are ids of stored files (SPEC 0.5 V0.18).
 	Attachments []string          `json:"attachments,omitempty"`
 	DecisionID  string            `json:"decisionId,omitempty"`
@@ -115,12 +117,13 @@ func sendAction(name, label string) *Action {
 				t.Model = a.Str("model")
 				t.Profile = a.Str("profile")
 				t.Title = a.Str("title")
+				t.Parent = a.Str("parent")
 				if t.Title == "" {
 					t.Title = TitleFrom(text)
 				}
 			}
 			revive(t, v, now)
-			return []Effect{{Kind: "send", Text: text, Images: imgs, Attachments: atts}}, nil
+			return []Effect{{Kind: "send", Text: text, Images: imgs, Attachments: atts, From: a.Str("from")}}, nil
 		},
 	}
 }
