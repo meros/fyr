@@ -399,3 +399,18 @@ func TestQuotaSharedIdentity(t *testing.T) {
 		t.Fatalf("kept: %+v", st)
 	}
 }
+
+// SPEC 0.5 V0.50: a token account reads its usage with its own token; with
+// no token it shows no numbers (never the folder's login).
+func TestAnthropicTokenAccountWithoutToken(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, ".claude"), 0o700)
+	os.WriteFile(filepath.Join(home, ".claude", ".credentials.json"), []byte(`{"claudeAiOauth":{"accessToken":"folder-token"}}`), 0o600)
+	s := New([]Profile{{ID: "n", Spec: &Spec{Kind: KindAnthropic, Token: true}, Identity: "token:n",
+		Key: func() (string, error) { return "", os.ErrNotExist }}}, home)
+	t0 := s.targets[0]
+	r := s.fetchAnthropic(context.Background(), t0)
+	if r.err == nil || len(r.windows) != 0 {
+		t.Fatalf("token account without a token got usage: %+v", r)
+	}
+}
