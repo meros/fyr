@@ -18,6 +18,7 @@ import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
 import { LiveViewBar, LiveViewPanel } from "./view-ui.tsx";
 import { defaultTab, liveViewOf } from "./view.ts";
+import { HandoverForm } from "./handover-ui.tsx";
 import { rowSummary } from "./view.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
@@ -130,6 +131,8 @@ export interface PhoneActions {
   /** V0.37: turn the live view on or off */
   setView(id: string, on: boolean): void;
   setModel(id: string, model: string): void;
+  /** V0.45: hand the thread over to another profile; resolves to an error text, or null */
+  handover(id: string, profile: string, model: string): Promise<string | null>;
   send(id: string, args: SendArgs): Promise<boolean>;
   /** V0.33: withdraw a message the agent has not read */
   cancelMessage(id: string, messageId: string): Promise<boolean>;
@@ -1413,10 +1416,19 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
         <Item label="Project…" icon={<ProjectIcon project={projectOf(t, p.projects)} name={projectName(t, p.projects)} size={18} />} right={projectName(t, p.projects)} onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id] } })} />
         {sug && <Item label={makeProjectLabel(sug)} sub="From this thread's repository" onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id], startNew: true } })} />}
         <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => p.actions.setView(t.id, !t.liveView))} />
+        <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another profile"} disabled={!!reason("thread.handover")} onClick={() => p.replace({ ...p.nav, sheet: { kind: "handover", ids: [t.id] } })} />
         <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
         {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.setSelecting(true), p.setPicked(new Set([t.id]))))} />}
         {!peek && <Item label="Details" icon={I.right} onClick={() => p.replace({ ...p.nav, sheet: { kind: "details", ids: [t.id] } })} />}
         <Item label="Archive" icon={I.close} sub={reason("thread.archive")} disabled={!!reason("thread.archive")} onClick={after(() => p.actions.archive([t.id]))} />
+      </MSheet>
+    );
+  }
+  if (sheet.kind === "handover" && t) {
+    return (
+      <MSheet onClose={close} label="Hand over">
+        <div class="m-shh">Hand over</div>
+        <HandoverForm phone t={t} profiles={p.profiles} onClose={close} onConfirm={(pr, m) => p.actions.handover(t.id, pr, m)} />
       </MSheet>
     );
   }

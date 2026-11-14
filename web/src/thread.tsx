@@ -12,7 +12,8 @@ import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } fro
 import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
-import { duration, relTime, shortModel } from "./format.ts";
+import { clockTime, duration, relTime, shortModel } from "./format.ts";
+import { dividerLine, rungDone } from "./handover.ts";
 import { pick, questionsOf, goTo, type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { onToolDetails, toolDetails } from "./prefs.ts";
@@ -67,6 +68,8 @@ export interface ThreadPaneProps {
   onBack?: () => void;
   /** Opens the project picker for this thread (V0.26, V0.30); absent: no ⋯ menu. */
   onMoveProject?: () => void;
+  /** Opens the handover dialog (V0.45). */
+  onHandover?: () => void;
 }
 
 type Tab = "view" | "conv" | "changes" | "pr";
@@ -113,7 +116,7 @@ export function ThreadPane(p: ThreadPaneProps) {
             <button class="btn" disabled={!!settleReason} title={settleReason ?? (t.running ? "Settle when done (e)" : "Settle (e)")} onClick={() => p.onRun("thread.settle")}>
               Settle <kbd>e</kbd>
             </button>
-            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} liveView={!!t.liveView} onLiveView={() => p.onRun("thread.setView", { on: !t.liveView })} />}
+            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} liveView={!!t.liveView} onLiveView={() => p.onRun("thread.setView", { on: !t.liveView })} onHandover={p.onHandover} handoverReason={unavailableReason(t, "thread.handover")} />}
           </div>
         </div>
         <div class="chips">
@@ -189,7 +192,7 @@ export function ThreadPane(p: ThreadPaneProps) {
 }
 
 /** The thread ⋯ menu (V0.26): opens on click or Enter, arrows move, Esc closes and returns focus. */
-function ThreadMenu({ onMove, liveView, onLiveView }: { onMove(): void; liveView: boolean; onLiveView(): void }) {
+function ThreadMenu({ onMove, liveView, onLiveView, onHandover, handoverReason }: { onMove(): void; liveView: boolean; onLiveView(): void; onHandover?: () => void; handoverReason?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
@@ -239,6 +242,13 @@ function ThreadMenu({ onMove, liveView, onLiveView }: { onMove(): void; liveView
             <span class="ell">{liveView ? "Turn off live view" : "Turn on live view"}</span>
             <span />
           </button>
+          {onHandover && (
+            <button class="mi" role="menuitem" disabled={!!handoverReason} title={handoverReason} onClick={run(onHandover)}>
+              <span />
+              <span class="ell">Hand over…</span>
+              <span />
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -400,6 +410,9 @@ export interface DeliveryActions {
   resend(args: SendArgs): Promise<unknown>;
 }
 const DeliveryCtx = createContext<DeliveryActions | null>(null);
+
+/** The host's profiles, for the handover divider's names (V0.45). */
+export const ProfilesContext = createContext<Profile[]>([]);
 
 export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions }) {
   const details = useToolDetails();
@@ -725,7 +738,25 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
       return <QuietLine icon={it.started ? "working" : TASK_ICON[it.status] ?? "settled"} line={it.text} fail={it.status === "failed"} />;
     case "answer":
       return <QuietLine icon="settled" line={`Answered: ${it.text}`} />;
+    case "handover":
+      return <HandoverDivider it={it} />;
   }
+}
+
+/** V0.45: "Handed over from Claude to Claude (acme) · 17:20", and how the context went over. */
+function HandoverDivider({ it }: { it: Extract<Item, { kind: "handover" }> }) {
+  const profiles = useContext(ProfilesContext);
+  return (
+    <div class="hodiv" role="separator">
+      <span class="hot">
+        <span>{dividerLine(it, profiles, clockTime(it.atIso))}</span>
+        <small title={it.note}>
+          {rungDone(it.rung)}
+          {it.note ? ` · ${it.note}` : ""}
+        </small>
+      </span>
+    </div>
+  );
 }
 
 function callIcon(c: ToolCall) {

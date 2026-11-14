@@ -161,7 +161,7 @@ func TestHandoverResumeErrorFallsBackToAdopt(t *testing.T) {
 		t.Fatalf("export %q: %s", ev.Path, b)
 	}
 	got := h.wait(th.ID, "adopt turn", func(t core.Thread, _ core.Attention) bool {
-		return !t.Running && strings.HasPrefix(t.Summary, "echo: [Fyr handover]")
+		return !t.Running && strings.HasPrefix(t.Summary, "echo: [Fyr] Handover:")
 	})
 	if !hasEvent(h.events(th.ID), "user", ev.Path) {
 		t.Fatal("the first message does not name the export")
@@ -215,7 +215,7 @@ func TestHandoverBriefWhenExportFails(t *testing.T) {
 	if got.SessionID == th.SessionID {
 		t.Fatal("the target kept the old session")
 	}
-	if !strings.Contains(users[2], "echo: [Fyr handover]") {
+	if !strings.Contains(users[2], "echo: [Fyr] Handover:") {
 		t.Fatalf("target message %q", users[2])
 	}
 }

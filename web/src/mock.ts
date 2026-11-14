@@ -1069,6 +1069,15 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.setModel":
         put(t, { model: String(args.model ?? t.model) });
         break;
+      case "thread.handover": {
+        // V0.45: the mock hands over at once, with full history.
+        const to = String(args.profile ?? "");
+        if (!to || to === t.profile) return { ok: false, error: "Pick another profile" };
+        const from = t.profile;
+        put(t, { profile: to, model: String(args.model ?? "") });
+        emit(t.id, "handover", { from, to, model: args.model ?? "", rung: "resume" });
+        break;
+      }
       default:
         return { ok: false, error: `Unknown action ${action}` };
     }

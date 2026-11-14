@@ -310,7 +310,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 			fail(fmt.Errorf("%s could not start: %v", name(to), err))
 			return
 		}
-		done(RungAdopt, sid, path, fmt.Sprintf("[Fyr handover] The owner handed this thread over to you from %s. Your session is new: the conversation so far is in %s (Fyr wrote it from the thread's log). Read it, then continue the work from where it stopped. Start your reply with a short summary of where things stand.", name(from), path))
+		done(RungAdopt, sid, path, fmt.Sprintf("[Fyr] Handover: the owner handed this thread over to you from %s. Your session is new: the conversation so far is in %s (Fyr wrote it from the thread's log). Read it, then continue the work from where it stopped. Start your reply with a short summary of where things stand.", name(from), path))
 		return
 	}
 	notes = append(notes, "Could not write the conversation: "+err.Error())
@@ -334,7 +334,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 		fail(fmt.Errorf("%s could not start: %v", name(to), err))
 		return
 	}
-	done(RungBrief, sid, path, fmt.Sprintf("[Fyr handover] The owner handed this thread over to you from %s. Your session is new; the previous agent wrote this handover%s:\n\n%s\n\nContinue the work from there. Start your reply with a short summary of where things stand.", name(from), saved, brief))
+	done(RungBrief, sid, path, fmt.Sprintf("[Fyr] Handover: the owner handed this thread over to you from %s. Your session is new; the previous agent wrote this handover%s:\n\n%s\n\nContinue the work from there. Start your reply with a short summary of where things stand.", name(from), saved, brief))
 }
 
 func name(p Profile) string {
@@ -355,7 +355,7 @@ func (m *Manager) brief(threadID string, to Profile) (string, error) {
 	m.mu.Lock()
 	s.results = append(s.results, ch)
 	m.mu.Unlock()
-	text := fmt.Sprintf("[Fyr handover] The owner is handing this thread over to another agent (%s) that starts without this conversation. Write the handover now as your whole reply, in Markdown: the goal, what is done, the current state (branch, PR, uncommitted changes), open items and decisions, and exactly how to continue. Do not change files or run anything else.", name(to))
+	text := fmt.Sprintf("[Fyr] Handover: the owner is handing this thread over to another agent (%s) that starts without this conversation. Write the handover now as your whole reply, in Markdown: the goal, what is done, the current state (branch, PR, uncommitted changes), open items and decisions, and exactly how to continue. Do not change files or run anything else.", name(to))
 	if err := m.send(threadID, core.Effect{Kind: "send", Text: text, From: FromHandover}); err != nil {
 		return "", err
 	}
