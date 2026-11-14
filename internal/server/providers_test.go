@@ -15,7 +15,9 @@ import (
 
 type fakeProviders struct{ cmds []engine.Cmd }
 
-func (f *fakeProviders) List() any  { return []map[string]any{{"id": "p1", "keySet": true, "keyLast4": "zz12"}} }
+func (f *fakeProviders) List() any {
+	return []map[string]any{{"id": "p1", "keySet": true, "keyLast4": "zz12"}}
+}
 func (f *fakeProviders) Found() any { return []map[string]any{{"id": "openrouter"}} }
 func (f *fakeProviders) Command(c engine.Cmd) engine.Reply {
 	f.cmds = append(f.cmds, c)

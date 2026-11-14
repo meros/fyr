@@ -51,6 +51,9 @@ type Profile struct {
 	Auth     cli.Auth               `json:"-"`
 	Endpoint cli.Endpoint           `json:"-"`
 	Key      func() (string, error) `json:"-"`
+	// KeyRequired: the profile does not start without its key (an endpoint,
+	// or an account that logs in with a token).
+	KeyRequired bool `json:"-"`
 	// ModelCaps: the offered models with their effort levels; DefaultEffort
 	// is used when the thread names none and the model takes it.
 	ModelCaps     []cli.Model `json:"modelCaps,omitempty"`
@@ -497,8 +500,12 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 	if p.Key != nil {
 		k, kerr := p.Key()
 		if kerr != nil || k == "" {
-			if l.Auth.Kind == cli.APIKey {
-				return nil, fmt.Errorf("%s needs a key: add it in Settings → Providers", name(p))
+			if p.KeyRequired || l.Auth.Kind == cli.APIKey {
+				what := "a key"
+				if l.Auth.Kind == cli.CLILogin {
+					what = "a login token"
+				}
+				return nil, fmt.Errorf("%s needs %s: add it in Settings → Providers", name(p), what)
 			}
 		}
 		l.Key = k

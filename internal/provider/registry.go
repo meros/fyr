@@ -114,8 +114,9 @@ func (r *Registry) importFound(f Found, copyKey bool) (Provider, error) {
 		p.Endpoint = cli.Endpoint{BaseURL: f.BaseURL, ModelEnv: f.ModelEnv}
 	} else {
 		p.Auth = cli.Auth{Kind: cli.CLILogin, ConfigDir: f.ConfigDir}
-		if f.KeyRef != "" {
+		if f.KeyRef != "" || f.TokenLogin {
 			p.Auth.Secret = SecretName(f.ID)
+			p.TokenLogin = f.TokenLogin
 		}
 	}
 	if f.KeyRef != "" {
@@ -224,8 +225,11 @@ func (r *Registry) status(p Provider) (string, string) {
 			return NeedsKey, "Paste the API key for " + p.Name + "."
 		}
 	case cli.CLILogin:
-		if kerr == nil || (claudecli.Adapter{}).LoggedIn(cli.Auth{Kind: cli.CLILogin, ConfigDir: r.dir(p.Auth.ConfigDir)}) {
+		if kerr == nil || (!p.TokenLogin && (claudecli.Adapter{}).LoggedIn(cli.Auth{Kind: cli.CLILogin, ConfigDir: r.dir(p.Auth.ConfigDir)})) {
 			return Ready, ""
+		}
+		if p.TokenLogin {
+			return NeedsLogin, "This account logs in with a token. Run `claude setup-token` while logged in to it and paste the token as its key."
 		}
 		cmd := "claude"
 		if p.Auth.ConfigDir != "" {
@@ -261,6 +265,7 @@ type DTO struct {
 	KeyLast4      string            `json:"keyLast4,omitempty"`
 	KeyFrom       string            `json:"keyFrom,omitempty"`
 	Imported      string            `json:"imported,omitempty"`
+	TokenLogin    bool              `json:"tokenLogin,omitempty"`
 	Threads       int               `json:"threads"`
 }
 
@@ -270,7 +275,7 @@ func (r *Registry) List() []DTO {
 	for _, p := range r.Providers() {
 		d := DTO{ID: p.ID, Name: p.Name, Kind: p.Kind(), CLI: p.CLI, Color: p.Color, Auth: string(p.Auth.Kind), ConfigDir: p.Auth.ConfigDir,
 			BaseURL: p.Endpoint.BaseURL, ModelEnv: p.Endpoint.ModelEnv, Models: p.Models, DefaultModel: p.DefaultModel,
-			DefaultEffort: p.DefaultEffort, Efforts: claudecli.Efforts, Quota: p.quotaSpec().Kind, Imported: p.Imported}
+			DefaultEffort: p.DefaultEffort, Efforts: claudecli.Efforts, Quota: p.quotaSpec().Kind, Imported: p.Imported, TokenLogin: p.TokenLogin}
 		d.Status, d.Need = r.status(p)
 		if v, err := r.key(p); err == nil {
 			d.KeySet, d.KeyLast4 = true, secrets.Last4(v)

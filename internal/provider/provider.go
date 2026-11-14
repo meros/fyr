@@ -44,6 +44,10 @@ type Provider struct {
 	Models        []cli.Model `json:"models"`
 	DefaultModel  string      `json:"defaultModel,omitempty"`
 	DefaultEffort string      `json:"defaultEffort,omitempty"`
+	// TokenLogin: a cli-login that logs in with its stored token only; its
+	// folder's login (maybe another account's) does not count, and it does
+	// not start without the token.
+	TokenLogin bool `json:"tokenLogin,omitempty"`
 	// QuotaKind: "" picks by auth and endpoint (V0.44 kinds).
 	QuotaKind string `json:"quotaKind,omitempty"`
 	// Imported: where an imported provider came from ("" when made here).
@@ -149,7 +153,8 @@ func (p Provider) Profile(key func() (string, error), permissionMode string) age
 	}
 	return agent.Profile{ID: p.ID, Name: p.Name, Binary: "claude", Color: p.Color, Models: ids, DefaultModel: def,
 		PermissionMode: permissionMode, Quota: p.quotaSpec(), ConfigDir: p.Auth.ConfigDir,
-		CLI: p.CLI, Auth: p.Auth, Endpoint: p.Endpoint, Key: key, ModelCaps: p.Models, DefaultEffort: p.DefaultEffort}
+		CLI: p.CLI, Auth: p.Auth, Endpoint: p.Endpoint, Key: key, KeyRequired: p.Auth.Kind == cli.APIKey || p.TokenLogin,
+		ModelCaps: p.Models, DefaultEffort: p.DefaultEffort}
 }
 
 // modelsFor gives known claude models their effort levels; other ids get

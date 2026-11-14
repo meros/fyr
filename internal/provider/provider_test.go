@@ -45,6 +45,8 @@ func newFixture(t *testing.T) fixture {
 	os.MkdirAll(filepath.Dir(f.keyFile), 0o700)
 	os.WriteFile(f.keyFile, []byte(dsKey+"\n"), 0o600)
 	os.WriteFile(filepath.Join(f.bin, "claude-acme"), []byte("#!/usr/bin/env bash\nexport CLAUDE_CONFIG_DIR=\"$HOME/.claude-acme\"\nexport CLAUDE_CODE_OAUTH_TOKEN='"+wrapTok+"'\nexec claude \"$@\"\n"), 0o755)
+	// As on the live host: a token and no folder, so ~/.claude (the main login) is not its login.
+	os.WriteFile(filepath.Join(f.bin, "claude-tok"), []byte("#!/usr/bin/env bash\nexport CLAUDE_CODE_OAUTH_TOKEN="+wrapTok+"\nexec claude \"$@\"\n"), 0o755)
 	os.WriteFile(filepath.Join(f.bin, "claude-deepseek"), []byte("#!/bin/sh\n# wrapper\nANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic ANTHROPIC_AUTH_TOKEN=\"$(cat "+f.keyFile+")\" ANTHROPIC_MODEL=deepseek-chat ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-chat exec claude \"$@\"\n"), 0o755)
 	return f
 }
@@ -62,6 +64,7 @@ func (f fixture) host() Host {
 			{ID: "claudeAlt", Name: "Claude", Binary: "claude", Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"}},
 			{ID: "claudeAcme", Name: "Claude (acme)", Binary: "claude-acme", Models: []string{"claude-opus-5-5"}},
 			{ID: "claudeDeepseek", Name: "DeepSeek", Binary: "claude-deepseek", Models: []string{"deepseek-chat", "deepseek-reasoner"}},
+			{ID: "claudeTok", Name: "Claude (tok)", Binary: "claude-tok"},
 		}}
 }
 
@@ -83,7 +86,7 @@ func TestDetect(t *testing.T) {
 	if a.Kind != KindAccount || a.ConfigDir != "" || a.Status != Ready || !a.LoggedIn {
 		t.Fatalf("main: %+v", a)
 	}
-	if n.Kind != KindAccount || n.ConfigDir != "~/.claude-acme" || n.Status != NeedsLogin || !strings.Contains(n.Note, "inside the wrapper") {
+	if n.Kind != KindAccount || n.ConfigDir != "~/.claude-acme" || n.Status != NeedsLogin || !strings.Contains(n.Note, "which Fyr does not read") {
 		t.Fatalf("acme: %+v", n)
 	}
 	if d.Kind != KindEndpoint || d.BaseURL != "https://api.deepseek.com/anthropic" || d.Status != Ready || d.KeyRef != "file:"+f.keyFile ||
@@ -92,6 +95,9 @@ func TestDetect(t *testing.T) {
 	}
 	if r.Kind != KindEndpoint || r.KeyRef != "env:OPENROUTER_API_KEY" || r.Status != Ready {
 		t.Fatalf("openrouter: %+v", r)
+	}
+	if tk := m["claudeTok"]; tk.ConfigDir != "" || tk.Status != NeedsLogin || !tk.TokenLogin || tk.LoggedIn {
+		t.Fatalf("token account must not count the main login: %+v", tk)
 	}
 	if _, ok := m["claude-empty"]; ok {
 		t.Fatal("a folder without a login is not a find")
@@ -136,8 +142,8 @@ func newReg(t *testing.T, f fixture) *Registry {
 func TestCutoverKeepsIDs(t *testing.T) {
 	f := newFixture(t)
 	r := newReg(t, f)
-	n, err := r.Cutover(r.Found(), []string{"claudeAlt", "claudeAcme", "claudeDeepseek"})
-	if err != nil || n != 3 {
+	n, err := r.Cutover(r.Found(), []string{"claudeAlt", "claudeAcme", "claudeDeepseek", "claudeTok"})
+	if err != nil || n != 4 {
 		t.Fatalf("%d %v", n, err)
 	}
 	var got []string
@@ -147,7 +153,7 @@ func TestCutoverKeepsIDs(t *testing.T) {
 			t.Fatalf("%s runs %s, not claude", p.ID, p.Binary)
 		}
 	}
-	if !slices.Equal(got, []string{"claudeAlt", "claudeAcme", "claudeDeepseek"}) {
+	if !slices.Equal(got, []string{"claudeAlt", "claudeAcme", "claudeDeepseek", "claudeTok"}) {
 		t.Fatal(got)
 	}
 	if r.Secrets.Has(SecretName("claudeDeepseek")) {
@@ -157,8 +163,22 @@ func TestCutoverKeepsIDs(t *testing.T) {
 	for _, d := range r.List() {
 		st[d.ID] = d.Status
 	}
-	if st["claudeAlt"] != Ready || st["claudeAcme"] != NeedsLogin || st["claudeDeepseek"] != Ready {
+	if st["claudeAlt"] != Ready || st["claudeAcme"] != NeedsLogin || st["claudeDeepseek"] != Ready || st["claudeTok"] != NeedsLogin {
 		t.Fatal(st)
+	}
+	// The token account never starts as the main login: it needs its token.
+	for _, p := range r.Profiles() {
+		if p.ID == "claudeTok" && (!p.KeyRequired || p.ConfigDir != "") {
+			t.Fatalf("%+v", p)
+		}
+	}
+	if rep := r.Command(cmd("provider.setKey", map[string]any{"id": "claudeTok", "key": "sk-ant-oat01-pasted-123456"})); !rep.OK {
+		t.Fatal(rep.Error)
+	}
+	for _, d := range r.List() {
+		if d.ID == "claudeTok" && (d.Status != Ready || d.KeyLast4 != "3456") {
+			t.Fatalf("%+v", d)
+		}
 	}
 	// Runs once: a second start (or after deleting everything) imports nothing.
 	r2 := newReg(t, f)

@@ -35,6 +35,9 @@ type Found struct {
 	KeyFrom  string `json:"keyFrom,omitempty"`
 	KeyRef   string `json:"-"`
 	LoggedIn bool   `json:"loggedIn,omitempty"`
+	// TokenLogin: the account logs in with a token (CLAUDE_CODE_OAUTH_TOKEN),
+	// not with its folder's login, which may be another account's.
+	TokenLogin bool `json:"tokenLogin,omitempty"`
 	// Status is what the provider would be after the import.
 	Status   string `json:"status"`
 	Note     string `json:"note,omitempty"`
@@ -190,8 +193,13 @@ func fromProfile(h Host, p agent.Profile) Found {
 			f.Models = modelsFor(ids(claudecli.Models), false)
 		}
 		f.LoggedIn = h.Adapter.LoggedIn(cli.Auth{Kind: cli.CLILogin, ConfigDir: h.dir(f.ConfigDir)})
-		if ref, desc, ok := keyRef(h, env.secrets["CLAUDE_CODE_OAUTH_TOKEN"]); ok {
-			f.KeyRef, f.KeyFrom = ref, desc
+		if tok := env.secrets["CLAUDE_CODE_OAUTH_TOKEN"]; tok != "" {
+			// The wrapper logs in with a token: the folder's login (often
+			// ~/.claude, the main account) is not this account's.
+			f.TokenLogin, f.LoggedIn = true, false
+			if ref, desc, ok := keyRef(h, tok); ok {
+				f.KeyRef, f.KeyFrom = ref, desc
+			}
 		}
 		switch {
 		case f.LoggedIn || f.KeyRef != "":
@@ -199,7 +207,7 @@ func fromProfile(h Host, p agent.Profile) Found {
 		default:
 			f.Status = NeedsLogin
 			if env.secrets["CLAUDE_CODE_OAUTH_TOKEN"] == "literal" {
-				note = append(note, "Its login token is inside the wrapper, which Fyr does not read.")
+				note = append(note, "Its login token is inside "+p.Binary+", which Fyr does not read: paste a token from `claude setup-token` (logged in to this account) as its key.")
 			}
 		}
 	} else {

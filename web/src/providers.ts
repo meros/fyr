@@ -28,6 +28,8 @@ export interface ProviderDTO {
   keyLast4?: string;
   keyFrom?: string;
   imported?: string;
+  /** an account that logs in with a token from `claude setup-token` only */
+  tokenLogin?: boolean;
   threads: number;
 }
 
