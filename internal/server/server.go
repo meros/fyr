@@ -286,16 +286,8 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	for _, a := range core.Ordered() {
 		acts = append(acts, actionMeta{a.Name, a.Label, a.Key, a.Bulk})
 	}
-	// V0.23: projects with their identity; cwd is the folder on this host
-	// (the new-thread picker uses it).
-	type project struct {
-		engine.ProjectDTO
-		Cwd string `json:"cwd"`
-	}
-	projects := []project{}
-	for _, p := range s.Engine.Projects() {
-		projects = append(projects, project{p, p.Folder(s.Engine.HostID)})
-	}
+	// V0.23, V0.55: projects with their identity and their one folder.
+	projects := s.Engine.Projects()
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
 	src := s.Profiles
 	if s.ProfileList != nil {

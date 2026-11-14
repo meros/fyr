@@ -86,7 +86,7 @@ type config struct {
 	IdleStopMinutes int             `json:"idleStopMinutes"`
 	OwnerLogin      string          `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)
 	Profiles        []agent.Profile `json:"profiles"`
-	// ScratchRoots: folders whose children are scratch workspaces (V0.28);
+	// ScratchRoots: folders whose children are scratch folders (V0.28);
 	// empty means ~/.t3/scratch and ~/.local/share/fyr/scratch.
 	ScratchRoots []string `json:"scratchRoots"`
 	// ScanRoots: extra folders the folder picker scans for git repositories,
@@ -232,19 +232,12 @@ func main() {
 	for _, r := range cfg.ScratchRoots {
 		eng.ScratchRoots = append(eng.ScratchRoots, expandHome(r))
 	}
-	// V0.28: Load gives threads their workspaces and ends auto projects. The
-	// start no longer seeds projects from T3 (t3.Projects stays for a later
-	// "Import from T3").
+	// V0.55: Load gives each project one folder (a migration, logged),
+	// matches threads by folder and ends auto projects. The start does not
+	// seed projects from T3 (t3.Projects stays for a later "Import from T3").
 	if err := eng.Load(); err != nil {
 		log.Fatal(err)
 	}
-	// V0.42: the projects' repos come from their folders' remotes; a clone
-	// elsewhere then matches.
-	go func() {
-		if eng.RefreshRepos() {
-			eng.Rematch()
-		}
-	}()
 	folders := &hostfs.FS{Home: home(), Folders: eng.ProjectFolders, Recent: eng.RecentFolders}
 	for _, r := range cfg.ScanRoots {
 		folders.ScanRoots = append(folders.ScanRoots, expandHome(r))

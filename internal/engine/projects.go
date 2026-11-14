@@ -1,11 +1,10 @@
 package engine
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -20,9 +19,6 @@ type ProjectDTO struct {
 	core.Project
 	Threads  int       `json:"threads"`
 	LastUsed time.Time `json:"lastUsed"`
-	// Repos are the normalised origin remotes of the project's folders on
-	// this host and its repo sources, deduplicated (V0.42); read-only.
-	Repos []string `json:"repos"`
 	// QuietUntil is the end of the quiet hours the project is in (V0.46).
 	QuietUntil *time.Time `json:"quietUntil,omitempty"`
 }
@@ -38,14 +34,6 @@ func (e *Engine) quietUntil(id string, now time.Time) *time.Time {
 		return &u
 	}
 	return nil
-}
-
-// runGit runs git in dir with a short timeout, for the clone provider.
-func runGit(dir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
-	return strings.TrimSpace(string(out)), err
 }
 
 // scratchDir is where Fyr makes scratch folders (V0.42).
@@ -152,168 +140,124 @@ func (e *Engine) RecentFolders() []string {
 	return out
 }
 
-// ProjectFolders are the folders of every project on this host (V0.42).
+// ProjectFolders are the folders of the projects (V0.42, V0.55).
 func (e *Engine) ProjectFolders() []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var out []string
 	for _, p := range e.projects {
-		for _, s := range p.Sources {
-			if s.Kind == "folder" && s.Host == e.HostID {
-				out = append(out, s.Path)
-			}
+		if p.Folder != "" {
+			out = append(out, p.Folder)
 		}
 	}
 	return out
 }
 
-// RefreshRepos reads the origin remote of every project folder on this host
-// (V0.42) and reports whether a project's repos changed. Git runs outside
-// the lock.
-func (e *Engine) RefreshRepos() bool {
-	dirs := e.ProjectFolders()
-	got := map[string]string{}
-	for _, d := range dirs {
-		if _, ok := got[d]; ok {
-			continue
-		}
-		remote, err := runGit(d, "remote", "get-url", "origin")
-		if err != nil {
-			remote = ""
-		}
-		got[d] = core.NormalizeRemote(remote)
-	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	changed := len(got) != len(e.repoOf)
-	for d, r := range got {
-		if old, ok := e.repoOf[d]; !ok || old != r {
-			changed = true
-		}
-	}
-	e.repoOf = got
-	return changed
-}
-
-// repos is a project's derived and hand-made repos, deduplicated. Call with
-// e.mu held.
-func (e *Engine) repos(p *core.Project) []string {
-	out := []string{}
-	seen := map[string]bool{}
-	add := func(r string) {
-		if r != "" && !seen[r] {
-			seen[r] = true
-			out = append(out, r)
-		}
-	}
-	for _, s := range p.Sources {
-		switch {
-		case s.Kind == "folder" && s.Host == e.HostID:
-			add(e.repoOf[s.Path])
-		case s.Kind == "repo":
-			add(core.NormalizeRemote(s.URL))
-		}
-	}
-	return out
-}
-
-// providers identify a folder, in order (SPEC 0.5 V0.28).
-func (e *Engine) providers() []core.Provider {
-	return []core.Provider{core.ScratchProvider{Roots: e.scratchRoots()}, core.CloneProvider{Git: runGit}, core.FolderProvider{}}
-}
-
-// projectList is the projects for matching: a folder's derived repo counts
-// as a repo source (V0.42).
-func (e *Engine) projectList() []core.Project {
-	out := make([]core.Project, 0, len(e.projects))
+// projectList is the projects for matching. Call with e.mu held.
+func (e *Engine) projectList() []*core.Project {
+	out := make([]*core.Project, 0, len(e.projects))
 	for _, p := range e.projects {
-		cp := *p
-		for _, s := range p.Sources {
-			if s.Kind == "folder" && s.Host == e.HostID && e.repoOf[s.Path] != "" {
-				cp.Sources = append(append([]core.Source{}, cp.Sources...), core.Source{Kind: "repo", URL: e.repoOf[s.Path]})
-			}
-		}
-		out = append(out, cp)
+		out = append(out, p)
 	}
 	return out
 }
 
-// workspaceOf finds or identifies the workspace of a folder on this host.
-// Call with e.mu held; it returns the workspace and whether it is new.
-func (e *Engine) workspaceOf(cwd string) (*core.Workspace, bool) {
-	dir := filepath.Clean(cwd)
-	for _, w := range e.workspaces {
-		if w.Host == e.HostID && w.Path == dir {
-			return w, false
-		}
-	}
-	w := core.Identify(e.providers(), e.HostID, dir)
-	w.ID = NewID("w_")
-	e.workspaces[w.ID] = &w
-	return &w, true
-}
-
-// assignProject gives t its workspace and, when the workspace is new to the
-// thread and it has no project, the project that matching finds; it never
-// makes a project (SPEC 0.5 V0.28). Call with e.mu held; it returns a new
-// workspace to persist, or nil.
-func (e *Engine) assignProject(t *core.Thread, now time.Time) *core.Workspace {
-	if t.Cwd == "" {
-		return nil
-	}
-	var made *core.Workspace
-	ws := e.workspaces[t.WorkspaceID]
-	fresh := ws == nil
-	if fresh {
-		w, isNew := e.workspaceOf(t.Cwd)
-		ws, t.WorkspaceID = w, w.ID
-		if isNew {
-			made = w
-		}
-	}
+// assignProject drops a project that is gone and, for a thread not filed by
+// hand and without a project, finds the project whose folder covers the
+// thread's folder (SPEC 0.5 V0.55). It never makes a project. Call with
+// e.mu held.
+func (e *Engine) assignProject(t *core.Thread) {
 	if t.ProjectID != "" && e.projects[t.ProjectID] == nil {
 		t.ProjectID, t.ProjectManual = "", false
 	}
-	if t.ProjectID == "" && fresh {
-		t.ProjectID = core.MatchProject(e.projectList(), ws.Refs)
+	if t.ProjectID == "" && !t.ProjectManual {
+		t.ProjectID = core.MatchFolder(e.projectList(), t.Cwd)
 	}
 	t.Project = ""
 	if p := e.projects[t.ProjectID]; p != nil {
 		t.Project = p.Name
 	}
-	return made
 }
 
-// suggestion is the project a thread without one could get (V0.28).
-func (e *Engine) suggestion(t *core.Thread) *core.Suggestion {
-	if t.ProjectID != "" && e.projects[t.ProjectID] != nil {
-		return nil
-	}
-	if w := e.workspaces[t.WorkspaceID]; w != nil {
-		return core.Suggest(*w)
-	}
-	return nil
+// NewProject is what "New project from this thread" starts with (SPEC 0.5
+// V0.30, V0.55): the thread's folder and its name.
+type NewProject struct {
+	Name   string `json:"name"`
+	Folder string `json:"folder"`
 }
 
-// draft is what "New project from this thread" starts with (V0.30), without
-// the sources an existing project already has. Call with e.mu held.
-func (e *Engine) draft(t *core.Thread) *core.Suggestion {
-	w := e.workspaces[t.WorkspaceID]
-	if w == nil {
+// draft is the thread's NewProject, or nil for a scratch folder, the home
+// folder, / and a folder that a project already has. Call with e.mu held.
+func (e *Engine) draft(t *core.Thread) *NewProject {
+	if t.Cwd == "" {
 		return nil
 	}
-	home, _ := os.UserHomeDir()
-	return core.Draft(*w, home, func(s core.Source) bool {
-		ref := s.Ref()
-		for _, p := range e.projects {
-			for _, ps := range p.Sources {
-				if ps.Ref() == ref {
-					return true
+	dir := filepath.Clean(t.Cwd)
+	if home, _ := os.UserHomeDir(); dir == "/" || (home != "" && dir == filepath.Clean(home)) {
+		return nil
+	}
+	for _, r := range e.scratchRoots() {
+		if core.Covers(r, dir) {
+			return nil
+		}
+	}
+	for _, p := range e.projects {
+		if p.Folder != "" && filepath.Clean(p.Folder) == dir {
+			return nil
+		}
+	}
+	return &NewProject{Name: filepath.Base(dir), Folder: dir}
+}
+
+// migrateFolders gives every project stored with sources (before V0.55) one
+// folder: the one marked main on this host, else its first folder on this
+// host, else its first folder on any host. The other sources are dropped and
+// logged (decision 0017).
+func (e *Engine) migrateFolders(old map[string][]store.OldSource) error {
+	var changed []*core.Project
+	for id, srcs := range old {
+		p := e.projects[id]
+		if p == nil {
+			continue
+		}
+		keep := -1
+		for pass := 0; pass < 3 && keep < 0; pass++ {
+			for i, s := range srcs {
+				here := s.Host == "" || s.Host == e.HostID
+				if s.Kind == "folder" && s.Path != "" && ((pass == 0 && here && s.Main) || (pass == 1 && here) || pass == 2) {
+					keep = i
+					break
 				}
 			}
 		}
-		return false
+		if p.Folder == "" && keep >= 0 {
+			p.Folder = filepath.Clean(srcs[keep].Path)
+		}
+		for i, s := range srcs {
+			switch {
+			case i == keep:
+			case s.Kind == "folder":
+				log.Printf("project %q: dropped folder %s:%s (V0.55: a project has one folder)", p.Name, s.Host, s.Path)
+			case s.Kind == "repo":
+				log.Printf("project %q: dropped repo %s (V0.55: a project has one folder)", p.Name, s.URL)
+			default:
+				log.Printf("project %q: dropped %s source (V0.55)", p.Name, s.Kind)
+			}
+		}
+		changed = append(changed, p)
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	_, err := e.st.Write(func(tx *store.Tx) error {
+		for _, p := range changed {
+			if err := tx.PutProject(p); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
+	return err
 }
 
 // migrateAuto ends auto projects (SPEC 0.5 V0.28): one that holds threads
@@ -373,116 +317,36 @@ func (e *Engine) Projects() []ProjectDTO {
 	out := make([]ProjectDTO, 0, len(e.projects))
 	now := e.Now()
 	for _, p := range e.projects {
-		out = append(out, ProjectDTO{Project: *p, Threads: counts[p.ID], LastUsed: last[p.ID], Repos: e.repos(p), QuietUntil: e.quietUntil(p.ID, now)})
+		out = append(out, ProjectDTO{Project: *p, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now)})
 	}
 	return out
 }
 
-// SeedProjects adds projects from another source (T3) by their folder on
-// this host; it never overwrites a project the user edited.
-func (e *Engine) SeedProjects(seeds []core.Project) {
-	e.mu.Lock()
-	now := e.Now()
-	var changed []*core.Project
-	for _, sd := range seeds {
-		folder := sd.Folder(e.HostID)
-		if folder == "" {
-			continue
-		}
-		var hit *core.Project
-		for _, p := range e.projects {
-			if p.Folder(e.HostID) == filepath.Clean(folder) {
-				hit = p
-			}
-		}
-		if hit != nil {
-			if hit.Edited {
-				continue
-			}
-			if sd.Name != "" {
-				hit.Name = sd.Name
-			}
-			if sd.Icon.Kind != "" {
-				hit.Icon = sd.Icon
-			}
-			hit.Seeded, hit.Auto = true, false
-			changed = append(changed, hit)
-			continue
-		}
-		p := sd
-		p.ID = NewID("p_")
-		p.Seeded, p.Auto = true, false
-		p.CreatedAt = now
-		for i := range p.Sources {
-			if p.Sources[i].Kind == "folder" {
-				p.Sources[i].Path = filepath.Clean(p.Sources[i].Path)
-			}
-		}
-		if p.Name == "" {
-			p.Name = filepath.Base(folder)
-		}
-		if !core.ValidColor(p.Color) {
-			p.Color = core.DefaultColor(p.Name)
-		}
-		if p.Icon.Kind == "" {
-			p.Icon = core.Icon{Kind: "monogram"}
-		}
-		e.projects[p.ID] = &p
-		changed = append(changed, &p)
+// checkFolder cleans a project folder and refuses one that cannot match: it
+// must be a full path to a folder that exists on this host (SPEC 0.5 V0.23,
+// V0.55). "" stays "" (no folder).
+func checkFolder(dir string) (string, error) {
+	p := strings.TrimSpace(dir)
+	if p == "" {
+		return "", nil
 	}
-	e.mu.Unlock()
-	for _, p := range changed {
-		e.saveProject(p)
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = home + p[1:]
+		}
 	}
+	if !filepath.IsAbs(p) {
+		return "", fmt.Errorf("the folder must be a full path, like /home/you/src/app")
+	}
+	p = filepath.Clean(p)
+	if fi, err := os.Stat(p); err != nil || !fi.IsDir() {
+		return "", fmt.Errorf("there is no folder %s on this host", p)
+	}
+	return p, nil
 }
 
-func (e *Engine) saveProject(p *core.Project) {
-	if _, err := e.st.Write(func(tx *store.Tx) error { return tx.PutProject(p) }); err != nil {
-		return
-	}
-	for _, d := range e.Projects() {
-		if d.ID == p.ID {
-			e.Hub.Project(d)
-		}
-	}
-}
-
-// checkSource cleans a source and refuses one that cannot match: a folder
-// must be an absolute path, and on this host it must exist (SPEC 0.5 V0.23).
-func (e *Engine) checkSource(s *core.Source) error {
-	switch s.Kind {
-	case "folder":
-		if s.Host == "" {
-			s.Host = e.HostID
-		}
-		p := strings.TrimSpace(s.Path)
-		if p == "~" || strings.HasPrefix(p, "~/") {
-			if home, err := os.UserHomeDir(); err == nil {
-				p = home + p[1:]
-			}
-		}
-		if !filepath.IsAbs(p) {
-			return fmt.Errorf("the folder must be a full path, like /home/you/src/app")
-		}
-		s.Path = filepath.Clean(p)
-		if s.Host == e.HostID {
-			if fi, err := os.Stat(s.Path); err != nil || !fi.IsDir() {
-				return fmt.Errorf("there is no folder %s on %s", s.Path, s.Host)
-			}
-		}
-	case "repo":
-		s.URL = core.NormalizeRemote(s.URL)
-		if s.URL == "" {
-			return fmt.Errorf("the repo needs a URL")
-		}
-	default:
-		return fmt.Errorf("source kind must be folder or repo")
-	}
-	return nil
-}
-
-// projectCommand handles project.update, project.create, project.createFrom,
-// project.addSource and project.removeSource.
+// projectCommand handles project.create and project.update (SPEC 0.5
+// V0.23, V0.55).
 func (e *Engine) projectCommand(c Cmd) Reply {
 	if prev, _ := e.st.Receipt(c.CommandID); prev != nil {
 		var r Reply
@@ -491,28 +355,24 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		return r
 	}
 	bad := func(msg string) Reply { return Reply{Error: msg, Status: 400} }
+	_, folderSet := c.Args["folder"]
+	folder, err := checkFolder(c.Args.Str("folder"))
+	if err != nil {
+		return bad(err.Error())
+	}
 	e.mu.Lock()
 	var p *core.Project
 	switch c.Action {
 	case "project.create":
-		name := c.Args.Str("name")
-		p = &core.Project{ID: NewID("p_"), Name: name, Icon: core.Icon{Kind: "monogram"}, CreatedAt: e.Now(), Edited: true}
-		raw, _ := json.Marshal(c.Args["sources"])
-		json.Unmarshal(raw, &p.Sources)
-		for i := range p.Sources {
-			if err := e.checkSource(&p.Sources[i]); err != nil {
-				e.mu.Unlock()
-				return bad(err.Error())
-			}
+		name := strings.TrimSpace(c.Args.Str("name"))
+		if name == "" && folder != "" {
+			name = filepath.Base(folder)
 		}
-		if p.Name == "" && len(p.Sources) > 0 {
-			p.Name = filepath.Base(p.Sources[0].Path + p.Sources[0].URL)
-		}
-		if strings.TrimSpace(p.Name) == "" {
+		if name == "" {
 			e.mu.Unlock()
-			return bad("a project needs a name or a source")
+			return bad("a project needs a name or a folder")
 		}
-		p.Color = core.DefaultColor(p.Name)
+		p = &core.Project{ID: NewID("p_"), Name: name, Folder: folder, Color: core.DefaultColor(name), Icon: core.Icon{Kind: "monogram"}, CreatedAt: e.Now(), Edited: true}
 		// V0.30: file the thread it was made from, by hand, in the same write.
 		if tid := c.Args.Str("threadId"); tid != "" {
 			t := e.threads[tid]
@@ -523,36 +383,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 			t.ProjectID, t.ProjectManual, t.Project = p.ID, true, ""
 		}
 		e.projects[p.ID] = p
-	case "project.createFrom":
-		// SPEC 0.5 V0.28: the thread's suggestion becomes a project, and
-		// every thread without a project that it matches is filed.
-		tid := c.Args.Str("threadId")
-		if tid == "" {
-			tid = c.ThreadID
-		}
-		t := e.threads[tid]
-		if t == nil {
-			e.mu.Unlock()
-			return Reply{Error: "no thread " + tid, Status: 404}
-		}
-		sug := e.suggestion(t)
-		if sug == nil {
-			e.mu.Unlock()
-			return bad("this thread has no project to make: it has a project, or its folder has no git remote")
-		}
-		p = &core.Project{ID: NewID("p_"), Name: sug.Name, Color: core.DefaultColor(sug.Name), Icon: core.Icon{Kind: "monogram"},
-			Sources: sug.Sources, CreatedAt: e.Now(), Edited: true}
-		e.projects[p.ID] = p
-		list := e.projectList()
-		for _, o := range e.threads {
-			if o.ProjectManual || (o.ProjectID != "" && e.projects[o.ProjectID] != nil) {
-				continue
-			}
-			if w := e.workspaces[o.WorkspaceID]; w != nil && core.MatchProject(list, w.Refs) == p.ID {
-				o.ProjectID = p.ID
-			}
-		}
-	case "project.update", "project.addSource", "project.removeSource", "project.setMain":
+	case "project.update":
 		cur := e.projects[c.Args.Str("id")]
 		if cur == nil {
 			e.mu.Unlock()
@@ -560,83 +391,55 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		}
 		cp := *cur
 		p = &cp
-		if c.Action == "project.addSource" {
-			var s core.Source
-			raw, _ := json.Marshal(c.Args["source"])
-			json.Unmarshal(raw, &s)
-			if err := e.checkSource(&s); err != nil {
+		if folderSet {
+			p.Folder = folder
+		}
+		if n := strings.TrimSpace(c.Args.Str("name")); n != "" {
+			p.Name = n
+		}
+		if col := c.Args.Str("color"); col != "" {
+			if !core.ValidColor(col) {
 				e.mu.Unlock()
-				return bad(err.Error())
+				return bad(fmt.Sprintf("color must be one of %v", core.Palette))
 			}
-			p.Sources = append(append([]core.Source{}, p.Sources...), s)
-		} else if c.Action == "project.removeSource" {
-			i, ok := c.Args["index"].(float64)
-			if n, isInt := c.Args["index"].(int); isInt {
-				i, ok = float64(n), true
-			}
-			if !ok || i != float64(int(i)) || int(i) < 0 || int(i) >= len(p.Sources) {
+			p.Color = col
+		}
+		if raw, ok := c.Args["icon"]; ok {
+			var ic core.Icon
+			b, _ := json.Marshal(raw)
+			json.Unmarshal(b, &ic)
+			if ic.Kind != "monogram" && ic.Kind != "emoji" && ic.Kind != "line" {
 				e.mu.Unlock()
-				return bad(fmt.Sprintf("index must be 0 to %d", len(p.Sources)-1))
+				return bad("icon kind must be monogram, emoji or line")
 			}
-			p.Sources = append(append([]core.Source{}, p.Sources[:int(i)]...), p.Sources[int(i)+1:]...)
-		} else if c.Action == "project.setMain" {
-			// V0.42: new threads in the project start in this folder.
-			i, ok := c.Args["index"].(float64)
-			if n, isInt := c.Args["index"].(int); isInt {
-				i, ok = float64(n), true
-			}
-			if !ok || i != float64(int(i)) || !p.SetMain(int(i)) {
-				e.mu.Unlock()
-				return bad("index must point at one of the project's folders")
-			}
-		} else {
-			if n := strings.TrimSpace(c.Args.Str("name")); n != "" {
-				p.Name = n
-			}
-			if col := c.Args.Str("color"); col != "" {
-				if !core.ValidColor(col) {
-					e.mu.Unlock()
-					return bad(fmt.Sprintf("color must be one of %v", core.Palette))
-				}
-				p.Color = col
-			}
-			if raw, ok := c.Args["icon"]; ok {
-				var ic core.Icon
+			p.Icon = ic
+		}
+		if v, ok := c.Args["profile"].(string); ok {
+			p.Profile = v
+		}
+		if v, ok := c.Args["model"].(string); ok {
+			p.Model = v
+		}
+		// V0.46: quiet hours, a list of windows (decision 0014
+		// addendum); null or an empty list clears them. The single
+		// object of before is read as a list of one.
+		if raw, ok := c.Args["quiet"]; ok {
+			var qs core.QuietHours
+			if raw != nil {
 				b, _ := json.Marshal(raw)
-				json.Unmarshal(b, &ic)
-				if ic.Kind != "monogram" && ic.Kind != "emoji" && ic.Kind != "line" {
+				if err := json.Unmarshal(b, &qs); err != nil {
 					e.mu.Unlock()
-					return bad("icon kind must be monogram, emoji or line")
+					return bad("quiet must be a list of {from, to, days?}")
 				}
-				p.Icon = ic
-			}
-			if v, ok := c.Args["profile"].(string); ok {
-				p.Profile = v
-			}
-			if v, ok := c.Args["model"].(string); ok {
-				p.Model = v
-			}
-			// V0.46: quiet hours, a list of windows (decision 0014
-			// addendum); null or an empty list clears them. The single
-			// object of before is read as a list of one.
-			if raw, ok := c.Args["quiet"]; ok {
-				var qs core.QuietHours
-				if raw != nil {
-					b, _ := json.Marshal(raw)
-					if err := json.Unmarshal(b, &qs); err != nil {
-						e.mu.Unlock()
-						return bad("quiet must be a list of {from, to, days?}")
-					}
-					if err := qs.Validate(); err != nil {
-						e.mu.Unlock()
-						return bad(err.Error())
-					}
+				if err := qs.Validate(); err != nil {
+					e.mu.Unlock()
+					return bad(err.Error())
 				}
-				if len(qs) == 0 {
-					qs = nil
-				}
-				p.Quiet = qs
 			}
+			if len(qs) == 0 {
+				qs = nil
+			}
+			p.Quiet = qs
 		}
 		p.Edited = true
 		e.projects[p.ID] = p
@@ -660,7 +463,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		}
 	}
 	reply := Reply{OK: true, Status: 200, Result: map[string]any{"id": p.ID}}
-	_, err := e.st.Write(func(tx *store.Tx) error {
+	_, err = e.st.Write(func(tx *store.Tx) error {
 		if err := tx.PutProject(p); err != nil {
 			return err
 		}
@@ -675,10 +478,6 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 	if err != nil {
 		return Reply{Error: err.Error(), Status: 500}
 	}
-	sourcesChanged := c.Action != "project.update" && c.Action != "project.createFrom" && c.Action != "project.setMain"
-	if sourcesChanged || c.Action == "project.createFrom" {
-		e.RefreshRepos() // V0.42: the folders changed; read their remotes again
-	}
 	for _, d := range e.Projects() {
 		if d.ID == p.ID {
 			e.Hub.Project(d)
@@ -687,8 +486,8 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 	for _, d := range touched {
 		e.Hub.Thread(d)
 	}
-	if sourcesChanged {
-		e.Rematch() // the sources changed: threads may belong elsewhere now
+	if c.Action == "project.create" || folderSet {
+		e.Rematch() // V0.55: the folders changed; threads may land here now
 	}
 	return reply
 }
@@ -699,29 +498,23 @@ func hostname() string {
 }
 
 // Rematch runs matching for every thread not filed by hand after a change
-// to the projects' sources (SPEC 0.5 V0.28): a thread moves to the project
-// that matching finds; a thread that nothing matches keeps its project.
-// Threads without a workspace get one.
+// to a project's folder (SPEC 0.5 V0.55): a thread moves to the project
+// whose folder covers it, the longest first; a thread that nothing covers
+// keeps its project.
 func (e *Engine) Rematch() {
 	e.mu.Lock()
 	now := e.Now()
 	list := e.projectList()
-	var made []*core.Workspace
 	var moved []*core.Thread
 	for _, t := range e.threads {
-		if t.Cwd == "" {
-			continue
-		}
-		old, oldWS := t.ProjectID, t.WorkspaceID
-		if w := e.assignProject(t, now); w != nil {
-			made = append(made, w)
-		}
+		old := t.ProjectID
+		e.assignProject(t)
 		if !t.ProjectManual {
-			if id := core.MatchProject(list, e.workspaces[t.WorkspaceID].Refs); id != "" {
+			if id := core.MatchFolder(list, t.Cwd); id != "" {
 				t.ProjectID, t.Project = id, e.projects[id].Name
 			}
 		}
-		if t.ProjectID != old || t.WorkspaceID != oldWS {
+		if t.ProjectID != old {
 			e.bump(t.ID)
 			moved = append(moved, t)
 		}
@@ -732,11 +525,6 @@ func (e *Engine) Rematch() {
 	}
 	e.mu.Unlock()
 	e.st.Write(func(tx *store.Tx) error {
-		for _, w := range made {
-			if err := tx.PutWorkspace(w); err != nil {
-				return err
-			}
-		}
 		for _, t := range moved {
 			if err := tx.PutThread(t); err != nil {
 				return err
