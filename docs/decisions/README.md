@@ -11,3 +11,4 @@ The owner decisions D1–D5 from the design phase stay in `../SPEC.md` 0.3. Reco
 | [0003](0003-fake-agent.md) | Tests drive a scripted fake `claude` over the real protocol | accepted |
 | [0004](0004-t3-adoption.md) | Adopt open T3 threads by Claude session id, history from the session transcript | accepted |
 | [0005](0005-android-pwa-first.md) | Phone client: PWA first, no APK; adb + Obtainium if an APK is needed | accepted |
+| [0006](0006-rail-direction.md) | The v0 client uses the Rail direction | accepted |

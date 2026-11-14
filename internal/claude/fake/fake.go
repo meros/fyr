@@ -1,0 +1,202 @@
+// Package fake is a scripted stand-in for the `claude` CLI that speaks the
+// same stream-json control protocol. Test binaries run it when the
+// environment has FYR_FAKE_CLAUDE=1, so tests drive the real client code
+// against a real child process.
+//
+// The first word of each user message picks the behaviour:
+//
+//	ask      asks one AskUserQuestion and reports the answer
+//	approve  asks for Bash permission and reports allow or deny
+//	fail     ends the run with an API error
+//	hang     waits until interrupted
+//	pr       runs `gh pr create` and prints a PR URL
+//	crash    exits with code 3 during the run
+//	sub      runs one subagent (Task tool) before it answers
+//	other    replies "echo: <text>"
+package fake
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"time"
+)
+
+type msg = map[string]any
+
+var (
+	wmu       sync.Mutex
+	pmu       sync.Mutex
+	pending   = map[string]chan msg{}
+	interrupt = make(chan struct{}, 1)
+	session   = "fake-session"
+	model     = "fake-model"
+)
+
+func write(m msg) {
+	b, _ := json.Marshal(m)
+	wmu.Lock()
+	os.Stdout.Write(append(b, '\n'))
+	wmu.Unlock()
+}
+
+func request(id string, req msg) msg {
+	ch := make(chan msg, 1)
+	pmu.Lock()
+	pending[id] = ch
+	pmu.Unlock()
+	write(msg{"type": "control_request", "request_id": id, "request": req})
+	select {
+	case r := <-ch:
+		return r
+	case <-interrupt:
+		write(msg{"type": "control_cancel_request", "request_id": id})
+		return nil
+	}
+}
+
+func assistant(content ...msg) {
+	write(msg{"type": "assistant", "session_id": session, "parent_tool_use_id": nil,
+		"message": msg{"role": "assistant", "content": content}})
+}
+
+func result(isErr bool, subtype, text string) {
+	write(msg{"type": "result", "subtype": subtype, "is_error": isErr, "result": text,
+		"session_id": session, "num_turns": 1, "duration_ms": 5, "total_cost_usd": 0.001})
+}
+
+func Main() {
+	for i, a := range os.Args {
+		if (a == "--session-id" || a == "--resume") && i+1 < len(os.Args) {
+			session = os.Args[i+1]
+		}
+		if a == "--model" && i+1 < len(os.Args) {
+			model = os.Args[i+1]
+		}
+	}
+	turns := make(chan string, 16)
+	go func() {
+		for text := range turns {
+			turn(text)
+		}
+	}()
+	sc := bufio.NewScanner(os.Stdin)
+	sc.Buffer(make([]byte, 1<<20), 64<<20)
+	for sc.Scan() {
+		var m msg
+		if json.Unmarshal(sc.Bytes(), &m) != nil {
+			continue
+		}
+		switch m["type"] {
+		case "control_request":
+			req, _ := m["request"].(msg)
+			id, _ := m["request_id"].(string)
+			if req["subtype"] == "interrupt" {
+				select {
+				case interrupt <- struct{}{}:
+				default:
+				}
+			}
+			resp := msg{}
+			if req["subtype"] == "initialize" {
+				resp = msg{"commands": []any{}, "models": []any{msg{"value": "fake-model"}}}
+			}
+			write(msg{"type": "control_response", "response": msg{"subtype": "success", "request_id": id, "response": resp}})
+		case "control_response":
+			r, _ := m["response"].(msg)
+			id, _ := r["request_id"].(string)
+			pmu.Lock()
+			ch := pending[id]
+			delete(pending, id)
+			pmu.Unlock()
+			if ch != nil {
+				inner, _ := r["response"].(msg)
+				ch <- inner
+			}
+		case "user":
+			mm, _ := m["message"].(msg)
+			text := ""
+			if cs, ok := mm["content"].([]any); ok {
+				for _, c := range cs {
+					if b, _ := c.(msg); b["type"] == "text" {
+						text, _ = b["text"].(string)
+					} else if b["type"] == "image" {
+						text += " [image]"
+					}
+				}
+			}
+			turns <- text
+		}
+	}
+}
+
+func turn(text string) {
+	// drain a stale interrupt from an earlier turn
+	select {
+	case <-interrupt:
+	default:
+	}
+	write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model, "cwd": mustWd()})
+	word := strings.Fields(text + " x")[0]
+	switch word {
+	case "ask":
+		r := request("ask1", msg{"subtype": "can_use_tool", "tool_name": "AskUserQuestion", "tool_use_id": "tu_ask",
+			"input": msg{"questions": []any{
+				msg{"question": "Which colour?", "header": "Colour", "multiSelect": false,
+					"options": []any{msg{"label": "Red", "description": "Warm"}, msg{"label": "Blue", "description": "Cold"}}},
+			}}})
+		if r == nil {
+			result(true, "error_during_execution", "interrupted")
+			return
+		}
+		in, _ := r["updatedInput"].(msg)
+		ans, _ := in["answers"].(msg)
+		assistant(msg{"type": "text", "text": fmt.Sprintf("You chose %v", ans["Which colour?"])})
+		result(false, "success", "done")
+	case "approve":
+		r := request("perm1", msg{"subtype": "can_use_tool", "tool_name": "Bash", "tool_use_id": "tu_b",
+			"input": msg{"command": "rm -rf build"}})
+		if r == nil {
+			result(true, "error_during_execution", "interrupted")
+			return
+		}
+		assistant(msg{"type": "text", "text": fmt.Sprintf("Permission: %v", r["behavior"])})
+		result(false, "success", "done")
+	case "fail":
+		assistant(msg{"type": "text", "text": "Trying"})
+		result(true, "success", "API Error: 500 Internal server error")
+	case "hang":
+		assistant(msg{"type": "tool_use", "id": "tu_h", "name": "Bash", "input": msg{"command": "sleep 600"}})
+		select {
+		case <-interrupt:
+			result(true, "error_during_execution", "")
+		case <-time.After(30 * time.Second):
+			result(false, "success", "woke")
+		}
+	case "pr":
+		assistant(msg{"type": "tool_use", "id": "tu_pr", "name": "Bash", "input": msg{"command": "gh pr create --fill"}})
+		write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
+			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_pr", "content": "https://github.com/acme/app/pull/42\n"}}}})
+		assistant(msg{"type": "text", "text": "Opened the PR."})
+		result(false, "success", "done")
+	case "sub":
+		assistant(msg{"type": "tool_use", "id": "tu_task", "name": "Task", "input": msg{"description": "look", "prompt": "look"}})
+		write(msg{"type": "assistant", "session_id": session, "parent_tool_use_id": "tu_task",
+			"message": msg{"role": "assistant", "content": []any{msg{"type": "text", "text": "subagent text"}}}})
+		write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
+			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_task", "content": "found it"}}}})
+		assistant(msg{"type": "text", "text": "The subagent found it."})
+		result(false, "success", "done")
+	case "crash":
+		fmt.Fprintln(os.Stderr, "boom")
+		os.Exit(3)
+	default:
+		assistant(msg{"type": "text", "text": "echo: " + text})
+		result(false, "success", "echo: "+text)
+	}
+}
+
+func mustWd() string { d, _ := os.Getwd(); return d }
