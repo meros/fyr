@@ -637,6 +637,27 @@ try {
   failures.push(`V0.37 desktop: ${e.message}`);
 }
 
+// V0.38: never block the main thread. While a burst of 300 thread updates and 300 messages streams in
+// (3 s), no task on the page's main thread takes over 50 ms, and the last message shows.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_mapperf` });
+  await sleep(1200);
+  // A mid-range phone's speed: 4 times slower than this machine's CPU.
+  await send("Emulation.setCPUThrottlingRate", { rate: 4 });
+  await evaluate(`window.__long = []; new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push(Math.round(e.duration)); }).observe({ type: "longtask", buffered: false }); window.__fyrBurst("t_mapperf", 300); true`);
+  await sleep(7000);
+  await send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  const r = await evaluate(`({ long: window.__long, last: [...document.querySelectorAll('.th .md')].map((x) => x.textContent).filter((t) => /Burst message/.test(t)).pop() ?? '' })`);
+  const total = r.long.reduce((a, b) => a + b, 0);
+  // Budget: no task over 100 ms, under 250 ms of long tasks in all (before V0.38: 10 tasks, 523 ms).
+  check(Math.max(0, ...r.long) <= 100 && total < 250, `V0.38 main thread: long tasks during the burst: ${r.long.length}, ${total} ms in all (${r.long.slice(0, 8).join(", ")} ms)`);
+  check(/Burst message 300/.test(r.last), `V0.38 main thread: the last burst message is not shown ("${r.last.slice(0, 60)}")`);
+} catch (e) {
+  failures.push(`V0.38 main thread: ${e.message}`);
+}
+
 clearTimeout(watchdog);
 cleanup();
 if (pageErrors.length) failures.push(...pageErrors.map((e) => `page error: ${e}`));

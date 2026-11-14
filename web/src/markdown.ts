@@ -5,10 +5,14 @@ import { Marked, type Tokens } from "marked";
 import { inlineAttachmentId } from "./previews.ts";
 import { attachmentUrl } from "./attach.ts";
 
+// V0.38: a message renders once; a new event does not parse the old ones again.
+const memo = new Map<string, string>();
+
 /** The page's origin; tests set one. */
 let originOverride: string | null = null;
 export function setMarkdownOrigin(o: string | null): void {
   originOverride = o;
+  memo.clear();
 }
 function mdOrigin(): string {
   return originOverride ?? (typeof location !== "undefined" ? location.origin : "http://localhost");
@@ -66,5 +70,14 @@ const md = new Marked({
 });
 
 export function renderMarkdown(src: string): string {
-  return md.parse(src, { async: false }) as string;
+  const hit = memo.get(src);
+  if (hit !== undefined) {
+    memo.delete(src); // keep recently used entries last
+    memo.set(src, hit);
+    return hit;
+  }
+  const html = md.parse(src, { async: false }) as string;
+  memo.set(src, html);
+  if (memo.size > 600) memo.delete(memo.keys().next().value as string);
+  return html;
 }

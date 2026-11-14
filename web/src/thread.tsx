@@ -420,8 +420,12 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (stick.current) el.scrollTop = el.scrollHeight;
-    check();
+    // V0.38: at the bottom, follow new content without reading the layout first (a read forces a
+    // layout of the whole conversation on every update); away from the bottom, nothing moves.
+    if (stick.current) {
+      el.scrollTop = 1e9;
+      onAtEnd(true);
+    }
   }, [all, threadId]);
 
   useEffect(() => {

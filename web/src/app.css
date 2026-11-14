@@ -649,3 +649,7 @@ button.ptag{padding:0}
 .lv.full{flex:1;min-height:0;display:flex;flex-direction:column}
 .lv.full .lv-h{cursor:default}
 .lv.full .lv-f{flex:1;min-height:0;height:auto}
+
+/* SPEC 0.5 V0.38: messages outside the screen skip layout and paint; the browser keeps
+   each one's real height once it has been drawn, so scrolling stays exact. */
+.convo-in>*{content-visibility:auto;contain-intrinsic-size:auto 64px}

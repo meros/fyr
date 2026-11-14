@@ -285,32 +285,45 @@ function App() {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") void syncPushStatus(api).then(setPushSt);
     });
+    // V0.38: stream messages are applied together, once per frame (a short timer while the page is
+    // hidden), so a burst of updates is one render, not one per message.
+    let queue: ((s: Store) => Store)[] = [];
+    let scheduled = false;
+    const flush = () => {
+      scheduled = false;
+      const fns = queue;
+      queue = [];
+      if (fns.length) setStore((s) => fns.reduce((acc, f) => f(acc), s));
+    };
+    const batch = (fn: (s: Store) => Store) => {
+      queue.push(fn);
+      if (scheduled) return;
+      scheduled = true;
+      if (document.hidden || typeof requestAnimationFrame !== "function") setTimeout(flush, 250);
+      else requestAnimationFrame(flush);
+    };
     api.start({
-      state: (dto) => setStore((s) => applySnapshot(s, dto, Date.now())),
+      state: (dto) => {
+        flush();
+        setStore((s) => applySnapshot(s, dto, Date.now()));
+      },
       thread: (t) => {
         if (shouldClearNotification(t.attention.state)) clearThreadNotification(t.id);
-        setStore((s) => upsertThread(s, t));
+        batch((s) => upsertThread(s, t));
       },
       // V0.38: a patch against our copy; when it does not fit, ask for the whole thread.
       threadPatch: (p) => {
-        let need = false;
-        setStore((s) => {
+        const st = (p.patch as { attention?: { state?: string } }).attention?.state;
+        if (st && shouldClearNotification(st)) clearThreadNotification(p.id);
+        batch((s) => {
           const r = applyThreadPatch(s, p);
-          need = r.needFull;
+          if (r.needFull) queueMicrotask(() => void api.thread(p.id).then((t) => t && setStore((x) => upsertThread(x, t))));
           return r.store;
         });
-        queueMicrotask(() => {
-          if (!need) {
-            const st = (p.patch as { attention?: { state?: string } }).attention?.state;
-            if (st && shouldClearNotification(st)) clearThreadNotification(p.id);
-            return;
-          }
-          void api.thread(p.id).then((t) => t && setStore((s) => upsertThread(s, t)));
-        });
       },
-      event: (e) => setStore((s) => liveEvent(s, e)),
-      project: (p) => setStore((s) => upsertProject(s, p)),
-      conn: (c) => setStore((s) => setConn(s, c)),
+      event: (e) => batch((s) => liveEvent(s, e)),
+      project: (p) => batch((s) => upsertProject(s, p)),
+      conn: (c) => batch((s) => setConn(s, c)),
     });
     const iv = setInterval(() => setTick(Date.now()), 15_000);
     return () => clearInterval(iv);
