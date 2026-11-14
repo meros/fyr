@@ -124,10 +124,17 @@ export function compareNeeds(a: ThreadDTO, b: ThreadDTO): number {
   return activity(b) - activity(a) || a.id.localeCompare(b.id);
 }
 
+/** When the thread's work started: the run, else (waiting) the earliest running agent; 0 when unknown. */
+export function workStartedAt(t: ThreadDTO): number {
+  const run = ts(t.runStartedAt);
+  if (run) return run;
+  const starts = (t.tasks ?? []).filter((x) => x.status === "running").map((x) => ts(x.startedAt)).filter((n) => n > 0);
+  return starts.length ? Math.min(...starts) : 0;
+}
+
+/** V0.26: a stable order, newest started first, then id; activity never moves a row. */
 export function compareWorking(a: ThreadDTO, b: ThreadDTO): number {
-  const sa = ts(a.runStartedAt) || Number.MAX_SAFE_INTEGER;
-  const sb = ts(b.runStartedAt) || Number.MAX_SAFE_INTEGER;
-  return sa - sb || a.id.localeCompare(b.id);
+  return workStartedAt(b) - workStartedAt(a) || a.id.localeCompare(b.id);
 }
 
 export function compareActivityDesc(a: ThreadDTO, b: ThreadDTO): number {
