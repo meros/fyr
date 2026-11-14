@@ -3,7 +3,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
-import { buildConversation, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall } from "./conversation.ts";
+import { buildConversation, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { duration, relTime, shortModel } from "./format.ts";
@@ -434,8 +434,10 @@ function ToolCard({ calls, nested }: { calls: ToolCall[]; nested?: boolean }) {
 function FoldGroup({ calls }: { calls: ToolCall[] }) {
   const details = useToolDetails();
   const [open, setOpen] = useState<boolean | null>(null);
+  const [all, setAll] = useState(false);
   const isOpen = open ?? details;
   const st = groupStats(calls);
+  const showAll = () => setAll(true);
   const toggle = () => setOpen(!isOpen);
   const text = calls.length === 1 ? calls[0].label : groupSummary(calls);
   return (
@@ -450,7 +452,18 @@ function FoldGroup({ calls }: { calls: ToolCall[] }) {
           {st.durationMs !== null ? duration(st.durationMs) : ""} {isOpen ? "▾" : "▸"}
         </span>
       </div>
-      {isOpen && calls.map((c) => <CallRow c={c} key={c.id} />)}
+      {isOpen &&
+        capCalls(calls, all).map((r) =>
+          r.kind === "more" ? (
+            <div class="tl row more" key="more" role="button" tabIndex={0} data-keys="self" title="Show every call" onClick={showAll} onKeyDown={keyActivate(showAll)}>
+              <span class="tlm">⋯</span>
+              <span class="tlt ell">{r.label}</span>
+              <span class="d" />
+            </div>
+          ) : (
+            <CallRow c={r.call} key={r.call.id} />
+          ),
+        )}
     </>
   );
 }
