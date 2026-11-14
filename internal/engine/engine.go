@@ -460,6 +460,10 @@ func (e *Engine) runEffect(threadID string, ef core.Effect) {
 	if req == nil {
 		return
 	}
+	if ef.ByOwner {
+		e.runOwnerEffect(threadID, *req)
+		return
+	}
 	ok, text := false, "The user declined it."
 	if ef.Allow {
 		if e.Effects == nil {
@@ -478,6 +482,55 @@ func (e *Engine) runEffect(threadID string, ef core.Effect) {
 		}
 	}
 	e.Report(threadID, *req, ef.Allow, ok, text)
+}
+
+// runOwnerEffect runs a PR action the owner started in the PR tab (SPEC 0.5
+// V0.43). The result is a line in the thread; the agent is not woken. The
+// poller looks at the PR again at once.
+func (e *Engine) runOwnerEffect(threadID string, req core.EffectReq) {
+	ok, text := false, "No effect runner is configured."
+	if e.Effects != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), EffectTimeout(req.Action))
+		out, err := e.Effects.Run(ctx, threadID, req)
+		cancel()
+		ok, text = err == nil, out
+		if err != nil {
+			text = err.Error()
+		}
+	}
+	text = ownerLine(req, ok, text)
+	e.Observe(threadID, func(*core.Thread, time.Time) {}, agent.Ev{Type: "effect.result",
+		Data: map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": text, "by": "owner"}})
+	if e.OnPR != nil {
+		e.OnPR(threadID)
+	}
+}
+
+// ownerLine starts an owner effect's result with one plain sentence.
+func ownerLine(req core.EffectReq, ok bool, text string) string {
+	url, _ := req.Args["pr"].(string)
+	pr := "the PR"
+	if _, n, found := agent.ParsePR(url); found {
+		pr = fmt.Sprintf("#%d", n)
+	}
+	var first string
+	switch {
+	case req.Action == "pr.merge" && ok:
+		method, _ := req.Args["method"].(string)
+		first = fmt.Sprintf("You merged %s (%s).", pr, method)
+	case req.Action == "pr.merge":
+		first = fmt.Sprintf("Merging %s failed.", pr)
+	case req.Action == "pr.rerunFailed" && ok:
+		first = fmt.Sprintf("You re-ran the failed checks of %s.", pr)
+	case req.Action == "pr.rerunFailed":
+		first = fmt.Sprintf("Re-running the failed checks of %s failed.", pr)
+	default:
+		return text
+	}
+	if strings.TrimSpace(text) == "" {
+		return first
+	}
+	return first + "\n\n" + strings.TrimSpace(text)
 }
 
 // Report records an effect result and sends it to the agent as context.

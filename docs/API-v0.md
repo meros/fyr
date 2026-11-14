@@ -85,7 +85,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 | `decision.closed` | `{"id": "…", "answer": "text shown in the log"}` |
 | `task` | `{"kind": "started" \| "ended", "id", "description", "status", "summary"}` a subagent or background task started or ended (V0.16) |
 | `preview` | `{"kind": "image" \| "html", "attachmentId", "title", "caption", "width", "height", "url"?}` something the agent showed with the `show` tool (V0.19). Images load from `/api/attachments/{id}`; HTML loads in an iframe from `/api/previews/{id}` |
-| `effect.result` | `{"action": "pr.merge", "ok": true, "text": "…"}` |
+| `effect.result` | `{"action": "pr.merge", "ok": true, "text": "…", "by"?: "owner"}`; `by: owner` marks a merge or re-run the owner started in the PR tab (V0.43) |
 | `view.published` | `{"pageId": "…", "state": {…}}` the agent published its live view's page (V0.37); the page loads from `/api/previews/{pageId}` |
 | `view.state` | `{"state": {…}}` the live view's full state after a patch (V0.37) |
 | `view.unchanged` | `{"reason": "…"}` the agent said the view is current (V0.37) |
@@ -222,6 +222,41 @@ The host folder picker. Every path is resolved through symlinks and must be an e
 ```
 
 The patch is cut at 400 KB at a line end (`truncated: true`). A path without changes returns `"patch": ""`. The path is matched literally; an untracked file is read only when git lists it as untracked.
+
+## PR detail (SPEC 0.5 V0.43)
+
+`GET /api/threads/{id}/pr` returns the thread's PR, read with `gh` on the host and cached 30 s per PR. `?fresh=1` skips the cache.
+
+```json
+{
+  "url": "https://github.com/acme/app/pull/88", "repo": "acme/app", "number": 88,
+  "title": "…", "body": "markdown", "state": "OPEN|MERGED|CLOSED", "draft": false,
+  "author": "octocat", "head": "fix/cards", "base": "main", "headSha": "3f2a…",
+  "additions": 120, "deletions": 18, "changedFiles": 4,
+  "labels": [{"name": "bug", "color": "d73a4a"}],
+  "mergeable": "MERGEABLE|CONFLICTING|UNKNOWN",
+  "mergeState": "CLEAN|BLOCKED|BEHIND|DIRTY|DRAFT|UNSTABLE|HAS_HOOKS|UNKNOWN",
+  "reviewDecision": "APPROVED|CHANGES_REQUESTED|REVIEW_REQUIRED|",
+  "reviews": [{"author": "anna", "state": "APPROVED|CHANGES_REQUESTED|COMMENTED|DISMISSED", "at": "…"}],
+  "checks": [{"name": "lint", "workflow": "CI", "state": "fail|running|pass|skipped", "status": "COMPLETED", "conclusion": "FAILURE", "startedAt": "…", "completedAt": "…", "url": "https://github.com/…/job/1"}],
+  "threads": [{"path": "web/src/Card.tsx", "line": 42, "outdated": false, "url": "…", "comments": [{"author": "anna", "body": "markdown", "at": "…", "url": "…"}]}],
+  "threadsError": "set when the review threads could not be read; the rest is valid",
+  "fetchedAt": "…"
+}
+```
+
+- `reviews` is the latest review of each reviewer. `threads` are the unresolved review threads only, at most 50, each with at most 20 comments.
+- A check is a CheckRun (`status`, `conclusion`, `workflow`) or a commit status (`status` empty, `conclusion` is its state: `SUCCESS`, `FAILURE`, `ERROR`, `PENDING`, `EXPECTED`). `state` is the host's reading of both.
+- Errors return `200 {"error": "…"}`: gh is missing or not signed in, the network failed, or the thread has no PR. An unknown thread is `404`.
+
+Owner commands (through `POST /api/command`, with `threadId`):
+
+| action | args |
+|---|---|
+| `pr.merge` | `method?`: `squash` (default), `merge` or `rebase`. Unavailable without an open PR, with a merge conflict or requested changes. The host reads the PR again and refuses a draft, a closed PR, and a merge state of `DIRTY`, `BLOCKED` or `BEHIND` |
+| `pr.rerunFailed` | none: reruns (`gh run rerun <id> --failed`) every failed, cancelled or timed-out workflow run of the head commit. Unavailable without an open PR |
+
+Both reply at once; the result arrives as an `effect.result` event with `"by": "owner"` (the agent is not told). `ThreadDTO.unavailable` carries their reasons like any action.
 
 ## Speed (SPEC 0.5 V0.38)
 

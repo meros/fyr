@@ -9,6 +9,7 @@ import type { UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockScenario } from "./mock.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
+import type { PrReply } from "./pr.ts";
 import { reloadForNewBuild } from "./pwa.ts";
 
 export type ConnState = "connecting" | "live" | "offline";
@@ -56,6 +57,8 @@ export interface Api {
   changes(threadId: string): Promise<ChangesDTO>;
   /** One file's unified diff (V0.25). */
   filePatch(threadId: string, path: string): Promise<FilePatchDTO>;
+  /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
+  prDetail(threadId: string, fresh?: boolean): Promise<PrReply>;
   /** The host folder picker (V0.42); every path stays inside the owner's home folder. */
   fsList(path: string): Promise<FsListing>;
   fsRecent(): Promise<FsDir[]>;
@@ -343,6 +346,16 @@ function createHttpApi(): Api {
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j;
     },
+    async prDetail(threadId, fresh) {
+      try {
+        const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/pr${fresh ? "?fresh=1" : ""}`);
+        const j = (await r.json().catch(() => ({}))) as PrReply;
+        if (!r.ok && !("error" in j)) return { error: `HTTP ${r.status}` };
+        return j;
+      } catch {
+        return { error: "Fyr is not reachable." };
+      }
+    },
     async presence(threadId, device) {
       try {
         await fetch("/api/presence", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ threadId, device }), keepalive: true });
@@ -468,6 +481,10 @@ function createMockApi(scenario: string): Api {
     },
     async fsMkdir(parent, name) {
       return server.fsMkdir(parent, name);
+    },
+    async prDetail(threadId) {
+      await new Promise((r) => setTimeout(r, 120));
+      return server.prDetail(threadId);
     },
     attachmentUrl(id) {
       if (MOCK_SHOTS[id]) return MOCK_SHOTS[id];

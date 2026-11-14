@@ -311,6 +311,20 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .chg-file{height:44px;padding:0 16px}
 .m-app .chg-path{font-size:13px}
 .m-app .chg-note{padding:8px 16px}
+/* PR tab (V0.43): 44 px targets, the lists run edge to edge. */
+.m-app .prv{padding:12px 16px 16px;background:var(--surface);gap:14px}
+.m-app .prv-t{font-size:17px;line-height:23px}
+.m-app .prv-status{padding:8px 12px}
+.m-app .prv-ref{min-height:44px;margin:-6px -6px -6px 0}
+.m-app .prv-acts .btn{min-height:44px;border-radius:12px;padding:0 14px;font-size:15px}
+.m-app .prv-size{display:inline-block;line-height:44px;border-bottom:0;text-decoration:underline dashed var(--line-strong);text-underline-offset:3px}
+.m-app .prv-ckl,.m-app .prv-more,.m-app .prv-fh,.m-app .prv-revs li,.m-app .prv-fold{min-height:44px}
+.m-app .prv-ask{min-height:44px;margin:-8px 12px 0 34px;font-size:14px}
+.m-app .prv-askall{min-height:44px}
+.m-app .prv-det{padding:14px 0 14px 8px;margin-right:-4px}
+.m-app .prv-thh a{padding:14px 0}
+.m-app .prv-m{min-height:56px;align-items:center}
+.m-app .prv-m input{margin:0;width:20px;height:20px}
 /* V0.28: a thread without a project, and the action that makes its suggested one */
 .m-nopj{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0}
 .m-bt.m-mkp{height:44px;border-radius:12px;padding:0 14px;font:500 15px/20px var(--ui);max-width:100%}
