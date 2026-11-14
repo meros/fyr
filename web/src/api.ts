@@ -342,6 +342,18 @@ function createMockApi(scenario: string): Api {
         h.state(server.state());
         h.conn("live");
       }, 0);
+      // V0.38 perf guard (mock only): a burst of n thread updates and n messages for one thread,
+      // one pair every 10 ms, the way a busy agent streams.
+      (globalThis as { __fyrBurst?: (id: string, n: number) => void }).__fyrBurst = (id, n) => {
+        const base = server.state().threads.find((t) => t.id === id);
+        if (!base) return;
+        for (let i = 1; i <= n; i++) {
+          setTimeout(() => {
+            h.thread({ ...base, rev: (base.rev ?? 0) + i, activity: `Step ${i} of ${n}`, updatedAt: new Date().toISOString() });
+            h.event({ seq: 1_000_000 + i, at: new Date().toISOString(), subject: id, type: "msg", data: { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: `Burst message ${i}: **bold**, \`code\`, and a list:\n\n- one\n- two` }] } } });
+          }, i * 10);
+        }
+      };
     },
     async command(action, threadId, args) {
       return server.command(newCommandId(), action, threadId, args ?? {});
