@@ -22,7 +22,7 @@ test-go:
 	go test ./...
 
 test-web:
-	cd web && npm run typecheck && npm test
+	cd web && npm run typecheck && npm test && npm run build && npm run test:layout
 
 # First install: put the build under ~/.local/share/fyr; then run `bin/fyr`.
 install: build

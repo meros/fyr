@@ -2,13 +2,15 @@
 // (design/directions/04-rail.html).
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, FyrEvent, ImageArg, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
+import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
 import { buildConversation, toolRows, type Item, type ToolCall } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { duration, relTime, shortModel } from "./format.ts";
 import { pick, questionsOf, goTo, type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
+import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
+import { sendArgs } from "./attach.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 
 export function prLabel(pr: PullRequest, short = false): { text: string; cls: string } {
@@ -40,7 +42,7 @@ export interface ThreadPaneProps {
   onAllow(d: Decision, allow: boolean): void;
   onRun(action: string, args?: Record<string, unknown>): void;
   onSnooze(): void;
-  onSend(text: string, images: ImageArg[]): Promise<boolean>;
+  onSend(args: SendArgs): Promise<boolean>;
   onAtEnd(atEnd: boolean): void;
   onFocusZone(): void;
   /** Loads older events; absent when the start of the thread is loaded. */
@@ -139,7 +141,7 @@ export function ThreadPane(p: ThreadPaneProps) {
   );
 }
 
-function PrTab({ t }: { t: ThreadDTO }) {
+export function PrTab({ t }: { t: ThreadDTO }) {
   if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
   const pr = t.pr;
   return (
@@ -213,7 +215,7 @@ function TaskRow({ t, now }: { t: TaskDTO; now: number }) {
 }
 
 /** Running tasks always show; ended ones fold behind "N finished". On a phone the whole strip is one line until opened. */
-function AgentsStrip({ tasks, now }: { tasks: TaskDTO[]; now: number }) {
+export function AgentsStrip({ tasks, now }: { tasks: TaskDTO[]; now: number }) {
   const [showEnded, setShowEnded] = useState(false);
   const [open, setOpen] = useState(false);
   const g = groupTasks(tasks);
@@ -241,7 +243,7 @@ function AgentsStrip({ tasks, now }: { tasks: TaskDTO[]; now: number }) {
 
 // ---- conversation ----
 
-function Conversation({ events, onAtEnd, threadId, onEarlier }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void }) {
+export function Conversation({ events, onAtEnd, threadId, onEarlier }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void }) {
   const items = useMemo(() => buildConversation(events ?? []), [events]);
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -300,7 +302,8 @@ function ItemView({ it }: { it: Item }) {
       return (
         <div class="you prose">
           {it.text}
-          {it.images > 0 && (
+          {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
+          {it.images > 0 && !it.attachments.length && (
             <span class="imgchip">
               {it.images} {it.images === 1 ? "image" : "images"}
             </span>
@@ -521,80 +524,27 @@ function AskCard(p: CardProps & { card: CardState }) {
 
 // ---- composer ----
 
-export function readImages(files: Iterable<File>): Promise<ImageArg[]> {
-  const list = [...files].filter((f) => f.type.startsWith("image/"));
-  return Promise.all(
-    list.map(
-      (f) =>
-        new Promise<ImageArg>((resolve, reject) => {
-          const r = new FileReader();
-          r.onload = () => {
-            const s = String(r.result);
-            resolve({ mediaType: f.type, data: s.slice(s.indexOf(",") + 1) });
-          };
-          r.onerror = () => reject(r.error);
-          r.readAsDataURL(f);
-        }),
-    ),
-  );
-}
-
-export function ImageStrip({ images, onRemove }: { images: ImageArg[]; onRemove(i: number): void }) {
-  if (!images.length) return null;
-  return (
-    <div class="thumbs">
-      {images.map((im, i) => (
-        <span class="thumb">
-          <img src={`data:${im.mediaType};base64,${im.data}`} alt={`Image ${i + 1}`} />
-          <button title="Remove image" aria-label="Remove image" onClick={() => onRemove(i)}>
-            ×
-          </button>
-        </span>
-      ))}
-    </div>
-  );
-}
-
-export function useImagePaste() {
-  const [images, setImages] = useState<ImageArg[]>([]);
-  const add = async (files: Iterable<File>) => {
-    const got = await readImages(files);
-    if (got.length) setImages((cur) => [...cur, ...got]);
-  };
-  const onPaste = (e: ClipboardEvent) => {
-    const files = [...(e.clipboardData?.files ?? [])];
-    if (files.some((f) => f.type.startsWith("image/"))) {
-      e.preventDefault();
-      void add(files);
-    }
-  };
-  const onDrop = (e: DragEvent) => {
-    const files = [...(e.dataTransfer?.files ?? [])];
-    if (files.length) {
-      e.preventDefault();
-      void add(files);
-    }
-  };
-  const onDragOver = (e: DragEvent) => {
-    if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
-  };
-  return { images, setImages, onPaste, onDrop, onDragOver, remove: (i: number) => setImages((c) => c.filter((_, j) => j !== i)) };
+/** What a send carries (SPEC V0.18): text and uploaded attachment ids; text may be empty. */
+export interface SendArgs {
+  text: string;
+  attachments?: string[];
 }
 
 interface ComposerProps {
   t: ThreadDTO;
   answer: AnswerField | null;
-  onSend(text: string, images: ImageArg[]): Promise<boolean>;
+  onSend(args: SendArgs): Promise<boolean>;
   onInterrupt(): void;
 }
 
 /**
  * Enter sends (steers a running thread). While a question is open the composer is the answer field
  * for the active question's "Other" (U15): Enter answers, ⌘Enter queues the text as a message instead.
+ * Files: the paperclip, paste and drop, any type; each uploads at once and shows a chip.
  */
 function Composer({ t, answer, onSend, onInterrupt }: ComposerProps) {
   const [draft, setDraft] = useState("");
-  const img = useImagePaste();
+  const att = useAttachments();
   const ta = useRef<HTMLTextAreaElement>(null);
   const sendReason = unavailableReason(t, "thread.send");
   const text = answer ? answer.text : draft;
@@ -608,12 +558,13 @@ function Composer({ t, answer, onSend, onInterrupt }: ComposerProps) {
     el.style.height = Math.min(el.scrollHeight, 200) + "px";
   }, [text]);
 
+  const plan = sendArgs(text, att.chips);
   const send = async () => {
-    if (sendReason || (!text.trim() && !img.images.length)) return;
-    const ok = await onSend(text, img.images);
+    if (sendReason || !plan.ok) return;
+    const ok = await onSend(plan.args);
     if (ok) {
       setText("");
-      img.setImages([]);
+      att.clear();
     }
   };
 
@@ -626,9 +577,10 @@ function Composer({ t, answer, onSend, onInterrupt }: ComposerProps) {
         : "Message…";
 
   return (
-    <div class="cmpw" onDrop={img.onDrop} onDragOver={img.onDragOver}>
-      <ImageStrip images={img.images} onRemove={img.remove} />
+    <div class="cmpw" onDrop={att.onDrop} onDragOver={att.onDragOver}>
+      <ChipStrip chips={att.chips} onRemove={att.remove} />
       <div class={`cmp${disabled ? " off" : ""}`}>
+        <ClipPicker onFiles={att.add} disabled={!!sendReason} />
         <textarea
           ref={ta}
           id="composer"
@@ -640,7 +592,7 @@ function Composer({ t, answer, onSend, onInterrupt }: ComposerProps) {
           title={disabled ? sendReason : undefined}
           data-other={answer ? "1" : undefined}
           onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
-          onPaste={img.onPaste}
+          onPaste={att.onPaste}
           onKeyDown={(e) => {
             if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
             e.preventDefault();
@@ -660,7 +612,7 @@ function Composer({ t, answer, onSend, onInterrupt }: ComposerProps) {
             Answer <kbd>⏎</kbd>
           </button>
         ) : (
-          <button class="btn p" disabled={!!sendReason || (!text.trim() && !img.images.length)} title={sendReason ?? "Send (Enter)"} onClick={() => void send()}>
+          <button class="btn p" disabled={!!sendReason || !plan.ok} title={sendReason ?? (plan.ok ? "Send (Enter)" : plan.reason)} onClick={() => void send()}>
             Send <kbd>⏎</kbd>
           </button>
         )}

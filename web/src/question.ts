@@ -139,3 +139,16 @@ export function cardKey(cs: CardState, d: Decision, key: string, opts: { shift?:
   }
   return { state: cs, handled: false };
 }
+
+/** A tap on the phone: pick without moving on; the view moves on after 250 ms for single-select (design/mobile). */
+export function pickStay(cs: CardState, d: Decision, opt: number): CardState {
+  const next = pick(cs, d, opt);
+  return { ...next, index: cs.index };
+}
+
+/** Choose Other on the phone: opens the field; a single-select question drops its pick. */
+export function chooseOther(cs: CardState, d: Decision): CardState {
+  const q = questionsOf(d)[cs.index];
+  const opened = openOther(cs);
+  return q && !q.multiSelect ? { ...opened, picks: replaceAt(opened.picks, cs.index, []) } : opened;
+}

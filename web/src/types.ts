@@ -156,11 +156,6 @@ export interface FyrEvent {
   data: any;
 }
 
-export interface ImageArg {
-  mediaType: string;
-  data: string; // base64, no data: prefix
-}
-
 export interface CommandReply {
   ok: boolean;
   threadId?: string;

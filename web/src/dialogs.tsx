@@ -1,8 +1,9 @@
 // New thread, Adopt from T3, and the snooze menu.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { ImageArg, Profile, Project, T3Candidate } from "./types.ts";
-import { ImageStrip, useImagePaste } from "./thread.tsx";
+import type { Profile, Project, T3Candidate } from "./types.ts";
+import { ChipStrip, ClipPicker, useAttachments } from "./attach-ui.tsx";
+import { sendArgs } from "./attach.ts";
 import { relTime, shortModel } from "./format.ts";
 import type { SnoozePreset } from "./store.ts";
 
@@ -25,7 +26,8 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
 export interface NewThreadArgs {
   cwd: string;
   text: string;
-  images: ImageArg[];
+  /** uploaded attachment ids (SPEC V0.18) */
+  attachments?: string[];
   profile: string;
   model: string;
   title?: string;
@@ -41,7 +43,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; o
   const [title, setTitle] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const img = useImagePaste();
+  const att = useAttachments();
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -57,10 +59,11 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; o
   const submit = async () => {
     if (busy) return;
     if (!cwd.trim()) return setErr("Pick a folder.");
-    if (!text.trim() && !img.images.length) return setErr("Write a prompt.");
+    const plan = sendArgs(text, att.chips);
+    if (!plan.ok) return setErr(plan.reason === "Nothing to send" ? "Write a prompt or attach a file." : plan.reason);
     setBusy(true);
     setErr(null);
-    const e = await p.onCreate({ cwd: cwd.trim(), text, images: img.images, profile, model, title: title.trim() || undefined });
+    const e = await p.onCreate({ cwd: cwd.trim(), text, attachments: plan.args.attachments, profile, model, title: title.trim() || undefined });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -105,11 +108,11 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; o
             ref={promptRef}
             rows={6}
             value={text}
-            placeholder="What should the agent do? Paste or drop screenshots here."
+            placeholder="What should the agent do? Paste or drop files here."
             onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
-            onPaste={img.onPaste}
-            onDrop={img.onDrop}
-            onDragOver={img.onDragOver}
+            onPaste={att.onPaste}
+            onDrop={att.onDrop}
+            onDragOver={att.onDragOver}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
                 e.preventDefault();
@@ -118,7 +121,10 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; o
             }}
           />
         </label>
-        <ImageStrip images={img.images} onRemove={img.remove} />
+        <div class="att-row">
+          <ClipPicker onFiles={att.add} />
+          <ChipStrip chips={att.chips} onRemove={att.remove} />
+        </div>
         {err && <div class="err prose">{err}</div>}
       </div>
       <div class="df">

@@ -2,7 +2,7 @@
 
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, ImageArg, ThreadDTO } from "./types.ts";
+import type { Decision, ThreadDTO } from "./types.ts";
 import { createApi } from "./api.ts";
 import {
   SECTIONS,
@@ -32,16 +32,81 @@ import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, 
 import { answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
-import { ThreadPane } from "./thread.tsx";
+import { ThreadPane, type SendArgs } from "./thread.tsx";
+import { setAttachmentUrl } from "./attach.ts";
+import { setUploader } from "./attach-ui.tsx";
 import { AdoptDialog, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
 import { disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
 import { unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
+import { PhoneApp, type PhoneActions } from "./phone.tsx";
+import { backTarget, initialEntries, navFromHistory, urlFor, type Nav } from "./nav.ts";
+import { PHONE_UNDO_MS } from "./mobile.ts";
+import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
+
+const PHONE_QUERY = "(max-width: 760px)";
+
+/** True at phone width (design/mobile, V0.14 breakpoint). */
+function usePhone(): boolean {
+  const mq = typeof window.matchMedia === "function" ? window.matchMedia(PHONE_QUERY) : null;
+  const [phone, setPhone] = useState(!!mq?.matches);
+  useEffect(() => {
+    if (!mq) return;
+    const f = () => setPhone(mq.matches);
+    mq.addEventListener("change", f);
+    return () => mq.removeEventListener("change", f);
+  }, []);
+  return phone;
+}
+
+/**
+ * The phone layout height follows the visual viewport (SPEC V0.17): --app-h, --app-top and kb-open on
+ * <html>, re-read on every event that can change them, and again on the next frames after a resume.
+ */
+function useViewportVars(on: boolean) {
+  useEffect(() => {
+    if (!on) return;
+    const root = document.documentElement;
+    const vv = window.visualViewport;
+    const read = () => {
+      const v = viewportVars({ innerHeight: window.innerHeight, vvHeight: vv?.height, vvOffsetTop: vv?.offsetTop });
+      root.style.setProperty("--app-h", v.height);
+      root.style.setProperty("--app-top", v.top);
+      root.classList.toggle("kb-open", v.keyboard);
+      // With the keyboard up, keep the field being typed in on screen.
+      const a = document.activeElement as HTMLElement | null;
+      if (v.keyboard && a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA")) requestAnimationFrame(() => a.scrollIntoView({ block: "nearest" }));
+    };
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const onEvent = (e: Event) => {
+      read();
+      if (rereadLater(e.type, document.visibilityState)) {
+        requestAnimationFrame(() => requestAnimationFrame(read));
+        timers.push(setTimeout(read, 350));
+      }
+    };
+    read();
+    for (const t of VIEWPORT_WINDOW_EVENTS) window.addEventListener(t, onEvent);
+    for (const t of VIEWPORT_VV_EVENTS) vv?.addEventListener(t, onEvent);
+    document.addEventListener("visibilitychange", onEvent);
+    return () => {
+      for (const t of VIEWPORT_WINDOW_EVENTS) window.removeEventListener(t, onEvent);
+      for (const t of VIEWPORT_VV_EVENTS) vv?.removeEventListener(t, onEvent);
+      document.removeEventListener("visibilitychange", onEvent);
+      timers.forEach(clearTimeout);
+      root.style.removeProperty("--app-h");
+      root.style.removeProperty("--app-top");
+      root.classList.remove("kb-open");
+    };
+  }, [on]);
+}
 
 /** Events per page of a thread timeline. */
 const PAGE = 400;
 
 const api = createApi();
+setUploader(api.uploadAttachment);
+setAttachmentUrl(api.attachmentUrl);
 const params = new URLSearchParams(location.search);
 
 type Dialog = "new" | "adopt" | "snooze" | "push" | null;
@@ -107,6 +172,13 @@ function App() {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tick, setTick] = useState(Date.now());
   const [inText, setInText] = useState(false);
+  // Phone (design/mobile): screens and sheets are history entries.
+  const phone = usePhone();
+  const phoneRef = useRef(phone);
+  phoneRef.current = phone;
+  useViewportVars(phone);
+  const [nav, setNav] = useState<Nav>(() => initialEntries(location.search).at(-1)!);
+  const [selecting, setSelecting] = useState(false);
   // PWA (SPEC V0.15): push bell, install prompt, and a thread to open from a notification tap.
   const [pushSt, setPushSt] = useState<PushStatus>("unsupported");
   const [canInstall, setCanInstall] = useState(false);
@@ -251,7 +323,7 @@ function App() {
 
   useEffect(() => {
     if (!toast) return;
-    const ms = toast.undo ? UNDO_MS : 4000;
+    const ms = toast.undo ? (phoneRef.current ? PHONE_UNDO_MS : UNDO_MS) : 4000;
     const id = setTimeout(() => setToast((t) => (t === toast ? null : t)), ms);
     return () => clearTimeout(id);
   }, [toast]);
@@ -274,7 +346,7 @@ function App() {
   const showError = (text: string) => setToast({ text, undo: false, error: true, at: Date.now() });
 
   const runAction = useCallback(async (action: string, ids: string[], args?: Record<string, unknown>) => {
-    if (!ids.length) return;
+    if (!ids.length) return 0;
     const replies = await Promise.all(ids.map((id) => api.command(action, id, args).then((r) => ({ id, r }))));
     const ok = replies.filter((x) => x.r.ok).map((x) => x.id);
     const bad = replies.filter((x) => !x.r.ok);
@@ -285,6 +357,7 @@ function App() {
       setToast({ text: u.label, undo: true, at: Date.now() });
     }
     if (bad.length) showError(bad.length === 1 ? (bad[0].r.error ?? "Failed") : `${bad.length} failed: ${bad[0].r.error ?? ""}`);
+    return ok.length;
   }, []);
 
   const doUndo = useCallback(async () => {
@@ -412,16 +485,16 @@ function App() {
     }
   };
 
-  const send = async (text: string, images: ImageArg[]): Promise<boolean> => {
+  const send = async (args: SendArgs): Promise<boolean> => {
     if (!view) return false;
-    const r = await api.command("thread.send", view.id, images.length ? { text, images } : { text });
+    const r = await api.command("thread.send", view.id, { ...args });
     if (!r.ok) showError(r.error ?? "Could not send");
     return r.ok;
   };
 
   const create = async (a: NewThreadArgs): Promise<string | null> => {
     const args: Record<string, unknown> = { cwd: a.cwd, text: a.text, profile: a.profile, model: a.model };
-    if (a.images.length) args.images = a.images;
+    if (a.attachments?.length) args.attachments = a.attachments;
     if (a.title) args.title = a.title;
     const r = await api.command("thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
@@ -430,7 +503,10 @@ function App() {
       const id = r.threadId;
       // The upsert may arrive after the reply; open once it is there.
       const tryOpen = (n: number) => {
-        if (threadsRef.current[id] || n > 20) openThread(id);
+        if (threadsRef.current[id] || n > 20) {
+          if (phoneRef.current) navReplace({ screen: { name: "thread", id }, sheet: null });
+          else openThread(id);
+        }
         else setTimeout(() => tryOpen(n + 1), 100);
       };
       tryOpen(0);
@@ -453,6 +529,7 @@ function App() {
   const lastEsc = useRef(0);
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e: KeyboardEvent) => {
+    if (phoneRef.current) return; // the phone has touch forms for every key (design/mobile, section 2)
     const k = e.key;
     const mod = e.metaKey || e.ctrlKey;
 
@@ -631,7 +708,8 @@ function App() {
 
   useEffect(() => {
     if (!pendingOpen || !store.threads[pendingOpen]) return;
-    openThread(pendingOpen, "open");
+    if (phone) navGo({ screen: { name: "thread", id: pendingOpen }, sheet: null });
+    else openThread(pendingOpen, "open");
     setPendingOpen(null);
   }, [pendingOpen, store.threads]);
 
@@ -645,6 +723,150 @@ function App() {
       onInstall={() => void promptInstall().then((ok) => ok && setCanInstall(false))}
     />
   );
+
+  // ---- phone navigation ----
+  const navGo = (n: Nav) => {
+    history.pushState(n, "", urlFor(n, location.search));
+    setNav(n);
+  };
+  const navReplace = (n: Nav) => {
+    history.replaceState(n, "", urlFor(n, location.search));
+    setNav(n);
+  };
+  const navBack = () => {
+    if (history.state && typeof history.state === "object" && "screen" in history.state && history.length > 1) history.back();
+    else {
+      const t = backTarget(nav);
+      if (t) navReplace(t);
+    }
+  };
+  // Build the history once: a deep link (a push) gets the inbox under it, so Back never leaves the app.
+  const navInit = useRef(false);
+  useEffect(() => {
+    if (!phone || navInit.current) return;
+    navInit.current = true;
+    const entries = initialEntries(location.search);
+    history.replaceState(entries[0], "", urlFor(entries[0], location.search));
+    for (const e of entries.slice(1)) history.pushState(e, "", urlFor(e, location.search));
+    setNav(entries[entries.length - 1]);
+    const onPop = (e: PopStateEvent) => setNav(navFromHistory(e.state, location.search));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [phone]);
+  // The open thread follows the screen.
+  useEffect(() => {
+    if (!phone) return;
+    const s = nav.screen;
+    if (s.name === "thread") {
+      if (view?.id !== s.id || view.mode !== "open") openThread(s.id, "open");
+    } else if (view) closePeek();
+  }, [phone, nav.screen.name === "thread" ? nav.screen.id : nav.screen.name]);
+
+  const phoneActions: PhoneActions = {
+    settle: (ids, bulk) => void runAction("thread.settle", ids, bulk ? { now: true } : undefined),
+    snooze: (ids, until) => void runAction("thread.snooze", ids, { until: until.toISOString() }),
+    archive: (ids) => void runAction("thread.archive", ids),
+    markUnseen: (id) => markUnseen(id),
+    retry: (id) => void runAction("thread.retry", [id]),
+    interrupt: (id) => void runAction("thread.interrupt", [id]),
+    setModel: (id, model) => void runAction("thread.setModel", [id], { model }),
+    send: async (id, args) => {
+      const r = await api.command("thread.send", id, { ...args });
+      if (!r.ok) showError(r.error ?? "Could not send");
+      return r.ok;
+    },
+    submitAsk: async (d) => {
+      const cs = cards[d.id];
+      const answers = cs ? answersOf(cs, d) : null;
+      if (!answers || !view) return false;
+      return (await runAction("thread.answer", [view.id], { decisionId: d.id, answers })) > 0;
+    },
+    allow: async (d, ok) => (view ? (await runAction("thread.answer", [view.id], { decisionId: d.id, allow: ok })) > 0 : false),
+    create,
+    undo: () => void doUndo(),
+  };
+
+  const pushDialog = (onClose: () => void) => (
+    <PushDialog
+      status={pushSt}
+      reason={pushReason}
+      onClose={onClose}
+      onOn={async () => {
+        const r = await enablePush(api);
+        setPushSt(r.status);
+        return r.error ?? null;
+      }}
+      onOff={async () => {
+        const r = await disablePush(api);
+        setPushSt(r.status);
+        return r.error ?? null;
+      }}
+      onTest={async () => {
+        const r = await api.pushTest();
+        return r.ok ? null : (r.error ?? "The test was not sent");
+      }}
+    />
+  );
+
+  if (phone) {
+    return (
+      <>
+        <PhoneApp
+          nav={nav}
+          go={navGo}
+          replace={navReplace}
+          back={navBack}
+          threads={store.threads}
+          sec={sec}
+          now={now}
+          host={store.host || (api.mock ? "mock" : "local")}
+          conn={store.conn}
+          thread={nav.screen.name === "thread" ? store.threads[nav.screen.id] : undefined}
+          events={nav.screen.name === "thread" ? store.events[nav.screen.id] : undefined}
+          onEarlier={view && earlier[view.id] ? () => loadEarlier(view.id) : undefined}
+          onAtEnd={(b) => setTracker((tr) => setAtEnd(tr, b))}
+          profiles={store.profiles}
+          projects={store.projects}
+          card={card}
+          onCard={(fn) => decision && setCards((c) => (c[decision.id] ? { ...c, [decision.id]: fn(c[decision.id]) } : c))}
+          sectionOpen={sectionOpen}
+          setSectionOpen={setSectionOpen}
+          expanded={expanded}
+          onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
+          picked={picked}
+          setPicked={setPicked}
+          selecting={selecting}
+          setSelecting={setSelecting}
+          push={pushSt}
+          pushReason={pushReason}
+          ios={env.ios}
+          standalone={env.standalone}
+          canInstall={canInstall && !isStandalone()}
+          onInstall={() => void promptInstall().then((ok) => ok && setCanInstall(false))}
+          theme={theme}
+          setTheme={setTheme}
+          toast={toast}
+          undoKind={undo?.kind ?? null}
+          undoIds={undo?.threadIds ?? []}
+          undoLive={undoLive(undo, Date.now())}
+          actions={phoneActions}
+        />
+        {nav.sheet?.kind === "push" && pushDialog(navBack)}
+        {nav.sheet?.kind === "adopt" && (
+          <AdoptDialog
+            load={() => api.t3Candidates()}
+            now={now}
+            onClose={navBack}
+            onAdopt={async (ids) => {
+              const e = await adopt(ids);
+              if (!e) navBack();
+              return e;
+            }}
+          />
+        )}
+      </>
+    );
+  }
 
   const activeSection: SectionKey | null = sel && store.threads[sel] ? sectionOf(store.threads[sel]) : null;
   const hints = keyHints({
@@ -743,27 +965,7 @@ function App() {
       )}
       {dialog === "new" && <NewThreadDialog profiles={store.profiles} projects={store.projects} onClose={() => setDialog(null)} onCreate={create} />}
       {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
-      {dialog === "push" && (
-        <PushDialog
-          status={pushSt}
-          reason={pushReason}
-          onClose={() => setDialog(null)}
-          onOn={async () => {
-            const r = await enablePush(api);
-            setPushSt(r.status);
-            return r.error ?? null;
-          }}
-          onOff={async () => {
-            const r = await disablePush(api);
-            setPushSt(r.status);
-            return r.error ?? null;
-          }}
-          onTest={async () => {
-            const r = await api.pushTest();
-            return r.ok ? null : (r.error ?? "The test was not sent");
-          }}
-        />
-      )}
+      {dialog === "push" && pushDialog(() => setDialog(null))}
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
     </div>
   );
