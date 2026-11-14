@@ -8,7 +8,8 @@ import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, Project, ProjectSource, ThreadDTO } from "./types.ts";
-import { SECTIONS, isAvailable, unavailableReason, type SectionKey, type Sections } from "./store.ts";
+import { SECTIONS, isAvailable, sections, unavailableReason, type SectionKey, type Sections } from "./store.ts";
+import { quietNote } from "./quiet.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
 import { AgentsStrip, Conversation, EffectBody, PrTab, effectSentence, prLabel, type SendArgs } from "./thread.tsx";
@@ -179,6 +180,8 @@ export interface PhoneProps {
   undoIds: string[];
   undoLive: boolean;
   actions: PhoneActions;
+  /** what search finds: the project filter's threads, quiet ones included (V0.46) */
+  searchable: Record<string, ThreadDTO>;
   /** projects (V0.23) */
   projectFilter: string | null;
   onProjectFilter(id: string | null): void;
@@ -382,6 +385,7 @@ function MInbox(p: PhoneProps) {
             <button class="m-pfn" onClick={() => p.go({ ...p.nav, sheet: { kind: "filter" } })}>
               <ProjectIcon project={fp} name={fp.name} size={20} />
               <span class="ell">Only {fp.name}</span>
+              {quietNote(fp, p.now) && <span class="m-pfq">{quietNote(fp, p.now)}</span>}
             </button>
             <button class="m-tbtn" onClick={() => p.onProjectFilter(null)}>
               Clear
@@ -668,7 +672,11 @@ function MSearch(p: PhoneProps) {
   const [q, setQ] = useState("");
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => ref.current?.focus(), []);
-  const all = SECTIONS.flatMap((s) => p.sec[s.key]);
+  // V0.46: search finds the threads of a project in its quiet hours too.
+  const all = useMemo(() => {
+    const sec = sections(p.searchable);
+    return SECTIONS.flatMap((s) => sec[s.key]);
+  }, [p.searchable]);
   const needle = q.trim().toLowerCase();
   const hits = needle ? all.filter((t) => `${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(needle)).slice(0, 200) : [];
   return (
@@ -1533,6 +1541,7 @@ function MProject(p: PhoneProps & { id: string }) {
             project={pr}
             profiles={p.profiles}
             host={p.host}
+            now={p.now}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
             onAddFolder={(v) => p.projectActions.addFolder(pr.id!, v)}
             onRemoveSource={(i) => p.projectActions.removeSource(pr.id!, i)}
