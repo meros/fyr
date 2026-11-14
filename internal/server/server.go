@@ -22,6 +22,7 @@ import (
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/gitdiff"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
@@ -61,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/stream", s.stream)
 	mux.HandleFunc("GET /api/threads/{id}/events", s.events)
+	mux.HandleFunc("GET /api/threads/{id}/changes", s.changes)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	if s.Presence != nil {
@@ -267,6 +269,35 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		evs = []store.Event{} // JSON [] instead of null
 	}
 	writeJSON(w, 200, map[string]any{"events": evs})
+}
+
+// changes serves the Changes tab (SPEC 0.5 V0.25): the branch diff of the
+// thread's folder, or with ?path= one file's patch.
+func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.Engine.Thread(r.PathValue("id"))
+	if !ok {
+		writeJSON(w, 404, map[string]any{"error": "no such thread"})
+		return
+	}
+	if r.URL.Query().Has("path") {
+		p, err := gitdiff.FilePatch(r.Context(), t.Cwd, r.URL.Query().Get("path"))
+		if err != nil {
+			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, p)
+		return
+	}
+	c, err := gitdiff.Summary(r.Context(), t.Cwd)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	if !c.Git {
+		writeJSON(w, 200, map[string]bool{"git": false})
+		return
+	}
+	writeJSON(w, 200, c)
 }
 
 func (s *Server) command(w http.ResponseWriter, r *http.Request) {
