@@ -7,7 +7,8 @@ import type { ThreadPatch } from "./store.ts";
 import type { CommandReply, FsDir, FsListing, FyrEvent, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
-import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockScenario } from "./mock.ts";
+import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockQuota, mockScenario } from "./mock.ts";
+import type { Quota } from "./quota.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import { reloadForNewBuild } from "./pwa.ts";
@@ -65,6 +66,8 @@ export interface Api {
   fsRepos(): Promise<FsDir[]>;
   /** Makes parent/name and returns its path. */
   fsMkdir(parent: string, name: string): Promise<string>;
+  /** V0.44: each profile's provider quota; [] when the host cannot say. */
+  quota(): Promise<Quota[]>;
 }
 
 async function fsGet<T>(path: string): Promise<T> {
@@ -346,6 +349,15 @@ function createHttpApi(): Api {
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j;
     },
+    async quota() {
+      try {
+        const r = await fetch("/api/quota");
+        const j = (await r.json().catch(() => [])) as unknown;
+        return r.ok && Array.isArray(j) ? (j as Quota[]) : [];
+      } catch {
+        return [];
+      }
+    },
     async prDetail(threadId, fresh) {
       try {
         const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/pr${fresh ? "?fresh=1" : ""}`);
@@ -463,6 +475,9 @@ function createMockApi(scenario: string): Api {
     },
     previewUrl(id) {
       return MOCK_PREVIEWS[id] ?? "data:text/html,<p>mock preview</p>";
+    },
+    async quota() {
+      return mockQuota(Date.now());
     },
     async changes(threadId) {
       return mockChanges(threadId);

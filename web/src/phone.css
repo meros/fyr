@@ -364,3 +364,5 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .fsheet .fcrumb{min-height:36px;padding:0 6px}
 .m-app .star{width:44px;height:44px;margin-left:-8px}
 .m-fline.scratch .ell{font-family:var(--ui);color:var(--ink-muted)}
+/* SPEC 0.5 V0.44: quota lines on the new-thread screen, 44 px targets. */
+.m-new .qlist .qsum{min-height:44px;font-size:13px}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, ProjectSource, T3Candidate } from "./types.ts";
+import { ProfileQuota, quotaSuffix, useQuotas } from "./quota-ui.tsx";
 import { ChipStrip, ClipPicker, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { NewProjectStep, ProjectIcon, ProjectList } from "./project-ui.tsx";
@@ -74,6 +75,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
   const startDefs = cur ? projectDefaults(cur, p.profiles) : {};
   const [profile, setProfile] = useState(startDefs.profile ?? p.profiles[0]?.id ?? "");
   const prof = p.profiles.find((x) => x.id === profile);
+  const quotas = useQuotas();
   const [model, setModel] = useState(startDefs.model ?? prof?.defaultModel ?? prof?.models[0] ?? "");
   const [text, setText] = useState("");
   const [title, setTitle] = useState("");
@@ -181,9 +183,10 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
           <label class="fld">
             <span>Profile</span>
             <select value={profile} onChange={(e) => pickProfile((e.target as HTMLSelectElement).value)}>
-              {p.profiles.map((pr) => (
-                <option value={pr.id}>{pr.name}</option>
-              ))}
+              {p.profiles.map((pr) => {
+                const q = quotaSuffix(quotas, pr.id); // V0.44
+                return <option value={pr.id}>{q ? `${pr.name} · ${q}` : pr.name}</option>;
+              })}
             </select>
           </label>
           <label class="fld">
@@ -195,6 +198,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
             </select>
           </label>
         </div>
+        <ProfileQuota profile={profile} profiles={p.profiles} />
         <label class="fld">
           <span>Title (optional)</span>
           <input value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} placeholder="From the prompt when empty" />

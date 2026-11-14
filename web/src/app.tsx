@@ -25,6 +25,7 @@ import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, ProjectSource, StateDTO, ThreadDTO } from "./types.ts";
 import { createApi } from "./api.ts";
+import { setQuotaSource } from "./quota-ui.tsx";
 import { setChangesSource } from "./changes-ui.tsx";
 import { setPrSource } from "./pr-ui.tsx";
 import {
@@ -137,6 +138,7 @@ function useViewportVars(on: boolean) {
 const PAGE = 400;
 
 const api = createApi();
+setQuotaSource(() => api.quota()); // V0.44
 setUploader(api.uploadAttachment);
 setAttachmentUrl(api.attachmentUrl);
 setPreviewUrl(api.previewUrl);
@@ -1265,7 +1267,7 @@ function App() {
       <DirectoryContext.Provider value={directory}>
       <FolderPickContext.Provider value={folderPicker}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
-        <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} />
+        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} />
         <Boundary name="The inbox">
         <Inbox
           sec={sec}

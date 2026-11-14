@@ -4,6 +4,7 @@
 import type { CommandReply, Decision, FsDir, FsListing, Project, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
+import type { Quota } from "./quota.ts";
 import { mockPrDetail } from "./mock-pr.ts";
 
 export function mockScenario(search: string): string | null {
@@ -1343,4 +1344,13 @@ function mockDeploy() {
   if (!ph) return null;
   const started = new Date(Date.now() - 4 * 60_000).toISOString();
   return { phase: ph, startedAt: started, at: new Date().toISOString(), build: "20261114-160324", blocking: ph === "drain" ? ["t_mapperf", "t_lasso"] : undefined, detail: ph === "failed" ? "tests failed, nothing was switched: exit status 2\nFAIL TestX" : undefined };
+}
+
+/** SPEC 0.5 V0.44: provider quota for the mock profiles; "work" is busy and stale. */
+export function mockQuota(now: number): Quota[] {
+  const at = (min: number) => new Date(now + min * 60_000).toISOString();
+  return [
+    { profile: "claude", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34, resetsAt: at(140) }, { name: "7 d", usedPct: 61, resetsAt: at(3 * 1440) }], updatedAt: at(-2) },
+    { profile: "work", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 86, resetsAt: at(45) }, { name: "7 d", usedPct: 40, resetsAt: at(5 * 1440) }], updatedAt: at(-14), stale: true, error: "Rate limited by the provider; trying again later", retryAt: at(6) },
+  ];
 }

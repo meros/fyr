@@ -36,6 +36,7 @@ import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import type { ConnState } from "./api.ts";
 import type { NewThreadArgs } from "./dialogs.tsx";
+import { QuotaList } from "./quota-ui.tsx";
 
 // ---- icons ----
 const I = {
@@ -1247,6 +1248,7 @@ function MNew(p: PhoneProps) {
             <input type="checkbox" checked={liveView} onChange={(e) => setLiveView((e.target as HTMLInputElement).checked)} />
             <span class="ell">Live view</span>
           </label>
+          <QuotaList profiles={p.profiles} />
         </div>
         {err && <div class="err prose">{err}</div>}
       </div>
