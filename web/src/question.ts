@@ -37,11 +37,6 @@ export function initCard(d: Decision): CardState {
   };
 }
 
-/** Labels over 40 characters make the 2 x 2 grid read poorly: fall back to one column (decision 0006). */
-export function oneColumn(q: Question): boolean {
-  return q.options.some((o) => o.label.length > 40);
-}
-
 export function answerOf(cs: CardState, d: Decision, i: number): string | null {
   const q = questionsOf(d)[i];
   if (!q) return null;
@@ -100,8 +95,8 @@ export function openOther(cs: CardState): CardState {
 
 export function setOther(cs: CardState, d: Decision, text: string): CardState {
   const q = questionsOf(d)[cs.index];
-  const picks = q && !q.multiSelect ? replaceAt(cs.picks, cs.index, []) : cs.picks;
-  return { ...cs, picks, other: replaceAt(cs.other, cs.index, text) };
+  const picks = q && !q.multiSelect && text ? replaceAt(cs.picks, cs.index, []) : cs.picks;
+  return { ...cs, picks, other: replaceAt(cs.other, cs.index, text === "" ? null : text) };
 }
 
 export function closeOther(cs: CardState): CardState {

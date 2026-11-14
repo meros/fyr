@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardKey, initCard, oneColumn, setOther, type CardState } from "../src/question.ts";
+import { cardKey, initCard, setOther, type CardState } from "../src/question.ts";
 import type { Decision } from "../src/types.ts";
 
 const d: Decision = {
@@ -75,8 +75,10 @@ test("multi-select with Other joins picks and text", () => {
   assert.deepEqual(r.submit, { "Gesture?": "Swipe", "Devices?": "iPhone, Pixel, Fold", "Name?": "B" });
 });
 
-test("tiles fall back to one column when an option label is over 40 characters", () => {
-  assert.equal(oneColumn(d.questions![0]), false);
-  assert.equal(oneColumn({ question: "q", options: [{ label: "x".repeat(41) }] }), true);
-  assert.equal(oneColumn({ question: "q", options: [{ label: "x".repeat(40) }] }), false);
+test("clearing the Other text drops it, so the question is unanswered again", () => {
+  let cs = setOther(initCard(d), d, "x");
+  assert.equal(cs.other[0], "x");
+  cs = setOther(cs, d, "");
+  assert.equal(cs.other[0], null);
+  assert.equal(cardKey(cs, d, "Enter").submit, undefined);
 });

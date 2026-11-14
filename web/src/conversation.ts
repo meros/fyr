@@ -33,9 +33,34 @@ function oneLine(s: string, max = 160): string {
   return t.length > max ? t.slice(0, max - 1) + "…" : t;
 }
 
+function lines(v: unknown): number {
+  return typeof v === "string" && v.length ? v.split("\n").length : 0;
+}
+
+/** "+42 −18" for edits, from the tool input. */
+export function diffStat(name: string, input: unknown): string {
+  const i = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  let add = 0;
+  let del = 0;
+  if (name === "Edit") {
+    add = lines(i.new_string);
+    del = lines(i.old_string);
+  } else if (name === "MultiEdit" && Array.isArray(i.edits)) {
+    for (const e of i.edits as Record<string, unknown>[]) {
+      add += lines(e?.new_string);
+      del += lines(e?.old_string);
+    }
+  } else if (name === "Write") {
+    add = lines(i.content);
+  } else return "";
+  return `+${add} −${del}`;
+}
+
 /** A short one-line form of a tool input. */
 export function summarizeInput(name: string, input: unknown): string {
   const i = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const stat = diffStat(name, input);
+  if (stat && typeof i.file_path === "string") return `${oneLine(i.file_path)} ${stat}`;
   const pick =
     str(i.command) ||
     str(i.file_path) ||
@@ -169,4 +194,21 @@ function finish(c: ToolCall | undefined, b: Block, at: number) {
   c.done = true;
   c.isError = !!b.is_error;
   c.durationMs = c.startedAt && at ? Math.max(0, at - c.startedAt) : null;
+}
+
+export const AGENT_TOOLS = new Set(["Task", "Agent"]);
+
+export type ToolRow = { kind: "call"; call: ToolCall } | { kind: "agents"; calls: ToolCall[] };
+
+/** Consecutive Task/Agent calls in one card read as one row: "3 subagents · explore gestures". */
+export function toolRows(calls: ToolCall[]): ToolRow[] {
+  const rows: ToolRow[] = [];
+  for (const c of calls) {
+    const last = rows[rows.length - 1];
+    if (AGENT_TOOLS.has(c.name)) {
+      if (last?.kind === "agents") last.calls.push(c);
+      else rows.push({ kind: "agents", calls: [c] });
+    } else rows.push({ kind: "call", call: c });
+  }
+  return rows;
 }

@@ -29,9 +29,9 @@ import {
   type UndoEntry,
 } from "./store.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
-import { answersOf, cardKey, initCard, type CardState } from "./question.ts";
+import { answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
-import { Inbox, Rail, SECTION_LIMIT, type Theme } from "./inbox.tsx";
+import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { ThreadPane } from "./thread.tsx";
 import { AdoptDialog, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
 
@@ -93,19 +93,31 @@ function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [tracker, setTracker] = useState<SeenTracker>(initialTracker);
   const [cards, setCards] = useState<Record<string, CardState>>({});
-  const [focusOther, setFocusOther] = useState(0);
+  const [sectionOpen, setSectionOpen] = useState<Partial<Record<SectionKey, boolean>>>({});
+  const [query, setQuery] = useState("");
+  const [help, setHelp] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState<Partial<Record<SectionKey, boolean>>>({});
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tick, setTick] = useState(Date.now());
   const [inText, setInText] = useState(false);
 
   const now = tick + store.clockOffset;
-  const sec = useMemo(() => sections(store.threads), [store.threads]);
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return store.threads;
+    const out: Record<string, ThreadDTO> = {};
+    for (const t of Object.values(store.threads)) {
+      if (`${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(q)) out[t.id] = t;
+    }
+    return out;
+  }, [store.threads, query]);
+  const sec = useMemo(() => sections(shown), [shown]);
   const limits = useMemo(() => {
     const l: Partial<Record<SectionKey, number>> = {};
-    for (const s of SECTIONS) l[s.key] = expanded[s.key] ? Infinity : SECTION_LIMIT[s.key];
+    for (const s of SECTIONS) l[s.key] = !isOpen(s.key, sectionOpen) ? 0 : expanded[s.key] ? Infinity : SECTION_LIMIT[s.key];
     return l;
-  }, [expanded]);
+  }, [expanded, sectionOpen]);
   const order = useMemo(() => flatOrder(sec, limits), [sec, limits]);
   const viewThread = view ? store.threads[view.id] : undefined;
 
@@ -322,6 +334,23 @@ function App() {
     void runAction("thread.answer", [view.id], { decisionId: d.id, answers }).then(() => nextNeeding(1, view.id));
   };
 
+  /** Enter in the answer field: the text answers the active question, then submit or move on. */
+  const answerEnter = () => {
+    if (!decision || decision.kind !== "ask" || !card) return;
+    const r = cardKey(card, decision, "Enter", { inOther: true });
+    setCards((c) => ({ ...c, [decision.id]: r.state }));
+    if (r.submit) submitAsk(decision);
+  };
+  const answerField =
+    decision?.kind === "ask" && card && view?.mode === "open"
+      ? {
+          index: card.index,
+          text: card.other[card.index] ?? "",
+          setText: (text: string) => setCards((c) => (c[decision.id] ? { ...c, [decision.id]: setOther(c[decision.id], decision, text) } : c)),
+          submit: answerEnter,
+        }
+      : null;
+
   const allow = (d: Decision, ok: boolean) => {
     if (!view) return;
     void runAction("thread.answer", [view.id], { decisionId: d.id, allow: ok });
@@ -337,6 +366,7 @@ function App() {
   };
 
   const jump = (k: SectionKey) => {
+    setSectionOpen((o) => ({ ...o, [k]: true }));
     const first = sec[k][0];
     document.getElementById(`sec-${k}`)?.scrollIntoView({ block: "start" });
     if (first) {
@@ -402,6 +432,12 @@ function App() {
       return;
     }
 
+    if (mod && (k === "k" || k === "K")) {
+      e.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select();
+      return;
+    }
     if (mod && (k === "z" || k === "Z") && !e.shiftKey && !isTextTarget(e.target)) {
       if (undoLive(undo, Date.now())) {
         e.preventDefault();
@@ -413,17 +449,13 @@ function App() {
 
     const el = e.target as HTMLElement | null;
     if (isTextTarget(e.target)) {
-      if (el?.dataset?.other && decision?.kind === "ask" && card) {
-        const r = cardKey(card, decision, k, { shift: e.shiftKey, inOther: true });
-        if (r.handled) {
-          e.preventDefault();
-          setCards((c) => ({ ...c, [decision.id]: r.state }));
-          if (r.submit) submitAsk(decision);
-          if (!r.state.otherOpen) setZone("thread");
-        }
+      if (el?.dataset?.other && decision?.kind === "ask" && card && k === "Tab") {
+        e.preventDefault();
+        setCards((c) => ({ ...c, [decision.id]: goTo(card, decision, card.index + (e.shiftKey ? -1 : 1)) }));
         return;
       }
       if (k === "Escape") {
+        if (el === searchRef.current && query) setQuery("");
         e.preventDefault();
         el?.blur();
         lastEsc.current = Date.now();
@@ -447,7 +479,7 @@ function App() {
         if (r.handled) {
           e.preventDefault();
           setCards((c) => ({ ...c, [decision.id]: r.state }));
-          if (r.focusOther) setFocusOther((n) => n + 1);
+          if (r.focusOther) document.getElementById("composer")?.focus();
           if (r.submit) submitAsk(decision);
           return;
         }
@@ -530,6 +562,14 @@ function App() {
       case "g":
         gPending.current = Date.now();
         return;
+      case "/":
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      case "?":
+        e.preventDefault();
+        setHelp((h) => !h);
+        return;
       case "Escape": {
         e.preventDefault();
         if (view?.mode === "peek") return closePeek();
@@ -570,14 +610,18 @@ function App() {
   return (
     <div class="shell">
       <div class="app">
-        <Rail sec={sec} active={activeSection} conn={store.conn} mock={api.mock} theme={theme} onJump={jump} onTheme={cycleTheme} />
+        <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} />
         <Inbox
           sec={sec}
           now={now}
           selected={sel}
-          open={view?.id ?? null}
           picked={picked}
+          open={sectionOpen}
           expanded={expanded}
+          query={query}
+          searchRef={searchRef}
+          onQuery={setQuery}
+          onToggle={(k) => setSectionOpen((o) => ({ ...o, [k]: !isOpen(k, o) }))}
           onClick={(id) => openThread(id, "open")}
           onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
           onNew={() => setDialog("new")}
@@ -591,9 +635,8 @@ function App() {
             events={store.events[view.id]}
             profiles={store.profiles}
             card={card}
-            focusOther={focusOther}
+            answerField={answerField}
             onCard={(cs) => decision && setCards((c) => ({ ...c, [decision.id]: cs }))}
-            onAnswerAsk={submitAsk}
             onAllow={allow}
             onRun={(a, args) => {
               if (a === "thread.settle") return settle(view.id);
@@ -614,15 +657,22 @@ function App() {
           </section>
         )}
       </div>
-      <footer class="keys" aria-label="Keys">
-        {hints.map(([key, label]) => (
+      {help && (
+        <footer class="keys" aria-label="Keys">
+          {hints.map(([key, label]) => (
+            <span class="kh">
+              <kbd>{key}</kbd>
+              {label}
+            </span>
+          ))}
+          <button class="kh theme" onClick={cycleTheme} title="Theme">
+            theme: {theme === "system" ? "auto" : theme}
+          </button>
           <span class="kh">
-            <kbd>{key}</kbd>
-            {label}
+            <kbd>?</kbd>close
           </span>
-        ))}
-        {store.conn === "offline" && <span class="kh off">offline, reconnecting</span>}
-      </footer>
+        </footer>
+      )}
       {toast && (
         <div class={`toast${toast.error ? " err" : ""}`} role="status">
           <span class="ell">{toast.text}</span>
