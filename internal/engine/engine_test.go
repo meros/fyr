@@ -199,7 +199,7 @@ func TestInterruptIsNotAFailure(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("hang")
 	h.wait(id, "working with activity", func(t core.Thread, a core.Attention) bool {
-		return a.State == core.Working && strings.HasPrefix(t.Activity, "Bash sleep")
+		return a.State == core.Working && strings.HasPrefix(t.Activity, "Running sleep")
 	})
 	if r := h.cmd("thread.interrupt", id, nil); !r.OK {
 		t.Fatalf("%+v", r)
