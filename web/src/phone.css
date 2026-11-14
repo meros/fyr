@@ -294,3 +294,27 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 /* V0.28: a thread without a project, and the action that makes its suggested one */
 .m-nopj{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0}
 .m-bt.m-mkp{height:44px;border-radius:12px;padding:0 14px;font:500 15px/20px var(--ui);max-width:100%}
+
+/* SPEC 0.5 V0.32: native feel. No pull-to-refresh or page bounce, no double-tap zoom,
+   no tap flash, no callout or text selection on the app's own controls; text people
+   read stays selectable. Presses react at once. No scrollbars, no mouse focus rings. */
+html:has(.m-app),html:has(.m-app) body{overscroll-behavior:none}
+.m-app{touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.m-app :is(.msg,.prose,pre,code,.m-kvrow,.m-q,.eff p,.dl,input,textarea,[contenteditable]){user-select:text;-webkit-user-select:text;-webkit-touch-callout:default}
+.m-app img{-webkit-user-drag:none}
+.m-app button:not(:disabled):active,.m-app .m-mv:active{background-color:var(--select);transition:none}
+.m-app .m-bt.p:not(:disabled):active{filter:brightness(.92);transform:scale(.985)}
+.m-app *{scrollbar-width:none}
+.m-app *::-webkit-scrollbar{display:none}
+.m-app :focus:not(:focus-visible){outline:none}
+/* Screen changes slide: forward from the right, back to the right. */
+::view-transition-old(root),::view-transition-new(root){animation-duration:.24s;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
+html[data-nav=fwd]::view-transition-new(root){animation-name:m-in-r}
+html[data-nav=fwd]::view-transition-old(root){animation-name:m-out-l}
+html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
+html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
+@keyframes m-in-r{from{transform:translateX(100%)}}
+@keyframes m-out-l{to{transform:translateX(-25%);opacity:.6}}
+@keyframes m-in-l{from{transform:translateX(-25%);opacity:.6}}
+@keyframes m-out-r{to{transform:translateX(100%)}}
+@media (prefers-reduced-motion: reduce){::view-transition-old(root),::view-transition-new(root){animation:none}}

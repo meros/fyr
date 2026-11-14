@@ -3,6 +3,7 @@
 // Desktop components are reused where the README says they carry over (Conversation, AgentsStrip,
 // PrTab, image paste); everything else here uses its own m- classes so the desktop CSS never applies.
 
+import { haptic } from "./native.ts";
 import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -553,8 +554,8 @@ function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) 
     if (cur.phase === "swipe") {
       suppressClick.current = true;
       const r = swipeEnd(cur, rowRef.current?.offsetWidth ?? 390, avail);
-      if (r.kind === "settle") p.actions.settle([t.id]);
-      else if (r.kind === "snooze") p.go({ ...p.nav, sheet: { kind: "snooze", ids: [t.id] } });
+      if (r.kind === "settle") (haptic("firm"), p.actions.settle([t.id]));
+      else if (r.kind === "snooze") (haptic(), p.go({ ...p.nav, sheet: { kind: "snooze", ids: [t.id] } }));
       else if (r.reason) {
         setHint(r.reason);
         setTimeout(() => setHint(null), 1400);
@@ -788,6 +789,7 @@ function MComposer({ t, p }: { t: ThreadDTO; p: PhoneProps }) {
   const send = async () => {
     if (reason || !plan.ok) return;
     if (await p.actions.send(t.id, plan.args)) {
+      haptic();
       setText("");
       att.clear();
     }
@@ -1032,7 +1034,7 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
         )}
       </div>
       <div class="m-abar">
-        <button class="m-bt p" disabled={!c.enabled} onClick={() => choice && commit(choice === "allow")}>
+        <button class="m-bt p" disabled={!c.enabled} onClick={() => choice && (haptic("firm"), commit(choice === "allow"))}>
           {c.label}
         </button>
       </div>

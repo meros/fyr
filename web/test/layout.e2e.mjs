@@ -436,6 +436,28 @@ try {
   failures.push(`V0.26 desktop: ${e.message}`);
 }
 
+// V0.32: native feel on the phone: no page bounce, controls not selectable, message text is,
+// and no browser menu on a long press outside text fields.
+try {
+  await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
+  const r = await evaluate(`(() => {
+    const cs = (el) => el ? getComputedStyle(el) : null;
+    const btn = document.querySelector('.m-app button');
+    const msg = document.querySelector('.m-app .prose, .m-app .msg');
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    document.querySelector('.m-app .m-tth, .m-app header')?.dispatchEvent(ev);
+    return { over: cs(document.documentElement).overscrollBehaviorY, touch: cs(document.querySelector('.m-app')).touchAction,
+      btn: cs(btn)?.userSelect, msg: cs(msg)?.userSelect ?? 'none', menuBlocked: ev.defaultPrevented };
+  })()`);
+  check(r.over === "none", `V0.32 native: the page can still be pulled (overscroll ${r.over})`);
+  check(/manipulation/.test(r.touch), `V0.32 native: double tap can zoom (touch-action ${r.touch})`);
+  check(r.btn === "none", `V0.32 native: buttons are selectable (${r.btn})`);
+  check(r.msg === "text" || r.msg === "auto", `V0.32 native: message text is not selectable (${r.msg})`);
+  check(r.menuBlocked, "V0.32 native: a long press opens the browser menu");
+} catch (e) {
+  failures.push(`V0.32 native: ${e.message}`);
+}
+
 // V0.31: a right-click on a thread row opens Fyr's menu; elsewhere nothing opens.
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
