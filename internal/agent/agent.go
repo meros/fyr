@@ -463,10 +463,7 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if _, err := c.Initialize(ctx, claude.Msg{
-		"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}},
-		"Stop":       []claude.Msg{{"hookCallbackIds": []string{"view"}}},
-	}); err != nil {
+	if _, err := c.Initialize(ctx, initHooks(s.viewTools)); err != nil {
 		c.Kill()
 		<-c.Done()
 		dropToken()
@@ -946,4 +943,15 @@ func gitBranch(dir string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// initHooks is what a process registers at start: the merge gate always,
+// and the Stop hook only with the live view (SPEC 0.5 V0.37), so other
+// threads get no extra round trip at the end of each turn.
+func initHooks(view bool) claude.Msg {
+	h := claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}
+	if view {
+		h["Stop"] = []claude.Msg{{"hookCallbackIds": []string{"view"}}}
+	}
+	return h
 }
