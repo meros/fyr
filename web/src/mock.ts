@@ -771,6 +771,7 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   e((t += 60), "user", { id: "m_map2", text: "Fix the snapshot test too.", images: 0 });
   e(t, "message.state", { id: "m_map2", state: "read" });
   e(t, "run.started", {});
+  e((t += 1), "msg", assistantText("The snapshot differs only in the sheet's shadow. I'll run that test alone first."));
   e((t += 2), "msg", toolUse("sn1", "Bash", { command: "yarn vitest src/map/snapshot", description: "Run the snapshot test" }));
   e((t += 30), "user", { id: "m_map3", text: "Keep the snapshot itself; only make the test faster.", images: 0 });
   e(t, "message.state", { id: "m_map3", state: "queued" });
