@@ -1,0 +1,122 @@
+self:
+{ config, lib, pkgs, ... }:
+
+# Fyr as a NixOS service (SPEC 12.6, decision 0007).
+#
+# NixOS owns the frame: the unit, its user, PATH, environment, limits, the
+# profiles and the launcher. The launcher owns the fyrd builds: it runs
+# ~/.local/share/fyr/current/fyrd (a self-deploy, V0.13) when there is one,
+# else this package's fyrd, the seed. Iterating on Fyr never needs a rebuild;
+# a rebuild changes the frame or blesses a new seed.
+let
+  cfg = config.services.fyr;
+  home = config.users.users.${cfg.user}.home;
+  configFile = pkgs.writeText "fyr-config.json" (builtins.toJSON {
+    listen = "127.0.0.1:${toString cfg.port}";
+    permissionMode = cfg.permissionMode;
+    idleStopMinutes = cfg.idleStopMinutes;
+    profiles = cfg.profiles;
+  });
+in
+{
+  options.services.fyr = {
+    enable = lib.mkEnableOption "the Fyr host daemon";
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = self.packages.${pkgs.stdenv.hostPlatform.system}.fyr;
+      description = "Provides the launcher and the seed fyrd.";
+    };
+    user = lib.mkOption {
+      type = lib.types.str;
+      description = "The user Fyr and its agents run as (they use this user's logins and repositories).";
+    };
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 7777;
+      description = "Loopback port (v0 serves loopback only, decision 0002).";
+    };
+    permissionMode = lib.mkOption {
+      type = lib.types.str;
+      default = "auto";
+      description = "claude --permission-mode for every profile that does not set its own.";
+    };
+    idleStopMinutes = lib.mkOption {
+      type = lib.types.int;
+      default = 10;
+      description = "Stop an agent process after this long without a run (SPEC V0.7).";
+    };
+    profiles = lib.mkOption {
+      type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
+      default = [ ];
+      description = ''
+        Agent profiles (SPEC V0.11): a claude-compatible binary with a name,
+        colour and model list. Empty means: read T3 Code's provider instances,
+        else plain `claude`. Ids should match T3's instance ids so adopted
+        threads keep their profile.
+      '';
+    };
+    path = lib.mkOption {
+      type = lib.types.listOf lib.types.package;
+      default = [ ];
+      description = "Extra packages on the unit PATH, such as claude wrappers.";
+    };
+    environment = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
+      default = { };
+      description = "Extra environment for the daemon and the agents it starts.";
+    };
+    memoryHigh = lib.mkOption {
+      type = lib.types.str;
+      default = "13G";
+      description = "MemoryHigh of the unit (daemon and agents). The governor (M4) refines this per session.";
+    };
+    memoryMax = lib.mkOption {
+      type = lib.types.str;
+      default = "14G";
+      description = "MemoryMax of the unit.";
+    };
+  };
+
+  config = lib.mkIf cfg.enable {
+    environment.systemPackages = [ cfg.package ];
+    environment.etc."fyr/config.json".source = configFile;
+
+    systemd.services.fyr = {
+      description = "Fyr host daemon";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+      # A switch must not restart Fyr: that ends every running agent turn.
+      # Changes apply at the next manual restart or boot, as with t3code.
+      restartIfChanged = false;
+      # nix: self-deploys build with `nix develop <checkout>` (decision 0007).
+      path = cfg.path ++ (with pkgs; [
+        claude-code git gh openssh nix gnumake bash coreutils gnugrep gnused findutils ripgrep
+      ]);
+      environment = {
+        HOME = home;
+        TZ = if config.time.timeZone != null then config.time.timeZone else "UTC";
+        NIX_PATH = lib.concatStringsSep ":" config.nix.nixPath;
+      } // cfg.environment;
+      serviceConfig = {
+        User = cfg.user;
+        Group = config.users.users.${cfg.user}.group;
+        WorkingDirectory = home;
+        ExecStart = lib.concatStringsSep " " [
+          "${cfg.package}/bin/fyr"
+          "-seed ${cfg.package}/bin/fyrd"
+          "-- -config /etc/fyr/config.json"
+        ];
+        Restart = "always";
+        RestartSec = 5;
+        # Agent turns are child processes; SIGINT to the group ends them cleanly.
+        KillSignal = "SIGINT";
+        TimeoutStopSec = 30;
+        MemoryHigh = cfg.memoryHigh;
+        MemoryMax = cfg.memoryMax;
+        Nice = 10;
+        IOWeight = 50;
+      };
+    };
+  };
+}

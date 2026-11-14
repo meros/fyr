@@ -126,3 +126,57 @@ func TestLauncherRollsBackNotReady(t *testing.T) {
 		t.Fatalf("current=%s", target(data, "current"))
 	}
 }
+
+// seedLauncher has a store-like seed build outside Data.
+func seedLauncher(t *testing.T, data, seedMode string) *Launcher {
+	seedRoot := t.TempDir()
+	build(t, seedRoot, "seed", seedMode)
+	l := launcher(data)
+	l.Seed = filepath.Join(seedRoot, "builds", "seed", "fyrd")
+	return l
+}
+
+// SPEC 12.6, decision 0007: without a current build the launcher runs the seed.
+func TestLauncherRunsSeedWithoutCurrent(t *testing.T) {
+	data := t.TempDir()
+	l := seedLauncher(t, data, "ok")
+	go func() { time.Sleep(300 * time.Millisecond); os.WriteFile(filepath.Join(data, "stop"), nil, 0o644) }()
+	if err := l.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if l.lastExe != l.Seed {
+		t.Fatalf("ran %q", l.lastExe)
+	}
+}
+
+// Decision 0007: the pin file forces the seed even when current exists.
+func TestLauncherPinForcesSeed(t *testing.T) {
+	data := t.TempDir()
+	build(t, data, "a", "crash")
+	link(t, data, "current", "a")
+	os.WriteFile(filepath.Join(data, "pin"), nil, 0o644)
+	l := seedLauncher(t, data, "ok")
+	go func() { time.Sleep(300 * time.Millisecond); os.WriteFile(filepath.Join(data, "stop"), nil, 0o644) }()
+	if err := l.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if l.lastExe != l.Seed {
+		t.Fatalf("ran %q", l.lastExe)
+	}
+}
+
+// Decision 0007: a failed promote with no previous build falls back to the seed.
+func TestLauncherRollsBackToSeed(t *testing.T) {
+	data := t.TempDir()
+	build(t, data, "b", "crash")
+	link(t, data, "next", "b")
+	l := seedLauncher(t, data, "deploy")
+	l.maxStarts = 2 // seed (deploys) → b (crashes) → rollback
+	l.Run()
+	if _, err := os.Lstat(filepath.Join(data, "current")); err == nil {
+		t.Fatalf("current still points at %s after a crash with no previous", target(data, "current"))
+	}
+	if _, err := os.Stat(filepath.Join(data, "deploy-failed.json")); err != nil {
+		t.Fatal("no rollback report")
+	}
+}
