@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FRAME_MAX, filmstrip, frameHeight, inlineAttachmentId, previewCard, stepImage, thumbBox } from "../src/previews.ts";
+import { FRAME_ALLOW, FRAME_MAX, filmstrip, frameHeight, inlineAttachmentId, previewCard, stepImage, thumbBox } from "../src/previews.ts";
 import { buildConversation, previewsOf } from "../src/conversation.ts";
 import { renderMarkdown, setMarkdownOrigin } from "../src/markdown.ts";
 
@@ -24,6 +24,17 @@ test("frame height: min(height, 600) at first, never over 2,000", () => {
   assert.equal(frameHeight(1800, true), 1800);
   assert.equal(frameHeight(50_000, true), FRAME_MAX);
   assert.equal(frameHeight(0), 400, "unknown height");
+});
+
+test("V0.47 frame height: 16:10 of the card without a size; the page's own report wins", () => {
+  assert.equal(frameHeight(0, false, 0, 640), 400);
+  assert.equal(frameHeight(0, false, 0, 358), 224, "phone width");
+  assert.equal(frameHeight(300, false, 0, 640), 300, "an explicit size");
+  assert.equal(frameHeight(0, false, 900, 640), 600, "a report starts at most 600 px");
+  assert.equal(frameHeight(0, true, 900, 640), 900, "Show all");
+  assert.equal(frameHeight(0, false, 20, 640), 40, "at least 40 px");
+  assert.match(FRAME_ALLOW, /fullscreen/);
+  assert.match(FRAME_ALLOW, /xr-spatial-tracking/);
 });
 
 test("thumbnail box keeps the aspect inside 360 px tall", () => {
