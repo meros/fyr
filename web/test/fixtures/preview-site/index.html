@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><title>Folder preview</title>
+<style>body{margin:0;padding:12px;font:14px system-ui,sans-serif}img{image-rendering:pixelated}</style>
+<p>A folder preview: a sibling script, a module that fetches a sibling file, and an image by relative path.</p>
+<img id="dot" src="dot.png" width="32" height="32" alt="dot">
+<script>addEventListener("securitypolicyviolation", (e) => (document.body.dataset.blocked = (document.body.dataset.blocked || "") + " " + e.blockedURI));</script>
+<script src="app.js"></script>
+<script type="module" src="mod.js"></script>
