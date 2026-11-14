@@ -400,3 +400,68 @@ func TestHomeFolderThreadHasNoProject(t *testing.T) {
 		t.Fatalf("a project was made for the home folder: %d", n)
 	}
 }
+
+// SPEC 0.5 V0.30: project.create with threadId makes the project and files
+// that thread by hand; other unfiled threads in the same folder join it by
+// matching. An unknown thread is a 404 and makes nothing.
+func TestCreateAndFile(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	dir := filepath.Join(h.dir, "Hemmet")
+	os.MkdirAll(dir, 0o755)
+	a := h.cmd("thread.create", "", core.Args{"cwd": dir, "text": "a"})
+	b := h.cmd("thread.create", "", core.Args{"cwd": dir, "text": "b"})
+	want := &core.Suggestion{Name: "Hemmet", Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: dir}}}
+	if d := dtoOf(h.e, a.ThreadID); !reflect.DeepEqual(d.NewProject, want) || d.Suggest != nil {
+		t.Fatalf("newProject %+v suggest %+v", d.NewProject, d.Suggest)
+	}
+	if bad := h.cmd("project.create", "", core.Args{"name": "X", "threadId": "t_nope"}); bad.OK || bad.Status != 404 || len(h.e.Projects()) != 0 {
+		t.Fatalf("unknown thread: %+v, %d projects", bad, len(h.e.Projects()))
+	}
+	r := h.cmd("project.create", "", core.Args{"name": "Home", "threadId": a.ThreadID, "sources": []any{map[string]any{"kind": "folder", "path": dir}}})
+	if !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	pid := r.Result.(map[string]any)["id"].(string)
+	ta, _ := h.e.Thread(a.ThreadID)
+	if ta.ProjectID != pid || !ta.ProjectManual || ta.Project != "Home" {
+		t.Fatalf("filed: %+v %v %q", ta.ProjectID, ta.ProjectManual, ta.Project)
+	}
+	if tb, _ := h.e.Thread(b.ThreadID); tb.ProjectID != pid || tb.ProjectManual {
+		t.Fatalf("the other thread did not join by matching: %q %v", tb.ProjectID, tb.ProjectManual)
+	}
+	// The folder is now a project's source: the prefill has nothing left.
+	if d := dtoOf(h.e, a.ThreadID); d.NewProject != nil {
+		t.Fatalf("newProject repeats a taken source: %+v", d.NewProject)
+	}
+	// A label made from a thread files it too.
+	c := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "c"})
+	r2 := h.cmd("project.create", "", core.Args{"name": "Kök", "threadId": c.ThreadID})
+	if tc, _ := h.e.Thread(c.ThreadID); !r2.OK || tc.Project != "Kök" || !tc.ProjectManual {
+		t.Fatalf("label: %+v %q", r2, tc.Project)
+	}
+}
+
+// SPEC 0.5 V0.30: thread.setProject with an empty projectId unfiles the
+// thread; it counts as filed by hand, so matching leaves it unfiled, and it
+// gets its suggestion back.
+func TestUnfile(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	repo := filepath.Join(h.dir, "lasso-app")
+	gitInit(t, repo)
+	gitRemote(t, repo, "git@github.com:meros/lasso-app.git")
+	th := h.cmd("thread.create", "", core.Args{"cwd": repo, "text": "a"})
+	if r := h.cmd("project.createFrom", "", core.Args{"threadId": th.ThreadID}); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	if r := h.cmd("thread.setProject", th.ThreadID, core.Args{"projectId": ""}); !r.OK {
+		t.Fatalf("unfile: %+v", r)
+	}
+	h.e.Rematch()
+	got, _ := h.e.Thread(th.ThreadID)
+	if got.ProjectID != "" || got.Project != "" || !got.ProjectManual {
+		t.Fatalf("after unfile: %q %q %v", got.ProjectID, got.Project, got.ProjectManual)
+	}
+	if d := dtoOf(h.e, th.ThreadID); d.Suggest == nil || d.Suggest.Name != "lasso-app" {
+		t.Fatalf("no suggestion after unfile: %+v", d.Suggest)
+	}
+}

@@ -103,7 +103,7 @@ Actions and their args:
 | `thread.settle` | `now?: true` for bulk settle |
 | `thread.snooze` | `until` (RFC 3339, future) |
 | `thread.rename` | `title` |
-| `thread.setProject` | `projectId`: file the thread into a project by hand; folder matching keeps it (V0.23) |
+| `thread.setProject` | `projectId`: file the thread into a project by hand; folder matching keeps it (V0.23). `""` unfiles it: no project, still filed by hand, so matching leaves it unfiled (V0.30) |
 | `thread.setModel` | `model` |
 | `t3.adopt` (no `threadId`) | `t3Ids: [..]` |
 
@@ -145,13 +145,14 @@ Commands (through `POST /api/command`, no `threadId`):
 | action | args |
 |---|---|
 | `project.update` | `id`, then any of `name`, `color` (a palette name: slate blue sky teal green olive violet indigo rose brown), `icon` `{kind: monogram\|emoji\|line, value}`, `profile`, `model` |
-| `project.create` | `name`, `sources?: [Source]` (a project may have no source: a label) |
+| `project.create` | `name`, `sources?: [Source]` (a project may have no source: a label), `threadId?`: file that thread into the new project by hand in the same write (V0.30). Reply `result: {id}` |
+| `project.createFrom` | `threadId`: make the thread's `suggest` project and file every unfiled thread it matches (V0.28) |
 | `project.addSource` | `id`, `source` |
 | `project.removeSource` | `id`, `index` (0-based, into `sources`) |
 
 A folder source needs a full path (`~/…` is expanded); on this host the folder must exist, else `400` with the reason. `host` may be left out: the host fills in its own name. After `project.create`, `project.addSource` or `project.removeSource` the host re-matches threads and sends the changed ones on the stream. An icon's `value` is left out when empty.
 
-The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. Threads carry `projectId`; `project` stays the display name.
+The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. Threads carry `projectId`; `project` stays the display name. A thread without a project and in a clone with a remote carries `suggest: {name, sources}` (V0.28). Every thread with a workspace may carry `newProject: {name, sources}`: what "New project from this thread" starts with (V0.30): the suggestion for a clone with a remote, else the folder's name and folder; absent for a scratch folder, the home folder and `/`, and without the sources an existing project already has.
 
 ## Changes (SPEC 0.5 V0.25)
 

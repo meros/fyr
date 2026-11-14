@@ -759,13 +759,22 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     return p;
   };
   const projectIdFor = (t: ThreadDTO) => t.projectId ?? projects.find((p) => p.name === t.project)?.id;
+  // V0.30: what "New project from this thread" starts with, as the host computes it (no scratch, no home, no taken source).
+  const draftFor = (t: ThreadDTO): ThreadDTO["newProject"] => {
+    const taken = (s: { kind: string; path?: string; url?: string }) =>
+      projects.some((p) => (p.sources ?? []).some((x) => x.kind === s.kind && (x as { path?: string }).path === s.path && (x as { url?: string }).url === s.url));
+    const base = t.suggest ?? (t.cwd && !t.cwd.includes("/scratch/") && t.cwd !== "/home/owner" ? { name: t.cwd.split("/").pop() ?? "", sources: [{ kind: "folder", host: "desk", path: t.cwd }] } : undefined);
+    const sources = (base?.sources ?? []).filter((x) => !taken(x as { kind: string }));
+    return base && sources.length ? { name: base.name, sources } : undefined;
+  };
+  const dtoOf = (t: ThreadDTO): ThreadDTO => ({ ...t, projectId: projectIdFor(t), suggest: projectIdFor(t) ? undefined : t.suggest, newProject: draftFor(t) });
   let nextId = 1;
 
   const put = (t: ThreadDTO, patch: Partial<ThreadDTO>) => {
     const n: ThreadDTO = { ...t, ...patch, updatedAt: new Date(clock()).toISOString() };
     n.projectId = n.projectId ?? projectIdFor(n);
     threads.set(n.id, n);
-    setTimeout(() => sub?.thread(n), 30);
+    setTimeout(() => sub?.thread(dtoOf(n)), 30);
     return n;
   };
   const emit = (id: string, type: string, data: unknown) => {
@@ -833,8 +842,11 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       if (!name) return { ok: false, error: "A project needs a name" };
       const sources = Array.isArray(args.sources) ? (args.sources as Project["sources"]) : [];
       const folder = sources?.find((x) => x.kind === "folder") as { path?: string } | undefined;
-      putProject({ id: `p_new${nextId++}`, name, sources, threads: 0, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
-      return { ok: true };
+      const ft = args.threadId ? threads.get(String(args.threadId)) : undefined;
+      if (args.threadId && !ft) return { ok: false, error: `no thread ${args.threadId}` };
+      const p = putProject({ id: `p_new${nextId++}`, name, sources, threads: ft ? 1 : 0, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
+      if (ft) put(ft, { projectId: p.id, project: p.name });
+      return { ok: true, result: { id: p.id } };
     }
     if (action === "project.createFrom") {
       const t = threads.get(String(args.threadId ?? ""));
@@ -842,7 +854,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       if (!t || !sug || projectIdFor(t)) return { ok: false, error: "This thread has no project to make" };
       const folder = sug.sources.find((x) => x.kind === "folder") as { path?: string } | undefined;
       const p = putProject({ id: `p_new${nextId++}`, name: sug.name, sources: sug.sources, threads: 1, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
-      put(t, { projectId: p.id, project: p.name, suggest: undefined });
+      put(t, { projectId: p.id, project: p.name });
       return { ok: true };
     }
     if (action === "project.removeSource") {
@@ -932,6 +944,11 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         put(t, { title: String(args.title ?? t.title) });
         break;
       case "thread.setProject": {
+        if (args.projectId === "") {
+          // V0.30: No project, by hand.
+          put(t, { projectId: "", project: "" });
+          break;
+        }
         const p = projects.find((x) => x.id === args.projectId);
         if (!p) return { ok: false, error: "No such project" };
         put(t, { projectId: p.id, project: p.name });
@@ -954,7 +971,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         host: "desk",
         user: "owner",
         buildId: "mock",
-        threads: [...threads.values()].map((t) => ({ ...t, projectId: projectIdFor(t) })),
+        threads: [...threads.values()].map(dtoOf),
         actions: [
           { name: "thread.settle", label: "Settle", key: "e", bulk: true },
           { name: "thread.snooze", label: "Snooze", key: "s" },

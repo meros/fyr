@@ -112,6 +112,8 @@ export interface ThreadDTO {
   workspaceId?: string;
   /** a project the thread could get, when it has none and its folder is a git clone (V0.28) */
   suggest?: ProjectSuggestion;
+  /** what "New project from this thread" starts with (V0.30); absent: a name only */
+  newProject?: ProjectSuggestion;
   /** the thread whose agent started this one (V0.22) */
   parent?: string | null;
   /** The checkout branch, read after each run; empty when not a git checkout. */
@@ -193,6 +195,8 @@ export interface CommandReply {
   ok: boolean;
   threadId?: string;
   error?: string;
+  /** project.create: the new project's id */
+  result?: { id?: string };
 }
 
 export interface T3Candidate {

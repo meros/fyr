@@ -137,3 +137,46 @@ func TestSourceRefRoundTrip(t *testing.T) {
 		t.Error("prepare on a host without a folder")
 	}
 }
+
+// SPEC 0.5 V0.30: what "New project from this thread" starts with. A clone
+// with a remote gives the suggestion; a folder gives its name and itself; a
+// scratch place, the home folder and / give nothing; a source an existing
+// project already has is left out.
+func TestDraft(t *testing.T) {
+	none := func(Source) bool { return false }
+	clone := Workspace{Provider: "clone", Refs: []Ref{FolderRef("h", "/src/fyr"), FolderRef("h", "/src/fyr/web"), RepoRef("git@github.com:meros/fyr.git")}}
+	if got, want := Draft(clone, "/home/m", none), Suggest(clone); !reflect.DeepEqual(got, want) {
+		t.Fatalf("clone: %+v, want %+v", got, want)
+	}
+	plain := Workspace{Provider: "folder", Refs: []Ref{FolderRef("h", "/home/m/Hemmet")}}
+	want := &Suggestion{Name: "Hemmet", Sources: []Source{{Kind: "folder", Host: "h", Path: "/home/m/Hemmet"}}}
+	if got := Draft(plain, "/home/m", none); !reflect.DeepEqual(got, want) {
+		t.Fatalf("folder: %+v", got)
+	}
+	local := Workspace{Provider: "clone", Refs: []Ref{FolderRef("h", "/src/local")}}
+	if got := Draft(local, "/home/m", none); got == nil || got.Name != "local" || len(got.Sources) != 1 {
+		t.Fatalf("clone without a remote: %+v", got)
+	}
+	for name, w := range map[string]Workspace{
+		"scratch": {Provider: "scratch", Refs: []Ref{}},
+		"home":    {Provider: "folder", Refs: []Ref{FolderRef("h", "/home/m")}},
+		"root":    {Provider: "folder", Refs: []Ref{FolderRef("h", "/")}},
+		"no refs": {Provider: "folder"},
+	} {
+		if got := Draft(w, "/home/m", none); got != nil {
+			t.Fatalf("%s: %+v", name, got)
+		}
+	}
+	// A dotfiles clone in the home folder: the repo, never the home folder.
+	dot := Workspace{Provider: "clone", Refs: []Ref{FolderRef("h", "/home/m"), RepoRef("github.com/m/dotfiles")}}
+	if got := Draft(dot, "/home/m", none); got == nil || got.Name != "dotfiles" || len(got.Sources) != 1 || got.Sources[0].Kind != "repo" {
+		t.Fatalf("dotfiles: %+v", got)
+	}
+	repoTaken := func(s Source) bool { return s.Kind == "repo" }
+	if got := Draft(clone, "/home/m", repoTaken); got == nil || got.Name != "fyr" || len(got.Sources) != 1 || got.Sources[0].Kind != "folder" {
+		t.Fatalf("repo taken: %+v", got)
+	}
+	if got := Draft(plain, "/home/m", func(Source) bool { return true }); got != nil {
+		t.Fatalf("all taken: %+v", got)
+	}
+}
