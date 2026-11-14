@@ -220,3 +220,63 @@ func TestFolderSourceChecksAndRematch(t *testing.T) {
 		t.Fatalf("a bad index was accepted: %+v", bad)
 	}
 }
+
+// SPEC 0.5 V0.23: projects made by matching before the auto flag existed
+// (no auto, no edit, no seed) are auto projects: they stop shadowing seeded
+// ones and go when empty. (Found live: per-scratch-folder projects and a
+// "meros" home project kept their threads after the re-match.)
+func TestLegacyAutoProjectsRetired(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	home := filepath.Join(h.dir, "home")
+	t.Setenv("HOME", home)
+	scratch := filepath.Join(home, ".t3", "scratch")
+	one := filepath.Join(scratch, "2026-11-13-plan")
+	app := filepath.Join(home, "src", "app")
+	os.MkdirAll(one, 0o755)
+	os.MkdirAll(app, 0o755)
+	a := h.cmd("thread.create", "", core.Args{"cwd": one, "text": "x"})
+	b := h.cmd("thread.create", "", core.Args{"cwd": app, "text": "y"})
+	c := h.cmd("thread.create", "", core.Args{"cwd": home, "text": "z"})
+	// Make every project legacy, and add a legacy home project that holds b and c.
+	h.e.mu.Lock()
+	legacyHome := &core.Project{ID: "p_home", Name: "home", Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: home}}}
+	h.e.projects[legacyHome.ID] = legacyHome
+	for _, p := range h.e.projects {
+		p.Auto = false
+	}
+	h.e.threads[b.ThreadID].ProjectID = "p_home"
+	h.e.threads[c.ThreadID].ProjectID = "p_home"
+	h.e.mu.Unlock()
+
+	h.e.SeedProjects([]core.Project{{Name: "Scratch", Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: scratch}}}})
+	h.e.Rematch()
+	if p := projectOf(h.e, a.ThreadID); p.Name != "Scratch" {
+		t.Fatalf("a legacy folder project shadowed the seeded one: %+v", p)
+	}
+	if p := projectOf(h.e, b.ThreadID); p.Name != "app" {
+		t.Fatalf("the home project kept a thread from a folder below it: %+v", p)
+	}
+	if id := h.e.threads[c.ThreadID].ProjectID; id != "" {
+		t.Fatalf("a thread in the home folder got a project: %s", id)
+	}
+	for _, p := range h.e.Projects() {
+		if f := p.Folder(h.e.HostID); f == home || f == one {
+			t.Fatalf("a legacy project stayed: %+v", p)
+		}
+	}
+}
+
+// SPEC 0.5 V0.23: the home folder and / are never an auto project.
+func TestHomeFolderThreadHasNoProject(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	home := filepath.Join(h.dir, "home")
+	os.MkdirAll(home, 0o755)
+	t.Setenv("HOME", home)
+	r := h.cmd("thread.create", "", core.Args{"cwd": home + "/", "text": "x"})
+	if id := h.e.threads[r.ThreadID].ProjectID; id != "" {
+		t.Fatalf("a thread in the home folder got a project: %+v", h.e.projects[id])
+	}
+	if n := len(h.e.Projects()); n != 0 {
+		t.Fatalf("a project was made for the home folder: %d", n)
+	}
+}

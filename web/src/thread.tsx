@@ -11,7 +11,7 @@ import { pick, questionsOf, goTo, type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { onToolDetails, toolDetails } from "./prefs.ts";
 import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
-import { projectOf } from "./projects.ts";
+import { projectName, projectOf } from "./projects.ts";
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
@@ -156,8 +156,8 @@ function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: str
   const p = projectOf(t, dir.projects);
   return (
     <button class="chip pj proj" style={{ "--pc": `var(--p-${p?.color ?? "slate"})` }} title={`${t.cwd}${profileName ? ` · ${profileName}` : ""} · open the project`} onClick={() => p?.id && dir.openProject(p.id)}>
-      <ProjectIcon project={p} name={t.project} size={16} />
-      <span>{p?.name ?? t.project ?? t.cwd}</span>
+      <ProjectIcon project={p} name={projectName(t, dir.projects)} size={16} />
+      <span>{projectName(t, dir.projects)}</span>
     </button>
   );
 }

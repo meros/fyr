@@ -14,7 +14,7 @@ import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
 import { NewProjectForm, ProjectEditor, ProjectIcon, ProjectList, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
-import { colorVar, pickerOrder, projectDefaults, projectOf, projectSubtitle } from "./projects.ts";
+import { colorVar, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle } from "./projects.ts";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import { previewsOf } from "./conversation.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
@@ -1330,7 +1330,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
           right={peek ? "← swipe" : undefined}
           onClick={() => p.replace({ ...p.nav, sheet: { kind: "snooze", ids: [t.id] } })}
         />
-        <Item label="Move to project…" icon={<ProjectIcon project={projectOf(t, p.projects)} name={t.project} size={18} />} onClick={() => p.replace({ ...p.nav, sheet: { kind: "move", ids: [t.id] } })} />
+        <Item label="Move to project…" icon={<ProjectIcon project={projectOf(t, p.projects)} name={projectName(t, p.projects)} size={18} />} onClick={() => p.replace({ ...p.nav, sheet: { kind: "move", ids: [t.id] } })} />
         <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
         {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.setSelecting(true), p.setPicked(new Set([t.id]))))} />}
         {!peek && <Item label="Details" icon={I.right} onClick={() => p.replace({ ...p.nav, sheet: { kind: "details", ids: [t.id] } })} />}
@@ -1358,7 +1358,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
               const pr = projectOf(t, p.projects);
               return (
                 <button class="m-plink" onClick={() => pr?.id && p.replace({ screen: { name: "project", id: pr.id }, sheet: null })}>
-                  <ProjectTag project={pr} name={t.project} />
+                  <ProjectTag project={pr} name={projectName(t, p.projects)} />
                 </button>
               );
             })(),
@@ -1426,9 +1426,9 @@ function SnoozeSheet({ ids, title, onClose, onPick }: { ids: string[]; title?: s
 function MProjectChip({ t, projects }: { t: ThreadDTO; projects: Project[] }) {
   const pr = projectOf(t, projects);
   return (
-    <span class="m-chip pj proj" style={{ "--pc": colorVar(pr?.color, pr?.name ?? t.project) }}>
-      <ProjectIcon project={pr} name={t.project} size={16} />
-      <span>{pr?.name ?? t.project ?? t.cwd}</span>
+    <span class="m-chip pj proj" style={{ "--pc": colorVar(pr?.color, projectName(t, projects)) }}>
+      <ProjectIcon project={pr} name={projectName(t, projects)} size={16} />
+      <span>{projectName(t, projects)}</span>
     </span>
   );
 }

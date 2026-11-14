@@ -1,9 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectOf, projectSubtitle, resolveIcon, sourceFromInput, startedBy } from "../src/projects.ts";
+import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, sourceFromInput, startedBy } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
+
+test("a thread without a project shows No project (a thread in the home folder, V0.23)", () => {
+  assert.equal(projectName({ project: "", projectId: undefined }, []), "No project");
+  const app = { id: "p1", name: "App", color: "teal", icon: { kind: "monogram" }, sources: [], threads: 1, lastUsed: "", cwd: "" } as unknown as Project;
+  assert.equal(projectName({ project: "app", projectId: "p1" }, [app]), "App");
+});
 
 const hue = (hex: string) => {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
