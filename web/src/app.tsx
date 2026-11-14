@@ -45,6 +45,7 @@ import {
   type SnoozePreset,
   type Store,
   type UndoEntry,
+  applyThreadPatch,
 } from "./store.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
@@ -286,6 +287,23 @@ function App() {
       thread: (t) => {
         if (shouldClearNotification(t.attention.state)) clearThreadNotification(t.id);
         setStore((s) => upsertThread(s, t));
+      },
+      // V0.38: a patch against our copy; when it does not fit, ask for the whole thread.
+      threadPatch: (p) => {
+        let need = false;
+        setStore((s) => {
+          const r = applyThreadPatch(s, p);
+          need = r.needFull;
+          return r.store;
+        });
+        queueMicrotask(() => {
+          if (!need) {
+            const st = (p.patch as { attention?: { state?: string } }).attention?.state;
+            if (st && shouldClearNotification(st)) clearThreadNotification(p.id);
+            return;
+          }
+          void api.thread(p.id).then((t) => t && setStore((s) => upsertThread(s, t)));
+        });
       },
       event: (e) => setStore((s) => liveEvent(s, e)),
       project: (p) => setStore((s) => upsertProject(s, p)),

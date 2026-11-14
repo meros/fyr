@@ -4,6 +4,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/stream", s.stream)
+	mux.HandleFunc("GET /api/threads/{id}", s.thread)
 	mux.HandleFunc("GET /api/threads/{id}/events", s.events)
 	mux.HandleFunc("GET /api/threads/{id}/events/{seq}", s.fullEvent)
 	mux.HandleFunc("GET /api/threads/{id}/changes", s.changes)
@@ -231,13 +233,65 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	fl.Flush()
 	ping := time.NewTicker(25 * time.Second)
 	defer ping.Stop()
+	// V0.38: after the first whole thread, this connection gets merge patches
+	// against what it already has; a thread goes out at most every 100 ms,
+	// the newest version winning.
+	sent := map[string]map[string]any{}
+	lastAt := map[string]time.Time{}
+	pending := map[string][]byte{}
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	sendThread := func(data []byte) {
+		var m map[string]any
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.UseNumber() // revs are nanosecond counts above 2^53
+		if dec.Decode(&m) != nil {
+			fmt.Fprintf(w, "event: thread\ndata: %s\n\n", data)
+			return
+		}
+		id, _ := m["id"].(string)
+		lastAt[id] = time.Now()
+		if prev, ok := sent[id]; ok {
+			out, err := json.Marshal(map[string]any{"id": id, "rev": m["rev"], "base": prev["rev"], "patch": engine.MergePatchDiff(prev, m)})
+			if err == nil && len(out) < len(data) {
+				sent[id] = m
+				fmt.Fprintf(w, "event: thread.patch\ndata: %s\n\n", out)
+				return
+			}
+		}
+		sent[id] = m
+		fmt.Fprintf(w, "event: thread\ndata: %s\n\n", data)
+	}
 	for {
 		select {
 		case f, ok := <-ch:
 			if !ok {
 				return // dropped as slow; the client reconnects
 			}
+			if f.Event == "thread" {
+				var head struct {
+					ID string `json:"id"`
+				}
+				json.Unmarshal(f.Data, &head)
+				if time.Since(lastAt[head.ID]) < 100*time.Millisecond {
+					pending[head.ID] = f.Data
+					continue
+				}
+				delete(pending, head.ID)
+				sendThread(f.Data)
+				fl.Flush()
+				continue
+			}
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", f.Event, f.Data)
+			fl.Flush()
+		case <-tick.C:
+			if len(pending) == 0 {
+				continue
+			}
+			for id, d := range pending {
+				delete(pending, id)
+				sendThread(d)
+			}
 			fl.Flush()
 		case <-ping.C:
 			fmt.Fprint(w, ": ping\n\n")
@@ -270,6 +324,19 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		evs = []store.Event{} // JSON [] instead of null
 	}
 	writeJSON(w, 200, map[string]any{"events": engine.LeanAll(evs)})
+}
+
+// thread returns one thread's DTO (V0.38): a client whose copy does not
+// match a patch's base asks for the whole thread.
+func (s *Server) thread(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	for _, d := range s.Engine.Snapshot() {
+		if d.ID == id {
+			writeJSON(w, 200, d)
+			return
+		}
+	}
+	writeJSON(w, 404, map[string]any{"error": "no such thread"})
 }
 
 // fullEvent returns one event whole (V0.38): the stream and the list cut
