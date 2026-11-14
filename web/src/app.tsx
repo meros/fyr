@@ -35,6 +35,9 @@ import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { ThreadPane } from "./thread.tsx";
 import { AdoptDialog, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
 
+/** Events per page of a thread timeline. */
+const PAGE = 400;
+
 const api = createApi();
 const params = new URLSearchParams(location.search);
 
@@ -158,6 +161,17 @@ function App() {
     }
   }, [store.loaded]);
 
+  // Threads whose timeline has older events on the host (API v0 paging).
+  const [earlier, setEarlier] = useState<Record<string, boolean>>({});
+  const loadEarlier = (id: string) => {
+    const first = store.events[id]?.[0]?.seq;
+    if (!first) return;
+    void api.eventsBefore(id, first, PAGE).then((evs) => {
+      setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
+      setStore((s) => mergeEvents(s, id, evs));
+    });
+  };
+
   // Load the open thread's events; after a reconnect fetch what was missed.
   const openId = view?.id ?? null;
   useEffect(() => {
@@ -165,8 +179,12 @@ function App() {
     let cancelled = false;
     const after = lastSeq(store, openId);
     const known = !!store.events[openId];
-    api.events(openId, known ? after : 0, 400).then(
-      (evs) => !cancelled && setStore((s) => mergeEvents(s, openId, evs, !known)),
+    api.events(openId, known ? after : 0, PAGE).then(
+      (evs) => {
+        if (cancelled) return;
+        if (!known) setEarlier((m) => ({ ...m, [openId]: evs.length >= PAGE }));
+        setStore((s) => mergeEvents(s, openId, evs, !known));
+      },
       () => !cancelled && !known && setStore((s) => mergeEvents(s, openId, [], true)),
     );
     return () => {
@@ -192,7 +210,8 @@ function App() {
       const t = tr.threadId ? threadsRef.current[tr.threadId] : undefined;
       if (t && shouldMarkSeen(tr, t, Date.now())) {
         setTracker((x) => markSent(x, t));
-        void api.command("thread.markSeen", t.id);
+        // upTo: only what this view showed counts as seen (API v0, SPEC 6.4).
+        void api.command("thread.markSeen", t.id, { upTo: t.activityAt });
       }
     }, 250);
     const onFocus = () => setTracker((x) => setWindowFocus(x, true, Date.now()));
@@ -633,6 +652,7 @@ function App() {
             thread={viewThread}
             mode={view.mode}
             events={store.events[view.id]}
+            onEarlier={earlier[view.id] ? () => loadEarlier(view.id) : undefined}
             profiles={store.profiles}
             card={card}
             answerField={answerField}

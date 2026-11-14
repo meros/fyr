@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ type Server struct {
 	MCP      http.Handler // agents' MCP endpoint; optional
 	Web      fs.FS        // the built web client
 	BuildID  string
+	Host     string // host name shown in the rail; default os.Hostname
 	Profiles []agent.Profile
 	// T3Candidates lists adoptable T3 threads; optional.
 	T3Candidates func() (any, error)
@@ -125,9 +127,17 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 		profiles = []agent.Profile{}
 	}
 	writeJSON(w, 200, map[string]any{
-		"now": time.Now().UTC(), "user": core.Owner, "buildId": s.BuildID,
+		"now": time.Now().UTC(), "user": core.Owner, "buildId": s.BuildID, "host": s.hostName(),
 		"threads": threads, "actions": acts, "profiles": profiles, "projects": projects,
 	})
+}
+
+func (s *Server) hostName() string {
+	if s.Host != "" {
+		return s.Host
+	}
+	h, _ := os.Hostname()
+	return h
 }
 
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
@@ -164,11 +174,18 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 2000 {
 		limit = 400
 	}
-	evs, err := s.Engine.Events(r.PathValue("id"), after, limit)
+	var evs []store.Event
+	var err error
+	if before > 0 {
+		evs, err = s.Engine.EventsBefore(r.PathValue("id"), before, limit)
+	} else {
+		evs, err = s.Engine.Events(r.PathValue("id"), after, limit)
+	}
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return

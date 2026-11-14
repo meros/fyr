@@ -178,6 +178,27 @@ func (s *Store) EventsFor(subject string, after int64, limit int, tail bool) ([]
 	return out, rows.Err()
 }
 
+// EventsBefore returns the newest limit events of a subject with seq < before, oldest first.
+func (s *Store) EventsBefore(subject string, before int64, limit int) ([]Event, error) {
+	rows, err := s.db.Query(`SELECT * FROM (SELECT seq,at,subject,type,data FROM events WHERE subject=? AND seq<? ORDER BY seq DESC LIMIT ?) ORDER BY seq`, subject, before, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Event
+	for rows.Next() {
+		var e Event
+		var at, d string
+		if err := rows.Scan(&e.Seq, &at, &e.Subject, &e.Type, &d); err != nil {
+			return nil, err
+		}
+		e.At, _ = time.Parse(time.RFC3339Nano, at)
+		e.Data = json.RawMessage(d)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) GetKV(k string) (string, error) {
 	var v string
 	err := s.db.QueryRow(`SELECT v FROM kv WHERE k=?`, k).Scan(&v)

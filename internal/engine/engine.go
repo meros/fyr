@@ -36,6 +36,8 @@ type Engine struct {
 	threads map[string]*core.Thread
 	views   map[string]*core.View
 	last    map[string]core.State // last broadcast state, for time-driven changes
+	revs    map[string]int64      // per-thread rev (SPEC 0.5 V0.2)
+	lastRev int64
 
 	Agents  Agents
 	Effects EffectRunner
@@ -49,7 +51,7 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, Hub: NewHub(), Now: time.Now}
+		last: map[string]core.State{}, revs: map[string]int64{}, Hub: NewHub(), Now: time.Now}
 }
 
 func NewID(prefix string) string {
@@ -73,6 +75,7 @@ func (e *Engine) Load() error {
 	defer e.mu.Unlock()
 	for _, t := range ts {
 		e.threads[t.ID] = t
+		e.bump(t.ID)
 	}
 	e.views = vs
 	now := e.Now()
@@ -117,6 +120,17 @@ func effectDecisions(t *core.Thread) []core.Decision {
 		}
 	}
 	return out
+}
+
+// bump gives a thread a new rev: wall-clock nanoseconds, strictly increasing,
+// so it also increases across restarts. Call with e.mu held.
+func (e *Engine) bump(id string) {
+	r := time.Now().UnixNano()
+	if r <= e.lastRev {
+		r = e.lastRev + 1
+	}
+	e.lastRev = r
+	e.revs[id] = r
 }
 
 func (e *Engine) view(id string) *core.View {
@@ -226,6 +240,7 @@ func (e *Engine) Command(c Cmd) Reply {
 		return Reply{Error: err.Error(), Status: 500}
 	}
 	e.threads[t.ID], e.views[t.ID] = t, &v
+	e.bump(t.ID)
 	dto := e.dto(t, now)
 	e.mu.Unlock()
 	e.Hub.Thread(dto)
@@ -332,6 +347,7 @@ func (e *Engine) Observe(threadID string, fn func(t *core.Thread, now time.Time)
 		return
 	}
 	e.threads[threadID] = t
+	e.bump(threadID)
 	dto := e.dto(t, now)
 	e.mu.Unlock()
 	e.Hub.Thread(dto)
@@ -355,6 +371,7 @@ func (e *Engine) Thread(id string) (core.Thread, bool) {
 // DTO is a thread as clients see it (docs/API-v0.md).
 type DTO struct {
 	*core.Thread
+	Rev         int64             `json:"rev"`
 	Attention   core.Attention    `json:"attention"`
 	View        *core.View        `json:"view"`
 	Unavailable map[string]string `json:"unavailable"`
@@ -374,7 +391,7 @@ func (e *Engine) dto(t *core.Thread, now time.Time) DTO {
 	att := core.Compute(t, v, now)
 	e.last[t.ID] = att.State
 	vc := *v
-	return DTO{Thread: t, Attention: att, View: &vc, Unavailable: un}
+	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.
@@ -411,6 +428,7 @@ func (e *Engine) Tick() {
 	var changed []DTO
 	for id, t := range e.threads {
 		if core.Compute(t, e.view(id), now).State != e.last[id] {
+			e.bump(id)
 			changed = append(changed, e.dto(clone(t), now))
 		}
 	}
@@ -418,6 +436,11 @@ func (e *Engine) Tick() {
 	for _, d := range changed {
 		e.Hub.Thread(d)
 	}
+}
+
+// EventsBefore pages back: the newest limit events older than before.
+func (e *Engine) EventsBefore(id string, before int64, limit int) ([]store.Event, error) {
+	return e.st.EventsBefore(id, before, limit)
 }
 
 // Events reads the timeline of one thread; after == 0 gives the newest limit.
@@ -472,6 +495,7 @@ func (e *Engine) Insert(t *core.Thread, v *core.View, history []agent.Ev, at []t
 	}
 	e.mu.Lock()
 	e.threads[t.ID], e.views[t.ID] = t, v
+	e.bump(t.ID)
 	dto := e.dto(t, e.Now())
 	e.mu.Unlock()
 	e.Hub.Thread(dto)

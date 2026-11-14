@@ -14,6 +14,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "now": "2026-11-14T09:00:00Z",
   "user": "owner",
   "buildId": "git sha or build time",
+  "host": "meros-laptop",
   "threads": [ThreadDTO],
   "actions": [{"name": "thread.settle", "label": "Settle", "key": "e", "bulk": true}],
   "profiles": [{"id": "claude", "name": "Claude", "color": "#d97757", "models": ["claude-opus-5-5"], "defaultModel": "claude-opus-5-5"}],
@@ -34,6 +35,8 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "pr": {"url": "…", "repo": "acme/app", "number": 42, "title": "…", "state": "OPEN", "checks": "pass|fail|pending|none", "review": "APPROVED", "conflict": false},
   "settledAt": null, "archivedAt": null, "settleWhenDone": false, "settleWhenMerged": false,
   "source": "fyr|t3",
+  "branch": "fix/map-lasso (empty when not a git checkout)",
+  "rev": 1794643457123456789,
 
   "attention": {"state": "asking|failed|blocked|done|working|seen|snoozed|settled|archived", "section": "needs|working|seen|snoozed|settled|archived", "reason": "…"},
   "view": {"seenAt": "…", "snoozeUntil": "…"},
@@ -41,7 +44,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 }
 ```
 
-An action name missing from `unavailable` is available. The client never computes status; it renders `attention`.
+`rev` increases on every change, also across host restarts: keep the copy with the higher `rev`. An action name missing from `unavailable` is available. The client never computes status; it renders `attention`.
 
 `Decision`:
 
@@ -60,7 +63,7 @@ An action name missing from `unavailable` is available. The client never compute
 
 ## `GET /api/threads/{id}/events?after=SEQ&limit=N`
 
-`{"events": [Event]}`, oldest first. With `after=0` it returns the newest `N` (default 400).
+`{"events": [Event]}`, oldest first. With `after=0` it returns the newest `N` (default 400). `?before=SEQ&limit=N` returns the newest `N` events older than `SEQ`, to page back.
 
 `Event`: `{"seq": 12, "at": "…", "subject": "t_…", "type": "…", "data": {…}}`. Types the client renders:
 
@@ -91,7 +94,8 @@ Actions and their args:
 | `thread.create` (no `threadId`) | `cwd`, `text`, `images?`, `profile?`, `model?`, `title?` |
 | `thread.send` | `text`, `images?` |
 | `thread.answer` | `decisionId`, then `answers: {question: label}` for `ask` (multi-select: labels joined with ", "; Other: the free text), or `allow: bool` for `approval` and `effect` |
-| `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markSeen`, `thread.markUnseen` | none |
+| `thread.markSeen` | `upTo`: the thread's `activityAt` the client showed (RFC 3339). Without it, now. |
+| `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markUnseen` | none |
 | `thread.settle` | `now?: true` for bulk settle |
 | `thread.snooze` | `until` (RFC 3339, future) |
 | `thread.rename` | `title` |

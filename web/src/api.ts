@@ -18,6 +18,8 @@ export interface Api {
   start(h: ApiHandlers): void;
   command(action: string, threadId?: string, args?: Record<string, unknown>): Promise<CommandReply>;
   events(threadId: string, after?: number, limit?: number): Promise<FyrEvent[]>;
+  /** The newest `limit` events older than `before`, to page back. */
+  eventsBefore(threadId: string, before: number, limit?: number): Promise<FyrEvent[]>;
   t3Candidates(): Promise<T3Candidate[]>;
 }
 
@@ -149,6 +151,12 @@ function createHttpApi(): Api {
       const j = (await r.json()) as { events?: FyrEvent[] };
       return j.events ?? [];
     },
+    async eventsBefore(threadId, before, limit = 400) {
+      const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/events?before=${before}&limit=${limit}`);
+      if (!r.ok) throw new Error(`events ${r.status}`);
+      const j = (await r.json()) as { events?: FyrEvent[] };
+      return j.events ?? [];
+    },
     async t3Candidates() {
       const r = await fetch("/api/t3/candidates");
       if (!r.ok) throw new Error(`candidates ${r.status}`);
@@ -177,6 +185,10 @@ function createMockApi(scenario: string): Api {
     },
     async events(threadId, after = 0, limit = 400) {
       return server.events(threadId, after, limit);
+    },
+    async eventsBefore(threadId, before, limit = 400) {
+      const all = server.events(threadId, 0, 1_000_000).filter((e) => e.seq < before);
+      return all.slice(Math.max(0, all.length - limit));
     },
     async t3Candidates() {
       return server.t3Candidates();
