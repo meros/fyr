@@ -272,8 +272,8 @@ func TestAttachmentEndpoints(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.19: previews are served sandboxed: scripts run, but the page
-// has no origin, so it cannot read the API or cookies.
+// SPEC 0.5 V0.19, V0.47: previews are served sandboxed: scripts run, but the
+// page has no origin, so it cannot read the API or cookies.
 func TestPreviewSandbox(t *testing.T) {
 	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
 	defer st.Close()
@@ -284,12 +284,92 @@ func TestPreviewSandbox(t *testing.T) {
 	m, _ := att.Save("mock.html", "text/html", strings.NewReader("<p>hi</p>"))
 	r := do(t, "GET", hs.URL+"/api/previews/"+m.ID, "", nil, "")
 	csp := r.Header.Get("Content-Security-Policy")
-	if r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), "text/html") || !strings.Contains(csp, "sandbox allow-scripts") || strings.Contains(csp, "allow-same-origin") || !strings.Contains(csp, "connect-src 'none'") {
+	if r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), "text/html") || !strings.HasPrefix(csp, "sandbox allow-scripts;") || strings.Contains(csp, "allow-same-origin") || strings.Contains(csp, "'self' ") {
 		t.Fatalf("%d %v", r.StatusCode, r.Header)
 	}
 	img, _ := att.Save("a.png", "image/png", strings.NewReader("x"))
 	if r := do(t, "GET", hs.URL+"/api/previews/"+img.ID, "", nil, ""); r.StatusCode != 404 {
 		t.Fatalf("a non-HTML attachment served as a preview: %d", r.StatusCode)
+	}
+	if r := do(t, "GET", hs.URL+"/api/previews/"+m.ID+"/mock.html", "", nil, ""); r.StatusCode != 404 {
+		t.Fatalf("a single page served as a folder: %d", r.StatusCode)
+	}
+}
+
+// SPEC 0.5 V0.47: the CSP allows the preview's own folder (an absolute
+// prefix: 'self' matches nothing without an origin) and the CDN list. The
+// layout test serves its folder preview with the same policy from
+// web/test/fixtures/preview-csp.txt.
+func TestPreviewCSP(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "web", "test", "fixtures", "preview-csp.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	base := "http://127.0.0.1:7777/api/previews/0123456789abcdef0123/"
+	want := strings.NewReplacer("{base}", base, "{cdn}", lines[1]).Replace(lines[0])
+	req := httptest.NewRequest("GET", "/api/previews/0123456789abcdef0123", nil)
+	req.Host = "127.0.0.1:7777"
+	if got := previewCSP(req, "0123456789abcdef0123"); got != want {
+		t.Fatalf("CSP\n got %s\nwant %s", got, want)
+	}
+	req.Host = "desk.tail.ts.net"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	if got := previewCSP(req, "0123456789abcdef0123"); !strings.Contains(got, "script-src https://desk.tail.ts.net/api/previews/0123456789abcdef0123/ https://cdnjs") {
+		t.Fatal(got)
+	}
+	req.Host = "x;script-src *"
+	if got := previewCSP(req, "0123456789abcdef0123"); strings.Contains(got, "*") || strings.Contains(got, "x;") {
+		t.Fatalf("a strange Host reached the policy: %s", got)
+	}
+}
+
+// SPEC 0.5 V0.47: a folder preview redirects to its page and serves its files
+// with their media types, never a path outside the folder.
+func TestPreviewFolder(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	att := &attach.Store{Dir: t.TempDir()}
+	s := &Server{Engine: engine.New(st), BuildID: "b1", Attach: att}
+	hs := httptest.NewServer(s.Handler())
+	defer hs.Close()
+	root := t.TempDir()
+	files := map[string]string{"index.html": "<script type=module src=app.mjs></script>", "app.mjs": "x", "lib/three.js": "x", "duck.glb": "glTF", "duck.gltf": "{}", "dec.wasm": "\x00asm", "sky.hdr": "#?RADIANCE", "t.ktx2": "x", "a.png": "x", "s.css": "x", "d.json": "{}", "f.woff2": "x"}
+	for p, c := range files {
+		os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
+		os.WriteFile(filepath.Join(root, p), []byte(c), 0o644)
+	}
+	list, _, err := attach.ScanTree(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := att.SaveTree("site", "index.html", list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	r, _ := noFollow.Get(hs.URL + "/api/previews/" + m.ID)
+	if r.StatusCode != 302 || r.Header.Get("Location") != "/api/previews/"+m.ID+"/index.html" {
+		t.Fatalf("redirect %d %q", r.StatusCode, r.Header.Get("Location"))
+	}
+	types := map[string]string{"index.html": "text/html; charset=utf-8", "app.mjs": "text/javascript; charset=utf-8", "lib/three.js": "text/javascript; charset=utf-8",
+		"duck.glb": "model/gltf-binary", "duck.gltf": "model/gltf+json", "dec.wasm": "application/wasm", "sky.hdr": "image/vnd.radiance", "t.ktx2": "image/ktx2",
+		"a.png": "image/png", "s.css": "text/css; charset=utf-8", "d.json": "application/json", "f.woff2": "font/woff2"}
+	for p, ct := range types {
+		r := do(t, "GET", hs.URL+"/api/previews/"+m.ID+"/"+p, "", nil, "")
+		body, _ := io.ReadAll(r.Body)
+		if r.StatusCode != 200 || r.Header.Get("Content-Type") != ct || string(body) != files[p] {
+			t.Fatalf("%s: %d %q %q", p, r.StatusCode, r.Header.Get("Content-Type"), body)
+		}
+		if r.Header.Get("Access-Control-Allow-Origin") != "*" || r.Header.Get("X-Content-Type-Options") != "nosniff" || !strings.HasPrefix(r.Header.Get("Content-Security-Policy"), "sandbox allow-scripts;") {
+			t.Fatalf("%s: headers %v", p, r.Header)
+		}
+	}
+	for _, bad := range []string{"../" + m.ID + "/meta.json", "%2e%2e/" + m.ID + "/meta.json", "lib/..%2f..%2fmeta.json", "lib", "missing.js", "..%2fmeta.json"} {
+		if r := do(t, "GET", hs.URL+"/api/previews/"+m.ID+"/"+bad, "", nil, ""); r.StatusCode == 200 {
+			body, _ := io.ReadAll(r.Body)
+			t.Fatalf("%s served: %q", bad, body)
+		}
 	}
 }
 
