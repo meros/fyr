@@ -4,7 +4,8 @@ import { isTransient, sendWithRetry } from "./retry.ts";
 import type { CommandReply, FyrEvent, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
-import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockScenario } from "./mock.ts";
+import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockScenario } from "./mock.ts";
+import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import { reloadForNewBuild } from "./pwa.ts";
 
 export type ConnState = "connecting" | "live" | "offline";
@@ -40,6 +41,10 @@ export interface Api {
   attachmentUrl(id: string): string;
   /** An HTML preview (V0.19), for a sandboxed iframe. */
   previewUrl(id: string): string;
+  /** The Changes tab (V0.25): the branch diff of the thread's folder. */
+  changes(threadId: string): Promise<ChangesDTO>;
+  /** One file's unified diff (V0.25). */
+  filePatch(threadId: string, path: string): Promise<FilePatchDTO>;
 }
 
 export type UploadResult = { ok: true; reply: UploadReply } | { ok: false; status: number | null; error?: string };
@@ -254,6 +259,18 @@ function createHttpApi(): Api {
     previewUrl(id) {
       return `/api/previews/${encodeURIComponent(id)}`;
     },
+    async changes(threadId) {
+      const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/changes`);
+      const j = (await r.json().catch(() => ({}))) as ChangesDTO & { error?: string };
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      return j;
+    },
+    async filePatch(threadId, path) {
+      const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/changes?path=${encodeURIComponent(path)}`);
+      const j = (await r.json().catch(() => ({}))) as FilePatchDTO & { error?: string };
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      return j;
+    },
     async presence(threadId, device) {
       try {
         await fetch("/api/presence", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ threadId, device }), keepalive: true });
@@ -343,6 +360,12 @@ function createMockApi(scenario: string): Api {
     },
     previewUrl(id) {
       return MOCK_PREVIEWS[id] ?? "data:text/html,<p>mock preview</p>";
+    },
+    async changes(threadId) {
+      return mockChanges(threadId);
+    },
+    async filePatch(_threadId, path) {
+      return mockFilePatch(path);
     },
     attachmentUrl(id) {
       if (MOCK_SHOTS[id]) return MOCK_SHOTS[id];

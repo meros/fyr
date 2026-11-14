@@ -280,3 +280,14 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .src-x{width:44px;height:44px;margin-right:-8px}
 .m-app .fromthread{max-width:85%}
 .m-app .fth{min-height:32px}
+
+/* Changes tab (V0.25): 44 px rows, the list runs edge to edge. */
+.m-app .chg{padding:8px 0 12px;background:var(--surface)}
+.m-app .chg-head{padding:0 16px;margin-bottom:6px}
+.m-app .chg-sum{font-size:13px}
+.m-app .chg-ref{min-height:36px}
+.m-app .chg-empty{padding:16px;font-size:15px}
+.m-app .chg-list{border-radius:0;border-left:0;border-right:0}
+.m-app .chg-file{height:44px;padding:0 16px}
+.m-app .chg-path{font-size:13px}
+.m-app .chg-note{padding:8px 16px}
