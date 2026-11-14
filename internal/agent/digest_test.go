@@ -131,4 +131,11 @@ func TestInitHooksStopOnlyWithView(t *testing.T) {
 	if _, ok := initHooks(false)["PreToolUse"]; !ok {
 		t.Fatal("the gate hook is gone")
 	}
+	// V0.52: the mid-turn reminder rides on PostToolUse, also only with the view.
+	if _, ok := initHooks(false)["PostToolUse"]; ok {
+		t.Fatal("a thread without the live view registers the reminder hook")
+	}
+	if _, ok := initHooks(true)["PostToolUse"]; !ok {
+		t.Fatal("a live view thread has no reminder hook")
+	}
 }
