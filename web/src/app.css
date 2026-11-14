@@ -390,6 +390,8 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .tl:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
 .tl.grp .tlt{color:var(--ink)}
 .tl.row{padding-left:26px}
+.tl.more .tlm{text-align:center;line-height:16px}
+.tl.more .tlt{color:var(--harbour)}
 .tlt{min-width:0}
 .tlt.err,.tlerr{color:var(--signal-ink);font-weight:500}
 .tl .d{font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink-muted)}
