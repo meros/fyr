@@ -386,3 +386,18 @@ func TestThreadChanges(t *testing.T) {
 		t.Fatalf("foreign host: %d", r.StatusCode)
 	}
 }
+
+// SPEC 0.5 V0.45: the dialog asks which rung a handover would use.
+func TestHandoverPlan(t *testing.T) {
+	hs, e := newServer(t)
+	r := e.Command(engine.Cmd{CommandID: "h1", Action: "thread.create", Args: map[string]any{"cwd": "/tmp", "text": "hi"}})
+	if got := do(t, "GET", hs.URL+"/api/threads/nope/handover?profile=b", "", nil, ""); got.StatusCode != 404 {
+		t.Fatalf("unknown thread: %d", got.StatusCode)
+	}
+	resp := do(t, "GET", hs.URL+"/api/threads/"+r.ThreadID+"/handover?profile=b", "", nil, "")
+	var p struct{ Rung string }
+	json.NewDecoder(resp.Body).Decode(&p)
+	if resp.StatusCode != 200 || p.Rung != "adopt" {
+		t.Fatalf("%d %+v", resp.StatusCode, p)
+	}
+}

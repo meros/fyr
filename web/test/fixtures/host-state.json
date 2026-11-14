@@ -23,6 +23,10 @@
       "name": "thread.dismissPR"
     },
     {
+      "label": "Hand over",
+      "name": "thread.handover"
+    },
+    {
       "key": "Escape",
       "label": "Stop run",
       "name": "thread.interrupt"

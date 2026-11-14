@@ -33,7 +33,7 @@ type EffectRunner interface {
 }
 
 type Engine struct {
-	deploy *deployState // V0.39
+	deploy   *deployState // V0.39
 	mu       sync.Mutex
 	st       *store.Store
 	threads  map[string]*core.Thread
@@ -64,6 +64,9 @@ type Engine struct {
 	sendLimit hourly
 	// AttachmentExists checks ids in thread.create and thread.send (V0.18).
 	AttachmentExists func(id string) bool
+	// ProfileExists checks the target of thread.handover (V0.45); nil
+	// accepts any.
+	ProfileExists func(id string) bool
 	// OnPR is called when a thread gets a new PR, so the poller looks now.
 	OnPR func(threadID string)
 	// OnAttention is called, outside the lock, when a thread's attention
@@ -180,6 +183,22 @@ func (e *Engine) Load() error {
 		}
 	}
 	for _, t := range e.threads {
+		// V0.45: a handover dies with the host; the thread keeps the
+		// profile it had, and the owner can start it again.
+		if t.Handover == nil {
+			continue
+		}
+		t.Handover = nil
+		if _, err := e.st.Write(func(tx *store.Tx) error {
+			if err := tx.PutThread(t); err != nil {
+				return err
+			}
+			return tx.Append(t.ID, "effect.error", map[string]any{"kind": "handover", "error": "Fyr restarted during the handover"}, now)
+		}); err != nil {
+			return err
+		}
+	}
+	for _, t := range e.threads {
 		if !t.Running && !hasLiveDecision(t) && t.RunningTasks() == 0 {
 			continue
 		}
@@ -290,6 +309,9 @@ func (e *Engine) Command(c Cmd) Reply {
 		if !ok {
 			return Reply{Error: "no project " + c.Args.Str("projectId"), Status: 400}
 		}
+	}
+	if c.Action == "thread.handover" && e.ProfileExists != nil && c.Args.Str("profile") != "" && !e.ProfileExists(c.Args.Str("profile")) {
+		return Reply{Error: "no profile " + c.Args.Str("profile"), Status: 400}
 	}
 	if c.Action == "thread.create" || c.Action == "thread.send" {
 		for _, id := range core.AttachmentIDs(c.Args) {

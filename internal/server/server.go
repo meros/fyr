@@ -56,6 +56,8 @@ type Server struct {
 	Profiles []agent.Profile
 	// T3Candidates lists adoptable T3 threads; optional.
 	T3Candidates func() (any, error)
+	// HandoverPlan says which rung a handover would use (V0.45); optional.
+	HandoverPlan func(threadID, profile string) agent.Plan
 }
 
 func (s *Server) Handler() http.Handler {
@@ -66,6 +68,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/events", s.events)
 	mux.HandleFunc("GET /api/threads/{id}/events/{seq}", s.fullEvent)
 	mux.HandleFunc("GET /api/threads/{id}/changes", s.changes)
+	mux.HandleFunc("GET /api/threads/{id}/handover", s.handoverPlan)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	if s.Presence != nil {
@@ -399,6 +402,20 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, c)
+}
+
+// handoverPlan answers which rung a handover to ?profile= would use (V0.45).
+func (s *Server) handoverPlan(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.Engine.Thread(id); !ok {
+		writeJSON(w, 404, map[string]any{"error": "no such thread"})
+		return
+	}
+	if s.HandoverPlan == nil {
+		writeJSON(w, 200, agent.Plan{Rung: agent.RungAdopt})
+		return
+	}
+	writeJSON(w, 200, s.HandoverPlan(id, r.URL.Query().Get("profile")))
 }
 
 func (s *Server) command(w http.ResponseWriter, r *http.Request) {

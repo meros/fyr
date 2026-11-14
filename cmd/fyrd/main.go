@@ -245,8 +245,10 @@ func main() {
 		MCPURL:      mcpURL,
 		LogDir:      filepath.Join(*data, "logs"),
 		Attachments: att.Get,
+		HandoverDir: filepath.Join(*data, "handover"),
 	})
 	eng.Agents = mgr
+	eng.ProfileExists = func(id string) bool { _, ok := profileByID[id]; return ok }
 	eng.Adopt = adopt
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -309,7 +311,7 @@ func main() {
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
 	}
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence,
+	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence,
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
 			if err != nil {
