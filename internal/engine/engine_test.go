@@ -477,3 +477,23 @@ func TestRestartDoesNotRenotify(t *testing.T) {
 		t.Fatalf("restart re-notified %d threads", n)
 	}
 }
+
+// SPEC 6.2, 0.5 V0.3: a turn the CLI starts on its own (a background task
+// finished) is a run too: working while it goes, done when it ends.
+func TestTurnWithoutUserMessageIsARun(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("bg")
+	h.wait(id, "working again in the second turn", func(t core.Thread, _ core.Attention) bool {
+		return t.Running && t.Summary == "background task done"
+	})
+	th := h.wait(id, "done after the second turn", state(core.Done))
+	starts := 0
+	for _, e := range h.events(id) {
+		if e.Type == "run.started" {
+			starts++
+		}
+	}
+	if starts != 2 || th.Running {
+		t.Fatalf("run.started %d, running %v", starts, th.Running)
+	}
+}

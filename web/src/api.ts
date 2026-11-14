@@ -3,6 +3,7 @@
 import type { CommandReply, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { createMockServer, mockScenario } from "./mock.ts";
+import { reloadForNewBuild } from "./pwa.ts";
 
 export type ConnState = "connecting" | "live" | "offline";
 
@@ -21,6 +22,16 @@ export interface Api {
   /** The newest `limit` events older than `before`, to page back. */
   eventsBefore(threadId: string, before: number, limit?: number): Promise<FyrEvent[]>;
   t3Candidates(): Promise<T3Candidate[]>;
+  /** Web Push (SPEC V0.15): the host's VAPID public key, base64url. */
+  pushKey(): Promise<string>;
+  pushSubscribe(subscription: PushSubscriptionJSON, device: string): Promise<PushReply>;
+  pushUnsubscribe(endpoint: string): Promise<PushReply>;
+  pushTest(): Promise<PushReply>;
+}
+
+export interface PushReply {
+  ok: boolean;
+  error?: string;
 }
 
 export function newCommandId(): string {
@@ -45,7 +56,7 @@ function createHttpApi(): Api {
   const checkBuild = (buildId: unknown) => {
     const r = observeBuildId(watch, buildId);
     watch = r.watch;
-    if (r.reload) location.reload();
+    if (r.reload) reloadForNewBuild();
     return r.reload;
   };
 
@@ -125,6 +136,21 @@ function createHttpApi(): Api {
     return reply;
   };
 
+  const postJson = async (path: string, body: unknown): Promise<PushReply> => {
+    try {
+      const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify(body) });
+      let j: Partial<PushReply> = {};
+      try {
+        j = await r.json();
+      } catch {
+        /* empty body */
+      }
+      return r.ok ? { ok: j.ok !== false, error: j.error } : { ok: false, error: j.error ?? `HTTP ${r.status}` };
+    } catch {
+      return { ok: false, error: "Fyr is not reachable" };
+    }
+  };
+
   return {
     mock: false,
     start(h) {
@@ -163,6 +189,22 @@ function createHttpApi(): Api {
       const j = (await r.json()) as { threads?: T3Candidate[] };
       return j.threads ?? [];
     },
+    async pushKey() {
+      const r = await fetch("/api/push/key");
+      if (!r.ok) throw new Error(`The host has no push key (HTTP ${r.status})`);
+      const j = (await r.json()) as { publicKey?: string };
+      if (!j.publicKey) throw new Error("The host sent no push key");
+      return j.publicKey;
+    },
+    pushSubscribe(subscription, device) {
+      return postJson("/api/push/subscribe", { subscription, device });
+    },
+    pushUnsubscribe(endpoint) {
+      return postJson("/api/push/unsubscribe", { endpoint });
+    },
+    pushTest() {
+      return postJson("/api/push/test", {});
+    },
   };
 }
 
@@ -192,6 +234,18 @@ function createMockApi(scenario: string): Api {
     },
     async t3Candidates() {
       return server.t3Candidates();
+    },
+    async pushKey() {
+      return server.pushKey();
+    },
+    async pushSubscribe(subscription, device) {
+      return server.pushSubscribe(subscription, device);
+    },
+    async pushUnsubscribe(endpoint) {
+      return server.pushUnsubscribe(endpoint);
+    },
+    async pushTest() {
+      return server.pushTest();
     },
   };
 }

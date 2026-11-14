@@ -71,11 +71,14 @@ type Manager struct {
 }
 
 type session struct {
-	thread    string
-	cwd       string
-	token     string
-	c         *claude.Client
-	turns     int
+	thread string
+	cwd    string
+	token  string
+	c      *claude.Client
+	// live is true from the start of a turn until its result. A turn starts
+	// on a send or on its own (the CLI resumes after a background task), so
+	// the stream decides, not a count of sends (SPEC 6.2).
+	live      bool
 	interrupt bool
 	asks      map[string]chan core.Effect // decision id → answer
 	reqs      map[string]string           // control request id → decision id
@@ -169,8 +172,8 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 		return err
 	}
 	m.mu.Lock()
-	s.turns++
-	first := s.turns == 1
+	first := !s.live
+	s.live = true
 	if s.idle != nil {
 		s.idle.Stop()
 	}
@@ -291,7 +294,7 @@ func (m *Manager) read(s *session) {
 		delete(m.sessions, s.thread)
 	}
 	delete(m.tokens, s.token)
-	live := s.turns > 0 || len(s.asks) > 0
+	live := s.live || len(s.asks) > 0
 	for id, ch := range s.asks {
 		close(ch)
 		delete(s.asks, id)
@@ -316,6 +319,9 @@ func (m *Manager) read(s *session) {
 
 func (m *Manager) handle(s *session, msg claude.Msg) {
 	typ, _ := msg["type"].(string)
+	if typ == "assistant" || (typ == "system" && msg["subtype"] == "init") {
+		m.turnStarted(s)
+	}
 	switch typ {
 	case "system":
 		if msg["subtype"] == "init" {
@@ -348,16 +354,12 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		}, Ev{"msg", trimMsg(msg)})
 	case "result":
 		m.mu.Lock()
-		s.turns--
-		ended := s.turns <= 0
+		ended := s.live
 		interrupted := s.interrupt
-		if ended {
-			s.turns = 0
-			s.interrupt = false
-		}
+		s.live, s.interrupt = false, false
 		m.mu.Unlock()
 		if !ended {
-			return
+			return // a stray result outside a turn
 		}
 		var f *core.Failure
 		isErr, _ := msg["is_error"].(bool)
@@ -381,6 +383,22 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 	}
 }
 
+// turnStarted opens a run for a turn the CLI started without a send.
+func (m *Manager) turnStarted(s *session) {
+	m.mu.Lock()
+	if s.live {
+		m.mu.Unlock()
+		return
+	}
+	s.live = true
+	if s.idle != nil {
+		s.idle.Stop()
+	}
+	m.mu.Unlock()
+	m.host.Observe(s.thread, func(t *core.Thread, now time.Time) { core.RunStarted(t, now) },
+		Ev{"run.started", map[string]any{"by": "agent"}})
+}
+
 func (m *Manager) armIdle(s *session) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -389,7 +407,7 @@ func (m *Manager) armIdle(s *session) {
 	}
 	s.idle = time.AfterFunc(m.cfg.IdleStop, func() {
 		m.mu.Lock()
-		quiet := s.turns == 0 && len(s.asks) == 0
+		quiet := !s.live && len(s.asks) == 0
 		m.mu.Unlock()
 		if quiet {
 			s.c.Close() // V0.7: the next message resumes the session

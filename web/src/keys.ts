@@ -1,7 +1,7 @@
 // The key-hint bar: which keys work right now. Pure.
 
 export interface HintContext {
-  dialog: "new" | "adopt" | "snooze" | null;
+  dialog: "new" | "adopt" | "snooze" | "push" | null;
   zone: "list" | "thread";
   hasSelection: boolean;
   picked: number;
@@ -18,6 +18,7 @@ export type Hint = [key: string, label: string];
 
 export function keyHints(c: HintContext): Hint[] {
   if (c.dialog === "snooze") return [["1–3", "snooze"], ["Esc", "close"]];
+  if (c.dialog === "push") return [["Esc", "close"]];
   if (c.dialog) return [["⏎", c.dialog === "new" ? "create" : "adopt"], ["⇧⏎", "new line"], ["Esc", "close"]];
   if (c.inText && c.card === "ask" && c.view === "open") return [["⏎", "answer"], ["⌘⏎", "queue as message"], ["Tab", "next question"], ["Esc", "leave field"]];
   if (c.inText) {

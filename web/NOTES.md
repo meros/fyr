@@ -30,3 +30,10 @@ Nothing here blocks the client; each item says what the client does today.
 - The away strip ("Since 14:02 …") of the design is not in v0 (SPEC 0.5). `⌘K` focuses the search field, which filters the inbox by title, project and PR number; the palette, `⌘1`–`⌘9` and `⌘[` are not in v0.
 - Key hints show only on buttons and in a bar that `?` toggles (the bar also holds the theme switch: auto, light, dark).
 - The theme bootstrap in `index.html` is an inline script; a strict CSP from fyrd would need a hash for it.
+
+## PWA and push (SPEC V0.15)
+
+- The build emits `manifest.webmanifest`, `sw.js` and `icons/` (the PNGs are drawn by `scripts/icons.ts`, no dependencies). The service worker's cache is named after a hash of the shell it precaches; it never handles `/api` or `/mcp`.
+- fyrd must serve `/sw.js` (JavaScript MIME type) and `/manifest.webmanifest` (`application/manifest+json`) from the root, and `/` must return `index.html`, which now uses absolute asset paths.
+- The bell reads the browser's own subscription. If the host deletes a subscription (404/410 from the push service), the bell still shows "on" until the user turns it off and on; a `GET /api/push/subscriptions` (or a status in the subscribe reply) would let the client show it.
+- Notification taps post `{type:"open", threadId}` to an open window, else open `/?open=<id>`.

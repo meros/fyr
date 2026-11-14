@@ -11,6 +11,8 @@
 //	hang     waits until interrupted
 //	pr       runs `gh pr create` and prints a PR URL
 //	crash    exits with code 3 during the run
+//	bg       ends its turn, then starts a second turn on its own (as the CLI
+//	         does when a background task finishes) with no user message
 //	sub      runs one subagent (Task tool) before it answers
 //	merge U  calls mcp__fyr__effect_request {action pr.merge, args {pr: U}}
 //	         over HTTP from --mcp-config and reports the tool's text
@@ -234,6 +236,16 @@ func turn(text string) {
 	case "mcpstatus":
 		assistant(msg{"type": "text", "text": "mcp: " + mcpAtStart})
 		result(false, "success", "done")
+	case "bg":
+		assistant(msg{"type": "text", "text": "started a background task"})
+		result(false, "success", "turn 1")
+		go func() {
+			time.Sleep(150 * time.Millisecond)
+			write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model})
+			assistant(msg{"type": "text", "text": "background task done"})
+			time.Sleep(150 * time.Millisecond)
+			result(false, "success", "turn 2")
+		}()
 	case "crash":
 		fmt.Fprintln(os.Stderr, "boom")
 		os.Exit(3)
