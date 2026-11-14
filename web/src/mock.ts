@@ -244,6 +244,22 @@ function fullFixture(now: number): Fixture {
     }),
   );
   add(
+    base("t_update", "Ship the Changes tab and the hardening", now, 3, {
+      project: "Fyr",
+      attention: { state: "asking", section: "needs", reason: "Update Fyr" },
+      decisions: [
+        {
+          id: "d_upd",
+          kind: "effect",
+          createdAt: iso(now - 3 * 60_000),
+          agent: "",
+          effect: { action: "fyr.deploy", args: { dir: "/home/owner/git/fyr-deploy" }, reason: "Hardening (no more blank screens, no backwards deploys), the Changes tab and the UI polish batch; every test passes." },
+        },
+      ],
+      unavailable: { ...NOT_RUNNING, "thread.settle": "A question is open" },
+    }),
+  );
+  add(
     base("t_effect", "Åtgärda översättningar för sökfältet på ändringssidan", now, 6, {
       project: "acme/web",
       attention: { state: "asking", section: "needs", reason: "Merge" },

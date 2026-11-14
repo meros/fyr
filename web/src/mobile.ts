@@ -1,5 +1,6 @@
 // Pure helpers for the phone layout (design/mobile/README.md).
 
+import { describeEffect } from "./effects.ts";
 import type { Decision, Profile, Project } from "./types.ts";
 import { answerOf, questionsOf, type CardState } from "./question.ts";
 
@@ -32,9 +33,10 @@ export type Choice = "allow" | "deny" | null;
 
 export function allowCommit(d: Decision, choice: Choice): Commit {
   const approval = d.kind === "approval";
-  if (choice === "allow") return { label: approval ? "Allow" : "Approve", enabled: true, act: "submit" };
-  if (choice === "deny") return { label: approval ? "Deny" : "Decline", enabled: true, act: "submit" };
-  return { label: approval ? "Allow or deny" : "Approve or decline", enabled: false, act: "none" };
+  const e = approval ? null : describeEffect(d);
+  if (choice === "allow") return { label: e ? e.yes : "Allow", enabled: true, act: "submit" };
+  if (choice === "deny") return { label: e ? e.no : "Deny", enabled: true, act: "submit" };
+  return { label: e ? "Pick one" : "Allow or deny", enabled: false, act: "none" };
 }
 
 /** Step dots up to 5 questions; beyond that, "1 of 9999". */

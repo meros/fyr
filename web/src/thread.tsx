@@ -1,6 +1,7 @@
 // Thread pane: header with chips and tabs, conversation, docked decision card and composer
 // (design/directions/04-rail.html).
 
+import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
@@ -149,7 +150,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} cwd={t.cwd} />}
       {tab === "changes" && <ChangesView threadId={t.id} />}
       {tab === "pr" && <PrTab t={t} />}
-      {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} />}
+      {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} pr={t.pr} />}
       <Composer key={t.id} t={t} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
   );
@@ -612,55 +613,66 @@ interface CardProps {
   card: CardState | null;
   onCard(cs: CardState): void;
   onAllow(d: Decision, allow: boolean): void;
+  /** the thread's PR, to name it in a merge card */
+  pr?: PullRequest | null;
 }
 
 function asker(d: Decision): string {
   return d.agent ? `asked by subagent “${d.agent}”` : "asked by this thread";
 }
 
+/** One sentence for an effect decision (V0.27), for rows and previews. */
 export function effectSentence(d: Decision): string {
-  const e = d.effect;
-  if (!e) return "";
-  if (e.action === "pr.merge") {
-    const pr = String(e.args?.pr ?? "");
-    const num = /\/pull\/(\d+)/.exec(pr)?.[1];
-    const method = e.args?.method ? ` with ${String(e.args.method)}` : "";
-    return `Merge ${num ? "#" + num : pr}${method}`;
-  }
-  return e.action;
+  return d.effect ? describeEffect(d).title : "";
+}
+
+/** The plain body of an effect card (V0.27): reason, what happens, details behind a toggle. */
+export function EffectBody({ d, x, cls = "" }: { d: Decision; x: EffectText; cls?: string }) {
+  return (
+    <div class={`eff ${cls}`}>
+      {x.why && <p class="eff-why">{x.why}</p>}
+      <p class="eff-what">{x.happens}</p>
+      <details class="eff-det">
+        <summary>Details</summary>
+        <div class="eff-who">{d.agent ? `Asked by subagent “${d.agent}”` : "Asked by this thread"} · the agent does not wait for the result</div>
+        <pre>{x.details.action + "\n" + JSON.stringify(x.details.args, null, 2)}</pre>
+      </details>
+    </div>
+  );
 }
 
 function DecisionCard(p: CardProps) {
   const { d } = p;
   if (d.kind === "ask") return p.card && p.card.decisionId === d.id ? <AskCard {...p} card={p.card} /> : null;
   const approval = d.kind === "approval";
+  const x = approval ? null : describeEffect(d, p.pr);
   const cmd = approval && typeof d.input?.command === "string" ? (d.input.command as string) : null;
   const rest = approval && d.input ? Object.fromEntries(Object.entries(d.input).filter(([k]) => k !== "command")) : {};
   return (
     <div class="ask">
       <div class="ah">
         <StateIcon state="asking" size={14} />
-        <b>{approval ? "Approval" : "Fyr action"}</b>
+        <b>{x ? x.label : "Approval"}</b>
         <span class="ell">{asker(d)}</span>
         {p.more > 0 && <span class="ml">+{p.more} more</span>}
       </div>
       <div class="ab">
-        <div class="q">{approval ? <>Allow {d.tool}?</> : effectSentence(d)}</div>
+        <div class="q">{x ? x.title : <>Allow {d.tool}?</>}</div>
         <div class="payload">
           {cmd && <pre class="cmd">{cmd}</pre>}
           {approval && Object.keys(rest).length > 0 && <pre>{JSON.stringify(rest, null, 2)}</pre>}
-          {!approval && <pre>{JSON.stringify(d.effect?.args ?? {}, null, 2)}</pre>}
+          {x && <EffectBody d={d} x={x} />}
         </div>
         <div class="grid4">
           <button class="op" onClick={() => p.onAllow(d, true)}>
-            <span class="a ell">{approval ? "Allow" : "Approve"}</span>
+            <span class="a ell">{x ? x.yes : "Allow"}</span>
             <kbd>1</kbd>
-            <span class="d">{approval ? "Run it once." : `${d.effect?.reason ? d.effect.reason + " " : ""}Fyr runs it; the agent does not wait.`}</span>
+            {approval && <span class="d">Run it once.</span>}
           </button>
           <button class="op" onClick={() => p.onAllow(d, false)}>
-            <span class="a ell">{approval ? "Deny" : "Decline"}</span>
+            <span class="a ell">{x ? x.no : "Deny"}</span>
             <kbd>2</kbd>
-            <span class="d">{approval ? "The agent is told no and continues." : "Nothing is run."}</span>
+            <span class="d">{approval ? "The agent is told no and continues." : "Nothing happens; the agent is told."}</span>
           </button>
         </div>
       </div>

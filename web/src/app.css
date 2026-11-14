@@ -524,3 +524,18 @@ button.ptag{padding:0}
 .crash-msg { color: var(--ink-muted); overflow-wrap: anywhere; min-width: 0; flex: 1 1 200px; font-family: var(--mono); font-size: 12px; }
 .crash-btns { display: flex; gap: 8px; }
 .crash-btns button { font: inherit; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; }
+
+/* SPEC 0.5 V0.27: an effect card in words; the technical form behind Details */
+.eff{display:flex;flex-direction:column;gap:6px;min-width:0}
+.eff p{margin:0;font:400 14px/20px var(--ui);color:var(--ink);overflow-wrap:anywhere}
+.eff .eff-what{color:var(--ink-muted)}
+.eff-det{font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.eff-det summary{cursor:pointer;min-height:28px;display:flex;align-items:center;list-style-position:inside}
+.eff-det .eff-who{margin:4px 0 6px}
+.eff-det pre{margin:0;padding:8px 10px;border-radius:8px;background:var(--sunken);font:400 12px/18px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.m-eff p{font-size:16px;line-height:23px}
+.m-eff .eff-det summary{min-height:44px;font-size:15px}
+.eff-det summary{list-style:none;gap:6px}
+.eff-det summary::-webkit-details-marker{display:none}
+.eff-det summary::before{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s;margin:0 4px 0 2px}
+.eff-det[open] summary::before{transform:rotate(45deg)}
