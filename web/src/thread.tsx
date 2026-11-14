@@ -3,7 +3,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
-import { buildConversation, toolRows, type Item, type ToolCall } from "./conversation.ts";
+import { buildConversation, previewsOf, toolRows, type Item, type ToolCall } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { duration, relTime, shortModel } from "./format.ts";
@@ -11,6 +11,8 @@ import { pick, questionsOf, goTo, type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
+import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
+import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 
 export function prLabel(pr: PullRequest, short = false): { text: string; cls: string } {
@@ -58,6 +60,7 @@ type Tab = "conv" | "changes" | "pr";
 export function ThreadPane(p: ThreadPaneProps) {
   const t = p.thread;
   const [tab, setTab] = useState<Tab>("conv");
+  const previews = useMemo(() => previewsOf(p.events ?? []), [p.events]);
   useEffect(() => setTab("conv"), [t.id]);
   const profile = p.profiles.find((x) => x.id === t.profile);
   const decision = t.decisions?.[0] ?? null;
@@ -132,6 +135,7 @@ export function ThreadPane(p: ThreadPaneProps) {
         </div>
       </div>
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      {tab === "conv" && <Filmstrip cards={previews} />}
       {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} />}
       {tab === "changes" && <div class="pane-note">The branch diff comes in a later version (v0.x). The Conversation tab lists every edit.</div>}
       {tab === "pr" && <PrTab t={t} />}
@@ -245,6 +249,7 @@ export function AgentsStrip({ tasks, now }: { tasks: TaskDTO[]; now: number }) {
 
 export function Conversation({ events, onAtEnd, threadId, onEarlier }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void }) {
   const items = useMemo(() => buildConversation(events ?? []), [events]);
+  const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -289,14 +294,14 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier }: { events:
           </button>
         )}
         {items.map((it) => (
-          <ItemView key={it.key} it={it} />
+          <ItemView key={it.key} it={it} previews={previews} />
         ))}
       </div>
     </div>
   );
 }
 
-function ItemView({ it }: { it: Item }) {
+function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
   switch (it.kind) {
     case "user":
       return (
@@ -340,6 +345,8 @@ function ItemView({ it }: { it: Item }) {
           </span>
         </div>
       );
+    case "preview":
+      return <PreviewCardView card={it.card} all={previews} />;
     case "task":
       return (
         <div class={`sys prose${it.status === "failed" ? " fail" : ""}`}>

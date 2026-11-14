@@ -2,6 +2,7 @@
 
 import type { Failure, FyrEvent } from "./types.ts";
 import { taskEventText } from "./tasks.ts";
+import { previewCard, type PreviewCard } from "./previews.ts";
 
 export interface ToolCall {
   id: string;
@@ -24,6 +25,7 @@ export type Item =
   | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number }
   | { kind: "effect"; key: string; action: string; ok: boolean; text: string }
   | { kind: "answer"; key: string; text: string }
+  | { kind: "preview"; key: string; card: PreviewCard }
   | { kind: "task"; key: string; text: string; status: string; started: boolean };
 
 function str(v: unknown): string {
@@ -96,6 +98,17 @@ function blocksOf(data: any): Block[] {
   if (Array.isArray(c)) return c as Block[];
   if (typeof c === "string") return [{ type: "text", text: c }];
   return [];
+}
+
+/** The thread's preview cards, in log order (for the filmstrip). */
+export function previewsOf(events: FyrEvent[]): PreviewCard[] {
+  const out: PreviewCard[] = [];
+  for (const e of events) {
+    if (e.type !== "preview") continue;
+    const c = previewCard(e.seq, e.at, e.data);
+    if (c) out.push(c);
+  }
+  return out;
 }
 
 export function buildConversation(events: FyrEvent[]): Item[] {
@@ -184,6 +197,11 @@ export function buildConversation(events: FyrEvent[]): Item[] {
           costUsd: typeof d.costUsd === "number" ? d.costUsd : undefined,
           durationMs: typeof d.durationMs === "number" ? d.durationMs : undefined,
         });
+        break;
+      }
+      case "preview": {
+        const card = previewCard(e.seq, e.at, e.data);
+        if (card) pushItem({ kind: "preview", key, card });
         break;
       }
       case "task":

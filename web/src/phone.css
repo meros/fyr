@@ -244,3 +244,9 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .att-chip{height:52px;width:236px}
 .m-capr{grid-template-columns:1fr 1fr}
 .m-nbody .att-strip{flex:none}
+/* previews on the phone: full width */
+.m-app .pv{max-width:none}
+.m-app .pv-img img{width:100%;max-height:560px;object-fit:cover;object-position:top}
+.m-app .pv-open,.m-app .pv-more{height:44px;line-height:42px;padding:0 14px}
+.m-app .fs-item{width:88px}
+.m-app .fs-item img,.m-app .fs-html{width:88px;height:64px}

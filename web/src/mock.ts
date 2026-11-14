@@ -354,6 +354,8 @@ function fullFixture(now: number): Fixture {
     threads.push(t);
   }
 
+  events.t_w3 = [...events.t_w3, ...previewEvents("t_w3", events.t_w3.length, now, true)];
+
   const t3: T3Candidate[] = [
     { t3Id: "t3_a", title: "Refactor booking calendar", cwd: "/home/owner/src/acme/web", profile: "claudeAlt", model: "claude-opus-5-5", updatedAt: iso(now - 3600_000), hasTranscript: true, prUrl: "https://github.com/acme/web/pull/4100" },
     { t3Id: "t3_b", title: LONG_TITLE, cwd: "/home/owner/src/" + LONG_PROJECT, profile: "claudeAlt", model: "claude-opus-5-5", updatedAt: iso(now - 7200_000), hasTranscript: false },
@@ -543,7 +545,57 @@ function railFixture(now: number): Fixture {
   push(130, "msg", assistantText("The lasso no longer closes the sheet, and the tests pass. Before I wire the close gesture, two choices for you."));
   push(131, "decision.opened", { decision: ask });
   events.t_lasso = ev2;
+  events.t_mapperf = [...events.t_mapperf, ...previewEvents("t_mapperf", events.t_mapperf.length, now, false)];
   return { threads, events, t3: [] };
+}
+
+
+// ---- previews (V0.19): drawn screenshots and an HTML chart, no network ----
+
+function svgShot(w: number, h: number, label: string, dark = false): string {
+  const bg = dark ? "#0f1419" : "#f6f7f8";
+  const bar = dark ? "#2a3a4a" : "#14212d";
+  const line = dark ? "#26303a" : "#dde1e6";
+  const rows = Array.from({ length: Math.min(40, Math.floor((h - 160) / 56)) }, (_, i) => `<rect x="${w * 0.06}" y="${150 + i * 56}" width="${w * (0.5 + ((i * 37) % 40) / 100)}" height="14" rx="4" fill="${line}"/>`).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="${bg}"/><rect width="${w}" height="${Math.min(110, h * 0.12)}" fill="${bar}"/><text x="${w * 0.06}" y="70" font-family="sans-serif" font-size="${Math.max(18, w / 40)}" fill="#f6f7f8">${label}</text>${rows}<circle cx="${w * 0.7}" cy="${h * 0.55}" r="${Math.min(w, h) * 0.12}" fill="#e8960f" opacity=".55"/></svg>`;
+  return "data:image/svg+xml," + encodeURIComponent(svg);
+}
+
+const CHART_HTML = `<!doctype html><meta charset="utf-8"><style>
+:root{color-scheme:light dark;--ink:#111820;--bar:#2f6fb0;--bg:#fff}
+@media (prefers-color-scheme:dark){:root{--ink:#e8ecf0;--bar:#6fa8e8;--bg:#161d24}}
+body{margin:0;padding:16px;font:13px/18px system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+.r{display:grid;grid-template-columns:130px 1fr 44px;gap:8px;align-items:center;height:28px}
+.b{height:14px;border-radius:4px;background:var(--bar);width:0;transition:width .6s}
+</style><h3 style="margin:0 0 10px">Test durations, src/map</h3><div id=c></div><p id=n></p><script>
+const d=[["lasso.test.ts",14.2],["tiles.test.ts",9.8],["snapshot.test.ts",7.1],["filter.test.ts",3.4],["sheet.test.ts",2.2],["util.test.ts",1.1]];
+const m=Math.max(...d.map(x=>x[1]));c.innerHTML=d.map(([f,s])=>'<div class=r><span>'+f+'</span><div><div class=b data-w='+(s/m*100)+'></div></div><span>'+s+' s</span></div>').join("");
+requestAnimationFrame(()=>document.querySelectorAll(".b").forEach(b=>b.style.width=b.dataset.w+"%"));n.textContent="Scripts run in the sandbox; the page has no origin.";
+</script>`;
+
+export const MOCK_SHOTS: Record<string, string> = {
+  pv_phone: svgShot(390, 844, "Filter sheet, iPhone mini"),
+  pv_desk: svgShot(1280, 800, "Map, desktop 1280 × 800"),
+  pv_tall: svgShot(390, 2600, "Listing page, full", true),
+};
+export const MOCK_PREVIEWS: Record<string, string> = {
+  pv_chart: "data:text/html;charset=utf-8," + encodeURIComponent(CHART_HTML),
+};
+
+function previewEvents(subject: string, start: number, now: number, stress: boolean): FyrEvent[] {
+  let seq = start;
+  const at = (m: number) => iso(now - m * 60_000);
+  const out: FyrEvent[] = [
+    ev(++seq, Date.parse(at(9)), subject, "preview", { kind: "image", attachmentId: "pv_phone", title: "Filter sheet on iPhone mini", caption: "After the fix: the lasso no longer closes the sheet.", width: 390, height: 844 }),
+    ev(++seq, Date.parse(at(8)), subject, "preview", { kind: "image", attachmentId: "pv_desk", title: "Map at desktop width", caption: "", width: 1280, height: 800, url: "http://localhost:5173/map?lasso=1" }),
+    ev(++seq, Date.parse(at(7)), subject, "preview", { kind: "html", attachmentId: "pv_chart", title: "Test durations by file", caption: "lasso.test.ts takes 37 % of the run.", width: 640, height: 300 }),
+  ];
+  if (stress)
+    out.push(
+      ev(++seq, Date.parse(at(6)), subject, "preview", { kind: "image", attachmentId: "pv_tall", title: LONG_TITLE, caption: "Full page at 390 px: " + LONG_URL, width: 390, height: 2600, url: LONG_URL }),
+      ev(++seq, Date.parse(at(5)), subject, "msg", assistantText("Inline: ![the sheet](/api/attachments/pv_phone) and an outside image stays a link: ![remote](https://example.com/x.png)")),
+    );
+  return out;
 }
 
 export interface MockServer {

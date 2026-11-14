@@ -133,6 +133,7 @@ const SIZES = [
 const SCREENS = [
   { name: "inbox", url: "?mock=rail" },
   { name: "thread", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in" },
+  { name: "thread with previews", url: "?mock=1&open=t_w3", field: ".m-cmp .in", previews: true },
   { name: "composer with chips", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in", files: ".m-cmp input[data-picker=files]" },
   { name: "question Q1", url: "?mock=rail&open=t_lasso", openOther: true },
   { name: "approval", url: "?mock=1&open=t_approval" },
@@ -160,6 +161,9 @@ const MEASURE = `(() => {
     chips: rect('.m-cmpw .att-strip'),
     camera: rect('.m-cmp .cam'),
     chipCount: document.querySelectorAll('.att-chip.done').length,
+    previewCards: document.querySelectorAll('.pv').length,
+    previewOverflow: Math.max(0, ...[...document.querySelectorAll('.pv, .pv-frame, .pv-img img, .fs')].map(e => e.getBoundingClientRect().right)) - window.innerWidth,
+    pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
     focused: active ? { top: active.top, bottom: active.bottom } : null,
   };
 })()`;
@@ -191,6 +195,11 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     check(r.top >= visTop - 0.5, `${ctx}: ${name} starts above the visible area (${r.top.toFixed(1)} < ${visTop})`);
     check(r.bottom <= visBottom - insetBottom + 0.5, `${ctx}: ${name} bottom ${r.bottom.toFixed(1)} is below ${visBottom - insetBottom} (viewport ${visBottom}, inset ${insetBottom})`);
   }
+  if (ctx.startsWith("thread with previews")) {
+    check(m.previewCards >= 4, `${ctx}: expected the 4 preview cards (found ${m.previewCards})`);
+    check(m.previewOverflow <= 0.5, `${ctx}: a preview card runs ${m.previewOverflow.toFixed(1)} px past the right edge`);
+  }
+  check(m.pageOverflow <= 0, `${ctx}: the page scrolls sideways by ${m.pageOverflow} px`);
   if (ctxWantsChips(ctx)) check(m.chipCount >= 2 && !!m.chips && !!m.camera, `${ctx}: expected 2 uploaded chips and the Camera button (chips ${m.chipCount})`);
   if (m.sheet) check(m.sheet.bottom <= visBottom + 0.5, `${ctx}: sheet runs below the viewport`);
   if (keyboard) {

@@ -22,6 +22,7 @@ import (
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
 )
@@ -46,6 +47,8 @@ type Server struct {
 	OwnerLogin string
 	// Push serves the Web Push endpoints (V0.15); optional.
 	Push Pusher
+	// Presence records which thread each device shows (V0.20); optional.
+	Presence *notify.Presence
 	// Attach stores uploaded files (V0.18); optional.
 	Attach   *attach.Store
 	Profiles []agent.Profile
@@ -60,6 +63,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/events", s.events)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
+	if s.Presence != nil {
+		mux.HandleFunc("POST /api/presence", func(w http.ResponseWriter, r *http.Request) {
+			var b struct {
+				ThreadID string `json:"threadId"`
+				Device   string `json:"device"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&b); err != nil || b.Device == "" {
+				http.Error(w, "threadId and device are required", 400)
+				return
+			}
+			s.Presence.Beat(b.Device, b.ThreadID, time.Now())
+			w.WriteHeader(http.StatusNoContent)
+		})
+	}
 	if s.Attach != nil {
 		mux.HandleFunc("POST /api/attachments", s.upload)
 		mux.HandleFunc("GET /api/attachments/{id}", s.download)
