@@ -1,11 +1,11 @@
 // New thread, Adopt from T3, and the snooze menu.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Profile, Project, T3Candidate } from "./types.ts";
+import type { Profile, Project, ProjectSource, T3Candidate } from "./types.ts";
 import { ChipStrip, ClipPicker, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
-import { NewProjectForm, ProjectIcon, ProjectList } from "./project-ui.tsx";
-import { pickerOrder, projectDefaults, projectSubtitle } from "./projects.ts";
+import { NewProjectStep, ProjectIcon, ProjectList } from "./project-ui.tsx";
+import { LAST_PROJECT_KEY, colorVar, localProject, projectDefaults, projectSubtitle, startProject } from "./projects.ts";
 import { relTime, shortModel } from "./format.ts";
 import type { SnoozePreset } from "./store.ts";
 
@@ -39,22 +39,37 @@ export interface NewThreadArgs {
 
 
 
-export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, folder: string, repo: string): Promise<string | null> }) {
-  const sortedProjects = pickerOrder(p.projects);
-  const first = sortedProjects.find((x) => x.cwd) ?? sortedProjects[0];
-  const [projectId, setProjectId] = useState<string | undefined>(first?.id);
+/** The last new thread's project on this device (V0.30). */
+export function lastProject(): string | null {
+  try {
+    return localStorage.getItem(LAST_PROJECT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** SPEC 0.5 V0.30: Project first; the folder follows from the project's folder on this host, else it is asked. */
+export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; host: string; projectFilter: string | null; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, sources: ProjectSource[]): Promise<{ error: string | null; id?: string }> }) {
+  const [made, setMade] = useState<Project | null>(null);
+  const projects = made && !p.projects.some((x) => x.id === made.id) ? [...p.projects, made] : p.projects;
+  const [projectId, setProjectId] = useState<string | undefined>(() => startProject(p.projects, p.projectFilter, lastProject()));
+  const cur = projects.find((x) => x.id === projectId);
   const [picking, setPicking] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [cwd, setCwd] = useState(first?.cwd ?? "");
-  const [profile, setProfile] = useState(p.profiles[0]?.id ?? "");
+  const [creating, setCreating] = useState<string | null>(null);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [cwd, setCwd] = useState(cur?.cwd ?? "");
+  const startDefs = cur ? projectDefaults(cur, p.profiles) : {};
+  const [profile, setProfile] = useState(startDefs.profile ?? p.profiles[0]?.id ?? "");
   const prof = p.profiles.find((x) => x.id === profile);
-  const [model, setModel] = useState(prof?.defaultModel ?? prof?.models[0] ?? "");
+  const [model, setModel] = useState(startDefs.model ?? prof?.defaultModel ?? prof?.models[0] ?? "");
   const [text, setText] = useState("");
   const [title, setTitle] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const att = useAttachments();
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
+  const askFolder = !cur?.cwd || folderOpen;
 
   useEffect(() => {
     promptRef.current?.focus();
@@ -65,10 +80,28 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; o
     const np = p.profiles.find((x) => x.id === id);
     setModel(np?.defaultModel ?? np?.models[0] ?? "");
   };
+  const choose = (pr: Project | null) => {
+    setPicking(false);
+    setCreating(null);
+    setProjectId(pr?.id);
+    setFolderOpen(false);
+    setCwd(pr?.cwd ?? "");
+    if (pr) {
+      const d = projectDefaults(pr, p.profiles);
+      if (d.profile) {
+        setProfile(d.profile);
+        if (d.model) setModel(d.model);
+      }
+    }
+    if (pr && !pr.cwd) setTimeout(() => folderRef.current?.focus(), 0);
+  };
 
   const submit = async () => {
     if (busy) return;
-    if (!cwd.trim()) return setErr("Pick a folder.");
+    if (!cwd.trim()) {
+      folderRef.current?.focus();
+      return setErr(cur ? `${cur.name} has no folder on this computer: pick one for this thread.` : "Pick a folder for this thread.");
+    }
     const plan = sendArgs(text, att.chips);
     if (!plan.ok) return setErr(plan.reason === "Nothing to send" ? "Write a prompt or attach a file." : plan.reason);
     setBusy(true);
@@ -83,57 +116,70 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; o
       <div class="db">
         <div class="fld">
           <span>Project</span>
-          {(() => {
-            const cur = p.projects.find((x) => x.id === projectId);
-            return (
-              <button class="ppick" onClick={() => setPicking(!picking)} aria-expanded={picking}>
-                {cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
-                <span class="plt">
-                  <span class="ell pln">{cur?.name ?? "No project"}</span>
-                  <span class="ell pls2">{cur ? projectSubtitle(cur) : "Pick one, or type a folder below"}</span>
-                </span>
-                <span class="chev">{picking ? "▾" : "▸"}</span>
-              </button>
-            );
-          })()}
-          {picking && !creating && (
+          <button class="ppick" onClick={() => (setPicking(!picking), setCreating(null))} aria-expanded={picking} style={cur ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
+            {cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
+            <span class="plt">
+              <span class="ell pln">{cur?.name ?? "No project"}</span>
+              <span class="ell pls2">{cur ? projectSubtitle(cur) : "Not filed; pick a folder below"}</span>
+            </span>
+            <span class="chev">{picking ? "▾" : "▸"}</span>
+          </button>
+          {picking && creating === null && (
             <ProjectList
-              projects={p.projects}
-              selectedId={projectId}
+              projects={projects}
+              selectedId={projectId ?? null}
               autoFocus
-              onPick={(pr) => {
-                setPicking(false);
-                if (!pr) return;
-                setProjectId(pr.id);
-                const d = projectDefaults(pr, p.profiles);
-                setCwd(d.cwd ?? "");
-                if (d.profile) {
-                  setProfile(d.profile);
-                  if (d.model) setModel(d.model);
-                }
-              }}
-              onNew={() => setCreating(true)}
+              allLabel="No project"
+              newRow={{ fromThread: false, sub: "Just a name; add a folder or repo if you like", onNew: (q) => setCreating(q.trim()) }}
+              onPick={choose}
+              extra={
+                <button class="pli more" onClick={() => (choose(null), setFolderOpen(true), setTimeout(() => folderRef.current?.focus(), 0))}>
+                  <span class="pi all">…</span>
+                  <span class="plt">
+                    <span class="ell pln">Pick a folder…</span>
+                    <span class="ell pls2">No project; type the folder</span>
+                  </span>
+                </button>
+              }
             />
           )}
-          {creating && (
-            <NewProjectForm
-              onCancel={() => setCreating(false)}
-              onCreate={async (name, folder, repo) => {
-                const e = await p.onNewProject(name, folder, repo);
-                if (!e) {
-                  setCreating(false);
-                  setPicking(true);
-                  if (folder) setCwd(folder);
+          {creating !== null && (
+            <NewProjectStep
+              initialName={creating}
+              initialSources={[]}
+              host={p.host}
+              fromThread={false}
+              onCancel={() => setCreating(null)}
+              onCreate={async (name, sources) => {
+                const r = await p.onNewProject(name, sources);
+                if (r.error) return r.error;
+                if (r.id) {
+                  const np = localProject(r.id, name, sources, p.host);
+                  setMade(np);
+                  choose(np);
                 }
-                return e;
+                return null;
               }}
             />
           )}
         </div>
-        <label class="fld">
-          <span>Folder</span>
-          <input value={cwd} onInput={(e) => setCwd((e.target as HTMLInputElement).value)} placeholder="/home/me/src/app" spellcheck={false} />
-        </label>
+        {askFolder ? (
+          <label class="fld">
+            <span>Folder</span>
+            <input ref={folderRef} value={cwd} onInput={(e) => setCwd((e.target as HTMLInputElement).value)} placeholder="~/src/app" spellcheck={false} />
+            {cur && !cur.cwd && <span class="srcl">{cur.name} has no folder on this computer. This thread runs here; add the folder to the project on its screen to make it the default.</span>}
+          </label>
+        ) : (
+          <div class="fld">
+            <span>Folder</span>
+            <div class="fline">
+              <span class="ell">{cwd.replace(/^\/home\/[^/]+(?=\/|$)/, "~")}</span>
+              <button class="btn sm" onClick={() => (setFolderOpen(true), setTimeout(() => folderRef.current?.focus(), 0))}>
+                Change
+              </button>
+            </div>
+          </div>
+        )}
         <div class="row2">
           <label class="fld">
             <span>Profile</span>

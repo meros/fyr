@@ -508,7 +508,22 @@ button.ptag{padding:0}
 .pls2{font:400 12px/16px var(--mono);color:var(--ink-muted)}
 .plc{font:400 12px/16px var(--mono);color:var(--ink-muted)}
 .plempty{padding:12px;font:400 13px/18px var(--ui);color:var(--ink-muted)}
-.pli.new .ell{color:var(--harbour);font:500 14px/19px var(--ui)}
+/* V0.30: the one picker and the one-step New project */
+.pli.new .pln{color:var(--harbour)}
+.pli.new .pi.all,.pli.more .pi.all{color:var(--harbour);font-weight:500}
+.pli.none .pln{color:var(--ink)}
+.pli:focus{background:var(--sunken)}
+.pli:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+.plfoot{align-self:flex-start;margin-top:8px;padding:6px 0;font:500 13px/18px var(--ui);color:var(--harbour);cursor:pointer}
+.plfoot:hover{text-decoration:underline}
+.chip.pj{cursor:pointer}
+.chip.nopj{background:transparent;border:1px solid var(--line-strong);color:var(--ink-muted)}
+.chip.nopj:hover,.chip.proj:hover{filter:brightness(.97);background:var(--sunken)}
+.srcb{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+.srct{display:flex;gap:8px;align-items:baseline;min-width:0}
+.srcl{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.fline{display:flex;align-items:center;gap:8px;min-height:34px;padding:0 4px 0 10px;border:1px solid var(--line);border-radius:8px;font:400 13px/18px var(--mono);color:var(--ink);min-width:0}
+.fline .ell{flex:1;min-width:0}
 .ppick{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:48px;padding:6px 10px;border:1px solid var(--line-strong);border-radius:8px;text-align:left;min-width:0}
 .pform{display:flex;flex-direction:column;gap:10px;min-width:0}
 .pformb{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
@@ -526,7 +541,7 @@ button.ptag{padding:0}
 .ig:hover{background:var(--sunken)}
 .ig.on{color:var(--pc);background:color-mix(in srgb,var(--pc) 14%,transparent);box-shadow:inset 0 0 0 1px var(--pc)}
 .srcs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
-.src{display:flex;gap:8px;align-items:center;min-height:28px;font:400 13px/18px var(--mono);color:var(--ink);min-width:0}
+.src{display:flex;gap:8px;align-items:center;min-height:28px;padding:4px 0;font:400 13px/18px var(--mono);color:var(--ink);min-width:0}
 .src b{font:600 12px/16px var(--ui);color:var(--ink-muted);flex:none;width:44px}
 .src .ell{flex:1;min-width:0}
 .src-x{flex:none;width:28px;height:28px;margin-left:auto;border:0;border-radius:6px;background:none;color:var(--ink-muted);font:400 18px/1 var(--ui);cursor:pointer}

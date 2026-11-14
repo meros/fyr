@@ -1,6 +1,6 @@
 // Projects (SPEC 0.5 V0.23): palette, icons, ordering, filtering; and started-by labels (V0.22). Pure.
 
-import type { Profile, Project, ProjectIconSpec, ProjectSuggestion, ThreadDTO } from "./types.ts";
+import type { Profile, Project, ProjectIconSpec, ProjectSource, ProjectSuggestion, ThreadDTO } from "./types.ts";
 import { LINE_ICONS } from "./lucide.ts";
 
 /** Ten hues tuned to the Rail tokens, light and dark. Never amber: the beam marks only what needs the user. */
@@ -143,7 +143,7 @@ export function projectSubtitle(p: Project): string {
   if (repo?.url) return repo.url;
   const folder = p.sources?.find((s) => s.kind === "folder") as { host?: string; path?: string } | undefined;
   if (folder?.path) return `${folder.host ?? "another host"}: ${folder.path}`;
-  return "No source: a label";
+  return "No source: filed by hand";
 }
 
 /** The new-thread picker: projects by last use (newest first), then by name. */
@@ -180,4 +180,57 @@ export const FILTER_KEY = "fyr.projectFilter";
 export function projectDefaults(pr: Project, profiles: Profile[]): { cwd?: string; profile?: string; model?: string } {
   const prof = profiles.find((x) => x.id === pr.profile);
   return { cwd: pr.cwd, profile: prof?.id, model: prof ? (pr.model && prof.models.includes(pr.model) ? pr.model : (prof.defaultModel ?? prof.models[0])) : undefined };
+}
+
+// ---- V0.30: one picker, one create step ----
+
+/** What "New project from this thread" starts with: the host's prefill, else the suggestion (an older host), else a name only. A copy. */
+export function newProjectDraft(t: Pick<ThreadDTO, "newProject" | "suggest">): { name: string; sources: ProjectSource[] } {
+  const d = t.newProject ?? t.suggest;
+  return { name: d?.name ?? "", sources: [...(d?.sources ?? [])] };
+}
+
+/** One plain line of what a source does. */
+export function sourceLine(s: ProjectSource, host: string): string {
+  if (s.kind === "folder") {
+    const h = String((s as { host?: string }).host ?? "");
+    return h && host && h !== host ? `Threads started in this folder on ${h} land here` : "Threads started in this folder land here";
+  }
+  if (s.kind === "repo") return "Threads in any clone of this repo land here, on any computer";
+  return "";
+}
+export const NO_SOURCE_LINE = "No source: you file threads here by hand";
+
+/** A source as text: a folder here as a short path, a folder elsewhere with its host, a repo as its URL. */
+export function sourceText(s: ProjectSource, host: string): string {
+  if (s.kind === "folder") {
+    const h = String((s as { host?: string }).host ?? "");
+    const p = String((s as { path?: string }).path ?? "");
+    return h && host && h !== host ? `${h}: ${p}` : p.replace(/^\/home\/[^/]+(?=\/|$)/, "~");
+  }
+  if (s.kind === "repo") return String((s as { url?: string }).url ?? "");
+  return JSON.stringify(s);
+}
+
+/** The picker's first row: from a thread "New project from this thread"; typed text that matches nothing names it. */
+export function newRowLabel(q: string, matches: number, fromThread: boolean): string {
+  const t = q.trim();
+  if (t && !matches) return `New project “${t}”`;
+  return fromThread ? "New project from this thread" : "New project";
+}
+
+/** The project a new thread starts on: the inbox filter, else the last one used on this device, else the most recent. */
+export function startProject(projects: Project[], filterId: string | null | undefined, lastId: string | null | undefined): string | undefined {
+  if (filterId && projects.some((p) => p.id === filterId)) return filterId;
+  if (lastId && projects.some((p) => p.id === lastId)) return lastId;
+  return pickerOrder(projects)[0]?.id;
+}
+
+/** The project of the last new thread on this device (V0.30); "" for No project. */
+export const LAST_PROJECT_KEY = "fyr.lastProject";
+
+/** A project the client just made, until the host's copy arrives: its folder here is its cwd (V0.30). */
+export function localProject(id: string, name: string, sources: ProjectSource[], host: string): Project {
+  const here = sources.find((s) => s.kind === "folder" && (!(s as { host?: string }).host || (s as { host?: string }).host === host)) as { path?: string } | undefined;
+  return { id, name, sources, threads: 0, lastUsed: new Date().toISOString(), cwd: here?.path };
 }

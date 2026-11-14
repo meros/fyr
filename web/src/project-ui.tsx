@@ -1,11 +1,12 @@
-// Project identity in the UI (SPEC 0.5 V0.23): icons, tags, lists, the project screen and a new-project form;
+// Project identity in the UI (SPEC 0.5 V0.23): icons, tags, lists, the project screen; the one picker and the
+// one-step New project (V0.30);
 // and the thread directory that started-by labels and cross-thread messages read (V0.22).
 
-import { createContext } from "preact";
+import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
-import type { Profile, Project, ThreadDTO } from "./types.ts";
+import type { Profile, Project, ProjectSource, ThreadDTO } from "./types.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { PALETTE_NAMES, colorName, colorVar, matchProjects, monogram, projectName, projectOf, projectSubtitle, resolveIcon } from "./projects.ts";
+import { NO_SOURCE_LINE, PALETTE_NAMES, colorName, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, sourceFromInput, sourceLine, sourceText } from "./projects.ts";
 import { shortModel } from "./format.ts";
 
 /** Threads and projects for labels deep in the tree, and a way to open a thread or a project. */
@@ -14,10 +15,12 @@ export interface Directory {
   projects: Project[];
   openThread(id: string): void;
   openProject(id: string): void;
-  /** Make the thread's suggested project (V0.28). */
-  createProjectFrom(threadId: string): void;
+  /** Open the project picker for a thread (V0.30); startNew focuses New project from this thread. */
+  pickProject(threadId: string, startNew?: boolean): void;
+  /** this host's name, for source lines */
+  host: string;
 }
-export const DirectoryContext = createContext<Directory>({ threads: {}, projects: [], openThread: () => {}, openProject: () => {}, createProjectFrom: () => {} });
+export const DirectoryContext = createContext<Directory>({ threads: {}, projects: [], openThread: () => {}, openProject: () => {}, pickProject: () => {}, host: "" });
 export const useDirectory = () => useContext(DirectoryContext);
 
 export function ProjectIcon({ project, name, size = 16 }: { project?: Project; name: string; size?: number }) {
@@ -103,21 +106,34 @@ export function FromThreadMessage({ fromId, text, children }: { fromId: string; 
   );
 }
 
-/** A searchable project list: the picker, Move to project and the filter. */
-export function ProjectList({ projects, selectedId, onPick, onNew, allLabel, autoFocus }: { projects: Project[]; selectedId?: string | null; onPick(p: Project | null): void; onNew?: () => void; allLabel?: string; autoFocus?: boolean }) {
+/** The picker's first row (V0.30): New project, named by the search text when nothing matches. */
+export interface NewRow {
+  /** from a thread: "New project from this thread" */
+  fromThread: boolean;
+  /** what it starts with, one line */
+  sub: string;
+  onNew(query: string): void;
+}
+
+/** A searchable project list: the picker (Project…), the new-thread picker and the filter. Rows: New project, the
+ *  null row (No project, All projects), the projects by last use, then any extra rows. */
+export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus, newRow, focusNew, extra }: { projects: Project[]; selectedId?: string | null; onPick(p: Project | null): void; allLabel?: string; autoFocus?: boolean; newRow?: NewRow; focusNew?: boolean; extra?: ComponentChildren }) {
   const [q, setQ] = useState("");
   const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (autoFocus) ref.current?.focus();
-  }, []);
   const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusNew) box.current?.querySelector<HTMLElement>(".pli.new")?.focus();
+    else if (autoFocus) ref.current?.focus();
+  }, []);
   const list = matchProjects(projects, q);
-  // Keyboard: Enter in the search picks the first match; arrows walk the list and back to the search.
+  // Keyboard: Enter in the search picks the first match, or names a new project when nothing matches; arrows walk the
+  // rows and back to the search.
   const options = () => [...(box.current?.querySelectorAll<HTMLElement>("button") ?? [])];
   const onSearchKey = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && q.trim() && list.length) {
+    if (e.key === "Enter" && q.trim()) {
       e.preventDefault();
-      onPick(list[0]);
+      if (list.length) onPick(list[0]);
+      else newRow?.onNew(q);
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       options()[0]?.focus();
@@ -133,14 +149,24 @@ export function ProjectList({ projects, selectedId, onPick, onNew, allLabel, aut
   };
   return (
     <div class="plist">
-      <input ref={ref} class="pq" type="search" placeholder="Search projects" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={onSearchKey} aria-label="Search projects" />
+      <input ref={ref} class="pq" type="search" placeholder={newRow ? "Search, or name a new project" : "Search projects"} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={onSearchKey} aria-label="Search projects" autocapitalize="off" />
       <div class="pls" role="listbox" ref={box} onKeyDown={onListKey}>
+        {newRow && (
+          <button class="pli new" role="option" aria-selected={false} onClick={() => newRow.onNew(q)}>
+            <span class="pi all">+</span>
+            <span class="plt">
+              <span class="ell pln">{newRowLabel(q, list.length, newRow.fromThread)}</span>
+              <span class="ell pls2">{newRow.sub}</span>
+            </span>
+          </button>
+        )}
         {allLabel && !q && (
-          <button class={`pli${!selectedId ? " on" : ""}`} role="option" aria-selected={!selectedId} onClick={() => onPick(null)}>
+          <button class={`pli none${!selectedId ? " on" : ""}`} role="option" aria-selected={!selectedId} onClick={() => onPick(null)}>
             <span class="pi all" />
             <span class="plt">
-              <span class="ell">{allLabel}</span>
+              <span class="ell pln">{allLabel}</span>
             </span>
+            {!selectedId && <span class="plc">✓</span>}
           </button>
         )}
         {list.map((p) => (
@@ -150,62 +176,128 @@ export function ProjectList({ projects, selectedId, onPick, onNew, allLabel, aut
               <span class="ell pln">{p.name}</span>
               <span class="ell pls2">{projectSubtitle(p)}</span>
             </span>
-            {p.threads ? <span class="plc">{p.threads}</span> : null}
+            {selectedId && p.id === selectedId ? <span class="plc">✓</span> : p.threads ? <span class="plc">{p.threads}</span> : null}
           </button>
         ))}
-        {!list.length && <div class="plempty">No project matches “{q}”.</div>}
-        {onNew && (
-          <button class="pli new" onClick={onNew}>
-            <span class="pi all">+</span>
-            <span class="plt">
-              <span class="ell">New project…</span>
-            </span>
-          </button>
-        )}
+        {!list.length && !newRow && <div class="plempty">No project matches “{q}”.</div>}
+        {extra}
       </div>
     </div>
   );
 }
 
-/** A new project: a name, and optionally a folder on this host or a repo URL. No source makes a label. */
-export function NewProjectForm({ onCreate, onCancel, initialName }: { onCreate(name: string, folder: string, repo: string): Promise<string | null>; onCancel(): void; initialName?: string }) {
-  const [name, setName] = useState(initialName ?? "");
-  const [folder, setFolder] = useState("");
-  const [repo, setRepo] = useState("");
+/** New project, one step (V0.30): a name (required), the sources it starts with (each says what it does; × leaves it
+ *  out) and one optional field for another folder or repo. The rest is on the project screen. */
+export function NewProjectStep({ initialName, initialSources, host, fromThread, onCreate, onCancel }: { initialName: string; initialSources: ProjectSource[]; host: string; fromThread: boolean; onCreate(name: string, sources: ProjectSource[]): Promise<string | null>; onCancel(): void }) {
+  const [name, setName] = useState(initialName);
+  const [sources, setSources] = useState(initialSources);
+  const [extra, setExtra] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    nameRef.current?.focus();
+    nameRef.current?.select();
+  }, []);
+  const added = sourceFromInput(extra) as ProjectSource | null;
   const submit = async () => {
-    if (!name.trim()) return setErr("A project needs a name.");
+    if (busy) return;
+    if (!name.trim()) {
+      nameRef.current?.focus();
+      return setErr("A project needs a name.");
+    }
     setBusy(true);
-    const e = await onCreate(name.trim(), folder.trim(), repo.trim());
+    setErr(null);
+    const e = await onCreate(name.trim(), added ? [...sources, added] : sources);
     setBusy(false);
     if (e) setErr(e);
+  };
+  const enter = (e: KeyboardEvent) => {
+    if (e.key === "Enter" && !e.isComposing) {
+      e.preventDefault();
+      void submit();
+    }
   };
   return (
     <div class="pform">
       <label class="fld">
         <span>Name</span>
-        <input value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} placeholder="Garden" autoFocus />
+        <input ref={nameRef} value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} onKeyDown={enter} placeholder="Garden" autocapitalize="sentences" />
       </label>
+      <div class="fld">
+        <span>{sources.length ? "Starts with" : "Sources"}</span>
+        {sources.length ? (
+          <SourceList sources={sources} host={host} onRemove={(i) => setSources(sources.filter((_, k) => k !== i))} />
+        ) : (
+          <p class="lede">{NO_SOURCE_LINE}.</p>
+        )}
+      </div>
       <label class="fld">
-        <span>Folder on this host (optional)</span>
-        <input value={folder} onInput={(e) => setFolder((e.target as HTMLInputElement).value)} placeholder="/home/me/src/app" spellcheck={false} />
+        <span>Add a folder or repo (optional)</span>
+        <input value={extra} onInput={(e) => setExtra((e.target as HTMLInputElement).value)} onKeyDown={enter} placeholder="~/src/app or github.com/me/app" spellcheck={false} autocapitalize="off" />
+        {added && <span class="srcl">{sourceLine(added, host)}</span>}
       </label>
-      <label class="fld">
-        <span>Repo URL (optional)</span>
-        <input value={repo} onInput={(e) => setRepo((e.target as HTMLInputElement).value)} placeholder="github.com/me/app" spellcheck={false} />
-      </label>
-      <p class="lede">Without a folder or a repo the project is a label: file threads into it by hand.</p>
+      <p class="lede">Icon, colour and defaults are on the project screen, later.</p>
       {err && <div class="err prose">{err}</div>}
       <div class="pformb">
         <button class="btn" onClick={onCancel}>
-          Cancel
+          Back
         </button>
         <button class="btn p" disabled={busy} onClick={() => void submit()}>
-          Create project
+          {fromThread ? "Create and file this thread" : "Create project"}
         </button>
       </div>
     </div>
+  );
+}
+
+/** Sources, each with one plain line of what it does (V0.30). */
+export function SourceList({ sources, host, onRemove }: { sources: ProjectSource[]; host: string; onRemove(i: number): void }) {
+  return (
+    <ul class="srcs">
+      {sources.map((s, i) => (
+        <li class="src">
+          <span class="srcb">
+            <span class="srct">
+              <b>{s.kind === "folder" ? "Folder" : s.kind === "repo" ? "Repo" : s.kind}</b>
+              <span class="ell">{sourceText(s, host)}</span>
+            </span>
+            <span class="srcl">{sourceLine(s, host)}</span>
+          </span>
+          <button class="src-x" aria-label={`Remove ${sourceText(s, host)}`} title="Remove" onClick={() => onRemove(i)}>
+            ×
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The one project picker (V0.30): file a thread, unfile it, or make a project from it in one step. */
+export function ProjectPicker({ projects, threads, host, startNew, onPick, onCreate, onEdit }: { projects: Project[]; threads: ThreadDTO[]; host: string; startNew?: boolean; onPick(p: Project | null): void; onCreate(name: string, sources: ProjectSource[]): Promise<string | null>; onEdit?(p: Project): void }) {
+  const one = threads.length === 1 ? threads[0] : undefined;
+  const base = one ? newProjectDraft(one) : { name: "", sources: [] };
+  const [draft, setDraft] = useState<{ name: string; sources: ProjectSource[] } | null>(null);
+  const cur = one ? projectOf(one, projects) : undefined;
+  if (draft) return <NewProjectStep initialName={draft.name} initialSources={draft.sources} host={host} fromThread={threads.length > 0} onCreate={onCreate} onCancel={() => setDraft(null)} />;
+  const sub = base.sources.length ? `${base.name} · ${base.sources.map((s) => sourceText(s, host)).join(" and ")}` : "Just a name; file threads here by hand";
+  return (
+    <>
+      <ProjectList
+        projects={projects}
+        selectedId={one ? (cur?.id ?? null) : undefined}
+        autoFocus
+        focusNew={startNew}
+        allLabel="No project"
+        newRow={{ fromThread: !!one, sub, onNew: (q) => setDraft({ name: q.trim() || base.name, sources: base.sources }) }}
+        onPick={onPick}
+      />
+      {cur && onEdit && (
+        <button class="plfoot" onClick={() => onEdit(cur)}>
+          Edit {cur.name}…
+        </button>
+      )}
+    </>
   );
 }
 
@@ -220,7 +312,7 @@ export interface ProjectPatch {
 }
 
 /** Edit a project's identity and defaults, and add or remove its sources (a folder path or a repo URL). */
-export function ProjectEditor({ project, profiles, onSave, onAddSource, onRemoveSource, onMoveThread, onNewProject }: { project: Project; profiles: Profile[]; onSave(patch: ProjectPatch): Promise<string | null>; onAddSource(value: string): Promise<string | null>; onRemoveSource(index: number): Promise<string | null>; onMoveThread?: () => void; onNewProject?: () => void }) {
+export function ProjectEditor({ project, profiles, host, onSave, onAddSource, onRemoveSource }: { project: Project; profiles: Profile[]; host: string; onSave(patch: ProjectPatch): Promise<string | null>; onAddSource(value: string): Promise<string | null>; onRemoveSource(index: number): Promise<string | null> }) {
   const [name, setName] = useState(project.name);
   const [color, setColor] = useState(colorName(project.color, project.name));
   const [kind, setKind] = useState<"monogram" | "emoji" | "line">(resolveIcon(project.icon, project.name).kind);
@@ -304,28 +396,17 @@ export function ProjectEditor({ project, profiles, onSave, onAddSource, onRemove
       </div>
       <div class="fld">
         <span>Sources</span>
-        <ul class="srcs">
-          {sources.length === 0 && <li class="src none">No source: a label</li>}
-          {sources.map((s, i) => (
-            <li class="src">
-              <b>{s.kind === "folder" ? "Folder" : s.kind === "repo" ? "Repo" : s.kind}</b>
-              <span class="ell">{s.kind === "folder" ? `${String((s as { host?: string }).host ?? "")}: ${String((s as { path?: string }).path ?? "")}` : String((s as { url?: string }).url ?? JSON.stringify(s))}</span>
-              <button
-                class="src-x"
-                aria-label="Remove source"
-                title="Remove source"
-                onClick={async () => {
-                  const e = await onRemoveSource(i);
-                  setMsg(e ? { text: e, err: true } : null);
-                }}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
+        {sources.length === 0 && <p class="lede">{NO_SOURCE_LINE}.</p>}
+        <SourceList
+          sources={sources}
+          host={host}
+          onRemove={async (i) => {
+            const e = await onRemoveSource(i);
+            setMsg(e ? { text: e, err: true } : null);
+          }}
+        />
         <div class="addsrc">
-          <input value={repo} placeholder="/home/me/src/app or github.com/me/app" spellcheck={false} autocapitalize="off" onInput={(e) => setRepo((e.target as HTMLInputElement).value)} aria-label="Folder path or repo URL" />
+          <input value={repo} placeholder="~/src/app or github.com/me/app" spellcheck={false} autocapitalize="off" onInput={(e) => setRepo((e.target as HTMLInputElement).value)} aria-label="Folder path or repo URL" />
           <button
             class="btn"
             disabled={!repo.trim()}
@@ -341,16 +422,6 @@ export function ProjectEditor({ project, profiles, onSave, onAddSource, onRemove
       </div>
       {msg && <div class={msg.err ? "err prose" : "lede"}>{msg.text}</div>}
       <div class="pformb">
-        {onNewProject && (
-          <button class="btn" onClick={onNewProject}>
-            New project…
-          </button>
-        )}
-        {onMoveThread && (
-          <button class="btn" onClick={onMoveThread}>
-            Move this thread…
-          </button>
-        )}
         <button class="btn p" onClick={() => void save()}>
           Save
         </button>

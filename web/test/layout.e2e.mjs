@@ -147,6 +147,11 @@ const SCREENS = [
   { name: "action sheet", url: "?mock=rail", sheet: "actions" },
   // SPEC 0.5 V0.28: a thread without a project; its details offer Make project “lasso-app”.
   { name: "details with a project suggestion", url: "?mock=1&open=t_s4", sheet: "details" },
+  // SPEC 0.5 V0.30: the project picker from the header chip, the one-step New project, and a new thread whose
+  // project has no folder here (the folder field shows and is required).
+  { name: "project picker", url: "?mock=1&open=t_s4", sheet: "project", field: ".m-sheet .pq" },
+  { name: "new project step", url: "?mock=1&open=t_s4", sheet: "newproject", field: ".m-sheet .pform input" },
+  { name: "new thread, project without a folder", url: "?mock=rail&new", storage: { "fyr.lastProject": "p_home", "fyr.projectFilter": "" }, field: ".m-new input.m-dchip" },
   // SPEC 0.5 V0.25: the Changes tab with one file's diff open.
   { name: "changes with a diff", url: "?mock=rail&open=t_mapperf&tab=changes", openDiff: true },
 ];
@@ -156,7 +161,7 @@ const MEASURE = `(() => {
   const vv = window.visualViewport;
   const top = vv.offsetTop, bottom = vv.offsetTop + vv.height;
   const rect = (sel) => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return r.height ? { top: r.top, bottom: r.bottom } : null; };
-  const lastSheetItem = (() => { const items = document.querySelectorAll('.m-sheet .m-mi, .m-sheet .m-bt'); const el = items[items.length - 1]; if (!el) return null; el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; })();
+  const lastSheetItem = (() => { const items = document.querySelectorAll('.m-sheet .m-mi, .m-sheet .m-bt, .m-sheet .pformb .btn'); const el = items[items.length - 1]; if (!el) return null; el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; })();
   const active = document.activeElement && document.activeElement !== document.body ? document.activeElement.getBoundingClientRect() : null;
   return {
     top, bottom,
@@ -182,6 +187,12 @@ const MEASURE = `(() => {
     diffLines: document.querySelectorAll('.chg-diff .dl').length,
     changeRight: Math.max(0, ...[...document.querySelectorAll('.chg, .chg-file, .chg-diff')].map(e => e.getBoundingClientRect().right)),
     focused: active ? { top: active.top, bottom: active.bottom } : null,
+    pickerRows: [...document.querySelectorAll('.m-sheet .pli .pln')].slice(0, 2).map(e => e.textContent),
+    stepName: document.querySelector('.m-sheet .pform input')?.value ?? null,
+    stepSources: document.querySelectorAll('.m-sheet .pform .src').length,
+    newProject: document.querySelector('.m-new .m-ppick .pln')?.textContent ?? null,
+    folderField: !!document.querySelector('.m-new input.m-dchip'),
+    startDisabled: !!document.querySelector('.m-new .m-abar .m-bt')?.disabled,
   };
 })()`;
 
@@ -218,6 +229,9 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     check(m.previewOverflow <= 0.5, `${ctx}: a preview card runs ${m.previewOverflow.toFixed(1)} px past the right edge`);
   }
   if (ctx.startsWith("project screen")) check(m.projectEditor, `${ctx}: no project editor`);
+  if (ctx.startsWith("project picker")) check(m.pickerRows[0] === "New project from this thread" && m.pickerRows[1] === "No project", `${ctx}: the picker's first rows are ${JSON.stringify(m.pickerRows)}`);
+  if (ctx.startsWith("new project step")) check(m.stepName === "lasso-app" && m.stepSources === 2, `${ctx}: the step is not prefilled from the thread (name ${m.stepName}, ${m.stepSources} sources)`);
+  if (ctx.startsWith("new thread, project without")) check(m.newProject === "Garden" && m.folderField && m.startDisabled, `${ctx}: expected Garden, the folder field and Start disabled (${m.newProject}, ${m.folderField}, ${m.startDisabled})`);
   if (ctx.startsWith("inbox filtered")) {
     check(m.filterLine, `${ctx}: the filter line is missing`);
     check(m.otherProjectRows === 0, `${ctx}: ${m.otherProjectRows} rows of other projects show under the filter`);
@@ -293,7 +307,11 @@ async function openScreen(s, w, h) {
     await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('Snooze'))?.click()`);
     await sleep(300);
   } else if (s.sheet === "details") {
-    await tapCenter(".m-chips");
+    await tapCenter(".m-chipsd");
+    await sleep(300);
+  } else if (s.sheet === "project" || s.sheet === "newproject") {
+    await tapCenter(".m-pjb");
+    if (s.sheet === "newproject") await tapCenter(".m-sheet .pli.new");
     await sleep(300);
   } else if (s.sheet === "actions") {
     await tapCenter("#m-sec-needs .m-swp .m-mv", 600);
@@ -314,7 +332,7 @@ for (const [w, h] of SIZES) {
       }
 
       // 2. Keyboard: focus the field, shrink the visual viewport (iOS also scrolls the layout viewport).
-      if (!s.sheet) {
+      if (!s.sheet || s.field) {
         if (s.openOther) {
           await evaluate(`[...document.querySelectorAll('.m-op')].find(b => b.textContent.startsWith('Other'))?.click()`);
           await sleep(200);
@@ -422,10 +440,10 @@ try {
   await key("Enter");
   const m = await evaluate(`({ menu: !!document.querySelector('.thh [role=menu]'), focused: document.activeElement?.textContent ?? '' })`);
   check(m.menu, "V0.26 desktop: the thread ⋯ menu does not open from the keyboard");
-  check(/Move to project/.test(m.focused), `V0.26 desktop: the ⋯ menu does not focus "Move to project…" ("${m.focused}")`);
+  check(/Project…/.test(m.focused), `V0.26 desktop: the ⋯ menu does not focus "Project…" ("${m.focused}")`);
   await key("Enter");
   const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .plist'), focus: document.activeElement?.classList.contains('pq') })`);
-  check(d.dlg && d.focus, "V0.26 desktop: Move to project… does not open the project picker with the search focused");
+  check(d.dlg && d.focus, "V0.26 desktop: Project… does not open the project picker with the search focused");
   await send("Input.insertText", { text: "Hemm" });
   await sleep(150);
   await key("Enter");
@@ -501,6 +519,39 @@ try {
   check(none, "V0.31 menu: a menu opened where nothing should");
 } catch (e) {
   failures.push(`V0.31 menu: ${e.message}`);
+}
+
+// SPEC 0.5 V0.30: from the keyboard, the suggestion chip opens the picker on New project from this thread; Enter
+// opens the one step prefilled from the thread, Enter makes the project and files the thread; p and the arrows then
+// unfile it with No project.
+try {
+  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_s4` });
+  await sleep(900);
+  await evaluate(`document.querySelector('.thh .chip.mkp')?.focus()`);
+  await key("Enter");
+  const a = await evaluate(`({ dlg: !!document.querySelector('.dlg .plist'), focused: document.activeElement?.classList.contains('new') ? document.activeElement.textContent : '' })`);
+  check(a.dlg && /New project from this thread/.test(a.focused), `V0.30 desktop: the suggestion chip does not open the picker on New project from this thread ("${a.focused}")`);
+  await key("Enter");
+  const b = await evaluate(`({ name: document.activeElement?.value ?? '', sources: document.querySelectorAll('.dlg .pform .src').length, button: document.querySelector('.dlg .pform .btn.p')?.textContent ?? '' })`);
+  check(b.name === "lasso-app" && b.sources === 2 && /Create and file this thread/.test(b.button), `V0.30 desktop: the step is not prefilled and focused (${JSON.stringify(b)})`);
+  await key("Enter");
+  await sleep(400);
+  const c = await evaluate(`({ dlg: !!document.querySelector('.dlg'), chip: document.querySelector('.thh .chip.proj')?.textContent ?? '', mk: !!document.querySelector('.thh .chip.mkp') })`);
+  check(!c.dlg && /lasso-app/.test(c.chip) && !c.mk, `V0.30 desktop: Enter does not make the project and file the thread (${JSON.stringify(c)})`);
+  await evaluate(`document.activeElement?.blur()`);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "p", code: "KeyP", text: "p", windowsVirtualKeyCode: 80 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "p", code: "KeyP" });
+  await sleep(200);
+  await key("ArrowDown");
+  await key("ArrowDown");
+  const f = await evaluate(`document.activeElement?.textContent ?? ''`);
+  check(/^No project/.test(f), `V0.30 desktop: the second row is not No project ("${f}")`);
+  await key("Enter");
+  await sleep(400);
+  const u = await evaluate(`({ dlg: !!document.querySelector('.dlg'), chip: document.querySelector('.thh .chip.pj')?.textContent ?? '' })`);
+  check(!u.dlg && u.chip === "No project", `V0.30 desktop: No project does not unfile the thread (${JSON.stringify(u)})`);
+} catch (e) {
+  failures.push(`V0.30 desktop: ${e.message}`);
 }
 
 clearTimeout(watchdog);
