@@ -23,7 +23,14 @@
 //	         real CLI connects its MCP servers before the first turn
 //	slow N   runs a tool for N ms, then takes in every queued message at
 //	         that tool boundary and replies "took in: <texts>" (V0.33)
+//	view H   publishes a live view with headline H over MCP during the turn
 //	other    replies "echo: <text>"
+//
+// When initialize registers a Stop hook (callback "view"), every turn that
+// ends without an error asks it, as the CLI does: a block reply writes the
+// synthetic user message and the stop-hook-error notification, then runs a
+// forced turn that publishes a view with headline "after stop hook", and
+// asks again with stop_hook_active true (V0.37).
 //
 // As the real CLI does, a user message with a uuid waits in a queue and is
 // reported as command_lifecycle queued, started (taken in), completed (its
@@ -54,6 +61,9 @@ var (
 	mcpAuth    string
 	mcpAtStart = "none"
 	model      = "fake-model"
+
+	stopHook bool
+	stops    int
 
 	qmu   sync.Mutex
 	queue []queued
@@ -144,6 +154,24 @@ func assistant(content ...msg) {
 }
 
 func result(isErr bool, subtype, text string) {
+	if !isErr && stopHook {
+		active := false
+		for i := 0; i < 5; i++ {
+			stops++
+			r := request(fmt.Sprintf("stop%d", stops), msg{"subtype": "hook_callback", "callback_id": "view",
+				"input": msg{"hook_event_name": "Stop", "stop_hook_active": active, "background_tasks": []any{}, "last_assistant_message": text}})
+			if r == nil || r["decision"] != "block" {
+				break
+			}
+			reason, _ := r["reason"].(string)
+			write(msg{"type": "user", "isSynthetic": true, "session_id": session, "parent_tool_use_id": nil,
+				"message": msg{"role": "user", "content": []any{msg{"type": "text", "text": "Stop hook feedback:\n" + reason}}}})
+			write(msg{"type": "system", "subtype": "notification", "key": "stop-hook-error", "priority": "immediate", "text": "Stop hook error occurred"})
+			publishView("after stop hook", fmt.Sprintf("tu_v%d", stops))
+			assistant(msg{"type": "text", "text": "Updated the view."})
+			text, active = "Updated the view.", true
+		}
+	}
 	write(msg{"type": "result", "subtype": subtype, "is_error": isErr, "result": text,
 		"session_id": session, "num_turns": 1, "duration_ms": 5, "total_cost_usd": 0.001})
 }
@@ -212,6 +240,8 @@ func Main() {
 				resp = msg{"cancelled": cancelQueued(uuid)}
 			}
 			if req["subtype"] == "initialize" {
+				hooks, _ := req["hooks"].(msg)
+				_, stopHook = hooks["Stop"]
 				resp = msg{"commands": []any{}, "models": []any{msg{"value": "fake-model"}}}
 			}
 			write(msg{"type": "control_response", "response": msg{"subtype": "success", "request_id": id, "response": resp}})
@@ -361,6 +391,11 @@ func turn(text string) (took []queued) {
 		}
 		assistant(msg{"type": "text", "text": "took in: " + strings.Join(texts, ", ")})
 		result(false, "success", "done")
+	case "view":
+		h := strings.TrimSpace(strings.TrimPrefix(text, "view"))
+		out := publishView(h, "tu_view")
+		assistant(msg{"type": "text", "text": "view: " + out})
+		result(false, "success", "done")
 	case "crash":
 		fmt.Fprintln(os.Stderr, "boom")
 		os.Exit(3)
@@ -369,6 +404,16 @@ func turn(text string) (took []queued) {
 		result(false, "success", "echo: "+text)
 	}
 	return took
+}
+
+// publishView calls view_publish as a tool use and returns the tool's text.
+func publishView(headline, id string) string {
+	args := msg{"html": "<h1 data-text=\"headline\"></h1>", "state": msg{"headline": headline}}
+	assistant(msg{"type": "tool_use", "id": id, "name": "mcp__fyr__view_publish", "input": args})
+	out := callMCP("view_publish", args)
+	write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
+		"content": []any{msg{"type": "tool_result", "tool_use_id": id, "content": out}}}})
+	return out
 }
 
 func callMCP(tool string, args msg) string {

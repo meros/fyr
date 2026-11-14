@@ -46,6 +46,10 @@ type Thread struct {
 	DismissedPRs []string `json:"dismissedPRs,omitempty"`
 	// Outbox holds the messages the agent has not read yet (V0.33).
 	Outbox []OutMsg `json:"outbox,omitempty"`
+	// LiveView is the flag: the agent keeps a pinned live view (V0.37).
+	LiveView bool `json:"liveView,omitempty"`
+	// Live is the view itself: page, state, times, headline (V0.37).
+	Live *LiveView `json:"live,omitempty"`
 
 	SettledAt        *time.Time `json:"settledAt,omitempty"`
 	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
