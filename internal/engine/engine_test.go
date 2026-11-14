@@ -409,3 +409,14 @@ func TestBranchObserved(t *testing.T) {
 	id := h.create("hello")
 	h.wait(id, "branch", func(t core.Thread, _ core.Attention) bool { return t.Branch == "feat/lasso" })
 }
+
+// SPEC 16.2 MCP binding: the token works from the moment the process
+// starts, because the CLI connects its MCP servers before initialize.
+func TestMCPTokenValidAtStartup(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("mcpstatus")
+	th := h.wait(id, "done", state(core.Done))
+	if th.Summary != "mcp: ok" {
+		t.Fatalf("summary %q", th.Summary)
+	}
+}

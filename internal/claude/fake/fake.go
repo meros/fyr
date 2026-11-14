@@ -15,6 +15,8 @@
 //	merge U  calls mcp__fyr__effect_request {action pr.merge, args {pr: U}}
 //	         over HTTP from --mcp-config and reports the tool's text
 //	gate     asks the PreToolUse hook about "gh pr merge 1" and reports it
+//	mcpstatus reports whether the MCP server answered at startup, as the
+//	         real CLI connects its MCP servers before the first turn
 //	other    replies "echo: <text>"
 package fake
 
@@ -33,14 +35,15 @@ import (
 type msg = map[string]any
 
 var (
-	wmu       sync.Mutex
-	pmu       sync.Mutex
-	pending   = map[string]chan msg{}
-	interrupt = make(chan struct{}, 1)
-	session   = "fake-session"
-	mcpURL    string
-	mcpAuth   string
-	model     = "fake-model"
+	wmu        sync.Mutex
+	pmu        sync.Mutex
+	pending    = map[string]chan msg{}
+	interrupt  = make(chan struct{}, 1)
+	session    = "fake-session"
+	mcpURL     string
+	mcpAuth    string
+	mcpAtStart = "none"
+	model      = "fake-model"
 )
 
 func write(m msg) {
@@ -92,6 +95,14 @@ func Main() {
 		}
 		if a == "--model" && i+1 < len(os.Args) {
 			model = os.Args[i+1]
+		}
+	}
+	if mcpURL != "" {
+		// The real CLI connects MCP servers while it starts, before initialize.
+		if out := callMCPList(); out == "" {
+			mcpAtStart = "ok"
+		} else {
+			mcpAtStart = out
 		}
 	}
 	turns := make(chan string, 16)
@@ -220,6 +231,9 @@ func turn(text string) {
 		hso, _ := r["hookSpecificOutput"].(msg)
 		assistant(msg{"type": "text", "text": fmt.Sprintf("hook: %v %v", hso["permissionDecision"], hso["permissionDecisionReason"])})
 		result(false, "success", "done")
+	case "mcpstatus":
+		assistant(msg{"type": "text", "text": "mcp: " + mcpAtStart})
+		result(false, "success", "done")
 	case "crash":
 		fmt.Fprintln(os.Stderr, "boom")
 		os.Exit(3)
@@ -252,6 +266,23 @@ func callMCP(tool string, args msg) string {
 		return fmt.Sprintf("mcp status %d", resp.StatusCode)
 	}
 	return out.Result.Content[0].Text
+}
+
+// callMCPList returns "" when tools/list succeeds, else a reason.
+func callMCPList() string {
+	b, _ := json.Marshal(msg{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	req, _ := http.NewRequest("POST", mcpURL, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", mcpAuth)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "error " + err.Error()
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return fmt.Sprintf("status %d", resp.StatusCode)
+	}
+	return ""
 }
 
 func mustWd() string { d, _ := os.Getwd(); return d }

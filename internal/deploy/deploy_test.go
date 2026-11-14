@@ -89,14 +89,16 @@ func TestDeployStopsOnRedTests(t *testing.T) {
 func TestDeploySwitches(t *testing.T) {
 	d, h, steps := newDeployer(t, "")
 	h.running = []string{"t1", "other"}
-	go func() { time.Sleep(100 * time.Millisecond); h.mu.Lock(); h.running = []string{"t1"}; h.mu.Unlock() }()
+	go func() { time.Sleep(60 * time.Millisecond); h.mu.Lock(); h.running = []string{"t1"}; h.mu.Unlock() }()
+	// The requester's own turn must end too before the switch.
+	go func() { time.Sleep(120 * time.Millisecond); h.mu.Lock(); h.running = nil; h.mu.Unlock() }()
 	start := time.Now()
 	_, err := d.Deploy(context.Background(), "t1", req, "/src/fyr")
 	if !errors.Is(err, core.ErrReportLater) {
 		t.Fatalf("err %v", err)
 	}
-	if time.Since(start) < 90*time.Millisecond {
-		t.Fatal("did not wait for the other running thread")
+	if time.Since(start) < 110*time.Millisecond {
+		t.Fatal("did not wait for every running thread, the requester included")
 	}
 	if len(*steps) != 2 || !strings.HasPrefix((*steps)[0], "make -C /src/fyr build") || (*steps)[1] != "make -C /src/fyr test" {
 		t.Fatalf("steps %v", *steps)

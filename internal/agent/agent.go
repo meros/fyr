@@ -237,8 +237,21 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 	if _, err := os.Stat(t.Cwd); err != nil {
 		return nil, fmt.Errorf("working directory: %w", err)
 	}
+	// The CLI connects its MCP servers while it starts, before initialize,
+	// so the token must be valid before the process exists (SPEC 16.2).
+	if s.token != "" {
+		m.mu.Lock()
+		m.tokens[s.token] = threadID
+		m.mu.Unlock()
+	}
+	dropToken := func() {
+		m.mu.Lock()
+		delete(m.tokens, s.token)
+		m.mu.Unlock()
+	}
 	c, err := claude.Start(spec)
 	if err != nil {
+		dropToken()
 		return nil, err
 	}
 	s.c = c
@@ -258,13 +271,11 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 	if _, err := c.Initialize(ctx, claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}); err != nil {
 		c.Kill()
 		<-c.Done()
+		dropToken()
 		return nil, fmt.Errorf("initialize: %w", err)
 	}
 	m.mu.Lock()
 	m.sessions[threadID] = s
-	if s.token != "" {
-		m.tokens[s.token] = threadID
-	}
 	m.mu.Unlock()
 	go m.read(s)
 	return s, nil
