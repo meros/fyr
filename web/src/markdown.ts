@@ -39,6 +39,16 @@ const md = new Marked({
       const t = title ? ` title="${escapeHtml(title)}"` : "";
       return `<a href="${escapeHtml(h)}"${t} target="_blank" rel="noopener noreferrer">${inner}</a>`;
     },
+    table(token: Tokens.Table) {
+      // V0.35: every cell names its column, so a narrow screen shows each row as a card.
+      const label = (c: Tokens.TableCell) => escapeHtml(c.text.replace(/[`*_~]/g, "").trim());
+      const align = (c: Tokens.TableCell) => (c.align ? ` style="text-align:${c.align}"` : "");
+      const head = token.header.map((c) => `<th${align(c)}>${this.parser.parseInline(c.tokens)}</th>`).join("");
+      const body = token.rows
+        .map((r) => `<tr>${r.map((c, i) => `<td data-label="${label(token.header[i] ?? c)}"${align(c)}>${this.parser.parseInline(c.tokens)}</td>`).join("")}</tr>`)
+        .join("");
+      return `<div class="tblw"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    },
     code({ text, lang }: Tokens.Code) {
       // V0.34: each code block has its own Copy button (the click is handled in the conversation).
       const cls = lang ? ` class="language-${escapeHtml(lang.split(/\s/)[0])}"` : "";

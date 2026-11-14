@@ -10,6 +10,10 @@ export function mockScenario(search: string): string | null {
   return decodeURIComponent(m[1]);
 }
 
+// V0.35: a table that squeezed on the phone (a commit column, long change text).
+const TRIAGE_TABLE =
+  "Filed 6 issues, closed 2 duplicates.\n\n| Commit | Change |\n|---|---|\n| `3d0a470` | Finished in 14 min in place of the lone check; a live working line on the desktop |\n| `a0e8242` | Drafts survive a new message, a screen change and a reload |\n| `20d4939` | Fyr's own right-click menu; text fields keep the browser menu |\n";
+
 const LONG_TITLE =
   "Migrate the listing search from the legacy Elasticsearch cluster to OpenSearch without downtime and keep the old index readable for rollback";
 const LONG_PROJECT = "norban-platform-infrastructure-terraform-modules-and-tooling"; // 59 chars
@@ -547,7 +551,7 @@ function railFixture(now: number): Fixture {
       }),
     );
   }
-  for (const t of threads) if (t.id !== "t_lasso") events[t.id] = simpleEvents(t.id, now, `Work on: ${t.title}`, t.summary || "Done.", t.failure);
+  for (const t of threads) if (t.id !== "t_lasso") events[t.id] = simpleEvents(t.id, now, `Work on: ${t.title}`, t.id === "t_triage" ? TRIAGE_TABLE : t.summary || "Done.", t.failure);
 
   // The conversation of the design's thread.
   const ev2: FyrEvent[] = [];

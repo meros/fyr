@@ -436,6 +436,24 @@ try {
   failures.push(`V0.26 desktop: ${e.message}`);
 }
 
+// V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.
+try {
+  await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
+  const r = await evaluate(`(() => {
+    const tw = document.querySelector('.md .tblw'); if (!tw) return null;
+    const cells = [...tw.querySelectorAll('td')].map(td => td.getBoundingClientRect());
+    return { cards: getComputedStyle(tw.querySelector('tr')).display, narrow: Math.min(...cells.map(c => c.width)), right: Math.max(...cells.map(c => c.right)), vw: innerWidth, pageX: document.scrollingElement.scrollWidth <= innerWidth };
+  })()`);
+  check(!!r, "V0.35 table: no table in the message");
+  if (r) {
+    check(r.cards === "block", `V0.35 table: rows are not cards on the phone (${r.cards})`);
+    check(r.narrow > 200, `V0.35 table: a cell is squeezed to ${Math.round(r.narrow)} px`);
+    check(r.right <= r.vw && r.pageX, "V0.35 table: the table runs past the edge");
+  }
+} catch (e) {
+  failures.push(`V0.35 table: ${e.message}`);
+}
+
 // V0.32: native feel on the phone: no page bounce, controls not selectable, message text is,
 // and no browser menu on a long press outside text fields.
 try {
