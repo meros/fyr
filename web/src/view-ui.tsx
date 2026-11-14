@@ -23,13 +23,32 @@ function saveCollapsed(s: Set<string>) {
   } catch {}
 }
 
-export function LiveViewPanel({ t, now, onPress }: { t: ThreadDTO; now: number; onPress(text: string): Promise<boolean> }) {
+/** V0.37: the full view (the View tab), or one headline bar above the conversation that opens it. */
+export function LiveViewBar({ t, now, onOpen }: { t: ThreadDTO; now: number; onOpen(): void }) {
+  const v = liveViewOf(t);
+  if (!v) return null;
+  const dim = viewDimmed(t);
+  const stamp = staleLabel(v.updatedAt, now);
+  return (
+    <div class={`lv shut${dim ? " dim" : ""}`} data-testid="live-view-bar">
+      <button class="lv-h" onClick={onOpen} title="Open the live view">
+        <span class="lv-k">Live view</span>
+        {v.headline && <span class="lv-hl ell">{v.headline}</span>}
+        <span class="lv-s">{dim ? `${stamp} · agent working` : stamp}</span>
+        <span class="chev">▸</span>
+      </button>
+    </div>
+  );
+}
+
+export function LiveViewPanel({ t, now, onPress, full }: { t: ThreadDTO; now: number; onPress(text: string): Promise<boolean>; full?: boolean }) {
   const v = liveViewOf(t);
   const frame = useRef<HTMLIFrameElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [reported, setReported] = useState(0);
   const [pane, setPane] = useState(0);
-  const [collapsed, setCollapsed] = useState(() => loadCollapsed().has(t.id));
+  const [shut, setCollapsed] = useState(() => loadCollapsed().has(t.id));
+  const collapsed = !full && shut;
   const stateJson = JSON.stringify(v?.state ?? {});
   const pressRef = useRef(onPress);
   pressRef.current = onPress;
@@ -43,10 +62,10 @@ export function LiveViewPanel({ t, now, onPress }: { t: ThreadDTO; now: number; 
 
   const toggle = () => {
     const s = loadCollapsed();
-    if (collapsed) s.delete(t.id);
+    if (shut) s.delete(t.id);
     else s.add(t.id);
     saveCollapsed(s);
-    setCollapsed(!collapsed);
+    setCollapsed(!shut);
   };
 
   const sendState = () => frame.current?.contentWindow?.postMessage(stateMessage(stateRef.current), "*");
@@ -85,14 +104,14 @@ export function LiveViewPanel({ t, now, onPress }: { t: ThreadDTO; now: number; 
   const dim = viewDimmed(t);
   const stamp = staleLabel(v.updatedAt, now);
   return (
-    <div class={`lv${dim ? " dim" : ""}${collapsed ? " shut" : ""}`} ref={box} data-testid="live-view">
-      <button class="lv-h" onClick={toggle} aria-expanded={!collapsed} title={collapsed ? "Show the live view" : "Hide the live view"}>
+    <div class={`lv${dim ? " dim" : ""}${collapsed ? " shut" : ""}${full ? " full" : ""}`} ref={box} data-testid="live-view">
+      <button class="lv-h" onClick={full ? undefined : toggle} aria-expanded={!collapsed} title={full ? v.updatedAt : collapsed ? "Show the live view" : "Hide the live view"}>
         <span class="lv-k">Live view</span>
         {collapsed && v.headline && <span class="lv-hl ell">{v.headline}</span>}
         <span class="lv-s" title={dim ? "The agent is working; this may change" : v.updatedAt}>
           {dim ? `${stamp} · agent working` : stamp}
         </span>
-        <span class="chev">{collapsed ? "▸" : "▾"}</span>
+        {!full && <span class="chev">{collapsed ? "▸" : "▾"}</span>}
       </button>
       {!collapsed && (
         <iframe
@@ -101,7 +120,7 @@ export function LiveViewPanel({ t, now, onPress }: { t: ThreadDTO; now: number; 
           src={previewUrl(v.pageId)}
           sandbox="allow-scripts"
           title={v.headline || "Live view"}
-          style={{ height: `${viewHeight(reported, pane)}px` }}
+          style={full ? undefined : { height: `${viewHeight(reported, pane)}px` }}
           onLoad={sendState}
         />
       )}

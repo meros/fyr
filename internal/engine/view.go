@@ -21,22 +21,26 @@ import (
 // ui/notifications/state, a press leaves as ui/message, the height as
 // ui/notifications/size-changed. The page reads window.fyr.state, calls
 // fyr.onState(fn) and fyr.send(text); an element with data-send="text"
-// sends on a click, and data-text="a.b" shows that state field.
+// sends on a click, and data-text="a.b" shows that state field. A pressed
+// data-send element shows feedback at once (busy, then Sent or Not sent),
+// whatever the page itself does (V0.37).
 const viewBridge = `<script>(function(){
-var state={},subs=[],n=0;
+var state={},subs=[],n=0,wait={};
 function post(m){m.jsonrpc="2.0";parent.postMessage(m,"*")}
 function pick(o,p){return p.split(".").reduce(function(a,k){return a==null?a:a[k]},o)}
 function fill(){var els=document.querySelectorAll("[data-text]");for(var i=0;i<els.length;i++){var v=pick(state,els[i].getAttribute("data-text"));els[i].textContent=v==null?"":typeof v=="object"?JSON.stringify(v):String(v)}}
 window.fyr={get state(){return state},onState:function(f){subs.push(f);try{f(state)}catch(e){console.error(e)}},
-send:function(t){t=String(t||"").trim();if(t)post({id:"m"+(++n),method:"ui/message",params:{role:"user",content:[{type:"text",text:t}]}})}};
-addEventListener("message",function(e){if(e.source!==parent)return;var d=e.data;if(!d||d.method!=="ui/notifications/state")return;
+send:function(t){t=String(t||"").trim();if(!t)return Promise.resolve(false);var id="m"+(++n);return new Promise(function(r){wait[id]=r;setTimeout(function(){if(wait[id]){delete wait[id];r(false)}},15000);post({id:id,method:"ui/message",params:{role:"user",content:[{type:"text",text:t}]}})})}};
+addEventListener("message",function(e){if(e.source!==parent)return;var d=e.data;if(d&&d.id&&wait[d.id]){var r=wait[d.id];delete wait[d.id];r(!d.error);return}if(!d||d.method!=="ui/notifications/state")return;
 state=(d.params&&d.params.state)||{};fill();subs.forEach(function(f){try{f(state)}catch(x){console.error(x)}})});
-document.addEventListener("click",function(e){var b=e.target&&e.target.closest&&e.target.closest("[data-send]");if(b){e.preventDefault();fyr.send(b.getAttribute("data-send")||b.textContent)}});
+document.addEventListener("click",function(e){var b=e.target&&e.target.closest&&e.target.closest("[data-send]");if(!b)return;e.preventDefault();if(b.getAttribute("data-fyr")==="busy")return;
+b.setAttribute("data-fyr","busy");b.setAttribute("aria-busy","true");
+fyr.send(b.getAttribute("data-send")||b.textContent).then(function(ok){b.removeAttribute("aria-busy");b.setAttribute("data-fyr",ok?"sent":"failed");setTimeout(function(){if(b.getAttribute("data-fyr")!=="busy")b.removeAttribute("data-fyr")},ok?1800:3000)})});
 var last=-1;function size(){var h=Math.ceil(document.documentElement.getBoundingClientRect().height);if(h!==last){last=h;post({method:"ui/notifications/size-changed",params:{height:h}})}}
 if(window.ResizeObserver)new ResizeObserver(size).observe(document.documentElement);addEventListener("load",size);
 document.addEventListener("DOMContentLoaded",function(){fill();size()});
 post({method:"ui/notifications/initialized",params:{}});
-})();</script>`
+})();</script><style>[data-send]{transition:opacity .12s}[data-send]:active{transform:scale(.97)}[data-fyr=busy]{opacity:.55;cursor:progress;pointer-events:none}[data-fyr=sent]::after{content:" ✓ Sent"}[data-fyr=failed]::after{content:" · Not sent";color:#c0392b}</style>`
 
 var headTag = regexp.MustCompile(`(?i)<head[^>]*>`)
 var htmlTag = regexp.MustCompile(`(?i)<html[^>]*>`)

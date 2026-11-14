@@ -113,3 +113,11 @@ export function stateMessage(state: Record<string, unknown>) {
 export function pressReply(id: string | number, ok: boolean) {
   return ok ? { jsonrpc: "2.0", id, result: {} } : { jsonrpc: "2.0", id, error: { code: -32000, message: "Not sent" } };
 }
+
+/** SPEC 0.5 V0.37: the tab a thread opens on. A live view opens on View; an explicit
+ *  choice wins; View does not exist without a view. */
+export function defaultTab(t: Pick<ThreadDTO, "live">, requested: string | undefined): string {
+  const has = !!liveViewOf(t);
+  if (requested === "view") return has ? "view" : "conv";
+  return requested ?? (has ? "view" : "conv");
+}

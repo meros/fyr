@@ -21,7 +21,8 @@ import { colorVar, makeProjectLabel, projectName, projectOf, suggestionFor } fro
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
-import { LiveViewPanel } from "./view-ui.tsx";
+import { LiveViewBar, LiveViewPanel } from "./view-ui.tsx";
+import { defaultTab, liveViewOf } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
@@ -68,13 +69,18 @@ export interface ThreadPaneProps {
   onMoveProject?: () => void;
 }
 
-type Tab = "conv" | "changes" | "pr";
+type Tab = "view" | "conv" | "changes" | "pr";
 
 export function ThreadPane(p: ThreadPaneProps) {
   const t = p.thread;
   const [tab, setTab] = useState<Tab>("conv");
   const previews = useMemo(() => previewsOf(p.events ?? []), [p.events]);
-  useEffect(() => setTab("conv"), [t.id]);
+  useEffect(() => setTab(defaultTab(t, undefined) as Tab), [t.id]);
+  const hasView = !!liveViewOf(t);
+  // A view that appears or goes away while the thread is open keeps the tabs valid.
+  useEffect(() => {
+    if (tab === "view" && !hasView) setTab("conv");
+  }, [hasView]);
   const profile = p.profiles.find((x) => x.id === t.profile);
   const decision = t.decisions?.[0] ?? null;
   const st = t.attention.state;
@@ -139,6 +145,11 @@ export function ThreadPane(p: ThreadPaneProps) {
           )}
         </div>
         <div class="tabs" role="tablist">
+          {hasView && (
+            <span class={tab === "view" ? "on" : ""} role="tab" onClick={() => setTab("view")}>
+              View
+            </span>
+          )}
           <span class={tab === "conv" ? "on" : ""} role="tab" onClick={() => setTab("conv")}>
             Conversation
           </span>
@@ -151,7 +162,8 @@ export function ThreadPane(p: ThreadPaneProps) {
         </div>
       </div>
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
-      {tab === "conv" && <LiveViewPanel t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} />}
+      {tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} />}
+      {tab === "conv" && <LiveViewBar t={t} now={p.now} onOpen={() => setTab("view")} />}
       {tab === "conv" && <Filmstrip cards={previews} />}
       {tab === "conv" && (
         <Conversation
@@ -633,6 +645,7 @@ function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
       );
     }
     case "assistant":
+      if (it.quiet) return <QuietLine icon="seen" line={it.text.split("\n").find((x) => x.trim()) ?? ""} full={it.text} />;
       return (
         <div class="msgw">
           <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text) }} />

@@ -129,3 +129,20 @@ test("run end label", () => {
   assert.deepEqual(runLabel(run({})), { text: "Finished", more: "" });
   assert.equal(runLabel(run({ failure: { class: "api", message: "overloaded" } as never })).text, "Failed (api): overloaded");
 });
+
+// SPEC 0.5 V0.37: the text of the turn Fyr forced to update the live view shows as one
+// quiet line (the owner's choice); the run's own answer stays a normal message.
+test("the forced view turn is a quiet line", () => {
+  const msg = (text: string) => ev("msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text }] } });
+  const items = buildConversation([
+    ev("user", { text: "go" }),
+    msg("Fixed; the e2e run is green."),
+    ev("view.forced", {}),
+    msg("Updated the view."),
+    ev("run.ended", { failure: null, interrupted: false, durationMs: 60000 }),
+    ev("user", { text: "next" }),
+    msg("Next answer."),
+  ]);
+  const kinds = items.map((i) => (i.kind === "assistant" ? `assistant${i.quiet ? ":quiet" : ""}` : i.kind));
+  assert.deepEqual(kinds, ["user", "assistant", "assistant:quiet", "run", "user", "assistant"]);
+});

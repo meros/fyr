@@ -618,6 +618,12 @@ try {
     const r = await send("Runtime.evaluate", { expression: `(() => { const b = document.querySelector('[data-send="Open the PR"]'); if (!b) return false; b.click(); return true; })()`, returnByValue: true }, frame.sessionId);
     check(r.result?.result?.value === true, `V0.37 desktop: no "Open the PR" button in the view (${JSON.stringify(r.result ?? r.error)})`);
     await sleep(600);
+    // V0.37: the pressed button says what happened, inside the view.
+    const fb = await send("Runtime.evaluate", { expression: `document.querySelector('[data-send="Open the PR"]')?.getAttribute('data-fyr') ?? ''`, returnByValue: true }, frame.sessionId);
+    check(fb.result?.result?.value === "sent", `V0.37 desktop: the pressed button gives no Sent feedback (${JSON.stringify(fb.result?.result?.value)})`);
+    // The message chip is in the Conversation tab; the thread opened on View.
+    await evaluate(`[...document.querySelectorAll('.th [role=tab]')].find((x) => x.textContent.trim() === 'Conversation')?.click()`);
+    await sleep(300);
     const chips = await evaluate(`[...document.querySelectorAll('.th .vchip')].map((c) => c.textContent)`);
     check(chips.some((c) => /Open the PR/.test(c)), `V0.37 desktop: the press did not post a message from the view (chips ${JSON.stringify(chips)})`);
   }

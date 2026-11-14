@@ -34,7 +34,7 @@ export function urlFor(n: Nav, currentSearch = ""): string {
   const s = n.screen;
   if (s.name === "thread") {
     p.set("open", s.id);
-    if (s.tab && s.tab !== "conv") p.set("tab", s.tab);
+    if (s.tab) p.set("tab", s.tab);
   } else if (s.name === "new") p.set("new", "");
   else if (s.name === "search") p.set("search", "");
   else if (s.name === "project") p.set("project", s.id);

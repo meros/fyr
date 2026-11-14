@@ -571,7 +571,13 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			// logged; the forced turn starts here.
 			m.mu.Lock()
 			s.inForced = s.viewBlocked
+			forced := s.inForced
 			m.mu.Unlock()
+			if forced {
+				// In stream order, so the client can show the forced turn's
+				// text as one quiet line (V0.37).
+				m.host.Observe(s.thread, func(*core.Thread, time.Time) {}, Ev{"view.forced", map[string]any{}})
+			}
 			return
 		}
 		if typ == "assistant" {

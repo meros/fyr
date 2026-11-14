@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.37: the live view's fold, headline, staleness and the bridge's message checks.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PRESS_MAX, bridgeMessage, liveViewOf, rowSummary, staleLabel, stateMessage, viewDimmed, viewHeight } from "../src/view.ts";
+import { PRESS_MAX, bridgeMessage, defaultTab, liveViewOf, rowSummary, staleLabel, stateMessage, viewDimmed, viewHeight } from "../src/view.ts";
 import { threadMenu } from "../src/menu.ts";
 import { buildConversation } from "../src/conversation.ts";
 import { decodeThread } from "../src/decode.ts";
@@ -85,4 +85,16 @@ test("the view tools never show as tool rows", () => {
     { seq: 2, at: "2026-11-14T09:00:01Z", subject: "t", type: "msg", data: { type: "user", parent_tool_use_id: null, message: { content: [{ type: "tool_result", tool_use_id: "u1", content: "Updated the live view." }] } } },
   ];
   assert.equal(buildConversation(evs).filter((x) => x.kind === "tools").length, 0);
+});
+
+// SPEC 0.5 V0.37: a thread with a live view opens on its View tab; the Conversation tab is
+// always one tap away, and an explicit choice wins.
+test("the start tab follows the live view", () => {
+  const withView = thread("v", "done", "needs", { live: { pageId: "p", state: {} } });
+  const plain = thread("c", "done", "needs");
+  assert.equal(defaultTab(withView, undefined), "view");
+  assert.equal(defaultTab(withView, "conv"), "conv");
+  assert.equal(defaultTab(withView, "changes"), "changes");
+  assert.equal(defaultTab(plain, undefined), "conv");
+  assert.equal(defaultTab(plain, "view"), "conv", "no view: the View tab does not exist");
 });

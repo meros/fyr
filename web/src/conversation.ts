@@ -44,7 +44,7 @@ export type Item =
       /** the owner's last message the agent read: the only one that says "Read" */
       lastRead: boolean;
     }
-  | { kind: "assistant"; key: string; text: string }
+  | { kind: "assistant"; key: string; text: string; quiet?: boolean }
   | { kind: "tools"; key: string; calls: ToolCall[] }
   | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number; compact: boolean }
   | { kind: "effect"; key: string; action: string; ok: boolean; text: string; line: string }
@@ -148,6 +148,8 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
   const details = !!opts.details;
   const cwd = opts.cwd ?? "";
   const items: Item[] = [];
+  // V0.37: inside the turn Fyr forced to update the live view, the agent's text is one quiet line.
+  let forcedTurn = false;
   const calls = new Map<string, ToolCall>();
   // V0.33: a message with an id waits here until the agent reads it (or it is
   // cancelled or lost); it then takes its place in the log at that point.
@@ -240,7 +242,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         }
         for (const b of blocks) {
           if (d.type === "assistant" && b.type === "text") {
-            if (b.text?.trim()) pushItem({ kind: "assistant", key: `${key}.${items.length}`, text: b.text });
+            if (b.text?.trim()) pushItem({ kind: "assistant", key: `${key}.${items.length}`, text: b.text, ...(forcedTurn ? { quiet: true } : {}) });
           } else if (d.type === "assistant" && b.type === "tool_use") {
             const c = newCall(b, at);
             calls.set(c.id, c);
@@ -256,7 +258,11 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         }
         break;
       }
+      case "view.forced":
+        forcedTurn = true;
+        break;
       case "run.ended": {
+        forcedTurn = false;
         const d = e.data ?? {};
         pushItem({
           kind: "run",
