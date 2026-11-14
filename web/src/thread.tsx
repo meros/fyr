@@ -2,13 +2,14 @@
 // (design/directions/04-rail.html).
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, FyrEvent, ImageArg, Profile, PullRequest, ThreadDTO } from "./types.ts";
+import type { Decision, FyrEvent, ImageArg, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
 import { buildConversation, toolRows, type Item, type ToolCall } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
-import { duration, shortModel } from "./format.ts";
+import { duration, relTime, shortModel } from "./format.ts";
 import { pick, questionsOf, goTo, type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
+import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 
 export function prLabel(pr: PullRequest, short = false): { text: string; cls: string } {
   if (pr.state === "MERGED") return { text: short ? "merged" : `#${pr.number} merged`, cls: "merged" };
@@ -44,6 +45,8 @@ export interface ThreadPaneProps {
   onFocusZone(): void;
   /** Loads older events; absent when the start of the thread is loaded. */
   onEarlier?: () => void;
+  /** server-adjusted clock, for elapsed times */
+  now: number;
   /** Phone layout: back to the inbox. */
   onBack?: () => void;
 }
@@ -126,6 +129,7 @@ export function ThreadPane(p: ThreadPaneProps) {
           </span>
         </div>
       </div>
+      {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} />}
       {tab === "changes" && <div class="pane-note">The branch diff comes in a later version (v0.x). The Conversation tab lists every edit.</div>}
       {tab === "pr" && <PrTab t={t} />}
@@ -181,6 +185,57 @@ function PrChip({ pr }: { pr: PullRequest }) {
     <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={pr.title || pr.url}>
       {l.text}
     </a>
+  );
+}
+
+// ---- agents strip (SPEC V0.16) ----
+
+const TASK_ICON: Record<string, "working" | "settled" | "failed" | "seen"> = {
+  running: "working",
+  completed: "settled",
+  failed: "failed",
+  stopped: "seen",
+};
+
+function TaskRow({ t, now }: { t: TaskDTO; now: number }) {
+  const line = taskLine(t);
+  return (
+    <div class={`tk ${t.status}`} title={`${t.description}\n${line}`}>
+      <StateIcon state={TASK_ICON[t.status] ?? "seen"} size={14} />
+      <span class="tkt">
+        <span class="tkd ell">{t.description || "Agent"}</span>
+        <span class="tkl ell">{line}</span>
+      </span>
+      <span class="tks">{taskStats(t)}</span>
+      <span class="tka">{relTime(t.startedAt, now)}</span>
+    </div>
+  );
+}
+
+/** Running tasks always show; ended ones fold behind "N finished". On a phone the whole strip is one line until opened. */
+function AgentsStrip({ tasks, now }: { tasks: TaskDTO[]; now: number }) {
+  const [showEnded, setShowEnded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const g = groupTasks(tasks);
+  return (
+    <div class={`agents${open ? " open" : ""}`}>
+      <button class="agsum ell" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <StateIcon state={g.running.length ? "waiting" : "settled"} size={14} />
+        <span class="ell">{agentsSummary(tasks)}</span>
+        <span class="chev">{open ? "▾" : "▸"}</span>
+      </button>
+      <div class="agrows">
+        {g.running.map((t) => (
+          <TaskRow t={t} now={now} key={t.id} />
+        ))}
+        {g.ended.length > 0 && (
+          <button class="tkmore" onClick={() => setShowEnded(!showEnded)} aria-expanded={showEnded}>
+            {g.ended.length} finished {showEnded ? "▾" : "▸"}
+          </button>
+        )}
+        {showEnded && g.ended.map((t) => <TaskRow t={t} now={now} key={t.id} />)}
+      </div>
+    </div>
   );
 }
 
@@ -280,6 +335,13 @@ function ItemView({ it }: { it: Item }) {
           <span>
             <code>{it.action}</code> {it.text}
           </span>
+        </div>
+      );
+    case "task":
+      return (
+        <div class={`sys prose${it.status === "failed" ? " fail" : ""}`}>
+          <StateIcon state={it.started ? "working" : TASK_ICON[it.status] ?? "settled"} size={14} />
+          <span>{it.text}</span>
         </div>
       );
     case "answer":

@@ -27,6 +27,8 @@ export interface Api {
   pushSubscribe(subscription: PushSubscriptionJSON, device: string): Promise<PushReply>;
   pushUnsubscribe(endpoint: string): Promise<PushReply>;
   pushTest(): Promise<PushReply>;
+  /** Whether the host still has this subscription; null when it could not be asked. */
+  pushStatus(endpoint: string): Promise<boolean | null>;
 }
 
 export interface PushReply {
@@ -205,6 +207,16 @@ function createHttpApi(): Api {
     pushTest() {
       return postJson("/api/push/test", {});
     },
+    async pushStatus(endpoint) {
+      try {
+        const r = await fetch("/api/push/status", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ endpoint }) });
+        if (!r.ok) return null;
+        const j = (await r.json()) as { known?: boolean };
+        return typeof j.known === "boolean" ? j.known : null;
+      } catch {
+        return null;
+      }
+    },
   };
 }
 
@@ -246,6 +258,9 @@ function createMockApi(scenario: string): Api {
     },
     async pushTest() {
       return server.pushTest();
+    },
+    async pushStatus(endpoint) {
+      return server.pushSubscriptions().some((s) => s.endpoint === endpoint);
     },
   };
 }

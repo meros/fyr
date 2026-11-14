@@ -34,7 +34,7 @@ import { keyHints } from "./keys.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { ThreadPane } from "./thread.tsx";
 import { AdoptDialog, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
-import { currentPushStatus, disablePush, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
+import { disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
 import { unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 
@@ -141,7 +141,11 @@ function App() {
   useEffect(() => {
     registerServiceWorker((id) => setPendingOpen(id));
     watchInstall((can) => setCanInstall(can));
-    void currentPushStatus().then(setPushSt);
+    // Reconcile with the host at start and whenever the app comes back to the foreground.
+    void syncPushStatus(api).then(setPushSt);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void syncPushStatus(api).then(setPushSt);
+    });
     api.start({
       state: (dto) => setStore((s) => applySnapshot(s, dto, Date.now())),
       thread: (t) => setStore((s) => upsertThread(s, t)),
@@ -684,6 +688,7 @@ function App() {
             thread={viewThread}
             mode={view.mode}
             events={store.events[view.id]}
+            now={now}
             onEarlier={earlier[view.id] ? () => loadEarlier(view.id) : undefined}
             onBack={closePeek}
             profiles={store.profiles}

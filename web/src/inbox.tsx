@@ -6,6 +6,7 @@ import { SECTIONS, type SectionKey, type Sections } from "./store.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { count, relTime, untilLabel, whenLabel } from "./format.ts";
 import { prLabel } from "./thread.tsx";
+import { groupTasks, workingLine } from "./tasks.ts";
 import type { ConnState } from "./api.ts";
 
 export type Theme = "system" | "light" | "dark";
@@ -125,16 +126,17 @@ function NeedsRow({ t, now, sel, picked, onClick }: RowProps) {
 function OneRow({ t, now, sel, picked, onClick }: RowProps) {
   const st = t.attention.state;
   const working = t.attention.section === "working";
-  const sub = working ? t.activity || t.project : st === "snoozed" ? `until ${untilLabel(t.view?.snoozeUntil, now)}` : t.project;
-  const when = working ? relTime(t.runStartedAt, now) : whenLabel(t.activityAt ?? t.updatedAt, now);
+  const sub = working ? workingLine(t) : st === "snoozed" ? `until ${untilLabel(t.view?.snoozeUntil, now)}` : t.project;
+  const firstTask = groupTasks(t.tasks).running.map((x) => x.startedAt).filter(Boolean).sort()[0];
+  const when = working ? relTime(t.runStartedAt ?? firstTask, now) : whenLabel(t.activityAt ?? t.updatedAt, now);
   return (
-    <div class={`one${sel ? " sel" : ""}${picked ? " picked" : ""}`} data-id={t.id} onClick={onClick} role="option" aria-selected={sel}>
+    <div class={`one${sel ? " sel" : ""}${picked ? " picked" : ""}${groupTasks(t.tasks).running.length ? " has-agents" : ""}`} data-id={t.id} onClick={onClick} role="option" aria-selected={sel}>
       <StateIcon state={st} />
-      <span class="t ell" title={t.title}>
-        {t.title || "Untitled"}
-        <i>{sub}</i>
+      <span class="t" title={`${t.title}\n${sub}`}>
+        <span class="tn ell">{t.title || "Untitled"}</span>
+        <i class="ell">{sub}</i>
       </span>
-      {working ? <span class="sb">{t.subagents ?? 0} sub</span> : t.pr ? <PrBadge t={t} short /> : <span />}
+      {working && !groupTasks(t.tasks).running.length ? <span class="sb">{t.subagents ?? 0} sub</span> : working ? <span /> : t.pr ? <PrBadge t={t} short /> : <span />}
       <span class="age">{when}</span>
     </div>
   );

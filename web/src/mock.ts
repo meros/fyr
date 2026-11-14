@@ -1,7 +1,7 @@
 // Fixtures for ?mock=1 (full stress set) and ?mock=2 (sparse: empty sections). A tiny in-memory fyrd:
 // commands change the fixtures and push thread upserts, so the UI can be clicked through without a host.
 
-import type { CommandReply, Decision, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { CommandReply, Decision, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 
 export function mockScenario(search: string): string | null {
   const m = /[?&]mock=([^&]*)/.exec(search);
@@ -68,6 +68,10 @@ function base(id: string, title: string, now: number, ageMin: number, extra: Par
     unavailable: {},
     ...extra,
   };
+}
+
+function task(id: string, description: string, status: TaskDTO["status"], now: number, startedMin: number, extra: Partial<TaskDTO> = {}): TaskDTO {
+  return { id, description, type: "local_agent", status, activity: "", summary: "", toolUses: 0, tokens: 0, startedAt: iso(now - startedMin * 60_000), updatedAt: iso(now - Math.max(0, startedMin - 1) * 60_000), ...extra };
 }
 
 const NOT_RUNNING = { "thread.interrupt": "No run is going", "thread.retry": "Nothing failed" };
@@ -152,6 +156,9 @@ function askEvents(id: string, now: number): FyrEvent[] {
           "`\n\nRaw HTML is escaped: <script>alert('x')</script> <b>not bold</b>\n\n```ts\nsheet.on('pointerdown', close)\n```\n\nBefore I wire the close gesture, two choices for you.",
       ),
     ),
+    e("task", { kind: "started", id: "k3", description: "Check iPad popover", status: "running" }),
+    e("task", { kind: "ended", id: "k3", description: "Check iPad popover", status: "completed", summary: "The popover already closes on swipe down." }),
+    e("task", { kind: "ended", id: "k4", description: "Run the visual diff", status: "failed", summary: "Playwright could not start: no display" }),
     e("decision.opened", { decision: askDecision(now) }),
   ];
 }
@@ -180,6 +187,13 @@ function fullFixture(now: number): Fixture {
 
   add(
     base("t_ask", "Fix map lasso on mobile", now, 2, {
+      tasks: [
+        task("k1", LONG_TITLE, "running", now, 14, { activity: "Bash yarn playwright test --project=mobile-safari " + LONG_BRANCH, toolUses: 9999, tokens: 12_345_678 }),
+        task("k2", "Explore sheet gestures", "running", now, 3, { activity: "Read src/ui/Sheet.tsx", toolUses: 14, tokens: 143_218 }),
+        task("k3", "Check iPad popover", "completed", now, 20, { summary: "The popover already closes on swipe down.", toolUses: 6, tokens: 41_000 }),
+        task("k4", "Run the visual diff", "failed", now, 25, { summary: "Playwright could not start: no display", toolUses: 2, tokens: 3_100 }),
+        task("k5", "Översätt felmeddelanden", "stopped", now, 40, { activity: "Edit src/i18n/sv.json", toolUses: 1, tokens: 900 }),
+      ],
       attention: { state: "asking", section: "needs", reason: "2 questions" },
       decisions: [askDecision(now)],
       summary: "The lasso no longer closes the sheet.",
@@ -273,6 +287,19 @@ function fullFixture(now: number): Fixture {
       }),
     );
   }
+  add(
+    base("t_wait", "Översätt appen till svenska och verifiera alla skärmar", now, 0.5, {
+      running: false,
+      runStartedAt: null,
+      attention: { state: "waiting", section: "working", reason: "2 agents" },
+      tasks: [
+        task("w1", "Design mobile translation", "running", now, 18, { activity: "Running build", toolUses: 14, tokens: 143_218 }),
+        task("w2", LONG_TITLE, "running", now, 7, { activity: "Read src/i18n/sv.json", toolUses: 9999, tokens: 2_400_000 }),
+        task("w3", "Collect strings", "completed", now, 30, { summary: "412 strings in 31 files", toolUses: 22, tokens: 88_000 }),
+      ],
+      unavailable: { "thread.retry": "Nothing failed", "thread.interrupt": "No run is going" },
+    }),
+  );
 
   add(
     base("t_s1", "Lasso polygon perf", now, 40, {
@@ -385,6 +412,12 @@ function railFixture(now: number): Fixture {
   };
   threads.push(
     base("t_lasso", "Fix map lasso on mobile", now, 2, {
+      tasks: [
+        task("lt0", "Explore sheet gestures on iPad", "running", now, 2, { activity: "Read src/ui/Sheet.tsx", toolUses: 9, tokens: 61_400 }),
+        task("lt1", "explore gestures", "completed", now, 4, { summary: "All other sheets close on swipe down.", toolUses: 14, tokens: 143_218 }),
+        task("lt2", "explore gestures", "completed", now, 4, { summary: "iOS uses swipe down for sheets.", toolUses: 6, tokens: 52_000 }),
+        task("lt3", "explore gestures", "completed", now, 4, { summary: "The lasso uses pointer capture.", toolUses: 4, tokens: 31_000 }),
+      ],
       model: "claude-sonnet-5-5",
       branch: "fix/map-lasso-mobile",
       attention: { state: "asking", section: "needs", reason: "" },
@@ -417,13 +450,22 @@ function railFixture(now: number): Fixture {
     ["t_search", "Search index", "Read src/index/build.rs", 1, 22, "working"],
   ];
   for (const [id, title, act, subs, m, state] of working) {
+    const waiting = state === "waiting";
     threads.push(
       base(id, title, now, 0.1, {
-        running: true,
-        runStartedAt: min(m),
-        activity: act,
+        running: !waiting,
+        runStartedAt: waiting ? null : min(m),
+        activity: waiting ? "" : act,
         subagents: subs,
-        attention: { state, section: "working", reason: "" },
+        tasks: waiting
+          ? [
+              task("dt1", "Design mobile translation", "running", now, m, { activity: "Running build", toolUses: 14, tokens: 143_218 }),
+              task("dt2", "Watch the deploy", "running", now, m - 2, { activity: act, toolUses: 3, tokens: 12_000 }),
+            ]
+          : id === "t_mapperf"
+            ? [task("mt1", "Profile the map render", "running", now, 6, { activity: "Bash yarn vitest src/map --reporter=verbose", toolUses: 21, tokens: 310_000 })]
+            : [],
+        attention: { state, section: "working", reason: waiting ? "2 agents" : "" },
         unavailable: { "thread.retry": "Nothing failed", "thread.markUnseen": "A run is going" },
       }),
     );

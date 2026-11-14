@@ -1,6 +1,7 @@
 // Turns the event timeline into render items. Pure.
 
 import type { Failure, FyrEvent } from "./types.ts";
+import { taskEventText } from "./tasks.ts";
 
 export interface ToolCall {
   id: string;
@@ -22,7 +23,8 @@ export type Item =
   | { kind: "tools"; key: string; calls: ToolCall[] }
   | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number }
   | { kind: "effect"; key: string; action: string; ok: boolean; text: string }
-  | { kind: "answer"; key: string; text: string };
+  | { kind: "answer"; key: string; text: string }
+  | { kind: "task"; key: string; text: string; status: string; started: boolean };
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
@@ -176,6 +178,9 @@ export function buildConversation(events: FyrEvent[]): Item[] {
         });
         break;
       }
+      case "task":
+        pushItem({ kind: "task", key, text: taskEventText(e.data ?? {}), status: str(e.data?.status), started: e.data?.kind === "started" });
+        break;
       case "effect.result":
         pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text: str(e.data?.text) });
         break;

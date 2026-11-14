@@ -48,3 +48,11 @@ test("device labels and payload parsing", () => {
   assert.deepEqual(parsePayload('{"title":"Asking","body":"Which gesture?","threadId":"t_1","state":"asking"}'), { title: "Asking", body: "Which gesture?", threadId: "t_1", state: "asking" });
   assert.deepEqual(parsePayload("hello"), { title: "Fyr", body: "hello" });
 });
+
+test("push status reconciliation with the host", async () => {
+  const { reconcilePush } = await import("../src/push.ts");
+  assert.deepEqual(reconcilePush(false, null), { unsubscribe: false, subscribed: false });
+  assert.deepEqual(reconcilePush(true, true), { unsubscribe: false, subscribed: true });
+  assert.deepEqual(reconcilePush(true, false), { unsubscribe: true, subscribed: false }, "the host deleted it: drop it locally");
+  assert.deepEqual(reconcilePush(true, null), { unsubscribe: false, subscribed: true }, "host unreachable: keep it");
+});

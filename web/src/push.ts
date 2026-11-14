@@ -65,6 +65,17 @@ export const PUSH_TITLE: Record<PushStatus, string> = {
   denied: "Notifications are blocked in the browser's site settings",
 };
 
+/**
+ * Reconcile the browser's subscription with the host (POST /api/push/status). `known` is null when the
+ * host could not be asked: keep what the browser has. A subscription the host deleted (after a 404 or
+ * 410 from the push service) is dropped locally too, so the bell shows off.
+ */
+export function reconcilePush(hasSubscription: boolean, known: boolean | null): { unsubscribe: boolean; subscribed: boolean } {
+  if (!hasSubscription) return { unsubscribe: false, subscribed: false };
+  if (known === false) return { unsubscribe: true, subscribed: false };
+  return { unsubscribe: false, subscribed: true };
+}
+
 /** A short device label for the subscription list: "Android Chrome", "iPhone Safari", "Linux Firefox". */
 export function deviceLabel(ua: string): string {
   const os = /iPhone/.test(ua)

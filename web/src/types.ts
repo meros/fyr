@@ -66,6 +66,20 @@ export interface PullRequest {
   conflict?: boolean;
 }
 
+/** A subagent or background task of a thread (SPEC V0.16). */
+export interface TaskDTO {
+  id: string;
+  description: string;
+  type?: string;
+  status: "running" | "completed" | "failed" | "stopped";
+  activity?: string;
+  summary?: string;
+  toolUses?: number;
+  tokens?: number;
+  startedAt?: string;
+  updatedAt?: string;
+}
+
 export interface ThreadDTO {
   /** Increases on every change, also across host restarts: keep the higher (API v0). */
   rev?: number;
@@ -94,6 +108,7 @@ export interface ThreadDTO {
   source?: "fyr" | "t3" | string;
   /** The checkout branch, read after each run; empty when not a git checkout. */
   branch?: string | null;
+  tasks?: TaskDTO[] | null;
   attention: Attention;
   view?: { seenAt?: string | null; snoozeUntil?: string | null } | null;
   unavailable?: Record<string, string> | null;
