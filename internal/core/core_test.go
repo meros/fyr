@@ -302,3 +302,31 @@ func TestMarkSeenUpTo(t *testing.T) {
 		t.Fatalf("upTo in the future must clamp to now, got %v", v2.SeenAt)
 	}
 }
+
+// SPEC 0.5 V0.16: a thread whose turn ended while its agents run is waiting,
+// in Working; it becomes done when they end.
+func TestBackgroundTasksMakeWaiting(t *testing.T) {
+	th, v := &Thread{ActivityAt: at(1)}, &View{SeenAt: at(0)}
+	TaskObserved(th, Task{ID: "a1", Description: "Design mobile", Status: "running"}, at(1))
+	if a := Compute(th, v, at(2)); a.State != Waiting || a.Section != WorkingSec || a.Reason != "1 agent" {
+		t.Fatalf("got %+v", a)
+	}
+	TaskObserved(th, Task{ID: "a1", Status: "completed", Activity: "Delivered"}, at(3))
+	if a := Compute(th, v, at(4)); a.State != Done {
+		t.Fatalf("got %+v", a)
+	}
+	if th.Tasks[0].Description != "Design mobile" || th.Tasks[0].Activity != "Delivered" {
+		t.Fatalf("update lost fields: %+v", th.Tasks[0])
+	}
+	RunStarted(th, at(5))
+	TaskObserved(th, Task{ID: "a2", Status: "running"}, at(5))
+	if a := Compute(th, v, at(6)); a.State != Working {
+		t.Fatal("a live turn is working, not waiting")
+	}
+	ProcessLost(th, "process", "exit", at(7))
+	for _, k := range th.Tasks {
+		if k.Status == "running" {
+			t.Fatal("a running task survived the process")
+		}
+	}
+}

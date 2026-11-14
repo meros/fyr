@@ -32,13 +32,14 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "activityAt": "…", "summary": "last assistant text, one line",
   "failure": {"class": "api", "message": "…", "at": "…"},
   "decisions": [Decision],
+  "tasks": [{"id": "a803…", "description": "Design mobile translation", "type": "local_agent", "status": "running|completed|failed|stopped", "activity": "Running build", "summary": "…", "toolUses": 14, "tokens": 143218, "startedAt": "…", "updatedAt": "…"}],
   "pr": {"url": "…", "repo": "acme/app", "number": 42, "title": "…", "state": "OPEN", "checks": "pass|fail|pending|none", "review": "APPROVED", "conflict": false},
   "settledAt": null, "archivedAt": null, "settleWhenDone": false, "settleWhenMerged": false,
   "source": "fyr|t3",
   "branch": "fix/map-lasso (empty when not a git checkout)",
   "rev": 1794643457123456789,
 
-  "attention": {"state": "asking|failed|blocked|done|working|seen|snoozed|settled|archived", "section": "needs|working|seen|snoozed|settled|archived", "reason": "…"},
+  "attention": {"state": "asking|failed|blocked|done|working|waiting|seen|snoozed|settled|archived", "section": "needs|working|seen|snoozed|settled|archived", "reason": "…"},
   "view": {"seenAt": "…", "snoozeUntil": "…"},
   "unavailable": {"thread.interrupt": "No run is going"}
 }
@@ -75,6 +76,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 | `run.ended` | `{"failure": Failure \| null, "interrupted": false, "costUsd": 0.01, "durationMs": 1200}` |
 | `decision.opened` | `{"decision": Decision}` |
 | `decision.closed` | `{"id": "…", "answer": "text shown in the log"}` |
+| `task` | `{"kind": "started" \| "ended", "id", "description", "status", "summary"}` a subagent or background task started or ended (V0.16) |
 | `effect.result` | `{"action": "pr.merge", "ok": true, "text": "…"}` |
 
 Other types may appear; the client ignores them.
