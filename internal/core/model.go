@@ -44,7 +44,8 @@ type Thread struct {
 	SettleWhenDone   bool       `json:"settleWhenDone,omitempty"`
 	SettleWhenMerged bool       `json:"settleWhenMerged,omitempty"`
 
-	Source string `json:"source"` // "fyr" or "t3"
+	Source string `json:"source"`           // "fyr" or "t3"
+	Parent string `json:"parent,omitempty"` // the thread whose agent started it (V0.22)
 	T3ID   string `json:"t3Id,omitempty"`
 }
 

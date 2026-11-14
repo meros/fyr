@@ -86,7 +86,6 @@ func (e *Engine) addPreview(thread string, data map[string]any) {
 }
 
 func (e *Engine) showTool() mcp.Tool {
-	var limit showLimiter
 	return mcp.Tool{Name: "show",
 		Description: "Show something to the user inside this Fyr thread, on desktop and phone. Give exactly one of: path (a local image file: a screenshot, a chart), html (a page or an HTML fragment; fragments get the Fyr theme with CSS variables --bg --fg --muted --line --accent and light and dark modes), or url (Fyr takes a screenshot of the page, for example a dev server on localhost, and shows it). Optional: title, caption, size (phone, desktop or WxH) and full (whole page). Returns at once with the stored file's path; read that file only if you need to look at it yourself. Use it after UI work and whenever a picture says more than text.",
 		Schema: obj(map[string]any{
@@ -174,7 +173,7 @@ func (e *Engine) showTool() mcp.Tool {
 				if e.Shooter == nil {
 					return "", errors.New("Fyr has no browser for screenshots on this host")
 				}
-				if !limit.allow(th, time.Now()) {
+				if !e.shotLimit.allow(th, time.Now()) {
 					return "", errors.New("screenshot limit: 10 a minute per thread")
 				}
 				sctx, cancel := context.WithTimeout(ctx, 45*time.Second)

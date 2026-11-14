@@ -64,6 +64,7 @@ const FyrPrompt = `You run inside Fyr, which shows this session to the user and 
 - To merge a pull request, call mcp__fyr__effect_request with action "pr.merge" and args {"pr": <url>, "method": "squash"|"merge"|"rebase"}. The user approves it; Fyr merges and sends you the result in a later message. Never run gh pr merge.
 - When you open a PR some other way than gh pr create, call mcp__fyr__pr_link with its URL.
 - When the user says the thread is finished once something happens, call mcp__fyr__settle_when.
+- To see or coordinate the user's other sessions, use mcp__fyr__threads, mcp__fyr__thread_read, mcp__fyr__thread_send and mcp__fyr__thread_new (start a separate session for work that should run on its own).
 - To show the user something (a screenshot after UI work, a chart, a mockup, a page), call mcp__fyr__show with a path, html or url; it appears in the thread on desktop and phone.`
 
 type Manager struct {
@@ -227,10 +228,21 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 	}
 	m.mu.Unlock()
 	userText := e.Text
+	if e.From != "" {
+		// V0.22: tell the receiving agent which thread wrote this.
+		label := e.From
+		if ft, ok := m.host.Thread(e.From); ok && ft.Title != "" {
+			label = fmt.Sprintf("%q (%s)", ft.Title, e.From)
+		}
+		e.Text = "[From thread " + label + "] " + e.Text
+	}
 	e, metas := m.withAttachments(e)
 	ud := map[string]any{"text": userText, "images": len(e.Images)}
 	if metas != nil {
 		ud["attachments"] = metas
+	}
+	if e.From != "" {
+		ud["from"] = e.From
 	}
 	evs := []Ev{{"user", ud}}
 	if first {

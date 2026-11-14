@@ -36,6 +36,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "pr": {"url": "…", "repo": "acme/app", "number": 42, "title": "…", "state": "OPEN", "checks": "pass|fail|pending|none", "review": "APPROVED", "conflict": false},
   "settledAt": null, "archivedAt": null, "settleWhenDone": false, "settleWhenMerged": false,
   "source": "fyr|t3",
+  "parent": "t_… (the thread whose agent started this one, V0.22)",
   "branch": "fix/map-lasso (empty when not a git checkout)",
   "rev": 1794643457123456789,
 
@@ -70,7 +71,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 
 | type | data |
 |---|---|
-| `user` | `{"text": "…", "images": 1}` what the user sent |
+| `user` | `{"text": "…", "images": 1, "from": "t_…"?}` what the user sent; with `from`, another thread's agent sent it (V0.22) |
 | `msg` | a raw `claude` stream message: `{"type": "assistant" \| "user", "parent_tool_use_id": null \| "…", "message": {"content": [blocks]}}`. Blocks: `text`, `thinking`, `tool_use {id, name, input}`, `tool_result {tool_use_id, content, is_error}`, `image`. A non-null `parent_tool_use_id` is a subagent message: fold it under that tool use. |
 | `run.started` | `{}` |
 | `run.ended` | `{"failure": Failure \| null, "interrupted": false, "costUsd": 0.01, "durationMs": 1200}` |

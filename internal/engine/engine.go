@@ -49,6 +49,10 @@ type Engine struct {
 	// Attach stores files for the show tool (V0.19); Shooter takes screenshots.
 	Attach  *attach.Store
 	Shooter Shooter
+	// Limits for agent tools live on the engine, not on one tool registration.
+	shotLimit showLimiter
+	newLimit  hourly
+	sendLimit hourly
 	// AttachmentExists checks ids in thread.create and thread.send (V0.18).
 	AttachmentExists func(id string) bool
 	// OnPR is called when a thread gets a new PR, so the poller looks now.
@@ -60,7 +64,8 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, Hub: NewHub(), Now: time.Now}
+		last: map[string]core.State{}, revs: map[string]int64{}, Hub: NewHub(), Now: time.Now,
+		newLimit: hourly{max: 5}, sendLimit: hourly{max: 30}}
 }
 
 func NewID(prefix string) string {
