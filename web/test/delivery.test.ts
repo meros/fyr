@@ -110,3 +110,16 @@ test("the View tab's chat: my last message there and the reply after it", () => 
   assert.equal(waiting?.reply, null);
   assert.equal(viewChat(buildConversation(evs.slice(0, 3))), null, "nothing typed on the View tab yet");
 });
+
+// SPEC 0.5 V0.33 (found live twice): a message whose read event never reached this device is read
+// (the host's outbox no longer holds it) and stands where it was sent, not at the end of the log.
+test("V0.33 a read message without its read event keeps its place", () => {
+  const say = (text: string) => ev("msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text }] } });
+  const evs = [say("before"), ev("user", { id: "m", text: "Make these more alike" }), ev("message.state", { id: "m", state: "queued" }), say("after 1"), say("after 2")];
+  const items = buildConversation(evs, { outbox: [] });
+  const texts = items.map((i: any) => i.text).filter(Boolean);
+  assert.deepEqual(texts, ["before", "Make these more alike", "after 1", "after 2"]);
+  const m = items.find((i: any) => i.kind === "user") as any;
+  assert.equal(m.delivery, "read");
+  assert.equal(m.pending, false);
+});

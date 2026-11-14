@@ -170,6 +170,8 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
   // V0.33: a message with an id waits here until the agent reads it (or it is
   // cancelled or lost); it then takes its place in the log at that point.
   const held = new Map<string, Extract<Item, { kind: "user" }>>();
+  // where each held message was sent: its place if its read event never arrives (V0.33)
+  const heldAt = new Map<string, { index: number; meta: ItemMeta }>();
   let group: Extract<Item, { kind: "tools" }> | null = null;
   // V0.41: runs are numbered from 1; `inRun` is false between run.ended and the next run.started.
   let run = 0;
@@ -230,8 +232,10 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           pending: false,
           lastRead: false,
         };
-        if (id) held.set(id, it);
-        else pushItem(it);
+        if (id) {
+          held.set(id, it);
+          heldAt.set(id, { index: items.length, meta: meta() });
+        } else pushItem(it);
         break;
       }
       case "message.state": {
@@ -335,17 +339,21 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         break; // decision.opened and unknown types are not shown in the log
     }
   }
+  // The host's outbox is the truth: a held message it no longer holds was read (its read event may
+  // never have reached this device). It goes back where it was sent, not to the end (found live).
+  const holds = opts.outbox ? new Set(opts.outbox) : null;
+  if (holds) {
+    const back = [...held.values()].filter((it) => !holds.has(it.id!)).map((it) => ({ it, at: heldAt.get(it.id!)! }));
+    for (const { it, at } of back.sort((a, b) => b.at.index - a.at.index)) {
+      items.splice(at.index, 0, { ...at.meta, ...it, delivery: "read", pending: false });
+      held.delete(it.id!);
+    }
+  }
   const out = calmTools(items);
   let last: Extract<Item, { kind: "user" }> | undefined;
   for (const it of out) if (it.kind === "user" && it.delivery === "read" && (!it.from || it.from === "view-typed")) last = it;
   if (last) last.lastRead = true;
-  const holds = opts.outbox ? new Set(opts.outbox) : null;
-  for (const it of held.values()) {
-    // The host's outbox is the truth: a message it no longer holds was read (its read event may
-    // never have reached this device).
-    if (holds && !holds.has(it.id!)) out.push({ ...it, delivery: "read", pending: false });
-    else out.push({ ...it, pending: true });
-  }
+  for (const it of held.values()) out.push({ ...it, pending: true });
   return out;
 }
 
