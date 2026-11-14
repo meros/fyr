@@ -203,6 +203,9 @@ const ADOPT = (
 );
 
 interface InboxProps {
+  /** V0.48: sections that close by themselves, with their deadline (ms) */
+  autoHideAt?: Partial<Record<SectionKey, number>>;
+  onSectionActivity?(k: SectionKey): void;
   sec: Sections;
   now: number;
   selected: string | null;
@@ -259,10 +262,14 @@ export function Inbox(p: InboxProps) {
           const shown = open ? list.slice(0, limit) : [];
           const hint = sectionHint(s.key, list, p.now);
           return (
-            <div id={`sec-${s.key}`}>
+            <div id={`sec-${s.key}`} onPointerMove={open && p.autoHideAt?.[s.key] ? () => p.onSectionActivity?.(s.key) : undefined} onKeyDown={open && p.autoHideAt?.[s.key] ? () => p.onSectionActivity?.(s.key) : undefined}>
               <div class={`sec${list.length ? " tog" : ""}`} onClick={() => list.length && p.onToggle(s.key)} title={list.length ? (open ? "Collapse" : "Expand") : undefined}>
                 {s.label}
                 <span class="n">{count(list.length)}</span>
+                {open && p.autoHideAt?.[s.key] ? (
+                  // V0.48: a small clock runs down to the auto-close; it restarts on use.
+                  <span key={p.autoHideAt[s.key]} class="ahc" style={{ "--ah": `${Math.max(0, (p.autoHideAt[s.key]! - Date.now()) / 1000)}s` }} title="Closes by itself; select it in the rail to keep it open" aria-hidden="true" />
+                ) : null}
                 {hint && <span class="h ell">{hint}</span>}
               </div>
               {shown.map((t) =>
