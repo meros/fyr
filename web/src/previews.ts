@@ -65,10 +65,17 @@ export function previewCard(seq: number, at: string, data: unknown): PreviewCard
   };
 }
 
-/** An HTML frame's height: min(height, 600) at first, at most 2,000 px when opened up. */
-export function frameHeight(height: number, expanded = false): number {
-  const h = height > 0 ? height : FRAME_DEFAULT;
-  return Math.min(h, expanded ? FRAME_MAX : FRAME_START_MAX);
+/** What an HTML frame may use (V0.47): its own full screen, WebXR and motion sensors for 3D. */
+export const FRAME_ALLOW = "fullscreen; xr-spatial-tracking; accelerometer; gyroscope";
+const FRAME_MIN = 40;
+
+/**
+ * An HTML frame's height (V0.19, V0.47): the page's own report, else the agent's `size` height, else 16:10 of the
+ * card's width; min(that, 600) at first, at most 2,000 px when opened up.
+ */
+export function frameHeight(height: number, expanded = false, reported = 0, width = 0): number {
+  const h = reported > 0 ? Math.ceil(reported) : height > 0 ? height : width > 0 ? Math.round((width * 10) / 16) : FRAME_DEFAULT;
+  return Math.max(FRAME_MIN, Math.min(h, expanded ? FRAME_MAX : FRAME_START_MAX));
 }
 
 /** A thumbnail's box: keep the aspect, at most `maxW` wide and `maxH` tall (desktop). */

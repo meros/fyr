@@ -1,10 +1,10 @@
 // The pinned live view above the conversation (SPEC 0.5 V0.37), desktop and phone. The page runs in the same
-// sandbox as HTML previews (no origin, no network); the app sends it the full state on load and on every change,
+// sandbox as HTML previews (no origin; CDN libraries only, V0.47); the app sends it the full state on load and on every change,
 // and a press in it becomes a message `from: "view"`.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { bridgeMessage, liveViewOf, pressReply, staleLabel, stateMessage, viewDimmed, viewHeight } from "./view.ts";
-import { previewUrl } from "./previews.ts";
+import { FRAME_ALLOW, previewUrl } from "./previews.ts";
 import type { ThreadDTO } from "./types.ts";
 
 const COLLAPSED_KEY = "fyr.view.collapsed";
@@ -119,6 +119,8 @@ export function LiveViewPanel({ t, now, onPress, full }: { t: ThreadDTO; now: nu
           class="lv-f"
           src={previewUrl(v.pageId)}
           sandbox="allow-scripts"
+          allow={FRAME_ALLOW}
+          allowFullScreen
           title={v.headline || "Live view"}
           style={full ? undefined : { height: `${viewHeight(reported, pane)}px` }}
           onLoad={sendState}

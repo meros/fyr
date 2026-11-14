@@ -651,6 +651,16 @@ requestAnimationFrame(()=>document.querySelectorAll(".b").forEach(b=>b.style.wid
 </script>`;
 
 
+// V0.47: a WebGL page (one red triangle; headless Chrome draws it with SwiftShader). It marks body[data-gl] with what it saw.
+const GL_HTML = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#111}canvas{display:block;width:100%;height:100%;touch-action:none}</style><canvas id=c></canvas><script>
+const c=document.getElementById("c");c.width=c.clientWidth||320;c.height=c.clientHeight||200;const g=c.getContext("webgl",{preserveDrawingBuffer:true});
+if(!g){document.body.dataset.gl="no-webgl"}else{const sh=(t,src)=>{const s=g.createShader(t);g.shaderSource(s,src);g.compileShader(s);return s};const p=g.createProgram();
+g.attachShader(p,sh(g.VERTEX_SHADER,"attribute vec2 a;void main(){gl_Position=vec4(a,0,1);}"));g.attachShader(p,sh(g.FRAGMENT_SHADER,"precision mediump float;void main(){gl_FragColor=vec4(1,0,0,1);}"));
+g.linkProgram(p);g.useProgram(p);g.bindBuffer(g.ARRAY_BUFFER,g.createBuffer());g.bufferData(g.ARRAY_BUFFER,new Float32Array([-.8,-.8,.8,-.8,0,.8]),g.STATIC_DRAW);
+g.enableVertexAttribArray(0);g.vertexAttribPointer(0,2,g.FLOAT,false,0,0);g.viewport(0,0,c.width,c.height);g.clearColor(0,0,0,1);g.clear(g.COLOR_BUFFER_BIT);g.drawArrays(g.TRIANGLES,0,3);
+const px=new Uint8Array(4);g.readPixels(c.width>>1,c.height>>1,1,1,g.RGBA,g.UNSIGNED_BYTE,px);document.body.dataset.gl=px[0]>200&&px[1]<50?"ok":"pixel "+px.join(",")}
+</script>`;
+
 // V0.37: the live view page as the host stores it: the Fyr theme around a fragment, the bridge first in <head>.
 // TestMockBridgeMatches (Go) keeps VIEW_BRIDGE equal to the host's bridge.
 export const VIEW_BRIDGE = `<script>(function(){
@@ -704,6 +714,9 @@ export const MOCK_SHOTS: Record<string, string> = {
 export const MOCK_PREVIEWS: Record<string, string> = {
   pv_chart: "data:text/html;charset=utf-8," + encodeURIComponent(CHART_HTML),
   pv_view: "data:text/html;charset=utf-8," + encodeURIComponent(VIEW_HTML),
+  pv_gl: "data:text/html;charset=utf-8," + encodeURIComponent(GL_HTML),
+  // V0.47: a folder preview; the layout test serves web/test/fixtures/preview-site here (with the host's CSP).
+  pv_site: "/api/previews/pv_site/index.html",
 };
 
 function previewEvents(subject: string, start: number, now: number, stress: boolean): FyrEvent[] {
@@ -718,6 +731,8 @@ function previewEvents(subject: string, start: number, now: number, stress: bool
     out.push(
       ev(++seq, Date.parse(at(6)), subject, "preview", { kind: "image", attachmentId: "pv_tall", title: LONG_TITLE, caption: "Full page at 390 px: " + LONG_URL, width: 390, height: 2600, url: LONG_URL }),
       ev(++seq, Date.parse(at(5)), subject, "msg", assistantText("Inline: ![the sheet](/api/attachments/pv_phone) and an outside image stays a link: ![remote](https://example.com/x.png)")),
+      ev(++seq, Date.parse(at(4)), subject, "preview", { kind: "html", attachmentId: "pv_gl", title: "WebGL triangle", caption: "A 3D canvas in the sandbox." }),
+      ev(++seq, Date.parse(at(3)), subject, "preview", { kind: "html", attachmentId: "pv_site", title: "Folder preview", caption: "index.html with its own script, module, JSON and image." }),
     );
   return out;
 }
