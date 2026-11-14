@@ -544,3 +544,53 @@ func TestHandoverPlan(t *testing.T) {
 		t.Fatalf("%d %+v", resp.StatusCode, p)
 	}
 }
+
+type fakePeers map[string]string
+
+func (f fakePeers) Login(_ context.Context, addr string) (string, error) {
+	if l, ok := f[addr]; ok {
+		return l, nil
+	}
+	return "", errors.New("unknown peer")
+}
+
+// SPEC 0.5 V0.51: on a host's tailnet address only peers whose Tailscale
+// identity is the owner's are served; an identity header is not trusted.
+func TestPeerGuard(t *testing.T) {
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
+	g := PeerGuard("owner@example.com", fakePeers{"100.64.0.2:5000": "owner@example.com", "100.64.0.3:5000": "other@example.com"}, ok)
+	try := func(addr, method string, hdr map[string]string) int {
+		r := httptest.NewRequest(method, "http://100.64.0.1:7778/api/state", nil)
+		r.RemoteAddr = addr
+		for k, v := range hdr {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		g.ServeHTTP(w, r)
+		return w.Code
+	}
+	if c := try("100.64.0.2:5000", "GET", nil); c != 204 {
+		t.Fatalf("owner peer: %d", c)
+	}
+	if c := try("100.64.0.3:5000", "GET", map[string]string{"Tailscale-User-Login": "owner@example.com"}); c != 403 {
+		t.Fatalf("other peer with a forged header: %d", c)
+	}
+	if c := try("100.64.0.9:5000", "GET", nil); c != 403 {
+		t.Fatalf("unknown peer: %d", c)
+	}
+	if c := try("100.64.0.2:5000", "POST", nil); c != 403 {
+		t.Fatalf("POST without X-Fyr: %d", c)
+	}
+	if c := try("100.64.0.2:5000", "POST", map[string]string{"X-Fyr": "1"}); c != 204 {
+		t.Fatalf("owner POST: %d", c)
+	}
+	if g := PeerGuard("", fakePeers{"100.64.0.2:5000": ""}, ok); g != nil {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "http://100.64.0.1:7778/api/state", nil)
+		r.RemoteAddr = "100.64.0.2:5000"
+		g.ServeHTTP(w, r)
+		if w.Code != 403 {
+			t.Fatalf("no owner configured: %d", w.Code)
+		}
+	}
+}
