@@ -188,7 +188,42 @@ func (e *Engine) saveProject(p *core.Project) {
 	}
 }
 
-// projectCommand handles project.update, project.create and project.addSource.
+// checkSource cleans a source and refuses one that cannot match: a folder
+// must be an absolute path, and on this host it must exist (SPEC 0.5 V0.23).
+func (e *Engine) checkSource(s *core.Source) error {
+	switch s.Kind {
+	case "folder":
+		if s.Host == "" {
+			s.Host = e.HostID
+		}
+		p := strings.TrimSpace(s.Path)
+		if p == "~" || strings.HasPrefix(p, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				p = home + p[1:]
+			}
+		}
+		if !filepath.IsAbs(p) {
+			return fmt.Errorf("the folder must be a full path, like /home/you/src/app")
+		}
+		s.Path = filepath.Clean(p)
+		if s.Host == e.HostID {
+			if fi, err := os.Stat(s.Path); err != nil || !fi.IsDir() {
+				return fmt.Errorf("there is no folder %s on %s", s.Path, s.Host)
+			}
+		}
+	case "repo":
+		s.URL = core.NormalizeRemote(s.URL)
+		if s.URL == "" {
+			return fmt.Errorf("the repo needs a URL")
+		}
+	default:
+		return fmt.Errorf("source kind must be folder or repo")
+	}
+	return nil
+}
+
+// projectCommand handles project.update, project.create, project.addSource
+// and project.removeSource.
 func (e *Engine) projectCommand(c Cmd) Reply {
 	if prev, _ := e.st.Receipt(c.CommandID); prev != nil {
 		var r Reply
@@ -205,6 +240,12 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		p = &core.Project{ID: NewID("p_"), Name: name, Icon: core.Icon{Kind: "monogram"}, CreatedAt: e.Now(), Edited: true}
 		raw, _ := json.Marshal(c.Args["sources"])
 		json.Unmarshal(raw, &p.Sources)
+		for i := range p.Sources {
+			if err := e.checkSource(&p.Sources[i]); err != nil {
+				e.mu.Unlock()
+				return bad(err.Error())
+			}
+		}
 		if p.Name == "" && len(p.Sources) > 0 {
 			p.Name = filepath.Base(p.Sources[0].Path + p.Sources[0].URL)
 		}
@@ -214,7 +255,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		}
 		p.Color = core.DefaultColor(p.Name)
 		e.projects[p.ID] = p
-	default:
+	case "project.update", "project.addSource", "project.removeSource":
 		cur := e.projects[c.Args.Str("id")]
 		if cur == nil {
 			e.mu.Unlock()
@@ -226,14 +267,21 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 			var s core.Source
 			raw, _ := json.Marshal(c.Args["source"])
 			json.Unmarshal(raw, &s)
-			if s.Kind != "folder" && s.Kind != "repo" {
+			if err := e.checkSource(&s); err != nil {
 				e.mu.Unlock()
-				return bad("source kind must be folder or repo")
-			}
-			if s.Kind == "repo" {
-				s.URL = core.NormalizeRemote(s.URL)
+				return bad(err.Error())
 			}
 			p.Sources = append(append([]core.Source{}, p.Sources...), s)
+		} else if c.Action == "project.removeSource" {
+			i, ok := c.Args["index"].(float64)
+			if n, isInt := c.Args["index"].(int); isInt {
+				i, ok = float64(n), true
+			}
+			if !ok || i != float64(int(i)) || int(i) < 0 || int(i) >= len(p.Sources) {
+				e.mu.Unlock()
+				return bad(fmt.Sprintf("index must be 0 to %d", len(p.Sources)-1))
+			}
+			p.Sources = append(append([]core.Source{}, p.Sources[:int(i)]...), p.Sources[int(i)+1:]...)
 		} else {
 			if n := strings.TrimSpace(c.Args.Str("name")); n != "" {
 				p.Name = n
@@ -264,6 +312,9 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		}
 		p.Edited = true
 		e.projects[p.ID] = p
+	default:
+		e.mu.Unlock()
+		return bad("unknown action " + c.Action)
 	}
 	// The name shows on threads: refresh them.
 	var touched []DTO
@@ -298,6 +349,9 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 	}
 	for _, d := range touched {
 		e.Hub.Thread(d)
+	}
+	if c.Action != "project.update" {
+		e.Rematch() // the sources changed: threads may belong elsewhere now
 	}
 	return reply
 }

@@ -277,5 +277,6 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .ig{height:44px}
 .m-app .igrid{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
 .m-app .addsrc input{height:44px;font-size:16px}
+.m-app .src-x{width:44px;height:44px;margin-right:-8px}
 .m-app .fromthread{max-width:85%}
 .m-app .fth{min-height:32px}

@@ -100,6 +100,13 @@ export function resolveIcon(icon: ProjectIconSpec | undefined, name: string): Re
   return { kind: "monogram", value: monogram(name) };
 }
 
+/** One input adds a source: a path (/… or ~…) is a folder on this host, anything else a repo URL. The host checks and cleans it. */
+export function sourceFromInput(v: string): { kind: "folder"; path: string } | { kind: "repo"; url: string } | null {
+  const t = v.trim();
+  if (!t) return null;
+  return t.startsWith("/") || t.startsWith("~") ? { kind: "folder", path: t } : { kind: "repo", url: t };
+}
+
 /** The project of a thread: by id, else by its display name. */
 export function projectOf(t: Pick<ThreadDTO, "projectId" | "project">, projects: Project[]): Project | undefined {
   return (t.projectId ? projects.find((p) => p.id === t.projectId) : undefined) ?? projects.find((p) => p.name === t.project);

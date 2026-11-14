@@ -147,5 +147,8 @@ Commands (through `POST /api/command`, no `threadId`):
 | `project.update` | `id`, then any of `name`, `color` (a palette name: slate blue sky teal green olive violet indigo rose brown), `icon` `{kind: monogram\|emoji\|line, value}`, `profile`, `model` |
 | `project.create` | `name`, `sources?: [Source]` (a project may have no source: a label) |
 | `project.addSource` | `id`, `source` |
+| `project.removeSource` | `id`, `index` (0-based, into `sources`) |
+
+A folder source needs a full path (`~/…` is expanded); on this host the folder must exist, else `400` with the reason. `host` may be left out: the host fills in its own name. After `project.create`, `project.addSource` or `project.removeSource` the host re-matches threads and sends the changed ones on the stream. An icon's `value` is left out when empty.
 
 The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. Threads carry `projectId`; `project` stays the display name.
