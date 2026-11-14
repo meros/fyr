@@ -117,8 +117,8 @@
     {
       "color": "green",
       "createdAt": "2026-01-01T00:00:00Z",
-      "cwd": "/home/owner/src/work",
       "edited": true,
+      "folder": "/home/owner/src/work",
       "icon": {
         "kind": "monogram"
       },
@@ -132,20 +132,11 @@
         }
       ],
       "quietUntil": "2026-01-01T00:00:00Z",
-      "repos": [],
-      "sources": [
-        {
-          "host": "host",
-          "kind": "folder",
-          "path": "/home/owner/src/work"
-        }
-      ],
       "threads": 1
     },
     {
       "color": "slate",
       "createdAt": "2026-01-01T00:00:00Z",
-      "cwd": "",
       "edited": true,
       "icon": {
         "kind": "monogram"
@@ -153,8 +144,6 @@
       "id": "p_2",
       "lastUsed": "2026-01-01T00:00:00Z",
       "name": "A label",
-      "repos": [],
-      "sources": null,
       "threads": 0
     }
   ],
@@ -198,8 +187,7 @@
         "seenAt": "2026-01-01T00:00:00Z",
         "user": "owner"
       },
-      "visibility": "private",
-      "workspaceId": "w_4"
+      "visibility": "private"
     },
     {
       "activityAt": "2026-01-01T00:00:00Z",
@@ -209,7 +197,7 @@
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner/src/app",
-      "id": "t_5",
+      "id": "t_4",
       "live": {
         "checkedAt": "2026-01-01T00:00:00Z",
         "headline": "Tests pass",
@@ -226,14 +214,8 @@
       "liveView": true,
       "model": "",
       "newProject": {
-        "name": "app",
-        "sources": [
-          {
-            "host": "host",
-            "kind": "folder",
-            "path": "/home/owner/src/app"
-          }
-        ]
+        "folder": "/home/owner/src/app",
+        "name": "app"
       },
       "owner": "owner",
       "profile": "claude",
@@ -258,12 +240,11 @@
       },
       "updatedAt": "2026-01-01T00:00:00Z",
       "view": {
-        "entity": "t_5",
+        "entity": "t_4",
         "seenAt": "2026-01-01T00:00:00Z",
         "user": "owner"
       },
-      "visibility": "private",
-      "workspaceId": "w_6"
+      "visibility": "private"
     },
     {
       "activityAt": "2026-01-01T00:00:00Z",
@@ -273,21 +254,11 @@
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner/src/lib",
-      "id": "t_7",
+      "id": "t_5",
       "model": "",
       "newProject": {
-        "name": "lib",
-        "sources": [
-          {
-            "host": "host",
-            "kind": "folder",
-            "path": "/home/owner/src/lib"
-          },
-          {
-            "kind": "repo",
-            "url": "github.com/owner/lib"
-          }
-        ]
+        "folder": "/home/owner/src/lib",
+        "name": "lib"
       },
       "owner": "owner",
       "profile": "claude",
@@ -296,20 +267,6 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
-      "suggest": {
-        "name": "lib",
-        "sources": [
-          {
-            "host": "host",
-            "kind": "folder",
-            "path": "/home/owner/src/lib"
-          },
-          {
-            "kind": "repo",
-            "url": "github.com/owner/lib"
-          }
-        ]
-      },
       "title": "a thread in a clone",
       "unavailable": {
         "pr.merge": "No PR",
@@ -326,12 +283,11 @@
       },
       "updatedAt": "2026-01-01T00:00:00Z",
       "view": {
-        "entity": "t_7",
+        "entity": "t_5",
         "seenAt": "2026-01-01T00:00:00Z",
         "user": "owner"
       },
-      "visibility": "private",
-      "workspaceId": "w_8"
+      "visibility": "private"
     },
     {
       "activityAt": "2026-01-01T00:00:00Z",
@@ -341,7 +297,7 @@
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner",
-      "id": "t_9",
+      "id": "t_6",
       "model": "",
       "owner": "owner",
       "profile": "claude",
@@ -366,12 +322,11 @@
       },
       "updatedAt": "2026-01-01T00:00:00Z",
       "view": {
-        "entity": "t_9",
+        "entity": "t_6",
         "seenAt": "2026-01-01T00:00:00Z",
         "user": "owner"
       },
-      "visibility": "private",
-      "workspaceId": "w_10"
+      "visibility": "private"
     },
     {
       "activityAt": "2026-01-01T00:00:00Z",
@@ -381,17 +336,11 @@
       },
       "createdAt": "2026-01-01T00:00:00Z",
       "cwd": "/home/owner/src/app",
-      "id": "t_11",
+      "id": "t_7",
       "model": "",
       "newProject": {
-        "name": "app",
-        "sources": [
-          {
-            "host": "host",
-            "kind": "folder",
-            "path": "/home/owner/src/app"
-          }
-        ]
+        "folder": "/home/owner/src/app",
+        "name": "app"
       },
       "owner": "owner",
       "profile": "claude",
@@ -416,12 +365,11 @@
       },
       "updatedAt": "2026-01-01T00:00:00Z",
       "view": {
-        "entity": "t_11",
+        "entity": "t_7",
         "seenAt": "2026-01-01T00:00:00Z",
         "user": "owner"
       },
-      "visibility": "private",
-      "workspaceId": "w_6"
+      "visibility": "private"
     }
   ],
   "user": "owner"

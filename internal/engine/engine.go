@@ -45,16 +45,12 @@ type Engine struct {
 
 	// quietSent is the quiet hours the clients last got, per project (V0.46).
 	quietSent map[string]string
-	// workspaces are where threads run (V0.28), by id.
-	workspaces map[string]*core.Workspace
-	// ScratchRoots are the scratch folders' roots (V0.28); nil: the defaults.
+	// ScratchRoots are the scratch folders' roots (V0.28): their threads get
+	// no "New project from this thread"; nil: the defaults.
 	ScratchRoots []string
 	// ScratchDir is where thread.create makes a scratch folder (V0.42);
 	// "": ~/.local/share/fyr/scratch.
 	ScratchDir string
-	// repoOf is the normalised origin of each project folder on this host
-	// (V0.42), "" for none; RefreshRepos fills it.
-	repoOf map[string]string
 	// HostID names this host in folder sources (V0.23); default the hostname.
 	HostID  string
 	lastRev int64
@@ -86,7 +82,7 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, quietSent: map[string]string{}, workspaces: map[string]*core.Workspace{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
+		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, quietSent: map[string]string{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
 		newLimit: hourly{max: 5}, sendLimit: hourly{max: 30}}
 }
 
@@ -131,34 +127,26 @@ func (e *Engine) Load() error {
 	for _, p := range ps {
 		e.projects[p.ID] = p
 	}
-	ws, err := e.st.Workspaces()
+	old, err := e.st.OldProjectSources()
 	if err != nil {
 		return err
 	}
-	for _, w := range ws {
-		e.workspaces[w.ID] = w
+	if err := e.migrateFolders(old); err != nil {
+		return err
 	}
 	if err := e.migrateAuto(); err != nil {
 		return err
 	}
-	// Threads from before workspaces (V0.28) get one now; a thread without
-	// a project gets the one matching finds, if any.
+	// V0.55: threads land in the project whose folder covers theirs; a
+	// thread whose project is gone loses it. Only changed threads are
+	// written.
 	for _, t := range e.threads {
-		if e.workspaces[t.WorkspaceID] != nil && (t.ProjectID == "" || e.projects[t.ProjectID] != nil) {
-			if p := e.projects[t.ProjectID]; p != nil {
-				t.Project = p.Name
-			}
+		pid, name, manual := t.ProjectID, t.Project, t.ProjectManual
+		e.assignProject(t)
+		if t.ProjectID == pid && t.Project == name && t.ProjectManual == manual {
 			continue
 		}
-		nw := e.assignProject(t, e.Now())
-		if _, err := e.st.Write(func(tx *store.Tx) error {
-			if nw != nil {
-				if err := tx.PutWorkspace(nw); err != nil {
-					return err
-				}
-			}
-			return tx.PutThread(t)
-		}); err != nil {
+		if _, err := e.st.Write(func(tx *store.Tx) error { return tx.PutThread(t) }); err != nil {
 			return err
 		}
 	}
@@ -363,7 +351,7 @@ func (e *Engine) Command(c Cmd) Reply {
 		c.Args = core.Args{}
 	}
 	// V0.42: thread.create files into projectId; without a cwd it starts in
-	// the project's main folder here, else in a fresh scratch folder.
+	// the project's folder (V0.55), else in a fresh scratch folder.
 	var fileIn, scratch string
 	if c.Action == "thread.create" {
 		if pid := c.Args.Str("projectId"); pid != "" {
@@ -374,8 +362,8 @@ func (e *Engine) Command(c Cmd) Reply {
 			}
 			fileIn = pid
 			if strings.TrimSpace(c.Args.Str("cwd")) == "" {
-				if f := pr.Folder(e.HostID); f != "" {
-					c.Args["cwd"] = f
+				if pr.Folder != "" {
+					c.Args["cwd"] = pr.Folder
 				}
 			}
 		}
@@ -407,7 +395,7 @@ func (e *Engine) Command(c Cmd) Reply {
 	if t.Profile == "" {
 		t.Profile = "claude"
 	}
-	newWS := e.assignProject(t, now)
+	e.assignProject(t)
 	t.UpdatedAt = now
 	reply := Reply{OK: true, ThreadID: t.ID, Status: 200}
 	for i := range effects {
@@ -419,11 +407,6 @@ func (e *Engine) Command(c Cmd) Reply {
 		}
 	}
 	evs, err := e.st.Write(func(tx *store.Tx) error {
-		if newWS != nil {
-			if err := tx.PutWorkspace(newWS); err != nil {
-				return err
-			}
-		}
 		if err := tx.PutThread(t); err != nil {
 			return err
 		}
@@ -639,10 +622,9 @@ type DTO struct {
 	Attention   core.Attention    `json:"attention"`
 	View        *core.View        `json:"view"`
 	Unavailable map[string]string `json:"unavailable"`
-	// Suggest is the project a thread without one could get (V0.28).
-	Suggest *core.Suggestion `json:"suggest,omitempty"`
-	// NewProject is what "New project from this thread" starts with (V0.30).
-	NewProject *core.Suggestion `json:"newProject,omitempty"`
+	// NewProject is what "New project from this thread" starts with (V0.30,
+	// V0.55).
+	NewProject *NewProject `json:"newProject,omitempty"`
 	// QuietUntil is the end of the quiet hours of the thread's project, while
 	// they hold (V0.46).
 	QuietUntil *time.Time `json:"quietUntil,omitempty"`
@@ -678,7 +660,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	}
 	att := core.Compute(t, v, now)
 	vc := *v
-	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, Suggest: e.suggestion(t), NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now)}
+	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now)}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.
@@ -791,14 +773,9 @@ func (e *Engine) adopt(c Cmd) Reply {
 // its history, in one transaction.
 func (e *Engine) Insert(t *core.Thread, v *core.View, history []agent.Ev, at []time.Time) error {
 	e.mu.Lock()
-	nw := e.assignProject(t, e.Now())
+	e.assignProject(t)
 	e.mu.Unlock()
 	if _, err := e.st.Write(func(tx *store.Tx) error {
-		if nw != nil {
-			if err := tx.PutWorkspace(nw); err != nil {
-				return err
-			}
-		}
 		if err := tx.PutThread(t); err != nil {
 			return err
 		}

@@ -7,9 +7,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { applySnapshot, flatOrder, initialStore, sections, unavailableReason, upsertProject, upsertThread } from "../src/store.ts";
-import { colorName, filterByProject, makeProjectLabel, matchProjects, projectName, projectOf, projectSubtitle, resolveIcon, suggestionFor } from "../src/projects.ts";
+import { colorName, filterByProject, matchProjects, newProjectDraft, projectName, projectOf, projectSubtitle, resolveIcon } from "../src/projects.ts";
 import { relTime, whenLabel } from "../src/format.ts";
-import { decodeThread } from "../src/decode.ts";
+import { decodeProject, decodeThread } from "../src/decode.ts";
 import { hideQuiet, nextQuietEnd, quietLine, quietList, quietNote } from "../src/quiet.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/host-state.json", import.meta.url), "utf8"));
@@ -55,11 +55,7 @@ function render(state: any) {
     const p = projectOf(t, s.projects);
     const name = projectName(t, s.projects);
     assert.equal(typeof name, "string");
-    const sug = suggestionFor(t, s.projects);
-    if (sug) {
-      makeProjectLabel(sug);
-      assert.ok(Array.isArray(sug.sources), "suggestion sources");
-    }
+    assert.equal(typeof newProjectDraft(t).folder, "string");
     resolveIcon(p?.icon, name);
     colorName(p?.color, name);
     relTime(t.activityAt, now);
@@ -83,20 +79,22 @@ function render(state: any) {
 test("the host fixture has the edge cases (a thread with no project, an icon without value)", () => {
   assert.ok(fixture.threads.some((t: any) => !t.projectId), "a thread with no project");
   assert.ok(fixture.projects.some((p: any) => p.icon && !("value" in p.icon)), "an icon without value");
-  // V0.28: workspaces and a suggestion for a thread in a clone.
-  assert.ok(fixture.threads.every((t: any) => typeof t.workspaceId === "string" && t.workspaceId), "a workspace per thread");
-  assert.ok(fixture.threads.some((t: any) => !t.projectId && t.suggest?.name === "lib"), "a suggestion");
+  // V0.55: one folder per project, no sources, workspaces or suggestions; a thread offers its folder.
+  assert.ok(fixture.projects.every((p: any) => !("sources" in p) && !("repos" in p) && !("cwd" in p)), "no sources, repos or cwd");
+  assert.ok(fixture.projects.some((p: any) => typeof p.folder === "string" && p.folder), "a project with a folder");
+  assert.ok(fixture.threads.every((t: any) => !("workspaceId" in t) && !("suggest" in t)), "no workspace or suggestion");
+  assert.ok(fixture.threads.some((t: any) => !t.projectId && t.newProject?.name === "lib" && t.newProject.folder.endsWith("/src/lib")), "a thread offers its folder");
   // V0.46: a project in its quiet hours and its thread carry quietUntil.
   assert.ok(fixture.projects.some((p: any) => Array.isArray(p.quiet) && quietList(p.quiet).length === p.quiet.length && p.quietUntil), "a quiet project, its quiet hours a list");
   assert.ok(fixture.threads.some((t: any) => t.quietUntil), "a thread in quiet hours");
 });
 
-test("SPEC 0.5 V0.28: decode keeps a suggestion with a name and drops one without", () => {
-  const t = fixture.threads.find((x: any) => x.suggest);
-  assert.equal(decodeThread(t).suggest?.name, "lib");
-  assert.equal(decodeThread({ ...t, suggest: { sources: [] } }).suggest, undefined);
-  assert.deepEqual(decodeThread({ ...t, suggest: { name: "lib" } }).suggest, { name: "lib", sources: [] });
-  assert.equal(decodeThread({ id: "t" }).workspaceId, "");
+test("SPEC 0.5 V0.55: decode keeps a new-project prefill with a name and drops one without", () => {
+  const t = fixture.threads.find((x: any) => x.newProject?.name === "lib");
+  assert.equal(decodeThread(t).newProject?.name, "lib");
+  assert.equal(decodeThread({ ...t, newProject: { folder: "/x" } }).newProject, undefined);
+  assert.deepEqual(decodeThread({ ...t, newProject: { name: "lib" } }).newProject, { name: "lib", folder: "" });
+  assert.equal(decodeProject({ name: "a" }).folder, "");
 });
 
 test("every screen function survives the host state with any optional field missing", () => {

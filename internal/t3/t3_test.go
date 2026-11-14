@@ -119,7 +119,7 @@ func TestProfilesFromSettings(t *testing.T) {
 // SPEC 0.5 V0.23: T3's projects seed Fyr's, with their titles and icons.
 func TestProjectsSeed(t *testing.T) {
 	db, _ := fixture(t)
-	ps, err := Projects(db, "h1")
+	ps, err := Projects(db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestProjectsSeed(t *testing.T) {
 		t.Fatalf("%+v", ps)
 	}
 	for _, p := range ps {
-		if p.Folder("h1") == "/home/u/.t3/scratch" {
+		if p.Folder == "/home/u/.t3/scratch" {
 			if p.Name != "Scratch" || p.Icon.Kind != "line" || p.Icon.Value != "message-square-dashed" || p.Color != "slate" {
 				t.Fatalf("%+v", p)
 			}
