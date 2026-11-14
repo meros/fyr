@@ -534,3 +534,15 @@ func TestRestartStopsTasks(t *testing.T) {
 		t.Fatalf("tasks after restart %+v", th.Tasks)
 	}
 }
+
+// SPEC 0.5 V0.13, V0.16: a deploy drains background agents too, so the
+// engine reports a waiting thread as busy.
+func TestRunningIncludesBackgroundTasks(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("agentbg")
+	h.wait(id, "waiting", state(core.Waiting))
+	busy := h.e.Running()
+	if len(busy) != 1 || busy[0] != id {
+		t.Fatalf("busy %v", busy)
+	}
+}
