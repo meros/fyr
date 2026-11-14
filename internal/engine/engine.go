@@ -82,6 +82,16 @@ func NewID(prefix string) string {
 	return prefix + hex.EncodeToString(b)
 }
 
+// NewMessageID is a random UUID; the CLI takes it as a user message's uuid
+// (SPEC 0.5 V0.33).
+func NewMessageID() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
 // Load reads the projections and repairs live work that the last run of the
 // host left behind (SPEC 0.5 V0.6): it becomes failed with class restart.
 func (e *Engine) Load() error {
@@ -146,6 +156,28 @@ func (e *Engine) Load() error {
 		}
 	}()
 	now := e.Now()
+	for _, t := range e.threads {
+		// V0.33: the agent's queue died with the old host; unread messages
+		// are lost, never resent by themselves.
+		if len(t.Outbox) == 0 {
+			continue
+		}
+		lost := t.Outbox
+		t.Outbox = nil
+		if _, err := e.st.Write(func(tx *store.Tx) error {
+			if err := tx.PutThread(t); err != nil {
+				return err
+			}
+			for _, m := range lost {
+				if err := tx.Append(t.ID, "message.state", map[string]any{"id": m.ID, "state": "lost"}, now); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
 	for _, t := range e.threads {
 		if !t.Running && !hasLiveDecision(t) && t.RunningTasks() == 0 {
 			continue
@@ -243,6 +275,9 @@ func (e *Engine) Command(c Cmd) Reply {
 	if strings.HasPrefix(c.Action, "project.") {
 		return e.projectCommand(c)
 	}
+	if c.Action == "thread.cancelMessage" {
+		return e.cancelMessage(c)
+	}
 	act := core.Registry[c.Action]
 	if act == nil {
 		return Reply{Error: "unknown action " + c.Action, Status: 400}
@@ -309,6 +344,14 @@ func (e *Engine) Command(c Cmd) Reply {
 	newWS := e.assignProject(t, now)
 	t.UpdatedAt = now
 	reply := Reply{OK: true, ThreadID: t.ID, Status: 200}
+	for i := range effects {
+		// V0.33: the message id is known before the agent writes it, so the
+		// client can follow its delivery.
+		if effects[i].Kind == "send" && effects[i].MessageID == "" {
+			effects[i].MessageID = NewMessageID()
+			reply.Result = map[string]any{"messageId": effects[i].MessageID}
+		}
+	}
 	evs, err := e.st.Write(func(tx *store.Tx) error {
 		if newWS != nil {
 			if err := tx.PutWorkspace(newWS); err != nil {

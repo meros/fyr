@@ -165,3 +165,31 @@ func (p *PR) Blocking() string {
 	}
 	return ""
 }
+
+// SetOutbox records a message's delivery state: "sent" and "queued" keep it
+// in the outbox, any other state (read, cancelled, lost) removes it.
+func SetOutbox(t *Thread, id, state string) {
+	for i, m := range t.Outbox {
+		if m.ID == id {
+			if state == "sent" || state == "queued" {
+				t.Outbox[i].State = state
+			} else {
+				t.Outbox = append(t.Outbox[:i:i], t.Outbox[i+1:]...)
+			}
+			return
+		}
+	}
+	if state == "sent" || state == "queued" {
+		t.Outbox = append(t.Outbox, OutMsg{ID: id, State: state})
+	}
+}
+
+// OutboxState is a message's state while it is unread, else "".
+func OutboxState(t *Thread, id string) string {
+	for _, m := range t.Outbox {
+		if m.ID == id {
+			return m.State
+		}
+	}
+	return ""
+}
