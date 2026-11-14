@@ -144,6 +144,8 @@ const SCREENS = [
   { name: "new thread", url: "?mock=rail&new", field: ".m-ta" },
   { name: "snooze sheet", url: "?mock=rail&open=t_mapperf", sheet: "snooze" },
   { name: "action sheet", url: "?mock=rail", sheet: "actions" },
+  // SPEC 0.5 V0.25: the Changes tab with one file's diff open.
+  { name: "changes with a diff", url: "?mock=rail&open=t_mapperf&tab=changes", openDiff: true },
 ];
 
 // What must be visible, and where, on the current screen.
@@ -173,6 +175,9 @@ const MEASURE = `(() => {
     otherProjectRows: [...document.querySelectorAll('.m-list .ptag .ptn')].filter(e => e.textContent !== 'norban/web').length,
     saveButton: rect('.pedit .pformb .btn.p'),
     toolOutput: (() => { const o = document.querySelector('.tlout'); if (!o) return null; const r = o.getBoundingClientRect(); return { right: r.right, lines: o.textContent.split(String.fromCharCode(10)).length }; })(),
+    changeRows: document.querySelectorAll('.chg-file').length,
+    diffLines: document.querySelectorAll('.chg-diff .dl').length,
+    changeRight: Math.max(0, ...[...document.querySelectorAll('.chg, .chg-file, .chg-diff')].map(e => e.getBoundingClientRect().right)),
     focused: active ? { top: active.top, bottom: active.bottom } : null,
   };
 })()`;
@@ -221,6 +226,11 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
       check(m.toolOutput.right <= window_innerWidth(m) + 0.5, `${ctx}: the output block runs past the right edge`);
     }
   }
+  if (ctx.startsWith("changes")) {
+    check(m.changeRows >= 4, `${ctx}: expected the changed files (found ${m.changeRows})`);
+    check(m.diffLines >= 5, `${ctx}: the opened file shows no diff lines (${m.diffLines})`);
+    check(m.changeRight <= window_innerWidth(m) + 0.5, `${ctx}: the changes list or diff runs ${(m.changeRight - window_innerWidth(m)).toFixed(1)} px past the right edge`);
+  }
   check(m.pageOverflow <= 0, `${ctx}: the page scrolls sideways by ${m.pageOverflow} px`);
   if (ctxWantsChips(ctx)) check(m.chipCount >= 2 && !!m.chips && !!m.camera, `${ctx}: expected 2 uploaded chips and the Camera button (chips ${m.chipCount})`);
   if (m.sheet) check(m.sheet.bottom <= visBottom + 0.5, `${ctx}: sheet runs below the viewport`);
@@ -268,6 +278,12 @@ async function openScreen(s, w, h) {
     await evaluate(`(() => { const rows = document.querySelectorAll('.tl.row'); rows[rows.length - 1]?.click(); })()`);
     await sleep(200);
     await evaluate(`document.querySelector('.tlout')?.scrollIntoView({ block: 'nearest' })`);
+  }
+  if (s.openDiff) {
+    await sleep(300);
+    // The file with the longest path: its row must ellipsize, its long lines scroll inside the diff.
+    await evaluate(`[...document.querySelectorAll('.chg-file')].sort((a, b) => b.title.length - a.title.length)[0]?.click()`);
+    await sleep(400);
   }
   if (s.sheet === "snooze") {
     await tapCenter(".m-tr1 .b44:last-child");

@@ -152,3 +152,36 @@ Commands (through `POST /api/command`, no `threadId`):
 A folder source needs a full path (`~/…` is expanded); on this host the folder must exist, else `400` with the reason. `host` may be left out: the host fills in its own name. After `project.create`, `project.addSource` or `project.removeSource` the host re-matches threads and sends the changed ones on the stream. An icon's `value` is left out when empty.
 
 The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. Threads carry `projectId`; `project` stays the display name.
+
+## Changes (SPEC 0.5 V0.25)
+
+`GET /api/threads/{id}/changes` returns the branch diff of the thread's folder against its base, computed with git (read-only, no cache):
+
+```json
+{
+  "git": true,
+  "root": "/home/me/src/app",
+  "branch": "fix/map-lasso",
+  "base": "origin/main",
+  "mergeBase": "3f2a…",
+  "commits": 3,
+  "files": [
+    {"path": "web/src/map.ts", "status": "modified", "additions": 40, "deletions": 12, "binary": false},
+    {"path": "web/src/lasso.ts", "oldPath": "web/src/select.ts", "status": "renamed", "additions": 2, "deletions": 1, "binary": false},
+    {"path": "docs/notes.md", "status": "added", "additions": 18, "deletions": 0, "binary": false}
+  ],
+  "truncated": false
+}
+```
+
+- `base` is `origin/HEAD`, else `origin/main`, `origin/master`, `main` or `master`; empty when none exists (then the diff is the uncommitted work against `HEAD`). `branch` is empty on a detached `HEAD`. `commits` counts the commits from the merge base to `HEAD`.
+- The diff runs from the merge base to the working tree: commits, staged and unstaged edits, and untracked files that are not ignored (`status: added`). `status` is one of `added`, `modified`, `deleted`, `renamed`; `oldPath` is set for a rename. Paths are relative to `root`. At most 1,000 files, sorted by path; more sets `truncated: true`.
+- Not a git checkout, or the folder is gone: `{"git": false}`. Unknown thread: `404`.
+
+`GET /api/threads/{id}/changes?path=<path>` returns one file's unified diff:
+
+```json
+{"path": "web/src/map.ts", "patch": "diff --git a/… b/…\n@@ -1,4 +1,5 @@\n…", "binary": false, "truncated": false}
+```
+
+The patch is cut at 400 KB at a line end (`truncated: true`). A path without changes returns `"patch": ""`. The path is matched literally; an untracked file is read only when git lists it as untracked.

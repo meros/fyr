@@ -8,6 +8,7 @@ import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, ThreadDTO } from "./types.ts";
 import { createApi } from "./api.ts";
+import { setChangesSource } from "./changes-ui.tsx";
 import {
   SECTIONS,
   applySnapshot,
@@ -118,6 +119,7 @@ const api = createApi();
 setUploader(api.uploadAttachment);
 setAttachmentUrl(api.attachmentUrl);
 setPreviewUrl(api.previewUrl);
+setChangesSource(api);
 const params = new URLSearchParams(location.search);
 
 type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "move" | "newproject" | null;
