@@ -1,6 +1,6 @@
 // Rail and inbox list, as design/directions/04-rail.html draws them.
 
-import type { Ref } from "preact";
+import type { ComponentChildren, Ref } from "preact";
 import type { ThreadDTO } from "./types.ts";
 import { SECTIONS, type SectionKey, type Sections } from "./store.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
@@ -15,6 +15,8 @@ interface RailProps {
   active: SectionKey | null;
   conn: ConnState;
   host: string;
+  /** the bell and Install controls (desktop) */
+  extra?: ComponentChildren;
   onJump(k: SectionKey): void;
 }
 
@@ -34,6 +36,7 @@ export function Rail(p: RailProps) {
           </button>
         );
       })}
+      {p.extra && <div class="railx">{p.extra}</div>}
       <div class={`foot ${p.conn}`} title={title}>
         <i />
         {p.host}
@@ -181,6 +184,8 @@ interface InboxProps {
   onNew(): void;
   onAdopt(): void;
   onFocusZone(): void;
+  /** the bell and Install controls (phone layout, where the rail is hidden) */
+  extra?: ComponentChildren;
 }
 
 export function Inbox(p: InboxProps) {
@@ -199,6 +204,7 @@ export function Inbox(p: InboxProps) {
           />
           <kbd>⌘K</kbd>
         </label>
+        {p.extra && <span class="phone-only">{p.extra}</span>}
         <button class="ibtn" onClick={p.onAdopt} title="Adopt from T3" aria-label="Adopt from T3">
           {ADOPT}
         </button>

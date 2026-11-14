@@ -62,7 +62,7 @@ code{font-family:var(--mono);font-size:.92em}
 b{font-weight:600}
 kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:center;border-radius:5px;border:1px solid var(--line);background:var(--raised);color:var(--ink-muted);display:inline-block;flex:none}
 
-.app{display:grid;grid-template-columns:76px 372px minmax(0,1fr);height:100vh}
+.app{display:grid;grid-template-columns:76px 372px minmax(0,1fr);height:100vh;height:100dvh}
 
 /* rail */
 .rail{display:flex;flex-direction:column;align-items:stretch;background:var(--sunken);border-right:1px solid var(--line);padding:10px 6px;gap:4px;min-height:0;--knock:var(--sunken)}
@@ -272,4 +272,34 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
   .grid4{grid-template-columns:minmax(0,1fr)}
   .op{height:auto;min-height:56px}
   .rw{height:60px}
+}
+
+/* PWA controls (SPEC V0.15): the bell and Install sit in the rail foot on desktop, in the inbox header on a phone. */
+.rail .railx{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:2px}
+.rail .railx+.foot{margin-top:6px}
+.rail .ibtn{width:32px;height:32px}
+.ibtn.bell.on{color:var(--ink)}
+.ibtn.bell.denied,.ibtn.bell.unsupported{color:var(--ink-faint)}
+.phone-only{display:none}
+
+@media (max-width:760px){
+  .phone-only{display:contents}
+  .search kbd{display:none}
+  /* Tap targets of at least 44 px. */
+  .ibtn{width:44px;height:44px}
+  .top{height:56px;gap:4px;padding:0 6px 0 12px}
+  .search{height:40px}
+  .btn{min-height:44px;height:auto}
+  .one{height:44px}
+  .tabs span{padding:12px 12px 12px}
+  .mi{height:48px}
+  .cand{height:60px}
+  /* 16 px in fields, so iOS does not zoom on focus. */
+  input,textarea,select,.search input,.cmp .in,.fld input,.fld select,.fld textarea{font-size:16px}
+}
+
+/* Installed app: keep content out of the notch, the home indicator and rounded corners. */
+@media (display-mode: standalone){
+  .app{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);height:100dvh}
+  .toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 }

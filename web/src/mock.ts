@@ -502,7 +502,16 @@ export interface MockServer {
   command(commandId: string, action: string, threadId: string | undefined, args: Record<string, unknown>): CommandReply;
   events(threadId: string, after: number, limit: number): FyrEvent[];
   t3Candidates(): T3Candidate[];
+  pushKey(): string;
+  pushSubscribe(subscription: PushSubscriptionJSON, device: string): { ok: boolean; error?: string };
+  pushUnsubscribe(endpoint: string): { ok: boolean; error?: string };
+  pushTest(): { ok: boolean; error?: string };
+  /** subscriptions stored in memory, by endpoint */
+  pushSubscriptions(): { endpoint: string; device: string }[];
 }
+
+/** A P-256 public key in the VAPID format; the mock has no private key and never pushes. */
+export const MOCK_VAPID_KEY = "BDJF2xtzzliD3JVf2tm-yBnwg5fyq3ePXxiuCwxmswDZykUsCBJdi4cRLPO3Q3EvmJ_7ngetcIYIviMRUSCaUV0";
 
 export function createMockServer(scenario: string, real0: number): MockServer {
   // ?mock=rail runs on the design's clock (14:32 today), so times read as in the frame.
@@ -512,6 +521,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   const threads = new Map(fx.threads.map((t) => [t.id, t]));
   const events = fx.events;
   const replies = new Map<string, CommandReply>();
+  const subs = new Map<string, { endpoint: string; device: string }>();
   let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void } | null = null;
   let nextId = 1;
 
@@ -698,6 +708,24 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     },
     t3Candidates() {
       return fx.t3;
+    },
+    pushKey() {
+      return MOCK_VAPID_KEY;
+    },
+    pushSubscribe(subscription, device) {
+      if (!subscription?.endpoint) return { ok: false, error: "subscription.endpoint is required" };
+      subs.set(subscription.endpoint, { endpoint: subscription.endpoint, device });
+      return { ok: true };
+    },
+    pushUnsubscribe(endpoint) {
+      subs.delete(endpoint);
+      return { ok: true };
+    },
+    pushTest() {
+      return subs.size ? { ok: true } : { ok: false, error: "No device has notifications on" };
+    },
+    pushSubscriptions() {
+      return [...subs.values()];
     },
   };
 }

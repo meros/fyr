@@ -34,6 +34,9 @@ import { keyHints } from "./keys.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { ThreadPane } from "./thread.tsx";
 import { AdoptDialog, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
+import { currentPushStatus, disablePush, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
+import { unsupportedReason, type PushStatus } from "./push.ts";
+import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 
 /** Events per page of a thread timeline. */
 const PAGE = 400;
@@ -41,7 +44,7 @@ const PAGE = 400;
 const api = createApi();
 const params = new URLSearchParams(location.search);
 
-type Dialog = "new" | "adopt" | "snooze" | null;
+type Dialog = "new" | "adopt" | "snooze" | "push" | null;
 type Zone = "list" | "thread";
 
 interface Toast {
@@ -104,6 +107,12 @@ function App() {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tick, setTick] = useState(Date.now());
   const [inText, setInText] = useState(false);
+  // PWA (SPEC V0.15): push bell, install prompt, and a thread to open from a notification tap.
+  const [pushSt, setPushSt] = useState<PushStatus>("unsupported");
+  const [canInstall, setCanInstall] = useState(false);
+  const [pendingOpen, setPendingOpen] = useState<string | null>(null);
+  const env = useMemo(() => pushEnv(), []);
+  const pushReason = unsupportedReason(env);
 
   const now = tick + store.clockOffset;
   const shown = useMemo(() => {
@@ -130,6 +139,9 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    registerServiceWorker((id) => setPendingOpen(id));
+    watchInstall((can) => setCanInstall(can));
+    void currentPushStatus().then(setPushSt);
     api.start({
       state: (dto) => setStore((s) => applySnapshot(s, dto, Date.now())),
       thread: (t) => setStore((s) => upsertThread(s, t)),
@@ -613,6 +625,23 @@ function App() {
     return () => window.removeEventListener("keydown", h);
   }, []);
 
+  useEffect(() => {
+    if (!pendingOpen || !store.threads[pendingOpen]) return;
+    openThread(pendingOpen, "open");
+    setPendingOpen(null);
+  }, [pendingOpen, store.threads]);
+
+  const pwaControls = (
+    <PwaControls
+      push={pushSt}
+      pushReason={pushReason}
+      showUnsupported={env.ios && !env.standalone}
+      canInstall={canInstall && !isStandalone()}
+      onBell={() => setDialog("push")}
+      onInstall={() => void promptInstall().then((ok) => ok && setCanInstall(false))}
+    />
+  );
+
   const activeSection: SectionKey | null = sel && store.threads[sel] ? sectionOf(store.threads[sel]) : null;
   const hints = keyHints({
     dialog,
@@ -631,7 +660,7 @@ function App() {
   return (
     <div class="shell">
       <div class={view ? "app open" : "app"}>
-        <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} />
+        <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} />
         <Inbox
           sec={sec}
           now={now}
@@ -647,6 +676,7 @@ function App() {
           onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
           onNew={() => setDialog("new")}
           onAdopt={() => setDialog("adopt")}
+          extra={pwaControls}
           onFocusZone={() => setZone("list")}
         />
         {viewThread && view ? (
@@ -708,6 +738,27 @@ function App() {
       )}
       {dialog === "new" && <NewThreadDialog profiles={store.profiles} projects={store.projects} onClose={() => setDialog(null)} onCreate={create} />}
       {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
+      {dialog === "push" && (
+        <PushDialog
+          status={pushSt}
+          reason={pushReason}
+          onClose={() => setDialog(null)}
+          onOn={async () => {
+            const r = await enablePush(api);
+            setPushSt(r.status);
+            return r.error ?? null;
+          }}
+          onOff={async () => {
+            const r = await disablePush(api);
+            setPushSt(r.status);
+            return r.error ?? null;
+          }}
+          onTest={async () => {
+            const r = await api.pushTest();
+            return r.ok ? null : (r.error ?? "The test was not sent");
+          }}
+        />
+      )}
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
     </div>
   );

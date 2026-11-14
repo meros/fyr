@@ -6,7 +6,7 @@ import { ImageStrip, useImagePaste } from "./thread.tsx";
 import { relTime, shortModel } from "./format.ts";
 import type { SnoozePreset } from "./store.ts";
 
-function Modal({ title, onClose, children, wide }: { title: string; onClose(): void; children: any; wide?: boolean }) {
+export function Modal({ title, onClose, children, wide }: { title: string; onClose(): void; children: any; wide?: boolean }) {
   return (
     <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div class={`dlg${wide ? " wide" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
