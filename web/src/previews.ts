@@ -30,6 +30,11 @@ export const FRAME_MAX = 2000;
 const FRAME_DEFAULT = 400;
 
 let previewUrlFor: (id: string) => string = (id) => `/api/previews/${encodeURIComponent(id)}`;
+/** Where an HTML page loads from: a preview or a live view (V0.37). */
+export function previewUrl(id: string): string {
+  return previewUrlFor(id);
+}
+
 /** The app sets this (mock mode serves data: pages). */
 export function setPreviewUrl(fn: (id: string) => string): void {
   previewUrlFor = fn;
