@@ -11,14 +11,16 @@ self:
 let
   cfg = config.services.fyr;
   home = config.users.users.${cfg.user}.home;
-  configJSON = builtins.toJSON {
+  configJSON = builtins.toJSON ({
     listen = "127.0.0.1:${toString cfg.port}";
     permissionMode = cfg.permissionMode;
     idleStopMinutes = cfg.idleStopMinutes;
     profiles = cfg.profiles;
     scanRoots = cfg.scanRoots;
     quota = lib.mapAttrs (_: q: lib.filterAttrs (_: v: v != null) q) cfg.quota;
-  };
+  } // lib.optionalAttrs (cfg.role != "both") { role = cfg.role; }
+    // lib.optionalAttrs (cfg.hosts != [ ]) { hosts = cfg.hosts; }
+    // lib.optionalAttrs (cfg.hostListen != null) { hostListen = cfg.hostListen; });
   optStr = description: lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; inherit description; };
 in
 {
@@ -47,6 +49,36 @@ in
       type = lib.types.int;
       default = 10;
       description = "Stop an agent process after this long without a run (SPEC V0.7).";
+    };
+    role = lib.mkOption {
+      type = lib.types.enum [ "both" "host" "front" ];
+      default = "both";
+      description = ''
+        What this fyrd does (SPEC 0.5 V0.51, decision 0016): `host` runs
+        threads and serves no page; `front` serves the client from `hosts`;
+        `both` is a host with its own front, which reaches it over a loopback
+        link through the host protocol.
+      '';
+    };
+    hosts = lib.mkOption {
+      type = lib.types.listOf (lib.types.submodule {
+        options = {
+          name = lib.mkOption { type = lib.types.str; description = "The host's name, shown in the client."; };
+          url = lib.mkOption { type = lib.types.str; example = "http://host-b:7778"; description = "Where the host serves fronts (its `hostListen`) on the tailnet."; };
+        };
+      });
+      default = [ ];
+      description = "A front's other hosts (V0.51). In `both` the local host comes first and needs no entry.";
+    };
+    hostListen = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "100.101.102.103:7778";
+      description = ''
+        A tailnet address where this host also serves fronts on other
+        machines (V0.51). Only peers whose Tailscale identity is the owner's
+        login are served. Null: loopback only.
+      '';
     };
     profiles = lib.mkOption {
       type = lib.types.listOf (lib.types.attrsOf lib.types.anything);

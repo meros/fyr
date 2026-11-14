@@ -89,7 +89,9 @@ func getState(t *testing.T, base string) state {
 	}
 	defer resp.Body.Close()
 	var s state
-	json.NewDecoder(resp.Body).Decode(&s)
+	dec := json.NewDecoder(resp.Body)
+	dec.UseNumber() // revs are nanosecond counts above 2^53
+	dec.Decode(&s)
 	return s
 }
 
@@ -259,11 +261,11 @@ func TestFrontMarksOfflineHost(t *testing.T) {
 	online(t, fs.URL, 1)
 	_, rep := post(t, fs.URL+"/api/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`)
 	id, _ := rep["threadId"].(string)
-	var rev0 float64
+	var rev0 int64
 	eventually(t, "thread on the front", func() bool {
 		d := threadOf(getState(t, fs.URL), id)
 		if d != nil {
-			rev0, _ = d["rev"].(float64)
+			rev0, _ = d["rev"].(json.Number).Int64()
 		}
 		return d != nil
 	})
@@ -274,7 +276,7 @@ func TestFrontMarksOfflineHost(t *testing.T) {
 		d = threadOf(getState(t, fs.URL), id)
 		return d != nil && d["hostOffline"] != nil
 	})
-	if rev, _ := d["rev"].(float64); rev <= rev0 {
+	if rev, _ := d["rev"].(json.Number).Int64(); rev <= rev0 {
 		t.Fatalf("the offline mark must raise rev: %v <= %v", rev, rev0)
 	}
 	if d["title"] != "hi" {

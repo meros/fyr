@@ -1,7 +1,8 @@
-// fyrd is the Fyr host daemon (v0: one host, one desktop client on
-// localhost; SPEC 0.5).
+// fyrd is the Fyr daemon (SPEC 0.5). It runs as a host (runs threads), a
+// front (serves the client from a list of hosts) or both, the default
+// (decision 0016, V0.51).
 //
-//	fyrd [serve] [-listen 127.0.0.1:7777] [-data DIR] [-web DIR]
+//	fyrd [serve] [-role both|host|front] [-listen 127.0.0.1:7777] [-hosts name=url,…] [-host-listen ADDR] [-data DIR] [-web DIR]
 //	fyrd import-t3 [-list]
 package main
 
@@ -29,6 +30,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/mcp"
@@ -93,6 +95,14 @@ type config struct {
 	// Quota: per profile id, where its provider allowance is read (V0.44);
 	// wins over the profile's own quota.
 	Quota map[string]*quota.Spec `json:"quota"`
+	// Role: host, front or both (V0.51); empty is both.
+	Role string `json:"role"`
+	// Hosts: a front's other hosts (V0.51), reached over the tailnet. In
+	// both, the local host comes first and needs no entry.
+	Hosts []front.HostConfig `json:"hosts"`
+	// HostListen: a tailnet address where the host also serves the host
+	// protocol to fronts on other machines (V0.51); empty is none.
+	HostListen string `json:"hostListen"`
 }
 
 // expandHome turns "~" and "~/x" into paths under the home folder.
@@ -148,6 +158,9 @@ func main() {
 	ownerLogin := fl.String("owner-login", "", "Tailscale login allowed over the tailnet (default from config ownerLogin)")
 	t3Dir := fl.String("t3", filepath.Join(home(), ".t3", "userdata"), "T3 Code user data directory")
 	list := fl.Bool("list", false, "import-t3: only list the candidates")
+	role := fl.String("role", "", "host, front or both (default from config role, else both)")
+	hostsFlag := fl.String("hosts", "", "front: other hosts as name=url,… (default from config hosts)")
+	hostListen := fl.String("host-listen", "", "host: also serve fronts on this tailnet address (default from config hostListen)")
 	fl.Parse(args)
 
 	os.MkdirAll(*data, 0o700)
@@ -165,6 +178,28 @@ func main() {
 	if *ownerLogin != "" {
 		cfg.OwnerLogin = *ownerLogin
 	}
+	if *role != "" {
+		cfg.Role = *role
+	}
+	if cfg.Role == "" {
+		cfg.Role = "both"
+	}
+	if cfg.Role != "both" && cfg.Role != "host" && cfg.Role != "front" {
+		log.Fatalf("role %q: want host, front or both", cfg.Role)
+	}
+	if *hostsFlag != "" {
+		hs, err := parseHosts(*hostsFlag)
+		if err != nil {
+			log.Fatal(err)
+		}
+		cfg.Hosts = hs
+	}
+	if *hostListen != "" {
+		cfg.HostListen = *hostListen
+	}
+	for i := range cfg.Hosts {
+		cfg.Hosts[i].Remote = true
+	}
 	if cfg.OwnerLogin == "" {
 		// V0.14: the Tailscale user of this machine owns it over the tailnet.
 		if login, dns, err := tailnet.Self(tailnet.DefaultSocket); err == nil {
@@ -175,6 +210,18 @@ func main() {
 		}
 	}
 	t3DB := filepath.Join(*t3Dir, "statev2.sqlite")
+	var webFS fs.FS = web.Dist()
+	if *webDir != "" {
+		webFS = os.DirFS(*webDir)
+	}
+	hostName, _ := os.Hostname()
+	if cfg.Role == "front" {
+		if cmd != "serve" {
+			log.Fatalf("%s needs the host role", cmd)
+		}
+		serveFront(cfg, webFS, hostName)
+		return
+	}
 
 	st, err := store.Open(filepath.Join(*data, "fyr.db"))
 	if err != nil {
@@ -277,14 +324,7 @@ func main() {
 		log.Fatalf("unknown command %q", cmd)
 	}
 
-	host, _, err := net.SplitHostPort(cfg.Listen)
-	if ip := net.ParseIP(host); err != nil || (host != "localhost" && (ip == nil || !ip.IsLoopback())) {
-		log.Fatalf("listen %q: v0 listens on loopback only (decision 0002)", cfg.Listen)
-	}
-	ln, err := net.Listen("tcp", cfg.Listen)
-	if err != nil {
-		log.Fatal(err)
-	}
+	ln := listenLoopback(cfg.Listen)
 	mcpURL := "http://" + ln.Addr().String() + "/mcp"
 
 	att := &attach.Store{Dir: filepath.Join(*data, "attachments")}
@@ -391,11 +431,8 @@ func main() {
 		}
 	}
 
-	var webFS fs.FS = web.Dist()
-	if *webDir != "" {
-		webFS = os.DirFS(*webDir)
-	}
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), ProfileList: profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence, FS: folders, PR: prDetails,
+	// V0.51: the host never serves the client; a front does.
+	srv := &server.Server{Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence, FS: folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
@@ -410,13 +447,37 @@ func main() {
 			}
 			return out, nil
 		}}
-	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal(err)
-		}
-	}()
-	log.Printf("build %s listening on http://%s (%d threads, %d providers)", BuildID(), ln.Addr(), len(eng.Snapshot()), len(profiles()))
+	var servers []*http.Server
+	serve := func(l net.Listener, h http.Handler) {
+		hs := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+		servers = append(servers, hs)
+		go func() {
+			if err := hs.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatal(err)
+			}
+		}()
+	}
+	hostHandler := srv.Handler()
+	if cfg.Role == "host" {
+		serve(ln, hostHandler)
+	} else {
+		// both (V0.51): the front reaches this host over a loopback link,
+		// through the host protocol only; agents keep /mcp on the main port.
+		link := listenLoopback("127.0.0.1:0")
+		serve(link, hostHandler)
+		hosts := append([]front.HostConfig{{Name: hostName, URL: "http://" + link.Addr().String()}}, cfg.Hosts...)
+		fr := front.New(front.Options{Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS}, hosts)
+		go fr.Run(ctx)
+		mux := http.NewServeMux()
+		mux.Handle("/mcp", hostHandler)
+		mux.Handle("/", fr.Handler())
+		serve(ln, mux)
+	}
+	if cfg.HostListen != "" {
+		serve(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: tailnet.DefaultSocket}))
+		log.Printf("serving fronts on the tailnet at %s", cfg.HostListen)
+	}
+	log.Printf("build %s (%s) listening on http://%s (%d threads, %d providers)", BuildID(), cfg.Role, ln.Addr(), len(eng.Snapshot()), len(profiles()))
 	deploy.MarkReady()
 	dep.ReportPending()
 
@@ -424,9 +485,91 @@ func main() {
 	log.Printf("shutting down")
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	hs.Shutdown(sctx)
+	for _, hs := range servers {
+		hs.Shutdown(sctx)
+	}
 	mgr.StopAll()
 	os.Exit(dep.ExitCode())
+}
+
+// serveFront runs fyrd as a front only (V0.51): the client and the browser
+// API, from the configured hosts; no threads, no store.
+func serveFront(cfg config, webFS fs.FS, name string) {
+	if len(cfg.Hosts) == 0 {
+		log.Fatal("a front needs hosts (config hosts or -hosts name=url,…)")
+	}
+	ln := listenLoopback(cfg.Listen)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	fr := front.New(front.Options{Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS}, cfg.Hosts)
+	go fr.Run(ctx)
+	hs := &http.Server{Handler: fr.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	}()
+	log.Printf("build %s (front) listening on http://%s for %d hosts", BuildID(), ln.Addr(), len(cfg.Hosts))
+	deploy.MarkReady()
+	<-ctx.Done()
+	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	hs.Shutdown(sctx)
+}
+
+// listenLoopback listens on a loopback address only (decision 0002).
+func listenLoopback(addr string) net.Listener {
+	host, _, err := net.SplitHostPort(addr)
+	if ip := net.ParseIP(host); err != nil || (host != "localhost" && (ip == nil || !ip.IsLoopback())) {
+		log.Fatalf("listen %q: v0 listens on loopback only (decision 0002)", addr)
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return ln
+}
+
+// listenTailnet listens on a tailnet address only (V0.51): Tailscale's
+// CGNAT range or its IPv6 prefix, where whois names every peer.
+func listenTailnet(addr string) net.Listener {
+	host, _, err := net.SplitHostPort(addr)
+	ip := net.ParseIP(host)
+	if err != nil || ip == nil || !tailnetIP(ip) {
+		log.Fatalf("hostListen %q: must be this machine's tailnet address (100.64.0.0/10 or fd7a:115c:a1e0::/48)", addr)
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return ln
+}
+
+func tailnetIP(ip net.IP) bool {
+	for _, c := range []string{"100.64.0.0/10", "fd7a:115c:a1e0::/48"} {
+		_, n, _ := net.ParseCIDR(c)
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseHosts reads -hosts: name=url pairs separated by commas.
+func parseHosts(s string) ([]front.HostConfig, error) {
+	var out []front.HostConfig
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		name, u, ok := strings.Cut(p, "=")
+		if !ok || name == "" || u == "" {
+			return nil, fmt.Errorf("-hosts: %q is not name=url", p)
+		}
+		out = append(out, front.HostConfig{Name: name, URL: u})
+	}
+	return out, nil
 }
 
 // effects runs approved async effects (SPEC 5.10).

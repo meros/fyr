@@ -44,6 +44,11 @@ func (h *Hub) send(event string, v any) {
 	if err != nil {
 		return
 	}
+	h.Publish(event, b)
+}
+
+// Publish sends an encoded frame (a front relays its hosts' frames, V0.51).
+func (h *Hub) Publish(event string, b []byte) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for ch := range h.subs {
