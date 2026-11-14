@@ -49,6 +49,8 @@ test("monogram: 1 or 2 letters", () => {
 
 test("icons: emoji, curated line icons (T3 names too), else the monogram", () => {
   assert.deepEqual(resolveIcon({ kind: "emoji", value: "🏡 hem" }, "Hemmet"), { kind: "emoji", value: "🏡" });
+  // The host omits an empty value (Go omitempty): {"kind":"monogram"} must not crash.
+  for (const kind of ["monogram", "emoji", "line"] as const) assert.deepEqual(resolveIcon(JSON.parse(`{"kind":"${kind}"}`), "norban"), { kind: "monogram", value: "N" });
   assert.deepEqual(resolveIcon({ kind: "line", value: "FolderGit2" }, "x"), { kind: "line", value: "folder-git-2" });
   assert.deepEqual(resolveIcon({ kind: "line", value: "Home" }, "x"), { kind: "line", value: "house" });
   assert.deepEqual(resolveIcon({ kind: "line", value: "no-such-icon" }, "norban/infra"), { kind: "monogram", value: "NI" });

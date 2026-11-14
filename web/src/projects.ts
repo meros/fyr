@@ -89,12 +89,14 @@ export type ResolvedIcon = { kind: "monogram"; value: string } | { kind: "emoji"
 
 /** The icon to draw: emoji (its first grapheme), a known line icon, else the monogram. */
 export function resolveIcon(icon: ProjectIconSpec | undefined, name: string): ResolvedIcon {
-  if (icon?.kind === "emoji" && icon.value.trim()) return { kind: "emoji", value: graphemes(icon.value.trim())[0] };
-  if (icon?.kind === "line") {
-    const n = lineName(icon.value);
+  // The host omits an empty value, so value may be missing.
+  const v = (icon?.value ?? "").trim();
+  if (icon?.kind === "emoji" && v) return { kind: "emoji", value: graphemes(v)[0] };
+  if (icon?.kind === "line" && v) {
+    const n = lineName(v);
     if (n) return { kind: "line", value: n };
   }
-  if (icon?.kind === "monogram" && icon.value.trim()) return { kind: "monogram", value: graphemes(icon.value.trim()).slice(0, 2).join("").toLocaleUpperCase() };
+  if (icon?.kind === "monogram" && v) return { kind: "monogram", value: graphemes(v).slice(0, 2).join("").toLocaleUpperCase() };
   return { kind: "monogram", value: monogram(name) };
 }
 
