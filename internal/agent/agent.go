@@ -113,8 +113,12 @@ type session struct {
 	// viewBlocked: the Stop hook blocked once this run; summary is the
 	// thread's summary before that forced turn, and forcedWork is true when
 	// the forced turn called a tool other than the view tools.
+	// The hook runs on the client's reader, ahead of the stream messages
+	// still queued for handle, so the summary comes from the hook's input
+	// and the forced turn counts from the synthetic message onward.
 	viewBlocked bool
 	summary     string
+	inForced    bool
 	forcedWork  bool
 	// refresh: end the process after this run, so the next one starts
 	// with the current flag.
@@ -566,7 +570,12 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		return
 	case "assistant", "user":
 		if typ == "user" && msg["isSynthetic"] == true {
-			return // the Stop hook's reason, echoed by the CLI (V0.37)
+			// The Stop hook's reason, echoed by the CLI (V0.37): never
+			// logged; the forced turn starts here.
+			m.mu.Lock()
+			s.inForced = s.viewBlocked
+			m.mu.Unlock()
+			return
 		}
 		if typ == "assistant" {
 			m.noteForced(s, msg)
@@ -595,7 +604,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		noReports := !s.lifecycle
 		restore := s.viewBlocked && !s.forcedWork
 		summary := s.summary
-		s.viewBlocked, s.forcedWork, s.summary = false, false, ""
+		s.viewBlocked, s.inForced, s.forcedWork, s.summary = false, false, false, ""
 		refresh := s.refresh && len(s.out) == 0
 		m.mu.Unlock()
 		if noReports {
@@ -659,15 +668,26 @@ func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
 	if !d.Block() {
 		return nil
 	}
-	s.viewBlocked, s.summary, s.forcedWork = true, t.Summary, false
+	summary := firstLine(fmt.Sprint(orNil(in["last_assistant_message"])))
+	if summary == "" {
+		summary = t.Summary
+	}
+	s.viewBlocked, s.summary, s.inForced, s.forcedWork = true, summary, false, false
 	return claude.Msg{"decision": "block", "reason": core.ViewStopReason}
+}
+
+func orNil(v any) any {
+	if v == nil {
+		return ""
+	}
+	return v
 }
 
 // noteForced marks a forced turn that did more than update the view.
 func (m *Manager) noteForced(s *session, msg claude.Msg) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !s.viewBlocked || s.forcedWork {
+	if !s.inForced || s.forcedWork {
 		return
 	}
 	inner, _ := msg["message"].(map[string]any)
