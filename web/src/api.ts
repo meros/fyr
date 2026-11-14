@@ -4,11 +4,13 @@ import { isTransient, sendWithRetry } from "./retry.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { cache, mergeStateDelta, sinceRev } from "./cache.ts";
 import type { ThreadPatch } from "./store.ts";
-import type { CommandReply, FsDir, FsListing, FyrEvent, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockQuota, mockScenario } from "./mock.ts";
 import type { Quota } from "./quota.ts";
+import type { FoundDTO, ProviderDTO } from "./providers.ts";
+import { createMockProviders } from "./mock-providers.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import { reloadForNewBuild } from "./pwa.ts";
@@ -68,6 +70,12 @@ export interface Api {
   fsMkdir(parent: string, name: string): Promise<string>;
   /** V0.44: each profile's provider quota; [] when the host cannot say. */
   quota(): Promise<Quota[]>;
+  /** V0.50: Settings → Providers; never a key, only whether one is set. */
+  providers(): Promise<ProviderDTO[]>;
+  /** V0.50: logins, endpoints and keys found on this host. */
+  providersFound(): Promise<FoundDTO[]>;
+  /** V0.50: the current profiles (after a provider changed). */
+  profiles(): Promise<Profile[]>;
 }
 
 async function fsGet<T>(path: string): Promise<T> {
@@ -349,6 +357,16 @@ function createHttpApi(): Api {
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j;
     },
+    async providers() {
+      return fsGet<ProviderDTO[]>("/api/providers");
+    },
+    async providersFound() {
+      return fsGet<FoundDTO[]>("/api/providers/found");
+    },
+    async profiles() {
+      // a delta newer than any thread: just the profiles and the small fields
+      return (await fsGet<{ profiles?: Profile[] }>("/api/state?since=9000000000000000000")).profiles ?? [];
+    },
     async quota() {
       try {
         const r = await fetch("/api/quota");
@@ -395,6 +413,7 @@ const MOCK_IMAGE =
 function createMockApi(scenario: string): Api {
   const server = createMockServer(scenario, Date.now());
   const mockFiles = new Map<string, string>();
+  const providers = createMockProviders();
   let watch = initialBuildWatch();
   return {
     mock: true,
@@ -420,7 +439,17 @@ function createMockApi(scenario: string): Api {
       };
     },
     async command(action, threadId, args) {
+      if (action.startsWith("provider.")) return providers.command(action, args ?? {});
       return server.command(newCommandId(), action, threadId, args ?? {});
+    },
+    async providers() {
+      return providers.list();
+    },
+    async providersFound() {
+      return providers.found();
+    },
+    async profiles() {
+      return server.state().profiles;
     },
     async events(threadId, after = 0, limit = 400) {
       return server.events(threadId, after, limit);

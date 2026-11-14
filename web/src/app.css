@@ -891,3 +891,46 @@ button.ptag{padding:0}
 .vchat-re{align-self:flex-start;max-width:85%;padding:7px 12px;border-radius:14px 14px 14px 4px;background:var(--raised);border:1px solid var(--line);font:400 14px/20px var(--ui);color:var(--ink);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 .vchat-live{color:var(--ink-muted);font-size:13px}
 .you .vtag{display:block;font:500 11px/14px var(--ui);color:var(--ink-muted);margin-bottom:2px}
+
+/* SPEC 0.5 V0.50: Settings */
+.set{display:flex;flex-direction:column;gap:18px;padding:4px 16px 16px;min-width:0}
+.sets{display:flex;flex-direction:column;gap:8px;min-width:0}
+.sets h3{margin:0;font:600 14px/20px var(--ui)}
+.sets h4{margin:6px 0 0;font:600 12px/16px var(--ui);color:var(--ink-muted)}
+.setd{font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.setn{font:500 13px/18px var(--ui)}
+.setrow{display:flex;flex-direction:column;gap:2px}
+.seterr{color:var(--signal-ink);font:400 12px/16px var(--ui)}
+.setneed{font:400 12px/16px var(--ui);color:var(--ink-muted);background:var(--sunken);border-radius:6px;padding:6px 8px;overflow-wrap:anywhere}
+.provs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.prov{border:1px solid var(--line);border-radius:10px;background:var(--raised);padding:6px 10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.provh{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;padding:0;border:0;background:none;color:inherit;text-align:left;font:inherit;cursor:pointer}
+.prov.found .provh{cursor:default}
+.provn{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.provn b{font:500 13px/18px var(--ui)}
+.pdot{width:8px;height:8px;border-radius:50%;background:var(--ink-faint);flex:none}
+.pst{font:500 11px/16px var(--ui);padding:2px 8px;border-radius:10px;background:var(--sunken);color:var(--ink-muted);white-space:nowrap;flex:none}
+.pst.needs-login,.pst.needs-key{background:var(--beam-wash);color:var(--beam-ink)}
+.provb{display:flex;flex-direction:column;gap:10px;padding:4px 0 6px}
+.provb .row2{display:flex;gap:10px;flex-wrap:wrap}
+.provb .row2 .fld{flex:1 1 140px}
+.provb textarea{min-height:56px;font:400 13px/18px var(--mono)}
+.setbar{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.setkey{display:flex;gap:8px;min-width:0}
+.setkey input{flex:1}
+.btn.danger{color:var(--signal-ink)}
+.addp{align-self:flex-start}
+.addf{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--raised)}
+.seg{display:flex;gap:0;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;align-self:flex-start}
+.seg button{border:0;background:none;color:var(--ink-muted);padding:0 12px;height:30px;font:500 13px/18px var(--ui);cursor:pointer}
+.seg button.on{background:var(--night);color:var(--on-night)}
+.rail .rgear{margin-top:auto}
+.rail .railx~.rgear{margin-top:4px}
+.rail .rgear+.foot{margin-top:6px}
+.dlg .set{max-height:min(72vh,720px);overflow-y:auto}
+/* phone: 44 px targets */
+.set.phone{padding:0}
+.set.phone .sbtn,.set.phone .provh,.set.phone .seg button,.set.phone .fld input,.set.phone .fld select{min-height:44px;height:auto}
+.set.phone .provh{padding:2px 0}
+.set.phone .setkey{flex-wrap:wrap}
+.set.phone .setkey input{flex:1 1 180px}

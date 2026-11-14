@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
@@ -33,8 +34,10 @@ import (
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/preview"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/quota"
+	"github.com/meros/fyr/internal/secrets"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/t3"
@@ -199,7 +202,51 @@ func main() {
 	for _, r := range cfg.ScanRoots {
 		folders.ScanRoots = append(folders.ScanRoots, expandHome(r))
 	}
-	adopt := func(ids []string) (int, error) { return adoptT3(eng, t3DB, cfg.Profiles, ids) }
+	// V0.50: providers. The first start imports today's profiles (same ids)
+	// as providers; then they come from Settings → Providers and the
+	// config's or T3's profiles only feed detection.
+	reg := &provider.Registry{DB: st, Secrets: secrets.Files(filepath.Join(*data, "secrets")), Home: home(),
+		PermissionMode: cfg.PermissionMode, Getenv: os.Getenv}
+	detectHost := provider.Host{Home: home(), Profiles: cfg.Profiles, Getenv: os.Getenv, LookPath: exec.LookPath}
+	reg.Detect = func() []provider.Found { return provider.Detect(detectHost) }
+	if err := reg.Load(); err != nil {
+		log.Fatal(err)
+	}
+	if reg.Empty() {
+		var ids []string
+		for _, p := range cfg.Profiles {
+			ids = append(ids, p.ID)
+		}
+		if n, err := reg.Cutover(reg.Found(), ids); err != nil {
+			log.Printf("providers: import: %v", err)
+		} else if n > 0 {
+			log.Printf("providers: imported %d profiles", n)
+		}
+	}
+	reg.InUse = func(id string) int {
+		n := 0
+		for _, t := range eng.Snapshot() {
+			if t.Profile == id && t.ArchivedAt == nil {
+				n++
+			}
+		}
+		return n
+	}
+	profiles := func() []agent.Profile {
+		if ps := reg.Profiles(); len(ps) > 0 {
+			return ps
+		}
+		return cfg.Profiles
+	}
+	profileByID := func(id string) (agent.Profile, bool) {
+		for _, p := range profiles() {
+			if p.ID == id {
+				return p, true
+			}
+		}
+		return agent.Profile{}, false
+	}
+	adopt := func(ids []string) (int, error) { return adoptT3(eng, t3DB, profiles(), ids) }
 
 	switch cmd {
 	case "import-t3":
@@ -240,10 +287,6 @@ func main() {
 	}
 	mcpURL := "http://" + ln.Addr().String() + "/mcp"
 
-	profileByID := map[string]agent.Profile{}
-	for _, p := range cfg.Profiles {
-		profileByID[p.ID] = p
-	}
 	att := &attach.Store{Dir: filepath.Join(*data, "attachments")}
 	eng.AttachmentExists = func(id string) bool { _, err := att.Get(id); return err == nil }
 	eng.Attach = att
@@ -256,7 +299,14 @@ func main() {
 		log.Printf("show: no Chrome on PATH; screenshots are off")
 	}
 	// V0.44: provider quota, read with the logins on this host.
-	quotas := quota.New(quotaProfiles(cfg.Profiles), home())
+	quotaList := func() []quota.Profile {
+		if reg.Empty() {
+			return quotaProfiles(cfg.Profiles)
+		}
+		return reg.QuotaProfiles()
+	}
+	quotas := quota.New(quotaList(), home())
+	reg.OnChange = func() { quotas.SetProfiles(quotaList()) }
 	quotas.Client = &http.Client{Timeout: 10 * time.Second}
 	quotas.Logf = log.Printf
 	var mgr *agent.Manager
@@ -264,13 +314,10 @@ func main() {
 	eng.Tools(mcpSrv)
 	mgr = agent.New(eng, agent.Config{
 		Profile: func(id string) agent.Profile {
-			if p, ok := profileByID[id]; ok {
+			if p, ok := profileByID(id); ok {
 				return p
 			}
-			if id == "claude" {
-				return cfg.Profiles[0]
-			}
-			return cfg.Profiles[0]
+			return profiles()[0]
 		},
 		IdleStop:    time.Duration(cfg.IdleStopMinutes) * time.Minute,
 		MCPURL:      mcpURL,
@@ -280,7 +327,7 @@ func main() {
 		HandoverDir: filepath.Join(*data, "handover"),
 	})
 	eng.Agents = mgr
-	eng.ProfileExists = func(id string) bool { _, ok := profileByID[id]; return ok }
+	eng.ProfileExists = func(id string) bool { _, ok := profileByID(id); return ok }
 	eng.Adopt = adopt
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -348,7 +395,7 @@ func main() {
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
 	}
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence, FS: folders, PR: prDetails,
+	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), ProfileList: profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence, FS: folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
@@ -369,7 +416,7 @@ func main() {
 			log.Fatal(err)
 		}
 	}()
-	log.Printf("build %s listening on http://%s (%d threads, %d profiles)", BuildID(), ln.Addr(), len(eng.Snapshot()), len(cfg.Profiles))
+	log.Printf("build %s listening on http://%s (%d threads, %d providers)", BuildID(), ln.Addr(), len(eng.Snapshot()), len(profiles()))
 	deploy.MarkReady()
 	dep.ReportPending()
 
@@ -532,6 +579,13 @@ func attentionDetail(d engine.DTO) (meta, detail string) {
 	}
 	return "", d.Attention.Reason
 }
+
+// providerAPI adapts the registry to the server.
+type providerAPI struct{ r *provider.Registry }
+
+func (p providerAPI) List() any                         { return p.r.List() }
+func (p providerAPI) Found() any                        { return p.r.Found() }
+func (p providerAPI) Command(c engine.Cmd) engine.Reply { return p.r.Command(c) }
 
 func quotaProfiles(ps []agent.Profile) []quota.Profile {
 	out := make([]quota.Profile, 0, len(ps))

@@ -12,6 +12,7 @@ import { SECTIONS, isAvailable, sections, unavailableReason, type SectionKey, ty
 import { quietNote } from "./quiet.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
+import { effortsFor, startEffort } from "./providers.ts";
 import { AgentsStrip, Conversation, EffectBody, PrTab, effectSentence, prLabel, type SendArgs } from "./thread.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
@@ -134,6 +135,8 @@ export interface PhoneActions {
   /** V0.37: turn the live view on or off */
   setView(id: string, on: boolean): void;
   setModel(id: string, model: string): void;
+  /** V0.50 */
+  setEffort(id: string, effort: string): void;
   /** V0.45: hand the thread over to another profile; resolves to an error text, or null */
   handover(id: string, profile: string, model: string): Promise<string | null>;
   send(id: string, args: SendArgs): Promise<boolean>;
@@ -179,6 +182,8 @@ export interface PhoneProps {
   onInstall(): void;
   theme: Theme;
   setTheme(t: Theme): void;
+  /** V0.50: the Settings body (the app builds it with its Api) */
+  settings?: ComponentChildren;
   toast: { text: string; undo: boolean; error?: boolean } | null;
   undoKind: "settle" | "archive" | "snooze" | null;
   undoIds: string[];
@@ -240,6 +245,12 @@ export function PhoneApp(p: PhoneProps) {
       )}
       {s.name === "new" && <MNew {...p} />}
       {s.name === "project" && <MProject {...p} id={s.id} />}
+      {s.name === "settings" && (
+        <div class="m-screen m-settings">
+          <MHeader onBack={p.back} title="Settings" />
+          <div class="m-nbody">{p.settings}</div>
+        </div>
+      )}
       {bottomBar && <MBottomBar {...p} />}
       <MToast {...p} bottomBar={bottomBar} />
       {p.nav.sheet && <MSheets {...p} sheet={p.nav.sheet} t={sheetThread} />}
@@ -1137,6 +1148,10 @@ function MNew(p: PhoneProps) {
     if (!combo.split("\u0000")[0] && defs.profile) setCombo(`${defs.profile}\u0000${defs.model}`);
   }, [p.projects.length, defs.profile]);
   const [profile, model] = combo.split("\u0000");
+  const [effortPick, setEffort] = useState("");
+  const prof = p.profiles.find((x) => x.id === profile);
+  const efforts = effortsFor(prof, model);
+  const effort = startEffort(prof, model, effortPick);
   const plan = sendArgs(text, att.chips);
   const ready = plan.ok;
 
@@ -1161,7 +1176,7 @@ function MNew(p: PhoneProps) {
     if (!ready || busy) return;
     setBusy(true);
     store(STORAGE_LAST, JSON.stringify({ cwd: folder.cwd ?? "", profile, model }));
-    const e = await p.actions.create({ cwd: folder.cwd, text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, projectId: projectId ?? undefined, view: liveView || undefined });
+    const e = await p.actions.create({ cwd: folder.cwd, text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, effort: effortPick && effort ? effort : undefined, projectId: projectId ?? undefined, view: liveView || undefined });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -1257,6 +1272,18 @@ function MNew(p: PhoneProps) {
               )}
             </select>
           </label>
+          {efforts.length > 0 && (
+            <label class="m-dchip">
+              <span class="ell">Effort · {effort || "default"}</span>
+              {I.down}
+              <select value={effort} aria-label="Effort" onChange={(e) => setEffort((e.target as HTMLSelectElement).value)}>
+                {!effort && <option value="">CLI default</option>}
+                {efforts.map((x) => (
+                  <option value={x}>{x}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <label class="m-dchip m-lvc">
             <input type="checkbox" checked={liveView} onChange={(e) => setLiveView((e.target as HTMLInputElement).checked)} />
             <span class="ell">Live view</span>
@@ -1317,6 +1344,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
     return (
       <MSheet onClose={close} label="More">
         <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.setSelecting(true))} />
+        <Item label="Settings" sub="Providers, notifications, appearance" onClick={() => p.replace({ screen: { name: "settings" }, sheet: null })} />
         <Item label="Filter by project…" right={p.projectFilter ? p.projects.find((x) => x.id === p.projectFilter)?.name : "all"} onClick={() => p.replace({ ...p.nav, sheet: { kind: "filter" } })} />
         <Item label="Adopt from T3" onClick={() => p.replace({ ...p.nav, sheet: { kind: "adopt" } })} />
         <Item label="Notifications" right={p.push} onClick={() => p.replace({ ...p.nav, sheet: { kind: "push" } })} />
@@ -1486,7 +1514,21 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
               shortModel(t.model)
             ),
           )}
-          {row("Profile", prof?.name ?? t.profile)}
+          {effortsFor(prof, t.model).length > 0 &&
+            row(
+              "Effort",
+              reason("thread.setModel") ? (
+                startEffort(prof, t.model, t.effort) || "default"
+              ) : (
+                <select class="m-msel" value={startEffort(prof, t.model, t.effort)} onChange={(e) => p.actions.setEffort(t.id, (e.target as HTMLSelectElement).value)}>
+                  {!startEffort(prof, t.model, t.effort) && <option value="">CLI default</option>}
+                  {effortsFor(prof, t.model).map((x) => (
+                    <option value={x}>{x}</option>
+                  ))}
+                </select>
+              ),
+            )}
+          {row("Provider", prof?.name ?? t.profile)}
           {t.pr &&
             row(
               "PR",

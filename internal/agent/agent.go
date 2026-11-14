@@ -21,6 +21,8 @@ import (
 
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/claude"
+	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/quota"
 )
@@ -40,6 +42,46 @@ type Profile struct {
 	// ConfigDir is the CLI's config dir (CLAUDE_CONFIG_DIR) when the
 	// profile has its own; Fyr then sets it. See ConfigDirPath (V0.45).
 	ConfigDir string `json:"configDir,omitempty"`
+
+	// V0.50 (decision 0015): a profile made from a provider. CLI is the
+	// adapter id ("" is claude); Auth and Endpoint are applied by the
+	// adapter; Key reads the provider's secret at launch and never leaves
+	// the host.
+	CLI      string                 `json:"cli,omitempty"`
+	Auth     cli.Auth               `json:"-"`
+	Endpoint cli.Endpoint           `json:"-"`
+	Key      func() (string, error) `json:"-"`
+	// KeyRequired: the profile does not start without its key (an endpoint,
+	// or an account that logs in with a token).
+	KeyRequired bool `json:"-"`
+	// ModelCaps: the offered models with their effort levels; DefaultEffort
+	// is used when the thread names none and the model takes it.
+	ModelCaps     []cli.Model `json:"modelCaps,omitempty"`
+	DefaultEffort string      `json:"defaultEffort,omitempty"`
+}
+
+// auth is the profile's auth; a legacy profile is a cli-login in its
+// configDir (the CLI's default when empty).
+func (p Profile) auth() cli.Auth {
+	if p.Auth.Kind != "" {
+		return p.Auth
+	}
+	return cli.Auth{Kind: cli.CLILogin, ConfigDir: p.ConfigDir}
+}
+
+// adapter is the CLI adapter a profile runs on.
+func (m *Manager) adapter(p Profile) (cli.Adapter, error) {
+	id := p.CLI
+	if id == "" {
+		id = claudecli.ID
+	}
+	if a, ok := m.cfg.Adapters[id]; ok {
+		return a, nil
+	}
+	if id == claudecli.ID {
+		return claudecli.Adapter{}, nil
+	}
+	return nil, fmt.Errorf("no CLI adapter %q", id)
 }
 
 // Ev is a timeline event the agent adds to a thread.
@@ -68,6 +110,8 @@ type Config struct {
 	// HandoverDir holds the files a handover starts from (V0.45); empty
 	// means a folder in the system temp dir.
 	HandoverDir string
+	// Adapters by id (V0.50); claude is built in.
+	Adapters map[string]cli.Adapter
 }
 
 // FyrPrompt is the short block that steers agents to Fyr tools (V0.12).
@@ -109,7 +153,8 @@ type session struct {
 	thread string
 	cwd    string
 	token  string
-	c      *claude.Client
+	c      cli.Session
+	effort string // the --effort it started with (V0.50)
 	// live is true from the start of a turn until its result. A turn starts
 	// on a send or on its own (the CLI resumes after a background task), so
 	// the stream decides, not a count of sends (SPEC 6.2).
@@ -213,11 +258,27 @@ func (m *Manager) Do(threadID string, e core.Effect) error {
 		s := m.sessions[threadID]
 		m.mu.Unlock()
 		if s != nil {
+			// V0.50: the CLI takes effort only at start; the process ends
+			// when idle (or after its run) and the next message resumes
+			// with the new effort.
+			if e.Effort != nil {
+				t, _ := m.host.Thread(threadID)
+				p := m.cfg.Profile(t.Profile)
+				if cli.EffortFor(p.ModelCaps, e.Model, *e.Effort, p.DefaultEffort) != s.effort {
+					m.refreshView(threadID)
+					m.mu.Lock()
+					gone := m.sessions[threadID] != s
+					m.mu.Unlock()
+					if gone {
+						return nil // the next start passes --model and --effort
+					}
+				}
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			return s.c.SetModel(ctx, e.Model)
 		}
-		return nil // the next start passes --model
+		return nil // the next start passes --model and --effort
 	}
 	return fmt.Errorf("agent: unknown effect %q", e.Kind)
 }
@@ -411,6 +472,7 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 type as struct {
 	profile Profile
 	model   string
+	effort  string
 	session string
 	resume  bool
 	addDirs []string
@@ -428,36 +490,40 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 		return nil, fmt.Errorf("no thread %s", threadID)
 	}
 	if o == nil {
-		o = &as{profile: m.cfg.Profile(t.Profile), model: t.Model, session: t.SessionID, resume: t.SessionID != ""}
+		pr := m.cfg.Profile(t.Profile)
+		o = &as{profile: pr, model: t.Model, session: t.SessionID, resume: t.SessionID != "",
+			effort: cli.EffortFor(pr.ModelCaps, t.Model, t.Effort, pr.DefaultEffort)}
 		if o.session == "" {
 			o.session = newUUID()
 		}
 	}
 	p := o.profile
-	args := []string{}
-	if o.model != "" {
-		args = append(args, "--model", o.model)
+	ad, err := m.adapter(p)
+	if err != nil {
+		return nil, err
 	}
-	if o.resume {
-		args = append(args, "--resume", o.session)
-	} else {
-		args = append(args, "--session-id", o.session)
+	l := cli.Launch{Binary: p.Binary, Dir: t.Cwd, Auth: p.auth(), Endpoint: p.Endpoint, Env: p.Env,
+		Model: o.model, Effort: o.effort, Session: o.session, Resume: o.resume, AddDirs: o.addDirs, PermissionMode: p.PermissionMode}
+	if p.Key != nil {
+		k, kerr := p.Key()
+		if kerr != nil || k == "" {
+			if p.KeyRequired || l.Auth.Kind == cli.APIKey {
+				what := "a key"
+				if l.Auth.Kind == cli.CLILogin {
+					what = "a login token"
+				}
+				return nil, fmt.Errorf("%s needs %s: add it in Settings → Providers", name(p), what)
+			}
+		}
+		l.Key = k
 	}
-	for _, d := range o.addDirs {
-		args = append(args, "--add-dir", d)
-	}
-	mode := p.PermissionMode
-	if mode == "" {
-		mode = "auto"
-	}
-	args = append(args, "--permission-mode", mode)
 	s := &session{thread: threadID, cwd: t.Cwd, asks: map[string]chan core.Effect{}, reqs: map[string]string{}, digest: newDigest(),
-		out: map[string]string{}, cancelling: map[string]bool{}}
+		out: map[string]string{}, cancelling: map[string]bool{}, effort: l.Effort}
 	if m.cfg.MCPURL != "" {
 		s.token = randHex(24)
 		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"fyr": map[string]any{
 			"type": "http", "url": m.cfg.MCPURL, "headers": map[string]string{"Authorization": "Bearer " + s.token}}}})
-		args = append(args, "--mcp-config", string(cfg), "--allowedTools", "mcp__fyr__*")
+		l.MCPConfig, l.AllowedTools = string(cfg), []string{"mcp__fyr__*"}
 	}
 	prompt := m.cfg.Prompt
 	if prompt == "-" {
@@ -467,19 +533,12 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 		s.viewTools = true
 		prompt = strings.TrimSpace(prompt + "\n\n" + ViewPrompt)
 	}
-	if prompt != "" {
-		args = append(args, "--append-system-prompt", prompt)
-	}
-	env := p.Env
-	if p.ConfigDir != "" {
-		env = append(append([]string{}, env...), "CLAUDE_CONFIG_DIR="+expandHome(p.ConfigDir))
-	}
-	spec := claude.Spec{Binary: p.Binary, Args: args, Dir: t.Cwd, Env: env}
+	l.SystemPrompt = prompt
 	if m.cfg.LogDir != "" {
 		os.MkdirAll(m.cfg.LogDir, 0o700)
 		f, err := os.OpenFile(filepath.Join(m.cfg.LogDir, threadID+".log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err == nil {
-			spec.Log, s.log = f, f
+			l.Log, s.log = f, f
 		}
 	}
 	if _, err := os.Stat(t.Cwd); err != nil {
@@ -497,26 +556,27 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 		delete(m.tokens, s.token)
 		m.mu.Unlock()
 	}
-	c, err := claude.Start(spec)
+	c, err := ad.Start(l, cli.Handlers{
+		CanUseTool: func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) },
+		Cancel:     func(reqID string) { m.cancelRequest(s, reqID) },
+		Hook: func(id string, in claude.Msg) claude.Msg {
+			if id == "view" {
+				return m.viewStop(s, in)
+			}
+			name, _ := in["tool_name"].(string)
+			ti, _ := in["tool_input"].(map[string]any)
+			if r := core.Gate(name, ti); r != "" {
+				return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse",
+					"permissionDecision": "deny", "permissionDecisionReason": r}}
+			}
+			return nil
+		},
+	})
 	if err != nil {
 		dropToken()
 		return nil, err
 	}
 	s.c = c
-	c.OnCanUseTool = func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) }
-	c.OnCancel = func(reqID string) { m.cancelRequest(s, reqID) }
-	c.OnHook = func(id string, in claude.Msg) claude.Msg {
-		if id == "view" {
-			return m.viewStop(s, in)
-		}
-		name, _ := in["tool_name"].(string)
-		ti, _ := in["tool_input"].(map[string]any)
-		if r := core.Gate(name, ti); r != "" {
-			return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse",
-				"permissionDecision": "deny", "permissionDecisionReason": r}}
-		}
-		return nil
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if _, err := c.Initialize(ctx, initHooks(s.viewTools)); err != nil {
@@ -537,7 +597,7 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 }
 
 func (m *Manager) read(s *session) {
-	for msg := range s.c.Out {
+	for msg := range s.c.Out() {
 		m.handle(s, msg)
 	}
 	<-s.c.Done()

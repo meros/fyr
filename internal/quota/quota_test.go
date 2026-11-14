@@ -379,3 +379,23 @@ func TestStreamEventKeepsAPIError(t *testing.T) {
 		t.Fatalf("windows %+v", st.Windows)
 	}
 }
+
+// SPEC 0.5 V0.50: quota is keyed by the auth identity: two profiles on one
+// login share one entry; SetProfiles keeps an identity's data.
+func TestQuotaSharedIdentity(t *testing.T) {
+	home := t.TempDir()
+	s := New([]Profile{{ID: "a", Binary: "claude"}, {ID: "b", Binary: "claude", Spec: &Spec{Kind: KindAnthropic, ConfigDir: "~/.claude"}},
+		{ID: "n", Binary: "claude", Spec: &Spec{Kind: KindAnthropic, ConfigDir: "~/.claude-n"}}}, home)
+	if len(s.targets) != 2 {
+		t.Fatalf("targets %d", len(s.targets))
+	}
+	s.Observe("a", map[string]any{"rateLimitType": "five_hour", "utilization": 0.5})
+	st := s.Snapshot()
+	if len(st) != 3 || st[1].Profile != "b" || len(st[1].Windows) != 1 || len(st[2].Windows) != 0 {
+		t.Fatalf("%+v", st)
+	}
+	s.SetProfiles([]Profile{{ID: "b2", Binary: "claude"}})
+	if st := s.Snapshot(); len(st) != 1 || st[0].Profile != "b2" || len(st[0].Windows) != 1 {
+		t.Fatalf("kept: %+v", st)
+	}
+}

@@ -189,6 +189,9 @@ const SCREENS = [
   { name: "project screen with quiet hours", url: "?mock=rail&project=p_home&quiet=p_home", storage: { "fyr.projectFilter": "" } },
   // SPEC 0.5 V0.45: the handover sheet from the thread's ⋯; its buttons stay above the bottom inset.
   { name: "handover sheet", url: "?mock=rail&open=t_triage", sheet: "handover" },
+  // SPEC 0.5 V0.50: Settings → Providers from the phone menu: the providers, Found on this host with Import, Add
+  // provider; every target 44 px and inside the safe areas.
+  { name: "settings providers", url: "?mock=rail&settings" },
 ];
 
 // What must be visible, and where, on the current screen.
@@ -242,6 +245,18 @@ const MEASURE = `(() => {
       const right = Math.max(0, ...[...v.querySelectorAll('*')].map(e => e.getBoundingClientRect().right));
       return { status, failed: v.querySelectorAll('.prv-ck.fail').length, ask: v.querySelectorAll('.prv-ask').length, threads: v.querySelectorAll('.prv-th').length,
         askAll: v.querySelector('.prv-askall')?.textContent ?? '', merge: !!v.querySelector('.prv-merge'), mergeDisabled: !!v.querySelector('.prv-merge')?.disabled, small, right };
+    })(),
+    settings: (() => {
+      const el = document.querySelector('.m-settings .set'); if (!el) return null;
+      const targets = [...el.querySelectorAll('button, select, input')].filter(e => e.getBoundingClientRect().height > 0);
+      const small = targets.map(e => ({ t: (e.textContent || e.getAttribute('aria-label') || e.tagName).trim().slice(0, 30), h: e.getBoundingClientRect().height })).filter(x => x.h < 43.5);
+      const add = el.querySelector('.addp'); const sc = el.closest('.m-nbody'); if (sc) sc.scrollTop = sc.scrollHeight;
+      const ar = add ? add.getBoundingClientRect() : null;
+      return { rows: el.querySelectorAll('.prov:not(.found)').length, found: el.querySelectorAll('.prov.found').length,
+        imports: [...el.querySelectorAll('.prov.found button')].filter(b => b.textContent.trim() === 'Import').length,
+        needs: [...el.querySelectorAll('.pst')].map(e => e.textContent), small,
+        right: Math.max(0, ...[...el.querySelectorAll('*')].map(e => e.getBoundingClientRect().right)),
+        add: ar ? { top: ar.top, bottom: ar.bottom } : null };
     })(),
     dlg: rect('.dlg'),
     dlgButton: (() => { const b = document.querySelector('.dlg .df .btn.p'); if (!b) return null; const r = b.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: r.height, text: b.textContent }; })(),
@@ -303,6 +318,15 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     check(m.previewOverflow <= 0.5, `${ctx}: a preview card runs ${m.previewOverflow.toFixed(1)} px past the right edge`);
   }
   if (ctx.startsWith("project screen")) check(m.projectEditor, `${ctx}: no project editor`);
+  if (ctx.startsWith("settings providers")) {
+    const st = m.settings;
+    check(!!st && st.rows === 3 && st.found >= 1 && st.imports === st.found && st.needs.includes("Needs a login"), `${ctx}: the Providers section is wrong ${JSON.stringify(st)}`);
+    if (st) {
+      check(st.small.length === 0, `${ctx}: targets under 44 px ${JSON.stringify(st.small)}`);
+      check(st.right <= m.innerWidth + 0.5, `${ctx}: Settings runs ${(st.right - m.innerWidth).toFixed(1)} px past the right edge`);
+      if (st.add) check(st.add.top >= m.top + insetTop - 0.5 && st.add.bottom <= m.bottom - insetBottom + 0.5, `${ctx}: Add provider (${st.add.top.toFixed(1)}–${st.add.bottom.toFixed(1)}) is outside the safe areas`);
+    }
+  }
   if (ctx.startsWith("project picker")) check(m.pickerRows[0] === "New project from this thread" && m.pickerRows[1] === "No project", `${ctx}: the picker's first rows are ${JSON.stringify(m.pickerRows)}`);
   if (ctx.startsWith("new project step")) check(m.stepName === "lasso-app" && m.stepSources === 1 && /clones of github.com\/owner\/lasso-app/.test(m.stepRepo), `${ctx}: the step is not prefilled from the thread (name ${m.stepName}, ${m.stepSources} folders, repo line "${m.stepRepo}")`);
   if (ctx.startsWith("new thread, project without")) check(m.newProject === "Hemmet" && m.folderLine === "A fresh scratch folder", `${ctx}: expected Hemmet in a fresh scratch folder (${m.newProject}, ${m.folderLine})`);
@@ -730,6 +754,23 @@ try {
   failures.push(`V0.45 desktop: ${e.message}`);
 }
 
+// SPEC 0.5 V0.50: the gear at the bottom of the desktop rail opens Settings with the Providers section.
+try {
+  await send("Page.navigate", { url: `${origin}/?mock=rail` });
+  await sleep(900);
+  const g = await evaluate(`(() => { const b = document.querySelector('.rail .rgear'); if (!b) return null; const r = b.getBoundingClientRect(), f = document.querySelector('.rail .foot').getBoundingClientRect(); b.click(); return { below: r.top > window.innerHeight / 2, aboveFoot: r.bottom <= f.top + 0.5 }; })()`);
+  check(!!g && g.below && g.aboveFoot, `V0.50 desktop: no gear at the bottom of the rail (${JSON.stringify(g)})`);
+  await sleep(400);
+  const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', sections: [...document.querySelectorAll('.dlg .sets h3')].map(e => e.textContent), rows: document.querySelectorAll('.dlg .prov:not(.found)').length })`);
+  check(d.title === "Settings" && d.sections.join("|") === "Providers|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  await evaluate(`document.querySelector('.dlg .prov .provh')?.click()`);
+  await sleep(200);
+  const o = await evaluate(`({ ta: !!document.querySelector('.dlg .prov.open textarea'), key: document.querySelector('.dlg .prov.open input[type=password]')?.value ?? null })`);
+  check(o.ta && o.key === "", `V0.50 desktop: an opened provider has no models field or a key in the page (${JSON.stringify(o)})`);
+} catch (e) {
+  failures.push(`V0.50 desktop: ${e.message}`);
+}
+
 // V0.39: the update banner is below the top safe area and inside the screen, and names the threads it waits for.
 try {
   await openScreen({ url: "?mock=rail&deploy=drain" }, 390, 844);
@@ -915,7 +956,7 @@ try {
   }
   await send("Target.setAutoAttach", { autoAttach: false, waitForDebuggerOnStart: false, flatten: true });
 } catch (e) {
-  failures.push(`V0.47 desktop: ${e.message}`);
+  failures.push(`V0.50 desktop: ${e.message}`);
 }
 
 // V0.38: never block the main thread. While a burst of 300 thread updates and 300 messages streams in

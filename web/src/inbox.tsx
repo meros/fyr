@@ -4,6 +4,7 @@ import { describeEffect } from "./effects.ts";
 import type { ComponentChildren, Ref } from "preact";
 import type { Profile, Project, ThreadDTO } from "./types.ts";
 import { QuotaRail } from "./quota-ui.tsx";
+import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, StartedBy, ThreadProject } from "./project-ui.tsx";
 import { colorVar, pickerOrder } from "./projects.ts";
 import { SECTIONS, type SectionKey, type Sections } from "./store.ts";
@@ -30,6 +31,8 @@ interface RailProps {
   onToggleList?(): void;
   /** V0.44: profiles, for the quota in the footer */
   profiles?: Profile[];
+  /** V0.50: the gear opens Settings */
+  onSettings?(): void;
 }
 
 export function Rail(p: RailProps) {
@@ -60,6 +63,12 @@ export function Rail(p: RailProps) {
       )}
       {p.profiles && <QuotaRail profiles={p.profiles} />}
       {p.extra && <div class="railx">{p.extra}</div>}
+      {p.onSettings && (
+        <button class="ri rgear" title="Settings (providers, notifications)" aria-label="Settings" onClick={p.onSettings}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: LINE_ICONS.settings }} />
+          <span class="l">Settings</span>
+        </button>
+      )}
       <div class={`foot ${p.conn}`} title={title}>
         <i />
         <span class="hn">{p.host}</span>

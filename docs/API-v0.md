@@ -107,7 +107,7 @@ Actions and their args:
 
 | action | args |
 |---|---|
-| `thread.create` (no `threadId`) | `cwd?`, `text`, `projectId?` (file it there by hand; without `cwd` it starts in the project's main folder here, V0.42), `images?`, `profile?`, `model?`, `title?`, `view?: true` (start with a live view, V0.37). Without `cwd` and without a project folder here the host makes a fresh `~/.local/share/fyr/scratch/<YYYYMMDD-HHMMSS>-<slug>` (V0.42) |
+| `thread.create` (no `threadId`) | `cwd?`, `text`, `projectId?` (file it there by hand; without `cwd` it starts in the project's main folder here, V0.42), `images?`, `profile?`, `model?`, `effort?` (V0.50: `low`…`max`; empty is the provider's default when the model takes effort), `title?`, `view?: true` (start with a live view, V0.37). Without `cwd` and without a project folder here the host makes a fresh `~/.local/share/fyr/scratch/<YYYYMMDD-HHMMSS>-<slug>` (V0.42) |
 | `thread.send` | `text`, `images?`, `from?: "view"` (a press in the live view, V0.37) |
 | `thread.setView` | `on: bool`: turn the live view on or off (V0.37). The agent's next process gets the view's prompt and tools |
 | `thread.answer` | `decisionId`, then `answers: {question: label}` for `ask` (multi-select: labels joined with ", "; Other: the free text), or `allow: bool` for `approval` and `effect` |
@@ -117,10 +117,11 @@ Actions and their args:
 | `thread.snooze` | `until` (RFC 3339, future) |
 | `thread.rename` | `title` |
 | `thread.setProject` | `projectId`: file the thread into a project by hand; folder matching keeps it (V0.23). `""` unfiles it: no project, still filed by hand, so matching leaves it unfiled (V0.30) |
-| `thread.setModel` | `model` |
+| `thread.setModel` | `model?`, `effort?` (at least one; V0.50: an effort alone keeps the model; `""` returns to the provider's default). The thread DTO carries `effort` when set |
 | `thread.handover` | `profile`, `model?` (default: the profile's default model): hand the thread over to another profile (V0.45). `409` while a run is live, a question is open, a handover is going or the thread is archived; `400` for an unknown profile or the thread's own. While it runs the thread has `"handover": {"to": "…", "model": "…", "at": "…"}` and sends are unavailable |
 | `thread.cancelMessage` | `messageId`: withdraw a message the agent has not read (V0.33). `409` when it was read already, is unknown, or the agent cannot withdraw it |
 | `t3.adopt` (no `threadId`) | `t3Ids: [..]` |
+| `provider.*` (no `threadId`) | see Providers (V0.50) |
 
 ## `GET /api/threads/{id}/handover?profile=P` (SPEC 0.5 V0.45)
 
@@ -289,9 +290,40 @@ Both reply at once; the result arrives as an `effect.result` event with `"by": "
 - Stream `event: deploy` `data: {"phase": "build|test|drain|switch|done|failed", "detail"?, "blocking"?: [threadId], "build", "startedAt", "at"}`.
 - `GET /api/state` has `deploy` with the latest progress while an update runs and for two minutes after it ended; otherwise `null`.
 
+## Providers (SPEC 0.5 V0.50)
+
+`GET /api/state` `profiles` are the providers as launch configs (same ids), each with `cli`, `models` (ids), `modelCaps: [{id, name?, efforts?}]`, `defaultModel`, `defaultEffort?`, `quota: {kind}`; never `env` or a key.
+
+`GET /api/providers`:
+
+```json
+[{"id": "claudeDeepseek", "name": "DeepSeek", "kind": "endpoint", "cli": "claude", "auth": "api-key",
+  "baseURL": "https://api.deepseek.com/anthropic", "modelEnv": {"ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-chat"},
+  "models": [{"id": "deepseek-chat"}], "defaultModel": "deepseek-chat", "efforts": ["low", "medium", "high", "xhigh", "max"],
+  "quota": "deepseek", "status": "ready", "keySet": true, "keyLast4": "4f2a", "keyFrom": "/run/secrets/deepseek",
+  "imported": "profile claudeDeepseek (claude-deepseek)", "threads": 3},
+ {"id": "claudeNorban", "name": "Claude (norban)", "kind": "claude-account", "auth": "cli-login", "configDir": "~/.claude-norban",
+  "models": [{"id": "claude-opus-5-5", "name": "Opus 5.5", "efforts": ["low", "medium", "high", "xhigh", "max"]}],
+  "quota": "anthropic-oauth", "status": "needs-login", "need": "Log in once in a terminal on this host: …", "keySet": false, "threads": 0}]
+```
+
+- `kind`: `claude-account` (auth `cli-login`) or `endpoint` (auth `api-key`). `status`: `ready`, `needs-login`, `needs-key`, with `need` saying what to do. `keySet` and `keyLast4` (empty for a key under 12 characters) are all a client learns of a key; `keyFrom` names where a key not yet stored by Fyr is read (an environment variable name or a file path). `efforts` are the adapter's levels; a model's `efforts` narrow them.
+
+`GET /api/providers/found`: what detection found on this host, each `{id, name, kind, source, configDir?, baseURL?, modelEnv?, models, defaultModel?, quotaKind?, keyFrom?, loggedIn?, status, note?, imported}`. `imported` is true when a provider with that `id` exists.
+
+Commands (`POST /api/command`, no `threadId`; `400` bad arguments, `404` unknown id, `409` conflict):
+
+| action | args |
+|---|---|
+| `provider.import` | `foundId`: create the provider from that find; a key found in fyrd's environment or a file is copied into the secret store. `409` when imported already. Result `{"id"}` |
+| `provider.create` | `name`, `kind: "claude-account" \| "endpoint"`, `id?` (default from the name), `configDir?` (account; empty is `~/.claude`), `baseURL` (endpoint), `key?`, `models?: [id]` (account default: the CLI's list), `defaultModel?`, `defaultEffort?`, `modelEnv?: {NAME: value}`, `quotaKind?`, `color?`. Result `{"id"}` |
+| `provider.update` | `id`, then any of `name`, `configDir`, `baseURL`, `models`, `defaultModel`, `defaultEffort`, `modelEnv`, `quotaKind`, `color` |
+| `provider.setKey` | `id`, `key` (an endpoint's API key, or an account's login token from `claude setup-token`); `""` removes it |
+| `provider.delete` | `id`; `409` while threads that are not archived use it. Its stored key is removed |
+
 ## Quota (SPEC 0.5 V0.44)
 
-`GET /api/quota` returns one entry per profile whose quota kind is not `none`, in profile order. The host reads a provider when its data is older than 5 minutes; a rate-limited provider is tried again after 5, 10, 20, then 30 minutes.
+`GET /api/quota` returns one entry per profile whose quota kind is not `none`, in profile order. Providers on one auth identity (V0.50) share the entry's data. The host reads a provider when its data is older than 5 minutes; a rate-limited provider is tried again after 5, 10, 20, then 30 minutes.
 
 ```json
 [

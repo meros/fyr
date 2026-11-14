@@ -69,6 +69,19 @@ type Server struct {
 	Quota func(ctx context.Context) any
 	// HandoverPlan says which rung a handover would use (V0.45); optional.
 	HandoverPlan func(threadID, profile string) agent.Plan
+	// ProfileList is the current profiles (the providers, V0.50); it wins
+	// over Profiles. Optional.
+	ProfileList func() []agent.Profile
+	// Providers serves Settings → Providers (V0.50); optional.
+	Providers Providers
+}
+
+// Providers is what the provider endpoints need (*provider.Registry
+// adapted in fyrd).
+type Providers interface {
+	List() any
+	Found() any
+	Command(c engine.Cmd) engine.Reply
 }
 
 // PRDetails is what the PR tab needs (*github.Details implements it).
@@ -89,6 +102,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	mux.HandleFunc("GET /api/quota", s.quota)
+	if s.Providers != nil {
+		mux.HandleFunc("GET /api/providers", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.Providers.List()) })
+		mux.HandleFunc("GET /api/providers/found", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.Providers.Found()) })
+	}
 	if s.Presence != nil {
 		mux.HandleFunc("POST /api/presence", func(w http.ResponseWriter, r *http.Request) {
 			var b struct {
@@ -237,9 +254,15 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 		projects = append(projects, project{p, p.Folder(s.Engine.HostID)})
 	}
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
-	profiles := s.Profiles
-	if profiles == nil {
-		profiles = []agent.Profile{}
+	src := s.Profiles
+	if s.ProfileList != nil {
+		src = s.ProfileList()
+	}
+	// A profile's env stays on the host (V0.50): it may name a secret.
+	profiles := make([]agent.Profile, 0, len(src))
+	for _, p := range src {
+		p.Env = nil
+		profiles = append(profiles, p)
 	}
 	writeJSON(w, 200, map[string]any{
 		"now": time.Now().UTC(), "user": core.Owner, "buildId": s.BuildID, "host": s.hostName(),
@@ -472,7 +495,16 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, engine.Reply{Error: "bad JSON: " + err.Error()})
 		return
 	}
-	rep := s.Engine.Command(c)
+	var rep engine.Reply
+	if strings.HasPrefix(c.Action, "provider.") {
+		if s.Providers == nil {
+			writeJSON(w, 404, engine.Reply{Error: "no providers on this host"})
+			return
+		}
+		rep = s.Providers.Command(c)
+	} else {
+		rep = s.Engine.Command(c)
+	}
 	if rep.Status == 0 {
 		rep.Status = 200
 	}
