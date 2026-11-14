@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,12 +33,15 @@ type EffectRunner interface {
 }
 
 type Engine struct {
-	mu      sync.Mutex
-	st      *store.Store
-	threads map[string]*core.Thread
-	views   map[string]*core.View
-	last    map[string]core.State // last broadcast state, for time-driven changes
-	revs    map[string]int64      // per-thread rev (SPEC 0.5 V0.2)
+	mu       sync.Mutex
+	st       *store.Store
+	threads  map[string]*core.Thread
+	views    map[string]*core.View
+	last     map[string]core.State    // last broadcast state, for time-driven changes
+	revs     map[string]int64         // per-thread rev (SPEC 0.5 V0.2)
+	projects map[string]*core.Project // V0.23
+	// HostID names this host in folder sources (V0.23); default the hostname.
+	HostID  string
 	lastRev int64
 
 	Agents  Agents
@@ -64,7 +68,7 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, Hub: NewHub(), Now: time.Now,
+		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
 		newLimit: hourly{max: 5}, sendLimit: hourly{max: 30}}
 }
 
@@ -92,6 +96,31 @@ func (e *Engine) Load() error {
 		e.bump(t.ID)
 	}
 	e.views = vs
+	ps, err := e.st.Projects()
+	if err != nil {
+		return err
+	}
+	for _, p := range ps {
+		e.projects[p.ID] = p
+	}
+	// Threads from before projects (V0.23) get one now.
+	for _, t := range e.threads {
+		if t.ProjectID != "" && e.projects[t.ProjectID] != nil {
+			t.Project = e.projects[t.ProjectID].Name
+			continue
+		}
+		np := e.assignProject(t, e.Now())
+		if _, err := e.st.Write(func(tx *store.Tx) error {
+			if np != nil {
+				if err := tx.PutProject(np); err != nil {
+					return err
+				}
+			}
+			return tx.PutThread(t)
+		}); err != nil {
+			return err
+		}
+	}
 	// Clients and push already know these states; only changes notify.
 	defer func() {
 		now := e.Now()
@@ -194,6 +223,9 @@ func (e *Engine) Command(c Cmd) Reply {
 	if c.Action == "t3.adopt" {
 		return e.adopt(c)
 	}
+	if strings.HasPrefix(c.Action, "project.") {
+		return e.projectCommand(c)
+	}
 	act := core.Registry[c.Action]
 	if act == nil {
 		return Reply{Error: "unknown action " + c.Action, Status: 400}
@@ -249,9 +281,15 @@ func (e *Engine) Command(c Cmd) Reply {
 	if t.Profile == "" {
 		t.Profile = "claude"
 	}
+	newProject := e.assignProject(t, now)
 	t.UpdatedAt = now
 	reply := Reply{OK: true, ThreadID: t.ID, Status: 200}
 	evs, err := e.st.Write(func(tx *store.Tx) error {
+		if newProject != nil {
+			if err := tx.PutProject(newProject); err != nil {
+				return err
+			}
+		}
 		if err := tx.PutThread(t); err != nil {
 			return err
 		}
@@ -534,7 +572,15 @@ func (e *Engine) adopt(c Cmd) Reply {
 // Insert adds a thread made outside the command path (T3 adoption), with
 // its history, in one transaction.
 func (e *Engine) Insert(t *core.Thread, v *core.View, history []agent.Ev, at []time.Time) error {
+	e.mu.Lock()
+	np := e.assignProject(t, e.Now())
+	e.mu.Unlock()
 	if _, err := e.st.Write(func(tx *store.Tx) error {
+		if np != nil {
+			if err := tx.PutProject(np); err != nil {
+				return err
+			}
+		}
 		if err := tx.PutThread(t); err != nil {
 			return err
 		}

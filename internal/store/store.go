@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS threads(id TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS views(user TEXT NOT NULL, entity TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(user, entity));
 CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, at TEXT NOT NULL, result TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, user TEXT NOT NULL, device TEXT NOT NULL, sub TEXT NOT NULL, created TEXT NOT NULL);
 `
 
@@ -267,4 +268,31 @@ func (s *Store) HasPushSub(endpoint string) (bool, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM push_subs WHERE endpoint=?`, endpoint).Scan(&n)
 	return n > 0, err
+}
+
+func (tx *Tx) PutProject(p *core.Project) error {
+	b, _ := json.Marshal(p)
+	_, err := tx.tx.Exec(`INSERT INTO projects(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, p.ID, string(b))
+	return err
+}
+
+func (s *Store) Projects() ([]*core.Project, error) {
+	rows, err := s.db.Query(`SELECT data FROM projects`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*core.Project
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		p := &core.Project{}
+		if err := json.Unmarshal([]byte(d), p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }

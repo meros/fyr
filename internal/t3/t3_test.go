@@ -13,7 +13,7 @@ const schema = `
 CREATE TABLE orchestration_v2_projection_threads (thread_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL,
   active_provider_thread_id TEXT, created_at TEXT, updated_at TEXT NOT NULL, archived_at TEXT, deleted_at TEXT, payload_json TEXT NOT NULL);
 CREATE TABLE orchestration_v2_projection_provider_threads (provider_thread_id TEXT PRIMARY KEY, thread_id TEXT, payload_json TEXT NOT NULL);
-CREATE TABLE projection_projects (project_id TEXT PRIMARY KEY, title TEXT, workspace_root TEXT NOT NULL);
+CREATE TABLE projection_projects (project_id TEXT PRIMARY KEY, title TEXT, workspace_root TEXT NOT NULL, project_icon_json TEXT, deleted_at TEXT, archived_at TEXT);
 CREATE TABLE projection_thread_pull_requests (thread_id TEXT NOT NULL, host TEXT, repository TEXT, number INTEGER, url TEXT NOT NULL, source TEXT, linked_at TEXT NOT NULL);
 `
 
@@ -32,7 +32,9 @@ func fixture(t *testing.T) (db, home string) {
 		}
 	}
 	mustExec(schema)
-	mustExec(`INSERT INTO projection_projects VALUES ('p1','app','/src/app')`)
+	mustExec(`INSERT INTO projection_projects VALUES ('p1','app','/src/app',NULL,NULL,NULL)`)
+	mustExec(`INSERT INTO projection_projects VALUES ('p2','No project','/home/u/.t3/scratch','{"kind":"lucide","name":"message-square-dashed","color":"gray"}',NULL,NULL)`)
+	mustExec(`INSERT INTO projection_projects VALUES ('p3','gone','/old',NULL,'2026-01-01',NULL)`)
 	add := func(id, payload, pt string) {
 		mustExec(`INSERT INTO orchestration_v2_projection_threads VALUES (?,?,?,?,?,?,NULL,NULL,?)`, id, "p1", "T "+id, "pt-"+id, "2026-11-13T10:00:00Z", "2026-11-13T11:00:00Z", payload)
 		mustExec(`INSERT INTO orchestration_v2_projection_provider_threads VALUES (?,?,?)`, "pt-"+id, id, pt)
@@ -111,5 +113,24 @@ func TestProfilesFromSettings(t *testing.T) {
 	}
 	if !found || ps[0].ID != "claudeAlt" {
 		t.Fatalf("%+v", ps)
+	}
+}
+
+// SPEC 0.5 V0.23: T3's projects seed Fyr's, with their titles and icons.
+func TestProjectsSeed(t *testing.T) {
+	db, _ := fixture(t)
+	ps, err := Projects(db, "h1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ps) != 2 {
+		t.Fatalf("%+v", ps)
+	}
+	for _, p := range ps {
+		if p.Folder("h1") == "/home/u/.t3/scratch" {
+			if p.Name != "Scratch" || p.Icon.Kind != "line" || p.Icon.Value != "message-square-dashed" || p.Color != "slate" {
+				t.Fatalf("%+v", p)
+			}
+		}
 	}
 }

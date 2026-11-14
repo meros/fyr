@@ -159,6 +159,10 @@ func main() {
 	if err := eng.Load(); err != nil {
 		log.Fatal(err)
 	}
+	// V0.23: T3's projects seed Fyr's (an edited project is left alone).
+	if seeds, err := t3.Projects(t3DB, eng.HostID); err == nil {
+		eng.SeedProjects(seeds)
+	}
 	adopt := func(ids []string) (int, error) { return adoptT3(eng, t3DB, cfg.Profiles, ids) }
 
 	switch cmd {

@@ -15,6 +15,7 @@ type Thread struct {
 	Title      string    `json:"title"`
 	Cwd        string    `json:"cwd"`
 	Project    string    `json:"project"`
+	ProjectID  string    `json:"projectId,omitempty"` // V0.23
 	Owner      string    `json:"owner"`
 	Visibility string    `json:"visibility"`
 	Profile    string    `json:"profile"`

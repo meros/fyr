@@ -18,7 +18,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "threads": [ThreadDTO],
   "actions": [{"name": "thread.settle", "label": "Settle", "key": "e", "bulk": true}],
   "profiles": [{"id": "claude", "name": "Claude", "color": "#d97757", "models": ["claude-opus-5-5"], "defaultModel": "claude-opus-5-5"}],
-  "projects": [{"cwd": "/home/me/src/app", "name": "app", "lastUsed": "…"}]
+  "projects": [{"id": "p_…", "name": "app", "color": "teal", "icon": {"kind": "monogram|emoji|line", "value": "…"}, "sources": [{"kind": "folder", "host": "host-a", "path": "/home/me/src/app"}, {"kind": "repo", "url": "github.com/me/app"}], "profile": "", "model": "", "threads": 4, "lastUsed": "…", "cwd": "/home/me/src/app"}]
 }
 ```
 
@@ -136,3 +136,15 @@ The PWA files: `/manifest.webmanifest` (`application/manifest+json`) and `/sw.js
 ## Previews (SPEC 0.5 V0.19)
 
 `GET /api/previews/{id}` serves an HTML preview with `Content-Security-Policy: sandbox allow-scripts; …; connect-src 'none'`. Embed it as `<iframe src="/api/previews/{id}" sandbox="allow-scripts">`: scripts run, but the page has no origin, so it cannot call the API.
+
+## Projects (SPEC 0.5 V0.23)
+
+Commands (through `POST /api/command`, no `threadId`):
+
+| action | args |
+|---|---|
+| `project.update` | `id`, then any of `name`, `color` (a palette name: slate blue sky teal green olive violet indigo rose brown), `icon` `{kind: monogram\|emoji\|line, value}`, `profile`, `model` |
+| `project.create` | `name?`, `sources: [Source]` |
+| `project.addSource` | `id`, `source` |
+
+The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. Threads carry `projectId`; `project` stays the display name.
