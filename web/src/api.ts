@@ -1,6 +1,7 @@
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead.
 
 import type { CommandReply, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { createMockServer, mockScenario } from "./mock.ts";
 import { reloadForNewBuild } from "./pwa.ts";
@@ -29,7 +30,12 @@ export interface Api {
   pushTest(): Promise<PushReply>;
   /** Whether the host still has this subscription; null when it could not be asked. */
   pushStatus(endpoint: string): Promise<boolean | null>;
+  /** Attachments (SPEC V0.18): upload one file; progress as bytes sent. */
+  uploadAttachment(file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<UploadResult>;
+  attachmentUrl(id: string): string;
 }
+
+export type UploadResult = { ok: true; reply: UploadReply } | { ok: false; status: number | null; error?: string };
 
 export interface PushReply {
   ok: boolean;
@@ -207,6 +213,33 @@ function createHttpApi(): Api {
     pushTest() {
       return postJson("/api/push/test", {});
     },
+    uploadAttachment(file, onProgress, signal) {
+      return new Promise<UploadResult>((resolve) => {
+        const x = new XMLHttpRequest();
+        x.open("POST", "/api/attachments");
+        x.setRequestHeader("X-Fyr", "1");
+        x.setRequestHeader("X-Fyr-Filename", encodeURIComponent(file.name || "file"));
+        x.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        x.upload.onprogress = (e) => onProgress(e.loaded, e.lengthComputable ? e.total : file.size);
+        x.onload = () => {
+          let j: Partial<UploadReply> & { error?: string } = {};
+          try {
+            j = JSON.parse(x.responseText);
+          } catch {
+            /* not JSON */
+          }
+          if (x.status >= 200 && x.status < 300 && j.id) resolve({ ok: true, reply: j as UploadReply });
+          else resolve({ ok: false, status: x.status, error: j.error });
+        };
+        x.onerror = () => resolve({ ok: false, status: null });
+        x.onabort = () => resolve({ ok: false, status: 0, error: "cancelled" });
+        signal?.addEventListener("abort", () => x.abort());
+        x.send(file);
+      });
+    },
+    attachmentUrl(id) {
+      return `/api/attachments/${encodeURIComponent(id)}`;
+    },
     async pushStatus(endpoint) {
       try {
         const r = await fetch("/api/push/status", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ endpoint }) });
@@ -220,8 +253,13 @@ function createHttpApi(): Api {
   };
 }
 
+const MOCK_IMAGE =
+  "data:image/svg+xml," +
+  encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844"><rect width="390" height="844" fill="#edeff2"/><rect width="390" height="120" fill="#14212d"/><rect x="24" y="170" width="250" height="18" rx="4" fill="#b4bcc6"/><rect x="24" y="210" width="320" height="14" rx="4" fill="#dde1e6"/><rect x="24" y="240" width="290" height="14" rx="4" fill="#dde1e6"/><circle cx="195" cy="560" r="90" fill="#e8960f" opacity=".5"/></svg>');
+
 function createMockApi(scenario: string): Api {
   const server = createMockServer(scenario, Date.now());
+  const mockFiles = new Map<string, string>();
   let watch = initialBuildWatch();
   return {
     mock: true,
@@ -261,6 +299,27 @@ function createMockApi(scenario: string): Api {
     },
     async pushStatus(endpoint) {
       return server.pushSubscriptions().some((s) => s.endpoint === endpoint);
+    },
+    uploadAttachment(file, onProgress, signal) {
+      // An in-memory store; progress in four steps so the chip shows it.
+      return new Promise<UploadResult>((resolve) => {
+        if (file.size > 25 * 1024 * 1024) return resolve({ ok: false, status: 413 });
+        let step = 0;
+        const tick = () => {
+          if (signal?.aborted) return resolve({ ok: false, status: 0, error: "cancelled" });
+          step++;
+          onProgress(Math.round((file.size * step) / 4), file.size);
+          if (step < 4) return void setTimeout(tick, 120);
+          const reply = server.putAttachment(file.name || "file", file.type || "application/octet-stream", file.size);
+          mockFiles.set(reply.id, URL.createObjectURL(file));
+          resolve({ ok: true, reply });
+        };
+        setTimeout(tick, 120);
+      });
+    },
+    attachmentUrl(id) {
+      // Fixture attachments have no bytes; images get a drawn placeholder.
+      return mockFiles.get(id) ?? (id === "fx_img" ? MOCK_IMAGE : "data:text/plain,mock%20attachment%20" + encodeURIComponent(id));
     },
   };
 }

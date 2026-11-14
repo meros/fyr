@@ -127,7 +127,15 @@ function askEvents(id: string, now: number): FyrEvent[] {
   let t = now - 20 * 60_000;
   const e = (type: string, data: unknown, step = 20_000) => ev(++s, (t += step), id, type, data);
   return [
-    e("user", { text: "The lasso tool closes the filter sheet on iPhone mini. Fix it and open a PR. Screenshot attached.", images: 1 }),
+    e("user", {
+      text: "The lasso tool closes the filter sheet on iPhone mini. Fix it and open a PR. Screenshot and log attached.",
+      images: 1,
+      attachments: [
+        { id: "fx_img", name: "IMG_4170 – filtret stängs.png", mediaType: "image/png", size: 845_312 },
+        { id: "fx_log", name: "playwright-mobile-safari-" + LONG_BRANCH + ".log", mediaType: "text/plain", size: 23_100_000 },
+        { id: "fx_pdf", name: "spec.pdf", mediaType: "application/pdf", size: 120_000 },
+      ],
+    }),
     e("run.started", {}),
     e("msg", assistantText("I traced it to `FilterSheet.tsx`: the sheet closes on `pointerdown` on the backdrop, and the lasso starts on the same event.")),
     e("msg", toolUse("tu1", "Read", { file_path: "src/map/FilterSheet.tsx" })),
@@ -412,6 +420,7 @@ function railFixture(now: number): Fixture {
   };
   threads.push(
     base("t_lasso", "Fix map lasso on mobile", now, 2, {
+      summary: "The lasso no longer closes the sheet, and the tests pass. Before I wire the close gesture, two choices for you.",
       tasks: [
         task("lt0", "Explore sheet gestures on iPad", "running", now, 2, { activity: "Read src/ui/Sheet.tsx", toolUses: 9, tokens: 61_400 }),
         task("lt1", "explore gestures", "completed", now, 4, { summary: "All other sheets close on swipe down.", toolUses: 14, tokens: 143_218 }),
@@ -550,6 +559,8 @@ export interface MockServer {
   pushTest(): { ok: boolean; error?: string };
   /** subscriptions stored in memory, by endpoint */
   pushSubscriptions(): { endpoint: string; device: string }[];
+  /** the in-memory attachment store (V0.18) */
+  putAttachment(name: string, mediaType: string, size: number): { id: string; name: string; size: number; mediaType: string; path: string };
 }
 
 /** A P-256 public key in the VAPID format; the mock has no private key and never pushes. */
@@ -564,6 +575,10 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   const events = fx.events;
   const replies = new Map<string, CommandReply>();
   const subs = new Map<string, { endpoint: string; device: string }>();
+  const files = new Map<string, { id: string; name: string; mediaType: string; size: number }>();
+  let fileSeq = 1;
+  const attachmentsOf = (args: Record<string, unknown>) =>
+    (Array.isArray(args.attachments) ? (args.attachments as string[]) : []).map((aid) => files.get(aid)).filter((x): x is NonNullable<typeof x> => !!x);
   let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void } | null = null;
   let nextId = 1;
 
@@ -621,7 +636,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       threads.set(id, nt);
       events[id] = [];
       const imgs = Array.isArray(args.images) ? args.images.length : 0;
-      emit(id, "user", { text: String(args.text ?? ""), images: imgs });
+      emit(id, "user", { text: String(args.text ?? ""), images: imgs, attachments: attachmentsOf(args) });
       runFor(id, "Started on it. (mock)");
       return { ok: true, threadId: id };
     }
@@ -647,7 +662,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     switch (action) {
       case "thread.send": {
         const imgs = Array.isArray(args.images) ? args.images.length : 0;
-        emit(t.id, "user", { text: String(args.text ?? ""), images: imgs });
+        emit(t.id, "user", { text: String(args.text ?? ""), images: imgs, attachments: attachmentsOf(args) });
         runFor(t.id, "Got it. Working on that now. (mock reply)");
         break;
       }
@@ -765,6 +780,11 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     },
     pushTest() {
       return subs.size ? { ok: true } : { ok: false, error: "No device has notifications on" };
+    },
+    putAttachment(name, mediaType, size) {
+      const id = `a_${fileSeq++}`;
+      files.set(id, { id, name, mediaType, size });
+      return { id, name, size, mediaType, path: `/home/owner/.local/share/fyr/attachments/${id}/${name}` };
     },
     pushSubscriptions() {
       return [...subs.values()];

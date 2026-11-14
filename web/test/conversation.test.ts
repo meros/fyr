@@ -49,3 +49,11 @@ test("consecutive Task calls fold into one subagents row; Edit shows a diff stat
   assert.deepEqual(rows.map((r) => (r.kind === "agents" ? `agents:${r.calls.length}` : r.call.name)), ["Read", "agents:3", "Bash", "agents:1"]);
   assert.equal(summarizeInput("Edit", { file_path: "a.ts", old_string: "x\ny", new_string: "z" }), "a.ts +1 −2");
 });
+
+test("a user event's attachments become chips", () => {
+  const items = buildConversation([
+    { seq: 1, at: "2026-11-14T09:00:00Z", subject: "t", type: "user", data: { text: "", attachments: [{ id: "a1", name: "x.png", mediaType: "image/png", size: 10 }, { bad: true }] } },
+  ]);
+  assert.equal(items[0].kind, "user");
+  assert.deepEqual((items[0] as any).attachments, [{ id: "a1", name: "x.png", mediaType: "image/png", size: 10 }]);
+});
