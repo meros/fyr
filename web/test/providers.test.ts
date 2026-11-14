@@ -1,7 +1,8 @@
 // SPEC 0.5 V0.50: Settings → Providers helpers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createArgs, EMPTY_FORM, effortsFor, importable, keyLine, modelsSummary, parseModelIds, startEffort, whereText } from "../src/providers.ts";
+import { createArgs, EMPTY_FORM, effortsFor, importable, keyLine, loginActive, loginButton, loginLine, modelsSummary, parseModelIds, startEffort, whereText } from "../src/providers.ts";
+import type { LoginDTO } from "../src/providers.ts";
 import type { Profile } from "../src/types.ts";
 
 test("a key shows only as set, its source and last 4", () => {
@@ -54,4 +55,20 @@ test("only finds not imported get an Import button", () => {
 // SPEC 0.5 V0.50: a token account shows that it logs in with a token, not a folder.
 test("V0.50 a token account's where text names the token", () => {
   assert.equal(whereText({ kind: "claude-account", configDir: "~/.claude", tokenLogin: true }), "token login");
+});
+
+// SPEC 0.5 V0.53: login through Fyr.
+test("the login button and line", () => {
+  const l = (state: LoginDTO["state"], kind: LoginDTO["kind"] = "token", message?: string): LoginDTO => ({ kind, state, expires: "", message });
+  assert.equal(loginButton({ canLogin: false, status: "needs-key" }), null);
+  assert.equal(loginButton({ canLogin: true, status: "needs-login", tokenLogin: true }), "Log in");
+  assert.equal(loginButton({ canLogin: true, status: "ready", tokenLogin: true }), "Get a new token");
+  assert.equal(loginButton({ canLogin: true, status: "ready" }), "Log in again");
+  assert.equal(loginButton({ canLogin: true, status: "needs-login", login: l("waiting") }), null, "one login per provider");
+  assert.equal(loginButton({ canLogin: true, status: "needs-login", login: l("failed") }), "Log in");
+  assert.ok(loginActive(l("checking")) && !loginActive(l("done")) && !loginActive(undefined));
+  assert.match(loginLine(l("waiting")), /paste the code/);
+  assert.equal(loginLine(l("done")), "Logged in. Fyr keeps the token on this host.");
+  assert.equal(loginLine(l("done", "folder")), "Logged in. Claude keeps the login in this account's folder.");
+  assert.equal(loginLine(l("timeout", "token", "The login timed out after 10 minutes. Start it again.")), "The login timed out after 10 minutes. Start it again.");
 });

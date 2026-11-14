@@ -912,6 +912,10 @@ button.ptag{padding:0}
 .provb .row2 .fld{flex:1 1 140px}
 .provb textarea{min-height:56px;font:400 13px/18px var(--mono)}
 .setbar{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.setbar .setd{margin-right:auto;align-self:center}
+.login{display:flex;flex-direction:column;gap:8px;background:var(--sunken);border-radius:8px;padding:8px 10px;min-width:0}
+.login .loginlink{align-self:flex-start;text-decoration:none;justify-content:center}
+.login.done .setd{color:var(--ink)}
 .setkey{display:flex;gap:8px;min-width:0}
 .setkey input{flex:1}
 .btn.danger{color:var(--signal-ink)}
@@ -926,7 +930,8 @@ button.ptag{padding:0}
 .dlg .set{max-height:min(72vh,720px);overflow-y:auto}
 /* phone: 44 px targets */
 .set.phone{padding:0}
-.set.phone .sbtn,.set.phone .provh,.set.phone .seg button,.set.phone .fld input,.set.phone .fld select{min-height:44px;height:auto}
+.set.phone .sbtn,.set.phone a.sbtn,.set.phone .provh,.set.phone .seg button,.set.phone .fld input,.set.phone .fld select{min-height:44px;height:auto}
 .set.phone .provh{padding:2px 0}
 .set.phone .setkey{flex-wrap:wrap}
 .set.phone .setkey input{flex:1 1 180px}
+.set.phone .login .loginlink{align-self:stretch}
