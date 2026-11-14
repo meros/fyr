@@ -303,3 +303,36 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
   .app{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);height:100dvh}
   .toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 }
+
+/* Agents strip (SPEC V0.16): one fixed-height row per task under the thread header. */
+.agents{flex:none;background:var(--raised);border-bottom:1px solid var(--line);padding:4px 12px;--knock:var(--raised)}
+.agsum{display:none}
+.agrows{max-height:146px;overflow-y:auto;scrollbar-width:thin}
+.tk{display:grid;grid-template-columns:16px minmax(0,1fr) auto 56px;column-gap:10px;align-items:center;height:28px;padding:0 12px;border-radius:8px;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.tk .tkt{display:flex;gap:8px;min-width:0;align-items:baseline}
+.tk .tkd{flex:0 1 auto;max-width:55%;font:500 13px/18px var(--ui);color:var(--ink)}
+.tk .tkl{flex:1 1 0}
+.tk.failed .tkl{color:var(--signal-ink)}
+.tk .tks,.tk .tka{font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tk .tka{text-align:right;overflow:hidden}
+.tk:not(.running) .tkd{color:var(--ink-muted)}
+.tkmore{display:block;height:28px;padding:0 12px 0 38px;font:500 12px/28px var(--ui);color:var(--ink-muted);border-radius:8px;white-space:nowrap}
+.tkmore:hover{background:var(--surface)}
+@media (max-width:760px){
+  .agents{padding:0 6px}
+  .agsum{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:0 12px;font:500 13px/18px var(--ui);color:var(--ink-muted)}
+  .agsum .chev{margin-left:auto;flex:none}
+  .agents:not(.open) .agrows{display:none}
+  .tk{grid-template-columns:16px minmax(0,1fr) auto;height:44px}
+  .tk .tka{display:none}
+  .tk .tkt{flex-direction:column;gap:0}
+  .tk .tkd{max-width:100%}
+  .tkmore{height:44px;line-height:44px}
+}
+
+/* One-line rows: the title and the meta share the line, so a long title never hides the meta. */
+.one .t{display:flex;align-items:baseline;min-width:0;overflow:hidden}
+.one .t .tn{flex:0 1 auto;max-width:62%}
+.one .t i{flex:1 1 0;min-width:0}
+.one.has-agents .t .tn{max-width:40%}
+@media (max-width:760px){.chip.brn{display:none}}

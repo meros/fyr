@@ -2,7 +2,7 @@
 // turning Web Push on and off. HTTP goes through api.ts.
 
 import type { Api } from "./api.ts";
-import { base64UrlToBytes, deviceLabel, pushStatus, type PushEnv, type PushStatus } from "./push.ts";
+import { base64UrlToBytes, deviceLabel, pushStatus, reconcilePush, type PushEnv, type PushStatus } from "./push.ts";
 
 let waiting: ServiceWorker | null = null;
 
@@ -85,6 +85,21 @@ export async function currentPushStatus(): Promise<PushStatus> {
     /* treat as not subscribed */
   }
   return pushStatus(env, perm, subscribed);
+}
+
+/** Ask the host whether it still has this device's subscription; drop it locally when not. Returns the bell state. */
+export async function syncPushStatus(api: Api): Promise<PushStatus> {
+  try {
+    const reg = await registration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (sub) {
+      const r = reconcilePush(true, await api.pushStatus(sub.endpoint));
+      if (r.unsubscribe) await sub.unsubscribe().catch(() => false);
+    }
+  } catch {
+    /* keep the browser's state */
+  }
+  return currentPushStatus();
 }
 
 export type PushResult = { status: PushStatus; error?: string };
