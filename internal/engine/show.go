@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/url"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 )
@@ -87,9 +89,10 @@ func (e *Engine) addPreview(thread string, data map[string]any) {
 
 func (e *Engine) showTool() mcp.Tool {
 	return mcp.Tool{Name: "show",
-		Description: "Show something to the user inside this Fyr thread, on desktop and phone. Give exactly one of: path (a local image file: a screenshot, a chart), html (a page or an HTML fragment; fragments get the Fyr theme with CSS variables --bg --fg --muted --line --accent and light and dark modes), or url (Fyr takes a screenshot of the page, for example a dev server on localhost, and shows it). Optional: title, caption, size (phone, desktop or WxH) and full (whole page). Returns at once with the stored file's path; read that file only if you need to look at it yourself. Use it after UI work and whenever a picture says more than text.",
+		Description: "Show something to the user inside this Fyr thread, on desktop and phone. Give exactly one of: path (an image file; an HTML page, shown with the files next to it; or a folder, shown from its index.html or entry), html (a page or an HTML fragment; fragments get the Fyr theme with CSS variables --bg --fg --muted --line --accent and light and dark modes), or url (Fyr takes a screenshot of the page, for example a dev server on localhost, and shows it). Pages run real HTML in a sandbox: scripts, ES modules, WebGL, WASM, workers, and their own files by relative URL (models such as .glb, textures, .wasm). Libraries load only from cdnjs.cloudflare.com, cdn.jsdelivr.net, unpkg.com, esm.sh, ajax.googleapis.com and www.gstatic.com; no other network, no Fyr API. A folder is at most 500 files and 50 MB (dot names and node_modules are skipped). A 3D page, for example:\n<script type=importmap>{\"imports\":{\"three\":\"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js\",\"three/addons/\":\"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/\"}}</script>\n<style>body{margin:0}canvas{display:block;width:100vw;height:100vh;touch-action:none}</style>\n<script type=module>\nimport * as THREE from 'three'; import {OrbitControls} from 'three/addons/controls/OrbitControls.js';\nconst r=new THREE.WebGLRenderer({antialias:true}); r.setSize(innerWidth,innerHeight); document.body.append(r.domElement);\nconst s=new THREE.Scene(), c=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,0.1,100); c.position.set(2,2,3);\ns.add(new THREE.Mesh(new THREE.TorusKnotGeometry(.6,.2,128,16), new THREE.MeshNormalMaterial()));\nconst o=new OrbitControls(c,r.domElement); r.setAnimationLoop(()=>{o.update(); r.render(s,c)});\n</script>\nA model in a folder: <script type=module src=\"https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js\"></script><model-viewer src=\"duck.glb\" camera-controls auto-rotate style=\"width:100%;height:100vh\"></model-viewer>. Optional: title, caption, size (phone, desktop or WxH; without it an HTML card is 16:10) and full (whole page). Returns at once with the stored file's path; read that file only if you need to look at it yourself. Use it after UI work and whenever a picture says more than text.",
 		Schema: obj(map[string]any{
-			"path": str("A local image file to show."), "html": str("A self-contained HTML page or fragment."),
+			"path":  str("A local image, an HTML page (with the files next to it) or a folder (index.html or entry)."),
+			"entry": str("For a folder: the page to open, a relative path (default index.html)."), "html": str("A self-contained HTML page or fragment."),
 			"url": str("An http(s) page to screenshot."), "title": str("A short title."), "caption": str("One line under it."),
 			"size": str("phone (390×844), desktop (1280×800) or WxH; for url and html."),
 			"full": map[string]any{"type": "boolean", "description": "Screenshot the whole page, not only the first screen."},
@@ -117,10 +120,19 @@ func (e *Engine) showTool() mcp.Tool {
 				return "", err
 			}
 			full, _ := a["full"].(bool)
+			entry, _ := a["entry"].(string)
+			size, _ := a["size"].(string)
+			sized := strings.TrimSpace(size) != ""
 			data := map[string]any{"title": title, "caption": caption}
 			switch {
 			case path != "":
 				st, err := os.Stat(path)
+				if err == nil && (st.IsDir() || isHTMLFile(path)) {
+					return e.showFolder(th, data, path, st.IsDir(), entry, sized, w, h)
+				}
+				if entry != "" {
+					return "", errors.New("entry is for a folder")
+				}
 				if err != nil || !st.Mode().IsRegular() {
 					return "", fmt.Errorf("%s is not a readable file", path)
 				}
@@ -129,7 +141,7 @@ func (e *Engine) showTool() mcp.Tool {
 				}
 				mt := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
 				if !strings.HasPrefix(mt, "image/") {
-					return "", fmt.Errorf("%s is not an image (use html for pages)", filepath.Base(path))
+					return "", fmt.Errorf("%s is not an image, an HTML page or a folder", filepath.Base(path))
 				}
 				f, err := os.Open(path)
 				if err != nil {
@@ -144,25 +156,14 @@ func (e *Engine) showTool() mcp.Tool {
 				e.addPreview(th, data)
 				return fmt.Sprintf("Shown in the thread: %s (attachment %s, %s).", nameOr(title, m.Name), m.ID, m.Path), nil
 			case html != "":
-				if len(html) > 512<<10 {
-					return "", errors.New("HTML over 512 kB is not shown")
+				id, err := e.storeHTML(title, html)
+				if err != nil {
+					return "", err
 				}
-				// Identical HTML from the agent is stored once, whatever the title.
-				sum := sha256.Sum256([]byte(html))
-				if !strings.Contains(strings.ToLower(html), "<html") {
-					html = themePage(title, html)
+				data["kind"], data["attachmentId"] = "html", id
+				if sized {
+					data["width"], data["height"] = w, h
 				}
-				key := "preview:" + hex.EncodeToString(sum[:])
-				id, _ := e.st.GetKV(key)
-				if _, err := e.Attach.Get(id); id == "" || err != nil {
-					m, err := e.Attach.Save(nameOr(title, "preview")+".html", "text/html", strings.NewReader(html))
-					if err != nil {
-						return "", err
-					}
-					id = m.ID
-					e.st.SetKV(key, id)
-				}
-				data["kind"], data["attachmentId"], data["width"], data["height"] = "html", id, w, h
 				e.addPreview(th, data)
 				return fmt.Sprintf("Shown in the thread: %s (preview %s).", nameOr(title, "HTML"), id), nil
 			default:
@@ -211,4 +212,114 @@ func nameOr(a, b string) string {
 		return b
 	}
 	return a
+}
+
+func isHTMLFile(p string) bool {
+	ext := strings.ToLower(filepath.Ext(p))
+	return ext == ".html" || ext == ".htm"
+}
+
+// storeHTML stores a page or a fragment (themed) once by content (V0.19).
+func (e *Engine) storeHTML(title, html string) (string, error) {
+	if len(html) > 512<<10 {
+		return "", errors.New("HTML over 512 kB is not shown")
+	}
+	// Identical HTML from the agent is stored once, whatever the title.
+	sum := sha256.Sum256([]byte(html))
+	if !strings.Contains(strings.ToLower(html), "<html") {
+		html = themePage(title, html)
+	}
+	key := "preview:" + hex.EncodeToString(sum[:])
+	id, _ := e.st.GetKV(key)
+	if _, err := e.Attach.Get(id); id == "" || err != nil {
+		m, err := e.Attach.Save(nameOr(title, "preview")+".html", "text/html", strings.NewReader(html))
+		if err != nil {
+			return "", err
+		}
+		id = m.ID
+		e.st.SetKV(key, id)
+	}
+	return id, nil
+}
+
+// showFolder shows a folder, or an HTML page with the files next to it, as
+// one preview whose relative URLs resolve (SPEC 0.5 V0.47).
+func (e *Engine) showFolder(th string, data map[string]any, path string, dir bool, entry string, sized bool, w, h int) (string, error) {
+	root := path
+	if !dir {
+		if entry != "" {
+			return "", errors.New("entry is for a folder; give the page as path")
+		}
+		root, entry = filepath.Dir(path), filepath.Base(path)
+	} else if entry == "" {
+		entry = "index.html"
+	}
+	entry = filepath.ToSlash(entry)
+	title, _ := data["title"].(string)
+	files, outside, err := attach.ScanTree(root)
+	if err != nil {
+		if !dir && errors.Is(err, attach.ErrTreeTooBig) {
+			b, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return "", rerr
+			}
+			id, serr := e.storeHTML(title, string(b))
+			if serr != nil {
+				return "", serr
+			}
+			data["kind"], data["attachmentId"] = "html", id
+			if sized {
+				data["width"], data["height"] = w, h
+			}
+			e.addPreview(th, data)
+			return fmt.Sprintf("Shown in the thread: %s (preview %s), alone: its folder is over %d files or %d MB, so files next to it were not included; put the page and its files in a folder of their own.", nameOr(title, filepath.Base(path)), id, attach.TreeMaxFiles, attach.TreeMaxBytes>>20), nil
+		}
+		if errors.Is(err, attach.ErrTreeTooBig) {
+			return "", fmt.Errorf("%s: %v (dot names and node_modules are skipped)", root, err)
+		}
+		return "", fmt.Errorf("%s is not a readable folder: %v", root, err)
+	}
+	found := false
+	for _, f := range files {
+		found = found || f.Rel == entry
+	}
+	if !found {
+		return "", fmt.Errorf("the folder has no page %s (give entry, a relative path to the page)", entry)
+	}
+	// Identical folders are stored once: a hash over the paths and contents.
+	hs := sha256.New()
+	fmt.Fprintf(hs, "entry %s\x00", entry)
+	for _, f := range files {
+		fh, err := os.Open(f.Abs)
+		if err != nil {
+			return "", err
+		}
+		c := sha256.New()
+		_, err = io.Copy(c, fh)
+		fh.Close()
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(hs, "%s\x00%x\x00", f.Rel, c.Sum(nil))
+	}
+	key := "preview:tree:" + hex.EncodeToString(hs.Sum(nil))
+	id, _ := e.st.GetKV(key)
+	if _, err := e.Attach.Get(id); id == "" || err != nil {
+		m, err := e.Attach.SaveTree(nameOr(title, filepath.Base(root)), entry, files)
+		if err != nil {
+			return "", err
+		}
+		id = m.ID
+		e.st.SetKV(key, id)
+	}
+	data["kind"], data["attachmentId"] = "html", id
+	if sized {
+		data["width"], data["height"] = w, h
+	}
+	e.addPreview(th, data)
+	out := fmt.Sprintf("Shown in the thread: %s (folder preview %s, %d files, page %s).", nameOr(title, filepath.Base(root)), id, len(files), entry)
+	if len(outside) > 0 {
+		out += " Skipped links that point outside the folder: " + strings.Join(outside, ", ") + "."
+	}
+	return out, nil
 }

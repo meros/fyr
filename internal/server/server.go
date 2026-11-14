@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -105,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /api/attachments", s.upload)
 		mux.HandleFunc("GET /api/attachments/{id}", s.download)
 		mux.HandleFunc("GET /api/previews/{id}", s.preview)
+		mux.HandleFunc("GET /api/previews/{id}/{path...}", s.previewFile)
 	}
 	if s.Push != nil {
 		mux.HandleFunc("GET /api/push/key", func(w http.ResponseWriter, r *http.Request) {
@@ -553,12 +556,72 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, m.Name, time.Time{}, f)
 }
 
-// preview serves an HTML preview (V0.19) in a sandbox without an origin:
-// its scripts run, but it cannot call the API, read cookies or fetch.
+// previewCDNs may serve scripts, models, decoders and fonts to a preview
+// (V0.47); ajax.googleapis.com hosts model-viewer, www.gstatic.com the Draco
+// and Basis decoders three.js and model-viewer load by default.
+var previewCDNs = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://esm.sh https://ajax.googleapis.com https://www.gstatic.com"
+
+var hostRe = regexp.MustCompile(`^[A-Za-z0-9.\-]+(:[0-9]+)?$|^\[[0-9A-Fa-f:.]+\](:[0-9]+)?$`)
+
+// previewCSP is the policy of every preview response (V0.19, V0.47): a
+// sandbox without allow-same-origin, so the page never has Fyr's origin and
+// cannot call the API; it may load from its own folder and the CDN list.
+// The folder is an absolute prefix: a page without an origin has no 'self'.
+func previewCSP(r *http.Request, id string) string {
+	base := ""
+	if hostRe.MatchString(r.Host) {
+		scheme := "http" // CSP3: an http source also matches https
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			scheme = "https"
+		}
+		base = scheme + "://" + r.Host + "/api/previews/" + id + "/ "
+	}
+	src := base + previewCDNs
+	return "sandbox allow-scripts; default-src 'none'; " +
+		"script-src " + src + " 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; " +
+		"style-src " + src + " 'unsafe-inline'; " +
+		"img-src " + src + " data: blob:; " +
+		"font-src " + src + " data:; " +
+		"media-src " + src + " data: blob:; " +
+		"connect-src " + src + " data: blob:; " +
+		"worker-src " + base + "blob:; " +
+		"frame-ancestors 'self'"
+}
+
+// previewTypes are the media types of a folder preview's files; others come
+// from the extension table, then application/octet-stream.
+var previewTypes = map[string]string{
+	".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8",
+	".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+	".json": "application/json", ".map": "application/json", ".wasm": "application/wasm", ".txt": "text/plain; charset=utf-8",
+	".glb": "model/gltf-binary", ".gltf": "model/gltf+json", ".bin": "application/octet-stream", ".obj": "model/obj", ".stl": "model/stl",
+	".usdz": "model/vnd.usdz+zip", ".hdr": "image/vnd.radiance", ".exr": "image/x-exr", ".ktx2": "image/ktx2", ".basis": "application/octet-stream",
+	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".avif": "image/avif", ".svg": "image/svg+xml",
+	".mp4": "video/mp4", ".webm": "video/webm", ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav",
+	".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".otf": "font/otf",
+}
+
+func previewHeaders(w http.ResponseWriter, r *http.Request, id, mediaType string) {
+	w.Header().Set("Content-Type", mediaType)
+	w.Header().Set("Content-Security-Policy", previewCSP(r, id))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// The page has no origin: its module scripts and fetches of its own files
+	// are cross-origin. The 80-bit id is the key, as for the page itself.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+}
+
+// preview serves an HTML preview (V0.19) in a sandbox without an origin; a
+// folder preview (V0.47) redirects to its page, so relative URLs resolve.
 func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
-	m, err := s.Attach.Get(r.PathValue("id"))
+	id := r.PathValue("id")
+	m, err := s.Attach.Get(id)
 	if err != nil || m.MediaType != "text/html" {
 		http.NotFound(w, r)
+		return
+	}
+	if m.Entry != "" {
+		http.Redirect(w, r, "/api/previews/"+id+"/"+(&url.URL{Path: m.Entry}).EscapedPath(), http.StatusFound)
 		return
 	}
 	b, err := os.ReadFile(m.Path)
@@ -566,11 +629,38 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-ancestors 'self'")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "private, max-age=86400")
+	previewHeaders(w, r, id, "text/html; charset=utf-8")
 	w.Write(b)
+}
+
+// previewFile serves one file of a folder preview (V0.47).
+func (s *Server) previewFile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	m, err := s.Attach.Get(id)
+	if err != nil || m.Entry == "" {
+		http.NotFound(w, r)
+		return
+	}
+	p, err := s.Attach.TreePath(m, r.PathValue("path"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	ext := strings.ToLower(filepath.Ext(p))
+	mt := previewTypes[ext]
+	if mt == "" {
+		if mt = mime.TypeByExtension(ext); mt == "" {
+			mt = "application/octet-stream"
+		}
+	}
+	previewHeaders(w, r, id, mt)
+	http.ServeContent(w, r, "", time.Time{}, f)
 }
 
 // fsRoutes are the host folder picker's calls (SPEC 0.5 V0.42): read-only

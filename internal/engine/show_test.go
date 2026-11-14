@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -114,6 +115,68 @@ func TestShowHTML(t *testing.T) {
 	}
 	if _, isErr := call(map[string]any{"html": strings.Repeat("x", 600<<10)}); !isErr {
 		t.Fatal("over 512 kB accepted")
+	}
+}
+
+// SPEC 0.5 V0.47: show {path} takes a folder or an HTML page with its
+// files: stored once, entry inside the folder, links out of it named.
+func TestShowFolder(t *testing.T) {
+	e, id, call := showEngine(t)
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "models"), 0o755)
+	os.WriteFile(filepath.Join(root, "index.html"), []byte(`<script type="module" src="app.js"></script>`), 0o644)
+	os.WriteFile(filepath.Join(root, "app.js"), []byte("import 'https://cdn.jsdelivr.net/npm/three'"), 0o644)
+	os.WriteFile(filepath.Join(root, "models", "duck.glb"), []byte("glTF"), 0o644)
+	os.WriteFile(filepath.Join(root, "viewer.html"), []byte("<p>two</p>"), 0o644)
+	os.Symlink("/etc/passwd", filepath.Join(root, "passwd"))
+	text, isErr := call(map[string]any{"path": root, "title": "Duck"})
+	if isErr || !strings.Contains(text, "Shown") || !strings.Contains(text, "4 files") || !strings.Contains(text, "passwd") {
+		t.Fatalf("%v %q", isErr, text)
+	}
+	call(map[string]any{"path": root + "/", "title": "Again"})
+	text, isErr = call(map[string]any{"path": filepath.Join(root, "viewer.html")})
+	if isErr {
+		t.Fatal(text)
+	}
+	p := previews(t, e, id)
+	if len(p) != 3 || p[0]["kind"] != "html" || p[0]["attachmentId"] != p[1]["attachmentId"] || p[2]["attachmentId"] == p[0]["attachmentId"] {
+		t.Fatalf("%+v", p)
+	}
+	if _, ok := p[0]["height"]; ok {
+		t.Fatalf("no size given, but a height was set: %+v", p[0])
+	}
+	m, _ := e.Attach.Get(p[0]["attachmentId"].(string))
+	if m.Entry != "index.html" {
+		t.Fatalf("%+v", m)
+	}
+	if m2, _ := e.Attach.Get(p[2]["attachmentId"].(string)); m2.Entry != "viewer.html" {
+		t.Fatalf("%+v", m2)
+	}
+	if f, err := e.Attach.TreePath(m, "models/duck.glb"); err != nil {
+		t.Fatal(err)
+	} else if b, _ := os.ReadFile(f); string(b) != "glTF" {
+		t.Fatalf("%q", b)
+	}
+	for _, entry := range []string{"../index.html", "/etc/passwd", "missing.html"} {
+		if _, isErr := call(map[string]any{"path": root, "entry": entry}); !isErr {
+			t.Fatalf("entry %q accepted", entry)
+		}
+	}
+	if _, isErr := call(map[string]any{"path": t.TempDir()}); !isErr {
+		t.Fatal("a folder without index.html was accepted")
+	}
+	// An HTML page in a folder over the limits is shown alone.
+	big := t.TempDir()
+	for i := 0; i < 501; i++ {
+		os.WriteFile(filepath.Join(big, fmt.Sprintf("f%03d.txt", i)), []byte("x"), 0o644)
+	}
+	os.WriteFile(filepath.Join(big, "page.html"), []byte("<p>alone</p>"), 0o644)
+	text, isErr = call(map[string]any{"path": filepath.Join(big, "page.html")})
+	if isErr || !strings.Contains(text, "alone") {
+		t.Fatalf("%v %q", isErr, text)
+	}
+	if _, isErr := call(map[string]any{"path": big}); !isErr {
+		t.Fatal("a folder over 500 files was accepted")
 	}
 }
 
