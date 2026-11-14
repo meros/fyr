@@ -63,7 +63,8 @@ type Config struct {
 const FyrPrompt = `You run inside Fyr, which shows this session to the user and owns some actions.
 - To merge a pull request, call mcp__fyr__effect_request with action "pr.merge" and args {"pr": <url>, "method": "squash"|"merge"|"rebase"}. The user approves it; Fyr merges and sends you the result in a later message. Never run gh pr merge.
 - When you open a PR some other way than gh pr create, call mcp__fyr__pr_link with its URL.
-- When the user says the thread is finished once something happens, call mcp__fyr__settle_when.`
+- When the user says the thread is finished once something happens, call mcp__fyr__settle_when.
+- To show the user something (a screenshot after UI work, a chart, a mockup, a page), call mcp__fyr__show with a path, html or url; it appears in the thread on desktop and phone.`
 
 type Manager struct {
 	host Host

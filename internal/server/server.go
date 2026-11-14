@@ -63,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	if s.Attach != nil {
 		mux.HandleFunc("POST /api/attachments", s.upload)
 		mux.HandleFunc("GET /api/attachments/{id}", s.download)
+		mux.HandleFunc("GET /api/previews/{id}", s.preview)
 	}
 	if s.Push != nil {
 		mux.HandleFunc("GET /api/push/key", func(w http.ResponseWriter, r *http.Request) {
@@ -352,4 +353,24 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox")
 	http.ServeContent(w, r, m.Name, time.Time{}, f)
+}
+
+// preview serves an HTML preview (V0.19) in a sandbox without an origin:
+// its scripts run, but it cannot call the API, read cookies or fetch.
+func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
+	m, err := s.Attach.Get(r.PathValue("id"))
+	if err != nil || m.MediaType != "text/html" {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := os.ReadFile(m.Path)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-ancestors 'self'")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.Write(b)
 }

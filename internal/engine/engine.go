@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
 )
@@ -45,6 +46,9 @@ type Engine struct {
 	Now     func() time.Time
 	// Adopt handles t3.adopt; set by main.
 	Adopt func(ids []string) (int, error)
+	// Attach stores files for the show tool (V0.19); Shooter takes screenshots.
+	Attach  *attach.Store
+	Shooter Shooter
 	// AttachmentExists checks ids in thread.create and thread.send (V0.18).
 	AttachmentExists func(id string) bool
 	// OnPR is called when a thread gets a new PR, so the poller looks now.

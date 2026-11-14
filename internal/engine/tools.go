@@ -77,6 +77,8 @@ func (e *Engine) Tools(s *mcp.Server) {
 			return "Requested. The user decides in Fyr; the result arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not perform this action another way.", nil
 		}})
 
+	s.Add(e.showTool())
+
 	s.Add(mcp.Tool{Name: "settle_when",
 		Description: "Mark this Fyr thread to settle (leave the user's inbox) when a condition holds: \"done\" when your current run ends, \"merged\" when the linked PR merges.",
 		Schema:      obj(map[string]any{"condition": map[string]any{"type": "string", "enum": []string{"done", "merged"}}}, "condition"),
