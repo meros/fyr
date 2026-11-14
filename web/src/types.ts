@@ -106,6 +106,10 @@ export interface ThreadDTO {
   settleWhenDone?: boolean;
   settleWhenMerged?: boolean;
   source?: "fyr" | "t3" | string;
+  /** the project this thread belongs to (V0.23); `project` stays the display name */
+  projectId?: string;
+  /** the thread whose agent started this one (V0.22) */
+  parent?: string | null;
   /** The checkout branch, read after each run; empty when not a git checkout. */
   branch?: string | null;
   tasks?: TaskDTO[] | null;
@@ -129,10 +133,28 @@ export interface Profile {
   defaultModel?: string;
 }
 
+/** Where a project's work lives (V0.23). */
+export type ProjectSource = { kind: "folder"; host: string; path: string } | { kind: "repo"; url: string } | { kind: string; [k: string]: unknown };
+
+export interface ProjectIconSpec {
+  kind: "monogram" | "emoji" | "line" | string;
+  value: string;
+}
+
+/** A project: a host-independent identity with sources (V0.23). A project may have no source (a label). */
 export interface Project {
-  cwd: string;
+  id?: string;
   name: string;
+  /** a palette name: slate blue sky teal green olive violet indigo rose brown */
+  color?: string;
+  icon?: ProjectIconSpec;
+  sources?: ProjectSource[];
+  profile?: string;
+  model?: string;
+  threads?: number;
   lastUsed?: string;
+  /** the project's folder on this host, when it has one */
+  cwd?: string;
 }
 
 export interface StateDTO {

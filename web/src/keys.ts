@@ -1,7 +1,7 @@
 // The key-hint bar: which keys work right now. Pure.
 
 export interface HintContext {
-  dialog: "new" | "adopt" | "snooze" | "push" | null;
+  dialog: string | null;
   zone: "list" | "thread";
   hasSelection: boolean;
   picked: number;

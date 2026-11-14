@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, T3Candidate } from "./types.ts";
 import { ChipStrip, ClipPicker, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
+import { NewProjectForm, ProjectIcon, ProjectList } from "./project-ui.tsx";
+import { pickerOrder, projectDefaults, projectSubtitle } from "./projects.ts";
 import { relTime, shortModel } from "./format.ts";
 import type { SnoozePreset } from "./store.ts";
 
@@ -31,11 +33,19 @@ export interface NewThreadArgs {
   profile: string;
   model: string;
   title?: string;
+  /** the picked project (V0.23): filed with thread.setProject after the start */
+  projectId?: string;
 }
 
-export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null> }) {
-  const sortedProjects = [...p.projects].sort((a, b) => (b.lastUsed ?? "").localeCompare(a.lastUsed ?? ""));
-  const [cwd, setCwd] = useState(sortedProjects[0]?.cwd ?? "");
+
+
+export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, folder: string, repo: string): Promise<string | null> }) {
+  const sortedProjects = pickerOrder(p.projects);
+  const first = sortedProjects.find((x) => x.cwd) ?? sortedProjects[0];
+  const [projectId, setProjectId] = useState<string | undefined>(first?.id);
+  const [picking, setPicking] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [cwd, setCwd] = useState(first?.cwd ?? "");
   const [profile, setProfile] = useState(p.profiles[0]?.id ?? "");
   const prof = p.profiles.find((x) => x.id === profile);
   const [model, setModel] = useState(prof?.defaultModel ?? prof?.models[0] ?? "");
@@ -63,7 +73,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; o
     if (!plan.ok) return setErr(plan.reason === "Nothing to send" ? "Write a prompt or attach a file." : plan.reason);
     setBusy(true);
     setErr(null);
-    const e = await p.onCreate({ cwd: cwd.trim(), text, attachments: plan.args.attachments, profile, model, title: title.trim() || undefined });
+    const e = await p.onCreate({ cwd: cwd.trim(), text, attachments: plan.args.attachments, profile, model, title: title.trim() || undefined, projectId });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -71,14 +81,58 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; o
   return (
     <Modal title="New thread" onClose={p.onClose} wide>
       <div class="db">
+        <div class="fld">
+          <span>Project</span>
+          {(() => {
+            const cur = p.projects.find((x) => x.id === projectId);
+            return (
+              <button class="ppick" onClick={() => setPicking(!picking)} aria-expanded={picking}>
+                {cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
+                <span class="plt">
+                  <span class="ell pln">{cur?.name ?? "No project"}</span>
+                  <span class="ell pls2">{cur ? projectSubtitle(cur) : "Pick one, or type a folder below"}</span>
+                </span>
+                <span class="chev">{picking ? "▾" : "▸"}</span>
+              </button>
+            );
+          })()}
+          {picking && !creating && (
+            <ProjectList
+              projects={p.projects}
+              selectedId={projectId}
+              autoFocus
+              onPick={(pr) => {
+                setPicking(false);
+                if (!pr) return;
+                setProjectId(pr.id);
+                const d = projectDefaults(pr, p.profiles);
+                setCwd(d.cwd ?? "");
+                if (d.profile) {
+                  setProfile(d.profile);
+                  if (d.model) setModel(d.model);
+                }
+              }}
+              onNew={() => setCreating(true)}
+            />
+          )}
+          {creating && (
+            <NewProjectForm
+              onCancel={() => setCreating(false)}
+              onCreate={async (name, folder, repo) => {
+                const e = await p.onNewProject(name, folder, repo);
+                if (!e) {
+                  setCreating(false);
+                  setPicking(true);
+                  if (folder) setCwd(folder);
+                }
+                return e;
+              }}
+            />
+          )}
+        </div>
         <label class="fld">
           <span>Folder</span>
-          <input list="fyr-projects" value={cwd} onInput={(e) => setCwd((e.target as HTMLInputElement).value)} placeholder="/home/me/src/app" spellcheck={false} />
-          <datalist id="fyr-projects">
-            {sortedProjects.map((pr) => (
-              <option value={pr.cwd}>{pr.name}</option>
-            ))}
-          </datalist>
+          <input value={cwd} onInput={(e) => setCwd((e.target as HTMLInputElement).value)} placeholder="/home/me/src/app" spellcheck={false} />
         </label>
         <div class="row2">
           <label class="fld">

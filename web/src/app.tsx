@@ -25,6 +25,7 @@ import {
   undoKindOf,
   undoLive,
   upsertThread,
+  upsertProject,
   UNDO_MS,
   type SectionKey,
   type SnoozePreset,
@@ -41,12 +42,14 @@ import { setAttachmentUrl } from "./attach.ts";
 import { setPreviewUrl } from "./previews.ts";
 import { PreviewViewer } from "./preview-ui.tsx";
 import { setUploader } from "./attach-ui.tsx";
-import { AdoptDialog, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
+import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
 import { disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
 import { unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
-import { backTarget, initialEntries, navFromHistory, urlFor, type Nav } from "./nav.ts";
+import { DirectoryContext, NewProjectForm, ProjectEditor, ProjectList, type Directory, type ProjectPatch } from "./project-ui.tsx";
+import { FILTER_KEY, filterByProject } from "./projects.ts";
+import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
 
@@ -116,7 +119,7 @@ setAttachmentUrl(api.attachmentUrl);
 setPreviewUrl(api.previewUrl);
 const params = new URLSearchParams(location.search);
 
-type Dialog = "new" | "adopt" | "snooze" | "push" | null;
+type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "move" | "newproject" | null;
 type Zone = "list" | "thread";
 
 interface Toast {
@@ -195,15 +198,35 @@ function App() {
   const pushReason = unsupportedReason(env);
 
   const now = tick + store.clockOffset;
+  // The project filter (V0.23), remembered per device.
+  const [projectFilter, setProjectFilterState] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(FILTER_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const setProjectFilter = (id: string | null) => {
+    setProjectFilterState(id);
+    try {
+      if (id) localStorage.setItem(FILTER_KEY, id);
+      else localStorage.removeItem(FILTER_KEY);
+    } catch {
+      /* storage blocked */
+    }
+  };
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [moveIds, setMoveIds] = useState<string[]>([]);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return store.threads;
+    const base = filterByProject(store.threads, projectFilter && store.projects.some((p) => p.id === projectFilter) ? projectFilter : null, store.projects);
+    if (!q) return base;
     const out: Record<string, ThreadDTO> = {};
-    for (const t of Object.values(store.threads)) {
+    for (const t of Object.values(base)) {
       if (`${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(q)) out[t.id] = t;
     }
     return out;
-  }, [store.threads, query]);
+  }, [store.threads, store.projects, query, projectFilter]);
   const sec = useMemo(() => sections(shown), [shown]);
   const limits = useMemo(() => {
     const l: Partial<Record<SectionKey, number>> = {};
@@ -233,6 +256,7 @@ function App() {
         setStore((s) => upsertThread(s, t));
       },
       event: (e) => setStore((s) => liveEvent(s, e)),
+      project: (p) => setStore((s) => upsertProject(s, p)),
       conn: (c) => setStore((s) => setConn(s, c)),
     });
     const iv = setInterval(() => setTick(Date.now()), 15_000);
@@ -402,7 +426,13 @@ function App() {
     const bad = res.find((r) => !r.ok);
     if (bad) showError(`Undo failed: ${bad.error ?? ""}`);
     else setToast({ text: "Undone", undo: false, at: Date.now() });
+    // U8: Undo of a settle or archive that left the thread reopens it.
+    const back = reopenRef.current;
+    reopenRef.current = null;
+    if (!bad && back && phoneRef.current && undo?.threadIds.includes(back)) navGoRef.current({ screen: { name: "thread", id: back }, sheet: null });
   }, [undo]);
+  const reopenRef = useRef<string | null>(null);
+  const navGoRef = useRef<(n: Nav) => void>(() => {});
 
   const openThread = (id: string, mode: "open" | "peek" = "open") => {
     setSel(id);
@@ -526,6 +556,40 @@ function App() {
     return r.ok;
   };
 
+  // ---- projects (V0.23) ----
+  const projectCommand = async (action: string, args: Record<string, unknown>, threadId?: string): Promise<string | null> => {
+    const r = await api.command(action, threadId, args);
+    return r.ok ? null : (r.error ?? "That did not work");
+  };
+  const projectActions = {
+    update: (id: string, patch: ProjectPatch) => projectCommand("project.update", { id, ...patch }),
+    addRepo: (id: string, url: string) => projectCommand("project.addSource", { id, source: { kind: "repo", url } }),
+    create: async (name: string, folder: string, repo: string): Promise<string | null> => {
+      const sources: Record<string, unknown>[] = [];
+      if (folder) sources.push({ kind: "folder", host: store.host || "local", path: folder });
+      if (repo) sources.push({ kind: "repo", url: repo });
+      return projectCommand("project.create", sources.length ? { name, sources } : { name });
+    },
+    move: async (ids: string[], projectId: string): Promise<string | null> => {
+      const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId }, id)))).filter(Boolean);
+      if (!errs.length) setToast({ text: ids.length === 1 ? `Moved to ${store.projects.find((p) => p.id === projectId)?.name ?? "the project"}` : `Moved ${ids.length} threads`, undo: false, at: Date.now() });
+      return errs[0] ?? null;
+    },
+  };
+  const openProjectScreen = (id: string) => {
+    if (phoneRef.current) navGo({ screen: { name: "project", id }, sheet: null });
+    else {
+      setProjectId(id);
+      setDialog("project");
+    }
+  };
+  const directory: Directory = {
+    threads: store.threads,
+    projects: store.projects,
+    openThread: (id) => (phoneRef.current ? navGo({ screen: { name: "thread", id }, sheet: null }) : openThread(id, "open")),
+    openProject: openProjectScreen,
+  };
+
   const create = async (a: NewThreadArgs): Promise<string | null> => {
     const args: Record<string, unknown> = { cwd: a.cwd, text: a.text, profile: a.profile, model: a.model };
     if (a.attachments?.length) args.attachments = a.attachments;
@@ -533,6 +597,7 @@ function App() {
     const r = await api.command("thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
+    if (r.threadId && a.projectId) void api.command("thread.setProject", r.threadId, { projectId: a.projectId });
     if (r.threadId) {
       const id = r.threadId;
       // The upsert may arrive after the reply; open once it is there.
@@ -703,6 +768,13 @@ function App() {
         setPicked(n);
         return;
       }
+      case "p":
+        e.preventDefault();
+        if (tgt) {
+          setMoveIds(picked.size ? [...picked] : [tgt]);
+          setDialog("move");
+        }
+        return;
       case "c":
         e.preventDefault();
         setDialog("new");
@@ -763,6 +835,17 @@ function App() {
     history.pushState(n, "", urlFor(n, location.search));
     setNav(n);
   };
+  navGoRef.current = navGo;
+  const navRef = useRef(nav);
+  navRef.current = nav;
+  /** U8: after settling or archiving the open thread on a phone, go back to the inbox (pop, not push). */
+  const leaveOpenThread = (action: "settle" | "archive", ids: string[]) => {
+    const s = navRef.current.screen;
+    if (s.name !== "thread" || ids.length !== 1 || ids[0] !== s.id) return;
+    if (!leavesThread(action, threadsRef.current[s.id])) return;
+    reopenRef.current = s.id;
+    navBack();
+  };
   const navReplace = (n: Nav) => {
     history.replaceState(n, "", urlFor(n, location.search));
     setNav(n);
@@ -797,9 +880,9 @@ function App() {
   }, [phone, nav.screen.name === "thread" ? nav.screen.id : nav.screen.name]);
 
   const phoneActions: PhoneActions = {
-    settle: (ids, bulk) => void runAction("thread.settle", ids, bulk ? { now: true } : undefined),
+    settle: (ids, bulk) => void runAction("thread.settle", ids, bulk ? { now: true } : undefined).then((n) => n && leaveOpenThread("settle", ids)),
     snooze: (ids, until) => void runAction("thread.snooze", ids, { until: until.toISOString() }),
-    archive: (ids) => void runAction("thread.archive", ids),
+    archive: (ids) => void runAction("thread.archive", ids).then((n) => n && leaveOpenThread("archive", ids)),
     markUnseen: (id) => markUnseen(id),
     retry: (id) => void runAction("thread.retry", [id]),
     interrupt: (id) => void runAction("thread.interrupt", [id]),
@@ -844,7 +927,7 @@ function App() {
 
   if (phone) {
     return (
-      <>
+      <DirectoryContext.Provider value={directory}>
         <PreviewViewer />
         <PhoneApp
           nav={nav}
@@ -885,6 +968,9 @@ function App() {
           undoIds={undo?.threadIds ?? []}
           undoLive={undoLive(undo, Date.now())}
           actions={phoneActions}
+          projectFilter={projectFilter}
+          onProjectFilter={setProjectFilter}
+          projectActions={projectActions}
         />
         {nav.sheet?.kind === "push" && pushDialog(navBack)}
         {nav.sheet?.kind === "adopt" && (
@@ -899,7 +985,7 @@ function App() {
             }}
           />
         )}
-      </>
+      </DirectoryContext.Provider>
     );
   }
 
@@ -921,6 +1007,7 @@ function App() {
   return (
     <div class="shell">
       <PreviewViewer />
+      <DirectoryContext.Provider value={directory}>
       <div class={view ? "app open" : "app"}>
         <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} />
         <Inbox
@@ -938,6 +1025,9 @@ function App() {
           onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
           onNew={() => setDialog("new")}
           onAdopt={() => setDialog("adopt")}
+          projects={store.projects}
+          projectFilter={projectFilter}
+          onProjectFilter={setProjectFilter}
           extra={pwaControls}
           onFocusZone={() => setZone("list")}
         />
@@ -1002,10 +1092,57 @@ function App() {
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} projects={store.projects} onClose={() => setDialog(null)} onCreate={create} />}
+      {dialog === "new" && <NewThreadDialog profiles={store.profiles} projects={store.projects} onClose={() => setDialog(null)} onCreate={create} onNewProject={projectActions.create} />}
+      {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
+        <Modal title="Project" onClose={() => setDialog(null)} wide>
+          <div class="db">
+            <ProjectEditor
+              project={store.projects.find((p) => p.id === projectId)!}
+              profiles={store.profiles}
+              onSave={(patch) => projectActions.update(projectId, patch)}
+              onAddRepo={(url) => projectActions.addRepo(projectId, url)}
+              onMoveThread={view ? () => (setMoveIds([view.id]), setDialog("move")) : undefined}
+              onNewProject={() => setDialog("newproject")}
+            />
+          </div>
+        </Modal>
+      )}
+      {dialog === "move" && (
+        <Modal title={moveIds.length > 1 ? `Move ${moveIds.length} threads to a project` : "Move to project"} onClose={() => setDialog(null)} wide>
+          <div class="db">
+            <ProjectList
+              projects={store.projects}
+              autoFocus
+              selectedId={moveIds.length === 1 ? store.threads[moveIds[0]]?.projectId : null}
+              onPick={async (p) => {
+                if (!p?.id) return;
+                const e = await projectActions.move(moveIds, p.id);
+                if (e) showError(e);
+                else setDialog(null);
+              }}
+              onNew={() => setDialog("newproject")}
+            />
+          </div>
+        </Modal>
+      )}
+      {dialog === "newproject" && (
+        <Modal title="New project" onClose={() => setDialog(null)} wide>
+          <div class="db">
+            <NewProjectForm
+              onCancel={() => setDialog(null)}
+              onCreate={async (name, folder, repo) => {
+                const e = await projectActions.create(name, folder, repo);
+                if (!e) setDialog(null);
+                return e;
+              }}
+            />
+          </div>
+        </Modal>
+      )}
       {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "push" && pushDialog(() => setDialog(null))}
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
+      </DirectoryContext.Provider>
     </div>
   );
 }

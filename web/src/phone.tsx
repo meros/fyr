@@ -13,6 +13,8 @@ import { AgentsStrip, Conversation, PrTab, effectSentence, prLabel, type SendArg
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
+import { NewProjectForm, ProjectEditor, ProjectIcon, ProjectList, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
+import { colorVar, pickerOrder, projectDefaults, projectOf, projectSubtitle } from "./projects.ts";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import { previewsOf } from "./conversation.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
@@ -162,6 +164,15 @@ export interface PhoneProps {
   undoIds: string[];
   undoLive: boolean;
   actions: PhoneActions;
+  /** projects (V0.23) */
+  projectFilter: string | null;
+  onProjectFilter(id: string | null): void;
+  projectActions: {
+    update(id: string, patch: ProjectPatch): Promise<string | null>;
+    addRepo(id: string, url: string): Promise<string | null>;
+    create(name: string, folder: string, repo: string): Promise<string | null>;
+    move(ids: string[], projectId: string): Promise<string | null>;
+  };
 }
 
 const STORAGE_LAST = "fyr.newDefaults";
@@ -201,6 +212,7 @@ export function PhoneApp(p: PhoneProps) {
         </div>
       )}
       {s.name === "new" && <MNew {...p} />}
+      {s.name === "project" && <MProject {...p} id={s.id} />}
       {bottomBar && <MBottomBar {...p} />}
       <MToast {...p} bottomBar={bottomBar} />
       {p.nav.sheet && <MSheets {...p} sheet={p.nav.sheet} t={sheetThread} />}
@@ -342,6 +354,20 @@ function MInbox(p: PhoneProps) {
           })}
         </div>
       )}
+      {p.projectFilter && !p.selecting && (() => {
+        const fp = p.projects.find((x) => x.id === p.projectFilter);
+        return fp ? (
+          <div class="m-pfline" style={{ "--pc": colorVar(fp.color, fp.name) }}>
+            <button class="m-pfn" onClick={() => p.go({ ...p.nav, sheet: { kind: "filter" } })}>
+              <ProjectIcon project={fp} name={fp.name} size={20} />
+              <span class="ell">Only {fp.name}</span>
+            </button>
+            <button class="m-tbtn" onClick={() => p.onProjectFilter(null)}>
+              Clear
+            </button>
+          </div>
+        ) : null;
+      })()}
       {p.conn === "offline" && (
         <div class="m-cstrip">
           <span class="ell">Reconnecting to {p.host}…</span>
@@ -556,7 +582,7 @@ function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) 
       <span class="t ell">{t.title || "Untitled"}</span>
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, p.now)}</span>
       <span class="m ell">
-        <b class={stateClass(st)}>{needsWord(t)}</b> · {t.project} · {needsMeta(t)}
+        <b class={stateClass(st)}>{needsWord(t)}</b> · {t.parent && <><StartedBy parentId={t.parent} link={false} /> · </>}<ThreadProject t={t} /> · {needsMeta(t)}
       </span>
       <MPr t={t} />
     </div>
@@ -565,7 +591,14 @@ function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) 
       {p.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : <StateIcon state={st} />}
       <span class="t">
         <span class="tn ell">{t.title || "Untitled"}</span>
-        <i class="ell">{oneMeta(t, p.now)}</i>
+        <i class="ell">
+          {t.parent && (
+            <>
+              <StartedBy parentId={t.parent} link={false} /> ·{" "}
+            </>
+          )}
+          {t.attention.section !== "working" && t.attention.state !== "snoozed" ? <ThreadProject t={t} /> : oneMeta(t, p.now)}
+        </i>
       </span>
       {t.attention.section !== "working" ? <MPr t={t} short /> : <span />}
       <span class="age">
@@ -663,7 +696,14 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
           <button class="b44" onClick={p.back} aria-label="Back to the inbox">
             {I.back}
           </button>
-          <div class="m-tt">{t.title || "Untitled"}</div>
+          <div class="m-ttw">
+            <div class="m-tt">{t.title || "Untitled"}</div>
+            {t.parent && (
+              <div class="m-from">
+                <StartedBy parentId={t.parent} />
+              </div>
+            )}
+          </div>
           <button class="b44" onClick={() => p.go({ ...p.nav, sheet: { kind: "thread-menu", ids: [t.id] } })} aria-label="Thread actions">
             {I.more}
           </button>
@@ -675,9 +715,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
             </span>
             <span>{stateLabel(st)}</span>
           </span>
-          <span class="m-chip pj">
-            <span>{t.project || t.cwd}</span>
-          </span>
+          <MProjectChip t={t} projects={p.projects} />
           {t.branch && (
             <span class="m-chip m brn">
               <span>{t.branch}</span>
@@ -1011,6 +1049,8 @@ function MNew(p: PhoneProps) {
   const [cwd, setCwd] = useState(defs.cwd);
   const [combo, setCombo] = useState(`${defs.profile}\u0000${defs.model}`);
   const [custom, setCustom] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [projectId, setProjectId] = useState<string | undefined>(undefined);
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1021,7 +1061,6 @@ function MNew(p: PhoneProps) {
     if (!combo.split("\u0000")[0] && defs.profile) setCombo(`${defs.profile}\u0000${defs.model}`);
   }, [defs.cwd, defs.profile]);
   const [profile, model] = combo.split("\u0000");
-  const projects = p.projects.some((x) => x.cwd === cwd) || !cwd ? p.projects : [{ cwd, name: cwd.split("/").slice(-2).join("/") }, ...p.projects];
   const plan = sendArgs(text, att.chips);
   const ready = !!cwd.trim() && plan.ok;
 
@@ -1046,7 +1085,7 @@ function MNew(p: PhoneProps) {
     if (!ready || busy) return;
     setBusy(true);
     store(STORAGE_LAST, JSON.stringify({ cwd: cwd.trim(), profile, model }));
-    const e = await p.actions.create({ cwd: cwd.trim(), text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model });
+    const e = await p.actions.create({ cwd: cwd.trim(), text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, projectId: projectId ?? p.projects.find((x) => x.cwd === cwd.trim())?.id });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -1076,28 +1115,40 @@ function MNew(p: PhoneProps) {
           <div class="m-dl">
             Starts in<span>{last.cwd ? "last used" : "most recent"}</span>
           </div>
-          {custom ? (
-            <input class="m-dchip" value={cwd} placeholder="/home/me/src/app" spellcheck={false} onInput={(e) => setCwd((e.target as HTMLInputElement).value)} />
-          ) : (
-            <label class="m-dchip">
-              <span class="ell">{projects.find((x) => x.cwd === cwd)?.name ?? (cwd || "Pick a folder")}</span>
-              {I.down}
-              <select
-                value={cwd}
-                aria-label="Folder"
-                onChange={(e) => {
-                  const v = (e.target as HTMLSelectElement).value;
-                  if (v === "\u0000other") setCustom(true);
-                  else setCwd(v);
+          {(() => {
+            const pr = p.projects.find((x) => x.id === projectId) ?? (cwd ? p.projects.find((x) => x.cwd === cwd) : undefined);
+            return (
+              <button class="m-dchip m-ppick" onClick={() => setPicking(!picking)} aria-expanded={picking} style={{ "--pc": colorVar(pr?.color, pr?.name ?? "") }}>
+                {pr ? <ProjectIcon project={pr} name={pr.name} size={28} /> : null}
+                <span class="plt">
+                  <span class="ell pln">{pr?.name ?? (cwd || "Pick a project")}</span>
+                  {pr && <span class="ell pls2">{projectSubtitle(pr)}</span>}
+                </span>
+                {picking ? I.up : I.down}
+              </button>
+            );
+          })()}
+          {picking && (
+            <div class="m-pickpanel">
+              <ProjectList
+                projects={pickerOrder(p.projects)}
+                selectedId={projectId}
+                onPick={(pr) => {
+                  setPicking(false);
+                  if (!pr) return;
+                  setProjectId(pr.id);
+                  const d = projectDefaults(pr, p.profiles);
+                  setCwd(d.cwd ?? "");
+                  setCustom(!d.cwd);
+                  if (d.profile && d.model) setCombo(`${d.profile}\u0000${d.model}`);
                 }}
-              >
-                {projects.map((x) => (
-                  <option value={x.cwd}>{x.name}</option>
-                ))}
-                <option value={"\u0000other"}>Other folder…</option>
-              </select>
-            </label>
+              />
+              <button class="m-more" onClick={() => (setPicking(false), setCustom(true), setProjectId(undefined))}>
+                Other folder…
+              </button>
+            </div>
           )}
+          {custom && <input class="m-dchip" value={cwd} placeholder="Folder for this thread, e.g. /home/me/src/app" spellcheck={false} onInput={(e) => setCwd((e.target as HTMLInputElement).value)} />}
           <label class="m-dchip">
             <span class="ell">
               {p.profiles.find((x) => x.id === profile)?.name ?? profile} · {shortModel(model)}
@@ -1168,12 +1219,60 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
     return (
       <MSheet onClose={close} label="More">
         <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.setSelecting(true))} />
+        <Item label="Filter by project…" right={p.projectFilter ? p.projects.find((x) => x.id === p.projectFilter)?.name : "all"} onClick={() => p.replace({ ...p.nav, sheet: { kind: "filter" } })} />
         <Item label="Adopt from T3" onClick={() => p.replace({ ...p.nav, sheet: { kind: "adopt" } })} />
         <Item label="Notifications" right={p.push} onClick={() => p.replace({ ...p.nav, sheet: { kind: "push" } })} />
         <Item label="Show tool details" sub="Every tool group open, every machine line in full" right={toolDetails() ? "on" : "off"} onClick={after(() => setToolDetails(!toolDetails()))} />
         {(["system", "light", "dark"] as Theme[]).map((th) => (
           <Item label={`Theme: ${th === "system" ? "auto" : th}`} right={p.theme === th ? "✓" : ""} onClick={() => p.setTheme(th)} />
         ))}
+      </MSheet>
+    );
+  }
+  if (sheet.kind === "filter") {
+    return (
+      <MSheet onClose={close} label="Filter by project">
+        <div class="m-shh">Show one project</div>
+        <ProjectList
+          projects={p.projects.filter((x) => (x.threads ?? 0) > 0 || x.id === p.projectFilter)}
+          selectedId={p.projectFilter}
+          allLabel="All projects"
+          onPick={(pr) => (p.onProjectFilter(pr?.id ?? null), close())}
+        />
+      </MSheet>
+    );
+  }
+  if (sheet.kind === "move") {
+    return (
+      <MSheet onClose={close} label="Move to project">
+        <div class="m-shh">{ids.length > 1 ? `Move ${ids.length} threads` : "Move to project"}</div>
+        <ProjectList
+          projects={p.projects}
+          selectedId={ids.length === 1 ? p.threads[ids[0]]?.projectId : null}
+          onPick={async (pr) => {
+            if (!pr?.id) return;
+            const e = await p.projectActions.move(ids, pr.id);
+            if (!e) close();
+          }}
+          onNew={() => p.replace({ ...p.nav, sheet: { kind: "newproject", ids } })}
+        />
+      </MSheet>
+    );
+  }
+  if (sheet.kind === "newproject") {
+    return (
+      <MSheet onClose={close} label="New project">
+        <div class="m-shh">New project</div>
+        <div class="m-pform">
+          <NewProjectForm
+            onCancel={close}
+            onCreate={async (name, folder, repo) => {
+              const e = await p.projectActions.create(name, folder, repo);
+              if (!e) close();
+              return e;
+            }}
+          />
+        </div>
       </MSheet>
     );
   }
@@ -1230,6 +1329,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
           right={peek ? "← swipe" : undefined}
           onClick={() => p.replace({ ...p.nav, sheet: { kind: "snooze", ids: [t.id] } })}
         />
+        <Item label="Move to project…" icon={<ProjectIcon project={projectOf(t, p.projects)} name={t.project} size={18} />} onClick={() => p.replace({ ...p.nav, sheet: { kind: "move", ids: [t.id] } })} />
         <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
         {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.setSelecting(true), p.setPicked(new Set([t.id]))))} />}
         {!peek && <Item label="Details" icon={I.right} onClick={() => p.replace({ ...p.nav, sheet: { kind: "details", ids: [t.id] } })} />}
@@ -1251,7 +1351,17 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
         <div class="m-shh prose">{t.title}</div>
         <div class="m-kvs">
           {row("State", `${stateLabel(t.attention.state)}${t.attention.reason ? " · " + t.attention.reason : ""}`)}
-          {row("Project", t.project)}
+          {row(
+            "Project",
+            (() => {
+              const pr = projectOf(t, p.projects);
+              return (
+                <button class="m-plink" onClick={() => pr?.id && p.replace({ screen: { name: "project", id: pr.id }, sheet: null })}>
+                  <ProjectTag project={pr} name={t.project} />
+                </button>
+              );
+            })(),
+          )}
           {row("Folder", t.cwd)}
           {t.branch && row("Branch", t.branch)}
           {row(
@@ -1307,5 +1417,40 @@ function SnoozeSheet({ ids, title, onClose, onPick }: { ids: string[]; title?: s
         </button>
       </div>
     </MSheet>
+  );
+}
+
+// ---- projects (V0.23) ----
+
+function MProjectChip({ t, projects }: { t: ThreadDTO; projects: Project[] }) {
+  const pr = projectOf(t, projects);
+  return (
+    <span class="m-chip pj proj" style={{ "--pc": colorVar(pr?.color, pr?.name ?? t.project) }}>
+      <ProjectIcon project={pr} name={t.project} size={16} />
+      <span>{pr?.name ?? t.project ?? t.cwd}</span>
+    </span>
+  );
+}
+
+/** The project screen: identity and defaults, sources read-only. */
+function MProject(p: PhoneProps & { id: string }) {
+  const pr = p.projects.find((x) => x.id === p.id);
+  return (
+    <div class="m-screen m-project">
+      <MHeader onBack={p.back} title="Project" />
+      <div class="m-nbody">
+        {pr ? (
+          <ProjectEditor
+            project={pr}
+            profiles={p.profiles}
+            onSave={(patch) => p.projectActions.update(pr.id!, patch)}
+            onAddRepo={(url) => p.projectActions.addRepo(pr.id!, url)}
+            onNewProject={() => p.go({ ...p.nav, sheet: { kind: "newproject" } })}
+          />
+        ) : (
+          <div class="m-empty">{p.projects.length ? "This project is not here anymore." : "Loading…"}</div>
+        )}
+      </div>
+    </div>
   );
 }
