@@ -84,10 +84,14 @@ const ViewPrompt = `This thread has a live view: a small page pinned above the c
 - State shape: "headline" (one line, the current status; Fyr also shows it in the inbox) plus any fields your page needs, for example "steps", "blockers", "next", "pr".
 - In the page, window.fyr.state is the current state; fyr.onState(fn) runs fn now and on every change; an element with data-text="field.path" shows that field. Fragments get the Fyr theme (CSS variables --bg --fg --muted --line --accent, light and dark). The page cannot call Fyr or other hosts; it may load libraries from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com and ajax.googleapis.com.
 - Buttons send messages: fyr.send(text), or an element with data-send="text", sends that text to you as a message from the view, as if the user typed it. Use buttons for choices and next steps; they never run anything by themselves.
+- A message marked [Typed on the live view tab] was written while the user looks at the view, not the conversation. Answer it first in one or two plain, spoken sentences (the answer, or what you will do now); that reply is shown next to their message on the View tab. Then do the work and update the view.
 - Before you end a turn, update the view if anything it shows changed, or call mcp__fyr__view_unchanged {reason}. Keep it short and current; it is the first thing the user reads.`
 
 // FromView marks a message sent by a press in the live view (V0.37).
 const FromView = "view"
+
+// FromViewTyped marks a message the user typed on the View tab (V0.49).
+const FromViewTyped = "view-typed"
 
 // FromHandover marks the messages Fyr sends during a handover (V0.45).
 const FromHandover = "handover"
@@ -303,6 +307,9 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 	} else if e.From == FromView {
 		// V0.37: a press in the live view; the user pressed it.
 		e.Text = "[From the live view] " + e.Text
+	} else if e.From == FromViewTyped {
+		// V0.49: typed while the user looks at the view, not the conversation.
+		e.Text = "[Typed on the live view tab] " + e.Text
 	} else if e.From != "" {
 		// V0.22: tell the receiving agent which thread wrote this.
 		label := e.From

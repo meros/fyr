@@ -17,7 +17,7 @@ import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
-import { LiveViewBar, LiveViewPanel } from "./view-ui.tsx";
+import { LiveViewBar, LiveViewPanel, ViewChat } from "./view-ui.tsx";
 import { defaultTab, liveViewOf } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
 import { rowSummary } from "./view.ts";
@@ -785,12 +785,14 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
       </div>
       {t.tasks && t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {!cardOpen && p.tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.actions.send(t.id, { text, from: "view" })} />}
+      {!cardOpen && p.tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
       {!cardOpen && p.tab === "conv" && <LiveViewBar t={t} now={p.now} onOpen={() => setTab("view")} />}
       {!cardOpen && p.tab === "conv" && <Filmstrip cards={previews} collapsible />}
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
       ) : p.tab === "conv" ? (
         <Conversation
+          outbox={(t.outbox ?? []).map((o) => o.id)}
           events={p.events}
           onAtEnd={p.onAtEnd}
           threadId={t.id}
@@ -816,12 +818,12 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
           </button>
         </div>
       )}
-      {!decision && !nextOffer && <MComposer key={t.id} t={t} p={p} />}
+      {!decision && !nextOffer && <MComposer key={t.id} t={t} p={p} onView={p.tab === "view"} />}
     </div>
   );
 }
 
-function MComposer({ t, p }: { t: ThreadDTO; p: PhoneProps }) {
+function MComposer({ t, p, onView }: { t: ThreadDTO; p: PhoneProps; onView?: boolean }) {
   const [text, setText] = useDraft(t.id);
   const att = useAttachments();
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -837,7 +839,7 @@ function MComposer({ t, p }: { t: ThreadDTO; p: PhoneProps }) {
   }, [text]);
   const send = async () => {
     if (reason || !plan.ok) return;
-    if (await p.actions.send(t.id, plan.args)) {
+    if (await p.actions.send(t.id, onView ? { ...plan.args, from: "view-typed" } : plan.args)) {
       haptic();
       setText("");
       att.clear();

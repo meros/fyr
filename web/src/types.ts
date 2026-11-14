@@ -127,6 +127,8 @@ export interface ThreadDTO {
   handover?: { to: string; model?: string; at: string } | null;
   /** V0.37: the live view; read it through liveViewOf (view.ts) */
   live?: { pageId?: string; state?: Record<string, unknown>; updatedAt?: string; checkedAt?: string; headline?: string } | null;
+  /** V0.33: messages the host still holds (queued or sent, not yet read) */
+  outbox?: { id: string; state: string }[] | null;
   attention: Attention;
   view?: { seenAt?: string | null; snoozeUntil?: string | null } | null;
   unavailable?: Record<string, string> | null;

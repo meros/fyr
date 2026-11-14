@@ -2,10 +2,12 @@
 // sandbox as HTML previews (no origin; CDN libraries only, V0.47); the app sends it the full state on load and on every change,
 // and a press in it becomes a message `from: "view"`.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { bridgeMessage, liveViewOf, pressReply, staleLabel, stateMessage, viewDimmed, viewHeight } from "./view.ts";
 import { FRAME_ALLOW, previewUrl } from "./previews.ts";
-import type { ThreadDTO } from "./types.ts";
+import type { FyrEvent, ThreadDTO } from "./types.ts";
+import { buildConversation, deliveryLabel, viewChat } from "./conversation.ts";
+import { liveLine } from "./tasks.ts";
 
 const COLLAPSED_KEY = "fyr.view.collapsed";
 
@@ -127,5 +129,28 @@ export function LiveViewPanel({ t, now, onPress, full }: { t: ThreadDTO; now: nu
         />
       )}
     </div>
+  );
+}
+
+/** SPEC 0.5 V0.49: the View tab's chat: your last message typed here, its state, and the agent's
+ *  spoken reply (or its current step while it works). A tap opens Conversation. */
+export function ViewChat({ t, events, now, onOpen }: { t: ThreadDTO; events: FyrEvent[] | undefined; now: number; onOpen(): void }) {
+  const outKey = (t.outbox ?? []).map((o) => o.id).join(",");
+  const c = useMemo(() => viewChat(buildConversation(events ?? [], { outbox: outKey ? outKey.split(",") : [] })), [events, outKey]);
+  if (!c) return null;
+  const state = deliveryLabel(c.mine);
+  const working = !c.reply && t.running;
+  return (
+    <button class="vchat" onClick={onOpen} title="Open the conversation">
+      <span class="vchat-me">
+        <span class="vchat-b">{c.mine.text}</span>
+        {state && <span class="vchat-s">{state}</span>}
+      </span>
+      {c.reply ? (
+        <span class="vchat-re">{c.reply}</span>
+      ) : working ? (
+        <span class="vchat-re vchat-live">{liveLine(t, now)}</span>
+      ) : null}
+    </button>
   );
 }

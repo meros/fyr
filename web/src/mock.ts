@@ -938,7 +938,9 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   const dtoOf = (t: ThreadDTO): ThreadDTO => {
     const pid = projectIdFor(t);
     const q = withQuiet(projects.find((p) => p.id === pid) ?? { name: "" }).quietUntil;
-    return { ...t, projectId: pid, suggest: pid ? undefined : t.suggest, newProject: draftFor(t), quietUntil: q };
+    // V0.33: the outbox is what the mock agent has not read yet, as the host sends it.
+    const outbox = [...unread].filter(([, tid]) => tid === t.id).map(([id]) => ({ id, state: "queued" }));
+    return { ...t, projectId: pid, suggest: pid ? undefined : t.suggest, newProject: draftFor(t), quietUntil: q, outbox: outbox.length ? outbox : undefined };
   };
   let nextId = 1;
 
@@ -972,8 +974,14 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     }
     emit(tid, "message.state", { id, state: "queued" });
     unread.set(id, tid);
+    const th = threads.get(tid);
+    if (th) put(th, {});
     setTimeout(() => {
-      if (unread.delete(id)) emit(tid, "message.state", { id, state: "read" });
+      if (unread.delete(id)) {
+        emit(tid, "message.state", { id, state: "read" });
+        const t2 = threads.get(tid);
+        if (t2) put(t2, {});
+      }
     }, 6000);
     return id;
   };
@@ -1113,6 +1121,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         if (unread.get(mid) !== t.id) return { ok: false, error: "The agent has already read this message" };
         unread.delete(mid);
         emit(t.id, "message.state", { id: mid, state: "cancelled" });
+        put(t, {});
         break;
       }
       case "thread.answer": {

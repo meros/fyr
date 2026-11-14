@@ -66,6 +66,8 @@ export type Item = (
   ItemMeta;
 
 export interface BuildOptions {
+  /** V0.33: ids of the messages the host still holds; others are not waiting, whatever events arrived */
+  outbox?: string[];
   /** "Show tool details": every machine line in full (V0.21) */
   details?: boolean;
   /** the thread's folder, for relative paths in labels */
@@ -333,9 +335,15 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
   }
   const out = calmTools(items);
   let last: Extract<Item, { kind: "user" }> | undefined;
-  for (const it of out) if (it.kind === "user" && it.delivery === "read" && !it.from) last = it;
+  for (const it of out) if (it.kind === "user" && it.delivery === "read" && (!it.from || it.from === "view-typed")) last = it;
   if (last) last.lastRead = true;
-  for (const it of held.values()) out.push({ ...it, pending: true });
+  const holds = opts.outbox ? new Set(opts.outbox) : null;
+  for (const it of held.values()) {
+    // The host's outbox is the truth: a message it no longer holds was read (its read event may
+    // never have reached this device).
+    if (holds && !holds.has(it.id!)) out.push({ ...it, delivery: "read", pending: false });
+    else out.push({ ...it, pending: true });
+  }
   return out;
 }
 
@@ -793,4 +801,25 @@ function foldOf(s: Item[]): Extract<Entry, { kind: "fold" }> {
     running: st.running,
     durationMs: start !== Infinity && end >= start && !st.running ? end - start : null,
   };
+}
+
+/** SPEC 0.5 V0.49: the View tab's chat: the last message typed there and the first spoken reply after it. */
+export function viewChat(items: Item[]): { mine: Extract<Item, { kind: "user" }>; reply: string | null } | null {
+  let at = -1;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.kind === "user" && it.from === "view-typed") at = i;
+  }
+  if (at < 0) return null;
+  const mine = items[at] as Extract<Item, { kind: "user" }>;
+  let reply: string | null = null;
+  for (let i = at + 1; i < items.length; i++) {
+    const it = items[i];
+    if (it.kind === "user") break;
+    if (it.kind === "assistant" && !it.quiet && it.text.trim()) {
+      reply = it.text.trim();
+      break;
+    }
+  }
+  return { mine, reply };
 }
