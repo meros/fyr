@@ -27,8 +27,10 @@ export function navTransition(dir: NavDir, update: () => void): void {
   document.documentElement.dataset.nav = dir;
   const vt = doc.startViewTransition(async () => {
     update();
-    // Preact renders on the next microtask; wait one frame so the new screen is in the DOM.
-    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    // Preact renders in a microtask; a zero timer runs after it. Never wait for a frame here:
+    // a view transition draws no frame until this callback returns, so a frame wait stalls
+    // until the browser's 4 s timeout (found live: every phone screen change took 4 s).
+    await new Promise<void>((r) => setTimeout(r, 0));
   }) as { ready?: Promise<unknown>; finished?: Promise<unknown>; updateCallbackDone?: Promise<unknown> } | undefined;
   // A newer screen change skips this transition; the update still ran, so the rejection is expected.
   for (const p of [vt?.ready, vt?.finished, vt?.updateCallbackDone]) p?.catch(() => {});
