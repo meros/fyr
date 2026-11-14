@@ -11,6 +11,7 @@ import { useFolderPick, type PickOptions } from "./folder-picker.tsx";
 import { relTime, shortModel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
 import type { SnoozePreset } from "./store.ts";
+import { hostForProject, profilesOn, type HostInfo } from "./hosts.ts";
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose(): void; children: any; wide?: boolean }) {
   return (
@@ -64,7 +65,7 @@ export function changeOptions(pr: Project | undefined, host: string, current: st
 
 /** SPEC 0.5 V0.30, V0.42: Project first; the folder follows from the project's main folder here, else a fresh scratch
  *  folder; "Change" opens the folder picker. */
-export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; host: string; projectFilter: string | null; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, sources: ProjectSource[]): Promise<{ error: string | null; id?: string }> }) {
+export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; projects: Project[]; host: string; projectFilter: string | null; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, sources: ProjectSource[]): Promise<{ error: string | null; id?: string }> }) {
   const [made, setMade] = useState<Project | null>(null);
   const projects = made && !p.projects.some((x) => x.id === made.id) ? [...p.projects, made] : p.projects;
   const [projectId, setProjectId] = useState<string | undefined>(() => startProject(p.projects, p.projectFilter, lastProject()));
@@ -75,11 +76,14 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
   const [picked, setPicked] = useState("");
   const folder = newThreadFolder(picked, cur);
   const picker = useFolderPick();
-  const startDefs = cur ? projectDefaults(cur, p.profiles) : {};
+  // V0.54: a thread starts on its project's host, with that host's profiles; its files upload there.
+  const target = hostForProject(cur?.host, p.hosts);
+  const profiles = profilesOn(target, p.hosts, p.profiles);
+  const startDefs = cur ? projectDefaults(cur, profiles) : {};
   // V0.50: a provider that cannot run (no token yet) is shown but not picked.
-  const firstOk = p.profiles.find((x) => !x.unavailable)?.id ?? "";
-  const [profile, setProfile] = useState(startDefs.profile && !p.profiles.find((x) => x.id === startDefs.profile)?.unavailable ? startDefs.profile : firstOk);
-  const prof = p.profiles.find((x) => x.id === profile);
+  const firstOk = profiles.find((x) => !x.unavailable)?.id ?? "";
+  const [profile, setProfile] = useState(startDefs.profile && !profiles.find((x) => x.id === startDefs.profile)?.unavailable ? startDefs.profile : firstOk);
+  const prof = profiles.find((x) => x.id === profile);
   const quotas = useQuotas();
   const [model, setModel] = useState(startDefs.model ?? prof?.defaultModel ?? prof?.models[0] ?? "");
   const [effortPick, setEffort] = useState("");
@@ -90,7 +94,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
   const [liveView, setLiveView] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const att = useAttachments();
+  const att = useAttachments(target);
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -99,7 +103,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
 
   const pickProfile = (id: string) => {
     setProfile(id);
-    const np = p.profiles.find((x) => x.id === id);
+    const np = profiles.find((x) => x.id === id);
     setModel(np?.defaultModel ?? np?.models[0] ?? "");
   };
   const choose = (pr: Project | null) => {
@@ -107,12 +111,16 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
     setCreating(null);
     setProjectId(pr?.id);
     setPicked("");
-    if (pr) {
-      const d = projectDefaults(pr, p.profiles);
-      if (d.profile) {
-        setProfile(d.profile);
-        if (d.model) setModel(d.model);
-      }
+    const there = profilesOn(hostForProject(pr?.host, p.hosts), p.hosts, p.profiles);
+    const d = pr ? projectDefaults(pr, there) : {};
+    if (d.profile) {
+      setProfile(d.profile);
+      if (d.model) setModel(d.model);
+    } else if (!there.some((x) => x.id === profile)) {
+      // V0.54: the project is on a host without this profile
+      const np = there.find((x) => !x.unavailable);
+      setProfile(np?.id ?? "");
+      setModel(np?.defaultModel ?? np?.models[0] ?? "");
     }
   };
   const change = async () => {
@@ -191,7 +199,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
           <label class="fld">
             <span>Profile</span>
             <select value={profile} onChange={(e) => pickProfile((e.target as HTMLSelectElement).value)}>
-              {p.profiles.map((pr) => {
+              {profiles.map((pr) => {
                 const q = quotaSuffix(quotas, pr.id); // V0.44
                 if (pr.unavailable) return <option value={pr.id} disabled title={pr.unavailable}>{`${pr.name} · needs setup`}</option>;
                 return <option value={pr.id}>{q ? `${pr.name} · ${q}` : pr.name}</option>;
@@ -218,7 +226,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
             </label>
           )}
         </div>
-        <ProfileQuota profile={profile} profiles={p.profiles} />
+        <ProfileQuota profile={profile} profiles={profiles} />
         <label class="fld">
           <span>Title (optional)</span>
           <input value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} placeholder="From the prompt when empty" />

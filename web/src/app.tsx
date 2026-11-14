@@ -1256,6 +1256,7 @@ function App() {
           onEarlier={view && earlier[view.id] ? () => loadEarlier(view.id) : undefined}
           onAtEnd={(b) => setTracker((tr) => setAtEnd(tr, b))}
           profiles={store.profiles}
+          hosts={store.hosts}
           projects={store.projects}
           card={card}
           onCard={(fn) => decision && setCards((c) => (c[decision.id] ? { ...c, [decision.id]: fn(c[decision.id]) } : c))}
@@ -1443,7 +1444,7 @@ function App() {
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} projects={store.projects} host={store.host} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, sources) => projectActions.create(name, sources)} />}
+      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} host={store.host} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, sources) => projectActions.create(name, sources)} />}
       {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
         <Modal title="Project" onClose={() => setDialog(null)} wide>
           <div class="db">

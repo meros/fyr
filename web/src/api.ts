@@ -5,7 +5,7 @@ import type { DeployProgress } from "./deploy.ts";
 import { cache, mergeStateDelta, sinceRev } from "./cache.ts";
 import type { ThreadPatch } from "./store.ts";
 import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
-import type { UploadReply } from "./attach.ts";
+import { hostQuery, type UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockQuota, mockScenario } from "./mock.ts";
 import type { Quota } from "./quota.ts";
@@ -52,10 +52,11 @@ export interface Api {
   /** Tell the host which thread this device shows (V0.20); "" for none. */
   presence(threadId: string, device: string): Promise<void>;
   /** Attachments (SPEC V0.18): upload one file; progress as bytes sent. */
-  uploadAttachment(file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<UploadResult>;
-  attachmentUrl(id: string): string;
-  /** An HTML preview (V0.19), for a sandboxed iframe. */
-  previewUrl(id: string): string;
+  /** V0.54: `host` is the thread's host (or the one a new thread starts on); the front stores the file there. */
+  uploadAttachment(file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal, host?: string): Promise<UploadResult>;
+  attachmentUrl(id: string, host?: string): string;
+  /** An HTML preview (V0.19), for a sandboxed iframe; from the thread's host (V0.54). */
+  previewUrl(id: string, host?: string): string;
   /** The Changes tab (V0.25): the branch diff of the thread's folder. */
   changes(threadId: string): Promise<ChangesDTO>;
   /** One file's unified diff (V0.25). */
@@ -315,10 +316,10 @@ function createHttpApi(): Api {
     pushTest() {
       return postJson("/api/push/test", {});
     },
-    uploadAttachment(file, onProgress, signal) {
+    uploadAttachment(file, onProgress, signal, host) {
       return new Promise<UploadResult>((resolve) => {
         const x = new XMLHttpRequest();
-        x.open("POST", "/api/attachments");
+        x.open("POST", `/api/attachments${hostQuery(host)}`);
         x.setRequestHeader("X-Fyr", "1");
         x.setRequestHeader("X-Fyr-Filename", encodeURIComponent(file.name || "file"));
         x.setRequestHeader("Content-Type", file.type || "application/octet-stream");
@@ -339,11 +340,11 @@ function createHttpApi(): Api {
         x.send(file);
       });
     },
-    attachmentUrl(id) {
-      return `/api/attachments/${encodeURIComponent(id)}`;
+    attachmentUrl(id, host) {
+      return `/api/attachments/${encodeURIComponent(id)}${hostQuery(host)}`;
     },
-    previewUrl(id) {
-      return `/api/previews/${encodeURIComponent(id)}`;
+    previewUrl(id, host) {
+      return `/api/previews/${encodeURIComponent(id)}${hostQuery(host)}`;
     },
     async changes(threadId) {
       const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/changes`);
