@@ -14,7 +14,7 @@ import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { clockTime, duration, relTime, shortModel } from "./format.ts";
 import { dividerLine, rungDone } from "./handover.ts";
-import { pick, questionsOf, goTo, type CardState } from "./question.ts";
+import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { onToolDetails, toolDetails } from "./prefs.ts";
 import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
@@ -44,6 +44,8 @@ export interface AnswerField {
 }
 
 export interface ThreadPaneProps {
+  /** U15: send the answers of the open question card */
+  onSubmitAsk?(d: Decision): void;
   thread: ThreadDTO;
   mode: "open" | "peek";
   events: FyrEvent[] | undefined;
@@ -190,7 +192,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       )}
       {tab === "changes" && <ChangesView threadId={t.id} />}
       {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}
-      {showsDecision(tab) && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} pr={t.pr} />}
+      {showsDecision(tab) && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
       <Composer key={t.id} t={t} now={p.now} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
   );
@@ -898,6 +900,8 @@ interface CardProps {
   card: CardState | null;
   onCard(cs: CardState): void;
   onAllow(d: Decision, allow: boolean): void;
+  /** U15: send the answers of an ask card */
+  onSubmitAsk?(d: Decision): void;
   /** the thread's PR, to name it in a merge card */
   pr?: PullRequest | null;
 }
@@ -1001,6 +1005,25 @@ function AskCard(p: CardProps & { card: CardState }) {
             <span class="d">{other ?? ""}</span>
           </button>
         </div>
+        {(() => {
+          // U15: always a visible way to finish (Enter still works).
+          const st = submitState(card, d);
+          return (
+            <div class="askf">
+              <span class="askp">
+                {st.total > 1 ? `${st.answered} of ${st.total} answered` : st.answered ? "Answered" : ""}
+              </span>
+              <button
+                class={`btn ${st.act === "submit" ? "p" : ""}`}
+                disabled={st.act === "none"}
+                onClick={() => (st.act === "submit" ? p.onSubmitAsk?.(d) : st.act === "next" && p.onCard(goTo(card, d, nextOpen(card, d))))}
+              >
+                {st.label}
+                {st.act === "submit" && <kbd>↵</kbd>}
+              </button>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

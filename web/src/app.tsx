@@ -1335,6 +1335,7 @@ function App() {
             answerField={answerField}
             onCard={(cs) => decision && setCards((c) => ({ ...c, [decision.id]: cs }))}
             onAllow={allow}
+            onSubmitAsk={submitAsk}
             onRun={(a, args) => {
               if (a === "thread.settle") return settle(view.id);
               if (a === "thread.archive") return archive([view.id]);
