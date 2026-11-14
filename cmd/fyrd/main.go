@@ -121,6 +121,13 @@ func main() {
 	fl.Parse(args)
 
 	os.MkdirAll(*data, 0o700)
+	// A systemd unit has a minimal PATH; agents need the user's tools.
+	if u := os.Getenv("USER"); u != "" || home() != "" {
+		if u == "" {
+			u = filepath.Base(home())
+		}
+		os.Setenv("PATH", agent.UserPath(os.Getenv("PATH"), home(), u, agent.DirExists))
+	}
 	cfg := loadConfig(*cfgPath, filepath.Join(*t3Dir, "settings.json"))
 	if *listen != "" {
 		cfg.Listen = *listen

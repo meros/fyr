@@ -111,12 +111,9 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	}
 	deadline := time.Now().Add(max)
 	for {
-		others := 0
-		for _, id := range d.Host.Running() {
-			if id != threadID {
-				others++
-			}
-		}
+		// Every run must end, the requester's too: the switch stops the
+		// process, and a live turn would die with it (SPEC 0.5 V0.13).
+		others := len(d.Host.Running())
 		if others == 0 {
 			break
 		}
