@@ -3,8 +3,8 @@ package server
 import (
 	"bufio"
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,8 +19,8 @@ import (
 
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"

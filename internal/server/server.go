@@ -5,6 +5,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/gitdiff"
+	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
@@ -56,6 +58,13 @@ type Server struct {
 	Profiles []agent.Profile
 	// T3Candidates lists adoptable T3 threads; optional.
 	T3Candidates func() (any, error)
+	// PR reads PR details for the PR tab (V0.43); optional.
+	PR PRDetails
+}
+
+// PRDetails is what the PR tab needs (*github.Details implements it).
+type PRDetails interface {
+	Get(ctx context.Context, url string, fresh bool) (github.Detail, error)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -66,6 +75,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/events", s.events)
 	mux.HandleFunc("GET /api/threads/{id}/events/{seq}", s.fullEvent)
 	mux.HandleFunc("GET /api/threads/{id}/changes", s.changes)
+	mux.HandleFunc("GET /api/threads/{id}/pr", s.prDetail)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	if s.Presence != nil {
@@ -399,6 +409,32 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, c)
+}
+
+// prDetail serves the PR tab (SPEC 0.5 V0.43). Failures are 200 {error}, so
+// the tab can say what went wrong.
+func (s *Server) prDetail(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.Engine.Thread(r.PathValue("id"))
+	if !ok {
+		writeJSON(w, 404, map[string]any{"error": "no such thread"})
+		return
+	}
+	if t.PR == nil || t.PR.URL == "" {
+		writeJSON(w, 200, map[string]any{"error": "This thread has no PR."})
+		return
+	}
+	if s.PR == nil {
+		writeJSON(w, 200, map[string]any{"error": "This host does not read PR details."})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	d, err := s.PR.Get(ctx, t.PR.URL, r.URL.Query().Get("fresh") == "1")
+	if err != nil {
+		writeJSON(w, 200, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, d)
 }
 
 func (s *Server) command(w http.ResponseWriter, r *http.Request) {
