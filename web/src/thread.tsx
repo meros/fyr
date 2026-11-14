@@ -13,6 +13,7 @@ import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { clockTime, duration, relTime, shortModel } from "./format.ts";
+import { effortsFor, startEffort } from "./providers.ts";
 import { dividerLine, rungDone } from "./handover.ts";
 import { pick, questionsOf, goTo, type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
@@ -148,6 +149,7 @@ export function ThreadPane(p: ThreadPaneProps) {
             </span>
           )}
           <ModelChip t={t} profile={profile} onRun={p.onRun} />
+          <EffortChip t={t} profile={profile} onRun={p.onRun} />
           {t.pr && <PrChip pr={t.pr} onDismiss={isAvailable(t, "thread.dismissPR") ? () => p.onRun("thread.dismissPR") : undefined} />}
           {(t.settleWhenDone || t.settleWhenMerged) && (
             <span class="chip">
@@ -301,6 +303,27 @@ function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | und
           {!models.includes(t.model) && <option value={t.model}>{shortModel(t.model)}</option>}
           {models.map((m) => (
             <option value={m}>{shortModel(m)}</option>
+          ))}
+        </select>
+      )}
+    </span>
+  );
+}
+
+/** V0.47: the thread's effort, when its model takes one. */
+function EffortChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
+  const efforts = effortsFor(profile, t.model);
+  if (!efforts.length) return null;
+  const cur = startEffort(profile, t.model, t.effort);
+  const reason = unavailableReason(t, "thread.setModel");
+  return (
+    <span class={`chip m${reason ? "" : " msel"}`} title={reason ? `Effort ${cur || "default"} · ${reason}` : `Effort ${cur || "default"} · change effort`}>
+      <span>{cur || "effort"}</span>
+      {!reason && (
+        <select value={cur} aria-label="Effort" onChange={(e) => onRun("thread.setModel", { effort: (e.target as HTMLSelectElement).value })}>
+          {!cur && <option value="">CLI default</option>}
+          {efforts.map((x) => (
+            <option value={x}>{x}</option>
           ))}
         </select>
       )}

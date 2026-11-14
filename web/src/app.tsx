@@ -58,6 +58,7 @@ import {
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
+import { Settings } from "./settings-ui.tsx";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
 import { HandoverDialog } from "./handover-ui.tsx";
@@ -68,7 +69,7 @@ import { PreviewViewer } from "./preview-ui.tsx";
 import { setUploader } from "./attach-ui.tsx";
 import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
 import { disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
-import { unsupportedReason, type PushStatus } from "./push.ts";
+import { PUSH_TITLE, unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
@@ -149,7 +150,7 @@ setPrSource(api);
 setFullEventSource(api);
 const params = new URLSearchParams(location.search);
 
-type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | "handover" | null;
+type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | "handover" | "settings" | null;
 type Zone = "list" | "thread";
 
 interface Toast {
@@ -846,6 +847,7 @@ function App() {
     if (a.attachments?.length) args.attachments = a.attachments;
     if (a.title) args.title = a.title;
     if (a.view) args.view = true;
+    if (a.effort) args.effort = a.effort;
     const r = await api.command("thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
@@ -1084,6 +1086,17 @@ function App() {
     setPendingOpen(null);
   }, [pendingOpen, store.threads]);
 
+  // V0.47: Settings reloads the profiles after a provider changed.
+  const reloadProfiles = () => void api.profiles().then((ps) => ps.length && setStore((s) => ({ ...s, profiles: ps })));
+  const themeControl = (
+    <div class="setbar" style={{ justifyContent: "flex-start" }} role="radiogroup" aria-label="Theme">
+      {(["system", "light", "dark"] as Theme[]).map((th) => (
+        <button class={`btn sbtn${theme === th ? " p" : ""}`} role="radio" aria-checked={theme === th} onClick={() => setTheme(th)}>
+          {th === "system" ? "Auto" : th === "light" ? "Light" : "Dark"}
+        </button>
+      ))}
+    </div>
+  );
   const pwaControls = (
     <PwaControls
       push={pushSt}
@@ -1160,6 +1173,7 @@ function App() {
     dismissPR: (id) => void runAction("thread.dismissPR", [id]),
     setView: (id, on) => void runAction("thread.setView", [id], { on }),
     setModel: (id, model) => void runAction("thread.setModel", [id], { model }),
+    setEffort: (id, effort) => void runAction("thread.setModel", [id], { effort }),
     handover: (id, profile, model) => handover(id, profile, model),
     send: async (id, args) => {
       const r = await api.command("thread.send", id, { ...args });
@@ -1243,6 +1257,20 @@ function App() {
           onInstall={() => void promptInstall().then((ok) => ok && setCanInstall(false))}
           theme={theme}
           setTheme={setTheme}
+          settings={
+            <Settings
+              api={api}
+              host={store.host}
+              phone
+              push={
+                <button class="btn sbtn" onClick={() => navGo({ ...nav, sheet: { kind: "push" } })}>
+                  {PUSH_TITLE[pushSt]}
+                </button>
+              }
+              appearance={themeControl}
+              onChanged={reloadProfiles}
+            />
+          }
           toast={toast}
           undoKind={undo?.kind ?? null}
           undoIds={undo?.threadIds ?? []}
@@ -1297,7 +1325,7 @@ function App() {
       <FolderPickContext.Provider value={folderPicker}>
       <ProfilesContext.Provider value={store.profiles}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
-        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} />
+        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} />
         <Boundary name="The inbox">
         <Inbox
           sec={sec}
@@ -1431,6 +1459,11 @@ function App() {
       )}
       {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "push" && pushDialog(() => setDialog(null))}
+      {dialog === "settings" && (
+        <Modal title="Settings" wide onClose={() => setDialog(null)}>
+          <Settings api={api} host={store.host} push={pwaControls} appearance={themeControl} onChanged={reloadProfiles} />
+        </Modal>
+      )}
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
       </ProfilesContext.Provider>
       {folderPickView}
