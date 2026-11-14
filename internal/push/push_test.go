@@ -68,6 +68,9 @@ func TestNotifyAndPruneGone(t *testing.T) {
 			t.Fatal("pushed to another user's subscription")
 		}
 	}
+	if p.Known("https://push/gone") || !p.Known("https://push/a") {
+		t.Fatal("Known disagrees with the pruning")
+	}
 	subs, _ := p.Subscriptions("owner")
 	if len(subs) != 1 || subs[0].Endpoint != "https://push/a" {
 		t.Fatalf("after prune: %+v", subs)

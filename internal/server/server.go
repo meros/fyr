@@ -29,6 +29,7 @@ type Pusher interface {
 	Subscribe(user string, sub push.Subscription, device string) error
 	Unsubscribe(endpoint string) error
 	Notify(user string, pl push.Payload) int
+	Known(endpoint string) bool
 }
 
 type Server struct {
@@ -60,6 +61,13 @@ func (s *Server) Handler() http.Handler {
 		})
 		mux.HandleFunc("POST /api/push/subscribe", s.pushSubscribe)
 		mux.HandleFunc("POST /api/push/unsubscribe", s.pushUnsubscribe)
+		mux.HandleFunc("POST /api/push/status", func(w http.ResponseWriter, r *http.Request) {
+			var b struct {
+				Endpoint string `json:"endpoint"`
+			}
+			json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b)
+			writeJSON(w, 200, map[string]bool{"known": b.Endpoint != "" && s.Push.Known(b.Endpoint)})
+		})
 		mux.HandleFunc("POST /api/push/test", func(w http.ResponseWriter, r *http.Request) {
 			n := s.Push.Notify(core.Owner, push.Payload{Title: "Fyr", Body: "Notifications work on this device.", State: "test"})
 			writeJSON(w, 200, map[string]int{"delivered": n})
