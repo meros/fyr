@@ -436,6 +436,33 @@ try {
   failures.push(`V0.26 desktop: ${e.message}`);
 }
 
+// V0.31: a right-click on a thread row opens Fyr's menu; elsewhere nothing opens.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await send("Page.navigate", { url: `${origin}/?mock=rail` });
+  await sleep(900);
+  const rightClick = async (x, y) => {
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "right", clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "right", clickCount: 1 });
+    await sleep(200);
+  };
+  const row = await evaluate(`(() => { const r = document.querySelector('[data-id]').getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; })()`);
+  await rightClick(row.x, row.y);
+  const m = await evaluate(`(() => { const el = document.querySelector('.ctxm'); if (!el) return null; const r = el.getBoundingClientRect(); return { items: [...el.querySelectorAll('.ctxm-i .ell')].map(x => x.textContent), inside: r.right <= innerWidth && r.bottom <= innerHeight }; })()`);
+  check(!!m && m.items[0] === "Open" && m.items.includes("Copy link"), `V0.31 menu: no Fyr menu on a thread row (${JSON.stringify(m)})`);
+  check(!!m && m.inside, "V0.31 menu: the menu runs outside the window");
+  await key("Escape");
+  const gone = await evaluate(`!document.querySelector('.ctxm')`);
+  check(gone, "V0.31 menu: Escape does not close the menu");
+  const empty = await evaluate(`(() => { const r = document.querySelector('.th, .empty-th').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.bottom - 120 }; })()`);
+  await rightClick(empty.x, empty.y);
+  const none = await evaluate(`!document.querySelector('.ctxm')`);
+  check(none, "V0.31 menu: a menu opened where nothing should");
+} catch (e) {
+  failures.push(`V0.31 menu: ${e.message}`);
+}
+
 clearTimeout(watchdog);
 cleanup();
 if (pageErrors.length) failures.push(...pageErrors.map((e) => `page error: ${e}`));
