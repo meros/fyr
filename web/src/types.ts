@@ -108,6 +108,10 @@ export interface ThreadDTO {
   source?: "fyr" | "t3" | string;
   /** the project this thread belongs to (V0.23); `project` stays the display name */
   projectId?: string;
+  /** where the thread runs (V0.28) */
+  workspaceId?: string;
+  /** a project the thread could get, when it has none and its folder is a git clone (V0.28) */
+  suggest?: ProjectSuggestion;
   /** the thread whose agent started this one (V0.22) */
   parent?: string | null;
   /** The checkout branch, read after each run; empty when not a git checkout. */
@@ -135,6 +139,12 @@ export interface Profile {
 
 /** Where a project's work lives (V0.23). */
 export type ProjectSource = { kind: "folder"; host: string; path: string } | { kind: "repo"; url: string } | { kind: string; [k: string]: unknown };
+
+/** A project made from a thread's workspace (V0.28): `project.createFrom {threadId}`. */
+export interface ProjectSuggestion {
+  name: string;
+  sources: ProjectSource[];
+}
 
 export interface ProjectIconSpec {
   kind: "monogram" | "emoji" | "line" | string;

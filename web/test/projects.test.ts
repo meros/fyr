@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, sourceFromInput, startedBy } from "../src/projects.ts";
+import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, makeProjectLabel, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, sourceFromInput, startedBy, suggestionFor } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -115,4 +115,15 @@ test("one input adds a folder or a repo; the host fills in its own name", () => 
   assert.deepEqual(sourceFromInput("github.com/me/fyr"), { kind: "repo", url: "github.com/me/fyr" });
   assert.deepEqual(sourceFromInput("git@github.com:me/fyr.git"), { kind: "repo", url: "git@github.com:me/fyr.git" });
   assert.equal(sourceFromInput("   "), null);
+});
+
+test("SPEC 0.5 V0.28: a thread without a project offers its suggestion; a filed thread does not", () => {
+  const sug = { name: "lasso-app", sources: [{ kind: "repo", url: "github.com/owner/lasso-app" }] };
+  assert.deepEqual(suggestionFor({ project: "", projectId: "", suggest: sug }, []), sug);
+  assert.equal(makeProjectLabel(sug), "Make project “lasso-app”");
+  const app = { id: "p1", name: "lasso-app", sources: [] } as unknown as Project;
+  // The suggestion arrives before the thread update that files it: the project wins.
+  assert.equal(suggestionFor({ project: "lasso-app", projectId: "p1", suggest: sug }, [app]), null);
+  assert.equal(suggestionFor({ project: "", projectId: "", suggest: undefined }, []), null);
+  assert.equal(suggestionFor({ project: "", projectId: "", suggest: { name: "", sources: [] } }, []), null);
 });

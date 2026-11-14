@@ -14,8 +14,10 @@ export interface Directory {
   projects: Project[];
   openThread(id: string): void;
   openProject(id: string): void;
+  /** Make the thread's suggested project (V0.28). */
+  createProjectFrom(threadId: string): void;
 }
-export const DirectoryContext = createContext<Directory>({ threads: {}, projects: [], openThread: () => {}, openProject: () => {} });
+export const DirectoryContext = createContext<Directory>({ threads: {}, projects: [], openThread: () => {}, openProject: () => {}, createProjectFrom: () => {} });
 export const useDirectory = () => useContext(DirectoryContext);
 
 export function ProjectIcon({ project, name, size = 16 }: { project?: Project; name: string; size?: number }) {

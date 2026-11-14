@@ -16,7 +16,7 @@ import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
 import { ChangesView } from "./changes-ui.tsx";
 import { NewProjectForm, ProjectEditor, ProjectIcon, ProjectList, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
-import { colorVar, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle } from "./projects.ts";
+import { colorVar, makeProjectLabel, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, suggestionFor } from "./projects.ts";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import { previewsOf } from "./conversation.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
@@ -175,6 +175,7 @@ export interface PhoneProps {
     removeSource(id: string, index: number): Promise<string | null>;
     create(name: string, folder: string, repo: string): Promise<string | null>;
     move(ids: string[], projectId: string): Promise<string | null>;
+    createFrom(threadId: string): Promise<string | null>;
   };
 }
 
@@ -1288,6 +1289,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
   if (!t) return null;
   const reason = (a: string) => unavailableReason(t, a);
   const avail = swipeAvail(t);
+  const sug = suggestionFor(t, p.projects);
   if (sheet.kind === "actions" || sheet.kind === "thread-menu") {
     const peek = sheet.kind === "actions";
     const d = t.decisions?.[0];
@@ -1331,6 +1333,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
           onClick={() => p.replace({ ...p.nav, sheet: { kind: "snooze", ids: [t.id] } })}
         />
         <Item label="Move to project…" icon={<ProjectIcon project={projectOf(t, p.projects)} name={projectName(t, p.projects)} size={18} />} onClick={() => p.replace({ ...p.nav, sheet: { kind: "move", ids: [t.id] } })} />
+        {sug && <Item label={makeProjectLabel(sug)} sub="From this thread's repository" onClick={after(() => p.projectActions.createFrom(t.id))} />}
         <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
         {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.setSelecting(true), p.setPicked(new Set([t.id]))))} />}
         {!peek && <Item label="Details" icon={I.right} onClick={() => p.replace({ ...p.nav, sheet: { kind: "details", ids: [t.id] } })} />}
@@ -1356,6 +1359,17 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
             "Project",
             (() => {
               const pr = projectOf(t, p.projects);
+              if (!pr)
+                return (
+                  <span class="m-nopj">
+                    <span>{projectName(t, p.projects)}</span>
+                    {sug && (
+                      <button class="m-bt m-mkp" onClick={after(() => p.projectActions.createFrom(t.id))}>
+                        {makeProjectLabel(sug)}
+                      </button>
+                    )}
+                  </span>
+                );
               return (
                 <button class="m-plink" onClick={() => pr?.id && p.replace({ screen: { name: "project", id: pr.id }, sheet: null })}>
                   <ProjectTag project={pr} name={projectName(t, p.projects)} />

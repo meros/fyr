@@ -577,6 +577,13 @@ function App() {
       if (repo) sources.push({ kind: "repo", url: repo });
       return projectCommand("project.create", sources.length ? { name, sources } : { name });
     },
+    createFrom: async (threadId: string): Promise<string | null> => {
+      const name = store.threads[threadId]?.suggest?.name;
+      const err = await projectCommand("project.createFrom", { threadId });
+      if (err) showError(err);
+      else setToast({ text: `Made project ${name ?? ""}`.trim(), undo: false, at: Date.now() });
+      return err;
+    },
     move: async (ids: string[], projectId: string): Promise<string | null> => {
       const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId }, id)))).filter(Boolean);
       if (!errs.length) setToast({ text: ids.length === 1 ? `Moved to ${store.projects.find((p) => p.id === projectId)?.name ?? "the project"}` : `Moved ${ids.length} threads`, undo: false, at: Date.now() });
@@ -595,6 +602,7 @@ function App() {
     projects: store.projects,
     openThread: (id) => (phoneRef.current ? navGo({ screen: { name: "thread", id }, sheet: null }) : openThread(id, "open")),
     openProject: openProjectScreen,
+    createProjectFrom: (id) => void projectActions.createFrom(id),
   };
 
   const create = async (a: NewThreadArgs): Promise<string | null> => {

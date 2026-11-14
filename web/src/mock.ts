@@ -334,6 +334,16 @@ function fullFixture(now: number): Fixture {
     }),
   );
   add(base("t_s2", "Nix flake update", now, 115, { project: "dotfiles", summary: "Updated nixpkgs to 26.05.", unavailable: NOT_RUNNING }));
+  // V0.28: a thread with no project whose folder is a clone suggests one.
+  add(
+    base("t_s4", "Sketch the lasso tool", now, 320, {
+      project: "",
+      cwd: "/home/owner/src/lasso-app",
+      summary: "Drew a first lasso over the map.",
+      suggest: { name: "lasso-app", sources: [{ kind: "folder", host: "desk", path: "/home/owner/src/lasso-app" }, { kind: "repo", url: "github.com/owner/lasso-app" }] },
+      unavailable: NOT_RUNNING,
+    }),
+  );
   add(base("t_s3", "Rensa gamla grenar i förrådet", now, 300, { project: LONG_PROJECT, summary: "Tog bort 14 grenar; två är kvar för att de har öppna PR.", unavailable: NOT_RUNNING }));
 
   add(
@@ -820,6 +830,15 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const sources = Array.isArray(args.sources) ? (args.sources as Project["sources"]) : [];
       const folder = sources?.find((x) => x.kind === "folder") as { path?: string } | undefined;
       putProject({ id: `p_new${nextId++}`, name, sources, threads: 0, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
+      return { ok: true };
+    }
+    if (action === "project.createFrom") {
+      const t = threads.get(String(args.threadId ?? ""));
+      const sug = t?.suggest;
+      if (!t || !sug || projectIdFor(t)) return { ok: false, error: "This thread has no project to make" };
+      const folder = sug.sources.find((x) => x.kind === "folder") as { path?: string } | undefined;
+      const p = putProject({ id: `p_new${nextId++}`, name: sug.name, sources: sug.sources, threads: 1, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
+      put(t, { projectId: p.id, project: p.name, suggest: undefined });
       return { ok: true };
     }
     if (action === "project.removeSource") {
