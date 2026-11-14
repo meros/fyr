@@ -1082,6 +1082,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         host: "desk",
         user: "owner",
         buildId: "mock",
+        deploy: mockDeploy(),
         threads: [...threads.values()].map(dtoOf),
         actions: [
           { name: "thread.settle", label: "Settle", key: "e", bulk: true },
@@ -1204,4 +1205,14 @@ export function mockFilePatch(path: string): FilePatchDTO {
     "   ctx.stroke();\n" +
     "\\ No newline at end of file\n";
   return { path, patch, binary: false, truncated: false };
+}
+
+/** V0.39: ?deploy=<phase> in the mock shows an update in progress (the layout test uses it). */
+// Read once at load: the phone app rewrites the URL when it starts.
+const MOCK_DEPLOY = typeof location !== "undefined" ? new URLSearchParams(location.search).get("deploy") : null;
+function mockDeploy() {
+  const ph = MOCK_DEPLOY;
+  if (!ph) return null;
+  const started = new Date(Date.now() - 4 * 60_000).toISOString();
+  return { phase: ph, startedAt: started, at: new Date().toISOString(), build: "20261114-160324", blocking: ph === "drain" ? ["t_mapperf", "t_lasso"] : undefined, detail: ph === "failed" ? "tests failed, nothing was switched: exit status 2\nFAIL TestX" : undefined };
 }

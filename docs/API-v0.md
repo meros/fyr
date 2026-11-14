@@ -216,3 +216,8 @@ The patch is cut at 400 KB at a line end (`truncated: true`). A path without cha
 - `GET /api/threads/{id}/events/{seq}` returns that one event whole (`404` when the thread has no such event).
 - Stream: after a connection has a thread whole, changes come as `event: thread.patch` `data: {"id", "rev", "base", "patch"}`; apply `patch` (RFC 7396) only when your copy has `rev === base`, else `GET /api/threads/{id}` (the ThreadDTO). A thread is sent at most every 100 ms per connection; the newest version wins.
 - `GET /api/state?since=REV` lists only threads with `rev > REV` and adds `"partial": true`; the other fields are whole. Revs grow across host restarts.
+
+## Update progress (SPEC 0.5 V0.39)
+
+- Stream `event: deploy` `data: {"phase": "build|test|drain|switch|done|failed", "detail"?, "blocking"?: [threadId], "build", "startedAt", "at"}`.
+- `GET /api/state` has `deploy` with the latest progress while an update runs and for two minutes after it ended; otherwise `null`.

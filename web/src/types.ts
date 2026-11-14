@@ -185,6 +185,8 @@ export interface StateDTO {
   actions: ActionInfo[];
   profiles: Profile[];
   projects: Project[];
+  /** V0.39: where an update of Fyr is, while one runs or just ended */
+  deploy?: import("./deploy.ts").DeployProgress | null;
 }
 
 export interface FyrEvent {

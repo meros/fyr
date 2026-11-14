@@ -219,7 +219,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"now": time.Now().UTC(), "user": core.Owner, "buildId": s.BuildID, "host": s.hostName(),
 		"threads": threads, "actions": acts, "profiles": profiles, "projects": projects,
-		"partial": since > 0,
+		"partial": since > 0, "deploy": s.Engine.DeployState(time.Now()),
 	})
 }
 

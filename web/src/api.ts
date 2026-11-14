@@ -1,6 +1,7 @@
 import { isTransient, sendWithRetry } from "./retry.ts";
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead.
 
+import type { DeployProgress } from "./deploy.ts";
 import { cache, mergeStateDelta, sinceRev } from "./cache.ts";
 import type { ThreadPatch } from "./store.ts";
 import type { CommandReply, FyrEvent, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
@@ -15,6 +16,8 @@ export type ConnState = "connecting" | "live" | "offline";
 export interface ApiHandlers {
   state(dto: StateDTO): void;
   thread(t: ThreadDTO): void;
+  /** V0.39: where an update of Fyr is */
+  deploy?(p: DeployProgress): void;
   /** V0.38: a merge patch against the thread copy with rev === base */
   threadPatch?(p: ThreadPatch): void;
   /** a project made or changed (V0.23); optional for older callers */
@@ -125,6 +128,13 @@ function createHttpApi(): Api {
     es.addEventListener("project", (m) => {
       try {
         h.project?.(JSON.parse((m as MessageEvent).data));
+      } catch {
+        /* ignore malformed */
+      }
+    });
+    es.addEventListener("deploy", (m) => {
+      try {
+        h.deploy?.(JSON.parse((m as MessageEvent).data));
       } catch {
         /* ignore malformed */
       }

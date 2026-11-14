@@ -130,3 +130,25 @@ func TestStateSince(t *testing.T) {
 		t.Fatalf("after one change: %v", one)
 	}
 }
+
+// SPEC 0.5 V0.39: the deploy's progress is in the state (a reloaded page sees it at
+// once) and on the stream; a finished one fades from the state after a while.
+func TestDeployProgressInState(t *testing.T) {
+	hs, e := newServer(t)
+	e.SetDeploy(map[string]any{"phase": "drain", "blocking": []string{"t_x"}}, "drain")
+	r := do(t, "GET", hs.URL+"/api/state", "", nil, "")
+	var s struct {
+		Deploy map[string]any `json:"deploy"`
+	}
+	json.NewDecoder(r.Body).Decode(&s)
+	if s.Deploy["phase"] != "drain" {
+		t.Fatalf("deploy %v", s.Deploy)
+	}
+	e.SetDeploy(map[string]any{"phase": "done"}, "done")
+	if e.DeployState(time.Now().Add(3*time.Minute)) != nil {
+		t.Fatal("a finished deploy stays in the state forever")
+	}
+	if e.DeployState(time.Now()) == nil {
+		t.Fatal("a just-finished deploy is gone at once")
+	}
+}

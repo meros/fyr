@@ -60,6 +60,9 @@ func (h *Hub) Thread(d DTO) { h.send("thread", d) }
 
 func (h *Hub) Project(p ProjectDTO) { h.send("project", p) }
 
+// Deploy sends a deploy's progress (SPEC 0.5 V0.39).
+func (h *Hub) Deploy(p any) { h.send("deploy", p) }
+
 func (h *Hub) Events(evs []store.Event) {
 	for _, ev := range evs {
 		h.send("event", Lean(ev)) // V0.38: large tool output is cut on the wire

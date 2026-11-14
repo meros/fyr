@@ -64,5 +64,6 @@ export function decodeState(raw: unknown): StateDTO {
     projects: arr(s.projects).map(decodeProject),
     actions: arr(s.actions),
     profiles: arr(s.profiles),
+    deploy: s.deploy && typeof s.deploy === "object" && typeof (s.deploy as { phase?: unknown }).phase === "string" ? s.deploy : null,
   };
 }

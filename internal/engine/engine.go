@@ -33,6 +33,7 @@ type EffectRunner interface {
 }
 
 type Engine struct {
+	deploy *deployState // V0.39
 	mu       sync.Mutex
 	st       *store.Store
 	threads  map[string]*core.Thread
