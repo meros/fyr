@@ -329,7 +329,8 @@ func (s *Service) Observe(profile string, info map[string]any) {
 	}
 	sortWindows(e.st.Windows)
 	e.st.UpdatedAt = &now
-	e.st.Stale, e.st.Error, e.st.RetryAt = false, "", nil
+	// The stream carries only the window that binds; it never hides an API error.
+	e.st.Stale = false
 }
 
 var windowNames = map[string]string{"five_hour": "5 h", "seven_day": "7 d"}
@@ -474,18 +475,21 @@ func (s *Service) fetchAnthropic(ctx context.Context, t target) result {
 	if ms := cred.OAuth.ExpiresAt; ms > 0 && s.now().After(time.UnixMilli(int64(ms))) {
 		return result{err: &fail{errOther, loginExpired}}
 	}
-	var u map[string]*struct {
-		Utilization *float64 `json:"utilization"`
-		ResetsAt    *string  `json:"resets_at"`
-	}
+	// The reply holds more than the windows (flags, numbers, other objects):
+	// read it loosely and decode only the two windows (found live: a strict
+	// decode failed and the 5 h window went missing).
+	var u map[string]json.RawMessage
 	if f := s.get(ctx, t.spec.BaseURL+"/api/oauth/usage", cred.OAuth.AccessToken,
 		map[string]string{"anthropic-beta": "oauth-2025-04-20"}, &u, loginExpired); f != nil {
 		return result{err: f}
 	}
 	var ws []Window
 	for _, key := range []string{"five_hour", "seven_day"} {
-		w := u[key]
-		if w == nil || w.Utilization == nil {
+		var w *struct {
+			Utilization *float64 `json:"utilization"`
+			ResetsAt    *string  `json:"resets_at"`
+		}
+		if raw, ok := u[key]; !ok || json.Unmarshal(raw, &w) != nil || w == nil || w.Utilization == nil {
 			continue
 		}
 		x := Window{Name: windowNames[key], UsedPct: pct(*w.Utilization)}
