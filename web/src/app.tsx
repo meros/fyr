@@ -1,3 +1,4 @@
+import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
 import { shouldClearNotification } from "./push.ts";
 import { clearThreadNotification } from "./pwa.ts";
 // The app shell: state, commands and the keyboard.
@@ -36,6 +37,8 @@ import { keyHints } from "./keys.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { ThreadPane, type SendArgs } from "./thread.tsx";
 import { setAttachmentUrl } from "./attach.ts";
+import { setPreviewUrl } from "./previews.ts";
+import { PreviewViewer } from "./preview-ui.tsx";
 import { setUploader } from "./attach-ui.tsx";
 import { AdoptDialog, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
 import { disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
@@ -109,6 +112,7 @@ const PAGE = 400;
 const api = createApi();
 setUploader(api.uploadAttachment);
 setAttachmentUrl(api.attachmentUrl);
+setPreviewUrl(api.previewUrl);
 const params = new URLSearchParams(location.search);
 
 type Dialog = "new" | "adopt" | "snooze" | "push" | null;
@@ -269,6 +273,29 @@ function App() {
 
   // Load the open thread's events; after a reconnect fetch what was missed.
   const openId = view?.id ?? null;
+
+  // Presence (V0.20): tell the host which thread is shown while visible.
+  const beatRef = useRef<BeatState>({ last: "", at: 0 });
+  useEffect(() => {
+    const device = deviceId();
+    const tick = () => {
+      const target = presenceTarget(openId, document.visibilityState);
+      const now = Date.now();
+      if (shouldBeat(beatRef.current, target, now)) {
+        beatRef.current = { last: target, at: now };
+        void api.presence(target, device);
+      }
+    };
+    tick();
+    const iv = setInterval(tick, 5_000);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("pagehide", tick);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("pagehide", tick);
+    };
+  }, [openId]);
   useEffect(() => {
     if (!openId || !store.loaded) return;
     let cancelled = false;
@@ -816,6 +843,7 @@ function App() {
   if (phone) {
     return (
       <>
+        <PreviewViewer />
         <PhoneApp
           nav={nav}
           go={navGo}
@@ -890,6 +918,7 @@ function App() {
 
   return (
     <div class="shell">
+      <PreviewViewer />
       <div class={view ? "app open" : "app"}>
         <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} />
         <Inbox

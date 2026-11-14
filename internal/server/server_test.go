@@ -14,6 +14,7 @@ import (
 
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
 )
@@ -282,5 +283,25 @@ func TestPreviewSandbox(t *testing.T) {
 	img, _ := att.Save("a.png", "image/png", strings.NewReader("x"))
 	if r := do(t, "GET", hs.URL+"/api/previews/"+img.ID, "", nil, ""); r.StatusCode != 404 {
 		t.Fatalf("a non-HTML attachment served as a preview: %d", r.StatusCode)
+	}
+}
+
+// SPEC 0.5 V0.20: a presence beat marks a thread as watched.
+func TestPresenceEndpoint(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	p := &notify.Presence{}
+	s := &Server{Engine: engine.New(st), BuildID: "b1", Presence: p}
+	hs := httptest.NewServer(s.Handler())
+	defer hs.Close()
+	if r := do(t, "POST", hs.URL+"/api/presence", "", map[string]string{"X-Fyr": "1"}, `{"threadId":"t1","device":"d1"}`); r.StatusCode != 204 {
+		t.Fatalf("status %d", r.StatusCode)
+	}
+	if !p.Watched("t1", time.Now()) {
+		t.Fatal("not watched after a beat")
+	}
+	do(t, "POST", hs.URL+"/api/presence", "", map[string]string{"X-Fyr": "1"}, `{"threadId":"","device":"d1"}`)
+	if p.Watched("t1", time.Now()) {
+		t.Fatal("still watched after the client stopped showing it")
 	}
 }

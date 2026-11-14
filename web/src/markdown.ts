@@ -2,6 +2,17 @@
 // and images render as links (no remote fetches from the log).
 
 import { Marked, type Tokens } from "marked";
+import { inlineAttachmentId } from "./previews.ts";
+import { attachmentUrl } from "./attach.ts";
+
+/** The page's origin; tests set one. */
+let originOverride: string | null = null;
+export function setMarkdownOrigin(o: string | null): void {
+  originOverride = o;
+}
+function mdOrigin(): string {
+  return originOverride ?? (typeof location !== "undefined" ? location.origin : "http://localhost");
+}
 
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -29,6 +40,9 @@ const md = new Marked({
       return `<a href="${escapeHtml(h)}"${t} target="_blank" rel="noopener noreferrer">${inner}</a>`;
     },
     image({ href, text }: Tokens.Image) {
+      // A same-origin attachment renders inline (V0.19); every other image stays a link.
+      const id = inlineAttachmentId(href, mdOrigin());
+      if (id) return `<img class="md-img" src="${escapeHtml(attachmentUrl(id))}" alt="${escapeHtml(text || "")}" loading="lazy">`;
       const h = safeHref(href);
       const label = escapeHtml(text || "image");
       return h ? `<a href="${escapeHtml(h)}" target="_blank" rel="noopener noreferrer">[${label}]</a>` : `[${label}]`;

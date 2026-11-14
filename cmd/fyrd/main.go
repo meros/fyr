@@ -29,6 +29,7 @@ import (
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/preview"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/server"
@@ -263,20 +264,38 @@ func main() {
 	if err := pusher.Init(); err != nil {
 		log.Printf("push: %v", err)
 	}
+	// V0.20: push for asking, failed, blocked and done; done and blocked wait
+	// 20 s and push only if still true; never for a thread being watched.
+	presence := &notify.Presence{}
 	eng.OnAttention = func(d engine.DTO, prev core.State) {
-		st := d.Attention.State
-		if st != core.Asking && st != core.Failed {
-			return
+		next := d.Attention.State
+		send := func() {
+			if presence.Watched(d.ID, time.Now()) {
+				return
+			}
+			meta, detail := attentionDetail(d)
+			pusher.Notify(core.Owner, push.PayloadFor(d.ID, d.Title, string(next), meta, detail))
 		}
-		meta, detail := attentionDetail(d)
-		go pusher.Notify(core.Owner, push.PayloadFor(d.ID, d.Title, string(st), meta, detail))
+		switch notify.PlanFor(string(prev), string(next)) {
+		case notify.Now:
+			go send()
+		case notify.Later:
+			time.AfterFunc(notify.Delay, func() {
+				for _, cur := range eng.Snapshot() {
+					if cur.ID == d.ID && cur.Attention.State == next {
+						d = cur
+						send()
+					}
+				}
+			})
+		}
 	}
 
 	var webFS fs.FS = web.Dist()
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
 	}
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att,
+	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence,
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
 			if err != nil {
@@ -420,11 +439,18 @@ func lastSummary(h []agent.Ev) string {
 	return ""
 }
 
-// attentionDetail is the meta word and the text of a push for asking or
-// failed, matching the inbox row (design/mobile rule 12).
+// attentionDetail is the meta word and the text of a push, matching the
+// inbox row (design/mobile rule 12, SPEC 0.5 V0.20).
 func attentionDetail(d engine.DTO) (meta, detail string) {
-	if d.Failure != nil && d.Attention.State == core.Failed {
-		return "Failed", d.Failure.Message
+	switch d.Attention.State {
+	case core.Failed:
+		if d.Failure != nil {
+			return "Failed", d.Failure.Message
+		}
+	case core.Done:
+		return "Done", d.Summary
+	case core.Blocked:
+		return "Blocked", d.Attention.Reason
 	}
 	if len(d.Decisions) > 0 {
 		x := d.Decisions[0]

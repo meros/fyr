@@ -3,7 +3,7 @@
 import type { CommandReply, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
-import { createMockServer, mockScenario } from "./mock.ts";
+import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockScenario } from "./mock.ts";
 import { reloadForNewBuild } from "./pwa.ts";
 
 export type ConnState = "connecting" | "live" | "offline";
@@ -30,9 +30,13 @@ export interface Api {
   pushTest(): Promise<PushReply>;
   /** Whether the host still has this subscription; null when it could not be asked. */
   pushStatus(endpoint: string): Promise<boolean | null>;
+  /** Tell the host which thread this device shows (V0.20); "" for none. */
+  presence(threadId: string, device: string): Promise<void>;
   /** Attachments (SPEC V0.18): upload one file; progress as bytes sent. */
   uploadAttachment(file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<UploadResult>;
   attachmentUrl(id: string): string;
+  /** An HTML preview (V0.19), for a sandboxed iframe. */
+  previewUrl(id: string): string;
 }
 
 export type UploadResult = { ok: true; reply: UploadReply } | { ok: false; status: number | null; error?: string };
@@ -240,6 +244,16 @@ function createHttpApi(): Api {
     attachmentUrl(id) {
       return `/api/attachments/${encodeURIComponent(id)}`;
     },
+    previewUrl(id) {
+      return `/api/previews/${encodeURIComponent(id)}`;
+    },
+    async presence(threadId, device) {
+      try {
+        await fetch("/api/presence", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ threadId, device }), keepalive: true });
+      } catch {
+        /* best effort */
+      }
+    },
     async pushStatus(endpoint) {
       try {
         const r = await fetch("/api/push/status", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ endpoint }) });
@@ -297,6 +311,9 @@ function createMockApi(scenario: string): Api {
     async pushTest() {
       return server.pushTest();
     },
+    async presence() {
+      /* the mock has no push */
+    },
     async pushStatus(endpoint) {
       return server.pushSubscriptions().some((s) => s.endpoint === endpoint);
     },
@@ -317,7 +334,11 @@ function createMockApi(scenario: string): Api {
         setTimeout(tick, 120);
       });
     },
+    previewUrl(id) {
+      return MOCK_PREVIEWS[id] ?? "data:text/html,<p>mock preview</p>";
+    },
     attachmentUrl(id) {
+      if (MOCK_SHOTS[id]) return MOCK_SHOTS[id];
       // Fixture attachments have no bytes; images get a drawn placeholder.
       return mockFiles.get(id) ?? (id === "fx_img" ? MOCK_IMAGE : "data:text/plain,mock%20attachment%20" + encodeURIComponent(id));
     },

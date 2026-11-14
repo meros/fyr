@@ -12,6 +12,8 @@ import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
 import { AgentsStrip, Conversation, PrTab, effectSentence, prLabel, type SendArgs } from "./thread.tsx";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
+import { Filmstrip } from "./preview-ui.tsx";
+import { previewsOf } from "./conversation.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
 import { ADVANCE_MS, activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, phoneSnoozePresets, stepLabel, stripCount, type Choice } from "./mobile.ts";
 import { LONG_PRESS_MS, idle, longPressCancelled, settleLabel, swipeAvail, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
@@ -637,6 +639,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => setCollapsed(false), [decision?.id]);
   const cardOpen = !!decision && !collapsed;
+  const previews = useMemo(() => previewsOf(p.events ?? []), [p.events]);
   const st = t.attention.state;
   const setTab = (tab: string) => p.replace({ screen: { name: "thread", id: t.id, tab }, sheet: null });
   const [nextOffer, setNextOffer] = useState<ThreadDTO | null>(null);
@@ -696,6 +699,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
         )}
       </div>
       {t.tasks && t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      {!cardOpen && p.tab === "conv" && <Filmstrip cards={previews} collapsible />}
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
       ) : p.tab === "conv" ? (
