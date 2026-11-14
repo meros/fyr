@@ -691,22 +691,12 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
     case "user": {
       // V0.33: unread messages are dimmed; a cancelled or lost one is struck through.
       const cls = it.pending ? " pend" : it.delivery === "cancelled" || it.delivery === "lost" ? " gone" : "";
-      if (it.from === "view")
-        return (
-          <div class={`youw vpress${cls}`}>
-            <span class="vchip" title="Pressed in the live view">
-              <span class="vk">View</span>
-              <span class="ell">{it.text}</span>
-            </span>
-            <DeliveryLine it={it} />
-          </div>
-        );
-      if (it.from === "view-typed")
-        // V0.49: typed on the View tab: a normal bubble with a small label.
+      if (it.from === "view" || it.from === "view-typed")
+        // V0.37 a press, V0.49 a message typed on the View tab: one bubble with the same View tag.
         return (
           <div class={`youw${cls}`}>
-            <div class="you prose">
-              <span class="vtag">from the View tab</span>
+            <div class={`you prose vmsg${it.from === "view" ? " vchip" : ""}`} title={it.from === "view" ? "Pressed in the live view" : "Typed on the View tab"}>
+              <span class="vk">View</span>
               {it.text}
             </div>
             <DeliveryLine it={it} />
