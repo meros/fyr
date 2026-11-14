@@ -34,3 +34,15 @@ Date: 2026-11-14 · Status: accepted (owner, three-round walk-through) · Builds
 | Workspace visibility | **A quiet line in the thread header**: "fyr-polish · branch ui-polish · host-a"; a tap shows the full path and actions. |
 
 **Consequences.** `Profile` becomes `Provider` (+ curated models) in the store and API, with an import step at start; T3/NixOS profile seeding is replaced by the import. Quota (V0.44) attaches to providers. Handover (V0.45) picks provider + model. Secrets live in files under `~/.local/share/fyr/secrets/` (0600). The Settings screen is new. Hosts other than the local one come with the tailnet transport (M0); until then the Hosts section shows this host only.
+
+**Addendum (2026-11-14, owner, while building slice 1).** "A provider abstracts away auth mechanism and cli handling mechanism. Keys should be stored safely in a reused way. Models and effort is chosen separately." Then "start simple", with five sharpenings:
+
+| Point | Decision |
+|---|---|
+| CLI adapter | **Launch + protocol + sessions + capabilities.** One Go interface (`internal/cli`) for what Fyr needs from an agent CLI: start and stop a session process, send, interrupt, set the model, cancel a queued message, answer permission and hook callbacks, the event stream (in the claude stream-json shape, Fyr's observation format), where sessions live (handover rung 1), whether a login exists, and its capabilities (auth kinds, efforts, its own models). `claude` is the only adapter, wrapping the existing client; a second CLI (codex) is a new adapter, not a special case. |
+| Auth | **Data the adapter applies**: `{kind: cli-login \| api-key \| none, configDir?, secret?}` plus an endpoint `{baseURL?, modelEnv?}`. The adapter says which kinds it takes and how it injects them. A provider = adapter id + auth + endpoint + offered models. |
+| Quota | **Keyed by the auth identity** (the login folder, or the secret and endpoint), so two providers on one account share one entry. |
+| Models | **Carry their capabilities** (effort levels; none for DeepSeek). A thread holds provider + model + effort; effort shows only when the model takes it. A project default ("Opus, high, preferably on Claude (acme)") and Hand over's nearest match are later slices; the data shape is ready. |
+| Secrets | **One store behind a swappable backend** (`internal/secrets`): files 0600 in a 0700 folder now; age, sops or systemd-creds later without provider changes. Providers name a secret; no provider code touches the files. |
+
+Slice 1 (SPEC 0.5 V0.47): the provider store, the claude adapter, the secret store, detection with Import, the one-time cut-over of today's three profiles (same ids), effort on threads, and Settings → Providers. Not yet: the login flow in the page, model discovery from the CLI, other hosts, project defaults.
