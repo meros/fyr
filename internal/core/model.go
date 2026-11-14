@@ -23,6 +23,7 @@ type Thread struct {
 	Visibility    string    `json:"visibility"`
 	Profile       string    `json:"profile"`
 	Model         string    `json:"model"`
+	Effort        string    `json:"effort,omitempty"` // V0.47: "" is the provider's default
 	SessionID     string    `json:"sessionId"`
 	Branch        string    `json:"branch,omitempty"` // read with git after each run
 	CreatedAt     time.Time `json:"createdAt"`
