@@ -296,3 +296,8 @@ func (s *Store) Projects() ([]*core.Project, error) {
 	}
 	return out, rows.Err()
 }
+
+func (tx *Tx) DeleteProject(id string) error {
+	_, err := tx.tx.Exec(`DELETE FROM projects WHERE id=?`, id)
+	return err
+}

@@ -35,10 +35,31 @@ func gitInfo(cwd string) (root, remote string) {
 	if filepath.Base(common) == ".git" {
 		root = filepath.Dir(common)
 	}
+	// A dotfiles repository in the home folder is not a project root.
+	if home, _ := os.UserHomeDir(); root == "/" || (home != "" && root == filepath.Clean(home)) {
+		return filepath.Clean(cwd), ""
+	}
 	if r, err := exec.CommandContext(ctx, "git", "-C", cwd, "remote", "get-url", "origin").Output(); err == nil {
 		remote = core.NormalizeRemote(string(r))
 	}
 	return root, remote
+}
+
+// bestProject prefers seeded or user-made projects over auto ones: an auto
+// project only matches when no other project does (SPEC 0.5 V0.23).
+func (e *Engine) bestProject(cwd, remote string) string {
+	var chosen, auto []core.Project
+	for _, p := range e.projects {
+		if p.Auto && !p.Edited {
+			auto = append(auto, *p)
+		} else {
+			chosen = append(chosen, *p)
+		}
+	}
+	if id := core.ProjectFor(chosen, e.HostID, cwd, remote); id != "" {
+		return id
+	}
+	return core.ProjectFor(auto, e.HostID, cwd, remote)
 }
 
 func (e *Engine) projectList() []core.Project {
@@ -59,17 +80,17 @@ func (e *Engine) assignProject(t *core.Thread, now time.Time) *core.Project {
 		t.Project = e.projects[t.ProjectID].Name
 		return nil
 	}
-	if id := core.ProjectFor(e.projectList(), e.HostID, t.Cwd, ""); id != "" {
+	if id := e.bestProject(t.Cwd, ""); id != "" {
 		t.ProjectID, t.Project = id, e.projects[id].Name
 		return nil
 	}
 	root, remote := gitInfo(t.Cwd)
-	if id := core.ProjectFor(e.projectList(), e.HostID, root, remote); id != "" {
+	if id := e.bestProject(root, remote); id != "" {
 		t.ProjectID, t.Project = id, e.projects[id].Name
 		return nil
 	}
 	name := filepath.Base(root)
-	p := &core.Project{ID: NewID("p_"), Name: name, Color: core.DefaultColor(name), Icon: core.Icon{Kind: "monogram"},
+	p := &core.Project{ID: NewID("p_"), Auto: true, Name: name, Color: core.DefaultColor(name), Icon: core.Icon{Kind: "monogram"},
 		Sources: []core.Source{{Kind: "folder", Host: e.HostID, Path: root}}, CreatedAt: now}
 	if remote != "" {
 		p.Sources = append(p.Sources, core.Source{Kind: "repo", URL: remote})
@@ -284,4 +305,56 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 func hostname() string {
 	h, _ := os.Hostname()
 	return h
+}
+
+// Rematch moves every thread not filed by hand to the best folder project
+// and removes auto projects that are left empty and were never edited
+// (SPEC 0.5 V0.23). Call it after SeedProjects at start.
+func (e *Engine) Rematch() {
+	e.mu.Lock()
+	now := e.Now()
+	var moved []*core.Thread
+	for _, t := range e.threads {
+		if t.ProjectManual || t.Cwd == "" {
+			continue
+		}
+		id := e.bestProject(t.Cwd, "")
+		if id != "" && id != t.ProjectID {
+			t.ProjectID, t.Project = id, e.projects[id].Name
+			e.bump(t.ID)
+			moved = append(moved, t)
+		}
+	}
+	used := map[string]bool{}
+	for _, t := range e.threads {
+		used[t.ProjectID] = true
+	}
+	var gone []string
+	for id, p := range e.projects {
+		if p.Auto && !p.Edited && !used[id] {
+			gone = append(gone, id)
+			delete(e.projects, id)
+		}
+	}
+	var dtos []DTO
+	for _, t := range moved {
+		dtos = append(dtos, e.dto(t, now))
+	}
+	e.mu.Unlock()
+	e.st.Write(func(tx *store.Tx) error {
+		for _, t := range moved {
+			if err := tx.PutThread(t); err != nil {
+				return err
+			}
+		}
+		for _, id := range gone {
+			if err := tx.DeleteProject(id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	for _, d := range dtos {
+		e.Hub.Thread(d)
+	}
 }
