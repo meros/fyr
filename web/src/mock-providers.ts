@@ -12,8 +12,10 @@ const CLAUDE_MODELS = [
 export function createMockProviders() {
   const keys = new Map<string, string>([["claudeDeepseek", "sk-mock-deepseek-4f2a"]]);
   const list: ProviderDTO[] = [
-    { id: "claude", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", defaultEffort: "high", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, imported: "profile claudeAlt", threads: 9 },
-    { id: "work", name: "Claude (work account)", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#2f6fb0", configDir: "~/.claude-work", models: CLAUDE_MODELS.slice(1, 2), defaultModel: "claude-sonnet-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "needs-login", need: "This account logs in with a token. Run `claude setup-token` while logged in to it and paste the token as its key.", tokenLogin: true, keySet: false, imported: "profile work (claude-work)", threads: 2 },
+    { id: "claude", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", defaultEffort: "high", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, imported: "profile claudeAlt", threads: 9, canLogin: true },
+    { id: "work", name: "Claude (work account)", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#2f6fb0", configDir: "~/.claude-work", models: CLAUDE_MODELS.slice(1, 2), defaultModel: "claude-sonnet-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "needs-login", need: "This account logs in with a token. Press Log in to get one here (Fyr keeps it), or paste a token from `claude setup-token` as its key.", tokenLogin: true, keySet: false, imported: "profile work (claude-work)", threads: 2, canLogin: true,
+      // V0.53: a login in progress, so the panel shows (and is measured) in mock mode.
+      login: { kind: "token", state: "waiting", url: "https://claude.com/cai/oauth/authorize?code=true&client_id=mock", expires: new Date(Date.now() + 10 * 60_000).toISOString() } },
     { id: "claudeDeepseek", name: "DeepSeek", kind: "endpoint", cli: "claude", auth: "api-key", baseURL: "https://api.deepseek.com/anthropic", models: [{ id: "deepseek-chat" }, { id: "deepseek-reasoner" }], defaultModel: "deepseek-chat", efforts: EFFORTS, quota: "deepseek", status: "ready", keySet: true, keyLast4: "4f2a", threads: 0 },
   ];
   const found: FoundDTO[] = [
@@ -72,6 +74,29 @@ export function createMockProviders() {
           else keys.delete(p.id);
           keyed(p);
           if (p.kind === "claude-account" && k) (p.status = "ready"), (p.need = undefined);
+          return { ok: true };
+        }
+        // V0.53: login through Fyr. Any code logs in; nothing is kept.
+        case "provider.login": {
+          const p = get(a.id);
+          if (!p || !p.canLogin) return fail("not a Claude account");
+          if (p.login && ["starting", "waiting", "checking"].includes(p.login.state)) return fail(`A login for ${p.name} is already running`);
+          p.login = { kind: p.tokenLogin ? "token" : "folder", state: "waiting", url: "https://claude.com/cai/oauth/authorize?code=true&client_id=mock", expires: new Date(Date.now() + 10 * 60_000).toISOString() };
+          return { ok: true };
+        }
+        case "provider.loginCode": {
+          const p = get(a.id);
+          if (!p?.login || p.login.state !== "waiting") return fail("no login is running; start it again");
+          if (!String(a.code ?? "").trim()) return fail("paste the code the sign-in page shows");
+          p.login = { ...p.login, state: "done", message: undefined };
+          if (p.tokenLogin) (p.keySet = true), (p.keyLast4 = "mock");
+          p.status = "ready";
+          p.need = undefined;
+          return { ok: true };
+        }
+        case "provider.loginCancel": {
+          const p = get(a.id);
+          if (p?.login) p.login = { ...p.login, state: "cancelled" };
           return { ok: true };
         }
         case "provider.delete": {

@@ -15,12 +15,16 @@ import {
   importable,
   keyLine,
   kindLabel,
+  loginActive,
+  loginButton,
+  loginLine,
   modelsSummary,
   modelsText,
   parseModelIds,
   STATUS_TEXT,
   whereText,
   type FoundDTO,
+  type LoginDTO,
   type ProviderDTO,
   type ProviderForm,
 } from "./providers.ts";
@@ -89,6 +93,16 @@ function ProvidersSection(p: SettingsProps) {
     }
   };
   useEffect(() => void load(), []);
+  // V0.53: while a login runs, follow it (its link, the code's answer, the end).
+  const logging = !!list?.some((x) => loginActive(x.login));
+  useEffect(() => {
+    if (!logging) return;
+    const t = setInterval(() => void load(), 1500);
+    return () => {
+      clearInterval(t);
+      p.onChanged?.(); // a login ended: the profiles' status may have changed
+    };
+  }, [logging]);
   const run = async (action: string, args: Record<string, unknown>): Promise<boolean> => {
     const r = await p.api.command(action, undefined, args);
     if (!r.ok) {
@@ -171,7 +185,15 @@ function ProviderRow({ p, quota, open, onToggle, run }: { p: ProviderDTO; quota?
         <span class={`pst ${p.status}`}>{STATUS_TEXT[p.status]}</span>
       </button>
       {quota && <QuotaLine q={quota} name={p.name} />}
-      {p.need && <div class="setneed">{p.need}</div>}
+      {p.need && !loginActive(p.login) && <div class="setneed">{p.need}</div>}
+      {p.login && <LoginPanel p={p} l={p.login} run={run} />}
+      {p.status === "needs-login" && loginButton(p) && (
+        <div class="setbar">
+          <button class="btn p sbtn" onClick={() => void run("provider.login", { id: p.id })}>
+            {loginButton(p)}
+          </button>
+        </div>
+      )}
       {open && (
         <div class="provb">
           <label class="fld">
@@ -216,6 +238,13 @@ function ProviderRow({ p, quota, open, onToggle, run }: { p: ProviderDTO; quota?
               </div>
             </label>
           )}
+          {p.status !== "needs-login" && loginButton(p) && (
+            <div class="setbar">
+              <button class="btn sbtn" onClick={() => void run("provider.login", { id: p.id })}>
+                {loginButton(p)}
+              </button>
+            </div>
+          )}
           <div class="setd">
             {p.quota !== "none" ? `Quota: ${p.quota}` : "No quota reading"}
             {p.imported ? ` · imported from ${p.imported}` : ""}
@@ -229,6 +258,65 @@ function ProviderRow({ p, quota, open, onToggle, run }: { p: ProviderDTO; quota?
         </div>
       )}
     </li>
+  );
+}
+
+// V0.53: a login Fyr runs with the CLI: the sign-in link, the code field, Cancel. The code goes to the CLI only.
+function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run(a: string, args: Record<string, unknown>): Promise<boolean> }) {
+  const [code, setCode] = useState("");
+  const active = loginActive(l);
+  const ends = new Date(l.expires);
+  const send = () => void run("provider.loginCode", { id: p.id, code }).then((ok) => ok && setCode(""));
+  return (
+    <div class={`login ${l.state}`} aria-live="polite">
+      <div class="setd">{loginLine(l)}</div>
+      {active && l.message && (
+        <div class="seterr" role="alert">
+          {l.message}
+        </div>
+      )}
+      {active && l.url && (
+        <>
+          <a class="btn p sbtn loginlink" href={l.url} target="_blank" rel="noopener noreferrer">
+            Open the sign-in page
+          </a>
+          <label class="fld">
+            <span>Code from the sign-in page</span>
+            <div class="setkey">
+              <input
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck={false}
+                value={code}
+                placeholder="Paste the code"
+                disabled={l.state === "checking"}
+                onInput={(e) => setCode((e.target as HTMLInputElement).value)}
+                onKeyDown={(e) => e.key === "Enter" && code.trim() && send()}
+              />
+              <button class="btn sbtn" disabled={!code.trim() || l.state === "checking"} onClick={send}>
+                Send code
+              </button>
+            </div>
+          </label>
+        </>
+      )}
+      <div class="setbar">
+        {active ? (
+          <>
+            <span class="setd">Ends at {isNaN(ends.getTime()) ? "" : ends.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            <button class="btn sbtn" onClick={() => void run("provider.loginCancel", { id: p.id })}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          (l.state === "failed" || l.state === "timeout") && (
+            <button class="btn sbtn" onClick={() => void run("provider.login", { id: p.id })}>
+              Try again
+            </button>
+          )
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -265,7 +353,7 @@ function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknow
               Choose…
             </button>
           </div>
-          <span class="setd">Log in once with this folder; Fyr then runs claude with it.</span>
+          <span class="setd">After adding it, press Log in: Fyr runs claude's login in this folder and shows the sign-in link here.</span>
         </label>
       ) : (
         <>
