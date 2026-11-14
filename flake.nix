@@ -76,7 +76,10 @@
                 system.stateVersion = "25.11";
                 users.users.u = { isNormalUser = true; home = "/home/u"; group = "users"; };
                 services.tailscale.enable = true;
-                services.fyr = { enable = true; user = "u"; tailnet.enable = true; scanRoots = [ "~/git" ]; };
+                services.fyr = {
+                  enable = true; user = "u"; tailnet.enable = true; scanRoots = [ "~/git" ];
+                  quota.claudeDeepseek = { kind = "deepseek"; keyFile = "/run/secrets/deepseek"; };
+                };
               }
             ];
           };
@@ -88,6 +91,7 @@
         assert nixpkgs.lib.hasInfix "-- -config /etc/fyr/config.json" fyr.ExecStart;
         assert sys.config.systemd.services.fyr.restartIfChanged == false;
         assert conf.scanRoots == [ "~/git" ];
+        assert conf.quota == { claudeDeepseek = { kind = "deepseek"; keyFile = "/run/secrets/deepseek"; }; };
         assert nixpkgs.lib.hasInfix "--https=7443 http://127.0.0.1:7777" tn.ExecStart;
         nixpkgs.legacyPackages.x86_64-linux.runCommand "fyr-module-check" { } "touch $out";
 

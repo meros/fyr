@@ -270,3 +270,23 @@ Both reply at once; the result arrives as an `effect.result` event with `"by": "
 
 - Stream `event: deploy` `data: {"phase": "build|test|drain|switch|done|failed", "detail"?, "blocking"?: [threadId], "build", "startedAt", "at"}`.
 - `GET /api/state` has `deploy` with the latest progress while an update runs and for two minutes after it ended; otherwise `null`.
+
+## Quota (SPEC 0.5 V0.44)
+
+`GET /api/quota` returns one entry per profile whose quota kind is not `none`, in profile order. The host reads a provider when its data is older than 5 minutes; a rate-limited provider is tried again after 5, 10, 20, then 30 minutes.
+
+```json
+[
+  {"profile": "claudeAlt", "kind": "anthropic-oauth",
+   "windows": [{"name": "5 h", "usedPct": 34, "resetsAt": "…"}, {"name": "7 d", "usedPct": 61, "resetsAt": "…"}],
+   "updatedAt": "…"},
+  {"profile": "claudeDeepseek", "kind": "deepseek", "balance": {"amount": 12.4, "currency": "CNY"}, "updatedAt": "…"},
+  {"profile": "router", "kind": "openrouter", "balance": {"spent": 3.2, "currency": "USD"}, "updatedAt": "…",
+   "stale": true, "error": "Rate limited by the provider; trying again later", "retryAt": "…"}
+]
+```
+
+- `windows` (`anthropic-oauth`): `usedPct` is 0–100; `resetsAt` may be missing. `balance` (`deepseek`, `openrouter`): `amount` is what is left, `spent` what a key without a limit has used.
+- `updatedAt` is when the data was read (from the provider, or from a running session's `rate_limit_event`); missing when nothing was ever read.
+- `stale: true`: the last read failed and the data is older. `error` says why in plain words ("Login expired; run this profile once", "No API key: set keyFile or keyEnv", "Rate limited by the provider; trying again later"). `retryAt` is the next try during a rate-limit wait.
+- Never contains a token or key. The profiles in `GET /api/state` carry only `quota.kind`.

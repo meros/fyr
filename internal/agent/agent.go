@@ -22,6 +22,7 @@ import (
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/quota"
 )
 
 // Profile is a claude-compatible binary with its settings (V0.11).
@@ -34,6 +35,8 @@ type Profile struct {
 	DefaultModel   string   `json:"defaultModel"`
 	PermissionMode string   `json:"permissionMode,omitempty"`
 	Env            []string `json:"env,omitempty"`
+	// Quota: where the provider allowance is read (V0.44); clients see the kind only.
+	Quota *quota.Spec `json:"quota,omitempty"`
 }
 
 // Ev is a timeline event the agent adds to a thread.
@@ -57,6 +60,8 @@ type Config struct {
 	Prompt   string        // appended system prompt
 	// Attachments resolves stored files by id (SPEC 0.5 V0.18).
 	Attachments func(id string) (attach.Meta, error)
+	// OnRateLimit gets a session's rate_limit_info with its profile id (V0.44); optional.
+	OnRateLimit func(profile string, info map[string]any)
 }
 
 // FyrPrompt is the short block that steers agents to Fyr tools (V0.12).
@@ -519,6 +524,14 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		m.turnStarted(s)
 	}
 	switch typ {
+	case "rate_limit_event":
+		// V0.44: a free quota update between the host's reads.
+		if info, ok := msg["rate_limit_info"].(map[string]any); ok && m.cfg.OnRateLimit != nil {
+			if t, ok := m.host.Thread(s.thread); ok {
+				m.cfg.OnRateLimit(m.cfg.Profile(t.Profile).ID, info)
+			}
+		}
+		return
 	case "command_lifecycle":
 		id, _ := msg["command_uuid"].(string)
 		if id == "" {
