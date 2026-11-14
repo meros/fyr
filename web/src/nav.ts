@@ -4,12 +4,14 @@
 
 export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" } | { name: "project"; id: string };
 
-export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "push" | "adopt" | "move" | "filter" | "newproject";
+export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "push" | "adopt" | "project" | "filter";
 
 export interface Sheet {
   kind: SheetKind;
   /** the thread(s) the sheet acts on */
   ids?: string[];
+  /** the project picker opens on New project from this thread (V0.30) */
+  startNew?: boolean;
 }
 
 export interface Nav {

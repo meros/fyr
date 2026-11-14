@@ -77,9 +77,9 @@ test("picker order, subtitles and search", () => {
   assert.equal(projectSubtitle(projects[0]), "~/src/web");
   assert.equal(projectSubtitle({ name: "x", cwd: "/home/owner/src/x" }), "~/src/x");
   assert.equal(projectSubtitle(projects[1]), "github.com/meros/fyr");
-  assert.equal(projectSubtitle(projects[2]), "No source: a label");
+  assert.equal(projectSubtitle(projects[2]), "No source: filed by hand");
   assert.deepEqual(matchProjects(projects, "meros").map((p) => p.id), ["p_fyr"]);
-  assert.deepEqual(matchProjects(projects, "label").map((p) => p.id), ["p_home", "p_old"]);
+  assert.deepEqual(matchProjects(projects, "by hand").map((p) => p.id), ["p_home", "p_old"]);
 });
 
 test("project filter and a thread's project", () => {
@@ -126,4 +126,52 @@ test("SPEC 0.5 V0.28: a thread without a project offers its suggestion; a filed 
   assert.equal(suggestionFor({ project: "lasso-app", projectId: "p1", suggest: sug }, [app]), null);
   assert.equal(suggestionFor({ project: "", projectId: "", suggest: undefined }, []), null);
   assert.equal(suggestionFor({ project: "", projectId: "", suggest: { name: "", sources: [] } }, []), null);
+});
+
+test("SPEC 0.5 V0.30: New project from this thread starts from the host's prefill, else the suggestion, else a name only", async () => {
+  const { newProjectDraft } = await import("../src/projects.ts");
+  const folder = { kind: "folder", host: "desk", path: "/home/o/Hemmet" } as const;
+  const repo = { kind: "repo", url: "github.com/o/lasso-app" } as const;
+  assert.deepEqual(newProjectDraft({ newProject: { name: "Hemmet", sources: [folder] } }), { name: "Hemmet", sources: [folder] });
+  // An older host sends only the suggestion.
+  assert.deepEqual(newProjectDraft({ suggest: { name: "lasso-app", sources: [repo] } }), { name: "lasso-app", sources: [repo] });
+  // A scratch folder, the home folder or no workspace: just a name field.
+  assert.deepEqual(newProjectDraft({}), { name: "", sources: [] });
+  // The prefill is a copy: removing a source in the form does not change the thread.
+  const t = { newProject: { name: "Hemmet", sources: [folder] } };
+  newProjectDraft(t).sources.pop();
+  assert.equal(t.newProject.sources.length, 1);
+});
+
+test("SPEC 0.5 V0.30: each source says in one line what it does", async () => {
+  const { sourceLine, sourceText, NO_SOURCE_LINE } = await import("../src/projects.ts");
+  assert.equal(sourceLine({ kind: "folder", host: "desk", path: "/x" }, "desk"), "Threads started in this folder land here");
+  assert.equal(sourceLine({ kind: "folder", host: "", path: "/x" }, "desk"), "Threads started in this folder land here");
+  assert.equal(sourceLine({ kind: "folder", host: "server", path: "/x" }, "desk"), "Threads started in this folder on server land here");
+  assert.equal(sourceLine({ kind: "repo", url: "github.com/o/a" }, "desk"), "Threads in any clone of this repo land here, on any computer");
+  assert.match(NO_SOURCE_LINE, /by hand/);
+  assert.equal(sourceText({ kind: "folder", host: "desk", path: "/home/owner/src/app" }, "desk"), "~/src/app");
+  assert.equal(sourceText({ kind: "folder", host: "server", path: "/srv/app" }, "desk"), "server: /srv/app");
+  assert.equal(sourceText({ kind: "repo", url: "github.com/o/a" }, "desk"), "github.com/o/a");
+});
+
+test("SPEC 0.5 V0.30: the picker's first row names what it makes", async () => {
+  const { newRowLabel } = await import("../src/projects.ts");
+  assert.equal(newRowLabel("", 3, true), "New project from this thread");
+  assert.equal(newRowLabel("", 3, false), "New project");
+  assert.equal(newRowLabel("hem", 1, true), "New project from this thread");
+  assert.equal(newRowLabel("Kök ", 0, true), "New project “Kök”");
+  assert.equal(newRowLabel("Kök", 0, false), "New project “Kök”");
+});
+
+test("SPEC 0.5 V0.30: a new thread starts on the inbox filter, else the last project used, else the most recent", async () => {
+  const { startProject } = await import("../src/projects.ts");
+  const ps = [
+    { id: "a", name: "A", lastUsed: "2026-11-10T00:00:00Z" },
+    { id: "b", name: "B", lastUsed: "2026-11-14T00:00:00Z" },
+  ] as Project[];
+  assert.equal(startProject(ps, "a", "b"), "a");
+  assert.equal(startProject(ps, null, "a"), "a");
+  assert.equal(startProject(ps, "gone", "gone"), "b");
+  assert.equal(startProject([], null, null), undefined);
 });

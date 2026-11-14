@@ -118,6 +118,20 @@
       "cwd": "/home/owner/src/lib",
       "id": "t_2",
       "model": "",
+      "newProject": {
+        "name": "lib",
+        "sources": [
+          {
+            "host": "host",
+            "kind": "folder",
+            "path": "/home/owner/src/lib"
+          },
+          {
+            "kind": "repo",
+            "url": "github.com/owner/lib"
+          }
+        ]
+      },
       "owner": "owner",
       "profile": "claude",
       "project": "",
@@ -206,6 +220,16 @@
       "cwd": "/home/owner/src/app",
       "id": "t_6",
       "model": "",
+      "newProject": {
+        "name": "app",
+        "sources": [
+          {
+            "host": "host",
+            "kind": "folder",
+            "path": "/home/owner/src/app"
+          }
+        ]
+      },
       "owner": "owner",
       "profile": "claude",
       "project": "",

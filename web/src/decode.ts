@@ -27,6 +27,7 @@ export function decodeThread(raw: unknown): ThreadDTO {
     project: str(t.project),
     workspaceId: str(t.workspaceId),
     suggest: decodeSuggestion(t.suggest),
+    newProject: decodeSuggestion(t.newProject),
     profile: str(t.profile),
     model: str(t.model),
     createdAt: str(t.createdAt),
