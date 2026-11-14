@@ -29,6 +29,7 @@ import (
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/preview"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
@@ -204,6 +205,15 @@ func main() {
 	}
 	att := &attach.Store{Dir: filepath.Join(*data, "attachments")}
 	eng.AttachmentExists = func(id string) bool { _, err := att.Get(id); return err == nil }
+	eng.Attach = att
+	// V0.19: screenshots for the show tool, with one Chrome started on demand.
+	if bin := preview.FindChrome(); bin != "" {
+		shooter := &preview.Chrome{Bin: bin, Dir: filepath.Join(*data, "chrome")}
+		eng.Shooter = shooter
+		defer shooter.Close()
+	} else {
+		log.Printf("show: no Chrome on PATH; screenshots are off")
+	}
 	var mgr *agent.Manager
 	mcpSrv := mcp.New(func(tok string) (string, bool) { return mgr.ThreadForToken(tok) })
 	eng.Tools(mcpSrv)

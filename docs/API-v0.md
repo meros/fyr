@@ -77,6 +77,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 | `decision.opened` | `{"decision": Decision}` |
 | `decision.closed` | `{"id": "…", "answer": "text shown in the log"}` |
 | `task` | `{"kind": "started" \| "ended", "id", "description", "status", "summary"}` a subagent or background task started or ended (V0.16) |
+| `preview` | `{"kind": "image" \| "html", "attachmentId", "title", "caption", "width", "height", "url"?}` something the agent showed with the `show` tool (V0.19). Images load from `/api/attachments/{id}`; HTML loads in an iframe from `/api/previews/{id}` |
 | `effect.result` | `{"action": "pr.merge", "ok": true, "text": "…"}` |
 
 Other types may appear; the client ignores them.
@@ -130,3 +131,7 @@ The PWA files: `/manifest.webmanifest` (`application/manifest+json`) and `/sw.js
 | `GET /api/attachments/{id}` | – | the file, with its media type |
 
 `thread.create` and `thread.send` take `attachments: [id…]`; a message may be attachments only. The `user` event then has `attachments: [{id, name, mediaType, size}]`.
+
+## Previews (SPEC 0.5 V0.19)
+
+`GET /api/previews/{id}` serves an HTML preview with `Content-Security-Policy: sandbox allow-scripts; …; connect-src 'none'`. Embed it as `<iframe src="/api/previews/{id}" sandbox="allow-scripts">`: scripts run, but the page has no origin, so it cannot call the API.

@@ -263,3 +263,24 @@ func TestAttachmentEndpoints(t *testing.T) {
 		t.Fatalf("unknown: %d", r.StatusCode)
 	}
 }
+
+// SPEC 0.5 V0.19: previews are served sandboxed: scripts run, but the page
+// has no origin, so it cannot read the API or cookies.
+func TestPreviewSandbox(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	att := &attach.Store{Dir: t.TempDir()}
+	s := &Server{Engine: engine.New(st), BuildID: "b1", Attach: att}
+	hs := httptest.NewServer(s.Handler())
+	defer hs.Close()
+	m, _ := att.Save("mock.html", "text/html", strings.NewReader("<p>hi</p>"))
+	r := do(t, "GET", hs.URL+"/api/previews/"+m.ID, "", nil, "")
+	csp := r.Header.Get("Content-Security-Policy")
+	if r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), "text/html") || !strings.Contains(csp, "sandbox allow-scripts") || strings.Contains(csp, "allow-same-origin") || !strings.Contains(csp, "connect-src 'none'") {
+		t.Fatalf("%d %v", r.StatusCode, r.Header)
+	}
+	img, _ := att.Save("a.png", "image/png", strings.NewReader("x"))
+	if r := do(t, "GET", hs.URL+"/api/previews/"+img.ID, "", nil, ""); r.StatusCode != 404 {
+		t.Fatalf("a non-HTML attachment served as a preview: %d", r.StatusCode)
+	}
+}
