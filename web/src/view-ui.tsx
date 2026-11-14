@@ -25,24 +25,7 @@ function saveCollapsed(s: Set<string>) {
   } catch {}
 }
 
-/** V0.37: the full view (the View tab), or one headline bar above the conversation that opens it. */
-export function LiveViewBar({ t, now, onOpen }: { t: ThreadDTO; now: number; onOpen(): void }) {
-  const v = liveViewOf(t);
-  if (!v) return null;
-  const dim = viewDimmed(t);
-  const stamp = staleLabel(v.updatedAt, now);
-  return (
-    <div class={`lv shut${dim ? " dim" : ""}`} data-testid="live-view-bar">
-      <button class="lv-h" onClick={onOpen} title="Open the live view">
-        <span class="lv-k">Live view</span>
-        {v.headline && <span class="lv-hl ell">{v.headline}</span>}
-        <span class="lv-s">{dim ? `${stamp} · agent working` : stamp}</span>
-        <span class="chev">▸</span>
-      </button>
-    </div>
-  );
-}
-
+/** V0.37: the full view (the View tab). V0.56: no headline bar in Conversation; the tab is the way in. */
 export function LiveViewPanel({ t, now, onPress, full }: { t: ThreadDTO; now: number; onPress(text: string): Promise<boolean>; full?: boolean }) {
   const v = liveViewOf(t);
   const frame = useRef<HTMLIFrameElement>(null);
