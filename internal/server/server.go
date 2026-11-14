@@ -178,34 +178,21 @@ type actionMeta struct {
 	Bulk  bool   `json:"bulk,omitempty"`
 }
 
-type project struct {
-	Cwd      string    `json:"cwd"`
-	Name     string    `json:"name"`
-	LastUsed time.Time `json:"lastUsed"`
-}
-
 func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	threads := s.Engine.Snapshot()
 	var acts []actionMeta
 	for _, a := range core.Ordered() {
 		acts = append(acts, actionMeta{a.Name, a.Label, a.Key, a.Bulk})
 	}
-	seen := map[string]*project{}
-	for _, t := range threads {
-		p := seen[t.Cwd]
-		if p == nil {
-			p = &project{Cwd: t.Cwd, Name: t.Project}
-			seen[t.Cwd] = p
-		}
-		if t.UpdatedAt.After(p.LastUsed) {
-			p.LastUsed = t.UpdatedAt
-		}
+	// V0.23: projects with their identity; cwd is the folder on this host
+	// (the new-thread picker uses it).
+	type project struct {
+		engine.ProjectDTO
+		Cwd string `json:"cwd"`
 	}
-	projects := []*project{}
-	for _, p := range seen {
-		if p.Cwd != "" {
-			projects = append(projects, p)
-		}
+	projects := []project{}
+	for _, p := range s.Engine.Projects() {
+		projects = append(projects, project{p, p.Folder(s.Engine.HostID)})
 	}
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
 	profiles := s.Profiles

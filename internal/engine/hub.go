@@ -58,6 +58,8 @@ func (h *Hub) send(event string, v any) {
 
 func (h *Hub) Thread(d DTO) { h.send("thread", d) }
 
+func (h *Hub) Project(p ProjectDTO) { h.send("project", p) }
+
 func (h *Hub) Events(evs []store.Event) {
 	for _, ev := range evs {
 		h.send("event", ev)

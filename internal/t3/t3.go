@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/core"
 	_ "modernc.org/sqlite"
 )
 
@@ -243,3 +244,39 @@ func Profiles(settings string) ([]agent.Profile, error) {
 
 // DefaultModels is the model list when nothing else names one.
 var DefaultModels = []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2", "claude-haiku-5-5"}
+
+// Projects reads T3's projects as Fyr project seeds (SPEC 0.5 V0.23): the
+// root as a folder source on host, the title, and a lucide icon as a line
+// icon. T3's "No project" (its scratch root) becomes "Scratch".
+func Projects(db, host string) ([]core.Project, error) {
+	c, err := open(db)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	rows, err := c.Query(`SELECT title, workspace_root, COALESCE(project_icon_json, '') FROM projection_projects WHERE deleted_at IS NULL AND archived_at IS NULL`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []core.Project
+	for rows.Next() {
+		var title, root, icon string
+		if err := rows.Scan(&title, &root, &icon); err != nil {
+			return nil, err
+		}
+		p := core.Project{Name: title, Sources: []core.Source{{Kind: "folder", Host: host, Path: root}}}
+		var ic struct{ Kind, Name, Color string }
+		if json.Unmarshal([]byte(icon), &ic) == nil && ic.Kind == "lucide" && ic.Name != "" {
+			p.Icon = core.Icon{Kind: "line", Value: ic.Name}
+			if ic.Color == "gray" {
+				p.Color = "slate"
+			}
+		}
+		if title == "No project" {
+			p.Name = "Scratch"
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
