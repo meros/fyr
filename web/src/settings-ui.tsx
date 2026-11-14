@@ -194,7 +194,7 @@ function ProviderRow({ p, quota, open, onToggle, run }: { p: ProviderDTO; quota?
           </div>
           {p.auth !== "none" && (
             <label class="fld">
-              <span>{p.kind === "endpoint" ? "API key" : "Login token (optional)"}</span>
+              <span>{p.kind === "endpoint" ? "API key" : p.tokenLogin ? "Login token" : "Login token (optional)"}</span>
               {kl && <span class="setd">{kl}</span>}
               <div class="setkey">
                 <input type="password" autocomplete="off" spellcheck={false} value={key} placeholder={p.keySet ? "Paste a new key to replace it" : "Paste the key"} onInput={(e) => setKey((e.target as HTMLInputElement).value)} />
