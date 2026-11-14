@@ -13,7 +13,7 @@ Date: 2026-11-14 · Status: accepted (owner, walk-through) · Spec: 0.5 V0.23, V
 | The GitHub repo | Automatic, one line: found from a folder's git `origin` and shown read-only ("Also matches clones of github.com/meros/fyr"). Never typed. Repo matching across hosts keeps working. |
 | A new thread with no project and no folder | Starts in a fresh scratch folder (`~/.local/share/fyr/scratch/<date>-<slug>`) with "No project". |
 | The host folder picker | Offers recent folders (where threads ran, newest first), git repos found by a scan, browsing the tree from `~` with breadcrumbs and typed paths with completion, and creating a new folder. |
-| Where the scan looks | The folders of the projects plus `~/git`, `~/src` and `~/locked`, two levels deep; the roots can be changed later in settings. |
+| Where the scan looks | The folders of the projects plus the configured scan roots, two levels deep. The roots are a setting (`scanRoots` in `/etc/fyr/config.json`, from the NixOS option `services.fyr.scanRoots`); Fyr's own default is none (project folders only). On the owner's laptop `~/nixos-config` sets `~/git`, `~/src` and `~/locked`. |
 
 **How the words read in the UI.** "Project" is a name with folders. "Threads started in these folders land here." "Main folder: new threads start here." "Also matches clones of <repo>." No word "source" in the UI.
 
