@@ -1,11 +1,12 @@
 // Fixtures for ?mock=1 (full stress set) and ?mock=2 (sparse: empty sections). A tiny in-memory fyrd:
 // commands change the fixtures and push thread upserts, so the UI can be clicked through without a host.
 
-import type { CommandReply, Decision, FsDir, FsListing, Project, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { CommandReply, Decision, FsDir, FsListing, Project, QuietHours, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import type { Quota } from "./quota.ts";
 import { mockPrDetail } from "./mock-pr.ts";
+import { quietList } from "./quiet.ts";
 
 export function mockScenario(search: string): string | null {
   const m = /[?&]mock=([^&]*)/.exec(search);
@@ -906,10 +907,12 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     (Array.isArray(args.attachments) ? (args.attachments as string[]) : []).map((aid) => files.get(aid)).filter((x): x is NonNullable<typeof x> => !!x);
   let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void } | null = null;
   let projects = mockProjects(now0);
-  // V0.46: ?quiet=<projectId> puts that project in quiet hours that started an hour ago and end in two hours.
+  // V0.46: ?quiet=<projectId> puts that project in quiet hours that started an hour ago and end in two hours, and
+  // gives it a second window (weekends, ten hours ahead) so the project screen shows two rows (decision 0014 addendum).
   if (MOCK_QUIET) {
     const hm = (ms: number) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
-    projects = projects.map((p) => (p.id === MOCK_QUIET ? { ...p, quiet: { from: hm(now0 - 3600_000), to: hm(now0 + 2 * 3600_000) } } : p));
+    const quiet = [{ from: hm(now0 - 3600_000), to: hm(now0 + 2 * 3600_000) }, { from: hm(now0 + 10 * 3600_000), to: hm(now0 + 11 * 3600_000), days: ["sat", "sun"] }];
+    projects = projects.map((p) => (p.id === MOCK_QUIET ? { ...p, quiet } : p));
   }
   // V0.46: the host computes quietUntil; the mock does the same for its own clock.
   const withQuiet = (p: Project): Project => {
@@ -1389,29 +1392,39 @@ export function mockFilePatch(path: string): FilePatchDTO {
 // V0.46: ?quiet=<projectId> (read once at load, like ?deploy).
 const MOCK_QUIET = typeof location !== "undefined" ? new URLSearchParams(location.search).get("quiet") : null;
 
-/** The host's QuietUntil (internal/core/quiet.go) on the device's clock, for the mock only. */
+/** The host's QuietUntil (internal/core/quiet.go) on the device's clock, for the mock only: any window holds, and
+ *  windows that follow on join, at most a week ahead. */
 export function mockQuietUntil(q: Project["quiet"], now: number): string | undefined {
   const hm = (s: string) => /^(\d{1,2}):(\d\d)$/.exec(s ?? "");
-  const f = q && hm(q.from), t = q && hm(q.to);
-  if (!q || !f || !t) return undefined;
-  const span = +t[1] * 60 + +t[2] <= +f[1] * 60 + +f[2] ? 1 : 0;
   const keys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-  const window = (at: number): number | null => {
+  const one = (w: QuietHours, at: number): number | null => {
+    const f = hm(w.from), t = hm(w.to);
+    if (!f || !t) return null;
+    const span = +t[1] * 60 + +t[2] <= +f[1] * 60 + +f[2] ? 1 : 0;
     const d = new Date(at);
     for (const back of [1, 0]) {
       const day = new Date(d.getFullYear(), d.getMonth(), d.getDate() - back, 12);
-      if (q.days?.length && !q.days.includes(keys[day.getDay()])) continue;
+      if (w.days?.length && !w.days.includes(keys[day.getDay()])) continue;
       const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - back, +f[1], +f[2]).getTime();
       const end = new Date(d.getFullYear(), d.getMonth(), d.getDate() - back + span, +t[1], +t[2]).getTime();
       if (at >= start && at < end) return end;
     }
     return null;
   };
+  const list = quietList(q);
+  const window = (at: number): number | null => {
+    let best: number | null = null;
+    for (const w of list) {
+      const e = one(w, at);
+      if (e !== null && (best === null || e > best)) best = e;
+    }
+    return best;
+  };
   let end = window(now);
   if (end === null) return undefined;
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 64 && end - now < 7 * 24 * 3600_000; i++) {
     const next = window(end);
-    if (next === null) break;
+    if (next === null || next <= end) break;
     end = next;
   }
   return new Date(end).toISOString();

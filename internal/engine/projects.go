@@ -31,7 +31,7 @@ type ProjectDTO struct {
 // host's time zone, or nil (SPEC 0.5 V0.46). Call with e.mu held.
 func (e *Engine) quietUntil(id string, now time.Time) *time.Time {
 	p := e.projects[id]
-	if p == nil || p.Quiet == nil {
+	if p == nil || len(p.Quiet) == 0 {
 		return nil
 	}
 	if u, ok := core.QuietUntil(p.Quiet, now.In(time.Local)); ok {
@@ -616,23 +616,26 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 			if v, ok := c.Args["model"].(string); ok {
 				p.Model = v
 			}
-			// V0.46: quiet hours; null clears them.
+			// V0.46: quiet hours, a list of windows (decision 0014
+			// addendum); null or an empty list clears them. The single
+			// object of before is read as a list of one.
 			if raw, ok := c.Args["quiet"]; ok {
-				if raw == nil {
-					p.Quiet = nil
-				} else {
-					var q core.Quiet
+				var qs core.QuietHours
+				if raw != nil {
 					b, _ := json.Marshal(raw)
-					if err := json.Unmarshal(b, &q); err != nil {
+					if err := json.Unmarshal(b, &qs); err != nil {
 						e.mu.Unlock()
-						return bad("quiet must be {from, to, days?}")
+						return bad("quiet must be a list of {from, to, days?}")
 					}
-					if err := q.Validate(); err != nil {
+					if err := qs.Validate(); err != nil {
 						e.mu.Unlock()
 						return bad(err.Error())
 					}
-					p.Quiet = &q
 				}
+				if len(qs) == 0 {
+					qs = nil
+				}
+				p.Quiet = qs
 			}
 		}
 		p.Edited = true

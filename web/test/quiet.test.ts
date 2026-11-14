@@ -2,7 +2,8 @@
 // unless the project filter picks their project or a search is typed, and re-renders at the nearest end.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hideQuiet, isQuiet, nextQuietEnd, quietLine, quietNote, toggleDay } from "../src/quiet.ts";
+import { QUIET_PRESETS, cleanWindow, dayText, hasWindow, hideQuiet, isAllDay, isQuiet, nextQuietEnd, quietLine, quietList, quietNote, setAllDay, toggleDay, windowWords } from "../src/quiet.ts";
+import { mockQuietUntil } from "../src/mock.ts";
 import { sections } from "../src/store.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
@@ -51,11 +52,13 @@ test("the filter note and the project screen line", () => {
   assert.equal(quietNote(p, new Date(2026, 10, 12, 20, 0).getTime()), "Quiet until Sat 06:00", "more than a day ahead names the day");
   assert.equal(quietNote(p, new Date(2026, 10, 14, 6, 0).getTime()), null);
   assert.equal(quietNote(undefined, now), null);
-  assert.equal(quietLine({ from: "17:00", to: "06:00" }), "Threads hide and send no notifications from 17:00 to 06:00.");
-  assert.equal(quietLine({ from: "17:00", to: "06:00", days: ["mon", "tue", "wed", "thu", "fri"] }), "Threads hide and send no notifications from 17:00 to 06:00, Mon–Fri.");
-  assert.equal(quietLine({ from: "09:00", to: "12:00", days: ["sat", "sun"] }), "Threads hide and send no notifications from 09:00 to 12:00, Sat–Sun.");
-  assert.equal(quietLine({ from: "09:00", to: "12:00", days: ["mon", "wed"] }), "Threads hide and send no notifications from 09:00 to 12:00, Mon, Wed.");
-  assert.equal(quietLine({ from: "00:00", to: "00:00", days: ["sat", "sun"] }), "Threads hide and send no notifications all day, Sat–Sun.");
+  assert.equal(quietLine({ from: "17:00", to: "06:00" }), "Threads hide and send no notifications from 17:00 to 06:00.", "the old single object");
+  assert.equal(quietLine([{ from: "17:00", to: "06:00" }]), "Threads hide and send no notifications from 17:00 to 06:00.");
+  assert.equal(quietLine([{ from: "17:00", to: "06:00", days: ["mon", "tue", "wed", "thu", "fri"] }]), "Threads hide and send no notifications weeknights 17:00–06:00.");
+  assert.equal(quietLine([{ from: "09:00", to: "12:00", days: ["sat", "sun"] }]), "Threads hide and send no notifications weekends 09:00–12:00.");
+  assert.equal(quietLine([{ from: "09:00", to: "12:00", days: ["mon", "wed"] }]), "Threads hide and send no notifications Mon, Wed 09:00–12:00.");
+  assert.equal(quietLine([{ from: "00:00", to: "00:00", days: ["sat", "sun"] }]), "Threads hide and send no notifications all weekend.");
+  assert.equal(quietLine([]), "Off: threads show and notify as usual.");
 });
 
 test("day toggles keep the week order; all seven is every day; the last day stays on", () => {
@@ -63,4 +66,53 @@ test("day toggles keep the week order; all seven is every day; the last day stay
   assert.deepEqual(toggleDay(["fri"], "mon"), ["mon", "fri"]);
   assert.deepEqual(toggleDay(["mon"], "mon"), ["mon"], "a window needs a day");
   assert.deepEqual(toggleDay(["mon", "tue", "wed", "thu", "fri", "sat"], "sun"), undefined);
+});
+
+// Decision 0014 addendum: several windows, presets, all day, 24-hour words.
+const preset = (k: string) => QUIET_PRESETS.find((p) => p.key === k)!.window;
+
+test("the summary line names every window in plain words", () => {
+  assert.equal(quietLine([preset("weeknights"), preset("weekend")]), "Threads hide and send no notifications weeknights 17:00–06:00 and all weekend.");
+  assert.equal(
+    quietLine([preset("weeknights"), { from: "12:00", to: "13:00" }, { from: "00:00", to: "00:00", days: ["wed"] }]),
+    "Threads hide and send no notifications weeknights 17:00–06:00, daily 12:00–13:00 and all day Wed.",
+  );
+  assert.equal(windowWords({ from: "00:00", to: "00:00" }), "all day");
+  assert.equal(windowWords({ from: "09:00", to: "17:00", days: ["mon", "tue", "wed", "thu", "fri"] }), "Mon–Fri 09:00–17:00", "a day window is not a night");
+  assert.equal(windowWords({ from: "22:00", to: "07:00", days: ["fri", "sat"] }), "Fri–Sat 22:00–07:00");
+});
+
+test("day runs read in week order and may wrap past Sunday", () => {
+  assert.equal(dayText(["sun", "mon", "tue", "wed", "thu", "fri"]), "Sun–Fri");
+  assert.equal(dayText(["fri", "sat", "sun", "mon"]), "Fri–Mon");
+  assert.equal(dayText(["mon", "wed", "fri"]), "Mon, Wed, Fri");
+  assert.equal(dayText(["sat"]), "Sat");
+  assert.equal(dayText(undefined), "");
+  assert.equal(dayText(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]), "");
+});
+
+test("the presets: weeknights Sun–Fri 17:00–06:00 and all weekend", () => {
+  assert.deepEqual(cleanWindow(preset("weeknights")), { from: "17:00", to: "06:00", days: ["mon", "tue", "wed", "thu", "fri", "sun"] });
+  assert.deepEqual(preset("weekend"), { from: "00:00", to: "00:00", days: ["sat", "sun"] });
+  assert.equal(isAllDay(preset("weekend")), true);
+  assert.equal(hasWindow([{ from: "17:00", to: "06:00", days: ["sun", "fri", "thu", "wed", "tue", "mon"] }], preset("weeknights")), true, "day order does not matter");
+  assert.equal(hasWindow([{ from: "17:00", to: "06:00" }], preset("weeknights")), false);
+  // Friday 17:00 joins the weekend and Monday morning (the host computes this; the mock mirrors it).
+  const fri = new Date(2026, 10, 13, 17, 0).getTime();
+  assert.equal(mockQuietUntil([preset("weeknights"), preset("weekend")], fri), new Date(2026, 10, 16, 6, 0).toISOString());
+  assert.equal(quietNote({ quietUntil: mockQuietUntil([preset("weeknights"), preset("weekend")], fri) }, fri), "Quiet until Mon 06:00");
+  assert.equal(mockQuietUntil([preset("weeknights")], new Date(2026, 10, 14, 12, 0).getTime()), undefined, "Saturday noon without the weekend");
+});
+
+test("all day is from equal to to; turned off it is the default evening", () => {
+  assert.deepEqual(setAllDay({ from: "17:00", to: "06:00", days: ["mon"] }, true), { from: "00:00", to: "00:00", days: ["mon"] });
+  assert.deepEqual(setAllDay({ from: "00:00", to: "00:00" }, false), { from: "17:00", to: "06:00" });
+});
+
+test("the old single object and the list both read as a list", () => {
+  assert.deepEqual(quietList({ from: "17:00", to: "06:00" }), [{ from: "17:00", to: "06:00" }]);
+  assert.deepEqual(quietList([{ from: "17:00", to: "06:00" }, { nope: 1 }]), [{ from: "17:00", to: "06:00" }]);
+  assert.deepEqual(quietList(undefined), []);
+  assert.deepEqual(quietList(null), []);
+  assert.deepEqual(cleanWindow({ from: "17:00", to: "06:00", days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] }), { from: "17:00", to: "06:00" }, "every day is no days");
 });
