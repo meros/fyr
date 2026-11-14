@@ -1,0 +1,848 @@
+// Thread pane: header with chips and tabs, conversation, docked decision card and composer
+// (design/directions/04-rail.html).
+
+import { liveLine } from "./tasks.ts";
+import { describeEffect, type EffectText } from "./effects.ts";
+import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
+import { buildConversation, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel } from "./conversation.ts";
+import { renderMarkdown } from "./markdown.ts";
+import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
+import { duration, relTime, shortModel } from "./format.ts";
+import { pick, questionsOf, goTo, type CardState } from "./question.ts";
+import { isAvailable, unavailableReason } from "./store.ts";
+import { onToolDetails, toolDetails } from "./prefs.ts";
+import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
+import { makeProjectLabel, projectName, projectOf, suggestionFor } from "./projects.ts";
+import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
+import { sendArgs } from "./attach.ts";
+import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
+import type { PreviewCard } from "./previews.ts";
+import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
+import { ChangesView } from "./changes-ui.tsx";
+
+export function prLabel(pr: PullRequest, short = false): { text: string; cls: string } {
+  if (pr.state === "MERGED") return { text: short ? "merged" : `#${pr.number} merged`, cls: "merged" };
+  if (pr.state === "CLOSED") return { text: short ? "closed" : `#${pr.number} closed`, cls: "merged" };
+  if (pr.conflict) return { text: `#${pr.number} ✗ conflict`, cls: "fail" };
+  if (pr.checks === "fail") return { text: `#${pr.number} ✗ CI`, cls: "fail" };
+  if (pr.checks === "pass") return { text: `#${pr.number} ✓`, cls: "ok" };
+  if (pr.checks === "pending") return { text: `#${pr.number} …`, cls: "" };
+  return { text: `#${pr.number}`, cls: "" };
+}
+
+export interface AnswerField {
+  index: number;
+  text: string;
+  setText(text: string): void;
+  /** Enter: take the text as this question's answer, then submit or move on */
+  submit(): void;
+}
+
+export interface ThreadPaneProps {
+  thread: ThreadDTO;
+  mode: "open" | "peek";
+  events: FyrEvent[] | undefined;
+  profiles: Profile[];
+  card: CardState | null;
+  answerField: AnswerField | null;
+  onCard(cs: CardState): void;
+  onAllow(d: Decision, allow: boolean): void;
+  onRun(action: string, args?: Record<string, unknown>): void;
+  onSnooze(): void;
+  onSend(args: SendArgs): Promise<boolean>;
+  onAtEnd(atEnd: boolean): void;
+  onFocusZone(): void;
+  /** Loads older events; absent when the start of the thread is loaded. */
+  onEarlier?: () => void;
+  /** server-adjusted clock, for elapsed times */
+  now: number;
+  /** Phone layout: back to the inbox. */
+  onBack?: () => void;
+  /** Opens the project picker for this thread (V0.26); absent: no ⋯ menu. */
+  onMoveProject?: () => void;
+}
+
+type Tab = "conv" | "changes" | "pr";
+
+export function ThreadPane(p: ThreadPaneProps) {
+  const t = p.thread;
+  const [tab, setTab] = useState<Tab>("conv");
+  const previews = useMemo(() => previewsOf(p.events ?? []), [p.events]);
+  useEffect(() => setTab("conv"), [t.id]);
+  const profile = p.profiles.find((x) => x.id === t.profile);
+  const decision = t.decisions?.[0] ?? null;
+  const st = t.attention.state;
+  const settleReason = unavailableReason(t, "thread.settle");
+  const snoozeReason = unavailableReason(t, "thread.snooze");
+  return (
+    <section class="th" onMouseDown={p.onFocusZone}>
+      <div class="thh">
+        <div class="tr">
+          {p.onBack && (
+            <button class="btn back" onClick={p.onBack} aria-label="Back to the inbox">
+              ‹
+            </button>
+          )}
+          <div class="tt" title={t.title}>
+            {t.title || "Untitled"}
+          </div>
+          <div class="acts">
+            {st === "failed" && (
+              <button class="btn" disabled={!isAvailable(t, "thread.retry")} title={unavailableReason(t, "thread.retry") ?? "Retry (r)"} onClick={() => p.onRun("thread.retry")}>
+                Retry <kbd>r</kbd>
+              </button>
+            )}
+            <button class="btn" disabled={!!snoozeReason} title={snoozeReason ?? "Snooze (s)"} onClick={p.onSnooze}>
+              Snooze <kbd>s</kbd>
+            </button>
+            <button class="btn" disabled={!!settleReason} title={settleReason ?? (t.running ? "Settle when done (e)" : "Settle (e)")} onClick={() => p.onRun("thread.settle")}>
+              Settle <kbd>e</kbd>
+            </button>
+            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} />}
+          </div>
+        </div>
+        <div class="chips">
+          <span class={`chip st ${stateClass(st)}`} title={t.attention.reason || stateLabel(st)}>
+            <span class={t.running ? "spin" : "icw"}>
+              <StateIcon state={st} size={14} />
+            </span>
+            <span style="color:var(--ink)">{stateLabel(st)}</span>
+          </span>
+          {p.mode === "peek" && (
+            <span class="chip peek">
+              <span>Peek · ⏎ opens</span>
+            </span>
+          )}
+          <HeaderProjectChip t={t} profileName={profile?.name} />
+          {t.parent && (
+            <span class="chip fromc">
+              <StartedBy parentId={t.parent} />
+            </span>
+          )}
+          {t.branch && (
+            <span class="chip m brn" title={t.branch}>
+              <span>{t.branch}</span>
+            </span>
+          )}
+          <ModelChip t={t} profile={profile} onRun={p.onRun} />
+          {t.pr && <PrChip pr={t.pr} />}
+          {(t.settleWhenDone || t.settleWhenMerged) && (
+            <span class="chip">
+              <span>{t.settleWhenDone ? "settles when done" : "settles when merged"}</span>
+            </span>
+          )}
+        </div>
+        <div class="tabs" role="tablist">
+          <span class={tab === "conv" ? "on" : ""} role="tab" onClick={() => setTab("conv")}>
+            Conversation
+          </span>
+          <span class={tab === "changes" ? "on" : ""} role="tab" onClick={() => setTab("changes")}>
+            Changes
+          </span>
+          <span class={tab === "pr" ? "on" : ""} role="tab" onClick={() => setTab("pr")}>
+            PR
+          </span>
+        </div>
+      </div>
+      {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      {tab === "conv" && <Filmstrip cards={previews} />}
+      {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} cwd={t.cwd} />}
+      {tab === "changes" && <ChangesView threadId={t.id} />}
+      {tab === "pr" && <PrTab t={t} />}
+      {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} pr={t.pr} />}
+      <Composer key={t.id} t={t} now={p.now} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
+    </section>
+  );
+}
+
+/** The thread ⋯ menu (V0.26): opens on click or Enter, arrows move, Esc closes and returns focus. */
+function ThreadMenu({ onMove }: { onMove(): void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    ref.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+    const away = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  const run = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    // The menu owns its keys: the inbox shortcuts must not act while it has focus.
+    e.stopPropagation();
+    if (!open) return;
+    const items = [...(ref.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+      btn.current?.focus();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const n = items.length;
+      items[(i + (e.key === "ArrowDown" ? 1 : n - 1) + n) % n]?.focus();
+    } else if (e.key === "Tab") setOpen(false);
+  };
+  return (
+    <div class="tmenu" ref={ref} onKeyDown={onKey}>
+      <button ref={btn} class="btn tmenu-b" aria-haspopup="menu" aria-expanded={open} aria-label="More actions" title="More actions" onClick={() => setOpen(!open)}>
+        ⋯
+      </button>
+      {open && (
+        <div class="tmenu-l" role="menu" aria-label="Thread actions">
+          <button class="mi" role="menuitem" onClick={run(onMove)}>
+            <kbd>p</kbd>
+            <span class="ell">Move to project…</span>
+            <span />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The project chip: icon and name in the project colour; a click opens the project screen. A thread without a
+ *  project shows "No project" and, when its folder is a git clone, Make project “<repo>” (V0.28). */
+function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: string }) {
+  const dir = useDirectory();
+  const p = projectOf(t, dir.projects);
+  const sug = suggestionFor(t, dir.projects);
+  if (!p)
+    return (
+      <>
+        <span class="chip pj" title={`${t.cwd}${profileName ? ` · ${profileName}` : ""}`}>
+          <span>{projectName(t, dir.projects)}</span>
+        </span>
+        {sug && (
+          <button class="chip mkp" title={`A project for ${sug.sources.map((s) => ("url" in s && s.url) || ("path" in s && s.path) || "").filter(Boolean).join(" and ")}`} onClick={() => dir.createProjectFrom(t.id)}>
+            <span>{makeProjectLabel(sug)}</span>
+          </button>
+        )}
+      </>
+    );
+  return (
+    <button class="chip pj proj" style={{ "--pc": `var(--p-${p?.color ?? "slate"})` }} title={`${t.cwd}${profileName ? ` · ${profileName}` : ""} · open the project`} onClick={() => p?.id && dir.openProject(p.id)}>
+      <ProjectIcon project={p} name={projectName(t, dir.projects)} size={16} />
+      <span>{projectName(t, dir.projects)}</span>
+    </button>
+  );
+}
+
+export function PrTab({ t }: { t: ThreadDTO }) {
+  if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
+  const pr = t.pr;
+  return (
+    <div class="pane-note prose">
+      <p>
+        <a href={pr.url} target="_blank" rel="noopener noreferrer">
+          {pr.repo ? `${pr.repo}#${pr.number}` : `#${pr.number}`}
+        </a>
+        {pr.title ? ` · ${pr.title}` : ""}
+      </p>
+      <p>
+        State {pr.state ?? "unknown"} · checks {pr.checks ?? "none"}
+        {pr.review ? ` · review ${pr.review}` : ""}
+        {pr.conflict ? " · merge conflict" : ""}
+      </p>
+      <p>Checks, review threads and Merge in this tab come in a later version (v0.x).</p>
+    </div>
+  );
+}
+
+function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
+  const models = profile?.models ?? [];
+  const reason = unavailableReason(t, "thread.setModel");
+  const can = models.length > 1 && !reason;
+  return (
+    <span class={`chip m${can ? " msel" : ""}`} title={can ? `${t.model} · change model` : reason ? `${t.model} · ${reason}` : t.model}>
+      <span>{shortModel(t.model)}</span>
+      {can && (
+        <select value={t.model} aria-label="Model" onChange={(e) => onRun("thread.setModel", { model: (e.target as HTMLSelectElement).value })}>
+          {!models.includes(t.model) && <option value={t.model}>{shortModel(t.model)}</option>}
+          {models.map((m) => (
+            <option value={m}>{shortModel(m)}</option>
+          ))}
+        </select>
+      )}
+    </span>
+  );
+}
+
+function PrChip({ pr }: { pr: PullRequest }) {
+  const l = prLabel(pr);
+  return (
+    <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={pr.title || pr.url}>
+      {l.text}
+    </a>
+  );
+}
+
+// ---- agents strip (SPEC V0.16) ----
+
+const TASK_ICON: Record<string, "working" | "settled" | "failed" | "seen"> = {
+  running: "working",
+  completed: "settled",
+  failed: "failed",
+  stopped: "seen",
+};
+
+function TaskRow({ t, now }: { t: TaskDTO; now: number }) {
+  const line = taskLine(t);
+  return (
+    <div class={`tk ${t.status}`} title={`${t.description}\n${line}`}>
+      <StateIcon state={TASK_ICON[t.status] ?? "seen"} size={14} />
+      <span class="tkt">
+        <span class="tkd ell">{t.description || "Agent"}</span>
+        <span class="tkl ell">{line}</span>
+      </span>
+      <span class="tks">{taskStats(t)}</span>
+      <span class="tka">{relTime(t.startedAt, now)}</span>
+    </div>
+  );
+}
+
+/** Running tasks always show; ended ones fold behind "N finished". On a phone the whole strip is one line until opened. */
+export function AgentsStrip({ tasks, now }: { tasks: TaskDTO[]; now: number }) {
+  const [showEnded, setShowEnded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const g = groupTasks(tasks);
+  return (
+    <div class={`agents${open ? " open" : ""}`}>
+      <button class="agsum ell" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <StateIcon state={g.running.length ? "waiting" : "settled"} size={14} />
+        <span class="ell">{agentsSummary(tasks)}</span>
+        <span class="chev">{open ? "▾" : "▸"}</span>
+      </button>
+      <div class="agrows">
+        {g.running.map((t) => (
+          <TaskRow t={t} now={now} key={t.id} />
+        ))}
+        {g.ended.length > 0 && (
+          <button class="tkmore" onClick={() => setShowEnded(!showEnded)} aria-expanded={showEnded}>
+            {g.ended.length} finished {showEnded ? "▾" : "▸"}
+          </button>
+        )}
+        {showEnded && g.ended.map((t) => <TaskRow t={t} now={now} key={t.id} />)}
+      </div>
+    </div>
+  );
+}
+
+// ---- conversation ----
+
+/** "Show tool details" (V0.21): every group open and every machine line in full. */
+export function useToolDetails(): boolean {
+  const [on, setOn] = useState(toolDetails());
+  useEffect(() => onToolDetails(setOn), []);
+  return on;
+}
+
+export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd }: { events: FyrEvent[] | undefined; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string }) {
+  const details = useToolDetails();
+  const items = useMemo(() => buildConversation(events ?? [], { details, cwd }), [events, details, cwd]);
+  const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
+  const ref = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
+
+  const check = () => {
+    const el = ref.current;
+    if (!el) return;
+    const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+    stick.current = atEnd;
+    onAtEnd(atEnd);
+  };
+
+  useLayoutEffect(() => {
+    stick.current = true;
+  }, [threadId]);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (stick.current) el.scrollTop = el.scrollHeight;
+    check();
+  }, [items, threadId]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+      check();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div class="convo" ref={ref} onScroll={check}>
+      <div class="convo-in">
+        {events === undefined && <div class="sys">Loading…</div>}
+        {events !== undefined && items.length === 0 && <div class="sys">No messages yet.</div>}
+        {onEarlier && events && events.length > 0 && (
+          <button class="btn ghost earlier" onClick={onEarlier}>
+            Show earlier messages
+          </button>
+        )}
+        {crashProbe() && (
+          <Boundary name="This message">
+            <CrashProbe />
+          </Boundary>
+        )}
+        {items.map((it) => (
+          <Boundary key={it.key} name="This message">
+            <ItemView it={it} previews={previews} />
+          </Boundary>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Enter and Space activate a focused group or row (they are divs with role=button). */
+function keyActivate(fn: () => void) {
+  return (e: KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      e.stopPropagation();
+      fn();
+    }
+  };
+}
+
+/** A quiet machine line: one line, the exact text one tap away. */
+function QuietLine({ icon, line, full, fail }: { icon: "settled" | "failed" | "seen" | "working"; line: string; full?: string; fail?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const more = !!full && full.trim() !== line.trim();
+  return (
+    <div class={`ql${fail ? " fail" : ""}`}>
+      <div class={`qlh${more ? " click" : ""}`} role={more ? "button" : undefined} tabIndex={more ? 0 : undefined} aria-expanded={more ? open : undefined} onClick={more ? () => setOpen(!open) : undefined} onKeyDown={more ? keyActivate(() => setOpen(!open)) : undefined}>
+        <StateIcon state={icon} size={12} />
+        <span class="ell">{line}</span>
+      </div>
+      {open && full && <pre class="qlx">{full}</pre>}
+    </div>
+  );
+}
+
+/** The end of a turn: a small mark; a tap shows time, cost and the failure. A failure keeps its text in one line. */
+function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
+  const [open, setOpen] = useState(false);
+  const facts = [it.durationMs !== undefined ? duration(it.durationMs) : "", it.costUsd !== undefined ? `$${it.costUsd.toFixed(2)}` : ""].filter(Boolean).join(" · ");
+  const icon = it.failure ? "failed" : it.interrupted ? "seen" : "settled";
+  const word = it.failure ? `Failed (${it.failure.class}): ${it.failure.message}` : it.interrupted ? "Interrupted" : "Finished";
+  if (!it.compact) {
+    return (
+      <div class={`sys prose${it.failure ? " fail" : ""}`}>
+        <StateIcon state={icon} size={14} />
+        <span>{word}</span>
+        {facts && <span class="tnum">{facts}</span>}
+      </div>
+    );
+  }
+  // V0.21: words, never a bare symbol; the cost is one tap away.
+  const lbl = runLabel(it);
+  return (
+    <div class={`runmark${it.failure ? " fail" : ""}`}>
+      <button class="rm" aria-expanded={open} title={[lbl.text, lbl.more].filter(Boolean).join(" · ")} onClick={() => lbl.more && setOpen(!open)}>
+        {it.failure && <StateIcon state={icon} size={12} />}
+        <span class="prose">{lbl.text}</span>
+        {open && lbl.more && <span class="rmx tnum">{lbl.more}</span>}
+      </button>
+    </div>
+  );
+}
+
+function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
+  switch (it.kind) {
+    case "user":
+      if (it.from)
+        return (
+          <FromThreadMessage fromId={it.from} text={it.text}>
+            {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
+          </FromThreadMessage>
+        );
+      return (
+        <div class="you prose">
+          {it.text}
+          {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
+          {it.images > 0 && !it.attachments.length && (
+            <span class="imgchip">
+              {it.images} {it.images === 1 ? "image" : "images"}
+            </span>
+          )}
+        </div>
+      );
+    case "assistant":
+      return <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text) }} />;
+    case "tools":
+      return <ToolCard calls={it.calls} />;
+    case "run":
+      return <RunMark it={it} />;
+    case "effect":
+      return <QuietLine icon={it.ok ? "settled" : "failed"} line={it.line} full={`${it.action}\n\n${it.text}`} fail={!it.ok} />;
+    case "note":
+      return <QuietLine icon="seen" line={`Fyr: ${it.line}`} full={it.text} />;
+    case "preview":
+      return <PreviewCardView card={it.card} all={previews} />;
+    case "task":
+      return <QuietLine icon={it.started ? "working" : TASK_ICON[it.status] ?? "settled"} line={it.text} fail={it.status === "failed"} />;
+    case "answer":
+      return <QuietLine icon="settled" line={`Answered: ${it.text}`} />;
+  }
+}
+
+function callIcon(c: ToolCall) {
+  return c.isError ? "failed" : c.done ? "settled" : "working";
+}
+
+/** One bordered card for consecutive tool calls: folded summary lines, with subagent rows as they were (V0.16). */
+function ToolCard({ calls, nested }: { calls: ToolCall[]; nested?: boolean }) {
+  return (
+    <div class={nested ? "act nested" : "act"}>
+      {segments(calls).map((s) => (s.kind === "agents" ? <AgentsRow calls={s.calls} /> : <FoldGroup calls={s.calls} />))}
+    </div>
+  );
+}
+
+/** "Read 3 files · ran 2 commands", total time, an error mark; a tap opens the rows. */
+function FoldGroup({ calls }: { calls: ToolCall[] }) {
+  const details = useToolDetails();
+  const [open, setOpen] = useState<boolean | null>(null);
+  const [all, setAll] = useState(false);
+  const isOpen = open ?? details;
+  const st = groupStats(calls);
+  const showAll = () => setAll(true);
+  const toggle = () => setOpen(!isOpen);
+  const text = calls.length === 1 ? calls[0].label : groupSummary(calls);
+  return (
+    <>
+      <div class="tl grp" role="button" tabIndex={0} aria-expanded={isOpen} data-keys="self" title={text} onClick={toggle} onKeyDown={keyActivate(toggle)}>
+        <StateIcon state={st.failed ? "failed" : st.running ? "working" : "settled"} size={14} />
+        <span class="tlt ell">
+          {text}
+          {st.failed > 0 && <b class="tlerr"> · {st.failed} failed</b>}
+        </span>
+        <span class="d">
+          {st.durationMs !== null ? duration(st.durationMs) : ""} {isOpen ? "▾" : "▸"}
+        </span>
+      </div>
+      {isOpen &&
+        capCalls(calls, all).map((r) =>
+          r.kind === "more" ? (
+            <div class="tl row more" key="more" role="button" tabIndex={0} data-keys="self" title="Show every call" onClick={showAll} onKeyDown={keyActivate(showAll)}>
+              <span class="tlm">⋯</span>
+              <span class="tlt ell">{r.label}</span>
+              <span class="d" />
+            </div>
+          ) : (
+            <CallRow c={r.call} key={r.call.id} />
+          ),
+        )}
+    </>
+  );
+}
+
+/** One call: its label; a tap shows the exact input and output (output cut at 200 lines). */
+function CallRow({ c }: { c: ToolCall }) {
+  const [open, setOpen] = useState(false);
+  const [all, setAll] = useState(false);
+  const toggle = () => setOpen(!open);
+  const out = all ? { text: c.output, hidden: 0 } : cutOutput(c.output);
+  return (
+    <div class={`tlr${open ? " open" : ""}`}>
+      <div class="tl row" role="button" tabIndex={0} aria-expanded={open} data-keys="self" onClick={toggle} onKeyDown={keyActivate(toggle)}>
+        <StateIcon state={callIcon(c)} size={14} />
+        <span class={`tlt ell${c.isError ? " err" : ""}`}>{c.label}</span>
+        <span class="d">{c.done ? duration(c.durationMs) : "running"}</span>
+      </div>
+      {open && (
+        <div class="tld">
+          <div class="tldh">
+            {friendlyName(c.name)}
+            {c.isError ? " · failed" : ""}
+          </div>
+          <pre class="tlin">{fullInput(c.name, c.input)}</pre>
+          {c.output ? (
+            <>
+              <pre class={`tlout${c.isError ? " err" : ""}`}>{out.text}</pre>
+              {out.hidden > 0 && (
+                <button class="btn sm tlall" onClick={() => setAll(true)}>
+                  Show all ({out.hidden.toLocaleString()} more lines)
+                </button>
+              )}
+            </>
+          ) : (
+            <div class="tldh">{c.done ? "No output" : "Running…"}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentsRow({ calls }: { calls: ToolCall[] }) {
+  const [open, setOpen] = useState(false);
+  const failed = calls.some((c) => c.isError);
+  const done = calls.every((c) => c.done);
+  const ms = done ? Math.max(...calls.map((c) => c.durationMs ?? 0)) : null;
+  const desc = calls[0].description || calls[0].summary;
+  const n = calls.length;
+  return (
+    <>
+      <div class="al click" onClick={() => setOpen(!open)} title={calls.map((c) => c.description || c.summary).join("\n")}>
+        <StateIcon state={failed ? "failed" : done ? "settled" : "working"} size={14} />
+        <span class="nm ell">{calls[0].name}</span>
+        <span class="s ell">
+          {n} {n === 1 ? "subagent" : "subagents"} · {desc} {open ? "▾" : "▸"}
+        </span>
+        <span class="d">{ms !== null ? duration(ms) : ""}</span>
+      </div>
+      {open && (
+        <div class="sub">
+          {calls.map((c) => (
+            <div class="subw">
+              <div class="subh ell">
+                {c.description || c.summary} · {c.subMessages} {c.subMessages === 1 ? "message" : "messages"}
+              </div>
+              {c.subCalls.length > 0 && <ToolCard calls={c.subCalls} nested />}
+              {c.subTexts.length > 0 && <div class="subtext prose">{c.subTexts[c.subTexts.length - 1]}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---- decision card ----
+
+interface CardProps {
+  d: Decision;
+  more: number;
+  card: CardState | null;
+  onCard(cs: CardState): void;
+  onAllow(d: Decision, allow: boolean): void;
+  /** the thread's PR, to name it in a merge card */
+  pr?: PullRequest | null;
+}
+
+function asker(d: Decision): string {
+  return d.agent ? `asked by subagent “${d.agent}”` : "asked by this thread";
+}
+
+/** One sentence for an effect decision (V0.27), for rows and previews. */
+export function effectSentence(d: Decision): string {
+  return d.effect ? describeEffect(d).title : "";
+}
+
+/** The plain body of an effect card (V0.27): reason, what happens, details behind a toggle. */
+export function EffectBody({ d, x, cls = "" }: { d: Decision; x: EffectText; cls?: string }) {
+  return (
+    <div class={`eff ${cls}`}>
+      {x.why && <p class="eff-why">{x.why}</p>}
+      <p class="eff-what">{x.happens}</p>
+      <details class="eff-det">
+        <summary>Details</summary>
+        <div class="eff-who">{d.agent ? `Asked by subagent “${d.agent}”` : "Asked by this thread"} · the agent does not wait for the result</div>
+        <pre>{x.details.action + "\n" + JSON.stringify(x.details.args, null, 2)}</pre>
+      </details>
+    </div>
+  );
+}
+
+function DecisionCard(p: CardProps) {
+  const { d } = p;
+  if (d.kind === "ask") return p.card && p.card.decisionId === d.id ? <AskCard {...p} card={p.card} /> : null;
+  const approval = d.kind === "approval";
+  const x = approval ? null : describeEffect(d, p.pr);
+  const cmd = approval && typeof d.input?.command === "string" ? (d.input.command as string) : null;
+  const rest = approval && d.input ? Object.fromEntries(Object.entries(d.input).filter(([k]) => k !== "command")) : {};
+  return (
+    <div class="ask">
+      <div class="ah">
+        <StateIcon state="asking" size={14} />
+        <b>{x ? x.label : "Approval"}</b>
+        <span class="ell">{asker(d)}</span>
+        {p.more > 0 && <span class="ml">+{p.more} more</span>}
+      </div>
+      <div class="ab">
+        <div class="q">{x ? x.title : <>Allow {d.tool}?</>}</div>
+        <div class="payload">
+          {cmd && <pre class="cmd">{cmd}</pre>}
+          {approval && Object.keys(rest).length > 0 && <pre>{JSON.stringify(rest, null, 2)}</pre>}
+          {x && <EffectBody d={d} x={x} />}
+        </div>
+        <div class="grid4">
+          <button class="op" onClick={() => p.onAllow(d, true)}>
+            <span class="a ell">{x ? x.yes : "Allow"}</span>
+            <kbd>1</kbd>
+            {approval && <span class="d">Run it once.</span>}
+          </button>
+          <button class="op" onClick={() => p.onAllow(d, false)}>
+            <span class="a ell">{x ? x.no : "Deny"}</span>
+            <kbd>2</kbd>
+            <span class="d">{approval ? "The agent is told no and continues." : "Nothing happens; the agent is told."}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AskCard(p: CardProps & { card: CardState }) {
+  const { d, card } = p;
+  const qs = questionsOf(d);
+  const q = qs[card.index];
+  if (!q) return null;
+  const picks = card.picks[card.index] ?? [];
+  const other = card.other[card.index];
+  return (
+    <div class="ask">
+      <div class="ah">
+        <StateIcon state="asking" size={14} />
+        <b class="qn" onClick={() => qs.length > 1 && p.onCard(goTo(card, d, (card.index + 1) % qs.length))} title={qs.length > 1 ? "Next question (Tab)" : undefined}>
+          Question {card.index + 1} of {qs.length}
+        </b>
+        <span class="ell">{asker(d)}</span>
+        <span class="ml">
+          {p.more > 0 && `+${p.more} more · `}
+          <kbd>Tab</kbd> multi-select next
+        </span>
+      </div>
+      <div class="ab">
+        <div class="q">{q.question}</div>
+        <div class="grid4">
+          {q.options.map((o, i) => (
+            <button class={`op${picks.includes(o.label) ? " on" : ""}`} title={`${o.label}${o.description ? `\n${o.description}` : ""}`} onClick={() => p.onCard(pick(card, d, i))}>
+              <span class="a ell">{o.label}</span>
+              <kbd>{i + 1}</kbd>
+              <span class="d">{o.description ?? ""}</span>
+            </button>
+          ))}
+          <button class={`op${other ? " on" : ""}`} onClick={() => document.getElementById("composer")?.focus()} title="Answer in your own words in the field below (0)">
+            <span class="a ell">Other…</span>
+            <kbd>0</kbd>
+            <span class="d">{other ?? ""}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- composer ----
+
+/** What a send carries (SPEC V0.18): text and uploaded attachment ids; text may be empty. */
+export interface SendArgs {
+  text: string;
+  attachments?: string[];
+}
+
+interface ComposerProps {
+  t: ThreadDTO;
+  now: number;
+  answer: AnswerField | null;
+  onSend(args: SendArgs): Promise<boolean>;
+  onInterrupt(): void;
+}
+
+/**
+ * Enter sends (steers a running thread). While a question is open the composer is the answer field
+ * for the active question's "Other" (U15): Enter answers, ⌘Enter queues the text as a message instead.
+ * Files: the paperclip, paste and drop, any type; each uploads at once and shows a chip.
+ */
+function Composer({ t, now, answer, onSend, onInterrupt }: ComposerProps) {
+  const [draft, setDraft] = useState("");
+  const att = useAttachments();
+  const ta = useRef<HTMLTextAreaElement>(null);
+  const sendReason = unavailableReason(t, "thread.send");
+  const text = answer ? answer.text : draft;
+  const setText = answer ? answer.setText : setDraft;
+  const disabled = !answer && !!sendReason;
+
+  useLayoutEffect(() => {
+    const el = ta.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+  }, [text]);
+
+  const plan = sendArgs(text, att.chips);
+  const send = async () => {
+    if (sendReason || !plan.ok) return;
+    const ok = await onSend(plan.args);
+    if (ok) {
+      setText("");
+      att.clear();
+    }
+  };
+
+  const placeholder = answer
+    ? `Answer question ${answer.index + 1} in your own words…`
+    : sendReason
+      ? sendReason
+      : t.running
+        ? "Steer the running thread…"
+        : "Message…";
+
+  return (
+    <div class="cmpw" onDrop={att.onDrop} onDragOver={att.onDragOver}>
+      {t.running && (
+        <div class="sys live">
+          <span class="spin icw">
+            <StateIcon state="working" size={14} />
+          </span>
+          <span class="ell">{liveLine(t, now)}</span>
+        </div>
+      )}
+      <ChipStrip chips={att.chips} onRemove={att.remove} />
+      <div class={`cmp${disabled ? " off" : ""}`}>
+        <ClipPicker onFiles={att.add} disabled={!!sendReason} />
+        <textarea
+          ref={ta}
+          id="composer"
+          class="in"
+          rows={1}
+          value={text}
+          disabled={disabled}
+          placeholder={placeholder}
+          title={disabled ? sendReason : undefined}
+          data-other={answer ? "1" : undefined}
+          onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+          onPaste={att.onPaste}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (answer && !(e.metaKey || e.ctrlKey)) answer.submit();
+            else void send();
+          }}
+        />
+        {answer && !sendReason && <span class="hint">⌘⏎ queue</span>}
+        {t.running && (
+          <button class="btn" disabled={!isAvailable(t, "thread.interrupt")} title={unavailableReason(t, "thread.interrupt") ?? "Interrupt (Esc)"} onClick={onInterrupt}>
+            Interrupt <kbd>Esc</kbd>
+          </button>
+        )}
+        {answer ? (
+          <button class="btn p" title="Answer (Enter)" onClick={answer.submit}>
+            Answer <kbd>⏎</kbd>
+          </button>
+        ) : (
+          <button class="btn p" disabled={!!sendReason || !plan.ok} title={sendReason ?? (plan.ok ? "Send (Enter)" : plan.reason)} onClick={() => void send()}>
+            Send <kbd>⏎</kbd>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
