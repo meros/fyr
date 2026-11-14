@@ -69,3 +69,14 @@ func (p *Presence) Watched(thread string, now time.Time) bool {
 	}
 	return false
 }
+
+// Allowed reports whether a planned push may go out at now: not for a
+// thread a device is watching, and not while the thread's project is in its
+// quiet hours (quietUntil in the future, SPEC 0.5 V0.46). A push refused for
+// quiet hours is dropped; nothing is sent when they end.
+func Allowed(watched bool, quietUntil *time.Time, now time.Time) bool {
+	if watched {
+		return false
+	}
+	return quietUntil == nil || !now.Before(*quietUntil)
+}

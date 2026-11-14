@@ -301,12 +301,15 @@ func main() {
 		log.Printf("push: %v", err)
 	}
 	// V0.20: push for asking, failed, blocked and done; done and blocked wait
-	// 20 s and push only if still true; never for a thread being watched.
+	// 20 s and push only if still true; never for a thread being watched or
+	// in its project's quiet hours (V0.46).
 	presence := &notify.Presence{}
 	eng.OnAttention = func(d engine.DTO, prev core.State) {
 		next := d.Attention.State
 		send := func() {
-			if presence.Watched(d.ID, time.Now()) {
+			// V0.46: no push in the project's quiet hours, none queued.
+			now := time.Now()
+			if !notify.Allowed(presence.Watched(d.ID, now), d.QuietUntil, now) {
 				return
 			}
 			meta, detail := attentionDetail(d)
