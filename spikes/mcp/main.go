@@ -73,7 +73,7 @@ func main() {
 
 	turn := func(label, text string) {
 		fmt.Println("==", label)
-		c.SendUser([]claude.Msg{{"type": "text", "text": text}})
+		c.SendUser([]claude.Msg{{"type": "text", "text": text}}, "")
 		timeout := time.After(150 * time.Second)
 		for {
 			select {

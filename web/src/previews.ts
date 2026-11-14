@@ -1,7 +1,7 @@
 // In-thread previews (SPEC 0.5 V0.19): the card model for a `preview` event, frame heights, and
 // which markdown image sources render inline. Pure.
 
-import { attachmentUrl } from "./attach.ts";
+import { attachmentUrl, hostQuery } from "./attach.ts";
 
 export interface PreviewData {
   kind: "image" | "html";
@@ -29,9 +29,14 @@ export const FRAME_START_MAX = 600;
 export const FRAME_MAX = 2000;
 const FRAME_DEFAULT = 400;
 
-let previewUrlFor: (id: string) => string = (id) => `/api/previews/${encodeURIComponent(id)}`;
+let previewUrlFor: (id: string, host?: string) => string = (id, host) => `/api/previews/${encodeURIComponent(id)}${hostQuery(host)}`;
+/** Where an HTML page loads from: a preview or a live view (V0.37), on the thread's host (V0.54). */
+export function previewUrl(id: string, host?: string): string {
+  return previewUrlFor(id, host);
+}
+
 /** The app sets this (mock mode serves data: pages). */
-export function setPreviewUrl(fn: (id: string) => string): void {
+export function setPreviewUrl(fn: (id: string, host?: string) => string): void {
   previewUrlFor = fn;
 }
 
@@ -41,7 +46,7 @@ function num(v: unknown): number {
 }
 
 /** The card for a `preview` event, or null when the event is not usable. */
-export function previewCard(seq: number, at: string, data: unknown): PreviewCard | null {
+export function previewCard(seq: number, at: string, data: unknown, host?: string): PreviewCard | null {
   const d = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
   const kind = d.kind === "html" ? "html" : d.kind === "image" ? "image" : null;
   const id = typeof d.attachmentId === "string" ? d.attachmentId : "";
@@ -56,14 +61,21 @@ export function previewCard(seq: number, at: string, data: unknown): PreviewCard
     width: num(d.width),
     height: num(d.height),
     url: typeof d.url === "string" && /^https?:\/\//i.test(d.url) ? d.url : undefined,
-    src: kind === "image" ? attachmentUrl(id) : previewUrlFor(id),
+    src: kind === "image" ? attachmentUrl(id, host) : previewUrlFor(id, host),
   };
 }
 
-/** An HTML frame's height: min(height, 600) at first, at most 2,000 px when opened up. */
-export function frameHeight(height: number, expanded = false): number {
-  const h = height > 0 ? height : FRAME_DEFAULT;
-  return Math.min(h, expanded ? FRAME_MAX : FRAME_START_MAX);
+/** What an HTML frame may use (V0.47): its own full screen, WebXR and motion sensors for 3D. */
+export const FRAME_ALLOW = "fullscreen; xr-spatial-tracking; accelerometer; gyroscope";
+const FRAME_MIN = 40;
+
+/**
+ * An HTML frame's height (V0.19, V0.47): the page's own report, else the agent's `size` height, else 16:10 of the
+ * card's width; min(that, 600) at first, at most 2,000 px when opened up.
+ */
+export function frameHeight(height: number, expanded = false, reported = 0, width = 0): number {
+  const h = reported > 0 ? Math.ceil(reported) : height > 0 ? height : width > 0 ? Math.round((width * 10) / 16) : FRAME_DEFAULT;
+  return Math.max(FRAME_MIN, Math.min(h, expanded ? FRAME_MAX : FRAME_START_MAX));
 }
 
 /** A thumbnail's box: keep the aspect, at most `maxW` wide and `maxH` tall (desktop). */

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { base64UrlToBytes, deviceLabel, parsePayload, pushNext, pushStatus, unsupportedReason, type PushEnv } from "../src/push.ts";
+import { base64UrlToBytes, deviceLabel, openTargets, parsePayload, pushNext, pushStatus, rememberOpen, takeOpen, unsupportedReason, type PushEnv } from "../src/push.ts";
 
 const desktop: PushEnv = { secure: true, serviceWorker: true, pushManager: true, notification: true, ios: false, standalone: false };
 
@@ -78,4 +78,20 @@ test("a thread's notification closes when it no longer needs the user", () => {
   assert.equal(shouldClearNotification("asking"), false);
   assert.equal(shouldClearNotification("failed"), false);
   for (const s of ["working", "waiting", "done", "seen", "settled", "snoozed", "archived"]) assert.equal(shouldClearNotification(s), true, s);
+});
+
+// SPEC 0.5 V0.15: a tapped notification opens its thread even when the app reloads for a
+// new build before the thread is on screen (found live: taps opened the wrong thread).
+test("a pending open survives a reload and is used once", () => {
+  const m = new Map<string, string>();
+  const st = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
+  rememberOpen(st, "t_b");
+  assert.equal(takeOpen(st), "t_b", "after the reload the thread is still there");
+  assert.equal(takeOpen(st), null, "used once");
+});
+
+// The service worker tells every Fyr window, so the installed app gets it even when a browser tab is open too.
+test("the open message goes to every window of the origin", () => {
+  const wins = [{ url: "https://h:7443/?x", id: "a" }, { url: "https://other/", id: "b" }, { url: "https://h:7443/", id: "c" }];
+  assert.deepEqual(openTargets(wins, "https://h:7443").map((w) => w.id), ["a", "c"]);
 });

@@ -21,26 +21,59 @@ export interface ToolCall {
   output: string;
   /** subagent messages folded under a Task/Agent tool use */
   subMessages: number;
+  /** V0.38: the host cut this output; the event with this seq has it whole */
+  cutSeq?: number;
   subCalls: ToolCall[];
   subTexts: string[];
 }
 
-export type Item =
-  | { kind: "user"; key: string; text: string; images: number; from?: string; attachments: { id: string; name: string; mediaType: string; size: number }[] }
-  | { kind: "assistant"; key: string; text: string }
+/** SPEC 0.5 V0.33: where a message is on its way to the agent; "" for messages from before tracking. */
+export type Delivery = "" | "sent" | "queued" | "read" | "cancelled" | "lost";
+
+/** V0.41: when the event arrived and which run it belongs to (undefined outside a run). */
+export interface ItemMeta {
+  at?: number;
+  run?: number;
+}
+
+export type Item = (
+  | {
+      kind: "user";
+      key: string;
+      text: string;
+      images: number;
+      from?: string;
+      attachments: { id: string; name: string; mediaType: string; size: number }[];
+      /** the message id (V0.33) */
+      id?: string;
+      delivery: Delivery;
+      /** not read yet: it renders after "Agent is here" */
+      pending: boolean;
+      /** the owner's last message the agent read: the only one that says "Read" */
+      lastRead: boolean;
+    }
+  | { kind: "assistant"; key: string; text: string; quiet?: boolean }
   | { kind: "tools"; key: string; calls: ToolCall[] }
   | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number; compact: boolean }
   | { kind: "effect"; key: string; action: string; ok: boolean; text: string; line: string }
   | { kind: "note"; key: string; text: string; line: string }
   | { kind: "answer"; key: string; text: string }
   | { kind: "preview"; key: string; card: PreviewCard }
-  | { kind: "task"; key: string; text: string; status: string; started: boolean };
+  | { kind: "task"; key: string; text: string; status: string; started: boolean }
+  /** V0.45: the thread moved to another profile */
+  | { kind: "handover"; key: string; from: string; to: string; rung: string; note?: string; atIso: string }
+) &
+  ItemMeta;
 
 export interface BuildOptions {
+  /** V0.33: ids of the messages the host still holds; others are not waiting, whatever events arrived */
+  outbox?: string[];
   /** "Show tool details": every machine line in full (V0.21) */
   details?: boolean;
   /** the thread's folder, for relative paths in labels */
   cwd?: string;
+  /** V0.54: the thread's host, which serves its previews */
+  host?: string;
 }
 
 function str(v: unknown): string {
@@ -117,11 +150,11 @@ function blocksOf(data: any): Block[] {
 }
 
 /** The thread's preview cards, in log order (for the filmstrip). */
-export function previewsOf(events: FyrEvent[]): PreviewCard[] {
+export function previewsOf(events: FyrEvent[], host?: string): PreviewCard[] {
   const out: PreviewCard[] = [];
   for (const e of events) {
     if (e.type !== "preview") continue;
-    const c = previewCard(e.seq, e.at, e.data);
+    const c = previewCard(e.seq, e.at, e.data, host);
     if (c) out.push(c);
   }
   return out;
@@ -131,12 +164,25 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
   const details = !!opts.details;
   const cwd = opts.cwd ?? "";
   const items: Item[] = [];
+  // V0.37: inside the turn Fyr forced to update the live view, the agent's text is one quiet line.
+  let forcedTurn = false;
   const calls = new Map<string, ToolCall>();
-  let group: { kind: "tools"; key: string; calls: ToolCall[] } | null = null;
+  // V0.33: a message with an id waits here until the agent reads it (or it is
+  // cancelled or lost); it then takes its place in the log at that point.
+  const held = new Map<string, Extract<Item, { kind: "user" }>>();
+  // where each held message was sent: its place if its read event never arrives (V0.33)
+  const heldAt = new Map<string, { index: number; meta: ItemMeta }>();
+  let group: Extract<Item, { kind: "tools" }> | null = null;
+  // V0.41: runs are numbered from 1; `inRun` is false between run.ended and the next run.started.
+  let run = 0;
+  let inRun = false;
+  let now = 0;
+  const meta = (): ItemMeta => (inRun ? { at: now, run } : { at: now });
 
   const pushItem = (it: Item) => {
     group = null;
-    items.push(it);
+    // a held message keeps the time it was sent; it joins the run that read it
+    items.push({ ...meta(), ...it, ...(inRun ? { run } : {}) });
   };
   const newCall = (b: Block, at: number): ToolCall => ({
     id: b.id ?? "",
@@ -157,8 +203,13 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
 
   for (const e of events) {
     const at = Date.parse(e.at) || 0;
+    now = at;
     const key = String(e.seq);
     switch (e.type) {
+      case "run.started":
+        run++;
+        inRun = true;
+        break;
       case "user": {
         const text = str(e.data?.text);
         // Fyr's own messages to the agent are system notes, not the user's words: hidden unless details are on.
@@ -166,7 +217,8 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           if (details) pushItem({ kind: "note", key, text, line: firstLine(text.replace(/^\[Fyr\]\s*/, "")) });
           break;
         }
-        pushItem({
+        const id = str(e.data?.id);
+        const it: Extract<Item, { kind: "user" }> = {
           kind: "user",
           key,
           text: str(e.data?.text),
@@ -175,7 +227,27 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           attachments: (Array.isArray(e.data?.attachments) ? e.data.attachments : [])
             .filter((a: any) => a && typeof a.id === "string")
             .map((a: any) => ({ id: a.id, name: str(a.name) || "file", mediaType: str(a.mediaType), size: Number(a.size) || 0 })),
-        });
+          id: id || undefined,
+          delivery: id ? "sent" : "",
+          pending: false,
+          lastRead: false,
+        };
+        if (id) {
+          held.set(id, it);
+          heldAt.set(id, { index: items.length, meta: meta() });
+        } else pushItem(it);
+        break;
+      }
+      case "message.state": {
+        const it = held.get(str(e.data?.id));
+        const st = str(e.data?.state);
+        if (!it) break;
+        if (st === "queued") it.delivery = "queued";
+        else if (st === "read" || st === "cancelled" || st === "lost") {
+          it.delivery = st;
+          held.delete(it.id!);
+          pushItem(it);
+        }
         break;
       }
       case "msg": {
@@ -192,7 +264,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
               calls.set(c.id, c);
               host.subCalls.push(c);
             } else if (b.type === "tool_result") {
-              finish(calls.get(b.tool_use_id ?? ""), b, at);
+              finish(calls.get(b.tool_use_id ?? ""), b, at, d.cut ? e.seq : undefined);
             } else if (b.type === "text" && d.type === "assistant" && b.text?.trim()) {
               host.subTexts.push(b.text);
             }
@@ -201,23 +273,27 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         }
         for (const b of blocks) {
           if (d.type === "assistant" && b.type === "text") {
-            if (b.text?.trim()) pushItem({ kind: "assistant", key: `${key}.${items.length}`, text: b.text });
+            if (b.text?.trim()) pushItem({ kind: "assistant", key: `${key}.${items.length}`, text: b.text, ...(forcedTurn ? { quiet: true } : {}) });
           } else if (d.type === "assistant" && b.type === "tool_use") {
             const c = newCall(b, at);
             calls.set(c.id, c);
             if (!group) {
-              group = { kind: "tools", key: `${key}.${items.length}`, calls: [] };
+              group = { kind: "tools", key: `${key}.${items.length}`, calls: [], ...meta() };
               items.push(group);
             }
             group.calls.push(c);
           } else if (b.type === "tool_result") {
-            finish(calls.get(b.tool_use_id ?? ""), b, at);
+            finish(calls.get(b.tool_use_id ?? ""), b, at, d.cut ? e.seq : undefined);
           }
           // thinking and image blocks are not shown in v0
         }
         break;
       }
+      case "view.forced":
+        forcedTurn = true;
+        break;
       case "run.ended": {
+        forcedTurn = false;
         const d = e.data ?? {};
         pushItem({
           kind: "run",
@@ -228,10 +304,11 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           durationMs: typeof d.durationMs === "number" ? d.durationMs : undefined,
           compact: !details,
         });
+        inRun = false;
         break;
       }
       case "preview": {
-        const card = previewCard(e.seq, e.at, e.data);
+        const card = previewCard(e.seq, e.at, e.data, opts.host);
         if (card) pushItem({ kind: "preview", key, card });
         break;
       }
@@ -246,14 +323,55 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text, line: firstLine(text) || (e.data?.ok ? "Done" : "Failed") });
         break;
       }
+      case "handover":
+        pushItem({ kind: "handover", key, from: str(e.data?.from), to: str(e.data?.to), rung: str(e.data?.rung), atIso: e.at, ...(str(e.data?.note) ? { note: str(e.data?.note) } : {}) });
+        break;
+      case "effect.error": {
+        // V0.45: a handover that could not start; other effect errors stay for tool details.
+        const err = str(e.data?.error);
+        if (e.data?.kind === "handover") pushItem({ kind: "effect", key, action: "handover", ok: false, text: err, line: `Handover failed: ${firstLine(err)}` });
+        break;
+      }
       case "decision.closed":
         if (str(e.data?.answer)) pushItem({ kind: "answer", key, text: str(e.data?.answer) });
         break;
       default:
-        break; // run.started, decision.opened and unknown types are not shown in the log
+        break; // decision.opened and unknown types are not shown in the log
     }
   }
-  return calmTools(items);
+  // The host's outbox is the truth: a held message it no longer holds was read (its read event may
+  // never have reached this device). It goes back where it was sent, not to the end (found live).
+  const holds = opts.outbox ? new Set(opts.outbox) : null;
+  if (holds) {
+    const back = [...held.values()].filter((it) => !holds.has(it.id!)).map((it) => ({ it, at: heldAt.get(it.id!)! }));
+    for (const { it, at } of back.sort((a, b) => b.at.index - a.at.index)) {
+      items.splice(at.index, 0, { ...at.meta, ...it, delivery: "read", pending: false });
+      held.delete(it.id!);
+    }
+  }
+  const out = calmTools(items);
+  let last: Extract<Item, { kind: "user" }> | undefined;
+  for (const it of out) if (it.kind === "user" && it.delivery === "read" && (!it.from || it.from === "view-typed")) last = it;
+  if (last) last.lastRead = true;
+  for (const it of held.values()) out.push({ ...it, pending: true });
+  return out;
+}
+
+/** V0.33: the quiet word under a message: Waiting, Sent, Read (the last read one only), Cancelled, Not delivered. */
+export function deliveryLabel(it: Extract<Item, { kind: "user" }>): string {
+  switch (it.delivery) {
+    case "queued":
+      return "Waiting";
+    case "sent":
+      return "Sent";
+    case "read":
+      return it.lastRead ? "Read" : "";
+    case "cancelled":
+      return "Cancelled";
+    case "lost":
+      return "Not delivered";
+  }
+  return "";
 }
 
 /** V0.21: drop calls that have their own card or are plumbing (unless they failed); drop groups left empty. */
@@ -270,8 +388,9 @@ function calmTools(items: Item[]): Item[] {
   return out;
 }
 
-function finish(c: ToolCall | undefined, b: Block, at: number) {
+function finish(c: ToolCall | undefined, b: Block, at: number, cutSeq?: number) {
   if (!c) return;
+  if (cutSeq) c.cutSeq = cutSeq;
   c.done = true;
   c.isError = !!b.is_error;
   c.output = resultText(b.content);
@@ -298,7 +417,7 @@ export function toolRows(calls: ToolCall[]): ToolRow[] {
 // ---- V0.21: calm tool output ----
 
 /** Calls whose result has its own card in the log: the call itself never shows (unless it failed). */
-export const CARD_TOOLS = new Set(["mcp__fyr__show", "mcp__fyr__effect_request", "mcp__fyr__pr_link", "mcp__fyr__settle_when", "AskUserQuestion"]);
+export const CARD_TOOLS = new Set(["mcp__fyr__view_publish", "mcp__fyr__view_state", "mcp__fyr__view_unchanged", "mcp__fyr__show", "mcp__fyr__effect_request", "mcp__fyr__pr_link", "mcp__fyr__settle_when", "AskUserQuestion"]);
 /** Plumbing: tool loading and bookkeeping. Extend here. */
 export const PLUMBING_TOOLS = new Set(["ToolSearch", "TodoWrite", "TodoRead", "ListMcpResourcesTool", "ReadMcpResourceTool"]);
 /** Shell bookkeeping: a Bash call whose whole command is one of these. */
@@ -349,8 +468,9 @@ const KINDS: Record<string, Kind> = {
   search: { key: "search", one: "searched the code", many: (n) => `searched the code ${n} times` },
   web: { key: "web", one: "searched the web", many: (n) => `searched the web ${n} times` },
   fetch: { key: "fetch", one: "fetched 1 page", many: (n) => `fetched ${n} pages` },
+  agent: { key: "agent", one: "started 1 subagent", many: (n) => `started ${n} subagents` },
 };
-const KIND_OF: Record<string, string> = { Read: "read", NotebookRead: "read", Edit: "edit", MultiEdit: "edit", Write: "edit", NotebookEdit: "edit", Bash: "bash", BashOutput: "bash", Grep: "search", Glob: "search", LS: "search", WebSearch: "web", WebFetch: "fetch" };
+const KIND_OF: Record<string, string> = { Read: "read", NotebookRead: "read", Edit: "edit", MultiEdit: "edit", Write: "edit", NotebookEdit: "edit", Bash: "bash", BashOutput: "bash", Grep: "search", Glob: "search", LS: "search", WebSearch: "web", WebFetch: "fetch", Task: "agent", Agent: "agent" };
 
 /** "Read 3 files · ran 2 commands · searched the web · edited 1 file", in order of first use. */
 export function groupSummary(calls: (Pick<ToolCall, "name"> & { description?: string })[]): string {
@@ -563,4 +683,153 @@ export function runLabel(it: Extract<Item, { kind: "run" }>): { text: string; mo
   if (it.failure) return { text: `Failed (${it.failure.class}): ${it.failure.message}`, more: [d, cost].filter(Boolean).join(" · ") };
   const text = it.interrupted ? (d ? `Stopped after ${d}` : "Stopped") : d ? `Finished in ${d}` : "Finished";
   return { text, more: cost };
+}
+
+/** V0.38: the whole output of one call, from the full event the host returns. */
+export function fullOutputOf(ev: { data?: unknown }, toolUseId: string): string | null {
+  const d = (ev?.data ?? {}) as { message?: { content?: Block[] } };
+  for (const b of d.message?.content ?? []) {
+    if (b.type === "tool_result" && b.tool_use_id === toolUseId) return resultText(b.content);
+  }
+  return null;
+}
+
+// ---- V0.41: pacing. What the owner reads (outcome) at full weight; the work (process) quiet and folded ----
+
+/** outcome: read at full weight; process: quiet; end: the small line that closes a run. */
+export type Role = "outcome" | "process" | "end";
+
+export type Entry =
+  | { kind: "item"; key: string; item: Item; role: Role }
+  | { kind: "fold"; key: string; items: Item[]; text: string; steps: number; failed: number; running: number; durationMs: number | null };
+
+function turnOf(it: Item, users: number): string {
+  return it.run !== undefined ? `r${it.run}` : `o${users}`;
+}
+
+/**
+ * The role of each item. Outcome: the owner's messages, the agent's last message of a run (the
+ * newest one while the run goes on), previews, and failures (a failed run, effect or agent).
+ * Process: everything the agent did on the way there, its earlier messages included.
+ */
+export function roles(items: Item[]): Role[] {
+  const lastText = new Map<string, number>();
+  let users = 0;
+  const turns = items.map((it, i) => {
+    if (it.kind === "user" && it.run === undefined) users++;
+    const t = turnOf(it, users);
+    if (it.kind === "assistant" && !it.quiet) lastText.set(t, i);
+    return t;
+  });
+  return items.map((it, i): Role => {
+    switch (it.kind) {
+      case "user":
+      case "preview":
+      case "handover":
+        return "outcome";
+      case "assistant":
+        return !it.quiet && lastText.get(turns[i]) === i ? "outcome" : "process";
+      case "run":
+        return it.failure ? "outcome" : "end";
+      case "effect":
+        return it.ok ? "process" : "outcome";
+      case "task":
+        return it.status === "failed" ? "outcome" : "process";
+      default:
+        return "process";
+    }
+  });
+}
+
+/** The run still going: the newest run with items and no end yet. */
+export function liveRun(items: Item[]): number | undefined {
+  let max: number | undefined;
+  for (const it of items) if (it.run !== undefined && (max === undefined || it.run > max)) max = it.run;
+  if (max === undefined) return undefined;
+  return items.some((it) => it.kind === "run" && it.run === max) ? undefined : max;
+}
+
+/**
+ * V0.41: consecutive process items fold into one line ("Read 3 files · ran 2 commands · 2 min"),
+ * one tap from every step. Not folded: a single step, a stretch of system lines only (they are one
+ * line each already), the newest stretch of the live run (what is happening now), and everything
+ * when tool details are on.
+ */
+export function pace(items: Item[], opts: { details?: boolean } = {}): Entry[] {
+  const rs = roles(items);
+  const live = liveRun(items);
+  const out: Entry[] = [];
+  let stretch: Item[] = [];
+  const flush = (atEnd: boolean) => {
+    const s = stretch;
+    stretch = [];
+    if (!s.length) return;
+    const work = s.some((it) => it.kind === "tools" || it.kind === "assistant");
+    const liveTail = atEnd && live !== undefined && s[s.length - 1].run === live;
+    if (opts.details || s.length < 2 || !work || liveTail) {
+      for (const it of s) out.push({ kind: "item", key: it.key, item: it, role: "process" });
+      return;
+    }
+    out.push(foldOf(s));
+  };
+  items.forEach((it, i) => {
+    if (rs[i] === "process") {
+      stretch.push(it);
+      return;
+    }
+    flush(false);
+    out.push({ kind: "item", key: it.key, item: it, role: rs[i] });
+  });
+  flush(true);
+  return out;
+}
+
+function foldOf(s: Item[]): Extract<Entry, { kind: "fold" }> {
+  const calls = s.flatMap((it) => (it.kind === "tools" ? it.calls : []));
+  const steps = calls.length + s.filter((it) => it.kind !== "tools").length;
+  let start = Infinity;
+  let end = 0;
+  for (const it of s) {
+    if (it.at) {
+      start = Math.min(start, it.at);
+      end = Math.max(end, it.at);
+    }
+    if (it.kind === "tools")
+      for (const c of it.calls) {
+        if (c.startedAt) start = Math.min(start, c.startedAt);
+        end = Math.max(end, c.startedAt + (c.durationMs ?? 0));
+      }
+  }
+  const st = groupStats(calls);
+  return {
+    kind: "fold",
+    key: `${s[0].key}.fold`,
+    items: s,
+    text: calls.length ? groupSummary(calls) : `${steps} steps`,
+    steps,
+    failed: st.failed,
+    running: st.running,
+    durationMs: start !== Infinity && end >= start && !st.running ? end - start : null,
+  };
+}
+
+/** SPEC 0.5 V0.49: the View tab's chat: the last message typed there and the first spoken reply after it. */
+export function viewChat(items: Item[]): { mine: Extract<Item, { kind: "user" }>; reply: string | null } | null {
+  let at = -1;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.kind === "user" && it.from === "view-typed") at = i;
+  }
+  if (at < 0) return null;
+  const mine = items[at] as Extract<Item, { kind: "user" }>;
+  let reply: string | null = null;
+  for (let i = at + 1; i < items.length; i++) {
+    const it = items[i];
+    if (it.kind === "user") break;
+    if (it.kind === "assistant" && !it.quiet && it.text.trim()) {
+      reply = it.text.trim();
+      break;
+    }
+  }
+  return { mine, reply };
 }

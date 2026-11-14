@@ -1,4 +1,22 @@
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
+/** Run when the browser is idle (V0.38: storing never competes with input). */
+const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
+import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
+import { listPref, listShown, setListPref } from "./prefs.ts";
+import { DeployBanner } from "./deploy-ui.tsx";
+import { cache, mergeEventLists } from "./cache.ts";
+import { setFullEventSource } from "./thread.tsx";
+import { rememberOpen, takeOpen } from "./push.ts";
+const sessionStore = () => {
+  try {
+    return typeof sessionStorage !== "undefined" ? sessionStorage : null;
+  } catch {
+    return null;
+  }
+};
+import { navTransition } from "./native.ts";
+import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
+import { ContextMenu } from "./menu-ui.tsx";
 import { Boundary } from "./boundary.tsx";
 import { shouldClearNotification } from "./push.ts";
 import { clearThreadNotification } from "./pwa.ts";
@@ -6,9 +24,11 @@ import { clearThreadNotification } from "./pwa.ts";
 
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, ThreadDTO } from "./types.ts";
+import type { Decision, StateDTO, ThreadDTO } from "./types.ts";
 import { createApi } from "./api.ts";
+import { setQuotaSource } from "./quota-ui.tsx";
 import { setChangesSource } from "./changes-ui.tsx";
+import { setPrSource } from "./pr-ui.tsx";
 import {
   SECTIONS,
   applySnapshot,
@@ -28,17 +48,21 @@ import {
   undoLive,
   upsertThread,
   upsertProject,
+  setDeploy,
   UNDO_MS,
   type SectionKey,
   type SnoozePreset,
   type Store,
   type UndoEntry,
+  applyThreadPatch,
 } from "./store.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
+import { Settings } from "./settings-ui.tsx";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
-import { ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
+import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
+import { HandoverDialog } from "./handover-ui.tsx";
 import { setToolDetails } from "./prefs.ts";
 import { setAttachmentUrl } from "./attach.ts";
 import { setPreviewUrl } from "./previews.ts";
@@ -46,11 +70,13 @@ import { PreviewViewer } from "./preview-ui.tsx";
 import { setUploader } from "./attach-ui.tsx";
 import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
 import { disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
-import { unsupportedReason, type PushStatus } from "./push.ts";
+import { PUSH_TITLE, unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
-import { DirectoryContext, NewProjectForm, ProjectEditor, ProjectList, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, filterByProject, sourceFromInput } from "./projects.ts";
+import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
+import { FILTER_KEY, LAST_PROJECT_KEY, filterByProject } from "./projects.ts";
+import { hideQuiet, nextQuietEnd } from "./quiet.ts";
+import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
@@ -116,13 +142,16 @@ function useViewportVars(on: boolean) {
 const PAGE = 400;
 
 const api = createApi();
+setQuotaSource(() => api.quota()); // V0.44
 setUploader(api.uploadAttachment);
 setAttachmentUrl(api.attachmentUrl);
 setPreviewUrl(api.previewUrl);
 setChangesSource(api);
+setPrSource(api);
+setFullEventSource(api);
 const params = new URLSearchParams(location.search);
 
-type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "move" | "newproject" | null;
+type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | "handover" | "settings" | null;
 type Zone = "list" | "thread";
 
 interface Toast {
@@ -173,6 +202,8 @@ function App() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState<Dialog>(null);
   const [snoozeTargets, setSnoozeTargets] = useState<string[]>([]);
+  // V0.45: the thread the handover dialog is for
+  const [handoverId, setHandoverId] = useState<string | null>(null);
   const [undo, setUndo] = useState<UndoEntry | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [tracker, setTracker] = useState<SeenTracker>(initialTracker);
@@ -219,17 +250,35 @@ function App() {
     }
   };
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [moveIds, setMoveIds] = useState<string[]>([]);
+  // The project picker (V0.30): the threads it files.
+  const [pickIds, setPickIds] = useState<string[]>([]);
+  const openPicker = (ids: string[]) => {
+    setPickIds(ids);
+    setDialog("picker");
+  };
+  // V0.46: quiet hours. One timer to the nearest quietUntil re-renders when a window ends (the host also sends the
+  // threads then); no polling.
+  const [quietClock, setQuietClock] = useState(0);
+  useEffect(() => {
+    const next = nextQuietEnd(store.threads, store.projects, Date.now() + store.clockOffset);
+    if (next === null) return;
+    const t = setTimeout(() => setQuietClock((n) => n + 1), Math.min(next - (Date.now() + store.clockOffset) + 250, 2 ** 31 - 1));
+    return () => clearTimeout(t);
+  }, [store.threads, store.projects, store.clockOffset, quietClock]);
+  const filterOn = !!projectFilter && store.projects.some((p) => p.id === projectFilter);
+  // What search may find: the project filter only, quiet threads included (V0.46).
+  const searchable = useMemo(() => filterByProject(store.threads, filterOn ? projectFilter : null, store.projects), [store.threads, store.projects, projectFilter, filterOn]);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const base = filterByProject(store.threads, projectFilter && store.projects.some((p) => p.id === projectFilter) ? projectFilter : null, store.projects);
+    // V0.46: a quiet project's threads leave the inbox and its counts, unless the filter picks it or a search is typed.
+    const base = hideQuiet(searchable, filterOn || !!q, Date.now() + store.clockOffset);
     if (!q) return base;
     const out: Record<string, ThreadDTO> = {};
     for (const t of Object.values(base)) {
       if (`${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(q)) out[t.id] = t;
     }
     return out;
-  }, [store.threads, store.projects, query, projectFilter]);
+  }, [searchable, filterOn, query, quietClock, store.clockOffset]);
   const sec = useMemo(() => sections(shown), [shown]);
   const limits = useMemo(() => {
     const l: Partial<Record<SectionKey, number>> = {};
@@ -245,22 +294,62 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    registerServiceWorker((id) => setPendingOpen(id));
+    registerServiceWorker((id) => {
+      rememberOpen(sessionStore(), id);
+      setPendingOpen(id);
+    });
+    // A tap that arrived just before a reload for a new build (V0.15).
+    const carried = takeOpen(sessionStore());
+    if (carried) {
+      rememberOpen(sessionStore(), carried);
+      setPendingOpen(carried);
+    }
     watchInstall((can) => setCanInstall(can));
     // Reconcile with the host at start and whenever the app comes back to the foreground.
     void syncPushStatus(api).then(setPushSt);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") void syncPushStatus(api).then(setPushSt);
     });
+    // V0.38: stream messages are applied together, once per frame (a short timer while the page is
+    // hidden), so a burst of updates is one render, not one per message.
+    let queue: ((s: Store) => Store)[] = [];
+    let scheduled = false;
+    const flush = () => {
+      scheduled = false;
+      const fns = queue;
+      queue = [];
+      if (fns.length) setStore((s) => fns.reduce((acc, f) => f(acc), s));
+    };
+    const batch = (fn: (s: Store) => Store) => {
+      queue.push(fn);
+      if (scheduled) return;
+      scheduled = true;
+      if (document.hidden || typeof requestAnimationFrame !== "function") setTimeout(flush, 250);
+      else requestAnimationFrame(flush);
+    };
     api.start({
-      state: (dto) => setStore((s) => applySnapshot(s, dto, Date.now())),
+      state: (dto) => {
+        flush();
+        setStore((s) => applySnapshot(s, dto, Date.now()));
+      },
       thread: (t) => {
         if (shouldClearNotification(t.attention.state)) clearThreadNotification(t.id);
-        setStore((s) => upsertThread(s, t));
+        batch((s) => upsertThread(s, t));
       },
-      event: (e) => setStore((s) => liveEvent(s, e)),
-      project: (p) => setStore((s) => upsertProject(s, p)),
-      conn: (c) => setStore((s) => setConn(s, c)),
+      // V0.38: a patch against our copy; when it does not fit, ask for the whole thread.
+      threadPatch: (p) => {
+        const st = (p.patch as { attention?: { state?: string } }).attention?.state;
+        if (st && shouldClearNotification(st)) clearThreadNotification(p.id);
+        batch((s) => {
+          const r = applyThreadPatch(s, p);
+          if (r.needFull) queueMicrotask(() => void api.thread(p.id).then((t) => t && setStore((x) => upsertThread(x, t))));
+          return r.store;
+        });
+      },
+      event: (e) => batch((s) => liveEvent(s, e)),
+      project: (p) => batch((s) => upsertProject(s, p)),
+      deploy: (p) => batch((s) => setDeploy(s, p)),
+      conn: (c) => batch((s) => setConn(s, c)),
     });
     const iv = setInterval(() => setTick(Date.now()), 15_000);
     return () => clearInterval(iv);
@@ -330,18 +419,50 @@ function App() {
     let cancelled = false;
     const after = lastSeq(store, openId);
     const known = !!store.events[openId];
-    api.events(openId, known ? after : 0, PAGE).then(
-      (evs) => {
+    const id = openId;
+    void (async () => {
+      // V0.38: the device's copy draws at once; the host sends only what is newer.
+      const stored = !known && !api.mock ? await cache.events(id) : null;
+      if (cancelled) return;
+      if (stored?.length) setStore((s) => (s.events[id] ? s : mergeEvents(s, id, stored, true)));
+      const from = known ? after : stored?.length ? stored[stored.length - 1].seq : 0;
+      try {
+        const evs = await api.events(id, from, PAGE);
         if (cancelled) return;
-        if (!known) setEarlier((m) => ({ ...m, [openId]: evs.length >= PAGE }));
-        setStore((s) => mergeEvents(s, openId, evs, !known));
-      },
-      () => !cancelled && !known && setStore((s) => mergeEvents(s, openId, [], true)),
-    );
+        if (!known && !stored?.length) setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
+        if (!known && stored?.length) {
+          const merged = mergeEventLists(stored, evs, PAGE, evs.length >= PAGE);
+          if (evs.length >= PAGE) setEarlier((m) => ({ ...m, [id]: true }));
+          setStore((s) => mergeEvents(s, id, merged, true));
+        } else setStore((s) => mergeEvents(s, id, evs, !known));
+      } catch {
+        if (!cancelled && !known && !stored?.length) setStore((s) => mergeEvents(s, id, [], true));
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, [openId, store.loaded, store.conn === "live"]);
+
+  // V0.38: keep the open thread's events and the state on the device, when the browser is idle.
+  const openEvents = openId ? store.events[openId] : undefined;
+  useEffect(() => {
+    if (!openId || !openEvents || api.mock) return;
+    const id = openId;
+    const t = setTimeout(() => idle(() => void cache.saveEvents(id, openEvents.slice(-PAGE))), 2000);
+    return () => clearTimeout(t);
+  }, [openId, openEvents]);
+  useEffect(() => {
+    if (!store.loaded || api.mock) return;
+    const t = setTimeout(
+      () =>
+        idle(() =>
+          void cache.saveState({ now: new Date().toISOString(), user: store.user, host: store.host, threads: Object.values(store.threads), actions: store.actions, profiles: store.profiles, projects: store.projects } as StateDTO),
+        ),
+      2000,
+    );
+    return () => clearTimeout(t);
+  }, [store.threads, store.projects, store.loaded]);
 
   // Decision card state follows the open decision.
   const decision: Decision | null = viewThread?.decisions?.[0] ?? null;
@@ -420,6 +541,13 @@ function App() {
     if (bad.length) showError(bad.length === 1 ? (bad[0].r.error ?? "Failed") : `${bad.length} failed: ${bad[0].r.error ?? ""}`);
     return ok.length;
   }, []);
+
+  /** V0.45: thread.handover; resolves to the host's error text, or null. */
+  const handover = async (id: string | null, profile?: string, model?: string): Promise<string | null> => {
+    if (!id || !profile) return "Pick a profile";
+    const r = await api.command("thread.handover", id, model ? { profile, model } : { profile });
+    return r.ok ? null : (r.error ?? "The handover could not start");
+  };
 
   const doUndo = useCallback(async () => {
     const cmds = undoCommands(undo, Date.now());
@@ -503,6 +631,51 @@ function App() {
     void runAction("thread.markUnseen", [id]);
   };
 
+  // ---- right-click menu (V0.31) ----
+  const [ctx, setCtx] = useState<{ x: number; y: number; items: MenuEntry[]; target: MenuTarget } | null>(null);
+  useEffect(() => {
+    const on = (e: MouseEvent) => {
+      const selection = String(window.getSelection?.() ?? "").trim();
+      const target = targetAt(e.target as Element | null, selection, threadsRef.current);
+      const items = menuFor(target);
+      if (items === null) return; // text fields keep the browser menu (spelling, Paste)
+      e.preventDefault();
+      if (phone || !items.length) return;
+      setCtx({ x: e.clientX, y: e.clientY, items, target });
+    };
+    document.addEventListener("contextmenu", on);
+    return () => document.removeEventListener("contextmenu", on);
+  }, [phone]);
+  const copyText = (text: string) => {
+    void navigator.clipboard?.writeText(text).then(
+      () => setToast({ text: "Copied", undo: false, at: Date.now() }),
+      () => showError("Could not copy"),
+    );
+  };
+  const MENU_ACTION: Record<string, string> = { unsettle: "thread.unsettle", unsnooze: "thread.unsnooze", markSeen: "thread.markSeen", unarchive: "thread.unarchive", interrupt: "thread.interrupt", dismissPR: "thread.dismissPR" };
+  const pickMenu = (it: MenuItem, target: MenuTarget) => {
+    setCtx(null);
+    if (target.kind === "thread") {
+      const id = target.t.id;
+      if (it.id === "open") openThread(id, "open");
+      else if (it.id === "settle") settle(id);
+      else if (it.id === "archive") archive([id]);
+      else if (it.id === "snooze") openSnooze([id]);
+      else if (it.id === "markUnseen") markUnseen(id);
+      else if (it.id === "project") openPicker([id]);
+      else if (it.id === "copyLink") copyText(`${location.origin}/?open=${id}`);
+      else if (it.id === "liveView") void runAction("thread.setView", [id], { on: !target.t.liveView });
+      else if (it.id === "handover") (setHandoverId(id), setDialog("handover"));
+      else if (MENU_ACTION[it.id]) void runAction(MENU_ACTION[it.id], [id]);
+      return;
+    }
+    if (it.id === "copy" && (target.kind === "text" || target.kind === "link")) copyText(target.kind === "text" ? target.selection : (target.selection ?? ""));
+    else if (it.id === "openLink" && target.kind === "link") window.open(target.href, "_blank", "noopener");
+    else if (it.id === "copyLink" && target.kind === "link") copyText(target.href);
+    else if (it.id === "openImage" && target.kind === "image") window.open(target.src, "_blank", "noopener");
+  };
+  const ctxMenu = ctx && <ContextMenu x={ctx.x} y={ctx.y} items={ctx.items} onPick={(it) => pickMenu(it, ctx.target)} onClose={() => setCtx(null)} />;
+
   const submitAsk = (d: Decision) => {
     const cs = cards[d.id];
     if (!cs || !view) return;
@@ -542,7 +715,43 @@ function App() {
     openThread(list[j], "open");
   };
 
+  // ---- the thread list (V0.40): hideable, hidden by default in a narrow window ----
+  const [listPrefState, setListPrefState] = useState<boolean | null>(() => listPref());
+  const [winW, setWinW] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1440));
+  useEffect(() => {
+    const on = () => setWinW(window.innerWidth);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const listOn = listShown(listPrefState, winW, !!view);
+  const toggleList = () => {
+    setListPrefState(!listOn);
+    setListPref(!listOn);
+  };
+
+  // V0.48: Settled opened from its header closes again after 30 s unless it is selected in the rail.
+  const [settledDeadline, setSettledDeadline] = useState<number | null>(null);
+  const [ahTick, setAhTick] = useState(0);
+  const activeForHide: SectionKey | null = sel && store.threads[sel] ? sectionOf(store.threads[sel]) : null;
+  useEffect(() => {
+    const r = autoHide({ open: isOpen("settled", sectionOpen), deadline: settledDeadline, active: activeForHide }, Date.now());
+    if (r.close) {
+      setSectionOpen((o) => ({ ...o, settled: false }));
+      setSettledDeadline(null);
+      return;
+    }
+    if (r.wait === null) return;
+    const t = setTimeout(() => setAhTick((x) => x + 1), r.wait + 20);
+    return () => clearTimeout(t);
+  }, [settledDeadline, sectionOpen, activeForHide, ahTick]);
+
   const jump = (k: SectionKey) => {
+    if (!sec[k].length) return; // an empty section is not a place to go
+    if (k === "settled") setSettledDeadline(null); // chosen in the rail: stays open (V0.48)
+    if (!listOn) {
+      setListPrefState(true); // jumping to a section shows the list (V0.40)
+      setListPref(true);
+    }
     setSectionOpen((o) => ({ ...o, [k]: true }));
     const first = sec[k][0];
     document.getElementById(`sec-${k}`)?.scrollIntoView({ block: "start" });
@@ -566,30 +775,68 @@ function App() {
   };
   const projectActions = {
     update: (id: string, patch: ProjectPatch) => projectCommand("project.update", { id, ...patch }),
-    addSource: (id: string, value: string) => {
-      const source = sourceFromInput(value);
-      return source ? projectCommand("project.addSource", { id, source }) : Promise.resolve("Type a folder path or a repo URL.");
+    /** V0.55: the project's one folder, from the picker. */
+    setFolder: (id: string, path: string) => projectCommand("project.update", { id, folder: path }),
+    /** New project (V0.30): with threadIds, the host files one thread in the same write; more are filed after. */
+    create: async (name: string, folder: string, threadIds: string[] = []): Promise<{ error: string | null; id?: string }> => {
+      const args: Record<string, unknown> = { name };
+      if (folder) args.folder = folder;
+      if (threadIds.length === 1) args.threadId = threadIds[0];
+      const r = await api.command("project.create", undefined, args);
+      if (!r.ok) return { error: r.error ?? "That did not work" };
+      const id = r.result?.id;
+      if (threadIds.length > 1 && id) await Promise.all(threadIds.map((t) => projectCommand("thread.setProject", { projectId: id }, t)));
+      setToast({ text: threadIds.length ? `Made project ${name} and filed ${threadIds.length === 1 ? "this thread" : `${threadIds.length} threads`}` : `Made project ${name}`, undo: false, at: Date.now() });
+      return { error: null, id };
     },
-    removeSource: (id: string, index: number) => projectCommand("project.removeSource", { id, index }),
-    create: async (name: string, folder: string, repo: string): Promise<string | null> => {
-      const sources: Record<string, unknown>[] = [];
-      if (folder) sources.push({ kind: "folder", path: folder }); // the host fills in its own name
-      if (repo) sources.push({ kind: "repo", url: repo });
-      return projectCommand("project.create", sources.length ? { name, sources } : { name });
-    },
-    createFrom: async (threadId: string): Promise<string | null> => {
-      const name = store.threads[threadId]?.suggest?.name;
-      const err = await projectCommand("project.createFrom", { threadId });
-      if (err) showError(err);
-      else setToast({ text: `Made project ${name ?? ""}`.trim(), undo: false, at: Date.now() });
-      return err;
-    },
-    move: async (ids: string[], projectId: string): Promise<string | null> => {
-      const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId }, id)))).filter(Boolean);
-      if (!errs.length) setToast({ text: ids.length === 1 ? `Moved to ${store.projects.find((p) => p.id === projectId)?.name ?? "the project"}` : `Moved ${ids.length} threads`, undo: false, at: Date.now() });
+    /** File threads into a project; null: No project. */
+    move: async (ids: string[], projectId: string | null): Promise<string | null> => {
+      const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId: projectId ?? "" }, id)))).filter(Boolean);
+      const where = projectId ? (store.projects.find((p) => p.id === projectId)?.name ?? "the project") : null;
+      if (!errs.length) setToast({ text: ids.length === 1 ? (where ? `Filed in ${where}` : "No project now") : where ? `Filed ${ids.length} threads in ${where}` : `${ids.length} threads have no project now`, undo: false, at: Date.now() });
       return errs[0] ?? null;
     },
   };
+  // V0.42: the host folder picker, a dialog on the desktop and a sheet on the phone, over whatever asked for it.
+  const [folderPick, setFolderPick] = useState<(PickOptions & { at: number; resolve(p: string | null): void }) | null>(null);
+  const folderPickRef = useRef(folderPick);
+  folderPickRef.current = folderPick;
+  const closeFolderPick = (path: string | null) => {
+    folderPickRef.current?.resolve(path);
+    setFolderPick(null);
+  };
+  const folderPicker: FolderPick = {
+    pick: (o = {}) =>
+      new Promise((resolve) => {
+        folderPickRef.current?.resolve(null);
+        setFolderPick({ ...o, at: Date.now(), resolve });
+      }),
+  };
+  const folderPickView = folderPick
+    ? phone ? (
+        <div class="m-scrim fscrim" onClick={(e) => e.target === e.currentTarget && Date.now() - folderPick.at > 500 && closeFolderPick(null)}>
+          <div class="m-sheet fsheet" role="dialog" aria-modal="true" aria-label={folderPick.title ?? "Pick a folder"}>
+            <div class="m-grab" />
+            <div class="fsh">
+              <span class="m-shh">{folderPick.title ?? "Pick a folder"}</span>
+              <button class="m-fchg" onClick={() => closeFolderPick(null)}>
+                Cancel
+              </button>
+            </div>
+            <FolderPicker fs={api} first={folderPick.first} onPick={closeFolderPick} autoFocus={false} />
+          </div>
+        </div>
+      ) : (
+        <div class="fmodal">
+          <Modal title={folderPick.title ?? "Pick a folder"} onClose={() => closeFolderPick(null)} wide>
+            <div class="db">
+              <FolderPicker fs={api} first={folderPick.first} onPick={closeFolderPick} />
+            </div>
+          </Modal>
+        </div>
+      )
+    : null;
+
   const openProjectScreen = (id: string) => {
     if (phoneRef.current) navGo({ screen: { name: "project", id }, sheet: null });
     else {
@@ -602,17 +849,25 @@ function App() {
     projects: store.projects,
     openThread: (id) => (phoneRef.current ? navGo({ screen: { name: "thread", id }, sheet: null }) : openThread(id, "open")),
     openProject: openProjectScreen,
-    createProjectFrom: (id) => void projectActions.createFrom(id),
+    pickProject: (id) => (phoneRef.current ? navGo({ ...navRef.current, sheet: { kind: "project", ids: [id] } }) : openPicker([id])),
+    host: store.host,
   };
 
   const create = async (a: NewThreadArgs): Promise<string | null> => {
-    const args: Record<string, unknown> = { cwd: a.cwd, text: a.text, profile: a.profile, model: a.model };
+    // V0.42: no cwd starts in the project's folder, or in a fresh scratch folder; the host files the project.
+    const args: Record<string, unknown> = { text: a.text, profile: a.profile, model: a.model };
+    if (a.cwd) args.cwd = a.cwd;
+    if (a.projectId) args.projectId = a.projectId;
     if (a.attachments?.length) args.attachments = a.attachments;
     if (a.title) args.title = a.title;
+    if (a.view) args.view = true;
+    if (a.effort) args.effort = a.effort;
     const r = await api.command("thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
-    if (r.threadId && a.projectId) void api.command("thread.setProject", r.threadId, { projectId: a.projectId });
+    try {
+      localStorage.setItem(LAST_PROJECT_KEY, a.projectId ?? "");
+    } catch {}
     if (r.threadId) {
       const id = r.threadId;
       // The upsert may arrive after the reply; open once it is there.
@@ -647,6 +902,13 @@ function App() {
     const k = e.key;
     const mod = e.metaKey || e.ctrlKey;
 
+    if (folderPickRef.current) {
+      if (k === "Escape") {
+        e.preventDefault();
+        closeFolderPick(null);
+      }
+      return;
+    }
     if (dialog) {
       if (k === "Escape") {
         e.preventDefault();
@@ -676,6 +938,8 @@ function App() {
     if (mod || e.altKey) return;
 
     const el = e.target as HTMLElement | null;
+    // A focused button (the project chip) takes Enter and Space itself.
+    if ((k === "Enter" || k === " ") && el?.tagName === "BUTTON") return;
     if (isTextTarget(e.target)) {
       if (el?.dataset?.other && decision?.kind === "ask" && card && k === "Tab") {
         e.preventDefault();
@@ -785,10 +1049,7 @@ function App() {
       }
       case "p":
         e.preventDefault();
-        if (tgt) {
-          setMoveIds(picked.size ? [...picked] : [tgt]);
-          setDialog("move");
-        }
+        if (tgt) openPicker(picked.size ? [...picked] : [tgt]);
         return;
       case "c":
         e.preventDefault();
@@ -804,6 +1065,10 @@ function App() {
       case "?":
         e.preventDefault();
         setHelp((h) => !h);
+        return;
+      case "\\":
+        e.preventDefault();
+        toggleList();
         return;
       case "Escape": {
         e.preventDefault();
@@ -831,9 +1096,21 @@ function App() {
     if (!pendingOpen || !store.threads[pendingOpen]) return;
     if (phone) navGo({ screen: { name: "thread", id: pendingOpen }, sheet: null });
     else openThread(pendingOpen, "open");
+    takeOpen(sessionStore()); // on screen now: done
     setPendingOpen(null);
   }, [pendingOpen, store.threads]);
 
+  // V0.50: Settings reloads the profiles after a provider changed.
+  const reloadProfiles = () => void api.profiles().then((ps) => ps.length && setStore((s) => ({ ...s, profiles: ps })));
+  const themeControl = (
+    <div class="setbar" style={{ justifyContent: "flex-start" }} role="radiogroup" aria-label="Theme">
+      {(["system", "light", "dark"] as Theme[]).map((th) => (
+        <button class={`btn sbtn${theme === th ? " p" : ""}`} role="radio" aria-checked={theme === th} onClick={() => setTheme(th)}>
+          {th === "system" ? "Auto" : th === "light" ? "Light" : "Dark"}
+        </button>
+      ))}
+    </div>
+  );
   const pwaControls = (
     <PwaControls
       push={pushSt}
@@ -848,7 +1125,9 @@ function App() {
   // ---- phone navigation ----
   const navGo = (n: Nav) => {
     history.pushState(n, "", urlFor(n, location.search));
-    setNav(n);
+    // A sheet opens over the screen; only a new screen slides (V0.32).
+    if (n.screen !== nav.screen && JSON.stringify(n.screen) !== JSON.stringify(nav.screen)) navTransition("fwd", () => setNav(n));
+    else setNav(n);
   };
   navGoRef.current = navGo;
   const navRef = useRef(nav);
@@ -881,7 +1160,11 @@ function App() {
     history.replaceState(entries[0], "", urlFor(entries[0], location.search));
     for (const e of entries.slice(1)) history.pushState(e, "", urlFor(e, location.search));
     setNav(entries[entries.length - 1]);
-    const onPop = (e: PopStateEvent) => setNav(navFromHistory(e.state, location.search));
+    const onPop = (e: PopStateEvent) => {
+      const n = navFromHistory(e.state, location.search);
+      if (JSON.stringify(n.screen) !== JSON.stringify(navRef.current.screen)) navTransition("back", () => setNav(n));
+      else setNav(n);
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [phone]);
@@ -901,12 +1184,17 @@ function App() {
     markUnseen: (id) => markUnseen(id),
     retry: (id) => void runAction("thread.retry", [id]),
     interrupt: (id) => void runAction("thread.interrupt", [id]),
+    dismissPR: (id) => void runAction("thread.dismissPR", [id]),
+    setView: (id, on) => void runAction("thread.setView", [id], { on }),
     setModel: (id, model) => void runAction("thread.setModel", [id], { model }),
+    setEffort: (id, effort) => void runAction("thread.setModel", [id], { effort }),
+    handover: (id, profile, model) => handover(id, profile, model),
     send: async (id, args) => {
       const r = await api.command("thread.send", id, { ...args });
       if (!r.ok) showError(r.error ?? "Could not send");
       return r.ok;
     },
+    cancelMessage: async (id, messageId) => (await runAction("thread.cancelMessage", [id], { messageId })) > 0,
     submitAsk: async (d) => {
       const cs = cards[d.id];
       const answers = cs ? answersOf(cs, d) : null;
@@ -943,7 +1231,10 @@ function App() {
   if (phone) {
     return (
       <DirectoryContext.Provider value={directory}>
+        <FolderPickContext.Provider value={folderPicker}>
+        <ProfilesContext.Provider value={store.profiles}>
         <Boundary name="Fyr">
+        <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone />
         <PreviewViewer />
         <PhoneApp
           nav={nav}
@@ -952,6 +1243,7 @@ function App() {
           back={navBack}
           threads={store.threads}
           sec={sec}
+          searchable={searchable}
           now={now}
           host={store.host || (api.mock ? "mock" : "local")}
           conn={store.conn}
@@ -960,6 +1252,7 @@ function App() {
           onEarlier={view && earlier[view.id] ? () => loadEarlier(view.id) : undefined}
           onAtEnd={(b) => setTracker((tr) => setAtEnd(tr, b))}
           profiles={store.profiles}
+          hosts={store.hosts}
           projects={store.projects}
           card={card}
           onCard={(fn) => decision && setCards((c) => (c[decision.id] ? { ...c, [decision.id]: fn(c[decision.id]) } : c))}
@@ -979,6 +1272,21 @@ function App() {
           onInstall={() => void promptInstall().then((ok) => ok && setCanInstall(false))}
           theme={theme}
           setTheme={setTheme}
+          settings={
+            <Settings
+              api={api}
+              host={store.host}
+              hosts={store.hosts}
+              phone
+              push={
+                <button class="btn sbtn" onClick={() => navGo({ ...nav, sheet: { kind: "push" } })}>
+                  {PUSH_TITLE[pushSt]}
+                </button>
+              }
+              appearance={themeControl}
+              onChanged={reloadProfiles}
+            />
+          }
           toast={toast}
           undoKind={undo?.kind ?? null}
           undoIds={undo?.threadIds ?? []}
@@ -987,6 +1295,7 @@ function App() {
           projectFilter={projectFilter}
           onProjectFilter={setProjectFilter}
           projectActions={projectActions}
+          overlay={folderPickView}
         />
         {nav.sheet?.kind === "push" && pushDialog(navBack)}
         {nav.sheet?.kind === "adopt" && (
@@ -1002,6 +1311,8 @@ function App() {
           />
         )}
         </Boundary>
+        </ProfilesContext.Provider>
+        </FolderPickContext.Provider>
       </DirectoryContext.Provider>
     );
   }
@@ -1023,10 +1334,14 @@ function App() {
 
   return (
     <div class="shell">
+      <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} />
+      {ctxMenu}
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>
-      <div class={view ? "app open" : "app"}>
-        <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} />
+      <FolderPickContext.Provider value={folderPicker}>
+      <ProfilesContext.Provider value={store.profiles}>
+      <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
+        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} />
         <Boundary name="The inbox">
         <Inbox
           sec={sec}
@@ -1038,7 +1353,16 @@ function App() {
           query={query}
           searchRef={searchRef}
           onQuery={setQuery}
-          onToggle={(k) => setSectionOpen((o) => ({ ...o, [k]: !isOpen(k, o) }))}
+          onToggle={(k) => {
+            const opening = !isOpen(k, sectionOpen);
+            if (k === "settled") setSettledDeadline(opening ? Date.now() + AUTO_HIDE_MS : null);
+            setSectionOpen((o) => ({ ...o, [k]: !isOpen(k, o) }));
+          }}
+          autoHideAt={settledDeadline !== null && activeSection !== "settled" ? { settled: settledDeadline } : undefined}
+          onSectionActivity={(k) => {
+            // Using the section restarts its time (at most a few times a second).
+            if (k === "settled" && settledDeadline !== null && settledDeadline - Date.now() < AUTO_HIDE_MS - 500) setSettledDeadline(Date.now() + AUTO_HIDE_MS);
+          }}
           onClick={(id) => openThread(id, "open")}
           onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
           onNew={() => setDialog("new")}
@@ -1064,13 +1388,15 @@ function App() {
             answerField={answerField}
             onCard={(cs) => decision && setCards((c) => ({ ...c, [decision.id]: cs }))}
             onAllow={allow}
+            onSubmitAsk={submitAsk}
             onRun={(a, args) => {
               if (a === "thread.settle") return settle(view.id);
               if (a === "thread.archive") return archive([view.id]);
               void runAction(a, [view.id], args);
             }}
             onSnooze={() => openSnooze([view.id])}
-            onMoveProject={() => (setMoveIds([view.id]), setDialog("move"))}
+            onMoveProject={() => openPicker([view.id])}
+            onHandover={() => (setHandoverId(view.id), setDialog("handover"))}
             onSend={send}
             onAtEnd={(b) => setTracker((tr) => setAtEnd(tr, b))}
             onFocusZone={() => {
@@ -1114,57 +1440,55 @@ function App() {
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} projects={store.projects} onClose={() => setDialog(null)} onCreate={create} onNewProject={projectActions.create} />}
+      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} host={store.host} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
       {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
         <Modal title="Project" onClose={() => setDialog(null)} wide>
           <div class="db">
             <ProjectEditor
               project={store.projects.find((p) => p.id === projectId)!}
               profiles={store.profiles}
+              now={now}
               onSave={(patch) => projectActions.update(projectId, patch)}
-              onAddSource={(v) => projectActions.addSource(projectId, v)}
-              onRemoveSource={(i) => projectActions.removeSource(projectId, i)}
-              onMoveThread={view ? () => (setMoveIds([view.id]), setDialog("move")) : undefined}
-              onNewProject={() => setDialog("newproject")}
+              onSetFolder={(v) => projectActions.setFolder(projectId, v)}
             />
           </div>
         </Modal>
       )}
-      {dialog === "move" && (
-        <Modal title={moveIds.length > 1 ? `Move ${moveIds.length} threads to a project` : "Move to project"} onClose={() => setDialog(null)} wide>
+      {dialog === "picker" && (
+        <Modal title={pickIds.length > 1 ? `Project for ${pickIds.length} threads` : "Project"} onClose={() => setDialog(null)} wide>
           <div class="db">
-            <ProjectList
+            <ProjectPicker
               projects={store.projects}
-              autoFocus
-              selectedId={moveIds.length === 1 ? store.threads[moveIds[0]]?.projectId : null}
+              threads={pickIds.map((id) => store.threads[id]).filter(Boolean)}
               onPick={async (p) => {
-                if (!p?.id) return;
-                const e = await projectActions.move(moveIds, p.id);
+                const e = await projectActions.move(pickIds, p?.id ?? null);
                 if (e) showError(e);
                 else setDialog(null);
               }}
-              onNew={() => setDialog("newproject")}
+              onCreate={async (name, folder) => {
+                const r = await projectActions.create(name, folder, pickIds);
+                if (!r.error) setDialog(null);
+                return r.error;
+              }}
+              onEdit={(p) => p.id && openProjectScreen(p.id)}
             />
           </div>
         </Modal>
       )}
-      {dialog === "newproject" && (
-        <Modal title="New project" onClose={() => setDialog(null)} wide>
-          <div class="db">
-            <NewProjectForm
-              onCancel={() => setDialog(null)}
-              onCreate={async (name, folder, repo) => {
-                const e = await projectActions.create(name, folder, repo);
-                if (!e) setDialog(null);
-                return e;
-              }}
-            />
-          </div>
-        </Modal>
+      {dialog === "handover" && handoverId && store.threads[handoverId] && (
+        <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m) => handover(handoverId, pr, m)} />
       )}
       {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "push" && pushDialog(() => setDialog(null))}
+      {dialog === "settings" && (
+        <Modal title="Settings" wide onClose={() => setDialog(null)}>
+          <Settings api={api} host={store.host} hosts={store.hosts} push={pwaControls} appearance={themeControl} onChanged={reloadProfiles} />
+        </Modal>
+      )}
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
+      </ProfilesContext.Provider>
+      {folderPickView}
+      </FolderPickContext.Provider>
       </DirectoryContext.Provider>
     </div>
   );

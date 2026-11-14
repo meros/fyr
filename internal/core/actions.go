@@ -16,7 +16,7 @@ func (a Args) Str(k string) string { s, _ := a[k].(string); return s }
 // Effect is work an Action asks the host to do after its state change is
 // stored. Apply never performs effects itself, so it stays pure.
 type Effect struct {
-	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel
+	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel, refresh, handover
 	Text   string  `json:"text,omitempty"`
 	Images []Image `json:"images,omitempty"`
 	// From is the thread whose agent sent this message (V0.22).
@@ -27,8 +27,17 @@ type Effect struct {
 	Answers     map[string]string `json:"answers,omitempty"`
 	Allow       bool              `json:"allow,omitempty"`
 	Model       string            `json:"model,omitempty"`
+	// Effort is the effort level of a setModel (V0.50); nil leaves it.
+	Effort *string `json:"effort,omitempty"`
+	// Profile is the target of a handover (V0.45).
+	Profile string `json:"profile,omitempty"`
 	// Request is the approved effect for Kind "effect".
 	Request *EffectReq `json:"request,omitempty"`
+	// ByOwner marks an effect the owner started (V0.43): its result is
+	// recorded in the thread and not sent to the agent.
+	ByOwner bool `json:"byOwner,omitempty"`
+	// MessageID names the message of a send, or the one to cancel (V0.33).
+	MessageID string `json:"messageId,omitempty"`
 }
 
 // Image is a pasted image, base64 encoded, sent to the agent as a content block.
@@ -99,6 +108,9 @@ func sendAction(name, label string) *Action {
 			if len(t.Decisions) > 0 {
 				return "Answer the open question first"
 			}
+			if t.Handover != nil {
+				return "Wait for the handover to finish"
+			}
 			return ""
 		},
 		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
@@ -115,9 +127,11 @@ func sendAction(name, label string) *Action {
 				}
 				t.Project = ProjectName(t.Cwd)
 				t.Model = a.Str("model")
+				t.Effort = a.Str("effort")
 				t.Profile = a.Str("profile")
 				t.Title = a.Str("title")
 				t.Parent = a.Str("parent")
+				t.LiveView, _ = a["view"].(bool)
 				if t.Title == "" {
 					t.Title = TitleFrom(text)
 				}
@@ -220,6 +234,24 @@ func init() {
 			msg := "The last run stopped with an error (" + t.Failure.Message + "). Continue from where you stopped."
 			revive(t, v, now)
 			return []Effect{{Kind: "send", Text: msg}}, nil
+		}})
+
+	register(&Action{Name: "thread.dismissPR", Label: "Dismiss PR",
+		Available: func(t *Thread, _ *View, _ time.Time) string {
+			if t.PR == nil {
+				return "No PR"
+			}
+			if t.PR.State == "OPEN" {
+				return "The PR is still open"
+			}
+			return ""
+		},
+		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
+			if t.PR.URL != "" {
+				t.DismissedPRs = append(t.DismissedPRs, t.PR.URL)
+			}
+			t.PR = nil
+			return nil, nil
 		}})
 
 	register(&Action{Name: "thread.dismiss", Label: "Dismiss failure",
@@ -384,12 +416,12 @@ func init() {
 
 	register(&Action{Name: "thread.setProject", Label: "Move to project",
 		// SPEC 0.5 V0.23: the engine checks that the project exists.
+		// V0.30: "" unfiles the thread, still by hand, so matching leaves it.
 		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
-			id := a.Str("projectId")
-			if id == "" {
-				return nil, fmt.Errorf("%w: projectId is required", ErrBadArgs)
+			if _, ok := a["projectId"].(string); !ok {
+				return nil, fmt.Errorf("%w: projectId is required (\"\" for no project)", ErrBadArgs)
 			}
-			t.ProjectID, t.ProjectManual = id, true
+			t.ProjectID, t.ProjectManual = a.Str("projectId"), true
 			return nil, nil
 		}})
 
@@ -403,15 +435,72 @@ func init() {
 			return nil, nil
 		}})
 
+	register(&Action{Name: "thread.setView", Label: "Live view",
+		// SPEC 0.5 V0.37: the agent's prompt and tools change with the next
+		// process, so the host restarts an idle one.
+		Available: notArchived,
+		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
+			on, ok := a["on"].(bool)
+			if !ok {
+				return nil, fmt.Errorf("%w: on must be true or false", ErrBadArgs)
+			}
+			if t.LiveView == on {
+				return nil, nil
+			}
+			t.LiveView = on
+			return []Effect{{Kind: "refresh"}}, nil
+		}})
+
+	register(&Action{Name: "thread.handover", Label: "Hand over",
+		// SPEC 0.5 V0.45, decision 0013: only the owner starts it; the host
+		// moves the context by the first rung that works.
+		Available: func(t *Thread, v *View, now time.Time) string {
+			if r := notArchived(t, v, now); r != "" {
+				return r
+			}
+			switch {
+			case t.Handover != nil:
+				return "A handover is already going"
+			case t.Running:
+				return "Wait for the run to end"
+			case len(t.Decisions) > 0:
+				return "Answer the open question first"
+			case len(t.Outbox) > 0:
+				return "Wait until the agent has read your message"
+			}
+			return ""
+		},
+		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
+			p := a.Str("profile")
+			if p == "" {
+				return nil, fmt.Errorf("%w: profile is required", ErrBadArgs)
+			}
+			if p == t.Profile {
+				return nil, fmt.Errorf("%w: the thread already runs on %s", ErrBadArgs, p)
+			}
+			t.Handover = &Handover{To: p, Model: a.Str("model"), At: now}
+			v.SeenAt = now
+			return []Effect{{Kind: "handover", Profile: p, Model: a.Str("model")}}, nil
+		}})
+
 	register(&Action{Name: "thread.setModel", Label: "Change model",
 		Available: notArchived,
 		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
 			m := a.Str("model")
-			if m == "" {
+			_, hasEffort := a["effort"]
+			if m == "" && !hasEffort {
 				return nil, fmt.Errorf("%w: empty model", ErrBadArgs)
 			}
+			if m == "" {
+				m = t.Model
+			}
 			t.Model = m
-			return []Effect{{Kind: "setModel", Model: m}}, nil
+			e := Effect{Kind: "setModel", Model: m}
+			if hasEffort {
+				eff := a.Str("effort")
+				t.Effort, e.Effort = eff, &eff
+			}
+			return []Effect{e}, nil
 		}})
 }
 

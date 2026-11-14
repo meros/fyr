@@ -1,0 +1,2 @@
+sandbox allow-scripts; default-src 'none'; script-src {base} {cdn} 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src {base} {cdn} 'unsafe-inline'; img-src {base} {cdn} data: blob:; font-src {base} {cdn} data:; media-src {base} {cdn} data: blob:; connect-src {base} {cdn} data: blob:; worker-src {base} blob:; frame-ancestors 'self'
+https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://esm.sh https://ajax.googleapis.com https://www.gstatic.com

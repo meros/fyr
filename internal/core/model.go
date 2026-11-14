@@ -16,13 +16,14 @@ type Thread struct {
 	Cwd       string `json:"cwd"`
 	Project   string `json:"project"`
 	ProjectID string `json:"projectId,omitempty"` // V0.23
-	// ProjectManual: the user filed the thread; folder matching keeps it.
+	// ProjectManual: the thread was filed by hand; folder matching never
+	// moves it again (V0.55).
 	ProjectManual bool      `json:"projectManual,omitempty"`
-	WorkspaceID   string    `json:"workspaceId,omitempty"` // V0.28: where it runs
 	Owner         string    `json:"owner"`
 	Visibility    string    `json:"visibility"`
 	Profile       string    `json:"profile"`
 	Model         string    `json:"model"`
+	Effort        string    `json:"effort,omitempty"` // V0.50: "" is the provider's default
 	SessionID     string    `json:"sessionId"`
 	Branch        string    `json:"branch,omitempty"` // read with git after each run
 	CreatedAt     time.Time `json:"createdAt"`
@@ -42,6 +43,16 @@ type Thread struct {
 	Failure   *Failure   `json:"failure,omitempty"`
 	Decisions []Decision `json:"decisions,omitempty"`
 	PR        *PR        `json:"pr,omitempty"`
+	// DismissedPRs are PR URLs the owner put away (V0.36); they never attach again.
+	DismissedPRs []string `json:"dismissedPRs,omitempty"`
+	// Outbox holds the messages the agent has not read yet (V0.33).
+	Outbox []OutMsg `json:"outbox,omitempty"`
+	// LiveView is the flag: the agent keeps a pinned live view (V0.37).
+	LiveView bool `json:"liveView,omitempty"`
+	// Live is the view itself: page, state, times, headline (V0.37).
+	Live *LiveView `json:"live,omitempty"`
+	// Handover is set while the thread moves to another profile (V0.45).
+	Handover *Handover `json:"handover,omitempty"`
 
 	SettledAt        *time.Time `json:"settledAt,omitempty"`
 	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
@@ -51,6 +62,21 @@ type Thread struct {
 	Source string `json:"source"`           // "fyr" or "t3"
 	Parent string `json:"parent,omitempty"` // the thread whose agent started it (V0.22)
 	T3ID   string `json:"t3Id,omitempty"`
+}
+
+// Handover is a move to another profile that is going on (SPEC 0.5 V0.45).
+type Handover struct {
+	To    string    `json:"to"`
+	Model string    `json:"model,omitempty"`
+	At    time.Time `json:"at"`
+}
+
+// OutMsg is a message sent to the agent and not read yet (SPEC 0.5 V0.33).
+// State is "sent" (written, no report from the agent) or "queued" (in the
+// agent's queue).
+type OutMsg struct {
+	ID    string `json:"id"`
+	State string `json:"state"`
 }
 
 // View is the per-user state of one entity (R19): snooze and read watermark.
@@ -152,6 +178,34 @@ func (p *PR) Blocking() string {
 		return "Merge conflict"
 	case p.Review == "CHANGES_REQUESTED":
 		return "Changes requested"
+	}
+	return ""
+}
+
+// SetOutbox records a message's delivery state: "sent" and "queued" keep it
+// in the outbox, any other state (read, cancelled, lost) removes it.
+func SetOutbox(t *Thread, id, state string) {
+	for i, m := range t.Outbox {
+		if m.ID == id {
+			if state == "sent" || state == "queued" {
+				t.Outbox[i].State = state
+			} else {
+				t.Outbox = append(t.Outbox[:i:i], t.Outbox[i+1:]...)
+			}
+			return
+		}
+	}
+	if state == "sent" || state == "queued" {
+		t.Outbox = append(t.Outbox, OutMsg{ID: id, State: state})
+	}
+}
+
+// OutboxState is a message's state while it is unread, else "".
+func OutboxState(t *Thread, id string) string {
+	for _, m := range t.Outbox {
+		if m.ID == id {
+			return m.State
+		}
 	}
 	return ""
 }

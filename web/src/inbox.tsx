@@ -2,7 +2,9 @@
 
 import { describeEffect } from "./effects.ts";
 import type { ComponentChildren, Ref } from "preact";
-import type { Project, ThreadDTO } from "./types.ts";
+import type { Profile, Project, ThreadDTO } from "./types.ts";
+import { QuotaRail } from "./quota-ui.tsx";
+import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, StartedBy, ThreadProject } from "./project-ui.tsx";
 import { colorVar, pickerOrder } from "./projects.ts";
 import { SECTIONS, type SectionKey, type Sections } from "./store.ts";
@@ -10,6 +12,8 @@ import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { count, relTime, untilLabel, whenLabel } from "./format.ts";
 import { prLabel } from "./thread.tsx";
 import { groupTasks, workingLine } from "./tasks.ts";
+import { rowSummary } from "./view.ts";
+import { quietNote } from "./quiet.ts";
 import type { ConnState } from "./api.ts";
 
 export type Theme = "system" | "light" | "dark";
@@ -22,6 +26,13 @@ interface RailProps {
   /** the bell and Install controls (desktop) */
   extra?: ComponentChildren;
   onJump(k: SectionKey): void;
+  /** V0.40: show or hide the thread list */
+  listOn?: boolean;
+  onToggleList?(): void;
+  /** V0.44: profiles, for the quota in the footer */
+  profiles?: Profile[];
+  /** V0.50: the gear opens Settings */
+  onSettings?(): void;
 }
 
 export function Rail(p: RailProps) {
@@ -32,7 +43,7 @@ export function Rail(p: RailProps) {
       {SECTIONS.map((s, i) => {
         const n = p.sec[s.key].length;
         return (
-          <button class={`ri${s.key === "needs" && n > 0 ? " att" : ""}${p.active === s.key ? " on" : ""}`} title={`${s.label}: ${n} (g${i + 1})`} onClick={() => p.onJump(s.key)}>
+          <button class={`ri${s.key === "needs" && n > 0 ? " att" : ""}${p.active === s.key && n > 0 ? " on" : ""}`} title={n ? `${s.label}: ${n} (g${i + 1})` : `${s.label}: none`} disabled={n === 0} onClick={() => p.onJump(s.key)}>
             <StateIcon state={s.state} />
             <span class="n">{count(n)}</span>
             <span class="l">{s.short}</span>
@@ -40,10 +51,27 @@ export function Rail(p: RailProps) {
           </button>
         );
       })}
+      {p.onToggleList && (
+        <button class={`ri lt${p.listOn ? " on" : ""}`} aria-pressed={p.listOn} title={p.listOn ? "Hide the thread list (\\)" : "Show the thread list (\\)"} onClick={p.onToggleList}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16" />
+          </svg>
+          <span class="l">List</span>
+          <span class="k">\</span>
+        </button>
+      )}
+      {p.profiles && <QuotaRail profiles={p.profiles} />}
       {p.extra && <div class="railx">{p.extra}</div>}
+      {p.onSettings && (
+        <button class="ri rgear" title="Settings (providers, notifications)" aria-label="Settings" onClick={p.onSettings}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: LINE_ICONS.settings }} />
+          <span class="l">Settings</span>
+        </button>
+      )}
       <div class={`foot ${p.conn}`} title={title}>
         <i />
-        {p.host}
+        <span class="hn">{p.host}</span>
       </div>
     </nav>
   );
@@ -75,7 +103,7 @@ function needsMeta(t: ThreadDTO): string {
   }
   if (st === "failed") return `${t.failure?.message ?? ""} · r to retry`;
   if (st === "working") return t.activity ?? "";
-  return t.summary ?? "";
+  return rowSummary(t);
 }
 
 function stateWord(t: ThreadDTO): string {
@@ -96,7 +124,7 @@ function PrBadge({ t, short }: { t: ThreadDTO; short?: boolean }) {
   if (!t.pr) return <span class="pr none" aria-label="no pull request" />;
   const l = prLabel(t.pr, short);
   return (
-    <span class={`pr ${l.cls}`} title={t.pr.title || t.pr.url}>
+    <span class={`pr ${l.cls}`} title={l.title}>
       {l.text}
     </span>
   );
@@ -184,6 +212,9 @@ const ADOPT = (
 );
 
 interface InboxProps {
+  /** V0.48: sections that close by themselves, with their deadline (ms) */
+  autoHideAt?: Partial<Record<SectionKey, number>>;
+  onSectionActivity?(k: SectionKey): void;
   sec: Sections;
   now: number;
   selected: string | null;
@@ -231,7 +262,7 @@ export function Inbox(p: InboxProps) {
           {PLUS}
         </button>
       </div>
-      <ProjectFilterRow projects={p.projects} selected={p.projectFilter} onPick={p.onProjectFilter} />
+      <ProjectFilterRow projects={p.projects} selected={p.projectFilter} onPick={p.onProjectFilter} now={p.now} />
       <div class="list" role="listbox" aria-label="Threads">
         {SECTIONS.map((s) => {
           const list = p.sec[s.key];
@@ -240,10 +271,14 @@ export function Inbox(p: InboxProps) {
           const shown = open ? list.slice(0, limit) : [];
           const hint = sectionHint(s.key, list, p.now);
           return (
-            <div id={`sec-${s.key}`}>
+            <div id={`sec-${s.key}`} onPointerMove={open && p.autoHideAt?.[s.key] ? () => p.onSectionActivity?.(s.key) : undefined} onKeyDown={open && p.autoHideAt?.[s.key] ? () => p.onSectionActivity?.(s.key) : undefined}>
               <div class={`sec${list.length ? " tog" : ""}`} onClick={() => list.length && p.onToggle(s.key)} title={list.length ? (open ? "Collapse" : "Expand") : undefined}>
                 {s.label}
                 <span class="n">{count(list.length)}</span>
+                {open && p.autoHideAt?.[s.key] ? (
+                  // V0.48: a small clock runs down to the auto-close; it restarts on use.
+                  <span key={p.autoHideAt[s.key]} class="ahc" style={{ "--ah": `${Math.max(0, (p.autoHideAt[s.key]! - Date.now()) / 1000)}s` }} title="Closes by itself; select it in the rail to keep it open" aria-hidden="true" />
+                ) : null}
                 {hint && <span class="h ell">{hint}</span>}
               </div>
               {shown.map((t) =>
@@ -267,7 +302,7 @@ export function Inbox(p: InboxProps) {
 }
 
 /** Desktop: a compact row of projects under the search field; one click filters, the × clears. */
-function ProjectFilterRow({ projects, selected, onPick }: { projects: Project[]; selected: string | null; onPick(id: string | null): void }) {
+function ProjectFilterRow({ projects, selected, onPick, now }: { projects: Project[]; selected: string | null; onPick(id: string | null): void; now: number }) {
   const list = pickerOrder(projects).filter((p) => (p.threads ?? 0) > 0 || p.id === selected);
   if (!list.length) return null;
   return (
@@ -277,12 +312,17 @@ function ProjectFilterRow({ projects, selected, onPick }: { projects: Project[];
           ×
         </button>
       )}
-      {list.map((p) => (
-        <button class={`pfc${p.id === selected ? " on" : ""}`} aria-pressed={p.id === selected} style={{ "--pc": colorVar(p.color, p.name) }} title={`${p.name}: ${p.threads ?? 0} threads`} onClick={() => onPick(p.id === selected ? null : p.id ?? null)}>
-          <ProjectIcon project={p} name={p.name} size={16} />
-          <span class="ell">{p.name}</span>
-        </button>
-      ))}
+      {list.map((p) => {
+        // V0.46: a project in its quiet hours says so; its threads show only while it is picked here.
+        const note = quietNote(p, now);
+        return (
+          <button class={`pfc${p.id === selected ? " on" : ""}${note ? " quiet" : ""}`} aria-pressed={p.id === selected} style={{ "--pc": colorVar(p.color, p.name) }} title={`${p.name}: ${p.threads ?? 0} threads${note ? ` · ${note}, hidden from the inbox` : ""}`} onClick={() => onPick(p.id === selected ? null : p.id ?? null)}>
+            <ProjectIcon project={p} name={p.name} size={16} />
+            <span class="ell">{p.name}</span>
+            {note && p.id === selected && <span class="pfq">{note}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

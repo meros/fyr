@@ -1,7 +1,8 @@
 // The one place where host JSON becomes client types (SPEC 0.5 V0.24). The host
 // omits empty fields (Go omitempty), so every field a screen reads without a
 // check gets its empty value here, and nothing past this point needs `?? ""`.
-import type { Attention, Project, ProjectSuggestion, StateDTO, ThreadDTO } from "./types.ts";
+import { decodeHosts } from "./hosts.ts";
+import type { Attention, NewProjectDraft, Project, StateDTO, ThreadDTO } from "./types.ts";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
@@ -9,11 +10,11 @@ const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object"
 
 const NO_ATTENTION: Attention = { state: "seen", section: "seen", reason: "" } as Attention;
 
-/** A suggestion without a name is no suggestion (V0.28). */
-function decodeSuggestion(raw: unknown): ProjectSuggestion | undefined {
+/** A prefill without a name is none (V0.30, V0.55). */
+function decodeDraft(raw: unknown): NewProjectDraft | undefined {
   const s = obj(raw);
   const name = str(s.name).trim();
-  return name ? { name, sources: arr(s.sources) } : undefined;
+  return name ? { name, folder: str(s.folder) } : undefined;
 }
 
 export function decodeThread(raw: unknown): ThreadDTO {
@@ -25,8 +26,7 @@ export function decodeThread(raw: unknown): ThreadDTO {
     title: str(t.title),
     cwd: str(t.cwd),
     project: str(t.project),
-    workspaceId: str(t.workspaceId),
-    suggest: decodeSuggestion(t.suggest),
+    newProject: decodeDraft(t.newProject),
     profile: str(t.profile),
     model: str(t.model),
     createdAt: str(t.createdAt),
@@ -47,8 +47,7 @@ export function decodeProject(raw: unknown): Project {
     name: str(p.name),
     color: str(p.color),
     icon: { kind: str(icon.kind) || "monogram", value: str(icon.value) },
-    sources: arr(p.sources),
-    cwd: str(p.cwd),
+    folder: str(p.folder),
   };
 }
 
@@ -63,5 +62,7 @@ export function decodeState(raw: unknown): StateDTO {
     projects: arr(s.projects).map(decodeProject),
     actions: arr(s.actions),
     profiles: arr(s.profiles),
+    hosts: decodeHosts(s.hosts),
+    deploy: s.deploy && typeof s.deploy === "object" && typeof (s.deploy as { phase?: unknown }).phase === "string" ? s.deploy : null,
   };
 }

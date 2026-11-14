@@ -1,11 +1,18 @@
 import { isTransient, sendWithRetry } from "./retry.ts";
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead.
 
-import type { CommandReply, FyrEvent, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
-import type { UploadReply } from "./attach.ts";
+import type { DeployProgress } from "./deploy.ts";
+import { cache, mergeStateDelta, sinceRev } from "./cache.ts";
+import type { ThreadPatch } from "./store.ts";
+import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import { hostQuery, type UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
-import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockScenario } from "./mock.ts";
+import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockQuota, mockScenario } from "./mock.ts";
+import type { Quota } from "./quota.ts";
+import type { FoundDTO, ProviderDTO } from "./providers.ts";
+import { createMockProviders } from "./mock-providers.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
+import type { PrReply } from "./pr.ts";
 import { reloadForNewBuild } from "./pwa.ts";
 
 export type ConnState = "connecting" | "live" | "offline";
@@ -13,6 +20,10 @@ export type ConnState = "connecting" | "live" | "offline";
 export interface ApiHandlers {
   state(dto: StateDTO): void;
   thread(t: ThreadDTO): void;
+  /** V0.39: where an update of Fyr is */
+  deploy?(p: DeployProgress): void;
+  /** V0.38: a merge patch against the thread copy with rev === base */
+  threadPatch?(p: ThreadPatch): void;
   /** a project made or changed (V0.23); optional for older callers */
   project?(p: Project): void;
   event(e: FyrEvent): void;
@@ -26,6 +37,10 @@ export interface Api {
   events(threadId: string, after?: number, limit?: number): Promise<FyrEvent[]>;
   /** The newest `limit` events older than `before`, to page back. */
   eventsBefore(threadId: string, before: number, limit?: number): Promise<FyrEvent[]>;
+  /** V0.38: one thread whole, when a patch does not fit the copy we have */
+  thread(threadId: string): Promise<ThreadDTO | null>;
+  /** V0.38: one event whole (the stream and the list cut large tool output) */
+  fullEvent(threadId: string, seq: number): Promise<FyrEvent | null>;
   t3Candidates(): Promise<T3Candidate[]>;
   /** Web Push (SPEC V0.15): the host's VAPID public key, base64url. */
   pushKey(): Promise<string>;
@@ -37,14 +52,38 @@ export interface Api {
   /** Tell the host which thread this device shows (V0.20); "" for none. */
   presence(threadId: string, device: string): Promise<void>;
   /** Attachments (SPEC V0.18): upload one file; progress as bytes sent. */
-  uploadAttachment(file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<UploadResult>;
-  attachmentUrl(id: string): string;
-  /** An HTML preview (V0.19), for a sandboxed iframe. */
-  previewUrl(id: string): string;
+  /** V0.54: `host` is the thread's host (or the one a new thread starts on); the front stores the file there. */
+  uploadAttachment(file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal, host?: string): Promise<UploadResult>;
+  attachmentUrl(id: string, host?: string): string;
+  /** An HTML preview (V0.19), for a sandboxed iframe; from the thread's host (V0.54). */
+  previewUrl(id: string, host?: string): string;
   /** The Changes tab (V0.25): the branch diff of the thread's folder. */
   changes(threadId: string): Promise<ChangesDTO>;
   /** One file's unified diff (V0.25). */
   filePatch(threadId: string, path: string): Promise<FilePatchDTO>;
+  /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
+  prDetail(threadId: string, fresh?: boolean): Promise<PrReply>;
+  /** The host folder picker (V0.42); every path stays inside the owner's home folder. */
+  fsList(path: string): Promise<FsListing>;
+  fsRecent(): Promise<FsDir[]>;
+  fsRepos(): Promise<FsDir[]>;
+  /** Makes parent/name and returns its path. */
+  fsMkdir(parent: string, name: string): Promise<string>;
+  /** V0.44: each profile's provider quota; [] when the host cannot say. */
+  quota(): Promise<Quota[]>;
+  /** V0.50: Settings → Providers; never a key, only whether one is set. */
+  providers(): Promise<ProviderDTO[]>;
+  /** V0.50: logins, endpoints and keys found on this host. */
+  providersFound(): Promise<FoundDTO[]>;
+  /** V0.50: the current profiles (after a provider changed). */
+  profiles(): Promise<Profile[]>;
+}
+
+async function fsGet<T>(path: string): Promise<T> {
+  const r = await fetch(path, { headers: { Accept: "application/json" } });
+  const j = (await r.json().catch(() => ({}))) as T & { error?: string };
+  if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+  return j;
 }
 
 export type UploadResult = { ok: true; reply: UploadReply } | { ok: false; status: number | null; error?: string };
@@ -67,6 +106,7 @@ export function createApi(search: string = location.search): Api {
 
 function createHttpApi(): Api {
   let watch = initialBuildWatch();
+  let fromNetwork = false;
   let handlers: ApiHandlers | null = null;
   let es: EventSource | null = null;
   let backoff = 500;
@@ -96,9 +136,14 @@ function createHttpApi(): Api {
       }
       if (checkBuild(hello.buildId)) return;
       try {
-        const r = await fetch("/api/state", { headers: { Accept: "application/json" } });
+        // V0.38: with a stored copy, ask only for threads changed since it.
+        const stored = await cache.state();
+        const since = stored ? sinceRev(stored) : 0;
+        const r = await fetch(since ? `/api/state?since=${since}` : "/api/state", { headers: { Accept: "application/json" } });
         if (!r.ok) throw new Error(`state ${r.status}`);
-        const dto = (await r.json()) as StateDTO & { buildId?: string };
+        let dto = (await r.json()) as StateDTO & { buildId?: string; partial?: boolean };
+        if (dto.partial && stored) dto = mergeStateDelta(stored, dto) as StateDTO & { buildId?: string };
+        fromNetwork = true;
         if (gen !== generation) return;
         if (checkBuild(dto.buildId)) return;
         backoff = 500;
@@ -111,6 +156,20 @@ function createHttpApi(): Api {
     es.addEventListener("project", (m) => {
       try {
         h.project?.(JSON.parse((m as MessageEvent).data));
+      } catch {
+        /* ignore malformed */
+      }
+    });
+    es.addEventListener("deploy", (m) => {
+      try {
+        h.deploy?.(JSON.parse((m as MessageEvent).data));
+      } catch {
+        /* ignore malformed */
+      }
+    });
+    es.addEventListener("thread.patch", (m) => {
+      try {
+        h.threadPatch?.(JSON.parse((m as MessageEvent).data));
       } catch {
         /* ignore malformed */
       }
@@ -165,8 +224,28 @@ function createHttpApi(): Api {
 
   return {
     mock: false,
+    async fsList(path) {
+      const l = await fsGet<FsListing>(`/api/fs/list?path=${encodeURIComponent(path)}`);
+      return { path: l.path, parent: l.parent ?? "", dirs: l.dirs ?? [] };
+    },
+    async fsRecent() {
+      return (await fsGet<{ dirs?: FsDir[] }>("/api/fs/recent")).dirs ?? [];
+    },
+    async fsRepos() {
+      return (await fsGet<{ dirs?: FsDir[] }>("/api/fs/repos")).dirs ?? [];
+    },
+    async fsMkdir(parent, name) {
+      const r = await fetch("/api/fs/mkdir", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ parent, name }) });
+      const j = (await r.json().catch(() => ({}))) as { path?: string; error?: string };
+      if (!r.ok || !j.path) throw new Error(j.error ?? `HTTP ${r.status}`);
+      return j.path;
+    },
     start(h) {
       handlers = h;
+      // V0.38: draw the device's copy at once (offline too); the network state replaces it.
+      void cache.state().then((stored) => {
+        if (stored && !fromNetwork) h.state({ ...stored, now: new Date().toISOString() });
+      });
       connect();
     },
     async command(action, threadId, args) {
@@ -201,6 +280,14 @@ function createHttpApi(): Api {
       const j = (await r.json()) as { events?: FyrEvent[] };
       return j.events ?? [];
     },
+    async thread(threadId) {
+      const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}`);
+      return r.ok ? ((await r.json()) as ThreadDTO) : null;
+    },
+    async fullEvent(threadId, seq) {
+      const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/events/${seq}`);
+      return r.ok ? ((await r.json()) as FyrEvent) : null;
+    },
     async eventsBefore(threadId, before, limit = 400) {
       const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/events?before=${before}&limit=${limit}`);
       if (!r.ok) throw new Error(`events ${r.status}`);
@@ -229,10 +316,10 @@ function createHttpApi(): Api {
     pushTest() {
       return postJson("/api/push/test", {});
     },
-    uploadAttachment(file, onProgress, signal) {
+    uploadAttachment(file, onProgress, signal, host) {
       return new Promise<UploadResult>((resolve) => {
         const x = new XMLHttpRequest();
-        x.open("POST", "/api/attachments");
+        x.open("POST", `/api/attachments${hostQuery(host)}`);
         x.setRequestHeader("X-Fyr", "1");
         x.setRequestHeader("X-Fyr-Filename", encodeURIComponent(file.name || "file"));
         x.setRequestHeader("Content-Type", file.type || "application/octet-stream");
@@ -253,11 +340,11 @@ function createHttpApi(): Api {
         x.send(file);
       });
     },
-    attachmentUrl(id) {
-      return `/api/attachments/${encodeURIComponent(id)}`;
+    attachmentUrl(id, host) {
+      return `/api/attachments/${encodeURIComponent(id)}${hostQuery(host)}`;
     },
-    previewUrl(id) {
-      return `/api/previews/${encodeURIComponent(id)}`;
+    previewUrl(id, host) {
+      return `/api/previews/${encodeURIComponent(id)}${hostQuery(host)}`;
     },
     async changes(threadId) {
       const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/changes`);
@@ -270,6 +357,35 @@ function createHttpApi(): Api {
       const j = (await r.json().catch(() => ({}))) as FilePatchDTO & { error?: string };
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j;
+    },
+    async providers() {
+      return fsGet<ProviderDTO[]>("/api/providers");
+    },
+    async providersFound() {
+      return fsGet<FoundDTO[]>("/api/providers/found");
+    },
+    async profiles() {
+      // a delta newer than any thread: just the profiles and the small fields
+      return (await fsGet<{ profiles?: Profile[] }>("/api/state?since=9000000000000000000")).profiles ?? [];
+    },
+    async quota() {
+      try {
+        const r = await fetch("/api/quota");
+        const j = (await r.json().catch(() => [])) as unknown;
+        return r.ok && Array.isArray(j) ? (j as Quota[]) : [];
+      } catch {
+        return [];
+      }
+    },
+    async prDetail(threadId, fresh) {
+      try {
+        const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/pr${fresh ? "?fresh=1" : ""}`);
+        const j = (await r.json().catch(() => ({}))) as PrReply;
+        if (!r.ok && !("error" in j)) return { error: `HTTP ${r.status}` };
+        return j;
+      } catch {
+        return { error: "Fyr is not reachable." };
+      }
     },
     async presence(threadId, device) {
       try {
@@ -298,6 +414,7 @@ const MOCK_IMAGE =
 function createMockApi(scenario: string): Api {
   const server = createMockServer(scenario, Date.now());
   const mockFiles = new Map<string, string>();
+  const providers = createMockProviders();
   let watch = initialBuildWatch();
   return {
     mock: true,
@@ -309,12 +426,40 @@ function createMockApi(scenario: string): Api {
         h.state(server.state());
         h.conn("live");
       }, 0);
+      // V0.38 perf guard (mock only): a burst of n thread updates and n messages for one thread,
+      // one pair every 10 ms, the way a busy agent streams.
+      (globalThis as { __fyrBurst?: (id: string, n: number) => void }).__fyrBurst = (id, n) => {
+        const base = server.state().threads.find((t) => t.id === id);
+        if (!base) return;
+        for (let i = 1; i <= n; i++) {
+          setTimeout(() => {
+            h.thread({ ...base, rev: (base.rev ?? 0) + i, activity: `Step ${i} of ${n}`, updatedAt: new Date().toISOString() });
+            h.event({ seq: 1_000_000 + i, at: new Date().toISOString(), subject: id, type: "msg", data: { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: `Burst message ${i}: **bold**, \`code\`, and a list:\n\n- one\n- two` }] } } });
+          }, i * 10);
+        }
+      };
     },
     async command(action, threadId, args) {
+      if (action.startsWith("provider.")) return providers.command(action, args ?? {});
       return server.command(newCommandId(), action, threadId, args ?? {});
+    },
+    async providers() {
+      return providers.list();
+    },
+    async providersFound() {
+      return providers.found();
+    },
+    async profiles() {
+      return server.state().profiles;
     },
     async events(threadId, after = 0, limit = 400) {
       return server.events(threadId, after, limit);
+    },
+    async thread() {
+      return null; // the mock sends whole threads
+    },
+    async fullEvent() {
+      return null; // the mock never cuts
     },
     async eventsBefore(threadId, before, limit = 400) {
       const all = server.events(threadId, 0, 1_000_000).filter((e) => e.seq < before);
@@ -361,11 +506,30 @@ function createMockApi(scenario: string): Api {
     previewUrl(id) {
       return MOCK_PREVIEWS[id] ?? "data:text/html,<p>mock preview</p>";
     },
+    async quota() {
+      return mockQuota(Date.now());
+    },
     async changes(threadId) {
       return mockChanges(threadId);
     },
     async filePatch(_threadId, path) {
       return mockFilePatch(path);
+    },
+    async fsList(path) {
+      return server.fsList(path);
+    },
+    async fsRecent() {
+      return server.fsRecent();
+    },
+    async fsRepos() {
+      return server.fsRepos();
+    },
+    async fsMkdir(parent, name) {
+      return server.fsMkdir(parent, name);
+    },
+    async prDetail(threadId) {
+      await new Promise((r) => setTimeout(r, 120));
+      return server.prDetail(threadId);
     },
     attachmentUrl(id) {
       if (MOCK_SHOTS[id]) return MOCK_SHOTS[id];

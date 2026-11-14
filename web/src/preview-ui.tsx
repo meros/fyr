@@ -1,7 +1,8 @@
-// Preview cards in the log, the full-screen viewer and the filmstrip (SPEC 0.5 V0.19).
+// Preview cards in the log, the full-screen viewer and the filmstrip (SPEC 0.5 V0.19, V0.47).
 
-import { useEffect, useRef, useState } from "preact/hooks";
-import { filmstrip, frameHeight, stepImage, type PreviewCard } from "./previews.ts";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { FRAME_ALLOW, filmstrip, frameHeight, stepImage, type PreviewCard } from "./previews.ts";
+import { bridgeMessage } from "./view.ts";
 
 /** One open viewer at a time: an image (with the thread's other images to swipe to) or an HTML frame. */
 type Open = { card: PreviewCard; all: PreviewCard[] } | null;
@@ -15,16 +16,60 @@ export function previewDomId(seq: number): string {
   return `pv-${seq}`;
 }
 
+/** V0.47: put the frame itself full screen, where the browser can (not iPhone Safari). */
+function canFullscreen(): boolean {
+  return typeof document !== "undefined" && !!document.fullscreenEnabled;
+}
+
+function FullscreenButton({ frame }: { frame: { current: HTMLIFrameElement | null } }) {
+  if (!canFullscreen()) return null;
+  return (
+    <button class="pv-fs" aria-label="Full screen" title="Full screen" onClick={() => void frame.current?.requestFullscreen?.().catch(() => {})}>
+      ⛶
+    </button>
+  );
+}
+
 export function PreviewCardView({ card, all }: { card: PreviewCard; all: PreviewCard[] }) {
   const [expanded, setExpanded] = useState(false);
+  const [reported, setReported] = useState(0);
+  const [width, setWidth] = useState(0);
+  const box = useRef<HTMLElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const html = card.kind === "html";
+
+  // V0.47: 16:10 of the card's width until the page reports its own height (ui/notifications/size-changed).
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!html || !el) return;
+    const measure = () => setWidth(el.clientWidth);
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [html]);
+  useEffect(() => {
+    if (!html) return;
+    const on = (e: MessageEvent) => {
+      const m = bridgeMessage(e.source, frame.current?.contentWindow, e.data);
+      if (m?.kind === "size") setReported(m.height);
+    };
+    window.addEventListener("message", on);
+    return () => window.removeEventListener("message", on);
+  }, [html]);
+
+  const h = frameHeight(card.height, expanded, reported, width);
   return (
-    <figure class={`pv ${card.kind}`} id={previewDomId(card.seq)}>
+    <figure class={`pv ${card.kind}`} id={previewDomId(card.seq)} ref={box}>
       <figcaption class="pv-h">
-        <span class="pv-t">{card.title || (card.kind === "html" ? "Preview" : "Screenshot")}</span>
-        {card.kind === "html" ? (
-          <button class="pv-open" onClick={() => openViewer(card, all)}>
-            Open
-          </button>
+        <span class="pv-t">{card.title || (html ? "Preview" : "Screenshot")}</span>
+        {html ? (
+          <>
+            <FullscreenButton frame={frame} />
+            <button class="pv-open" onClick={() => openViewer(card, all)}>
+              Open
+            </button>
+          </>
         ) : (
           card.width > 0 && (
             <span class="pv-sz">
@@ -39,8 +84,18 @@ export function PreviewCardView({ card, all }: { card: PreviewCard; all: Preview
         </button>
       ) : (
         <>
-          <iframe class="pv-frame" src={card.src} sandbox="allow-scripts" loading="lazy" title={card.title || "Preview"} style={{ height: `${frameHeight(card.height, expanded)}px` }} />
-          {card.height > frameHeight(card.height, false) && (
+          <iframe
+            ref={frame}
+            class="pv-frame"
+            src={card.src}
+            sandbox="allow-scripts"
+            allow={FRAME_ALLOW}
+            allowFullScreen
+            loading="lazy"
+            title={card.title || "Preview"}
+            style={{ height: `${h}px` }}
+          />
+          {frameHeight(card.height, true, reported, width) > frameHeight(card.height, false, reported, width) && (
             <button class="pv-more" onClick={() => setExpanded(!expanded)}>
               {expanded ? "Show less" : "Show all"}
             </button>
@@ -69,6 +124,7 @@ export function PreviewViewer() {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<{ dist: number; scale: number; x0: number; y0: number; pan: { x: number; y: number } } | null>(null);
   const pushed = useRef(false);
+  const fframe = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     setOpenGlobal = (o) => {
@@ -167,6 +223,7 @@ export function PreviewViewer() {
     <div class="pv-full" role="dialog" aria-label={c.title || "Preview"}>
       <div class="pv-fh">
         <span class="pv-ft">{c.title}</span>
+        {c.kind === "html" && <FullscreenButton frame={fframe} />}
         {c.kind === "image" && imgs.length > 1 && (
           <span class="pv-fn">
             {pos + 1} / {imgs.length}
@@ -191,7 +248,7 @@ export function PreviewViewer() {
           )}
         </div>
       ) : (
-        <iframe class="pv-fframe" src={c.src} sandbox="allow-scripts" title={c.title || "Preview"} />
+        <iframe ref={fframe} class="pv-fframe" src={c.src} sandbox="allow-scripts" allow={FRAME_ALLOW} allowFullScreen title={c.title || "Preview"} />
       )}
       {c.caption && <div class="pv-fc prose">{c.caption}</div>}
     </div>

@@ -146,3 +146,39 @@ export function notificationOptions(p: PushPayload, now: number): Record<string,
 export function shouldClearNotification(state: string): boolean {
   return state !== "asking" && state !== "failed";
 }
+
+// ---- opening the thread of a tapped notification (V0.15) ----
+
+type KV = { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void };
+const OPEN_KEY = "fyr.pendingOpen";
+
+/** Keep the thread a tap asked for until it is on screen: a reload for a new build must not lose it. */
+export function rememberOpen(st: KV | null, threadId: string): void {
+  try {
+    st?.setItem(OPEN_KEY, threadId);
+  } catch {
+    /* storage denied: the in-memory value still works without a reload */
+  }
+}
+
+/** The thread a tap asked for, once. */
+export function takeOpen(st: KV | null): string | null {
+  try {
+    const v = st?.getItem(OPEN_KEY) ?? null;
+    if (v) st?.removeItem(OPEN_KEY);
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+/** Every window of this origin gets the open message (the installed app and any open tab). */
+export function openTargets<W extends { url: string }>(wins: W[], origin: string): W[] {
+  return wins.filter((c) => {
+    try {
+      return new URL(c.url).origin === origin;
+    } catch {
+      return false;
+    }
+  });
+}

@@ -21,7 +21,10 @@ import (
 
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/claude"
+	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/quota"
 )
 
 // Profile is a claude-compatible binary with its settings (V0.11).
@@ -34,6 +37,54 @@ type Profile struct {
 	DefaultModel   string   `json:"defaultModel"`
 	PermissionMode string   `json:"permissionMode,omitempty"`
 	Env            []string `json:"env,omitempty"`
+	// Quota: where the provider allowance is read (V0.44); clients see the kind only.
+	Quota *quota.Spec `json:"quota,omitempty"`
+	// ConfigDir is the CLI's config dir (CLAUDE_CONFIG_DIR) when the
+	// profile has its own; Fyr then sets it. See ConfigDirPath (V0.45).
+	ConfigDir string `json:"configDir,omitempty"`
+
+	// V0.50 (decision 0015): a profile made from a provider. CLI is the
+	// adapter id ("" is claude); Auth and Endpoint are applied by the
+	// adapter; Key reads the provider's secret at launch and never leaves
+	// the host.
+	CLI      string                 `json:"cli,omitempty"`
+	Auth     cli.Auth               `json:"-"`
+	Endpoint cli.Endpoint           `json:"-"`
+	Key      func() (string, error) `json:"-"`
+	// KeyRequired: the profile does not start without its key (an endpoint,
+	// or an account that logs in with a token).
+	KeyRequired bool `json:"-"`
+	// Unavailable says why the provider cannot run now (V0.50: no token or
+	// key yet); clients do not offer it for new threads or Hand over.
+	Unavailable string `json:"unavailable,omitempty"`
+	// ModelCaps: the offered models with their effort levels; DefaultEffort
+	// is used when the thread names none and the model takes it.
+	ModelCaps     []cli.Model `json:"modelCaps,omitempty"`
+	DefaultEffort string      `json:"defaultEffort,omitempty"`
+}
+
+// auth is the profile's auth; a legacy profile is a cli-login in its
+// configDir (the CLI's default when empty).
+func (p Profile) auth() cli.Auth {
+	if p.Auth.Kind != "" {
+		return p.Auth
+	}
+	return cli.Auth{Kind: cli.CLILogin, ConfigDir: p.ConfigDir}
+}
+
+// adapter is the CLI adapter a profile runs on.
+func (m *Manager) adapter(p Profile) (cli.Adapter, error) {
+	id := p.CLI
+	if id == "" {
+		id = claudecli.ID
+	}
+	if a, ok := m.cfg.Adapters[id]; ok {
+		return a, nil
+	}
+	if id == claudecli.ID {
+		return claudecli.Adapter{}, nil
+	}
+	return nil, fmt.Errorf("no CLI adapter %q", id)
 }
 
 // Ev is a timeline event the agent adds to a thread.
@@ -57,6 +108,13 @@ type Config struct {
 	Prompt   string        // appended system prompt
 	// Attachments resolves stored files by id (SPEC 0.5 V0.18).
 	Attachments func(id string) (attach.Meta, error)
+	// OnRateLimit gets a session's rate_limit_info with its profile id (V0.44); optional.
+	OnRateLimit func(profile string, info map[string]any)
+	// HandoverDir holds the files a handover starts from (V0.45); empty
+	// means a folder in the system temp dir.
+	HandoverDir string
+	// Adapters by id (V0.50); claude is built in.
+	Adapters map[string]cli.Adapter
 }
 
 // FyrPrompt is the short block that steers agents to Fyr tools (V0.12).
@@ -65,7 +123,26 @@ const FyrPrompt = `You run inside Fyr, which shows this session to the user and 
 - When you open a PR some other way than gh pr create, call mcp__fyr__pr_link with its URL.
 - When the user says the thread is finished once something happens, call mcp__fyr__settle_when.
 - To see or coordinate the user's other sessions, use mcp__fyr__threads, mcp__fyr__thread_read, mcp__fyr__thread_send and mcp__fyr__thread_new (start a separate session for work that should run on its own).
-- To show the user something (a screenshot after UI work, a chart, a mockup, a page), call mcp__fyr__show with a path, html or url; it appears in the thread on desktop and phone.`
+- To show the user something (a screenshot after UI work, a chart, a mockup, a page, a 3D model or scene), call mcp__fyr__show with a path, html or url; it appears in the thread on desktop and phone. Pages run real HTML in a sandbox: WebGL, WASM, ES modules, three.js or model-viewer from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com or ajax.googleapis.com, and their own files: give path a folder (index.html plus models, textures, scripts) or an HTML file next to its files.`
+
+// ViewPrompt is appended to the system prompt of a thread with a live view.
+const ViewPrompt = `This thread has a live view: a small page pinned above the conversation that shows the state of your work, so the user does not have to read the thread to know where things are.
+- The view is a page (HTML, rarely rebuilt) plus a small JSON state (at most 16 kB) that you update often. Publish the page once with mcp__fyr__view_publish {html or path, state}; after that change only the state with mcp__fyr__view_state {patch}, a JSON Merge Patch (RFC 7396: keys merge, null deletes a key, arrays are replaced whole).
+- State shape: "headline" (one line, the current status; Fyr also shows it in the inbox) plus any fields your page needs, for example "steps", "blockers", "next", "pr".
+- In the page, window.fyr.state is the current state; fyr.onState(fn) runs fn now and on every change; an element with data-text="field.path" shows that field. Fragments get the Fyr theme (CSS variables --bg --fg --muted --line --accent, light and dark). The page cannot call Fyr or other hosts; it may load libraries from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com and ajax.googleapis.com.
+- Buttons send messages: fyr.send(text), or an element with data-send="text", sends that text to you as a message from the view, as if the user typed it. Use buttons for choices and next steps; they never run anything by themselves.
+- A message marked [Typed on the live view tab] was written while the user looks at the view, not the conversation. Answer it first in one or two plain, spoken sentences (the answer, or what you will do now); that reply is shown next to their message on the View tab. Then do the work and update the view.
+- Update the view as the work moves, not only at the end: when you start or finish an item, change the headline and the items that moved. Fyr reminds you after a few minutes without an update.
+- Before you end a turn, update the view if anything it shows changed, or call mcp__fyr__view_unchanged {reason}. Keep it short and current; it is the first thing the user reads.`
+
+// FromView marks a message sent by a press in the live view (V0.37).
+const FromView = "view"
+
+// FromViewTyped marks a message the user typed on the View tab (V0.49).
+const FromViewTyped = "view-typed"
+
+// FromHandover marks the messages Fyr sends during a handover (V0.45).
+const FromHandover = "handover"
 
 type Manager struct {
 	host Host
@@ -80,7 +157,8 @@ type session struct {
 	thread string
 	cwd    string
 	token  string
-	c      *claude.Client
+	c      cli.Session
+	effort string // the --effort it started with (V0.50)
 	// live is true from the start of a turn until its result. A turn starts
 	// on a send or on its own (the CLI resumes after a background task), so
 	// the stream decides, not a count of sends (SPEC 6.2).
@@ -88,9 +166,38 @@ type session struct {
 	interrupt bool
 	asks      map[string]chan core.Effect // decision id → answer
 	reqs      map[string]string           // control request id → decision id
-	digest    *digest
-	idle      *time.Timer
-	log       io.Closer
+	// out holds unread messages: id → "sent" or "queued" (V0.33);
+	// cancelling marks the ones a cancel request is out for.
+	out        map[string]string
+	cancelling map[string]bool
+	// lifecycle is true once the CLI reported command_lifecycle; without
+	// it a message counts as read when its turn ends.
+	lifecycle bool
+	// viewTools: the process started with the live view's prompt and
+	// tools (V0.37). The flag can change while it runs; the Stop hook only
+	// asks for a view the agent knows about.
+	viewTools bool
+	// viewBlocked: the Stop hook blocked once this run; summary is the
+	// thread's summary before that forced turn, and forcedWork is true when
+	// the forced turn called a tool other than the view tools.
+	// The hook runs on the client's reader, ahead of the stream messages
+	// still queued for handle, so the summary comes from the hook's input
+	// and the forced turn counts from the synthetic message onward.
+	viewBlocked bool
+	// viewNudged is the last mid-turn reminder (V0.52).
+	viewNudged time.Time
+	summary    string
+	inForced   bool
+	forcedWork bool
+	// refresh: end the process after this run, so the next one starts
+	// with the current flag.
+	refresh bool
+	// results get the result message of each turn (a handover waits on
+	// the source's turn, V0.45).
+	results []chan claude.Msg
+	digest  *digest
+	idle    *time.Timer
+	log     io.Closer
 }
 
 func New(host Host, cfg Config) *Manager {
@@ -144,16 +251,40 @@ func (m *Manager) Do(threadID string, e core.Effect) error {
 	case "stop":
 		m.Stop(threadID)
 		return nil
+	case "refresh":
+		m.refreshView(threadID)
+		return nil
+	case "cancelMessage":
+		return m.cancelMessage(threadID, e.MessageID)
+	case "handover":
+		m.handover(threadID, e)
+		return nil
 	case "setModel":
 		m.mu.Lock()
 		s := m.sessions[threadID]
 		m.mu.Unlock()
 		if s != nil {
+			// V0.50: the CLI takes effort only at start; the process ends
+			// when idle (or after its run) and the next message resumes
+			// with the new effort.
+			if e.Effort != nil {
+				t, _ := m.host.Thread(threadID)
+				p := m.cfg.Profile(t.Profile)
+				if cli.EffortFor(p.ModelCaps, e.Model, *e.Effort, p.DefaultEffort) != s.effort {
+					m.refreshView(threadID)
+					m.mu.Lock()
+					gone := m.sessions[threadID] != s
+					m.mu.Unlock()
+					if gone {
+						return nil // the next start passes --model and --effort
+					}
+				}
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			return s.c.SetModel(ctx, e.Model)
 		}
-		return nil // the next start passes --model
+		return nil // the next start passes --model and --effort
 	}
 	return fmt.Errorf("agent: unknown effect %q", e.Kind)
 }
@@ -213,11 +344,20 @@ func content(e core.Effect) []claude.Msg {
 }
 
 func (m *Manager) send(threadID string, e core.Effect) error {
+	if e.MessageID == "" {
+		e.MessageID = newUUID()
+	}
 	s, err := m.ensure(threadID)
 	if err != nil {
+		// V0.33: the message stays in the log, marked lost.
+		ud := map[string]any{"id": e.MessageID, "text": e.Text, "images": len(e.Images)}
+		if e.From != "" {
+			ud["from"] = e.From
+		}
 		m.host.Observe(threadID, func(t *core.Thread, now time.Time) {
 			core.RunEnded(t, &core.Failure{Class: "process", Message: "Could not start the agent: " + err.Error(), At: now}, now)
-		}, Ev{"run.ended", map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}})
+		}, Ev{"user", ud}, Ev{"message.state", map[string]any{"id": e.MessageID, "state": "lost"}},
+			Ev{"run.ended", map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}})
 		return err
 	}
 	m.mu.Lock()
@@ -226,9 +366,18 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 	if s.idle != nil {
 		s.idle.Stop()
 	}
+	s.out[e.MessageID] = "sent"
 	m.mu.Unlock()
 	userText := e.Text
-	if e.From != "" {
+	if e.From == FromHandover {
+		// V0.45: Fyr's own words, no prefix.
+	} else if e.From == FromView {
+		// V0.37: a press in the live view; the user pressed it.
+		e.Text = "[From the live view] " + e.Text
+	} else if e.From == FromViewTyped {
+		// V0.49: typed while the user looks at the view, not the conversation.
+		e.Text = "[Typed on the live view tab] " + e.Text
+	} else if e.From != "" {
 		// V0.22: tell the receiving agent which thread wrote this.
 		label := e.From
 		if ft, ok := m.host.Thread(e.From); ok && ft.Title != "" {
@@ -237,7 +386,7 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 		e.Text = "[From thread " + label + "] " + e.Text
 	}
 	e, metas := m.withAttachments(e)
-	ud := map[string]any{"text": userText, "images": len(e.Images)}
+	ud := map[string]any{"id": e.MessageID, "text": userText, "images": len(e.Images)}
 	if metas != nil {
 		ud["attachments"] = metas
 	}
@@ -248,18 +397,94 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 	if first {
 		evs = append(evs, Ev{"run.started", map[string]any{}})
 	}
+	id := e.MessageID
 	m.host.Observe(threadID, func(t *core.Thread, now time.Time) {
 		if first {
 			core.RunStarted(t, now)
 		}
+		core.SetOutbox(t, id, "sent")
 	}, evs...)
-	return s.c.SendUser(content(e))
+	return s.c.SendUser(content(e), id)
+}
+
+// delivered moves a message to a new state (V0.33) and records it once.
+// It ignores a message that is no longer unread, and a "cancelled" report
+// for a message whose cancel request is still out (cancelMessage records it).
+func (m *Manager) delivered(s *session, id, state string) {
+	m.mu.Lock()
+	cur := s.out[id]
+	if cur == "" || cur == state || (state == "cancelled" && s.cancelling[id]) {
+		m.mu.Unlock()
+		return
+	}
+	if state == "queued" {
+		s.out[id] = state
+	} else {
+		delete(s.out, id)
+	}
+	m.mu.Unlock()
+	m.host.Observe(s.thread, func(t *core.Thread, _ time.Time) { core.SetOutbox(t, id, state) },
+		Ev{"message.state", map[string]any{"id": id, "state": state}})
+}
+
+// unread lists the messages the agent has not read.
+func (m *Manager) unread(s *session) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ids := make([]string, 0, len(s.out))
+	for id := range s.out {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// cancelMessage withdraws a message from the CLI's queue (V0.33).
+func (m *Manager) cancelMessage(threadID, id string) error {
+	m.mu.Lock()
+	s := m.sessions[threadID]
+	waiting := s != nil && s.out[id] != ""
+	if waiting {
+		s.cancelling[id] = true
+	}
+	m.mu.Unlock()
+	if !waiting {
+		return fmt.Errorf("The agent has already read this message")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	ok, err := s.c.CancelMessage(ctx, id)
+	m.mu.Lock()
+	delete(s.cancelling, id)
+	m.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("The agent cannot withdraw this message: %v", err)
+	}
+	if !ok {
+		return fmt.Errorf("The agent has already read this message")
+	}
+	m.delivered(s, id, "cancelled")
+	return nil
 }
 
 var mcpNameRe = regexp.MustCompile(`[^A-Za-z0-9_-]`)
 
 // ensure returns the live session of a thread, starting the process if needed.
 func (m *Manager) ensure(threadID string) (*session, error) {
+	return m.ensureAs(threadID, nil)
+}
+
+// as starts a thread's process on another profile than its own: a
+// handover starts its target before the thread moves (V0.45).
+type as struct {
+	profile Profile
+	model   string
+	effort  string
+	session string
+	resume  bool
+	addDirs []string
+}
+
+func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 	m.mu.Lock()
 	if s := m.sessions[threadID]; s != nil {
 		m.mu.Unlock()
@@ -270,37 +495,56 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 	if !ok {
 		return nil, fmt.Errorf("no thread %s", threadID)
 	}
-	p := m.cfg.Profile(t.Profile)
-	args := []string{}
-	if t.Model != "" {
-		args = append(args, "--model", t.Model)
+	if o == nil {
+		pr := m.cfg.Profile(t.Profile)
+		o = &as{profile: pr, model: t.Model, session: t.SessionID, resume: t.SessionID != "",
+			effort: cli.EffortFor(pr.ModelCaps, t.Model, t.Effort, pr.DefaultEffort)}
+		if o.session == "" {
+			o.session = newUUID()
+		}
 	}
-	if t.SessionID != "" {
-		args = append(args, "--resume", t.SessionID)
-	} else {
-		args = append(args, "--session-id", newUUID())
+	p := o.profile
+	ad, err := m.adapter(p)
+	if err != nil {
+		return nil, err
 	}
-	mode := p.PermissionMode
-	if mode == "" {
-		mode = "auto"
+	l := cli.Launch{Binary: p.Binary, Dir: t.Cwd, Auth: p.auth(), Endpoint: p.Endpoint, Env: p.Env,
+		Model: o.model, Effort: o.effort, Session: o.session, Resume: o.resume, AddDirs: o.addDirs, PermissionMode: p.PermissionMode}
+	if p.Key != nil {
+		k, kerr := p.Key()
+		if kerr != nil || k == "" {
+			if p.KeyRequired || l.Auth.Kind == cli.APIKey {
+				what := "a key"
+				if l.Auth.Kind == cli.CLILogin {
+					what = "a login token"
+				}
+				return nil, fmt.Errorf("%s needs %s: add it in Settings → Providers", name(p), what)
+			}
+		}
+		l.Key = k
 	}
-	args = append(args, "--permission-mode", mode)
-	s := &session{thread: threadID, cwd: t.Cwd, asks: map[string]chan core.Effect{}, reqs: map[string]string{}, digest: newDigest()}
+	s := &session{thread: threadID, cwd: t.Cwd, asks: map[string]chan core.Effect{}, reqs: map[string]string{}, digest: newDigest(),
+		out: map[string]string{}, cancelling: map[string]bool{}, effort: l.Effort}
 	if m.cfg.MCPURL != "" {
 		s.token = randHex(24)
 		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"fyr": map[string]any{
 			"type": "http", "url": m.cfg.MCPURL, "headers": map[string]string{"Authorization": "Bearer " + s.token}}}})
-		args = append(args, "--mcp-config", string(cfg), "--allowedTools", "mcp__fyr__*")
+		l.MCPConfig, l.AllowedTools = string(cfg), []string{"mcp__fyr__*"}
 	}
-	if m.cfg.Prompt != "-" {
-		args = append(args, "--append-system-prompt", m.cfg.Prompt)
+	prompt := m.cfg.Prompt
+	if prompt == "-" {
+		prompt = ""
 	}
-	spec := claude.Spec{Binary: p.Binary, Args: args, Dir: t.Cwd, Env: p.Env}
+	if t.LiveView && m.cfg.MCPURL != "" {
+		s.viewTools = true
+		prompt = strings.TrimSpace(prompt + "\n\n" + ViewPrompt)
+	}
+	l.SystemPrompt = prompt
 	if m.cfg.LogDir != "" {
 		os.MkdirAll(m.cfg.LogDir, 0o700)
 		f, err := os.OpenFile(filepath.Join(m.cfg.LogDir, threadID+".log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err == nil {
-			spec.Log, s.log = f, f
+			l.Log, s.log = f, f
 		}
 	}
 	if _, err := os.Stat(t.Cwd); err != nil {
@@ -318,29 +562,40 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 		delete(m.tokens, s.token)
 		m.mu.Unlock()
 	}
-	c, err := claude.Start(spec)
+	c, err := ad.Start(l, cli.Handlers{
+		CanUseTool: func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) },
+		Cancel:     func(reqID string) { m.cancelRequest(s, reqID) },
+		Hook: func(id string, in claude.Msg) claude.Msg {
+			if id == "view" {
+				return m.viewStop(s, in)
+			}
+			if id == "viewnudge" {
+				return m.viewNudge(s)
+			}
+			name, _ := in["tool_name"].(string)
+			ti, _ := in["tool_input"].(map[string]any)
+			if r := core.Gate(name, ti); r != "" {
+				return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse",
+					"permissionDecision": "deny", "permissionDecisionReason": r}}
+			}
+			return nil
+		},
+	})
 	if err != nil {
 		dropToken()
 		return nil, err
 	}
 	s.c = c
-	c.OnCanUseTool = func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) }
-	c.OnCancel = func(reqID string) { m.cancelRequest(s, reqID) }
-	c.OnHook = func(_ string, in claude.Msg) claude.Msg {
-		name, _ := in["tool_name"].(string)
-		ti, _ := in["tool_input"].(map[string]any)
-		if r := core.Gate(name, ti); r != "" {
-			return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse",
-				"permissionDecision": "deny", "permissionDecisionReason": r}}
-		}
-		return nil
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if _, err := c.Initialize(ctx, claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}); err != nil {
+	if _, err := c.Initialize(ctx, initHooks(s.viewTools)); err != nil {
 		c.Kill()
 		<-c.Done()
 		dropToken()
+		if perr := c.Err(); perr != nil {
+			// The CLI's own words, e.g. "No conversation found" (V0.45).
+			return nil, fmt.Errorf("initialize: %w (%s)", err, strings.TrimSpace(perr.Error()))
+		}
 		return nil, fmt.Errorf("initialize: %w", err)
 	}
 	m.mu.Lock()
@@ -351,7 +606,7 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 }
 
 func (m *Manager) read(s *session) {
-	for msg := range s.c.Out {
+	for msg := range s.c.Out() {
 		m.handle(s, msg)
 	}
 	<-s.c.Done()
@@ -361,6 +616,10 @@ func (m *Manager) read(s *session) {
 	}
 	delete(m.tokens, s.token)
 	live := s.live || len(s.asks) > 0
+	for _, ch := range s.results {
+		close(ch)
+	}
+	s.results = nil
 	for id, ch := range s.asks {
 		close(ch)
 		delete(s.asks, id)
@@ -371,6 +630,10 @@ func (m *Manager) read(s *session) {
 	m.mu.Unlock()
 	if s.log != nil {
 		s.log.Close()
+	}
+	// V0.33: the CLI's queue died with the process.
+	for _, id := range m.unread(s) {
+		m.delivered(s, id, "lost")
 	}
 	if live {
 		msg := "The agent process exited during the run"
@@ -389,6 +652,31 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		m.turnStarted(s)
 	}
 	switch typ {
+	case "rate_limit_event":
+		// V0.44: a free quota update between the host's reads.
+		if info, ok := msg["rate_limit_info"].(map[string]any); ok && m.cfg.OnRateLimit != nil {
+			if t, ok := m.host.Thread(s.thread); ok {
+				m.cfg.OnRateLimit(m.cfg.Profile(t.Profile).ID, info)
+			}
+		}
+		return
+	case "command_lifecycle":
+		id, _ := msg["command_uuid"].(string)
+		if id == "" {
+			id, _ = msg["uuid"].(string)
+		}
+		m.mu.Lock()
+		s.lifecycle = true
+		m.mu.Unlock()
+		switch msg["state"] {
+		case "queued":
+			m.delivered(s, id, "queued")
+		case "started", "completed":
+			m.delivered(s, id, "read")
+		case "cancelled":
+			m.delivered(s, id, "cancelled")
+		}
+		return
 	case "system":
 		if msg["subtype"] == "background_tasks_changed" {
 			for _, k := range taskList(msg) {
@@ -419,6 +707,23 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		}
 		return
 	case "assistant", "user":
+		if typ == "user" && msg["isSynthetic"] == true {
+			// The Stop hook's reason, echoed by the CLI (V0.37): never
+			// logged; the forced turn starts here.
+			m.mu.Lock()
+			s.inForced = s.viewBlocked
+			forced := s.inForced
+			m.mu.Unlock()
+			if forced {
+				// In stream order, so the client can show the forced turn's
+				// text as one quiet line (V0.37).
+				m.host.Observe(s.thread, func(*core.Thread, time.Time) {}, Ev{"view.forced", map[string]any{}})
+			}
+			return
+		}
+		if typ == "assistant" {
+			m.noteForced(s, msg)
+		}
 		o := s.digest.feed(msg)
 		m.host.Observe(s.thread, func(t *core.Thread, now time.Time) {
 			if o.Activity != "" {
@@ -439,6 +744,19 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		interrupted := s.interrupt
 		s.live, s.interrupt = false, false
 		m.mu.Unlock()
+		m.mu.Lock()
+		noReports := !s.lifecycle
+		restore := s.viewBlocked && !s.forcedWork
+		summary := s.summary
+		s.viewBlocked, s.inForced, s.forcedWork, s.summary = false, false, false, ""
+		refresh := s.refresh && len(s.out) == 0
+		m.mu.Unlock()
+		if noReports {
+			// An older CLI reports no delivery: its turn read every message.
+			for _, id := range m.unread(s) {
+				m.delivered(s, id, "read")
+			}
+		}
 		if !ended {
 			return // a stray result outside a turn
 		}
@@ -451,6 +769,13 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			}
 			f = &core.Failure{Class: classify(text), Message: clip(firstLine(text), 300)}
 		}
+		m.mu.Lock()
+		waiters := s.results
+		s.results = nil
+		m.mu.Unlock()
+		for _, ch := range waiters {
+			ch <- msg
+		}
 		data := map[string]any{"interrupted": interrupted, "costUsd": msg["total_cost_usd"], "durationMs": msg["duration_ms"], "failure": f}
 		branch := gitBranch(s.cwd)
 		m.host.Observe(s.thread, func(t *core.Thread, now time.Time) {
@@ -459,8 +784,118 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			}
 			core.RunEnded(t, f, now)
 			t.Branch = branch
+			if restore {
+				// V0.37: a forced turn that only updated the view keeps the
+				// run's own last words as the summary.
+				t.Summary = summary
+			}
 		}, Ev{"run.ended", data})
+		if refresh {
+			m.mu.Lock()
+			if m.sessions[s.thread] == s {
+				delete(m.sessions, s.thread)
+			}
+			m.mu.Unlock()
+			s.c.Close()
+			return
+		}
 		m.armIdle(s)
+	}
+}
+
+// viewStop answers the Stop hook (SPEC 0.5 V0.37): block once per run
+// when the thread has a live view and the run did not touch it.
+func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
+	t, ok := m.host.Thread(s.thread)
+	if !ok {
+		return nil
+	}
+	bg, _ := in["background_tasks"].([]any)
+	active, _ := in["stop_hook_active"].(bool)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d := core.ViewStop{Flag: s.viewTools && t.LiveView, Touched: core.ViewTouchedThisRun(&t),
+		Blocked: s.viewBlocked, Active: active, Tasks: len(bg) + t.RunningTasks()}
+	if !d.Block() {
+		return nil
+	}
+	summary := firstLine(fmt.Sprint(orNil(in["last_assistant_message"])))
+	if summary == "" {
+		summary = t.Summary
+	}
+	s.viewBlocked, s.summary, s.inForced, s.forcedWork = true, summary, false, false
+	return claude.Msg{"decision": "block", "reason": core.ViewStopReason}
+}
+
+// viewNudge answers the PostToolUse hook (SPEC 0.5 V0.52): when a turn has
+// run ViewNudgeAfter without a view_* call, add a reminder to the context.
+func (m *Manager) viewNudge(s *session) claude.Msg {
+	t, ok := m.host.Thread(s.thread)
+	if !ok {
+		return nil
+	}
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := core.ViewNudge{Flag: s.viewTools && t.LiveView, Nudged: s.viewNudged}
+	if t.RunStartedAt != nil {
+		n.RunStarted = *t.RunStartedAt
+	}
+	if t.Live != nil {
+		n.Checked = t.Live.CheckedAt
+	}
+	if !n.Due(now) {
+		return nil
+	}
+	s.viewNudged = now
+	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": core.ViewNudgeReason}}
+}
+
+func orNil(v any) any {
+	if v == nil {
+		return ""
+	}
+	return v
+}
+
+// noteForced marks a forced turn that did more than update the view.
+func (m *Manager) noteForced(s *session, msg claude.Msg) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !s.inForced || s.forcedWork {
+		return
+	}
+	inner, _ := msg["message"].(map[string]any)
+	blocks, _ := inner["content"].([]any)
+	for _, x := range blocks {
+		b, _ := x.(map[string]any)
+		if b["type"] != "tool_use" {
+			continue
+		}
+		if name, _ := b["name"].(string); !strings.HasPrefix(name, "mcp__fyr__view_") {
+			s.forcedWork = true
+		}
+	}
+}
+
+// refreshView makes the next process start with the thread's current
+// live view flag: an idle process ends now, a running one after its run.
+func (m *Manager) refreshView(threadID string) {
+	m.mu.Lock()
+	s := m.sessions[threadID]
+	if s == nil {
+		m.mu.Unlock()
+		return
+	}
+	idle := !s.live && len(s.asks) == 0 && len(s.out) == 0
+	if idle {
+		delete(m.sessions, threadID) // the next send starts a new process
+	} else {
+		s.refresh = true
+	}
+	m.mu.Unlock()
+	if idle {
+		s.c.Close()
 	}
 }
 
@@ -686,4 +1121,17 @@ func gitBranch(dir string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// initHooks is what a process registers at start: the merge gate always,
+// and the Stop hook only with the live view (SPEC 0.5 V0.37), so other
+// threads get no extra round trip at the end of each turn.
+func initHooks(view bool) claude.Msg {
+	h := claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}
+	if view {
+		h["Stop"] = []claude.Msg{{"hookCallbackIds": []string{"view"}}}
+		// V0.52: after any tool call, remind the agent when the view went stale mid-turn.
+		h["PostToolUse"] = []claude.Msg{{"hookCallbackIds": []string{"viewnudge"}}}
+	}
+	return h
 }
