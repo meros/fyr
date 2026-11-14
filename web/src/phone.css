@@ -275,6 +275,7 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-chip.proj span{color:var(--pc)}
 .m-pfline{flex:none;display:flex;align-items:center;gap:8px;min-height:44px;padding:0 4px 0 12px;background:color-mix(in srgb,var(--pc) 10%,var(--raised));border-bottom:1px solid var(--line);min-width:0}
 .m-pfn{flex:1;display:flex;align-items:center;gap:8px;min-width:0;min-height:44px;font:500 14px/20px var(--ui);color:var(--pc)}
+.m-pfq{flex:none;font:400 12px/16px var(--ui);color:var(--ink-muted);white-space:nowrap}
 .m-ppick{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;text-align:left;height:auto;min-height:56px}
 .m-pickpanel{display:flex;flex-direction:column;gap:6px}
 .m-app .pli{min-height:56px}
@@ -294,6 +295,9 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-fhint{font:400 13px/18px var(--ui);color:var(--ink-muted);padding:0 4px}
 .m-app .sw{width:40px;height:40px;border-radius:20px}
 .m-app .seg button{height:44px}
+.m-app .qtog{min-height:44px;font-size:16px}
+.m-app .fld .qtog input{width:22px;height:22px}
+.m-app .fld .qtimes input{height:44px;font-size:16px}
 .m-app .ig{height:44px}
 .m-app .igrid{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
 .m-app .addsrc input{height:44px;font-size:16px}

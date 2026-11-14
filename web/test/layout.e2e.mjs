@@ -166,6 +166,11 @@ const SCREENS = [
   // SPEC 0.5 V0.43: the PR tab with a failing check and 2 unresolved review threads, and the Merge dialog.
   { name: "PR tab with a failing check", url: "?mock=1&open=t_block&tab=pr", prTab: true },
   { name: "PR merge dialog", url: "?mock=1&open=t_s2&tab=pr", sheet: "merge" },
+  // SPEC 0.5 V0.46: quiet hours. ?quiet=p_home puts Hemmet in quiet hours: its thread leaves the inbox, comes back
+  // with the project filter (whose line says until when), and the project screen's Quiet hours row fits the phone.
+  { name: "inbox with a quiet project", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "" } },
+  { name: "quiet project through the filter", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "p_home" } },
+  { name: "project screen with quiet hours", url: "?mock=rail&project=p_home&quiet=p_home", storage: { "fyr.projectFilter": "" } },
 ];
 
 // What must be visible, and where, on the current screen.
@@ -226,6 +231,17 @@ const MEASURE = `(() => {
     liveView: rect('.m-thread .lv'),
     liveFrame: rect('.m-thread .lv-f'),
     innerHeight: window.innerHeight,
+    dishwasher: (document.querySelector('.m-app')?.innerText ?? '').includes('Pick a dishwasher'),
+    quietNote: document.querySelector('.m-pfq')?.textContent ?? null,
+    quietRow: (() => {
+      const el = document.querySelector('.pedit .qfld'); if (!el) return null;
+      el.scrollIntoView({ block: 'center' });
+      const r = el.getBoundingClientRect();
+      const days = [...el.querySelectorAll('.qdays button')].map(b => b.getBoundingClientRect());
+      const times = [...el.querySelectorAll('.qtimes input')].map(b => b.getBoundingClientRect());
+      return { top: r.top, bottom: r.bottom, right: Math.max(r.right, ...days.map(d => d.right), ...times.map(d => d.right)), on: !!el.querySelector('.qtog input')?.checked,
+        line: el.querySelector('.lede')?.textContent ?? '', days: days.length, small: [...days, ...times].filter(d => d.height < 43.5).length };
+    })(),
   };
 })()`;
 
@@ -267,6 +283,17 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   if (ctx.startsWith("new thread, project without")) check(m.newProject === "Hemmet" && m.folderLine === "A fresh scratch folder", `${ctx}: expected Hemmet in a fresh scratch folder (${m.newProject}, ${m.folderLine})`);
   if (ctx.startsWith("folder picker sheet")) check(m.folderSections.join("|") === "norban/web's folders|Recent|Repos found|Browse" && m.browseRows >= 4, `${ctx}: sections ${JSON.stringify(m.folderSections)}, ${m.browseRows} browse rows`);
   if (ctx.startsWith("project screen with folders")) check(m.stars === "★☆" && /^Also matches clones of github.com\/norban\/web and github.com\/norban\/web-docs/.test(m.repoLine) && m.noSourceWord, `${ctx}: stars "${m.stars}", repo line "${m.repoLine}", no "source" word ${m.noSourceWord}`);
+  if (ctx.startsWith("inbox with a quiet project")) check(!m.dishwasher && !m.quietNote, `${ctx}: the quiet project's thread shows in the inbox (${m.dishwasher}, note ${m.quietNote})`);
+  if (ctx.startsWith("quiet project through the filter")) check(m.dishwasher && /^Quiet until \d\d:\d\d$/.test(m.quietNote ?? ""), `${ctx}: the filter does not show the quiet project's thread (${m.dishwasher}) or its note ("${m.quietNote}")`);
+  if (ctx.startsWith("project screen with quiet hours")) {
+    const q = m.quietRow;
+    check(!!q && q.on && q.days === 7 && /^Threads hide and send no notifications from \d\d:\d\d to \d\d:\d\d\. Quiet until \d\d:\d\d\.$/.test(q.line), `${ctx}: the Quiet hours row is wrong ${JSON.stringify(q)}`);
+    if (q) {
+      check(q.top >= m.top + insetTop - 0.5 && q.bottom <= m.bottom - insetBottom + 0.5, `${ctx}: the Quiet hours row (${q.top.toFixed(1)}–${q.bottom.toFixed(1)}) is outside the safe areas`);
+      check(q.right <= m.innerWidth + 0.5, `${ctx}: the Quiet hours row runs ${(q.right - m.innerWidth).toFixed(1)} px past the right edge`);
+      check(q.small === 0, `${ctx}: ${q.small} quiet-hours targets are under 44 px`);
+    }
+  }
   if (ctx.startsWith("inbox filtered")) {
     check(m.filterLine, `${ctx}: the filter line is missing`);
     check(m.otherProjectRows === 0, `${ctx}: ${m.otherProjectRows} rows of other projects show under the filter`);
