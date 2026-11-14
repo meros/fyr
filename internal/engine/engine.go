@@ -268,6 +268,9 @@ func (e *Engine) runEffect(threadID string, ef core.Effect) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			out, err := e.Effects.Run(ctx, threadID, *req)
 			cancel()
+			if errors.Is(err, core.ErrReportLater) {
+				return
+			}
 			ok, text = err == nil, out
 			if err != nil {
 				text = err.Error()
