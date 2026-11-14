@@ -644,3 +644,8 @@ button.ptag{padding:0}
 .m-lvc{gap:8px}
 .m-lvc input{margin:0;width:18px;height:18px}
 @media (max-width:760px){.lv-h{padding:0 12px;min-height:40px}}
+
+/* SPEC 0.5 V0.37: the View tab fills the pane; the Conversation tab shows one headline bar. */
+.lv.full{flex:1;min-height:0;display:flex;flex-direction:column}
+.lv.full .lv-h{cursor:default}
+.lv.full .lv-f{flex:1;min-height:0;height:auto}

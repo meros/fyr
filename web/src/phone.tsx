@@ -16,7 +16,8 @@ import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
-import { LiveViewPanel } from "./view-ui.tsx";
+import { LiveViewBar, LiveViewPanel } from "./view-ui.tsx";
+import { defaultTab, liveViewOf } from "./view.ts";
 import { rowSummary } from "./view.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
@@ -219,7 +220,7 @@ export function PhoneApp(p: PhoneProps) {
     <div class={`m-app${bottomBar ? " has-bar" : ""}`}>
       {s.name === "inbox" && <MInbox {...p} />}
       {s.name === "search" && <MSearch {...p} />}
-      {s.name === "thread" && p.thread && <MThread {...p} t={p.thread} tab={s.tab ?? "conv"} />}
+      {s.name === "thread" && p.thread && <MThread {...p} t={p.thread} tab={defaultTab(p.thread, s.tab)} />}
       {s.name === "thread" && !p.thread && (
         <div class="m-screen">
           <MHeader onBack={p.back} title="Thread" />
@@ -742,6 +743,11 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
         </div>
         {!cardOpen && (
           <div class="m-tabs" role="tablist">
+            {liveViewOf(t) && (
+              <button class={p.tab === "view" ? "on" : ""} onClick={() => setTab("view")}>
+                View
+              </button>
+            )}
             <button class={p.tab === "conv" ? "on" : ""} onClick={() => setTab("conv")}>
               Conversation
             </button>
@@ -755,7 +761,8 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
         )}
       </div>
       {t.tasks && t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
-      {!cardOpen && p.tab === "conv" && <LiveViewPanel t={t} now={p.now} onPress={(text) => p.actions.send(t.id, { text, from: "view" })} />}
+      {!cardOpen && p.tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.actions.send(t.id, { text, from: "view" })} />}
+      {!cardOpen && p.tab === "conv" && <LiveViewBar t={t} now={p.now} onOpen={() => setTab("view")} />}
       {!cardOpen && p.tab === "conv" && <Filmstrip cards={previews} collapsible />}
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>

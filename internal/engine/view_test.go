@@ -209,6 +209,24 @@ func TestViewStopHookBlocksOnce(t *testing.T) {
 	if n := len(viewEvents(h, id, "run.ended")); n != 1 {
 		t.Fatalf("%d run.ended, want 1", n)
 	}
+	// The forced turn is marked in stream order, after the run's own last message,
+	// so the client can show its text as one quiet line (V0.37, owner's choice).
+	var forced []int64
+	var lastOwn int64
+	for _, ev := range h.events(id) {
+		if ev.Type == "view.forced" {
+			forced = append(forced, ev.Seq)
+		}
+		if ev.Type == "msg" && strings.Contains(string(ev.Data), "echo: hello") {
+			lastOwn = ev.Seq
+		}
+	}
+	if len(forced) != 1 {
+		t.Fatalf("%d view.forced, want 1", len(forced))
+	}
+	if lastOwn == 0 || forced[0] < lastOwn {
+		t.Fatalf("view.forced at %d before the run's own answer at %d", forced[0], lastOwn)
+	}
 
 	// A run that updates the view itself is not blocked.
 	h.cmd("thread.send", id, core.Args{"text": "view Ready"})
@@ -256,5 +274,16 @@ func TestMockBridgeMatches(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "export const VIEW_BRIDGE = `"+viewBridge+"`;") {
 		t.Fatal("web/src/mock.ts VIEW_BRIDGE differs from viewBridge; copy it over")
+	}
+}
+
+// SPEC 0.5 V0.37: every view gives a pressed button immediate feedback, whatever the
+// agent wrote: busy at once, then Sent or Not sent from the host's reply.
+func TestViewBridgeGivesPressFeedback(t *testing.T) {
+	page := viewPage("<button data-send=\"Go\">Go</button>")
+	for _, want := range []string{`[data-fyr=busy]`, `Sent`, `Not sent`, `setAttribute("data-fyr","busy")`, `wait[d.id]`} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("the bridge lacks %q", want)
+		}
 	}
 }
