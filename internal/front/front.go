@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/server"
 )
 
@@ -50,6 +51,18 @@ type Options struct {
 	// stream is long-lived).
 	Client *http.Client
 	Logf   func(format string, args ...any)
+	// Push sends this front's notifications to its devices (V0.54); nil
+	// sends none.
+	Push server.Pusher
+	// NotifyDelay is how long done and blocked wait before they push;
+	// default notify.Delay.
+	NotifyDelay time.Duration
+	// CacheDir keeps the last state per host across a restart (V0.54);
+	// empty keeps it in memory only.
+	CacheDir string
+	// Local is the host in this process (role both): its deploy is this
+	// front's own update, shown as the banner (V0.54). Empty: the first host.
+	Local string
 }
 
 type Front struct {
@@ -57,7 +70,12 @@ type Front struct {
 	links []*link
 	hub   *engine.Hub
 
-	mu sync.Mutex // guards the caches of every link
+	mu       sync.Mutex // guards the caches of every link and objs
+	presence *notify.Presence
+	// objs: the host of an attachment or preview the front has routed by
+	// ?host= or ?thread=, or uploaded (V0.54), so a preview's own files
+	// reach the same host.
+	objs map[string]*link
 }
 
 // link is a front's connection to one host and its cache of that host's
@@ -76,6 +94,7 @@ type link struct {
 	online   bool
 	since    time.Time
 	err      string
+	dirty    bool // changed since the cache was written
 }
 
 func New(opt Options, hosts []HostConfig) *Front {
@@ -88,7 +107,10 @@ func New(opt Options, hosts []HostConfig) *Front {
 	if opt.Logf == nil {
 		opt.Logf = log.Printf
 	}
-	f := &Front{opt: opt, hub: engine.NewHub()}
+	if opt.NotifyDelay <= 0 {
+		opt.NotifyDelay = notify.Delay
+	}
+	f := &Front{opt: opt, hub: engine.NewHub(), presence: &notify.Presence{}, objs: map[string]*link{}}
 	for _, h := range hosts {
 		u, err := url.Parse(strings.TrimRight(h.URL, "/"))
 		if err != nil || u.Host == "" {
@@ -113,18 +135,46 @@ func New(opt Options, hosts []HostConfig) *Front {
 			},
 		}
 		f.links = append(f.links, l)
+		if opt.CacheDir != "" {
+			f.restore(l)
+		}
 	}
 	return f
 }
 
-// Run follows every host until ctx ends.
+// Run follows every host until ctx ends, and keeps the cache on disk.
 func (f *Front) Run(ctx context.Context) {
 	var wg sync.WaitGroup
 	for _, l := range f.links {
 		wg.Add(1)
 		go func() { defer wg.Done(); f.follow(ctx, l) }()
 	}
+	if f.opt.CacheDir != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			t := time.NewTicker(saveEvery)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					f.saveDirty()
+				}
+			}
+		}()
+	}
 	wg.Wait()
+	f.saveDirty()
+}
+
+// isLocal: this link's deploy is the front's own update.
+func (f *Front) isLocal(l *link) bool {
+	if f.opt.Local != "" {
+		return l.name() == f.opt.Local
+	}
+	return len(f.links) > 0 && f.links[0] == l
 }
 
 // name is the configured name, else the name the host reports.
@@ -294,7 +344,20 @@ func (f *Front) load(l *link, st map[string]any) {
 			}
 		}
 	}
+	// V0.54: a thread whose attention changed while the front was not
+	// following the host (an outage, a front restart) still notifies.
+	for id, m := range raw {
+		if old := l.raw[id]; old != nil && revOf(m) > revOf(old) {
+			f.noticeLocked(l, old, m)
+		}
+	}
+	for id := range l.pub {
+		if raw[id] == nil {
+			delete(l.pub, id) // gone from the host
+		}
+	}
 	l.raw = raw
+	l.dirty = true
 	l.projects = nil
 	ps, _ := st["projects"].([]any)
 	for _, x := range ps {
@@ -364,17 +427,24 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 		if !replaced {
 			l.projects = append([]map[string]any{sp}, l.projects...)
 		}
+		l.dirty = true
 		f.mu.Unlock()
 		if b, err := json.Marshal(sp); err == nil {
 			f.hub.Publish("project", b)
 		}
 	case "deploy":
+		// V0.54: a deploy is per host (V0.24's drain runs on the host). Only
+		// the local host's is this front's own update and its banner; another
+		// host's shows on that host's row (hosts[].deploy).
 		if d, err := decode(data); err == nil {
 			f.mu.Lock()
 			l.env["deploy"] = d
+			l.dirty = true
 			f.mu.Unlock()
 		}
-		f.hub.Publish(ev, data)
+		if f.isLocal(l) {
+			f.hub.Publish(ev, data)
+		}
 	default: // event and anything newer: the client ignores what it does not know
 		f.hub.Publish(ev, data)
 	}
@@ -388,9 +458,11 @@ func (f *Front) take(l *link, m map[string]any) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if old := l.raw[id]; old != nil && revOf(m) < revOf(old) {
+	old := l.raw[id]
+	if old != nil && revOf(m) < revOf(old) {
 		return
 	}
+	f.noticeLocked(l, old, m)
 	l.raw[id] = m
 	delete(l.known, id)
 	f.publishLocked(l, id)
@@ -423,6 +495,7 @@ func (f *Front) publishLocked(l *link, id string) {
 	}
 	doc["rev"] = json.Number(strconv.FormatInt(rev, 10))
 	l.pub[id] = doc
+	l.dirty = true
 	if b, err := json.Marshal(doc); err == nil {
 		f.hub.Publish("thread", b)
 	}
@@ -457,6 +530,7 @@ func (f *Front) setOffline(l *link, err error) {
 		f.opt.Logf("front: host %s offline: %s", l.name(), msg)
 	}
 	l.online = false
+	l.dirty = true
 	l.err = "unreachable"
 	if err != nil && !errors.Is(err, io.EOF) {
 		l.err = err.Error()
@@ -480,10 +554,16 @@ func (f *Front) Handler() http.Handler {
 		f.forward(w, r, f.owner(r.PathValue("id")))
 	})
 	mux.HandleFunc("POST /api/command", f.command)
-	mux.HandleFunc("POST /api/presence", f.presence)
+	// V0.54: device data lives on the front: presence and push.
+	server.PresenceRoute(mux, f.presence)
+	if f.opt.Push != nil {
+		server.PushRoutes(mux, f.opt.Push)
+	}
+	mux.HandleFunc("POST /api/attachments", f.upload)
 	mux.HandleFunc("GET /api/attachments/{id}", f.lookup)
 	mux.HandleFunc("GET /api/previews/{id}", f.lookup)
 	mux.HandleFunc("GET /api/previews/{id}/{path...}", f.lookup)
+	mux.HandleFunc("GET /api/quota", f.quota)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		f.forward(w, r, f.byName(r.URL.Query().Get("host")))
 	})
@@ -567,13 +647,21 @@ func (f *Front) forward(w http.ResponseWriter, r *http.Request, l *link) {
 	l.proxy.ServeHTTP(w, r)
 }
 
+// state merges the hosts' states. The records are per host and stamped;
+// the rest (V0.54): actions are the same everywhere (the first host's);
+// profiles are per host (0015), listed per host in hosts[].profiles and
+// merged by id at the top (the first host's wins), so a thread on any host
+// finds its profile; deploy is per host in hosts[].deploy, and the top-level
+// deploy is the local host's (this front's own update).
 func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	f.mu.Lock()
 	threads := []map[string]any{}
 	projects := []map[string]any{}
 	hosts := []map[string]any{}
-	var env map[string]any
+	profiles := []any{}
+	seenProfile := map[any]bool{}
+	var actions, deploy any
 	for _, l := range f.links {
 		for _, d := range l.pub {
 			if since <= 0 || revOf(d) > since {
@@ -588,19 +676,34 @@ func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 		if !l.online && l.err != "" {
 			h["error"] = l.err
 		}
-		hosts = append(hosts, h)
-		if env == nil && l.env != nil {
-			env = l.env
+		if ps, ok := l.env["profiles"].([]any); ok {
+			h["profiles"] = ps
+			for _, p := range ps {
+				pm, _ := p.(map[string]any)
+				if pm == nil || seenProfile[pm["id"]] {
+					continue
+				}
+				seenProfile[pm["id"]] = true
+				profiles = append(profiles, p)
+			}
 		}
+		if d := l.env["deploy"]; d != nil {
+			h["deploy"] = d
+			if f.isLocal(l) {
+				deploy = d
+			}
+		}
+		if actions == nil && l.env["actions"] != nil {
+			actions = l.env["actions"]
+		}
+		hosts = append(hosts, h)
+	}
+	if actions == nil {
+		actions = []any{}
 	}
 	out := map[string]any{"now": time.Now().UTC(), "user": "owner", "buildId": f.opt.BuildID, "host": f.opt.Name,
 		"threads": threads, "projects": projects, "hosts": hosts, "partial": since > 0,
-		"actions": []any{}, "profiles": []any{}, "deploy": nil}
-	for k, v := range env {
-		if k != "host" {
-			out[k] = v
-		}
-	}
+		"actions": actions, "profiles": profiles, "deploy": deploy}
 	b, err := json.Marshal(out)
 	f.mu.Unlock()
 	if err != nil {
@@ -649,12 +752,15 @@ func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 	var l *link
 	host, _ := c.Args["host"].(string)
 	pid, _ := c.Args["id"].(string)
+	if !strings.HasPrefix(c.Action, "project.") {
+		pid, _ = c.Args["projectId"].(string) // thread.create in a project (V0.54)
+	}
 	switch {
 	case c.ThreadID != "":
 		l = f.owner(c.ThreadID)
 	case host != "":
 		l = f.byName(host)
-	case strings.HasPrefix(c.Action, "project.") && pid != "":
+	case pid != "":
 		if l = f.projectOwner(pid); l == nil {
 			l = f.byName("")
 		}
@@ -691,41 +797,99 @@ func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 	w.Write(out)
 }
 
-// presence goes to every online host: each pushes for its own threads (V0.20).
-func (f *Front) presence(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<10))
-	if err != nil {
-		http.Error(w, "bad body", 400)
-		return
+// target is the host a call names: ?thread= (the thread's host) or ?host=;
+// nil when it names none.
+func (f *Front) target(r *http.Request) *link {
+	q := r.URL.Query()
+	if id := q.Get("thread"); id != "" {
+		return f.owner(id)
 	}
-	status := http.StatusNoContent
-	for _, l := range f.links {
-		f.mu.Lock()
-		on := l.online
-		f.mu.Unlock()
-		if !on {
-			continue
-		}
-		req, _ := http.NewRequestWithContext(r.Context(), "POST", l.base.String()+"/api/presence", bytes.NewReader(body))
-		req.Host = "localhost"
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Fyr", "1")
-		resp, err := l.client.Do(req)
-		if err != nil {
-			continue
-		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode >= 400 {
-			status = resp.StatusCode
-		}
+	if h := q.Get("host"); h != "" {
+		return f.byName(h)
 	}
-	w.WriteHeader(status)
+	return nil
 }
 
-// lookup finds an attachment or preview on the hosts in turn (its id does
-// not name its host yet); with one host it is a plain pass-through.
+// remember notes the host of an attachment or preview id.
+func (f *Front) remember(id string, l *link) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.objs) > 10000 {
+		clear(f.objs)
+	}
+	f.objs[id] = l
+}
+
+// upload stores a file on the host the client names (the thread's, or the
+// host a new thread will start on), else the first host (V0.54).
+func (f *Front) upload(w http.ResponseWriter, r *http.Request) {
+	l := f.target(r)
+	if l == nil {
+		l = f.byName("")
+	}
+	if f.unavailable(w, l) {
+		return
+	}
+	rec := &recorder{ResponseWriter: w}
+	l.proxy.ServeHTTP(rec, r)
+	var m struct {
+		ID string `json:"id"`
+	}
+	if rec.status < 300 && json.Unmarshal(rec.body.Bytes(), &m) == nil && m.ID != "" {
+		f.remember(m.ID, l)
+	}
+}
+
+// recorder keeps a copy of a small reply (an upload's id) while passing it on.
+type recorder struct {
+	http.ResponseWriter
+	status int
+	body   bytes.Buffer
+}
+
+func (r *recorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *recorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = 200
+	}
+	if r.body.Len() < 64<<10 {
+		r.body.Write(b)
+	}
+	return r.ResponseWriter.Write(b)
+}
+
+// lookup serves an attachment or preview from its host (V0.54): the one the
+// client names with ?thread= or ?host=, else the one the front learned for
+// that id (an upload, or the preview page whose files these are), else the
+// first host. No host is tried in turn.
 func (f *Front) lookup(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	l := f.target(r)
+	if l != nil {
+		f.remember(id, l)
+	} else {
+		f.mu.Lock()
+		l = f.objs[id]
+		f.mu.Unlock()
+	}
+	if l == nil {
+		l = f.byName("")
+	}
+	f.forward(w, r, l)
+}
+
+// quota merges the provider quota of every online host (V0.54): profiles
+// are per host (0015); a profile id on two hosts shows the first's. With
+// ?host= it is that host's only.
+func (f *Front) quota(w http.ResponseWriter, r *http.Request) {
+	if l := f.target(r); l != nil {
+		f.forward(w, r, l)
+		return
+	}
 	var on []*link
 	f.mu.Lock()
 	for _, l := range f.links {
@@ -734,36 +898,28 @@ func (f *Front) lookup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.mu.Unlock()
-	if h := r.URL.Query().Get("host"); h != "" || len(f.links) == 1 {
-		f.forward(w, r, f.byName(h))
-		return
-	}
+	parts := make([][]map[string]any, len(on))
+	var wg sync.WaitGroup
 	for i, l := range on {
-		if i == len(on)-1 {
-			l.proxy.ServeHTTP(w, r)
-			return
-		}
-		req := r.Clone(r.Context())
-		req.URL.Scheme, req.URL.Host, req.RequestURI = l.base.Scheme, l.base.Host, ""
-		req.Host = r.Host
-		if l.cfg.Remote {
-			req.Header.Del("Tailscale-User-Login")
-		}
-		resp, err := l.client.Transport.RoundTrip(req)
-		if err != nil {
-			continue
-		}
-		if resp.StatusCode == http.StatusNotFound {
-			resp.Body.Close()
-			continue
-		}
-		defer resp.Body.Close()
-		for k, vs := range resp.Header {
-			w.Header()[k] = vs
-		}
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
-		return
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var q []map[string]any
+			if err := f.get(r.Context(), l, "/api/quota", &q); err == nil {
+				parts[i] = q
+			}
+		}()
 	}
-	http.NotFound(w, r)
+	wg.Wait()
+	out := []map[string]any{}
+	seen := map[any]bool{}
+	for _, p := range parts {
+		for _, q := range p {
+			if !seen[q["profile"]] {
+				seen[q["profile"]] = true
+				out = append(out, q)
+			}
+		}
+	}
+	writeJSON(w, 200, out)
 }

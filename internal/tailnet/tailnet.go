@@ -86,3 +86,31 @@ func Self(socket string) (login, dnsName string, err error) {
 	}
 	return login, strings.TrimSuffix(s.Self.DNSName, "."), nil
 }
+
+// IPv4 is this node's tailnet IPv4 address (SPEC 0.5 V0.54): a host's
+// `hostListen` of "tailnet:PORT" listens there, so a config need not name
+// the address.
+func IPv4(socket string) (string, error) {
+	req, _ := http.NewRequest("GET", "http://local-tailscaled.sock/localapi/v0/status", nil)
+	req.Header.Set("Sec-Tailscale", "localapi")
+	resp, err := localClient(socket).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("tailscaled status: %s", resp.Status)
+	}
+	var s struct {
+		TailscaleIPs []string
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
+		return "", err
+	}
+	for _, ip := range s.TailscaleIPs {
+		if p := net.ParseIP(ip); p != nil && p.To4() != nil {
+			return ip, nil
+		}
+	}
+	return "", fmt.Errorf("tailscaled reports no IPv4 address for this node (is it logged in?)")
+}

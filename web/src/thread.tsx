@@ -86,7 +86,7 @@ function urlTab(id: string): string | undefined {
 export function ThreadPane(p: ThreadPaneProps) {
   const t = p.thread;
   const [tab, setTab] = useState<Tab>("conv");
-  const previews = useMemo(() => previewsOf(p.events ?? []), [p.events]);
+  const previews = useMemo(() => previewsOf(p.events ?? [], t.host), [p.events, t.host]);
   useEffect(() => setTab(defaultTab(t, urlTab(t.id)) as Tab), [t.id]);
   const hasView = !!liveViewOf(t);
   // A view that appears or goes away while the thread is open keeps the tabs valid.
@@ -196,6 +196,7 @@ export function ThreadPane(p: ThreadPaneProps) {
           threadId={t.id}
           onEarlier={p.onEarlier}
           cwd={t.cwd}
+          host={t.host}
           delivery={{ cancel: async (messageId) => p.onRun("thread.cancelMessage", { messageId }), resend: p.onSend }}
         />
       )}
@@ -414,13 +415,16 @@ export interface DeliveryActions {
 }
 const DeliveryCtx = createContext<DeliveryActions | null>(null);
 
+/** V0.54: the thread's host: its attachments and previews load from there. */
+const HostContext = createContext<string | undefined>(undefined);
+
 /** The host's profiles, for the handover divider's names (V0.45). */
 export const ProfilesContext = createContext<Profile[]>([]);
 
-export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions }) {
+export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: string }) {
   const details = useToolDetails();
   const outKey = outbox ? outbox.join(",") : null;
-  const all = useMemo(() => buildConversation(events ?? [], { details, cwd, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, outKey]);
+  const all = useMemo(() => buildConversation(events ?? [], { details, cwd, host, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, host, outKey]);
   // V0.33: messages the agent has not read stand after "Agent is here".
   const [items, pending] = useMemo(() => [all.filter((i) => !(i.kind === "user" && i.pending)), all.filter((i) => i.kind === "user" && i.pending)], [all]);
   const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
@@ -476,6 +480,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
   };
   return (
     <ThreadIdContext.Provider value={threadId}>
+    <HostContext.Provider value={host}>
     <div class="convo" ref={ref} onScroll={check} onClick={onCodeCopy}>
       <div class="convo-in">
         {events === undefined && <div class="sys">Loading…</div>}
@@ -511,6 +516,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
         </DeliveryCtx.Provider>
       </div>
     </div>
+    </HostContext.Provider>
     </ThreadIdContext.Provider>
   );
 }
@@ -682,6 +688,7 @@ function Fold({ en, previews }: { en: Extract<Entry, { kind: "fold" }>; previews
 }
 
 function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]; process?: boolean }) {
+  const host = useContext(HostContext);
   switch (it.kind) {
     case "user": {
       // V0.33: unread messages are dimmed; a cancelled or lost one is struck through.
@@ -701,7 +708,7 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
         return (
           <div class={`youw from${cls}`}>
             <FromThreadMessage fromId={it.from} text={it.text}>
-              {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
+              {it.attachments.length > 0 && <SentAttachments items={it.attachments} host={host} />}
             </FromThreadMessage>
             <DeliveryLine it={it} />
           </div>
@@ -710,7 +717,7 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
         <div class={`youw${cls}`}>
           <div class="you prose">
             {it.text}
-            {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
+            {it.attachments.length > 0 && <SentAttachments items={it.attachments} host={host} />}
             {it.images > 0 && !it.attachments.length && (
               <span class="imgchip">
                 {it.images} {it.images === 1 ? "image" : "images"}
@@ -725,7 +732,7 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
       if (it.quiet) return <QuietLine icon="seen" line={it.text.split("\n").find((x) => x.trim()) ?? ""} full={it.text} />;
       return (
         <div class={`msgw${process ? " proc" : ""}`}>
-          <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text) }} />
+          <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text, host) }} />
           <CopyButton text={copySource({ kind: "message", text: it.text })} label="Copy message" cls="msgcp" />
         </div>
       );
@@ -1076,7 +1083,7 @@ interface ComposerProps {
  */
 function Composer({ t, now, answer, onSend, onInterrupt }: ComposerProps) {
   const [draft, setDraft] = useDraft(t.id);
-  const att = useAttachments();
+  const att = useAttachments(t.host);
   const ta = useRef<HTMLTextAreaElement>(null);
   const sendReason = unavailableReason(t, "thread.send");
   const text = answer ? answer.text : draft;

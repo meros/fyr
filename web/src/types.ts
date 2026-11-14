@@ -173,6 +173,8 @@ export interface ProjectIconSpec {
  *  in it by hand. */
 export interface Project {
   id?: string;
+  /** V0.51: the host the project lives on (a front stamps it) */
+  host?: string;
   name: string;
   /** a palette name: slate blue sky teal green olive violet indigo rose brown */
   color?: string;

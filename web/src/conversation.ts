@@ -72,6 +72,8 @@ export interface BuildOptions {
   details?: boolean;
   /** the thread's folder, for relative paths in labels */
   cwd?: string;
+  /** V0.54: the thread's host, which serves its previews */
+  host?: string;
 }
 
 function str(v: unknown): string {
@@ -148,11 +150,11 @@ function blocksOf(data: any): Block[] {
 }
 
 /** The thread's preview cards, in log order (for the filmstrip). */
-export function previewsOf(events: FyrEvent[]): PreviewCard[] {
+export function previewsOf(events: FyrEvent[], host?: string): PreviewCard[] {
   const out: PreviewCard[] = [];
   for (const e of events) {
     if (e.type !== "preview") continue;
-    const c = previewCard(e.seq, e.at, e.data);
+    const c = previewCard(e.seq, e.at, e.data, host);
     if (c) out.push(c);
   }
   return out;
@@ -302,7 +304,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         break;
       }
       case "preview": {
-        const card = previewCard(e.seq, e.at, e.data);
+        const card = previewCard(e.seq, e.at, e.data, opts.host);
         if (card) pushItem({ kind: "preview", key, card });
         break;
       }
