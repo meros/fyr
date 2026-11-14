@@ -862,3 +862,7 @@ button.ptag{padding:0}
 .hodiv::before,.hodiv::after{content:"";flex:1;height:1px;background:var(--line)}
 .hodiv .hot{display:flex;flex-direction:column;align-items:center;text-align:center;max-width:80%;min-width:0}
 .hodiv small{font-weight:400;color:var(--ink-faint)}
+
+/* SPEC U15: the question card's footer: progress and one button that says what it does */
+.ask .askf{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:10px}
+.ask .askf .askp{margin-right:auto;font:400 12px/16px var(--ui);color:var(--ink-muted)}

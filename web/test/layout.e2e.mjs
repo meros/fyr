@@ -917,6 +917,29 @@ try {
   failures.push(`V0.32 phone navigation: ${e.message}`);
 }
 
+// U15: the desktop question card always shows a button that says how to finish.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_lasso` });
+  await sleep(1200);
+  const btn = () => evaluate(`(() => { const b = document.querySelector('.th .ask .askf .btn'); return b ? { text: b.textContent.replace('↵', '').trim(), disabled: b.disabled } : null; })()`);
+  const a = await btn();
+  check(!!a && a.text === "Pick an answer" && a.disabled, `U15 desktop: the card does not start with a disabled "Pick an answer" (${JSON.stringify(a)})`);
+  await evaluate(`document.querySelectorAll('.th .ask .grid4 .op')[0]?.click()`);
+  await sleep(200);
+  await evaluate(`document.querySelectorAll('.th .ask .grid4 .op')[0]?.click()`);
+  await sleep(200);
+  const b = await btn();
+  check(!!b && /^Send 2 answers$/.test(b.text) && !b.disabled, `U15 desktop: after both answers the button is not "Send 2 answers" (${JSON.stringify(b)})`);
+  await evaluate(`document.querySelector('.th .ask .askf .btn')?.click()`);
+  await sleep(600);
+  const gone = await evaluate(`!document.querySelector('.th .ask .askf')`);
+  check(gone, "U15 desktop: the card stays after Send");
+} catch (e) {
+  failures.push(`U15 desktop: ${e.message}`);
+}
+
 clearTimeout(watchdog);
 cleanup();
 if (pageErrors.length) failures.push(...pageErrors.map((e) => `page error: ${e}`));
