@@ -341,14 +341,15 @@ Commands (`POST /api/command`, no `threadId`; `400` bad arguments, `404` unknown
 - `stale: true`: the last read failed and the data is older. `error` says why in plain words ("Login expired; run this profile once", "No API key: set keyFile or keyEnv", "Rate limited by the provider; trying again later"). `retryAt` is the next try during a rate-limit wait.
 - Never contains a token or key. The profiles in `GET /api/state` carry only `quota.kind`.
 
-## Fronts and hosts (SPEC 0.5 V0.51, decision 0016)
+## Fronts and hosts (SPEC 0.5 V0.51, V0.54, decision 0016)
 
 The browser talks to a **front**; the front talks to its **hosts** over the **host protocol**, which is this API without the web client. The browser API above does not change; the front adds:
 
-- `GET /api/state`: every thread and project carries `host` (its host's name); a thread whose host is unreachable carries `hostOffline` (RFC 3339, since when). The state adds `hosts: [{"name": "host-a", "online": true, "since": "…", "error"?: "…"}]`.
+- `GET /api/state`: every thread and project carries `host` (its host's name); a thread whose host is unreachable carries `hostOffline` (RFC 3339, since when). The state adds `hosts: [{"name": "host-a", "online": true, "since": "…", "error"?: "…", "profiles": […], "deploy"?: {…}}]` (V0.54: each host's profiles and update). The top-level `profiles` is every host's, merged by id (the first host's wins); `deploy` is the front's own machine's; `actions` the first host's. After a front restart a host it cannot reach is served from the front's cache on disk, `hostOffline` since the front last had it online.
 - Commands and thread calls (`/api/threads/{id}/…`) go to the thread's host. A call without a thread goes to `args.host` (command) or `?host=` (other calls) when given, a `project.*` command to the project's host, else to the first host. A thread on an offline host is read-only: `503 {"ok": false, "error": "host-a is offline since 19:40; its threads are read-only"}`.
-- Attachments and previews are looked up on each host in turn; an upload goes to `?host=` or the first host.
-- `POST /api/presence` goes to every online host.
+- Attachments and previews (V0.54): `POST /api/attachments`, `GET /api/attachments/{id}` and `GET /api/previews/{id}[/{path}]` take `?host=` or `?thread=` (the thread's host); without either, a read goes to the host the front learned for that id (an upload through it, or the preview page these files belong to), else to the first host. No host is tried in turn.
+- `GET /api/quota` merges every online host's list (`?host=` for one host's).
+- Device data is the front's (V0.54): `POST /api/presence` and `/api/push/*` (key, subscribe, unsubscribe, status, test) are served by the front, which sends the push for the threads of all its hosts. Hosts send none.
 
 The host protocol (front → host):
 
@@ -361,3 +362,33 @@ The host protocol (front → host):
 | everything else | passed through with the browser's `Host`, so previews keep their CSP base |
 
 Guard on the host: the loopback guard as above; on a `hostListen` tailnet address only peers whose Tailscale identity (whois of the connection) is the owner's login, and `Tailscale-User-Login` headers are ignored there. A host role never serves the web client.
+
+### Two machines on NixOS (V0.54)
+
+The laptop and host-b each run `fyrd` as host and front (`role` both, the default). Each serves the host protocol on its tailnet address and lists the other as a host; the laptop's front serves its browser on localhost, host-b's front serves the phone through Tailscale Serve. The owner applies these blocks in the NixOS configuration; tailscaled must be logged in as the owner on both machines.
+
+host-b:
+
+```nix
+services.tailscale.enable = true;
+services.fyr = {
+  enable = true;
+  user = "owner";
+  # role = "both";                   # the default: a host and the phone's front
+  hostPort = 7778;                   # serve fronts on this machine's tailnet address (tailnet:7778), port open on tailscale0 only
+  hosts = [ { name = "host-a"; url = "http://host-a:7778"; } ];
+  tailnet.enable = true;             # Tailscale Serve: https://host-b.<tailnet>.ts.net:7443 → the front
+  scanRoots = [ "~/git" ];
+};
+```
+
+host-a (its existing block, plus):
+
+```nix
+services.fyr = {
+  hostPort = 7778;
+  hosts = [ { name = "host-b"; url = "http://host-b:7778"; } ];
+};
+```
+
+`host-a` and `host-b` are MagicDNS names; a full name (`host-b.<tailnet>.ts.net`) or a `100.x` address works too. Each front's local host comes first and needs no entry. The phone subscribes to notifications again on host-b's front (its own device data); a subscription made on the laptop's front stays with that front.
