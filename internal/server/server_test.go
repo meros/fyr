@@ -2,7 +2,9 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +18,9 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/attach"
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
@@ -384,5 +388,64 @@ func TestThreadChanges(t *testing.T) {
 	}
 	if r := do(t, "GET", hs.URL+"/api/threads/"+id+"/changes", "evil.example", nil, ""); r.StatusCode != 403 {
 		t.Fatalf("foreign host: %d", r.StatusCode)
+	}
+}
+
+type fakeDetails struct {
+	fresh []bool
+	err   error
+}
+
+func (f *fakeDetails) Get(_ context.Context, url string, fresh bool) (github.Detail, error) {
+	f.fresh = append(f.fresh, fresh)
+	if f.err != nil {
+		return github.Detail{}, f.err
+	}
+	return github.Detail{URL: url, Number: 42, Title: "T", State: "OPEN", Checks: []github.Check{{Name: "lint", State: "fail"}}}, nil
+}
+
+// SPEC 0.5 V0.43: GET /api/threads/{id}/pr returns the detail, errors as 200 {error}.
+func TestThreadPRDetail(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	e := engine.New(st)
+	fd := &fakeDetails{}
+	hs := httptest.NewServer((&Server{Engine: e, PR: fd}).Handler())
+	defer hs.Close()
+	r := e.Command(engine.Cmd{CommandID: "c1", Action: "thread.create", Args: core.Args{"cwd": t.TempDir(), "text": "hi"}})
+	id := r.ThreadID
+	get := func(path string) (int, map[string]any) {
+		resp := do(t, "GET", hs.URL+path, "", nil, "")
+		defer resp.Body.Close()
+		var m map[string]any
+		json.NewDecoder(resp.Body).Decode(&m)
+		return resp.StatusCode, m
+	}
+	if code, _ := get("/api/threads/t_nope/pr"); code != 404 {
+		t.Fatalf("unknown thread: %d", code)
+	}
+	if code, m := get("/api/threads/" + id + "/pr"); code != 200 || m["error"] == nil {
+		t.Fatalf("no PR: %d %v", code, m)
+	}
+	e.Observe(id, func(th *core.Thread, now time.Time) {
+		core.PRObserved(th, core.PR{URL: "https://github.com/a/b/pull/42", Repo: "a/b", Number: 42, State: "OPEN"}, now)
+	})
+	code, m := get("/api/threads/" + id + "/pr?fresh=1")
+	if code != 200 || m["number"] != float64(42) || m["error"] != nil {
+		t.Fatalf("detail: %d %v", code, m)
+	}
+	if checks, _ := m["checks"].([]any); len(checks) != 1 {
+		t.Fatalf("checks %v", m["checks"])
+	}
+	get("/api/threads/" + id + "/pr")
+	if len(fd.fresh) != 2 || !fd.fresh[0] || fd.fresh[1] {
+		t.Fatalf("fresh flags %v", fd.fresh)
+	}
+	fd.err = errors.New("gh is not signed in on this host")
+	if code, m := get("/api/threads/" + id + "/pr"); code != 200 || m["error"] != "gh is not signed in on this host" {
+		t.Fatalf("error: %d %v", code, m)
 	}
 }

@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import type { Decision, ProjectSource, StateDTO, ThreadDTO } from "./types.ts";
 import { createApi } from "./api.ts";
 import { setChangesSource } from "./changes-ui.tsx";
+import { setPrSource } from "./pr-ui.tsx";
 import {
   SECTIONS,
   applySnapshot,
@@ -140,6 +141,7 @@ setUploader(api.uploadAttachment);
 setAttachmentUrl(api.attachmentUrl);
 setPreviewUrl(api.previewUrl);
 setChangesSource(api);
+setPrSource(api);
 setFullEventSource(api);
 const params = new URLSearchParams(location.search);
 

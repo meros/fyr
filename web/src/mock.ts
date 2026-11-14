@@ -3,6 +3,8 @@
 
 import type { CommandReply, Decision, FsDir, FsListing, Project, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
+import type { PrReply } from "./pr.ts";
+import { mockPrDetail } from "./mock-pr.ts";
 
 export function mockScenario(search: string): string | null {
   const m = /[?&]mock=([^&]*)/.exec(search);
@@ -360,7 +362,16 @@ function fullFixture(now: number): Fixture {
       unavailable: NOT_RUNNING,
     }),
   );
-  add(base("t_s2", "Nix flake update", now, 115, { project: "dotfiles", summary: "Updated nixpkgs to 26.05.", unavailable: NOT_RUNNING }));
+  // V0.43: an open PR that is ready to merge (the PR tab's Merge dialog).
+  add(
+    base("t_s2", "Nix flake update", now, 115, {
+      project: "dotfiles",
+      summary: "Updated nixpkgs to 26.05.",
+      branch: "chore/flake-update",
+      pr: { url: "https://github.com/meros/dotfiles/pull/57", repo: "meros/dotfiles", number: 57, state: "OPEN", checks: "pass", review: "APPROVED", conflict: false },
+      unavailable: NOT_RUNNING,
+    }),
+  );
   // V0.28: a thread with no project whose folder is a clone suggests one.
   add(
     base("t_s4", "Sketch the lasso tool", now, 320, {
@@ -857,6 +868,8 @@ export interface MockServer {
   fsMkdir(parent: string, name: string): string;
   /** the in-memory attachment store (V0.18) */
   putAttachment(name: string, mediaType: string, size: number): { id: string; name: string; size: number; mediaType: string; path: string };
+  /** the PR tab's detail (V0.43) */
+  prDetail(threadId: string): PrReply;
 }
 
 /** A P-256 public key in the VAPID format; the mock has no private key and never pushes. */
@@ -1133,6 +1146,26 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.setModel":
         put(t, { model: String(args.model ?? t.model) });
         break;
+      case "thread.dismissPR":
+        if (!t.pr || t.pr.state === "OPEN") return { ok: false, error: "The PR is still open" };
+        put(t, { pr: null });
+        break;
+      // V0.43: the owner's PR actions report as an effect.result by the owner.
+      case "pr.merge": {
+        if (!t.pr || (t.pr.state ?? "OPEN") !== "OPEN") return { ok: false, error: "The PR is not open" };
+        const pr = t.pr;
+        setTimeout(() => {
+          emit(t.id, "effect.result", { action: "pr.merge", by: "owner", ok: true, text: `You merged #${pr.number} (${String(args.method ?? "squash")}).\n\n✓ Merged pull request ${pr.repo}#${pr.number}` });
+          put(t, { pr: { ...pr, state: "MERGED" } });
+        }, 600);
+        break;
+      }
+      case "pr.rerunFailed": {
+        if (!t.pr || (t.pr.state ?? "OPEN") !== "OPEN") return { ok: false, error: "The PR is not open" };
+        const n = t.pr.number;
+        setTimeout(() => emit(t.id, "effect.result", { action: "pr.rerunFailed", by: "owner", ok: true, text: `You re-ran the failed checks of #${n}.\n\nRe-ran 1 failed workflow run of 9c1e0b7: CI.` }), 400);
+        break;
+      }
       default:
         return { ok: false, error: `Unknown action ${action}` };
     }
@@ -1170,6 +1203,9 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const r = exec(action, threadId ? threads.get(threadId) : undefined, args);
       replies.set(commandId, r);
       return r;
+    },
+    prDetail(threadId) {
+      return mockPrDetail(threads.get(threadId), clock());
     },
     events(threadId, after, limit) {
       const list = events[threadId] ?? [];

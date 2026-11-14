@@ -512,7 +512,11 @@ function oneMeta(t: ThreadDTO, now: number): string {
 function MPr({ t, short }: { t: ThreadDTO; short?: boolean }) {
   if (!t.pr) return <span />;
   const l = prLabel(t.pr, short);
-  return <span class={`m-pr ${l.cls}`}>{l.text}</span>;
+  return (
+    <span class={`m-pr ${l.cls}`} title={l.title}>
+      {l.text}
+    </span>
+  );
 }
 
 /** A row with swipes (right settles, left snoozes), long press (actions) and selection. */
@@ -743,7 +747,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
               <span>{t.branch}</span>
             </span>
           )}
-          {t.pr && <span class={`m-chip prc ${prLabel(t.pr).cls}`}>{prLabel(t.pr).text}</span>}
+          {t.pr && <span class={`m-chip prc ${prLabel(t.pr).cls}`} title={prLabel(t.pr).title}>{prLabel(t.pr).text}</span>}
           </button>
         </div>
         {!cardOpen && (
@@ -785,7 +789,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
       ) : p.tab === "changes" ? (
         <ChangesView threadId={t.id} />
       ) : p.tab === "pr" ? (
-        <PrTab t={t} onDismiss={() => p.actions.dismissPR(t.id)} />
+        <PrTab t={t} now={p.now} phone onSend={(text) => p.actions.send(t.id, { text })} onDismiss={() => p.actions.dismissPR(t.id)} onChanges={() => setTab("changes")} />
       ) : null}
       {decision && decision.kind === "ask" && p.card && p.card.decisionId === decision.id && (
         <MAsk d={decision} card={p.card} onCard={p.onCard} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} submit={() => p.actions.submitAsk(decision).then(afterAnswer)} />
