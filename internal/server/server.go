@@ -22,12 +22,15 @@ import (
 )
 
 type Server struct {
-	Engine   *engine.Engine
-	MCP      http.Handler // agents' MCP endpoint; optional
-	Web      fs.FS        // the built web client
-	BuildID  string
-	Host     string // host name shown in the rail; default os.Hostname
-	Profiles []agent.Profile
+	Engine  *engine.Engine
+	MCP     http.Handler // agents' MCP endpoint; optional
+	Web     fs.FS        // the built web client
+	BuildID string
+	Host    string // host name shown in the rail; default os.Hostname
+	// OwnerLogin is the Tailscale login allowed over the tailnet (V0.14).
+	// Empty refuses every tailnet request.
+	OwnerLogin string
+	Profiles   []agent.Profile
 	// T3Candidates lists adoptable T3 threads; optional.
 	T3Candidates func() (any, error)
 }
@@ -45,13 +48,30 @@ func (s *Server) Handler() http.Handler {
 	if s.Web != nil {
 		mux.Handle("/", noCacheIndex(http.FileServerFS(s.Web)))
 	}
-	return guard(mux)
+	return guard(s.OwnerLogin, mux)
 }
 
-// guard refuses non-loopback Host headers (DNS rebinding) and POSTs without
-// X-Fyr (cross-site form posts). The MCP endpoint uses its bearer token.
-func guard(next http.Handler) http.Handler {
+// guard refuses requests that are neither local nor the owner over the
+// tailnet, and POSTs without X-Fyr (cross-site form posts). The MCP endpoint
+// uses its bearer token.
+//
+// Local: a loopback Host header (this also stops DNS rebinding).
+// Tailnet (SPEC 0.5 V0.14): Tailscale Serve proxies from loopback and adds
+// Tailscale-User-Login; it must equal owner.
+func guard(owner string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if login := r.Header.Get("Tailscale-User-Login"); login != "" {
+			if owner == "" || login != owner {
+				http.Error(w, "this Fyr belongs to another tailnet user", http.StatusForbidden)
+				return
+			}
+			if r.Method == http.MethodPost && r.URL.Path != "/mcp" && r.Header.Get("X-Fyr") != "1" {
+				http.Error(w, "missing X-Fyr header", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
 		host := r.Host
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
