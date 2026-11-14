@@ -70,19 +70,21 @@ await new Promise((r) => ws.addEventListener("open", r));
 let seq = 0;
 const pending = new Map();
 const pageErrors = [];
+const attached = []; // child targets (the sandboxed live view runs out of process)
 ws.addEventListener("message", (m) => {
   const j = JSON.parse(m.data);
   if (j.id && pending.has(j.id)) {
     pending.get(j.id)(j);
     pending.delete(j.id);
   }
+  if (j.method === "Target.attachedToTarget") attached.push(j.params);
   if (j.method === "Runtime.exceptionThrown") pageErrors.push(j.params.exceptionDetails?.exception?.description ?? j.params.exceptionDetails?.text);
 });
-const send = (method, params = {}) =>
+const send = (method, params = {}, sessionId) =>
   new Promise((r) => {
     const i = ++seq;
     pending.set(i, r);
-    ws.send(JSON.stringify({ id: i, method, params }));
+    ws.send(JSON.stringify({ id: i, method, params, ...(sessionId ? { sessionId } : {}) }));
   });
 const evaluate = async (expression) => {
   const r = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
@@ -152,6 +154,8 @@ const SCREENS = [
   { name: "project picker", url: "?mock=1&open=t_s4", sheet: "project", field: ".m-sheet .pq" },
   { name: "new project step", url: "?mock=1&open=t_s4", sheet: "newproject", field: ".m-sheet .pform input" },
   { name: "new thread, project without a folder", url: "?mock=rail&new", storage: { "fyr.lastProject": "p_home", "fyr.projectFilter": "" }, field: ".m-new input.m-dchip" },
+  // SPEC 0.5 V0.37: a thread with a pinned live view; the composer stays inside the safe areas.
+  { name: "thread with a live view", url: "?mock=1&open=t_view", field: ".m-cmp .in" },
   // SPEC 0.5 V0.25: the Changes tab with one file's diff open.
   { name: "changes with a diff", url: "?mock=rail&open=t_mapperf&tab=changes", openDiff: true },
 ];
@@ -193,6 +197,9 @@ const MEASURE = `(() => {
     newProject: document.querySelector('.m-new .m-ppick .pln')?.textContent ?? null,
     folderField: !!document.querySelector('.m-new input.m-dchip'),
     startDisabled: !!document.querySelector('.m-new .m-abar .m-bt')?.disabled,
+    liveView: rect('.m-thread .lv'),
+    liveFrame: rect('.m-thread .lv-f'),
+    innerHeight: window.innerHeight,
   };
 })()`;
 
@@ -241,6 +248,15 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     if (m.toolOutput) {
       check(m.toolOutput.lines === 200, `${ctx}: long output shows ${m.toolOutput.lines} lines, expected the 200-line cut`);
       check(m.toolOutput.right <= window_innerWidth(m) + 0.5, `${ctx}: the output block runs past the right edge`);
+    }
+  }
+  if (ctx.startsWith("thread with a live view")) {
+    check(!!m.liveView && !!m.liveFrame, `${ctx}: no pinned live view`);
+    if (m.liveView && m.header) check(m.liveView.top >= m.header.bottom - 0.5, `${ctx}: the live view starts under the header (${m.liveView.top.toFixed(1)} < ${m.header.bottom.toFixed(1)})`);
+    if (m.liveFrame) {
+      const fh = m.liveFrame.bottom - m.liveFrame.top;
+      check(fh >= 40 && fh <= m.innerHeight * 0.6 + 1, `${ctx}: the live view is ${fh.toFixed(0)} px tall (40 to 60 % of ${m.innerHeight})`);
+      if (m.composer) check(m.liveFrame.bottom <= m.composer.top + 0.5, `${ctx}: the live view overlaps the composer`);
     }
   }
   if (ctx.startsWith("changes")) {
@@ -583,6 +599,36 @@ try {
   check(!u.dlg && u.chip === "No project", `V0.30 desktop: No project does not unfile the thread (${JSON.stringify(u)})`);
 } catch (e) {
   failures.push(`V0.30 desktop: ${e.message}`);
+}
+
+// SPEC 0.5 V0.37: on the desktop, a press in the live view posts a message from the view, shown as a chip.
+// The view's sandboxed frame runs out of process, so the click goes through its own CDP session.
+try {
+  await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  attached.length = 0;
+  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_view` });
+  await sleep(1500);
+  const v = await evaluate(`(() => { const f = document.querySelector('.th .lv-f'); return f ? { h: f.getBoundingClientRect().height, stamp: document.querySelector('.th .lv-s')?.textContent ?? '' } : null; })()`);
+  check(!!v && v.h > 120 && /updated 12 min ago/.test(v.stamp), `V0.37 desktop: the live view is missing, not sized by its page, or has no stamp (${JSON.stringify(v)})`);
+  const frame = attached.filter((a) => a.targetInfo.type === "iframe").pop();
+  check(!!frame, "V0.37 desktop: no frame target for the live view");
+  if (frame) {
+    const r = await send("Runtime.evaluate", { expression: `(() => { const b = document.querySelector('[data-send="Open the PR"]'); if (!b) return false; b.click(); return true; })()`, returnByValue: true }, frame.sessionId);
+    check(r.result?.result?.value === true, `V0.37 desktop: no "Open the PR" button in the view (${JSON.stringify(r.result ?? r.error)})`);
+    await sleep(600);
+    const chips = await evaluate(`[...document.querySelectorAll('.th .vchip')].map((c) => c.textContent)`);
+    check(chips.some((c) => /Open the PR/.test(c)), `V0.37 desktop: the press did not post a message from the view (chips ${JSON.stringify(chips)})`);
+  }
+  // A message from another window is ignored: the top page posts a press as if it were the view.
+  await evaluate(`window.postMessage({ jsonrpc: "2.0", id: 1, method: "ui/message", params: { role: "user", content: [{ type: "text", text: "forged" }] } }, "*")`);
+  await sleep(400);
+  const forged = await evaluate(`[...document.querySelectorAll('.th .vchip')].some((c) => /forged/.test(c.textContent))`);
+  check(!forged, "V0.37 desktop: a message from outside the view's frame was sent");
+  await send("Target.setAutoAttach", { autoAttach: false, waitForDebuggerOnStart: false, flatten: true });
+} catch (e) {
+  failures.push(`V0.37 desktop: ${e.message}`);
 }
 
 clearTimeout(watchdog);

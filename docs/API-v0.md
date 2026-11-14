@@ -40,12 +40,16 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "parent": "t_… (the thread whose agent started this one, V0.22)",
   "branch": "fix/map-lasso (empty when not a git checkout)",
   "rev": 1794643457123456789,
+  "liveView": true,
+  "live": {"pageId": "…", "state": {"headline": "Tests pass; PR open", "steps": ["…"]}, "updatedAt": "…", "checkedAt": "…", "headline": "Tests pass; PR open"},
 
   "attention": {"state": "asking|failed|blocked|done|working|waiting|seen|snoozed|settled|archived", "section": "needs|working|seen|snoozed|settled|archived", "reason": "…"},
   "view": {"seenAt": "…", "snoozeUntil": "…"},
   "unavailable": {"thread.interrupt": "No run is going"}
 }
 ```
+
+`liveView` is the live view flag and `live` the view itself (V0.37); both are absent on a thread without them. `live.headline` is `state.headline` when it is a string; `checkedAt` is the last `view_*` call, `updatedAt` the last change of page or state.
 
 `rev` increases on every change, also across host restarts: keep the copy with the higher `rev`. An action name missing from `unavailable` is available. The client never computes status; it renders `attention`.
 
@@ -72,7 +76,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 
 | type | data |
 |---|---|
-| `user` | `{"id": "…", "text": "…", "images": 1, "from": "t_…"?}` what the user sent; with `from`, another thread's agent sent it (V0.22). `id` is the message id (V0.33); older events have none |
+| `user` | `{"id": "…", "text": "…", "images": 1, "from": "t_…" \| "view"?}` what the user sent; with a thread id in `from`, another thread's agent sent it (V0.22); `from: "view"` is a press in the live view (V0.37). `id` is the message id (V0.33); older events have none |
 | `message.state` | `{"id": "…", "state": "queued" \| "read" \| "cancelled" \| "lost"}` the delivery of a message changed (V0.33). A `user` event with an `id` starts as `sent` |
 | `msg` | a raw `claude` stream message: `{"type": "assistant" \| "user", "parent_tool_use_id": null \| "…", "message": {"content": [blocks]}}`. Blocks: `text`, `thinking`, `tool_use {id, name, input}`, `tool_result {tool_use_id, content, is_error}`, `image`. A non-null `parent_tool_use_id` is a subagent message: fold it under that tool use. |
 | `run.started` | `{}` |
@@ -82,6 +86,9 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 | `task` | `{"kind": "started" \| "ended", "id", "description", "status", "summary"}` a subagent or background task started or ended (V0.16) |
 | `preview` | `{"kind": "image" \| "html", "attachmentId", "title", "caption", "width", "height", "url"?}` something the agent showed with the `show` tool (V0.19). Images load from `/api/attachments/{id}`; HTML loads in an iframe from `/api/previews/{id}` |
 | `effect.result` | `{"action": "pr.merge", "ok": true, "text": "…"}` |
+| `view.published` | `{"pageId": "…", "state": {…}}` the agent published its live view's page (V0.37); the page loads from `/api/previews/{pageId}` |
+| `view.state` | `{"state": {…}}` the live view's full state after a patch (V0.37) |
+| `view.unchanged` | `{"reason": "…"}` the agent said the view is current (V0.37) |
 
 Other types may appear; the client ignores them.
 
@@ -97,8 +104,9 @@ Actions and their args:
 
 | action | args |
 |---|---|
-| `thread.create` (no `threadId`) | `cwd`, `text`, `images?`, `profile?`, `model?`, `title?` |
-| `thread.send` | `text`, `images?` |
+| `thread.create` (no `threadId`) | `cwd`, `text`, `images?`, `profile?`, `model?`, `title?`, `view?: true` (start with a live view, V0.37) |
+| `thread.send` | `text`, `images?`, `from?: "view"` (a press in the live view, V0.37) |
+| `thread.setView` | `on: bool`: turn the live view on or off (V0.37). The agent's next process gets the view's prompt and tools |
 | `thread.answer` | `decisionId`, then `answers: {question: label}` for `ask` (multi-select: labels joined with ", "; Other: the free text), or `allow: bool` for `approval` and `effect` |
 | `thread.markSeen` | `upTo`: the thread's `activityAt` the client showed (RFC 3339). Without it, now. |
 | `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.dismissPR` (V0.36: merged or closed PR only), `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markUnseen` | none |
@@ -140,6 +148,17 @@ The PWA files: `/manifest.webmanifest` (`application/manifest+json`) and `/sw.js
 ## Previews (SPEC 0.5 V0.19)
 
 `GET /api/previews/{id}` serves an HTML preview with `Content-Security-Policy: sandbox allow-scripts; …; connect-src 'none'`. Embed it as `<iframe src="/api/previews/{id}" sandbox="allow-scripts">`: scripts run, but the page has no origin, so it cannot call the API.
+
+## Live views (SPEC 0.5 V0.37)
+
+A view page is an HTML preview: `<iframe src="/api/previews/{pageId}" sandbox="allow-scripts">`. The client and the page exchange JSON-RPC 2.0 messages with `postMessage` (target `"*"`, because the page has no origin); the client accepts only messages whose `event.source` is the view's iframe.
+
+| Direction | Message |
+|---|---|
+| client → page | `{"jsonrpc": "2.0", "method": "ui/notifications/state", "params": {"state": {…}}}` on load, on `initialized` and on every change |
+| page → client | `{"jsonrpc": "2.0", "method": "ui/notifications/initialized", "params": {}}` once the bridge runs |
+| page → client | `{"jsonrpc": "2.0", "method": "ui/notifications/size-changed", "params": {"height": 312}}` |
+| page → client | `{"jsonrpc": "2.0", "id": "m1", "method": "ui/message", "params": {"role": "user", "content": [{"type": "text", "text": "Open the PR"}]}}`; the client sends `thread.send {text, from: "view"}` and answers `{"jsonrpc": "2.0", "id": "m1", "result": {}}` (or an `error` when the send failed) |
 
 ## Projects (SPEC 0.5 V0.23)
 

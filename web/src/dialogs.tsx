@@ -35,6 +35,8 @@ export interface NewThreadArgs {
   title?: string;
   /** the picked project (V0.23): filed with thread.setProject after the start */
   projectId?: string;
+  /** V0.37: start with a live view */
+  view?: boolean;
 }
 
 
@@ -64,6 +66,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
   const [model, setModel] = useState(startDefs.model ?? prof?.defaultModel ?? prof?.models[0] ?? "");
   const [text, setText] = useState("");
   const [title, setTitle] = useState("");
+  const [liveView, setLiveView] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const att = useAttachments();
@@ -106,7 +109,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
     if (!plan.ok) return setErr(plan.reason === "Nothing to send" ? "Write a prompt or attach a file." : plan.reason);
     setBusy(true);
     setErr(null);
-    const e = await p.onCreate({ cwd: cwd.trim(), text, attachments: plan.args.attachments, profile, model, title: title.trim() || undefined, projectId });
+    const e = await p.onCreate({ cwd: cwd.trim(), text, attachments: plan.args.attachments, profile, model, title: title.trim() || undefined, projectId, view: liveView || undefined });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -224,6 +227,10 @@ export function NewThreadDialog(p: { profiles: Profile[]; projects: Project[]; h
         <div class="att-row">
           <ClipPicker onFiles={att.add} />
           <ChipStrip chips={att.chips} onRemove={att.remove} />
+          <label class="lvc" title="The agent keeps a page of its state pinned above the conversation">
+            <input type="checkbox" checked={liveView} onChange={(e) => setLiveView((e.target as HTMLInputElement).checked)} />
+            <span>Live view</span>
+          </label>
         </div>
         {err && <div class="err prose">{err}</div>}
       </div>

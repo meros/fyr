@@ -21,6 +21,7 @@ import { colorVar, makeProjectLabel, projectName, projectOf, suggestionFor } fro
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
+import { LiveViewPanel } from "./view-ui.tsx";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
@@ -103,7 +104,7 @@ export function ThreadPane(p: ThreadPaneProps) {
             <button class="btn" disabled={!!settleReason} title={settleReason ?? (t.running ? "Settle when done (e)" : "Settle (e)")} onClick={() => p.onRun("thread.settle")}>
               Settle <kbd>e</kbd>
             </button>
-            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} />}
+            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} liveView={!!t.liveView} onLiveView={() => p.onRun("thread.setView", { on: !t.liveView })} />}
           </div>
         </div>
         <div class="chips">
@@ -150,6 +151,7 @@ export function ThreadPane(p: ThreadPaneProps) {
         </div>
       </div>
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      {tab === "conv" && <LiveViewPanel t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} />}
       {tab === "conv" && <Filmstrip cards={previews} />}
       {tab === "conv" && (
         <Conversation
@@ -170,7 +172,7 @@ export function ThreadPane(p: ThreadPaneProps) {
 }
 
 /** The thread ⋯ menu (V0.26): opens on click or Enter, arrows move, Esc closes and returns focus. */
-function ThreadMenu({ onMove }: { onMove(): void }) {
+function ThreadMenu({ onMove, liveView, onLiveView }: { onMove(): void; liveView: boolean; onLiveView(): void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
@@ -213,6 +215,11 @@ function ThreadMenu({ onMove }: { onMove(): void }) {
           <button class="mi" role="menuitem" onClick={run(onMove)}>
             <kbd>p</kbd>
             <span class="ell">Project…</span>
+            <span />
+          </button>
+          <button class="mi" role="menuitem" onClick={run(onLiveView)}>
+            <span />
+            <span class="ell">{liveView ? "Turn off live view" : "Turn on live view"}</span>
             <span />
           </button>
         </div>
@@ -591,6 +598,16 @@ function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
     case "user": {
       // V0.33: unread messages are dimmed; a cancelled or lost one is struck through.
       const cls = it.pending ? " pend" : it.delivery === "cancelled" || it.delivery === "lost" ? " gone" : "";
+      if (it.from === "view")
+        return (
+          <div class={`youw vpress${cls}`}>
+            <span class="vchip" title="Pressed in the live view">
+              <span class="vk">View</span>
+              <span class="ell">{it.text}</span>
+            </span>
+            <DeliveryLine it={it} />
+          </div>
+        );
       if (it.from)
         return (
           <div class={`youw from${cls}`}>
@@ -884,6 +901,8 @@ function AskCard(p: CardProps & { card: CardState }) {
 export interface SendArgs {
   text: string;
   attachments?: string[];
+  /** V0.37: a press in the live view */
+  from?: "view";
 }
 
 interface ComposerProps {

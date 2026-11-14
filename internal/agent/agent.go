@@ -67,6 +67,17 @@ const FyrPrompt = `You run inside Fyr, which shows this session to the user and 
 - To see or coordinate the user's other sessions, use mcp__fyr__threads, mcp__fyr__thread_read, mcp__fyr__thread_send and mcp__fyr__thread_new (start a separate session for work that should run on its own).
 - To show the user something (a screenshot after UI work, a chart, a mockup, a page), call mcp__fyr__show with a path, html or url; it appears in the thread on desktop and phone.`
 
+// ViewPrompt is appended to the system prompt of a thread with a live view.
+const ViewPrompt = `This thread has a live view: a small page pinned above the conversation that shows the state of your work, so the user does not have to read the thread to know where things are.
+- The view is a page (HTML, rarely rebuilt) plus a small JSON state (at most 16 kB) that you update often. Publish the page once with mcp__fyr__view_publish {html or path, state}; after that change only the state with mcp__fyr__view_state {patch}, a JSON Merge Patch (RFC 7396: keys merge, null deletes a key, arrays are replaced whole).
+- State shape: "headline" (one line, the current status; Fyr also shows it in the inbox) plus any fields your page needs, for example "steps", "blockers", "next", "pr".
+- In the page, window.fyr.state is the current state; fyr.onState(fn) runs fn now and on every change; an element with data-text="field.path" shows that field. Fragments get the Fyr theme (CSS variables --bg --fg --muted --line --accent, light and dark). The page has no network access.
+- Buttons send messages: fyr.send(text), or an element with data-send="text", sends that text to you as a message from the view, as if the user typed it. Use buttons for choices and next steps; they never run anything by themselves.
+- Before you end a turn, update the view if anything it shows changed, or call mcp__fyr__view_unchanged {reason}. Keep it short and current; it is the first thing the user reads.`
+
+// FromView marks a message sent by a press in the live view (V0.37).
+const FromView = "view"
+
 type Manager struct {
 	host Host
 	cfg  Config
@@ -95,7 +106,24 @@ type session struct {
 	// lifecycle is true once the CLI reported command_lifecycle; without
 	// it a message counts as read when its turn ends.
 	lifecycle bool
-	digest    *digest
+	// viewTools: the process started with the live view's prompt and
+	// tools (V0.37). The flag can change while it runs; the Stop hook only
+	// asks for a view the agent knows about.
+	viewTools bool
+	// viewBlocked: the Stop hook blocked once this run; summary is the
+	// thread's summary before that forced turn, and forcedWork is true when
+	// the forced turn called a tool other than the view tools.
+	// The hook runs on the client's reader, ahead of the stream messages
+	// still queued for handle, so the summary comes from the hook's input
+	// and the forced turn counts from the synthetic message onward.
+	viewBlocked bool
+	summary     string
+	inForced    bool
+	forcedWork  bool
+	// refresh: end the process after this run, so the next one starts
+	// with the current flag.
+	refresh bool
+	digest  *digest
 	idle      *time.Timer
 	log       io.Closer
 }
@@ -150,6 +178,9 @@ func (m *Manager) Do(threadID string, e core.Effect) error {
 		return m.doInterrupt(threadID)
 	case "stop":
 		m.Stop(threadID)
+		return nil
+	case "refresh":
+		m.refreshView(threadID)
 		return nil
 	case "cancelMessage":
 		return m.cancelMessage(threadID, e.MessageID)
@@ -247,7 +278,10 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 	s.out[e.MessageID] = "sent"
 	m.mu.Unlock()
 	userText := e.Text
-	if e.From != "" {
+	if e.From == FromView {
+		// V0.37: a press in the live view; the user pressed it.
+		e.Text = "[From the live view] " + e.Text
+	} else if e.From != "" {
 		// V0.22: tell the receiving agent which thread wrote this.
 		label := e.From
 		if ft, ok := m.host.Thread(e.From); ok && ft.Title != "" {
@@ -373,8 +407,16 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 			"type": "http", "url": m.cfg.MCPURL, "headers": map[string]string{"Authorization": "Bearer " + s.token}}}})
 		args = append(args, "--mcp-config", string(cfg), "--allowedTools", "mcp__fyr__*")
 	}
-	if m.cfg.Prompt != "-" {
-		args = append(args, "--append-system-prompt", m.cfg.Prompt)
+	prompt := m.cfg.Prompt
+	if prompt == "-" {
+		prompt = ""
+	}
+	if t.LiveView && m.cfg.MCPURL != "" {
+		s.viewTools = true
+		prompt = strings.TrimSpace(prompt + "\n\n" + ViewPrompt)
+	}
+	if prompt != "" {
+		args = append(args, "--append-system-prompt", prompt)
 	}
 	spec := claude.Spec{Binary: p.Binary, Args: args, Dir: t.Cwd, Env: p.Env}
 	if m.cfg.LogDir != "" {
@@ -407,7 +449,10 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 	s.c = c
 	c.OnCanUseTool = func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) }
 	c.OnCancel = func(reqID string) { m.cancelRequest(s, reqID) }
-	c.OnHook = func(_ string, in claude.Msg) claude.Msg {
+	c.OnHook = func(id string, in claude.Msg) claude.Msg {
+		if id == "view" {
+			return m.viewStop(s, in)
+		}
 		name, _ := in["tool_name"].(string)
 		ti, _ := in["tool_input"].(map[string]any)
 		if r := core.Gate(name, ti); r != "" {
@@ -418,7 +463,10 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if _, err := c.Initialize(ctx, claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}); err != nil {
+	if _, err := c.Initialize(ctx, claude.Msg{
+		"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}},
+		"Stop":       []claude.Msg{{"hookCallbackIds": []string{"view"}}},
+	}); err != nil {
 		c.Kill()
 		<-c.Done()
 		dropToken()
@@ -521,6 +569,17 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		}
 		return
 	case "assistant", "user":
+		if typ == "user" && msg["isSynthetic"] == true {
+			// The Stop hook's reason, echoed by the CLI (V0.37): never
+			// logged; the forced turn starts here.
+			m.mu.Lock()
+			s.inForced = s.viewBlocked
+			m.mu.Unlock()
+			return
+		}
+		if typ == "assistant" {
+			m.noteForced(s, msg)
+		}
 		o := s.digest.feed(msg)
 		m.host.Observe(s.thread, func(t *core.Thread, now time.Time) {
 			if o.Activity != "" {
@@ -543,6 +602,10 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		m.mu.Unlock()
 		m.mu.Lock()
 		noReports := !s.lifecycle
+		restore := s.viewBlocked && !s.forcedWork
+		summary := s.summary
+		s.viewBlocked, s.inForced, s.forcedWork, s.summary = false, false, false, ""
+		refresh := s.refresh && len(s.out) == 0
 		m.mu.Unlock()
 		if noReports {
 			// An older CLI reports no delivery: its turn read every message.
@@ -570,8 +633,94 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			}
 			core.RunEnded(t, f, now)
 			t.Branch = branch
+			if restore {
+				// V0.37: a forced turn that only updated the view keeps the
+				// run's own last words as the summary.
+				t.Summary = summary
+			}
 		}, Ev{"run.ended", data})
+		if refresh {
+			m.mu.Lock()
+			if m.sessions[s.thread] == s {
+				delete(m.sessions, s.thread)
+			}
+			m.mu.Unlock()
+			s.c.Close()
+			return
+		}
 		m.armIdle(s)
+	}
+}
+
+// viewStop answers the Stop hook (SPEC 0.5 V0.37): block once per run
+// when the thread has a live view and the run did not touch it.
+func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
+	t, ok := m.host.Thread(s.thread)
+	if !ok {
+		return nil
+	}
+	bg, _ := in["background_tasks"].([]any)
+	active, _ := in["stop_hook_active"].(bool)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d := core.ViewStop{Flag: s.viewTools && t.LiveView, Touched: core.ViewTouchedThisRun(&t),
+		Blocked: s.viewBlocked, Active: active, Tasks: len(bg) + t.RunningTasks()}
+	if !d.Block() {
+		return nil
+	}
+	summary := firstLine(fmt.Sprint(orNil(in["last_assistant_message"])))
+	if summary == "" {
+		summary = t.Summary
+	}
+	s.viewBlocked, s.summary, s.inForced, s.forcedWork = true, summary, false, false
+	return claude.Msg{"decision": "block", "reason": core.ViewStopReason}
+}
+
+func orNil(v any) any {
+	if v == nil {
+		return ""
+	}
+	return v
+}
+
+// noteForced marks a forced turn that did more than update the view.
+func (m *Manager) noteForced(s *session, msg claude.Msg) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !s.inForced || s.forcedWork {
+		return
+	}
+	inner, _ := msg["message"].(map[string]any)
+	blocks, _ := inner["content"].([]any)
+	for _, x := range blocks {
+		b, _ := x.(map[string]any)
+		if b["type"] != "tool_use" {
+			continue
+		}
+		if name, _ := b["name"].(string); !strings.HasPrefix(name, "mcp__fyr__view_") {
+			s.forcedWork = true
+		}
+	}
+}
+
+// refreshView makes the next process start with the thread's current
+// live view flag: an idle process ends now, a running one after its run.
+func (m *Manager) refreshView(threadID string) {
+	m.mu.Lock()
+	s := m.sessions[threadID]
+	if s == nil {
+		m.mu.Unlock()
+		return
+	}
+	idle := !s.live && len(s.asks) == 0 && len(s.out) == 0
+	if idle {
+		delete(m.sessions, threadID) // the next send starts a new process
+	} else {
+		s.refresh = true
+	}
+	m.mu.Unlock()
+	if idle {
+		s.c.Close()
 	}
 }
 

@@ -624,3 +624,23 @@ button.ptag{padding:0}
 .prw{display:inline-flex;align-items:center;gap:2px}
 .chip.prx{padding:0 7px;border:0;background:var(--sunken);color:var(--ink-muted);cursor:pointer;font:inherit}
 .chip.prx:hover{color:var(--ink)}
+
+/* SPEC 0.5 V0.37: the pinned live view above the conversation */
+.lv{flex:none;display:flex;flex-direction:column;background:var(--raised);border-bottom:1px solid var(--line);min-width:0;--knock:var(--raised)}
+.lv-h{display:flex;align-items:center;gap:8px;min-height:32px;padding:0 24px;text-align:left;font:500 12px/16px var(--ui);color:var(--ink-muted);min-width:0}
+.lv-k{flex:none;text-transform:uppercase;letter-spacing:.06em;font-size:11px;color:var(--ink-faint)}
+.lv-hl{flex:1;min-width:0;color:var(--ink);font-weight:500;font-size:13px}
+.lv-s{margin-left:auto;flex:none;font-weight:400;color:var(--ink-faint)}
+.lv-h .chev{flex:none;color:var(--ink-faint)}
+.lv-f{display:block;width:100%;border:0;background:var(--raised);transition:opacity .2s}
+.lv.dim .lv-f{opacity:.55}
+.lv.dim .lv-s{color:var(--ink-muted)}
+.lv.shut .lv-h{min-height:40px}
+.youw.vpress{align-items:flex-end}
+.vchip{display:inline-flex;align-items:center;gap:6px;max-width:min(520px,90%);height:26px;padding:0 10px 0 4px;border-radius:13px;border:1px solid var(--line-strong);background:var(--raised);font:500 12px/16px var(--ui);color:var(--ink);min-width:0}
+.vchip .vk{flex:none;padding:1px 6px;border-radius:9px;background:var(--sunken);color:var(--ink-muted);font-size:11px}
+.lvc{margin-left:auto;flex:none;display:flex;align-items:center;gap:6px;height:30px;font:500 13px/18px var(--ui);color:var(--ink);cursor:pointer;white-space:nowrap}
+.lvc input{margin:0}
+.m-lvc{gap:8px}
+.m-lvc input{margin:0;width:18px;height:18px}
+@media (max-width:760px){.lv-h{padding:0 12px;min-height:40px}}
