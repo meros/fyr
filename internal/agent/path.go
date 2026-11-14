@@ -20,6 +20,7 @@ func UserPath(path, home, user string, exists func(string) bool) string {
 	}
 	for _, p := range []string{
 		"/run/wrappers/bin",
+		filepath.Join(home, ".local", "bin"),
 		filepath.Join(home, ".nix-profile", "bin"),
 		filepath.Join("/etc/profiles/per-user", user, "bin"),
 		"/run/current-system/sw/bin",
