@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
@@ -229,5 +231,35 @@ func TestPWAFiles(t *testing.T) {
 	r = do(t, "GET", hs.URL+"/sw.js", "", nil, "")
 	if r.Header.Get("Cache-Control") != "no-cache" || !strings.Contains(r.Header.Get("Content-Type"), "javascript") {
 		t.Fatalf("sw headers %v", r.Header)
+	}
+}
+
+// SPEC 0.5 V0.18: upload with X-Fyr and a file name; read it back; limits.
+func TestAttachmentEndpoints(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	s := &Server{Engine: engine.New(st), BuildID: "b1", Attach: &attach.Store{Dir: t.TempDir(), Max: 16}}
+	hs := httptest.NewServer(s.Handler())
+	defer hs.Close()
+	h := map[string]string{"X-Fyr": "1", "X-Fyr-Filename": "sk%C3%A4rm.png", "Content-Type": "image/png"}
+	if r := do(t, "POST", hs.URL+"/api/attachments", "", map[string]string{"X-Fyr-Filename": "a.png"}, "x"); r.StatusCode != 403 {
+		t.Fatalf("no X-Fyr: %d", r.StatusCode)
+	}
+	r := do(t, "POST", hs.URL+"/api/attachments", "", h, "PNGDATA")
+	var m attach.Meta
+	json.NewDecoder(r.Body).Decode(&m)
+	if r.StatusCode != 200 || m.Name != "skärm.png" || m.Size != 7 || m.MediaType != "image/png" || m.ID == "" {
+		t.Fatalf("upload %d %+v", r.StatusCode, m)
+	}
+	r = do(t, "GET", hs.URL+"/api/attachments/"+m.ID, "", nil, "")
+	b, _ := io.ReadAll(r.Body)
+	if r.StatusCode != 200 || string(b) != "PNGDATA" || r.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("get %d %q %v", r.StatusCode, b, r.Header)
+	}
+	if r := do(t, "POST", hs.URL+"/api/attachments", "", h, strings.Repeat("x", 17)); r.StatusCode != 413 {
+		t.Fatalf("over the limit: %d", r.StatusCode)
+	}
+	if r := do(t, "GET", hs.URL+"/api/attachments/nope", "", nil, ""); r.StatusCode != 404 {
+		t.Fatalf("unknown: %d", r.StatusCode)
 	}
 }

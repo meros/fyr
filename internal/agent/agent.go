@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/core"
 )
@@ -53,6 +55,8 @@ type Config struct {
 	MCPURL   string        // Fyr's MCP endpoint; empty disables the binding
 	LogDir   string        // raw protocol logs, optional
 	Prompt   string        // appended system prompt
+	// Attachments resolves stored files by id (SPEC 0.5 V0.18).
+	Attachments func(id string) (attach.Meta, error)
 }
 
 // FyrPrompt is the short block that steers agents to Fyr tools (V0.12).
@@ -152,6 +156,49 @@ func (m *Manager) Do(threadID string, e core.Effect) error {
 	return fmt.Errorf("agent: unknown effect %q", e.Kind)
 }
 
+// inlineImage is the set of image types Claude takes as image blocks.
+var inlineImage = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
+
+// withAttachments adds image blocks for small images and lists every
+// attachment with its path in the text (SPEC 0.5 V0.18).
+func (m *Manager) withAttachments(e core.Effect) (core.Effect, []map[string]any) {
+	var metas []map[string]any
+	if len(e.Attachments) == 0 || m.cfg.Attachments == nil {
+		return e, nil
+	}
+	var lines []string
+	for _, id := range e.Attachments {
+		a, err := m.cfg.Attachments(id)
+		if err != nil {
+			continue
+		}
+		metas = append(metas, map[string]any{"id": a.ID, "name": a.Name, "mediaType": a.MediaType, "size": a.Size})
+		if inlineImage[a.MediaType] && a.Size <= 5<<20 {
+			if b, err := os.ReadFile(a.Path); err == nil {
+				e.Images = append(e.Images, core.Image{MediaType: a.MediaType, Data: base64.StdEncoding.EncodeToString(b)})
+			}
+		}
+		lines = append(lines, fmt.Sprintf("Attached: %s (%s, %s) at %s", a.Name, a.MediaType, humanSize(a.Size), a.Path))
+	}
+	if len(lines) > 0 {
+		if e.Text != "" {
+			e.Text += "\n\n"
+		}
+		e.Text += strings.Join(lines, "\n")
+	}
+	return e, metas
+}
+
+func humanSize(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%d kB", n>>10)
+	}
+	return fmt.Sprintf("%d B", n)
+}
+
 func content(e core.Effect) []claude.Msg {
 	var out []claude.Msg
 	for _, im := range e.Images {
@@ -178,7 +225,13 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 		s.idle.Stop()
 	}
 	m.mu.Unlock()
-	evs := []Ev{{"user", map[string]any{"text": e.Text, "images": len(e.Images)}}}
+	userText := e.Text
+	e, metas := m.withAttachments(e)
+	ud := map[string]any{"text": userText, "images": len(e.Images)}
+	if metas != nil {
+		ud["attachments"] = metas
+	}
+	evs := []Ev{{"user", ud}}
 	if first {
 		evs = append(evs, Ev{"run.started", map[string]any{}})
 	}
