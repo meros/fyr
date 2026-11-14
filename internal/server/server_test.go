@@ -168,6 +168,7 @@ func (f *fakePush) Subscribe(user string, sub push.Subscription, device string) 
 }
 func (f *fakePush) Unsubscribe(endpoint string) error       { delete(f.subs, endpoint); return nil }
 func (f *fakePush) Notify(user string, pl push.Payload) int { return len(f.subs) }
+func (f *fakePush) Known(endpoint string) bool              { _, ok := f.subs[endpoint]; return ok }
 
 // SPEC 0.5 V0.15: key, subscribe, test and unsubscribe.
 func TestPushEndpoints(t *testing.T) {
@@ -197,8 +198,17 @@ func TestPushEndpoints(t *testing.T) {
 	if res["delivered"] != 1 {
 		t.Fatalf("test: %v", res)
 	}
+	known := func() bool {
+		r := do(t, "POST", hs.URL+"/api/push/status", "", h, `{"endpoint":"https://push/e1"}`)
+		var k map[string]bool
+		json.NewDecoder(r.Body).Decode(&k)
+		return k["known"]
+	}
+	if !known() {
+		t.Fatal("status: a stored subscription is not known")
+	}
 	do(t, "POST", hs.URL+"/api/push/unsubscribe", "", h, `{"endpoint":"https://push/e1"}`)
-	if len(fp.subs) != 0 {
+	if len(fp.subs) != 0 || known() {
 		t.Fatal("unsubscribe")
 	}
 }

@@ -114,6 +114,7 @@ Actions and their args:
 | `POST /api/push/subscribe` | `{"subscription": PushSubscription.toJSON(), "device": "Pixel 9 · Chrome"}` | `{"ok": true}` |
 | `POST /api/push/unsubscribe` | `{"endpoint": "…"}` | `{"ok": true}` |
 | `POST /api/push/test` | – | `{"delivered": 1}` |
+| `POST /api/push/status` | `{"endpoint": "…"}` | `{"known": true}`: false when the host deleted it after a 404 or 410 |
 
 All POSTs need `X-Fyr: 1`. The host pushes `{"title", "body", "threadId", "state"}` when a thread enters `asking` or `failed`; the service worker shows it with `tag = threadId` and opens `/?open=<threadId>` on a tap.
 

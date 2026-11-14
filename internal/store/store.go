@@ -262,3 +262,9 @@ func (s *Store) PushSubs(user string) ([]PushSub, error) {
 	}
 	return out, rows.Err()
 }
+
+func (s *Store) HasPushSub(endpoint string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM push_subs WHERE endpoint=?`, endpoint).Scan(&n)
+	return n > 0, err
+}

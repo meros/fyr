@@ -79,6 +79,12 @@ func (p *Pusher) Subscribe(user string, sub Subscription, device string) error {
 
 func (p *Pusher) Unsubscribe(endpoint string) error { return p.DB.DeletePushSub(endpoint) }
 
+// Known reports whether a subscription is still stored for any user.
+func (p *Pusher) Known(endpoint string) bool {
+	ok, err := p.DB.HasPushSub(endpoint)
+	return err == nil && ok
+}
+
 func (p *Pusher) Subscriptions(user string) ([]Subscription, error) {
 	rows, err := p.DB.PushSubs(user)
 	if err != nil {
