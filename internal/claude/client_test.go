@@ -53,7 +53,7 @@ func untilResult(t *testing.T, c *Client) (all []Msg) {
 
 func TestEchoTurn(t *testing.T) {
 	c := start(t)
-	c.SendUser([]Msg{{"type": "text", "text": "hello"}})
+	c.SendUser([]Msg{{"type": "text", "text": "hello"}}, "")
 	msgs := untilResult(t, c)
 	if msgs[0]["session_id"] != "s1" {
 		t.Fatalf("session id not passed: %v", msgs[0])
@@ -70,7 +70,7 @@ func TestAskUserQuestionRoundTrip(t *testing.T) {
 		in["answers"] = Msg{"Which colour?": "Blue"}
 		return Msg{"behavior": "allow", "updatedInput": in}
 	}
-	c.SendUser([]Msg{{"type": "text", "text": "ask"}})
+	c.SendUser([]Msg{{"type": "text", "text": "ask"}}, "")
 	msgs := untilResult(t, c)
 	found := false
 	for _, m := range msgs {
@@ -89,7 +89,7 @@ func TestInterruptCancelsPendingQuestion(t *testing.T) {
 	cancelled := make(chan string, 1)
 	c.OnCancel = func(id string) { cancelled <- id }
 	c.OnCanUseTool = func(req Msg) Msg { time.Sleep(10 * time.Second); return Msg{} }
-	c.SendUser([]Msg{{"type": "text", "text": "ask"}})
+	c.SendUser([]Msg{{"type": "text", "text": "ask"}}, "")
 	time.Sleep(100 * time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -111,7 +111,7 @@ func TestInterruptCancelsPendingQuestion(t *testing.T) {
 
 func TestCrashReportsStderr(t *testing.T) {
 	c := start(t)
-	c.SendUser([]Msg{{"type": "text", "text": "crash"}})
+	c.SendUser([]Msg{{"type": "text", "text": "crash"}}, "")
 	select {
 	case <-c.Done():
 	case <-time.After(5 * time.Second):
