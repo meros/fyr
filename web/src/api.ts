@@ -1,7 +1,7 @@
 import { isTransient, sendWithRetry } from "./retry.ts";
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead.
 
-import type { CommandReply, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { CommandReply, FyrEvent, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockScenario } from "./mock.ts";
@@ -12,6 +12,8 @@ export type ConnState = "connecting" | "live" | "offline";
 export interface ApiHandlers {
   state(dto: StateDTO): void;
   thread(t: ThreadDTO): void;
+  /** a project made or changed (V0.23); optional for older callers */
+  project?(p: Project): void;
   event(e: FyrEvent): void;
   conn(c: ConnState): void;
 }
@@ -99,6 +101,13 @@ function createHttpApi(): Api {
         h.conn("live");
       } catch {
         if (gen === generation) retry();
+      }
+    });
+    es.addEventListener("project", (m) => {
+      try {
+        h.project?.(JSON.parse((m as MessageEvent).data));
+      } catch {
+        /* ignore malformed */
       }
     });
     es.addEventListener("thread", (m) => {
@@ -278,7 +287,7 @@ function createMockApi(scenario: string): Api {
     start(h) {
       h.conn("connecting");
       watch = observeBuildId(watch, server.buildId).watch;
-      server.subscribe({ thread: h.thread, event: h.event });
+      server.subscribe({ thread: h.thread, event: h.event, project: (p) => h.project?.(p) });
       setTimeout(() => {
         h.state(server.state());
         h.conn("live");

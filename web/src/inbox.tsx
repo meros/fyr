@@ -1,7 +1,9 @@
 // Rail and inbox list, as design/directions/04-rail.html draws them.
 
 import type { ComponentChildren, Ref } from "preact";
-import type { ThreadDTO } from "./types.ts";
+import type { Project, ThreadDTO } from "./types.ts";
+import { ProjectIcon, StartedBy, ThreadProject } from "./project-ui.tsx";
+import { colorVar, pickerOrder } from "./projects.ts";
 import { SECTIONS, type SectionKey, type Sections } from "./store.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { count, relTime, untilLabel, whenLabel } from "./format.ts";
@@ -116,7 +118,7 @@ function NeedsRow({ t, now, sel, picked, onClick }: RowProps) {
       </span>
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, now)}</span>
       <span class="m ell">
-        <b class={stateClass(st)}>{stateWord(t)}</b> · {t.project} · {needsMeta(t)}
+        <b class={stateClass(st)}>{stateWord(t)}</b> · {t.parent && <><StartedBy parentId={t.parent} /> · </>}<ThreadProject t={t} /> · {needsMeta(t)}
       </span>
       <PrBadge t={t} />
     </div>
@@ -134,7 +136,14 @@ function OneRow({ t, now, sel, picked, onClick }: RowProps) {
       <StateIcon state={st} />
       <span class="t" title={`${t.title}\n${sub}`}>
         <span class="tn ell">{t.title || "Untitled"}</span>
-        <i class="ell">{sub}</i>
+        <i class="ell">
+          {t.parent && (
+            <>
+              <StartedBy parentId={t.parent} /> ·{" "}
+            </>
+          )}
+          {!working && st !== "snoozed" ? <ThreadProject t={t} /> : sub}
+        </i>
       </span>
       {working && !groupTasks(t.tasks).running.length ? <span class="sb">{t.subagents ?? 0} sub</span> : working ? <span /> : t.pr ? <PrBadge t={t} short /> : <span />}
       <span class="age">{when}</span>
@@ -188,6 +197,10 @@ interface InboxProps {
   onFocusZone(): void;
   /** the bell and Install controls (phone layout, where the rail is hidden) */
   extra?: ComponentChildren;
+  /** the project filter (V0.23) */
+  projects: Project[];
+  projectFilter: string | null;
+  onProjectFilter(id: string | null): void;
 }
 
 export function Inbox(p: InboxProps) {
@@ -214,6 +227,7 @@ export function Inbox(p: InboxProps) {
           {PLUS}
         </button>
       </div>
+      <ProjectFilterRow projects={p.projects} selected={p.projectFilter} onPick={p.onProjectFilter} />
       <div class="list" role="listbox" aria-label="Threads">
         {SECTIONS.map((s) => {
           const list = p.sec[s.key];
@@ -245,5 +259,26 @@ export function Inbox(p: InboxProps) {
         })}
       </div>
     </aside>
+  );
+}
+
+/** Desktop: a compact row of projects under the search field; one click filters, the × clears. */
+function ProjectFilterRow({ projects, selected, onPick }: { projects: Project[]; selected: string | null; onPick(id: string | null): void }) {
+  const list = pickerOrder(projects).filter((p) => (p.threads ?? 0) > 0 || p.id === selected);
+  if (!list.length) return null;
+  return (
+    <div class="pfrow" role="toolbar" aria-label="Filter by project">
+      {selected && (
+        <button class="pfx" onClick={() => onPick(null)} title="Show every project" aria-label="Clear the project filter">
+          ×
+        </button>
+      )}
+      {list.map((p) => (
+        <button class={`pfc${p.id === selected ? " on" : ""}`} aria-pressed={p.id === selected} style={{ "--pc": colorVar(p.color, p.name) }} title={`${p.name}: ${p.threads ?? 0} threads`} onClick={() => onPick(p.id === selected ? null : p.id ?? null)}>
+          <ProjectIcon project={p} name={p.name} size={16} />
+          <span class="ell">{p.name}</span>
+        </button>
+      ))}
+    </div>
   );
 }

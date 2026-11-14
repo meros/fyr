@@ -253,3 +253,10 @@ export function snoozePresets(now: Date): SnoozePreset[] {
     { label: "Monday 06:00", until: monday },
   ];
 }
+
+/** A project from the stream (`event: project`, V0.23): replace by id, or add. */
+export function upsertProject(s: Store, p: Project): Store {
+  const i = s.projects.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
+  const projects = i >= 0 ? s.projects.map((x, j) => (j === i ? p : x)) : [...s.projects, p];
+  return { ...s, projects };
+}

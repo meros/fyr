@@ -26,7 +26,7 @@ export interface ToolCall {
 }
 
 export type Item =
-  | { kind: "user"; key: string; text: string; images: number; attachments: { id: string; name: string; mediaType: string; size: number }[] }
+  | { kind: "user"; key: string; text: string; images: number; from?: string; attachments: { id: string; name: string; mediaType: string; size: number }[] }
   | { kind: "assistant"; key: string; text: string }
   | { kind: "tools"; key: string; calls: ToolCall[] }
   | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number; compact: boolean }
@@ -171,6 +171,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           key,
           text: str(e.data?.text),
           images: Number(e.data?.images) || 0,
+          from: str(e.data?.from) || undefined,
           attachments: (Array.isArray(e.data?.attachments) ? e.data.attachments : [])
             .filter((a: any) => a && typeof a.id === "string")
             .map((a: any) => ({ id: a.id, name: str(a.name) || "file", mediaType: str(a.mediaType), size: Number(a.size) || 0 })),

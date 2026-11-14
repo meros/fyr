@@ -10,6 +10,8 @@ import { duration, relTime, shortModel } from "./format.ts";
 import { pick, questionsOf, goTo, type CardState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { onToolDetails, toolDetails } from "./prefs.ts";
+import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
+import { projectOf } from "./projects.ts";
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
@@ -106,10 +108,12 @@ export function ThreadPane(p: ThreadPaneProps) {
               <span>Peek · ⏎ opens</span>
             </span>
           )}
-          <span class="chip pj" title={`${t.cwd}${profile ? ` · ${profile.name}` : ""}`}>
-            {profile && <i class="dot" style={{ background: profile.color }} />}
-            <span>{t.project || t.cwd}</span>
-          </span>
+          <HeaderProjectChip t={t} profileName={profile?.name} />
+          {t.parent && (
+            <span class="chip fromc">
+              <StartedBy parentId={t.parent} />
+            </span>
+          )}
           {t.branch && (
             <span class="chip m brn" title={t.branch}>
               <span>{t.branch}</span>
@@ -143,6 +147,18 @@ export function ThreadPane(p: ThreadPaneProps) {
       {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} />}
       <Composer key={t.id} t={t} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
+  );
+}
+
+/** The project chip: icon and name in the project colour; a click opens the project screen. */
+function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: string }) {
+  const dir = useDirectory();
+  const p = projectOf(t, dir.projects);
+  return (
+    <button class="chip pj proj" style={{ "--pc": `var(--p-${p?.color ?? "slate"})` }} title={`${t.cwd}${profileName ? ` · ${profileName}` : ""} · open the project`} onClick={() => p?.id && dir.openProject(p.id)}>
+      <ProjectIcon project={p} name={t.project} size={16} />
+      <span>{p?.name ?? t.project ?? t.cwd}</span>
+    </button>
   );
 }
 
@@ -365,6 +381,12 @@ function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
 function ItemView({ it, previews }: { it: Item; previews: PreviewCard[] }) {
   switch (it.kind) {
     case "user":
+      if (it.from)
+        return (
+          <FromThreadMessage fromId={it.from} text={it.text}>
+            {it.attachments.length > 0 && <SentAttachments items={it.attachments} />}
+          </FromThreadMessage>
+        );
       return (
         <div class="you prose">
           {it.text}

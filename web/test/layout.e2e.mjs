@@ -133,6 +133,8 @@ const SIZES = [
 const SCREENS = [
   { name: "inbox", url: "?mock=rail" },
   { name: "thread", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in" },
+  { name: "project screen", url: "?mock=rail&project=p_web" },
+  { name: "inbox filtered by project", url: "?mock=rail", storage: { "fyr.projectFilter": "p_web" } },
   { name: "opened tool group", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in", openTools: true },
   { name: "thread with previews", url: "?mock=1&open=t_w3", field: ".m-cmp .in", previews: true },
   { name: "composer with chips", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in", files: ".m-cmp input[data-picker=files]" },
@@ -166,6 +168,10 @@ const MEASURE = `(() => {
     previewOverflow: Math.max(0, ...[...document.querySelectorAll('.pv, .pv-frame, .pv-img img, .fs')].map(e => e.getBoundingClientRect().right)) - window.innerWidth,
     pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
     innerWidth: window.innerWidth,
+    projectEditor: !!document.querySelector('.pedit'),
+    filterLine: !!document.querySelector('.m-pfline'),
+    otherProjectRows: [...document.querySelectorAll('.m-list .ptag .ptn')].filter(e => e.textContent !== 'norban/web').length,
+    saveButton: rect('.pedit .pformb .btn.p'),
     toolOutput: (() => { const o = document.querySelector('.tlout'); if (!o) return null; const r = o.getBoundingClientRect(); return { right: r.right, lines: o.textContent.split(String.fromCharCode(10)).length }; })(),
     focused: active ? { top: active.top, bottom: active.bottom } : null,
   };
@@ -203,6 +209,11 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     check(m.previewCards >= 4, `${ctx}: expected the 4 preview cards (found ${m.previewCards})`);
     check(m.previewOverflow <= 0.5, `${ctx}: a preview card runs ${m.previewOverflow.toFixed(1)} px past the right edge`);
   }
+  if (ctx.startsWith("project screen")) check(m.projectEditor, `${ctx}: no project editor`);
+  if (ctx.startsWith("inbox filtered")) {
+    check(m.filterLine, `${ctx}: the filter line is missing`);
+    check(m.otherProjectRows === 0, `${ctx}: ${m.otherProjectRows} rows of other projects show under the filter`);
+  }
   if (ctx.startsWith("opened tool group")) {
     check(!!m.toolOutput, `${ctx}: the opened row shows no output`);
     if (m.toolOutput) {
@@ -236,6 +247,11 @@ async function openScreen(s, w, h) {
   await send("Page.navigate", { url: `${origin}/${s.url}` });
   await sleep(900);
   await injectInsets();
+  if (s.storage) {
+    await evaluate(`(() => { const s = ${JSON.stringify(s.storage)}; for (const k in s) localStorage.setItem(k, s[k]); })()`);
+    await send("Page.navigate", { url: `${origin}/${s.url}` });
+    await sleep(900);
+  }
   await frames();
   if (s.files) {
     writeFileSync(join(profile, "shot.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
@@ -303,6 +319,24 @@ for (const [w, h] of SIZES) {
       failures.push(`${ctx}: ${e.message}`);
     }
   }
+}
+
+// U8: settle the open thread from its ⋯ menu at 390 × 844; the inbox shows with the Undo toast.
+try {
+  await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
+  await tapCenter(".m-tr1 .b44:last-child");
+  await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('Settle'))?.click()`);
+  await sleep(1200);
+  const r = await evaluate(`({ inbox: !!document.querySelector('.m-strip'), toast: document.querySelector('.m-toast')?.textContent ?? '', url: location.search })`);
+  check(r.inbox, `U8 settle from the thread: the inbox does not show (${r.url})`);
+  check(/Settled/.test(r.toast) && /Undo/.test(r.toast), `U8 settle from the thread: no Undo toast on the inbox ("${r.toast}")`);
+  // Undo reopens the thread.
+  await evaluate(`document.querySelector('.m-toast .tb')?.click()`);
+  await sleep(900);
+  const u = await evaluate(`({ thread: !!document.querySelector('.m-tth'), url: location.search })`);
+  check(u.thread && /open=t_triage/.test(u.url), `U8 Undo does not reopen the thread (${u.url})`);
+} catch (e) {
+  failures.push(`U8 settle from the thread: ${e.message}`);
 }
 
 clearTimeout(watchdog);

@@ -39,3 +39,13 @@ test("bottom bar on Inbox and Search only, never while selecting", () => {
   assert.deepEqual(navFromHistory(null, "?open=x"), parseUrl("?open=x"));
   assert.deepEqual(navFromHistory(INBOX, "?open=x"), INBOX);
 });
+
+test("U8: settle or archive of the open thread returns to the inbox, unless it stays open", async () => {
+  const { leavesThread } = await import("../src/nav.ts");
+  assert.equal(leavesThread("settle", { running: false, pr: null }), true);
+  assert.equal(leavesThread("settle", { running: true }), false, "settle when done keeps it open");
+  assert.equal(leavesThread("settle", { running: false, pr: { state: "OPEN" } }), false, "settle when merged keeps it open");
+  assert.equal(leavesThread("settle", { running: false, pr: { state: "MERGED" } }), true);
+  assert.equal(leavesThread("archive", { running: true }), true);
+  assert.equal(leavesThread("settle", undefined), false);
+});

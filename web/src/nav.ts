@@ -2,9 +2,9 @@
 // Each screen has a URL; a sheet adds an entry without changing the URL, so Back closes the sheet,
 // then the thread. A thread opened from a deep link (a push) gets an inbox entry under it.
 
-export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" };
+export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" } | { name: "project"; id: string };
 
-export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "push" | "adopt";
+export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "push" | "adopt" | "move" | "filter" | "newproject";
 
 export interface Sheet {
   kind: SheetKind;
@@ -35,6 +35,7 @@ export function urlFor(n: Nav, currentSearch = ""): string {
     if (s.tab && s.tab !== "conv") p.set("tab", s.tab);
   } else if (s.name === "new") p.set("new", "");
   else if (s.name === "search") p.set("search", "");
+  else if (s.name === "project") p.set("project", s.id);
   const q = p.toString().replace(/=(&|$)/g, "$1");
   return q ? `/?${q}` : "/";
 }
@@ -43,6 +44,8 @@ export function parseUrl(search: string): Nav {
   const p = new URLSearchParams(search);
   const open = p.get("open");
   if (open) return { screen: { name: "thread", id: open, tab: p.get("tab") ?? undefined }, sheet: null };
+  const project = p.get("project");
+  if (project) return { screen: { name: "project", id: project }, sheet: null };
   if (p.has("new")) return { screen: { name: "new" }, sheet: null };
   if (p.has("search")) return { screen: { name: "search" }, sheet: null };
   return INBOX;
@@ -59,6 +62,18 @@ export function backTarget(n: Nav): Nav | null {
   if (n.sheet) return { ...n, sheet: null };
   if (n.screen.name !== "inbox") return INBOX;
   return null;
+}
+
+/**
+ * U8 (phone): settling or archiving the open thread returns to the inbox, through Back so the thread entry
+ * is popped. "Settle when done" (a run is going) and "settle when merged" (an open PR) keep the thread open.
+ */
+export function leavesThread(action: "settle" | "archive", t: { running?: boolean; pr?: { state?: string } | null } | undefined): boolean {
+  if (!t) return false;
+  if (action === "archive") return true;
+  if (t.running) return false;
+  if (t.pr && (t.pr.state ?? "OPEN") === "OPEN") return false;
+  return true;
 }
 
 /** The bottom bar shows on Inbox and Search only. */

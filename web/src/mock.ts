@@ -1,7 +1,7 @@
 // Fixtures for ?mock=1 (full stress set) and ?mock=2 (sparse: empty sections). A tiny in-memory fyrd:
 // commands change the fixtures and push thread upserts, so the UI can be clicked through without a host.
 
-import type { CommandReply, Decision, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { CommandReply, Decision, Project, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 
 export function mockScenario(search: string): string | null {
   const m = /[?&]mock=([^&]*)/.exec(search);
@@ -355,6 +355,9 @@ function fullFixture(now: number): Fixture {
   }
 
   events.t_w3 = [...events.t_w3, ...previewEvents("t_w3", events.t_w3.length, now, true)];
+  // V0.22 in the stress set: a long-titled parent, and a message from it.
+  for (const t of threads) if (t.id === "t_w2") t.parent = "t_w3";
+  events.t_w2 = [...events.t_w2, ev(events.t_w2.length + 1, now - 60_000, "t_w2", "user", { text: "Use the new index for the map tiles; " + LONG_URL, from: "t_w3" })];
 
   const t3: T3Candidate[] = [
     { t3Id: "t3_a", title: "Refactor booking calendar", cwd: "/home/owner/src/norban/web", profile: "claudeAgent", model: "claude-opus-5-5", updatedAt: iso(now - 3600_000), hasTranscript: true, prUrl: "https://github.com/norban/web/pull/4100" },
@@ -487,6 +490,7 @@ function railFixture(now: number): Fixture {
     ["t_pw", "Bump Playwright to 1.58", "norban/web", 11, 48, false],
     ["t_copy", "Rewrite onboarding copy", "norban/web", 10, 12, false],
     ["t_snap", "Fix flaky map snapshot test", "norban/web", 9, 30, false],
+    ["t_dish", "Pick a dishwasher under 8 000 kr", "Hemmet", 8, 5, false],
   ];
   for (const [id, title, project, h, m, merged] of seen) {
     const t = base(id, title, now, 0, { project, summary: "Done.", unavailable: quiet });
@@ -546,6 +550,13 @@ function railFixture(now: number): Fixture {
   push(131, "decision.opened", { decision: ask });
   events.t_lasso = ev2;
   events.t_mapperf = calmTurn("t_mapperf", now);
+  // V0.22: Search index was started by Map perf's agent, which also wrote to Babysit PR #4170.
+  for (const t of threads) if (t.id === "t_search") t.parent = "t_mapperf";
+  for (const t of threads) if (t.id === "t_dish") t.cwd = "/home/owner/scratch/2026-11-14-dishwasher";
+  events.t_babysit = [
+    ...events.t_babysit,
+    ev(events.t_babysit.length + 1, now - 2 * 60_000, "t_babysit", "user", { text: "The map tests pass on map-perf now. Rebase on it before you merge #4170.", from: "t_mapperf" }),
+  ];
   return { threads, events, t3: [] };
 }
 
@@ -657,10 +668,29 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   return out;
 }
 
+// ---- projects (V0.23): every colour and icon kind, a repo-only project and a label ----
+export function mockProjects(now: number): Project[] {
+  const ago = (h: number) => iso(now - h * 3600_000);
+  const folder = (path: string) => ({ kind: "folder", host: "desk", path });
+  const repo = (url: string) => ({ kind: "repo", url });
+  return [
+    { id: "p_web", name: "norban/web", color: "teal", icon: { kind: "line", value: "Globe" }, sources: [folder("/home/owner/src/norban/web"), repo("github.com/norban/web")], profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1), cwd: "/home/owner/src/norban/web" },
+    { id: "p_ops", name: "norban/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, sources: [folder("/home/owner/src/norban/ops")], threads: 2, lastUsed: ago(1), cwd: "/home/owner/src/norban/ops" },
+    { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram", value: "" }, sources: [folder("/home/owner/src/" + LONG_PROJECT), repo("github.com/norban/" + LONG_PROJECT)], threads: 3, lastUsed: ago(5), cwd: "/home/owner/src/" + LONG_PROJECT },
+    { id: "p_dot", name: "dotfiles", color: "olive", icon: { kind: "line", value: "terminal" }, sources: [folder("/home/owner/dotfiles")], threads: 1, lastUsed: ago(2), cwd: "/home/owner/dotfiles" },
+    { id: "p_api", name: "norban/api", color: "sky", icon: { kind: "line", value: "server" }, sources: [folder("/home/owner/src/norban/api")], threads: 0, lastUsed: ago(30), cwd: "/home/owner/src/norban/api" },
+    { id: "p_fyr", name: "fyr", color: "violet", icon: { kind: "line", value: "FolderGit2" }, sources: [repo("github.com/meros/fyr")], threads: 0, lastUsed: ago(48) },
+    { id: "p_home", name: "Hemmet", color: "green", icon: { kind: "emoji", value: "🏡" }, sources: [], threads: 1, lastUsed: ago(3) },
+    { id: "p_infra", name: "norban/infra", color: "slate", icon: { kind: "line", value: "no-such-icon" }, sources: [folder("/home/owner/src/norban/infra")], threads: 1, lastUsed: ago(10), cwd: "/home/owner/src/norban/infra" },
+    { id: "p_maplab", name: "Map perf lab", color: "blue", icon: { kind: "line", value: "map" }, sources: [folder("/home/owner/src/maplab")], threads: 0, lastUsed: ago(70), cwd: "/home/owner/src/maplab" },
+    { id: "p_book", name: "Bokföring åt Övik", icon: { kind: "monogram", value: "" }, color: "brown", sources: [folder("/home/owner/ekonomi")], threads: 0, lastUsed: ago(200), cwd: "/home/owner/ekonomi" },
+  ];
+}
+
 export interface MockServer {
   buildId: string;
   state(): StateDTO;
-  subscribe(h: { thread(t: ThreadDTO): void; event(e: FyrEvent): void }): void;
+  subscribe(h: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void }): void;
   command(commandId: string, action: string, threadId: string | undefined, args: Record<string, unknown>): CommandReply;
   events(threadId: string, after: number, limit: number): FyrEvent[];
   t3Candidates(): T3Candidate[];
@@ -690,11 +720,19 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   let fileSeq = 1;
   const attachmentsOf = (args: Record<string, unknown>) =>
     (Array.isArray(args.attachments) ? (args.attachments as string[]) : []).map((aid) => files.get(aid)).filter((x): x is NonNullable<typeof x> => !!x);
-  let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void } | null = null;
+  let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void } | null = null;
+  let projects = mockProjects(now0);
+  const putProject = (p: Project) => {
+    projects = projects.some((x) => x.id === p.id) ? projects.map((x) => (x.id === p.id ? p : x)) : [...projects, p];
+    setTimeout(() => sub?.project?.(p), 30);
+    return p;
+  };
+  const projectIdFor = (t: ThreadDTO) => t.projectId ?? projects.find((p) => p.name === t.project)?.id;
   let nextId = 1;
 
   const put = (t: ThreadDTO, patch: Partial<ThreadDTO>) => {
     const n: ThreadDTO = { ...t, ...patch, updatedAt: new Date(clock()).toISOString() };
+    n.projectId = n.projectId ?? projectIdFor(n);
     threads.set(n.id, n);
     setTimeout(() => sub?.thread(n), 30);
     return n;
@@ -750,6 +788,28 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       emit(id, "user", { text: String(args.text ?? ""), images: imgs, attachments: attachmentsOf(args) });
       runFor(id, "Started on it. (mock)");
       return { ok: true, threadId: id };
+    }
+    if (action === "project.update") {
+      const p = projects.find((x) => x.id === args.id);
+      if (!p) return { ok: false, error: "No such project" };
+      const patch: Partial<Project> = {};
+      for (const k of ["name", "color", "icon", "profile", "model"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k];
+      putProject({ ...p, ...patch });
+      return { ok: true };
+    }
+    if (action === "project.create") {
+      const name = String(args.name ?? "").trim();
+      if (!name) return { ok: false, error: "A project needs a name" };
+      const sources = Array.isArray(args.sources) ? (args.sources as Project["sources"]) : [];
+      const folder = sources?.find((x) => x.kind === "folder") as { path?: string } | undefined;
+      putProject({ id: `p_new${nextId++}`, name, sources, threads: 0, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
+      return { ok: true };
+    }
+    if (action === "project.addSource") {
+      const p = projects.find((x) => x.id === args.id);
+      if (!p) return { ok: false, error: "No such project" };
+      putProject({ ...p, sources: [...(p.sources ?? []), args.source as NonNullable<Project["sources"]>[number]] });
+      return { ok: true };
     }
     if (action === "t3.adopt") {
       const ids = (args.t3Ids as string[]) ?? [];
@@ -824,6 +884,12 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.rename":
         put(t, { title: String(args.title ?? t.title) });
         break;
+      case "thread.setProject": {
+        const p = projects.find((x) => x.id === args.projectId);
+        if (!p) return { ok: false, error: "No such project" };
+        put(t, { projectId: p.id, project: p.name });
+        break;
+      }
       case "thread.setModel":
         put(t, { model: String(args.model ?? t.model) });
         break;
@@ -841,7 +907,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         host: "desk",
         user: "owner",
         buildId: "mock",
-        threads: [...threads.values()],
+        threads: [...threads.values()].map((t) => ({ ...t, projectId: projectIdFor(t) })),
         actions: [
           { name: "thread.settle", label: "Settle", key: "e", bulk: true },
           { name: "thread.snooze", label: "Snooze", key: "s" },
@@ -851,12 +917,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
           { id: "claude", name: "Claude", color: "#d97757", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5"], defaultModel: "claude-opus-5-5" },
           { id: "work", name: "Claude (work account)", color: "#2f6fb0", models: ["claude-sonnet-5-5"], defaultModel: "claude-sonnet-5-5" },
         ],
-        projects: [
-          { cwd: "/home/owner/src/norban/web", name: "norban/web" },
-          { cwd: "/home/owner/src/norban/ops", name: "norban/ops" },
-          { cwd: "/home/owner/src/" + LONG_PROJECT, name: LONG_PROJECT },
-          { cwd: "/home/owner/dotfiles", name: "dotfiles" },
-        ],
+        projects,
       } as StateDTO;
     },
     subscribe(h) {
