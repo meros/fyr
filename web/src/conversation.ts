@@ -60,6 +60,8 @@ export type Item = (
   | { kind: "answer"; key: string; text: string }
   | { kind: "preview"; key: string; card: PreviewCard }
   | { kind: "task"; key: string; text: string; status: string; started: boolean }
+  /** V0.45: the thread moved to another profile */
+  | { kind: "handover"; key: string; from: string; to: string; rung: string; note?: string; atIso: string }
 ) &
   ItemMeta;
 
@@ -311,6 +313,15 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
       case "effect.result": {
         const text = str(e.data?.text);
         pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text, line: firstLine(text) || (e.data?.ok ? "Done" : "Failed") });
+        break;
+      }
+      case "handover":
+        pushItem({ kind: "handover", key, from: str(e.data?.from), to: str(e.data?.to), rung: str(e.data?.rung), atIso: e.at, ...(str(e.data?.note) ? { note: str(e.data?.note) } : {}) });
+        break;
+      case "effect.error": {
+        // V0.45: a handover that could not start; other effect errors stay for tool details.
+        const err = str(e.data?.error);
+        if (e.data?.kind === "handover") pushItem({ kind: "effect", key, action: "handover", ok: false, text: err, line: `Handover failed: ${firstLine(err)}` });
         break;
       }
       case "decision.closed":
@@ -696,6 +707,7 @@ export function roles(items: Item[]): Role[] {
     switch (it.kind) {
       case "user":
       case "preview":
+      case "handover":
         return "outcome";
       case "assistant":
         return !it.quiet && lastText.get(turns[i]) === i ? "outcome" : "process";

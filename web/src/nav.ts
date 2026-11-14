@@ -4,7 +4,7 @@
 
 export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" } | { name: "project"; id: string };
 
-export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "push" | "adopt" | "project" | "filter";
+export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "push" | "adopt" | "project" | "filter" | "handover";
 
 export interface Sheet {
   kind: SheetKind;

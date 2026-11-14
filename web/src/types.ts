@@ -121,6 +121,8 @@ export interface ThreadDTO {
   tasks?: TaskDTO[] | null;
   /** V0.37: the agent keeps a live view */
   liveView?: boolean;
+  /** V0.45: a handover to another profile is going on */
+  handover?: { to: string; model?: string; at: string } | null;
   /** V0.37: the live view; read it through liveViewOf (view.ts) */
   live?: { pageId?: string; state?: Record<string, unknown>; updatedAt?: string; checkedAt?: string; headline?: string } | null;
   attention: Attention;

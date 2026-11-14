@@ -8,7 +8,7 @@ const labels = (m: MenuEntry[]) => m.map((x) => ("sep" in x ? "—" : x.label));
 
 test("a thread row gets the thread's actions in a fixed order", () => {
   const t = thread("t1", "seen", "seen");
-  assert.deepEqual(labels(threadMenu(t)), ["Open", "—", "Settle", "Snooze…", "Mark unseen", "Archive", "—", "Project…", "Turn on live view", "—", "Copy link"]); // V0.37 adds the live view
+  assert.deepEqual(labels(threadMenu(t)), ["Open", "—", "Settle", "Snooze…", "Mark unseen", "Archive", "—", "Project…", "Turn on live view", "Hand over…", "—", "Copy link"]); // V0.37 adds the live view, V0.45 the handover
 });
 
 test("the menu follows the thread's state", () => {

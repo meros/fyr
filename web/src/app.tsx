@@ -57,7 +57,8 @@ import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, 
 import { answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
-import { ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
+import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
+import { HandoverDialog } from "./handover-ui.tsx";
 import { setToolDetails } from "./prefs.ts";
 import { setAttachmentUrl } from "./attach.ts";
 import { setPreviewUrl } from "./previews.ts";
@@ -142,7 +143,7 @@ setChangesSource(api);
 setFullEventSource(api);
 const params = new URLSearchParams(location.search);
 
-type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | null;
+type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | "handover" | null;
 type Zone = "list" | "thread";
 
 interface Toast {
@@ -193,6 +194,8 @@ function App() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState<Dialog>(null);
   const [snoozeTargets, setSnoozeTargets] = useState<string[]>([]);
+  // V0.45: the thread the handover dialog is for
+  const [handoverId, setHandoverId] = useState<string | null>(null);
   const [undo, setUndo] = useState<UndoEntry | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [tracker, setTracker] = useState<SeenTracker>(initialTracker);
@@ -520,6 +523,13 @@ function App() {
     return ok.length;
   }, []);
 
+  /** V0.45: thread.handover; resolves to the host's error text, or null. */
+  const handover = async (id: string | null, profile?: string, model?: string): Promise<string | null> => {
+    if (!id || !profile) return "Pick a profile";
+    const r = await api.command("thread.handover", id, model ? { profile, model } : { profile });
+    return r.ok ? null : (r.error ?? "The handover could not start");
+  };
+
   const doUndo = useCallback(async () => {
     const cmds = undoCommands(undo, Date.now());
     if (!cmds) return;
@@ -636,6 +646,7 @@ function App() {
       else if (it.id === "project") openPicker([id]);
       else if (it.id === "copyLink") copyText(`${location.origin}/?open=${id}`);
       else if (it.id === "liveView") void runAction("thread.setView", [id], { on: !target.t.liveView });
+      else if (it.id === "handover") (setHandoverId(id), setDialog("handover"));
       else if (MENU_ACTION[it.id]) void runAction(MENU_ACTION[it.id], [id]);
       return;
     }
@@ -1082,6 +1093,7 @@ function App() {
     dismissPR: (id) => void runAction("thread.dismissPR", [id]),
     setView: (id, on) => void runAction("thread.setView", [id], { on }),
     setModel: (id, model) => void runAction("thread.setModel", [id], { model }),
+    handover: (id, profile, model) => handover(id, profile, model),
     send: async (id, args) => {
       const r = await api.command("thread.send", id, { ...args });
       if (!r.ok) showError(r.error ?? "Could not send");
@@ -1124,6 +1136,7 @@ function App() {
   if (phone) {
     return (
       <DirectoryContext.Provider value={directory}>
+        <ProfilesContext.Provider value={store.profiles}>
         <Boundary name="Fyr">
         <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone />
         <PreviewViewer />
@@ -1184,6 +1197,7 @@ function App() {
           />
         )}
         </Boundary>
+        </ProfilesContext.Provider>
       </DirectoryContext.Provider>
     );
   }
@@ -1209,6 +1223,7 @@ function App() {
       {ctxMenu}
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>
+      <ProfilesContext.Provider value={store.profiles}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
         <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} />
         <Boundary name="The inbox">
@@ -1255,6 +1270,7 @@ function App() {
             }}
             onSnooze={() => openSnooze([view.id])}
             onMoveProject={() => openPicker([view.id])}
+            onHandover={() => (setHandoverId(view.id), setDialog("handover"))}
             onSend={send}
             onAtEnd={(b) => setTracker((tr) => setAtEnd(tr, b))}
             onFocusZone={() => {
@@ -1336,9 +1352,13 @@ function App() {
           </div>
         </Modal>
       )}
+      {dialog === "handover" && handoverId && store.threads[handoverId] && (
+        <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m) => handover(handoverId, pr, m)} />
+      )}
       {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "push" && pushDialog(() => setDialog(null))}
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
+      </ProfilesContext.Provider>
       </DirectoryContext.Provider>
     </div>
   );
