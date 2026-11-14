@@ -254,7 +254,8 @@ func main() {
 		if st != core.Asking && st != core.Failed {
 			return
 		}
-		go pusher.Notify(core.Owner, push.PayloadFor(d.ID, d.Title, string(st), attentionDetail(d)))
+		meta, detail := attentionDetail(d)
+		go pusher.Notify(core.Owner, push.PayloadFor(d.ID, d.Title, string(st), meta, detail))
 	}
 
 	var webFS fs.FS = web.Dist()
@@ -405,21 +406,26 @@ func lastSummary(h []agent.Ev) string {
 	return ""
 }
 
-// attentionDetail is the notification body for asking or failed.
-func attentionDetail(d engine.DTO) string {
+// attentionDetail is the meta word and the text of a push for asking or
+// failed, matching the inbox row (design/mobile rule 12).
+func attentionDetail(d engine.DTO) (meta, detail string) {
 	if d.Failure != nil && d.Attention.State == core.Failed {
-		return d.Failure.Message
+		return "Failed", d.Failure.Message
 	}
 	if len(d.Decisions) > 0 {
 		x := d.Decisions[0]
 		switch {
 		case x.Kind == "ask" && len(x.Questions) > 0:
-			return x.Questions[0].Question
+			meta = "1 question"
+			if n := len(x.Questions); n > 1 {
+				meta = fmt.Sprintf("%d questions", n)
+			}
+			return meta, x.Questions[0].Question
 		case x.Kind == "effect" && x.Effect != nil:
-			return "approve " + x.Effect.Action
+			return "Fyr action", "approve " + x.Effect.Action
 		case x.Kind == "approval":
-			return "allow " + x.Tool
+			return "Approval", "allow " + x.Tool
 		}
 	}
-	return d.Attention.Reason
+	return "", d.Attention.Reason
 }

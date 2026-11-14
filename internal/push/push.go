@@ -151,14 +151,13 @@ func short(s string) string {
 	return s
 }
 
-// PayloadFor builds the notification for a thread entering a state.
-func PayloadFor(threadID, title, state, detail string) Payload {
+// PayloadFor builds the notification for a thread entering a state. The
+// body starts with the inbox meta word, so the state reads first even when
+// the title is long (design/mobile rule 12).
+func PayloadFor(threadID, title, state, meta, detail string) Payload {
 	body := detail
-	switch state {
-	case "asking":
-		body = "Asks: " + detail
-	case "failed":
-		body = "Failed: " + detail
+	if meta != "" {
+		body = meta + " · " + detail
 	}
 	r := []rune(body)
 	if len(r) > 180 {

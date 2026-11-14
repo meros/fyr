@@ -82,11 +82,16 @@ func TestNotifyAndPruneGone(t *testing.T) {
 }
 
 func TestPayloadFor(t *testing.T) {
-	pl := PayloadFor("t1", "Fix lasso", "asking", "Which gesture should close the filter sheet?")
-	if pl.Title != "Fix lasso" || pl.ThreadID != "t1" || !strings.HasPrefix(pl.Body, "Asks: Which gesture") {
+	// SPEC 0.5 V0.15, design/mobile rule 12: the meta word comes first.
+	pl := PayloadFor("t1", "Fix lasso", "asking", "2 questions", "Which gesture should close the filter sheet?")
+	if pl.Title != "Fix lasso" || pl.ThreadID != "t1" || pl.Body != "2 questions · Which gesture should close the filter sheet?" {
 		t.Fatalf("%+v", pl)
 	}
-	if pl := PayloadFor("t1", "x", "failed", "API error 500"); pl.Body != "Failed: API error 500" {
+	if pl := PayloadFor("t1", "x", "failed", "Failed", "API error 500"); pl.Body != "Failed · API error 500" {
 		t.Fatalf("%+v", pl)
+	}
+	long := PayloadFor("t1", "x", "asking", "1 question", strings.Repeat("å", 400))
+	if r := []rune(long.Body); len(r) > 180 || r[len(r)-1] != '…' {
+		t.Fatalf("not clipped by runes: %d", len(r))
 	}
 }
