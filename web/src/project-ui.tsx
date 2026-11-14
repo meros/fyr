@@ -108,11 +108,31 @@ export function ProjectList({ projects, selectedId, onPick, onNew, allLabel, aut
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, []);
+  const box = useRef<HTMLDivElement>(null);
   const list = matchProjects(projects, q);
+  // Keyboard: Enter in the search picks the first match; arrows walk the list and back to the search.
+  const options = () => [...(box.current?.querySelectorAll<HTMLElement>("button") ?? [])];
+  const onSearchKey = (e: KeyboardEvent) => {
+    if (e.key === "Enter" && q.trim() && list.length) {
+      e.preventDefault();
+      onPick(list[0]);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      options()[0]?.focus();
+    }
+  };
+  const onListKey = (e: KeyboardEvent) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const items = options();
+    const i = items.indexOf(document.activeElement as HTMLElement) + (e.key === "ArrowDown" ? 1 : -1);
+    if (i < 0) ref.current?.focus();
+    else items[Math.min(i, items.length - 1)]?.focus();
+  };
   return (
     <div class="plist">
-      <input ref={ref} class="pq" type="search" placeholder="Search projects" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} aria-label="Search projects" />
-      <div class="pls" role="listbox">
+      <input ref={ref} class="pq" type="search" placeholder="Search projects" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={onSearchKey} aria-label="Search projects" />
+      <div class="pls" role="listbox" ref={box} onKeyDown={onListKey}>
         {allLabel && !q && (
           <button class={`pli${!selectedId ? " on" : ""}`} role="option" aria-selected={!selectedId} onClick={() => onPick(null)}>
             <span class="pi all" />
