@@ -30,13 +30,15 @@
           pname = "fyr";
           version = "0-${rev}";
           src = ./.;
-          vendorHash = "sha256-n+WU7qcF6NauBw9DFU4VG1fnDQ387+nibJ/uzApqehk=";
+          vendorHash = "sha256-+GV6f45A+AcPTjboUx0yQ1p62rywC3MKzs35EoQKspM=";
           subPackages = [ "cmd/fyrd" "cmd/fyr" ];
           env.CGO_ENABLED = 0;
           ldflags = [ "-s" "-w" "-X main.buildID=nix-${rev}" ];
           preBuild = ''
             cp -r ${fyr-web}/dist/. web/dist/
           '';
+          # Fetching the Go modules does not need the web build.
+          overrideModAttrs = _: { preBuild = ""; };
           # The tests start child processes (a fake claude, fake daemons)
           # and pass in the sandbox; they also run in `make test`.
           doCheck = true;
