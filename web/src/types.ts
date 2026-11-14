@@ -195,8 +195,8 @@ export interface CommandReply {
   ok: boolean;
   threadId?: string;
   error?: string;
-  /** project.create: the new project's id */
-  result?: { id?: string };
+  /** project.create: the new project's id; thread.send and thread.create: { messageId } (V0.33) */
+  result?: { id?: string; messageId?: string; [k: string]: unknown };
 }
 
 export interface T3Candidate {

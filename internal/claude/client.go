@@ -230,9 +230,27 @@ func (c *Client) SetModel(ctx context.Context, model string) error {
 }
 
 // SendUser sends one user message with text and optional content blocks.
-func (c *Client) SendUser(content []Msg) error {
-	return c.write(Msg{"type": "user", "session_id": "", "parent_tool_use_id": nil,
-		"message": Msg{"role": "user", "content": content}})
+// A uuid makes the CLI report the message's delivery as command_lifecycle
+// (queued, started, completed, cancelled) and lets CancelMessage withdraw it.
+func (c *Client) SendUser(content []Msg, uuid string) error {
+	m := Msg{"type": "user", "session_id": "", "parent_tool_use_id": nil,
+		"message": Msg{"role": "user", "content": content}}
+	if uuid != "" {
+		m["uuid"] = uuid
+	}
+	return c.write(m)
+}
+
+// CancelMessage withdraws a queued user message (cancel_async_message). It
+// reports false when the CLI has already taken the message in.
+func (c *Client) CancelMessage(ctx context.Context, uuid string) (bool, error) {
+	r, err := c.Request(ctx, Msg{"subtype": "cancel_async_message", "message_uuid": uuid})
+	if err != nil {
+		return false, err
+	}
+	inner, _ := r["response"].(Msg)
+	ok, _ := inner["cancelled"].(bool)
+	return ok, nil
 }
 
 // Close ends the session by closing stdin; the CLI exits on its own.

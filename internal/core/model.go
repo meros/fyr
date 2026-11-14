@@ -42,6 +42,8 @@ type Thread struct {
 	Failure   *Failure   `json:"failure,omitempty"`
 	Decisions []Decision `json:"decisions,omitempty"`
 	PR        *PR        `json:"pr,omitempty"`
+	// Outbox holds the messages the agent has not read yet (V0.33).
+	Outbox []OutMsg `json:"outbox,omitempty"`
 
 	SettledAt        *time.Time `json:"settledAt,omitempty"`
 	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
@@ -51,6 +53,14 @@ type Thread struct {
 	Source string `json:"source"`           // "fyr" or "t3"
 	Parent string `json:"parent,omitempty"` // the thread whose agent started it (V0.22)
 	T3ID   string `json:"t3Id,omitempty"`
+}
+
+// OutMsg is a message sent to the agent and not read yet (SPEC 0.5 V0.33).
+// State is "sent" (written, no report from the agent) or "queued" (in the
+// agent's queue).
+type OutMsg struct {
+	ID    string `json:"id"`
+	State string `json:"state"`
 }
 
 // View is the per-user state of one entity (R19): snooze and read watermark.
@@ -152,6 +162,34 @@ func (p *PR) Blocking() string {
 		return "Merge conflict"
 	case p.Review == "CHANGES_REQUESTED":
 		return "Changes requested"
+	}
+	return ""
+}
+
+// SetOutbox records a message's delivery state: "sent" and "queued" keep it
+// in the outbox, any other state (read, cancelled, lost) removes it.
+func SetOutbox(t *Thread, id, state string) {
+	for i, m := range t.Outbox {
+		if m.ID == id {
+			if state == "sent" || state == "queued" {
+				t.Outbox[i].State = state
+			} else {
+				t.Outbox = append(t.Outbox[:i:i], t.Outbox[i+1:]...)
+			}
+			return
+		}
+	}
+	if state == "sent" || state == "queued" {
+		t.Outbox = append(t.Outbox, OutMsg{ID: id, State: state})
+	}
+}
+
+// OutboxState is a message's state while it is unread, else "".
+func OutboxState(t *Thread, id string) string {
+	for _, m := range t.Outbox {
+		if m.ID == id {
+			return m.State
+		}
 	}
 	return ""
 }

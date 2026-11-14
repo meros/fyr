@@ -29,6 +29,8 @@ type Effect struct {
 	Model       string            `json:"model,omitempty"`
 	// Request is the approved effect for Kind "effect".
 	Request *EffectReq `json:"request,omitempty"`
+	// MessageID names the message of a send, or the one to cancel (V0.33).
+	MessageID string `json:"messageId,omitempty"`
 }
 
 // Image is a pasted image, base64 encoded, sent to the agent as a content block.

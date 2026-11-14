@@ -13,3 +13,4 @@ The owner decisions D1–D5 from the design phase stay in `../SPEC.md` 0.3. Reco
 | [0005](0005-android-pwa-first.md) | Phone client: PWA first, no APK; adb + Obtainium if an APK is needed | accepted |
 | [0006](0006-rail-direction.md) | The v0 client uses the Rail direction | accepted |
 | [0007](0007-nix-integration.md) | NixOS owns the unit, profiles, launcher and a seed build; dev builds live outside the store | proposed |
+| [0009](0009-message-delivery.md) | Message delivery follows the CLI's own queue: `command_lifecycle` receipts, `cancel_async_message` | accepted |
