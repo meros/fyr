@@ -24,6 +24,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/gitdiff"
+	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
@@ -56,6 +57,8 @@ type Server struct {
 	Profiles []agent.Profile
 	// T3Candidates lists adoptable T3 threads; optional.
 	T3Candidates func() (any, error)
+	// FS serves the host folder picker (V0.42); optional.
+	FS *hostfs.FS
 }
 
 func (s *Server) Handler() http.Handler {
@@ -104,6 +107,9 @@ func (s *Server) Handler() http.Handler {
 			n := s.Push.Notify(core.Owner, push.Payload{Title: "Fyr", Body: "Notifications work on this device.", State: "test"})
 			writeJSON(w, 200, map[string]int{"delivered": n})
 		})
+	}
+	if s.FS != nil {
+		s.fsRoutes(mux)
 	}
 	if s.MCP != nil {
 		mux.Handle("/mcp", s.MCP)
@@ -509,4 +515,39 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Write(b)
+}
+
+// fsRoutes are the host folder picker's calls (SPEC 0.5 V0.42): read-only
+// except mkdir, confined to the owner's home folder; a refused path is 400.
+func (s *Server) fsRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/fs/list", func(w http.ResponseWriter, r *http.Request) {
+		l, err := s.FS.List(r.URL.Query().Get("path"))
+		if err != nil {
+			writeJSON(w, 400, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, l)
+	})
+	mux.HandleFunc("GET /api/fs/recent", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"dirs": s.FS.RecentDirs()})
+	})
+	mux.HandleFunc("GET /api/fs/repos", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"dirs": s.FS.Repos()})
+	})
+	mux.HandleFunc("POST /api/fs/mkdir", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Parent string `json:"parent"`
+			Name   string `json:"name"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&b); err != nil {
+			writeJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON"})
+			return
+		}
+		p, err := s.FS.Mkdir(b.Parent, b.Name)
+		if err != nil {
+			writeJSON(w, 400, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "path": p})
+	})
 }

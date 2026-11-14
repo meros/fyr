@@ -338,3 +338,15 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 @keyframes m-in-l{from{transform:translateX(-25%);opacity:.6}}
 @keyframes m-out-r{to{transform:translateX(100%)}}
 @media (prefers-reduced-motion: reduce){::view-transition-old(root),::view-transition-new(root){animation:none}}
+/* V0.42: the folder picker as a sheet */
+.fsheet{height:88%}
+.fsh{display:flex;align-items:center;justify-content:space-between;padding:0 16px 0 4px;flex:none}
+.fsheet .fpick{padding:0 16px;flex:1;min-height:0}
+.fsheet .fps{max-height:none;flex:1;min-height:0}
+.m-app .fpr,.fsheet .fpr{min-height:52px}
+.fsheet .pq{height:44px;font-size:16px}
+.fsheet .fbar .btn{height:44px;padding:0 14px;font-size:15px}
+.fsheet .fname{height:44px;font-size:16px}
+.fsheet .fcrumb{min-height:36px;padding:0 6px}
+.m-app .star{width:44px;height:44px;margin-left:-8px}
+.m-fline.scratch .ell{font-family:var(--ui);color:var(--ink-muted)}

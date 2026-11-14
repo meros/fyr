@@ -154,7 +154,11 @@ const SCREENS = [
   // project has no folder here (the folder field shows and is required).
   { name: "project picker", url: "?mock=1&open=t_s4", sheet: "project", field: ".m-sheet .pq" },
   { name: "new project step", url: "?mock=1&open=t_s4", sheet: "newproject", field: ".m-sheet .pform input" },
-  { name: "new thread, project without a folder", url: "?mock=rail&new", storage: { "fyr.lastProject": "p_home", "fyr.projectFilter": "" }, field: ".m-new input.m-dchip" },
+  // SPEC 0.5 V0.42: a project without a folder here starts in a fresh scratch folder; "Change" opens the folder
+  // picker sheet; the project screen lists folders with the main star and the repo line.
+  { name: "new thread, project without a folder", url: "?mock=rail&new", storage: { "fyr.lastProject": "p_home", "fyr.projectFilter": "" }, field: ".m-ta" },
+  { name: "folder picker sheet", url: "?mock=rail&new", storage: { "fyr.lastProject": "p_web", "fyr.projectFilter": "" }, sheet: "folder", field: ".fsheet .pq" },
+  { name: "project screen with folders", url: "?mock=rail&project=p_web" },
   // SPEC 0.5 V0.37: a thread with a pinned live view; the composer stays inside the safe areas.
   { name: "thread with a live view", url: "?mock=1&open=t_view", field: ".m-cmp .in" },
   // SPEC 0.5 V0.25: the Changes tab with one file's diff open.
@@ -166,7 +170,7 @@ const MEASURE = `(() => {
   const vv = window.visualViewport;
   const top = vv.offsetTop, bottom = vv.offsetTop + vv.height;
   const rect = (sel) => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return r.height ? { top: r.top, bottom: r.bottom } : null; };
-  const lastSheetItem = (() => { const items = document.querySelectorAll('.m-sheet .m-mi, .m-sheet .m-bt, .m-sheet .pformb .btn'); const el = items[items.length - 1]; if (!el) return null; el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; })();
+  const lastSheetItem = (() => { const items = document.querySelectorAll('.m-sheet .m-mi, .m-sheet .m-bt, .m-sheet .pformb .btn, .m-sheet .fbar .btn'); const el = items[items.length - 1]; if (!el) return null; el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; })();
   const active = document.activeElement && document.activeElement !== document.body ? document.activeElement.getBoundingClientRect() : null;
   return {
     top, bottom,
@@ -196,7 +200,13 @@ const MEASURE = `(() => {
     stepName: document.querySelector('.m-sheet .pform input')?.value ?? null,
     stepSources: document.querySelectorAll('.m-sheet .pform .src').length,
     newProject: document.querySelector('.m-new .m-ppick .pln')?.textContent ?? null,
-    folderField: !!document.querySelector('.m-new input.m-dchip'),
+    folderLine: document.querySelector('.m-new .m-fline .ell')?.textContent ?? null,
+    stepRepo: document.querySelector('.m-sheet .pform .srcl:not(.src .srcl)')?.textContent ?? '',
+    folderSections: [...document.querySelectorAll('.fsheet .fsec h4')].map(e => e.textContent),
+    browseRows: document.querySelectorAll('.fsheet .fsec.browse .fpr').length,
+    stars: [...document.querySelectorAll('.pedit .srcs.folders .star')].map(e => e.textContent).join(''),
+    repoLine: [...document.querySelectorAll('.pedit .srcl')].map(e => e.textContent).find(t => t.startsWith('Also')) ?? '',
+    noSourceWord: !/\bsources?\b/i.test(document.querySelector('.pedit, .m-new, .m-sheet')?.innerText ?? ''),
     startDisabled: !!document.querySelector('.m-new .m-abar .m-bt')?.disabled,
     liveView: rect('.m-thread .lv'),
     liveFrame: rect('.m-thread .lv-f'),
@@ -238,8 +248,10 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   }
   if (ctx.startsWith("project screen")) check(m.projectEditor, `${ctx}: no project editor`);
   if (ctx.startsWith("project picker")) check(m.pickerRows[0] === "New project from this thread" && m.pickerRows[1] === "No project", `${ctx}: the picker's first rows are ${JSON.stringify(m.pickerRows)}`);
-  if (ctx.startsWith("new project step")) check(m.stepName === "lasso-app" && m.stepSources === 2, `${ctx}: the step is not prefilled from the thread (name ${m.stepName}, ${m.stepSources} sources)`);
-  if (ctx.startsWith("new thread, project without")) check(m.newProject === "Garden" && m.folderField && m.startDisabled, `${ctx}: expected Garden, the folder field and Start disabled (${m.newProject}, ${m.folderField}, ${m.startDisabled})`);
+  if (ctx.startsWith("new project step")) check(m.stepName === "lasso-app" && m.stepSources === 1 && /clones of github.com\/owner\/lasso-app/.test(m.stepRepo), `${ctx}: the step is not prefilled from the thread (name ${m.stepName}, ${m.stepSources} folders, repo line "${m.stepRepo}")`);
+  if (ctx.startsWith("new thread, project without")) check(m.newProject === "Garden" && m.folderLine === "A fresh scratch folder", `${ctx}: expected Garden in a fresh scratch folder (${m.newProject}, ${m.folderLine})`);
+  if (ctx.startsWith("folder picker sheet")) check(m.folderSections.join("|") === "acme/web's folders|Recent|Repos found|Browse" && m.browseRows >= 4, `${ctx}: sections ${JSON.stringify(m.folderSections)}, ${m.browseRows} browse rows`);
+  if (ctx.startsWith("project screen with folders")) check(m.stars === "★☆" && /^Also matches clones of github.com\/acme\/web and github.com\/acme\/web-docs/.test(m.repoLine) && m.noSourceWord, `${ctx}: stars "${m.stars}", repo line "${m.repoLine}", no "source" word ${m.noSourceWord}`);
   if (ctx.startsWith("inbox filtered")) {
     check(m.filterLine, `${ctx}: the filter line is missing`);
     check(m.otherProjectRows === 0, `${ctx}: ${m.otherProjectRows} rows of other projects show under the filter`);
@@ -335,6 +347,10 @@ async function openScreen(s, w, h) {
     await tapCenter(".m-pjb");
     if (s.sheet === "newproject") await tapCenter(".m-sheet .pli.new");
     await sleep(300);
+  } else if (s.sheet === "folder") {
+    await sleep(300);
+    await tapCenter(".m-new .m-fchg");
+    await sleep(400);
   } else if (s.sheet === "actions") {
     await tapCenter("#m-sec-needs .m-swp .m-mv", 600);
   }
@@ -467,7 +483,7 @@ try {
 // SPEC 0.5 V0.26: on the desktop, a long tool group shows the last 3 calls behind "+N more tools",
 // and the thread ⋯ menu moves the thread to a project from the keyboard.
 const key = async (k, code = k) => {
-  const vk = { Enter: 13, Escape: 27, ArrowDown: 40, ArrowUp: 38 }[k] ?? 0;
+  const vk = { Enter: 13, Escape: 27, ArrowDown: 40, ArrowUp: 38, Tab: 9 }[k] ?? 0;
   await send("Input.dispatchKeyEvent", k === "Enter" ? { type: "keyDown", key: k, code, text: "\r", windowsVirtualKeyCode: vk } : { type: "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code });
   await sleep(150);
@@ -511,6 +527,61 @@ try {
   check(!r.dlg && /Garden/.test(r.chip), `V0.26 desktop: Enter in the picker does not move the thread to the first match (chip "${r.chip}")`);
 } catch (e) {
   failures.push(`V0.26 desktop: ${e.message}`);
+}
+
+// SPEC 0.5 V0.42: on the desktop, the new thread's Change opens the folder picker from the keyboard; a typed path
+// completes with Tab, Enter opens the folder, Enter again picks it; Esc closes only the picker.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await send("Page.navigate", { url: `${origin}/?mock=rail` });
+  await sleep(600);
+  await evaluate(`localStorage.setItem("fyr.lastProject", "p_web"); localStorage.setItem("fyr.projectFilter", ""); true`);
+  await send("Page.navigate", { url: `${origin}/?mock=rail&dialog=new` });
+  await sleep(900);
+  const before = await evaluate(`document.querySelector('.dlg .fline .ell')?.textContent ?? ''`);
+  check(before === "~/src/acme/web", `V0.42 desktop: a new thread in acme/web does not start in its main folder ("${before}")`);
+  await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change')?.focus()`);
+  await key("Enter");
+  await sleep(300);
+  const o = await evaluate(`({ picker: !!document.querySelector('.fpick'), focus: document.activeElement?.classList.contains('pq') && !!document.activeElement.closest('.fpick'), first: document.querySelector('.fpick .fsec h4')?.textContent ?? '' })`);
+  check(o.picker && o.focus, `V0.42 desktop: Change does not open the folder picker with its field focused (${JSON.stringify(o)})`);
+  check(o.first === "acme/web's folders", `V0.42 desktop: the project's other folders do not come first ("${o.first}")`);
+  // acme and acme-platform-… share "acme": Tab completes to the common start; Enter opens the exact name.
+  await send("Input.insertText", { text: "~/src/no" });
+  await sleep(400);
+  await key("Tab");
+  await sleep(300);
+  const v = await evaluate(`document.querySelector('.fpick .pq')?.value ?? ''`);
+  check(v === "~/src/acme", `V0.42 desktop: Tab does not complete the common start ("${v}")`);
+  await key("Enter");
+  await sleep(400);
+  const v2 = await evaluate(`document.querySelector('.fpick .pq')?.value ?? ''`);
+  check(v2 === "~/src/acme/", `V0.42 desktop: Enter does not open the exact folder ("${v2}")`);
+  await send("Input.insertText", { text: "o" });
+  await sleep(400);
+  await key("Tab");
+  await sleep(300);
+  const v3 = await evaluate(`document.querySelector('.fpick .pq')?.value ?? ''`);
+  check(v3 === "~/src/acme/ops/", `V0.42 desktop: Tab does not complete the one match ("${v3}")`);
+  await sleep(300);
+  await key("Enter");
+  await sleep(400);
+  const r = await evaluate(`({ picker: !!document.querySelector('.fpick'), dlg: !!document.querySelector('.dlg'), folder: document.querySelector('.dlg .fline .ell')?.textContent ?? '' })`);
+  check(!r.picker && r.dlg && r.folder === "~/src/acme/ops", `V0.42 desktop: Enter does not pick the typed folder (${JSON.stringify(r)})`);
+  await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change')?.focus()`);
+  await key("Enter");
+  await sleep(300);
+  await key("ArrowDown");
+  const row = await evaluate(`document.activeElement?.classList.contains('fpr') ?? false`);
+  check(row, "V0.42 desktop: ArrowDown does not reach the first folder row");
+  await key("Escape");
+  await sleep(200);
+  const e2 = await evaluate(`({ picker: !!document.querySelector('.fpick'), dlg: !!document.querySelector('.dlg') })`);
+  check(!e2.picker && e2.dlg, `V0.42 desktop: Esc does not close only the picker (${JSON.stringify(e2)})`);
+  await key("Escape");
+} catch (e) {
+  failures.push(`V0.42 desktop folder picker: ${e.message}`);
 }
 
 // V0.39: the update banner is below the top safe area and inside the screen, and names the threads it waits for.
@@ -605,7 +676,7 @@ try {
   check(a.dlg && /New project from this thread/.test(a.focused), `V0.30 desktop: the suggestion chip does not open the picker on New project from this thread ("${a.focused}")`);
   await key("Enter");
   const b = await evaluate(`({ name: document.activeElement?.value ?? '', sources: document.querySelectorAll('.dlg .pform .src').length, button: document.querySelector('.dlg .pform .btn.p')?.textContent ?? '' })`);
-  check(b.name === "lasso-app" && b.sources === 2 && /Create and file this thread/.test(b.button), `V0.30 desktop: the step is not prefilled and focused (${JSON.stringify(b)})`);
+  check(b.name === "lasso-app" && b.sources === 1 && /Create and file this thread/.test(b.button), `V0.30 desktop: the step is not prefilled and focused (${JSON.stringify(b)})`);
   await key("Enter");
   await sleep(400);
   const c = await evaluate(`({ dlg: !!document.querySelector('.dlg'), chip: document.querySelector('.thh .chip.proj')?.textContent ?? '', mk: !!document.querySelector('.thh .chip.mkp') })`);

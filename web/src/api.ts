@@ -4,7 +4,7 @@ import { isTransient, sendWithRetry } from "./retry.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { cache, mergeStateDelta, sinceRev } from "./cache.ts";
 import type { ThreadPatch } from "./store.ts";
-import type { CommandReply, FyrEvent, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { CommandReply, FsDir, FsListing, FyrEvent, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockScenario } from "./mock.ts";
@@ -56,6 +56,19 @@ export interface Api {
   changes(threadId: string): Promise<ChangesDTO>;
   /** One file's unified diff (V0.25). */
   filePatch(threadId: string, path: string): Promise<FilePatchDTO>;
+  /** The host folder picker (V0.42); every path stays inside the owner's home folder. */
+  fsList(path: string): Promise<FsListing>;
+  fsRecent(): Promise<FsDir[]>;
+  fsRepos(): Promise<FsDir[]>;
+  /** Makes parent/name and returns its path. */
+  fsMkdir(parent: string, name: string): Promise<string>;
+}
+
+async function fsGet<T>(path: string): Promise<T> {
+  const r = await fetch(path, { headers: { Accept: "application/json" } });
+  const j = (await r.json().catch(() => ({}))) as T & { error?: string };
+  if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+  return j;
 }
 
 export type UploadResult = { ok: true; reply: UploadReply } | { ok: false; status: number | null; error?: string };
@@ -196,6 +209,22 @@ function createHttpApi(): Api {
 
   return {
     mock: false,
+    async fsList(path) {
+      const l = await fsGet<FsListing>(`/api/fs/list?path=${encodeURIComponent(path)}`);
+      return { path: l.path, parent: l.parent ?? "", dirs: l.dirs ?? [] };
+    },
+    async fsRecent() {
+      return (await fsGet<{ dirs?: FsDir[] }>("/api/fs/recent")).dirs ?? [];
+    },
+    async fsRepos() {
+      return (await fsGet<{ dirs?: FsDir[] }>("/api/fs/repos")).dirs ?? [];
+    },
+    async fsMkdir(parent, name) {
+      const r = await fetch("/api/fs/mkdir", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ parent, name }) });
+      const j = (await r.json().catch(() => ({}))) as { path?: string; error?: string };
+      if (!r.ok || !j.path) throw new Error(j.error ?? `HTTP ${r.status}`);
+      return j.path;
+    },
     start(h) {
       handlers = h;
       // V0.38: draw the device's copy at once (offline too); the network state replaces it.
@@ -427,6 +456,18 @@ function createMockApi(scenario: string): Api {
     },
     async filePatch(_threadId, path) {
       return mockFilePatch(path);
+    },
+    async fsList(path) {
+      return server.fsList(path);
+    },
+    async fsRecent() {
+      return server.fsRecent();
+    },
+    async fsRepos() {
+      return server.fsRepos();
+    },
+    async fsMkdir(parent, name) {
+      return server.fsMkdir(parent, name);
     },
     attachmentUrl(id) {
       if (MOCK_SHOTS[id]) return MOCK_SHOTS[id];

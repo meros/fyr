@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, makeProjectLabel, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, sourceFromInput, startedBy, suggestionFor } from "../src/projects.ts";
+import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, makeProjectLabel, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy, suggestionFor } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -77,7 +77,7 @@ test("picker order, subtitles and search", () => {
   assert.equal(projectSubtitle(projects[0]), "~/src/web");
   assert.equal(projectSubtitle({ name: "x", cwd: "/home/owner/src/x" }), "~/src/x");
   assert.equal(projectSubtitle(projects[1]), "github.com/meros/fyr");
-  assert.equal(projectSubtitle(projects[2]), "No source: filed by hand");
+  assert.equal(projectSubtitle(projects[2]), "No folder: filed by hand");
   assert.deepEqual(matchProjects(projects, "meros").map((p) => p.id), ["p_fyr"]);
   assert.deepEqual(matchProjects(projects, "by hand").map((p) => p.id), ["p_home", "p_old"]);
 });
@@ -109,14 +109,6 @@ test("started-by and cross-thread messages", () => {
   assert.equal(messageFrom(undefined, ts, projects), null);
 });
 
-test("one input adds a folder or a repo; the host fills in its own name", () => {
-  assert.deepEqual(sourceFromInput(" /home/me/src/fyr/ "), { kind: "folder", path: "/home/me/src/fyr/" });
-  assert.deepEqual(sourceFromInput("~/src/fyr"), { kind: "folder", path: "~/src/fyr" });
-  assert.deepEqual(sourceFromInput("github.com/me/fyr"), { kind: "repo", url: "github.com/me/fyr" });
-  assert.deepEqual(sourceFromInput("git@github.com:me/fyr.git"), { kind: "repo", url: "git@github.com:me/fyr.git" });
-  assert.equal(sourceFromInput("   "), null);
-});
-
 test("SPEC 0.5 V0.28: a thread without a project offers its suggestion; a filed thread does not", () => {
   const sug = { name: "lasso-app", sources: [{ kind: "repo", url: "github.com/owner/lasso-app" }] };
   assert.deepEqual(suggestionFor({ project: "", projectId: "", suggest: sug }, []), sug);
@@ -143,16 +135,31 @@ test("SPEC 0.5 V0.30: New project from this thread starts from the host's prefil
   assert.equal(t.newProject.sources.length, 1);
 });
 
-test("SPEC 0.5 V0.30: each source says in one line what it does", async () => {
-  const { sourceLine, sourceText, NO_SOURCE_LINE } = await import("../src/projects.ts");
-  assert.equal(sourceLine({ kind: "folder", host: "desk", path: "/x" }, "desk"), "Threads started in this folder land here");
-  assert.equal(sourceLine({ kind: "folder", host: "", path: "/x" }, "desk"), "Threads started in this folder land here");
-  assert.equal(sourceLine({ kind: "folder", host: "server", path: "/x" }, "desk"), "Threads started in this folder on server land here");
-  assert.equal(sourceLine({ kind: "repo", url: "github.com/o/a" }, "desk"), "Threads in any clone of this repo land here, on any computer");
-  assert.match(NO_SOURCE_LINE, /by hand/);
-  assert.equal(sourceText({ kind: "folder", host: "desk", path: "/home/owner/src/app" }, "desk"), "~/src/app");
+test("SPEC 0.5 V0.42: folders with a main one, the automatic repo line, the scratch default", async () => {
+  const { projectFolders, projectRepos, repoLine, createFolderLine, newThreadFolder, sourceText, NO_FOLDER_LINE, localProject } = await import("../src/projects.ts");
+  const srcs = [
+    { kind: "repo", url: "github.com/o/a" },
+    { kind: "folder", host: "server", path: "/srv/a" },
+    { kind: "folder", host: "desk", path: "/home/owner/src/a" },
+    { kind: "folder", host: "desk", path: "/home/owner/src/a-docs" },
+  ];
+  assert.deepEqual(projectFolders(srcs, "desk").map((f) => [f.index, f.main, f.here]), [[1, false, false], [2, true, true], [3, false, true]]);
+  const marked = srcs.map((s, i) => (i === 3 ? { ...s, main: true } : s));
+  assert.deepEqual(projectFolders(marked, "desk").filter((f) => f.main).map((f) => f.index), [3]);
+  assert.deepEqual(projectFolders([], "desk"), []);
+  assert.deepEqual(projectRepos({ repos: ["github.com/o/b"], sources: srcs }), ["github.com/o/b"]);
+  assert.deepEqual(projectRepos({ sources: srcs }), ["github.com/o/a"], "an older host: the repo sources");
+  assert.equal(repoLine([]), "");
+  assert.equal(repoLine(["github.com/meros/fyr"]), "Also matches clones of github.com/meros/fyr");
+  assert.equal(repoLine(["a", "b", "c"]), "Also matches clones of a, b and c");
+  assert.equal(createFolderLine("/home/owner/src/app"), "Threads started in ~/src/app land in this project.");
+  assert.deepEqual(newThreadFolder("", undefined), { label: "A fresh scratch folder", scratch: true });
+  assert.deepEqual(newThreadFolder("", { cwd: "/home/owner/src/a" }), { cwd: "/home/owner/src/a", label: "~/src/a", scratch: false });
+  assert.deepEqual(newThreadFolder(" /home/owner/x ", { cwd: "/home/owner/src/a" }), { cwd: "/home/owner/x", label: "~/x", scratch: false });
+  assert.match(NO_FOLDER_LINE, /by hand/);
+  assert.doesNotMatch(NO_FOLDER_LINE, /source/i);
   assert.equal(sourceText({ kind: "folder", host: "server", path: "/srv/app" }, "desk"), "server: /srv/app");
-  assert.equal(sourceText({ kind: "repo", url: "github.com/o/a" }, "desk"), "github.com/o/a");
+  assert.equal(localProject("p", "A", marked, "desk").cwd, "/home/owner/src/a-docs");
 });
 
 test("SPEC 0.5 V0.30: the picker's first row names what it makes", async () => {
