@@ -169,7 +169,8 @@ export interface PhoneProps {
   onProjectFilter(id: string | null): void;
   projectActions: {
     update(id: string, patch: ProjectPatch): Promise<string | null>;
-    addRepo(id: string, url: string): Promise<string | null>;
+    addSource(id: string, value: string): Promise<string | null>;
+    removeSource(id: string, index: number): Promise<string | null>;
     create(name: string, folder: string, repo: string): Promise<string | null>;
     move(ids: string[], projectId: string): Promise<string | null>;
   };
@@ -1432,7 +1433,7 @@ function MProjectChip({ t, projects }: { t: ThreadDTO; projects: Project[] }) {
   );
 }
 
-/** The project screen: identity and defaults, sources read-only. */
+/** The project screen: identity, defaults and sources. */
 function MProject(p: PhoneProps & { id: string }) {
   const pr = p.projects.find((x) => x.id === p.id);
   return (
@@ -1444,7 +1445,8 @@ function MProject(p: PhoneProps & { id: string }) {
             project={pr}
             profiles={p.profiles}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
-            onAddRepo={(url) => p.projectActions.addRepo(pr.id!, url)}
+            onAddSource={(v) => p.projectActions.addSource(pr.id!, v)}
+            onRemoveSource={(i) => p.projectActions.removeSource(pr.id!, i)}
             onNewProject={() => p.go({ ...p.nav, sheet: { kind: "newproject" } })}
           />
         ) : (

@@ -470,6 +470,9 @@ button.ptag{padding:0}
 .srcs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
 .src{display:flex;gap:8px;align-items:center;min-height:28px;font:400 13px/18px var(--mono);color:var(--ink);min-width:0}
 .src b{font:600 12px/16px var(--ui);color:var(--ink-muted);flex:none;width:44px}
+.src .ell{flex:1;min-width:0}
+.src-x{flex:none;width:28px;height:28px;margin-left:auto;border:0;border-radius:6px;background:none;color:var(--ink-muted);font:400 18px/1 var(--ui);cursor:pointer}
+.src-x:hover{background:var(--hover);color:var(--ink)}
 .src.none{font-family:var(--ui);color:var(--ink-muted)}
 .addsrc{display:flex;gap:8px;min-width:0}
 .addsrc input{flex:1;min-width:0;height:32px;padding:0 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);font:400 13px/18px var(--mono)}

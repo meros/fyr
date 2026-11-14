@@ -181,3 +181,42 @@ func TestHomeGitRootIgnored(t *testing.T) {
 		t.Fatalf("home repo swallowed the folder: %+v", p)
 	}
 }
+
+// SPEC 0.5 V0.23: a folder source must exist on the host; a source can be
+// removed; a change to sources re-matches threads at once. (Found live: a
+// project made with the typo /home/meris/… matched nothing and could not be
+// corrected.)
+func TestFolderSourceChecksAndRematch(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	repo := filepath.Join(h.dir, "src", "fyr")
+	os.MkdirAll(repo, 0o755)
+	h.e.SeedProjects([]core.Project{{Name: "home", Sources: []core.Source{{Kind: "folder", Host: h.e.HostID, Path: h.dir}}}})
+	r := h.cmd("thread.create", "", core.Args{"cwd": repo, "text": "x"})
+	if p := projectOf(h.e, r.ThreadID); p.Name != "home" {
+		t.Fatalf("setup: %+v", p)
+	}
+	typo := core.Args{"name": "Fyr", "sources": []any{map[string]any{"kind": "folder", "host": h.e.HostID, "path": filepath.Join(h.dir, "nope", "fyr")}}}
+	if bad := h.e.Command(Cmd{CommandID: "c1", Action: "project.create", Args: typo}); bad.OK || bad.Status != 400 {
+		t.Fatalf("a missing folder was accepted: %+v", bad)
+	}
+	c := h.e.Command(Cmd{CommandID: "c2", Action: "project.create", Args: core.Args{"name": "Fyr"}})
+	pid := c.Result.(map[string]any)["id"].(string)
+	if bad := h.e.Command(Cmd{CommandID: "a1", Action: "project.addSource", Args: core.Args{"id": pid, "source": map[string]any{"kind": "folder", "host": h.e.HostID, "path": "relative/fyr"}}}); bad.OK || bad.Status != 400 {
+		t.Fatalf("a relative folder was accepted: %+v", bad)
+	}
+	if a := h.e.Command(Cmd{CommandID: "a2", Action: "project.addSource", Args: core.Args{"id": pid, "source": map[string]any{"kind": "folder", "host": h.e.HostID, "path": repo + "/"}}}); !a.OK {
+		t.Fatalf("%+v", a)
+	}
+	if p := projectOf(h.e, r.ThreadID); p.Name != "Fyr" {
+		t.Fatalf("not re-matched after addSource: %+v", p)
+	}
+	if rm := h.e.Command(Cmd{CommandID: "r1", Action: "project.removeSource", Args: core.Args{"id": pid, "index": 0}}); !rm.OK {
+		t.Fatalf("%+v", rm)
+	}
+	if p := projectOf(h.e, r.ThreadID); p.Name != "home" {
+		t.Fatalf("not re-matched after removeSource: %+v", p)
+	}
+	if bad := h.e.Command(Cmd{CommandID: "r2", Action: "project.removeSource", Args: core.Args{"id": pid, "index": 3}}); bad.OK || bad.Status != 400 {
+		t.Fatalf("a bad index was accepted: %+v", bad)
+	}
+}

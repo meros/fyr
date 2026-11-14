@@ -48,7 +48,7 @@ import { unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { DirectoryContext, NewProjectForm, ProjectEditor, ProjectList, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, filterByProject } from "./projects.ts";
+import { FILTER_KEY, filterByProject, sourceFromInput } from "./projects.ts";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
@@ -563,10 +563,14 @@ function App() {
   };
   const projectActions = {
     update: (id: string, patch: ProjectPatch) => projectCommand("project.update", { id, ...patch }),
-    addRepo: (id: string, url: string) => projectCommand("project.addSource", { id, source: { kind: "repo", url } }),
+    addSource: (id: string, value: string) => {
+      const source = sourceFromInput(value);
+      return source ? projectCommand("project.addSource", { id, source }) : Promise.resolve("Type a folder path or a repo URL.");
+    },
+    removeSource: (id: string, index: number) => projectCommand("project.removeSource", { id, index }),
     create: async (name: string, folder: string, repo: string): Promise<string | null> => {
       const sources: Record<string, unknown>[] = [];
-      if (folder) sources.push({ kind: "folder", host: store.host || "local", path: folder });
+      if (folder) sources.push({ kind: "folder", path: folder }); // the host fills in its own name
       if (repo) sources.push({ kind: "repo", url: repo });
       return projectCommand("project.create", sources.length ? { name, sources } : { name });
     },
@@ -1100,7 +1104,8 @@ function App() {
               project={store.projects.find((p) => p.id === projectId)!}
               profiles={store.profiles}
               onSave={(patch) => projectActions.update(projectId, patch)}
-              onAddRepo={(url) => projectActions.addRepo(projectId, url)}
+              onAddSource={(v) => projectActions.addSource(projectId, v)}
+              onRemoveSource={(i) => projectActions.removeSource(projectId, i)}
               onMoveThread={view ? () => (setMoveIds([view.id]), setDialog("move")) : undefined}
               onNewProject={() => setDialog("newproject")}
             />

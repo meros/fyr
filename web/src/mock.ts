@@ -805,6 +805,13 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       putProject({ id: `p_new${nextId++}`, name, sources, threads: 0, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
       return { ok: true };
     }
+    if (action === "project.removeSource") {
+      const p = projects.find((x) => x.id === args.id);
+      const i = Number(args.index);
+      if (!p || !Number.isInteger(i) || i < 0 || i >= (p.sources ?? []).length) return { ok: false, error: "No such source" };
+      putProject({ ...p, sources: (p.sources ?? []).filter((_, k) => k !== i) });
+      return { ok: true };
+    }
     if (action === "project.addSource") {
       const p = projects.find((x) => x.id === args.id);
       if (!p) return { ok: false, error: "No such project" };

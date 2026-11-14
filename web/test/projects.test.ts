@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
+import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectOf, projectSubtitle, resolveIcon, sourceFromInput, startedBy } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -101,4 +101,12 @@ test("started-by and cross-thread messages", () => {
   assert.equal(startedBy({ parent: null }, ts), null);
   assert.equal(messageFrom("p", ts, projects)?.project?.id, "p_web");
   assert.equal(messageFrom(undefined, ts, projects), null);
+});
+
+test("one input adds a folder or a repo; the host fills in its own name", () => {
+  assert.deepEqual(sourceFromInput(" /home/me/src/fyr/ "), { kind: "folder", path: "/home/me/src/fyr/" });
+  assert.deepEqual(sourceFromInput("~/src/fyr"), { kind: "folder", path: "~/src/fyr" });
+  assert.deepEqual(sourceFromInput("github.com/me/fyr"), { kind: "repo", url: "github.com/me/fyr" });
+  assert.deepEqual(sourceFromInput("git@github.com:me/fyr.git"), { kind: "repo", url: "git@github.com:me/fyr.git" });
+  assert.equal(sourceFromInput("   "), null);
 });

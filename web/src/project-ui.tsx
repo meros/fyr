@@ -197,8 +197,8 @@ export interface ProjectPatch {
   model?: string;
 }
 
-/** Edit a project's identity and defaults; its sources are listed read-only, with "Add repo URL". */
-export function ProjectEditor({ project, profiles, onSave, onAddRepo, onMoveThread, onNewProject }: { project: Project; profiles: Profile[]; onSave(patch: ProjectPatch): Promise<string | null>; onAddRepo(url: string): Promise<string | null>; onMoveThread?: () => void; onNewProject?: () => void }) {
+/** Edit a project's identity and defaults, and add or remove its sources (a folder path or a repo URL). */
+export function ProjectEditor({ project, profiles, onSave, onAddSource, onRemoveSource, onMoveThread, onNewProject }: { project: Project; profiles: Profile[]; onSave(patch: ProjectPatch): Promise<string | null>; onAddSource(value: string): Promise<string | null>; onRemoveSource(index: number): Promise<string | null>; onMoveThread?: () => void; onNewProject?: () => void }) {
   const [name, setName] = useState(project.name);
   const [color, setColor] = useState(colorName(project.color, project.name));
   const [kind, setKind] = useState<"monogram" | "emoji" | "line">(resolveIcon(project.icon, project.name).kind);
@@ -284,25 +284,36 @@ export function ProjectEditor({ project, profiles, onSave, onAddRepo, onMoveThre
         <span>Sources</span>
         <ul class="srcs">
           {sources.length === 0 && <li class="src none">No source: a label</li>}
-          {sources.map((s) => (
+          {sources.map((s, i) => (
             <li class="src">
               <b>{s.kind === "folder" ? "Folder" : s.kind === "repo" ? "Repo" : s.kind}</b>
               <span class="ell">{s.kind === "folder" ? `${String((s as { host?: string }).host ?? "")}: ${String((s as { path?: string }).path ?? "")}` : String((s as { url?: string }).url ?? JSON.stringify(s))}</span>
+              <button
+                class="src-x"
+                aria-label="Remove source"
+                title="Remove source"
+                onClick={async () => {
+                  const e = await onRemoveSource(i);
+                  setMsg(e ? { text: e, err: true } : null);
+                }}
+              >
+                ×
+              </button>
             </li>
           ))}
         </ul>
         <div class="addsrc">
-          <input value={repo} placeholder="github.com/me/app" spellcheck={false} onInput={(e) => setRepo((e.target as HTMLInputElement).value)} aria-label="Repo URL" />
+          <input value={repo} placeholder="/home/me/src/app or github.com/me/app" spellcheck={false} autocapitalize="off" onInput={(e) => setRepo((e.target as HTMLInputElement).value)} aria-label="Folder path or repo URL" />
           <button
             class="btn"
             disabled={!repo.trim()}
             onClick={async () => {
-              const e = await onAddRepo(repo.trim());
-              if (e) setMsg({ text: e, err: true });
-              else setRepo("");
+              const e = await onAddSource(repo.trim());
+              setMsg(e ? { text: e, err: true } : null);
+              if (!e) setRepo("");
             }}
           >
-            Add repo URL
+            Add source
           </button>
         </div>
       </div>
