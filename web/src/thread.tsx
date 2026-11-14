@@ -18,6 +18,7 @@ import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
+import { ChangesView } from "./changes-ui.tsx";
 
 export function prLabel(pr: PullRequest, short = false): { text: string; cls: string } {
   if (pr.state === "MERGED") return { text: short ? "merged" : `#${pr.number} merged`, cls: "merged" };
@@ -146,7 +147,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {tab === "conv" && <Filmstrip cards={previews} />}
       {tab === "conv" && <Conversation events={p.events} onAtEnd={p.onAtEnd} threadId={t.id} onEarlier={p.onEarlier} cwd={t.cwd} />}
-      {tab === "changes" && <div class="pane-note">The branch diff comes in a later version (v0.x). The Conversation tab lists every edit.</div>}
+      {tab === "changes" && <ChangesView threadId={t.id} />}
       {tab === "pr" && <PrTab t={t} />}
       {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} />}
       <Composer key={t.id} t={t} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />

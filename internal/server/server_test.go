@@ -6,7 +6,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -303,5 +306,83 @@ func TestPresenceEndpoint(t *testing.T) {
 	do(t, "POST", hs.URL+"/api/presence", "", map[string]string{"X-Fyr": "1"}, `{"threadId":"","device":"d1"}`)
 	if p.Watched("t1", time.Now()) {
 		t.Fatal("still watched after the client stopped showing it")
+	}
+}
+
+// SPEC 0.5 V0.25: the Changes tab's data: the branch diff of the thread's
+// folder, one file's patch, {git:false} outside git, 404 for no thread.
+func TestThreadChanges(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	hs, _ := newServer(t)
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\n"), 0o644)
+	run("add", "a.txt")
+	run("commit", "-q", "-m", "x")
+	run("checkout", "-q", "-b", "feature")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\ntwo\n"), 0o644)
+
+	create := func(id, cwd string) string {
+		r := do(t, "POST", hs.URL+"/api/command", "", map[string]string{"X-Fyr": "1"},
+			`{"commandId":"`+id+`","action":"thread.create","args":{"cwd":`+strconv.Quote(cwd)+`,"text":"hi"}}`)
+		var rep struct {
+			ThreadID string `json:"threadId"`
+		}
+		json.NewDecoder(r.Body).Decode(&rep)
+		if rep.ThreadID == "" {
+			t.Fatalf("create: %d", r.StatusCode)
+		}
+		return rep.ThreadID
+	}
+	id := create("cg1", dir)
+
+	r := do(t, "GET", hs.URL+"/api/threads/"+id+"/changes", "", nil, "")
+	var c struct {
+		Git    bool   `json:"git"`
+		Branch string `json:"branch"`
+		Base   string `json:"base"`
+		Files  []struct {
+			Path      string `json:"path"`
+			Status    string `json:"status"`
+			Additions int    `json:"additions"`
+		} `json:"files"`
+	}
+	json.NewDecoder(r.Body).Decode(&c)
+	if r.StatusCode != 200 || !c.Git || c.Branch != "feature" || c.Base != "main" || len(c.Files) != 1 || c.Files[0].Path != "a.txt" || c.Files[0].Additions != 1 {
+		t.Fatalf("%d %+v", r.StatusCode, c)
+	}
+
+	r = do(t, "GET", hs.URL+"/api/threads/"+id+"/changes?path=a.txt", "", nil, "")
+	var p struct {
+		Path  string `json:"path"`
+		Patch string `json:"patch"`
+	}
+	json.NewDecoder(r.Body).Decode(&p)
+	if r.StatusCode != 200 || p.Path != "a.txt" || !strings.Contains(p.Patch, "+two") {
+		t.Fatalf("%d %+v", r.StatusCode, p)
+	}
+
+	plain := create("cg2", t.TempDir())
+	r = do(t, "GET", hs.URL+"/api/threads/"+plain+"/changes", "", nil, "")
+	body, _ := io.ReadAll(r.Body)
+	if r.StatusCode != 200 || strings.TrimSpace(string(body)) != `{"git":false}` {
+		t.Fatalf("not git: %d %s", r.StatusCode, body)
+	}
+
+	if r := do(t, "GET", hs.URL+"/api/threads/nope/changes", "", nil, ""); r.StatusCode != 404 {
+		t.Fatalf("unknown thread: %d", r.StatusCode)
+	}
+	if r := do(t, "GET", hs.URL+"/api/threads/"+id+"/changes", "evil.example", nil, ""); r.StatusCode != 403 {
+		t.Fatalf("foreign host: %d", r.StatusCode)
 	}
 }
