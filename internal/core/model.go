@@ -34,6 +34,7 @@ type Thread struct {
 	ActivityAt time.Time `json:"activityAt"`
 	Summary    string    `json:"summary,omitempty"` // last assistant text, one line
 
+	Tasks     []Task     `json:"tasks,omitempty"` // subagents and background tasks (V0.16)
 	Failure   *Failure   `json:"failure,omitempty"`
 	Decisions []Decision `json:"decisions,omitempty"`
 	PR        *PR        `json:"pr,omitempty"`
@@ -54,6 +55,32 @@ type View struct {
 	SeenAt      time.Time  `json:"seenAt"`
 	SnoozeUntil *time.Time `json:"snoozeUntil,omitempty"`
 	SnoozedAt   *time.Time `json:"snoozedAt,omitempty"`
+}
+
+// Task is a native subagent or background task of the thread's session
+// (SPEC 0.5 V0.16), as the CLI reports it.
+type Task struct {
+	ID          string     `json:"id"`
+	Description string     `json:"description,omitempty"`
+	Type        string     `json:"type,omitempty"`   // local_agent, local_bash, …
+	Status      string     `json:"status,omitempty"` // running, completed, failed, stopped
+	Activity    string     `json:"activity,omitempty"`
+	Summary     string     `json:"summary,omitempty"`
+	ToolUses    int        `json:"toolUses,omitempty"`
+	Tokens      int        `json:"tokens,omitempty"`
+	StartedAt   *time.Time `json:"startedAt,omitempty"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
+}
+
+// Running counts the thread's running tasks.
+func (t *Thread) RunningTasks() int {
+	n := 0
+	for _, k := range t.Tasks {
+		if k.Status == "running" {
+			n++
+		}
+	}
+	return n
 }
 
 // Failure is the reason the last run did not finish normally.

@@ -1,6 +1,9 @@
 package core
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // State is the one status vocabulary. Only Attention computes it; clients
 // never derive status themselves.
@@ -12,6 +15,7 @@ const (
 	Blocked  State = "blocked"
 	Done     State = "done"
 	Working  State = "working"
+	Waiting  State = "waiting"
 	Seen     State = "seen"
 	Snoozed  State = "snoozed"
 	Settled  State = "settled"
@@ -81,6 +85,13 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 		return Attention{Failed, NeedsYou, t.Failure.Message}
 	case t.Running:
 		return Attention{Working, WorkingSec, ""}
+	}
+	if n := t.RunningTasks(); n > 0 {
+		reason := "1 agent"
+		if n > 1 {
+			reason = fmt.Sprintf("%d agents", n)
+		}
+		return Attention{Waiting, WorkingSec, reason}
 	}
 	if r := t.PR.Blocking(); r != "" {
 		return Attention{Blocked, NeedsYou, r}

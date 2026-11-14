@@ -60,3 +60,32 @@ func TestParsePR(t *testing.T) {
 		t.Fatal("issue parsed as PR")
 	}
 }
+
+// SPEC 0.5 V0.16: the CLI's task messages, in the shapes CLI 2.1.325 sends.
+func TestTaskFromSystem(t *testing.T) {
+	cases := []struct {
+		msg          M
+		status, act  string
+		event        string
+		uses, tokens int
+	}{
+		{M{"type": "system", "subtype": "task_started", "task_id": "a1", "description": "Design mobile", "task_type": "local_agent"}, "running", "", "started", 0, 0},
+		{M{"type": "system", "subtype": "task_progress", "task_id": "a1", "description": "Running Create output directories", "last_tool_name": "Bash",
+			"usage": M{"total_tokens": 143218.0, "tool_uses": 14.0}}, "", "Running Create output directories", "", 14, 143218},
+		{M{"type": "system", "subtype": "task_updated", "task_id": "a1", "patch": M{"status": "completed"}}, "completed", "", "ended", 0, 0},
+		{M{"type": "system", "subtype": "task_notification", "task_id": "a1", "status": "stopped", "summary": "did not finish"}, "stopped", "", "ended", 0, 0},
+	}
+	for i, c := range cases {
+		k, ev, ok := taskFromSystem(c.msg)
+		if !ok || k.ID != "a1" || k.Status != c.status || k.Activity != c.act || ev != c.event || k.ToolUses != c.uses || k.Tokens != c.tokens {
+			t.Errorf("case %d: %+v %q %v", i, k, ev, ok)
+		}
+	}
+	if _, _, ok := taskFromSystem(M{"type": "system", "subtype": "thinking_tokens"}); ok {
+		t.Error("thinking_tokens is not a task")
+	}
+	bg := taskList(M{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{M{"task_id": "b1", "description": "watch CI", "task_type": "local_bash"}}})
+	if len(bg) != 1 || bg[0].ID != "b1" || bg[0].Status != "running" {
+		t.Errorf("background list %+v", bg)
+	}
+}

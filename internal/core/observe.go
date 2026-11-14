@@ -43,6 +43,11 @@ func ProcessLost(t *Thread, class, msg string, now time.Time) {
 			live = true
 		}
 	}
+	for i := range t.Tasks {
+		if t.Tasks[i].Status == "running" {
+			t.Tasks[i].Status, t.Tasks[i].UpdatedAt = "stopped", now
+		}
+	}
 	if !live {
 		return
 	}
@@ -81,5 +86,56 @@ func PRObserved(t *Thread, p PR, now time.Time) {
 	if p.State == "MERGED" && t.SettleWhenMerged && t.SettledAt == nil {
 		t.SettledAt = &now
 		t.SettleWhenMerged = false
+	}
+}
+
+// TaskObserved merges a task report into the thread: non-empty fields of k
+// replace the stored ones. A task that ends moves ActivityAt, so the thread
+// is done when its last agent finishes (SPEC 0.5 V0.16).
+func TaskObserved(t *Thread, k Task, now time.Time) {
+	k.UpdatedAt = now
+	for i := range t.Tasks {
+		cur := &t.Tasks[i]
+		if cur.ID != k.ID {
+			continue
+		}
+		ended := cur.Status == "running" && k.Status != "" && k.Status != "running"
+		if k.Description != "" {
+			cur.Description = k.Description
+		}
+		if k.Type != "" {
+			cur.Type = k.Type
+		}
+		if k.Status != "" {
+			cur.Status = k.Status
+		}
+		if k.Activity != "" {
+			cur.Activity = k.Activity
+		}
+		if k.Summary != "" {
+			cur.Summary = k.Summary
+		}
+		if k.ToolUses > 0 {
+			cur.ToolUses = k.ToolUses
+		}
+		if k.Tokens > 0 {
+			cur.Tokens = k.Tokens
+		}
+		cur.UpdatedAt = now
+		if ended {
+			t.ActivityAt = now
+		}
+		return
+	}
+	if k.Status == "" {
+		k.Status = "running"
+	}
+	if k.StartedAt == nil {
+		k.StartedAt = &now
+	}
+	t.Tasks = append(t.Tasks, k)
+	// Keep the list short: the 20 newest.
+	if len(t.Tasks) > 20 {
+		t.Tasks = t.Tasks[len(t.Tasks)-20:]
 	}
 }

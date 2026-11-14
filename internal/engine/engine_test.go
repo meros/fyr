@@ -497,3 +497,40 @@ func TestTurnWithoutUserMessageIsARun(t *testing.T) {
 		t.Fatalf("run.started %d, running %v", starts, th.Running)
 	}
 }
+
+// SPEC 0.5 V0.16: a background agent keeps the thread waiting after the
+// turn; it is done when the agent completes; the timeline has both ends.
+func TestBackgroundAgentWaiting(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("agentbg")
+	th := h.wait(id, "waiting with activity", func(t core.Thread, a core.Attention) bool {
+		return a.State == core.Waiting && len(t.Tasks) == 1 && t.Tasks[0].Activity == "Running build"
+	})
+	if th.Tasks[0].ToolUses != 3 || th.Tasks[0].Description != "Design mobile" {
+		t.Fatalf("task %+v", th.Tasks[0])
+	}
+	th = h.wait(id, "done", state(core.Done))
+	if th.Tasks[0].Status != "completed" || th.Tasks[0].Summary != "Design delivered" {
+		t.Fatalf("task %+v", th.Tasks[0])
+	}
+	evs := h.events(id)
+	if !hasEvent(evs, "task", `"kind":"started"`) || !hasEvent(evs, "task", `"kind":"ended"`) {
+		t.Fatal("task events missing")
+	}
+}
+
+// SPEC 0.5 V0.16: running tasks become stopped when the host restarts.
+func TestRestartStopsTasks(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("agentbg")
+	h.wait(id, "waiting", state(core.Waiting))
+	h.e.st.Close()
+	st, _ := store.Open(h.db)
+	defer st.Close()
+	e2 := New(st)
+	e2.Load()
+	th, _ := e2.Thread(id)
+	if th.RunningTasks() != 0 {
+		t.Fatalf("tasks after restart %+v", th.Tasks)
+	}
+}

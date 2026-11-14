@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/meros/fyr/internal/core"
 )
 
 var prRe = regexp.MustCompile(`https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)`)
@@ -120,4 +122,64 @@ func clip(s string, n int) string {
 		return string(r[:n-1]) + "…"
 	}
 	return s
+}
+
+// taskFromSystem reads one task message of the CLI (SPEC 0.5 V0.16). event
+// is "started" or "ended" when the timeline should record it, else "".
+func taskFromSystem(m map[string]any) (k core.Task, event string, ok bool) {
+	str := func(x map[string]any, key string) string { s, _ := x[key].(string); return s }
+	k.ID = str(m, "task_id")
+	if k.ID == "" {
+		return k, "", false
+	}
+	switch str(m, "subtype") {
+	case "task_started":
+		k.Description, k.Type, k.Status = str(m, "description"), str(m, "task_type"), "running"
+		return k, "started", true
+	case "task_progress":
+		k.Activity = clip(firstLine(str(m, "description")), 120)
+		if k.Activity == "" {
+			k.Activity = str(m, "last_tool_name")
+		}
+		if u, _ := m["usage"].(map[string]any); u != nil {
+			if n, ok := u["tool_uses"].(float64); ok {
+				k.ToolUses = int(n)
+			}
+			if n, ok := u["total_tokens"].(float64); ok {
+				k.Tokens = int(n)
+			}
+		}
+		return k, "", true
+	case "task_updated":
+		p, _ := m["patch"].(map[string]any)
+		k.Status = str(p, "status")
+		if k.Status == "" || k.Status == "running" {
+			return k, "", k.Status != ""
+		}
+		return k, "ended", true
+	case "task_notification":
+		k.Status, k.Summary = str(m, "status"), clip(firstLine(str(m, "summary")), 200)
+		if k.Status == "" {
+			k.Status = "completed"
+		}
+		return k, "ended", true
+	}
+	return k, "", false
+}
+
+// taskList reads background_tasks_changed: the tasks that run now.
+func taskList(m map[string]any) []core.Task {
+	raw, _ := m["tasks"].([]any)
+	var out []core.Task
+	for _, x := range raw {
+		t, _ := x.(map[string]any)
+		id, _ := t["task_id"].(string)
+		if id == "" {
+			continue
+		}
+		d, _ := t["description"].(string)
+		ty, _ := t["task_type"].(string)
+		out = append(out, core.Task{ID: id, Description: d, Type: ty, Status: "running"})
+	}
+	return out
 }

@@ -324,6 +324,21 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 	}
 	switch typ {
 	case "system":
+		if msg["subtype"] == "background_tasks_changed" {
+			for _, k := range taskList(msg) {
+				k := k
+				m.host.Observe(s.thread, func(t *core.Thread, now time.Time) { core.TaskObserved(t, k, now) })
+			}
+			return
+		}
+		if k, ev, ok := taskFromSystem(msg); ok {
+			var evs []Ev
+			if ev != "" {
+				evs = append(evs, Ev{"task", map[string]any{"kind": ev, "id": k.ID, "description": k.Description, "status": k.Status, "summary": k.Summary}})
+			}
+			m.host.Observe(s.thread, func(t *core.Thread, now time.Time) { core.TaskObserved(t, k, now) }, evs...)
+			return
+		}
 		if msg["subtype"] == "init" {
 			sid, _ := msg["session_id"].(string)
 			model, _ := msg["model"].(string)

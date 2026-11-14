@@ -90,7 +90,7 @@ func (e *Engine) Load() error {
 	}()
 	now := e.Now()
 	for _, t := range e.threads {
-		if !t.Running && !hasLiveDecision(t) {
+		if !t.Running && !hasLiveDecision(t) && t.RunningTasks() == 0 {
 			continue
 		}
 		msg := "Fyr restarted during the run"

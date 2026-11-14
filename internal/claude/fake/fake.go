@@ -11,6 +11,8 @@
 //	hang     waits until interrupted
 //	pr       runs `gh pr create` and prints a PR URL
 //	crash    exits with code 3 during the run
+//	agentbg  starts a background agent, ends its turn, and reports the
+//	         agent's progress and completion with the CLI's task messages
 //	bg       ends its turn, then starts a second turn on its own (as the CLI
 //	         does when a background task finishes) with no user message
 //	sub      runs one subagent (Task tool) before it answers
@@ -236,6 +238,16 @@ func turn(text string) {
 	case "mcpstatus":
 		assistant(msg{"type": "text", "text": "mcp: " + mcpAtStart})
 		result(false, "success", "done")
+	case "agentbg":
+		write(msg{"type": "system", "subtype": "task_started", "task_id": "ag1", "description": "Design mobile", "task_type": "local_agent", "is_backgrounded": true})
+		assistant(msg{"type": "text", "text": "agent launched"})
+		result(false, "success", "turn 1")
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			write(msg{"type": "system", "subtype": "task_progress", "task_id": "ag1", "description": "Running build", "usage": msg{"tool_uses": 3, "total_tokens": 1200}})
+			time.Sleep(300 * time.Millisecond)
+			write(msg{"type": "system", "subtype": "task_notification", "task_id": "ag1", "status": "completed", "summary": "Design delivered"})
+		}()
 	case "bg":
 		assistant(msg{"type": "text", "text": "started a background task"})
 		result(false, "success", "turn 1")
