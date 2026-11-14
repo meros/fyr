@@ -47,3 +47,27 @@ func TestMonogram(t *testing.T) {
 		}
 	}
 }
+
+// SPEC 0.5 V0.42: the main folder is the one marked main on the host, else
+// the first folder there; SetMain moves the mark within that host only.
+func TestMainFolder(t *testing.T) {
+	p := Project{Sources: []Source{
+		{Kind: "repo", URL: "github.com/me/app"},
+		{Kind: "folder", Host: "b", Path: "/b/app"},
+		{Kind: "folder", Host: "a", Path: "/a/one"},
+		{Kind: "folder", Host: "a", Path: "/a/two"},
+	}}
+	if p.Folder("a") != "/a/one" || p.Folder("b") != "/b/app" || p.Folder("c") != "" || p.MainIndex("c") != -1 {
+		t.Fatalf("default main: %q %q", p.Folder("a"), p.Folder("b"))
+	}
+	orig := p.Sources
+	if !p.SetMain(3) || p.Folder("a") != "/a/two" || p.Folder("b") != "/b/app" || orig[3].Main {
+		t.Fatalf("set main: %+v (original changed: %v)", p.Sources, orig[3].Main)
+	}
+	if !p.SetMain(2) || p.Sources[3].Main || !p.Sources[2].Main {
+		t.Fatalf("move main: %+v", p.Sources)
+	}
+	if p.SetMain(0) || p.SetMain(4) || p.SetMain(-1) {
+		t.Fatal("a repo or a bad index became main")
+	}
+}

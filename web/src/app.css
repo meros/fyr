@@ -708,3 +708,32 @@ button.ptag{padding:0}
 .foldb>.cv:first-child{margin-top:0}
 .qlh{color:var(--ink-faint)}
 .vchip{border-color:var(--line);color:var(--ink-muted);font-weight:400}
+
+/* SPEC 0.5 V0.42: the host folder picker, project folders with a main star */
+.fpick{display:flex;flex-direction:column;gap:8px;min-width:0}
+.fps{display:flex;flex-direction:column;gap:10px;max-height:min(60vh,520px);overflow-y:auto;min-width:0}
+.fsec{flex:none;display:flex;flex-direction:column;min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.fsec h4{margin:0;padding:6px 10px;font:600 11px/16px var(--ui);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-muted);background:var(--sunken);border-bottom:1px solid var(--line)}
+.fsec.plempty{border:0}
+.fpr{flex:none;display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:40px;padding:4px 10px;border-bottom:1px solid var(--line);text-align:left;min-width:0;width:100%}
+.fpr:last-child{border-bottom:0}
+.fpr:hover,.fpr:focus{background:var(--sunken)}
+.fpr:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+.fpi{display:grid;place-items:center;color:var(--ink-muted)}
+.fpi.repo{color:var(--harbour)}
+.fgo{font:400 18px/1 var(--ui);color:var(--ink-muted)}
+.fcrumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px 4px;padding:6px 10px;border-bottom:1px solid var(--line);font:400 13px/18px var(--mono);color:var(--ink);min-width:0}
+.fcrumbs b{font-weight:600;min-width:0;max-width:100%}
+.fcrumb{padding:2px 4px;border-radius:4px;color:var(--harbour);font:inherit}
+.fcrumb:hover{background:var(--sunken)}
+.fsep{color:var(--ink-muted)}
+.fbar{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;padding:8px 10px;border-top:1px solid var(--line);min-width:0}
+.fbar .btn.p{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fname{flex:1 1 160px;min-width:0;height:30px;padding:0 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);font:400 13px/18px var(--mono)}
+.fline.scratch .ell{font-family:var(--ui);color:var(--ink-muted)}
+.addf{align-self:flex-start}
+.srcs.folders .src{gap:6px}
+.star{flex:none;width:28px;height:28px;border-radius:6px;font:400 17px/1 var(--ui);color:var(--ink-muted)}
+.star.on{color:var(--pc,var(--harbour))}
+.star:hover{background:var(--hover)}
+.star.off{display:inline-block}

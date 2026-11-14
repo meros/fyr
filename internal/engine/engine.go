@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -45,6 +46,12 @@ type Engine struct {
 	workspaces map[string]*core.Workspace
 	// ScratchRoots are the scratch folders' roots (V0.28); nil: the defaults.
 	ScratchRoots []string
+	// ScratchDir is where thread.create makes a scratch folder (V0.42);
+	// "": ~/.local/share/fyr/scratch.
+	ScratchDir string
+	// repoOf is the normalised origin of each project folder on this host
+	// (V0.42), "" for none; RefreshRepos fills it.
+	repoOf map[string]string
 	// HostID names this host in folder sources (V0.23); default the hostname.
 	HostID  string
 	lastRev int64
@@ -330,7 +337,40 @@ func (e *Engine) Command(c Cmd) Reply {
 	if c.Args == nil {
 		c.Args = core.Args{}
 	}
+	// V0.42: thread.create files into projectId; without a cwd it starts in
+	// the project's main folder here, else in a fresh scratch folder.
+	var fileIn, scratch string
+	if c.Action == "thread.create" {
+		if pid := c.Args.Str("projectId"); pid != "" {
+			pr := e.projects[pid]
+			if pr == nil {
+				e.mu.Unlock()
+				return Reply{Error: "no project " + pid, Status: 400}
+			}
+			fileIn = pid
+			if strings.TrimSpace(c.Args.Str("cwd")) == "" {
+				if f := pr.Folder(e.HostID); f != "" {
+					c.Args["cwd"] = f
+				}
+			}
+		}
+		if strings.TrimSpace(c.Args.Str("cwd")) == "" {
+			dir, err := e.makeScratch(c.Args.Str("text"), now)
+			if err != nil {
+				e.mu.Unlock()
+				return Reply{Error: "could not make a scratch folder: " + err.Error(), Status: 500}
+			}
+			scratch = dir
+			c.Args["cwd"] = dir
+		}
+	}
 	effects, err := act.Apply(t, &v, c.Args, now)
+	if err == nil && fileIn != "" {
+		t.ProjectID, t.ProjectManual = fileIn, true
+	}
+	if err != nil && scratch != "" {
+		os.Remove(scratch)
+	}
 	if err != nil {
 		e.mu.Unlock()
 		status := 400

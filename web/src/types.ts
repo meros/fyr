@@ -144,7 +144,7 @@ export interface Profile {
 }
 
 /** Where a project's work lives (V0.23). */
-export type ProjectSource = { kind: "folder"; host: string; path: string } | { kind: "repo"; url: string } | { kind: string; [k: string]: unknown };
+export type ProjectSource = { kind: "folder"; host: string; path: string; main?: boolean } | { kind: "repo"; url: string } | { kind: string; [k: string]: unknown };
 
 /** A project made from a thread's workspace (V0.28): `project.createFrom {threadId}`. */
 export interface ProjectSuggestion {
@@ -170,8 +170,24 @@ export interface Project {
   model?: string;
   threads?: number;
   lastUsed?: string;
-  /** the project's folder on this host, when it has one */
+  /** the project's main folder on this host, when it has one (V0.42) */
   cwd?: string;
+  /** V0.42: the repos its folders' clones are matched by (from git origin, and repo sources made by hand); read-only */
+  repos?: string[];
+}
+
+/** A folder in the host folder picker (V0.42). */
+export interface FsDir {
+  name: string;
+  path: string;
+  repo?: boolean;
+}
+
+/** GET /api/fs/list (V0.42): a folder and its subfolders; parent is "" at the home folder. */
+export interface FsListing {
+  path: string;
+  parent: string;
+  dirs: FsDir[];
 }
 
 export interface StateDTO {

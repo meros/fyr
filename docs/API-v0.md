@@ -104,7 +104,7 @@ Actions and their args:
 
 | action | args |
 |---|---|
-| `thread.create` (no `threadId`) | `cwd`, `text`, `images?`, `profile?`, `model?`, `title?`, `view?: true` (start with a live view, V0.37) |
+| `thread.create` (no `threadId`) | `cwd?`, `text`, `projectId?` (file it there by hand; without `cwd` it starts in the project's main folder here, V0.42), `images?`, `profile?`, `model?`, `title?`, `view?: true` (start with a live view, V0.37). Without `cwd` and without a project folder here the host makes a fresh `~/.local/share/fyr/scratch/<YYYYMMDD-HHMMSS>-<slug>` (V0.42) |
 | `thread.send` | `text`, `images?`, `from?: "view"` (a press in the live view, V0.37) |
 | `thread.setView` | `on: bool`: turn the live view on or off (V0.37). The agent's next process gets the view's prompt and tools |
 | `thread.answer` | `decisionId`, then `answers: {question: label}` for `ask` (multi-select: labels joined with ", "; Other: the free text), or `allow: bool` for `approval` and `effect` |
@@ -171,10 +171,24 @@ Commands (through `POST /api/command`, no `threadId`):
 | `project.createFrom` | `threadId`: make the thread's `suggest` project and file every unfiled thread it matches (V0.28) |
 | `project.addSource` | `id`, `source` |
 | `project.removeSource` | `id`, `index` (0-based, into `sources`) |
+| `project.setMain` | `id`, `index` (0-based, a folder in `sources`): new threads start in this folder; the mark moves from the project's other folders on that host (V0.42) |
 
 A folder source needs a full path (`~/…` is expanded); on this host the folder must exist, else `400` with the reason. `host` may be left out: the host fills in its own name. After `project.create`, `project.addSource` or `project.removeSource` the host re-matches threads and sends the changed ones on the stream. An icon's `value` is left out when empty.
 
+A folder source may carry `main: true` (V0.42); without one, the first folder on a host is main. A project's `cwd` in the state is its main folder on this host. Every project carries `repos: ["github.com/me/app"]`: the normalised `origin` remotes of its folders on this host and its repo sources, deduplicated, read-only; a derived repo matches clones elsewhere like a repo source.
+
 The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. Threads carry `projectId`; `project` stays the display name. A thread without a project and in a clone with a remote carries `suggest: {name, sources}` (V0.28). Every thread with a workspace may carry `newProject: {name, sources}`: what "New project from this thread" starts with (V0.30): the suggestion for a clone with a remote, else the folder's name and folder; absent for a scratch folder, the home folder and `/`, and without the sources an existing project already has.
+
+## Folders (SPEC 0.5 V0.42)
+
+The host folder picker. Every path is resolved through symlinks and must be an existing folder inside the owner's home folder; `~` and `~/…` are expanded; anything else is `400 {error}`.
+
+| call | reply |
+|---|---|
+| `GET /api/fs/list?path=` (empty: `~`) | `{path, parent, dirs: [{name, path, repo?}]}`: the subfolders, hidden ones included, sorted by name; `parent` is `""` at the home folder; `repo` when the folder has `.git`; a symlink that leads outside is left out |
+| `GET /api/fs/recent` | `{dirs: [...]}`: the distinct folders of threads, newest first, at most 30 |
+| `GET /api/fs/repos` | `{dirs: [...]}`: git repositories under the project folders on this host and the config's `scanRoots`, two levels deep (not inside a repository; no hidden folders or `node_modules`); cached for five minutes, refreshed in the background |
+| `POST /api/fs/mkdir {parent, name}` (X-Fyr) | `{ok: true, path}`; `400` when the name is empty, has `/`, is `.`/`..`, or is taken |
 
 ## Changes (SPEC 0.5 V0.25)
 

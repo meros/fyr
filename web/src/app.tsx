@@ -69,7 +69,8 @@ import { unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, LAST_PROJECT_KEY, filterByProject, sourceFromInput } from "./projects.ts";
+import { FILTER_KEY, LAST_PROJECT_KEY, filterByProject } from "./projects.ts";
+import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
@@ -728,11 +729,10 @@ function App() {
   };
   const projectActions = {
     update: (id: string, patch: ProjectPatch) => projectCommand("project.update", { id, ...patch }),
-    addSource: (id: string, value: string) => {
-      const source = sourceFromInput(value);
-      return source ? projectCommand("project.addSource", { id, source }) : Promise.resolve("Type a folder path or a repo URL.");
-    },
+    /** V0.42: a folder from the picker; the host fills in its own name. */
+    addFolder: (id: string, path: string) => projectCommand("project.addSource", { id, source: { kind: "folder", path } }),
     removeSource: (id: string, index: number) => projectCommand("project.removeSource", { id, index }),
+    setMain: (id: string, index: number) => projectCommand("project.setMain", { id, index }),
     /** New project (V0.30): with threadIds, the host files one thread in the same write; more are filed after. */
     create: async (name: string, sources: ProjectSource[], threadIds: string[] = []): Promise<{ error: string | null; id?: string }> => {
       const args: Record<string, unknown> = { name };
@@ -753,6 +753,46 @@ function App() {
       return errs[0] ?? null;
     },
   };
+  // V0.42: the host folder picker, a dialog on the desktop and a sheet on the phone, over whatever asked for it.
+  const [folderPick, setFolderPick] = useState<(PickOptions & { at: number; resolve(p: string | null): void }) | null>(null);
+  const folderPickRef = useRef(folderPick);
+  folderPickRef.current = folderPick;
+  const closeFolderPick = (path: string | null) => {
+    folderPickRef.current?.resolve(path);
+    setFolderPick(null);
+  };
+  const folderPicker: FolderPick = {
+    pick: (o = {}) =>
+      new Promise((resolve) => {
+        folderPickRef.current?.resolve(null);
+        setFolderPick({ ...o, at: Date.now(), resolve });
+      }),
+  };
+  const folderPickView = folderPick
+    ? phone ? (
+        <div class="m-scrim fscrim" onClick={(e) => e.target === e.currentTarget && Date.now() - folderPick.at > 500 && closeFolderPick(null)}>
+          <div class="m-sheet fsheet" role="dialog" aria-modal="true" aria-label={folderPick.title ?? "Pick a folder"}>
+            <div class="m-grab" />
+            <div class="fsh">
+              <span class="m-shh">{folderPick.title ?? "Pick a folder"}</span>
+              <button class="m-fchg" onClick={() => closeFolderPick(null)}>
+                Cancel
+              </button>
+            </div>
+            <FolderPicker fs={api} first={folderPick.first} onPick={closeFolderPick} autoFocus={false} />
+          </div>
+        </div>
+      ) : (
+        <div class="fmodal">
+          <Modal title={folderPick.title ?? "Pick a folder"} onClose={() => closeFolderPick(null)} wide>
+            <div class="db">
+              <FolderPicker fs={api} first={folderPick.first} onPick={closeFolderPick} />
+            </div>
+          </Modal>
+        </div>
+      )
+    : null;
+
   const openProjectScreen = (id: string) => {
     if (phoneRef.current) navGo({ screen: { name: "project", id }, sheet: null });
     else {
@@ -770,14 +810,16 @@ function App() {
   };
 
   const create = async (a: NewThreadArgs): Promise<string | null> => {
-    const args: Record<string, unknown> = { cwd: a.cwd, text: a.text, profile: a.profile, model: a.model };
+    // V0.42: no cwd starts in the project's main folder, or in a fresh scratch folder; the host files the project.
+    const args: Record<string, unknown> = { text: a.text, profile: a.profile, model: a.model };
+    if (a.cwd) args.cwd = a.cwd;
+    if (a.projectId) args.projectId = a.projectId;
     if (a.attachments?.length) args.attachments = a.attachments;
     if (a.title) args.title = a.title;
     if (a.view) args.view = true;
     const r = await api.command("thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
-    if (r.threadId && a.projectId) void api.command("thread.setProject", r.threadId, { projectId: a.projectId });
     try {
       localStorage.setItem(LAST_PROJECT_KEY, a.projectId ?? "");
     } catch {}
@@ -815,6 +857,13 @@ function App() {
     const k = e.key;
     const mod = e.metaKey || e.ctrlKey;
 
+    if (folderPickRef.current) {
+      if (k === "Escape") {
+        e.preventDefault();
+        closeFolderPick(null);
+      }
+      return;
+    }
     if (dialog) {
       if (k === "Escape") {
         e.preventDefault();
@@ -1124,6 +1173,7 @@ function App() {
   if (phone) {
     return (
       <DirectoryContext.Provider value={directory}>
+        <FolderPickContext.Provider value={folderPicker}>
         <Boundary name="Fyr">
         <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone />
         <PreviewViewer />
@@ -1169,6 +1219,7 @@ function App() {
           projectFilter={projectFilter}
           onProjectFilter={setProjectFilter}
           projectActions={projectActions}
+          overlay={folderPickView}
         />
         {nav.sheet?.kind === "push" && pushDialog(navBack)}
         {nav.sheet?.kind === "adopt" && (
@@ -1184,6 +1235,7 @@ function App() {
           />
         )}
         </Boundary>
+        </FolderPickContext.Provider>
       </DirectoryContext.Provider>
     );
   }
@@ -1209,6 +1261,7 @@ function App() {
       {ctxMenu}
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>
+      <FolderPickContext.Provider value={folderPicker}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
         <Rail sec={sec} active={activeSection} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} />
         <Boundary name="The inbox">
@@ -1307,8 +1360,9 @@ function App() {
               profiles={store.profiles}
               host={store.host}
               onSave={(patch) => projectActions.update(projectId, patch)}
-              onAddSource={(v) => projectActions.addSource(projectId, v)}
+              onAddFolder={(v) => projectActions.addFolder(projectId, v)}
               onRemoveSource={(i) => projectActions.removeSource(projectId, i)}
+              onSetMain={(i) => projectActions.setMain(projectId, i)}
             />
           </div>
         </Modal>
@@ -1339,6 +1393,8 @@ function App() {
       {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "push" && pushDialog(() => setDialog(null))}
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
+      {folderPickView}
+      </FolderPickContext.Provider>
       </DirectoryContext.Provider>
     </div>
   );

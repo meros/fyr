@@ -28,6 +28,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/notify"
@@ -82,6 +83,17 @@ type config struct {
 	// ScratchRoots: folders whose children are scratch workspaces (V0.28);
 	// empty means ~/.t3/scratch and ~/.local/share/fyr/scratch.
 	ScratchRoots []string `json:"scratchRoots"`
+	// ScanRoots: extra folders the folder picker scans for git repositories,
+	// two levels deep (V0.42); `~` is the home folder.
+	ScanRoots []string `json:"scanRoots"`
+}
+
+// expandHome turns "~" and "~/x" into paths under the home folder.
+func expandHome(r string) string {
+	if r == "~" || strings.HasPrefix(r, "~/") {
+		return home() + r[1:]
+	}
+	return r
 }
 
 func home() string { h, _ := os.UserHomeDir(); return h }
@@ -161,16 +173,24 @@ func main() {
 	defer st.Close()
 	eng := engine.New(st)
 	for _, r := range cfg.ScratchRoots {
-		if r == "~" || strings.HasPrefix(r, "~/") {
-			r = home() + r[1:]
-		}
-		eng.ScratchRoots = append(eng.ScratchRoots, r)
+		eng.ScratchRoots = append(eng.ScratchRoots, expandHome(r))
 	}
 	// V0.28: Load gives threads their workspaces and ends auto projects. The
 	// start no longer seeds projects from T3 (t3.Projects stays for a later
 	// "Import from T3").
 	if err := eng.Load(); err != nil {
 		log.Fatal(err)
+	}
+	// V0.42: the projects' repos come from their folders' remotes; a clone
+	// elsewhere then matches.
+	go func() {
+		if eng.RefreshRepos() {
+			eng.Rematch()
+		}
+	}()
+	folders := &hostfs.FS{Home: home(), Folders: eng.ProjectFolders, Recent: eng.RecentFolders}
+	for _, r := range cfg.ScanRoots {
+		folders.ScanRoots = append(folders.ScanRoots, expandHome(r))
 	}
 	adopt := func(ids []string) (int, error) { return adoptT3(eng, t3DB, cfg.Profiles, ids) }
 
@@ -309,7 +329,7 @@ func main() {
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
 	}
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence,
+	srv := &server.Server{Engine: eng, MCP: mcpSrv, Web: webFS, BuildID: BuildID(), Profiles: cfg.Profiles, OwnerLogin: cfg.OwnerLogin, Push: pusher, Attach: att, Presence: presence, FS: folders,
 		T3Candidates: func() (any, error) {
 			cs, err := t3.Candidates(t3DB, home())
 			if err != nil {

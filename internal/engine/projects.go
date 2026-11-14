@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +20,9 @@ type ProjectDTO struct {
 	core.Project
 	Threads  int       `json:"threads"`
 	LastUsed time.Time `json:"lastUsed"`
+	// Repos are the normalised origin remotes of the project's folders on
+	// this host and its repo sources, deduplicated (V0.42); read-only.
+	Repos []string `json:"repos"`
 }
 
 // runGit runs git in dir with a short timeout, for the clone provider.
@@ -29,17 +33,173 @@ func runGit(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// scratchRoots are the folders whose children are throwaway places (SPEC 0.5
-// V0.28): ScratchRoots when set, else T3's and Fyr's scratch roots.
-func (e *Engine) scratchRoots() []string {
-	if e.ScratchRoots != nil {
-		return e.ScratchRoots
+// scratchDir is where Fyr makes scratch folders (V0.42).
+func (e *Engine) scratchDir() string {
+	if e.ScratchDir != "" {
+		return e.ScratchDir
 	}
 	home, _ := os.UserHomeDir()
 	if home == "" {
-		return nil
+		return ""
 	}
-	return []string{filepath.Join(home, ".t3", "scratch"), filepath.Join(home, ".local", "share", "fyr", "scratch")}
+	return filepath.Join(home, ".local", "share", "fyr", "scratch")
+}
+
+// scratchRoots are the folders whose children are throwaway places (SPEC 0.5
+// V0.28): ScratchRoots when set, else T3's scratch root; Fyr's own scratch
+// folder is always one (V0.42).
+func (e *Engine) scratchRoots() []string {
+	roots := e.ScratchRoots
+	if roots == nil {
+		if home, _ := os.UserHomeDir(); home != "" {
+			roots = []string{filepath.Join(home, ".t3", "scratch")}
+		}
+	}
+	if d := e.scratchDir(); d != "" {
+		for _, r := range roots {
+			if filepath.Clean(r) == d {
+				return roots
+			}
+		}
+		roots = append(append([]string{}, roots...), d)
+	}
+	return roots
+}
+
+// scratchSlug is a folder-name slug from the first words of text (V0.42).
+func scratchSlug(text string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(text) {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if !ok {
+			if b.Len() > 0 {
+				dash = true
+			}
+			continue
+		}
+		if dash {
+			if b.Len() >= 34 {
+				break
+			}
+			b.WriteByte('-')
+			dash = false
+		}
+		b.WriteRune(r)
+		if b.Len() >= 40 {
+			break
+		}
+	}
+	if b.Len() == 0 {
+		return "thread"
+	}
+	return strings.TrimSuffix(b.String(), "-")
+}
+
+// makeScratch makes a fresh scratch folder for a thread (V0.42).
+func (e *Engine) makeScratch(text string, now time.Time) (string, error) {
+	root := e.scratchDir()
+	if root == "" {
+		return "", fmt.Errorf("no home folder for a scratch folder")
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return "", err
+	}
+	base := filepath.Join(root, now.Local().Format("20060102-150405")+"-"+scratchSlug(text))
+	dir := base
+	for i := 2; ; i++ {
+		err := os.Mkdir(dir, 0o755)
+		if err == nil {
+			return dir, nil
+		}
+		if !os.IsExist(err) || i > 99 {
+			return "", err
+		}
+		dir = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
+// RecentFolders are the thread folders on this host, newest first (V0.42).
+func (e *Engine) RecentFolders() []string {
+	e.mu.Lock()
+	ts := make([]*core.Thread, 0, len(e.threads))
+	for _, t := range e.threads {
+		if t.Cwd != "" {
+			ts = append(ts, t)
+		}
+	}
+	sort.Slice(ts, func(i, j int) bool { return ts[i].UpdatedAt.After(ts[j].UpdatedAt) })
+	out := make([]string, 0, len(ts))
+	for _, t := range ts {
+		out = append(out, t.Cwd)
+	}
+	e.mu.Unlock()
+	return out
+}
+
+// ProjectFolders are the folders of every project on this host (V0.42).
+func (e *Engine) ProjectFolders() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var out []string
+	for _, p := range e.projects {
+		for _, s := range p.Sources {
+			if s.Kind == "folder" && s.Host == e.HostID {
+				out = append(out, s.Path)
+			}
+		}
+	}
+	return out
+}
+
+// RefreshRepos reads the origin remote of every project folder on this host
+// (V0.42) and reports whether a project's repos changed. Git runs outside
+// the lock.
+func (e *Engine) RefreshRepos() bool {
+	dirs := e.ProjectFolders()
+	got := map[string]string{}
+	for _, d := range dirs {
+		if _, ok := got[d]; ok {
+			continue
+		}
+		remote, err := runGit(d, "remote", "get-url", "origin")
+		if err != nil {
+			remote = ""
+		}
+		got[d] = core.NormalizeRemote(remote)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	changed := len(got) != len(e.repoOf)
+	for d, r := range got {
+		if old, ok := e.repoOf[d]; !ok || old != r {
+			changed = true
+		}
+	}
+	e.repoOf = got
+	return changed
+}
+
+// repos is a project's derived and hand-made repos, deduplicated. Call with
+// e.mu held.
+func (e *Engine) repos(p *core.Project) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	add := func(r string) {
+		if r != "" && !seen[r] {
+			seen[r] = true
+			out = append(out, r)
+		}
+	}
+	for _, s := range p.Sources {
+		switch {
+		case s.Kind == "folder" && s.Host == e.HostID:
+			add(e.repoOf[s.Path])
+		case s.Kind == "repo":
+			add(core.NormalizeRemote(s.URL))
+		}
+	}
+	return out
 }
 
 // providers identify a folder, in order (SPEC 0.5 V0.28).
@@ -47,10 +207,18 @@ func (e *Engine) providers() []core.Provider {
 	return []core.Provider{core.ScratchProvider{Roots: e.scratchRoots()}, core.CloneProvider{Git: runGit}, core.FolderProvider{}}
 }
 
+// projectList is the projects for matching: a folder's derived repo counts
+// as a repo source (V0.42).
 func (e *Engine) projectList() []core.Project {
 	out := make([]core.Project, 0, len(e.projects))
 	for _, p := range e.projects {
-		out = append(out, *p)
+		cp := *p
+		for _, s := range p.Sources {
+			if s.Kind == "folder" && s.Host == e.HostID && e.repoOf[s.Path] != "" {
+				cp.Sources = append(append([]core.Source{}, cp.Sources...), core.Source{Kind: "repo", URL: e.repoOf[s.Path]})
+			}
+		}
+		out = append(out, cp)
 	}
 	return out
 }
@@ -189,7 +357,7 @@ func (e *Engine) Projects() []ProjectDTO {
 	}
 	out := make([]ProjectDTO, 0, len(e.projects))
 	for _, p := range e.projects {
-		out = append(out, ProjectDTO{Project: *p, Threads: counts[p.ID], LastUsed: last[p.ID]})
+		out = append(out, ProjectDTO{Project: *p, Threads: counts[p.ID], LastUsed: last[p.ID], Repos: e.repos(p)})
 	}
 	return out
 }
@@ -368,7 +536,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 				o.ProjectID = p.ID
 			}
 		}
-	case "project.update", "project.addSource", "project.removeSource":
+	case "project.update", "project.addSource", "project.removeSource", "project.setMain":
 		cur := e.projects[c.Args.Str("id")]
 		if cur == nil {
 			e.mu.Unlock()
@@ -395,6 +563,16 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 				return bad(fmt.Sprintf("index must be 0 to %d", len(p.Sources)-1))
 			}
 			p.Sources = append(append([]core.Source{}, p.Sources[:int(i)]...), p.Sources[int(i)+1:]...)
+		} else if c.Action == "project.setMain" {
+			// V0.42: new threads in the project start in this folder.
+			i, ok := c.Args["index"].(float64)
+			if n, isInt := c.Args["index"].(int); isInt {
+				i, ok = float64(n), true
+			}
+			if !ok || i != float64(int(i)) || !p.SetMain(int(i)) {
+				e.mu.Unlock()
+				return bad("index must point at one of the project's folders")
+			}
 		} else {
 			if n := strings.TrimSpace(c.Args.Str("name")); n != "" {
 				p.Name = n
@@ -455,6 +633,10 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 	if err != nil {
 		return Reply{Error: err.Error(), Status: 500}
 	}
+	sourcesChanged := c.Action != "project.update" && c.Action != "project.createFrom" && c.Action != "project.setMain"
+	if sourcesChanged || c.Action == "project.createFrom" {
+		e.RefreshRepos() // V0.42: the folders changed; read their remotes again
+	}
 	for _, d := range e.Projects() {
 		if d.ID == p.ID {
 			e.Hub.Project(d)
@@ -463,7 +645,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 	for _, d := range touched {
 		e.Hub.Thread(d)
 	}
-	if c.Action != "project.update" && c.Action != "project.createFrom" {
+	if sourcesChanged {
 		e.Rematch() // the sources changed: threads may belong elsewhere now
 	}
 	return reply
