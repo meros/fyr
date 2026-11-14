@@ -248,13 +248,15 @@ const MEASURE = `(() => {
     })(),
     settings: (() => {
       const el = document.querySelector('.m-settings .set'); if (!el) return null;
-      const targets = [...el.querySelectorAll('button, select, input')].filter(e => e.getBoundingClientRect().height > 0);
+      const targets = [...el.querySelectorAll('button, select, input, a.sbtn')].filter(e => e.getBoundingClientRect().height > 0);
       const small = targets.map(e => ({ t: (e.textContent || e.getAttribute('aria-label') || e.tagName).trim().slice(0, 30), h: e.getBoundingClientRect().height })).filter(x => x.h < 43.5);
+      const lg = el.querySelector('.login');
+      const login = lg ? { link: lg.querySelector('a.loginlink')?.getAttribute('href') ?? '', code: !!lg.querySelector('input'), cancel: [...lg.querySelectorAll('button')].some(b => b.textContent.trim() === 'Cancel') } : null;
       const add = el.querySelector('.addp'); const sc = el.closest('.m-nbody'); if (sc) sc.scrollTop = sc.scrollHeight;
       const ar = add ? add.getBoundingClientRect() : null;
       return { rows: el.querySelectorAll('.prov:not(.found)').length, found: el.querySelectorAll('.prov.found').length,
         imports: [...el.querySelectorAll('.prov.found button')].filter(b => b.textContent.trim() === 'Import').length,
-        needs: [...el.querySelectorAll('.pst')].map(e => e.textContent), small,
+        needs: [...el.querySelectorAll('.pst')].map(e => e.textContent), small, login,
         right: Math.max(0, ...[...el.querySelectorAll('*')].map(e => e.getBoundingClientRect().right)),
         add: ar ? { top: ar.top, bottom: ar.bottom } : null };
     })(),
@@ -323,6 +325,8 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     check(!!st && st.rows === 3 && st.found >= 1 && st.imports === st.found && st.needs.includes("Needs a login"), `${ctx}: the Providers section is wrong ${JSON.stringify(st)}`);
     if (st) {
       check(st.small.length === 0, `${ctx}: targets under 44 px ${JSON.stringify(st.small)}`);
+      // SPEC 0.5 V0.53: a running login shows its sign-in link, the code field and Cancel, all 44 px.
+      check(!!st.login && /^https:\/\/claude\.com\//.test(st.login.link) && st.login.code && st.login.cancel, `${ctx}: the login panel is wrong ${JSON.stringify(st.login)}`);
       check(st.right <= m.innerWidth + 0.5, `${ctx}: Settings runs ${(st.right - m.innerWidth).toFixed(1)} px past the right edge`);
       if (st.add) check(st.add.top >= m.top + insetTop - 0.5 && st.add.bottom <= m.bottom - insetBottom + 0.5, `${ctx}: Add provider (${st.add.top.toFixed(1)}–${st.add.bottom.toFixed(1)}) is outside the safe areas`);
     }

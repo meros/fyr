@@ -31,6 +31,19 @@ export interface ProviderDTO {
   /** an account that logs in with a token from `claude setup-token` only */
   tokenLogin?: boolean;
   threads: number;
+  /** V0.53: a Claude account; it can log in through Fyr */
+  canLogin?: boolean;
+  /** V0.53: its current or recent login (never a token or the code) */
+  login?: LoginDTO;
+}
+
+/** V0.53: a login Fyr runs with the CLI. */
+export interface LoginDTO {
+  kind: "token" | "folder";
+  state: "starting" | "waiting" | "checking" | "done" | "failed" | "cancelled" | "timeout";
+  url?: string;
+  message?: string;
+  expires: string;
 }
 
 export interface FoundDTO {
@@ -148,4 +161,36 @@ export function createArgs(f: ProviderForm): { args: Record<string, unknown> } |
 /** The finds worth an Import button: not imported yet. */
 export function importable(fs: FoundDTO[]): FoundDTO[] {
   return fs.filter((f) => !f.imported);
+}
+
+/** V0.53: the login still runs. */
+export function loginActive(l?: LoginDTO): boolean {
+  return !!l && (l.state === "starting" || l.state === "waiting" || l.state === "checking");
+}
+
+/** V0.53: the button that starts a login, or null (an endpoint, or a login runs). */
+export function loginButton(p: Pick<ProviderDTO, "canLogin" | "status" | "tokenLogin" | "login">): string | null {
+  if (!p.canLogin || loginActive(p.login)) return null;
+  if (p.status === "needs-login") return "Log in";
+  return p.tokenLogin ? "Get a new token" : "Log in again";
+}
+
+/** V0.53: what the login is doing, in a line. */
+export function loginLine(l: LoginDTO): string {
+  switch (l.state) {
+    case "starting":
+      return "Starting claude…";
+    case "waiting":
+      return "Open the sign-in page, sign in, then paste the code it shows here.";
+    case "checking":
+      return "Checking the code…";
+    case "done":
+      return l.kind === "token" ? "Logged in. Fyr keeps the token on this host." : "Logged in. Claude keeps the login in this account's folder.";
+    case "cancelled":
+      return "Login cancelled.";
+    case "timeout":
+      return l.message || "The login timed out. Start it again.";
+    case "failed":
+      return l.message || "The login did not finish. Start it again.";
+  }
 }
