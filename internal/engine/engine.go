@@ -435,13 +435,14 @@ func (e *Engine) Snapshot() []DTO {
 	return out
 }
 
-// Running lists the threads with a live run.
+// Running lists the threads with a live run or a running background task;
+// a deploy waits for all of them (SPEC 0.5 V0.13, V0.16).
 func (e *Engine) Running() []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var out []string
 	for id, t := range e.threads {
-		if t.Running {
+		if t.Running || t.RunningTasks() > 0 {
 			out = append(out, id)
 		}
 	}
