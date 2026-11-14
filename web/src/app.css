@@ -641,8 +641,16 @@ button.ptag{padding:0}
 .qrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}
 .qtog{display:inline-flex;align-items:center;gap:8px;min-height:34px;font:500 14px/20px var(--ui);color:var(--ink);cursor:pointer}
 .fld .qtog input{width:18px;height:18px;padding:0;margin:0;accent-color:var(--pc)}
-.qtimes{display:inline-flex;align-items:center;gap:6px;color:var(--ink-muted)}
-.fld .qtimes input{width:auto;min-width:96px}
+.qtimes{display:inline-flex;align-items:center;gap:6px;color:var(--ink-muted);flex-wrap:wrap}
+/* Decision 0014 addendum: several windows, each a row; 24-hour times from two selects. */
+.qwin{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-bottom:1px solid var(--line);min-width:0}
+.qtime{display:inline-flex;align-items:center;gap:2px}
+.fld .qtime select{width:auto;padding:0 6px;font-variant-numeric:tabular-nums}
+.qall{font:500 14px/20px var(--ui);color:var(--ink)}
+.qrm{margin-left:auto;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;font:400 18px/1 var(--ui);color:var(--ink-muted)}
+.qrm:hover{background:var(--sunken);color:var(--ink)}
+.qadd{display:flex;gap:6px;flex-wrap:wrap;padding-top:6px}
+.qpre span{color:var(--ink-muted);font-weight:400}
 .qdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;max-width:420px}
 .qdays button{padding:0 2px}
 .emoji{width:90px;height:40px;font-size:24px;text-align:center;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised)}

@@ -238,11 +238,18 @@ const MEASURE = `(() => {
     quietRow: (() => {
       const el = document.querySelector('.pedit .qfld'); if (!el) return null;
       el.scrollIntoView({ block: 'center' });
+      // Each row and the add bar, scrolled into view one by one: two rows and the presets are taller than a small phone.
+      const parts = [...el.querySelectorAll('.qwin, .qadd')].map((p) => { p.scrollIntoView({ block: 'center' }); const b = p.getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; });
+      el.scrollIntoView({ block: 'center' });
       const r = el.getBoundingClientRect();
-      const days = [...el.querySelectorAll('.qdays button')].map(b => b.getBoundingClientRect());
-      const times = [...el.querySelectorAll('.qtimes input')].map(b => b.getBoundingClientRect());
-      return { top: r.top, bottom: r.bottom, right: Math.max(r.right, ...days.map(d => d.right), ...times.map(d => d.right)), on: !!el.querySelector('.qtog input')?.checked,
-        line: el.querySelector('.lede')?.textContent ?? '', days: days.length, small: [...days, ...times].filter(d => d.height < 43.5).length };
+      const box = (b) => b.getBoundingClientRect();
+      const days = [...el.querySelectorAll('.qdays button')].map(box);
+      const times = [...el.querySelectorAll('.qtime select')].map(box);
+      const others = [...el.querySelectorAll('.qrm, .qtog, .qadd button')].map(box);
+      const all = [...days, ...times, ...others];
+      return { parts, right: Math.max(r.right, ...all.map(d => d.right)), rows: el.querySelectorAll('.qwin').length,
+        add: [...el.querySelectorAll('.qadd button')].map(b => b.textContent.replace(/\\s+/g, ' ').trim()),
+        line: el.querySelector('.lede')?.textContent ?? '', days: days.length, times: times.length, small: all.filter(d => d.height < 43.5).length };
     })(),
   };
 })()`;
@@ -289,9 +296,14 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   if (ctx.startsWith("quiet project through the filter")) check(m.dishwasher && /^Quiet until \d\d:\d\d$/.test(m.quietNote ?? ""), `${ctx}: the filter does not show the quiet project's thread (${m.dishwasher}) or its note ("${m.quietNote}")`);
   if (ctx.startsWith("project screen with quiet hours")) {
     const q = m.quietRow;
-    check(!!q && q.on && q.days === 7 && /^Threads hide and send no notifications from \d\d:\d\d to \d\d:\d\d\. Quiet until \d\d:\d\d\.$/.test(q.line), `${ctx}: the Quiet hours row is wrong ${JSON.stringify(q)}`);
+    // Decision 0014 addendum: two windows (the mock's daily one and a weekend one), each with its 24-hour times and
+    // seven days, "+ Add quiet hours" and both presets, and one line for all of them.
+    check(!!q && q.rows === 2 && q.days === 14 && q.times === 8 && q.add.join("|") === "+ Add quiet hours|Weeknights 17:00–06:00|All weekend Sat–Sun"
+      && /^Threads hide and send no notifications daily \d\d:\d\d–\d\d:\d\d and weekends \d\d:\d\d–\d\d:\d\d\. Quiet until \d\d:\d\d\.$/.test(q.line), `${ctx}: the Quiet hours rows are wrong ${JSON.stringify(q)}`);
     if (q) {
-      check(q.top >= m.top + insetTop - 0.5 && q.bottom <= m.bottom - insetBottom + 0.5, `${ctx}: the Quiet hours row (${q.top.toFixed(1)}–${q.bottom.toFixed(1)}) is outside the safe areas`);
+      for (const [i, p] of q.parts.entries())
+        check(p.top >= m.top + insetTop - 0.5 && p.bottom <= m.bottom - insetBottom + 0.5, `${ctx}: quiet hours part ${i + 1} (${p.top.toFixed(1)}–${p.bottom.toFixed(1)}) is outside the safe areas`);
+      check(q.parts.length === 3, `${ctx}: expected two rows and the add bar, found ${q.parts.length} parts`);
       check(q.right <= m.innerWidth + 0.5, `${ctx}: the Quiet hours row runs ${(q.right - m.innerWidth).toFixed(1)} px past the right edge`);
       check(q.small === 0, `${ctx}: ${q.small} quiet-hours targets are under 44 px`);
     }

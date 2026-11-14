@@ -10,7 +10,7 @@ import { applySnapshot, flatOrder, initialStore, sections, unavailableReason, up
 import { colorName, filterByProject, makeProjectLabel, matchProjects, projectName, projectOf, projectSubtitle, resolveIcon, suggestionFor } from "../src/projects.ts";
 import { relTime, whenLabel } from "../src/format.ts";
 import { decodeThread } from "../src/decode.ts";
-import { hideQuiet, nextQuietEnd, quietLine, quietNote } from "../src/quiet.ts";
+import { hideQuiet, nextQuietEnd, quietLine, quietList, quietNote } from "../src/quiet.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/host-state.json", import.meta.url), "utf8"));
 const REQUIRED = new Set(["id"]); // a thread or project without an id is not data
@@ -75,7 +75,7 @@ function render(state: any) {
     projectSubtitle(p);
     filterByProject(s.threads, p.id ?? null, s.projects);
     quietNote(p, now);
-    if (p.quiet?.from && p.quiet?.to) quietLine(p.quiet);
+    quietLine(quietList(p.quiet));
   }
   matchProjects(s.projects, "a");
 }
@@ -87,7 +87,7 @@ test("the host fixture has the edge cases (a thread with no project, an icon wit
   assert.ok(fixture.threads.every((t: any) => typeof t.workspaceId === "string" && t.workspaceId), "a workspace per thread");
   assert.ok(fixture.threads.some((t: any) => !t.projectId && t.suggest?.name === "lib"), "a suggestion");
   // V0.46: a project in its quiet hours and its thread carry quietUntil.
-  assert.ok(fixture.projects.some((p: any) => p.quiet && p.quietUntil), "a quiet project");
+  assert.ok(fixture.projects.some((p: any) => Array.isArray(p.quiet) && quietList(p.quiet).length === p.quiet.length && p.quietUntil), "a quiet project, its quiet hours a list");
   assert.ok(fixture.threads.some((t: any) => t.quietUntil), "a thread in quiet hours");
 });
 

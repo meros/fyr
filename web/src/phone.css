@@ -297,7 +297,9 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .seg button{height:44px}
 .m-app .qtog{min-height:44px;font-size:16px}
 .m-app .fld .qtog input{width:22px;height:22px}
-.m-app .fld .qtimes input{height:44px;font-size:16px}
+.m-app .fld .qtime select{height:44px;font-size:16px;padding:0 8px}
+.m-app .qrm{width:44px;height:44px;margin-right:-6px;font-size:22px}
+.m-app .qadd .btn{height:44px;padding:0 14px;font-size:15px}
 .m-app .ig{height:44px}
 .m-app .igrid{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
 .m-app .addsrc input{height:44px;font-size:16px}
