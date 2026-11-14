@@ -19,6 +19,10 @@
       "name": "thread.dismiss"
     },
     {
+      "label": "Dismiss PR",
+      "name": "thread.dismissPR"
+    },
+    {
       "key": "Escape",
       "label": "Stop run",
       "name": "thread.interrupt"
@@ -157,6 +161,7 @@
       "unavailable": {
         "thread.answer": "Nothing to answer",
         "thread.dismiss": "No failure to dismiss",
+        "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
@@ -194,6 +199,7 @@
       "unavailable": {
         "thread.answer": "Nothing to answer",
         "thread.dismiss": "No failure to dismiss",
+        "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
@@ -241,6 +247,7 @@
       "unavailable": {
         "thread.answer": "Nothing to answer",
         "thread.dismiss": "No failure to dismiss",
+        "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",

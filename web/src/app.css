@@ -619,3 +619,8 @@ button.ptag{padding:0}
 .cpy:hover{color:var(--ink);border-color:var(--line-strong)}
 @media (hover:none){.cpy{opacity:.7}.msgw>.msgcp{position:static;display:block;margin:4px 0 0 auto}}
 .md .codeb pre{padding-right:56px}
+
+/* SPEC 0.5 V0.36: dismiss a merged PR from its chip */
+.prw{display:inline-flex;align-items:center;gap:2px}
+.chip.prx{padding:0 7px;border:0;background:var(--sunken);color:var(--ink-muted);cursor:pointer;font:inherit}
+.chip.prx:hover{color:var(--ink)}

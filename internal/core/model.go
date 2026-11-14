@@ -42,6 +42,8 @@ type Thread struct {
 	Failure   *Failure   `json:"failure,omitempty"`
 	Decisions []Decision `json:"decisions,omitempty"`
 	PR        *PR        `json:"pr,omitempty"`
+	// DismissedPRs are PR URLs the owner put away (V0.36); they never attach again.
+	DismissedPRs []string `json:"dismissedPRs,omitempty"`
 	// Outbox holds the messages the agent has not read yet (V0.33).
 	Outbox []OutMsg `json:"outbox,omitempty"`
 

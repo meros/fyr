@@ -101,7 +101,7 @@ Actions and their args:
 | `thread.send` | `text`, `images?` |
 | `thread.answer` | `decisionId`, then `answers: {question: label}` for `ask` (multi-select: labels joined with ", "; Other: the free text), or `allow: bool` for `approval` and `effect` |
 | `thread.markSeen` | `upTo`: the thread's `activityAt` the client showed (RFC 3339). Without it, now. |
-| `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markUnseen` | none |
+| `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.dismissPR` (V0.36: merged or closed PR only), `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markUnseen` | none |
 | `thread.settle` | `now?: true` for bulk settle |
 | `thread.snooze` | `until` (RFC 3339, future) |
 | `thread.rename` | `title` |

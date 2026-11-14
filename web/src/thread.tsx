@@ -130,7 +130,7 @@ export function ThreadPane(p: ThreadPaneProps) {
             </span>
           )}
           <ModelChip t={t} profile={profile} onRun={p.onRun} />
-          {t.pr && <PrChip pr={t.pr} />}
+          {t.pr && <PrChip pr={t.pr} onDismiss={isAvailable(t, "thread.dismissPR") ? () => p.onRun("thread.dismissPR") : undefined} />}
           {(t.settleWhenDone || t.settleWhenMerged) && (
             <span class="chip">
               <span>{t.settleWhenDone ? "settles when done" : "settles when merged"}</span>
@@ -162,7 +162,7 @@ export function ThreadPane(p: ThreadPaneProps) {
         />
       )}
       {tab === "changes" && <ChangesView threadId={t.id} />}
-      {tab === "pr" && <PrTab t={t} />}
+      {tab === "pr" && <PrTab t={t} onDismiss={() => p.onRun("thread.dismissPR")} />}
       {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} pr={t.pr} />}
       <Composer key={t.id} t={t} now={p.now} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
@@ -244,7 +244,7 @@ function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: str
   );
 }
 
-export function PrTab({ t }: { t: ThreadDTO }) {
+export function PrTab({ t, onDismiss }: { t: ThreadDTO; onDismiss?: () => void }) {
   if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
   const pr = t.pr;
   return (
@@ -260,7 +260,16 @@ export function PrTab({ t }: { t: ThreadDTO }) {
         {pr.review ? ` · review ${pr.review}` : ""}
         {pr.conflict ? " · merge conflict" : ""}
       </p>
-      <p>Checks, review threads and Merge in this tab come in a later version (v0.x).</p>
+      {onDismiss && isAvailable(t, "thread.dismissPR") && (pr.state === "MERGED" || pr.state === "CLOSED") ? (
+        <p>
+          <button class="btn sm" onClick={onDismiss}>
+            Dismiss PR
+          </button>{" "}
+          The thread goes on; this PR is no longer shown.
+        </p>
+      ) : (
+        <p>Checks, review threads and Merge in this tab come in a later version (v0.x).</p>
+      )}
     </div>
   );
 }
@@ -284,12 +293,20 @@ function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | und
   );
 }
 
-function PrChip({ pr }: { pr: PullRequest }) {
+function PrChip({ pr, onDismiss }: { pr: PullRequest; onDismiss?: () => void }) {
   const l = prLabel(pr);
+  const done = pr.state === "MERGED" || pr.state === "CLOSED";
   return (
-    <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={pr.title || pr.url}>
-      {l.text}
-    </a>
+    <span class="prw">
+      <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={pr.title || pr.url}>
+        {l.text}
+      </a>
+      {done && onDismiss && (
+        <button class="chip prx" aria-label="Dismiss PR" title="Dismiss PR: the thread goes on" onClick={onDismiss}>
+          ×
+        </button>
+      )}
+    </span>
   );
 }
 

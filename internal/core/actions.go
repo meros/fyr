@@ -224,6 +224,24 @@ func init() {
 			return []Effect{{Kind: "send", Text: msg}}, nil
 		}})
 
+	register(&Action{Name: "thread.dismissPR", Label: "Dismiss PR",
+		Available: func(t *Thread, _ *View, _ time.Time) string {
+			if t.PR == nil {
+				return "No PR"
+			}
+			if t.PR.State == "OPEN" {
+				return "The PR is still open"
+			}
+			return ""
+		},
+		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
+			if t.PR.URL != "" {
+				t.DismissedPRs = append(t.DismissedPRs, t.PR.URL)
+			}
+			t.PR = nil
+			return nil, nil
+		}})
+
 	register(&Action{Name: "thread.dismiss", Label: "Dismiss failure",
 		Available: func(t *Thread, _ *View, _ time.Time) string {
 			if t.Failure == nil {

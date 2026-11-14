@@ -330,3 +330,39 @@ func TestBackgroundTasksMakeWaiting(t *testing.T) {
 		}
 	}
 }
+
+// SPEC 0.5 V0.36: a merged or closed PR can be dismissed while the thread goes
+// on; polling or a later link never brings it back; a new PR attaches as usual.
+func TestDismissPR(t *testing.T) {
+	a := Registry["thread.dismissPR"]
+	if a == nil {
+		t.Fatal("no thread.dismissPR action")
+	}
+	th := &Thread{}
+	v := &View{}
+	PRObserved(th, PR{URL: "https://github.com/o/r/pull/15", State: "OPEN"}, at(1))
+	if why := a.Available(th, v, at(1)); why == "" {
+		t.Fatal("an open PR can be dismissed")
+	}
+	PRObserved(th, PR{URL: "https://github.com/o/r/pull/15", State: "MERGED"}, at(2))
+	if why := a.Available(th, v, at(2)); why != "" {
+		t.Fatalf("a merged PR cannot be dismissed: %s", why)
+	}
+	if _, err := a.Apply(th, v, nil, at(3)); err != nil {
+		t.Fatal(err)
+	}
+	if th.PR != nil {
+		t.Fatal("the PR stayed")
+	}
+	PRObserved(th, PR{URL: "https://github.com/o/r/pull/15", State: "MERGED"}, at(4))
+	if th.PR != nil {
+		t.Fatal("polling brought the dismissed PR back")
+	}
+	PRObserved(th, PR{URL: "https://github.com/o/r/pull/16", State: "OPEN"}, at(5))
+	if th.PR == nil || th.PR.URL != "https://github.com/o/r/pull/16" {
+		t.Fatalf("a new PR did not attach: %+v", th.PR)
+	}
+	if a.Available(&Thread{}, v, at(6)) == "" {
+		t.Fatal("a thread without a PR offers Dismiss PR")
+	}
+}
