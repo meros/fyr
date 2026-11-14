@@ -653,3 +653,18 @@ button.ptag{padding:0}
 /* SPEC 0.5 V0.38: messages outside the screen skip layout and paint; the browser keeps
    each one's real height once it has been drawn, so scrolling stays exact. */
 .convo-in>*{content-visibility:auto;contain-intrinsic-size:auto 64px}
+
+/* SPEC 0.5 V0.39: the update banner */
+.dbn{position:fixed;z-index:70;left:88px;bottom:14px;max-width:min(560px,calc(100vw - 100px));display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 12px;border-radius:12px;background:var(--raised);border:1px solid var(--line-strong);box-shadow:0 8px 28px rgba(0,0,0,.18);font:500 13px/18px var(--ui);color:var(--ink)}
+.dbn.m{left:12px;right:12px;bottom:auto;max-width:none;top:calc(env(safe-area-inset-top) + 8px);font-size:14px;line-height:20px}
+.dbn-t{flex:1;min-width:0;overflow-wrap:anywhere}
+.dbn.ok{border-color:var(--calm)}
+.dbn.fail{border-color:var(--signal-ink)}
+.dbn-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--calm)}
+.dbn.fail .dbn-dot{background:var(--signal-ink)}
+.dbn-spin{width:14px;height:14px;flex:none;border-radius:50%;border:2px solid var(--line-strong);border-top-color:var(--ink);animation:dbn-r .8s linear infinite}
+@keyframes dbn-r{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.dbn-spin{animation:none}}
+.dbn-b{border:0;background:none;color:var(--ink-muted);font:inherit;cursor:pointer;padding:2px 6px;min-height:28px}
+.dbn.m .dbn-b{min-height:44px;min-width:44px}
+.dbn-more{flex-basis:100%;margin:0;max-height:40vh;overflow:auto;padding:8px;border-radius:8px;background:var(--sunken);font:400 12px/17px var(--mono);white-space:pre-wrap}

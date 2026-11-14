@@ -1,6 +1,7 @@
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
 /** Run when the browser is idle (V0.38: storing never competes with input). */
 const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
+import { DeployBanner } from "./deploy-ui.tsx";
 import { cache, mergeEventLists } from "./cache.ts";
 import { setFullEventSource } from "./thread.tsx";
 import { rememberOpen, takeOpen } from "./push.ts";
@@ -43,6 +44,7 @@ import {
   undoLive,
   upsertThread,
   upsertProject,
+  setDeploy,
   UNDO_MS,
   type SectionKey,
   type SnoozePreset,
@@ -323,6 +325,7 @@ function App() {
       },
       event: (e) => batch((s) => liveEvent(s, e)),
       project: (p) => batch((s) => upsertProject(s, p)),
+      deploy: (p) => batch((s) => setDeploy(s, p)),
       conn: (c) => batch((s) => setConn(s, c)),
     });
     const iv = setInterval(() => setTick(Date.now()), 15_000);
@@ -1099,6 +1102,7 @@ function App() {
     return (
       <DirectoryContext.Provider value={directory}>
         <Boundary name="Fyr">
+        <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone />
         <PreviewViewer />
         <PhoneApp
           nav={nav}
@@ -1178,6 +1182,7 @@ function App() {
 
   return (
     <div class="shell">
+      <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} />
       {ctxMenu}
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>

@@ -134,6 +134,7 @@ const SIZES = [
 
 const SCREENS = [
   { name: "inbox", url: "?mock=rail" },
+  { name: "update banner (V0.39)", url: "?mock=rail&deploy=drain" },
   { name: "thread", url: "?mock=rail&open=t_mapperf", field: ".m-cmp .in" },
   { name: "project screen", url: "?mock=rail&project=p_web" },
   { name: "inbox filtered by project", url: "?mock=rail", storage: { "fyr.projectFilter": "p_web" } },
@@ -499,6 +500,19 @@ try {
   check(!r.dlg && /Hemmet/.test(r.chip), `V0.26 desktop: Enter in the picker does not move the thread to the first match (chip "${r.chip}")`);
 } catch (e) {
   failures.push(`V0.26 desktop: ${e.message}`);
+}
+
+// V0.39: the update banner is below the top safe area and inside the screen, and names the threads it waits for.
+try {
+  await openScreen({ url: "?mock=rail&deploy=drain" }, 390, 844);
+  const b = await evaluate(`(() => { const e = document.querySelector('.dbn'); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, left: r.left, right: r.right, text: e.textContent }; })()`);
+  check(!!b, "V0.39 banner: no update banner on the phone");
+  if (b) {
+    check(b.top >= INSETS.top && b.left >= 0 && b.right <= 390, `V0.39 banner: outside the safe area (${JSON.stringify(b)})`);
+    check(/waiting for 2 threads to finish: Map perf/.test(b.text), `V0.39 banner: text "${b.text}"`);
+  }
+} catch (e) {
+  failures.push(`V0.39 banner: ${e.message}`);
 }
 
 // V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.

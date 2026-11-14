@@ -1,4 +1,5 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
+import type { DeployProgress } from "./deploy.ts";
 import { decodeProject, decodeState, decodeThread } from "./decode.ts";
 
 import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, ThreadDTO } from "./types.ts";
@@ -26,6 +27,8 @@ export interface Store {
   actions: ActionInfo[];
   profiles: Profile[];
   projects: Project[];
+  /** V0.39 */
+  deploy: DeployProgress | null;
   /** timeline events per thread, oldest first; only for threads the client has loaded */
   events: Record<string, FyrEvent[]>;
 }
@@ -42,6 +45,7 @@ export function initialStore(): Store {
     profiles: [],
     projects: [],
     events: {},
+    deploy: null,
   };
 }
 
@@ -78,6 +82,7 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     actions: dto.actions ?? [],
     profiles: dto.profiles ?? [],
     projects: dto.projects ?? [],
+    deploy: dto.deploy ?? null,
   };
 }
 
@@ -297,4 +302,9 @@ export function applyThreadPatch(s: Store, p: ThreadPatch): { store: Store; need
   if (!cur || cur.rev !== p.base) return { store: s, needFull: true };
   const next = decodeThread(mergePatch(cur, p.patch));
   return { store: { ...s, threads: { ...s.threads, [p.id]: next } }, needFull: false };
+}
+
+/** V0.39: a deploy progress from the stream. */
+export function setDeploy(s: Store, p: DeployProgress | null): Store {
+  return { ...s, deploy: p };
 }

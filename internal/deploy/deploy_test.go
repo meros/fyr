@@ -236,3 +236,68 @@ func TestNewerDeployCancelsPending(t *testing.T) {
 		t.Fatalf("pending %q", p)
 	}
 }
+
+// SPEC 0.5 V0.39: a deploy reports each phase as it happens, with the threads
+// it waits for; a failure reports why.
+func TestDeployReportsProgress(t *testing.T) {
+	d, h, _ := newDeployer(t, "")
+	var mu sync.Mutex
+	var phases []string
+	var waited []string
+	d.OnProgress = func(p Progress) {
+		mu.Lock()
+		defer mu.Unlock()
+		if len(phases) == 0 || phases[len(phases)-1] != p.Phase {
+			phases = append(phases, p.Phase)
+		}
+		if p.Phase == "drain" {
+			waited = append(waited, strings.Join(p.Blocking, ","))
+		}
+	}
+	h.running = []string{"t1", "other"}
+	go func() { time.Sleep(60 * time.Millisecond); h.mu.Lock(); h.running = []string{"t1"}; h.mu.Unlock() }()
+	go func() { time.Sleep(120 * time.Millisecond); h.mu.Lock(); h.running = nil; h.mu.Unlock() }()
+	if _, err := d.Deploy(context.Background(), "t1", req, "/src/fyr"); !errors.Is(err, core.ErrReportLater) {
+		t.Fatalf("err %v", err)
+	}
+	mu.Lock()
+	got := strings.Join(phases, " ")
+	w := strings.Join(waited, " | ")
+	mu.Unlock()
+	if got != "build test drain switch" {
+		t.Fatalf("phases %q", got)
+	}
+	if !strings.Contains(w, "t1,other") || !strings.Contains(w, "t1") {
+		t.Fatalf("blocking threads not reported: %q", w)
+	}
+
+	f, _, _ := newDeployer(t, "test")
+	var last Progress
+	f.OnProgress = func(p Progress) { last = p }
+	f.Deploy(context.Background(), "t1", req, "/src/fyr")
+	if last.Phase != "failed" || !strings.Contains(last.Detail, "FAIL TestX") {
+		t.Fatalf("failure not reported: %+v", last)
+	}
+}
+
+// SPEC 0.5 V0.39: the new daemon says the update is done at once; after a
+// rollback the old one says it failed and why.
+func TestReportPendingProgress(t *testing.T) {
+	d, _, _ := newDeployer(t, "")
+	var got []Progress
+	d.OnProgress = func(p Progress) { got = append(got, p) }
+	d.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b2","req":{"action":"fyr.deploy"}}`)
+	d.ReportPending()
+	if len(got) == 0 || got[0].Phase != "done" || got[0].Build != "b2" {
+		t.Fatalf("done not reported: %+v", got)
+	}
+	f, _, _ := newDeployer(t, "")
+	got = nil
+	f.OnProgress = func(p Progress) { got = append(got, p) }
+	f.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b3","req":{"action":"fyr.deploy"}}`)
+	os.WriteFile(filepath.Join(f.Data, "deploy-failed.json"), []byte(`{"build":"b3","reason":"exited with code 1 after 0s","log":"panic: x"}`), 0o600)
+	f.ReportPending()
+	if len(got) == 0 || got[0].Phase != "failed" || !strings.Contains(got[0].Detail, "rolled back") {
+		t.Fatalf("rollback not reported: %+v", got)
+	}
+}

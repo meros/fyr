@@ -253,6 +253,7 @@ func main() {
 	defer stop()
 
 	dep := &deploy.Deployer{Data: *data, DB: st, Host: eng, Quit: stop, Live: BuildID()}
+	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
 	eng.Effects = effects{dep: dep}
 
 	poller := &github.Poller{Gh: github.Gh, Src: prSource{eng}}
