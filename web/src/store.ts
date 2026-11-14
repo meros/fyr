@@ -272,3 +272,29 @@ export function upsertProject(s: Store, raw: Project): Store {
   const projects = i >= 0 ? s.projects.map((x, j) => (j === i ? p : x)) : [...s.projects, p];
   return { ...s, projects };
 }
+
+/** RFC 7396 JSON Merge Patch: objects merge key by key, null deletes, anything else replaces. */
+export function mergePatch(target: unknown, patch: unknown): unknown {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return patch;
+  const out: Record<string, unknown> = target && typeof target === "object" && !Array.isArray(target) ? { ...(target as Record<string, unknown>) } : {};
+  for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
+    if (v === null) delete out[k];
+    else out[k] = mergePatch(out[k], v);
+  }
+  return out;
+}
+
+export interface ThreadPatch {
+  id: string;
+  rev: number;
+  base: number;
+  patch: Record<string, unknown>;
+}
+
+/** SPEC 0.5 V0.38: apply a thread patch only on the copy it was made against; else ask for the whole thread. */
+export function applyThreadPatch(s: Store, p: ThreadPatch): { store: Store; needFull: boolean } {
+  const cur = s.threads[p.id];
+  if (!cur || cur.rev !== p.base) return { store: s, needFull: true };
+  const next = decodeThread(mergePatch(cur, p.patch));
+  return { store: { ...s, threads: { ...s.threads, [p.id]: next } }, needFull: false };
+}
