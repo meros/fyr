@@ -1,6 +1,6 @@
 // Projects (SPEC 0.5 V0.23): palette, icons, ordering, filtering; and started-by labels (V0.22). Pure.
 
-import type { Profile, Project, ProjectIconSpec, ProjectSource, ProjectSuggestion, ThreadDTO } from "./types.ts";
+import type { NewProjectDraft, Profile, Project, ProjectIconSpec, ThreadDTO } from "./types.ts";
 import { LINE_ICONS } from "./lucide.ts";
 
 /** Ten hues tuned to the Rail tokens, light and dark. Never amber: the beam marks only what needs the user. */
@@ -110,17 +110,6 @@ export function projectOf(t: Pick<ThreadDTO, "projectId" | "project">, projects:
   return (t.projectId ? projects.find((p) => p.id === t.projectId) : undefined) ?? projects.find((p) => p.name === t.project);
 }
 
-/** The project a thread without one could get (V0.28): its suggestion, only while it has no project. */
-export function suggestionFor(t: Pick<ThreadDTO, "projectId" | "project" | "suggest">, projects: Project[]): ProjectSuggestion | null {
-  if (projectOf(t, projects)) return null;
-  return t.suggest?.name ? t.suggest : null;
-}
-
-/** The action's label: Make project “name”. */
-export function makeProjectLabel(s: ProjectSuggestion): string {
-  return `Make project “${s.name}”`;
-}
-
 /** The inbox filter: only this project's threads; null shows all. */
 export function filterByProject(threads: Record<string, ThreadDTO>, projectId: string | null, projects: Project[]): Record<string, ThreadDTO> {
   if (!projectId) return threads;
@@ -129,15 +118,9 @@ export function filterByProject(threads: Record<string, ThreadDTO>, projectId: s
   return out;
 }
 
-/** Where a project lives, for a subtitle: its main folder here, else its repo, else a folder elsewhere, else that it is
- *  a label. */
+/** Where a project lives, for a subtitle: its folder, else that threads are filed by hand (V0.55). */
 export function projectSubtitle(p: Project): string {
-  if (p.cwd) return p.cwd.replace(/^\/home\/[^/]+(?=\/|$)/, "~");
-  const repo = projectRepos(p)[0];
-  if (repo) return repo;
-  const folder = p.sources?.find((s) => s.kind === "folder") as { host?: string; path?: string } | undefined;
-  if (folder?.path) return `${folder.host ?? "another host"}: ${folder.path}`;
-  return "No folder: filed by hand";
+  return p.folder ? shortPath(p.folder) : "No folder: filed by hand";
 }
 
 /** The new-thread picker: projects by last use (newest first), then by name. */
@@ -173,70 +156,29 @@ export const FILTER_KEY = "fyr.projectFilter";
 /** Picking a project fills the folder with its folder here and its default profile and model (V0.23). */
 export function projectDefaults(pr: Project, profiles: Profile[]): { cwd?: string; profile?: string; model?: string } {
   const prof = profiles.find((x) => x.id === pr.profile);
-  return { cwd: pr.cwd, profile: prof?.id, model: prof ? (pr.model && prof.models.includes(pr.model) ? pr.model : (prof.defaultModel ?? prof.models[0])) : undefined };
+  return { cwd: pr.folder || undefined, profile: prof?.id, model: prof ? (pr.model && prof.models.includes(pr.model) ? pr.model : (prof.defaultModel ?? prof.models[0])) : undefined };
 }
 
 // ---- V0.30: one picker, one create step ----
 
-/** What "New project from this thread" starts with: the host's prefill, else the suggestion (an older host), else a name only. A copy. */
-export function newProjectDraft(t: Pick<ThreadDTO, "newProject" | "suggest">): { name: string; sources: ProjectSource[] } {
-  const d = t.newProject ?? t.suggest;
-  return { name: d?.name ?? "", sources: [...(d?.sources ?? [])] };
+/** What "New project from this thread" starts with (V0.30, V0.55): the host's prefill, else a name only. */
+export function newProjectDraft(t: Pick<ThreadDTO, "newProject">): NewProjectDraft {
+  return { name: t.newProject?.name ?? "", folder: t.newProject?.folder ?? "" };
 }
 
-// ---- V0.42: folders, the main folder, the automatic repo line ----
+// ---- V0.55: one folder (decision 0017) ----
 
 /** A project with no folder: the words for it. */
 export const NO_FOLDER_LINE = "No folder: you file threads here by hand";
-export const FOLDERS_LINE = "Threads started in these folders land here.";
-export const MAIN_LINE = "Main folder: new threads start here.";
-
-/** The project's folders with their index into sources, and which one is main on this host (the marked one, else the
- *  first here). */
-export function projectFolders(sources: ProjectSource[], host: string): { index: number; path: string; host: string; main: boolean; here: boolean }[] {
-  const out = sources.flatMap((s, index) => (s.kind === "folder" ? [{ index, path: String((s as { path?: string }).path ?? ""), host: String((s as { host?: string }).host ?? ""), main: false, here: false, marked: !!(s as { main?: boolean }).main }] : []));
-  for (const f of out) f.here = !f.host || !host || f.host === host;
-  const here = out.filter((f) => f.here);
-  const main = here.find((f) => f.marked) ?? here[0];
-  return out.map(({ marked: _m, ...f }) => ({ ...f, main: f.index === main?.index }));
-}
-
-/** The repos a project also matches: the host's list, else (an older host) its repo sources. */
-export function projectRepos(p: Pick<Project, "repos" | "sources">): string[] {
-  if (p.repos?.length) return p.repos;
-  return (p.sources ?? []).flatMap((s) => (s.kind === "repo" && (s as { url?: string }).url ? [String((s as { url?: string }).url)] : []));
-}
-
-/** "Also matches clones of a", "… of a and b", "… of a, b and c"; "" for none. */
-export function repoLine(repos: string[]): string {
-  if (!repos.length) return "";
-  const list = repos.length === 1 ? repos[0] : `${repos.slice(0, -1).join(", ")} and ${repos.at(-1)}`;
-  return `Also matches clones of ${list}`;
-}
-
-/** The create step's line for one folder. */
-export function createFolderLine(path: string): string {
-  return `Threads started in ${shortPath(path)} land in this project.`;
-}
+export const FOLDER_LINE = "Threads started in this folder or below land here.";
 
 export function shortPath(p: string): string {
   return p.replace(/^\/home\/[^/]+(?=\/|$)/, "~");
 }
 
-/** A folder as text: a folder here as a short path, a folder elsewhere with its host, a repo as its URL. */
-export function sourceText(s: ProjectSource, host: string): string {
-  if (s.kind === "folder") {
-    const h = String((s as { host?: string }).host ?? "");
-    const p = String((s as { path?: string }).path ?? "");
-    return h && host && h !== host ? `${h}: ${p}` : shortPath(p);
-  }
-  if (s.kind === "repo") return String((s as { url?: string }).url ?? "");
-  return JSON.stringify(s);
-}
-
-/** The new thread's folder (V0.42): the picked one, else the project's main folder here, else a fresh scratch folder. */
-export function newThreadFolder(picked: string, project: Pick<Project, "cwd"> | undefined): { cwd?: string; label: string; scratch: boolean } {
-  const cwd = picked.trim() || project?.cwd || "";
+/** The new thread's folder (V0.42): the picked one, else the project's folder, else a fresh scratch folder. */
+export function newThreadFolder(picked: string, project: Pick<Project, "folder"> | undefined): { cwd?: string; label: string; scratch: boolean } {
+  const cwd = picked.trim() || project?.folder || "";
   return cwd ? { cwd, label: shortPath(cwd), scratch: false } : { label: "A fresh scratch folder", scratch: true };
 }
 
@@ -257,8 +199,7 @@ export function startProject(projects: Project[], filterId: string | null | unde
 /** The project of the last new thread on this device (V0.30); "" for No project. */
 export const LAST_PROJECT_KEY = "fyr.lastProject";
 
-/** A project the client just made, until the host's copy arrives: its main folder here is its cwd (V0.30, V0.42). */
-export function localProject(id: string, name: string, sources: ProjectSource[], host: string): Project {
-  const main = projectFolders(sources, host).find((f) => f.main);
-  return { id, name, sources, threads: 0, lastUsed: new Date().toISOString(), cwd: main?.path, repos: projectRepos({ sources }) };
+/** A project the client just made, until the host's copy arrives (V0.30, V0.55). */
+export function localProject(id: string, name: string, folder: string): Project {
+  return { id, name, folder: folder || undefined, threads: 0, lastUsed: new Date().toISOString() };
 }

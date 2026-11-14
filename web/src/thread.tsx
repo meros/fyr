@@ -20,7 +20,7 @@ import { isAvailable, unavailableReason } from "./store.ts";
 import { offlineLine } from "./hosts.ts";
 import { onToolDetails, toolDetails } from "./prefs.ts";
 import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
-import { colorVar, makeProjectLabel, projectName, projectOf, suggestionFor } from "./projects.ts";
+import { colorVar, projectName, projectOf } from "./projects.ts";
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
@@ -272,26 +272,16 @@ function ThreadMenu({ onMove, liveView, onLiveView, onHandover, handoverReason }
   );
 }
 
-/** The project chip (V0.30): icon and name in the project colour, or "No project"; a click opens the picker. A thread
- *  without a project whose folder is a git clone also offers Make project “<repo>”, which opens the picker on New
- *  project from this thread (V0.28). */
+/** The project chip (V0.30): icon and name in the project colour, or "No project"; a click opens the picker. */
 function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: string }) {
   const dir = useDirectory();
   const p = projectOf(t, dir.projects);
-  const sug = suggestionFor(t, dir.projects);
   const where = `${t.cwd}${profileName ? ` · ${profileName}` : ""}`;
   return (
-    <>
-      <button class={`chip pj${p ? " proj" : " nopj"}`} style={p ? { "--pc": colorVar(p.color, p.name) } : undefined} title={`${where} · Project… (p)`} aria-label={`Project: ${projectName(t, dir.projects)}. Change`} onClick={() => dir.pickProject(t.id)}>
-        {p && <ProjectIcon project={p} name={p.name} size={16} />}
-        <span>{projectName(t, dir.projects)}</span>
-      </button>
-      {sug && (
-        <button class="chip mkp" title={`A project for ${sug.sources.map((s) => ("url" in s && s.url) || ("path" in s && s.path) || "").filter(Boolean).join(" and ")}`} onClick={() => dir.pickProject(t.id, true)}>
-          <span>{makeProjectLabel(sug)}</span>
-        </button>
-      )}
-    </>
+    <button class={`chip pj${p ? " proj" : " nopj"}`} style={p ? { "--pc": colorVar(p.color, p.name) } : undefined} title={`${where} · Project… (p)`} aria-label={`Project: ${projectName(t, dir.projects)}. Change`} onClick={() => dir.pickProject(t.id)}>
+      {p && <ProjectIcon project={p} name={p.name} size={16} />}
+      <span>{projectName(t, dir.projects)}</span>
+    </button>
   );
 }
 

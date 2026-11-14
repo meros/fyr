@@ -114,12 +114,8 @@ export interface ThreadDTO {
   source?: "fyr" | "t3" | string;
   /** the project this thread belongs to (V0.23); `project` stays the display name */
   projectId?: string;
-  /** where the thread runs (V0.28) */
-  workspaceId?: string;
-  /** a project the thread could get, when it has none and its folder is a git clone (V0.28) */
-  suggest?: ProjectSuggestion;
-  /** what "New project from this thread" starts with (V0.30); absent: a name only */
-  newProject?: ProjectSuggestion;
+  /** what "New project from this thread" starts with (V0.30, V0.55): the thread's folder; absent: a name only */
+  newProject?: NewProjectDraft;
   /** V0.46: the end of the quiet hours of the thread's project, while they hold (RFC 3339) */
   quietUntil?: string;
   /** the thread whose agent started this one (V0.22) */
@@ -161,13 +157,10 @@ export interface Profile {
   unavailable?: string;
 }
 
-/** Where a project's work lives (V0.23). */
-export type ProjectSource = { kind: "folder"; host: string; path: string; main?: boolean } | { kind: "repo"; url: string } | { kind: string; [k: string]: unknown };
-
-/** A project made from a thread's workspace (V0.28): `project.createFrom {threadId}`. */
-export interface ProjectSuggestion {
+/** What "New project from this thread" starts with (V0.55): a name and the thread's folder. */
+export interface NewProjectDraft {
   name: string;
-  sources: ProjectSource[];
+  folder: string;
 }
 
 export interface ProjectIconSpec {
@@ -176,22 +169,20 @@ export interface ProjectIconSpec {
   value?: string;
 }
 
-/** A project: a host-independent identity with sources (V0.23). A project may have no source (a label). */
+/** A project: a name, a colour and one folder on its host (V0.55, decision 0017). Without a folder threads are filed
+ *  in it by hand. */
 export interface Project {
   id?: string;
   name: string;
   /** a palette name: slate blue sky teal green olive violet indigo rose brown */
   color?: string;
   icon?: ProjectIconSpec;
-  sources?: ProjectSource[];
+  /** the one folder on the project's host; threads there or below land in it (V0.55) */
+  folder?: string;
   profile?: string;
   model?: string;
   threads?: number;
   lastUsed?: string;
-  /** the project's main folder on this host, when it has one (V0.42) */
-  cwd?: string;
-  /** V0.42: the repos its folders' clones are matched by (from git origin, and repo sources made by hand); read-only */
-  repos?: string[];
   /** V0.46: quiet hours, in the host's time zone: a list of windows (decision 0014 addendum); absent is off.
    *  A host from before the addendum sends one window as an object; quietList reads both. */
   quiet?: QuietHours[] | QuietHours;

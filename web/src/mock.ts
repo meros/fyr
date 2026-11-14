@@ -374,13 +374,12 @@ function fullFixture(now: number): Fixture {
       unavailable: NOT_RUNNING,
     }),
   );
-  // V0.28: a thread with no project whose folder is a clone suggests one.
+  // V0.55: a thread with no project offers New project from its folder.
   add(
     base("t_s4", "Sketch the lasso tool", now, 320, {
       project: "",
       cwd: "/home/owner/src/lasso-app",
       summary: "Drew a first lasso over the map.",
-      suggest: { name: "lasso-app", sources: [{ kind: "folder", host: "desk", path: "/home/owner/src/lasso-app" }, { kind: "repo", url: "github.com/owner/lasso-app" }] },
       unavailable: NOT_RUNNING,
     }),
   );
@@ -806,56 +805,42 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   return out;
 }
 
-// ---- projects (V0.23): every colour and icon kind, a repo-only project and a label ----
+// ---- projects (V0.23, V0.55): every colour and icon kind, one folder each, and a label without a folder ----
 export function mockProjects(now: number): Project[] {
   const ago = (h: number) => iso(now - h * 3600_000);
-  const folder = (path: string) => ({ kind: "folder", host: "desk", path });
-  const repo = (url: string) => ({ kind: "repo", url });
   return [
-    { id: "p_web", name: "norban/web", color: "teal", icon: { kind: "line", value: "Globe" }, sources: [folder("/home/owner/src/norban/web"), folder("/home/owner/src/norban/web-docs"), repo("github.com/norban/web")], profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1), cwd: "/home/owner/src/norban/web" },
-    { id: "p_ops", name: "norban/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, sources: [folder("/home/owner/src/norban/ops")], threads: 2, lastUsed: ago(1), cwd: "/home/owner/src/norban/ops" },
-    { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram" }, sources: [folder("/home/owner/src/" + LONG_PROJECT), repo("github.com/norban/" + LONG_PROJECT)], threads: 3, lastUsed: ago(5), cwd: "/home/owner/src/" + LONG_PROJECT },
-    { id: "p_dot", name: "dotfiles", color: "olive", icon: { kind: "line", value: "terminal" }, sources: [folder("/home/owner/dotfiles")], threads: 1, lastUsed: ago(2), cwd: "/home/owner/dotfiles" },
-    { id: "p_api", name: "norban/api", color: "sky", icon: { kind: "line", value: "server" }, sources: [folder("/home/owner/src/norban/api")], threads: 0, lastUsed: ago(30), cwd: "/home/owner/src/norban/api" },
-    { id: "p_fyr", name: "fyr", color: "violet", icon: { kind: "line", value: "FolderGit2" }, sources: [repo("github.com/meros/fyr")], threads: 0, lastUsed: ago(48) },
-    { id: "p_home", name: "Hemmet", color: "green", icon: { kind: "emoji", value: "🏡" }, sources: [], threads: 1, lastUsed: ago(3) },
-    { id: "p_infra", name: "norban/infra", color: "slate", icon: { kind: "line", value: "no-such-icon" }, sources: [folder("/home/owner/src/norban/infra")], threads: 1, lastUsed: ago(10), cwd: "/home/owner/src/norban/infra" },
-    { id: "p_maplab", name: "Map perf lab", color: "blue", icon: { kind: "line", value: "map" }, sources: [folder("/home/owner/src/maplab")], threads: 0, lastUsed: ago(70), cwd: "/home/owner/src/maplab" },
-    { id: "p_book", name: "Bokföring åt Övik", icon: { kind: "monogram" }, color: "brown", sources: [folder("/home/owner/ekonomi")], threads: 0, lastUsed: ago(200), cwd: "/home/owner/ekonomi" },
-  ].map(withRepos);
+    { id: "p_web", name: "norban/web", color: "teal", icon: { kind: "line", value: "Globe" }, folder: "/home/owner/src/norban/web", profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1) },
+    { id: "p_ops", name: "norban/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, folder: "/home/owner/src/norban/ops", threads: 2, lastUsed: ago(1) },
+    { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram" }, folder: "/home/owner/src/" + LONG_PROJECT, threads: 3, lastUsed: ago(5) },
+    { id: "p_dot", name: "dotfiles", color: "olive", icon: { kind: "line", value: "terminal" }, folder: "/home/owner/dotfiles", threads: 1, lastUsed: ago(2) },
+    { id: "p_api", name: "norban/api", color: "sky", icon: { kind: "line", value: "server" }, folder: "/home/owner/src/norban/api", threads: 0, lastUsed: ago(30) },
+    { id: "p_fyr", name: "fyr", color: "violet", icon: { kind: "line", value: "FolderGit2" }, folder: "/home/owner/git/fyr", threads: 0, lastUsed: ago(48) },
+    { id: "p_home", name: "Hemmet", color: "green", icon: { kind: "emoji", value: "🏡" }, threads: 1, lastUsed: ago(3) },
+    { id: "p_infra", name: "norban/infra", color: "slate", icon: { kind: "line", value: "no-such-icon" }, folder: "/home/owner/src/norban/infra", threads: 1, lastUsed: ago(10) },
+    { id: "p_maplab", name: "Map perf lab", color: "blue", icon: { kind: "line", value: "map" }, folder: "/home/owner/src/maplab", threads: 0, lastUsed: ago(70) },
+    { id: "p_book", name: "Bokföring åt Övik", icon: { kind: "monogram" }, color: "brown", folder: "/home/owner/ekonomi", threads: 0, lastUsed: ago(200) },
+  ];
 }
 
-// V0.42: the repo each mock folder's git origin names.
-const MOCK_ORIGIN: Record<string, string> = {
-  "/home/owner/src/norban/web": "github.com/norban/web",
-  "/home/owner/src/norban/web-docs": "github.com/norban/web-docs",
-  "/home/owner/src/norban/ops": "github.com/norban/ops",
-  "/home/owner/src/norban/api": "github.com/norban/api",
-  "/home/owner/src/norban/infra": "github.com/norban/infra",
-  ["/home/owner/src/" + LONG_PROJECT]: "github.com/norban/" + LONG_PROJECT,
-  "/home/owner/src/lasso-app": "github.com/owner/lasso-app",
-  "/home/owner/dotfiles": "github.com/owner/dotfiles",
-  "/home/owner/git/fyr": "github.com/meros/fyr",
-  "/home/owner/git/fyr-folders": "github.com/meros/fyr",
-  "/home/owner/git/solidcraft": "github.com/meros/solidcraft",
-};
-
-/** The host's derived fields (V0.42): cwd is the main folder here, repos come from the folders' origins and repo sources. */
-function withRepos(p: Project): Project {
-  const folders = (p.sources ?? []).filter((s) => s.kind === "folder") as { path: string; main?: boolean }[];
-  const main = folders.find((f) => f.main) ?? folders[0];
-  const repos: string[] = [];
-  for (const s of p.sources ?? []) {
-    const r = s.kind === "folder" ? MOCK_ORIGIN[(s as { path: string }).path] : s.kind === "repo" ? String((s as { url?: string }).url ?? "") : "";
-    if (r && !repos.includes(r)) repos.push(r);
-  }
-  return { ...p, cwd: main?.path, repos };
-}
+// V0.42: the mock folders that are git repositories (the folder picker's "Repos found").
+const MOCK_REPOS = [
+  "/home/owner/src/norban/web",
+  "/home/owner/src/norban/web-docs",
+  "/home/owner/src/norban/ops",
+  "/home/owner/src/norban/api",
+  "/home/owner/src/norban/infra",
+  "/home/owner/src/" + LONG_PROJECT,
+  "/home/owner/src/lasso-app",
+  "/home/owner/dotfiles",
+  "/home/owner/git/fyr",
+  "/home/owner/git/fyr-folders",
+  "/home/owner/git/solidcraft",
+];
 
 const MOCK_HOME = "/home/owner";
 /** A small home folder for the folder picker (V0.42). */
 function mockTree(extra: string[]): { dirs: Set<string>; repos: Set<string> } {
-  const repos = new Set(Object.keys(MOCK_ORIGIN));
+  const repos = new Set(MOCK_REPOS);
   const dirs = new Set<string>();
   const add = (p: string) => {
     for (let at = p; at.startsWith(MOCK_HOME); at = at.slice(0, at.lastIndexOf("/"))) dirs.add(at);
@@ -920,30 +905,27 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     const { quietUntil: _, ...rest } = p;
     return u ? { ...rest, quietUntil: u } : rest;
   };
-  const tree = mockTree([...fx.threads.map((t) => t.cwd), ...projects.flatMap((p) => (p.sources ?? []).map((s) => String((s as { path?: string }).path ?? "")))].filter((p) => p.startsWith(MOCK_HOME)));
+  const tree = mockTree([...fx.threads.map((t) => t.cwd), ...projects.map((p) => p.folder ?? "")].filter((p) => p.startsWith(MOCK_HOME)));
   const expand = (p: string) => (p.trim() === "~" || p.trim() === "" ? MOCK_HOME : p.trim().startsWith("~/") ? MOCK_HOME + p.trim().slice(1) : p.trim()).replace(/\/+$/, "") || "/";
   const dirOf = (p: string): FsDir => ({ name: p.split("/").pop() ?? p, path: p, repo: tree.repos.has(p) || undefined });
-  const putProject = (p0: Project) => {
-    const p = withRepos(p0);
+  const putProject = (p: Project) => {
     projects = projects.some((x) => x.id === p.id) ? projects.map((x) => (x.id === p.id ? p : x)) : [...projects, p];
     setTimeout(() => sub?.project?.(withQuiet(p)), 30);
     return p;
   };
   const projectIdFor = (t: ThreadDTO) => t.projectId ?? projects.find((p) => p.name === t.project)?.id;
-  // V0.30: what "New project from this thread" starts with, as the host computes it (no scratch, no home, no taken source).
+  // V0.30, V0.55: what "New project from this thread" starts with, as the host computes it (no scratch, no home, no
+  // folder a project has).
   const draftFor = (t: ThreadDTO): ThreadDTO["newProject"] => {
-    const taken = (s: { kind: string; path?: string; url?: string }) =>
-      projects.some((p) => (p.sources ?? []).some((x) => x.kind === s.kind && (x as { path?: string }).path === s.path && (x as { url?: string }).url === s.url));
-    const base = t.suggest ?? (t.cwd && !t.cwd.includes("/scratch/") && t.cwd !== "/home/owner" ? { name: t.cwd.split("/").pop() ?? "", sources: [{ kind: "folder", host: "desk", path: t.cwd }] } : undefined);
-    const sources = (base?.sources ?? []).filter((x) => !taken(x as { kind: string }));
-    return base && sources.length ? { name: base.name, sources } : undefined;
+    if (!t.cwd || t.cwd.includes("/scratch/") || t.cwd === MOCK_HOME || projects.some((p) => p.folder === t.cwd)) return undefined;
+    return { name: t.cwd.split("/").pop() ?? "", folder: t.cwd };
   };
   const dtoOf = (t: ThreadDTO): ThreadDTO => {
     const pid = projectIdFor(t);
     const q = withQuiet(projects.find((p) => p.id === pid) ?? { name: "" }).quietUntil;
     // V0.33: the outbox is what the mock agent has not read yet, as the host sends it.
     const outbox = [...unread].filter(([, tid]) => tid === t.id).map(([id]) => ({ id, state: "queued" }));
-    return { ...t, projectId: pid, suggest: pid ? undefined : t.suggest, newProject: draftFor(t), quietUntil: q, outbox: outbox.length ? outbox : undefined };
+    return { ...t, projectId: pid, newProject: draftFor(t), quietUntil: q, outbox: outbox.length ? outbox : undefined };
   };
   let nextId = 1;
 
@@ -1022,11 +1004,11 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   const exec = (action: string, t: ThreadDTO | undefined, args: Record<string, unknown>): CommandReply => {
     if (action === "thread.create") {
       const id = `t_new${nextId++}`;
-      // V0.42: a project's main folder, else a fresh scratch folder.
+      // V0.42, V0.55: the project's folder, else a fresh scratch folder.
       const pr = args.projectId ? projects.find((x) => x.id === args.projectId) : undefined;
       if (args.projectId && !pr) return { ok: false, error: `no project ${args.projectId}` };
       const slug = String(args.text ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "thread";
-      const cwd = String(args.cwd || pr?.cwd || `${MOCK_HOME}/.local/share/fyr/scratch/20261114-093005-${slug}`);
+      const cwd = String(args.cwd || pr?.folder || `${MOCK_HOME}/.local/share/fyr/scratch/20261114-093005-${slug}`);
       const nt = base(id, String(args.title || args.text || "New thread").slice(0, 80), clock(), 0, {
         cwd,
         project: pr?.name ?? "",
@@ -1046,6 +1028,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       if (!p) return { ok: false, error: "No such project" };
       const patch: Partial<Project> = {};
       for (const k of ["name", "color", "icon", "profile", "model", "quiet"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k] ?? undefined;
+      if ("folder" in args) patch.folder = args.folder ? expand(String(args.folder)) : undefined;
       const np = putProject({ ...p, ...patch });
       // V0.46: the threads carry the project's quietUntil, so they change with it.
       if ("quiet" in args) for (const t of threads.values()) if (projectIdFor(t) === np.id) setTimeout(() => sub?.thread(dtoOf(t)), 40);
@@ -1054,45 +1037,12 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     if (action === "project.create") {
       const name = String(args.name ?? "").trim();
       if (!name) return { ok: false, error: "A project needs a name" };
-      const sources = Array.isArray(args.sources) ? (args.sources as Project["sources"]) : [];
-      const folder = sources?.find((x) => x.kind === "folder") as { path?: string } | undefined;
+      const folder = args.folder ? expand(String(args.folder)) : undefined;
       const ft = args.threadId ? threads.get(String(args.threadId)) : undefined;
       if (args.threadId && !ft) return { ok: false, error: `no thread ${args.threadId}` };
-      const p = putProject({ id: `p_new${nextId++}`, name, sources, threads: ft ? 1 : 0, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
+      const p = putProject({ id: `p_new${nextId++}`, name, folder, threads: ft ? 1 : 0, lastUsed: new Date(clock()).toISOString() });
       if (ft) put(ft, { projectId: p.id, project: p.name });
       return { ok: true, result: { id: p.id } };
-    }
-    if (action === "project.createFrom") {
-      const t = threads.get(String(args.threadId ?? ""));
-      const sug = t?.suggest;
-      if (!t || !sug || projectIdFor(t)) return { ok: false, error: "This thread has no project to make" };
-      const folder = sug.sources.find((x) => x.kind === "folder") as { path?: string } | undefined;
-      const p = putProject({ id: `p_new${nextId++}`, name: sug.name, sources: sug.sources, threads: 1, lastUsed: new Date(clock()).toISOString(), cwd: folder?.path });
-      put(t, { projectId: p.id, project: p.name });
-      return { ok: true };
-    }
-    if (action === "project.removeSource") {
-      const p = projects.find((x) => x.id === args.id);
-      const i = Number(args.index);
-      if (!p || !Number.isInteger(i) || i < 0 || i >= (p.sources ?? []).length) return { ok: false, error: "No such source" };
-      putProject({ ...p, sources: (p.sources ?? []).filter((_, k) => k !== i) });
-      return { ok: true };
-    }
-    if (action === "project.addSource") {
-      const p = projects.find((x) => x.id === args.id);
-      if (!p) return { ok: false, error: "No such project" };
-      const src = { ...(args.source as Record<string, unknown>) } as NonNullable<Project["sources"]>[number];
-      if (src.kind === "folder") Object.assign(src, { host: "desk", path: expand(String((src as { path?: string }).path ?? "")) });
-      putProject({ ...p, sources: [...(p.sources ?? []), src] });
-      return { ok: true };
-    }
-    if (action === "project.setMain") {
-      const p = projects.find((x) => x.id === args.id);
-      const i = Number(args.index);
-      const srcs = p?.sources ?? [];
-      if (!p || !Number.isInteger(i) || srcs[i]?.kind !== "folder") return { ok: false, error: "index must point at one of the project's folders" };
-      putProject({ ...p, sources: srcs.map((s, k) => (s.kind === "folder" ? { ...s, main: k === i } : s)) });
-      return { ok: true };
     }
     if (action === "t3.adopt") {
       const ids = (args.t3Ids as string[]) ?? [];

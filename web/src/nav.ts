@@ -10,8 +10,6 @@ export interface Sheet {
   kind: SheetKind;
   /** the thread(s) the sheet acts on */
   ids?: string[];
-  /** the project picker opens on New project from this thread (V0.30) */
-  startNew?: boolean;
 }
 
 export interface Nav {
