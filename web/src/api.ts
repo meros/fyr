@@ -1,3 +1,4 @@
+import { isTransient, sendWithRetry } from "./retry.ts";
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead.
 
 import type { CommandReply, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
@@ -132,21 +133,6 @@ function createHttpApi(): Api {
     }, wait);
   };
 
-  const post = async (body: unknown): Promise<CommandReply> => {
-    const r = await fetch("/api/command", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Fyr": "1" },
-      body: JSON.stringify(body),
-    });
-    let reply: CommandReply;
-    try {
-      reply = (await r.json()) as CommandReply;
-    } catch {
-      reply = { ok: false, error: `HTTP ${r.status}` };
-    }
-    if (!r.ok && reply.ok !== false) reply = { ok: false, error: `HTTP ${r.status}` };
-    return reply;
-  };
 
   const postJson = async (path: string, body: unknown): Promise<PushReply> => {
     try {
@@ -170,18 +156,30 @@ function createHttpApi(): Api {
       connect();
     },
     async command(action, threadId, args) {
+      // One commandId for every try: the host applies it once (I7), so a
+      // restart during a deploy is ridden out (SPEC 0.5 V0.13).
       const body = { commandId: newCommandId(), action, threadId, args: args ?? {} };
-      try {
-        return await post(body);
-      } catch {
-        // Network failure: the same commandId is safe to send again (I7).
-        try {
-          await new Promise((r) => setTimeout(r, 800));
-          return await post(body);
-        } catch (e) {
-          return { ok: false, error: "Fyr is not reachable" };
-        }
-      }
+      let reply: CommandReply = { ok: false, error: "Fyr is not reachable" };
+      const { gaveUp } = await sendWithRetry(
+        async () => {
+          try {
+            const r = await fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify(body) });
+            if (isTransient(r.status)) return r.status;
+            try {
+              reply = (await r.json()) as CommandReply;
+            } catch {
+              reply = { ok: false, error: `HTTP ${r.status}` };
+            }
+            if (!r.ok && reply.ok !== false) reply = { ok: false, error: `HTTP ${r.status}` };
+            return r.status;
+          } catch {
+            return null;
+          }
+        },
+        undefined,
+        () => handlers?.conn("connecting"),
+      );
+      return gaveUp ? { ok: false, error: "Fyr is restarting or not reachable; try again in a moment" } : reply;
     },
     async events(threadId, after = 0, limit = 400) {
       const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/events?after=${after}&limit=${limit}`);
