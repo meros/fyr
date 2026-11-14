@@ -542,3 +542,16 @@ button.ptag{padding:0}
 .eff-det summary::-webkit-details-marker{display:none}
 .eff-det summary::before{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s;margin:0 4px 0 2px}
 .eff-det[open] summary::before{transform:rotate(45deg)}
+
+/* SPEC 0.5 V0.21: the end of a run in words; the live line while working */
+.runmark .rm{display:inline-flex;align-items:center;gap:6px;padding:2px 0;border:0;background:none;color:var(--ink-faint);font:400 12px/16px var(--ui);cursor:default}
+.runmark .rm[aria-expanded]{cursor:pointer}
+.runmark.fail .rm{color:var(--signal-ink)}
+.runmark .rmx{color:var(--ink-faint)}
+.cmpw .live{display:flex;align-items:center;gap:8px;min-width:0;margin:0 0 6px;color:var(--ink-muted);font:400 13px/18px var(--ui)}
+/* A narrow thread pane: the field keeps room to type; key hints go first, labels never wrap. */
+.cmpw{container-type:inline-size}
+.cmp .in{min-width:7em}
+.cmp .btn{flex:none;white-space:nowrap}
+@container (max-width:560px){.cmp kbd,.cmp .hint{display:none}}
+@container (max-width:380px){.cmp{flex-wrap:wrap}.cmp .in{flex-basis:100%}}

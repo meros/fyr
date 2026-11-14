@@ -1,11 +1,12 @@
 // Thread pane: header with chips and tabs, conversation, docked decision card and composer
 // (design/directions/04-rail.html).
 
+import { liveLine } from "./tasks.ts";
 import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
-import { buildConversation, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall } from "./conversation.ts";
+import { buildConversation, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { duration, relTime, shortModel } from "./format.ts";
@@ -151,7 +152,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {tab === "changes" && <ChangesView threadId={t.id} />}
       {tab === "pr" && <PrTab t={t} />}
       {tab === "conv" && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} pr={t.pr} />}
-      <Composer key={t.id} t={t} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
+      <Composer key={t.id} t={t} now={p.now} onSend={p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
   );
 }
@@ -447,13 +448,15 @@ function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
       </div>
     );
   }
+  // V0.21: words, never a bare symbol; the cost is one tap away.
+  const lbl = runLabel(it);
   return (
     <div class={`runmark${it.failure ? " fail" : ""}`}>
-      <button class="rm" aria-expanded={open} aria-label={`${word}${facts ? ", " + facts : ""}`} title={`${word}${facts ? " · " + facts : ""}`} onClick={() => setOpen(!open)}>
-        <StateIcon state={icon} size={12} />
-        {it.failure && <span class="prose">{word}</span>}
+      <button class="rm" aria-expanded={open} title={[lbl.text, lbl.more].filter(Boolean).join(" · ")} onClick={() => lbl.more && setOpen(!open)}>
+        {it.failure && <StateIcon state={icon} size={12} />}
+        <span class="prose">{lbl.text}</span>
+        {open && lbl.more && <span class="rmx tnum">{lbl.more}</span>}
       </button>
-      {open && <span class="rmx tnum">{it.failure ? facts : [word, facts].filter(Boolean).join(" · ")}</span>}
     </div>
   );
 }
@@ -746,6 +749,7 @@ export interface SendArgs {
 
 interface ComposerProps {
   t: ThreadDTO;
+  now: number;
   answer: AnswerField | null;
   onSend(args: SendArgs): Promise<boolean>;
   onInterrupt(): void;
@@ -756,7 +760,7 @@ interface ComposerProps {
  * for the active question's "Other" (U15): Enter answers, ⌘Enter queues the text as a message instead.
  * Files: the paperclip, paste and drop, any type; each uploads at once and shows a chip.
  */
-function Composer({ t, answer, onSend, onInterrupt }: ComposerProps) {
+function Composer({ t, now, answer, onSend, onInterrupt }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const att = useAttachments();
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -792,6 +796,14 @@ function Composer({ t, answer, onSend, onInterrupt }: ComposerProps) {
 
   return (
     <div class="cmpw" onDrop={att.onDrop} onDragOver={att.onDragOver}>
+      {t.running && (
+        <div class="sys live">
+          <span class="spin icw">
+            <StateIcon state="working" size={14} />
+          </span>
+          <span class="ell">{liveLine(t, now)}</span>
+        </div>
+      )}
       <ChipStrip chips={att.chips} onRemove={att.remove} />
       <div class={`cmp${disabled ? " off" : ""}`}>
         <ClipPicker onFiles={att.add} disabled={!!sendReason} />

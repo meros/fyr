@@ -23,7 +23,7 @@ import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type Card
 import { ADVANCE_MS, activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, phoneSnoozePresets, stepLabel, stripCount, type Choice } from "./mobile.ts";
 import { LONG_PRESS_MS, idle, longPressCancelled, settleLabel, swipeAvail, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
 import type { Nav, Sheet } from "./nav.ts";
-import { agentsLabel, groupTasks, workingLine } from "./tasks.ts";
+import { groupTasks, liveLine, workingLine } from "./tasks.ts";
 import { COLLAPSED_BY_DEFAULT, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
@@ -791,7 +791,6 @@ function MComposer({ t, p }: { t: ThreadDTO; p: PhoneProps }) {
       att.clear();
     }
   };
-  const running = groupTasks(t.tasks).running.length;
   return (
     <div class="m-cmpw" onDrop={att.onDrop} onDragOver={att.onDragOver}>
       {t.running && (
@@ -799,10 +798,7 @@ function MComposer({ t, p }: { t: ThreadDTO; p: PhoneProps }) {
           <span class="spin icw">
             <StateIcon state="working" size={14} />
           </span>
-          <span class="ell">
-            Working{t.activity ? ` · ${t.activity}` : ""}
-            {running ? ` · ${agentsLabel(running)}` : ""} · {relTime(t.runStartedAt, p.now)}
-          </span>
+          <span class="ell">{liveLine(t, p.now)}</span>
         </div>
       )}
       <ChipStrip chips={att.chips} onRemove={att.remove} />
