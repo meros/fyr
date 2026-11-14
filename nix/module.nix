@@ -65,6 +65,14 @@ in
       default = { };
       description = "Extra environment for the daemon and the agents it starts.";
     };
+    tailnet = {
+      enable = lib.mkEnableOption "publishing Fyr on the tailnet with Tailscale Serve (SPEC 0.5 V0.14)";
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 7443;
+        description = "HTTPS port on the tailnet. Only the owner's Tailscale login is served.";
+      };
+    };
     memoryHigh = lib.mkOption {
       type = lib.types.str;
       default = "13G";
@@ -80,6 +88,21 @@ in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [ cfg.package ];
     environment.etc."fyr/config.json".source = configFile;
+
+    # Tailscale Serve keeps its config in tailscaled; this unit sets it at boot
+    # so the address is declared here, not in a manual command.
+    systemd.services.fyr-tailnet = lib.mkIf cfg.tailnet.enable {
+      description = "Publish Fyr on the tailnet (Tailscale Serve)";
+      after = [ "tailscaled.service" "fyr.service" ];
+      wants = [ "tailscaled.service" ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${config.services.tailscale.package}/bin/tailscale serve --bg --https=${toString cfg.tailnet.port} http://127.0.0.1:${toString cfg.port}";
+        ExecStop = "${config.services.tailscale.package}/bin/tailscale serve --https=${toString cfg.tailnet.port} off";
+      };
+    };
 
     systemd.services.fyr = {
       description = "Fyr host daemon";

@@ -60,6 +60,32 @@
         };
       });
 
+      # Evaluates the module in a minimal system and checks the units it
+      # writes (run with `nix flake check`).
+      checks.x86_64-linux.module =
+        let
+          sys = nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            modules = [
+              self.nixosModules.fyr
+              {
+                boot.isContainer = true;
+                system.stateVersion = "25.11";
+                users.users.u = { isNormalUser = true; home = "/home/u"; group = "users"; };
+                services.tailscale.enable = true;
+                services.fyr = { enable = true; user = "u"; tailnet.enable = true; };
+              }
+            ];
+          };
+          fyr = sys.config.systemd.services.fyr.serviceConfig;
+          tn = sys.config.systemd.services.fyr-tailnet.serviceConfig;
+        in
+        assert nixpkgs.lib.hasInfix "-seed " fyr.ExecStart;
+        assert nixpkgs.lib.hasInfix "-- -config /etc/fyr/config.json" fyr.ExecStart;
+        assert sys.config.systemd.services.fyr.restartIfChanged == false;
+        assert nixpkgs.lib.hasInfix "--https=7443 http://127.0.0.1:7777" tn.ExecStart;
+        nixpkgs.legacyPackages.x86_64-linux.runCommand "fyr-module-check" { } "touch $out";
+
       nixosModules.fyr = import ./nix/module.nix self;
       nixosModules.default = self.nixosModules.fyr;
     };
