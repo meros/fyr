@@ -55,4 +55,9 @@ func TestProviderEndpoints(t *testing.T) {
 	if !strings.Contains(string(b), `"id":"p1"`) || strings.Contains(string(b), "sk-leak") {
 		t.Fatalf("state: %s", b)
 	}
+	// #42: the profiles read, without env, replaces the client's state reload.
+	b, _ = io.ReadAll(do(t, "GET", hs.URL+"/api/profiles", "", nil, "").Body)
+	if !strings.HasPrefix(string(b), `[{"id":"p1"`) || strings.Contains(string(b), "sk-leak") {
+		t.Fatalf("profiles: %s", b)
+	}
 }

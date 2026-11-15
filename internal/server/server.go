@@ -110,6 +110,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	mux.HandleFunc("GET /api/quota", s.quota)
+	// #42: the profiles alone, for the client after a provider changed.
+	mux.HandleFunc("GET /api/profiles", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.profiles()) })
 	if s.Providers != nil {
 		mux.HandleFunc("GET /api/providers", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.Providers.List()) })
 		mux.HandleFunc("GET /api/providers/found", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.Providers.Found()) })
@@ -280,21 +282,28 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	// V0.23, V0.55: projects with their identity and their one folder.
 	projects := s.Engine.Projects()
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
-	src := s.Profiles
-	if s.ProfileList != nil {
-		src = s.ProfileList()
-	}
-	// A profile's env stays on the host (V0.50): it may name a secret.
-	profiles := make([]agent.Profile, 0, len(src))
-	for _, p := range src {
-		p.Env = nil
-		profiles = append(profiles, p)
-	}
+	profiles := s.profiles()
 	writeJSON(w, 200, map[string]any{
 		"now": time.Now().UTC(), "user": core.Owner, "buildId": s.BuildID, "host": s.hostName(),
 		"threads": threads, "actions": acts, "profiles": profiles, "projects": projects,
 		"partial": since > 0, "deploy": s.Engine.DeployState(time.Now()),
 	})
+}
+
+// profiles are the current profiles as clients see them: ProfileList when
+// set, else Profiles. A profile's env stays on the host (V0.50): it may name
+// a secret.
+func (s *Server) profiles() []agent.Profile {
+	src := s.Profiles
+	if s.ProfileList != nil {
+		src = s.ProfileList()
+	}
+	out := make([]agent.Profile, 0, len(src))
+	for _, p := range src {
+		p.Env = nil
+		out = append(out, p)
+	}
+	return out
 }
 
 func (s *Server) hostName() string {
