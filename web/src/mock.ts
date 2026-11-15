@@ -485,7 +485,12 @@ function fullFixture(now: number): Fixture {
         createdAt: iso(600), updatedAt: iso(180),
       },
     ];
-    ops.offers = [{ id: "smoke", on: "thread", label: "Run smoke tests", run: "script", argv: ["make", "smoke"], by: "agent", digest: dg("smoke") }];
+    // V0.68: a script in a scratch folder, as on the owner's phone: its confirmation shortens the paths.
+    const scratch = "/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-norban-claude-long-term-token";
+    ops.offers = [
+      { id: "smoke", on: "thread", label: "Run smoke tests", run: "script", argv: ["make", "smoke"], by: "agent", digest: dg("smoke") },
+      { id: "token", on: "thread", label: "Set the Norban token", run: "script", argv: ["bash", `${scratch}/set-norban-token.sh`], cwd: scratch, by: "agent", digest: dg("token") },
+    ];
   }
   return { threads, events, t3 };
 }
