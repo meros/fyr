@@ -1,13 +1,13 @@
 // Package server is the v0 HTTP transport (SPEC 0.5 V0.2, decision 0002,
 // docs/API-v0.md): JSON commands, a snapshot, an SSE stream, the agents'
-// MCP endpoint and the web client.
+// MCP endpoint. A front serves the web client and the device data (push,
+// presence) since V0.51 and V0.54.
 package server
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io/fs"
 	"mime"
 	"net"
 	"net/http"
@@ -28,35 +28,19 @@ import (
 	"github.com/meros/fyr/internal/gitdiff"
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/hostfs"
-	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/provider"
-	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/stream"
 )
 
-// Pusher is what the push endpoints need (*push.Pusher implements it).
-type Pusher interface {
-	PublicKey() string
-	Subscribe(user string, sub push.Subscription, device string) error
-	Unsubscribe(endpoint string) error
-	Notify(user string, pl push.Payload) int
-	Known(endpoint string) bool
-}
-
 type Server struct {
 	Engine  *engine.Engine
 	MCP     http.Handler // agents' MCP endpoint; optional
-	Web     fs.FS        // the built web client
 	BuildID string
 	Host    string // host name shown in the rail; default os.Hostname
 	// OwnerLogin is the Tailscale login allowed over the tailnet (V0.14).
 	// Empty refuses every tailnet request.
 	OwnerLogin string
-	// Push serves the Web Push endpoints (V0.15); optional.
-	Push Pusher
-	// Presence records which thread each device shows (V0.20); optional.
-	Presence *notify.Presence
 	// Attach stores uploaded files (V0.18); optional.
 	Attach   *attach.Store
 	Profiles []provider.Profile
@@ -112,13 +96,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	mux.HandleFunc("GET /api/quota", s.quota)
 	// #42: the profiles alone, for the client after a provider changed.
-	mux.HandleFunc("GET /api/profiles", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.profiles()) })
+	mux.HandleFunc("GET /api/profiles", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.profiles()) })
 	if s.Providers != nil {
-		mux.HandleFunc("GET /api/providers", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.Providers.List()) })
-		mux.HandleFunc("GET /api/providers/found", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.Providers.Found()) })
-	}
-	if s.Presence != nil {
-		PresenceRoute(mux, s.Presence)
+		mux.HandleFunc("GET /api/providers", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Providers.List()) })
+		mux.HandleFunc("GET /api/providers/found", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Providers.Found()) })
 	}
 	if s.Attach != nil {
 		mux.HandleFunc("POST /api/attachments", s.upload)
@@ -126,17 +107,11 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("GET /api/previews/{id}", s.preview)
 		mux.HandleFunc("GET /api/previews/{id}/{path...}", s.previewFile)
 	}
-	if s.Push != nil {
-		PushRoutes(mux, s.Push)
-	}
 	if s.FS != nil {
 		s.fsRoutes(mux)
 	}
 	if s.MCP != nil {
 		mux.Handle("/mcp", s.MCP)
-	}
-	if s.Web != nil {
-		mux.Handle("/", WebClient(s.Web))
 	}
 	return mux
 }
@@ -201,9 +176,6 @@ func tailnetHost(host string) bool {
 // V0.51) in the loopback and tailnet guard and gzip.
 func Browser(owner string, next http.Handler) http.Handler { return guard(owner, withGzip(next)) }
 
-// WebClient serves the built web client with fresh pages (V0.13, V0.15).
-func WebClient(web fs.FS) http.Handler { return noCacheIndex(http.FileServerFS(web)) }
-
 // PeerAuth names the Tailscale login that owns the peer at a remote address
 // (tailscaled whois; V0.51).
 type PeerAuth interface {
@@ -232,36 +204,6 @@ func PeerGuard(owner string, peers PeerAuth, next http.Handler) http.Handler {
 	})
 }
 
-func init() { mime.AddExtensionType(".webmanifest", "application/manifest+json") }
-
-// noCacheIndex keeps the page, the manifest and the service worker fresh,
-// so a new build is picked up at the next load (V0.13, V0.15).
-func noCacheIndex(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := r.URL.Path
-		if p == "/" || strings.HasSuffix(p, ".html") || p == "/sw.js" || p == "/manifest.webmanifest" {
-			w.Header().Set("Cache-Control", "no-cache")
-		}
-		if p == "/manifest.webmanifest" {
-			w.Header().Set("Content-Type", "application/manifest+json")
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
-type actionMeta struct {
-	Name  string `json:"name"`
-	Label string `json:"label"`
-	Key   string `json:"key,omitempty"`
-	Bulk  bool   `json:"bulk,omitempty"`
-}
-
 func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	threads := s.Engine.Snapshot()
 	// V0.38: ?since=REV lists only threads changed after REV (revs grow
@@ -276,18 +218,18 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 		}
 		threads = changed
 	}
-	var acts []actionMeta
+	var acts []api.Action
 	for _, a := range core.Ordered() {
-		acts = append(acts, actionMeta{a.Name, a.Label, a.Key, a.Bulk})
+		acts = append(acts, api.Action{Name: a.Name, Label: a.Label, Key: a.Key, Bulk: a.Bulk})
 	}
 	// V0.23, V0.55: projects with their identity and their one folder.
 	projects := s.Engine.Projects()
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
 	profiles := s.profiles()
-	writeJSON(w, 200, map[string]any{
-		"now": time.Now().UTC(), "user": core.Owner, "buildId": s.BuildID, "host": s.hostName(),
-		"threads": threads, "actions": acts, "profiles": profiles, "projects": projects,
-		"partial": since > 0, "deploy": s.Engine.DeployState(time.Now()),
+	api.WriteJSON(w, 200, api.State[api.Thread, api.Project, provider.Profile]{
+		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(),
+		Threads: threads, Actions: acts, Profiles: profiles, Projects: projects,
+		Partial: since > 0, Deploy: s.Engine.DeployState(time.Now()),
 	})
 }
 
@@ -336,13 +278,13 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		evs, err = s.Engine.Events(r.PathValue("id"), after, limit)
 	}
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		api.WriteJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
 	if evs == nil {
 		evs = []store.Event{} // JSON [] instead of null
 	}
-	writeJSON(w, 200, map[string]any{"events": engine.LeanAll(evs)})
+	api.WriteJSON(w, 200, map[string]any{"events": engine.LeanAll(evs)})
 }
 
 // thread returns one thread's DTO (V0.38): a client whose copy does not
@@ -351,11 +293,11 @@ func (s *Server) thread(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	for _, d := range s.Engine.Snapshot() {
 		if d.ID == id {
-			writeJSON(w, 200, d)
+			api.WriteJSON(w, 200, d)
 			return
 		}
 	}
-	writeJSON(w, 404, map[string]any{"error": "no such thread"})
+	api.WriteJSON(w, 404, map[string]any{"error": "no such thread"})
 }
 
 // fullEvent returns one event whole (V0.38): the stream and the list cut
@@ -363,19 +305,19 @@ func (s *Server) thread(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fullEvent(w http.ResponseWriter, r *http.Request) {
 	seq, err := strconv.ParseInt(r.PathValue("seq"), 10, 64)
 	if err != nil || seq <= 0 {
-		writeJSON(w, 400, map[string]any{"error": "seq must be a positive number"})
+		api.WriteJSON(w, 400, map[string]any{"error": "seq must be a positive number"})
 		return
 	}
 	evs, err := s.Engine.Events(r.PathValue("id"), seq-1, 1)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		api.WriteJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
 	if len(evs) == 0 || evs[0].Seq != seq {
-		writeJSON(w, 404, map[string]any{"error": "no such event"})
+		api.WriteJSON(w, 404, map[string]any{"error": "no such event"})
 		return
 	}
-	writeJSON(w, 200, evs[0])
+	api.WriteJSON(w, 200, evs[0])
 }
 
 // changes serves the Changes tab (SPEC 0.5 V0.25): the branch diff of the
@@ -383,7 +325,7 @@ func (s *Server) fullEvent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.Engine.Thread(r.PathValue("id"))
 	if !ok {
-		writeJSON(w, 404, map[string]any{"error": "no such thread"})
+		api.WriteJSON(w, 404, map[string]any{"error": "no such thread"})
 		return
 	}
 	if r.URL.Query().Has("path") {
@@ -392,26 +334,26 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Has("since") { // V0.65: from the seen head
 			p, err = gitdiff.FilePatchSince(r.Context(), t.Cwd, r.URL.Query().Get("path"), r.URL.Query().Get("since"))
 			if errors.Is(err, gitdiff.ErrBadSince) {
-				writeJSON(w, 400, map[string]any{"error": err.Error()})
+				api.WriteJSON(w, 400, map[string]any{"error": err.Error()})
 				return
 			}
 		} else {
 			p, err = gitdiff.FilePatch(r.Context(), t.Cwd, r.URL.Query().Get("path"))
 		}
 		if err != nil {
-			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			api.WriteJSON(w, 500, map[string]any{"error": err.Error()})
 			return
 		}
-		writeJSON(w, 200, p)
+		api.WriteJSON(w, 200, p)
 		return
 	}
 	c, err := gitdiff.Summary(r.Context(), t.Cwd)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		api.WriteJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
 	if !c.Git {
-		writeJSON(w, 200, map[string]bool{"git": false})
+		api.WriteJSON(w, 200, map[string]bool{"git": false})
 		return
 	}
 	// V0.65: the owner's Viewed marks and what is new since the last look.
@@ -424,7 +366,7 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 		if look.Files != nil || look.Head != "" {
 			since, err := gitdiff.SinceSeen(r.Context(), t.Cwd, c, gitdiff.Seen{Head: look.Head, Files: look.Files})
 			if err != nil {
-				writeJSON(w, 500, map[string]any{"error": err.Error()})
+				api.WriteJSON(w, 500, map[string]any{"error": err.Error()})
 				return
 			}
 			since.At = look.At
@@ -434,7 +376,7 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 			c.Since = since
 		}
 	}
-	writeJSON(w, 200, c)
+	api.WriteJSON(w, 200, c)
 }
 
 // prDetail serves the PR tab (SPEC 0.5 V0.43). Failures are 200 {error}, so
@@ -442,52 +384,52 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 func (s *Server) prDetail(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.Engine.Thread(r.PathValue("id"))
 	if !ok {
-		writeJSON(w, 404, map[string]any{"error": "no such thread"})
+		api.WriteJSON(w, 404, map[string]any{"error": "no such thread"})
 		return
 	}
 	pr := t.MainPR()
 	if pr == nil || pr.URL == "" {
-		writeJSON(w, 200, map[string]any{"error": "This thread has no PR."})
+		api.WriteJSON(w, 200, map[string]any{"error": "This thread has no PR."})
 		return
 	}
 	if s.PR == nil {
-		writeJSON(w, 200, map[string]any{"error": "This host does not read PR details."})
+		api.WriteJSON(w, 200, map[string]any{"error": "This host does not read PR details."})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	d, err := s.PR.Get(ctx, pr.URL, r.URL.Query().Get("fresh") == "1")
 	if err != nil {
-		writeJSON(w, 200, map[string]any{"error": err.Error()})
+		api.WriteJSON(w, 200, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, d)
+	api.WriteJSON(w, 200, d)
 }
 
 // handoverPlan answers which rung a handover to ?profile= would use (V0.45).
 func (s *Server) handoverPlan(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, ok := s.Engine.Thread(id); !ok {
-		writeJSON(w, 404, map[string]any{"error": "no such thread"})
+		api.WriteJSON(w, 404, map[string]any{"error": "no such thread"})
 		return
 	}
 	if s.HandoverPlan == nil {
-		writeJSON(w, 200, agent.Plan{Rung: agent.RungAdopt})
+		api.WriteJSON(w, 200, agent.Plan{Rung: agent.RungAdopt})
 		return
 	}
-	writeJSON(w, 200, s.HandoverPlan(id, r.URL.Query().Get("profile")))
+	api.WriteJSON(w, 200, s.HandoverPlan(id, r.URL.Query().Get("profile")))
 }
 
 func (s *Server) command(w http.ResponseWriter, r *http.Request) {
 	var c api.Cmd
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<20)).Decode(&c); err != nil {
-		writeJSON(w, 400, api.Reply{Error: "bad JSON: " + err.Error()})
+		api.WriteJSON(w, 400, api.Reply{Error: "bad JSON: " + err.Error()})
 		return
 	}
 	var rep api.Reply
 	if strings.HasPrefix(c.Action, "provider.") {
 		if s.Providers == nil {
-			writeJSON(w, 404, api.Reply{Error: "no providers on this host"})
+			api.WriteJSON(w, 404, api.Reply{Error: "no providers on this host"})
 			return
 		}
 		rep = s.Providers.Command(c)
@@ -497,81 +439,20 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request) {
 	if rep.Status == 0 {
 		rep.Status = 200
 	}
-	writeJSON(w, rep.Status, rep)
+	api.WriteJSON(w, rep.Status, rep)
 }
 
 func (s *Server) t3(w http.ResponseWriter, r *http.Request) {
 	if s.T3Candidates == nil {
-		writeJSON(w, 200, map[string]any{"threads": []any{}})
+		api.WriteJSON(w, 200, map[string]any{"threads": []any{}})
 		return
 	}
 	c, err := s.T3Candidates()
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		api.WriteJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"threads": c})
-}
-
-// PushRoutes serves the Web Push endpoints (V0.15) for p: a host's before
-// decision 0016, a front's since V0.54 (the front holds the device data).
-func PushRoutes(mux *http.ServeMux, p Pusher) {
-	mux.HandleFunc("GET /api/push/key", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]string{"publicKey": p.PublicKey()})
-	})
-	mux.HandleFunc("POST /api/push/subscribe", func(w http.ResponseWriter, r *http.Request) {
-		var b struct {
-			Subscription push.Subscription `json:"subscription"`
-			Device       string            `json:"device"`
-		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b); err != nil {
-			writeJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON"})
-			return
-		}
-		if err := p.Subscribe(core.Owner, b.Subscription, b.Device); err != nil {
-			writeJSON(w, 400, map[string]any{"ok": false, "error": err.Error()})
-			return
-		}
-		writeJSON(w, 200, map[string]any{"ok": true})
-	})
-	mux.HandleFunc("POST /api/push/unsubscribe", func(w http.ResponseWriter, r *http.Request) {
-		var b struct {
-			Endpoint string `json:"endpoint"`
-		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b); err != nil || b.Endpoint == "" {
-			writeJSON(w, 400, map[string]any{"ok": false, "error": "endpoint is required"})
-			return
-		}
-		p.Unsubscribe(b.Endpoint)
-		writeJSON(w, 200, map[string]any{"ok": true})
-	})
-	mux.HandleFunc("POST /api/push/status", func(w http.ResponseWriter, r *http.Request) {
-		var b struct {
-			Endpoint string `json:"endpoint"`
-		}
-		json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b)
-		writeJSON(w, 200, map[string]bool{"known": b.Endpoint != "" && p.Known(b.Endpoint)})
-	})
-	mux.HandleFunc("POST /api/push/test", func(w http.ResponseWriter, r *http.Request) {
-		n := p.Notify(core.Owner, push.Payload{Title: "Fyr", Body: "Notifications work on this device.", State: "test"})
-		writeJSON(w, 200, map[string]int{"delivered": n})
-	})
-}
-
-// PresenceRoute records which thread each device shows (V0.20).
-func PresenceRoute(mux *http.ServeMux, p *notify.Presence) {
-	mux.HandleFunc("POST /api/presence", func(w http.ResponseWriter, r *http.Request) {
-		var b struct {
-			ThreadID string `json:"threadId"`
-			Device   string `json:"device"`
-		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&b); err != nil || b.Device == "" {
-			http.Error(w, "threadId and device are required", 400)
-			return
-		}
-		p.Beat(b.Device, b.ThreadID, time.Now())
-		w.WriteHeader(http.StatusNoContent)
-	})
+	api.WriteJSON(w, 200, map[string]any{"threads": c})
 }
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
@@ -581,14 +462,14 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := s.Attach.Save(name, r.Header.Get("Content-Type"), r.Body)
 	if errors.Is(err, attach.ErrTooLarge) {
-		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"ok": false, "error": err.Error()})
+		api.WriteJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		api.WriteJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, m)
+	api.WriteJSON(w, 200, m)
 }
 
 func (s *Server) download(w http.ResponseWriter, r *http.Request) {
@@ -723,16 +604,16 @@ func (s *Server) fsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/fs/list", func(w http.ResponseWriter, r *http.Request) {
 		l, err := s.FS.List(r.URL.Query().Get("path"))
 		if err != nil {
-			writeJSON(w, 400, map[string]any{"error": err.Error()})
+			api.WriteJSON(w, 400, map[string]any{"error": err.Error()})
 			return
 		}
-		writeJSON(w, 200, l)
+		api.WriteJSON(w, 200, l)
 	})
 	mux.HandleFunc("GET /api/fs/recent", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"dirs": s.FS.RecentDirs()})
+		api.WriteJSON(w, 200, map[string]any{"dirs": s.FS.RecentDirs()})
 	})
 	mux.HandleFunc("GET /api/fs/repos", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"dirs": s.FS.Repos()})
+		api.WriteJSON(w, 200, map[string]any{"dirs": s.FS.Repos()})
 	})
 	mux.HandleFunc("POST /api/fs/mkdir", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
@@ -740,25 +621,25 @@ func (s *Server) fsRoutes(mux *http.ServeMux) {
 			Name   string `json:"name"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&b); err != nil {
-			writeJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON"})
+			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON"})
 			return
 		}
 		p, err := s.FS.Mkdir(b.Parent, b.Name)
 		if err != nil {
-			writeJSON(w, 400, map[string]any{"ok": false, "error": err.Error()})
+			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"ok": true, "path": p})
+		api.WriteJSON(w, 200, map[string]any{"ok": true, "path": p})
 	})
 }
 
 // quota answers GET /api/quota (V0.44): due providers are read, at most 8 s.
 func (s *Server) quota(w http.ResponseWriter, r *http.Request) {
 	if s.Quota == nil {
-		writeJSON(w, 200, []any{})
+		api.WriteJSON(w, 200, []any{})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
-	writeJSON(w, 200, s.Quota(ctx))
+	api.WriteJSON(w, 200, s.Quota(ctx))
 }

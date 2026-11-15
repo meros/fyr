@@ -4,6 +4,8 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
@@ -88,4 +90,52 @@ type Project struct {
 	LastUsed time.Time `json:"lastUsed"`
 	// QuietUntil is the end of the quiet hours the project is in (V0.46).
 	QuietUntil *time.Time `json:"quietUntil,omitempty"`
+}
+
+// State is GET /api/state (docs/API-v0.md). A host fills it with its own
+// records (T api.Thread, P api.Project, F its profiles); a front with its
+// hosts' records as it got them, stamped with their host, and Hosts (V0.51,
+// V0.54).
+type State[T, P, F any] struct {
+	Now      time.Time `json:"now"`
+	User     string    `json:"user"`
+	BuildID  string    `json:"buildId"`
+	Host     string    `json:"host"`
+	Threads  []T       `json:"threads"`
+	Actions  []Action  `json:"actions"`
+	Profiles []F       `json:"profiles"`
+	Projects []P       `json:"projects"`
+	// Partial: ?since=REV listed only the threads changed after REV (V0.38).
+	Partial bool `json:"partial"`
+	// Deploy is the deploy progress to show (V0.39), or nil.
+	Deploy any `json:"deploy"`
+	// Hosts are a front's hosts (V0.51); a host sends none.
+	Hosts []Host `json:"hosts,omitempty"`
+}
+
+// Action is an owner action as clients list it.
+type Action struct {
+	Name  string `json:"name"`
+	Label string `json:"label"`
+	Key   string `json:"key,omitempty"`
+	Bulk  bool   `json:"bulk,omitempty"`
+}
+
+// Host is one of a front's hosts in its state (V0.54): online or since when
+// not, its profiles and its deploy.
+type Host struct {
+	Name   string `json:"name"`
+	Online bool   `json:"online"`
+	Since  string `json:"since,omitempty"`
+	Error  string `json:"error,omitempty"`
+	// Profiles are the host's own (decision 0015); null when the host sent none.
+	Profiles []any `json:"profiles"`
+	Deploy   any   `json:"deploy,omitempty"`
+}
+
+// WriteJSON is the one JSON reply of the host and the front.
+func WriteJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
 }

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"testing/fstest"
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/engine"
@@ -34,7 +33,7 @@ func TestProviderEndpoints(t *testing.T) {
 	}
 	defer st.Close()
 	fp := &fakeProviders{}
-	s := &Server{Engine: engine.New(st), Web: fstest.MapFS{"index.html": {Data: []byte("x")}}, Providers: fp,
+	s := &Server{Engine: engine.New(st), Providers: fp,
 		ProfileList: func() []provider.Profile {
 			return []provider.Profile{{ID: "p1", Name: "P", Env: []string{"ANTHROPIC_AUTH_TOKEN=sk-leak-1234"}, Key: func() (string, error) { return "sk-leak-5678", nil }}}
 		}}
