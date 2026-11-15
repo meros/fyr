@@ -301,7 +301,7 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) {
 	if c == nil && p.Branch != "" {
 		for i := range t.Changes {
 			x := &t.Changes[i]
-			if x.Kind == "code" && x.Branch == p.Branch && !Ended(x.Phase) && prOf(x) == "" {
+			if x.Kind == "code" && x.Branch == p.Branch && !Ended(x.Phase) && x.PR() == "" {
 				c = x
 				break
 			}
@@ -557,8 +557,8 @@ func changeByEvidence(t *Thread, kind, url string) *Change {
 	return nil
 }
 
-// prOf is the PR URL of a change, or "".
-func prOf(c *Change) string {
+// PR is the URL of the change's first PR evidence, or "".
+func (c *Change) PR() string {
 	for _, ev := range c.Evidence {
 		if ev.Kind == "pr" {
 			return ev.URL
@@ -572,7 +572,7 @@ func PRURLs(t *Thread) []string {
 	var out []string
 	for i := range t.Changes {
 		c := &t.Changes[i]
-		if u := prOf(c); u != "" && InFlight(c.Phase) {
+		if u := c.PR(); u != "" && InFlight(c.Phase) {
 			out = append(out, u)
 		}
 	}

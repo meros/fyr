@@ -75,7 +75,7 @@ func TestPRBecomesCodeChange(t *testing.T) {
 		t.Fatalf("the PR made a second change instead of joining the branch: %+v", th.Changes)
 	}
 	c := &th.Changes[0]
-	if c.Title != "Feature" || c.Phase != PhaseReview || prOf(c) == "" {
+	if c.Title != "Feature" || c.Phase != PhaseReview || c.PR() == "" {
 		t.Fatalf("joined: %+v", c)
 	}
 	// A second PR of the same thread is its own change.

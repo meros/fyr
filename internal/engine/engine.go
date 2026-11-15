@@ -61,7 +61,8 @@ type Engine struct {
 
 	Agents  Agents
 	Effects EffectRunner
-	// Scripts runs script actions of changes (V0.60); nil runs them with exec.
+	// Scripts runs script actions of changes, the thread and its view (V0.60);
+	// nil runs them with exec.
 	Scripts ScriptRunner
 	Hub     *Hub
 	Now     func() time.Time

@@ -40,16 +40,6 @@ type Attention struct {
 	Reason  string  `json:"reason,omitempty"`
 }
 
-// precedence orders Needs-you rows; a lower number sorts first.
-var precedence = map[State]int{Asking: 0, Failed: 1, Blocked: 2, Done: 3}
-
-func Precedence(s State) int {
-	if p, ok := precedence[s]; ok {
-		return p
-	}
-	return 9
-}
-
 // Compute returns the attention of t for the user who owns v at time now.
 //
 // Order: archived, settled, then the snooze (which a new question or failure
