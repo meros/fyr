@@ -306,9 +306,8 @@ export interface Change {
   /** V0.60, #31: the change's actions and their last runs */
   offers?: Offer[];
   runs?: OfferRun[];
-  /** V0.66: the failed checks' annotations while the PR is open, and the merge commit Fyr watches for deployments. */
+  /** V0.66: the failed checks' annotations while the PR is open. The deploy watch is a Rule of the thread (#46). */
   annotations?: CiAnnotation[];
-  deployWatch?: { repo: string; sha: string; mergedAt: string; checked?: boolean; seen?: boolean; done?: boolean };
   createdAt: string;
   updatedAt: string;
 }
