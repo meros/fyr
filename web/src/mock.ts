@@ -436,6 +436,16 @@ function fullFixture(now: number): Fixture {
     const iso = (min: number) => new Date(now - min * 60_000).toISOString();
     const dg = (s: string) => s.length.toString(16).padStart(16, "0");
     ops.changes = [
+      // V0.65: the code change of the mock branch; its revision summaries show above the files.
+      {
+        id: "c_lasso", key: "branch:fix/map-lasso-mobile", kind: "code", title: "Lasso works on mobile", branch: "fix/map-lasso-mobile", phase: "working", phaseBy: "agent",
+        revisions: [
+          { id: "3f2a9c1", summary: "Lasso selects on touch; render skips features out of view", by: "agent", at: iso(200) },
+          { id: "51d0aa3", summary: "Map tests for 20 render cases", by: "agent", at: iso(185) },
+          { id: "7be1c0d", summary: "Optional cluster tier and warm nodes in the search module; thicker stroke for selected features", by: "agent", at: iso(20) },
+        ],
+        createdAt: iso(210), updatedAt: iso(20),
+      },
       {
         id: "c_scale", key: "k8s:prod/api replicas", kind: "infra", title: "Raise api replicas to 4", targets: ["k8s:gke-prod/api"], phase: "landed", phaseBy: "agent", label: "applied to prod",
         revisions: [{ id: "sha256:9f2c41d07aa1", summary: "replicas 2 → 4, readiness probe 5 s", by: "agent", at: iso(70) }],
@@ -1208,6 +1218,12 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.markUnseen":
         idle("done", "needs");
         break;
+      case "thread.changesSeen":
+        break; // V0.65: the mock keeps its fixed look, so every visit shows the same "new since"
+      case "thread.fileViewed":
+        if (args.viewed === true) mockViewed.set(`${t.id}:${String(args.path)}`, String(args.blob ?? ""));
+        else mockViewed.delete(`${t.id}:${String(args.path)}`);
+        break;
       case "thread.rename":
         put(t, { title: String(args.title ?? t.title) });
         break;
@@ -1365,26 +1381,54 @@ export function createMockServer(scenario: string, real0: number): MockServer {
 
 const LONG_CHANGE_PATH = `infrastructure/${LONG_PROJECT}/modules/opensearch/cluster/variables-for-the-search-cluster-and-its-dashboards.tf`;
 
-/** The branch diff of a mock thread; t_deploy is outside git. */
+/** V0.65: the mock's Viewed marks, `${threadId}:${path}` → blob. t_done starts with its test file viewed. */
+const mockViewed = new Map<string, string>();
+
+/** A stable fake blob id for a mock path. */
+function mockBlob(path: string): string {
+  let h = 0;
+  for (const ch of path) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h.toString(16).padStart(8, "0").repeat(5);
+}
+
+/** The branch diff of a mock thread; t_deploy is outside git. t_done also has a look 3 h ago (V0.65). */
 export function mockChanges(threadId: string): ChangesDTO {
   if (threadId === "t_deploy") return { git: false };
-  return {
+  if (threadId === "t_done" && !mockViewed.has("t_done:init")) {
+    mockViewed.set("t_done:init", "");
+    mockViewed.set("t_done:web/test/map.test.ts", mockBlob("web/test/map.test.ts"));
+    mockViewed.set("t_done:web/src/map/lasso.ts", mockBlob("web/src/map/lasso.ts"));
+  }
+  const files = [
+    { path: "docs/old-notes.md", status: "deleted" as const, additions: 0, deletions: 12, binary: false },
+    { path: LONG_CHANGE_PATH, status: "modified" as const, additions: 4, deletions: 2, binary: false, blob: mockBlob(LONG_CHANGE_PATH) },
+    { path: "web/public/marker.png", status: "added" as const, additions: 0, deletions: 0, binary: true, blob: mockBlob("web/public/marker.png") },
+    { path: "web/src/map/lasso.ts", oldPath: "web/src/map/select.ts", status: "renamed" as const, additions: 6, deletions: 2, binary: false, blob: mockBlob("web/src/map/lasso.ts") },
+    { path: "web/src/map/render.ts", status: "modified" as const, additions: 42, deletions: 18, binary: false, blob: mockBlob("web/src/map/render.ts") },
+    { path: "web/test/map.test.ts", status: "added" as const, additions: 64, deletions: 0, binary: false, blob: mockBlob("web/test/map.test.ts") },
+  ].map((f) => ({ ...f, viewed: mockViewed.get(`${threadId}:${f.path}`) === (f.blob ?? "") && mockViewed.has(`${threadId}:${f.path}`) }));
+  const c: ChangesDTO = {
     git: true,
     root: "/home/owner/src/norban/web",
     branch: "fix/map-lasso-mobile",
     base: "origin/main",
     mergeBase: "3f2a9c1d0e",
     commits: 3,
+    head: "7be1c0d4a9f2e3b5c6d7e8f90a1b2c3d4e5f6a7b",
     truncated: false,
-    files: [
-      { path: "docs/old-notes.md", status: "deleted", additions: 0, deletions: 12, binary: false },
-      { path: LONG_CHANGE_PATH, status: "modified", additions: 4, deletions: 2, binary: false },
-      { path: "web/public/marker.png", status: "added", additions: 0, deletions: 0, binary: true },
-      { path: "web/src/map/lasso.ts", oldPath: "web/src/map/select.ts", status: "renamed", additions: 6, deletions: 2, binary: false },
-      { path: "web/src/map/render.ts", status: "modified", additions: 42, deletions: 18, binary: false },
-      { path: "web/test/map.test.ts", status: "added", additions: 64, deletions: 0, binary: false },
-    ],
+    files,
   };
+  if (threadId === "t_done") {
+    const pick = (p: string, add: number, del: number) => ({ ...files.find((f) => f.path === p)!, additions: add, deletions: del });
+    c.since = {
+      head: "51d0aa3c9e8b7f6a5d4c3b2a1908f7e6d5c4b3a2",
+      at: new Date(Date.now() - 3 * 3600_000).toISOString(),
+      mode: "ancestor",
+      commits: 2,
+      files: [pick(LONG_CHANGE_PATH, 2, 1), pick("web/src/map/render.ts", 3, 1)],
+    };
+  }
+  return c;
 }
 
 /** One mock file's unified diff. */

@@ -853,10 +853,10 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
           delivery={{ cancel: (messageId) => p.actions.cancelMessage(t.id, messageId), resend: (args) => p.actions.send(t.id, args) }}
         />
       ) : p.tab === "changes" ? (
-        <>
+        <div class="chtab">
           <ChangeList t={t} onRun={(a, args) => p.actions.run(t.id, a, args)} />
-          <CiNotesScope changes={t.changes}><ChangesView threadId={t.id} /></CiNotesScope>
-        </>
+          <CiNotesScope changes={t.changes}><ChangesView threadId={t.id} changes={t.changes} /></CiNotesScope>
+        </div>
       ) : p.tab === "pr" ? (
         <PrTab t={t} now={p.now} phone onSend={(text) => p.actions.send(t.id, { text })} onDismiss={() => p.actions.dismissPR(t.id)} onChanges={() => setTab("changes")} />
       ) : null}

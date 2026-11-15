@@ -19,6 +19,10 @@
       "name": "thread.archive"
     },
     {
+      "label": "Changes seen",
+      "name": "thread.changesSeen"
+    },
+    {
       "label": "New thread",
       "name": "thread.create"
     },
@@ -29,6 +33,10 @@
     {
       "label": "Dismiss PR",
       "name": "thread.dismissPR"
+    },
+    {
+      "label": "Viewed",
+      "name": "thread.fileViewed"
     },
     {
       "label": "Hand over",

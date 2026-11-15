@@ -215,7 +215,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {tab === "changes" && (
         <div class="chtab">
           <ChangeList t={t} onRun={p.onRun} />
-          <CiNotesScope changes={t.changes}><ChangesView threadId={t.id} /></CiNotesScope>
+          <CiNotesScope changes={t.changes}><ChangesView threadId={t.id} changes={t.changes} /></CiNotesScope>
         </div>
       )}
       {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}

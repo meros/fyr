@@ -180,7 +180,9 @@ const SCREENS = [
   // SPEC 0.5 V0.25: the Changes tab with one file's diff open.
   { name: "changes with a diff", url: "?mock=rail&open=t_mapperf&tab=changes", openDiff: true },
   // SPEC 0.5 V0.66: a failing PR's CI annotations: a count on the file rows, notes in the opened file's diff; a live change.
-  { name: "changes with CI annotations", url: "?mock=1&open=t_done&tab=changes", openDiff: "web/src/map/render.ts" },
+  { name: "changes with CI annotations", url: "?mock=1&open=t_done&tab=changes", openDiff: "web/src/map/render.ts", wholeBranch: true },
+  // SPEC 0.5 V0.65: New since you looked and Whole branch, the agent's notes, Viewed checkboxes; every target 44 px.
+  { name: "changes since you looked", url: "?mock=1&open=t_done&tab=changes", openDiff: true },
   // SPEC 0.5 V0.43: the PR tab with a failing check and 2 unresolved review threads, and the Merge dialog.
   { name: "PR tab with a failing check", url: "?mock=1&open=t_block&tab=pr", prTab: true },
   { name: "PR merge dialog", url: "?mock=1&open=t_s2&tab=pr", sheet: "merge" },
@@ -228,6 +230,13 @@ const MEASURE = `(() => {
     saveButton: rect('.pedit .pformb .btn.p'),
     toolOutput: (() => { const o = document.querySelector('.tlout'); if (!o) return null; const r = o.getBoundingClientRect(); return { right: r.right, lines: o.textContent.split(String.fromCharCode(10)).length }; })(),
     changeRows: document.querySelectorAll('.chg-file').length,
+    since: (() => {
+      const el = document.querySelector('.chg'); if (!el) return null;
+      const targets = [...el.querySelectorAll('.chg-mode, .chg-vw, .chg-file')].filter(e => e.getBoundingClientRect().height > 0);
+      const small = targets.map(e => ({ t: (e.textContent || e.className).trim().slice(0, 30), h: e.getBoundingClientRect().height, w: e.getBoundingClientRect().width })).filter(x => x.h < 43.5 || x.w < 43.5);
+      const right = Math.max(0, ...[...el.querySelectorAll('.chg-modes, .chg-notes, .chg-vw, .chg-mode')].map(e => e.getBoundingClientRect().right));
+      return { modes: [...el.querySelectorAll('.chg-mode')].map(e => e.textContent), pressed: el.querySelector('.chg-mode.on')?.textContent ?? '', count: el.querySelector('.chg-vcount')?.textContent ?? '', notes: el.querySelectorAll('.chg-notes li').length, boxes: el.querySelectorAll('.chg-vw input').length, small, right };
+    })(),
     diffLines: document.querySelectorAll('.chg-diff .dl').length,
     ciCounts: [...document.querySelectorAll('.chg-ci')].map(e => e.textContent).join(","),
     ciNotes: [...document.querySelectorAll('.chg-diff .dl.nt')].filter(e => /[✖▲] lint/.test(e.textContent)).length,
@@ -387,7 +396,15 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     }
   }
   if (ctx.startsWith("changes")) {
-    check(m.changeRows >= 4, `${ctx}: expected the changed files (found ${m.changeRows})`);
+    check(m.changeRows >= (ctx.includes("since") ? 2 : 4), `${ctx}: expected the changed files (found ${m.changeRows})`);
+    if (ctx.includes("since")) {
+      const v = m.since;
+      check(!!v && v.modes.length === 2 && v.pressed === "New since you looked · 2" && v.count === "0 of 2 viewed" && v.notes === 3 && v.boxes === 2, `${ctx}: the since view is wrong ${JSON.stringify(v)}`);
+      if (v) {
+        check(v.small.length === 0, `${ctx}: targets under 44 px ${JSON.stringify(v.small)}`);
+        check(v.right <= window_innerWidth(m) + 0.5, `${ctx}: the since controls run ${(v.right - window_innerWidth(m)).toFixed(1)} px past the right edge`);
+      }
+    }
     check(m.diffLines >= 5, `${ctx}: the opened file shows no diff lines (${m.diffLines})`);
     if (ctx.startsWith("changes with CI")) {
       check(m.ciCounts === "2,1", `${ctx}: expected annotation counts 2 and 1 on the file rows (found "${m.ciCounts}")`);
@@ -465,6 +482,11 @@ async function openScreen(s, w, h) {
     await evaluate(`(() => { const rows = document.querySelectorAll('.tl.row'); rows[rows.length - 1]?.click(); })()`);
     await sleep(200);
     await evaluate(`document.querySelector('.tlout')?.scrollIntoView({ block: 'nearest' })`);
+  }
+  if (s.wholeBranch) {
+    // V0.65 opens on New since you looked when there is a look; this screen checks the whole branch (V0.66).
+    await evaluate(`[...document.querySelectorAll('.chg-mode')].find((b) => b.textContent.startsWith('Whole'))?.click()`);
+    await sleep(200);
   }
   if (s.openDiff) {
     await sleep(300);
