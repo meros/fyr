@@ -1,30 +1,8 @@
-import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
-/** Run when the browser is idle (V0.38: storing never competes with input). */
-const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
-import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
-import { listPref, listShown, setListPref } from "./prefs.ts";
-import { DeployBanner } from "./deploy-ui.tsx";
-import { cache, mergeEventLists } from "./cache.ts";
-import { setFullEventSource } from "./thread.tsx";
-import { rememberOpen, takeOpen } from "./push.ts";
-const sessionStore = () => {
-  try {
-    return typeof sessionStorage !== "undefined" ? sessionStorage : null;
-  } catch {
-    return null;
-  }
-};
-import { navTransition } from "./native.ts";
-import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
-import { ContextMenu } from "./menu-ui.tsx";
-import { Boundary } from "./boundary.tsx";
-import { shouldClearNotification } from "./push.ts";
-import { clearThreadNotification } from "./pwa.ts";
 // The app shell: state, commands and the keyboard.
 
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, StateDTO, ThreadDTO } from "./types.ts";
+import type { Decision, ThreadDTO } from "./types.ts";
 import { createApi } from "./api.ts";
 import { setQuotaSource } from "./quota-ui.tsx";
 import { setChangesSource } from "./changes-ui.tsx";
@@ -35,14 +13,18 @@ import {
   flatOrder,
   initialStore,
   isAvailable,
-  lastSeq,
   liveEvent,
+  matchesQuery,
   mergeEvents,
   recordUndo,
+  resumeSeq,
+  resumed,
   sectionOf,
   sections,
   setConn,
+  presetForKey,
   snoozePresets,
+  stateForCache,
   undoCommands,
   undoKindOf,
   undoLive,
@@ -57,31 +39,51 @@ import {
   applyThreadPatch,
 } from "./store.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
-import { answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
-import { keyHints } from "./keys.ts";
+import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
+import { dialogAfterClose, keyHints } from "./keys.ts";
 import { Settings } from "./settings-ui.tsx";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
 import { HandoverDialog } from "./handover-ui.tsx";
-import { setToolDetails } from "./prefs.ts";
+import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
 import { setAttachmentUrl } from "./attach.ts";
 import { setPreviewUrl } from "./previews.ts";
 import { PreviewViewer } from "./preview-ui.tsx";
 import { setUploader } from "./attach-ui.tsx";
 import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
-import { disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
-import { PUSH_TITLE, unsupportedReason, type PushStatus } from "./push.ts";
+import { clearThreadNotification, disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
+import { PUSH_TITLE, rememberOpen, shouldClearNotification, takeOpen, unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, LAST_PROJECT_KEY, filterByProject } from "./projects.ts";
+import { FILTER_KEY, LAST_PROJECT_KEY, filterByProject, moveToast } from "./projects.ts";
 import { hideQuiet, nextQuietEnd } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
+import { hostLabel } from "./hosts.ts";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
+import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
+import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
+import { DeployBanner } from "./deploy-ui.tsx";
+import { cache, mergeEventLists } from "./cache.ts";
+import { setFullEventSource } from "./thread.tsx";
+import { navTransition } from "./native.ts";
+import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
+import { ContextMenu } from "./menu-ui.tsx";
+import { Boundary } from "./boundary.tsx";
+
+/** Run when the browser is idle (V0.38: storing never competes with input). */
+const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
+const sessionStore = () => {
+  try {
+    return typeof sessionStorage !== "undefined" ? sessionStorage : null;
+  } catch {
+    return null;
+  }
+};
 
 const PHONE_QUERY = "(max-width: 760px)";
 
@@ -279,7 +281,7 @@ function App() {
     if (!q) return base;
     const out: Record<string, ThreadDTO> = {};
     for (const t of Object.values(base)) {
-      if (`${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(q)) out[t.id] = t;
+      if (matchesQuery(t, q)) out[t.id] = t;
     }
     return out;
   }, [searchable, filterOn, query, quietClock, store.clockOffset]);
@@ -367,7 +369,7 @@ function App() {
     const want = params.get("open");
     const first = want && store.threads[want] ? want : order[0];
     // On a phone the inbox comes first; open a thread only when asked (?open=).
-    const phone = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 760px)").matches;
+    const phone = typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches;
     if (first && (!phone || want)) {
       setSel(first);
       setView({ id: first, mode: "open" });
@@ -421,7 +423,8 @@ function App() {
   useEffect(() => {
     if (!openId || !store.loaded) return;
     let cancelled = false;
-    const after = lastSeq(store, openId);
+    // After a reconnect, from where the timeline stood when the stream dropped (review 2026-11-15).
+    const after = resumeSeq(store, openId);
     const known = !!store.events[openId];
     const id = openId;
     void (async () => {
@@ -438,7 +441,7 @@ function App() {
           const merged = mergeEventLists(stored, evs, PAGE, evs.length >= PAGE);
           if (evs.length >= PAGE) setEarlier((m) => ({ ...m, [id]: true }));
           setStore((s) => mergeEvents(s, id, merged, true));
-        } else setStore((s) => mergeEvents(s, id, evs, !known));
+        } else setStore((s) => resumed(mergeEvents(s, id, evs, !known), id, from));
       } catch {
         if (!cancelled && !known && !stored?.length) setStore((s) => mergeEvents(s, id, [], true));
       }
@@ -461,12 +464,12 @@ function App() {
     const t = setTimeout(
       () =>
         idle(() =>
-          void cache.saveState({ now: new Date().toISOString(), user: store.user, host: store.host, threads: Object.values(store.threads), actions: store.actions, profiles: store.profiles, projects: store.projects } as StateDTO),
+          void cache.saveState(stateForCache(store, new Date().toISOString())),
         ),
       2000,
     );
     return () => clearTimeout(t);
-  }, [store.threads, store.projects, store.loaded]);
+  }, [store.threads, store.projects, store.hosts, store.deploy, store.loaded]);
 
   // Decision card state follows the open decision.
   const decision: Decision | null = viewThread?.decisions?.[0] ?? null;
@@ -523,9 +526,13 @@ function App() {
   // Track whether focus is in a text field (for the key-hint bar).
   useEffect(() => {
     const f = () => setInText(isTextTarget(document.activeElement));
+    const out = () => setTimeout(f, 0);
     document.addEventListener("focusin", f);
-    document.addEventListener("focusout", () => setTimeout(f, 0));
-    return () => document.removeEventListener("focusin", f);
+    document.addEventListener("focusout", out);
+    return () => {
+      document.removeEventListener("focusin", f);
+      document.removeEventListener("focusout", out);
+    };
   }, []);
 
   // ---- actions ----
@@ -685,7 +692,8 @@ function App() {
     if (!cs || !view) return;
     const answers = answersOf(cs, d);
     if (!answers) return;
-    void runAction("thread.answer", [view.id], { decisionId: d.id, answers }).then(() => nextNeeding(1, view.id));
+    const id = view.id;
+    void answerThenNext(() => runAction("thread.answer", [id], { decisionId: d.id, answers }), () => nextNeeding(1, id));
   };
 
   /** Enter in the answer field: the text answers the active question, then submit or move on. */
@@ -800,12 +808,14 @@ function App() {
       if (!e) setToast({ text: `Deleted ${name}`, undo: false, at: Date.now() });
       return e;
     },
-    /** File threads into a project; null: No project. */
+    /** File threads into a project; null: No project. Shows the result or the error as a toast. */
     move: async (ids: string[], projectId: string | null): Promise<string | null> => {
       const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId: projectId ?? "" }, id)))).filter(Boolean);
       const where = projectId ? (store.projects.find((p) => p.id === projectId)?.name ?? "the project") : null;
-      if (!errs.length) setToast({ text: ids.length === 1 ? (where ? `Filed in ${where}` : "No project now") : where ? `Filed ${ids.length} threads in ${where}` : `${ids.length} threads have no project now`, undo: false, at: Date.now() });
-      return errs[0] ?? null;
+      // Both shells show the result here, the error too (review 2026-11-15).
+      const e = errs[0] ?? null;
+      setToast({ ...moveToast(ids.length, where, e), undo: false, at: Date.now() });
+      return e;
     },
   };
   // V0.42: the host folder picker, a dialog on the desktop and a sheet on the phone, over whatever asked for it.
@@ -934,12 +944,16 @@ function App() {
     if (dialog) {
       if (k === "Escape") {
         e.preventDefault();
-        setDialog(null);
+        setDialog(dialogAfterClose(dialog, projectFrom));
         return;
       }
-      if (dialog === "snooze" && /^[1-3]$/.test(k)) {
-        e.preventDefault();
-        snooze(snoozePresets(new Date())[Number(k) - 1]);
+      if (dialog === "snooze") {
+        // SPEC 0.5 V0.67: 1–5 in the order shown; without This evening 4 is the last.
+        const p = presetForKey(snoozePresets(new Date()), k);
+        if (p) {
+          e.preventDefault();
+          snooze(p);
+        }
       }
       return;
     }
@@ -1268,7 +1282,7 @@ function App() {
           sec={sec}
           searchable={searchable}
           now={now}
-          host={store.host || (api.mock ? "mock" : "local")}
+          host={hostLabel(store.host, api.mock)}
           conn={store.conn}
           thread={nav.screen.name === "thread" ? store.threads[nav.screen.id] : undefined}
           events={nav.screen.name === "thread" ? store.events[nav.screen.id] : undefined}
@@ -1344,6 +1358,7 @@ function App() {
   const activeSection: SectionKey | null = sel && store.threads[sel] ? sectionOf(store.threads[sel]) : null;
   const hints = keyHints({
     dialog,
+    snoozeCount: dialog === "snooze" ? snoozePresets(new Date()).length : undefined,
     zone,
     hasSelection: !!sel,
     picked: picked.size,
@@ -1352,7 +1367,7 @@ function App() {
     cardMulti: !!(decision?.kind === "ask" && card && decision.questions?.[card.index]?.multiSelect),
     running: !!viewThread?.running,
     failed: (tgtThread(store, zone, view, sel)?.attention.state ?? "") === "failed",
-    undo: undoLive(undo, tick) || (!!toast?.undo && undoLive(undo, Date.now())),
+    undo: !!toast?.undo && undoLive(undo, Date.now()),
     inText,
   });
 
@@ -1365,7 +1380,7 @@ function App() {
       <FolderPickContext.Provider value={folderPicker}>
       <ProfilesContext.Provider value={store.profiles}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
-        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
+        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={hostLabel(store.host, api.mock)} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
         <Boundary name="The inbox">
         <Inbox
           sec={sec}
@@ -1466,7 +1481,7 @@ function App() {
       )}
       {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} host={store.host} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
       {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
-        <Modal title="Project" onClose={() => setDialog(projectFrom)} wide>
+        <Modal title="Project" onClose={() => setDialog(dialogAfterClose(dialog, projectFrom))} wide>
           <div class="db">
             <ProjectEditor
               project={store.projects.find((p) => p.id === projectId)!}
@@ -1491,8 +1506,7 @@ function App() {
               threads={pickIds.map((id) => store.threads[id]).filter(Boolean)}
               onPick={async (p) => {
                 const e = await projectActions.move(pickIds, p?.id ?? null);
-                if (e) showError(e);
-                else setDialog(null);
+                if (!e) setDialog(null);
               }}
               onCreate={async (name, folder) => {
                 const r = await projectActions.create(name, folder, pickIds);

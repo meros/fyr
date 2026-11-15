@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionEventLine, changeChip, changeEventLine, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
+import { actionEventLine, settleLine, changeChip, changeEventLine, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
 import type { Change, Offer } from "../src/types.ts";
 
 const at = "2026-11-15T09:00:00Z";
@@ -46,4 +46,15 @@ test("conversation lines for change and action events", () => {
   assert.equal(changeEventLine({ op: "status", change: { title: "api", phase: "landed", phaseBy: "agent", label: "applied" } }), "Change “api” · landed (reported) · applied");
   assert.deepEqual(actionEventLine({ label: "Apply", title: "the change “api”" }), { line: "You pressed “Apply” on the change “api”", ok: true });
   assert.deepEqual(actionEventLine({ label: "Roll back", ended: true, ok: false, exit: 3 }), { line: "“Roll back” failed (exit 3)", ok: false });
+});
+
+// review 2026-11-15, SPEC V0.59 (7): settle_when on a change shows on the thread's "settles when" chip.
+test("settleLine names the change and the phase it waits for", () => {
+  assert.equal(settleLine({ changes: [] }), null);
+  assert.equal(settleLine({ settleWhenDone: true }), "settles when done");
+  assert.equal(settleLine({ settleWhenMerged: true }), "settles when merged");
+  const changes = [change({ id: "c_1", key: "replicas", title: "api replicas" })];
+  assert.equal(settleLine({ changes, settleWhen: { change: "c_1", phase: "live" } }), "settles when api replicas is live");
+  assert.equal(settleLine({ changes, settleWhen: { change: "replicas", phase: "landed" } }), "settles when api replicas is landed", "by key too");
+  assert.equal(settleLine({ changes, settleWhen: { change: "c_9", phase: "live" } }), "settles when c_9 is live", "an unknown change by its id");
 });

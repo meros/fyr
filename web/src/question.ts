@@ -173,3 +173,8 @@ export function nextOpen(cs: CardState, d: Decision): number {
   }
   return cs.index;
 }
+
+/** Send the answer, then open the next thread that needs you, only when the host took it (as the phone does). */
+export async function answerThenNext(answer: () => Promise<number>, next: () => void): Promise<void> {
+  if ((await answer()) > 0) next();
+}

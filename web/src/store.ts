@@ -34,6 +34,9 @@ export interface Store {
   deploy: DeployProgress | null;
   /** timeline events per thread, oldest first; only for threads the client has loaded */
   events: Record<string, FyrEvent[]>;
+  /** The last seq of each loaded timeline when the stream left live: a refetch starts there, not after the
+   * events the new stream already appended (review 2026-11-15). Cleared per thread once refetched. */
+  resumeFrom: Record<string, number>;
 }
 
 export function initialStore(): Store {
@@ -49,6 +52,7 @@ export function initialStore(): Store {
     profiles: [],
     projects: [],
     events: {},
+    resumeFrom: {},
     deploy: null,
   };
 }
@@ -91,6 +95,11 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
   };
 }
 
+/** The state as the device stores it (V0.38); applySnapshot reads it back on an offline start. */
+export function stateForCache(s: Store, now: string): StateDTO {
+  return { now, user: s.user, host: s.host, hosts: s.hosts, deploy: s.deploy, threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: s.projects };
+}
+
 export function upsertThread(s: Store, raw: ThreadDTO): Store {
   const t = decodeThread(raw);
   if (!t.id) return s;
@@ -99,7 +108,24 @@ export function upsertThread(s: Store, raw: ThreadDTO): Store {
 }
 
 export function setConn(s: Store, conn: Conn): Store {
-  return s.conn === conn ? s : { ...s, conn };
+  if (s.conn === conn) return s;
+  if (s.conn !== "live" || conn === "live") return { ...s, conn };
+  // Leaving live: remember where each loaded timeline stood. An older point (not refetched yet) stays.
+  const resumeFrom = { ...s.resumeFrom };
+  for (const id of Object.keys(s.events)) if (!(id in resumeFrom)) resumeFrom[id] = lastSeq(s, id);
+  return { ...s, conn, resumeFrom };
+}
+
+/** Where to fetch a loaded timeline from: before a reconnect gap when there is one, else its newest seq. */
+export function resumeSeq(s: Store, threadId: string): number {
+  return s.resumeFrom[threadId] ?? lastSeq(s, threadId);
+}
+
+/** The timeline was refetched from `from`: forget that gap (unless a newer drop recorded another point). */
+export function resumed(s: Store, threadId: string, from: number): Store {
+  if (s.resumeFrom[threadId] !== from) return s;
+  const { [threadId]: _, ...rest } = s.resumeFrom;
+  return { ...s, resumeFrom: rest };
 }
 
 /** Merge events for a thread, deduplicated by seq, oldest first. */
@@ -195,6 +221,11 @@ export function flatOrder(sec: Sections, limits?: Partial<Record<SectionKey, num
   return ids;
 }
 
+/** Search: the query (any case, padded or not) in the title, the project or `#<PR number>`. */
+export function matchesQuery(t: ThreadDTO, q: string): boolean {
+  return `${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(q.trim().toLowerCase());
+}
+
 export function isAvailable(t: ThreadDTO | undefined, action: string): boolean {
   return !!t && !(t.unavailable && action in t.unavailable);
 }
@@ -230,9 +261,14 @@ export function undoKindOf(action: string): UndoKind | null {
   return null;
 }
 
+/** The toast's verb for an undoable action. */
+export function undoVerb(kind: UndoKind): string {
+  return kind === "settle" ? "Settled" : kind === "archive" ? "Archived" : "Snoozed";
+}
+
 export function recordUndo(kind: UndoKind, threadIds: string[], now: number, label?: string): UndoEntry {
   const n = threadIds.length;
-  const verb = kind === "settle" ? "Settled" : kind === "archive" ? "Archived" : "Snoozed";
+  const verb = undoVerb(kind);
   return { kind, threadIds, at: now, label: label ?? (n === 1 ? verb : `${verb} ${n} threads`) };
 }
 
@@ -252,27 +288,47 @@ export function undoCommands(u: UndoEntry | null, now: number): PlannedCommand[]
   return u.threadIds.map((id) => ({ action: INVERSE[u.kind], threadId: id }));
 }
 
-// ---- snooze presets (local time) ----
+// ---- snooze presets (local time), one list for desktop and phone (SPEC 0.5 V0.67) ----
 
 export interface SnoozePreset {
   label: string;
   until: Date;
+  /** "15:41", "today 18:00", "Sun 06:00" */
+  when: string;
 }
 
+function hm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** In 1 hour, in 3 hours, this evening (only before 17:00), tomorrow morning, Monday morning (a week ahead on a Monday). */
 export function snoozePresets(now: Date): SnoozePreset[] {
+  const out: SnoozePreset[] = [];
+  const in1 = new Date(now.getTime() + 3600_000);
   const in3 = new Date(now.getTime() + 3 * 3600_000);
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  tomorrow.setHours(6, 0, 0, 0);
-  const monday = new Date(now);
-  const add = ((8 - now.getDay()) % 7) || 7; // next Monday, a week ahead when today is Monday
-  monday.setDate(now.getDate() + add);
-  monday.setHours(6, 0, 0, 0);
-  return [
-    { label: "3 hours", until: in3 },
-    { label: "Tomorrow 06:00", until: tomorrow },
-    { label: "Monday 06:00", until: monday },
-  ];
+  out.push({ label: "In 1 hour", until: in1, when: hm(in1) });
+  out.push({ label: "In 3 hours", until: in3, when: hm(in3) });
+  if (now.getHours() < 17) {
+    const ev = new Date(now);
+    ev.setHours(18, 0, 0, 0);
+    out.push({ label: "This evening", until: ev, when: "today 18:00" });
+  }
+  const tm = new Date(now);
+  tm.setDate(now.getDate() + 1);
+  tm.setHours(6, 0, 0, 0);
+  out.push({ label: "Tomorrow morning", until: tm, when: `${DAYS[tm.getDay()]} 06:00` });
+  const mon = new Date(now);
+  mon.setDate(now.getDate() + (((8 - now.getDay()) % 7) || 7));
+  mon.setHours(6, 0, 0, 0);
+  out.push({ label: "Monday morning", until: mon, when: `${DAYS[mon.getDay()]} 06:00` });
+  return out;
+}
+
+/** The desktop keys 1–5: the preset at that place in the list shown, or null. */
+export function presetForKey(presets: SnoozePreset[], key: string): SnoozePreset | null {
+  return /^[1-9]$/.test(key) ? (presets[Number(key) - 1] ?? null) : null;
 }
 
 /** A project from the stream (`event: project`, V0.23): replace by id, or add; `{id, deleted: true}` removes it (V0.58). */

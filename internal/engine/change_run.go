@@ -115,6 +115,8 @@ func (e *Engine) offerTool(s *mcp.Server) {
 // the digest must be the one the owner saw (V0.60). on is a change's id,
 // "thread" or "view".
 func (e *Engine) runAction(c Cmd) Reply {
+	e.press.Lock()
+	defer e.press.Unlock()
 	if prev, _ := e.st.Receipt(c.CommandID); prev != nil {
 		var r Reply
 		json.Unmarshal(prev, &r)
@@ -151,7 +153,7 @@ func (e *Engine) runAction(c Cmd) Reply {
 	}
 	pr := ""
 	if h.Change != nil {
-		pr = prOfChange(h.Change)
+		pr = h.Change.PR()
 	}
 	e.Observe(c.ThreadID, func(t *core.Thread, now time.Time) {
 		if x, err := core.HolderOf(t, on); err == nil {
@@ -185,15 +187,6 @@ func (e *Engine) runAction(c Cmd) Reply {
 		go e.runScriptAction(c.ThreadID, on, title, dir, a)
 	}
 	return reply
-}
-
-func prOfChange(c *core.Change) string {
-	for _, ev := range c.Evidence {
-		if ev.Kind == "pr" {
-			return ev.URL
-		}
-	}
-	return ""
 }
 
 func (e *Engine) runScriptAction(threadID, on, title, dir string, a core.Offer) {

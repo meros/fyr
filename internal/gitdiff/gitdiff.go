@@ -90,6 +90,14 @@ func runGitIn(ctx context.Context, dir string, stdin io.Reader, stdout io.Writer
 	return err
 }
 
+// Output runs one read-only git command in dir the way this package does
+// (optional locks off, no prompt, a timeout) and returns its stdout without
+// the trailing newline. The agent's git facts read with it (review
+// 2026-11-15).
+func Output(ctx context.Context, dir string, args ...string) (string, error) {
+	return out(ctx, dir, args...)
+}
+
 func out(ctx context.Context, dir string, args ...string) (string, error) {
 	var b bytes.Buffer
 	err := runGit(ctx, dir, &b, args...)

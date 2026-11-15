@@ -116,6 +116,8 @@ export interface ThreadDTO {
   archivedAt?: string | null;
   settleWhenDone?: boolean;
   settleWhenMerged?: boolean;
+  /** V0.59 (7): settles when the change (an id or a key) reaches the phase */
+  settleWhen?: { change: string; phase: string };
   source?: "fyr" | "t3" | string;
   /** the project this thread belongs to (V0.23); `project` stays the display name */
   projectId?: string;

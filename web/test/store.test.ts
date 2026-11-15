@@ -5,14 +5,22 @@ import {
   applyThreadPatch,
   flatOrder,
   initialStore,
+  lastSeq,
+  resumed,
+  resumeSeq,
+  setConn,
   liveEvent,
+  matchesQuery,
   mergeEvents,
   newer,
   recordUndo,
   sections,
+  presetForKey,
   snoozePresets,
+  stateForCache,
   undoCommands,
   undoKindOf,
+  undoVerb,
   upsertThread,
   UNDO_MS,
 } from "../src/store.ts";
@@ -137,14 +145,26 @@ test("undo of settle, archive and snooze sends the inverse within the window", (
   assert.equal(recordUndo("settle", ["a", "b", "c"], now).label, "Settled 3 threads");
 });
 
-test("snooze presets: 3 h, tomorrow 06:00, next Monday 06:00", () => {
-  const fri = new Date(2026, 10, 13, 15, 30); // Friday
-  const [h3, tom, mon] = snoozePresets(fri);
-  assert.equal(h3.until.getTime() - fri.getTime(), 3 * 3600_000);
-  assert.deepEqual([tom.until.getDate(), tom.until.getHours(), tom.until.getMinutes()], [14, 6, 0]);
-  assert.deepEqual([mon.until.getDay(), mon.until.getDate(), mon.until.getHours()], [1, 16, 6]);
+// SPEC 0.5 V0.67: one snooze list for desktop and phone, each with its time; keys 1–5 pick in the order shown.
+test("SPEC 0.5 V0.67: one snooze list, in order, with times", () => {
+  const morning = snoozePresets(new Date(2026, 10, 14, 9, 41)); // a Saturday
+  assert.deepEqual(morning.map((p) => p.label), ["In 1 hour", "In 3 hours", "This evening", "Tomorrow morning", "Monday morning"]);
+  assert.deepEqual(morning.map((p) => p.when), ["10:41", "12:41", "today 18:00", "Sun 06:00", "Mon 06:00"]);
+  const late = snoozePresets(new Date(2026, 10, 14, 19, 0));
+  assert.deepEqual(late.map((p) => p.label), ["In 1 hour", "In 3 hours", "Tomorrow morning", "Monday morning"]);
   const monday = new Date(2026, 10, 16, 9, 0);
-  assert.equal(snoozePresets(monday)[2].until.getDate(), 23, "on a Monday: next week's Monday");
+  assert.equal(snoozePresets(monday).at(-1)!.until.getDate(), 23, "on a Monday: next week's Monday");
+});
+
+test("SPEC 0.5 V0.67: keys 1–5 pick the preset shown at that place", () => {
+  const morning = snoozePresets(new Date(2026, 10, 14, 9, 41));
+  assert.equal(presetForKey(morning, "3")?.label, "This evening");
+  assert.equal(presetForKey(morning, "5")?.label, "Monday morning");
+  const late = snoozePresets(new Date(2026, 10, 14, 19, 0));
+  assert.equal(presetForKey(late, "4")?.label, "Monday morning", "without This evening 4 is the last");
+  assert.equal(presetForKey(late, "5"), null);
+  assert.equal(presetForKey(late, "0"), null);
+  assert.equal(presetForKey(late, "x"), null);
 });
 
 // API v0: rev decides which copy wins, also when updatedAt says otherwise.
@@ -171,4 +191,57 @@ test("thread patches apply on the matching rev only", () => {
   assert.equal(stale.needFull, true);
   assert.equal(stale.store.threads.t1.title, "a", "a patch on another base changes nothing");
   assert.equal(applyThreadPatch(r.store, { id: "nope", rev: 1, base: 0, patch: {} }).needFull, true);
+});
+
+// review 2026-11-15: events that arrive between a new subscription and conn → live must not hide the gap before them.
+test("a reconnect refetches each loaded timeline from where it was when the stream dropped", () => {
+  const ev = (seq: number, subject = "a") => ({ seq, subject, type: "agent", at: at(0) }) as unknown as import("../src/types.ts").FyrEvent;
+  let s = applySnapshot(initialStore(), snap([thread("a", "seen", "seen"), thread("b", "seen", "seen")]), Date.parse(at(0)));
+  s = setConn(s, "live");
+  s = mergeEvents(s, "a", [ev(1), ev(2)], true);
+  s = mergeEvents(s, "b", [ev(7, "b")], true);
+  s = setConn(s, "offline");
+  s = setConn(s, "connecting");
+  // Seq 3–4 were missed; 5 arrives on the new stream before the snapshot.
+  s = liveEvent(s, ev(5));
+  assert.equal(lastSeq(s, "a"), 5);
+  s = setConn(s, "live");
+  assert.equal(resumeSeq(s, "a"), 2, "the refetch starts before the gap");
+  assert.equal(resumeSeq(s, "b"), 7);
+  s = resumed(s, "a", 2);
+  assert.equal(resumeSeq(s, "a"), 5, "after the refetch the newest seq again");
+  assert.equal(resumeSeq(s, "b"), 7);
+  // A second drop before b is refetched keeps b's older point.
+  s = mergeEvents(s, "b", [ev(9, "b")]);
+  s = setConn(s, "offline");
+  assert.equal(resumeSeq(s, "b"), 7);
+});
+
+// review 2026-11-15: the device's copy of the state keeps the host list and the deploy, so an offline start has them.
+test("the stored state round-trips hosts and deploy", () => {
+  const live = applySnapshot(initialStore(), { ...snap([thread("a", "seen", "seen")]), host: "front", hosts: [{ name: "front", online: true }, { name: "nas", online: false }], deploy: { phase: "build" } }, Date.parse(at(0)));
+  const stored = stateForCache(live, at(1));
+  const offline = applySnapshot(initialStore(), stored, Date.parse(at(2)));
+  assert.deepEqual(offline.hosts.map((h) => h.name), ["front", "nas"]);
+  assert.equal(offline.deploy?.phase, "build");
+  assert.equal(offline.host, "front");
+  assert.deepEqual(Object.keys(offline.threads), ["a"]);
+});
+
+// review 2026-11-15: one search match for the desktop list and the phone search (title, project, #PR).
+test("matchesQuery finds a thread by title, project or PR number", () => {
+  const t = thread("a", "seen", "seen", { title: "Fix Login", project: "web", pr: { number: 42 } as never });
+  assert.equal(matchesQuery(t, "login"), true);
+  assert.equal(matchesQuery(t, " WEB "), true);
+  assert.equal(matchesQuery(t, "#42"), true);
+  assert.equal(matchesQuery(t, "#4"), true);
+  assert.equal(matchesQuery(t, "api"), false);
+  assert.equal(matchesQuery(thread("b", "seen", "seen"), "#"), false, "no PR, no #");
+});
+
+// review 2026-11-15: one verb for the undo toast, desktop and phone.
+test("undoVerb names the deferred action", () => {
+  assert.equal(undoVerb("settle"), "Settled");
+  assert.equal(undoVerb("archive"), "Archived");
+  assert.equal(undoVerb("snooze"), "Snoozed");
 });

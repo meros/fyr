@@ -2,19 +2,7 @@
 // `--knock` is the surface colour used for cut-outs.
 
 import type { AttentionState } from "./types.ts";
-
-const LABEL: Record<AttentionState, string> = {
-  asking: "Asking",
-  failed: "Failed",
-  blocked: "Blocked",
-  done: "Done",
-  working: "Working",
-  waiting: "Waiting",
-  seen: "Seen",
-  snoozed: "Snoozed",
-  settled: "Settled",
-  archived: "Archived",
-};
+import { stateLabel } from "./rows.ts";
 
 const CLS: Record<AttentionState, string> = {
   asking: "s-ask",
@@ -28,10 +16,6 @@ const CLS: Record<AttentionState, string> = {
   settled: "s-set",
   archived: "s-arch",
 };
-
-export function stateLabel(s: AttentionState): string {
-  return LABEL[s] ?? s;
-}
 
 export function stateClass(s: AttentionState): string {
   return CLS[s] ?? "";

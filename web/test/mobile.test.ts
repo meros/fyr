@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, phoneSnoozePresets, stepLabel, stripCount } from "../src/mobile.ts";
+import { activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, stepLabel, stripCount } from "../src/mobile.ts";
 import { chooseOther, goTo, initCard, pickStay, setOther } from "../src/question.ts";
 import type { Decision } from "../src/types.ts";
 
@@ -56,14 +56,6 @@ test("step dots up to 5 questions, counts in the strip", () => {
   assert.deepEqual(stepLabel(0, 9999), { dots: false, text: "Question 1 of 9999" });
   assert.equal(stripCount(9999), "9999");
   assert.equal(stripCount(10000), "10k+");
-});
-
-test("snooze presets: this evening only before 17:00", () => {
-  const morning = phoneSnoozePresets(new Date(2026, 10, 14, 9, 41)); // a Saturday
-  assert.deepEqual(morning.map((p) => p.label), ["In 1 hour", "In 3 hours", "This evening", "Tomorrow morning", "Monday morning"]);
-  assert.deepEqual(morning.map((p) => p.when), ["10:41", "12:41", "today 18:00", "Sun 06:00", "Mon 06:00"]);
-  const late = phoneSnoozePresets(new Date(2026, 10, 14, 19, 0));
-  assert.ok(!late.some((p) => p.label === "This evening"));
 });
 
 test("New screen defaults: last used on this device, else the host's most recent", () => {

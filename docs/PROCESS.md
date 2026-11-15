@@ -39,7 +39,7 @@ A bug is a place where the code breaks the spec. The fix starts at step 2. If th
 
 Areas: `area:core`, `area:agent`, `area:store`, `area:server`, `area:web`, `area:t3`, `area:github`, `area:nix`, `area:design`, `area:android`.
 
-Milestones: `v0 first viable`, then `M0`–`M5` from `docs/FYR-V1.md` section 7, then `v1.1` and later from section 8.
+Milestones and their order are in `docs/PLAN.md`; after `M5 Cut-over` come `v1.1` and later from `docs/FYR-V1.md` section 8.
 
 ## Tests and checks
 
