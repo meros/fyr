@@ -25,6 +25,10 @@ export interface Ask {
   confirm: string;
   /** destructive: the primary button is red */
   danger?: boolean;
+  /** V0.72: one pick among options; the sheet writes the picked value back here */
+  choice?: { label: string; options: { value: string; label: string }[]; value: string };
+  /** V0.72: an optional line of text; the sheet writes it back here */
+  reason?: { label: string; value: string; max?: number };
 }
 
 // <anything>/scratch/<name><rest>: Fyr's scratch folders (V0.42) live under ~/.local/share/fyr/scratch.

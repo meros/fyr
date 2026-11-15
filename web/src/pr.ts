@@ -107,6 +107,7 @@ export function mergeStatus(d: PrDetail): MergeStatus {
 export function chipStatus(pr: PullRequest): MergeStatus {
   if (pr.state === "MERGED") return { text: "Merged", tone: "ok", canMerge: false };
   if (pr.state === "CLOSED") return { text: "Closed", tone: "muted", canMerge: false };
+  if (pr.state === "MISSING") return { text: "Does not exist on GitHub", tone: "muted", canMerge: false };
   if (pr.conflict) return blocked("Conflicts with the base branch");
   if (pr.checks === "fail") return blocked("Checks failing");
   if (pr.review === "CHANGES_REQUESTED") return blocked("Changes requested");
@@ -120,9 +121,9 @@ export function prChip(pr: PullRequest, short = false): { text: string; cls: str
   const s = chipStatus(pr);
   const n = `#${pr.number}`;
   const word =
-    pr.state === "MERGED" ? "merged" : pr.state === "CLOSED" ? "closed" : pr.conflict ? "conflicts" : pr.checks === "fail" ? "failing" : pr.review === "CHANGES_REQUESTED" || pr.review === "REVIEW_REQUIRED" ? "review" : pr.checks === "pending" ? "running" : "ready";
-  const cls = word === "merged" || word === "closed" ? "merged" : s.tone === "fail" ? "fail" : s.tone === "ok" ? "ok" : "";
-  const text = short && (word === "merged" || word === "closed") ? word : `${n} ${word}`;
+    pr.state === "MERGED" ? "merged" : pr.state === "CLOSED" ? "closed" : pr.state === "MISSING" ? "missing" : pr.conflict ? "conflicts" : pr.checks === "fail" ? "failing" : pr.review === "CHANGES_REQUESTED" || pr.review === "REVIEW_REQUIRED" ? "review" : pr.checks === "pending" ? "running" : "ready";
+  const cls = word === "merged" || word === "closed" || word === "missing" ? "merged" : s.tone === "fail" ? "fail" : s.tone === "ok" ? "ok" : "";
+  const text = short && (word === "merged" || word === "closed" || word === "missing") ? word : `${n} ${word}`;
   return { text, cls, title: [n, s.text, pr.title].filter(Boolean).join(" · ") };
 }
 

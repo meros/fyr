@@ -364,7 +364,7 @@ function EffortChip({ t, profile, onRun }: { t: Thread; profile: Profile | undef
 
 function PrChip({ pr, onDismiss }: { pr: PullRequest; onDismiss?: () => void }) {
   const l = prChip(pr);
-  const done = pr.state === "MERGED" || pr.state === "CLOSED";
+  const done = pr.state === "MERGED" || pr.state === "CLOSED" || pr.state === "MISSING";
   return (
     <span class="prw">
       <a class={`chip pr ${l.cls}`} href={pr.url} target="_blank" rel="noopener noreferrer" title={l.title}>

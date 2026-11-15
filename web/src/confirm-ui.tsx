@@ -35,6 +35,8 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
   const opened = useRef(Date.now());
   const [full, setFull] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pick, setPick] = useState(a.choice?.value ?? "");
+  const [why, setWhy] = useState(a.reason?.value ?? "");
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
 
@@ -53,7 +55,7 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
         doneRef.current(true);
       } else if (k === "Tab") {
         // Focus stays inside.
-        const list = [...(box.current?.querySelectorAll<HTMLElement>("button") ?? [])];
+        const list = [...(box.current?.querySelectorAll<HTMLElement>("button, input") ?? [])];
         if (!list.length) return;
         e.preventDefault();
         const i = list.indexOf(document.activeElement as HTMLElement);
@@ -74,6 +76,39 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
   const body = (
     <div class="cfm-b">
       {a.text && <p class="cfm-text">{a.text}</p>}
+      {a.choice && (
+        <div class="cfm-pick" role="radiogroup" aria-label={a.choice.label}>
+          <span class="cfm-in">{a.choice.label}</span>
+          {a.choice.options.map((o) => (
+            <button
+              key={o.value}
+              role="radio"
+              aria-checked={pick === o.value}
+              class={`cfm-opt${pick === o.value ? " on" : ""}`}
+              onClick={() => {
+                a.choice!.value = o.value;
+                setPick(o.value);
+              }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {a.reason && (
+        <label class="cfm-why">
+          <span class="cfm-in">{a.reason.label}</span>
+          <input
+            value={why}
+            maxLength={a.reason.max}
+            onInput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              a.reason!.value = v;
+              setWhy(v);
+            }}
+          />
+        </label>
+      )}
       {c && (
         <div class="cfm-cmd">
           <button class="cfm-code" aria-expanded={full} title={full ? undefined : [c.full, c.folderFull && `in ${c.folderFull}`].filter(Boolean).join("\n")} onClick={() => setFull(!full)}>

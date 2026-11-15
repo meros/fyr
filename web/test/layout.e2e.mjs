@@ -254,6 +254,7 @@ const MEASURE = `(() => {
     composer: rect('.m-cmp'),
     commit: rect('.m-abar .m-bt'),
     sheet: rect('.m-sheet'),
+    chend: [...document.querySelectorAll('.chend')].map((b) => { const r = b.getBoundingClientRect(); return { h: r.height, right: r.right }; }),
     cfm: (() => { const s = document.querySelector('.m-sheet.cfm'); if (!s) return null; const r = s.getBoundingClientRect(); const bs = [...s.querySelectorAll('.cfm-f .m-bt, .cfm-copy')].map((b) => b.getBoundingClientRect()); const p = s.querySelector('.cfm-f .m-bt.p'); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, vw: innerWidth, minBtn: Math.min(...bs.map((b) => b.height)), btnBottom: Math.max(...bs.map((b) => b.bottom)), title: s.querySelector('.cfm-t')?.textContent ?? '', code: s.querySelector('.cfm-code code')?.textContent ?? '', folder: s.querySelector('.cfm-in')?.textContent ?? '', primary: p?.textContent ?? '', danger: !!p?.classList.contains('danger'), focused: document.activeElement === p, codeOverflow: s.querySelector('.cfm-code') ? s.querySelector('.cfm-code').scrollWidth - s.querySelector('.cfm-code').clientWidth : 0 }; })(),
     sheetItem: lastSheetItem,
     chips: rect('.m-cmpw .att-strip'),
@@ -450,6 +451,11 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
       check(m.ciNotes === 2, `${ctx}: expected 2 lint notes in render.ts's diff (found ${m.ciNotes})`);
     }
     check(m.changeRight <= window_innerWidth(m) + 0.5, `${ctx}: the changes list or diff runs ${(m.changeRight - window_innerWidth(m)).toFixed(1)} px past the right edge`);
+  }
+  if (ctx.startsWith("board of changes")) {
+    // V0.72: every change that has not ended offers End this change, a 44 px target inside the screen.
+    check(m.chend.length >= 1, `${ctx}: no End this change on the board`);
+    check(m.chend.every((b) => b.h >= 43.5 && b.right <= window_innerWidth(m) + 0.5), `${ctx}: End this change is under 44 px or past the edge ${JSON.stringify(m.chend)}`);
   }
   if (ctx.startsWith("PR tab")) {
     check(!!m.pr, `${ctx}: no PR tab`);

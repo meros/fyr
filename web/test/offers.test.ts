@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionEventLine, settleLine, changeChip, changeEventLine, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
+import { actionEventLine, canEnd, endArgs, endChangeAsk, settleLine, changeChip, changeEventLine, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
 import type { Change, Offer } from "../src/types.ts";
 
 const at = "2026-11-15T09:00:00Z";
@@ -57,4 +57,24 @@ test("settleLine names the change and the phase it waits for", () => {
   assert.equal(settleLine({ changes, settleWhen: { change: "c_1", phase: "live" } }), "settles when api replicas is live");
   assert.equal(settleLine({ changes, settleWhen: { change: "replicas", phase: "landed" } }), "settles when api replicas is landed", "by key too");
   assert.equal(settleLine({ changes, settleWhen: { change: "c_9", phase: "live" } }), "settles when c_9 is live", "an unknown change by its id");
+});
+
+test("V0.72: End this change on every change that has not ended, with Fyr's confirmation", () => {
+  const pr = change({ kind: "code", title: "acme/app#88", phase: "review", phaseBy: "observed", evidence: [{ kind: "pr", url: "https://github.com/acme/app/pull/88" }] });
+  assert.equal(canEnd(pr), true);
+  assert.equal(canEnd(change({ phase: "abandoned" })), false);
+  assert.equal(canEnd(change({ phase: "landed" })), true);
+  assert.equal(canEnd(change({ threads: ["t1"] })), false, "a host record is not the thread's to end");
+  const a = endChangeAsk(pr);
+  assert.equal(a.title, "End this change?");
+  assert.equal(a.confirm, "End change");
+  assert.equal(a.text, "Fyr stops watching its PR and removes its actions. The agent is told; more work on it becomes a new change.");
+  assert.deepEqual(a.choice?.options.map((o) => o.value), ["abandoned", "reverted"]);
+  assert.equal(a.choice?.value, "abandoned", "abandoned is the default");
+  assert.equal(endChangeAsk(change({})).text, "Fyr stops watching it and removes its actions. The agent is told; more work on it becomes a new change.");
+  assert.deepEqual(endArgs(pr, a), { change: "c_1", phase: "abandoned" });
+  a.choice!.value = "reverted";
+  a.reason!.value = "  a test fixture ";
+  assert.deepEqual(endArgs(pr, a), { change: "c_1", phase: "reverted", reason: "a test fixture" });
+  assert.equal(phaseText({ phase: "abandoned", phaseBy: "observed", label: "the PR does not exist on GitHub" }), "abandoned · the PR does not exist on GitHub");
 });
