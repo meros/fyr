@@ -622,6 +622,25 @@ func (s prSource) Observe(id string, pr core.PR) {
 	})
 }
 
+// Deploys are the merge commits whose deployments the poller reads (V0.66).
+func (s prSource) Deploys() []github.DeployThread {
+	var out []github.DeployThread
+	now := time.Now()
+	for _, t := range s.e.Snapshot() {
+		if t.ArchivedAt != nil {
+			continue
+		}
+		for _, d := range core.DeployWatches(t.Thread, now) {
+			out = append(out, github.DeployThread{ID: t.ID, Change: d.Change, Repo: d.Repo, SHA: d.SHA, First: d.First})
+		}
+	}
+	return out
+}
+
+func (s prSource) ObserveDeploy(id, change string, d core.DeployObs) {
+	s.e.Observe(id, func(t *core.Thread, now time.Time) { core.ChangeDeployObserved(t, change, d, now) })
+}
+
 func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []string) (int, error) {
 	cs, err := t3.Candidates(db, home())
 	if err != nil {

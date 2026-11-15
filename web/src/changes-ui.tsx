@@ -2,6 +2,7 @@
 // desktop and phone: a summary line with Refresh, one row per file, and the file's diff opened in place.
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { CiCount, placeNotes, useCiNotes } from "./ci-notes-ui.tsx"; // V0.66
 import { parsePatch, shortenPath, sortFiles, splitPath, statusMark, statusWord, summaryLine, type ChangedFile, type ChangesDTO, type FilePatchDTO } from "./changes.ts";
 
 export interface ChangesSource {
@@ -155,6 +156,7 @@ function FileRow({ f, open, state, onToggle }: { f: ChangedFile; open: boolean; 
             </>
           )}
         </span>
+        <CiCount path={f.path} />
       </button>
       {open && <FileDiff f={f} state={state} />}
     </div>
@@ -163,6 +165,7 @@ function FileRow({ f, open, state, onToggle }: { f: ChangedFile; open: boolean; 
 
 function FileDiff({ f, state }: { f: ChangedFile; state: PatchState | undefined }) {
   const [all, setAll] = useState(false);
+  const ci = useCiNotes(f.path);
   const lines = useMemo(() => (state?.kind === "ok" ? parsePatch(state.p.patch).filter((l) => l.kind !== "meta") : []), [state]);
   const renamed = f.oldPath ? <div class="chg-note">Renamed from {shortenPath(f.oldPath, 80)}</div> : null;
   if (!state || state.kind === "loading") return <div class="chg-note">Loading the diff…</div>;
@@ -181,7 +184,7 @@ function FileDiff({ f, state }: { f: ChangedFile; state: PatchState | undefined 
         <div class="chg-note">{f.oldPath ? "The content did not change." : "No changes in this file now; Refresh to update the list."}</div>
       </>
     );
-  const shown = all ? lines : lines.slice(0, FIRST_LINES);
+  const shown = placeNotes(all ? lines : lines.slice(0, FIRST_LINES), ci);
   return (
     <>
       {renamed}

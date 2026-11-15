@@ -61,6 +61,10 @@ type Change struct {
 	// from what Fyr observed. Runs are their last results.
 	Actions []Offer    `json:"actions,omitempty"`
 	Runs    []OfferRun `json:"runs,omitempty"`
+	// V0.66: the failed checks' annotations while the PR is open, and the
+	// merge commit Fyr watches for deployments.
+	Annotations []Annotation `json:"annotations,omitempty"`
+	DeployWatch *DeployWatch `json:"deployWatch,omitempty"`
 	PhaseBy    string      `json:"phaseBy"`
 	CreatedAt  time.Time   `json:"createdAt"`
 	UpdatedAt  time.Time   `json:"updatedAt"`
@@ -338,6 +342,12 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) {
 		setPhase(t, c, phase, ByObserved, now)
 	}
 	defer syncBuiltins(c)
+	watchMerge(c, p, now)
+	if p.State == "OPEN" && p.Checks == "fail" {
+		c.Annotations = p.Annotations
+	} else {
+		c.Annotations = nil
+	}
 	switch p.Checks {
 	case "pass":
 		setCondition(c, "checks", "ok", "", ByObserved, now)

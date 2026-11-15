@@ -147,9 +147,9 @@ type fakeSrc struct {
 	deployed []core.DeployObs
 }
 
-func (f *fakeSrc) Snapshot() []PRThread            { return f.prs }
-func (f *fakeSrc) Observe(_ string, pr core.PR)    { f.observed = append(f.observed, pr) }
-func (f *fakeSrc) Deploys() []DeployThread         { return f.deploys }
+func (f *fakeSrc) Snapshot() []PRThread                        { return f.prs }
+func (f *fakeSrc) Observe(_ string, pr core.PR)                { f.observed = append(f.observed, pr) }
+func (f *fakeSrc) Deploys() []DeployThread                     { return f.deploys }
 func (f *fakeSrc) ObserveDeploy(_, _ string, d core.DeployObs) { f.deployed = append(f.deployed, d) }
 
 // SPEC 0.5 V0.66 (7): the poller adds annotations to a failing PR, once per
@@ -157,8 +157,8 @@ func (f *fakeSrc) ObserveDeploy(_, _ string, d core.DeployObs) { f.deployed = ap
 func TestPollerAnnotatesFailingPR(t *testing.T) {
 	view := `{"state":"OPEN","headRefOid":"h1","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"FAILURE"}]}`
 	b := &byArgs{out: map[string]string{
-		"pr view":               view,
-		"commits/h1/check-runs": `{"check_runs": [{"id": 11, "name": "lint", "conclusion": "failure", "output": {"annotations_count": 1}}]}`,
+		"pr view":                   view,
+		"commits/h1/check-runs":     `{"check_runs": [{"id": 11, "name": "lint", "conclusion": "failure", "output": {"annotations_count": 1}}]}`,
 		"check-runs/11/annotations": `[{"path": "a.go", "start_line": 3, "end_line": 3, "annotation_level": "failure", "message": "boom"}]`,
 	}}
 	src := &fakeSrc{prs: []PRThread{{ID: "t1", URL: "https://github.com/o/r/pull/7"}}}

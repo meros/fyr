@@ -179,6 +179,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .chg-dir{min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;color:var(--ink-muted)}
 .chg-name{flex:0 1 auto;min-width:min(12ch,100%);overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
 .chg-n{flex:none;font:400 12px/18px var(--mono)}
+.chg-ci{flex:none;min-width:18px;height:18px;padding:0 5px;border-radius:9px;display:grid;place-items:center;font:600 11px/1 var(--mono);color:var(--ink-muted);border:1px solid var(--line)}.chg-ci.fail{color:var(--signal-ink);border-color:currentColor}
 .chg-n .a{color:var(--calm)}.chg-n .d{color:var(--signal-ink)}.chg-bin{color:var(--ink-faint)}
 .chg-note{padding:8px 12px;font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
 .chg-diff{overflow-x:auto;overflow-y:hidden;min-width:0;background:var(--raised);scrollbar-width:thin}
@@ -937,7 +938,7 @@ button.ptag{padding:0}
 /* V0.59, V0.60: changes and their actions */
 .pr.chg{max-width:180px}
 .chtab{display:flex;flex-direction:column;min-height:0;overflow-y:auto}
-.chl{display:flex;flex-direction:column;gap:8px;padding:12px 16px 4px}
+.chl{display:flex;flex-direction:column;gap:8px;padding:12px 16px 4px;flex:0 1 auto;min-height:0;max-height:50%;overflow-y:auto;scrollbar-width:thin}
 .chc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--raised);min-width:0}
 .chc.fail{border-color:var(--signal-ink)}
 .chc.end{opacity:.65}

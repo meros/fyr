@@ -288,8 +288,22 @@ export interface Change {
   /** V0.60 */
   actions?: Offer[];
   runs?: OfferRun[];
+  /** V0.66: the failed checks' annotations while the PR is open, and the merge commit Fyr watches for deployments. */
+  annotations?: CiAnnotation[];
+  deployWatch?: { repo: string; sha: string; mergedAt: string; checked?: boolean; seen?: boolean; done?: boolean };
   createdAt: string;
   updatedAt: string;
+}
+
+/** V0.66 (7): a check run's annotation on the PR's head commit. */
+export interface CiAnnotation {
+  path: string;
+  line: number;
+  endLine?: number;
+  level: "failure" | "warning" | "notice";
+  message: string;
+  title?: string;
+  check: string;
 }
 
 export interface ChangeCondition {
