@@ -981,7 +981,6 @@ button.ptag{padding:0}
 .chrail li{flex:1;font:500 11px/14px var(--ui);color:var(--ink-muted);border-top:3px solid var(--line);padding-top:3px}
 .chrail li.done{border-color:var(--harbour);color:var(--ink)}
 .chrail li.now{border-color:var(--harbour);color:var(--harbour);font-weight:600}
-.chrail li.end{border-color:var(--ink-muted);flex:none;padding-right:8px}
 .chcond{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px;font:400 12px/16px var(--ui)}
 .chcond li.fail{color:var(--signal-ink)}
 .chcond li.pending{color:var(--ink-muted)}
