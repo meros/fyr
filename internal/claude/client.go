@@ -191,6 +191,14 @@ func (c *Client) Request(ctx context.Context, req Msg) (Msg, error) {
 	c.pmu.Lock()
 	c.pending[id] = ch
 	c.pmu.Unlock()
+	// A request that times out or fails to write is forgotten; an answer
+	// or the process exit has already removed it otherwise (review
+	// 2026-11-15).
+	defer func() {
+		c.pmu.Lock()
+		delete(c.pending, id)
+		c.pmu.Unlock()
+	}()
 	if err := c.write(Msg{"type": "control_request", "request_id": id, "request": req}); err != nil {
 		return nil, err
 	}

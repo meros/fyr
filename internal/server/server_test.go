@@ -169,6 +169,29 @@ func TestTailnetIdentity(t *testing.T) {
 	}
 }
 
+// review 2026-11-15 (SPEC 0.5 V0.14): the tailnet identity header does not
+// lift the Host check. A DNS-rebinding page reaches loopback with its own
+// Host and can set any header, so a header request must name a ts.net host,
+// the only Host Tailscale Serve forwards (https://<host>.ts.net).
+func TestTailnetHeaderNeedsTailnetHost(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	s := &Server{Engine: engine.New(st), BuildID: "b1", OwnerLogin: "owner@example.com"}
+	hs := httptest.NewServer(s.Handler())
+	defer hs.Close()
+	owner := map[string]string{"Tailscale-User-Login": "owner@example.com", "X-Fyr": "1"}
+	for _, host := range []string{"evil.example", "evil.example:7443", "ts.net.evil.example", "evil-ts.net"} {
+		if r := do(t, "GET", hs.URL+"/api/state", host, owner, ""); r.StatusCode != 403 {
+			t.Fatalf("rebinding host %q with identity header: %d", host, r.StatusCode)
+		}
+	}
+	for _, host := range []string{"box.tail1234.ts.net", "box.tail1234.ts.net:7443", "BOX.Tail1234.TS.NET."} {
+		if r := do(t, "GET", hs.URL+"/api/state", host, owner, ""); r.StatusCode != 200 {
+			t.Fatalf("tailnet host %q: %d", host, r.StatusCode)
+		}
+	}
+}
+
 type fakePush struct{ subs map[string]string }
 
 func (f *fakePush) PublicKey() string { return "BPUB" }
