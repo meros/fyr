@@ -8,6 +8,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
 )
@@ -73,7 +74,7 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 	}
 	switch ef.Kind {
 	case core.EffectThread:
-		r := e.Command(Cmd{CommandID: ef.ID, Action: "thread.create", Args: childArgs(e, threadID, core.Args{"cwd": ef.Cwd, "text": ef.Text, "projectId": ef.Project})})
+		r := e.Command(api.Cmd{CommandID: ef.ID, Action: "thread.create", Args: childArgs(e, threadID, core.Args{"cwd": ef.Cwd, "text": ef.Text, "projectId": ef.Project})})
 		if !r.OK {
 			return res(false, 0, r.Error), false
 		}

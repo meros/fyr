@@ -25,48 +25,12 @@ import (
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/gitdiff"
-	"github.com/meros/fyr/internal/quota"
+	"github.com/meros/fyr/internal/provider"
 )
 
-// Profile is a claude-compatible binary with its settings (V0.11).
-type Profile struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Binary         string   `json:"binary"`
-	Color          string   `json:"color"`
-	Models         []string `json:"models"`
-	DefaultModel   string   `json:"defaultModel"`
-	PermissionMode string   `json:"permissionMode,omitempty"`
-	Env            []string `json:"env,omitempty"`
-	// Quota: where the provider allowance is read (V0.44); clients see the kind only.
-	Quota *quota.Spec `json:"quota,omitempty"`
-	// ConfigDir is the CLI's config dir (CLAUDE_CONFIG_DIR) when the
-	// profile has its own; Fyr then sets it. See ConfigDirPath (V0.45).
-	ConfigDir string `json:"configDir,omitempty"`
-
-	// V0.50 (decision 0015): a profile made from a provider. CLI is the
-	// adapter id ("" is claude); Auth and Endpoint are applied by the
-	// adapter; Key reads the provider's secret at launch and never leaves
-	// the host.
-	CLI      string                 `json:"cli,omitempty"`
-	Auth     cli.Auth               `json:"-"`
-	Endpoint cli.Endpoint           `json:"-"`
-	Key      func() (string, error) `json:"-"`
-	// KeyRequired: the profile does not start without its key (an endpoint,
-	// or an account that logs in with a token).
-	KeyRequired bool `json:"-"`
-	// Unavailable says why the provider cannot run now (V0.50: no token or
-	// key yet); clients do not offer it for new threads or Hand over.
-	Unavailable string `json:"unavailable,omitempty"`
-	// ModelCaps: the offered models with their effort levels; DefaultEffort
-	// is used when the thread names none and the model takes it.
-	ModelCaps     []cli.Model `json:"modelCaps,omitempty"`
-	DefaultEffort string      `json:"defaultEffort,omitempty"`
-}
-
-// auth is the profile's auth; a legacy profile is a cli-login in its
+// authOf is the profile's auth; a legacy profile is a cli-login in its
 // configDir (the CLI's default when empty).
-func (p Profile) auth() cli.Auth {
+func authOf(p provider.Profile) cli.Auth {
 	if p.Auth.Kind != "" {
 		return p.Auth
 	}
@@ -74,7 +38,7 @@ func (p Profile) auth() cli.Auth {
 }
 
 // adapter is the CLI adapter a profile runs on.
-func (m *Manager) adapter(p Profile) (cli.Adapter, error) {
+func (m *Manager) adapter(p provider.Profile) (cli.Adapter, error) {
 	id := p.CLI
 	if id == "" {
 		id = claudecli.ID
@@ -103,7 +67,7 @@ type Host interface {
 }
 
 type Config struct {
-	Profile  func(id string) Profile
+	Profile  func(id string) provider.Profile
 	IdleStop time.Duration // V0.7, default 10 min
 	MCPURL   string        // Fyr's MCP endpoint; empty disables the binding
 	LogDir   string        // raw protocol logs, optional
@@ -495,7 +459,7 @@ func (m *Manager) ensure(threadID string) (*session, error) {
 // as starts a thread's process on another profile than its own: a
 // handover starts its target before the thread moves (V0.45).
 type as struct {
-	profile Profile
+	profile provider.Profile
 	model   string
 	effort  string
 	session string
@@ -576,7 +540,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := cli.Launch{Binary: p.Binary, Dir: t.Cwd, Auth: p.auth(), Endpoint: p.Endpoint, Env: p.Env,
+	l := cli.Launch{Binary: p.Binary, Dir: t.Cwd, Auth: authOf(p), Endpoint: p.Endpoint, Env: p.Env,
 		Model: o.model, Effort: o.effort, Session: o.session, Resume: o.resume, AddDirs: o.addDirs, PermissionMode: p.PermissionMode}
 	if p.Key != nil {
 		k, kerr := p.Key()

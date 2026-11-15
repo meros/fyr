@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/provider"
 )
 
 type rlHost struct{}
@@ -19,7 +20,7 @@ func TestRateLimitEventReachesQuota(t *testing.T) {
 	var gotProfile string
 	var gotInfo map[string]any
 	m := New(rlHost{}, Config{
-		Profile:     func(string) Profile { return Profile{ID: "claudeAgent"} },
+		Profile:     func(string) provider.Profile { return provider.Profile{ID: "claudeAgent"} },
 		OnRateLimit: func(p string, info map[string]any) { gotProfile, gotInfo = p, info },
 	})
 	s := &session{thread: "t1", digest: newDigest()}

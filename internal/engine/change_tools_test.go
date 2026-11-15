@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 )
@@ -99,7 +100,7 @@ func TestChangeActions(t *testing.T) {
 	if a == nil || a.Revision != "sha256:p1" || a.Digest == "" {
 		t.Fatalf("action: %+v", a)
 	}
-	press := func(cmd, digest string) Reply {
+	press := func(cmd, digest string) api.Reply {
 		return h.cmdID(cmd, "action.run", id, core.Args{"on": c.ID, "action": "apply", "digest": digest})
 	}
 	if r := press("r0", "stale"); r.OK || r.Status != 409 {

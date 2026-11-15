@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/store"
@@ -354,11 +355,11 @@ func checkFolder(dir string) (string, error) {
 
 // projectCommand handles project.create and project.update (SPEC 0.5
 // V0.23, V0.55).
-func (e *Engine) projectCommand(c Cmd) Reply {
+func (e *Engine) projectCommand(c api.Cmd) api.Reply {
 	if c.Action == "project.delete" {
 		return e.projectDelete(c)
 	}
-	bad := func(msg string) Reply { return Reply{Error: msg, Status: 400} }
+	bad := func(msg string) api.Reply { return api.Reply{Error: msg, Status: 400} }
 	_, folderSet := c.Args["folder"]
 	folder, err := checkFolder(c.Args.Str("folder"))
 	if err != nil {
@@ -389,7 +390,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 			t := e.threads[tid]
 			if t == nil {
 				e.mu.Unlock()
-				return Reply{Error: "no thread " + tid, Status: 404}
+				return api.Reply{Error: "no thread " + tid, Status: 404}
 			}
 			t.ProjectID, t.ProjectManual = p.ID, true
 		}
@@ -398,7 +399,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		cur := e.projects[c.Args.Str("id")]
 		if cur == nil {
 			e.mu.Unlock()
-			return Reply{Error: "no project " + c.Args.Str("id"), Status: 404}
+			return api.Reply{Error: "no project " + c.Args.Str("id"), Status: 404}
 		}
 		cp := *cur
 		p = &cp
@@ -473,7 +474,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 			touched = append(touched, e.dto(t, now))
 		}
 	}
-	reply := Reply{OK: true, Status: 200, Result: map[string]any{"id": p.ID}}
+	reply := api.Reply{OK: true, Status: 200, Result: map[string]any{"id": p.ID}}
 	_, err = e.st.Write(func(tx *store.Tx) error {
 		if err := tx.PutProject(p); err != nil {
 			return err
@@ -487,7 +488,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 	})
 	e.mu.Unlock()
 	if err != nil {
-		return Reply{Error: err.Error(), Status: 500}
+		return api.Reply{Error: err.Error(), Status: 500}
 	}
 	for _, d := range e.Projects() {
 		if d.ID == p.ID {
@@ -506,7 +507,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 // projectDelete removes a project (SPEC 0.5 V0.58). Its threads lose it and
 // the filed-by-hand mark, then match again, so one inside another project's
 // folder lands there. The stream gets {id, deleted: true}.
-func (e *Engine) projectDelete(c Cmd) Reply {
+func (e *Engine) projectDelete(c api.Cmd) api.Reply {
 	id := c.Args.Str("id")
 	e.mu.Lock()
 	if r, done := e.replay(c.CommandID); done {
@@ -515,7 +516,7 @@ func (e *Engine) projectDelete(c Cmd) Reply {
 	}
 	if e.projects[id] == nil {
 		e.mu.Unlock()
-		return Reply{Error: "no project " + id, Status: 404}
+		return api.Reply{Error: "no project " + id, Status: 404}
 	}
 	delete(e.projects, id)
 	delete(e.quietSent, id)
@@ -538,7 +539,7 @@ func (e *Engine) projectDelete(c Cmd) Reply {
 	for _, t := range moved {
 		dtos = append(dtos, e.dto(t, now))
 	}
-	reply := Reply{OK: true, Status: 200, Result: map[string]any{"id": id}}
+	reply := api.Reply{OK: true, Status: 200, Result: map[string]any{"id": id}}
 	_, err := e.st.Write(func(tx *store.Tx) error {
 		if err := tx.DeleteProject(id); err != nil {
 			return err
@@ -552,7 +553,7 @@ func (e *Engine) projectDelete(c Cmd) Reply {
 	})
 	e.mu.Unlock()
 	if err != nil {
-		return Reply{Error: err.Error(), Status: 500}
+		return api.Reply{Error: err.Error(), Status: 500}
 	}
 	e.Hub.ProjectDeleted(id)
 	for _, d := range dtos {

@@ -14,8 +14,8 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
 )
@@ -28,7 +28,7 @@ type host struct {
 	down atomic.Bool
 }
 
-func newHost(t *testing.T, name string, profiles ...agent.Profile) *host {
+func newHost(t *testing.T, name string, profiles ...provider.Profile) *host {
 	st, err := store.Open(filepath.Join(t.TempDir(), "db"))
 	if err != nil {
 		t.Fatal(err)
@@ -358,8 +358,8 @@ func TestFrontDropsDeletedProject(t *testing.T) {
 // #42: the front's profiles read asks each online host and merges by id (the
 // first host's wins), as its state does.
 func TestFrontProfiles(t *testing.T) {
-	a := newHost(t, "a", agent.Profile{ID: "claude", Name: "Claude on a", Env: []string{"SECRET=1"}})
-	b := newHost(t, "b", agent.Profile{ID: "claude", Name: "Claude on b"}, agent.Profile{ID: "local", Name: "Local"})
+	a := newHost(t, "a", provider.Profile{ID: "claude", Name: "Claude on a", Env: []string{"SECRET=1"}})
+	b := newHost(t, "b", provider.Profile{ID: "claude", Name: "Claude on b"}, provider.Profile{ID: "local", Name: "Local"})
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
 	resp, err := http.Get(fs.URL + "/api/profiles")

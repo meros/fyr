@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/claude/fake"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -75,8 +77,8 @@ func startHarness(t *testing.T, dir, db string, idle time.Duration) *harness {
 	e.Tools(srv)
 	hs := httptest.NewServer(srv)
 	m = agent.New(e, agent.Config{
-		Profile: func(string) agent.Profile {
-			return agent.Profile{ID: "fake", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}}
+		Profile: func(string) provider.Profile {
+			return provider.Profile{ID: "fake", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}}
 		},
 		IdleStop: idle, MCPURL: hs.URL + "/mcp",
 		Attachments: h.att.Get,
@@ -87,14 +89,14 @@ func startHarness(t *testing.T, dir, db string, idle time.Duration) *harness {
 	return h
 }
 
-func (h *harness) cmd(action, thread string, args core.Args) Reply {
+func (h *harness) cmd(action, thread string, args core.Args) api.Reply {
 	h.seq++
 	return h.cmdID(action+"-"+string(rune('a'+h.seq)), action, thread, args)
 }
 
-func (h *harness) cmdID(id, action, thread string, args core.Args) Reply {
+func (h *harness) cmdID(id, action, thread string, args core.Args) api.Reply {
 	h.t.Helper()
-	return h.e.Command(Cmd{CommandID: id, Action: action, ThreadID: thread, Args: args})
+	return h.e.Command(api.Cmd{CommandID: id, Action: action, ThreadID: thread, Args: args})
 }
 
 func (h *harness) create(text string) string {

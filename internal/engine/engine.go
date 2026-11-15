@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
@@ -225,28 +226,12 @@ func (e *Engine) ChangesLook(id string) *core.ChangesLook {
 	return &l
 }
 
-// Cmd is one command from any surface.
-type Cmd struct {
-	CommandID string    `json:"commandId"`
-	Action    string    `json:"action"`
-	ThreadID  string    `json:"threadId,omitempty"`
-	Args      core.Args `json:"args,omitempty"`
-}
-
-type Reply struct {
-	OK       bool   `json:"ok"`
-	ThreadID string `json:"threadId,omitempty"`
-	Error    string `json:"error,omitempty"`
-	Status   int    `json:"-"`
-	Result   any    `json:"result,omitempty"`
-}
-
 // Command applies one owner command exactly once per CommandID (I7). It
 // builds an Input and sends it down the one path; projects, T3 adoption and
 // a message cancel keep their own (they wait on things outside the thread).
-func (e *Engine) Command(c Cmd) Reply {
+func (e *Engine) Command(c api.Cmd) api.Reply {
 	if c.CommandID == "" {
-		return Reply{Error: "commandId is required", Status: 400}
+		return api.Reply{Error: "commandId is required", Status: 400}
 	}
 	if c.Action == "t3.adopt" {
 		return e.adopt(c)
@@ -258,23 +243,23 @@ func (e *Engine) Command(c Cmd) Reply {
 		return e.cancelMessage(c)
 	}
 	if k := core.Kinds[c.Action]; k == nil || !slices.Contains(k.From, core.ByOwner) {
-		return Reply{Error: "unknown action " + c.Action, Status: 400}
+		return api.Reply{Error: "unknown action " + c.Action, Status: 400}
 	}
 	if c.Action == "thread.setProject" && c.Args.Str("projectId") != "" {
 		e.mu.Lock()
 		ok := e.projects[c.Args.Str("projectId")] != nil
 		e.mu.Unlock()
 		if !ok {
-			return Reply{Error: "no project " + c.Args.Str("projectId"), Status: 400}
+			return api.Reply{Error: "no project " + c.Args.Str("projectId"), Status: 400}
 		}
 	}
 	if c.Action == "thread.handover" && e.ProfileExists != nil && c.Args.Str("profile") != "" && !e.ProfileExists(c.Args.Str("profile")) {
-		return Reply{Error: "no profile " + c.Args.Str("profile"), Status: 400}
+		return api.Reply{Error: "no profile " + c.Args.Str("profile"), Status: 400}
 	}
 	if c.Action == "thread.create" || c.Action == "thread.send" {
 		for _, id := range core.AttachmentIDs(c.Args) {
 			if e.AttachmentExists == nil || !e.AttachmentExists(id) {
-				return Reply{Error: "unknown attachment " + id, Status: 400}
+				return api.Reply{Error: "unknown attachment " + id, Status: 400}
 			}
 		}
 	}
@@ -297,7 +282,7 @@ func (e *Engine) Command(c Cmd) Reply {
 			pr := e.projects[pid]
 			e.mu.Unlock()
 			if pr == nil {
-				return Reply{Error: "no project " + pid, Status: 400}
+				return api.Reply{Error: "no project " + pid, Status: 400}
 			}
 			if strings.TrimSpace(args.Str("cwd")) == "" && pr.Folder != "" {
 				args["cwd"] = pr.Folder
@@ -306,7 +291,7 @@ func (e *Engine) Command(c Cmd) Reply {
 		if strings.TrimSpace(args.Str("cwd")) == "" {
 			dir, err := e.makeScratch(args.Str("text"), now)
 			if err != nil {
-				return Reply{Error: "could not make a scratch folder: " + err.Error(), Status: 500}
+				return api.Reply{Error: "could not make a scratch folder: " + err.Error(), Status: 500}
 			}
 			scratch = dir
 			args["cwd"] = dir
@@ -325,16 +310,16 @@ func (e *Engine) Command(c Cmd) Reply {
 }
 
 // rejected is a command's reply for an Input that did not apply.
-func rejected(err error) Reply {
+func rejected(err error) api.Reply {
 	var r *core.Rejection
 	if !errors.As(err, &r) {
-		return Reply{Error: err.Error(), Status: 500}
+		return api.Reply{Error: err.Error(), Status: 500}
 	}
 	status := map[core.RejectCode]int{core.RejectBadArgs: 400, core.RejectNotFound: 404, core.RejectRights: 403}[r.Code]
 	if status == 0 {
 		status = 409 // not now; a transient rejection gets no receipt (A4)
 	}
-	return Reply{Error: r.Reason, Status: status}
+	return api.Reply{Error: r.Reason, Status: status}
 }
 
 // Apply sends one Input down the path and returns the reduce's reply. The
@@ -359,7 +344,7 @@ func (e *Engine) Apply(in core.Input) (any, error) {
 
 // applied is one Input that went down the path, ready to publish.
 type applied struct {
-	reply    Reply
+	reply    api.Reply
 	res      core.Result
 	threadID string
 	dto      *DTO
@@ -443,7 +428,7 @@ func (e *Engine) stage(cur *core.Thread, in core.Input, now time.Time, fresh boo
 		t.UpdatedAt = now
 		s.changed, s.feedOnly = true, false
 	}
-	s.applied = &applied{res: res, threadID: t.ID, reply: Reply{OK: true, ThreadID: t.ID, Status: 200, Result: res.Reply}}
+	s.applied = &applied{res: res, threadID: t.ID, reply: api.Reply{OK: true, ThreadID: t.ID, Status: 200, Result: res.Reply}}
 	for i := range s.res.Effects {
 		ef := &s.res.Effects[i]
 		ef.ID = NewID("fx_")
@@ -557,15 +542,15 @@ func (e *Engine) record(threadID string, evs ...core.Event) {
 // as a 200, and done; a store error is a 500, also done. Call it under the
 // lock that also covers writing the command's receipt, so a command sent
 // twice at once runs once.
-func (e *Engine) replay(cmdID string) (Reply, bool) {
+func (e *Engine) replay(cmdID string) (api.Reply, bool) {
 	prev, err := e.st.Receipt(cmdID)
 	if err != nil {
-		return Reply{Error: err.Error(), Status: 500}, true
+		return api.Reply{Error: err.Error(), Status: 500}, true
 	}
 	if prev == nil {
-		return Reply{}, false
+		return api.Reply{}, false
 	}
-	var r Reply
+	var r api.Reply
 	json.Unmarshal(prev, &r)
 	r.Status = 200
 	return r, true
@@ -758,9 +743,9 @@ func (e *Engine) Events(id string, after int64, limit int) ([]store.Event, error
 	return e.st.EventsFor(id, after, limit, after == 0)
 }
 
-func (e *Engine) adopt(c Cmd) Reply {
+func (e *Engine) adopt(c api.Cmd) api.Reply {
 	if e.Adopt == nil {
-		return Reply{Error: "T3 adoption is not configured", Status: 409}
+		return api.Reply{Error: "T3 adoption is not configured", Status: 409}
 	}
 	e.press.Lock()
 	defer e.press.Unlock()
@@ -776,9 +761,9 @@ func (e *Engine) adopt(c Cmd) Reply {
 	}
 	n, err := e.Adopt(ids)
 	if err != nil {
-		return Reply{Error: err.Error(), Status: 500}
+		return api.Reply{Error: err.Error(), Status: 500}
 	}
-	r := Reply{OK: true, Status: 200, Result: map[string]any{"adopted": n}}
+	r := api.Reply{OK: true, Status: 200, Result: map[string]any{"adopted": n}}
 	e.st.Write(func(tx *store.Tx) error { return tx.PutReceipt(c.CommandID, r, e.Now()) })
 	return r
 }

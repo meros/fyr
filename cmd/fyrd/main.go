@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/deploy"
@@ -80,11 +81,11 @@ func BuildID() string {
 }
 
 type config struct {
-	Listen          string          `json:"listen"`
-	PermissionMode  string          `json:"permissionMode"`
-	IdleStopMinutes int             `json:"idleStopMinutes"`
-	OwnerLogin      string          `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)
-	Profiles        []agent.Profile `json:"profiles"`
+	Listen          string             `json:"listen"`
+	PermissionMode  string             `json:"permissionMode"`
+	IdleStopMinutes int                `json:"idleStopMinutes"`
+	OwnerLogin      string             `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)
+	Profiles        []provider.Profile `json:"profiles"`
 	// ScratchRoots: folders whose children are scratch folders (V0.28);
 	// empty means ~/.t3/scratch and ~/.local/share/fyr/scratch.
 	ScratchRoots []string `json:"scratchRoots"`
@@ -119,7 +120,7 @@ func loadConfig(path, t3Settings string) config {
 		}
 	}
 	if len(c.Profiles) == 0 {
-		c.Profiles = []agent.Profile{{ID: "claudeAgent", Name: "Claude", Binary: "claude", Color: "#d97757",
+		c.Profiles = []provider.Profile{{ID: "claudeAgent", Name: "Claude", Binary: "claude", Color: "#d97757",
 			Models: t3.DefaultModels, DefaultModel: t3.DefaultModels[0]}}
 	}
 	for i := range c.Profiles {
@@ -263,19 +264,19 @@ func main() {
 		}
 		return n
 	}
-	profiles := func() []agent.Profile {
+	profiles := func() []provider.Profile {
 		if ps := reg.Profiles(); len(ps) > 0 {
 			return ps
 		}
 		return cfg.Profiles
 	}
-	profileByID := func(id string) (agent.Profile, bool) {
+	profileByID := func(id string) (provider.Profile, bool) {
 		for _, p := range profiles() {
 			if p.ID == id {
 				return p, true
 			}
 		}
-		return agent.Profile{}, false
+		return provider.Profile{}, false
 	}
 	adopt := func(ids []string) (int, error) { return adoptT3(eng, t3DB, profiles(), ids) }
 
@@ -337,7 +338,7 @@ func main() {
 	mcpSrv := mcp.New(func(tok string) (string, bool) { return mgr.ThreadForToken(tok) })
 	eng.Tools(mcpSrv)
 	mgr = agent.New(eng, agent.Config{
-		Profile: func(id string) agent.Profile {
+		Profile: func(id string) provider.Profile {
 			if p, ok := profileByID(id); ok {
 				return p
 			}
@@ -625,7 +626,7 @@ func (s prSource) ObserveDeploy(id, change string, d core.DeployObs) {
 	s.e.Apply(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindDeployObserved, Thread: id, Args: core.DeployObservedArgs{Change: change, Obs: d}})
 }
 
-func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []string) (int, error) {
+func adoptT3(eng *engine.Engine, db string, profiles []provider.Profile, ids []string) (int, error) {
 	cs, err := t3.Candidates(db, home())
 	if err != nil {
 		return 0, err
@@ -702,11 +703,11 @@ func lastSummary(h []core.Event) string {
 // providerAPI adapts the registry to the server.
 type providerAPI struct{ r *provider.Registry }
 
-func (p providerAPI) List() any                         { return p.r.List() }
-func (p providerAPI) Found() any                        { return p.r.Found() }
-func (p providerAPI) Command(c engine.Cmd) engine.Reply { return p.r.Command(c) }
+func (p providerAPI) List() any                   { return p.r.List() }
+func (p providerAPI) Found() any                  { return p.r.Found() }
+func (p providerAPI) Command(c api.Cmd) api.Reply { return p.r.Command(c) }
 
-func quotaProfiles(ps []agent.Profile) []quota.Profile {
+func quotaProfiles(ps []provider.Profile) []quota.Profile {
 	out := make([]quota.Profile, 0, len(ps))
 	for _, p := range ps {
 		out = append(out, quota.Profile{ID: p.ID, Binary: p.Binary, Env: p.Env, Spec: p.Quota})

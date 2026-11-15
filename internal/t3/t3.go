@@ -13,9 +13,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/provider"
 	_ "modernc.org/sqlite"
 )
 
@@ -167,7 +167,7 @@ func History(home, session string, limit int) ([]core.Event, []time.Time, error)
 
 // Profiles turns T3's claude provider instances into Fyr profiles. The
 // built-in instance claudeAgent (the plain `claude` binary) is always first.
-func Profiles(settings string) ([]agent.Profile, error) {
+func Profiles(settings string) ([]provider.Profile, error) {
 	b, err := os.ReadFile(settings)
 	if err != nil {
 		return nil, err
@@ -209,7 +209,7 @@ func Profiles(settings string) ([]agent.Profile, error) {
 		}
 		return out
 	}
-	out := []agent.Profile{{ID: "claudeAgent", Name: "Claude", Binary: "claude", Color: "#d97757", Models: models("claudeAgent", nil)}}
+	out := []provider.Profile{{ID: "claudeAgent", Name: "Claude", Binary: "claude", Color: "#d97757", Models: models("claudeAgent", nil)}}
 	ids := make([]string, 0, len(s.ProviderInstances))
 	for id := range s.ProviderInstances {
 		ids = append(ids, id)
@@ -232,7 +232,7 @@ func Profiles(settings string) ([]agent.Profile, error) {
 		if name == "" {
 			name = id
 		}
-		out = append(out, agent.Profile{ID: id, Name: name, Binary: bin, Color: pi.AccentColor, Models: models(id, custom)})
+		out = append(out, provider.Profile{ID: id, Name: name, Binary: bin, Color: pi.AccentColor, Models: models(id, custom)})
 	}
 	for i := range out {
 		if len(out[i].Models) > 0 {

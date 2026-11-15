@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
@@ -34,7 +35,7 @@ func bare(t *testing.T) (*Engine, *store.Store, *time.Time) {
 
 func bareThread(t *testing.T, e *Engine) string {
 	t.Helper()
-	r := e.Command(Cmd{CommandID: NewID("c"), Action: "thread.create", Args: core.Args{"cwd": t.TempDir(), "text": "hi"}})
+	r := e.Command(api.Cmd{CommandID: NewID("c"), Action: "thread.create", Args: core.Args{"cwd": t.TempDir(), "text": "hi"}})
 	if !r.OK {
 		t.Fatalf("create: %+v", r)
 	}
@@ -148,7 +149,7 @@ func TestReplayUnderLock(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if r := e.Command(Cmd{CommandID: "same", Action: "project.create", Args: core.Args{"name": "Lasso"}}); !r.OK {
+			if r := e.Command(api.Cmd{CommandID: "same", Action: "project.create", Args: core.Args{"name": "Lasso"}}); !r.OK {
 				t.Errorf("create: %+v", r)
 			}
 		}()
@@ -157,7 +158,7 @@ func TestReplayUnderLock(t *testing.T) {
 	if n := len(e.Projects()); n != 1 {
 		t.Fatalf("%d projects from one command id", n)
 	}
-	r := e.Command(Cmd{CommandID: "same", Action: "project.create", Args: core.Args{"name": "Other"}})
+	r := e.Command(api.Cmd{CommandID: "same", Action: "project.create", Args: core.Args{"name": "Other"}})
 	b, _ := json.Marshal(r)
 	if !r.OK || r.Status != 200 || !strings.Contains(string(b), `"id":"p_`) {
 		t.Fatalf("replay: %s", b)

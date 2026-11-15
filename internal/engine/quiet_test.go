@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 )
 
@@ -33,7 +34,7 @@ func drain(ch chan Frame, event string) []map[string]any {
 // push, nothing queued for the end of the window).
 func TestQuietHours(t *testing.T) {
 	h := newHarness(t, time.Minute)
-	c := h.e.Command(Cmd{CommandID: "p", Action: "project.create", Args: core.Args{"name": "Work", "folder": h.dir}})
+	c := h.e.Command(api.Cmd{CommandID: "p", Action: "project.create", Args: core.Args{"name": "Work", "folder": h.dir}})
 	pid := c.Result.(map[string]any)["id"].(string)
 	id := h.create("x")
 	h.wait(id, "done", state(core.Done))

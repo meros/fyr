@@ -13,6 +13,7 @@ import (
 
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/provider"
 )
 
 // stubAdapter is a CLI adapter whose sessions are scripted in Go.
@@ -130,7 +131,7 @@ func (h stubHost) Thread(id string) (core.Thread, bool) {
 func stubManager(t *testing.T, a *stubAdapter) *Manager {
 	t.Helper()
 	m := New(stubHost{cwd: t.TempDir()}, Config{
-		Profile:  func(id string) Profile { return Profile{ID: id, CLI: "stub"} },
+		Profile:  func(id string) provider.Profile { return provider.Profile{ID: id, CLI: "stub"} },
 		Adapters: map[string]cli.Adapter{"stub": a},
 		Prompt:   "-",
 	})
@@ -188,7 +189,7 @@ func TestHandoverStartRacingSendLeavesOneProcess(t *testing.T) {
 	}
 	var got *session
 	go func() {
-		s, err := m.ensureAs("t1", &as{profile: Profile{ID: "other", CLI: "stub"}, model: "target", session: "s2"})
+		s, err := m.ensureAs("t1", &as{profile: provider.Profile{ID: "other", CLI: "stub"}, model: "target", session: "s2"})
 		got = s
 		errs <- err
 	}()
@@ -237,7 +238,7 @@ func TestBriefWaitsForRunningTurn(t *testing.T) {
 	}
 	done := make(chan string, 1)
 	go func() {
-		out, err := m.brief("t1", Profile{ID: "other"})
+		out, err := m.brief("t1", provider.Profile{ID: "other"})
 		if err != nil {
 			out = "error: " + err.Error()
 		}
@@ -278,7 +279,7 @@ func TestBriefMatchesItsOwnMessage(t *testing.T) {
 	if _, err := m.ensure("t1"); err != nil {
 		t.Fatal(err)
 	}
-	out, err := m.brief("t1", Profile{ID: "other"})
+	out, err := m.brief("t1", provider.Profile{ID: "other"})
 	if err != nil {
 		t.Fatal(err)
 	}

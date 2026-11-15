@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
-	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/pty"
 )
 
@@ -110,10 +110,10 @@ func (r *Registry) loginTimeout() time.Duration {
 }
 
 // startLogin runs provider.login.
-func (r *Registry) startLogin(id string) engine.Reply {
+func (r *Registry) startLogin(id string) api.Reply {
 	p, ok := r.get(id)
 	if !ok {
-		return engine.Reply{Error: "no provider " + id, Status: 404}
+		return api.Reply{Error: "no provider " + id, Status: 404}
 	}
 	if p.Auth.Kind != cli.CLILogin {
 		return fail(errors.New(p.Name + " is not a Claude account; paste its key instead"))
@@ -124,7 +124,7 @@ func (r *Registry) startLogin(id string) engine.Reply {
 	}
 	if l := r.logins[id]; l != nil && l.active() {
 		r.lmu.Unlock()
-		return engine.Reply{Error: "A login for " + p.Name + " is already running", Status: 409}
+		return api.Reply{Error: "A login for " + p.Name + " is already running", Status: 409}
 	}
 	kind := claudecli.LoginFolder
 	if p.TokenLogin {
@@ -140,7 +140,7 @@ func (r *Registry) startLogin(id string) engine.Reply {
 		return fail(err)
 	}
 	log.Printf("providers: login for %s started (%s)", id, kind)
-	return engine.Reply{Result: l.dto()}
+	return api.Reply{Result: l.dto()}
 }
 
 func (r *Registry) runLogin(p Provider, l *loginRun) error {
@@ -348,7 +348,7 @@ func (r *Registry) storeToken(id, tok string) error {
 }
 
 // loginCode runs provider.loginCode: the code the sign-in page showed.
-func (r *Registry) loginCode(id, code string) engine.Reply {
+func (r *Registry) loginCode(id, code string) api.Reply {
 	code = strings.TrimSpace(code)
 	if code == "" || len(code) > 4096 || strings.ContainsAny(code, "\r\n\x03\x04\x1b") {
 		return fail(errors.New("paste the code the sign-in page shows"))
@@ -357,12 +357,12 @@ func (r *Registry) loginCode(id, code string) engine.Reply {
 	l := r.logins[id]
 	r.lmu.Unlock()
 	if l == nil || !l.active() {
-		return engine.Reply{Error: "no login is running; start it again", Status: 409}
+		return api.Reply{Error: "no login is running; start it again", Status: 409}
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.state == LoginStarting {
-		return engine.Reply{Error: "the sign-in link is not ready yet", Status: 409}
+		return api.Reply{Error: "the sign-in link is not ready yet", Status: 409}
 	}
 	end := "\n"
 	if l.terminal {
@@ -380,16 +380,16 @@ func (r *Registry) loginCode(id, code string) engine.Reply {
 	}
 	l.state, l.msg = LoginChecking, ""
 	l.mark = l.outLen // only output after the code counts
-	return engine.Reply{}
+	return api.Reply{}
 }
 
 // cancelLogin runs provider.loginCancel.
-func (r *Registry) cancelLogin(id string) engine.Reply {
+func (r *Registry) cancelLogin(id string) api.Reply {
 	r.lmu.Lock()
 	l := r.logins[id]
 	r.lmu.Unlock()
 	if l == nil || !l.active() {
-		return engine.Reply{}
+		return api.Reply{}
 	}
 	l.mu.Lock()
 	l.byOwner = true
@@ -398,5 +398,5 @@ func (r *Registry) cancelLogin(id string) engine.Reply {
 	if c != nil {
 		c()
 	}
-	return engine.Reply{}
+	return api.Reply{}
 }
