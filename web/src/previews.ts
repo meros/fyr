@@ -1,7 +1,7 @@
 // In-thread previews (SPEC 0.5 V0.19): the card model for a `preview` event, frame heights, and
 // which markdown image sources render inline. Pure.
 
-import { attachmentUrl, hostQuery } from "./attach.ts";
+import { attachmentUrl, hostQuery, type ContentUrls } from "./attach.ts";
 
 export interface PreviewData {
   kind: "image" | "html";
@@ -29,16 +29,13 @@ export const FRAME_START_MAX = 600;
 export const FRAME_MAX = 2000;
 const FRAME_DEFAULT = 400;
 
-let previewUrlFor: (id: string, host?: string) => string = (id, host) => `/api/previews/${encodeURIComponent(id)}${hostQuery(host)}`;
-/** Where an HTML page loads from: a preview or a live view (V0.37), on the thread's host (V0.54). */
+/** Where an HTML page loads from on the host: a preview or a live view (V0.37), on the thread's host (V0.54). */
 export function previewUrl(id: string, host?: string): string {
-  return previewUrlFor(id, host);
+  return `/api/previews/${encodeURIComponent(id)}${hostQuery(host)}`;
 }
 
-/** The app sets this (mock mode serves data: pages). */
-export function setPreviewUrl(fn: (id: string, host?: string) => string): void {
-  previewUrlFor = fn;
-}
+/** The host's content URLs; the real Api uses them, the mock has its own. */
+export const hostUrls: ContentUrls = { attachmentUrl, previewUrl };
 
 function num(v: unknown): number {
   const n = Number(v);
@@ -46,7 +43,7 @@ function num(v: unknown): number {
 }
 
 /** The card for a `preview` event, or null when the event is not usable. */
-export function previewCard(seq: number, at: string, data: unknown, host?: string): PreviewCard | null {
+export function previewCard(seq: number, at: string, data: unknown, host?: string, urls: ContentUrls = hostUrls): PreviewCard | null {
   const d = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
   const kind = d.kind === "html" ? "html" : d.kind === "image" ? "image" : null;
   const id = typeof d.attachmentId === "string" ? d.attachmentId : "";
@@ -61,7 +58,7 @@ export function previewCard(seq: number, at: string, data: unknown, host?: strin
     width: num(d.width),
     height: num(d.height),
     url: typeof d.url === "string" && /^https?:\/\//i.test(d.url) ? d.url : undefined,
-    src: kind === "image" ? attachmentUrl(id, host) : previewUrlFor(id, host),
+    src: kind === "image" ? urls.attachmentUrl(id, host) : urls.previewUrl(id, host),
   };
 }
 

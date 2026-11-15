@@ -1,21 +1,15 @@
 // Attachment chips, pickers and the full-screen image viewer (SPEC 0.5 V0.18).
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { addChips, attachmentUrl, chipDone, chipError, chipProgress, fileLabel, formatSize, isImage, removeChip, type Chip } from "./attach.ts";
-import type { UploadResult } from "./api.ts";
-
-type Uploader = (file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal, host?: string) => Promise<UploadResult>;
-let uploader: Uploader | null = null;
-/** The app hands in api.uploadAttachment once (api.ts stays the only HTTP module). */
-export function setUploader(fn: Uploader): void {
-  uploader = fn;
-}
+import { addChips, chipDone, chipError, chipProgress, fileLabel, formatSize, isImage, removeChip, type Chip } from "./attach.ts";
+import { useApi } from "./api-context.ts";
 
 let keySeq = 0;
 
 /** Chips for one composer: add files (picked, pasted, dropped), each uploads at once, to `host` (V0.54: the
  *  thread's host, or the one a new thread starts on; the front routes by it). */
 export function useAttachments(host?: string) {
+  const api = useApi();
   const [chips, setChips] = useState<Chip[]>([]);
   const hostRef = useRef(host);
   hostRef.current = host;
@@ -39,14 +33,11 @@ export function useAttachments(host?: string) {
     });
     setChips((c) => addChips(c, fresh.map((x) => x.nf)));
     for (const { file, nf } of fresh) {
-      if (nf.size > 25 * 1024 * 1024 || !uploader) {
-        if (!uploader) setChips((c) => chipError(c, nf.key, null));
-        continue;
-      }
+      if (nf.size > 25 * 1024 * 1024) continue;
       const ac = new AbortController();
       aborts.current.set(nf.key, ac);
       const named = file.name ? file : new File([file], nf.name, { type: file.type });
-      void uploader(named, (l, t) => setChips((c) => chipProgress(c, nf.key, l, t)), ac.signal, hostRef.current).then((r) => {
+      void api.uploadAttachment(named, (l, t) => setChips((c) => chipProgress(c, nf.key, l, t)), ac.signal, hostRef.current).then((r) => {
         aborts.current.delete(nf.key);
         if (ac.signal.aborted) return;
         setChips((c) => (r.ok ? chipDone(c, nf.key, r.reply) : chipError(c, nf.key, r.status, r.error)));
@@ -180,6 +171,7 @@ export interface SentAttachment {
 
 /** A user message's attachments: image thumbnails (tap: full screen) and file chips (open in a new tab). */
 export function SentAttachments({ items, host }: { items: SentAttachment[]; host?: string }) {
+  const { attachmentUrl } = useApi();
   const [full, setFull] = useState<SentAttachment | null>(null);
   if (!items.length) return null;
   return (

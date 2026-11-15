@@ -6,6 +6,7 @@ import { useDraft } from "./drafts.ts";
 import { liveLine } from "./tasks.ts";
 import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
+import { useApi } from "./api-context.ts";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createContext } from "preact";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, Thread } from "./types.ts";
@@ -86,7 +87,8 @@ function urlTab(id: string): string | undefined {
 export function ThreadPane(p: ThreadPaneProps) {
   const t = p.thread;
   const [tab, setTab] = useState<Tab>("conv");
-  const previews = useMemo(() => previewsOf(p.events ?? [], t.host), [p.events, t.host]);
+  const api = useApi();
+  const previews = useMemo(() => previewsOf(p.events ?? [], t.host, api), [p.events, t.host]);
   useEffect(() => setTab(defaultTab(t, urlTab(t.id)) as Tab), [t.id]);
   const hasView = !!liveViewOf(t);
   // A view that appears or goes away while the thread is open keeps the tabs valid.
@@ -440,8 +442,9 @@ export const ProfilesContext = createContext<Profile[]>([]);
 
 export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: string }) {
   const details = useToolDetails();
+  const api = useApi();
   const outKey = outbox ? outbox.join(",") : null;
-  const all = useMemo(() => buildConversation(events ?? [], { details, cwd, host, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, host, outKey]);
+  const all = useMemo(() => buildConversation(events ?? [], { details, cwd, host, urls: api, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, host, outKey]);
   // V0.33: messages the agent has not read stand after "Agent is here".
   const [items, pending] = useMemo(() => [all.filter((i) => !(i.kind === "user" && i.pending)), all.filter((i) => i.kind === "user" && i.pending)], [all]);
   const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
@@ -706,6 +709,7 @@ function Fold({ en, previews }: { en: Extract<Entry, { kind: "fold" }>; previews
 
 function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]; process?: boolean }) {
   const host = useContext(HostContext);
+  const api = useApi();
   switch (it.kind) {
     case "user": {
       // V0.33: unread messages are dimmed; a cancelled or lost one is struck through.
@@ -749,7 +753,7 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
       if (it.quiet) return <QuietLine icon="seen" line={it.text.split("\n").find((x) => x.trim()) ?? ""} full={it.text} />;
       return (
         <div class={`msgw${process ? " proc" : ""}`}>
-          <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text, host) }} />
+          <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text, host, api.attachmentUrl) }} />
           <CopyButton text={copySource({ kind: "message", text: it.text })} label="Copy message" cls="msgcp" />
         </div>
       );
@@ -839,24 +843,20 @@ function FoldGroup({ calls }: { calls: ToolCall[] }) {
   );
 }
 
-/** One call: its label; a tap shows the exact input and output (output cut at 200 lines). */
-let fullEventSource: { fullEvent(threadId: string, seq: number): Promise<FyrEvent | null> } | null = null;
-/** V0.38: where a cut tool output is loaded from (the app sets the API). */
-export function setFullEventSource(s: typeof fullEventSource): void {
-  fullEventSource = s;
-}
 export const ThreadIdContext = createContext("");
 
+/** One call: its label; a tap shows the exact input and output (output cut at 200 lines). */
 function CallRow({ c }: { c: ToolCall }) {
+  const api = useApi();
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
   const threadId = useContext(ThreadIdContext);
   const [whole, setWhole] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const loadWhole = async () => {
-    if (!c.cutSeq || !fullEventSource) return;
+    if (!c.cutSeq) return;
     setLoading(true);
-    const ev = await fullEventSource.fullEvent(threadId, c.cutSeq).catch(() => null);
+    const ev = await api.fullEvent(threadId, c.cutSeq).catch(() => null);
     const text = ev ? fullOutputOf(ev, c.id) : null;
     setLoading(false);
     if (text !== null) {

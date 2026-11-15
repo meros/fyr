@@ -4,7 +4,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { bridgeMessage, liveViewOf, pressReply, staleLabel, stateMessage, viewDimmed, viewHeight } from "./view.ts";
-import { FRAME_ALLOW, previewUrl } from "./previews.ts";
+import { FRAME_ALLOW } from "./previews.ts";
+import { useApi } from "./api-context.ts";
 import type { FyrEvent, Thread, Offer } from "./types.ts";
 import { buildConversation, deliveryLabel, viewChat } from "./conversation.ts";
 import { liveLine } from "./tasks.ts";
@@ -28,6 +29,7 @@ function saveCollapsed(s: Set<string>) {
 
 /** V0.37: the full view (the View tab). V0.56: no headline bar in Conversation; the tab is the way in. */
 export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; now: number; onPress(text: string): Promise<boolean>; /** V0.60: run one of the view's actions */ onAction?(o: Offer): Promise<boolean>; full?: boolean }) {
+  const api = useApi();
   const v = liveViewOf(t);
   const frame = useRef<HTMLIFrameElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -113,7 +115,7 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; 
         <iframe
           ref={frame}
           class="lv-f"
-          src={previewUrl(v.pageId, t.host)}
+          src={api.previewUrl(v.pageId, t.host)}
           sandbox="allow-scripts"
           allow={FRAME_ALLOW}
           allowFullScreen

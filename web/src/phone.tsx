@@ -4,6 +4,7 @@
 // PrTab, image paste); everything else here uses its own m- classes so the desktop CSS never applies.
 
 import { haptic } from "./native.ts";
+import { useApi } from "./api-context.ts";
 import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -725,7 +726,8 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => setCollapsed(false), [decision?.id]);
   const cardOpen = !!decision && !collapsed;
-  const previews = useMemo(() => previewsOf(p.events ?? [], t.host), [p.events, t.host]);
+  const api = useApi();
+  const previews = useMemo(() => previewsOf(p.events ?? [], t.host, api), [p.events, t.host]);
   const st = t.attention.state;
   const setTab = (tab: string) => p.replace({ screen: { name: "thread", id: t.id, tab }, sheet: null });
   const [nextOffer, setNextOffer] = useState<Thread | null>(null);

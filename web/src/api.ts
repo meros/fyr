@@ -6,7 +6,8 @@ import type { DeployProgress } from "./deploy.ts";
 import { cache, mergeStateDelta, sinceRev } from "./cache.ts";
 import type { Conn, ThreadPatch } from "./store.ts";
 import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
-import { hostQuery, type UploadReply } from "./attach.ts";
+import { attachmentUrl, hostQuery, type UploadReply } from "./attach.ts";
+import { previewUrl } from "./previews.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
 import type { FoundDTO, ProviderDTO } from "./providers.ts";
@@ -344,12 +345,8 @@ function createHttpApi(): Api {
         x.send(file);
       });
     },
-    attachmentUrl(id, host) {
-      return `/api/attachments/${encodeURIComponent(id)}${hostQuery(host)}`;
-    },
-    previewUrl(id, host) {
-      return `/api/previews/${encodeURIComponent(id)}${hostQuery(host)}`;
-    },
+    attachmentUrl,
+    previewUrl,
     async changes(threadId) {
       const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/changes`);
       const j = (await r.json().catch(() => ({}))) as ChangesDTO & { error?: string };
