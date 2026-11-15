@@ -222,6 +222,13 @@ export function startProject(projects: Project[], filterId: string | null | unde
 export const LAST_PROJECT_KEY = "fyr.lastProject";
 
 /** A project the client just made, until the host's copy arrives (V0.30, V0.55). */
+/** V0.63: what the new-thread project chip shows. While the New project step is open it shows the project being
+ *  made, never the one picked before. */
+export function projectChip(cur: Project | undefined, draft: { name: string; folder: string } | null): { name: string; sub: string; isNew: boolean } {
+  if (draft) return { name: draft.name.trim() || "New project", sub: draft.folder ? `New · ${shortPath(draft.folder)}` : "New · no folder", isNew: true };
+  return cur ? { name: cur.name, sub: projectSubtitle(cur), isNew: false } : { name: "No project", sub: "Not filed", isNew: false };
+}
+
 export function localProject(id: string, name: string, folder: string): Project {
   return { id, name, folder: folder || undefined, threads: 0, lastUsed: new Date().toISOString() };
 }

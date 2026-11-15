@@ -225,9 +225,10 @@ export function FolderField({ folder, title, onPick, onClear }: { folder: string
 
 /** New project, one step (V0.30, V0.55): a name (required) and the one folder, prefilled from the thread. The rest is
  *  on the project screen. */
-export function NewProjectStep({ initialName, initialFolder, fromThread, onCreate, onCancel }: { initialName: string; initialFolder: string; fromThread: boolean; onCreate(name: string, folder: string): Promise<string | null>; onCancel(): void }) {
+export function NewProjectStep({ initialName, initialFolder, fromThread, onCreate, onCancel, onDraft }: { initialName: string; initialFolder: string; fromThread: boolean; onCreate(name: string, folder: string): Promise<string | null>; onCancel(): void; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void }) {
   const [name, setName] = useState(initialName);
   const [folder, setFolder] = useState(initialFolder);
+  useEffect(() => onDraft?.(name, folder), [name, folder]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
