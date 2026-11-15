@@ -60,7 +60,7 @@ export interface Api {
   /** The Changes tab (V0.25): the branch diff of the thread's folder. */
   changes(threadId: string): Promise<ChangesDTO>;
   /** One file's unified diff (V0.25). */
-  filePatch(threadId: string, path: string): Promise<FilePatchDTO>;
+  filePatch(threadId: string, path: string, since?: string): Promise<FilePatchDTO>;
   /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
   prDetail(threadId: string, fresh?: boolean): Promise<PrReply>;
   /** The host folder picker (V0.42); every path stays inside the owner's home folder. */
@@ -352,8 +352,8 @@ function createHttpApi(): Api {
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j;
     },
-    async filePatch(threadId, path) {
-      const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/changes?path=${encodeURIComponent(path)}`);
+    async filePatch(threadId, path, since) {
+      const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/changes?path=${encodeURIComponent(path)}${since ? `&since=${encodeURIComponent(since)}` : ""}`);
       const j = (await r.json().catch(() => ({}))) as FilePatchDTO & { error?: string };
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j;

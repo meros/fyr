@@ -37,6 +37,11 @@ type File struct {
 	Additions int    `json:"additions"`
 	Deletions int    `json:"deletions"`
 	Binary    bool   `json:"binary"`
+	// Blob is the git blob id of the file's content now, "" when it is
+	// deleted or not a file (V0.65).
+	Blob string `json:"blob,omitempty"`
+	// Viewed is the owner's Viewed mark for this content; the server sets it.
+	Viewed bool `json:"viewed,omitempty"`
 }
 
 // Changes is the diff summary of a folder.
@@ -47,8 +52,12 @@ type Changes struct {
 	Base      string `json:"base"`
 	MergeBase string `json:"mergeBase"`
 	Commits   int    `json:"commits"`
+	// Head is the commit checked out, "" without commits (V0.65).
+	Head      string `json:"head"`
 	Files     []File `json:"files"`
 	Truncated bool   `json:"truncated"`
+	// Since is what changed since the owner's last look (V0.65).
+	Since *Since `json:"since,omitempty"`
 }
 
 // Patch is one file's unified diff.
@@ -62,12 +71,18 @@ type Patch struct {
 // runGit runs one git command in dir, writing its stdout to stdout. Optional
 // locks are off so a read never contends with the agent's own git commands.
 func runGit(ctx context.Context, dir string, stdout io.Writer, args ...string) error {
+	return runGitIn(ctx, dir, nil, stdout, args...)
+}
+
+// runGitIn is runGit with stdin.
+func runGitIn(ctx context.Context, dir string, stdin io.Reader, stdout io.Writer, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	full := append([]string{"-C", dir, "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.quotepath=off"}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C", "GIT_TERMINAL_PROMPT=0")
 	cmd.Stdout = stdout
+	cmd.Stdin = stdin
 	err := cmd.Run()
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -83,7 +98,7 @@ func out(ctx context.Context, dir string, args ...string) (string, error) {
 
 // state is where the diff starts.
 type state struct {
-	root, branch, base, mergeBase, from string
+	root, branch, base, mergeBase, from, head string
 	commits                             int
 }
 
@@ -108,6 +123,7 @@ func resolve(ctx context.Context, dir string) (s state, ok bool, err error) {
 		return s, true, nil
 	}
 	s.from = "HEAD"
+	s.head, _ = out(ctx, root, "rev-parse", "--verify", "-q", "HEAD^{commit}")
 	cands := []string{}
 	if h, err := out(ctx, root, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"); err == nil && h != "" {
 		cands = append(cands, h)
@@ -136,7 +152,7 @@ func Summary(ctx context.Context, dir string) (Changes, error) {
 	if err != nil || !ok {
 		return Changes{Files: []File{}}, err
 	}
-	c := Changes{Git: true, Root: s.root, Branch: s.branch, Base: s.base, MergeBase: s.mergeBase, Commits: s.commits, Files: []File{}}
+	c := Changes{Git: true, Root: s.root, Branch: s.branch, Base: s.base, MergeBase: s.mergeBase, Commits: s.commits, Head: s.head, Files: []File{}}
 	tracked, err := trackedChanges(ctx, s)
 	if err != nil {
 		return c, err
@@ -162,6 +178,9 @@ func Summary(ctx context.Context, dir string) (Changes, error) {
 	if files == nil {
 		files = []File{}
 	}
+	if err := fillBlobs(ctx, s, files); err != nil {
+		return c, err
+	}
 	c.Files = files
 	return c, nil
 }
@@ -173,7 +192,21 @@ func contains(sorted []string, p string) bool {
 
 // trackedChanges merges git's name-status and numstat for the tracked files.
 func trackedChanges(ctx context.Context, s state) ([]File, error) {
-	ns, err := out(ctx, s.root, "diff", "--no-ext-diff", "--no-textconv", "-M", "--name-status", "-z", s.from)
+	return diffFiles(ctx, s.root, s.from, true, nil)
+}
+
+// diffFiles lists the tracked files that differ between from and the
+// working tree, with renames when asked, and only the given paths when any.
+func diffFiles(ctx context.Context, root, from string, renames bool, paths []string) ([]File, error) {
+	mode := "-M"
+	if !renames {
+		mode = "--no-renames"
+	}
+	tail := []string{from}
+	if len(paths) > 0 {
+		tail = append(append(tail, "--"), paths...)
+	}
+	ns, err := out(ctx, root, append([]string{"diff", "--no-ext-diff", "--no-textconv", mode, "--name-status", "-z"}, tail...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +243,7 @@ func trackedChanges(ctx context.Context, s state) ([]File, error) {
 		idx[fl.Path] = len(files)
 		files = append(files, fl)
 	}
-	num, err := out(ctx, s.root, "diff", "--no-ext-diff", "--no-textconv", "-M", "--numstat", "-z", s.from)
+	num, err := out(ctx, root, append([]string{"diff", "--no-ext-diff", "--no-textconv", mode, "--numstat", "-z"}, tail...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -358,6 +391,11 @@ func FilePatch(ctx context.Context, dir, path string) (Patch, error) {
 			return p, err
 		}
 	}
+	return finish(p, w), nil
+}
+
+// finish cuts a patch at maxPatch on a line end.
+func finish(p Patch, w *capWriter) Patch {
 	b := w.buf.Bytes()
 	if len(b) > maxPatch {
 		b = b[:maxPatch]
@@ -368,5 +406,5 @@ func FilePatch(ctx context.Context, dir, path string) (Patch, error) {
 	}
 	p.Patch = string(b)
 	p.Binary = bytes.HasPrefix(b, []byte("Binary files ")) || bytes.Contains(b, []byte("\nBinary files "))
-	return p, nil
+	return p
 }

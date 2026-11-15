@@ -133,7 +133,7 @@ func TestSinceRebased(t *testing.T) {
 	git(t, dir, "checkout", "-q", "-b", "feature")
 	write(t, dir, "edit.txt", "one\nTWO\nthree\n")
 	git(t, dir, "commit", "-qam", "change two")
-	write(t, dir, "fresh.txt", "f\n")
+	write(t, dir, "fresh.txt", strings.Repeat("a line that stays\n", 20))
 	git(t, dir, "add", "fresh.txt")
 	git(t, dir, "commit", "-qm", "add fresh")
 	ctx := context.Background()
@@ -146,7 +146,7 @@ func TestSinceRebased(t *testing.T) {
 	git(t, dir, "commit", "-qam", "main moves")
 	git(t, dir, "checkout", "-q", "feature")
 	git(t, dir, "rebase", "-q", "main")
-	write(t, dir, "fresh.txt", "f\ng\n")
+	write(t, dir, "fresh.txt", strings.Repeat("a line that stays\n", 20)+"g\n")
 	git(t, dir, "commit", "-qa", "--amend", "-m", "add fresh")
 
 	c, _ = Summary(ctx, dir)

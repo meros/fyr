@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -259,6 +260,21 @@ func (e *Engine) view(id string) *core.View {
 		e.views[id] = v
 	}
 	return v
+}
+
+// ChangesLook returns a copy of the owner's last look at the thread's
+// Changes tab and the Viewed marks (V0.65), or nil.
+func (e *Engine) ChangesLook(id string) *core.ChangesLook {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	v := e.views[id]
+	if v == nil || v.ChangesLook == nil {
+		return nil
+	}
+	l := *v.ChangesLook
+	l.Files = maps.Clone(l.Files)
+	l.Viewed = maps.Clone(l.Viewed)
+	return &l
 }
 
 // Cmd is one command from any surface.
@@ -674,6 +690,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	}
 	att := core.Compute(t, v, now)
 	vc := *v
+	vc.ChangesLook = nil // V0.65: served with the Changes tab, not on every push
 	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now)}
 }
 
