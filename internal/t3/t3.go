@@ -11,10 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	_ "modernc.org/sqlite"
 )
@@ -101,21 +101,21 @@ WHERE t.deleted_at IS NULL AND t.archived_at IS NULL`)
 	return out, rows.Err()
 }
 
-// TranscriptPath finds ~/.claude*/projects/*/<session>.jsonl, or "".
+// TranscriptPath finds <session>.jsonl in the projects of any ~/.claude*
+// config folder, or "" (claudecli.SessionFile is the one lookup).
 func TranscriptPath(home, session string) string {
-	if session == "" || strings.ContainsAny(session, "/\\*?[") {
-		return ""
+	dirs, _ := filepath.Glob(filepath.Join(home, ".claude*"))
+	for _, d := range dirs {
+		if p := claudecli.SessionFile(d, "", session); p != "" {
+			return p
+		}
 	}
-	m, _ := filepath.Glob(filepath.Join(home, ".claude*", "projects", "*", session+".jsonl"))
-	if len(m) == 0 {
-		return ""
-	}
-	return m[0]
+	return ""
 }
 
 // History converts the last limit lines of a Claude transcript into Fyr
 // timeline events: a user's text becomes "user", everything else "msg".
-func History(home, session string, limit int) ([]agent.Ev, []time.Time, error) {
+func History(home, session string, limit int) ([]core.Event, []time.Time, error) {
 	path := TranscriptPath(home, session)
 	if path == "" {
 		return nil, nil, nil
@@ -126,7 +126,7 @@ func History(home, session string, limit int) ([]agent.Ev, []time.Time, error) {
 	}
 	defer f.Close()
 	type line struct {
-		ev agent.Ev
+		ev core.Event
 		at time.Time
 	}
 	var all []line
@@ -149,15 +149,15 @@ func History(home, session string, limit int) ([]agent.Ev, []time.Time, error) {
 		}
 		at, _ := time.Parse(time.RFC3339Nano, l.Timestamp)
 		if s, ok := l.Message["content"].(string); ok && l.Type == "user" {
-			all = append(all, line{agent.Ev{Type: "user", Data: map[string]any{"text": s, "images": 0}}, at})
+			all = append(all, line{core.Event{Type: "user", Data: map[string]any{"text": s, "images": 0}}, at})
 			continue
 		}
-		all = append(all, line{agent.Ev{Type: "msg", Data: map[string]any{"type": l.Type, "parent_tool_use_id": l.Parent, "message": l.Message}}, at})
+		all = append(all, line{core.Event{Type: "msg", Data: map[string]any{"type": l.Type, "parent_tool_use_id": l.Parent, "message": l.Message}}, at})
 	}
 	if len(all) > limit {
 		all = all[len(all)-limit:]
 	}
-	evs := make([]agent.Ev, len(all))
+	evs := make([]core.Event, len(all))
 	ats := make([]time.Time, len(all))
 	for i, l := range all {
 		evs[i], ats[i] = l.ev, l.at

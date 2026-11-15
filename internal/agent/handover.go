@@ -12,6 +12,7 @@ import (
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/proc"
 )
 
@@ -43,31 +44,19 @@ var BriefTimeout = 10 * time.Minute
 // daemon's, else ~/.claude.
 func (p Profile) ConfigDirPath() string {
 	if p.ConfigDir != "" {
-		return expandHome(p.ConfigDir)
+		return hostfs.ExpandHome(p.ConfigDir, "")
 	}
 	for _, kv := range p.Env {
 		if v, ok := strings.CutPrefix(kv, "CLAUDE_CONFIG_DIR="); ok && v != "" {
-			return expandHome(v)
+			return hostfs.ExpandHome(v, "")
 		}
 	}
 	if v := os.Getenv("CLAUDE_CONFIG_DIR"); v != "" {
-		return expandHome(v)
+		return hostfs.ExpandHome(v, "")
 	}
 	h, _ := os.UserHomeDir()
 	return filepath.Join(h, ".claude")
 }
-
-func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		h, _ := os.UserHomeDir()
-		return h + p[1:]
-	}
-	return p
-}
-
-// sessionFile finds <config>/projects/<dir>/<session>.jsonl (the claude
-// adapter's layout, V0.50).
-func sessionFile(cfgDir, cwd, sid string) string { return claudecli.SessionFile(cfgDir, cwd, sid) }
 
 func sameDir(a, b string) bool {
 	if filepath.Clean(a) == filepath.Clean(b) {
@@ -84,7 +73,7 @@ func resumable(t core.Thread, from Profile) (string, error) {
 	if t.SessionID == "" {
 		return "", fmt.Errorf("The thread has no session yet")
 	}
-	src := sessionFile(from.ConfigDirPath(), t.Cwd, t.SessionID)
+	src := claudecli.SessionFile(from.ConfigDirPath(), t.Cwd, t.SessionID)
 	if src == "" {
 		return "", fmt.Errorf("No session transcript for this thread in %s", from.ConfigDirPath())
 	}

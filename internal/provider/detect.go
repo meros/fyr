@@ -11,6 +11,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
+	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/secrets"
 )
@@ -136,10 +137,7 @@ func (h Host) dir(d string) string {
 	if d == "" {
 		return filepath.Join(h.Home, ".claude")
 	}
-	if d == "~" || strings.HasPrefix(d, "~/") {
-		return filepath.Join(h.Home, d[1:])
-	}
-	return filepath.Clean(d)
+	return filepath.Clean(hostfs.ExpandHome(d, h.Home))
 }
 
 func slug(s string) string {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/hostfs"
 )
 
 // ID is the adapter id providers name.
@@ -48,7 +49,7 @@ func (Adapter) Caps() cli.Caps {
 func (Adapter) Env(l cli.Launch) ([]string, error) {
 	env := append([]string{}, l.Env...)
 	if d := l.Auth.ConfigDir; d != "" {
-		env = append(env, "CLAUDE_CONFIG_DIR="+expandHome(d))
+		env = append(env, "CLAUDE_CONFIG_DIR="+hostfs.ExpandHome(d, ""))
 	}
 	switch l.Auth.Kind {
 	case cli.APIKey:
@@ -138,10 +139,10 @@ func (s session) Out() <-chan cli.Msg { return s.Client.Out }
 // CLAUDE_CONFIG_DIR, else ~/.claude.
 func (Adapter) SessionsDir(a cli.Auth) string {
 	if a.ConfigDir != "" {
-		return expandHome(a.ConfigDir)
+		return hostfs.ExpandHome(a.ConfigDir, "")
 	}
 	if v := os.Getenv("CLAUDE_CONFIG_DIR"); v != "" {
-		return expandHome(v)
+		return hostfs.ExpandHome(v, "")
 	}
 	h, _ := os.UserHomeDir()
 	return filepath.Join(h, ".claude")
@@ -157,12 +158,4 @@ func (Adapter) SessionFile(dir, cwd, sid string) string { return SessionFile(dir
 
 func (Adapter) CopySession(src, fromDir, toDir, sid string) error {
 	return CopySession(src, fromDir, toDir, sid)
-}
-
-func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		h, _ := os.UserHomeDir()
-		return h + p[1:]
-	}
-	return p
 }

@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
@@ -786,7 +785,7 @@ func (e *Engine) adopt(c Cmd) Reply {
 
 // Insert adds a thread made outside the command path (T3 adoption), with
 // its history, in one transaction.
-func (e *Engine) Insert(t *core.Thread, v *core.View, history []agent.Ev, at []time.Time) error {
+func (e *Engine) Insert(t *core.Thread, v *core.View, history []core.Event, at []time.Time) error {
 	e.mu.Lock()
 	e.assignProject(t)
 	e.mu.Unlock()

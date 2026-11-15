@@ -88,9 +88,6 @@ func (m *Manager) adapter(p Profile) (cli.Adapter, error) {
 	return nil, fmt.Errorf("no CLI adapter %q", id)
 }
 
-// Ev is a timeline event the agent adds to a thread.
-type Ev = core.Event
-
 // observe reports what the manager saw of a thread's process as an Input
 // from the process observer.
 func (m *Manager) observe(threadID, kind string, args any) {
@@ -381,7 +378,7 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 			ud["from"] = e.From
 		}
 		m.observe(threadID, core.KindSendFailed, core.SendFailedArgs{Message: "Could not start the agent: " + err.Error(),
-			Log: []Ev{{Type: "user", Data: ud}, {Type: "message.state", Data: map[string]any{"id": e.MessageID, "state": "lost"}}, {Type: "run.ended", Data: map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}}}})
+			Log: []core.Event{{Type: "user", Data: ud}, {Type: "message.state", Data: map[string]any{"id": e.MessageID, "state": "lost"}}, {Type: "run.ended", Data: map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}}}})
 		return err
 	}
 	m.mu.Lock()
@@ -422,9 +419,9 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 	if e.From != "" {
 		ud["from"] = e.From
 	}
-	evs := []Ev{{Type: "user", Data: ud}}
+	evs := []core.Event{{Type: "user", Data: ud}}
 	if first {
-		evs = append(evs, Ev{Type: "run.started", Data: map[string]any{}})
+		evs = append(evs, core.Event{Type: "run.started", Data: map[string]any{}})
 	}
 	m.observe(threadID, core.KindMessageSent, core.MessageSentArgs{ID: e.MessageID, First: first, Log: evs})
 	return s.c.SendUser(content(e), e.MessageID)
@@ -751,9 +748,9 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			return
 		}
 		if k, ev, ok := taskFromSystem(msg); ok {
-			var evs []Ev
+			var evs []core.Event
 			if ev != "" {
-				evs = append(evs, Ev{Type: "task", Data: map[string]any{"kind": ev, "id": k.ID, "description": k.Description, "status": k.Status, "summary": k.Summary}})
+				evs = append(evs, core.Event{Type: "task", Data: map[string]any{"kind": ev, "id": k.ID, "description": k.Description, "status": k.Status, "summary": k.Summary}})
 			}
 			m.observe(s.thread, core.KindTask, core.TaskArgs{Task: k, Log: evs})
 			return
@@ -775,7 +772,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			if forced {
 				// In stream order, so the client can show the forced turn's
 				// text as one quiet line (V0.37).
-				m.observe(s.thread, core.KindRecord, []Ev{{Type: "view.forced", Data: map[string]any{}}})
+				m.observe(s.thread, core.KindRecord, []core.Event{{Type: "view.forced", Data: map[string]any{}}})
 			}
 			return
 		}
@@ -783,9 +780,9 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			m.noteForced(s, msg)
 		}
 		o := s.digest.feed(msg)
-		d := core.DigestArgs{Activity: o.Activity, Summary: o.Summary, Subagents: o.Subagents, Log: []Ev{{Type: "msg", Data: trimMsg(msg)}}}
+		d := core.DigestArgs{Activity: o.Activity, Summary: o.Summary, Subagents: o.Subagents, Log: []core.Event{{Type: "msg", Data: trimMsg(msg)}}}
 		if o.PRURL != "" {
-			repo, n, _ := ParsePR(o.PRURL)
+			repo, n, _ := core.ParsePR(o.PRURL)
 			d.PR = &core.PR{URL: o.PRURL, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}
 		}
 		m.observe(s.thread, core.KindDigest, d)
@@ -1154,7 +1151,7 @@ func (m *Manager) answer(threadID string, e core.Effect) error {
 	} else {
 		text = "denied"
 	}
-	m.observe(threadID, core.KindRecord, []Ev{{Type: "decision.closed", Data: map[string]any{"id": e.DecisionID, "answer": text}}})
+	m.observe(threadID, core.KindRecord, []core.Event{{Type: "decision.closed", Data: map[string]any{"id": e.DecisionID, "answer": text}}})
 	return nil
 }
 

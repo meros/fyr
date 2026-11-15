@@ -62,8 +62,8 @@ func TestObserveEventOnlyKeepsUpdatedAt(t *testing.T) {
 	before, _ := e.Thread(id)
 	*now = now.Add(time.Hour)
 	ch := e.Hub.Subscribe()
-	coretest.Patch(e, id, func(*core.Thread, time.Time) []agent.Ev {
-		return []agent.Ev{{Type: "effect.result", Data: map[string]any{"ok": true}}}
+	coretest.Patch(e, id, func(*core.Thread, time.Time) []core.Event {
+		return []core.Event{{Type: "effect.result", Data: map[string]any{"ok": true}}}
 	})
 	after, _ := e.Thread(id)
 	if !after.UpdatedAt.Equal(before.UpdatedAt) {
@@ -73,7 +73,7 @@ func TestObserveEventOnlyKeepsUpdatedAt(t *testing.T) {
 	if len(got["event"]) != 1 || len(got["thread"]) != 0 {
 		t.Fatalf("frames: %d events, %d threads", len(got["event"]), len(got["thread"]))
 	}
-	coretest.Patch(e, id, func(t *core.Thread, _ time.Time) []agent.Ev { t.Summary = "moved"; return nil })
+	coretest.Patch(e, id, func(t *core.Thread, _ time.Time) []core.Event { t.Summary = "moved"; return nil })
 	if th, _ := e.Thread(id); !th.UpdatedAt.Equal(*now) {
 		t.Fatalf("a change did not move UpdatedAt: %v", th.UpdatedAt)
 	}
@@ -207,9 +207,9 @@ func TestOneTurnParser(t *testing.T) {
 	e, st, _ := bare(t)
 	id := bareThread(t, e)
 	e.record(id,
-		agent.Ev{Type: "user", Data: map[string]any{"text": "typed on the view", "from": agent.FromViewTyped}},
-		agent.Ev{Type: "user", Data: map[string]any{"text": "carry on", "from": agent.FromHandover}},
-		agent.Ev{Type: "msg", Data: map[string]any{"type": "assistant", "parent_tool_use_id": nil, "message": map[string]any{"content": []any{
+		core.Event{Type: "user", Data: map[string]any{"text": "typed on the view", "from": agent.FromViewTyped}},
+		core.Event{Type: "user", Data: map[string]any{"text": "carry on", "from": agent.FromHandover}},
+		core.Event{Type: "msg", Data: map[string]any{"type": "assistant", "parent_tool_use_id": nil, "message": map[string]any{"content": []any{
 			map[string]any{"type": "text", "text": "Done åäö"}, map[string]any{"type": "tool_use", "name": "Bash", "input": map[string]any{"command": "ls"}}}}}})
 	evs, _ := st.EventsFor(id, 0, 100, false)
 	text := threadText(evs)

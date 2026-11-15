@@ -110,7 +110,7 @@ func create(t *testing.T, base, host, text string) string {
 }
 
 func ask(h *host, id, q string) {
-	coretest.Patch(h.eng, id, func(th *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.eng, id, func(th *core.Thread, now time.Time) []core.Event {
 		core.DecisionOpened(th, core.Decision{ID: "d1", Kind: "ask", CreatedAt: now, Questions: []core.Question{{Question: q}}})
 		return nil
 	})

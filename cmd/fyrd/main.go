@@ -104,14 +104,6 @@ type config struct {
 	HostListen string `json:"hostListen"`
 }
 
-// expandHome turns "~" and "~/x" into paths under the home folder.
-func expandHome(r string) string {
-	if r == "~" || strings.HasPrefix(r, "~/") {
-		return home() + r[1:]
-	}
-	return r
-}
-
 func home() string { h, _ := os.UserHomeDir(); return h }
 
 func loadConfig(path, t3Settings string) config {
@@ -229,7 +221,7 @@ func main() {
 	defer st.Close()
 	eng := engine.New(st)
 	for _, r := range cfg.ScratchRoots {
-		eng.ScratchRoots = append(eng.ScratchRoots, expandHome(r))
+		eng.ScratchRoots = append(eng.ScratchRoots, hostfs.ExpandHome(r, home()))
 	}
 	// V0.55: Load gives each project one folder (a migration, logged),
 	// matches threads by folder and ends auto projects. The start does not
@@ -239,7 +231,7 @@ func main() {
 	}
 	folders := &hostfs.FS{Home: home(), Folders: eng.ProjectFolders, Recent: eng.RecentFolders}
 	for _, r := range cfg.ScanRoots {
-		folders.ScanRoots = append(folders.ScanRoots, expandHome(r))
+		folders.ScanRoots = append(folders.ScanRoots, hostfs.ExpandHome(r, home()))
 	}
 	// V0.50: providers. The first start imports today's profiles (same ids)
 	// as providers; then they come from Settings → Providers and the
@@ -658,7 +650,7 @@ func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []stri
 		t := &core.Thread{ID: engine.NewID("t_"), Title: c.Title, Cwd: c.Cwd,
 			Owner: core.Owner, Visibility: "private", Profile: prof, Model: c.Model, SessionID: c.SessionID,
 			CreatedAt: c.UpdatedAt, UpdatedAt: c.UpdatedAt, ActivityAt: c.UpdatedAt, Source: "t3", T3ID: c.T3ID}
-		if repo, num, ok := agent.ParsePR(c.PRURL); ok {
+		if repo, num, ok := core.ParsePR(c.PRURL); ok {
 			core.PRObserved(t, core.PR{URL: c.PRURL, Repo: repo, Number: num, State: "OPEN", Checks: core.ChecksPending}, c.UpdatedAt)
 		}
 		v := &core.View{User: core.Owner, Entity: t.ID, SeenAt: c.UpdatedAt}
@@ -684,7 +676,7 @@ func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []stri
 	return n, nil
 }
 
-func lastSummary(h []agent.Ev) string {
+func lastSummary(h []core.Event) string {
 	for i := len(h) - 1; i >= 0; i-- {
 		m, _ := h[i].Data.(map[string]any)
 		if m["type"] != "assistant" {
