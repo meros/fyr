@@ -21,13 +21,10 @@ func RunEnded(t *Thread, f *Failure, now time.Time) {
 	t.Activity = ""
 	t.ActivityAt = now
 	t.Failure = f
-	if f == nil && t.SettleWhenDone && len(t.Decisions) == 0 {
-		t.SettledAt = &now
-		t.SettleWhenDone = false
-	}
 	if f != nil {
-		t.SettleWhenDone = false
+		t.Settle.Drop(SettleDone) // the run did not finish
 	}
+	CheckSettle(t, now)
 }
 
 // ProcessLost is called when the agent process exits or the host restarts

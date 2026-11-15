@@ -150,9 +150,9 @@ func (e *Engine) Load() error {
 	// thread whose project is gone loses it. Only changed threads are
 	// written.
 	for _, t := range e.threads {
-		pid, name, manual := t.ProjectID, t.Project, t.ProjectManual
+		pid, manual := t.ProjectID, t.ProjectManual
 		e.assignProject(t)
-		if t.ProjectID == pid && t.Project == name && t.ProjectManual == manual {
+		if t.ProjectID == pid && t.ProjectManual == manual {
 			continue
 		}
 		if _, err := e.st.Write(func(tx *store.Tx) error { return tx.PutThread(t) }); err != nil {
@@ -673,9 +673,20 @@ type DTO struct {
 	// PR is the main change's PR, for the PR chip and tab (#32); the PR
 	// itself lives on its change.
 	PR *core.PR `json:"pr,omitempty"`
-	// SettleWhenMerged: the thread settles when the main PR merges (#32:
-	// stored as settleWhen on the main change).
-	SettleWhenMerged bool `json:"settleWhenMerged,omitempty"`
+	// Project is the name of the thread's project (#33: derived, not
+	// stored).
+	Project string `json:"project"`
+	// LiveView is live.enabled, the flag clients read (#33).
+	LiveView bool `json:"liveView,omitempty"`
+	// The settle as clients read it, derived from thread.settle (#33):
+	// settledAt, settleWhenDone (a "done" condition), settleWhenMerged (the
+	// main change reaching landed) and settleWhen (a change condition).
+	SettledAt        *time.Time       `json:"settledAt,omitempty"`
+	SettleWhenDone   bool             `json:"settleWhenDone,omitempty"`
+	SettleWhenMerged bool             `json:"settleWhenMerged,omitempty"`
+	SettleWhen       *core.SettleCond `json:"settleWhen,omitempty"`
+	// Settle shadows thread.settle, which the fields above carry.
+	Settle *struct{} `json:"settle,omitempty"`
 
 	prev core.State // the state before this change; not sent
 }
@@ -710,7 +721,8 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	vc := *v
 	vc.ChangesLook = nil // V0.65: served with the Changes tab, not on every push
 	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now),
-		PR: t.MainPR(), SettleWhenMerged: core.SettlesWhenMerged(t)}
+		PR: t.MainPR(), Project: e.projectName(t), LiveView: t.ViewOn(),
+		SettledAt: t.Settle.At, SettleWhenDone: t.Settle.Has(core.SettleDone), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t)}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.

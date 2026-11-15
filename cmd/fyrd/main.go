@@ -657,7 +657,7 @@ func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []stri
 		if !known[prof] {
 			prof = profiles[0].ID
 		}
-		t := &core.Thread{ID: engine.NewID("t_"), Title: c.Title, Cwd: c.Cwd, Project: core.ProjectName(c.Cwd),
+		t := &core.Thread{ID: engine.NewID("t_"), Title: c.Title, Cwd: c.Cwd,
 			Owner: core.Owner, Visibility: "private", Profile: prof, Model: c.Model, SessionID: c.SessionID,
 			CreatedAt: c.UpdatedAt, UpdatedAt: c.UpdatedAt, ActivityAt: c.UpdatedAt, Source: "t3", T3ID: c.T3ID}
 		if repo, num, ok := agent.ParsePR(c.PRURL); ok {

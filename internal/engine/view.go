@@ -68,7 +68,7 @@ func (e *Engine) viewFor(th string) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	t := e.threads[th]
-	return t != nil && t.LiveView
+	return t != nil && t.ViewOn()
 }
 
 func stateArg(a map[string]any, key string) (map[string]any, error) {

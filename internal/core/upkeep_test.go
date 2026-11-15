@@ -10,7 +10,7 @@ import (
 // change tool call; observed changes and ended ones never do.
 func TestChangesStale(t *testing.T) {
 	start := ct0
-	th := &Thread{RunStartedAt: &start}
+	th := &Thread{Conversation: Conversation{RunStartedAt: &start}}
 	ChangePRObserved(th, PR{URL: "https://github.com/o/r/pull/1", Repo: "o/r", Number: 1, State: "OPEN"}, ct0)
 	if ChangesStale(th) {
 		t.Fatal("an observed PR change asked for upkeep")

@@ -181,6 +181,14 @@ const (
 	EffectRun EffectKind = "effect"
 )
 
+// SettleKind is what an armed settle condition waits for (#33).
+type SettleKind string
+
+const (
+	SettleDone   SettleKind = "done"   // the run ends without an open question
+	SettleChange SettleKind = "change" // a change reaches a phase
+)
+
 // RunKind is how an action runs (SPEC 0.5 V0.60 (2)).
 type RunKind string
 

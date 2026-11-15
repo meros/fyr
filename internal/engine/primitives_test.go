@@ -115,7 +115,7 @@ func TestLoadTasksOnlyNoRunEnded(t *testing.T) {
 		t.Fatal(err)
 	}
 	th := &core.Thread{ID: "t_tasks", Owner: core.Owner, Cwd: dir, Profile: "claude",
-		Tasks: []core.Task{{ID: "k1", Status: core.TaskRunning}}}
+		Conversation: core.Conversation{Tasks: []core.Task{{ID: "k1", Status: core.TaskRunning}}}}
 	if _, err := st.Write(func(tx *store.Tx) error { return tx.PutThread(th) }); err != nil {
 		t.Fatal(err)
 	}

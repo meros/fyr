@@ -9,7 +9,8 @@ import (
 // LiveView is a thread's pinned live view (SPEC 0.5 V0.37, decision 0010):
 // a page stored once by content hash and a small JSON state the agent
 // patches. The client shows the page above the conversation and sends it
-// the full state on load and on every change.
+// the full state on load and on every change. Enabled is the owner's switch;
+// the page, state and actions outlive it.
 type LiveView struct {
 	PageID    string         `json:"pageId,omitempty"`
 	State     map[string]any `json:"state,omitempty"`
@@ -19,6 +20,7 @@ type LiveView struct {
 	CheckedAt time.Time `json:"checkedAt"`
 	// Headline is state.headline when it is a string.
 	Headline string `json:"headline,omitempty"`
+	Enabled  bool   `json:"enabled,omitempty"`
 	// Actions are the view's actions and their runs (V0.60 (6), #31); they
 	// go when the owner turns the view off.
 	Actions
@@ -33,11 +35,28 @@ const ViewStopReason = "Update this thread's live view (view_state or view_publi
 
 // ViewPublished records a new page and its full state.
 func ViewPublished(t *Thread, pageID string, state map[string]any, now time.Time) {
+	var on bool
 	var acts Actions
 	if t.Live != nil {
-		acts = t.Live.Actions // the view's actions outlive a new page
+		on, acts = t.Live.Enabled, t.Live.Actions // the view's actions outlive a new page
 	}
-	t.Live = &LiveView{PageID: pageID, State: state, UpdatedAt: now, CheckedAt: now, Headline: headline(state), Actions: acts}
+	t.Live = &LiveView{Enabled: on, PageID: pageID, State: state, UpdatedAt: now, CheckedAt: now, Headline: headline(state), Actions: acts}
+}
+
+// SetView turns the live view on or off; off drops the view's actions
+// (V0.60). It reports whether anything changed.
+func SetView(t *Thread, on bool) bool {
+	if t.ViewOn() == on {
+		return false
+	}
+	if t.Live == nil {
+		t.Live = &LiveView{}
+	}
+	t.Live.Enabled = on
+	if !on {
+		t.Live.Actions = Actions{}
+	}
+	return true
 }
 
 // ViewStateSet records the full state after a patch.

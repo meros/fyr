@@ -48,7 +48,7 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 	if t.ArchivedAt != nil {
 		return Attention{Archived, ArchivedSec, ""}
 	}
-	if t.SettledAt != nil {
+	if t.Settle.At != nil {
 		return Attention{Settled, SettledSec, ""}
 	}
 	asking := len(t.Decisions) > 0
