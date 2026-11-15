@@ -25,6 +25,7 @@ import (
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/gitdiff"
 	"github.com/meros/fyr/internal/quota"
 )
 
@@ -1169,9 +1170,11 @@ func (m *Manager) StopAll() {
 func gitFacts(dir string) core.GitFacts {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	// gitdiff's runner turns optional locks off, so `git status` never takes
+	// the index lock while the agent runs git (review 2026-11-15).
 	git := func(args ...string) (string, bool) {
-		out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
-		return strings.TrimSpace(string(out)), err == nil
+		out, err := gitdiff.Output(ctx, dir, args...)
+		return strings.TrimSpace(out), err == nil
 	}
 	var g core.GitFacts
 	g.Branch, _ = git("branch", "--show-current")
