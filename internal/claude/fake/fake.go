@@ -23,6 +23,10 @@
 //	         real CLI connects its MCP servers before the first turn
 //	tool N   runs a tool for N ms, asks the PostToolUse hook and replies
 //	         "context: <its additionalContext>"
+//	subtool  runs a subagent (Agent tool) that makes one tool call, then
+//	         ends the Agent tool; it asks the PostToolUse hook after each, as
+//	         the CLI does (the subagent's input names agent_id and
+//	         agent_type), and replies "sub: <context> top: <context>"
 //	slow N   runs a tool for N ms, then takes in every queued message at
 //	         that tool boundary and replies "took in: <texts>" (V0.33)
 //	view H   publishes a live view with headline H over MCP during the turn
@@ -479,15 +483,23 @@ func turn(text string) (took []queued) {
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 		write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
 			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_t", "content": "slept"}}}})
-		ctx := ""
-		if postHook {
-			r := request("post1", msg{"subtype": "hook_callback", "callback_id": "viewnudge",
-				"input": msg{"hook_event_name": "PostToolUse", "tool_name": "Bash"}})
-			hso, _ := r["hookSpecificOutput"].(msg)
-			ctx, _ = hso["additionalContext"].(string)
-		}
+		ctx := postToolUse("post1", msg{"hook_event_name": "PostToolUse", "session_id": session, "tool_name": "Bash", "tool_use_id": "tu_t"})
 		assistant(msg{"type": "text", "text": "context: " + ctx})
 		result(false, "success", "context: "+ctx)
+	case "subtool":
+		assistant(msg{"type": "tool_use", "id": "tu_agent", "name": "Agent", "input": msg{"description": "look", "prompt": "look", "subagent_type": "general-purpose"}})
+		write(msg{"type": "assistant", "session_id": session, "parent_tool_use_id": "tu_agent",
+			"message": msg{"role": "assistant", "content": []any{msg{"type": "tool_use", "id": "tu_sub_read", "name": "Read", "input": msg{"file_path": "go.mod"}}}}})
+		write(msg{"type": "user", "session_id": session, "parent_tool_use_id": "tu_agent", "message": msg{"role": "user",
+			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_sub_read", "content": "module x"}}}})
+		sub := postToolUse("post_sub", msg{"hook_event_name": "PostToolUse", "session_id": session, "agent_id": "a5c5b30d842d78842",
+			"agent_type": "general-purpose", "tool_name": "Read", "tool_use_id": "tu_sub_read"})
+		write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
+			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_agent", "content": "found it"}}}})
+		top := postToolUse("post_top", msg{"hook_event_name": "PostToolUse", "session_id": session, "tool_name": "Agent", "tool_use_id": "tu_agent"})
+		line := "sub: " + sub + " top: " + top
+		assistant(msg{"type": "text", "text": line})
+		result(false, "success", line)
 	case "slow":
 		ms := 500
 		if f := strings.Fields(text); len(f) > 1 {
@@ -517,6 +529,18 @@ func turn(text string) (took []queued) {
 		result(false, "success", "echo: "+text)
 	}
 	return took
+}
+
+// postToolUse asks the PostToolUse hook, when one is registered, and
+// returns its additionalContext.
+func postToolUse(id string, input msg) string {
+	if !postHook {
+		return ""
+	}
+	r := request(id, msg{"subtype": "hook_callback", "callback_id": "viewnudge", "input": input})
+	hso, _ := r["hookSpecificOutput"].(msg)
+	ctx, _ := hso["additionalContext"].(string)
+	return ctx
 }
 
 // publishView calls view_publish as a tool use and returns the tool's text.
