@@ -191,7 +191,7 @@ Commands (through `POST /api/command`, no `threadId`):
 
 A folder needs a full path (`~/…` is expanded) and must exist on the host, else `400` with the reason. After `project.create` or a change of `folder` the host matches again every thread not filed by hand and sends the changed ones on the stream: a thread lands in the project whose folder is its folder or contains it, the longest folder first; matching never takes a project away. An icon's `value` is left out when empty. A thread with no `cwd` and a `projectId` starts in the project's folder.
 
-The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. After `project.delete` it sends `event: project` with `{id, deleted: true}` (V0.58). Threads carry `projectId`; `project` stays the display name. A thread may carry `newProject: {name, folder}`: what "New project from this thread" starts with (V0.30, V0.55): its folder and the folder's name; absent for a scratch folder, the home folder, `/`, and a folder a project already has.
+The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. After `project.delete` it sends `event: project` with `{id, deleted: true}` (V0.58). A project carries `rev`, when the host built that copy (it grows across restarts); a client keeps the copy with the higher `rev`, so a frame that arrives while `/api/state` is in flight is not overwritten by the older snapshot. Threads carry `projectId`; `project` stays the display name. A thread may carry `newProject: {name, folder}`: what "New project from this thread" starts with (V0.30, V0.55): its folder and the folder's name; absent for a scratch folder, the home folder, `/`, and a folder a project already has.
 
 Removed in V0.55: `sources`, `main`, `repos`, `cwd` on a project; `suggest` and `workspaceId` on a thread; `project.createFrom`, `project.addSource`, `project.removeSource`, `project.setMain` (`400 unknown action`).
 
@@ -293,7 +293,7 @@ Both reply at once; the result arrives as an `effect.result` event with `"by": "
 
 ## Providers (SPEC 0.5 V0.50)
 
-`GET /api/state` `profiles` are the providers as launch configs (same ids), each with `cli`, `models` (ids), `modelCaps: [{id, name?, efforts?}]`, `defaultModel`, `defaultEffort?`, `quota: {kind}`; never `env` or a key.
+`GET /api/state` `profiles` are the providers as launch configs (same ids), each with `cli`, `models` (ids), `modelCaps: [{id, name?, efforts?}]`, `defaultModel`, `defaultEffort?`, `quota: {kind}`; never `env` or a key. `GET /api/profiles` returns the same list alone, for a client after a provider changed.
 
 `GET /api/providers`:
 
@@ -350,6 +350,7 @@ The browser talks to a **front**; the front talks to its **hosts** over the **ho
 - Commands and thread calls (`/api/threads/{id}/…`) go to the thread's host. A call without a thread goes to `args.host` (command) or `?host=` (other calls) when given, a `project.*` command to the project's host, else to the first host. A thread on an offline host is read-only: `503 {"ok": false, "error": "host-a is offline since 19:40; its threads are read-only"}`.
 - Attachments and previews (V0.54): `POST /api/attachments`, `GET /api/attachments/{id}` and `GET /api/previews/{id}[/{path}]` take `?host=` or `?thread=` (the thread's host); without either, a read goes to the host the front learned for that id (an upload through it, or the preview page these files belong to), else to the first host. No host is tried in turn.
 - `GET /api/quota` merges every online host's list (`?host=` for one host's).
+- `GET /api/profiles` merges every online host's profiles by id, the first host's winning.
 - Device data is the front's (V0.54): `POST /api/presence` and `/api/push/*` (key, subscribe, unsubscribe, status, test) are served by the front, which sends the push for the threads of all its hosts. Hosts send none.
 
 The host protocol (front → host):

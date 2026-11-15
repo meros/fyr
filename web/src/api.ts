@@ -363,8 +363,7 @@ function createHttpApi(): Api {
       return fsGet<FoundDTO[]>("/api/providers/found");
     },
     async profiles() {
-      // a delta newer than any thread: just the profiles and the small fields
-      return (await fsGet<{ profiles?: Profile[] }>("/api/state?since=9000000000000000000")).profiles ?? [];
+      return fsGet<Profile[]>("/api/profiles");
     },
     async quota() {
       try {
