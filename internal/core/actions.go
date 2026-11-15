@@ -88,17 +88,6 @@ func images(a Args) []Image {
 	return out
 }
 
-// settleArmed reports a settle that waits for something: the run or a
-// change's phase (the main PR's merge is its change reaching landed).
-func settleArmed(t *Thread) bool {
-	return t.SettleWhenDone || t.SettleWhen != nil
-}
-
-// disarmSettle cancels every settle that waits for something.
-func disarmSettle(t *Thread) {
-	t.SettleWhenDone, t.SettleWhen = false, nil
-}
-
 // OpenMain is the main change while its PR is open, or nil.
 func OpenMain(t *Thread) *Change {
 	if c := t.Main(); c != nil && c.PR.State == "OPEN" {
@@ -107,30 +96,12 @@ func OpenMain(t *Thread) *Change {
 	return nil
 }
 
-// SettleWhenMerged arms "settle when merged" (SPEC 13.1 `m`, #32): the
-// thread settles when its main change lands. It reports false when the
-// thread has no open main PR.
-func SettleWhenMerged(t *Thread) bool {
-	c := OpenMain(t)
-	if c == nil {
-		return false
-	}
-	t.SettleWhen = &SettleWhen{Change: c.ID, Phase: PhaseLanded}
-	return true
-}
-
-// SettlesWhenMerged reports that the thread settles when its main PR merges.
-func SettlesWhenMerged(t *Thread) bool {
-	c := t.Main()
-	return c != nil && t.SettleWhen != nil && t.SettleWhen.Phase == PhaseLanded && FindChange(t, t.SettleWhen.Change) == c
-}
-
 // revive is what any message from the user does to a thread: it clears the
 // failure, the settle and the snooze, and counts as seeing the thread.
 func revive(t *Thread, v *View, now time.Time) {
 	t.Failure = nil
-	t.SettledAt = nil
-	t.SettleWhenDone = false
+	t.Settle.At = nil
+	t.Settle.Drop(SettleDone) // a new run: "when done" was for the last one
 	v.SnoozeUntil, v.SnoozedAt = nil, nil
 	v.SeenAt = now
 }
@@ -162,13 +133,14 @@ func sendAction(name, label string) *Action {
 				if t.Cwd == "" {
 					return nil, fmt.Errorf("%w: cwd is required", ErrBadArgs)
 				}
-				t.Project = ProjectName(t.Cwd)
 				t.Model = a.Str("model")
 				t.Effort = a.Str("effort")
 				t.Profile = a.Str("profile")
 				t.Title = a.Str("title")
 				t.Parent = a.Str("parent")
-				t.LiveView, _ = a["view"].(bool)
+				if on, _ := a["view"].(bool); on {
+					SetView(t, true)
+				}
 				if t.Title == "" {
 					t.Title = TitleFrom(text)
 				}
@@ -309,10 +281,10 @@ func init() {
 
 	register(&Action{Name: "thread.settle", Label: "Settle", Key: "e", Bulk: true,
 		Available: func(t *Thread, v *View, now time.Time) string {
-			if t.SettledAt != nil {
+			if t.Settle.At != nil {
 				return "Already settled"
 			}
-			if t.SettleWhenDone {
+			if t.Settle.Has(SettleDone) {
 				return "Settles when the run ends"
 			}
 			return notArchived(t, v, now)
@@ -322,15 +294,14 @@ func init() {
 		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
 			force, _ := a["now"].(bool)
 			if t.Running { // also for bulk: a live run is never hidden as settled
-				t.SettleWhenDone = true
+				ArmSettle(t, SettleCond{Kind: SettleDone}, now)
 				return nil, nil
 			}
-			if !force && !SettlesWhenMerged(t) && SettleWhenMerged(t) {
+			if !force && !SettlesWhenMerged(t) && SettleWhenMerged(t, now) {
 				v.SeenAt = now
 				return nil, nil
 			}
-			disarmSettle(t)
-			t.SettledAt = &now
+			t.Settle = Settle{At: &now}
 			t.Failure = nil
 			v.SeenAt = now
 			v.SnoozeUntil, v.SnoozedAt = nil, nil
@@ -339,14 +310,14 @@ func init() {
 
 	register(&Action{Name: "thread.unsettle", Label: "Unsettle", Bulk: true,
 		Available: func(t *Thread, _ *View, _ time.Time) string {
-			if t.SettledAt == nil && !settleArmed(t) {
+			if t.Settle.At == nil && len(t.Settle.When) == 0 {
 				return "Not settled"
 			}
 			return ""
 		},
+		// #33: clears the settle and every armed condition, the agent's too.
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
-			t.SettledAt = nil
-			disarmSettle(t)
+			t.Settle = Settle{}
 			return nil, nil
 		}})
 
@@ -361,14 +332,14 @@ func init() {
 			return ""
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
-			SettleWhenMerged(t)
+			SettleWhenMerged(t, now)
 			v.SeenAt = now
 			return nil, nil
 		}})
 
 	register(&Action{Name: "thread.snooze", Label: "Snooze", Key: "s", Bulk: true,
 		Available: func(t *Thread, v *View, now time.Time) string {
-			if t.SettledAt != nil {
+			if t.Settle.At != nil {
 				return "Settled threads do not snooze"
 			}
 			return notArchived(t, v, now)
@@ -481,12 +452,8 @@ func init() {
 			if !ok {
 				return nil, fmt.Errorf("%w: on must be true or false", ErrBadArgs)
 			}
-			if t.LiveView == on {
+			if !SetView(t, on) { // V0.60: off drops the view's actions
 				return nil, nil
-			}
-			t.LiveView = on
-			if !on {
-				ClearView(t) // V0.60: the view's actions go with it
 			}
 			return []Effect{{Kind: EffectRefresh}}, nil
 		}})
@@ -542,15 +509,6 @@ func init() {
 			}
 			return []Effect{e}, nil
 		}})
-}
-
-// ProjectName is the last path element of a working directory.
-func ProjectName(cwd string) string {
-	cwd = strings.TrimRight(cwd, "/")
-	if i := strings.LastIndex(cwd, "/"); i >= 0 {
-		return cwd[i+1:]
-	}
-	return cwd
 }
 
 // TitleFrom makes a first title from the first line of a prompt.

@@ -176,10 +176,15 @@ func (e *Engine) assignProject(t *core.Thread) {
 	if t.ProjectID == "" && !t.ProjectManual {
 		t.ProjectID = core.MatchFolder(e.projectList(), t.Cwd)
 	}
-	t.Project = ""
+}
+
+// projectName is the name of the thread's project, or "" (#33: derived for
+// the DTO, never stored). Call with e.mu held.
+func (e *Engine) projectName(t *core.Thread) string {
 	if p := e.projects[t.ProjectID]; p != nil {
-		t.Project = p.Name
+		return p.Name
 	}
+	return ""
 }
 
 // NewProject is what "New project from this thread" starts with (SPEC 0.5
@@ -368,6 +373,9 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		return r
 	}
 	var p *core.Project
+	// renamed: the threads of the project show another name; a new
+	// project's threads (the one it was made from) are all new to it.
+	renamed := true
 	switch c.Action {
 	case "project.create":
 		name := strings.TrimSpace(c.Args.Str("name"))
@@ -386,7 +394,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 				e.mu.Unlock()
 				return Reply{Error: "no thread " + tid, Status: 404}
 			}
-			t.ProjectID, t.ProjectManual, t.Project = p.ID, true, ""
+			t.ProjectID, t.ProjectManual = p.ID, true
 		}
 		e.projects[p.ID] = p
 	case "project.update":
@@ -397,11 +405,12 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		}
 		cp := *cur
 		p = &cp
+		renamed = false
 		if folderSet {
 			p.Folder = folder
 		}
 		if n := strings.TrimSpace(c.Args.Str("name")); n != "" {
-			p.Name = n
+			renamed, p.Name = n != cur.Name, n
 		}
 		if col := c.Args.Str("color"); col != "" {
 			if !core.ValidColor(col) {
@@ -462,8 +471,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		e.quietSent[p.ID] = quietKey(e.quietUntil(p.ID, now))
 	}
 	for _, t := range e.threads {
-		if t.ProjectID == p.ID && (t.Project != p.Name || quietChanged) {
-			t.Project = p.Name
+		if t.ProjectID == p.ID && (renamed || quietChanged) {
 			e.bump(t.ID)
 			touched = append(touched, e.dto(t, now))
 		}
@@ -581,7 +589,7 @@ func (e *Engine) Rematch() {
 		e.assignProject(t)
 		if !t.ProjectManual {
 			if id := core.MatchFolder(list, t.Cwd); id != "" {
-				t.ProjectID, t.Project = id, e.projects[id].Name
+				t.ProjectID = id
 			}
 		}
 		if t.ProjectID != old {

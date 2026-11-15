@@ -88,12 +88,6 @@ type Evidence struct {
 	Title      string `json:"title,omitempty"`
 }
 
-// SettleWhen settles a thread when a change reaches a phase (V0.59 (7)).
-type SettleWhen struct {
-	Change string `json:"change"`
-	Phase  Phase  `json:"phase"`
-}
-
 // FindChange is the change with this id or key, or nil.
 func FindChange(t *Thread, ref string) *Change {
 	if ref == "" {
@@ -461,19 +455,6 @@ func (c *Change) Blocking() string {
 	return ""
 }
 
-// CheckSettleChange settles the thread when its settle_when change has
-// reached the phase (V0.59 (7)).
-func CheckSettleChange(t *Thread, now time.Time) {
-	if t.SettleWhen == nil || t.SettledAt != nil {
-		return
-	}
-	c := FindChange(t, t.SettleWhen.Change)
-	if c != nil && c.Phase.Reached(t.SettleWhen.Phase) {
-		t.SettledAt = &now
-		t.SettleWhen = nil
-	}
-}
-
 // --- helpers ---
 
 func setPhase(t *Thread, c *Change, phase Phase, by string, now time.Time) {
@@ -485,7 +466,7 @@ func setPhase(t *Thread, c *Change, phase Phase, by string, now time.Time) {
 	if moved && phase != PhaseWorking {
 		t.ActivityAt = now
 	}
-	CheckSettleChange(t, now)
+	CheckSettle(t, now)
 }
 
 func condition(c *Change, typ CondType) *Condition {

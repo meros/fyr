@@ -245,7 +245,7 @@ func TestLoadThreadBeforePROnChange(t *testing.T) {
 		if c := th.Changes[2]; !c.Dismissed || c.PR == nil || c.PR.State != "MERGED" {
 			t.Fatalf("%s: dismissed %+v %+v", when, c.Dismissed, c.PR)
 		}
-		if w := th.SettleWhen; w == nil || w.Change != "c_1" || w.Phase != core.PhaseLanded || !core.SettlesWhenMerged(th) {
+		if w := core.SettleWhenChange(th); w == nil || w.Change != "c_1" || w.Phase != core.PhaseLanded || !core.SettlesWhenMerged(th) {
 			t.Fatalf("%s: settle when %+v", when, w)
 		}
 		if !th.ActivityAt.Equal(time.Date(2026, 11, 14, 8, 0, 0, 0, time.UTC)) {

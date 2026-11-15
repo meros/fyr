@@ -68,9 +68,9 @@ func (e *Engine) Tools(s *mcp.Server) {
 	e.threadTools(s)
 
 	s.Add(mcp.Tool{Name: "settle_when",
-		Description: "Mark this Fyr thread to settle (leave the user's inbox) when a condition holds: \"done\" when your current run ends, \"merged\" when the linked PR merges, \"change\" when the change (id or key) reaches phase (landed is also reached by live).",
+		Description: "Mark this Fyr thread to settle (leave the user's inbox) when a condition holds: \"done\" when your current run ends, \"merged\" when the linked PR merges, \"change\" when the change (id or key) reaches phase (landed is also reached by live). Conditions add up: the first that holds settles the thread, never while a run is live.",
 		Schema: obj(map[string]any{
-			"condition": map[string]any{"type": "string", "enum": []string{"done", "merged", "change"}},
+			"condition": map[string]any{"type": "string", "enum": []string{string(core.SettleDone), "merged", string(core.SettleChange)}},
 			"change":    str("For condition change: the change's id or key."),
 			"phase":     map[string]any{"type": "string", "enum": core.PhasesAfter(core.PhaseWorking)},
 		}, "condition"),
@@ -79,14 +79,14 @@ func (e *Engine) Tools(s *mcp.Server) {
 			var err error
 			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 				switch cond {
-				case "done":
-					t.SettleWhenDone = true
+				case string(core.SettleDone):
+					core.ArmSettle(t, core.SettleCond{Kind: core.SettleDone}, now)
 				case "merged":
-					if !core.SettleWhenMerged(t) {
+					if !core.SettleWhenMerged(t, now) {
 						err = errors.New("this thread has no open PR; link one with pr_link first")
 						return nil
 					}
-				case "change":
+				case string(core.SettleChange):
 					c := core.FindChange(t, sArg(a, "change"))
 					phase := core.Phase(sArg(a, "phase"))
 					if phase == "" {
@@ -96,9 +96,8 @@ func (e *Engine) Tools(s *mcp.Server) {
 						err = noChange(a)
 						return nil
 					}
-					t.SettleWhen = &core.SettleWhen{Change: c.ID, Phase: phase}
+					core.ArmSettle(t, core.SettleCond{Kind: core.SettleChange, Change: c.ID, Phase: phase}, now)
 					cond = fmt.Sprintf("%q is %s", c.Title, phase)
-					core.CheckSettleChange(t, now)
 				default:
 					err = fmt.Errorf("unknown condition %q", cond)
 				}
