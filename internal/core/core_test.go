@@ -165,7 +165,7 @@ func TestInvariantsUnderRandomCommands(t *testing.T) {
 				ProcessLost(th, "process", "exit", now)
 			case 4:
 				states := []string{"OPEN", "MERGED", "CLOSED"}
-				checks := []string{"pass", "fail", "pending"}
+				checks := []Checks{"pass", "fail", "pending"}
 				PRObserved(th, PR{State: states[rng.Intn(3)], Checks: checks[rng.Intn(3)]}, now)
 			default:
 				n := names[rng.Intn(len(names))]

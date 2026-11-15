@@ -47,7 +47,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 			}
 			repo, n, _ := agent.ParsePR(url)
 			e.Observe(th, func(t *core.Thread, now time.Time) {
-				core.PRObserved(t, core.PR{URL: url, Repo: repo, Number: n, State: "OPEN", Checks: "pending"}, now)
+				core.PRObserved(t, core.PR{URL: url, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}, now)
 			}, agent.Ev{Type: "pr.linked", Data: map[string]any{"url": url}})
 			return "Linked " + url + ". Fyr watches its checks and reviews.", nil
 		}})
@@ -70,7 +70,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 				return "", err
 			}
 			reason, _ := a["reason"].(string)
-			d := core.Decision{ID: NewID("d_"), Kind: "effect", Assignee: core.Owner,
+			d := core.Decision{ID: NewID("d_"), Kind: core.DecisionEffect, Assignee: core.Owner,
 				Effect: &core.EffectReq{Action: action, Args: args, Reason: reason}}
 			e.Observe(th, func(t *core.Thread, now time.Time) {
 				d.CreatedAt = now
@@ -89,7 +89,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 		Schema: obj(map[string]any{
 			"condition": map[string]any{"type": "string", "enum": []string{"done", "merged", "change"}},
 			"change":    str("For condition change: the change's id or key."),
-			"phase":     map[string]any{"type": "string", "enum": []string{core.PhaseReview, core.PhaseLanded, core.PhaseLive}},
+			"phase":     map[string]any{"type": "string", "enum": core.PhasesAfter(core.PhaseWorking)},
 		}, "condition"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			cond, _ := a["condition"].(string)
@@ -106,7 +106,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 					t.SettleWhenMerged = true
 				case "change":
 					c := core.FindChange(t, sArg(a, "change"))
-					phase := sArg(a, "phase")
+					phase := core.Phase(sArg(a, "phase"))
 					if phase == "" {
 						phase = core.PhaseLanded
 					}

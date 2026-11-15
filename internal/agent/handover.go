@@ -178,7 +178,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 			}
 			return
 		}
-		if err := m.send(threadID, core.Effect{Kind: "send", Text: first, From: FromHandover}); err != nil {
+		if err := m.send(threadID, core.Effect{Kind: core.EffectSend, Text: first, From: FromHandover}); err != nil {
 			log.Printf("thread %s: handover first message: %v", threadID, err)
 		}
 	}
@@ -278,7 +278,7 @@ func (m *Manager) brief(threadID string, to Profile) (string, error) {
 	s.results = append(s.results, ch)
 	m.mu.Unlock()
 	text := fmt.Sprintf("[Fyr] Handover: the owner is handing this thread over to another agent (%s) that starts without this conversation. Write the handover now as your whole reply, in Markdown: the goal, what is done, the current state (branch, PR, uncommitted changes), open items and decisions, and exactly how to continue. Do not change files or run anything else.", name(to))
-	if err := m.send(threadID, core.Effect{Kind: "send", Text: text, From: FromHandover}); err != nil {
+	if err := m.send(threadID, core.Effect{Kind: core.EffectSend, Text: text, From: FromHandover}); err != nil {
 		return "", err
 	}
 	select {

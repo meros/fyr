@@ -120,13 +120,13 @@ func ChangeDeployObserved(t *Thread, changeID string, d DeployObs, now time.Time
 	for _, x := range d.Deployments {
 		w.Seen = true
 		prod := IsProduction(x.Env, x.Production)
-		typ := "deploy"
+		typ := CondDeploy
 		if !prod {
-			typ = "deploy:" + x.Env
+			typ = CondDeployTo(x.Env)
 		}
 		switch x.State {
 		case "success", "inactive":
-			setCondition(c, typ, "ok", "", ByObserved, now)
+			setCondition(c, typ, CondOK, "", ByObserved, now)
 			if prod {
 				w.Done = true
 				if u := firstOf(x.URL, x.LogURL); u != "" {
@@ -136,7 +136,7 @@ func ChangeDeployObserved(t *Thread, changeID string, d DeployObs, now time.Time
 			}
 		case "failure", "error":
 			if prod {
-				if k := condition(c, typ); k == nil || k.Status != "fail" {
+				if k := condition(c, typ); k == nil || k.Status != CondFail {
 					t.ActivityAt = now
 				}
 				w.Done = true
@@ -144,9 +144,9 @@ func ChangeDeployObserved(t *Thread, changeID string, d DeployObs, now time.Time
 					addEvidence(c, Evidence{Kind: "deploy-log", URL: x.LogURL, Title: x.Env})
 				}
 			}
-			setCondition(c, typ, "fail", "deploy to "+x.Env+" failed", ByObserved, now)
+			setCondition(c, typ, CondFail, "deploy to "+x.Env+" failed", ByObserved, now)
 		default:
-			setCondition(c, typ, "pending", "deploying to "+x.Env, ByObserved, now)
+			setCondition(c, typ, CondPending, "deploying to "+x.Env, ByObserved, now)
 		}
 	}
 	c.UpdatedAt = now

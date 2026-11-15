@@ -77,7 +77,7 @@ func TestTaskFromSystem(t *testing.T) {
 	}
 	for i, c := range cases {
 		k, ev, ok := taskFromSystem(c.msg)
-		if !ok || k.ID != "a1" || k.Status != c.status || k.Activity != c.act || ev != c.event || k.ToolUses != c.uses || k.Tokens != c.tokens {
+		if !ok || k.ID != "a1" || string(k.Status) != c.status || k.Activity != c.act || ev != c.event || k.ToolUses != c.uses || k.Tokens != c.tokens {
 			t.Errorf("case %d: %+v %q %v", i, k, ev, ok)
 		}
 	}

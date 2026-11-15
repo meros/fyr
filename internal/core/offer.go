@@ -50,12 +50,12 @@ type Offer struct {
 	// When, Revision and OnOK exist only on a change: the phases it shows
 	// in, the revision a script is bound to (like a saved plan), the phase a
 	// successful script moves the change to.
-	When     []string `json:"when,omitempty"`
-	Revision string   `json:"revision,omitempty"`
-	OnOK     string   `json:"onOk,omitempty"`
-	Primary  bool     `json:"primary,omitempty"`
-	By       string   `json:"by"` // agent or observed
-	Digest   string   `json:"digest"`
+	When     []Phase `json:"when,omitempty"`
+	Revision string  `json:"revision,omitempty"`
+	OnOK     Phase   `json:"onOk,omitempty"`
+	Primary  bool    `json:"primary,omitempty"`
+	By       string  `json:"by"` // agent or observed
+	Digest   string  `json:"digest"`
 }
 
 // OfferRun is one press of an offer and its result.
@@ -143,11 +143,11 @@ func (h Holder) Declare(a Offer) error {
 		}
 	} else {
 		for _, p := range a.When {
-			if !ValidPhase(p) {
+			if !p.Valid() {
 				return fmt.Errorf("when: unknown phase %q", p)
 			}
 		}
-		if a.OnOK != "" && !ValidPhase(a.OnOK) {
+		if a.OnOK != "" && !a.OnOK.Valid() {
 			return fmt.Errorf("onOk: unknown phase %q", a.OnOK)
 		}
 		if a.Revision == "newest" {
@@ -213,11 +213,11 @@ func (h Holder) Find(id string) *Offer {
 func (h Holder) Available(a Offer) string {
 	if c := h.Change; c != nil {
 		if len(a.When) == 0 {
-			if Ended(c.Phase) {
-				return "The change is " + c.Phase
+			if c.Phase.Ended() {
+				return "The change is " + string(c.Phase)
 			}
-		} else if !contains(a.When, c.Phase) {
-			return "Not while the change is " + c.Phase
+		} else if !slices.Contains(a.When, c.Phase) {
+			return "Not while the change is " + string(c.Phase)
 		}
 		if a.Revision != "" && (len(c.Revisions) == 0 || c.Revisions[len(c.Revisions)-1].ID != a.Revision) {
 			return "The change has a newer revision than " + a.Revision
@@ -264,12 +264,12 @@ func (h Holder) Ended(t *Thread, a Offer, ok bool, exit int, output string, now 
 		return
 	}
 	if ok {
-		setCondition(c, "action:"+a.ID, "ok", "", ByObserved, now)
+		setCondition(c, CondAction(a.ID), CondOK, "", ByObserved, now)
 		if a.OnOK != "" {
 			setPhase(t, c, a.OnOK, ByOwner, now)
 		}
 	} else {
-		setCondition(c, "action:"+a.ID, "fail", fmt.Sprintf("%s failed (exit %d)", a.Label, exit), ByObserved, now)
+		setCondition(c, CondAction(a.ID), CondFail, fmt.Sprintf("%s failed (exit %d)", a.Label, exit), ByObserved, now)
 	}
 	c.UpdatedAt = now
 }
@@ -296,16 +296,19 @@ func syncBuiltins(c *Change) {
 		a.Digest = a.digest()
 		c.Actions = append(c.Actions, a)
 	}
-	is := func(typ, status string) bool { k := condition(c, typ); return k != nil && k.Status == status }
+	is := func(typ CondType, status CondStatus) bool {
+		k := condition(c, typ)
+		return k != nil && k.Status == status
+	}
 	// V0.66 (6): a failed production deploy of a landed change.
-	if c.Phase == PhaseLanded && is("deploy", "fail") {
+	if c.Phase == PhaseLanded && is(CondDeploy, CondFail) {
 		add(Offer{ID: "fyr.deployfail", Label: "Investigate the failed deploy", Run: RunAgent, In: "this", Primary: true, Prompt: deployPrompt(c)})
 	}
 	pr := c.PR()
 	if pr == "" || c.Phase != PhaseReview {
 		return
 	}
-	failing, changesAsked, conflict := is("checks", "fail"), is("review", "fail"), is("conflict", "fail")
+	failing, changesAsked, conflict := is(CondChecks, CondFail), is(CondReview, CondFail), is(CondConflict, CondFail)
 	if failing {
 		add(Offer{ID: "fyr.rerun", Label: "Re-run failed checks", Run: RunFyr, Effect: "pr.rerunFailed"})
 		add(Offer{ID: "fyr.fixci", Label: "Fix CI", Run: RunAgent, In: "this", Primary: true,
@@ -330,7 +333,7 @@ func deployPrompt(c *Change) string {
 	if c.DeployWatch != nil {
 		p += ", merge commit " + c.DeployWatch.SHA + ","
 	}
-	if k := condition(c, "deploy"); k != nil && k.Reason != "" {
+	if k := condition(c, CondDeploy); k != nil && k.Reason != "" {
 		p += " failed: " + k.Reason + "."
 	} else {
 		p += " failed."
@@ -341,13 +344,4 @@ func deployPrompt(c *Change) string {
 		}
 	}
 	return p + " Read the deployment's log, find the cause, and propose a fix with change_status before you change anything."
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
