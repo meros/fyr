@@ -77,7 +77,7 @@ import { PUSH_TITLE, unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, LAST_PROJECT_KEY, filterByProject } from "./projects.ts";
+import { FILTER_KEY, LAST_PROJECT_KEY, filterByProject, moveToast } from "./projects.ts";
 import { hideQuiet, nextQuietEnd } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
@@ -803,12 +803,14 @@ function App() {
       if (!e) setToast({ text: `Deleted ${name}`, undo: false, at: Date.now() });
       return e;
     },
-    /** File threads into a project; null: No project. */
+    /** File threads into a project; null: No project. Shows the result or the error as a toast. */
     move: async (ids: string[], projectId: string | null): Promise<string | null> => {
       const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId: projectId ?? "" }, id)))).filter(Boolean);
       const where = projectId ? (store.projects.find((p) => p.id === projectId)?.name ?? "the project") : null;
-      if (!errs.length) setToast({ text: ids.length === 1 ? (where ? `Filed in ${where}` : "No project now") : where ? `Filed ${ids.length} threads in ${where}` : `${ids.length} threads have no project now`, undo: false, at: Date.now() });
-      return errs[0] ?? null;
+      // Both shells show the result here, the error too (review 2026-11-15).
+      const e = errs[0] ?? null;
+      setToast({ ...moveToast(ids.length, where, e), undo: false, at: Date.now() });
+      return e;
     },
   };
   // V0.42: the host folder picker, a dialog on the desktop and a sheet on the phone, over whatever asked for it.
@@ -1494,8 +1496,7 @@ function App() {
               threads={pickIds.map((id) => store.threads[id]).filter(Boolean)}
               onPick={async (p) => {
                 const e = await projectActions.move(pickIds, p?.id ?? null);
-                if (e) showError(e);
-                else setDialog(null);
+                if (!e) setDialog(null);
               }}
               onCreate={async (name, folder) => {
                 const r = await projectActions.create(name, folder, pickIds);
