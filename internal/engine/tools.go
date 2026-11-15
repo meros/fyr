@@ -73,6 +73,22 @@ func (e *Engine) Tools(s *mcp.Server) {
 		}})
 
 	s.Add(e.watchTool())
+	s.Add(e.stateTool())
+}
+
+// stateTool reads the current state of the thread's records (#47): the
+// notices that start with [Fyr] are one sentence each and point here.
+func (e *Engine) stateTool() mcp.Tool {
+	return mcp.Tool{Name: "fyr_state",
+		Description: "Read the current state of this thread's records in Fyr in one compact form: the thread and its settle state, the changes with their PR, git and deploy conditions and actions, the live view, and the rules (your watches among them). Fyr's [Fyr] notices are one sentence each; read the details here instead of polling gh.",
+		Schema:      obj(map[string]any{"about": str("Optional: thread, changes, view, rules, settle, or one change's id or key. Empty: everything.")}),
+		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+			t, ok := e.Thread(th)
+			if !ok {
+				return "", errors.New("no such thread")
+			}
+			return core.StateText(&t, sArg(a, "about"), e.Now())
+		}}
 }
 
 // watchTool is the agent's own Rules (SPEC 7, #46): arm a watch over Fyr's

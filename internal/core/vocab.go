@@ -178,9 +178,10 @@ const (
 	EffectRun EffectKind = "effect"
 	// EffectScript runs a script action's argv (V0.60).
 	EffectScript EffectKind = "script.run"
-	// EffectTell tells the thread's agent a result (V0.60 (4)); the agent
-	// feed (#47) replaces it.
-	EffectTell EffectKind = "agent.tell"
+	// EffectFeed asks the agent manager to deliver the thread's notices
+	// (the agent feed, #47): a message that starts a turn when the agent is
+	// idle; a running agent takes them at its next tool call.
+	EffectFeed EffectKind = "agent.feed"
 	// EffectThread starts a new thread with a first message (an agent
 	// action pressed with in: "new").
 	EffectThread EffectKind = "thread.create"
