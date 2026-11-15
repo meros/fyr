@@ -34,7 +34,7 @@ import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { ChangeList, ThreadOffers, useViewAction } from "./offers-ui.tsx";
-import { changeChip, settleLine } from "./offers.ts";
+import { changeChip, headerPr, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
 
@@ -152,7 +152,7 @@ export function ThreadPane(p: ThreadPaneProps) {
           )}
           <ModelChip t={t} profile={profile} onRun={p.onRun} />
           <EffortChip t={t} profile={profile} onRun={p.onRun} />
-          {t.pr && <PrChip pr={t.pr} onDismiss={isAvailable(t, "thread.dismissPR") ? () => p.onRun("thread.dismissPR") : undefined} />}
+          {headerPr(t) && <PrChip pr={headerPr(t)!} onDismiss={isAvailable(t, "thread.dismissPR") ? () => p.onRun("thread.dismissPR") : undefined} />}
           {(() => {
             const c = changeChip(t); // V0.59 (8)
             return c ? (

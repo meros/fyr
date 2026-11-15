@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionEventLine, canEnd, endArgs, endChangeAsk, settleLine, changeChip, changeEventLine, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
+import { actionEventLine, canEnd, endArgs, endChangeAsk, settleLine, changeChip, changeEventLine, headerPr, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
 import type { Change, Offer } from "../src/types.ts";
 
 const at = "2026-11-15T09:00:00Z";
@@ -12,6 +12,17 @@ test("the phase rail and its words; a reported phase says so (V0.59 (8))", () =>
   assert.equal(rail({ phase: "reverted" }).end, "reverted");
   assert.equal(phaseText({ phase: "landed", phaseBy: "agent", label: "applied" }), "landed (reported) · applied");
   assert.equal(phaseText({ phase: "review", phaseBy: "observed" }), "review");
+});
+
+test("an ended change has no rail, only its end word; the header drops the chip of an ended main PR", () => {
+  // V0.73 (2): "abandoned" showed twice on each card (header and a one-segment rail), and "#88 missing" stayed in the header.
+  assert.deepEqual(rail({ phase: "abandoned" }).steps, []);
+  const pr = { url: "https://github.com/acme/app/pull/88", repo: "acme/app", number: 88, state: "MISSING" as const, checks: "none" as const, conflict: false };
+  assert.equal(headerPr({ pr, changes: [change({ key: "pr:acme/app#88", phase: "abandoned", phaseBy: "observed" })] }), null);
+  assert.equal(headerPr({ pr: { ...pr, state: "OPEN" }, changes: [change({ key: "x", evidence: [{ kind: "pr", url: pr.url }], phase: "abandoned", phaseBy: "owner" })] }), null);
+  assert.equal(headerPr({ pr: { ...pr, state: "OPEN" }, changes: [change({ key: "pr:acme/app#88", phase: "review" })] })?.number, 88);
+  assert.equal(headerPr({ pr: { ...pr, state: "MERGED" }, changes: [change({ key: "pr:acme/app#88", phase: "reverted" })] })?.number, 88);
+  assert.equal(headerPr({ pr: null, changes: [] }), null);
 });
 
 test("actions: phases, a bound revision, a running one (V0.60 (3))", () => {

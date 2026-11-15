@@ -98,17 +98,15 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
         </span>
         <span class="chp">{phaseText(c)}</span>
       </header>
-      <ol class="chrail" aria-label={`Phase: ${c.phase}`}>
-        {r.end ? (
-          <li class="now end">{r.end}</li>
-        ) : (
-          r.steps.map((s) => (
+      {r.steps.length > 0 && (
+        <ol class="chrail" aria-label={`Phase: ${c.phase}`}>
+          {r.steps.map((s) => (
             <li key={s.phase} class={s.state}>
               {s.phase}
             </li>
-          ))
-        )}
-      </ol>
+          ))}
+        </ol>
+      )}
       {conds.length > 0 && (
         <ul class="chcond">
           {conds.map((k) => (

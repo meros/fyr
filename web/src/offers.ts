@@ -1,16 +1,16 @@
 // Changes and actions in the client (SPEC 0.5 V0.59, V0.60, decision 0018). Pure: what a change shows, which
 // actions the owner can press now, and the words for the conversation lines.
 
-import type { Change, ChangePhase, Offer, OfferRun, Thread } from "./types.ts";
+import type { Change, ChangePhase, Offer, OfferRun, PullRequest, Thread } from "./types.ts";
 import type { Ask } from "./confirm.ts";
 
 export const RAIL: ChangePhase[] = ["working", "review", "landed", "live"];
 
 export const ended = (p: ChangePhase) => p === "abandoned" || p === "reverted";
 
-/** The phase rail: each step done, current or ahead; an ended change shows its end word. */
+/** The phase rail: each step done, current or ahead. An ended change has no steps (V0.73 (2)): its header says the end. */
 export function rail(c: Pick<Change, "phase">): { steps: { phase: ChangePhase; state: "done" | "now" | "ahead" }[]; end?: ChangePhase } {
-  if (ended(c.phase)) return { steps: RAIL.map((phase) => ({ phase, state: "ahead" as const })), end: c.phase };
+  if (ended(c.phase)) return { steps: [], end: c.phase };
   const at = RAIL.indexOf(c.phase);
   return { steps: RAIL.map((phase, i) => ({ phase, state: i < at ? "done" : i === at ? "now" : "ahead" })) };
 }
@@ -102,6 +102,15 @@ export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { 
   const word = fail ? `${fail.type} failed` : c.needs === "owner" ? "needs you" : c.label || c.phase;
   const more = live.length > 1 ? ` +${live.length - 1}` : "";
   return { text: short ? `${word}${more}` : `${clip(c.title)} · ${word}${more}`, cls: fail ? "fail" : c.phase === "live" ? "ok" : "", title: `${c.title} · ${phaseText(c)}` };
+}
+
+/** The thread's main PR for the header chip (V0.73 (2)): none once its change has ended (closed, missing on GitHub,
+ *  or ended by the owner); a merged PR keeps its chip. */
+export function headerPr(t: Pick<Thread, "changes" | "pr">): PullRequest | null {
+  const pr = t.pr;
+  if (!pr || pr.state === "MERGED") return pr ?? null;
+  const its = (c: Change) => c.key === `pr:${pr.repo}#${pr.number}` || (c.evidence ?? []).some((e) => e.kind === "pr" && e.url === pr.url);
+  return t.changes.some((c) => its(c) && ended(c.phase)) ? null : pr;
 }
 
 const clip = (s: string) => (s.length > 24 ? `${s.slice(0, 23)}…` : s);
