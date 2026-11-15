@@ -33,6 +33,11 @@ type Agents interface {
 	Do(threadID string, e core.Effect) error
 }
 
+// Providers runs a provider command. *provider.Registry implements it.
+type Providers interface {
+	Run(c api.Cmd) api.Reply
+}
+
 // EffectRunner performs an approved async effect (SPEC 5.10), e.g. pr.merge.
 type EffectRunner interface {
 	Run(ctx context.Context, threadID string, req core.EffectReq) (string, error)
@@ -41,10 +46,9 @@ type EffectRunner interface {
 type Engine struct {
 	deploy *deployState // V0.39
 	mu     sync.Mutex
-	// press serializes the commands that call out of the engine while they
-	// run (message cancels, T3 adoption), so the receipt check, the work
-	// and the receipt are one step. Everything else is one step under mu
-	// in apply.
+	// press serializes the kinds whose reply waits for their effects
+	// (await), so the receipt check, the work and the receipt are one step.
+	// Everything else is one step under mu in apply.
 	press    sync.Mutex
 	st       *store.Store
 	threads  map[string]*core.Thread
@@ -76,8 +80,11 @@ type Engine struct {
 	Scripts ScriptRunner
 	Hub     *stream.Hub
 	Now     func() time.Time
-	// Adopt handles t3.adopt; set by main.
+	// Adopt runs t3.adopt's effect; set by main.
 	Adopt func(ids []string) (int, error)
+	// Providers runs the provider commands' effect (3.16); nil: this host
+	// has no providers.
+	Providers Providers
 	// Attach stores files for the show tool (V0.19); Shooter takes screenshots.
 	Attach  *attach.Store
 	Shooter Shooter
@@ -227,57 +234,72 @@ func (e *Engine) ChangesLook(id string) *core.ChangesLook {
 	return &l
 }
 
-// Command applies one owner command exactly once per CommandID (I7). It
-// builds an Input and sends it down the one path; projects, T3 adoption and
-// a message cancel keep their own (they wait on things outside the thread).
+// Command applies one owner command exactly once per CommandID (I7): it
+// builds the owner's Input and submits it.
 func (e *Engine) Command(c api.Cmd) api.Reply {
 	if c.CommandID == "" {
 		return api.Reply{Error: "commandId is required", Status: 400}
 	}
-	if c.Action == "t3.adopt" {
-		return e.adopt(c)
+	return e.submit(core.Input{Source: core.FromOwner, Kind: c.Action, Thread: c.ThreadID, Args: c.Args, CmdID: c.CommandID})
+}
+
+// submit sends a command's Input down the one path: the owner's commands
+// and the agent's thread_send and thread_new. It checks what only the host
+// can know first (a project, a profile, an attachment, a folder on disk),
+// makes the record of a kind that makes one, and takes the path of the
+// kind's record: a thread, a project, or the host for a kind whose reply
+// waits for its effects.
+func (e *Engine) submit(in core.Input) api.Reply {
+	k := core.Kinds[in.Kind]
+	if k == nil || !slices.Contains(k.From, in.Source.Principal()) {
+		return api.Reply{Error: "unknown action " + in.Kind, Status: 400}
 	}
-	if strings.HasPrefix(c.Action, "project.") {
-		return e.projectCommand(c)
+	var a core.Args
+	switch x := in.Args.(type) {
+	case core.Args:
+		a = x
+	case map[string]any:
+		a = x
 	}
-	if c.Action == "thread.cancelMessage" {
-		return e.cancelMessage(c)
+	if a == nil {
+		a = core.Args{}
 	}
-	if k := core.Kinds[c.Action]; k == nil || !slices.Contains(k.From, core.ByOwner) {
-		return api.Reply{Error: "unknown action " + c.Action, Status: 400}
+	in.Args = a
+	if k.Await {
+		return e.await(in, k)
 	}
-	if c.Action == "thread.setProject" && c.Args.Str("projectId") != "" {
+	if k.On == core.RecProject {
+		return e.applyProject(in)
+	}
+	if in.Kind == "thread.setProject" && a.Str("projectId") != "" {
 		e.mu.Lock()
-		ok := e.projects[c.Args.Str("projectId")] != nil
+		ok := e.projects[a.Str("projectId")] != nil
 		e.mu.Unlock()
 		if !ok {
-			return api.Reply{Error: "no project " + c.Args.Str("projectId"), Status: 400}
+			return api.Reply{Error: "no project " + a.Str("projectId"), Status: 400}
 		}
 	}
-	if c.Action == "thread.handover" && e.ProfileExists != nil && c.Args.Str("profile") != "" && !e.ProfileExists(c.Args.Str("profile")) {
-		return api.Reply{Error: "no profile " + c.Args.Str("profile"), Status: 400}
+	if in.Kind == "thread.handover" && e.ProfileExists != nil && a.Str("profile") != "" && !e.ProfileExists(a.Str("profile")) {
+		return api.Reply{Error: "no profile " + a.Str("profile"), Status: 400}
 	}
-	if c.Action == "thread.create" || c.Action == "thread.send" {
-		for _, id := range core.AttachmentIDs(c.Args) {
+	if in.Kind == "thread.create" || in.Kind == "thread.send" {
+		for _, id := range core.AttachmentIDs(a) {
 			if e.AttachmentExists == nil || !e.AttachmentExists(id) {
 				return api.Reply{Error: "unknown attachment " + id, Status: 400}
 			}
 		}
 	}
-	if c.Args == nil {
-		c.Args = core.Args{}
-	}
 	var fresh *core.Thread
 	var scratch string
-	if c.Action == "thread.create" {
-		if r, done := e.replay(c.CommandID); done {
+	if in.Kind == "thread.create" {
+		if r, done := e.replay(in.CmdID); done {
 			return r
 		}
 		now := e.Now()
 		fresh = &core.Thread{ID: NewID("t_"), Owner: core.Owner, Visibility: "private", CreatedAt: now, Source: "fyr"}
 		// V0.42: thread.create files into projectId; without a cwd it starts
 		// in the project's folder (V0.55), else in a fresh scratch folder.
-		args := maps.Clone(c.Args)
+		args := maps.Clone(a)
 		if pid := args.Str("projectId"); pid != "" {
 			e.mu.Lock()
 			pr := e.projects[pid]
@@ -297,9 +319,9 @@ func (e *Engine) Command(c api.Cmd) api.Reply {
 			scratch = dir
 			args["cwd"] = dir
 		}
-		c.Args = args
+		in.Args = args
 	}
-	p, err := e.apply(core.Input{Source: core.FromOwner, Kind: c.Action, Thread: c.ThreadID, Args: c.Args, CmdID: c.CommandID}, fresh)
+	p, err := e.apply(in, fresh)
 	if scratch != "" && (err != nil || p.replayed) {
 		os.Remove(scratch)
 	}
@@ -308,6 +330,87 @@ func (e *Engine) Command(c api.Cmd) api.Reply {
 	}
 	e.publish(p)
 	return p.reply
+}
+
+// await is the path of a kind whose reply waits for its effects
+// (core.InputKind.Await): the reduce, then its effects in order, then the
+// receipt with the outcome. press makes the receipt check, the work and the
+// receipt one step. A failure that may pass on a retry (409, 5xx) stores no
+// receipt (A4).
+func (e *Engine) await(in core.Input, k *core.InputKind) api.Reply {
+	e.press.Lock()
+	defer e.press.Unlock()
+	if r, done := e.replay(in.CmdID); done {
+		return r
+	}
+	id := in.CmdID
+	in.CmdID = "" // the receipt waits for the outcome
+	var effs []core.Effect
+	var reply api.Reply
+	if k.On == core.RecHost {
+		res, err := core.ReduceHost(in, e.Now())
+		if err != nil {
+			return rejected(err)
+		}
+		effs, reply = res.Effects, api.Reply{OK: true, Status: 200, Result: res.Reply}
+	} else {
+		p, err := e.apply(in, nil)
+		if err != nil {
+			return rejected(err)
+		}
+		effs, p.res.Effects = p.res.Effects, nil
+		e.publish(p)
+		reply = p.reply
+	}
+	for _, ef := range effs {
+		if reply = e.awaited(in, ef, reply); !reply.OK {
+			break
+		}
+	}
+	if reply.Status != 409 && reply.Status < 500 {
+		e.st.Write(func(tx *store.Tx) error { return tx.PutReceipt(id, reply, e.Now()) })
+	}
+	return reply
+}
+
+// awaited runs one effect of an Await kind and gives the reply its outcome.
+func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Reply {
+	fail := func(status int, msg string) api.Reply { return api.Reply{Error: msg, Status: status} }
+	switch ef.Kind {
+	case core.EffectCancelMessage:
+		if e.Agents == nil {
+			return fail(409, "No agent runs this thread")
+		}
+		if err := e.Agents.Do(in.Thread, ef); err != nil {
+			return fail(409, err.Error())
+		}
+	case core.EffectAdopt:
+		if e.Adopt == nil {
+			return fail(409, "T3 adoption is not configured")
+		}
+		var ids []string
+		raw, _ := ef.Request.Args["t3Ids"].([]any)
+		for _, x := range raw {
+			if s, ok := x.(string); ok {
+				ids = append(ids, s)
+			}
+		}
+		n, err := e.Adopt(ids)
+		if err != nil {
+			return fail(500, err.Error())
+		}
+		reply.Result = map[string]any{"adopted": n}
+	case core.EffectProvider:
+		if e.Providers == nil {
+			return fail(404, "no providers on this host")
+		}
+		r := e.Providers.Run(api.Cmd{Action: ef.Request.Action, Args: core.Args(ef.Request.Args)})
+		if r.Status == 0 {
+			r.Status = 200
+		}
+		return r
+	}
+	return reply
 }
 
 // rejected is a command's reply for an Input that did not apply.
@@ -357,7 +460,8 @@ type applied struct {
 
 // apply is the one path (decision 0020): replay the receipt, load, reduce,
 // store the records, their events, the receipt and the durable effects in
-// one transaction. fresh is the new thread of a kind that makes one. A
+// one transaction. fresh is the new thread of thread.create; a kind that
+// Makes its thread gets a new one with the Input's id. A
 // thread the reduce leaves as it was is not written and keeps its
 // UpdatedAt: an event alone does not move it up the list (#36).
 func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
@@ -374,7 +478,12 @@ func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 	cur := fresh
 	if cur == nil {
 		if cur = e.threads[in.Thread]; cur == nil {
-			return nil, &core.Rejection{Code: core.RejectNotFound, Reason: "no thread " + in.Thread}
+			// A kind that makes its thread (T3 adoption) names the new id.
+			if k := core.Kinds[in.Kind]; k == nil || !k.Makes || in.Thread == "" {
+				return nil, &core.Rejection{Code: core.RejectNotFound, Reason: "no thread " + in.Thread}
+			}
+			fresh = &core.Thread{ID: in.Thread}
+			cur = fresh
 		}
 	}
 	s, err := e.stage(cur, in, e.Now(), fresh != nil)
@@ -413,7 +522,7 @@ func (e *Engine) stage(cur *core.Thread, in core.Input, now time.Time, fresh boo
 		return nil, err
 	}
 	k := core.Kinds[in.Kind]
-	if in.Source == core.FromOwner {
+	if in.Source == core.FromOwner || fresh {
 		e.assignProject(t)
 	}
 	s := &staged{in: in, cur: cur, t: t, v: v, now: now}
@@ -466,8 +575,12 @@ func (s *staged) persist(tx *store.Tx) error {
 			return err
 		}
 	}
-	for _, ev := range s.res.Events {
-		if err := tx.Append(t.ID, ev.Type, ev.Data, s.now); err != nil {
+	for i, ev := range s.res.Events {
+		at := s.now
+		if i < len(s.res.At) && !s.res.At[i].IsZero() {
+			at = s.res.At[i]
+		}
+		if err := tx.Append(t.ID, ev.Type, ev.Data, at); err != nil {
 			return err
 		}
 	}
@@ -707,62 +820,6 @@ func (e *Engine) EventsBefore(id string, before int64, limit int) ([]store.Event
 // Events reads the timeline of one thread; after == 0 gives the newest limit.
 func (e *Engine) Events(id string, after int64, limit int) ([]store.Event, error) {
 	return e.st.EventsFor(id, after, limit, after == 0)
-}
-
-func (e *Engine) adopt(c api.Cmd) api.Reply {
-	if e.Adopt == nil {
-		return api.Reply{Error: "T3 adoption is not configured", Status: 409}
-	}
-	e.press.Lock()
-	defer e.press.Unlock()
-	if r, done := e.replay(c.CommandID); done {
-		return r
-	}
-	raw, _ := c.Args["t3Ids"].([]any)
-	ids := []string{}
-	for _, x := range raw {
-		if s, ok := x.(string); ok {
-			ids = append(ids, s)
-		}
-	}
-	n, err := e.Adopt(ids)
-	if err != nil {
-		return api.Reply{Error: err.Error(), Status: 500}
-	}
-	r := api.Reply{OK: true, Status: 200, Result: map[string]any{"adopted": n}}
-	e.st.Write(func(tx *store.Tx) error { return tx.PutReceipt(c.CommandID, r, e.Now()) })
-	return r
-}
-
-// Insert adds a thread made outside the command path (T3 adoption), with
-// its history, in one transaction.
-func (e *Engine) Insert(t *core.Thread, v *core.View, history []core.Event, at []time.Time) error {
-	e.mu.Lock()
-	e.assignProject(t)
-	e.mu.Unlock()
-	if _, err := e.st.Write(func(tx *store.Tx) error {
-		if err := tx.PutThread(t); err != nil {
-			return err
-		}
-		if err := tx.PutView(v); err != nil {
-			return err
-		}
-		for i, ev := range history {
-			if err := tx.Append(t.ID, ev.Type, ev.Data, at[i]); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	e.mu.Lock()
-	e.threads[t.ID], e.views[t.ID] = t, v
-	e.bump(t.ID)
-	dto := e.dto(t, e.Now())
-	e.mu.Unlock()
-	e.Hub.Send(stream.FrameThread, dto)
-	return nil
 }
 
 // HasT3 reports whether a T3 thread was already adopted.

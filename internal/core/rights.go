@@ -15,6 +15,9 @@ type Field string
 
 const (
 	FieldThreadTitle     Field = "thread.title"
+	FieldThreadProject   Field = "thread.project" // filed by hand
+	FieldThreadView      Field = "thread.view"    // the live view on or off
+	FieldViewSeen        Field = "view.seen"      // the owner's seenAt
 	FieldChangePhase     Field = "change.phase"
 	FieldChangeCondition Field = "change.condition"
 	// A condition type with one status: "change.condition.review=ok".
@@ -37,6 +40,9 @@ type Right struct {
 // Rights is the one table.
 var Rights = []Right{
 	{Field: FieldThreadTitle, By: []string{ByOwner, ByAgent}, Kept: []string{ByOwner}, Over: agentOnly, Refuse: "the owner named %s; ask them to rename it"},
+	{Field: FieldThreadProject, By: ownerOnly, Refuse: "only the owner files %s in a project"},
+	{Field: FieldThreadView, By: ownerOnly, Refuse: "only the owner turns the live view of %s on or off"},
+	{Field: FieldViewSeen, By: ownerOnly, Refuse: "only the owner sees %s"},
 	{Field: FieldChangePhase, By: anyone, Kept: observed, Over: agentOnly, Refuse: "Fyr observes %s; a report cannot change it"},
 	{Field: FieldChangeCondition, By: anyone, Kept: observed, Over: agentOnly, Refuse: "Fyr observes %s; a report cannot change it"},
 	{Field: FieldReviewOK, By: []string{ByOwner, ByObserved}, Refuse: "an agent cannot mark %s ok; ask the owner with change_request"},

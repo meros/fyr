@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/quota"
@@ -166,9 +165,8 @@ func parseHosts(s string) ([]front.HostConfig, error) {
 // providerAPI adapts the registry to the server.
 type providerAPI struct{ r *provider.Registry }
 
-func (p providerAPI) List() any                   { return p.r.List() }
-func (p providerAPI) Found() any                  { return p.r.Found() }
-func (p providerAPI) Command(c api.Cmd) api.Reply { return p.r.Command(c) }
+func (p providerAPI) List() any  { return p.r.List() }
+func (p providerAPI) Found() any { return p.r.Found() }
 
 func quotaProfiles(ps []provider.Profile) []quota.Profile {
 	out := make([]quota.Profile, 0, len(ps))
