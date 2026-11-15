@@ -142,3 +142,52 @@ func TestThreadRenameTool(t *testing.T) {
 		t.Fatalf("other title %q", th.Title)
 	}
 }
+
+// #48: thread_send and thread_new send agent-source Inputs that name the
+// sending thread, so the field rights apply: the agent's message does not
+// mark the owner's view seen, and an agent cannot file a thread in a
+// project or turn on its live view.
+func TestAgentThreadToolsAreAgentInputs(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	a := h.create("coordinator")
+	b := h.create("worker")
+	h.wait(b, "done", state(core.Done))
+	seenOf := func(id string) time.Time {
+		for _, d := range h.e.Snapshot() {
+			if d.ID == id {
+				return d.View.SeenAt
+			}
+		}
+		t.Fatalf("no thread %s", id)
+		return time.Time{}
+	}
+	seen := seenOf(b)
+	if _, isErr := callAs(t, h.e, a, "thread_send", map[string]any{"id": b, "text": "please rebase"}); isErr {
+		t.Fatal("send failed")
+	}
+	h.wait(b, "second turn", func(t core.Thread, _ core.Attention) bool { return strings.Contains(t.Summary, "please rebase") })
+	if got := seenOf(b); !got.Equal(seen) {
+		t.Fatalf("the agent's message marked the owner's view seen: %v → %v", seen, got)
+	}
+	if !hasEvent(h.events(b), "command", `"from":"`+a+`"`) {
+		t.Fatal("the receiving thread's Input does not name the sending thread")
+	}
+
+	p := h.cmd("project.create", "", core.Args{"name": "Owner's"})
+	pid, _ := p.Result.(map[string]any)["id"].(string)
+	for _, args := range []core.Args{{"projectId": pid}, {"view": true}} {
+		args["cwd"], args["text"] = h.dir, "child"
+		r := h.e.submit(core.Input{Source: core.FromAgent, From: a, Kind: "thread.create", Args: args, CmdID: NewID("agent_")})
+		if r.OK || r.Status != 403 {
+			t.Fatalf("an agent wrote an owner-only field with %v: %+v", args, r)
+		}
+	}
+	text, isErr := callAs(t, h.e, a, "thread_new", map[string]any{"cwd": h.dir, "text": "child work", "title": "Child"})
+	if isErr {
+		t.Fatalf("%q", text)
+	}
+	child := strings.TrimSuffix(strings.TrimPrefix(text, "Started thread "), ".")
+	if th, _ := h.e.Thread(child); th.Parent != a || th.ProjectManual {
+		t.Fatalf("child: parent %q manual %v", th.Parent, th.ProjectManual)
+	}
+}

@@ -37,6 +37,7 @@ const (
 	ObsDeploy  = "deployments"
 	ObsHost    = "host" // the host itself: a restart
 	ObsGit     = "git"  // the git observer: host change records (#35)
+	ObsT3      = "t3"   // T3 adoption (V0.9)
 )
 
 // Observer is the source of an observer's Inputs.
@@ -69,6 +70,9 @@ type Input struct {
 	// the agent's tools, a typed value for observers and effect results.
 	Args  any    `json:"args,omitempty"`
 	CmdID string `json:"cmdId,omitempty"`
+	// From is the thread whose agent sent an agent-source Input to another
+	// thread (thread_send, thread_new).
+	From string `json:"from,omitempty"`
 }
 
 // Event is one line a reduce appends to the thread's log. The agent feed
@@ -80,8 +84,15 @@ type Event struct {
 
 // Result is what a reduce produces besides the records.
 type Result struct {
-	Events  []Event
+	Events []Event
+	// At are the times of the first Events when they happened before the
+	// reduce (an adopted thread's history); an event without one is now.
+	At      []time.Time
 	Effects []Effect
+	// Follow are Inputs to other threads that this reduce sends (a new
+	// project files the thread it was made from): the engine reduces them in
+	// the same transaction.
+	Follow []Input
 	// Reply is what the sender gets back: a tool's text, a command's result.
 	Reply any
 }
@@ -110,11 +121,23 @@ func reject(code RejectCode, format string, a ...any) *Rejection {
 }
 
 // Rec is the records one Input reduces: the thread (with its changes and
-// Rules) and the owner's view of it (with the owner's Rules).
+// Rules) and the owner's view of it (with the owner's Rules), or a project.
 type Rec struct {
 	T *Thread
 	V *View
+	P *Project
 }
+
+// Record names the record an Input kind changes.
+type Record string
+
+const (
+	RecThread  Record = ""        // a thread and the owner's view of it
+	RecProject Record = "project" // a project (3.15)
+	// RecHost changes no record of the state: the host's own setup (the
+	// provider registry, T3 adoption), done by the kind's effects.
+	RecHost Record = "host"
+)
 
 // InputKind is one kind of Input: who may send it, its guard and its
 // reducer. A new feature is a kind, never a new path.
@@ -134,6 +157,15 @@ type InputKind struct {
 	// Untouched keeps the thread's UpdatedAt even when it changes: a
 	// repair, not news.
 	Untouched bool
+	// On is the record it changes.
+	On Record
+	// Makes: it makes its record (a new thread or project).
+	Makes bool
+	// Await: the sender's reply waits for the kind's effects, which the
+	// engine runs before it answers and before it stores the receipt (a
+	// message cancel needs the agent's answer; T3 adoption and the provider
+	// commands report what they did).
+	Await bool
 }
 
 // Kinds are every Input kind by name: the owner's commands (Registry), the
@@ -159,12 +191,9 @@ var (
 // thread for a kind that makes one. It is pure: the records passed in are
 // not changed.
 func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result, error) {
-	k := Kinds[in.Kind]
-	if k == nil {
-		return nil, nil, Result{}, reject(RejectBadArgs, "unknown action %s", in.Kind)
-	}
-	if !slices.Contains(k.From, in.Source.Principal()) {
-		return nil, nil, Result{}, reject(RejectRights, "%s cannot send %s", in.Source, in.Kind)
+	k, err := kindOf(in, RecThread)
+	if err != nil {
+		return nil, nil, Result{}, err
 	}
 	before := t
 	if before == nil {
@@ -182,15 +211,7 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	}
 	res, err := k.Reduce(Rec{T: t, V: v}, in, now)
 	if err != nil {
-		var r *Rejection
-		switch {
-		case errors.As(err, &r):
-		case errors.Is(err, ErrBadArgs):
-			r = &Rejection{Code: RejectBadArgs, Reason: err.Error()}
-		default:
-			r = &Rejection{Code: RejectConflict, Reason: err.Error()}
-		}
-		return nil, nil, Result{}, r
+		return nil, nil, Result{}, asRejection(err)
 	}
 	// The scheduler (#46): the Rules this Input made true fire now, in the
 	// same records and the same transaction.
@@ -200,6 +221,73 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	// The agent feed (#47): the notice rules project this reduce.
 	res.Effects = append(res.Effects, project(Reduced{Before: before, After: t, In: in, Events: res.Events}, now)...)
 	return t, v, res, nil
+}
+
+// ReduceProject applies one Input of a project kind to a copy of its
+// project: fresh for a kind that makes one, else the project args.id names
+// in ps. after is nil when the reduce deleted the project. It is pure.
+func ReduceProject(ps map[string]*Project, fresh *Project, in Input, now time.Time) (before, after *Project, res Result, err error) {
+	k, err := kindOf(in, RecProject)
+	if err != nil {
+		return nil, nil, Result{}, err
+	}
+	cur := fresh
+	if !k.Makes {
+		id := mapArgs(in).Str("id")
+		if cur = ps[id]; cur == nil {
+			return nil, nil, Result{}, reject(RejectNotFound, "no project %s", id)
+		}
+		before = cur
+	}
+	p := *cur
+	p.Quiet = slices.Clone(cur.Quiet)
+	res, err = k.Reduce(Rec{P: &p}, in, now)
+	if err != nil {
+		return nil, nil, Result{}, asRejection(err)
+	}
+	if p.ID == "" { // the reduce emptied it: deleted
+		return before, nil, res, nil
+	}
+	return before, &p, res, nil
+}
+
+// ReduceHost applies one Input of a host kind: it checks the sender and
+// returns the kind's effects. It is pure.
+func ReduceHost(in Input, now time.Time) (Result, error) {
+	k, err := kindOf(in, RecHost)
+	if err != nil {
+		return Result{}, err
+	}
+	res, err := k.Reduce(Rec{}, in, now)
+	if err != nil {
+		return Result{}, asRejection(err)
+	}
+	return res, nil
+}
+
+// kindOf is the kind of an Input of record on, checked against its sender.
+func kindOf(in Input, on Record) (*InputKind, error) {
+	k := Kinds[in.Kind]
+	if k == nil || k.On != on {
+		return nil, reject(RejectBadArgs, "unknown action %s", in.Kind)
+	}
+	if !slices.Contains(k.From, in.Source.Principal()) {
+		return nil, reject(RejectRights, "%s cannot send %s", in.Source, in.Kind)
+	}
+	return k, nil
+}
+
+// asRejection classifies a reducer's error.
+func asRejection(err error) *Rejection {
+	var r *Rejection
+	switch {
+	case errors.As(err, &r):
+	case errors.Is(err, ErrBadArgs):
+		r = &Rejection{Code: RejectBadArgs, Reason: err.Error()}
+	default:
+		r = &Rejection{Code: RejectConflict, Reason: err.Error()}
+	}
+	return r
 }
 
 // CloneThread is a deep copy of a thread, as stored.

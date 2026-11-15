@@ -143,6 +143,7 @@ const (
 	WhenIdle        = "idle"          // no run is live and the last one did not fail
 	WhenNoDecisions = "noDecisions"   // no question or approval waits
 	WhenMoved       = "changeMoved"   // anchored: {change}: the change's phase, conditions or evidence moved since the last firing
+	WhenEnded       = "changeEnded"   // {change}: the change ended (abandoned or reverted)
 )
 
 // AgentWhens are the kinds the agent may use in its own Rules.
@@ -225,6 +226,8 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 	switch w.Kind {
 	case WhenReached:
 		return truth(c.Phase.Reached(w.Phase))
+	case WhenEnded:
+		return truth(c.Phase.Ended())
 	case WhenCondition:
 		k := condition(c, w.Type)
 		return truth(k != nil && k.Status == w.Status)

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -166,5 +167,32 @@ func TestAnnotationsFollowFailingChecks(t *testing.T) {
 	ChangePRObserved(th, PR{URL: dpr, Repo: "o/r", Number: 7, State: "OPEN", Checks: "pending", Head: "h2"}, ct0)
 	if c.Annotations != nil {
 		t.Fatalf("annotations kept after the checks stopped failing: %+v", c.Annotations)
+	}
+}
+
+// #48, SPEC 0.5 V0.66 (5): the watch ends when its change ends (reverted or
+// abandoned), also a watch stored before the change-ended clause existed.
+func TestDeployWatchEndsWithItsChange(t *testing.T) {
+	th, c := mergedThread(t)
+	at := ct0.Add(10 * time.Minute)
+	setPhase(th, c, PhaseReverted, ByAgent, at)
+	rules(th, at)
+	if FindRule(th, deployRuleID(c.ID)) != nil || len(DeployWatches(th, at)) != 0 {
+		t.Fatalf("a reverted change is still watched: %+v", th.Rules)
+	}
+
+	// A thread stored with the old watch (no changeEnded) gets the clause.
+	th, c = mergedThread(t)
+	r := FindRule(th, deployRuleID(c.ID))
+	r.When = Any(r.When.Any[:len(r.When.Any)-1]...)
+	b, _ := json.Marshal(th)
+	back, err := DecodeThread(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setPhase(back, &back.Changes[0], PhaseReverted, ByAgent, at)
+	rules(back, at)
+	if FindRule(back, deployRuleID(c.ID)) != nil {
+		t.Fatalf("a stored watch does not end with its change: %+v", back.Rules)
 	}
 }

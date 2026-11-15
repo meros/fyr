@@ -66,7 +66,6 @@ type Server struct {
 type Providers interface {
 	List() any
 	Found() any
-	Command(c api.Cmd) api.Reply
 }
 
 // PRDetails is what the PR tab needs (*github.Details implements it).
@@ -426,16 +425,7 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request) {
 		api.WriteJSON(w, 400, api.Reply{Error: "bad JSON: " + err.Error()})
 		return
 	}
-	var rep api.Reply
-	if strings.HasPrefix(c.Action, "provider.") {
-		if s.Providers == nil {
-			api.WriteJSON(w, 404, api.Reply{Error: "no providers on this host"})
-			return
-		}
-		rep = s.Providers.Command(c)
-	} else {
-		rep = s.Engine.Command(c)
-	}
+	rep := s.Engine.Command(c) // #48: provider commands too
 	if rep.Status == 0 {
 		rep.Status = 200
 	}

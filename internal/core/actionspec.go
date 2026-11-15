@@ -514,6 +514,7 @@ func migrateComponents(t *Thread, b []byte) error {
 // migrateRules moves what watched before #46 into Rules: settle.when (#33)
 // into settle Rules, a change's deployWatch that had not ended into its
 // deploy Rule, and a change with a PR gets the Rule of its built-in actions.
+// A deploy Rule stored before #48 also ends when its change ends.
 func migrateRules(t *Thread, b []byte) error {
 	now := t.UpdatedAt
 	if bytes.Contains(b, []byte(`"when"`)) || bytes.Contains(b, []byte(`"deployWatch"`)) {
@@ -564,6 +565,9 @@ func migrateRules(t *Thread, b []byte) error {
 	}
 	for i := range t.Changes {
 		armBuiltins(t, &t.Changes[i], now)
+	}
+	for i := range t.Rules {
+		endsWithChange(&t.Rules[i])
 	}
 	return nil
 }

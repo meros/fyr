@@ -52,9 +52,10 @@ const (
 
 // The deploy watch (#46) is a Rule of the thread about a landed change: the
 // deployments observer reads its merge commit while it is armed, and it
-// ends when the change is live, the production deploy failed, or its time
-// limit passes: 24 hours without a deployment of the commit, 7 days with
-// one. A repo without any deployment ends it at the first read.
+// ends when the change is live, the production deploy failed, the change
+// ended (#48), or its time limit passes: 24 hours without a deployment of
+// the commit, 7 days with one. A repo without any deployment ends it at the
+// first read.
 func deployRuleID(changeID string) string { return PurposeDeploy + ":" + changeID }
 
 func deployLimit(since time.Time, seen bool) When {
@@ -69,7 +70,17 @@ func deployLimit(since time.Time, seen bool) When {
 func deployWhen(c *Change, since time.Time, seen bool) When {
 	return Any(When{Kind: WhenReached, Change: c.ID, Phase: PhaseLive},
 		When{Kind: WhenCondition, Change: c.ID, Type: CondDeploy, Status: CondFail},
-		deployLimit(since, seen))
+		deployLimit(since, seen),
+		When{Kind: WhenEnded, Change: c.ID})
+}
+
+// endsWithChange gives a deploy watch stored before #48 its changeEnded
+// clause.
+func endsWithChange(r *Rule) {
+	if r.Purpose != PurposeDeploy || slices.ContainsFunc(r.When.Any, func(w When) bool { return w.Kind == WhenEnded }) {
+		return
+	}
+	r.When.Any = append(r.When.Any, When{Kind: WhenEnded, Change: r.About})
 }
 
 // watchMerge arms the watch when the PR merged and the change is not live.

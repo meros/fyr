@@ -23,8 +23,9 @@ The spec has the parts in sections 3.2, 4, 5 and 7. The V0 rows built around the
    - snooze;
    - the deploy watch and its time limits;
    - the built-in actions that follow a PR;
-   - quiet hours;
    - the owner's or agent's own watches ("tell me when CI on #12 is green").
+
+   Quiet hours stay computed (#48): they watch nothing and do nothing. They are a pure function of the project's windows and the clock, read when the state is built and when a push is sent; no record changes when a window starts or ends, so a Rule would only store what the clock already says.
 
    Conditions read records only, so a Rule never calls the network; observers bring facts in as Inputs.
 5. **The agent feed.** A projection from events to Notices for the thread's agent. A Notice is `{about: record ref, what: one sentence, urgency: wake | next | stop | silent, coalesceKey}`. It is the only way Fyr speaks to the agent; it replaces `tell`, the Stop hook reasons and the mid-turn reminders. Delivery is one queue per thread:
@@ -51,6 +52,8 @@ The spec has the parts in sections 3.2, 4, 5 and 7. The V0 rows built around the
 **Records the agent shapes.** The agent writes through the same Inputs: open and revise changes, declare actions, set its live view, arm a Rule ("settle when", "tell me when"). The field rights make sure it cannot write facts (a PR's checks), approvals or the owner's state.
 
 **Scope of a record (0016, #35).** A record has one owner host. Observed changes are host records keyed by repo and branch (#35); a thread holds references to the records it works on and Rules over them, so two threads in one folder see one change and each gets its own notices.
+
+**Records that are not a thread (#48).** A project is a record of its own: its kinds (`project.create`, `.update`, `.delete`) are reduced by `ReduceProject`, and the thread Inputs a project change causes (the thread a new project files, the threads its folder moves) go through the threads' own reduce in the same transaction. The provider registry and T3 adoption are the host's setup, not state: their kinds are host kinds whose reduce returns one effect. A kind whose reply needs the outcome of its effect (a message cancel needs the CLI's answer; T3 adoption and the provider commands report what they did) is marked `await`: the engine runs its effects before it answers and stores the receipt with the outcome. Every command is an Input on the one path; no command family has its own.
 
 **What stays as it is.** The event log and receipts (store), the wire DTO as a projection of records, the action registry's role as the list of owner commands (it becomes the Input kinds with `source: owner`).
 
