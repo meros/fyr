@@ -14,6 +14,11 @@
 // Insets: Emulation.setSafeAreaInsetsOverride (Chrome 136 or later). Keyboard and resume: a scripted
 // window.visualViewport (an EventTarget whose height and offsetTop the test sets), installed before
 // the app runs, because CDP cannot shrink only the visual viewport.
+//
+// Speed: the three sizes run at the same time, one tab each (each in its own browser context, so their
+// localStorage is apart); the desktop and timing checks run after them, alone. No step sleeps a fixed time to
+// let the page catch up: each waits for the state it needs (waitFor polls a page expression, settle waits for a
+// DOM without changes and without running animations). The few fixed waits left measure time on purpose.
 
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -70,50 +75,80 @@ const watchdog = setTimeout(() => {
   console.error("layout test: timed out");
   cleanup();
   process.exit(2);
-}, 420_000); // 37 phone screens × 3 sizes and the desktop checks take about 290 s on a loaded machine
+}, 150_000); // about 35 s on a quiet 8-core machine, about 60 s under a 6-core CPU load
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let targets;
+let version;
 for (let i = 0; i < 100; i++) {
   try {
-    targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-    if (targets.some((t) => t.type === "page")) break;
+    version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+    if (version.webSocketDebuggerUrl) break;
   } catch {}
   await sleep(100);
 }
-const ws = new WebSocket(targets.find((t) => t.type === "page").webSocketDebuggerUrl);
+// One browser connection; each tab is a flat session on it (Target.attachToTarget with flatten), so the
+// sandboxed frames a tab auto-attaches come over the same socket.
+const ws = new WebSocket(version.webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener("open", r));
 let seq = 0;
 const pending = new Map();
+const tabsBySession = new Map();
 const pageErrors = [];
-const attached = []; // child targets (the sandboxed live view runs out of process)
 ws.addEventListener("message", (m) => {
   const j = JSON.parse(m.data);
   if (j.id && pending.has(j.id)) {
     pending.get(j.id)(j);
     pending.delete(j.id);
   }
-  if (j.method === "Target.attachedToTarget") attached.push(j.params);
-  if (j.method === "Runtime.exceptionThrown") pageErrors.push(j.params.exceptionDetails?.exception?.description ?? j.params.exceptionDetails?.text);
+  const tab = j.method && tabsBySession.get(j.sessionId);
+  if (tab) tab.event(j);
 });
-const send = (method, params = {}, sessionId) =>
+const sendRaw = (method, params = {}, sessionId) =>
   new Promise((r) => {
     const i = ++seq;
     pending.set(i, r);
     ws.send(JSON.stringify({ id: i, method, params, ...(sessionId ? { sessionId } : {}) }));
   });
-const evaluate = async (expression) => {
-  const r = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-  if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? r.result.exceptionDetails.text);
-  return r.result?.result?.value;
-};
 
-await send("Page.enable");
-await send("Runtime.enable");
+const INSETS = { top: 47, bottom: 34, left: 0, right: 0 };
 
-// A scriptable visualViewport, before any page script runs.
-await send("Page.addScriptToEvaluateOnNewDocument", {
-  source: `(() => {
+// A tab in its own browser context (its own localStorage, so tabs that run at the same time do not see each
+// other's projectFilter or drafts) and its own window (so it is a visible page that draws frames).
+async function newTab() {
+  const ctx = await sendRaw("Target.createBrowserContext", { disposeOnDetach: true });
+  const target = await sendRaw("Target.createTarget", { url: "about:blank", browserContextId: ctx.result.browserContextId, newWindow: true });
+  const att = await sendRaw("Target.attachToTarget", { targetId: target.result.targetId, flatten: true });
+  const sessionId = att.result.sessionId;
+  const waiters = [];
+  const tab = {
+    targetId: target.result.targetId,
+    attached: [], // child targets (the sandboxed live view runs out of process)
+    send: (method, params = {}, sid = sessionId) => sendRaw(method, params, sid),
+    // The next event of this name on this tab.
+    next(method, timeout) {
+      return new Promise((ok, fail) => {
+        const w = { method, ok, timer: setTimeout(() => (waiters.splice(waiters.indexOf(w), 1), fail(new Error(`no ${method} within ${timeout} ms`))), timeout) };
+        waiters.push(w);
+      });
+    },
+    event(j) {
+      if (j.method === "Target.attachedToTarget") tab.attached.push(j.params);
+      if (j.method === "Runtime.exceptionThrown") pageErrors.push(j.params.exceptionDetails?.exception?.description ?? j.params.exceptionDetails?.text);
+      for (const w of waiters.filter((x) => x.method === j.method)) {
+        clearTimeout(w.timer);
+        waiters.splice(waiters.indexOf(w), 1);
+        w.ok(j.params);
+      }
+    },
+  };
+  tabsBySession.set(sessionId, tab);
+  await tab.send("Page.enable");
+  await tab.send("Runtime.enable");
+  // The tab behaves as the focused window although several windows are open.
+  await tab.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+  // A scriptable visualViewport, before any page script runs.
+  await tab.send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `(() => {
     const vv = new EventTarget();
     window.__vv = { h: null, top: 0 };
     for (const [k, get] of Object.entries({
@@ -128,19 +163,17 @@ await send("Page.addScriptToEvaluateOnNewDocument", {
     Object.defineProperty(document, "hidden", { get: () => hidden, configurable: true });
     window.__setHidden = (h) => { hidden = h; document.dispatchEvent(new Event("visibilitychange")); };
   })();`,
-});
-
-const INSETS = { top: 47, bottom: 34, left: 0, right: 0 };
-// env(safe-area-inset-*) is always defined in a browser (0 without a notch), so CSS variables cannot
-// stand in for it; this Chrome must support the override.
-const trySafeArea = await send("Emulation.setSafeAreaInsetsOverride", { insets: INSETS });
-if (trySafeArea.error) {
-  console.error(`layout test: this Chrome cannot emulate safe-area insets (${trySafeArea.error.message}); use Chrome 136 or later`);
-  cleanup();
-  process.exit(1);
+  });
+  // env(safe-area-inset-*) is always defined in a browser (0 without a notch), so CSS variables cannot
+  // stand in for it; this Chrome must support the override.
+  const trySafeArea = await tab.send("Emulation.setSafeAreaInsetsOverride", { insets: INSETS });
+  if (trySafeArea.error) {
+    console.error(`layout test: this Chrome cannot emulate safe-area insets (${trySafeArea.error.message}); use Chrome 136 or later`);
+    cleanup();
+    process.exit(1);
+  }
+  return tab;
 }
-console.log(`insets: Emulation.setSafeAreaInsetsOverride (top ${INSETS.top}, bottom ${INSETS.bottom}); keyboard and resume: scripted visualViewport`);
-const injectInsets = async () => {};
 
 const SIZES = [
   [360, 640],
@@ -148,6 +181,8 @@ const SIZES = [
   [430, 932],
 ];
 
+// The PR tab has its detail from GitHub (the mock answers after 120 ms), not only the thread's own PR line.
+const PR_LOADED = "!!document.querySelector('.prv .prv-st') && !document.querySelector('.prv .prv-empty')";
 const SCREENS = [
   { name: "inbox", url: "?mock=rail" },
   { name: "update banner (V0.39)", url: "?mock=rail&deploy=drain" },
@@ -184,8 +219,8 @@ const SCREENS = [
   // SPEC 0.5 V0.65: New since you looked and Whole branch, the agent's notes, Viewed checkboxes; every target 44 px.
   { name: "changes since you looked", url: "?mock=1&open=t_done&tab=changes", openDiff: true },
   // SPEC 0.5 V0.43: the PR tab with a failing check and 2 unresolved review threads, and the Merge dialog.
-  { name: "PR tab with a failing check", url: "?mock=1&open=t_block&tab=pr", prTab: true },
-  { name: "PR merge dialog", url: "?mock=1&open=t_s2&tab=pr", sheet: "merge" },
+  { name: "PR tab with a failing check", url: "?mock=1&open=t_block&tab=pr", prTab: true, ready: PR_LOADED },
+  { name: "PR merge dialog", url: "?mock=1&open=t_s2&tab=pr", sheet: "merge", ready: PR_LOADED },
   // SPEC 0.5 V0.46: quiet hours. ?quiet=p_home puts Hemmet in quiet hours: its thread leaves the inbox, comes back
   // with the project filter (whose line says until when), and the project screen's Quiet hours row fits the phone.
   { name: "inbox with a quiet project", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "" } },
@@ -459,99 +494,173 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   }
 }
 
-const frames = () => evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))))");
+// The page is settled when its DOM has not changed for QUIET_MS, at least two frames have drawn since the last
+// change, and no view transition or finite animation runs. The mock answers within 30 ms, so 80 ms without a
+// change is past any chain of its answers; a longer mock delay (an upload, the PR detail) is waited for by what
+// it shows.
+const QUIET_MS = 80;
+const SETTLE = `new Promise((ok) => {
+  let last = performance.now(), frames = 0;
+  const mo = new MutationObserver(() => { last = performance.now(); frames = 0; });
+  mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+  const moving = () => {
+    try { if (document.documentElement.matches(':active-view-transition')) return true; } catch {}
+    return document.getAnimations().some((a) => a.playState === 'running' && a.effect?.getComputedTiming().endTime !== Infinity);
+  };
+  const t0 = performance.now();
+  const tick = () => {
+    frames++;
+    const now = performance.now();
+    const quiet = now - last >= ${QUIET_MS} && frames >= 2 && !moving();
+    if (quiet || now - t0 > 5000) { mo.disconnect(); ok(quiet); }
+    else requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+})`;
 
-async function tapCenter(sel, hold = 0) {
-  const c = await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return null; const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
-  if (!c) throw new Error(`no element ${sel}`);
-  await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: c[0], y: c[1] }] });
-  await sleep(hold || 40);
-  await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await sleep(350);
+// The helpers of one tab.
+function harness(t) {
+  const { send } = t;
+  const evaluate = async (expression) => {
+    const r = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+    if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? r.result.exceptionDetails.text);
+    return r.result?.result?.value;
+  };
+  // Polls fn every 25 ms until it returns something truthy and returns that. At the timeout it throws (what
+  // names the state it waited for), or with soft returns the last value so the check after it reports what it
+  // found.
+  const poll = async (fn, { timeout = 10_000, what = "a state", soft = false } = {}) => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await fn();
+      if (v) return v;
+      if (Date.now() - t0 > timeout) {
+        if (soft) return v;
+        throw new Error(`timed out after ${timeout} ms waiting for ${what}`);
+      }
+      await sleep(25);
+    }
+  };
+  // The same for a page expression, in the tab or in one of its frames (sessionId).
+  const waitIn = (sessionId, expr, opts = {}) =>
+    poll(async () => {
+      const r = await send("Runtime.evaluate", { expression: `(() => { try { return (${expr}); } catch { return false; } })()`, returnByValue: true, awaitPromise: true }, sessionId);
+      return r.result?.result?.value; // undefined while the page is between documents
+    }, { what: expr, ...opts });
+  const waitFor = (expr, opts) => waitIn(undefined, expr, opts);
+  const frames = () => evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => r(true), 0))))");
+  const settle = async () => {
+    if (!(await evaluate(SETTLE))) throw new Error("the page did not settle: its DOM kept changing for 5 s");
+  };
+  // Navigates and waits for the load event, then for ready (the app has drawn its screen) and a settled DOM.
+  const navigate = async (url, ready = "!!document.querySelector('.m-app, .shell')") => {
+    const loaded = t.next("Page.loadEventFired", 20_000);
+    const r = await send("Page.navigate", { url });
+    if (r.error || r.result?.errorText) throw new Error(`navigate ${url}: ${r.error?.message ?? r.result.errorText}`);
+    await loaded;
+    await waitFor(ready, { what: `the page ${url} to show ${ready}` });
+    await settle();
+  };
+  // A tap, the touch held 40 ms like a finger; until is the state the tap leads to.
+  // A long press holds the touch until that state shows: the app opens it after LONG_PRESS_MS (400 ms) of the
+  // page's own clock, so a hold timed here would be too short in a page that is slow to take the touch. It
+  // ends with touchCancel: headless Chrome has no long-press gesture and turns a lifted touch into a click at
+  // the same point, which would land on the sheet that just opened (a phone sends no click after a long press).
+  const tapCenter = async (sel, until, { long = false } = {}) => {
+    const c = await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return null; const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+    if (!c) throw new Error(`no element ${sel}`);
+    await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: c[0], y: c[1] }] });
+    if (long) await waitFor(until, { what: `${until} during a long press on ${sel}` });
+    else await sleep(40);
+    await send("Input.dispatchTouchEvent", { type: long ? "touchCancel" : "touchEnd", touchPoints: [] });
+    await waitFor(until, { what: `${until} after a tap on ${sel}` });
+    await settle();
+  };
+  const key = async (k, code = k) => {
+    const vk = { Enter: 13, Escape: 27, ArrowDown: 40, ArrowUp: 38, Tab: 9 }[k] ?? 0;
+    await send("Input.dispatchKeyEvent", k === "Enter" ? { type: "keyDown", key: k, code, text: "\r", windowsVirtualKeyCode: vk } : { type: "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code });
+    await settle();
+  };
+  // The phone layout has applied the visual viewport (useViewportVars in app.tsx): --app-h and --app-top match it.
+  const viewportApplied = `(() => { const s = getComputedStyle(document.documentElement); return s.getPropertyValue('--app-h').trim() === Math.round(visualViewport.height) + 'px' && s.getPropertyValue('--app-top').trim() === Math.max(0, Math.round(visualViewport.offsetTop)) + 'px'; })()`;
+
+  async function openScreen(s, w, h) {
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: true });
+    await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    const ready = s.ready ?? "!!document.querySelector('.m-app')";
+    await navigate(`${origin}/${s.url}`, ready);
+    if (s.storage) {
+      await evaluate(`(() => { const s = ${JSON.stringify(s.storage)}; for (const k in s) localStorage.setItem(k, s[k]); })()`);
+      await navigate(`${origin}/${s.url}`, ready);
+    }
+    if (s.files) {
+      writeFileSync(join(profile, "shot.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
+      writeFileSync(join(profile, "build-output-with-a-very-long-name-that-does-not-fit.log"), "log line\n".repeat(200));
+      await send("DOM.enable");
+      const doc = await send("DOM.getDocument", {});
+      const q = await send("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: s.files });
+      await send("DOM.setFileInputFiles", { nodeId: q.result.nodeId, files: [join(profile, "shot.png"), join(profile, "build-output-with-a-very-long-name-that-does-not-fit.log")] });
+      // The mock uploads in four steps of 120 ms.
+      await waitFor(`document.querySelectorAll('.att-chip.done').length >= 2`, { soft: true });
+      await settle();
+    }
+    if (s.openTools) {
+      // V0.41: the run's steps are folded into one line first
+      await evaluate(`document.querySelector('.tl.fold')?.click()`);
+      await settle();
+      await evaluate(`document.querySelector('.tl.grp')?.click()`);
+      await settle();
+      await evaluate(`(() => { const rows = document.querySelectorAll('.tl.row'); rows[rows.length - 1]?.click(); })()`);
+      await waitFor(`!!document.querySelector('.tlout')`, { soft: true });
+      await evaluate(`document.querySelector('.tlout')?.scrollIntoView({ block: 'nearest' })`);
+    }
+    if (s.wholeBranch) {
+      // V0.65 opens on New since you looked when there is a look; this screen checks the whole branch (V0.66).
+      await evaluate(`[...document.querySelectorAll('.chg-mode')].find((b) => b.textContent.startsWith('Whole'))?.click()`);
+      await waitFor(`document.querySelector('.chg-mode.on')?.textContent.startsWith('Whole')`, { what: "Whole branch pressed" });
+      await settle();
+    }
+    if (s.openDiff) {
+      // The file with the longest path: its row must ellipsize, its long lines scroll inside the diff.
+      if (typeof s.openDiff === "string") await evaluate(`document.querySelector('.chg-file[title="${s.openDiff}"]')?.click()`);
+      else await evaluate(`[...document.querySelectorAll('.chg-file')].sort((a, b) => b.title.length - a.title.length)[0]?.click()`);
+      await waitFor(`document.querySelectorAll('.chg-diff .dl').length >= 5`, { soft: true });
+      await settle();
+    }
+    const sheetItem = (word) => `[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('${word}'))`;
+    if (s.sheet === "snooze" || s.sheet === "handover") {
+      const word = s.sheet === "snooze" ? "Snooze" : "Hand over";
+      await tapCenter(".m-tr1 .b44:last-child", `!!${sheetItem(word)}`);
+      await evaluate(`${sheetItem(word)}?.click()`);
+      await waitFor(`!${sheetItem(word)} && !!document.querySelector('.m-sheet')`, { what: `the ${s.sheet} sheet` });
+    } else if (s.sheet === "details") {
+      await tapCenter(".m-chipsd", "!!document.querySelector('.m-sheet')");
+    } else if (s.sheet === "project" || s.sheet === "newproject") {
+      await tapCenter(".m-pjb", "!!document.querySelector('.m-sheet .pli.new')");
+      if (s.sheet === "newproject") await tapCenter(".m-sheet .pli.new", "!!document.querySelector('.m-sheet .pform input')");
+    } else if (s.sheet === "folder") {
+      await tapCenter(".m-new .m-fchg", "!!document.querySelector('.fsheet .fsec.browse .fpr')");
+    } else if (s.sheet === "merge") {
+      await tapCenter(".prv-merge", "!!document.querySelector('.dlg .df .btn.p')");
+    } else if (s.sheet === "confirm") {
+      await evaluate(`[...document.querySelectorAll('.offb .btn')].find((b) => b.textContent.includes('Set the Norban token'))?.click()`);
+      await waitFor(`!!document.querySelector('.m-sheet.cfm')`, { what: "the confirmation sheet" });
+    } else if (s.sheet === "confirm-delete") {
+      await evaluate(`document.querySelector('.pdel .btn')?.scrollIntoView({ block: 'center' })`);
+      await tapCenter(".pdel .btn", "!!document.querySelector('.m-sheet.cfm')");
+    } else if (s.sheet === "actions") {
+      await tapCenter("#m-sec-needs .m-swp .m-mv", "!!document.querySelector('.m-sheet')", { long: true });
+    }
+    await settle();
+  }
+
+  return { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached: t.attached };
 }
 
-async function openScreen(s, w, h) {
-  await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: true });
-  await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
-  await send("Page.navigate", { url: `${origin}/${s.url}` });
-  await sleep(900);
-  await injectInsets();
-  if (s.storage) {
-    await evaluate(`(() => { const s = ${JSON.stringify(s.storage)}; for (const k in s) localStorage.setItem(k, s[k]); })()`);
-    await send("Page.navigate", { url: `${origin}/${s.url}` });
-    await sleep(900);
-  }
-  await frames();
-  if (s.files) {
-    writeFileSync(join(profile, "shot.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
-    writeFileSync(join(profile, "build-output-with-a-very-long-name-that-does-not-fit.log"), "log line\n".repeat(200));
-    await send("DOM.enable");
-    const doc = await send("DOM.getDocument", {});
-    const q = await send("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: s.files });
-    await send("DOM.setFileInputFiles", { nodeId: q.result.nodeId, files: [join(profile, "shot.png"), join(profile, "build-output-with-a-very-long-name-that-does-not-fit.log")] });
-    await sleep(900);
-  }
-  if (s.openTools) {
-    // V0.41: the run's steps are folded into one line first
-    await evaluate(`document.querySelector('.tl.fold')?.click()`);
-    await sleep(150);
-    await evaluate(`document.querySelector('.tl.grp')?.click()`);
-    await sleep(150);
-    await evaluate(`(() => { const rows = document.querySelectorAll('.tl.row'); rows[rows.length - 1]?.click(); })()`);
-    await sleep(200);
-    await evaluate(`document.querySelector('.tlout')?.scrollIntoView({ block: 'nearest' })`);
-  }
-  if (s.wholeBranch) {
-    // V0.65 opens on New since you looked when there is a look; this screen checks the whole branch (V0.66).
-    await evaluate(`[...document.querySelectorAll('.chg-mode')].find((b) => b.textContent.startsWith('Whole'))?.click()`);
-    await sleep(200);
-  }
-  if (s.openDiff) {
-    await sleep(300);
-    // The file with the longest path: its row must ellipsize, its long lines scroll inside the diff.
-    if (typeof s.openDiff === "string") await evaluate(`document.querySelector('.chg-file[title="${s.openDiff}"]')?.click()`);
-    else await evaluate(`[...document.querySelectorAll('.chg-file')].sort((a, b) => b.title.length - a.title.length)[0]?.click()`);
-    await sleep(400);
-  }
-  if (s.sheet === "snooze") {
-    await tapCenter(".m-tr1 .b44:last-child");
-    await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('Snooze'))?.click()`);
-    await sleep(300);
-  } else if (s.sheet === "handover") {
-    await tapCenter(".m-tr1 .b44:last-child");
-    await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('Hand over'))?.click()`);
-    await sleep(300);
-  } else if (s.sheet === "details") {
-    await tapCenter(".m-chipsd");
-    await sleep(300);
-  } else if (s.sheet === "project" || s.sheet === "newproject") {
-    await tapCenter(".m-pjb");
-    if (s.sheet === "newproject") await tapCenter(".m-sheet .pli.new");
-    await sleep(300);
-  } else if (s.sheet === "folder") {
-    await sleep(300);
-    await tapCenter(".m-new .m-fchg");
-    await sleep(400);
-  } else if (s.sheet === "merge") {
-    await sleep(300);
-    await tapCenter(".prv-merge");
-    await sleep(200);
-  } else if (s.sheet === "confirm") {
-    await sleep(300);
-    await evaluate(`[...document.querySelectorAll('.offb .btn')].find((b) => b.textContent.includes('Set the Norban token'))?.click()`);
-    await sleep(300);
-  } else if (s.sheet === "confirm-delete") {
-    await sleep(300);
-    await evaluate(`document.querySelector('.pdel .btn')?.scrollIntoView({ block: 'center' })`);
-    await tapCenter(".pdel .btn");
-    await sleep(200);
-  } else if (s.sheet === "actions") {
-    await tapCenter("#m-sec-needs .m-swp .m-mv", 600);
-  }
-  await frames();
-}
-
-for (const [w, h] of SIZES) {
+// The phone screens at one size.
+async function phonePass(t, w, h) {
+  const { send, evaluate, waitFor, frames, settle, openScreen, viewportApplied } = harness(t);
   for (const s of SCREENS) {
     const ctx = `${s.name} ${w}x${h}`;
     try {
@@ -568,17 +677,20 @@ for (const [w, h] of SIZES) {
       if (!s.sheet || s.field) {
         if (s.openOther) {
           await evaluate(`[...document.querySelectorAll('.m-op')].find(b => b.textContent.startsWith('Other'))?.click()`);
-          await sleep(200);
+          await waitFor(`!!document.querySelector('.m-otherf')`, { what: "the Other field" });
+          await settle();
         }
         const field = s.openOther ? ".m-otherf" : s.field;
         if (field) {
           await evaluate(`document.querySelector(${JSON.stringify(field)})?.focus()`);
           const kh = Math.round(h * 0.6);
           await evaluate(`window.__vv.h = ${kh}; window.__vv.top = ${Math.round(h * 0.15)}; visualViewport.dispatchEvent(new Event('resize')); visualViewport.dispatchEvent(new Event('scroll'))`);
-          await frames();
+          await waitFor(`${viewportApplied} && document.documentElement.classList.contains('kb-open')`, { soft: true });
+          await frames(); // the app scrolls the focused field into view on the next frame
           assertLayout(await evaluate(MEASURE), `${ctx} keyboard`, { keyboard: true });
           await evaluate(`document.activeElement?.blur(); window.__vv.h = null; window.__vv.top = 0; visualViewport.dispatchEvent(new Event('resize'))`);
-          await frames();
+          await waitFor(`${viewportApplied} && !document.documentElement.classList.contains('kb-open')`, { soft: true });
+          await settle();
         }
       }
 
@@ -587,9 +699,11 @@ for (const [w, h] of SIZES) {
       for (const rh of [Math.round(h * 0.85), h]) {
         await evaluate(`window.__setHidden(true)`);
         await send("Emulation.setDeviceMetricsOverride", { width: w, height: rh, deviceScaleFactor: 1, mobile: true });
-        await sleep(100);
+        await waitFor(`innerHeight === ${rh}`, { what: `the window to be ${rh} px tall` });
         await evaluate(`window.__setHidden(false); window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))`);
-        await frames();
+        await frames(); // the app re-reads the size on the next frames after a resume
+        await waitFor(viewportApplied, { soft: true });
+        await settle();
         assertLayout(await evaluate(MEASURE), `${ctx} after resume at ${w}x${rh}`);
       }
     } catch (e) {
@@ -598,18 +712,28 @@ for (const [w, h] of SIZES) {
   }
 }
 
+console.log(`insets: Emulation.setSafeAreaInsetsOverride (top ${INSETS.top}, bottom ${INSETS.bottom}); keyboard and resume: scripted visualViewport`);
+// The three sizes run at the same time, each in its own tab; the desktop and timing checks below run after
+// them in the last tab, alone, so the CPU they measure is not shared with the phone passes.
+const started = Date.now();
+const tabs = await Promise.all(SIZES.map(() => newTab()));
+await Promise.all(SIZES.map(([w, h], i) => phonePass(tabs[i], w, h)));
+const phoneDone = Date.now();
+const { send, evaluate, poll, waitIn, waitFor, settle, navigate, tapCenter, key, openScreen, attached } = harness(tabs[tabs.length - 1]);
+for (const t of tabs.slice(0, -1)) await sendRaw("Target.closeTarget", { targetId: t.targetId });
+
 // U8: settle the open thread from its ⋯ menu at 390 × 844; the inbox shows with the Undo toast.
 try {
   await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
-  await tapCenter(".m-tr1 .b44:last-child");
+  await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
   await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('Settle'))?.click()`);
-  await sleep(1200);
+  await waitFor(`!!document.querySelector('.m-strip') && /Undo/.test(document.querySelector('.m-toast')?.textContent ?? '')`, { soft: true });
   const r = await evaluate(`({ inbox: !!document.querySelector('.m-strip'), toast: document.querySelector('.m-toast')?.textContent ?? '', url: location.search })`);
   check(r.inbox, `U8 settle from the thread: the inbox does not show (${r.url})`);
   check(/Settled/.test(r.toast) && /Undo/.test(r.toast), `U8 settle from the thread: no Undo toast on the inbox ("${r.toast}")`);
   // Undo reopens the thread.
   await evaluate(`document.querySelector('.m-toast .tb')?.click()`);
-  await sleep(900);
+  await waitFor(`!!document.querySelector('.m-tth') && /open=t_triage/.test(location.search)`, { soft: true });
   const u = await evaluate(`({ thread: !!document.querySelector('.m-tth'), url: location.search })`);
   check(u.thread && /open=t_triage/.test(u.url), `U8 Undo does not reopen the thread (${u.url})`);
 } catch (e) {
@@ -621,12 +745,12 @@ try {
   const typeIn = (v) => evaluate(`(() => { const el = document.querySelector('.m-cmp .in'); el.value = ${JSON.stringify(v)}; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
   await typeIn("half a sentence");
-  await sleep(150);
+  await waitFor(`localStorage.getItem('fyr.draft.t_triage') === 'half a sentence'`, { soft: true });
   await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
   const v = await evaluate(`document.querySelector('.m-cmp .in')?.value ?? ''`);
   check(v === "half a sentence", `V0.29 draft: lost after a reload ("${v}")`);
   await typeIn("");
-  await sleep(150);
+  await waitFor(`localStorage.getItem('fyr.draft.t_triage') === null`, { soft: true });
 } catch (e) {
   failures.push(`V0.29 draft: ${e.message}`);
 }
@@ -635,7 +759,7 @@ try {
 // Waiting and a Cancel that fits the screen; Cancel strikes it through with Send again.
 try {
   await openScreen({ url: "?mock=rail&open=t_mapperf" }, 390, 844);
-  await sleep(300);
+  await waitFor(`!!document.querySelector('.m-app .youw.pend .dlb') && !!document.querySelector('.m-app .here')`, { soft: true });
   const r = await evaluate(`(() => {
     const here = document.querySelector('.m-app .here');
     const pend = [...document.querySelectorAll('.m-app .youw.pend')];
@@ -653,8 +777,7 @@ try {
   check(Number(r.opacity) < 1, `V0.33 phone: the pending message is not dimmed (opacity ${r.opacity})`);
   check(!!r.box && r.box.left >= 0 && r.box.right <= r.vw + 0.5 && r.box.bottom <= r.cmp + 0.5 && r.box.h >= 36, `V0.33 phone: Cancel is out of reach ${JSON.stringify(r.box)} (composer at ${r.cmp})`);
   check(r.read.length === 1 && r.read[0] === "Read", `V0.33 phone: only the last read message says Read (${JSON.stringify(r.read)})`);
-  await tapCenter(".m-app .youw.pend .dlb");
-  await sleep(300);
+  await tapCenter(".m-app .youw.pend .dlb", "!!document.querySelector('.m-app .youw.gone')");
   const c = await evaluate(`(() => { const g = document.querySelector('.m-app .youw.gone'); return { pend: document.querySelectorAll('.m-app .youw.pend').length, here: !!document.querySelector('.m-app .here'), word: g?.querySelector('.dl span')?.textContent ?? '', again: g?.querySelector('.dlb')?.textContent ?? '', strike: g ? getComputedStyle(g.querySelector('.you')).textDecorationLine : '' }; })()`);
   check(c.pend === 0 && !c.here, `V0.33 phone: after Cancel the message still waits (${JSON.stringify(c)})`);
   check(c.word === "Cancelled" && c.again === "Send again" && /line-through/.test(c.strike), `V0.33 phone: a cancelled message is not struck through with Send again (${JSON.stringify(c)})`);
@@ -666,7 +789,7 @@ try {
 // rest of the conversation stay. (Found live: one bad field blanked the whole client.)
 try {
   await openScreen({ url: "?mock=rail&open=t_mapperf&crash=1" }, 390, 844);
-  await sleep(300);
+  await waitFor(`!!document.querySelector('.crash')`, { soft: true });
   const r = await evaluate(`({ card: document.querySelector('.crash')?.textContent ?? '', header: !!document.querySelector('.m-tth'), composer: !!document.querySelector('.m-cmp'), body: document.body.innerText.length })`);
   check(/could not be shown/.test(r.card), `V0.24 crash card: no error card ("${r.card}")`);
   check(r.header && r.composer, `V0.24 crash card: the thread did not stay (header ${r.header}, composer ${r.composer})`);
@@ -677,35 +800,27 @@ try {
 
 // SPEC 0.5 V0.26: on the desktop, a long tool group shows the last 3 calls behind "+N more tools",
 // and the thread ⋯ menu moves the thread to a project from the keyboard.
-const key = async (k, code = k) => {
-  const vk = { Enter: 13, Escape: 27, ArrowDown: 40, ArrowUp: 38, Tab: 9 }[k] ?? 0;
-  await send("Input.dispatchKeyEvent", k === "Enter" ? { type: "keyDown", key: k, code, text: "\r", windowsVirtualKeyCode: vk } : { type: "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk });
-  await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code });
-  await sleep(150);
-};
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_mapperf` });
-  await sleep(900);
+  await navigate(`${origin}/?mock=rail&open=t_mapperf`, "!!document.querySelector('.th .tl.fold')");
   // V0.41: the finished run is one folded line; its steps show after one tap
   const f = await evaluate(`({ folds: document.querySelectorAll('.th .tl.fold').length, grp: document.querySelectorAll('.th .tl.grp').length, out: [...document.querySelectorAll('.th .cv.out .cl')].pop()?.textContent ?? '' })`);
   check(f.folds === 1 && f.grp === 1, `V0.41 desktop: expected one folded line and only the live step open (${JSON.stringify(f)})`);
   check(/run that test alone/.test(f.out), `V0.41 desktop: the live run's newest message is not an outcome ("${f.out}")`);
   await evaluate(`document.querySelector('.th .tl.fold')?.click()`);
-  await sleep(150);
+  await settle();
   await evaluate(`document.querySelector('.th .tl.grp')?.click()`);
-  await sleep(150);
+  await waitFor(`!!document.querySelector('.th .tl.more')`, { soft: true });
   const g = await evaluate(`({ more: document.querySelector('.th .tl.more')?.textContent ?? '', rows: document.querySelectorAll('.th .tl.row').length })`);
   check(/\+5 more tools/.test(g.more), `V0.26 desktop: no "+5 more tools" row in the 8-call group ("${g.more}")`);
   check(g.rows === 4, `V0.26 desktop: the opened group shows ${g.rows} rows, expected the more row and 3 calls`);
   await evaluate(`document.querySelector('.th .tl.more')?.click()`);
-  await sleep(150);
+  await waitFor(`!document.querySelector('.th .tl.more')`, { soft: true });
   const g2 = await evaluate(`({ more: !!document.querySelector('.th .tl.more'), rows: document.querySelectorAll('.th .tl.row').length })`);
   check(!g2.more && g2.rows === 8, `V0.26 desktop: "+N more tools" does not show every call (${g2.rows} rows)`);
 
-  await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_triage` });
-  await sleep(900);
+  await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.thh .tmenu-b')");
   await evaluate(`document.querySelector('.thh .tmenu-b')?.focus()`);
   await key("Enter");
   const m = await evaluate(`({ menu: !!document.querySelector('.thh [role=menu]'), focused: document.activeElement?.textContent ?? '' })`);
@@ -715,9 +830,9 @@ try {
   const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .plist'), focus: document.activeElement?.classList.contains('pq') })`);
   check(d.dlg && d.focus, "V0.26 desktop: Project… does not open the project picker with the search focused");
   await send("Input.insertText", { text: "hemmet" }); // V0.61: Enter picks a project by its exact name (any case)
-  await sleep(150);
+  await settle();
   await key("Enter");
-  await sleep(300);
+  await waitFor(`!document.querySelector('.dlg') && /Hemmet/.test(document.querySelector('.thh .chip.proj')?.textContent ?? '')`, { soft: true });
   const r = await evaluate(`({ dlg: !!document.querySelector('.dlg'), chip: document.querySelector('.thh .chip.proj')?.textContent ?? '' })`);
   check(!r.dlg && /Hemmet/.test(r.chip), `V0.26, V0.61 desktop: Enter on an exact project name does not move the thread there (chip "${r.chip}")`);
 } catch (e) {
@@ -729,49 +844,47 @@ try {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${origin}/?mock=rail` });
-  await sleep(600);
+  await navigate(`${origin}/?mock=rail`);
   await evaluate(`localStorage.setItem("fyr.lastProject", "p_web"); localStorage.setItem("fyr.projectFilter", ""); true`);
-  await send("Page.navigate", { url: `${origin}/?mock=rail&dialog=new` });
-  await sleep(900);
+  await navigate(`${origin}/?mock=rail&dialog=new`, "!!document.querySelector('.dlg .fline .ell')");
   const before = await evaluate(`document.querySelector('.dlg .fline .ell')?.textContent ?? ''`);
   check(before === "~/src/norban/web", `V0.42 desktop: a new thread in norban/web does not start in its folder ("${before}")`);
   await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change')?.focus()`);
   await key("Enter");
-  await sleep(300);
+  await waitFor(`!!document.querySelector('.fpick .fsec h4')`, { soft: true });
   const o = await evaluate(`({ picker: !!document.querySelector('.fpick'), focus: document.activeElement?.classList.contains('pq') && !!document.activeElement.closest('.fpick'), first: document.querySelector('.fpick .fsec h4')?.textContent ?? '' })`);
   check(o.picker && o.focus, `V0.42 desktop: Change does not open the folder picker with its field focused (${JSON.stringify(o)})`);
   check(o.first === "Recent", `V0.55 desktop: the picker offers a project folder that is already picked ("${o.first}")`);
   // norban and norban-platform-… share "norban": Tab completes to the common start; Enter opens the exact name.
   await send("Input.insertText", { text: "~/src/no" });
-  await sleep(400);
+  await settle();
   await key("Tab");
-  await sleep(300);
+  await waitFor(`document.querySelector('.fpick .pq')?.value === '~/src/norban'`, { soft: true });
   const v = await evaluate(`document.querySelector('.fpick .pq')?.value ?? ''`);
   check(v === "~/src/norban", `V0.42 desktop: Tab does not complete the common start ("${v}")`);
   await key("Enter");
-  await sleep(400);
+  await waitFor(`document.querySelector('.fpick .pq')?.value === '~/src/norban/'`, { soft: true });
+  await settle();
   const v2 = await evaluate(`document.querySelector('.fpick .pq')?.value ?? ''`);
   check(v2 === "~/src/norban/", `V0.42 desktop: Enter does not open the exact folder ("${v2}")`);
   await send("Input.insertText", { text: "o" });
-  await sleep(400);
+  await settle();
   await key("Tab");
-  await sleep(300);
+  await waitFor(`document.querySelector('.fpick .pq')?.value === '~/src/norban/ops/'`, { soft: true });
   const v3 = await evaluate(`document.querySelector('.fpick .pq')?.value ?? ''`);
   check(v3 === "~/src/norban/ops/", `V0.42 desktop: Tab does not complete the one match ("${v3}")`);
-  await sleep(300);
+  await settle();
   await key("Enter");
-  await sleep(400);
+  await waitFor(`!document.querySelector('.fpick')`, { soft: true });
   const r = await evaluate(`({ picker: !!document.querySelector('.fpick'), dlg: !!document.querySelector('.dlg'), folder: document.querySelector('.dlg .fline .ell')?.textContent ?? '' })`);
   check(!r.picker && r.dlg && r.folder === "~/src/norban/ops", `V0.42 desktop: Enter does not pick the typed folder (${JSON.stringify(r)})`);
   await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change')?.focus()`);
   await key("Enter");
-  await sleep(300);
+  await waitFor(`!!document.querySelector('.fpick .fpr')`, { soft: true });
   await key("ArrowDown");
   const row = await evaluate(`document.activeElement?.classList.contains('fpr') ?? false`);
   check(row, "V0.42 desktop: ArrowDown does not reach the first folder row");
   await key("Escape");
-  await sleep(200);
   const e2 = await evaluate(`({ picker: !!document.querySelector('.fpick'), dlg: !!document.querySelector('.dlg') })`);
   check(!e2.picker && e2.dlg, `V0.42 desktop: Esc does not close only the picker (${JSON.stringify(e2)})`);
   await key("Escape");
@@ -783,17 +896,16 @@ try {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_block&tab=pr` });
-  await sleep(1200);
+  await navigate(`${origin}/?mock=1&open=t_block&tab=pr`, "!!document.querySelector('.th .prv-ask')");
   const before = await evaluate(`({ ask: document.querySelector('.th .prv-ask')?.textContent ?? '', status: document.querySelector('.th .prv-st')?.textContent ?? '' })`);
   check(before.ask === "Ask the agent to fix this check", `V0.43 desktop: no "Ask the agent to fix this check" on the failed check ("${before.ask}")`);
   check(/^Blocked: /.test(before.status), `V0.43 desktop: status line "${before.status}"`);
   await evaluate(`document.querySelector('.th .prv-ask')?.click()`);
-  await sleep(500);
+  await waitFor(`/Sent to the agent/.test(document.querySelector('.th .prv-note')?.textContent ?? '')`, { soft: true });
   const note = await evaluate(`document.querySelector('.th .prv-note')?.textContent ?? ''`);
   check(/Sent to the agent: fix lint/.test(note), `V0.43 desktop: no confirmation after asking ("${note}")`);
   await evaluate(`[...document.querySelectorAll('.th .tabs [role=tab]')].find(e => e.textContent === 'Conversation')?.click()`);
-  await sleep(400);
+  await waitFor(`[...document.querySelectorAll('.th .you')].some(e => e.textContent.includes('The check lint failed'))`, { soft: true });
   const posted = await evaluate(`[...document.querySelectorAll('.th .you')].map(e => e.textContent).find(t => t.includes('The check lint failed')) ?? ''`);
   check(/The check lint failed: https:\/\/github\.com\/.*\. Find the cause and fix it\./.test(posted), `V0.43 desktop: the owner's message is not in the conversation ("${posted.slice(0, 120)}")`);
 } catch (e) {
@@ -803,18 +915,17 @@ try {
 // SPEC 0.5 V0.45: the thread ⋯ menu offers Hand over…; the dialog says how the context goes over, and a
 // confirmed handover leaves a divider that names both profiles.
 try {
-  await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_triage` });
-  await sleep(900);
+  await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.thh .tmenu-b')");
   await evaluate(`document.querySelector('.thh .tmenu-b')?.click()`);
-  await sleep(150);
+  await waitFor(`!!document.querySelector('.thh [role=menuitem]')`, { soft: true });
   const it = await evaluate(`[...document.querySelectorAll('.thh [role=menuitem]')].map(b => b.textContent)`);
   check(it.some((x) => /Hand over…/.test(x)), `V0.45 desktop: no Hand over… in the ⋯ menu (${JSON.stringify(it)})`);
   await evaluate(`[...document.querySelectorAll('.thh [role=menuitem]')].find(b => /Hand over/.test(b.textContent))?.click()`);
-  await sleep(400);
+  await waitFor(`!!document.querySelector('.dlg .ho-rung b') && !!document.querySelector('.dlg select')?.selectedOptions[0]`, { soft: true });
   const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .ho-rung'), rung: document.querySelector('.dlg .ho-rung b')?.textContent ?? '', to: document.querySelector('.dlg select')?.selectedOptions[0]?.textContent ?? '' })`);
   check(d.dlg && /Full history|reads the old conversation|writes a handover/.test(d.rung) && d.to !== "", `V0.45 desktop: the dialog does not show the target and the rung (${JSON.stringify(d)})`);
   await evaluate(`[...document.querySelectorAll('.dlg .df .btn')].find(b => b.textContent.trim() === 'Hand over')?.click()`);
-  await sleep(400);
+  await waitFor(`!document.querySelector('.dlg') && !!document.querySelector('.th .hodiv')`, { soft: true });
   const r = await evaluate(`({ dlg: !!document.querySelector('.dlg'), div: document.querySelector('.th .hodiv')?.textContent ?? '' })`);
   check(!r.dlg && r.div.startsWith("Handed over from ") && r.div.includes(` to ${d.to}`), `V0.45 desktop: no divider after the handover (${JSON.stringify(r)})`);
 } catch (e) {
@@ -823,15 +934,15 @@ try {
 
 // SPEC 0.5 V0.50: the gear at the bottom of the desktop rail opens Settings with the Providers section.
 try {
-  await send("Page.navigate", { url: `${origin}/?mock=rail` });
-  await sleep(900);
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .rgear')");
   const g = await evaluate(`(() => { const b = document.querySelector('.rail .rgear'); if (!b) return null; const r = b.getBoundingClientRect(), f = document.querySelector('.rail .foot').getBoundingClientRect(); b.click(); return { below: r.top > window.innerHeight / 2, aboveFoot: r.bottom <= f.top + 0.5 }; })()`);
   check(!!g && g.below && g.aboveFoot, `V0.50 desktop: no gear at the bottom of the rail (${JSON.stringify(g)})`);
-  await sleep(400);
+  await waitFor(`document.querySelectorAll('.dlg .prov:not(.found)').length === 3`, { soft: true });
+  await settle();
   const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', sections: [...document.querySelectorAll('.dlg .sets h3')].map(e => e.textContent), rows: document.querySelectorAll('.dlg .prov:not(.found)').length })`);
   check(d.title === "Settings" && d.sections.join("|") === "Providers|Projects|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
   await evaluate(`document.querySelector('.dlg .prov .provh')?.click()`);
-  await sleep(200);
+  await waitFor(`!!document.querySelector('.dlg .prov.open textarea')`, { soft: true });
   const o = await evaluate(`({ ta: !!document.querySelector('.dlg .prov.open textarea'), key: document.querySelector('.dlg .prov.open input[type=password]')?.value ?? null })`);
   check(o.ta && o.key === "", `V0.50 desktop: an opened provider has no models field or a key in the page (${JSON.stringify(o)})`);
 } catch (e) {
@@ -921,12 +1032,11 @@ try {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${origin}/?mock=rail` });
-  await sleep(900);
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('[data-id]')");
   const rightClick = async (x, y) => {
     await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "right", clickCount: 1 });
     await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "right", clickCount: 1 });
-    await sleep(200);
+    await settle();
   };
   const row = await evaluate(`(() => { const r = document.querySelector('[data-id]').getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; })()`);
   await rightClick(row.x, row.y);
@@ -948,12 +1058,11 @@ try {
 // thread, Enter opens the one step prefilled with the thread's folder, Enter makes the project and files the thread; p
 // and the arrows then unfile it with No project.
 try {
-  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_s4` });
-  await sleep(900);
+  await navigate(`${origin}/?mock=1&open=t_s4`, "!!document.querySelector('.thh .chip.pj')");
   check(!(await evaluate(`!!document.querySelector('.thh .chip.mkp')`)), "V0.55 desktop: the Make project chip still shows");
   await evaluate(`document.querySelector('.thh .chip.pj')?.focus()`);
   await key("Enter");
-  await sleep(200);
+  await waitFor(`!!document.querySelector('.dlg .plist')`, { soft: true });
   await key("ArrowDown");
   const a = await evaluate(`({ dlg: !!document.querySelector('.dlg .plist'), focused: document.activeElement?.classList.contains('new') ? document.activeElement.textContent : '' })`);
   check(a.dlg && /New project from this thread/.test(a.focused), `V0.30 desktop: the project chip does not open the picker with New project from this thread first ("${a.focused}")`);
@@ -961,19 +1070,20 @@ try {
   const b = await evaluate(`({ name: document.activeElement?.value ?? '', folder: document.querySelector('.dlg .pform .pfolder .ell')?.textContent ?? '', button: document.querySelector('.dlg .pform .btn.p')?.textContent ?? '' })`);
   check(b.name === "lasso-app" && b.folder === "~/src/lasso-app" && /Create and file this thread/.test(b.button), `V0.30 desktop: the step is not prefilled and focused (${JSON.stringify(b)})`);
   await key("Enter");
-  await sleep(400);
+  await waitFor(`!document.querySelector('.dlg') && /lasso-app/.test(document.querySelector('.thh .chip.proj')?.textContent ?? '')`, { soft: true });
   const c = await evaluate(`({ dlg: !!document.querySelector('.dlg'), chip: document.querySelector('.thh .chip.proj')?.textContent ?? '' })`);
   check(!c.dlg && /lasso-app/.test(c.chip), `V0.30 desktop: Enter does not make the project and file the thread (${JSON.stringify(c)})`);
   await evaluate(`document.activeElement?.blur()`);
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "p", code: "KeyP", text: "p", windowsVirtualKeyCode: 80 });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: "p", code: "KeyP" });
-  await sleep(200);
+  await waitFor(`!!document.querySelector('.dlg .plist')`, { soft: true });
+  await settle();
   await key("ArrowDown");
   await key("ArrowDown");
   const f = await evaluate(`document.activeElement?.textContent ?? ''`);
   check(/^No project/.test(f), `V0.30 desktop: the second row is not No project ("${f}")`);
   await key("Enter");
-  await sleep(400);
+  await waitFor(`!document.querySelector('.dlg') && document.querySelector('.thh .chip.pj')?.textContent === 'No project'`, { soft: true });
   const u = await evaluate(`({ dlg: !!document.querySelector('.dlg'), chip: document.querySelector('.thh .chip.pj')?.textContent ?? '' })`);
   check(!u.dlg && u.chip === "No project", `V0.30 desktop: No project does not unfile the thread (${JSON.stringify(u)})`);
 } catch (e) {
@@ -987,28 +1097,31 @@ try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   attached.length = 0;
-  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_view` });
-  await sleep(1500);
+  await navigate(`${origin}/?mock=1&open=t_view`, "!!document.querySelector('.th .lv-f')");
+  await waitFor(`(document.querySelector('.th .lv-f')?.getBoundingClientRect().height ?? 0) > 120`, { soft: true });
   const v = await evaluate(`(() => { const f = document.querySelector('.th .lv-f'); return f ? { h: f.getBoundingClientRect().height, stamp: document.querySelector('.th .lv-s')?.textContent ?? '' } : null; })()`);
   check(!!v && v.h > 120 && /updated 12 min ago/.test(v.stamp), `V0.37 desktop: the live view is missing, not sized by its page, or has no stamp (${JSON.stringify(v)})`);
-  const frame = attached.filter((a) => a.targetInfo.type === "iframe").pop();
+  const frame = await poll(() => attached.filter((a) => a.targetInfo.type === "iframe").pop(), { soft: true });
   check(!!frame, "V0.37 desktop: no frame target for the live view");
   if (frame) {
+    await waitIn(frame.sessionId, `!!document.querySelector('[data-send="Open the PR"]')`, { soft: true });
     const r = await send("Runtime.evaluate", { expression: `(() => { const b = document.querySelector('[data-send="Open the PR"]'); if (!b) return false; b.click(); return true; })()`, returnByValue: true }, frame.sessionId);
     check(r.result?.result?.value === true, `V0.37 desktop: no "Open the PR" button in the view (${JSON.stringify(r.result ?? r.error)})`);
-    await sleep(600);
-    // V0.37: the pressed button says what happened, inside the view.
-    const fb = await send("Runtime.evaluate", { expression: `document.querySelector('[data-send="Open the PR"]')?.getAttribute('data-fyr') ?? ''`, returnByValue: true }, frame.sessionId);
-    check(fb.result?.result?.value === "sent", `V0.37 desktop: the pressed button gives no Sent feedback (${JSON.stringify(fb.result?.result?.value)})`);
+    // V0.37: the pressed button says what happened, inside the view (for 1.8 s).
+    const fb = await waitIn(frame.sessionId, `document.querySelector('[data-send="Open the PR"]')?.getAttribute('data-fyr') === 'sent' ? 'sent' : ''`, { soft: true });
+    check(fb === "sent", `V0.37 desktop: the pressed button gives no Sent feedback (${JSON.stringify(fb)})`);
     // The message chip is in the Conversation tab; the thread opened on View.
     await evaluate(`[...document.querySelectorAll('.th [role=tab]')].find((x) => x.textContent.trim() === 'Conversation')?.click()`);
-    await sleep(300);
+    await waitFor(`[...document.querySelectorAll('.th .vchip')].some((c) => /Open the PR/.test(c.textContent))`, { soft: true });
     const chips = await evaluate(`[...document.querySelectorAll('.th .vchip')].map((c) => c.textContent)`);
     check(chips.some((c) => /Open the PR/.test(c)), `V0.37 desktop: the press did not post a message from the view (chips ${JSON.stringify(chips)})`);
   }
-  // A message from another window is ignored: the top page posts a press as if it were the view.
+  // A message from another window is ignored: the top page posts a press as if it were the view. Nothing
+  // changes when it is ignored, so this waits as long as a real press takes to show: the mock posts it after
+  // 20 ms, the press above showed its chip within a settle.
   await evaluate(`window.postMessage({ jsonrpc: "2.0", id: 1, method: "ui/message", params: { role: "user", content: [{ type: "text", text: "forged" }] } }, "*")`);
-  await sleep(400);
+  await sleep(400); // a fixed wait on purpose: nothing changes when the message is ignored, so it gives a wrongly accepted one time to show
+  await settle();
   const forged = await evaluate(`[...document.querySelectorAll('.th .vchip')].some((c) => /forged/.test(c.textContent))`);
   check(!forged, "V0.37 desktop: a message from outside the view's frame was sent");
   await send("Target.setAutoAttach", { autoAttach: false, waitForDebuggerOnStart: false, flatten: true });
@@ -1023,30 +1136,39 @@ try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   attached.length = 0;
-  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_w3` });
-  await sleep(1200);
+  await navigate(`${origin}/?mock=1&open=t_w3`, "!!document.querySelector('.th .pv.html')");
   await evaluate(`(() => { const f = [...document.querySelectorAll('.th .pv.html')].pop(); f?.scrollIntoView({ block: "end" }); return !!f; })()`);
-  await sleep(1500);
-  const cards = await evaluate(`[...document.querySelectorAll('.th .pv.html')].map((f) => { const i = f.querySelector('iframe'); return { t: f.querySelector('.pv-t')?.textContent ?? '', w: Math.round(i.getBoundingClientRect().width), h: Math.round(i.getBoundingClientRect().height), allow: i.getAttribute('allow') ?? '', fs: !!f.querySelector('.pv-fs') }; })`);
+  const CARDS = `[...document.querySelectorAll('.th .pv.html')].map((f) => { const i = f.querySelector('iframe'); return { t: f.querySelector('.pv-t')?.textContent ?? '', w: Math.round(i.getBoundingClientRect().width), h: Math.round(i.getBoundingClientRect().height), allow: i.getAttribute('allow') ?? '', fs: !!f.querySelector('.pv-fs') }; })`;
+  // The folder preview reports its height once its page has loaded.
+  await waitFor(`${CARDS}.some((c) => c.t === "Folder preview" && c.h === 300)`, { soft: true });
+  await settle();
+  const cards = await evaluate(CARDS);
   const glCard = cards.find((c) => c.t === "WebGL triangle");
   const siteCard = cards.find((c) => c.t === "Folder preview");
   check(!!glCard && Math.abs(glCard.h - Math.round((glCard.w * 10) / 16)) <= 1, `V0.47 desktop: the WebGL card is not 16:10 of its width (${JSON.stringify(glCard)})`);
   check(!!siteCard && siteCard.h === 300, `V0.47 desktop: the folder preview is not as tall as its page reported (${JSON.stringify(siteCard)})`);
   check(cards.every((c) => /fullscreen/.test(c.allow) && /xr-spatial-tracking/.test(c.allow) && c.fs), `V0.47 desktop: a frame lacks allow="fullscreen; xr-spatial-tracking" or the Full screen button (${JSON.stringify(cards)})`);
   // A frame target is attached before it navigates; its URL comes from the current target list.
-  const live = (await send("Target.getTargets")).result?.targetInfos ?? [];
+  let live = [];
   const urlOf = (a) => live.find((x) => x.targetId === a.targetInfo.targetId)?.url ?? a.targetInfo.url;
   const frameOf = (re) => attached.filter((a) => a.targetInfo.type === "iframe" && re.test(urlOf(a))).pop();
-  const inFrame = async (f, expr) => (await send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true }, f.sessionId)).result?.result?.value;
-  const gl = frameOf(/^data:text\/html.*webgl/);
-  const st = frameOf(/\/api\/previews\/pv_site\//);
+  const previewFrames = async () => {
+    live = (await send("Target.getTargets")).result?.targetInfos ?? [];
+    const gl = frameOf(/^data:text\/html.*webgl/), st = frameOf(/\/api\/previews\/pv_site\//);
+    return gl && st ? { gl, st } : null;
+  };
+  const found = (await poll(previewFrames, { soft: true })) ?? {};
+  const { gl, st } = found;
   check(!!gl && !!st, `V0.47 desktop: no frame target for the WebGL or the folder preview (${attached.map((a) => urlOf(a).slice(0, 40)).join(" | ")})`);
   if (gl) {
-    const v = await inFrame(gl, `document.body.dataset.gl ?? ''`);
+    const v = await waitIn(gl.sessionId, `document.body.dataset.gl ?? ''`, { soft: true });
     check(v === "ok", `V0.47 desktop: the WebGL triangle did not draw in the sandbox (${v})`);
   }
   if (st) {
-    const v = await inFrame(st, `new Promise((ok) => setTimeout(() => ok({ js: document.body.dataset.js, fetch: document.body.dataset.fetch, api: document.body.dataset.api, img: document.getElementById('dot')?.naturalWidth ?? 0, blocked: document.body.dataset.blocked ?? '', origin: String(self.origin) }), 300))`);
+    // The page sets each data attribute when its load or its blocked request has finished.
+    const SITE = `({ js: document.body.dataset.js, fetch: document.body.dataset.fetch, api: document.body.dataset.api, img: document.getElementById('dot')?.naturalWidth ?? 0, blocked: document.body.dataset.blocked ?? '', origin: String(self.origin) })`;
+    await waitIn(st.sessionId, `(() => { const v = ${SITE}; return v.js && v.fetch && v.api && v.img > 0 && v.blocked; })()`, { soft: true });
+    const v = await waitIn(st.sessionId, SITE);
     check(v?.js === "1" && v?.fetch === "ok" && v?.img > 0, `V0.47 desktop: the folder preview did not load its own files (${JSON.stringify(v)})`);
     check(v?.api === "closed" && /\/api\/state/.test(v?.blocked ?? "") && v?.origin === "null", `V0.47 desktop: the folder preview reached the host outside its folder or has an origin (${JSON.stringify(v)})`);
   }
@@ -1056,23 +1178,42 @@ try {
 }
 
 // V0.38: never block the main thread. While a burst of 300 thread updates and 300 messages streams in
-// (3 s), no task on the page's main thread takes over 50 ms, and the last message shows.
+// (3 s), no task on the page's main thread takes over 50 ms, and the last message shows. The long tasks are
+// observed inside the page from the burst's start until its last message has drawn, so the test's own
+// navigation and reads are not in the measurement.
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_mapperf` });
-  await sleep(1200);
+  await navigate(`${origin}/?mock=rail&open=t_mapperf`, "!!document.querySelector('.th .md') && typeof window.__fyrBurst === 'function'");
   // A mid-range phone's speed: 4 times slower than this machine's CPU.
   await send("Emulation.setCPUThrottlingRate", { rate: 4 });
-  await evaluate(`window.__long = []; new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push(Math.round(e.duration)); }).observe({ type: "longtask", buffered: false }); window.__fyrBurst("t_mapperf", 300); true`);
-  await sleep(7000);
+  const burst = await evaluate(`new Promise((done) => {
+    const long = [];
+    const po = new PerformanceObserver((l) => { for (const e of l.getEntries()) long.push(Math.round(e.duration)); });
+    po.observe({ type: "longtask", buffered: false });
+    window.__fyrBurst("t_mapperf", 300);
+    const t0 = performance.now();
+    const end = (shown) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
+      for (const e of po.takeRecords()) long.push(Math.round(e.duration));
+      po.disconnect();
+      done({ long, shown, ms: Math.round(performance.now() - t0) });
+    }, 0)));
+    const poll = () => {
+      const all = document.querySelectorAll('.th .md');
+      if (/Burst message 300/.test(all[all.length - 1]?.textContent ?? '')) end(true);
+      else if (performance.now() - t0 > 30000) end(false);
+      else setTimeout(poll, 100);
+    };
+    setTimeout(poll, 100);
+  })`);
   await send("Emulation.setCPUThrottlingRate", { rate: 1 });
-  const r = await evaluate(`({ long: window.__long, last: [...document.querySelectorAll('.th .md')].map((x) => x.textContent).filter((t) => /Burst message/.test(t)).pop() ?? '' })`);
-  const total = r.long.reduce((a, b) => a + b, 0);
+  const r = await evaluate(`({ last: [...document.querySelectorAll('.th .md')].map((x) => x.textContent).filter((t) => /Burst message/.test(t)).pop() ?? '' })`);
+  const total = burst.long.reduce((a, b) => a + b, 0);
   // Budget: no task over 100 ms, under 250 ms of long tasks in all (before V0.38: 10 tasks, 523 ms).
-  check(Math.max(0, ...r.long) <= 100 && total < 250, `V0.38 main thread: long tasks during the burst: ${r.long.length}, ${total} ms in all (${r.long.slice(0, 8).join(", ")} ms)`);
+  check(Math.max(0, ...burst.long) <= 100 && total < 250, `V0.38 main thread: long tasks during the burst (${burst.ms} ms): ${burst.long.length}, ${total} ms in all (${burst.long.slice(0, 8).join(", ")} ms)`);
   check(/Burst message 300/.test(r.last), `V0.38 main thread: the last burst message is not shown ("${r.last.slice(0, 60)}")`);
 } catch (e) {
+  await send("Emulation.setCPUThrottlingRate", { rate: 1 });
   failures.push(`V0.38 main thread: ${e.message}`);
 }
 
@@ -1080,15 +1221,13 @@ try {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 900, height: 800, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${origin}/?mock=rail&open=t_triage` });
-  await sleep(1200);
+  await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.th')");
   const a = await evaluate(`({ list: !!document.querySelector('.ib') && getComputedStyle(document.querySelector('.ib')).display !== 'none', th: Math.round(document.querySelector('.th')?.getBoundingClientRect().width ?? 0) })`);
   check(!a.list && a.th > 700, `V0.40 list: a narrow window does not start with the list hidden (list ${a.list}, thread ${a.th} px)`);
   await evaluate(`document.activeElement?.blur(); true`);
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "\\", code: "Backslash", text: "\\" });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: "\\", code: "Backslash" });
-  await sleep(300);
-  const b = await evaluate(`!!document.querySelector('.ib') && getComputedStyle(document.querySelector('.ib')).display !== 'none'`);
+  const b = await waitFor(`!!document.querySelector('.ib') && getComputedStyle(document.querySelector('.ib')).display !== 'none'`, { soft: true });
   check(b, "V0.40 list: the \\ key does not show the list");
   await evaluate(`try { localStorage.removeItem("fyr.list") } catch {} true`);
 } catch (e) {
@@ -1100,8 +1239,7 @@ try {
 try {
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
   await send("Emulation.setTouchEmulationEnabled", { enabled: true });
-  await send("Page.navigate", { url: `${origin}/?mock=rail` });
-  await sleep(1500);
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-app .m-mv')");
   const inVT = `(() => { try { return document.documentElement.matches(':active-view-transition'); } catch { return false; } })()`;
   const tapAndWait = async (sel, cond) => {
     const c = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
@@ -1113,7 +1251,7 @@ try {
     return Date.now() - t0;
   };
   const open = await tapAndWait(".m-app .m-mv", "!!document.querySelector('.m-tth')");
-  await sleep(300);
+  await settle();
   const back = await tapAndWait(".m-tth .b44", "!document.querySelector('.m-tth')");
   check(open >= 0 && open < 800, `V0.32 phone: opening a thread took ${open} ms`);
   check(back >= 0 && back < 800, `V0.32 phone: Back to the list took ${back} ms`);
@@ -1125,20 +1263,19 @@ try {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_lasso` });
-  await sleep(1200);
-  const btn = () => evaluate(`(() => { const b = document.querySelector('.th .ask .askf .btn'); return b ? { text: b.textContent.replace('↵', '').trim(), disabled: b.disabled } : null; })()`);
+  await navigate(`${origin}/?mock=1&open=t_lasso`, "!!document.querySelector('.th .ask .askf .btn')");
+  const BTN = `(() => { const b = document.querySelector('.th .ask .askf .btn'); return b ? { text: b.textContent.replace('↵', '').trim(), disabled: b.disabled } : null; })()`;
+  const btn = () => evaluate(BTN);
   const a = await btn();
   check(!!a && a.text === "Pick an answer" && a.disabled, `U15 desktop: the card does not start with a disabled "Pick an answer" (${JSON.stringify(a)})`);
   await evaluate(`document.querySelectorAll('.th .ask .grid4 .op')[0]?.click()`);
-  await sleep(200);
+  await settle();
   await evaluate(`document.querySelectorAll('.th .ask .grid4 .op')[0]?.click()`);
-  await sleep(200);
+  await waitFor(`/^Send 2 answers$/.test(${BTN}?.text ?? '')`, { soft: true });
   const b = await btn();
   check(!!b && /^Send 2 answers$/.test(b.text) && !b.disabled, `U15 desktop: after both answers the button is not "Send 2 answers" (${JSON.stringify(b)})`);
   await evaluate(`document.querySelector('.th .ask .askf .btn')?.click()`);
-  await sleep(600);
-  const gone = await evaluate(`!document.querySelector('.th .ask .askf')`);
+  const gone = await waitFor(`!document.querySelector('.th .ask .askf')`, { soft: true });
   check(gone, "U15 desktop: the card stays after Send");
 } catch (e) {
   failures.push(`U15 desktop: ${e.message}`);
@@ -1150,15 +1287,15 @@ try {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${origin}/?mock=rail` });
-  await sleep(1000);
+  await navigate(`${origin}/?mock=rail`, "[...document.querySelectorAll('.sec.tog')].some((x) => /Settled/.test(x.textContent))");
+  const SETTLED = `({ clock: !!document.querySelector('#sec-settled .ahc'), rows: document.querySelectorAll('#sec-settled [data-id]').length })`;
   await evaluate(`[...document.querySelectorAll('.sec.tog')].find((x) => /Settled/.test(x.textContent))?.click()`);
-  await sleep(300);
-  const a = await evaluate(`({ clock: !!document.querySelector('#sec-settled .ahc'), rows: document.querySelectorAll('#sec-settled [data-id]').length })`);
+  await waitFor(`${SETTLED}.clock && ${SETTLED}.rows > 0`, { soft: true });
+  const a = await evaluate(SETTLED);
   check(a.clock && a.rows > 0, `V0.48 settled: opened from its header without a clock (${JSON.stringify(a)})`);
   await evaluate(`[...document.querySelectorAll('.rail .ri')].find((x) => /Settled/.test(x.textContent))?.click()`);
-  await sleep(300);
-  const b = await evaluate(`({ clock: !!document.querySelector('#sec-settled .ahc'), rows: document.querySelectorAll('#sec-settled [data-id]').length })`);
+  await waitFor(`!${SETTLED}.clock && ${SETTLED}.rows > 0`, { soft: true });
+  const b = await evaluate(SETTLED);
   check(!b.clock && b.rows > 0, `V0.48 settled: chosen in the rail it still runs down (${JSON.stringify(b)})`);
 } catch (e) {
   failures.push(`V0.48 settled: ${e.message}`);
@@ -1169,27 +1306,29 @@ try {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_done` });
-  await sleep(1200);
+  await navigate(`${origin}/?mock=1&open=t_done`, "[...document.querySelectorAll('.th .offb .btn')].some((b) => b.textContent.includes('Set the Norban token'))");
   const press = () => evaluate(`[...document.querySelectorAll('.th .offb .btn')].find((b) => b.textContent.includes('Set the Norban token'))?.click()`);
   const dlg = () => evaluate(`(() => { const d = document.querySelector('.dlg.cfm'); if (!d) return null; const r = d.getBoundingClientRect(); const p = d.querySelector('.df .btn.p'); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, title: d.querySelector('.cfm-t')?.textContent ?? '', primary: p?.textContent.replace('⏎', '').trim(), focused: document.activeElement === p, hover: d.querySelector('.cfm-code')?.title ?? '', runs: document.querySelectorAll('.th .offrun').length }; })()`);
   const runs = () => evaluate(`[...document.querySelectorAll('.th .offrun')].map((r) => r.textContent).join('|')`);
+  const opened = `document.activeElement === document.querySelector('.dlg.cfm .df .btn.p')`;
   await press();
-  await sleep(200);
+  await waitFor(opened, { soft: true });
+  await settle();
   const a = await dlg();
   check(!!a && a.top >= 0 && a.bottom <= 800 && a.left >= 0 && a.right <= 1280, `V0.68 desktop: the dialog does not fit the window (${JSON.stringify(a)})`);
   check(!!a && a.title === "Set the Norban token" && a.primary === "Run" && a.focused, `V0.68 desktop: title, primary or focus wrong (${JSON.stringify(a)})`);
   check(!!a && a.hover.includes("/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-norban-claude-long-term-token/set-norban-token.sh"), `V0.68 desktop: no full command on hover ("${a?.hover}")`);
   if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "confirm-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
   await evaluate(`document.querySelector('.cfm-scrim')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
+  await settle();
   check(!!(await dlg()), "V0.68 desktop: a click outside closes the dialog");
   const before = await runs();
   await key("Escape");
   check(!(await dlg()) && (await runs()) === before, "V0.68 desktop: Escape does not close the dialog without a press");
   await press();
-  await sleep(200);
+  await waitFor(opened, { soft: true });
   await key("Enter");
-  await sleep(300);
+  await waitFor(`!document.querySelector('.dlg.cfm') && [...document.querySelectorAll('.th .offrun')].some((r) => /Set the Norban token/.test(r.textContent))`, { soft: true });
   const after = await runs();
   check(!(await dlg()) && /Set the Norban token/.test(after), `V0.68 desktop: Enter does not run the action (runs "${after}")`);
 } catch (e) {
@@ -1198,6 +1337,7 @@ try {
 
 clearTimeout(watchdog);
 cleanup();
+console.log(`time: phone screens ${((phoneDone - started) / 1000).toFixed(1)} s (${SIZES.length} sizes at once), desktop and timing checks ${((Date.now() - phoneDone) / 1000).toFixed(1)} s`);
 if (pageErrors.length) failures.push(...pageErrors.map((e) => `page error: ${e}`));
 if (failures.length) {
   console.error(`layout test: ${failures.length} of ${checks} checks failed`);
