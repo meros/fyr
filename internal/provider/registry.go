@@ -69,13 +69,6 @@ func (r *Registry) Load() error {
 	return nil
 }
 
-func (r *Registry) getenv(k string) string {
-	if r.Getenv != nil {
-		return r.Getenv(k)
-	}
-	return ""
-}
-
 // Empty reports whether no provider exists.
 func (r *Registry) Empty() bool { r.mu.Lock(); defer r.mu.Unlock(); return len(r.list) == 0 }
 
