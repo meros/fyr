@@ -613,12 +613,13 @@ func (s prSource) Snapshot() []github.PRThread {
 }
 
 func (s prSource) Observe(id string, pr core.PR) {
-	s.e.Observe(id, func(t *core.Thread, now time.Time) {
+	s.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
 		if t.PR != nil && t.PR.URL == pr.URL {
 			core.PRObserved(t, pr, now)
 		} else {
 			core.ChangePRObserved(t, pr, now) // V0.59: another PR of the thread
 		}
+		return nil
 	})
 }
 
@@ -638,7 +639,10 @@ func (s prSource) Deploys() []github.DeployThread {
 }
 
 func (s prSource) ObserveDeploy(id, change string, d core.DeployObs) {
-	s.e.Observe(id, func(t *core.Thread, now time.Time) { core.ChangeDeployObserved(t, change, d, now) })
+	s.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+		core.ChangeDeployObserved(t, change, d, now)
+		return nil
+	})
 }
 
 func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []string) (int, error) {

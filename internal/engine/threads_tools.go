@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,32 +10,35 @@ import (
 
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/store"
 )
 
-// hourly counts calls per thread in a sliding hour (V0.22 runaway limits).
-type hourly struct {
+// window allows max calls per key in a sliding span: the runaway limits of
+// agent tools (V0.22 threads, V0.19 screenshots).
+type window struct {
 	mu   sync.Mutex
 	hits map[string][]time.Time
 	max  int
+	span time.Duration
 }
 
-func (h *hourly) allow(key string, now time.Time) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.hits == nil {
-		h.hits = map[string][]time.Time{}
+func (w *window) allow(key string, now time.Time) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.hits == nil {
+		w.hits = map[string][]time.Time{}
 	}
-	keep := h.hits[key][:0]
-	for _, t := range h.hits[key] {
-		if now.Sub(t) < time.Hour {
+	keep := w.hits[key][:0]
+	for _, t := range w.hits[key] {
+		if now.Sub(t) < w.span {
 			keep = append(keep, t)
 		}
 	}
-	if len(keep) >= h.max {
-		h.hits[key] = keep
+	if len(keep) >= w.max {
+		w.hits[key] = keep
 		return false
 	}
-	h.hits[key] = append(keep, now)
+	w.hits[key] = append(keep, now)
 	return true
 }
 
@@ -54,7 +56,7 @@ func age(t time.Time) string {
 }
 
 // threadText renders a thread's last turns as plain text for thread_read.
-func threadText(evs []json.RawMessage, types []string) string {
+func threadText(evs []store.Event) string {
 	var b strings.Builder
 	tools := 0
 	flush := func() {
@@ -63,55 +65,26 @@ func threadText(evs []json.RawMessage, types []string) string {
 			tools = 0
 		}
 	}
-	for i, raw := range evs {
-		switch types[i] {
-		case "user":
-			var u struct {
-				Text string `json:"text"`
-				From string `json:"from"`
-			}
-			json.Unmarshal(raw, &u)
+	for _, t := range readTurns(evs) {
+		switch t.Kind {
+		case turnUser:
 			flush()
-			who := "User"
-			if u.From == "view" {
-				who = "User (live view)"
-			} else if u.From == "view-typed" {
-				who = "User (View tab)"
-			} else if u.From != "" {
-				who = "Thread " + u.From
-			}
-			fmt.Fprintf(&b, "%s: %s\n", who, strings.TrimSpace(u.Text))
-		case "msg":
-			var m struct {
-				Type   string `json:"type"`
-				Parent any    `json:"parent_tool_use_id"`
-				Msg    struct {
-					Content []map[string]any `json:"content"`
-				} `json:"message"`
-			}
-			json.Unmarshal(raw, &m)
-			if m.Type != "assistant" || m.Parent != nil {
-				continue
-			}
-			for _, c := range m.Msg.Content {
-				switch c["type"] {
-				case "text":
-					flush()
-					fmt.Fprintf(&b, "Agent: %s\n", strings.TrimSpace(fmt.Sprint(c["text"])))
-				case "tool_use":
+			fmt.Fprintf(&b, "%s: %s\n", speaker("User", t.From), strings.TrimSpace(t.Text))
+		case turnAgent:
+			for _, p := range t.Parts {
+				if p.Tool != "" {
 					tools++
+					continue
 				}
+				flush()
+				fmt.Fprintf(&b, "Agent: %s\n", strings.TrimSpace(p.Text))
 			}
-		case "run.ended":
+		case turnEnded:
 			flush()
 		}
 	}
 	flush()
-	s := b.String()
-	if len(s) > 8000 {
-		s = "…" + s[len(s)-7999:]
-	}
-	return s
+	return core.TruncTail(b.String(), 8000)
 }
 
 func (e *Engine) threadTools(s *mcp.Server) {
@@ -168,13 +141,8 @@ func (e *Engine) threadTools(s *mcp.Server) {
 			if err != nil {
 				return "", err
 			}
-			raws := make([]json.RawMessage, len(evs))
-			types := make([]string, len(evs))
-			for i, ev := range evs {
-				raws[i], types[i] = ev.Data, ev.Type
-			}
 			head := fmt.Sprintf("Thread %s · %s · %s\n", t.ID, t.Title, t.Cwd)
-			return head + threadText(raws, types), nil
+			return head + threadText(evs), nil
 		}})
 
 	s.Add(mcp.Tool{Name: "thread_send",

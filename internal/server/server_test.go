@@ -17,6 +17,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
@@ -645,8 +646,9 @@ func TestThreadPRDetail(t *testing.T) {
 	if code, m := get("/api/threads/" + id + "/pr"); code != 200 || m["error"] == nil {
 		t.Fatalf("no PR: %d %v", code, m)
 	}
-	e.Observe(id, func(th *core.Thread, now time.Time) {
+	e.Observe(id, func(th *core.Thread, now time.Time) []agent.Ev {
 		core.PRObserved(th, core.PR{URL: "https://github.com/a/b/pull/42", Repo: "a/b", Number: 42, State: "OPEN"}, now)
+		return nil
 	})
 	code, m := get("/api/threads/" + id + "/pr?fresh=1")
 	if code != 200 || m["number"] != float64(42) || m["error"] != nil {

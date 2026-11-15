@@ -353,12 +353,6 @@ func checkFolder(dir string) (string, error) {
 // projectCommand handles project.create and project.update (SPEC 0.5
 // V0.23, V0.55).
 func (e *Engine) projectCommand(c Cmd) Reply {
-	if prev, _ := e.st.Receipt(c.CommandID); prev != nil {
-		var r Reply
-		json.Unmarshal(prev, &r)
-		r.Status = 200
-		return r
-	}
 	if c.Action == "project.delete" {
 		return e.projectDelete(c)
 	}
@@ -369,6 +363,10 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		return bad(err.Error())
 	}
 	e.mu.Lock()
+	if r, done := e.replay(c.CommandID); done {
+		e.mu.Unlock()
+		return r
+	}
 	var p *core.Project
 	switch c.Action {
 	case "project.create":
@@ -502,11 +500,14 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 
 // projectDelete removes a project (SPEC 0.5 V0.58). Its threads lose it and
 // the filed-by-hand mark, then match again, so one inside another project's
-// folder lands there. The stream gets {id, deleted: true}. Called after the
-// receipt check.
+// folder lands there. The stream gets {id, deleted: true}.
 func (e *Engine) projectDelete(c Cmd) Reply {
 	id := c.Args.Str("id")
 	e.mu.Lock()
+	if r, done := e.replay(c.CommandID); done {
+		e.mu.Unlock()
+		return r
+	}
 	if e.projects[id] == nil {
 		e.mu.Unlock()
 		return Reply{Error: "no project " + id, Status: 404}

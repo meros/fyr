@@ -109,8 +109,9 @@ func create(t *testing.T, base, host, text string) string {
 }
 
 func ask(h *host, id, q string) {
-	h.eng.Observe(id, func(th *core.Thread, now time.Time) {
+	h.eng.Observe(id, func(th *core.Thread, now time.Time) []agent.Ev {
 		core.DecisionOpened(th, core.Decision{ID: "d1", Kind: "ask", CreatedAt: now, Questions: []core.Question{{Question: q}}})
+		return nil
 	})
 }
 
