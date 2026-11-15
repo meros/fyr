@@ -15,6 +15,7 @@ import {
   recordUndo,
   sections,
   snoozePresets,
+  stateForCache,
   undoCommands,
   undoKindOf,
   upsertThread,
@@ -199,4 +200,15 @@ test("a reconnect refetches each loaded timeline from where it was when the stre
   s = mergeEvents(s, "b", [ev(9, "b")]);
   s = setConn(s, "offline");
   assert.equal(resumeSeq(s, "b"), 7);
+});
+
+// review 2026-11-15: the device's copy of the state keeps the host list and the deploy, so an offline start has them.
+test("the stored state round-trips hosts and deploy", () => {
+  const live = applySnapshot(initialStore(), { ...snap([thread("a", "seen", "seen")]), host: "front", hosts: [{ name: "front", online: true }, { name: "nas", online: false }], deploy: { phase: "build" } }, Date.parse(at(0)));
+  const stored = stateForCache(live, at(1));
+  const offline = applySnapshot(initialStore(), stored, Date.parse(at(2)));
+  assert.deepEqual(offline.hosts.map((h) => h.name), ["front", "nas"]);
+  assert.equal(offline.deploy?.phase, "build");
+  assert.equal(offline.host, "front");
+  assert.deepEqual(Object.keys(offline.threads), ["a"]);
 });
