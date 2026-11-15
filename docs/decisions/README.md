@@ -25,3 +25,4 @@ The owner decisions D1–D5 from the design phase stay in `../SPEC.md` 0.3. Reco
 | [0017](0017-a-project-is-one-folder.md) | A project is one folder | accepted |
 | [0018](0018-changes-are-records.md) | Changes are records: one model for git and non-git changes, six agent tools, facts beat claims, git observed first | accepted |
 | [0019](0019-worktree-per-change.md) | A worktree per change: parallel changes get their own worktrees, stacked ones branch from the change they build on, multi-repo changes are a group | accepted |
+| [0020](0020-state-machine-and-agent-feed.md) | One state machine beside the agent: records, one reducer path, effects run by Fyr, Rules, and one feed of notices to the agent | proposed |
