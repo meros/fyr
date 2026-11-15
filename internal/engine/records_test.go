@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
 )
@@ -44,7 +45,7 @@ func (g *fakeGit) end(dir, branch string, gone, merged bool) {
 
 func threadIn(t *testing.T, e *Engine, cwd string) string {
 	t.Helper()
-	r := e.Command(Cmd{CommandID: NewID("c"), Action: "thread.create", Args: core.Args{"cwd": cwd, "text": "hi"}})
+	r := e.Command(api.Cmd{CommandID: NewID("c"), Action: "thread.create", Args: core.Args{"cwd": cwd, "text": "hi"}})
 	if !r.OK {
 		t.Fatalf("create: %+v", r)
 	}

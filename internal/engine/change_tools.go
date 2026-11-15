@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 )
@@ -52,10 +51,10 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			pr := sArg(a, "pr")
 			if pr != "" {
 				var ok bool
-				if pr, ok = agent.CanonicalPR(pr); !ok {
+				if pr, ok = core.CanonicalPR(pr); !ok {
 					return "", errors.New("pr must be a GitHub pull request URL")
 				}
-				_, prN, _ := agent.ParsePR(pr)
+				_, prN, _ := core.ParsePR(pr)
 				o.Evidence = append(o.Evidence, core.Evidence{Kind: "pr", URL: pr, Title: fmt.Sprintf("#%d", prN)})
 			}
 			r, err := e.changeInput(th, core.KindChangeOpen, core.ChangeOpenArgs{Open: o, PR: pr})

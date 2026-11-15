@@ -7,10 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"testing/fstest"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/store"
 )
@@ -23,8 +22,8 @@ func TestQuotaEndpointAndProfileKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	s := &Server{Engine: engine.New(st), Web: fstest.MapFS{"index.html": {Data: []byte("x")}},
-		Profiles: []agent.Profile{{ID: "ds", Name: "DeepSeek", Quota: &quota.Spec{Kind: "deepseek", KeyFile: "/run/secrets/deepseek", KeyEnv: "SECRET_VAR"}}},
+	s := &Server{Engine: engine.New(st),
+		Profiles: []provider.Profile{{ID: "ds", Name: "DeepSeek", Quota: &quota.Spec{Kind: "deepseek", KeyFile: "/run/secrets/deepseek", KeyEnv: "SECRET_VAR"}}},
 		Quota: func(context.Context) any {
 			return []quota.Status{{Profile: "ds", Kind: "deepseek", Error: "No API key: set keyFile or keyEnv"}}
 		}}

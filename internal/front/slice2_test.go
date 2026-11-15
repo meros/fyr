@@ -13,11 +13,11 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
@@ -60,7 +60,7 @@ func fullHost(t *testing.T, name, profile string) *host {
 	h := &host{eng: engine.New(st)}
 	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name,
 		Attach:   &attach.Store{Dir: t.TempDir()},
-		Profiles: []agent.Profile{{ID: profile, Name: profile, Binary: "claude"}}}
+		Profiles: []provider.Profile{{ID: profile, Name: profile, Binary: "claude"}}}
 	inner := s.Handler()
 	h.hs = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h.down.Load() {
@@ -110,7 +110,7 @@ func create(t *testing.T, base, host, text string) string {
 }
 
 func ask(h *host, id, q string) {
-	coretest.Patch(h.eng, id, func(th *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.eng, id, func(th *core.Thread, now time.Time) []core.Event {
 		core.DecisionOpened(th, core.Decision{ID: "d1", Kind: "ask", CreatedAt: now, Questions: []core.Question{{Question: q}}})
 		return nil
 	})

@@ -10,21 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/store"
+	"github.com/meros/fyr/internal/stream"
 )
-
-// ProjectDTO is a project as clients see it (SPEC 0.5 V0.23).
-type ProjectDTO struct {
-	core.Project
-	// Rev is when this copy was built (#42): a client keeps the higher of a
-	// snapshot's copy and a stream frame's.
-	Rev      int64     `json:"rev"`
-	Threads  int       `json:"threads"`
-	LastUsed time.Time `json:"lastUsed"`
-	// QuietUntil is the end of the quiet hours the project is in (V0.46).
-	QuietUntil *time.Time `json:"quietUntil,omitempty"`
-}
 
 // quietUntil is the end of the quiet hours project id is in at now, in the
 // host's time zone, or nil (SPEC 0.5 V0.46). Call with e.mu held.
@@ -187,16 +178,9 @@ func (e *Engine) projectName(t *core.Thread) string {
 	return ""
 }
 
-// NewProject is what "New project from this thread" starts with (SPEC 0.5
-// V0.30, V0.55): the thread's folder and its name.
-type NewProject struct {
-	Name   string `json:"name"`
-	Folder string `json:"folder"`
-}
-
 // draft is the thread's NewProject, or nil for a scratch folder, the home
 // folder, / and a folder that a project already has. Call with e.mu held.
-func (e *Engine) draft(t *core.Thread) *NewProject {
+func (e *Engine) draft(t *core.Thread) *api.NewProject {
 	if t.Cwd == "" {
 		return nil
 	}
@@ -214,7 +198,7 @@ func (e *Engine) draft(t *core.Thread) *NewProject {
 			return nil
 		}
 	}
-	return &NewProject{Name: filepath.Base(dir), Folder: dir}
+	return &api.NewProject{Name: filepath.Base(dir), Folder: dir}
 }
 
 // migrateFolders gives every project stored with sources (before V0.55) one
@@ -310,7 +294,7 @@ func (e *Engine) migrateAuto() error {
 
 // Projects lists projects with their thread counts, all stamped with one new
 // rev (built under e.mu, so a later copy is never older).
-func (e *Engine) Projects() []ProjectDTO {
+func (e *Engine) Projects() []api.Project {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	counts := map[string]int{}
@@ -323,11 +307,11 @@ func (e *Engine) Projects() []ProjectDTO {
 			last[t.ProjectID] = t.UpdatedAt
 		}
 	}
-	out := make([]ProjectDTO, 0, len(e.projects))
+	out := make([]api.Project, 0, len(e.projects))
 	now := e.Now()
 	rev := e.nextRev()
 	for _, p := range e.projects {
-		out = append(out, ProjectDTO{Project: *p, Rev: rev, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now)})
+		out = append(out, api.Project{Project: *p, Rev: rev, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now)})
 	}
 	return out
 }
@@ -340,11 +324,7 @@ func checkFolder(dir string) (string, error) {
 	if p == "" {
 		return "", nil
 	}
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			p = home + p[1:]
-		}
-	}
+	p = hostfs.ExpandHome(p, "")
 	if !filepath.IsAbs(p) {
 		return "", fmt.Errorf("the folder must be a full path, like /home/you/src/app")
 	}
@@ -357,11 +337,11 @@ func checkFolder(dir string) (string, error) {
 
 // projectCommand handles project.create and project.update (SPEC 0.5
 // V0.23, V0.55).
-func (e *Engine) projectCommand(c Cmd) Reply {
+func (e *Engine) projectCommand(c api.Cmd) api.Reply {
 	if c.Action == "project.delete" {
 		return e.projectDelete(c)
 	}
-	bad := func(msg string) Reply { return Reply{Error: msg, Status: 400} }
+	bad := func(msg string) api.Reply { return api.Reply{Error: msg, Status: 400} }
 	_, folderSet := c.Args["folder"]
 	folder, err := checkFolder(c.Args.Str("folder"))
 	if err != nil {
@@ -392,7 +372,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 			t := e.threads[tid]
 			if t == nil {
 				e.mu.Unlock()
-				return Reply{Error: "no thread " + tid, Status: 404}
+				return api.Reply{Error: "no thread " + tid, Status: 404}
 			}
 			t.ProjectID, t.ProjectManual = p.ID, true
 		}
@@ -401,7 +381,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		cur := e.projects[c.Args.Str("id")]
 		if cur == nil {
 			e.mu.Unlock()
-			return Reply{Error: "no project " + c.Args.Str("id"), Status: 404}
+			return api.Reply{Error: "no project " + c.Args.Str("id"), Status: 404}
 		}
 		cp := *cur
 		p = &cp
@@ -463,7 +443,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		return bad("unknown action " + c.Action)
 	}
 	// The name and the quiet hours show on threads: refresh them.
-	var touched []DTO
+	var touched []api.Thread
 	now := e.Now()
 	_, quietChanged := c.Args["quiet"]
 	quietChanged = quietChanged && c.Action == "project.update"
@@ -476,7 +456,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 			touched = append(touched, e.dto(t, now))
 		}
 	}
-	reply := Reply{OK: true, Status: 200, Result: map[string]any{"id": p.ID}}
+	reply := api.Reply{OK: true, Status: 200, Result: map[string]any{"id": p.ID}}
 	_, err = e.st.Write(func(tx *store.Tx) error {
 		if err := tx.PutProject(p); err != nil {
 			return err
@@ -490,15 +470,15 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 	})
 	e.mu.Unlock()
 	if err != nil {
-		return Reply{Error: err.Error(), Status: 500}
+		return api.Reply{Error: err.Error(), Status: 500}
 	}
 	for _, d := range e.Projects() {
 		if d.ID == p.ID {
-			e.Hub.Project(d)
+			e.Hub.Send(stream.FrameProject, d)
 		}
 	}
 	for _, d := range touched {
-		e.Hub.Thread(d)
+		e.Hub.Send(stream.FrameThread, d)
 	}
 	if c.Action == "project.create" || folderSet {
 		e.Rematch() // V0.55: the folders changed; threads may land here now
@@ -509,7 +489,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 // projectDelete removes a project (SPEC 0.5 V0.58). Its threads lose it and
 // the filed-by-hand mark, then match again, so one inside another project's
 // folder lands there. The stream gets {id, deleted: true}.
-func (e *Engine) projectDelete(c Cmd) Reply {
+func (e *Engine) projectDelete(c api.Cmd) api.Reply {
 	id := c.Args.Str("id")
 	e.mu.Lock()
 	if r, done := e.replay(c.CommandID); done {
@@ -518,7 +498,7 @@ func (e *Engine) projectDelete(c Cmd) Reply {
 	}
 	if e.projects[id] == nil {
 		e.mu.Unlock()
-		return Reply{Error: "no project " + id, Status: 404}
+		return api.Reply{Error: "no project " + id, Status: 404}
 	}
 	delete(e.projects, id)
 	delete(e.quietSent, id)
@@ -537,11 +517,11 @@ func (e *Engine) projectDelete(c Cmd) Reply {
 		e.bump(t.ID)
 		moved = append(moved, t)
 	}
-	dtos := make([]DTO, 0, len(moved))
+	dtos := make([]api.Thread, 0, len(moved))
 	for _, t := range moved {
 		dtos = append(dtos, e.dto(t, now))
 	}
-	reply := Reply{OK: true, Status: 200, Result: map[string]any{"id": id}}
+	reply := api.Reply{OK: true, Status: 200, Result: map[string]any{"id": id}}
 	_, err := e.st.Write(func(tx *store.Tx) error {
 		if err := tx.DeleteProject(id); err != nil {
 			return err
@@ -555,16 +535,16 @@ func (e *Engine) projectDelete(c Cmd) Reply {
 	})
 	e.mu.Unlock()
 	if err != nil {
-		return Reply{Error: err.Error(), Status: 500}
+		return api.Reply{Error: err.Error(), Status: 500}
 	}
-	e.Hub.ProjectDeleted(id)
+	e.Hub.Send(stream.FrameProject, map[string]any{"id": id, "deleted": true}) // SPEC 0.5 V0.58
 	for _, d := range dtos {
-		e.Hub.Thread(d)
+		e.Hub.Send(stream.FrameThread, d)
 	}
 	// The projects that took threads have new counts.
 	for _, d := range e.Projects() {
 		if gained[d.ID] {
-			e.Hub.Project(d)
+			e.Hub.Send(stream.FrameProject, d)
 		}
 	}
 	return reply
@@ -597,7 +577,7 @@ func (e *Engine) Rematch() {
 			moved = append(moved, t)
 		}
 	}
-	var dtos []DTO
+	var dtos []api.Thread
 	for _, t := range moved {
 		dtos = append(dtos, e.dto(t, now))
 	}
@@ -611,6 +591,6 @@ func (e *Engine) Rematch() {
 		return nil
 	})
 	for _, d := range dtos {
-		e.Hub.Thread(d)
+		e.Hub.Send(stream.FrameThread, d)
 	}
 }

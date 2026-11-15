@@ -27,9 +27,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/api"
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/server"
+	"github.com/meros/fyr/internal/stream"
 )
 
 // HostConfig is one host in a front's list.
@@ -54,7 +56,7 @@ type Options struct {
 	Logf   func(format string, args ...any)
 	// Push sends this front's notifications to its devices (V0.54); nil
 	// sends none.
-	Push server.Pusher
+	Push Pusher
 	// NotifyDelay is how long done and blocked wait before they push;
 	// default notify.Delay.
 	NotifyDelay time.Duration
@@ -69,7 +71,7 @@ type Options struct {
 type Front struct {
 	opt   Options
 	links []*link
-	hub   *engine.Hub
+	hub   *stream.Hub
 
 	mu       sync.Mutex // guards the caches of every link and objs
 	presence *notify.Presence
@@ -114,7 +116,7 @@ func New(opt Options, hosts []HostConfig) *Front {
 	if opt.NotifyDelay <= 0 {
 		opt.NotifyDelay = notify.Delay
 	}
-	f := &Front{opt: opt, hub: engine.NewHub(), presence: &notify.Presence{}, objs: map[string]*link{}}
+	f := &Front{opt: opt, hub: stream.NewHub(), presence: &notify.Presence{}, objs: map[string]*link{}}
 	for _, h := range hosts {
 		u, err := url.Parse(strings.TrimRight(h.URL, "/"))
 		if err != nil || u.Host == "" {
@@ -135,7 +137,7 @@ func New(opt Options, hosts []HostConfig) *Front {
 			Transport:     opt.Client.Transport,
 			FlushInterval: -1,
 			ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-				writeJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})
+				api.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})
 			},
 		}
 		f.links = append(f.links, l)
@@ -417,7 +419,7 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 		patch, _ := p["patch"].(map[string]any)
 		var m map[string]any
 		if c := conn[id]; c != nil && revOf(c) == b && patch != nil {
-			m = engine.ApplyMergePatch(c, patch)
+			m = stream.ApplyMergePatch(c, patch)
 		} else if err := f.get(ctx, l, "/api/threads/"+url.PathEscape(id), &m); err != nil {
 			return
 		}
@@ -571,7 +573,7 @@ func (f *Front) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
 		ch := f.hub.Subscribe()
 		defer f.hub.Unsubscribe(ch)
-		server.ServeStream(w, r, ch, f.opt.BuildID)
+		stream.Serve(w, r, ch, f.opt.BuildID)
 	})
 	mux.HandleFunc("GET /api/threads/{id}", f.thread)
 	mux.HandleFunc("/api/threads/{id}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
@@ -579,9 +581,9 @@ func (f *Front) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /api/command", f.command)
 	// V0.54: device data lives on the front: presence and push.
-	server.PresenceRoute(mux, f.presence)
+	presenceRoute(mux, f.presence)
 	if f.opt.Push != nil {
-		server.PushRoutes(mux, f.opt.Push)
+		pushRoutes(mux, f.opt.Push)
 	}
 	mux.HandleFunc("POST /api/attachments", f.upload)
 	mux.HandleFunc("GET /api/attachments/{id}", f.lookup)
@@ -594,15 +596,9 @@ func (f *Front) Handler() http.Handler {
 	})
 	mux.HandleFunc("/mcp", http.NotFound) // agents talk to their host
 	if f.opt.Web != nil {
-		mux.Handle("/", server.WebClient(f.opt.Web))
+		mux.Handle("/", webClient(f.opt.Web))
 	}
 	return server.Browser(f.opt.OwnerLogin, mux)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
 }
 
 // byName is the host with that name, else the first host.
@@ -651,7 +647,7 @@ func (f *Front) projectOwner(id string) *link {
 // unavailable answers for a host that cannot take the call now.
 func (f *Front) unavailable(w http.ResponseWriter, l *link) bool {
 	if l == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "this front has no hosts"})
+		api.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "this front has no hosts"})
 		return true
 	}
 	f.mu.Lock()
@@ -660,7 +656,7 @@ func (f *Front) unavailable(w http.ResponseWriter, l *link) bool {
 	if on {
 		return false
 	}
-	writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false,
+	api.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false,
 		"error": fmt.Sprintf("%s is offline since %s; its threads are read-only", name, since.Local().Format("15:04"))})
 	return true
 }
@@ -681,62 +677,66 @@ func (f *Front) forward(w http.ResponseWriter, r *http.Request, l *link) {
 func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	f.mu.Lock()
-	threads := []map[string]any{}
-	projects := []map[string]any{}
-	hosts := []map[string]any{}
-	profiles := []any{}
+	st := api.State[map[string]any, map[string]any, any]{Now: time.Now().UTC(), User: core.Owner, BuildID: f.opt.BuildID, Host: f.opt.Name,
+		Threads: []map[string]any{}, Projects: []map[string]any{}, Profiles: []any{}, Hosts: []api.Host{}, Partial: since > 0}
 	seenProfile := map[any]bool{}
-	var actions, deploy any
+	var actions any
 	for _, l := range f.links {
 		for _, d := range l.pub {
 			if since <= 0 || revOf(d) > since {
-				threads = append(threads, d)
+				st.Threads = append(st.Threads, d)
 			}
 		}
-		projects = append(projects, l.projects...)
-		h := map[string]any{"name": l.name(), "online": l.online}
+		st.Projects = append(st.Projects, l.projects...)
+		h := api.Host{Name: l.name(), Online: l.online}
 		if !l.since.IsZero() {
-			h["since"] = l.since.UTC().Format(time.RFC3339)
+			h.Since = l.since.UTC().Format(time.RFC3339)
 		}
 		if !l.online && l.err != "" {
-			h["error"] = l.err
+			h.Error = l.err
 		}
 		if ps, ok := l.env["profiles"].([]any); ok {
-			h["profiles"] = ps
+			h.Profiles = ps
 			for _, p := range ps {
 				pm, _ := p.(map[string]any)
 				if pm == nil || seenProfile[pm["id"]] {
 					continue
 				}
 				seenProfile[pm["id"]] = true
-				profiles = append(profiles, p)
+				st.Profiles = append(st.Profiles, p)
 			}
 		}
 		if d := l.env["deploy"]; d != nil {
-			h["deploy"] = d
+			h.Deploy = d
 			if f.isLocal(l) {
-				deploy = d
+				st.Deploy = d
 			}
 		}
 		if actions == nil && l.env["actions"] != nil {
 			actions = l.env["actions"]
 		}
-		hosts = append(hosts, h)
+		st.Hosts = append(st.Hosts, h)
 	}
-	if actions == nil {
-		actions = []any{}
-	}
-	out := map[string]any{"now": time.Now().UTC(), "user": "owner", "buildId": f.opt.BuildID, "host": f.opt.Name,
-		"threads": threads, "projects": projects, "hosts": hosts, "partial": since > 0,
-		"actions": actions, "profiles": profiles, "deploy": deploy}
-	b, err := json.Marshal(out)
+	st.Actions = actionsOf(actions)
+	b, err := json.Marshal(st)
 	f.mu.Unlock()
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		api.WriteJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(b)
+	api.WriteJSON(w, 200, json.RawMessage(b))
+}
+
+// actionsOf reads the action list a host sent (decoded JSON).
+func actionsOf(v any) []api.Action {
+	out := []api.Action{}
+	if b, err := json.Marshal(v); err == nil {
+		json.Unmarshal(b, &out)
+	}
+	if out == nil {
+		out = []api.Action{}
+	}
+	return out
 }
 
 func (f *Front) thread(w http.ResponseWriter, r *http.Request) {
@@ -750,11 +750,10 @@ func (f *Front) thread(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Unlock()
 	if b == nil {
-		writeJSON(w, 404, map[string]any{"error": "no such thread"})
+		api.WriteJSON(w, 404, map[string]any{"error": "no such thread"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(b)
+	api.WriteJSON(w, 200, json.RawMessage(b))
 }
 
 // command sends a command to the host that owns its record (V0.51). The
@@ -762,7 +761,7 @@ func (f *Front) thread(w http.ResponseWriter, r *http.Request) {
 func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<20))
 	if err != nil {
-		writeJSON(w, 400, map[string]any{"ok": false, "error": "bad body: " + err.Error()})
+		api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad body: " + err.Error()})
 		return
 	}
 	var c struct {
@@ -771,7 +770,7 @@ func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 		Args     map[string]any `json:"args"`
 	}
 	if err := json.Unmarshal(body, &c); err != nil {
-		writeJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON: " + err.Error()})
+		api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON: " + err.Error()})
 		return
 	}
 	var l *link
@@ -801,7 +800,7 @@ func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 	req.Header.Set("X-Fyr", "1")
 	resp, err := l.client.Do(req)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})
+		api.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})
 		return
 	}
 	defer resp.Body.Close()
@@ -915,13 +914,13 @@ func (f *Front) quota(w http.ResponseWriter, r *http.Request) {
 		f.forward(w, r, l)
 		return
 	}
-	writeJSON(w, 200, f.gather(r.Context(), "/api/quota", "profile"))
+	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/quota", "profile"))
 }
 
 // profiles asks each online host for its profiles (#42), merged by id with
 // the first host's winning, as in the state.
 func (f *Front) profiles(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, f.gather(r.Context(), "/api/profiles", "id"))
+	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/profiles", "id"))
 }
 
 // gather GETs a list from each online host and joins them in host order,

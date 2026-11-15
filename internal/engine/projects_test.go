@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
 )
@@ -28,7 +29,7 @@ func gitInit(t *testing.T, dir string) {
 }
 
 // dtoOf is a thread as clients see it.
-func dtoOf(e *Engine, id string) DTO {
+func dtoOf(e *Engine, id string) api.Thread {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.build(e.threads[id], e.Now())
@@ -66,7 +67,7 @@ func TestNoAutoProjectAndCreate(t *testing.T) {
 	if n := len(h.e.Projects()); n != 0 {
 		t.Fatalf("matching made %d projects", n)
 	}
-	if d := dtoOf(h.e, r1.ThreadID); d.ProjectID != "" || d.NewProject == nil || *d.NewProject != (NewProject{Name: "lasso-app", Folder: repo}) {
+	if d := dtoOf(h.e, r1.ThreadID); d.ProjectID != "" || d.NewProject == nil || *d.NewProject != (api.NewProject{Name: "lasso-app", Folder: repo}) {
 		t.Fatalf("project %q newProject %+v", d.ProjectID, d.NewProject)
 	}
 	r := h.cmd("project.create", "", core.Args{"name": "Lasso", "folder": repo})
@@ -108,7 +109,7 @@ func TestProjectUpdate(t *testing.T) {
 	if p.Name != "acme" {
 		t.Fatalf("%+v", p)
 	}
-	up := h.e.Command(Cmd{CommandID: "u1", Action: "project.update", Args: core.Args{"id": p.ID, "name": "Acme", "color": "violet", "icon": map[string]any{"kind": "emoji", "value": "🏠"}}})
+	up := h.e.Command(api.Cmd{CommandID: "u1", Action: "project.update", Args: core.Args{"id": p.ID, "name": "Acme", "color": "violet", "icon": map[string]any{"kind": "emoji", "value": "🏠"}}})
 	if !up.OK {
 		t.Fatalf("%+v", up)
 	}
@@ -119,7 +120,7 @@ func TestProjectUpdate(t *testing.T) {
 	if d := dtoOf(h.e, r.ThreadID); d.Project != "Acme" {
 		t.Fatalf("the thread kept the old name: %q", d.Project)
 	}
-	if bad := h.e.Command(Cmd{CommandID: "u2", Action: "project.update", Args: core.Args{"id": p.ID, "color": "amber"}}); bad.OK || bad.Status != 400 {
+	if bad := h.e.Command(api.Cmd{CommandID: "u2", Action: "project.update", Args: core.Args{"id": p.ID, "color": "amber"}}); bad.OK || bad.Status != 400 {
 		t.Fatalf("amber accepted: %+v", bad)
 	}
 }
@@ -160,7 +161,7 @@ func TestMatchAtLoad(t *testing.T) {
 func TestProjectWithoutFolderAndManualFiling(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	h.cmd("project.create", "", core.Args{"name": "Here", "folder": h.dir})
-	r := h.e.Command(Cmd{CommandID: "p1", Action: "project.create", Args: core.Args{"name": "Garden"}})
+	r := h.e.Command(api.Cmd{CommandID: "p1", Action: "project.create", Args: core.Args{"name": "Garden"}})
 	if !r.OK {
 		t.Fatalf("a project without a folder was refused: %+v", r)
 	}
@@ -183,7 +184,7 @@ func TestProjectWithoutFolderAndManualFiling(t *testing.T) {
 	if p := projectOf(e2, th.ThreadID); p.Name != "Garden" {
 		t.Fatalf("folder matching moved the thread back: %+v", p)
 	}
-	if bad := h.e.Command(Cmd{CommandID: "x", Action: "thread.setProject", ThreadID: th.ThreadID, Args: core.Args{"projectId": "p_nope"}}); bad.OK {
+	if bad := h.e.Command(api.Cmd{CommandID: "x", Action: "thread.setProject", ThreadID: th.ThreadID, Args: core.Args{"projectId": "p_nope"}}); bad.OK {
 		t.Fatal("an unknown project was accepted")
 	}
 }
@@ -220,15 +221,15 @@ func TestFolderChecksAndRematch(t *testing.T) {
 	}
 	h.cmd("thread.setProject", m.ThreadID, core.Args{"projectId": ""})
 	typo := core.Args{"name": "Fyr", "folder": filepath.Join(h.dir, "nope", "fyr")}
-	if bad := h.e.Command(Cmd{CommandID: "c1", Action: "project.create", Args: typo}); bad.OK || bad.Status != 400 || !strings.Contains(bad.Error, "nope") {
+	if bad := h.e.Command(api.Cmd{CommandID: "c1", Action: "project.create", Args: typo}); bad.OK || bad.Status != 400 || !strings.Contains(bad.Error, "nope") {
 		t.Fatalf("a missing folder was accepted: %+v", bad)
 	}
-	c := h.e.Command(Cmd{CommandID: "c2", Action: "project.create", Args: core.Args{"name": "Fyr"}})
+	c := h.e.Command(api.Cmd{CommandID: "c2", Action: "project.create", Args: core.Args{"name": "Fyr"}})
 	pid := c.Result.(map[string]any)["id"].(string)
-	if bad := h.e.Command(Cmd{CommandID: "a1", Action: "project.update", Args: core.Args{"id": pid, "folder": "relative/fyr"}}); bad.OK || bad.Status != 400 {
+	if bad := h.e.Command(api.Cmd{CommandID: "a1", Action: "project.update", Args: core.Args{"id": pid, "folder": "relative/fyr"}}); bad.OK || bad.Status != 400 {
 		t.Fatalf("a relative folder was accepted: %+v", bad)
 	}
-	if a := h.e.Command(Cmd{CommandID: "a2", Action: "project.update", Args: core.Args{"id": pid, "folder": repo + "/"}}); !a.OK {
+	if a := h.e.Command(api.Cmd{CommandID: "a2", Action: "project.update", Args: core.Args{"id": pid, "folder": repo + "/"}}); !a.OK {
 		t.Fatalf("%+v", a)
 	}
 	if p := projectOf(h.e, r.ThreadID); p.Name != "Fyr" {
@@ -237,14 +238,14 @@ func TestFolderChecksAndRematch(t *testing.T) {
 	if p := projectOf(h.e, m.ThreadID); p.ID != "" {
 		t.Fatalf("a thread unfiled by hand was matched: %+v", p)
 	}
-	if rm := h.e.Command(Cmd{CommandID: "r1", Action: "project.update", Args: core.Args{"id": pid, "folder": ""}}); !rm.OK {
+	if rm := h.e.Command(api.Cmd{CommandID: "r1", Action: "project.update", Args: core.Args{"id": pid, "folder": ""}}); !rm.OK {
 		t.Fatalf("%+v", rm)
 	}
 	if p := projectOf(h.e, r.ThreadID); p.Name != "home" {
 		t.Fatalf("after clearing the folder the next folder up did not win: %+v", p)
 	}
 	// Nothing covers the thread now: it keeps its project.
-	if rm := h.e.Command(Cmd{CommandID: "r2", Action: "project.update", Args: core.Args{"id": projectOf(h.e, r.ThreadID).ID, "folder": ""}}); !rm.OK {
+	if rm := h.e.Command(api.Cmd{CommandID: "r2", Action: "project.update", Args: core.Args{"id": projectOf(h.e, r.ThreadID).ID, "folder": ""}}); !rm.OK {
 		t.Fatalf("%+v", rm)
 	}
 	if p := projectOf(h.e, r.ThreadID); p.Name != "home" {

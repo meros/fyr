@@ -6,7 +6,6 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 )
@@ -17,7 +16,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 		Description: "Link a GitHub pull request to this Fyr thread. Call it when you open a PR other than with `gh pr create`, or to switch the thread to another PR.",
 		Schema:      obj(map[string]any{"url": str("The PR URL, https://github.com/<owner>/<repo>/pull/<n>")}, "url"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			url, ok := agent.CanonicalPR(sArg(a, "url"))
+			url, ok := core.CanonicalPR(sArg(a, "url"))
 			if !ok {
 				return "", errors.New("not a GitHub pull request URL")
 			}

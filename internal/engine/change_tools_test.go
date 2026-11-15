@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 )
@@ -100,7 +100,7 @@ func TestChangeActions(t *testing.T) {
 	if a == nil || a.Revision != "sha256:p1" || a.Digest == "" {
 		t.Fatalf("action: %+v", a)
 	}
-	press := func(cmd, digest string) Reply {
+	press := func(cmd, digest string) api.Reply {
 		return h.cmdID(cmd, "action.run", id, core.Args{"on": c.ID, "action": "apply", "digest": digest})
 	}
 	if r := press("r0", "stale"); r.OK || r.Status != 409 {
@@ -331,7 +331,7 @@ func TestMergeOneGuard(t *testing.T) {
 	h.wait(id, "done", state(core.Done))
 	url := "https://github.com/acme/app/pull/9"
 	set := func(conflict bool) {
-		coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
+		coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
 			core.PRObserved(t, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass", Conflict: conflict}, now)
 			return nil
 		})

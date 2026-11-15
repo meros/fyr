@@ -12,12 +12,13 @@ import (
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/secrets"
 	"github.com/meros/fyr/internal/store"
 )
 
 // providerHarness runs the fake CLI under provider-made profiles (V0.50).
-func providerHarness(t *testing.T, profiles map[string]agent.Profile) *harness {
+func providerHarness(t *testing.T, profiles map[string]provider.Profile) *harness {
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "fyr.db"))
 	if err != nil {
@@ -30,7 +31,7 @@ func providerHarness(t *testing.T, profiles map[string]agent.Profile) *harness {
 	srv := mcp.New(func(tok string) (string, bool) { return m.ThreadForToken(tok) })
 	e.Tools(srv)
 	hs := httptest.NewServer(srv)
-	m = agent.New(e, agent.Config{Profile: func(id string) agent.Profile { return profiles[id] }, IdleStop: time.Minute, MCPURL: hs.URL + "/mcp"})
+	m = agent.New(e, agent.Config{Profile: func(id string) provider.Profile { return profiles[id] }, IdleStop: time.Minute, MCPURL: hs.URL + "/mcp"})
 	e.Agents, e.Effects, h.m = m, h.r, m
 	t.Cleanup(func() { m.StopAll(); hs.Close(); st.Close() })
 	return h
@@ -46,7 +47,7 @@ func TestProviderLaunch(t *testing.T) {
 	sec.Put("ds.key", "sk-test-0123456789-zq")
 	key := func(name string) func() (string, error) { return func() (string, error) { return sec.Get(name) } }
 	opus := cli.Model{ID: "claude-opus-5-5", Efforts: []string{"low", "high", "max"}}
-	ps := map[string]agent.Profile{
+	ps := map[string]provider.Profile{
 		"ds": {ID: "ds", Name: "DeepSeek", Binary: os.Args[0], Env: fake, Auth: cli.Auth{Kind: cli.APIKey, Secret: "ds.key"},
 			Endpoint: cli.Endpoint{BaseURL: "https://api.deepseek.test/anthropic"}, Key: key("ds.key"),
 			ModelCaps: []cli.Model{{ID: "deepseek-chat"}}, DefaultEffort: "high"},
@@ -86,7 +87,7 @@ func TestProviderLaunch(t *testing.T) {
 
 // thread.setModel takes an effort alone; the thread keeps it.
 func TestSetEffort(t *testing.T) {
-	h := providerHarness(t, map[string]agent.Profile{"acct": {ID: "acct", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"},
+	h := providerHarness(t, map[string]provider.Profile{"acct": {ID: "acct", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"},
 		ModelCaps: []cli.Model{{ID: "m", Efforts: []string{"low", "high"}}}}})
 	r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "launch", "profile": "acct", "model": "m"})
 	h.wait(r.ThreadID, "run", func(t core.Thread, _ core.Attention) bool { return !t.Running && t.Summary != "" })

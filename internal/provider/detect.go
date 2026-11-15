@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
+	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/secrets"
 )
@@ -49,7 +49,7 @@ type Host struct {
 	Home string
 	// Profiles: what fyrd runs today (the config's profiles or the ones
 	// seeded from T3's settings), with their ids, binaries, env and quota.
-	Profiles []agent.Profile
+	Profiles []Profile
 	Getenv   func(string) string
 	LookPath func(string) (string, error)
 	Adapter  cli.Adapter
@@ -136,10 +136,7 @@ func (h Host) dir(d string) string {
 	if d == "" {
 		return filepath.Join(h.Home, ".claude")
 	}
-	if d == "~" || strings.HasPrefix(d, "~/") {
-		return filepath.Join(h.Home, d[1:])
-	}
-	return filepath.Clean(d)
+	return filepath.Clean(hostfs.ExpandHome(d, h.Home))
 }
 
 func slug(s string) string {
@@ -152,7 +149,7 @@ func slug(s string) string {
 
 // fromProfile turns one of today's profiles into a find with the same id,
 // so threads keep their profile.
-func fromProfile(h Host, p agent.Profile) Found {
+func fromProfile(h Host, p Profile) Found {
 	env := parseEnv(p.Env)
 	src := "profile " + p.ID
 	var note []string

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/store"
@@ -164,7 +165,7 @@ func (e *Engine) threadTools(s *mcp.Server) {
 			if !e.sendLimit.allow(self, time.Now()) {
 				return "", errors.New("send limit: 30 messages an hour per thread")
 			}
-			r := e.Command(Cmd{CommandID: NewID("agent_"), Action: "thread.send", ThreadID: id, Args: core.Args{"text": text, "from": self}})
+			r := e.Command(api.Cmd{CommandID: NewID("agent_"), Action: "thread.send", ThreadID: id, Args: core.Args{"text": text, "from": self}})
 			if !r.OK {
 				return "", errors.New(r.Error)
 			}
@@ -208,7 +209,7 @@ func (e *Engine) threadTools(s *mcp.Server) {
 				}
 			}
 			args = childArgs(e, self, args)
-			r := e.Command(Cmd{CommandID: NewID("agent_"), Action: "thread.create", Args: args})
+			r := e.Command(api.Cmd{CommandID: NewID("agent_"), Action: "thread.create", Args: args})
 			if !r.OK {
 				return "", errors.New(r.Error)
 			}

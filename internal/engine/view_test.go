@@ -12,6 +12,7 @@ import (
 
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/api"
 )
 
 func viewEvents(h *harness, id, typ string) []map[string]any {
@@ -172,7 +173,7 @@ func TestViewTools(t *testing.T) {
 	}
 
 	// The DTO carries the view (API: thread.live).
-	var dto DTO
+	var dto api.Thread
 	for _, d := range h.e.Snapshot() {
 		if d.ID == id {
 			dto = d
@@ -180,7 +181,7 @@ func TestViewTools(t *testing.T) {
 	}
 	raw, _ := json.Marshal(dto)
 	if !strings.Contains(string(raw), `"live":{"pageId":"`+th.Live.PageID) || !strings.Contains(string(raw), `"liveView":true`) {
-		t.Fatalf("DTO: %s", raw)
+		t.Fatalf("api.Thread: %s", raw)
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/proc"
@@ -88,7 +87,7 @@ func (e *Engine) offerTool(s *mcp.Server) {
 // checks the rest of the args.
 func canonicalArgs(args map[string]any) error {
 	if pr, ok := args["pr"].(string); ok && pr != "" {
-		canon, ok := agent.CanonicalPR(pr)
+		canon, ok := core.CanonicalPR(pr)
 		if !ok {
 			return errors.New("args.pr must be a GitHub pull request URL")
 		}

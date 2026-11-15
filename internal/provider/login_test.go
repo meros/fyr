@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/cli"
-	"github.com/meros/fyr/internal/engine"
 )
 
 // The fake CLI is this test binary run again with FYR_FAKE_LOGIN set: it
@@ -120,9 +120,9 @@ func newLoginFix(t *testing.T, mode string) *loginFix {
 	return lf
 }
 
-func (lf *loginFix) cmd(action string, args map[string]any) engine.Reply {
+func (lf *loginFix) cmd(action string, args map[string]any) api.Reply {
 	lf.n++
-	rep := lf.r.Command(engine.Cmd{CommandID: fmt.Sprintf("c%d", lf.n), Action: action, Args: args})
+	rep := lf.r.Command(api.Cmd{CommandID: fmt.Sprintf("c%d", lf.n), Action: action, Args: args})
 	b, _ := json.Marshal(rep)
 	lf.replies = append(lf.replies, string(b))
 	return rep
