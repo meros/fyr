@@ -2,6 +2,7 @@
 // actions the owner can press now, and the words for the conversation lines.
 
 import type { Change, ChangePhase, Offer, OfferRun, Thread } from "./types.ts";
+import type { Ask } from "./confirm.ts";
 
 export const RAIL: ChangePhase[] = ["working", "review", "landed", "live"];
 
@@ -62,6 +63,27 @@ export function lastRun(runs: OfferRun[] | undefined, id: string): OfferRun | un
 /** The command args of a press: what the owner saw is what runs. */
 export function pressArgs(on: string, o: Offer) {
   return { on, action: o.id, digest: o.digest };
+}
+
+/** V0.72: the owner can end every change of the thread that has not ended (a host record on the board is not one). */
+export const canEnd = (c: Pick<Change, "phase" | "threads">) => !ended(c.phase) && !c.threads?.length;
+
+/** V0.72: Fyr's confirmation before End this change: the end (abandoned by default, or reverted) and a reason. */
+export function endChangeAsk(c: Pick<Change, "evidence">): Ask & { choice: NonNullable<Ask["choice"]>; reason: NonNullable<Ask["reason"]> } {
+  const pr = (c.evidence ?? []).some((e) => e.kind === "pr");
+  return {
+    title: "End this change?",
+    text: `Fyr stops watching ${pr ? "its PR" : "it"} and removes its actions. The agent is told; more work on it becomes a new change.`,
+    choice: { label: "Ended as", options: [{ value: "abandoned", label: "Abandoned" }, { value: "reverted", label: "Reverted" }], value: "abandoned" },
+    reason: { label: "Reason (optional)", value: "", max: 200 },
+    confirm: "End change",
+  };
+}
+
+/** The command args of change.end from what the owner picked in the confirmation. */
+export function endArgs(c: Pick<Change, "id">, a: Pick<Ask, "choice" | "reason">): { change: string; phase: string; reason?: string } {
+  const reason = (a.reason?.value ?? "").trim();
+  return { change: c.id, phase: a.choice?.value || "abandoned", ...(reason ? { reason } : {}) };
 }
 
 /** The changes to list, newest first; PR changes too (V0.59 (8)). */

@@ -60,7 +60,7 @@ export interface PullRequest {
   repo?: string;
   number: number;
   title?: string;
-  state?: string; // OPEN | MERGED | CLOSED
+  state?: string; // OPEN | MERGED | CLOSED | MISSING (V0.72: GitHub says it does not exist)
   checks?: "pass" | "fail" | "pending" | "none" | string;
   review?: string;
   conflict?: boolean;
