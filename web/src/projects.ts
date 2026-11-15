@@ -119,6 +119,13 @@ export function filterByProject(threads: Record<string, ThreadDTO>, projectId: s
 }
 
 /** Where a project lives, for a subtitle: its folder, else that threads are filed by hand (V0.55). */
+/** V0.58: the one question before Delete project. */
+export function deleteQuestion(p: Pick<Project, "name" | "threads">): string {
+  const n = p.threads ?? 0;
+  const threads = n === 0 ? "It has no threads." : n === 1 ? "Its 1 thread stays and lands in a project whose folder covers it, or in No project." : `Its ${n} threads stay and land in a project whose folder covers them, or in No project.`;
+  return `Delete ${p.name}? ${threads} The folder on disk is not touched.`;
+}
+
 export function projectSubtitle(p: Project): string {
   return p.folder ? shortPath(p.folder) : "No folder: filed by hand";
 }

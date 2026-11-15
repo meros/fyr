@@ -65,6 +65,11 @@ func (h *Hub) Thread(d DTO) { h.send("thread", d) }
 
 func (h *Hub) Project(p ProjectDTO) { h.send("project", p) }
 
+// ProjectDeleted says a project is gone (SPEC 0.5 V0.58).
+func (h *Hub) ProjectDeleted(id string) {
+	h.send("project", map[string]any{"id": id, "deleted": true})
+}
+
 // Deploy sends a deploy's progress (SPEC 0.5 V0.39).
 func (h *Hub) Deploy(p any) { h.send("deploy", p) }
 

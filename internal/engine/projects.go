@@ -354,6 +354,9 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		r.Status = 200
 		return r
 	}
+	if c.Action == "project.delete" {
+		return e.projectDelete(c)
+	}
 	bad := func(msg string) Reply { return Reply{Error: msg, Status: 400} }
 	_, folderSet := c.Args["folder"]
 	folder, err := checkFolder(c.Args.Str("folder"))
@@ -488,6 +491,67 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 	}
 	if c.Action == "project.create" || folderSet {
 		e.Rematch() // V0.55: the folders changed; threads may land here now
+	}
+	return reply
+}
+
+// projectDelete removes a project (SPEC 0.5 V0.58). Its threads lose it and
+// the filed-by-hand mark, then match again, so one inside another project's
+// folder lands there. The stream gets {id, deleted: true}. Called after the
+// receipt check.
+func (e *Engine) projectDelete(c Cmd) Reply {
+	id := c.Args.Str("id")
+	e.mu.Lock()
+	if e.projects[id] == nil {
+		e.mu.Unlock()
+		return Reply{Error: "no project " + id, Status: 404}
+	}
+	delete(e.projects, id)
+	delete(e.quietSent, id)
+	now := e.Now()
+	var moved []*core.Thread
+	gained := map[string]bool{}
+	for _, t := range e.threads {
+		if t.ProjectID != id {
+			continue
+		}
+		t.ProjectID, t.ProjectManual = "", false
+		e.assignProject(t)
+		if t.ProjectID != "" {
+			gained[t.ProjectID] = true
+		}
+		e.bump(t.ID)
+		moved = append(moved, t)
+	}
+	dtos := make([]DTO, 0, len(moved))
+	for _, t := range moved {
+		dtos = append(dtos, e.dto(t, now))
+	}
+	reply := Reply{OK: true, Status: 200, Result: map[string]any{"id": id}}
+	_, err := e.st.Write(func(tx *store.Tx) error {
+		if err := tx.DeleteProject(id); err != nil {
+			return err
+		}
+		for _, t := range moved {
+			if err := tx.PutThread(t); err != nil {
+				return err
+			}
+		}
+		return tx.PutReceipt(c.CommandID, reply, now)
+	})
+	e.mu.Unlock()
+	if err != nil {
+		return Reply{Error: err.Error(), Status: 500}
+	}
+	e.Hub.ProjectDeleted(id)
+	for _, d := range dtos {
+		e.Hub.Thread(d)
+	}
+	// The projects that took threads have new counts.
+	for _, d := range e.Projects() {
+		if gained[d.ID] {
+			e.Hub.Project(d)
+		}
 	}
 	return reply
 }

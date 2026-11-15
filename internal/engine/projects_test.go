@@ -422,3 +422,63 @@ func TestUnfile(t *testing.T) {
 		t.Fatalf("after unfile: %q %q %v", got.ProjectID, got.Project, got.ProjectManual)
 	}
 }
+
+// SPEC 0.5 V0.58: project.delete removes the project; its threads lose it and
+// the filed-by-hand mark, then matching runs, so a thread inside another
+// project's folder lands there. The stream says {id, deleted: true}.
+func TestProjectDelete(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	outer := filepath.Join(h.dir, "work")
+	inner := filepath.Join(outer, "app")
+	os.MkdirAll(inner, 0o755)
+	if r := h.cmd("project.create", "", core.Args{"name": "Work", "folder": outer}); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	r := h.cmd("project.create", "", core.Args{"name": "App", "folder": inner})
+	pid := r.Result.(map[string]any)["id"].(string)
+	a := h.cmd("thread.create", "", core.Args{"cwd": inner, "text": "a"})
+	b := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "b"})
+	if r := h.cmd("thread.setProject", b.ThreadID, core.Args{"projectId": pid}); !r.OK {
+		t.Fatalf("file b: %+v", r)
+	}
+	if p := projectOf(h.e, a.ThreadID); p.ID != pid {
+		t.Fatalf("a is in %q, want App", p.Name)
+	}
+	if bad := h.cmd("project.delete", "", core.Args{"id": "p_nope"}); bad.OK || bad.Status != 404 {
+		t.Fatalf("unknown id: %+v", bad)
+	}
+	ch := h.e.Hub.Subscribe()
+	defer h.e.Hub.Unsubscribe(ch)
+	if r := h.cmd("project.delete", "", core.Args{"id": pid}); !r.OK {
+		t.Fatalf("delete: %+v", r)
+	}
+	for _, p := range h.e.Projects() {
+		if p.ID == pid {
+			t.Fatal("the project is still listed")
+		}
+	}
+	if p := projectOf(h.e, a.ThreadID); p.Name != "Work" {
+		t.Fatalf("a matched to %q, want Work", p.Name)
+	}
+	tb, _ := h.e.Thread(b.ThreadID)
+	if tb.ProjectID != "" || tb.ProjectManual || tb.Project != "" {
+		t.Fatalf("b after delete: %q %v %q", tb.ProjectID, tb.ProjectManual, tb.Project)
+	}
+	gone := false
+	for _, m := range drain(ch, "project") {
+		if m["id"] == pid && m["deleted"] == true {
+			gone = true
+		}
+	}
+	if !gone {
+		t.Fatal("no project {id, deleted: true} on the stream")
+	}
+	// The project stays gone after a restart.
+	h.m.StopAll()
+	h2 := startHarness(t, h.dir, h.db, time.Minute)
+	for _, p := range h2.e.Projects() {
+		if p.ID == pid {
+			t.Fatal("the project came back after a restart")
+		}
+	}
+}

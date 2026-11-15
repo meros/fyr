@@ -319,3 +319,37 @@ func TestFrontServesClientAndGuards(t *testing.T) {
 		t.Fatalf("POST without X-Fyr: %d", r.StatusCode)
 	}
 }
+
+// SPEC 0.5 V0.58: project.delete through the front reaches the project's
+// host, and the front drops the project from its state.
+func TestFrontDropsDeletedProject(t *testing.T) {
+	h := newHost(t, "meros-laptop")
+	fs := newFront(t, HostConfig{Name: "meros-laptop", URL: h.hs.URL})
+	online(t, fs.URL, 1)
+	projects := func() []any {
+		resp, err := http.Get(fs.URL + "/api/state")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var s struct {
+			Projects []any `json:"projects"`
+		}
+		json.NewDecoder(resp.Body).Decode(&s)
+		return s.Projects
+	}
+	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p1","action":"project.create","args":{"name":"Hemmet"}}`)
+	res, _ := rep["result"].(map[string]any)
+	pid, _ := res["id"].(string)
+	if code != 200 || pid == "" {
+		t.Fatalf("create via front: %d %v", code, rep)
+	}
+	eventually(t, "the project on the front", func() bool { return len(projects()) == 1 })
+	if code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p2","action":"project.delete","args":{"id":"`+pid+`"}}`); code != 200 || rep["ok"] != true {
+		t.Fatalf("delete via front: %d %v", code, rep)
+	}
+	if len(h.eng.Projects()) != 0 {
+		t.Fatal("the host still has the project")
+	}
+	eventually(t, "the project gone from the front", func() bool { return len(projects()) == 0 })
+}

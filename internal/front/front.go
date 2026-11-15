@@ -417,6 +417,18 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 			return
 		}
 		f.mu.Lock()
+		if p["deleted"] == true { // V0.58: the host deleted it
+			kept := l.projects[:0]
+			for _, x := range l.projects {
+				if x["id"] != p["id"] {
+					kept = append(kept, x)
+				}
+			}
+			l.projects, l.dirty = kept, true
+			f.mu.Unlock()
+			f.hub.Publish("project", data)
+			return
+		}
 		sp := f.stampProject(l, p)
 		replaced := false
 		for i, x := range l.projects {

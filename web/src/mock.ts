@@ -1034,6 +1034,14 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       if ("quiet" in args) for (const t of threads.values()) if (projectIdFor(t) === np.id) setTimeout(() => sub?.thread(dtoOf(t)), 40);
       return { ok: true };
     }
+    if (action === "project.delete") {
+      const p = projects.find((x) => x.id === args.id);
+      if (!p) return { ok: false, error: `no project ${args.id}` };
+      projects = projects.filter((x) => x.id !== p.id);
+      setTimeout(() => sub?.project?.({ id: p.id, deleted: true } as Project), 30);
+      for (const t of threads.values()) if (projectIdFor(t) === p.id) put(t, { projectId: undefined, project: "" });
+      return { ok: true, result: { id: p.id } };
+    }
     if (action === "project.create") {
       const name = String(args.name ?? "").trim();
       if (!name) return { ok: false, error: "A project needs a name" };
