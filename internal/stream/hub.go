@@ -1,10 +1,20 @@
-package engine
+// Package stream is the live side of the host protocol (SPEC 0.5 V0.2,
+// V0.38): a hub that fans frames out to subscribers, and the SSE stream that
+// writes a subscription with threads as JSON Merge Patches. The host and the
+// front (V0.51) both serve it.
+package stream
 
 import (
 	"encoding/json"
 	"sync"
+)
 
-	"github.com/meros/fyr/internal/store"
+// The frames a host sends besides the hello (docs/API-v0.md).
+const (
+	FrameThread  = "thread"
+	FrameProject = "project"
+	FrameDeploy  = "deploy"
+	FrameEvent   = "event"
 )
 
 // Frame is one Server-Sent Event.
@@ -39,7 +49,8 @@ func (h *Hub) Unsubscribe(ch chan Frame) {
 	h.mu.Unlock()
 }
 
-func (h *Hub) send(event string, v any) {
+// Send encodes v and publishes it as one frame.
+func (h *Hub) Send(event string, v any) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return
@@ -58,23 +69,5 @@ func (h *Hub) Publish(event string, b []byte) {
 			delete(h.subs, ch)
 			close(ch)
 		}
-	}
-}
-
-func (h *Hub) Thread(d DTO) { h.send("thread", d) }
-
-func (h *Hub) Project(p ProjectDTO) { h.send("project", p) }
-
-// ProjectDeleted says a project is gone (SPEC 0.5 V0.58).
-func (h *Hub) ProjectDeleted(id string) {
-	h.send("project", map[string]any{"id": id, "deleted": true})
-}
-
-// Deploy sends a deploy's progress (SPEC 0.5 V0.39).
-func (h *Hub) Deploy(p any) { h.send("deploy", p) }
-
-func (h *Hub) Events(evs []store.Event) {
-	for _, ev := range evs {
-		h.send("event", Lean(ev)) // V0.38: large tool output is cut on the wire
 	}
 }

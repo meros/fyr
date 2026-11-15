@@ -1,0 +1,109 @@
+package agent
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/meros/fyr/internal/claude"
+	"github.com/meros/fyr/internal/core"
+)
+
+// The hooks of the CLI, and the agent feed's delivery through them.
+
+// The agent feed's delivery (decision 0020 part 5, #47): the thread's
+// notice queue reaches the agent here and nowhere else.
+
+// take takes the notices due at a point.
+func (m *Manager) take(s *session, threadID string, at core.Point) []core.Notice {
+	a := core.FeedTake{At: at}
+	if s != nil {
+		a.View, a.Changes = s.viewTools, s.changeTools
+	}
+	out, err := m.host.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindFeedTake, Thread: threadID, Args: a})
+	if err != nil {
+		return nil
+	}
+	ns, _ := out.([]core.Notice)
+	return ns
+}
+
+// feed delivers to an idle agent: every pending notice in one message that
+// starts a turn, when one of them may wake it (not on a settled or archived
+// thread). A running agent takes them in its hooks, or here after its run.
+func (m *Manager) feed(threadID string) error {
+	m.mu.Lock()
+	s := m.sessions[threadID]
+	busy := m.starting[threadID] != nil || (s != nil && (s.live || len(s.out) > 0))
+	m.mu.Unlock()
+	if busy {
+		return nil
+	}
+	ns := m.take(s, threadID, core.AtIdle)
+	if len(ns) == 0 {
+		return nil
+	}
+	return m.send(threadID, core.Effect{Kind: core.EffectSend, Text: core.NoticeText(ns)}, nil)
+}
+
+// stopHook answers the Stop hook (SPEC 0.5 V0.37): the feed's stop notices
+// (the upkeep of the view and the changes) block the Stop once per run, in
+// one reason, never while background work runs.
+func (m *Manager) stopHook(s *session, in claude.Msg) claude.Msg {
+	t, ok := m.host.Thread(s.thread)
+	if !ok {
+		return nil
+	}
+	bg, _ := in["background_tasks"].([]any)
+	active, _ := in["stop_hook_active"].(bool)
+	m.mu.Lock()
+	blocked := s.stopBlocked
+	m.mu.Unlock()
+	if blocked || active || len(bg)+t.RunningTasks() > 0 {
+		return nil
+	}
+	ns := m.take(s, s.thread, core.AtStop)
+	if len(ns) == 0 {
+		return nil
+	}
+	summary := firstLine(fmt.Sprint(orNil(in["last_assistant_message"])))
+	if summary == "" {
+		summary = t.Summary
+	}
+	m.mu.Lock()
+	s.stopBlocked, s.summary, s.inForced, s.forcedWork = true, summary, false, false
+	m.mu.Unlock()
+	reasons := make([]string, len(ns))
+	for i, n := range ns {
+		reasons[i] = n.What
+	}
+	return claude.Msg{"decision": "block", "reason": strings.Join(reasons, "\n")}
+}
+
+// toolHook answers the PostToolUse hook: the notices due at a tool call
+// (the wake and next ones, and the upkeep reminders, V0.52) as context.
+func (m *Manager) toolHook(s *session) claude.Msg {
+	ns := m.take(s, s.thread, core.AtTool)
+	if len(ns) == 0 {
+		return nil
+	}
+	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": core.NoticeText(ns)}}
+}
+
+func orNil(v any) any {
+	if v == nil {
+		return ""
+	}
+	return v
+}
+
+// initHooks is what a process registers at start: the merge gate always,
+// and the agent feed's Stop and PostToolUse hooks only for a process with
+// Fyr's tools, so other processes get no extra round trip.
+func initHooks(feed bool) claude.Msg {
+	h := claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}
+	if feed {
+		h["Stop"] = []claude.Msg{{"hookCallbackIds": []string{"view"}}}
+		h["PostToolUse"] = []claude.Msg{{"hookCallbackIds": []string{"viewnudge"}}}
+	}
+	return h
+}

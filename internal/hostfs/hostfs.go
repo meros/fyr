@@ -80,9 +80,7 @@ func (f *FS) Expand(p string) (string, error) {
 	if p == "" || p == "~" {
 		return f.Home, nil
 	}
-	if strings.HasPrefix(p, "~/") {
-		return filepath.Join(f.Home, p[2:]), nil
-	}
+	p = ExpandHome(p, f.Home)
 	if !filepath.IsAbs(p) {
 		return "", fmt.Errorf("%w: %s is not a full path", ErrOutside, p)
 	}
@@ -304,4 +302,19 @@ func (f *FS) Mkdir(parent, name string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(clean, name), nil
+}
+
+// ExpandHome turns "~" and "~/x" into paths under home ("" is the user's
+// home folder); any other path is returned as it is. It is the one home-folder
+// expansion of fyrd (config roots, profile and quota folders, project folders).
+func ExpandHome(p, home string) string {
+	if p != "~" && !strings.HasPrefix(p, "~/") {
+		return p
+	}
+	if home == "" {
+		if home, _ = os.UserHomeDir(); home == "" {
+			return p
+		}
+	}
+	return filepath.Join(home, p[1:])
 }

@@ -7,11 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/stream"
 )
 
 // drain returns the frames of one kind waiting on ch.
-func drain(ch chan Frame, event string) []map[string]any {
+func drain(ch chan stream.Frame, event string) []map[string]any {
 	var out []map[string]any
 	for {
 		select {
@@ -33,7 +35,7 @@ func drain(ch chan Frame, event string) []map[string]any {
 // push, nothing queued for the end of the window).
 func TestQuietHours(t *testing.T) {
 	h := newHarness(t, time.Minute)
-	c := h.e.Command(Cmd{CommandID: "p", Action: "project.create", Args: core.Args{"name": "Work", "folder": h.dir}})
+	c := h.e.Command(api.Cmd{CommandID: "p", Action: "project.create", Args: core.Args{"name": "Work", "folder": h.dir}})
 	pid := c.Result.(map[string]any)["id"].(string)
 	id := h.create("x")
 	h.wait(id, "done", state(core.Done))
@@ -52,7 +54,7 @@ func TestQuietHours(t *testing.T) {
 
 	var mu sync.Mutex
 	pushes := 0
-	h.e.OnAttention = func(DTO, core.State) { mu.Lock(); pushes++; mu.Unlock() }
+	h.e.OnAttention = func(api.Thread, core.State) { mu.Lock(); pushes++; mu.Unlock() }
 	ch := h.e.Hub.Subscribe()
 	defer h.e.Hub.Unsubscribe(ch)
 

@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/claude/fake"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -75,8 +77,8 @@ func startHarness(t *testing.T, dir, db string, idle time.Duration) *harness {
 	e.Tools(srv)
 	hs := httptest.NewServer(srv)
 	m = agent.New(e, agent.Config{
-		Profile: func(string) agent.Profile {
-			return agent.Profile{ID: "fake", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}}
+		Profile: func(string) provider.Profile {
+			return provider.Profile{ID: "fake", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}}
 		},
 		IdleStop: idle, MCPURL: hs.URL + "/mcp",
 		Attachments: h.att.Get,
@@ -87,14 +89,14 @@ func startHarness(t *testing.T, dir, db string, idle time.Duration) *harness {
 	return h
 }
 
-func (h *harness) cmd(action, thread string, args core.Args) Reply {
+func (h *harness) cmd(action, thread string, args core.Args) api.Reply {
 	h.seq++
 	return h.cmdID(action+"-"+string(rune('a'+h.seq)), action, thread, args)
 }
 
-func (h *harness) cmdID(id, action, thread string, args core.Args) Reply {
+func (h *harness) cmdID(id, action, thread string, args core.Args) api.Reply {
 	h.t.Helper()
-	return h.e.Command(Cmd{CommandID: id, Action: action, ThreadID: thread, Args: args})
+	return h.e.Command(api.Cmd{CommandID: id, Action: action, ThreadID: thread, Args: args})
 }
 
 func (h *harness) create(text string) string {
@@ -432,7 +434,7 @@ func TestAttentionTransitionsNotify(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	var mu sync.Mutex
 	got := []string{}
-	h.e.OnAttention = func(d DTO, prev core.State) {
+	h.e.OnAttention = func(d api.Thread, prev core.State) {
 		mu.Lock()
 		got = append(got, string(prev)+"→"+string(d.Attention.State))
 		mu.Unlock()
@@ -480,7 +482,7 @@ func TestRestartDoesNotRenotify(t *testing.T) {
 	e2 := New(st)
 	e2.Load()
 	n := 0
-	e2.OnAttention = func(DTO, core.State) { n++ }
+	e2.OnAttention = func(api.Thread, core.State) { n++ }
 	e2.Tick()
 	if n != 0 {
 		t.Fatalf("restart re-notified %d threads", n)
@@ -605,7 +607,7 @@ func TestOwnerMergeFromTab(t *testing.T) {
 	id := h.create("pr")
 	h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.MainPR() != nil })
 	h.wait(id, "done", state(core.Done))
-	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
 		core.PRObserved(t, core.PR{URL: t.MainPR().URL, Repo: t.MainPR().Repo, Number: t.MainPR().Number, State: "OPEN", Checks: "pass"}, now)
 		return nil
 	})
@@ -650,7 +652,7 @@ func TestOwnerPRActionsUnavailable(t *testing.T) {
 		t.Fatalf("no PR rerun: %+v", r)
 	}
 	set := func(p core.PR) {
-		coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
+		coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
 			core.PRObserved(t, p, now)
 			return nil
 		})
@@ -682,7 +684,7 @@ func TestDTOPRIsTheMainChange(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("hello")
 	h.wait(id, "done", state(core.Done))
-	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
 		core.PRObserved(t, core.PR{URL: "https://github.com/acme/app/pull/9", Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass"}, now)
 		core.ChangePRObserved(t, core.PR{URL: "https://github.com/acme/app/pull/10", Repo: "acme/app", Number: 10, State: "OPEN", Checks: "pass"}, now)
 		return nil
@@ -720,7 +722,7 @@ func TestDTODerivesSettleViewAndProject(t *testing.T) {
 	h.cmd("project.create", "", core.Args{"name": "Kök", "folder": h.dir})
 	id := h.create("hello")
 	h.wait(id, "done", state(core.Done))
-	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
 		c, _, _ := core.OpenChange(t, core.ChangeOpen{Key: "doc:x", Kind: core.KindDoc, Title: "Doc"}, core.ByAgent, now)
 		t.Running = true
 		core.SettleWhenDone(t, core.ByAgent, now)
@@ -738,7 +740,7 @@ func TestDTODerivesSettleViewAndProject(t *testing.T) {
 	if _, ok := wire["settle"]; ok || wire["settledAt"] != nil {
 		t.Fatalf("dto sends settle: %s", b)
 	}
-	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev { core.RunEnded(t, nil, now); return nil })
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event { core.RunEnded(t, nil, now); return nil })
 	b, _ = json.Marshal(dtoOf(h.e, id))
 	wire = map[string]any{}
 	json.Unmarshal(b, &wire)

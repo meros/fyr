@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
 )
@@ -69,8 +69,8 @@ func (f *Front) send(m map[string]any) {
 	f.opt.Push.Notify(core.Owner, push.PayloadFor(d.ID, d.Title, string(d.Attention.State), meta, detail))
 }
 
-func dtoOf(m map[string]any) (engine.DTO, error) {
-	var d engine.DTO
+func dtoOf(m map[string]any) (api.Thread, error) {
+	var d api.Thread
 	b, err := json.Marshal(m)
 	if err != nil {
 		return d, err
@@ -86,7 +86,7 @@ func dtoOf(m map[string]any) (engine.DTO, error) {
 
 // AttentionDetail is the meta word and the text of a push, matching the
 // inbox row (design/mobile rule 12, SPEC 0.5 V0.20).
-func AttentionDetail(d engine.DTO) (meta, detail string) {
+func AttentionDetail(d api.Thread) (meta, detail string) {
 	switch d.Attention.State {
 	case core.Failed:
 		if d.Failure != nil {

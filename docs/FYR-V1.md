@@ -161,6 +161,8 @@ Built from the Fyr design system with the round-5 fixes. The mock (`../design/sc
 
 ## 7. Build plan
 
+*Historical: the plan as of 13 Nov 2026. The current milestones, their order and exit criteria are in [`PLAN.md`](PLAN.md).*
+
 Sizes are my estimates, not measurements. They exist to make the order clear, not to promise dates.
 
 | Milestone | Content | Exit criterion | Est. size |
@@ -183,6 +185,8 @@ Total estimate: about 13k lines of Go and 15k of TypeScript. T3 Code is about 1.
 ---
 
 ## 8. After v1: getting what you want, and more
+
+*Historical: the plan as of 13 Nov 2026. The current milestones, their order and exit criteria are in [`PLAN.md`](PLAN.md).*
 
 Each step adds modules or turns on parts of the core that already exist. None needs a migration.
 

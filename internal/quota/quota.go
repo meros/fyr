@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/meros/fyr/internal/hostfs"
 	"io"
 	"math"
 	"net/http"
@@ -107,13 +108,13 @@ func Resolve(p Profile, home string) Spec {
 		if s.ConfigDir == "" {
 			s.ConfigDir = "~/.claude"
 		}
-		s.ConfigDir = expand(s.ConfigDir, home)
+		s.ConfigDir = hostfs.ExpandHome(s.ConfigDir, home)
 	case KindDeepSeek, KindOpenRouter:
 		if s.KeyEnv == "" && s.KeyFile == "" {
 			s.KeyEnv = defaultKeyEnv[s.Kind]
 		}
 		if s.KeyFile != "" {
-			s.KeyFile = expand(s.KeyFile, home)
+			s.KeyFile = hostfs.ExpandHome(s.KeyFile, home)
 		}
 	case KindNone:
 	default:
@@ -133,13 +134,6 @@ func envOf(env []string, k string) string {
 		}
 	}
 	return ""
-}
-
-func expand(p, home string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		return filepath.Join(home, p[1:])
-	}
-	return p
 }
 
 // Window is one Claude usage window.

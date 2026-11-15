@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
 )
@@ -9,10 +10,10 @@ import (
 // It answers only after the agent confirmed, so a 200 means the agent never
 // sees the message; a message already read, unknown or not withdrawable is a
 // 409 without a receipt.
-func (e *Engine) cancelMessage(c Cmd) Reply {
+func (e *Engine) cancelMessage(c api.Cmd) api.Reply {
 	id := c.Args.Str("messageId")
 	if id == "" {
-		return Reply{Error: "messageId is required", Status: 400}
+		return api.Reply{Error: "messageId is required", Status: 400}
 	}
 	e.press.Lock() // the receipt check and the receipt are one step
 	defer e.press.Unlock()
@@ -23,20 +24,20 @@ func (e *Engine) cancelMessage(c Cmd) Reply {
 	t := e.threads[c.ThreadID]
 	if t == nil {
 		e.mu.Unlock()
-		return Reply{Error: "no thread " + c.ThreadID, Status: 404}
+		return api.Reply{Error: "no thread " + c.ThreadID, Status: 404}
 	}
 	waiting := core.OutboxState(t, id) != ""
 	e.mu.Unlock()
 	if !waiting {
-		return Reply{Error: "The agent has already read this message", Status: 409}
+		return api.Reply{Error: "The agent has already read this message", Status: 409}
 	}
 	if e.Agents == nil {
-		return Reply{Error: "No agent runs this thread", Status: 409}
+		return api.Reply{Error: "No agent runs this thread", Status: 409}
 	}
 	if err := e.Agents.Do(c.ThreadID, core.Effect{Kind: core.EffectCancelMessage, MessageID: id}); err != nil {
-		return Reply{Error: err.Error(), Status: 409}
+		return api.Reply{Error: err.Error(), Status: 409}
 	}
-	reply := Reply{OK: true, ThreadID: c.ThreadID, Status: 200}
+	reply := api.Reply{OK: true, ThreadID: c.ThreadID, Status: 200}
 	e.mu.Lock()
 	now := e.Now()
 	evs, err := e.st.Write(func(tx *store.Tx) error {
@@ -47,8 +48,8 @@ func (e *Engine) cancelMessage(c Cmd) Reply {
 	})
 	e.mu.Unlock()
 	if err != nil {
-		return Reply{Error: err.Error(), Status: 500}
+		return api.Reply{Error: err.Error(), Status: 500}
 	}
-	e.Hub.Events(evs)
+	e.sendEvents(evs)
 	return reply
 }

@@ -1,6 +1,9 @@
 package engine
 
-import "time"
+import (
+	"github.com/meros/fyr/internal/stream"
+	"time"
+)
 
 // SPEC 0.5 V0.39: the latest deploy progress, for the state and the stream.
 // A finished deploy (done or failed) stays two minutes, so a page that
@@ -17,7 +20,7 @@ func (e *Engine) SetDeploy(v any, phase string) {
 	e.mu.Lock()
 	e.deploy = &deployState{v: v, phase: phase, at: time.Now()}
 	e.mu.Unlock()
-	e.Hub.Deploy(v)
+	e.Hub.Send(stream.FrameDeploy, v) // SPEC 0.5 V0.39
 }
 
 // DeployState is the progress to show at now, or nil.

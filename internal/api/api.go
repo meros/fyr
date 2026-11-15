@@ -1,0 +1,141 @@
+// Package api holds the wire shapes of the host protocol (docs/API-v0.md):
+// commands and their replies, and the records as clients see them. The engine, the server, the front and the
+// provider registry share them; api imports only core.
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/meros/fyr/internal/core"
+)
+
+// Cmd is one command from any surface.
+type Cmd struct {
+	CommandID string    `json:"commandId"`
+	Action    string    `json:"action"`
+	ThreadID  string    `json:"threadId,omitempty"`
+	Args      core.Args `json:"args,omitempty"`
+}
+
+type Reply struct {
+	OK       bool   `json:"ok"`
+	ThreadID string `json:"threadId,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Status   int    `json:"-"`
+	Result   any    `json:"result,omitempty"`
+}
+
+// Thread is a thread as clients see it (docs/API-v0.md).
+type Thread struct {
+	*core.Thread
+	Rev         int64             `json:"rev"`
+	Attention   core.Attention    `json:"attention"`
+	View        *View             `json:"view"`
+	Unavailable map[string]string `json:"unavailable"`
+	// NewProject is what "New project from this thread" starts with (V0.30,
+	// V0.55).
+	NewProject *NewProject `json:"newProject,omitempty"`
+	// QuietUntil is the end of the quiet hours of the thread's project, while
+	// they hold (V0.46).
+	QuietUntil *time.Time `json:"quietUntil,omitempty"`
+	// PR is the main change's PR, for the PR chip and tab (#32); the PR
+	// itself lives on its change.
+	PR *core.PR `json:"pr,omitempty"`
+	// Project is the name of the thread's project (#33: derived, not
+	// stored).
+	Project string `json:"project"`
+	// LiveView is live.enabled, the flag clients read (#33).
+	LiveView bool `json:"liveView,omitempty"`
+	// The settle as clients read it, derived from thread.settle and the
+	// settle Rules (#33, #46): settledAt, settleWhenDone (a "done" Rule),
+	// settleWhenMerged (the main change reaching landed) and settleWhen (a
+	// change Rule).
+	SettledAt        *time.Time     `json:"settledAt,omitempty"`
+	SettleWhenDone   bool           `json:"settleWhenDone,omitempty"`
+	SettleWhenMerged bool           `json:"settleWhenMerged,omitempty"`
+	SettleWhen       *core.SettleOn `json:"settleWhen,omitempty"`
+	// Settle shadows thread.settle, which the fields above carry.
+	Settle *struct{} `json:"settle,omitempty"`
+	// Feed shadows thread.feed: the notices are the agent's (#47).
+	Feed *struct{} `json:"feed,omitempty"`
+	// Changes are the thread's own changes and the host records it shows
+	// (#35), each record once with the threads that show it.
+	Changes []core.Change `json:"changes,omitempty"`
+}
+
+// View is the owner's view as clients read it: the snooze is derived
+// from the View's snooze Rule (#46).
+type View struct {
+	*core.View
+	SnoozeUntil *time.Time `json:"snoozeUntil,omitempty"`
+	SnoozedAt   *time.Time `json:"snoozedAt,omitempty"`
+}
+
+// NewProject is what "New project from this thread" starts with (SPEC 0.5
+// V0.30, V0.55): the thread's folder and its name.
+type NewProject struct {
+	Name   string `json:"name"`
+	Folder string `json:"folder"`
+}
+
+// Project is a project as clients see it (SPEC 0.5 V0.23).
+type Project struct {
+	core.Project
+	// Rev is when this copy was built (#42): a client keeps the higher of a
+	// snapshot's copy and a stream frame's.
+	Rev      int64     `json:"rev"`
+	Threads  int       `json:"threads"`
+	LastUsed time.Time `json:"lastUsed"`
+	// QuietUntil is the end of the quiet hours the project is in (V0.46).
+	QuietUntil *time.Time `json:"quietUntil,omitempty"`
+}
+
+// State is GET /api/state (docs/API-v0.md). A host fills it with its own
+// records (T api.Thread, P api.Project, F its profiles); a front with its
+// hosts' records as it got them, stamped with their host, and Hosts (V0.51,
+// V0.54).
+type State[T, P, F any] struct {
+	Now      time.Time `json:"now"`
+	User     string    `json:"user"`
+	BuildID  string    `json:"buildId"`
+	Host     string    `json:"host"`
+	Threads  []T       `json:"threads"`
+	Actions  []Action  `json:"actions"`
+	Profiles []F       `json:"profiles"`
+	Projects []P       `json:"projects"`
+	// Partial: ?since=REV listed only the threads changed after REV (V0.38).
+	Partial bool `json:"partial"`
+	// Deploy is the deploy progress to show (V0.39), or nil.
+	Deploy any `json:"deploy"`
+	// Hosts are a front's hosts (V0.51); a host sends none.
+	Hosts []Host `json:"hosts,omitempty"`
+}
+
+// Action is an owner action as clients list it.
+type Action struct {
+	Name  string `json:"name"`
+	Label string `json:"label"`
+	Key   string `json:"key,omitempty"`
+	Bulk  bool   `json:"bulk,omitempty"`
+}
+
+// Host is one of a front's hosts in its state (V0.54): online or since when
+// not, its profiles and its deploy.
+type Host struct {
+	Name   string `json:"name"`
+	Online bool   `json:"online"`
+	Since  string `json:"since,omitempty"`
+	Error  string `json:"error,omitempty"`
+	// Profiles are the host's own (decision 0015); null when the host sent none.
+	Profiles []any `json:"profiles"`
+	Deploy   any   `json:"deploy,omitempty"`
+}
+
+// WriteJSON is the one JSON reply of the host and the front.
+func WriteJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}

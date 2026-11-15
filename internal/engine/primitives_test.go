@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/store"
+	"github.com/meros/fyr/internal/stream"
 )
 
 // bare is an engine without agents, on a clock the test moves.
@@ -34,7 +36,7 @@ func bare(t *testing.T) (*Engine, *store.Store, *time.Time) {
 
 func bareThread(t *testing.T, e *Engine) string {
 	t.Helper()
-	r := e.Command(Cmd{CommandID: NewID("c"), Action: "thread.create", Args: core.Args{"cwd": t.TempDir(), "text": "hi"}})
+	r := e.Command(api.Cmd{CommandID: NewID("c"), Action: "thread.create", Args: core.Args{"cwd": t.TempDir(), "text": "hi"}})
 	if !r.OK {
 		t.Fatalf("create: %+v", r)
 	}
@@ -42,8 +44,8 @@ func bareThread(t *testing.T, e *Engine) string {
 }
 
 // frames drains what the hub sent so far, by event name.
-func frames(ch chan Frame) map[string][]Frame {
-	out := map[string][]Frame{}
+func frames(ch chan stream.Frame) map[string][]stream.Frame {
+	out := map[string][]stream.Frame{}
 	for {
 		select {
 		case f := <-ch:
@@ -62,8 +64,8 @@ func TestObserveEventOnlyKeepsUpdatedAt(t *testing.T) {
 	before, _ := e.Thread(id)
 	*now = now.Add(time.Hour)
 	ch := e.Hub.Subscribe()
-	coretest.Patch(e, id, func(*core.Thread, time.Time) []agent.Ev {
-		return []agent.Ev{{Type: "effect.result", Data: map[string]any{"ok": true}}}
+	coretest.Patch(e, id, func(*core.Thread, time.Time) []core.Event {
+		return []core.Event{{Type: "effect.result", Data: map[string]any{"ok": true}}}
 	})
 	after, _ := e.Thread(id)
 	if !after.UpdatedAt.Equal(before.UpdatedAt) {
@@ -73,7 +75,7 @@ func TestObserveEventOnlyKeepsUpdatedAt(t *testing.T) {
 	if len(got["event"]) != 1 || len(got["thread"]) != 0 {
 		t.Fatalf("frames: %d events, %d threads", len(got["event"]), len(got["thread"]))
 	}
-	coretest.Patch(e, id, func(t *core.Thread, _ time.Time) []agent.Ev { t.Summary = "moved"; return nil })
+	coretest.Patch(e, id, func(t *core.Thread, _ time.Time) []core.Event { t.Summary = "moved"; return nil })
 	if th, _ := e.Thread(id); !th.UpdatedAt.Equal(*now) {
 		t.Fatalf("a change did not move UpdatedAt: %v", th.UpdatedAt)
 	}
@@ -148,7 +150,7 @@ func TestReplayUnderLock(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if r := e.Command(Cmd{CommandID: "same", Action: "project.create", Args: core.Args{"name": "Lasso"}}); !r.OK {
+			if r := e.Command(api.Cmd{CommandID: "same", Action: "project.create", Args: core.Args{"name": "Lasso"}}); !r.OK {
 				t.Errorf("create: %+v", r)
 			}
 		}()
@@ -157,7 +159,7 @@ func TestReplayUnderLock(t *testing.T) {
 	if n := len(e.Projects()); n != 1 {
 		t.Fatalf("%d projects from one command id", n)
 	}
-	r := e.Command(Cmd{CommandID: "same", Action: "project.create", Args: core.Args{"name": "Other"}})
+	r := e.Command(api.Cmd{CommandID: "same", Action: "project.create", Args: core.Args{"name": "Other"}})
 	b, _ := json.Marshal(r)
 	if !r.OK || r.Status != 200 || !strings.Contains(string(b), `"id":"p_`) {
 		t.Fatalf("replay: %s", b)
@@ -207,9 +209,9 @@ func TestOneTurnParser(t *testing.T) {
 	e, st, _ := bare(t)
 	id := bareThread(t, e)
 	e.record(id,
-		agent.Ev{Type: "user", Data: map[string]any{"text": "typed on the view", "from": agent.FromViewTyped}},
-		agent.Ev{Type: "user", Data: map[string]any{"text": "carry on", "from": agent.FromHandover}},
-		agent.Ev{Type: "msg", Data: map[string]any{"type": "assistant", "parent_tool_use_id": nil, "message": map[string]any{"content": []any{
+		core.Event{Type: "user", Data: map[string]any{"text": "typed on the view", "from": agent.FromViewTyped}},
+		core.Event{Type: "user", Data: map[string]any{"text": "carry on", "from": agent.FromHandover}},
+		core.Event{Type: "msg", Data: map[string]any{"type": "assistant", "parent_tool_use_id": nil, "message": map[string]any{"content": []any{
 			map[string]any{"type": "text", "text": "Done åäö"}, map[string]any{"type": "tool_use", "name": "Bash", "input": map[string]any{"command": "ls"}}}}}})
 	evs, _ := st.EventsFor(id, 0, 100, false)
 	text := threadText(evs)

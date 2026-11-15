@@ -13,6 +13,7 @@ import (
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/proc"
+	"github.com/meros/fyr/internal/provider"
 )
 
 // Handover (SPEC 0.5 V0.45, decision 0013): the owner moves a thread to
@@ -38,37 +39,6 @@ type Plan struct {
 // BriefTimeout bounds the source's handover turn (rung 3).
 var BriefTimeout = 10 * time.Minute
 
-// ConfigDirPath is where the profile's CLI keeps its sessions: the
-// profile's configDir, else CLAUDE_CONFIG_DIR in its env, else the
-// daemon's, else ~/.claude.
-func (p Profile) ConfigDirPath() string {
-	if p.ConfigDir != "" {
-		return expandHome(p.ConfigDir)
-	}
-	for _, kv := range p.Env {
-		if v, ok := strings.CutPrefix(kv, "CLAUDE_CONFIG_DIR="); ok && v != "" {
-			return expandHome(v)
-		}
-	}
-	if v := os.Getenv("CLAUDE_CONFIG_DIR"); v != "" {
-		return expandHome(v)
-	}
-	h, _ := os.UserHomeDir()
-	return filepath.Join(h, ".claude")
-}
-
-func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		h, _ := os.UserHomeDir()
-		return h + p[1:]
-	}
-	return p
-}
-
-// sessionFile finds <config>/projects/<dir>/<session>.jsonl (the claude
-// adapter's layout, V0.50).
-func sessionFile(cfgDir, cwd, sid string) string { return claudecli.SessionFile(cfgDir, cwd, sid) }
-
 func sameDir(a, b string) bool {
 	if filepath.Clean(a) == filepath.Clean(b) {
 		return true
@@ -80,11 +50,11 @@ func sameDir(a, b string) bool {
 
 // resumable reports whether the target can resume the thread's session,
 // and the source transcript; it changes nothing.
-func resumable(t core.Thread, from Profile) (string, error) {
+func resumable(t core.Thread, from provider.Profile) (string, error) {
 	if t.SessionID == "" {
 		return "", fmt.Errorf("The thread has no session yet")
 	}
-	src := sessionFile(from.ConfigDirPath(), t.Cwd, t.SessionID)
+	src := claudecli.SessionFile(from.ConfigDirPath(), t.Cwd, t.SessionID)
 	if src == "" {
 		return "", fmt.Errorf("No session transcript for this thread in %s", from.ConfigDirPath())
 	}
@@ -250,7 +220,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 	done(RungBrief, sid, path, fmt.Sprintf("[Fyr] Handover: the owner handed this thread over to you from %s. Your session is new; the previous agent wrote this handover%s:\n\n%s\n\nContinue the work from there. Start your reply with a short summary of where things stand.", name(from), saved, brief))
 }
 
-func name(p Profile) string {
+func name(p provider.Profile) string {
 	if p.Name != "" {
 		return p.Name
 	}
@@ -261,7 +231,7 @@ func name(p Profile) string {
 // as its reply, and returns that reply. A turn that runs already ends
 // first, and only the result of the turn that read the brief's message
 // counts (#40).
-func (m *Manager) brief(threadID string, to Profile) (string, error) {
+func (m *Manager) brief(threadID string, to provider.Profile) (string, error) {
 	s, err := m.ensure(threadID)
 	if err != nil {
 		return "", err

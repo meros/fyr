@@ -4,7 +4,7 @@ A calm control room for Claude coding agents. Like a lighthouse (*fyr* in Swedis
 
 Fyr runs Claude Code sessions on your own machines and shows one list: what needs you on top, running work below. It is built for one person who runs many agents in parallel against GitHub, and it is meant to replace T3 Code for that use.
 
-**Status:** v0 is in daily use (spec 0.5, V0.1–V0.67). Next milestone: `Solid core`, which consolidates the data model; the order is in [`docs/PLAN.md`](docs/PLAN.md). Status lives in [GitHub milestones](https://github.com/meros/fyr/milestones); how work flows is in [`docs/PROCESS.md`](docs/PROCESS.md).
+**Status:** v0 is in daily use (spec 0.5, V0.1–V0.71). Current milestone: `Solid core`, which consolidates the data model; the order is in [`docs/PLAN.md`](docs/PLAN.md). Status lives in [GitHub milestones](https://github.com/meros/fyr/milestones); how work flows is in [`docs/PROCESS.md`](docs/PROCESS.md).
 
 ## Start here
 

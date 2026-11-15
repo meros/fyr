@@ -6,6 +6,7 @@ import (
 
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
+	"github.com/meros/fyr/internal/stream"
 )
 
 // SPEC 0.5 V0.38: what the host sends is lean. A tool output over the cap is
@@ -112,4 +113,12 @@ func dropImages(x any) bool {
 		}
 	}
 	return cut
+}
+
+// sendEvents publishes stored events on the stream; large tool output is cut
+// on the wire (V0.38).
+func (e *Engine) sendEvents(evs []store.Event) {
+	for _, ev := range evs {
+		e.Hub.Send(stream.FrameEvent, Lean(ev))
+	}
 }
