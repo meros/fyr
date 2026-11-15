@@ -34,6 +34,9 @@ export interface Store {
   deploy: DeployProgress | null;
   /** timeline events per thread, oldest first; only for threads the client has loaded */
   events: Record<string, FyrEvent[]>;
+  /** The last seq of each loaded timeline when the stream left live: a refetch starts there, not after the
+   * events the new stream already appended (review 2026-11-15). Cleared per thread once refetched. */
+  resumeFrom: Record<string, number>;
 }
 
 export function initialStore(): Store {
@@ -49,6 +52,7 @@ export function initialStore(): Store {
     profiles: [],
     projects: [],
     events: {},
+    resumeFrom: {},
     deploy: null,
   };
 }
@@ -99,7 +103,24 @@ export function upsertThread(s: Store, raw: ThreadDTO): Store {
 }
 
 export function setConn(s: Store, conn: Conn): Store {
-  return s.conn === conn ? s : { ...s, conn };
+  if (s.conn === conn) return s;
+  if (s.conn !== "live" || conn === "live") return { ...s, conn };
+  // Leaving live: remember where each loaded timeline stood. An older point (not refetched yet) stays.
+  const resumeFrom = { ...s.resumeFrom };
+  for (const id of Object.keys(s.events)) if (!(id in resumeFrom)) resumeFrom[id] = lastSeq(s, id);
+  return { ...s, conn, resumeFrom };
+}
+
+/** Where to fetch a loaded timeline from: before a reconnect gap when there is one, else its newest seq. */
+export function resumeSeq(s: Store, threadId: string): number {
+  return s.resumeFrom[threadId] ?? lastSeq(s, threadId);
+}
+
+/** The timeline was refetched from `from`: forget that gap (unless a newer drop recorded another point). */
+export function resumed(s: Store, threadId: string, from: number): Store {
+  if (s.resumeFrom[threadId] !== from) return s;
+  const { [threadId]: _, ...rest } = s.resumeFrom;
+  return { ...s, resumeFrom: rest };
 }
 
 /** Merge events for a thread, deduplicated by seq, oldest first. */

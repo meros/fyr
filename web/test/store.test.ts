@@ -5,6 +5,10 @@ import {
   applyThreadPatch,
   flatOrder,
   initialStore,
+  lastSeq,
+  resumed,
+  resumeSeq,
+  setConn,
   liveEvent,
   mergeEvents,
   newer,
@@ -171,4 +175,28 @@ test("thread patches apply on the matching rev only", () => {
   assert.equal(stale.needFull, true);
   assert.equal(stale.store.threads.t1.title, "a", "a patch on another base changes nothing");
   assert.equal(applyThreadPatch(r.store, { id: "nope", rev: 1, base: 0, patch: {} }).needFull, true);
+});
+
+// review 2026-11-15: events that arrive between a new subscription and conn → live must not hide the gap before them.
+test("a reconnect refetches each loaded timeline from where it was when the stream dropped", () => {
+  const ev = (seq: number, subject = "a") => ({ seq, subject, type: "agent", at: at(0) }) as unknown as import("../src/types.ts").FyrEvent;
+  let s = applySnapshot(initialStore(), snap([thread("a", "seen", "seen"), thread("b", "seen", "seen")]), Date.parse(at(0)));
+  s = setConn(s, "live");
+  s = mergeEvents(s, "a", [ev(1), ev(2)], true);
+  s = mergeEvents(s, "b", [ev(7, "b")], true);
+  s = setConn(s, "offline");
+  s = setConn(s, "connecting");
+  // Seq 3–4 were missed; 5 arrives on the new stream before the snapshot.
+  s = liveEvent(s, ev(5));
+  assert.equal(lastSeq(s, "a"), 5);
+  s = setConn(s, "live");
+  assert.equal(resumeSeq(s, "a"), 2, "the refetch starts before the gap");
+  assert.equal(resumeSeq(s, "b"), 7);
+  s = resumed(s, "a", 2);
+  assert.equal(resumeSeq(s, "a"), 5, "after the refetch the newest seq again");
+  assert.equal(resumeSeq(s, "b"), 7);
+  // A second drop before b is refetched keeps b's older point.
+  s = mergeEvents(s, "b", [ev(9, "b")]);
+  s = setConn(s, "offline");
+  assert.equal(resumeSeq(s, "b"), 7);
 });
