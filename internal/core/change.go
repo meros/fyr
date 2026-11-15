@@ -66,9 +66,9 @@ type Change struct {
 	// merge commit Fyr watches for deployments.
 	Annotations []Annotation `json:"annotations,omitempty"`
 	DeployWatch *DeployWatch `json:"deployWatch,omitempty"`
-	PhaseBy    string      `json:"phaseBy"`
-	CreatedAt  time.Time   `json:"createdAt"`
-	UpdatedAt  time.Time   `json:"updatedAt"`
+	PhaseBy     string       `json:"phaseBy"`
+	CreatedAt   time.Time    `json:"createdAt"`
+	UpdatedAt   time.Time    `json:"updatedAt"`
 }
 
 // Revision is one version of a change: a commit, a plan digest, a doc version.
@@ -631,7 +631,6 @@ func trimChanges(t *Thread, now time.Time) {
 		t.Changes = append(t.Changes[:idx], t.Changes[idx+1:]...)
 	}
 }
-
 
 // freshKey is key, or key~N when a change with that key has landed or
 // ended: new work after that is a new change (V0.59 (3)).

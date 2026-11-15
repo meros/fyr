@@ -90,7 +90,9 @@ func images(a Args) []Image {
 
 // settleArmed reports a settle that waits for something: the run, the PR
 // merge or a change's phase.
-func settleArmed(t *Thread) bool { return t.SettleWhenDone || t.SettleWhenMerged || t.SettleWhen != nil }
+func settleArmed(t *Thread) bool {
+	return t.SettleWhenDone || t.SettleWhenMerged || t.SettleWhen != nil
+}
 
 // disarmSettle cancels every settle that waits for something.
 func disarmSettle(t *Thread) {
