@@ -706,3 +706,38 @@ func TestDTOPRIsTheMainChange(t *testing.T) {
 		t.Fatalf("changes board: %+v", wire.Changes)
 	}
 }
+
+// #33: the wire DTO keeps settledAt, settleWhenDone, settleWhen, liveView
+// and project, derived from the thread's Settle and Live and its project;
+// thread.settle itself is not sent.
+func TestDTODerivesSettleViewAndProject(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	h.cmd("project.create", "", core.Args{"name": "Kök", "folder": h.dir})
+	id := h.create("hello")
+	h.wait(id, "done", state(core.Done))
+	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+		c, _, _ := core.OpenChange(t, core.ChangeOpen{Key: "doc:x", Kind: core.KindDoc, Title: "Doc"}, core.ByAgent, now)
+		t.Running = true
+		core.ArmSettle(t, core.SettleCond{Kind: core.SettleDone}, now)
+		core.ArmSettle(t, core.SettleCond{Kind: core.SettleChange, Change: c.ID, Phase: core.PhaseReview}, now)
+		core.SetView(t, true)
+		return nil
+	})
+	wire := map[string]any{}
+	b, _ := json.Marshal(dtoOf(h.e, id))
+	json.Unmarshal(b, &wire)
+	sw, _ := wire["settleWhen"].(map[string]any)
+	if wire["settleWhenDone"] != true || sw == nil || sw["phase"] != string(core.PhaseReview) || wire["liveView"] != true || wire["project"] != "Kök" {
+		t.Fatalf("dto: %s", b)
+	}
+	if _, ok := wire["settle"]; ok || wire["settledAt"] != nil {
+		t.Fatalf("dto sends settle: %s", b)
+	}
+	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev { core.RunEnded(t, nil, now); return nil })
+	b, _ = json.Marshal(dtoOf(h.e, id))
+	wire = map[string]any{}
+	json.Unmarshal(b, &wire)
+	if wire["settledAt"] == nil || wire["settleWhenDone"] != nil || wire["settleWhen"] != nil {
+		t.Fatalf("dto after the run: %s", b)
+	}
+}

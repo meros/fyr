@@ -50,9 +50,9 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 }
 ```
 
-`pr` is the PR of the thread's main change (`mainChange`, a change id) and `settleWhenMerged` says that `settleWhen` waits for that change to land; the host derives both (#32). Every PR is stored on its code change (`changes[].pr`), so a thread with two PRs shows both on the Changes board.
+`pr` is the PR of the thread's main change (`mainChange`, a change id) and `settleWhenMerged` says that `settleWhen` waits for that change to land; the host derives both (#32). The host stores the settle as one component, `{at, when: [{kind: done|change, change, phase}]}` (#33), and derives `settledAt`, `settleWhenDone` (a `done` condition), `settleWhenMerged` and `settleWhen` (a change condition, one that is not "when merged" first) from it; several conditions may be armed, any one that holds settles the thread, and never while a run is live. `project` is the name of the thread's project (`projectId`), derived and not stored. Every PR is stored on its code change (`changes[].pr`), so a thread with two PRs shows both on the Changes board.
 
-`liveView` is the live view flag and `live` the view itself (V0.37); both are absent on a thread without them. `live.headline` is `state.headline` when it is a string; `checkedAt` is the last `view_*` call, `updatedAt` the last change of page or state.
+`liveView` is the live view flag and `live` the view itself (V0.37); both are absent on a thread without them. The flag is stored as `live.enabled` (#33), which the DTO also carries. `live.headline` is `state.headline` when it is a string; `checkedAt` is the last `view_*` call, `updatedAt` the last change of page or state.
 
 `rev` increases on every change, also across host restarts: keep the copy with the higher `rev`. An action name missing from `unavailable` is available. The client never computes status; it renders `attention`.
 

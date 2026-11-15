@@ -40,20 +40,20 @@ func TestAttentionTable(t *testing.T) {
 		{"new thread never seen is done", Thread{ActivityAt: at(1)}, View{}, Done},
 		{"seen after activity", Thread{ActivityAt: at(1)}, View{SeenAt: at(2)}, Seen},
 		{"activity after seen is done", Thread{ActivityAt: at(3)}, View{SeenAt: at(2)}, Done},
-		{"running is working", Thread{Running: true, ActivityAt: at(3)}, View{}, Working},
-		{"asking beats running", Thread{Running: true, Decisions: ask}, View{SeenAt: at(9)}, Asking},
-		{"failed stays after a visit", Thread{Failure: fail}, View{SeenAt: at(9)}, Failed},
-		{"asking beats failed", Thread{Failure: fail, Decisions: ask}, View{}, Asking},
+		{"running is working", Thread{Conversation: Conversation{Running: true}, ActivityAt: at(3)}, View{}, Working},
+		{"asking beats running", Thread{Conversation: Conversation{Running: true}, Decisions: ask}, View{SeenAt: at(9)}, Asking},
+		{"failed stays after a visit", Thread{Conversation: Conversation{Failure: fail}}, View{SeenAt: at(9)}, Failed},
+		{"asking beats failed", Thread{Conversation: Conversation{Failure: fail}, Decisions: ask}, View{}, Asking},
 		{"blocked PR when idle", withPR(Thread{}, openFail), View{SeenAt: at(9)}, Blocked},
-		{"blocked PR hidden while working", withPR(Thread{Running: true}, openFail), View{}, Working},
+		{"blocked PR hidden while working", withPR(Thread{Conversation: Conversation{Running: true}}, openFail), View{}, Working},
 		{"merged PR does not block", withPR(Thread{}, PR{State: "MERGED", Checks: "fail"}), View{SeenAt: at(9)}, Seen},
-		{"settled beats asking", Thread{SettledAt: ptr(at(1)), Decisions: ask}, View{}, Settled},
-		{"archived beats all", Thread{ArchivedAt: ptr(at(1)), SettledAt: ptr(at(1))}, View{}, Archived},
+		{"settled beats asking", Thread{Settle: Settle{At: ptr(at(1))}, Decisions: ask}, View{}, Settled},
+		{"archived beats all", Thread{ArchivedAt: ptr(at(1)), Settle: Settle{At: ptr(at(1))}}, View{}, Archived},
 		{"snoozed hides done", Thread{ActivityAt: at(3)}, View{SnoozeUntil: ptr(at(60)), SnoozedAt: ptr(at(4))}, Snoozed},
 		{"snooze expired", Thread{ActivityAt: at(3)}, View{SnoozeUntil: ptr(at(6)), SnoozedAt: ptr(at(4)), SeenAt: at(4)}, Seen},
 		{"new question wakes snooze", Thread{Decisions: ask}, View{SnoozeUntil: ptr(at(60)), SnoozedAt: ptr(at(4))}, Asking},
 		{"old question stays snoozed", Thread{Decisions: ask}, View{SnoozeUntil: ptr(at(60)), SnoozedAt: ptr(at(6))}, Snoozed},
-		{"new failure wakes snooze", Thread{Failure: fail}, View{SnoozeUntil: ptr(at(60)), SnoozedAt: ptr(at(4))}, Failed},
+		{"new failure wakes snooze", Thread{Conversation: Conversation{Failure: fail}}, View{SnoozeUntil: ptr(at(60)), SnoozedAt: ptr(at(4))}, Failed},
 	}
 	for _, c := range cases {
 		got := Compute(&c.th, &c.v, at(10))
@@ -82,7 +82,7 @@ func TestSettleWhileRunningSettlesWhenDone(t *testing.T) {
 	if _, err := apply(t, "thread.settle", th, v, nil, at(1)); err != nil {
 		t.Fatal(err)
 	}
-	if th.SettledAt != nil || !th.SettleWhenDone {
+	if th.Settle.At != nil || !th.Settle.Has(SettleDone) {
 		t.Fatal("settle on a running thread must defer")
 	}
 	RunEnded(th, nil, at(2))
@@ -204,7 +204,7 @@ func TestInvariantsUnderRandomCommands(t *testing.T) {
 				t.Fatalf("run %d step %d: L3 broken: archived thread has live work", run, step)
 			}
 			a := Compute(th, v, now)
-			if th.Failure != nil && th.ArchivedAt == nil && th.SettledAt == nil && len(th.Decisions) == 0 && a.State != Failed && a.State != Snoozed {
+			if th.Failure != nil && th.ArchivedAt == nil && th.Settle.At == nil && len(th.Decisions) == 0 && a.State != Failed && a.State != Snoozed {
 				t.Fatalf("run %d step %d: failure hidden as %s", run, step, a.State)
 			}
 			if len(th.Decisions) > 0 && a.Section != NeedsYou && a.State != Settled && a.State != Archived && a.State != Snoozed {
@@ -240,15 +240,15 @@ func TestSettleWithOpenPRArmsSettleWhenMerged(t *testing.T) {
 	if _, err := apply(t, "thread.settle", th, v, nil, at(1)); err != nil {
 		t.Fatal(err)
 	}
-	if th.SettledAt != nil || !SettlesWhenMerged(th) {
-		t.Fatalf("e with an open PR must arm settle when merged, got settled=%v armed=%v", th.SettledAt != nil, SettlesWhenMerged(th))
+	if th.Settle.At != nil || !SettlesWhenMerged(th) {
+		t.Fatalf("e with an open PR must arm settle when merged, got settled=%v armed=%v", th.Settle.At != nil, SettlesWhenMerged(th))
 	}
 	th1 := withPR(Thread{}, PR{State: "OPEN"})
 	th2, v2 := &th1, &View{}
 	if _, err := apply(t, "thread.settle", th2, v2, Args{"now": true}, at(1)); err != nil {
 		t.Fatal(err)
 	}
-	if th2.SettledAt == nil {
+	if th2.Settle.At == nil {
 		t.Fatal("bulk settle must settle now")
 	}
 }

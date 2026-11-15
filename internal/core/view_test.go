@@ -71,7 +71,7 @@ func TestViewStopDecision(t *testing.T) {
 // state.headline when it is a string.
 func TestViewFold(t *testing.T) {
 	start := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
-	th := &Thread{LiveView: true}
+	th := &Thread{Live: &LiveView{Enabled: true}}
 	RunStarted(th, start)
 	if ViewTouchedThisRun(th) {
 		t.Fatal("touched before any call")

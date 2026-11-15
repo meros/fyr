@@ -34,7 +34,7 @@ func TestProjectFolderAndNewThread(t *testing.T) {
 		t.Fatalf("folder %q", f)
 	}
 	n := h.cmd("thread.create", "", core.Args{"projectId": pid, "text": "hej"})
-	th, _ := h.e.Thread(n.ThreadID)
+	th := dtoOf(h.e, n.ThreadID)
 	if !n.OK || th.Cwd != a || th.ProjectID != pid || !th.ProjectManual || th.Project != "P" {
 		t.Fatalf("new thread: %+v cwd %q project %q manual %v", n, th.Cwd, th.ProjectID, th.ProjectManual)
 	}
