@@ -16,7 +16,7 @@ const ChangesNudgeReason = "Your open changes in Fyr have not been updated for a
 func OpenAgentChanges(t *Thread) int {
 	n := 0
 	for _, c := range t.Changes {
-		if !Ended(c.Phase) && c.PhaseBy != ByObserved {
+		if !c.Phase.Ended() && c.PhaseBy != ByObserved {
 			n++
 		}
 	}

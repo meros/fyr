@@ -37,15 +37,15 @@ func ProcessLost(t *Thread, class, msg string, now time.Time) {
 	var keep []Decision
 	live := t.Running
 	for _, d := range t.Decisions {
-		if d.Kind == "effect" {
+		if d.Kind == DecisionEffect {
 			keep = append(keep, d)
 		} else {
 			live = true
 		}
 	}
 	for i := range t.Tasks {
-		if t.Tasks[i].Status == "running" {
-			t.Tasks[i].Status, t.Tasks[i].UpdatedAt = "stopped", now
+		if t.Tasks[i].Status == TaskRunning {
+			t.Tasks[i].Status, t.Tasks[i].UpdatedAt = TaskStopped, now
 		}
 	}
 	if !live {
@@ -105,7 +105,7 @@ func TaskObserved(t *Thread, k Task, now time.Time) {
 		if cur.ID != k.ID {
 			continue
 		}
-		ended := cur.Status == "running" && k.Status != "" && k.Status != "running"
+		ended := cur.Status == TaskRunning && k.Status != "" && k.Status != TaskRunning
 		if k.Description != "" {
 			cur.Description = k.Description
 		}
@@ -134,7 +134,7 @@ func TaskObserved(t *Thread, k Task, now time.Time) {
 		return
 	}
 	if k.Status == "" {
-		k.Status = "running"
+		k.Status = TaskRunning
 	}
 	if k.StartedAt == nil {
 		k.StartedAt = &now

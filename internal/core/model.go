@@ -126,8 +126,8 @@ func FileViewed(v *View, path, blob string) bool {
 type Task struct {
 	ID          string     `json:"id"`
 	Description string     `json:"description,omitempty"`
-	Type        string     `json:"type,omitempty"`   // local_agent, local_bash, …
-	Status      string     `json:"status,omitempty"` // running, completed, failed, stopped
+	Type        string     `json:"type,omitempty"` // local_agent, local_bash, …
+	Status      TaskStatus `json:"status,omitempty"`
 	Activity    string     `json:"activity,omitempty"`
 	Summary     string     `json:"summary,omitempty"`
 	ToolUses    int        `json:"toolUses,omitempty"`
@@ -140,7 +140,7 @@ type Task struct {
 func (t *Thread) RunningTasks() int {
 	n := 0
 	for _, k := range t.Tasks {
-		if k.Status == "running" {
+		if k.Status == TaskRunning {
 			n++
 		}
 	}
@@ -156,15 +156,15 @@ type Failure struct {
 
 // Decision is a question or an approval that waits for the user.
 type Decision struct {
-	ID        string     `json:"id"`
-	Kind      string     `json:"kind"` // "ask", "approval" or "effect"
-	Assignee  string     `json:"assignee"`
-	Questions []Question `json:"questions,omitempty"`
-	Tool      string     `json:"tool,omitempty"`
-	Input     any        `json:"input,omitempty"`
-	Agent     string     `json:"agent,omitempty"` // which subagent asked, when known
-	Effect    *EffectReq `json:"effect,omitempty"`
-	CreatedAt time.Time  `json:"createdAt"`
+	ID        string       `json:"id"`
+	Kind      DecisionKind `json:"kind"`
+	Assignee  string       `json:"assignee"`
+	Questions []Question   `json:"questions,omitempty"`
+	Tool      string       `json:"tool,omitempty"`
+	Input     any          `json:"input,omitempty"`
+	Agent     string       `json:"agent,omitempty"` // which subagent asked, when known
+	Effect    *EffectReq   `json:"effect,omitempty"`
+	CreatedAt time.Time    `json:"createdAt"`
 }
 
 // EffectReq is an effect the agent asked Fyr to run (SPEC 5.10, V0.12).
@@ -192,8 +192,8 @@ type PR struct {
 	Repo      string     `json:"repo"`
 	Number    int        `json:"number"`
 	Title     string     `json:"title,omitempty"`
-	State     string     `json:"state"`  // OPEN, MERGED, CLOSED
-	Checks    string     `json:"checks"` // pass, fail, pending, none
+	State     string     `json:"state"` // OPEN, MERGED, CLOSED
+	Checks    Checks     `json:"checks"`
 	Review    string     `json:"review,omitempty"`
 	Conflict  bool       `json:"conflict,omitempty"`
 	Branch    string     `json:"branch,omitempty"` // the head branch (V0.59)
@@ -212,7 +212,7 @@ func (p *PR) Blocking() string {
 		return ""
 	}
 	switch {
-	case p.Checks == "fail":
+	case p.Checks == ChecksFail:
 		return "CI failed"
 	case p.Conflict:
 		return "Merge conflict"

@@ -33,7 +33,7 @@ func TestFetchParsesChecks(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if p.Checks != c.checks || p.Conflict != c.conflict || p.State != c.state || p.Repo != "a/b" || p.Number != 1 {
+		if string(p.Checks) != c.checks || p.Conflict != c.conflict || p.State != c.state || p.Repo != "a/b" || p.Number != 1 {
 			t.Errorf("case %d: %+v", i, p)
 		}
 	}

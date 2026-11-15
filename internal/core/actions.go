@@ -16,9 +16,9 @@ func (a Args) Str(k string) string { s, _ := a[k].(string); return s }
 // Effect is work an Action asks the host to do after its state change is
 // stored. Apply never performs effects itself, so it stays pure.
 type Effect struct {
-	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel, refresh, cancelMessage, handover
-	Text   string  `json:"text,omitempty"`
-	Images []Image `json:"images,omitempty"`
+	Kind   EffectKind `json:"kind"`
+	Text   string     `json:"text,omitempty"`
+	Images []Image    `json:"images,omitempty"`
 	// From is the thread whose agent sent this message (V0.22).
 	From string `json:"from,omitempty"`
 	// Attachments are ids of stored files (SPEC 0.5 V0.18).
@@ -31,7 +31,7 @@ type Effect struct {
 	Effort *string `json:"effort,omitempty"`
 	// Profile is the target of a handover (V0.45).
 	Profile string `json:"profile,omitempty"`
-	// Request is the approved effect for Kind "effect".
+	// Request is the approved effect for Kind EffectRun.
 	Request *EffectReq `json:"request,omitempty"`
 	// ByOwner marks an effect the owner started (V0.43): its result is
 	// recorded in the thread and not sent to the agent.
@@ -148,7 +148,7 @@ func sendAction(name, label string) *Action {
 				}
 			}
 			revive(t, v, now)
-			return []Effect{{Kind: "send", Text: text, Images: imgs, Attachments: atts, From: a.Str("from")}}, nil
+			return []Effect{{Kind: EffectSend, Text: text, Images: imgs, Attachments: atts, From: a.Str("from")}}, nil
 		},
 	}
 }
@@ -196,8 +196,8 @@ func init() {
 				return nil, fmt.Errorf("%w: no open decision %q", ErrBadArgs, id)
 			}
 			d := t.Decisions[idx]
-			e := Effect{Kind: "answer", DecisionID: id}
-			if d.Kind == "ask" {
+			e := Effect{Kind: EffectAnswer, DecisionID: id}
+			if d.Kind == DecisionAsk {
 				raw, _ := a["answers"].(map[string]any)
 				e.Answers = map[string]string{}
 				for _, q := range d.Questions {
@@ -211,9 +211,9 @@ func init() {
 			} else {
 				e.Allow, _ = a["allow"].(bool)
 			}
-			if d.Kind == "effect" {
+			if d.Kind == DecisionEffect {
 				// SPEC 5.10: the agent is not waiting; Fyr runs the effect itself.
-				e.Kind, e.Request = "effect", d.Effect
+				e.Kind, e.Request = EffectRun, d.Effect
 			}
 			t.Decisions = append(t.Decisions[:idx:idx], t.Decisions[idx+1:]...)
 			if len(t.Decisions) == 0 {
@@ -231,7 +231,7 @@ func init() {
 			return ""
 		},
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
-			return []Effect{{Kind: "interrupt"}}, nil
+			return []Effect{{Kind: EffectInterrupt}}, nil
 		}})
 
 	register(&Action{Name: "thread.retry", Label: "Retry", Key: "r",
@@ -244,7 +244,7 @@ func init() {
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			msg := "The last run stopped with an error (" + t.Failure.Message + "). Continue from where you stopped."
 			revive(t, v, now)
-			return []Effect{{Kind: "send", Text: msg}}, nil
+			return []Effect{{Kind: EffectSend, Text: msg}}, nil
 		}})
 
 	register(&Action{Name: "thread.dismissPR", Label: "Dismiss PR",
@@ -380,7 +380,7 @@ func init() {
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			t.ArchivedAt = &now
 			v.SnoozeUntil, v.SnoozedAt = nil, nil
-			return []Effect{{Kind: "stop"}}, nil
+			return []Effect{{Kind: EffectStop}}, nil
 		}})
 
 	register(&Action{Name: "thread.unarchive", Label: "Unarchive", Bulk: true,
@@ -460,7 +460,7 @@ func init() {
 			if !on {
 				ClearView(t) // V0.60: the view's actions go with it
 			}
-			return []Effect{{Kind: "refresh"}}, nil
+			return []Effect{{Kind: EffectRefresh}}, nil
 		}})
 
 	register(&Action{Name: "thread.handover", Label: "Hand over",
@@ -492,7 +492,7 @@ func init() {
 			}
 			t.Handover = &Handover{To: p, Model: a.Str("model"), At: now}
 			v.SeenAt = now
-			return []Effect{{Kind: "handover", Profile: p, Model: a.Str("model")}}, nil
+			return []Effect{{Kind: EffectHandover, Profile: p, Model: a.Str("model")}}, nil
 		}})
 
 	register(&Action{Name: "thread.setModel", Label: "Change model",
@@ -507,7 +507,7 @@ func init() {
 				m = t.Model
 			}
 			t.Model = m
-			e := Effect{Kind: "setModel", Model: m}
+			e := Effect{Kind: EffectSetModel, Model: m}
 			if hasEffort {
 				eff := a.Str("effort")
 				t.Effort, e.Effort = eff, &eff

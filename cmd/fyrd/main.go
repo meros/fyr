@@ -667,7 +667,7 @@ func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []stri
 			Owner: core.Owner, Visibility: "private", Profile: prof, Model: c.Model, SessionID: c.SessionID,
 			CreatedAt: c.UpdatedAt, UpdatedAt: c.UpdatedAt, ActivityAt: c.UpdatedAt, Source: "t3", T3ID: c.T3ID}
 		if repo, num, ok := agent.ParsePR(c.PRURL); ok {
-			t.PR = &core.PR{URL: c.PRURL, Repo: repo, Number: num, State: "OPEN", Checks: "pending"}
+			t.PR = &core.PR{URL: c.PRURL, Repo: repo, Number: num, State: "OPEN", Checks: core.ChecksPending}
 		}
 		v := &core.View{User: core.Owner, Entity: t.ID, SeenAt: c.UpdatedAt}
 		if c.SnoozedUntil != "" {
