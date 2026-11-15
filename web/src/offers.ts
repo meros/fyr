@@ -97,3 +97,14 @@ export function actionEventLine(d: Record<string, unknown> | undefined): { line:
   const ok = !!d.ok;
   return { line: ok ? `“${label}” succeeded` : `“${label}” failed${d.exit ? ` (exit ${d.exit})` : ""}`, ok };
 }
+
+/** The thread's "settles when …" chip, or null when nothing is armed. A change is found by id, then key (V0.59 (7)). */
+export function settleLine(t: Pick<ThreadDTO, "settleWhenDone" | "settleWhenMerged" | "settleWhen" | "changes">): string | null {
+  if (t.settleWhenDone) return "settles when done";
+  if (t.settleWhenMerged) return "settles when merged";
+  const w = t.settleWhen;
+  if (!w?.change) return null;
+  const cs = t.changes ?? [];
+  const c = cs.find((x) => x.id === w.change) ?? cs.find((x) => x.key === w.change);
+  return `settles when ${c?.title || w.change} is ${w.phase}`;
+}

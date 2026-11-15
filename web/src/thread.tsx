@@ -31,7 +31,7 @@ import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
-import { changeChip } from "./offers.ts";
+import { changeChip, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
 
@@ -170,11 +170,14 @@ export function ThreadPane(p: ThreadPaneProps) {
               </span>
             ) : null;
           })()}
-          {(t.settleWhenDone || t.settleWhenMerged) && (
-            <span class="chip">
-              <span>{t.settleWhenDone ? "settles when done" : "settles when merged"}</span>
-            </span>
-          )}
+          {(() => {
+            const l = settleLine(t);
+            return l ? (
+              <span class="chip">
+                <span>{l}</span>
+              </span>
+            ) : null;
+          })()}
         </div>
         <ThreadOffers t={t} onRun={p.onRun} />
         <div class="tabs" role="tablist">
