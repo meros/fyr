@@ -1,6 +1,6 @@
-import { isTransient, sendWithRetry } from "./retry.ts";
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead.
 
+import { isTransient, sendWithRetry } from "./retry.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { cache, mergeStateDelta, sinceRev } from "./cache.ts";
 import type { Conn, ThreadPatch } from "./store.ts";
