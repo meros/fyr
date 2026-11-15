@@ -24,7 +24,7 @@ import { clearThreadNotification } from "./pwa.ts";
 
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, StateDTO, ThreadDTO } from "./types.ts";
+import type { Decision, ThreadDTO } from "./types.ts";
 import { createApi } from "./api.ts";
 import { setQuotaSource } from "./quota-ui.tsx";
 import { setChangesSource } from "./changes-ui.tsx";
@@ -44,6 +44,7 @@ import {
   sections,
   setConn,
   snoozePresets,
+  stateForCache,
   undoCommands,
   undoKindOf,
   undoLive,
@@ -463,12 +464,12 @@ function App() {
     const t = setTimeout(
       () =>
         idle(() =>
-          void cache.saveState({ now: new Date().toISOString(), user: store.user, host: store.host, threads: Object.values(store.threads), actions: store.actions, profiles: store.profiles, projects: store.projects } as StateDTO),
+          void cache.saveState(stateForCache(store, new Date().toISOString())),
         ),
       2000,
     );
     return () => clearTimeout(t);
-  }, [store.threads, store.projects, store.loaded]);
+  }, [store.threads, store.projects, store.hosts, store.deploy, store.loaded]);
 
   // Decision card state follows the open decision.
   const decision: Decision | null = viewThread?.decisions?.[0] ?? null;

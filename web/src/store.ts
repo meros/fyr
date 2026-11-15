@@ -95,6 +95,11 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
   };
 }
 
+/** The state as the device stores it (V0.38); applySnapshot reads it back on an offline start. */
+export function stateForCache(s: Store, now: string): StateDTO {
+  return { now, user: s.user, host: s.host, hosts: s.hosts, deploy: s.deploy, threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: s.projects };
+}
+
 export function upsertThread(s: Store, raw: ThreadDTO): Store {
   const t = decodeThread(raw);
   if (!t.id) return s;
