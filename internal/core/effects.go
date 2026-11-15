@@ -1,7 +1,6 @@
 package core
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -52,15 +51,9 @@ func reduceEffectResult(r Rec, in Input, now time.Time) (Result, error) {
 		}
 		short := TruncTail(strings.TrimSpace(x.Text), 2000)
 		res.Events = append(res.Events, Event{"action", map[string]any{"on": p.On, "title": p.Title, "action": p.Action.ID, "label": p.Action.Label, "run": p.Action.Run, "ok": x.OK, "exit": x.Exit, "output": short, "ended": true}})
-		res.Effects = append(res.Effects, tell(ownerRan(p.Action.Label, p.Title, x.OK, x.Exit, x.Text)))
 	case ef.Kind == EffectRun && ef.Request != nil && ef.ByOwner:
 		req := *ef.Request
-		res.Events = append(res.Events, Event{"effect.result", map[string]any{"action": req.Action, "args": req.Args, "ok": x.OK, "text": ownerLine(req, x.OK, x.Text), "by": "owner"}})
-		label := req.Action
-		if fx := FyrEffects[req.Action]; fx != nil {
-			label = fx.Label
-		}
-		res.Effects = append(res.Effects, tell(ownerRan(label, prTitle(req), x.OK, 0, x.Text)))
+		res.Events = append(res.Events, Event{"effect.result", map[string]any{"action": req.Action, "args": req.Args, "ok": x.OK, "text": ownerLine(req, x.OK, x.Text), "output": TruncTail(strings.TrimSpace(x.Text), 2000), "by": "owner"}})
 	case ef.Kind == EffectRun && ef.Request != nil:
 		report(&res, *ef.Request, ef.Allow, x.OK, x.Text)
 	case !x.OK:
@@ -69,45 +62,14 @@ func reduceEffectResult(r Rec, in Input, now time.Time) (Result, error) {
 	return res, nil
 }
 
-// tell is the effect that tells the thread's agent: the one place a reduce
-// speaks to the agent until the agent feed (#47) projects notices instead.
-func tell(text string) Effect { return Effect{Kind: EffectTell, Text: text} }
-
-// report records the result of a request the agent made and tells the
-// agent.
+// report records the result of a request the agent made; the agent feed
+// tells the agent (feed.go, the result rule).
 func report(res *Result, req EffectReq, allowed, ok bool, text string) {
-	res.Events = append(res.Events, Event{"effect.result", map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": text}})
-	status := "failed"
-	switch {
-	case ok:
-		status = "succeeded"
-	case !allowed:
-		status = "was declined by the user"
+	data := map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": text}
+	if !allowed {
+		data["declined"] = true
 	}
-	b, _ := json.Marshal(req.Args)
-	tool := "effect_request"
-	if _, ok := req.Args["change"]; ok {
-		tool = "change_request" // V0.59
-	}
-	res.Effects = append(res.Effects, tell(fmt.Sprintf("[Fyr] Your %s %s %s %s.\n%s", tool, req.Action, string(b), status, text)))
-}
-
-// ownerRan is the agent's message about something the owner ran.
-func ownerRan(label, title string, ok bool, exit int, out string) string {
-	status := "succeeded"
-	if !ok {
-		status = fmt.Sprintf("failed (exit %d)", exit)
-	}
-	return fmt.Sprintf("[Fyr] The owner ran %q on %s: it %s.\n%s", label, title, status, TruncTail(strings.TrimSpace(out), 2000))
-}
-
-// prTitle names the PR of an effect for the agent.
-func prTitle(req EffectReq) string {
-	url, _ := req.Args["pr"].(string)
-	if _, n := parsePRURL(url); n != 0 {
-		return fmt.Sprintf("the PR #%d", n)
-	}
-	return "this thread"
+	res.Events = append(res.Events, Event{"effect.result", data})
 }
 
 // ownerLine starts an owner effect's result with one plain sentence.

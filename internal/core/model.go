@@ -59,7 +59,9 @@ type Thread struct {
 	Settle Settle `json:"settle,omitzero"`
 	// Rules are the thread's armed watches (SPEC 7, #46): settle conditions,
 	// the deploy watch, the built-in actions and the agent's own.
-	Rules      []Rule     `json:"rules,omitempty"`
+	Rules []Rule `json:"rules,omitempty"`
+	// Feed is the agent's queue of notices not delivered yet (#47).
+	Feed       Feed       `json:"feed,omitzero"`
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 
 	Source string `json:"source"`           // "fyr" or "t3"

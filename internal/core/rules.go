@@ -735,9 +735,8 @@ func init() {
 		}},
 		// The snooze's end: its firing disarms it, which wakes the thread.
 		{Name: KindRuleWake, From: fromRule, Reduce: func(Rec, Input, time.Time) (Result, error) { return Result{}, nil }},
-		// #47 hook: the agent feed turns this firing into a Notice for the
-		// thread's agent (the rule.fired event carries the note). Until then
-		// the firing is only recorded.
+		// The agent feed's watch rule (feed.go) turns this firing into a
+		// notice for the thread's agent; the rule.fired event carries the note.
 		{Name: KindRuleNotify, From: fromRule, Reduce: func(Rec, Input, time.Time) (Result, error) { return Result{}, nil }},
 		// A Rule whose armed time was the work (an observer reads while it is
 		// armed): firing ends it.

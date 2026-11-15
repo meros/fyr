@@ -389,12 +389,15 @@ func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 	was, _ := json.Marshal(cur)
 	is, _ := json.Marshal(t)
 	changed := fresh != nil || string(was) != string(is)
+	// The agent's notice queue is not news for the owner (#47): a change of
+	// it alone is stored, never broadcast, and keeps UpdatedAt.
+	feedOnly := changed && fresh == nil && string(sansFeed(cur)) == string(sansFeed(t))
 	vwas, _ := json.Marshal(e.views[cur.ID])
 	vis, _ := json.Marshal(v)
 	viewChanged := string(vwas) != string(vis)
-	if k.Touch || (changed && !k.Untouched) {
+	if k.Touch || (changed && !feedOnly && !k.Untouched) {
 		t.UpdatedAt = now
-		changed = true
+		changed, feedOnly = true, false
 	}
 	p := &applied{res: res, threadID: t.ID, reply: Reply{OK: true, ThreadID: t.ID, Status: 200, Result: res.Reply}}
 	for i := range p.res.Effects {
@@ -451,6 +454,10 @@ func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 		return nil, err
 	}
 	p.evs = evs
+	if feedOnly && !viewChanged {
+		e.threads[t.ID] = t
+		return p, nil
+	}
 	if changed || viewChanged {
 		p.newPR = cur.MainPR() == nil && t.MainPR() != nil
 		e.threads[t.ID], e.views[t.ID] = t, v
@@ -459,6 +466,14 @@ func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 		p.dto = &d
 	}
 	return p, nil
+}
+
+// sansFeed is a thread as JSON without its notice queue.
+func sansFeed(t *core.Thread) []byte {
+	c := *t
+	c.Feed = core.Feed{}
+	b, _ := json.Marshal(&c)
+	return b
 }
 
 // publish broadcasts what apply stored, then starts its effects. Call it
@@ -545,6 +560,8 @@ type DTO struct {
 	SettleWhen       *core.SettleOn `json:"settleWhen,omitempty"`
 	// Settle shadows thread.settle, which the fields above carry.
 	Settle *struct{} `json:"settle,omitempty"`
+	// Feed shadows thread.feed: the notices are the agent's (#47).
+	Feed *struct{} `json:"feed,omitempty"`
 
 	prev core.State // the state before this change; not sent
 }
