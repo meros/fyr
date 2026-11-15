@@ -10,6 +10,7 @@ import {
   resumeSeq,
   setConn,
   liveEvent,
+  matchesQuery,
   mergeEvents,
   newer,
   recordUndo,
@@ -211,4 +212,15 @@ test("the stored state round-trips hosts and deploy", () => {
   assert.equal(offline.deploy?.phase, "build");
   assert.equal(offline.host, "front");
   assert.deepEqual(Object.keys(offline.threads), ["a"]);
+});
+
+// review 2026-11-15: one search match for the desktop list and the phone search (title, project, #PR).
+test("matchesQuery finds a thread by title, project or PR number", () => {
+  const t = thread("a", "seen", "seen", { title: "Fix Login", project: "web", pr: { number: 42 } as never });
+  assert.equal(matchesQuery(t, "login"), true);
+  assert.equal(matchesQuery(t, " WEB "), true);
+  assert.equal(matchesQuery(t, "#42"), true);
+  assert.equal(matchesQuery(t, "#4"), true);
+  assert.equal(matchesQuery(t, "api"), false);
+  assert.equal(matchesQuery(thread("b", "seen", "seen"), "#"), false, "no PR, no #");
 });

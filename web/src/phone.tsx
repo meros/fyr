@@ -8,7 +8,7 @@ import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts";
-import { SECTIONS, isAvailable, sections, unavailableReason, type SectionKey, type Sections } from "./store.ts";
+import { SECTIONS, isAvailable, matchesQuery, sections, unavailableReason, type SectionKey, type Sections } from "./store.ts";
 import { quietNote } from "./quiet.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
@@ -696,7 +696,7 @@ function MSearch(p: PhoneProps) {
     return SECTIONS.flatMap((s) => sec[s.key]);
   }, [p.searchable]);
   const needle = q.trim().toLowerCase();
-  const hits = needle ? all.filter((t) => `${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(needle)).slice(0, 200) : [];
+  const hits = needle ? all.filter((t) => matchesQuery(t, needle)).slice(0, 200) : [];
   return (
     <div class="m-screen">
       <div class="m-ih">
