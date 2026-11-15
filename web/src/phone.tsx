@@ -8,12 +8,13 @@ import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts";
-import { SECTIONS, isAvailable, sections, unavailableReason, type SectionKey, type Sections } from "./store.ts";
+import { SECTIONS, isAvailable, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type Conn, type SectionKey, type Sections, type UndoKind } from "./store.ts";
 import { quietNote } from "./quiet.ts";
-import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
+import { StateIcon, stateClass } from "./icons.tsx";
+import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
-import { AgentsStrip, Conversation, EffectBody, PrTab, effectSentence, prLabel, type SendArgs } from "./thread.tsx";
+import { AgentsStrip, Conversation, EffectBody, PrTab, type SendArgs } from "./thread.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
@@ -21,11 +22,11 @@ import { Filmstrip } from "./preview-ui.tsx";
 import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
 import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
 import { changeChip } from "./offers.ts";
+import { prChip } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { defaultTab, liveViewOf } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
-import { rowSummary } from "./view.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
@@ -35,14 +36,13 @@ import { changeOptions, folderHint, lastProject } from "./dialogs.tsx";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import { previewsOf } from "./conversation.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
-import { ADVANCE_MS, activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, phoneSnoozePresets, stepLabel, stripCount, type Choice } from "./mobile.ts";
+import { ADVANCE_MS, activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, stepLabel, stripCount, type Choice } from "./mobile.ts";
 import { LONG_PRESS_MS, idle, longPressCancelled, settleLabel, swipeAvail, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
 import type { Nav, Sheet } from "./nav.ts";
 import { groupTasks, liveLine, workingLine } from "./tasks.ts";
 import { COLLAPSED_BY_DEFAULT, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
-import type { ConnState } from "./api.ts";
 import type { NewThreadArgs } from "./dialogs.tsx";
 import { QuotaList } from "./quota-ui.tsx";
 import { hostForProject, hostTag, offlineLine, profilesOn, type HostInfo } from "./hosts.ts";
@@ -165,7 +165,7 @@ export interface PhoneProps {
   sec: Sections;
   now: number;
   host: string;
-  conn: ConnState;
+  conn: Conn;
   thread: ThreadDTO | undefined;
   events: FyrEvent[] | undefined;
   onEarlier?: () => void;
@@ -195,7 +195,7 @@ export interface PhoneProps {
   /** V0.50: the Settings body (the app builds it with its Api) */
   settings?: ComponentChildren;
   toast: { text: string; undo: boolean; error?: boolean } | null;
-  undoKind: "settle" | "archive" | "snooze" | null;
+  undoKind: UndoKind | null;
   undoIds: string[];
   undoLive: boolean;
   actions: PhoneActions;
@@ -294,7 +294,7 @@ function MToast(p: PhoneProps & { bottomBar: boolean }) {
   if (!p.toast) return null;
   let text = p.toast.text;
   if (p.toast.undo && p.undoKind && p.undoIds.length === 1) {
-    const verb = p.undoKind === "settle" ? "Settled" : p.undoKind === "archive" ? "Archived" : "Snoozed";
+    const verb = undoVerb(p.undoKind);
     const title = p.threads[p.undoIds[0]]?.title;
     if (title) text = `${verb} “${title}”`;
   }
@@ -514,29 +514,6 @@ function snoozedHint(list: ThreadDTO[], now: number): string {
   return next ? `next: ${untilLabel(next, now)}` : "none";
 }
 
-function needsWord(t: ThreadDTO): string {
-  const d = t.decisions?.[0];
-  if (t.attention.state === "asking" && d) {
-    if (d.kind === "ask") {
-      const n = d.questions?.length ?? 1;
-      return n === 1 ? "1 question" : `${n} questions`;
-    }
-    return d.kind === "approval" ? "Approval" : describeEffect(d, t.pr).label;
-  }
-  return t.attention.reason || stateLabel(t.attention.state);
-}
-
-function needsMeta(t: ThreadDTO): string {
-  const d = t.decisions?.[0];
-  if (t.attention.state === "asking" && d) {
-    if (d.kind === "ask") return d.questions?.[0]?.question ?? "";
-    if (d.kind === "approval") return `Allow ${d.tool ?? "tool"}${typeof d.input?.command === "string" ? ": " + d.input.command : ""}`;
-    return effectSentence(d);
-  }
-  if (t.attention.state === "failed") return t.failure?.message ?? "";
-  return rowSummary(t);
-}
-
 function oneMeta(t: ThreadDTO, now: number): string {
   if (t.attention.section === "working") {
     const subs = t.subagents && !groupTasks(t.tasks).running.length ? `${t.subagents} sub · ` : "";
@@ -555,7 +532,7 @@ function MHost({ t, hosts }: { t: ThreadDTO; hosts?: HostInfo[] }) {
 
 function MPr({ t, short }: { t: ThreadDTO; short?: boolean }) {
   if (!t.pr) return <span />;
-  const l = prLabel(t.pr, short);
+  const l = prChip(t.pr, short);
   return (
     <span class={`m-pr ${l.cls}`} title={l.title}>
       {l.text}
@@ -651,7 +628,7 @@ function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) 
       <span class="t ell">{t.title || "Untitled"}</span>
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, p.now)}</span>
       <span class="m ell">
-        <b class={stateClass(st)}>{needsWord(t)}</b> · <MHost t={t} hosts={p.hosts} />{t.parent && <><StartedBy parentId={t.parent} link={false} /> · </>}<ThreadProject t={t} /> · {needsMeta(t)}
+        <b class={stateClass(st)}>{rowState(t)}</b> · <MHost t={t} hosts={p.hosts} />{t.parent && <><StartedBy parentId={t.parent} link={false} /> · </>}<ThreadProject t={t} /> · {rowMeta(t)}
       </span>
       <MPr t={t} />
     </div>
@@ -719,7 +696,7 @@ function MSearch(p: PhoneProps) {
     return SECTIONS.flatMap((s) => sec[s.key]);
   }, [p.searchable]);
   const needle = q.trim().toLowerCase();
-  const hits = needle ? all.filter((t) => `${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(needle)).slice(0, 200) : [];
+  const hits = needle ? all.filter((t) => matchesQuery(t, needle)).slice(0, 200) : [];
   return (
     <div class="m-screen">
       <div class="m-ih">
@@ -801,7 +778,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
               <span>{t.branch}</span>
             </span>
           )}
-          {t.pr && <span class={`m-chip prc ${prLabel(t.pr).cls}`} title={prLabel(t.pr).title}>{prLabel(t.pr).text}</span>}
+          {t.pr && <span class={`m-chip prc ${prChip(t.pr).cls}`} title={prChip(t.pr).title}>{prChip(t.pr).text}</span>}
           {(() => {
             const c = changeChip(t); // V0.59 (8)
             return c ? <span class={`m-chip prc ${c.cls}`} title={c.title}>{c.text}</span> : null;
@@ -1482,12 +1459,12 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
               <div class="m-pkt">{t.title}</div>
             </div>
             <div class="m-pkm ell">
-              {[t.project, t.branch, t.pr ? prLabel(t.pr).text : null].filter(Boolean).join(" · ")}
+              {[t.project, t.branch, t.pr ? prChip(t.pr).text : null].filter(Boolean).join(" · ")}
             </div>
             {t.summary && <div class="m-pkb prose">Claude: {t.summary}</div>}
             {d && (
               <div class="m-pkq">
-                <b class="s-ask">{needsWord(t)}</b> · {needsMeta(t)}
+                <b class="s-ask">{rowState(t)}</b> · {rowMeta(t)}
               </div>
             )}
             <div class="m-pkn">Peek does not mark the thread seen.</div>
@@ -1602,7 +1579,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
 }
 
 function SnoozeSheet({ ids, title, onClose, onPick }: { ids: string[]; title?: string; onClose(): void; onPick(d: Date): void }) {
-  const presets = phoneSnoozePresets(new Date());
+  const presets = snoozePresets(new Date());
   const [custom, setCustom] = useState(false);
   const [val, setVal] = useState("");
   return (

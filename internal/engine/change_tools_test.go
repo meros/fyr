@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -239,5 +240,74 @@ func TestChangesUpkeep(t *testing.T) {
 	}
 	if th, _ := h.e.Thread(id); !th.ChangesCheckedAt.After(first) {
 		t.Fatal("change_unchanged did not move the upkeep time")
+	}
+}
+
+// SPEC 0.5 V0.60 (3): two presses at the same time (two devices) run a
+// script once; the second gets "It is running".
+func TestConcurrentPressRunsOnce(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	release := make(chan struct{})
+	var mu sync.Mutex
+	runs := 0
+	h.e.Scripts = func(context.Context, string, []string) (string, int, error) {
+		mu.Lock()
+		runs++
+		mu.Unlock()
+		<-release
+		return "", 0, nil
+	}
+	if out, isErr := callAs(t, h.e, id, "offer_action", map[string]any{"on": "thread", "id": "e2e", "label": "E2E", "run": "script", "argv": []any{"make", "e2e"}}); isErr {
+		t.Fatal(out)
+	}
+	th, _ := h.e.Thread(id)
+	a := findOffer(th.Offers, "e2e")
+	var wg sync.WaitGroup
+	oks := make(chan bool, 8)
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			oks <- h.cmdID(fmt.Sprintf("p%d", i), "action.run", id, core.Args{"on": "thread", "action": "e2e", "digest": a.Digest}).OK
+		}()
+	}
+	wg.Wait()
+	close(oks)
+	n := 0
+	for ok := range oks {
+		if ok {
+			n++
+		}
+	}
+	close(release)
+	if n != 1 {
+		t.Fatalf("%d of 8 concurrent presses ran", n)
+	}
+	eventually(t, "the script ended", func() bool {
+		th, _ := h.e.Thread(id)
+		return len(th.OfferRuns) == 1 && !th.OfferRuns[0].Running
+	})
+}
+
+// SPEC 0.5 V0.12, review 2026-11-15: pr_link and change_open store the PR in
+// the one canonical form, whatever page of it the agent passed.
+func TestPRLinkStoresCanonicalURL(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	if out, isErr := callAs(t, h.e, id, "pr_link", map[string]any{"url": "https://github.com/o/r/pull/5/files?w=1"}); isErr {
+		t.Fatal(out)
+	}
+	if out, isErr := callAs(t, h.e, id, "change_open", map[string]any{"key": "k", "title": "K", "pr": "https://github.com/o/r/pull/6#top"}); isErr {
+		t.Fatal(out)
+	}
+	th, _ := h.e.Thread(id)
+	if th.PR == nil || th.PR.URL != "https://github.com/o/r/pull/5" {
+		t.Fatalf("pr_link stored %+v", th.PR)
+	}
+	if c := core.FindChange(&th, "k"); c == nil || c.PR() != "https://github.com/o/r/pull/6" {
+		t.Fatalf("change_open stored %+v", c)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"strings"
 	"time"
 )
@@ -59,6 +60,8 @@ type Offer struct {
 
 // OfferRun is one press of an offer and its result.
 type OfferRun struct {
+	// On is "thread" or "view" for the thread's runs; "" on a change.
+	On      string     `json:"on,omitempty"`
 	Action  string     `json:"action"`
 	Label   string     `json:"label"`
 	By      string     `json:"by"`
@@ -180,6 +183,10 @@ func (h Holder) count() int {
 	return n
 }
 
+// owns reports a run of this holder. Runs stored before runs had On are the
+// thread's, as they were then.
+func (h Holder) owns(r OfferRun) bool { return r.On == h.On || (r.On == "" && h.Change == nil) }
+
 // Remove drops an offer the agent declared.
 func (h Holder) Remove(id string) bool {
 	list := *h.Offers
@@ -217,7 +224,7 @@ func (h Holder) Available(a Offer) string {
 		}
 	}
 	for _, r := range *h.Runs {
-		if r.Action == a.ID && r.Running {
+		if r.Action == a.ID && h.owns(r) && r.Running {
 			return "It is running"
 		}
 	}
@@ -229,7 +236,7 @@ func (h Holder) Available(a Offer) string {
 // sets it to fail, which blocks the thread. A failed script on the thread or
 // its view is a failure line only; it moves ActivityAt so the owner sees it.
 func (h Holder) Started(a Offer, now time.Time) {
-	*h.Runs = append(*h.Runs, OfferRun{Action: a.ID, Label: a.Label, By: ByOwner, At: now, Running: a.Run == RunScript || a.Run == RunFyr})
+	*h.Runs = append(*h.Runs, OfferRun{On: h.On, Action: a.ID, Label: a.Label, By: ByOwner, At: now, Running: a.Run == RunScript || a.Run == RunFyr})
 	if len(*h.Runs) > maxRuns {
 		*h.Runs = (*h.Runs)[len(*h.Runs)-maxRuns:]
 	}
@@ -244,7 +251,7 @@ func (h Holder) Ended(t *Thread, a Offer, ok bool, exit int, output string, now 
 	}
 	runs := *h.Runs
 	for i := len(runs) - 1; i >= 0; i-- {
-		if runs[i].Action == a.ID && runs[i].Running {
+		if runs[i].Action == a.ID && h.owns(runs[i]) && runs[i].Running {
 			runs[i].Running, runs[i].OK, runs[i].Exit, runs[i].Output, runs[i].EndedAt = false, ok, exit, output, &now
 			break
 		}
@@ -267,15 +274,10 @@ func (h Holder) Ended(t *Thread, a Offer, ok bool, exit int, output string, now 
 	c.UpdatedAt = now
 }
 
-// ClearView drops the view's offers when the view goes away.
+// ClearView drops the view's offers and their runs when the view goes away.
 func ClearView(t *Thread) {
-	keep := t.Offers[:0]
-	for _, a := range t.Offers {
-		if a.On != OnView {
-			keep = append(keep, a)
-		}
-	}
-	t.Offers = keep
+	t.Offers = slices.DeleteFunc(t.Offers, func(a Offer) bool { return a.On == OnView })
+	t.OfferRuns = slices.DeleteFunc(t.OfferRuns, func(r OfferRun) bool { return r.On == OnView })
 }
 
 // syncBuiltins sets the built-in offers of a code change with a PR from what
@@ -299,7 +301,7 @@ func syncBuiltins(c *Change) {
 	if c.Phase == PhaseLanded && is("deploy", "fail") {
 		add(Offer{ID: "fyr.deployfail", Label: "Investigate the failed deploy", Run: RunAgent, In: "this", Primary: true, Prompt: deployPrompt(c)})
 	}
-	pr := prOf(c)
+	pr := c.PR()
 	if pr == "" || c.Phase != PhaseReview {
 		return
 	}
@@ -322,7 +324,7 @@ func syncBuiltins(c *Change) {
 
 func deployPrompt(c *Change) string {
 	p := "The deploy of " + c.Title
-	if pr := prOf(c); pr != "" {
+	if pr := c.PR(); pr != "" {
 		p += " (" + pr + ")"
 	}
 	if c.DeployWatch != nil {

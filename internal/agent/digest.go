@@ -9,16 +9,37 @@ import (
 	"github.com/meros/fyr/internal/core"
 )
 
-var prRe = regexp.MustCompile(`https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)`)
+// prRe finds a PR URL inside text (gh pr create's output); prURLRe is a
+// whole value that is a PR URL. A value is never a URL found inside it, so
+// "--subject=x <url>" is not a PR URL and never reaches gh (review
+// 2026-11-15). A PR's own pages (/files, /checks) and a query or fragment
+// are allowed after the number.
+var (
+	prRe    = regexp.MustCompile(`https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)`)
+	prURLRe = regexp.MustCompile(`^https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)(?:/[\w/-]*)?(?:[?#]\S*)?$`)
+)
 
 // ParsePR splits a GitHub PR URL into "owner/repo" and the number.
 func ParsePR(url string) (repo string, number int, ok bool) {
-	m := prRe.FindStringSubmatch(url)
+	m := prURLRe.FindStringSubmatch(url)
 	if m == nil {
 		return "", 0, false
 	}
-	n, _ := strconv.Atoi(m[2])
+	n, err := strconv.Atoi(m[2])
+	if err != nil {
+		return "", 0, false
+	}
 	return m[1], n, true
+}
+
+// CanonicalPR is the PR URL in the one form gh is given:
+// https://github.com/owner/repo/pull/N.
+func CanonicalPR(url string) (string, bool) {
+	repo, n, ok := ParsePR(url)
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("https://github.com/%s/pull/%d", repo, n), true
 }
 
 type toolInfo struct {
@@ -95,16 +116,6 @@ func resultText(c any) string {
 			}
 		}
 		return sb.String()
-	}
-	return ""
-}
-
-// short picks the most telling input field of a tool call, one line.
-func short(in map[string]any) string {
-	for _, k := range []string{"command", "description", "file_path", "pattern", "url", "query", "path", "prompt"} {
-		if s, ok := in[k].(string); ok && s != "" {
-			return clip(firstLine(s), 80)
-		}
 	}
 	return ""
 }

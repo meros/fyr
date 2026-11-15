@@ -16,7 +16,7 @@ func (a Args) Str(k string) string { s, _ := a[k].(string); return s }
 // Effect is work an Action asks the host to do after its state change is
 // stored. Apply never performs effects itself, so it stays pure.
 type Effect struct {
-	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel, refresh, handover
+	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel, refresh, cancelMessage, handover
 	Text   string  `json:"text,omitempty"`
 	Images []Image `json:"images,omitempty"`
 	// From is the thread whose agent sent this message (V0.22).
@@ -86,6 +86,17 @@ func images(a Args) []Image {
 		}
 	}
 	return out
+}
+
+// settleArmed reports a settle that waits for something: the run, the PR
+// merge or a change's phase.
+func settleArmed(t *Thread) bool {
+	return t.SettleWhenDone || t.SettleWhenMerged || t.SettleWhen != nil
+}
+
+// disarmSettle cancels every settle that waits for something.
+func disarmSettle(t *Thread) {
+	t.SettleWhenDone, t.SettleWhenMerged, t.SettleWhen = false, false, nil
 }
 
 // revive is what any message from the user does to a thread: it clears the
@@ -290,10 +301,9 @@ func init() {
 				v.SeenAt = now
 				return nil, nil
 			}
-			t.SettleWhenDone = false
+			disarmSettle(t)
 			t.SettledAt = &now
 			t.Failure = nil
-			t.SettleWhenMerged = false
 			v.SeenAt = now
 			v.SnoozeUntil, v.SnoozedAt = nil, nil
 			return nil, nil
@@ -301,15 +311,14 @@ func init() {
 
 	register(&Action{Name: "thread.unsettle", Label: "Unsettle", Bulk: true,
 		Available: func(t *Thread, _ *View, _ time.Time) string {
-			if t.SettledAt == nil && !t.SettleWhenDone && !t.SettleWhenMerged {
+			if t.SettledAt == nil && !settleArmed(t) {
 				return "Not settled"
 			}
 			return ""
 		},
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
 			t.SettledAt = nil
-			t.SettleWhenDone = false
-			t.SettleWhenMerged = false
+			disarmSettle(t)
 			return nil, nil
 		}})
 

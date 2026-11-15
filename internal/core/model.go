@@ -136,7 +136,7 @@ type Task struct {
 	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
-// Running counts the thread's running tasks.
+// RunningTasks counts the thread's running tasks.
 func (t *Thread) RunningTasks() int {
 	n := 0
 	for _, k := range t.Tasks {

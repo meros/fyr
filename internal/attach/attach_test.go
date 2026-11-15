@@ -123,3 +123,36 @@ func TestTreeCaps(t *testing.T) {
 		t.Fatalf("over 50 MB: %v", err)
 	}
 }
+
+// review 2026-11-15: an upload named meta.json keeps its content; the
+// store's own metadata cannot overwrite it. Attachments saved in the old
+// layout (the file beside meta.json) still read back.
+func TestUploadNamedMetaJSON(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
+	m, err := s.Save("meta.json", "application/json", strings.NewReader(`{"mine":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(m.ID)
+	if err != nil || got.Name != "meta.json" || got.Size != 13 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if b, _ := os.ReadFile(got.Path); string(b) != `{"mine":true}` {
+		t.Fatalf("content %q", b)
+	}
+
+	// The old layout: <id>/<name> and <id>/meta.json with an absolute Path.
+	id := "0123456789abcdef0123"
+	dir := filepath.Join(s.Dir, id)
+	os.MkdirAll(dir, 0o700)
+	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("old"), 0o600)
+	old := fmt.Sprintf(`{"id":%q,"name":"notes.txt","size":3,"mediaType":"text/plain","path":%q}`, id, filepath.Join(dir, "notes.txt"))
+	os.WriteFile(filepath.Join(dir, "meta.json"), []byte(old), 0o600)
+	o, err := s.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(o.Path); string(b) != "old" {
+		t.Fatalf("old layout content %q", b)
+	}
+}

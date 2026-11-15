@@ -200,7 +200,7 @@ func TestMergeCheckedRefuses(t *testing.T) {
 	}
 	ok := &scripted{out: map[string]string{"pr view": `{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE"}`, "pr merge": "✓ Squashed and merged"}}
 	out, err := MergeChecked(context.Background(), ok.run, "https://github.com/acme/app/pull/88", "rebase")
-	if err != nil || !strings.Contains(out, "merged") || ok.count("pr merge https://github.com/acme/app/pull/88 --rebase") != 1 {
+	if err != nil || !strings.Contains(out, "merged") || ok.count("pr merge --rebase -- https://github.com/acme/app/pull/88") != 1 {
 		t.Fatalf("clean merge %q %v %v", out, err, ok.calls)
 	}
 	if _, err := MergeChecked(context.Background(), ok.run, "https://github.com/acme/app/pull/88", "--admin"); err == nil {
