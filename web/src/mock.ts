@@ -8,12 +8,6 @@ import type { Quota } from "./quota.ts";
 import { mockPrDetail } from "./mock-pr.ts";
 import { quietList } from "./quiet.ts";
 
-export function mockScenario(search: string): string | null {
-  const m = /[?&]mock=([^&]*)/.exec(search);
-  if (!m || m[1] === "0" || m[1] === "") return null;
-  return decodeURIComponent(m[1]);
-}
-
 // V0.35: a table that squeezed on the phone (a commit column, long change text).
 const TRIAGE_TABLE =
   "Filed 6 issues, closed 2 duplicates.\n\n| Commit | Change |\n|---|---|\n| `3d0a470` | Finished in 14 min in place of the lone check; a live working line on the desktop |\n| `a0e8242` | Drafts survive a new message, a screen change and a reload |\n| `20d4939` | Fyr's own right-click menu; text fields keep the browser menu |\n";

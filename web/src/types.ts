@@ -180,6 +180,8 @@ export interface ProjectIconSpec {
  *  in it by hand. */
 export interface Project {
   id?: string;
+  /** #42: when the host built this copy; the client keeps the higher of a snapshot's and a frame's */
+  rev?: number;
   /** V0.51: the host the project lives on (a front stamps it) */
   host?: string;
   name: string;
