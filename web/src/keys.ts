@@ -45,3 +45,8 @@ export function keyHints(c: HintContext): Hint[] {
   else if (c.running && c.zone === "thread") h.push(["Esc", "interrupt"]);
   return h;
 }
+
+/** The dialog after Escape or Close: the project screen returns to Settings when opened from there (V0.58). */
+export function dialogAfterClose<D extends string>(dialog: D | null, projectFrom: D | null): D | null {
+  return dialog === "project" ? projectFrom : null;
+}

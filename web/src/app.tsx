@@ -59,7 +59,7 @@ import {
 } from "./store.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
-import { keyHints } from "./keys.ts";
+import { dialogAfterClose, keyHints } from "./keys.ts";
 import { Settings } from "./settings-ui.tsx";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
@@ -939,7 +939,7 @@ function App() {
     if (dialog) {
       if (k === "Escape") {
         e.preventDefault();
-        setDialog(null);
+        setDialog(dialogAfterClose(dialog, projectFrom));
         return;
       }
       if (dialog === "snooze" && /^[1-3]$/.test(k)) {
@@ -1471,7 +1471,7 @@ function App() {
       )}
       {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} host={store.host} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
       {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
-        <Modal title="Project" onClose={() => setDialog(projectFrom)} wide>
+        <Modal title="Project" onClose={() => setDialog(dialogAfterClose(dialog, projectFrom))} wide>
           <div class="db">
             <ProjectEditor
               project={store.projects.find((p) => p.id === projectId)!}
