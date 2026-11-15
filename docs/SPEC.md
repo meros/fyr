@@ -1090,7 +1090,7 @@ type Feed = { queue?: Notice[];    // at most 50
 - **Coalescing.** A notice with the key of a queued one merges into it: the higher urgency wins, and the same subject appends its state ("PR #12: merged → live."). A notice without a subject replaces the older text.
 - **Delivery points.**
   - **Idle**: when the agent has no run, every queued notice is sent as one message that starts a turn, if at least one may wake (not `self`). `next` wakes an idle agent too (owner, 2026-11-15).
-  - **Tool call**: after a tool call during a run, every queued notice that is not `stop`, plus the reminders that are due, go into the agent's context (PostToolUse).
+  - **Tool call**: after a tool call during a run, every queued notice that is not `stop`, plus the reminders that are due, go into the agent's context (PostToolUse). Only the thread's own agent takes them: a tool call inside a subagent (its hook input carries `agent_id`) takes nothing and leaves the queue as it is, and a subagent's stop never takes `stop` notices (#49).
   - **Run's end**: the `stop` notices and the upkeep go as the Stop hook's one reason and block the Stop once. Not when the hook is already active, not twice in a run, and not while background tasks run.
 - **Asleep.** A settled or archived thread, or one in a handover, is not woken. Its notices wait in the queue until it is revived.
 - **Loop guard.** A notice that the agent's own Input caused is `self`: it never wakes the agent and goes out with the next delivery.
