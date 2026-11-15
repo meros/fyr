@@ -140,8 +140,5 @@ func TaskObserved(t *Thread, k Task, now time.Time) {
 		k.StartedAt = &now
 	}
 	t.Tasks = append(t.Tasks, k)
-	// Keep the list short: the 20 newest.
-	if len(t.Tasks) > 20 {
-		t.Tasks = t.Tasks[len(t.Tasks)-20:]
-	}
+	t.Tasks = keepLast(t.Tasks, 20) // keep the list short
 }

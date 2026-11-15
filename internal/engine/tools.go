@@ -4,36 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 )
-
-// EffectActions are the actions an agent may request with effect_request.
-var EffectActions = map[string]func(args map[string]any) error{
-	"pr.merge": func(a map[string]any) error {
-		pr, _ := a["pr"].(string)
-		canon, ok := agent.CanonicalPR(pr)
-		if !ok {
-			return errors.New("args.pr must be a GitHub pull request URL")
-		}
-		a["pr"] = canon
-		switch m, _ := a["method"].(string); m {
-		case "", "squash", "merge", "rebase":
-			return nil
-		default:
-			return fmt.Errorf("args.method %q must be squash, merge or rebase", m)
-		}
-	},
-	"fyr.deploy": func(a map[string]any) error {
-		if d, _ := a["dir"].(string); d == "" {
-			return errors.New("args.dir must be the Fyr checkout to build")
-		}
-		return nil
-	},
-}
 
 // Tools registers the agent tools of SPEC 0.5 V0.12 on an MCP server.
 func (e *Engine) Tools(s *mcp.Server) {
@@ -46,36 +24,41 @@ func (e *Engine) Tools(s *mcp.Server) {
 				return "", errors.New("not a GitHub pull request URL")
 			}
 			repo, n, _ := agent.ParsePR(url)
-			e.Observe(th, func(t *core.Thread, now time.Time) {
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 				core.PRObserved(t, core.PR{URL: url, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}, now)
-			}, agent.Ev{Type: "pr.linked", Data: map[string]any{"url": url}})
+				return []agent.Ev{{Type: "pr.linked", Data: map[string]any{"url": url}}}
+			})
 			return "Linked " + url + ". Fyr watches its checks and reviews.", nil
 		}})
 
 	s.Add(mcp.Tool{Name: "effect_request",
 		Description: "Ask Fyr to perform an effect that needs the user's approval. Returns at once; do not wait or poll. The user approves or declines in Fyr, Fyr runs it, and the result arrives as a later message starting with [Fyr]. Actions: \"pr.merge\" with args {pr: <url>, method: squash|merge|rebase} (use this instead of gh pr merge); \"fyr.deploy\" with args {dir: <Fyr checkout>} builds, tests and switches the running Fyr to that checkout.",
 		Schema: obj(map[string]any{
-			"action": map[string]any{"type": "string", "enum": []string{"pr.merge", "fyr.deploy"}},
+			"action": map[string]any{"type": "string", "enum": requestable()},
 			"args":   map[string]any{"type": "object"},
 			"reason": str("One sentence for the user: why now."),
 		}, "action", "args"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			action, _ := a["action"].(string)
 			args, _ := a["args"].(map[string]any)
-			check := EffectActions[action]
-			if check == nil {
+			if args == nil {
+				args = map[string]any{}
+			}
+			fx := core.FyrEffects[action]
+			if fx == nil || !fx.Request {
 				return "", fmt.Errorf("unknown action %q", action)
 			}
-			if err := check(args); err != nil {
+			if err := e.canRequest(th, fx, args); err != nil {
 				return "", err
 			}
 			reason, _ := a["reason"].(string)
 			d := core.Decision{ID: NewID("d_"), Kind: core.DecisionEffect, Assignee: core.Owner,
 				Effect: &core.EffectReq{Action: action, Args: args, Reason: reason}}
-			e.Observe(th, func(t *core.Thread, now time.Time) {
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 				d.CreatedAt = now
 				core.DecisionOpened(t, d)
-			}, agent.Ev{Type: "decision.opened", Data: map[string]any{"decision": d}})
+				return []agent.Ev{{Type: "decision.opened", Data: map[string]any{"decision": d}}}
+			})
 			return "Requested. The user decides in Fyr; the result arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not perform this action another way.", nil
 		}})
 
@@ -94,14 +77,14 @@ func (e *Engine) Tools(s *mcp.Server) {
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			cond, _ := a["condition"].(string)
 			var err error
-			e.Observe(th, func(t *core.Thread, now time.Time) {
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 				switch cond {
 				case "done":
 					t.SettleWhenDone = true
 				case "merged":
 					if t.PR == nil || t.PR.State != "OPEN" {
 						err = errors.New("this thread has no open PR; link one with pr_link first")
-						return
+						return nil
 					}
 					t.SettleWhenMerged = true
 				case "change":
@@ -112,7 +95,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 					}
 					if c == nil {
 						err = noChange(a)
-						return
+						return nil
 					}
 					t.SettleWhen = &core.SettleWhen{Change: c.ID, Phase: phase}
 					cond = fmt.Sprintf("%q is %s", c.Title, phase)
@@ -120,6 +103,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 				default:
 					err = fmt.Errorf("unknown condition %q", cond)
 				}
+				return nil
 			})
 			if err != nil {
 				return "", err
@@ -140,3 +124,31 @@ func obj(props map[string]any, required ...string) map[string]any {
 }
 
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+
+// requestable are the Fyr effects an agent may request, sorted.
+func requestable() []string {
+	var out []string
+	for id, fx := range core.FyrEffects {
+		if fx.Request {
+			out = append(out, id)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// canRequest checks an agent's request of a Fyr effect: its args, and the
+// effect's guard, the same one the owner's command and press use (#31).
+func (e *Engine) canRequest(th string, fx *core.FyrEffect, args map[string]any) error {
+	if err := effectArgs(fx, args); err != nil {
+		return err
+	}
+	t, ok := e.Thread(th)
+	if !ok {
+		return errors.New("no such thread")
+	}
+	if why := fx.Guard(&t, args); why != "" {
+		return fmt.Errorf("Fyr cannot %s now: %s", strings.ToLower(fx.Label), why)
+	}
+	return nil
+}

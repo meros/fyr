@@ -50,8 +50,7 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
 
 /** The thread's own actions (V0.60): in the header, above the tabs. */
 export function ThreadOffers({ t, onRun }: { t: Thread; onRun: Run }) {
-  const mine = t.offers.filter((o) => o.on === "thread");
-  return <OfferBar on="thread" offers={mine} runs={t.offerRuns} cwd={t.cwd} onRun={onRun} />;
+  return <OfferBar on="thread" offers={t.offers} runs={t.runs} cwd={t.cwd} onRun={onRun} />;
 }
 
 /** The view's actions run through its page; this runs one with its digest. */
@@ -128,7 +127,7 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
           )}
         </div>
       )}
-      <OfferBar on={c.id} offers={c.actions} runs={c.runs} change={c} cwd={cwd} onRun={onRun} />
+      <OfferBar on={c.id} offers={c.offers} runs={c.runs} change={c} cwd={cwd} onRun={onRun} />
     </article>
   );
 }

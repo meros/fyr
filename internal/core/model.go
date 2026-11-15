@@ -47,10 +47,9 @@ type Thread struct {
 	Changes []Change `json:"changes,omitempty"`
 	// ChangesCheckedAt is the last change tool call (V0.62).
 	ChangesCheckedAt *time.Time `json:"changesCheckedAt,omitempty"`
-	// Offers are the thread's and its live view's actions; OfferRuns their
-	// last results (V0.60). A change holds its own.
-	Offers    []Offer    `json:"offers,omitempty"`
-	OfferRuns []OfferRun `json:"offerRuns,omitempty"`
+	// Actions are the thread's own actions and their last runs (V0.60, #31).
+	// A change and the live view hold their own.
+	Actions
 	// DismissedPRs are PR URLs the owner put away (V0.36); they never attach again.
 	DismissedPRs []string `json:"dismissedPRs,omitempty"`
 	// Outbox holds the messages the agent has not read yet (V0.33).

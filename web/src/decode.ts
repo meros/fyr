@@ -36,7 +36,7 @@ export function decodeThread(raw: unknown): Thread {
     tasks: arr(t.tasks),
     changes: arr(t.changes),
     offers: arr(t.offers),
-    offerRuns: arr(t.offerRuns),
+    runs: arr(t.runs),
     outbox: arr(t.outbox),
     unavailable: obj(t.unavailable) as Record<string, string>,
     attention: typeof a.section === "string" && typeof a.state === "string" ? ({ ...NO_ATTENTION, ...a } as Attention) : NO_ATTENTION,

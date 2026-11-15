@@ -51,6 +51,22 @@ func TestDigestPRFromGhPrCreate(t *testing.T) {
 	}
 }
 
+// SPEC 0.5 V0.8: only a line that is a PR URL links, as gh pr create prints
+// it; a command that mentions gh pr create and prints a PR URL inside other
+// text (a test run, a grep) links nothing.
+func TestDigestPRNeedsOwnLine(t *testing.T) {
+	d := newDigest()
+	d.feed(asst(nil, M{"type": "tool_use", "id": "g", "name": "Bash", "input": M{"command": "go test ./internal/github/ 2>&1 | grep -v 'gh pr create'"}}))
+	o := d.feed(result("g", "detail_test.go:45: \"url\": \"https://github.com/acme/app/pull/88\"\nok\n"))
+	if o.PRURL != "" {
+		t.Fatalf("a URL inside test output linked: %q", o.PRURL)
+	}
+	d.feed(asst(nil, M{"type": "tool_use", "id": "h", "name": "Bash", "input": M{"command": "cd repo && gh pr create --fill"}}))
+	if o := d.feed(result("h", "Warning: 1 uncommitted change\n  https://github.com/o/r/pull/5  \n")); o.PRURL != "https://github.com/o/r/pull/5" {
+		t.Fatalf("pr %q", o.PRURL)
+	}
+}
+
 func TestParsePR(t *testing.T) {
 	repo, n, ok := ParsePR("https://github.com/acme/web/pull/12345")
 	if !ok || repo != "acme/web" || n != 12345 {
