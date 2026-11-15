@@ -10,7 +10,7 @@ import { SECTIONS, type Conn, type SectionKey, type Sections } from "./store.ts"
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState } from "./rows.ts";
 import { count, relTime, untilLabel, whenLabel } from "./format.ts";
-import { prLabel } from "./thread.tsx";
+import { prChip } from "./pr.ts";
 import { changeChip } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
 import { quietNote } from "./quiet.ts";
@@ -103,7 +103,7 @@ function PrBadge({ t, short }: { t: ThreadDTO; short?: boolean }) {
       </span>
     );
   if (!t.pr) return <span class="pr none" aria-label="no pull request" />;
-  const l = prLabel(t.pr, short);
+  const l = prChip(t.pr, short);
   return (
     <span class={`pr ${l.cls}`} title={l.title}>
       {l.text}

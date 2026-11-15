@@ -1,25 +1,3 @@
-import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
-/** Run when the browser is idle (V0.38: storing never competes with input). */
-const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
-import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
-import { listPref, listShown, setListPref } from "./prefs.ts";
-import { DeployBanner } from "./deploy-ui.tsx";
-import { cache, mergeEventLists } from "./cache.ts";
-import { setFullEventSource } from "./thread.tsx";
-import { rememberOpen, takeOpen } from "./push.ts";
-const sessionStore = () => {
-  try {
-    return typeof sessionStorage !== "undefined" ? sessionStorage : null;
-  } catch {
-    return null;
-  }
-};
-import { navTransition } from "./native.ts";
-import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
-import { ContextMenu } from "./menu-ui.tsx";
-import { Boundary } from "./boundary.tsx";
-import { shouldClearNotification } from "./push.ts";
-import { clearThreadNotification } from "./pwa.ts";
 // The app shell: state, commands and the keyboard.
 
 import { render } from "preact";
@@ -68,14 +46,14 @@ import { needsCount } from "./board.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
 import { HandoverDialog } from "./handover-ui.tsx";
-import { setToolDetails } from "./prefs.ts";
+import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
 import { setAttachmentUrl } from "./attach.ts";
 import { setPreviewUrl } from "./previews.ts";
 import { PreviewViewer } from "./preview-ui.tsx";
 import { setUploader } from "./attach-ui.tsx";
 import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
-import { disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
-import { PUSH_TITLE, unsupportedReason, type PushStatus } from "./push.ts";
+import { clearThreadNotification, disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
+import { PUSH_TITLE, rememberOpen, shouldClearNotification, takeOpen, unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
@@ -86,6 +64,25 @@ import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type 
 import { PHONE_UNDO_MS } from "./mobile.ts";
 import { hostLabel } from "./hosts.ts";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
+import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
+import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
+import { DeployBanner } from "./deploy-ui.tsx";
+import { cache, mergeEventLists } from "./cache.ts";
+import { setFullEventSource } from "./thread.tsx";
+import { navTransition } from "./native.ts";
+import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
+import { ContextMenu } from "./menu-ui.tsx";
+import { Boundary } from "./boundary.tsx";
+
+/** Run when the browser is idle (V0.38: storing never competes with input). */
+const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
+const sessionStore = () => {
+  try {
+    return typeof sessionStorage !== "undefined" ? sessionStorage : null;
+  } catch {
+    return null;
+  }
+};
 
 const PHONE_QUERY = "(max-width: 760px)";
 
@@ -528,9 +525,13 @@ function App() {
   // Track whether focus is in a text field (for the key-hint bar).
   useEffect(() => {
     const f = () => setInText(isTextTarget(document.activeElement));
+    const out = () => setTimeout(f, 0);
     document.addEventListener("focusin", f);
-    document.addEventListener("focusout", () => setTimeout(f, 0));
-    return () => document.removeEventListener("focusin", f);
+    document.addEventListener("focusout", out);
+    return () => {
+      document.removeEventListener("focusin", f);
+      document.removeEventListener("focusout", out);
+    };
   }, []);
 
   // ---- actions ----
@@ -1360,7 +1361,7 @@ function App() {
     cardMulti: !!(decision?.kind === "ask" && card && decision.questions?.[card.index]?.multiSelect),
     running: !!viewThread?.running,
     failed: (tgtThread(store, zone, view, sel)?.attention.state ?? "") === "failed",
-    undo: undoLive(undo, tick) || (!!toast?.undo && undoLive(undo, Date.now())),
+    undo: !!toast?.undo && undoLive(undo, Date.now()),
     inText,
   });
 

@@ -14,7 +14,7 @@ import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
-import { AgentsStrip, Conversation, EffectBody, PrTab, prLabel, type SendArgs } from "./thread.tsx";
+import { AgentsStrip, Conversation, EffectBody, PrTab, type SendArgs } from "./thread.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
@@ -22,6 +22,7 @@ import { Filmstrip } from "./preview-ui.tsx";
 import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
 import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
 import { changeChip } from "./offers.ts";
+import { prChip } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { defaultTab, liveViewOf } from "./view.ts";
@@ -531,7 +532,7 @@ function MHost({ t, hosts }: { t: ThreadDTO; hosts?: HostInfo[] }) {
 
 function MPr({ t, short }: { t: ThreadDTO; short?: boolean }) {
   if (!t.pr) return <span />;
-  const l = prLabel(t.pr, short);
+  const l = prChip(t.pr, short);
   return (
     <span class={`m-pr ${l.cls}`} title={l.title}>
       {l.text}
@@ -777,7 +778,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
               <span>{t.branch}</span>
             </span>
           )}
-          {t.pr && <span class={`m-chip prc ${prLabel(t.pr).cls}`} title={prLabel(t.pr).title}>{prLabel(t.pr).text}</span>}
+          {t.pr && <span class={`m-chip prc ${prChip(t.pr).cls}`} title={prChip(t.pr).title}>{prChip(t.pr).text}</span>}
           {(() => {
             const c = changeChip(t); // V0.59 (8)
             return c ? <span class={`m-chip prc ${c.cls}`} title={c.title}>{c.text}</span> : null;
@@ -1458,7 +1459,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
               <div class="m-pkt">{t.title}</div>
             </div>
             <div class="m-pkm ell">
-              {[t.project, t.branch, t.pr ? prLabel(t.pr).text : null].filter(Boolean).join(" · ")}
+              {[t.project, t.branch, t.pr ? prChip(t.pr).text : null].filter(Boolean).join(" · ")}
             </div>
             {t.summary && <div class="m-pkb prose">Claude: {t.summary}</div>}
             {d && (
