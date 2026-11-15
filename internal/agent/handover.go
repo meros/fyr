@@ -159,8 +159,10 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 	var notes []string
 	fail := func(err error) {
 		log.Printf("thread %s: handover to %s: %v", threadID, e.Profile, err)
-		m.host.Observe(threadID, func(t *core.Thread, _ time.Time) { t.Handover = nil },
-			Ev{"effect.error", map[string]any{"kind": "handover", "error": err.Error()}})
+		m.host.Observe(threadID, func(t *core.Thread, _ time.Time) []Ev {
+			t.Handover = nil
+			return []Ev{{"effect.error", map[string]any{"kind": "handover", "error": err.Error()}}}
+		})
 	}
 	done := func(rung, sid, path string, first string) {
 		data := map[string]any{"from": t.Profile, "to": e.Profile, "model": model, "rung": rung}
@@ -170,10 +172,11 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 		if len(notes) > 0 {
 			data["note"] = strings.Join(notes, "; ")
 		}
-		m.host.Observe(threadID, func(t *core.Thread, _ time.Time) {
+		m.host.Observe(threadID, func(t *core.Thread, _ time.Time) []Ev {
 			t.Profile, t.Model, t.SessionID, t.Handover = e.Profile, model, sid, nil
 			t.Failure = nil
-		}, Ev{"handover", data})
+			return []Ev{{"handover", data}}
+		})
 		m.mu.Lock()
 		s := m.sessions[threadID]
 		m.mu.Unlock()
@@ -207,7 +210,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 			m.stopNow(threadID)
 			if _, err := m.ensureAs(threadID, &as{profile: to, model: model, session: t.SessionID, resume: true,
 				effort: cli.EffortFor(to.ModelCaps, model, t.Effort, to.DefaultEffort)}); err != nil {
-				notes = append(notes, "Resume failed: "+clip(firstLine(err.Error()), 300))
+				notes = append(notes, "Resume failed: "+core.TruncHead(firstLine(err.Error()), 300))
 			} else {
 				done(RungResume, t.SessionID, "", "")
 				return
@@ -293,7 +296,7 @@ func (m *Manager) brief(threadID string, to Profile) (string, error) {
 		}
 		out, _ := res["result"].(string)
 		if isErr, _ := res["is_error"].(bool); isErr {
-			return "", fmt.Errorf("%s", clip(firstLine(out), 300))
+			return "", fmt.Errorf("%s", core.TruncHead(firstLine(out), 300))
 		}
 		if strings.TrimSpace(out) == "" {
 			return "", fmt.Errorf("the reply was empty")

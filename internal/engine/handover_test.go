@@ -261,7 +261,10 @@ func TestHandoverClearedOnRestart(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("hello")
 	h.wait(id, "done", state(core.Done))
-	h.e.Observe(id, func(t *core.Thread, now time.Time) { t.Handover = &core.Handover{To: "b", At: now} })
+	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+		t.Handover = &core.Handover{To: "b", At: now}
+		return nil
+	})
 	h.m.StopAll()
 	h2 := startHarness(t, h.dir, h.db, time.Minute)
 	got, _ := h2.e.Thread(id)

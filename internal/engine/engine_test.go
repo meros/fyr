@@ -599,8 +599,9 @@ func TestOwnerMergeFromTab(t *testing.T) {
 	id := h.create("pr")
 	h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.PR != nil })
 	h.wait(id, "done", state(core.Done))
-	h.e.Observe(id, func(t *core.Thread, now time.Time) {
+	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
 		core.PRObserved(t, core.PR{URL: t.PR.URL, Repo: t.PR.Repo, Number: t.PR.Number, State: "OPEN", Checks: "pass"}, now)
+		return nil
 	})
 	if r := h.cmd("pr.merge", id, core.Args{"method": "fast"}); r.OK || r.Status != 400 {
 		t.Fatalf("bad method: %+v", r)
@@ -644,7 +645,10 @@ func TestOwnerPRActionsUnavailable(t *testing.T) {
 		t.Fatalf("no PR rerun: %+v", r)
 	}
 	set := func(p core.PR) {
-		h.e.Observe(id, func(t *core.Thread, now time.Time) { core.PRObserved(t, p, now) })
+		h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+			core.PRObserved(t, p, now)
+			return nil
+		})
 	}
 	url := "https://github.com/acme/app/pull/9"
 	set(core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Conflict: true})

@@ -9,7 +9,7 @@ import (
 
 type rlHost struct{}
 
-func (rlHost) Observe(string, func(*core.Thread, time.Time), ...Ev) {}
+func (rlHost) Observe(string, func(*core.Thread, time.Time) []Ev) {}
 func (rlHost) Thread(id string) (core.Thread, bool) {
 	return core.Thread{ID: id, Profile: "claude"}, true
 }
