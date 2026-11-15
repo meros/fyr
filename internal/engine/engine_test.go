@@ -289,9 +289,9 @@ func TestRestartRecovery(t *testing.T) {
 func TestPRLinkedFromGhPrCreate(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("pr")
-	th := h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.PR != nil })
-	if th.PR.Repo != "acme/app" || th.PR.Number != 42 {
-		t.Fatalf("pr %+v", th.PR)
+	th := h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.MainPR() != nil })
+	if p := th.MainPR(); p.Repo != "acme/app" || p.Number != 42 {
+		t.Fatalf("pr %+v", th.MainPR())
 	}
 }
 
@@ -598,10 +598,10 @@ func TestEffectDeadlines(t *testing.T) {
 func TestOwnerMergeFromTab(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("pr")
-	h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.PR != nil })
+	h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.MainPR() != nil })
 	h.wait(id, "done", state(core.Done))
 	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
-		core.PRObserved(t, core.PR{URL: t.PR.URL, Repo: t.PR.Repo, Number: t.PR.Number, State: "OPEN", Checks: "pass"}, now)
+		core.PRObserved(t, core.PR{URL: t.MainPR().URL, Repo: t.MainPR().Repo, Number: t.MainPR().Number, State: "OPEN", Checks: "pass"}, now)
 		return nil
 	})
 	if r := h.cmd("pr.merge", id, core.Args{"method": "fast"}); r.OK || r.Status != 400 {
@@ -668,5 +668,41 @@ func TestOwnerPRActionsUnavailable(t *testing.T) {
 	}
 	if r := h.cmd("pr.rerunFailed", id, nil); r.OK {
 		t.Fatalf("rerun on a merged PR: %+v", r)
+	}
+}
+
+// #32: the wire DTO keeps "pr" and "settleWhenMerged" for the client,
+// derived from the main change; every PR is on the Changes board.
+func TestDTOPRIsTheMainChange(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("hello")
+	h.wait(id, "done", state(core.Done))
+	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+		core.PRObserved(t, core.PR{URL: "https://github.com/acme/app/pull/9", Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass"}, now)
+		core.ChangePRObserved(t, core.PR{URL: "https://github.com/acme/app/pull/10", Repo: "acme/app", Number: 10, State: "OPEN", Checks: "pass"}, now)
+		return nil
+	})
+	if r := h.cmd("thread.settleWhenMerged", id, nil); !r.OK {
+		t.Fatalf("settle when merged: %+v", r)
+	}
+	var wire struct {
+		ID               string                `json:"id"`
+		PR               *struct{ URL string } `json:"pr"`
+		SettleWhenMerged bool                  `json:"settleWhenMerged"`
+		Changes          []struct {
+			PR *struct{ URL string } `json:"pr"`
+		} `json:"changes"`
+	}
+	for _, d := range h.e.Snapshot() {
+		if d.ID == id {
+			b, _ := json.Marshal(d)
+			json.Unmarshal(b, &wire)
+		}
+	}
+	if wire.PR == nil || wire.PR.URL != "https://github.com/acme/app/pull/9" || !wire.SettleWhenMerged {
+		t.Fatalf("dto pr %+v settleWhenMerged %v", wire.PR, wire.SettleWhenMerged)
+	}
+	if len(wire.Changes) != 2 || wire.Changes[0].PR == nil || wire.Changes[1].PR == nil || wire.Changes[1].PR.URL != "https://github.com/acme/app/pull/10" {
+		t.Fatalf("changes board: %+v", wire.Changes)
 	}
 }

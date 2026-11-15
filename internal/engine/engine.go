@@ -577,7 +577,7 @@ func (e *Engine) Observe(threadID string, fn func(t *core.Thread, now time.Time)
 	t := &core.Thread{}
 	json.Unmarshal(was, t)
 	now := e.Now()
-	hadPR := t.PR != nil
+	hadPR := t.MainPR() != nil
 	evs := fn(t, now)
 	is, _ := json.Marshal(t)
 	changed := string(is) != string(was)
@@ -618,7 +618,7 @@ func (e *Engine) Observe(threadID string, fn func(t *core.Thread, now time.Time)
 	e.Hub.Thread(dto)
 	e.Hub.Events(written)
 	e.notify(dto)
-	if !hadPR && t.PR != nil && e.OnPR != nil {
+	if !hadPR && t.MainPR() != nil && e.OnPR != nil {
 		e.OnPR(threadID)
 	}
 }
@@ -670,6 +670,12 @@ type DTO struct {
 	// QuietUntil is the end of the quiet hours of the thread's project, while
 	// they hold (V0.46).
 	QuietUntil *time.Time `json:"quietUntil,omitempty"`
+	// PR is the main change's PR, for the PR chip and tab (#32); the PR
+	// itself lives on its change.
+	PR *core.PR `json:"pr,omitempty"`
+	// SettleWhenMerged: the thread settles when the main PR merges (#32:
+	// stored as settleWhen on the main change).
+	SettleWhenMerged bool `json:"settleWhenMerged,omitempty"`
 
 	prev core.State // the state before this change; not sent
 }
@@ -703,7 +709,8 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	att := core.Compute(t, v, now)
 	vc := *v
 	vc.ChangesLook = nil // V0.65: served with the Changes tab, not on every push
-	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now)}
+	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now),
+		PR: t.MainPR(), SettleWhenMerged: core.SettlesWhenMerged(t)}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.

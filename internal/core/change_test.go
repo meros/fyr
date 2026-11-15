@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -75,7 +76,7 @@ func TestPRBecomesCodeChange(t *testing.T) {
 		t.Fatalf("the PR made a second change instead of joining the branch: %+v", th.Changes)
 	}
 	c := &th.Changes[0]
-	if c.Title != "Feature" || c.Phase != PhaseReview || c.PR() == "" {
+	if c.Title != "Feature" || c.Phase != PhaseReview || c.PRURL() == "" {
 		t.Fatalf("joined: %+v", c)
 	}
 	// A second PR of the same thread is its own change.
@@ -88,11 +89,11 @@ func TestPRBecomesCodeChange(t *testing.T) {
 	if th.Changes[0].Phase != PhaseLanded || th.Changes[1].Phase != PhaseAbandoned || len(PRURLs(th)) != 0 {
 		t.Fatalf("after merge and close: %s %s", th.Changes[0].Phase, th.Changes[1].Phase)
 	}
-	// PRObserved keeps thread.pr and adds the change.
+	// PRObserved makes the change and the main change.
 	th2 := &Thread{}
 	PRObserved(th2, PR{URL: "https://github.com/o/r/pull/1", Repo: "o/r", Number: 1, State: "OPEN"}, ct0)
-	if th2.PR == nil || len(th2.Changes) != 1 {
-		t.Fatalf("PRObserved: %+v %+v", th2.PR, th2.Changes)
+	if th2.MainPR() == nil || len(th2.Changes) != 1 {
+		t.Fatalf("PRObserved: %+v %+v", th2.MainPR(), th2.Changes)
 	}
 }
 
@@ -283,5 +284,91 @@ func TestThreadAndViewRunsApart(t *testing.T) {
 	ClearView(th)
 	if len(th.Runs) != 1 || th.Runs[0].On != OnThread {
 		t.Fatalf("view runs left after ClearView: %+v", th.Runs)
+	}
+}
+
+// #32: a PR lives on its code change; the thread keeps the id of its main
+// change. Two PRs are two changes with their own PR, and the main one is
+// the PR the PR tab shows; linking another PR makes it the main one.
+func TestPRLivesOnItsChange(t *testing.T) {
+	th := &Thread{}
+	PRObserved(th, PR{URL: "https://github.com/o/r/pull/1", State: "OPEN", Checks: "pending"}, ct0)
+	ChangePRObserved(th, PR{URL: "https://github.com/o/r/pull/2", State: "OPEN", Checks: "pass"}, ct0)
+	if len(th.Changes) != 2 || th.Changes[0].PR == nil || th.Changes[1].PR == nil {
+		t.Fatalf("two PRs, two changes with a PR: %+v", th.Changes)
+	}
+	if p := th.MainPR(); p == nil || p.Number != 1 || th.MainChange != th.Changes[0].ID {
+		t.Fatalf("main PR %+v (main change %q)", p, th.MainChange)
+	}
+	// Polling the main PR updates its change, and so the main PR.
+	ChangePRObserved(th, PR{URL: "https://github.com/o/r/pull/1", Repo: "o/r", Number: 1, State: "OPEN", Checks: "fail", CheckedAt: &ct0}, ct0)
+	if p := th.MainPR(); p.Checks != ChecksFail {
+		t.Fatalf("polled main PR %+v", p)
+	}
+	// A link never overwrites what GitHub reported.
+	PRObserved(th, PR{URL: "https://github.com/o/r/pull/1", State: "OPEN", Checks: "pending"}, ct0)
+	if p := th.MainPR(); p.Checks != ChecksFail {
+		t.Fatalf("a link reset the polled PR: %+v", p)
+	}
+	PRObserved(th, PR{URL: "https://github.com/o/r/pull/2", State: "OPEN"}, ct0)
+	if p := th.MainPR(); p == nil || p.Number != 2 {
+		t.Fatalf("pr_link to the second PR: %+v", p)
+	}
+	// Evidence the agent attaches gives a change its PR, which the poller reads.
+	c, _, _ := OpenChange(th, ChangeOpen{Key: "api", Kind: KindCode, Title: "API"}, ByAgent, ct0)
+	AttachEvidence(c, []Evidence{{Kind: "pr", URL: "https://github.com/o/api/pull/4"}}, ct0)
+	if c.PR == nil || c.PR.Repo != "o/api" || c.PR.Number != 4 || !slices.Contains(PRURLs(th), "https://github.com/o/api/pull/4") {
+		t.Fatalf("attached PR: %+v", c.PR)
+	}
+}
+
+// #32: attention has one source for blocked: the change's conditions. A
+// failing PR blocks with its change's reason, the main PR or another one.
+func TestPRBlocksThroughItsChange(t *testing.T) {
+	th := &Thread{}
+	PRObserved(th, PR{URL: "https://github.com/o/r/pull/1", Title: "Main", State: "OPEN", Checks: "fail"}, ct0)
+	if a := Compute(th, &View{SeenAt: ct0.Add(time.Hour)}, ct0); a.State != Blocked || a.Reason != ChangeBlocking(th) || a.Reason != "Main: CI failed" {
+		t.Fatalf("main PR: %+v", a)
+	}
+	th2 := &Thread{}
+	PRObserved(th2, PR{URL: "https://github.com/o/r/pull/1", Title: "Main", State: "OPEN", Checks: "pass"}, ct0)
+	ChangePRObserved(th2, PR{URL: "https://github.com/o/r/pull/2", Title: "Other", State: "OPEN", Checks: "pass"}, ct0)
+	ChangePRObserved(th2, PR{URL: "https://github.com/o/r/pull/2", Title: "Other", State: "OPEN", Checks: "pass"}, ct0.Add(time.Minute))
+	if th2.ActivityAt != ct0 {
+		t.Fatalf("polling alone moved activity: %v", th2.ActivityAt)
+	}
+	ChangePRObserved(th2, PR{URL: "https://github.com/o/r/pull/2", Title: "Other", State: "OPEN", Conflict: true}, ct0.Add(2*time.Minute))
+	if a := Compute(th2, &View{SeenAt: ct0.Add(time.Hour)}, ct0); a.State != Blocked || a.Reason != "Other: Merge conflict" {
+		t.Fatalf("second PR: %+v", a)
+	}
+	if th2.ActivityAt != ct0.Add(2*time.Minute) {
+		t.Fatalf("a PR that starts to block moves activity: %v", th2.ActivityAt)
+	}
+}
+
+// #32: "settle when merged" is a settle condition on the main change
+// reaching landed; a closed PR does not settle.
+func TestSettleWhenMergedIsTheMainChangeLanding(t *testing.T) {
+	th := &Thread{}
+	PRObserved(th, PR{URL: "https://github.com/o/r/pull/1", State: "OPEN", Checks: "pass"}, ct0)
+	if r := Registry["thread.settleWhenMerged"].Available(th, &View{}, ct0); r != "" {
+		t.Fatal(r)
+	}
+	Registry["thread.settleWhenMerged"].Apply(th, &View{}, nil, ct0)
+	if w := th.SettleWhen; w == nil || w.Change != th.MainChange || w.Phase != PhaseLanded {
+		t.Fatalf("settle when %+v", w)
+	}
+	if r := Registry["thread.settleWhenMerged"].Available(th, &View{}, ct0); r != "Already set" {
+		t.Fatalf("armed twice: %q", r)
+	}
+	closed := *th
+	closed.Changes = slices.Clone(th.Changes)
+	ChangePRObserved(&closed, PR{URL: "https://github.com/o/r/pull/1", State: "CLOSED"}, ct0)
+	if closed.SettledAt != nil {
+		t.Fatal("a closed PR settled the thread")
+	}
+	ChangePRObserved(th, PR{URL: "https://github.com/o/r/pull/1", State: "MERGED"}, ct0)
+	if th.SettledAt == nil || th.SettleWhen != nil {
+		t.Fatalf("merge did not settle: %+v", th.SettleWhen)
 	}
 }

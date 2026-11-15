@@ -816,7 +816,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 				t.Summary = o.Summary
 			}
 			t.Subagents += o.Subagents
-			if o.PRURL != "" && (t.PR == nil || t.PR.URL != o.PRURL) {
+			if p := t.MainPR(); o.PRURL != "" && (p == nil || p.URL != o.PRURL) {
 				repo, n, _ := ParsePR(o.PRURL)
 				core.PRObserved(t, core.PR{URL: o.PRURL, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}, now)
 			}

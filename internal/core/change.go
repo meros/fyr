@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -42,6 +44,12 @@ type Change struct {
 	Group      string      `json:"group,omitempty"`
 	After      []string    `json:"after,omitempty"`
 	Needs      string      `json:"needs,omitempty"` // "owner" or ""
+	// PR is the code change's pull request as GitHub last reported it (#32);
+	// its "pr" evidence is the link the Changes board shows.
+	PR *PR `json:"pr,omitempty"`
+	// Dismissed: the owner put the merged or closed PR away (V0.36); it is
+	// never the thread's main PR again.
+	Dismissed bool `json:"dismissed,omitempty"`
 	// Actions the owner can press (V0.60): declared by the agent, or built in
 	// from what Fyr observed, and their last runs.
 	Actions
@@ -259,17 +267,22 @@ func AttachEvidence(c *Change, evs []Evidence, now time.Time) error {
 }
 
 // ChangePRObserved writes a PR snapshot into the thread's code change for
-// that PR (V0.59 (4)): found by the PR URL, else by its head branch, else
-// made. Open is review, merged landed, closed abandoned.
-func ChangePRObserved(t *Thread, p PR, now time.Time) {
+// that PR (V0.59 (4), #32): found by the PR URL, else by its head branch, else
+// made. Open is review, merged landed, closed abandoned. It moves ActivityAt
+// when the PR starts to block, merges or closes, so polling alone never marks
+// a thread done.
+func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	if p.URL == "" {
-		return
+		return nil
 	}
-	c := changeByEvidence(t, "pr", p.URL)
+	if p.Repo == "" || p.Number == 0 {
+		p.Repo, p.Number = parsePRURL(p.URL)
+	}
+	c := changeByPR(t, p.URL)
 	if c == nil && p.Branch != "" {
 		for i := range t.Changes {
 			x := &t.Changes[i]
-			if x.Kind == KindCode && x.Branch == p.Branch && !x.Phase.Ended() && x.PR() == "" {
+			if x.Kind == KindCode && x.Branch == p.Branch && !x.Phase.Ended() && x.PRURL() == "" {
 				c = x
 				break
 			}
@@ -282,9 +295,21 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) {
 		}
 		c, _, _ = OpenChange(t, ChangeOpen{Key: fmt.Sprintf("pr:%s#%d", p.Repo, p.Number), Kind: KindCode, Title: title, Branch: p.Branch}, ByObserved, now)
 		if c == nil {
-			return
+			return nil
 		}
 	}
+	oldState, oldBlocking := "", c.Blocking()
+	if c.PR != nil {
+		oldState = c.PR.State
+	}
+	defer func() {
+		if b := c.Blocking(); (oldState != p.State || oldBlocking != b) && (b != "" || p.State != "OPEN") {
+			t.ActivityAt = now
+		}
+	}()
+	snap := p
+	snap.Annotations = nil
+	c.PR = &snap
 	if p.Title != "" && (c.Title == "" || c.Title == c.Key || c.Title == c.Branch) {
 		c.Title = p.Title
 	}
@@ -322,7 +347,7 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) {
 		// closed; they no longer need anyone (decision 0018).
 		dropConditions(c, CondChecks, CondReview, CondConflict)
 		c.UpdatedAt = now
-		return
+		return c
 	}
 	switch p.Checks {
 	case ChecksPass:
@@ -346,6 +371,7 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) {
 		setCondition(c, CondConflict, CondOK, "", ByObserved, now)
 	}
 	c.UpdatedAt = now
+	return c
 }
 
 // GitFacts are what the host reads from the thread's folder after a run.
@@ -404,25 +430,33 @@ func GitObserved(t *Thread, g GitFacts, now time.Time) {
 	c.UpdatedAt = now
 }
 
-// ChangeBlocking is why a change needs the owner (V0.59 (6)), or "".
+// ChangeBlocking is why a change of the thread needs the owner (V0.59 (6)),
+// or "". It is the one source of "blocked", PRs included (#32).
 func ChangeBlocking(t *Thread) string {
 	for i := len(t.Changes) - 1; i >= 0; i-- {
-		c := &t.Changes[i]
-		if c.Phase.Ended() {
-			continue
+		if r := t.Changes[i].Blocking(); r != "" {
+			return t.Changes[i].Title + ": " + r
 		}
-		for _, k := range c.Conditions {
-			if k.Status == CondFail {
-				r := k.Reason
-				if r == "" {
-					r = string(k.Type) + " failed"
-				}
-				return c.Title + ": " + r
+	}
+	return ""
+}
+
+// Blocking is why this change needs the owner, or "": a failed condition
+// (a PR's checks, review or conflict among them) or needs owner.
+func (c *Change) Blocking() string {
+	if c.Phase.Ended() {
+		return ""
+	}
+	for _, k := range c.Conditions {
+		if k.Status == CondFail {
+			if k.Reason != "" {
+				return k.Reason
 			}
+			return string(k.Type) + " failed"
 		}
-		if c.Needs == "owner" {
-			return c.Title + ": needs you"
-		}
+	}
+	if c.Needs == "owner" {
+		return "needs you"
 	}
 	return ""
 }
@@ -491,6 +525,8 @@ func addRevision(c *Change, r Revision, now time.Time) bool {
 	return true
 }
 
+// addEvidence adds proof once. The first "pr" evidence of a change without a
+// PR gives it one, open until GitHub reports otherwise (#32).
 func addEvidence(c *Change, ev Evidence) {
 	for _, x := range c.Evidence {
 		if x.Kind == ev.Kind && x.URL == ev.URL && x.Attachment == ev.Attachment {
@@ -498,30 +534,43 @@ func addEvidence(c *Change, ev Evidence) {
 		}
 	}
 	c.Evidence = append(c.Evidence, ev)
+	if ev.Kind == "pr" && c.PR == nil && ev.URL != "" {
+		repo, n := parsePRURL(ev.URL)
+		c.PR = &PR{URL: ev.URL, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending}
+	}
 }
 
-func changeByEvidence(t *Thread, kind, url string) *Change {
+// changeByPR is the change whose PR has this URL, or nil.
+func changeByPR(t *Thread, url string) *Change {
 	if url == "" {
 		return nil
 	}
 	for i := range t.Changes {
-		for _, ev := range t.Changes[i].Evidence {
-			if ev.Kind == kind && ev.URL == url {
-				return &t.Changes[i]
-			}
+		if t.Changes[i].PRURL() == url {
+			return &t.Changes[i]
 		}
 	}
 	return nil
 }
 
-// PR is the URL of the change's first PR evidence, or "".
-func (c *Change) PR() string {
-	for _, ev := range c.Evidence {
-		if ev.Kind == "pr" {
-			return ev.URL
-		}
+// PRURL is the URL of the change's PR, or "".
+func (c *Change) PRURL() string {
+	if c.PR == nil {
+		return ""
 	}
-	return ""
+	return c.PR.URL
+}
+
+var prURLRe = regexp.MustCompile(`github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)`)
+
+// parsePRURL reads owner/repo and the number from a GitHub PR URL.
+func parsePRURL(url string) (string, int) {
+	m := prURLRe.FindStringSubmatch(url)
+	if m == nil {
+		return "", 0
+	}
+	n, _ := strconv.Atoi(m[2])
+	return m[1], n
 }
 
 // PRURLs are the PR URLs of the thread's changes that are not ended or landed.
@@ -529,7 +578,7 @@ func PRURLs(t *Thread) []string {
 	var out []string
 	for i := range t.Changes {
 		c := &t.Changes[i]
-		if u := c.PR(); u != "" && c.Phase.InFlight() {
+		if u := c.PRURL(); u != "" && c.Phase.InFlight() {
 			out = append(out, u)
 		}
 	}
