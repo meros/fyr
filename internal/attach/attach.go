@@ -1,6 +1,8 @@
 // Package attach stores files the user attaches to a message (SPEC 0.5
-// V0.18): images, documents, logs, photos. Each file lives in its own
-// directory under Dir with a meta.json beside it.
+// V0.18): images, documents, logs, photos. Each attachment has its own
+// directory under Dir: meta.json, and the file under file/<name> (a folder
+// preview under tree/). Attachments saved before review 2026-11-15 have the
+// file beside meta.json; meta.json's absolute path still finds it.
 package attach
 
 import (
@@ -77,10 +79,12 @@ func (s *Store) Save(name, mediaType string, r io.Reader) (Meta, error) {
 		}
 	}
 	dir := filepath.Join(s.Dir, m.ID)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	// The file goes in its own subdirectory, so no upload name (meta.json)
+	// can clash with the store's own files (review 2026-11-15).
+	if err := os.MkdirAll(filepath.Join(dir, "file"), 0o700); err != nil {
 		return Meta{}, err
 	}
-	m.Path = filepath.Join(dir, m.Name)
+	m.Path = filepath.Join(dir, "file", m.Name)
 	f, err := os.OpenFile(m.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return Meta{}, err

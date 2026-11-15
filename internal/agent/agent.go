@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -25,6 +24,7 @@ import (
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/gitdiff"
 	"github.com/meros/fyr/internal/quota"
 )
 
@@ -1062,17 +1062,30 @@ func (m *Manager) canUseTool(s *session, req claude.Msg) claude.Msg {
 }
 
 func (m *Manager) answer(threadID string, e core.Effect) error {
+	// Send under the lock and never block: read() closes the ask channels
+	// under the same lock when the process ends, and the channel holds one
+	// answer, so a second answer finds it full (review 2026-11-15).
 	m.mu.Lock()
 	s := m.sessions[threadID]
 	var ch chan core.Effect
 	if s != nil {
 		ch = s.asks[e.DecisionID]
 	}
+	sent := false
+	if ch != nil {
+		select {
+		case ch <- e:
+			sent = true
+		default:
+		}
+	}
 	m.mu.Unlock()
 	if ch == nil {
 		return fmt.Errorf("the question is no longer open in the agent")
 	}
-	ch <- e
+	if !sent {
+		return fmt.Errorf("the question was already answered")
+	}
 	text := ""
 	if e.Answers != nil {
 		parts := []string{}
@@ -1093,13 +1106,15 @@ func (m *Manager) cancelRequest(s *session, reqID string) {
 	m.mu.Lock()
 	id := s.reqs[reqID]
 	ch := s.asks[id]
+	if ch != nil {
+		select {
+		case ch <- core.Effect{Kind: "cancel"}:
+		default:
+		}
+	}
 	m.mu.Unlock()
 	if ch == nil {
 		return
-	}
-	select {
-	case ch <- core.Effect{Kind: "cancel"}:
-	default:
 	}
 	m.host.Observe(s.thread, func(t *core.Thread, _ time.Time) { core.DecisionClosed(t, id) },
 		Ev{"decision.closed", map[string]any{"id": id, "answer": "withdrawn"}})
@@ -1154,9 +1169,11 @@ func (m *Manager) StopAll() {
 func gitFacts(dir string) core.GitFacts {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	// gitdiff's runner turns optional locks off, so `git status` never takes
+	// the index lock while the agent runs git (review 2026-11-15).
 	git := func(args ...string) (string, bool) {
-		out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
-		return strings.TrimSpace(string(out)), err == nil
+		out, err := gitdiff.Output(ctx, dir, args...)
+		return strings.TrimSpace(out), err == nil
 	}
 	var g core.GitFacts
 	g.Branch, _ = git("branch", "--show-current")
@@ -1207,17 +1224,6 @@ func NormalizeRemote(u string) string {
 		u = strings.ToLower(u[:i]) + u[i:]
 	}
 	return u
-}
-
-// gitBranch is the current branch of a checkout, or "" (SPEC 0.5 V0.2).
-func gitBranch(dir string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "branch", "--show-current").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
 }
 
 // initHooks is what a process registers at start: the merge gate always,

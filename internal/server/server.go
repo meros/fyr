@@ -143,11 +143,18 @@ func (s *Server) routes() http.Handler {
 // uses its bearer token.
 //
 // Local: a loopback Host header (this also stops DNS rebinding).
-// Tailnet (SPEC 0.5 V0.14): Tailscale Serve proxies from loopback and adds
-// Tailscale-User-Login; it must equal owner.
+// Tailnet (SPEC 0.5 V0.14): Tailscale Serve proxies from loopback, keeps
+// the browser's Host (https://<host>.ts.net) and adds Tailscale-User-Login;
+// it must equal owner. The header alone proves nothing: a DNS-rebinding page
+// reaches loopback too and may set any header, but its Host is its own
+// domain, never a ts.net name (review 2026-11-15).
 func guard(owner string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if login := r.Header.Get("Tailscale-User-Login"); login != "" {
+			if !tailnetHost(r.Host) {
+				http.Error(w, "the tailnet identity header needs a ts.net host", http.StatusForbidden)
+				return
+			}
 			if owner == "" || login != owner {
 				http.Error(w, "this Fyr belongs to another tailnet user", http.StatusForbidden)
 				return
@@ -175,6 +182,16 @@ func guard(owner string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// tailnetHost reports whether a Host header names a MagicDNS host, the only
+// name Tailscale Serve answers on with HTTPS.
+func tailnetHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	return strings.HasSuffix(host, ".ts.net") && len(host) > len(".ts.net")
 }
 
 // Browser wraps a browser-facing handler (the host's own, or a front's,

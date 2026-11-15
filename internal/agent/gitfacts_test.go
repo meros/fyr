@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -51,6 +52,39 @@ func TestNormalizeRemote(t *testing.T) {
 	} {
 		if got := NormalizeRemote(in); got != want {
 			t.Errorf("%s: %s, want %s", in, got, want)
+		}
+	}
+}
+
+// review 2026-11-15: gitFacts reads with optional locks off, as gitdiff
+// does, so `git status` after a run never takes the index lock while the
+// agent runs git itself.
+func TestGitFactsNoOptionalLocks(t *testing.T) {
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	log := filepath.Join(dir, "env.log")
+	os.MkdirAll(bin, 0o755)
+	script := "#!/usr/bin/env sh\necho \"${GIT_OPTIONAL_LOCKS:-unset} $*\" >> " + log + "\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(dir, "work")
+	if out, err := exec.Command(real, "init", "-q", "-b", "main", work).CombinedOutput(); err != nil {
+		t.Skipf("git init: %v %s", err, out)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	gitFacts(work)
+	b, err := os.ReadFile(log)
+	if err != nil || len(b) == 0 {
+		t.Fatalf("gitFacts ran no git: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if !strings.HasPrefix(line, "0 ") {
+			t.Errorf("git without GIT_OPTIONAL_LOCKS=0: %s", line)
 		}
 	}
 }

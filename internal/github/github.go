@@ -9,6 +9,7 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
@@ -36,10 +37,11 @@ func Fetch(ctx context.Context, gh Runner, url string) (core.PR, error) {
 // fetch also returns the number of failed checks.
 func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	repo, n, ok := agent.ParsePR(url)
+	canon, _ := agent.CanonicalPR(url)
 	if !ok {
 		return core.PR{}, 0, fmt.Errorf("not a PR URL: %s", url)
 	}
-	out, err := gh(ctx, "pr", "view", url, "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt")
+	out, err := gh(ctx, "pr", "view", "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt", "--", canon)
 	if err != nil {
 		return core.PR{}, 0, err
 	}
@@ -92,13 +94,14 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 
 // Merge merges a PR with gh (the pr.merge effect).
 func Merge(ctx context.Context, gh Runner, url, method string) (string, error) {
-	if _, _, ok := agent.ParsePR(url); !ok {
+	canon, ok := agent.CanonicalPR(url)
+	if !ok {
 		return "", fmt.Errorf("not a PR URL: %s", url)
 	}
 	if method == "" {
 		method = "squash"
 	}
-	out, err := gh(ctx, "pr", "merge", url, "--"+method)
+	out, err := gh(ctx, "pr", "merge", "--"+method, "--", canon)
 	return strings.TrimSpace(string(out)), err
 }
 
@@ -116,22 +119,29 @@ type Poller struct {
 	Gh       Runner
 	Src      Source
 	Interval time.Duration
-	kick     chan string
 	notes    map[string]noteCache // V0.66 (7): by PR URL
+
+	// kick is made once, by whichever of Kick and Run comes first, so a
+	// kick before Run waits for it and no goroutine writes the field
+	// while another reads it (review 2026-11-15).
+	kickOnce sync.Once
+	kick     chan string
+}
+
+func (p *Poller) kicks() chan string {
+	p.kickOnce.Do(func() { p.kick = make(chan string, 16) })
+	return p.kick
 }
 
 func (p *Poller) Kick(threadID string) {
-	if p.kick == nil {
-		return
-	}
 	select {
-	case p.kick <- threadID:
+	case p.kicks() <- threadID:
 	default:
 	}
 }
 
 func (p *Poller) Run(ctx context.Context) {
-	p.kick = make(chan string, 16)
+	kick := p.kicks()
 	if p.Interval == 0 {
 		p.Interval = 2 * time.Minute
 	}
@@ -144,7 +154,7 @@ func (p *Poller) Run(ctx context.Context) {
 			return
 		case <-tick.C:
 			p.pollAll(ctx)
-		case id := <-p.kick:
+		case id := <-kick:
 			for _, t := range p.Src.Snapshot() {
 				if t.ID == id {
 					p.poll(ctx, t)
