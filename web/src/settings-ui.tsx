@@ -8,6 +8,7 @@ import { hostStatus, type HostInfo } from "./hosts.ts";
 import type { Quota } from "./quota.ts";
 import { quotaFor } from "./quota.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
+import { CARD_WORD, cardState } from "./quota.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { removeProviderAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
@@ -240,7 +241,8 @@ function ProviderRow({ p, quota, open, onToggle, run }: { p: ProviderDTO; quota?
             {kindLabel(p.kind)} · {whereText(p)} · {modelsSummary(p.models)}
           </span>
         </span>
-        <span class={`pst ${p.status}`}>{STATUS_TEXT[p.status]}</span>
+        {/* V0.77 (1), #65: the badge tells the truth about the account, so Ready never sits beside its own error. */}
+        <span class={`pst ${p.status}`}>{quota && p.status === "ready" ? CARD_WORD[cardState(quota)] : STATUS_TEXT[p.status]}</span>
       </button>
       {quota && <QuotaLine q={quota} name={p.name} />}
       {p.need && !loginActive(p.login) && <div class="setneed">{p.need}</div>}
