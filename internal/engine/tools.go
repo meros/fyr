@@ -83,7 +83,7 @@ func (e *Engine) stateTool() mcp.Tool {
 		Description: "Read the current state of this thread's records in Fyr in one compact form: the thread and its settle state, the changes with their PR, git and deploy conditions and actions, the live view, and the rules (your watches among them). Fyr's [Fyr] notices are one sentence each; read the details here instead of polling gh.",
 		Schema:      obj(map[string]any{"about": str("Optional: thread, changes, view, rules, settle, or one change's id or key. Empty: everything.")}),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			t, ok := e.Thread(th)
+			t, ok := e.Shown(th)
 			if !ok {
 				return "", errors.New("no such thread")
 			}

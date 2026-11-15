@@ -91,6 +91,9 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 		out, exit, err := run(ctx, ef.Script.Dir, ef.Script.Argv)
 		cancel()
 		return res(err == nil, exit, out), false
+	case core.EffectGit:
+		e.observeGit(threadID, ef.Git)
+		return nil, false
 	case core.EffectRun:
 		if ef.Request == nil {
 			return nil, false

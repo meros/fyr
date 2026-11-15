@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, data TEXT NOT NULL);
 DROP TABLE IF EXISTS workspaces; -- V0.55: workspaces are gone (decision 0017)
 CREATE TABLE IF NOT EXISTS providers(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS effects(id TEXT PRIMARY KEY, thread TEXT NOT NULL, state TEXT NOT NULL, data TEXT NOT NULL, result TEXT NOT NULL DEFAULT '', at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS changes(id TEXT PRIMARY KEY, data TEXT NOT NULL); -- #35: host change records
 CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, user TEXT NOT NULL, device TEXT NOT NULL, sub TEXT NOT NULL, created TEXT NOT NULL);
 `
 
@@ -77,6 +78,41 @@ func (tx *Tx) PutThread(t *core.Thread) error {
 	b, _ := json.Marshal(t)
 	_, err := tx.tx.Exec(`INSERT INTO threads(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, t.ID, string(b))
 	return err
+}
+
+// PutChange stores a host change record (#35).
+func (tx *Tx) PutChange(c *core.Change) error {
+	b, _ := json.Marshal(c)
+	_, err := tx.tx.Exec(`INSERT INTO changes(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, c.ID, string(b))
+	return err
+}
+
+// DeleteChange removes a host change record.
+func (tx *Tx) DeleteChange(id string) error {
+	_, err := tx.tx.Exec(`DELETE FROM changes WHERE id=?`, id)
+	return err
+}
+
+// Changes are the host change records.
+func (s *Store) Changes() ([]*core.Change, error) {
+	rows, err := s.db.Query(`SELECT data FROM changes`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*core.Change
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		c := &core.Change{}
+		if err := json.Unmarshal([]byte(d), c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 func (tx *Tx) PutView(v *core.View) error {
