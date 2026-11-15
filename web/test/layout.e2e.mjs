@@ -654,12 +654,12 @@ try {
   await key("Enter");
   const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .plist'), focus: document.activeElement?.classList.contains('pq') })`);
   check(d.dlg && d.focus, "V0.26 desktop: Project… does not open the project picker with the search focused");
-  await send("Input.insertText", { text: "Hemm" });
+  await send("Input.insertText", { text: "garden" }); // V0.61: Enter picks a project by its exact name (any case)
   await sleep(150);
   await key("Enter");
   await sleep(300);
   const r = await evaluate(`({ dlg: !!document.querySelector('.dlg'), chip: document.querySelector('.thh .chip.proj')?.textContent ?? '' })`);
-  check(!r.dlg && /Garden/.test(r.chip), `V0.26 desktop: Enter in the picker does not move the thread to the first match (chip "${r.chip}")`);
+  check(!r.dlg && /Garden/.test(r.chip), `V0.26, V0.61 desktop: Enter on an exact project name does not move the thread there (chip "${r.chip}")`);
 } catch (e) {
   failures.push(`V0.26 desktop: ${e.message}`);
 }

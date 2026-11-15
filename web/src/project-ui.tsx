@@ -7,7 +7,7 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, ThreadDTO } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, quietLine, quietList, quietNote, setAllDay, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, deleteQuestion, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, deleteQuestion, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { shortModel } from "./format.ts";
 
@@ -131,10 +131,11 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
   // rows and back to the search.
   const options = () => [...(box.current?.querySelectorAll<HTMLElement>("button") ?? [])];
   const onSearchKey = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && q.trim()) {
+    const act = e.key === "Enter" ? enterAction(projects, list, q, !!newRow) : null;
+    if (act) {
       e.preventDefault();
-      if (list.length) onPick(list[0]);
-      else newRow?.onNew(q);
+      if ("pick" in act) onPick(act.pick);
+      else newRow?.onNew(act.create);
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       options()[0]?.focus();
@@ -156,7 +157,7 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
           <button class="pli new" role="option" aria-selected={false} onClick={() => newRow.onNew(q)}>
             <span class="pi all">+</span>
             <span class="plt">
-              <span class="ell pln">{newRowLabel(q, list.length, newRow.fromThread)}</span>
+              <span class="ell pln">{newRowLabel(q, !!exactProject(projects, q), newRow.fromThread)}</span>
               <span class="ell pls2">{newRow.sub}</span>
             </span>
           </button>

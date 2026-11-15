@@ -132,13 +132,25 @@ test("SPEC 0.5 V0.55: one folder, its words, the scratch default", async () => {
   for (const gone of ["projectFolders", "projectRepos", "repoLine", "sourceText", "MAIN_LINE", "FOLDERS_LINE", "createFolderLine", "suggestionFor", "makeProjectLabel"]) assert.ok(!(gone in projects), gone);
 });
 
-test("SPEC 0.5 V0.30: the picker's first row names what it makes", async () => {
+test("SPEC 0.5 V0.30, V0.61: the picker's first row names what it makes", async () => {
   const { newRowLabel } = await import("../src/projects.ts");
-  assert.equal(newRowLabel("", 3, true), "New project from this thread");
-  assert.equal(newRowLabel("", 3, false), "New project");
-  assert.equal(newRowLabel("hem", 1, true), "New project from this thread");
-  assert.equal(newRowLabel("Kök ", 0, true), "New project “Kök”");
-  assert.equal(newRowLabel("Kök", 0, false), "New project “Kök”");
+  assert.equal(newRowLabel("", false, true), "New project from this thread");
+  assert.equal(newRowLabel("", false, false), "New project");
+  assert.equal(newRowLabel("hem", false, true), "New project “hem”", "a partial match still names the new project");
+  assert.equal(newRowLabel("Garden", true, true), "New project from this thread", "an exact name is the existing project");
+  assert.equal(newRowLabel("Kök ", false, false), "New project “Kök”");
+});
+
+test("SPEC 0.5 V0.61: Enter picks an existing project only by its exact name; else it makes the new one", async () => {
+  const { enterAction, matchProjects } = await import("../src/projects.ts");
+  const list = [{ id: "p1", name: "fyr", folder: "/home/me/git/fyr" }, { id: "p2", name: "Garden" }] as Project[];
+  const enter = (q: string, canCreate = true) => enterAction(list, matchProjects(list, q), q, canCreate);
+  assert.deepEqual(enter("fyr2"), { create: "fyr2" });
+  assert.deepEqual(enter("fy"), { create: "fy" }, "a partial match is not picked");
+  assert.deepEqual(enter("git"), { create: "git" }, "a folder match is not picked");
+  assert.equal((enter(" GARDEN ") as { pick: Project }).pick.id, "p2");
+  assert.equal((enter("fy", false) as { pick: Project }).pick.id, "p1", "the filter has no New project row: first match");
+  assert.equal(enter("   "), null);
 });
 
 test("SPEC 0.5 V0.30: a new thread starts on the inbox filter, else the last project used, else the most recent", async () => {
