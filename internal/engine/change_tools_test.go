@@ -369,3 +369,56 @@ func TestMergeOneGuard(t *testing.T) {
 		t.Fatalf("request %+v", req)
 	}
 }
+
+// SPEC 0.5 V0.71: a thread that an action starts (in: "new") follows the
+// pressing thread's provider, model and effort and names it as its parent;
+// a second press while the first runs starts nothing (the live case, 15 Nov:
+// two threads per press, on the owner's personal account instead of
+// claudeNorban).
+func TestNewThreadActionFollowsParent(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "x", "profile": "claudeNorban", "model": "claude-opus-5-5", "effort": "high"})
+	if !r.OK {
+		t.Fatalf("create: %+v", r)
+	}
+	id := r.ThreadID
+	h.wait(id, "done", state(core.Done))
+	if out, isErr := callAs(t, h.e, id, "offer_action", map[string]any{"on": "thread", "id": "pick", "label": "Pick up #12476", "run": "agent", "in": "new", "prompt": "Pick up issue 12476."}); isErr {
+		t.Fatal(out)
+	}
+	th, _ := h.e.Thread(id)
+	a := findOffer(th.Offers, "pick")
+	var wg sync.WaitGroup
+	for i := range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.cmdID(fmt.Sprintf("pick%d", i), "action.run", id, core.Args{"on": "thread", "action": "pick", "digest": a.Digest})
+		}()
+	}
+	wg.Wait()
+	var children []core.Thread
+	eventually(t, "the child thread", func() bool {
+		children = nil
+		for _, d := range h.e.Snapshot() {
+			if c, _ := h.e.Thread(d.ID); c.Parent == id {
+				children = append(children, c)
+			}
+		}
+		return len(children) >= 1
+	})
+	time.Sleep(200 * time.Millisecond) // a second thread would appear by now
+	children = nil
+	for _, d := range h.e.Snapshot() {
+		if c, _ := h.e.Thread(d.ID); c.Parent == id {
+			children = append(children, c)
+		}
+	}
+	if len(children) != 1 {
+		t.Fatalf("%d threads for one press", len(children))
+	}
+	c := children[0]
+	if c.Profile != "claudeNorban" || c.Model != "claude-opus-5-5" || c.Effort != "high" {
+		t.Fatalf("child provider %q model %q effort %q", c.Profile, c.Model, c.Effort)
+	}
+}

@@ -234,6 +234,8 @@ func resultNotices(r Reduced) []Notice {
 	for _, ev := range r.Events {
 		d, _ := ev.Data.(map[string]any)
 		switch {
+		case ev.Type == "action" && d["ended"] == true && d["run"] == RunAgent && d["ok"] == true && str(d["output"]) == "":
+			// An agent action sent to this agent: the message itself is the news.
 		case ev.Type == "action" && d["ended"] == true:
 			ok, _ := d["ok"].(bool)
 			exit, _ := d["exit"].(int)

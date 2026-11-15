@@ -73,11 +73,11 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 	}
 	switch ef.Kind {
 	case core.EffectThread:
-		r := e.Command(Cmd{CommandID: ef.ID, Action: "thread.create", Args: core.Args{"cwd": ef.Cwd, "text": ef.Text, "projectId": ef.Project}})
+		r := e.Command(Cmd{CommandID: ef.ID, Action: "thread.create", Args: childArgs(e, threadID, core.Args{"cwd": ef.Cwd, "text": ef.Text, "projectId": ef.Project})})
 		if !r.OK {
 			return res(false, 0, r.Error), false
 		}
-		return nil, false
+		return res(true, 0, "Started thread "+r.ThreadID+"."), false
 	case core.EffectScript:
 		limit := time.Duration(ef.Script.TimeoutSec) * time.Second
 		if limit == 0 {
@@ -105,7 +105,27 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 		log.Printf("thread %s: effect %s: %v", threadID, ef.Kind, err)
 		return res(false, 0, err.Error()), false
 	}
+	if ef.Press != nil { // an agent action sent to this thread: the press ends
+		return res(true, 0, ""), false
+	}
 	return nil, false
+}
+
+// childArgs completes the args of a thread that another thread starts
+// (V0.71): unless they name them, it follows the parent's provider, model and
+// effort, and names the parent.
+func childArgs(e *Engine, parent string, args core.Args) core.Args {
+	p, ok := e.Thread(parent)
+	if !ok {
+		return args
+	}
+	args["parent"] = parent
+	for k, v := range map[string]string{"profile": p.Profile, "model": p.Model, "effort": p.Effort} {
+		if _, set := args[k]; !set && v != "" {
+			args[k] = v
+		}
+	}
+	return args
 }
 
 // runFyr runs one Fyr effect, whoever started it. The args are completed
