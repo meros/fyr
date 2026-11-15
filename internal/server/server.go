@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
@@ -30,6 +31,7 @@ import (
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/notify"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
 )
@@ -58,7 +60,7 @@ type Server struct {
 	Presence *notify.Presence
 	// Attach stores uploaded files (V0.18); optional.
 	Attach   *attach.Store
-	Profiles []agent.Profile
+	Profiles []provider.Profile
 	// T3Candidates lists adoptable T3 threads; optional.
 	T3Candidates func() (any, error)
 	// FS serves the host folder picker (V0.42); optional.
@@ -71,7 +73,7 @@ type Server struct {
 	HandoverPlan func(threadID, profile string) agent.Plan
 	// ProfileList is the current profiles (the providers, V0.50); it wins
 	// over Profiles. Optional.
-	ProfileList func() []agent.Profile
+	ProfileList func() []provider.Profile
 	// Providers serves Settings → Providers (V0.50); optional.
 	Providers Providers
 }
@@ -81,7 +83,7 @@ type Server struct {
 type Providers interface {
 	List() any
 	Found() any
-	Command(c engine.Cmd) engine.Reply
+	Command(c api.Cmd) api.Reply
 }
 
 // PRDetails is what the PR tab needs (*github.Details implements it).
@@ -293,12 +295,12 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 // profiles are the current profiles as clients see them: ProfileList when
 // set, else Profiles. A profile's env stays on the host (V0.50): it may name
 // a secret.
-func (s *Server) profiles() []agent.Profile {
+func (s *Server) profiles() []provider.Profile {
 	src := s.Profiles
 	if s.ProfileList != nil {
 		src = s.ProfileList()
 	}
-	out := make([]agent.Profile, 0, len(src))
+	out := make([]provider.Profile, 0, len(src))
 	for _, p := range src {
 		p.Env = nil
 		out = append(out, p)
@@ -563,15 +565,15 @@ func (s *Server) handoverPlan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) command(w http.ResponseWriter, r *http.Request) {
-	var c engine.Cmd
+	var c api.Cmd
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<20)).Decode(&c); err != nil {
-		writeJSON(w, 400, engine.Reply{Error: "bad JSON: " + err.Error()})
+		writeJSON(w, 400, api.Reply{Error: "bad JSON: " + err.Error()})
 		return
 	}
-	var rep engine.Reply
+	var rep api.Reply
 	if strings.HasPrefix(c.Action, "provider.") {
 		if s.Providers == nil {
-			writeJSON(w, 404, engine.Reply{Error: "no providers on this host"})
+			writeJSON(w, 404, api.Reply{Error: "no providers on this host"})
 			return
 		}
 		rep = s.Providers.Command(c)

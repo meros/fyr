@@ -8,10 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
-	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/secrets"
 	"github.com/meros/fyr/internal/store"
@@ -44,7 +43,7 @@ type Registry struct {
 
 	mu   sync.Mutex
 	list []Provider
-	seen map[string]engine.Reply
+	seen map[string]api.Reply
 
 	lmu    sync.Mutex
 	logins map[string]*loginRun
@@ -202,8 +201,8 @@ func (r *Registry) Providers() []Provider {
 }
 
 // Profiles are the providers as launch configs, in order.
-func (r *Registry) Profiles() []agent.Profile {
-	out := []agent.Profile{}
+func (r *Registry) Profiles() []Profile {
+	out := []Profile{}
 	for _, p := range r.Providers() {
 		pr := p.Profile(r.keyFn(p.ID), r.PermissionMode)
 		if st, need := r.status(p); st != Ready {
@@ -327,13 +326,13 @@ func (r *Registry) changed() {
 }
 
 // Command runs provider.* commands; each commandId runs once.
-func (r *Registry) Command(c engine.Cmd) engine.Reply {
+func (r *Registry) Command(c api.Cmd) api.Reply {
 	if c.CommandID == "" {
-		return engine.Reply{Error: "commandId is required", Status: 400}
+		return api.Reply{Error: "commandId is required", Status: 400}
 	}
 	r.mu.Lock()
 	if r.seen == nil {
-		r.seen = map[string]engine.Reply{}
+		r.seen = map[string]api.Reply{}
 	}
 	if rep, ok := r.seen[c.CommandID]; ok {
 		r.mu.Unlock()
@@ -349,16 +348,16 @@ func (r *Registry) Command(c engine.Cmd) engine.Reply {
 	}
 	r.mu.Lock()
 	if len(r.seen) > 500 {
-		r.seen = map[string]engine.Reply{}
+		r.seen = map[string]api.Reply{}
 	}
 	r.seen[c.CommandID] = rep
 	r.mu.Unlock()
 	return rep
 }
 
-func fail(err error) engine.Reply { return engine.Reply{Error: err.Error()} }
+func fail(err error) api.Reply { return api.Reply{Error: err.Error()} }
 
-func (r *Registry) run(c engine.Cmd) engine.Reply {
+func (r *Registry) run(c api.Cmd) api.Reply {
 	a := c.Args
 	id := a.Str("id")
 	switch c.Action {
@@ -369,15 +368,15 @@ func (r *Registry) run(c engine.Cmd) engine.Reply {
 				continue
 			}
 			if f.Imported {
-				return engine.Reply{Error: "already imported", Status: 409}
+				return api.Reply{Error: "already imported", Status: 409}
 			}
 			p, err := r.importFound(f, true)
 			if err != nil {
 				return fail(err)
 			}
-			return engine.Reply{Result: map[string]string{"id": p.ID}}
+			return api.Reply{Result: map[string]string{"id": p.ID}}
 		}
-		return engine.Reply{Error: "nothing found as " + fid, Status: 404}
+		return api.Reply{Error: "nothing found as " + fid, Status: 404}
 	case "provider.create":
 		p, err := r.fromArgs(Provider{CLI: claudecli.ID, CreatedAt: time.Now().UTC()}, a, true)
 		if err != nil {
@@ -391,11 +390,11 @@ func (r *Registry) run(c engine.Cmd) engine.Reply {
 				return fail(err)
 			}
 		}
-		return engine.Reply{Result: map[string]string{"id": p.ID}}
+		return api.Reply{Result: map[string]string{"id": p.ID}}
 	case "provider.update":
 		p, ok := r.get(id)
 		if !ok {
-			return engine.Reply{Error: "no provider " + id, Status: 404}
+			return api.Reply{Error: "no provider " + id, Status: 404}
 		}
 		p, err := r.fromArgs(p, a, false)
 		if err != nil {
@@ -405,7 +404,7 @@ func (r *Registry) run(c engine.Cmd) engine.Reply {
 	case "provider.setKey":
 		p, ok := r.get(id)
 		if !ok {
-			return engine.Reply{Error: "no provider " + id, Status: 404}
+			return api.Reply{Error: "no provider " + id, Status: 404}
 		}
 		if p.Auth.Kind == cli.NoAuth {
 			return fail(errors.New("this provider takes no key"))
@@ -427,11 +426,11 @@ func (r *Registry) run(c engine.Cmd) engine.Reply {
 	case "provider.delete":
 		p, ok := r.get(id)
 		if !ok {
-			return engine.Reply{Error: "no provider " + id, Status: 404}
+			return api.Reply{Error: "no provider " + id, Status: 404}
 		}
 		if r.InUse != nil {
 			if n := r.InUse(id); n > 0 {
-				return engine.Reply{Error: fmt.Sprintf("%d threads use %s; hand them over first", n, p.Name), Status: 409}
+				return api.Reply{Error: fmt.Sprintf("%d threads use %s; hand them over first", n, p.Name), Status: 409}
 			}
 		}
 		if err := r.DB.DeleteProvider(id); err != nil {
@@ -449,12 +448,12 @@ func (r *Registry) run(c engine.Cmd) engine.Reply {
 			}
 		}
 		r.mu.Unlock()
-		return engine.Reply{}
+		return api.Reply{}
 	}
-	return engine.Reply{Error: "unknown action " + c.Action}
+	return api.Reply{Error: "unknown action " + c.Action}
 }
 
-func (r *Registry) replace(p Provider) engine.Reply {
+func (r *Registry) replace(p Provider) api.Reply {
 	if err := p.validate(); err != nil {
 		return fail(err)
 	}
@@ -466,10 +465,10 @@ func (r *Registry) replace(p Provider) engine.Reply {
 				return fail(err)
 			}
 			r.list[i] = p
-			return engine.Reply{}
+			return api.Reply{}
 		}
 	}
-	return engine.Reply{Error: "no provider " + p.ID, Status: 404}
+	return api.Reply{Error: "no provider " + p.ID, Status: 404}
 }
 
 // fromArgs applies create or update arguments. A key is never stored in

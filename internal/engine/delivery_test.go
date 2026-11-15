@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
 )
 
 // messageID is the id the host gave a sent message (Reply.Result.messageId).
-func messageID(t *testing.T, r Reply) string {
+func messageID(t *testing.T, r api.Reply) string {
 	t.Helper()
 	m, _ := r.Result.(map[string]any)
 	id, _ := m["messageId"].(string)

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/quota"
@@ -147,7 +146,7 @@ func (p Provider) identity(home string) string {
 
 // Profile is the launch config the agent runs (threads, handover and quota
 // keep using profiles by id).
-func (p Provider) Profile(key func() (string, error), permissionMode string) agent.Profile {
+func (p Provider) Profile(key func() (string, error), permissionMode string) Profile {
 	ids := make([]string, 0, len(p.Models))
 	for _, m := range p.Models {
 		ids = append(ids, m.ID)
@@ -156,7 +155,7 @@ func (p Provider) Profile(key func() (string, error), permissionMode string) age
 	if def == "" && len(ids) > 0 {
 		def = ids[0]
 	}
-	return agent.Profile{ID: p.ID, Name: p.Name, Binary: "claude", Color: p.Color, Models: ids, DefaultModel: def,
+	return Profile{ID: p.ID, Name: p.Name, Binary: "claude", Color: p.Color, Models: ids, DefaultModel: def,
 		PermissionMode: permissionMode, Quota: p.quotaSpec(), ConfigDir: p.Auth.ConfigDir,
 		CLI: p.CLI, Auth: p.Auth, Endpoint: p.Endpoint, Key: key, KeyRequired: p.Auth.Kind == cli.APIKey || p.TokenLogin,
 		ModelCaps: p.Models, DefaultEffort: p.DefaultEffort}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
@@ -31,7 +32,7 @@ func showEngine(t *testing.T) (*Engine, string, func(args map[string]any) (strin
 	e := New(st)
 	e.Attach = &attach.Store{Dir: filepath.Join(dir, "att")}
 	e.Shooter = &fakeShooter{}
-	r := e.Command(Cmd{CommandID: "c", Action: "thread.create", Args: core.Args{"cwd": dir, "text": "x"}})
+	r := e.Command(api.Cmd{CommandID: "c", Action: "thread.create", Args: core.Args{"cwd": dir, "text": "x"}})
 	srv := mcp.New(func(string) (string, bool) { return r.ThreadID, true })
 	e.Tools(srv)
 	hs := httptest.NewServer(srv)

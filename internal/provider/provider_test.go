@@ -10,10 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
-	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/secrets"
 	"github.com/meros/fyr/internal/store"
@@ -60,7 +59,7 @@ func (f fixture) host() Host {
 			}
 			return p, nil
 		},
-		Profiles: []agent.Profile{
+		Profiles: []Profile{
 			{ID: "claudeAlt", Name: "Claude", Binary: "claude", Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"}},
 			{ID: "claudeAcme", Name: "Claude (acme)", Binary: "claude-acme", Models: []string{"claude-opus-5-5"}},
 			{ID: "claudeDeepseek", Name: "DeepSeek", Binary: "claude-deepseek", Models: []string{"deepseek-chat", "deepseek-reasoner"}},
@@ -188,7 +187,7 @@ func TestCutoverKeepsIDs(t *testing.T) {
 		t.Fatal("cut-over ran twice")
 	}
 	// The deepseek profile starts plain claude with the key from the file.
-	var ds agent.Profile
+	var ds Profile
 	for _, p := range r.Profiles() {
 		if p.ID == "claudeDeepseek" {
 			ds = p
@@ -204,8 +203,8 @@ func TestCutoverKeepsIDs(t *testing.T) {
 	}
 }
 
-func cmd(action string, args map[string]any) engine.Cmd {
-	return engine.Cmd{CommandID: action + "-" + time.Now().Format("150405.000000000"), Action: action, Args: args}
+func cmd(action string, args map[string]any) api.Cmd {
+	return api.Cmd{CommandID: action + "-" + time.Now().Format("150405.000000000"), Action: action, Args: args}
 }
 
 // (1)(3) A key lives only in the secret store: not in the database, a DTO

@@ -17,6 +17,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
@@ -631,7 +632,7 @@ func TestThreadPRDetail(t *testing.T) {
 	fd := &fakeDetails{}
 	hs := httptest.NewServer((&Server{Engine: e, PR: fd}).Handler())
 	defer hs.Close()
-	r := e.Command(engine.Cmd{CommandID: "c1", Action: "thread.create", Args: core.Args{"cwd": t.TempDir(), "text": "hi"}})
+	r := e.Command(api.Cmd{CommandID: "c1", Action: "thread.create", Args: core.Args{"cwd": t.TempDir(), "text": "hi"}})
 	id := r.ThreadID
 	get := func(path string) (int, map[string]any) {
 		resp := do(t, "GET", hs.URL+path, "", nil, "")
@@ -670,7 +671,7 @@ func TestThreadPRDetail(t *testing.T) {
 // SPEC 0.5 V0.45: the dialog asks which rung a handover would use.
 func TestHandoverPlan(t *testing.T) {
 	hs, e := newServer(t)
-	r := e.Command(engine.Cmd{CommandID: "h1", Action: "thread.create", Args: map[string]any{"cwd": "/tmp", "text": "hi"}})
+	r := e.Command(api.Cmd{CommandID: "h1", Action: "thread.create", Args: map[string]any{"cwd": "/tmp", "text": "hi"}})
 	if got := do(t, "GET", hs.URL+"/api/threads/nope/handover?profile=b", "", nil, ""); got.StatusCode != 404 {
 		t.Fatalf("unknown thread: %d", got.StatusCode)
 	}

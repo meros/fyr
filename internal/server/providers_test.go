@@ -8,20 +8,21 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/engine"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/store"
 )
 
-type fakeProviders struct{ cmds []engine.Cmd }
+type fakeProviders struct{ cmds []api.Cmd }
 
 func (f *fakeProviders) List() any {
 	return []map[string]any{{"id": "p1", "keySet": true, "keyLast4": "zz12"}}
 }
 func (f *fakeProviders) Found() any { return []map[string]any{{"id": "openrouter"}} }
-func (f *fakeProviders) Command(c engine.Cmd) engine.Reply {
+func (f *fakeProviders) Command(c api.Cmd) api.Reply {
 	f.cmds = append(f.cmds, c)
-	return engine.Reply{OK: true}
+	return api.Reply{OK: true}
 }
 
 // SPEC 0.5 V0.50: the provider endpoints, provider.* commands go to the
@@ -34,8 +35,8 @@ func TestProviderEndpoints(t *testing.T) {
 	defer st.Close()
 	fp := &fakeProviders{}
 	s := &Server{Engine: engine.New(st), Web: fstest.MapFS{"index.html": {Data: []byte("x")}}, Providers: fp,
-		ProfileList: func() []agent.Profile {
-			return []agent.Profile{{ID: "p1", Name: "P", Env: []string{"ANTHROPIC_AUTH_TOKEN=sk-leak-1234"}, Key: func() (string, error) { return "sk-leak-5678", nil }}}
+		ProfileList: func() []provider.Profile {
+			return []provider.Profile{{ID: "p1", Name: "P", Env: []string{"ANTHROPIC_AUTH_TOKEN=sk-leak-1234"}, Key: func() (string, error) { return "sk-leak-5678", nil }}}
 		}}
 	hs := httptest.NewServer(s.Handler())
 	defer hs.Close()

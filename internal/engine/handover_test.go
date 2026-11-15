@@ -13,6 +13,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -38,7 +39,7 @@ func newHandoverHarness(t *testing.T) *handoverHarness {
 	os.MkdirAll(work, 0o700)
 	hh := &handoverHarness{harness: &harness{t: t, e: e, r: &runner{}, dir: work}, dirA: filepath.Join(dir, "cfgA"), dirB: filepath.Join(dir, "cfgB"), out: filepath.Join(dir, "handover")}
 	fake := []string{"FYR_FAKE_CLAUDE=1"}
-	profiles := map[string]agent.Profile{
+	profiles := map[string]provider.Profile{
 		"a":    {ID: "a", Name: "Claude", Binary: os.Args[0], Env: fake, ConfigDir: hh.dirA, DefaultModel: "model-a"},
 		"b":    {ID: "b", Name: "Claude (acme)", Binary: os.Args[0], Env: fake, ConfigDir: hh.dirB, Models: []string{"model-b", "model-b2"}, DefaultModel: "model-b"},
 		"s":    {ID: "s", Name: "Same dir", Binary: os.Args[0], Env: append([]string{"CLAUDE_CONFIG_DIR=" + hh.dirA}, fake...)},
@@ -50,7 +51,7 @@ func newHandoverHarness(t *testing.T) *handoverHarness {
 	e.Tools(srv)
 	hs := httptest.NewServer(srv)
 	m = agent.New(e, agent.Config{
-		Profile:     func(id string) agent.Profile { return profiles[id] },
+		Profile:     func(id string) provider.Profile { return profiles[id] },
 		IdleStop:    time.Minute,
 		MCPURL:      hs.URL + "/mcp",
 		HandoverDir: hh.out,
