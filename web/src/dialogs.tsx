@@ -379,9 +379,7 @@ export function SnoozeMenu(p: { presets: SnoozePreset[]; count: number; onPick(p
           <button class="mi" onClick={() => p.onPick(s)}>
             <kbd>{i + 1}</kbd>
             <span class="ell">{s.label}</span>
-            <span class="when tnum">
-              {s.until.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}
-            </span>
+            <span class="when tnum">{s.when}</span>
           </button>
         ))}
       </div>

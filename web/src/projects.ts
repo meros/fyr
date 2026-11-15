@@ -232,3 +232,10 @@ export function projectChip(cur: Project | undefined, draft: { name: string; fol
 export function localProject(id: string, name: string, folder: string): Project {
   return { id, name, folder: folder || undefined, threads: 0, lastUsed: new Date().toISOString() };
 }
+
+/** The toast after filing `n` threads in `where` (null: No project), or the host's error (review 2026-11-15). */
+export function moveToast(n: number, where: string | null, error: string | null): { text: string; error: boolean } {
+  if (error) return { text: error, error: true };
+  const text = n === 1 ? (where ? `Filed in ${where}` : "No project now") : where ? `Filed ${n} threads in ${where}` : `${n} threads have no project now`;
+  return { text, error: false };
+}

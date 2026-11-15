@@ -2,6 +2,8 @@
 
 export interface HintContext {
   dialog: string | null;
+  /** SPEC 0.5 V0.67: how many snooze presets the menu shows (4 or 5) */
+  snoozeCount?: number;
   zone: "list" | "thread";
   hasSelection: boolean;
   picked: number;
@@ -17,7 +19,7 @@ export interface HintContext {
 export type Hint = [key: string, label: string];
 
 export function keyHints(c: HintContext): Hint[] {
-  if (c.dialog === "snooze") return [["1–3", "snooze"], ["Esc", "close"]];
+  if (c.dialog === "snooze") return [[`1–${c.snoozeCount ?? 5}`, "snooze"], ["Esc", "close"]];
   if (c.dialog === "push") return [["Esc", "close"]];
   if (c.dialog) return [["⏎", c.dialog === "new" ? "create" : "adopt"], ["⇧⏎", "new line"], ["Esc", "close"]];
   if (c.inText && c.card === "ask" && c.view === "open") return [["⏎", "answer"], ["⌘⏎", "queue as message"], ["Tab", "next question"], ["Esc", "leave field"]];
@@ -44,4 +46,9 @@ export function keyHints(c: HintContext): Hint[] {
   if (c.view === "peek") h.push(["Esc", "close peek"]);
   else if (c.running && c.zone === "thread") h.push(["Esc", "interrupt"]);
   return h;
+}
+
+/** The dialog after Escape or Close: the project screen returns to Settings when opened from there (V0.58). */
+export function dialogAfterClose<D extends string>(dialog: D | null, projectFrom: D | null): D | null {
+  return dialog === "project" ? projectFrom : null;
 }

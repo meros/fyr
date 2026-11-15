@@ -11,7 +11,8 @@ import { createContext } from "preact";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
 import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
-import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
+import { StateIcon, stateClass } from "./icons.tsx";
+import { stateLabel } from "./rows.ts";
 import { clockTime, duration, relTime, shortModel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
 import { dividerLine, rungDone } from "./handover.ts";
@@ -31,14 +32,9 @@ import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
-import { changeChip } from "./offers.ts";
+import { changeChip, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
-
-/** The PR chip's short label, its class and the merge status words as its title (V0.43). */
-export function prLabel(pr: PullRequest, short = false): { text: string; cls: string; title: string } {
-  return prChip(pr, short);
-}
 
 export interface AnswerField {
   index: number;
@@ -68,7 +64,7 @@ export interface ThreadPaneProps {
   onEarlier?: () => void;
   /** server-adjusted clock, for elapsed times */
   now: number;
-  /** Phone layout: back to the inbox. */
+  /** Back to the inbox: the desktop closes the thread pane with it (open or peek). */
   onBack?: () => void;
   /** Opens the project picker for this thread (V0.26, V0.30); absent: no ⋯ menu. */
   onMoveProject?: () => void;
@@ -170,11 +166,14 @@ export function ThreadPane(p: ThreadPaneProps) {
               </span>
             ) : null;
           })()}
-          {(t.settleWhenDone || t.settleWhenMerged) && (
-            <span class="chip">
-              <span>{t.settleWhenDone ? "settles when done" : "settles when merged"}</span>
-            </span>
-          )}
+          {(() => {
+            const l = settleLine(t);
+            return l ? (
+              <span class="chip">
+                <span>{l}</span>
+              </span>
+            ) : null;
+          })()}
         </div>
         <ThreadOffers t={t} onRun={p.onRun} />
         <div class="tabs" role="tablist">
@@ -349,7 +348,7 @@ function EffortChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | un
 }
 
 function PrChip({ pr, onDismiss }: { pr: PullRequest; onDismiss?: () => void }) {
-  const l = prLabel(pr);
+  const l = prChip(pr);
   const done = pr.state === "MERGED" || pr.state === "CLOSED";
   return (
     <span class="prw">
@@ -957,10 +956,6 @@ function asker(d: Decision): string {
 }
 
 /** One sentence for an effect decision (V0.27), for rows and previews. */
-export function effectSentence(d: Decision): string {
-  return d.effect ? describeEffect(d).title : "";
-}
-
 /** The plain body of an effect card (V0.27): reason, what happens, details behind a toggle. */
 export function EffectBody({ d, x, cls = "" }: { d: Decision; x: EffectText; cls?: string }) {
   return (

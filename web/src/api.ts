@@ -1,9 +1,9 @@
-import { isTransient, sendWithRetry } from "./retry.ts";
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead.
 
+import { isTransient, sendWithRetry } from "./retry.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { cache, mergeStateDelta, sinceRev } from "./cache.ts";
-import type { ThreadPatch } from "./store.ts";
+import type { Conn, ThreadPatch } from "./store.ts";
 import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import { hostQuery, type UploadReply } from "./attach.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
@@ -15,8 +15,6 @@ import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import { reloadForNewBuild } from "./pwa.ts";
 
-export type ConnState = "connecting" | "live" | "offline";
-
 export interface ApiHandlers {
   state(dto: StateDTO): void;
   thread(t: ThreadDTO): void;
@@ -27,7 +25,7 @@ export interface ApiHandlers {
   /** a project made or changed (V0.23); optional for older callers */
   project?(p: Project): void;
   event(e: FyrEvent): void;
-  conn(c: ConnState): void;
+  conn(c: Conn): void;
 }
 
 export interface Api {
