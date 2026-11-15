@@ -9,15 +9,11 @@ import (
 	"github.com/meros/fyr/internal/core"
 )
 
-// prRe finds a PR URL inside text (gh pr create's output); prURLRe is a
-// whole value that is a PR URL. A value is never a URL found inside it, so
-// "--subject=x <url>" is not a PR URL and never reaches gh (review
-// 2026-11-15). A PR's own pages (/files, /checks) and a query or fragment
-// are allowed after the number.
-var (
-	prRe    = regexp.MustCompile(`https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)`)
-	prURLRe = regexp.MustCompile(`^https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)(?:/[\w/-]*)?(?:[?#]\S*)?$`)
-)
+// prURLRe is a whole value that is a PR URL. A value is never a URL found
+// inside it, so "--subject=x <url>" is not a PR URL and never reaches gh
+// (review 2026-11-15). A PR's own pages (/files, /checks) and a query or
+// fragment are allowed after the number.
+var prURLRe = regexp.MustCompile(`^https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)(?:/[\w/-]*)?(?:[?#]\S*)?$`)
 
 // ParsePR splits a GitHub PR URL into "owner/repo" and the number.
 func ParsePR(url string) (repo string, number int, ok bool) {
@@ -94,13 +90,26 @@ func (d *digest) feed(m map[string]any) digestOut {
 			ti := d.tools[id]
 			cmd, _ := ti.input["command"].(string)
 			if ti.name == "Bash" && strings.Contains(cmd, "gh pr create") {
-				if u := prRe.FindString(resultText(b["content"])); u != "" {
+				if u := createdPR(resultText(b["content"])); u != "" {
 					o.PRURL = u
 				}
 			}
 		}
 	}
 	return o
+}
+
+// createdPR is the PR URL gh pr create printed: the last line that is a PR
+// URL and nothing else. A URL inside other text (a test run that mentions
+// the command) is not a created PR.
+func createdPR(out string) string {
+	lines := strings.Split(out, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if u, ok := CanonicalPR(strings.TrimSpace(lines[i])); ok {
+			return u
+		}
+	}
+	return ""
 }
 
 func resultText(c any) string {
