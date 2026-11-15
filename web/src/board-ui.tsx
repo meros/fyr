@@ -2,14 +2,14 @@
 // desktop (a dialog) and phone (a screen).
 
 import { useState } from "preact/hooks";
-import type { Project, ThreadDTO } from "./types.ts";
+import type { Project, Thread } from "./types.ts";
 import { boardItems, boardProjects, columns, type BoardItem } from "./board.ts";
 import { ChangeCard } from "./offers-ui.tsx";
 import { ProjectIcon } from "./project-ui.tsx";
 import { colorVar } from "./projects.ts";
 
 export interface BoardProps {
-  threads: Record<string, ThreadDTO>;
+  threads: Record<string, Thread>;
   projects: Project[];
   /** a thread command, for example action.run */
   onRun(threadId: string, action: string, args?: Record<string, unknown>): void;

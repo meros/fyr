@@ -1,5 +1,5 @@
 // SPEC 0.5 V0.39: where an update of Fyr is, in words, for the banner.
-import type { ThreadDTO } from "./types.ts";
+import type { Thread } from "./types.ts";
 
 export interface DeployProgress {
   phase: string; // build, test, drain, switch, done, failed
@@ -19,7 +19,7 @@ function minutes(fromIso: string | undefined, now: number): string {
   return s < 60 ? `${s} s` : `${Math.round(s / 60)} min`;
 }
 
-export function deployLine(p: DeployProgress | null | undefined, threads: Record<string, ThreadDTO>, now: number, conn: string): DeployLine | null {
+export function deployLine(p: DeployProgress | null | undefined, threads: Record<string, Thread>, now: number, conn: string): DeployLine | null {
   if (!p || !p.phase) return null;
   const busy = p.phase === "build" || p.phase === "test" || p.phase === "drain" || p.phase === "switch";
   if (busy && conn !== "live") return { text: "Restarting Fyr · back in a few seconds", tone: "busy" };

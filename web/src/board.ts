@@ -1,6 +1,6 @@
 // The Changes board (SPEC 0.5 V0.64): every change of every thread on one screen, grouped by stage. Pure.
 
-import type { Change, Project, ThreadDTO } from "./types.ts";
+import type { Change, Project, Thread } from "./types.ts";
 import { ended } from "./offers.ts";
 import { projectOf } from "./projects.ts";
 
@@ -17,7 +17,7 @@ export const COLUMNS: { key: Column; label: string }[] = [
 
 export interface BoardItem {
   change: Change;
-  thread: ThreadDTO;
+  thread: Thread;
   project?: Project;
 }
 
@@ -38,14 +38,14 @@ export function columnOf(c: Change): Column {
 }
 
 /** Every change of every thread that is not archived, filtered. */
-export function boardItems(threads: Record<string, ThreadDTO>, projects: Project[], f: BoardFilter = {}): BoardItem[] {
+export function boardItems(threads: Record<string, Thread>, projects: Project[], f: BoardFilter = {}): BoardItem[] {
   const q = (f.q ?? "").trim().toLowerCase();
   const out: BoardItem[] = [];
   for (const t of Object.values(threads)) {
     if (t.archivedAt) continue;
     const project = projectOf(t, projects);
     if (f.projectId && project?.id !== f.projectId) continue;
-    for (const c of t.changes ?? []) {
+    for (const c of t.changes) {
       if (!f.ended && ended(c.phase)) continue;
       if (q && ![c.title, c.key, c.group ?? "", ...(c.targets ?? []), t.title].join(" ").toLowerCase().includes(q)) continue;
       out.push({ change: c, thread: t, project });
@@ -93,16 +93,16 @@ export function stackOrder(items: BoardItem[]): BoardItem[] {
 }
 
 /** The rail and menu badge: how many changes need the owner. */
-export function needsCount(threads: Record<string, ThreadDTO>): number {
+export function needsCount(threads: Record<string, Thread>): number {
   let n = 0;
-  for (const t of Object.values(threads)) if (!t.archivedAt) for (const c of t.changes ?? []) if (columnOf(c) === "needs") n++;
+  for (const t of Object.values(threads)) if (!t.archivedAt) for (const c of t.changes) if (columnOf(c) === "needs") n++;
   return n;
 }
 
 /** The projects that have changes, for the filter chips. */
-export function boardProjects(threads: Record<string, ThreadDTO>, projects: Project[]): Project[] {
+export function boardProjects(threads: Record<string, Thread>, projects: Project[]): Project[] {
   const ids = new Set<string>();
-  for (const t of Object.values(threads)) if (!t.archivedAt && (t.changes ?? []).length) {
+  for (const t of Object.values(threads)) if (!t.archivedAt && t.changes.length) {
     const p = projectOf(t, projects);
     if (p?.id) ids.add(p.id);
   }

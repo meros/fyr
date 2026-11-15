@@ -51,8 +51,8 @@ test("conversation lines for change and action events", () => {
 // review 2026-11-15, SPEC V0.59 (7): settle_when on a change shows on the thread's "settles when" chip.
 test("settleLine names the change and the phase it waits for", () => {
   assert.equal(settleLine({ changes: [] }), null);
-  assert.equal(settleLine({ settleWhenDone: true }), "settles when done");
-  assert.equal(settleLine({ settleWhenMerged: true }), "settles when merged");
+  assert.equal(settleLine({ changes: [], settleWhenDone: true }), "settles when done");
+  assert.equal(settleLine({ changes: [], settleWhenMerged: true }), "settles when merged");
   const changes = [change({ id: "c_1", key: "replicas", title: "api replicas" })];
   assert.equal(settleLine({ changes, settleWhen: { change: "c_1", phase: "live" } }), "settles when api replicas is live");
   assert.equal(settleLine({ changes, settleWhen: { change: "replicas", phase: "landed" } }), "settles when api replicas is landed", "by key too");

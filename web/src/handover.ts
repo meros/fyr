@@ -1,6 +1,6 @@
 // SPEC 0.5 V0.45, decision 0013: hand a thread over to another profile. Pure: the dialog's words, the divider's
 // words, the default target. The host picks the rung; the client only says which one it will be.
-import type { Profile, ThreadDTO } from "./types.ts";
+import type { Profile, Thread } from "./types.ts";
 
 export type Rung = "resume" | "adopt" | "brief";
 export interface HandoverPlan {
@@ -33,7 +33,7 @@ export function rungDone(r: string): string {
 }
 
 /** The profiles a thread can go to: every other one. */
-export function handoverTargets(t: ThreadDTO, profiles: Profile[]): Profile[] {
+export function handoverTargets(t: Thread, profiles: Profile[]): Profile[] {
   return profiles.filter((p) => p.id !== t.profile && !p.unavailable);
 }
 
@@ -43,7 +43,7 @@ export function targetModel(p: Profile | undefined): string {
 }
 
 /** The host's answer when it can be asked; a mock or an old host gets the likely rung. */
-export function planGuess(t: ThreadDTO): HandoverPlan {
+export function planGuess(t: Thread): HandoverPlan {
   return t.sessionId ? { rung: "resume" } : { rung: "adopt", note: "The thread has no session yet" };
 }
 

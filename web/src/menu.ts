@@ -1,12 +1,12 @@
 // SPEC 0.5 V0.31: what Fyr's right-click menu holds. Pure: the target in, the
 // entries out. The menu component and the app wire the ids to actions.
-import type { ThreadDTO } from "./types.ts";
+import type { Thread } from "./types.ts";
 
 export type MenuItem = { id: string; label: string; key?: string; disabled?: string };
 export type MenuEntry = MenuItem | { sep: true };
 
 export type MenuTarget =
-  | { kind: "thread"; t: ThreadDTO }
+  | { kind: "thread"; t: Thread }
   | { kind: "text"; selection: string }
   | { kind: "link"; href: string; selection?: string }
   | { kind: "image"; src: string }
@@ -15,12 +15,12 @@ export type MenuTarget =
 
 const SEP: MenuEntry = { sep: true };
 
-function item(t: ThreadDTO, id: string, action: string, label: string, key?: string): MenuItem {
-  const why = t.unavailable?.[action];
+function item(t: Thread, id: string, action: string, label: string, key?: string): MenuItem {
+  const why = t.unavailable[action];
   return { id, label, key, ...(why ? { disabled: why } : {}) };
 }
 
-export function threadMenu(t: ThreadDTO): MenuEntry[] {
+export function threadMenu(t: Thread): MenuEntry[] {
   const settled = !!t.settledAt || t.attention.state === "settled";
   const archived = !!t.archivedAt || t.attention.state === "archived";
   const snoozed = t.attention.state === "snoozed";
@@ -58,7 +58,7 @@ export function menuFor(target: MenuTarget): MenuEntry[] | null {
 }
 
 /** Where a right-click landed, from the DOM (desktop and phone). */
-export function targetAt(el: Element | null, selection: string, threads: Record<string, ThreadDTO>): MenuTarget {
+export function targetAt(el: Element | null, selection: string, threads: Record<string, Thread>): MenuTarget {
   if (!el) return { kind: "none" };
   if (el.closest("input, textarea, select, [contenteditable=''], [contenteditable=true]")) return { kind: "editable" };
   const a = el.closest("a[href]") as HTMLAnchorElement | null;

@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { boardItems, boardProjects, columnOf, columns, needsCount, stackOrder } from "../src/board.ts";
-import type { Change, Project, ThreadDTO } from "../src/types.ts";
+import type { Change, Project, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
 const at = (m: number) => new Date(Date.UTC(2026, 10, 15, 9, m)).toISOString();
 const ch = (p: Partial<Change>): Change => ({ id: "c", key: "k", kind: "infra", title: "x", phase: "working", phaseBy: "agent", createdAt: at(0), updatedAt: at(0), ...p });
 const projects = [{ id: "p1", name: "ops" }, { id: "p2", name: "web" }] as Project[];
 
-function threads(): Record<string, ThreadDTO> {
+function threads(): Record<string, Thread> {
   const a = thread("t1", "seen", "seen", { title: "Scale api", projectId: "p1", changes: [ch({ id: "c1", title: "replicas", phase: "landed", conditions: [{ type: "health", status: "fail", source: "agent", at: at(1) }] }), ch({ id: "c2", title: "runbook", phase: "review", updatedAt: at(5) })] });
   const b = thread("t2", "seen", "seen", { title: "Search", projectId: "p2", changes: [ch({ id: "c3", key: "api", title: "api part", phase: "review", group: "search-v2", kind: "code", updatedAt: at(2) }), ch({ id: "c4", title: "web part", phase: "review", group: "search-v2", after: ["api"], updatedAt: at(9) }), ch({ id: "c5", title: "old", phase: "abandoned" })] });
   const c = thread("t3", "archived", "archived", { title: "Archived", archivedAt: at(0), changes: [ch({ id: "c6", title: "hidden" })] });

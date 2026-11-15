@@ -3,7 +3,7 @@
 
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import type { Change, Offer, OfferRun, ThreadDTO } from "./types.ts";
+import type { Change, Offer, OfferRun, Thread } from "./types.ts";
 import { changeList, lastRun, offerDetail, openConditions, phaseText, pressArgs, rail, shownOffers, unavailable } from "./offers.ts";
 
 type Run = (action: string, args?: Record<string, unknown>) => void;
@@ -49,8 +49,8 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
 }
 
 /** The thread's own actions (V0.60): in the header, above the tabs. */
-export function ThreadOffers({ t, onRun }: { t: ThreadDTO; onRun: Run }) {
-  const mine = (t.offers ?? []).filter((o) => o.on === "thread");
+export function ThreadOffers({ t, onRun }: { t: Thread; onRun: Run }) {
+  const mine = t.offers.filter((o) => o.on === "thread");
   return <OfferBar on="thread" offers={mine} runs={t.offerRuns} cwd={t.cwd} onRun={onRun} />;
 }
 
@@ -60,7 +60,7 @@ export const viewAction = (onRun: Run) => async (o: Offer) => (onRun("action.run
 const KIND: Record<string, string> = { code: "⌥", infra: "☁", host: "▣", data: "⛁", doc: "▤", design: "◇", other: "•" };
 
 /** The Changes tab's list (V0.59 (8)): every change, newest first, above the branch diff. */
-export function ChangeList({ t, onRun }: { t: ThreadDTO; onRun: Run }) {
+export function ChangeList({ t, onRun }: { t: Thread; onRun: Run }) {
   const list = changeList(t);
   if (!list.length) return null;
   return (

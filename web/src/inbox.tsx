@@ -1,7 +1,7 @@
 // Rail and inbox list, as design/directions/04-rail.html draws them.
 
 import type { ComponentChildren, Ref } from "preact";
-import type { Profile, Project, ThreadDTO } from "./types.ts";
+import type { Profile, Project, Thread } from "./types.ts";
 import { QuotaRail } from "./quota-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, StartedBy, ThreadProject } from "./project-ui.tsx";
@@ -94,7 +94,7 @@ export function isOpen(k: SectionKey, open: Partial<Record<SectionKey, boolean>>
   return open[k] ?? !COLLAPSED_BY_DEFAULT.includes(k);
 }
 
-function PrBadge({ t, short }: { t: ThreadDTO; short?: boolean }) {
+function PrBadge({ t, short }: { t: Thread; short?: boolean }) {
   const c = changeChip(t, short); // V0.59 (8): a change that is not a PR, when no PR is open
   if (c)
     return (
@@ -112,7 +112,7 @@ function PrBadge({ t, short }: { t: ThreadDTO; short?: boolean }) {
 }
 
 interface RowProps {
-  t: ThreadDTO;
+  t: Thread;
   now: number;
   sel: boolean;
   picked: boolean;
@@ -164,7 +164,7 @@ function OneRow({ t, now, sel, picked, onClick }: RowProps) {
   );
 }
 
-function sectionHint(k: SectionKey, list: ThreadDTO[], now: number): string {
+function sectionHint(k: SectionKey, list: Thread[], now: number): string {
   if (k === "working") {
     const waiting = list.filter((t) => t.attention.state === "waiting").length;
     return waiting ? `${waiting} waiting` : "";

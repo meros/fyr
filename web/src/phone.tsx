@@ -7,9 +7,10 @@ import { haptic } from "./native.ts";
 import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts";
+import type { Decision, FyrEvent, Profile, Project, Thread } from "./types.ts";
 import { SECTIONS, isAvailable, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type Conn, type SectionKey, type Sections, type UndoKind } from "./store.ts";
 import { quietNote } from "./quiet.ts";
+import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
@@ -161,12 +162,12 @@ export interface PhoneProps {
   go(n: Nav): void;
   replace(n: Nav): void;
   back(): void;
-  threads: Record<string, ThreadDTO>;
+  threads: Record<string, Thread>;
   sec: Sections;
   now: number;
   host: string;
   conn: Conn;
-  thread: ThreadDTO | undefined;
+  thread: Thread | undefined;
   events: FyrEvent[] | undefined;
   onEarlier?: () => void;
   onAtEnd(atEnd: boolean): void;
@@ -200,7 +201,7 @@ export interface PhoneProps {
   undoLive: boolean;
   actions: PhoneActions;
   /** what search finds: the project filter's threads, quiet ones included (V0.46) */
-  searchable: Record<string, ThreadDTO>;
+  searchable: Record<string, Thread>;
   /** projects (V0.23) */
   projectFilter: string | null;
   onProjectFilter(id: string | null): void;
@@ -502,11 +503,11 @@ function MInbox(p: PhoneProps) {
   );
 }
 
-function workingHint(list: ThreadDTO[]): string {
+function workingHint(list: Thread[]): string {
   const waiting = list.filter((t) => t.attention.state === "waiting").length;
   return waiting ? `${waiting} waiting` : "";
 }
-function snoozedHint(list: ThreadDTO[], now: number): string {
+function snoozedHint(list: Thread[], now: number): string {
   const next = list
     .map((t) => t.view?.snoozeUntil)
     .filter((x): x is string => !!x)
@@ -514,7 +515,7 @@ function snoozedHint(list: ThreadDTO[], now: number): string {
   return next ? `next: ${untilLabel(next, now)}` : "none";
 }
 
-function oneMeta(t: ThreadDTO, now: number): string {
+function oneMeta(t: Thread, now: number): string {
   if (t.attention.section === "working") {
     const subs = t.subagents && !groupTasks(t.tasks).running.length ? `${t.subagents} sub · ` : "";
     return subs + workingLine(t);
@@ -524,13 +525,13 @@ function oneMeta(t: ThreadDTO, now: number): string {
 }
 
 /** V0.54: a row names the thread's host when the front has more than one; an offline host says so on any front. */
-function MHost({ t, hosts }: { t: ThreadDTO; hosts?: HostInfo[] }) {
+function MHost({ t, hosts }: { t: Thread; hosts?: HostInfo[] }) {
   if (t.hostOffline) return <><b class="m-off">{t.host || "host"} offline</b> · </>;
   const h = hostTag(t, hosts);
   return h ? <><span class="m-hostn">{h}</span> · </> : null;
 }
 
-function MPr({ t, short }: { t: ThreadDTO; short?: boolean }) {
+function MPr({ t, short }: { t: Thread; short?: boolean }) {
   if (!t.pr) return <span />;
   const l = prChip(t.pr, short);
   return (
@@ -541,7 +542,7 @@ function MPr({ t, short }: { t: ThreadDTO; short?: boolean }) {
 }
 
 /** A row with swipes (right settles, left snoozes), long press (actions) and selection. */
-function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) {
+function MRow({ t, p, needs }: { t: Thread; p: PhoneProps; needs: boolean }) {
   const avail: SwipeAvail = useMemo(() => swipeAvail(t), [t]);
   const [sw, setSw] = useState<Swipe>(idle);
   const swRef = useRef<Swipe>(idle);
@@ -718,16 +719,16 @@ function MSearch(p: PhoneProps) {
 
 // ---- thread ----
 
-function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
+function MThread(p: PhoneProps & { t: Thread; tab: string }) {
   const t = p.t;
-  const decision = t.decisions?.[0] ?? null;
+  const decision = currentDecision(t);
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => setCollapsed(false), [decision?.id]);
   const cardOpen = !!decision && !collapsed;
   const previews = useMemo(() => previewsOf(p.events ?? [], t.host), [p.events, t.host]);
   const st = t.attention.state;
   const setTab = (tab: string) => p.replace({ screen: { name: "thread", id: t.id, tab }, sheet: null });
-  const [nextOffer, setNextOffer] = useState<ThreadDTO | null>(null);
+  const [nextOffer, setNextOffer] = useState<Thread | null>(null);
   useEffect(() => {
     if (!nextOffer) return;
     const id = setTimeout(() => setNextOffer(null), 5000);
@@ -812,7 +813,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
           </div>
         )}
       </div>
-      {t.tasks && t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      {t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {!cardOpen && p.tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.actions.send(t.id, { text, from: "view" })} onAction={viewAction((a, args) => p.actions.run(t.id, a, args))} />}
       {!cardOpen && p.tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
       {!cardOpen && p.tab === "conv" && <Filmstrip cards={previews} collapsible />}
@@ -820,7 +821,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
       ) : p.tab === "conv" ? (
         <Conversation
-          outbox={(t.outbox ?? []).map((o) => o.id)}
+          outbox={t.outbox.map((o) => o.id)}
           events={p.events}
           onAtEnd={p.onAtEnd}
           threadId={t.id}
@@ -855,7 +856,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
   );
 }
 
-function MComposer({ t, p, onView }: { t: ThreadDTO; p: PhoneProps; onView?: boolean }) {
+function MComposer({ t, p, onView }: { t: Thread; p: PhoneProps; onView?: boolean }) {
   const [text, setText] = useDraft(t.id);
   const att = useAttachments(t.host);
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -1070,7 +1071,7 @@ function MAsk({ d, card, onCard, collapsed, onCollapse, submit }: { d: Decision;
   );
 }
 
-function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t: ThreadDTO; host: string; collapsed: boolean; onCollapse(): void; commit(ok: boolean): void }) {
+function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t: Thread; host: string; collapsed: boolean; onCollapse(): void; commit(ok: boolean): void }) {
   const [choice, setChoice] = useState<Choice>(null);
   useEffect(() => setChoice(null), [d.id]);
   const approval = d.kind === "approval";
@@ -1372,7 +1373,7 @@ function Item({ icon, label, sub, right, disabled, onClick }: { icon?: Component
   );
 }
 
-function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
+function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   const close = p.back;
   const { sheet, t } = p;
   const ids = sheet.ids ?? [];
@@ -1449,7 +1450,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
   const avail = swipeAvail(t);
   if (sheet.kind === "actions" || sheet.kind === "thread-menu") {
     const peek = sheet.kind === "actions";
-    const d = t.decisions?.[0];
+    const d = currentDecision(t);
     return (
       <MSheet onClose={close} label={t.title}>
         {peek && (
@@ -1610,7 +1611,7 @@ function SnoozeSheet({ ids, title, onClose, onPick }: { ids: string[]; title?: s
 // ---- projects (V0.23) ----
 
 /** The thread header's project chip (V0.30): a tap opens the picker. */
-function MProjectChip({ t, projects, onClick }: { t: ThreadDTO; projects: Project[]; onClick(): void }) {
+function MProjectChip({ t, projects, onClick }: { t: Thread; projects: Project[]; onClick(): void }) {
   const pr = projectOf(t, projects);
   return (
     <button class="m-pjb" onClick={onClick} aria-label={`Project: ${projectName(t, projects)}. Change`}>

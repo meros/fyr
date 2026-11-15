@@ -1,7 +1,9 @@
-import type { AttentionState, Section, ThreadDTO } from "../src/types.ts";
+import { decodeThread } from "../src/decode.ts";
+import type { AttentionState, Section, Thread, ThreadDTO } from "../src/types.ts";
 
-export function thread(id: string, state: AttentionState, section: Section, extra: Partial<ThreadDTO> = {}): ThreadDTO {
-  return {
+export function thread(id: string, state: AttentionState, section: Section, extra: Partial<ThreadDTO> = {}): Thread {
+  // #41: the client works on decoded threads; the fixture goes through the same decoder.
+  return decodeThread({
     id,
     title: id,
     cwd: "/x",
@@ -13,5 +15,5 @@ export function thread(id: string, state: AttentionState, section: Section, extr
     running: false,
     attention: { state, section, reason: "" },
     ...extra,
-  };
+  });
 }

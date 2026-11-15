@@ -2,9 +2,9 @@
 // updated; red with the reason when it failed. The page reloads by itself onto the new build.
 import { useEffect, useState } from "preact/hooks";
 import { deployLine, type DeployProgress } from "./deploy.ts";
-import type { ThreadDTO } from "./types.ts";
+import type { Thread } from "./types.ts";
 
-export function DeployBanner({ p, threads, conn, phone }: { p: DeployProgress | null; threads: Record<string, ThreadDTO>; conn: string; phone?: boolean }) {
+export function DeployBanner({ p, threads, conn, phone }: { p: DeployProgress | null; threads: Record<string, Thread>; conn: string; phone?: boolean }) {
   const [now, setNow] = useState(Date.now());
   const [hidden, setHidden] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
