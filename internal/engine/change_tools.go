@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,21 +17,6 @@ import (
 // The change tools of SPEC 0.5 V0.59 (5), decision 0018: one family for every
 // change an agent makes or asks for. Git and GitHub are observed without
 // them; the tools add intent, grouping and asks.
-
-// ChangeAsk is what change_request may ask the owner.
-type ChangeAsk string
-
-const (
-	AskReview  ChangeAsk = "review"
-	AskApprove ChangeAsk = "approve"
-	AskMerge   ChangeAsk = "merge"
-	AskApply   ChangeAsk = "apply"
-	AskDeploy  ChangeAsk = "deploy"
-	AskRevert  ChangeAsk = "revert"
-)
-
-// ChangeAsks are all asks, in the order the tool lists them.
-var ChangeAsks = []ChangeAsk{AskReview, AskApprove, AskMerge, AskApply, AskDeploy, AskRevert}
 
 const changeRef = "The change: its id (c_…) or its key."
 
@@ -209,15 +195,18 @@ func (e *Engine) changeTools(s *mcp.Server) {
 		Description: "Ask the owner about a change. Returns at once; do not wait or poll. The owner answers in Fyr and the answer arrives as a later message starting with [Fyr]. ask: review (look at it), approve (accept it before you go on), merge (Fyr merges the change's PR; args {method: squash|merge|rebase}; use this instead of gh pr merge), apply (you apply it after the yes), deploy (Fyr deploys a Fyr checkout; args {dir}), revert. An approve or review that the owner accepts marks the change's approval ok.",
 		Schema: obj(map[string]any{
 			"change": str(changeRef),
-			"ask":    map[string]any{"type": "string", "enum": ChangeAsks},
+			"ask":    map[string]any{"type": "string", "enum": core.Names(core.ChangeAsks())},
 			"args":   map[string]any{"type": "object"},
 			"reason": str("One sentence for the owner: why now."),
 		}, "change", "ask"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			ask := ChangeAsk(sArg(a, "ask"))
+			ask := core.ChangeAsk(sArg(a, "ask"))
 			args, _ := a["args"].(map[string]any)
 			if args == nil {
 				args = map[string]any{}
+			}
+			if !slices.Contains(core.ChangeAsks(), ask) {
+				return "", fmt.Errorf("ask must be one of %s", strings.Join(core.Names(core.ChangeAsks()), ", "))
 			}
 			t, ok := e.Thread(th)
 			if !ok {
@@ -231,20 +220,12 @@ func (e *Engine) changeTools(s *mcp.Server) {
 				return "", fmt.Errorf("%q is %s", c.Title, c.Phase)
 			}
 			action := "change." + string(ask)
-			switch ask {
-			case AskMerge:
-				if _, ok := args["pr"].(string); !ok && c.PR() != "" {
+			if fx := core.FyrEffectFor(ask); fx != nil { // merge, deploy: Fyr runs them
+				action = fx.ID
+				if _, ok := args["pr"].(string); !ok && fx.OnPR && c.PR() != "" {
 					args["pr"] = c.PR()
 				}
-				action = "pr.merge"
-			case AskDeploy:
-				action = "fyr.deploy"
-			case AskReview, AskApprove, AskApply, AskRevert:
-			default:
-				return "", fmt.Errorf("ask must be one of %s", strings.Join(core.Names(ChangeAsks), ", "))
-			}
-			if check := EffectActions[action]; check != nil {
-				if err := check(args); err != nil {
+				if err := e.canRequest(th, fx, args); err != nil {
 					return "", err
 				}
 			}
@@ -335,12 +316,12 @@ func (e *Engine) changeObserve(th, op string, fn func(t *core.Thread, now time.T
 // (review, approve, apply, revert): the owner's answer is the result, and a
 // yes to review or approve marks the change's approval ok (V0.59 (5)).
 func (e *Engine) changeEffect(threadID string, req core.EffectReq, allowed bool) (bool, string) {
-	ask := ChangeAsk(strings.TrimPrefix(req.Action, "change."))
+	ask := core.ChangeAsk(strings.TrimPrefix(req.Action, "change."))
 	title, _ := req.Args["title"].(string)
 	if !allowed {
 		return false, fmt.Sprintf("The owner said no to %s %q.", ask, title)
 	}
-	if ask == AskReview || ask == AskApprove {
+	if ask == core.AskReview || ask == core.AskApprove {
 		id, _ := req.Args["change"].(string)
 		e.Observe(threadID, func(t *core.Thread, now time.Time) []agent.Ev {
 			if c := core.FindChange(t, id); c != nil {

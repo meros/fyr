@@ -181,6 +181,46 @@ const (
 	EffectRun EffectKind = "effect"
 )
 
+// RunKind is how an action runs (SPEC 0.5 V0.60 (2)).
+type RunKind string
+
+const (
+	RunFyr    RunKind = "fyr"    // one of FyrEffects, only from Fyr
+	RunScript RunKind = "script" // an exact command the agent declared
+	RunAgent  RunKind = "agent"  // a prompt for this thread's agent or a new thread
+)
+
+// Holders of actions besides a change (V0.60 (1)).
+const (
+	OnThread = "thread"
+	OnView   = "view"
+)
+
+// The effects Fyr runs itself (FyrEffects).
+const (
+	FyrMerge  = "pr.merge"
+	FyrRerun  = "pr.rerunFailed"
+	FyrDeploy = "fyr.deploy"
+)
+
+// ChangeAsk is what change_request asks the owner (V0.59 (5)). merge and
+// deploy run a FyrEffect; the others report the owner's answer.
+type ChangeAsk string
+
+const (
+	AskReview  ChangeAsk = "review"
+	AskApprove ChangeAsk = "approve"
+	AskMerge   ChangeAsk = "merge"
+	AskApply   ChangeAsk = "apply"
+	AskDeploy  ChangeAsk = "deploy"
+	AskRevert  ChangeAsk = "revert"
+)
+
+// ChangeAsks are all asks, in the order the tool lists them.
+func ChangeAsks() []ChangeAsk {
+	return []ChangeAsk{AskReview, AskApprove, AskMerge, AskApply, AskDeploy, AskRevert}
+}
+
 // TaskStatus is the state of a subagent or background task, as the CLI
 // reports it (V0.16). The CLI may report others; Fyr acts on running only.
 type TaskStatus string

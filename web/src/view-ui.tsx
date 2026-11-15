@@ -38,8 +38,8 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: ThreadDT
   const stateJson = JSON.stringify(v?.state ?? {});
   const pressRef = useRef(onPress);
   pressRef.current = onPress;
-  const actionRef = useRef({ onAction, offers: t.offers });
-  actionRef.current = { onAction, offers: t.offers };
+  const actionRef = useRef({ onAction, offers: t.live?.offers });
+  actionRef.current = { onAction, offers: t.live?.offers };
   const stateRef = useRef(v?.state ?? {});
   stateRef.current = v?.state ?? {};
 
@@ -84,7 +84,7 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: ThreadDT
         // V0.60: only an action the agent declared on the view runs; the press carries its digest.
         const id = m.id;
         const { onAction: run, offers } = actionRef.current;
-        const o = offers?.find((x) => x.on === "view" && x.id === m.action);
+        const o = offers?.find((x) => x.id === m.action);
         void (o && run ? run(o) : Promise.resolve(false)).then((ok) => {
           if (id !== null) frame.current?.contentWindow?.postMessage(pressReply(id, ok), "*");
         });

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 )
 
@@ -93,7 +94,7 @@ func TestChangeActions(t *testing.T) {
 		t.Fatal("a fyr. id was accepted")
 	}
 	c := changeOf(h, id, "tf:prod")
-	a := findOffer(c.Actions, "apply")
+	a := findOffer(c.Offers, "apply")
 	if a == nil || a.Revision != "sha256:p1" || a.Digest == "" {
 		t.Fatalf("action: %+v", a)
 	}
@@ -122,7 +123,7 @@ func TestChangeActions(t *testing.T) {
 	// A failed script blocks the thread.
 	call("offer_action", map[string]any{"on": c.ID, "id": "rollback", "label": "Roll back", "run": "script", "argv": []any{"bash", "-c", "exit 3"}})
 	exit = 3
-	rb := findOffer(changeOf(h, id, c.ID).Actions, "rollback")
+	rb := findOffer(changeOf(h, id, c.ID).Offers, "rollback")
 	if r := h.cmdID("r3", "action.run", id, core.Args{"on": c.ID, "action": "rollback", "digest": rb.Digest}); !r.OK {
 		t.Fatalf("rollback: %+v", r)
 	}
@@ -142,20 +143,20 @@ func TestBuiltinActions(t *testing.T) {
 	core.ChangePRObserved(th, core.PR{URL: "https://github.com/o/r/pull/5", Repo: "o/r", Number: 5, State: "OPEN", Checks: "fail", Review: "CHANGES_REQUESTED"}, now)
 	c := &th.Changes[0]
 	ids := map[string]bool{}
-	for _, a := range c.Actions {
+	for _, a := range c.Offers {
 		ids[a.ID] = true
 	}
 	for _, want := range []string{"fyr.rerun", "fyr.fixci", "fyr.review", "fyr.merge"} {
 		if !ids[want] {
-			t.Fatalf("missing %s in %+v", want, c.Actions)
+			t.Fatalf("missing %s in %+v", want, c.Offers)
 		}
 	}
-	if fix := findOffer(c.Actions, "fyr.fixci"); fix.Run != core.RunAgent || !fix.Primary {
+	if fix := findOffer(c.Offers, "fyr.fixci"); fix.Run != core.RunAgent || !fix.Primary {
 		t.Fatalf("Fix CI: %+v", fix)
 	}
 	core.ChangePRObserved(th, core.PR{URL: "https://github.com/o/r/pull/5", Repo: "o/r", Number: 5, State: "MERGED"}, now)
-	if len(th.Changes[0].Actions) != 0 {
-		t.Fatalf("a merged PR kept actions: %+v", th.Changes[0].Actions)
+	if len(th.Changes[0].Offers) != 0 {
+		t.Fatalf("a merged PR kept actions: %+v", th.Changes[0].Offers)
 	}
 }
 
@@ -169,7 +170,7 @@ func eventually(t *testing.T, what string, ok func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-func findOffer(list []core.Offer, id string) *core.Offer {
+func findOffer(list []core.ActionSpec, id string) *core.ActionSpec {
 	for i := range list {
 		if list[i].ID == id {
 			return &list[i]
@@ -203,7 +204,7 @@ func TestThreadAndViewActions(t *testing.T) {
 	}
 	eventually(t, "the thread script ended", func() bool {
 		th, _ := h.e.Thread(id)
-		return len(th.OfferRuns) == 1 && !th.OfferRuns[0].Running && th.OfferRuns[0].OK
+		return len(th.Runs) == 1 && !th.Runs[0].Running && th.Runs[0].OK
 	})
 	// A view action, removed with the view.
 	if r := h.cmd("thread.setView", id, core.Args{"on": true}); !r.OK {
@@ -214,8 +215,12 @@ func TestThreadAndViewActions(t *testing.T) {
 	}
 	h.cmd("thread.setView", id, core.Args{"on": false})
 	th, _ = h.e.Thread(id)
-	if findOffer(th.Offers, "approve") != nil || findOffer(th.Offers, "e2e") == nil {
-		t.Fatalf("after the view closed: %+v", th.Offers)
+	var view []core.ActionSpec
+	if th.Live != nil {
+		view = th.Live.Offers
+	}
+	if findOffer(view, "approve") != nil || findOffer(th.Offers, "e2e") == nil {
+		t.Fatalf("after the view closed: %+v %+v", view, th.Offers)
 	}
 }
 
@@ -287,7 +292,7 @@ func TestConcurrentPressRunsOnce(t *testing.T) {
 	}
 	eventually(t, "the script ended", func() bool {
 		th, _ := h.e.Thread(id)
-		return len(th.OfferRuns) == 1 && !th.OfferRuns[0].Running
+		return len(th.Runs) == 1 && !th.Runs[0].Running
 	})
 }
 
@@ -309,5 +314,55 @@ func TestPRLinkStoresCanonicalURL(t *testing.T) {
 	}
 	if c := core.FindChange(&th, "k"); c == nil || c.PR() != "https://github.com/o/r/pull/6" {
 		t.Fatalf("change_open stored %+v", c)
+	}
+}
+
+// #31: merge has one guard. The owner's PR-tab command, the press of a
+// change's built-in Merge, and the agent's effect_request and change_request
+// all refuse a PR with a conflict with the same reason; once it clears, the
+// press merges the change's PR and the agent hears the result (V0.60 (4)).
+func TestMergeOneGuard(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	url := "https://github.com/acme/app/pull/9"
+	set := func(conflict bool) {
+		h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+			core.PRObserved(t, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass", Conflict: conflict}, now)
+			return nil
+		})
+	}
+	set(true)
+	const why = "The PR has merge conflicts"
+	if r := h.cmd("pr.merge", id, nil); r.OK || !strings.Contains(r.Error, why) {
+		t.Fatalf("PR tab: %+v", r)
+	}
+	c := changeOf(h, id, "pr:acme/app#9")
+	m := findOffer(c.Offers, "fyr.merge")
+	if r := h.cmdID("p1", "action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest}); r.OK || r.Status != 409 || !strings.Contains(r.Error, why) {
+		t.Fatalf("press: %+v", r)
+	}
+	if out, isErr := callAs(t, h.e, id, "effect_request", map[string]any{"action": "pr.merge", "args": map[string]any{"pr": url}}); !isErr || !strings.Contains(out, why) {
+		t.Fatalf("effect_request: %s", out)
+	}
+	if out, isErr := callAs(t, h.e, id, "change_request", map[string]any{"change": c.ID, "ask": "merge"}); !isErr || !strings.Contains(out, why) {
+		t.Fatalf("change_request: %s", out)
+	}
+	if h.r.n() != 0 {
+		t.Fatalf("the runner ran %d times", h.r.n())
+	}
+	set(false)
+	m = findOffer(changeOf(h, id, c.ID).Offers, "fyr.merge")
+	if r := h.cmdID("p2", "action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest}); !r.OK {
+		t.Fatalf("press: %+v", r)
+	}
+	h.wait(id, "the agent heard the merge", func(t core.Thread, _ core.Attention) bool {
+		return strings.HasPrefix(t.Summary, `echo: [Fyr] The owner ran "Merge"`) && strings.Contains(t.Summary, "succeeded")
+	})
+	h.r.mu.Lock()
+	req := h.r.calls[0]
+	h.r.mu.Unlock()
+	if req.Action != core.FyrMerge || req.Args["pr"] != url || req.Args["method"] != "squash" {
+		t.Fatalf("request %+v", req)
 	}
 }
