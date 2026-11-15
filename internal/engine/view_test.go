@@ -172,7 +172,7 @@ func TestViewTools(t *testing.T) {
 		t.Fatalf("bridge not first in head: %.80s", b)
 	}
 
-	// The api.Thread carries the view (API: thread.live).
+	// The DTO carries the view (API: thread.live).
 	var dto api.Thread
 	for _, d := range h.e.Snapshot() {
 		if d.ID == id {
