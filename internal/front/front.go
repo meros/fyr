@@ -576,6 +576,7 @@ func (f *Front) Handler() http.Handler {
 	mux.HandleFunc("GET /api/previews/{id}", f.lookup)
 	mux.HandleFunc("GET /api/previews/{id}/{path...}", f.lookup)
 	mux.HandleFunc("GET /api/quota", f.quota)
+	mux.HandleFunc("GET /api/profiles", f.profiles)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		f.forward(w, r, f.byName(r.URL.Query().Get("host")))
 	})
@@ -902,6 +903,18 @@ func (f *Front) quota(w http.ResponseWriter, r *http.Request) {
 		f.forward(w, r, l)
 		return
 	}
+	writeJSON(w, 200, f.gather(r.Context(), "/api/quota", "profile"))
+}
+
+// profiles asks each online host for its profiles (#42), merged by id with
+// the first host's winning, as in the state.
+func (f *Front) profiles(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, f.gather(r.Context(), "/api/profiles", "id"))
+}
+
+// gather GETs a list from each online host and joins them in host order,
+// keeping the first item for each value of key.
+func (f *Front) gather(ctx context.Context, path, key string) []map[string]any {
 	var on []*link
 	f.mu.Lock()
 	for _, l := range f.links {
@@ -917,7 +930,7 @@ func (f *Front) quota(w http.ResponseWriter, r *http.Request) {
 		go func() {
 			defer wg.Done()
 			var q []map[string]any
-			if err := f.get(r.Context(), l, "/api/quota", &q); err == nil {
+			if err := f.get(ctx, l, path, &q); err == nil {
 				parts[i] = q
 			}
 		}()
@@ -927,11 +940,11 @@ func (f *Front) quota(w http.ResponseWriter, r *http.Request) {
 	seen := map[any]bool{}
 	for _, p := range parts {
 		for _, q := range p {
-			if !seen[q["profile"]] {
-				seen[q["profile"]] = true
+			if !seen[q[key]] {
+				seen[q[key]] = true
 				out = append(out, q)
 			}
 		}
 	}
-	writeJSON(w, 200, out)
+	return out
 }

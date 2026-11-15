@@ -246,15 +246,18 @@ func effectDecisions(t *core.Thread) []core.Decision {
 	return out
 }
 
-// bump gives a thread a new rev: wall-clock nanoseconds, strictly increasing,
-// so it also increases across restarts. Call with e.mu held.
-func (e *Engine) bump(id string) {
+// bump gives a thread a new rev. Call with e.mu held.
+func (e *Engine) bump(id string) { e.revs[id] = e.nextRev() }
+
+// nextRev is a new rev: wall-clock nanoseconds, strictly increasing, so it
+// also increases across restarts. Call with e.mu held.
+func (e *Engine) nextRev() int64 {
 	r := time.Now().UnixNano()
 	if r <= e.lastRev {
 		r = e.lastRev + 1
 	}
 	e.lastRev = r
-	e.revs[id] = r
+	return r
 }
 
 func (e *Engine) view(id string) *core.View {

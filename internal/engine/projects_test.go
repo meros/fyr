@@ -2,6 +2,7 @@ package engine
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -480,5 +481,51 @@ func TestProjectDelete(t *testing.T) {
 		if p.ID == pid {
 			t.Fatal("the project came back after a restart")
 		}
+	}
+}
+
+// #42: a project carries rev, a stamp of when its DTO was built, so a client
+// keeps the newer of a snapshot and a stream frame that crossed it.
+func TestProjectRev(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	c := h.cmd("project.create", "", core.Args{"name": "App"})
+	pid := c.Result.(map[string]any)["id"].(string)
+	revOf := func() int64 {
+		for _, p := range h.e.Projects() {
+			if p.ID == pid {
+				return p.Rev
+			}
+		}
+		t.Fatal("no project")
+		return 0
+	}
+	before := revOf()
+	ch := h.e.Hub.Subscribe()
+	defer h.e.Hub.Unsubscribe(ch)
+	if r := h.cmd("project.update", "", core.Args{"id": pid, "color": "violet"}); !r.OK {
+		t.Fatalf("update: %+v", r)
+	}
+	var sent int64
+	for len(ch) > 0 {
+		fr := <-ch
+		if fr.Event != "project" {
+			continue
+		}
+		var p struct {
+			ID  string `json:"id"`
+			Rev int64  `json:"rev"`
+		}
+		if err := json.Unmarshal(fr.Data, &p); err != nil {
+			t.Fatal(err)
+		}
+		if p.ID == pid {
+			sent = p.Rev
+		}
+	}
+	if before <= 0 || sent <= before {
+		t.Fatalf("the update's frame has rev %d, the snapshot before it %d", sent, before)
+	}
+	if after := revOf(); after <= sent {
+		t.Fatalf("a snapshot after the frame has rev %d <= %d", after, sent)
 	}
 }

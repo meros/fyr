@@ -3,22 +3,30 @@
 import { build } from "esbuild";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { markPng } from "./icons.ts";
 import { THEME, manifest } from "./manifest.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const dist = join(root, "dist");
+// --out DIR builds elsewhere (the bundle test); the default is web/dist, which the Go binary embeds.
+const outArg = process.argv.indexOf("--out");
+const dist = outArg > 0 ? resolve(process.argv[outArg + 1]) : join(root, "dist");
 const watch = process.argv.includes("--dev");
 
 // Clean dist but keep .keep (the Go binary embeds web/dist).
 await mkdir(dist, { recursive: true });
 for (const f of await readdir(dist)) if (f !== ".keep") await rm(join(dist, f), { recursive: true, force: true });
 
-await build({
+// Code splitting (#42): the mock Api (src/mock-api.ts, loaded with import() only in mock mode) and the code it
+// shares with the app become chunks next to app.js; the service worker precaches every one.
+const app = await build({
   entryPoints: [join(root, "src/app.tsx")],
-  outfile: join(dist, "app.js"),
+  outdir: dist,
+  entryNames: "[name]",
+  chunkNames: "[name]-[hash]",
+  splitting: true,
+  metafile: true,
   bundle: true,
   format: "esm",
   target: "es2022",
@@ -88,9 +96,10 @@ await writeFile(
 );
 
 // Service worker last: its cache name is a hash of the shell it precaches.
+const scripts = Object.keys(app.metafile.outputs).map((p) => "/" + relative(dist, resolve(p)).split("\\").join("/"));
 const shell = [
   "/index.html",
-  "/app.js",
+  ...scripts,
   "/app.css",
   "/manifest.webmanifest",
   "/fonts/Geist-Variable.woff2",

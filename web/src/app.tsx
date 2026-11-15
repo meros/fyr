@@ -145,7 +145,7 @@ function useViewportVars(on: boolean) {
 /** Events per page of a thread timeline. */
 const PAGE = 400;
 
-const api = createApi();
+const api = await createApi(); // #42: the mock Api is a chunk loaded only in mock mode
 setQuotaSource(() => api.quota()); // V0.44
 setUploader(api.uploadAttachment);
 setAttachmentUrl(api.attachmentUrl);

@@ -70,6 +70,11 @@ export function newer(cur: ThreadDTO | undefined, next: ThreadDTO): boolean {
   return ts(next.updatedAt) >= ts(cur.updatedAt);
 }
 
+/** #42: keep the newer of two versions of a project by rev (equal replaces); without a rev on both, the next one. */
+function newerProject(cur: Project | undefined, next: Project): boolean {
+  return !cur || typeof cur.rev !== "number" || typeof next.rev !== "number" || next.rev >= cur.rev;
+}
+
 export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store {
   const dto = decodeState(raw);
   const threads: Record<string, ThreadDTO> = {};
@@ -80,6 +85,11 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     const cur = s.threads[id];
     if (cur && cur !== threads[id] && !newer(cur, threads[id])) threads[id] = cur;
   }
+  // Projects the same way (#42): a project frame may have crossed the snapshot in flight.
+  const projects = (dto.projects ?? []).map((p) => {
+    const cur = p.id ? s.projects.find((x) => x.id === p.id) : undefined;
+    return cur && !newerProject(cur, p) ? cur : p;
+  });
   return {
     ...s,
     loaded: true,
@@ -90,7 +100,7 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     threads,
     actions: dto.actions ?? [],
     profiles: dto.profiles ?? [],
-    projects: dto.projects ?? [],
+    projects,
     deploy: dto.deploy ?? null,
   };
 }
@@ -331,11 +341,13 @@ export function presetForKey(presets: SnoozePreset[], key: string): SnoozePreset
   return /^[1-9]$/.test(key) ? (presets[Number(key) - 1] ?? null) : null;
 }
 
-/** A project from the stream (`event: project`, V0.23): replace by id, or add; `{id, deleted: true}` removes it (V0.58). */
+/** A project from the stream (`event: project`, V0.23): replace by id unless older (#42), or add; `{id, deleted: true}`
+ *  removes it (V0.58). */
 export function upsertProject(s: Store, raw: Project): Store {
   if (raw.deleted) return raw.id && s.projects.some((x) => x.id === raw.id) ? { ...s, projects: s.projects.filter((x) => x.id !== raw.id) } : s;
   const p = decodeProject(raw);
   const i = s.projects.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
+  if (i >= 0 && !newerProject(s.projects[i], p)) return s;
   const projects = i >= 0 ? s.projects.map((x, j) => (j === i ? p : x)) : [...s.projects, p];
   return { ...s, projects };
 }
