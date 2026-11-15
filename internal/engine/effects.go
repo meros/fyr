@@ -72,9 +72,6 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 		return &core.EffectResult{Effect: ef, OK: ok, Exit: exit, Text: text}
 	}
 	switch ef.Kind {
-	case core.EffectTell:
-		e.tell(threadID, ef.Text)
-		return nil, false
 	case core.EffectThread:
 		r := e.Command(Cmd{CommandID: ef.ID, Action: "thread.create", Args: core.Args{"cwd": ef.Cwd, "text": ef.Text, "projectId": ef.Project}})
 		if !r.OK {
@@ -203,19 +200,4 @@ func (e *Engine) ResumeEffects() error {
 		}
 	}
 	return nil
-}
-
-// tell sends a result to the thread's agent: the one function that speaks
-// to the agent (the agent feed, #47, replaces it). The one rule (#31, SPEC
-// 0.5 V0.60 (4)): the agent hears the result of every fyr and script action
-// and of every request it made, whoever started it, unless the thread is
-// archived or settled.
-func (e *Engine) tell(threadID, msg string) {
-	t, found := e.Thread(threadID)
-	if !found || t.ArchivedAt != nil || t.Settle.At != nil || e.Agents == nil {
-		return
-	}
-	if err := e.Agents.Do(threadID, core.Effect{Kind: core.EffectSend, Text: msg}); err != nil {
-		log.Printf("thread %s: tell the agent: %v", threadID, err)
-	}
 }

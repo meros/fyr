@@ -130,6 +130,7 @@ const FyrPrompt = `You run inside Fyr, which shows this session to the user and 
 - Give the user a button for the next step with mcp__fyr__offer_action, on a change, the thread or your live view: run "script" for an exact command Fyr runs on their press, run "agent" for a step that needs judgement. Fyr never runs it without the press.
 - When you open a PR some other way than gh pr create, call mcp__fyr__pr_link with its URL (or change_open with pr).
 - When the user says the thread is finished once something happens, call mcp__fyr__settle_when.
+- Fyr tells you what happened on your records in lines that start with [Fyr], one sentence each (a result you asked for, CI failed or passed, a merge, the owner's changes). Read the details and the current state with mcp__fyr__fyr_state instead of polling.
 - To act once when something in Fyr becomes true (CI on a change passes, a change lands, a time passes), arm mcp__fyr__watch instead of polling; it can also settle the thread.
 - To see or coordinate the user's other sessions, use mcp__fyr__threads, mcp__fyr__thread_read, mcp__fyr__thread_send and mcp__fyr__thread_new (start a separate session for work that should run on its own).
 - To show the user something (a screenshot after UI work, a chart, a mockup, a page, a 3D model or scene), call mcp__fyr__show with a path, html or url; it appears in the thread on desktop and phone. Pages run real HTML in a sandbox: WebGL, WASM, ES modules, three.js or model-viewer from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com or ajax.googleapis.com, and their own files: give path a folder (index.html plus models, textures, scripts) or an HTML file next to its files.`
@@ -185,25 +186,23 @@ type session struct {
 	// it a message counts as read when its turn ends.
 	lifecycle bool
 	// viewTools: the process started with the live view's prompt and
-	// tools (V0.37). The flag can change while it runs; the Stop hook only
-	// asks for a view the agent knows about.
+	// tools (V0.37). The flag can change while it runs; the feed's upkeep
+	// only asks for a view the agent knows about.
 	viewTools bool
 	// changeTools: this process has Fyr's MCP tools, the change tools
-	// among them (V0.62); changesNudged is their last mid-turn reminder.
-	changeTools   bool
-	changesNudged time.Time
-	// viewBlocked: the Stop hook blocked once this run; summary is the
-	// thread's summary before that forced turn, and forcedWork is true when
-	// the forced turn called a tool other than the view tools.
-	// The hook runs on the client's reader, ahead of the stream messages
-	// still queued for handle, so the summary comes from the hook's input
-	// and the forced turn counts from the synthetic message onward.
-	viewBlocked bool
-	// viewNudged is the last mid-turn reminder (V0.52).
-	viewNudged time.Time
-	summary    string
-	inForced   bool
-	forcedWork bool
+	// among them (V0.62), and the feed's hooks.
+	changeTools bool
+	// stopBlocked: the Stop hook blocked once this run with the feed's stop
+	// notices; summary is the thread's summary before that forced turn, and
+	// forcedWork is true when the forced turn called a tool other than the
+	// upkeep tools. The hook runs on the client's reader, ahead of the
+	// stream messages still queued for handle, so the summary comes from the
+	// hook's input and the forced turn counts from the synthetic message
+	// onward.
+	stopBlocked bool
+	summary     string
+	inForced    bool
+	forcedWork  bool
 	// refresh: end the process after this run, so the next one starts
 	// with the current flag.
 	refresh bool
@@ -267,6 +266,8 @@ func (m *Manager) Do(threadID string, e core.Effect) error {
 	switch e.Kind {
 	case core.EffectSend:
 		return m.send(threadID, e, nil)
+	case core.EffectFeed:
+		return m.feed(threadID)
 	case core.EffectAnswer:
 		return m.answer(threadID, e)
 	case core.EffectInterrupt:
@@ -638,10 +639,10 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		Cancel:     func(reqID string) { m.cancelRequest(s, reqID) },
 		Hook: func(id string, in claude.Msg) claude.Msg {
 			if id == "view" {
-				return m.viewStop(s, in)
+				return m.stopHook(s, in)
 			}
 			if id == "viewnudge" {
-				return m.viewNudge(s)
+				return m.toolHook(s)
 			}
 			name, _ := in["tool_name"].(string)
 			ti, _ := in["tool_input"].(map[string]any)
@@ -768,7 +769,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			// The Stop hook's reason, echoed by the CLI (V0.37): never
 			// logged; the forced turn starts here.
 			m.mu.Lock()
-			s.inForced = s.viewBlocked
+			s.inForced = s.stopBlocked
 			forced := s.inForced
 			m.mu.Unlock()
 			if forced {
@@ -796,9 +797,9 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		m.mu.Unlock()
 		m.mu.Lock()
 		noReports := !s.lifecycle
-		restore := s.viewBlocked && !s.forcedWork
+		restore := s.stopBlocked && !s.forcedWork
 		summary := s.summary
-		s.viewBlocked, s.inForced, s.forcedWork, s.summary = false, false, false, ""
+		s.stopBlocked, s.inForced, s.forcedWork, s.summary = false, false, false, ""
 		refresh := s.refresh && len(s.out) == 0
 		m.mu.Unlock()
 		if noReports {
@@ -849,15 +850,53 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			}
 			m.mu.Unlock()
 			s.c.Close()
+			go m.feed(s.thread) // the next process takes what waits
 			return
 		}
 		m.armIdle(s)
+		go m.feed(s.thread) // the agent is idle: what waits starts a turn
 	}
 }
 
-// viewStop answers the Stop hook (SPEC 0.5 V0.37): block once per run
-// when the thread has a live view and the run did not touch it.
-func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
+// The agent feed's delivery (decision 0020 part 5, #47): the thread's
+// notice queue reaches the agent here and nowhere else.
+
+// take takes the notices due at a point.
+func (m *Manager) take(s *session, threadID string, at core.Point) []core.Notice {
+	a := core.FeedTake{At: at}
+	if s != nil {
+		a.View, a.Changes = s.viewTools, s.changeTools
+	}
+	out, err := m.host.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindFeedTake, Thread: threadID, Args: a})
+	if err != nil {
+		return nil
+	}
+	ns, _ := out.([]core.Notice)
+	return ns
+}
+
+// feed delivers to an idle agent: every pending notice in one message that
+// starts a turn, when one of them may wake it (not on a settled or archived
+// thread). A running agent takes them in its hooks, or here after its run.
+func (m *Manager) feed(threadID string) error {
+	m.mu.Lock()
+	s := m.sessions[threadID]
+	busy := m.starting[threadID] != nil || (s != nil && (s.live || len(s.out) > 0))
+	m.mu.Unlock()
+	if busy {
+		return nil
+	}
+	ns := m.take(s, threadID, core.AtIdle)
+	if len(ns) == 0 {
+		return nil
+	}
+	return m.send(threadID, core.Effect{Kind: core.EffectSend, Text: core.NoticeText(ns)}, nil)
+}
+
+// stopHook answers the Stop hook (SPEC 0.5 V0.37): the feed's stop notices
+// (the upkeep of the view and the changes) block the Stop once per run, in
+// one reason, never while background work runs.
+func (m *Manager) stopHook(s *session, in claude.Msg) claude.Msg {
 	t, ok := m.host.Thread(s.thread)
 	if !ok {
 		return nil
@@ -865,56 +904,37 @@ func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
 	bg, _ := in["background_tasks"].([]any)
 	active, _ := in["stop_hook_active"].(bool)
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	d := core.ViewStop{Flag: s.viewTools && t.ViewOn(), Touched: core.ViewTouchedThisRun(&t),
-		Changes: s.changeTools && core.ChangesStale(&t), // V0.62
-		Blocked: s.viewBlocked, Active: active, Tasks: len(bg) + t.RunningTasks()}
-	if !d.Block() {
+	blocked := s.stopBlocked
+	m.mu.Unlock()
+	if blocked || active || len(bg)+t.RunningTasks() > 0 {
+		return nil
+	}
+	ns := m.take(s, s.thread, core.AtStop)
+	if len(ns) == 0 {
 		return nil
 	}
 	summary := firstLine(fmt.Sprint(orNil(in["last_assistant_message"])))
 	if summary == "" {
 		summary = t.Summary
 	}
-	s.viewBlocked, s.summary, s.inForced, s.forcedWork = true, summary, false, false
-	return claude.Msg{"decision": "block", "reason": core.StopReason(d.Flag && !d.Touched, d.Changes)}
+	m.mu.Lock()
+	s.stopBlocked, s.summary, s.inForced, s.forcedWork = true, summary, false, false
+	m.mu.Unlock()
+	reasons := make([]string, len(ns))
+	for i, n := range ns {
+		reasons[i] = n.What
+	}
+	return claude.Msg{"decision": "block", "reason": strings.Join(reasons, "\n")}
 }
 
-// viewNudge answers the PostToolUse hook (SPEC 0.5 V0.52): when a turn has
-// run ViewNudgeAfter without a view_* call, add a reminder to the context.
-func (m *Manager) viewNudge(s *session) claude.Msg {
-	t, ok := m.host.Thread(s.thread)
-	if !ok {
+// toolHook answers the PostToolUse hook: the notices due at a tool call
+// (the wake and next ones, and the upkeep reminders, V0.52) as context.
+func (m *Manager) toolHook(s *session) claude.Msg {
+	ns := m.take(s, s.thread, core.AtTool)
+	if len(ns) == 0 {
 		return nil
 	}
-	now := time.Now()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	n := core.ViewNudge{Flag: s.viewTools && t.ViewOn(), Nudged: s.viewNudged}
-	if t.RunStartedAt != nil {
-		n.RunStarted = *t.RunStartedAt
-	}
-	if t.Live != nil {
-		n.Checked = t.Live.CheckedAt
-	}
-	var say []string
-	if n.Due(now) {
-		s.viewNudged = now
-		say = append(say, core.ViewNudgeReason)
-	}
-	// V0.62: the same reminder for the open changes the agent owns.
-	cn := core.ViewNudge{Flag: s.changeTools && core.OpenAgentChanges(&t) > 0, RunStarted: n.RunStarted, Nudged: s.changesNudged}
-	if t.ChangesCheckedAt != nil {
-		cn.Checked = *t.ChangesCheckedAt
-	}
-	if cn.Due(now) {
-		s.changesNudged = now
-		say = append(say, core.ChangesNudgeReason)
-	}
-	if len(say) == 0 {
-		return nil
-	}
-	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": strings.Join(say, "\n")}}
+	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": core.NoticeText(ns)}}
 }
 
 func orNil(v any) any {
@@ -1262,13 +1282,12 @@ func NormalizeRemote(u string) string {
 }
 
 // initHooks is what a process registers at start: the merge gate always,
-// and the Stop hook only with the live view (SPEC 0.5 V0.37), so other
-// threads get no extra round trip at the end of each turn.
-func initHooks(view bool) claude.Msg {
+// and the agent feed's Stop and PostToolUse hooks only for a process with
+// Fyr's tools, so other processes get no extra round trip.
+func initHooks(feed bool) claude.Msg {
 	h := claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}
-	if view {
+	if feed {
 		h["Stop"] = []claude.Msg{{"hookCallbackIds": []string{"view"}}}
-		// V0.52: after any tool call, remind the agent when the view went stale mid-turn.
 		h["PostToolUse"] = []claude.Msg{{"hookCallbackIds": []string{"viewnudge"}}}
 	}
 	return h

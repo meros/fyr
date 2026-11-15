@@ -66,19 +66,20 @@ func TestViewToolsOnlyWithFlag(t *testing.T) {
 	if !r.OK {
 		t.Fatalf("setView: %+v", r)
 	}
-	// The idle process ends, so the next one starts with the view's prompt and tools.
-	deadline := time.Now().Add(5 * time.Second)
-	for h.m.Live(plain) && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if h.m.Live(plain) {
-		t.Fatal("setView kept the old process")
+	// The idle process ends, so the next one starts with the view's prompt
+	// and tools; the owner's change is a notice that wakes the agent (#47),
+	// and the new process's Stop hook has it publish a view.
+	th := h.wait(plain, "woken with the view", func(t core.Thread, _ core.Attention) bool {
+		return !t.Running && t.Live != nil && t.Live.Headline == "after stop hook"
+	})
+	if !strings.HasPrefix(th.Summary, "echo: [Fyr] The owner turned the live view on") {
+		t.Fatalf("the agent read %q", th.Summary)
 	}
 	if names := strings.Join(toolNames(t, h.e, plain), " "); !strings.Contains(names, "view_publish") || !strings.Contains(names, "view_unchanged") {
 		t.Fatalf("flagged thread lists %s", names)
 	}
-	if out, isErr := callAs(t, h.e, plain, "view_state", map[string]any{"patch": map[string]any{}}); !isErr || !strings.Contains(out, "view_publish first") {
-		t.Fatalf("state before any page: %s", out)
+	if out, isErr := callAs(t, h.e, plain, "view_state", map[string]any{"patch": map[string]any{}}); isErr {
+		t.Fatalf("state after the woken agent published: %s", out)
 	}
 	if r := h.cmd("thread.setView", plain, core.Args{}); r.Status != 400 {
 		t.Fatalf("setView without on: %+v", r)
