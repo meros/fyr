@@ -171,6 +171,28 @@ func (e *Engine) threadTools(s *mcp.Server) {
 			return fmt.Sprintf("Sent to %q (%s).", t.Title, id), nil
 		}})
 
+	s.Add(mcp.Tool{Name: "thread_rename",
+		Description: "Rename this Fyr thread, or a thread this thread started (id), so the owner's list says what the work is. Give a short, specific title (at most 80 characters) when the topic becomes clear or changes. A name the owner gave is kept.",
+		Schema:      obj(map[string]any{"title": str("The new title."), "id": str("Optional: a thread this thread started; default this thread.")}, "title"),
+		Call: func(_ context.Context, self string, a map[string]any) (string, error) {
+			id := sArg(a, "id")
+			if id == "" {
+				id = self
+			}
+			t, ok := e.Thread(id)
+			if !ok {
+				return "", fmt.Errorf("no thread %q", id)
+			}
+			if id != self && t.Parent != self {
+				return "", errors.New("you can rename this thread or a thread it started")
+			}
+			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindThreadRename, Thread: id, Args: map[string]any{"title": sArg(a, "title")}}); err != nil {
+				return "", err
+			}
+			t, _ = e.Thread(id)
+			return fmt.Sprintf("The thread is now %q.", t.Title), nil
+		}})
+
 	s.Add(mcp.Tool{Name: "thread_new",
 		Description: "Start a new Fyr thread (a separate agent session) in a folder with a first message, for work that should run on its own. The user sees it in the inbox, marked as started by this thread. At most 5 an hour.",
 		Schema: obj(map[string]any{"cwd": str("The folder to work in (absolute path)."), "text": str("The first message: a full brief."),
