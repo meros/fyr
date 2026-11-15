@@ -190,10 +190,25 @@ export function newThreadFolder(picked: string, project: Pick<Project, "folder">
 }
 
 /** The picker's first row: from a thread "New project from this thread"; typed text that matches nothing names it. */
-export function newRowLabel(q: string, matches: number, fromThread: boolean): string {
+export function newRowLabel(q: string, exact: boolean, fromThread: boolean): string {
   const t = q.trim();
-  if (t && !matches) return `New project “${t}”`;
+  if (t && !exact) return `New project “${t}”`; // V0.61: typed text names the new project, matches or not
   return fromThread ? "New project from this thread" : "New project";
+}
+
+/** The project whose name is exactly the typed text (any case), or undefined. */
+export function exactProject(projects: Project[], q: string): Project | undefined {
+  const t = q.trim().toLowerCase();
+  return t ? projects.find((p) => p.name.trim().toLowerCase() === t) : undefined;
+}
+
+/** What Enter in the picker's search does (V0.61): with a New project row, it picks only a project named exactly
+ *  like the text, else it starts New project with the text; without one (the filter), the first match. */
+export function enterAction(projects: Project[], matches: Project[], q: string, canCreate: boolean): { pick: Project } | { create: string } | null {
+  if (!q.trim()) return null;
+  if (!canCreate) return matches.length ? { pick: matches[0] } : null;
+  const exact = exactProject(projects, q);
+  return exact ? { pick: exact } : { create: q.trim() };
 }
 
 /** The project a new thread starts on: the inbox filter, else the last one used on this device, else the most recent. */
