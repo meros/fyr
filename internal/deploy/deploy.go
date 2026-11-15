@@ -110,11 +110,7 @@ type pending struct {
 func (d *Deployer) ExitCode() int { return d.exit }
 
 func tail(b []byte, n int) string {
-	s := strings.TrimSpace(string(b))
-	if len(s) > n {
-		s = "…" + s[len(s)-n:]
-	}
-	return s
+	return core.TruncTail(strings.TrimSpace(string(b)), n)
 }
 
 // Deploy builds and tests dir, snapshots the database, waits until no other

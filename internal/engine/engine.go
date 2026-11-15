@@ -37,8 +37,10 @@ type EffectRunner interface {
 type Engine struct {
 	deploy *deployState // V0.39
 	mu     sync.Mutex
-	// press serializes the owner's action presses, so the receipt, the
-	// "It is running" check and the start are one step (V0.60 (3)).
+	// press serializes the commands that call out of the engine while they
+	// run (the owner's action presses, message cancels, T3 adoption), so
+	// the receipt check, the work and the receipt are one step; for an
+	// action press also the "It is running" check (V0.60 (3)).
 	press    sync.Mutex
 	st       *store.Store
 	threads  map[string]*core.Thread
@@ -72,9 +74,9 @@ type Engine struct {
 	Attach  *attach.Store
 	Shooter Shooter
 	// Limits for agent tools live on the engine, not on one tool registration.
-	shotLimit showLimiter
-	newLimit  hourly
-	sendLimit hourly
+	shotLimit window
+	newLimit  window
+	sendLimit window
 	// AttachmentExists checks ids in thread.create and thread.send (V0.18).
 	AttachmentExists func(id string) bool
 	// ProfileExists checks the target of thread.handover (V0.45); nil
@@ -90,7 +92,7 @@ type Engine struct {
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
 		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, quietSent: map[string]string{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
-		newLimit: hourly{max: 5}, sendLimit: hourly{max: 30}}
+		shotLimit: window{max: 10, span: time.Minute}, newLimit: window{max: 5, span: time.Hour}, sendLimit: window{max: 30, span: time.Hour}}
 }
 
 func NewID(prefix string) string {
@@ -204,7 +206,8 @@ func (e *Engine) Load() error {
 		}
 	}
 	for _, t := range e.threads {
-		if !t.Running && !hasLiveDecision(t) && t.RunningTasks() == 0 {
+		live := t.Running || hasLiveDecision(t)
+		if !live && t.RunningTasks() == 0 {
 			continue
 		}
 		msg := "Fyr restarted during the run"
@@ -217,6 +220,9 @@ func (e *Engine) Load() error {
 		if _, err := e.st.Write(func(tx *store.Tx) error {
 			if err := tx.PutThread(t); err != nil {
 				return err
+			}
+			if !live { // only background tasks: they stop, there was no run
+				return nil
 			}
 			return tx.Append(t.ID, "run.ended", map[string]any{"failure": t.Failure}, now)
 		}); err != nil {
@@ -344,14 +350,8 @@ func (e *Engine) Command(c Cmd) Reply {
 		}
 	}
 	e.mu.Lock()
-	if prev, err := e.st.Receipt(c.CommandID); err != nil {
+	if r, done := e.replay(c.CommandID); done {
 		e.mu.Unlock()
-		return Reply{Error: err.Error(), Status: 500}
-	} else if prev != nil {
-		e.mu.Unlock()
-		var r Reply
-		json.Unmarshal(prev, &r)
-		r.Status = 200
 		return r
 	}
 	now := e.Now()
@@ -471,7 +471,7 @@ func (e *Engine) run(threadID string, effects []core.Effect) {
 		}
 		if err := e.Agents.Do(threadID, ef); err != nil {
 			log.Printf("thread %s: effect %s: %v", threadID, ef.Kind, err)
-			e.Observe(threadID, func(*core.Thread, time.Time) {}, agent.Ev{Type: "effect.error",
+			e.record(threadID, agent.Ev{Type: "effect.error",
 				Data: map[string]any{"kind": ef.Kind, "error": err.Error()}})
 		}
 	}
@@ -537,7 +537,7 @@ func (e *Engine) runOwnerEffect(threadID string, req core.EffectReq) {
 		}
 	}
 	text = ownerLine(req, ok, text)
-	e.Observe(threadID, func(*core.Thread, time.Time) {}, agent.Ev{Type: "effect.result",
+	e.record(threadID, agent.Ev{Type: "effect.result",
 		Data: map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": text, "by": "owner"}})
 	if e.OnPR != nil {
 		e.OnPR(threadID)
@@ -573,7 +573,7 @@ func ownerLine(req core.EffectReq, ok bool, text string) string {
 
 // Report records an effect result and sends it to the agent as context.
 func (e *Engine) Report(threadID string, req core.EffectReq, allowed, ok bool, text string) {
-	e.Observe(threadID, func(*core.Thread, time.Time) {}, agent.Ev{Type: "effect.result",
+	e.record(threadID, agent.Ev{Type: "effect.result",
 		Data: map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": text}})
 	t, found := e.Thread(threadID)
 	if !found || t.ArchivedAt != nil || t.SettledAt != nil || e.Agents == nil {
@@ -597,22 +597,38 @@ func (e *Engine) Report(threadID string, req core.EffectReq, allowed, ok bool, t
 	}
 }
 
-// Observe applies a fact from an agent or a poller and appends its events.
-func (e *Engine) Observe(threadID string, fn func(t *core.Thread, now time.Time), evs ...agent.Ev) {
+// Observe applies a fact from an agent or a poller: fn changes a copy of the
+// thread and returns the events that record it. One observation is one write
+// and one broadcast. A thread that fn leaves as it was is not written and
+// keeps its UpdatedAt: an event alone does not move it up the list (#36).
+// fn runs under the engine's lock; it must not call the engine.
+func (e *Engine) Observe(threadID string, fn func(t *core.Thread, now time.Time) []agent.Ev) {
 	e.mu.Lock()
 	cur := e.threads[threadID]
 	if cur == nil {
 		e.mu.Unlock()
 		return
 	}
-	t := clone(cur)
+	was, _ := json.Marshal(cur)
+	t := &core.Thread{}
+	json.Unmarshal(was, t)
 	now := e.Now()
 	hadPR := t.PR != nil
-	fn(t, now)
-	t.UpdatedAt = now
+	evs := fn(t, now)
+	is, _ := json.Marshal(t)
+	changed := string(is) != string(was)
+	if !changed && len(evs) == 0 {
+		e.mu.Unlock()
+		return
+	}
+	if changed {
+		t.UpdatedAt = now
+	}
 	written, err := e.st.Write(func(tx *store.Tx) error {
-		if err := tx.PutThread(t); err != nil {
-			return err
+		if changed {
+			if err := tx.PutThread(t); err != nil {
+				return err
+			}
 		}
 		for _, ev := range evs {
 			if err := tx.Append(threadID, ev.Type, ev.Data, now); err != nil {
@@ -626,6 +642,11 @@ func (e *Engine) Observe(threadID string, fn func(t *core.Thread, now time.Time)
 		log.Printf("observe %s: %v", threadID, err)
 		return
 	}
+	if !changed {
+		e.mu.Unlock()
+		e.Hub.Events(written)
+		return
+	}
 	e.threads[threadID] = t
 	e.bump(threadID)
 	dto := e.dto(t, now)
@@ -636,6 +657,29 @@ func (e *Engine) Observe(threadID string, fn func(t *core.Thread, now time.Time)
 	if !hadPR && t.PR != nil && e.OnPR != nil {
 		e.OnPR(threadID)
 	}
+}
+
+// record appends events to a thread without changing it.
+func (e *Engine) record(threadID string, evs ...agent.Ev) {
+	e.Observe(threadID, func(*core.Thread, time.Time) []agent.Ev { return evs })
+}
+
+// replay returns the stored reply of a command id that already ran (I7),
+// as a 200, and done; a store error is a 500, also done. Call it under the
+// lock that also covers writing the command's receipt, so a command sent
+// twice at once runs once.
+func (e *Engine) replay(cmdID string) (Reply, bool) {
+	prev, err := e.st.Receipt(cmdID)
+	if err != nil {
+		return Reply{Error: err.Error(), Status: 500}, true
+	}
+	if prev == nil {
+		return Reply{}, false
+	}
+	var r Reply
+	json.Unmarshal(prev, &r)
+	r.Status = 200
+	return r, true
 }
 
 // Thread returns a copy of one thread.
@@ -782,10 +826,9 @@ func (e *Engine) adopt(c Cmd) Reply {
 	if e.Adopt == nil {
 		return Reply{Error: "T3 adoption is not configured", Status: 409}
 	}
-	if prev, _ := e.st.Receipt(c.CommandID); prev != nil {
-		var r Reply
-		json.Unmarshal(prev, &r)
-		r.Status = 200
+	e.press.Lock()
+	defer e.press.Unlock()
+	if r, done := e.replay(c.CommandID); done {
 		return r
 	}
 	raw, _ := c.Args["t3Ids"].([]any)

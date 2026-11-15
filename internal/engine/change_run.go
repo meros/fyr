@@ -3,7 +3,6 @@ package engine
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -67,10 +66,10 @@ func (e *Engine) offerTool(s *mcp.Server) {
 			var label, where string
 			removed := false
 			var err error
-			e.Observe(th, func(t *core.Thread, now time.Time) {
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 				var h core.Holder
 				if h, err = core.HolderOf(t, on); err != nil {
-					return
+					return nil
 				}
 				where = on
 				if h.Change != nil {
@@ -79,14 +78,14 @@ func (e *Engine) offerTool(s *mcp.Server) {
 					core.ChangesChecked(t, now) // V0.62
 				} else if on == core.OnView && !t.LiveView {
 					err = errors.New("this thread has no live view; publish one with view_publish first, or use on: \"thread\"")
-					return
+					return nil
 				}
 				if b, _ := a["remove"].(bool); b {
 					if !h.Remove(id) {
 						err = fmt.Errorf("no action %q of yours on %s", id, where)
 					}
 					removed = true
-					return
+					return nil
 				}
 				o := core.Offer{ID: id, Label: sArg(a, "label"), Run: sArg(a, "run"), Argv: listArg(a, "argv"), Cwd: sArg(a, "cwd"),
 					Prompt: sArg(a, "prompt"), In: sArg(a, "in"), When: listOf[core.Phase](a, "when"), OnOK: core.Phase(sArg(a, "onOk"))}
@@ -100,6 +99,7 @@ func (e *Engine) offerTool(s *mcp.Server) {
 				if err = h.Declare(o); err == nil {
 					label = h.Find(id).Label
 				}
+				return nil
 			})
 			if err != nil {
 				return "", err
@@ -117,10 +117,7 @@ func (e *Engine) offerTool(s *mcp.Server) {
 func (e *Engine) runAction(c Cmd) Reply {
 	e.press.Lock()
 	defer e.press.Unlock()
-	if prev, _ := e.st.Receipt(c.CommandID); prev != nil {
-		var r Reply
-		json.Unmarshal(prev, &r)
-		r.Status = 200
+	if r, done := e.replay(c.CommandID); done {
 		return r
 	}
 	th, ok := e.Thread(c.ThreadID)
@@ -155,11 +152,12 @@ func (e *Engine) runAction(c Cmd) Reply {
 	if h.Change != nil {
 		pr = h.Change.PR()
 	}
-	e.Observe(c.ThreadID, func(t *core.Thread, now time.Time) {
+	e.Observe(c.ThreadID, func(t *core.Thread, now time.Time) []agent.Ev {
 		if x, err := core.HolderOf(t, on); err == nil {
 			x.Started(a, now)
 		}
-	}, agent.Ev{Type: "action", Data: map[string]any{"on": on, "title": title, "action": a.ID, "label": a.Label, "run": a.Run, "argv": a.Argv, "by": "owner"}})
+		return []agent.Ev{{Type: "action", Data: map[string]any{"on": on, "title": title, "action": a.ID, "label": a.Label, "run": a.Run, "argv": a.Argv, "by": "owner"}}}
+	})
 	reply := Reply{OK: true, Status: 200, Result: map[string]any{"on": on, "action": a.ID}}
 	e.st.Write(func(tx *store.Tx) error { return tx.PutReceipt(c.CommandID, reply, e.Now()) })
 
@@ -223,11 +221,13 @@ func (e *Engine) runBuiltin(threadID, on, title string, a core.Offer, pr string)
 
 // finishAction records the result and tells the agent, which did not run it.
 func (e *Engine) finishAction(threadID, on, title string, a core.Offer, ok bool, exit int, out string) {
-	e.Observe(threadID, func(t *core.Thread, now time.Time) {
+	short := core.TruncTail(strings.TrimSpace(out), 2000)
+	e.Observe(threadID, func(t *core.Thread, now time.Time) []agent.Ev {
 		if h, err := core.HolderOf(t, on); err == nil {
 			h.Ended(t, a, ok, exit, out, now)
 		}
-	}, agent.Ev{Type: "action", Data: map[string]any{"on": on, "title": title, "action": a.ID, "label": a.Label, "run": a.Run, "ok": ok, "exit": exit, "output": tail(out, 2000), "ended": true}})
+		return []agent.Ev{{Type: "action", Data: map[string]any{"on": on, "title": title, "action": a.ID, "label": a.Label, "run": a.Run, "ok": ok, "exit": exit, "output": short, "ended": true}}}
+	})
 	t, found := e.Thread(threadID)
 	if !found || t.ArchivedAt != nil || e.Agents == nil {
 		return
@@ -236,14 +236,6 @@ func (e *Engine) finishAction(threadID, on, title string, a core.Offer, ok bool,
 	if !ok {
 		status = fmt.Sprintf("failed (exit %d)", exit)
 	}
-	msg := fmt.Sprintf("[Fyr] The owner ran %q on %s: it %s.\n%s", a.Label, title, status, tail(out, 2000))
+	msg := fmt.Sprintf("[Fyr] The owner ran %q on %s: it %s.\n%s", a.Label, title, status, short)
 	e.Agents.Do(threadID, core.Effect{Kind: core.EffectSend, Text: msg})
-}
-
-func tail(s string, n int) string {
-	s = strings.TrimSpace(s)
-	if len(s) > n {
-		return "…" + s[len(s)-n:]
-	}
-	return s
 }

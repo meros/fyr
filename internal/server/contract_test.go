@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 )
 
@@ -69,8 +70,9 @@ func TestStateContractFixture(t *testing.T) {
 	post(`{"commandId":"k5","action":"thread.create","args":{"cwd":"` + src + `","text":"a thread with a live view","view":true}}`)
 	for _, d := range e.Snapshot() {
 		if d.Title == "a thread with a live view" {
-			e.Observe(d.ID, func(t *core.Thread, now time.Time) {
+			e.Observe(d.ID, func(t *core.Thread, now time.Time) []agent.Ev {
 				core.ViewPublished(t, "a_page", map[string]any{"headline": "Tests pass", "steps": []any{"build", "test"}}, now)
+				return nil
 			})
 		}
 	}
