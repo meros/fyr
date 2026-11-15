@@ -59,9 +59,10 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			var prN int
 			if pr != "" {
 				var ok bool
-				if prRepo, prN, ok = agent.ParsePR(pr); !ok {
+				if pr, ok = agent.CanonicalPR(pr); !ok {
 					return "", errors.New("pr must be a GitHub pull request URL")
 				}
+				prRepo, prN, _ = agent.ParsePR(pr)
 				o.Evidence = append(o.Evidence, core.Evidence{Kind: "pr", URL: pr, Title: fmt.Sprintf("#%d", prN)})
 			}
 			var c core.Change
