@@ -96,6 +96,29 @@ type View struct {
 	SeenAt      time.Time  `json:"seenAt"`
 	SnoozeUntil *time.Time `json:"snoozeUntil,omitempty"`
 	SnoozedAt   *time.Time `json:"snoozedAt,omitempty"`
+	// ChangesLook is the owner's last look at the Changes tab and the
+	// Viewed marks (V0.65). Not sent in the thread DTO.
+	ChangesLook *ChangesLook `json:"changesLook,omitempty"`
+}
+
+// ChangesLook is what the Changes tab showed: the head commit and each
+// file's blob id, and the files marked Viewed with the blob they had then
+// (SPEC 0.5 V0.65).
+type ChangesLook struct {
+	Head   string            `json:"head"`
+	At     time.Time         `json:"at"`
+	Files  map[string]string `json:"files,omitempty"`
+	Viewed map[string]string `json:"viewed,omitempty"`
+}
+
+// FileViewed reports whether the file was marked Viewed with this content;
+// the mark resets by itself when the content changes.
+func FileViewed(v *View, path, blob string) bool {
+	if v == nil || v.ChangesLook == nil {
+		return false
+	}
+	b, ok := v.ChangesLook.Viewed[path]
+	return ok && b == blob
 }
 
 // Task is a native subagent or background task of the thread's session

@@ -214,7 +214,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {tab === "changes" && (
         <div class="chtab">
           <ChangeList t={t} onRun={p.onRun} />
-          <ChangesView threadId={t.id} />
+          <ChangesView threadId={t.id} changes={t.changes} />
         </div>
       )}
       {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}

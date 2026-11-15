@@ -241,6 +241,8 @@ The host folder picker. Every path is resolved through symlinks and must be an e
 
 The patch is cut at 400 KB at a line end (`truncated: true`). A path without changes returns `"patch": ""`. The path is matched literally; an untracked file is read only when git lists it as untracked.
 
+**Since you looked (V0.65).** The reply also has `head` (the commit, `""` without commits) and per file `blob` (its content's blob id now, absent when deleted) and `viewed` (the owner marked this content Viewed). After a `thread.changesSeen` it adds `since: {head, at, mode: "ancestor"|"rebased"|"missing", commits, files: [File], rangeDiff?, rangeDiffTruncated?}`: the files whose content differs from the look, with status and +/− from the seen head to the working tree. `?path=<p>&since=<commit>` returns that file's diff from the commit to the working tree; a `since` that is not a hex id is `400`. Commands: `thread.changesSeen {head, files: {path: blob}}` records the look; `thread.fileViewed {path, blob, viewed: bool}` sets or clears a mark. Both change the owner's View, which the thread DTO sends without them.
+
 ## PR detail (SPEC 0.5 V0.43)
 
 `GET /api/threads/{id}/pr` returns the thread's PR, read with `gh` on the host and cached 30 s per PR. `?fresh=1` skips the cache.
