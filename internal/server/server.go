@@ -445,7 +445,17 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Has("path") {
-		p, err := gitdiff.FilePatch(r.Context(), t.Cwd, r.URL.Query().Get("path"))
+		var p gitdiff.Patch
+		var err error
+		if r.URL.Query().Has("since") { // V0.65: from the seen head
+			p, err = gitdiff.FilePatchSince(r.Context(), t.Cwd, r.URL.Query().Get("path"), r.URL.Query().Get("since"))
+			if errors.Is(err, gitdiff.ErrBadSince) {
+				writeJSON(w, 400, map[string]any{"error": err.Error()})
+				return
+			}
+		} else {
+			p, err = gitdiff.FilePatch(r.Context(), t.Cwd, r.URL.Query().Get("path"))
+		}
 		if err != nil {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})
 			return
@@ -461,6 +471,26 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 	if !c.Git {
 		writeJSON(w, 200, map[string]bool{"git": false})
 		return
+	}
+	// V0.65: the owner's Viewed marks and what is new since the last look.
+	look := s.Engine.ChangesLook(t.ID)
+	if look != nil {
+		lv := &core.View{ChangesLook: look}
+		for i := range c.Files {
+			c.Files[i].Viewed = core.FileViewed(lv, c.Files[i].Path, c.Files[i].Blob)
+		}
+		if look.Files != nil || look.Head != "" {
+			since, err := gitdiff.SinceSeen(r.Context(), t.Cwd, c, gitdiff.Seen{Head: look.Head, Files: look.Files})
+			if err != nil {
+				writeJSON(w, 500, map[string]any{"error": err.Error()})
+				return
+			}
+			since.At = look.At
+			for i := range since.Files {
+				since.Files[i].Viewed = core.FileViewed(lv, since.Files[i].Path, since.Files[i].Blob)
+			}
+			c.Since = since
+		}
 	}
 	writeJSON(w, 200, c)
 }

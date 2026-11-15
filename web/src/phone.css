@@ -318,6 +318,18 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .chg-file{height:44px;padding:0 16px}
 .m-app .chg-path{font-size:13px}
 .m-app .chg-note{padding:8px 16px}
+/* V0.65: the change cards and the files scroll as one, so many cards never push the composer off screen */
+.m-app .chtab{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden}
+.m-app .chtab .chg{flex:none;overflow:visible}
+.m-app .chg-modes,.m-app .chg-since{padding:0 16px}
+.m-app .chg-seg{flex:1 1 100%}
+.m-app .chg-mode{flex:1;height:44px;font-size:14px}
+.m-app .chg-vcount{font-size:13px}
+.m-app .chg-notes,.m-app .chg-range{margin-left:16px;margin-right:16px}
+.m-app .chg-rr>summary,.m-app div.chg-rr{min-height:44px}
+.m-app .chg-vw{width:44px;min-height:44px;justify-content:center;padding:0}
+.m-app .chg-vw input{width:20px;height:20px}
+.m-app .chg-vwt{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 /* PR tab (V0.43): 44 px targets, the lists run edge to edge. */
 .m-app .prv{padding:12px 16px 16px;background:var(--surface);gap:14px}
 .m-app .prv-t{font-size:17px;line-height:23px}
@@ -380,3 +392,4 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-hostn{font-family:var(--mono);font-size:12px}
 .m-app .offers{padding:4px 16px}.m-app .chc .offers{padding:0}.m-app .offb .btn{min-height:40px}.m-app .chl{padding:12px 16px 4px}
 .m-app .board{padding:0}.m-app .bdchips .chip,.m-app .bdfrom{min-height:44px}.m-app .bdend{min-height:44px;margin-left:0}
+.m-app .chtab .chl{max-height:none;overflow:visible} /* V0.65 + V0.66: one scroll on the phone */

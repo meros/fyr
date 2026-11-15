@@ -471,6 +471,118 @@ func TestThreadChanges(t *testing.T) {
 	}
 }
 
+// SPEC 0.5 V0.65: the owner's look and Viewed marks shape the reply: the
+// files new since the look, viewed until the content changes, the since
+// patch; the look stays out of the thread DTO.
+func TestThreadChangesSinceYouLooked(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	hs, _ := newServer(t)
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t", "GIT_CONFIG_GLOBAL=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("bee\n"), 0o644)
+	run("add", "-A")
+	run("commit", "-q", "-m", "x")
+	run("checkout", "-q", "-b", "feature")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\ntwo\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("bee\nb2\n"), 0o644)
+	run("commit", "-qam", "work")
+
+	hdr := map[string]string{"X-Fyr": "1"}
+	r := do(t, "POST", hs.URL+"/api/command", "", hdr, `{"commandId":"cs1","action":"thread.create","args":{"cwd":`+strconv.Quote(dir)+`,"text":"hi"}}`)
+	var rep struct {
+		ThreadID string `json:"threadId"`
+	}
+	json.NewDecoder(r.Body).Decode(&rep)
+	id := rep.ThreadID
+	type file struct {
+		Path      string `json:"path"`
+		Blob      string `json:"blob"`
+		Viewed    bool   `json:"viewed"`
+		Additions int    `json:"additions"`
+	}
+	type reply struct {
+		Head  string `json:"head"`
+		Files []file `json:"files"`
+		Since *struct {
+			Head  string `json:"head"`
+			Mode  string `json:"mode"`
+			Files []file `json:"files"`
+		} `json:"since"`
+	}
+	get := func() reply {
+		t.Helper()
+		r := do(t, "GET", hs.URL+"/api/threads/"+id+"/changes", "", nil, "")
+		var c reply
+		json.NewDecoder(r.Body).Decode(&c)
+		if r.StatusCode != 200 {
+			t.Fatalf("changes: %d", r.StatusCode)
+		}
+		return c
+	}
+	command := func(cid, action, args string) {
+		t.Helper()
+		r := do(t, "POST", hs.URL+"/api/command", "", hdr, `{"commandId":"`+cid+`","action":"`+action+`","threadId":"`+id+`","args":`+args+`}`)
+		if r.StatusCode != 200 {
+			b, _ := io.ReadAll(r.Body)
+			t.Fatalf("%s: %d %s", action, r.StatusCode, b)
+		}
+	}
+	c := get()
+	if c.Head == "" || len(c.Files) != 2 || c.Files[0].Blob == "" || c.Since != nil {
+		t.Fatalf("first look: %+v", c)
+	}
+	files := map[string]string{}
+	for _, f := range c.Files {
+		files[f.Path] = f.Blob
+	}
+	fb, _ := json.Marshal(files)
+	command("cs2", "thread.changesSeen", `{"head":"`+c.Head+`","files":`+string(fb)+`}`)
+	command("cs3", "thread.fileViewed", `{"path":"a.txt","blob":"`+files["a.txt"]+`","viewed":true}`)
+	command("cs4", "thread.fileViewed", `{"path":"b.txt","blob":"`+files["b.txt"]+`","viewed":true}`)
+
+	r = do(t, "GET", hs.URL+"/api/threads/"+id, "", nil, "")
+	body, _ := io.ReadAll(r.Body)
+	if strings.Contains(string(body), "changesLook") || strings.Contains(string(body), files["a.txt"]) {
+		t.Fatalf("the look is in the thread DTO: %s", body)
+	}
+
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\ntwo\nthree\n"), 0o644)
+	c = get()
+	if c.Since == nil || c.Since.Mode != "ancestor" || c.Since.Head != c.Head || len(c.Since.Files) != 1 || c.Since.Files[0].Path != "a.txt" || c.Since.Files[0].Additions != 1 {
+		t.Fatalf("since: %+v", c.Since)
+	}
+	v := map[string]bool{}
+	for _, f := range c.Files {
+		v[f.Path] = f.Viewed
+	}
+	if v["a.txt"] || !v["b.txt"] {
+		t.Fatalf("viewed resets for a.txt only: %+v", c.Files)
+	}
+
+	r = do(t, "GET", hs.URL+"/api/threads/"+id+"/changes?path=a.txt&since="+c.Head, "", nil, "")
+	var p struct {
+		Patch string `json:"patch"`
+	}
+	json.NewDecoder(r.Body).Decode(&p)
+	if r.StatusCode != 200 || !strings.Contains(p.Patch, "+three") || strings.Contains(p.Patch, "+two") {
+		t.Fatalf("since patch: %d %q", r.StatusCode, p.Patch)
+	}
+	if r := do(t, "GET", hs.URL+"/api/threads/"+id+"/changes?path=a.txt&since=HEAD", "", nil, ""); r.StatusCode != 400 {
+		t.Fatalf("since=HEAD: %d", r.StatusCode)
+	}
+}
+
 type fakeDetails struct {
 	fresh []bool
 	err   error
