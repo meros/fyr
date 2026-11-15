@@ -64,11 +64,15 @@ func TestGitFactsNoOptionalLocks(t *testing.T) {
 	if err != nil {
 		t.Skip("no git")
 	}
+	sh, err := exec.LookPath("sh") // the nix build sandbox has no /usr/bin/env
+	if err != nil {
+		t.Skip("no sh")
+	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")
 	log := filepath.Join(dir, "env.log")
 	os.MkdirAll(bin, 0o755)
-	script := "#!/usr/bin/env sh\necho \"${GIT_OPTIONAL_LOCKS:-unset} $*\" >> " + log + "\nexec " + real + " \"$@\"\n"
+	script := "#!" + sh + "\necho \"${GIT_OPTIONAL_LOCKS:-unset} $*\" >> " + log + "\nexec " + real + " \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
