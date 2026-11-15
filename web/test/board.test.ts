@@ -43,3 +43,14 @@ test("SPEC 0.5 V0.64: columns by stage; a group stays together, its stack base f
   assert.deepEqual(g.items.map((i) => i.change.id), ["c3", "c4"], "c4 builds on api (c3): base first, though c4 is newer");
   assert.equal(stackOrder([]).length, 0);
 });
+
+test("#35: an observed branch is one host record, shown in each of its threads and once on the board", () => {
+  const rec = ch({ id: "r1", key: "git:github.com/meros/fyr#v0", kind: "code", title: "v0", phaseBy: "observed", threads: ["t1", "t2"], conditions: [{ type: "x", status: "fail", source: "observed", at: at(0) }] });
+  const own = ch({ id: "c1", key: "k", title: "same key, another thread" });
+  const ts = {
+    t1: thread("t1", "seen", "seen", { title: "One", changes: [rec, own] }),
+    t2: thread("t2", "seen", "seen", { title: "Two", changes: [rec, { ...own }] }),
+  };
+  assert.deepEqual(boardItems(ts, projects).map((i) => i.change.id).sort(), ["c1", "c1", "r1"], "agent changes stay per thread");
+  assert.equal(needsCount(ts), 1);
+});
