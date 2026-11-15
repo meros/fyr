@@ -597,16 +597,10 @@ func (s prSource) Snapshot() []github.PRThread {
 		if t.ArchivedAt != nil {
 			continue
 		}
-		main := ""
-		if t.PR != nil && t.PR.State == "OPEN" {
-			main = t.PR.URL
-			out = append(out, github.PRThread{ID: t.ID, URL: main})
-		}
-		// V0.59 (4): the PR of every code change not ended, not only the main one.
+		// V0.59 (4), #32: the PR of every code change in flight, the main one
+		// among them.
 		for _, u := range core.PRURLs(t.Thread) {
-			if u != main {
-				out = append(out, github.PRThread{ID: t.ID, URL: u})
-			}
+			out = append(out, github.PRThread{ID: t.ID, URL: u})
 		}
 	}
 	return out
@@ -614,11 +608,7 @@ func (s prSource) Snapshot() []github.PRThread {
 
 func (s prSource) Observe(id string, pr core.PR) {
 	s.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
-		if t.PR != nil && t.PR.URL == pr.URL {
-			core.PRObserved(t, pr, now)
-		} else {
-			core.ChangePRObserved(t, pr, now) // V0.59: another PR of the thread
-		}
+		core.ChangePRObserved(t, pr, now) // #32: the PR lives on its change
 		return nil
 	})
 }
@@ -671,7 +661,7 @@ func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []stri
 			Owner: core.Owner, Visibility: "private", Profile: prof, Model: c.Model, SessionID: c.SessionID,
 			CreatedAt: c.UpdatedAt, UpdatedAt: c.UpdatedAt, ActivityAt: c.UpdatedAt, Source: "t3", T3ID: c.T3ID}
 		if repo, num, ok := agent.ParsePR(c.PRURL); ok {
-			t.PR = &core.PR{URL: c.PRURL, Repo: repo, Number: num, State: "OPEN", Checks: core.ChecksPending}
+			core.PRObserved(t, core.PR{URL: c.PRURL, Repo: repo, Number: num, State: "OPEN", Checks: core.ChecksPending}, c.UpdatedAt)
 		}
 		v := &core.View{User: core.Owner, Entity: t.ID, SeenAt: c.UpdatedAt}
 		if c.SnoozedUntil != "" {

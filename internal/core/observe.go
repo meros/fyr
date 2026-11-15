@@ -74,24 +74,20 @@ func DecisionClosed(t *Thread, id string) {
 	}
 }
 
-// PRObserved stores a new PR snapshot. It moves ActivityAt only when the PR
-// starts to block, merges or closes, so polling alone never marks a thread done.
+// PRObserved links a PR to the thread as its main PR (#32): the agent opened
+// or named it. Its code change keeps the snapshot and becomes the thread's
+// main change. A PR the owner dismissed never comes back (V0.36), and a link
+// never overwrites what GitHub already reported about the PR.
 func PRObserved(t *Thread, p PR, now time.Time) {
-	for _, u := range t.DismissedPRs {
-		if p.URL != "" && u == p.URL {
-			return // the owner dismissed this PR (V0.36)
-		}
+	c := changeByPR(t, p.URL)
+	if c != nil && c.Dismissed {
+		return
 	}
-	old := t.PR
-	t.PR = &p
-	ChangePRObserved(t, p, now) // V0.59: the PR is also a code change
-	changed := old == nil || old.State != p.State || old.Blocking() != p.Blocking()
-	if changed && (p.Blocking() != "" || p.State != "OPEN") {
-		t.ActivityAt = now
+	if c == nil || c.PR == nil || c.PR.CheckedAt == nil || p.CheckedAt != nil {
+		c = ChangePRObserved(t, p, now)
 	}
-	if p.State == "MERGED" && t.SettleWhenMerged && t.SettledAt == nil {
-		t.SettledAt = &now
-		t.SettleWhenMerged = false
+	if c != nil {
+		t.MainChange = c.ID
 	}
 }
 

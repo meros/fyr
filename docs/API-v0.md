@@ -50,6 +50,8 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 }
 ```
 
+`pr` is the PR of the thread's main change (`mainChange`, a change id) and `settleWhenMerged` says that `settleWhen` waits for that change to land; the host derives both (#32). Every PR is stored on its code change (`changes[].pr`), so a thread with two PRs shows both on the Changes board.
+
 `liveView` is the live view flag and `live` the view itself (V0.37); both are absent on a thread without them. `live.headline` is `state.headline` when it is a string; `checkedAt` is the last `view_*` call, `updatedAt` the last change of page or state.
 
 `rev` increases on every change, also across host restarts: keep the copy with the higher `rev`. An action name missing from `unavailable` is available. The client never computes status; it renders `attention`.

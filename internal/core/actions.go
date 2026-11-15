@@ -88,15 +88,41 @@ func images(a Args) []Image {
 	return out
 }
 
-// settleArmed reports a settle that waits for something: the run, the PR
-// merge or a change's phase.
+// settleArmed reports a settle that waits for something: the run or a
+// change's phase (the main PR's merge is its change reaching landed).
 func settleArmed(t *Thread) bool {
-	return t.SettleWhenDone || t.SettleWhenMerged || t.SettleWhen != nil
+	return t.SettleWhenDone || t.SettleWhen != nil
 }
 
 // disarmSettle cancels every settle that waits for something.
 func disarmSettle(t *Thread) {
-	t.SettleWhenDone, t.SettleWhenMerged, t.SettleWhen = false, false, nil
+	t.SettleWhenDone, t.SettleWhen = false, nil
+}
+
+// OpenMain is the main change while its PR is open, or nil.
+func OpenMain(t *Thread) *Change {
+	if c := t.Main(); c != nil && c.PR.State == "OPEN" {
+		return c
+	}
+	return nil
+}
+
+// SettleWhenMerged arms "settle when merged" (SPEC 13.1 `m`, #32): the
+// thread settles when its main change lands. It reports false when the
+// thread has no open main PR.
+func SettleWhenMerged(t *Thread) bool {
+	c := OpenMain(t)
+	if c == nil {
+		return false
+	}
+	t.SettleWhen = &SettleWhen{Change: c.ID, Phase: PhaseLanded}
+	return true
+}
+
+// SettlesWhenMerged reports that the thread settles when its main PR merges.
+func SettlesWhenMerged(t *Thread) bool {
+	c := t.Main()
+	return c != nil && t.SettleWhen != nil && t.SettleWhen.Phase == PhaseLanded && FindChange(t, t.SettleWhen.Change) == c
 }
 
 // revive is what any message from the user does to a thread: it clears the
@@ -249,19 +275,22 @@ func init() {
 
 	register(&Action{Name: "thread.dismissPR", Label: "Dismiss PR",
 		Available: func(t *Thread, _ *View, _ time.Time) string {
-			if t.PR == nil {
+			p := t.MainPR()
+			if p == nil {
 				return "No PR"
 			}
-			if t.PR.State == "OPEN" {
+			if p.State == "OPEN" {
 				return "The PR is still open"
 			}
 			return ""
 		},
+		// V0.36, #32: the change keeps its record and is never the main
+		// change again; the thread has no main PR until a new one attaches.
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
-			if t.PR.URL != "" {
-				t.DismissedPRs = append(t.DismissedPRs, t.PR.URL)
+			if c := t.Main(); c != nil {
+				c.Dismissed = true
 			}
-			t.PR = nil
+			t.MainChange = ""
 			return nil, nil
 		}})
 
@@ -296,8 +325,7 @@ func init() {
 				t.SettleWhenDone = true
 				return nil, nil
 			}
-			if !force && t.PR != nil && t.PR.State == "OPEN" && !t.SettleWhenMerged {
-				t.SettleWhenMerged = true
+			if !force && !SettlesWhenMerged(t) && SettleWhenMerged(t) {
 				v.SeenAt = now
 				return nil, nil
 			}
@@ -324,16 +352,16 @@ func init() {
 
 	register(&Action{Name: "thread.settleWhenMerged", Label: "Settle when merged", Key: "m",
 		Available: func(t *Thread, _ *View, _ time.Time) string {
-			if t.PR == nil || t.PR.State != "OPEN" {
+			if OpenMain(t) == nil {
 				return "No open PR"
 			}
-			if t.SettleWhenMerged {
+			if SettlesWhenMerged(t) {
 				return "Already set"
 			}
 			return ""
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
-			t.SettleWhenMerged = true
+			SettleWhenMerged(t)
 			v.SeenAt = now
 			return nil, nil
 		}})

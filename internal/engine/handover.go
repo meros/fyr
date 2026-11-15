@@ -26,8 +26,8 @@ func (e *Engine) Conversation(id string) (string, error) {
 	if t.Branch != "" {
 		fmt.Fprintf(&b, " · branch %s", t.Branch)
 	}
-	if t.PR != nil {
-		fmt.Fprintf(&b, " · PR %s (%s)", t.PR.URL, t.PR.State)
+	if p := t.MainPR(); p != nil {
+		fmt.Fprintf(&b, " · PR %s (%s)", p.URL, p.State)
 	}
 	b.WriteString("\n")
 	n := 0

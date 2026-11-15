@@ -193,3 +193,89 @@ func TestLoadThreadBeforeActions(t *testing.T) {
 		t.Fatalf("saved again: %s", raw)
 	}
 }
+
+// #32: a thread stored with its PR on the thread loads with the PR on its
+// code change: thread.pr goes to the change that has it (made when none
+// does) and that change is the main one; other changes' "pr" evidence becomes
+// their PR; a dismissed PR's change is dismissed; settleWhenMerged waits for
+// the main change to land. Saved again, none of the old fields is left.
+func TestLoadThreadBeforePROnChange(t *testing.T) {
+	s, _ := open(t)
+	old := `{"id":"t_pr","title":"Old","activityAt":"2026-11-14T08:00:00Z","updatedAt":"2026-11-14T08:00:00Z",
+	"pr":{"url":"https://github.com/o/r/pull/1","repo":"o/r","number":1,"title":"Fix","state":"OPEN","checks":"fail","checkedAt":"2026-11-14T10:00:00Z"},
+	"dismissedPRs":["https://github.com/o/r/pull/3"],
+	"settleWhenMerged":true,
+	"changes":[
+	  {"id":"c_1","key":"git:o/r#fix","kind":"code","title":"Fix","branch":"fix","phase":"review","phaseBy":"observed",
+	   "conditions":[{"type":"checks","status":"fail","reason":"CI failed","source":"observed","at":"2026-11-14T10:00:00Z"}],
+	   "evidence":[{"kind":"pr","url":"https://github.com/o/r/pull/1","title":"#1"}]},
+	  {"id":"c_2","key":"pr:o/r#2","kind":"code","title":"Other","phase":"review","phaseBy":"observed",
+	   "evidence":[{"kind":"pr","url":"https://github.com/o/r/pull/2","title":"#2"}]},
+	  {"id":"c_3","key":"pr:o/r#3","kind":"code","title":"Done","phase":"landed","phaseBy":"observed",
+	   "evidence":[{"kind":"pr","url":"https://github.com/o/r/pull/3","title":"#3"}]}]}`
+	bare := `{"id":"t_bare","title":"Before changes","pr":{"url":"https://github.com/o/r/pull/7","repo":"o/r","number":7,"state":"MERGED","checks":"pass"}}`
+	for id, data := range map[string]string{"t_pr": old, "t_bare": bare} {
+		if _, err := s.db.Exec(`INSERT INTO threads(id,data) VALUES(?,?)`, id, data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	load := func() map[string]*core.Thread {
+		ts, err := s.Threads()
+		if err != nil || len(ts) != 2 {
+			t.Fatalf("load: %v %d", err, len(ts))
+		}
+		out := map[string]*core.Thread{}
+		for _, th := range ts {
+			out[th.ID] = th
+		}
+		return out
+	}
+	check := func(when string, ts map[string]*core.Thread) {
+		th := ts["t_pr"]
+		if len(th.Changes) != 3 || th.MainChange != "c_1" {
+			t.Fatalf("%s: main %q changes %d", when, th.MainChange, len(th.Changes))
+		}
+		p := th.MainPR()
+		if p == nil || p.URL != "https://github.com/o/r/pull/1" || p.Checks != core.ChecksFail || p.CheckedAt == nil {
+			t.Fatalf("%s: main PR %+v", when, p)
+		}
+		if c := th.Changes[1]; c.PR == nil || c.PR.URL != "https://github.com/o/r/pull/2" || c.PR.Number != 2 || c.PR.State != "OPEN" {
+			t.Fatalf("%s: second PR %+v", when, c.PR)
+		}
+		if c := th.Changes[2]; !c.Dismissed || c.PR == nil || c.PR.State != "MERGED" {
+			t.Fatalf("%s: dismissed %+v %+v", when, c.Dismissed, c.PR)
+		}
+		if w := th.SettleWhen; w == nil || w.Change != "c_1" || w.Phase != core.PhaseLanded || !core.SettlesWhenMerged(th) {
+			t.Fatalf("%s: settle when %+v", when, w)
+		}
+		if !th.ActivityAt.Equal(time.Date(2026, 11, 14, 8, 0, 0, 0, time.UTC)) {
+			t.Fatalf("%s: moving the PR moved activity to %v", when, th.ActivityAt)
+		}
+		b := ts["t_bare"]
+		if p := b.MainPR(); p == nil || p.Number != 7 || len(b.Changes) != 1 || b.Changes[0].Phase != core.PhaseLanded {
+			t.Fatalf("%s: a PR without a change: %+v %+v", when, p, b.Changes)
+		}
+	}
+	ts := load()
+	check("loaded", ts)
+	if _, err := s.Write(func(tx *Tx) error {
+		for _, th := range ts {
+			if err := tx.PutThread(th); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	s.db.QueryRow(`SELECT data FROM threads WHERE id='t_pr'`).Scan(&raw)
+	var top map[string]any
+	json.Unmarshal([]byte(raw), &top)
+	for _, k := range []string{"pr", "dismissedPRs", "settleWhenMerged"} {
+		if _, ok := top[k]; ok {
+			t.Fatalf("saved again with %q: %s", k, raw)
+		}
+	}
+	check("saved again", load())
+}

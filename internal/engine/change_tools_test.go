@@ -309,10 +309,10 @@ func TestPRLinkStoresCanonicalURL(t *testing.T) {
 		t.Fatal(out)
 	}
 	th, _ := h.e.Thread(id)
-	if th.PR == nil || th.PR.URL != "https://github.com/o/r/pull/5" {
-		t.Fatalf("pr_link stored %+v", th.PR)
+	if th.MainPR() == nil || th.MainPR().URL != "https://github.com/o/r/pull/5" {
+		t.Fatalf("pr_link stored %+v", th.MainPR())
 	}
-	if c := core.FindChange(&th, "k"); c == nil || c.PR() != "https://github.com/o/r/pull/6" {
+	if c := core.FindChange(&th, "k"); c == nil || c.PRURL() != "https://github.com/o/r/pull/6" {
 		t.Fatalf("change_open stored %+v", c)
 	}
 }
