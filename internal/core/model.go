@@ -44,6 +44,9 @@ type Thread struct {
 	// Changes are the thread's change records (V0.59, decision 0018). A PR
 	// lives on its code change (#32).
 	Changes []Change `json:"changes,omitempty"`
+	// Refs are the host change records the thread shows (#35): observed
+	// branches, one record per repo and branch on the host.
+	Refs []Ref `json:"refs,omitempty"`
 	// MainChange is the id of the code change whose PR the PR tab shows and
 	// the PR commands act on (#32); "" when the thread has no main PR.
 	MainChange string `json:"mainChange,omitempty"`
