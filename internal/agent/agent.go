@@ -155,7 +155,8 @@ type Manager struct {
 
 	mu       sync.Mutex
 	sessions map[string]*session
-	tokens   map[string]string // MCP token → thread id
+	starting map[string]*starting // thread id → its start in flight (#40)
+	tokens   map[string]string    // MCP token → thread id
 }
 
 type session struct {
@@ -201,12 +202,20 @@ type session struct {
 	// refresh: end the process after this run, so the next one starts
 	// with the current flag.
 	refresh bool
-	// results get the result message of each turn (a handover waits on
-	// the source's turn, V0.45).
-	results []chan claude.Msg
+	// results wait for turn results (a handover waits on the source's
+	// turn, V0.45).
+	results []waiter
 	digest  *digest
 	idle    *time.Timer
 	log     io.Closer
+}
+
+// waiter gets the result of the turn that read message msg (#40): a
+// result that ends a turn while msg still waits in the CLI's queue is
+// another turn's. An empty msg takes the next result.
+type waiter struct {
+	msg string
+	ch  chan claude.Msg
 }
 
 func New(host Host, cfg Config) *Manager {
@@ -216,7 +225,7 @@ func New(host Host, cfg Config) *Manager {
 	if cfg.Prompt == "" {
 		cfg.Prompt = FyrPrompt
 	}
-	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, tokens: map[string]string{}}
+	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, starting: map[string]*starting{}, tokens: map[string]string{}}
 }
 
 // ThreadForToken maps an MCP bearer token to its thread (16.2 MCP binding).
@@ -252,7 +261,7 @@ func newUUID() string {
 func (m *Manager) Do(threadID string, e core.Effect) error {
 	switch e.Kind {
 	case core.EffectSend:
-		return m.send(threadID, e)
+		return m.send(threadID, e, nil)
 	case core.EffectAnswer:
 		return m.answer(threadID, e)
 	case core.EffectInterrupt:
@@ -352,7 +361,9 @@ func content(e core.Effect) []claude.Msg {
 	return out
 }
 
-func (m *Manager) send(threadID string, e core.Effect) error {
+// send writes a user message; a non-nil result gets the result of the turn
+// that reads it.
+func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) error {
 	if e.MessageID == "" {
 		e.MessageID = newUUID()
 	}
@@ -376,6 +387,11 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 		s.idle.Stop()
 	}
 	s.out[e.MessageID] = "sent"
+	if result != nil {
+		// Under the same lock as out, so no result can see the waiter
+		// before it sees the message as unread.
+		s.results = append(s.results, waiter{e.MessageID, result})
+	}
 	m.mu.Unlock()
 	userText := e.Text
 	if e.From == FromHandover {
@@ -493,13 +509,62 @@ type as struct {
 	addDirs []string
 }
 
+// starting is a process start in flight: every other caller for the same
+// thread waits for it instead of starting a second process on the same
+// session (#40).
+type starting struct {
+	done chan struct{}
+	s    *session
+	err  error
+}
+
+// ensureAs returns the thread's live process, starting one if needed. With
+// o (a handover) it always starts a new process on o and ends the one that
+// runs. One start per thread runs at a time; the start takes up to 60 s, so
+// it runs outside m.mu and the others wait on its done channel (#40).
 func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 	m.mu.Lock()
-	if s := m.sessions[threadID]; s != nil {
+	for {
+		st := m.starting[threadID]
+		if st == nil {
+			break
+		}
 		m.mu.Unlock()
-		return s, nil
+		<-st.done
+		if o == nil {
+			return st.s, st.err
+		}
+		m.mu.Lock()
 	}
+	old := m.sessions[threadID]
+	if old != nil && o == nil {
+		m.mu.Unlock()
+		return old, nil
+	}
+	delete(m.sessions, threadID)
+	st := &starting{done: make(chan struct{})}
+	m.starting[threadID] = st
 	m.mu.Unlock()
+	if old != nil {
+		m.end(threadID, old)
+	}
+	s, err := m.start(threadID, o)
+	m.mu.Lock()
+	delete(m.starting, threadID)
+	if err == nil {
+		m.sessions[threadID] = s
+	}
+	st.s, st.err = s, err
+	m.mu.Unlock()
+	if err == nil {
+		go m.read(s)
+	}
+	close(st.done)
+	return s, err
+}
+
+// start launches and initializes a process; ensureAs makes it the thread's.
+func (m *Manager) start(threadID string, o *as) (*session, error) {
 	t, ok := m.host.Thread(threadID)
 	if !ok {
 		return nil, fmt.Errorf("no thread %s", threadID)
@@ -608,10 +673,6 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 		}
 		return nil, fmt.Errorf("initialize: %w", err)
 	}
-	m.mu.Lock()
-	m.sessions[threadID] = s
-	m.mu.Unlock()
-	go m.read(s)
 	return s, nil
 }
 
@@ -626,8 +687,8 @@ func (m *Manager) read(s *session) {
 	}
 	delete(m.tokens, s.token)
 	live := s.live || len(s.asks) > 0
-	for _, ch := range s.results {
-		close(ch)
+	for _, w := range s.results {
+		close(w.ch)
 	}
 	s.results = nil
 	for id, ch := range s.asks {
@@ -780,10 +841,18 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			f = &core.Failure{Class: classify(text), Message: clip(firstLine(text), 300)}
 		}
 		m.mu.Lock()
-		waiters := s.results
-		s.results = nil
+		var due []chan claude.Msg
+		kept := s.results[:0]
+		for _, w := range s.results {
+			if w.msg != "" && s.out[w.msg] != "" {
+				kept = append(kept, w) // its message is still queued
+			} else {
+				due = append(due, w.ch)
+			}
+		}
+		s.results = kept
 		m.mu.Unlock()
-		for _, ch := range waiters {
+		for _, ch := range due {
 			ch <- msg
 		}
 		data := map[string]any{"interrupted": interrupted, "costUsd": msg["total_cost_usd"], "durationMs": msg["duration_ms"], "failure": f}
