@@ -36,6 +36,7 @@ const (
 	ObsGitHub  = "github"
 	ObsDeploy  = "deployments"
 	ObsHost    = "host" // the host itself: a restart
+	ObsGit     = "git"  // the git observer: host change records (#35)
 )
 
 // Observer is the source of an observer's Inputs.

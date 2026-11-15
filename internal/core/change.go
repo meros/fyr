@@ -66,6 +66,16 @@ type Change struct {
 	// Aliases are other keys that name this change: an agent's key for a
 	// code change it joined by repo and branch (V0.70 (2)).
 	Aliases []string `json:"aliases,omitempty"`
+	// Workspace is where the change's git facts are read (decision 0019):
+	// set on a host record by the git observer, and on a thread's code
+	// change when it links one.
+	Workspace *Workspace `json:"workspace,omitempty"`
+	// Observed is the host record of the same repo and branch that this
+	// thread's change follows (#35): its git facts are copied here.
+	Observed string `json:"observed,omitempty"`
+	// Threads are the threads that reference a host record; set only where
+	// it is shown (the thread DTO, change_list), never stored.
+	Threads []string `json:"threads,omitempty"`
 }
 
 // Revision is one version of a change: a commit, a plan digest, a doc version.
@@ -149,6 +159,7 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 		}
 	}
 	if c != nil {
+		defer linkRef(t, c)
 		if c.Title == "" {
 			c.Title = o.Title
 		}
@@ -185,7 +196,9 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 	}
 	t.Changes = append(t.Changes, nc)
 	trimChanges(t, now)
-	return FindChange(t, nc.ID), true, nil
+	c = FindChange(t, nc.ID)
+	linkRef(t, c)
+	return c, true, nil
 }
 
 // ReviseChange adds a revision; the same id twice is one revision. A new
@@ -339,6 +352,7 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 		}
 		c.Targets = union(c.Targets, []string{"repo:" + repo})
 	}
+	linkRef(t, c)
 	phase := PhaseReview
 	switch p.State {
 	case "MERGED":
@@ -389,60 +403,17 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	return c
 }
 
-// GitFacts are what the host reads from the thread's folder after a run.
+// GitFacts are what the host reads from one checkout: the thread's folder
+// or a change's workspace.
 type GitFacts struct {
 	Repo     string // the origin remote, normalised (github.com/owner/name), or the root folder
+	Path     string // the checkout's root folder
 	Branch   string
 	Base     string
 	Ahead    int // commits since the merge base with the base
 	Unpushed int // commits not on the upstream; all when there is none
 	Dirty    int // changed and untracked files
 	Head     string
-}
-
-// GitObserved keeps the code change of the thread's branch (V0.59 (3)). A
-// branch with commits, unpushed work or changed files has one; it is made in
-// working and the observed conditions pushed and clean follow the facts.
-func GitObserved(t *Thread, g GitFacts, now time.Time) {
-	if g.Branch == "" {
-		return
-	}
-	var c *Change
-	for i := range t.Changes {
-		x := &t.Changes[i]
-		if x.Kind == KindCode && x.Branch == g.Branch && x.Phase.InFlight() {
-			c = x
-			break
-		}
-	}
-	if c == nil {
-		if g.Ahead == 0 && g.Unpushed == 0 && g.Dirty == 0 {
-			return
-		}
-		var targets []string
-		if g.Repo != "" {
-			targets = []string{"repo:" + g.Repo}
-		}
-		c, _, _ = OpenChange(t, ChangeOpen{Key: freshKey(t, "git:"+g.Repo+"#"+g.Branch), Kind: KindCode, Title: g.Branch, Branch: g.Branch, Targets: targets}, ByObserved, now)
-		if c == nil {
-			return
-		}
-		c.PhaseBy = ByObserved
-	}
-	if g.Unpushed > 0 {
-		setCondition(c, CondPushed, CondPending, plural(g.Unpushed, "commit")+" not pushed", ByObserved, now)
-	} else {
-		setCondition(c, CondPushed, CondOK, "", ByObserved, now)
-	}
-	if g.Dirty > 0 {
-		setCondition(c, CondClean, CondPending, plural(g.Dirty, "file")+" changed, not committed", ByObserved, now)
-	} else {
-		setCondition(c, CondClean, CondOK, "", ByObserved, now)
-	}
-	if g.Head != "" && g.Ahead > 0 {
-		addRevision(c, Revision{ID: g.Head, Summary: fmt.Sprintf("%s ahead of %s", plural(g.Ahead, "commit"), g.Base), By: ByObserved}, now)
-	}
-	c.UpdatedAt = now
 }
 
 // ChangeBlocking is why a change of the thread needs the owner (V0.59 (6)),
@@ -478,6 +449,7 @@ func (c *Change) Blocking() string {
 
 // --- helpers ---
 
+// setPhase moves a change; t is its thread, nil for a host record.
 func setPhase(t *Thread, c *Change, phase Phase, by string, now time.Time) {
 	if c.Phase == phase && c.PhaseBy == by {
 		return
@@ -490,7 +462,7 @@ func setPhase(t *Thread, c *Change, phase Phase, by string, now time.Time) {
 	case !phase.Reached(PhaseLanded) && !phase.Ended():
 		c.LandedAt = nil
 	}
-	if moved && phase != PhaseWorking {
+	if moved && phase != PhaseWorking && t != nil {
 		t.ActivityAt = now
 	}
 }
@@ -645,19 +617,6 @@ func trimChanges(t *Thread, now time.Time) {
 	}
 }
 
-// freshKey is key, or key~N when a change with that key has landed or
-// ended: new work after that is a new change (V0.59 (3)).
-func freshKey(t *Thread, key string) string {
-	k := key
-	for n := 2; ; n++ {
-		c := FindChange(t, k)
-		if c == nil || c.Phase.InFlight() {
-			return k
-		}
-		k = fmt.Sprintf("%s~%d", key, n)
-	}
-}
-
 func dropConditions(c *Change, types ...CondType) {
 	out := c.Conditions[:0]
 	for _, k := range c.Conditions {
@@ -672,6 +631,17 @@ func dropConditions(c *Change, types ...CondType) {
 // landed (in flight), or nil. Without a repo on either side the branch alone
 // decides.
 func codeChangeOn(t *Thread, branch string, targets []string) *Change {
+	for i := range t.Changes {
+		c := &t.Changes[i]
+		if c.Kind == KindCode && c.Branch == branch && c.Phase.InFlight() && sameRepo(c.Targets, targets) {
+			return c
+		}
+	}
+	return nil
+}
+
+// sameRepo reports targets that share a repo, or a side that names none.
+func sameRepo(a, b []string) bool {
 	repos := func(ts []string) []string {
 		var out []string
 		for _, x := range ts {
@@ -681,16 +651,6 @@ func codeChangeOn(t *Thread, branch string, targets []string) *Change {
 		}
 		return out
 	}
-	want := repos(targets)
-	for i := range t.Changes {
-		c := &t.Changes[i]
-		if c.Kind != KindCode || c.Branch != branch || !c.Phase.InFlight() {
-			continue
-		}
-		have := repos(c.Targets)
-		if len(want) == 0 || len(have) == 0 || slices.ContainsFunc(want, func(r string) bool { return slices.Contains(have, r) }) {
-			return c
-		}
-	}
-	return nil
+	x, y := repos(a), repos(b)
+	return len(x) == 0 || len(y) == 0 || slices.ContainsFunc(x, func(r string) bool { return slices.Contains(y, r) })
 }
