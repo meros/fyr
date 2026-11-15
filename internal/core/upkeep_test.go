@@ -29,3 +29,23 @@ func TestChangesStale(t *testing.T) {
 		t.Fatal("an ended change asked for upkeep")
 	}
 }
+
+// SPEC 0.5 V0.73: a live change needs no upkeep, unless something about it
+// failed after it landed (a deploy, a health check).
+func TestLiveNeedsNoUpkeep(t *testing.T) {
+	start := ct0
+	th := &Thread{Conversation: Conversation{RunStartedAt: &start}}
+	c, _, _ := OpenChange(th, ChangeOpen{Key: "fyr:deploy x", Kind: KindHost, Title: "Deploy"}, ByAgent, ct0.Add(-time.Hour))
+	if err := UpdateChange(th, c, ChangeUpdate{Phase: PhaseLive}, ByAgent, ct0.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if ChangesStale(th) {
+		t.Fatal("a live change asked for upkeep")
+	}
+	if err := UpdateChange(th, c, ChangeUpdate{Conditions: []Condition{{Type: "health", Status: CondFail, Reason: "500s"}}}, ByAgent, ct0.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if !ChangesStale(th) {
+		t.Fatal("a live change with a later failure needs no upkeep")
+	}
+}
