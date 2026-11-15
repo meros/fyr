@@ -454,6 +454,33 @@ function fullFixture(now: number): Fixture {
         actions: [{ id: "publish", label: "Publish to the wiki", run: "agent", in: "this", prompt: "Publish the runbook to the team wiki and link it here.", by: "agent", digest: dg("publish") }],
         createdAt: iso(50), updatedAt: iso(40),
       },
+      // V0.66: a PR whose checks fail, with annotations on the diff lines, and a merged PR that GitHub deployed.
+      {
+        id: "c_lasso", key: "pr:norban/web#4123", kind: "code", title: "Map: draw only visible features", branch: "fix/map-lasso-mobile", targets: ["repo:github.com/norban/web"],
+        phase: "review", phaseBy: "observed",
+        conditions: [{ type: "checks", status: "fail", reason: "CI failed", source: "observed", at: iso(20) }],
+        evidence: [{ kind: "pr", url: "https://github.com/norban/web/pull/4123", title: "#4123" }],
+        annotations: [
+          { path: "web/src/map/render.ts", line: 44, level: "failure", title: "no-undef", message: "'stats' is not defined.", check: "lint" },
+          { path: "web/src/map/render.ts", line: 210, level: "warning", message: "Function renderMap has a complexity of 14. Maximum allowed is 12.", check: "lint" },
+          { path: "web/test/map.test.ts", line: 7, endLine: 9, level: "failure", message: "Snapshot `map case 7` mismatched\n- 3 features\n+ 2 features", check: "test" },
+        ],
+        createdAt: iso(40), updatedAt: iso(20),
+      },
+      {
+        id: "c_cal", key: "pr:norban/web#4100", kind: "code", title: "Refactor booking calendar", targets: ["repo:github.com/norban/web"], phase: "live", phaseBy: "observed",
+        conditions: [
+          { type: "checks", status: "ok", source: "observed", at: iso(300) },
+          { type: "deploy:staging", status: "ok", source: "observed", at: iso(200) },
+          { type: "deploy", status: "ok", source: "observed", at: iso(180) },
+        ],
+        evidence: [
+          { kind: "pr", url: "https://github.com/norban/web/pull/4100", title: "#4100" },
+          { kind: "deployment", url: "https://norban.se", title: "production" },
+        ],
+        deployWatch: { repo: "norban/web", sha: "8c1f0e2a9b", mergedAt: iso(240), checked: true, seen: true, done: true },
+        createdAt: iso(600), updatedAt: iso(180),
+      },
     ];
     ops.offers = [{ id: "smoke", on: "thread", label: "Run smoke tests", run: "script", argv: ["make", "smoke"], by: "agent", digest: dg("smoke") }];
   }

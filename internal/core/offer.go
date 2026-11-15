@@ -289,16 +289,20 @@ func syncBuiltins(c *Change) {
 		}
 	}
 	c.Actions = keep
-	pr := prOf(c)
-	if pr == "" || c.Phase != PhaseReview {
-		return
-	}
 	add := func(a Offer) {
 		a.By = ByObserved
 		a.Digest = a.digest()
 		c.Actions = append(c.Actions, a)
 	}
 	is := func(typ, status string) bool { k := condition(c, typ); return k != nil && k.Status == status }
+	// V0.66 (6): a failed production deploy of a landed change.
+	if c.Phase == PhaseLanded && is("deploy", "fail") {
+		add(Offer{ID: "fyr.deployfail", Label: "Investigate the failed deploy", Run: RunAgent, In: "this", Primary: true, Prompt: deployPrompt(c)})
+	}
+	pr := prOf(c)
+	if pr == "" || c.Phase != PhaseReview {
+		return
+	}
 	failing, changesAsked, conflict := is("checks", "fail"), is("review", "fail"), is("conflict", "fail")
 	if failing {
 		add(Offer{ID: "fyr.rerun", Label: "Re-run failed checks", Run: RunFyr, Effect: "pr.rerunFailed"})
@@ -314,6 +318,27 @@ func syncBuiltins(c *Change) {
 			Prompt: "The PR " + pr + " has a merge conflict with its base. Rebase on the base, resolve the conflicts, run the tests, and push."})
 	}
 	add(Offer{ID: "fyr.merge", Label: "Merge", Run: RunFyr, Effect: "pr.merge", Primary: !failing && !changesAsked && !conflict})
+}
+
+func deployPrompt(c *Change) string {
+	p := "The deploy of " + c.Title
+	if pr := prOf(c); pr != "" {
+		p += " (" + pr + ")"
+	}
+	if c.DeployWatch != nil {
+		p += ", merge commit " + c.DeployWatch.SHA + ","
+	}
+	if k := condition(c, "deploy"); k != nil && k.Reason != "" {
+		p += " failed: " + k.Reason + "."
+	} else {
+		p += " failed."
+	}
+	for _, ev := range c.Evidence {
+		if ev.Kind == "deploy-log" {
+			p += " The log: " + ev.URL + "."
+		}
+	}
+	return p + " Read the deployment's log, find the cause, and propose a fix with change_status before you change anything."
 }
 
 func contains(list []string, s string) bool {
