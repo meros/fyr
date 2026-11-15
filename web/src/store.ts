@@ -275,8 +275,9 @@ export function snoozePresets(now: Date): SnoozePreset[] {
   ];
 }
 
-/** A project from the stream (`event: project`, V0.23): replace by id, or add. */
+/** A project from the stream (`event: project`, V0.23): replace by id, or add; `{id, deleted: true}` removes it (V0.58). */
 export function upsertProject(s: Store, raw: Project): Store {
+  if (raw.deleted) return raw.id && s.projects.some((x) => x.id === raw.id) ? { ...s, projects: s.projects.filter((x) => x.id !== raw.id) } : s;
   const p = decodeProject(raw);
   const i = s.projects.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
   const projects = i >= 0 ? s.projects.map((x, j) => (j === i ? p : x)) : [...s.projects, p];

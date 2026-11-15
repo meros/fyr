@@ -2,7 +2,7 @@
 
 Build with `npm ci && npm run build` (output in `dist/`, embedded by the Go binary). `npm run typecheck`, `npm test` (node:test over the pure modules: `store`, `seen`, `question`, `buildid`, `conversation`, `markdown`). `node scripts/build.mjs --dev` builds unminified with inline source maps.
 
-Mock mode: `dist/index.html?mock=rail` is the exact content of the first light frame of `design/directions/04-rail.html` on the design's clock (14:32 today), for side-by-side comparison. `?mock=1` serves the stress fixtures from `src/mock.ts` (no host needed); `?mock=2` is a sparse set with empty sections. `&open=<threadId>` opens a thread and `&dialog=new|adopt|snooze` opens a dialog, for screenshots.
+Mock mode: `dist/index.html?mock=rail` is the exact content of the first light frame of `design/directions/04-rail.html` on the design's clock (14:32 today), for side-by-side comparison. `?mock=1` serves the stress fixtures from `src/mock.ts` (no host needed); `?mock=2` is a sparse set with empty sections. `&open=<threadId>` opens a thread and `&dialog=new|adopt|snooze|settings` opens a dialog, for screenshots.
 
 ## Contract questions (docs/API-v0.md)
 

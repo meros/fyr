@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
+import { PALETTE, PALETTE_NAMES, colorName, deleteQuestion, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
+import { initialStore, upsertProject } from "../src/store.ts";
 
 test("a thread without a project shows No project (a thread in the home folder, V0.23)", () => {
   assert.equal(projectName({ project: "", projectId: undefined }, []), "No project");
@@ -150,4 +151,19 @@ test("SPEC 0.5 V0.30: a new thread starts on the inbox filter, else the last pro
   assert.equal(startProject(ps, null, "a"), "a");
   assert.equal(startProject(ps, "gone", "gone"), "b");
   assert.equal(startProject([], null, null), undefined);
+});
+
+test("a deleted project leaves the store (V0.58)", () => {
+  const a = { id: "p1", name: "App" } as Project;
+  const b = { id: "p2", name: "Garden" } as Project;
+  let s = upsertProject(upsertProject(initialStore(), a), b);
+  s = upsertProject(s, { id: "p1", deleted: true } as unknown as Project);
+  assert.deepEqual(s.projects.map((p) => p.id), ["p2"]);
+  assert.equal(upsertProject(s, { id: "p9", deleted: true } as unknown as Project).projects.length, 1, "an unknown id changes nothing");
+});
+
+test("Delete project asks once, with what happens to the threads (V0.58)", () => {
+  assert.equal(deleteQuestion({ name: "Garden", threads: 12 }), "Delete Garden? Its 12 threads stay and land in a project whose folder covers them, or in No project. The folder on disk is not touched.");
+  assert.match(deleteQuestion({ name: "A", threads: 1 }), /Its 1 thread stays and lands/);
+  assert.match(deleteQuestion({ name: "A" }), /It has no threads\./);
 });

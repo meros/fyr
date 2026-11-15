@@ -1,5 +1,5 @@
-// SPEC 0.5 V0.50: Settings. Providers (list, Found on this host, Add provider), Hosts, Notifications,
-// Appearance. The same body on desktop (a dialog) and phone (a screen).
+// SPEC 0.5 V0.50: Settings. Providers (list, Found on this host, Add provider), Projects (V0.58), Hosts,
+// Notifications, Appearance. The same body on desktop (a dialog) and phone (a screen).
 
 import { useEffect, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
@@ -9,6 +9,9 @@ import type { Quota } from "./quota.ts";
 import { quotaFor } from "./quota.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { useFolderPick } from "./folder-picker.tsx";
+import type { Project } from "./types.ts";
+import { colorVar, projectSubtitle } from "./projects.ts";
+import { NewProjectStep, ProjectIcon } from "./project-ui.tsx";
 import {
   createArgs,
   EMPTY_FORM,
@@ -41,12 +44,18 @@ export interface SettingsProps {
   appearance?: ComponentChildren;
   /** the providers changed: reload the state's profiles */
   onChanged?(): void;
+  /** V0.58: the Projects section; without it the section is left out */
+  projects?: Project[];
+  onOpenProject?(id: string): void;
+  /** New project without a thread; the error, or null */
+  onCreateProject?(name: string, folder: string): Promise<string | null>;
 }
 
 export function Settings(p: SettingsProps) {
   return (
     <div class={`set${p.phone ? " phone" : ""}`}>
       <ProvidersSection {...p} />
+      {p.projects && <ProjectsSection projects={p.projects} onOpen={(id) => p.onOpenProject?.(id)} onCreate={p.onCreateProject} />}
       <section class="sets">
         <h3>Hosts</h3>
         {p.hosts && p.hosts.length > 0 ? (
@@ -72,6 +81,52 @@ export function Settings(p: SettingsProps) {
         {p.appearance ?? <div class="setd">Theme follows the system.</div>}
       </section>
     </div>
+  );
+}
+
+/** V0.58: every project by name, with its icon, folder and thread count; a row opens the project screen. */
+export function ProjectsSection({ projects, onOpen, onCreate }: { projects: Project[]; onOpen(id: string): void; onCreate?(name: string, folder: string): Promise<string | null> }) {
+  const [adding, setAdding] = useState(false);
+  const list = [...projects].filter((x) => x.id).sort((a, b) => a.name.localeCompare(b.name));
+  return (
+    <section class="sets" aria-label="Projects">
+      <h3>Projects</h3>
+      {list.length === 0 && <div class="setd">No projects yet.</div>}
+      {list.length > 0 && (
+        <div class="pls setpl">
+          {list.map((x) => (
+            <button key={x.id} class="pli" style={{ "--pc": colorVar(x.color, x.name) }} onClick={() => onOpen(x.id!)}>
+              <ProjectIcon project={x} name={x.name} size={28} />
+              <span class="plt">
+                <span class="ell pln">{x.name}</span>
+                <span class="ell pls2">{projectSubtitle(x)}</span>
+              </span>
+              <span class="plc" title={`${x.threads ?? 0} threads`}>
+                {x.threads ?? 0}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {onCreate &&
+        (adding ? (
+          <NewProjectStep
+            initialName=""
+            initialFolder=""
+            fromThread={false}
+            onCancel={() => setAdding(false)}
+            onCreate={async (name, folder) => {
+              const e = await onCreate(name, folder);
+              if (!e) setAdding(false);
+              return e;
+            }}
+          />
+        ) : (
+          <button class="btn sbtn addp" onClick={() => setAdding(true)}>
+            New project
+          </button>
+        ))}
+    </section>
   );
 }
 

@@ -7,7 +7,7 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, ThreadDTO } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, quietLine, quietList, quietNote, setAllDay, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, deleteQuestion, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { shortModel } from "./format.ts";
 
@@ -404,8 +404,8 @@ export function QuietRow({ value, onChange, note }: { value: QuietHours[]; onCha
 const quietKey = (q: QuietHours[]) => JSON.stringify(q.map(cleanWindow));
 
 /** Edit a project (V0.55): name, its one folder (Change… through the folder picker), quiet hours, colour, icon and
- *  defaults. */
-export function ProjectEditor({ project, profiles, now, onSave, onSetFolder }: { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null> }) {
+ *  defaults; Delete project… at the end (V0.58). */
+export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onDelete }: { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null>; /** V0.58: after the one question; the error, or null */ onDelete?(): Promise<string | null> }) {
   const [name, setName] = useState(project.name);
   const [color, setColor] = useState(colorName(project.color, project.name));
   const [kind, setKind] = useState<"monogram" | "emoji" | "line">(resolveIcon(project.icon, project.name).kind);
@@ -503,6 +503,20 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder }: {
           Save
         </button>
       </div>
+      {onDelete && (
+        <div class="pdel">
+          <button
+            class="btn sm danger"
+            onClick={async () => {
+              if (!confirm(deleteQuestion(project))) return;
+              const e = await onDelete();
+              if (e) setMsg({ text: e, err: true });
+            }}
+          >
+            Delete project…
+          </button>
+        </div>
+      )}
     </div>
   );
 }

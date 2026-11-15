@@ -888,6 +888,9 @@ button.ptag{padding:0}
 .set{display:flex;flex-direction:column;gap:18px;padding:4px 16px 16px;min-width:0}
 .sets{display:flex;flex-direction:column;gap:8px;min-width:0}
 .sets h3{margin:0;font:600 14px/20px var(--ui)}
+/* V0.58: the Projects list in Settings shows every project; Settings scrolls, not the list */
+.setpl{max-height:none;overflow:visible}
+.pdel{margin-top:16px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:flex-start}
 .sets h4{margin:6px 0 0;font:600 12px/16px var(--ui);color:var(--ink-muted)}
 .setd{font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
 .setn{font:500 13px/18px var(--ui)}

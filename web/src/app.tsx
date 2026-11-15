@@ -250,6 +250,8 @@ function App() {
     }
   };
   const [projectId, setProjectId] = useState<string | null>(null);
+  // V0.58: the desktop project screen opened from Settings returns there when it closes.
+  const [projectFrom, setProjectFrom] = useState<"settings" | null>(null);
   // The project picker (V0.30): the threads it files.
   const [pickIds, setPickIds] = useState<string[]>([]);
   const openPicker = (ids: string[]) => {
@@ -371,7 +373,7 @@ function App() {
       setTracker((tr) => openView(tr, first, "open", Date.now(), document.hasFocus()));
     }
     const d = params.get("dialog");
-    if (d === "new" || d === "adopt") setDialog(d);
+    if (d === "new" || d === "adopt" || d === "settings") setDialog(d);
     if (d === "snooze" && first) {
       setSnoozeTargets([first]);
       setDialog("snooze");
@@ -789,6 +791,13 @@ function App() {
       setToast({ text: threadIds.length ? `Made project ${name} and filed ${threadIds.length === 1 ? "this thread" : `${threadIds.length} threads`}` : `Made project ${name}`, undo: false, at: Date.now() });
       return { error: null, id };
     },
+    /** V0.58: delete a project; its threads match again on the host. */
+    delete: async (id: string): Promise<string | null> => {
+      const name = store.projects.find((p) => p.id === id)?.name ?? "the project";
+      const e = await projectCommand("project.delete", { id });
+      if (!e) setToast({ text: `Deleted ${name}`, undo: false, at: Date.now() });
+      return e;
+    },
     /** File threads into a project; null: No project. */
     move: async (ids: string[], projectId: string | null): Promise<string | null> => {
       const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId: projectId ?? "" }, id)))).filter(Boolean);
@@ -837,12 +846,23 @@ function App() {
       )
     : null;
 
-  const openProjectScreen = (id: string) => {
+  const openProjectScreen = (id: string, from: "settings" | null = null) => {
     if (phoneRef.current) navGo({ screen: { name: "project", id }, sheet: null });
     else {
       setProjectId(id);
+      setProjectFrom(from);
       setDialog("project");
     }
+  };
+  // V0.58: a project deleted elsewhere closes its open screen (desktop).
+  useEffect(() => {
+    if (dialog === "project" && projectId && !store.projects.some((p) => p.id === projectId)) setDialog(projectFrom);
+  }, [dialog, projectId, store.projects]);
+  /** V0.58: Settings' Projects section, the same on desktop and phone. */
+  const projectsInSettings = {
+    projects: store.projects,
+    onOpenProject: (id: string) => openProjectScreen(id, "settings"),
+    onCreateProject: async (name: string, folder: string) => (await projectActions.create(name, folder)).error,
   };
   const directory: Directory = {
     threads: store.threads,
@@ -1285,6 +1305,7 @@ function App() {
               }
               appearance={themeControl}
               onChanged={reloadProfiles}
+              {...projectsInSettings}
             />
           }
           toast={toast}
@@ -1442,7 +1463,7 @@ function App() {
       )}
       {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} host={store.host} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
       {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
-        <Modal title="Project" onClose={() => setDialog(null)} wide>
+        <Modal title="Project" onClose={() => setDialog(projectFrom)} wide>
           <div class="db">
             <ProjectEditor
               project={store.projects.find((p) => p.id === projectId)!}
@@ -1450,6 +1471,11 @@ function App() {
               now={now}
               onSave={(patch) => projectActions.update(projectId, patch)}
               onSetFolder={(v) => projectActions.setFolder(projectId, v)}
+              onDelete={async () => {
+                const e = await projectActions.delete(projectId);
+                if (!e) setDialog(projectFrom);
+                return e;
+              }}
             />
           </div>
         </Modal>
@@ -1482,7 +1508,7 @@ function App() {
       {dialog === "push" && pushDialog(() => setDialog(null))}
       {dialog === "settings" && (
         <Modal title="Settings" wide onClose={() => setDialog(null)}>
-          <Settings api={api} host={store.host} hosts={store.hosts} push={pwaControls} appearance={themeControl} onChanged={reloadProfiles} />
+          <Settings api={api} host={store.host} hosts={store.hosts} push={pwaControls} appearance={themeControl} onChanged={reloadProfiles} {...projectsInSettings} />
         </Modal>
       )}
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}

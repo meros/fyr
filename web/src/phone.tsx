@@ -205,6 +205,8 @@ export interface PhoneProps {
     create(name: string, folder: string, threadIds?: string[]): Promise<{ error: string | null; id?: string }>;
     /** null: No project */
     move(ids: string[], projectId: string | null): Promise<string | null>;
+    /** V0.58 */
+    delete(id: string): Promise<string | null>;
   };
 }
 
@@ -1616,6 +1618,11 @@ function MProject(p: PhoneProps & { id: string }) {
             now={p.now}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
             onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}
+            onDelete={async () => {
+              const e = await p.projectActions.delete(pr.id!);
+              if (!e) p.back();
+              return e;
+            }}
           />
         ) : (
           <div class="m-empty">{p.projects.length ? "This project is not here anymore." : "Loading…"}</div>

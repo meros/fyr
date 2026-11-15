@@ -190,6 +190,8 @@ export interface Project {
   quiet?: QuietHours[] | QuietHours;
   /** V0.46: the end of the quiet hours the project is in now (RFC 3339); absent when not quiet */
   quietUntil?: string;
+  /** V0.58: only on the stream, `{id, deleted: true}` after project.delete */
+  deleted?: boolean;
 }
 
 /** One window of a project's quiet hours (V0.46): HH:MM; to not after from crosses midnight, from equal to to is
