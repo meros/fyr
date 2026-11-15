@@ -71,7 +71,7 @@ type Input struct {
 }
 
 // Event is one line a reduce appends to the thread's log. The agent feed
-// (#47) projects its notices from these.
+// (feed.go) projects its notices from these.
 type Event struct {
 	Type string
 	Data any
@@ -165,6 +165,10 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	if !slices.Contains(k.From, in.Source.Principal()) {
 		return nil, nil, Result{}, reject(RejectRights, "%s cannot send %s", in.Source, in.Kind)
 	}
+	before := t
+	if before == nil {
+		before = &Thread{}
+	}
 	t, v = CloneThread(t), cloneView(v)
 	if v == nil {
 		v = &View{User: Owner, Entity: t.ID}
@@ -192,6 +196,8 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	more := EvalRules(Rec{T: t, V: v}, now)
 	res.Events = append(res.Events, more.Events...)
 	res.Effects = append(res.Effects, more.Effects...)
+	// The agent feed (#47): the notice rules project this reduce.
+	res.Effects = append(res.Effects, project(Reduced{Before: before, After: t, In: in, Events: res.Events}, now)...)
 	return t, v, res, nil
 }
 

@@ -21,6 +21,8 @@
 //	gate     asks the PreToolUse hook about "gh pr merge 1" and reports it
 //	mcpstatus reports whether the MCP server answered at startup, as the
 //	         real CLI connects its MCP servers before the first turn
+//	tool N   runs a tool for N ms, asks the PostToolUse hook and replies
+//	         "context: <its additionalContext>"
 //	slow N   runs a tool for N ms, then takes in every queued message at
 //	         that tool boundary and replies "took in: <texts>" (V0.33)
 //	view H   publishes a live view with headline H over MCP during the turn
@@ -73,6 +75,7 @@ var (
 	model      = "fake-model"
 
 	stopHook bool
+	postHook bool
 	stops    int
 
 	qmu   sync.Mutex
@@ -314,6 +317,7 @@ func Main() {
 			if req["subtype"] == "initialize" {
 				hooks, _ := req["hooks"].(msg)
 				_, stopHook = hooks["Stop"]
+				_, postHook = hooks["PostToolUse"]
 				resp = msg{"commands": []any{}, "models": []any{msg{"value": "fake-model"}}}
 			}
 			write(msg{"type": "control_response", "response": msg{"subtype": "success", "request_id": id, "response": resp}})
@@ -466,6 +470,24 @@ func turn(text string) (took []queued) {
 			time.Sleep(150 * time.Millisecond)
 			result(false, "success", "turn 2")
 		}()
+	case "tool":
+		ms := 500
+		if f := strings.Fields(text); len(f) > 1 {
+			fmt.Sscan(f[1], &ms)
+		}
+		assistant(msg{"type": "tool_use", "id": "tu_t", "name": "Bash", "input": msg{"command": "sleep 1"}})
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+		write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
+			"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_t", "content": "slept"}}}})
+		ctx := ""
+		if postHook {
+			r := request("post1", msg{"subtype": "hook_callback", "callback_id": "viewnudge",
+				"input": msg{"hook_event_name": "PostToolUse", "tool_name": "Bash"}})
+			hso, _ := r["hookSpecificOutput"].(msg)
+			ctx, _ = hso["additionalContext"].(string)
+		}
+		assistant(msg{"type": "text", "text": "context: " + ctx})
+		result(false, "success", "context: "+ctx)
 	case "slow":
 		ms := 500
 		if f := strings.Fields(text); len(f) > 1 {
