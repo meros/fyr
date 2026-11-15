@@ -3,10 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
-	"strings"
-	"time"
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
@@ -23,11 +20,9 @@ func (e *Engine) Tools(s *mcp.Server) {
 			if !ok {
 				return "", errors.New("not a GitHub pull request URL")
 			}
-			repo, n, _ := agent.ParsePR(url)
-			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
-				core.PRObserved(t, core.PR{URL: url, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}, now)
-				return []agent.Ev{{Type: "pr.linked", Data: map[string]any{"url": url}}}
-			})
+			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindPRLink, Thread: th, Args: url}); err != nil {
+				return "", err
+			}
 			return "Linked " + url + ". Fyr watches its checks and reviews.", nil
 		}})
 
@@ -44,21 +39,14 @@ func (e *Engine) Tools(s *mcp.Server) {
 			if args == nil {
 				args = map[string]any{}
 			}
-			fx := core.FyrEffects[action]
-			if fx == nil || !fx.Request {
-				return "", fmt.Errorf("unknown action %q", action)
-			}
-			if err := e.canRequest(th, fx, args); err != nil {
+			if err := canonicalArgs(args); err != nil {
 				return "", err
 			}
 			reason, _ := a["reason"].(string)
-			d := core.Decision{ID: NewID("d_"), Kind: core.DecisionEffect, Assignee: core.Owner,
-				Effect: &core.EffectReq{Action: action, Args: args, Reason: reason}}
-			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
-				d.CreatedAt = now
-				core.DecisionOpened(t, d)
-				return []agent.Ev{{Type: "decision.opened", Data: map[string]any{"decision": d}}}
-			})
+			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindEffectRequest, Thread: th,
+				Args: core.EffectRequest{ID: NewID("d_"), Action: action, Args: args, Reason: reason}}); err != nil {
+				return "", err
+			}
 			return "Requested. The user decides in Fyr; the result arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not perform this action another way.", nil
 		}})
 
@@ -75,37 +63,11 @@ func (e *Engine) Tools(s *mcp.Server) {
 			"phase":     map[string]any{"type": "string", "enum": core.PhasesAfter(core.PhaseWorking)},
 		}, "condition"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			cond, _ := a["condition"].(string)
-			var err error
-			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
-				switch cond {
-				case string(core.SettleDone):
-					core.ArmSettle(t, core.SettleCond{Kind: core.SettleDone}, now)
-				case "merged":
-					if !core.SettleWhenMerged(t, now) {
-						err = errors.New("this thread has no open PR; link one with pr_link first")
-						return nil
-					}
-				case string(core.SettleChange):
-					c := core.FindChange(t, sArg(a, "change"))
-					phase := core.Phase(sArg(a, "phase"))
-					if phase == "" {
-						phase = core.PhaseLanded
-					}
-					if c == nil {
-						err = noChange(a)
-						return nil
-					}
-					core.ArmSettle(t, core.SettleCond{Kind: core.SettleChange, Change: c.ID, Phase: phase}, now)
-					cond = fmt.Sprintf("%q is %s", c.Title, phase)
-				default:
-					err = fmt.Errorf("unknown condition %q", cond)
-				}
-				return nil
-			})
+			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindSettleWhen, Thread: th, Args: core.Args(a)})
 			if err != nil {
 				return "", err
 			}
+			cond, _ := out.(string)
 			return "The thread settles when " + cond + ".", nil
 		}})
 }
@@ -135,18 +97,3 @@ func requestable() []string {
 	return out
 }
 
-// canRequest checks an agent's request of a Fyr effect: its args, and the
-// effect's guard, the same one the owner's command and press use (#31).
-func (e *Engine) canRequest(th string, fx *core.FyrEffect, args map[string]any) error {
-	if err := effectArgs(fx, args); err != nil {
-		return err
-	}
-	t, ok := e.Thread(th)
-	if !ok {
-		return errors.New("no such thread")
-	}
-	if why := fx.Guard(&t, args); why != "" {
-		return fmt.Errorf("Fyr cannot %s now: %s", strings.ToLower(fx.Label), why)
-	}
-	return nil
-}

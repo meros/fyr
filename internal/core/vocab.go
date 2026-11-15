@@ -107,9 +107,6 @@ func CondAction(id string) CondType { return CondType(condActionPrefix + id) }
 // environment (V0.66).
 func CondDeployTo(env string) CondType { return CondType(condDeployPrefix + env) }
 
-// OwnerOnly reports a condition only the owner may mark ok.
-func (k CondType) OwnerOnly() bool { return k == CondReview || k == CondApproval }
-
 // CondStatus is the state of one condition.
 type CondStatus string
 
@@ -177,8 +174,16 @@ const (
 	// EffectCancel withdraws an open question; the agent package sends it
 	// to itself when the CLI cancels a request.
 	EffectCancel EffectKind = "cancel"
-	// EffectRun runs an approved EffectReq (SPEC 5.10).
+	// EffectRun runs an approved EffectReq (SPEC 5.10): one of FyrEffects.
 	EffectRun EffectKind = "effect"
+	// EffectScript runs a script action's argv (V0.60).
+	EffectScript EffectKind = "script.run"
+	// EffectTell tells the thread's agent a result (V0.60 (4)); the agent
+	// feed (#47) replaces it.
+	EffectTell EffectKind = "agent.tell"
+	// EffectThread starts a new thread with a first message (an agent
+	// action pressed with in: "new").
+	EffectThread EffectKind = "thread.create"
 )
 
 // SettleKind is what an armed settle condition waits for (#33).

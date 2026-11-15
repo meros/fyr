@@ -1,6 +1,8 @@
-// Package engine is the host's one command path (SPEC 5, 0.5 V0.2): every
-// Action from every surface goes through Command; every fact from agents and
-// GitHub goes through Observe. Both persist and broadcast in one place.
+// Package engine is the host's one path for state (SPEC 5, 0.5 V0.2,
+// decision 0020): every change to a thread record is a core.Input, reduced
+// by core.Reduce and stored, broadcast and acted on in apply. Command builds
+// the owner's Inputs; the agent's tools, the agent manager and the pollers
+// call Apply. The effect runner (effects.go) runs what a reduce returns.
 package engine
 
 import (
@@ -13,6 +15,7 @@ import (
 	"log"
 	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -38,9 +41,9 @@ type Engine struct {
 	deploy *deployState // V0.39
 	mu     sync.Mutex
 	// press serializes the commands that call out of the engine while they
-	// run (the owner's action presses, message cancels, T3 adoption), so
-	// the receipt check, the work and the receipt are one step; for an
-	// action press also the "It is running" check (V0.60 (3)).
+	// run (message cancels, T3 adoption), so the receipt check, the work
+	// and the receipt are one step. Everything else is one step under mu
+	// in apply.
 	press    sync.Mutex
 	st       *store.Store
 	threads  map[string]*core.Thread
@@ -159,97 +162,23 @@ func (e *Engine) Load() error {
 			return err
 		}
 	}
+	ids := slices.Collect(maps.Keys(e.threads))
+	e.mu.Unlock()
+	// V0.6, V0.33, V0.45: repair what the last run left, through the path
+	// (no broadcast: no client is connected yet).
+	for _, id := range ids {
+		if _, err := e.apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindHostRestarted, Thread: id}, nil); err != nil {
+			e.mu.Lock()
+			return err
+		}
+	}
+	e.mu.Lock()
 	// Clients and push already know these states; only changes notify.
-	defer func() {
-		now := e.Now()
-		for id, t := range e.threads {
-			e.last[id] = core.Compute(t, e.view(id), now).State
-		}
-	}()
 	now := e.Now()
-	for _, t := range e.threads {
-		// V0.33: the agent's queue died with the old host; unread messages
-		// are lost, never resent by themselves.
-		if len(t.Outbox) == 0 {
-			continue
-		}
-		lost := t.Outbox
-		t.Outbox = nil
-		if _, err := e.st.Write(func(tx *store.Tx) error {
-			if err := tx.PutThread(t); err != nil {
-				return err
-			}
-			for _, m := range lost {
-				if err := tx.Append(t.ID, "message.state", map[string]any{"id": m.ID, "state": "lost"}, now); err != nil {
-					return err
-				}
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-	}
-	for _, t := range e.threads {
-		// V0.45: a handover dies with the host; the thread keeps the
-		// profile it had, and the owner can start it again.
-		if t.Handover == nil {
-			continue
-		}
-		t.Handover = nil
-		if _, err := e.st.Write(func(tx *store.Tx) error {
-			if err := tx.PutThread(t); err != nil {
-				return err
-			}
-			return tx.Append(t.ID, "effect.error", map[string]any{"kind": "handover", "error": "Fyr restarted during the handover"}, now)
-		}); err != nil {
-			return err
-		}
-	}
-	for _, t := range e.threads {
-		live := t.Running || hasLiveDecision(t)
-		if !live && t.RunningTasks() == 0 {
-			continue
-		}
-		msg := "Fyr restarted during the run"
-		if hasLiveDecision(t) {
-			msg = "Fyr restarted while a question was open; Retry asks again"
-		}
-		keep := effectDecisions(t)
-		core.ProcessLost(t, "restart", msg, now)
-		t.Decisions = keep // effect Decisions do not need the process (5.10)
-		if _, err := e.st.Write(func(tx *store.Tx) error {
-			if err := tx.PutThread(t); err != nil {
-				return err
-			}
-			if !live { // only background tasks: they stop, there was no run
-				return nil
-			}
-			return tx.Append(t.ID, "run.ended", map[string]any{"failure": t.Failure}, now)
-		}); err != nil {
-			return err
-		}
+	for id, t := range e.threads {
+		e.last[id] = core.Compute(t, e.view(id), now).State
 	}
 	return nil
-}
-
-// hasLiveDecision is true when a Decision needs the agent process.
-func hasLiveDecision(t *core.Thread) bool {
-	for _, d := range t.Decisions {
-		if d.Kind != core.DecisionEffect {
-			return true
-		}
-	}
-	return false
-}
-
-func effectDecisions(t *core.Thread) []core.Decision {
-	var out []core.Decision
-	for _, d := range t.Decisions {
-		if d.Kind == core.DecisionEffect {
-			out = append(out, d)
-		}
-	}
-	return out
 }
 
 // bump gives a thread a new rev. Call with e.mu held.
@@ -306,14 +235,9 @@ type Reply struct {
 	Result   any    `json:"result,omitempty"`
 }
 
-func clone(t *core.Thread) *core.Thread {
-	b, _ := json.Marshal(t)
-	c := &core.Thread{}
-	json.Unmarshal(b, c)
-	return c
-}
-
-// Command applies one Action exactly once per CommandID (I7).
+// Command applies one owner command exactly once per CommandID (I7). It
+// builds an Input and sends it down the one path; projects, T3 adoption and
+// a message cancel keep their own (they wait on things outside the thread).
 func (e *Engine) Command(c Cmd) Reply {
 	if c.CommandID == "" {
 		return Reply{Error: "commandId is required", Status: 400}
@@ -324,14 +248,10 @@ func (e *Engine) Command(c Cmd) Reply {
 	if strings.HasPrefix(c.Action, "project.") {
 		return e.projectCommand(c)
 	}
-	if c.Action == "action.run" { // V0.60: the owner presses an action
-		return e.runAction(c)
-	}
 	if c.Action == "thread.cancelMessage" {
 		return e.cancelMessage(c)
 	}
-	act := core.Registry[c.Action]
-	if act == nil {
+	if k := core.Kinds[c.Action]; k == nil || !slices.Contains(k.From, core.ByOwner) {
 		return Reply{Error: "unknown action " + c.Action, Status: 400}
 	}
 	if c.Action == "thread.setProject" && c.Args.Str("projectId") != "" {
@@ -352,280 +272,217 @@ func (e *Engine) Command(c Cmd) Reply {
 			}
 		}
 	}
-	e.mu.Lock()
-	if r, done := e.replay(c.CommandID); done {
-		e.mu.Unlock()
-		return r
-	}
-	now := e.Now()
-	var t *core.Thread
-	if c.Action == "thread.create" {
-		t = &core.Thread{ID: NewID("t_"), Owner: core.Owner, Visibility: "private", CreatedAt: now, Source: "fyr"}
-	} else {
-		cur := e.threads[c.ThreadID]
-		if cur == nil {
-			e.mu.Unlock()
-			return Reply{Error: "no thread " + c.ThreadID, Status: 404}
-		}
-		t = clone(cur)
-	}
-	v := *e.view(t.ID)
-	v.Entity = t.ID
-	if r := act.Available(t, &v, now); r != "" {
-		e.mu.Unlock()
-		return Reply{Error: r, Status: 409} // transient: no receipt (A4)
-	}
 	if c.Args == nil {
 		c.Args = core.Args{}
 	}
-	// V0.42: thread.create files into projectId; without a cwd it starts in
-	// the project's folder (V0.55), else in a fresh scratch folder.
-	var fileIn, scratch string
+	var fresh *core.Thread
+	var scratch string
 	if c.Action == "thread.create" {
-		if pid := c.Args.Str("projectId"); pid != "" {
+		if r, done := e.replay(c.CommandID); done {
+			return r
+		}
+		now := e.Now()
+		fresh = &core.Thread{ID: NewID("t_"), Owner: core.Owner, Visibility: "private", CreatedAt: now, Source: "fyr"}
+		// V0.42: thread.create files into projectId; without a cwd it starts
+		// in the project's folder (V0.55), else in a fresh scratch folder.
+		args := maps.Clone(c.Args)
+		if pid := args.Str("projectId"); pid != "" {
+			e.mu.Lock()
 			pr := e.projects[pid]
+			e.mu.Unlock()
 			if pr == nil {
-				e.mu.Unlock()
 				return Reply{Error: "no project " + pid, Status: 400}
 			}
-			fileIn = pid
-			if strings.TrimSpace(c.Args.Str("cwd")) == "" {
-				if pr.Folder != "" {
-					c.Args["cwd"] = pr.Folder
-				}
+			if strings.TrimSpace(args.Str("cwd")) == "" && pr.Folder != "" {
+				args["cwd"] = pr.Folder
 			}
 		}
-		if strings.TrimSpace(c.Args.Str("cwd")) == "" {
-			dir, err := e.makeScratch(c.Args.Str("text"), now)
+		if strings.TrimSpace(args.Str("cwd")) == "" {
+			dir, err := e.makeScratch(args.Str("text"), now)
 			if err != nil {
-				e.mu.Unlock()
 				return Reply{Error: "could not make a scratch folder: " + err.Error(), Status: 500}
 			}
 			scratch = dir
-			c.Args["cwd"] = dir
+			args["cwd"] = dir
 		}
+		c.Args = args
 	}
-	effects, err := act.Apply(t, &v, c.Args, now)
-	if err == nil && fileIn != "" {
-		t.ProjectID, t.ProjectManual = fileIn, true
-	}
-	if err != nil && scratch != "" {
+	p, err := e.apply(core.Input{Source: core.FromOwner, Kind: c.Action, Thread: c.ThreadID, Args: c.Args, CmdID: c.CommandID}, fresh)
+	if scratch != "" && (err != nil || p.replayed) {
 		os.Remove(scratch)
 	}
 	if err != nil {
-		e.mu.Unlock()
-		status := 400
-		if !errors.Is(err, core.ErrBadArgs) {
-			status = 409
-		}
-		return Reply{Error: err.Error(), Status: status}
+		return rejected(err)
 	}
-	if t.Profile == "" {
-		t.Profile = "claude"
-	}
-	e.assignProject(t)
-	t.UpdatedAt = now
-	reply := Reply{OK: true, ThreadID: t.ID, Status: 200}
-	for i := range effects {
-		// V0.33: the message id is known before the agent writes it, so the
-		// client can follow its delivery.
-		if effects[i].Kind == core.EffectSend && effects[i].MessageID == "" {
-			effects[i].MessageID = NewMessageID()
-			reply.Result = map[string]any{"messageId": effects[i].MessageID}
-		}
-	}
-	evs, err := e.st.Write(func(tx *store.Tx) error {
-		if err := tx.PutThread(t); err != nil {
-			return err
-		}
-		if err := tx.PutView(&v); err != nil {
-			return err
-		}
-		if err := tx.Append(t.ID, "command", map[string]any{"action": c.Action, "commandId": c.CommandID}, now); err != nil {
-			return err
-		}
-		return tx.PutReceipt(c.CommandID, reply, now)
-	})
-	if err != nil {
-		e.mu.Unlock()
+	e.publish(p)
+	return p.reply
+}
+
+// rejected is a command's reply for an Input that did not apply.
+func rejected(err error) Reply {
+	var r *core.Rejection
+	if !errors.As(err, &r) {
 		return Reply{Error: err.Error(), Status: 500}
 	}
-	e.threads[t.ID], e.views[t.ID] = t, &v
-	e.bump(t.ID)
-	dto := e.dto(t, now)
-	e.mu.Unlock()
-	e.Hub.Thread(dto)
-	e.Hub.Events(evs)
-	e.notify(dto)
-	if len(effects) > 0 {
-		go e.run(t.ID, effects)
+	status := map[core.RejectCode]int{core.RejectBadArgs: 400, core.RejectNotFound: 404, core.RejectRights: 403}[r.Code]
+	if status == 0 {
+		status = 409 // not now; a transient rejection gets no receipt (A4)
 	}
-	return reply
+	return Reply{Error: r.Reason, Status: status}
 }
 
-func (e *Engine) run(threadID string, effects []core.Effect) {
-	for _, ef := range effects {
-		if ef.Kind == core.EffectRun {
-			e.runEffect(threadID, ef)
-			continue
-		}
-		if e.Agents == nil {
-			continue
-		}
-		if err := e.Agents.Do(threadID, ef); err != nil {
-			log.Printf("thread %s: effect %s: %v", threadID, ef.Kind, err)
-			e.record(threadID, agent.Ev{Type: "effect.error",
-				Data: map[string]any{"kind": ef.Kind, "error": err.Error()}})
-		}
+// Apply sends one Input down the path and returns the reduce's reply. The
+// agent's tools, the agent manager and the pollers call it; Command builds
+// the owner's.
+func (e *Engine) Apply(in core.Input) (any, error) {
+	p, err := e.apply(in, nil)
+	if err != nil {
+		return nil, err
 	}
+	e.publish(p)
+	return p.res.Reply, nil
 }
 
-// EffectTimeout is the deadline of one Fyr effect (core.FyrEffects).
-func EffectTimeout(action string) time.Duration {
-	if fx := core.FyrEffects[action]; fx != nil {
-		return fx.Timeout
-	}
-	return 10 * time.Minute
+// applied is one Input that went down the path, ready to publish.
+type applied struct {
+	reply    Reply
+	res      core.Result
+	threadID string
+	dto      *DTO
+	evs      []store.Event
+	newPR    bool
+	replayed bool
 }
 
-// runEffect runs an effect from a command: the owner's own (the PR tab), or
-// the owner's answer to an agent's request (SPEC 5.10, 0.5 V0.12, V0.59).
-func (e *Engine) runEffect(threadID string, ef core.Effect) {
-	req := ef.Request
-	switch {
-	case req == nil:
-	case ef.ByOwner:
-		e.runFyr(threadID, *req, fyrStart{})
-	case strings.HasPrefix(req.Action, "change."): // V0.59: an ask Fyr does not run
-		ok, text := e.changeEffect(threadID, *req, ef.Allow)
-		e.Report(threadID, *req, ef.Allow, ok, text)
-	case !ef.Allow:
-		e.Report(threadID, *req, false, false, "The user declined it.")
-	default:
-		e.runFyr(threadID, *req, fyrStart{asked: true})
-	}
-}
-
-// prTitle names the PR of an effect for the agent.
-func prTitle(req core.EffectReq) string {
-	url, _ := req.Args["pr"].(string)
-	if _, n, found := agent.ParsePR(url); found {
-		return fmt.Sprintf("the PR #%d", n)
-	}
-	return "this thread"
-}
-
-// ownerLine starts an owner effect's result with one plain sentence.
-func ownerLine(req core.EffectReq, ok bool, text string) string {
-	url, _ := req.Args["pr"].(string)
-	pr := "the PR"
-	if _, n, found := agent.ParsePR(url); found {
-		pr = fmt.Sprintf("#%d", n)
-	}
-	var first string
-	switch {
-	case req.Action == "pr.merge" && ok:
-		method, _ := req.Args["method"].(string)
-		first = fmt.Sprintf("You merged %s (%s).", pr, method)
-	case req.Action == "pr.merge":
-		first = fmt.Sprintf("Merging %s failed.", pr)
-	case req.Action == "pr.rerunFailed" && ok:
-		first = fmt.Sprintf("You re-ran the failed checks of %s.", pr)
-	case req.Action == "pr.rerunFailed":
-		first = fmt.Sprintf("Re-running the failed checks of %s failed.", pr)
-	default:
-		return text
-	}
-	if strings.TrimSpace(text) == "" {
-		return first
-	}
-	return first + "\n\n" + strings.TrimSpace(text)
-}
-
-// Report records the result of a request the agent made and tells the agent.
-func (e *Engine) Report(threadID string, req core.EffectReq, allowed, ok bool, text string) {
-	e.record(threadID, agent.Ev{Type: "effect.result",
-		Data: map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": text}})
-	status := "failed"
-	switch {
-	case ok:
-		status = "succeeded"
-	case !allowed:
-		status = "was declined by the user"
-	}
-	b, _ := json.Marshal(req.Args)
-	tool := "effect_request"
-	if _, ok := req.Args["change"]; ok {
-		tool = "change_request" // V0.59
-	}
-	e.tell(threadID, fmt.Sprintf("[Fyr] Your %s %s %s %s.\n%s", tool, req.Action, string(b), status, text))
-}
-
-// Observe applies a fact from an agent or a poller: fn changes a copy of the
-// thread and returns the events that record it. One observation is one write
-// and one broadcast. A thread that fn leaves as it was is not written and
-// keeps its UpdatedAt: an event alone does not move it up the list (#36).
-// fn runs under the engine's lock; it must not call the engine.
-func (e *Engine) Observe(threadID string, fn func(t *core.Thread, now time.Time) []agent.Ev) {
+// apply is the one path (decision 0020): replay the receipt, load, reduce,
+// store the records, their events, the receipt and the durable effects in
+// one transaction. fresh is the new thread of a kind that makes one. A
+// thread the reduce leaves as it was is not written and keeps its
+// UpdatedAt: an event alone does not move it up the list (#36).
+func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 	e.mu.Lock()
-	cur := e.threads[threadID]
+	defer e.mu.Unlock()
+	if in.CmdID != "" {
+		if r, done := e.replay(in.CmdID); done {
+			if r.Status == 500 {
+				return nil, errors.New(r.Error)
+			}
+			return &applied{reply: r, replayed: true}, nil
+		}
+	}
+	cur := fresh
 	if cur == nil {
-		e.mu.Unlock()
-		return
+		if cur = e.threads[in.Thread]; cur == nil {
+			return nil, &core.Rejection{Code: core.RejectNotFound, Reason: "no thread " + in.Thread}
+		}
+	}
+	in.Thread = cur.ID
+	now := e.Now()
+	t, v, res, err := core.Reduce(cur, e.views[cur.ID], in, now)
+	if err != nil {
+		return nil, err
+	}
+	k := core.Kinds[in.Kind]
+	if in.Source == core.FromOwner {
+		e.assignProject(t)
 	}
 	was, _ := json.Marshal(cur)
-	t := &core.Thread{}
-	json.Unmarshal(was, t)
-	now := e.Now()
-	hadPR := t.MainPR() != nil
-	evs := fn(t, now)
 	is, _ := json.Marshal(t)
-	changed := string(is) != string(was)
-	if !changed && len(evs) == 0 {
-		e.mu.Unlock()
-		return
-	}
-	if changed {
+	changed := fresh != nil || string(was) != string(is)
+	vwas, _ := json.Marshal(e.views[cur.ID])
+	vis, _ := json.Marshal(v)
+	viewChanged := string(vwas) != string(vis)
+	if k.Touch || (changed && !k.Untouched) {
 		t.UpdatedAt = now
+		changed = true
 	}
-	written, err := e.st.Write(func(tx *store.Tx) error {
+	p := &applied{res: res, threadID: t.ID, reply: Reply{OK: true, ThreadID: t.ID, Status: 200, Result: res.Reply}}
+	for i := range p.res.Effects {
+		ef := &p.res.Effects[i]
+		ef.ID = NewID("fx_")
+		// V0.33: the message id is known before the agent writes it, so the
+		// client can follow its delivery.
+		if ef.Kind == core.EffectSend && ef.MessageID == "" {
+			ef.MessageID = NewMessageID()
+			if res.Reply == nil {
+				p.reply.Result = map[string]any{"messageId": ef.MessageID}
+			}
+		}
+	}
+	doneFx, fromEffect := strings.CutPrefix(string(in.Source), "effect:")
+	if !changed && !viewChanged && len(res.Events) == 0 && in.CmdID == "" && !slices.ContainsFunc(p.res.Effects, core.Effect.Durable) && !fromEffect {
+		return p, nil
+	}
+	evs, err := e.st.Write(func(tx *store.Tx) error {
 		if changed {
 			if err := tx.PutThread(t); err != nil {
 				return err
 			}
 		}
-		for _, ev := range evs {
-			if err := tx.Append(threadID, ev.Type, ev.Data, now); err != nil {
+		if viewChanged {
+			if err := tx.PutView(v); err != nil {
 				return err
 			}
+		}
+		for _, ev := range res.Events {
+			if err := tx.Append(t.ID, ev.Type, ev.Data, now); err != nil {
+				return err
+			}
+		}
+		for _, ef := range p.res.Effects {
+			if ef.Durable() {
+				if err := tx.PutEffect(ef.ID, t.ID, ef, now); err != nil {
+					return err
+				}
+			}
+		}
+		if fromEffect {
+			if err := tx.EffectDone(doneFx); err != nil {
+				return err
+			}
+		}
+		if in.CmdID != "" {
+			return tx.PutReceipt(in.CmdID, p.reply, now)
 		}
 		return nil
 	})
 	if err != nil {
-		e.mu.Unlock()
-		log.Printf("observe %s: %v", threadID, err)
+		log.Printf("thread %s: %s: %v", t.ID, in.Kind, err)
+		return nil, err
+	}
+	p.evs = evs
+	if changed || viewChanged {
+		p.newPR = cur.MainPR() == nil && t.MainPR() != nil
+		e.threads[t.ID], e.views[t.ID] = t, v
+		e.bump(t.ID)
+		d := e.dto(t, now)
+		p.dto = &d
+	}
+	return p, nil
+}
+
+// publish broadcasts what apply stored, then starts its effects. Call it
+// without e.mu held.
+func (e *Engine) publish(p *applied) {
+	if p.replayed {
 		return
 	}
-	if !changed {
-		e.mu.Unlock()
-		e.Hub.Events(written)
-		return
+	if p.dto != nil {
+		e.Hub.Thread(*p.dto)
 	}
-	e.threads[threadID] = t
-	e.bump(threadID)
-	dto := e.dto(t, now)
-	e.mu.Unlock()
-	e.Hub.Thread(dto)
-	e.Hub.Events(written)
-	e.notify(dto)
-	if !hadPR && t.MainPR() != nil && e.OnPR != nil {
-		e.OnPR(threadID)
+	e.Hub.Events(p.evs)
+	if p.dto != nil {
+		e.notify(*p.dto)
 	}
+	if p.newPR && e.OnPR != nil {
+		e.OnPR(p.threadID)
+	}
+	e.start(p.threadID, p.res.Effects)
 }
 
 // record appends events to a thread without changing it.
-func (e *Engine) record(threadID string, evs ...agent.Ev) {
-	e.Observe(threadID, func(*core.Thread, time.Time) []agent.Ev { return evs })
+func (e *Engine) record(threadID string, evs ...core.Event) {
+	e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindRecord, Thread: threadID, Args: evs})
 }
 
 // replay returns the stored reply of a command id that already ran (I7),
@@ -654,7 +511,7 @@ func (e *Engine) Thread(id string) (core.Thread, bool) {
 	if t == nil {
 		return core.Thread{}, false
 	}
-	return *clone(t), true
+	return *core.CloneThread(t), true
 }
 
 // DTO is a thread as clients see it (docs/API-v0.md).
@@ -732,7 +589,7 @@ func (e *Engine) Snapshot() []DTO {
 	now := e.Now()
 	out := make([]DTO, 0, len(e.threads))
 	for _, t := range e.threads {
-		out = append(out, e.build(clone(t), now))
+		out = append(out, e.build(core.CloneThread(t), now))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
 	return out
@@ -778,7 +635,7 @@ func (e *Engine) Tick() {
 	for id, t := range e.threads {
 		if core.Compute(t, e.view(id), now).State != e.last[id] || quiet[t.ProjectID] {
 			e.bump(id)
-			changed = append(changed, e.dto(clone(t), now))
+			changed = append(changed, e.dto(core.CloneThread(t), now))
 		}
 	}
 	e.mu.Unlock()

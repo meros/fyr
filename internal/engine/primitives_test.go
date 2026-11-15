@@ -11,6 +11,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -61,7 +62,7 @@ func TestObserveEventOnlyKeepsUpdatedAt(t *testing.T) {
 	before, _ := e.Thread(id)
 	*now = now.Add(time.Hour)
 	ch := e.Hub.Subscribe()
-	e.Observe(id, func(*core.Thread, time.Time) []agent.Ev {
+	coretest.Patch(e, id, func(*core.Thread, time.Time) []agent.Ev {
 		return []agent.Ev{{Type: "effect.result", Data: map[string]any{"ok": true}}}
 	})
 	after, _ := e.Thread(id)
@@ -72,7 +73,7 @@ func TestObserveEventOnlyKeepsUpdatedAt(t *testing.T) {
 	if len(got["event"]) != 1 || len(got["thread"]) != 0 {
 		t.Fatalf("frames: %d events, %d threads", len(got["event"]), len(got["thread"]))
 	}
-	e.Observe(id, func(t *core.Thread, _ time.Time) []agent.Ev { t.Summary = "moved"; return nil })
+	coretest.Patch(e, id, func(t *core.Thread, _ time.Time) []agent.Ev { t.Summary = "moved"; return nil })
 	if th, _ := e.Thread(id); !th.UpdatedAt.Equal(*now) {
 		t.Fatalf("a change did not move UpdatedAt: %v", th.UpdatedAt)
 	}

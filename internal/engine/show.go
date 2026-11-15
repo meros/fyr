@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/mcp"
 )
@@ -56,7 +56,7 @@ table{border-collapse:collapse}td,th{border:1px solid var(--line);padding:4px 8p
 }
 
 func (e *Engine) addPreview(thread string, data map[string]any) {
-	e.record(thread, agent.Ev{Type: "preview", Data: data})
+	e.record(thread, core.Event{Type: "preview", Data: data})
 }
 
 func (e *Engine) showTool() mcp.Tool {

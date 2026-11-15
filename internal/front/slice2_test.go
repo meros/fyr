@@ -16,6 +16,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/server"
@@ -109,7 +110,7 @@ func create(t *testing.T, base, host, text string) string {
 }
 
 func ask(h *host, id, q string) {
-	h.eng.Observe(id, func(th *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.eng, id, func(th *core.Thread, now time.Time) []agent.Ev {
 		core.DecisionOpened(th, core.Decision{ID: "d1", Kind: "ask", CreatedAt: now, Questions: []core.Question{{Question: q}}})
 		return nil
 	})

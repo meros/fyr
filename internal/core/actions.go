@@ -16,6 +16,9 @@ func (a Args) Str(k string) string { s, _ := a[k].(string); return s }
 // Effect is work an Action asks the host to do after its state change is
 // stored. Apply never performs effects itself, so it stays pure.
 type Effect struct {
+	// ID names the effect for its runner and its result (effect:<id>); the
+	// engine sets it when it stores the reduce that returned it.
+	ID     string     `json:"id,omitempty"`
 	Kind   EffectKind `json:"kind"`
 	Text   string     `json:"text,omitempty"`
 	Images []Image    `json:"images,omitempty"`
@@ -38,6 +41,28 @@ type Effect struct {
 	ByOwner bool `json:"byOwner,omitempty"`
 	// MessageID names the message of a send, or the one to cancel (V0.33).
 	MessageID string `json:"messageId,omitempty"`
+	// Script is what EffectScript runs; Cwd is where EffectThread starts.
+	Script *Script `json:"script,omitempty"`
+	Cwd    string  `json:"cwd,omitempty"`
+	// Project files the thread EffectThread starts.
+	Project string `json:"project,omitempty"`
+	// Press is the owner's press this effect runs, when it is one: its
+	// result ends the action's run.
+	Press *Press `json:"press,omitempty"`
+}
+
+// Script is an exact command: argv in dir, within a time limit.
+type Script struct {
+	Argv       []string `json:"argv"`
+	Dir        string   `json:"dir,omitempty"`
+	TimeoutSec int      `json:"timeoutSec,omitempty"`
+}
+
+// Press is an action the owner pressed: where, and what it was.
+type Press struct {
+	On     string     `json:"on"`
+	Title  string     `json:"title"`
+	Action ActionSpec `json:"action"`
 }
 
 // Image is a pasted image, base64 encoded, sent to the agent as a content block.
@@ -144,6 +169,10 @@ func sendAction(name, label string) *Action {
 				if t.Title == "" {
 					t.Title = TitleFrom(text)
 				}
+				// V0.42: the engine checked that the project exists.
+				if pid := a.Str("projectId"); pid != "" {
+					t.ProjectID, t.ProjectManual = pid, true
+				}
 			}
 			revive(t, v, now)
 			return []Effect{{Kind: EffectSend, Text: text, Images: imgs, Attachments: atts, From: a.Str("from")}}, nil
@@ -164,11 +193,35 @@ func Ordered() []*Action {
 	return out
 }
 
+// register adds an owner command: to the Registry (the list clients show)
+// and as an Input kind only the owner sends (decision 0020).
 func register(a *Action) {
 	if a.Available == nil {
 		a.Available = always
 	}
 	Registry[a.Name] = a
+	RegisterKind(&InputKind{Name: a.Name, From: ownerOnly, Available: a.Available, Touch: true,
+		Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
+			args := mapArgs(in)
+			effs, err := a.Apply(r.T, r.V, args, now)
+			if err != nil {
+				return Result{}, err
+			}
+			if r.T.Profile == "" {
+				r.T.Profile = "claude"
+			}
+			res := Result{Events: []Event{{"command", map[string]any{"action": a.Name, "commandId": in.CmdID}}}}
+			for _, ef := range effs {
+				// The owner's answer to an agent's request (5.10) settles here,
+				// or becomes the Fyr effect it approved.
+				if ef.Kind == EffectRun && ef.Request != nil && !ef.ByOwner {
+					answerEffect(r.T, &res, *ef.Request, ef.Allow, now)
+					continue
+				}
+				res.Effects = append(res.Effects, ef)
+			}
+			return res, nil
+		}})
 }
 
 func init() {

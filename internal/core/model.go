@@ -175,6 +175,9 @@ type Decision struct {
 
 // EffectReq is an effect the agent asked Fyr to run (SPEC 5.10, V0.12).
 type EffectReq struct {
+	// ID is the effect that runs it, set by the runner; a result reported
+	// later (a deploy) names it.
+	ID     string         `json:"id,omitempty"`
 	Action string         `json:"action"`
 	Args   map[string]any `json:"args"`
 	Reason string         `json:"reason,omitempty"`

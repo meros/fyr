@@ -152,10 +152,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 	var notes []string
 	fail := func(err error) {
 		log.Printf("thread %s: handover to %s: %v", threadID, e.Profile, err)
-		m.host.Observe(threadID, func(t *core.Thread, _ time.Time) []Ev {
-			t.Handover = nil
-			return []Ev{{"effect.error", map[string]any{"kind": "handover", "error": err.Error()}}}
-		})
+		m.observe(threadID, core.KindHandoverFailed, err.Error())
 	}
 	done := func(rung, sid, path string, first string) {
 		data := map[string]any{"from": t.Profile, "to": e.Profile, "model": model, "rung": rung}
@@ -165,11 +162,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 		if len(notes) > 0 {
 			data["note"] = strings.Join(notes, "; ")
 		}
-		m.host.Observe(threadID, func(t *core.Thread, _ time.Time) []Ev {
-			t.Profile, t.Model, t.SessionID, t.Handover = e.Profile, model, sid, nil
-			t.Failure = nil
-			return []Ev{{"handover", data}}
-		})
+		m.observe(threadID, core.KindHandoverDone, core.HandoverDoneArgs{Profile: e.Profile, Model: model, SessionID: sid, Data: data})
 		m.mu.Lock()
 		s := m.sessions[threadID]
 		m.mu.Unlock()
