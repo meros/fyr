@@ -1244,6 +1244,16 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.setModel":
         put(t, { model: String(args.model ?? t.model) });
         break;
+      case "change.end": {
+        // V0.72: the owner ends a change; its actions go.
+        const c = (t.changes ?? []).find((x) => x.id === args.change || x.key === args.change);
+        if (!c) return { ok: false, error: `no change ${String(args.change)}` };
+        if (c.phase === "abandoned" || c.phase === "reverted") return { ok: false, error: `"${c.title}" is already ${c.phase}` };
+        const phase = args.phase === "reverted" ? "reverted" : "abandoned";
+        const label = String(args.reason ?? "").trim() || undefined;
+        put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, phase, phaseBy: "owner" as const, label, offers: [], updatedAt: new Date(clock()).toISOString() } : x)) });
+        break;
+      }
       case "thread.dismissPR":
         if (!t.pr || t.pr.state === "OPEN") return { ok: false, error: "The PR is still open" };
         put(t, { pr: null });

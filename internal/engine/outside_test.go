@@ -153,3 +153,33 @@ func TestT3AdoptCommand(t *testing.T) {
 		t.Fatalf("one command adopted %d times", calls)
 	}
 }
+
+// V0.72: a PR that GitHub says does not exist, and a change the owner ended,
+// are no longer polled.
+func TestEndedPRIsNotPolled(t *testing.T) {
+	e, _, _ := bare(t)
+	r := e.Command(api.Cmd{CommandID: "c1", Action: "thread.create", Args: core.Args{"cwd": t.TempDir(), "text": "hi"}})
+	if !r.OK {
+		t.Fatalf("create: %+v", r)
+	}
+	id := r.ThreadID
+	gone, mine := "https://github.com/acme/app/pull/88", "https://github.com/acme/app/pull/89"
+	w := PRWatch{E: e}
+	w.Observe(id, core.PR{URL: gone, Repo: "acme/app", Number: 88, State: "OPEN"})
+	w.Observe(id, core.PR{URL: mine, Repo: "acme/app", Number: 89, State: "OPEN"})
+	if s := w.Snapshot(); len(s) != 2 {
+		t.Fatalf("snapshot %+v", s)
+	}
+	now := e.Now()
+	w.Observe(id, core.PR{URL: gone, Repo: "acme/app", Number: 88, State: core.PRMissing, CheckedAt: &now})
+	if s := w.Snapshot(); len(s) != 1 || s[0].URL != mine {
+		t.Fatalf("a missing PR is still polled: %+v", s)
+	}
+	r = e.Command(api.Cmd{CommandID: "c2", Action: core.KindChangeEnd, ThreadID: id, Args: core.Args{"change": "pr:acme/app#89", "reason": "not mine"}})
+	if !r.OK {
+		t.Fatalf("end: %+v", r)
+	}
+	if s := w.Snapshot(); len(s) != 0 {
+		t.Fatalf("an ended change is still polled: %+v", s)
+	}
+}

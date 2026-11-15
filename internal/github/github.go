@@ -91,6 +91,23 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	return p, failed, nil
 }
 
+// Missing reports an error by which GitHub answered that the PR or its
+// repository does not exist (V0.72): GraphQL's "Could not resolve to a
+// Repository" or "... to a PullRequest", or HTTP 404. A network error, a
+// rate limit, a 5xx or a failed login is not.
+func Missing(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "Could not resolve to a Repository") || strings.Contains(s, "Could not resolve to a PullRequest") || strings.Contains(s, "HTTP 404")
+}
+
+// MissingAfter is how long after GitHub first said a PR does not exist a
+// second answer confirms it (V0.72): one poll later, so a PR GitHub has
+// not finished making is not ended by a kick right after it opened.
+const MissingAfter = time.Minute
+
 // Merge merges a PR with gh (the pr.merge effect).
 func Merge(ctx context.Context, gh Runner, url, method string) (string, error) {
 	canon, ok := core.CanonicalPR(url)
@@ -119,6 +136,10 @@ type Poller struct {
 	Src      Source
 	Interval time.Duration
 	notes    map[string]noteCache // V0.66 (7): by PR URL
+	// Now is the clock (tests); nil is time.Now.
+	Now func() time.Time
+	// missing is when GitHub first said a PR does not exist (V0.72), by URL.
+	missing map[string]time.Time
 
 	// kick is made once, by whichever of Kick and Run comes first, so a
 	// kick before Run waits for it and no goroutine writes the field
@@ -178,10 +199,32 @@ func (p *Poller) poll(ctx context.Context, t PRThread) {
 	c, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	pr, failed, err := fetch(c, p.Gh, t.URL)
-	if err != nil {
-		log.Printf("pr %s: %v", t.URL, err)
+	if Missing(err) {
+		now := time.Now()
+		if p.Now != nil {
+			now = p.Now()
+		}
+		first, seen := p.missing[t.URL]
+		if !seen {
+			if p.missing == nil {
+				p.missing = map[string]time.Time{}
+			}
+			p.missing[t.URL] = now
+		}
+		if !seen || now.Sub(first) < MissingAfter {
+			log.Printf("pr %s: %v", t.URL, err)
+			return
+		}
+		delete(p.missing, t.URL)
+		repo, n, _ := core.ParsePR(t.URL)
+		p.Src.Observe(t.ID, core.PR{URL: t.URL, Repo: repo, Number: n, State: core.PRMissing, Checks: core.ChecksNone, CheckedAt: &now})
 		return
 	}
+	if err != nil {
+		log.Printf("pr %s: %v", t.URL, err) // transient: nothing changes
+		return
+	}
+	delete(p.missing, t.URL)
 	if pr.State == "OPEN" && pr.Checks == core.ChecksFail && pr.Head != "" {
 		pr.Annotations = p.annotations(c, t.URL, pr, failed)
 	} else {
