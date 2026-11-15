@@ -308,6 +308,12 @@ export interface Change {
   runs?: OfferRun[];
   /** V0.66: the failed checks' annotations while the PR is open. The deploy watch is a Rule of the thread (#46). */
   annotations?: CiAnnotation[];
+  /** #35, decision 0019: where its git facts are read */
+  workspace?: { repo?: string; path?: string; branch?: string; base?: string; madeByFyr?: boolean };
+  /** #35: the host record of the same branch this thread's change follows */
+  observed?: string;
+  /** #35: set on a host record (an observed branch): the threads that show it. It is one change on the board. */
+  threads?: string[];
   createdAt: string;
   updatedAt: string;
 }
