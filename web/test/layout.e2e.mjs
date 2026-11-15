@@ -341,6 +341,14 @@ const MEASURE = `(() => {
         right: Math.max(0, ...[...el.querySelectorAll('*')].map(e => e.getBoundingClientRect().right)),
         add: ar ? { top: ar.top, bottom: ar.bottom } : null };
     })(),
+    // Content that paints outside its box: an element whose overflow is visible while its height is capped
+    // (a max-height, or a flex item shrunk below its content). The rows then draw over the sections below.
+    // Up to 8 px is allowed: .dlb enlarges its touch target with -6 px margins on purpose.
+    spills: [...document.querySelectorAll('.m-app *')].filter((e) => {
+      const cs = getComputedStyle(e);
+      if (cs.overflowY !== 'visible' || cs.display === 'inline' || cs.display === 'contents' || e.clientHeight === 0) return false;
+      return e.scrollHeight - e.clientHeight > 8;
+    }).map((e) => e.tagName.toLowerCase() + '.' + [...e.classList].join('.') + ' ' + e.clientHeight + '<' + e.scrollHeight),
     dlg: rect('.dlg'),
     dlgButton: (() => { const b = document.querySelector('.dlg .df .btn.p'); if (!b) return null; const r = b.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: r.height, text: b.textContent }; })(),
     dlgRows: [...document.querySelectorAll('.dlg .prv-m')].map(e => e.getBoundingClientRect().height),
@@ -511,6 +519,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     }
     if (m.dlg) check(m.dlg.top >= m.top + INSETS.top - 0.5, `${ctx}: the dialog starts above the top inset (${m.dlg.top.toFixed(1)})`);
   }
+  check(m.spills.length === 0, `${ctx}: content paints outside its box ${JSON.stringify(m.spills.slice(0, 5))}`);
   check(m.pageOverflow <= 0, `${ctx}: the page scrolls sideways by ${m.pageOverflow} px`);
   if (ctxWantsChips(ctx)) check(m.chipCount >= 2 && !!m.chips && !!m.camera, `${ctx}: expected 2 uploaded chips and the Camera button (chips ${m.chipCount})`);
   if (m.sheet) check(m.sheet.bottom <= visBottom + 0.5, `${ctx}: sheet runs below the viewport`);
