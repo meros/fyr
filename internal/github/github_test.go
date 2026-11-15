@@ -3,7 +3,11 @@ package github
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/meros/fyr/internal/core"
 )
 
 func fakeGh(out string) Runner {
@@ -86,3 +90,39 @@ func TestGhPRArgsEndFlags(t *testing.T) {
 	}
 }
 
+
+// review 2026-11-15: a Kick before Run starts is kept, not dropped (and
+// Kick never reads a channel field Run is still writing).
+type laterSrc struct {
+	mu       sync.Mutex
+	calls    int
+	observed chan string
+}
+
+func (l *laterSrc) Snapshot() []PRThread {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.calls++
+	if l.calls == 1 { // Run's first pollAll sees no PR yet
+		return nil
+	}
+	return []PRThread{{ID: "t1", URL: "https://github.com/a/b/pull/9"}}
+}
+func (l *laterSrc) Observe(id string, _ core.PR) { l.observed <- id }
+
+func TestKickBeforeRunIsKept(t *testing.T) {
+	src := &laterSrc{observed: make(chan string, 4)}
+	p := &Poller{Gh: fakeGh(`{"state":"OPEN"}`), Src: src, Interval: time.Hour}
+	p.Kick("t1")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go p.Run(ctx)
+	select {
+	case id := <-src.observed:
+		if id != "t1" {
+			t.Fatal(id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the kick before Run was dropped")
+	}
+}
