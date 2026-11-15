@@ -175,6 +175,12 @@ type PR struct {
 	Conflict  bool       `json:"conflict,omitempty"`
 	Branch    string     `json:"branch,omitempty"` // the head branch (V0.59)
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
+	// V0.66: the head and merge commits, and the failed checks' annotations
+	// (carried to the change, not stored on the PR).
+	Head        string       `json:"head,omitempty"`
+	MergeSHA    string       `json:"mergeSha,omitempty"`
+	MergedAt    *time.Time   `json:"mergedAt,omitempty"`
+	Annotations []Annotation `json:"-"`
 }
 
 // Blocking reports why the PR needs the user, or "" when it does not.

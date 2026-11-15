@@ -29,6 +29,7 @@ import { defaultTab, liveViewOf, showsDecision } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
+import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
 import { changeChip } from "./offers.ts";
 import { prChip } from "./pr.ts";
@@ -214,7 +215,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {tab === "changes" && (
         <div class="chtab">
           <ChangeList t={t} onRun={p.onRun} />
-          <ChangesView threadId={t.id} />
+          <CiNotesScope changes={t.changes}><ChangesView threadId={t.id} /></CiNotesScope>
         </div>
       )}
       {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}

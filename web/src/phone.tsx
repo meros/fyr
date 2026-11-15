@@ -27,6 +27,7 @@ import { defaultTab, liveViewOf } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
 import { rowSummary } from "./view.ts";
 import { ChangesView } from "./changes-ui.tsx";
+import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
 import { colorVar, localProject, newThreadFolder, projectChip, projectDefaults, projectName, projectOf, startProject } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -854,7 +855,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
       ) : p.tab === "changes" ? (
         <>
           <ChangeList t={t} onRun={(a, args) => p.actions.run(t.id, a, args)} />
-          <ChangesView threadId={t.id} />
+          <CiNotesScope changes={t.changes}><ChangesView threadId={t.id} /></CiNotesScope>
         </>
       ) : p.tab === "pr" ? (
         <PrTab t={t} now={p.now} phone onSend={(text) => p.actions.send(t.id, { text })} onDismiss={() => p.actions.dismissPR(t.id)} onChanges={() => setTab("changes")} />
