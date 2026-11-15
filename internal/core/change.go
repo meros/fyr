@@ -488,9 +488,7 @@ func addRevision(c *Change, r Revision, now time.Time) bool {
 	}
 	r.At = now
 	c.Revisions = append(c.Revisions, r)
-	if len(c.Revisions) > maxRevisions {
-		c.Revisions = c.Revisions[len(c.Revisions)-maxRevisions:]
-	}
+	c.Revisions = keepLast(c.Revisions, maxRevisions)
 	return true
 }
 

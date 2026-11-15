@@ -122,7 +122,7 @@ func resultMsg(text string) cli.Msg {
 // stubHost is a host with one thread per id, all in one folder.
 type stubHost struct{ cwd string }
 
-func (stubHost) Observe(string, func(*core.Thread, time.Time), ...Ev) {}
+func (stubHost) Observe(string, func(*core.Thread, time.Time) []Ev) {}
 func (h stubHost) Thread(id string) (core.Thread, bool) {
 	return core.Thread{ID: id, Profile: "stub", Cwd: h.cwd, SessionID: "s1"}, true
 }

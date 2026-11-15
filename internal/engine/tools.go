@@ -46,9 +46,10 @@ func (e *Engine) Tools(s *mcp.Server) {
 				return "", errors.New("not a GitHub pull request URL")
 			}
 			repo, n, _ := agent.ParsePR(url)
-			e.Observe(th, func(t *core.Thread, now time.Time) {
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 				core.PRObserved(t, core.PR{URL: url, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}, now)
-			}, agent.Ev{Type: "pr.linked", Data: map[string]any{"url": url}})
+				return []agent.Ev{{Type: "pr.linked", Data: map[string]any{"url": url}}}
+			})
 			return "Linked " + url + ". Fyr watches its checks and reviews.", nil
 		}})
 
@@ -72,10 +73,11 @@ func (e *Engine) Tools(s *mcp.Server) {
 			reason, _ := a["reason"].(string)
 			d := core.Decision{ID: NewID("d_"), Kind: core.DecisionEffect, Assignee: core.Owner,
 				Effect: &core.EffectReq{Action: action, Args: args, Reason: reason}}
-			e.Observe(th, func(t *core.Thread, now time.Time) {
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 				d.CreatedAt = now
 				core.DecisionOpened(t, d)
-			}, agent.Ev{Type: "decision.opened", Data: map[string]any{"decision": d}})
+				return []agent.Ev{{Type: "decision.opened", Data: map[string]any{"decision": d}}}
+			})
 			return "Requested. The user decides in Fyr; the result arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not perform this action another way.", nil
 		}})
 
@@ -94,14 +96,14 @@ func (e *Engine) Tools(s *mcp.Server) {
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			cond, _ := a["condition"].(string)
 			var err error
-			e.Observe(th, func(t *core.Thread, now time.Time) {
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 				switch cond {
 				case "done":
 					t.SettleWhenDone = true
 				case "merged":
 					if t.PR == nil || t.PR.State != "OPEN" {
 						err = errors.New("this thread has no open PR; link one with pr_link first")
-						return
+						return nil
 					}
 					t.SettleWhenMerged = true
 				case "change":
@@ -112,7 +114,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 					}
 					if c == nil {
 						err = noChange(a)
-						return
+						return nil
 					}
 					t.SettleWhen = &core.SettleWhen{Change: c.ID, Phase: phase}
 					cond = fmt.Sprintf("%q is %s", c.Title, phase)
@@ -120,6 +122,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 				default:
 					err = fmt.Errorf("unknown condition %q", cond)
 				}
+				return nil
 			})
 			if err != nil {
 				return "", err

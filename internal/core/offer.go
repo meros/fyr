@@ -237,18 +237,14 @@ func (h Holder) Available(a Offer) string {
 // its view is a failure line only; it moves ActivityAt so the owner sees it.
 func (h Holder) Started(a Offer, now time.Time) {
 	*h.Runs = append(*h.Runs, OfferRun{On: h.On, Action: a.ID, Label: a.Label, By: ByOwner, At: now, Running: a.Run == RunScript || a.Run == RunFyr})
-	if len(*h.Runs) > maxRuns {
-		*h.Runs = (*h.Runs)[len(*h.Runs)-maxRuns:]
-	}
+	*h.Runs = keepLast(*h.Runs, maxRuns)
 	if h.Change != nil {
 		h.Change.UpdatedAt = now
 	}
 }
 
 func (h Holder) Ended(t *Thread, a Offer, ok bool, exit int, output string, now time.Time) {
-	if len(output) > 4096 {
-		output = "…" + output[len(output)-4096:]
-	}
+	output = TruncTail(output, 4096)
 	runs := *h.Runs
 	for i := len(runs) - 1; i >= 0; i-- {
 		if runs[i].Action == a.ID && h.owns(runs[i]) && runs[i].Running {

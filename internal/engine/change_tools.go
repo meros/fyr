@@ -41,9 +41,10 @@ func (e *Engine) changeTools(s *mcp.Server) {
 		Schema:      obj(map[string]any{"reason": str("Why they are still current, in a few words.")}, "reason"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			n := 0
-			e.Observe(th, func(t *core.Thread, now time.Time) {
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 				n = core.OpenAgentChanges(t)
 				core.ChangesChecked(t, now)
+				return nil
 			})
 			if n == 0 {
 				return "You have no open changes; nothing to keep current.", nil
@@ -253,11 +254,12 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			}
 			d := core.Decision{ID: NewID("d_"), Kind: core.DecisionEffect, Assignee: core.Owner,
 				Effect: &core.EffectReq{Action: action, Args: args, Reason: sArg(a, "reason")}}
-			e.Observe(th, func(t *core.Thread, now time.Time) {
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 				d.CreatedAt = now
 				core.DecisionOpened(t, d)
 				core.ChangesChecked(t, now) // V0.62
-			}, agent.Ev{Type: "decision.opened", Data: map[string]any{"decision": d}})
+				return []agent.Ev{{Type: "decision.opened", Data: map[string]any{"decision": d}}}
+			})
 			return fmt.Sprintf("Asked the owner to %s %q. The answer arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not do it another way meanwhile.", ask, c.Title), nil
 		}})
 
@@ -310,29 +312,23 @@ func (e *Engine) changeTools(s *mcp.Server) {
 }
 
 // changeObserve runs fn on the thread under the engine's lock, keeps a copy
-// of the change it returns in out, and adds a `change` event (V0.59 (5))
-// that the conversation shows as one line.
+// of the change it returns in out, and records it with a `change` event
+// (V0.59 (5)) that the conversation shows as one line: one observation.
 func (e *Engine) changeObserve(th, op string, fn func(t *core.Thread, now time.Time) (*core.Change, error), out *core.Change) error {
 	if _, ok := e.Thread(th); !ok {
 		return errors.New("no such thread")
 	}
 	var err error
-	e.Observe(th, func(t *core.Thread, now time.Time) {
+	e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
 		var c *core.Change
-		c, err = fn(t, now)
-		if err == nil {
-			core.ChangesChecked(t, now) // V0.62
+		if c, err = fn(t, now); err != nil {
+			return nil
 		}
-		if c != nil {
-			*out = *c
-		}
+		core.ChangesChecked(t, now) // V0.62
+		*out = *c
+		return []agent.Ev{{Type: "change", Data: map[string]any{"op": op, "change": map[string]any{"id": out.ID, "title": out.Title, "kind": out.Kind, "phase": out.Phase, "phaseBy": out.PhaseBy, "label": out.Label}}}}
 	})
-	if err != nil {
-		return err
-	}
-	ev := agent.Ev{Type: "change", Data: map[string]any{"op": op, "change": map[string]any{"id": out.ID, "title": out.Title, "kind": out.Kind, "phase": out.Phase, "phaseBy": out.PhaseBy, "label": out.Label}}}
-	e.Observe(th, func(*core.Thread, time.Time) {}, ev)
-	return nil
+	return err
 }
 
 // changeEffect finishes a change_request ask that Fyr does not run itself
@@ -346,11 +342,12 @@ func (e *Engine) changeEffect(threadID string, req core.EffectReq, allowed bool)
 	}
 	if ask == AskReview || ask == AskApprove {
 		id, _ := req.Args["change"].(string)
-		e.Observe(threadID, func(t *core.Thread, now time.Time) {
+		e.Observe(threadID, func(t *core.Thread, now time.Time) []agent.Ev {
 			if c := core.FindChange(t, id); c != nil {
 				no := ""
 				core.UpdateChange(t, c, core.ChangeUpdate{Conditions: []core.Condition{{Type: core.CondApproval, Status: core.CondOK, Reason: "the owner said yes"}}, Needs: &no}, core.ByOwner, now)
 			}
+			return nil
 		})
 	}
 	return true, fmt.Sprintf("The owner said yes to %s %q.", ask, title)

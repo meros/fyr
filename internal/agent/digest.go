@@ -123,18 +123,10 @@ func resultText(c any) string {
 func firstLine(s string) string {
 	for _, l := range strings.Split(s, "\n") {
 		if l = strings.TrimSpace(l); l != "" {
-			return clip(l, 160)
+			return core.TruncHead(l, 160)
 		}
 	}
 	return ""
-}
-
-func clip(s string, n int) string {
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n-1]) + "…"
-	}
-	return s
 }
 
 // taskFromSystem reads one task message of the CLI (SPEC 0.5 V0.16). event
@@ -150,7 +142,7 @@ func taskFromSystem(m map[string]any) (k core.Task, event string, ok bool) {
 		k.Description, k.Type, k.Status = str(m, "description"), str(m, "task_type"), core.TaskRunning
 		return k, "started", true
 	case "task_progress":
-		k.Activity = clip(firstLine(str(m, "description")), 120)
+		k.Activity = core.TruncHead(firstLine(str(m, "description")), 120)
 		if k.Activity == "" {
 			k.Activity = str(m, "last_tool_name")
 		}
@@ -171,7 +163,7 @@ func taskFromSystem(m map[string]any) (k core.Task, event string, ok bool) {
 		}
 		return k, "ended", true
 	case "task_notification":
-		k.Status, k.Summary = core.TaskStatus(str(m, "status")), clip(firstLine(str(m, "summary")), 200)
+		k.Status, k.Summary = core.TaskStatus(str(m, "status")), core.TruncHead(firstLine(str(m, "summary")), 200)
 		if k.Status == "" {
 			k.Status = core.TaskCompleted
 		}
@@ -203,7 +195,7 @@ func taskList(m map[string]any) []core.Task {
 func activityLabel(name string, in map[string]any) string {
 	str := func(k string) string { s, _ := in[k].(string); return strings.TrimSpace(s) }
 	if d := str("description"); d != "" && (name == "Bash" || name == "Task" || name == "Agent") {
-		return clip(firstLine(d), 80)
+		return core.TruncHead(firstLine(d), 80)
 	}
 	base := func(p string) string {
 		if i := strings.LastIndex(p, "/"); i >= 0 {
@@ -215,7 +207,7 @@ func activityLabel(name string, in map[string]any) string {
 	case "ToolSearch", "TodoWrite", "ListMcpResourcesTool", "ReadMcpResourceTool":
 		return ""
 	case "Bash":
-		return "Running " + clip(firstLine(str("command")), 70)
+		return "Running " + core.TruncHead(firstLine(str("command")), 70)
 	case "Read":
 		return "Reading " + base(str("file_path"))
 	case "Edit", "MultiEdit", "NotebookEdit":
@@ -223,11 +215,11 @@ func activityLabel(name string, in map[string]any) string {
 	case "Write":
 		return "Writing " + base(str("file_path"))
 	case "Grep":
-		return "Searching for " + clip(str("pattern"), 60)
+		return "Searching for " + core.TruncHead(str("pattern"), 60)
 	case "Glob":
-		return "Listing " + clip(str("pattern"), 60)
+		return "Listing " + core.TruncHead(str("pattern"), 60)
 	case "WebSearch":
-		return "Searching the web for " + clip(str("query"), 60)
+		return "Searching the web for " + core.TruncHead(str("query"), 60)
 	case "WebFetch":
 		u := str("url")
 		if i := strings.Index(u, "://"); i >= 0 {
@@ -238,14 +230,14 @@ func activityLabel(name string, in map[string]any) string {
 		}
 		return "Reading " + u
 	case "Task", "Agent":
-		return clip(firstLine(str("prompt")), 80)
+		return core.TruncHead(firstLine(str("prompt")), 80)
 	}
 	if strings.HasPrefix(name, "mcp__") {
 		parts := strings.SplitN(strings.TrimPrefix(name, "mcp__"), "__", 2)
 		if len(parts) == 2 {
 			if parts[0] == "fyr" && parts[1] == "show" {
 				if t := str("title"); t != "" {
-					return "Showing " + clip(t, 60)
+					return "Showing " + core.TruncHead(t, 60)
 				}
 				return "Showing a preview"
 			}
