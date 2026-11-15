@@ -72,7 +72,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 					return nil, err
 				}
 				made = m
-				if pr != "" && t.PR == nil {
+				if pr != "" && t.MainPR() == nil {
 					// The first PR is also the thread's main PR (the PR tab, the merge gate).
 					core.PRObserved(t, core.PR{URL: pr, Repo: prRepo, Number: prN, State: "OPEN", Checks: core.ChecksPending, Branch: x.Branch}, now)
 				}
@@ -222,8 +222,8 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			action := "change." + string(ask)
 			if fx := core.FyrEffectFor(ask); fx != nil { // merge, deploy: Fyr runs them
 				action = fx.ID
-				if _, ok := args["pr"].(string); !ok && fx.OnPR && c.PR() != "" {
-					args["pr"] = c.PR()
+				if _, ok := args["pr"].(string); !ok && fx.OnPR && c.PRURL() != "" {
+					args["pr"] = c.PRURL()
 				}
 				if err := e.canRequest(th, fx, args); err != nil {
 					return "", err

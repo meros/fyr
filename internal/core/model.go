@@ -42,16 +42,17 @@ type Thread struct {
 	Tasks     []Task     `json:"tasks,omitempty"` // subagents and background tasks (V0.16)
 	Failure   *Failure   `json:"failure,omitempty"`
 	Decisions []Decision `json:"decisions,omitempty"`
-	PR        *PR        `json:"pr,omitempty"`
-	// Changes are the thread's change records (V0.59, decision 0018).
+	// Changes are the thread's change records (V0.59, decision 0018). A PR
+	// lives on its code change (#32).
 	Changes []Change `json:"changes,omitempty"`
+	// MainChange is the id of the code change whose PR the PR tab shows and
+	// the PR commands act on (#32); "" when the thread has no main PR.
+	MainChange string `json:"mainChange,omitempty"`
 	// ChangesCheckedAt is the last change tool call (V0.62).
 	ChangesCheckedAt *time.Time `json:"changesCheckedAt,omitempty"`
 	// Actions are the thread's own actions and their last runs (V0.60, #31).
 	// A change and the live view hold their own.
 	Actions
-	// DismissedPRs are PR URLs the owner put away (V0.36); they never attach again.
-	DismissedPRs []string `json:"dismissedPRs,omitempty"`
 	// Outbox holds the messages the agent has not read yet (V0.33).
 	Outbox []OutMsg `json:"outbox,omitempty"`
 	// LiveView is the flag: the agent keeps a pinned live view (V0.37).
@@ -61,11 +62,11 @@ type Thread struct {
 	// Handover is set while the thread moves to another profile (V0.45).
 	Handover *Handover `json:"handover,omitempty"`
 
-	SettledAt        *time.Time `json:"settledAt,omitempty"`
-	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
-	SettleWhenDone   bool       `json:"settleWhenDone,omitempty"`
-	SettleWhenMerged bool       `json:"settleWhenMerged,omitempty"`
-	// SettleWhen settles when a change reaches a phase (V0.59 (7)).
+	SettledAt      *time.Time `json:"settledAt,omitempty"`
+	ArchivedAt     *time.Time `json:"archivedAt,omitempty"`
+	SettleWhenDone bool       `json:"settleWhenDone,omitempty"`
+	// SettleWhen settles when a change reaches a phase (V0.59 (7)); "settle
+	// when merged" is the main change reaching landed (#32).
 	SettleWhen *SettleWhen `json:"settleWhen,omitempty"`
 
 	Source string `json:"source"`           // "fyr" or "t3"
@@ -185,7 +186,8 @@ type Option struct {
 	Description string `json:"description,omitempty"`
 }
 
-// PR is the pull request a thread serves.
+// PR is a pull request snapshot as GitHub reported it. It lives on its code
+// change (Change.PR, #32).
 type PR struct {
 	URL       string     `json:"url"`
 	Repo      string     `json:"repo"`
@@ -205,20 +207,22 @@ type PR struct {
 	Annotations []Annotation `json:"-"`
 }
 
-// Blocking reports why the PR needs the user, or "" when it does not.
-func (p *PR) Blocking() string {
-	if p == nil || p.State != "OPEN" {
-		return ""
+// Main is the thread's main code change, the one with the PR the PR tab
+// shows (#32), or nil.
+func (t *Thread) Main() *Change {
+	c := FindChange(t, t.MainChange)
+	if c == nil || c.PR == nil || c.Dismissed {
+		return nil
 	}
-	switch {
-	case p.Checks == ChecksFail:
-		return "CI failed"
-	case p.Conflict:
-		return "Merge conflict"
-	case p.Review == "CHANGES_REQUESTED":
-		return "Changes requested"
+	return c
+}
+
+// MainPR is the main change's PR snapshot, or nil.
+func (t *Thread) MainPR() *PR {
+	if c := t.Main(); c != nil {
+		return c.PR
 	}
-	return ""
+	return nil
 }
 
 // SetOutbox records a message's delivery state: "sent" and "queued" keep it
