@@ -261,9 +261,14 @@ export function undoKindOf(action: string): UndoKind | null {
   return null;
 }
 
+/** The toast's verb for an undoable action. */
+export function undoVerb(kind: UndoKind): string {
+  return kind === "settle" ? "Settled" : kind === "archive" ? "Archived" : "Snoozed";
+}
+
 export function recordUndo(kind: UndoKind, threadIds: string[], now: number, label?: string): UndoEntry {
   const n = threadIds.length;
-  const verb = kind === "settle" ? "Settled" : kind === "archive" ? "Archived" : "Snoozed";
+  const verb = undoVerb(kind);
   return { kind, threadIds, at: now, label: label ?? (n === 1 ? verb : `${verb} ${n} threads`) };
 }
 

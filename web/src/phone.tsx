@@ -8,7 +8,7 @@ import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts";
-import { SECTIONS, isAvailable, matchesQuery, sections, unavailableReason, type SectionKey, type Sections } from "./store.ts";
+import { SECTIONS, isAvailable, matchesQuery, sections, unavailableReason, undoVerb, type Conn, type SectionKey, type Sections, type UndoKind } from "./store.ts";
 import { quietNote } from "./quiet.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
@@ -42,7 +42,6 @@ import { groupTasks, liveLine, workingLine } from "./tasks.ts";
 import { COLLAPSED_BY_DEFAULT, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
-import type { ConnState } from "./api.ts";
 import type { NewThreadArgs } from "./dialogs.tsx";
 import { QuotaList } from "./quota-ui.tsx";
 import { hostForProject, hostTag, offlineLine, profilesOn, type HostInfo } from "./hosts.ts";
@@ -165,7 +164,7 @@ export interface PhoneProps {
   sec: Sections;
   now: number;
   host: string;
-  conn: ConnState;
+  conn: Conn;
   thread: ThreadDTO | undefined;
   events: FyrEvent[] | undefined;
   onEarlier?: () => void;
@@ -195,7 +194,7 @@ export interface PhoneProps {
   /** V0.50: the Settings body (the app builds it with its Api) */
   settings?: ComponentChildren;
   toast: { text: string; undo: boolean; error?: boolean } | null;
-  undoKind: "settle" | "archive" | "snooze" | null;
+  undoKind: UndoKind | null;
   undoIds: string[];
   undoLive: boolean;
   actions: PhoneActions;
@@ -294,7 +293,7 @@ function MToast(p: PhoneProps & { bottomBar: boolean }) {
   if (!p.toast) return null;
   let text = p.toast.text;
   if (p.toast.undo && p.undoKind && p.undoIds.length === 1) {
-    const verb = p.undoKind === "settle" ? "Settled" : p.undoKind === "archive" ? "Archived" : "Snoozed";
+    const verb = undoVerb(p.undoKind);
     const title = p.threads[p.undoIds[0]]?.title;
     if (title) text = `${verb} “${title}”`;
   }
