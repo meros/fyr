@@ -1,6 +1,5 @@
 // Rail and inbox list, as design/directions/04-rail.html draws them.
 
-import { describeEffect } from "./effects.ts";
 import type { ComponentChildren, Ref } from "preact";
 import type { Profile, Project, ThreadDTO } from "./types.ts";
 import { QuotaRail } from "./quota-ui.tsx";
@@ -8,12 +7,12 @@ import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, StartedBy, ThreadProject } from "./project-ui.tsx";
 import { colorVar, pickerOrder } from "./projects.ts";
 import { SECTIONS, type SectionKey, type Sections } from "./store.ts";
-import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
+import { StateIcon, stateClass } from "./icons.tsx";
+import { rowMeta, rowState } from "./rows.ts";
 import { count, relTime, untilLabel, whenLabel } from "./format.ts";
 import { prLabel } from "./thread.tsx";
 import { changeChip } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
-import { rowSummary } from "./view.ts";
 import { quietNote } from "./quiet.ts";
 import type { ConnState } from "./api.ts";
 
@@ -96,41 +95,6 @@ export function isOpen(k: SectionKey, open: Partial<Record<SectionKey, boolean>>
   return open[k] ?? !COLLAPSED_BY_DEFAULT.includes(k);
 }
 
-function needsMeta(t: ThreadDTO): string {
-  const st = t.attention.state;
-  const d = t.decisions?.[0];
-  if (st === "asking" && d) {
-    // The asker is named on the card (U25); the row keeps the question, as the design draws it.
-    const who = "";
-    if (d.kind === "ask") return d.questions?.[0]?.question ?? "";
-    if (d.kind === "approval") {
-      const cmd = typeof d.input?.command === "string" ? ` ${d.input.command}` : "";
-      return `${who}Allow ${d.tool ?? "tool"}${cmd}`;
-    }
-    if (d.kind === "effect") {
-      const x = describeEffect(d, t.pr);
-      return `${who}${x.title}${x.why ? " · " + x.why : ""}`;
-    }
-  }
-  if (st === "failed") return `${t.failure?.message ?? ""} · r to retry`;
-  if (st === "working") return t.activity ?? "";
-  return rowSummary(t);
-}
-
-function stateWord(t: ThreadDTO): string {
-  const st = t.attention.state;
-  if (st === "asking") {
-    const d = t.decisions?.[0];
-    if (d?.kind === "ask") {
-      const n = d.questions?.length ?? 1;
-      return n === 1 ? "1 question" : `${n} questions`;
-    }
-    if (d?.kind === "approval") return "Approval";
-    if (d?.kind === "effect") return describeEffect(d, t.pr).label;
-  }
-  return t.attention.reason || stateLabel(st);
-}
-
 function PrBadge({ t, short }: { t: ThreadDTO; short?: boolean }) {
   const c = changeChip(t, short); // V0.59 (8): a change that is not a PR, when no PR is open
   if (c)
@@ -168,7 +132,7 @@ function NeedsRow({ t, now, sel, picked, onClick }: RowProps) {
       </span>
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, now)}</span>
       <span class="m ell">
-        <b class={stateClass(st)}>{stateWord(t)}</b> · {t.parent && <><StartedBy parentId={t.parent} /> · </>}<ThreadProject t={t} /> · {needsMeta(t)}
+        <b class={stateClass(st)}>{rowState(t)}</b> · {t.parent && <><StartedBy parentId={t.parent} /> · </>}<ThreadProject t={t} /> · {rowMeta(t, { keys: true })}
       </span>
       <PrBadge t={t} />
     </div>
