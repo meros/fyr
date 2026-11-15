@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -90,7 +91,6 @@ func TestGhPRArgsEndFlags(t *testing.T) {
 	}
 }
 
-
 // review 2026-11-15: a Kick before Run starts is kept, not dropped (and
 // Kick never reads a channel field Run is still writing).
 type laterSrc struct {
@@ -124,5 +124,80 @@ func TestKickBeforeRunIsKept(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the kick before Run was dropped")
+	}
+}
+
+// V0.72 (1): GitHub's "does not exist" answer is an observation, reported
+// once a second answer a poll later confirms it; a transient error (network,
+// rate limit, 5xx, auth) reports nothing.
+type observeSrc struct{ got []core.PR }
+
+func (o *observeSrc) Snapshot() []PRThread         { return nil }
+func (o *observeSrc) Observe(_ string, pr core.PR) { o.got = append(o.got, pr) }
+
+func TestPollReportsAMissingPR(t *testing.T) {
+	url := "https://github.com/acme/app/pull/88"
+	gone := func(_ context.Context, args ...string) ([]byte, error) {
+		return nil, errors.New("gh pr view: exit status 1: GraphQL: Could not resolve to a Repository with the name 'acme/app'. (repository)")
+	}
+	at := time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)
+	src := &observeSrc{}
+	p := &Poller{Gh: gone, Src: src, Now: func() time.Time { return at }}
+	th := PRThread{ID: "t1", URL: url}
+	p.poll(context.Background(), th)
+	at = at.Add(10 * time.Second) // a kick right after: not yet a second answer
+	p.poll(context.Background(), th)
+	if len(src.got) != 0 {
+		t.Fatalf("reported after one answer: %+v", src.got)
+	}
+	at = at.Add(2 * time.Minute)
+	p.poll(context.Background(), th)
+	if len(src.got) != 1 || src.got[0].State != core.PRMissing || src.got[0].URL != url || src.got[0].Number != 88 || src.got[0].CheckedAt == nil {
+		t.Fatalf("reported %+v", src.got)
+	}
+	for _, msg := range []string{
+		"gh pr view: exit status 1: GraphQL: Could not resolve to a PullRequest with the number of 88. (repository.pullRequest)",
+		"gh api: exit status 1: HTTP 404: Not Found (https://api.github.com/repos/acme/app/pulls/88)",
+	} {
+		if !Missing(errors.New(msg)) {
+			t.Errorf("not read as missing: %s", msg)
+		}
+	}
+	for _, msg := range []string{
+		"gh pr view: exit status 1: error connecting to api.github.com",
+		"gh pr view: exit status 1: GraphQL: API rate limit exceeded for user ID 1.",
+		"gh pr view: exit status 1: HTTP 502: Bad Gateway",
+		"gh pr view: exit status 4: HTTP 401: Bad credentials",
+		"gh pr view: context deadline exceeded",
+	} {
+		if Missing(errors.New(msg)) {
+			t.Errorf("transient read as missing: %s", msg)
+		}
+	}
+	flaky := &observeSrc{}
+	p = &Poller{Gh: func(context.Context, ...string) ([]byte, error) { return nil, errors.New("HTTP 502: Bad Gateway") }, Src: flaky, Now: func() time.Time { return at }}
+	for range 3 {
+		at = at.Add(2 * time.Minute)
+		p.poll(context.Background(), th)
+	}
+	if len(flaky.got) != 0 {
+		t.Fatalf("a transient error was reported: %+v", flaky.got)
+	}
+	// An answer in between starts the count again.
+	src = &observeSrc{}
+	n := 0
+	p = &Poller{Gh: func(ctx context.Context, args ...string) ([]byte, error) {
+		n++
+		if n == 2 {
+			return []byte(`{"state":"OPEN"}`), nil
+		}
+		return gone(ctx, args...)
+	}, Src: src, Now: func() time.Time { return at }}
+	for range 3 {
+		at = at.Add(2 * time.Minute)
+		p.poll(context.Background(), th)
+	}
+	if len(src.got) != 1 || src.got[0].State != "OPEN" {
+		t.Fatalf("an answer in between did not reset the count: %+v", src.got)
 	}
 }

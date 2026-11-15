@@ -361,6 +361,17 @@ func init() {
 			return nil, nil
 		}})
 
+	register(&Action{Name: KindChangeEnd, Label: "End this change",
+		Available: func(t *Thread, _ *View, _ time.Time) string {
+			for i := range t.Changes {
+				if !t.Changes[i].Phase.Ended() {
+					return ""
+				}
+			}
+			return "No change to end"
+		},
+		Apply: endChange})
+
 	register(&Action{Name: "thread.dismiss", Label: "Dismiss failure",
 		Available: func(t *Thread, _ *View, _ time.Time) string {
 			if t.Failure == nil {

@@ -1029,5 +1029,13 @@ button.ptag{padding:0}
 .cfm-in{font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
 .cfm-copy{height:30px;margin:6px 6px 0 0;padding:0 10px;border-radius:7px;font:500 12px/16px var(--ui);color:var(--harbour)}
 .cfm-copy:hover{background:var(--raised)}
+.cfm-pick{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.cfm-pick .cfm-in{flex-basis:100%}
+.cfm-opt{height:30px;padding:0 12px;border:1px solid var(--line);border-radius:7px;font:500 13px/18px var(--ui);color:var(--ink)}
+.cfm-opt.on{border-color:var(--harbour);background:var(--sunken);color:var(--harbour)}
+.cfm-why{display:flex;flex-direction:column;gap:4px}
+.cfm-why input{height:32px;padding:0 10px;border:1px solid var(--line);border-radius:7px;background:var(--raised);min-width:0}
+.chend{align-self:flex-start;padding:0;font:400 12px/16px var(--ui);color:var(--ink-muted);text-decoration:underline;text-underline-offset:2px}
+.chend:hover{color:var(--ink)}
 .btn.p.danger,.m-bt.p.danger{background:var(--signal-ink);border-color:var(--signal-ink);color:var(--raised)}
 .btn.p.danger kbd{color:var(--raised)}

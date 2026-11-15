@@ -4,7 +4,7 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
-import { changeList, lastRun, offerDetail, openConditions, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
+import { canEnd, changeList, endArgs, endChangeAsk, lastRun, offerDetail, openConditions, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
 import { press } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
@@ -80,6 +80,12 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
   const r = rail(c);
   const conds = openConditions(c);
   const rev = c.revisions?.at(-1);
+  const ask = useAsk();
+  // V0.72: the owner ends any change that has not ended, through Fyr's own confirmation.
+  const end = async () => {
+    const a = endChangeAsk(c);
+    if (await ask(a)) onRun("change.end", endArgs(c, a));
+  };
   return (
     <article class={`chc${r.end ? " end" : ""}${conds.some((k) => k.status === "fail") ? " fail" : ""}`}>
       {from}
@@ -131,6 +137,11 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
         </div>
       )}
       <OfferBar on={c.id} offers={c.offers} runs={c.runs} change={c} cwd={cwd} onRun={onRun} />
+      {canEnd(c) && (
+        <button class="chend" onClick={() => void end()}>
+          End this change
+        </button>
+      )}
     </article>
   );
 }

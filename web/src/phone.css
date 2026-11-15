@@ -400,4 +400,7 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-sheet.cfm .cfm-code code{font-size:14px;line-height:20px}
 .m-sheet.cfm .cfm-in{font-size:13px;line-height:18px}
 .m-sheet.cfm .cfm-copy{height:44px;margin:0;padding:0 14px;font-size:14px}
+.m-sheet.cfm .cfm-opt,.m-sheet.cfm .cfm-why input{height:44px;font-size:15px}
+.m-sheet.cfm .cfm-opt{flex:1}
+.m-app .chend{min-height:44px}
 .cfm-f{display:flex;gap:8px;padding:8px 16px 0;flex:none}.cfm-f .m-bt{flex:1}
