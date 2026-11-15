@@ -44,14 +44,14 @@ func init() {
 			if m != "squash" && m != "merge" && m != "rebase" {
 				return nil, fmt.Errorf("%w: method must be squash, merge or rebase", ErrBadArgs)
 			}
-			return []Effect{{Kind: "effect", Allow: true, ByOwner: true,
+			return []Effect{{Kind: EffectRun, Allow: true, ByOwner: true,
 				Request: &EffectReq{Action: "pr.merge", Args: map[string]any{"pr": t.PR.URL, "method": m}}}}, nil
 		}})
 
 	register(&Action{Name: "pr.rerunFailed", Label: "Re-run failed checks",
 		Available: openPR,
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
-			return []Effect{{Kind: "effect", Allow: true, ByOwner: true,
+			return []Effect{{Kind: EffectRun, Allow: true, ByOwner: true,
 				Request: &EffectReq{Action: "pr.rerunFailed", Args: map[string]any{"pr": t.PR.URL}}}}, nil
 		}})
 }

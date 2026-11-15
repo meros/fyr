@@ -229,7 +229,7 @@ func (e *Engine) Load() error {
 // hasLiveDecision is true when a Decision needs the agent process.
 func hasLiveDecision(t *core.Thread) bool {
 	for _, d := range t.Decisions {
-		if d.Kind != "effect" {
+		if d.Kind != core.DecisionEffect {
 			return true
 		}
 	}
@@ -239,7 +239,7 @@ func hasLiveDecision(t *core.Thread) bool {
 func effectDecisions(t *core.Thread) []core.Decision {
 	var out []core.Decision
 	for _, d := range t.Decisions {
-		if d.Kind == "effect" {
+		if d.Kind == core.DecisionEffect {
 			out = append(out, d)
 		}
 	}
@@ -426,7 +426,7 @@ func (e *Engine) Command(c Cmd) Reply {
 	for i := range effects {
 		// V0.33: the message id is known before the agent writes it, so the
 		// client can follow its delivery.
-		if effects[i].Kind == "send" && effects[i].MessageID == "" {
+		if effects[i].Kind == core.EffectSend && effects[i].MessageID == "" {
 			effects[i].MessageID = NewMessageID()
 			reply.Result = map[string]any{"messageId": effects[i].MessageID}
 		}
@@ -462,7 +462,7 @@ func (e *Engine) Command(c Cmd) Reply {
 
 func (e *Engine) run(threadID string, effects []core.Effect) {
 	for _, ef := range effects {
-		if ef.Kind == "effect" {
+		if ef.Kind == core.EffectRun {
 			e.runEffect(threadID, ef)
 			continue
 		}
@@ -592,7 +592,7 @@ func (e *Engine) Report(threadID string, req core.EffectReq, allowed, ok bool, t
 		tool = "change_request" // V0.59
 	}
 	msg := fmt.Sprintf("[Fyr] Your %s %s %s %s.\n%s", tool, req.Action, string(b), status, text)
-	if err := e.Agents.Do(threadID, core.Effect{Kind: "send", Text: msg}); err != nil {
+	if err := e.Agents.Do(threadID, core.Effect{Kind: core.EffectSend, Text: msg}); err != nil {
 		log.Printf("thread %s: deliver effect result: %v", threadID, err)
 	}
 }
