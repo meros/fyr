@@ -34,6 +34,9 @@ interface RailProps {
   profiles?: Profile[];
   /** V0.50: the gear opens Settings */
   onSettings?(): void;
+  /** V0.64: open the Changes board; needs is how many changes need the owner */
+  onChanges?(): void;
+  changesNeeds?: number;
 }
 
 export function Rail(p: RailProps) {
@@ -64,6 +67,13 @@ export function Rail(p: RailProps) {
       )}
       {p.profiles && <QuotaRail profiles={p.profiles} />}
       {p.extra && <div class="railx">{p.extra}</div>}
+      {p.onChanges && (
+        <button class="ri rchg" title="Changes across threads" aria-label={`Changes${p.changesNeeds ? `, ${p.changesNeeds} need you` : ""}`} onClick={p.onChanges}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: LINE_ICONS["layout-dashboard"] }} />
+          <span class="l">Changes</span>
+          {!!p.changesNeeds && <span class="rb">{p.changesNeeds}</span>}
+        </button>
+      )}
       {p.onSettings && (
         <button class="ri rgear" title="Settings (providers, notifications)" aria-label="Settings" onClick={p.onSettings}>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: LINE_ICONS.settings }} />

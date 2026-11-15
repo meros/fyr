@@ -192,6 +192,7 @@ const SCREENS = [
   // SPEC 0.5 V0.50: Settings → Providers from the phone menu: the providers, Found on this host with Import, Add
   // provider; every target 44 px and inside the safe areas.
   { name: "settings providers", url: "?mock=rail&settings" },
+  { name: "board of changes", url: "?mock=1&changes" },
   // V0.54: a front with two hosts, one offline: rows name the host; the offline thread says so under its chips.
   { name: "inbox with two hosts", url: "?mock=rail&hosts=2" },
   { name: "thread on an offline host", url: "?mock=rail&hosts=2&open=t_triage", field: ".m-cmp .in" },

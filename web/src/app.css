@@ -962,3 +962,24 @@ button.ptag{padding:0}
 .offrun.ok{color:var(--calm)}.offrun.fail{color:var(--signal-ink)}
 .offrl{padding:0;text-align:left;color:inherit}
 .offout{margin:4px 0 0;max-height:200px;overflow:auto;padding:6px 8px;border-radius:6px;background:var(--sunken);font:400 11px/15px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+/* V0.64: the Changes board */
+.board{display:flex;flex-direction:column;gap:10px;min-width:0}
+.bdf{display:flex;flex-direction:column;gap:8px}
+.bdchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bdchips .chip{cursor:pointer}
+.bdchips .chip.on{border-color:var(--pc,var(--harbour));color:var(--pc,var(--harbour))}
+.bdend{display:inline-flex;gap:6px;align-items:center;font:400 12px/16px var(--ui);color:var(--ink-muted);margin-left:auto}
+.bdcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;align-items:start}
+.bdcol{display:flex;flex-direction:column;gap:8px;min-width:0}
+.bdcol h3{margin:0;font:600 13px/18px var(--ui);display:flex;gap:6px;align-items:center}
+.bdcol.needs h3{color:var(--signal-ink)}
+.bdn{font:400 12px/16px var(--mono);color:var(--ink-muted)}
+.bdsum{grid-column:1/-1;font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.bdgroup{display:flex;flex-direction:column;gap:6px;border-left:3px solid var(--line);padding-left:8px}
+.bdgh{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.bdfrom{display:flex;align-items:center;gap:6px;padding:0;min-width:0;font:400 12px/16px var(--ui);color:var(--ink-muted);text-align:left}
+.bdfrom:hover{color:var(--ink)}
+.bdempty{padding:24px 0;font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.board.phone .bdcols{grid-template-columns:1fr}
+.rchg{position:relative}
+.rchg .rb{position:absolute;top:-2px;right:2px;min-width:16px;height:16px;border-radius:8px;background:var(--signal-ink);color:var(--bg,#fff);font:600 10px/16px var(--ui);text-align:center;padding:0 4px}

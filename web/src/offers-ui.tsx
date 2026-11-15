@@ -2,6 +2,7 @@
 // change, the thread, the live view (its page runs them through the bridge).
 
 import { useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, ThreadDTO } from "./types.ts";
 import { changeList, lastRun, offerDetail, openConditions, phaseText, pressArgs, rail, shownOffers, unavailable } from "./offers.ts";
 
@@ -71,12 +72,15 @@ export function ChangeList({ t, onRun }: { t: ThreadDTO; onRun: Run }) {
   );
 }
 
-function ChangeCard({ c, cwd, onRun }: { c: Change; cwd?: string; onRun: Run }) {
+/** One change: rail, conditions, targets, proof and its actions. `from` is a line above the title (the board names
+ *  the thread there). */
+export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; onRun: Run; from?: ComponentChildren }) {
   const r = rail(c);
   const conds = openConditions(c);
   const rev = c.revisions?.at(-1);
   return (
     <article class={`chc${r.end ? " end" : ""}${conds.some((k) => k.status === "fail") ? " fail" : ""}`}>
+      {from}
       <header class="chh">
         <span class="chk" title={c.kind} aria-hidden="true">
           {KIND[c.kind] ?? "•"}

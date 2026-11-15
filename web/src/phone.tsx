@@ -21,6 +21,8 @@ import { Filmstrip } from "./preview-ui.tsx";
 import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
 import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
 import { changeChip } from "./offers.ts";
+import { ChangesBoard } from "./board-ui.tsx";
+import { needsCount } from "./board.ts";
 import { defaultTab, liveViewOf } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
 import { rowSummary } from "./view.ts";
@@ -252,6 +254,14 @@ export function PhoneApp(p: PhoneProps) {
       )}
       {s.name === "new" && <MNew {...p} />}
       {s.name === "project" && <MProject {...p} id={s.id} />}
+      {s.name === "changes" && (
+        <div class="m-screen m-changes">
+          <MHeader onBack={p.back} title="Changes" />
+          <div class="m-nbody">
+            <ChangesBoard phone threads={p.threads} projects={p.projects} onRun={(id, a, args) => p.actions.run(id, a, args)} onOpenThread={(id) => p.go({ screen: { name: "thread", id }, sheet: null })} />
+          </div>
+        </div>
+      )}
       {s.name === "settings" && (
         <div class="m-screen m-settings">
           <MHeader onBack={p.back} title="Settings" />
@@ -1399,6 +1409,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
     return (
       <MSheet onClose={close} label="More">
         <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.setSelecting(true))} />
+        <Item label="Changes" sub="Every change across threads, by stage" right={needsCount(p.threads) ? `${needsCount(p.threads)} need you` : undefined} onClick={() => p.replace({ screen: { name: "changes" }, sheet: null })} />
         <Item label="Settings" sub="Providers, notifications, appearance" onClick={() => p.replace({ screen: { name: "settings" }, sheet: null })} />
         <Item label="Filter by project…" right={p.projectFilter ? p.projects.find((x) => x.id === p.projectFilter)?.name : "all"} onClick={() => p.replace({ ...p.nav, sheet: { kind: "filter" } })} />
         <Item label="Adopt from T3" onClick={() => p.replace({ ...p.nav, sheet: { kind: "adopt" } })} />
