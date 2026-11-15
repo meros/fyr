@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/core"
 )
 
 type Label struct {
@@ -132,8 +132,8 @@ func CheckState(typename, status, conclusion, state string) string {
 
 // FetchDetail reads one PR with gh pr view (without review threads).
 func FetchDetail(ctx context.Context, gh Runner, url string) (Detail, error) {
-	repo, n, ok := agent.ParsePR(url)
-	canon, _ := agent.CanonicalPR(url)
+	repo, n, ok := core.ParsePR(url)
+	canon, _ := core.CanonicalPR(url)
 	if !ok {
 		return Detail{}, fmt.Errorf("not a PR URL: %s", url)
 	}
@@ -385,8 +385,8 @@ func FailedRuns(runs []Run, sha string) []Run {
 
 // RerunFailed reruns the failed jobs of each failed workflow run of the PR's head commit.
 func RerunFailed(ctx context.Context, gh Runner, url string) (string, error) {
-	repo, _, ok := agent.ParsePR(url)
-	canon, _ := agent.CanonicalPR(url)
+	repo, _, ok := core.ParsePR(url)
+	canon, _ := core.CanonicalPR(url)
 	if !ok {
 		return "", fmt.Errorf("not a PR URL: %s", url)
 	}

@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/proc"
 )
@@ -36,8 +35,8 @@ func Fetch(ctx context.Context, gh Runner, url string) (core.PR, error) {
 
 // fetch also returns the number of failed checks.
 func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
-	repo, n, ok := agent.ParsePR(url)
-	canon, _ := agent.CanonicalPR(url)
+	repo, n, ok := core.ParsePR(url)
+	canon, _ := core.CanonicalPR(url)
 	if !ok {
 		return core.PR{}, 0, fmt.Errorf("not a PR URL: %s", url)
 	}
@@ -94,7 +93,7 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 
 // Merge merges a PR with gh (the pr.merge effect).
 func Merge(ctx context.Context, gh Runner, url, method string) (string, error) {
-	canon, ok := agent.CanonicalPR(url)
+	canon, ok := core.CanonicalPR(url)
 	if !ok {
 		return "", fmt.Errorf("not a PR URL: %s", url)
 	}

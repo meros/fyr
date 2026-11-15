@@ -3,6 +3,7 @@ package claudecli
 import (
 	"regexp"
 	"strings"
+	"github.com/meros/fyr/internal/hostfs"
 )
 
 // SPEC 0.5 V0.53: the CLI's own login, run by Fyr. Two kinds:
@@ -45,7 +46,7 @@ func LoginEnv(base []string, configDir string) []string {
 		}
 	}
 	if configDir != "" {
-		out = append(out, "CLAUDE_CONFIG_DIR="+expandHome(configDir))
+		out = append(out, "CLAUDE_CONFIG_DIR="+hostfs.ExpandHome(configDir, ""))
 	}
 	return append(out, "BROWSER=true", "TERM=xterm-256color", "NO_COLOR=1")
 }

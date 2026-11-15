@@ -262,7 +262,7 @@ func TestHandoverClearedOnRestart(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("hello")
 	h.wait(id, "done", state(core.Done))
-	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
 		t.Handover = &core.Handover{To: "b", At: now}
 		return nil
 	})

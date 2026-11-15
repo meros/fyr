@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -340,11 +341,7 @@ func checkFolder(dir string) (string, error) {
 	if p == "" {
 		return "", nil
 	}
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			p = home + p[1:]
-		}
-	}
+	p = hostfs.ExpandHome(p, "")
 	if !filepath.IsAbs(p) {
 		return "", fmt.Errorf("the folder must be a full path, like /home/you/src/app")
 	}
