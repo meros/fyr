@@ -1,9 +1,9 @@
 package engine
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -335,262 +335,164 @@ func checkFolder(dir string) (string, error) {
 	return p, nil
 }
 
-// projectCommand handles project.create and project.update (SPEC 0.5
-// V0.23, V0.55).
-func (e *Engine) projectCommand(c api.Cmd) api.Reply {
-	if c.Action == "project.delete" {
-		return e.projectDelete(c)
+// applyProject is the one path of a project Input (#48): replay the
+// receipt, reduce the project, file every thread by the new folders
+// (project.matched) and send the reduce's Follow to their threads, store it
+// all with the receipt in one transaction, then broadcast the project, the
+// threads that moved and the threads that show its name or quiet hours. A
+// folder must be a full path to a folder on this host (V0.23, V0.55); its
+// clean path is the Input's.
+func (e *Engine) applyProject(in core.Input) api.Reply {
+	a := maps.Clone(in.Args.(core.Args))
+	if _, set := a["folder"]; set {
+		folder, err := checkFolder(a.Str("folder"))
+		if err != nil {
+			return api.Reply{Error: err.Error(), Status: 400}
+		}
+		a["folder"] = folder
 	}
-	bad := func(msg string) api.Reply { return api.Reply{Error: msg, Status: 400} }
-	_, folderSet := c.Args["folder"]
-	folder, err := checkFolder(c.Args.Str("folder"))
-	if err != nil {
-		return bad(err.Error())
-	}
+	in.Args = a
 	e.mu.Lock()
-	if r, done := e.replay(c.CommandID); done {
+	if r, done := e.replay(in.CmdID); done {
 		e.mu.Unlock()
 		return r
 	}
-	var p *core.Project
-	// renamed: the threads of the project show another name; a new
-	// project's threads (the one it was made from) are all new to it.
-	renamed := true
-	switch c.Action {
-	case "project.create":
-		name := strings.TrimSpace(c.Args.Str("name"))
-		if name == "" && folder != "" {
-			name = filepath.Base(folder)
-		}
-		if name == "" {
-			e.mu.Unlock()
-			return bad("a project needs a name or a folder")
-		}
-		p = &core.Project{ID: NewID("p_"), Name: name, Folder: folder, Color: core.DefaultColor(name), Icon: core.Icon{Kind: "monogram"}, CreatedAt: e.Now(), Edited: true}
-		// V0.30: file the thread it was made from, by hand, in the same write.
-		if tid := c.Args.Str("threadId"); tid != "" {
-			t := e.threads[tid]
-			if t == nil {
-				e.mu.Unlock()
-				return api.Reply{Error: "no thread " + tid, Status: 404}
-			}
-			t.ProjectID, t.ProjectManual = p.ID, true
-		}
-		e.projects[p.ID] = p
-	case "project.update":
-		cur := e.projects[c.Args.Str("id")]
-		if cur == nil {
-			e.mu.Unlock()
-			return api.Reply{Error: "no project " + c.Args.Str("id"), Status: 404}
-		}
-		cp := *cur
-		p = &cp
-		renamed = false
-		if folderSet {
-			p.Folder = folder
-		}
-		if n := strings.TrimSpace(c.Args.Str("name")); n != "" {
-			renamed, p.Name = n != cur.Name, n
-		}
-		if col := c.Args.Str("color"); col != "" {
-			if !core.ValidColor(col) {
-				e.mu.Unlock()
-				return bad(fmt.Sprintf("color must be one of %v", core.Palette))
-			}
-			p.Color = col
-		}
-		if raw, ok := c.Args["icon"]; ok {
-			var ic core.Icon
-			b, _ := json.Marshal(raw)
-			json.Unmarshal(b, &ic)
-			if ic.Kind != "monogram" && ic.Kind != "emoji" && ic.Kind != "line" {
-				e.mu.Unlock()
-				return bad("icon kind must be monogram, emoji or line")
-			}
-			p.Icon = ic
-		}
-		if v, ok := c.Args["profile"].(string); ok {
-			p.Profile = v
-		}
-		if v, ok := c.Args["model"].(string); ok {
-			p.Model = v
-		}
-		// V0.46: quiet hours, a list of windows (decision 0014
-		// addendum); null or an empty list clears them. The single
-		// object of before is read as a list of one.
-		if raw, ok := c.Args["quiet"]; ok {
-			var qs core.QuietHours
-			if raw != nil {
-				b, _ := json.Marshal(raw)
-				if err := json.Unmarshal(b, &qs); err != nil {
-					e.mu.Unlock()
-					return bad("quiet must be a list of {from, to, days?}")
-				}
-				if err := qs.Validate(); err != nil {
-					e.mu.Unlock()
-					return bad(err.Error())
-				}
-			}
-			if len(qs) == 0 {
-				qs = nil
-			}
-			p.Quiet = qs
-		}
-		p.Edited = true
-		e.projects[p.ID] = p
-	default:
-		e.mu.Unlock()
-		return bad("unknown action " + c.Action)
-	}
-	// The name and the quiet hours show on threads: refresh them.
-	var touched []api.Thread
 	now := e.Now()
-	_, quietChanged := c.Args["quiet"]
-	quietChanged = quietChanged && c.Action == "project.update"
-	if quietChanged {
-		e.quietSent[p.ID] = quietKey(e.quietUntil(p.ID, now))
+	before, after, res, err := core.ReduceProject(e.projects, &core.Project{ID: NewID("p_")}, in, now)
+	if err != nil {
+		e.mu.Unlock()
+		return rejected(err)
 	}
-	for _, t := range e.threads {
-		if t.ProjectID == p.ID && (renamed || quietChanged) {
-			e.bump(t.ID)
-			touched = append(touched, e.dto(t, now))
+	id := before
+	if id == nil {
+		id = after
+	}
+	old := e.projects
+	e.projects = maps.Clone(old)
+	if after != nil {
+		e.projects[after.ID] = after
+	} else {
+		delete(e.projects, id.ID)
+	}
+	var ss []*staged
+	stage := func(in core.Input) error {
+		t := e.threads[in.Thread]
+		if t == nil {
+			return &core.Rejection{Code: core.RejectNotFound, Reason: "no thread " + in.Thread}
 		}
-	}
-	reply := api.Reply{OK: true, Status: 200, Result: map[string]any{"id": p.ID}}
-	_, err = e.st.Write(func(tx *store.Tx) error {
-		if err := tx.PutProject(p); err != nil {
+		s, err := e.stage(t, in, now, false)
+		if err != nil {
 			return err
 		}
-		for _, d := range touched {
-			if err := tx.PutThread(d.Thread); err != nil {
+		ss = append(ss, s)
+		return nil
+	}
+	followed := map[string]bool{}
+	for _, f := range res.Follow {
+		if err = stage(f); err != nil {
+			break
+		}
+		followed[f.Thread] = true
+	}
+	list := e.projectList()
+	for tid, t := range e.threads {
+		if err != nil {
+			break
+		}
+		if pid := refiled(t, e.projects, list); pid != t.ProjectID && !followed[tid] {
+			err = stage(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindProjectMatched, Thread: tid, Args: core.ProjectMatch{ID: pid}})
+		}
+	}
+	if err != nil {
+		e.projects = old
+		e.mu.Unlock()
+		return rejected(err)
+	}
+	reply := api.Reply{OK: true, Status: 200, Result: res.Reply}
+	if _, err := e.st.Write(func(tx *store.Tx) error {
+		if after != nil {
+			if err := tx.PutProject(after); err != nil {
+				return err
+			}
+		} else if err := tx.DeleteProject(id.ID); err != nil {
+			return err
+		}
+		for _, ev := range res.Events {
+			if err := tx.Append(id.ID, ev.Type, ev.Data, now); err != nil {
 				return err
 			}
 		}
-		return tx.PutReceipt(c.CommandID, reply, now)
-	})
-	e.mu.Unlock()
-	if err != nil {
+		for _, s := range ss {
+			if err := s.persist(tx); err != nil {
+				return err
+			}
+		}
+		return tx.PutReceipt(in.CmdID, reply, now)
+	}); err != nil {
+		e.projects = old
+		e.mu.Unlock()
 		return api.Reply{Error: err.Error(), Status: 500}
 	}
+	// The counts of the projects that took or lost threads change; the
+	// threads in it show its name and quiet hours.
+	frames := map[string]bool{id.ID: true}
+	staged := map[string]bool{}
+	for _, s := range ss {
+		e.commit(s, true)
+		staged[s.threadID] = true
+		frames[s.cur.ProjectID], frames[s.t.ProjectID] = true, true
+	}
+	if after != nil {
+		e.quietSent[after.ID] = quietKey(e.quietUntil(after.ID, now))
+	} else {
+		delete(e.quietSent, id.ID)
+	}
+	var shows []api.Thread
+	if after != nil && (before == nil || before.Name != after.Name || !sameJSON(before.Quiet, after.Quiet)) {
+		for tid, t := range e.threads {
+			if t.ProjectID == after.ID && !staged[tid] {
+				e.bump(tid)
+				shows = append(shows, e.dto(t, now))
+			}
+		}
+	}
+	e.mu.Unlock()
+	if after == nil {
+		e.Hub.Send(stream.FrameProject, map[string]any{"id": id.ID, "deleted": true}) // SPEC 0.5 V0.58
+	}
 	for _, d := range e.Projects() {
-		if d.ID == p.ID {
+		if frames[d.ID] {
 			e.Hub.Send(stream.FrameProject, d)
 		}
 	}
-	for _, d := range touched {
-		e.Hub.Send(stream.FrameThread, d)
+	for _, s := range ss {
+		e.publish(s.applied)
 	}
-	if c.Action == "project.create" || folderSet {
-		e.Rematch() // V0.55: the folders changed; threads may land here now
+	for _, d := range shows {
+		e.Hub.Send(stream.FrameThread, d)
 	}
 	return reply
 }
 
-// projectDelete removes a project (SPEC 0.5 V0.58). Its threads lose it and
-// the filed-by-hand mark, then match again, so one inside another project's
-// folder lands there. The stream gets {id, deleted: true}.
-func (e *Engine) projectDelete(c api.Cmd) api.Reply {
-	id := c.Args.Str("id")
-	e.mu.Lock()
-	if r, done := e.replay(c.CommandID); done {
-		e.mu.Unlock()
-		return r
+// refiled is the project a thread lands in after a change to the projects
+// (V0.55, V0.58): a thread whose project is gone loses it and the
+// filed-by-hand mark; a thread not filed by hand moves to the project whose
+// folder covers it, the longest first, and one that nothing covers keeps
+// its project.
+func refiled(t *core.Thread, ps map[string]*core.Project, list []*core.Project) string {
+	pid, manual := t.ProjectID, t.ProjectManual
+	if pid != "" && ps[pid] == nil {
+		pid, manual = "", false
 	}
-	if e.projects[id] == nil {
-		e.mu.Unlock()
-		return api.Reply{Error: "no project " + id, Status: 404}
-	}
-	delete(e.projects, id)
-	delete(e.quietSent, id)
-	now := e.Now()
-	var moved []*core.Thread
-	gained := map[string]bool{}
-	for _, t := range e.threads {
-		if t.ProjectID != id {
-			continue
-		}
-		t.ProjectID, t.ProjectManual = "", false
-		e.assignProject(t)
-		if t.ProjectID != "" {
-			gained[t.ProjectID] = true
-		}
-		e.bump(t.ID)
-		moved = append(moved, t)
-	}
-	dtos := make([]api.Thread, 0, len(moved))
-	for _, t := range moved {
-		dtos = append(dtos, e.dto(t, now))
-	}
-	reply := api.Reply{OK: true, Status: 200, Result: map[string]any{"id": id}}
-	_, err := e.st.Write(func(tx *store.Tx) error {
-		if err := tx.DeleteProject(id); err != nil {
-			return err
-		}
-		for _, t := range moved {
-			if err := tx.PutThread(t); err != nil {
-				return err
-			}
-		}
-		return tx.PutReceipt(c.CommandID, reply, now)
-	})
-	e.mu.Unlock()
-	if err != nil {
-		return api.Reply{Error: err.Error(), Status: 500}
-	}
-	e.Hub.Send(stream.FrameProject, map[string]any{"id": id, "deleted": true}) // SPEC 0.5 V0.58
-	for _, d := range dtos {
-		e.Hub.Send(stream.FrameThread, d)
-	}
-	// The projects that took threads have new counts.
-	for _, d := range e.Projects() {
-		if gained[d.ID] {
-			e.Hub.Send(stream.FrameProject, d)
+	if !manual {
+		if m := core.MatchFolder(list, t.Cwd); m != "" {
+			pid = m
 		}
 	}
-	return reply
+	return pid
 }
 
 func hostname() string {
 	h, _ := os.Hostname()
 	return h
-}
-
-// Rematch runs matching for every thread not filed by hand after a change
-// to a project's folder (SPEC 0.5 V0.55): a thread moves to the project
-// whose folder covers it, the longest first; a thread that nothing covers
-// keeps its project.
-func (e *Engine) Rematch() {
-	e.mu.Lock()
-	now := e.Now()
-	list := e.projectList()
-	var moved []*core.Thread
-	for _, t := range e.threads {
-		old := t.ProjectID
-		e.assignProject(t)
-		if !t.ProjectManual {
-			if id := core.MatchFolder(list, t.Cwd); id != "" {
-				t.ProjectID = id
-			}
-		}
-		if t.ProjectID != old {
-			e.bump(t.ID)
-			moved = append(moved, t)
-		}
-	}
-	var dtos []api.Thread
-	for _, t := range moved {
-		dtos = append(dtos, e.dto(t, now))
-	}
-	e.mu.Unlock()
-	e.st.Write(func(tx *store.Tx) error {
-		for _, t := range moved {
-			if err := tx.PutThread(t); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	for _, d := range dtos {
-		e.Hub.Send(stream.FrameThread, d)
-	}
 }

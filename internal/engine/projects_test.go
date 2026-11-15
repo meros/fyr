@@ -174,7 +174,7 @@ func TestProjectWithoutFolderAndManualFiling(t *testing.T) {
 		t.Fatalf("not filed: %+v", p)
 	}
 	h.cmd("thread.send", th.ThreadID, core.Args{"text": "again"})
-	h.e.Rematch()
+	h.cmd("project.update", "", core.Args{"id": pid}) // every project Input files threads again
 	h.m.StopAll()
 	h.e.st.Close()
 	st, _ := store.Open(h.db)
@@ -411,13 +411,14 @@ func TestUnfile(t *testing.T) {
 	repo := filepath.Join(h.dir, "lasso-app")
 	os.MkdirAll(repo, 0o755)
 	th := h.cmd("thread.create", "", core.Args{"cwd": repo, "text": "a"})
-	if r := h.cmd("project.create", "", core.Args{"name": "Lasso", "folder": repo}); !r.OK {
-		t.Fatalf("%+v", r)
+	pr := h.cmd("project.create", "", core.Args{"name": "Lasso", "folder": repo})
+	if !pr.OK {
+		t.Fatalf("%+v", pr)
 	}
 	if r := h.cmd("thread.setProject", th.ThreadID, core.Args{"projectId": ""}); !r.OK {
 		t.Fatalf("unfile: %+v", r)
 	}
-	h.e.Rematch()
+	h.cmd("project.update", "", core.Args{"id": pr.Result.(map[string]any)["id"]}) // every project Input files threads again
 	h.cmd("thread.send", th.ThreadID, core.Args{"text": "b"})
 	got := dtoOf(h.e, th.ThreadID)
 	if got.ProjectID != "" || got.Project != "" || !got.ProjectManual {
@@ -528,5 +529,37 @@ func TestProjectRev(t *testing.T) {
 	}
 	if after := revOf(); after <= sent {
 		t.Fatalf("a snapshot after the frame has rev %d <= %d", after, sent)
+	}
+}
+
+// #48: a project Input goes down the one path: one receipt per commandId,
+// an event on the project, and the thread it files reduced in the same step
+// as its own Input.
+func TestProjectInputOnPath(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	th := h.create("recept")
+	var ids []any
+	for range 2 {
+		r := h.cmdID("p1", "project.create", "", core.Args{"name": "Kök", "threadId": th})
+		if !r.OK {
+			t.Fatalf("%+v", r)
+		}
+		ids = append(ids, r.Result.(map[string]any)["id"])
+	}
+	if ids[0] != ids[1] || len(h.e.Projects()) != 1 {
+		t.Fatalf("one command made %d projects: %v", len(h.e.Projects()), ids)
+	}
+	pid, _ := ids[0].(string)
+	if !hasEvent(h.events(pid), "command", `"project.create"`) {
+		t.Fatal("no event on the project")
+	}
+	if !hasEvent(h.events(th), "command", `"thread.setProject"`) {
+		t.Fatal("the filed thread's Input left no event")
+	}
+	if r := h.cmd("project.update", "", core.Args{"id": "p_nope", "name": "x"}); r.OK || r.Status != 404 {
+		t.Fatalf("an unknown project: %+v", r)
+	}
+	if r := h.cmd("project.create", "", core.Args{"name": "x", "threadId": "t_nope"}); r.OK || r.Status != 404 || len(h.e.Projects()) != 1 {
+		t.Fatalf("an unknown thread: %+v, %d projects", r, len(h.e.Projects()))
 	}
 }

@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -85,6 +86,12 @@ type Action struct {
 	Available func(t *Thread, v *View, now time.Time) string `json:"-"`
 	// Apply changes t and v in place and returns the effects to run.
 	Apply func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) `json:"-"`
+	// Agent: another thread's agent may send it too (thread_send,
+	// thread_new), as an agent-source Input that names its thread in from.
+	Agent bool `json:"-"`
+	// Fields are the fields an argument writes, checked against Rights for
+	// the sender (5.2).
+	Fields map[string]Field `json:"-"`
 }
 
 var ErrBadArgs = errors.New("bad arguments")
@@ -136,7 +143,8 @@ func revive(t *Thread, v *View, now time.Time) {
 
 func sendAction(name, label string) *Action {
 	return &Action{
-		Name: name, Label: label,
+		Name: name, Label: label, Agent: true,
+		Fields: map[string]Field{"projectId": FieldThreadProject, "view": FieldThreadView, "title": FieldThreadTitle},
 		Available: func(t *Thread, v *View, now time.Time) string {
 			if r := notArchived(t, v, now); r != "" {
 				return r
@@ -197,23 +205,54 @@ func Ordered() []*Action {
 }
 
 // register adds an owner command: to the Registry (the list clients show)
-// and as an Input kind only the owner sends (decision 0020).
+// and as an Input kind the owner sends (decision 0020); an Agent command
+// also from another thread's agent. Each argument in Fields is checked
+// against Rights for the sender, and a sender that may not write the
+// owner's seenAt leaves it as it was.
 func register(a *Action) {
 	if a.Available == nil {
 		a.Available = always
 	}
 	Registry[a.Name] = a
-	RegisterKind(&InputKind{Name: a.Name, From: ownerOnly, Available: a.Available, Touch: true,
+	from := ownerOnly
+	if a.Agent {
+		from = []string{ByOwner, ByAgent}
+	}
+	RegisterKind(&InputKind{Name: a.Name, From: from, Available: a.Available, Touch: true,
 		Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
-			args := mapArgs(in)
+			by := in.Source.Principal()
+			args := maps.Clone(mapArgs(in))
+			if args == nil {
+				args = Args{}
+			}
+			for k, f := range a.Fields {
+				if _, set := args[k]; set {
+					if err := CanWrite(f, by, "", "this thread"); err != nil {
+						return Result{}, err
+					}
+				}
+			}
+			// Another thread's agent: the sending thread is the Input's, never
+			// an argument; a thread it starts is its child.
+			if by == ByAgent {
+				args["from"], args["parent"] = in.From, in.From
+			}
+			seen := r.V.SeenAt
 			effs, err := a.Apply(r.T, r.V, args, now)
 			if err != nil {
 				return Result{}, err
 			}
+			if CanWrite(FieldViewSeen, by, "", "") != nil {
+				r.V.SeenAt = seen
+			}
 			if r.T.Profile == "" {
 				r.T.Profile = "claude"
 			}
-			res := Result{Events: []Event{{"command", map[string]any{"action": a.Name, "commandId": in.CmdID}}}}
+			ev := map[string]any{"action": a.Name, "commandId": in.CmdID}
+			if by != ByOwner {
+				ev["by"], ev["from"] = by, in.From
+			}
+			res := Result{Events: []Event{{"command", ev}}}
 			for _, ef := range effs {
 				// The owner's answer to an agent's request (5.10) settles here,
 				// or becomes the Fyr effect it approved.
@@ -479,7 +518,7 @@ func init() {
 			return nil, nil
 		}})
 
-	register(&Action{Name: "thread.setProject", Label: "Move to project",
+	register(&Action{Name: "thread.setProject", Label: "Move to project", Fields: map[string]Field{"projectId": FieldThreadProject},
 		// SPEC 0.5 V0.23: the engine checks that the project exists.
 		// V0.30: "" unfiles the thread, still by hand, so matching leaves it.
 		Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
@@ -500,7 +539,7 @@ func init() {
 			return nil, nil
 		}})
 
-	register(&Action{Name: "thread.setView", Label: "Live view",
+	register(&Action{Name: "thread.setView", Label: "Live view", Fields: map[string]Field{"on": FieldThreadView},
 		// SPEC 0.5 V0.37: the agent's prompt and tools change with the next
 		// process, so the host restarts an idle one.
 		Available: notArchived,

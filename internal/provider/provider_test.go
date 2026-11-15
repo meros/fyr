@@ -171,7 +171,7 @@ func TestCutoverKeepsIDs(t *testing.T) {
 			t.Fatalf("%+v", p)
 		}
 	}
-	if rep := r.Command(cmd("provider.setKey", map[string]any{"id": "claudeTok", "key": "sk-ant-oat01-pasted-123456"})); !rep.OK {
+	if rep := r.Run(cmd("provider.setKey", map[string]any{"id": "claudeTok", "key": "sk-ant-oat01-pasted-123456"})); !rep.OK {
 		t.Fatal(rep.Error)
 	}
 	for _, d := range r.List() {
@@ -212,7 +212,7 @@ func cmd(action string, args map[string]any) api.Cmd {
 func TestKeysNeverLeave(t *testing.T) {
 	f := newFixture(t)
 	r := newReg(t, f)
-	rep := r.Command(cmd("provider.create", map[string]any{"name": "My Router", "kind": "endpoint", "baseURL": "https://openrouter.ai/api/",
+	rep := r.Run(cmd("provider.create", map[string]any{"name": "My Router", "kind": "endpoint", "baseURL": "https://openrouter.ai/api/",
 		"key": routerKey, "models": []any{"anthropic/claude-opus", "z-ai/glm"}, "modelEnv": map[string]any{"ANTHROPIC_DEFAULT_HAIKU_MODEL": "z-ai/glm"}}))
 	if !rep.OK {
 		t.Fatal(rep.Error)
@@ -237,20 +237,20 @@ func TestKeysNeverLeave(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 	// Replace and clear the key.
-	if rep := r.Command(cmd("provider.setKey", map[string]any{"id": id, "key": ""})); !rep.OK {
+	if rep := r.Run(cmd("provider.setKey", map[string]any{"id": id, "key": ""})); !rep.OK {
 		t.Fatal(rep.Error)
 	}
 	if d := r.List()[0]; d.KeySet || d.Status != NeedsKey {
 		t.Fatalf("%+v", d)
 	}
 	// Import the OpenRouter key from fyrd's environment on click.
-	if rep := r.Command(cmd("provider.import", map[string]any{"foundId": "openrouter"})); !rep.OK {
+	if rep := r.Run(cmd("provider.import", map[string]any{"foundId": "openrouter"})); !rep.OK {
 		t.Fatal(rep.Error)
 	}
 	if v, _ := r.Secrets.Get(SecretName("openrouter")); v != routerKey {
 		t.Fatal("import did not copy the key")
 	}
-	if rep := r.Command(cmd("provider.import", map[string]any{"foundId": "openrouter"})); rep.OK || rep.Status != 409 {
+	if rep := r.Run(cmd("provider.import", map[string]any{"foundId": "openrouter"})); rep.OK || rep.Status != 409 {
 		t.Fatal("double import")
 	}
 }
@@ -259,7 +259,7 @@ func TestUpdateDeleteAndQuotaIdentity(t *testing.T) {
 	f := newFixture(t)
 	r := newReg(t, f)
 	r.Cutover(r.Found(), []string{"claudeAlt", "claudeAcme"})
-	r.Command(cmd("provider.create", map[string]any{"name": "Claude again", "kind": "claude-account", "configDir": f.home + "/.claude"}))
+	r.Run(cmd("provider.create", map[string]any{"name": "Claude again", "kind": "claude-account", "configDir": f.home + "/.claude"}))
 	qs := r.QuotaProfiles()
 	if len(qs) != 3 || qs[0].Identity != qs[2].Identity || qs[0].Identity == qs[1].Identity {
 		t.Fatalf("identities: %q %q %q", qs[0].Identity, qs[1].Identity, qs[2].Identity)
@@ -268,7 +268,7 @@ func TestUpdateDeleteAndQuotaIdentity(t *testing.T) {
 	if len(svc.Snapshot()) != 3 {
 		t.Fatal("one status per profile")
 	}
-	if rep := r.Command(cmd("provider.update", map[string]any{"id": "claudeAcme", "models": []any{"claude-sonnet-5-5", "my-custom"}, "defaultEffort": "high"})); !rep.OK {
+	if rep := r.Run(cmd("provider.update", map[string]any{"id": "claudeAcme", "models": []any{"claude-sonnet-5-5", "my-custom"}, "defaultEffort": "high"})); !rep.OK {
 		t.Fatal(rep.Error)
 	}
 	p, _ := r.get("claudeAcme")
@@ -276,13 +276,13 @@ func TestUpdateDeleteAndQuotaIdentity(t *testing.T) {
 		t.Fatalf("%+v", p)
 	}
 	r.InUse = func(id string) int { return map[string]int{"claudeAlt": 2}[id] }
-	if rep := r.Command(cmd("provider.delete", map[string]any{"id": "claudeAlt"})); rep.OK || rep.Status != 409 {
+	if rep := r.Run(cmd("provider.delete", map[string]any{"id": "claudeAlt"})); rep.OK || rep.Status != 409 {
 		t.Fatal("deleted a provider in use")
 	}
-	if rep := r.Command(cmd("provider.delete", map[string]any{"id": "claudeAcme"})); !rep.OK {
+	if rep := r.Run(cmd("provider.delete", map[string]any{"id": "claudeAcme"})); !rep.OK {
 		t.Fatal(rep.Error)
 	}
-	if rep := r.Command(cmd("provider.create", map[string]any{"name": "x", "kind": "endpoint", "id": "../evil", "baseURL": "https://e"})); rep.OK {
+	if rep := r.Run(cmd("provider.create", map[string]any{"name": "x", "kind": "endpoint", "id": "../evil", "baseURL": "https://e"})); rep.OK {
 		t.Fatal("bad id accepted")
 	}
 }
