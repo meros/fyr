@@ -15,8 +15,9 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
+
+	"github.com/meros/fyr/internal/proc"
 )
 
 // FindChrome returns the first Chrome or Chromium on PATH, or "".
@@ -70,7 +71,7 @@ func (c *Chrome) start() error {
 		"--no-default-browser-check", "--disable-gpu", "--hide-scrollbars", "--mute-audio",
 		"--disable-extensions", "--user-data-dir="+c.Dir, "about:blank")
 	cmd.ExtraFiles = []*os.File{inR, outW}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Close stops the whole tree
+	proc.Group(cmd) // Close stops the whole tree
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -223,7 +224,7 @@ func (c *Chrome) Close() {
 		return
 	}
 	c.w.Close()
-	syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL)
+	proc.Kill(c.cmd)
 	<-c.dead
 	c.cmd = nil
 }

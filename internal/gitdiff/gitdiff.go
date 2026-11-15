@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/meros/fyr/internal/proc"
 )
 
 var (
@@ -79,7 +81,7 @@ func runGitIn(ctx context.Context, dir string, stdin io.Reader, stdout io.Writer
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	full := append([]string{"-C", dir, "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.quotepath=off"}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
+	cmd := proc.Command(ctx, "git", full...)
 	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C", "GIT_TERMINAL_PROMPT=0")
 	cmd.Stdout = stdout
 	cmd.Stdin = stdin

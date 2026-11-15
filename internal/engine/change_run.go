@@ -13,6 +13,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/proc"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -24,7 +25,7 @@ import (
 type ScriptRunner func(ctx context.Context, dir string, argv []string) (out string, exit int, err error)
 
 func runScript(ctx context.Context, dir string, argv []string) (string, int, error) {
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := proc.Command(ctx, argv[0], argv[1:]...) // #39: the limit stops what the script started too
 	cmd.Dir = dir
 	var b bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &b, &b
