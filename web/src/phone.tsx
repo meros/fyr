@@ -8,7 +8,7 @@ import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts";
-import { SECTIONS, isAvailable, matchesQuery, sections, unavailableReason, undoVerb, type Conn, type SectionKey, type Sections, type UndoKind } from "./store.ts";
+import { SECTIONS, isAvailable, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type Conn, type SectionKey, type Sections, type UndoKind } from "./store.ts";
 import { quietNote } from "./quiet.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
@@ -36,7 +36,7 @@ import { changeOptions, folderHint, lastProject } from "./dialogs.tsx";
 import { setToolDetails, toolDetails } from "./prefs.ts";
 import { previewsOf } from "./conversation.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
-import { ADVANCE_MS, activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, phoneSnoozePresets, stepLabel, stripCount, type Choice } from "./mobile.ts";
+import { ADVANCE_MS, activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, stepLabel, stripCount, type Choice } from "./mobile.ts";
 import { LONG_PRESS_MS, idle, longPressCancelled, settleLabel, swipeAvail, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
 import type { Nav, Sheet } from "./nav.ts";
 import { groupTasks, liveLine, workingLine } from "./tasks.ts";
@@ -1579,7 +1579,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
 }
 
 function SnoozeSheet({ ids, title, onClose, onPick }: { ids: string[]; title?: string; onClose(): void; onPick(d: Date): void }) {
-  const presets = phoneSnoozePresets(new Date());
+  const presets = snoozePresets(new Date());
   const [custom, setCustom] = useState(false);
   const [val, setVal] = useState("");
   return (

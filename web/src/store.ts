@@ -288,27 +288,47 @@ export function undoCommands(u: UndoEntry | null, now: number): PlannedCommand[]
   return u.threadIds.map((id) => ({ action: INVERSE[u.kind], threadId: id }));
 }
 
-// ---- snooze presets (local time) ----
+// ---- snooze presets (local time), one list for desktop and phone (SPEC 0.5 V0.67) ----
 
 export interface SnoozePreset {
   label: string;
   until: Date;
+  /** "15:41", "today 18:00", "Sun 06:00" */
+  when: string;
 }
 
+function hm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** In 1 hour, in 3 hours, this evening (only before 17:00), tomorrow morning, Monday morning (a week ahead on a Monday). */
 export function snoozePresets(now: Date): SnoozePreset[] {
+  const out: SnoozePreset[] = [];
+  const in1 = new Date(now.getTime() + 3600_000);
   const in3 = new Date(now.getTime() + 3 * 3600_000);
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  tomorrow.setHours(6, 0, 0, 0);
-  const monday = new Date(now);
-  const add = ((8 - now.getDay()) % 7) || 7; // next Monday, a week ahead when today is Monday
-  monday.setDate(now.getDate() + add);
-  monday.setHours(6, 0, 0, 0);
-  return [
-    { label: "3 hours", until: in3 },
-    { label: "Tomorrow 06:00", until: tomorrow },
-    { label: "Monday 06:00", until: monday },
-  ];
+  out.push({ label: "In 1 hour", until: in1, when: hm(in1) });
+  out.push({ label: "In 3 hours", until: in3, when: hm(in3) });
+  if (now.getHours() < 17) {
+    const ev = new Date(now);
+    ev.setHours(18, 0, 0, 0);
+    out.push({ label: "This evening", until: ev, when: "today 18:00" });
+  }
+  const tm = new Date(now);
+  tm.setDate(now.getDate() + 1);
+  tm.setHours(6, 0, 0, 0);
+  out.push({ label: "Tomorrow morning", until: tm, when: `${DAYS[tm.getDay()]} 06:00` });
+  const mon = new Date(now);
+  mon.setDate(now.getDate() + (((8 - now.getDay()) % 7) || 7));
+  mon.setHours(6, 0, 0, 0);
+  out.push({ label: "Monday morning", until: mon, when: `${DAYS[mon.getDay()]} 06:00` });
+  return out;
+}
+
+/** The desktop keys 1–5: the preset at that place in the list shown, or null. */
+export function presetForKey(presets: SnoozePreset[], key: string): SnoozePreset | null {
+  return /^[1-9]$/.test(key) ? (presets[Number(key) - 1] ?? null) : null;
 }
 
 /** A project from the stream (`event: project`, V0.23): replace by id, or add; `{id, deleted: true}` removes it (V0.58). */

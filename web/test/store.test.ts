@@ -15,6 +15,7 @@ import {
   newer,
   recordUndo,
   sections,
+  presetForKey,
   snoozePresets,
   stateForCache,
   undoCommands,
@@ -144,14 +145,26 @@ test("undo of settle, archive and snooze sends the inverse within the window", (
   assert.equal(recordUndo("settle", ["a", "b", "c"], now).label, "Settled 3 threads");
 });
 
-test("snooze presets: 3 h, tomorrow 06:00, next Monday 06:00", () => {
-  const fri = new Date(2026, 10, 13, 15, 30); // Friday
-  const [h3, tom, mon] = snoozePresets(fri);
-  assert.equal(h3.until.getTime() - fri.getTime(), 3 * 3600_000);
-  assert.deepEqual([tom.until.getDate(), tom.until.getHours(), tom.until.getMinutes()], [14, 6, 0]);
-  assert.deepEqual([mon.until.getDay(), mon.until.getDate(), mon.until.getHours()], [1, 16, 6]);
+// SPEC 0.5 V0.67: one snooze list for desktop and phone, each with its time; keys 1–5 pick in the order shown.
+test("SPEC 0.5 V0.67: one snooze list, in order, with times", () => {
+  const morning = snoozePresets(new Date(2026, 10, 14, 9, 41)); // a Saturday
+  assert.deepEqual(morning.map((p) => p.label), ["In 1 hour", "In 3 hours", "This evening", "Tomorrow morning", "Monday morning"]);
+  assert.deepEqual(morning.map((p) => p.when), ["10:41", "12:41", "today 18:00", "Sun 06:00", "Mon 06:00"]);
+  const late = snoozePresets(new Date(2026, 10, 14, 19, 0));
+  assert.deepEqual(late.map((p) => p.label), ["In 1 hour", "In 3 hours", "Tomorrow morning", "Monday morning"]);
   const monday = new Date(2026, 10, 16, 9, 0);
-  assert.equal(snoozePresets(monday)[2].until.getDate(), 23, "on a Monday: next week's Monday");
+  assert.equal(snoozePresets(monday).at(-1)!.until.getDate(), 23, "on a Monday: next week's Monday");
+});
+
+test("SPEC 0.5 V0.67: keys 1–5 pick the preset shown at that place", () => {
+  const morning = snoozePresets(new Date(2026, 10, 14, 9, 41));
+  assert.equal(presetForKey(morning, "3")?.label, "This evening");
+  assert.equal(presetForKey(morning, "5")?.label, "Monday morning");
+  const late = snoozePresets(new Date(2026, 10, 14, 19, 0));
+  assert.equal(presetForKey(late, "4")?.label, "Monday morning", "without This evening 4 is the last");
+  assert.equal(presetForKey(late, "5"), null);
+  assert.equal(presetForKey(late, "0"), null);
+  assert.equal(presetForKey(late, "x"), null);
 });
 
 // API v0: rev decides which copy wins, also when updatedAt says otherwise.
