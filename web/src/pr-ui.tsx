@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import type { Thread } from "./types.ts";
-import { MERGE_METHODS, checkDuration, chipStatus, fixCheckMessage, groupChecks, mergeButton, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
+import { MERGE_METHODS, checkDuration, checksSection, chipStatus, fixCheckMessage, groupChecks, mergeButton, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { relTime } from "./format.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
@@ -171,7 +171,7 @@ export function PrView(p: PrViewProps) {
       )}
       {d && (
         <>
-          <Checks groups={groups} now={p.now} sendReason={sendReason} onAsk={(c) => void ask(fixCheckMessage(c), `fix ${c.name}`)} />
+          <Checks groups={groups} state={d.state} now={p.now} sendReason={sendReason} onAsk={(c) => void ask(fixCheckMessage(c), `fix ${c.name}`)} />
           {d.reviews && d.reviews.length > 0 && (
             <section class="prv-sec">
               <h3>Reviews</h3>
@@ -240,26 +240,29 @@ function CheckRow({ c, now, children }: { c: PrCheck; now: number; children?: an
   );
 }
 
-function Checks({ groups, now, sendReason, onAsk }: { groups: ReturnType<typeof groupChecks>; now: number; sendReason?: string; onAsk(c: PrCheck): void }) {
+function Checks({ groups, state, now, sendReason, onAsk }: { groups: ReturnType<typeof groupChecks>; state?: string; now: number; sendReason?: string; onAsk(c: PrCheck): void }) {
   const [showPassed, setShowPassed] = useState(false);
   const rest = [...groups.passed, ...groups.skipped];
   const total = groups.failed.length + groups.running.length + rest.length;
+  const sec = checksSection(state);
   if (!total)
     return (
       <section class="prv-sec">
-        <h3>Checks</h3>
+        <h3>{sec.heading}</h3>
         <div class="prv-sub">No checks on this PR.</div>
       </section>
     );
   return (
     <section class="prv-sec">
-      <h3>Checks</h3>
-      <ul class="prv-cks">
+      <h3>{sec.heading}</h3>
+      <ul class={`prv-cks${sec.history ? " history" : ""}`}>
         {groups.failed.map((c) => (
           <CheckRow key={`f${c.workflow}/${c.name}`} c={c} now={now}>
-            <button class="prv-ask" disabled={!!sendReason} title={sendReason ?? "Sends a message to the agent with the check's link"} onClick={() => onAsk(c)}>
-              Ask the agent to fix this check
-            </button>
+            {!sec.history && (
+              <button class="prv-ask" disabled={!!sendReason} title={sendReason ?? "Sends a message to the agent with the check's link"} onClick={() => onAsk(c)}>
+                Ask the agent to fix this check
+              </button>
+            )}
           </CheckRow>
         ))}
         {groups.running.map((c) => (
