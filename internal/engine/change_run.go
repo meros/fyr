@@ -76,6 +76,7 @@ func (e *Engine) offerTool(s *mcp.Server) {
 				if h.Change != nil {
 					where = fmt.Sprintf("the change %q", h.Change.Title)
 					h.Change.UpdatedAt = now
+					core.ChangesChecked(t, now) // V0.62
 				} else if on == core.OnView && !t.LiveView {
 					err = errors.New("this thread has no live view; publish one with view_publish first, or use on: \"thread\"")
 					return

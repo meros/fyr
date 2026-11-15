@@ -217,3 +217,27 @@ func TestThreadAndViewActions(t *testing.T) {
 		t.Fatalf("after the view closed: %+v", th.Offers)
 	}
 }
+
+// SPEC 0.5 V0.62: change tools and change_unchanged record the upkeep.
+func TestChangesUpkeep(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	call := func(tool string, a map[string]any) (string, bool) { return callAs(t, h.e, id, tool, a) }
+	if out, _ := call("change_unchanged", map[string]any{"reason": "nothing open"}); !strings.Contains(out, "no open changes") {
+		t.Fatalf("no changes: %s", out)
+	}
+	call("change_open", map[string]any{"key": "doc:x", "kind": "doc", "title": "Doc"})
+	th, _ := h.e.Thread(id)
+	if th.ChangesCheckedAt == nil {
+		t.Fatal("change_open did not record the upkeep")
+	}
+	first := *th.ChangesCheckedAt
+	time.Sleep(2 * time.Millisecond)
+	if out, _ := call("change_unchanged", map[string]any{"reason": "waiting for review"}); !strings.Contains(out, "1 open changes") {
+		t.Fatalf("unchanged: %s", out)
+	}
+	if th, _ := h.e.Thread(id); !th.ChangesCheckedAt.After(first) {
+		t.Fatal("change_unchanged did not move the upkeep time")
+	}
+}

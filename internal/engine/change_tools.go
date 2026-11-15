@@ -24,6 +24,20 @@ const changeRef = "The change: its id (c_…) or its key."
 
 func (e *Engine) changeTools(s *mcp.Server) {
 	e.offerTool(s) // V0.60
+	s.Add(mcp.Tool{Name: "change_unchanged",
+		Description: "Say that your open changes in Fyr are still current after this stretch of work, with a short reason. Call it instead of change_status when nothing about them moved.",
+		Schema:      obj(map[string]any{"reason": str("Why they are still current, in a few words.")}, "reason"),
+		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+			n := 0
+			e.Observe(th, func(t *core.Thread, now time.Time) {
+				n = core.OpenAgentChanges(t)
+				core.ChangesChecked(t, now)
+			})
+			if n == 0 {
+				return "You have no open changes; nothing to keep current.", nil
+			}
+			return fmt.Sprintf("Noted: %d open changes still current (%s).", n, sArg(a, "reason")), nil
+		}})
 	s.Add(mcp.Tool{Name: "change_open",
 		Description: "Start a change record in Fyr, or get the one with this key (idempotent). Open one for every change you make or prepare outside this folder's git branch: a server or cluster change, a migration, a NixOS rebuild, another repo, a design, a document. Do it before the first edit. Git branches and GitHub PRs of this thread are recorded by Fyr itself; open one for them only to give a title, a group or a stack.",
 		Schema: obj(map[string]any{
@@ -233,6 +247,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			e.Observe(th, func(t *core.Thread, now time.Time) {
 				d.CreatedAt = now
 				core.DecisionOpened(t, d)
+				core.ChangesChecked(t, now) // V0.62
 			}, agent.Ev{Type: "decision.opened", Data: map[string]any{"decision": d}})
 			return fmt.Sprintf("Asked the owner to %s %q. The answer arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not do it another way meanwhile.", ask, c.Title), nil
 		}})
@@ -296,6 +311,9 @@ func (e *Engine) changeObserve(th, op string, fn func(t *core.Thread, now time.T
 	e.Observe(th, func(t *core.Thread, now time.Time) {
 		var c *core.Change
 		c, err = fn(t, now)
+		if err == nil {
+			core.ChangesChecked(t, now) // V0.62
+		}
 		if c != nil {
 			*out = *c
 		}
