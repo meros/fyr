@@ -605,6 +605,10 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 	if why := h.Available(*act); why != "" {
 		return Result{}, &Rejection{Code: RejectUnavailable, Reason: why}
 	}
+	if last := lastRunOf(h.Runs, act.ID, h.On); last != nil && now.Sub(last.At) < PressTwice {
+		// V0.71: a page or a double tap that sends one press twice
+		return Result{}, &Rejection{Code: RejectUnavailable, Reason: "It was just pressed"}
+	}
 	a, title := *act, "this thread"
 	if h.Change != nil {
 		on, title = h.Change.ID, fmt.Sprintf("the change %q", h.Change.Title)
@@ -620,10 +624,12 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 		res.Effects = []Effect{{Kind: EffectRun, Allow: true, Press: press, Request: &EffectReq{Action: a.Effect, Args: h.EffectArgs(a)}}}
 	case RunAgent:
 		msg := fmt.Sprintf("[Fyr] The owner pressed %q on %s.\n%s", a.Label, title, a.Prompt)
+		// V0.71: every press runs until its result lands, so a second
+		// press is "It is running"; a new thread follows this one.
 		if a.In == "new" {
-			res.Effects = []Effect{{Kind: EffectThread, Text: msg, Cwd: t.Cwd, Project: t.ProjectID}}
+			res.Effects = []Effect{{Kind: EffectThread, Press: press, Text: msg, Cwd: t.Cwd, Project: t.ProjectID}}
 		} else {
-			res.Effects = []Effect{{Kind: EffectSend, Text: msg}}
+			res.Effects = []Effect{{Kind: EffectSend, Press: press, Text: msg}}
 		}
 	case RunScript:
 		dir := a.Cwd
@@ -671,4 +677,17 @@ func reduceRestarted(r Rec, _ Input, now time.Time) (Result, error) {
 		res.Events = append(res.Events, Event{"run.ended", map[string]any{"failure": t.Failure}})
 	}
 	return res, nil
+}
+
+// PressTwice is how close a second press of one action counts as the same
+// press (V0.71).
+const PressTwice = 2 * time.Second
+
+func lastRunOf(runs []ActionRun, action, on string) *ActionRun {
+	for i := len(runs) - 1; i >= 0; i-- {
+		if runs[i].Action == action && runs[i].On == on {
+			return &runs[i]
+		}
+	}
+	return nil
 }

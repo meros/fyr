@@ -251,7 +251,7 @@ func (h Holder) EffectArgs(a ActionSpec) map[string]any {
 // sets it to fail, which blocks the thread. A failed script on the thread or
 // its view is a failure line only; it moves ActivityAt so the owner sees it.
 func (h Holder) Started(a ActionSpec, now time.Time) {
-	h.Runs = append(h.Runs, ActionRun{On: h.On, Action: a.ID, Label: a.Label, By: ByOwner, At: now, Running: a.Run == RunScript || a.Run == RunFyr})
+	h.Runs = append(h.Runs, ActionRun{On: h.On, Action: a.ID, Label: a.Label, By: ByOwner, At: now, Running: true})
 	h.Runs = keepLast(h.Runs, maxRuns)
 	if h.Change != nil {
 		h.Change.UpdatedAt = now

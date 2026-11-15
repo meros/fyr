@@ -201,18 +201,13 @@ func (e *Engine) threadTools(s *mcp.Server) {
 			if !e.newLimit.allow(self, time.Now()) {
 				return "", errors.New("limit: 5 new threads an hour per thread")
 			}
-			args := core.Args{"parent": self}
+			args := core.Args{}
 			for _, k := range []string{"cwd", "text", "title", "model"} {
 				if v, ok := a[k].(string); ok && v != "" {
 					args[k] = v
 				}
 			}
-			if p, ok := e.Thread(self); ok {
-				args["profile"] = p.Profile
-				if _, has := args["model"]; !has && p.Model != "" {
-					args["model"] = p.Model
-				}
-			}
+			args = childArgs(e, self, args)
 			r := e.Command(Cmd{CommandID: NewID("agent_"), Action: "thread.create", Args: args})
 			if !r.OK {
 				return "", errors.New(r.Error)
