@@ -1,8 +1,9 @@
 // The text of an inbox row that needs you: the state word and the line after it. Pure; the desktop
 // inbox and the phone inbox draw the same words (review 2026-11-15).
 
+import { currentDecision } from "./decode.ts";
 import { describeEffect } from "./effects.ts";
-import type { AttentionState, ThreadDTO } from "./types.ts";
+import type { AttentionState, Thread } from "./types.ts";
 import { rowSummary } from "./view.ts";
 
 const LABEL: Record<AttentionState, string> = {
@@ -23,10 +24,10 @@ export function stateLabel(s: AttentionState): string {
 }
 
 /** The bold word: the open decision's kind while asking, else the attention reason or the state. */
-export function rowState(t: ThreadDTO): string {
+export function rowState(t: Thread): string {
   const st = t.attention.state;
   if (st === "asking") {
-    const d = t.decisions?.[0];
+    const d = currentDecision(t);
     if (d?.kind === "ask") {
       const n = d.questions?.length ?? 1;
       return n === 1 ? "1 question" : `${n} questions`;
@@ -38,9 +39,9 @@ export function rowState(t: ThreadDTO): string {
 }
 
 /** The line after it. `keys`: a failed row names the retry key (the desktop has a keyboard). */
-export function rowMeta(t: ThreadDTO, o: { keys?: boolean } = {}): string {
+export function rowMeta(t: Thread, o: { keys?: boolean } = {}): string {
   const st = t.attention.state;
-  const d = t.decisions?.[0];
+  const d = currentDecision(t);
   if (st === "asking" && d) {
     // The asker is named on the card (U25); the row keeps the question, as the design draws it.
     if (d.kind === "ask") return d.questions?.[0]?.question ?? "";

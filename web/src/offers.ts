@@ -1,7 +1,7 @@
 // Changes and actions in the client (SPEC 0.5 V0.59, V0.60, decision 0018). Pure: what a change shows, which
 // actions the owner can press now, and the words for the conversation lines.
 
-import type { Change, ChangePhase, Offer, OfferRun, ThreadDTO } from "./types.ts";
+import type { Change, ChangePhase, Offer, OfferRun, Thread } from "./types.ts";
 
 export const RAIL: ChangePhase[] = ["working", "review", "landed", "live"];
 
@@ -51,7 +51,8 @@ export function offerDetail(o: Offer, cwd?: string): string {
   return o.effect === "pr.merge" ? "Fyr merges the PR" : o.effect === "pr.rerunFailed" ? "Fyr re-runs the failed checks" : "Fyr runs it";
 }
 
-const quote = (a: string) => (/^[\w./:=@%+-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
+/** One argument as a shell would need it written. */
+export const quote = (a: string) => (/^[\w./:=@%+-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
 
 /** The newest run of an action. */
 export function lastRun(runs: OfferRun[] | undefined, id: string): OfferRun | undefined {
@@ -64,14 +65,14 @@ export function pressArgs(on: string, o: Offer) {
 }
 
 /** The changes to list, newest first; PR changes too (V0.59 (8)). */
-export function changeList(t: Pick<ThreadDTO, "changes">): Change[] {
-  return [...(t.changes ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+export function changeList(t: Pick<Thread, "changes">): Change[] {
+  return [...t.changes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 /** The inbox chip when the thread has no open PR: the most urgent change that is not a PR (V0.59 (8)). */
-export function changeChip(t: Pick<ThreadDTO, "changes" | "pr">, short = false): { text: string; cls: string; title: string } | null {
+export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { text: string; cls: string; title: string } | null {
   if (t.pr && (t.pr.state ?? "OPEN") === "OPEN") return null;
-  const live = (t.changes ?? []).filter((c) => !ended(c.phase) && !(c.evidence ?? []).some((e) => e.kind === "pr"));
+  const live = t.changes.filter((c) => !ended(c.phase) && !(c.evidence ?? []).some((e) => e.kind === "pr"));
   if (!live.length) return null;
   const rank = (c: Change) => (c.conditions?.some((k) => k.status === "fail") ? 0 : c.needs === "owner" ? 1 : 2);
   const c = [...live].sort((a, b) => rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt))[0];
@@ -99,12 +100,12 @@ export function actionEventLine(d: Record<string, unknown> | undefined): { line:
 }
 
 /** The thread's "settles when …" chip, or null when nothing is armed. A change is found by id, then key (V0.59 (7)). */
-export function settleLine(t: Pick<ThreadDTO, "settleWhenDone" | "settleWhenMerged" | "settleWhen" | "changes">): string | null {
+export function settleLine(t: Pick<Thread, "settleWhenDone" | "settleWhenMerged" | "settleWhen" | "changes">): string | null {
   if (t.settleWhenDone) return "settles when done";
   if (t.settleWhenMerged) return "settles when merged";
   const w = t.settleWhen;
   if (!w?.change) return null;
-  const cs = t.changes ?? [];
+  const cs = t.changes;
   const c = cs.find((x) => x.id === w.change) ?? cs.find((x) => x.key === w.change);
   return `settles when ${c?.title || w.change} is ${w.phase}`;
 }

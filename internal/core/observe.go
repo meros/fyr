@@ -21,12 +21,9 @@ func RunEnded(t *Thread, f *Failure, now time.Time) {
 	t.Activity = ""
 	t.ActivityAt = now
 	t.Failure = f
-	if f == nil && t.SettleWhenDone && len(t.Decisions) == 0 {
-		t.SettledAt = &now
-		t.SettleWhenDone = false
-	}
+	t.RunEnds++
 	if f != nil {
-		t.SettleWhenDone = false
+		dropSettleDone(t) // the run did not finish
 	}
 }
 
@@ -37,15 +34,15 @@ func ProcessLost(t *Thread, class, msg string, now time.Time) {
 	var keep []Decision
 	live := t.Running
 	for _, d := range t.Decisions {
-		if d.Kind == "effect" {
+		if d.Kind == DecisionEffect {
 			keep = append(keep, d)
 		} else {
 			live = true
 		}
 	}
 	for i := range t.Tasks {
-		if t.Tasks[i].Status == "running" {
-			t.Tasks[i].Status, t.Tasks[i].UpdatedAt = "stopped", now
+		if t.Tasks[i].Status == TaskRunning {
+			t.Tasks[i].Status, t.Tasks[i].UpdatedAt = TaskStopped, now
 		}
 	}
 	if !live {
@@ -74,24 +71,20 @@ func DecisionClosed(t *Thread, id string) {
 	}
 }
 
-// PRObserved stores a new PR snapshot. It moves ActivityAt only when the PR
-// starts to block, merges or closes, so polling alone never marks a thread done.
+// PRObserved links a PR to the thread as its main PR (#32): the agent opened
+// or named it. Its code change keeps the snapshot and becomes the thread's
+// main change. A PR the owner dismissed never comes back (V0.36), and a link
+// never overwrites what GitHub already reported about the PR.
 func PRObserved(t *Thread, p PR, now time.Time) {
-	for _, u := range t.DismissedPRs {
-		if p.URL != "" && u == p.URL {
-			return // the owner dismissed this PR (V0.36)
-		}
+	c := changeByPR(t, p.URL)
+	if c != nil && c.Dismissed {
+		return
 	}
-	old := t.PR
-	t.PR = &p
-	ChangePRObserved(t, p, now) // V0.59: the PR is also a code change
-	changed := old == nil || old.State != p.State || old.Blocking() != p.Blocking()
-	if changed && (p.Blocking() != "" || p.State != "OPEN") {
-		t.ActivityAt = now
+	if c == nil || c.PR == nil || c.PR.CheckedAt == nil || p.CheckedAt != nil {
+		c = ChangePRObserved(t, p, now)
 	}
-	if p.State == "MERGED" && t.SettleWhenMerged && t.SettledAt == nil {
-		t.SettledAt = &now
-		t.SettleWhenMerged = false
+	if c != nil {
+		t.MainChange = c.ID
 	}
 }
 
@@ -105,7 +98,7 @@ func TaskObserved(t *Thread, k Task, now time.Time) {
 		if cur.ID != k.ID {
 			continue
 		}
-		ended := cur.Status == "running" && k.Status != "" && k.Status != "running"
+		ended := cur.Status == TaskRunning && k.Status != "" && k.Status != TaskRunning
 		if k.Description != "" {
 			cur.Description = k.Description
 		}
@@ -134,14 +127,11 @@ func TaskObserved(t *Thread, k Task, now time.Time) {
 		return
 	}
 	if k.Status == "" {
-		k.Status = "running"
+		k.Status = TaskRunning
 	}
 	if k.StartedAt == nil {
 		k.StartedAt = &now
 	}
 	t.Tasks = append(t.Tasks, k)
-	// Keep the list short: the 20 newest.
-	if len(t.Tasks) > 20 {
-		t.Tasks = t.Tasks[len(t.Tasks)-20:]
-	}
+	t.Tasks = keepLast(t.Tasks, 20) // keep the list short
 }

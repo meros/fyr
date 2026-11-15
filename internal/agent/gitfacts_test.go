@@ -92,3 +92,53 @@ func TestGitFactsNoOptionalLocks(t *testing.T) {
 		}
 	}
 }
+
+// #35: an observed branch ends when it is merged into its base (its head is
+// an ancestor of origin/<base>), or when it is gone without a merge.
+func TestGitEnd(t *testing.T) {
+	dir := t.TempDir()
+	origin := filepath.Join(dir, "origin.git")
+	work := filepath.Join(dir, "work")
+	git := func(d string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = d
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Skipf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git(dir, "init", "-q", "--bare", "-b", "main", origin)
+	git(dir, "clone", "-q", origin, work)
+	git(work, "commit", "-q", "--allow-empty", "-m", "base")
+	git(work, "push", "-q", "origin", "main")
+	git(work, "checkout", "-q", "-b", "feat")
+	git(work, "commit", "-q", "--allow-empty", "-m", "one")
+	head := git(work, "rev-parse", "--short", "HEAD")
+	if g := gitFacts(work); g.Path == "" || g.Head != head {
+		t.Fatalf("facts: %+v", g)
+	}
+	var g Git
+	if gone, merged, known := g.End(work, "feat", "origin/main", head); gone || merged || !known {
+		t.Fatalf("open branch: gone %v merged %v known %v", gone, merged, known)
+	}
+	git(work, "checkout", "-q", "-b", "spike")
+	git(work, "commit", "-q", "--allow-empty", "-m", "spike")
+	spike := git(work, "rev-parse", "--short", "HEAD")
+	git(work, "checkout", "-q", "main")
+	git(work, "merge", "-q", "--ff-only", "feat")
+	git(work, "push", "-q", "origin", "main")
+	git(work, "branch", "-q", "-d", "feat")
+	git(work, "branch", "-q", "-D", "spike")
+	if gone, merged, _ := g.End(work, "feat", "origin/main", head); !gone || !merged {
+		t.Fatalf("merged and deleted: gone %v merged %v", gone, merged)
+	}
+	if gone, merged, _ := g.End(work, "spike", "", spike); !gone || merged {
+		t.Fatalf("deleted without a merge: gone %v merged %v", gone, merged)
+	}
+	if _, _, known := g.End(dir, "feat", "", head); known {
+		t.Fatal("a folder that is not a checkout is known")
+	}
+}

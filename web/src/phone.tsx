@@ -1,51 +1,49 @@
 // The phone layout (760 px or less), from design/mobile (README and mobile.html).
 // Screens: Inbox, Thread, New, Search; sheets slide up over a screen and are history entries.
-// Desktop components are reused where the README says they carry over (Conversation, AgentsStrip,
-// PrTab, image paste); everything else here uses its own m- classes so the desktop CSS never applies.
+// Desktop components are reused where the README says they carry over (the thread tab body, AgentsStrip,
+// image paste); thread commands, undo and toasts are the desktop's too (#41);
+// everything else here uses its own m- classes so the desktop CSS never applies.
 
 import { haptic } from "./native.ts";
+import { useApi } from "./api-context.ts";
 import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts";
-import { SECTIONS, isAvailable, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type Conn, type SectionKey, type Sections, type UndoKind } from "./store.ts";
+import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
+import { SECTIONS, isAvailable, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
+import type { ThreadCommands } from "./commands.ts";
 import { quietNote } from "./quiet.ts";
+import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
-import { AgentsStrip, Conversation, EffectBody, PrTab, type SendArgs } from "./thread.tsx";
+import { AgentsStrip, EffectBody, ThreadTabBody } from "./thread.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
-import { Filmstrip } from "./preview-ui.tsx";
-import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
-import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
+import { ThreadOffers } from "./offers-ui.tsx";
 import { changeChip } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
-import { defaultTab, liveViewOf } from "./view.ts";
+import { TAB_LABEL, defaultTab, threadTabs } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
-import { ChangesView } from "./changes-ui.tsx";
-import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
-import { colorVar, localProject, newThreadFolder, projectChip, projectDefaults, projectName, projectOf, startProject } from "./projects.ts";
-import { useFolderPick } from "./folder-picker.tsx";
-import { changeOptions, folderHint, lastProject } from "./dialogs.tsx";
+import { colorVar, projectName, projectOf } from "./projects.ts";
+import { folderHint, type NewThreadArgs } from "./new-thread.ts";
+import { useNewThreadForm } from "./new-thread-form.ts";
 import { setToolDetails, toolDetails } from "./prefs.ts";
-import { previewsOf } from "./conversation.ts";
 import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type CardState } from "./question.ts";
-import { ADVANCE_MS, activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, stepLabel, stripCount, type Choice } from "./mobile.ts";
+import { ADVANCE_MS, activeSection, allowCommit, askCommit, stepLabel, stripCount, type Choice } from "./mobile.ts";
 import { LONG_PRESS_MS, idle, longPressCancelled, settleLabel, swipeAvail, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
 import type { Nav, Sheet } from "./nav.ts";
 import { groupTasks, liveLine, workingLine } from "./tasks.ts";
 import { COLLAPSED_BY_DEFAULT, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
-import type { NewThreadArgs } from "./dialogs.tsx";
 import { QuotaList } from "./quota-ui.tsx";
-import { hostForProject, hostTag, offlineLine, profilesOn, type HostInfo } from "./hosts.ts";
+import { hostLabel, hostTag, offlineLine, type HostInfo } from "./hosts.ts";
 
 // ---- icons ----
 const I = {
@@ -129,53 +127,28 @@ const I = {
 
 // ---- props from the app shell ----
 
-export interface PhoneActions {
-  /** V0.60: any thread command, for example action.run */
-  run(id: string, action: string, args?: Record<string, unknown>): void;
-  settle(ids: string[], bulk?: boolean): void;
-  snooze(ids: string[], until: Date): void;
-  archive(ids: string[]): void;
-  markUnseen(id: string): void;
-  retry(id: string): void;
-  interrupt(id: string): void;
-  /** V0.36: put away a merged or closed PR */
-  dismissPR(id: string): void;
-  /** V0.37: turn the live view on or off */
-  setView(id: string, on: boolean): void;
-  setModel(id: string, model: string): void;
-  /** V0.50 */
-  setEffort(id: string, effort: string): void;
-  /** V0.45: hand the thread over to another profile; resolves to an error text, or null */
-  handover(id: string, profile: string, model: string): Promise<string | null>;
-  send(id: string, args: SendArgs): Promise<boolean>;
-  /** V0.33: withdraw a message the agent has not read */
-  cancelMessage(id: string, messageId: string): Promise<boolean>;
-  submitAsk(d: Decision): Promise<boolean>;
-  allow(d: Decision, ok: boolean): Promise<boolean>;
-  create(a: NewThreadArgs): Promise<string | null>;
-  undo(): void;
-}
-
-export interface PhoneProps {
-  nav: Nav;
+/** The phone's place (design/mobile: screens and sheets are history entries) and how to move. */
+export interface PhoneNav {
+  at: Nav;
   go(n: Nav): void;
   replace(n: Nav): void;
   back(): void;
-  threads: Record<string, ThreadDTO>;
-  sec: Sections;
-  now: number;
-  host: string;
-  conn: Conn;
-  thread: ThreadDTO | undefined;
+}
+
+/** The thread on screen: its timeline, the question card's state, and the answers (they need the card). */
+export interface PhoneOpen {
+  thread: Thread | undefined;
   events: FyrEvent[] | undefined;
   onEarlier?: () => void;
   onAtEnd(atEnd: boolean): void;
-  profiles: Profile[];
-  /** V0.51/V0.54: the front's hosts; with more than one, rows and headers name each thread's host */
-  hosts?: HostInfo[];
-  projects: Project[];
   card: CardState | null;
   onCard(fn: (cs: CardState) => CardState): void;
+  submitAsk(d: Decision): Promise<boolean>;
+  allow(d: Decision, ok: boolean): Promise<boolean>;
+}
+
+/** The inbox list's own state: open and expanded sections, selection mode and the picked rows. */
+export interface PhoneList {
   sectionOpen: Partial<Record<SectionKey, boolean>>;
   setSectionOpen(fn: (o: Partial<Record<SectionKey, boolean>>) => Partial<Record<SectionKey, boolean>>): void;
   expanded: Partial<Record<SectionKey, boolean>>;
@@ -184,6 +157,10 @@ export interface PhoneProps {
   setPicked(s: Set<string>): void;
   selecting: boolean;
   setSelecting(b: boolean): void;
+}
+
+/** This device: push, install and theme. */
+export interface PhoneDevice {
   push: PushStatus;
   pushReason: string | null;
   ios: boolean;
@@ -192,20 +169,31 @@ export interface PhoneProps {
   onInstall(): void;
   theme: Theme;
   setTheme(t: Theme): void;
-  /** V0.50: the Settings body (the app builds it with its Api) */
-  settings?: ComponentChildren;
-  toast: { text: string; undo: boolean; error?: boolean } | null;
-  undoKind: UndoKind | null;
-  undoIds: string[];
-  undoLive: boolean;
-  actions: PhoneActions;
-  /** what search finds: the project filter's threads, quiet ones included (V0.46) */
-  searchable: Record<string, ThreadDTO>;
-  /** projects (V0.23) */
-  projectFilter: string | null;
-  onProjectFilter(id: string | null): void;
-  /** V0.42: the folder picker sheet, over everything */
-  overlay?: ComponentChildren;
+}
+
+/** What the phone does differently from a plain thread command: U8 leaves the open thread after a settle or
+ *  archive, Mark unseen restarts the seen timer, and New starts a thread. Every other command is `commands.run`. */
+export interface PhoneActions {
+  settle(ids: string[], bulk?: boolean): void;
+  archive(ids: string[]): void;
+  markUnseen(id: string): void;
+  create(a: NewThreadArgs): Promise<string | null>;
+}
+
+export interface PhoneProps {
+  nav: PhoneNav;
+  /** threads, projects, profiles, hosts and the connection */
+  store: Store;
+  /** the inbox's sections; what search finds: the project filter's threads, quiet ones included (V0.46) */
+  inbox: { sec: Sections; searchable: Record<string, Thread> };
+  now: number;
+  /** #41: the same thread commands, undo and toasts as the desktop */
+  commands: ThreadCommands;
+  open: PhoneOpen;
+  list: PhoneList;
+  device: PhoneDevice;
+  /** the project filter (V0.23) */
+  filter: { id: string | null; set(id: string | null): void };
   projectActions: {
     update(id: string, patch: ProjectPatch): Promise<string | null>;
     setFolder(id: string, path: string): Promise<string | null>;
@@ -215,9 +203,18 @@ export interface PhoneProps {
     /** V0.58 */
     delete(id: string): Promise<string | null>;
   };
+  actions: PhoneActions;
+  /** V0.50: the Settings body (the app builds it with its Api) */
+  settings?: ComponentChildren;
+  /** V0.42: the folder picker sheet, over everything */
+  overlay?: ComponentChildren;
 }
 
-const STORAGE_LAST = "fyr.newDefaults";
+/** The host's name in the header (the mock says so). */
+function useHostName(p: PhoneProps): string {
+  return hostLabel(p.store.host, useApi().mock);
+}
+
 const STORAGE_IOS = "fyr.iosRowDismissed";
 
 function store(key: string, value: string | null) {
@@ -239,39 +236,39 @@ function load(key: string): string | null {
 // ---- shell ----
 
 export function PhoneApp(p: PhoneProps) {
-  const s = p.nav.screen;
-  const sheetThread = p.nav.sheet?.ids?.length === 1 ? p.threads[p.nav.sheet.ids[0]] : undefined;
-  const bottomBar = !p.selecting && (s.name === "inbox" || s.name === "search");
+  const s = p.nav.at.screen;
+  const sheetThread = p.nav.at.sheet?.ids?.length === 1 ? p.store.threads[p.nav.at.sheet.ids[0]] : undefined;
+  const bottomBar = !p.list.selecting && (s.name === "inbox" || s.name === "search");
   return (
     <div class={`m-app${bottomBar ? " has-bar" : ""}`}>
       {s.name === "inbox" && <MInbox {...p} />}
       {s.name === "search" && <MSearch {...p} />}
-      {s.name === "thread" && p.thread && <MThread {...p} t={p.thread} tab={defaultTab(p.thread, s.tab)} />}
-      {s.name === "thread" && !p.thread && (
+      {s.name === "thread" && p.open.thread && <MThread {...p} t={p.open.thread} tab={defaultTab(p.open.thread, s.tab)} />}
+      {s.name === "thread" && !p.open.thread && (
         <div class="m-screen">
-          <MHeader onBack={p.back} title="Thread" />
-          <div class="m-empty">{Object.keys(p.threads).length ? "This thread is not here anymore." : "Loading…"}</div>
+          <MHeader onBack={p.nav.back} title="Thread" />
+          <div class="m-empty">{Object.keys(p.store.threads).length ? "This thread is not here anymore." : "Loading…"}</div>
         </div>
       )}
       {s.name === "new" && <MNew {...p} />}
       {s.name === "project" && <MProject {...p} id={s.id} />}
       {s.name === "changes" && (
         <div class="m-screen m-changes">
-          <MHeader onBack={p.back} title="Changes" />
+          <MHeader onBack={p.nav.back} title="Changes" />
           <div class="m-nbody">
-            <ChangesBoard phone threads={p.threads} projects={p.projects} onRun={(id, a, args) => p.actions.run(id, a, args)} onOpenThread={(id) => p.go({ screen: { name: "thread", id }, sheet: null })} />
+            <ChangesBoard phone threads={p.store.threads} projects={p.store.projects} onRun={(id, a, args) => void p.commands.run(a, [id], args)} onOpenThread={(id) => p.nav.go({ screen: { name: "thread", id }, sheet: null })} />
           </div>
         </div>
       )}
       {s.name === "settings" && (
         <div class="m-screen m-settings">
-          <MHeader onBack={p.back} title="Settings" />
+          <MHeader onBack={p.nav.back} title="Settings" />
           <div class="m-nbody">{p.settings}</div>
         </div>
       )}
       {bottomBar && <MBottomBar {...p} />}
       <MToast {...p} bottomBar={bottomBar} />
-      {p.nav.sheet && <MSheets {...p} sheet={p.nav.sheet} t={sheetThread} />}
+      {p.nav.at.sheet && <MSheets {...p} sheet={p.nav.at.sheet} t={sheetThread} />}
       {p.overlay}
     </div>
   );
@@ -291,18 +288,19 @@ function MHeader({ onBack, title, right, close }: { onBack(): void; title: Compo
 }
 
 function MToast(p: PhoneProps & { bottomBar: boolean }) {
-  if (!p.toast) return null;
-  let text = p.toast.text;
-  if (p.toast.undo && p.undoKind && p.undoIds.length === 1) {
-    const verb = undoVerb(p.undoKind);
-    const title = p.threads[p.undoIds[0]]?.title;
+  const { toast, undo } = p.commands;
+  if (!toast) return null;
+  let text = toast.text;
+  if (toast.undo && undo && undo.threadIds.length === 1) {
+    const verb = undoVerb(undo.kind);
+    const title = p.store.threads[undo.threadIds[0]]?.title;
     if (title) text = `${verb} “${title}”`;
   }
   return (
-    <div class={`m-toast${p.toast.error ? " err" : ""}${p.bottomBar ? " over-bar" : ""}`} role="status">
+    <div class={`m-toast${toast.error ? " err" : ""}${p.bottomBar ? " over-bar" : ""}`} role="status">
       <span class="ell">{text}</span>
-      {p.toast.undo && p.undoLive && (
-        <button class="tb" onClick={p.actions.undo}>
+      {toast.undo && p.commands.canUndo() && (
+        <button class="tb" onClick={() => void p.commands.doUndo()}>
           {I.undo}
           Undo
         </button>
@@ -312,20 +310,20 @@ function MToast(p: PhoneProps & { bottomBar: boolean }) {
 }
 
 function MBottomBar(p: PhoneProps) {
-  const n = p.sec.needs.length;
-  const s = p.nav.screen.name;
+  const n = p.inbox.sec.needs.length;
+  const s = p.nav.at.screen.name;
   return (
     <nav class="m-bn" aria-label="Main">
-      <button class={`m-bi${s === "inbox" ? " on" : ""}`} onClick={() => (s === "inbox" ? document.querySelector(".m-list")?.scrollTo({ top: 0 }) : p.replace({ screen: { name: "inbox" }, sheet: null }))}>
+      <button class={`m-bi${s === "inbox" ? " on" : ""}`} onClick={() => (s === "inbox" ? document.querySelector(".m-list")?.scrollTo({ top: 0 }) : p.nav.replace({ screen: { name: "inbox" }, sheet: null }))}>
         {I.inbox}
         {n > 0 && <i class="m-bdg">{stripCount(n)}</i>}
         Inbox
       </button>
-      <button class="m-bnew" onClick={() => p.go({ screen: { name: "new" }, sheet: null })}>
+      <button class="m-bnew" onClick={() => p.nav.go({ screen: { name: "new" }, sheet: null })}>
         {I.plus}
         New
       </button>
-      <button class={`m-bi${s === "search" ? " on" : ""}`} onClick={() => s !== "search" && p.go({ screen: { name: "search" }, sheet: null })}>
+      <button class={`m-bi${s === "search" ? " on" : ""}`} onClick={() => s !== "search" && p.nav.go({ screen: { name: "search" }, sheet: null })}>
         {I.search}
         Search
       </button>
@@ -336,10 +334,11 @@ function MBottomBar(p: PhoneProps) {
 // ---- inbox ----
 
 function MInbox(p: PhoneProps) {
+  const hostName = useHostName(p);
   const listRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<SectionKey | null>("needs");
   const [iosDismissed, setIosDismissed] = useState(() => load(STORAGE_IOS) === "1");
-  const showIos = p.ios && !p.standalone && !iosDismissed;
+  const showIos = p.device.ios && !p.device.standalone && !iosDismissed;
 
   const onScroll = () => {
     const el = listRef.current;
@@ -349,7 +348,7 @@ function MInbox(p: PhoneProps) {
   };
 
   const jump = (k: SectionKey) => {
-    p.setSectionOpen((o) => ({ ...o, [k]: true }));
+    p.list.setSectionOpen((o) => ({ ...o, [k]: true }));
     requestAnimationFrame(() => {
       const el = listRef.current;
       const h = document.getElementById(`m-sec-${k}`);
@@ -358,47 +357,47 @@ function MInbox(p: PhoneProps) {
     });
   };
 
-  const all = SECTIONS.flatMap((s) => p.sec[s.key]);
-  const merged = p.sec.seen.filter((t) => t.pr?.state === "MERGED" && isAvailable(t, "thread.settle"));
+  const all = SECTIONS.flatMap((s) => p.inbox.sec[s.key]);
+  const merged = p.inbox.sec.seen.filter((t) => t.pr?.state === "MERGED" && isAvailable(t, "thread.settle"));
 
   return (
     <div class="m-screen">
-      {p.selecting ? (
+      {p.list.selecting ? (
         <div class="m-ih sel">
-          <button class="b44" onClick={() => (p.setSelecting(false), p.setPicked(new Set()))} aria-label="Cancel selection">
+          <button class="b44" onClick={() => (p.list.setSelecting(false), p.list.setPicked(new Set()))} aria-label="Cancel selection">
             {I.close}
           </button>
-          <span class="m-nt">{p.picked.size} selected</span>
+          <span class="m-nt">{p.list.picked.size} selected</span>
           <span class="sp" />
-          <button class="m-tbtn" onClick={() => p.setPicked(new Set(all.map((t) => t.id)))}>
+          <button class="m-tbtn" onClick={() => p.list.setPicked(new Set(all.map((t) => t.id)))}>
             Select all
           </button>
         </div>
       ) : (
         <div class="m-ih">
           <span class="m-brand">Fyr</span>
-          <span class={`m-conn ${p.conn}`} title={p.conn}>
+          <span class={`m-conn ${p.store.conn}`} title={p.store.conn}>
             <i />
-            <span class="ell">{p.host}</span>
+            <span class="ell">{hostName}</span>
           </span>
           <span class="sp" />
           <PwaControls
-            push={p.push}
-            pushReason={p.pushReason}
+            push={p.device.push}
+            pushReason={p.device.pushReason}
             showUnsupported={false}
-            canInstall={p.canInstall}
-            onBell={() => p.go({ ...p.nav, sheet: { kind: "push" } })}
-            onInstall={p.onInstall}
+            canInstall={p.device.canInstall}
+            onBell={() => p.nav.go({ ...p.nav.at, sheet: { kind: "push" } })}
+            onInstall={p.device.onInstall}
           />
-          <button class="b44" onClick={() => p.go({ ...p.nav, sheet: { kind: "menu" } })} aria-label="More">
+          <button class="b44" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "menu" } })} aria-label="More">
             {I.more}
           </button>
         </div>
       )}
-      {!p.selecting && (
+      {!p.list.selecting && (
         <div class="m-strip" role="tablist" aria-label="Sections">
           {SECTIONS.map((s) => {
-            const n = p.sec[s.key].length;
+            const n = p.inbox.sec[s.key].length;
             return (
               <button class={`m-seg${active === s.key ? " on" : ""}${s.key === "needs" && n > 0 ? " att" : ""}`} onClick={() => jump(s.key)} title={`${s.label}: ${n}`}>
                 <span class="c">
@@ -411,30 +410,30 @@ function MInbox(p: PhoneProps) {
           })}
         </div>
       )}
-      {p.projectFilter && !p.selecting && (() => {
-        const fp = p.projects.find((x) => x.id === p.projectFilter);
+      {p.filter.id && !p.list.selecting && (() => {
+        const fp = p.store.projects.find((x) => x.id === p.filter.id);
         return fp ? (
           <div class="m-pfline" style={{ "--pc": colorVar(fp.color, fp.name) }}>
-            <button class="m-pfn" onClick={() => p.go({ ...p.nav, sheet: { kind: "filter" } })}>
+            <button class="m-pfn" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "filter" } })}>
               <ProjectIcon project={fp} name={fp.name} size={20} />
               <span class="ell">Only {fp.name}</span>
               {quietNote(fp, p.now) && <span class="m-pfq">{quietNote(fp, p.now)}</span>}
             </button>
-            <button class="m-tbtn" onClick={() => p.onProjectFilter(null)}>
+            <button class="m-tbtn" onClick={() => p.filter.set(null)}>
               Clear
             </button>
           </div>
         ) : null;
       })()}
-      {p.conn === "offline" && (
+      {p.store.conn === "offline" && (
         <div class="m-cstrip">
-          <span class="ell">Reconnecting to {p.host}…</span>
+          <span class="ell">Reconnecting to {hostName}…</span>
         </div>
       )}
-      {showIos && !p.selecting && (
+      {showIos && !p.list.selecting && (
         <div class="m-iosrow">
           <span class="ell">Add Fyr to the Home Screen to get notifications.</span>
-          <button class="m-tbtn" onClick={() => p.go({ ...p.nav, sheet: { kind: "push" } })}>
+          <button class="m-tbtn" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "push" } })}>
             How
           </button>
           <button class="b44" aria-label="Dismiss" onClick={() => (store(STORAGE_IOS, "1"), setIosDismissed(true))}>
@@ -444,20 +443,20 @@ function MInbox(p: PhoneProps) {
       )}
       <div class="m-list" ref={listRef} onScroll={onScroll}>
         {SECTIONS.map((s) => {
-          const list = p.sec[s.key];
-          const open = isOpen(s.key, p.sectionOpen) && list.length > 0;
-          const limit = p.expanded[s.key] ? list.length : SECTION_LIMIT[s.key];
+          const list = p.inbox.sec[s.key];
+          const open = isOpen(s.key, p.list.sectionOpen) && list.length > 0;
+          const limit = p.list.expanded[s.key] ? list.length : SECTION_LIMIT[s.key];
           const hint = s.key === "working" ? workingHint(list) : s.key === "snoozed" ? snoozedHint(list, p.now) : s.key === "settled" ? "last 24 h" : "";
           const collapsible = list.length > 0 && (COLLAPSED_BY_DEFAULT.includes(s.key) || !open);
           return (
             <section id={`m-sec-${s.key}`}>
               <div
-                class={`m-sec${collapsible ? (open ? " exp" : " col") : ""}${s.key === "seen" && merged.length && !p.selecting ? " hasbtn" : ""}`}
-                onClick={() => list.length && p.setSectionOpen((o) => ({ ...o, [s.key]: !isOpen(s.key, o) }))}
+                class={`m-sec${collapsible ? (open ? " exp" : " col") : ""}${s.key === "seen" && merged.length && !p.list.selecting ? " hasbtn" : ""}`}
+                onClick={() => list.length && p.list.setSectionOpen((o) => ({ ...o, [s.key]: !isOpen(s.key, o) }))}
               >
                 {s.label}
                 <span class="n">{stripCount(list.length)}</span>
-                {s.key === "seen" && merged.length > 0 && !p.selecting ? (
+                {s.key === "seen" && merged.length > 0 && !p.list.selecting ? (
                   <button
                     class="m-sbtn"
                     onClick={(e) => {
@@ -477,7 +476,7 @@ function MInbox(p: PhoneProps) {
               {open &&
                 list.slice(0, limit).map((t) => <MRow key={t.id} t={t} p={p} needs={s.key === "needs"} />)}
               {open && list.length > limit && (
-                <button class="m-more" onClick={() => p.onExpand(s.key)}>
+                <button class="m-more" onClick={() => p.list.onExpand(s.key)}>
                   Show all {list.length.toLocaleString()}
                 </button>
               )}
@@ -485,15 +484,15 @@ function MInbox(p: PhoneProps) {
           );
         })}
       </div>
-      {p.selecting && (
+      {p.list.selecting && (
         <div class="m-selbar">
-          <button class="m-bt p" disabled={!p.picked.size} onClick={() => (p.actions.settle([...p.picked], true), p.setSelecting(false), p.setPicked(new Set()))}>
-            Settle {p.picked.size || ""}
+          <button class="m-bt p" disabled={!p.list.picked.size} onClick={() => (p.actions.settle([...p.list.picked], true), p.list.setSelecting(false), p.list.setPicked(new Set()))}>
+            Settle {p.list.picked.size || ""}
           </button>
-          <button class="m-bt" disabled={!p.picked.size} onClick={() => p.go({ ...p.nav, sheet: { kind: "snooze", ids: [...p.picked] } })}>
+          <button class="m-bt" disabled={!p.list.picked.size} onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "snooze", ids: [...p.list.picked] } })}>
             Snooze…
           </button>
-          <button class="b44" disabled={!p.picked.size} aria-label="More actions" onClick={() => p.go({ ...p.nav, sheet: { kind: "actions", ids: [...p.picked] } })}>
+          <button class="b44" disabled={!p.list.picked.size} aria-label="More actions" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "actions", ids: [...p.list.picked] } })}>
             {I.more}
           </button>
         </div>
@@ -502,11 +501,11 @@ function MInbox(p: PhoneProps) {
   );
 }
 
-function workingHint(list: ThreadDTO[]): string {
+function workingHint(list: Thread[]): string {
   const waiting = list.filter((t) => t.attention.state === "waiting").length;
   return waiting ? `${waiting} waiting` : "";
 }
-function snoozedHint(list: ThreadDTO[], now: number): string {
+function snoozedHint(list: Thread[], now: number): string {
   const next = list
     .map((t) => t.view?.snoozeUntil)
     .filter((x): x is string => !!x)
@@ -514,7 +513,7 @@ function snoozedHint(list: ThreadDTO[], now: number): string {
   return next ? `next: ${untilLabel(next, now)}` : "none";
 }
 
-function oneMeta(t: ThreadDTO, now: number): string {
+function oneMeta(t: Thread, now: number): string {
   if (t.attention.section === "working") {
     const subs = t.subagents && !groupTasks(t.tasks).running.length ? `${t.subagents} sub · ` : "";
     return subs + workingLine(t);
@@ -524,13 +523,13 @@ function oneMeta(t: ThreadDTO, now: number): string {
 }
 
 /** V0.54: a row names the thread's host when the front has more than one; an offline host says so on any front. */
-function MHost({ t, hosts }: { t: ThreadDTO; hosts?: HostInfo[] }) {
+function MHost({ t, hosts }: { t: Thread; hosts?: HostInfo[] }) {
   if (t.hostOffline) return <><b class="m-off">{t.host || "host"} offline</b> · </>;
   const h = hostTag(t, hosts);
   return h ? <><span class="m-hostn">{h}</span> · </> : null;
 }
 
-function MPr({ t, short }: { t: ThreadDTO; short?: boolean }) {
+function MPr({ t, short }: { t: Thread; short?: boolean }) {
   if (!t.pr) return <span />;
   const l = prChip(t.pr, short);
   return (
@@ -541,7 +540,7 @@ function MPr({ t, short }: { t: ThreadDTO; short?: boolean }) {
 }
 
 /** A row with swipes (right settles, left snoozes), long press (actions) and selection. */
-function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) {
+function MRow({ t, p, needs }: { t: Thread; p: PhoneProps; needs: boolean }) {
   const avail: SwipeAvail = useMemo(() => swipeAvail(t), [t]);
   const [sw, setSw] = useState<Swipe>(idle);
   const swRef = useRef<Swipe>(idle);
@@ -562,15 +561,15 @@ function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) 
 
   const onDown = (e: PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    set(p.selecting ? idle : swipeStart(e.clientX, e.clientY));
+    set(p.list.selecting ? idle : swipeStart(e.clientX, e.clientY));
     lp.current = { timer: null, x: e.clientX, y: e.clientY, fired: false };
-    if (!p.selecting) {
+    if (!p.list.selecting) {
       lp.current.timer = setTimeout(() => {
         lp.current.fired = true;
         suppressClick.current = true;
         set(idle);
         if (navigator.vibrate) navigator.vibrate(8);
-        p.go({ ...p.nav, sheet: { kind: "actions", ids: [t.id] } });
+        p.nav.go({ ...p.nav.at, sheet: { kind: "actions", ids: [t.id] } });
       }, LONG_PRESS_MS);
     }
   };
@@ -595,7 +594,7 @@ function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) 
       suppressClick.current = true;
       const r = swipeEnd(cur, rowRef.current?.offsetWidth ?? 390, avail);
       if (r.kind === "settle") (haptic("firm"), p.actions.settle([t.id]));
-      else if (r.kind === "snooze") (haptic(), p.go({ ...p.nav, sheet: { kind: "snooze", ids: [t.id] } }));
+      else if (r.kind === "snooze") (haptic(), p.nav.go({ ...p.nav.at, sheet: { kind: "snooze", ids: [t.id] } }));
       else if (r.reason) {
         setHint(r.reason);
         setTimeout(() => setHint(null), 1400);
@@ -608,37 +607,37 @@ function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) 
       suppressClick.current = false;
       return;
     }
-    if (p.selecting) {
-      const n = new Set(p.picked);
+    if (p.list.selecting) {
+      const n = new Set(p.list.picked);
       if (n.has(t.id)) n.delete(t.id);
       else n.add(t.id);
-      p.setPicked(n);
+      p.list.setPicked(n);
       return;
     }
-    p.go({ screen: { name: "thread", id: t.id }, sheet: null });
+    p.nav.go({ screen: { name: "thread", id: t.id }, sheet: null });
   };
 
   const off = swipeOffset(sw, avail);
   const side = off > 0 ? avail.right : off < 0 ? avail.left : null;
   const st = t.attention.state;
-  const picked = p.picked.has(t.id);
+  const picked = p.list.picked.has(t.id);
   const body = needs ? (
     <div class={`m-rw${st === "done" ? " dn" : ""}`}>
-      {p.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : <span class="m-tile"><StateIcon state={st} /></span>}
+      {p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : <span class="m-tile"><StateIcon state={st} /></span>}
       <span class="t ell">{t.title || "Untitled"}</span>
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, p.now)}</span>
       <span class="m ell">
-        <b class={stateClass(st)}>{rowState(t)}</b> · <MHost t={t} hosts={p.hosts} />{t.parent && <><StartedBy parentId={t.parent} link={false} /> · </>}<ThreadProject t={t} /> · {rowMeta(t)}
+        <b class={stateClass(st)}>{rowState(t)}</b> · <MHost t={t} hosts={p.store.hosts} />{t.parent && <><StartedBy parentId={t.parent} link={false} /> · </>}<ThreadProject t={t} /> · {rowMeta(t)}
       </span>
       <MPr t={t} />
     </div>
   ) : (
     <div class="m-one">
-      {p.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : <StateIcon state={st} />}
+      {p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : <StateIcon state={st} />}
       <span class="t">
         <span class="tn ell">{t.title || "Untitled"}</span>
         <i class="ell">
-          <MHost t={t} hosts={p.hosts} />
+          <MHost t={t} hosts={p.store.hosts} />
           {t.parent && (
             <>
               <StartedBy parentId={t.parent} link={false} /> ·{" "}
@@ -692,9 +691,9 @@ function MSearch(p: PhoneProps) {
   useEffect(() => ref.current?.focus(), []);
   // V0.46: search finds the threads of a project in its quiet hours too.
   const all = useMemo(() => {
-    const sec = sections(p.searchable);
+    const sec = sections(p.inbox.searchable);
     return SECTIONS.flatMap((s) => sec[s.key]);
-  }, [p.searchable]);
+  }, [p.inbox.searchable]);
   const needle = q.trim().toLowerCase();
   const hits = needle ? all.filter((t) => matchesQuery(t, needle)).slice(0, 200) : [];
   return (
@@ -718,16 +717,16 @@ function MSearch(p: PhoneProps) {
 
 // ---- thread ----
 
-function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
+function MThread(p: PhoneProps & { t: Thread; tab: string }) {
   const t = p.t;
-  const decision = t.decisions?.[0] ?? null;
+  const hostName = useHostName(p);
+  const decision = currentDecision(t);
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => setCollapsed(false), [decision?.id]);
   const cardOpen = !!decision && !collapsed;
-  const previews = useMemo(() => previewsOf(p.events ?? [], t.host), [p.events, t.host]);
   const st = t.attention.state;
-  const setTab = (tab: string) => p.replace({ screen: { name: "thread", id: t.id, tab }, sheet: null });
-  const [nextOffer, setNextOffer] = useState<ThreadDTO | null>(null);
+  const setTab = (tab: string) => p.nav.replace({ screen: { name: "thread", id: t.id, tab }, sheet: null });
+  const [nextOffer, setNextOffer] = useState<Thread | null>(null);
   useEffect(() => {
     if (!nextOffer) return;
     const id = setTimeout(() => setNextOffer(null), 5000);
@@ -736,7 +735,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
 
   const afterAnswer = (ok: boolean) => {
     if (!ok) return;
-    const next = p.sec.needs.find((x) => x.id !== t.id);
+    const next = p.inbox.sec.needs.find((x) => x.id !== t.id);
     if (next) setNextOffer(next);
   };
 
@@ -744,7 +743,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
     <div class={`m-screen m-thread${cardOpen ? " carding" : ""}`}>
       <div class="m-tth">
         <div class="m-tr1">
-          <button class="b44" onClick={p.back} aria-label="Back to the inbox">
+          <button class="b44" onClick={p.nav.back} aria-label="Back to the inbox">
             {I.back}
           </button>
           <div class="m-ttw">
@@ -755,20 +754,20 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
               </div>
             )}
           </div>
-          <button class="b44" onClick={() => p.go({ ...p.nav, sheet: { kind: "thread-menu", ids: [t.id] } })} aria-label="Thread actions">
+          <button class="b44" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "thread-menu", ids: [t.id] } })} aria-label="Thread actions">
             {I.more}
           </button>
         </div>
         <div class="m-chips">
-          <MProjectChip t={t} projects={p.projects} onClick={() => p.go({ ...p.nav, sheet: { kind: "project", ids: [t.id] } })} />
-          <button class="m-chipsd" onClick={() => p.go({ ...p.nav, sheet: { kind: "details", ids: [t.id] } })} aria-label="Thread details">
+          <MProjectChip t={t} projects={p.store.projects} onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "project", ids: [t.id] } })} />
+          <button class="m-chipsd" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} aria-label="Thread details">
           <span class={`m-chip st ${stateClass(st)}`}>
             <span class={t.running ? "spin icw" : "icw"}>
               <StateIcon state={st} size={14} />
             </span>
             <span>{stateLabel(st)}</span>
           </span>
-          {hostTag(t, p.hosts) && !t.hostOffline && (
+          {hostTag(t, p.store.hosts) && !t.hostOffline && (
             <span class="m-chip m m-hostc">
               <span>{t.host}</span>
             </span>
@@ -785,7 +784,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
           })()}
           </button>
         </div>
-        <ThreadOffers t={t} onRun={(a, args) => p.actions.run(t.id, a, args)} />
+        <ThreadOffers t={t} onRun={(a, args) => void p.commands.run(a, [t.id], args)} />
         {t.hostOffline && (
           <div class="m-offl" role="status" title="The front shows this thread from its last copy; commands wait until the host is back">
             {offlineLine(t)}
@@ -793,59 +792,40 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
         )}
         {!cardOpen && (
           <div class="m-tabs" role="tablist">
-            {liveViewOf(t) && (
-              <button class={p.tab === "view" ? "on" : ""} onClick={() => setTab("view")}>
-                View
+            {threadTabs(t).map((k) => (
+              <button class={p.tab === k ? "on" : ""} onClick={() => setTab(k)}>
+                {TAB_LABEL[k]}
               </button>
-            )}
-            <button class={p.tab === "conv" ? "on" : ""} onClick={() => setTab("conv")}>
-              Conversation
-            </button>
-            <button class={p.tab === "changes" ? "on" : ""} onClick={() => setTab("changes")}>
-              Changes
-            </button>
-            {t.pr && (
-              <button class={p.tab === "pr" ? "on" : ""} onClick={() => setTab("pr")}>
-                PR
-              </button>
-            )}
+            ))}
           </div>
         )}
       </div>
-      {t.tasks && t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
-      {!cardOpen && p.tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.actions.send(t.id, { text, from: "view" })} onAction={viewAction((a, args) => p.actions.run(t.id, a, args))} />}
-      {!cardOpen && p.tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
-      {!cardOpen && p.tab === "conv" && <Filmstrip cards={previews} collapsible />}
+      {t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
-      ) : p.tab === "conv" ? (
-        <Conversation
-          outbox={(t.outbox ?? []).map((o) => o.id)}
-          events={p.events}
-          onAtEnd={p.onAtEnd}
-          threadId={t.id}
-          onEarlier={p.onEarlier}
-          cwd={t.cwd}
-          host={t.host}
-          delivery={{ cancel: (messageId) => p.actions.cancelMessage(t.id, messageId), resend: (args) => p.actions.send(t.id, args) }}
+      ) : (
+        <ThreadTabBody
+          phone
+          t={t}
+          tab={p.tab}
+          setTab={setTab}
+          events={p.open.events}
+          now={p.now}
+          onAtEnd={p.open.onAtEnd}
+          onEarlier={p.open.onEarlier}
+          run={(a, args) => p.commands.run(a, [t.id], args)}
+          send={(args) => p.commands.send(t.id, args)}
         />
-      ) : p.tab === "changes" ? (
-        <div class="chtab">
-          <ChangeList t={t} onRun={(a, args) => p.actions.run(t.id, a, args)} />
-          <CiNotesScope changes={t.changes}><ChangesView threadId={t.id} changes={t.changes} /></CiNotesScope>
-        </div>
-      ) : p.tab === "pr" ? (
-        <PrTab t={t} now={p.now} phone onSend={(text) => p.actions.send(t.id, { text })} onDismiss={() => p.actions.dismissPR(t.id)} onChanges={() => setTab("changes")} />
-      ) : null}
-      {decision && decision.kind === "ask" && p.card && p.card.decisionId === decision.id && (
-        <MAsk d={decision} card={p.card} onCard={p.onCard} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} submit={() => p.actions.submitAsk(decision).then(afterAnswer)} />
+      )}
+      {decision && decision.kind === "ask" && p.open.card && p.open.card.decisionId === decision.id && (
+        <MAsk d={decision} card={p.open.card} onCard={p.open.onCard} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} submit={() => p.open.submitAsk(decision).then(afterAnswer)} />
       )}
       {decision && decision.kind !== "ask" && (
-        <MAllow d={decision} t={t} host={p.host} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} commit={(ok) => p.actions.allow(decision, ok).then(afterAnswer)} />
+        <MAllow d={decision} t={t} host={hostName} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} commit={(ok) => p.open.allow(decision, ok).then(afterAnswer)} />
       )}
       {!decision && nextOffer && (
         <div class="m-abar">
-          <button class="m-bt p" onClick={() => (setNextOffer(null), p.replace({ screen: { name: "thread", id: nextOffer.id }, sheet: null }))}>
+          <button class="m-bt p" onClick={() => (setNextOffer(null), p.nav.replace({ screen: { name: "thread", id: nextOffer.id }, sheet: null }))}>
             <span class="ell">Next: {nextOffer.title} ›</span>
           </button>
         </div>
@@ -855,7 +835,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
   );
 }
 
-function MComposer({ t, p, onView }: { t: ThreadDTO; p: PhoneProps; onView?: boolean }) {
+function MComposer({ t, p, onView }: { t: Thread; p: PhoneProps; onView?: boolean }) {
   const [text, setText] = useDraft(t.id);
   const att = useAttachments(t.host);
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -871,7 +851,7 @@ function MComposer({ t, p, onView }: { t: ThreadDTO; p: PhoneProps; onView?: boo
   }, [text]);
   const send = async () => {
     if (reason || !plan.ok) return;
-    if (await p.actions.send(t.id, onView ? { ...plan.args, from: "view-typed" } : plan.args)) {
+    if (await p.commands.send(t.id, onView ? { ...plan.args, from: "view-typed" } : plan.args)) {
       haptic();
       setText("");
       att.clear();
@@ -901,7 +881,7 @@ function MComposer({ t, p, onView }: { t: ThreadDTO; p: PhoneProps; onView?: boo
           onPaste={att.onPaste}
         />
         {stop ? (
-          <button class="m-send" aria-label="Stop the run" title={unavailableReason(t, "thread.interrupt") ?? "Stop"} disabled={!isAvailable(t, "thread.interrupt")} onClick={() => p.actions.interrupt(t.id)}>
+          <button class="m-send" aria-label="Stop the run" title={unavailableReason(t, "thread.interrupt") ?? "Stop"} disabled={!isAvailable(t, "thread.interrupt")} onClick={() => void p.commands.run("thread.interrupt", [t.id])}>
             {I.stop}
           </button>
         ) : (
@@ -1070,7 +1050,7 @@ function MAsk({ d, card, onCard, collapsed, onCollapse, submit }: { d: Decision;
   );
 }
 
-function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t: ThreadDTO; host: string; collapsed: boolean; onCollapse(): void; commit(ok: boolean): void }) {
+function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t: Thread; host: string; collapsed: boolean; onCollapse(): void; commit(ok: boolean): void }) {
   const [choice, setChoice] = useState<Choice>(null);
   useEffect(() => setChoice(null), [d.id]);
   const approval = d.kind === "approval";
@@ -1127,68 +1107,16 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
 
 // ---- new thread ----
 
-/** SPEC 0.5 V0.30: Project first; the folder follows from the project's folder on this host, else it is asked. */
+/** SPEC 0.5 V0.30: Project first; the folder follows from the project's folder on this host, else it is asked.
+ *  #41: the state is useNewThreadForm's, shared with the desktop dialog. */
 function MNew(p: PhoneProps) {
-  const last = useMemo(() => parseLastUsed(load(STORAGE_LAST)), []);
-  const defs = useMemo(() => newDefaults(last, p.projects, p.profiles), [p.projects, p.profiles]);
-  const [made, setMade] = useState<Project | null>(null);
-  const projects = made && !p.projects.some((x) => x.id === made.id) ? [...p.projects, made] : p.projects;
-  // undefined: No project; null: not chosen yet (the projects may still be loading).
-  const [projectId, setProjectId] = useState<string | undefined | null>(null);
-  // V0.42: a folder picked for this thread; "" follows the project (its folder, else a scratch folder).
-  const [picked, setPicked] = useState("");
-  const picker = useFolderPick();
-  const [combo, setCombo] = useState(`${defs.profile}\u0000${defs.model}`);
-  const [picking, setPicking] = useState(false);
-  const [creating, setCreating] = useState<string | null>(null);
-  // V0.63: the project being made in the New project step, as it is typed.
-  const [draft, setDraft] = useState<{ name: string; folder: string } | null>(null);
-  const making = creating !== null ? (draft ?? { name: creating, folder: "" }) : null;
-  const [text, setText] = useState("");
-  const [liveView, setLiveView] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const n = useNewThreadForm({ projects: p.store.projects, profiles: p.store.profiles, hosts: p.store.hosts, projectFilter: p.filter.id, onCreate: p.actions.create, onNewProject: (name, folder) => p.projectActions.create(name, folder) });
+  const { form: f, cur, chip, folder, profiles, att } = n;
   const ta = useRef<HTMLTextAreaElement>(null);
-  const cur = projectId ? projects.find((x) => x.id === projectId) : undefined;
-  // V0.54: a thread starts on its project's host, with that host's profiles; its files upload there.
-  const target = hostForProject(cur?.host, p.hosts);
-  const profiles = profilesOn(target, p.hosts, p.profiles);
-  const att = useAttachments(target);
-  const folder = newThreadFolder(picked, making ? localProject("", making.name, making.folder) : cur);
-  const chip = projectChip(cur, making);
-  const choose = (pr: Project | null) => {
-    setPicking(false);
-    setCreating(null);
-    setDraft(null);
-    setProjectId(pr?.id);
-    setPicked("");
-    const there = profilesOn(hostForProject(pr?.host, p.hosts), p.hosts, p.profiles);
-    const d = pr ? projectDefaults(pr, there) : {};
-    if (d.profile && d.model) setCombo(`${d.profile}\u0000${d.model}`);
-    else if (!there.some((x) => x.id === combo.split("\u0000")[0])) {
-      const np = there.find((x) => !x.unavailable);
-      if (np) setCombo(`${np.id}\u0000${np.defaultModel ?? np.models[0] ?? ""}`);
-    }
-  };
-  useEffect(() => {
-    if (projectId === null && p.projects.length) {
-      const id = startProject(p.projects, p.projectFilter, lastProject());
-      const pr = p.projects.find((x) => x.id === id);
-      if (pr) choose(pr);
-      else setProjectId(undefined);
-    }
-    if (!combo.split("\u0000")[0] && defs.profile) setCombo(`${defs.profile}\u0000${defs.model}`);
-  }, [p.projects.length, defs.profile]);
-  const [profile, model] = combo.split("\u0000");
-  const [effortPick, setEffort] = useState("");
-  const prof = profiles.find((x) => x.id === profile);
-  const efforts = effortsFor(prof, model);
-  const effort = startEffort(prof, model, effortPick);
-  const plan = sendArgs(text, att.chips);
-  const ready = plan.ok;
+  const ready = n.plan.ok;
 
   const paste = async () => {
-    setErr(null);
+    n.setErr(null);
     try {
       const items = await navigator.clipboard.read();
       const files: File[] = [];
@@ -1196,87 +1124,48 @@ function MNew(p: PhoneProps) {
         const type = it.types.find((x) => x.startsWith("image/"));
         if (type) files.push(new File([await it.getType(type)], "pasted", { type }));
       }
-      if (!files.length) return setErr("The clipboard has no image.");
+      if (!files.length) return n.setErr("The clipboard has no image.");
       att.add(files);
     } catch {
       ta.current?.focus();
-      setErr("Paste into the text field: press and hold it, then Paste.");
+      n.setErr("Paste into the text field: press and hold it, then Paste.");
     }
-  };
-
-  const start = async () => {
-    if (!ready || busy) return;
-    setBusy(true);
-    // V0.63: Start with the New project step open makes the project first, then files the thread in it.
-    let pid = projectId ?? undefined;
-    if (making) {
-      if (!making.name.trim()) return (setBusy(false), setErr("A project needs a name."));
-      const r = await p.projectActions.create(making.name.trim(), making.folder);
-      if (r.error || !r.id) return (setBusy(false), setErr(r.error ?? "The project was not made."));
-      const np = localProject(r.id, making.name.trim(), making.folder);
-      setMade(np);
-      choose(np);
-      pid = r.id;
-    }
-    store(STORAGE_LAST, JSON.stringify({ cwd: folder.cwd ?? "", profile, model }));
-    const e = await p.actions.create({ cwd: making && !picked ? making.folder || undefined : folder.cwd, text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, effort: effortPick && effort ? effort : undefined, projectId: pid, view: liveView || undefined });
-    setBusy(false);
-    if (e) setErr(e);
   };
 
   return (
     <div class="m-screen m-new">
-      <MHeader onBack={p.back} title="New thread" close />
+      <MHeader onBack={p.nav.back} title="New thread" close />
       <div class="m-nbody" onDrop={att.onDrop} onDragOver={att.onDragOver}>
         <div class="m-defs">
           <div class="m-dl">Project</div>
-          <button class="m-dchip m-ppick" onClick={() => (setPicking(!picking), setCreating(null), setDraft(null))} aria-expanded={picking} style={cur && !chip.isNew ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
+          <button class="m-dchip m-ppick" onClick={n.togglePicking} aria-expanded={f.picking} style={cur && !chip.isNew ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
             {chip.isNew ? <span class="pi all">+</span> : cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
             <span class="plt">
               <span class="ell pln">{chip.name}</span>
               <span class="ell pls2">{chip.sub}</span>
             </span>
-            {picking ? I.up : I.down}
+            {f.picking ? I.up : I.down}
           </button>
-          {picking && creating === null && (
+          {f.picking && f.creating === null && (
             <div class="m-pickpanel">
               <ProjectList
-                projects={projects}
-                selectedId={projectId ?? null}
+                projects={n.projects}
+                selectedId={f.projectId ?? null}
                 allLabel="No project"
-                newRow={{ fromThread: false, sub: "A name, and a folder if you like", onNew: (q) => setCreating(q.trim()) }}
-                onPick={(pr) => choose(pr)}
+                newRow={{ fromThread: false, sub: "A name, and a folder if you like", onNew: n.startCreating }}
+                onPick={n.choose}
               />
             </div>
           )}
-          {creating !== null && (
+          {f.creating !== null && (
             <div class="m-pickpanel">
-              <NewProjectStep
-                initialName={creating}
-                initialFolder=""
-                fromThread={false}
-                onDraft={(name, folder) => setDraft({ name, folder })}
-                onCancel={() => (setCreating(null), setDraft(null))}
-                onCreate={async (name, folder) => {
-                  const r = await p.projectActions.create(name, folder);
-                  if (r.error) return r.error;
-                  if (r.id) {
-                    const np = localProject(r.id, name, folder);
-                    setMade(np);
-                    choose(np);
-                  }
-                  return null;
-                }}
-              />
+              <NewProjectStep initialName={f.creating} initialFolder="" fromThread={false} onDraft={n.setDraft} onCancel={n.cancelCreating} onCreate={n.createProject} />
             </div>
           )}
           <div class="m-dl">Folder</div>
           <div class={`m-dchip m-fline${folder.scratch ? " scratch" : ""}`}>
             <span class="ell">{folder.label}</span>
-            <button class="m-fchg" onClick={async () => {
-              const path = await picker.pick(changeOptions(cur, folder.cwd ?? ""));
-              if (path) setPicked(path);
-            }}>
+            <button class="m-fchg" onClick={() => void n.changeFolder()}>
               Change
             </button>
           </div>
@@ -1294,18 +1183,25 @@ function MNew(p: PhoneProps) {
           ref={ta}
           class="m-ta"
           rows={3}
-          value={text}
+          value={f.text}
           placeholder={att.chips.length ? "Add a note (optional)" : "What should Claude do? Optional with a screenshot."}
-          onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+          onInput={(e) => n.set({ text: (e.target as HTMLTextAreaElement).value })}
           onPaste={att.onPaste}
         />
         <div class="m-defs">
           <label class="m-dchip">
             <span class="ell">
-              {profiles.find((x) => x.id === profile)?.name ?? profile} · {shortModel(model)}
+              {profiles.find((x) => x.id === f.profile)?.name ?? f.profile} · {shortModel(f.model)}
             </span>
             {I.down}
-            <select value={combo} aria-label="Profile and model" onChange={(e) => setCombo((e.target as HTMLSelectElement).value)}>
+            <select
+              value={`${f.profile}\u0000${f.model}`}
+              aria-label="Profile and model"
+              onChange={(e) => {
+                const [profile, model] = (e.target as HTMLSelectElement).value.split("\u0000");
+                n.set({ profile, model });
+              }}
+            >
               {profiles.flatMap((pr) =>
                 pr.models.map((m) => (
                   <option value={`${pr.id}\u0000${m}`}>
@@ -1315,28 +1211,28 @@ function MNew(p: PhoneProps) {
               )}
             </select>
           </label>
-          {efforts.length > 0 && (
+          {n.efforts.length > 0 && (
             <label class="m-dchip">
-              <span class="ell">Effort · {effort || "default"}</span>
+              <span class="ell">Effort · {n.effort || "default"}</span>
               {I.down}
-              <select value={effort} aria-label="Effort" onChange={(e) => setEffort((e.target as HTMLSelectElement).value)}>
-                {!effort && <option value="">CLI default</option>}
-                {efforts.map((x) => (
+              <select value={n.effort} aria-label="Effort" onChange={(e) => n.set({ effortPick: (e.target as HTMLSelectElement).value })}>
+                {!n.effort && <option value="">CLI default</option>}
+                {n.efforts.map((x) => (
                   <option value={x}>{x}</option>
                 ))}
               </select>
             </label>
           )}
           <label class="m-dchip m-lvc">
-            <input type="checkbox" checked={liveView} onChange={(e) => setLiveView((e.target as HTMLInputElement).checked)} />
+            <input type="checkbox" checked={f.liveView} onChange={(e) => n.set({ liveView: (e.target as HTMLInputElement).checked })} />
             <span class="ell">Live view</span>
           </label>
           <QuotaList profiles={profiles} />
         </div>
-        {err && <div class="err prose">{err}</div>}
+        {n.err && <div class="err prose">{n.err}</div>}
       </div>
       <div class="m-abar">
-        <button class="m-bt p" disabled={!ready || busy} onClick={() => void start()}>
+        <button class="m-bt p" disabled={!ready || n.busy} onClick={() => void n.submit()}>
           Start
         </button>
       </div>
@@ -1372,8 +1268,8 @@ function Item({ icon, label, sub, right, disabled, onClick }: { icon?: Component
   );
 }
 
-function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
-  const close = p.back;
+function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
+  const close = p.nav.back;
   const { sheet, t } = p;
   const ids = sheet.ids ?? [];
   const after = (fn: () => void) => () => {
@@ -1381,20 +1277,20 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
     setTimeout(fn, 0);
   };
   if (sheet.kind === "snooze") {
-    return <SnoozeSheet ids={ids} title={ids.length === 1 ? p.threads[ids[0]]?.title : undefined} onClose={close} onPick={(d) => (close(), p.actions.snooze(ids, d), p.setSelecting(false), p.setPicked(new Set()))} />;
+    return <SnoozeSheet ids={ids} title={ids.length === 1 ? p.store.threads[ids[0]]?.title : undefined} onClose={close} onPick={(d) => (close(), void p.commands.run("thread.snooze", ids, { until: d.toISOString() }), p.list.setSelecting(false), p.list.setPicked(new Set()))} />;
   }
   if (sheet.kind === "menu") {
     return (
       <MSheet onClose={close} label="More">
-        <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.setSelecting(true))} />
-        <Item label="Changes" sub="Every change across threads, by stage" right={needsCount(p.threads) ? `${needsCount(p.threads)} need you` : undefined} onClick={() => p.replace({ screen: { name: "changes" }, sheet: null })} />
-        <Item label="Settings" sub="Providers, notifications, appearance" onClick={() => p.replace({ screen: { name: "settings" }, sheet: null })} />
-        <Item label="Filter by project…" right={p.projectFilter ? p.projects.find((x) => x.id === p.projectFilter)?.name : "all"} onClick={() => p.replace({ ...p.nav, sheet: { kind: "filter" } })} />
-        <Item label="Adopt from T3" onClick={() => p.replace({ ...p.nav, sheet: { kind: "adopt" } })} />
-        <Item label="Notifications" right={p.push} onClick={() => p.replace({ ...p.nav, sheet: { kind: "push" } })} />
+        <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.list.setSelecting(true))} />
+        <Item label="Changes" sub="Every change across threads, by stage" right={needsCount(p.store.threads) ? `${needsCount(p.store.threads)} need you` : undefined} onClick={() => p.nav.replace({ screen: { name: "changes" }, sheet: null })} />
+        <Item label="Settings" sub="Providers, notifications, appearance" onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
+        <Item label="Filter by project…" right={p.filter.id ? p.store.projects.find((x) => x.id === p.filter.id)?.name : "all"} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "filter" } })} />
+        <Item label="Adopt from T3" onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "adopt" } })} />
+        <Item label="Notifications" right={p.device.push} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "push" } })} />
         <Item label="Show tool details" sub="Every tool group open, every machine line in full" right={toolDetails() ? "on" : "off"} onClick={after(() => setToolDetails(!toolDetails()))} />
         {(["system", "light", "dark"] as Theme[]).map((th) => (
-          <Item label={`Theme: ${th === "system" ? "auto" : th}`} right={p.theme === th ? "✓" : ""} onClick={() => p.setTheme(th)} />
+          <Item label={`Theme: ${th === "system" ? "auto" : th}`} right={p.device.theme === th ? "✓" : ""} onClick={() => p.device.setTheme(th)} />
         ))}
       </MSheet>
     );
@@ -1404,10 +1300,10 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
       <MSheet onClose={close} label="Filter by project">
         <div class="m-shh">Show one project</div>
         <ProjectList
-          projects={p.projects.filter((x) => (x.threads ?? 0) > 0 || x.id === p.projectFilter)}
-          selectedId={p.projectFilter}
+          projects={p.store.projects.filter((x) => (x.threads ?? 0) > 0 || x.id === p.filter.id)}
+          selectedId={p.filter.id}
           allLabel="All projects"
-          onPick={(pr) => (p.onProjectFilter(pr?.id ?? null), close())}
+          onPick={(pr) => (p.filter.set(pr?.id ?? null), close())}
         />
       </MSheet>
     );
@@ -1419,8 +1315,8 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
         <div class="m-shh">{ids.length > 1 ? `Project for ${ids.length} threads` : "Project"}</div>
         <div class="m-pform">
           <ProjectPicker
-            projects={p.projects}
-            threads={ids.map((id) => p.threads[id]).filter(Boolean)}
+            projects={p.store.projects}
+            threads={ids.map((id) => p.store.threads[id]).filter(Boolean)}
             onPick={async (pr) => {
               const e = await p.projectActions.move(ids, pr?.id ?? null);
               if (!e) close();
@@ -1430,7 +1326,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
               if (!r.error) close();
               return r.error;
             }}
-            onEdit={(pr) => pr.id && p.replace({ screen: { name: "project", id: pr.id }, sheet: null })}
+            onEdit={(pr) => pr.id && p.nav.replace({ screen: { name: "project", id: pr.id }, sheet: null })}
           />
         </div>
       </MSheet>
@@ -1440,7 +1336,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
     return (
       <MSheet onClose={close} label="Selected threads">
         <div class="m-shh">{ids.length} selected</div>
-        <Item label={`Archive ${ids.length}`} icon={I.close} onClick={after(() => (p.actions.archive(ids), p.setSelecting(false), p.setPicked(new Set())))} />
+        <Item label={`Archive ${ids.length}`} icon={I.close} onClick={after(() => (p.actions.archive(ids), p.list.setSelecting(false), p.list.setPicked(new Set())))} />
       </MSheet>
     );
   }
@@ -1449,7 +1345,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
   const avail = swipeAvail(t);
   if (sheet.kind === "actions" || sheet.kind === "thread-menu") {
     const peek = sheet.kind === "actions";
-    const d = t.decisions?.[0];
+    const d = currentDecision(t);
     return (
       <MSheet onClose={close} label={t.title}>
         {peek && (
@@ -1471,8 +1367,8 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
           </div>
         )}
         {!peek && <div class="m-shh ell">{t.title}</div>}
-        {peek && <Item label="Open thread" icon={I.right} right="tap" onClick={() => p.replace({ screen: { name: "thread", id: t.id }, sheet: null })} />}
-        {t.attention.state === "failed" && <Item label="Retry" sub={reason("thread.retry")} disabled={!!reason("thread.retry")} onClick={after(() => p.actions.retry(t.id))} />}
+        {peek && <Item label="Open thread" icon={I.right} right="tap" onClick={() => p.nav.replace({ screen: { name: "thread", id: t.id }, sheet: null })} />}
+        {t.attention.state === "failed" && <Item label="Retry" sub={reason("thread.retry")} disabled={!!reason("thread.retry")} onClick={after(() => void p.commands.run("thread.retry", [t.id]))} />}
         <Item
           label={avail.right.ok ? settleLabel(t) : "Settle"}
           icon={<StateIcon state="settled" size={16} />}
@@ -1487,14 +1383,14 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
           sub={reason("thread.snooze")}
           disabled={!!reason("thread.snooze")}
           right={peek ? "← swipe" : undefined}
-          onClick={() => p.replace({ ...p.nav, sheet: { kind: "snooze", ids: [t.id] } })}
+          onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "snooze", ids: [t.id] } })}
         />
-        <Item label="Project…" icon={<ProjectIcon project={projectOf(t, p.projects)} name={projectName(t, p.projects)} size={18} />} right={projectName(t, p.projects)} onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id] } })} />
-        <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => p.actions.setView(t.id, !t.liveView))} />
-        <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another profile"} disabled={!!reason("thread.handover")} onClick={() => p.replace({ ...p.nav, sheet: { kind: "handover", ids: [t.id] } })} />
+        <Item label="Project…" icon={<ProjectIcon project={projectOf(t, p.store.projects)} name={projectName(t, p.store.projects)} size={18} />} right={projectName(t, p.store.projects)} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "project", ids: [t.id] } })} />
+        <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => void p.commands.run("thread.setView", [t.id], { on: !t.liveView }))} />
+        <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another profile"} disabled={!!reason("thread.handover")} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "handover", ids: [t.id] } })} />
         <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
-        {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.setSelecting(true), p.setPicked(new Set([t.id]))))} />}
-        {!peek && <Item label="Details" icon={I.right} onClick={() => p.replace({ ...p.nav, sheet: { kind: "details", ids: [t.id] } })} />}
+        {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.list.setSelecting(true), p.list.setPicked(new Set([t.id]))))} />}
+        {!peek && <Item label="Details" icon={I.right} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} />}
         <Item label="Archive" icon={I.close} sub={reason("thread.archive")} disabled={!!reason("thread.archive")} onClick={after(() => p.actions.archive([t.id]))} />
       </MSheet>
     );
@@ -1503,12 +1399,12 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
     return (
       <MSheet onClose={close} label="Hand over">
         <div class="m-shh">Hand over</div>
-        <HandoverForm phone t={t} profiles={p.profiles} onClose={close} onConfirm={(pr, m) => p.actions.handover(t.id, pr, m)} />
+        <HandoverForm phone t={t} profiles={p.store.profiles} onClose={close} onConfirm={(pr, m) => p.commands.handover(t.id, pr, m)} />
       </MSheet>
     );
   }
   if (sheet.kind === "details") {
-    const prof = p.profiles.find((x) => x.id === t.profile);
+    const prof = p.store.profiles.find((x) => x.id === t.profile);
     const canModel = (prof?.models.length ?? 0) > 1 && !reason("thread.setModel");
     const row = (k: string, v: ComponentChildren) => (
       <div class="m-kvrow">
@@ -1524,10 +1420,10 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
           {row(
             "Project",
             (() => {
-              const pr = projectOf(t, p.projects);
+              const pr = projectOf(t, p.store.projects);
               return (
                 <span class="m-nopj">
-                  <button class="m-plink" onClick={() => p.replace({ ...p.nav, sheet: { kind: "project", ids: [t.id] } })} aria-label={`Project: ${projectName(t, p.projects)}. Change`}>
+                  <button class="m-plink" onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "project", ids: [t.id] } })} aria-label={`Project: ${projectName(t, p.store.projects)}. Change`}>
                     {pr ? <ProjectTag project={pr} name={pr.name} /> : <span>No project</span>}
                     <span class="m-plc">Change</span>
                   </button>
@@ -1540,7 +1436,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
           {row(
             "Model",
             canModel ? (
-              <select class="m-msel" value={t.model} onChange={(e) => p.actions.setModel(t.id, (e.target as HTMLSelectElement).value)}>
+              <select class="m-msel" value={t.model} onChange={(e) => void p.commands.run("thread.setModel", [t.id], { model: (e.target as HTMLSelectElement).value })}>
                 {prof!.models.map((m) => (
                   <option value={m}>{shortModel(m)}</option>
                 ))}
@@ -1555,7 +1451,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
               reason("thread.setModel") ? (
                 startEffort(prof, t.model, t.effort) || "default"
               ) : (
-                <select class="m-msel" value={startEffort(prof, t.model, t.effort)} onChange={(e) => p.actions.setEffort(t.id, (e.target as HTMLSelectElement).value)}>
+                <select class="m-msel" value={startEffort(prof, t.model, t.effort)} onChange={(e) => void p.commands.run("thread.setModel", [t.id], { effort: (e.target as HTMLSelectElement).value })}>
                   {!startEffort(prof, t.model, t.effort) && <option value="">CLI default</option>}
                   {effortsFor(prof, t.model).map((x) => (
                     <option value={x}>{x}</option>
@@ -1610,7 +1506,7 @@ function SnoozeSheet({ ids, title, onClose, onPick }: { ids: string[]; title?: s
 // ---- projects (V0.23) ----
 
 /** The thread header's project chip (V0.30): a tap opens the picker. */
-function MProjectChip({ t, projects, onClick }: { t: ThreadDTO; projects: Project[]; onClick(): void }) {
+function MProjectChip({ t, projects, onClick }: { t: Thread; projects: Project[]; onClick(): void }) {
   const pr = projectOf(t, projects);
   return (
     <button class="m-pjb" onClick={onClick} aria-label={`Project: ${projectName(t, projects)}. Change`}>
@@ -1624,26 +1520,26 @@ function MProjectChip({ t, projects, onClick }: { t: ThreadDTO; projects: Projec
 
 /** The project screen (V0.55): name, folder, quiet hours, colour, icon and defaults. */
 function MProject(p: PhoneProps & { id: string }) {
-  const pr = p.projects.find((x) => x.id === p.id);
+  const pr = p.store.projects.find((x) => x.id === p.id);
   return (
     <div class="m-screen m-project">
-      <MHeader onBack={p.back} title="Project" />
+      <MHeader onBack={p.nav.back} title="Project" />
       <div class="m-nbody">
         {pr ? (
           <ProjectEditor
             project={pr}
-            profiles={p.profiles}
+            profiles={p.store.profiles}
             now={p.now}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
             onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}
             onDelete={async () => {
               const e = await p.projectActions.delete(pr.id!);
-              if (!e) p.back();
+              if (!e) p.nav.back();
               return e;
             }}
           />
         ) : (
-          <div class="m-empty">{p.projects.length ? "This project is not here anymore." : "Loading…"}</div>
+          <div class="m-empty">{p.store.projects.length ? "This project is not here anymore." : "Loading…"}</div>
         )}
       </div>
     </div>

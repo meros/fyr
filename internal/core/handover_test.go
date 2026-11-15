@@ -14,10 +14,10 @@ func TestHandoverAvailability(t *testing.T) {
 		want string
 	}{
 		{"idle", Thread{Profile: "a"}, ""},
-		{"running", Thread{Running: true}, "Wait for the run to end"},
+		{"running", Thread{Conversation: Conversation{Running: true}}, "Wait for the run to end"},
 		{"asking", Thread{Decisions: []Decision{{ID: "d", Kind: "ask"}}}, "Answer the open question first"},
 		{"archived", Thread{ArchivedAt: ptr(at(1))}, "The thread is archived"},
-		{"going", Thread{Handover: &Handover{To: "b"}}, "A handover is already going"},
+		{"going", Thread{Conversation: Conversation{Handover: &Handover{To: "b"}}}, "A handover is already going"},
 	}
 	for _, c := range cases {
 		if got := a.Available(&c.th, &View{}, at(2)); got != c.want {

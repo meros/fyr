@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/proc"
 )
 
 // Runner runs gh with arguments and returns its combined output.
@@ -21,7 +21,7 @@ type Runner func(ctx context.Context, args ...string) ([]byte, error)
 
 // Gh runs the real gh CLI.
 func Gh(ctx context.Context, args ...string) ([]byte, error) {
-	out, err := exec.CommandContext(ctx, "gh", args...).CombinedOutput()
+	out, err := proc.Command(ctx, "gh", args...).CombinedOutput()
 	if err != nil {
 		return out, fmt.Errorf("gh %s: %w: %s", strings.Join(args[:min(2, len(args))], " "), err, strings.TrimSpace(string(out)))
 	}
@@ -66,18 +66,18 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	if err := json.Unmarshal(out, &v); err != nil {
 		return core.PR{}, 0, fmt.Errorf("gh pr view: %w", err)
 	}
-	checks, failed := "none", 0
+	checks, failed := core.ChecksNone, 0
 	if len(v.Rollup) > 0 {
-		checks = "pass"
+		checks = core.ChecksPass
 	}
 	for _, c := range v.Rollup {
 		switch {
 		case c.Conclusion == "FAILURE" || c.Conclusion == "CANCELLED" || c.Conclusion == "TIMED_OUT" ||
 			c.Conclusion == "ACTION_REQUIRED" || c.Conclusion == "STARTUP_FAILURE" || c.State == "FAILURE" || c.State == "ERROR":
-			checks = "fail"
+			checks = core.ChecksFail
 			failed++
-		case checks != "fail" && ((c.Typename == "CheckRun" && c.Status != "COMPLETED") || c.State == "PENDING" || c.State == "EXPECTED"):
-			checks = "pending"
+		case checks != core.ChecksFail && ((c.Typename == "CheckRun" && c.Status != "COMPLETED") || c.State == "PENDING" || c.State == "EXPECTED"):
+			checks = core.ChecksPending
 		}
 	}
 	now := time.Now()
@@ -183,7 +183,7 @@ func (p *Poller) poll(ctx context.Context, t PRThread) {
 		log.Printf("pr %s: %v", t.URL, err)
 		return
 	}
-	if pr.State == "OPEN" && pr.Checks == "fail" && pr.Head != "" {
+	if pr.State == "OPEN" && pr.Checks == core.ChecksFail && pr.Head != "" {
 		pr.Annotations = p.annotations(c, t.URL, pr, failed)
 	} else {
 		delete(p.notes, t.URL)

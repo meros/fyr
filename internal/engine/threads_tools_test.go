@@ -106,3 +106,39 @@ func TestThreadNewAndLimit(t *testing.T) {
 		t.Fatalf("limit not enforced: %v %q", isErr, text)
 	}
 }
+
+// SPEC 0.5 V0.69: thread_rename names this thread or a thread it started,
+// never another of the owner's threads.
+func TestThreadRenameTool(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	a := h.create("parent")
+	other := h.create("other")
+	if text, isErr := callAs(t, h.e, a, "thread_rename", map[string]any{"title": "Acme token"}); isErr {
+		t.Fatalf("%q", text)
+	}
+	if th, _ := h.e.Thread(a); th.Title != "Acme token" {
+		t.Fatalf("title %q", th.Title)
+	}
+	if _, isErr := callAs(t, h.e, a, "thread_new", map[string]any{"cwd": h.dir, "text": "child work", "title": "Child"}); isErr {
+		t.Fatal("thread_new")
+	}
+	var child string
+	for _, d := range h.e.Snapshot() {
+		if d.Title == "Child" {
+			child = d.ID
+		}
+	}
+	if text, isErr := callAs(t, h.e, a, "thread_rename", map[string]any{"id": child, "title": "Child: tests"}); isErr {
+		t.Fatalf("rename child: %q", text)
+	}
+	if th, _ := h.e.Thread(child); th.Title != "Child: tests" {
+		t.Fatalf("child title %q", th.Title)
+	}
+	before, _ := h.e.Thread(other)
+	if text, isErr := callAs(t, h.e, a, "thread_rename", map[string]any{"id": other, "title": "Taken"}); !isErr || !strings.Contains(text, "started") {
+		t.Fatalf("renamed an unrelated thread: %v %q", isErr, text)
+	}
+	if th, _ := h.e.Thread(other); th.Title != before.Title {
+		t.Fatalf("other title %q", th.Title)
+	}
+}

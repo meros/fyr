@@ -14,6 +14,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
@@ -27,13 +28,13 @@ type host struct {
 	down atomic.Bool
 }
 
-func newHost(t *testing.T, name string) *host {
+func newHost(t *testing.T, name string, profiles ...agent.Profile) *host {
 	st, err := store.Open(filepath.Join(t.TempDir(), "db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	h := &host{eng: engine.New(st)}
-	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name}
+	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name, Profiles: profiles}
 	inner := s.Handler()
 	h.hs = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h.down.Load() {
@@ -352,4 +353,26 @@ func TestFrontDropsDeletedProject(t *testing.T) {
 		t.Fatal("the host still has the project")
 	}
 	eventually(t, "the project gone from the front", func() bool { return len(projects()) == 0 })
+}
+
+// #42: the front's profiles read asks each online host and merges by id (the
+// first host's wins), as its state does.
+func TestFrontProfiles(t *testing.T) {
+	a := newHost(t, "a", agent.Profile{ID: "claude", Name: "Claude on a", Env: []string{"SECRET=1"}})
+	b := newHost(t, "b", agent.Profile{ID: "claude", Name: "Claude on b"}, agent.Profile{ID: "local", Name: "Local"})
+	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
+	online(t, fs.URL, 2)
+	resp, err := http.Get(fs.URL + "/api/profiles")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var ps []map[string]any
+	if err := json.Unmarshal(raw, &ps); err != nil {
+		t.Fatalf("%v: %s", err, raw)
+	}
+	if len(ps) != 2 || ps[0]["name"] != "Claude on a" || ps[1]["id"] != "local" || strings.Contains(string(raw), "SECRET") {
+		t.Fatalf("profiles: %s", raw)
+	}
 }

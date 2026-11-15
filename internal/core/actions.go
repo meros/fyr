@@ -16,9 +16,12 @@ func (a Args) Str(k string) string { s, _ := a[k].(string); return s }
 // Effect is work an Action asks the host to do after its state change is
 // stored. Apply never performs effects itself, so it stays pure.
 type Effect struct {
-	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel, refresh, cancelMessage, handover
-	Text   string  `json:"text,omitempty"`
-	Images []Image `json:"images,omitempty"`
+	// ID names the effect for its runner and its result (effect:<id>); the
+	// engine sets it when it stores the reduce that returned it.
+	ID     string     `json:"id,omitempty"`
+	Kind   EffectKind `json:"kind"`
+	Text   string     `json:"text,omitempty"`
+	Images []Image    `json:"images,omitempty"`
 	// From is the thread whose agent sent this message (V0.22).
 	From string `json:"from,omitempty"`
 	// Attachments are ids of stored files (SPEC 0.5 V0.18).
@@ -31,13 +34,38 @@ type Effect struct {
 	Effort *string `json:"effort,omitempty"`
 	// Profile is the target of a handover (V0.45).
 	Profile string `json:"profile,omitempty"`
-	// Request is the approved effect for Kind "effect".
+	// Request is the approved effect for Kind EffectRun.
 	Request *EffectReq `json:"request,omitempty"`
 	// ByOwner marks an effect the owner started (V0.43): its result is
 	// recorded in the thread and not sent to the agent.
 	ByOwner bool `json:"byOwner,omitempty"`
 	// MessageID names the message of a send, or the one to cancel (V0.33).
 	MessageID string `json:"messageId,omitempty"`
+	// Script is what EffectScript runs; Cwd is where EffectThread starts.
+	Script *Script `json:"script,omitempty"`
+	Cwd    string  `json:"cwd,omitempty"`
+	// Project files the thread EffectThread starts.
+	Project string `json:"project,omitempty"`
+	// Press is the owner's press this effect runs, when it is one: its
+	// result ends the action's run.
+	Press *Press `json:"press,omitempty"`
+	// Git is the folder's facts of an EffectGit, read by the agent manager
+	// at the run's end.
+	Git *GitFacts `json:"git,omitempty"`
+}
+
+// Script is an exact command: argv in dir, within a time limit.
+type Script struct {
+	Argv       []string `json:"argv"`
+	Dir        string   `json:"dir,omitempty"`
+	TimeoutSec int      `json:"timeoutSec,omitempty"`
+}
+
+// Press is an action the owner pressed: where, and what it was.
+type Press struct {
+	On     string     `json:"on"`
+	Title  string     `json:"title"`
+	Action ActionSpec `json:"action"`
 }
 
 // Image is a pasted image, base64 encoded, sent to the agent as a content block.
@@ -88,24 +116,21 @@ func images(a Args) []Image {
 	return out
 }
 
-// settleArmed reports a settle that waits for something: the run, the PR
-// merge or a change's phase.
-func settleArmed(t *Thread) bool {
-	return t.SettleWhenDone || t.SettleWhenMerged || t.SettleWhen != nil
-}
-
-// disarmSettle cancels every settle that waits for something.
-func disarmSettle(t *Thread) {
-	t.SettleWhenDone, t.SettleWhenMerged, t.SettleWhen = false, false, nil
+// OpenMain is the main change while its PR is open, or nil.
+func OpenMain(t *Thread) *Change {
+	if c := t.Main(); c != nil && c.PR.State == "OPEN" {
+		return c
+	}
+	return nil
 }
 
 // revive is what any message from the user does to a thread: it clears the
 // failure, the settle and the snooze, and counts as seeing the thread.
 func revive(t *Thread, v *View, now time.Time) {
 	t.Failure = nil
-	t.SettledAt = nil
-	t.SettleWhenDone = false
-	v.SnoozeUntil, v.SnoozedAt = nil, nil
+	t.Settle.At = nil
+	dropSettleDone(t) // a new run: "when done" was for the last one
+	Unsnooze(v)
 	v.SeenAt = now
 }
 
@@ -136,19 +161,24 @@ func sendAction(name, label string) *Action {
 				if t.Cwd == "" {
 					return nil, fmt.Errorf("%w: cwd is required", ErrBadArgs)
 				}
-				t.Project = ProjectName(t.Cwd)
 				t.Model = a.Str("model")
 				t.Effort = a.Str("effort")
 				t.Profile = a.Str("profile")
 				t.Title = a.Str("title")
 				t.Parent = a.Str("parent")
-				t.LiveView, _ = a["view"].(bool)
+				if on, _ := a["view"].(bool); on {
+					SetView(t, true)
+				}
 				if t.Title == "" {
 					t.Title = TitleFrom(text)
 				}
+				// V0.42: the engine checked that the project exists.
+				if pid := a.Str("projectId"); pid != "" {
+					t.ProjectID, t.ProjectManual = pid, true
+				}
 			}
 			revive(t, v, now)
-			return []Effect{{Kind: "send", Text: text, Images: imgs, Attachments: atts, From: a.Str("from")}}, nil
+			return []Effect{{Kind: EffectSend, Text: text, Images: imgs, Attachments: atts, From: a.Str("from")}}, nil
 		},
 	}
 }
@@ -166,11 +196,35 @@ func Ordered() []*Action {
 	return out
 }
 
+// register adds an owner command: to the Registry (the list clients show)
+// and as an Input kind only the owner sends (decision 0020).
 func register(a *Action) {
 	if a.Available == nil {
 		a.Available = always
 	}
 	Registry[a.Name] = a
+	RegisterKind(&InputKind{Name: a.Name, From: ownerOnly, Available: a.Available, Touch: true,
+		Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
+			args := mapArgs(in)
+			effs, err := a.Apply(r.T, r.V, args, now)
+			if err != nil {
+				return Result{}, err
+			}
+			if r.T.Profile == "" {
+				r.T.Profile = "claude"
+			}
+			res := Result{Events: []Event{{"command", map[string]any{"action": a.Name, "commandId": in.CmdID}}}}
+			for _, ef := range effs {
+				// The owner's answer to an agent's request (5.10) settles here,
+				// or becomes the Fyr effect it approved.
+				if ef.Kind == EffectRun && ef.Request != nil && !ef.ByOwner {
+					answerEffect(r.T, &res, *ef.Request, ef.Allow, now)
+					continue
+				}
+				res.Effects = append(res.Effects, ef)
+			}
+			return res, nil
+		}})
 }
 
 func init() {
@@ -196,8 +250,8 @@ func init() {
 				return nil, fmt.Errorf("%w: no open decision %q", ErrBadArgs, id)
 			}
 			d := t.Decisions[idx]
-			e := Effect{Kind: "answer", DecisionID: id}
-			if d.Kind == "ask" {
+			e := Effect{Kind: EffectAnswer, DecisionID: id}
+			if d.Kind == DecisionAsk {
 				raw, _ := a["answers"].(map[string]any)
 				e.Answers = map[string]string{}
 				for _, q := range d.Questions {
@@ -211,9 +265,9 @@ func init() {
 			} else {
 				e.Allow, _ = a["allow"].(bool)
 			}
-			if d.Kind == "effect" {
+			if d.Kind == DecisionEffect {
 				// SPEC 5.10: the agent is not waiting; Fyr runs the effect itself.
-				e.Kind, e.Request = "effect", d.Effect
+				e.Kind, e.Request = EffectRun, d.Effect
 			}
 			t.Decisions = append(t.Decisions[:idx:idx], t.Decisions[idx+1:]...)
 			if len(t.Decisions) == 0 {
@@ -231,7 +285,7 @@ func init() {
 			return ""
 		},
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
-			return []Effect{{Kind: "interrupt"}}, nil
+			return []Effect{{Kind: EffectInterrupt}}, nil
 		}})
 
 	register(&Action{Name: "thread.retry", Label: "Retry", Key: "r",
@@ -244,24 +298,27 @@ func init() {
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			msg := "The last run stopped with an error (" + t.Failure.Message + "). Continue from where you stopped."
 			revive(t, v, now)
-			return []Effect{{Kind: "send", Text: msg}}, nil
+			return []Effect{{Kind: EffectSend, Text: msg}}, nil
 		}})
 
 	register(&Action{Name: "thread.dismissPR", Label: "Dismiss PR",
 		Available: func(t *Thread, _ *View, _ time.Time) string {
-			if t.PR == nil {
+			p := t.MainPR()
+			if p == nil {
 				return "No PR"
 			}
-			if t.PR.State == "OPEN" {
+			if p.State == "OPEN" {
 				return "The PR is still open"
 			}
 			return ""
 		},
+		// V0.36, #32: the change keeps its record and is never the main
+		// change again; the thread has no main PR until a new one attaches.
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
-			if t.PR.URL != "" {
-				t.DismissedPRs = append(t.DismissedPRs, t.PR.URL)
+			if c := t.Main(); c != nil {
+				c.Dismissed = true
 			}
-			t.PR = nil
+			t.MainChange = ""
 			return nil, nil
 		}})
 
@@ -280,10 +337,10 @@ func init() {
 
 	register(&Action{Name: "thread.settle", Label: "Settle", Key: "e", Bulk: true,
 		Available: func(t *Thread, v *View, now time.Time) string {
-			if t.SettledAt != nil {
+			if t.Settle.At != nil {
 				return "Already settled"
 			}
-			if t.SettleWhenDone {
+			if SettlesWhenDone(t) {
 				return "Settles when the run ends"
 			}
 			return notArchived(t, v, now)
@@ -293,54 +350,53 @@ func init() {
 		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
 			force, _ := a["now"].(bool)
 			if t.Running { // also for bulk: a live run is never hidden as settled
-				t.SettleWhenDone = true
+				SettleWhenDone(t, ByOwner, now)
 				return nil, nil
 			}
-			if !force && t.PR != nil && t.PR.State == "OPEN" && !t.SettleWhenMerged {
-				t.SettleWhenMerged = true
+			if !force && !SettlesWhenMerged(t) && SettleWhenMerged(t, ByOwner, now) {
 				v.SeenAt = now
 				return nil, nil
 			}
-			disarmSettle(t)
-			t.SettledAt = &now
+			settleNow(t, now)
 			t.Failure = nil
 			v.SeenAt = now
-			v.SnoozeUntil, v.SnoozedAt = nil, nil
+			Unsnooze(v)
 			return nil, nil
 		}})
 
 	register(&Action{Name: "thread.unsettle", Label: "Unsettle", Bulk: true,
 		Available: func(t *Thread, _ *View, _ time.Time) string {
-			if t.SettledAt == nil && !settleArmed(t) {
+			if t.Settle.At == nil && !Settling(t) {
 				return "Not settled"
 			}
 			return ""
 		},
+		// #33: clears the settle and every settle Rule, the agent's too.
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
-			t.SettledAt = nil
-			disarmSettle(t)
+			t.Settle = Settle{}
+			DropSettleRules(t)
 			return nil, nil
 		}})
 
 	register(&Action{Name: "thread.settleWhenMerged", Label: "Settle when merged", Key: "m",
 		Available: func(t *Thread, _ *View, _ time.Time) string {
-			if t.PR == nil || t.PR.State != "OPEN" {
+			if OpenMain(t) == nil {
 				return "No open PR"
 			}
-			if t.SettleWhenMerged {
+			if SettlesWhenMerged(t) {
 				return "Already set"
 			}
 			return ""
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
-			t.SettleWhenMerged = true
+			SettleWhenMerged(t, ByOwner, now)
 			v.SeenAt = now
 			return nil, nil
 		}})
 
 	register(&Action{Name: "thread.snooze", Label: "Snooze", Key: "s", Bulk: true,
 		Available: func(t *Thread, v *View, now time.Time) string {
-			if t.SettledAt != nil {
+			if t.Settle.At != nil {
 				return "Settled threads do not snooze"
 			}
 			return notArchived(t, v, now)
@@ -350,20 +406,20 @@ func init() {
 			if err != nil || !until.After(now) {
 				return nil, fmt.Errorf("%w: until must be a future RFC 3339 time", ErrBadArgs)
 			}
-			v.SnoozeUntil, v.SnoozedAt = &until, &now
+			Snooze(v, until, now)
 			v.SeenAt = now
 			return nil, nil
 		}})
 
 	register(&Action{Name: "thread.unsnooze", Label: "Unsnooze", Bulk: true,
 		Available: func(_ *Thread, v *View, now time.Time) string {
-			if v.SnoozeUntil == nil || !v.SnoozeUntil.After(now) {
+			if until, _ := SnoozeOf(v); until == nil || !until.After(now) {
 				return "Not snoozed"
 			}
 			return ""
 		},
 		Apply: func(_ *Thread, v *View, _ Args, _ time.Time) ([]Effect, error) {
-			v.SnoozeUntil, v.SnoozedAt = nil, nil
+			Unsnooze(v)
 			return nil, nil
 		}})
 
@@ -379,8 +435,8 @@ func init() {
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			t.ArchivedAt = &now
-			v.SnoozeUntil, v.SnoozedAt = nil, nil
-			return []Effect{{Kind: "stop"}}, nil
+			Unsnooze(v)
+			return []Effect{{Kind: EffectStop}}, nil
 		}})
 
 	register(&Action{Name: "thread.unarchive", Label: "Unarchive", Bulk: true,
@@ -440,7 +496,7 @@ func init() {
 			if s == "" {
 				return nil, fmt.Errorf("%w: empty title", ErrBadArgs)
 			}
-			t.Title = s
+			t.Title, t.TitleBy = s, ByOwner
 			return nil, nil
 		}})
 
@@ -453,14 +509,10 @@ func init() {
 			if !ok {
 				return nil, fmt.Errorf("%w: on must be true or false", ErrBadArgs)
 			}
-			if t.LiveView == on {
+			if !SetView(t, on) { // V0.60: off drops the view's actions
 				return nil, nil
 			}
-			t.LiveView = on
-			if !on {
-				ClearView(t) // V0.60: the view's actions go with it
-			}
-			return []Effect{{Kind: "refresh"}}, nil
+			return []Effect{{Kind: EffectRefresh}}, nil
 		}})
 
 	register(&Action{Name: "thread.handover", Label: "Hand over",
@@ -492,7 +544,7 @@ func init() {
 			}
 			t.Handover = &Handover{To: p, Model: a.Str("model"), At: now}
 			v.SeenAt = now
-			return []Effect{{Kind: "handover", Profile: p, Model: a.Str("model")}}, nil
+			return []Effect{{Kind: EffectHandover, Profile: p, Model: a.Str("model")}}, nil
 		}})
 
 	register(&Action{Name: "thread.setModel", Label: "Change model",
@@ -507,22 +559,13 @@ func init() {
 				m = t.Model
 			}
 			t.Model = m
-			e := Effect{Kind: "setModel", Model: m}
+			e := Effect{Kind: EffectSetModel, Model: m}
 			if hasEffort {
 				eff := a.Str("effort")
 				t.Effort, e.Effort = eff, &eff
 			}
 			return []Effect{e}, nil
 		}})
-}
-
-// ProjectName is the last path element of a working directory.
-func ProjectName(cwd string) string {
-	cwd = strings.TrimRight(cwd, "/")
-	if i := strings.LastIndex(cwd, "/"); i >= 0 {
-		return cwd[i+1:]
-	}
-	return cwd
 }
 
 // TitleFrom makes a first title from the first line of a prompt.

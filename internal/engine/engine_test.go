@@ -16,6 +16,7 @@ import (
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/claude/fake"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/store"
 )
@@ -289,9 +290,9 @@ func TestRestartRecovery(t *testing.T) {
 func TestPRLinkedFromGhPrCreate(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("pr")
-	th := h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.PR != nil })
-	if th.PR.Repo != "acme/app" || th.PR.Number != 42 {
-		t.Fatalf("pr %+v", th.PR)
+	th := h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.MainPR() != nil })
+	if p := th.MainPR(); p.Repo != "acme/app" || p.Number != 42 {
+		t.Fatalf("pr %+v", th.MainPR())
 	}
 }
 
@@ -449,6 +450,9 @@ func TestAttentionTransitionsNotify(t *testing.T) {
 	}
 	id := h.create("ask")
 	th := h.wait(id, "asking", state(core.Asking))
+	// The notification follows the broadcast; wait for it, then check that
+	// a visit does not send it again.
+	eventually(t, "asking notified", func() bool { return count("asking") >= 1 })
 	h.e.Snapshot()
 	h.cmd("thread.markSeen", id, nil)
 	if count("asking") != 1 {
@@ -458,6 +462,7 @@ func TestAttentionTransitionsNotify(t *testing.T) {
 	h.wait(id, "done", state(core.Done))
 	id2 := h.create("fail")
 	h.wait(id2, "failed", state(core.Failed))
+	eventually(t, "failed notified", func() bool { return count("failed") >= 1 })
 	if count("failed") != 1 {
 		t.Fatalf("failed notified %d times: %v", count("failed"), got)
 	}
@@ -592,15 +597,17 @@ func TestEffectDeadlines(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.43: the owner merges from the PR tab through the command path; the
-// result is an effect.result by the owner and the agent is not woken.
+// #31: the owner merges from the PR tab through the command path (SPEC 0.5
+// V0.43); the result is an effect.result by the owner and, like every fyr
+// action's result (V0.60 (4)), it is sent to the agent.
 func TestOwnerMergeFromTab(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("pr")
-	h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.PR != nil })
+	h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.MainPR() != nil })
 	h.wait(id, "done", state(core.Done))
-	h.e.Observe(id, func(t *core.Thread, now time.Time) {
-		core.PRObserved(t, core.PR{URL: t.PR.URL, Repo: t.PR.Repo, Number: t.PR.Number, State: "OPEN", Checks: "pass"}, now)
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
+		core.PRObserved(t, core.PR{URL: t.MainPR().URL, Repo: t.MainPR().Repo, Number: t.MainPR().Number, State: "OPEN", Checks: "pass"}, now)
+		return nil
 	})
 	if r := h.cmd("pr.merge", id, core.Args{"method": "fast"}); r.OK || r.Status != 400 {
 		t.Fatalf("bad method: %+v", r)
@@ -626,10 +633,9 @@ func TestOwnerMergeFromTab(t *testing.T) {
 	if req.Action != "pr.merge" || req.Args["method"] != "rebase" || req.Args["pr"] != "https://github.com/acme/app/pull/42" {
 		t.Fatalf("request %+v", req)
 	}
-	time.Sleep(200 * time.Millisecond)
-	if th, _ := h.e.Thread(id); strings.Contains(th.Summary, "[Fyr]") {
-		t.Fatalf("the agent was told: %q", th.Summary)
-	}
+	h.wait(id, "the agent was told", func(t core.Thread, _ core.Attention) bool {
+		return strings.HasPrefix(t.Summary, "echo: [Fyr] The owner ran \"Merge PR\"") && strings.Contains(t.Summary, "succeeded")
+	})
 }
 
 // SPEC 0.5 V0.43: Merge and Re-run are unavailable without an open, mergeable PR.
@@ -644,7 +650,10 @@ func TestOwnerPRActionsUnavailable(t *testing.T) {
 		t.Fatalf("no PR rerun: %+v", r)
 	}
 	set := func(p core.PR) {
-		h.e.Observe(id, func(t *core.Thread, now time.Time) { core.PRObserved(t, p, now) })
+		coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
+			core.PRObserved(t, p, now)
+			return nil
+		})
 	}
 	url := "https://github.com/acme/app/pull/9"
 	set(core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Conflict: true})
@@ -664,5 +673,76 @@ func TestOwnerPRActionsUnavailable(t *testing.T) {
 	}
 	if r := h.cmd("pr.rerunFailed", id, nil); r.OK {
 		t.Fatalf("rerun on a merged PR: %+v", r)
+	}
+}
+
+// #32: the wire DTO keeps "pr" and "settleWhenMerged" for the client,
+// derived from the main change; every PR is on the Changes board.
+func TestDTOPRIsTheMainChange(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("hello")
+	h.wait(id, "done", state(core.Done))
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
+		core.PRObserved(t, core.PR{URL: "https://github.com/acme/app/pull/9", Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass"}, now)
+		core.ChangePRObserved(t, core.PR{URL: "https://github.com/acme/app/pull/10", Repo: "acme/app", Number: 10, State: "OPEN", Checks: "pass"}, now)
+		return nil
+	})
+	if r := h.cmd("thread.settleWhenMerged", id, nil); !r.OK {
+		t.Fatalf("settle when merged: %+v", r)
+	}
+	var wire struct {
+		ID               string                `json:"id"`
+		PR               *struct{ URL string } `json:"pr"`
+		SettleWhenMerged bool                  `json:"settleWhenMerged"`
+		Changes          []struct {
+			PR *struct{ URL string } `json:"pr"`
+		} `json:"changes"`
+	}
+	for _, d := range h.e.Snapshot() {
+		if d.ID == id {
+			b, _ := json.Marshal(d)
+			json.Unmarshal(b, &wire)
+		}
+	}
+	if wire.PR == nil || wire.PR.URL != "https://github.com/acme/app/pull/9" || !wire.SettleWhenMerged {
+		t.Fatalf("dto pr %+v settleWhenMerged %v", wire.PR, wire.SettleWhenMerged)
+	}
+	if len(wire.Changes) != 2 || wire.Changes[0].PR == nil || wire.Changes[1].PR == nil || wire.Changes[1].PR.URL != "https://github.com/acme/app/pull/10" {
+		t.Fatalf("changes board: %+v", wire.Changes)
+	}
+}
+
+// #33: the wire DTO keeps settledAt, settleWhenDone, settleWhen, liveView
+// and project, derived from the thread's Settle and Live and its project;
+// thread.settle itself is not sent.
+func TestDTODerivesSettleViewAndProject(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	h.cmd("project.create", "", core.Args{"name": "Kök", "folder": h.dir})
+	id := h.create("hello")
+	h.wait(id, "done", state(core.Done))
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
+		c, _, _ := core.OpenChange(t, core.ChangeOpen{Key: "doc:x", Kind: core.KindDoc, Title: "Doc"}, core.ByAgent, now)
+		t.Running = true
+		core.SettleWhenDone(t, core.ByAgent, now)
+		core.SettleWhenReached(t, c.ID, core.PhaseReview, core.ByAgent, now)
+		core.SetView(t, true)
+		return nil
+	})
+	wire := map[string]any{}
+	b, _ := json.Marshal(dtoOf(h.e, id))
+	json.Unmarshal(b, &wire)
+	sw, _ := wire["settleWhen"].(map[string]any)
+	if wire["settleWhenDone"] != true || sw == nil || sw["phase"] != string(core.PhaseReview) || wire["liveView"] != true || wire["project"] != "Kök" {
+		t.Fatalf("dto: %s", b)
+	}
+	if _, ok := wire["settle"]; ok || wire["settledAt"] != nil {
+		t.Fatalf("dto sends settle: %s", b)
+	}
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev { core.RunEnded(t, nil, now); return nil })
+	b, _ = json.Marshal(dtoOf(h.e, id))
+	wire = map[string]any{}
+	json.Unmarshal(b, &wire)
+	if wire["settledAt"] == nil || wire["settleWhenDone"] != nil || wire["settleWhen"] != nil {
+		t.Fatalf("dto after the run: %s", b)
 	}
 }

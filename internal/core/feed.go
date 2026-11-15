@@ -1,0 +1,655 @@
+package core
+
+// The agent feed (decision 0020 part 5, #47): the only way Fyr speaks to the
+// thread's agent. Notice rules project each reduce (its events and the
+// records before and after) into Notices; the thread keeps one queue of
+// them, merged by coalesce key; the agent manager takes them at three
+// points: when the agent is idle (a message that starts a turn), at a tool
+// call (context) and at the run's end (the Stop hook's one reason).
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+)
+
+// Urgency is when a notice reaches the agent.
+type Urgency string
+
+const (
+	// Wake is delivered now: a turn starts when the agent is idle.
+	Wake Urgency = "wake"
+	// Next is delivered at the next tool call or turn; an idle agent is
+	// woken for it too (owner, 2026-11-15).
+	Next Urgency = "next"
+	// Stop is delivered at the run's end and blocks the Stop once.
+	Stop Urgency = "stop"
+	// Silent is only in the log and in fyr_state: never queued.
+	Silent Urgency = "silent"
+)
+
+// rank orders urgencies for a merge: the earlier delivery wins.
+func (u Urgency) rank() int { return map[Urgency]int{Wake: 3, Next: 2, Stop: 1}[u] }
+
+// Notice is one thing the agent is told: one sentence about one record.
+type Notice struct {
+	// About is the record: "thread", "view", "change:<id>" or "rule:<id>".
+	About   string  `json:"about"`
+	What    string  `json:"what"`
+	Urgency Urgency `json:"urgency"`
+	Key     string  `json:"coalesceKey"`
+	// Subject and States make a coalesced line: "CI on PR #12: failed →
+	// passed". A notice without a subject is replaced by a newer one.
+	Subject string   `json:"subject,omitempty"`
+	States  []string `json:"states,omitempty"`
+	// Self: the agent's own Input caused it, so it never wakes the agent
+	// (no loop); it goes out with the next tool call or delivery.
+	Self bool      `json:"self,omitempty"`
+	At   time.Time `json:"at"`
+}
+
+func (n *Notice) render() {
+	if n.Subject != "" {
+		n.What = n.Subject + ": " + strings.Join(n.States, " → ") + "."
+	}
+}
+
+// Feed is the thread's queue of notices not delivered yet.
+type Feed struct {
+	Queue []Notice `json:"queue,omitempty"`
+	// Told is the last delivery per coalesce key: the interval of the
+	// mid-turn reminders.
+	Told map[string]time.Time `json:"told,omitempty"`
+}
+
+const maxQueue = 50
+
+// Enqueue adds a notice, merging it into a pending one with its key.
+func (f *Feed) Enqueue(n Notice) {
+	if n.Urgency == Silent || n.Urgency == "" {
+		return
+	}
+	n.render()
+	for i := range f.Queue {
+		q := &f.Queue[i]
+		if q.Key != n.Key {
+			continue
+		}
+		if n.Urgency.rank() > q.Urgency.rank() {
+			q.Urgency = n.Urgency
+		}
+		q.Self = q.Self && n.Self
+		q.At = n.At
+		if q.Subject != "" && n.Subject == q.Subject {
+			for _, s := range n.States {
+				if len(q.States) == 0 || q.States[len(q.States)-1] != s {
+					q.States = append(q.States, s)
+				}
+			}
+			q.render()
+		} else {
+			q.What, q.Subject, q.States, q.About = n.What, n.Subject, n.States, n.About
+		}
+		return
+	}
+	f.Queue = keepLast(append(f.Queue, n), maxQueue)
+}
+
+// wakes reports a pending notice that may start a turn.
+func (f *Feed) wakes() bool {
+	return slices.ContainsFunc(f.Queue, func(n Notice) bool { return !n.Self })
+}
+
+// take removes and returns the queued notices that match.
+func (f *Feed) take(match func(Notice) bool) []Notice {
+	var out, keep []Notice
+	for _, n := range f.Queue {
+		if match(n) {
+			out = append(out, n)
+		} else {
+			keep = append(keep, n)
+		}
+	}
+	f.Queue = keep
+	return out
+}
+
+// remember records the delivery time of each key during a run: the
+// interval of the reminders. Older entries go.
+func (f *Feed) remember(ns []Notice, run *time.Time, now time.Time) {
+	if f.Told == nil {
+		f.Told = map[string]time.Time{}
+	}
+	for _, n := range ns {
+		f.Told[n.Key] = now
+	}
+	for k, at := range f.Told {
+		if run == nil || at.Before(*run) {
+			delete(f.Told, k)
+		}
+	}
+	if len(f.Told) == 0 {
+		f.Told = nil
+	}
+}
+
+// Asleep reports a thread whose agent is not woken: settled or archived.
+// Its notices wait until it is revived.
+func (t *Thread) Asleep() bool { return t.Settle.At != nil || t.ArchivedAt != nil }
+
+// wakeable reports a thread whose agent a notice may wake now: not asleep,
+// and not moving to another profile (the handover's end wakes it).
+func (t *Thread) wakeable() bool { return !t.Asleep() && t.Handover == nil }
+
+// NoticeText is how notices read to the agent: one line each.
+func NoticeText(ns []Notice) string {
+	lines := make([]string, len(ns))
+	for i, n := range ns {
+		lines[i] = "[Fyr] " + n.What
+	}
+	return strings.Join(lines, "\n")
+}
+
+// --- the notice rules (0020, "Who is told what") ---
+
+// Point is where the agent manager takes notices.
+type Point string
+
+const (
+	AtIdle Point = "idle" // the agent is idle: a message that starts a turn
+	AtTool Point = "tool" // after a tool call: context
+	AtStop Point = "stop" // the run's end: the Stop hook's reason
+)
+
+// Reduced is what a notice rule reads of one reduce.
+type Reduced struct {
+	Before, After *Thread
+	In            Input
+	Events        []Event
+}
+
+// Taking is what a notice rule reads at a delivery point.
+type Taking struct {
+	T   *Thread
+	At  Point
+	Arg FeedTake
+	Now time.Time
+}
+
+// NoticeRule is one row of the table: it projects a reduce (OnReduce) or a
+// delivery point (OnTake) into notices.
+type NoticeRule struct {
+	Name     string
+	Urgency  Urgency
+	OnReduce func(r Reduced) []Notice
+	OnTake   func(x Taking) []Notice
+}
+
+// NoticeRules is the table; each row has a test (feed_test.go).
+var NoticeRules = []NoticeRule{
+	{Name: "result", Urgency: Wake, OnReduce: resultNotices},
+	{Name: "watch", Urgency: Wake, OnReduce: watchNotices},
+	{Name: "fact.blocks", Urgency: Wake, OnReduce: func(r Reduced) []Notice { return factNotices(r, true) }},
+	{Name: "fact.moves", Urgency: Next, OnReduce: func(r Reduced) []Notice { return factNotices(r, false) }},
+	{Name: "record", Urgency: Next, OnReduce: recordNotices},
+	{Name: "upkeep.stop", Urgency: Stop, OnTake: upkeepStop},
+	{Name: "upkeep.reminder", Urgency: Next, OnTake: upkeepReminder},
+	{Name: "owner", Urgency: Next, OnReduce: ownerNotices},
+}
+
+// project runs the reduce rules on one reduce and queues their notices. It
+// returns the effect that wakes the agent when a notice may start a turn:
+// a new one, or a pending one on a thread that was just revived.
+func project(r Reduced, now time.Time) []Effect {
+	t := r.After
+	added := false
+	for _, rule := range NoticeRules {
+		if rule.OnReduce == nil {
+			continue
+		}
+		for _, n := range rule.OnReduce(r) {
+			if n.Urgency == "" {
+				n.Urgency = rule.Urgency
+			}
+			if n.Urgency == Silent {
+				continue
+			}
+			n.Self = n.Self || r.In.Source == FromAgent // the loop guard
+			n.At = now
+			t.Feed.Enqueue(n)
+			added = added || !n.Self
+		}
+	}
+	revived := !r.Before.wakeable() && t.wakeable()
+	if !t.wakeable() || !t.Feed.wakes() || !(added || revived) {
+		return nil
+	}
+	return []Effect{{Kind: EffectFeed}}
+}
+
+// result: the result of an effect the agent asked for, or of an action
+// anyone pressed on its records (V0.60 (4)).
+func resultNotices(r Reduced) []Notice {
+	var out []Notice
+	for _, ev := range r.Events {
+		d, _ := ev.Data.(map[string]any)
+		switch {
+		case ev.Type == "action" && d["ended"] == true && d["run"] == RunAgent && d["ok"] == true && str(d["output"]) == "":
+			// An agent action sent to this agent: the message itself is the news.
+		case ev.Type == "action" && d["ended"] == true:
+			ok, _ := d["ok"].(bool)
+			exit, _ := d["exit"].(int)
+			out = append(out, Notice{About: aboutOn(d["on"]), Key: fmt.Sprintf("result:%v:%v", d["on"], d["action"]),
+				What: ranText(fmt.Sprint(d["label"]), fmt.Sprint(d["title"]), ok, exit, str(d["output"]))})
+		case ev.Type == "effect.result":
+			ok, _ := d["ok"].(bool)
+			action := str(d["action"])
+			args, _ := d["args"].(map[string]any)
+			n := Notice{About: "thread", Key: "result:" + action + ":" + target(args)}
+			if c, _ := args["change"].(string); c != "" {
+				n.About = "change:" + c
+			}
+			if d["by"] == "owner" {
+				label := action
+				if fx := FyrEffects[action]; fx != nil {
+					label = fx.Label
+				}
+				n.What = ranText(label, target(args), ok, 0, str(d["output"]))
+			} else {
+				declined, _ := d["declined"].(bool)
+				n.What = requestText(action, args, ok, declined, str(d["text"]))
+			}
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func str(v any) string { s, _ := v.(string); return s }
+
+func aboutOn(on any) string {
+	s := str(on)
+	if s == OnThread || s == OnView || s == "" {
+		return cmpOr(s, "thread")
+	}
+	return "change:" + s
+}
+
+func cmpOr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// detail is the first line of an output, short, after a colon.
+func detail(out string) string {
+	line := strings.TrimSpace(strings.SplitN(strings.TrimSpace(out), "\n", 2)[0])
+	if line == "" {
+		return ""
+	}
+	return ": " + strings.TrimSuffix(TruncHead(line, 160), ".")
+}
+
+// ranText is the sentence for something the owner ran.
+func ranText(label, title string, ok bool, exit int, out string) string {
+	status := "succeeded"
+	if !ok {
+		status = "failed"
+		if exit != 0 {
+			status = fmt.Sprintf("failed (exit %d)", exit)
+		}
+	}
+	return fmt.Sprintf("The owner ran %q on %s: it %s%s.", label, title, status, detail(out))
+}
+
+// requestText is the sentence for the result of the agent's request.
+func requestText(action string, args map[string]any, ok, declined bool, text string) string {
+	tool, what := "effect_request", action
+	if ask, isAsk := strings.CutPrefix(action, "change."); isAsk {
+		tool, what = "change_request", ask
+	} else if _, ok := args["change"]; ok {
+		tool = "change_request"
+	}
+	status := "failed"
+	switch {
+	case ok:
+		status = "succeeded"
+	case declined:
+		status = "was declined by the owner"
+	}
+	return fmt.Sprintf("Your %s %s on %s %s%s.", tool, what, target(args), status, detail(text))
+}
+
+// target names what an effect acted on.
+func target(args map[string]any) string {
+	if t, _ := args["title"].(string); t != "" {
+		return fmt.Sprintf("the change %q", t)
+	}
+	if url, _ := args["pr"].(string); url != "" {
+		if _, n := parsePRURL(url); n != 0 {
+			return fmt.Sprintf("PR #%d", n)
+		}
+	}
+	return "this thread"
+}
+
+// watch: the agent's own watch fired (then notify).
+func watchNotices(r Reduced) []Notice {
+	var out []Notice
+	for _, ev := range r.Events {
+		d, _ := ev.Data.(map[string]any)
+		if ev.Type != "rule.fired" || d["purpose"] != PurposeWatch || d["outcome"] != OutcomeOK {
+			continue
+		}
+		id := str(d["rule"])
+		note := ""
+		if th, ok := d["then"].(Then); ok {
+			note = strings.TrimSpace(str(th.Args["note"]))
+		}
+		what := "Your watch " + id + " fired"
+		if note != "" {
+			what += ": " + strings.TrimSuffix(note, ".")
+		}
+		out = append(out, Notice{About: "rule:" + id, Key: "rule:" + id, What: what + "."})
+	}
+	return out
+}
+
+// The condition types a fact notice is about: the ones Fyr observes from
+// outside the agent's own checkout (pushed and clean are its own work).
+func factType(typ CondType) bool {
+	switch typ {
+	case CondChecks, CondReview, CondConflict, CondDeploy:
+		return true
+	}
+	return strings.HasPrefix(string(typ), condDeployPrefix)
+}
+
+// condWords are a condition's subject and its ok and fail words.
+func condWords(typ CondType) (string, string, string) {
+	switch typ {
+	case CondChecks:
+		return "CI", "passed", "failed"
+	case CondReview:
+		return "Review", "approved", "changes requested"
+	case CondConflict:
+		return "Merge conflicts", "resolved", "conflicting"
+	case CondDeploy:
+		return "Deploy", "deployed", "failed"
+	}
+	return "Deploy to " + strings.TrimPrefix(string(typ), condDeployPrefix), "succeeded", "failed"
+}
+
+// changeName names a change in a notice.
+func changeName(c *Change) string {
+	if c.PR != nil && c.PR.Number != 0 {
+		return fmt.Sprintf("PR #%d", c.PR.Number)
+	}
+	return fmt.Sprintf("%q", c.Title)
+}
+
+// fact.blocks (blocks true): a fact that makes a change fail or block (CI
+// failed, a conflict, changes requested, a deploy failed, closed). fact.moves
+// (blocks false): a fact that moves it forward (checks passed, approved,
+// merged, live). Only facts: what the agent reported itself is not news.
+func factNotices(r Reduced, blocks bool) []Notice {
+	var out []Notice
+	for i := range r.After.Changes {
+		c := &r.After.Changes[i]
+		was := FindChange(r.Before, c.ID)
+		about := "change:" + c.ID
+		for _, k := range c.Conditions {
+			if !factType(k.Type) || k.Source == ByAgent || (k.Type == CondDeploy && k.Status == CondOK) {
+				continue // a production deploy that went ok is the phase live
+			}
+			var prev CondStatus
+			if was != nil {
+				if p := condition(was, k.Type); p != nil {
+					prev = p.Status
+				}
+			}
+			if k.Status == prev || k.Status == CondPending || (k.Status == CondFail) != blocks {
+				continue
+			}
+			if blocks && c.Phase.Ended() {
+				continue
+			}
+			subj, okWord, failWord := condWords(k.Type)
+			state := okWord
+			if k.Status == CondFail {
+				state = failWord
+			}
+			out = append(out, Notice{About: about, Key: "cond:" + c.ID + ":" + string(k.Type), Subject: subj + " on " + changeName(c), States: []string{state}})
+		}
+		var prevPhase Phase
+		if was != nil {
+			prevPhase = was.Phase
+		}
+		if c.Phase == prevPhase || c.PhaseBy == ByAgent {
+			continue
+		}
+		state := ""
+		switch {
+		case blocks && c.Phase.Ended():
+			state = string(c.Phase)
+			if c.PR != nil && c.PR.State == "CLOSED" {
+				state = "closed"
+			}
+		case !blocks && c.Phase == PhaseLanded:
+			state = string(PhaseLanded)
+			if c.PR != nil && c.PR.State == "MERGED" {
+				state = "merged"
+			}
+		case !blocks && c.Phase == PhaseLive:
+			state = string(PhaseLive)
+		}
+		if state != "" {
+			// One key per change: "PR #12: merged → live" is one line.
+			out = append(out, Notice{About: about, Key: "phase:" + c.ID, Subject: changeName(c), States: []string{state}})
+		}
+	}
+	return out
+}
+
+// record: a host record the thread shows merged or went (#35). A change of
+// the thread that follows the record speaks for it (fact.*).
+func recordNotices(r Reduced) []Notice {
+	a, ok := r.In.Args.(ChangeObservedArgs)
+	if r.In.Kind != KindChangeObserved || !ok || a.Before == nil || a.Before.Phase == a.After.Phase {
+		return nil
+	}
+	id := a.After.ID
+	if slices.ContainsFunc(r.After.Changes, func(c Change) bool { return c.Observed == id }) {
+		return nil
+	}
+	state := ""
+	switch a.After.Phase {
+	case PhaseLanded:
+		state = "merged"
+	case PhaseAbandoned:
+		state = "gone without a merge"
+	default:
+		return nil
+	}
+	return []Notice{{About: "change:" + id, Key: "phase:" + id, Subject: "Branch " + a.After.Branch, States: []string{state}}}
+}
+
+// owner: a change by the owner to the thread's settings, project or settle
+// state.
+func ownerNotices(r Reduced) []Notice {
+	if r.In.Source != FromOwner || r.In.Kind == "thread.create" {
+		return nil
+	}
+	b, a := r.Before, r.After
+	var out []Notice
+	add := func(key, what string) { out = append(out, Notice{About: "thread", Key: "owner:" + key, What: what}) }
+	if a.Title != b.Title {
+		add("title", fmt.Sprintf("The owner renamed this thread to %q.", a.Title))
+	}
+	if a.ProjectID != b.ProjectID {
+		if a.ProjectID == "" {
+			add("project", "The owner took this thread out of its project.")
+		} else {
+			add("project", "The owner moved this thread to another project.")
+		}
+	}
+	if a.ViewOn() != b.ViewOn() {
+		if a.ViewOn() {
+			add("view", "The owner turned the live view on; it takes effect with your next process.")
+		} else {
+			add("view", "The owner turned the live view off.")
+		}
+	}
+	settle := func(t *Thread) string {
+		switch {
+		case t.Settle.At != nil:
+			return "settled"
+		case SettlesWhenMerged(t):
+			return "settles when its PR merges"
+		case Settling(t):
+			return "settles when its condition holds"
+		}
+		return "not settled"
+	}
+	if s := settle(a); s != settle(b) {
+		out = append(out, Notice{About: "thread", Key: "owner:settle", Subject: "The owner set this thread", States: []string{s}})
+	}
+	if (a.ArchivedAt != nil) != (b.ArchivedAt != nil) {
+		s := "unarchived"
+		if a.ArchivedAt != nil {
+			s = "archived"
+		}
+		out = append(out, Notice{About: "thread", Key: "owner:archive", Subject: "The owner set this thread", States: []string{s}})
+	}
+	return out
+}
+
+// The upkeep sentences (SPEC 0.5 V0.37, V0.52, V0.62). They name what to
+// update and never dictate a reply (research/stop-hook-spike.md).
+const (
+	ViewStopText        = "Update this thread's live view (view_state or view_publish), or call view_unchanged with a reason, then stop."
+	ChangesStopText     = "Update your open changes in Fyr (change_status for phase and conditions, change_revise, change_attach), or call change_unchanged with a reason, then stop."
+	ViewReminderText    = "The live view has not changed for a few minutes while you work. Update it now with view_state (the headline and the items that moved), or call view_unchanged with a reason, then continue."
+	ChangesReminderText = "Your open changes in Fyr have not been updated for a few minutes while you work. Report what moved with change_status (phase, conditions), change_revise or change_attach, or call change_unchanged with a reason, then continue."
+	// ReminderAfter is how long a running turn may go without touching its
+	// view or changes before the reminder.
+	ReminderAfter = 4 * time.Minute
+)
+
+// upkeep.stop: the view or the changes the agent keeps were not touched in
+// this run (V0.37, V0.62).
+func upkeepStop(x Taking) []Notice {
+	if x.At != AtStop {
+		return nil
+	}
+	var out []Notice
+	if x.Arg.View && x.T.ViewOn() && !ViewTouchedThisRun(x.T) {
+		out = append(out, Notice{About: "view", Key: "upkeep:view", What: ViewStopText})
+	}
+	if x.Arg.Changes && ChangesStale(x.T) {
+		out = append(out, Notice{About: "thread", Key: "upkeep:changes", What: ChangesStopText})
+	}
+	return out
+}
+
+// upkeep.reminder: a running turn went ReminderAfter since the latest of the
+// run start, the last touch and the last reminder (V0.52, V0.62).
+func upkeepReminder(x Taking) []Notice {
+	t := x.T
+	if x.At != AtTool || t.RunStartedAt == nil {
+		return nil
+	}
+	due := func(key string, checked time.Time) bool {
+		last := *t.RunStartedAt
+		for _, at := range []time.Time{checked, t.Feed.Told[key]} {
+			if at.After(last) {
+				last = at
+			}
+		}
+		return x.Now.Sub(last) >= ReminderAfter
+	}
+	var out []Notice
+	if x.Arg.View && t.ViewOn() {
+		if due("upkeep:view", t.Live.CheckedAt) {
+			out = append(out, Notice{About: "view", Key: "upkeep:view", What: ViewReminderText})
+		}
+	}
+	if x.Arg.Changes && OpenAgentChanges(t) > 0 {
+		var checked time.Time
+		if t.ChangesCheckedAt != nil {
+			checked = *t.ChangesCheckedAt
+		}
+		if due("upkeep:changes", checked) {
+			out = append(out, Notice{About: "thread", Key: "upkeep:changes", What: ChangesReminderText})
+		}
+	}
+	return out
+}
+
+// --- taking notices ---
+
+// KindFeedTake is the agent manager taking notices at a point.
+const KindFeedTake = "feed.take"
+
+// FeedTake is where the manager takes notices, and which tools the
+// agent's process has (the upkeep asks only for what it can update).
+type FeedTake struct {
+	At            Point
+	View, Changes bool
+}
+
+func init() {
+	RegisterKind(&InputKind{Name: KindFeedTake, From: observed, Untouched: true, Reduce: reduceFeedTake})
+}
+
+// reduceFeedTake removes and returns what is delivered at the point: when
+// idle, every pending notice when one may wake the agent (never on a
+// settled or archived thread); at a tool call, all but the stop ones, and
+// the reminders that are due; at the run's end, the stop ones and the
+// upkeep.
+func reduceFeedTake(r Rec, in Input, now time.Time) (Result, error) {
+	a, err := argsOf[FeedTake](in)
+	if err != nil {
+		return Result{}, err
+	}
+	t, f := r.T, &r.T.Feed
+	var out []Notice
+	switch a.At {
+	case AtIdle:
+		if !t.wakeable() || !f.wakes() {
+			return Result{}, nil
+		}
+		out = f.take(func(Notice) bool { return true })
+	case AtTool:
+		out = f.take(func(n Notice) bool { return n.Urgency != Stop })
+	case AtStop:
+		out = f.take(func(n Notice) bool { return n.Urgency == Stop })
+	default:
+		return Result{}, fmt.Errorf("%w: no point %q", ErrBadArgs, a.At)
+	}
+	for _, rule := range NoticeRules {
+		if rule.OnTake == nil {
+			continue
+		}
+		for _, n := range rule.OnTake(Taking{T: t, At: a.At, Arg: a, Now: now}) {
+			if n.Urgency == "" {
+				n.Urgency = rule.Urgency
+			}
+			n.At = now
+			out = append(out, n)
+		}
+	}
+	if a.At == AtTool {
+		f.remember(out, t.RunStartedAt, now)
+	} else if a.At == AtIdle {
+		f.Told = nil
+	}
+	if len(out) == 0 {
+		return Result{}, nil
+	}
+	// The most urgent first: a result before the facts that moved.
+	slices.SortStableFunc(out, func(x, y Notice) int { return y.Urgency.rank() - x.Urgency.rank() })
+	return Result{Reply: out}, nil
+}

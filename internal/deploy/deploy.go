@@ -6,20 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/proc"
 )
 
 // Runner runs a command in dir and returns its combined output.
 type Runner func(ctx context.Context, dir string, args ...string) ([]byte, error)
 
 func execRunner(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd := proc.Command(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	return cmd.CombinedOutput()
@@ -110,11 +110,7 @@ type pending struct {
 func (d *Deployer) ExitCode() int { return d.exit }
 
 func tail(b []byte, n int) string {
-	s := strings.TrimSpace(string(b))
-	if len(s) > n {
-		s = "…" + s[len(s)-n:]
-	}
-	return s
+	return core.TruncTail(strings.TrimSpace(string(b)), n)
 }
 
 // Deploy builds and tests dir, snapshots the database, waits until no other
@@ -206,7 +202,7 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 			d.report(prog, "drain", "", append([]string(nil), running...))
 		}
 		if time.Now().After(deadline) {
-			return failed(fmt.Errorf("%d other threads were still running after %s; nothing was switched", others, max))
+			return failed(fmt.Errorf("%d threads (the requester included) were still running after %s; nothing was switched", others, max))
 		}
 		select {
 		case <-ctx.Done():

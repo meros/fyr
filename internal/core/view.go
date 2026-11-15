@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -9,7 +10,8 @@ import (
 // LiveView is a thread's pinned live view (SPEC 0.5 V0.37, decision 0010):
 // a page stored once by content hash and a small JSON state the agent
 // patches. The client shows the page above the conversation and sends it
-// the full state on load and on every change.
+// the full state on load and on every change. Enabled is the owner's switch;
+// the page, state and actions outlive it.
 type LiveView struct {
 	PageID    string         `json:"pageId,omitempty"`
 	State     map[string]any `json:"state,omitempty"`
@@ -19,18 +21,39 @@ type LiveView struct {
 	CheckedAt time.Time `json:"checkedAt"`
 	// Headline is state.headline when it is a string.
 	Headline string `json:"headline,omitempty"`
+	Enabled  bool   `json:"enabled,omitempty"`
+	// Actions are the view's actions and their runs (V0.60 (6), #31); they
+	// go when the owner turns the view off.
+	Actions
 }
 
 // ViewStateMax is the largest view state, as JSON.
 const ViewStateMax = 16 << 10
 
-// ViewStopReason is what the Stop hook tells the agent. It names what to
-// update and never dictates a reply (research/stop-hook-spike.md).
-const ViewStopReason = "Update this thread's live view (view_state or view_publish), or call view_unchanged with a reason, then stop."
-
 // ViewPublished records a new page and its full state.
 func ViewPublished(t *Thread, pageID string, state map[string]any, now time.Time) {
-	t.Live = &LiveView{PageID: pageID, State: state, UpdatedAt: now, CheckedAt: now, Headline: headline(state)}
+	var on bool
+	var acts Actions
+	if t.Live != nil {
+		on, acts = t.Live.Enabled, t.Live.Actions // the view's actions outlive a new page
+	}
+	t.Live = &LiveView{Enabled: on, PageID: pageID, State: state, UpdatedAt: now, CheckedAt: now, Headline: headline(state), Actions: acts}
+}
+
+// SetView turns the live view on or off; off drops the view's actions
+// (V0.60). It reports whether anything changed.
+func SetView(t *Thread, on bool) bool {
+	if t.ViewOn() == on {
+		return false
+	}
+	if t.Live == nil {
+		t.Live = &LiveView{}
+	}
+	t.Live.Enabled = on
+	if !on {
+		t.Live.Actions = Actions{}
+	}
+	return true
 }
 
 // ViewStateSet records the full state after a patch.
@@ -98,47 +121,10 @@ func StateSize(state map[string]any) int {
 	return len(b)
 }
 
-// ViewStop is what the Stop hook decides from (SPEC 0.5 V0.37).
-type ViewStop struct {
-	Flag    bool // the thread has a live view and this process has its tools
-	Changes bool // V0.62: open agent changes and no change tool call this run
-	Touched bool // a view_* call happened this run
-	Blocked bool // the hook already blocked once this run
-	Active  bool // stop_hook_active: the CLI is already in a forced turn
-	Tasks   int  // background tasks still running
-}
-
-// Block reports whether the Stop hook makes the agent take one more turn.
-func (s ViewStop) Block() bool {
-	return (s.Flag && !s.Touched || s.Changes) && !s.Blocked && !s.Active && s.Tasks == 0
-}
-
-// ViewNudgeAfter is how long a running turn with a live view may go without
-// a view_* call before Fyr reminds the agent (SPEC 0.5 V0.52).
-const ViewNudgeAfter = 4 * time.Minute
-
-// ViewNudgeReason is the reminder, added to the context after a tool call.
-const ViewNudgeReason = "The live view has not changed for a few minutes while you work. Update it now with view_state (the headline and the items that moved), or call view_unchanged with a reason, then continue."
-
-// ViewNudge decides the mid-turn reminder (SPEC 0.5 V0.52).
-type ViewNudge struct {
-	Flag       bool      // the thread has a live view and this process has its tools
-	RunStarted time.Time // zero outside a run
-	Checked    time.Time // the last view_* call
-	Nudged     time.Time // the last reminder
-}
-
-// Due reports whether the reminder goes out now: ViewNudgeAfter since the
-// latest of the run start, the last view call and the last reminder.
-func (n ViewNudge) Due(now time.Time) bool {
-	if !n.Flag || n.RunStarted.IsZero() {
-		return false
+// CheckViewState refuses a view state over ViewStateMax.
+func CheckViewState(s map[string]any) error {
+	if n := StateSize(s); n > ViewStateMax {
+		return fmt.Errorf("the view state is %d bytes as JSON; at most %d. Keep details in the thread and only the status in the state", n, ViewStateMax)
 	}
-	last := n.RunStarted
-	for _, t := range []time.Time{n.Checked, n.Nudged} {
-		if t.After(last) {
-			last = t
-		}
-	}
-	return now.Sub(last) >= ViewNudgeAfter
+	return nil
 }
