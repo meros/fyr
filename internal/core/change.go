@@ -460,6 +460,8 @@ type GitFacts struct {
 	Path     string // the checkout's root folder
 	Branch   string
 	Base     string
+	// BaseHead is where the base points (origin/main); V0.76 (1): a branch behind it is not merged into it.
+	BaseHead string
 	Ahead    int // commits since the merge base with the base
 	Unpushed int // commits not on the upstream; all when there is none
 	Dirty    int // changed and untracked files
