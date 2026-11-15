@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -1225,17 +1224,6 @@ func NormalizeRemote(u string) string {
 		u = strings.ToLower(u[:i]) + u[i:]
 	}
 	return u
-}
-
-// gitBranch is the current branch of a checkout, or "" (SPEC 0.5 V0.2).
-func gitBranch(dir string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "branch", "--show-current").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
 }
 
 // initHooks is what a process registers at start: the merge gate always,

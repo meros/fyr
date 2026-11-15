@@ -120,16 +120,6 @@ func resultText(c any) string {
 	return ""
 }
 
-// short picks the most telling input field of a tool call, one line.
-func short(in map[string]any) string {
-	for _, k := range []string{"command", "description", "file_path", "pattern", "url", "query", "path", "prompt"} {
-		if s, ok := in[k].(string); ok && s != "" {
-			return clip(firstLine(s), 80)
-		}
-	}
-	return ""
-}
-
 func firstLine(s string) string {
 	for _, l := range strings.Split(s, "\n") {
 		if l = strings.TrimSpace(l); l != "" {
