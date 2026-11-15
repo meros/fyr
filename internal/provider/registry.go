@@ -43,7 +43,6 @@ type Registry struct {
 
 	mu   sync.Mutex
 	list []Provider
-	seen map[string]api.Reply
 
 	lmu    sync.Mutex
 	logins map[string]*loginRun
@@ -325,20 +324,9 @@ func (r *Registry) changed() {
 	}
 }
 
-// Command runs provider.* commands; each commandId runs once.
-func (r *Registry) Command(c api.Cmd) api.Reply {
-	if c.CommandID == "" {
-		return api.Reply{Error: "commandId is required", Status: 400}
-	}
-	r.mu.Lock()
-	if r.seen == nil {
-		r.seen = map[string]api.Reply{}
-	}
-	if rep, ok := r.seen[c.CommandID]; ok {
-		r.mu.Unlock()
-		return rep
-	}
-	r.mu.Unlock()
+// Run runs one provider.* command. The engine's path keeps its receipt
+// (#48), so a commandId runs once.
+func (r *Registry) Run(c api.Cmd) api.Reply {
 	rep := r.run(c)
 	if rep.Error == "" {
 		rep.OK = true
@@ -346,12 +334,6 @@ func (r *Registry) Command(c api.Cmd) api.Reply {
 	} else if rep.Status == 0 {
 		rep.Status = 400
 	}
-	r.mu.Lock()
-	if len(r.seen) > 500 {
-		r.seen = map[string]api.Reply{}
-	}
-	r.seen[c.CommandID] = rep
-	r.mu.Unlock()
 	return rep
 }
 

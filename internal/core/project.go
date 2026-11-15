@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"hash/fnv"
 	"path"
 	"strings"
@@ -95,4 +96,116 @@ func Monogram(name string) string {
 		return "?"
 	}
 	return string(out)
+}
+
+// The project kinds (#48, SPEC 3.15): the owner's project commands are Input
+// kinds of the project record on the one path. The engine checks a folder
+// on the host and puts the clean path in args.folder before the reduce;
+// threads land in projects by their folders (MatchFolder), which the engine
+// works out for every thread after each project Input.
+const (
+	KindProjectCreate = "project.create"
+	KindProjectUpdate = "project.update"
+	KindProjectDelete = "project.delete"
+	// KindProjectMatched files a thread by its folder, not by hand (V0.55):
+	// args ProjectMatch.
+	KindProjectMatched = "project.matched"
+)
+
+// ProjectMatch is the project a thread's folder lands it in, "" for none.
+type ProjectMatch struct{ ID string }
+
+func init() {
+	for _, k := range []*InputKind{
+		{Name: KindProjectCreate, On: RecProject, Makes: true, From: ownerOnly, Reduce: reduceProjectCreate},
+		{Name: KindProjectUpdate, On: RecProject, From: ownerOnly, Reduce: reduceProjectUpdate},
+		{Name: KindProjectDelete, On: RecProject, From: ownerOnly, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
+			id := r.P.ID
+			*r.P = Project{}
+			return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": id}}, nil
+		}},
+		{Name: KindProjectMatched, From: observed, Untouched: true, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
+			a, err := argsOf[ProjectMatch](in)
+			if err == nil {
+				r.T.ProjectID, r.T.ProjectManual = a.ID, false
+			}
+			return Result{}, err
+		}},
+	} {
+		RegisterKind(k)
+	}
+}
+
+// reduceProjectCreate makes a project (SPEC 0.5 V0.23, V0.55) and files the
+// thread it was made from by hand (V0.30).
+func reduceProjectCreate(r Rec, in Input, now time.Time) (Result, error) {
+	a := mapArgs(in)
+	p := r.P
+	p.Folder = a.Str("folder")
+	p.Name = a.trimmed("name")
+	if p.Name == "" && p.Folder != "" {
+		p.Name = path.Base(p.Folder)
+	}
+	if p.Name == "" {
+		return Result{}, reject(RejectBadArgs, "a project needs a name or a folder")
+	}
+	p.Color, p.Icon, p.CreatedAt, p.Edited = DefaultColor(p.Name), Icon{Kind: "monogram"}, now, true
+	res := Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID}}
+	if tid := a.Str("threadId"); tid != "" {
+		res.Follow = []Input{{Source: in.Source, Kind: "thread.setProject", Thread: tid, Args: Args{"projectId": p.ID}}}
+	}
+	return res, nil
+}
+
+// reduceProjectUpdate changes the fields args name; quiet hours are a list
+// of windows (decision 0014 addendum), and null or an empty list clears
+// them (V0.46).
+func reduceProjectUpdate(r Rec, in Input, _ time.Time) (Result, error) {
+	a := mapArgs(in)
+	p := r.P
+	if _, ok := a["folder"]; ok {
+		p.Folder = a.Str("folder")
+	}
+	if n := a.trimmed("name"); n != "" {
+		p.Name = n
+	}
+	if col := a.Str("color"); col != "" {
+		if !ValidColor(col) {
+			return Result{}, reject(RejectBadArgs, "color must be one of %v", Palette)
+		}
+		p.Color = col
+	}
+	if raw, ok := a["icon"]; ok {
+		var ic Icon
+		b, _ := json.Marshal(raw)
+		json.Unmarshal(b, &ic)
+		if ic.Kind != "monogram" && ic.Kind != "emoji" && ic.Kind != "line" {
+			return Result{}, reject(RejectBadArgs, "icon kind must be monogram, emoji or line")
+		}
+		p.Icon = ic
+	}
+	if v, ok := a["profile"].(string); ok {
+		p.Profile = v
+	}
+	if v, ok := a["model"].(string); ok {
+		p.Model = v
+	}
+	if raw, ok := a["quiet"]; ok {
+		var qs QuietHours
+		if raw != nil {
+			b, _ := json.Marshal(raw)
+			if err := json.Unmarshal(b, &qs); err != nil {
+				return Result{}, reject(RejectBadArgs, "quiet must be a list of {from, to, days?}")
+			}
+			if err := qs.Validate(); err != nil {
+				return Result{}, reject(RejectBadArgs, "%s", err.Error())
+			}
+		}
+		if len(qs) == 0 {
+			qs = nil
+		}
+		p.Quiet = qs
+	}
+	p.Edited = true
+	return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID}}, nil
 }

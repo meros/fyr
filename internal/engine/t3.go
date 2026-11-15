@@ -84,7 +84,9 @@ func (x T3) adopt(cs []t3.Candidate, ids []string) (int, error) {
 				t.Summary = s
 			}
 		}
-		if err := x.E.Insert(t, v, hist, at); err != nil {
+		// #48: the adopted thread goes down the one path, with its history.
+		if _, err := x.E.Apply(core.Input{Source: core.Observer(core.ObsT3), Kind: core.KindThreadAdopted, Thread: t.ID,
+			Args: core.Adopted{Thread: t, View: v, History: hist, At: at}}); err != nil {
 			return n, err
 		}
 		n++
