@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/meros/fyr/internal/engine"
@@ -91,6 +92,9 @@ type link struct {
 	known    map[string]bool           // thread ids learned from command replies
 	projects []map[string]any
 	env      map[string]any // the rest of the host's state: actions, profiles, deploy, user, host
+	// reported is the name the host reports (env["host"]), kept apart so
+	// name() needs no lock: the proxy's error handler calls it (#40).
+	reported atomic.Pointer[string]
 	online   bool
 	since    time.Time
 	err      string
@@ -182,10 +186,17 @@ func (l *link) name() string {
 	if l.cfg.Name != "" {
 		return l.cfg.Name
 	}
-	if s, _ := l.env["host"].(string); s != "" {
-		return s
+	if s := l.reported.Load(); s != nil && *s != "" {
+		return *s
 	}
 	return l.base.Host
+}
+
+// setEnv replaces the host's state; the caller holds f.mu.
+func (l *link) setEnv(env map[string]any) {
+	l.env = env
+	s, _ := env["host"].(string)
+	l.reported.Store(&s)
 }
 
 func (f *Front) follow(ctx context.Context, l *link) {
@@ -329,12 +340,13 @@ func revOf(m map[string]any) int64 {
 func (f *Front) load(l *link, st map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	l.env = map[string]any{}
+	env := map[string]any{}
 	for _, k := range []string{"actions", "profiles", "deploy", "user", "host"} {
 		if v, ok := st[k]; ok {
-			l.env[k] = v
+			env[k] = v
 		}
 	}
+	l.setEnv(env)
 	raw := map[string]map[string]any{}
 	ts, _ := st["threads"].([]any)
 	for _, x := range ts {
