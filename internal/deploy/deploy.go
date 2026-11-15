@@ -202,7 +202,7 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 			d.report(prog, "drain", "", append([]string(nil), running...))
 		}
 		if time.Now().After(deadline) {
-			return failed(fmt.Errorf("%d other threads were still running after %s; nothing was switched", others, max))
+			return failed(fmt.Errorf("%d threads (the requester included) were still running after %s; nothing was switched", others, max))
 		}
 		select {
 		case <-ctx.Done():
