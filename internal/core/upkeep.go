@@ -3,20 +3,17 @@ package core
 import "time"
 
 // Keeping changes current (SPEC 0.5 V0.62): like the live view (V0.37,
-// V0.52), the changes the agent owns are kept up to date. At the end of a
-// run that did not touch them the Stop hook asks once; a long turn gets a
-// reminder. Changes that Fyr observes (git, GitHub) keep themselves current
-// and do not count.
-
-// ChangesNudgeReason is the mid-turn reminder for changes.
-const ChangesNudgeReason = "Your open changes in Fyr have not been updated for a few minutes while you work. Report what moved with change_status (phase, conditions), change_revise or change_attach, or call change_unchanged with a reason, then continue."
+// V0.52), the changes the agent owns are kept up to date. The agent feed's
+// upkeep rules (feed.go) ask at the end of a run that did not touch them and
+// remind a long turn. Changes that Fyr observes (git, GitHub) keep
+// themselves current and do not count.
 
 // OpenAgentChanges counts the changes the agent owns that are not ended:
 // opened or last moved by the agent.
 func OpenAgentChanges(t *Thread) int {
 	n := 0
 	for _, c := range t.Changes {
-		if !Ended(c.Phase) && c.PhaseBy != ByObserved {
+		if !c.Phase.Ended() && c.PhaseBy != ByObserved {
 			n++
 		}
 	}
@@ -33,15 +30,4 @@ func ChangesStale(t *Thread) bool {
 		return false
 	}
 	return t.ChangesCheckedAt == nil || t.ChangesCheckedAt.Before(*t.RunStartedAt)
-}
-
-// StopReason is the Stop hook's one reason for what is stale.
-func StopReason(view, changes bool) string {
-	switch {
-	case view && changes:
-		return "Update this thread's live view (view_state or view_publish) and your open changes (change_status, change_revise or change_attach), or call view_unchanged and change_unchanged with a reason, then stop."
-	case changes:
-		return "Update your open changes in Fyr (change_status for phase and conditions, change_revise, change_attach), or call change_unchanged with a reason, then stop."
-	}
-	return ViewStopReason
 }

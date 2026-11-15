@@ -6,11 +6,13 @@ import { useDraft } from "./drafts.ts";
 import { liveLine } from "./tasks.ts";
 import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
+import { useApi } from "./api-context.ts";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createContext } from "preact";
-import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
+import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, Thread } from "./types.ts";
 import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
+import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { stateLabel } from "./rows.ts";
 import { clockTime, duration, relTime, shortModel } from "./format.ts";
@@ -26,12 +28,12 @@ import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
 import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
-import { defaultTab, liveViewOf, showsDecision } from "./view.ts";
+import { TAB_LABEL, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
-import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
+import { ChangeList, ThreadOffers, useViewAction } from "./offers-ui.tsx";
 import { changeChip, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
@@ -47,7 +49,7 @@ export interface AnswerField {
 export interface ThreadPaneProps {
   /** U15: send the answers of the open question card */
   onSubmitAsk?(d: Decision): void;
-  thread: ThreadDTO;
+  thread: Thread;
   mode: "open" | "peek";
   events: FyrEvent[] | undefined;
   profiles: Profile[];
@@ -72,8 +74,6 @@ export interface ThreadPaneProps {
   onHandover?: () => void;
 }
 
-type Tab = "view" | "conv" | "changes" | "pr";
-
 /** A deep link `/?open=<id>&tab=pr` opens that tab on the desktop too. */
 function urlTab(id: string): string | undefined {
   if (typeof location === "undefined") return undefined;
@@ -84,19 +84,14 @@ function urlTab(id: string): string | undefined {
 
 export function ThreadPane(p: ThreadPaneProps) {
   const t = p.thread;
-  const [tab, setTab] = useState<Tab>("conv");
-  const previews = useMemo(() => previewsOf(p.events ?? [], t.host), [p.events, t.host]);
-  useEffect(() => setTab(defaultTab(t, urlTab(t.id)) as Tab), [t.id]);
-  const hasView = !!liveViewOf(t);
-  // A view that appears or goes away while the thread is open keeps the tabs valid.
-  useEffect(() => {
-    if (tab === "view" && !hasView) setTab("conv");
-  }, [hasView]);
-  useEffect(() => {
-    if (tab === "pr" && !t.pr) setTab("conv"); // V0.36: a dismissed PR takes its tab with it
-  }, [!!t.pr]);
+  // #41: the tab is derived as on the phone: the one picked for this thread (or the deep link's), made valid by
+  // defaultTab (no View without a view, no PR tab without a PR).
+  const [pick, setPick] = useState<{ id: string; tab: string } | null>(null);
+  const tab = defaultTab(t, pick?.id === t.id ? pick.tab : urlTab(t.id));
+  const setTab = (tab: string) => setPick({ id: t.id, tab });
+  useEffect(() => setPick(null), [t.id]); // another thread opens on its own default
   const profile = p.profiles.find((x) => x.id === t.profile);
-  const decision = t.decisions?.[0] ?? null;
+  const decision = currentDecision(t);
   const st = t.attention.state;
   const settleReason = unavailableReason(t, "thread.settle");
   const snoozeReason = unavailableReason(t, "thread.snooze");
@@ -177,50 +172,70 @@ export function ThreadPane(p: ThreadPaneProps) {
         </div>
         <ThreadOffers t={t} onRun={p.onRun} />
         <div class="tabs" role="tablist">
-          {hasView && (
-            <span class={tab === "view" ? "on" : ""} role="tab" onClick={() => setTab("view")}>
-              View
+          {threadTabs(t).map((k) => (
+            <span class={tab === k ? "on" : ""} role="tab" onClick={() => setTab(k)}>
+              {TAB_LABEL[k]}
             </span>
-          )}
-          <span class={tab === "conv" ? "on" : ""} role="tab" onClick={() => setTab("conv")}>
-            Conversation
-          </span>
-          <span class={tab === "changes" ? "on" : ""} role="tab" onClick={() => setTab("changes")}>
-            Changes
-          </span>
-          {t.pr && (
-            <span class={tab === "pr" ? "on" : ""} role="tab" onClick={() => setTab("pr")}>
-              PR
-            </span>
-          )}
+          ))}
         </div>
       </div>
-      {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
-      {tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} onAction={viewAction(p.onRun)} />}
-      {tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
-      {tab === "conv" && <Filmstrip cards={previews} />}
+      {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
+      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
+      <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
+    </section>
+  );
+}
+
+export interface ThreadTabBodyProps {
+  t: Thread;
+  /** from defaultTab */
+  tab: string;
+  setTab(tab: string): void;
+  events: FyrEvent[] | undefined;
+  now: number;
+  onAtEnd(atEnd: boolean): void;
+  /** Loads older events; absent when the start of the thread is loaded. */
+  onEarlier?: () => void;
+  /** a thread command on this thread */
+  run(action: string, args?: Record<string, unknown>): unknown;
+  send(args: SendArgs): Promise<boolean>;
+  phone?: boolean;
+}
+
+/** #41: what a thread tab shows, the same on desktop and phone: View (V0.37), Conversation with its filmstrip
+ *  (V0.19), Changes (V0.25, V0.59) and PR (V0.43). */
+export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier, run, send, phone }: ThreadTabBodyProps) {
+  const api = useApi();
+  const previews = useMemo(() => previewsOf(events ?? [], t.host, api), [events, t.host]);
+  const viewAction = useViewAction(run, t.cwd);
+  return (
+    <>
+      {tab === "view" && <LiveViewPanel full t={t} now={now} onPress={(text) => send({ text, from: "view" })} onAction={viewAction} />}
+      {tab === "view" && <ViewChat t={t} events={events} now={now} onOpen={() => setTab("conv")} />}
+      {tab === "conv" && <Filmstrip cards={previews} collapsible={phone} />}
       {tab === "conv" && (
         <Conversation
-          outbox={(t.outbox ?? []).map((o) => o.id)}
-          events={p.events}
-          onAtEnd={p.onAtEnd}
+          outbox={t.outbox.map((o) => o.id)}
+          events={events}
+          onAtEnd={onAtEnd}
           threadId={t.id}
-          onEarlier={p.onEarlier}
+          onEarlier={onEarlier}
           cwd={t.cwd}
           host={t.host}
-          delivery={{ cancel: async (messageId) => p.onRun("thread.cancelMessage", { messageId }), resend: p.onSend }}
+          delivery={{ cancel: async (messageId) => run("thread.cancelMessage", { messageId }), resend: send }}
         />
       )}
       {tab === "changes" && (
         <div class="chtab">
-          <ChangeList t={t} onRun={p.onRun} />
-          <CiNotesScope changes={t.changes}><ChangesView threadId={t.id} changes={t.changes} /></CiNotesScope>
+          <ChangeList t={t} onRun={run} />
+          <CiNotesScope changes={t.changes}>
+            <ChangesView threadId={t.id} changes={t.changes} />
+          </CiNotesScope>
         </div>
       )}
-      {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}
-      {showsDecision(tab) && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
-      <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
-    </section>
+      {tab === "pr" && <PrTab t={t} now={now} phone={phone} onSend={(text) => send({ text })} onDismiss={() => run("thread.dismissPR")} onChanges={() => setTab("changes")} />}
+    </>
   );
 }
 
@@ -289,7 +304,7 @@ function ThreadMenu({ onMove, liveView, onLiveView, onHandover, handoverReason }
 }
 
 /** The project chip (V0.30): icon and name in the project colour, or "No project"; a click opens the picker. */
-function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: string }) {
+function HeaderProjectChip({ t, profileName }: { t: Thread; profileName?: string }) {
   const dir = useDirectory();
   const p = projectOf(t, dir.projects);
   const where = `${t.cwd}${profileName ? ` · ${profileName}` : ""}`;
@@ -302,12 +317,12 @@ function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: str
 }
 
 /** The PR tab (V0.43). */
-export function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: ThreadDTO; now: number; onSend(text: string): Promise<boolean>; onDismiss(): void; onChanges(): void; phone?: boolean }) {
+function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: Thread; now: number; onSend(text: string): Promise<boolean>; onDismiss(): void; onChanges(): void; phone?: boolean }) {
   if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
   return <PrView key={t.id} t={t} now={now} onSend={onSend} onDismiss={onDismiss} onChanges={onChanges} phone={phone} />;
 }
 
-function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
+function ModelChip({ t, profile, onRun }: { t: Thread; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
   const models = profile?.models ?? [];
   const reason = unavailableReason(t, "thread.setModel");
   const can = models.length > 1 && !reason;
@@ -327,7 +342,7 @@ function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | und
 }
 
 /** V0.50: the thread's effort, when its model takes one. */
-function EffortChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
+function EffortChip({ t, profile, onRun }: { t: Thread; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
   const efforts = effortsFor(profile, t.model);
   if (!efforts.length) return null;
   const cur = startEffort(profile, t.model, t.effort);
@@ -439,8 +454,9 @@ export const ProfilesContext = createContext<Profile[]>([]);
 
 export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: string }) {
   const details = useToolDetails();
+  const api = useApi();
   const outKey = outbox ? outbox.join(",") : null;
-  const all = useMemo(() => buildConversation(events ?? [], { details, cwd, host, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, host, outKey]);
+  const all = useMemo(() => buildConversation(events ?? [], { details, cwd, host, urls: api, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, host, outKey]);
   // V0.33: messages the agent has not read stand after "Agent is here".
   const [items, pending] = useMemo(() => [all.filter((i) => !(i.kind === "user" && i.pending)), all.filter((i) => i.kind === "user" && i.pending)], [all]);
   const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
@@ -705,6 +721,7 @@ function Fold({ en, previews }: { en: Extract<Entry, { kind: "fold" }>; previews
 
 function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]; process?: boolean }) {
   const host = useContext(HostContext);
+  const api = useApi();
   switch (it.kind) {
     case "user": {
       // V0.33: unread messages are dimmed; a cancelled or lost one is struck through.
@@ -748,7 +765,7 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
       if (it.quiet) return <QuietLine icon="seen" line={it.text.split("\n").find((x) => x.trim()) ?? ""} full={it.text} />;
       return (
         <div class={`msgw${process ? " proc" : ""}`}>
-          <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text, host) }} />
+          <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text, host, api.attachmentUrl) }} />
           <CopyButton text={copySource({ kind: "message", text: it.text })} label="Copy message" cls="msgcp" />
         </div>
       );
@@ -838,24 +855,20 @@ function FoldGroup({ calls }: { calls: ToolCall[] }) {
   );
 }
 
-/** One call: its label; a tap shows the exact input and output (output cut at 200 lines). */
-let fullEventSource: { fullEvent(threadId: string, seq: number): Promise<FyrEvent | null> } | null = null;
-/** V0.38: where a cut tool output is loaded from (the app sets the API). */
-export function setFullEventSource(s: typeof fullEventSource): void {
-  fullEventSource = s;
-}
 export const ThreadIdContext = createContext("");
 
+/** One call: its label; a tap shows the exact input and output (output cut at 200 lines). */
 function CallRow({ c }: { c: ToolCall }) {
+  const api = useApi();
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
   const threadId = useContext(ThreadIdContext);
   const [whole, setWhole] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const loadWhole = async () => {
-    if (!c.cutSeq || !fullEventSource) return;
+    if (!c.cutSeq) return;
     setLoading(true);
-    const ev = await fullEventSource.fullEvent(threadId, c.cutSeq).catch(() => null);
+    const ev = await api.fullEvent(threadId, c.cutSeq).catch(() => null);
     const text = ev ? fullOutputOf(ev, c.id) : null;
     setLoading(false);
     if (text !== null) {
@@ -1081,7 +1094,7 @@ export interface SendArgs {
 }
 
 interface ComposerProps {
-  t: ThreadDTO;
+  t: Thread;
   now: number;
   answer: AnswerField | null;
   onSend(args: SendArgs): Promise<boolean>;

@@ -2,7 +2,7 @@
 // for 1.5 s and the user has scrolled to the end. A Space peek never marks seen. After "mark unseen"
 // the client stops marking that thread seen until the user leaves the view and opens it again.
 
-import type { ThreadDTO } from "./types.ts";
+import type { Thread } from "./types.ts";
 
 export const SEEN_DELAY_MS = 1500;
 
@@ -54,19 +54,19 @@ export function markedUnseen(tr: SeenTracker): SeenTracker {
   return { ...tr, suppressed: true };
 }
 
-function resultKey(t: ThreadDTO): string {
+function resultKey(t: Thread): string {
   return `${t.id}@${t.activityAt ?? t.updatedAt}`;
 }
 
-export function shouldMarkSeen(tr: SeenTracker, t: ThreadDTO | undefined, now: number): boolean {
+export function shouldMarkSeen(tr: SeenTracker, t: Thread | undefined, now: number): boolean {
   if (!t || tr.threadId !== t.id) return false;
   if (tr.mode !== "open" || tr.suppressed || !tr.atEnd || tr.focusedSince === null) return false;
   if (now - tr.focusedSince < SEEN_DELAY_MS) return false;
   if (t.attention.state !== "done") return false;
-  if (t.unavailable && "thread.markSeen" in t.unavailable) return false;
+  if ("thread.markSeen" in t.unavailable) return false;
   return tr.sentKey !== resultKey(t);
 }
 
-export function markSent(tr: SeenTracker, t: ThreadDTO): SeenTracker {
+export function markSent(tr: SeenTracker, t: Thread): SeenTracker {
   return { ...tr, sentKey: resultKey(t) };
 }

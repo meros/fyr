@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -20,15 +21,8 @@ func cutText(s string, max int) (string, bool) {
 	if len(s) <= max {
 		return s, false
 	}
-	head := s[:max]
-	// do not split a UTF-8 rune
-	for len(head) > 0 && head[len(head)-1]&0xC0 == 0x80 {
-		head = head[:len(head)-1]
-	}
-	if len(head) > 0 && head[len(head)-1] >= 0xC0 {
-		head = head[:len(head)-1]
-	}
-	return head + fmt.Sprintf("\n… [%d KB more; open the full output]", (len(s)-len(head)+1023)/1024), true
+	head := core.TruncHead(s, max)
+	return head + fmt.Sprintf("\n[%d KB more; open the full output]", (len(s)-len(head)+1023)/1024), true
 }
 
 // Lean returns ev as it is sent: tool outputs cut, the original untouched.

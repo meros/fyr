@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -13,28 +15,12 @@ import (
 // Changes are records (SPEC 0.5 V0.59, decision 0018): one model for a git
 // branch, a PR, a server change, a migration, a design or a document.
 
-// Phases of a change. Working, review, landed and live are in order; the two
-// ends stop it.
-const (
-	PhaseWorking   = "working"
-	PhaseReview    = "review"
-	PhaseLanded    = "landed"
-	PhaseLive      = "live"
-	PhaseAbandoned = "abandoned"
-	PhaseReverted  = "reverted"
-)
-
 // Who set a phase or a condition.
 const (
 	ByAgent    = "agent"
 	ByObserved = "observed"
 	ByOwner    = "owner"
 )
-
-// ChangeKinds are the kinds a change may have.
-var ChangeKinds = []string{"code", "infra", "host", "data", "doc", "design", "other"}
-
-var phaseRank = map[string]int{PhaseWorking: 0, PhaseReview: 1, PhaseLanded: 2, PhaseLive: 3}
 
 const (
 	maxChanges   = 50
@@ -46,29 +32,50 @@ const (
 type Change struct {
 	ID         string      `json:"id"`
 	Key        string      `json:"key"`
-	Kind       string      `json:"kind"`
+	Kind       ChangeKind  `json:"kind"`
 	Title      string      `json:"title"`
 	Targets    []string    `json:"targets,omitempty"`
 	Branch     string      `json:"branch,omitempty"`
 	Revisions  []Revision  `json:"revisions,omitempty"`
-	Phase      string      `json:"phase"`
+	Phase      Phase       `json:"phase"`
 	Label      string      `json:"label,omitempty"`
 	Conditions []Condition `json:"conditions,omitempty"`
 	Evidence   []Evidence  `json:"evidence,omitempty"`
 	Group      string      `json:"group,omitempty"`
 	After      []string    `json:"after,omitempty"`
 	Needs      string      `json:"needs,omitempty"` // "owner" or ""
+	// PR is the code change's pull request as GitHub last reported it (#32);
+	// its "pr" evidence is the link the Changes board shows.
+	PR *PR `json:"pr,omitempty"`
+	// Dismissed: the owner put the merged or closed PR away (V0.36); it is
+	// never the thread's main PR again.
+	Dismissed bool `json:"dismissed,omitempty"`
 	// Actions the owner can press (V0.60): declared by the agent, or built in
-	// from what Fyr observed. Runs are their last results.
-	Actions []Offer    `json:"actions,omitempty"`
-	Runs    []OfferRun `json:"runs,omitempty"`
-	// V0.66: the failed checks' annotations while the PR is open, and the
-	// merge commit Fyr watches for deployments.
+	// from what Fyr observed, and their last runs.
+	Actions
+	// V0.66: the failed checks' annotations while the PR is open. The deploy
+	// watch of its merge commit is a Rule of the thread (#46).
 	Annotations []Annotation `json:"annotations,omitempty"`
-	DeployWatch *DeployWatch `json:"deployWatch,omitempty"`
 	PhaseBy     string       `json:"phaseBy"`
 	CreatedAt   time.Time    `json:"createdAt"`
 	UpdatedAt   time.Time    `json:"updatedAt"`
+	// LandedAt is when the change first reached landed (V0.70): a failure
+	// recorded before it is history and no longer blocks; one reported in
+	// the same call as the landing, or later, blocks.
+	LandedAt *time.Time `json:"landedAt,omitempty"`
+	// Aliases are other keys that name this change: an agent's key for a
+	// code change it joined by repo and branch (V0.70 (2)).
+	Aliases []string `json:"aliases,omitempty"`
+	// Workspace is where the change's git facts are read (decision 0019):
+	// set on a host record by the git observer, and on a thread's code
+	// change when it links one.
+	Workspace *Workspace `json:"workspace,omitempty"`
+	// Observed is the host record of the same repo and branch that this
+	// thread's change follows (#35): its git facts are copied here.
+	Observed string `json:"observed,omitempty"`
+	// Threads are the threads that reference a host record; set only where
+	// it is shown (the thread DTO, change_list), never stored.
+	Threads []string `json:"threads,omitempty"`
 }
 
 // Revision is one version of a change: a commit, a plan digest, a doc version.
@@ -82,11 +89,11 @@ type Revision struct {
 
 // Condition is one independent fact about a change.
 type Condition struct {
-	Type   string    `json:"type"`
-	Status string    `json:"status"` // ok, fail, pending
-	Reason string    `json:"reason,omitempty"`
-	Source string    `json:"source"`
-	At     time.Time `json:"at"`
+	Type   CondType   `json:"type"`
+	Status CondStatus `json:"status"`
+	Reason string     `json:"reason,omitempty"`
+	Source string     `json:"source"`
+	At     time.Time  `json:"at"`
 }
 
 // Evidence links proof: a PR, a plan, a log, a preview, a deployment.
@@ -95,28 +102,6 @@ type Evidence struct {
 	URL        string `json:"url,omitempty"`
 	Attachment string `json:"attachment,omitempty"`
 	Title      string `json:"title,omitempty"`
-}
-
-// SettleWhen settles a thread when a change reaches a phase (V0.59 (7)).
-type SettleWhen struct {
-	Change string `json:"change"`
-	Phase  string `json:"phase"`
-}
-
-// Ended reports a phase that stops a change.
-func Ended(phase string) bool { return phase == PhaseAbandoned || phase == PhaseReverted }
-
-// ValidPhase reports a known phase.
-func ValidPhase(p string) bool { _, ok := phaseRank[p]; return ok || Ended(p) }
-
-// Reached reports that phase has got at least as far as want.
-func Reached(phase, want string) bool {
-	if phase == want {
-		return true
-	}
-	a, ok1 := phaseRank[phase]
-	b, ok2 := phaseRank[want]
-	return ok1 && ok2 && a >= b
 }
 
 // FindChange is the change with this id or key, or nil.
@@ -130,7 +115,7 @@ func FindChange(t *Thread, ref string) *Change {
 		}
 	}
 	for i := range t.Changes {
-		if t.Changes[i].Key == ref {
+		if t.Changes[i].Key == ref || slices.Contains(t.Changes[i].Aliases, ref) {
 			return &t.Changes[i]
 		}
 	}
@@ -139,10 +124,11 @@ func FindChange(t *Thread, ref string) *Change {
 
 // ChangeOpen is what the agent (or an observer) starts a change with.
 type ChangeOpen struct {
-	Key, Kind, Title, Branch, Group string
-	Targets, After                  []string
-	Revision                        *Revision
-	Evidence                        []Evidence
+	Key, Title, Branch, Group string
+	Kind                      ChangeKind
+	Targets, After            []string
+	Revision                  *Revision
+	Evidence                  []Evidence
 }
 
 // ChangeID is a change's id: stable for its key, so a retried call or a
@@ -161,10 +147,19 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 	if o.Key == "" {
 		return nil, false, errors.New("key is required: a stable name for this change, for example \"k8s:prod/api replicas\"")
 	}
-	if o.Kind != "" && !validKind(o.Kind) {
-		return nil, false, fmt.Errorf("kind must be one of %s", strings.Join(ChangeKinds, ", "))
+	if o.Kind != "" && !o.Kind.Valid() {
+		return nil, false, fmt.Errorf("kind must be one of %s", strings.Join(Names(ChangeKinds()), ", "))
 	}
-	if c := FindChange(t, o.Key); c != nil {
+	c := FindChange(t, o.Key)
+	if c == nil && o.Kind == KindCode && o.Branch != "" {
+		// One change per repo and branch (V0.70 (2)): the agent's key joins
+		// the change Fyr already keeps for that branch.
+		if c = codeChangeOn(t, o.Branch, o.Targets); c != nil {
+			c.Aliases = union(c.Aliases, []string{o.Key})
+		}
+	}
+	if c != nil {
+		defer linkRef(t, c)
 		if c.Title == "" {
 			c.Title = o.Title
 		}
@@ -186,22 +181,24 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 		return c, false, nil
 	}
 	if o.Kind == "" {
-		o.Kind = "other"
+		o.Kind = KindOther
 	}
 	if strings.TrimSpace(o.Title) == "" {
 		o.Title = o.Key
 	}
-	c := Change{ID: ChangeID(o.Key), Key: o.Key, Kind: o.Kind, Title: strings.TrimSpace(o.Title), Targets: union(nil, o.Targets), Branch: o.Branch,
+	nc := Change{ID: ChangeID(o.Key), Key: o.Key, Kind: o.Kind, Title: strings.TrimSpace(o.Title), Targets: union(nil, o.Targets), Branch: o.Branch,
 		Group: o.Group, After: union(nil, o.After), Phase: PhaseWorking, PhaseBy: by, CreatedAt: now, UpdatedAt: now}
 	for _, ev := range o.Evidence {
-		addEvidence(&c, ev)
+		addEvidence(&nc, ev)
 	}
 	if o.Revision != nil {
-		addRevision(&c, *o.Revision, now)
+		addRevision(&nc, *o.Revision, now)
 	}
-	t.Changes = append(t.Changes, c)
+	t.Changes = append(t.Changes, nc)
 	trimChanges(t, now)
-	return FindChange(t, c.ID), true, nil
+	c = FindChange(t, nc.ID)
+	linkRef(t, c)
+	return c, true, nil
 }
 
 // ReviseChange adds a revision; the same id twice is one revision. A new
@@ -212,8 +209,8 @@ func ReviseChange(c *Change, r Revision, now time.Time) bool {
 		return false
 	}
 	for i := range c.Conditions {
-		if c.Conditions[i].Source != ByOwner && c.Conditions[i].Status != "pending" {
-			c.Conditions[i].Status, c.Conditions[i].Reason, c.Conditions[i].At = "pending", "", now
+		if c.Conditions[i].Source != ByOwner && c.Conditions[i].Status != CondPending {
+			c.Conditions[i].Status, c.Conditions[i].Reason, c.Conditions[i].At = CondPending, "", now
 		}
 	}
 	c.UpdatedAt = now
@@ -222,36 +219,43 @@ func ReviseChange(c *Change, r Revision, now time.Time) bool {
 
 // ChangeUpdate is a status report: each set field changes.
 type ChangeUpdate struct {
-	Phase      string
+	Phase      Phase
 	Label      *string
 	Conditions []Condition
 	Needs      *string
 }
 
-// UpdateChange applies a status report from by (V0.59 (2)): an observed
-// phase or condition is not changed by the agent, and the agent never marks
-// a review or an approval ok.
+// UpdateChange applies a status report from by (V0.59 (2)). What by may
+// write is the field rights table (rights.go).
 func UpdateChange(t *Thread, c *Change, u ChangeUpdate, by string, now time.Time) error {
 	if u.Phase != "" {
-		if !ValidPhase(u.Phase) {
-			return fmt.Errorf("phase must be working, review, landed, live, abandoned or reverted")
+		if !u.Phase.Valid() {
+			return fmt.Errorf("phase must be %s", OrList(Phases()))
 		}
-		if by == ByAgent && c.PhaseBy == ByObserved && u.Phase != c.Phase {
-			return fmt.Errorf("Fyr observes the phase of %q (%s); a report cannot change it", c.Title, c.Phase)
+		if u.Phase != c.Phase {
+			if err := CanWrite(FieldChangePhase, by, c.PhaseBy, fmt.Sprintf("the phase of %q (%s)", c.Title, c.Phase)); err != nil {
+				return err
+			}
 		}
 	}
 	for _, k := range u.Conditions {
 		if k.Type == "" {
 			return errors.New("each condition needs a type")
 		}
-		if k.Status != "ok" && k.Status != "fail" && k.Status != "pending" {
-			return fmt.Errorf("condition %q: status must be ok, fail or pending", k.Type)
+		if !k.Status.Valid() {
+			return fmt.Errorf("condition %q: status must be %s", k.Type, OrList(CondStatuses()))
 		}
-		if by == ByAgent && k.Status == "ok" && (k.Type == "review" || k.Type == "approval") {
-			return fmt.Errorf("an agent cannot mark %q ok; ask the owner with change_request", k.Type)
+		if f := condField(k.Type, k.Status); f != "" {
+			if err := CanWrite(f, by, "", fmt.Sprintf("%q", k.Type)); err != nil {
+				return err
+			}
 		}
-		if cur := condition(c, k.Type); by == ByAgent && cur != nil && cur.Source == ByObserved {
-			return fmt.Errorf("Fyr observes %q of %q; a report cannot change it", k.Type, c.Title)
+		cur := ""
+		if x := condition(c, k.Type); x != nil {
+			cur = x.Source
+		}
+		if err := CanWrite(FieldChangeCondition, by, cur, fmt.Sprintf("%q of %q", k.Type, c.Title)); err != nil {
+			return err
 		}
 	}
 	if u.Needs != nil && *u.Needs != "" && *u.Needs != "owner" {
@@ -291,17 +295,22 @@ func AttachEvidence(c *Change, evs []Evidence, now time.Time) error {
 }
 
 // ChangePRObserved writes a PR snapshot into the thread's code change for
-// that PR (V0.59 (4)): found by the PR URL, else by its head branch, else
-// made. Open is review, merged landed, closed abandoned.
-func ChangePRObserved(t *Thread, p PR, now time.Time) {
+// that PR (V0.59 (4), #32): found by the PR URL, else by its head branch, else
+// made. Open is review, merged landed, closed abandoned. It moves ActivityAt
+// when the PR starts to block, merges or closes, so polling alone never marks
+// a thread done.
+func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	if p.URL == "" {
-		return
+		return nil
 	}
-	c := changeByEvidence(t, "pr", p.URL)
+	if p.Repo == "" || p.Number == 0 {
+		p.Repo, p.Number = parsePRURL(p.URL)
+	}
+	c := changeByPR(t, p.URL)
 	if c == nil && p.Branch != "" {
 		for i := range t.Changes {
 			x := &t.Changes[i]
-			if x.Kind == "code" && x.Branch == p.Branch && !Ended(x.Phase) && x.PR() == "" {
+			if x.Kind == KindCode && x.Branch == p.Branch && !x.Phase.Ended() && x.PRURL() == "" {
 				c = x
 				break
 			}
@@ -312,11 +321,23 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) {
 		if title == "" {
 			title = fmt.Sprintf("%s#%d", p.Repo, p.Number)
 		}
-		c, _, _ = OpenChange(t, ChangeOpen{Key: fmt.Sprintf("pr:%s#%d", p.Repo, p.Number), Kind: "code", Title: title, Branch: p.Branch}, ByObserved, now)
+		c, _, _ = OpenChange(t, ChangeOpen{Key: fmt.Sprintf("pr:%s#%d", p.Repo, p.Number), Kind: KindCode, Title: title, Branch: p.Branch}, ByObserved, now)
 		if c == nil {
-			return
+			return nil
 		}
 	}
+	oldState, oldBlocking := "", c.Blocking()
+	if c.PR != nil {
+		oldState = c.PR.State
+	}
+	defer func() {
+		if b := c.Blocking(); (oldState != p.State || oldBlocking != b) && (b != "" || p.State != "OPEN") {
+			t.ActivityAt = now
+		}
+	}()
+	snap := p
+	snap.Annotations = nil
+	c.PR = &snap
 	if p.Title != "" && (c.Title == "" || c.Title == c.Key || c.Title == c.Branch) {
 		c.Title = p.Title
 	}
@@ -331,6 +352,7 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) {
 		}
 		c.Targets = union(c.Targets, []string{"repo:" + repo})
 	}
+	linkRef(t, c)
 	phase := PhaseReview
 	switch p.State {
 	case "MERGED":
@@ -342,9 +364,9 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) {
 	if !(phase == PhaseLanded && c.Phase == PhaseLive) {
 		setPhase(t, c, phase, ByObserved, now)
 	}
-	defer syncBuiltins(c)
-	watchMerge(c, p, now)
-	if p.State == "OPEN" && p.Checks == "fail" {
+	armBuiltins(t, c, now)
+	watchMerge(t, c, p, now)
+	if p.State == "OPEN" && p.Checks == ChecksFail {
 		c.Annotations = p.Annotations
 	} else {
 		c.Annotations = nil
@@ -352,37 +374,40 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) {
 	if p.State != "OPEN" {
 		// Checks, review and conflict describe the PR before it merged or
 		// closed; they no longer need anyone (decision 0018).
-		dropConditions(c, "checks", "review", "conflict")
+		dropConditions(c, CondChecks, CondReview, CondConflict)
 		c.UpdatedAt = now
-		return
+		return c
 	}
 	switch p.Checks {
-	case "pass":
-		setCondition(c, "checks", "ok", "", ByObserved, now)
-	case "fail":
-		setCondition(c, "checks", "fail", "CI failed", ByObserved, now)
-	case "pending":
-		setCondition(c, "checks", "pending", "", ByObserved, now)
+	case ChecksPass:
+		setCondition(c, CondChecks, CondOK, "", ByObserved, now)
+	case ChecksFail:
+		setCondition(c, CondChecks, CondFail, "CI failed", ByObserved, now)
+	case ChecksPending:
+		setCondition(c, CondChecks, CondPending, "", ByObserved, now)
 	}
 	switch p.Review {
 	case "APPROVED":
-		setCondition(c, "review", "ok", "", ByObserved, now)
+		setCondition(c, CondReview, CondOK, "", ByObserved, now)
 	case "CHANGES_REQUESTED":
-		setCondition(c, "review", "fail", "Changes requested", ByObserved, now)
+		setCondition(c, CondReview, CondFail, "Changes requested", ByObserved, now)
 	case "REVIEW_REQUIRED":
-		setCondition(c, "review", "pending", "", ByObserved, now)
+		setCondition(c, CondReview, CondPending, "", ByObserved, now)
 	}
 	if p.Conflict {
-		setCondition(c, "conflict", "fail", "Merge conflict", ByObserved, now)
-	} else if condition(c, "conflict") != nil {
-		setCondition(c, "conflict", "ok", "", ByObserved, now)
+		setCondition(c, CondConflict, CondFail, "Merge conflict", ByObserved, now)
+	} else if condition(c, CondConflict) != nil {
+		setCondition(c, CondConflict, CondOK, "", ByObserved, now)
 	}
 	c.UpdatedAt = now
+	return c
 }
 
-// GitFacts are what the host reads from the thread's folder after a run.
+// GitFacts are what the host reads from one checkout: the thread's folder
+// or a change's workspace.
 type GitFacts struct {
 	Repo     string // the origin remote, normalised (github.com/owner/name), or the root folder
+	Path     string // the checkout's root folder
 	Branch   string
 	Base     string
 	Ahead    int // commits since the merge base with the base
@@ -391,111 +416,58 @@ type GitFacts struct {
 	Head     string
 }
 
-// GitObserved keeps the code change of the thread's branch (V0.59 (3)). A
-// branch with commits, unpushed work or changed files has one; it is made in
-// working and the observed conditions pushed and clean follow the facts.
-func GitObserved(t *Thread, g GitFacts, now time.Time) {
-	if g.Branch == "" {
-		return
-	}
-	var c *Change
-	for i := range t.Changes {
-		x := &t.Changes[i]
-		if x.Kind == "code" && x.Branch == g.Branch && InFlight(x.Phase) {
-			c = x
-			break
-		}
-	}
-	if c == nil {
-		if g.Ahead == 0 && g.Unpushed == 0 && g.Dirty == 0 {
-			return
-		}
-		var targets []string
-		if g.Repo != "" {
-			targets = []string{"repo:" + g.Repo}
-		}
-		c, _, _ = OpenChange(t, ChangeOpen{Key: freshKey(t, "git:"+g.Repo+"#"+g.Branch), Kind: "code", Title: g.Branch, Branch: g.Branch, Targets: targets}, ByObserved, now)
-		if c == nil {
-			return
-		}
-		c.PhaseBy = ByObserved
-	}
-	if g.Unpushed > 0 {
-		setCondition(c, "pushed", "pending", plural(g.Unpushed, "commit")+" not pushed", ByObserved, now)
-	} else {
-		setCondition(c, "pushed", "ok", "", ByObserved, now)
-	}
-	if g.Dirty > 0 {
-		setCondition(c, "clean", "pending", plural(g.Dirty, "file")+" changed, not committed", ByObserved, now)
-	} else {
-		setCondition(c, "clean", "ok", "", ByObserved, now)
-	}
-	if g.Head != "" && g.Ahead > 0 {
-		addRevision(c, Revision{ID: g.Head, Summary: fmt.Sprintf("%s ahead of %s", plural(g.Ahead, "commit"), g.Base), By: ByObserved}, now)
-	}
-	c.UpdatedAt = now
-}
-
-// ChangeBlocking is why a change needs the owner (V0.59 (6)), or "".
+// ChangeBlocking is why a change of the thread needs the owner (V0.59 (6)),
+// or "". It is the one source of "blocked", PRs included (#32).
 func ChangeBlocking(t *Thread) string {
 	for i := len(t.Changes) - 1; i >= 0; i-- {
-		c := &t.Changes[i]
-		if Ended(c.Phase) {
-			continue
-		}
-		for _, k := range c.Conditions {
-			if k.Status == "fail" {
-				r := k.Reason
-				if r == "" {
-					r = k.Type + " failed"
-				}
-				return c.Title + ": " + r
-			}
-		}
-		if c.Needs == "owner" {
-			return c.Title + ": needs you"
+		if r := t.Changes[i].Blocking(); r != "" {
+			return t.Changes[i].Title + ": " + r
 		}
 	}
 	return ""
 }
 
-// CheckSettleChange settles the thread when its settle_when change has
-// reached the phase (V0.59 (7)).
-func CheckSettleChange(t *Thread, now time.Time) {
-	if t.SettleWhen == nil || t.SettledAt != nil {
-		return
+// Blocking is why this change needs the owner, or "": a failed condition
+// (a PR's checks, review or conflict among them) or needs owner.
+func (c *Change) Blocking() string {
+	if c.Phase.Ended() {
+		return ""
 	}
-	c := FindChange(t, t.SettleWhen.Change)
-	if c != nil && Reached(c.Phase, t.SettleWhen.Phase) {
-		t.SettledAt = &now
-		t.SettleWhen = nil
+	for _, k := range c.Conditions {
+		if k.Status == CondFail && (c.LandedAt == nil || !k.At.Before(*c.LandedAt)) {
+			if k.Reason != "" {
+				return k.Reason
+			}
+			return string(k.Type) + " failed"
+		}
 	}
+	if c.Needs == "owner" {
+		return "needs you"
+	}
+	return ""
 }
 
 // --- helpers ---
 
-func validKind(k string) bool {
-	for _, x := range ChangeKinds {
-		if x == k {
-			return true
-		}
-	}
-	return false
-}
-
-func setPhase(t *Thread, c *Change, phase, by string, now time.Time) {
+// setPhase moves a change; t is its thread, nil for a host record.
+func setPhase(t *Thread, c *Change, phase Phase, by string, now time.Time) {
 	if c.Phase == phase && c.PhaseBy == by {
 		return
 	}
 	moved := c.Phase != phase
 	c.Phase, c.PhaseBy, c.UpdatedAt = phase, by, now
-	if moved && phase != PhaseWorking {
+	switch {
+	case phase.Reached(PhaseLanded) && c.LandedAt == nil:
+		c.LandedAt = &now
+	case !phase.Reached(PhaseLanded) && !phase.Ended():
+		c.LandedAt = nil
+	}
+	if moved && phase != PhaseWorking && t != nil {
 		t.ActivityAt = now
 	}
-	CheckSettleChange(t, now)
 }
 
-func condition(c *Change, typ string) *Condition {
+func condition(c *Change, typ CondType) *Condition {
 	for i := range c.Conditions {
 		if c.Conditions[i].Type == typ {
 			return &c.Conditions[i]
@@ -504,7 +476,7 @@ func condition(c *Change, typ string) *Condition {
 	return nil
 }
 
-func setCondition(c *Change, typ, status, reason, by string, now time.Time) {
+func setCondition(c *Change, typ CondType, status CondStatus, reason, by string, now time.Time) {
 	if k := condition(c, typ); k != nil {
 		if k.Status != status || k.Reason != reason || k.Source != by {
 			k.Status, k.Reason, k.Source, k.At = status, reason, by, now
@@ -528,12 +500,12 @@ func addRevision(c *Change, r Revision, now time.Time) bool {
 	}
 	r.At = now
 	c.Revisions = append(c.Revisions, r)
-	if len(c.Revisions) > maxRevisions {
-		c.Revisions = c.Revisions[len(c.Revisions)-maxRevisions:]
-	}
+	c.Revisions = keepLast(c.Revisions, maxRevisions)
 	return true
 }
 
+// addEvidence adds proof once. The first "pr" evidence of a change without a
+// PR gives it one, open until GitHub reports otherwise (#32).
 func addEvidence(c *Change, ev Evidence) {
 	for _, x := range c.Evidence {
 		if x.Kind == ev.Kind && x.URL == ev.URL && x.Attachment == ev.Attachment {
@@ -541,30 +513,43 @@ func addEvidence(c *Change, ev Evidence) {
 		}
 	}
 	c.Evidence = append(c.Evidence, ev)
+	if ev.Kind == "pr" && c.PR == nil && ev.URL != "" {
+		repo, n := parsePRURL(ev.URL)
+		c.PR = &PR{URL: ev.URL, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending}
+	}
 }
 
-func changeByEvidence(t *Thread, kind, url string) *Change {
+// changeByPR is the change whose PR has this URL, or nil.
+func changeByPR(t *Thread, url string) *Change {
 	if url == "" {
 		return nil
 	}
 	for i := range t.Changes {
-		for _, ev := range t.Changes[i].Evidence {
-			if ev.Kind == kind && ev.URL == url {
-				return &t.Changes[i]
-			}
+		if t.Changes[i].PRURL() == url {
+			return &t.Changes[i]
 		}
 	}
 	return nil
 }
 
-// PR is the URL of the change's first PR evidence, or "".
-func (c *Change) PR() string {
-	for _, ev := range c.Evidence {
-		if ev.Kind == "pr" {
-			return ev.URL
-		}
+// PRURL is the URL of the change's PR, or "".
+func (c *Change) PRURL() string {
+	if c.PR == nil {
+		return ""
 	}
-	return ""
+	return c.PR.URL
+}
+
+var prURLRe = regexp.MustCompile(`github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)`)
+
+// parsePRURL reads owner/repo and the number from a GitHub PR URL.
+func parsePRURL(url string) (string, int) {
+	m := prURLRe.FindStringSubmatch(url)
+	if m == nil {
+		return "", 0
+	}
+	n, _ := strconv.Atoi(m[2])
+	return m[1], n
 }
 
 // PRURLs are the PR URLs of the thread's changes that are not ended or landed.
@@ -572,7 +557,7 @@ func PRURLs(t *Thread) []string {
 	var out []string
 	for i := range t.Changes {
 		c := &t.Changes[i]
-		if u := c.PR(); u != "" && InFlight(c.Phase) {
+		if u := c.PRURL(); u != "" && c.Phase.InFlight() {
 			out = append(out, u)
 		}
 	}
@@ -611,7 +596,7 @@ func plural(n int, word string) string {
 func trimChanges(t *Thread, now time.Time) {
 	keep := t.Changes[:0]
 	for _, c := range t.Changes {
-		if Ended(c.Phase) && now.Sub(c.UpdatedAt) > endedKeep {
+		if c.Phase.Ended() && now.Sub(c.UpdatedAt) > endedKeep {
 			continue
 		}
 		keep = append(keep, c)
@@ -620,7 +605,7 @@ func trimChanges(t *Thread, now time.Time) {
 	for len(t.Changes) > maxChanges {
 		idx := -1
 		for i, c := range t.Changes {
-			if Ended(c.Phase) && (idx < 0 || c.UpdatedAt.Before(t.Changes[idx].UpdatedAt)) {
+			if c.Phase.Ended() && (idx < 0 || c.UpdatedAt.Before(t.Changes[idx].UpdatedAt)) {
 				idx = i
 			}
 		}
@@ -632,24 +617,7 @@ func trimChanges(t *Thread, now time.Time) {
 	}
 }
 
-// freshKey is key, or key~N when a change with that key has landed or
-// ended: new work after that is a new change (V0.59 (3)).
-func freshKey(t *Thread, key string) string {
-	k := key
-	for n := 2; ; n++ {
-		c := FindChange(t, k)
-		if c == nil || InFlight(c.Phase) {
-			return k
-		}
-		k = fmt.Sprintf("%s~%d", key, n)
-	}
-}
-
-// InFlight reports a phase before landed: the change can still fail,
-// block and take new work.
-func InFlight(phase string) bool { return phase == PhaseWorking || phase == PhaseReview }
-
-func dropConditions(c *Change, types ...string) {
+func dropConditions(c *Change, types ...CondType) {
 	out := c.Conditions[:0]
 	for _, k := range c.Conditions {
 		if !slices.Contains(types, k.Type) {
@@ -657,4 +625,32 @@ func dropConditions(c *Change, types ...string) {
 		}
 	}
 	c.Conditions = out
+}
+
+// codeChangeOn is the thread's code change on branch in the same repo, not
+// landed (in flight), or nil. Without a repo on either side the branch alone
+// decides.
+func codeChangeOn(t *Thread, branch string, targets []string) *Change {
+	for i := range t.Changes {
+		c := &t.Changes[i]
+		if c.Kind == KindCode && c.Branch == branch && c.Phase.InFlight() && sameRepo(c.Targets, targets) {
+			return c
+		}
+	}
+	return nil
+}
+
+// sameRepo reports targets that share a repo, or a side that names none.
+func sameRepo(a, b []string) bool {
+	repos := func(ts []string) []string {
+		var out []string
+		for _, x := range ts {
+			if strings.HasPrefix(x, "repo:") {
+				out = append(out, x)
+			}
+		}
+		return out
+	}
+	x, y := repos(a), repos(b)
+	return len(x) == 0 || len(y) == 0 || slices.ContainsFunc(x, func(r string) bool { return slices.Contains(y, r) })
 }

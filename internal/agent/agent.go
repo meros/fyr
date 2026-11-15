@@ -89,15 +89,19 @@ func (m *Manager) adapter(p Profile) (cli.Adapter, error) {
 }
 
 // Ev is a timeline event the agent adds to a thread.
-type Ev struct {
-	Type string
-	Data any
+type Ev = core.Event
+
+// observe reports what the manager saw of a thread's process as an Input
+// from the process observer.
+func (m *Manager) observe(threadID, kind string, args any) {
+	m.host.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: kind, Thread: threadID, Args: args})
 }
 
 // Host is what the agent needs from the engine.
 type Host interface {
-	// Observe changes one thread and appends events in one transaction.
-	Observe(threadID string, fn func(t *core.Thread, now time.Time), evs ...Ev)
+	// Apply sends one Input down the engine's one path (decision 0020):
+	// the agent manager observes the process and reports what it saw.
+	Apply(in core.Input) (any, error)
 	Thread(id string) (core.Thread, bool)
 }
 
@@ -126,6 +130,8 @@ const FyrPrompt = `You run inside Fyr, which shows this session to the user and 
 - Give the user a button for the next step with mcp__fyr__offer_action, on a change, the thread or your live view: run "script" for an exact command Fyr runs on their press, run "agent" for a step that needs judgement. Fyr never runs it without the press.
 - When you open a PR some other way than gh pr create, call mcp__fyr__pr_link with its URL (or change_open with pr).
 - When the user says the thread is finished once something happens, call mcp__fyr__settle_when.
+- Fyr tells you what happened on your records in lines that start with [Fyr], one sentence each (a result you asked for, CI failed or passed, a merge, the owner's changes). Read the details and the current state with mcp__fyr__fyr_state instead of polling.
+- To act once when something in Fyr becomes true (CI on a change passes, a change lands, a time passes), arm mcp__fyr__watch instead of polling; it can also settle the thread.
 - To see or coordinate the user's other sessions, use mcp__fyr__threads, mcp__fyr__thread_read, mcp__fyr__thread_send and mcp__fyr__thread_new (start a separate session for work that should run on its own).
 - To show the user something (a screenshot after UI work, a chart, a mockup, a page, a 3D model or scene), call mcp__fyr__show with a path, html or url; it appears in the thread on desktop and phone. Pages run real HTML in a sandbox: WebGL, WASM, ES modules, three.js or model-viewer from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com or ajax.googleapis.com, and their own files: give path a folder (index.html plus models, textures, scripts) or an HTML file next to its files.`
 
@@ -155,7 +161,8 @@ type Manager struct {
 
 	mu       sync.Mutex
 	sessions map[string]*session
-	tokens   map[string]string // MCP token → thread id
+	starting map[string]*starting // thread id → its start in flight (#40)
+	tokens   map[string]string    // MCP token → thread id
 }
 
 type session struct {
@@ -179,34 +186,40 @@ type session struct {
 	// it a message counts as read when its turn ends.
 	lifecycle bool
 	// viewTools: the process started with the live view's prompt and
-	// tools (V0.37). The flag can change while it runs; the Stop hook only
-	// asks for a view the agent knows about.
+	// tools (V0.37). The flag can change while it runs; the feed's upkeep
+	// only asks for a view the agent knows about.
 	viewTools bool
 	// changeTools: this process has Fyr's MCP tools, the change tools
-	// among them (V0.62); changesNudged is their last mid-turn reminder.
-	changeTools   bool
-	changesNudged time.Time
-	// viewBlocked: the Stop hook blocked once this run; summary is the
-	// thread's summary before that forced turn, and forcedWork is true when
-	// the forced turn called a tool other than the view tools.
-	// The hook runs on the client's reader, ahead of the stream messages
-	// still queued for handle, so the summary comes from the hook's input
-	// and the forced turn counts from the synthetic message onward.
-	viewBlocked bool
-	// viewNudged is the last mid-turn reminder (V0.52).
-	viewNudged time.Time
-	summary    string
-	inForced   bool
-	forcedWork bool
+	// among them (V0.62), and the feed's hooks.
+	changeTools bool
+	// stopBlocked: the Stop hook blocked once this run with the feed's stop
+	// notices; summary is the thread's summary before that forced turn, and
+	// forcedWork is true when the forced turn called a tool other than the
+	// upkeep tools. The hook runs on the client's reader, ahead of the
+	// stream messages still queued for handle, so the summary comes from the
+	// hook's input and the forced turn counts from the synthetic message
+	// onward.
+	stopBlocked bool
+	summary     string
+	inForced    bool
+	forcedWork  bool
 	// refresh: end the process after this run, so the next one starts
 	// with the current flag.
 	refresh bool
-	// results get the result message of each turn (a handover waits on
-	// the source's turn, V0.45).
-	results []chan claude.Msg
+	// results wait for turn results (a handover waits on the source's
+	// turn, V0.45).
+	results []waiter
 	digest  *digest
 	idle    *time.Timer
 	log     io.Closer
+}
+
+// waiter gets the result of the turn that read message msg (#40): a
+// result that ends a turn while msg still waits in the CLI's queue is
+// another turn's. An empty msg takes the next result.
+type waiter struct {
+	msg string
+	ch  chan claude.Msg
 }
 
 func New(host Host, cfg Config) *Manager {
@@ -216,7 +229,7 @@ func New(host Host, cfg Config) *Manager {
 	if cfg.Prompt == "" {
 		cfg.Prompt = FyrPrompt
 	}
-	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, tokens: map[string]string{}}
+	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, starting: map[string]*starting{}, tokens: map[string]string{}}
 }
 
 // ThreadForToken maps an MCP bearer token to its thread (16.2 MCP binding).
@@ -251,24 +264,26 @@ func newUUID() string {
 // Do runs one effect of a command for a thread.
 func (m *Manager) Do(threadID string, e core.Effect) error {
 	switch e.Kind {
-	case "send":
-		return m.send(threadID, e)
-	case "answer":
+	case core.EffectSend:
+		return m.send(threadID, e, nil)
+	case core.EffectFeed:
+		return m.feed(threadID)
+	case core.EffectAnswer:
 		return m.answer(threadID, e)
-	case "interrupt":
+	case core.EffectInterrupt:
 		return m.doInterrupt(threadID)
-	case "stop":
+	case core.EffectStop:
 		m.Stop(threadID)
 		return nil
-	case "refresh":
+	case core.EffectRefresh:
 		m.refreshView(threadID)
 		return nil
-	case "cancelMessage":
+	case core.EffectCancelMessage:
 		return m.cancelMessage(threadID, e.MessageID)
-	case "handover":
+	case core.EffectHandover:
 		m.handover(threadID, e)
 		return nil
-	case "setModel":
+	case core.EffectSetModel:
 		m.mu.Lock()
 		s := m.sessions[threadID]
 		m.mu.Unlock()
@@ -352,7 +367,9 @@ func content(e core.Effect) []claude.Msg {
 	return out
 }
 
-func (m *Manager) send(threadID string, e core.Effect) error {
+// send writes a user message; a non-nil result gets the result of the turn
+// that reads it.
+func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) error {
 	if e.MessageID == "" {
 		e.MessageID = newUUID()
 	}
@@ -363,10 +380,8 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 		if e.From != "" {
 			ud["from"] = e.From
 		}
-		m.host.Observe(threadID, func(t *core.Thread, now time.Time) {
-			core.RunEnded(t, &core.Failure{Class: "process", Message: "Could not start the agent: " + err.Error(), At: now}, now)
-		}, Ev{"user", ud}, Ev{"message.state", map[string]any{"id": e.MessageID, "state": "lost"}},
-			Ev{"run.ended", map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}})
+		m.observe(threadID, core.KindSendFailed, core.SendFailedArgs{Message: "Could not start the agent: " + err.Error(),
+			Log: []Ev{{Type: "user", Data: ud}, {Type: "message.state", Data: map[string]any{"id": e.MessageID, "state": "lost"}}, {Type: "run.ended", Data: map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}}}})
 		return err
 	}
 	m.mu.Lock()
@@ -376,6 +391,11 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 		s.idle.Stop()
 	}
 	s.out[e.MessageID] = "sent"
+	if result != nil {
+		// Under the same lock as out, so no result can see the waiter
+		// before it sees the message as unread.
+		s.results = append(s.results, waiter{e.MessageID, result})
+	}
 	m.mu.Unlock()
 	userText := e.Text
 	if e.From == FromHandover {
@@ -402,18 +422,12 @@ func (m *Manager) send(threadID string, e core.Effect) error {
 	if e.From != "" {
 		ud["from"] = e.From
 	}
-	evs := []Ev{{"user", ud}}
+	evs := []Ev{{Type: "user", Data: ud}}
 	if first {
-		evs = append(evs, Ev{"run.started", map[string]any{}})
+		evs = append(evs, Ev{Type: "run.started", Data: map[string]any{}})
 	}
-	id := e.MessageID
-	m.host.Observe(threadID, func(t *core.Thread, now time.Time) {
-		if first {
-			core.RunStarted(t, now)
-		}
-		core.SetOutbox(t, id, "sent")
-	}, evs...)
-	return s.c.SendUser(content(e), id)
+	m.observe(threadID, core.KindMessageSent, core.MessageSentArgs{ID: e.MessageID, First: first, Log: evs})
+	return s.c.SendUser(content(e), e.MessageID)
 }
 
 // delivered moves a message to a new state (V0.33) and records it once.
@@ -432,8 +446,7 @@ func (m *Manager) delivered(s *session, id, state string) {
 		delete(s.out, id)
 	}
 	m.mu.Unlock()
-	m.host.Observe(s.thread, func(t *core.Thread, _ time.Time) { core.SetOutbox(t, id, state) },
-		Ev{"message.state", map[string]any{"id": id, "state": state}})
+	m.observe(s.thread, core.KindMessageState, core.MessageStateArgs{ID: id, State: state})
 }
 
 // unread lists the messages the agent has not read.
@@ -493,13 +506,62 @@ type as struct {
 	addDirs []string
 }
 
+// starting is a process start in flight: every other caller for the same
+// thread waits for it instead of starting a second process on the same
+// session (#40).
+type starting struct {
+	done chan struct{}
+	s    *session
+	err  error
+}
+
+// ensureAs returns the thread's live process, starting one if needed. With
+// o (a handover) it always starts a new process on o and ends the one that
+// runs. One start per thread runs at a time; the start takes up to 60 s, so
+// it runs outside m.mu and the others wait on its done channel (#40).
 func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 	m.mu.Lock()
-	if s := m.sessions[threadID]; s != nil {
+	for {
+		st := m.starting[threadID]
+		if st == nil {
+			break
+		}
 		m.mu.Unlock()
-		return s, nil
+		<-st.done
+		if o == nil {
+			return st.s, st.err
+		}
+		m.mu.Lock()
 	}
+	old := m.sessions[threadID]
+	if old != nil && o == nil {
+		m.mu.Unlock()
+		return old, nil
+	}
+	delete(m.sessions, threadID)
+	st := &starting{done: make(chan struct{})}
+	m.starting[threadID] = st
 	m.mu.Unlock()
+	if old != nil {
+		m.end(threadID, old)
+	}
+	s, err := m.start(threadID, o)
+	m.mu.Lock()
+	delete(m.starting, threadID)
+	if err == nil {
+		m.sessions[threadID] = s
+	}
+	st.s, st.err = s, err
+	m.mu.Unlock()
+	if err == nil {
+		go m.read(s)
+	}
+	close(st.done)
+	return s, err
+}
+
+// start launches and initializes a process; ensureAs makes it the thread's.
+func (m *Manager) start(threadID string, o *as) (*session, error) {
 	t, ok := m.host.Thread(threadID)
 	if !ok {
 		return nil, fmt.Errorf("no thread %s", threadID)
@@ -545,7 +607,7 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 		prompt = ""
 	}
 	s.changeTools = m.cfg.MCPURL != "" // V0.62
-	if t.LiveView && m.cfg.MCPURL != "" {
+	if t.ViewOn() && m.cfg.MCPURL != "" {
 		s.viewTools = true
 		prompt = strings.TrimSpace(prompt + "\n\n" + ViewPrompt)
 	}
@@ -577,10 +639,10 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 		Cancel:     func(reqID string) { m.cancelRequest(s, reqID) },
 		Hook: func(id string, in claude.Msg) claude.Msg {
 			if id == "view" {
-				return m.viewStop(s, in)
+				return m.stopHook(s, in)
 			}
 			if id == "viewnudge" {
-				return m.viewNudge(s)
+				return m.toolHook(s)
 			}
 			name, _ := in["tool_name"].(string)
 			ti, _ := in["tool_input"].(map[string]any)
@@ -608,10 +670,6 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 		}
 		return nil, fmt.Errorf("initialize: %w", err)
 	}
-	m.mu.Lock()
-	m.sessions[threadID] = s
-	m.mu.Unlock()
-	go m.read(s)
 	return s, nil
 }
 
@@ -626,8 +684,8 @@ func (m *Manager) read(s *session) {
 	}
 	delete(m.tokens, s.token)
 	live := s.live || len(s.asks) > 0
-	for _, ch := range s.results {
-		close(ch)
+	for _, w := range s.results {
+		close(w.ch)
 	}
 	s.results = nil
 	for id, ch := range s.asks {
@@ -648,11 +706,9 @@ func (m *Manager) read(s *session) {
 	if live {
 		msg := "The agent process exited during the run"
 		if err := s.c.Err(); err != nil {
-			msg += ": " + clip(strings.TrimSpace(err.Error()), 600)
+			msg += ": " + core.TruncHead(strings.TrimSpace(err.Error()), 600)
 		}
-		m.host.Observe(s.thread, func(t *core.Thread, now time.Time) {
-			core.ProcessLost(t, "process", msg, now)
-		}, Ev{"run.ended", map[string]any{"failure": map[string]any{"class": "process", "message": msg}}})
+		m.observe(s.thread, core.KindProcessLost, msg)
 	}
 }
 
@@ -690,30 +746,22 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 	case "system":
 		if msg["subtype"] == "background_tasks_changed" {
 			for _, k := range taskList(msg) {
-				k := k
-				m.host.Observe(s.thread, func(t *core.Thread, now time.Time) { core.TaskObserved(t, k, now) })
+				m.observe(s.thread, core.KindTask, core.TaskArgs{Task: k})
 			}
 			return
 		}
 		if k, ev, ok := taskFromSystem(msg); ok {
 			var evs []Ev
 			if ev != "" {
-				evs = append(evs, Ev{"task", map[string]any{"kind": ev, "id": k.ID, "description": k.Description, "status": k.Status, "summary": k.Summary}})
+				evs = append(evs, Ev{Type: "task", Data: map[string]any{"kind": ev, "id": k.ID, "description": k.Description, "status": k.Status, "summary": k.Summary}})
 			}
-			m.host.Observe(s.thread, func(t *core.Thread, now time.Time) { core.TaskObserved(t, k, now) }, evs...)
+			m.observe(s.thread, core.KindTask, core.TaskArgs{Task: k, Log: evs})
 			return
 		}
 		if msg["subtype"] == "init" {
 			sid, _ := msg["session_id"].(string)
 			model, _ := msg["model"].(string)
-			m.host.Observe(s.thread, func(t *core.Thread, _ time.Time) {
-				if sid != "" {
-					t.SessionID = sid
-				}
-				if model != "" && t.Model == "" {
-					t.Model = model
-				}
-			})
+			m.observe(s.thread, core.KindSession, core.SessionArgs{SessionID: sid, Model: model})
 		}
 		return
 	case "assistant", "user":
@@ -721,13 +769,13 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			// The Stop hook's reason, echoed by the CLI (V0.37): never
 			// logged; the forced turn starts here.
 			m.mu.Lock()
-			s.inForced = s.viewBlocked
+			s.inForced = s.stopBlocked
 			forced := s.inForced
 			m.mu.Unlock()
 			if forced {
 				// In stream order, so the client can show the forced turn's
 				// text as one quiet line (V0.37).
-				m.host.Observe(s.thread, func(*core.Thread, time.Time) {}, Ev{"view.forced", map[string]any{}})
+				m.observe(s.thread, core.KindRecord, []Ev{{Type: "view.forced", Data: map[string]any{}}})
 			}
 			return
 		}
@@ -735,19 +783,12 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			m.noteForced(s, msg)
 		}
 		o := s.digest.feed(msg)
-		m.host.Observe(s.thread, func(t *core.Thread, now time.Time) {
-			if o.Activity != "" {
-				t.Activity = o.Activity
-			}
-			if o.Summary != "" {
-				t.Summary = o.Summary
-			}
-			t.Subagents += o.Subagents
-			if o.PRURL != "" && (t.PR == nil || t.PR.URL != o.PRURL) {
-				repo, n, _ := ParsePR(o.PRURL)
-				core.PRObserved(t, core.PR{URL: o.PRURL, Repo: repo, Number: n, State: "OPEN", Checks: "pending"}, now)
-			}
-		}, Ev{"msg", trimMsg(msg)})
+		d := core.DigestArgs{Activity: o.Activity, Summary: o.Summary, Subagents: o.Subagents, Log: []Ev{{Type: "msg", Data: trimMsg(msg)}}}
+		if o.PRURL != "" {
+			repo, n, _ := ParsePR(o.PRURL)
+			d.PR = &core.PR{URL: o.PRURL, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}
+		}
+		m.observe(s.thread, core.KindDigest, d)
 	case "result":
 		m.mu.Lock()
 		ended := s.live
@@ -756,9 +797,9 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		m.mu.Unlock()
 		m.mu.Lock()
 		noReports := !s.lifecycle
-		restore := s.viewBlocked && !s.forcedWork
+		restore := s.stopBlocked && !s.forcedWork
 		summary := s.summary
-		s.viewBlocked, s.inForced, s.forcedWork, s.summary = false, false, false, ""
+		s.stopBlocked, s.inForced, s.forcedWork, s.summary = false, false, false, ""
 		refresh := s.refresh && len(s.out) == 0
 		m.mu.Unlock()
 		if noReports {
@@ -777,31 +818,31 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			if text == "" {
 				text, _ = msg["subtype"].(string)
 			}
-			f = &core.Failure{Class: classify(text), Message: clip(firstLine(text), 300)}
+			f = &core.Failure{Class: classify(text), Message: core.TruncHead(firstLine(text), 300)}
 		}
 		m.mu.Lock()
-		waiters := s.results
-		s.results = nil
+		var due []chan claude.Msg
+		kept := s.results[:0]
+		for _, w := range s.results {
+			if w.msg != "" && s.out[w.msg] != "" {
+				kept = append(kept, w) // its message is still queued
+			} else {
+				due = append(due, w.ch)
+			}
+		}
+		s.results = kept
 		m.mu.Unlock()
-		for _, ch := range waiters {
+		for _, ch := range due {
 			ch <- msg
 		}
 		data := map[string]any{"interrupted": interrupted, "costUsd": msg["total_cost_usd"], "durationMs": msg["duration_ms"], "failure": f}
-		facts := gitFacts(s.cwd)
-		branch := facts.Branch
-		m.host.Observe(s.thread, func(t *core.Thread, now time.Time) {
-			if f != nil {
-				f.At = now
-			}
-			core.RunEnded(t, f, now)
-			t.Branch = branch
-			core.GitObserved(t, facts, now) // V0.59 (3)
-			if restore {
-				// V0.37: a forced turn that only updated the view keeps the
-				// run's own last words as the summary.
-				t.Summary = summary
-			}
-		}, Ev{"run.ended", data})
+		end := core.RunEndedArgs{Failure: f, Git: gitFacts(s.cwd), Data: data} // V0.59 (3): the git facts
+		if restore {
+			// V0.37: a forced turn that only updated the view keeps the
+			// run's own last words as the summary.
+			end.Summary = &summary
+		}
+		m.observe(s.thread, core.KindRunEnded, end)
 		if refresh {
 			m.mu.Lock()
 			if m.sessions[s.thread] == s {
@@ -809,15 +850,53 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			}
 			m.mu.Unlock()
 			s.c.Close()
+			go m.feed(s.thread) // the next process takes what waits
 			return
 		}
 		m.armIdle(s)
+		go m.feed(s.thread) // the agent is idle: what waits starts a turn
 	}
 }
 
-// viewStop answers the Stop hook (SPEC 0.5 V0.37): block once per run
-// when the thread has a live view and the run did not touch it.
-func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
+// The agent feed's delivery (decision 0020 part 5, #47): the thread's
+// notice queue reaches the agent here and nowhere else.
+
+// take takes the notices due at a point.
+func (m *Manager) take(s *session, threadID string, at core.Point) []core.Notice {
+	a := core.FeedTake{At: at}
+	if s != nil {
+		a.View, a.Changes = s.viewTools, s.changeTools
+	}
+	out, err := m.host.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindFeedTake, Thread: threadID, Args: a})
+	if err != nil {
+		return nil
+	}
+	ns, _ := out.([]core.Notice)
+	return ns
+}
+
+// feed delivers to an idle agent: every pending notice in one message that
+// starts a turn, when one of them may wake it (not on a settled or archived
+// thread). A running agent takes them in its hooks, or here after its run.
+func (m *Manager) feed(threadID string) error {
+	m.mu.Lock()
+	s := m.sessions[threadID]
+	busy := m.starting[threadID] != nil || (s != nil && (s.live || len(s.out) > 0))
+	m.mu.Unlock()
+	if busy {
+		return nil
+	}
+	ns := m.take(s, threadID, core.AtIdle)
+	if len(ns) == 0 {
+		return nil
+	}
+	return m.send(threadID, core.Effect{Kind: core.EffectSend, Text: core.NoticeText(ns)}, nil)
+}
+
+// stopHook answers the Stop hook (SPEC 0.5 V0.37): the feed's stop notices
+// (the upkeep of the view and the changes) block the Stop once per run, in
+// one reason, never while background work runs.
+func (m *Manager) stopHook(s *session, in claude.Msg) claude.Msg {
 	t, ok := m.host.Thread(s.thread)
 	if !ok {
 		return nil
@@ -825,56 +904,37 @@ func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
 	bg, _ := in["background_tasks"].([]any)
 	active, _ := in["stop_hook_active"].(bool)
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	d := core.ViewStop{Flag: s.viewTools && t.LiveView, Touched: core.ViewTouchedThisRun(&t),
-		Changes: s.changeTools && core.ChangesStale(&t), // V0.62
-		Blocked: s.viewBlocked, Active: active, Tasks: len(bg) + t.RunningTasks()}
-	if !d.Block() {
+	blocked := s.stopBlocked
+	m.mu.Unlock()
+	if blocked || active || len(bg)+t.RunningTasks() > 0 {
+		return nil
+	}
+	ns := m.take(s, s.thread, core.AtStop)
+	if len(ns) == 0 {
 		return nil
 	}
 	summary := firstLine(fmt.Sprint(orNil(in["last_assistant_message"])))
 	if summary == "" {
 		summary = t.Summary
 	}
-	s.viewBlocked, s.summary, s.inForced, s.forcedWork = true, summary, false, false
-	return claude.Msg{"decision": "block", "reason": core.StopReason(d.Flag && !d.Touched, d.Changes)}
+	m.mu.Lock()
+	s.stopBlocked, s.summary, s.inForced, s.forcedWork = true, summary, false, false
+	m.mu.Unlock()
+	reasons := make([]string, len(ns))
+	for i, n := range ns {
+		reasons[i] = n.What
+	}
+	return claude.Msg{"decision": "block", "reason": strings.Join(reasons, "\n")}
 }
 
-// viewNudge answers the PostToolUse hook (SPEC 0.5 V0.52): when a turn has
-// run ViewNudgeAfter without a view_* call, add a reminder to the context.
-func (m *Manager) viewNudge(s *session) claude.Msg {
-	t, ok := m.host.Thread(s.thread)
-	if !ok {
+// toolHook answers the PostToolUse hook: the notices due at a tool call
+// (the wake and next ones, and the upkeep reminders, V0.52) as context.
+func (m *Manager) toolHook(s *session) claude.Msg {
+	ns := m.take(s, s.thread, core.AtTool)
+	if len(ns) == 0 {
 		return nil
 	}
-	now := time.Now()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	n := core.ViewNudge{Flag: s.viewTools && t.LiveView, Nudged: s.viewNudged}
-	if t.RunStartedAt != nil {
-		n.RunStarted = *t.RunStartedAt
-	}
-	if t.Live != nil {
-		n.Checked = t.Live.CheckedAt
-	}
-	var say []string
-	if n.Due(now) {
-		s.viewNudged = now
-		say = append(say, core.ViewNudgeReason)
-	}
-	// V0.62: the same reminder for the open changes the agent owns.
-	cn := core.ViewNudge{Flag: s.changeTools && core.OpenAgentChanges(&t) > 0, RunStarted: n.RunStarted, Nudged: s.changesNudged}
-	if t.ChangesCheckedAt != nil {
-		cn.Checked = *t.ChangesCheckedAt
-	}
-	if cn.Due(now) {
-		s.changesNudged = now
-		say = append(say, core.ChangesNudgeReason)
-	}
-	if len(say) == 0 {
-		return nil
-	}
-	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": strings.Join(say, "\n")}}
+	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": core.NoticeText(ns)}}
 }
 
 func orNil(v any) any {
@@ -947,8 +1007,7 @@ func (m *Manager) turnStarted(s *session) {
 		s.idle.Stop()
 	}
 	m.mu.Unlock()
-	m.host.Observe(s.thread, func(t *core.Thread, now time.Time) { core.RunStarted(t, now) },
-		Ev{"run.started", map[string]any{"by": "agent"}})
+	m.observe(s.thread, core.KindRunStarted, nil)
 }
 
 func (m *Manager) armIdle(s *session) {
@@ -1022,31 +1081,28 @@ func (m *Manager) canUseTool(s *session, req claude.Msg) claude.Msg {
 	agentID, _ := req["agent_id"].(string)
 	d := core.Decision{ID: "d_" + randHex(6), Assignee: core.Owner, Agent: agentID}
 	if tool == "AskUserQuestion" {
-		d.Kind = "ask"
+		d.Kind = core.DecisionAsk
 		b, _ := json.Marshal(input["questions"])
 		json.Unmarshal(b, &d.Questions)
 	} else {
-		d.Kind, d.Tool, d.Input = "approval", tool, input
+		d.Kind, d.Tool, d.Input = core.DecisionApproval, tool, input
 	}
 	ch := make(chan core.Effect, 1)
 	m.mu.Lock()
 	s.asks[d.ID] = ch
 	s.reqs[reqID] = d.ID
 	m.mu.Unlock()
-	m.host.Observe(s.thread, func(t *core.Thread, now time.Time) {
-		d.CreatedAt = now
-		core.DecisionOpened(t, d)
-	}, Ev{"decision.opened", map[string]any{"decision": d}})
+	m.observe(s.thread, core.KindDecisionOpened, d)
 
 	ans, ok := <-ch
 	m.mu.Lock()
 	delete(s.asks, d.ID)
 	delete(s.reqs, reqID)
 	m.mu.Unlock()
-	if !ok || ans.Kind == "cancel" {
+	if !ok || ans.Kind == core.EffectCancel {
 		return claude.Msg{"behavior": "deny", "message": "The question was withdrawn."}
 	}
-	if d.Kind == "ask" {
+	if d.Kind == core.DecisionAsk {
 		answers := map[string]any{}
 		for k, v := range ans.Answers {
 			answers[k] = v
@@ -1098,7 +1154,7 @@ func (m *Manager) answer(threadID string, e core.Effect) error {
 	} else {
 		text = "denied"
 	}
-	m.host.Observe(threadID, func(*core.Thread, time.Time) {}, Ev{"decision.closed", map[string]any{"id": e.DecisionID, "answer": text}})
+	m.observe(threadID, core.KindRecord, []Ev{{Type: "decision.closed", Data: map[string]any{"id": e.DecisionID, "answer": text}}})
 	return nil
 }
 
@@ -1108,7 +1164,7 @@ func (m *Manager) cancelRequest(s *session, reqID string) {
 	ch := s.asks[id]
 	if ch != nil {
 		select {
-		case ch <- core.Effect{Kind: "cancel"}:
+		case ch <- core.Effect{Kind: core.EffectCancel}:
 		default:
 		}
 	}
@@ -1116,8 +1172,7 @@ func (m *Manager) cancelRequest(s *session, reqID string) {
 	if ch == nil {
 		return
 	}
-	m.host.Observe(s.thread, func(t *core.Thread, _ time.Time) { core.DecisionClosed(t, id) },
-		Ev{"decision.closed", map[string]any{"id": id, "answer": "withdrawn"}})
+	m.observe(s.thread, core.KindDecisionGone, id)
 }
 
 func (m *Manager) doInterrupt(threadID string) error {
@@ -1180,10 +1235,11 @@ func gitFacts(dir string) core.GitFacts {
 	if g.Branch == "" {
 		return g
 	}
+	g.Path, _ = git("rev-parse", "--show-toplevel")
 	if u, ok := git("remote", "get-url", "origin"); ok {
 		g.Repo = NormalizeRemote(u)
-	} else if root, ok := git("rev-parse", "--show-toplevel"); ok {
-		g.Repo = root
+	} else {
+		g.Repo = g.Path
 	}
 	g.Head, _ = git("rev-parse", "--short", "HEAD")
 	for _, b := range []string{"origin/HEAD", "origin/main", "origin/master"} {
@@ -1204,6 +1260,49 @@ func gitFacts(dir string) core.GitFacts {
 		g.Dirty = len(strings.Split(st, "\n"))
 	}
 	return g
+}
+
+// Git is the host's git observer (#35): the facts of a checkout, and how a
+// record's branch ended.
+type Git struct{}
+
+// Facts are the branch facts of the checkout at dir.
+func (Git) Facts(dir string) core.GitFacts { return gitFacts(dir) }
+
+// End reads whether branch in the checkout at dir is gone, and whether it
+// is merged into base: its tip, or lastHead when it is gone, is an ancestor
+// of base (origin/HEAD, origin/main or origin/master when base is ""). A
+// branch Fyr saw no commit of (lastHead "") is never merged. known is false
+// when dir is not a git checkout.
+func (Git) End(dir, branch, base, lastHead string) (gone, merged, known bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	git := func(args ...string) (string, bool) {
+		out, err := gitdiff.Output(ctx, dir, args...)
+		return strings.TrimSpace(out), err == nil
+	}
+	if _, ok := git("rev-parse", "--git-dir"); !ok {
+		return false, false, false
+	}
+	tip, _ := git("rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	gone = tip == ""
+	if lastHead == "" {
+		return gone, false, true
+	}
+	commit := tip
+	if gone {
+		commit = lastHead
+	}
+	bases := []string{base}
+	if base == "" {
+		bases = []string{"origin/HEAD", "origin/main", "origin/master"}
+	}
+	for _, b := range bases {
+		if _, ok := git("merge-base", "--is-ancestor", commit, b); ok {
+			return gone, true, true
+		}
+	}
+	return gone, false, true
 }
 
 // NormalizeRemote turns a git remote into host/owner/name: git@github.com:o/r.git
@@ -1227,13 +1326,12 @@ func NormalizeRemote(u string) string {
 }
 
 // initHooks is what a process registers at start: the merge gate always,
-// and the Stop hook only with the live view (SPEC 0.5 V0.37), so other
-// threads get no extra round trip at the end of each turn.
-func initHooks(view bool) claude.Msg {
+// and the agent feed's Stop and PostToolUse hooks only for a process with
+// Fyr's tools, so other processes get no extra round trip.
+func initHooks(feed bool) claude.Msg {
 	h := claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}
-	if view {
+	if feed {
 		h["Stop"] = []claude.Msg{{"hookCallbackIds": []string{"view"}}}
-		// V0.52: after any tool call, remind the agent when the view went stale mid-turn.
 		h["PostToolUse"] = []claude.Msg{{"hookCallbackIds": []string{"viewnudge"}}}
 	}
 	return h

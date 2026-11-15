@@ -70,7 +70,7 @@ const watchdog = setTimeout(() => {
   console.error("layout test: timed out");
   cleanup();
   process.exit(2);
-}, 280_000);
+}, 420_000); // 37 phone screens × 3 sizes and the desktop checks take about 290 s on a loaded machine
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let targets;
@@ -197,6 +197,9 @@ const SCREENS = [
   // provider; every target 44 px and inside the safe areas.
   { name: "settings providers", url: "?mock=rail&settings" },
   { name: "board of changes", url: "?mock=1&changes" },
+  // SPEC 0.5 V0.68: Fyr's own confirmation sheets: a script in a scratch folder, and Delete project (red).
+  { name: "confirm sheet for a script", url: "?mock=1&open=t_done", sheet: "confirm" },
+  { name: "confirm sheet for Delete project", url: "?mock=rail&project=p_web", sheet: "confirm-delete" },
   // V0.54: a front with two hosts, one offline: rows name the host; the offline thread says so under its chips.
   { name: "inbox with two hosts", url: "?mock=rail&hosts=2" },
   { name: "thread on an offline host", url: "?mock=rail&hosts=2&open=t_triage", field: ".m-cmp .in" },
@@ -216,6 +219,7 @@ const MEASURE = `(() => {
     composer: rect('.m-cmp'),
     commit: rect('.m-abar .m-bt'),
     sheet: rect('.m-sheet'),
+    cfm: (() => { const s = document.querySelector('.m-sheet.cfm'); if (!s) return null; const r = s.getBoundingClientRect(); const bs = [...s.querySelectorAll('.cfm-f .m-bt, .cfm-copy')].map((b) => b.getBoundingClientRect()); const p = s.querySelector('.cfm-f .m-bt.p'); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, vw: innerWidth, minBtn: Math.min(...bs.map((b) => b.height)), btnBottom: Math.max(...bs.map((b) => b.bottom)), title: s.querySelector('.cfm-t')?.textContent ?? '', code: s.querySelector('.cfm-code code')?.textContent ?? '', folder: s.querySelector('.cfm-in')?.textContent ?? '', primary: p?.textContent ?? '', danger: !!p?.classList.contains('danger'), focused: document.activeElement === p, codeOverflow: s.querySelector('.cfm-code') ? s.querySelector('.cfm-code').scrollWidth - s.querySelector('.cfm-code').clientWidth : 0 }; })(),
     sheetItem: lastSheetItem,
     chips: rect('.m-cmpw .att-strip'),
     camera: rect('.m-cmp .cam'),
@@ -435,6 +439,20 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   check(m.pageOverflow <= 0, `${ctx}: the page scrolls sideways by ${m.pageOverflow} px`);
   if (ctxWantsChips(ctx)) check(m.chipCount >= 2 && !!m.chips && !!m.camera, `${ctx}: expected 2 uploaded chips and the Camera button (chips ${m.chipCount})`);
   if (m.sheet) check(m.sheet.bottom <= visBottom + 0.5, `${ctx}: sheet runs below the viewport`);
+  if (ctx.startsWith("confirm sheet")) {
+    // SPEC 0.5 V0.68: the sheet fits, its buttons are 44 px and above the bottom inset, focus is on the primary.
+    const c = m.cfm;
+    check(!!c, `${ctx}: no confirmation sheet`);
+    if (c) {
+      check(c.top >= visTop + insetTop - 0.5 && c.left >= -0.5 && c.right <= c.vw + 0.5, `${ctx}: the sheet does not fit (${JSON.stringify(c)})`);
+      check(c.minBtn >= 43.5, `${ctx}: a button is ${c.minBtn.toFixed(1)} px tall`);
+      check(c.btnBottom <= visBottom - insetBottom + 0.5, `${ctx}: the buttons end at ${c.btnBottom.toFixed(1)}, below ${visBottom - insetBottom}`);
+      check(c.focused, `${ctx}: focus is not on the primary button`);
+      check(c.codeOverflow <= 0.5, `${ctx}: the command runs ${c.codeOverflow} px past its box`);
+      if (ctx.startsWith("confirm sheet for a script")) check(c.title === "Set the Norban token" && c.primary === "Run" && !c.danger && c.code === "bash …/20261115-130828-find-the-norban-claude-long-term-token/set-norban-token.sh" && c.folder === "in ~/…/scratch/20261115-130828-find-the-norban-claude-long-term-token", `${ctx}: words ${JSON.stringify(c)}`);
+      else check(c.title === "Delete norban/web?" && c.primary === "Delete project" && c.danger, `${ctx}: words ${JSON.stringify(c)}`);
+    }
+  }
   if (keyboard) {
     check(!!m.focused, `${ctx}: no field is focused`);
     if (m.focused) check(m.focused.top >= visTop - 0.5 && m.focused.bottom <= visBottom + 0.5, `${ctx}: the focused field (${m.focused.top.toFixed(1)}–${m.focused.bottom.toFixed(1)}) is outside the visible area ${visTop}–${visBottom}`);
@@ -518,6 +536,15 @@ async function openScreen(s, w, h) {
     await sleep(300);
     await tapCenter(".prv-merge");
     await sleep(200);
+  } else if (s.sheet === "confirm") {
+    await sleep(300);
+    await evaluate(`[...document.querySelectorAll('.offb .btn')].find((b) => b.textContent.includes('Set the Norban token'))?.click()`);
+    await sleep(300);
+  } else if (s.sheet === "confirm-delete") {
+    await sleep(300);
+    await evaluate(`document.querySelector('.pdel .btn')?.scrollIntoView({ block: 'center' })`);
+    await tapCenter(".pdel .btn");
+    await sleep(200);
   } else if (s.sheet === "actions") {
     await tapCenter("#m-sec-needs .m-swp .m-mv", 600);
   }
@@ -531,6 +558,7 @@ for (const [w, h] of SIZES) {
       await openScreen(s, w, h);
       // 1. At rest.
       assertLayout(await evaluate(MEASURE), `${ctx} at rest`);
+      if (process.env.FYR_SHOTS && s.sheet === "confirm" && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "confirm-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (s.sheet === "handover") {
         const ho = await evaluate(`({ rung: document.querySelector('.m-sheet .ho-rung')?.textContent ?? '', btn: [...document.querySelectorAll('.m-sheet .df .btn')].map(b => b.textContent.trim()) })`);
         check(!!ho.rung && ho.btn.includes("Hand over"), `${ctx}: the handover sheet has no rung line or no Hand over button ${JSON.stringify(ho)}`);
@@ -1134,6 +1162,38 @@ try {
   check(!b.clock && b.rows > 0, `V0.48 settled: chosen in the rail it still runs down (${JSON.stringify(b)})`);
 } catch (e) {
   failures.push(`V0.48 settled: ${e.message}`);
+}
+
+// SPEC 0.5 V0.68: on the desktop the confirmation is a dialog that fits the window, with focus on its primary
+// button; Escape closes it without a press, Enter presses. A click outside does not close it.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await send("Page.navigate", { url: `${origin}/?mock=1&open=t_done` });
+  await sleep(1200);
+  const press = () => evaluate(`[...document.querySelectorAll('.th .offb .btn')].find((b) => b.textContent.includes('Set the Norban token'))?.click()`);
+  const dlg = () => evaluate(`(() => { const d = document.querySelector('.dlg.cfm'); if (!d) return null; const r = d.getBoundingClientRect(); const p = d.querySelector('.df .btn.p'); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, title: d.querySelector('.cfm-t')?.textContent ?? '', primary: p?.textContent.replace('⏎', '').trim(), focused: document.activeElement === p, hover: d.querySelector('.cfm-code')?.title ?? '', runs: document.querySelectorAll('.th .offrun').length }; })()`);
+  const runs = () => evaluate(`[...document.querySelectorAll('.th .offrun')].map((r) => r.textContent).join('|')`);
+  await press();
+  await sleep(200);
+  const a = await dlg();
+  check(!!a && a.top >= 0 && a.bottom <= 800 && a.left >= 0 && a.right <= 1280, `V0.68 desktop: the dialog does not fit the window (${JSON.stringify(a)})`);
+  check(!!a && a.title === "Set the Norban token" && a.primary === "Run" && a.focused, `V0.68 desktop: title, primary or focus wrong (${JSON.stringify(a)})`);
+  check(!!a && a.hover.includes("/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-norban-claude-long-term-token/set-norban-token.sh"), `V0.68 desktop: no full command on hover ("${a?.hover}")`);
+  if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "confirm-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  await evaluate(`document.querySelector('.cfm-scrim')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
+  check(!!(await dlg()), "V0.68 desktop: a click outside closes the dialog");
+  const before = await runs();
+  await key("Escape");
+  check(!(await dlg()) && (await runs()) === before, "V0.68 desktop: Escape does not close the dialog without a press");
+  await press();
+  await sleep(200);
+  await key("Enter");
+  await sleep(300);
+  const after = await runs();
+  check(!(await dlg()) && /Set the Norban token/.test(after), `V0.68 desktop: Enter does not run the action (runs "${after}")`);
+} catch (e) {
+  failures.push(`V0.68 desktop: ${e.message}`);
 }
 
 clearTimeout(watchdog);

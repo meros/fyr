@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, moveToast, PALETTE_NAMES, colorName, deleteQuestion, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
+import { PALETTE, moveToast, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
-import { initialStore, upsertProject } from "../src/store.ts";
+import { applySnapshot, initialStore, upsertProject } from "../src/store.ts";
 
 test("a thread without a project shows No project (a thread in the home folder, V0.23)", () => {
   assert.equal(projectName({ project: "", projectId: undefined }, []), "No project");
@@ -174,10 +174,20 @@ test("a deleted project leaves the store (V0.58)", () => {
   assert.equal(upsertProject(s, { id: "p9", deleted: true } as unknown as Project).projects.length, 1, "an unknown id changes nothing");
 });
 
-test("Delete project asks once, with what happens to the threads (V0.58)", () => {
-  assert.equal(deleteQuestion({ name: "Hemmet", threads: 12 }), "Delete Hemmet? Its 12 threads stay and land in a project whose folder covers them, or in No project. The folder on disk is not touched.");
-  assert.match(deleteQuestion({ name: "A", threads: 1 }), /Its 1 thread stays and lands/);
-  assert.match(deleteQuestion({ name: "A" }), /It has no threads\./);
+// #42: a project frame that crossed the snapshot in flight keeps its newer copy; an older frame changes nothing.
+test("projects keep the copy with the higher rev", () => {
+  const frame = { id: "p1", name: "New name", rev: 20 } as Project;
+  let s = upsertProject(initialStore(), frame);
+  s = applySnapshot(s, { now: "", user: "", threads: [], actions: [], profiles: [], projects: [{ id: "p1", name: "Old name", rev: 10 } as Project, { id: "p2", name: "B", rev: 10 } as Project] }, Date.now());
+  assert.deepEqual(s.projects.map((p) => p.name), ["New name", "B"]);
+  s = upsertProject(s, { id: "p2", name: "Older", rev: 5 } as Project);
+  assert.equal(s.projects[1].name, "B", "an older frame is ignored");
+  s = upsertProject(s, { id: "p2", name: "Same rev", rev: 10 } as Project);
+  assert.equal(s.projects[1].name, "Same rev", "an equal rev replaces");
+  s = applySnapshot(s, { now: "", user: "", threads: [], actions: [], profiles: [], projects: [{ id: "p1", name: "Newest", rev: 30 } as Project] }, Date.now());
+  assert.deepEqual(s.projects.map((p) => p.name), ["Newest"], "a newer snapshot wins and drops what it lacks");
+  s = upsertProject(s, { id: "p1", name: "No rev" } as Project);
+  assert.equal(s.projects[0].name, "No rev", "without a rev on both sides the frame replaces");
 });
 
 test("SPEC 0.5 V0.63: while New project is open, the new-thread chip shows the project being made", async () => {

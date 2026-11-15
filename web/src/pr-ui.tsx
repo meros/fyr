@@ -3,27 +3,18 @@
 // dialog; "Ask the agent" buttons send the owner's message through thread.send.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { CommandReply, ThreadDTO } from "./types.ts";
-import { MERGE_METHODS, checkDuration, chipStatus, fixCheckMessage, groupChecks, mergeButton, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
+import { useApi } from "./api-context.ts";
+import type { Thread } from "./types.ts";
+import { MERGE_METHODS, checkDuration, checksSection, chipStatus, fixCheckMessage, groupChecks, mergeButton, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { relTime } from "./format.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { StateIcon } from "./icons.tsx";
 import { Modal } from "./dialogs.tsx";
 
-export interface PrSource {
-  prDetail(threadId: string, fresh?: boolean): Promise<PrDetail | { error: string }>;
-  command(action: string, threadId?: string, args?: Record<string, unknown>): Promise<CommandReply>;
-}
-
-let source: PrSource | null = null;
-/** The app hands in the API once (api.ts stays the only HTTP module). */
-export function setPrSource(s: PrSource): void {
-  source = s;
-}
 
 export interface PrViewProps {
-  t: ThreadDTO;
+  t: Thread;
   now: number;
   /** sends an owner message to the thread (thread.send); resolves true when it was accepted */
   onSend(text: string): Promise<boolean>;
@@ -39,6 +30,7 @@ const STATE_WORD: Record<string, string> = { OPEN: "Open", MERGED: "Merged", CLO
 
 export function PrView(p: PrViewProps) {
   const { t } = p;
+  const source = useApi();
   const pr = t.pr!;
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
@@ -48,7 +40,6 @@ export function PrView(p: PrViewProps) {
   const later = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchDetail = (fresh: boolean) => {
-    if (!source) return;
     const g = ++gen.current;
     setBusy(true);
     source.prDetail(t.id, fresh).then((r) => {
@@ -87,7 +78,6 @@ export function PrView(p: PrViewProps) {
   };
 
   const run = async (action: string, args: Record<string, unknown>, sent: string) => {
-    if (!source) return false;
     const r = await source.command(action, t.id, args);
     setNote(r.ok ? { text: sent } : { text: r.error ?? "Failed", fail: true });
     if (r.ok) refreshSoon(4000);
@@ -181,7 +171,7 @@ export function PrView(p: PrViewProps) {
       )}
       {d && (
         <>
-          <Checks groups={groups} now={p.now} sendReason={sendReason} onAsk={(c) => void ask(fixCheckMessage(c), `fix ${c.name}`)} />
+          <Checks groups={groups} state={d.state} now={p.now} sendReason={sendReason} onAsk={(c) => void ask(fixCheckMessage(c), `fix ${c.name}`)} />
           {d.reviews && d.reviews.length > 0 && (
             <section class="prv-sec">
               <h3>Reviews</h3>
@@ -250,26 +240,29 @@ function CheckRow({ c, now, children }: { c: PrCheck; now: number; children?: an
   );
 }
 
-function Checks({ groups, now, sendReason, onAsk }: { groups: ReturnType<typeof groupChecks>; now: number; sendReason?: string; onAsk(c: PrCheck): void }) {
+function Checks({ groups, state, now, sendReason, onAsk }: { groups: ReturnType<typeof groupChecks>; state?: string; now: number; sendReason?: string; onAsk(c: PrCheck): void }) {
   const [showPassed, setShowPassed] = useState(false);
   const rest = [...groups.passed, ...groups.skipped];
   const total = groups.failed.length + groups.running.length + rest.length;
+  const sec = checksSection(state);
   if (!total)
     return (
       <section class="prv-sec">
-        <h3>Checks</h3>
+        <h3>{sec.heading}</h3>
         <div class="prv-sub">No checks on this PR.</div>
       </section>
     );
   return (
     <section class="prv-sec">
-      <h3>Checks</h3>
-      <ul class="prv-cks">
+      <h3>{sec.heading}</h3>
+      <ul class={`prv-cks${sec.history ? " history" : ""}`}>
         {groups.failed.map((c) => (
           <CheckRow key={`f${c.workflow}/${c.name}`} c={c} now={now}>
-            <button class="prv-ask" disabled={!!sendReason} title={sendReason ?? "Sends a message to the agent with the check's link"} onClick={() => onAsk(c)}>
-              Ask the agent to fix this check
-            </button>
+            {!sec.history && (
+              <button class="prv-ask" disabled={!!sendReason} title={sendReason ?? "Sends a message to the agent with the check's link"} onClick={() => onAsk(c)}>
+                Ask the agent to fix this check
+              </button>
+            )}
           </CheckRow>
         ))}
         {groups.running.map((c) => (
@@ -294,6 +287,7 @@ function Checks({ groups, now, sendReason, onAsk }: { groups: ReturnType<typeof 
 }
 
 function Threads({ threads, error, now, sendReason, onAsk }: { threads: PrThread[]; error?: string; now: number; sendReason?: string; onAsk(): void }) {
+  const api = useApi();
   const files = useMemo(() => threadsByFile(threads), [threads]);
   const [open, setOpen] = useState<Set<string>>(() => new Set(threads.length <= 3 ? files.map((f) => f.path) : []));
   if (error)
@@ -342,7 +336,7 @@ function Threads({ threads, error, now, sendReason, onAsk }: { threads: PrThread
                         <b>{c.author}</b>
                         {c.at && <span class="prv-age">{relTime(c.at, now)} ago</span>}
                       </div>
-                      <div class="md prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(c.body) }} />
+                      <div class="md prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(c.body, undefined, api.attachmentUrl) }} />
                     </div>
                   ))}
                 </div>
@@ -355,6 +349,7 @@ function Threads({ threads, error, now, sendReason, onAsk }: { threads: PrThread
 }
 
 function Description({ body }: { body: string }) {
+  const api = useApi();
   const text = body.replace(/<!--[\s\S]*?-->/g, "").trim();
   const ref = useRef<HTMLDivElement>(null);
   const [all, setAll] = useState(false);
@@ -368,7 +363,7 @@ function Description({ body }: { body: string }) {
       <h3>Description</h3>
       {text ? (
         <>
-          <div ref={ref} class={`md prose prv-desc${all ? "" : " cut"}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+          <div ref={ref} class={`md prose prv-desc${all ? "" : " cut"}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(text, undefined, api.attachmentUrl) }} />
           {(long || all) && (
             <button class="prv-fold" onClick={() => setAll(!all)}>
               {all ? "Show less ▴" : "Show all ▾"}

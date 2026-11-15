@@ -4,6 +4,7 @@
 // this version, and the look recorded when the owner leaves the tab.
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useApi } from "./api-context.ts";
 import { CiCount, placeNotes, useCiNotes } from "./ci-notes-ui.tsx"; // V0.66
 import {
   codeNotes,
@@ -31,18 +32,6 @@ import {
 import { relTime } from "./format.ts";
 import type { Change } from "./types.ts";
 
-export interface ChangesSource {
-  changes(threadId: string): Promise<ChangesDTO>;
-  filePatch(threadId: string, path: string, since?: string): Promise<FilePatchDTO>;
-  /** V0.65: thread.changesSeen and thread.fileViewed */
-  command(action: string, threadId?: string, args?: Record<string, unknown>): Promise<unknown>;
-}
-
-let source: ChangesSource | null = null;
-/** The app hands in the API once (api.ts stays the only HTTP module). */
-export function setChangesSource(s: ChangesSource): void {
-  source = s;
-}
 
 type PatchState = { kind: "loading" } | { kind: "error"; error: string } | { kind: "ok"; p: FilePatchDTO };
 type Mode = "since" | "whole";
@@ -55,6 +44,7 @@ function message(e: unknown): string {
 }
 
 export function ChangesView({ threadId, changes }: { threadId: string; changes?: Change[] }) {
+  const source = useApi();
   const [data, setData] = useState<ChangesDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -69,11 +59,10 @@ export function ChangesView({ threadId, changes }: { threadId: string; changes?:
   const flush = () => {
     const s = shown.current;
     shown.current = null;
-    if (s && source) void source.command("thread.changesSeen", s.threadId, { head: s.look.head, files: s.look.files }).catch(() => {});
+    if (s) void source.command("thread.changesSeen", s.threadId, { head: s.look.head, files: s.look.files }).catch(() => {});
   };
 
   const load = (first = false) => {
-    if (!source) return;
     const g = ++gen.current;
     setLoading(true);
     setError(null);
@@ -101,7 +90,6 @@ export function ChangesView({ threadId, changes }: { threadId: string; changes?:
   };
 
   const fetchPatch = (path: string, m: Mode, c: ChangesDTO | null = data, g = gen.current) => {
-    if (!source) return;
     const key = `${m}:${path}`;
     // The since diff runs from the seen head; a seen commit that is gone falls back to the branch diff.
     const since = m === "since" && c?.since && c.since.mode !== "missing" ? c.since.head : undefined;
@@ -151,7 +139,7 @@ export function ChangesView({ threadId, changes }: { threadId: string; changes?:
       next.delete(f.path);
       setOpen(next);
     }
-    void source?.command("thread.fileViewed", threadId, { path: f.path, blob, viewed: on }).catch(() => setMarks((x) => ({ ...x, [f.path]: on ? null : blob })));
+    void source.command("thread.fileViewed", threadId, { path: f.path, blob, viewed: on }).catch(() => setMarks((x) => ({ ...x, [f.path]: on ? null : blob })));
   };
 
   const head = (text: string) => (

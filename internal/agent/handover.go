@@ -12,6 +12,7 @@ import (
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/proc"
 )
 
 // Handover (SPEC 0.5 V0.45, decision 0013): the owner moves a thread to
@@ -122,22 +123,19 @@ func (m *Manager) writeHandoverFile(threadID, kind, text string) (string, error)
 	return p, nil
 }
 
-// stopNow ends a thread's process and forgets it at once, so the next
-// start makes a new one (the reader may still be draining the old one).
-func (m *Manager) stopNow(threadID string) {
-	m.mu.Lock()
-	s := m.sessions[threadID]
-	delete(m.sessions, threadID)
-	m.mu.Unlock()
-	if s == nil {
-		return
-	}
+// end stops a process ensureAs has already taken out of the session map
+// (the reader may still be draining it).
+func (m *Manager) end(threadID string, s *session) {
 	s.c.Close()
 	select {
 	case <-s.c.Done():
 	case <-time.After(5 * time.Second):
 		s.c.Kill()
-		<-s.c.Done()
+		select { // #39: Kill ends it; never wait without a bound
+		case <-s.c.Done():
+		case <-time.After(proc.WaitDelay + time.Second):
+			log.Printf("thread %s: the old process did not end after kill", threadID)
+		}
 	}
 }
 
@@ -154,8 +152,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 	var notes []string
 	fail := func(err error) {
 		log.Printf("thread %s: handover to %s: %v", threadID, e.Profile, err)
-		m.host.Observe(threadID, func(t *core.Thread, _ time.Time) { t.Handover = nil },
-			Ev{"effect.error", map[string]any{"kind": "handover", "error": err.Error()}})
+		m.observe(threadID, core.KindHandoverFailed, err.Error())
 	}
 	done := func(rung, sid, path string, first string) {
 		data := map[string]any{"from": t.Profile, "to": e.Profile, "model": model, "rung": rung}
@@ -165,10 +162,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 		if len(notes) > 0 {
 			data["note"] = strings.Join(notes, "; ")
 		}
-		m.host.Observe(threadID, func(t *core.Thread, _ time.Time) {
-			t.Profile, t.Model, t.SessionID, t.Handover = e.Profile, model, sid, nil
-			t.Failure = nil
-		}, Ev{"handover", data})
+		m.observe(threadID, core.KindHandoverDone, core.HandoverDoneArgs{Profile: e.Profile, Model: model, SessionID: sid, Data: data})
 		m.mu.Lock()
 		s := m.sessions[threadID]
 		m.mu.Unlock()
@@ -178,7 +172,7 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 			}
 			return
 		}
-		if err := m.send(threadID, core.Effect{Kind: "send", Text: first, From: FromHandover}); err != nil {
+		if err := m.send(threadID, core.Effect{Kind: core.EffectSend, Text: first, From: FromHandover}, nil); err != nil {
 			log.Printf("thread %s: handover first message: %v", threadID, err)
 		}
 	}
@@ -199,10 +193,9 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 		if cerr != nil {
 			notes = append(notes, "Could not copy the session: "+cerr.Error())
 		} else {
-			m.stopNow(threadID)
 			if _, err := m.ensureAs(threadID, &as{profile: to, model: model, session: t.SessionID, resume: true,
 				effort: cli.EffortFor(to.ModelCaps, model, t.Effort, to.DefaultEffort)}); err != nil {
-				notes = append(notes, "Resume failed: "+clip(firstLine(err.Error()), 300))
+				notes = append(notes, "Resume failed: "+core.TruncHead(firstLine(err.Error()), 300))
 			} else {
 				done(RungResume, t.SessionID, "", "")
 				return
@@ -226,7 +219,6 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 		path, err = m.writeHandoverFile(threadID, "conversation", conv)
 	}
 	if err == nil {
-		m.stopNow(threadID)
 		sid := newUUID()
 		if _, err := m.ensureAs(threadID, &as{profile: to, model: model, session: sid, addDirs: []string{filepath.Dir(path)}}); err != nil {
 			fail(fmt.Errorf("%s could not start: %v", name(to), err))
@@ -244,7 +236,6 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 		return
 	}
 	path, perr := m.writeHandoverFile(threadID, "brief", brief)
-	m.stopNow(threadID)
 	sid := newUUID()
 	o := &as{profile: to, model: model, session: sid}
 	saved := ""
@@ -267,34 +258,53 @@ func name(p Profile) string {
 }
 
 // brief runs one turn on the thread's own profile that writes the handover
-// as its reply, and returns that reply.
+// as its reply, and returns that reply. A turn that runs already ends
+// first, and only the result of the turn that read the brief's message
+// counts (#40).
 func (m *Manager) brief(threadID string, to Profile) (string, error) {
 	s, err := m.ensure(threadID)
 	if err != nil {
 		return "", err
 	}
-	ch := make(chan claude.Msg, 1)
+	deadline := time.After(BriefTimeout)
+	wait := func(ch chan claude.Msg) (claude.Msg, error) {
+		select {
+		case res, ok := <-ch:
+			if !ok {
+				return nil, fmt.Errorf("the agent process ended")
+			}
+			return res, nil
+		case <-deadline:
+			return nil, fmt.Errorf("no reply after %s", BriefTimeout)
+		}
+	}
 	m.mu.Lock()
-	s.results = append(s.results, ch)
+	var running chan claude.Msg
+	if s.live {
+		running = make(chan claude.Msg, 1)
+		s.results = append(s.results, waiter{ch: running})
+	}
 	m.mu.Unlock()
+	if running != nil {
+		if _, err := wait(running); err != nil {
+			return "", err
+		}
+	}
+	ch := make(chan claude.Msg, 1)
 	text := fmt.Sprintf("[Fyr] Handover: the owner is handing this thread over to another agent (%s) that starts without this conversation. Write the handover now as your whole reply, in Markdown: the goal, what is done, the current state (branch, PR, uncommitted changes), open items and decisions, and exactly how to continue. Do not change files or run anything else.", name(to))
-	if err := m.send(threadID, core.Effect{Kind: "send", Text: text, From: FromHandover}); err != nil {
+	if err := m.send(threadID, core.Effect{Kind: core.EffectSend, Text: text, From: FromHandover}, ch); err != nil {
 		return "", err
 	}
-	select {
-	case res, ok := <-ch:
-		if !ok {
-			return "", fmt.Errorf("the agent process ended")
-		}
-		out, _ := res["result"].(string)
-		if isErr, _ := res["is_error"].(bool); isErr {
-			return "", fmt.Errorf("%s", clip(firstLine(out), 300))
-		}
-		if strings.TrimSpace(out) == "" {
-			return "", fmt.Errorf("the reply was empty")
-		}
-		return out, nil
-	case <-time.After(BriefTimeout):
-		return "", fmt.Errorf("no reply after %s", BriefTimeout)
+	res, err := wait(ch)
+	if err != nil {
+		return "", err
 	}
+	out, _ := res["result"].(string)
+	if isErr, _ := res["is_error"].(bool); isErr {
+		return "", fmt.Errorf("%s", core.TruncHead(firstLine(out), 300))
+	}
+	if strings.TrimSpace(out) == "" {
+		return "", fmt.Errorf("the reply was empty")
+	}
+	return out, nil
 }

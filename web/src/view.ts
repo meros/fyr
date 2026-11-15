@@ -1,7 +1,7 @@
 // Live views (SPEC 0.5 V0.37, decision 0010): the pinned view's model, the bridge messages between the view's iframe
 // and the app (MCP Apps names), and the inbox row's headline. Pure.
 
-import type { ThreadDTO } from "./types.ts";
+import type { Thread } from "./types.ts";
 
 export interface LiveViewDTO {
   pageId: string;
@@ -17,7 +17,7 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 /** The thread's view, or null when it has no page yet. */
-export function liveViewOf(t: Pick<ThreadDTO, "live">): LiveViewDTO | null {
+export function liveViewOf(t: Pick<Thread, "live">): LiveViewDTO | null {
   const v = obj(t.live);
   const pageId = str(v.pageId);
   if (!pageId) return null;
@@ -25,12 +25,12 @@ export function liveViewOf(t: Pick<ThreadDTO, "live">): LiveViewDTO | null {
 }
 
 /** The inbox row's line when nothing more urgent shows: the view's headline, else the last assistant text. */
-export function rowSummary(t: Pick<ThreadDTO, "live" | "summary">): string {
+export function rowSummary(t: Pick<Thread, "live" | "summary">): string {
   return liveViewOf(t)?.headline || t.summary || "";
 }
 
 /** Dimmed while a run goes that has not touched the view yet: what it shows may be old. */
-export function viewDimmed(t: Pick<ThreadDTO, "running" | "runStartedAt" | "live">): boolean {
+export function viewDimmed(t: Pick<Thread, "running" | "runStartedAt" | "live">): boolean {
   if (!t.running) return false;
   const v = liveViewOf(t);
   if (!v) return false;
@@ -123,11 +123,20 @@ export function pressReply(id: string | number, ok: boolean) {
 
 /** SPEC 0.5 V0.37: the tab a thread opens on. A live view opens on View; an explicit
  *  choice wins; View does not exist without a view. */
-export function defaultTab(t: Pick<ThreadDTO, "live" | "pr">, requested: string | undefined): string {
+export function defaultTab(t: Pick<Thread, "live" | "pr">, requested: string | undefined): string {
   const has = !!liveViewOf(t);
   if (requested === "view") return has ? "view" : "conv";
   if (requested === "pr" && !t.pr) return "conv"; // V0.36: no PR, no PR tab
   return requested ?? (has ? "view" : "conv");
+}
+
+export type ThreadTab = "view" | "conv" | "changes" | "pr";
+
+export const TAB_LABEL: Record<ThreadTab, string> = { view: "View", conv: "Conversation", changes: "Changes", pr: "PR" };
+
+/** #41: the tabs a thread has, in order, on desktop and phone: View only with a view (V0.37), PR only with a PR (V0.36). */
+export function threadTabs(t: Pick<Thread, "live" | "pr">): ThreadTab[] {
+  return [...(liveViewOf(t) ? (["view"] as const) : []), "conv", "changes", ...(t.pr ? (["pr"] as const) : [])];
 }
 
 /** SPEC 0.5 V0.37: the tabs a question or approval card shows on; never hidden behind View. */

@@ -109,9 +109,9 @@ export interface ThreadDTO {
   pr?: PullRequest | null;
   /** V0.59: the thread's change records */
   changes?: Change[];
-  /** V0.60: the thread's and its live view's actions, and their last runs */
+  /** V0.60, #31: the thread's own actions and their last runs; a change and the live view hold their own */
   offers?: Offer[];
-  offerRuns?: OfferRun[];
+  runs?: OfferRun[];
   settledAt?: string | null;
   archivedAt?: string | null;
   settleWhenDone?: boolean;
@@ -135,12 +135,26 @@ export interface ThreadDTO {
   /** V0.45: a handover to another profile is going on */
   handover?: { to: string; model?: string; at: string } | null;
   /** V0.37: the live view; read it through liveViewOf (view.ts) */
-  live?: { pageId?: string; state?: Record<string, unknown>; updatedAt?: string; checkedAt?: string; headline?: string } | null;
+  live?: { pageId?: string; state?: Record<string, unknown>; updatedAt?: string; checkedAt?: string; headline?: string; offers?: Offer[]; runs?: OfferRun[] } | null;
   /** V0.33: messages the host still holds (queued or sent, not yet read) */
   outbox?: { id: string; state: string }[] | null;
   attention: Attention;
   view?: { seenAt?: string | null; snoozeUntil?: string | null } | null;
   unavailable?: Record<string, string> | null;
+}
+
+/**
+ * #41: the client's thread, a ThreadDTO as decode.ts leaves it. Every list is present (the host omits empty
+ * ones), so no screen needs `?? []`. The wire type stays ThreadDTO.
+ */
+export interface Thread extends ThreadDTO {
+  decisions: Decision[];
+  tasks: TaskDTO[];
+  changes: Change[];
+  offers: Offer[];
+  runs: OfferRun[];
+  outbox: { id: string; state: string }[];
+  unavailable: Record<string, string>;
 }
 
 export interface ActionInfo {
@@ -180,6 +194,8 @@ export interface ProjectIconSpec {
  *  in it by hand. */
 export interface Project {
   id?: string;
+  /** #42: when the host built this copy; the client keeps the higher of a snapshot's and a frame's */
+  rev?: number;
   /** V0.51: the host the project lives on (a front stamps it) */
   host?: string;
   name: string;
@@ -287,12 +303,17 @@ export interface Change {
   after?: string[];
   needs?: string;
   phaseBy: "agent" | "observed" | "owner";
-  /** V0.60 */
-  actions?: Offer[];
+  /** V0.60, #31: the change's actions and their last runs */
+  offers?: Offer[];
   runs?: OfferRun[];
-  /** V0.66: the failed checks' annotations while the PR is open, and the merge commit Fyr watches for deployments. */
+  /** V0.66: the failed checks' annotations while the PR is open. The deploy watch is a Rule of the thread (#46). */
   annotations?: CiAnnotation[];
-  deployWatch?: { repo: string; sha: string; mergedAt: string; checked?: boolean; seen?: boolean; done?: boolean };
+  /** #35, decision 0019: where its git facts are read */
+  workspace?: { repo?: string; path?: string; branch?: string; base?: string; madeByFyr?: boolean };
+  /** #35: the host record of the same branch this thread's change follows */
+  observed?: string;
+  /** #35: set on a host record (an observed branch): the threads that show it. It is one change on the board. */
+  threads?: string[];
   createdAt: string;
   updatedAt: string;
 }

@@ -151,6 +151,12 @@ export function groupChecks(checks: PrCheck[]): CheckGroups {
   return g;
 }
 
+/** V0.70 (3): on a merged or closed PR the checks are history: muted, under "Checks at merge", with no ask. */
+export function checksSection(state: string | undefined): { heading: string; history: boolean } {
+  const history = (state ?? "OPEN") !== "OPEN";
+  return { heading: history ? "Checks at merge" : "Checks", history };
+}
+
 export function passedLabel(g: CheckGroups): string {
   const parts = [];
   if (g.passed.length) parts.push(`${g.passed.length} passed`);

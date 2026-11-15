@@ -2,14 +2,13 @@ package agent
 
 import (
 	"testing"
-	"time"
 
 	"github.com/meros/fyr/internal/core"
 )
 
 type rlHost struct{}
 
-func (rlHost) Observe(string, func(*core.Thread, time.Time), ...Ev) {}
+func (rlHost) Apply(core.Input) (any, error) { return nil, nil }
 func (rlHost) Thread(id string) (core.Thread, bool) {
 	return core.Thread{ID: id, Profile: "claude"}, true
 }

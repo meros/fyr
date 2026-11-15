@@ -1,20 +1,20 @@
 // SPEC 0.5 V0.45, decision 0013: the handover dialog. Pick the profile and model, see which rung the host will
 // use, confirm. The same form sits in a desktop modal and in a phone sheet.
 import { useEffect, useState } from "preact/hooks";
-import type { Profile, ThreadDTO } from "./types.ts";
+import type { Profile, Thread } from "./types.ts";
 import { handoverTargets, parsePlan, planGuess, rungText, targetModel, type HandoverPlan } from "./handover.ts";
 import { shortModel } from "./format.ts";
 import { Modal } from "./dialogs.tsx";
 
 export interface HandoverProps {
-  t: ThreadDTO;
+  t: Thread;
   profiles: Profile[];
   onClose(): void;
   /** runs thread.handover; resolves to an error text, or null */
   onConfirm(profile: string, model: string): Promise<string | null>;
 }
 
-async function fetchPlan(t: ThreadDTO, profile: string): Promise<HandoverPlan> {
+async function fetchPlan(t: Thread, profile: string): Promise<HandoverPlan> {
   try {
     const r = await fetch(`/api/threads/${encodeURIComponent(t.id)}/handover?profile=${encodeURIComponent(profile)}`, { headers: { Accept: "application/json" } });
     if (r.ok) return parsePlan(await r.json()) ?? planGuess(t);
@@ -40,7 +40,7 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
       live = false;
     };
   }, [p.t.id, profile]);
-  const blocked = p.t.unavailable?.["thread.handover"];
+  const blocked = p.t.unavailable["thread.handover"];
   const from = p.profiles.find((x) => x.id === p.t.profile)?.name ?? p.t.profile;
   const pick = (id: string) => {
     setProfile(id);

@@ -17,6 +17,9 @@ import (
 // ProjectDTO is a project as clients see it (SPEC 0.5 V0.23).
 type ProjectDTO struct {
 	core.Project
+	// Rev is when this copy was built (#42): a client keeps the higher of a
+	// snapshot's copy and a stream frame's.
+	Rev      int64     `json:"rev"`
 	Threads  int       `json:"threads"`
 	LastUsed time.Time `json:"lastUsed"`
 	// QuietUntil is the end of the quiet hours the project is in (V0.46).
@@ -173,10 +176,15 @@ func (e *Engine) assignProject(t *core.Thread) {
 	if t.ProjectID == "" && !t.ProjectManual {
 		t.ProjectID = core.MatchFolder(e.projectList(), t.Cwd)
 	}
-	t.Project = ""
+}
+
+// projectName is the name of the thread's project, or "" (#33: derived for
+// the DTO, never stored). Call with e.mu held.
+func (e *Engine) projectName(t *core.Thread) string {
 	if p := e.projects[t.ProjectID]; p != nil {
-		t.Project = p.Name
+		return p.Name
 	}
+	return ""
 }
 
 // NewProject is what "New project from this thread" starts with (SPEC 0.5
@@ -300,7 +308,8 @@ func (e *Engine) migrateAuto() error {
 	return err
 }
 
-// Projects lists projects with their thread counts.
+// Projects lists projects with their thread counts, all stamped with one new
+// rev (built under e.mu, so a later copy is never older).
 func (e *Engine) Projects() []ProjectDTO {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -316,8 +325,9 @@ func (e *Engine) Projects() []ProjectDTO {
 	}
 	out := make([]ProjectDTO, 0, len(e.projects))
 	now := e.Now()
+	rev := e.nextRev()
 	for _, p := range e.projects {
-		out = append(out, ProjectDTO{Project: *p, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now)})
+		out = append(out, ProjectDTO{Project: *p, Rev: rev, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now)})
 	}
 	return out
 }
@@ -348,12 +358,6 @@ func checkFolder(dir string) (string, error) {
 // projectCommand handles project.create and project.update (SPEC 0.5
 // V0.23, V0.55).
 func (e *Engine) projectCommand(c Cmd) Reply {
-	if prev, _ := e.st.Receipt(c.CommandID); prev != nil {
-		var r Reply
-		json.Unmarshal(prev, &r)
-		r.Status = 200
-		return r
-	}
 	if c.Action == "project.delete" {
 		return e.projectDelete(c)
 	}
@@ -364,7 +368,14 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		return bad(err.Error())
 	}
 	e.mu.Lock()
+	if r, done := e.replay(c.CommandID); done {
+		e.mu.Unlock()
+		return r
+	}
 	var p *core.Project
+	// renamed: the threads of the project show another name; a new
+	// project's threads (the one it was made from) are all new to it.
+	renamed := true
 	switch c.Action {
 	case "project.create":
 		name := strings.TrimSpace(c.Args.Str("name"))
@@ -383,7 +394,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 				e.mu.Unlock()
 				return Reply{Error: "no thread " + tid, Status: 404}
 			}
-			t.ProjectID, t.ProjectManual, t.Project = p.ID, true, ""
+			t.ProjectID, t.ProjectManual = p.ID, true
 		}
 		e.projects[p.ID] = p
 	case "project.update":
@@ -394,11 +405,12 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		}
 		cp := *cur
 		p = &cp
+		renamed = false
 		if folderSet {
 			p.Folder = folder
 		}
 		if n := strings.TrimSpace(c.Args.Str("name")); n != "" {
-			p.Name = n
+			renamed, p.Name = n != cur.Name, n
 		}
 		if col := c.Args.Str("color"); col != "" {
 			if !core.ValidColor(col) {
@@ -459,8 +471,7 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 		e.quietSent[p.ID] = quietKey(e.quietUntil(p.ID, now))
 	}
 	for _, t := range e.threads {
-		if t.ProjectID == p.ID && (t.Project != p.Name || quietChanged) {
-			t.Project = p.Name
+		if t.ProjectID == p.ID && (renamed || quietChanged) {
 			e.bump(t.ID)
 			touched = append(touched, e.dto(t, now))
 		}
@@ -497,11 +508,14 @@ func (e *Engine) projectCommand(c Cmd) Reply {
 
 // projectDelete removes a project (SPEC 0.5 V0.58). Its threads lose it and
 // the filed-by-hand mark, then match again, so one inside another project's
-// folder lands there. The stream gets {id, deleted: true}. Called after the
-// receipt check.
+// folder lands there. The stream gets {id, deleted: true}.
 func (e *Engine) projectDelete(c Cmd) Reply {
 	id := c.Args.Str("id")
 	e.mu.Lock()
+	if r, done := e.replay(c.CommandID); done {
+		e.mu.Unlock()
+		return r
+	}
 	if e.projects[id] == nil {
 		e.mu.Unlock()
 		return Reply{Error: "no project " + id, Status: 404}
@@ -575,7 +589,7 @@ func (e *Engine) Rematch() {
 		e.assignProject(t)
 		if !t.ProjectManual {
 			if id := core.MatchFolder(list, t.Cwd); id != "" {
-				t.ProjectID, t.Project = id, e.projects[id].Name
+				t.ProjectID = id
 			}
 		}
 		if t.ProjectID != old {

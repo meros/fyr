@@ -3,7 +3,7 @@ import type { HostInfo } from "./hosts.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { decodeProject, decodeState, decodeThread } from "./decode.ts";
 
-import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, ThreadDTO } from "./types.ts";
+import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, Thread, ThreadDTO } from "./types.ts";
 
 export type SectionKey = "needs" | "working" | "seen" | "snoozed" | "settled";
 
@@ -26,7 +26,7 @@ export interface Store {
   host: string;
   /** V0.51 */
   hosts: HostInfo[];
-  threads: Record<string, ThreadDTO>;
+  threads: Record<string, Thread>;
   actions: ActionInfo[];
   profiles: Profile[];
   projects: Project[];
@@ -70,16 +70,26 @@ export function newer(cur: ThreadDTO | undefined, next: ThreadDTO): boolean {
   return ts(next.updatedAt) >= ts(cur.updatedAt);
 }
 
+/** #42: keep the newer of two versions of a project by rev (equal replaces); without a rev on both, the next one. */
+function newerProject(cur: Project | undefined, next: Project): boolean {
+  return !cur || typeof cur.rev !== "number" || typeof next.rev !== "number" || next.rev >= cur.rev;
+}
+
 export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store {
   const dto = decodeState(raw);
-  const threads: Record<string, ThreadDTO> = {};
-  for (const t of dto.threads ?? []) threads[t.id] = t;
+  const threads: Record<string, Thread> = {};
+  for (const t of dto.threads) threads[t.id] = t;
   // An upsert that arrived on the stream after subscribing but before the snapshot may be newer.
   // Threads missing from the snapshot are dropped (stale from an earlier connection).
   for (const id of Object.keys(threads)) {
     const cur = s.threads[id];
     if (cur && cur !== threads[id] && !newer(cur, threads[id])) threads[id] = cur;
   }
+  // Projects the same way (#42): a project frame may have crossed the snapshot in flight.
+  const projects = (dto.projects ?? []).map((p) => {
+    const cur = p.id ? s.projects.find((x) => x.id === p.id) : undefined;
+    return cur && !newerProject(cur, p) ? cur : p;
+  });
   return {
     ...s,
     loaded: true,
@@ -90,7 +100,7 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     threads,
     actions: dto.actions ?? [],
     profiles: dto.profiles ?? [],
-    projects: dto.projects ?? [],
+    projects,
     deploy: dto.deploy ?? null,
   };
 }
@@ -153,11 +163,11 @@ export function lastSeq(s: Store, threadId: string): number {
 
 const NEEDS_RANK: Partial<Record<AttentionState, number>> = { asking: 0, failed: 1, blocked: 2, done: 3 };
 
-function activity(t: ThreadDTO): number {
+function activity(t: Thread): number {
   return ts(t.activityAt) || ts(t.updatedAt);
 }
 
-export function compareNeeds(a: ThreadDTO, b: ThreadDTO): number {
+export function compareNeeds(a: Thread, b: Thread): number {
   const ra = NEEDS_RANK[a.attention.state] ?? 9;
   const rb = NEEDS_RANK[b.attention.state] ?? 9;
   if (ra !== rb) return ra - rb;
@@ -165,25 +175,25 @@ export function compareNeeds(a: ThreadDTO, b: ThreadDTO): number {
 }
 
 /** When the thread's work started: the run, else (waiting) the earliest running agent; 0 when unknown. */
-export function workStartedAt(t: ThreadDTO): number {
+export function workStartedAt(t: Thread): number {
   const run = ts(t.runStartedAt);
   if (run) return run;
-  const starts = (t.tasks ?? []).filter((x) => x.status === "running").map((x) => ts(x.startedAt)).filter((n) => n > 0);
+  const starts = t.tasks.filter((x) => x.status === "running").map((x) => ts(x.startedAt)).filter((n) => n > 0);
   return starts.length ? Math.min(...starts) : 0;
 }
 
 /** V0.26: a stable order, newest started first, then id; activity never moves a row. */
-export function compareWorking(a: ThreadDTO, b: ThreadDTO): number {
+export function compareWorking(a: Thread, b: Thread): number {
   return workStartedAt(b) - workStartedAt(a) || a.id.localeCompare(b.id);
 }
 
-export function compareActivityDesc(a: ThreadDTO, b: ThreadDTO): number {
+export function compareActivityDesc(a: Thread, b: Thread): number {
   return activity(b) - activity(a) || a.id.localeCompare(b.id);
 }
 
-export type Sections = Record<SectionKey, ThreadDTO[]>;
+export type Sections = Record<SectionKey, Thread[]>;
 
-export function sectionOf(t: ThreadDTO): SectionKey | null {
+export function sectionOf(t: Thread): SectionKey | null {
   switch (t.attention?.section) {
     case "needs":
     case "working":
@@ -196,7 +206,7 @@ export function sectionOf(t: ThreadDTO): SectionKey | null {
   }
 }
 
-export function sections(threads: Record<string, ThreadDTO>): Sections {
+export function sections(threads: Record<string, Thread>): Sections {
   const out: Sections = { needs: [], working: [], seen: [], snoozed: [], settled: [] };
   for (const t of Object.values(threads)) {
     const k = sectionOf(t);
@@ -222,17 +232,17 @@ export function flatOrder(sec: Sections, limits?: Partial<Record<SectionKey, num
 }
 
 /** Search: the query (any case, padded or not) in the title, the project or `#<PR number>`. */
-export function matchesQuery(t: ThreadDTO, q: string): boolean {
+export function matchesQuery(t: Thread, q: string): boolean {
   return `${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(q.trim().toLowerCase());
 }
 
-export function isAvailable(t: ThreadDTO | undefined, action: string): boolean {
-  return !!t && !(t.unavailable && action in t.unavailable);
+export function isAvailable(t: Thread | undefined, action: string): boolean {
+  return !!t && !(action in t.unavailable);
 }
 
-export function unavailableReason(t: ThreadDTO | undefined, action: string): string | undefined {
+export function unavailableReason(t: Thread | undefined, action: string): string | undefined {
   if (!t) return "No thread";
-  return t.unavailable?.[action];
+  return t.unavailable[action];
 }
 
 // ---- undo of deferred actions (settle, archive, snooze) ----
@@ -331,11 +341,13 @@ export function presetForKey(presets: SnoozePreset[], key: string): SnoozePreset
   return /^[1-9]$/.test(key) ? (presets[Number(key) - 1] ?? null) : null;
 }
 
-/** A project from the stream (`event: project`, V0.23): replace by id, or add; `{id, deleted: true}` removes it (V0.58). */
+/** A project from the stream (`event: project`, V0.23): replace by id unless older (#42), or add; `{id, deleted: true}`
+ *  removes it (V0.58). */
 export function upsertProject(s: Store, raw: Project): Store {
   if (raw.deleted) return raw.id && s.projects.some((x) => x.id === raw.id) ? { ...s, projects: s.projects.filter((x) => x.id !== raw.id) } : s;
   const p = decodeProject(raw);
   const i = s.projects.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
+  if (i >= 0 && !newerProject(s.projects[i], p)) return s;
   const projects = i >= 0 ? s.projects.map((x, j) => (j === i ? p : x)) : [...s.projects, p];
   return { ...s, projects };
 }

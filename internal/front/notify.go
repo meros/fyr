@@ -100,15 +100,15 @@ func AttentionDetail(d engine.DTO) (meta, detail string) {
 	if len(d.Decisions) > 0 {
 		x := d.Decisions[0]
 		switch {
-		case x.Kind == "ask" && len(x.Questions) > 0:
+		case x.Kind == core.DecisionAsk && len(x.Questions) > 0:
 			meta = "1 question"
 			if n := len(x.Questions); n > 1 {
 				meta = fmt.Sprintf("%d questions", n)
 			}
 			return meta, x.Questions[0].Question
-		case x.Kind == "effect" && x.Effect != nil:
+		case x.Kind == core.DecisionEffect && x.Effect != nil:
 			return "Fyr action", "approve " + x.Effect.Action
-		case x.Kind == "approval":
+		case x.Kind == core.DecisionApproval:
 			return "Approval", "allow " + x.Tool
 		}
 	}

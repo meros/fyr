@@ -374,6 +374,10 @@ func main() {
 	poller := &github.Poller{Gh: github.Gh, Src: prSource{eng}}
 	eng.OnPR = poller.Kick
 	go poller.Run(ctx)
+	// Decision 0020: the durable effects the last run left run once or land.
+	if err := eng.ResumeEffects(); err != nil {
+		log.Printf("resume effects: %v", err)
+	}
 	go func() {
 		t := time.NewTicker(10 * time.Second)
 		defer t.Stop()
@@ -597,29 +601,17 @@ func (s prSource) Snapshot() []github.PRThread {
 		if t.ArchivedAt != nil {
 			continue
 		}
-		main := ""
-		if t.PR != nil && t.PR.State == "OPEN" {
-			main = t.PR.URL
-			out = append(out, github.PRThread{ID: t.ID, URL: main})
-		}
-		// V0.59 (4): the PR of every code change not ended, not only the main one.
+		// V0.59 (4), #32: the PR of every code change in flight, the main one
+		// among them.
 		for _, u := range core.PRURLs(t.Thread) {
-			if u != main {
-				out = append(out, github.PRThread{ID: t.ID, URL: u})
-			}
+			out = append(out, github.PRThread{ID: t.ID, URL: u})
 		}
 	}
 	return out
 }
 
 func (s prSource) Observe(id string, pr core.PR) {
-	s.e.Observe(id, func(t *core.Thread, now time.Time) {
-		if t.PR != nil && t.PR.URL == pr.URL {
-			core.PRObserved(t, pr, now)
-		} else {
-			core.ChangePRObserved(t, pr, now) // V0.59: another PR of the thread
-		}
-	})
+	s.e.Apply(core.Input{Source: core.Observer(core.ObsGitHub), Kind: core.KindPRObserved, Thread: id, Args: pr})
 }
 
 // Deploys are the merge commits whose deployments the poller reads (V0.66).
@@ -638,7 +630,7 @@ func (s prSource) Deploys() []github.DeployThread {
 }
 
 func (s prSource) ObserveDeploy(id, change string, d core.DeployObs) {
-	s.e.Observe(id, func(t *core.Thread, now time.Time) { core.ChangeDeployObserved(t, change, d, now) })
+	s.e.Apply(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindDeployObserved, Thread: id, Args: core.DeployObservedArgs{Change: change, Obs: d}})
 }
 
 func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []string) (int, error) {
@@ -663,17 +655,16 @@ func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []stri
 		if !known[prof] {
 			prof = profiles[0].ID
 		}
-		t := &core.Thread{ID: engine.NewID("t_"), Title: c.Title, Cwd: c.Cwd, Project: core.ProjectName(c.Cwd),
+		t := &core.Thread{ID: engine.NewID("t_"), Title: c.Title, Cwd: c.Cwd,
 			Owner: core.Owner, Visibility: "private", Profile: prof, Model: c.Model, SessionID: c.SessionID,
 			CreatedAt: c.UpdatedAt, UpdatedAt: c.UpdatedAt, ActivityAt: c.UpdatedAt, Source: "t3", T3ID: c.T3ID}
 		if repo, num, ok := agent.ParsePR(c.PRURL); ok {
-			t.PR = &core.PR{URL: c.PRURL, Repo: repo, Number: num, State: "OPEN", Checks: "pending"}
+			core.PRObserved(t, core.PR{URL: c.PRURL, Repo: repo, Number: num, State: "OPEN", Checks: core.ChecksPending}, c.UpdatedAt)
 		}
 		v := &core.View{User: core.Owner, Entity: t.ID, SeenAt: c.UpdatedAt}
 		if c.SnoozedUntil != "" {
 			if until, err := time.Parse(time.RFC3339Nano, c.SnoozedUntil); err == nil && until.After(time.Now()) {
-				now := time.Now()
-				v.SnoozeUntil, v.SnoozedAt = &until, &now
+				core.Snooze(v, until, time.Now())
 			}
 		}
 		hist, at, err := t3.History(home(), c.SessionID, 400)

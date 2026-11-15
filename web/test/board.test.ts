@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { boardItems, boardProjects, columnOf, columns, needsCount, stackOrder } from "../src/board.ts";
-import type { Change, Project, ThreadDTO } from "../src/types.ts";
+import type { Change, Project, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
 const at = (m: number) => new Date(Date.UTC(2026, 10, 15, 9, m)).toISOString();
 const ch = (p: Partial<Change>): Change => ({ id: "c", key: "k", kind: "infra", title: "x", phase: "working", phaseBy: "agent", createdAt: at(0), updatedAt: at(0), ...p });
 const projects = [{ id: "p1", name: "ops" }, { id: "p2", name: "web" }] as Project[];
 
-function threads(): Record<string, ThreadDTO> {
+function threads(): Record<string, Thread> {
   const a = thread("t1", "seen", "seen", { title: "Scale api", projectId: "p1", changes: [ch({ id: "c1", title: "replicas", phase: "landed", conditions: [{ type: "health", status: "fail", source: "agent", at: at(1) }] }), ch({ id: "c2", title: "runbook", phase: "review", updatedAt: at(5) })] });
   const b = thread("t2", "seen", "seen", { title: "Search", projectId: "p2", changes: [ch({ id: "c3", key: "api", title: "api part", phase: "review", group: "search-v2", kind: "code", updatedAt: at(2) }), ch({ id: "c4", title: "web part", phase: "review", group: "search-v2", after: ["api"], updatedAt: at(9) }), ch({ id: "c5", title: "old", phase: "abandoned" })] });
   const c = thread("t3", "archived", "archived", { title: "Archived", archivedAt: at(0), changes: [ch({ id: "c6", title: "hidden" })] });
@@ -42,4 +42,15 @@ test("SPEC 0.5 V0.64: columns by stage; a group stays together, its stack base f
   assert.ok(g && g.kind === "group" && g.group === "search-v2");
   assert.deepEqual(g.items.map((i) => i.change.id), ["c3", "c4"], "c4 builds on api (c3): base first, though c4 is newer");
   assert.equal(stackOrder([]).length, 0);
+});
+
+test("#35: an observed branch is one host record, shown in each of its threads and once on the board", () => {
+  const rec = ch({ id: "r1", key: "git:github.com/meros/fyr#v0", kind: "code", title: "v0", phaseBy: "observed", threads: ["t1", "t2"], conditions: [{ type: "x", status: "fail", source: "observed", at: at(0) }] });
+  const own = ch({ id: "c1", key: "k", title: "same key, another thread" });
+  const ts = {
+    t1: thread("t1", "seen", "seen", { title: "One", changes: [rec, own] }),
+    t2: thread("t2", "seen", "seen", { title: "Two", changes: [rec, { ...own }] }),
+  };
+  assert.deepEqual(boardItems(ts, projects).map((i) => i.change.id).sort(), ["c1", "c1", "r1"], "agent changes stay per thread");
+  assert.equal(needsCount(ts), 1);
 });

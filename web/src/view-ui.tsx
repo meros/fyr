@@ -4,8 +4,9 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { bridgeMessage, liveViewOf, pressReply, staleLabel, stateMessage, viewDimmed, viewHeight } from "./view.ts";
-import { FRAME_ALLOW, previewUrl } from "./previews.ts";
-import type { FyrEvent, ThreadDTO, Offer } from "./types.ts";
+import { FRAME_ALLOW } from "./previews.ts";
+import { useApi } from "./api-context.ts";
+import type { FyrEvent, Thread, Offer } from "./types.ts";
 import { buildConversation, deliveryLabel, viewChat } from "./conversation.ts";
 import { liveLine } from "./tasks.ts";
 import { chatHidden, chatKey, loadDismissed, saveDismissed } from "./view-chat.ts";
@@ -27,7 +28,8 @@ function saveCollapsed(s: Set<string>) {
 }
 
 /** V0.37: the full view (the View tab). V0.56: no headline bar in Conversation; the tab is the way in. */
-export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: ThreadDTO; now: number; onPress(text: string): Promise<boolean>; /** V0.60: run one of the view's actions */ onAction?(o: Offer): Promise<boolean>; full?: boolean }) {
+export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; now: number; onPress(text: string): Promise<boolean>; /** V0.60: run one of the view's actions */ onAction?(o: Offer): Promise<boolean>; full?: boolean }) {
+  const api = useApi();
   const v = liveViewOf(t);
   const frame = useRef<HTMLIFrameElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -38,8 +40,8 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: ThreadDT
   const stateJson = JSON.stringify(v?.state ?? {});
   const pressRef = useRef(onPress);
   pressRef.current = onPress;
-  const actionRef = useRef({ onAction, offers: t.offers });
-  actionRef.current = { onAction, offers: t.offers };
+  const actionRef = useRef({ onAction, offers: t.live?.offers });
+  actionRef.current = { onAction, offers: t.live?.offers };
   const stateRef = useRef(v?.state ?? {});
   stateRef.current = v?.state ?? {};
 
@@ -84,7 +86,7 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: ThreadDT
         // V0.60: only an action the agent declared on the view runs; the press carries its digest.
         const id = m.id;
         const { onAction: run, offers } = actionRef.current;
-        const o = offers?.find((x) => x.on === "view" && x.id === m.action);
+        const o = offers?.find((x) => x.id === m.action);
         void (o && run ? run(o) : Promise.resolve(false)).then((ok) => {
           if (id !== null) frame.current?.contentWindow?.postMessage(pressReply(id, ok), "*");
         });
@@ -113,7 +115,7 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: ThreadDT
         <iframe
           ref={frame}
           class="lv-f"
-          src={previewUrl(v.pageId, t.host)}
+          src={api.previewUrl(v.pageId, t.host)}
           sandbox="allow-scripts"
           allow={FRAME_ALLOW}
           allowFullScreen
@@ -128,8 +130,8 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: ThreadDT
 
 /** SPEC 0.5 V0.49: the View tab's chat: your last message typed here, its state, and the agent's
  *  spoken reply (or its current step while it works). A tap opens Conversation. */
-export function ViewChat({ t, events, now, onOpen }: { t: ThreadDTO; events: FyrEvent[] | undefined; now: number; onOpen(): void }) {
-  const outKey = (t.outbox ?? []).map((o) => o.id).join(",");
+export function ViewChat({ t, events, now, onOpen }: { t: Thread; events: FyrEvent[] | undefined; now: number; onOpen(): void }) {
+  const outKey = t.outbox.map((o) => o.id).join(",");
   const c = useMemo(() => viewChat(buildConversation(events ?? [], { outbox: outKey ? outKey.split(",") : [] })), [events, outKey]);
   const [dismissed, setDismissed] = useState(loadDismissed);
   if (!c) return null;

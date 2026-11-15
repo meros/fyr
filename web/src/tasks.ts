@@ -1,6 +1,6 @@
 // Background work (SPEC 0.5 V0.16): subagents and background tasks of a thread. Pure.
 
-import type { TaskDTO, ThreadDTO } from "./types.ts";
+import type { TaskDTO, Thread } from "./types.ts";
 import { relTime } from "./format.ts";
 
 function ts(s: string | null | undefined): number {
@@ -73,7 +73,7 @@ export function agentsSummary(tasks: TaskDTO[] | null | undefined): string {
 }
 
 /** The second part of a Working-section row: waiting reads the reason and the newest activity; working adds "· N agents". */
-export function workingLine(t: ThreadDTO): string {
+export function workingLine(t: Thread): string {
   const running = groupTasks(t.tasks).running;
   if (t.attention.state === "waiting") {
     const newest = [...running].sort((a, b) => ts(b.updatedAt) - ts(a.updatedAt))[0];
@@ -93,7 +93,7 @@ export function taskEventText(d: { kind?: string; description?: string; status?:
 }
 
 /** SPEC 0.5 V0.21: the live line under a working thread, desktop and phone. */
-export function liveLine(t: ThreadDTO, now: number): string {
+export function liveLine(t: Thread, now: number): string {
   const running = groupTasks(t.tasks).running.length;
   return [t.activity || "Working", running ? agentsLabel(running) : "", relTime(t.runStartedAt, now)].filter(Boolean).join(" · ");
 }

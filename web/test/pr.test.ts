@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.43: the PR tab's pure logic: merge status words, the chip, check grouping, ask-the-agent messages.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkDuration, chipStatus, fixCheckMessage, groupChecks, mergeStatus, passedLabel, prChip, reviewAskLabel, reviewMessage, updatedLabel, type PrCheck, type PrDetail } from "../src/pr.ts";
+import { checkDuration, checksSection, chipStatus, fixCheckMessage, groupChecks, mergeStatus, passedLabel, prChip, reviewAskLabel, reviewMessage, updatedLabel, type PrCheck, type PrDetail } from "../src/pr.ts";
 
 const base: PrDetail = {
   url: "https://github.com/acme/app/pull/88",
@@ -117,4 +117,11 @@ test("updated stamp", () => {
   assert.equal(updatedLabel("2026-11-14T08:59:55Z", now), "updated 5 s ago");
   assert.equal(updatedLabel("2026-11-14T08:58:00Z", now), "updated 2 min ago");
   assert.equal(updatedLabel(undefined, now), "");
+});
+
+test("SPEC 0.5 V0.70 (3): after a merge or close, failed checks are history: muted, under Checks at merge, no ask", () => {
+  assert.deepEqual(checksSection("OPEN"), { heading: "Checks", history: false });
+  assert.deepEqual(checksSection(undefined), { heading: "Checks", history: false });
+  assert.deepEqual(checksSection("MERGED"), { heading: "Checks at merge", history: true });
+  assert.deepEqual(checksSection("CLOSED"), { heading: "Checks at merge", history: true });
 });

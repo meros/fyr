@@ -50,7 +50,9 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 }
 ```
 
-`liveView` is the live view flag and `live` the view itself (V0.37); both are absent on a thread without them. `live.headline` is `state.headline` when it is a string; `checkedAt` is the last `view_*` call, `updatedAt` the last change of page or state.
+`pr` is the PR of the thread's main change (`mainChange`, a change id) and `settleWhenMerged` says that `settleWhen` waits for that change to land; the host derives both (#32). The host stores the settle as one component, `{at, when: [{kind: done|change, change, phase}]}` (#33), and derives `settledAt`, `settleWhenDone` (a `done` condition), `settleWhenMerged` and `settleWhen` (a change condition, one that is not "when merged" first) from it; several conditions may be armed, any one that holds settles the thread, and never while a run is live. `project` is the name of the thread's project (`projectId`), derived and not stored. Every PR is stored on its code change (`changes[].pr`), so a thread with two PRs shows both on the Changes board.
+
+`liveView` is the live view flag and `live` the view itself (V0.37); both are absent on a thread without them. The flag is stored as `live.enabled` (#33), which the DTO also carries. `live.headline` is `state.headline` when it is a string; `checkedAt` is the last `view_*` call, `updatedAt` the last change of page or state.
 
 `rev` increases on every change, also across host restarts: keep the copy with the higher `rev`. An action name missing from `unavailable` is available. The client never computes status; it renders `attention`.
 
@@ -191,7 +193,7 @@ Commands (through `POST /api/command`, no `threadId`):
 
 A folder needs a full path (`~/…` is expanded) and must exist on the host, else `400` with the reason. After `project.create` or a change of `folder` the host matches again every thread not filed by hand and sends the changed ones on the stream: a thread lands in the project whose folder is its folder or contains it, the longest folder first; matching never takes a project away. An icon's `value` is left out when empty. A thread with no `cwd` and a `projectId` starts in the project's folder.
 
-The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. After `project.delete` it sends `event: project` with `{id, deleted: true}` (V0.58). Threads carry `projectId`; `project` stays the display name. A thread may carry `newProject: {name, folder}`: what "New project from this thread" starts with (V0.30, V0.55): its folder and the folder's name; absent for a scratch folder, the home folder, `/`, and a folder a project already has.
+The stream sends `event: project` with a project (same shape as in the state) when one is made or changed. After `project.delete` it sends `event: project` with `{id, deleted: true}` (V0.58). A project carries `rev`, when the host built that copy (it grows across restarts); a client keeps the copy with the higher `rev`, so a frame that arrives while `/api/state` is in flight is not overwritten by the older snapshot. Threads carry `projectId`; `project` stays the display name. A thread may carry `newProject: {name, folder}`: what "New project from this thread" starts with (V0.30, V0.55): its folder and the folder's name; absent for a scratch folder, the home folder, `/`, and a folder a project already has.
 
 Removed in V0.55: `sources`, `main`, `repos`, `cwd` on a project; `suggest` and `workspaceId` on a thread; `project.createFrom`, `project.addSource`, `project.removeSource`, `project.setMain` (`400 unknown action`).
 
@@ -293,7 +295,7 @@ Both reply at once; the result arrives as an `effect.result` event with `"by": "
 
 ## Providers (SPEC 0.5 V0.50)
 
-`GET /api/state` `profiles` are the providers as launch configs (same ids), each with `cli`, `models` (ids), `modelCaps: [{id, name?, efforts?}]`, `defaultModel`, `defaultEffort?`, `quota: {kind}`; never `env` or a key.
+`GET /api/state` `profiles` are the providers as launch configs (same ids), each with `cli`, `models` (ids), `modelCaps: [{id, name?, efforts?}]`, `defaultModel`, `defaultEffort?`, `quota: {kind}`; never `env` or a key. `GET /api/profiles` returns the same list alone, for a client after a provider changed.
 
 `GET /api/providers`:
 
@@ -350,6 +352,7 @@ The browser talks to a **front**; the front talks to its **hosts** over the **ho
 - Commands and thread calls (`/api/threads/{id}/…`) go to the thread's host. A call without a thread goes to `args.host` (command) or `?host=` (other calls) when given, a `project.*` command to the project's host, else to the first host. A thread on an offline host is read-only: `503 {"ok": false, "error": "meros-laptop is offline since 19:40; its threads are read-only"}`.
 - Attachments and previews (V0.54): `POST /api/attachments`, `GET /api/attachments/{id}` and `GET /api/previews/{id}[/{path}]` take `?host=` or `?thread=` (the thread's host); without either, a read goes to the host the front learned for that id (an upload through it, or the preview page these files belong to), else to the first host. No host is tried in turn.
 - `GET /api/quota` merges every online host's list (`?host=` for one host's).
+- `GET /api/profiles` merges every online host's profiles by id, the first host's winning.
 - Device data is the front's (V0.54): `POST /api/presence` and `/api/push/*` (key, subscribe, unsubscribe, status, test) are served by the front, which sends the push for the threads of all its hosts. Hosts send none.
 
 The host protocol (front → host):

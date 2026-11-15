@@ -140,6 +140,7 @@
         }
       ],
       "quietUntil": "2026-01-01T00:00:00Z",
+      "rev": 1,
       "threads": 1
     },
     {
@@ -152,6 +153,7 @@
       "id": "p_2",
       "lastUsed": "2026-01-01T00:00:00Z",
       "name": "A label",
+      "rev": 1,
       "threads": 0
     }
   ],
@@ -208,6 +210,7 @@
       "id": "t_4",
       "live": {
         "checkedAt": "2026-01-01T00:00:00Z",
+        "enabled": true,
         "headline": "Tests pass",
         "pageId": "a_page",
         "state": {

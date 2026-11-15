@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -45,33 +46,11 @@ func TestMergePatch(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.37: the Stop hook blocks once per run, only for a flagged
-// thread whose run did not touch the view, and never while agents run.
-func TestViewStopDecision(t *testing.T) {
-	cases := []struct {
-		name string
-		in   ViewStop
-		want bool
-	}{
-		{"flag on, untouched", ViewStop{Flag: true}, true},
-		{"flag off", ViewStop{}, false},
-		{"view call this run", ViewStop{Flag: true, Touched: true}, false},
-		{"already blocked once", ViewStop{Flag: true, Blocked: true}, false},
-		{"stop_hook_active", ViewStop{Flag: true, Active: true}, false},
-		{"background task running", ViewStop{Flag: true, Tasks: 1}, false},
-	}
-	for _, c := range cases {
-		if got := c.in.Block(); got != c.want {
-			t.Errorf("%s: Block() = %v, want %v", c.name, got, c.want)
-		}
-	}
-}
-
 // SPEC 0.5 V0.37: the DTO's view folds from the events; the headline is
 // state.headline when it is a string.
 func TestViewFold(t *testing.T) {
 	start := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
-	th := &Thread{LiveView: true}
+	th := &Thread{Live: &LiveView{Enabled: true}}
 	RunStarted(th, start)
 	if ViewTouchedThisRun(th) {
 		t.Fatal("touched before any call")
@@ -95,29 +74,11 @@ func TestViewFold(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.52: a running turn with a live view gets a reminder after
-// ViewNudgeAfter without a view_* call, and at most one per interval.
-func TestViewNudgeDue(t *testing.T) {
-	t0 := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
-	n := ViewNudge{Flag: true, RunStarted: t0}
-	if n.Due(t0.Add(ViewNudgeAfter - time.Second)) {
-		t.Fatal("due before the interval")
-	}
-	if !n.Due(t0.Add(ViewNudgeAfter)) {
-		t.Fatal("not due after the interval with no view call")
-	}
-	n.Checked = t0.Add(3 * time.Minute)
-	if n.Due(t0.Add(ViewNudgeAfter + time.Minute)) {
-		t.Fatal("due although the view changed 2 minutes ago")
-	}
-	n.Checked, n.Nudged = time.Time{}, t0.Add(ViewNudgeAfter)
-	if n.Due(t0.Add(ViewNudgeAfter + time.Minute)) {
-		t.Fatal("a second reminder within the interval")
-	}
-	if (ViewNudge{RunStarted: t0}).Due(t0.Add(time.Hour)) {
-		t.Fatal("due without a live view")
-	}
-	if (ViewNudge{Flag: true}).Due(t0) {
-		t.Fatal("due outside a run")
+// SPEC 0.5 V0.37: view_state needs a page first.
+func TestViewStateNeedsAPage(t *testing.T) {
+	th := &Thread{ID: "t", Live: &LiveView{Enabled: true}}
+	_, _, _, err := Reduce(th, nil, Input{Source: FromAgent, Kind: KindViewState, Thread: "t", Args: map[string]any{}}, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "view_publish first") {
+		t.Fatalf("state before any page: %v", err)
 	}
 }
