@@ -80,6 +80,7 @@ func openHost(cfg config, data, t3DB string) *host {
 		return ids
 	}}
 	eng.Adopt = h.t3.Adopt
+	eng.Providers = reg // #48: provider commands go down the engine's path
 	return h
 }
 

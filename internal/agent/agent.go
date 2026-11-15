@@ -387,21 +387,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 	c, err := ad.Start(l, cli.Handlers{
 		CanUseTool: func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) },
 		Cancel:     func(reqID string) { m.cancelRequest(s, reqID) },
-		Hook: func(id string, in claude.Msg) claude.Msg {
-			if id == "view" {
-				return m.stopHook(s, in)
-			}
-			if id == "viewnudge" {
-				return m.toolHook(s)
-			}
-			name, _ := in["tool_name"].(string)
-			ti, _ := in["tool_input"].(map[string]any)
-			if r := core.Gate(name, ti); r != "" {
-				return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse",
-					"permissionDecision": "deny", "permissionDecisionReason": r}}
-			}
-			return nil
-		},
+		Hook:       func(id string, in claude.Msg) claude.Msg { return m.hook(s, id, in) },
 	})
 	if err != nil {
 		dropToken()

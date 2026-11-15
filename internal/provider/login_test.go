@@ -122,7 +122,7 @@ func newLoginFix(t *testing.T, mode string) *loginFix {
 
 func (lf *loginFix) cmd(action string, args map[string]any) api.Reply {
 	lf.n++
-	rep := lf.r.Command(api.Cmd{CommandID: fmt.Sprintf("c%d", lf.n), Action: action, Args: args})
+	rep := lf.r.Run(api.Cmd{CommandID: fmt.Sprintf("c%d", lf.n), Action: action, Args: args})
 	b, _ := json.Marshal(rep)
 	lf.replies = append(lf.replies, string(b))
 	return rep
