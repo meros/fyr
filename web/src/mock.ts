@@ -482,7 +482,6 @@ function fullFixture(now: number): Fixture {
           { kind: "pr", url: "https://github.com/acme/web/pull/4100", title: "#4100" },
           { kind: "deployment", url: "https://example.com", title: "production" },
         ],
-        deployWatch: { repo: "acme/web", sha: "8c1f0e2a9b", mergedAt: iso(240), checked: true, seen: true, done: true },
         createdAt: iso(600), updatedAt: iso(180),
       },
     ];
