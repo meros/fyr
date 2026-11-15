@@ -3,25 +3,23 @@
 
 import { useEffect, useState } from "preact/hooks";
 import type { Profile } from "./types.ts";
+import type { Api } from "./api.ts";
+import { useApi } from "./api-context.ts";
 import { hasData, quotaDetail, quotaFor, quotaParts, quotaSummary, railFigure, type Quota } from "./quota.ts";
 
 const POLL_MS = 60_000;
 
-let source: (() => Promise<Quota[]>) | null = null;
+/** The Api of the first subscriber (#41: from ApiContext; there is one per app). */
+let source: Pick<Api, "quota"> | null = null;
 let current: Quota[] = [];
 let lastAt = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
 const subs = new Set<(q: Quota[]) => void>();
 
-/** The app sets where quota comes from (its Api) once. */
-export function setQuotaSource(fn: () => Promise<Quota[]>): void {
-  source = fn;
-}
-
 async function poll(): Promise<void> {
   if (!source || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
   lastAt = Date.now();
-  const q = await source().catch(() => current);
+  const q = await source.quota().catch(() => current);
   current = q;
   for (const s of subs) s(q);
 }
@@ -31,10 +29,12 @@ function onVisible(): void {
 }
 
 export function useQuotas(): Quota[] {
+  const api = useApi();
   const [q, setQ] = useState(current);
   useEffect(() => {
     subs.add(setQ);
     if (subs.size === 1) {
+      source = api;
       if (Date.now() - lastAt > POLL_MS / 2) void poll();
       timer = setInterval(() => void poll(), POLL_MS);
       document.addEventListener("visibilitychange", onVisible);

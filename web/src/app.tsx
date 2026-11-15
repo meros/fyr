@@ -5,9 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import type { Decision, Thread } from "./types.ts";
 import { createApi } from "./api.ts";
 import { currentDecision } from "./decode.ts";
-import { setQuotaSource } from "./quota-ui.tsx";
-import { setChangesSource } from "./changes-ui.tsx";
-import { setPrSource } from "./pr-ui.tsx";
+import { ApiContext, useApi } from "./api-context.ts";
 import {
   SECTIONS,
   applySnapshot,
@@ -49,10 +47,7 @@ import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
 import { HandoverDialog } from "./handover-ui.tsx";
 import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
-import { setAttachmentUrl } from "./attach.ts";
-import { setPreviewUrl } from "./previews.ts";
 import { PreviewViewer } from "./preview-ui.tsx";
-import { setUploader } from "./attach-ui.tsx";
 import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
 import { clearThreadNotification, disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
 import { PUSH_TITLE, rememberOpen, shouldClearNotification, takeOpen, unsupportedReason, type PushStatus } from "./push.ts";
@@ -70,7 +65,6 @@ import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence
 import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
 import { DeployBanner } from "./deploy-ui.tsx";
 import { cache, mergeEventLists } from "./cache.ts";
-import { setFullEventSource } from "./thread.tsx";
 import { navTransition } from "./native.ts";
 import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
 import { ContextMenu } from "./menu-ui.tsx";
@@ -146,14 +140,7 @@ function useViewportVars(on: boolean) {
 /** Events per page of a thread timeline. */
 const PAGE = 400;
 
-const api = await createApi(); // #42: the mock Api is a chunk loaded only in mock mode
-setQuotaSource(() => api.quota()); // V0.44
-setUploader(api.uploadAttachment);
-setAttachmentUrl(api.attachmentUrl);
-setPreviewUrl(api.previewUrl);
-setChangesSource(api);
-setPrSource(api);
-setFullEventSource(api);
+const hostApi = await createApi(); // #42: the mock Api is a chunk loaded only in mock mode
 const params = new URLSearchParams(location.search);
 
 type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | "handover" | "settings" | "changes" | null;
@@ -200,6 +187,8 @@ function isTextTarget(t: EventTarget | null): boolean {
 }
 
 function App() {
+  // #41: every component reaches the host through ApiContext; a test can provide a fake Api.
+  const api = useApi();
   const [store, setStore] = useState<Store>(initialStore);
   const [sel, setSel] = useState<string | null>(null);
   const [view, setView] = useState<{ id: string; mode: "open" | "peek" } | null>(null);
@@ -1558,4 +1547,9 @@ function tgtThread(s: Store, zone: Zone, view: { id: string } | null, sel: strin
   return id ? s.threads[id] : undefined;
 }
 
-render(<App />, document.getElementById("app")!);
+render(
+  <ApiContext.Provider value={hostApi}>
+    <App />
+  </ApiContext.Provider>,
+  document.getElementById("app")!,
+);

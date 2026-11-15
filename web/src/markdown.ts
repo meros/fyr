@@ -7,8 +7,9 @@ import { attachmentUrl } from "./attach.ts";
 
 // V0.38: a message renders once; a new event does not parse the old ones again.
 const memo = new Map<string, string>();
-// V0.54: the host of the thread being rendered; its attachments load from there.
+// V0.54: the host of the thread being rendered; its attachments load from there (#41: through the Api's URLs).
 let curHost: string | undefined;
+let curUrl: (id: string, host?: string) => string = attachmentUrl;
 
 /** The page's origin; tests set one. */
 let originOverride: string | null = null;
@@ -63,7 +64,7 @@ const md = new Marked({
     image({ href, text }: Tokens.Image) {
       // A same-origin attachment renders inline (V0.19); every other image stays a link.
       const id = inlineAttachmentId(href, mdOrigin());
-      if (id) return `<img class="md-img" src="${escapeHtml(attachmentUrl(id, curHost))}" alt="${escapeHtml(text || "")}" loading="lazy">`;
+      if (id) return `<img class="md-img" src="${escapeHtml(curUrl(id, curHost))}" alt="${escapeHtml(text || "")}" loading="lazy">`;
       const h = safeHref(href);
       const label = escapeHtml(text || "image");
       return h ? `<a href="${escapeHtml(h)}" target="_blank" rel="noopener noreferrer">[${label}]</a>` : `[${label}]`;
@@ -71,7 +72,12 @@ const md = new Marked({
   },
 });
 
-export function renderMarkdown(src: string, host?: string): string {
+export function renderMarkdown(src: string, host?: string, urlFor: (id: string, host?: string) => string = attachmentUrl): string {
+  if (urlFor !== curUrl) {
+    // Another Api's URLs: what is cached points elsewhere.
+    curUrl = urlFor;
+    memo.clear();
+  }
   const key = host ? `${host}\u0000${src}` : src;
   const hit = memo.get(key);
   if (hit !== undefined) {

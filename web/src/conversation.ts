@@ -4,6 +4,7 @@ import { actionEventLine, changeEventLine } from "./offers.ts";
 import type { Failure, FyrEvent } from "./types.ts";
 import { taskEventText } from "./tasks.ts";
 import { previewCard, type PreviewCard } from "./previews.ts";
+import type { ContentUrls } from "./attach.ts";
 
 export interface ToolCall {
   id: string;
@@ -75,6 +76,8 @@ export interface BuildOptions {
   cwd?: string;
   /** V0.54: the thread's host, which serves its previews */
   host?: string;
+  /** #41: where previews load from (the Api's); the host's paths when absent */
+  urls?: ContentUrls;
 }
 
 function str(v: unknown): string {
@@ -151,11 +154,11 @@ function blocksOf(data: any): Block[] {
 }
 
 /** The thread's preview cards, in log order (for the filmstrip). */
-export function previewsOf(events: FyrEvent[], host?: string): PreviewCard[] {
+export function previewsOf(events: FyrEvent[], host?: string, urls?: ContentUrls): PreviewCard[] {
   const out: PreviewCard[] = [];
   for (const e of events) {
     if (e.type !== "preview") continue;
-    const c = previewCard(e.seq, e.at, e.data, host);
+    const c = previewCard(e.seq, e.at, e.data, host, urls);
     if (c) out.push(c);
   }
   return out;
@@ -309,7 +312,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         break;
       }
       case "preview": {
-        const card = previewCard(e.seq, e.at, e.data, opts.host);
+        const card = previewCard(e.seq, e.at, e.data, opts.host, opts.urls);
         if (card) pushItem({ kind: "preview", key, card });
         break;
       }

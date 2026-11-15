@@ -109,14 +109,16 @@ export function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
 }
 
-/** The URL of an attachment; set by the app (mock mode serves object URLs). V0.54: `host` is the host of the
- *  thread it belongs to; the front reads it from there. */
-let urlFor: (id: string, host?: string) => string = (id, host) => `/api/attachments/${encodeURIComponent(id)}${hostQuery(host)}`;
-export function setAttachmentUrl(fn: (id: string, host?: string) => string): void {
-  urlFor = fn;
+/** Where attachments and HTML previews load from (V0.18, V0.19). The Api provides them (#41: through ApiContext);
+ *  the mock serves object and data URLs. */
+export interface ContentUrls {
+  attachmentUrl(id: string, host?: string): string;
+  previewUrl(id: string, host?: string): string;
 }
+
+/** The host's URL of an attachment. V0.54: `host` is the host of the thread it belongs to; the front reads it from there. */
 export function attachmentUrl(id: string, host?: string): string {
-  return urlFor(id, host);
+  return `/api/attachments/${encodeURIComponent(id)}${hostQuery(host)}`;
 }
 /** "?host=<name>" for a call the front routes by host (V0.54), "" without one. */
 export function hostQuery(host: string | undefined): string {
