@@ -36,10 +36,11 @@ func Fetch(ctx context.Context, gh Runner, url string) (core.PR, error) {
 // fetch also returns the number of failed checks.
 func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	repo, n, ok := agent.ParsePR(url)
+	canon, _ := agent.CanonicalPR(url)
 	if !ok {
 		return core.PR{}, 0, fmt.Errorf("not a PR URL: %s", url)
 	}
-	out, err := gh(ctx, "pr", "view", url, "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt")
+	out, err := gh(ctx, "pr", "view", "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt", "--", canon)
 	if err != nil {
 		return core.PR{}, 0, err
 	}
@@ -92,13 +93,14 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 
 // Merge merges a PR with gh (the pr.merge effect).
 func Merge(ctx context.Context, gh Runner, url, method string) (string, error) {
-	if _, _, ok := agent.ParsePR(url); !ok {
+	canon, ok := agent.CanonicalPR(url)
+	if !ok {
 		return "", fmt.Errorf("not a PR URL: %s", url)
 	}
 	if method == "" {
 		method = "squash"
 	}
-	out, err := gh(ctx, "pr", "merge", url, "--"+method)
+	out, err := gh(ctx, "pr", "merge", "--"+method, "--", canon)
 	return strings.TrimSpace(string(out)), err
 }
 
