@@ -51,7 +51,8 @@ export function offerDetail(o: Offer, cwd?: string): string {
   return o.effect === "pr.merge" ? "Fyr merges the PR" : o.effect === "pr.rerunFailed" ? "Fyr re-runs the failed checks" : "Fyr runs it";
 }
 
-const quote = (a: string) => (/^[\w./:=@%+-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
+/** One argument as a shell would need it written. */
+export const quote = (a: string) => (/^[\w./:=@%+-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
 
 /** The newest run of an action. */
 export function lastRun(runs: OfferRun[] | undefined, id: string): OfferRun | undefined {
