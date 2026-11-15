@@ -2,7 +2,7 @@
 
 Build with `npm ci && npm run build` (output in `dist/`, embedded by the Go binary). `npm run typecheck`, `npm test` (node:test over the pure modules: `store`, `seen`, `question`, `buildid`, `conversation`, `markdown`). `node scripts/build.mjs --dev` builds unminified with inline source maps.
 
-Mock mode: `dist/index.html?mock=rail` is the exact content of the first light frame of `design/directions/04-rail.html` on the design's clock (14:32 today), for side-by-side comparison. `?mock=1` serves the stress fixtures from `src/mock.ts` (no host needed); `?mock=2` is a sparse set with empty sections. `&open=<threadId>` opens a thread and `&dialog=new|adopt|snooze|settings` opens a dialog, for screenshots.
+Mock mode (the fixtures are a chunk, `mock-api-*.js`, that `api.ts` loads with `import()` only when `?mock=` is set; `test/bundle.test.ts` checks that the start bundle has none of it): `dist/index.html?mock=rail` is the exact content of the first light frame of `design/directions/04-rail.html` on the design's clock (14:32 today), for side-by-side comparison. `?mock=1` serves the stress fixtures from `src/mock.ts` (no host needed); `?mock=2` is a sparse set with empty sections. `&open=<threadId>` opens a thread and `&dialog=new|adopt|snooze|settings` opens a dialog, for screenshots.
 
 ## Contract questions (docs/API-v0.md)
 
@@ -33,7 +33,7 @@ Nothing here blocks the client; each item says what the client does today.
 
 ## PWA and push (SPEC V0.15)
 
-- The build emits `manifest.webmanifest`, `sw.js` and `icons/` (the PNGs are drawn by `scripts/icons.ts`, no dependencies). The service worker's cache is named after a hash of the shell it precaches; it never handles `/api` or `/mcp`.
+- The build emits `manifest.webmanifest`, `sw.js` and `icons/` (the PNGs are drawn by `scripts/icons.ts`, no dependencies). The service worker's cache is named after a hash of the shell it precaches (every script chunk from the esbuild metafile included); it never handles `/api` or `/mcp`.
 - fyrd must serve `/sw.js` (JavaScript MIME type) and `/manifest.webmanifest` (`application/manifest+json`) from the root, and `/` must return `index.html`, which now uses absolute asset paths.
 - The bell reads the browser's own subscription. If the host deletes a subscription (404/410 from the push service), the bell still shows "on" until the user turns it off and on; a `GET /api/push/subscriptions` (or a status in the subscribe reply) would let the client show it.
 - Notification taps post `{type:"open", threadId}` to an open window, else open `/?open=<id>`.
