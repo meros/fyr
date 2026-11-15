@@ -2,7 +2,7 @@
 // Each screen has a URL; a sheet adds an entry without changing the URL, so Back closes the sheet,
 // then the thread. A thread opened from a deep link (a push) gets an inbox entry under it.
 
-export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" } | { name: "project"; id: string } | { name: "settings" };
+export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" } | { name: "project"; id: string } | { name: "settings" } | { name: "changes" };
 
 export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "push" | "adopt" | "project" | "filter" | "handover";
 
@@ -37,6 +37,7 @@ export function urlFor(n: Nav, currentSearch = ""): string {
   else if (s.name === "search") p.set("search", "");
   else if (s.name === "project") p.set("project", s.id);
   else if (s.name === "settings") p.set("settings", "");
+  else if (s.name === "changes") p.set("changes", ""); // V0.64
   const q = p.toString().replace(/=(&|$)/g, "$1");
   return q ? `/?${q}` : "/";
 }
@@ -50,6 +51,7 @@ export function parseUrl(search: string): Nav {
   if (p.has("new")) return { screen: { name: "new" }, sheet: null };
   if (p.has("search")) return { screen: { name: "search" }, sheet: null };
   if (p.has("settings")) return { screen: { name: "settings" }, sheet: null };
+  if (p.has("changes")) return { screen: { name: "changes" }, sheet: null };
   return INBOX;
 }
 

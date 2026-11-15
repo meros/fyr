@@ -60,6 +60,8 @@ import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, 
 import { answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
 import { Settings } from "./settings-ui.tsx";
+import { ChangesBoard } from "./board-ui.tsx";
+import { needsCount } from "./board.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
 import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
 import { HandoverDialog } from "./handover-ui.tsx";
@@ -151,7 +153,7 @@ setPrSource(api);
 setFullEventSource(api);
 const params = new URLSearchParams(location.search);
 
-type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | "handover" | "settings" | null;
+type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | "handover" | "settings" | "changes" | null;
 type Zone = "list" | "thread";
 
 interface Toast {
@@ -373,7 +375,7 @@ function App() {
       setTracker((tr) => openView(tr, first, "open", Date.now(), document.hasFocus()));
     }
     const d = params.get("dialog");
-    if (d === "new" || d === "adopt" || d === "settings") setDialog(d);
+    if (d === "new" || d === "adopt" || d === "settings" || d === "changes") setDialog(d);
     if (d === "snooze" && first) {
       setSnoozeTargets([first]);
       setDialog("snooze");
@@ -1363,7 +1365,7 @@ function App() {
       <FolderPickContext.Provider value={folderPicker}>
       <ProfilesContext.Provider value={store.profiles}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
-        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} />
+        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
         <Boundary name="The inbox">
         <Inbox
           sec={sec}
@@ -1507,6 +1509,21 @@ function App() {
       )}
       {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "push" && pushDialog(() => setDialog(null))}
+      {dialog === "changes" && (
+        <Modal title="Changes" wide onClose={() => setDialog(null)}>
+          <div class="db">
+            <ChangesBoard
+              threads={store.threads}
+              projects={store.projects}
+              onRun={(id, a, args) => void runAction(a, [id], args)}
+              onOpenThread={(id) => {
+                setDialog(null);
+                openThread(id, "open");
+              }}
+            />
+          </div>
+        </Modal>
+      )}
       {dialog === "settings" && (
         <Modal title="Settings" wide onClose={() => setDialog(null)}>
           <Settings api={api} host={store.host} hosts={store.hosts} push={pwaControls} appearance={themeControl} onChanged={reloadProfiles} {...projectsInSettings} />
