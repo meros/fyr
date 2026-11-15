@@ -255,3 +255,33 @@ func TestUnsettleCancelsSettleWhenChange(t *testing.T) {
 		t.Fatal("unsettle left settle_when armed")
 	}
 }
+
+// SPEC 0.5 V0.60 (1): the thread's actions and its view's actions have their
+// own runs; a running thread action does not block the view action with the
+// same id, and the view's runs go with the view.
+func TestThreadAndViewRunsApart(t *testing.T) {
+	th := &Thread{}
+	thr, _ := HolderOf(th, OnThread)
+	view, _ := HolderOf(th, OnView)
+	a := Offer{ID: "test", Label: "Test", Run: RunScript, Argv: []string{"true"}}
+	if err := thr.Declare(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Declare(a); err != nil {
+		t.Fatal(err)
+	}
+	ta, va := *thr.Find("test"), *view.Find("test")
+	thr.Started(ta, ct0)
+	if r := view.Available(va); r != "" {
+		t.Fatalf("the view's action is blocked by the thread's run: %q", r)
+	}
+	view.Started(va, ct0)
+	view.Ended(th, va, true, 0, "", ct0)
+	if r := thr.Available(ta); r != "It is running" {
+		t.Fatalf("the view's end closed the thread's run: %q", r)
+	}
+	ClearView(th)
+	if len(th.OfferRuns) != 1 || th.OfferRuns[0].On != OnThread {
+		t.Fatalf("view runs left after ClearView: %+v", th.OfferRuns)
+	}
+}

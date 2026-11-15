@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -240,4 +241,52 @@ func TestChangesUpkeep(t *testing.T) {
 	if th, _ := h.e.Thread(id); !th.ChangesCheckedAt.After(first) {
 		t.Fatal("change_unchanged did not move the upkeep time")
 	}
+}
+
+// SPEC 0.5 V0.60 (3): two presses at the same time (two devices) run a
+// script once; the second gets "It is running".
+func TestConcurrentPressRunsOnce(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	release := make(chan struct{})
+	var mu sync.Mutex
+	runs := 0
+	h.e.Scripts = func(context.Context, string, []string) (string, int, error) {
+		mu.Lock()
+		runs++
+		mu.Unlock()
+		<-release
+		return "", 0, nil
+	}
+	if out, isErr := callAs(t, h.e, id, "offer_action", map[string]any{"on": "thread", "id": "e2e", "label": "E2E", "run": "script", "argv": []any{"make", "e2e"}}); isErr {
+		t.Fatal(out)
+	}
+	th, _ := h.e.Thread(id)
+	a := findOffer(th.Offers, "e2e")
+	var wg sync.WaitGroup
+	oks := make(chan bool, 8)
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			oks <- h.cmdID(fmt.Sprintf("p%d", i), "action.run", id, core.Args{"on": "thread", "action": "e2e", "digest": a.Digest}).OK
+		}()
+	}
+	wg.Wait()
+	close(oks)
+	n := 0
+	for ok := range oks {
+		if ok {
+			n++
+		}
+	}
+	close(release)
+	if n != 1 {
+		t.Fatalf("%d of 8 concurrent presses ran", n)
+	}
+	eventually(t, "the script ended", func() bool {
+		th, _ := h.e.Thread(id)
+		return len(th.OfferRuns) == 1 && !th.OfferRuns[0].Running
+	})
 }

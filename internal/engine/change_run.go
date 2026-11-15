@@ -115,6 +115,8 @@ func (e *Engine) offerTool(s *mcp.Server) {
 // the digest must be the one the owner saw (V0.60). on is a change's id,
 // "thread" or "view".
 func (e *Engine) runAction(c Cmd) Reply {
+	e.press.Lock()
+	defer e.press.Unlock()
 	if prev, _ := e.st.Receipt(c.CommandID); prev != nil {
 		var r Reply
 		json.Unmarshal(prev, &r)

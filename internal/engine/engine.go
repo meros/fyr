@@ -35,8 +35,11 @@ type EffectRunner interface {
 }
 
 type Engine struct {
-	deploy   *deployState // V0.39
-	mu       sync.Mutex
+	deploy *deployState // V0.39
+	mu     sync.Mutex
+	// press serializes the owner's action presses, so the receipt, the
+	// "It is running" check and the start are one step (V0.60 (3)).
+	press    sync.Mutex
 	st       *store.Store
 	threads  map[string]*core.Thread
 	views    map[string]*core.View
