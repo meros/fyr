@@ -194,3 +194,64 @@ func TestTrimChanges(t *testing.T) {
 		t.Fatalf("trim: %d changes", len(th.Changes))
 	}
 }
+
+// SPEC 0.5 V0.59 (6), decision 0018: a merged PR whose checks failed does not
+// block the thread; the PR's checks, review and conflict describe it before
+// the merge.
+func TestMergedPRWithFailedChecksDoesNotBlock(t *testing.T) {
+	th := &Thread{}
+	pr := PR{URL: "https://github.com/o/r/pull/9", Repo: "o/r", Number: 9, Title: "Fix", State: "OPEN", Checks: "fail", Review: "CHANGES_REQUESTED", Conflict: true}
+	ChangePRObserved(th, pr, ct0)
+	if ChangeBlocking(th) == "" {
+		t.Fatal("an open PR with failed checks did not block")
+	}
+	pr.State = "MERGED"
+	ChangePRObserved(th, pr, ct0)
+	if r := ChangeBlocking(th); r != "" {
+		t.Fatalf("a merged PR blocked: %q", r)
+	}
+}
+
+// SPEC 0.5 V0.59 (3): new work on a branch after its change landed is a new
+// change; the landed one keeps its history.
+func TestGitObservedAfterLanded(t *testing.T) {
+	th := &Thread{}
+	g := GitFacts{Repo: "github.com/o/r", Branch: "feat", Base: "origin/main", Ahead: 1, Head: "h1"}
+	GitObserved(th, g, ct0)
+	ChangePRObserved(th, PR{URL: "https://github.com/o/r/pull/3", Repo: "o/r", Number: 3, State: "MERGED", Branch: "feat"}, ct0)
+	if th.Changes[0].Phase != PhaseLanded {
+		t.Fatalf("not landed: %+v", th.Changes[0])
+	}
+	g.Head, g.Ahead, g.Unpushed = "h2", 1, 1
+	GitObserved(th, g, ct0)
+	if len(th.Changes) != 2 {
+		t.Fatalf("new work went onto the landed change: %+v", th.Changes)
+	}
+	old, fresh := &th.Changes[0], &th.Changes[1]
+	if len(old.Revisions) != 1 || condition(old, "pushed").Status != "ok" {
+		t.Fatalf("landed change changed: %+v", old)
+	}
+	if fresh.Phase != PhaseWorking || fresh.ID == old.ID || fresh.Branch != "feat" {
+		t.Fatalf("fresh change: %+v", fresh)
+	}
+	GitObserved(th, g, ct0)
+	if len(th.Changes) != 2 {
+		t.Fatal("a second observation made a third change")
+	}
+}
+
+// SPEC 0.5 V0.59 (7): Unsettle cancels a settle_when on a change, and
+// Settle replaces it.
+func TestUnsettleCancelsSettleWhenChange(t *testing.T) {
+	th, v := &Thread{}, &View{}
+	c, _, _ := OpenChange(th, ChangeOpen{Key: "nix:server", Kind: "host", Title: "Rebuild"}, ByAgent, ct0)
+	th.SettleWhen = &SettleWhen{Change: c.ID, Phase: PhaseLanded}
+	un := Registry["thread.unsettle"]
+	if r := un.Available(th, v, ct0); r != "" {
+		t.Fatalf("unsettle not available: %q", r)
+	}
+	un.Apply(th, v, nil, ct0)
+	if th.SettleWhen != nil {
+		t.Fatal("unsettle left settle_when armed")
+	}
+}

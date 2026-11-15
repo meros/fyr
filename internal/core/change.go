@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -348,6 +349,13 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) {
 	} else {
 		c.Annotations = nil
 	}
+	if p.State != "OPEN" {
+		// Checks, review and conflict describe the PR before it merged or
+		// closed; they no longer need anyone (decision 0018).
+		dropConditions(c, "checks", "review", "conflict")
+		c.UpdatedAt = now
+		return
+	}
 	switch p.Checks {
 	case "pass":
 		setCondition(c, "checks", "ok", "", ByObserved, now)
@@ -393,7 +401,7 @@ func GitObserved(t *Thread, g GitFacts, now time.Time) {
 	var c *Change
 	for i := range t.Changes {
 		x := &t.Changes[i]
-		if x.Kind == "code" && x.Branch == g.Branch && !Ended(x.Phase) && x.Phase != PhaseLanded && x.Phase != PhaseLive {
+		if x.Kind == "code" && x.Branch == g.Branch && InFlight(x.Phase) {
 			c = x
 			break
 		}
@@ -406,7 +414,7 @@ func GitObserved(t *Thread, g GitFacts, now time.Time) {
 		if g.Repo != "" {
 			targets = []string{"repo:" + g.Repo}
 		}
-		c, _, _ = OpenChange(t, ChangeOpen{Key: "git:" + g.Repo + "#" + g.Branch, Kind: "code", Title: g.Branch, Branch: g.Branch, Targets: targets}, ByObserved, now)
+		c, _, _ = OpenChange(t, ChangeOpen{Key: freshKey(t, "git:"+g.Repo+"#"+g.Branch), Kind: "code", Title: g.Branch, Branch: g.Branch, Targets: targets}, ByObserved, now)
 		if c == nil {
 			return
 		}
@@ -564,7 +572,7 @@ func PRURLs(t *Thread) []string {
 	var out []string
 	for i := range t.Changes {
 		c := &t.Changes[i]
-		if u := prOf(c); u != "" && !Ended(c.Phase) && c.Phase != PhaseLanded && c.Phase != PhaseLive {
+		if u := prOf(c); u != "" && InFlight(c.Phase) {
 			out = append(out, u)
 		}
 	}
@@ -624,3 +632,30 @@ func trimChanges(t *Thread, now time.Time) {
 	}
 }
 
+
+// freshKey is key, or key~N when a change with that key has landed or
+// ended: new work after that is a new change (V0.59 (3)).
+func freshKey(t *Thread, key string) string {
+	k := key
+	for n := 2; ; n++ {
+		c := FindChange(t, k)
+		if c == nil || InFlight(c.Phase) {
+			return k
+		}
+		k = fmt.Sprintf("%s~%d", key, n)
+	}
+}
+
+// InFlight reports a phase before landed: the change can still fail,
+// block and take new work.
+func InFlight(phase string) bool { return phase == PhaseWorking || phase == PhaseReview }
+
+func dropConditions(c *Change, types ...string) {
+	out := c.Conditions[:0]
+	for _, k := range c.Conditions {
+		if !slices.Contains(types, k.Type) {
+			out = append(out, k)
+		}
+	}
+	c.Conditions = out
+}
