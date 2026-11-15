@@ -88,6 +88,15 @@ func images(a Args) []Image {
 	return out
 }
 
+// settleArmed reports a settle that waits for something: the run, the PR
+// merge or a change's phase.
+func settleArmed(t *Thread) bool { return t.SettleWhenDone || t.SettleWhenMerged || t.SettleWhen != nil }
+
+// disarmSettle cancels every settle that waits for something.
+func disarmSettle(t *Thread) {
+	t.SettleWhenDone, t.SettleWhenMerged, t.SettleWhen = false, false, nil
+}
+
 // revive is what any message from the user does to a thread: it clears the
 // failure, the settle and the snooze, and counts as seeing the thread.
 func revive(t *Thread, v *View, now time.Time) {
@@ -290,10 +299,9 @@ func init() {
 				v.SeenAt = now
 				return nil, nil
 			}
-			t.SettleWhenDone = false
+			disarmSettle(t)
 			t.SettledAt = &now
 			t.Failure = nil
-			t.SettleWhenMerged = false
 			v.SeenAt = now
 			v.SnoozeUntil, v.SnoozedAt = nil, nil
 			return nil, nil
@@ -301,15 +309,14 @@ func init() {
 
 	register(&Action{Name: "thread.unsettle", Label: "Unsettle", Bulk: true,
 		Available: func(t *Thread, _ *View, _ time.Time) string {
-			if t.SettledAt == nil && !t.SettleWhenDone && !t.SettleWhenMerged {
+			if t.SettledAt == nil && !settleArmed(t) {
 				return "Not settled"
 			}
 			return ""
 		},
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
 			t.SettledAt = nil
-			t.SettleWhenDone = false
-			t.SettleWhenMerged = false
+			disarmSettle(t)
 			return nil, nil
 		}})
 

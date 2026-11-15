@@ -92,7 +92,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			cond, _ := a["condition"].(string)
 			var err error
-			e.Observe(th, func(t *core.Thread, _ time.Time) {
+			e.Observe(th, func(t *core.Thread, now time.Time) {
 				switch cond {
 				case "done":
 					t.SettleWhenDone = true
@@ -114,7 +114,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 					}
 					t.SettleWhen = &core.SettleWhen{Change: c.ID, Phase: phase}
 					cond = fmt.Sprintf("%q is %s", c.Title, phase)
-					core.CheckSettleChange(t, time.Now())
+					core.CheckSettleChange(t, now)
 				default:
 					err = fmt.Errorf("unknown condition %q", cond)
 				}
