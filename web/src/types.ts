@@ -109,9 +109,9 @@ export interface ThreadDTO {
   pr?: PullRequest | null;
   /** V0.59: the thread's change records */
   changes?: Change[];
-  /** V0.60: the thread's and its live view's actions, and their last runs */
+  /** V0.60, #31: the thread's own actions and their last runs; a change and the live view hold their own */
   offers?: Offer[];
-  offerRuns?: OfferRun[];
+  runs?: OfferRun[];
   settledAt?: string | null;
   archivedAt?: string | null;
   settleWhenDone?: boolean;
@@ -135,7 +135,7 @@ export interface ThreadDTO {
   /** V0.45: a handover to another profile is going on */
   handover?: { to: string; model?: string; at: string } | null;
   /** V0.37: the live view; read it through liveViewOf (view.ts) */
-  live?: { pageId?: string; state?: Record<string, unknown>; updatedAt?: string; checkedAt?: string; headline?: string } | null;
+  live?: { pageId?: string; state?: Record<string, unknown>; updatedAt?: string; checkedAt?: string; headline?: string; offers?: Offer[]; runs?: OfferRun[] } | null;
   /** V0.33: messages the host still holds (queued or sent, not yet read) */
   outbox?: { id: string; state: string }[] | null;
   attention: Attention;
@@ -289,8 +289,8 @@ export interface Change {
   after?: string[];
   needs?: string;
   phaseBy: "agent" | "observed" | "owner";
-  /** V0.60 */
-  actions?: Offer[];
+  /** V0.60, #31: the change's actions and their last runs */
+  offers?: Offer[];
   runs?: OfferRun[];
   /** V0.66: the failed checks' annotations while the PR is open, and the merge commit Fyr watches for deployments. */
   annotations?: CiAnnotation[];

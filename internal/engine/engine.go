@@ -480,71 +480,39 @@ func (e *Engine) run(threadID string, effects []core.Effect) {
 	}
 }
 
-// EffectTimeout is the deadline of one approved effect. A deploy builds,
-// tests and then drains for up to 30 minutes (SPEC 0.5 V0.13).
+// EffectTimeout is the deadline of one Fyr effect (core.FyrEffects).
 func EffectTimeout(action string) time.Duration {
-	if action == "fyr.deploy" {
-		return 60 * time.Minute
+	if fx := core.FyrEffects[action]; fx != nil {
+		return fx.Timeout
 	}
 	return 10 * time.Minute
 }
 
-// runEffect runs an approved or declined async effect and reports the result
-// to the thread as context for the agent (SPEC 5.10, 0.5 V0.12).
+// runEffect runs an effect from a command: the owner's own (the PR tab), or
+// the owner's answer to an agent's request (SPEC 5.10, 0.5 V0.12, V0.59).
 func (e *Engine) runEffect(threadID string, ef core.Effect) {
 	req := ef.Request
-	if req == nil {
-		return
-	}
-	if ef.ByOwner {
-		e.runOwnerEffect(threadID, *req)
-		return
-	}
-	ok, text := false, "The user declined it."
-	if strings.HasPrefix(req.Action, "change.") { // V0.59: an ask Fyr does not run
-		ok, text = e.changeEffect(threadID, *req, ef.Allow)
+	switch {
+	case req == nil:
+	case ef.ByOwner:
+		e.runFyr(threadID, *req, fyrStart{})
+	case strings.HasPrefix(req.Action, "change."): // V0.59: an ask Fyr does not run
+		ok, text := e.changeEffect(threadID, *req, ef.Allow)
 		e.Report(threadID, *req, ef.Allow, ok, text)
-		return
+	case !ef.Allow:
+		e.Report(threadID, *req, false, false, "The user declined it.")
+	default:
+		e.runFyr(threadID, *req, fyrStart{asked: true})
 	}
-	if ef.Allow {
-		if e.Effects == nil {
-			text = "No effect runner is configured."
-		} else {
-			ctx, cancel := context.WithTimeout(context.Background(), EffectTimeout(req.Action))
-			out, err := e.Effects.Run(ctx, threadID, *req)
-			cancel()
-			if errors.Is(err, core.ErrReportLater) {
-				return
-			}
-			ok, text = err == nil, out
-			if err != nil {
-				text = err.Error()
-			}
-		}
-	}
-	e.Report(threadID, *req, ef.Allow, ok, text)
 }
 
-// runOwnerEffect runs a PR action the owner started in the PR tab (SPEC 0.5
-// V0.43). The result is a line in the thread; the agent is not woken. The
-// poller looks at the PR again at once.
-func (e *Engine) runOwnerEffect(threadID string, req core.EffectReq) {
-	ok, text := false, "No effect runner is configured."
-	if e.Effects != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), EffectTimeout(req.Action))
-		out, err := e.Effects.Run(ctx, threadID, req)
-		cancel()
-		ok, text = err == nil, out
-		if err != nil {
-			text = err.Error()
-		}
+// prTitle names the PR of an effect for the agent.
+func prTitle(req core.EffectReq) string {
+	url, _ := req.Args["pr"].(string)
+	if _, n, found := agent.ParsePR(url); found {
+		return fmt.Sprintf("the PR #%d", n)
 	}
-	text = ownerLine(req, ok, text)
-	e.record(threadID, agent.Ev{Type: "effect.result",
-		Data: map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": text, "by": "owner"}})
-	if e.OnPR != nil {
-		e.OnPR(threadID)
-	}
+	return "this thread"
 }
 
 // ownerLine starts an owner effect's result with one plain sentence.
@@ -574,14 +542,10 @@ func ownerLine(req core.EffectReq, ok bool, text string) string {
 	return first + "\n\n" + strings.TrimSpace(text)
 }
 
-// Report records an effect result and sends it to the agent as context.
+// Report records the result of a request the agent made and tells the agent.
 func (e *Engine) Report(threadID string, req core.EffectReq, allowed, ok bool, text string) {
 	e.record(threadID, agent.Ev{Type: "effect.result",
 		Data: map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": text}})
-	t, found := e.Thread(threadID)
-	if !found || t.ArchivedAt != nil || t.SettledAt != nil || e.Agents == nil {
-		return
-	}
 	status := "failed"
 	switch {
 	case ok:
@@ -594,10 +558,7 @@ func (e *Engine) Report(threadID string, req core.EffectReq, allowed, ok bool, t
 	if _, ok := req.Args["change"]; ok {
 		tool = "change_request" // V0.59
 	}
-	msg := fmt.Sprintf("[Fyr] Your %s %s %s %s.\n%s", tool, req.Action, string(b), status, text)
-	if err := e.Agents.Do(threadID, core.Effect{Kind: core.EffectSend, Text: msg}); err != nil {
-		log.Printf("thread %s: deliver effect result: %v", threadID, err)
-	}
+	e.tell(threadID, fmt.Sprintf("[Fyr] Your %s %s %s %s.\n%s", tool, req.Action, string(b), status, text))
 }
 
 // Observe applies a fact from an agent or a poller: fn changes a copy of the

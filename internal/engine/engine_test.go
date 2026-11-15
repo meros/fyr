@@ -592,8 +592,9 @@ func TestEffectDeadlines(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.43: the owner merges from the PR tab through the command path; the
-// result is an effect.result by the owner and the agent is not woken.
+// #31: the owner merges from the PR tab through the command path (SPEC 0.5
+// V0.43); the result is an effect.result by the owner and, like every fyr
+// action's result (V0.60 (4)), it is sent to the agent.
 func TestOwnerMergeFromTab(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("pr")
@@ -627,10 +628,9 @@ func TestOwnerMergeFromTab(t *testing.T) {
 	if req.Action != "pr.merge" || req.Args["method"] != "rebase" || req.Args["pr"] != "https://github.com/acme/app/pull/42" {
 		t.Fatalf("request %+v", req)
 	}
-	time.Sleep(200 * time.Millisecond)
-	if th, _ := h.e.Thread(id); strings.Contains(th.Summary, "[Fyr]") {
-		t.Fatalf("the agent was told: %q", th.Summary)
-	}
+	h.wait(id, "the agent was told", func(t core.Thread, _ core.Attention) bool {
+		return strings.HasPrefix(t.Summary, "echo: [Fyr] The owner ran \"Merge PR\"") && strings.Contains(t.Summary, "succeeded")
+	})
 }
 
 // SPEC 0.5 V0.43: Merge and Re-run are unavailable without an open, mergeable PR.
