@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.44: provider quota words: the summary line, colour from 80 %, the rail figure, details.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { money, quotaDetail, quotaParts, quotaSummary, railFigure, type Quota } from "../src/quota.ts";
+import { cardState, money, quotaDetail, quotaParts, quotaSummary, railFigure, type Quota } from "../src/quota.ts";
 
 const now = Date.parse("2026-11-14T10:00:00Z");
 const claude: Quota = {
@@ -46,4 +46,25 @@ test("details: resets in local time, freshness, the stale note and the next try"
   assert.equal(d[3], "Stale: showing the last data read");
   assert.equal(d[4], "Rate limited by the provider; trying again later");
   assert.match(d[5], /^Next try \d\d:\d\d$/);
+});
+
+// SPEC 0.5 V0.77 (1), #65: the card says each thing once. Today it repeated the same sentence three times (the line,
+// its own detail, and the profile's line above), all while the badge said Ready.
+test("the card says one error and its next try, once", () => {
+  const q: Quota = { profile: "claudeAcme", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }], stale: true, error: "Rate limited by the provider; trying again later", retryAt: "2026-11-14T10:31:00Z" };
+  assert.equal(quotaSummary(q, "Claude (acme)"), "Claude (acme) 5 h 34 %");
+  const d = quotaDetail(q, "Claude (acme)", now);
+  assert.deepEqual(d.filter((l) => /Rate limited/.test(l)).length, 1, `one mention: ${d.join(" | ")}`);
+  assert.equal(d.filter((l) => /Next try/.test(l)).length, 1);
+  // the same, with no windows: the error is the line, not the name twice plus the error
+  const bare: Quota = { profile: "x", kind: "anthropic-oauth", error: "Login expired; run this profile once", retryAt: "2026-11-14T10:31:00Z" };
+  assert.equal(quotaSummary(bare, "Work"), "Work: Login expired; run this profile once");
+});
+
+test("the card's badge says Ready only when nothing is wrong", () => {
+  assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }] }), "ready");
+  assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }], error: "Rate limited by the provider; trying again later", retryAt: "2026-11-14T10:31:00Z" }), "limited");
+  assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", error: "Login expired; run this profile once" }), "expired");
+  assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }], stale: true }), "stale");
+  assert.equal(cardState({ profile: "x", kind: "anthropic-oauth" }), "unknown");
 });

@@ -86,11 +86,24 @@ export function quotaDetail(q: Quota, name: string, now: number): string[] {
   if (b?.amount !== undefined) lines.push(`${name}: ${money(b.amount, b.currency)} left`);
   else if (b?.spent !== undefined) lines.push(`${name}: ${money(b.spent, b.currency)} used (no limit on the key)`);
   if (q.updatedAt) lines.push(`Updated ${relTime(q.updatedAt, now)} ago`);
+  // V0.77 (1), #65: the error and its next try appear once in the detail, never again in the line above it.
   if (q.stale) lines.push("Stale: showing the last data read");
-  if (q.error) lines.push(q.error);
+  if (q.error && hasData(q)) lines.push(q.error);
   if (q.retryAt) lines.push(`Next try ${untilLabel(q.retryAt, now)}`);
   return lines;
 }
+
+/** V0.77 (1), #65: what the card's badge says. "Ready" means nothing is wrong, so a limited, expired, stale or unread
+ *  account never shows Ready beside its own error. */
+export type CardState = "ready" | "limited" | "expired" | "stale" | "unknown";
+export function cardState(q: Quota): CardState {
+  if (!hasData(q) && q.error) return /expired|login/i.test(q.error) ? "expired" : "limited";
+  if (q.error) return "limited";
+  if (q.stale) return "stale";
+  return hasData(q) ? "ready" : "unknown";
+}
+
+export const CARD_WORD: Record<CardState, string> = { ready: "Ready", limited: "Rate limited", expired: "Login expired", stale: "Stale", unknown: "Not read yet" };
 
 export function quotaFor(list: Quota[], profile: string): Quota | undefined {
   return list.find((q) => q.profile === profile);
