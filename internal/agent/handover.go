@@ -12,6 +12,7 @@ import (
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/proc"
 )
 
 // Handover (SPEC 0.5 V0.45, decision 0013): the owner moves a thread to
@@ -137,7 +138,11 @@ func (m *Manager) stopNow(threadID string) {
 	case <-s.c.Done():
 	case <-time.After(5 * time.Second):
 		s.c.Kill()
-		<-s.c.Done()
+		select { // #39: Kill ends it; never wait without a bound
+		case <-s.c.Done():
+		case <-time.After(proc.WaitDelay + time.Second):
+			log.Printf("thread %s: the old process did not end after kill", threadID)
+		}
 	}
 }
 
