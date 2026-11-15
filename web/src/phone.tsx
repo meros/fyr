@@ -26,7 +26,7 @@ import { HandoverForm } from "./handover-ui.tsx";
 import { rowSummary } from "./view.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
-import { colorVar, localProject, newThreadFolder, projectDefaults, projectName, projectOf, projectSubtitle, startProject } from "./projects.ts";
+import { colorVar, localProject, newThreadFolder, projectChip, projectDefaults, projectName, projectOf, startProject } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { changeOptions, folderHint, lastProject } from "./dialogs.tsx";
 import { setToolDetails, toolDetails } from "./prefs.ts";
@@ -1153,6 +1153,9 @@ function MNew(p: PhoneProps) {
   const [combo, setCombo] = useState(`${defs.profile}\u0000${defs.model}`);
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
+  // V0.63: the project being made in the New project step, as it is typed.
+  const [draft, setDraft] = useState<{ name: string; folder: string } | null>(null);
+  const making = creating !== null ? (draft ?? { name: creating, folder: "" }) : null;
   const [text, setText] = useState("");
   const [liveView, setLiveView] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1163,10 +1166,12 @@ function MNew(p: PhoneProps) {
   const target = hostForProject(cur?.host, p.hosts);
   const profiles = profilesOn(target, p.hosts, p.profiles);
   const att = useAttachments(target);
-  const folder = newThreadFolder(picked, cur);
+  const folder = newThreadFolder(picked, making ? localProject("", making.name, making.folder) : cur);
+  const chip = projectChip(cur, making);
   const choose = (pr: Project | null) => {
     setPicking(false);
     setCreating(null);
+    setDraft(null);
     setProjectId(pr?.id);
     setPicked("");
     const there = profilesOn(hostForProject(pr?.host, p.hosts), p.hosts, p.profiles);
@@ -1214,8 +1219,19 @@ function MNew(p: PhoneProps) {
   const start = async () => {
     if (!ready || busy) return;
     setBusy(true);
+    // V0.63: Start with the New project step open makes the project first, then files the thread in it.
+    let pid = projectId ?? undefined;
+    if (making) {
+      if (!making.name.trim()) return (setBusy(false), setErr("A project needs a name."));
+      const r = await p.projectActions.create(making.name.trim(), making.folder);
+      if (r.error || !r.id) return (setBusy(false), setErr(r.error ?? "The project was not made."));
+      const np = localProject(r.id, making.name.trim(), making.folder);
+      setMade(np);
+      choose(np);
+      pid = r.id;
+    }
     store(STORAGE_LAST, JSON.stringify({ cwd: folder.cwd ?? "", profile, model }));
-    const e = await p.actions.create({ cwd: folder.cwd, text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, effort: effortPick && effort ? effort : undefined, projectId: projectId ?? undefined, view: liveView || undefined });
+    const e = await p.actions.create({ cwd: making && !picked ? making.folder || undefined : folder.cwd, text: plan.ok ? plan.args.text : text, attachments: plan.ok ? plan.args.attachments : undefined, profile, model, effort: effortPick && effort ? effort : undefined, projectId: pid, view: liveView || undefined });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -1226,11 +1242,11 @@ function MNew(p: PhoneProps) {
       <div class="m-nbody" onDrop={att.onDrop} onDragOver={att.onDragOver}>
         <div class="m-defs">
           <div class="m-dl">Project</div>
-          <button class="m-dchip m-ppick" onClick={() => (setPicking(!picking), setCreating(null))} aria-expanded={picking} style={cur ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
-            {cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
+          <button class="m-dchip m-ppick" onClick={() => (setPicking(!picking), setCreating(null), setDraft(null))} aria-expanded={picking} style={cur && !chip.isNew ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
+            {chip.isNew ? <span class="pi all">+</span> : cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
             <span class="plt">
-              <span class="ell pln">{cur?.name ?? "No project"}</span>
-              <span class="ell pls2">{cur ? projectSubtitle(cur) : "Not filed"}</span>
+              <span class="ell pln">{chip.name}</span>
+              <span class="ell pls2">{chip.sub}</span>
             </span>
             {picking ? I.up : I.down}
           </button>
@@ -1251,7 +1267,8 @@ function MNew(p: PhoneProps) {
                 initialName={creating}
                 initialFolder=""
                 fromThread={false}
-                onCancel={() => setCreating(null)}
+                onDraft={(name, folder) => setDraft({ name, folder })}
+                onCancel={() => (setCreating(null), setDraft(null))}
                 onCreate={async (name, folder) => {
                   const r = await p.projectActions.create(name, folder);
                   if (r.error) return r.error;

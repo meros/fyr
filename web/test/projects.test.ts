@@ -179,3 +179,16 @@ test("Delete project asks once, with what happens to the threads (V0.58)", () =>
   assert.match(deleteQuestion({ name: "A", threads: 1 }), /Its 1 thread stays and lands/);
   assert.match(deleteQuestion({ name: "A" }), /It has no threads\./);
 });
+
+test("SPEC 0.5 V0.63: while New project is open, the new-thread chip shows the project being made", async () => {
+  const { projectChip } = await import("../src/projects.ts");
+  const old = { id: "p1", name: "fyr", folder: "/home/me/git/fyr" } as Project;
+  assert.equal(projectChip(old, null).name, "fyr");
+  assert.equal(projectChip(old, null).isNew, false);
+  const c = projectChip(old, { name: "Kök", folder: "" });
+  assert.equal(c.name, "Kök");
+  assert.equal(c.isNew, true);
+  assert.equal(c.sub, "New · no folder");
+  assert.equal(projectChip(old, { name: "  ", folder: "" }).name, "New project");
+  assert.equal(projectChip(undefined, null).name, "No project");
+});

@@ -6,7 +6,7 @@ import { ProfileQuota, quotaSuffix, useQuotas } from "./quota-ui.tsx";
 import { ChipStrip, ClipPicker, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { NewProjectStep, ProjectIcon, ProjectList } from "./project-ui.tsx";
-import { LAST_PROJECT_KEY, colorVar, localProject, newThreadFolder, projectDefaults, projectSubtitle, startProject } from "./projects.ts";
+import { LAST_PROJECT_KEY, colorVar, localProject, newThreadFolder, projectChip, projectDefaults, startProject } from "./projects.ts";
 import { useFolderPick, type PickOptions } from "./folder-picker.tsx";
 import { relTime, shortModel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
@@ -73,9 +73,13 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
   const cur = projects.find((x) => x.id === projectId);
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
-  // V0.42: a folder picked for this thread; "" follows the project.
+  // V0.63: the project being made in the New project step, as it is typed.
+  const [draft, setDraft] = useState<{ name: string; folder: string } | null>(null);
+  const making = creating !== null ? (draft ?? { name: creating, folder: "" }) : null;
+  // V0.42: a folder picked for this thread; "" follows the project (V0.63: the one being made).
   const [picked, setPicked] = useState("");
-  const folder = newThreadFolder(picked, cur);
+  const folder = newThreadFolder(picked, making ? localProject("", making.name, making.folder) : cur);
+  const chip = projectChip(cur, making);
   const picker = useFolderPick();
   // V0.54: a thread starts on its project's host, with that host's profiles; its files upload there.
   const target = hostForProject(cur?.host, p.hosts);
@@ -110,6 +114,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
   const choose = (pr: Project | null) => {
     setPicking(false);
     setCreating(null);
+    setDraft(null);
     setProjectId(pr?.id);
     setPicked("");
     const there = profilesOn(hostForProject(pr?.host, p.hosts), p.hosts, p.profiles);
@@ -136,7 +141,18 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
     if (!plan.ok) return setErr(plan.reason === "Nothing to send" ? "Write a prompt or attach a file." : plan.reason);
     setBusy(true);
     setErr(null);
-    const e = await p.onCreate({ cwd: folder.cwd, text, attachments: plan.args.attachments, profile, model, effort: effortPick && effort ? effort : undefined, title: title.trim() || undefined, projectId, view: liveView || undefined });
+    // V0.63: Start with the New project step open makes the project first, then files the thread in it.
+    let pid = projectId;
+    if (making) {
+      if (!making.name.trim()) return (setBusy(false), setErr("A project needs a name."));
+      const r = await p.onNewProject(making.name.trim(), making.folder);
+      if (r.error || !r.id) return (setBusy(false), setErr(r.error ?? "The project was not made."));
+      const np = localProject(r.id, making.name.trim(), making.folder);
+      setMade(np);
+      choose(np);
+      pid = r.id;
+    }
+    const e = await p.onCreate({ cwd: making && !picked ? making.folder || undefined : folder.cwd, text, attachments: plan.args.attachments, profile, model, effort: effortPick && effort ? effort : undefined, title: title.trim() || undefined, projectId: pid, view: liveView || undefined });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -146,11 +162,11 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
       <div class="db">
         <div class="fld">
           <span>Project</span>
-          <button class="ppick" onClick={() => (setPicking(!picking), setCreating(null))} aria-expanded={picking} style={cur ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
-            {cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
+          <button class="ppick" onClick={() => (setPicking(!picking), setCreating(null), setDraft(null))} aria-expanded={picking} style={cur && !chip.isNew ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
+            {chip.isNew ? <span class="pi all">+</span> : cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
             <span class="plt">
-              <span class="ell pln">{cur?.name ?? "No project"}</span>
-              <span class="ell pls2">{cur ? projectSubtitle(cur) : "Not filed"}</span>
+              <span class="ell pln">{chip.name}</span>
+              <span class="ell pls2">{chip.sub}</span>
             </span>
             <span class="chev">{picking ? "▾" : "▸"}</span>
           </button>
@@ -169,7 +185,8 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
               initialName={creating}
               initialFolder=""
               fromThread={false}
-              onCancel={() => setCreating(null)}
+              onDraft={(name, folder) => setDraft({ name, folder })}
+              onCancel={() => (setCreating(null), setDraft(null))}
               onCreate={async (name, folder) => {
                 const r = await p.onNewProject(name, folder);
                 if (r.error) return r.error;
