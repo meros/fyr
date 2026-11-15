@@ -10,10 +10,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import type { Decision, FyrEvent, Profile, Project, ThreadDTO } from "./types.ts";
 import { SECTIONS, isAvailable, sections, unavailableReason, type SectionKey, type Sections } from "./store.ts";
 import { quietNote } from "./quiet.ts";
-import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
+import { StateIcon, stateClass } from "./icons.tsx";
+import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
-import { AgentsStrip, Conversation, EffectBody, PrTab, effectSentence, prLabel, type SendArgs } from "./thread.tsx";
+import { AgentsStrip, Conversation, EffectBody, PrTab, prLabel, type SendArgs } from "./thread.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
@@ -25,7 +26,6 @@ import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { defaultTab, liveViewOf } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
-import { rowSummary } from "./view.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
@@ -514,29 +514,6 @@ function snoozedHint(list: ThreadDTO[], now: number): string {
   return next ? `next: ${untilLabel(next, now)}` : "none";
 }
 
-function needsWord(t: ThreadDTO): string {
-  const d = t.decisions?.[0];
-  if (t.attention.state === "asking" && d) {
-    if (d.kind === "ask") {
-      const n = d.questions?.length ?? 1;
-      return n === 1 ? "1 question" : `${n} questions`;
-    }
-    return d.kind === "approval" ? "Approval" : describeEffect(d, t.pr).label;
-  }
-  return t.attention.reason || stateLabel(t.attention.state);
-}
-
-function needsMeta(t: ThreadDTO): string {
-  const d = t.decisions?.[0];
-  if (t.attention.state === "asking" && d) {
-    if (d.kind === "ask") return d.questions?.[0]?.question ?? "";
-    if (d.kind === "approval") return `Allow ${d.tool ?? "tool"}${typeof d.input?.command === "string" ? ": " + d.input.command : ""}`;
-    return effectSentence(d);
-  }
-  if (t.attention.state === "failed") return t.failure?.message ?? "";
-  return rowSummary(t);
-}
-
 function oneMeta(t: ThreadDTO, now: number): string {
   if (t.attention.section === "working") {
     const subs = t.subagents && !groupTasks(t.tasks).running.length ? `${t.subagents} sub · ` : "";
@@ -651,7 +628,7 @@ function MRow({ t, p, needs }: { t: ThreadDTO; p: PhoneProps; needs: boolean }) 
       <span class="t ell">{t.title || "Untitled"}</span>
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, p.now)}</span>
       <span class="m ell">
-        <b class={stateClass(st)}>{needsWord(t)}</b> · <MHost t={t} hosts={p.hosts} />{t.parent && <><StartedBy parentId={t.parent} link={false} /> · </>}<ThreadProject t={t} /> · {needsMeta(t)}
+        <b class={stateClass(st)}>{rowState(t)}</b> · <MHost t={t} hosts={p.hosts} />{t.parent && <><StartedBy parentId={t.parent} link={false} /> · </>}<ThreadProject t={t} /> · {rowMeta(t)}
       </span>
       <MPr t={t} />
     </div>
@@ -1487,7 +1464,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: ThreadDTO | undefined }) {
             {t.summary && <div class="m-pkb prose">Claude: {t.summary}</div>}
             {d && (
               <div class="m-pkq">
-                <b class="s-ask">{needsWord(t)}</b> · {needsMeta(t)}
+                <b class="s-ask">{rowState(t)}</b> · {rowMeta(t)}
               </div>
             )}
             <div class="m-pkn">Peek does not mark the thread seen.</div>

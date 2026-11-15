@@ -11,7 +11,8 @@ import { createContext } from "preact";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
 import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
-import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
+import { StateIcon, stateClass } from "./icons.tsx";
+import { stateLabel } from "./rows.ts";
 import { clockTime, duration, relTime, shortModel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
 import { dividerLine, rungDone } from "./handover.ts";
@@ -960,10 +961,6 @@ function asker(d: Decision): string {
 }
 
 /** One sentence for an effect decision (V0.27), for rows and previews. */
-export function effectSentence(d: Decision): string {
-  return d.effect ? describeEffect(d).title : "";
-}
-
 /** The plain body of an effect card (V0.27): reason, what happens, details behind a toggle. */
 export function EffectBody({ d, x, cls = "" }: { d: Decision; x: EffectText; cls?: string }) {
   return (
