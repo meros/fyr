@@ -445,7 +445,7 @@ function fullFixture(now: number): Fixture {
         revisions: [{ id: "sha256:9f2c41d07aa1", summary: "replicas 2 → 4, readiness probe 5 s", by: "agent", at: iso(70) }],
         conditions: [{ type: "health", status: "fail", reason: "2 of 4 pods in CrashLoopBackOff", source: "agent", at: iso(62) }],
         evidence: [{ kind: "log", url: "https://console.cloud.google.com/logs", title: "pod logs" }],
-        actions: [
+        offers: [
           { id: "fix", label: "Investigate the crash loop", run: "agent", in: "this", prompt: "Read the logs of the crashing pods, find the cause, and propose a fix before you change anything.", primary: true, by: "agent", digest: dg("fix") },
           { id: "rollback", label: "Roll back", run: "script", argv: ["kubectl", "--context", "gke-prod", "rollout", "undo", "deploy/api"], onOk: "reverted", by: "agent", digest: dg("rollback") },
         ],
@@ -455,7 +455,7 @@ function fullFixture(now: number): Fixture {
       {
         id: "c_runbook", key: "doc:runbook", kind: "doc", title: "Runbook for api scaling", phase: "review", phaseBy: "agent", needs: "owner",
         evidence: [{ kind: "doc", url: "https://docs.example/runbook", title: "draft" }],
-        actions: [{ id: "publish", label: "Publish to the wiki", run: "agent", in: "this", prompt: "Publish the runbook to the team wiki and link it here.", by: "agent", digest: dg("publish") }],
+        offers: [{ id: "publish", label: "Publish to the wiki", run: "agent", in: "this", prompt: "Publish the runbook to the team wiki and link it here.", by: "agent", digest: dg("publish") }],
         createdAt: iso(50), updatedAt: iso(40),
       },
       // V0.66: a PR whose checks fail, with annotations on the diff lines, and a merged PR that GitHub deployed.
@@ -1099,20 +1099,22 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       if (!t) return { ok: false, error: "no thread" };
       const on = String(args.on ?? "");
       const ch = t.changes?.find((c) => c.id === on);
-      const offers = ch ? ch.actions : t.offers?.filter((o) => o.on === on);
+      const offers = ch ? ch.offers : on === "view" ? t.live?.offers : t.offers;
       const o = offers?.find((x) => x.id === args.action);
       if (!o) return { ok: false, error: `no action ${args.action}` };
       if (o.digest !== args.digest) return { ok: false, error: "The action changed since you saw it; look at it again." };
       if (o.run === "script" || o.run === "fyr") {
         const at = new Date(clock()).toISOString();
         const run = { action: o.id, label: o.label, by: "owner", at, running: true, ok: false };
-        const runs = [...((ch ? ch.runs : t.offerRuns) ?? []), run];
-        put(t, ch ? { changes: t.changes!.map((c) => (c === ch ? { ...c, runs } : c)) } : { offerRuns: runs });
+        type Runs = NonNullable<ThreadDTO["runs"]>;
+        // #31: a change, the live view and the thread each hold their runs.
+        const withRuns = (cur: ThreadDTO, f: (rs: Runs | undefined) => Runs): Partial<ThreadDTO> =>
+          ch ? { changes: cur.changes!.map((c) => (c.id === ch.id ? { ...c, runs: f(c.runs) } : c)) } : on === "view" ? { live: { ...cur.live, runs: f(cur.live?.runs) } } : { runs: f(cur.runs) };
+        put(t, withRuns(t, (rs) => [...(rs ?? []), run]));
         setTimeout(() => {
           const cur = threads.get(t.id)!;
           const done = { ...run, running: false, ok: true, output: `$ ${(o.argv ?? [o.effect]).join(" ")}\nok (mock)`, endedAt: new Date(clock()).toISOString() };
-          const fin = (rs: typeof runs | undefined) => (rs ?? []).map((r) => (r === run || (r.action === run.action && r.running) ? done : r));
-          put(cur, ch ? { changes: cur.changes!.map((c) => (c.id === ch.id ? { ...c, runs: fin(c.runs) } : c)) } : { offerRuns: fin(cur.offerRuns) });
+          put(cur, withRuns(cur, (rs) => (rs ?? []).map((r) => (r === run || (r.action === run.action && r.running) ? done : r))));
         }, 1200);
       }
       return { ok: true, result: { on, action: o.id } };

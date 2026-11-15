@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -147,5 +148,48 @@ func TestEvents(t *testing.T) {
 	check("before", before, seqs[1], seqs[2])
 	if !tail[1].At.Equal(at.Add(4*time.Second)) || string(tail[1].Data) != `{"i":4}` {
 		t.Fatalf("event: %+v", tail[1])
+	}
+}
+
+// #31: a thread stored before the one Actions component loads with its
+// actions and runs: the thread's runs from offerRuns, the view's actions and
+// runs moved to the live view, and a change's actions from "actions".
+func TestLoadThreadBeforeActions(t *testing.T) {
+	s, _ := open(t)
+	old := `{"id":"t_old","title":"Old","liveView":true,
+	"offers":[{"id":"e2e","on":"thread","label":"Run e2e","run":"script","argv":["make","e2e"],"by":"agent","digest":"d1"},
+	          {"id":"ok","on":"view","label":"Looks good","run":"agent","prompt":"go on","in":"this","by":"agent","digest":"d2"}],
+	"offerRuns":[{"action":"e2e","label":"Run e2e","by":"owner","at":"2026-11-14T10:00:00Z","ok":true},
+	             {"on":"view","action":"ok","label":"Looks good","by":"owner","at":"2026-11-14T10:01:00Z","ok":true}],
+	"changes":[{"id":"c_1","key":"tf:prod","kind":"infra","title":"Prod","phase":"review","phaseBy":"agent",
+	  "actions":[{"id":"apply","label":"Apply","run":"script","argv":["terraform","apply"],"by":"agent","digest":"d3"}],
+	  "runs":[{"action":"apply","label":"Apply","by":"owner","at":"2026-11-14T09:00:00Z","ok":true}]}]}`
+	if _, err := s.db.Exec(`INSERT INTO threads(id,data) VALUES(?,?)`, "t_old", old); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := s.Threads()
+	if err != nil || len(ts) != 1 {
+		t.Fatalf("load: %v %d", err, len(ts))
+	}
+	th := ts[0]
+	if len(th.Offers) != 1 || th.Offers[0].ID != "e2e" || th.Offers[0].Digest != "d1" || len(th.Runs) != 1 || th.Runs[0].Action != "e2e" {
+		t.Fatalf("thread actions: %+v %+v", th.Offers, th.Runs)
+	}
+	if th.Live == nil || len(th.Live.Offers) != 1 || th.Live.Offers[0].ID != "ok" || len(th.Live.Runs) != 1 || th.Live.Runs[0].Action != "ok" {
+		t.Fatalf("view actions: %+v", th.Live)
+	}
+	c := th.Changes[0]
+	if len(c.Offers) != 1 || c.Offers[0].ID != "apply" || c.Offers[0].Digest != "d3" || len(c.Runs) != 1 {
+		t.Fatalf("change actions: %+v", c.Actions)
+	}
+	// Saved again, it is in the new shape and loads the same.
+	if _, err := s.Write(func(tx *Tx) error { return tx.PutThread(th) }); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	s.db.QueryRow(`SELECT data FROM threads WHERE id='t_old'`).Scan(&raw)
+	ts, _ = s.Threads()
+	if strings.Contains(raw, "offerRuns") || strings.Contains(raw, `"actions"`) || len(ts[0].Live.Offers) != 1 || len(ts[0].Changes[0].Offers) != 1 {
+		t.Fatalf("saved again: %s", raw)
 	}
 }

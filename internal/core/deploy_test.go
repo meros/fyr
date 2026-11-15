@@ -78,14 +78,14 @@ func TestProductionFailureBlocks(t *testing.T) {
 	if got := ChangeBlocking(th); got != "Fix it: deploy to prod-eu failed" {
 		t.Fatalf("blocking %q", got)
 	}
-	var inv *Offer
-	for i := range c.Actions {
-		if c.Actions[i].ID == "fyr.deployfail" {
-			inv = &c.Actions[i]
+	var inv *ActionSpec
+	for i := range c.Offers {
+		if c.Offers[i].ID == "fyr.deployfail" {
+			inv = &c.Offers[i]
 		}
 	}
 	if inv == nil || inv.Run != RunAgent || inv.Label != "Investigate the failed deploy" || !strings.Contains(inv.Prompt, "https://github.com/o/r/actions/runs/9") || inv.Digest == "" {
-		t.Fatalf("actions: %+v", c.Actions)
+		t.Fatalf("actions: %+v", c.Offers)
 	}
 	if len(DeployWatches(th, at)) != 0 {
 		t.Fatal("a failed production deploy is still watched")
