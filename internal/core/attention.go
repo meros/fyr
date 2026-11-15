@@ -52,20 +52,18 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 		return Attention{Settled, SettledSec, ""}
 	}
 	asking := len(t.Decisions) > 0
-	if v != nil && v.SnoozeUntil != nil && v.SnoozeUntil.After(now) {
+	if until, since := SnoozeOf(v); until != nil && until.After(now) {
 		woke := false
-		if v.SnoozedAt != nil {
-			for _, d := range t.Decisions {
-				if d.CreatedAt.After(*v.SnoozedAt) {
-					woke = true
-				}
-			}
-			if t.Failure != nil && t.Failure.At.After(*v.SnoozedAt) {
+		for _, d := range t.Decisions {
+			if d.CreatedAt.After(*since) {
 				woke = true
 			}
 		}
+		if t.Failure != nil && t.Failure.At.After(*since) {
+			woke = true
+		}
 		if !woke {
-			return Attention{Snoozed, SnoozedSec, "until " + v.SnoozeUntil.Format(time.RFC3339)}
+			return Attention{Snoozed, SnoozedSec, "until " + until.Format(time.RFC3339)}
 		}
 	}
 	switch {

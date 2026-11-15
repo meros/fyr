@@ -53,6 +53,8 @@ func (s Source) Principal() string {
 		return ByOwner
 	case s == FromAgent:
 		return ByAgent
+	case strings.HasPrefix(string(s), "rule:"):
+		return ByRule
 	}
 	return ByObserved
 }
@@ -106,8 +108,8 @@ func reject(code RejectCode, format string, a ...any) *Rejection {
 	return &Rejection{Code: code, Reason: fmt.Sprintf(format, a...)}
 }
 
-// Rec is the records one Input reduces: the thread (with its changes) and
-// the owner's view of it.
+// Rec is the records one Input reduces: the thread (with its changes and
+// Rules) and the owner's view of it (with the owner's Rules).
 type Rec struct {
 	T *Thread
 	V *View
@@ -185,6 +187,11 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 		}
 		return nil, nil, Result{}, r
 	}
+	// The scheduler (#46): the Rules this Input made true fire now, in the
+	// same records and the same transaction.
+	more := EvalRules(Rec{T: t, V: v}, now)
+	res.Events = append(res.Events, more.Events...)
+	res.Effects = append(res.Effects, more.Effects...)
 	return t, v, res, nil
 }
 

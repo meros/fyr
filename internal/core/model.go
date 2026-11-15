@@ -52,8 +52,11 @@ type Thread struct {
 	// Live is the live view: whether the agent keeps one, its page, state,
 	// upkeep times and actions (V0.37).
 	Live *LiveView `json:"live,omitempty"`
-	// Settle is when the thread settled and what settles it (#33).
-	Settle     Settle     `json:"settle,omitzero"`
+	// Settle is when the thread settled (#33); what settles it are Rules.
+	Settle Settle `json:"settle,omitzero"`
+	// Rules are the thread's armed watches (SPEC 7, #46): settle conditions,
+	// the deploy watch, the built-in actions and the agent's own.
+	Rules      []Rule     `json:"rules,omitempty"`
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 
 	Source string `json:"source"`           // "fyr" or "t3"
@@ -71,6 +74,8 @@ type Conversation struct {
 	Summary      string     `json:"summary,omitempty"` // last assistant text, one line
 	Tasks        []Task     `json:"tasks,omitempty"`   // subagents and background tasks (V0.16)
 	Failure      *Failure   `json:"failure,omitempty"`
+	// RunEnds counts the runs that ended: runEnded Rules compare with it.
+	RunEnds int `json:"runEnds,omitempty"`
 	// Outbox holds the messages the agent has not read yet (V0.33).
 	Outbox []OutMsg `json:"outbox,omitempty"`
 	// Handover is set while the thread moves to another profile (V0.45).
@@ -95,13 +100,13 @@ type OutMsg struct {
 	State string `json:"state"`
 }
 
-// View is the per-user state of one entity (R19): snooze and read watermark.
+// View is the per-user state of one entity (R19): the read watermark and the
+// user's Rules (a snooze, SPEC 7.1 viewer).
 type View struct {
-	User        string     `json:"user"`
-	Entity      string     `json:"entity"`
-	SeenAt      time.Time  `json:"seenAt"`
-	SnoozeUntil *time.Time `json:"snoozeUntil,omitempty"`
-	SnoozedAt   *time.Time `json:"snoozedAt,omitempty"`
+	User   string    `json:"user"`
+	Entity string    `json:"entity"`
+	SeenAt time.Time `json:"seenAt"`
+	Rules  []Rule    `json:"rules,omitempty"`
 	// ChangesLook is the owner's last look at the Changes tab and the
 	// Viewed marks (V0.65). Not sent in the thread DTO.
 	ChangesLook *ChangesLook `json:"changesLook,omitempty"`

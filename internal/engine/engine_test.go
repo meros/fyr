@@ -719,8 +719,8 @@ func TestDTODerivesSettleViewAndProject(t *testing.T) {
 	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
 		c, _, _ := core.OpenChange(t, core.ChangeOpen{Key: "doc:x", Kind: core.KindDoc, Title: "Doc"}, core.ByAgent, now)
 		t.Running = true
-		core.ArmSettle(t, core.SettleCond{Kind: core.SettleDone}, now)
-		core.ArmSettle(t, core.SettleCond{Kind: core.SettleChange, Change: c.ID, Phase: core.PhaseReview}, now)
+		core.SettleWhenDone(t, core.ByAgent, now)
+		core.SettleWhenReached(t, c.ID, core.PhaseReview, core.ByAgent, now)
 		core.SetView(t, true)
 		return nil
 	})

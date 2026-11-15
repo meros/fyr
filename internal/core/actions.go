@@ -126,8 +126,8 @@ func OpenMain(t *Thread) *Change {
 func revive(t *Thread, v *View, now time.Time) {
 	t.Failure = nil
 	t.Settle.At = nil
-	t.Settle.Drop(SettleDone) // a new run: "when done" was for the last one
-	v.SnoozeUntil, v.SnoozedAt = nil, nil
+	dropSettleDone(t) // a new run: "when done" was for the last one
+	Unsnooze(v)
 	v.SeenAt = now
 }
 
@@ -337,7 +337,7 @@ func init() {
 			if t.Settle.At != nil {
 				return "Already settled"
 			}
-			if t.Settle.Has(SettleDone) {
+			if SettlesWhenDone(t) {
 				return "Settles when the run ends"
 			}
 			return notArchived(t, v, now)
@@ -347,30 +347,31 @@ func init() {
 		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
 			force, _ := a["now"].(bool)
 			if t.Running { // also for bulk: a live run is never hidden as settled
-				ArmSettle(t, SettleCond{Kind: SettleDone}, now)
+				SettleWhenDone(t, ByOwner, now)
 				return nil, nil
 			}
-			if !force && !SettlesWhenMerged(t) && SettleWhenMerged(t, now) {
+			if !force && !SettlesWhenMerged(t) && SettleWhenMerged(t, ByOwner, now) {
 				v.SeenAt = now
 				return nil, nil
 			}
-			t.Settle = Settle{At: &now}
+			settleNow(t, now)
 			t.Failure = nil
 			v.SeenAt = now
-			v.SnoozeUntil, v.SnoozedAt = nil, nil
+			Unsnooze(v)
 			return nil, nil
 		}})
 
 	register(&Action{Name: "thread.unsettle", Label: "Unsettle", Bulk: true,
 		Available: func(t *Thread, _ *View, _ time.Time) string {
-			if t.Settle.At == nil && len(t.Settle.When) == 0 {
+			if t.Settle.At == nil && !Settling(t) {
 				return "Not settled"
 			}
 			return ""
 		},
-		// #33: clears the settle and every armed condition, the agent's too.
+		// #33: clears the settle and every settle Rule, the agent's too.
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
 			t.Settle = Settle{}
+			DropSettleRules(t)
 			return nil, nil
 		}})
 
@@ -385,7 +386,7 @@ func init() {
 			return ""
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
-			SettleWhenMerged(t, now)
+			SettleWhenMerged(t, ByOwner, now)
 			v.SeenAt = now
 			return nil, nil
 		}})
@@ -402,20 +403,20 @@ func init() {
 			if err != nil || !until.After(now) {
 				return nil, fmt.Errorf("%w: until must be a future RFC 3339 time", ErrBadArgs)
 			}
-			v.SnoozeUntil, v.SnoozedAt = &until, &now
+			Snooze(v, until, now)
 			v.SeenAt = now
 			return nil, nil
 		}})
 
 	register(&Action{Name: "thread.unsnooze", Label: "Unsnooze", Bulk: true,
 		Available: func(_ *Thread, v *View, now time.Time) string {
-			if v.SnoozeUntil == nil || !v.SnoozeUntil.After(now) {
+			if until, _ := SnoozeOf(v); until == nil || !until.After(now) {
 				return "Not snoozed"
 			}
 			return ""
 		},
 		Apply: func(_ *Thread, v *View, _ Args, _ time.Time) ([]Effect, error) {
-			v.SnoozeUntil, v.SnoozedAt = nil, nil
+			Unsnooze(v)
 			return nil, nil
 		}})
 
@@ -431,7 +432,7 @@ func init() {
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			t.ArchivedAt = &now
-			v.SnoozeUntil, v.SnoozedAt = nil, nil
+			Unsnooze(v)
 			return []Effect{{Kind: EffectStop}}, nil
 		}})
 

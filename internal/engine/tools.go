@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 
@@ -58,7 +59,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 	s.Add(mcp.Tool{Name: "settle_when",
 		Description: "Mark this Fyr thread to settle (leave the user's inbox) when a condition holds: \"done\" when your current run ends, \"merged\" when the linked PR merges, \"change\" when the change (id or key) reaches phase (landed is also reached by live). Conditions add up: the first that holds settles the thread, never while a run is live.",
 		Schema: obj(map[string]any{
-			"condition": map[string]any{"type": "string", "enum": []string{string(core.SettleDone), "merged", string(core.SettleChange)}},
+			"condition": map[string]any{"type": "string", "enum": []string{"done", "merged", "change"}},
 			"change":    str("For condition change: the change's id or key."),
 			"phase":     map[string]any{"type": "string", "enum": core.PhasesAfter(core.PhaseWorking)},
 		}, "condition"),
@@ -70,6 +71,42 @@ func (e *Engine) Tools(s *mcp.Server) {
 			cond, _ := out.(string)
 			return "The thread settles when " + cond + ".", nil
 		}})
+
+	s.Add(e.watchTool())
+}
+
+// watchTool is the agent's own Rules (SPEC 7, #46): arm a watch over Fyr's
+// records that notifies the agent or settles the thread, or remove one.
+func (e *Engine) watchTool() mcp.Tool {
+	cond := map[string]any{"type": "object", "description": `A condition over Fyr's records (never the network). One of: {"kind":"runEnded"} (your current run ends); {"kind":"changeReached","change":<id or key>,"phase":<phase>}; {"kind":"condition","change":<id or key>,"type":"checks"|"review"|"conflict"|"deploy"|...,"status":"ok"|"fail"|"pending"}; {"kind":"at","at":<RFC 3339 time>}; {"kind":"idleFor","ms":<n>} (nothing happened on the thread for n ms); or {"any":[...]}, {"all":[...]}, {"not":{...}}.`}
+	return mcp.Tool{Name: "watch",
+		Description: "Watch something in Fyr and act once when it becomes true: then \"notify\" tells you (for example when CI on a change passes), then \"settle\" settles the thread (never while a run is live). It fires once, when the condition goes from false to true, and is then removed. The owner sees your watches on the thread. Remove one with {remove: <id>}.",
+		Schema: obj(map[string]any{
+			"when":   cond,
+			"then":   map[string]any{"type": "string", "enum": []string{"notify", "settle"}},
+			"note":   str("For notify: one sentence for yourself, what to do when it fires."),
+			"remove": str("The id of a watch of yours to remove; nothing else is needed."),
+		}),
+		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+			if id := sArg(a, "remove"); id != "" {
+				if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindRuleRemove, Thread: th, Args: id}); err != nil {
+					return "", err
+				}
+				return "Removed the watch " + id + ".", nil
+			}
+			var w core.When
+			b, _ := json.Marshal(a["when"])
+			if err := json.Unmarshal(b, &w); err != nil || a["when"] == nil {
+				return "", errors.New("when must be a condition object")
+			}
+			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindRuleArm, Thread: th,
+				Args: core.RuleArmArgs{ID: NewID("w_"), When: w, Then: sArg(a, "then"), Note: sArg(a, "note")}})
+			if err != nil {
+				return "", err
+			}
+			r, _ := out.(core.Rule)
+			return "Armed the watch " + r.ID + " (then " + sArg(a, "then") + "). Remove it with watch {remove: \"" + r.ID + "\"}.", nil
+		}}
 }
 
 // obj builds an object schema. "required" is left out when empty: null is
@@ -96,4 +133,3 @@ func requestable() []string {
 	slices.Sort(out)
 	return out
 }
-

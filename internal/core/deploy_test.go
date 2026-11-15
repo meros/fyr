@@ -20,8 +20,9 @@ func mergedThread(t *testing.T) (*Thread, *Change) {
 // SPEC 0.5 V0.66 (1): a merged PR's change watches its merge commit.
 func TestMergeStartsDeployWatch(t *testing.T) {
 	th, c := mergedThread(t)
-	if c.Phase != PhaseLanded || c.DeployWatch == nil || c.DeployWatch.SHA != "m1" || c.DeployWatch.Repo != "o/r" || !c.DeployWatch.MergedAt.Equal(ct0.Add(time.Minute)) {
-		t.Fatalf("watch: %+v %+v", c.Phase, c.DeployWatch)
+	r := FindRule(th, deployRuleID(c.ID))
+	if c.Phase != PhaseLanded || r == nil || r.Purpose != PurposeDeploy || r.Observe.SHA != "m1" || r.Observe.Repo != "o/r" || !r.Observe.Since.Equal(ct0.Add(time.Minute)) {
+		t.Fatalf("watch: %+v %+v", c.Phase, r)
 	}
 	w := DeployWatches(th, ct0.Add(time.Hour))
 	if len(w) != 1 || w[0].Change != c.ID || w[0].SHA != "m1" || w[0].Repo != "o/r" || !w[0].First {
@@ -68,6 +69,7 @@ func TestProductionFailureBlocks(t *testing.T) {
 	th, c := mergedThread(t)
 	at := ct0.Add(10 * time.Minute)
 	ChangeDeployObserved(th, c.ID, DeployObs{Deployments: []Deployment{{Env: "prod-eu", Production: true, State: "failure", LogURL: "https://github.com/o/r/actions/runs/9"}}}, at)
+	rules(th, at)
 	if c.Phase != PhaseLanded {
 		t.Fatalf("phase %s", c.Phase)
 	}
@@ -147,8 +149,8 @@ func TestLiveIsNotWatched(t *testing.T) {
 	c := &th.Changes[0]
 	c.Phase = PhaseLive
 	ChangePRObserved(th, PR{URL: dpr, Repo: "o/r", Number: 7, State: "MERGED", MergeSHA: "m1"}, ct0)
-	if c.DeployWatch != nil || len(DeployWatches(th, ct0)) != 0 {
-		t.Fatalf("watch on a live change: %+v", c.DeployWatch)
+	if FindRule(th, deployRuleID(c.ID)) != nil || len(DeployWatches(th, ct0)) != 0 {
+		t.Fatalf("watch on a live change: %+v", th.Rules)
 	}
 }
 

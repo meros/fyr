@@ -519,7 +519,7 @@ type DTO struct {
 	*core.Thread
 	Rev         int64             `json:"rev"`
 	Attention   core.Attention    `json:"attention"`
-	View        *core.View        `json:"view"`
+	View        *ViewDTO          `json:"view"`
 	Unavailable map[string]string `json:"unavailable"`
 	// NewProject is what "New project from this thread" starts with (V0.30,
 	// V0.55).
@@ -535,17 +535,26 @@ type DTO struct {
 	Project string `json:"project"`
 	// LiveView is live.enabled, the flag clients read (#33).
 	LiveView bool `json:"liveView,omitempty"`
-	// The settle as clients read it, derived from thread.settle (#33):
-	// settledAt, settleWhenDone (a "done" condition), settleWhenMerged (the
-	// main change reaching landed) and settleWhen (a change condition).
-	SettledAt        *time.Time       `json:"settledAt,omitempty"`
-	SettleWhenDone   bool             `json:"settleWhenDone,omitempty"`
-	SettleWhenMerged bool             `json:"settleWhenMerged,omitempty"`
-	SettleWhen       *core.SettleCond `json:"settleWhen,omitempty"`
+	// The settle as clients read it, derived from thread.settle and the
+	// settle Rules (#33, #46): settledAt, settleWhenDone (a "done" Rule),
+	// settleWhenMerged (the main change reaching landed) and settleWhen (a
+	// change Rule).
+	SettledAt        *time.Time     `json:"settledAt,omitempty"`
+	SettleWhenDone   bool           `json:"settleWhenDone,omitempty"`
+	SettleWhenMerged bool           `json:"settleWhenMerged,omitempty"`
+	SettleWhen       *core.SettleOn `json:"settleWhen,omitempty"`
 	// Settle shadows thread.settle, which the fields above carry.
 	Settle *struct{} `json:"settle,omitempty"`
 
 	prev core.State // the state before this change; not sent
+}
+
+// ViewDTO is the owner's view as clients read it: the snooze is derived
+// from the View's snooze Rule (#46).
+type ViewDTO struct {
+	*core.View
+	SnoozeUntil *time.Time `json:"snoozeUntil,omitempty"`
+	SnoozedAt   *time.Time `json:"snoozedAt,omitempty"`
 }
 
 // notify reports an attention change; call it without e.mu held.
@@ -577,9 +586,11 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	att := core.Compute(t, v, now)
 	vc := *v
 	vc.ChangesLook = nil // V0.65: served with the Changes tab, not on every push
-	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: &vc, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now),
+	vd := &ViewDTO{View: &vc}
+	vd.SnoozeUntil, vd.SnoozedAt = core.SnoozeOf(v)
+	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now),
 		PR: t.MainPR(), Project: e.projectName(t), LiveView: t.ViewOn(),
-		SettledAt: t.Settle.At, SettleWhenDone: t.Settle.Has(core.SettleDone), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t)}
+		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t)}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.
@@ -617,8 +628,9 @@ func quietKey(u *time.Time) string {
 	return u.UTC().Format(time.RFC3339)
 }
 
-// Tick broadcasts threads whose attention changed with time alone (a snooze
-// ended), and the projects whose quiet hours started or ended with their
+// Tick fires the Rules that are due (a snooze ends, a deploy watch's time
+// limit passes), broadcasts threads whose attention changed with time alone,
+// and the projects whose quiet hours started or ended with their
 // threads (V0.46; not an attention change, so never a push). Call it every
 // few seconds.
 func (e *Engine) Tick() {
@@ -632,13 +644,24 @@ func (e *Engine) Tick() {
 		}
 	}
 	var changed []DTO
+	var due []string
 	for id, t := range e.threads {
+		if at := core.NextCheck(t, e.view(id), now); at != nil && !at.After(now) {
+			due = append(due, id)
+		}
 		if core.Compute(t, e.view(id), now).State != e.last[id] || quiet[t.ProjectID] {
 			e.bump(id)
 			changed = append(changed, e.dto(core.CloneThread(t), now))
 		}
 	}
 	e.mu.Unlock()
+	// The one timer of the Rules (#46): a Rule due at its nextCheck is
+	// evaluated after the clock's Input.
+	for _, id := range due {
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsClock), Kind: core.KindClock, Thread: id}); err != nil {
+			log.Printf("thread %s: clock: %v", id, err)
+		}
+	}
 	if len(quiet) > 0 {
 		for _, p := range e.Projects() {
 			if quiet[p.ID] {

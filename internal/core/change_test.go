@@ -170,13 +170,16 @@ func TestChangeAttention(t *testing.T) {
 func TestSettleWhenChange(t *testing.T) {
 	th := &Thread{}
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "nix:server", Kind: "host", Title: "Rebuild"}, ByAgent, ct0)
-	ArmSettle(th, SettleCond{Kind: SettleChange, Change: c.ID, Phase: PhaseLanded}, ct0)
+	SettleWhenReached(th, c.ID, PhaseLanded, ByAgent, ct0)
+	rules(th, ct0)
 	UpdateChange(th, c, ChangeUpdate{Phase: PhaseReview}, ByAgent, ct0)
+	rules(th, ct0)
 	if th.Settle.At != nil {
 		t.Fatal("settled before landed")
 	}
 	UpdateChange(th, c, ChangeUpdate{Phase: PhaseLive}, ByAgent, ct0)
-	if th.Settle.At == nil || len(th.Settle.When) != 0 {
+	rules(th, ct0)
+	if th.Settle.At == nil || Settling(th) {
 		t.Fatal("live did not count as landed")
 	}
 }
@@ -246,13 +249,13 @@ func TestGitObservedAfterLanded(t *testing.T) {
 func TestUnsettleCancelsSettleWhenChange(t *testing.T) {
 	th, v := &Thread{}, &View{}
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "nix:server", Kind: "host", Title: "Rebuild"}, ByAgent, ct0)
-	ArmSettle(th, SettleCond{Kind: SettleChange, Change: c.ID, Phase: PhaseLanded}, ct0)
+	SettleWhenReached(th, c.ID, PhaseLanded, ByAgent, ct0)
 	un := Registry["thread.unsettle"]
 	if r := un.Available(th, v, ct0); r != "" {
 		t.Fatalf("unsettle not available: %q", r)
 	}
 	un.Apply(th, v, nil, ct0)
-	if len(th.Settle.When) != 0 {
+	if Settling(th) {
 		t.Fatal("unsettle left settle_when armed")
 	}
 }
@@ -362,13 +365,15 @@ func TestSettleWhenMergedIsTheMainChangeLanding(t *testing.T) {
 		t.Fatalf("armed twice: %q", r)
 	}
 	closed := *th
-	closed.Changes = slices.Clone(th.Changes)
+	closed.Changes, closed.Rules = slices.Clone(th.Changes), slices.Clone(th.Rules)
 	ChangePRObserved(&closed, PR{URL: "https://github.com/o/r/pull/1", State: "CLOSED"}, ct0)
+	rules(&closed, ct0)
 	if closed.Settle.At != nil {
 		t.Fatal("a closed PR settled the thread")
 	}
 	ChangePRObserved(th, PR{URL: "https://github.com/o/r/pull/1", State: "MERGED"}, ct0)
-	if th.Settle.At == nil || len(th.Settle.When) != 0 {
+	rules(th, ct0)
+	if th.Settle.At == nil || Settling(th) {
 		t.Fatalf("merge did not settle: %+v", th.Settle)
 	}
 }

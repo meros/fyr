@@ -664,8 +664,7 @@ func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []stri
 		v := &core.View{User: core.Owner, Entity: t.ID, SeenAt: c.UpdatedAt}
 		if c.SnoozedUntil != "" {
 			if until, err := time.Parse(time.RFC3339Nano, c.SnoozedUntil); err == nil && until.After(time.Now()) {
-				now := time.Now()
-				v.SnoozeUntil, v.SnoozedAt = &until, &now
+				core.Snooze(v, until, time.Now())
 			}
 		}
 		hist, at, err := t3.History(home(), c.SessionID, 400)
