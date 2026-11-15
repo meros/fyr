@@ -1,0 +1,221 @@
+package core
+
+import "strings"
+
+// The vocabularies of the thread model (#37). Each is a typed string whose
+// constants carry the wire values; tool schemas, error messages and code use
+// the constants, never the raw strings. A test greps the rest of the tree.
+
+// Phase is how far a change got (SPEC 0.5 V0.59). Working, review, landed
+// and live are in order; abandoned and reverted end a change.
+type Phase string
+
+const (
+	PhaseWorking   Phase = "working"
+	PhaseReview    Phase = "review"
+	PhaseLanded    Phase = "landed"
+	PhaseLive      Phase = "live"
+	PhaseAbandoned Phase = "abandoned"
+	PhaseReverted  Phase = "reverted"
+)
+
+// phaseOrder are the phases that progress, in order.
+var phaseOrder = []Phase{PhaseWorking, PhaseReview, PhaseLanded, PhaseLive}
+
+// phaseHelp explains a phase where its name alone does not.
+var phaseHelp = map[Phase]string{
+	PhaseReview: "waits for a review or an approval",
+	PhaseLanded: "the source of truth has it: merged, applied, ran, published",
+	PhaseLive:   "it runs where it should and is healthy",
+}
+
+// Phases are all phases: the four in order, then the two ends.
+func Phases() []Phase { return append(append([]Phase{}, phaseOrder...), PhaseAbandoned, PhaseReverted) }
+
+// PhasesAfter are the phases in order after p, ends excluded.
+func PhasesAfter(p Phase) []Phase {
+	r, ok := p.rank()
+	if !ok {
+		return nil
+	}
+	return append([]Phase{}, phaseOrder[r+1:]...)
+}
+
+// PhaseGuide lists every phase with what it means, for a tool description.
+func PhaseGuide() string {
+	var parts []string
+	for _, p := range Phases() {
+		s := string(p)
+		if h := phaseHelp[p]; h != "" {
+			s += " (" + h + ")"
+		}
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func (p Phase) rank() (int, bool) {
+	for i, x := range phaseOrder {
+		if x == p {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// Valid reports a known phase.
+func (p Phase) Valid() bool { _, ok := p.rank(); return ok || p.Ended() }
+
+// Ended reports a phase that stops a change.
+func (p Phase) Ended() bool { return p == PhaseAbandoned || p == PhaseReverted }
+
+// InFlight reports a phase before landed: the change can still fail, block
+// and take new work.
+func (p Phase) InFlight() bool { return p == PhaseWorking || p == PhaseReview }
+
+// Reached reports that p has got at least as far as want.
+func (p Phase) Reached(want Phase) bool {
+	if p == want {
+		return true
+	}
+	a, ok1 := p.rank()
+	b, ok2 := want.rank()
+	return ok1 && ok2 && a >= b
+}
+
+// CondType names a condition of a change. Fyr observes the constants below;
+// an agent may report any other type (for example "apply").
+type CondType string
+
+const (
+	CondChecks   CondType = "checks"
+	CondReview   CondType = "review"
+	CondConflict CondType = "conflict"
+	CondDeploy   CondType = "deploy" // the production deployment (V0.66)
+	CondPushed   CondType = "pushed"
+	CondClean    CondType = "clean"
+	CondApproval CondType = "approval"
+
+	condActionPrefix = "action:"
+	condDeployPrefix = "deploy:"
+)
+
+// CondAction is the condition of a script action on a change (V0.60).
+func CondAction(id string) CondType { return CondType(condActionPrefix + id) }
+
+// CondDeployTo is the condition of a deployment to a non-production
+// environment (V0.66).
+func CondDeployTo(env string) CondType { return CondType(condDeployPrefix + env) }
+
+// OwnerOnly reports a condition only the owner may mark ok.
+func (k CondType) OwnerOnly() bool { return k == CondReview || k == CondApproval }
+
+// CondStatus is the state of one condition.
+type CondStatus string
+
+const (
+	CondOK      CondStatus = "ok"
+	CondFail    CondStatus = "fail"
+	CondPending CondStatus = "pending"
+)
+
+// CondStatuses are all condition statuses.
+func CondStatuses() []CondStatus { return []CondStatus{CondOK, CondFail, CondPending} }
+
+// Valid reports a known status.
+func (s CondStatus) Valid() bool { return s == CondOK || s == CondFail || s == CondPending }
+
+// ChangeKind is what a change changes.
+type ChangeKind string
+
+const (
+	KindCode   ChangeKind = "code"
+	KindInfra  ChangeKind = "infra"
+	KindHost   ChangeKind = "host"
+	KindData   ChangeKind = "data"
+	KindDoc    ChangeKind = "doc"
+	KindDesign ChangeKind = "design"
+	KindOther  ChangeKind = "other"
+)
+
+// ChangeKinds are the kinds a change may have.
+func ChangeKinds() []ChangeKind {
+	return []ChangeKind{KindCode, KindInfra, KindHost, KindData, KindDoc, KindDesign, KindOther}
+}
+
+// Valid reports a known kind.
+func (k ChangeKind) Valid() bool {
+	for _, x := range ChangeKinds() {
+		if x == k {
+			return true
+		}
+	}
+	return false
+}
+
+// DecisionKind is what a decision asks the owner.
+type DecisionKind string
+
+const (
+	DecisionAsk      DecisionKind = "ask"      // AskUserQuestion: questions with options
+	DecisionApproval DecisionKind = "approval" // a tool call that waits for permission
+	DecisionEffect   DecisionKind = "effect"   // an effect Fyr runs once approved (SPEC 5.10)
+)
+
+// EffectKind is what an Effect does.
+type EffectKind string
+
+const (
+	EffectSend          EffectKind = "send"
+	EffectAnswer        EffectKind = "answer"
+	EffectInterrupt     EffectKind = "interrupt"
+	EffectStop          EffectKind = "stop"
+	EffectSetModel      EffectKind = "setModel"
+	EffectRefresh       EffectKind = "refresh"
+	EffectCancelMessage EffectKind = "cancelMessage"
+	EffectHandover      EffectKind = "handover"
+	// EffectCancel withdraws an open question; the agent package sends it
+	// to itself when the CLI cancels a request.
+	EffectCancel EffectKind = "cancel"
+	// EffectRun runs an approved EffectReq (SPEC 5.10).
+	EffectRun EffectKind = "effect"
+)
+
+// TaskStatus is the state of a subagent or background task, as the CLI
+// reports it (V0.16). The CLI may report others; Fyr acts on running only.
+type TaskStatus string
+
+const (
+	TaskRunning   TaskStatus = "running"
+	TaskCompleted TaskStatus = "completed"
+	TaskFailed    TaskStatus = "failed"
+	TaskStopped   TaskStatus = "stopped"
+)
+
+// Checks is the rollup of a PR's checks.
+type Checks string
+
+const (
+	ChecksPass    Checks = "pass"
+	ChecksFail    Checks = "fail"
+	ChecksPending Checks = "pending"
+	ChecksNone    Checks = "none"
+)
+
+// Names are the values of a vocabulary as plain strings.
+func Names[T ~string](xs []T) []string {
+	s := make([]string, len(xs))
+	for i, x := range xs {
+		s[i] = string(x)
+	}
+	return s
+}
+
+// OrList joins the values as "a, b or c", for a message.
+func OrList[T ~string](xs []T) string {
+	s := Names(xs)
+	if len(s) < 2 {
+		return strings.Join(s, "")
+	}
+	return strings.Join(s[:len(s)-1], ", ") + " or " + s[len(s)-1]
+}

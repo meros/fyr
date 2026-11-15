@@ -46,7 +46,7 @@ func TestFactsBeatClaims(t *testing.T) {
 		t.Fatal("agent overwrote an observed condition")
 	}
 	other, _, _ := OpenChange(th, ChangeOpen{Key: "doc:spec", Kind: "doc", Title: "Spec"}, ByAgent, ct0)
-	for _, typ := range []string{"review", "approval"} {
+	for _, typ := range []CondType{"review", "approval"} {
 		if err := UpdateChange(th, other, ChangeUpdate{Conditions: []Condition{{Type: typ, Status: "ok"}}}, ByAgent, ct0); err == nil {
 			t.Fatalf("agent marked %s ok", typ)
 		}

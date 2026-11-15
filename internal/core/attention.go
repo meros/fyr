@@ -70,7 +70,7 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 	}
 	switch {
 	case asking:
-		return Attention{Asking, NeedsYou, t.Decisions[0].Kind}
+		return Attention{Asking, NeedsYou, string(t.Decisions[0].Kind)}
 	case t.Failure != nil:
 		return Attention{Failed, NeedsYou, t.Failure.Message}
 	case t.Running:

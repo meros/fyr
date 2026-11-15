@@ -251,24 +251,24 @@ func newUUID() string {
 // Do runs one effect of a command for a thread.
 func (m *Manager) Do(threadID string, e core.Effect) error {
 	switch e.Kind {
-	case "send":
+	case core.EffectSend:
 		return m.send(threadID, e)
-	case "answer":
+	case core.EffectAnswer:
 		return m.answer(threadID, e)
-	case "interrupt":
+	case core.EffectInterrupt:
 		return m.doInterrupt(threadID)
-	case "stop":
+	case core.EffectStop:
 		m.Stop(threadID)
 		return nil
-	case "refresh":
+	case core.EffectRefresh:
 		m.refreshView(threadID)
 		return nil
-	case "cancelMessage":
+	case core.EffectCancelMessage:
 		return m.cancelMessage(threadID, e.MessageID)
-	case "handover":
+	case core.EffectHandover:
 		m.handover(threadID, e)
 		return nil
-	case "setModel":
+	case core.EffectSetModel:
 		m.mu.Lock()
 		s := m.sessions[threadID]
 		m.mu.Unlock()
@@ -745,7 +745,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			t.Subagents += o.Subagents
 			if o.PRURL != "" && (t.PR == nil || t.PR.URL != o.PRURL) {
 				repo, n, _ := ParsePR(o.PRURL)
-				core.PRObserved(t, core.PR{URL: o.PRURL, Repo: repo, Number: n, State: "OPEN", Checks: "pending"}, now)
+				core.PRObserved(t, core.PR{URL: o.PRURL, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}, now)
 			}
 		}, Ev{"msg", trimMsg(msg)})
 	case "result":
@@ -1022,11 +1022,11 @@ func (m *Manager) canUseTool(s *session, req claude.Msg) claude.Msg {
 	agentID, _ := req["agent_id"].(string)
 	d := core.Decision{ID: "d_" + randHex(6), Assignee: core.Owner, Agent: agentID}
 	if tool == "AskUserQuestion" {
-		d.Kind = "ask"
+		d.Kind = core.DecisionAsk
 		b, _ := json.Marshal(input["questions"])
 		json.Unmarshal(b, &d.Questions)
 	} else {
-		d.Kind, d.Tool, d.Input = "approval", tool, input
+		d.Kind, d.Tool, d.Input = core.DecisionApproval, tool, input
 	}
 	ch := make(chan core.Effect, 1)
 	m.mu.Lock()
@@ -1043,10 +1043,10 @@ func (m *Manager) canUseTool(s *session, req claude.Msg) claude.Msg {
 	delete(s.asks, d.ID)
 	delete(s.reqs, reqID)
 	m.mu.Unlock()
-	if !ok || ans.Kind == "cancel" {
+	if !ok || ans.Kind == core.EffectCancel {
 		return claude.Msg{"behavior": "deny", "message": "The question was withdrawn."}
 	}
-	if d.Kind == "ask" {
+	if d.Kind == core.DecisionAsk {
 		answers := map[string]any{}
 		for k, v := range ans.Answers {
 			answers[k] = v
@@ -1108,7 +1108,7 @@ func (m *Manager) cancelRequest(s *session, reqID string) {
 	ch := s.asks[id]
 	if ch != nil {
 		select {
-		case ch <- core.Effect{Kind: "cancel"}:
+		case ch <- core.Effect{Kind: core.EffectCancel}:
 		default:
 		}
 	}

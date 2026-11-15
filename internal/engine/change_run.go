@@ -55,7 +55,7 @@ func (e *Engine) offerTool(s *mcp.Server) {
 			"cwd":        str("script: the folder to run in."),
 			"timeoutSec": map[string]any{"type": "integer", "description": "script: the time limit, default 600, at most 3600."},
 			"bind":       map[string]any{"type": "boolean", "description": "On a change, script: run only while the newest revision is the one it was declared on."},
-			"onOk":       map[string]any{"type": "string", "enum": []string{core.PhaseReview, core.PhaseLanded, core.PhaseLive, core.PhaseReverted}, "description": "On a change, script: the phase after success."},
+			"onOk":       map[string]any{"type": "string", "enum": append(core.PhasesAfter(core.PhaseWorking), core.PhaseReverted), "description": "On a change, script: the phase after success."},
 			"prompt":     str("agent: what the agent does when the owner presses it."),
 			"in":         map[string]any{"type": "string", "enum": []string{"this", "new"}},
 			"when":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "On a change: the phases it shows in; default every phase not ended."},
@@ -89,7 +89,7 @@ func (e *Engine) offerTool(s *mcp.Server) {
 					return
 				}
 				o := core.Offer{ID: id, Label: sArg(a, "label"), Run: sArg(a, "run"), Argv: listArg(a, "argv"), Cwd: sArg(a, "cwd"),
-					Prompt: sArg(a, "prompt"), In: sArg(a, "in"), When: listArg(a, "when"), OnOK: sArg(a, "onOk")}
+					Prompt: sArg(a, "prompt"), In: sArg(a, "in"), When: listOf[core.Phase](a, "when"), OnOK: core.Phase(sArg(a, "onOk"))}
 				if n, ok := a["timeoutSec"].(float64); ok {
 					o.TimeoutSec = int(n)
 				}
@@ -175,7 +175,7 @@ func (e *Engine) runAction(c Cmd) Reply {
 			}
 			reply.Result.(map[string]any)["threadId"] = r.ThreadID
 		} else if e.Agents != nil {
-			if err := e.Agents.Do(c.ThreadID, core.Effect{Kind: "send", Text: msg}); err != nil {
+			if err := e.Agents.Do(c.ThreadID, core.Effect{Kind: core.EffectSend, Text: msg}); err != nil {
 				return Reply{Error: err.Error(), Status: 500}
 			}
 		}
@@ -237,7 +237,7 @@ func (e *Engine) finishAction(threadID, on, title string, a core.Offer, ok bool,
 		status = fmt.Sprintf("failed (exit %d)", exit)
 	}
 	msg := fmt.Sprintf("[Fyr] The owner ran %q on %s: it %s.\n%s", a.Label, title, status, tail(out, 2000))
-	e.Agents.Do(threadID, core.Effect{Kind: "send", Text: msg})
+	e.Agents.Do(threadID, core.Effect{Kind: core.EffectSend, Text: msg})
 }
 
 func tail(s string, n int) string {

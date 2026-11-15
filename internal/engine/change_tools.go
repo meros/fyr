@@ -17,8 +17,20 @@ import (
 // change an agent makes or asks for. Git and GitHub are observed without
 // them; the tools add intent, grouping and asks.
 
-// ChangeAsks are what change_request may ask the owner.
-var ChangeAsks = []string{"review", "approve", "merge", "apply", "deploy", "revert"}
+// ChangeAsk is what change_request may ask the owner.
+type ChangeAsk string
+
+const (
+	AskReview  ChangeAsk = "review"
+	AskApprove ChangeAsk = "approve"
+	AskMerge   ChangeAsk = "merge"
+	AskApply   ChangeAsk = "apply"
+	AskDeploy  ChangeAsk = "deploy"
+	AskRevert  ChangeAsk = "revert"
+)
+
+// ChangeAsks are all asks, in the order the tool lists them.
+var ChangeAsks = []ChangeAsk{AskReview, AskApprove, AskMerge, AskApply, AskDeploy, AskRevert}
 
 const changeRef = "The change: its id (c_…) or its key."
 
@@ -42,7 +54,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 		Description: "Start a change record in Fyr, or get the one with this key (idempotent). Open one for every change you make or prepare outside this folder's git branch: a server or cluster change, a migration, a NixOS rebuild, another repo, a design, a document. Do it before the first edit. Git branches and GitHub PRs of this thread are recorded by Fyr itself; open one for them only to give a title, a group or a stack.",
 		Schema: obj(map[string]any{
 			"key":      str("A stable name, unique in this thread, for example \"k8s:prod/api replicas\" or \"doc:design-v2\". The same key returns the same change."),
-			"kind":     map[string]any{"type": "string", "enum": core.ChangeKinds},
+			"kind":     map[string]any{"type": "string", "enum": core.ChangeKinds()},
 			"title":    str("One line for the owner: what changes."),
 			"targets":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Where it lands, as kind:name, for example \"k8s:gke-prod/api\", \"host:meros-server\", \"repo:github.com/o/r\", \"env:production\"."},
 			"branch":   str("For code: the git branch."),
@@ -52,7 +64,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			"revision": revisionSchema(),
 		}, "key", "kind", "title"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			o := core.ChangeOpen{Key: sArg(a, "key"), Kind: sArg(a, "kind"), Title: sArg(a, "title"), Branch: sArg(a, "branch"), Group: sArg(a, "group"),
+			o := core.ChangeOpen{Key: sArg(a, "key"), Kind: core.ChangeKind(sArg(a, "kind")), Title: sArg(a, "title"), Branch: sArg(a, "branch"), Group: sArg(a, "group"),
 				Targets: listArg(a, "targets"), After: listArg(a, "after"), Revision: revisionArg(a["revision"])}
 			pr := sArg(a, "pr")
 			var prRepo string
@@ -75,7 +87,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 				made = m
 				if pr != "" && t.PR == nil {
 					// The first PR is also the thread's main PR (the PR tab, the merge gate).
-					core.PRObserved(t, core.PR{URL: pr, Repo: prRepo, Number: prN, State: "OPEN", Checks: "pending", Branch: x.Branch}, now)
+					core.PRObserved(t, core.PR{URL: pr, Repo: prRepo, Number: prN, State: "OPEN", Checks: core.ChecksPending, Branch: x.Branch}, now)
 				}
 				return x, nil
 			}, &c)
@@ -120,20 +132,20 @@ func (e *Engine) changeTools(s *mcp.Server) {
 		}})
 
 	s.Add(mcp.Tool{Name: "change_status",
-		Description: "Report how far a change got, or a fact about it. Phases: working, review (waits for a review or an approval), landed (the source of truth has it: merged, applied, ran, published), live (it runs where it should and is healthy), abandoned, reverted. Conditions are independent facts with status ok, fail or pending, for example {type: \"apply\", status: \"fail\", reason: \"quota exceeded\"}; a failed one puts the thread in the owner's Needs you. needs: \"owner\" says the owner must look. You cannot change what Fyr observes (git, GitHub) and you cannot mark a review or an approval ok; use change_request.",
+		Description: "Report how far a change got, or a fact about it. Phases: " + core.PhaseGuide() + ". Conditions are independent facts with status " + core.OrList(core.CondStatuses()) + ", for example {type: \"apply\", status: \"fail\", reason: \"quota exceeded\"}; a failed one puts the thread in the owner's Needs you. needs: \"owner\" says the owner must look. You cannot change what Fyr observes (git, GitHub) and you cannot mark a review or an approval ok; use change_request.",
 		Schema: obj(map[string]any{
 			"change": str(changeRef),
-			"phase":  map[string]any{"type": "string", "enum": []string{core.PhaseWorking, core.PhaseReview, core.PhaseLanded, core.PhaseLive, core.PhaseAbandoned, core.PhaseReverted}},
+			"phase":  map[string]any{"type": "string", "enum": core.Phases()},
 			"label":  str("The kind's own word for where it is, for example \"planned\", \"applied to staging\"."),
 			"conditions": map[string]any{"type": "array", "items": obj(map[string]any{
 				"type":   str("What the fact is about: apply, health, migration, tests, …"),
-				"status": map[string]any{"type": "string", "enum": []string{"ok", "fail", "pending"}},
+				"status": map[string]any{"type": "string", "enum": core.CondStatuses()},
 				"reason": str("One line, mainly for fail and pending."),
 			}, "type", "status")},
 			"needs": map[string]any{"type": "string", "enum": []string{"owner", ""}, "description": "\"owner\" when the owner must look; \"\" clears it."},
 		}, "change"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			u := core.ChangeUpdate{Phase: sArg(a, "phase")}
+			u := core.ChangeUpdate{Phase: core.Phase(sArg(a, "phase"))}
 			if v, ok := a["label"].(string); ok {
 				u.Label = &v
 			}
@@ -143,7 +155,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			if raw, ok := a["conditions"].([]any); ok {
 				for _, x := range raw {
 					m, _ := x.(map[string]any)
-					u.Conditions = append(u.Conditions, core.Condition{Type: sArg(m, "type"), Status: sArg(m, "status"), Reason: sArg(m, "reason")})
+					u.Conditions = append(u.Conditions, core.Condition{Type: core.CondType(sArg(m, "type")), Status: core.CondStatus(sArg(m, "status")), Reason: sArg(m, "reason")})
 				}
 			}
 			var c core.Change
@@ -201,7 +213,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			"reason": str("One sentence for the owner: why now."),
 		}, "change", "ask"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			ask := sArg(a, "ask")
+			ask := ChangeAsk(sArg(a, "ask"))
 			args, _ := a["args"].(map[string]any)
 			if args == nil {
 				args = map[string]any{}
@@ -214,21 +226,21 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			if c == nil {
 				return "", noChange(a)
 			}
-			if core.Ended(c.Phase) {
+			if c.Phase.Ended() {
 				return "", fmt.Errorf("%q is %s", c.Title, c.Phase)
 			}
-			action := "change." + ask
+			action := "change." + string(ask)
 			switch ask {
-			case "merge":
+			case AskMerge:
 				if _, ok := args["pr"].(string); !ok && c.PR() != "" {
 					args["pr"] = c.PR()
 				}
 				action = "pr.merge"
-			case "deploy":
+			case AskDeploy:
 				action = "fyr.deploy"
-			case "review", "approve", "apply", "revert":
+			case AskReview, AskApprove, AskApply, AskRevert:
 			default:
-				return "", fmt.Errorf("ask must be one of %s", strings.Join(ChangeAsks, ", "))
+				return "", fmt.Errorf("ask must be one of %s", strings.Join(core.Names(ChangeAsks), ", "))
 			}
 			if check := EffectActions[action]; check != nil {
 				if err := check(args); err != nil {
@@ -239,7 +251,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			if _, ok := args["title"]; !ok {
 				args["title"] = c.Title
 			}
-			d := core.Decision{ID: NewID("d_"), Kind: "effect", Assignee: core.Owner,
+			d := core.Decision{ID: NewID("d_"), Kind: core.DecisionEffect, Assignee: core.Owner,
 				Effect: &core.EffectReq{Action: action, Args: args, Reason: sArg(a, "reason")}}
 			e.Observe(th, func(t *core.Thread, now time.Time) {
 				d.CreatedAt = now
@@ -327,17 +339,17 @@ func (e *Engine) changeObserve(th, op string, fn func(t *core.Thread, now time.T
 // (review, approve, apply, revert): the owner's answer is the result, and a
 // yes to review or approve marks the change's approval ok (V0.59 (5)).
 func (e *Engine) changeEffect(threadID string, req core.EffectReq, allowed bool) (bool, string) {
-	ask := strings.TrimPrefix(req.Action, "change.")
+	ask := ChangeAsk(strings.TrimPrefix(req.Action, "change."))
 	title, _ := req.Args["title"].(string)
 	if !allowed {
 		return false, fmt.Sprintf("The owner said no to %s %q.", ask, title)
 	}
-	if ask == "review" || ask == "approve" {
+	if ask == AskReview || ask == AskApprove {
 		id, _ := req.Args["change"].(string)
 		e.Observe(threadID, func(t *core.Thread, now time.Time) {
 			if c := core.FindChange(t, id); c != nil {
 				no := ""
-				core.UpdateChange(t, c, core.ChangeUpdate{Conditions: []core.Condition{{Type: "approval", Status: "ok", Reason: "the owner said yes"}}, Needs: &no}, core.ByOwner, now)
+				core.UpdateChange(t, c, core.ChangeUpdate{Conditions: []core.Condition{{Type: core.CondApproval, Status: core.CondOK, Reason: "the owner said yes"}}, Needs: &no}, core.ByOwner, now)
 			}
 		})
 	}
@@ -345,7 +357,7 @@ func (e *Engine) changeEffect(threadID string, req core.EffectReq, allowed bool)
 }
 
 func phaseText(c core.Change) string {
-	s := c.Phase
+	s := string(c.Phase)
 	if c.PhaseBy == core.ByAgent && c.Phase != core.PhaseWorking {
 		s += " (reported)"
 	}
@@ -353,8 +365,8 @@ func phaseText(c core.Change) string {
 		s += ", " + c.Label
 	}
 	for _, k := range c.Conditions {
-		if k.Status == "fail" {
-			s += " · " + k.Type + " failed"
+		if k.Status == core.CondFail {
+			s += " · " + string(k.Type) + " failed"
 			if k.Reason != "" {
 				s += ": " + k.Reason
 			}
@@ -372,12 +384,15 @@ func sArg(a map[string]any, k string) string {
 	return strings.TrimSpace(v)
 }
 
-func listArg(a map[string]any, k string) []string {
+func listArg(a map[string]any, k string) []string { return listOf[string](a, k) }
+
+// listOf reads a list of strings into a typed list.
+func listOf[T ~string](a map[string]any, k string) []T {
 	raw, _ := a[k].([]any)
-	var out []string
+	var out []T
 	for _, x := range raw {
 		if s, ok := x.(string); ok {
-			out = append(out, s)
+			out = append(out, T(s))
 		}
 	}
 	return out

@@ -40,7 +40,7 @@ func (e *Engine) cancelMessage(c Cmd) Reply {
 	if e.Agents == nil {
 		return Reply{Error: "No agent runs this thread", Status: 409}
 	}
-	if err := e.Agents.Do(c.ThreadID, core.Effect{Kind: "cancelMessage", MessageID: id}); err != nil {
+	if err := e.Agents.Do(c.ThreadID, core.Effect{Kind: core.EffectCancelMessage, MessageID: id}); err != nil {
 		return Reply{Error: err.Error(), Status: 409}
 	}
 	reply := Reply{OK: true, ThreadID: c.ThreadID, Status: 200}

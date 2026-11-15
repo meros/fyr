@@ -147,7 +147,7 @@ func taskFromSystem(m map[string]any) (k core.Task, event string, ok bool) {
 	}
 	switch str(m, "subtype") {
 	case "task_started":
-		k.Description, k.Type, k.Status = str(m, "description"), str(m, "task_type"), "running"
+		k.Description, k.Type, k.Status = str(m, "description"), str(m, "task_type"), core.TaskRunning
 		return k, "started", true
 	case "task_progress":
 		k.Activity = clip(firstLine(str(m, "description")), 120)
@@ -165,15 +165,15 @@ func taskFromSystem(m map[string]any) (k core.Task, event string, ok bool) {
 		return k, "", true
 	case "task_updated":
 		p, _ := m["patch"].(map[string]any)
-		k.Status = str(p, "status")
-		if k.Status == "" || k.Status == "running" {
+		k.Status = core.TaskStatus(str(p, "status"))
+		if k.Status == "" || k.Status == core.TaskRunning {
 			return k, "", k.Status != ""
 		}
 		return k, "ended", true
 	case "task_notification":
-		k.Status, k.Summary = str(m, "status"), clip(firstLine(str(m, "summary")), 200)
+		k.Status, k.Summary = core.TaskStatus(str(m, "status")), clip(firstLine(str(m, "summary")), 200)
 		if k.Status == "" {
-			k.Status = "completed"
+			k.Status = core.TaskCompleted
 		}
 		return k, "ended", true
 	}
@@ -192,7 +192,7 @@ func taskList(m map[string]any) []core.Task {
 		}
 		d, _ := t["description"].(string)
 		ty, _ := t["task_type"].(string)
-		out = append(out, core.Task{ID: id, Description: d, Type: ty, Status: "running"})
+		out = append(out, core.Task{ID: id, Description: d, Type: ty, Status: core.TaskRunning})
 	}
 	return out
 }
