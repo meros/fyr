@@ -290,3 +290,24 @@ func TestConcurrentPressRunsOnce(t *testing.T) {
 		return len(th.OfferRuns) == 1 && !th.OfferRuns[0].Running
 	})
 }
+
+// SPEC 0.5 V0.12, review 2026-11-15: pr_link and change_open store the PR in
+// the one canonical form, whatever page of it the agent passed.
+func TestPRLinkStoresCanonicalURL(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	if out, isErr := callAs(t, h.e, id, "pr_link", map[string]any{"url": "https://github.com/o/r/pull/5/files?w=1"}); isErr {
+		t.Fatal(out)
+	}
+	if out, isErr := callAs(t, h.e, id, "change_open", map[string]any{"key": "k", "title": "K", "pr": "https://github.com/o/r/pull/6#top"}); isErr {
+		t.Fatal(out)
+	}
+	th, _ := h.e.Thread(id)
+	if th.PR == nil || th.PR.URL != "https://github.com/o/r/pull/5" {
+		t.Fatalf("pr_link stored %+v", th.PR)
+	}
+	if c := core.FindChange(&th, "k"); c == nil || c.PR() != "https://github.com/o/r/pull/6" {
+		t.Fatalf("change_open stored %+v", c)
+	}
+}

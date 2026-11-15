@@ -15,9 +15,11 @@ import (
 var EffectActions = map[string]func(args map[string]any) error{
 	"pr.merge": func(a map[string]any) error {
 		pr, _ := a["pr"].(string)
-		if _, _, ok := agent.ParsePR(pr); !ok {
+		canon, ok := agent.CanonicalPR(pr)
+		if !ok {
 			return errors.New("args.pr must be a GitHub pull request URL")
 		}
+		a["pr"] = canon
 		switch m, _ := a["method"].(string); m {
 		case "", "squash", "merge", "rebase":
 			return nil
@@ -39,11 +41,11 @@ func (e *Engine) Tools(s *mcp.Server) {
 		Description: "Link a GitHub pull request to this Fyr thread. Call it when you open a PR other than with `gh pr create`, or to switch the thread to another PR.",
 		Schema:      obj(map[string]any{"url": str("The PR URL, https://github.com/<owner>/<repo>/pull/<n>")}, "url"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			url, _ := a["url"].(string)
-			repo, n, ok := agent.ParsePR(url)
+			url, ok := agent.CanonicalPR(sArg(a, "url"))
 			if !ok {
 				return "", errors.New("not a GitHub pull request URL")
 			}
+			repo, n, _ := agent.ParsePR(url)
 			e.Observe(th, func(t *core.Thread, now time.Time) {
 				core.PRObserved(t, core.PR{URL: url, Repo: repo, Number: n, State: "OPEN", Checks: "pending"}, now)
 			}, agent.Ev{Type: "pr.linked", Data: map[string]any{"url": url}})
