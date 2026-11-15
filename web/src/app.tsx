@@ -22,6 +22,7 @@ import {
   sectionOf,
   sections,
   setConn,
+  presetForKey,
   snoozePresets,
   stateForCache,
   undoCommands,
@@ -946,9 +947,13 @@ function App() {
         setDialog(dialogAfterClose(dialog, projectFrom));
         return;
       }
-      if (dialog === "snooze" && /^[1-3]$/.test(k)) {
-        e.preventDefault();
-        snooze(snoozePresets(new Date())[Number(k) - 1]);
+      if (dialog === "snooze") {
+        // SPEC 0.5 V0.67: 1–5 in the order shown; without This evening 4 is the last.
+        const p = presetForKey(snoozePresets(new Date()), k);
+        if (p) {
+          e.preventDefault();
+          snooze(p);
+        }
       }
       return;
     }
@@ -1353,6 +1358,7 @@ function App() {
   const activeSection: SectionKey | null = sel && store.threads[sel] ? sectionOf(store.threads[sel]) : null;
   const hints = keyHints({
     dialog,
+    snoozeCount: dialog === "snooze" ? snoozePresets(new Date()).length : undefined,
     zone,
     hasSelection: !!sel,
     picked: picked.size,
