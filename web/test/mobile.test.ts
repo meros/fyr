@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activeSection, allowCommit, askCommit, newDefaults, parseLastUsed, stepLabel, stripCount } from "../src/mobile.ts";
+import { activeSection, allowCommit, askCommit, stepLabel, stripCount } from "../src/mobile.ts";
 import { chooseOther, goTo, initCard, pickStay, setOther } from "../src/question.ts";
 import type { Decision } from "../src/types.ts";
 
@@ -56,21 +56,6 @@ test("step dots up to 5 questions, counts in the strip", () => {
   assert.deepEqual(stepLabel(0, 9999), { dots: false, text: "Question 1 of 9999" });
   assert.equal(stripCount(9999), "9999");
   assert.equal(stripCount(10000), "10k+");
-});
-
-test("New screen defaults: last used on this device, else the host's most recent", () => {
-  const projects = [
-    { folder: "/a", name: "a", lastUsed: "2026-11-01" },
-    { folder: "/b", name: "b", lastUsed: "2026-11-10" },
-  ];
-  const profiles = [
-    { id: "claude", name: "Claude", color: "#000", models: ["opus", "sonnet"], defaultModel: "opus" },
-    { id: "work", name: "Work", color: "#111", models: ["sonnet"] },
-  ];
-  assert.deepEqual(newDefaults({}, projects, profiles), { cwd: "/b", profile: "claude", model: "opus" });
-  assert.deepEqual(newDefaults(parseLastUsed('{"cwd":"/a","profile":"work","model":"sonnet"}'), projects, profiles), { cwd: "/a", profile: "work", model: "sonnet" });
-  assert.deepEqual(newDefaults({ profile: "gone", model: "x" }, projects, profiles), { cwd: "/b", profile: "claude", model: "opus" });
-  assert.deepEqual(parseLastUsed("not json"), {});
 });
 
 test("the active strip segment follows the scroll", () => {

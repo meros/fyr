@@ -218,8 +218,6 @@ export function startProject(projects: Project[], filterId: string | null | unde
   return pickerOrder(projects)[0]?.id;
 }
 
-/** The project of the last new thread on this device (V0.30); "" for No project. */
-export const LAST_PROJECT_KEY = "fyr.lastProject";
 
 /** A project the client just made, until the host's copy arrives (V0.30, V0.55). */
 /** V0.63: what the new-thread project chip shows. While the New project step is open it shows the project being
