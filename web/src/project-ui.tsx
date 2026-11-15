@@ -5,7 +5,7 @@
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
-import { DEFAULT_QUIET, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, quietLine, quietList, quietNote, setAllDay, toggleDay } from "./quiet.ts";
+import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, quietLine, quietList, quietNote, setAllDay, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -186,6 +186,69 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
         {!list.length && !newRow && <div class="plempty">No project matches “{q}”.</div>}
         {extra}
       </div>
+    </div>
+  );
+}
+
+/** V0.74: the row under New thread's project list while a project is quiet. Holding it (finger or mouse button) for
+ *  30 s shows quiet projects for 30 minutes; lifting, moving off or closing the list before then starts over. No key
+ *  and no tap, on purpose. */
+export function QuietHold({ count, showUntil, show, hide }: { count: number; showUntil: number; show(): void; hide(): void }) {
+  const [start, setStart] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const done = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const stop = () => {
+    clearTimeout(done.current);
+    setStart(null);
+  };
+  useEffect(() => () => clearTimeout(done.current), []);
+  useEffect(() => {
+    if (start === null) return;
+    const id = setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(id);
+  }, [start]);
+  if (!count) return null;
+  const n = count === 1 ? "1 quiet project" : `${count} quiet projects`;
+  if (showUntil) {
+    const d = new Date(showUntil);
+    const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return (
+      <div class="qhold on">
+        <span class="qht">Quiet projects show until {hm}</span>
+        <button type="button" class="btn sm" onClick={hide}>
+          Hide
+        </button>
+      </div>
+    );
+  }
+  const begin = (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    clearTimeout(done.current);
+    const t = Date.now();
+    setStart(t);
+    setNow(t);
+    done.current = setTimeout(() => {
+      setStart(null);
+      show();
+    }, QUIET_HOLD_MS);
+  };
+  const part = start === null ? 0 : Math.min(1, (now - start) / QUIET_HOLD_MS);
+  const left = Math.max(1, Math.ceil((QUIET_HOLD_MS - (now - (start ?? now))) / 1000));
+  return (
+    <div
+      class={`qhold${start !== null ? " held" : ""}`}
+      onPointerDown={begin}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      <span class="qhf" style={{ width: `${part * 100}%` }} />
+      <span class="qht">{start === null ? `${n} hidden. Hold here for 30 s to show them for 30 minutes.` : `Keep holding · ${left} s`}</span>
     </div>
   );
 }

@@ -144,3 +144,40 @@ export function toggleDay(days: string[] | undefined, day: string): string[] | u
   const out = WEEK.map((w) => w.key).filter((k) => on.has(k));
   return out.length === 7 ? undefined : out;
 }
+
+// ---- V0.74: New thread leaves quiet projects out; a 30 s hold shows them for 30 minutes on this device ----
+
+/** How long the owner holds the row, and how long quiet projects then show. The hold is slow on purpose. */
+export const QUIET_HOLD_MS = 30_000;
+export const QUIET_SHOW_MS = 30 * 60_000;
+const SHOW_KEY = "fyr.quietShowUntil";
+
+/** The projects New thread offers: quiet ones left out unless showUntil is ahead; keep (the picked one) stays. */
+export function createProjects(projects: Project[], now: number, showUntil: number, keep?: string): Project[] {
+  if (showUntil > now) return projects;
+  return projects.filter((p) => !isQuiet(p, now) || (!!keep && p.id === keep));
+}
+
+type KV = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+/** The end of the unlock on this device, or 0. */
+export function loadQuietShow(kv: KV | null): number {
+  try {
+    const t = Number(kv?.getItem(SHOW_KEY));
+    return Number.isFinite(t) && t > 0 ? t : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** from: start an unlock of QUIET_SHOW_MS (returns its end); null: end it (returns 0). */
+export function saveQuietShow(kv: KV | null, from: number | null): number {
+  const end = from === null ? 0 : from + QUIET_SHOW_MS;
+  try {
+    if (end) kv?.setItem(SHOW_KEY, String(end));
+    else kv?.removeItem(SHOW_KEY);
+  } catch {
+    // private window or blocked storage: the unlock holds until the form closes
+  }
+  return end;
+}

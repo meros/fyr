@@ -1395,7 +1395,7 @@ function App() {
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
+      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={projectFilter} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
       {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
         <Modal title="Project" onClose={() => setDialog(dialogAfterClose(dialog, projectFrom))} wide>
           <div class="db">
