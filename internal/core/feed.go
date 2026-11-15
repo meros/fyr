@@ -192,6 +192,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "watch", Urgency: Wake, OnReduce: watchNotices},
 	{Name: "fact.blocks", Urgency: Wake, OnReduce: func(r Reduced) []Notice { return factNotices(r, true) }},
 	{Name: "fact.moves", Urgency: Next, OnReduce: func(r Reduced) []Notice { return factNotices(r, false) }},
+	{Name: "record", Urgency: Next, OnReduce: recordNotices},
 	{Name: "upkeep.stop", Urgency: Stop, OnTake: upkeepStop},
 	{Name: "upkeep.reminder", Urgency: Next, OnTake: upkeepReminder},
 	{Name: "owner", Urgency: Next, OnReduce: ownerNotices},
@@ -450,6 +451,29 @@ func factNotices(r Reduced, blocks bool) []Notice {
 		}
 	}
 	return out
+}
+
+// record: a host record the thread shows merged or went (#35). A change of
+// the thread that follows the record speaks for it (fact.*).
+func recordNotices(r Reduced) []Notice {
+	a, ok := r.In.Args.(ChangeObservedArgs)
+	if r.In.Kind != KindChangeObserved || !ok || a.Before == nil || a.Before.Phase == a.After.Phase {
+		return nil
+	}
+	id := a.After.ID
+	if slices.ContainsFunc(r.After.Changes, func(c Change) bool { return c.Observed == id }) {
+		return nil
+	}
+	state := ""
+	switch a.After.Phase {
+	case PhaseLanded:
+		state = "merged"
+	case PhaseAbandoned:
+		state = "gone without a merge"
+	default:
+		return nil
+	}
+	return []Notice{{About: "change:" + id, Key: "phase:" + id, Subject: "Branch " + a.After.Branch, States: []string{state}}}
 }
 
 // owner: a change by the owner to the thread's settings, project or settle

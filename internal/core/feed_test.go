@@ -192,6 +192,33 @@ func TestNoticeRules(t *testing.T) {
 			}
 		},
 		// A change by the owner to the thread's settings, project or settle
+		// #35: a host record the thread shows merged or went: next. A change
+		// of the thread that follows the record speaks for it instead.
+		"record": func(t *testing.T) {
+			was := Change{ID: "c_rec", Key: "git:github.com/o/r#feat", Kind: KindCode, Branch: "feat", Phase: PhaseWorking, PhaseBy: ByObserved, Targets: []string{"repo:github.com/o/r"}}
+			merged := was
+			merged.Phase = PhaseLanded
+			gone := was
+			gone.Phase = PhaseAbandoned
+			src := Observer(ObsGit)
+			th := &Thread{ID: "t"}
+			th, _ = fstep(t, th, Input{Source: src, Kind: KindChangeObserved, Args: ChangeObservedArgs{After: was}}, ct0)
+			if len(th.Refs) != 1 || len(th.Feed.Queue) != 0 {
+				t.Fatalf("a new record: refs %+v, queue %+v", th.Refs, th.Feed.Queue)
+			}
+			th, res := fstep(t, th, Input{Source: src, Kind: KindChangeObserved, Args: ChangeObservedArgs{Before: &was, After: merged}}, ct0)
+			if n := queued(t, th, "phase:c_rec"); n.Urgency != Next || n.What != "Branch feat: merged." || !wakes(res) || !th.Refs[0].Ended {
+				t.Fatalf("merged: %+v, refs %+v", n, th.Refs)
+			}
+			th = &Thread{ID: "t2"}
+			th, _ = fstep(t, th, Input{Source: src, Kind: KindChangeObserved, Args: ChangeObservedArgs{After: was}}, ct0)
+			th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeOpen, Args: ChangeOpenArgs{Open: ChangeOpen{Key: "fix", Kind: KindCode, Title: "Fix", Branch: "feat"}}}, ct0)
+			th, _ = fstep(t, th, Input{Source: src, Kind: KindChangeObserved, Args: ChangeObservedArgs{Before: &was, After: gone}}, ct0)
+			c := FindChange(th, "fix")
+			if c.Observed != "c_rec" || c.Phase != PhaseAbandoned || len(th.Feed.Queue) != 1 || th.Feed.Queue[0].Key != "phase:"+c.ID || th.Feed.Queue[0].Urgency != Wake {
+				t.Fatalf("follower: %+v, queue %+v", c, th.Feed.Queue)
+			}
+		},
 		// state: next. A settled thread queues without waking until revived.
 		"owner": func(t *testing.T) {
 			th, res := fstep(t, feedThread(), Input{Source: FromOwner, Kind: "thread.rename", Args: Args{"title": "Login fix"}}, ct0)

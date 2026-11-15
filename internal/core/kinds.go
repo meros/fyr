@@ -305,11 +305,13 @@ func init() {
 			}
 			RunEnded(r.T, a.Failure, now)
 			r.T.Branch = a.Git.Branch
-			GitObserved(r.T, a.Git, now) // V0.59 (3)
 			if a.Summary != nil {
 				r.T.Summary = *a.Summary
 			}
-			return Result{Events: []Event{{"run.ended", data}}}, nil
+			// V0.59 (3), #35: the git observer reads the folder and each
+			// change's workspace into host records.
+			git := a.Git
+			return Result{Events: []Event{{"run.ended", data}}, Effects: []Effect{{Kind: EffectGit, Git: &git}}}, nil
 		}},
 		{Name: KindProcessLost, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			msg, _ := in.Args.(string)

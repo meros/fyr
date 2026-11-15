@@ -185,6 +185,11 @@ const (
 	// EffectThread starts a new thread with a first message (an agent
 	// action pressed with in: "new").
 	EffectThread EffectKind = "thread.create"
+	// EffectGit reads git after a run (#35): the thread's folder facts it
+	// carries, each workspace of its changes, and whether the branches of
+	// the records it references merged or went. Each read lands as an
+	// Input of a host change record.
+	EffectGit EffectKind = "git.observe"
 )
 
 // RunKind is how an action runs (SPEC 0.5 V0.60 (2)).

@@ -49,6 +49,9 @@ type Effect struct {
 	// Press is the owner's press this effect runs, when it is one: its
 	// result ends the action's run.
 	Press *Press `json:"press,omitempty"`
+	// Git is the folder's facts of an EffectGit, read by the agent manager
+	// at the run's end.
+	Git *GitFacts `json:"git,omitempty"`
 }
 
 // Script is an exact command: argv in dir, within a time limit.

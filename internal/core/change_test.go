@@ -64,20 +64,17 @@ func TestFactsBeatClaims(t *testing.T) {
 }
 
 // SPEC 0.5 V0.59 (4): every PR is a code change, found by URL, else by its
-// head branch; merged is landed, closed abandoned.
+// head branch; merged is landed, closed abandoned. #35: a PR on a branch
+// whose host record the thread shows follows that record.
 func TestPRBecomesCodeChange(t *testing.T) {
-	th := &Thread{}
-	GitObserved(th, GitFacts{Repo: "github.com/o/r", Branch: "feat", Base: "origin/main", Ahead: 2, Unpushed: 2, Head: "abc"}, ct0)
-	if len(th.Changes) != 1 || th.Changes[0].Branch != "feat" {
-		t.Fatalf("git change: %+v", th.Changes)
-	}
+	th := &Thread{Refs: []Ref{{ID: "c_rec", Repo: "github.com/o/r", Branch: "feat"}}}
 	ChangePRObserved(th, PR{URL: "https://github.com/o/r/pull/9", Repo: "o/r", Number: 9, Title: "Feature", State: "OPEN", Checks: "pending", Branch: "feat"}, ct0)
 	if len(th.Changes) != 1 {
-		t.Fatalf("the PR made a second change instead of joining the branch: %+v", th.Changes)
+		t.Fatalf("changes: %+v", th.Changes)
 	}
 	c := &th.Changes[0]
-	if c.Title != "Feature" || c.Phase != PhaseReview || c.PRURL() == "" {
-		t.Fatalf("joined: %+v", c)
+	if c.Title != "Feature" || c.Phase != PhaseReview || c.PRURL() == "" || c.Observed != "c_rec" {
+		t.Fatalf("PR change: %+v", c)
 	}
 	// A second PR of the same thread is its own change.
 	ChangePRObserved(th, PR{URL: "https://github.com/o/other/pull/3", Repo: "o/other", Number: 3, State: "OPEN"}, ct0)
@@ -97,29 +94,52 @@ func TestPRBecomesCodeChange(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.59 (3): a branch with work has a code change; clean and pushed
-// follow the facts; a clean branch with nothing ahead makes none.
-func TestGitObserved(t *testing.T) {
-	th := &Thread{}
-	GitObserved(th, GitFacts{Branch: "main", Base: "origin/main"}, ct0)
-	if len(th.Changes) != 0 {
-		t.Fatal("a clean branch made a change")
+// observe lands git facts on the host records rs, as the engine does.
+func observe(t *testing.T, rs []*Change, g GitFacts, now time.Time) ([]*Change, *Change) {
+	t.Helper()
+	before, after, _, err := ReduceRecord(rs, Input{Source: Observer(ObsGit), Kind: KindGitObserved, Args: g}, now)
+	if err != nil {
+		t.Fatal(err)
 	}
-	GitObserved(th, GitFacts{Repo: "github.com/o/r", Branch: "main", Base: "origin/main", Dirty: 3}, ct0)
-	c := &th.Changes[0]
-	if c.Phase != PhaseWorking || condition(c, "clean").Status != "pending" || condition(c, "pushed").Status != "ok" {
-		t.Fatalf("dirty main: %+v", c.Conditions)
+	if after == nil {
+		return rs, nil
+	}
+	if before == nil {
+		return append(rs, after), after
+	}
+	out := slices.Clone(rs)
+	out[slices.Index(rs, before)] = after
+	return out, after
+}
+
+// SPEC 0.5 V0.59 (3), #35: a branch with work has a host record; clean and
+// pushed follow the facts; a clean branch with nothing ahead makes none.
+func TestGitObserved(t *testing.T) {
+	rs, c := observe(t, nil, GitFacts{Branch: "main", Base: "origin/main"}, ct0)
+	if c != nil {
+		t.Fatal("a clean branch made a record")
+	}
+	rs, c = observe(t, rs, GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "main", Base: "origin/main", Dirty: 3}, ct0)
+	if c == nil || c.Phase != PhaseWorking || condition(c, "clean").Status != "pending" || condition(c, "pushed").Status != "ok" {
+		t.Fatalf("dirty main: %+v", c)
 	}
 	if !strings.Contains(condition(c, "clean").Reason, "3 files") {
 		t.Fatalf("reason: %q", condition(c, "clean").Reason)
 	}
-	GitObserved(th, GitFacts{Repo: "github.com/o/r", Branch: "main", Base: "origin/main", Ahead: 1, Unpushed: 1, Head: "h1"}, ct0)
-	if len(th.Changes) != 1 || condition(c, "clean").Status != "ok" || condition(c, "pushed").Status != "pending" || len(c.Revisions) != 1 {
-		t.Fatalf("after commit: %+v", c)
+	if w := c.Workspace; w == nil || w.Repo != "github.com/o/r" || w.Path != "/w/r" || w.Branch != "main" || w.Base != "origin/main" {
+		t.Fatalf("workspace: %+v", c.Workspace)
+	}
+	rs, c = observe(t, rs, GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "main", Base: "origin/main", Ahead: 1, Unpushed: 1, Head: "h1"}, ct0)
+	if len(rs) != 1 || condition(c, "clean").Status != "ok" || condition(c, "pushed").Status != "pending" || len(c.Revisions) != 1 {
+		t.Fatalf("after commit: %d records, %+v", len(rs), c)
 	}
 	// Pending never blocks.
-	if r := ChangeBlocking(th); r != "" {
+	if r := c.Blocking(); r != "" {
 		t.Fatalf("pending blocked: %q", r)
+	}
+	// The same branch name in another repo is another record.
+	if rs, _ = observe(t, rs, GitFacts{Repo: "github.com/o/other", Branch: "main", Dirty: 1}, ct0); len(rs) != 2 {
+		t.Fatalf("records: %d", len(rs))
 	}
 }
 
@@ -216,31 +236,29 @@ func TestMergedPRWithFailedChecksDoesNotBlock(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.59 (3): new work on a branch after its change landed is a new
-// change; the landed one keeps its history.
+// SPEC 0.5 V0.59 (3), #35: new work on a branch after its record landed is
+// a new record; the landed one keeps its history.
 func TestGitObservedAfterLanded(t *testing.T) {
-	th := &Thread{}
 	g := GitFacts{Repo: "github.com/o/r", Branch: "feat", Base: "origin/main", Ahead: 1, Head: "h1"}
-	GitObserved(th, g, ct0)
-	ChangePRObserved(th, PR{URL: "https://github.com/o/r/pull/3", Repo: "o/r", Number: 3, State: "MERGED", Branch: "feat"}, ct0)
-	if th.Changes[0].Phase != PhaseLanded {
-		t.Fatalf("not landed: %+v", th.Changes[0])
+	rs, old := observe(t, nil, g, ct0)
+	_, landed, _, err := ReduceRecord(rs, Input{Source: Observer(ObsGit), Kind: KindGitEnded, Args: GitEnd{Change: old.ID, Merged: true}}, ct0)
+	if err != nil || landed.Phase != PhaseLanded || landed.PhaseBy != ByObserved || landed.LandedAt == nil {
+		t.Fatalf("not landed: %+v %v", landed, err)
 	}
+	if condition(landed, CondPushed) != nil {
+		t.Fatalf("a landed branch keeps pushed: %+v", landed.Conditions)
+	}
+	rs = []*Change{landed}
 	g.Head, g.Ahead, g.Unpushed = "h2", 1, 1
-	GitObserved(th, g, ct0)
-	if len(th.Changes) != 2 {
-		t.Fatalf("new work went onto the landed change: %+v", th.Changes)
+	rs, fresh := observe(t, rs, g, ct0)
+	if len(rs) != 2 || fresh.ID == landed.ID || fresh.Key != ObservedKey(g.Repo, g.Branch)+"~2" || fresh.Phase != PhaseWorking {
+		t.Fatalf("new work went onto the landed record: %+v", fresh)
 	}
-	old, fresh := &th.Changes[0], &th.Changes[1]
-	if len(old.Revisions) != 1 || condition(old, "pushed").Status != "ok" {
-		t.Fatalf("landed change changed: %+v", old)
+	if len(landed.Revisions) != 1 {
+		t.Fatalf("landed record changed: %+v", landed)
 	}
-	if fresh.Phase != PhaseWorking || fresh.ID == old.ID || fresh.Branch != "feat" {
-		t.Fatalf("fresh change: %+v", fresh)
-	}
-	GitObserved(th, g, ct0)
-	if len(th.Changes) != 2 {
-		t.Fatal("a second observation made a third change")
+	if rs, _ = observe(t, rs, g, ct0); len(rs) != 2 {
+		t.Fatal("a second observation made a third record")
 	}
 }
 
