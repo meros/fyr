@@ -423,6 +423,13 @@ func DecodeThread(b []byte) (*Thread, error) {
 	if err := migrateRules(t, b); err != nil {
 		return nil, err
 	}
+	for i := range t.Changes { // V0.70: stored before landedAt
+		c := &t.Changes[i]
+		if c.LandedAt == nil && c.Phase.Reached(PhaseLanded) {
+			at := c.UpdatedAt
+			c.LandedAt = &at
+		}
+	}
 	if bytes.Contains(b, []byte(`"offerRuns"`)) || bytes.Contains(b, []byte(`"actions"`)) {
 		var old struct {
 			Runs    []ActionRun `json:"offerRuns"`

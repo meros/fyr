@@ -59,6 +59,13 @@ type Change struct {
 	PhaseBy     string       `json:"phaseBy"`
 	CreatedAt   time.Time    `json:"createdAt"`
 	UpdatedAt   time.Time    `json:"updatedAt"`
+	// LandedAt is when the change first reached landed (V0.70): a failure
+	// recorded before it is history and no longer blocks; one reported in
+	// the same call as the landing, or later, blocks.
+	LandedAt *time.Time `json:"landedAt,omitempty"`
+	// Aliases are other keys that name this change: an agent's key for a
+	// code change it joined by repo and branch (V0.70 (2)).
+	Aliases []string `json:"aliases,omitempty"`
 }
 
 // Revision is one version of a change: a commit, a plan digest, a doc version.
@@ -98,7 +105,7 @@ func FindChange(t *Thread, ref string) *Change {
 		}
 	}
 	for i := range t.Changes {
-		if t.Changes[i].Key == ref {
+		if t.Changes[i].Key == ref || slices.Contains(t.Changes[i].Aliases, ref) {
 			return &t.Changes[i]
 		}
 	}
@@ -133,7 +140,15 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 	if o.Kind != "" && !o.Kind.Valid() {
 		return nil, false, fmt.Errorf("kind must be one of %s", strings.Join(Names(ChangeKinds()), ", "))
 	}
-	if c := FindChange(t, o.Key); c != nil {
+	c := FindChange(t, o.Key)
+	if c == nil && o.Kind == KindCode && o.Branch != "" {
+		// One change per repo and branch (V0.70 (2)): the agent's key joins
+		// the change Fyr already keeps for that branch.
+		if c = codeChangeOn(t, o.Branch, o.Targets); c != nil {
+			c.Aliases = union(c.Aliases, []string{o.Key})
+		}
+	}
+	if c != nil {
 		if c.Title == "" {
 			c.Title = o.Title
 		}
@@ -160,17 +175,17 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 	if strings.TrimSpace(o.Title) == "" {
 		o.Title = o.Key
 	}
-	c := Change{ID: ChangeID(o.Key), Key: o.Key, Kind: o.Kind, Title: strings.TrimSpace(o.Title), Targets: union(nil, o.Targets), Branch: o.Branch,
+	nc := Change{ID: ChangeID(o.Key), Key: o.Key, Kind: o.Kind, Title: strings.TrimSpace(o.Title), Targets: union(nil, o.Targets), Branch: o.Branch,
 		Group: o.Group, After: union(nil, o.After), Phase: PhaseWorking, PhaseBy: by, CreatedAt: now, UpdatedAt: now}
 	for _, ev := range o.Evidence {
-		addEvidence(&c, ev)
+		addEvidence(&nc, ev)
 	}
 	if o.Revision != nil {
-		addRevision(&c, *o.Revision, now)
+		addRevision(&nc, *o.Revision, now)
 	}
-	t.Changes = append(t.Changes, c)
+	t.Changes = append(t.Changes, nc)
 	trimChanges(t, now)
-	return FindChange(t, c.ID), true, nil
+	return FindChange(t, nc.ID), true, nil
 }
 
 // ReviseChange adds a revision; the same id twice is one revision. A new
@@ -448,7 +463,7 @@ func (c *Change) Blocking() string {
 		return ""
 	}
 	for _, k := range c.Conditions {
-		if k.Status == CondFail {
+		if k.Status == CondFail && (c.LandedAt == nil || !k.At.Before(*c.LandedAt)) {
 			if k.Reason != "" {
 				return k.Reason
 			}
@@ -469,6 +484,12 @@ func setPhase(t *Thread, c *Change, phase Phase, by string, now time.Time) {
 	}
 	moved := c.Phase != phase
 	c.Phase, c.PhaseBy, c.UpdatedAt = phase, by, now
+	switch {
+	case phase.Reached(PhaseLanded) && c.LandedAt == nil:
+		c.LandedAt = &now
+	case !phase.Reached(PhaseLanded) && !phase.Ended():
+		c.LandedAt = nil
+	}
 	if moved && phase != PhaseWorking {
 		t.ActivityAt = now
 	}
@@ -645,4 +666,31 @@ func dropConditions(c *Change, types ...CondType) {
 		}
 	}
 	c.Conditions = out
+}
+
+// codeChangeOn is the thread's code change on branch in the same repo, not
+// landed (in flight), or nil. Without a repo on either side the branch alone
+// decides.
+func codeChangeOn(t *Thread, branch string, targets []string) *Change {
+	repos := func(ts []string) []string {
+		var out []string
+		for _, x := range ts {
+			if strings.HasPrefix(x, "repo:") {
+				out = append(out, x)
+			}
+		}
+		return out
+	}
+	want := repos(targets)
+	for i := range t.Changes {
+		c := &t.Changes[i]
+		if c.Kind != KindCode || c.Branch != branch || !c.Phase.InFlight() {
+			continue
+		}
+		have := repos(c.Targets)
+		if len(want) == 0 || len(have) == 0 || slices.ContainsFunc(want, func(r string) bool { return slices.Contains(have, r) }) {
+			return c
+		}
+	}
+	return nil
 }
