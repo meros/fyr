@@ -1375,7 +1375,8 @@ try {
   await navigate(`${origin}/?mock=1&open=t_done`, "[...document.querySelectorAll('.th .offb .btn')].some((b) => b.textContent.includes('Set the Acme token'))");
   const press = () => evaluate(`[...document.querySelectorAll('.th .offb .btn')].find((b) => b.textContent.includes('Set the Acme token'))?.click()`);
   const dlg = () => evaluate(`(() => { const d = document.querySelector('.dlg.cfm'); if (!d) return null; const r = d.getBoundingClientRect(); const p = d.querySelector('.df .btn.p'); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, title: d.querySelector('.cfm-t')?.textContent ?? '', primary: p?.textContent.replace('⏎', '').trim(), focused: document.activeElement === p, hover: d.querySelector('.cfm-code')?.title ?? '', runs: document.querySelectorAll('.th .offrun').length }; })()`);
-  const runs = () => evaluate(`[...document.querySelectorAll('.th .offrun')].map((r) => r.textContent).join('|')`);
+  // V0.75 (1), #62: an action's result shows on its own button, so the buttons are what this check reads.
+  const runs = () => evaluate(`[...document.querySelectorAll('.th .offb .btn')].map((r) => r.textContent).filter((t) => !/^✦|^Set the Acme token$/.test(t) || /✓|failed|running/.test(t)).join('|')`);
   const opened = `document.activeElement === document.querySelector('.dlg.cfm .df .btn.p')`;
   await press();
   await waitFor(opened, { soft: true });
@@ -1394,7 +1395,7 @@ try {
   await press();
   await waitFor(opened, { soft: true });
   await key("Enter");
-  await waitFor(`!document.querySelector('.dlg.cfm') && [...document.querySelectorAll('.th .offrun')].some((r) => /Set the Acme token/.test(r.textContent))`, { soft: true });
+  await waitFor(`!document.querySelector('.dlg.cfm') && [...document.querySelectorAll('.th .offers .btn')].some((r) => /Set the Acme token.*(✓|failed|running)/.test(r.textContent))`, { soft: true }); // V0.75 (1): the result is on the button
   const after = await runs();
   check(!(await dlg()) && /Set the Acme token/.test(after), `V0.68 desktop: Enter does not run the action (runs "${after}")`);
 } catch (e) {

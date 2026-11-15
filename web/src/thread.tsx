@@ -26,6 +26,7 @@ import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./proje
 import { colorVar, projectName, projectOf } from "./projects.ts";
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
+import type { ComponentChildren } from "preact";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
 import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
 import { TAB_LABEL, defaultTab, showsDecision, threadTabs } from "./view.ts";
@@ -213,9 +214,9 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
     <>
       {tab === "view" && <LiveViewPanel full t={t} now={now} onPress={(text) => send({ text, from: "view" })} onAction={viewAction} />}
       {tab === "view" && <ViewChat t={t} events={events} now={now} onOpen={() => setTab("conv")} />}
-      {tab === "conv" && <Filmstrip cards={previews} collapsible={phone} />}
       {tab === "conv" && (
         <Conversation
+          strip={<Filmstrip cards={previews} collapsible={phone} />}
           outbox={t.outbox.map((o) => o.id)}
           events={events}
           onAtEnd={onAtEnd}
@@ -452,7 +453,7 @@ const HostContext = createContext<string | undefined>(undefined);
 /** The host's profiles, for the handover divider's names (V0.45). */
 export const ProfilesContext = createContext<Profile[]>([]);
 
-export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: string }) {
+export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host, strip }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: string; strip?: ComponentChildren }) {
   const details = useToolDetails();
   const api = useApi();
   const outKey = outbox ? outbox.join(",") : null;
@@ -515,6 +516,8 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
     <HostContext.Provider value={host}>
     <div class="convo" ref={ref} onScroll={check} onClick={onCodeCopy}>
       <div class="convo-in">
+        {/* V0.75 (2), #64: the filmstrip scrolls with the conversation, so a thread without previews has no empty band */}
+        {strip && <div class="cv-strip">{strip}</div>}
         {events === undefined && <div class="sys">Loading…</div>}
         {events !== undefined && items.length === 0 && <div class="sys">No messages yet.</div>}
         {onEarlier && events && events.length > 0 && (

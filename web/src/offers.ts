@@ -60,6 +60,14 @@ export function lastRun(runs: OfferRun[] | undefined, id: string): OfferRun | un
   return [...(runs ?? [])].reverse().find((r) => r.action === id);
 }
 
+/** V0.75 (1), #62: an action's state from its newest run: fresh (never run, or not since the last look), running,
+ *  ok, failed. The bar draws a used action quiet in place instead of adding a line for its result. */
+export type RunState = "fresh" | "running" | "ok" | "failed";
+export function runState(runs: OfferRun[] | undefined, id: string): RunState {
+  const r = lastRun(runs, id);
+  return !r ? "fresh" : r.running ? "running" : r.ok ? "ok" : "failed";
+}
+
 /** The command args of a press: what the owner saw is what runs. */
 export function pressArgs(on: string, o: Offer) {
   return { on, action: o.id, digest: o.digest };

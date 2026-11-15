@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionEventLine, canEnd, endArgs, endChangeAsk, settleLine, changeChip, changeEventLine, headerPr, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
-import type { Change, Offer } from "../src/types.ts";
+import { actionEventLine, canEnd, endArgs, endChangeAsk, runState, settleLine, changeChip, changeEventLine, headerPr, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
+import type { Change, Offer, OfferRun } from "../src/types.ts";
 
 const at = "2026-11-15T09:00:00Z";
 const change = (p: Partial<Change>): Change => ({ id: "c_1", key: "k", kind: "infra", title: "api replicas", phase: "working", phaseBy: "agent", createdAt: at, updatedAt: at, ...p });
@@ -88,4 +88,15 @@ test("V0.72: End this change on every change that has not ended, with Fyr's conf
   a.reason!.value = "  a test fixture ";
   assert.deepEqual(endArgs(pr, a), { change: "c_1", phase: "reverted", reason: "a test fixture" });
   assert.equal(phaseText({ phase: "abandoned", phaseBy: "observed", label: "the PR does not exist on GitHub" }), "abandoned · the PR does not exist on GitHub");
+});
+
+// SPEC 0.5 V0.75 (1): a used action turns quiet in place, with its result on the button (#62).
+test("an action's state comes from its newest run", () => {
+  const r = (p: Partial<OfferRun>): OfferRun => ({ action: "a", label: "Apply", by: "owner", at, ok: true, ...p });
+  assert.equal(runState([], "a"), "fresh");
+  assert.equal(runState([r({ action: "other", running: true })], "a"), "fresh", "another action's run does not count");
+  assert.equal(runState([r({ running: true })], "a"), "running");
+  assert.equal(runState([r({})], "a"), "ok");
+  assert.equal(runState([r({ action: "other" }), r({})], "a"), "ok");
+  assert.equal(runState([r({}), r({ ok: false, exit: 1 })], "a"), "failed", "the newest run of this action wins");
 });
