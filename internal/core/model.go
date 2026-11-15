@@ -215,7 +215,7 @@ type PR struct {
 	Repo      string     `json:"repo"`
 	Number    int        `json:"number"`
 	Title     string     `json:"title,omitempty"`
-	State     string     `json:"state"` // OPEN, MERGED, CLOSED
+	State     string     `json:"state"` // OPEN, MERGED, CLOSED, or MISSING (PRMissing)
 	Checks    Checks     `json:"checks"`
 	Review    string     `json:"review,omitempty"`
 	Conflict  bool       `json:"conflict,omitempty"`
@@ -228,6 +228,14 @@ type PR struct {
 	MergedAt    *time.Time   `json:"mergedAt,omitempty"`
 	Annotations []Annotation `json:"-"`
 }
+
+// PRMissing is the state Fyr observes when GitHub answers that the PR or its
+// repository does not exist (V0.72): the change ends as abandoned with
+// MissingPRLabel, and nothing polls the URL again.
+const (
+	PRMissing      = "MISSING"
+	MissingPRLabel = "the PR does not exist on GitHub"
+)
 
 // Main is the thread's main code change, the one with the PR the PR tab
 // shows (#32), or nil.

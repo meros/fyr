@@ -280,6 +280,42 @@ func UpdateChange(t *Thread, c *Change, u ChangeUpdate, by string, now time.Time
 	return nil
 }
 
+// maxEndReason is the longest reason the owner gives for an end.
+const maxEndReason = 200
+
+// endChange is the owner's change.end {change, phase?, reason?} (V0.72): it
+// ends any change that has not ended, observed ones too (the owner decides),
+// as abandoned (the default) or reverted. The reason becomes the label; the
+// change's actions go, and nothing polls its PR again.
+func endChange(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
+	c := FindChange(t, strings.TrimSpace(a.Str("change")))
+	if c == nil {
+		return nil, NoChange(a.Str("change"))
+	}
+	if c.Phase.Ended() {
+		return nil, reject(RejectUnavailable, "%q is already %s", c.Title, c.Phase)
+	}
+	phase := Phase(strings.TrimSpace(a.Str("phase")))
+	if phase == "" {
+		phase = PhaseAbandoned
+	}
+	if !phase.Ended() {
+		return nil, fmt.Errorf("%w: phase must be abandoned or reverted", ErrBadArgs)
+	}
+	if err := CanWrite(FieldChangePhase, ByOwner, c.PhaseBy, fmt.Sprintf("the phase of %q", c.Title)); err != nil {
+		return nil, err
+	}
+	reason := strings.Join(strings.Fields(a.Str("reason")), " ")
+	if r := []rune(reason); len(r) > maxEndReason {
+		reason = string(r[:maxEndReason-1]) + "…"
+	}
+	setPhase(t, c, phase, ByOwner, now)
+	c.Label, c.Offers, c.Annotations = reason, nil, nil
+	c.UpdatedAt = now
+	v.SeenAt = now
+	return nil, nil
+}
+
 // AttachEvidence adds proof; the same kind and URL (or attachment) twice is one.
 func AttachEvidence(c *Change, evs []Evidence, now time.Time) error {
 	for _, ev := range evs {
@@ -296,7 +332,8 @@ func AttachEvidence(c *Change, evs []Evidence, now time.Time) error {
 
 // ChangePRObserved writes a PR snapshot into the thread's code change for
 // that PR (V0.59 (4), #32): found by the PR URL, else by its head branch, else
-// made. Open is review, merged landed, closed abandoned. It moves ActivityAt
+// made. Open is review, merged landed, closed abandoned, and missing (V0.72)
+// abandoned with MissingPRLabel. A change the owner ended stays. It moves ActivityAt
 // when the PR starts to block, merges or closes, so polling alone never marks
 // a thread done.
 func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
@@ -307,6 +344,12 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 		p.Repo, p.Number = parsePRURL(p.URL)
 	}
 	c := changeByPR(t, p.URL)
+	if p.State == PRMissing && c == nil {
+		return nil // V0.72: no change is made for a PR that does not exist
+	}
+	if c != nil && CanWrite(FieldChangePhase, ByObserved, c.PhaseBy, "") != nil {
+		return c // V0.72: the owner ended it; a fact does not move it again
+	}
 	if c == nil && p.Branch != "" {
 		for i := range t.Changes {
 			x := &t.Changes[i]
@@ -337,6 +380,10 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	}()
 	snap := p
 	snap.Annotations = nil
+	if p.State == PRMissing && c.PR != nil {
+		// GitHub said nothing about it; what it said before stays.
+		snap.Title, snap.Branch, snap.Head = c.PR.Title, c.PR.Branch, c.PR.Head
+	}
 	c.PR = &snap
 	if p.Title != "" && (c.Title == "" || c.Title == c.Key || c.Title == c.Branch) {
 		c.Title = p.Title
@@ -359,6 +406,9 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 		phase = PhaseLanded
 	case "CLOSED":
 		phase = PhaseAbandoned
+	case PRMissing:
+		phase = PhaseAbandoned
+		c.Label = MissingPRLabel
 	}
 	// A merged change that something reported live stays live.
 	if !(phase == PhaseLanded && c.Phase == PhaseLive) {
