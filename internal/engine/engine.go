@@ -51,6 +51,8 @@ type Engine struct {
 	last     map[string]core.State    // last broadcast state, for time-driven changes
 	revs     map[string]int64         // per-thread rev (SPEC 0.5 V0.2)
 	projects map[string]*core.Project // V0.23
+	// records are the host change records (#35): observed branches.
+	records map[string]*core.Change
 
 	// quietSent is the quiet hours the clients last got, per project (V0.46).
 	quietSent map[string]string
@@ -66,6 +68,8 @@ type Engine struct {
 
 	Agents  Agents
 	Effects EffectRunner
+	// Git reads checkouts for the git observer (#35); nil reads with git.
+	Git GitReader
 	// Scripts runs script actions of changes, the thread and its view (V0.60);
 	// nil runs them with exec.
 	Scripts ScriptRunner
@@ -94,7 +98,7 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, quietSent: map[string]string{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
+		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, quietSent: map[string]string{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
 		shotLimit: window{max: 10, span: time.Minute}, newLimit: window{max: 5, span: time.Hour}, sendLimit: window{max: 30, span: time.Hour}}
 }
 
@@ -132,6 +136,9 @@ func (e *Engine) Load() error {
 		e.bump(t.ID)
 	}
 	e.views = vs
+	if err := e.loadRecords(); err != nil {
+		return err
+	}
 	ps, err := e.st.Projects()
 	if err != nil {
 		return err
@@ -333,8 +340,16 @@ func rejected(err error) Reply {
 
 // Apply sends one Input down the path and returns the reduce's reply. The
 // agent's tools, the agent manager and the pollers call it; Command builds
-// the owner's.
+// the owner's. An Input of a host change record goes down the record's path
+// (applyRecord).
 func (e *Engine) Apply(in core.Input) (any, error) {
+	if core.IsRecordKind(in.Kind) {
+		ps, err := e.applyRecord(in)
+		for _, p := range ps {
+			e.publish(p)
+		}
+		return nil, err
+	}
 	p, err := e.apply(in, nil)
 	if err != nil {
 		return nil, err
@@ -376,8 +391,37 @@ func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 			return nil, &core.Rejection{Code: core.RejectNotFound, Reason: "no thread " + in.Thread}
 		}
 	}
+	s, err := e.stage(cur, in, e.Now(), fresh != nil)
+	if err != nil {
+		return nil, err
+	}
+	if s.idle() {
+		return s.applied, nil
+	}
+	if _, err := e.st.Write(s.persist); err != nil {
+		log.Printf("thread %s: %s: %v", cur.ID, in.Kind, err)
+		return nil, err
+	}
+	e.commit(s, false)
+	return s.applied, nil
+}
+
+// staged is one thread's reduce, ready to store.
+type staged struct {
+	*applied
+	in                             core.Input
+	cur, t                         *core.Thread
+	v                              *core.View
+	now                            time.Time
+	changed, viewChanged, feedOnly bool
+	fromEffect                     bool
+	doneFx                         string
+}
+
+// stage reduces one Input of a thread and works out what to store. Call it
+// with e.mu held.
+func (e *Engine) stage(cur *core.Thread, in core.Input, now time.Time, fresh bool) (*staged, error) {
 	in.Thread = cur.ID
-	now := e.Now()
 	t, v, res, err := core.Reduce(cur, e.views[cur.ID], in, now)
 	if err != nil {
 		return nil, err
@@ -386,86 +430,96 @@ func (e *Engine) apply(in core.Input, fresh *core.Thread) (*applied, error) {
 	if in.Source == core.FromOwner {
 		e.assignProject(t)
 	}
+	s := &staged{in: in, cur: cur, t: t, v: v, now: now}
 	was, _ := json.Marshal(cur)
 	is, _ := json.Marshal(t)
-	changed := fresh != nil || string(was) != string(is)
+	s.changed = fresh || string(was) != string(is)
 	// The agent's notice queue is not news for the owner (#47): a change of
 	// it alone is stored, never broadcast, and keeps UpdatedAt.
-	feedOnly := changed && fresh == nil && string(sansFeed(cur)) == string(sansFeed(t))
+	s.feedOnly = s.changed && !fresh && string(sansFeed(cur)) == string(sansFeed(t))
 	vwas, _ := json.Marshal(e.views[cur.ID])
 	vis, _ := json.Marshal(v)
-	viewChanged := string(vwas) != string(vis)
-	if k.Touch || (changed && !feedOnly && !k.Untouched) {
+	s.viewChanged = string(vwas) != string(vis)
+	if k.Touch || (s.changed && !s.feedOnly && !k.Untouched) {
 		t.UpdatedAt = now
-		changed, feedOnly = true, false
+		s.changed, s.feedOnly = true, false
 	}
-	p := &applied{res: res, threadID: t.ID, reply: Reply{OK: true, ThreadID: t.ID, Status: 200, Result: res.Reply}}
-	for i := range p.res.Effects {
-		ef := &p.res.Effects[i]
+	s.applied = &applied{res: res, threadID: t.ID, reply: Reply{OK: true, ThreadID: t.ID, Status: 200, Result: res.Reply}}
+	for i := range s.res.Effects {
+		ef := &s.res.Effects[i]
 		ef.ID = NewID("fx_")
 		// V0.33: the message id is known before the agent writes it, so the
 		// client can follow its delivery.
 		if ef.Kind == core.EffectSend && ef.MessageID == "" {
 			ef.MessageID = NewMessageID()
 			if res.Reply == nil {
-				p.reply.Result = map[string]any{"messageId": ef.MessageID}
+				s.reply.Result = map[string]any{"messageId": ef.MessageID}
 			}
 		}
 	}
-	doneFx, fromEffect := strings.CutPrefix(string(in.Source), "effect:")
-	if !changed && !viewChanged && len(res.Events) == 0 && in.CmdID == "" && !slices.ContainsFunc(p.res.Effects, core.Effect.Durable) && !fromEffect {
-		return p, nil
+	s.doneFx, s.fromEffect = strings.CutPrefix(string(in.Source), "effect:")
+	return s, nil
+}
+
+// idle reports a reduce with nothing to store.
+func (s *staged) idle() bool {
+	return !s.changed && !s.viewChanged && len(s.res.Events) == 0 && s.in.CmdID == "" && !slices.ContainsFunc(s.res.Effects, core.Effect.Durable) && !s.fromEffect
+}
+
+// persist writes a staged reduce in tx: the thread, its view, events,
+// durable effects, the applied effect and the receipt.
+func (s *staged) persist(tx *store.Tx) error {
+	t, from := s.t, len(tx.Events)
+	if s.changed {
+		if err := tx.PutThread(t); err != nil {
+			return err
+		}
 	}
-	evs, err := e.st.Write(func(tx *store.Tx) error {
-		if changed {
-			if err := tx.PutThread(t); err != nil {
-				return err
-			}
+	if s.viewChanged {
+		if err := tx.PutView(s.v); err != nil {
+			return err
 		}
-		if viewChanged {
-			if err := tx.PutView(v); err != nil {
-				return err
-			}
-		}
-		for _, ev := range res.Events {
-			if err := tx.Append(t.ID, ev.Type, ev.Data, now); err != nil {
-				return err
-			}
-		}
-		for _, ef := range p.res.Effects {
-			if ef.Durable() {
-				if err := tx.PutEffect(ef.ID, t.ID, ef, now); err != nil {
-					return err
-				}
-			}
-		}
-		if fromEffect {
-			if err := tx.EffectDone(doneFx); err != nil {
-				return err
-			}
-		}
-		if in.CmdID != "" {
-			return tx.PutReceipt(in.CmdID, p.reply, now)
-		}
-		return nil
-	})
-	if err != nil {
-		log.Printf("thread %s: %s: %v", t.ID, in.Kind, err)
-		return nil, err
 	}
-	p.evs = evs
-	if feedOnly && !viewChanged {
+	for _, ev := range s.res.Events {
+		if err := tx.Append(t.ID, ev.Type, ev.Data, s.now); err != nil {
+			return err
+		}
+	}
+	s.evs = tx.Events[from:]
+	for _, ef := range s.res.Effects {
+		if ef.Durable() {
+			if err := tx.PutEffect(ef.ID, t.ID, ef, s.now); err != nil {
+				return err
+			}
+		}
+	}
+	if s.fromEffect {
+		if err := tx.EffectDone(s.doneFx); err != nil {
+			return err
+		}
+	}
+	if s.in.CmdID != "" {
+		return tx.PutReceipt(s.in.CmdID, s.reply, s.now)
+	}
+	return nil
+}
+
+// commit keeps a stored reduce in memory and builds the DTO to broadcast;
+// show builds it also when only a record the thread shows moved. Call it
+// with e.mu held.
+func (e *Engine) commit(s *staged, show bool) {
+	t := s.t
+	if s.feedOnly && !s.viewChanged && !show {
 		e.threads[t.ID] = t
-		return p, nil
+		return
 	}
-	if changed || viewChanged {
-		p.newPR = cur.MainPR() == nil && t.MainPR() != nil
-		e.threads[t.ID], e.views[t.ID] = t, v
+	if s.changed || s.viewChanged || show {
+		s.newPR = s.cur.MainPR() == nil && t.MainPR() != nil
+		e.threads[t.ID], e.views[t.ID] = t, s.v
 		e.bump(t.ID)
-		d := e.dto(t, now)
-		p.dto = &d
+		d := e.dto(t, s.now)
+		s.dto = &d
 	}
-	return p, nil
 }
 
 // sansFeed is a thread as JSON without its notice queue.
@@ -562,6 +616,9 @@ type DTO struct {
 	Settle *struct{} `json:"settle,omitempty"`
 	// Feed shadows thread.feed: the notices are the agent's (#47).
 	Feed *struct{} `json:"feed,omitempty"`
+	// Changes are the thread's own changes and the host records it shows
+	// (#35), each record once with the threads that show it.
+	Changes []core.Change `json:"changes,omitempty"`
 
 	prev core.State // the state before this change; not sent
 }
@@ -607,7 +664,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	vd.SnoozeUntil, vd.SnoozedAt = core.SnoozeOf(v)
 	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now),
 		PR: t.MainPR(), Project: e.projectName(t), LiveView: t.ViewOn(),
-		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t)}
+		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t), Changes: e.shown(t)}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.

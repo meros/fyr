@@ -41,17 +41,27 @@ export function columnOf(c: Change): Column {
 export function boardItems(threads: Record<string, Thread>, projects: Project[], f: BoardFilter = {}): BoardItem[] {
   const q = (f.q ?? "").trim().toLowerCase();
   const out: BoardItem[] = [];
+  const seen = new Set<string>();
   for (const t of Object.values(threads)) {
     if (t.archivedAt) continue;
     const project = projectOf(t, projects);
     if (f.projectId && project?.id !== f.projectId) continue;
     for (const c of t.changes) {
       if (!f.ended && ended(c.phase)) continue;
+      if (!once(c, seen)) continue;
       if (q && ![c.title, c.key, c.group ?? "", ...(c.targets ?? []), t.title].join(" ").toLowerCase().includes(q)) continue;
       out.push({ change: c, thread: t, project });
     }
   }
   return out;
+}
+
+/** #35: a host record (an observed branch) is in every thread that shows it, and once on the board. */
+function once(c: Change, seen: Set<string>): boolean {
+  if (!c.threads) return true;
+  if (seen.has(c.id)) return false;
+  seen.add(c.id);
+  return true;
 }
 
 /** A column's entries: changes of one group together under the group's name (a cross-repo set), a stack in the
@@ -95,7 +105,8 @@ export function stackOrder(items: BoardItem[]): BoardItem[] {
 /** The rail and menu badge: how many changes need the owner. */
 export function needsCount(threads: Record<string, Thread>): number {
   let n = 0;
-  for (const t of Object.values(threads)) if (!t.archivedAt) for (const c of t.changes) if (columnOf(c) === "needs") n++;
+  const seen = new Set<string>();
+  for (const t of Object.values(threads)) if (!t.archivedAt) for (const c of t.changes) if (columnOf(c) === "needs" && once(c, seen)) n++;
   return n;
 }
 

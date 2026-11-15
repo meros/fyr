@@ -24,3 +24,20 @@ Date: 2026-11-15 · Status: accepted (owner: "Polish this plan, build it") · Re
 **Why actions live on the change, not the project.** 0017 dropped project actions because nothing used them. An action on a change is declared by the agent that knows the change, at the moment it is useful, and it goes away with the change. Project-level templates ("deploy this project") can come later as a source of declared actions.
 
 **Consequences.** `Thread.PR` stays as the thread's main PR for the PR tab (V0.43) and the merge gate; it is also a `code` change. Several PRs per thread are polled. The Changes tab lists the change records above the branch diff. Not in the first build: the interdiff from the last revision seen (`git range-diff`), per-file "viewed" marks, inline CI annotations, GitHub Deployments for `live`, the cross-thread Changes screen and Fyr-run applies; research section 4 holds their order.
+
+## Addendum (#35, 2026-11-15): observed branches are host records
+
+Owner: "one observed change per repo and branch on the host, shown in every thread in that folder and once on the Changes board. Agent-opened changes stay per thread." Live data showed why: branch `v0` of fyr was one change id on two threads, and it stayed `working` with "7 commits not pushed" after it merged and was deleted.
+
+| Question | Decision |
+|---|---|
+| What an observed change is | A host record (decision 0020, part 1): a Change keyed by repo and branch, stored once in its own table with its own events. Its `workspace {repo, path, branch, base, madeByFyr}` (0019) says where git is read. New work after it lands is a new record (`key~2`). |
+| Who shows it | Each thread holds a reference `{id, repo, branch}`. The thread whose run observed it and every thread whose folder is in its checkout get one while it is in flight. The thread DTO lists it after the thread's own changes, with `threads`, the threads that show it; the Changes board shows it once. |
+| Notices | A record's move is sent to every thread that shows it as one Input (`change.observed`) through that thread's reduce, so each thread gets its own notice: "Branch v0: merged." (next). |
+| An agent change on the same branch | The thread's code change (the agent's, or a PR's) on the record's repo and branch **follows** the record: it keeps its own id, key, intent, PR and actions, and Fyr copies the record's git facts onto it (workspace, pushed, clean, newest revision, and the branch's end unless a PR says how it ended). The thread shows that change instead of the record, so the branch is one row in the thread. The link is made when the record moves, when the agent opens the change and when a PR arrives. This is V0.70's in-thread join one level up: within a thread, an agent change still joins a PR change of the branch (`aliases`); across threads, only the record is shared. |
+| What the observer reads | After each run: the thread's folder when it is a checkout (a folder of many repos yields nothing, as before), the workspace of each in-flight change, and for each in-flight record the thread shows, whether its branch ended. |
+| When it ends | `landed` when the branch is merged into its base: the head is an ancestor of `origin/<base>`, or a PR of the branch merged (a squash merge leaves the head outside the base). `abandoned` when the branch is gone without a merge. Pushed and clean are dropped at the end. Ended records go after 30 days. |
+| Stored threads | On load, a thread's observed git change moves into a host record with the same id and the thread gets a reference. One the agent or a PR added to (a PR, an alias, actions, evidence, a label, a Rule) stays in the thread and follows the record. |
+| Actions | Removing an action drops its `action:<id>` condition; its runs stay as history. |
+
+Not in this change: making worktrees and the `change_open` workspace argument (#44); Rules over a host record (a settle on a record's phase).

@@ -186,7 +186,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			"id":    str("One change, by id or key (this thread only)."),
 		}),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			t, ok := e.Thread(th)
+			t, ok := e.Shown(th)
 			if !ok {
 				return "", errors.New("no such thread")
 			}
@@ -202,11 +202,18 @@ func (e *Engine) changeTools(s *mcp.Server) {
 				}
 				rows = append(rows, row{Change: *c})
 			} else if sArg(a, "scope") == "project" && t.ProjectID != "" {
+				seen := map[string]bool{}
 				for _, d := range e.Snapshot() {
 					if d.ProjectID != t.ProjectID || d.ArchivedAt != nil {
 						continue
 					}
 					for _, c := range d.Changes {
+						if c.Threads != nil { // a host record: once (#35)
+							if seen[c.ID] {
+								continue
+							}
+							seen[c.ID] = true
+						}
 						r := row{Change: c}
 						if d.ID != th {
 							r.Thread = d.ID + " " + d.Title

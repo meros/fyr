@@ -182,11 +182,15 @@ func (h Holder) Declare(a ActionSpec) error {
 	return nil
 }
 
-// Remove drops an action the agent declared.
+// Remove drops an action the agent declared, and on a change its
+// action:<id> condition (#35); its runs stay as history.
 func (h Holder) Remove(id string) bool {
 	for i, a := range h.Offers {
 		if a.ID == id && a.By == ByAgent {
 			h.Offers = append(h.Offers[:i:i], h.Offers[i+1:]...)
+			if h.Change != nil {
+				dropConditions(h.Change, CondAction(id))
+			}
 			return true
 		}
 	}
