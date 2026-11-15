@@ -29,7 +29,7 @@ import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { TAB_LABEL, defaultTab, threadTabs } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
-import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
+import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, QuietHold, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
 import { colorVar, projectName, projectOf } from "./projects.ts";
 import { folderHint, type NewThreadArgs } from "./new-thread.ts";
 import { useNewThreadForm } from "./new-thread-form.ts";
@@ -1115,7 +1115,7 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
 /** SPEC 0.5 V0.30: Project first; the folder follows from the project's folder on this host, else it is asked.
  *  #41: the state is useNewThreadForm's, shared with the desktop dialog. */
 function MNew(p: PhoneProps) {
-  const n = useNewThreadForm({ projects: p.store.projects, profiles: p.store.profiles, hosts: p.store.hosts, projectFilter: p.filter.id, onCreate: p.actions.create, onNewProject: (name, folder) => p.projectActions.create(name, folder) });
+  const n = useNewThreadForm({ projects: p.store.projects, profiles: p.store.profiles, hosts: p.store.hosts, projectFilter: p.filter.id, clockOffset: p.store.clockOffset, onCreate: p.actions.create, onNewProject: (name, folder) => p.projectActions.create(name, folder) });
   const { form: f, cur, chip, folder, profiles, att } = n;
   const ta = useRef<HTMLTextAreaElement>(null);
   const ready = n.plan.ok;
@@ -1159,6 +1159,7 @@ function MNew(p: PhoneProps) {
                 allLabel="No project"
                 newRow={{ fromThread: false, sub: "A name, and a folder if you like", onNew: n.startCreating }}
                 onPick={n.choose}
+                extra={<QuietHold {...n.quiet} />}
               />
             </div>
           )}
