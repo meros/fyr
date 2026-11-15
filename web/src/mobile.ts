@@ -1,7 +1,7 @@
 // Pure helpers for the phone layout (design/mobile/README.md).
 
 import { describeEffect } from "./effects.ts";
-import type { Decision, Profile, Project } from "./types.ts";
+import type { Decision } from "./types.ts";
 import { answerOf, questionsOf, type CardState } from "./question.ts";
 
 /** Single-select picks move on after this delay; multi-select and the last question never do. */
@@ -47,33 +47,6 @@ export function stepLabel(index: number, n: number): { dots: boolean; text: stri
 /** Counts in the strip: 4 digits fit; 10000 and more show as 10k+. */
 export function stripCount(n: number): string {
   return n >= 10000 ? "10k+" : String(n);
-}
-
-// ---- New thread: defaults remembered per device ----
-
-export interface LastUsed {
-  cwd?: string;
-  profile?: string;
-  model?: string;
-}
-
-export function parseLastUsed(raw: string | null): LastUsed {
-  try {
-    const j = JSON.parse(raw ?? "");
-    if (j && typeof j === "object") return { cwd: typeof j.cwd === "string" ? j.cwd : undefined, profile: typeof j.profile === "string" ? j.profile : undefined, model: typeof j.model === "string" ? j.model : undefined };
-  } catch {
-    /* none stored */
-  }
-  return {};
-}
-
-/** The folder, profile and model a New screen starts with: the last used on this device when still valid, else the host's most recent. */
-export function newDefaults(last: LastUsed, projects: Project[], profiles: Profile[]): { cwd: string; profile: string; model: string } {
-  const recent = [...projects].sort((a, b) => (b.lastUsed ?? "").localeCompare(a.lastUsed ?? ""));
-  const cwd = last.cwd || recent[0]?.folder || "";
-  const prof = profiles.find((p) => p.id === last.profile) ?? profiles[0];
-  const model = prof && last.model && prof.models.includes(last.model) ? last.model : (prof?.defaultModel ?? prof?.models[0] ?? "");
-  return { cwd, profile: prof?.id ?? "", model };
 }
 
 /** Which section the list is scrolled to: the last section whose header is at or above the top. */

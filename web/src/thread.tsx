@@ -28,7 +28,7 @@ import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach
 import { sendArgs } from "./attach.ts";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
 import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
-import { defaultTab, liveViewOf, showsDecision } from "./view.ts";
+import { TAB_LABEL, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
@@ -74,8 +74,6 @@ export interface ThreadPaneProps {
   onHandover?: () => void;
 }
 
-type Tab = "view" | "conv" | "changes" | "pr";
-
 /** A deep link `/?open=<id>&tab=pr` opens that tab on the desktop too. */
 function urlTab(id: string): string | undefined {
   if (typeof location === "undefined") return undefined;
@@ -86,18 +84,12 @@ function urlTab(id: string): string | undefined {
 
 export function ThreadPane(p: ThreadPaneProps) {
   const t = p.thread;
-  const [tab, setTab] = useState<Tab>("conv");
-  const api = useApi();
-  const previews = useMemo(() => previewsOf(p.events ?? [], t.host, api), [p.events, t.host]);
-  useEffect(() => setTab(defaultTab(t, urlTab(t.id)) as Tab), [t.id]);
-  const hasView = !!liveViewOf(t);
-  // A view that appears or goes away while the thread is open keeps the tabs valid.
-  useEffect(() => {
-    if (tab === "view" && !hasView) setTab("conv");
-  }, [hasView]);
-  useEffect(() => {
-    if (tab === "pr" && !t.pr) setTab("conv"); // V0.36: a dismissed PR takes its tab with it
-  }, [!!t.pr]);
+  // #41: the tab is derived as on the phone: the one picked for this thread (or the deep link's), made valid by
+  // defaultTab (no View without a view, no PR tab without a PR).
+  const [pick, setPick] = useState<{ id: string; tab: string } | null>(null);
+  const tab = defaultTab(t, pick?.id === t.id ? pick.tab : urlTab(t.id));
+  const setTab = (tab: string) => setPick({ id: t.id, tab });
+  useEffect(() => setPick(null), [t.id]); // another thread opens on its own default
   const profile = p.profiles.find((x) => x.id === t.profile);
   const decision = currentDecision(t);
   const st = t.attention.state;
@@ -180,50 +172,69 @@ export function ThreadPane(p: ThreadPaneProps) {
         </div>
         <ThreadOffers t={t} onRun={p.onRun} />
         <div class="tabs" role="tablist">
-          {hasView && (
-            <span class={tab === "view" ? "on" : ""} role="tab" onClick={() => setTab("view")}>
-              View
+          {threadTabs(t).map((k) => (
+            <span class={tab === k ? "on" : ""} role="tab" onClick={() => setTab(k)}>
+              {TAB_LABEL[k]}
             </span>
-          )}
-          <span class={tab === "conv" ? "on" : ""} role="tab" onClick={() => setTab("conv")}>
-            Conversation
-          </span>
-          <span class={tab === "changes" ? "on" : ""} role="tab" onClick={() => setTab("changes")}>
-            Changes
-          </span>
-          {t.pr && (
-            <span class={tab === "pr" ? "on" : ""} role="tab" onClick={() => setTab("pr")}>
-              PR
-            </span>
-          )}
+          ))}
         </div>
       </div>
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
-      {tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} onAction={viewAction(p.onRun)} />}
-      {tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
-      {tab === "conv" && <Filmstrip cards={previews} />}
+      <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
+      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
+      <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
+    </section>
+  );
+}
+
+export interface ThreadTabBodyProps {
+  t: Thread;
+  /** from defaultTab */
+  tab: string;
+  setTab(tab: string): void;
+  events: FyrEvent[] | undefined;
+  now: number;
+  onAtEnd(atEnd: boolean): void;
+  /** Loads older events; absent when the start of the thread is loaded. */
+  onEarlier?: () => void;
+  /** a thread command on this thread */
+  run(action: string, args?: Record<string, unknown>): unknown;
+  send(args: SendArgs): Promise<boolean>;
+  phone?: boolean;
+}
+
+/** #41: what a thread tab shows, the same on desktop and phone: View (V0.37), Conversation with its filmstrip
+ *  (V0.19), Changes (V0.25, V0.59) and PR (V0.43). */
+export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier, run, send, phone }: ThreadTabBodyProps) {
+  const api = useApi();
+  const previews = useMemo(() => previewsOf(events ?? [], t.host, api), [events, t.host]);
+  return (
+    <>
+      {tab === "view" && <LiveViewPanel full t={t} now={now} onPress={(text) => send({ text, from: "view" })} onAction={viewAction(run)} />}
+      {tab === "view" && <ViewChat t={t} events={events} now={now} onOpen={() => setTab("conv")} />}
+      {tab === "conv" && <Filmstrip cards={previews} collapsible={phone} />}
       {tab === "conv" && (
         <Conversation
           outbox={t.outbox.map((o) => o.id)}
-          events={p.events}
-          onAtEnd={p.onAtEnd}
+          events={events}
+          onAtEnd={onAtEnd}
           threadId={t.id}
-          onEarlier={p.onEarlier}
+          onEarlier={onEarlier}
           cwd={t.cwd}
           host={t.host}
-          delivery={{ cancel: async (messageId) => p.onRun("thread.cancelMessage", { messageId }), resend: p.onSend }}
+          delivery={{ cancel: async (messageId) => run("thread.cancelMessage", { messageId }), resend: send }}
         />
       )}
       {tab === "changes" && (
         <div class="chtab">
-          <ChangeList t={t} onRun={p.onRun} />
-          <CiNotesScope changes={t.changes}><ChangesView threadId={t.id} changes={t.changes} /></CiNotesScope>
+          <ChangeList t={t} onRun={run} />
+          <CiNotesScope changes={t.changes}>
+            <ChangesView threadId={t.id} changes={t.changes} />
+          </CiNotesScope>
         </div>
       )}
-      {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}
-      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
-      <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
-    </section>
+      {tab === "pr" && <PrTab t={t} now={now} phone={phone} onSend={(text) => send({ text })} onDismiss={() => run("thread.dismissPR")} onChanges={() => setTab("changes")} />}
+    </>
   );
 }
 
@@ -305,7 +316,7 @@ function HeaderProjectChip({ t, profileName }: { t: Thread; profileName?: string
 }
 
 /** The PR tab (V0.43). */
-export function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: Thread; now: number; onSend(text: string): Promise<boolean>; onDismiss(): void; onChanges(): void; phone?: boolean }) {
+function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: Thread; now: number; onSend(text: string): Promise<boolean>; onDismiss(): void; onChanges(): void; phone?: boolean }) {
   if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
   return <PrView key={t.id} t={t} now={now} onSend={onSend} onDismiss={onDismiss} onChanges={onChanges} phone={phone} />;
 }

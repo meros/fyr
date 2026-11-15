@@ -1,11 +1,12 @@
 // The app shell: state, commands and the keyboard.
 
 import { render } from "preact";
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, Thread } from "./types.ts";
 import { createApi } from "./api.ts";
 import { currentDecision } from "./decode.ts";
 import { ApiContext, useApi } from "./api-context.ts";
+import { useThreadCommands } from "./commands.ts";
 import {
   SECTIONS,
   applySnapshot,
@@ -15,7 +16,6 @@ import {
   liveEvent,
   matchesQuery,
   mergeEvents,
-  recordUndo,
   resumeSeq,
   resumed,
   sectionOf,
@@ -24,9 +24,6 @@ import {
   presetForKey,
   snoozePresets,
   stateForCache,
-  undoCommands,
-  undoKindOf,
-  undoLive,
   upsertThread,
   upsertProject,
   setDeploy,
@@ -34,7 +31,6 @@ import {
   type SectionKey,
   type SnoozePreset,
   type Store,
-  type UndoEntry,
   applyThreadPatch,
 } from "./store.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
@@ -48,13 +44,14 @@ import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./th
 import { HandoverDialog } from "./handover-ui.tsx";
 import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
 import { PreviewViewer } from "./preview-ui.tsx";
-import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu, type NewThreadArgs } from "./dialogs.tsx";
+import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu } from "./dialogs.tsx";
+import type { NewThreadArgs } from "./new-thread.ts";
 import { clearThreadNotification, disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
 import { PUSH_TITLE, rememberOpen, shouldClearNotification, takeOpen, unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, LAST_PROJECT_KEY, filterByProject, moveToast } from "./projects.ts";
+import { FILTER_KEY, filterByProject, moveToast } from "./projects.ts";
 import { hideQuiet, nextQuietEnd } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
@@ -146,13 +143,6 @@ const params = new URLSearchParams(location.search);
 type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | "handover" | "settings" | "changes" | null;
 type Zone = "list" | "thread";
 
-interface Toast {
-  text: string;
-  undo: boolean;
-  error?: boolean;
-  at: number;
-}
-
 function readTheme(): Theme {
   try {
     const t = localStorage.getItem("fyr.theme");
@@ -198,8 +188,6 @@ function App() {
   const [snoozeTargets, setSnoozeTargets] = useState<string[]>([]);
   // V0.45: the thread the handover dialog is for
   const [handoverId, setHandoverId] = useState<string | null>(null);
-  const [undo, setUndo] = useState<UndoEntry | null>(null);
-  const [toast, setToast] = useState<Toast | null>(null);
   const [tracker, setTracker] = useState<SeenTracker>(initialTracker);
   const [cards, setCards] = useState<Record<string, CardState>>({});
   const [sectionOpen, setSectionOpen] = useState<Partial<Record<SectionKey, boolean>>>({});
@@ -216,6 +204,18 @@ function App() {
   const phoneRef = useRef(phone);
   phoneRef.current = phone;
   useViewportVars(phone);
+  // U8: Undo of a settle or archive that left the open thread on a phone reopens it.
+  const reopenRef = useRef<string | null>(null);
+  const navGoRef = useRef<(n: Nav) => void>(() => {});
+  const cmds = useThreadCommands({
+    undoMs: phone ? PHONE_UNDO_MS : UNDO_MS,
+    onUndone: (entry, ok) => {
+      const back = reopenRef.current;
+      reopenRef.current = null;
+      if (ok && back && phoneRef.current && entry.threadIds.includes(back)) navGoRef.current({ screen: { name: "thread", id: back }, sheet: null });
+    },
+  });
+  const { toast } = cmds;
   const [nav, setNav] = useState<Nav>(() => initialEntries(location.search).at(-1)!);
   const [selecting, setSelecting] = useState(false);
   // PWA (SPEC V0.15): push bell, install prompt, and a thread to open from a notification tap.
@@ -500,13 +500,6 @@ function App() {
     document.title = n ? `(${n}) Fyr` : "Fyr";
   }, [sec.needs.length]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const ms = toast.undo ? (phoneRef.current ? PHONE_UNDO_MS : UNDO_MS) : 4000;
-    const id = setTimeout(() => setToast((t) => (t === toast ? null : t)), ms);
-    return () => clearTimeout(id);
-  }, [toast]);
-
   // Keep the selected row visible.
   useEffect(() => {
     if (!sel) return;
@@ -525,46 +518,7 @@ function App() {
     };
   }, []);
 
-  // ---- actions ----
-  const showError = (text: string) => setToast({ text, undo: false, error: true, at: Date.now() });
-
-  const runAction = useCallback(async (action: string, ids: string[], args?: Record<string, unknown>) => {
-    if (!ids.length) return 0;
-    const replies = await Promise.all(ids.map((id) => api.command(action, id, args).then((r) => ({ id, r }))));
-    const ok = replies.filter((x) => x.r.ok).map((x) => x.id);
-    const bad = replies.filter((x) => !x.r.ok);
-    const kind = undoKindOf(action);
-    if (kind && ok.length) {
-      const u = recordUndo(kind, ok, Date.now());
-      setUndo(u);
-      setToast({ text: u.label, undo: true, at: Date.now() });
-    }
-    if (bad.length) showError(bad.length === 1 ? (bad[0].r.error ?? "Failed") : `${bad.length} failed: ${bad[0].r.error ?? ""}`);
-    return ok.length;
-  }, []);
-
-  /** V0.45: thread.handover; resolves to the host's error text, or null. */
-  const handover = async (id: string | null, profile?: string, model?: string): Promise<string | null> => {
-    if (!id || !profile) return "Pick a profile";
-    const r = await api.command("thread.handover", id, model ? { profile, model } : { profile });
-    return r.ok ? null : (r.error ?? "The handover could not start");
-  };
-
-  const doUndo = useCallback(async () => {
-    const cmds = undoCommands(undo, Date.now());
-    if (!cmds) return;
-    setUndo(null);
-    const res = await Promise.all(cmds.map((c) => api.command(c.action, c.threadId, c.args)));
-    const bad = res.find((r) => !r.ok);
-    if (bad) showError(`Undo failed: ${bad.error ?? ""}`);
-    else setToast({ text: "Undone", undo: false, at: Date.now() });
-    // U8: Undo of a settle or archive that left the thread reopens it.
-    const back = reopenRef.current;
-    reopenRef.current = null;
-    if (!bad && back && phoneRef.current && undo?.threadIds.includes(back)) navGoRef.current({ screen: { name: "thread", id: back }, sheet: null });
-  }, [undo]);
-  const reopenRef = useRef<string | null>(null);
-  const navGoRef = useRef<(n: Nav) => void>(() => {});
+  // ---- actions (#41: run, undo, toasts and errors live in useThreadCommands) ----
 
   const openThread = (id: string, mode: "open" | "peek" = "open") => {
     setSel(id);
@@ -591,7 +545,7 @@ function App() {
 
   const settle = (id: string) => {
     if (zone === "list") stepPast([id]);
-    void runAction("thread.settle", [id]);
+    void cmds.run("thread.settle", [id]);
   };
 
   const settleGroup = () => {
@@ -601,16 +555,16 @@ function App() {
       if (k) ids = sec[k].map((t) => t.id);
     }
     ids = ids.filter((id) => isAvailable(store.threads[id], "thread.settle"));
-    if (!ids.length) return showError("Nothing here can be settled");
+    if (!ids.length) return cmds.showError("Nothing here can be settled");
     stepPast(ids);
     setPicked(new Set());
-    void runAction("thread.settle", ids, { now: true });
+    void cmds.run("thread.settle", ids, { now: true });
   };
 
   const archive = (ids: string[]) => {
     stepPast(ids);
     setPicked(new Set());
-    void runAction("thread.archive", ids);
+    void cmds.run("thread.archive", ids);
   };
 
   const openSnooze = (ids: string[]) => {
@@ -624,12 +578,12 @@ function App() {
     setDialog(null);
     stepPast(ids);
     setPicked(new Set());
-    void runAction("thread.snooze", ids, { until: p.until.toISOString() });
+    void cmds.run("thread.snooze", ids, { until: p.until.toISOString() });
   };
 
   const markUnseen = (id: string) => {
     if (view?.id === id) setTracker((tr) => markedUnseen(tr));
-    void runAction("thread.markUnseen", [id]);
+    void cmds.run("thread.markUnseen", [id]);
   };
 
   // ---- right-click menu (V0.31) ----
@@ -649,8 +603,8 @@ function App() {
   }, [phone]);
   const copyText = (text: string) => {
     void navigator.clipboard?.writeText(text).then(
-      () => setToast({ text: "Copied", undo: false, at: Date.now() }),
-      () => showError("Could not copy"),
+      () => cmds.notify("Copied"),
+      () => cmds.showError("Could not copy"),
     );
   };
   const MENU_ACTION: Record<string, string> = { unsettle: "thread.unsettle", unsnooze: "thread.unsnooze", markSeen: "thread.markSeen", unarchive: "thread.unarchive", interrupt: "thread.interrupt", dismissPR: "thread.dismissPR" };
@@ -665,9 +619,9 @@ function App() {
       else if (it.id === "markUnseen") markUnseen(id);
       else if (it.id === "project") openPicker([id]);
       else if (it.id === "copyLink") copyText(`${location.origin}/?open=${id}`);
-      else if (it.id === "liveView") void runAction("thread.setView", [id], { on: !target.t.liveView });
+      else if (it.id === "liveView") void cmds.run("thread.setView", [id], { on: !target.t.liveView });
       else if (it.id === "handover") (setHandoverId(id), setDialog("handover"));
-      else if (MENU_ACTION[it.id]) void runAction(MENU_ACTION[it.id], [id]);
+      else if (MENU_ACTION[it.id]) void cmds.run(MENU_ACTION[it.id], [id]);
       return;
     }
     if (it.id === "copy" && (target.kind === "text" || target.kind === "link")) copyText(target.kind === "text" ? target.selection : (target.selection ?? ""));
@@ -683,7 +637,7 @@ function App() {
     const answers = answersOf(cs, d);
     if (!answers) return;
     const id = view.id;
-    void answerThenNext(() => runAction("thread.answer", [id], { decisionId: d.id, answers }), () => nextNeeding(1, id));
+    void answerThenNext(() => cmds.run("thread.answer", [id], { decisionId: d.id, answers }), () => nextNeeding(1, id));
   };
 
   /** Enter in the answer field: the text answers the active question, then submit or move on. */
@@ -705,7 +659,7 @@ function App() {
 
   const allow = (d: Decision, ok: boolean) => {
     if (!view) return;
-    void runAction("thread.answer", [view.id], { decisionId: d.id, allow: ok });
+    void cmds.run("thread.answer", [view.id], { decisionId: d.id, allow: ok });
   };
 
   const nextNeeding = (dir: 1 | -1, from?: string | null) => {
@@ -763,12 +717,7 @@ function App() {
     }
   };
 
-  const send = async (args: SendArgs): Promise<boolean> => {
-    if (!view) return false;
-    const r = await api.command("thread.send", view.id, { ...args });
-    if (!r.ok) showError(r.error ?? "Could not send");
-    return r.ok;
-  };
+  const send = async (args: SendArgs): Promise<boolean> => (view ? cmds.send(view.id, args) : false);
 
   // ---- projects (V0.23) ----
   const projectCommand = async (action: string, args: Record<string, unknown>, threadId?: string): Promise<string | null> => {
@@ -788,14 +737,14 @@ function App() {
       if (!r.ok) return { error: r.error ?? "That did not work" };
       const id = r.result?.id;
       if (threadIds.length > 1 && id) await Promise.all(threadIds.map((t) => projectCommand("thread.setProject", { projectId: id }, t)));
-      setToast({ text: threadIds.length ? `Made project ${name} and filed ${threadIds.length === 1 ? "this thread" : `${threadIds.length} threads`}` : `Made project ${name}`, undo: false, at: Date.now() });
+      cmds.notify(threadIds.length ? `Made project ${name} and filed ${threadIds.length === 1 ? "this thread" : `${threadIds.length} threads`}` : `Made project ${name}`);
       return { error: null, id };
     },
     /** V0.58: delete a project; its threads match again on the host. */
     delete: async (id: string): Promise<string | null> => {
       const name = store.projects.find((p) => p.id === id)?.name ?? "the project";
       const e = await projectCommand("project.delete", { id });
-      if (!e) setToast({ text: `Deleted ${name}`, undo: false, at: Date.now() });
+      if (!e) cmds.notify(`Deleted ${name}`);
       return e;
     },
     /** File threads into a project; null: No project. Shows the result or the error as a toast. */
@@ -804,7 +753,8 @@ function App() {
       const where = projectId ? (store.projects.find((p) => p.id === projectId)?.name ?? "the project") : null;
       // Both shells show the result here, the error too (review 2026-11-15).
       const e = errs[0] ?? null;
-      setToast({ ...moveToast(ids.length, where, e), undo: false, at: Date.now() });
+      const m = moveToast(ids.length, where, e);
+      cmds.notify(m.text, m.error);
       return e;
     },
   };
@@ -887,9 +837,6 @@ function App() {
     const r = await api.command("thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
-    try {
-      localStorage.setItem(LAST_PROJECT_KEY, a.projectId ?? "");
-    } catch {}
     if (r.threadId) {
       const id = r.threadId;
       // The upsert may arrive after the reply; open once it is there.
@@ -909,7 +856,7 @@ function App() {
     const r = await api.command("t3.adopt", undefined, { t3Ids: ids });
     if (!r.ok) return r.error ?? "Could not adopt";
     setDialog(null);
-    setToast({ text: ids.length === 1 ? "Adopted 1 thread" : `Adopted ${ids.length} threads`, undo: false, at: Date.now() });
+    cmds.notify(ids.length === 1 ? "Adopted 1 thread" : `Adopted ${ids.length} threads`);
     return null;
   };
 
@@ -955,9 +902,9 @@ function App() {
       return;
     }
     if (mod && (k === "z" || k === "Z") && !e.shiftKey && !isTextTarget(e.target)) {
-      if (undoLive(undo, Date.now())) {
+      if (cmds.canUndo()) {
         e.preventDefault();
-        void doUndo();
+        void cmds.doUndo();
       }
       return;
     }
@@ -1062,7 +1009,7 @@ function App() {
         return;
       case "r":
         e.preventDefault();
-        if (tgt) void runAction("thread.retry", [tgt]);
+        if (tgt) void cmds.run("thread.retry", [tgt]);
         return;
       case "x": {
         e.preventDefault();
@@ -1103,7 +1050,7 @@ function App() {
         const t = viewThread;
         const fromComposer = Date.now() - lastEsc.current < 800;
         if (t?.running && (zone === "thread" || fromComposer) && isAvailable(t, "thread.interrupt")) {
-          void runAction("thread.interrupt", [t.id]);
+          void cmds.run("thread.interrupt", [t.id]);
           return;
         }
         setZone("list");
@@ -1204,33 +1151,10 @@ function App() {
   }, [phone, nav.screen.name === "thread" ? nav.screen.id : nav.screen.name]);
 
   const phoneActions: PhoneActions = {
-    settle: (ids, bulk) => void runAction("thread.settle", ids, bulk ? { now: true } : undefined).then((n) => n && leaveOpenThread("settle", ids)),
-    snooze: (ids, until) => void runAction("thread.snooze", ids, { until: until.toISOString() }),
-    archive: (ids) => void runAction("thread.archive", ids).then((n) => n && leaveOpenThread("archive", ids)),
+    settle: (ids, bulk) => void cmds.run("thread.settle", ids, bulk ? { now: true } : undefined).then((n) => n && leaveOpenThread("settle", ids)),
+    archive: (ids) => void cmds.run("thread.archive", ids).then((n) => n && leaveOpenThread("archive", ids)),
     markUnseen: (id) => markUnseen(id),
-    retry: (id) => void runAction("thread.retry", [id]),
-    interrupt: (id) => void runAction("thread.interrupt", [id]),
-    dismissPR: (id) => void runAction("thread.dismissPR", [id]),
-    run: (id, action, args) => void runAction(action, [id], args),
-    setView: (id, on) => void runAction("thread.setView", [id], { on }),
-    setModel: (id, model) => void runAction("thread.setModel", [id], { model }),
-    setEffort: (id, effort) => void runAction("thread.setModel", [id], { effort }),
-    handover: (id, profile, model) => handover(id, profile, model),
-    send: async (id, args) => {
-      const r = await api.command("thread.send", id, { ...args });
-      if (!r.ok) showError(r.error ?? "Could not send");
-      return r.ok;
-    },
-    cancelMessage: async (id, messageId) => (await runAction("thread.cancelMessage", [id], { messageId })) > 0,
-    submitAsk: async (d) => {
-      const cs = cards[d.id];
-      const answers = cs ? answersOf(cs, d) : null;
-      if (!answers || !view) return false;
-      return (await runAction("thread.answer", [view.id], { decisionId: d.id, answers })) > 0;
-    },
-    allow: async (d, ok) => (view ? (await runAction("thread.answer", [view.id], { decisionId: d.id, allow: ok })) > 0 : false),
     create,
-    undo: () => void doUndo(),
   };
 
   const pushDialog = (onClose: () => void) => (
@@ -1264,41 +1188,37 @@ function App() {
         <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone />
         <PreviewViewer />
         <PhoneApp
-          nav={nav}
-          go={navGo}
-          replace={navReplace}
-          back={navBack}
-          threads={store.threads}
-          sec={sec}
-          searchable={searchable}
+          nav={{ at: nav, go: navGo, replace: navReplace, back: navBack }}
+          store={store}
+          inbox={{ sec, searchable }}
           now={now}
-          host={hostLabel(store.host, api.mock)}
-          conn={store.conn}
-          thread={nav.screen.name === "thread" ? store.threads[nav.screen.id] : undefined}
-          events={nav.screen.name === "thread" ? store.events[nav.screen.id] : undefined}
-          onEarlier={view && earlier[view.id] ? () => loadEarlier(view.id) : undefined}
-          onAtEnd={(b) => setTracker((tr) => setAtEnd(tr, b))}
-          profiles={store.profiles}
-          hosts={store.hosts}
-          projects={store.projects}
-          card={card}
-          onCard={(fn) => decision && setCards((c) => (c[decision.id] ? { ...c, [decision.id]: fn(c[decision.id]) } : c))}
-          sectionOpen={sectionOpen}
-          setSectionOpen={setSectionOpen}
-          expanded={expanded}
-          onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
-          picked={picked}
-          setPicked={setPicked}
-          selecting={selecting}
-          setSelecting={setSelecting}
-          push={pushSt}
-          pushReason={pushReason}
-          ios={env.ios}
-          standalone={env.standalone}
-          canInstall={canInstall && !isStandalone()}
-          onInstall={() => void promptInstall().then((ok) => ok && setCanInstall(false))}
-          theme={theme}
-          setTheme={setTheme}
+          commands={cmds}
+          open={{
+            thread: nav.screen.name === "thread" ? store.threads[nav.screen.id] : undefined,
+            events: nav.screen.name === "thread" ? store.events[nav.screen.id] : undefined,
+            onEarlier: view && earlier[view.id] ? () => loadEarlier(view.id) : undefined,
+            onAtEnd: (b) => setTracker((tr) => setAtEnd(tr, b)),
+            card,
+            onCard: (fn) => decision && setCards((c) => (c[decision.id] ? { ...c, [decision.id]: fn(c[decision.id]) } : c)),
+            submitAsk: async (d) => {
+              const cs = cards[d.id];
+              const answers = cs ? answersOf(cs, d) : null;
+              if (!answers || !view) return false;
+              return (await cmds.run("thread.answer", [view.id], { decisionId: d.id, answers })) > 0;
+            },
+            allow: async (d, ok) => (view ? (await cmds.run("thread.answer", [view.id], { decisionId: d.id, allow: ok })) > 0 : false),
+          }}
+          list={{ sectionOpen, setSectionOpen, expanded, onExpand: (k) => setExpanded((x) => ({ ...x, [k]: true })), picked, setPicked, selecting, setSelecting }}
+          device={{
+            push: pushSt,
+            pushReason,
+            ios: env.ios,
+            standalone: env.standalone,
+            canInstall: canInstall && !isStandalone(),
+            onInstall: () => void promptInstall().then((ok) => ok && setCanInstall(false)),
+            theme,
+            setTheme,
+          }}
           settings={
             <Settings
               api={api}
@@ -1315,13 +1235,8 @@ function App() {
               {...projectsInSettings}
             />
           }
-          toast={toast}
-          undoKind={undo?.kind ?? null}
-          undoIds={undo?.threadIds ?? []}
-          undoLive={undoLive(undo, Date.now())}
           actions={phoneActions}
-          projectFilter={projectFilter}
-          onProjectFilter={setProjectFilter}
+          filter={{ id: projectFilter, set: setProjectFilter }}
           projectActions={projectActions}
           overlay={folderPickView}
         />
@@ -1357,7 +1272,7 @@ function App() {
     cardMulti: !!(decision?.kind === "ask" && card && decision.questions?.[card.index]?.multiSelect),
     running: !!viewThread?.running,
     failed: (tgtThread(store, zone, view, sel)?.attention.state ?? "") === "failed",
-    undo: !!toast?.undo && undoLive(undo, Date.now()),
+    undo: !!toast?.undo && cmds.canUndo(),
     inText,
   });
 
@@ -1421,7 +1336,7 @@ function App() {
             onRun={(a, args) => {
               if (a === "thread.settle") return settle(view.id);
               if (a === "thread.archive") return archive([view.id]);
-              void runAction(a, [view.id], args);
+              void cmds.run(a, [view.id], args);
             }}
             onSnooze={() => openSnooze([view.id])}
             onMoveProject={() => openPicker([view.id])}
@@ -1462,14 +1377,14 @@ function App() {
       {toast && (
         <div class={`toast${toast.error ? " err" : ""}`} role="status">
           <span class="ell">{toast.text}</span>
-          {toast.undo && undoLive(undo, Date.now()) && (
-            <button class="btn sm" onClick={() => void doUndo()}>
+          {toast.undo && cmds.canUndo() && (
+            <button class="btn sm" onClick={() => void cmds.doUndo()}>
               Undo <kbd>⌘Z</kbd>
             </button>
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} host={store.host} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
+      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={projectFilter} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
       {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
         <Modal title="Project" onClose={() => setDialog(dialogAfterClose(dialog, projectFrom))} wide>
           <div class="db">
@@ -1509,7 +1424,7 @@ function App() {
         </Modal>
       )}
       {dialog === "handover" && handoverId && store.threads[handoverId] && (
-        <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m) => handover(handoverId, pr, m)} />
+        <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m) => cmds.handover(handoverId, pr, m)} />
       )}
       {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "push" && pushDialog(() => setDialog(null))}
@@ -1519,7 +1434,7 @@ function App() {
             <ChangesBoard
               threads={store.threads}
               projects={store.projects}
-              onRun={(id, a, args) => void runAction(a, [id], args)}
+              onRun={(id, a, args) => void cmds.run(a, [id], args)}
               onOpenThread={(id) => {
                 setDialog(null);
                 openThread(id, "open");

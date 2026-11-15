@@ -130,6 +130,15 @@ export function defaultTab(t: Pick<Thread, "live" | "pr">, requested: string | u
   return requested ?? (has ? "view" : "conv");
 }
 
+export type ThreadTab = "view" | "conv" | "changes" | "pr";
+
+export const TAB_LABEL: Record<ThreadTab, string> = { view: "View", conv: "Conversation", changes: "Changes", pr: "PR" };
+
+/** #41: the tabs a thread has, in order, on desktop and phone: View only with a view (V0.37), PR only with a PR (V0.36). */
+export function threadTabs(t: Pick<Thread, "live" | "pr">): ThreadTab[] {
+  return [...(liveViewOf(t) ? (["view"] as const) : []), "conv", "changes", ...(t.pr ? (["pr"] as const) : [])];
+}
+
 /** SPEC 0.5 V0.37: the tabs a question or approval card shows on; never hidden behind View. */
 export function showsDecision(tab: string): boolean {
   return tab === "conv" || tab === "view";
