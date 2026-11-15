@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardKey, initCard, pick, setOther, type CardState, submitState } from "../src/question.ts";
+import { answerThenNext, cardKey, initCard, pick, setOther, type CardState, submitState } from "../src/question.ts";
 import type { Decision } from "../src/types.ts";
 
 const d: Decision = {
@@ -97,4 +97,13 @@ test("the card's submit button follows the answers", () => {
   assert.deepEqual(submitState(cs, d), { label: "Send 2 answers", act: "submit", answered: 2, total: 2 });
   const one = { id: "e", kind: "ask", questions: [{ question: "C?", options: [{ label: "z" }] }] } as unknown as Decision;
   assert.equal(submitState(pick(initCard(one), one, 0), one).label, "Send answer");
+});
+
+// review 2026-11-15: a failed answer keeps the thread open; only an accepted one moves to the next that needs you.
+test("answerThenNext moves on only when the host took the answer", async () => {
+  let moved = 0;
+  await answerThenNext(async () => 0, () => moved++);
+  assert.equal(moved, 0, "a failed thread.answer stays");
+  await answerThenNext(async () => 1, () => moved++);
+  assert.equal(moved, 1);
 });

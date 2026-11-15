@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.51: Settings → Hosts lists the front's hosts; an offline host's threads say so and are read-only.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeHosts, hostForProject, hostStatus, hostTag, multiHost, offlineLine, profilesOn } from "../src/hosts.ts";
+import { decodeHosts, hostLabel, hostForProject, hostStatus, hostTag, multiHost, offlineLine, profilesOn } from "../src/hosts.ts";
 import { attachmentUrl } from "../src/attach.ts";
 import { previewCard, previewUrl } from "../src/previews.ts";
 import { renderMarkdown, setMarkdownOrigin } from "../src/markdown.ts";
@@ -67,4 +67,11 @@ test("attachments, previews and markdown images load from the thread's host", ()
   assert.match(renderMarkdown(md, "b"), /src="\/api\/attachments\/att_9\?host=b"/);
   assert.match(renderMarkdown(md), /src="\/api\/attachments\/att_9"/);
   setMarkdownOrigin(null);
+});
+
+// review 2026-11-15: the rail and the phone name the host the same way when the state has none.
+test("hostLabel falls back to mock or local", () => {
+  assert.equal(hostLabel("front", false), "front");
+  assert.equal(hostLabel("", true), "mock");
+  assert.equal(hostLabel("", false), "local");
 });

@@ -16,6 +16,11 @@ export interface HostInfo {
   deploy?: DeployProgress;
 }
 
+/** The host's name for the rail and the phone; without one in the state, "mock" or "local". */
+export function hostLabel(host: string, mock: boolean): string {
+  return host || (mock ? "mock" : "local");
+}
+
 export function decodeHosts(raw: unknown): HostInfo[] {
   if (!Array.isArray(raw)) return [];
   return raw

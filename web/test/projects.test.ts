@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, PALETTE_NAMES, colorName, deleteQuestion, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
+import { PALETTE, moveToast, PALETTE_NAMES, colorName, deleteQuestion, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 import { initialStore, upsertProject } from "../src/store.ts";
@@ -191,4 +191,13 @@ test("SPEC 0.5 V0.63: while New project is open, the new-thread chip shows the p
   assert.equal(c.sub, "New · no folder");
   assert.equal(projectChip(old, { name: "  ", folder: "" }).name, "New project");
   assert.equal(projectChip(undefined, null).name, "No project");
+});
+
+// review 2026-11-15: a failed move shows its error on both shells (the phone showed nothing).
+test("moveToast says where the threads went, or the error", () => {
+  assert.deepEqual(moveToast(1, "App", null), { text: "Filed in App", error: false });
+  assert.deepEqual(moveToast(1, null, null), { text: "No project now", error: false });
+  assert.deepEqual(moveToast(3, "App", null), { text: "Filed 3 threads in App", error: false });
+  assert.deepEqual(moveToast(2, null, null), { text: "2 threads have no project now", error: false });
+  assert.deepEqual(moveToast(2, "App", "No such project"), { text: "No such project", error: true });
 });
