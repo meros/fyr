@@ -258,7 +258,7 @@ const MEASURE = `(() => {
       const small = targets.map(e => ({ t: (e.textContent || e.getAttribute('aria-label') || e.tagName).trim().slice(0, 30), h: e.getBoundingClientRect().height })).filter(x => x.h < 43.5);
       const lg = el.querySelector('.login');
       const login = lg ? { link: lg.querySelector('a.loginlink')?.getAttribute('href') ?? '', code: !!lg.querySelector('input'), cancel: [...lg.querySelectorAll('button')].some(b => b.textContent.trim() === 'Cancel') } : null;
-      const add = el.querySelector('.addp'); const sc = el.closest('.m-nbody'); if (sc) sc.scrollTop = sc.scrollHeight;
+      const add = el.querySelector('.addp'); add?.scrollIntoView({ block: 'center' }); // V0.58: Projects follow Providers, so Add provider is no longer at the end
       const ar = add ? add.getBoundingClientRect() : null;
       return { rows: el.querySelectorAll('.prov:not(.found)').length, found: el.querySelectorAll('.prov.found').length,
         imports: [...el.querySelectorAll('.prov.found button')].filter(b => b.textContent.trim() === 'Import').length,
@@ -769,7 +769,7 @@ try {
   check(!!g && g.below && g.aboveFoot, `V0.50 desktop: no gear at the bottom of the rail (${JSON.stringify(g)})`);
   await sleep(400);
   const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', sections: [...document.querySelectorAll('.dlg .sets h3')].map(e => e.textContent), rows: document.querySelectorAll('.dlg .prov:not(.found)').length })`);
-  check(d.title === "Settings" && d.sections.join("|") === "Providers|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  check(d.title === "Settings" && d.sections.join("|") === "Providers|Projects|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
   await evaluate(`document.querySelector('.dlg .prov .provh')?.click()`);
   await sleep(200);
   const o = await evaluate(`({ ta: !!document.querySelector('.dlg .prov.open textarea'), key: document.querySelector('.dlg .prov.open input[type=password]')?.value ?? null })`);

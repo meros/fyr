@@ -77,13 +77,18 @@ func (e *Engine) Tools(s *mcp.Server) {
 			return "Requested. The user decides in Fyr; the result arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not perform this action another way.", nil
 		}})
 
+	e.changeTools(s) // V0.59
 	s.Add(e.showTool())
 	e.viewTools(s)
 	e.threadTools(s)
 
 	s.Add(mcp.Tool{Name: "settle_when",
-		Description: "Mark this Fyr thread to settle (leave the user's inbox) when a condition holds: \"done\" when your current run ends, \"merged\" when the linked PR merges.",
-		Schema:      obj(map[string]any{"condition": map[string]any{"type": "string", "enum": []string{"done", "merged"}}}, "condition"),
+		Description: "Mark this Fyr thread to settle (leave the user's inbox) when a condition holds: \"done\" when your current run ends, \"merged\" when the linked PR merges, \"change\" when the change (id or key) reaches phase (landed is also reached by live).",
+		Schema: obj(map[string]any{
+			"condition": map[string]any{"type": "string", "enum": []string{"done", "merged", "change"}},
+			"change":    str("For condition change: the change's id or key."),
+			"phase":     map[string]any{"type": "string", "enum": []string{core.PhaseReview, core.PhaseLanded, core.PhaseLive}},
+		}, "condition"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			cond, _ := a["condition"].(string)
 			var err error
@@ -97,6 +102,19 @@ func (e *Engine) Tools(s *mcp.Server) {
 						return
 					}
 					t.SettleWhenMerged = true
+				case "change":
+					c := core.FindChange(t, sArg(a, "change"))
+					phase := sArg(a, "phase")
+					if phase == "" {
+						phase = core.PhaseLanded
+					}
+					if c == nil {
+						err = noChange(a)
+						return
+					}
+					t.SettleWhen = &core.SettleWhen{Change: c.ID, Phase: phase}
+					cond = fmt.Sprintf("%q is %s", c.Title, phase)
+					core.CheckSettleChange(t, time.Now())
 				default:
 					err = fmt.Errorf("unknown condition %q", cond)
 				}

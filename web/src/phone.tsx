@@ -19,6 +19,8 @@ import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { Filmstrip } from "./preview-ui.tsx";
 import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
+import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
+import { changeChip } from "./offers.ts";
 import { defaultTab, liveViewOf } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
 import { rowSummary } from "./view.ts";
@@ -125,6 +127,8 @@ const I = {
 // ---- props from the app shell ----
 
 export interface PhoneActions {
+  /** V0.60: any thread command, for example action.run */
+  run(id: string, action: string, args?: Record<string, unknown>): void;
   settle(ids: string[], bulk?: boolean): void;
   snooze(ids: string[], until: Date): void;
   archive(ids: string[]): void;
@@ -787,8 +791,13 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
             </span>
           )}
           {t.pr && <span class={`m-chip prc ${prLabel(t.pr).cls}`} title={prLabel(t.pr).title}>{prLabel(t.pr).text}</span>}
+          {(() => {
+            const c = changeChip(t); // V0.59 (8)
+            return c ? <span class={`m-chip prc ${c.cls}`} title={c.title}>{c.text}</span> : null;
+          })()}
           </button>
         </div>
+        <ThreadOffers t={t} onRun={(a, args) => p.actions.run(t.id, a, args)} />
         {t.hostOffline && (
           <div class="m-offl" role="status" title="The front shows this thread from its last copy; commands wait until the host is back">
             {offlineLine(t)}
@@ -816,7 +825,7 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
         )}
       </div>
       {t.tasks && t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
-      {!cardOpen && p.tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.actions.send(t.id, { text, from: "view" })} />}
+      {!cardOpen && p.tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.actions.send(t.id, { text, from: "view" })} onAction={viewAction((a, args) => p.actions.run(t.id, a, args))} />}
       {!cardOpen && p.tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
       {!cardOpen && p.tab === "conv" && <Filmstrip cards={previews} collapsible />}
       {cardOpen ? (
@@ -833,7 +842,10 @@ function MThread(p: PhoneProps & { t: ThreadDTO; tab: string }) {
           delivery={{ cancel: (messageId) => p.actions.cancelMessage(t.id, messageId), resend: (args) => p.actions.send(t.id, args) }}
         />
       ) : p.tab === "changes" ? (
-        <ChangesView threadId={t.id} />
+        <>
+          <ChangeList t={t} onRun={(a, args) => p.actions.run(t.id, a, args)} />
+          <ChangesView threadId={t.id} />
+        </>
       ) : p.tab === "pr" ? (
         <PrTab t={t} now={p.now} phone onSend={(text) => p.actions.send(t.id, { text })} onDismiss={() => p.actions.dismissPR(t.id)} onChanges={() => setTab("changes")} />
       ) : null}

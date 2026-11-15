@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -119,8 +120,10 @@ type Config struct {
 
 // FyrPrompt is the short block that steers agents to Fyr tools (V0.12).
 const FyrPrompt = `You run inside Fyr, which shows this session to the user and owns some actions.
-- To merge a pull request, call mcp__fyr__effect_request with action "pr.merge" and args {"pr": <url>, "method": "squash"|"merge"|"rebase"}. The user approves it; Fyr merges and sends you the result in a later message. Never run gh pr merge.
-- When you open a PR some other way than gh pr create, call mcp__fyr__pr_link with its URL.
+- Every change you make or prepare is a change record in Fyr (decision 0018). Fyr records this folder's git branch and its PRs itself. For anything else (a server or cluster change, a migration, a NixOS rebuild, another repo, a design, a document) call mcp__fyr__change_open before the first edit, then mcp__fyr__change_status as it moves (working, review, landed, live; a failed condition when something breaks), mcp__fyr__change_revise for a new version and mcp__fyr__change_attach for proof. Read Fyr's facts with mcp__fyr__change_list instead of polling gh.
+- Ask the user about a change with mcp__fyr__change_request (review, approve, merge, apply, deploy, revert). To merge a pull request use ask "merge"; never run gh pr merge. You cannot mark your own change approved.
+- Give the user a button for the next step with mcp__fyr__offer_action, on a change, the thread or your live view: run "script" for an exact command Fyr runs on their press, run "agent" for a step that needs judgement. Fyr never runs it without the press.
+- When you open a PR some other way than gh pr create, call mcp__fyr__pr_link with its URL (or change_open with pr).
 - When the user says the thread is finished once something happens, call mcp__fyr__settle_when.
 - To see or coordinate the user's other sessions, use mcp__fyr__threads, mcp__fyr__thread_read, mcp__fyr__thread_send and mcp__fyr__thread_new (start a separate session for work that should run on its own).
 - To show the user something (a screenshot after UI work, a chart, a mockup, a page, a 3D model or scene), call mcp__fyr__show with a path, html or url; it appears in the thread on desktop and phone. Pages run real HTML in a sandbox: WebGL, WASM, ES modules, three.js or model-viewer from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com or ajax.googleapis.com, and their own files: give path a folder (index.html plus models, textures, scripts) or an HTML file next to its files.`
@@ -131,6 +134,7 @@ const ViewPrompt = `This thread has a live view: a small page pinned above the c
 - State shape: "headline" (one line, the current status; Fyr also shows it in the inbox) plus any fields your page needs, for example "steps", "blockers", "next", "pr".
 - In the page, window.fyr.state is the current state; fyr.onState(fn) runs fn now and on every change; an element with data-text="field.path" shows that field. Fragments get the Fyr theme (CSS variables --bg --fg --muted --line --accent, light and dark). The page cannot call Fyr or other hosts; it may load libraries from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com and ajax.googleapis.com.
 - Buttons send messages: fyr.send(text), or an element with data-send="text", sends that text to you as a message from the view, as if the user typed it. Use buttons for choices and next steps; they never run anything by themselves.
+- A button can also run an action you declared on the view with mcp__fyr__offer_action {on: "view", id, …}: an element with data-action="<id>", or fyr.run("<id>"). Fyr runs it on the user's press: a script exactly as declared, or a prompt to you or a new thread. Use it for an exact step (run the e2e suite, apply the plan); use data-send for a choice.
 - A message marked [Typed on the live view tab] was written while the user looks at the view, not the conversation. Answer it first in one or two plain, spoken sentences (the answer, or what you will do now); that reply is shown next to their message on the View tab. Then do the work and update the view.
 - Update the view as the work moves, not only at the end: when you start or finish an item, change the headline and the items that moved. Fyr reminds you after a few minutes without an update.
 - Before you end a turn, update the view if anything it shows changed, or call mcp__fyr__view_unchanged {reason}. Keep it short and current; it is the first thing the user reads.`
@@ -777,13 +781,15 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			ch <- msg
 		}
 		data := map[string]any{"interrupted": interrupted, "costUsd": msg["total_cost_usd"], "durationMs": msg["duration_ms"], "failure": f}
-		branch := gitBranch(s.cwd)
+		facts := gitFacts(s.cwd)
+		branch := facts.Branch
 		m.host.Observe(s.thread, func(t *core.Thread, now time.Time) {
 			if f != nil {
 				f.At = now
 			}
 			core.RunEnded(t, f, now)
 			t.Branch = branch
+			core.GitObserved(t, facts, now) // V0.59 (3)
 			if restore {
 				// V0.37: a forced turn that only updated the view keeps the
 				// run's own last words as the summary.
@@ -1110,6 +1116,67 @@ func (m *Manager) StopAll() {
 	for _, id := range ids {
 		m.Stop(id)
 	}
+}
+
+// gitFacts reads the branch facts of a checkout after a run (SPEC 0.5 V0.2,
+// V0.59 (3)): branch, base, commits ahead of the base, unpushed commits and
+// changed files. Outside git, or on a timeout, only what was read is set.
+func gitFacts(dir string) core.GitFacts {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	git := func(args ...string) (string, bool) {
+		out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
+		return strings.TrimSpace(string(out)), err == nil
+	}
+	var g core.GitFacts
+	g.Branch, _ = git("branch", "--show-current")
+	if g.Branch == "" {
+		return g
+	}
+	if u, ok := git("remote", "get-url", "origin"); ok {
+		g.Repo = NormalizeRemote(u)
+	} else if root, ok := git("rev-parse", "--show-toplevel"); ok {
+		g.Repo = root
+	}
+	g.Head, _ = git("rev-parse", "--short", "HEAD")
+	for _, b := range []string{"origin/HEAD", "origin/main", "origin/master"} {
+		if mb, ok := git("merge-base", b, "HEAD"); ok && mb != "" {
+			g.Base = b
+			if n, ok := git("rev-list", "--count", mb+"..HEAD"); ok {
+				g.Ahead, _ = strconv.Atoi(n)
+			}
+			break
+		}
+	}
+	if n, ok := git("rev-list", "--count", "@{upstream}..HEAD"); ok {
+		g.Unpushed, _ = strconv.Atoi(n)
+	} else {
+		g.Unpushed = g.Ahead // no upstream: nothing of the branch is pushed
+	}
+	if st, ok := git("status", "--porcelain"); ok && st != "" {
+		g.Dirty = len(strings.Split(st, "\n"))
+	}
+	return g
+}
+
+// NormalizeRemote turns a git remote into host/owner/name: git@github.com:o/r.git
+// and https://github.com/o/r are both github.com/o/r.
+func NormalizeRemote(u string) string {
+	u = strings.TrimSpace(u)
+	u = strings.TrimSuffix(strings.TrimSuffix(u, "/"), ".git")
+	for _, p := range []string{"https://", "http://", "ssh://", "git://"} {
+		u = strings.TrimPrefix(u, p)
+	}
+	if i := strings.Index(u, "@"); i >= 0 {
+		u = u[i+1:]
+	}
+	if i := strings.Index(u, ":"); i >= 0 && !strings.Contains(u[:i], "/") {
+		u = u[:i] + "/" + u[i+1:]
+	}
+	if i := strings.Index(u, "/"); i > 0 {
+		u = strings.ToLower(u[:i]) + u[i:]
+	}
+	return u
 }
 
 // gitBranch is the current branch of a checkout, or "" (SPEC 0.5 V0.2).

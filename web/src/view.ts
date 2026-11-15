@@ -69,7 +69,7 @@ export function viewHeight(reported: number, pane: number): number {
 /** A press carries at most this much text. */
 export const PRESS_MAX = 2000;
 
-export type BridgeIn = { kind: "ready" } | { kind: "size"; height: number } | { kind: "press"; text: string; id: string | number | null };
+export type BridgeIn = { kind: "ready" } | { kind: "size"; height: number } | { kind: "press"; text: string; id: string | number | null } | { kind: "action"; action: string; id: string | number | null };
 
 /**
  * A message from the view's iframe, or null. Only the view's own frame counts (`source === frame`): any other window,
@@ -99,6 +99,13 @@ export function bridgeMessage(source: unknown, frame: unknown, data: unknown): B
       if (!text || text.length > PRESS_MAX) return null;
       const id = typeof d.id === "string" || typeof d.id === "number" ? d.id : null;
       return { kind: "press", text, id };
+    }
+    case "ui/action": {
+      // V0.60: data-action / fyr.run(id) runs the view's declared action with that id.
+      const action = str(p.action).trim();
+      if (!action || action.length > 100) return null;
+      const id = typeof d.id === "string" || typeof d.id === "number" ? d.id : null;
+      return { kind: "action", action, id };
     }
   }
   return null;

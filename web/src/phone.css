@@ -378,3 +378,4 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-offl{margin:0 16px 8px;padding:8px 12px;border-radius:8px;background:var(--sunken);color:var(--ink-muted);font:500 13px/18px var(--ui);overflow-wrap:anywhere}
 .m-off{color:var(--ink-muted);font-weight:600}
 .m-hostn{font-family:var(--mono);font-size:12px}
+.m-app .offers{padding:4px 16px}.m-app .chc .offers{padding:0}.m-app .offb .btn{min-height:40px}.m-app .chl{padding:12px 16px 4px}

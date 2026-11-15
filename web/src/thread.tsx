@@ -29,6 +29,8 @@ import { defaultTab, liveViewOf, showsDecision } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
+import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
+import { changeChip } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
 
@@ -159,12 +161,21 @@ export function ThreadPane(p: ThreadPaneProps) {
           <ModelChip t={t} profile={profile} onRun={p.onRun} />
           <EffortChip t={t} profile={profile} onRun={p.onRun} />
           {t.pr && <PrChip pr={t.pr} onDismiss={isAvailable(t, "thread.dismissPR") ? () => p.onRun("thread.dismissPR") : undefined} />}
+          {(() => {
+            const c = changeChip(t); // V0.59 (8)
+            return c ? (
+              <span class={`chip prc ${c.cls}`} title={c.title} onClick={() => setTab("changes")}>
+                <span>{c.text}</span>
+              </span>
+            ) : null;
+          })()}
           {(t.settleWhenDone || t.settleWhenMerged) && (
             <span class="chip">
               <span>{t.settleWhenDone ? "settles when done" : "settles when merged"}</span>
             </span>
           )}
         </div>
+        <ThreadOffers t={t} onRun={p.onRun} />
         <div class="tabs" role="tablist">
           {hasView && (
             <span class={tab === "view" ? "on" : ""} role="tab" onClick={() => setTab("view")}>
@@ -185,7 +196,7 @@ export function ThreadPane(p: ThreadPaneProps) {
         </div>
       </div>
       {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
-      {tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} />}
+      {tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} onAction={viewAction(p.onRun)} />}
       {tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
       {tab === "conv" && <Filmstrip cards={previews} />}
       {tab === "conv" && (
@@ -200,7 +211,12 @@ export function ThreadPane(p: ThreadPaneProps) {
           delivery={{ cancel: async (messageId) => p.onRun("thread.cancelMessage", { messageId }), resend: p.onSend }}
         />
       )}
-      {tab === "changes" && <ChangesView threadId={t.id} />}
+      {tab === "changes" && (
+        <div class="chtab">
+          <ChangeList t={t} onRun={p.onRun} />
+          <ChangesView threadId={t.id} />
+        </div>
+      )}
       {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}
       {showsDecision(tab) && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
       <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />

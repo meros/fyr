@@ -107,6 +107,11 @@ export interface ThreadDTO {
   failure?: Failure | null;
   decisions?: Decision[] | null;
   pr?: PullRequest | null;
+  /** V0.59: the thread's change records */
+  changes?: Change[];
+  /** V0.60: the thread's and its live view's actions, and their last runs */
+  offers?: Offer[];
+  offerRuns?: OfferRun[];
   settledAt?: string | null;
   archivedAt?: string | null;
   settleWhenDone?: boolean;
@@ -259,4 +264,70 @@ export interface T3Candidate {
   prUrl?: string;
   updatedAt?: string;
   hasTranscript?: boolean;
+}
+
+/** V0.59 (decision 0018): one change a thread makes or asks for. */
+export type ChangePhase = "working" | "review" | "landed" | "live" | "abandoned" | "reverted";
+
+export interface Change {
+  id: string;
+  key: string;
+  kind: string;
+  title: string;
+  targets?: string[];
+  branch?: string;
+  revisions?: { id: string; summary?: string; url?: string; by: string; at: string }[];
+  phase: ChangePhase;
+  label?: string;
+  conditions?: ChangeCondition[];
+  evidence?: { kind: string; url?: string; attachment?: string; title?: string }[];
+  group?: string;
+  after?: string[];
+  needs?: string;
+  phaseBy: "agent" | "observed" | "owner";
+  /** V0.60 */
+  actions?: Offer[];
+  runs?: OfferRun[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChangeCondition {
+  type: string;
+  status: "ok" | "fail" | "pending";
+  reason?: string;
+  source: "agent" | "observed" | "owner";
+  at: string;
+}
+
+/** V0.60: a button the owner presses, on a change, the thread or its live view. */
+export interface Offer {
+  id: string;
+  on?: "thread" | "view";
+  label: string;
+  run: "fyr" | "script" | "agent";
+  effect?: string;
+  argv?: string[];
+  cwd?: string;
+  timeoutSec?: number;
+  prompt?: string;
+  in?: "this" | "new";
+  when?: ChangePhase[];
+  revision?: string;
+  onOk?: ChangePhase;
+  primary?: boolean;
+  by: "agent" | "observed";
+  digest: string;
+}
+
+export interface OfferRun {
+  action: string;
+  label: string;
+  by: string;
+  at: string;
+  running?: boolean;
+  ok: boolean;
+  exit?: number;
+  output?: string;
+  endedAt?: string;
 }
