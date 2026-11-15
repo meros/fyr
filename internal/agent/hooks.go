@@ -45,6 +45,32 @@ func (m *Manager) feed(threadID string) error {
 	return m.send(threadID, core.Effect{Kind: core.EffectSend, Text: core.NoticeText(ns)}, nil)
 }
 
+// hook answers a hook callback of s's process by its callback id. The
+// feed's notices are for the thread's own agent (#49): a hook input that
+// names a subagent (the CLI adds agent_id and agent_type to the input of a
+// tool call made inside one) takes nothing and leaves the queue as it is.
+// A subagent's stop is SubagentStop, which Fyr does not register; the
+// check covers the Stop hook too.
+func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
+	switch id {
+	case "view", "viewnudge":
+		if sub, _ := in["agent_id"].(string); sub != "" {
+			return nil
+		}
+		if id == "view" {
+			return m.stopHook(s, in)
+		}
+		return m.toolHook(s)
+	}
+	name, _ := in["tool_name"].(string)
+	ti, _ := in["tool_input"].(map[string]any)
+	if r := core.Gate(name, ti); r != "" {
+		return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse",
+			"permissionDecision": "deny", "permissionDecisionReason": r}}
+	}
+	return nil
+}
+
 // stopHook answers the Stop hook (SPEC 0.5 V0.37): the feed's stop notices
 // (the upkeep of the view and the changes) block the Stop once per run, in
 // one reason, never while background work runs.
