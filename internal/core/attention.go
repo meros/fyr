@@ -96,6 +96,9 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 	if r := t.PR.Blocking(); r != "" {
 		return Attention{Blocked, NeedsYou, r}
 	}
+	if r := ChangeBlocking(t); r != "" { // V0.59 (6)
+		return Attention{Blocked, NeedsYou, r}
+	}
 	if v == nil || t.ActivityAt.After(v.SeenAt) {
 		return Attention{Done, NeedsYou, ""}
 	}

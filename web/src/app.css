@@ -934,3 +934,31 @@ button.ptag{padding:0}
 .set.phone .setkey{flex-wrap:wrap}
 .set.phone .setkey input{flex:1 1 180px}
 .set.phone .login .loginlink{align-self:stretch}
+/* V0.59, V0.60: changes and their actions */
+.pr.chg{max-width:180px}
+.chtab{display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+.chl{display:flex;flex-direction:column;gap:8px;padding:12px 16px 4px}
+.chc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--raised);min-width:0}
+.chc.fail{border-color:var(--signal-ink)}
+.chc.end{opacity:.65}
+.chh{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0}
+.chk{flex:none;width:20px;text-align:center;color:var(--ink-muted)}
+.cht{flex:1 1 60%;font:600 14px/20px var(--ui)}
+.chp{flex:none;font:400 12px/16px var(--mono);color:var(--ink-muted)}
+.chrail{display:flex;gap:4px;margin:0;padding:0;list-style:none}
+.chrail li{flex:1;font:500 11px/14px var(--ui);color:var(--ink-muted);border-top:3px solid var(--line);padding-top:3px}
+.chrail li.done{border-color:var(--harbour);color:var(--ink)}
+.chrail li.now{border-color:var(--harbour);color:var(--harbour);font-weight:600}
+.chrail li.end{border-color:var(--ink-muted);flex:none;padding-right:8px}
+.chcond{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px;font:400 12px/16px var(--ui)}
+.chcond li.fail{color:var(--signal-ink)}
+.chcond li.pending{color:var(--ink-muted)}
+.chneed{font:600 12px/16px var(--ui);color:var(--signal-ink)}
+.chev{display:flex;flex-wrap:wrap;gap:8px;font:400 12px/16px var(--ui)}
+.offers{display:flex;flex-direction:column;gap:4px;min-width:0}
+.thead .offers,.m-thead .offers{padding:4px 0}
+.offb{display:flex;flex-wrap:wrap;gap:6px}
+.offrun{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.offrun.ok{color:var(--calm)}.offrun.fail{color:var(--signal-ink)}
+.offrl{padding:0;text-align:left;color:inherit}
+.offout{margin:4px 0 0;max-height:200px;overflow:auto;padding:6px 8px;border-radius:6px;background:var(--sunken);font:400 11px/15px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}

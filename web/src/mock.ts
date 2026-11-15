@@ -430,6 +430,33 @@ function fullFixture(now: number): Fixture {
     { t3Id: "t3_b", title: LONG_TITLE, cwd: "/home/owner/src/" + LONG_PROJECT, profile: "claudeAgent", model: "claude-opus-5-5", updatedAt: iso(now - 7200_000), hasTranscript: false },
     { t3Id: "t3_c", title: "Översätt e-postmallar", cwd: "/home/owner/src/norban/mail", profile: "codex", model: "gpt-5", updatedAt: iso(now - 86400_000), hasTranscript: true },
   ];
+  // V0.59, V0.60: changes that are not a PR, with actions, on one thread.
+  const ops = threads.find((x) => x.id === "t_done");
+  if (ops) {
+    const iso = (min: number) => new Date(now - min * 60_000).toISOString();
+    const dg = (s: string) => s.length.toString(16).padStart(16, "0");
+    ops.changes = [
+      {
+        id: "c_scale", key: "k8s:prod/api replicas", kind: "infra", title: "Raise api replicas to 4", targets: ["k8s:gke-prod/api"], phase: "landed", phaseBy: "agent", label: "applied to prod",
+        revisions: [{ id: "sha256:9f2c41d07aa1", summary: "replicas 2 → 4, readiness probe 5 s", by: "agent", at: iso(70) }],
+        conditions: [{ type: "health", status: "fail", reason: "2 of 4 pods in CrashLoopBackOff", source: "agent", at: iso(62) }],
+        evidence: [{ kind: "log", url: "https://console.cloud.google.com/logs", title: "pod logs" }],
+        actions: [
+          { id: "fix", label: "Investigate the crash loop", run: "agent", in: "this", prompt: "Read the logs of the crashing pods, find the cause, and propose a fix before you change anything.", primary: true, by: "agent", digest: dg("fix") },
+          { id: "rollback", label: "Roll back", run: "script", argv: ["kubectl", "--context", "gke-prod", "rollout", "undo", "deploy/api"], onOk: "reverted", by: "agent", digest: dg("rollback") },
+        ],
+        runs: [{ action: "apply", label: "Apply", by: "owner", at: iso(65), ok: true, output: "deployment.apps/api configured", endedAt: iso(64) }],
+        createdAt: iso(80), updatedAt: iso(62),
+      },
+      {
+        id: "c_runbook", key: "doc:runbook", kind: "doc", title: "Runbook for api scaling", phase: "review", phaseBy: "agent", needs: "owner",
+        evidence: [{ kind: "doc", url: "https://docs.example/runbook", title: "draft" }],
+        actions: [{ id: "publish", label: "Publish to the wiki", run: "agent", in: "this", prompt: "Publish the runbook to the team wiki and link it here.", by: "agent", digest: dg("publish") }],
+        createdAt: iso(50), updatedAt: iso(40),
+      },
+    ];
+    ops.offers = [{ id: "smoke", on: "thread", label: "Run smoke tests", run: "script", argv: ["make", "smoke"], by: "agent", digest: dg("smoke") }];
+  }
   return { threads, events, t3 };
 }
 
@@ -669,17 +696,19 @@ function post(m){m.jsonrpc="2.0";parent.postMessage(m,"*")}
 function pick(o,p){return p.split(".").reduce(function(a,k){return a==null?a:a[k]},o)}
 function fill(){var els=document.querySelectorAll("[data-text]");for(var i=0;i<els.length;i++){var v=pick(state,els[i].getAttribute("data-text"));els[i].textContent=v==null?"":typeof v=="object"?JSON.stringify(v):String(v)}}
 window.fyr={get state(){return state},onState:function(f){subs.push(f);try{f(state)}catch(e){console.error(e)}},
-send:function(t){t=String(t||"").trim();if(!t)return Promise.resolve(false);var id="m"+(++n);return new Promise(function(r){wait[id]=r;setTimeout(function(){if(wait[id]){delete wait[id];r(false)}},15000);post({id:id,method:"ui/message",params:{role:"user",content:[{type:"text",text:t}]}})})}};
+send:function(t){t=String(t||"").trim();if(!t)return Promise.resolve(false);return ask("ui/message",{role:"user",content:[{type:"text",text:t}]})},
+run:function(a){a=String(a||"").trim();if(!a)return Promise.resolve(false);return ask("ui/action",{action:a})}};
+function ask(m,p){var id="m"+(++n);return new Promise(function(r){wait[id]=r;setTimeout(function(){if(wait[id]){delete wait[id];r(false)}},15000);post({id:id,method:m,params:p})})}
 addEventListener("message",function(e){if(e.source!==parent)return;var d=e.data;if(d&&d.id&&wait[d.id]){var r=wait[d.id];delete wait[d.id];r(!d.error);return}if(!d||d.method!=="ui/notifications/state")return;
 state=(d.params&&d.params.state)||{};fill();subs.forEach(function(f){try{f(state)}catch(x){console.error(x)}})});
-document.addEventListener("click",function(e){var b=e.target&&e.target.closest&&e.target.closest("[data-send]");if(!b)return;e.preventDefault();if(b.getAttribute("data-fyr")==="busy")return;
+document.addEventListener("click",function(e){var b=e.target&&e.target.closest&&e.target.closest("[data-send],[data-action]");if(!b)return;e.preventDefault();if(b.getAttribute("data-fyr")==="busy")return;
 b.setAttribute("data-fyr","busy");b.setAttribute("aria-busy","true");
-fyr.send(b.getAttribute("data-send")||b.textContent).then(function(ok){b.removeAttribute("aria-busy");b.setAttribute("data-fyr",ok?"sent":"failed");setTimeout(function(){if(b.getAttribute("data-fyr")!=="busy")b.removeAttribute("data-fyr")},ok?1800:3000)})});
+(b.hasAttribute("data-action")?fyr.run(b.getAttribute("data-action")):fyr.send(b.getAttribute("data-send")||b.textContent)).then(function(ok){b.removeAttribute("aria-busy");b.setAttribute("data-fyr",ok?"sent":"failed");setTimeout(function(){if(b.getAttribute("data-fyr")!=="busy")b.removeAttribute("data-fyr")},ok?1800:3000)})});
 var last=-1;function size(){var h=Math.ceil(document.documentElement.getBoundingClientRect().height);if(h!==last){last=h;post({method:"ui/notifications/size-changed",params:{height:h}})}}
 if(window.ResizeObserver)new ResizeObserver(size).observe(document.documentElement);addEventListener("load",size);
 document.addEventListener("DOMContentLoaded",function(){fill();size()});
 post({method:"ui/notifications/initialized",params:{}});
-})();</script><style>[data-send]{transition:opacity .12s}[data-send]:active{transform:scale(.97)}[data-fyr=busy]{opacity:.55;cursor:progress;pointer-events:none}[data-fyr=sent]::after{content:" ✓ Sent"}[data-fyr=failed]::after{content:" · Not sent";color:#c0392b}</style>`;
+})();</script><style>[data-send],[data-action]{transition:opacity .12s}[data-send]:active,[data-action]:active{transform:scale(.97)}[data-fyr=busy]{opacity:.55;cursor:progress;pointer-events:none}[data-fyr=sent]::after{content:" ✓ Sent"}[data-fyr=failed]::after{content:" · Not sent";color:#c0392b}</style>`;
 const VIEW_THEME = `
 :root{--bg:#ffffff;--fg:#111820;--muted:#56616d;--line:#dde1e6;--accent:#e8960f;--surface:#f6f7f8;color-scheme:light dark}
 @media (prefers-color-scheme: dark){:root{--bg:#161d24;--fg:#e8ecf0;--muted:#9aa6b2;--line:#26303a;--accent:#f5a524;--surface:#0f1419}}
@@ -1033,6 +1062,29 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       // V0.46: the threads carry the project's quietUntil, so they change with it.
       if ("quiet" in args) for (const t of threads.values()) if (projectIdFor(t) === np.id) setTimeout(() => sub?.thread(dtoOf(t)), 40);
       return { ok: true };
+    }
+    if (action === "action.run") {
+      // V0.60: a press; a script ends ok a moment later with a line of output.
+      if (!t) return { ok: false, error: "no thread" };
+      const on = String(args.on ?? "");
+      const ch = t.changes?.find((c) => c.id === on);
+      const offers = ch ? ch.actions : t.offers?.filter((o) => o.on === on);
+      const o = offers?.find((x) => x.id === args.action);
+      if (!o) return { ok: false, error: `no action ${args.action}` };
+      if (o.digest !== args.digest) return { ok: false, error: "The action changed since you saw it; look at it again." };
+      if (o.run === "script" || o.run === "fyr") {
+        const at = new Date(clock()).toISOString();
+        const run = { action: o.id, label: o.label, by: "owner", at, running: true, ok: false };
+        const runs = [...((ch ? ch.runs : t.offerRuns) ?? []), run];
+        put(t, ch ? { changes: t.changes!.map((c) => (c === ch ? { ...c, runs } : c)) } : { offerRuns: runs });
+        setTimeout(() => {
+          const cur = threads.get(t.id)!;
+          const done = { ...run, running: false, ok: true, output: `$ ${(o.argv ?? [o.effect]).join(" ")}\nok (mock)`, endedAt: new Date(clock()).toISOString() };
+          const fin = (rs: typeof runs | undefined) => (rs ?? []).map((r) => (r === run || (r.action === run.action && r.running) ? done : r));
+          put(cur, ch ? { changes: cur.changes!.map((c) => (c.id === ch.id ? { ...c, runs: fin(c.runs) } : c)) } : { offerRuns: fin(cur.offerRuns) });
+        }, 1200);
+      }
+      return { ok: true, result: { on, action: o.id } };
     }
     if (action === "project.delete") {
       const p = projects.find((x) => x.id === args.id);

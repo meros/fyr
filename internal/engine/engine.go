@@ -57,6 +57,8 @@ type Engine struct {
 
 	Agents  Agents
 	Effects EffectRunner
+	// Scripts runs script actions of changes (V0.60); nil runs them with exec.
+	Scripts ScriptRunner
 	Hub     *Hub
 	Now     func() time.Time
 	// Adopt handles t3.adopt; set by main.
@@ -293,6 +295,9 @@ func (e *Engine) Command(c Cmd) Reply {
 	if strings.HasPrefix(c.Action, "project.") {
 		return e.projectCommand(c)
 	}
+	if c.Action == "action.run" { // V0.60: the owner presses an action
+		return e.runAction(c)
+	}
 	if c.Action == "thread.cancelMessage" {
 		return e.cancelMessage(c)
 	}
@@ -473,6 +478,11 @@ func (e *Engine) runEffect(threadID string, ef core.Effect) {
 		return
 	}
 	ok, text := false, "The user declined it."
+	if strings.HasPrefix(req.Action, "change.") { // V0.59: an ask Fyr does not run
+		ok, text = e.changeEffect(threadID, *req, ef.Allow)
+		e.Report(threadID, *req, ef.Allow, ok, text)
+		return
+	}
 	if ef.Allow {
 		if e.Effects == nil {
 			text = "No effect runner is configured."
@@ -557,7 +567,11 @@ func (e *Engine) Report(threadID string, req core.EffectReq, allowed, ok bool, t
 		status = "was declined by the user"
 	}
 	b, _ := json.Marshal(req.Args)
-	msg := fmt.Sprintf("[Fyr] Your effect_request %s %s %s.\n%s", req.Action, string(b), status, text)
+	tool := "effect_request"
+	if _, ok := req.Args["change"]; ok {
+		tool = "change_request" // V0.59
+	}
+	msg := fmt.Sprintf("[Fyr] Your %s %s %s %s.\n%s", tool, req.Action, string(b), status, text)
 	if err := e.Agents.Do(threadID, core.Effect{Kind: "send", Text: msg}); err != nil {
 		log.Printf("thread %s: deliver effect result: %v", threadID, err)
 	}

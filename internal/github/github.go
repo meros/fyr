@@ -33,7 +33,7 @@ func Fetch(ctx context.Context, gh Runner, url string) (core.PR, error) {
 	if !ok {
 		return core.PR{}, fmt.Errorf("not a PR URL: %s", url)
 	}
-	out, err := gh(ctx, "pr", "view", url, "--json", "state,mergeable,reviewDecision,statusCheckRollup,title")
+	out, err := gh(ctx, "pr", "view", url, "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName")
 	if err != nil {
 		return core.PR{}, err
 	}
@@ -42,6 +42,7 @@ func Fetch(ctx context.Context, gh Runner, url string) (core.PR, error) {
 		Mergeable      string `json:"mergeable"`
 		ReviewDecision string `json:"reviewDecision"`
 		Title          string `json:"title"`
+		HeadRefName    string `json:"headRefName"`
 		Rollup         []struct {
 			Typename   string `json:"__typename"`
 			Status     string `json:"status"`
@@ -67,7 +68,7 @@ func Fetch(ctx context.Context, gh Runner, url string) (core.PR, error) {
 	}
 	now := time.Now()
 	return core.PR{URL: url, Repo: repo, Number: n, Title: v.Title, State: v.State, Checks: checks,
-		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", CheckedAt: &now}, nil
+		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", Branch: v.HeadRefName, CheckedAt: &now}, nil
 }
 
 // Merge merges a PR with gh (the pr.merge effect).

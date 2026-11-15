@@ -43,6 +43,12 @@ type Thread struct {
 	Failure   *Failure   `json:"failure,omitempty"`
 	Decisions []Decision `json:"decisions,omitempty"`
 	PR        *PR        `json:"pr,omitempty"`
+	// Changes are the thread's change records (V0.59, decision 0018).
+	Changes []Change `json:"changes,omitempty"`
+	// Offers are the thread's and its live view's actions; OfferRuns their
+	// last results (V0.60). A change holds its own.
+	Offers    []Offer    `json:"offers,omitempty"`
+	OfferRuns []OfferRun `json:"offerRuns,omitempty"`
 	// DismissedPRs are PR URLs the owner put away (V0.36); they never attach again.
 	DismissedPRs []string `json:"dismissedPRs,omitempty"`
 	// Outbox holds the messages the agent has not read yet (V0.33).
@@ -58,6 +64,8 @@ type Thread struct {
 	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
 	SettleWhenDone   bool       `json:"settleWhenDone,omitempty"`
 	SettleWhenMerged bool       `json:"settleWhenMerged,omitempty"`
+	// SettleWhen settles when a change reaches a phase (V0.59 (7)).
+	SettleWhen *SettleWhen `json:"settleWhen,omitempty"`
 
 	Source string `json:"source"`           // "fyr" or "t3"
 	Parent string `json:"parent,omitempty"` // the thread whose agent started it (V0.22)
@@ -163,6 +171,7 @@ type PR struct {
 	Checks    string     `json:"checks"` // pass, fail, pending, none
 	Review    string     `json:"review,omitempty"`
 	Conflict  bool       `json:"conflict,omitempty"`
+	Branch    string     `json:"branch,omitempty"` // the head branch (V0.59)
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
 }
 

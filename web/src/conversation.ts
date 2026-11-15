@@ -1,5 +1,6 @@
 // Turns the event timeline into render items. Pure.
 
+import { actionEventLine, changeEventLine } from "./offers.ts";
 import type { Failure, FyrEvent } from "./types.ts";
 import { taskEventText } from "./tasks.ts";
 import { previewCard, type PreviewCard } from "./previews.ts";
@@ -321,6 +322,18 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
       case "effect.result": {
         const text = str(e.data?.text);
         pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text, line: firstLine(text) || (e.data?.ok ? "Done" : "Failed") });
+        break;
+      }
+      case "change": {
+        // V0.59: a change tool call, one line; the Changes tab holds the record.
+        const line = changeEventLine(e.data);
+        pushItem({ kind: "effect", key, action: "change", ok: true, text: line, line });
+        break;
+      }
+      case "action": {
+        // V0.60: a press and its result; the output is the text.
+        const a = actionEventLine(e.data);
+        pushItem({ kind: "effect", key, action: "action", ok: a.ok, text: str(e.data?.output) || a.line, line: a.line });
         break;
       }
       case "handover":

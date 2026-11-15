@@ -11,6 +11,7 @@ import { SECTIONS, type SectionKey, type Sections } from "./store.ts";
 import { StateIcon, stateClass, stateLabel } from "./icons.tsx";
 import { count, relTime, untilLabel, whenLabel } from "./format.ts";
 import { prLabel } from "./thread.tsx";
+import { changeChip } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
 import { rowSummary } from "./view.ts";
 import { quietNote } from "./quiet.ts";
@@ -121,6 +122,13 @@ function stateWord(t: ThreadDTO): string {
 }
 
 function PrBadge({ t, short }: { t: ThreadDTO; short?: boolean }) {
+  const c = changeChip(t, short); // V0.59 (8): a change that is not a PR, when no PR is open
+  if (c)
+    return (
+      <span class={`pr chg ${c.cls}`} title={c.title}>
+        {c.text}
+      </span>
+    );
   if (!t.pr) return <span class="pr none" aria-label="no pull request" />;
   const l = prLabel(t.pr, short);
   return (
@@ -177,7 +185,7 @@ function OneRow({ t, now, sel, picked, onClick }: RowProps) {
           {!working && st !== "snoozed" ? <ThreadProject t={t} /> : sub}
         </i>
       </span>
-      {working && !groupTasks(t.tasks).running.length ? <span class="sb">{t.subagents ?? 0} sub</span> : working ? <span /> : t.pr ? <PrBadge t={t} short /> : <span />}
+      {working && !groupTasks(t.tasks).running.length ? <span class="sb">{t.subagents ?? 0} sub</span> : working ? <span /> : t.pr || changeChip(t) ? <PrBadge t={t} short /> : <span />}
       <span class="age">{when}</span>
     </div>
   );

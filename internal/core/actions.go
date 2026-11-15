@@ -448,6 +448,9 @@ func init() {
 				return nil, nil
 			}
 			t.LiveView = on
+			if !on {
+				ClearView(t) // V0.60: the view's actions go with it
+			}
 			return []Effect{{Kind: "refresh"}}, nil
 		}})
 

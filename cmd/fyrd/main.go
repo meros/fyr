@@ -594,8 +594,19 @@ type prSource struct{ e *engine.Engine }
 func (s prSource) Snapshot() []github.PRThread {
 	var out []github.PRThread
 	for _, t := range s.e.Snapshot() {
-		if t.PR != nil && t.PR.State == "OPEN" && t.ArchivedAt == nil {
-			out = append(out, github.PRThread{ID: t.ID, URL: t.PR.URL})
+		if t.ArchivedAt != nil {
+			continue
+		}
+		main := ""
+		if t.PR != nil && t.PR.State == "OPEN" {
+			main = t.PR.URL
+			out = append(out, github.PRThread{ID: t.ID, URL: main})
+		}
+		// V0.59 (4): the PR of every code change not ended, not only the main one.
+		for _, u := range core.PRURLs(t.Thread) {
+			if u != main {
+				out = append(out, github.PRThread{ID: t.ID, URL: u})
+			}
 		}
 	}
 	return out
@@ -605,6 +616,8 @@ func (s prSource) Observe(id string, pr core.PR) {
 	s.e.Observe(id, func(t *core.Thread, now time.Time) {
 		if t.PR != nil && t.PR.URL == pr.URL {
 			core.PRObserved(t, pr, now)
+		} else {
+			core.ChangePRObserved(t, pr, now) // V0.59: another PR of the thread
 		}
 	})
 }

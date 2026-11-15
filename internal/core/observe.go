@@ -84,6 +84,7 @@ func PRObserved(t *Thread, p PR, now time.Time) {
 	}
 	old := t.PR
 	t.PR = &p
+	ChangePRObserved(t, p, now) // V0.59: the PR is also a code change
 	changed := old == nil || old.State != p.State || old.Blocking() != p.Blocking()
 	if changed && (p.Blocking() != "" || p.State != "OPEN") {
 		t.ActivityAt = now

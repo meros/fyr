@@ -1205,6 +1205,7 @@ function App() {
     retry: (id) => void runAction("thread.retry", [id]),
     interrupt: (id) => void runAction("thread.interrupt", [id]),
     dismissPR: (id) => void runAction("thread.dismissPR", [id]),
+    run: (id, action, args) => void runAction(action, [id], args),
     setView: (id, on) => void runAction("thread.setView", [id], { on }),
     setModel: (id, model) => void runAction("thread.setModel", [id], { model }),
     setEffort: (id, effort) => void runAction("thread.setModel", [id], { effort }),
