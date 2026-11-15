@@ -42,6 +42,7 @@ func gitFacts(dir string) core.GitFacts {
 			if n, ok := git("rev-list", "--count", mb+"..HEAD"); ok {
 				g.Ahead, _ = strconv.Atoi(n)
 			}
+			g.BaseHead, _ = git("rev-parse", "--short", b)
 			break
 		}
 	}
@@ -86,6 +87,17 @@ func (Git) End(dir, branch, base, lastHead string) (gone, merged, known bool) {
 	commit := tip
 	if gone {
 		commit = lastHead
+	}
+	// #51: a branch that is not ahead of its base has nothing of its own to merge, so its ancestor test
+	// answers true for every base that moved on: behind the base is not merged into it.
+	if !gone {
+		b := base
+		if b == "" {
+			b = "origin/HEAD"
+		}
+		if n, ok := git("rev-list", "--count", b+".."+branch); ok && n == "0" {
+			return gone, false, true
+		}
 	}
 	bases := []string{base}
 	if base == "" {

@@ -138,6 +138,14 @@ func TestGitEnd(t *testing.T) {
 	if gone, merged, _ := g.End(work, "spike", "", spike); !gone || merged {
 		t.Fatalf("deleted without a merge: gone %v merged %v", gone, merged)
 	}
+	// #51, V0.76 (1): a branch behind its base is not merged into it, though its head is an ancestor of it.
+	lag := git(work, "rev-parse", "--short", "HEAD")
+	git(work, "branch", "-q", "lag", lag)
+	git(work, "commit", "-q", "--allow-empty", "-m", "base moves on")
+	git(work, "push", "-q", "origin", "main")
+	if gone, merged, _ := g.End(work, "lag", "origin/main", lag); gone || merged {
+		t.Fatalf("behind the base: gone %v merged %v", gone, merged)
+	}
 	if _, _, known := g.End(dir, "feat", "", head); known {
 		t.Fatal("a folder that is not a checkout is known")
 	}
