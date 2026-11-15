@@ -493,7 +493,7 @@ func init() {
 			if s == "" {
 				return nil, fmt.Errorf("%w: empty title", ErrBadArgs)
 			}
-			t.Title = s
+			t.Title, t.TitleBy = s, ByOwner
 			return nil, nil
 		}})
 

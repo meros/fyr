@@ -14,8 +14,11 @@ const Owner = "owner"
 // Live view, the Settle and the Actions. The project's name is not stored:
 // clients get it from ProjectID.
 type Thread struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// TitleBy is who named the thread last: the owner's name is kept
+	// against the agent's (V0.69); "" for a title from the first message.
+	TitleBy   string `json:"titleBy,omitempty"`
 	Cwd       string `json:"cwd"`
 	ProjectID string `json:"projectId,omitempty"` // V0.23
 	// ProjectManual: the thread was filed by hand; folder matching never

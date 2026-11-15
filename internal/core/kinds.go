@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // The Input kinds of the thread record besides the owner's commands (which
@@ -18,6 +19,7 @@ import (
 const (
 	KindRecord          = "record"
 	KindPRLink          = "pr.link"
+	KindThreadRename    = "thread.retitle"
 	KindEffectRequest   = "effect.request"
 	KindChangeRequest   = "change.request"
 	KindSettleWhen      = "settle.when"
@@ -382,9 +384,35 @@ func init() {
 			t.Failure = nil
 			return Result{Events: []Event{{"handover", a.Data}}}, nil
 		}},
+		{Name: KindThreadRename, From: agentOnly, Reduce: reduceRename},
 	} {
 		RegisterKind(k)
 	}
+}
+
+// MaxTitle is the longest thread title in characters (V0.69).
+const MaxTitle = 80
+
+// reduceRename is the agent's thread_rename (V0.69): one trimmed line of at
+// most MaxTitle characters; a name the owner gave is kept.
+func reduceRename(r Rec, in Input, _ time.Time) (Result, error) {
+	a, _ := in.Args.(map[string]any)
+	title, _ := a["title"].(string)
+	title = strings.Join(strings.Fields(title), " ")
+	if title == "" {
+		return Result{}, &Rejection{Code: RejectBadArgs, Reason: "the title is empty"}
+	}
+	if utf8.RuneCountInString(title) > MaxTitle {
+		return Result{}, &Rejection{Code: RejectBadArgs, Reason: fmt.Sprintf("a title has at most %d characters", MaxTitle)}
+	}
+	if err := CanWrite(FieldThreadTitle, ByAgent, r.T.TitleBy, "this thread"); err != nil {
+		return Result{}, err
+	}
+	if r.T.Title == title {
+		return Result{}, nil
+	}
+	r.T.Title, r.T.TitleBy = title, ByAgent
+	return Result{Events: []Event{{"thread.renamed", map[string]any{"title": title, "by": ByAgent}}}}, nil
 }
 
 // changeKind is a change tool's reducer: fn finds or makes the change, and

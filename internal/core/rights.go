@@ -14,6 +14,7 @@ import (
 type Field string
 
 const (
+	FieldThreadTitle     Field = "thread.title"
 	FieldChangePhase     Field = "change.phase"
 	FieldChangeCondition Field = "change.condition"
 	// A condition type with one status: "change.condition.review=ok".
@@ -35,6 +36,7 @@ type Right struct {
 
 // Rights is the one table.
 var Rights = []Right{
+	{Field: FieldThreadTitle, By: []string{ByOwner, ByAgent}, Kept: []string{ByOwner}, Over: agentOnly, Refuse: "the owner named %s; ask them to rename it"},
 	{Field: FieldChangePhase, By: anyone, Kept: observed, Over: agentOnly, Refuse: "Fyr observes %s; a report cannot change it"},
 	{Field: FieldChangeCondition, By: anyone, Kept: observed, Over: agentOnly, Refuse: "Fyr observes %s; a report cannot change it"},
 	{Field: FieldReviewOK, By: []string{ByOwner, ByObserved}, Refuse: "an agent cannot mark %s ok; ask the owner with change_request"},
