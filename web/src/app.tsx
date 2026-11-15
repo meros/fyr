@@ -35,10 +35,11 @@ import {
   flatOrder,
   initialStore,
   isAvailable,
-  lastSeq,
   liveEvent,
   mergeEvents,
   recordUndo,
+  resumeSeq,
+  resumed,
   sectionOf,
   sections,
   setConn,
@@ -421,7 +422,8 @@ function App() {
   useEffect(() => {
     if (!openId || !store.loaded) return;
     let cancelled = false;
-    const after = lastSeq(store, openId);
+    // After a reconnect, from where the timeline stood when the stream dropped (review 2026-11-15).
+    const after = resumeSeq(store, openId);
     const known = !!store.events[openId];
     const id = openId;
     void (async () => {
@@ -438,7 +440,7 @@ function App() {
           const merged = mergeEventLists(stored, evs, PAGE, evs.length >= PAGE);
           if (evs.length >= PAGE) setEarlier((m) => ({ ...m, [id]: true }));
           setStore((s) => mergeEvents(s, id, merged, true));
-        } else setStore((s) => mergeEvents(s, id, evs, !known));
+        } else setStore((s) => resumed(mergeEvents(s, id, evs, !known), id, from));
       } catch {
         if (!cancelled && !known && !stored?.length) setStore((s) => mergeEvents(s, id, [], true));
       }
