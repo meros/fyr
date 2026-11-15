@@ -5,22 +5,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os/exec"
-	"strings"
-	"time"
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/proc"
-	"github.com/meros/fyr/internal/store"
 )
 
 // Actions (SPEC 0.5 V0.60, #31; the model is in core/actionspec.go): the agent
 // declares them on a change, the thread or its live view; the owner presses
-// them; Fyr runs them. Three ways: a Fyr effect, an exact script, or a prompt
-// for an agent. Every Fyr effect runs through runFyr, whoever started it.
+// them (the Input action.run, core/kinds.go); Fyr runs them as effects
+// (effects.go). Three ways: a Fyr effect, an exact script, or a prompt for an
+// agent. Every Fyr effect runs through runFyr, whoever started it.
 
 // ScriptRunner runs a script action; tests replace it.
 type ScriptRunner func(ctx context.Context, dir string, argv []string) (out string, exit int, err error)
@@ -65,238 +62,31 @@ func (e *Engine) offerTool(s *mcp.Server) {
 			"remove":     map[string]any{"type": "boolean"},
 		}, "on", "id"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
-			id, on := sArg(a, "id"), sArg(a, "on")
-			var label, where string
-			removed := false
-			var err error
-			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
-				var h core.Holder
-				if h, err = core.HolderOf(t, on); err != nil {
-					return nil
-				}
-				where = on
-				if h.Change != nil {
-					where = fmt.Sprintf("the change %q", h.Change.Title)
-					h.Change.UpdatedAt = now
-					core.ChangesChecked(t, now) // V0.62
-				}
-				if b, _ := a["remove"].(bool); b {
-					if !h.Remove(id) {
-						err = fmt.Errorf("no action %q of yours on %s", id, where)
-					}
-					removed = true
-					return nil
-				}
-				o := core.ActionSpec{ID: id, Label: sArg(a, "label"), Run: core.RunKind(sArg(a, "run")), Argv: listArg(a, "argv"), Cwd: sArg(a, "cwd"),
-					Prompt: sArg(a, "prompt"), In: sArg(a, "in"), When: listOf[core.Phase](a, "when"), OnOK: core.Phase(sArg(a, "onOk"))}
-				if n, ok := a["timeoutSec"].(float64); ok {
-					o.TimeoutSec = int(n)
-				}
-				if b, _ := a["bind"].(bool); b {
-					o.Revision = "newest"
-				}
-				o.Primary, _ = a["primary"].(bool)
-				if err = h.Declare(o); err == nil {
-					label = h.Find(id).Label
-				}
-				return nil
-			})
+			o := core.ActionSpec{ID: sArg(a, "id"), Label: sArg(a, "label"), Run: core.RunKind(sArg(a, "run")), Argv: listArg(a, "argv"), Cwd: sArg(a, "cwd"),
+				Prompt: sArg(a, "prompt"), In: sArg(a, "in"), When: listOf[core.Phase](a, "when"), OnOK: core.Phase(sArg(a, "onOk"))}
+			if n, ok := a["timeoutSec"].(float64); ok {
+				o.TimeoutSec = int(n)
+			}
+			if b, _ := a["bind"].(bool); b {
+				o.Revision = "newest"
+			}
+			o.Primary, _ = a["primary"].(bool)
+			remove, _ := a["remove"].(bool)
+			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindActionOffer, Thread: th, Args: core.OfferArgs{On: sArg(a, "on"), Spec: o, Remove: remove}})
 			if err != nil {
 				return "", err
 			}
-			if removed {
-				return fmt.Sprintf("Removed %q from %s.", id, where), nil
+			r := out.(core.OfferReply)
+			if r.Removed {
+				return fmt.Sprintf("Removed %q from %s.", o.ID, r.Where), nil
 			}
-			return fmt.Sprintf("The owner sees %q on %s in Fyr. When they press it, the result arrives as a message starting with [Fyr].", label, where), nil
+			return fmt.Sprintf("The owner sees %q on %s in Fyr. When they press it, the result arrives as a message starting with [Fyr].", r.Label, r.Where), nil
 		}})
 }
 
-// runAction is the owner's press (command action.run {on, action, digest}):
-// the digest must be the one the owner saw (V0.60). on is a change's id,
-// "thread" or "view".
-func (e *Engine) runAction(c Cmd) Reply {
-	e.press.Lock()
-	defer e.press.Unlock()
-	if r, done := e.replay(c.CommandID); done {
-		return r
-	}
-	th, ok := e.Thread(c.ThreadID)
-	if !ok {
-		return Reply{Error: "no thread " + c.ThreadID, Status: 404}
-	}
-	on := c.Args.Str("on")
-	if on == "" {
-		on = c.Args.Str("change") // the first form
-	}
-	h, err := core.HolderOf(&th, on)
-	if err != nil {
-		return Reply{Error: err.Error(), Status: 404}
-	}
-	act := h.Find(c.Args.Str("action"))
-	if act == nil {
-		return Reply{Error: "no action " + c.Args.Str("action"), Status: 404}
-	}
-	if d := c.Args.Str("digest"); d == "" || d != act.Digest {
-		return Reply{Error: "The action changed since you saw it; look at it again.", Status: 409}
-	}
-	if why := h.Available(*act); why != "" {
-		return Reply{Error: why, Status: 409}
-	}
-	a, title, cwd := *act, "this thread", th.Cwd
-	if h.Change != nil {
-		on, title = h.Change.ID, fmt.Sprintf("the change %q", h.Change.Title)
-	} else if on == core.OnView {
-		title = "the live view"
-	}
-	req := core.EffectReq{Action: a.Effect, Args: h.EffectArgs(a)}
-	e.Observe(c.ThreadID, func(t *core.Thread, now time.Time) []agent.Ev {
-		if x, err := core.HolderOf(t, on); err == nil {
-			x.Started(a, now)
-		}
-		return []agent.Ev{{Type: "action", Data: map[string]any{"on": on, "title": title, "action": a.ID, "label": a.Label, "run": a.Run, "argv": a.Argv, "by": "owner"}}}
-	})
-	reply := Reply{OK: true, Status: 200, Result: map[string]any{"on": on, "action": a.ID}}
-	e.st.Write(func(tx *store.Tx) error { return tx.PutReceipt(c.CommandID, reply, e.Now()) })
-
-	switch a.Run {
-	case core.RunFyr:
-		go e.runFyr(c.ThreadID, req, fyrStart{press: &pressed{on: on, title: title, a: a}})
-	case core.RunAgent:
-		msg := fmt.Sprintf("[Fyr] The owner pressed %q on %s.\n%s", a.Label, title, a.Prompt)
-		if a.In == "new" {
-			r := e.Command(Cmd{CommandID: c.CommandID + ":new", Action: "thread.create", Args: core.Args{"cwd": cwd, "text": msg, "projectId": th.ProjectID}})
-			if !r.OK {
-				return Reply{Error: r.Error, Status: r.Status}
-			}
-			reply.Result.(map[string]any)["threadId"] = r.ThreadID
-		} else if e.Agents != nil {
-			if err := e.Agents.Do(c.ThreadID, core.Effect{Kind: core.EffectSend, Text: msg}); err != nil {
-				return Reply{Error: err.Error(), Status: 500}
-			}
-		}
-	case core.RunScript:
-		dir := a.Cwd
-		if dir == "" {
-			dir = cwd
-		}
-		go e.runScriptAction(c.ThreadID, on, title, dir, a)
-	}
-	return reply
-}
-
-func (e *Engine) runScriptAction(threadID, on, title, dir string, a core.ActionSpec) {
-	limit := time.Duration(a.TimeoutSec) * time.Second
-	if limit == 0 {
-		limit = 10 * time.Minute
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), limit)
-	run := e.Scripts
-	if run == nil {
-		run = runScript
-	}
-	out, exit, err := run(ctx, dir, a.Argv)
-	cancel()
-	e.finishAction(threadID, on, title, a, err == nil, exit, out)
-}
-
-// fyrStart is who started a Fyr effect, which decides how its result reads;
-// whether the agent hears it does not depend on it (tell).
-type fyrStart struct {
-	asked bool     // the agent asked for it and the owner said yes
-	press *pressed // the owner pressed a built-in action
-	// neither: the owner's own command (the PR tab)
-}
-
-type pressed struct {
-	on, title string
-	a         core.ActionSpec
-}
-
-// runFyr runs one Fyr effect: the one path for every way to start one. The
-// args are completed and the guard is checked again first, as when it was
-// offered (SPEC 5.10 (4)).
-func (e *Engine) runFyr(threadID string, req core.EffectReq, s fyrStart) {
-	t, found := e.Thread(threadID)
-	if !found {
-		return
-	}
-	fx := core.FyrEffects[req.Action]
-	ok, text := false, "No effect runner is configured."
-	if fx == nil {
-		text = fmt.Sprintf("Fyr has no effect %q.", req.Action)
-	} else if err := fx.Check(req.Args); err != nil {
-		text = err.Error() + "."
-	} else if why := fx.Guard(&t, req.Args); why != "" {
-		text = why + "."
-	} else if e.Effects != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), fx.Timeout)
-		out, err := e.Effects.Run(ctx, threadID, req)
-		cancel()
-		if errors.Is(err, core.ErrReportLater) {
-			return
-		}
-		ok, text = err == nil, out
-		if err != nil {
-			text = err.Error()
-		}
-	}
-	switch {
-	case s.press != nil:
-		e.finishAction(threadID, s.press.on, s.press.title, s.press.a, ok, 0, text)
-	case s.asked:
-		e.Report(threadID, req, true, ok, text)
-	default:
-		e.record(threadID, agent.Ev{Type: "effect.result",
-			Data: map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": ownerLine(req, ok, text), "by": "owner"}})
-		label := req.Action
-		if fx != nil {
-			label = fx.Label
-		}
-		e.tell(threadID, ownerRan(label, prTitle(req), ok, 0, text))
-	}
-	if fx != nil && fx.OnPR && e.OnPR != nil {
-		e.OnPR(threadID)
-	}
-}
-
-// finishAction records the result of a pressed script or fyr action and
-// tells the agent, which did not run it.
-func (e *Engine) finishAction(threadID, on, title string, a core.ActionSpec, ok bool, exit int, out string) {
-	short := core.TruncTail(strings.TrimSpace(out), 2000)
-	e.Observe(threadID, func(t *core.Thread, now time.Time) []agent.Ev {
-		if h, err := core.HolderOf(t, on); err == nil {
-			h.Ended(a, ok, exit, out, now)
-		}
-		return []agent.Ev{{Type: "action", Data: map[string]any{"on": on, "title": title, "action": a.ID, "label": a.Label, "run": a.Run, "ok": ok, "exit": exit, "output": short, "ended": true}}}
-	})
-	e.tell(threadID, ownerRan(a.Label, title, ok, exit, out))
-}
-
-// ownerRan is the agent's message about something the owner ran.
-func ownerRan(label, title string, ok bool, exit int, out string) string {
-	status := "succeeded"
-	if !ok {
-		status = fmt.Sprintf("failed (exit %d)", exit)
-	}
-	return fmt.Sprintf("[Fyr] The owner ran %q on %s: it %s.\n%s", label, title, status, core.TruncTail(strings.TrimSpace(out), 2000))
-}
-
-// tell sends a result to the thread's agent. The one rule (#31, SPEC 0.5
-// V0.60 (4)): the agent hears the result of every fyr and script action and
-// of every request it made, whoever started it, unless the thread is
-// archived or settled.
-func (e *Engine) tell(threadID, msg string) {
-	t, found := e.Thread(threadID)
-	if !found || t.ArchivedAt != nil || t.Settle.At != nil || e.Agents == nil {
-		return
-	}
-	if err := e.Agents.Do(threadID, core.Effect{Kind: core.EffectSend, Text: msg}); err != nil {
-		log.Printf("thread %s: tell the agent: %v", threadID, err)
-	}
-}
-
-// effectArgs puts a PR URL in the one form gh is given and checks the args.
-func effectArgs(fx *core.FyrEffect, args map[string]any) error {
+// canonicalArgs puts a PR URL in the one form gh is given; the reducer
+// checks the rest of the args.
+func canonicalArgs(args map[string]any) error {
 	if pr, ok := args["pr"].(string); ok && pr != "" {
 		canon, ok := agent.CanonicalPR(pr)
 		if !ok {
@@ -304,5 +94,5 @@ func effectArgs(fx *core.FyrEffect, args map[string]any) error {
 		}
 		args["pr"] = canon
 	}
-	return fx.Check(args)
+	return nil
 }

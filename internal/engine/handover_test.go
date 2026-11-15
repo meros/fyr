@@ -11,6 +11,7 @@ import (
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/store"
 )
@@ -261,7 +262,7 @@ func TestHandoverClearedOnRestart(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("hello")
 	h.wait(id, "done", state(core.Done))
-	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
 		t.Handover = &core.Handover{To: "b", At: now}
 		return nil
 	})

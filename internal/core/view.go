@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -167,4 +168,12 @@ func (n ViewNudge) Due(now time.Time) bool {
 		}
 	}
 	return now.Sub(last) >= ViewNudgeAfter
+}
+
+// CheckViewState refuses a view state over ViewStateMax.
+func CheckViewState(s map[string]any) error {
+	if n := StateSize(s); n > ViewStateMax {
+		return fmt.Errorf("the view state is %d bytes as JSON; at most %d. Keep details in the thread and only the status in the state", n, ViewStateMax)
+	}
+	return nil
 }

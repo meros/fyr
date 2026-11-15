@@ -10,6 +10,7 @@ import (
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/core/coretest"
 )
 
 func changeOf(h *harness, id, ref string) *core.Change {
@@ -327,7 +328,7 @@ func TestMergeOneGuard(t *testing.T) {
 	h.wait(id, "done", state(core.Done))
 	url := "https://github.com/acme/app/pull/9"
 	set := func(conflict bool) {
-		h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+		coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
 			core.PRObserved(t, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass", Conflict: conflict}, now)
 			return nil
 		})

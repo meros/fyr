@@ -374,6 +374,10 @@ func main() {
 	poller := &github.Poller{Gh: github.Gh, Src: prSource{eng}}
 	eng.OnPR = poller.Kick
 	go poller.Run(ctx)
+	// Decision 0020: the durable effects the last run left run once or land.
+	if err := eng.ResumeEffects(); err != nil {
+		log.Printf("resume effects: %v", err)
+	}
 	go func() {
 		t := time.NewTicker(10 * time.Second)
 		defer t.Stop()
@@ -607,10 +611,7 @@ func (s prSource) Snapshot() []github.PRThread {
 }
 
 func (s prSource) Observe(id string, pr core.PR) {
-	s.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
-		core.ChangePRObserved(t, pr, now) // #32: the PR lives on its change
-		return nil
-	})
+	s.e.Apply(core.Input{Source: core.Observer(core.ObsGitHub), Kind: core.KindPRObserved, Thread: id, Args: pr})
 }
 
 // Deploys are the merge commits whose deployments the poller reads (V0.66).
@@ -629,10 +630,7 @@ func (s prSource) Deploys() []github.DeployThread {
 }
 
 func (s prSource) ObserveDeploy(id, change string, d core.DeployObs) {
-	s.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
-		core.ChangeDeployObserved(t, change, d, now)
-		return nil
-	})
+	s.e.Apply(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindDeployObserved, Thread: id, Args: core.DeployObservedArgs{Change: change, Obs: d}})
 }
 
 func adoptT3(eng *engine.Engine, db string, profiles []agent.Profile, ids []string) (int, error) {

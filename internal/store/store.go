@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, data TEXT NOT NULL);
 DROP TABLE IF EXISTS workspaces; -- V0.55: workspaces are gone (decision 0017)
 CREATE TABLE IF NOT EXISTS providers(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS effects(id TEXT PRIMARY KEY, thread TEXT NOT NULL, state TEXT NOT NULL, data TEXT NOT NULL, result TEXT NOT NULL DEFAULT '', at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, user TEXT NOT NULL, device TEXT NOT NULL, sub TEXT NOT NULL, created TEXT NOT NULL);
 `
 
@@ -102,6 +103,74 @@ func (tx *Tx) PutReceipt(id string, result any, at time.Time) error {
 	b, _ := json.Marshal(result)
 	_, err := tx.tx.Exec(`INSERT INTO receipts(id,at,result) VALUES(?,?,?)`, id, at.UTC().Format(time.RFC3339Nano), string(b))
 	return err
+}
+
+// Effects that do work outside Fyr run at most once (decision 0020 (3)):
+// the reduce that returns one stores it as pending in its transaction; the
+// runner claims it (started) before the work, stores the result (finished),
+// and the transaction that applies the result marks it done. A deploy hands
+// its result to the next daemon (later).
+const (
+	EffectPending  = "new"
+	EffectStarted  = "started"
+	EffectFinished = "finished"
+	EffectLater    = "later"
+	EffectDone     = "done"
+)
+
+// StoredEffect is one effect row.
+type StoredEffect struct {
+	ID, Thread, State string
+	Data, Result      json.RawMessage
+}
+
+// PutEffect stores a new effect as pending.
+func (tx *Tx) PutEffect(id, thread string, data any, at time.Time) error {
+	b, _ := json.Marshal(data)
+	_, err := tx.tx.Exec(`INSERT INTO effects(id,thread,state,data,at) VALUES(?,?,?,?,?)`, id, thread, EffectPending, string(b), at.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+// EffectDone marks an effect's result as applied.
+func (tx *Tx) EffectDone(id string) error {
+	_, err := tx.tx.Exec(`UPDATE effects SET state=? WHERE id=?`, EffectDone, id)
+	return err
+}
+
+// MoveEffect moves an effect from one state to another and reports whether
+// it was in from: a claim that two runners cannot both win.
+func (s *Store) MoveEffect(id, from, to string, result any) (bool, error) {
+	res := ""
+	if result != nil {
+		b, _ := json.Marshal(result)
+		res = string(b)
+	}
+	r, err := s.db.Exec(`UPDATE effects SET state=?, result=CASE WHEN ?='' THEN result ELSE ? END WHERE id=? AND state=?`, to, res, res, id, from)
+	if err != nil {
+		return false, err
+	}
+	n, err := r.RowsAffected()
+	return n == 1, err
+}
+
+// OpenEffects are the effects not done, oldest first.
+func (s *Store) OpenEffects() ([]StoredEffect, error) {
+	rows, err := s.db.Query(`SELECT id,thread,state,data,result FROM effects WHERE state<>? ORDER BY at, rowid`, EffectDone)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StoredEffect
+	for rows.Next() {
+		var e StoredEffect
+		var d, r string
+		if err := rows.Scan(&e.ID, &e.Thread, &e.State, &d, &r); err != nil {
+			return nil, err
+		}
+		e.Data, e.Result = json.RawMessage(d), json.RawMessage(r)
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // Receipt returns the stored result of a command id, or nil when it is new.

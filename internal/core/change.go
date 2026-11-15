@@ -198,16 +198,17 @@ type ChangeUpdate struct {
 	Needs      *string
 }
 
-// UpdateChange applies a status report from by (V0.59 (2)): an observed
-// phase or condition is not changed by the agent, and the agent never marks
-// a review or an approval ok.
+// UpdateChange applies a status report from by (V0.59 (2)). What by may
+// write is the field rights table (rights.go).
 func UpdateChange(t *Thread, c *Change, u ChangeUpdate, by string, now time.Time) error {
 	if u.Phase != "" {
 		if !u.Phase.Valid() {
 			return fmt.Errorf("phase must be %s", OrList(Phases()))
 		}
-		if by == ByAgent && c.PhaseBy == ByObserved && u.Phase != c.Phase {
-			return fmt.Errorf("Fyr observes the phase of %q (%s); a report cannot change it", c.Title, c.Phase)
+		if u.Phase != c.Phase {
+			if err := CanWrite(FieldChangePhase, by, c.PhaseBy, fmt.Sprintf("the phase of %q (%s)", c.Title, c.Phase)); err != nil {
+				return err
+			}
 		}
 	}
 	for _, k := range u.Conditions {
@@ -217,11 +218,17 @@ func UpdateChange(t *Thread, c *Change, u ChangeUpdate, by string, now time.Time
 		if !k.Status.Valid() {
 			return fmt.Errorf("condition %q: status must be %s", k.Type, OrList(CondStatuses()))
 		}
-		if by == ByAgent && k.Status == CondOK && k.Type.OwnerOnly() {
-			return fmt.Errorf("an agent cannot mark %q ok; ask the owner with change_request", k.Type)
+		if f := condField(k.Type, k.Status); f != "" {
+			if err := CanWrite(f, by, "", fmt.Sprintf("%q", k.Type)); err != nil {
+				return err
+			}
 		}
-		if cur := condition(c, k.Type); by == ByAgent && cur != nil && cur.Source == ByObserved {
-			return fmt.Errorf("Fyr observes %q of %q; a report cannot change it", k.Type, c.Title)
+		cur := ""
+		if x := condition(c, k.Type); x != nil {
+			cur = x.Source
+		}
+		if err := CanWrite(FieldChangeCondition, by, cur, fmt.Sprintf("%q of %q", k.Type, c.Title)); err != nil {
+			return err
 		}
 	}
 	if u.Needs != nil && *u.Needs != "" && *u.Needs != "owner" {

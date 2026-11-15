@@ -9,9 +9,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"time"
 
-	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 )
@@ -83,13 +81,6 @@ func stateArg(a map[string]any, key string) (map[string]any, error) {
 	return m, nil
 }
 
-func checkState(s map[string]any) error {
-	if n := core.StateSize(s); n > core.ViewStateMax {
-		return fmt.Errorf("the view state is %d bytes as JSON; at most %d. Keep details in the thread and only the status in the state", n, core.ViewStateMax)
-	}
-	return nil
-}
-
 func (e *Engine) viewTools(s *mcp.Server) {
 	s.Add(mcp.Tool{Name: "view_publish", For: e.viewFor,
 		Description: "Publish this thread's live view: a self-contained HTML page (or fragment) pinned above the conversation, plus its full JSON state. Give html or path (an .html file), and state. Republish only when the layout must change; use view_state for new data. Identical pages are stored once.",
@@ -131,7 +122,7 @@ func (e *Engine) viewTools(s *mcp.Server) {
 			if state == nil {
 				state = map[string]any{}
 			}
-			if err := checkState(state); err != nil {
+			if err := core.CheckViewState(state); err != nil {
 				return "", err
 			}
 			sum := sha256.Sum256([]byte(html))
@@ -142,10 +133,9 @@ func (e *Engine) viewTools(s *mcp.Server) {
 			if err != nil {
 				return "", err
 			}
-			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
-				core.ViewPublished(t, id, state, now)
-				return []agent.Ev{{Type: "view.published", Data: map[string]any{"pageId": id, "state": state}}}
-			})
+			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindViewPublish, Thread: th, Args: core.ViewPublishArgs{PageID: id, State: state}}); err != nil {
+				return "", err
+			}
 			return fmt.Sprintf("Published the live view (page %s). Update it with view_state from now on.", id), nil
 		}})
 
@@ -162,24 +152,9 @@ func (e *Engine) viewTools(s *mcp.Server) {
 			if patch == nil {
 				return "", errors.New("patch must be a JSON object")
 			}
-			t, ok := e.Thread(th)
-			if !ok {
-				return "", errors.New("no thread")
-			}
-			if t.Live == nil || t.Live.PageID == "" {
-				return "", errors.New("this thread has no view page yet; publish one with view_publish first")
-			}
-			next, _ := core.MergePatch(t.Live.State, patch).(map[string]any)
-			if next == nil {
-				next = map[string]any{}
-			}
-			if err := checkState(next); err != nil {
+			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindViewState, Thread: th, Args: patch}); err != nil {
 				return "", err
 			}
-			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
-				core.ViewStateSet(t, next, now)
-				return []agent.Ev{{Type: "view.state", Data: map[string]any{"state": next}}}
-			})
 			return "Updated the live view.", nil
 		}})
 
@@ -188,13 +163,9 @@ func (e *Engine) viewTools(s *mcp.Server) {
 		Schema:      obj(map[string]any{"reason": str("Why the view is still current, in a few words.")}, "reason"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			reason, _ := a["reason"].(string)
-			if strings.TrimSpace(reason) == "" {
-				return "", errors.New("give a reason")
+			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindViewUnchanged, Thread: th, Args: reason}); err != nil {
+				return "", err
 			}
-			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
-				core.ViewChecked(t, now)
-				return []agent.Ev{{Type: "view.unchanged", Data: map[string]any{"reason": reason}}}
-			})
 			return "Noted; the view stays as it is.", nil
 		}})
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/claude/fake"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/store"
 )
@@ -600,7 +601,7 @@ func TestOwnerMergeFromTab(t *testing.T) {
 	id := h.create("pr")
 	h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.MainPR() != nil })
 	h.wait(id, "done", state(core.Done))
-	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
 		core.PRObserved(t, core.PR{URL: t.MainPR().URL, Repo: t.MainPR().Repo, Number: t.MainPR().Number, State: "OPEN", Checks: "pass"}, now)
 		return nil
 	})
@@ -645,7 +646,7 @@ func TestOwnerPRActionsUnavailable(t *testing.T) {
 		t.Fatalf("no PR rerun: %+v", r)
 	}
 	set := func(p core.PR) {
-		h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+		coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
 			core.PRObserved(t, p, now)
 			return nil
 		})
@@ -677,7 +678,7 @@ func TestDTOPRIsTheMainChange(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("hello")
 	h.wait(id, "done", state(core.Done))
-	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
 		core.PRObserved(t, core.PR{URL: "https://github.com/acme/app/pull/9", Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass"}, now)
 		core.ChangePRObserved(t, core.PR{URL: "https://github.com/acme/app/pull/10", Repo: "acme/app", Number: 10, State: "OPEN", Checks: "pass"}, now)
 		return nil
@@ -715,7 +716,7 @@ func TestDTODerivesSettleViewAndProject(t *testing.T) {
 	h.cmd("project.create", "", core.Args{"name": "Kök", "folder": h.dir})
 	id := h.create("hello")
 	h.wait(id, "done", state(core.Done))
-	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev {
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev {
 		c, _, _ := core.OpenChange(t, core.ChangeOpen{Key: "doc:x", Kind: core.KindDoc, Title: "Doc"}, core.ByAgent, now)
 		t.Running = true
 		core.ArmSettle(t, core.SettleCond{Kind: core.SettleDone}, now)
@@ -733,7 +734,7 @@ func TestDTODerivesSettleViewAndProject(t *testing.T) {
 	if _, ok := wire["settle"]; ok || wire["settledAt"] != nil {
 		t.Fatalf("dto sends settle: %s", b)
 	}
-	h.e.Observe(id, func(t *core.Thread, now time.Time) []agent.Ev { core.RunEnded(t, nil, now); return nil })
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []agent.Ev { core.RunEnded(t, nil, now); return nil })
 	b, _ = json.Marshal(dtoOf(h.e, id))
 	wire = map[string]any{}
 	json.Unmarshal(b, &wire)
