@@ -126,8 +126,8 @@ func (s *Store) Threads() ([]*core.Thread, error) {
 		if err := rows.Scan(&d); err != nil {
 			return nil, err
 		}
-		t := &core.Thread{}
-		if err := json.Unmarshal([]byte(d), t); err != nil {
+		t, err := core.DecodeThread([]byte(d)) // #31: also the shape stored before
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, t)
