@@ -427,8 +427,8 @@ func factNotices(r Reduced, blocks bool) []Notice {
 		if was != nil {
 			prevPhase = was.Phase
 		}
-		if c.Phase == prevPhase || c.PhaseBy == ByAgent {
-			continue
+		if c.Phase == prevPhase || c.PhaseBy == ByAgent || c.PhaseBy == ByOwner {
+			continue // the owner's end is the owner rule's
 		}
 		state := ""
 		switch {
@@ -436,6 +436,9 @@ func factNotices(r Reduced, blocks bool) []Notice {
 			state = string(c.Phase)
 			if c.PR != nil && c.PR.State == "CLOSED" {
 				state = "closed"
+			}
+			if c.PR != nil && c.PR.State == PRMissing {
+				state = "does not exist on GitHub" // V0.72
 			}
 		case !blocks && c.Phase == PhaseLanded:
 			state = string(PhaseLanded)
@@ -515,6 +518,16 @@ func ownerNotices(r Reduced) []Notice {
 	}
 	if s := settle(a); s != settle(b) {
 		out = append(out, Notice{About: "thread", Key: "owner:settle", Subject: "The owner set this thread", States: []string{s}})
+	}
+	for i := range a.Changes {
+		c := &a.Changes[i]
+		if was := FindChange(b, c.ID); c.PhaseBy == ByOwner && c.Phase.Ended() && (was == nil || !was.Phase.Ended()) {
+			what := fmt.Sprintf("The owner ended %s as %s", changeName(c), c.Phase)
+			if c.Label != "" {
+				what += ": " + c.Label
+			}
+			add("end:"+c.ID, what+". Fyr no longer watches it; open a new change with another key if the work goes on.")
+		}
 	}
 	if (a.ArchivedAt != nil) != (b.ArchivedAt != nil) {
 		s := "unarchived"

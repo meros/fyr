@@ -44,13 +44,16 @@ var Rights = []Right{
 	{Field: FieldThreadView, By: ownerOnly, Refuse: "only the owner turns the live view of %s on or off"},
 	{Field: FieldViewSeen, By: ownerOnly, Refuse: "only the owner sees %s"},
 	{Field: FieldChangePhase, By: anyone, Kept: observed, Over: agentOnly, Refuse: "Fyr observes %s; a report cannot change it"},
+	// V0.72: the owner's end of a change is kept against the agent and the facts.
+	{Field: FieldChangePhase, By: anyone, Kept: ownerOnly, Over: []string{ByAgent, ByObserved}, Refuse: "the owner ended %s; open a new change with another key"},
 	{Field: FieldChangeCondition, By: anyone, Kept: observed, Over: agentOnly, Refuse: "Fyr observes %s; a report cannot change it"},
 	{Field: FieldReviewOK, By: []string{ByOwner, ByObserved}, Refuse: "an agent cannot mark %s ok; ask the owner with change_request"},
 	{Field: FieldApprovalOK, By: []string{ByOwner, ByObserved}, Refuse: "an agent cannot mark %s ok; ask the owner with change_request"},
 }
 
 // CanWrite checks that by may write field f whose current value cur wrote
-// ("" for none). subject names the field in the reason.
+// ("" for none): every row of f must allow it. subject names the field in
+// the reason.
 func CanWrite(f Field, by, cur, subject string) error {
 	for _, r := range Rights {
 		if r.Field != f {
@@ -59,7 +62,6 @@ func CanWrite(f Field, by, cur, subject string) error {
 		if !slices.Contains(r.By, by) || (slices.Contains(r.Kept, cur) && slices.Contains(r.Over, by)) {
 			return &Rejection{Code: RejectRights, Reason: fmt.Sprintf(r.Refuse, subject)}
 		}
-		return nil
 	}
 	return nil
 }
