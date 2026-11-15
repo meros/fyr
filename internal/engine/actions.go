@@ -287,7 +287,7 @@ func ownerRan(label, title string, ok bool, exit int, out string) string {
 // archived or settled.
 func (e *Engine) tell(threadID, msg string) {
 	t, found := e.Thread(threadID)
-	if !found || t.ArchivedAt != nil || t.SettledAt != nil || e.Agents == nil {
+	if !found || t.ArchivedAt != nil || t.Settle.At != nil || e.Agents == nil {
 		return
 	}
 	if err := e.Agents.Do(threadID, core.Effect{Kind: core.EffectSend, Text: msg}); err != nil {

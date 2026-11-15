@@ -78,7 +78,7 @@ func TestNoAutoProjectAndCreate(t *testing.T) {
 	if p1.ID != pid || p2.ID != pid || !p1.Edited || p1.Color != core.DefaultColor("Lasso") {
 		t.Fatalf("%+v %+v", p1, p2)
 	}
-	if th, _ := h.e.Thread(r2.ThreadID); th.ProjectManual || th.Project != "Lasso" {
+	if th, _ := h.e.Thread(r2.ThreadID); th.ProjectManual || dtoOf(h.e, r2.ThreadID).Project != "Lasso" {
 		t.Fatalf("matched thread: %+v", th)
 	}
 	if d := dtoOf(h.e, r1.ThreadID); d.NewProject != nil {
@@ -116,8 +116,8 @@ func TestProjectUpdate(t *testing.T) {
 	if p.Name != "Norban" || p.Color != "violet" || p.Icon.Value != "🏠" || p.Folder != ws {
 		t.Fatalf("%+v", p)
 	}
-	if th, _ := h.e.Thread(r.ThreadID); th.Project != "Norban" {
-		t.Fatalf("the thread kept the old name: %q", th.Project)
+	if d := dtoOf(h.e, r.ThreadID); d.Project != "Norban" {
+		t.Fatalf("the thread kept the old name: %q", d.Project)
 	}
 	if bad := h.e.Command(Cmd{CommandID: "u2", Action: "project.update", Args: core.Args{"id": p.ID, "color": "amber"}}); bad.OK || bad.Status != 400 {
 		t.Fatalf("amber accepted: %+v", bad)
@@ -135,7 +135,7 @@ func TestMatchAtLoad(t *testing.T) {
 	h.m.StopAll()
 	th, _ := h.e.Thread(r.ThreadID)
 	old := th
-	old.ProjectID, old.Project = "", ""
+	old.ProjectID = ""
 	h.e.st.Write(func(tx *store.Tx) error { return tx.PutThread(&old) })
 	tg, _ := h.e.Thread(g.ThreadID)
 	tg.ProjectID, tg.ProjectManual = "p_gone", true
@@ -147,7 +147,7 @@ func TestMatchAtLoad(t *testing.T) {
 	if err := e2.Load(); err != nil {
 		t.Fatal(err)
 	}
-	if d, _ := e2.Thread(r.ThreadID); d.ProjectID != pid || d.Project != "Here" {
+	if d := dtoOf(e2, r.ThreadID); d.ProjectID != pid || d.Project != "Here" {
 		t.Fatalf("after load: project %q %q", d.ProjectID, d.Project)
 	}
 	if d, _ := e2.Thread(g.ThreadID); d.ProjectID != pid || d.ProjectManual {
@@ -388,7 +388,7 @@ func TestCreateAndFile(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	pid := r.Result.(map[string]any)["id"].(string)
-	ta, _ := h.e.Thread(a.ThreadID)
+	ta := dtoOf(h.e, a.ThreadID)
 	if ta.ProjectID != pid || !ta.ProjectManual || ta.Project != "Home" {
 		t.Fatalf("filed: %+v %v %q", ta.ProjectID, ta.ProjectManual, ta.Project)
 	}
@@ -398,7 +398,7 @@ func TestCreateAndFile(t *testing.T) {
 	// A label made from a thread files it too.
 	c := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "c"})
 	r2 := h.cmd("project.create", "", core.Args{"name": "Kök", "threadId": c.ThreadID})
-	if tc, _ := h.e.Thread(c.ThreadID); !r2.OK || tc.Project != "Kök" || !tc.ProjectManual {
+	if tc := dtoOf(h.e, c.ThreadID); !r2.OK || tc.Project != "Kök" || !tc.ProjectManual {
 		t.Fatalf("label: %+v %q", r2, tc.Project)
 	}
 }
@@ -418,7 +418,7 @@ func TestUnfile(t *testing.T) {
 	}
 	h.e.Rematch()
 	h.cmd("thread.send", th.ThreadID, core.Args{"text": "b"})
-	got, _ := h.e.Thread(th.ThreadID)
+	got := dtoOf(h.e, th.ThreadID)
 	if got.ProjectID != "" || got.Project != "" || !got.ProjectManual {
 		t.Fatalf("after unfile: %q %q %v", got.ProjectID, got.Project, got.ProjectManual)
 	}
@@ -461,7 +461,7 @@ func TestProjectDelete(t *testing.T) {
 	if p := projectOf(h.e, a.ThreadID); p.Name != "Work" {
 		t.Fatalf("a matched to %q, want Work", p.Name)
 	}
-	tb, _ := h.e.Thread(b.ThreadID)
+	tb := dtoOf(h.e, b.ThreadID)
 	if tb.ProjectID != "" || tb.ProjectManual || tb.Project != "" {
 		t.Fatalf("b after delete: %q %v %q", tb.ProjectID, tb.ProjectManual, tb.Project)
 	}

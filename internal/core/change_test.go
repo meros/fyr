@@ -170,13 +170,13 @@ func TestChangeAttention(t *testing.T) {
 func TestSettleWhenChange(t *testing.T) {
 	th := &Thread{}
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "nix:server", Kind: "host", Title: "Rebuild"}, ByAgent, ct0)
-	th.SettleWhen = &SettleWhen{Change: c.ID, Phase: PhaseLanded}
+	ArmSettle(th, SettleCond{Kind: SettleChange, Change: c.ID, Phase: PhaseLanded}, ct0)
 	UpdateChange(th, c, ChangeUpdate{Phase: PhaseReview}, ByAgent, ct0)
-	if th.SettledAt != nil {
+	if th.Settle.At != nil {
 		t.Fatal("settled before landed")
 	}
 	UpdateChange(th, c, ChangeUpdate{Phase: PhaseLive}, ByAgent, ct0)
-	if th.SettledAt == nil || th.SettleWhen != nil {
+	if th.Settle.At == nil || len(th.Settle.When) != 0 {
 		t.Fatal("live did not count as landed")
 	}
 }
@@ -246,13 +246,13 @@ func TestGitObservedAfterLanded(t *testing.T) {
 func TestUnsettleCancelsSettleWhenChange(t *testing.T) {
 	th, v := &Thread{}, &View{}
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "nix:server", Kind: "host", Title: "Rebuild"}, ByAgent, ct0)
-	th.SettleWhen = &SettleWhen{Change: c.ID, Phase: PhaseLanded}
+	ArmSettle(th, SettleCond{Kind: SettleChange, Change: c.ID, Phase: PhaseLanded}, ct0)
 	un := Registry["thread.unsettle"]
 	if r := un.Available(th, v, ct0); r != "" {
 		t.Fatalf("unsettle not available: %q", r)
 	}
 	un.Apply(th, v, nil, ct0)
-	if th.SettleWhen != nil {
+	if len(th.Settle.When) != 0 {
 		t.Fatal("unsettle left settle_when armed")
 	}
 }
@@ -261,7 +261,7 @@ func TestUnsettleCancelsSettleWhenChange(t *testing.T) {
 // own runs; a running thread action does not block the view action with the
 // same id, and the view's runs go with the view.
 func TestThreadAndViewRunsApart(t *testing.T) {
-	th := &Thread{LiveView: true}
+	th := &Thread{Live: &LiveView{Enabled: true}}
 	thr, _ := HolderOf(th, OnThread)
 	view, _ := HolderOf(th, OnView)
 	a := ActionSpec{ID: "test", Label: "Test", Run: RunScript, Argv: []string{"true"}}
@@ -281,9 +281,9 @@ func TestThreadAndViewRunsApart(t *testing.T) {
 	if r := thr.Available(ta); r != "It is running" {
 		t.Fatalf("the view's end closed the thread's run: %q", r)
 	}
-	ClearView(th)
-	if len(th.Runs) != 1 || th.Runs[0].On != OnThread {
-		t.Fatalf("view runs left after ClearView: %+v", th.Runs)
+	SetView(th, false)
+	if len(th.Runs) != 1 || th.Runs[0].On != OnThread || len(th.Live.Runs) != 0 {
+		t.Fatalf("view runs left after the view went off: %+v %+v", th.Runs, th.Live.Runs)
 	}
 }
 
@@ -355,7 +355,7 @@ func TestSettleWhenMergedIsTheMainChangeLanding(t *testing.T) {
 		t.Fatal(r)
 	}
 	Registry["thread.settleWhenMerged"].Apply(th, &View{}, nil, ct0)
-	if w := th.SettleWhen; w == nil || w.Change != th.MainChange || w.Phase != PhaseLanded {
+	if w := SettleWhenChange(th); w == nil || w.Change != th.MainChange || w.Phase != PhaseLanded {
 		t.Fatalf("settle when %+v", w)
 	}
 	if r := Registry["thread.settleWhenMerged"].Available(th, &View{}, ct0); r != "Already set" {
@@ -364,11 +364,11 @@ func TestSettleWhenMergedIsTheMainChangeLanding(t *testing.T) {
 	closed := *th
 	closed.Changes = slices.Clone(th.Changes)
 	ChangePRObserved(&closed, PR{URL: "https://github.com/o/r/pull/1", State: "CLOSED"}, ct0)
-	if closed.SettledAt != nil {
+	if closed.Settle.At != nil {
 		t.Fatal("a closed PR settled the thread")
 	}
 	ChangePRObserved(th, PR{URL: "https://github.com/o/r/pull/1", State: "MERGED"}, ct0)
-	if th.SettledAt == nil || th.SettleWhen != nil {
-		t.Fatalf("merge did not settle: %+v", th.SettleWhen)
+	if th.Settle.At == nil || len(th.Settle.When) != 0 {
+		t.Fatalf("merge did not settle: %+v", th.Settle)
 	}
 }

@@ -9,12 +9,14 @@ import "time"
 // (R19) so several users per host need no migration later.
 const Owner = "owner"
 
-// Thread is one conversation with one agent session in one directory.
+// Thread is one conversation with one agent session in one directory. Its
+// parts are components (#33): the Conversation (the agent's run state), the
+// Live view, the Settle and the Actions. The project's name is not stored:
+// clients get it from ProjectID.
 type Thread struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	Cwd       string `json:"cwd"`
-	Project   string `json:"project"`
 	ProjectID string `json:"projectId,omitempty"` // V0.23
 	// ProjectManual: the thread was filed by hand; folder matching never
 	// moves it again (V0.55).
@@ -29,19 +31,13 @@ type Thread struct {
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
 
-	// Run state, written only by observations from the agent.
-	Running      bool       `json:"running"`
-	RunStartedAt *time.Time `json:"runStartedAt,omitempty"`
-	Activity     string     `json:"activity,omitempty"` // last tool or text, one line
-	Subagents    int        `json:"subagents,omitempty"`
+	// Conversation is the agent's run state. Its fields stay at the top
+	// level of the stored and the wire JSON.
+	Conversation
 	// ActivityAt moves when something happens that the user should look at:
 	// a run ends, a question opens, a failure, a PR change.
-	ActivityAt time.Time `json:"activityAt"`
-	Summary    string    `json:"summary,omitempty"` // last assistant text, one line
-
-	Tasks     []Task     `json:"tasks,omitempty"` // subagents and background tasks (V0.16)
-	Failure   *Failure   `json:"failure,omitempty"`
-	Decisions []Decision `json:"decisions,omitempty"`
+	ActivityAt time.Time  `json:"activityAt"`
+	Decisions  []Decision `json:"decisions,omitempty"`
 	// Changes are the thread's change records (V0.59, decision 0018). A PR
 	// lives on its code change (#32).
 	Changes []Change `json:"changes,omitempty"`
@@ -53,26 +49,36 @@ type Thread struct {
 	// Actions are the thread's own actions and their last runs (V0.60, #31).
 	// A change and the live view hold their own.
 	Actions
-	// Outbox holds the messages the agent has not read yet (V0.33).
-	Outbox []OutMsg `json:"outbox,omitempty"`
-	// LiveView is the flag: the agent keeps a pinned live view (V0.37).
-	LiveView bool `json:"liveView,omitempty"`
-	// Live is the view itself: page, state, times, headline (V0.37).
+	// Live is the live view: whether the agent keeps one, its page, state,
+	// upkeep times and actions (V0.37).
 	Live *LiveView `json:"live,omitempty"`
-	// Handover is set while the thread moves to another profile (V0.45).
-	Handover *Handover `json:"handover,omitempty"`
-
-	SettledAt      *time.Time `json:"settledAt,omitempty"`
-	ArchivedAt     *time.Time `json:"archivedAt,omitempty"`
-	SettleWhenDone bool       `json:"settleWhenDone,omitempty"`
-	// SettleWhen settles when a change reaches a phase (V0.59 (7)); "settle
-	// when merged" is the main change reaching landed (#32).
-	SettleWhen *SettleWhen `json:"settleWhen,omitempty"`
+	// Settle is when the thread settled and what settles it (#33).
+	Settle     Settle     `json:"settle,omitzero"`
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 
 	Source string `json:"source"`           // "fyr" or "t3"
 	Parent string `json:"parent,omitempty"` // the thread whose agent started it (V0.22)
 	T3ID   string `json:"t3Id,omitempty"`
 }
+
+// Conversation is the run state of the thread's agent session (SPEC 3.3),
+// written only by observations from the agent.
+type Conversation struct {
+	Running      bool       `json:"running"`
+	RunStartedAt *time.Time `json:"runStartedAt,omitempty"`
+	Activity     string     `json:"activity,omitempty"` // last tool or text, one line
+	Subagents    int        `json:"subagents,omitempty"`
+	Summary      string     `json:"summary,omitempty"` // last assistant text, one line
+	Tasks        []Task     `json:"tasks,omitempty"`   // subagents and background tasks (V0.16)
+	Failure      *Failure   `json:"failure,omitempty"`
+	// Outbox holds the messages the agent has not read yet (V0.33).
+	Outbox []OutMsg `json:"outbox,omitempty"`
+	// Handover is set while the thread moves to another profile (V0.45).
+	Handover *Handover `json:"handover,omitempty"`
+}
+
+// ViewOn reports that the agent keeps a live view (V0.37).
+func (t *Thread) ViewOn() bool { return t.Live != nil && t.Live.Enabled }
 
 // Handover is a move to another profile that is going on (SPEC 0.5 V0.45).
 type Handover struct {
@@ -136,8 +142,8 @@ type Task struct {
 	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
-// RunningTasks counts the thread's running tasks.
-func (t *Thread) RunningTasks() int {
+// RunningTasks counts the conversation's running tasks.
+func (t *Conversation) RunningTasks() int {
 	n := 0
 	for _, k := range t.Tasks {
 		if k.Status == TaskRunning {

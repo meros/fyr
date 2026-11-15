@@ -101,11 +101,8 @@ func HolderOf(t *Thread, on string) (Holder, error) {
 	case OnThread:
 		return Holder{Actions: &t.Actions, On: on, t: t}, nil
 	case OnView:
-		if !t.LiveView {
+		if !t.ViewOn() {
 			return Holder{}, errors.New("this thread has no live view; publish one with view_publish first, or use on: \"thread\"")
-		}
-		if t.Live == nil {
-			t.Live = &LiveView{}
 		}
 		return Holder{Actions: &t.Live.Actions, On: on, t: t}, nil
 	}
@@ -287,13 +284,6 @@ func (h Holder) Ended(a ActionSpec, ok bool, exit int, output string, now time.T
 	c.UpdatedAt = now
 }
 
-// ClearView drops the view's actions and their runs when the view goes away.
-func ClearView(t *Thread) {
-	if t.Live != nil {
-		t.Live.Actions = Actions{}
-	}
-}
-
 // FyrEffect is an effect Fyr runs itself, whoever started it.
 type FyrEffect struct {
 	ID    string
@@ -415,10 +405,15 @@ func init() {
 // DecodeThread reads a stored thread, also in the shape stored before #31:
 // the thread's runs in offerRuns, the view's actions and runs mixed into the
 // thread's, and a change's actions under "actions"; and before #32: the PR on
-// the thread, dismissedPRs and settleWhenMerged.
+// the thread, dismissedPRs and settleWhenMerged; and before #33: the
+// settle in settledAt, settleWhenDone and settleWhen, and the live view's
+// flag in liveView.
 func DecodeThread(b []byte) (*Thread, error) {
 	t := &Thread{}
 	if err := json.Unmarshal(b, t); err != nil {
+		return nil, err
+	}
+	if err := migrateComponents(t, b); err != nil {
 		return nil, err
 	}
 	if err := migratePR(t, b); err != nil {
@@ -462,6 +457,43 @@ func DecodeThread(b []byte) (*Thread, error) {
 		t.Runs = slices.DeleteFunc(t.Runs, func(r ActionRun) bool { return isView(r.On) })
 	}
 	return t, nil
+}
+
+// migrateComponents moves a thread stored before #33 into its Settle and
+// Live components.
+func migrateComponents(t *Thread, b []byte) error {
+	keys := []string{`"settledAt"`, `"settleWhenDone"`, `"settleWhen"`, `"liveView"`}
+	if !slices.ContainsFunc(keys, func(k string) bool { return bytes.Contains(b, []byte(k)) }) {
+		return nil
+	}
+	var old struct {
+		SettledAt      *time.Time `json:"settledAt"`
+		SettleWhenDone bool       `json:"settleWhenDone"`
+		SettleWhen     *struct {
+			Change string `json:"change"`
+			Phase  Phase  `json:"phase"`
+		} `json:"settleWhen"`
+		LiveView bool `json:"liveView"`
+	}
+	if err := json.Unmarshal(b, &old); err != nil {
+		return err
+	}
+	if t.Settle.At == nil && len(t.Settle.When) == 0 {
+		t.Settle.At = old.SettledAt
+		if old.SettleWhenDone {
+			t.Settle.arm(SettleCond{Kind: SettleDone})
+		}
+		if w := old.SettleWhen; w != nil && w.Change != "" {
+			t.Settle.arm(SettleCond{Kind: SettleChange, Change: w.Change, Phase: w.Phase})
+		}
+	}
+	if old.LiveView {
+		if t.Live == nil {
+			t.Live = &LiveView{}
+		}
+		t.Live.Enabled = true
+	}
+	return nil
 }
 
 // migratePR moves a thread stored before #32 onto its changes: a change's
@@ -508,8 +540,8 @@ func migratePR(t *Thread, b []byte) error {
 		t.ActivityAt = activity // moving the PR is not news
 		if c != nil {
 			t.MainChange = c.ID
-			if old.SettleWhenMerged && p.State == "OPEN" && t.SettleWhen == nil {
-				t.SettleWhen = &SettleWhen{Change: c.ID, Phase: PhaseLanded}
+			if old.SettleWhenMerged && p.State == "OPEN" {
+				t.Settle.arm(SettleCond{Kind: SettleChange, Change: c.ID, Phase: PhaseLanded})
 			}
 		}
 	}

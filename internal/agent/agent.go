@@ -614,7 +614,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		prompt = ""
 	}
 	s.changeTools = m.cfg.MCPURL != "" // V0.62
-	if t.LiveView && m.cfg.MCPURL != "" {
+	if t.ViewOn() && m.cfg.MCPURL != "" {
 		s.viewTools = true
 		prompt = strings.TrimSpace(prompt + "\n\n" + ViewPrompt)
 	}
@@ -909,7 +909,7 @@ func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
 	active, _ := in["stop_hook_active"].(bool)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	d := core.ViewStop{Flag: s.viewTools && t.LiveView, Touched: core.ViewTouchedThisRun(&t),
+	d := core.ViewStop{Flag: s.viewTools && t.ViewOn(), Touched: core.ViewTouchedThisRun(&t),
 		Changes: s.changeTools && core.ChangesStale(&t), // V0.62
 		Blocked: s.viewBlocked, Active: active, Tasks: len(bg) + t.RunningTasks()}
 	if !d.Block() {
@@ -933,7 +933,7 @@ func (m *Manager) viewNudge(s *session) claude.Msg {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	n := core.ViewNudge{Flag: s.viewTools && t.LiveView, Nudged: s.viewNudged}
+	n := core.ViewNudge{Flag: s.viewTools && t.ViewOn(), Nudged: s.viewNudged}
 	if t.RunStartedAt != nil {
 		n.RunStarted = *t.RunStartedAt
 	}
