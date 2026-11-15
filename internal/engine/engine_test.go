@@ -450,6 +450,9 @@ func TestAttentionTransitionsNotify(t *testing.T) {
 	}
 	id := h.create("ask")
 	th := h.wait(id, "asking", state(core.Asking))
+	// The notification follows the broadcast; wait for it, then check that
+	// a visit does not send it again.
+	eventually(t, "asking notified", func() bool { return count("asking") >= 1 })
 	h.e.Snapshot()
 	h.cmd("thread.markSeen", id, nil)
 	if count("asking") != 1 {
@@ -459,6 +462,7 @@ func TestAttentionTransitionsNotify(t *testing.T) {
 	h.wait(id, "done", state(core.Done))
 	id2 := h.create("fail")
 	h.wait(id2, "failed", state(core.Failed))
+	eventually(t, "failed notified", func() bool { return count("failed") >= 1 })
 	if count("failed") != 1 {
 		t.Fatalf("failed notified %d times: %v", count("failed"), got)
 	}
