@@ -2,7 +2,7 @@
 // unless the project filter picks their project or a search is typed, and re-renders at the nearest end.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { QUIET_PRESETS, cleanWindow, dayText, hasWindow, hideQuiet, isAllDay, isQuiet, nextQuietEnd, quietLine, quietList, quietNote, setAllDay, toggleDay, windowWords } from "../src/quiet.ts";
+import { QUIET_HOLD_MS, QUIET_PRESETS, QUIET_SHOW_MS, cleanWindow, createProjects, loadQuietShow, saveQuietShow, dayText, hasWindow, hideQuiet, isAllDay, isQuiet, nextQuietEnd, quietLine, quietList, quietNote, setAllDay, toggleDay, windowWords } from "../src/quiet.ts";
 import { mockQuietUntil } from "../src/mock.ts";
 import { sections } from "../src/store.ts";
 import type { Project } from "../src/types.ts";
@@ -115,4 +115,34 @@ test("the old single object and the list both read as a list", () => {
   assert.deepEqual(quietList(undefined), []);
   assert.deepEqual(quietList(null), []);
   assert.deepEqual(cleanWindow({ from: "17:00", to: "06:00", days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] }), { from: "17:00", to: "06:00" }, "every day is no days");
+});
+
+// SPEC 0.5 V0.74: a quiet project stays out of New thread; a 30 s hold shows it for 30 minutes.
+test("New thread leaves quiet projects out, keeps the picked one, and shows them all while unlocked", () => {
+  const ps: Project[] = [
+    { id: "p_work", name: "Work", quietUntil: until },
+    { id: "p_home", name: "Home" },
+    { id: "p_late", name: "Late", quietUntil: later },
+  ];
+  assert.deepEqual(createProjects(ps, now, 0).map((p) => p.id), ["p_home"]);
+  assert.deepEqual(createProjects(ps, now, 0, "p_late").map((p) => p.id), ["p_home", "p_late"], "the picked project stays");
+  assert.deepEqual(createProjects(ps, now, now + 60_000).map((p) => p.id), ["p_work", "p_home", "p_late"], "unlocked");
+  assert.deepEqual(createProjects(ps, now, now).map((p) => p.id), ["p_home"], "the unlock ended");
+  assert.deepEqual(createProjects(ps, Date.parse(until), 0).map((p) => p.id), ["p_work", "p_home"], "a window ended");
+});
+
+test("the hold takes 30 s and shows quiet projects for 30 minutes on this device", () => {
+  assert.equal(QUIET_HOLD_MS, 30_000);
+  assert.equal(QUIET_SHOW_MS, 30 * 60_000);
+  const mem = new Map<string, string>();
+  const kv = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+  assert.equal(loadQuietShow(kv), 0);
+  const end = saveQuietShow(kv, now);
+  assert.equal(end, now + QUIET_SHOW_MS);
+  assert.equal(loadQuietShow(kv), end);
+  saveQuietShow(kv, null);
+  assert.equal(loadQuietShow(kv), 0, "Hide ends it");
+  mem.set("fyr.quietShowUntil", "junk");
+  assert.equal(loadQuietShow(kv), 0);
+  assert.equal(loadQuietShow(null), 0);
 });
