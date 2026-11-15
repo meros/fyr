@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -359,8 +360,19 @@ func TestMergeOneGuard(t *testing.T) {
 	if r := h.cmdID("p2", "action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest}); !r.OK {
 		t.Fatalf("press: %+v", r)
 	}
-	h.wait(id, "the agent heard the merge", func(t core.Thread, _ core.Attention) bool {
-		return strings.HasPrefix(t.Summary, `echo: [Fyr] The owner ran "Merge"`) && strings.Contains(t.Summary, "succeeded")
+	// A slow machine sends the conflict notice and the merge result in one
+	// message, so look for the line in any message the agent got.
+	eventually(t, "the agent heard the merge", func() bool {
+		for _, ev := range h.events(id) {
+			var m map[string]any
+			if ev.Type == "user" && json.Unmarshal(ev.Data, &m) == nil {
+				text, _ := m["text"].(string)
+				if strings.Contains(text, `[Fyr] The owner ran "Merge"`) && strings.Contains(text, "succeeded") {
+					return true
+				}
+			}
+		}
+		return false
 	})
 	h.r.mu.Lock()
 	req := h.r.calls[0]
