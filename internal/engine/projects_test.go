@@ -29,7 +29,7 @@ func gitInit(t *testing.T, dir string) {
 }
 
 // dtoOf is a thread as clients see it.
-func dtoOf(e *Engine, id string) DTO {
+func dtoOf(e *Engine, id string) api.Thread {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.build(e.threads[id], e.Now())
@@ -67,7 +67,7 @@ func TestNoAutoProjectAndCreate(t *testing.T) {
 	if n := len(h.e.Projects()); n != 0 {
 		t.Fatalf("matching made %d projects", n)
 	}
-	if d := dtoOf(h.e, r1.ThreadID); d.ProjectID != "" || d.NewProject == nil || *d.NewProject != (NewProject{Name: "lasso-app", Folder: repo}) {
+	if d := dtoOf(h.e, r1.ThreadID); d.ProjectID != "" || d.NewProject == nil || *d.NewProject != (api.NewProject{Name: "lasso-app", Folder: repo}) {
 		t.Fatalf("project %q newProject %+v", d.ProjectID, d.NewProject)
 	}
 	r := h.cmd("project.create", "", core.Args{"name": "Lasso", "folder": repo})
@@ -485,7 +485,7 @@ func TestProjectDelete(t *testing.T) {
 	}
 }
 
-// #42: a project carries rev, a stamp of when its DTO was built, so a client
+// #42: a project carries rev, a stamp of when its api.Thread was built, so a client
 // keeps the newer of a snapshot and a stream frame that crossed it.
 func TestProjectRev(t *testing.T) {
 	h := newHarness(t, time.Minute)

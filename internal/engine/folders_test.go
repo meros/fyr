@@ -8,16 +8,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 )
 
-func projectDTO(e *Engine, id string) ProjectDTO {
+func projectDTO(e *Engine, id string) api.Project {
 	for _, p := range e.Projects() {
 		if p.ID == id {
 			return p
 		}
 	}
-	return ProjectDTO{}
+	return api.Project{}
 }
 
 // SPEC 0.5 V0.55: a project has one folder; a new thread in the project

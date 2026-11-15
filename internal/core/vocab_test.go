@@ -23,7 +23,7 @@ var vocabAllow = map[string][]string{
 	// The name of change_request's ask argument.
 	"internal/engine/change_tools.go": {"ask"},
 	// The hub's event name and the front's env key for deploy progress.
-	"internal/engine/hub.go":  {"deploy"},
+	"internal/stream/hub.go":  {"deploy"},
 	"internal/front/front.go": {"deploy"},
 	// GitHub's deployment state before the first status.
 	"internal/github/deploy.go": {"pending"},

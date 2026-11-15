@@ -25,6 +25,7 @@ import (
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
+	"github.com/meros/fyr/internal/stream"
 )
 
 // Agents runs agent effects. *agent.Manager implements it.
@@ -73,7 +74,7 @@ type Engine struct {
 	// Scripts runs script actions of changes, the thread and its view (V0.60);
 	// nil runs them with exec.
 	Scripts ScriptRunner
-	Hub     *Hub
+	Hub     *stream.Hub
 	Now     func() time.Time
 	// Adopt handles t3.adopt; set by main.
 	Adopt func(ids []string) (int, error)
@@ -93,12 +94,12 @@ type Engine struct {
 	OnPR func(threadID string)
 	// OnAttention is called, outside the lock, when a thread's attention
 	// state changes (push, SPEC 0.5 V0.15). prev is "" for a new thread.
-	OnAttention func(d DTO, prev core.State)
+	OnAttention func(d api.Thread, prev core.State)
 }
 
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, quietSent: map[string]string{}, HostID: hostname(), Hub: NewHub(), Now: time.Now,
+		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, quietSent: map[string]string{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
 		shotLimit: window{max: 10, span: time.Minute}, newLimit: window{max: 5, span: time.Hour}, sendLimit: window{max: 30, span: time.Hour}}
 }
 
@@ -347,7 +348,8 @@ type applied struct {
 	reply    api.Reply
 	res      core.Result
 	threadID string
-	dto      *DTO
+	dto      *api.Thread
+	prev     core.State // the attention clients had before
 	evs      []store.Event
 	newPR    bool
 	replayed bool
@@ -501,8 +503,8 @@ func (e *Engine) commit(s *staged, show bool) {
 		s.newPR = s.cur.MainPR() == nil && t.MainPR() != nil
 		e.threads[t.ID], e.views[t.ID] = t, s.v
 		e.bump(t.ID)
-		d := e.dto(t, s.now)
-		s.dto = &d
+		d, prev := e.seen(t, s.now)
+		s.dto, s.prev = &d, prev
 	}
 }
 
@@ -521,11 +523,11 @@ func (e *Engine) publish(p *applied) {
 		return
 	}
 	if p.dto != nil {
-		e.Hub.Thread(*p.dto)
+		e.Hub.Send(stream.FrameThread, *p.dto)
 	}
-	e.Hub.Events(p.evs)
+	e.sendEvents(p.evs)
 	if p.dto != nil {
-		e.notify(*p.dto)
+		e.notify(*p.dto, p.prev)
 	}
 	if p.newPR && e.OnPR != nil {
 		e.OnPR(p.threadID)
@@ -567,70 +569,29 @@ func (e *Engine) Thread(id string) (core.Thread, bool) {
 	return *core.CloneThread(t), true
 }
 
-// DTO is a thread as clients see it (docs/API-v0.md).
-type DTO struct {
-	*core.Thread
-	Rev         int64             `json:"rev"`
-	Attention   core.Attention    `json:"attention"`
-	View        *ViewDTO          `json:"view"`
-	Unavailable map[string]string `json:"unavailable"`
-	// NewProject is what "New project from this thread" starts with (V0.30,
-	// V0.55).
-	NewProject *NewProject `json:"newProject,omitempty"`
-	// QuietUntil is the end of the quiet hours of the thread's project, while
-	// they hold (V0.46).
-	QuietUntil *time.Time `json:"quietUntil,omitempty"`
-	// PR is the main change's PR, for the PR chip and tab (#32); the PR
-	// itself lives on its change.
-	PR *core.PR `json:"pr,omitempty"`
-	// Project is the name of the thread's project (#33: derived, not
-	// stored).
-	Project string `json:"project"`
-	// LiveView is live.enabled, the flag clients read (#33).
-	LiveView bool `json:"liveView,omitempty"`
-	// The settle as clients read it, derived from thread.settle and the
-	// settle Rules (#33, #46): settledAt, settleWhenDone (a "done" Rule),
-	// settleWhenMerged (the main change reaching landed) and settleWhen (a
-	// change Rule).
-	SettledAt        *time.Time     `json:"settledAt,omitempty"`
-	SettleWhenDone   bool           `json:"settleWhenDone,omitempty"`
-	SettleWhenMerged bool           `json:"settleWhenMerged,omitempty"`
-	SettleWhen       *core.SettleOn `json:"settleWhen,omitempty"`
-	// Settle shadows thread.settle, which the fields above carry.
-	Settle *struct{} `json:"settle,omitempty"`
-	// Feed shadows thread.feed: the notices are the agent's (#47).
-	Feed *struct{} `json:"feed,omitempty"`
-	// Changes are the thread's own changes and the host records it shows
-	// (#35), each record once with the threads that show it.
-	Changes []core.Change `json:"changes,omitempty"`
-
-	prev core.State // the state before this change; not sent
-}
-
-// ViewDTO is the owner's view as clients read it: the snooze is derived
-// from the View's snooze Rule (#46).
-type ViewDTO struct {
-	*core.View
-	SnoozeUntil *time.Time `json:"snoozeUntil,omitempty"`
-	SnoozedAt   *time.Time `json:"snoozedAt,omitempty"`
-}
-
 // notify reports an attention change; call it without e.mu held.
-func (e *Engine) notify(d DTO) {
-	if e.OnAttention != nil && d.Attention.State != d.prev {
-		e.OnAttention(d, d.prev)
+func (e *Engine) notify(d api.Thread, prev core.State) {
+	if e.OnAttention != nil && d.Attention.State != prev {
+		e.OnAttention(d, prev)
 	}
 }
 
-func (e *Engine) dto(t *core.Thread, now time.Time) DTO {
-	d := e.build(t, now)
-	d.prev = e.last[t.ID]
-	e.last[t.ID] = d.Attention.State
+func (e *Engine) dto(t *core.Thread, now time.Time) api.Thread {
+	d, _ := e.seen(t, now)
 	return d
 }
 
+// seen builds a thread's DTO, records its attention as the one clients have
+// and returns the attention they had before.
+func (e *Engine) seen(t *core.Thread, now time.Time) (api.Thread, core.State) {
+	d := e.build(t, now)
+	prev := e.last[t.ID]
+	e.last[t.ID] = d.Attention.State
+	return d, prev
+}
+
 // build makes a DTO without recording it as seen by clients.
-func (e *Engine) build(t *core.Thread, now time.Time) DTO {
+func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 	v := e.view(t.ID)
 	un := map[string]string{}
 	for name, a := range core.Registry {
@@ -644,19 +605,19 @@ func (e *Engine) build(t *core.Thread, now time.Time) DTO {
 	att := core.Compute(t, v, now)
 	vc := *v
 	vc.ChangesLook = nil // V0.65: served with the Changes tab, not on every push
-	vd := &ViewDTO{View: &vc}
+	vd := &api.View{View: &vc}
 	vd.SnoozeUntil, vd.SnoozedAt = core.SnoozeOf(v)
-	return DTO{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now),
+	return api.Thread{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now),
 		PR: t.MainPR(), Project: e.projectName(t), LiveView: t.ViewOn(),
 		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t), Changes: e.shown(t)}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.
-func (e *Engine) Snapshot() []DTO {
+func (e *Engine) Snapshot() []api.Thread {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	now := e.Now()
-	out := make([]DTO, 0, len(e.threads))
+	out := make([]api.Thread, 0, len(e.threads))
 	for _, t := range e.threads {
 		out = append(out, e.build(core.CloneThread(t), now))
 	}
@@ -701,7 +662,11 @@ func (e *Engine) Tick() {
 			quiet[pid] = true
 		}
 	}
-	var changed []DTO
+	type change struct {
+		d    api.Thread
+		prev core.State
+	}
+	var changed []change
 	var due []string
 	for id, t := range e.threads {
 		if at := core.NextCheck(t, e.view(id), now); at != nil && !at.After(now) {
@@ -709,7 +674,8 @@ func (e *Engine) Tick() {
 		}
 		if core.Compute(t, e.view(id), now).State != e.last[id] || quiet[t.ProjectID] {
 			e.bump(id)
-			changed = append(changed, e.dto(core.CloneThread(t), now))
+			d, prev := e.seen(core.CloneThread(t), now)
+			changed = append(changed, change{d, prev})
 		}
 	}
 	e.mu.Unlock()
@@ -723,13 +689,13 @@ func (e *Engine) Tick() {
 	if len(quiet) > 0 {
 		for _, p := range e.Projects() {
 			if quiet[p.ID] {
-				e.Hub.Project(p)
+				e.Hub.Send(stream.FrameProject, p)
 			}
 		}
 	}
-	for _, d := range changed {
-		e.Hub.Thread(d)
-		e.notify(d)
+	for _, c := range changed {
+		e.Hub.Send(stream.FrameThread, c.d)
+		e.notify(c.d, c.prev)
 	}
 }
 
@@ -795,7 +761,7 @@ func (e *Engine) Insert(t *core.Thread, v *core.View, history []core.Event, at [
 	e.bump(t.ID)
 	dto := e.dto(t, e.Now())
 	e.mu.Unlock()
-	e.Hub.Thread(dto)
+	e.Hub.Send(stream.FrameThread, dto)
 	return nil
 }
 

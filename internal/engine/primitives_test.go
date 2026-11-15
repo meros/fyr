@@ -14,6 +14,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/store"
+	"github.com/meros/fyr/internal/stream"
 )
 
 // bare is an engine without agents, on a clock the test moves.
@@ -43,8 +44,8 @@ func bareThread(t *testing.T, e *Engine) string {
 }
 
 // frames drains what the hub sent so far, by event name.
-func frames(ch chan Frame) map[string][]Frame {
-	out := map[string][]Frame{}
+func frames(ch chan stream.Frame) map[string][]stream.Frame {
+	out := map[string][]stream.Frame{}
 	for {
 		select {
 		case f := <-ch:

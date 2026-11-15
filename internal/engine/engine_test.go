@@ -434,7 +434,7 @@ func TestAttentionTransitionsNotify(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	var mu sync.Mutex
 	got := []string{}
-	h.e.OnAttention = func(d DTO, prev core.State) {
+	h.e.OnAttention = func(d api.Thread, prev core.State) {
 		mu.Lock()
 		got = append(got, string(prev)+"→"+string(d.Attention.State))
 		mu.Unlock()
@@ -482,7 +482,7 @@ func TestRestartDoesNotRenotify(t *testing.T) {
 	e2 := New(st)
 	e2.Load()
 	n := 0
-	e2.OnAttention = func(DTO, core.State) { n++ }
+	e2.OnAttention = func(api.Thread, core.State) { n++ }
 	e2.Tick()
 	if n != 0 {
 		t.Fatalf("restart re-notified %d threads", n)
@@ -678,7 +678,7 @@ func TestOwnerPRActionsUnavailable(t *testing.T) {
 	}
 }
 
-// #32: the wire DTO keeps "pr" and "settleWhenMerged" for the client,
+// #32: the wire api.Thread keeps "pr" and "settleWhenMerged" for the client,
 // derived from the main change; every PR is on the Changes board.
 func TestDTOPRIsTheMainChange(t *testing.T) {
 	h := newHarness(t, time.Minute)
@@ -714,7 +714,7 @@ func TestDTOPRIsTheMainChange(t *testing.T) {
 	}
 }
 
-// #33: the wire DTO keeps settledAt, settleWhenDone, settleWhen, liveView
+// #33: the wire api.Thread keeps settledAt, settleWhenDone, settleWhen, liveView
 // and project, derived from the thread's Settle and Live and its project;
 // thread.settle itself is not sent.
 func TestDTODerivesSettleViewAndProject(t *testing.T) {
