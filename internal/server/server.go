@@ -529,7 +529,8 @@ func (s *Server) prDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]any{"error": "no such thread"})
 		return
 	}
-	if t.PR == nil || t.PR.URL == "" {
+	pr := t.MainPR()
+	if pr == nil || pr.URL == "" {
 		writeJSON(w, 200, map[string]any{"error": "This thread has no PR."})
 		return
 	}
@@ -539,7 +540,7 @@ func (s *Server) prDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	d, err := s.PR.Get(ctx, t.PR.URL, r.URL.Query().Get("fresh") == "1")
+	d, err := s.PR.Get(ctx, pr.URL, r.URL.Query().Get("fresh") == "1")
 	if err != nil {
 		writeJSON(w, 200, map[string]any{"error": err.Error()})
 		return

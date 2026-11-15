@@ -11,7 +11,7 @@ package core
 // FyrEffects are the effects Fyr runs itself. Each has one Guard, used by
 // every way to start it: the owner's command (the registry's Available), the
 // press of a built-in offer, and the owner's yes to an agent's effect_request
-// or change_request. A PR effect asks the PR's change first, then thread.pr.
+// or change_request. A PR effect asks the change that has the PR (#32).
 // The registry stays the list of owner commands, each with Available (V0.5).
 // The agent hears the result of every fyr and script action (V0.60 (4)).
 
@@ -242,7 +242,7 @@ func (h Holder) EffectArgs(a ActionSpec) map[string]any {
 	args := map[string]any{}
 	if h.Change != nil {
 		args["change"] = h.Change.ID
-		if pr := h.Change.PR(); pr != "" {
+		if pr := h.Change.PRURL(); pr != "" {
 			args["pr"] = pr
 		}
 	}
@@ -358,8 +358,8 @@ func needPR(a map[string]any) error {
 }
 
 // prGuard is why a PR effect cannot run on args.pr now, or "" (V0.43 (2)).
-// The change that has the PR decides; thread.pr only when no change has it;
-// a PR Fyr has no record of is left to GitHub, which the runner reads again.
+// The change that has the PR decides (#32); a PR Fyr has no record of is left
+// to GitHub, which the runner reads again.
 func prGuard(merge bool) func(*Thread, map[string]any) string {
 	return func(t *Thread, a map[string]any) string {
 		if t.ArchivedAt != nil {
@@ -370,11 +370,9 @@ func prGuard(merge bool) func(*Thread, map[string]any) string {
 			return "No PR"
 		}
 		open, conflict, changes := true, false, false
-		if c := changeByEvidence(t, "pr", url); c != nil {
+		if c := changeByPR(t, url); c != nil {
 			fails := func(typ CondType) bool { k := condition(c, typ); return k != nil && k.Status == CondFail }
 			open, conflict, changes = c.Phase.InFlight(), fails(CondConflict), fails(CondReview)
-		} else if p := t.PR; p != nil && p.URL == url {
-			open, conflict, changes = p.State == "" || p.State == "OPEN", p.Conflict, p.Review == "CHANGES_REQUESTED"
 		}
 		switch {
 		case !open:
@@ -389,15 +387,15 @@ func prGuard(merge bool) func(*Thread, map[string]any) string {
 }
 
 // The owner's PR commands from the PR tab (V0.43 (2)) are FyrEffects on the
-// thread's PR: their Available is the effect's guard.
+// thread's main PR (#32): their Available is the effect's guard.
 func init() {
 	for _, id := range []string{FyrMerge, FyrRerun} {
 		fx := FyrEffects[id]
 		args := func(t *Thread) map[string]any {
-			if t.PR == nil {
-				return map[string]any{}
+			if p := t.MainPR(); p != nil {
+				return map[string]any{"pr": p.URL}
 			}
-			return map[string]any{"pr": t.PR.URL}
+			return map[string]any{}
 		}
 		register(&Action{Name: id, Label: fx.Label,
 			Available: func(t *Thread, _ *View, _ time.Time) string { return fx.Guard(t, args(t)) },
@@ -416,10 +414,14 @@ func init() {
 
 // DecodeThread reads a stored thread, also in the shape stored before #31:
 // the thread's runs in offerRuns, the view's actions and runs mixed into the
-// thread's, and a change's actions under "actions".
+// thread's, and a change's actions under "actions"; and before #32: the PR on
+// the thread, dismissedPRs and settleWhenMerged.
 func DecodeThread(b []byte) (*Thread, error) {
 	t := &Thread{}
 	if err := json.Unmarshal(b, t); err != nil {
+		return nil, err
+	}
+	if err := migratePR(t, b); err != nil {
 		return nil, err
 	}
 	if bytes.Contains(b, []byte(`"offerRuns"`)) || bytes.Contains(b, []byte(`"actions"`)) {
@@ -462,6 +464,66 @@ func DecodeThread(b []byte) (*Thread, error) {
 	return t, nil
 }
 
+// migratePR moves a thread stored before #32 onto its changes: a change's
+// "pr" evidence becomes its PR, thread.pr goes to its change (made when none
+// has it) and that change is the main one, a dismissed PR's change is
+// dismissed, and settleWhenMerged waits for the main change to land.
+func migratePR(t *Thread, b []byte) error {
+	for i := range t.Changes {
+		c := &t.Changes[i]
+		for _, ev := range c.Evidence {
+			if ev.Kind == "pr" && c.PR == nil && ev.URL != "" {
+				repo, n := parsePRURL(ev.URL)
+				c.PR = &PR{URL: ev.URL, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending}
+				switch {
+				case c.Phase == PhaseAbandoned:
+					c.PR.State = "CLOSED"
+				case !c.Phase.InFlight():
+					c.PR.State = "MERGED"
+				}
+			}
+		}
+	}
+	if !bytes.Contains(b, []byte(`"pr"`)) && !bytes.Contains(b, []byte(`"dismissedPRs"`)) && !bytes.Contains(b, []byte(`"settleWhenMerged"`)) {
+		return nil
+	}
+	var old struct {
+		PR               *PR      `json:"pr"`
+		DismissedPRs     []string `json:"dismissedPRs"`
+		SettleWhenMerged bool     `json:"settleWhenMerged"`
+	}
+	if err := json.Unmarshal(b, &old); err != nil {
+		return err
+	}
+	if p := old.PR; p != nil && p.URL != "" && t.MainChange == "" {
+		at := t.UpdatedAt
+		if p.CheckedAt != nil {
+			at = *p.CheckedAt
+		}
+		activity := t.ActivityAt
+		c := changeByPR(t, p.URL)
+		if c == nil || c.PR == nil || c.PR.CheckedAt == nil {
+			c = ChangePRObserved(t, *p, at)
+		}
+		t.ActivityAt = activity // moving the PR is not news
+		if c != nil {
+			t.MainChange = c.ID
+			if old.SettleWhenMerged && p.State == "OPEN" && t.SettleWhen == nil {
+				t.SettleWhen = &SettleWhen{Change: c.ID, Phase: PhaseLanded}
+			}
+		}
+	}
+	for _, u := range old.DismissedPRs {
+		if c := changeByPR(t, u); c != nil {
+			c.Dismissed = true
+			if t.MainChange == c.ID {
+				t.MainChange = ""
+			}
+		}
+	}
+	return nil
+}
+
 // syncBuiltins sets the built-in actions of a code change with a PR from what
 // Fyr observed: Merge while open; Re-run failed and Fix CI while checks fail;
 // Address review while changes are requested; Rebase on a conflict (V0.60).
@@ -480,7 +542,7 @@ func syncBuiltins(c *Change) {
 	if c.Phase == PhaseLanded && is(CondDeploy, CondFail) {
 		add(ActionSpec{ID: "fyr.deployfail", Label: "Investigate the failed deploy", Run: RunAgent, In: "this", Primary: true, Prompt: deployPrompt(c)})
 	}
-	pr := c.PR()
+	pr := c.PRURL()
 	if pr == "" || c.Phase != PhaseReview {
 		return
 	}
@@ -503,7 +565,7 @@ func syncBuiltins(c *Change) {
 
 func deployPrompt(c *Change) string {
 	p := "The deploy of " + c.Title
-	if pr := c.PR(); pr != "" {
+	if pr := c.PRURL(); pr != "" {
 		p += " (" + pr + ")"
 	}
 	if c.DeployWatch != nil {

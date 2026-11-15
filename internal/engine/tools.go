@@ -82,11 +82,10 @@ func (e *Engine) Tools(s *mcp.Server) {
 				case "done":
 					t.SettleWhenDone = true
 				case "merged":
-					if t.PR == nil || t.PR.State != "OPEN" {
+					if !core.SettleWhenMerged(t) {
 						err = errors.New("this thread has no open PR; link one with pr_link first")
 						return nil
 					}
-					t.SettleWhenMerged = true
 				case "change":
 					c := core.FindChange(t, sArg(a, "change"))
 					phase := core.Phase(sArg(a, "phase"))
