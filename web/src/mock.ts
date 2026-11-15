@@ -1,7 +1,7 @@
 // Fixtures for ?mock=1 (full stress set) and ?mock=2 (sparse: empty sections). A tiny in-memory fyrd:
 // commands change the fixtures and push thread upserts, so the UI can be clicked through without a host.
 
-import type { CommandReply, Decision, FsDir, FsListing, Project, QuietHours, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { Change, CommandReply, Decision, FsDir, FsListing, Project, QuietHours, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import type { Quota } from "./quota.ts";
@@ -286,6 +286,40 @@ function fullFixture(now: number): Fixture {
       unavailable: NOT_RUNNING,
     }),
   );
+  // V0.73 (2): the owner's phone screen: six changes, five of them ended, a missing main PR, 20 finished agents and a
+  // git checkout without a diff. The diff section must flow after the cards (it was drawn over the last two).
+  {
+    const at = (min: number) => iso(now - min * 60_000);
+    const deploy = (n: number, title: string, rev: string, summary: string): Change => ({
+      id: `c_dep${n}`, key: `host:fyr deploy ${n}`, kind: "host", title, targets: ["host:fyr"], phase: "abandoned", phaseBy: "owner",
+      revisions: [{ id: rev, summary, by: "agent", at: at(60 * n) }], createdAt: at(60 * n + 5), updatedAt: at(60 * n),
+    });
+    add(
+      base("t_ended", "Fyr: review, plan and Solid core", now, 3, {
+        project: "fyr",
+        branch: "main",
+        attention: { state: "done", section: "needs", reason: "Done" },
+        summary: "Created a worktree for V0.73.",
+        pr: { url: "https://github.com/acme/app/pull/88", repo: "acme/app", number: 88, state: "MISSING", checks: "none", conflict: false },
+        tasks: Array.from({ length: 20 }, (_, i) => task(`te${i}`, `Solid core worker ${i + 1}`, "completed", now, 40 - i, { summary: "Done.", toolUses: 12, tokens: 40_000 })),
+        changes: [
+          deploy(1, "Deploy V0.72 on top of the running build (main 4302001)", "4302001", "V0.72 on top of the running build 98b15a2"),
+          deploy(2, "Deploy Solid core part 2 (main ef103c7) with the layout test", "98b15a2", "Solid core complete (#48, #49) plus the layout test at about 42 s instead of 284 s; the pending request builds this"),
+          deploy(3, "Deploy the review and cleanup merge with fifteen bug fixes", "0d4d81c", "15 bug fixes, safe cleanup, V0.67 one snooze list, plan docs"),
+          deploy(4, "Deploy Solid core part 1 (main f8f97d8) plus a test fix", "a9a8ec0", "f8f97d8 plus a test fix: TestMergeOneGuard failed the deploy's make test under load"),
+          {
+            id: "c_app88", key: "pr:acme/app#88", kind: "code", title: "acme/app#88", targets: ["repo:github.com/acme/app"], phase: "abandoned", phaseBy: "observed", label: "the PR does not exist on GitHub",
+            evidence: [{ kind: "pr", url: "https://github.com/acme/app/pull/88", title: "#88" }], createdAt: at(400), updatedAt: at(300),
+          },
+          {
+            id: "c_v073", key: "branch:v073-live-upkeep", kind: "code", title: "A live change needs no upkeep (V0.73)", branch: "v073-live-upkeep", phase: "working", phaseBy: "agent",
+            revisions: [{ id: "262ec20", summary: "A live change needs no upkeep", by: "agent", at: at(4) }], createdAt: at(30), updatedAt: at(4),
+          },
+        ],
+        unavailable: NOT_RUNNING,
+      }),
+    );
+  }
   // V0.37: a thread with a live view; the log has an earlier press from the view.
   {
     const st = { headline: "E2e green on mobile; PR not opened yet", steps: [{ label: "Reproduce", state: "done" }, { label: "Fix the lasso", state: "done" }, { label: "E2e on mobile", state: "done" }, { label: "Open the PR", state: "now" }], next: "Open the PR when you say so" };
@@ -1404,6 +1438,8 @@ function mockBlob(path: string): string {
 /** The branch diff of a mock thread; t_deploy is outside git. t_done also has a look 3 h ago (V0.65). */
 export function mockChanges(threadId: string): ChangesDTO {
   if (threadId === "t_deploy") return { git: false };
+  // V0.73 (2): a checkout on its base with nothing changed.
+  if (threadId === "t_ended") return { git: true, root: "/home/owner/src/fyr", branch: "main", base: "origin/main", mergeBase: "262ec20a1b", commits: 0, head: "262ec20a1b2c3d4e5f60718293a4b5c6d7e8f901", truncated: false, files: [] };
   if (threadId === "t_done" && !mockViewed.has("t_done:init")) {
     mockViewed.set("t_done:init", "");
     mockViewed.set("t_done:web/test/map.test.ts", mockBlob("web/test/map.test.ts"));

@@ -232,6 +232,8 @@ const SCREENS = [
   // provider; every target 44 px and inside the safe areas.
   { name: "settings providers", url: "?mock=rail&settings" },
   { name: "board of changes", url: "?mock=1&changes" },
+  // V0.73 (2): six change cards (five ended) above a git checkout with no diff; the diff section flows after the cards.
+  { name: "ended changes over an empty diff", url: "?mock=1&open=t_ended&tab=changes", ready: "!!document.querySelector('.chtab .chg-empty')" },
   // SPEC 0.5 V0.68: Fyr's own confirmation sheets: a script in a scratch folder, and Delete project (red).
   { name: "confirm sheet for a script", url: "?mock=1&open=t_done", sheet: "confirm" },
   { name: "confirm sheet for Delete project", url: "?mock=rail&project=p_web", sheet: "confirm-delete" },
@@ -239,6 +241,24 @@ const SCREENS = [
   { name: "inbox with two hosts", url: "?mock=rail&hosts=2" },
   { name: "thread on an offline host", url: "?mock=rail&hosts=2&open=t_triage", field: ".m-cmp .in" },
 ];
+
+// V0.73 (2): the Changes tab's cards and the diff section below them. A card's box is cut to the list when the list
+// scrolls by itself (the desktop); every card and the diff section must not overlap, and the diff starts below the list.
+const FLOW = `(() => {
+  const tab = document.querySelector('.chtab'), chl = tab?.querySelector('.chl'), chg = tab?.querySelector('.chg');
+  if (!tab || !chl || !chg) return null;
+  const box = (e) => { const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; };
+  const clip = getComputedStyle(chl).overflowY !== 'visible';
+  const l = box(chl), d = box(chg);
+  const cards = [...chl.querySelectorAll('.chc')].map(box).map((c) => clip ? { ...c, top: Math.max(c.top, l.top), bottom: Math.min(c.bottom, l.bottom) } : c).filter((c) => c.bottom > c.top);
+  const hit = (a, b) => a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5 && a.left < b.right - 0.5 && b.left < a.right - 0.5;
+  const overlaps = [];
+  cards.forEach((c, i) => { if (hit(c, d)) overlaps.push('card ' + (i + 1) + ' and the diff'); cards.slice(i + 1).forEach((o, j) => hit(c, o) && overlaps.push('cards ' + (i + 1) + ' and ' + (i + j + 2))); });
+  const last = cards[cards.length - 1];
+  return { cards: chl.querySelectorAll('.chc').length, lastBottom: last ? last.bottom : null, listBottom: clip ? l.bottom : (last ? last.bottom : l.bottom), diffTop: d.top, overlaps,
+    rails: [...chl.querySelectorAll('.chc.end .chrail')].length, ended: chl.querySelectorAll('.chc.end').length,
+    empty: chg.querySelector('.chg-empty')?.textContent ?? '', prChip: [...document.querySelectorAll('.chip.pr, .m-chip.prc')].map((e) => e.textContent).join('|') };
+})()`;
 
 // What must be visible, and where, on the current screen.
 const MEASURE = `(() => {
@@ -270,6 +290,7 @@ const MEASURE = `(() => {
     saveButton: rect('.pedit .pformb .btn.p'),
     toolOutput: (() => { const o = document.querySelector('.tlout'); if (!o) return null; const r = o.getBoundingClientRect(); return { right: r.right, lines: o.textContent.split(String.fromCharCode(10)).length }; })(),
     changeRows: document.querySelectorAll('.chg-file').length,
+    flow: ${FLOW},
     since: (() => {
       const el = document.querySelector('.chg'); if (!el) return null;
       const targets = [...el.querySelectorAll('.chg-mode, .chg-vw, .chg-file')].filter(e => e.getBoundingClientRect().height > 0);
@@ -356,6 +377,18 @@ const check = (ok, what) => {
 
 const window_innerWidth = (m) => m.innerWidth;
 const ctxWantsChips = (ctx) => ctx.startsWith("composer with chips");
+
+// V0.73 (2): six cards, five ended without a rail, the diff section below the last card and nothing overlapping;
+// the header has no chip for the ended main PR.
+function checkFlow(f, ctx) {
+  check(!!f && f.cards === 6 && f.ended === 5, `${ctx}: expected 6 change cards, 5 ended (${JSON.stringify(f)})`);
+  if (!f) return;
+  check(f.empty === "No changes against origin/main.", `${ctx}: the diff section says "${f.empty}"`);
+  check(f.diffTop >= f.listBottom - 0.5 && (f.lastBottom === null || f.diffTop >= f.lastBottom - 0.5), `${ctx}: the diff section starts at ${f.diffTop.toFixed(1)}, above the last card's bottom ${f.lastBottom?.toFixed(1)} (list ${f.listBottom.toFixed(1)})`);
+  check(f.overlaps.length === 0, `${ctx}: overlapping boxes: ${f.overlaps.join(", ")}`);
+  check(f.rails === 0, `${ctx}: ${f.rails} ended cards still draw a phase rail`);
+  check(!/#88/.test(f.prChip), `${ctx}: the header shows the ended main PR's chip "${f.prChip}"`);
+}
 
 function assertLayout(m, ctx, { keyboard = false } = {}) {
   const insetTop = keyboard ? 0 : INSETS.top;
@@ -452,6 +485,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     }
     check(m.changeRight <= window_innerWidth(m) + 0.5, `${ctx}: the changes list or diff runs ${(m.changeRight - window_innerWidth(m)).toFixed(1)} px past the right edge`);
   }
+  if (ctx.startsWith("ended changes")) checkFlow(m.flow, ctx);
   if (ctx.startsWith("board of changes")) {
     // V0.72: every change that has not ended offers End this change, a 44 px target inside the screen.
     check(m.chend.length >= 1, `${ctx}: no End this change on the board`);
@@ -673,6 +707,11 @@ async function phonePass(t, w, h) {
       await openScreen(s, w, h);
       // 1. At rest.
       assertLayout(await evaluate(MEASURE), `${ctx} at rest`);
+      if (process.env.FYR_SHOTS && s.name.startsWith("ended changes") && w === 390) {
+        await evaluate(`(() => { const t = document.querySelector('.chtab'); t.scrollTop = t.scrollHeight; })()`); // the last cards and the diff
+        await settle();
+        writeFileSync(join(process.env.FYR_SHOTS, "changes-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+      }
       if (process.env.FYR_SHOTS && s.sheet === "confirm" && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "confirm-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (s.sheet === "handover") {
         const ho = await evaluate(`({ rung: document.querySelector('.m-sheet .ho-rung')?.textContent ?? '', btn: [...document.querySelectorAll('.m-sheet .df .btn')].map(b => b.textContent.trim()) })`);
@@ -1305,6 +1344,18 @@ try {
   check(!b.clock && b.rows > 0, `V0.48 settled: chosen in the rail it still runs down (${JSON.stringify(b)})`);
 } catch (e) {
   failures.push(`V0.48 settled: ${e.message}`);
+}
+
+// V0.73 (2): on the desktop, the Changes tab of six cards over an empty diff, in a tall and a short window.
+for (const [w, h] of [[1280, 800], [1024, 600]]) {
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=1&open=t_ended&tab=changes`, "!!document.querySelector('.th .chtab .chg-empty')");
+    checkFlow(await evaluate(FLOW), `ended changes desktop ${w}x${h}`);
+  } catch (e) {
+    failures.push(`ended changes desktop ${w}x${h}: ${e.message}`);
+  }
 }
 
 // SPEC 0.5 V0.68: on the desktop the confirmation is a dialog that fits the window, with focus on its primary
