@@ -58,7 +58,7 @@ import {
   applyThreadPatch,
 } from "./store.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
-import { answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
+import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
 import { Settings } from "./settings-ui.tsx";
 import { ChangesBoard } from "./board-ui.tsx";
@@ -687,7 +687,8 @@ function App() {
     if (!cs || !view) return;
     const answers = answersOf(cs, d);
     if (!answers) return;
-    void runAction("thread.answer", [view.id], { decisionId: d.id, answers }).then(() => nextNeeding(1, view.id));
+    const id = view.id;
+    void answerThenNext(() => runAction("thread.answer", [id], { decisionId: d.id, answers }), () => nextNeeding(1, id));
   };
 
   /** Enter in the answer field: the text answers the active question, then submit or move on. */
