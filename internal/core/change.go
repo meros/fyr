@@ -43,9 +43,8 @@ type Change struct {
 	After      []string    `json:"after,omitempty"`
 	Needs      string      `json:"needs,omitempty"` // "owner" or ""
 	// Actions the owner can press (V0.60): declared by the agent, or built in
-	// from what Fyr observed. Runs are their last results.
-	Actions []Offer    `json:"actions,omitempty"`
-	Runs    []OfferRun `json:"runs,omitempty"`
+	// from what Fyr observed, and their last runs.
+	Actions
 	// V0.66: the failed checks' annotations while the PR is open, and the
 	// merge commit Fyr watches for deployments.
 	Annotations []Annotation `json:"annotations,omitempty"`
@@ -488,9 +487,7 @@ func addRevision(c *Change, r Revision, now time.Time) bool {
 	}
 	r.At = now
 	c.Revisions = append(c.Revisions, r)
-	if len(c.Revisions) > maxRevisions {
-		c.Revisions = c.Revisions[len(c.Revisions)-maxRevisions:]
-	}
+	c.Revisions = keepLast(c.Revisions, maxRevisions)
 	return true
 }
 

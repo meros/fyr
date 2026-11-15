@@ -135,18 +135,17 @@ func (e *Engine) viewTools(s *mcp.Server) {
 				return "", err
 			}
 			sum := sha256.Sum256([]byte(html))
-			key := "view:" + hex.EncodeToString(sum[:])
-			id, _ := e.st.GetKV(key)
-			if _, err := e.Attach.Get(id); id == "" || err != nil {
+			id, err := e.storeOnce("view:"+hex.EncodeToString(sum[:]), func() (string, error) {
 				m, err := e.Attach.Save("view.html", "text/html", strings.NewReader(viewPage(html)))
-				if err != nil {
-					return "", err
-				}
-				id = m.ID
-				e.st.SetKV(key, id)
+				return m.ID, err
+			})
+			if err != nil {
+				return "", err
 			}
-			e.Observe(th, func(t *core.Thread, now time.Time) { core.ViewPublished(t, id, state, now) },
-				agent.Ev{Type: "view.published", Data: map[string]any{"pageId": id, "state": state}})
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
+				core.ViewPublished(t, id, state, now)
+				return []agent.Ev{{Type: "view.published", Data: map[string]any{"pageId": id, "state": state}}}
+			})
 			return fmt.Sprintf("Published the live view (page %s). Update it with view_state from now on.", id), nil
 		}})
 
@@ -177,8 +176,10 @@ func (e *Engine) viewTools(s *mcp.Server) {
 			if err := checkState(next); err != nil {
 				return "", err
 			}
-			e.Observe(th, func(t *core.Thread, now time.Time) { core.ViewStateSet(t, next, now) },
-				agent.Ev{Type: "view.state", Data: map[string]any{"state": next}})
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
+				core.ViewStateSet(t, next, now)
+				return []agent.Ev{{Type: "view.state", Data: map[string]any{"state": next}}}
+			})
 			return "Updated the live view.", nil
 		}})
 
@@ -190,8 +191,10 @@ func (e *Engine) viewTools(s *mcp.Server) {
 			if strings.TrimSpace(reason) == "" {
 				return "", errors.New("give a reason")
 			}
-			e.Observe(th, func(t *core.Thread, now time.Time) { core.ViewChecked(t, now) },
-				agent.Ev{Type: "view.unchanged", Data: map[string]any{"reason": reason}})
+			e.Observe(th, func(t *core.Thread, now time.Time) []agent.Ev {
+				core.ViewChecked(t, now)
+				return []agent.Ev{{Type: "view.unchanged", Data: map[string]any{"reason": reason}}}
+			})
 			return "Noted; the view stays as it is.", nil
 		}})
 }

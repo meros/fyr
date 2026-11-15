@@ -19,6 +19,9 @@ type LiveView struct {
 	CheckedAt time.Time `json:"checkedAt"`
 	// Headline is state.headline when it is a string.
 	Headline string `json:"headline,omitempty"`
+	// Actions are the view's actions and their runs (V0.60 (6), #31); they
+	// go when the owner turns the view off.
+	Actions
 }
 
 // ViewStateMax is the largest view state, as JSON.
@@ -30,7 +33,11 @@ const ViewStopReason = "Update this thread's live view (view_state or view_publi
 
 // ViewPublished records a new page and its full state.
 func ViewPublished(t *Thread, pageID string, state map[string]any, now time.Time) {
-	t.Live = &LiveView{PageID: pageID, State: state, UpdatedAt: now, CheckedAt: now, Headline: headline(state)}
+	var acts Actions
+	if t.Live != nil {
+		acts = t.Live.Actions // the view's actions outlive a new page
+	}
+	t.Live = &LiveView{PageID: pageID, State: state, UpdatedAt: now, CheckedAt: now, Headline: headline(state), Actions: acts}
 }
 
 // ViewStateSet records the full state after a patch.

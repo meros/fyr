@@ -260,10 +260,10 @@ func TestUnsettleCancelsSettleWhenChange(t *testing.T) {
 // own runs; a running thread action does not block the view action with the
 // same id, and the view's runs go with the view.
 func TestThreadAndViewRunsApart(t *testing.T) {
-	th := &Thread{}
+	th := &Thread{LiveView: true}
 	thr, _ := HolderOf(th, OnThread)
 	view, _ := HolderOf(th, OnView)
-	a := Offer{ID: "test", Label: "Test", Run: RunScript, Argv: []string{"true"}}
+	a := ActionSpec{ID: "test", Label: "Test", Run: RunScript, Argv: []string{"true"}}
 	if err := thr.Declare(a); err != nil {
 		t.Fatal(err)
 	}
@@ -276,12 +276,12 @@ func TestThreadAndViewRunsApart(t *testing.T) {
 		t.Fatalf("the view's action is blocked by the thread's run: %q", r)
 	}
 	view.Started(va, ct0)
-	view.Ended(th, va, true, 0, "", ct0)
+	view.Ended(va, true, 0, "", ct0)
 	if r := thr.Available(ta); r != "It is running" {
 		t.Fatalf("the view's end closed the thread's run: %q", r)
 	}
 	ClearView(th)
-	if len(th.OfferRuns) != 1 || th.OfferRuns[0].On != OnThread {
-		t.Fatalf("view runs left after ClearView: %+v", th.OfferRuns)
+	if len(th.Runs) != 1 || th.Runs[0].On != OnThread {
+		t.Fatalf("view runs left after ClearView: %+v", th.Runs)
 	}
 }

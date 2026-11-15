@@ -60,7 +60,8 @@ func (f *Front) restore(l *link) {
 	if c.Pub != nil {
 		l.pub = c.Pub
 	}
-	l.projects, l.env = c.Projects, c.Env
+	l.projects = c.Projects
+	l.setEnv(c.Env)
 	l.since = c.Since
 	if c.Online {
 		l.since = c.SavedAt

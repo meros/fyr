@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/proc"
 )
 
 // Runner runs gh with arguments and returns its combined output.
@@ -21,7 +21,7 @@ type Runner func(ctx context.Context, args ...string) ([]byte, error)
 
 // Gh runs the real gh CLI.
 func Gh(ctx context.Context, args ...string) ([]byte, error) {
-	out, err := exec.CommandContext(ctx, "gh", args...).CombinedOutput()
+	out, err := proc.Command(ctx, "gh", args...).CombinedOutput()
 	if err != nil {
 		return out, fmt.Errorf("gh %s: %w: %s", strings.Join(args[:min(2, len(args))], " "), err, strings.TrimSpace(string(out)))
 	}

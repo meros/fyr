@@ -15,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/meros/fyr/internal/proc"
 )
 
 type Msg = map[string]any
@@ -31,6 +33,7 @@ type Spec struct {
 type Client struct {
 	cmd     *exec.Cmd
 	stdin   io.WriteCloser
+	stdout  io.ReadCloser
 	wmu     sync.Mutex
 	pmu     sync.Mutex
 	pending map[string]chan Msg
@@ -59,6 +62,7 @@ func Start(s Spec) (*Client, error) {
 		"--permission-prompt-tool", "stdio"}
 	cmd := exec.Command(s.Binary, append(base, s.Args...)...)
 	cmd.Dir = s.Dir
+	proc.Group(cmd) // Kill stops the CLI and what it started (#39)
 	cmd.Env = append(os.Environ(), "CLAUDE_CODE_ENTRYPOINT=sdk-go")
 	cmd.Env = append(cmd.Env, s.Env...)
 	tl := &tail{max: 4096}
@@ -71,7 +75,7 @@ func Start(s Spec) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{cmd: cmd, stdin: in, pending: map[string]chan Msg{}, Out: make(chan Msg, 256),
+	c := &Client{cmd: cmd, stdin: in, stdout: out, pending: map[string]chan Msg{}, Out: make(chan Msg, 256),
 		log: s.Log, stderr: tl, done: make(chan struct{})}
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -264,8 +268,13 @@ func (c *Client) CancelMessage(ctx context.Context, uuid string) (bool, error) {
 // Close ends the session by closing stdin; the CLI exits on its own.
 func (c *Client) Close() error { return c.stdin.Close() }
 
-// Kill stops the process at once.
-func (c *Client) Kill() { c.cmd.Process.Kill() }
+// Kill stops the process and everything it started, at once. It also
+// closes the read end of stdout, so Done closes even when a child that left
+// the process group still holds the pipe open (#39).
+func (c *Client) Kill() {
+	proc.Kill(c.cmd)
+	c.stdout.Close()
+}
 
 // tail keeps the last max bytes written to it.
 type tail struct {
