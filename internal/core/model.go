@@ -45,6 +45,8 @@ type Thread struct {
 	PR        *PR        `json:"pr,omitempty"`
 	// Changes are the thread's change records (V0.59, decision 0018).
 	Changes []Change `json:"changes,omitempty"`
+	// ChangesCheckedAt is the last change tool call (V0.62).
+	ChangesCheckedAt *time.Time `json:"changesCheckedAt,omitempty"`
 	// Offers are the thread's and its live view's actions; OfferRuns their
 	// last results (V0.60). A change holds its own.
 	Offers    []Offer    `json:"offers,omitempty"`

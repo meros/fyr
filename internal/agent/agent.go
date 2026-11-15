@@ -121,6 +121,7 @@ type Config struct {
 // FyrPrompt is the short block that steers agents to Fyr tools (V0.12).
 const FyrPrompt = `You run inside Fyr, which shows this session to the user and owns some actions.
 - Every change you make or prepare is a change record in Fyr (decision 0018). Fyr records this folder's git branch and its PRs itself. For anything else (a server or cluster change, a migration, a NixOS rebuild, another repo, a design, a document) call mcp__fyr__change_open before the first edit, then mcp__fyr__change_status as it moves (working, review, landed, live; a failed condition when something breaks), mcp__fyr__change_revise for a new version and mcp__fyr__change_attach for proof. Read Fyr's facts with mcp__fyr__change_list instead of polling gh.
+- Keep your open changes current, like a live view: when one moves, report it with change_status, change_revise or change_attach in the same run; when nothing moved, call mcp__fyr__change_unchanged with a reason. Fyr asks at the end of a run that did not touch them.
 - Ask the user about a change with mcp__fyr__change_request (review, approve, merge, apply, deploy, revert). To merge a pull request use ask "merge"; never run gh pr merge. You cannot mark your own change approved.
 - Give the user a button for the next step with mcp__fyr__offer_action, on a change, the thread or your live view: run "script" for an exact command Fyr runs on their press, run "agent" for a step that needs judgement. Fyr never runs it without the press.
 - When you open a PR some other way than gh pr create, call mcp__fyr__pr_link with its URL (or change_open with pr).
@@ -181,6 +182,10 @@ type session struct {
 	// tools (V0.37). The flag can change while it runs; the Stop hook only
 	// asks for a view the agent knows about.
 	viewTools bool
+	// changeTools: this process has Fyr's MCP tools, the change tools
+	// among them (V0.62); changesNudged is their last mid-turn reminder.
+	changeTools   bool
+	changesNudged time.Time
 	// viewBlocked: the Stop hook blocked once this run; summary is the
 	// thread's summary before that forced turn, and forcedWork is true when
 	// the forced turn called a tool other than the view tools.
@@ -539,6 +544,7 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 	if prompt == "-" {
 		prompt = ""
 	}
+	s.changeTools = m.cfg.MCPURL != "" // V0.62
 	if t.LiveView && m.cfg.MCPURL != "" {
 		s.viewTools = true
 		prompt = strings.TrimSpace(prompt + "\n\n" + ViewPrompt)
@@ -592,7 +598,7 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 	s.c = c
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if _, err := c.Initialize(ctx, initHooks(s.viewTools)); err != nil {
+	if _, err := c.Initialize(ctx, initHooks(s.viewTools || s.changeTools)); err != nil {
 		c.Kill()
 		<-c.Done()
 		dropToken()
@@ -821,6 +827,7 @@ func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	d := core.ViewStop{Flag: s.viewTools && t.LiveView, Touched: core.ViewTouchedThisRun(&t),
+		Changes: s.changeTools && core.ChangesStale(&t), // V0.62
 		Blocked: s.viewBlocked, Active: active, Tasks: len(bg) + t.RunningTasks()}
 	if !d.Block() {
 		return nil
@@ -830,7 +837,7 @@ func (m *Manager) viewStop(s *session, in claude.Msg) claude.Msg {
 		summary = t.Summary
 	}
 	s.viewBlocked, s.summary, s.inForced, s.forcedWork = true, summary, false, false
-	return claude.Msg{"decision": "block", "reason": core.ViewStopReason}
+	return claude.Msg{"decision": "block", "reason": core.StopReason(d.Flag && !d.Touched, d.Changes)}
 }
 
 // viewNudge answers the PostToolUse hook (SPEC 0.5 V0.52): when a turn has
@@ -850,11 +857,24 @@ func (m *Manager) viewNudge(s *session) claude.Msg {
 	if t.Live != nil {
 		n.Checked = t.Live.CheckedAt
 	}
-	if !n.Due(now) {
+	var say []string
+	if n.Due(now) {
+		s.viewNudged = now
+		say = append(say, core.ViewNudgeReason)
+	}
+	// V0.62: the same reminder for the open changes the agent owns.
+	cn := core.ViewNudge{Flag: s.changeTools && core.OpenAgentChanges(&t) > 0, RunStarted: n.RunStarted, Nudged: s.changesNudged}
+	if t.ChangesCheckedAt != nil {
+		cn.Checked = *t.ChangesCheckedAt
+	}
+	if cn.Due(now) {
+		s.changesNudged = now
+		say = append(say, core.ChangesNudgeReason)
+	}
+	if len(say) == 0 {
 		return nil
 	}
-	s.viewNudged = now
-	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": core.ViewNudgeReason}}
+	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PostToolUse", "additionalContext": strings.Join(say, "\n")}}
 }
 
 func orNil(v any) any {
@@ -878,10 +898,20 @@ func (m *Manager) noteForced(s *session, msg claude.Msg) {
 		if b["type"] != "tool_use" {
 			continue
 		}
-		if name, _ := b["name"].(string); !strings.HasPrefix(name, "mcp__fyr__view_") {
+		if name, _ := b["name"].(string); !strings.HasPrefix(name, "mcp__fyr__view_") && !upkeepTool(name) {
 			s.forcedWork = true
 		}
 	}
+}
+
+// upkeepTool is a change tool that keeps records current (V0.62): a forced
+// turn that only called these did no new work.
+func upkeepTool(name string) bool {
+	switch strings.TrimPrefix(name, "mcp__fyr__") {
+	case "change_status", "change_revise", "change_attach", "change_unchanged", "change_list":
+		return true
+	}
+	return false
 }
 
 // refreshView makes the next process start with the thread's current

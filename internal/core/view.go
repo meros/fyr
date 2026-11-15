@@ -101,6 +101,7 @@ func StateSize(state map[string]any) int {
 // ViewStop is what the Stop hook decides from (SPEC 0.5 V0.37).
 type ViewStop struct {
 	Flag    bool // the thread has a live view and this process has its tools
+	Changes bool // V0.62: open agent changes and no change tool call this run
 	Touched bool // a view_* call happened this run
 	Blocked bool // the hook already blocked once this run
 	Active  bool // stop_hook_active: the CLI is already in a forced turn
@@ -109,7 +110,7 @@ type ViewStop struct {
 
 // Block reports whether the Stop hook makes the agent take one more turn.
 func (s ViewStop) Block() bool {
-	return s.Flag && !s.Touched && !s.Blocked && !s.Active && s.Tasks == 0
+	return (s.Flag && !s.Touched || s.Changes) && !s.Blocked && !s.Active && s.Tasks == 0
 }
 
 // ViewNudgeAfter is how long a running turn with a live view may go without
