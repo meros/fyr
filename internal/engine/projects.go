@@ -17,6 +17,9 @@ import (
 // ProjectDTO is a project as clients see it (SPEC 0.5 V0.23).
 type ProjectDTO struct {
 	core.Project
+	// Rev is when this copy was built (#42): a client keeps the higher of a
+	// snapshot's copy and a stream frame's.
+	Rev      int64     `json:"rev"`
 	Threads  int       `json:"threads"`
 	LastUsed time.Time `json:"lastUsed"`
 	// QuietUntil is the end of the quiet hours the project is in (V0.46).
@@ -300,7 +303,8 @@ func (e *Engine) migrateAuto() error {
 	return err
 }
 
-// Projects lists projects with their thread counts.
+// Projects lists projects with their thread counts, all stamped with one new
+// rev (built under e.mu, so a later copy is never older).
 func (e *Engine) Projects() []ProjectDTO {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -316,8 +320,9 @@ func (e *Engine) Projects() []ProjectDTO {
 	}
 	out := make([]ProjectDTO, 0, len(e.projects))
 	now := e.Now()
+	rev := e.nextRev()
 	for _, p := range e.projects {
-		out = append(out, ProjectDTO{Project: *p, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now)})
+		out = append(out, ProjectDTO{Project: *p, Rev: rev, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now)})
 	}
 	return out
 }
