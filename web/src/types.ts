@@ -143,6 +143,20 @@ export interface ThreadDTO {
   unavailable?: Record<string, string> | null;
 }
 
+/**
+ * #41: the client's thread, a ThreadDTO as decode.ts leaves it. Every list is present (the host omits empty
+ * ones), so no screen needs `?? []`. The wire type stays ThreadDTO.
+ */
+export interface Thread extends ThreadDTO {
+  decisions: Decision[];
+  tasks: TaskDTO[];
+  changes: Change[];
+  offers: Offer[];
+  offerRuns: OfferRun[];
+  outbox: { id: string; state: string }[];
+  unavailable: Record<string, string>;
+}
+
 export interface ActionInfo {
   name: string;
   label: string;

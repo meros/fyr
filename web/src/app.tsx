@@ -2,8 +2,9 @@
 
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, ThreadDTO } from "./types.ts";
+import type { Decision, Thread } from "./types.ts";
 import { createApi } from "./api.ts";
+import { currentDecision } from "./decode.ts";
 import { setQuotaSource } from "./quota-ui.tsx";
 import { setChangesSource } from "./changes-ui.tsx";
 import { setPrSource } from "./pr-ui.tsx";
@@ -279,7 +280,7 @@ function App() {
     // V0.46: a quiet project's threads leave the inbox and its counts, unless the filter picks it or a search is typed.
     const base = hideQuiet(searchable, filterOn || !!q, Date.now() + store.clockOffset);
     if (!q) return base;
-    const out: Record<string, ThreadDTO> = {};
+    const out: Record<string, Thread> = {};
     for (const t of Object.values(base)) {
       if (matchesQuery(t, q)) out[t.id] = t;
     }
@@ -472,7 +473,7 @@ function App() {
   }, [store.threads, store.projects, store.hosts, store.deploy, store.loaded]);
 
   // Decision card state follows the open decision.
-  const decision: Decision | null = viewThread?.decisions?.[0] ?? null;
+  const decision: Decision | null = viewThread ? currentDecision(viewThread) : null;
   useEffect(() => {
     if (decision?.kind === "ask" && !cards[decision.id]) setCards((c) => ({ ...c, [decision.id]: initCard(decision) }));
   }, [decision?.id]);
@@ -1552,7 +1553,7 @@ function App() {
   );
 }
 
-function tgtThread(s: Store, zone: Zone, view: { id: string } | null, sel: string | null): ThreadDTO | undefined {
+function tgtThread(s: Store, zone: Zone, view: { id: string } | null, sel: string | null): Thread | undefined {
   const id = zone === "thread" && view ? view.id : sel;
   return id ? s.threads[id] : undefined;
 }

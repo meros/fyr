@@ -4,7 +4,7 @@
 
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
-import type { Profile, Project, QuietHours, ThreadDTO } from "./types.ts";
+import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, quietLine, quietList, quietNote, setAllDay, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, deleteQuestion, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
@@ -13,7 +13,7 @@ import { shortModel } from "./format.ts";
 
 /** Threads and projects for labels deep in the tree, and a way to open a thread or a project. */
 export interface Directory {
-  threads: Record<string, ThreadDTO>;
+  threads: Record<string, Thread>;
   projects: Project[];
   openThread(id: string): void;
   openProject(id: string): void;
@@ -65,7 +65,7 @@ export function ProjectTag({ project, name, onClick, title }: { project?: Projec
 }
 
 /** A thread's project tag from the directory. */
-export function ThreadProject({ t }: { t: Pick<ThreadDTO, "project" | "projectId"> }) {
+export function ThreadProject({ t }: { t: Pick<Thread, "project" | "projectId"> }) {
   const dir = useDirectory();
   return <ProjectTag project={projectOf(t, dir.projects)} name={projectName(t, dir.projects)} />;
 }
@@ -279,7 +279,7 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, onCreat
 }
 
 /** The one project picker (V0.30): file a thread, unfile it, or make a project from it in one step. */
-export function ProjectPicker({ projects, threads, onPick, onCreate, onEdit }: { projects: Project[]; threads: ThreadDTO[]; onPick(p: Project | null): void; onCreate(name: string, folder: string): Promise<string | null>; onEdit?(p: Project): void }) {
+export function ProjectPicker({ projects, threads, onPick, onCreate, onEdit }: { projects: Project[]; threads: Thread[]; onPick(p: Project | null): void; onCreate(name: string, folder: string): Promise<string | null>; onEdit?(p: Project): void }) {
   const one = threads.length === 1 ? threads[0] : undefined;
   const base = one ? newProjectDraft(one) : { name: "", folder: "" };
   const [draft, setDraft] = useState<{ name: string; folder: string } | null>(null);

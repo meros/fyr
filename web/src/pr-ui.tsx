@@ -3,7 +3,7 @@
 // dialog; "Ask the agent" buttons send the owner's message through thread.send.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { CommandReply, ThreadDTO } from "./types.ts";
+import type { CommandReply, Thread } from "./types.ts";
 import { MERGE_METHODS, checkDuration, chipStatus, fixCheckMessage, groupChecks, mergeButton, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { relTime } from "./format.ts";
@@ -23,7 +23,7 @@ export function setPrSource(s: PrSource): void {
 }
 
 export interface PrViewProps {
-  t: ThreadDTO;
+  t: Thread;
   now: number;
   /** sends an owner message to the thread (thread.send); resolves true when it was accepted */
   onSend(text: string): Promise<boolean>;

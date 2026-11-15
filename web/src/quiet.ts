@@ -1,6 +1,6 @@
 // Quiet hours per project (SPEC 0.5 V0.46, decision 0014). The host decides when a project is quiet and sends
 // quietUntil on the project and on each of its threads; the client only hides and re-renders on time.
-import type { Project, QuietHours, ThreadDTO } from "./types.ts";
+import type { Project, QuietHours, Thread } from "./types.ts";
 
 export const WEEK: { key: string; label: string }[] = [
   { key: "mon", label: "Mon" },
@@ -57,18 +57,18 @@ export function isQuiet(x: { quietUntil?: string } | undefined, now: number): bo
 }
 
 /** The inbox's threads: quiet ones left out, unless show (the project filter picks a project, or a search is typed). */
-export function hideQuiet(threads: Record<string, ThreadDTO>, show: boolean, now: number): Record<string, ThreadDTO> {
+export function hideQuiet(threads: Record<string, Thread>, show: boolean, now: number): Record<string, Thread> {
   if (show) return threads;
   let any = false;
   for (const t of Object.values(threads)) if (isQuiet(t, now)) any = true;
   if (!any) return threads;
-  const out: Record<string, ThreadDTO> = {};
+  const out: Record<string, Thread> = {};
   for (const t of Object.values(threads)) if (!isQuiet(t, now)) out[t.id] = t;
   return out;
 }
 
 /** When the client must look again: the nearest quietUntil still ahead, or null. One timer, no polling. */
-export function nextQuietEnd(threads: Record<string, ThreadDTO>, projects: Project[], now: number): number | null {
+export function nextQuietEnd(threads: Record<string, Thread>, projects: Project[], now: number): number | null {
   let next: number | null = null;
   for (const x of [...Object.values(threads), ...projects]) {
     const u = until(x);

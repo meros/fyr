@@ -1,6 +1,6 @@
 // Projects (SPEC 0.5 V0.23): palette, icons, ordering, filtering; and started-by labels (V0.22). Pure.
 
-import type { NewProjectDraft, Profile, Project, ProjectIconSpec, ThreadDTO } from "./types.ts";
+import type { NewProjectDraft, Profile, Project, ProjectIconSpec, Thread } from "./types.ts";
 import { LINE_ICONS } from "./lucide.ts";
 
 /** Ten hues tuned to the Rail tokens, light and dark. Never amber: the beam marks only what needs the user. */
@@ -101,19 +101,19 @@ export function resolveIcon(icon: ProjectIconSpec | undefined, name: string): Re
 }
 
 /** The name to show for a thread's project; "No project" when it has none. */
-export function projectName(t: Pick<ThreadDTO, "projectId" | "project">, projects: Project[]): string {
+export function projectName(t: Pick<Thread, "projectId" | "project">, projects: Project[]): string {
   return projectOf(t, projects)?.name || t.project || "No project";
 }
 
 /** The project of a thread: by id, else by its display name. */
-export function projectOf(t: Pick<ThreadDTO, "projectId" | "project">, projects: Project[]): Project | undefined {
+export function projectOf(t: Pick<Thread, "projectId" | "project">, projects: Project[]): Project | undefined {
   return (t.projectId ? projects.find((p) => p.id === t.projectId) : undefined) ?? projects.find((p) => p.name === t.project);
 }
 
 /** The inbox filter: only this project's threads; null shows all. */
-export function filterByProject(threads: Record<string, ThreadDTO>, projectId: string | null, projects: Project[]): Record<string, ThreadDTO> {
+export function filterByProject(threads: Record<string, Thread>, projectId: string | null, projects: Project[]): Record<string, Thread> {
   if (!projectId) return threads;
-  const out: Record<string, ThreadDTO> = {};
+  const out: Record<string, Thread> = {};
   for (const t of Object.values(threads)) if (projectOf(t, projects)?.id === projectId) out[t.id] = t;
   return out;
 }
@@ -144,14 +144,14 @@ export function matchProjects(projects: Project[], query: string): Project[] {
 }
 
 /** Started-by (V0.22): "from <parent title>", or null. */
-export function startedBy(t: Pick<ThreadDTO, "parent">, threads: Record<string, ThreadDTO>): { id: string; title: string } | null {
+export function startedBy(t: Pick<Thread, "parent">, threads: Record<string, Thread>): { id: string; title: string } | null {
   if (!t.parent) return null;
   const p = threads[t.parent];
   return { id: t.parent, title: p?.title || "another thread" };
 }
 
 /** A message another thread's agent sent: who sent it. */
-export function messageFrom(fromId: string | undefined, threads: Record<string, ThreadDTO>, projects: Project[]): { id: string; title: string; project?: Project } | null {
+export function messageFrom(fromId: string | undefined, threads: Record<string, Thread>, projects: Project[]): { id: string; title: string; project?: Project } | null {
   if (!fromId) return null;
   const t = threads[fromId];
   return { id: fromId, title: t?.title || "another thread", project: t ? projectOf(t, projects) : undefined };
@@ -169,7 +169,7 @@ export function projectDefaults(pr: Project, profiles: Profile[]): { cwd?: strin
 // ---- V0.30: one picker, one create step ----
 
 /** What "New project from this thread" starts with (V0.30, V0.55): the host's prefill, else a name only. */
-export function newProjectDraft(t: Pick<ThreadDTO, "newProject">): NewProjectDraft {
+export function newProjectDraft(t: Pick<Thread, "newProject">): NewProjectDraft {
   return { name: t.newProject?.name ?? "", folder: t.newProject?.folder ?? "" };
 }
 

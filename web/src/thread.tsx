@@ -8,9 +8,10 @@ import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createContext } from "preact";
-import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, ThreadDTO } from "./types.ts";
+import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, Thread } from "./types.ts";
 import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
+import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { stateLabel } from "./rows.ts";
 import { clockTime, duration, relTime, shortModel } from "./format.ts";
@@ -47,7 +48,7 @@ export interface AnswerField {
 export interface ThreadPaneProps {
   /** U15: send the answers of the open question card */
   onSubmitAsk?(d: Decision): void;
-  thread: ThreadDTO;
+  thread: Thread;
   mode: "open" | "peek";
   events: FyrEvent[] | undefined;
   profiles: Profile[];
@@ -96,7 +97,7 @@ export function ThreadPane(p: ThreadPaneProps) {
     if (tab === "pr" && !t.pr) setTab("conv"); // V0.36: a dismissed PR takes its tab with it
   }, [!!t.pr]);
   const profile = p.profiles.find((x) => x.id === t.profile);
-  const decision = t.decisions?.[0] ?? null;
+  const decision = currentDecision(t);
   const st = t.attention.state;
   const settleReason = unavailableReason(t, "thread.settle");
   const snoozeReason = unavailableReason(t, "thread.snooze");
@@ -195,13 +196,13 @@ export function ThreadPane(p: ThreadPaneProps) {
           )}
         </div>
       </div>
-      {t.tasks && t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
+      {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {tab === "view" && <LiveViewPanel full t={t} now={p.now} onPress={(text) => p.onSend({ text, from: "view" })} onAction={viewAction(p.onRun)} />}
       {tab === "view" && <ViewChat t={t} events={p.events} now={p.now} onOpen={() => setTab("conv")} />}
       {tab === "conv" && <Filmstrip cards={previews} />}
       {tab === "conv" && (
         <Conversation
-          outbox={(t.outbox ?? []).map((o) => o.id)}
+          outbox={t.outbox.map((o) => o.id)}
           events={p.events}
           onAtEnd={p.onAtEnd}
           threadId={t.id}
@@ -218,7 +219,7 @@ export function ThreadPane(p: ThreadPaneProps) {
         </div>
       )}
       {tab === "pr" && <PrTab t={t} now={p.now} onSend={(text) => p.onSend({ text })} onDismiss={() => p.onRun("thread.dismissPR")} onChanges={() => setTab("changes")} />}
-      {showsDecision(tab) && decision && <DecisionCard d={decision} more={(t.decisions?.length ?? 1) - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
+      {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
       <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
     </section>
   );
@@ -289,7 +290,7 @@ function ThreadMenu({ onMove, liveView, onLiveView, onHandover, handoverReason }
 }
 
 /** The project chip (V0.30): icon and name in the project colour, or "No project"; a click opens the picker. */
-function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: string }) {
+function HeaderProjectChip({ t, profileName }: { t: Thread; profileName?: string }) {
   const dir = useDirectory();
   const p = projectOf(t, dir.projects);
   const where = `${t.cwd}${profileName ? ` · ${profileName}` : ""}`;
@@ -302,12 +303,12 @@ function HeaderProjectChip({ t, profileName }: { t: ThreadDTO; profileName?: str
 }
 
 /** The PR tab (V0.43). */
-export function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: ThreadDTO; now: number; onSend(text: string): Promise<boolean>; onDismiss(): void; onChanges(): void; phone?: boolean }) {
+export function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: Thread; now: number; onSend(text: string): Promise<boolean>; onDismiss(): void; onChanges(): void; phone?: boolean }) {
   if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
   return <PrView key={t.id} t={t} now={now} onSend={onSend} onDismiss={onDismiss} onChanges={onChanges} phone={phone} />;
 }
 
-function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
+function ModelChip({ t, profile, onRun }: { t: Thread; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
   const models = profile?.models ?? [];
   const reason = unavailableReason(t, "thread.setModel");
   const can = models.length > 1 && !reason;
@@ -327,7 +328,7 @@ function ModelChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | und
 }
 
 /** V0.50: the thread's effort, when its model takes one. */
-function EffortChip({ t, profile, onRun }: { t: ThreadDTO; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
+function EffortChip({ t, profile, onRun }: { t: Thread; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
   const efforts = effortsFor(profile, t.model);
   if (!efforts.length) return null;
   const cur = startEffort(profile, t.model, t.effort);
@@ -1081,7 +1082,7 @@ export interface SendArgs {
 }
 
 interface ComposerProps {
-  t: ThreadDTO;
+  t: Thread;
   now: number;
   answer: AnswerField | null;
   onSend(args: SendArgs): Promise<boolean>;

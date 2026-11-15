@@ -6,7 +6,7 @@
 // - Right settles (commits at 50 % of the row width), left opens the snooze sheet (at 30 %).
 // - An unavailable direction shows its reason and snaps back.
 
-import type { ThreadDTO } from "./types.ts";
+import type { Thread } from "./types.ts";
 
 export const SWIPE_START_PX = 12;
 export const SWIPE_MAX_ANGLE = 30;
@@ -58,7 +58,7 @@ export interface SwipeAvail {
 }
 
 /** What a row's swipes do, from the Action registry's availability (U3). */
-export function swipeAvail(t: ThreadDTO): SwipeAvail {
+export function swipeAvail(t: Thread): SwipeAvail {
   const un = t.unavailable ?? {};
   const settleReason = un["thread.settle"];
   const snoozeReason = un["thread.snooze"];
@@ -69,13 +69,13 @@ export function swipeAvail(t: ThreadDTO): SwipeAvail {
 }
 
 /** `e` semantics (13.1): running settles when done; an open PR without a run settles when merged. */
-export function settleLabel(t: ThreadDTO): string {
+export function settleLabel(t: Thread): string {
   if (t.running) return "Settle when done";
   if (t.pr && (t.pr.state ?? "OPEN") === "OPEN") return "Settle when merged";
   return "Settle";
 }
 
-function shortReason(reason: string, t: ThreadDTO): string {
+function shortReason(reason: string, t: Thread): string {
   if (t.attention.state === "asking") return "Answer first";
   return reason;
 }
