@@ -179,6 +179,8 @@ const SCREENS = [
   { name: "thread with a live view", url: "?mock=1&open=t_view", field: ".m-cmp .in" },
   // SPEC 0.5 V0.25: the Changes tab with one file's diff open.
   { name: "changes with a diff", url: "?mock=rail&open=t_mapperf&tab=changes", openDiff: true },
+  // SPEC 0.5 V0.66: a failing PR's CI annotations: a count on the file rows, notes in the opened file's diff; a live change.
+  { name: "changes with CI annotations", url: "?mock=1&open=t_done&tab=changes", openDiff: "web/src/map/render.ts" },
   // SPEC 0.5 V0.43: the PR tab with a failing check and 2 unresolved review threads, and the Merge dialog.
   { name: "PR tab with a failing check", url: "?mock=1&open=t_block&tab=pr", prTab: true },
   { name: "PR merge dialog", url: "?mock=1&open=t_s2&tab=pr", sheet: "merge" },
@@ -226,6 +228,8 @@ const MEASURE = `(() => {
     toolOutput: (() => { const o = document.querySelector('.tlout'); if (!o) return null; const r = o.getBoundingClientRect(); return { right: r.right, lines: o.textContent.split(String.fromCharCode(10)).length }; })(),
     changeRows: document.querySelectorAll('.chg-file').length,
     diffLines: document.querySelectorAll('.chg-diff .dl').length,
+    ciCounts: [...document.querySelectorAll('.chg-ci')].map(e => e.textContent).join(","),
+    ciNotes: [...document.querySelectorAll('.chg-diff .dl.nt')].filter(e => /[✖▲] lint/.test(e.textContent)).length,
     changeRight: Math.max(0, ...[...document.querySelectorAll('.chg, .chg-file, .chg-diff')].map(e => e.getBoundingClientRect().right)),
     focused: active ? { top: active.top, bottom: active.bottom } : null,
     pickerRows: [...document.querySelectorAll('.m-sheet .pli .pln')].slice(0, 2).map(e => e.textContent),
@@ -384,6 +388,10 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   if (ctx.startsWith("changes")) {
     check(m.changeRows >= 4, `${ctx}: expected the changed files (found ${m.changeRows})`);
     check(m.diffLines >= 5, `${ctx}: the opened file shows no diff lines (${m.diffLines})`);
+    if (ctx.startsWith("changes with CI")) {
+      check(m.ciCounts === "2,1", `${ctx}: expected annotation counts 2 and 1 on the file rows (found "${m.ciCounts}")`);
+      check(m.ciNotes === 2, `${ctx}: expected 2 lint notes in render.ts's diff (found ${m.ciNotes})`);
+    }
     check(m.changeRight <= window_innerWidth(m) + 0.5, `${ctx}: the changes list or diff runs ${(m.changeRight - window_innerWidth(m)).toFixed(1)} px past the right edge`);
   }
   if (ctx.startsWith("PR tab")) {
@@ -460,7 +468,8 @@ async function openScreen(s, w, h) {
   if (s.openDiff) {
     await sleep(300);
     // The file with the longest path: its row must ellipsize, its long lines scroll inside the diff.
-    await evaluate(`[...document.querySelectorAll('.chg-file')].sort((a, b) => b.title.length - a.title.length)[0]?.click()`);
+    if (typeof s.openDiff === "string") await evaluate(`document.querySelector('.chg-file[title="${s.openDiff}"]')?.click()`);
+    else await evaluate(`[...document.querySelectorAll('.chg-file')].sort((a, b) => b.title.length - a.title.length)[0]?.click()`);
     await sleep(400);
   }
   if (s.sheet === "snooze") {

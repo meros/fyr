@@ -29,13 +29,19 @@ func Gh(ctx context.Context, args ...string) ([]byte, error) {
 
 // Fetch reads one PR's state.
 func Fetch(ctx context.Context, gh Runner, url string) (core.PR, error) {
+	p, _, err := fetch(ctx, gh, url)
+	return p, err
+}
+
+// fetch also returns the number of failed checks.
+func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	repo, n, ok := agent.ParsePR(url)
 	if !ok {
-		return core.PR{}, fmt.Errorf("not a PR URL: %s", url)
+		return core.PR{}, 0, fmt.Errorf("not a PR URL: %s", url)
 	}
-	out, err := gh(ctx, "pr", "view", url, "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName")
+	out, err := gh(ctx, "pr", "view", url, "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt")
 	if err != nil {
-		return core.PR{}, err
+		return core.PR{}, 0, err
 	}
 	var v struct {
 		State          string `json:"state"`
@@ -43,7 +49,12 @@ func Fetch(ctx context.Context, gh Runner, url string) (core.PR, error) {
 		ReviewDecision string `json:"reviewDecision"`
 		Title          string `json:"title"`
 		HeadRefName    string `json:"headRefName"`
-		Rollup         []struct {
+		HeadRefOid     string `json:"headRefOid"`
+		MergeCommit    *struct {
+			Oid string `json:"oid"`
+		} `json:"mergeCommit"`
+		MergedAt *time.Time `json:"mergedAt"`
+		Rollup   []struct {
 			Typename   string `json:"__typename"`
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
@@ -51,9 +62,9 @@ func Fetch(ctx context.Context, gh Runner, url string) (core.PR, error) {
 		} `json:"statusCheckRollup"`
 	}
 	if err := json.Unmarshal(out, &v); err != nil {
-		return core.PR{}, fmt.Errorf("gh pr view: %w", err)
+		return core.PR{}, 0, fmt.Errorf("gh pr view: %w", err)
 	}
-	checks := "none"
+	checks, failed := "none", 0
 	if len(v.Rollup) > 0 {
 		checks = "pass"
 	}
@@ -62,13 +73,21 @@ func Fetch(ctx context.Context, gh Runner, url string) (core.PR, error) {
 		case c.Conclusion == "FAILURE" || c.Conclusion == "CANCELLED" || c.Conclusion == "TIMED_OUT" ||
 			c.Conclusion == "ACTION_REQUIRED" || c.Conclusion == "STARTUP_FAILURE" || c.State == "FAILURE" || c.State == "ERROR":
 			checks = "fail"
+			failed++
 		case checks != "fail" && ((c.Typename == "CheckRun" && c.Status != "COMPLETED") || c.State == "PENDING" || c.State == "EXPECTED"):
 			checks = "pending"
 		}
 	}
 	now := time.Now()
-	return core.PR{URL: url, Repo: repo, Number: n, Title: v.Title, State: v.State, Checks: checks,
-		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", Branch: v.HeadRefName, CheckedAt: &now}, nil
+	p := core.PR{URL: url, Repo: repo, Number: n, Title: v.Title, State: v.State, Checks: checks,
+		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", Branch: v.HeadRefName, CheckedAt: &now, Head: v.HeadRefOid}
+	if v.MergeCommit != nil {
+		p.MergeSHA = v.MergeCommit.Oid
+	}
+	if v.MergedAt != nil && !v.MergedAt.IsZero() {
+		p.MergedAt = v.MergedAt
+	}
+	return p, failed, nil
 }
 
 // Merge merges a PR with gh (the pr.merge effect).
@@ -98,6 +117,7 @@ type Poller struct {
 	Src      Source
 	Interval time.Duration
 	kick     chan string
+	notes    map[string]noteCache // V0.66 (7): by PR URL
 }
 
 func (p *Poller) Kick(threadID string) {
@@ -138,15 +158,25 @@ func (p *Poller) pollAll(ctx context.Context) {
 	for _, t := range p.Src.Snapshot() {
 		p.poll(ctx, t)
 	}
+	if ds, ok := p.Src.(DeploySource); ok {
+		for _, d := range ds.Deploys() {
+			p.pollDeploy(ctx, ds, d)
+		}
+	}
 }
 
 func (p *Poller) poll(ctx context.Context, t PRThread) {
 	c, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	pr, err := Fetch(c, p.Gh, t.URL)
+	pr, failed, err := fetch(c, p.Gh, t.URL)
 	if err != nil {
 		log.Printf("pr %s: %v", t.URL, err)
 		return
+	}
+	if pr.State == "OPEN" && pr.Checks == "fail" && pr.Head != "" {
+		pr.Annotations = p.annotations(c, t.URL, pr, failed)
+	} else {
+		delete(p.notes, t.URL)
 	}
 	p.Src.Observe(t.ID, pr)
 }

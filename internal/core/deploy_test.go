@@ -80,7 +80,7 @@ func TestProductionFailureBlocks(t *testing.T) {
 	}
 	var inv *Offer
 	for i := range c.Actions {
-		if c.Actions[i].ID == "fyr.deploy" {
+		if c.Actions[i].ID == "fyr.deployfail" {
 			inv = &c.Actions[i]
 		}
 	}
