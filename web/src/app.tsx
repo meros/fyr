@@ -84,6 +84,7 @@ import { hideQuiet, nextQuietEnd } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
+import { hostLabel } from "./hosts.ts";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
 
 const PHONE_QUERY = "(max-width: 760px)";
@@ -370,7 +371,7 @@ function App() {
     const want = params.get("open");
     const first = want && store.threads[want] ? want : order[0];
     // On a phone the inbox comes first; open a thread only when asked (?open=).
-    const phone = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 760px)").matches;
+    const phone = typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches;
     if (first && (!phone || want)) {
       setSel(first);
       setView({ id: first, mode: "open" });
@@ -1275,7 +1276,7 @@ function App() {
           sec={sec}
           searchable={searchable}
           now={now}
-          host={store.host || (api.mock ? "mock" : "local")}
+          host={hostLabel(store.host, api.mock)}
           conn={store.conn}
           thread={nav.screen.name === "thread" ? store.threads[nav.screen.id] : undefined}
           events={nav.screen.name === "thread" ? store.events[nav.screen.id] : undefined}
@@ -1372,7 +1373,7 @@ function App() {
       <FolderPickContext.Provider value={folderPicker}>
       <ProfilesContext.Provider value={store.profiles}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
-        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={store.host || (api.mock ? "mock" : "local")} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
+        <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={hostLabel(store.host, api.mock)} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
         <Boundary name="The inbox">
         <Inbox
           sec={sec}

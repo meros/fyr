@@ -6,7 +6,7 @@ import { QuotaRail } from "./quota-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, StartedBy, ThreadProject } from "./project-ui.tsx";
 import { colorVar, pickerOrder } from "./projects.ts";
-import { SECTIONS, type SectionKey, type Sections } from "./store.ts";
+import { SECTIONS, type Conn, type SectionKey, type Sections } from "./store.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState } from "./rows.ts";
 import { count, relTime, untilLabel, whenLabel } from "./format.ts";
@@ -14,14 +14,13 @@ import { prLabel } from "./thread.tsx";
 import { changeChip } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
 import { quietNote } from "./quiet.ts";
-import type { ConnState } from "./api.ts";
 
 export type Theme = "system" | "light" | "dark";
 
 interface RailProps {
   sec: Sections;
   active: SectionKey | null;
-  conn: ConnState;
+  conn: Conn;
   host: string;
   /** the bell and Install controls (desktop) */
   extra?: ComponentChildren;

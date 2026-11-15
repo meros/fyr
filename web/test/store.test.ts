@@ -19,6 +19,7 @@ import {
   stateForCache,
   undoCommands,
   undoKindOf,
+  undoVerb,
   upsertThread,
   UNDO_MS,
 } from "../src/store.ts";
@@ -223,4 +224,11 @@ test("matchesQuery finds a thread by title, project or PR number", () => {
   assert.equal(matchesQuery(t, "#4"), true);
   assert.equal(matchesQuery(t, "api"), false);
   assert.equal(matchesQuery(thread("b", "seen", "seen"), "#"), false, "no PR, no #");
+});
+
+// review 2026-11-15: one verb for the undo toast, desktop and phone.
+test("undoVerb names the deferred action", () => {
+  assert.equal(undoVerb("settle"), "Settled");
+  assert.equal(undoVerb("archive"), "Archived");
+  assert.equal(undoVerb("snooze"), "Snoozed");
 });
