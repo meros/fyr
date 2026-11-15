@@ -678,7 +678,7 @@ func TestOwnerPRActionsUnavailable(t *testing.T) {
 	}
 }
 
-// #32: the wire api.Thread keeps "pr" and "settleWhenMerged" for the client,
+// #32: the wire DTO keeps "pr" and "settleWhenMerged" for the client,
 // derived from the main change; every PR is on the Changes board.
 func TestDTOPRIsTheMainChange(t *testing.T) {
 	h := newHarness(t, time.Minute)
@@ -714,7 +714,7 @@ func TestDTOPRIsTheMainChange(t *testing.T) {
 	}
 }
 
-// #33: the wire api.Thread keeps settledAt, settleWhenDone, settleWhen, liveView
+// #33: the wire DTO keeps settledAt, settleWhenDone, settleWhen, liveView
 // and project, derived from the thread's Settle and Live and its project;
 // thread.settle itself is not sent.
 func TestDTODerivesSettleViewAndProject(t *testing.T) {

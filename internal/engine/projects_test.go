@@ -485,7 +485,7 @@ func TestProjectDelete(t *testing.T) {
 	}
 }
 
-// #42: a project carries rev, a stamp of when its api.Thread was built, so a client
+// #42: a project carries rev, a stamp of when its DTO was built, so a client
 // keeps the newer of a snapshot and a stream frame that crossed it.
 func TestProjectRev(t *testing.T) {
 	h := newHarness(t, time.Minute)
