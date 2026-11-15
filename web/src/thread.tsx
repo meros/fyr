@@ -33,7 +33,7 @@ import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
-import { ChangeList, ThreadOffers, viewAction } from "./offers-ui.tsx";
+import { ChangeList, ThreadOffers, useViewAction } from "./offers-ui.tsx";
 import { changeChip, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
@@ -208,9 +208,10 @@ export interface ThreadTabBodyProps {
 export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier, run, send, phone }: ThreadTabBodyProps) {
   const api = useApi();
   const previews = useMemo(() => previewsOf(events ?? [], t.host, api), [events, t.host]);
+  const viewAction = useViewAction(run, t.cwd);
   return (
     <>
-      {tab === "view" && <LiveViewPanel full t={t} now={now} onPress={(text) => send({ text, from: "view" })} onAction={viewAction(run)} />}
+      {tab === "view" && <LiveViewPanel full t={t} now={now} onPress={(text) => send({ text, from: "view" })} onAction={viewAction} />}
       {tab === "view" && <ViewChat t={t} events={events} now={now} onOpen={() => setTab("conv")} />}
       {tab === "conv" && <Filmstrip cards={previews} collapsible={phone} />}
       {tab === "conv" && (

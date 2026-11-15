@@ -3,7 +3,7 @@
 
 import type { Offer, Project } from "./types.ts";
 import { tildePath } from "./folders.ts";
-import { quote } from "./offers.ts";
+import { pressArgs, quote } from "./offers.ts";
 
 export interface AskCommand {
   /** the command with its paths shortened */
@@ -91,4 +91,19 @@ export function deleteProjectAsk(p: Pick<Project, "name" | "threads">): Ask {
 /** Settings, Providers: Remove. */
 export function removeProviderAsk(p: { name: string }): Ask {
   return { title: `Remove ${p.name}?`, text: "Its stored key is deleted too.", confirm: "Remove provider", danger: true };
+}
+
+/** V0.68 (8): one press for every holder, the buttons and the live view's page alike: a script or a fyr action runs
+ *  only after the owner confirms it; an agent action is a message and goes at once. True when it was sent. */
+export async function press(
+  on: string,
+  o: Offer,
+  cwd: string | undefined,
+  ask: (a: Ask) => Promise<boolean>,
+  run: (action: string, args?: Record<string, unknown>) => void,
+): Promise<boolean> {
+  const a = offerAsk(o, cwd);
+  if (a && !(await ask(a))) return false;
+  run("action.run", pressArgs(on, o));
+  return true;
 }
