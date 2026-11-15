@@ -721,9 +721,9 @@ type Project = { id: string; name: string; color: string; icon: Icon;
   edited?: boolean; createdAt: Time };
 ```
 
-- **Matching.** A thread not filed by hand lands in the project whose folder is the thread's folder or contains it; the longest folder wins, ties by project id. Matching runs when a thread is made or adopted, at start, and after `project.create`, a folder change or `project.delete`. It never takes a project away. A thread filed by hand keeps its project.
-- **Commands.** `project.create {name, folder?, threadId?}`, `project.update {id, name?, color?, icon?, folder?, profile?, model?, quiet?}`, `project.delete {id}` (V0.58). They run on the project command path of the engine, outside `Reduce` (5.3).
-- **Quiet hours.** While a window holds, the thread DTO carries `quietUntil`; the front sends no push for the thread and the client hides it from the inbox (V0.46). Quiet hours are computed, not a Rule (7.6).
+- **Matching.** A thread not filed by hand lands in the project whose folder is the thread's folder or contains it; the longest folder wins, ties by project id. Matching runs when a thread is made or adopted, at start, and after every project Input. It never takes a project away, except from a thread whose project was deleted, which also loses its filed-by-hand mark (V0.58). A thread filed by hand keeps its project. Each thread that matching moves gets the Input `project.matched` (source `observer:host`), which keeps its `updatedAt`.
+- **Commands.** `project.create {name, folder?, threadId?}`, `project.update {id, name?, color?, icon?, folder?, profile?, model?, quiet?}`, `project.delete {id}` (V0.58). They are Input kinds of the project record on the one path (5.1): the engine checks the folder on the host, reduces the project, then reduces the thread Inputs it causes (the thread `project.create` files, as `thread.setProject`; the threads matching moves) and stores all of it with the receipt in one transaction (#48).
+- **Quiet hours.** While a window holds, the thread DTO carries `quietUntil`; the front sends no push for the thread and the client hides it from the inbox (V0.46). Quiet hours are computed, not a Rule (7.6, decision 0020).
 
 ### 3.16 Provider
 
@@ -746,6 +746,7 @@ type Provider = { id: string; name: string; color?: string;
 - **Quota.** Quota is keyed by the auth identity (the login folder, or the key and endpoint), so two providers on one account share one reading (V0.44, V0.50 (5)).
 - **Status.** Ready, needs a login, or needs a key. A provider that cannot run carries `unavailable` with the reason; pickers show it disabled.
 - **Login (V0.53).** `provider.login`, `provider.loginCode` and `provider.loginCancel` run the CLI's own login on the host, at most one per provider, for at most 10 minutes.
+- **Commands.** `provider.import`, `.create`, `.update`, `.setKey`, `.login`, `.loginCode`, `.loginCancel` and `.delete` are host Input kinds on the one path (5.1): the reduce returns the effect `provider`, which the registry runs before the engine answers, and the engine keeps the receipt (#48).
 - **Model and effort.** A thread holds provider, model and effort. A thread that another thread starts takes the starting thread's provider, model and effort unless the call names them (V0.71 (1)).
 
 ### 3.17 Host and front
@@ -801,16 +802,20 @@ This section states how the state changes, as built (decision 0020). One path ta
 type Input = {
   source: "owner" | "agent" | `observer:${string}` | `rule:${RuleId}` | `effect:${EffectId}`;
   kind: string;                    // an Input kind (below)
-  thread: string;                  // the record it changes
+  thread: string;                  // the thread it changes; a project kind names its project in args.id
   args?: unknown;                  // a map for commands and tools; a typed value for observers and results
   cmdId?: string;                  // the CommandId: one receipt per id (A4)
+  from?: string;                   // agent: the thread whose agent sent it to another thread (5.12)
 };
 
 type InputKind = {
   name: string;
+  on: "thread" | "project" | "host";                   // the record it changes; host: none (below)
   from: ("owner" | "agent" | "observed" | "rule")[];   // the principals that may send it
   available?: (thread, view, now) => "" | reason;      // the guard
-  reduce: (records, input, now) => { events, effects, reply } | Rejection;
+  reduce: (records, input, now) => { events, effects, follow, reply } | Rejection;
+  makes?: boolean;                 // it makes its record (a new project, an adopted thread)
+  await?: boolean;                 // the reply waits for its effects (below)
 };
 
 type Rejection = { code: "conflict" | "badArgs" | "notFound" | "rights" | "unavailable"; reason: string };
@@ -821,6 +826,10 @@ type Rejection = { code: "conflict" | "badArgs" | "notFound" | "rights" | "unava
 - **The reducer.** `Reduce(thread, view, input, now)` is pure. It checks that the source may send the kind, runs the kind's guard, and applies the kind's reducer to copies of the thread (with its changes and Rules) and the owner's View. Then, on the same copies, it runs the Rule scheduler (7.3) and the agent feed's notice rules (5.14). It returns the new records, the events, the effects and the reply, or a Rejection. Nothing is stored on a rejection.
 - **The engine's path.** One function takes every Input: replay the receipt when `cmdId` has one; load the records; reduce; store the records, their events, the receipt and the durable effects in one transaction; publish the thread to the clients; start the effects. A thread that the reduce leaves unchanged is not written and keeps its `updatedAt`.
 - **Host change records** have their own pure reducer (`ReduceRecord`, 3.14) and the same path: a record that moves becomes one `change.observed` Input per thread that shows it.
+- **Projects** have their own pure reducer (`ReduceProject`, 3.15) and the same path: replay the receipt, reduce the project, reduce the thread Inputs it causes (`follow`, and matching), store it all in one transaction, broadcast the project and the threads.
+- **Host kinds** change no record of the state: the provider commands (3.16) and `t3.adopt` (V0.9). `ReduceHost` checks the sender and returns the kind's effect.
+- **Await.** A kind whose reply needs its effect's outcome (`thread.cancelMessage`, which needs the CLI's answer before it can say the agent never sees the message (V0.33); `t3.adopt`; `provider.*`) is reduced and stored without its receipt; the engine runs its effects in order, then stores the receipt with the outcome. A failure that may pass on a retry (409, 5xx) stores no receipt. One lock covers the receipt check, the work and the receipt.
+- **Adopted threads.** T3 adoption sends each thread as the Input `thread.adopted` (source `observer:t3`), which makes the thread with its view and its history at the times it happened, and keeps T3's `updatedAt`.
 - **A new feature** is a record field, an Input kind, a reducer case, and perhaps a Condition kind (7.2) and a notice rule (5.14). It never needs a new path for state, effects or telling the agent.
 
 **Rules**
@@ -832,8 +841,6 @@ type Rejection = { code: "conflict" | "badArgs" | "notFound" | "rights" | "unava
 - **A6. Firings in the same transaction.** A Rule's `then` is an Input that the scheduler reduces on the same copies, in the same transaction (7.3). It is checked like any Input: the kind must accept `rule`, and its guard must pass.
 - **A7 (Post-v1).** A command whose target is an entity goes to the entity's residence. A host that is not the residence rejects it. A fenced entity (10.4) rejects all commands except the move steps, with the reason "moving". Built: the front sends each command to the host that owns the record (3.17).
 
-**Outside the path.** Four command families do not go through `Reduce` yet: `project.*` (3.15), `provider.*` (3.16), `thread.cancelMessage` (it needs the CLI's answer before it can reply, V0.33) and `t3.adopt` (V0.9). They keep receipts.
-
 **Post-v1** (the Action design this path replaced): `Action<P> {params, target, callers, defaultLevel, effect, restoresVisibility, available, apply}` with nested calls of depth 4, applied in one transaction, and a whole call tree that becomes one approval Decision when any call needs a level above `none` (K13).
 
 ### 5.2 Field rights and limits
@@ -843,12 +850,15 @@ Each field a reducer writes on behalf of a sender names who may write it (decisi
 | Field | Who may write it | Kept against | Refusal |
 |---|---|---|---|
 | `thread.title` | owner, agent | a title the owner gave is kept against the agent | "the owner named this thread; ask them to rename it" (V0.69) |
+| `thread.project` | owner | | "only the owner files this thread in a project" (`projectId` of `thread.create`, `thread.setProject`) |
+| `thread.view` | owner | | "only the owner turns the live view of this thread on or off" (`view` of `thread.create`, `thread.setView`) |
+| `view.seen` | owner | | an agent's Input leaves the owner's `seenAt` as it was (`thread.send` revives the thread without marking it seen) |
 | `change.phase` | owner, agent, observed | a phase Fyr observed is kept against the agent | "Fyr observes the phase of …; a report cannot change it" |
 | `change.condition` | owner, agent, observed | a condition Fyr observed is kept against the agent | "Fyr observes …; a report cannot change it" |
 | `change.condition.review=ok` | owner, observed | | "an agent cannot mark "review" ok; ask the owner with change_request" |
 | `change.condition.approval=ok` | owner, observed | | the same for `approval` |
 
-- **Who may send a kind** is the kind's `from` (5.1): the owner's commands accept only the owner; the agent's tools only the agent; facts only observers and effect results; a Rule's `then` only kinds that accept `rule`.
+- **Who may send a kind** is the kind's `from` (5.1): the owner's commands accept only the owner, except `thread.create` and `thread.send`, which another thread's agent sends too (5.12); the agent's tools only the agent; facts only observers and effect results; a Rule's `then` only kinds that accept `rule`.
 - **Built limits.** At most 50 changes per thread (3.13), 12 actions per holder and 10 runs kept (5.13), 20 watches by the agent per thread (7.1), 8 Rule firings per Input (7.3), 50 queued notices (5.14). A thread's agent may start at most 5 threads an hour and send at most 30 messages an hour to other threads (V0.22).
 
 **Post-v1** (several principals and quotas):
@@ -867,7 +877,8 @@ The owner's commands are the Registry (`Ordered()` gives the list clients show).
 | Command | Args | Unavailable when (reason) | Does |
 |---|---|---|---|
 | `thread.create` | cwd, text, attachments?, images?, title?, projectId?, profile?, model?, effort?, view?, parent? | | Makes the thread; files it by hand when `projectId` is given; sends the first message. Without `cwd`, the engine uses the project's folder or makes a scratch folder (V0.42). |
-| `thread.send` | text, attachments?, images?, from? | archived; a question is open ("Answer the open question first"); a handover runs | Revives the thread (3.4) and sends the message. |
+| `thread.send` | text, attachments?, images?, from? (the surface: `view`, `view-typed`) | archived; a question is open ("Answer the open question first"); a handover runs | Revives the thread (3.4) and sends the message. |
+| `thread.cancelMessage` | messageId | the message was read ("The agent has already read this message") | Withdraws a message the agent has not read; replies after the agent confirmed (V0.33, Await 5.1). |
 | `thread.answer` | decision, answers or allow | nothing to answer | Answers a Decision (5.6). |
 | `thread.interrupt` | | no run | Stops the run; waiting messages stay queued (V0.33). |
 | `thread.retry` | | the last run did not fail; archived | Revives the thread and asks the agent to continue from where it stopped (V0.6). |
@@ -976,6 +987,7 @@ A reducer never does work. It returns effects, and Fyr's effect runner executes 
 | `thread.create` | a new thread for an agent action with `in: "new"` | no |
 | `agent.feed` | deliver the thread's notices (5.14) | no |
 | `git.observe` | read git after a run (3.14) | no |
+| `t3.adopt`, `provider` | adopt T3 threads; run a provider command (3.16). The engine runs them before it answers (Await, 5.1) | no |
 
 **At most once.** A durable effect is stored with the reduce that returned it. The runner claims it (`pending → started`) before the work, so it runs at most once, also across a restart. The result is stored (`started → finished`) and lands as an Input `effect.result` with source `effect:<id>`, which the same reducer applies. An effect that was `started` when Fyr stopped is not run again: it lands as a failure with the text "Fyr restarted while this ran, so Fyr does not know whether it finished; it was not run again. Check its outcome before you retry." A deploy reports its own result later, from the new daemon (V0.13).
 
@@ -1024,7 +1036,7 @@ Each session gets Fyr's MCP server (V0.12). A tool call becomes an Input with so
 | `offer_action` | `action.offer` | Declares or removes an action (5.13). |
 | `view_publish`, `view_state`, `view_unchanged` | `view.publish`, `view.state`, `view.unchanged` | Only for a process started with the live view (V0.37). |
 | `thread_rename {title, id?}` | `thread.retitle` | This thread or one it started (V0.69). |
-| `thread_new`, `thread_send` | the owner commands `thread.create` and `thread.send`, on the other thread | Marked `parent` and `from` (V0.22, V0.71). At most 5 new threads and 30 messages an hour per thread. |
+| `thread_new`, `thread_send` | `thread.create` and `thread.send` with source `agent` and `from` the sending thread, on the other thread | The field rights (5.2) apply to the agent: it cannot file the thread in a project or turn on its live view, and its message does not mark the thread seen. The new thread's `parent` and the message's `from` are the sending thread (V0.22, V0.71, #48). At most 5 new threads and 30 messages an hour per thread. |
 | `show` | | A preview event (V0.19, V0.47). |
 | `fyr_state`, `change_list`, `threads`, `thread_read` | | Read queries (5.11). |
 
@@ -1240,6 +1252,7 @@ A Condition is one kind with its params, or `any`, `all` or `not` of others. It 
 | `at {at}` | yes | `now ≥ at` |
 | `changeMoved {change}` | yes | the change's title, phase, PR, conditions or evidence differ from the snapshot |
 | `changeReached {change, phase}` | no | the change got at least that far (3.13 Phases) |
+| `changeEnded {change}` | no | the change ended: abandoned or reverted |
 | `condition {change, type, status}` | no | the change has that condition with that status |
 | `idleFor {ms}` | no | `now − activityAt ≥ ms` |
 | `idle` | no | no run is live and the last run did not fail |
@@ -1289,13 +1302,13 @@ When the last reason goes, the Rule resumes:
 |---|---|---|---|---|
 | `settle:done` | settle | `all(runEnded, noDecisions, idle)` | `rule.settle` | disarm |
 | `settle:<change>` | settle | `all(changeReached(change, phase), idle)`; "settle when merged" is the main change reaching landed | `rule.settle` | disarm |
-| `deployWatch:<change>` | deployWatch | the change is live, its `deploy` condition failed, or the time limit passed: 24 h after the merge without a deployment of the commit, 7 days with one | `rule.end` | disarm |
+| `deployWatch:<change>` | deployWatch | the change is live, its `deploy` condition failed, the change ended (`changeEnded`), or the time limit passed: 24 h after the merge without a deployment of the commit, 7 days with one | `rule.end` | disarm |
 | `builtins:<change>` | builtins | `changeMoved(change)` | `change.builtins`: set the built-in actions from what Fyr observed (5.13) | keep |
 | `snooze` | snooze | 7.5 | `rule.wake` | disarm |
 
 - **Settle.** A settle Rule settles only when the thread is idle, so a working thread is never hidden and a failed run keeps the thread in the inbox. The first settle Rule that fires settles the thread; settling clears every settle Rule. "When done" is dropped when a new message starts a new run. `thread.unsettle` clears the settle and every settle Rule.
 - **The deploy watch.** While it is armed, the deployments observer reads the merge commit's GitHub Deployments (`observe`), and each read lands as `deploy.observed` (V0.66). A repo without any deployment ends the watch at the first read.
-- **Quiet hours** are computed from the project's windows when the state is read (3.15); they are not a Rule yet.
+- **Quiet hours** are computed from the project's windows and the clock when the state is read (3.15), not a Rule: they change no record and start no Input, so a Rule would only store what the clock already says (decision 0020). The engine's clock broadcasts a project and its threads when a window starts or ends.
 
 **Post-v1** (the default Rules of a new thread, from the `DefaultRules` extension point, created with `createdBy: system(defaults)`):
 
