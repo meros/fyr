@@ -8,14 +8,17 @@ import "time"
 // remind a long turn. Changes that Fyr observes (git, GitHub) keep
 // themselves current and do not count.
 
-// OpenAgentChanges counts the changes the agent owns that are not ended:
-// opened or last moved by the agent.
+// OpenAgentChanges counts the changes the agent owns that still need it:
+// opened or last moved by the agent, not ended, and not live unless
+// something failed after the landing (V0.73: a live change is done).
 func OpenAgentChanges(t *Thread) int {
 	n := 0
-	for _, c := range t.Changes {
-		if !c.Phase.Ended() && c.PhaseBy != ByObserved {
-			n++
+	for i := range t.Changes {
+		c := &t.Changes[i]
+		if c.Phase.Ended() || c.PhaseBy == ByObserved || (c.Phase == PhaseLive && c.Blocking() == "") {
+			continue
 		}
+		n++
 	}
 	return n
 }

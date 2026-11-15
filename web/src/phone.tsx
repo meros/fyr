@@ -23,7 +23,7 @@ import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { ThreadOffers } from "./offers-ui.tsx";
-import { changeChip } from "./offers.ts";
+import { changeChip, headerPr } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
@@ -777,7 +777,12 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
               <span>{t.branch}</span>
             </span>
           )}
-          {t.pr && <span class={`m-chip prc ${prChip(t.pr).cls}`} title={prChip(t.pr).title}>{prChip(t.pr).text}</span>}
+          {(() => {
+            const pr = headerPr(t); // V0.73 (2): no chip for an ended main PR
+            if (!pr) return null;
+            const l = prChip(pr);
+            return <span class={`m-chip prc ${l.cls}`} title={l.title}>{l.text}</span>;
+          })()}
           {(() => {
             const c = changeChip(t); // V0.59 (8)
             return c ? <span class={`m-chip prc ${c.cls}`} title={c.title}>{c.text}</span> : null;
