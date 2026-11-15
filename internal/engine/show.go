@@ -13,44 +13,16 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
-	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 )
 
 // Shooter renders a page to PNG (SPEC 0.5 V0.19).
 type Shooter interface {
 	Shoot(ctx context.Context, url string, width, height int, full bool) ([]byte, error)
-}
-
-// showLimiter allows 10 screenshots a minute per thread.
-type showLimiter struct {
-	mu   sync.Mutex
-	hits map[string][]time.Time
-}
-
-func (l *showLimiter) allow(thread string, now time.Time) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.hits == nil {
-		l.hits = map[string][]time.Time{}
-	}
-	keep := l.hits[thread][:0]
-	for _, t := range l.hits[thread] {
-		if now.Sub(t) < time.Minute {
-			keep = append(keep, t)
-		}
-	}
-	if len(keep) >= 10 {
-		l.hits[thread] = keep
-		return false
-	}
-	l.hits[thread] = append(keep, now)
-	return true
 }
 
 func parseSize(s string) (int, int, error) {
@@ -84,7 +56,7 @@ table{border-collapse:collapse}td,th{border:1px solid var(--line);padding:4px 8p
 }
 
 func (e *Engine) addPreview(thread string, data map[string]any) {
-	e.Observe(thread, func(*core.Thread, time.Time) {}, agent.Ev{Type: "preview", Data: data})
+	e.record(thread, agent.Ev{Type: "preview", Data: data})
 }
 
 func (e *Engine) showTool() mcp.Tool {
@@ -229,16 +201,26 @@ func (e *Engine) storeHTML(title, html string) (string, error) {
 	if !strings.Contains(strings.ToLower(html), "<html") {
 		html = themePage(title, html)
 	}
-	key := "preview:" + hex.EncodeToString(sum[:])
-	id, _ := e.st.GetKV(key)
-	if _, err := e.Attach.Get(id); id == "" || err != nil {
+	return e.storeOnce("preview:"+hex.EncodeToString(sum[:]), func() (string, error) {
 		m, err := e.Attach.Save(nameOr(title, "preview")+".html", "text/html", strings.NewReader(html))
-		if err != nil {
-			return "", err
+		return m.ID, err
+	})
+}
+
+// storeOnce stores a file once per content key: the attachment id saved
+// under key, or a new one from save when there is none or its file is gone
+// (V0.19, V0.37).
+func (e *Engine) storeOnce(key string, save func() (string, error)) (string, error) {
+	if id, _ := e.st.GetKV(key); id != "" {
+		if _, err := e.Attach.Get(id); err == nil {
+			return id, nil
 		}
-		id = m.ID
-		e.st.SetKV(key, id)
 	}
+	id, err := save()
+	if err != nil {
+		return "", err
+	}
+	e.st.SetKV(key, id)
 	return id, nil
 }
 
@@ -302,15 +284,12 @@ func (e *Engine) showFolder(th string, data map[string]any, path string, dir boo
 		}
 		fmt.Fprintf(hs, "%s\x00%x\x00", f.Rel, c.Sum(nil))
 	}
-	key := "preview:tree:" + hex.EncodeToString(hs.Sum(nil))
-	id, _ := e.st.GetKV(key)
-	if _, err := e.Attach.Get(id); id == "" || err != nil {
+	id, err := e.storeOnce("preview:tree:"+hex.EncodeToString(hs.Sum(nil)), func() (string, error) {
 		m, err := e.Attach.SaveTree(nameOr(title, filepath.Base(root)), entry, files)
-		if err != nil {
-			return "", err
-		}
-		id = m.ID
-		e.st.SetKV(key, id)
+		return m.ID, err
+	})
+	if err != nil {
+		return "", err
 	}
 	data["kind"], data["attachmentId"] = "html", id
 	if sized {

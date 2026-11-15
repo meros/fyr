@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"encoding/json"
-
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
 )
@@ -16,17 +14,12 @@ func (e *Engine) cancelMessage(c Cmd) Reply {
 	if id == "" {
 		return Reply{Error: "messageId is required", Status: 400}
 	}
-	e.mu.Lock()
-	if prev, err := e.st.Receipt(c.CommandID); err != nil {
-		e.mu.Unlock()
-		return Reply{Error: err.Error(), Status: 500}
-	} else if prev != nil {
-		e.mu.Unlock()
-		var r Reply
-		json.Unmarshal(prev, &r)
-		r.Status = 200
+	e.press.Lock() // the receipt check and the receipt are one step
+	defer e.press.Unlock()
+	if r, done := e.replay(c.CommandID); done {
 		return r
 	}
+	e.mu.Lock()
 	t := e.threads[c.ThreadID]
 	if t == nil {
 		e.mu.Unlock()
