@@ -36,6 +36,7 @@ import {
   initialStore,
   isAvailable,
   liveEvent,
+  matchesQuery,
   mergeEvents,
   recordUndo,
   resumeSeq,
@@ -281,7 +282,7 @@ function App() {
     if (!q) return base;
     const out: Record<string, ThreadDTO> = {};
     for (const t of Object.values(base)) {
-      if (`${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(q)) out[t.id] = t;
+      if (matchesQuery(t, q)) out[t.id] = t;
     }
     return out;
   }, [searchable, filterOn, query, quietClock, store.clockOffset]);

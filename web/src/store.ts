@@ -221,6 +221,11 @@ export function flatOrder(sec: Sections, limits?: Partial<Record<SectionKey, num
   return ids;
 }
 
+/** Search: the query (any case, padded or not) in the title, the project or `#<PR number>`. */
+export function matchesQuery(t: ThreadDTO, q: string): boolean {
+  return `${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(q.trim().toLowerCase());
+}
+
 export function isAvailable(t: ThreadDTO | undefined, action: string): boolean {
   return !!t && !(t.unavailable && action in t.unavailable);
 }
