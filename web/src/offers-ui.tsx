@@ -5,6 +5,8 @@ import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
 import { changeList, lastRun, offerDetail, openConditions, phaseText, pressArgs, rail, shownOffers, unavailable } from "./offers.ts";
+import { offerAsk } from "./confirm.ts";
+import { useAsk } from "./confirm-ui.tsx";
 
 type Run = (action: string, args?: Record<string, unknown>) => void;
 
@@ -12,10 +14,12 @@ type Run = (action: string, args?: Record<string, unknown>) => void;
 export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string; offers?: Offer[]; runs?: OfferRun[]; change?: Change; cwd?: string; onRun: Run }) {
   const list = shownOffers(offers, change);
   const [open, setOpen] = useState<string | null>(null);
+  const ask = useAsk();
   if (!list.length) return null;
-  const press = (o: Offer) => {
-    // The owner sees what runs before a script or a merge starts; an agent action is a message.
-    if (o.run !== "agent" && !confirm(`${o.label}\n\n${offerDetail(o, cwd)}`)) return;
+  const press = async (o: Offer) => {
+    // V0.68: the owner sees what runs before a script or a merge starts; an agent action is a message.
+    const a = offerAsk(o, cwd);
+    if (a && !(await ask(a))) return;
     onRun("action.run", pressArgs(on, o));
   };
   return (
@@ -24,7 +28,7 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
         {list.map((o) => {
           const why = unavailable(o, runs, change);
           return (
-            <button key={o.id} class={`btn sm${o.primary ? " p" : ""}`} disabled={!!why} title={why ?? offerDetail(o, cwd)} onClick={() => press(o)}>
+            <button key={o.id} class={`btn sm${o.primary ? " p" : ""}`} disabled={!!why} title={why ?? offerDetail(o, cwd)} onClick={() => void press(o)}>
               {o.run === "agent" ? "✦ " : ""}
               {o.label}
             </button>

@@ -9,6 +9,8 @@ import type { Quota } from "./quota.ts";
 import { quotaFor } from "./quota.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { useFolderPick } from "./folder-picker.tsx";
+import { removeProviderAsk } from "./confirm.ts";
+import { useAsk } from "./confirm-ui.tsx";
 import type { Project } from "./types.ts";
 import { colorVar, projectSubtitle } from "./projects.ts";
 import { NewProjectStep, ProjectIcon } from "./project-ui.tsx";
@@ -224,6 +226,7 @@ function ProvidersSection(p: SettingsProps) {
 function ProviderRow({ p, quota, open, onToggle, run }: { p: ProviderDTO; quota?: Quota; open: boolean; onToggle(): void; run(a: string, args: Record<string, unknown>): Promise<boolean> }) {
   const [models, setModels] = useState(modelsText(p.models));
   const [key, setKey] = useState("");
+  const ask = useAsk();
   useEffect(() => setModels(modelsText(p.models)), [p.models.map((m) => m.id).join("\n")]);
   const effortModels = p.models.filter((m) => m.efforts?.length);
   const kl = keyLine(p);
@@ -306,7 +309,7 @@ function ProviderRow({ p, quota, open, onToggle, run }: { p: ProviderDTO; quota?
             {p.threads ? ` · ${p.threads} thread${p.threads === 1 ? "" : "s"}` : ""}
           </div>
           <div class="setbar">
-            <button class="btn sbtn danger" disabled={p.threads > 0} title={p.threads > 0 ? "Threads use it; hand them over first" : ""} onClick={() => confirm(`Remove ${p.name}? Its stored key is deleted too.`) && void run("provider.delete", { id: p.id })}>
+            <button class="btn sbtn danger" disabled={p.threads > 0} title={p.threads > 0 ? "Threads use it; hand them over first" : ""} onClick={async () => (await ask(removeProviderAsk(p))) && void run("provider.delete", { id: p.id })}>
               Remove
             </button>
           </div>

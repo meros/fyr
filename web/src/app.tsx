@@ -50,6 +50,7 @@ import { clearThreadNotification, disablePush, syncPushStatus, enablePush, isSta
 import { PUSH_TITLE, rememberOpen, shouldClearNotification, takeOpen, unsupportedReason, type PushStatus } from "./push.ts";
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
+import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, filterByProject, moveToast } from "./projects.ts";
 import { hideQuiet, nextQuietEnd } from "./quiet.ts";
@@ -773,6 +774,8 @@ function App() {
         setFolderPick({ ...o, at: Date.now(), resolve });
       }),
   };
+  // V0.68: Fyr's own confirmation, a sheet on the phone and a dialog on the desktop.
+  const confirmHost = useConfirmHost(phone);
   const folderPickView = folderPick
     ? phone ? (
         <div class="m-scrim fscrim" onClick={(e) => e.target === e.currentTarget && Date.now() - folderPick.at > 500 && closeFolderPick(null)}>
@@ -1183,6 +1186,7 @@ function App() {
     return (
       <DirectoryContext.Provider value={directory}>
         <FolderPickContext.Provider value={folderPicker}>
+        <ConfirmProvider value={confirmHost.ask}>
         <ProfilesContext.Provider value={store.profiles}>
         <Boundary name="Fyr">
         <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone />
@@ -1238,7 +1242,12 @@ function App() {
           actions={phoneActions}
           filter={{ id: projectFilter, set: setProjectFilter }}
           projectActions={projectActions}
-          overlay={folderPickView}
+          overlay={
+            <>
+              {folderPickView}
+              {confirmHost.view}
+            </>
+          }
         />
         {nav.sheet?.kind === "push" && pushDialog(navBack)}
         {nav.sheet?.kind === "adopt" && (
@@ -1255,6 +1264,7 @@ function App() {
         )}
         </Boundary>
         </ProfilesContext.Provider>
+        </ConfirmProvider>
         </FolderPickContext.Provider>
       </DirectoryContext.Provider>
     );
@@ -1283,6 +1293,7 @@ function App() {
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>
       <FolderPickContext.Provider value={folderPicker}>
+      <ConfirmProvider value={confirmHost.ask}>
       <ProfilesContext.Provider value={store.profiles}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
         <Rail sec={sec} active={activeSection} profiles={store.profiles} conn={store.conn} host={hostLabel(store.host, api.mock)} onJump={jump} extra={pwaControls} listOn={listOn} onToggleList={toggleList} onSettings={() => setDialog("settings")} onChanges={() => setDialog("changes")} changesNeeds={needsCount(store.threads)} />
@@ -1451,6 +1462,8 @@ function App() {
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
       </ProfilesContext.Provider>
       {folderPickView}
+      {confirmHost.view}
+      </ConfirmProvider>
       </FolderPickContext.Provider>
       </DirectoryContext.Provider>
     </div>

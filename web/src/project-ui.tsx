@@ -7,8 +7,10 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, quietLine, quietList, quietNote, setAllDay, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, deleteQuestion, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
+import { deleteProjectAsk } from "./confirm.ts";
+import { useAsk } from "./confirm-ui.tsx";
 import { shortModel } from "./format.ts";
 
 /** Threads and projects for labels deep in the tree, and a way to open a thread or a project. */
@@ -417,6 +419,7 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
   const [model, setModel] = useState(project.model ?? "");
   const [quiet, setQuiet] = useState<QuietHours[]>(quietList(project.quiet));
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
+  const ask = useAsk();
   useEffect(() => {
     setName(project.name);
   }, [project.id]);
@@ -510,7 +513,7 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
           <button
             class="btn sm danger"
             onClick={async () => {
-              if (!confirm(deleteQuestion(project))) return;
+              if (!(await ask(deleteProjectAsk(project)))) return;
               const e = await onDelete();
               if (e) setMsg({ text: e, err: true });
             }}
