@@ -502,13 +502,13 @@ func reduceSettleWhen(r Rec, in Input, now time.Time) (Result, error) {
 	a := mapArgs(in)
 	t, cond := r.T, a.Str("condition")
 	switch cond {
-	case string(SettleDone):
-		ArmSettle(t, SettleCond{Kind: SettleDone}, now)
+	case "done":
+		SettleWhenDone(t, ByAgent, now)
 	case "merged":
-		if !SettleWhenMerged(t, now) {
+		if !SettleWhenMerged(t, ByAgent, now) {
 			return Result{}, errors.New("this thread has no open PR; link one with pr_link first")
 		}
-	case string(SettleChange):
+	case "change":
 		phase := Phase(a.trimmed("phase"))
 		if phase == "" {
 			phase = PhaseLanded
@@ -517,7 +517,7 @@ func reduceSettleWhen(r Rec, in Input, now time.Time) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		ArmSettle(t, SettleCond{Kind: SettleChange, Change: c.ID, Phase: phase}, now)
+		SettleWhenReached(t, c.ID, phase, ByAgent, now)
 		cond = fmt.Sprintf("%q is %s", c.Title, phase)
 	default:
 		return Result{}, fmt.Errorf("unknown condition %q", cond)

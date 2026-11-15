@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"strings"
 	"time"
 )
@@ -18,18 +19,6 @@ type Annotation struct {
 	Message string `json:"message"`
 	Title   string `json:"title,omitempty"`
 	Check   string `json:"check"`
-}
-
-// DeployWatch is the merge commit Fyr reads deployments of.
-type DeployWatch struct {
-	Repo     string    `json:"repo"`
-	SHA      string    `json:"sha"`
-	MergedAt time.Time `json:"mergedAt"`
-	// Checked: the first read is done; Seen: the commit has a deployment;
-	// Done: the watch ended (live, production failed, or no deployments).
-	Checked bool `json:"checked,omitempty"`
-	Seen    bool `json:"seen,omitempty"`
-	Done    bool `json:"done,omitempty"`
 }
 
 // Deployment is the newest deployment of one environment and its newest
@@ -61,38 +50,63 @@ const (
 	watchMax      = 7 * 24 * time.Hour
 )
 
-// watchMerge starts the watch when the PR merged and the change is not live.
-func watchMerge(c *Change, p PR, now time.Time) {
-	if p.State != "MERGED" || p.MergeSHA == "" || p.Repo == "" || c.DeployWatch != nil || c.Phase != PhaseLanded {
+// The deploy watch (#46) is a Rule of the thread about a landed change: the
+// deployments observer reads its merge commit while it is armed, and it
+// ends when the change is live, the production deploy failed, or its time
+// limit passes: 24 hours without a deployment of the commit, 7 days with
+// one. A repo without any deployment ends it at the first read.
+func deployRuleID(changeID string) string { return PurposeDeploy + ":" + changeID }
+
+func deployLimit(since time.Time, seen bool) When {
+	limit := watchNoDeploy
+	if seen {
+		limit = watchMax
+	}
+	at := since.Add(limit)
+	return When{Kind: WhenAt, At: &at}
+}
+
+func deployWhen(c *Change, since time.Time, seen bool) When {
+	return Any(When{Kind: WhenReached, Change: c.ID, Phase: PhaseLive},
+		When{Kind: WhenCondition, Change: c.ID, Type: CondDeploy, Status: CondFail},
+		deployLimit(since, seen))
+}
+
+// watchMerge arms the watch when the PR merged and the change is not live.
+// A change that already has a deploy condition was watched before.
+func watchMerge(t *Thread, c *Change, p PR, now time.Time) {
+	if p.State != "MERGED" || p.MergeSHA == "" || p.Repo == "" || c.Phase != PhaseLanded || FindRule(t, deployRuleID(c.ID)) != nil || deploySeen(c) {
 		return
 	}
 	at := now
 	if p.MergedAt != nil {
 		at = *p.MergedAt
 	}
-	c.DeployWatch = &DeployWatch{Repo: p.Repo, SHA: p.MergeSHA, MergedAt: at}
+	if now.Sub(at) >= watchNoDeploy {
+		return
+	}
+	ArmRule(t, Rule{ID: deployRuleID(c.ID), Purpose: PurposeDeploy, About: c.ID, When: deployWhen(c, at, false),
+		Then: Then{Kind: KindRuleEnd}, After: AfterDisarm, CreatedBy: BySystem,
+		Observe: &Observe{Observer: ObsDeploy, Repo: p.Repo, SHA: p.MergeSHA, Since: at}}, now)
 }
 
-func watching(c *Change, now time.Time) bool {
-	w := c.DeployWatch
-	if w == nil || w.Done || c.Phase != PhaseLanded {
-		return false
-	}
-	limit := watchNoDeploy
-	if w.Seen {
-		limit = watchMax
-	}
-	return now.Sub(w.MergedAt) < limit
+// deploySeen reports a deployment of the change observed: a deploy
+// condition.
+func deploySeen(c *Change) bool {
+	return slices.ContainsFunc(c.Conditions, func(k Condition) bool {
+		return k.Type == CondDeploy || strings.HasPrefix(string(k.Type), condDeployPrefix)
+	})
 }
 
-// DeployWatches are the merge commits of the thread to read deployments of.
+// DeployWatches are the merge commits of the thread to read deployments of:
+// its armed deploy Rules that do not end at now.
 func DeployWatches(t *Thread, now time.Time) []DeployRef {
 	var out []DeployRef
-	for i := range t.Changes {
-		c := &t.Changes[i]
-		if watching(c, now) {
-			out = append(out, DeployRef{Change: c.ID, Repo: c.DeployWatch.Repo, SHA: c.DeployWatch.SHA, First: !c.DeployWatch.Checked})
+	for _, r := range RulesOf(t, PurposeDeploy) {
+		if r.Status != RuleArmed || r.Observe == nil || r.When.eval(t, r.Armed, now) == yes {
+			continue
 		}
+		out = append(out, DeployRef{Change: r.About, Repo: r.Observe.Repo, SHA: r.Observe.SHA, First: !r.Observe.Read})
 	}
 	return out
 }
@@ -107,18 +121,19 @@ func IsProduction(env string, flag bool) bool {
 // ChangeDeployObserved writes one read of deployments into the change.
 func ChangeDeployObserved(t *Thread, changeID string, d DeployObs, now time.Time) {
 	c := FindChange(t, changeID)
-	if c == nil || c.DeployWatch == nil || c.DeployWatch.Done || c.Phase != PhaseLanded {
+	r := FindRule(t, deployRuleID(changeID))
+	if c == nil || r == nil || r.Observe == nil || c.Phase != PhaseLanded {
 		return
 	}
-	w := c.DeployWatch
-	w.Checked = true
+	r.Observe.Read = true
 	if d.None {
-		w.Done = true
+		DropRules(t, func(x Rule) bool { return x.ID == r.ID })
 		return
 	}
-	defer syncBuiltins(c)
+	if len(d.Deployments) > 0 && !deploySeen(c) { // seen: the limit is 7 days
+		r.When = deployWhen(c, r.Observe.Since, true)
+	}
 	for _, x := range d.Deployments {
-		w.Seen = true
 		prod := IsProduction(x.Env, x.Production)
 		typ := CondDeploy
 		if !prod {
@@ -128,7 +143,6 @@ func ChangeDeployObserved(t *Thread, changeID string, d DeployObs, now time.Time
 		case "success", "inactive":
 			setCondition(c, typ, CondOK, "", ByObserved, now)
 			if prod {
-				w.Done = true
 				if u := firstOf(x.URL, x.LogURL); u != "" {
 					addEvidence(c, Evidence{Kind: "deployment", URL: u, Title: x.Env})
 				}
@@ -139,7 +153,6 @@ func ChangeDeployObserved(t *Thread, changeID string, d DeployObs, now time.Time
 				if k := condition(c, typ); k == nil || k.Status != CondFail {
 					t.ActivityAt = now
 				}
-				w.Done = true
 				if x.LogURL != "" {
 					addEvidence(c, Evidence{Kind: "deploy-log", URL: x.LogURL, Title: x.Env})
 				}

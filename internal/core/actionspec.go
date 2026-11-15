@@ -407,7 +407,8 @@ func init() {
 // thread's, and a change's actions under "actions"; and before #32: the PR on
 // the thread, dismissedPRs and settleWhenMerged; and before #33: the
 // settle in settledAt, settleWhenDone and settleWhen, and the live view's
-// flag in liveView.
+// flag in liveView; and before #46: settle.when and a change's deployWatch,
+// which become Rules.
 func DecodeThread(b []byte) (*Thread, error) {
 	t := &Thread{}
 	if err := json.Unmarshal(b, t); err != nil {
@@ -417,6 +418,9 @@ func DecodeThread(b []byte) (*Thread, error) {
 		return nil, err
 	}
 	if err := migratePR(t, b); err != nil {
+		return nil, err
+	}
+	if err := migrateRules(t, b); err != nil {
 		return nil, err
 	}
 	if bytes.Contains(b, []byte(`"offerRuns"`)) || bytes.Contains(b, []byte(`"actions"`)) {
@@ -478,13 +482,13 @@ func migrateComponents(t *Thread, b []byte) error {
 	if err := json.Unmarshal(b, &old); err != nil {
 		return err
 	}
-	if t.Settle.At == nil && len(t.Settle.When) == 0 {
+	if t.Settle.At == nil && !Settling(t) {
 		t.Settle.At = old.SettledAt
 		if old.SettleWhenDone {
-			t.Settle.arm(SettleCond{Kind: SettleDone})
+			SettleWhenDone(t, ByOwner, t.UpdatedAt)
 		}
 		if w := old.SettleWhen; w != nil && w.Change != "" {
-			t.Settle.arm(SettleCond{Kind: SettleChange, Change: w.Change, Phase: w.Phase})
+			SettleWhenReached(t, w.Change, w.Phase, ByOwner, t.UpdatedAt)
 		}
 	}
 	if old.LiveView {
@@ -492,6 +496,63 @@ func migrateComponents(t *Thread, b []byte) error {
 			t.Live = &LiveView{}
 		}
 		t.Live.Enabled = true
+	}
+	return nil
+}
+
+// migrateRules moves what watched before #46 into Rules: settle.when (#33)
+// into settle Rules, a change's deployWatch that had not ended into its
+// deploy Rule, and a change with a PR gets the Rule of its built-in actions.
+func migrateRules(t *Thread, b []byte) error {
+	now := t.UpdatedAt
+	if bytes.Contains(b, []byte(`"when"`)) || bytes.Contains(b, []byte(`"deployWatch"`)) {
+		var old struct {
+			Settle struct {
+				When json.RawMessage `json:"when"`
+			} `json:"settle"`
+			Changes []struct {
+				ID          string `json:"id"`
+				DeployWatch *struct {
+					Repo     string    `json:"repo"`
+					SHA      string    `json:"sha"`
+					MergedAt time.Time `json:"mergedAt"`
+					Checked  bool      `json:"checked"`
+					Seen     bool      `json:"seen"`
+					Done     bool      `json:"done"`
+				} `json:"deployWatch"`
+			} `json:"changes"`
+		}
+		if err := json.Unmarshal(b, &old); err != nil {
+			return err
+		}
+		// settle.when was a list of {kind, change, phase}; settle Rules have
+		// their own "when" objects, which are not stored under settle.
+		var conds []struct {
+			Kind   string `json:"kind"`
+			Change string `json:"change"`
+			Phase  Phase  `json:"phase"`
+		}
+		json.Unmarshal(old.Settle.When, &conds)
+		for _, w := range conds {
+			switch w.Kind {
+			case "done":
+				SettleWhenDone(t, ByOwner, now)
+			case "change":
+				SettleWhenReached(t, w.Change, w.Phase, ByOwner, now)
+			}
+		}
+		for _, oc := range old.Changes {
+			w, c := oc.DeployWatch, FindChange(t, oc.ID)
+			if w == nil || w.Done || c == nil || FindRule(t, deployRuleID(c.ID)) != nil {
+				continue
+			}
+			ArmRule(t, Rule{ID: deployRuleID(c.ID), Purpose: PurposeDeploy, About: c.ID, When: deployWhen(c, w.MergedAt, w.Seen),
+				Then: Then{Kind: KindRuleEnd}, After: AfterDisarm, CreatedBy: BySystem,
+				Observe: &Observe{Observer: ObsDeploy, Repo: w.Repo, SHA: w.SHA, Since: w.MergedAt, Read: w.Checked}}, now)
+		}
+	}
+	for i := range t.Changes {
+		armBuiltins(t, &t.Changes[i], now)
 	}
 	return nil
 }
@@ -541,7 +602,7 @@ func migratePR(t *Thread, b []byte) error {
 		if c != nil {
 			t.MainChange = c.ID
 			if old.SettleWhenMerged && p.State == "OPEN" {
-				t.Settle.arm(SettleCond{Kind: SettleChange, Change: c.ID, Phase: PhaseLanded})
+				SettleWhenReached(t, c.ID, PhaseLanded, ByOwner, t.UpdatedAt)
 			}
 		}
 	}
@@ -556,9 +617,22 @@ func migratePR(t *Thread, b []byte) error {
 	return nil
 }
 
-// syncBuiltins sets the built-in actions of a code change with a PR from what
-// Fyr observed: Merge while open; Re-run failed and Fix CI while checks fail;
-// Address review while changes are requested; Rebase on a conflict (V0.60).
+// armBuiltins arms the Rule that keeps the built-in actions of a change with
+// a PR (#46): each time the change moves, change.builtins sets them again.
+func armBuiltins(t *Thread, c *Change, now time.Time) {
+	id := "builtins:" + c.ID
+	if c.PR == nil || FindRule(t, id) != nil {
+		return
+	}
+	ArmRule(t, Rule{ID: id, Purpose: PurposeBuiltins, About: c.ID, When: When{Kind: WhenMoved, Change: c.ID},
+		Then: Then{Kind: KindBuiltins, Args: map[string]any{"change": c.ID}}, After: AfterKeep, CreatedBy: BySystem}, now)
+}
+
+// syncBuiltins is change.builtins: it sets the built-in actions of a code
+// change with a PR from what Fyr observed: Merge while open; Re-run failed
+// and Fix CI while checks fail; Address review while changes are requested;
+// Rebase on a conflict (V0.60); Investigate a failed production deploy
+// (V0.66).
 func syncBuiltins(c *Change) {
 	c.Offers = slices.DeleteFunc(c.Offers, func(a ActionSpec) bool { return a.By == ByObserved })
 	add := func(a ActionSpec) {
@@ -600,8 +674,8 @@ func deployPrompt(c *Change) string {
 	if pr := c.PRURL(); pr != "" {
 		p += " (" + pr + ")"
 	}
-	if c.DeployWatch != nil {
-		p += ", merge commit " + c.DeployWatch.SHA + ","
+	if c.PR != nil && c.PR.MergeSHA != "" {
+		p += ", merge commit " + c.PR.MergeSHA + ","
 	}
 	if k := condition(c, CondDeploy); k != nil && k.Reason != "" {
 		p += " failed: " + k.Reason + "."

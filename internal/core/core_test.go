@@ -49,11 +49,11 @@ func TestAttentionTable(t *testing.T) {
 		{"merged PR does not block", withPR(Thread{}, PR{State: "MERGED", Checks: "fail"}), View{SeenAt: at(9)}, Seen},
 		{"settled beats asking", Thread{Settle: Settle{At: ptr(at(1))}, Decisions: ask}, View{}, Settled},
 		{"archived beats all", Thread{ArchivedAt: ptr(at(1)), Settle: Settle{At: ptr(at(1))}}, View{}, Archived},
-		{"snoozed hides done", Thread{ActivityAt: at(3)}, View{SnoozeUntil: ptr(at(60)), SnoozedAt: ptr(at(4))}, Snoozed},
-		{"snooze expired", Thread{ActivityAt: at(3)}, View{SnoozeUntil: ptr(at(6)), SnoozedAt: ptr(at(4)), SeenAt: at(4)}, Seen},
-		{"new question wakes snooze", Thread{Decisions: ask}, View{SnoozeUntil: ptr(at(60)), SnoozedAt: ptr(at(4))}, Asking},
-		{"old question stays snoozed", Thread{Decisions: ask}, View{SnoozeUntil: ptr(at(60)), SnoozedAt: ptr(at(6))}, Snoozed},
-		{"new failure wakes snooze", Thread{Conversation: Conversation{Failure: fail}}, View{SnoozeUntil: ptr(at(60)), SnoozedAt: ptr(at(4))}, Failed},
+		{"snoozed hides done", Thread{ActivityAt: at(3)}, snoozed(View{}, at(60), at(4)), Snoozed},
+		{"snooze expired", Thread{ActivityAt: at(3)}, snoozed(View{SeenAt: at(4)}, at(6), at(4)), Seen},
+		{"new question wakes snooze", Thread{Decisions: ask}, snoozed(View{}, at(60), at(4)), Asking},
+		{"old question stays snoozed", Thread{Decisions: ask}, snoozed(View{}, at(60), at(6)), Snoozed},
+		{"new failure wakes snooze", Thread{Conversation: Conversation{Failure: fail}}, snoozed(View{}, at(60), at(4)), Failed},
 	}
 	for _, c := range cases {
 		got := Compute(&c.th, &c.v, at(10))
@@ -82,10 +82,12 @@ func TestSettleWhileRunningSettlesWhenDone(t *testing.T) {
 	if _, err := apply(t, "thread.settle", th, v, nil, at(1)); err != nil {
 		t.Fatal(err)
 	}
-	if th.Settle.At != nil || !th.Settle.Has(SettleDone) {
+	if th.Settle.At != nil || !SettlesWhenDone(th) {
 		t.Fatal("settle on a running thread must defer")
 	}
+	rules(th, at(1))
 	RunEnded(th, nil, at(2))
+	rules(th, at(2))
 	if Compute(th, v, at(3)).State != Settled {
 		t.Fatal("thread did not settle when the run ended")
 	}
@@ -96,6 +98,7 @@ func TestFailedRunDoesNotSettle(t *testing.T) {
 	RunStarted(th, at(0))
 	apply(t, "thread.settle", th, v, nil, at(1))
 	RunEnded(th, &Failure{Class: "api", Message: "x", At: at(2)}, at(2))
+	rules(th, at(2))
 	if got := Compute(th, v, at(3)).State; got != Failed {
 		t.Fatalf("got %s, want failed", got)
 	}
@@ -128,6 +131,7 @@ func TestPRMergeSettlesWhenAsked(t *testing.T) {
 		t.Fatal(err)
 	}
 	ChangePRObserved(th, pr(PR{State: "MERGED", Checks: "pass"}), at(2))
+	rules(th, at(2))
 	if Compute(th, v, at(3)).State != Settled {
 		t.Fatal("merge did not settle")
 	}

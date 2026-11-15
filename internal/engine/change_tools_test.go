@@ -142,6 +142,7 @@ func TestBuiltinActions(t *testing.T) {
 	th := &core.Thread{}
 	now := time.Now()
 	core.ChangePRObserved(th, core.PR{URL: "https://github.com/o/r/pull/5", Repo: "o/r", Number: 5, State: "OPEN", Checks: "fail", Review: "CHANGES_REQUESTED"}, now)
+	core.EvalRules(core.Rec{T: th}, now) // #46: the built-in actions are a Rule
 	c := &th.Changes[0]
 	ids := map[string]bool{}
 	for _, a := range c.Offers {
@@ -156,6 +157,7 @@ func TestBuiltinActions(t *testing.T) {
 		t.Fatalf("Fix CI: %+v", fix)
 	}
 	core.ChangePRObserved(th, core.PR{URL: "https://github.com/o/r/pull/5", Repo: "o/r", Number: 5, State: "MERGED"}, now)
+	core.EvalRules(core.Rec{T: th}, now)
 	if len(th.Changes[0].Offers) != 0 {
 		t.Fatalf("a merged PR kept actions: %+v", th.Changes[0].Offers)
 	}

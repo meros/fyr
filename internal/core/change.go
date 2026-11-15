@@ -53,10 +53,9 @@ type Change struct {
 	// Actions the owner can press (V0.60): declared by the agent, or built in
 	// from what Fyr observed, and their last runs.
 	Actions
-	// V0.66: the failed checks' annotations while the PR is open, and the
-	// merge commit Fyr watches for deployments.
+	// V0.66: the failed checks' annotations while the PR is open. The deploy
+	// watch of its merge commit is a Rule of the thread (#46).
 	Annotations []Annotation `json:"annotations,omitempty"`
-	DeployWatch *DeployWatch `json:"deployWatch,omitempty"`
 	PhaseBy     string       `json:"phaseBy"`
 	CreatedAt   time.Time    `json:"createdAt"`
 	UpdatedAt   time.Time    `json:"updatedAt"`
@@ -336,8 +335,8 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	if !(phase == PhaseLanded && c.Phase == PhaseLive) {
 		setPhase(t, c, phase, ByObserved, now)
 	}
-	defer syncBuiltins(c)
-	watchMerge(c, p, now)
+	armBuiltins(t, c, now)
+	watchMerge(t, c, p, now)
 	if p.State == "OPEN" && p.Checks == ChecksFail {
 		c.Annotations = p.Annotations
 	} else {
@@ -473,7 +472,6 @@ func setPhase(t *Thread, c *Change, phase Phase, by string, now time.Time) {
 	if moved && phase != PhaseWorking {
 		t.ActivityAt = now
 	}
-	CheckSettle(t, now)
 }
 
 func condition(c *Change, typ CondType) *Condition {

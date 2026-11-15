@@ -13,8 +13,10 @@ func TestSettleWaitsForTheRun(t *testing.T) {
 	th := &Thread{}
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "nix:server", Kind: KindHost, Title: "Rebuild"}, ByAgent, ct0)
 	RunStarted(th, ct0)
-	ArmSettle(th, SettleCond{Kind: SettleChange, Change: c.ID, Phase: PhaseLanded}, ct0)
+	SettleWhenReached(th, c.ID, PhaseLanded, ByAgent, ct0)
+	rules(th, ct0)
 	UpdateChange(th, c, ChangeUpdate{Phase: PhaseLanded}, ByAgent, ct0)
+	rules(th, ct0)
 	if th.Settle.At != nil {
 		t.Fatal("the change landing settled a running thread")
 	}
@@ -23,7 +25,8 @@ func TestSettleWaitsForTheRun(t *testing.T) {
 	}
 	end := ct0.Add(time.Minute)
 	RunEnded(th, nil, end)
-	if th.Settle.At == nil || !th.Settle.At.Equal(end) || len(th.Settle.When) != 0 {
+	rules(th, end)
+	if th.Settle.At == nil || !th.Settle.At.Equal(end) || Settling(th) {
 		t.Fatalf("the run's end did not settle: %+v", th.Settle)
 	}
 }
@@ -35,10 +38,11 @@ func TestSettleAnyArmedCondition(t *testing.T) {
 	th, v := &Thread{}, &View{}
 	PRObserved(th, PR{URL: "https://github.com/o/r/pull/1", State: "OPEN", Checks: ChecksPass}, ct0)
 	doc, _, _ := OpenChange(th, ChangeOpen{Key: "doc:x", Kind: KindDoc, Title: "Design doc"}, ByAgent, ct0)
-	ArmSettle(th, SettleCond{Kind: SettleChange, Change: doc.ID, Phase: PhaseReview}, ct0)
+	SettleWhenReached(th, doc.ID, PhaseReview, ByAgent, ct0)
 	Registry["thread.settleWhenMerged"].Apply(th, v, nil, ct0)
-	if len(th.Settle.When) != 2 || !SettlesWhenMerged(th) {
-		t.Fatalf("m replaced the agent's condition: %+v", th.Settle.When)
+	rules(th, ct0)
+	if len(RulesOf(th, PurposeSettle)) != 2 || !SettlesWhenMerged(th) {
+		t.Fatalf("m replaced the agent's condition: %+v", th.Rules)
 	}
 	if w := SettleWhenChange(th); w == nil || w.Change != doc.ID {
 		t.Fatalf("the client's settleWhen: %+v", w)
@@ -49,14 +53,16 @@ func TestSettleAnyArmedCondition(t *testing.T) {
 		t.Fatalf("unsettle with armed conditions: %q", r)
 	}
 	un.Apply(th, v, nil, ct0)
-	if th.Settle.At != nil || len(th.Settle.When) != 0 {
+	if th.Settle.At != nil || Settling(th) {
 		t.Fatalf("unsettle left %+v", th.Settle)
 	}
 
-	ArmSettle(th, SettleCond{Kind: SettleChange, Change: doc.ID, Phase: PhaseReview}, ct0)
-	SettleWhenMerged(th, ct0)
+	SettleWhenReached(th, doc.ID, PhaseReview, ByAgent, ct0)
+	SettleWhenMerged(th, ByOwner, ct0)
+	rules(th, ct0)
 	UpdateChange(th, doc, ChangeUpdate{Phase: PhaseReview}, ByAgent, ct0)
-	if th.Settle.At == nil || len(th.Settle.When) != 0 {
+	rules(th, ct0)
+	if th.Settle.At == nil || Settling(th) {
 		t.Fatalf("one condition holding did not settle: %+v", th.Settle)
 	}
 }
@@ -67,15 +73,20 @@ func TestSettleNotOnAFailedRun(t *testing.T) {
 	th := &Thread{}
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "nix:server", Kind: KindHost, Title: "Rebuild"}, ByAgent, ct0)
 	RunStarted(th, ct0)
-	ArmSettle(th, SettleCond{Kind: SettleDone}, ct0)
-	ArmSettle(th, SettleCond{Kind: SettleChange, Change: c.ID, Phase: PhaseLanded}, ct0)
+	SettleWhenDone(th, ByAgent, ct0)
+	SettleWhenReached(th, c.ID, PhaseLanded, ByAgent, ct0)
+	rules(th, ct0)
 	UpdateChange(th, c, ChangeUpdate{Phase: PhaseLanded}, ByAgent, ct0)
+	rules(th, ct0)
 	RunEnded(th, &Failure{Class: "api", Message: "overloaded", At: ct0}, ct0)
-	if th.Settle.At != nil || th.Settle.Has(SettleDone) || len(th.Settle.When) != 1 {
-		t.Fatalf("after a failed run: %+v", th.Settle)
+	rules(th, ct0)
+	if th.Settle.At != nil || SettlesWhenDone(th) || len(RulesOf(th, PurposeSettle)) != 1 {
+		t.Fatalf("after a failed run: %+v %+v", th.Settle, th.Rules)
 	}
 	RunStarted(th, ct0)
+	rules(th, ct0)
 	RunEnded(th, nil, ct0)
+	rules(th, ct0)
 	if th.Settle.At == nil {
 		t.Fatal("the retried run's end did not settle")
 	}
@@ -97,9 +108,11 @@ func TestDecodeThreadBefore33(t *testing.T) {
 	if th.Settle.At == nil || !th.Settle.At.Equal(at) {
 		t.Fatalf("settledAt: %+v", th.Settle.At)
 	}
-	want := []SettleCond{{Kind: SettleDone}, {Kind: SettleChange, Change: "c_1", Phase: PhaseLive}}
-	if len(th.Settle.When) != 2 || th.Settle.When[0] != want[0] || th.Settle.When[1] != want[1] {
-		t.Fatalf("settle conditions: %+v", th.Settle.When)
+	if len(RulesOf(th, PurposeSettle)) != 2 || !SettlesWhenDone(th) {
+		t.Fatalf("settle conditions: %+v", th.Rules)
+	}
+	if w := SettleWhenChange(th); w == nil || w.Change != "c_1" || w.Phase != PhaseLive {
+		t.Fatalf("settle when change: %+v", w)
 	}
 	if !th.ViewOn() || th.Live.PageID != "p1" || th.Live.Headline != "h" {
 		t.Fatalf("live view: %+v", th.Live)
@@ -114,7 +127,7 @@ func TestDecodeThreadBefore33(t *testing.T) {
 		}
 	}
 	again, err := DecodeThread(b)
-	if err != nil || again.Settle.At == nil || len(again.Settle.When) != 2 || !again.ViewOn() {
+	if err != nil || again.Settle.At == nil || len(RulesOf(again, PurposeSettle)) != 2 || !again.ViewOn() {
 		t.Fatalf("the new shape does not round-trip: %v %+v", err, again)
 	}
 }

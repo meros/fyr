@@ -216,8 +216,8 @@ func (s *Store) Views(user string) (map[string]*core.View, error) {
 		if err := rows.Scan(&d); err != nil {
 			return nil, err
 		}
-		v := &core.View{}
-		if err := json.Unmarshal([]byte(d), v); err != nil {
+		v, err := core.DecodeView([]byte(d)) // #46: also the snooze stored before Rules
+		if err != nil {
 			return nil, err
 		}
 		out[v.Entity] = v
