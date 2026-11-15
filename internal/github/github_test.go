@@ -46,10 +46,43 @@ func TestMergeRunsGh(t *testing.T) {
 	if err != nil || !strings.Contains(out, "merged") {
 		t.Fatal(out, err)
 	}
-	if strings.Join(got, " ") != "pr merge https://github.com/a/b/pull/9 --squash" {
+	if strings.Join(got, " ") != "pr merge --squash -- https://github.com/a/b/pull/9" {
 		t.Fatalf("args %v", got)
 	}
 	if _, err := Merge(context.Background(), r, "https://evil/x", "squash"); err == nil {
 		t.Fatal("non-PR URL accepted")
 	}
 }
+
+// review 2026-11-15: gh gets the canonical PR URL after "--", so nothing
+// in a stored URL can be read as a gh flag.
+func TestGhPRArgsEndFlags(t *testing.T) {
+	s := &scripted{out: map[string]string{"pr view": `{"state":"OPEN","headRefOid":"abc"}`}}
+	url := "https://github.com/a/b/pull/9/files#x"
+	if _, err := Fetch(context.Background(), s.run, url); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Merge(context.Background(), s.run, url, "squash"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FetchDetail(context.Background(), s.run, url); err != nil {
+		t.Fatal(err)
+	}
+	RerunFailed(context.Background(), s.run, url)
+	if len(s.calls) < 4 {
+		t.Fatalf("calls %v", s.calls)
+	}
+	for _, c := range s.calls {
+		if c[0] != "pr" {
+			continue
+		}
+		n := len(c)
+		if n < 2 || c[n-2] != "--" || c[n-1] != "https://github.com/a/b/pull/9" {
+			t.Errorf("gh %v: want ... -- https://github.com/a/b/pull/9", c)
+		}
+	}
+	if _, err := Merge(context.Background(), s.run, "--subject=x https://github.com/a/b/pull/9", "squash"); err == nil {
+		t.Fatal("URL with a flag in front accepted")
+	}
+}
+

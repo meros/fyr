@@ -133,10 +133,11 @@ func CheckState(typename, status, conclusion, state string) string {
 // FetchDetail reads one PR with gh pr view (without review threads).
 func FetchDetail(ctx context.Context, gh Runner, url string) (Detail, error) {
 	repo, n, ok := agent.ParsePR(url)
+	canon, _ := agent.CanonicalPR(url)
 	if !ok {
 		return Detail{}, fmt.Errorf("not a PR URL: %s", url)
 	}
-	out, err := gh(ctx, "pr", "view", url, "--json", viewFields)
+	out, err := gh(ctx, "pr", "view", "--json", viewFields, "--", canon)
 	if err != nil {
 		return Detail{}, Friendly(err)
 	}
@@ -385,10 +386,11 @@ func FailedRuns(runs []Run, sha string) []Run {
 // RerunFailed reruns the failed jobs of each failed workflow run of the PR's head commit.
 func RerunFailed(ctx context.Context, gh Runner, url string) (string, error) {
 	repo, _, ok := agent.ParsePR(url)
+	canon, _ := agent.CanonicalPR(url)
 	if !ok {
 		return "", fmt.Errorf("not a PR URL: %s", url)
 	}
-	out, err := gh(ctx, "pr", "view", url, "--json", "headRefOid")
+	out, err := gh(ctx, "pr", "view", "--json", "headRefOid", "--", canon)
 	if err != nil {
 		return "", Friendly(err)
 	}
