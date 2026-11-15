@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, moveToast, PALETTE_NAMES, colorName, deleteQuestion, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
+import { PALETTE, moveToast, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 import { applySnapshot, initialStore, upsertProject } from "../src/store.ts";
@@ -188,12 +188,6 @@ test("projects keep the copy with the higher rev", () => {
   assert.deepEqual(s.projects.map((p) => p.name), ["Newest"], "a newer snapshot wins and drops what it lacks");
   s = upsertProject(s, { id: "p1", name: "No rev" } as Project);
   assert.equal(s.projects[0].name, "No rev", "without a rev on both sides the frame replaces");
-});
-
-test("Delete project asks once, with what happens to the threads (V0.58)", () => {
-  assert.equal(deleteQuestion({ name: "Hemmet", threads: 12 }), "Delete Hemmet? Its 12 threads stay and land in a project whose folder covers them, or in No project. The folder on disk is not touched.");
-  assert.match(deleteQuestion({ name: "A", threads: 1 }), /Its 1 thread stays and lands/);
-  assert.match(deleteQuestion({ name: "A" }), /It has no threads\./);
 });
 
 test("SPEC 0.5 V0.63: while New project is open, the new-thread chip shows the project being made", async () => {

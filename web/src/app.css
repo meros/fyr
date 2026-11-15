@@ -1014,3 +1014,19 @@ button.ptag{padding:0}
 .board.phone .bdcols{grid-template-columns:1fr}
 .rchg{position:relative}
 .rchg .rb{position:absolute;top:-2px;right:2px;min-width:16px;height:16px;border-radius:8px;background:var(--signal-ink);color:var(--bg,#fff);font:600 10px/16px var(--ui);text-align:center;padding:0 4px}
+
+/* V0.68: Fyr's own confirmation (confirm-ui.tsx); the phone's sheet is in phone.css. */
+.cfm-scrim{z-index:30}
+.dlg.cfm{width:min(480px,100%)}
+.cfm .dh{height:auto;min-height:44px;padding:10px 16px}
+.cfm-t{overflow-wrap:anywhere}
+.cfm-b{padding:14px 16px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
+.cfm-text{margin:0;font:400 14px/20px var(--ui);overflow-wrap:anywhere}
+.cfm-cmd{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:4px;background:var(--sunken);border-radius:10px;--knock:var(--sunken)}
+.cfm-code{display:flex;flex-direction:column;gap:4px;padding:10px 12px;min-width:0;cursor:pointer;user-select:text;-webkit-user-select:text}
+.cfm-code code{font:400 13px/19px var(--mono);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.cfm-in{font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.cfm-copy{height:30px;margin:6px 6px 0 0;padding:0 10px;border-radius:7px;font:500 12px/16px var(--ui);color:var(--harbour)}
+.cfm-copy:hover{background:var(--raised)}
+.btn.p.danger,.m-bt.p.danger{background:var(--signal-ink);border-color:var(--signal-ink);color:var(--raised)}
+.btn.p.danger kbd{color:var(--raised)}
