@@ -1,6 +1,6 @@
 # 0021 Dual installs by default, and how a front learns its hosts
 
-Date: 2026-11-15 · Status: accepted (owner, 2026-11-15: "most installs should be dual... Simply because it's an easier model. Then we add a mechanism for discovery and routing to other hosts from all clients... Either static list or autodiscovery"; "dual by default but fully possible to run either or. Hosts have the other-hosts-config and autodetection"; "Keep the assumption for now" on the tailnet) · Amends 0016 and SPEC V0.54 · The spec rows follow in a later change
+Date: 2026-11-15 · Status: accepted (owner, 2026-11-15: "most installs should be dual... Simply because it's an easier model. Then we add a mechanism for discovery and routing to other hosts from all clients... Either static list or autodiscovery"; "dual by default but fully possible to run either or. Hosts have the other-hosts-config and autodetection"; "Keep the assumption for now" on the tailnet) · Accepted as the model for the two-machines milestone (`docs/PLAN.md` 2) · Amends 0016 and SPEC V0.54 · The spec rows follow in a later change
 
 **Context.** 0016 split the program into hosts (run threads) and fronts (serve the client) and left two questions open for a second machine: which front a device installs, and how a front knows which hosts exist. V0.54 answered the first by accident: its text reads as though a front belongs to a device set (the laptop's localhost front, the phone's server front), which means two origins, two installed apps and two push sets.
 
