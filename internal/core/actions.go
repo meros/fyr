@@ -16,7 +16,7 @@ func (a Args) Str(k string) string { s, _ := a[k].(string); return s }
 // Effect is work an Action asks the host to do after its state change is
 // stored. Apply never performs effects itself, so it stays pure.
 type Effect struct {
-	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel, refresh, handover
+	Kind   string  `json:"kind"` // send, answer, interrupt, stop, setModel, refresh, cancelMessage, handover
 	Text   string  `json:"text,omitempty"`
 	Images []Image `json:"images,omitempty"`
 	// From is the thread whose agent sent this message (V0.22).

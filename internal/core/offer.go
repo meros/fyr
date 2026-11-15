@@ -301,7 +301,7 @@ func syncBuiltins(c *Change) {
 	if c.Phase == PhaseLanded && is("deploy", "fail") {
 		add(Offer{ID: "fyr.deployfail", Label: "Investigate the failed deploy", Run: RunAgent, In: "this", Primary: true, Prompt: deployPrompt(c)})
 	}
-	pr := prOf(c)
+	pr := c.PR()
 	if pr == "" || c.Phase != PhaseReview {
 		return
 	}
@@ -324,7 +324,7 @@ func syncBuiltins(c *Change) {
 
 func deployPrompt(c *Change) string {
 	p := "The deploy of " + c.Title
-	if pr := prOf(c); pr != "" {
+	if pr := c.PR(); pr != "" {
 		p += " (" + pr + ")"
 	}
 	if c.DeployWatch != nil {
