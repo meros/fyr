@@ -113,8 +113,13 @@ func TestBranchDiffAgainstMain(t *testing.T) {
 		t.Fatalf("files %+v", c.Files)
 	}
 	for k, w := range want {
-		if f[k] != w {
-			t.Errorf("%s: got %+v want %+v", k, f[k], w)
+		got := f[k]
+		if got.Status != "deleted" && got.Blob == "" {
+			t.Errorf("%s: no blob id (V0.65)", k)
+		}
+		got.Blob = ""
+		if got != w {
+			t.Errorf("%s: got %+v want %+v", k, got, w)
 		}
 	}
 	for i := 1; i < len(c.Files); i++ {
