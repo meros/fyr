@@ -4,13 +4,19 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
-import { canEnd, changeList, endArgs, endChangeAsk, lastRun, offerDetail, openConditions, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
+import { canEnd, changeList, endArgs, endChangeAsk, lastRun, offerDetail, openConditions, phaseText, rail, runState, shownOffers, unavailable } from "./offers.ts";
 import { press } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
 type Run = (action: string, args?: Record<string, unknown>) => void;
 
 /** Buttons for the actions of one holder, primary first, with what each runs and the newest result. */
+/** V0.75 (1), #62: the hour:minute of a run, in the owner's own time. */
+const hhmm = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toTimeString().slice(0, 5);
+};
+
 export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string; offers?: Offer[]; runs?: OfferRun[]; change?: Change; cwd?: string; onRun: Run }) {
   const list = shownOffers(offers, change);
   const [open, setOpen] = useState<string | null>(null);
@@ -22,27 +28,32 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
       <div class="offb">
         {list.map((o) => {
           const why = unavailable(o, runs, change);
+          const st = runState(runs, o.id);
+          const last = lastRun(runs, o.id);
+          // V0.75 (1), #62: a used action carries its result on the button and turns quiet; a failure keeps its weight.
+          const word = st === "running" ? " · running…" : st === "ok" ? ` · ${hhmm((last!.endedAt ?? last!.at)!)}` : st === "failed" ? ` · failed${last!.exit ? ` (exit ${last!.exit})` : ""}` : "";
+          const mark = st === "ok" ? "✓ " : st === "failed" ? "✕ " : o.run === "agent" ? "✦ " : "";
+          const title = st === "fresh" ? (why ?? offerDetail(o, cwd)) : `${offerDetail(o, cwd)} · the last run ${last?.running ? "is running" : last?.ok ? "succeeded" : "failed"}`;
           return (
-            <button key={o.id} class={`btn sm${o.primary ? " p" : ""}`} disabled={!!why} title={why ?? offerDetail(o, cwd)} onClick={() => void onPress(o)}>
-              {o.run === "agent" ? "✦ " : ""}
+            <button key={o.id} class={`btn sm${o.primary && st === "fresh" ? " p" : ""}${st === "ok" ? " used" : st === "failed" ? " bad" : ""}`} disabled={!!why} title={title} aria-busy={st === "running" || undefined} onClick={() => void onPress(o)}>
+              {mark}
               {o.label}
+              {word}
             </button>
           );
         })}
-      </div>
-      {list.map((o) => {
-        const r = lastRun(runs, o.id);
-        if (!r) return null;
-        const state = r.running ? "running…" : r.ok ? "succeeded" : `failed${r.exit ? ` (exit ${r.exit})` : ""}`;
-        return (
-          <div key={`r-${o.id}`} class={`offrun${r.running ? "" : r.ok ? " ok" : " fail"}`}>
-            <button class="offrl" onClick={() => setOpen(open === o.id ? null : o.id)} aria-expanded={open === o.id} disabled={!r.output}>
-              {o.label}: {state}
+        {/* the newest run's output, one press away, on a control of its own: a button cannot hold a button */}
+        {(() => {
+          const withOut = [...list].reverse().find((o) => lastRun(runs, o.id)?.output);
+          if (!withOut) return null;
+          return (
+            <button class={`offout-b${open === withOut.id ? " on" : ""}`} title={`${withOut.label}: the last run's output`} aria-expanded={open === withOut.id} onClick={() => setOpen(open === withOut.id ? null : withOut.id)}>
+              ▤
             </button>
-            {open === o.id && r.output && <pre class="offout">{r.output}</pre>}
-          </div>
-        );
-      })}
+          );
+        })()}
+      </div>
+      {open !== null && <pre class="offout">{lastRun(runs, open)?.output}</pre>}
     </div>
   );
 }

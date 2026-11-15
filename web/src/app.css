@@ -549,7 +549,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .pv-c{display:flex;flex-direction:column;gap:2px;padding:8px 12px 10px;font:400 13px/19px var(--ui);color:var(--ink-muted);min-width:0}
 .pv-url{font:400 12px/16px var(--mono);color:var(--harbour);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .md-img{max-width:100%;max-height:360px;border-radius:8px;border:1px solid var(--line);display:block;margin:6px 0}
-.fs{flex:none;background:var(--raised);border-bottom:1px solid var(--line);padding:6px 12px;--knock:var(--raised)}
+.fs{flex:none;background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:6px 8px;--knock:var(--raised)}
 .fs-row{display:flex;gap:8px;overflow-x:auto;scrollbar-width:thin}
 .fs-item{flex:none;display:flex;flex-direction:column;gap:2px;width:96px;padding:0;text-align:left}
 .fs-item img,.fs-html{width:96px;height:56px;border-radius:6px;border:1px solid var(--line);object-fit:cover;object-position:top;background:var(--sunken);display:grid;place-items:center;font:500 11px/14px var(--mono);color:var(--ink-muted)}
@@ -821,6 +821,8 @@ button.ptag{padding:0}
    reads at full weight with room before it; the work on the way (earlier messages, tool steps,
    system lines) is small, muted, borderless and close together, folded into one line per stretch. */
 .convo-in{gap:0}
+.cv-strip{display:flex;flex-direction:column;gap:8px;padding:0 0 12px;margin-bottom:4px}
+.cv-strip:empty{display:none}
 .cv{min-width:0;display:flex;flex-direction:column;margin-top:4px}
 .convo-in>.cv:first-child,.convo-in>.earlier+.cv{margin-top:0}
 .cv.out{margin-top:22px}
@@ -994,11 +996,18 @@ button.ptag{padding:0}
 .chcond li.pending{color:var(--ink-muted)}
 .chneed{font:600 12px/16px var(--ui);color:var(--signal-ink)}
 .chev{display:flex;flex-wrap:wrap;gap:8px;font:400 12px/16px var(--ui)}
-.offers{display:flex;flex-direction:column;gap:4px;min-width:0}
+.offers{display:flex;flex-direction:column;gap:6px;min-width:0;margin-top:12px}
 .thead .offers,.m-thead .offers{padding:4px 0}
 .offb{display:flex;flex-wrap:wrap;gap:6px}
 .offrun{font:400 12px/16px var(--ui);color:var(--ink-muted)}
 .offrun.ok{color:var(--calm)}.offrun.fail{color:var(--signal-ink)}
+/* V0.75 (1), #62: a used action stays in place, quiet; a failure keeps its weight and turns to the signal colour. */
+.btn.used{color:var(--ink-faint);background:transparent;border-color:var(--line)}
+.btn.used:hover:not(:disabled){color:var(--ink-muted);background:var(--sunken)}
+.btn.bad{color:var(--signal-ink);border-color:var(--signal-ink)}
+.offout-b{flex:none;width:24px;height:24px;border-radius:6px;font:400 12px/22px var(--mono);color:var(--ink-muted);border:1px solid var(--line)}
+.offout-b.on{background:var(--sunken);color:var(--ink)}
+
 .offrl{padding:0;text-align:left;color:inherit}
 .offout{margin:4px 0 0;max-height:200px;overflow:auto;padding:6px 8px;border-radius:6px;background:var(--sunken);font:400 11px/15px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
 /* V0.64: the Changes board */
