@@ -921,7 +921,9 @@ button.ptag{padding:0}
 .sets{display:flex;flex-direction:column;gap:8px;min-width:0}
 .sets h3{margin:0;font:600 14px/20px var(--ui)}
 /* V0.58: the Projects list in Settings shows every project; Settings scrolls, not the list */
-.setpl{max-height:none;overflow:visible}
+/* The page scrolls, so the list is uncapped. Lift the cap with max-height only, never overflow:visible: a rule that
+   still caps it (.m-app .pls) then scrolls the list instead of drawing the rows over the sections below. */
+.set .pls.setpl{max-height:none}
 .pdel{margin-top:16px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:flex-start}
 .sets h4{margin:6px 0 0;font:600 12px/16px var(--ui);color:var(--ink-muted)}
 .setd{font:400 12px/16px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
