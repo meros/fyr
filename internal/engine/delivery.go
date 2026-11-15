@@ -50,6 +50,6 @@ func (e *Engine) cancelMessage(c api.Cmd) api.Reply {
 	if err != nil {
 		return api.Reply{Error: err.Error(), Status: 500}
 	}
-	e.Hub.Events(evs)
+	e.sendEvents(evs)
 	return reply
 }

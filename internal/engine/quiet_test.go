@@ -9,10 +9,11 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/stream"
 )
 
 // drain returns the frames of one kind waiting on ch.
-func drain(ch chan Frame, event string) []map[string]any {
+func drain(ch chan stream.Frame, event string) []map[string]any {
 	var out []map[string]any
 	for {
 		select {
@@ -53,7 +54,7 @@ func TestQuietHours(t *testing.T) {
 
 	var mu sync.Mutex
 	pushes := 0
-	h.e.OnAttention = func(DTO, core.State) { mu.Lock(); pushes++; mu.Unlock() }
+	h.e.OnAttention = func(api.Thread, core.State) { mu.Lock(); pushes++; mu.Unlock() }
 	ch := h.e.Hub.Subscribe()
 	defer h.e.Hub.Unsubscribe(ch)
 

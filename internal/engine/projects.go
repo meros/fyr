@@ -14,19 +14,8 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/hostfs"
 	"github.com/meros/fyr/internal/store"
+	"github.com/meros/fyr/internal/stream"
 )
-
-// ProjectDTO is a project as clients see it (SPEC 0.5 V0.23).
-type ProjectDTO struct {
-	core.Project
-	// Rev is when this copy was built (#42): a client keeps the higher of a
-	// snapshot's copy and a stream frame's.
-	Rev      int64     `json:"rev"`
-	Threads  int       `json:"threads"`
-	LastUsed time.Time `json:"lastUsed"`
-	// QuietUntil is the end of the quiet hours the project is in (V0.46).
-	QuietUntil *time.Time `json:"quietUntil,omitempty"`
-}
 
 // quietUntil is the end of the quiet hours project id is in at now, in the
 // host's time zone, or nil (SPEC 0.5 V0.46). Call with e.mu held.
@@ -189,16 +178,9 @@ func (e *Engine) projectName(t *core.Thread) string {
 	return ""
 }
 
-// NewProject is what "New project from this thread" starts with (SPEC 0.5
-// V0.30, V0.55): the thread's folder and its name.
-type NewProject struct {
-	Name   string `json:"name"`
-	Folder string `json:"folder"`
-}
-
 // draft is the thread's NewProject, or nil for a scratch folder, the home
 // folder, / and a folder that a project already has. Call with e.mu held.
-func (e *Engine) draft(t *core.Thread) *NewProject {
+func (e *Engine) draft(t *core.Thread) *api.NewProject {
 	if t.Cwd == "" {
 		return nil
 	}
@@ -216,7 +198,7 @@ func (e *Engine) draft(t *core.Thread) *NewProject {
 			return nil
 		}
 	}
-	return &NewProject{Name: filepath.Base(dir), Folder: dir}
+	return &api.NewProject{Name: filepath.Base(dir), Folder: dir}
 }
 
 // migrateFolders gives every project stored with sources (before V0.55) one
@@ -312,7 +294,7 @@ func (e *Engine) migrateAuto() error {
 
 // Projects lists projects with their thread counts, all stamped with one new
 // rev (built under e.mu, so a later copy is never older).
-func (e *Engine) Projects() []ProjectDTO {
+func (e *Engine) Projects() []api.Project {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	counts := map[string]int{}
@@ -325,11 +307,11 @@ func (e *Engine) Projects() []ProjectDTO {
 			last[t.ProjectID] = t.UpdatedAt
 		}
 	}
-	out := make([]ProjectDTO, 0, len(e.projects))
+	out := make([]api.Project, 0, len(e.projects))
 	now := e.Now()
 	rev := e.nextRev()
 	for _, p := range e.projects {
-		out = append(out, ProjectDTO{Project: *p, Rev: rev, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now)})
+		out = append(out, api.Project{Project: *p, Rev: rev, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now)})
 	}
 	return out
 }
@@ -461,7 +443,7 @@ func (e *Engine) projectCommand(c api.Cmd) api.Reply {
 		return bad("unknown action " + c.Action)
 	}
 	// The name and the quiet hours show on threads: refresh them.
-	var touched []DTO
+	var touched []api.Thread
 	now := e.Now()
 	_, quietChanged := c.Args["quiet"]
 	quietChanged = quietChanged && c.Action == "project.update"
@@ -492,11 +474,11 @@ func (e *Engine) projectCommand(c api.Cmd) api.Reply {
 	}
 	for _, d := range e.Projects() {
 		if d.ID == p.ID {
-			e.Hub.Project(d)
+			e.Hub.Send(stream.FrameProject, d)
 		}
 	}
 	for _, d := range touched {
-		e.Hub.Thread(d)
+		e.Hub.Send(stream.FrameThread, d)
 	}
 	if c.Action == "project.create" || folderSet {
 		e.Rematch() // V0.55: the folders changed; threads may land here now
@@ -535,7 +517,7 @@ func (e *Engine) projectDelete(c api.Cmd) api.Reply {
 		e.bump(t.ID)
 		moved = append(moved, t)
 	}
-	dtos := make([]DTO, 0, len(moved))
+	dtos := make([]api.Thread, 0, len(moved))
 	for _, t := range moved {
 		dtos = append(dtos, e.dto(t, now))
 	}
@@ -555,14 +537,14 @@ func (e *Engine) projectDelete(c api.Cmd) api.Reply {
 	if err != nil {
 		return api.Reply{Error: err.Error(), Status: 500}
 	}
-	e.Hub.ProjectDeleted(id)
+	e.Hub.Send(stream.FrameProject, map[string]any{"id": id, "deleted": true}) // SPEC 0.5 V0.58
 	for _, d := range dtos {
-		e.Hub.Thread(d)
+		e.Hub.Send(stream.FrameThread, d)
 	}
 	// The projects that took threads have new counts.
 	for _, d := range e.Projects() {
 		if gained[d.ID] {
-			e.Hub.Project(d)
+			e.Hub.Send(stream.FrameProject, d)
 		}
 	}
 	return reply
@@ -595,7 +577,7 @@ func (e *Engine) Rematch() {
 			moved = append(moved, t)
 		}
 	}
-	var dtos []DTO
+	var dtos []api.Thread
 	for _, t := range moved {
 		dtos = append(dtos, e.dto(t, now))
 	}
@@ -609,6 +591,6 @@ func (e *Engine) Rematch() {
 		return nil
 	})
 	for _, d := range dtos {
-		e.Hub.Thread(d)
+		e.Hub.Send(stream.FrameThread, d)
 	}
 }

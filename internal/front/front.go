@@ -27,9 +27,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/server"
+	"github.com/meros/fyr/internal/stream"
 )
 
 // HostConfig is one host in a front's list.
@@ -69,7 +69,7 @@ type Options struct {
 type Front struct {
 	opt   Options
 	links []*link
-	hub   *engine.Hub
+	hub   *stream.Hub
 
 	mu       sync.Mutex // guards the caches of every link and objs
 	presence *notify.Presence
@@ -114,7 +114,7 @@ func New(opt Options, hosts []HostConfig) *Front {
 	if opt.NotifyDelay <= 0 {
 		opt.NotifyDelay = notify.Delay
 	}
-	f := &Front{opt: opt, hub: engine.NewHub(), presence: &notify.Presence{}, objs: map[string]*link{}}
+	f := &Front{opt: opt, hub: stream.NewHub(), presence: &notify.Presence{}, objs: map[string]*link{}}
 	for _, h := range hosts {
 		u, err := url.Parse(strings.TrimRight(h.URL, "/"))
 		if err != nil || u.Host == "" {
@@ -417,7 +417,7 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 		patch, _ := p["patch"].(map[string]any)
 		var m map[string]any
 		if c := conn[id]; c != nil && revOf(c) == b && patch != nil {
-			m = engine.ApplyMergePatch(c, patch)
+			m = stream.ApplyMergePatch(c, patch)
 		} else if err := f.get(ctx, l, "/api/threads/"+url.PathEscape(id), &m); err != nil {
 			return
 		}
@@ -571,7 +571,7 @@ func (f *Front) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
 		ch := f.hub.Subscribe()
 		defer f.hub.Unsubscribe(ch)
-		server.ServeStream(w, r, ch, f.opt.BuildID)
+		stream.Serve(w, r, ch, f.opt.BuildID)
 	})
 	mux.HandleFunc("GET /api/threads/{id}", f.thread)
 	mux.HandleFunc("/api/threads/{id}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
