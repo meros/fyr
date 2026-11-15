@@ -4,8 +4,8 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
-import { changeList, lastRun, offerDetail, openConditions, phaseText, pressArgs, rail, shownOffers, unavailable } from "./offers.ts";
-import { offerAsk } from "./confirm.ts";
+import { changeList, lastRun, offerDetail, openConditions, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
+import { press } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
 type Run = (action: string, args?: Record<string, unknown>) => void;
@@ -16,19 +16,14 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
   const [open, setOpen] = useState<string | null>(null);
   const ask = useAsk();
   if (!list.length) return null;
-  const press = async (o: Offer) => {
-    // V0.68: the owner sees what runs before a script or a merge starts; an agent action is a message.
-    const a = offerAsk(o, cwd);
-    if (a && !(await ask(a))) return;
-    onRun("action.run", pressArgs(on, o));
-  };
+  const onPress = (o: Offer) => press(on, o, cwd, ask, onRun);
   return (
     <div class="offers">
       <div class="offb">
         {list.map((o) => {
           const why = unavailable(o, runs, change);
           return (
-            <button key={o.id} class={`btn sm${o.primary ? " p" : ""}`} disabled={!!why} title={why ?? offerDetail(o, cwd)} onClick={() => void press(o)}>
+            <button key={o.id} class={`btn sm${o.primary ? " p" : ""}`} disabled={!!why} title={why ?? offerDetail(o, cwd)} onClick={() => void onPress(o)}>
               {o.run === "agent" ? "✦ " : ""}
               {o.label}
             </button>
@@ -57,8 +52,12 @@ export function ThreadOffers({ t, onRun }: { t: Thread; onRun: Run }) {
   return <OfferBar on="thread" offers={t.offers} runs={t.runs} cwd={t.cwd} onRun={onRun} />;
 }
 
-/** The view's actions run through its page; this runs one with its digest. */
-export const viewAction = (onRun: Run) => async (o: Offer) => (onRun("action.run", pressArgs("view", o)), true);
+/** The view's actions run through its page (fyr.run, data-action); the owner confirms a script or a fyr action
+ *  first, as on a button (V0.68 (8)), so a page cannot run one by itself. */
+export function useViewAction(onRun: Run, cwd?: string) {
+  const ask = useAsk();
+  return (o: Offer) => press("view", o, cwd, ask, onRun);
+}
 
 const KIND: Record<string, string> = { code: "⌥", infra: "☁", host: "▣", data: "⛁", doc: "▤", design: "◇", other: "•" };
 

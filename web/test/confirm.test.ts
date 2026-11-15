@@ -1,7 +1,7 @@
 // SPEC V0.68: what Fyr's own confirmation says, for a script, a fyr effect and a destructive action.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deleteProjectAsk, offerAsk, removeProviderAsk, shortArg, shortFolder } from "../src/confirm.ts";
+import { deleteProjectAsk, offerAsk, press, removeProviderAsk, shortArg, shortFolder } from "../src/confirm.ts";
 import type { Offer } from "../src/types.ts";
 
 const SCRATCH = "/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-acme-claude-long-term-token";
@@ -66,4 +66,19 @@ test("V0.68: Remove provider is destructive too", () => {
   assert.equal(a.text, "Its stored key is deleted too.");
   assert.equal(a.confirm, "Remove provider");
   assert.equal(a.danger, true);
+});
+
+test("V0.68 (8): a live view's page runs a script only after the owner confirms; an agent action goes at once", async () => {
+  const runs: unknown[] = [];
+  const run = (action: string, args?: Record<string, unknown>) => void runs.push([action, args]);
+  const asked: string[] = [];
+  const no = async (a: { title: string }) => (asked.push(a.title), false);
+  const yes = async (a: { title: string }) => (asked.push(a.title), true);
+  assert.equal(await press("view", offer({}), SCRATCH, no, run), false);
+  assert.deepEqual(runs, [], "a script ran without the owner's yes");
+  assert.equal(await press("view", offer({}), SCRATCH, yes, run), true);
+  assert.deepEqual(runs, [["action.run", { on: "view", action: "a", digest: "d1" }]]);
+  assert.equal(await press("view", offer({ id: "b", run: "agent", prompt: "p" }), SCRATCH, no, run), true);
+  assert.equal(runs.length, 2);
+  assert.deepEqual(asked, ["Set the Acme token", "Set the Acme token"], "an agent action asked");
 });
