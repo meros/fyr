@@ -95,3 +95,16 @@ test("the open message goes to every window of the origin", () => {
   const wins = [{ url: "https://h:7443/?x", id: "a" }, { url: "https://other/", id: "b" }, { url: "https://h:7443/", id: "c" }];
   assert.deepEqual(openTargets(wins, "https://h:7443").map((w) => w.id), ["a", "c"]);
 });
+
+// V0.119: Settings → This device → Notifications: the row's words and whether its switch works.
+import { pushRow } from "../src/push.ts";
+
+test("the Notifications row per state", () => {
+  assert.deepEqual(pushRow("off", null, false), { desc: "When a thread asks you something or fails.", error: false, disabled: false, on: false, test: false });
+  assert.deepEqual(pushRow("on", null, false), { desc: "When a thread asks you something or fails.", error: false, disabled: false, on: true, test: true });
+  assert.equal(pushRow("on", null, true).desc, "Sent. It should arrive in a few seconds.");
+  assert.deepEqual(pushRow("denied", null, false), { desc: "Blocked for this site. Allow them in the browser's site settings, then reload Fyr.", error: true, disabled: true, on: false, test: false });
+  const ios = pushRow("unsupported", unsupportedReason({ secure: true, serviceWorker: true, pushManager: true, notification: true, ios: true, standalone: false }), false);
+  assert.deepEqual(ios, { desc: "On an iPhone, add Fyr to the Home Screen first: Share, then Add to Home Screen.", error: false, disabled: true, on: false, test: false });
+  assert.equal(pushRow("unsupported", null, false).desc, "Notifications are not available in this browser.");
+});
