@@ -392,6 +392,32 @@ const timed = (ok, what) => {
 };
 
 const window_innerWidth = (m) => m.innerWidth;
+// The class of #84: text outside its parent. Every element that holds text must stay inside the content box of its
+// nearest bordered ancestor (a card, a chip, a button, a field) and inside the window, unless an ancestor on the way
+// clips or scrolls it (overflow other than visible), which is how a row, a chip line or a scroller keeps it in.
+const OUTSIDE = `(() => {
+  const out = [], W = innerWidth;
+  const clips = (cs) => cs.overflowX !== 'visible' || cs.overflowY !== 'visible';
+  for (const e of document.querySelectorAll('body *')) {
+    if (!e.offsetParent && getComputedStyle(e).position !== 'fixed') continue;
+    if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+    const r = e.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    let a = e.parentElement, box = null;
+    for (; a && a !== document.body; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (clips(cs)) break;
+      if (parseFloat(cs.borderRightWidth) > 0 && parseFloat(cs.borderLeftWidth) > 0) { box = a; break; }
+    }
+    const name = (x) => x.tagName.toLowerCase() + (x.className && typeof x.className === 'string' ? '.' + x.className.trim().split(/\\s+/).join('.') : '');
+    const t = e.textContent.trim().slice(0, 40);
+    if (box) {
+      const b = box.getBoundingClientRect(), cs = getComputedStyle(box);
+      if (r.right > b.right - parseFloat(cs.borderRightWidth) + 1 || r.left < b.left + parseFloat(cs.borderLeftWidth) - 1) out.push(name(e) + ' outside ' + name(box) + ': ' + t);
+    } else if ((!a || a === document.body) && (r.right > W + 1 || r.left < -1)) out.push(name(e) + ' outside the window: ' + t);
+  }
+  return out.slice(0, 6);
+})()`;
 // SPEC 0.5 V0.50, decision 0015 (#28): the UI says provider, never profile. Reads Fyr's own chrome (labels, options,
 // buttons, menu items, dialog text, aria-labels and placeholders); the conversation's text is the agent's, not Fyr's.
 const PROFILE_WORDS = `(() => { const out = []; const see = (s) => { if (s && /\\bprofiles?\\b/i.test(s)) out.push(s.trim().slice(0, 80)); };
@@ -731,6 +757,8 @@ async function phonePass(t, w, h) {
       await openScreen(s, w, h);
       // 1. At rest.
       assertLayout(await evaluate(MEASURE), `${ctx} at rest`);
+      const outside = await evaluate(OUTSIDE);
+      check(outside.length === 0, `${ctx}: text outside its parent (${JSON.stringify(outside)})`);
       const words = await evaluate(PROFILE_WORDS);
       check(words.length === 0, `${ctx}: the UI says profile (${JSON.stringify(words)})`);
       if (process.env.FYR_SHOTS && s.name.startsWith("ended changes") && w === 390) {
