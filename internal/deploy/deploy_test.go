@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -161,7 +162,8 @@ func TestDeployUsesNixDevelopWithFlake(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "flake.nix"), []byte("{}"), 0o644)
 	d.Deploy(context.Background(), "t1", req, dir)
-	if len(*steps) < 2 || !strings.HasPrefix((*steps)[0], "nix develop "+dir+" --command make -C "+dir+" build") {
+	made := slices.DeleteFunc(slices.Clone(*steps), func(s string) bool { return strings.HasPrefix(s, "git ") }) // V0.82
+	if len(made) < 2 || !strings.HasPrefix(made[0], "nix develop "+dir+" --command make -C "+dir+" build") {
 		t.Fatalf("steps %v", *steps)
 	}
 }
