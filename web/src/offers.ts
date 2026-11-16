@@ -1,7 +1,8 @@
 // Changes and actions in the client (SPEC 0.5 V0.59, V0.60, decision 0018). Pure: what a change shows, which
 // actions the owner can press now, and the words for the conversation lines.
 
-import type { Change, ChangePhase, Offer, OfferRun, PullRequest, Thread } from "./types.ts";
+import type { Change, ChangeNeed, ChangePhase, Offer, OfferRun, PullRequest, Thread } from "./types.ts";
+import { shortHead } from "./pr.ts";
 import type { Ask } from "./confirm.ts";
 
 export const RAIL: ChangePhase[] = ["working", "review", "landed", "live"];
@@ -105,8 +106,8 @@ export function pressArgs(on: string, o: Offer, head?: string) {
   return head ? { on, action: o.id, digest: o.digest, head } : { on, action: o.id, digest: o.digest };
 }
 
-/** V0.72: the owner can end every change of the thread that has not ended (a host record on the board is not one). */
-export const canEnd = (c: Pick<Change, "phase" | "threads" | "done">) => !ended(c.phase) && !isDone(c) && !c.threads?.length;
+/** V0.72, V0.101: the owner can end (Abandon) every change that has not ended, of the thread or a host record; the host routes it. */
+export const canEnd = (c: Pick<Change, "phase" | "done">) => !ended(c.phase) && !isDone(c);
 
 /** V0.98 (4): Done on an open change, of the thread or a host record; the host routes it. */
 export const canDone = (c: Pick<Change, "done">) => !isDone(c);
@@ -132,23 +133,59 @@ export function endArgs(c: Pick<Change, "id">, a: Pick<Ask, "choice" | "reason">
   return { change: c.id, phase: a.choice?.value || "abandoned", ...(reason ? { reason } : {}) };
 }
 
-/** V0.59 (6): a change that has not ended and fails or waits for the owner, before any Not now; V0.98 (4): not one
- *  the owner marked done. */
-export const blocks = (c: Pick<Change, "phase" | "needs" | "conditions"> & { done?: Change["done"] }) =>
-  !ended(c.phase) && c.done?.reason !== "done" && (c.needs === "owner" || !!c.conditions?.some((k) => k.status === "fail"));
+/** V0.101: a change in Needs you. The host computes it (an open ask, Ready, Stopped on a failure) and leaves out a done
+ *  change, a parked one and a failure the agent is fixing (muted); the client only reads `need`. */
+export const needsOwner = (c: Pick<Change, "need">) => !!c.need && !c.need.muted;
 
-/** V0.84: a change in Needs you: it blocks and the owner has not parked it. The host clears `parked` when the change
- *  moves after the park, so a parked change here is still as the owner saw it. */
-export const needsOwner = (c: Pick<Change, "phase" | "needs" | "conditions" | "parked">) => blocks(c) && !c.parked;
-
-/** V0.84: Not now on a change of the thread (not a host record) that is in Needs you. */
-export const canPark = (c: Pick<Change, "phase" | "needs" | "conditions" | "parked" | "threads">) => needsOwner(c) && !c.threads?.length;
+/** V0.101: Not now on a change of the thread whose cause is Ready or a failure; Not now on an ask declines the ask. */
+export const canPark = (c: Pick<Change, "need" | "threads">) => !c.threads?.length && (c.need?.cause === "ready" || c.need?.cause === "failure");
 
 /** The command args of change.park and change.unpark. */
 export const parkArgs = (c: Pick<Change, "id">) => ({ change: c.id });
 
-/** V0.84: the quiet line of a parked change, or null. `clock` turns the time into hh:mm. */
-export const parkedLine = (c: Pick<Change, "parked">, clock: (iso: string) => string): string | null => (c.parked ? `Not now · ${clock(c.parked.at)}` : null);
+/** V0.101: Not now on an ask declines it: the owner's answer with allow false. */
+export const declineArgs = (n: Pick<ChangeNeed, "ask">) => ({ decisionId: n.ask ?? "", allow: false });
+
+/** V0.101: Yes on an ask (a merge ask runs the merge bound to the head the agent's ask fixed). */
+export const allowArgs = (n: Pick<ChangeNeed, "ask">) => ({ decisionId: n.ask ?? "", allow: true });
+
+/** V0.101: when a parked change comes back (decision 0024 section 5: Not now is keyed to the head). */
+export const BACK_TEXT = "back when the head changes";
+
+/** V0.84, V0.101: the quiet line of a parked change, or null. `clock` turns the time into hh:mm. */
+export const parkedLine = (c: Pick<Change, "parked">, clock: (iso: string) => string): string | null => (c.parked ? `Not now · ${clock(c.parked.at)} · ${BACK_TEXT}` : null);
+
+/** V0.101: the words of a need on its card and row: the button and the line. A merge (Ready or a merge ask) is bound to
+ *  the head; an ask is answered; a failure says what failed. */
+export function needLook(n: ChangeNeed): { button: string; line: string; beam: boolean } {
+  const head = n.head ? ` ${shortHead(n.head)}` : "";
+  switch (n.cause) {
+    case "ready":
+      return { button: `${n.text === "Review and merge" ? "Review and merge" : "Merge"}${head}`, line: n.text === "Review and merge" ? "Green; a required review waits for you." : "Green and waiting for your merge.", beam: true };
+    case "ask":
+      return { button: "Answer", line: n.text || "The agent asks you.", beam: true };
+    case "failure":
+      return { button: "Open", line: `Stopped on a failure: ${n.text ?? "failed"}`, beam: true };
+    default:
+      return { button: "", line: n.text || "Agent is fixing CI", beam: false };
+  }
+}
+
+/** V0.101: Refresh now on an open change that Fyr reads: a PR, or a branch (a host record or a thread change on one). */
+export const canRefresh = (c: Pick<Change, "phase" | "done" | "pr" | "branch" | "threads">) => !ended(c.phase) && !isDone(c) && (!!c.pr || !!c.branch || !!c.threads?.length);
+
+/** V0.101: "checked 30 s ago", from when Fyr last read the change's PR. */
+export function checkedText(iso: string, now: number): string {
+  const s = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
+  if (Number.isNaN(s)) return "";
+  return s < 60 ? `checked ${s} s ago` : s < 3600 ? `checked ${Math.round(s / 60)} min ago` : `checked ${Math.round(s / 3600)} h ago`;
+}
+
+/** V0.101: the inbox row's cause: the first change of the thread in Needs you, newest first. */
+export function rowNeed(t: Pick<Thread, "changes">): { change: Change; need: ChangeNeed } | null {
+  for (const c of changeList(t)) if (c.need && !c.need.muted) return { change: c, need: c.need };
+  return null;
+}
 
 /** The changes to list, newest first; PR changes too (V0.59 (8)). */
 export function changeList(t: Pick<Thread, "changes">): Change[] {
@@ -163,10 +200,11 @@ export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { 
   const live = t.changes.filter((c) => !ended(c.phase) && !isDone(c) && !(c.evidence ?? []).some((e) => e.kind === "pr"));
   if (!live.length) return null;
   // V0.84: a parked change ranks and reads as quiet work.
-  const rank = (c: Change) => (c.parked ? 2 : c.conditions?.some((k) => k.status === "fail") ? 0 : c.needs === "owner" ? 1 : 2);
+  // V0.101: the host's need ranks first; a failure without one (the agent is on it) next.
+  const rank = (c: Change) => (c.parked ? 3 : needsOwner(c) ? 0 : c.conditions?.some((k) => k.status === "fail") ? 1 : 2);
   const c = [...live].sort((a, b) => rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt))[0];
   const fail = c.parked ? undefined : c.conditions?.find((k) => k.status === "fail");
-  const word = fail ? `${fail.type} failed` : c.parked ? "not now" : c.needs === "owner" ? "needs you" : c.label || c.phase;
+  const word = fail ? `${fail.type} failed` : c.parked ? "not now" : needsOwner(c) ? "needs you" : c.label || c.phase;
   const more = live.length > 1 ? ` +${live.length - 1}` : "";
   return { text: short ? `${word}${more}` : `${clip(c.title)} · ${word}${more}`, cls: fail ? "fail" : c.phase === "live" ? "ok" : "", title: `${c.title} · ${phaseText(c)}` };
 }

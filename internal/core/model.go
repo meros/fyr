@@ -50,8 +50,6 @@ type Thread struct {
 	// MainChange is the id of the code change whose PR the PR tab shows and
 	// the PR commands act on (#32); "" when the thread has no main PR.
 	MainChange string `json:"mainChange,omitempty"`
-	// ChangesCheckedAt is the last change tool call (V0.62).
-	ChangesCheckedAt *time.Time `json:"changesCheckedAt,omitempty"`
 	// Actions are the thread's own actions and their last runs (V0.60, #31).
 	// A change and the live view hold their own.
 	Actions
@@ -84,6 +82,13 @@ type Conversation struct {
 	Failure      *Failure   `json:"failure,omitempty"`
 	// RunEnds counts the runs that ended: runEnded Rules compare with it.
 	RunEnds int `json:"runEnds,omitempty"`
+	// RunEndedAt is when the last run ended (V0.101): a failure is the
+	// owner's StopAfter later (need.go).
+	RunEndedAt *time.Time `json:"runEndedAt,omitempty"`
+	// Stopped: at the last reduce no run or task was in progress and the
+	// last run ended StopAfter ago or more (V0.101). The clock re-reduces at
+	// RunEndedAt + StopAfter (NextCheck), so it turns on with no new effect.
+	Stopped bool `json:"stopped,omitempty"`
 	// Outbox holds the messages the agent has not read yet (V0.33).
 	Outbox []OutMsg `json:"outbox,omitempty"`
 	// Handover is set while the thread moves to another profile (V0.45).

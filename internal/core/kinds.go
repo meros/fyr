@@ -27,7 +27,7 @@ const (
 	KindChangeRevise    = "change.revise"
 	KindChangeStatus    = "change.status"
 	KindChangeAttach    = "change.attach"
-	KindChangeUnchanged = "change.unchanged"
+	KindChangeUpdate    = "change.update" // V0.101: status, revision and proof in one
 	KindChangeEnd       = "change.end"    // the owner's command (V0.72)
 	KindChangePark      = "change.park"   // the owner's Not now (V0.84)
 	KindChangeUnpark    = "change.unpark" // its Undo (V0.84)
@@ -91,6 +91,17 @@ type (
 	ChangeReply struct {
 		Change Change
 		New    bool
+		// Notes are for the agent: the value Fyr reads of an observed field
+		// it sent, or that a PR it abandoned is still open (V0.101).
+		Notes []string
+	}
+	// ChangeUpdateArgs is change_update (V0.101): the report, a new
+	// revision and proof, each optional.
+	ChangeUpdateArgs struct {
+		Change   string
+		Update   ChangeUpdate
+		Revision *Revision
+		Evidence []Evidence
 	}
 	OfferArgs struct {
 		On     string
@@ -187,17 +198,8 @@ func init() {
 			}
 			return c, ReviseChange(c, a.Revision, now), nil
 		})},
-		{Name: KindChangeStatus, From: agentOnly, Reduce: changeKind("status", func(t *Thread, in Input, now time.Time) (*Change, bool, error) {
-			a, err := argsOf[ChangeStatusArgs](in)
-			if err != nil {
-				return nil, false, err
-			}
-			c, err := findChange(t, a.Change)
-			if err != nil {
-				return nil, false, err
-			}
-			return c, false, UpdateChange(t, c, a.Update, in.Source.Principal(), now)
-		})},
+		{Name: KindChangeStatus, From: agentOnly, Reduce: changeKindNotes("status", reportChange)},
+		{Name: KindChangeUpdate, From: agentOnly, Reduce: changeKindNotes("update", reportChange)},
 		{Name: KindChangeAttach, From: agentOnly, Reduce: changeKind("attach", func(t *Thread, in Input, now time.Time) (*Change, bool, error) {
 			a, err := argsOf[ChangeAttachArgs](in)
 			if err != nil {
@@ -213,11 +215,6 @@ func init() {
 			// V0.87 (2): a PR that Fyr's own change holds folds that change into this one.
 			return joinPRWork(t, c, now), false, nil
 		})},
-		{Name: KindChangeUnchanged, From: agentOnly, Reduce: func(r Rec, _ Input, now time.Time) (Result, error) {
-			n := OpenAgentChanges(r.T)
-			ChangesChecked(r.T, now)
-			return Result{Reply: n}, nil
-		}},
 		{Name: KindActionOffer, From: agentOnly, Reduce: reduceOffer},
 		{Name: KindActionPress, From: ownerOnly, Reduce: reducePress},
 		{Name: KindViewPublish, From: agentOnly, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
@@ -447,17 +444,67 @@ func reduceRename(r Rec, in Input, _ time.Time) (Result, error) {
 }
 
 // changeKind is a change tool's reducer: fn finds or makes the change, and
-// the reduce records the upkeep (V0.62) and one `change` event (V0.59 (5)).
+// the reduce records one `change` event (V0.59 (5)).
 func changeKind(op string, fn func(t *Thread, in Input, now time.Time) (*Change, bool, error)) func(Rec, Input, time.Time) (Result, error) {
+	return changeKindNotes(op, func(t *Thread, in Input, now time.Time) (*Change, bool, []string, error) {
+		c, isNew, err := fn(t, in, now)
+		return c, isNew, nil, err
+	})
+}
+
+// changeKindNotes is changeKind for a report whose reply carries notes
+// (V0.101: what Fyr reads instead of an observed value).
+func changeKindNotes(op string, fn func(t *Thread, in Input, now time.Time) (*Change, bool, []string, error)) func(Rec, Input, time.Time) (Result, error) {
 	return func(r Rec, in Input, now time.Time) (Result, error) {
-		c, isNew, err := fn(r.T, in, now)
+		c, isNew, notes, err := fn(r.T, in, now)
 		if err != nil {
 			return Result{}, err
 		}
-		ChangesChecked(r.T, now)
 		ev := Event{"change", map[string]any{"op": op, "change": map[string]any{"id": c.ID, "title": c.Title, "kind": c.Kind, "phase": c.Phase, "phaseBy": c.PhaseBy, "label": c.Label}}}
-		return Result{Events: []Event{ev}, Reply: ChangeReply{Change: *c, New: isNew}}, nil
+		return Result{Events: []Event{ev}, Reply: ChangeReply{Change: *c, New: isNew, Notes: notes}}, nil
 	}
+}
+
+// reportChange is change_update (and its alias change_status): the
+// report, then a revision and proof when given (V0.101).
+func reportChange(t *Thread, in Input, now time.Time) (*Change, bool, []string, error) {
+	var a ChangeUpdateArgs
+	switch x := in.Args.(type) {
+	case ChangeUpdateArgs:
+		a = x
+	case ChangeStatusArgs:
+		a = ChangeUpdateArgs{Change: x.Change, Update: x.Update}
+	default:
+		return nil, false, nil, fmt.Errorf("%w: %s got %T", ErrBadArgs, in.Kind, in.Args)
+	}
+	c, err := findChange(t, a.Change)
+	if err != nil {
+		return nil, false, nil, err
+	}
+	if len(a.Evidence) > 0 {
+		for _, ev := range a.Evidence {
+			if ev.Kind == "" || (ev.URL == "" && ev.Attachment == "") {
+				return nil, false, nil, errors.New("evidence needs a kind and a url or an attachment")
+			}
+		}
+	}
+	notes, err := ReportChange(t, c, a.Update, in.Source.Principal(), now)
+	if err != nil {
+		return nil, false, nil, err
+	}
+	added := false
+	if a.Revision != nil {
+		added = ReviseChange(c, *a.Revision, now)
+	}
+	if len(a.Evidence) > 0 {
+		id := c.ID
+		AttachEvidence(c, a.Evidence, now)
+		c = joinPRWork(t, c, now) // V0.87 (2)
+		if c == nil {
+			c = FindChange(t, id)
+		}
+	}
+	return c, added, notes, nil
 }
 
 // NoChange is the reason for a change ref the thread does not have.
@@ -554,7 +601,6 @@ func reduceChangeRequest(r Rec, in Input, now time.Time) (Result, error) {
 		a.Args["title"] = c.Title
 	}
 	res := openRequest(r.T, a.ID, EffectReq{Action: action, Args: a.Args, Reason: a.Reason}, now)
-	ChangesChecked(r.T, now) // V0.62
 	res.Reply = *c
 	return res, nil
 }
@@ -567,7 +613,7 @@ func reduceSettleWhen(r Rec, in Input, now time.Time) (Result, error) {
 		SettleWhenDone(t, ByAgent, now)
 	case "merged":
 		if !SettleWhenMerged(t, ByAgent, now) {
-			return Result{}, errors.New("this thread has no open PR; link one with pr_link first")
+			return Result{}, errors.New("this thread has no open PR; link one with change_open {pr} first")
 		}
 	case "change":
 		phase := Phase(a.trimmed("phase"))
@@ -599,7 +645,6 @@ func reduceOffer(r Rec, in Input, now time.Time) (Result, error) {
 	if h.Change != nil {
 		where = fmt.Sprintf("the change %q", h.Change.Title)
 		h.Change.UpdatedAt = now
-		ChangesChecked(r.T, now) // V0.62
 	}
 	if a.Remove {
 		if !h.Remove(a.Spec.ID) {

@@ -682,7 +682,7 @@ func syncBuiltins(c *Change) {
 	if failing {
 		add(ActionSpec{ID: "fyr.rerun", Label: "Re-run failed checks", Run: RunFyr, Effect: FyrRerun})
 		add(ActionSpec{ID: "fyr.fixci", Label: "Fix CI", Run: RunAgent, In: "this", Primary: true,
-			Prompt: "CI failed on " + pr + ". Read the failed jobs (gh run view --log-failed), fix the cause, push, and report with change_status."})
+			Prompt: "CI failed on " + pr + ". Read the failed jobs (gh run view --log-failed), fix the cause and push; Fyr reads the new checks itself."})
 	}
 	if changesAsked {
 		add(ActionSpec{ID: "fyr.review", Label: "Address review", Run: RunAgent, In: "this", Primary: !failing,
@@ -713,5 +713,5 @@ func deployPrompt(c *Change) string {
 			p += " The log: " + ev.URL + "."
 		}
 	}
-	return p + " Read the deployment's log, find the cause, and propose a fix with change_status before you change anything."
+	return p + " Read the deployment's log, find the cause, and propose a fix with change_update before you change anything."
 }

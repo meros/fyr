@@ -160,10 +160,10 @@ func TestReviseResetsConditions(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.59 (6): a failed condition or needs:owner blocks; an ended
-// change does not.
+// SPEC 0.5 V0.59 (6), V0.101: a failed condition of a stopped thread is
+// Needs you; an ended change is not.
 func TestChangeAttention(t *testing.T) {
-	th := &Thread{ActivityAt: ct0}
+	th := &Thread{ActivityAt: ct0, Conversation: Conversation{Stopped: true}}
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "k8s:prod/api", Kind: "infra", Title: "api replicas"}, ByAgent, ct0)
 	v := &View{SeenAt: ct0.Add(time.Minute)}
 	if a := Compute(th, v, ct0.Add(2*time.Minute)); a.State != Seen {
@@ -174,14 +174,8 @@ func TestChangeAttention(t *testing.T) {
 		t.Fatalf("failed condition: %+v", a)
 	}
 	UpdateChange(th, c, ChangeUpdate{Phase: PhaseAbandoned}, ByAgent, ct0)
-	if r := ChangeBlocking(th); r != "" {
-		t.Fatalf("an ended change blocked: %q", r)
-	}
-	d, _, _ := OpenChange(th, ChangeOpen{Key: "doc:x", Kind: "doc", Title: "Design doc"}, ByAgent, ct0)
-	owner := "owner"
-	UpdateChange(th, d, ChangeUpdate{Needs: &owner}, ByAgent, ct0)
-	if r := ChangeBlocking(th); r != "Design doc: needs you" {
-		t.Fatalf("needs owner: %q", r)
+	if _, n := ThreadNeed(th); n != nil {
+		t.Fatalf("an ended change needs the owner: %+v", n)
 	}
 }
 
@@ -226,12 +220,12 @@ func TestMergedPRWithFailedChecksDoesNotBlock(t *testing.T) {
 	th := &Thread{}
 	pr := PR{URL: "https://github.com/o/r/pull/9", Repo: "o/r", Number: 9, Title: "Fix", State: "OPEN", Checks: "fail", Review: "CHANGES_REQUESTED", Conflict: true}
 	ChangePRObserved(th, pr, ct0)
-	if ChangeBlocking(th) == "" {
+	if needText(th) == "" {
 		t.Fatal("an open PR with failed checks did not block")
 	}
 	pr.State = "MERGED"
 	ChangePRObserved(th, pr, ct0)
-	if r := ChangeBlocking(th); r != "" {
+	if r := needText(th); r != "" {
 		t.Fatalf("a merged PR blocked: %q", r)
 	}
 }
@@ -346,12 +340,12 @@ func TestPRLivesOnItsChange(t *testing.T) {
 // #32: attention has one source for blocked: the change's conditions. A
 // failing PR blocks with its change's reason, the main PR or another one.
 func TestPRBlocksThroughItsChange(t *testing.T) {
-	th := &Thread{}
+	th := &Thread{Conversation: Conversation{Stopped: true}} // V0.101: idle 5 minutes
 	PRObserved(th, PR{URL: "https://github.com/o/r/pull/1", Title: "Main", State: "OPEN", Checks: "fail"}, ct0)
-	if a := Compute(th, &View{SeenAt: ct0.Add(time.Hour)}, ct0); a.State != Blocked || a.Reason != ChangeBlocking(th) || a.Reason != "Main: CI failed" {
+	if a := Compute(th, &View{SeenAt: ct0.Add(time.Hour)}, ct0); a.State != Blocked || a.Reason != needText(th) || a.Reason != "Main: CI failed" {
 		t.Fatalf("main PR: %+v", a)
 	}
-	th2 := &Thread{}
+	th2 := &Thread{Conversation: Conversation{Stopped: true}}
 	PRObserved(th2, PR{URL: "https://github.com/o/r/pull/1", Title: "Main", State: "OPEN", Checks: "pass"}, ct0)
 	ChangePRObserved(th2, PR{URL: "https://github.com/o/r/pull/2", Title: "Other", State: "OPEN", Checks: "pass"}, ct0)
 	ChangePRObserved(th2, PR{URL: "https://github.com/o/r/pull/2", Title: "Other", State: "OPEN", Checks: "pass"}, ct0.Add(time.Minute))

@@ -232,6 +232,10 @@ const SCREENS = [
   // provider; every target 44 px and inside the safe areas.
   { name: "settings providers", url: "?mock=rail&settings" },
   { name: "board of changes", url: "?mock=1&changes" },
+  // V0.101: the inbox row of a thread in Needs you carries the beam and its button; the Changes tab shows the ask
+  // inline with its answer and Not now, Ready with Merge bound to the head, and Refresh now.
+  { name: "inbox with a ready change (V0.101)", url: "?mock=1" },
+  { name: "thread Changes tab with the causes inline (V0.101)", url: "?mock=1&open=t_done&tab=changes" },
   // V0.73 (2): six change cards (five ended) above a git checkout with no diff; the diff section flows after the cards.
   { name: "ended changes over an empty diff", url: "?mock=1&open=t_ended&tab=changes", ready: "!!document.querySelector('.chtab .chg-empty')" },
   // SPEC 0.5 V0.68: Fyr's own confirmation sheets: a script in a scratch folder, and Delete project (red).
@@ -775,6 +779,7 @@ async function phonePass(t, w, h) {
         await settle();
         writeFileSync(join(process.env.FYR_SHOTS, "changes-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       }
+      if (process.env.FYR_SHOTS && s.name.endsWith("(V0.101)") && w === 390) writeFileSync(join(process.env.FYR_SHOTS, s.name.startsWith("inbox") ? "inbox-phone.png" : "changes-tab-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (process.env.FYR_SHOTS && s.name.startsWith("board of changes") && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "board-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (process.env.FYR_SHOTS && s.sheet === "confirm" && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "confirm-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (s.sheet === "handover") {
@@ -1804,6 +1809,12 @@ try {
   await waitFor(`!document.querySelector('.dlg.cfm') && [...document.querySelectorAll('.th .offers .btn')].some((r) => /Set the Norban token.*(✓|failed|running)/.test(r.textContent))`, { soft: true }); // V0.75 (1): the result is on the button
   const after = await runs();
   check(!(await dlg()) && /Set the Norban token/.test(after), `V0.68 desktop: Enter does not run the action (runs "${after}")`);
+  if (process.env.FYR_SHOTS) {
+    // V0.101: the desktop inbox next to the thread's Changes tab, with the causes inline.
+    await navigate(`${origin}/?mock=1&open=t_done&tab=changes`, "!!document.querySelector('.chtab')");
+    await settle();
+    writeFileSync(join(process.env.FYR_SHOTS, "changes-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  }
 } catch (e) {
   failures.push(`V0.68 desktop: ${e.message}`);
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionEventLine, canEnd, canPark, parkArgs, parkedLine,offerLook, endArgs, endChangeAsk, runState, settleLine, changeChip, changeEventLine, headerPr, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
+import { actionEventLine, canEnd, canPark, declineArgs, parkArgs, parkedLine,offerLook, endArgs, endChangeAsk, runState, settleLine, changeChip, changeEventLine, headerPr, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
 import type { Change, Offer, OfferRun } from "../src/types.ts";
 
 const at = "2026-11-15T09:00:00Z";
@@ -76,7 +76,7 @@ test("V0.72: End this change on every change that has not ended, with Fyr's conf
   assert.equal(canEnd(pr), true);
   assert.equal(canEnd(change({ phase: "abandoned" })), false);
   assert.equal(canEnd(change({ phase: "landed" })), true);
-  assert.equal(canEnd(change({ threads: ["t1"] })), false, "a host record is not the thread's to end");
+  assert.equal(canEnd(change({ threads: ["t1"] })), true, "V0.101: Abandon on a host record too; the host routes it");
   const a = endChangeAsk(pr);
   assert.equal(a.title, "End this change?");
   assert.equal(a.confirm, "End change");
@@ -115,18 +115,18 @@ test("a button shows its action's newest run on itself", () => {
   assert.deepEqual(look([r({ ok: false, exit: 1 })]), ["failed", " bad", "✕ ", " · failed (exit 1)"], "a failure is loud");
 });
 
-test("SPEC 0.5 V0.84, #93: Not now on a change that needs the owner or has a failed condition; parked shows a quiet line", () => {
-  const fail = [{ type: "apply", status: "fail" as const, source: "agent" as const, at }];
-  assert.equal(canPark(change({ needs: "owner" })), true);
-  assert.equal(canPark(change({ phase: "landed", conditions: fail })), true);
-  assert.equal(canPark(change({})), false, "nothing about it needs the owner");
-  assert.equal(canPark(change({ conditions: [{ type: "checks", status: "pending", source: "observed", at }] })), false);
-  assert.equal(canPark(change({ needs: "owner", phase: "abandoned" })), false, "ended");
-  assert.equal(canPark(change({ needs: "owner", parked: { at, seen: "f" } })), false, "already parked: Undo instead");
-  assert.equal(canPark(change({ needs: "owner", threads: ["t1"] })), false, "a host record is not the thread's");
-  assert.deepEqual(parkArgs(change({ needs: "owner" })), { change: "c_1" });
-  assert.equal(parkedLine(change({ needs: "owner" }), () => "09:00"), null);
-  assert.equal(parkedLine(change({ needs: "owner", parked: { at, seen: "f" } }), () => "10:00"), "Not now · 10:00");
-  const chip = changeChip({ changes: [change({ needs: "owner", parked: { at, seen: "f" } })] });
+test("SPEC V0.101: Not now on a Ready or failure cause of the host; an ask is declined; parked says when it comes back", () => {
+  const failure = { cause: "failure" as const, text: "apply failed", head: "abc1234" };
+  assert.equal(canPark(change({ need: failure })), true);
+  assert.equal(canPark(change({ need: { cause: "ready", text: "Merge", head: "a1b2c3d4" } })), true);
+  assert.equal(canPark(change({ conditions: [{ type: "apply", status: "fail", source: "agent", at }] })), false, "the client never derives a cause");
+  assert.equal(canPark(change({ need: { cause: "ask", ask: "d1" } })), false, "an ask is declined, not parked");
+  assert.equal(canPark(change({ need: { cause: "fixing", muted: true } })), false, "the agent is on it");
+  assert.equal(canPark(change({ need: failure, threads: ["t1"] })), false, "a host record is not the thread's");
+  assert.deepEqual(parkArgs(change({ need: failure })), { change: "c_1" });
+  assert.deepEqual(declineArgs({ ask: "d1" }), { decisionId: "d1", allow: false });
+  assert.equal(parkedLine(change({}), () => "09:00"), null);
+  assert.equal(parkedLine(change({ parked: { at, seen: "f" } }), () => "10:00"), "Not now · 10:00 · back when the head changes");
+  const chip = changeChip({ changes: [change({ parked: { at, seen: "f" } })] });
   assert.ok(chip && !chip.text.includes("needs you"), "the inbox chip does not say it needs you");
 });
