@@ -608,6 +608,8 @@ function MRow({ t, p, needs }: { t: Thread; p: PhoneProps; needs: boolean }) {
   const picked = p.list.picked.has(t.id);
   const lead = p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : undefined;
   const pre = <MHost t={t} hosts={p.store.hosts} />;
+  // V0.109: no row is marked here. The phone shows the inbox or one thread, never both, so there is no open thread
+  // beside the list for a mark to follow; the desktop marks the open thread's row (app.tsx, selection.ts).
   const body = needs ? <NeedsRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} /> : <OneRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} />;
   return (
     <div class={`m-swp${picked ? " picked" : ""}${sw.phase === "swipe" ? " moving" : ""}`}>
