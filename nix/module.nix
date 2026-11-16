@@ -18,6 +18,13 @@ let
     profiles = cfg.profiles;
     scanRoots = cfg.scanRoots;
     quota = lib.mapAttrs (_: q: lib.filterAttrs (_: v: v != null) q) cfg.quota;
+  } // lib.optionalAttrs cfg.cgroups.enable {
+    # V0.80: fyrd splits the unit's cgroup and writes this budget itself.
+    cgroups = {
+      enable = true;
+      inherit (cfg.cgroups) serverMemoryLow agentsMemoryHigh agentsMemoryMax agentsMemorySwapMax;
+      agentsCpuMax = "${toString (cfg.cgroups.agentsCpuCores * 100000)} 100000";
+    };
   } // lib.optionalAttrs (cfg.role != "both") { role = cfg.role; }
     // lib.optionalAttrs (cfg.hosts != [ ]) { hosts = cfg.hosts; }
     // lib.optionalAttrs (hostListen != null) { hostListen = hostListen; });
@@ -179,12 +186,62 @@ in
     memoryHigh = lib.mkOption {
       type = lib.types.str;
       default = "13G";
-      description = "MemoryHigh of the unit (daemon and agents). The governor (M4) refines this per session.";
+      description = ''
+        MemoryHigh of the whole unit when `cgroups.enable` is off. With
+        cgroups the limits sit on agents/ only, so the daemon is never
+        throttled for memory its agents use (V0.80).
+      '';
     };
     memoryMax = lib.mkOption {
       type = lib.types.str;
       default = "14G";
-      description = "MemoryMax of the unit.";
+      description = "MemoryMax of the whole unit when `cgroups.enable` is off.";
+    };
+    # SPEC 0.5 V0.80, after T3's launcher (t3code.nix in the machine's
+    # config): the unit delegates cpu and memory, fyrd moves itself into
+    # server/ and starts every agent CLI in agents/<thread id>/, the
+    # deploy's build and tests in agents/self-deploy/. The budget sits on
+    # agents/. A machine-wide QoS script may rewrite the CPU cap at
+    #   /sys/fs/cgroup/system.slice/fyr.service/agents/cpu.max
+    # (T3's agents-lock-cap lifts it while the screen is locked).
+    cgroups = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Split the unit into server/ and agents/<thread>/ (Delegate=cpu memory) with the budget below.";
+      };
+      serverMemoryLow = lib.mkOption {
+        type = lib.types.str;
+        default = "1G";
+        description = ''
+          memory.low of server/ (the launcher and fyrd), kept out of reclaim.
+          The unit gets the same MemoryLow, since a cgroup keeps no more
+          protection than its parent has; system.slice needs one too.
+        '';
+      };
+      agentsCpuCores = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 4;
+        description = "cpu.max of agents/, in cores: every thread together, the deploy included.";
+      };
+      agentsMemoryHigh = lib.mkOption {
+        type = lib.types.str;
+        default = "13G";
+        description = "memory.high of agents/: the kernel throttles the agents past it.";
+      };
+      agentsMemoryMax = lib.mkOption {
+        type = lib.types.str;
+        default = "14G";
+        description = "memory.max of agents/: the kernel OOM-kills an agent process past it. Keep the gap to memoryHigh narrow.";
+      };
+      agentsMemorySwapMax = lib.mkOption {
+        type = lib.types.str;
+        default = "16G";
+        description = ''
+          memory.swap.max of agents/. T3's notes (2026-11-13): an 8 GiB cap left
+          the agents stalling between high and max; 24G spilled swap onto disk.
+        '';
+      };
     };
   };
 
@@ -246,11 +303,17 @@ in
         # Agent turns are child processes; SIGINT to the group ends them cleanly.
         KillSignal = "SIGINT";
         TimeoutStopSec = 30;
-        MemoryHigh = cfg.memoryHigh;
-        MemoryMax = cfg.memoryMax;
         Nice = 10;
         IOWeight = 50;
-      };
+      } // (if cfg.cgroups.enable then {
+        # V0.80: systemd hands the subtree to the user; fyrd splits it and
+        # sets the budget on agents/ (see the cgroups options).
+        Delegate = "cpu memory";
+        MemoryLow = cfg.cgroups.serverMemoryLow;
+      } else {
+        MemoryHigh = cfg.memoryHigh;
+        MemoryMax = cfg.memoryMax;
+      });
     };
   };
 }

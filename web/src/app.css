@@ -902,6 +902,13 @@ button.ptag{padding:0}
 .qline.stale .qsum .ell{opacity:.7}
 .qline .qdet{margin:4px 0 0;padding:0 0 0 14px;list-style:none;font:400 12px/17px var(--ui);color:var(--ink-muted)}
 .qline .hot,.rail .rq .hot{color:var(--signal-ink);font-weight:600}
+/* SPEC 0.5 V0.80: the machine load above the quota, and a working thread's CPU in its row; colour only when hot. */
+.rail .rld{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:2px;font:400 10px/14px var(--mono);color:var(--ink-muted)}
+.rail .rld+.rq{margin-top:8px}
+.rail .rld+.railx,.rail .rld+.foot{margin-top:8px}
+.rail .rldr{display:flex;flex-direction:column;align-items:center;cursor:default;max-width:100%}
+.rail .rldr small{font:400 9px/11px var(--ui);color:var(--ink-faint)}
+.rail .rld .hot,.tcpu.hot{color:var(--signal-ink);font-weight:600}
 .qlist{display:flex;flex-direction:column;gap:2px;min-width:0}
 /* V0.45: the handover dialog and the divider in the conversation */
 .ho-from{font:400 13px/18px var(--ui);color:var(--ink-muted)}

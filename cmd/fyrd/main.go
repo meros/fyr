@@ -25,6 +25,7 @@ import (
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
+	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/front"
@@ -87,13 +88,24 @@ func main() {
 		serveFront(cfg, webFS, hostName, *data)
 		return
 	}
+	// V0.80: the daemon moves to server/ before it starts anything; every
+	// agent then starts in agents/<thread>/. Off (and logged) without the
+	// module's cgroups or a delegated cgroup.
+	var tree *cgroup.Tree
+	if cmd == "serve" {
+		budget := cgroup.Budget{}
+		if cfg.Cgroups != nil {
+			budget = *cfg.Cgroups
+		}
+		tree = cgroup.Setup(cgroup.Options{Budget: budget, Logf: log.Printf})
+	}
 	h := openHost(cfg, *data, filepath.Join(*t3Dir, "statev2.sqlite"))
 	defer h.st.Close()
 	switch cmd {
 	case "import-t3":
 		importT3(h.t3, *list)
 	case "serve":
-		h.serve(cfg, webFS, hostName, *data)
+		h.serve(cfg, webFS, hostName, *data, tree)
 	default:
 		log.Fatalf("unknown command %q", cmd)
 	}
@@ -101,7 +113,7 @@ func main() {
 
 // serve runs the host until a signal: its agents, effects and pollers, the
 // host protocol, and in role both the front on the same port (V0.51).
-func (h *host) serve(cfg config, webFS fs.FS, hostName, data string) {
+func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgroup.Tree) {
 	eng, reg := h.eng, h.reg
 	ln := listenLoopback(cfg.Listen)
 	att := &attach.Store{Dir: filepath.Join(data, "attachments")}
@@ -138,13 +150,14 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string) {
 		},
 		IdleStop: time.Duration(cfg.IdleStopMinutes) * time.Minute, MCPURL: "http://" + ln.Addr().String() + "/mcp",
 		LogDir: filepath.Join(data, "logs"), Attachments: att.Get, OnRateLimit: quotas.Observe, OnCommands: eng.SetCommands, HandoverDir: filepath.Join(data, "handover"),
+		Cgroups: tree,
 	})
 	eng.Agents = mgr
 	eng.ProfileExists = func(id string) bool { _, ok := h.profile(id); return ok }
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID()}
+	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy()}
 	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
 	prDetails := &github.Details{Gh: github.Gh}                            // V0.43: the PR tab's details, cached 30 s
 	eng.Effects = engine.Outside{Gh: github.Gh, PR: prDetails, Deploy: dep.Deploy}
@@ -173,6 +186,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string) {
 	// V0.51: the host never serves the client; a front does.
 	srv := &server.Server{Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
 		Quota:        func(ctx context.Context) any { return quotas.Get(ctx) },
+		Load:         &cgroup.Sampler{Tree: tree}, // V0.80
 		T3Candidates: func() (any, error) { return h.t3.Candidates() }}
 	var servers []*http.Server
 	frontDone := make(chan struct{})

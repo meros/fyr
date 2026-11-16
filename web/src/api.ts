@@ -10,6 +10,7 @@ import { attachmentUrl, hostQuery, type UploadReply } from "./attach.ts";
 import { previewUrl } from "./previews.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
+import type { HostLoad } from "./load.ts";
 import type { FoundDTO, ProviderDTO } from "./providers.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
@@ -70,6 +71,8 @@ export interface Api {
   fsMkdir(parent: string, name: string): Promise<string>;
   /** V0.44: each profile's provider quota; [] when the host cannot say. */
   quota(): Promise<Quota[]>;
+  /** V0.80: each host's load and its threads' CPU; [] when no host can say. */
+  load(): Promise<HostLoad[]>;
   /** V0.50: Settings → Providers; never a key, only whether one is set. */
   providers(): Promise<ProviderDTO[]>;
   /** V0.50: logins, endpoints and keys found on this host. */
@@ -389,6 +392,15 @@ function createHttpApi(): Api {
         const r = await fetch("/api/quota");
         const j = (await r.json().catch(() => [])) as unknown;
         return r.ok && Array.isArray(j) ? (j as Quota[]) : [];
+      } catch {
+        return [];
+      }
+    },
+    async load() {
+      try {
+        const r = await fetch("/api/load");
+        const j = (await r.json().catch(() => [])) as unknown;
+        return r.ok && Array.isArray(j) ? (j as HostLoad[]) : [];
       } catch {
         return [];
       }
