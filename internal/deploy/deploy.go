@@ -438,7 +438,16 @@ func (d *Deployer) ReportPending() {
 		wait = 65 * time.Second
 	}
 	go func() {
-		time.Sleep(wait)
+		// #148: the launcher says when the probation ended (probation-ok);
+		// a launcher from before #148 never does, so after wait plus a
+		// margin the deploy counts as good as before.
+		okPath := filepath.Join(d.Data, ProbationOK)
+		step := min(time.Second, wait/10+time.Millisecond)
+		for end := time.Now().Add(wait + wait/2); time.Now().Before(end); time.Sleep(step) {
+			if b, err := os.ReadFile(okPath); err == nil && filepath.Base(strings.TrimSpace(string(b))) == p.Build {
+				break
+			}
+		}
 		d.DB.SetKV("pending_deploy", "")
 		d.ship(d.runner(), p.Build, p.Commit, p.Remote, p.Dir)
 		d.Host.Report(p.Thread, p.Req, true, true, "Fyr now runs build "+p.Build+".")
