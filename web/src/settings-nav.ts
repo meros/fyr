@@ -86,3 +86,8 @@ const PUSH_WORD: Record<PushStatus, string> = { on: "Notifications on", off: "No
 export function deviceSummary(push: PushStatus, theme: "system" | "light" | "dark"): string {
   return `${PUSH_WORD[push]} · theme ${theme === "system" ? "auto" : theme}`;
 }
+
+/** Esc in the desktop dialog (outside a changed text field): a sub-page goes to its list; a page closes Settings (null). */
+export function escapeTarget(r: PageRef): PageRef | null {
+  return r.sub ? { page: r.page } : null;
+}

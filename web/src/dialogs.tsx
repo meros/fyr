@@ -13,10 +13,10 @@ import { folderHint, type NewThreadArgs } from "./new-thread.ts";
 import { useNewThreadForm } from "./new-thread-form.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 
-export function Modal({ title, onClose, children, wide }: { title: string; onClose(): void; children: any; wide?: boolean }) {
+export function Modal({ title, onClose, children, wide, cls }: { title: string; onClose(): void; children: any; wide?: boolean; /** V0.119: "settings" keeps one size on every page */ cls?: string }) {
   return (
     <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div class={`dlg${wide ? " wide" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div class={`dlg${wide ? " wide" : ""}${cls ? ` ${cls}` : ""}`} role="dialog" aria-modal="true" aria-label={title}>
         <div class="dh">
           <b>{title}</b>
           <button class="x" onClick={onClose} aria-label="Close" title="Close (Esc)">

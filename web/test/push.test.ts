@@ -25,7 +25,7 @@ test("status: unsupported, denied, on, off", () => {
 
 test("iOS needs the app on the home screen first", () => {
   const ios = { ...desktop, ios: true };
-  assert.match(unsupportedReason(ios) ?? "", /home screen/);
+  assert.match(unsupportedReason(ios) ?? "", /Home Screen/);
   assert.equal(pushStatus(ios, "default", false), "unsupported");
   assert.equal(unsupportedReason({ ...ios, standalone: true }), null);
   assert.equal(pushStatus({ ...ios, standalone: true }, "default", false), "off");
