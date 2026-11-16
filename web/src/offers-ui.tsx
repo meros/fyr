@@ -8,6 +8,7 @@ import { canEnd, canPark, changeList, endArgs, endChangeAsk, lastRun, offerDetai
 import { press } from "./confirm.ts";
 import { headLabel } from "./pr.ts";
 import { useAsk } from "./confirm-ui.tsx";
+import { autoMergeLine } from "./automerge.ts";
 
 type Run = (action: string, args?: Record<string, unknown>) => void;
 
@@ -130,6 +131,7 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
         </ul>
       )}
       {c.needs === "owner" && !c.parked && <div class="chneed">Needs you</div>}
+      {autoMergeLine(c) && <div class="chauto setd">{autoMergeLine(c)}</div>}
       {parked && (
         <div class="chparked setd" title="It comes back to Needs you when something on it changes">
           {parked}
