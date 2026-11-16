@@ -116,17 +116,17 @@ func TestChangeFollowsRecord(t *testing.T) {
 // SPEC 0.5 V0.76 (1), #51: a branch with nothing ahead of its base has nothing to land. When the base moves on and the
 // branch is behind it, the branch is not "merged": it is still the branch, and the record stays in flight.
 func TestRecordBehindItsBaseIsNotLanded(t *testing.T) {
-	rs, rec := observe(t, nil, GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "main", Base: "origin/main", Ahead: 1, Unpushed: 0, Head: "h1"}, ct0)
+	rs, rec := observe(t, nil, GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "feat", Base: "origin/main", Ahead: 1, Unpushed: 0, Head: "h1"}, ct0)
 	if rec.Phase != PhaseWorking || len(rec.Revisions) != 1 || rec.Revisions[0].ID != "h1" {
 		t.Fatalf("with a commit ahead: %+v", rec)
 	}
 	// origin/main moves to h2 and this checkout is still at h1: behind the base, not merged into it.
-	_, again, _, _ := ReduceRecord(rs, Input{Source: Observer(ObsGit), Kind: KindGitObserved, Args: GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "main", Base: "origin/main", BaseHead: "h2", Ahead: 0, Unpushed: 0, Head: "h1"}}, ct0)
+	_, again, _, _ := ReduceRecord(rs, Input{Source: Observer(ObsGit), Kind: KindGitObserved, Args: GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "feat", Base: "origin/main", BaseHead: "h2", Ahead: 0, Unpushed: 0, Head: "h1"}}, ct0)
 	if again.Phase != PhaseWorking {
 		t.Fatalf("a branch behind its base is not landed: %s", again.Phase)
 	}
 	// and when it catches up with a new commit, the record takes the new revision instead of ending.
-	_, more, _, _ := ReduceRecord(rs, Input{Source: Observer(ObsGit), Kind: KindGitObserved, Args: GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "main", Base: "origin/main", BaseHead: "h2", Ahead: 1, Unpushed: 0, Head: "h3"}}, ct0)
+	_, more, _, _ := ReduceRecord(rs, Input{Source: Observer(ObsGit), Kind: KindGitObserved, Args: GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "feat", Base: "origin/main", BaseHead: "h2", Ahead: 1, Unpushed: 0, Head: "h3"}}, ct0)
 	if more.Phase != PhaseWorking || more.Revisions[len(more.Revisions)-1].ID != "h3" {
 		t.Fatalf("a new commit after the base moved: %+v", more)
 	}

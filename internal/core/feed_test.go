@@ -114,7 +114,8 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("watch: %+v", n)
 			}
 		},
-		// A fact that makes the change fail or block: wake.
+		// A fact that makes the change fail or block: wake. A closed PR is
+		// done, not a failure: next (V0.95 (1)).
 		"fact.blocks": func(t *testing.T) {
 			th, res := observePR(t, feedThread(), PR{State: "OPEN", Checks: ChecksFail, Conflict: true, Review: "CHANGES_REQUESTED"}, ct0)
 			ci := queued(t, th, "cond:"+th.Changes[0].ID+":checks")
@@ -125,7 +126,7 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("conflict: %+v", n)
 			}
 			th, _ = observePR(t, feedThread(), PR{State: "CLOSED", Checks: ChecksPending}, ct0)
-			if n := queued(t, th, "phase:"+th.Changes[0].ID); n.Urgency != Wake || n.What != "PR #7: closed." {
+			if n := queued(t, th, "phase:"+th.Changes[0].ID); n.Urgency != Next || n.What != "PR #7: closed." {
 				t.Fatalf("closed: %+v", n)
 			}
 		},
@@ -215,7 +216,7 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("a new record: refs %+v, queue %+v", th.Refs, th.Feed.Queue)
 			}
 			th, res := fstep(t, th, Input{Source: src, Kind: KindChangeObserved, Args: ChangeObservedArgs{Before: &was, After: merged}}, ct0)
-			if n := queued(t, th, "phase:c_rec"); n.Urgency != Next || n.What != "Branch feat: merged." || !wakes(res) || !th.Refs[0].Ended {
+			if n := queued(t, th, "phase:c_rec"); n.Urgency != Next || n.What != "Branch feat: merged." || wakes(res) || !th.Refs[0].Ended {
 				t.Fatalf("merged: %+v, refs %+v", n, th.Refs)
 			}
 			th = &Thread{ID: "t2"}
@@ -223,14 +224,14 @@ func TestNoticeRules(t *testing.T) {
 			th, _ = fstep(t, th, Input{Source: FromAgent, Kind: KindChangeOpen, Args: ChangeOpenArgs{Open: ChangeOpen{Key: "fix", Kind: KindCode, Title: "Fix", Branch: "feat"}}}, ct0)
 			th, _ = fstep(t, th, Input{Source: src, Kind: KindChangeObserved, Args: ChangeObservedArgs{Before: &was, After: gone}}, ct0)
 			c := FindChange(th, "fix")
-			if c.Observed != "c_rec" || c.Phase != PhaseAbandoned || len(th.Feed.Queue) != 1 || th.Feed.Queue[0].Key != "phase:"+c.ID || th.Feed.Queue[0].Urgency != Wake {
+			if c.Observed != "c_rec" || c.Phase != PhaseAbandoned || len(th.Feed.Queue) != 1 || th.Feed.Queue[0].Key != "phase:"+c.ID || th.Feed.Queue[0].Urgency != Next {
 				t.Fatalf("follower: %+v, queue %+v", c, th.Feed.Queue)
 			}
 		},
-		// state: next. A settled thread queues without waking until revived.
+		// state: next, which wakes nobody (V0.95 (1)); unsettle too.
 		"owner": func(t *testing.T) {
 			th, res := fstep(t, feedThread(), Input{Source: FromOwner, Kind: "thread.rename", Args: Args{"title": "Login fix"}}, ct0)
-			if n := queued(t, th, "owner:title"); n.Urgency != Next || n.What != `The owner renamed this thread to "Login fix".` || !wakes(res) {
+			if n := queued(t, th, "owner:title"); n.Urgency != Next || n.What != `The owner renamed this thread to "Login fix".` || wakes(res) {
 				t.Fatalf("rename: %+v", n)
 			}
 			th, _ = take(t, th, FeedTake{At: AtIdle}, ct0)
@@ -242,7 +243,7 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("a settled thread was woken: %q", whats(ns))
 			}
 			th, res = fstep(t, th, Input{Source: FromOwner, Kind: "thread.unsettle"}, ct0)
-			if n := queued(t, th, "owner:settle"); n.What != "The owner set this thread: settled → not settled." || !wakes(res) {
+			if n := queued(t, th, "owner:settle"); n.What != "The owner set this thread: settled → not settled." || wakes(res) {
 				t.Fatalf("revived: %+v wakes=%v", n, wakes(res))
 			}
 			// V0.89: Settle on an idle thread with an open PR is "settle when
@@ -257,7 +258,7 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("the owner's settle woke the agent: %q", whats(ns))
 			}
 			th, res = fstep(t, th, Input{Source: FromOwner, Kind: "thread.unsettle"}, ct0)
-			if n := queued(t, th, "owner:settle"); n.Self || !wakes(res) {
+			if n := queued(t, th, "owner:settle"); n.Self || wakes(res) {
 				t.Fatalf("unsettle after settle when merged: %+v wakes=%v", n, wakes(res))
 			}
 		},
@@ -274,7 +275,7 @@ func TestNoticeRules(t *testing.T) {
 
 // #47: what the agent's own tool call causes never wakes it (no loop): its
 // watch that its own change_status makes true is taken at the next tool
-// call, not as a turn of its own; anything else that arrives wakes it, and
+// call, not as a turn of its own; a failure that arrives wakes it, and
 // the idle message carries both, the most urgent first.
 func TestFeedLoopGuard(t *testing.T) {
 	th := feedThread()
@@ -291,18 +292,18 @@ func TestFeedLoopGuard(t *testing.T) {
 	if _, ns := take(t, th, FeedTake{At: AtTool}, ct0); len(ns) != 1 {
 		t.Fatalf("not taken at the next tool call: %q", whats(ns))
 	}
-	th, res = observePR(t, th, PR{State: "OPEN", Checks: ChecksPass}, ct0)
+	th, res = observePR(t, th, PR{State: "OPEN", Checks: ChecksFail}, ct0)
 	if !wakes(res) {
 		t.Fatal("a fact did not wake the agent")
 	}
 	th, ns := take(t, th, FeedTake{At: AtIdle}, ct0)
-	if got := whats(ns); len(got) != 2 || ns[0].Key != "rule:w_1" || got[1] != "CI on PR #7: passed." {
+	if got := whats(ns); len(got) != 2 || ns[0].Key != "rule:w_1" || got[1] != "CI on PR #7: failed." {
 		t.Fatalf("idle delivery: %q", got)
 	}
 	if len(th.Feed.Queue) != 0 {
 		t.Fatalf("left in the queue: %+v", th.Feed.Queue)
 	}
-	if NoticeText(ns) != "[Fyr] Your watch w_1 fired: ask for review.\n[Fyr] CI on PR #7: passed." {
+	if NoticeText(ns) != "[Fyr] Your watch w_1 fired: ask for review.\n[Fyr] CI on PR #7: failed." {
 		t.Fatalf("text %q", NoticeText(ns))
 	}
 	// The most urgent first, whatever the order they came in.

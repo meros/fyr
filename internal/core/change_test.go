@@ -113,24 +113,24 @@ func observe(t *testing.T, rs []*Change, g GitFacts, now time.Time) ([]*Change, 
 }
 
 // SPEC 0.5 V0.59 (3), #35: a branch with work has a host record; clean and
-// pushed follow the facts; a clean branch with nothing ahead makes none.
+// pushed follow the facts; a branch with nothing ahead makes none (V0.95 (4)).
 func TestGitObserved(t *testing.T) {
-	rs, c := observe(t, nil, GitFacts{Branch: "main", Base: "origin/main"}, ct0)
+	rs, c := observe(t, nil, GitFacts{Branch: "feat", Base: "origin/main", Dirty: 3}, ct0)
 	if c != nil {
-		t.Fatal("a clean branch made a record")
+		t.Fatal("a branch with nothing ahead made a record")
 	}
-	rs, c = observe(t, rs, GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "main", Base: "origin/main", Dirty: 3}, ct0)
+	rs, c = observe(t, rs, GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "feat", Base: "origin/main", Ahead: 1, Dirty: 3, Head: "h0"}, ct0)
 	if c == nil || c.Phase != PhaseWorking || condition(c, "clean").Status != "pending" || condition(c, "pushed").Status != "ok" {
-		t.Fatalf("dirty main: %+v", c)
+		t.Fatalf("dirty feat: %+v", c)
 	}
 	if !strings.Contains(condition(c, "clean").Reason, "3 files") {
 		t.Fatalf("reason: %q", condition(c, "clean").Reason)
 	}
-	if w := c.Workspace; w == nil || w.Repo != "github.com/o/r" || w.Path != "/w/r" || w.Branch != "main" || w.Base != "origin/main" {
+	if w := c.Workspace; w == nil || w.Repo != "github.com/o/r" || w.Path != "/w/r" || w.Branch != "feat" || w.Base != "origin/main" {
 		t.Fatalf("workspace: %+v", c.Workspace)
 	}
-	rs, c = observe(t, rs, GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "main", Base: "origin/main", Ahead: 1, Unpushed: 1, Head: "h1"}, ct0)
-	if len(rs) != 1 || condition(c, "clean").Status != "ok" || condition(c, "pushed").Status != "pending" || len(c.Revisions) != 1 {
+	rs, c = observe(t, rs, GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "feat", Base: "origin/main", Ahead: 1, Unpushed: 1, Head: "h1"}, ct0)
+	if len(rs) != 1 || condition(c, "clean").Status != "ok" || condition(c, "pushed").Status != "pending" || len(c.Revisions) != 2 {
 		t.Fatalf("after commit: %d records, %+v", len(rs), c)
 	}
 	// Pending never blocks.
@@ -138,7 +138,7 @@ func TestGitObserved(t *testing.T) {
 		t.Fatalf("pending blocked: %q", r)
 	}
 	// The same branch name in another repo is another record.
-	if rs, _ = observe(t, rs, GitFacts{Repo: "github.com/o/other", Branch: "main", Dirty: 1}, ct0); len(rs) != 2 {
+	if rs, _ = observe(t, rs, GitFacts{Repo: "github.com/o/other", Branch: "feat", Ahead: 1, Dirty: 1}, ct0); len(rs) != 2 {
 		t.Fatalf("records: %d", len(rs))
 	}
 }
