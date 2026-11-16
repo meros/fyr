@@ -17,7 +17,7 @@ import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { shortModel, untilLabel } from "./format.ts";
 import { effortsFor, offLabel, startEffort } from "./providers.ts";
-import { AgentsStrip, EffectBody, ThreadTabBody } from "./thread.tsx";
+import { AgentsStrip, EffectBody, ThreadTabBody, sendFrom } from "./thread.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
@@ -801,12 +801,12 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           </button>
         </div>
       )}
-      {!decision && !nextOffer && <MComposer key={t.id} t={t} p={p} onView={p.tab === "view"} />}
+      {!decision && !nextOffer && <MComposer key={t.id} t={t} p={p} tab={p.tab} setTab={setTab} />}
     </div>
   );
 }
 
-function MComposer({ t, p, onView }: { t: Thread; p: PhoneProps; onView?: boolean }) {
+function MComposer({ t, p, tab, setTab }: { t: Thread; p: PhoneProps; tab: string; setTab(tab: string): void }) {
   const [text, setText] = useDraft(t.id);
   const att = useAttachments(t.host);
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -824,7 +824,7 @@ function MComposer({ t, p, onView }: { t: Thread; p: PhoneProps; onView?: boolea
   }, [text]);
   const send = async () => {
     if (reason || !plan.ok) return;
-    if (await p.commands.send(t.id, onView ? { ...plan.args, from: "view-typed" } : plan.args)) {
+    if (await sendFrom(tab, plan.args, (a) => p.commands.send(t.id, a), setTab)) {
       haptic();
       setText("");
       att.clear();

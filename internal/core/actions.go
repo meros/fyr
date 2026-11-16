@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+// OldViewTyped is the mark a message typed on the View tab carried before
+// V0.128 (V0.49). A send with it is an ordinary message, and a stored one
+// reads as the owner's own.
+const OldViewTyped = "view-typed"
+
 // Args are the arguments of one command, as decoded from JSON.
 type Args map[string]any
 
@@ -187,7 +192,11 @@ func sendAction(name, label string) *Action {
 				}
 			}
 			revive(t, v, now)
-			return []Effect{{Kind: EffectSend, Text: text, Images: imgs, Attachments: atts, From: a.Str("from")}}, nil
+			from := a.Str("from")
+			if from == OldViewTyped {
+				from = "" // V0.128: a stale client's View-tab message is an ordinary one
+			}
+			return []Effect{{Kind: EffectSend, Text: text, Images: imgs, Attachments: atts, From: from}}, nil
 		},
 	}
 }
