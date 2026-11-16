@@ -42,9 +42,9 @@ export function Rail(p: RailProps) {
   const title = p.conn === "live" ? `Connected to ${p.host}` : p.conn === "offline" ? `${p.host} is not reachable, retrying` : "Connecting…";
   return (
     <nav class="rail" aria-label="Sections">
-      {/* V0.92: the Fyr mark, the app icon itself, in place of the name */}
+      {/* V0.93: the rendered isometric lighthouse (128 px, shown at 32) in place of the name */}
       <div class="brand" title="Fyr">
-        <img src="/icons/icon-192.png" alt="Fyr" width="32" height="32" />
+        <img src="/logo.png" alt="Fyr" width="32" height="32" />
       </div>
       {SECTIONS.map((s, i) => {
         const n = p.sec[s.key].length;
