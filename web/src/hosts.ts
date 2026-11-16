@@ -14,6 +14,8 @@ export interface HostInfo {
   profiles?: Profile[];
   /** V0.54: an update of Fyr on this host */
   deploy?: DeployProgress;
+  /** V0.123: the front found it on the tailnet (decision 0025); else it is configured */
+  found?: boolean;
 }
 
 /** The host's name for the rail and the phone; without one in the state, "mock" or "local". */
@@ -32,6 +34,7 @@ export function decodeHosts(raw: unknown): HostInfo[] {
       error: typeof h.error === "string" ? h.error : undefined,
       profiles: Array.isArray(h.profiles) ? (h.profiles as Profile[]) : undefined,
       deploy: h.deploy && typeof h.deploy === "object" && typeof (h.deploy as { phase?: unknown }).phase === "string" ? (h.deploy as DeployProgress) : undefined,
+      ...(h.found === true ? { found: true } : {}),
     }));
 }
 
@@ -68,8 +71,9 @@ const BUSY = new Set(["build", "test", "drain", "switch", "client"]);
 /** The status words of a host row in Settings → Hosts. */
 export function hostStatus(h: HostInfo, self: string): string {
   const here = h.name === self ? "this machine · " : "";
-  if (h.online && h.deploy && BUSY.has(h.deploy.phase)) return `${here}online · updating Fyr`;
-  if (h.online) return `${here}online`;
+  const found = h.found ? " · found on the tailnet" : "";
+  if (h.online && h.deploy && BUSY.has(h.deploy.phase)) return `${here}online · updating Fyr${found}`;
+  if (h.online) return `${here}online${found}`;
   const at = clockTime(h.since);
-  return `${here}offline${at ? ` since ${at}` : ""}`;
+  return `${here}offline${at ? ` since ${at}` : ""}${found}`;
 }

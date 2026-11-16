@@ -14,7 +14,7 @@ import (
 
 func TestLinkNameDuringLoad(t *testing.T) {
 	f := New(Options{}, []HostConfig{{URL: "http://127.0.0.1:1"}})
-	l := f.links[0]
+	l := f.all()[0]
 	st := map[string]any{"host": "h1", "actions": []any{}, "profiles": []any{}, "deploy": map[string]any{}, "user": "u"}
 	var wg sync.WaitGroup
 	wg.Add(1)

@@ -84,7 +84,7 @@ func (f *Front) saveDirty() {
 	}
 	var jobs []job
 	f.mu.Lock()
-	for _, l := range f.links {
+	for _, l := range f.all() {
 		if !l.dirty {
 			continue
 		}

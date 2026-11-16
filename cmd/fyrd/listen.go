@@ -31,6 +31,13 @@ func listenLoopback(addr string) net.Listener {
 	return ln
 }
 
+// loopbackAddr: addr is host:port on a loopback address.
+func loopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	ip := net.ParseIP(host)
+	return err == nil && (host == "localhost" || (ip != nil && ip.IsLoopback()))
+}
+
 // listenTailnet listens on a tailnet address only (V0.51): Tailscale's
 // CGNAT range or its IPv6 prefix, where whois names every peer.
 func listenTailnet(addr string) net.Listener {
