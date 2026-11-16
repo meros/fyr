@@ -13,6 +13,8 @@ export interface QuotaBalance {
 }
 export interface Quota {
   profile: string;
+  /** V0.127: the host of the provider (the front stamps it); the same id on two hosts is two quotas */
+  host?: string;
   kind: string;
   windows?: QuotaWindow[];
   balance?: QuotaBalance;
@@ -124,6 +126,7 @@ export const CARD_WORD: Record<CardState, string> = {
   unknown: "Not read yet",
 };
 
-export function quotaFor(list: Quota[], profile: string): Quota | undefined {
+export function quotaFor(list: Quota[], profile: string, host?: string): Quota | undefined {
+  if (host) return list.find((q) => q.profile === profile && (!q.host || q.host === host)); // V0.127
   return list.find((q) => q.profile === profile);
 }

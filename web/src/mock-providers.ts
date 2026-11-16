@@ -21,11 +21,12 @@ const ROUTER_MODELS = Array.from({ length: 40 }, (_, i) => {
 });
 
 /** mode: "" (three providers), "none" (no providers yet), "nokey" (DeepSeek's key is missing), "many" (and an endpoint
- *  with 40 models), "checkfail" (DeepSeek's last check failed). */
+ *  with 40 models), "checkfail" (DeepSeek's last check failed); V0.127, another host of &hosts=2: "lab" (a Claude login
+ *  with the same id as desk's, and Z.ai), "server" (a Claude login), "bare" (no providers, nothing found). */
 export function createMockProviders(mode = "", hostNow: () => number = Date.now) {
   // The times a check reports are the host's (the rail mock's clock is fixed).
   const ago = (ms: number) => new Date(hostNow() - ms).toISOString();
-  const keys = new Map<string, string>(mode === "nokey" ? [] : [["claudeDeepseek", "sk-mock-deepseek-4f2a"]]);
+  const keys = new Map<string, string>(mode === "nokey" ? [] : [["claudeDeepseek", "sk-mock-deepseek-4f2a"], ["zai", "sk-mock-zai-7c1e"]]);
   const list: ProviderDTO[] = [
     { id: "claude", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", defaultEffort: "high", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, imported: "profile claudeAlt", threads: 9, canLogin: true,
       // V0.120: checked 4 min ago (the page does not ask again); Fable 5.2 is New, Sonnet 5.4 and Haiku 5.4 are off.
@@ -63,9 +64,14 @@ export function createMockProviders(mode = "", hostNow: () => number = Date.now)
     y.setHours(14, 2, 0, 0);
     Object.assign(list[2], { checkedAt: y.toISOString(), checkError: "api.deepseek.com/anthropic/v1/models answered 401" });
   }
-  if (mode === "none") list.length = 0;
+  if (mode === "lab" || mode === "server") {
+    list.length = 0;
+    list.push({ id: "claude", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, threads: mode === "lab" ? 4 : 6, canLogin: true, catalog: cat(CLAUDE_MODELS), checkedAt: ago(20 * 60_000) });
+    if (mode === "lab") list.push({ id: "zai", name: "Z.ai", kind: "endpoint", cli: "claude", auth: "api-key", baseURL: "https://api.z.ai/api/anthropic", models: [{ id: "glm-5" }, { id: "glm-4.6" }], defaultModel: "glm-5", efforts: EFFORTS, quota: "none", status: "ready", keySet: true, keyLast4: "7c1e", threads: 1, catalog: cat([{ id: "glm-5" }, { id: "glm-4.6" }]), checkedAt: ago(20 * 60_000) });
+  }
+  if (mode === "none" || mode === "bare") list.length = 0;
   if (mode === "nokey") Object.assign(list[2], { keySet: false, keyLast4: undefined, status: "needs-key", need: "Paste the API key for DeepSeek." });
-  const found: FoundDTO[] = [
+  const found: FoundDTO[] = mode === "lab" || mode === "server" || mode === "bare" ? [] : [
     { id: "openrouter", name: "OpenRouter", kind: "endpoint", source: "OPENROUTER_API_KEY in fyrd's environment", baseURL: "https://openrouter.ai/api", models: [], quotaKind: "openrouter", keyFrom: "OPENROUTER_API_KEY in fyrd's environment", status: "ready", note: "Add the model ids this endpoint should offer.", imported: false },
     { id: "claude-old", name: "Claude (old)", kind: "claude-account", source: "~/.claude-old", configDir: "~/.claude-old", models: CLAUDE_MODELS, loggedIn: true, status: "ready", imported: false },
   ];

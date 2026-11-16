@@ -97,10 +97,11 @@ func post(t *testing.T, url, body string) (int, map[string]any) {
 }
 
 type state struct {
-	BuildID string           `json:"buildId"`
-	Threads []map[string]any `json:"threads"`
-	Hosts   []map[string]any `json:"hosts"`
-	Actions []map[string]any `json:"actions"`
+	BuildID  string           `json:"buildId"`
+	Threads  []map[string]any `json:"threads"`
+	Hosts    []map[string]any `json:"hosts"`
+	Actions  []map[string]any `json:"actions"`
+	Projects []map[string]any `json:"projects"`
 }
 
 func getState(t *testing.T, base string) state {

@@ -7,7 +7,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
 import type { Api } from "./api.ts";
-import { hostLine, hostRows, hostState, howIn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
+import { hostForProject, hostLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
+import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, withHost, type SettingsHost } from "./host-settings.ts";
 import { quotaFor } from "./quota.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { CARD_WORD, cardState } from "./quota.ts";
@@ -25,7 +26,7 @@ import { NewProjectStep, ProjectEditor, ProjectIcon, type ProjectPatch } from ".
 import { pushRow, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { move } from "./reorder.ts";
-import { PAGES, automationSummary, deviceSummary, hostsNeed, hostsSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
+import { PAGES, deviceSummary, hostsNeed, hostsSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
 import { Empty, Grip, Group, LoadError, MoveButtons, Row, SaveField, SavedMark, Seg, SetContext, Skeleton, Switch, useReorder, useSaved, useSet } from "./settings-rows.tsx";
 import {
   createArgs,
@@ -112,92 +113,114 @@ export interface SettingsProps {
 
 const OFFLINE = (host: string) => `No connection to ${host || "the host"}. Settings show what was last read and cannot be changed until it is back.`;
 
-// ---- the data every page and the nav read; each part loads by itself ----
+// ---- the data every page and the nav read; each part of each host loads by itself ----
 
 type Run = (action: string, args: Record<string, unknown>) => Promise<string | null>;
 
+/** V0.127: what one host's per-host pages read. */
+interface HostSlice {
+  providers: ProviderDTO[] | null;
+  provErr: string | null;
+  found: FoundDTO[];
+  deploy: boolean | null;
+  deployErr: string | null;
+  /** V0.126 (#151): the host's update record; null when it has none */
+  updates: UpdatesView | null;
+  repos: AutoMergeRepo[] | null;
+  reposErr: string | null;
+  sa: SystemAgentsView | null;
+  saErr: string | null;
+  /** the host is offline and this is what the front last read, read then (X-Fyr-Read-At); null when it is fresh */
+  readAt: string | null;
+}
+const EMPTY_SLICE: HostSlice = { providers: null, provErr: null, found: [], deploy: null, deployErr: null, updates: null, repos: null, reposErr: null, sa: null, saErr: null, readAt: null };
+
+/** V0.127: the settings of every host the front follows. Each host's reads and commands name it (`?host=`,
+ *  `args.host`); the front sends them there. One host (or none) is one part that names no host, as before. */
 function useSettingsData(p: SettingsProps, saved: () => void) {
   const api = p.api;
-  const [providers, setProviders] = useState<ProviderDTO[] | null>(null);
-  const [provErr, setProvErr] = useState<string | null>(null);
-  const [found, setFound] = useState<FoundDTO[]>([]);
-  const [deploy, setDeploy] = useState<boolean | null>(null);
-  const [deployErr, setDeployErr] = useState<string | null>(null);
-  const [updates, setUpdates] = useState<UpdatesView | null>(null);
-  const [repos, setRepos] = useState<AutoMergeRepo[] | null>(null);
-  const [reposErr, setReposErr] = useState<string | null>(null);
-  const hostNames = (p.hosts ?? []).map((h) => h.name);
-  const [saHost, setSaHost] = useState(hostNames[0] ?? "");
-  const [sa, setSa] = useState<SystemAgentsView | null>(null);
-  const [saErr, setSaErr] = useState<string | null>(null);
+  const hosts = settingsHosts(p.hosts, p.host);
+  const [slices, setSlices] = useState<Record<string, HostSlice>>({});
+  const patch = (host: string, part: Partial<HostSlice>) => setSlices((s) => ({ ...s, [host]: { ...(s[host] ?? EMPTY_SLICE), ...part } }));
+  const seen = (host: string, r: { readAt?: string }) => patch(host, { readAt: r.readAt ?? null });
 
-  const loadProviders = async () => {
+  const loadProviders = async (host: string) => {
     try {
-      const [l, f] = await Promise.all([api.providers(), api.providersFound().catch(() => [] as FoundDTO[])]);
-      setProviders(l);
-      setFound(f);
-      setProvErr(null);
+      const [l, f] = await Promise.all([api.providers(host), api.providersFound(host).catch(() => ({ data: [] as FoundDTO[] }))]);
+      patch(host, { providers: l.data, found: f.data, provErr: null, readAt: l.readAt ?? null });
     } catch (e) {
-      setProvErr(`Could not read the providers: ${(e as Error).message}.`);
+      patch(host, { provErr: `Could not read the providers: ${(e as Error).message}.` });
     }
   };
-  const loadDeploy = async () => {
-    if (!api.autoDeploy) return setDeploy(null);
+  const loadDeploy = async (host: string) => {
+    if (!api.autoDeploy) return patch(host, { deploy: null });
     try {
-      setDeploy((await api.autoDeploy()).on);
-      setDeployErr(null);
+      const r = await api.autoDeploy(host);
+      patch(host, { deploy: r.data.on, deployErr: null });
+      seen(host, r);
     } catch (e) {
-      setDeployErr(`Could not read the auto-deploy setting: ${(e as Error).message}.`);
+      patch(host, { deployErr: `Could not read the auto-deploy setting: ${(e as Error).message}.` });
     }
   };
   // V0.126 (#151): the update record; a host without one shows nothing.
-  const loadUpdates = async () => {
-    if (!api.updates) return setUpdates(null);
+  const loadUpdates = async (host: string) => {
+    if (!api.updates) return patch(host, { updates: null });
     try {
-      setUpdates(await api.updates());
+      patch(host, { updates: (await api.updates(host)).data });
     } catch {
-      setUpdates(null);
+      patch(host, { updates: null });
     }
   };
-  const loadRepos = async () => {
-    if (!api.autoMerge) return setRepos([]);
+  const loadRepos = async (host: string) => {
+    if (!api.autoMerge) return patch(host, { repos: [] });
     try {
-      setRepos(await api.autoMerge());
-      setReposErr(null);
+      const r = await api.autoMerge(host);
+      patch(host, { repos: r.data, reposErr: null });
+      seen(host, r);
     } catch (e) {
-      setReposErr(`Could not read the auto-merge setting: ${(e as Error).message}.`);
+      patch(host, { reposErr: `Could not read the auto-merge setting: ${(e as Error).message}.` });
     }
   };
-  const loadSa = async (h = saHost) => {
+  const loadSa = async (host: string) => {
     if (!api.systemAgents) return;
     try {
-      setSa(await api.systemAgents(h || undefined));
-      setSaErr(null);
+      const r = await api.systemAgents(host);
+      patch(host, { sa: r.data, saErr: null });
+      seen(host, r);
     } catch (e) {
-      setSaErr(`Could not read the system agents: ${(e as Error).message}.`);
+      patch(host, { saErr: `Could not read the system agents: ${(e as Error).message}.` });
     }
   };
+  const loadAll = (host: string) => {
+    void loadProviders(host);
+    void loadDeploy(host);
+    void loadUpdates(host);
+    void loadRepos(host);
+    void loadSa(host);
+  };
+  // Every host once, and a host again when it comes back online (what showed was last read).
+  const online = hosts.map((h) => `${h.name}:${h.online ? 1 : 0}`).join(" ");
+  const was = useRef<Record<string, boolean>>({});
   useEffect(() => {
-    void loadProviders();
-    void loadDeploy();
-    void loadUpdates();
-    void loadRepos();
-  }, []);
-  useEffect(() => void loadSa(saHost), [saHost]);
-  // V0.53: while a login runs, follow it (its link, the code's answer, the end).
-  const logging = !!providers?.some((x) => loginActive(x.login));
+    for (const h of hosts) {
+      if (!(h.name in was.current) || (h.online && !was.current[h.name])) loadAll(h.name);
+      was.current[h.name] = h.online;
+    }
+  }, [online]);
+  // V0.53: while a login runs on a host, follow it there (its link, the code's answer, the end).
+  const logging = hosts.filter((h) => slices[h.name]?.providers?.some((x) => loginActive(x.login))).map((h) => h.name);
   useEffect(() => {
-    if (!logging) return;
-    const t = setInterval(() => void loadProviders(), 1500);
+    if (!logging.length) return;
+    const t = setInterval(() => logging.forEach((h) => void loadProviders(h)), 1500);
     return () => {
       clearInterval(t);
       p.onChanged?.(); // a login ended: the profiles' status may have changed
     };
-  }, [logging]);
+  }, [logging.join(" ")]);
 
-  /** One owner command; ok shows Saved and reloads what it changed. The error is shown on the row that sent it. */
-  const command = async (action: string, args: Record<string, unknown>, reload: () => Promise<void>): Promise<string | null> => {
-    const r = await api.command(action, undefined, args);
+  /** One owner command to a host; ok shows Saved and reloads what it changed. The error is shown on the row that sent it. */
+  const command = async (host: string, action: string, args: Record<string, unknown>, reload: () => Promise<void>): Promise<string | null> => {
+    const r = await api.command(action, undefined, withHost(args, host));
     if (!r.ok) {
       await reload(); // the control goes back to what the host has
       return r.error ?? "That did not work";
@@ -206,60 +229,63 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
     await reload();
     return null;
   };
-  const runProvider: Run = async (action, args) => {
-    const e = await command(action, args, loadProviders);
-    if (!e) {
-      p.onChanged?.();
-      void loadSa();
-    }
-    return e;
+  const of = (h: SettingsHost) => {
+    const host = h.name;
+    const slice = slices[host] ?? EMPTY_SLICE;
+    const runProvider: Run = async (action, args) => {
+      const e = await command(host, action, args, () => loadProviders(host));
+      if (!e) {
+        p.onChanged?.();
+        void loadSa(host);
+      }
+      return e;
+    };
+    return {
+      ...slice,
+      host: h,
+      /** a sub-page of this host's Providers part (a provider, "new") */
+      ref: (sub: string): PageRef => (host ? { page: "providers", host, sub } : { page: "providers", sub }),
+      loadProviders: () => loadProviders(host),
+      loadDeploy: () => loadDeploy(host),
+      loadRepos: () => loadRepos(host),
+      loadSa: () => loadSa(host),
+      runProvider,
+      /** V0.120: ask a provider for its models now. Not a save: no Saved mark. The reply waits for the check. */
+      refreshModels: async (id: string): Promise<string | null> => {
+        const r = await api.command("provider.refreshModels", undefined, withHost({ id }, host));
+        await loadProviders(host);
+        if (r.ok) p.onChanged?.();
+        return r.ok ? null : (r.error ?? "That did not work");
+      },
+      runDeploy: (on: boolean) => command(host, "host.autoDeploy", { on }, () => loadDeploy(host)),
+      loadUpdates: () => loadUpdates(host),
+      runUpdateNow: () => command(host, "host.updateNow", {}, () => loadUpdates(host)),
+      runRepo: (repo: string, on: boolean) => command(host, "host.autoMerge", { repo, on }, () => loadRepos(host)),
+      runSa: (args: Record<string, unknown>) => command(host, "host.systemAgents", args, () => loadSa(host)),
+    };
   };
-  /** V0.120: ask a provider for its models now. Not a save: no Saved mark. The reply waits for the check. */
-  const refreshModels = async (id: string): Promise<string | null> => {
-    const r = await api.command("provider.refreshModels", undefined, { id });
-    await loadProviders();
-    if (r.ok) p.onChanged?.();
-    return r.ok ? null : (r.error ?? "That did not work");
-  };
-  return {
-    providers,
-    provErr,
-    refreshModels,
-    found,
-    loadProviders,
-    deploy,
-    deployErr,
-    loadDeploy,
-    repos,
-    reposErr,
-    loadRepos,
-    sa,
-    saErr,
-    saHost,
-    setSaHost,
-    loadSa,
-    hostNames,
-    runProvider,
-    runDeploy: (on: boolean) => command("host.autoDeploy", { on }, loadDeploy),
-    updates,
-    loadUpdates,
-    runUpdateNow: () => command("host.updateNow", {}, loadUpdates),
-    runRepo: (repo: string, on: boolean) => command("host.autoMerge", { repo, on }, loadRepos),
-    runSa: (args: Record<string, unknown>) => command("host.systemAgents", saHost ? { ...args, host: saHost } : args, () => loadSa()),
-  };
+  const all = hosts.map(of);
+  /** The part a sub-page belongs to: its host's, else the first. */
+  const at = (host: string | undefined) => all.find((d) => d.host.name === (host ?? "")) ?? (host ? undefined : all[0]);
+  return { all, at, grouped: hosts.length > 1 };
 }
-type Data = ReturnType<typeof useSettingsData>;
+type AllSettings = ReturnType<typeof useSettingsData>;
+type Data = AllSettings["all"][number];
 
-/** What needs the owner on the Providers page, for the phone's More sheet ("1 needs a login"); "" while unknown. */
-export function useProvidersNeed(api: SettingsProps["api"]): string {
+/** What needs the owner on the Providers page, for the phone's More sheet ("1 needs a login"); "" while unknown. V0.127:
+ *  over every host the front follows. */
+export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[], self = ""): string {
   const [v, setV] = useState("");
+  const names = settingsHosts(hosts, self).map((h) => h.name);
   useEffect(() => {
     let live = true;
-    void Promise.all([api.providers(), api.systemAgents ? api.systemAgents().catch(() => null) : null])
-      .then(([l, sa]) => live && setV(providersNeed(l, sa?.jobs.filter((j) => j.error).length ?? 0)))
-      .catch(() => {});
+    void Promise.all(
+      names.map((h) =>
+        Promise.all([api.providers(h).then((r) => r.data), api.systemAgents ? api.systemAgents(h).then((r) => r.data).catch(() => null) : null]).catch(() => [[], null] as const),
+      ),
+    ).then((parts) => live && setV(providersNeed(parts.flatMap(([l]) => l), parts.reduce((n, [, sa]) => n + (sa?.jobs.filter((j) => j.error).length ?? 0), 0))));
     return () => void (live = false);
-  }, []);
+  }, [names.join(" ")]);
   return v;
 }
 
@@ -269,15 +295,18 @@ export function Settings(p: SettingsProps) {
   const sv = useSaved();
   const data = useSettingsData(p, sv.mark);
   const env = { readOnly: !!p.offline, phone: !!p.phone, saved: sv.mark };
-  const blocked = data.sa?.jobs.filter((j) => j.error).length ?? 0;
+  // V0.127: the nav's lines count every host; an offline host Fyr has never read is left out.
+  const read = data.all.filter((d) => d.host.online || d.providers !== null);
+  const provs = read.some((d) => d.providers === null) ? null : read.flatMap((d) => d.providers!);
+  const blocked = data.all.reduce((n, d) => n + (d.sa?.jobs.filter((j) => j.error).length ?? 0), 0);
   const summaries: Record<PageId, string> = {
-    providers: providersSummary(data.providers, blocked),
-    automation: automationSummary(p.api.autoDeploy ? data.deploy : false, data.repos),
+    providers: providersSummary(provs, blocked),
+    automation: automationSummaryHosts(data.all.map((d) => ({ deploy: p.api.autoDeploy ? d.deploy : false, repos: d.repos, skip: !d.host.online && d.repos === null }))),
     projects: projectsSummary(settingsProjects(p.projects).length),
     hosts: hostsSummary(p.hosts),
     device: deviceSummary(p.device.push, p.device.theme),
   };
-  const badges: Partial<Record<PageId, number>> = { providers: navBadge(data.providers, blocked), hosts: hostsNeed(p.hosts) };
+  const badges: Partial<Record<PageId, number>> = { providers: navBadge(provs, blocked), hosts: hostsNeed(p.hosts) };
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
   const [reordering, setReordering] = useState(false);
@@ -292,17 +321,17 @@ export function Settings(p: SettingsProps) {
   useEffect(() => {
     const was = prev.current;
     prev.current = p.at;
-    if (!p.at || (was && was.page === p.at.page && was.sub === p.at.sub)) return;
+    if (!p.at || (was && was.page === p.at.page && was.sub === p.at.sub && was.host === p.at.host)) return;
     if (byKeys.current) return void (byKeys.current = false);
     const el = pane.current ?? document;
     requestAnimationFrame(() => {
       if (was?.sub && was.page === p.at!.page && !p.at!.sub) {
-        const row = el.querySelector<HTMLElement>(`[data-sub="${CSS.escape(was.sub)}"]`);
+        const row = el.querySelector<HTMLElement>(`[data-sub="${CSS.escape(subKey(was))}"]`);
         if (row) return row.focus();
       }
       if (!p.phone) el.querySelector<HTMLElement>(".stp-h h2")?.focus();
     });
-  }, [p.at?.page, p.at?.sub]);
+  }, [p.at?.page, p.at?.sub, p.at?.host]);
 
   const nav = (
     <SettingsNav
@@ -373,7 +402,9 @@ export function Settings(p: SettingsProps) {
   );
 }
 
-const pageKey = (r: PageRef) => (r.sub ? `${r.page}/${r.sub}` : r.page);
+const pageKey = (r: PageRef) => (r.sub ? `${r.page}/${subKey(r)}` : r.page);
+/** A sub-page's row (data-sub), where focus goes back to: "lab/claude" for a host's provider (V0.127), else the id. */
+const subKey = (r: PageRef) => (r.host ? `${r.host}/${r.sub ?? ""}` : (r.sub ?? ""));
 
 /** The five pages: a title and a line of state each, and the amber count on a page that needs the owner (Providers,
  *  V0.125 Hosts). Desktop: the dialog's left
@@ -431,24 +462,45 @@ interface PageUi {
   setReordering(b: boolean): void;
 }
 
-function pageView(at: PageRef, p: SettingsProps, d: Data, ui: PageUi): PageView {
+function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi): PageView {
   const go = p.go;
   switch (at.page) {
     case "providers": {
-      if (at.sub === "new") return { title: "Add provider", parent: "Providers", body: <AddProvider onCancel={() => go({ page: "providers" })} onCreate={async (args) => { const e = await d.runProvider("provider.create", args); if (!e) go({ page: "providers" }); return e; }} /> };
-      if (at.sub) {
+      // V0.127: a host's provider and Add provider name the host; with several hosts the page says which one.
+      const d = at.sub ? s.at(at.host) : undefined;
+      const on = d && s.grouped ? d.host.label : "";
+      if (d && at.sub === "new")
+        return {
+          title: "Add provider",
+          parent: "Providers",
+          lede: on ? `On ${on}. A key you paste is kept on ${on} and never leaves it.` : undefined,
+          body: (
+            <HostEnv d={d}>
+              <AddProvider onCancel={() => go({ page: "providers" })} onCreate={async (args) => { const e = await d.runProvider("provider.create", args); if (!e) go({ page: "providers" }); return e; }} />
+            </HostEnv>
+          ),
+        };
+      if (d && at.sub) {
         const x = d.providers?.find((y) => y.id === at.sub);
+        const note = readOnlyNote(d.host, d.readAt, p.now);
         return {
           title: x?.name ?? "Provider",
           parent: "Providers",
-          end: x && <ProviderBadge p={x} />,
-          body: x ? <ProviderPage key={x.id} p={x} run={d.runProvider} refresh={() => d.refreshModels(x.id)} now={p.now} clockKnown={p.clockKnown ?? true} onRemoved={() => go({ page: "providers" })} /> : d.providers === null && !d.provErr ? <Skeleton rows={4} /> : d.provErr ? <LoadError text={d.provErr} onRetry={() => void d.loadProviders()} /> : <Group><Empty text="This provider is not here anymore." /></Group>,
+          end: x && <ProviderBadge p={x} host={d.host.name} />,
+          lede: on ? `On ${on}.` : undefined,
+          body: (
+            <HostEnv d={d}>
+              {note && x && <div class="note hnote">{note}</div>}
+              {x ? <ProviderPage key={`${d.host.name}/${x.id}`} p={x} host={d.host.name} run={d.runProvider} refresh={() => d.refreshModels(x.id)} now={p.now} clockKnown={p.clockKnown ?? true} onRemoved={() => go({ page: "providers" })} /> : d.providers === null && !d.provErr ? <Skeleton rows={4} /> : d.provErr ? <LoadError text={d.provErr} onRetry={() => void d.loadProviders()} /> : <Group><Empty text="This provider is not here anymore." /></Group>}
+            </HostEnv>
+          ),
         };
       }
-      return { title: "Providers", body: <ProvidersPage d={d} go={go} /> };
+      // An unknown host shows the Providers page.
+      return { title: "Providers", body: <HostParts s={s} now={p.now} part={(d) => <ProvidersPage d={d} go={go} grouped={s.grouped} />} /> };
     }
     case "automation":
-      return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} /> };
+      return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <HostParts s={s} now={p.now} part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} />} /> };
     case "projects": {
       if (at.sub) {
         const pr = p.projects.find((x) => x.id === at.sub);
@@ -459,7 +511,7 @@ function pageView(at: PageRef, p: SettingsProps, d: Data, ui: PageUi): PageView 
             <ProjectEditor
               key={pr.id}
               project={pr}
-              profiles={p.profiles}
+              profiles={profilesOn(hostForProject(pr.host, p.hosts), p.hosts, p.profiles) /* V0.127: its host's providers */}
               now={p.now}
               onSave={(patch) => p.projectActions.update(pr.id!, patch)}
               onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}
@@ -499,14 +551,45 @@ function pageView(at: PageRef, p: SettingsProps, d: Data, ui: PageUi): PageView 
 
 // ---- Providers ----
 
+/** V0.127: the per-host pages, one part per host. With one host the part has no heading, as before; with several
+ *  each has the host's name and state, and an offline host's part shows what Fyr last read from it, read-only, or only
+ *  says so when it has nothing. */
+function HostParts({ s, now, part }: { s: AllSettings; now: number; part(d: Data): ComponentChildren }) {
+  if (!s.grouped) return <>{part(s.all[0])}</>;
+  return (
+    <>
+      {s.all.map((d) => {
+        const note = readOnlyNote(d.host, d.readAt, now);
+        const nothing = !d.host.online && !d.readAt && d.providers === null && d.deploy === null && d.repos === null;
+        return (
+          <section key={d.host.name} class={`hpart${d.host.online ? "" : " off"}`} data-host={d.host.name} aria-label={`Settings on ${d.host.label}`}>
+            <h3 class="hpart-h">
+              <span class="mono">{d.host.label}</span>
+              <span class="hpart-s">{groupLine(d.host, now)}</span>
+            </h3>
+            {note && <div class="note hnote">{note}</div>}
+            {!nothing && <HostEnv d={d}>{part(d)}</HostEnv>}
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
+/** A host's controls are read-only while it is offline (V0.127), as the whole page is with no connection. */
+function HostEnv({ d, children }: { d: Data; children: ComponentChildren }) {
+  const env = useSet();
+  return <SetContext.Provider value={{ ...env, readOnly: env.readOnly || !d.host.online }}>{children}</SetContext.Provider>;
+}
+
 /** The status badge: today's words; V0.77 (1), #65: it tells the truth about the account, so Ready never sits beside
- *  its own error. */
-function ProviderBadge({ p }: { p: ProviderDTO }) {
-  const quota = quotaFor(useQuotas(), p.id);
+ *  its own error. V0.127: the quota is its host's. */
+function ProviderBadge({ p, host }: { p: ProviderDTO; host: string }) {
+  const quota = quotaFor(useQuotas(), p.id, host || undefined);
   return <span class={`pst ${p.status}`}>{quota && p.status === "ready" ? CARD_WORD[cardState(quota)] : STATUS_TEXT[p.status]}</span>;
 }
 
-function ProvidersPage({ d, go }: { d: Data; go(r: PageRef): void }) {
+function ProvidersPage({ d, go, grouped }: { d: Data; go(r: PageRef): void; grouped: boolean }) {
   const quotas = useQuotas();
   const [more, setMore] = useState(false);
   const env = useSet();
@@ -526,11 +609,11 @@ function ProvidersPage({ d, go }: { d: Data; go(r: PageRef): void }) {
       ) : (
         <Group label="Providers">
           {d.providers.map((x) => {
-            const q = quotaFor(quotas, x.id);
+            const q = quotaFor(quotas, x.id, d.host.name || undefined);
             return (
               <Row
-                onClick={() => go({ page: "providers", sub: x.id })}
-                data={{ sub: x.id }}
+                onClick={() => go(d.ref(x.id))}
+                data={{ sub: subKey(d.ref(x.id)) }}
                 class="prow"
                 lead={<span class="pdot" style={x.color ? { background: x.color } : undefined} />}
                 title={x.name}
@@ -543,7 +626,7 @@ function ProvidersPage({ d, go }: { d: Data; go(r: PageRef): void }) {
                 }
                 end={
                   <>
-                    <ProviderBadge p={x} />
+                    <ProviderBadge p={x} host={d.host.name} />
                     <span class="chev">›</span>
                   </>
                 }
@@ -588,11 +671,11 @@ function ProvidersPage({ d, go }: { d: Data; go(r: PageRef): void }) {
         </Group>
       )}
       <div class="sbar">
-        <button type="button" class={`btn addp${none ? " p" : ""}`} disabled={env.readOnly} data-sub="new" onClick={() => go({ page: "providers", sub: "new" })}>
+        <button type="button" class={`btn addp${none ? " p" : ""}`} disabled={env.readOnly} data-sub={subKey(d.ref("new"))} onClick={() => go(d.ref("new"))}>
           Add provider
         </button>
       </div>
-      <h3 class="stp-sub">System agents</h3>
+      {grouped ? <h4 class="stp-sub">System agents</h4> : <h3 class="stp-sub">System agents</h3>}
       {none ? (
         <Group label="System agents">
           <Empty text="Add a provider first. System agents run on one of them." />
@@ -633,7 +716,6 @@ function SystemAgents({ d }: { d: Data }) {
   const def = v.default ?? {};
   return (
     <Group label="System agents" foot="The model calls Fyr makes itself. A job that cannot run fails and says why; it never moves to a bigger model.">
-      {d.hostNames.length > 1 && <Row title="Host" desc="Each host runs these on its own providers." stack end={<Select label="Host" value={d.saHost} options={d.hostNames.map((h) => ({ value: h, label: h }))} onPick={d.setSaHost} />} />}
       <Row
         title="Default"
         desc="For every job that has no choice of its own."
@@ -672,8 +754,8 @@ function SystemAgents({ d }: { d: Data }) {
 }
 
 /** A provider's page: what blocks it first (a login, a key), its models, its usage, Remove last. */
-function ProviderPage({ p, run, refresh, now, clockKnown, onRemoved }: { p: ProviderDTO; run: Run; refresh(): Promise<string | null>; now: number; clockKnown: boolean; onRemoved(): void }) {
-  const quota = quotaFor(useQuotas(), p.id);
+function ProviderPage({ p, host, run, refresh, now, clockKnown, onRemoved }: { p: ProviderDTO; host: string; run: Run; refresh(): Promise<string | null>; now: number; clockKnown: boolean; onRemoved(): void }) {
+  const quota = quotaFor(useQuotas(), p.id, host || undefined);
   const ask = useAsk();
   const env = useSet();
   const [rmErr, setRmErr] = useState<string | null>(null);
@@ -1192,6 +1274,7 @@ function AutomationPage({ d, hasDeploy }: { d: Data; hasDeploy: boolean }) {
 /** V0.126 (#151): what runs, Update now or Back to release, and the newest updates with their logs. Desktop and phone
  *  share it; the logs open in a new tab on both. */
 function UpdatesGroup({ d }: { d: Data }) {
+  const env = useSet();
   const [err, setErr] = useState<string | null>(null);
   const [all, setAll] = useState(false);
   const v = d.updates!;
@@ -1204,7 +1287,7 @@ function UpdatesGroup({ d }: { d: Data }) {
         title={updateState(v)}
         error={err}
         end={
-          <button type="button" class="btn" onClick={async () => setErr(await d.runUpdateNow())}>
+          <button type="button" class="btn" disabled={env.readOnly} onClick={async () => setErr(await d.runUpdateNow())}>
             {press}
           </button>
         }
@@ -1222,7 +1305,7 @@ function UpdatesGroup({ d }: { d: Data }) {
                 {(u.logs ?? []).map((n) => (
                   <>
                     {" · "}
-                    <a href={`/api/updates/${encodeURIComponent(u.build)}/${n}`} target="_blank" rel="noopener noreferrer">
+                    <a href={`/api/updates/${encodeURIComponent(u.build)}/${n}${d.host.name ? `?host=${encodeURIComponent(d.host.name)}` : ""}` /* V0.127: from its host */} target="_blank" rel="noopener noreferrer">
                       {n}
                     </a>
                   </>

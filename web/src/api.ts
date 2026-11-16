@@ -9,6 +9,7 @@ import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateD
 import { attachmentUrl, hostQuery, type UploadReply } from "./attach.ts";
 import { previewUrl } from "./previews.ts";
 import { decodeHosts, type HostInfo } from "./hosts.ts";
+import { settingsPath } from "./host-settings.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
 import type { HostLoad } from "./load.ts";
@@ -84,18 +85,20 @@ export interface Api {
   quota(): Promise<Quota[]>;
   /** V0.80: each host's load and its threads' CPU; [] when no host can say. */
   load(): Promise<HostLoad[]>;
+  // V0.127: the per-host settings reads. `host` names the host ("" or missing: the front's first host); an offline
+  // host answers what the front last read from it, with when (readAt).
   /** V0.50: Settings → Providers; never a key, only whether one is set. */
-  providers(): Promise<ProviderDTO[]>;
-  /** V0.50: logins, endpoints and keys found on this host. */
-  providersFound(): Promise<FoundDTO[]>;
+  providers(host?: string): Promise<HostRead<ProviderDTO[]>>;
+  /** V0.50: logins, endpoints and keys found on the host. */
+  providersFound(host?: string): Promise<HostRead<FoundDTO[]>>;
   /** V0.102: the repos Fyr knows and whether each merges agents' merge asks with no press. */
-  autoMerge(): Promise<AutoMergeRepo[]>;
+  autoMerge(host?: string): Promise<HostRead<AutoMergeRepo[]>>;
   /** V0.111: whether Fyr approves agents' deploy asks of merged code with no press. */
-  autoDeploy(): Promise<AutoDeploySetting>;
+  autoDeploy(host?: string): Promise<HostRead<AutoDeploySetting>>;
   /** V0.126 (#151): the update record and whether a local build pauses auto-update. */
-  updates(): Promise<UpdatesView>;
-  /** V0.115: the system agents setting of a host ("" or missing: the front's first host) */
-  systemAgents(host?: string): Promise<SystemAgentsView>;
+  updates(host?: string): Promise<HostRead<UpdatesView>>;
+  /** V0.115: the system agents setting of a host */
+  systemAgents(host?: string): Promise<HostRead<SystemAgentsView>>;
   /** V0.50: the current profiles (after a provider changed). */
   profiles(): Promise<Profile[]>;
   /** V0.79: the agent's commands and skills for a thread, or for a provider and folder (New thread). */
@@ -106,6 +109,20 @@ export interface Api {
 
 /** Whose commands: a thread's, or the newest of a provider and folder on a host (V0.79). */
 export type CommandSource = { threadId: string } | { cwd: string; profile: string; host?: string };
+
+/** V0.127: a per-host settings read; readAt is set when the host is offline and this is what the front last read. */
+export interface HostRead<T> {
+  data: T;
+  readAt?: string;
+}
+
+async function hostGet<T>(path: string, host: string | undefined): Promise<HostRead<T>> {
+  const r = await fetch(settingsPath(path, host ?? ""), { headers: { Accept: "application/json" } });
+  const j = (await r.json().catch(() => ({}))) as T & { error?: string };
+  if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+  const at = r.headers.get("X-Fyr-Read-At");
+  return at ? { data: j, readAt: at } : { data: j };
+}
 
 async function fsGet<T>(path: string): Promise<T> {
   const r = await fetch(path, { headers: { Accept: "application/json" } });
@@ -428,23 +445,23 @@ function createHttpApi(): Api {
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j;
     },
-    async providers() {
-      return fsGet<ProviderDTO[]>("/api/providers");
+    async providers(host) {
+      return hostGet<ProviderDTO[]>("/api/providers", host);
     },
-    async providersFound() {
-      return fsGet<FoundDTO[]>("/api/providers/found");
+    async providersFound(host) {
+      return hostGet<FoundDTO[]>("/api/providers/found", host);
     },
-    async autoMerge() {
-      return fsGet<AutoMergeRepo[]>("/api/autoMerge");
+    async autoMerge(host) {
+      return hostGet<AutoMergeRepo[]>("/api/autoMerge", host);
     },
-    async autoDeploy() {
-      return fsGet<AutoDeploySetting>("/api/autoDeploy");
+    async autoDeploy(host) {
+      return hostGet<AutoDeploySetting>("/api/autoDeploy", host);
     },
-    async updates() {
-      return fsGet<UpdatesView>("/api/updates");
+    async updates(host) {
+      return hostGet<UpdatesView>("/api/updates", host);
     },
     async systemAgents(host) {
-      return fsGet<SystemAgentsView>(`/api/systemAgents${host ? `?host=${encodeURIComponent(host)}` : ""}`);
+      return hostGet<SystemAgentsView>("/api/systemAgents", host);
     },
     async profiles() {
       return fsGet<Profile[]>("/api/profiles");
