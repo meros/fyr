@@ -125,7 +125,9 @@ export const parkedLine = (c: Pick<Change, "parked">, clock: (iso: string) => st
 
 /** The changes to list, newest first; PR changes too (V0.59 (8)). */
 export function changeList(t: Pick<Thread, "changes">): Change[] {
-  return [...t.changes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  // V0.87 (3), #69: one card per id, the newest: two changes with one id are one work item.
+  const seen = new Set<string>();
+  return [...t.changes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).filter((c) => !seen.has(c.id) && !!seen.add(c.id));
 }
 
 /** The inbox chip when the thread has no open PR: the most urgent change that is not a PR (V0.59 (8)). */
