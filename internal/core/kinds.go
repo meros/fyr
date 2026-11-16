@@ -484,14 +484,16 @@ func reducePRLink(r Rec, in Input, now time.Time) (Result, error) {
 
 // canRequest checks an agent's request of a Fyr effect: its args, and the
 // effect's guard, the same one the owner's command and press use (#31).
+// A merge is bound to the head Fyr reads when the agent asks (V0.97); the
+// guard comes first, so a blocked PR says why before a missing head does.
 func canRequest(t *Thread, fx *FyrEffect, args map[string]any) error {
-	if err := fx.Check(args); err != nil {
-		return err
+	if fx.ID == FyrMerge {
+		fixHead(t, args)
 	}
 	if why := fx.Guard(t, args); why != "" {
 		return fmt.Errorf("Fyr cannot %s now: %s", strings.ToLower(fx.Label), why)
 	}
-	return nil
+	return fx.Check(args)
 }
 
 // openRequest opens the owner's Decision for an agent's request.
@@ -646,13 +648,23 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 	} else if on == OnView {
 		title = "the live view"
 	}
+	req := h.EffectArgs(a)
+	if a.Run == RunFyr && a.Effect == FyrMerge { // V0.97: bound to the head the owner saw
+		req["head"] = args.Str("head")
+		if err := needHead(req); err != nil {
+			return Result{}, fmt.Errorf("%w: %v", ErrBadArgs, err)
+		}
+		if why := headMoved(t, req); why != "" {
+			return Result{}, &Rejection{Code: RejectUnavailable, Reason: why}
+		}
+	}
 	h.Started(a, now)
 	res := Result{Reply: map[string]any{"on": on, "action": a.ID},
 		Events: []Event{{"action", map[string]any{"on": on, "title": title, "action": a.ID, "label": a.Label, "run": a.Run, "argv": a.Argv, "by": "owner"}}}}
 	press := &Press{On: on, Title: title, Action: a}
 	switch a.Run {
 	case RunFyr:
-		res.Effects = []Effect{{Kind: EffectRun, Allow: true, Press: press, Request: &EffectReq{Action: a.Effect, Args: h.EffectArgs(a)}}}
+		res.Effects = []Effect{{Kind: EffectRun, Allow: true, Press: press, Request: &EffectReq{Action: a.Effect, Args: req}}}
 	case RunAgent:
 		msg := fmt.Sprintf("[Fyr] The owner pressed %q on %s.\n%s", a.Label, title, a.Prompt)
 		// V0.71: every press runs until its result lands, so a second

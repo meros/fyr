@@ -340,22 +340,29 @@ func MergeBlock(d Detail) string {
 
 var methods = map[string]bool{"squash": true, "merge": true, "rebase": true}
 
-// MergeChecked reads the PR again and merges it unless MergeBlock refuses.
-func MergeChecked(ctx context.Context, gh Runner, url, method string) (string, error) {
+// MergeChecked reads the PR again and merges it unless MergeBlock refuses
+// or its head is not head, the commit the owner saw (V0.97).
+func MergeChecked(ctx context.Context, gh Runner, url, method, head string) (string, error) {
 	if method == "" {
 		method = "squash"
 	}
 	if !methods[method] {
 		return "", fmt.Errorf("unknown merge method %q", method)
 	}
+	if head == "" {
+		return "", errors.New("not merged: no head commit was given")
+	}
 	d, err := FetchDetail(ctx, gh, url)
 	if err != nil {
 		return "", err
 	}
+	if !core.SameHead(d.HeadSha, head) {
+		return "", errors.New(core.HeadMoved)
+	}
 	if why := MergeBlock(d); why != "" {
 		return "", fmt.Errorf("not merged: %s", why)
 	}
-	out, err := Merge(ctx, gh, url, method)
+	out, err := Merge(ctx, gh, url, method, d.HeadSha)
 	return out, Friendly(err)
 }
 

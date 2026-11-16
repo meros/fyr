@@ -105,9 +105,11 @@ export async function press(
   cwd: string | undefined,
   ask: (a: Ask) => Promise<boolean>,
   run: (action: string, args?: Record<string, unknown>) => void,
+  /** V0.97: a Merge is bound to the head the owner saw */
+  head?: string,
 ): Promise<boolean> {
   const a = offerAsk(o, cwd);
   if (a && !(await ask(a))) return false;
-  run("action.run", pressArgs(on, o));
+  run("action.run", pressArgs(on, o, head));
   return true;
 }
