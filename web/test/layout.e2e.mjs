@@ -1598,7 +1598,8 @@ try {
     const m = row.querySelector('.m');
     const sb = list.offsetWidth - list.clientWidth; // a classic scrollbar takes width; an overlay one takes none
     const gutter = getComputedStyle(list).scrollbarGutter;
-    return { out, hit, mCut: cut(m), prCut: cut(pr), prRight: pr.getBoundingClientRect().right, listInner: list.getBoundingClientRect().right - sb, gutter };
+    return { out, hit, mCut: cut(m), prCut: cut(pr) || pr.scrollWidth <= pr.clientWidth, // V0.91: on its own line the chip may fit whole
+       prRight: pr.getBoundingClientRect().right, listInner: list.getBoundingClientRect().right - sb, gutter };
   })()`);
   check(r.out.length === 0, `#56 desktop: a row cell passes the row (${JSON.stringify(r)})`);
   check(r.hit.length === 0, `#56 desktop: two row cells overlap (${JSON.stringify(r)})`);
@@ -1606,6 +1607,36 @@ try {
   check(r.gutter.includes("stable"), `#56 desktop: the list does not reserve its scrollbar's width (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`#56 desktop: ${e.message}`);
+}
+
+// SPEC 0.5 V0.91: every inbox row starts with its project tag, then the title, on one line; every chip (PR, change,
+// subagents) sits below the title, inside the row; no row says "0 sub".
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.list .rw .hd .ptag') && !!document.querySelector('.list .one .hd .ptag')");
+  const r = await evaluate(`(() => {
+    const bad = [];
+    const rows = [...document.querySelectorAll('.list .rw, .list .one')];
+    for (const row of rows) {
+      const id = row.dataset.id, box = row.getBoundingClientRect();
+      const tag = row.querySelector('.hd .ptag'), title = row.querySelector('.hd .t');
+      if (!tag || !title) { bad.push(id + ': no project or title'); continue; }
+      const a = tag.getBoundingClientRect(), b = title.getBoundingClientRect();
+      if (a.right > b.left + 0.5) bad.push(id + ': project not before the title');
+      if (Math.abs(a.top - b.top) > 4) bad.push(id + ': project and title not on one line');
+      for (const c of row.querySelectorAll('.pr:not(.none), .sb')) {
+        const cr = c.getBoundingClientRect();
+        if (cr.top < b.bottom - 0.5) bad.push(id + ': chip ' + c.textContent + ' beside the title');
+        if (cr.bottom > box.bottom + 0.5 || cr.right > box.right + 0.5) bad.push(id + ': chip ' + c.textContent + ' outside the row');
+        if (c.textContent.trim() === '0 sub') bad.push(id + ': shows 0 sub');
+      }
+    }
+    return { n: rows.length, bad };
+  })()`);
+  check(r.n >= 8 && r.bad.length === 0, `V0.91 desktop: inbox rows (${JSON.stringify(r)})`);
+} catch (e) {
+  failures.push(`V0.91 desktop: ${e.message}`);
 }
 
 // #64: the thread header's blocks (title, chips, offers, tabs) sit 12 px apart, and the conversation starts where
