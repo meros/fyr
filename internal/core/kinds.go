@@ -36,6 +36,7 @@ const (
 	KindViewUnchanged   = "view.unchanged"
 	KindPRObserved      = "pr.observed"
 	KindDeployObserved  = "deploy.observed"
+	KindSelfDeployed    = "deploy.self" // V0.82
 	KindHostRestarted   = "host.restarted"
 	KindMessageSent     = "message.sent"
 	KindMessageState    = "message.state"
@@ -104,6 +105,12 @@ type (
 	DeployObservedArgs struct {
 		Change string
 		Obs    DeployObs
+	}
+	// SelfDeployedArgs are the changes of a thread whose merge commit is in
+	// the build a self-deploy made live (V0.82).
+	SelfDeployedArgs struct {
+		Build   string
+		Changes []string
 	}
 	MessageSentArgs struct {
 		ID    string
@@ -254,6 +261,13 @@ func init() {
 			a, err := argsOf[DeployObservedArgs](in)
 			if err == nil {
 				ChangeDeployObserved(r.T, a.Change, a.Obs, now)
+			}
+			return Result{}, err
+		}},
+		{Name: KindSelfDeployed, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
+			a, err := argsOf[SelfDeployedArgs](in)
+			if err == nil {
+				ChangesSelfDeployed(r.T, a, now)
 			}
 			return Result{}, err
 		}},
