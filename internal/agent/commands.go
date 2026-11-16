@@ -19,6 +19,11 @@ var terminalOnly = map[string]bool{
 	"install-github-app": true, "migrate-installer": true, "rewind": true, "plugin": true,
 	"plugins": true, "login-method": true, "add-dir": true, "output-style": true, "fast": true,
 	"usage": true,
+	// The terminal's own screen and session settings, and Fyr's own effort
+	// picker and thread title (16 Nov, from a live list).
+	"heapdump": true, "reload-plugins": true, "reload-skills": true, "color": true, "focus": true,
+	"autocompact": true, "auto-mode-setup": true, "effort": true, "rename": true,
+	"workflow-launch-exec": true,
 }
 
 // commandsOf reads the commands of the CLI's initialize answer, without the
@@ -36,7 +41,7 @@ func commandsOf(answer cli.Msg) []core.Command {
 		m, _ := r.(cli.Msg)
 		name, _ := m["name"].(string)
 		name = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(name), "/"))
-		if name == "" || strings.ContainsAny(name, " \t\n") || seen[name] || terminalOnly[name] {
+		if name == "" || strings.ContainsAny(name, " \t\n") || seen[name] || terminalOnly[name] || strings.HasPrefix(name, "__") { // "__": the CLI's internal ones
 			continue
 		}
 		seen[name] = true
