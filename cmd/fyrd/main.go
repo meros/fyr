@@ -35,6 +35,7 @@ import (
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/server"
+	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/tailnet"
 	"github.com/meros/fyr/web"
@@ -154,11 +155,15 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	})
 	eng.Agents = mgr
 	eng.ProfileExists = func(id string) bool { _, ok := h.profile(id); return ok }
+	// V0.86: at most cfg.Slots heavy jobs at once; the deploy's tests first.
+	pool := slots.New(cfg.Slots)
+	eng.UseSlots(pool)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy()}
 	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
+	dep.Slot = func(ctx context.Context) (func(), error) { return pool.Wait(ctx, cgroup.DeployDir, slots.Test) }
 	// V0.82: a self-deploy makes the landed changes its build holds live.
 	dep.OnShipped = func(s deploy.Shipped) {
 		n := eng.SelfDeployed(agent.NormalizeRemote(s.Remote), s.Build, s.Contains)
@@ -192,7 +197,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// V0.51: the host never serves the client; a front does.
 	srv := &server.Server{Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
-		Load:  &cgroup.Sampler{Tree: tree}, // V0.80
+		Load:  &cgroup.Sampler{Tree: tree, Slots: pool}, // V0.80, V0.86
 		Focus: func(device, thread string, on bool) { // V0.85
 			if on {
 				tree.Focus(device, thread, time.Now())

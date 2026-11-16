@@ -53,6 +53,7 @@ const (
 	KindDecisionGone    = "decision.withdrawn"
 	KindHandoverFailed  = "handover.failed"
 	KindHandoverDone    = "handover.done"
+	KindSlotGranted     = "slot.granted" // V0.86: a queued slot is the thread's now
 )
 
 // The typed args of the kinds that are not a map.
@@ -278,6 +279,13 @@ func init() {
 			return Result{}, err
 		}},
 		{Name: KindHostRestarted, From: observed, Untouched: true, Reduce: reduceRestarted},
+		{Name: KindSlotGranted, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
+			kind, _ := in.Args.(string)
+			if kind == "" {
+				return Result{}, errors.New("slot.granted needs the kind")
+			}
+			return Result{Events: []Event{{EventSlot, map[string]any{"kind": kind, "granted": true}}}}, nil
+		}},
 		{Name: KindMessageSent, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a, err := argsOf[MessageSentArgs](in)
 			if err != nil {

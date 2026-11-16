@@ -196,6 +196,30 @@ var NoticeRules = []NoticeRule{
 	{Name: "upkeep.stop", Urgency: Stop, OnTake: upkeepStop},
 	{Name: "upkeep.reminder", Urgency: Next, OnTake: upkeepReminder},
 	{Name: "owner", Urgency: Next, OnReduce: ownerNotices},
+	{Name: "slot", Urgency: Wake, OnReduce: slotNotices},
+}
+
+// EventSlot is the event of a slot for a heavy job that became the
+// thread's (V0.86).
+const EventSlot = "slot"
+
+// slot: a slot the agent queued for is its own now; it ended its turn to
+// wait, so wake it.
+func slotNotices(r Reduced) []Notice {
+	var out []Notice
+	for _, ev := range r.Events {
+		d, _ := ev.Data.(map[string]any)
+		if ev.Type != EventSlot || d["granted"] != true {
+			continue
+		}
+		kind := str(d["kind"])
+		a := "A "
+		if strings.ContainsAny(kind[:min(1, len(kind))], "aeiou") {
+			a = "An "
+		}
+		out = append(out, Notice{About: "thread", Key: "slot", What: a + kind + " slot is yours now: run the job, then call slot_release."})
+	}
+	return out
 }
 
 // project runs the reduce rules on one reduce and queues their notices. It

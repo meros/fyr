@@ -3,7 +3,7 @@
 import type { ComponentChildren, Ref } from "preact";
 import type { Profile, Project, Thread } from "./types.ts";
 import { QuotaRail } from "./quota-ui.tsx";
-import { LoadRail, ThreadCPU } from "./load-ui.tsx";
+import { LoadRail, ThreadCPU, ThreadSlot } from "./load-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, StartedBy, ThreadProject } from "./project-ui.tsx";
 import { colorVar, pickerOrder } from "./projects.ts";
@@ -159,6 +159,7 @@ function OneRow({ t, now, sel, picked, onClick }: RowProps) {
           )}
           {!working && st !== "snoozed" ? <ThreadProject t={t} /> : sub}
           {working && <ThreadCPU id={t.id} />}
+          <ThreadSlot id={t.id} />
         </i>
       </span>
       {working && !groupTasks(t.tasks).running.length ? <span class="sb">{t.subagents ?? 0} sub</span> : working ? <span /> : t.pr || changeChip(t) ? <PrBadge t={t} short /> : <span />}
