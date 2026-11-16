@@ -200,7 +200,7 @@ in
     # SPEC 0.5 V0.80, after T3's launcher (t3code.nix in the machine's
     # config): the unit delegates cpu and memory, fyrd moves itself into
     # server/ and starts every agent CLI in agents/<thread id>/, the
-    # deploy's build and tests in agents/deploy/. The budget sits on
+    # deploy's build and tests in agents/self-deploy/. The budget sits on
     # agents/. A machine-wide QoS script may rewrite the CPU cap at
     #   /sys/fs/cgroup/system.slice/fyr.service/agents/cpu.max
     # (T3's agents-lock-cap lifts it while the screen is locked).

@@ -181,7 +181,7 @@ func TestV080ThreadCgroupLivesWhileItsProcessesDo(t *testing.T) {
 	if got := tr.Thread("../x"); got != filepath.Join(o.FS, unit, "agents", "___x") {
 		t.Fatalf("unsafe name gave %q", got)
 	}
-	if got := tr.Deploy(); got != filepath.Join(o.FS, unit, "agents", "deploy") {
+	if got := tr.Deploy(); got != filepath.Join(o.FS, unit, "agents", DeployDir) {
 		t.Fatalf("deploy %q", got)
 	}
 }

@@ -33,7 +33,7 @@ type Use struct {
 	MemoryMax uint64   `json:"memoryMax"` // 0 without a limit
 }
 
-// ThreadLoad is one cgroup under agents/: a thread's id, or "deploy".
+// ThreadLoad is one cgroup under agents/: a thread's id, or "self-deploy".
 type ThreadLoad struct {
 	ID     string   `json:"id"`
 	CPU    *float64 `json:"cpu,omitempty"` // cores, nil on the first read

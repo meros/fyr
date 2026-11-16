@@ -96,7 +96,7 @@ func Setup(o Options) *Tree {
 		o.Logf("cgroups: off (%v); every process runs in the daemon's cgroup", err)
 		return nil
 	}
-	o.Logf("cgroups: on in %s (server/, agents/<thread>/, agents/deploy/)", t.root)
+	o.Logf("cgroups: on in %s (server/, agents/<thread>/, agents/self-deploy/)", t.root)
 	return t
 }
 
@@ -266,6 +266,10 @@ func (t *Tree) Release(id string) {
 	os.Remove(filepath.Join(t.root, "agents", name))
 }
 
+// DeployDir is the cgroup of a self-deploy's build and tests under agents/. Thread
+// cgroups are named after thread ids (t_...), so the two never meet.
+const DeployDir = "self-deploy"
+
 // Deploy is where a self-deploy's build and tests run, or "" when off.
 func (t *Tree) Deploy() string {
 	if t == nil {
@@ -273,7 +277,7 @@ func (t *Tree) Deploy() string {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	d, err := t.make("deploy")
+	d, err := t.make(DeployDir)
 	if err != nil {
 		t.logf("cgroups: deploy: %v", err)
 		return ""
