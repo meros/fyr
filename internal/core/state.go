@@ -18,13 +18,13 @@ func StateText(t *Thread, about string, now time.Time) (string, error) {
 	switch about {
 	case "":
 		stateThread(&b, t, now)
-		stateChanges(&b, t.Changes, now)
+		stateOpenChanges(&b, t.Changes, now)
 		stateView(&b, t, now)
 		stateRules(&b, t.Rules, "")
 	case "thread", "settle":
 		stateThread(&b, t, now)
 	case "changes":
-		stateChanges(&b, t.Changes, now)
+		stateOpenChanges(&b, t.Changes, now)
 	case "view":
 		stateView(&b, t, now)
 	case "rules":
