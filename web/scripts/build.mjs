@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { markPng } from "./icons.ts";
+import { ICON_DIR, ICON_FILES, iconUrl } from "../src/icon-paths.ts";
 import { THEME, manifest } from "./manifest.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -56,16 +56,10 @@ await copyFile(join(root, "node_modules/geist/LICENSE.txt"), join(dist, "fonts/L
 // V0.93: the sidebar logo, an isometric lighthouse rendered with Blender (design/logo/lighthouse.py).
 await copyFile(join(root, "assets/logo.png"), join(dist, "logo.png"));
 
-// Icons: the Fyr mark, drawn and PNG-encoded here (scripts/icons.ts).
-await mkdir(join(dist, "icons"), { recursive: true });
-const icons = {
-  "icon-192.png": markPng(192),
-  "icon-512.png": markPng(512),
-  "maskable-512.png": markPng(512, { maskable: true }),
-  "apple-touch-icon.png": markPng(180, { maskable: true }), // iOS rounds the corners itself
-  "badge-96.png": markPng(96, { badge: true }), // Android status bar: white on transparent
-};
-for (const [name, png] of Object.entries(icons)) await writeFile(join(dist, "icons", name), png);
+// Icons (V0.110): cut from the rendered lighthouse by design/logo/icons.sh and committed in assets/icons.
+const iconDir = join(dist, ICON_DIR.slice(1));
+await mkdir(iconDir, { recursive: true });
+for (const n of Object.values(ICON_FILES)) await copyFile(join(root, "assets/icons", n), join(iconDir, n));
 
 await writeFile(join(dist, "manifest.webmanifest"), JSON.stringify(manifest(), null, 2) + "\n");
 
@@ -80,8 +74,9 @@ await writeFile(
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="${THEME.light}" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="${THEME.dark}" media="(prefers-color-scheme: dark)">
-<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
-<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="${iconUrl("favicon32")}">
+<link rel="icon" type="image/png" sizes="192x192" href="${iconUrl("any192")}">
+<link rel="apple-touch-icon" sizes="180x180" href="${iconUrl("apple180")}">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fyr">
@@ -107,7 +102,7 @@ const shell = [
   "/manifest.webmanifest",
   "/fonts/Geist-Variable.woff2",
   "/fonts/GeistMono-Variable.woff2",
-  ...Object.keys(icons).map((n) => `/icons/${n}`),
+  ...Object.values(ICON_FILES).map((n) => `${ICON_DIR}/${n}`),
   "/logo.png",
 ];
 const hash = createHash("sha256");
