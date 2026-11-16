@@ -30,6 +30,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/notify"
+	"github.com/meros/fyr/internal/peers"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/stream"
 )
@@ -41,6 +42,8 @@ type HostConfig struct {
 	// Remote: the host runs on another machine. The browser's identity
 	// headers are not passed on; the host checks the front's tailnet identity.
 	Remote bool `json:"-"`
+	// Found: discovery found it (V0.123), it is not in the config.
+	Found bool `json:"-"`
 }
 
 type Options struct {
@@ -69,12 +72,22 @@ type Options struct {
 	// Store keeps the owner's settings that span the hosts (V0.121: the
 	// project order); nil keeps none.
 	Store KV
+	// WellKnown is this install's /.well-known/fyr answer (V0.123, decision
+	// 0025), by which other installs find it; nil serves none.
+	WellKnown func() peers.WellKnown
 }
 
 type Front struct {
-	opt   Options
-	links []*link
-	hub   *stream.Hub
+	opt Options
+	// links: the hosts followed, copy on write (a found host joins while the
+	// front runs, V0.123); read with all().
+	links atomic.Pointer[[]*link]
+	// run: the context and wait group of Run, so a host added later is
+	// followed as long as the ones from the start.
+	runMu  sync.Mutex
+	runCtx context.Context
+	runWG  *sync.WaitGroup
+	hub    *stream.Hub
 	// client is the web client served and its build (V0.13); a client-only
 	// deploy swaps it (V0.81).
 	client atomic.Pointer[clientBuild]
@@ -132,45 +145,96 @@ func New(opt Options, hosts []HostConfig) *Front {
 		c.h = webClient(opt.Web)
 	}
 	f.client.Store(c)
+	f.links.Store(&[]*link{})
 	f.loadOrder()
 	for _, h := range hosts {
-		u, err := url.Parse(strings.TrimRight(h.URL, "/"))
-		if err != nil || u.Host == "" {
-			opt.Logf("front: host %s: bad url %q", h.Name, h.URL)
-			continue
-		}
-		l := &link{cfg: h, base: u, client: opt.Client, raw: map[string]map[string]any{},
-			pub: map[string]map[string]any{}, known: map[string]bool{}}
-		l.proxy = &httputil.ReverseProxy{
-			Rewrite: func(pr *httputil.ProxyRequest) {
-				pr.SetURL(l.base)
-				// Previews build their CSP from the browser's Host (V0.47).
-				pr.Out.Host = pr.In.Host
-				if l.cfg.Remote {
-					pr.Out.Header.Del("Tailscale-User-Login")
-				}
-			},
-			Transport:     opt.Client.Transport,
-			FlushInterval: -1,
-			ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-				api.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})
-			},
-		}
-		f.links = append(f.links, l)
-		if opt.CacheDir != "" {
-			f.restore(l)
+		if l := f.newLink(h); l != nil {
+			f.append(l)
 		}
 	}
 	return f
 }
 
-// Run follows every host until ctx ends, and keeps the cache on disk.
-func (f *Front) Run(ctx context.Context) {
-	var wg sync.WaitGroup
-	for _, l := range f.links {
+// all is the hosts followed, in order: the configured ones, then the found ones.
+func (f *Front) all() []*link { return *f.links.Load() }
+
+func (f *Front) append(l *link) {
+	old := f.all()
+	n := append(append(make([]*link, 0, len(old)+1), old...), l)
+	f.links.Store(&n)
+}
+
+// AddHost follows one more host, found by discovery (V0.123, decision
+// 0025): it behaves as a configured one. A host whose name or URL is
+// already followed is not added again; false then.
+func (f *Front) AddHost(h HostConfig) bool {
+	f.runMu.Lock()
+	defer f.runMu.Unlock()
+	u := strings.TrimRight(h.URL, "/")
+	f.mu.Lock()
+	for _, l := range f.all() {
+		rep := l.reported.Load()
+		if l.base.String() == u || (h.Name != "" && (l.name() == h.Name || (rep != nil && *rep == h.Name))) {
+			f.mu.Unlock()
+			return false
+		}
+	}
+	f.mu.Unlock()
+	l := f.newLink(h)
+	if l == nil {
+		return false
+	}
+	f.mu.Lock()
+	f.append(l)
+	f.mu.Unlock()
+	f.opt.Logf("front: following found host %s at %s", l.name(), u)
+	if ctx, wg := f.runCtx, f.runWG; ctx != nil && ctx.Err() == nil {
 		wg.Add(1)
 		go func() { defer wg.Done(); f.follow(ctx, l) }()
 	}
+	return true
+}
+
+func (f *Front) newLink(h HostConfig) *link {
+	opt := f.opt
+	u, err := url.Parse(strings.TrimRight(h.URL, "/"))
+	if err != nil || u.Host == "" {
+		opt.Logf("front: host %s: bad url %q", h.Name, h.URL)
+		return nil
+	}
+	l := &link{cfg: h, base: u, client: opt.Client, raw: map[string]map[string]any{},
+		pub: map[string]map[string]any{}, known: map[string]bool{}}
+	l.proxy = &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(l.base)
+			// Previews build their CSP from the browser's Host (V0.47).
+			pr.Out.Host = pr.In.Host
+			if l.cfg.Remote {
+				pr.Out.Header.Del("Tailscale-User-Login")
+			}
+		},
+		Transport:     opt.Client.Transport,
+		FlushInterval: -1,
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			api.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})
+		},
+	}
+	if opt.CacheDir != "" {
+		f.restore(l)
+	}
+	return l
+}
+
+// Run follows every host until ctx ends, and keeps the cache on disk.
+func (f *Front) Run(ctx context.Context) {
+	var wg sync.WaitGroup
+	f.runMu.Lock()
+	f.runCtx, f.runWG = ctx, &wg
+	for _, l := range f.all() {
+		wg.Add(1)
+		go func() { defer wg.Done(); f.follow(ctx, l) }()
+	}
+	f.runMu.Unlock()
 	if f.opt.CacheDir != "" {
 		wg.Add(1)
 		go func() {
@@ -187,6 +251,10 @@ func (f *Front) Run(ctx context.Context) {
 			}
 		}()
 	}
+	<-ctx.Done()
+	f.runMu.Lock()
+	f.runCtx = nil // a host found now is not followed
+	f.runMu.Unlock()
 	wg.Wait()
 	f.saveDirty()
 }
@@ -196,7 +264,8 @@ func (f *Front) isLocal(l *link) bool {
 	if f.opt.Local != "" {
 		return l.name() == f.opt.Local
 	}
-	return len(f.links) > 0 && f.links[0] == l
+	ls := f.all()
+	return len(ls) > 0 && ls[0] == l
 }
 
 // name is the configured name, else the name the host reports.
@@ -621,6 +690,9 @@ func (f *Front) Handler() http.Handler {
 		f.forward(w, r, f.byName(r.URL.Query().Get("host")))
 	})
 	mux.HandleFunc("/mcp", http.NotFound) // agents talk to their host
+	if f.opt.WellKnown != nil {           // V0.123: how other installs find this one
+		mux.Handle("GET /.well-known/fyr", peers.Handler(f.opt.WellKnown))
+	}
 	if f.opt.Web != nil {
 		mux.Handle("/", f.webClient())
 	}
@@ -632,22 +704,23 @@ func (f *Front) byName(name string) *link {
 	if name != "" {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		for _, l := range f.links {
+		for _, l := range f.all() {
 			if l.name() == name {
 				return l
 			}
 		}
 	}
-	if len(f.links) == 0 {
+	ls := f.all()
+	if len(ls) == 0 {
 		return nil
 	}
-	return f.links[0]
+	return ls[0]
 }
 
 // owner is the host that runs a thread (the id-to-host map), else the first.
 func (f *Front) owner(id string) *link {
 	f.mu.Lock()
-	for _, l := range f.links {
+	for _, l := range f.all() {
 		if l.raw[id] != nil || l.known[id] {
 			f.mu.Unlock()
 			return l
@@ -660,7 +733,7 @@ func (f *Front) owner(id string) *link {
 func (f *Front) projectOwner(id string) *link {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, l := range f.links {
+	for _, l := range f.all() {
 		for _, p := range l.projects {
 			if p["id"] == id {
 				return l
@@ -707,14 +780,14 @@ func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 		Threads: []map[string]any{}, Projects: []map[string]any{}, Profiles: []any{}, Hosts: []api.Host{}, Partial: since > 0}
 	seenProfile := map[any]bool{}
 	var actions any
-	for _, l := range f.links {
+	for _, l := range f.all() {
 		for _, d := range l.pub {
 			if since <= 0 || revOf(d) > since {
 				st.Threads = append(st.Threads, d)
 			}
 		}
 		st.Projects = append(st.Projects, l.projects...)
-		h := api.Host{Name: l.name(), Online: l.online}
+		h := api.Host{Name: l.name(), Online: l.online, Found: l.cfg.Found}
 		if !l.since.IsZero() {
 			h.Since = l.since.UTC().Format(time.RFC3339)
 		}
@@ -770,7 +843,7 @@ func (f *Front) thread(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	f.mu.Lock()
 	var b []byte
-	for _, l := range f.links {
+	for _, l := range f.all() {
 		if d := l.pub[id]; d != nil {
 			b, _ = json.Marshal(d)
 		}
@@ -969,7 +1042,7 @@ func (f *Front) profiles(w http.ResponseWriter, r *http.Request) {
 func (f *Front) gather(ctx context.Context, path, key string) []map[string]any {
 	var on []*link
 	f.mu.Lock()
-	for _, l := range f.links {
+	for _, l := range f.all() {
 		if l.online {
 			on = append(on, l)
 		}

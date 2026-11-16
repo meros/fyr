@@ -79,6 +79,16 @@ type config struct {
 	// Slots: how many heavy jobs (test suites, builds, e2e runs) run at
 	// once across the threads (V0.86); absent or negative is 2, 0 is off.
 	Slots *int `json:"slots"`
+	// Peers: Fyr page origins probed as they are (V0.123, decision 0025),
+	// besides the tailnet's own nodes; for development and non-tailnet hosts.
+	Peers []string `json:"peers"`
+	// PeerPorts: the HTTPS ports a tailnet node is probed on for
+	// /.well-known/fyr (V0.123); empty is 7443, Tailscale Serve's port in the
+	// NixOS module.
+	PeerPorts []int `json:"peerPorts"`
+	// Name: this install's name in the clients; empty is the machine's
+	// hostname. Two installs on one machine need two names (V0.123).
+	Name string `json:"name"`
 }
 
 func home() string { h, _ := os.UserHomeDir(); return h }

@@ -1659,7 +1659,7 @@ function mockHosts(now: number) {
   const iso = (ms: number) => new Date(ms).toISOString();
   return [
     { name: "desk", online: true, since: iso(now - 3 * 3600_000) },
-    { name: "meros-server", online: false, since: iso(now - 25 * 60_000), error: "unreachable" },
+    { name: "meros-server", online: false, since: iso(now - 25 * 60_000), error: "unreachable", found: true },
   ];
 }
 function mockHostOf(t: ThreadDTO, now: number): ThreadDTO {
