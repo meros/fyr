@@ -206,7 +206,11 @@ func init() {
 			if err != nil {
 				return nil, false, err
 			}
-			return c, false, AttachEvidence(c, a.Evidence, now)
+			if err := AttachEvidence(c, a.Evidence, now); err != nil {
+				return nil, false, err
+			}
+			// V0.87 (2): a PR that Fyr's own change holds folds that change into this one.
+			return joinPRWork(t, c, now), false, nil
 		})},
 		{Name: KindChangeUnchanged, From: agentOnly, Reduce: func(r Rec, _ Input, now time.Time) (Result, error) {
 			n := OpenAgentChanges(r.T)
