@@ -142,6 +142,10 @@ func (m *Manager) handover(threadID string, e core.Effect) {
 			}
 			return
 		}
+		// SPEC V0.96 (4): the new session learns the open changes' ids.
+		if lines := core.OpenChangesText(&t); lines != "" {
+			first += "\n\n" + lines
+		}
 		if err := m.send(threadID, core.Effect{Kind: core.EffectSend, Text: first, From: FromHandover}, nil); err != nil {
 			log.Printf("thread %s: handover first message: %v", threadID, err)
 		}
