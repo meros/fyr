@@ -1105,7 +1105,7 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
                     <span class="plt">
                       <span class="ell pln">{x.name}</span>
                       <span class="ell pls2">
-                        {quiet ? `${quiet.replace(/^Quiet now, until/, "Quiet until")} · ` : ""}
+                        {quiet ? `${quiet} · ` : ""}
                         {projectSubtitle(x)}
                       </span>
                     </span>
