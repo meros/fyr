@@ -1542,6 +1542,21 @@ for (const [w, h, mobile] of [[1280, 800, false], [390, 844, true]]) {
   }
 }
 
+// #85: a dismissed "Fyr is updated" stays dismissed after a reload (the mock stamps the report with a new time on
+// every load, as a restarted host may).
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail&deploy=done`, "!!document.querySelector('.dbn.ok [aria-label=Dismiss]')");
+  await evaluate(`document.querySelector('.dbn.ok [aria-label=Dismiss]').click()`);
+  await waitFor(`!document.querySelector('.dbn')`, { soft: true });
+  await navigate(`${origin}/?mock=rail&deploy=done`, "!!document.querySelector('.rail')");
+  await settle();
+  check(await evaluate(`!document.querySelector('.dbn')`), "#85 desktop: a dismissed update result shows again after a reload");
+} catch (e) {
+  failures.push(`#85 desktop: ${e.message}`);
+}
+
 // V0.73 (2): on the desktop, the Changes tab of six cards over an empty diff, in a tall and a short window.
 for (const [w, h] of [[1280, 800], [1024, 600]]) {
   try {
