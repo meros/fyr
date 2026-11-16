@@ -85,6 +85,9 @@ type Engine struct {
 	Now     func() time.Time
 	// Adopt runs t3.adopt's effect; set by main.
 	Adopt func(ids []string) (int, error)
+	// DeployNow runs host.deployNow's effect (V0.83): the deployer stops its
+	// drain; nil: this host deploys nothing.
+	DeployNow func() error
 	// Providers runs the provider commands' effect (3.16); nil: this host
 	// has no providers.
 	Providers Providers
@@ -403,6 +406,13 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(500, err.Error())
 		}
 		reply.Result = map[string]any{"adopted": n}
+	case core.EffectDeployNow:
+		if e.DeployNow == nil {
+			return fail(409, "This host runs no deploy")
+		}
+		if err := e.DeployNow(); err != nil {
+			return fail(409, err.Error())
+		}
 	case core.EffectProvider:
 		if e.Providers == nil {
 			return fail(404, "no providers on this host")
@@ -753,6 +763,21 @@ func (e *Engine) Running() []string {
 		}
 	}
 	return out
+}
+
+// Continue sends "continue" to a thread whose turn a forced deploy cut
+// (V0.83), as the owner's message on the one send path, so the run resumes
+// the session. A thread settled or archived since gets nothing. One
+// commandID sends once (I7). It reports whether the thread took it.
+func (e *Engine) Continue(id, commandID string) bool {
+	e.mu.Lock()
+	t := e.threads[id]
+	skip := t == nil || t.ArchivedAt != nil || t.Settle.At != nil
+	e.mu.Unlock()
+	if skip {
+		return false
+	}
+	return e.submit(core.Input{Source: core.FromOwner, Kind: "thread.send", Thread: id, Args: core.Args{"text": "continue"}, CmdID: commandID}).OK
 }
 
 // quietKey is what the clients last got for a project's quiet hours.

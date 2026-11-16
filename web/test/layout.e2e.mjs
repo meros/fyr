@@ -1584,7 +1584,7 @@ for (const [w, h, mobile] of [[1280, 800, false], [390, 844, true]]) {
     await waitFor(`!!document.querySelector('${sel}')`, { soft: true });
     const c = await evaluate(`(() => { const d = document.querySelector('${sel}'); if (!d) return null; const p = d.querySelector('${prim}'); return { title: d.querySelector('.cfm-t')?.textContent ?? '', text: d.querySelector('.cfm-text')?.textContent ?? '', primary: p?.textContent.replace('⏎', '').trim(), danger: !!p?.classList.contains('danger') }; })()`);
     check(!!c && c.title === "Restart Fyr now?" && c.primary === "Restart now" && c.danger && /continue/.test(c.text), `${ctx}: pressing Restart now does not open its confirmation (${JSON.stringify(c)})`);
-    await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await evaluate(`document.querySelector('${sel} ${mobile ? ".cfm-f .m-bt:not(.p)" : ".df .btn:not(.p)"}')?.click()`);
     await waitFor(`!document.querySelector('${sel}')`, { soft: true });
     check(await evaluate(`!document.querySelector('${sel}') && /waiting for/.test(document.querySelector('.dbn')?.textContent ?? '')`), `${ctx}: Cancel does not close the confirmation or the banner changed`);
   } catch (e) {
