@@ -152,6 +152,10 @@ export function ThreadPane(p: ThreadPaneProps) {
               <span>{t.branch}</span>
             </span>
           )}
+          <span class="chip pvc" title={profile?.unavailable ? `Provider ${profile.name} · ${profile.unavailable}` : `Provider ${profile?.name ?? t.profile}`}>
+            <span class="pdot" style={profile?.color ? { background: profile.color } : undefined} />
+            <span>{profile?.name ?? t.profile}</span>
+          </span>
           <ModelChip t={t} profile={profile} onRun={p.onRun} />
           <EffortChip t={t} profile={profile} onRun={p.onRun} />
           {headerPr(t) && <PrChip pr={headerPr(t)!} onDismiss={isAvailable(t, "thread.dismissPR") ? () => p.onRun("thread.dismissPR") : undefined} />}

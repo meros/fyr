@@ -12,11 +12,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
 import { SECTIONS, isAvailable, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
-import { quietNote } from "./quiet.ts";
 import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
-import { relTime, shortModel, untilLabel, whenLabel } from "./format.ts";
+import { shortModel, untilLabel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
 import { AgentsStrip, EffectBody, ThreadTabBody } from "./thread.tsx";
 import { describeEffect } from "./effects.ts";
@@ -30,7 +29,7 @@ import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { TAB_LABEL, defaultTab, threadTabs } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
-import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, QuietHold, ProjectPicker, ProjectTag, StartedBy, ThreadProject, type ProjectPatch } from "./project-ui.tsx";
+import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, QuietHold, ProjectPicker, ProjectTag, StartedBy, type ProjectPatch } from "./project-ui.tsx";
 import { colorVar, projectName, projectOf } from "./projects.ts";
 import { folderHint, type NewThreadArgs } from "./new-thread.ts";
 import { useNewThreadForm } from "./new-thread-form.ts";
@@ -39,12 +38,12 @@ import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type Card
 import { ADVANCE_MS, activeSection, allowCommit, askCommit, stepLabel, stripCount, type Choice } from "./mobile.ts";
 import { LONG_PRESS_MS, idle, longPressCancelled, settleLabel, swipeAvail, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
 import type { Nav, Sheet } from "./nav.ts";
-import { groupTasks, liveLine, workingLine } from "./tasks.ts";
-import { COLLAPSED_BY_DEFAULT, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
+import { liveLine } from "./tasks.ts";
+import { COLLAPSED_BY_DEFAULT, ProjectFilterRow, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
+import { NeedsRowBody, OneRowBody, PHONE_LOOK } from "./row-ui.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import { QuotaList } from "./quota-ui.tsx";
-import { ThreadCPU, ThreadSlot } from "./load-ui.tsx";
 import { hostLabel, hostTag, offlineLine, type HostInfo } from "./hosts.ts";
 
 // ---- icons ----
@@ -412,21 +411,7 @@ function MInbox(p: PhoneProps) {
           })}
         </div>
       )}
-      {p.filter.id && !p.list.selecting && (() => {
-        const fp = p.store.projects.find((x) => x.id === p.filter.id);
-        return fp ? (
-          <div class="m-pfline" style={{ "--pc": colorVar(fp.color, fp.name) }}>
-            <button class="m-pfn" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "filter" } })}>
-              <ProjectIcon project={fp} name={fp.name} size={20} />
-              <span class="ell">Only {fp.name}</span>
-              {quietNote(fp, p.now) && <span class="m-pfq">{quietNote(fp, p.now)}</span>}
-            </button>
-            <button class="m-tbtn" onClick={() => p.filter.set(null)}>
-              Clear
-            </button>
-          </div>
-        ) : null;
-      })()}
+      {!p.list.selecting && <ProjectFilterRow projects={p.store.projects} selected={p.filter.id} onPick={p.filter.set} now={p.now} />}
       {p.store.conn === "offline" && (
         <div class="m-cstrip">
           <span class="ell">Reconnecting to {hostName}…</span>
@@ -515,30 +500,11 @@ function snoozedHint(list: Thread[], now: number): string {
   return next ? `next: ${untilLabel(next, now)}` : "none";
 }
 
-function oneMeta(t: Thread, now: number): string {
-  if (t.attention.section === "working") {
-    const subs = t.subagents && !groupTasks(t.tasks).running.length ? `${t.subagents} sub · ` : "";
-    return subs + workingLine(t);
-  }
-  if (t.attention.state === "snoozed") return `until ${untilLabel(t.view?.snoozeUntil, now)}`;
-  return t.project;
-}
-
 /** V0.54: a row names the thread's host when the front has more than one; an offline host says so on any front. */
 function MHost({ t, hosts }: { t: Thread; hosts?: HostInfo[] }) {
   if (t.hostOffline) return <><b class="m-off">{t.host || "host"} offline</b> · </>;
   const h = hostTag(t, hosts);
   return h ? <><span class="m-hostn">{h}</span> · </> : null;
-}
-
-function MPr({ t, short }: { t: Thread; short?: boolean }) {
-  if (!t.pr) return <span />;
-  const l = prChip(t.pr, short);
-  return (
-    <span class={`m-pr ${l.cls}`} title={l.title}>
-      {l.text}
-    </span>
-  );
 }
 
 /** A row with swipes (right settles, left snoozes), long press (actions) and selection. */
@@ -623,41 +589,9 @@ function MRow({ t, p, needs }: { t: Thread; p: PhoneProps; needs: boolean }) {
   const side = off > 0 ? avail.right : off < 0 ? avail.left : null;
   const st = t.attention.state;
   const picked = p.list.picked.has(t.id);
-  const body = needs ? (
-    <div class={`m-rw${st === "done" ? " dn" : ""}`}>
-      {p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : <span class="m-tile"><StateIcon state={st} /></span>}
-      <span class="t ell">{t.title || "Untitled"}</span>
-      <span class="age">{relTime(t.activityAt ?? t.updatedAt, p.now)}</span>
-      <span class="m ell">
-        <b class={stateClass(st)}>{rowState(t)}</b> · <MHost t={t} hosts={p.store.hosts} />{t.parent && <><StartedBy parentId={t.parent} link={false} /> · </>}<ThreadProject t={t} /> · {rowMeta(t)}
-      </span>
-      <MPr t={t} />
-    </div>
-  ) : (
-    <div class="m-one">
-      {p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : <StateIcon state={st} />}
-      <span class="t">
-        <span class="tn ell">{t.title || "Untitled"}</span>
-        <i class="ell">
-          <MHost t={t} hosts={p.store.hosts} />
-          {t.parent && (
-            <>
-              <StartedBy parentId={t.parent} link={false} /> ·{" "}
-            </>
-          )}
-          {t.attention.section !== "working" && t.attention.state !== "snoozed" ? <ThreadProject t={t} /> : oneMeta(t, p.now)}
-          {t.attention.section === "working" && <ThreadCPU id={t.id} />}
-          <ThreadSlot id={t.id} />
-        </i>
-      </span>
-      {t.attention.section !== "working" ? <MPr t={t} short /> : <span />}
-      <span class="age">
-        {t.attention.section === "working"
-          ? relTime(t.runStartedAt ?? groupTasks(t.tasks).running.map((x) => x.startedAt).filter(Boolean).sort()[0], p.now)
-          : whenLabel(t.activityAt ?? t.updatedAt, p.now)}
-      </span>
-    </div>
-  );
+  const lead = p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : undefined;
+  const pre = <MHost t={t} hosts={p.store.hosts} />;
+  const body = needs ? <NeedsRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} /> : <OneRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} />;
   return (
     <div class={`m-swp${picked ? " picked" : ""}${sw.phase === "swipe" ? " moving" : ""}`}>
       {side && (
