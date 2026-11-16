@@ -1005,7 +1005,7 @@ button.ptag{padding:0}
 .chh{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0}
 .chk{flex:none;width:20px;text-align:center;color:var(--ink-muted)}
 .cht{flex:1 1 60%;font:600 14px/20px var(--ui)}
-.chp{flex:none;font:400 12px/16px var(--mono);color:var(--ink-muted)}
+.chp{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:400 12px/16px var(--mono);color:var(--ink-muted)} /* #84: a long phase label ends in … inside its card */
 .chrail{display:flex;gap:4px;margin:0;padding:0;list-style:none}
 .chrail li{flex:1;font:500 11px/14px var(--ui);color:var(--ink-muted);border-top:3px solid var(--line);padding-top:3px}
 .chrail li.done{border-color:var(--harbour);color:var(--ink)}
