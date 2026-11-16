@@ -4,6 +4,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Profile, Thread } from "./types.ts";
 import { handoverTargets, parsePlan, planGuess, rungText, targetModel, type HandoverPlan } from "./handover.ts";
 import { shortModel } from "./format.ts";
+import { offLabel } from "./providers.ts";
 import { Modal } from "./dialogs.tsx";
 
 export interface HandoverProps {
@@ -41,7 +42,10 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
     };
   }, [p.t.id, profile]);
   const blocked = p.t.unavailable["thread.handover"];
-  const from = p.profiles.find((x) => x.id === p.t.profile)?.name ?? p.t.profile;
+  const fromProf = p.profiles.find((x) => x.id === p.t.profile);
+  const from = fromProf?.name ?? p.t.profile;
+  // V0.120 (5): the thread's model, marked off when the owner turned it off (it keeps running until handed over).
+  const fromModel = p.t.model ? (fromProf && !fromProf.models.includes(p.t.model) ? offLabel(p.t.model) : shortModel(p.t.model)) : "";
   const pick = (id: string) => {
     setProfile(id);
     setModel(targetModel(targets.find((x) => x.id === id)));
@@ -60,7 +64,8 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
     <>
     <div class={`db ho-b${p.phone ? " ho-ph" : ""}`}>
       <div class="ho-from">
-        From <b>{from}</b>. The thread keeps its conversation, project and folder; later runs use the new provider.
+        From <b>{from}</b>
+        {fromModel && <span class="ho-model"> · {fromModel}</span>}. The thread keeps its conversation, project and folder; later runs use the new provider.
       </div>
       <div class="row2">
         <label class="fld">

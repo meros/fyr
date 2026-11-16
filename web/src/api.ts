@@ -28,6 +28,8 @@ export interface ApiHandlers {
   threadPatch?(p: ThreadPatch): void;
   /** a project made or changed (V0.23); optional for older callers */
   project?(p: Project): void;
+  /** V0.121: the owner's project order changed (the front's own event) */
+  projectOrder?(ids: string[]): void;
   event(e: FyrEvent): void;
   conn(c: Conn): void;
 }
@@ -183,6 +185,14 @@ function createHttpApi(): Api {
     es.addEventListener("project", (m) => {
       try {
         h.project?.(JSON.parse((m as MessageEvent).data));
+      } catch {
+        /* ignore malformed */
+      }
+    });
+    es.addEventListener("projectOrder", (m) => {
+      try {
+        const ids = (JSON.parse((m as MessageEvent).data) as { ids?: unknown }).ids;
+        if (Array.isArray(ids)) h.projectOrder?.(ids.filter((x): x is string => typeof x === "string"));
       } catch {
         /* ignore malformed */
       }

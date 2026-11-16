@@ -1,6 +1,6 @@
 // SPEC 0.5 V0.50: Settings → Providers in mock mode. In memory; no key ever leaves this module either.
 import type { CommandReply } from "./types.ts";
-import type { FoundDTO, ProviderDTO } from "./providers.ts";
+import type { CatalogModel, FoundDTO, ProviderDTO } from "./providers.ts";
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const CLAUDE_MODELS = [
@@ -9,16 +9,43 @@ const CLAUDE_MODELS = [
   { id: "claude-haiku-5-5", name: "Haiku 5.5" },
 ];
 
-/** mode: "" (three providers), "none" (no providers yet), "nokey" (DeepSeek's key is missing). */
-export function createMockProviders(mode = "") {
+/** V0.120: what a provider reports. */
+const cat = (ms: { id: string; name?: string; efforts?: string[] }[], extra: Partial<CatalogModel> = {}): CatalogModel[] =>
+  ms.map((m) => ({ ...m, firstSeen: new Date(Date.now() - 20 * 86_400_000).toISOString(), ...extra }));
+
+/** V0.120: an endpoint with 40 models, for the search (&providers=many). */
+const ROUTER_MODELS = Array.from({ length: 40 }, (_, i) => {
+  const fam = ["anthropic/claude-sonnet", "anthropic/claude-opus", "openai/gpt", "google/gemini", "z-ai/glm", "deepseek/deepseek", "qwen/qwen3", "mistralai/mistral"][i % 8];
+  const id = `${fam}-${5 - Math.floor(i / 8) / 10}`.replace(/\.0$/, "");
+  return { id, name: id };
+});
+
+/** mode: "" (three providers), "none" (no providers yet), "nokey" (DeepSeek's key is missing), "many" (and an endpoint
+ *  with 40 models), "checkfail" (DeepSeek's last check failed). */
+export function createMockProviders(mode = "", hostNow: () => number = Date.now) {
+  // The times a check reports are the host's (the rail mock's clock is fixed).
+  const ago = (ms: number) => new Date(hostNow() - ms).toISOString();
   const keys = new Map<string, string>(mode === "nokey" ? [] : [["claudeDeepseek", "sk-mock-deepseek-4f2a"]]);
   const list: ProviderDTO[] = [
-    { id: "claude", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", defaultEffort: "high", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, imported: "profile claudeAgent", threads: 9, canLogin: true },
+    { id: "claude", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", defaultEffort: "high", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, imported: "profile claudeAgent", threads: 9, canLogin: true,
+      // V0.120: checked 4 min ago (the page does not ask again); Fable 5.2 is New, Sonnet 5.4 and Haiku 5.4 are off.
+      catalog: [...cat(CLAUDE_MODELS), ...cat([{ id: "claude-fable-5-2", name: "Fable 5.2", efforts: EFFORTS }], { new: true, firstSeen: new Date(Date.now() - 86_400_000).toISOString() }), ...cat([{ id: "claude-sonnet-5-4", name: "Sonnet 5.4", efforts: EFFORTS }, { id: "claude-haiku-5-4", name: "Haiku 5.4" }])],
+      checkedAt: ago(4 * 60_000) },
     { id: "work", name: "Claude (work account)", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#2f6fb0", configDir: "~/.claude-work", models: CLAUDE_MODELS.slice(1, 2), defaultModel: "claude-sonnet-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "needs-login", need: "This account logs in with a token. Press Log in to get one here (Fyr keeps it), or paste a token from `claude setup-token` as its key.", tokenLogin: true, keySet: false, imported: "profile work (claude-work)", threads: 2, canLogin: true,
       // V0.53: a login in progress, so the panel shows (and is measured) in mock mode.
       login: { kind: "token", state: "waiting", url: "https://claude.com/cai/oauth/authorize?code=true&client_id=mock", expires: new Date(Date.now() + 10 * 60_000).toISOString() } },
-    { id: "claudeDeepseek", name: "DeepSeek", kind: "endpoint", cli: "claude", auth: "api-key", baseURL: "https://api.deepseek.com/anthropic", models: [{ id: "deepseek-chat" }, { id: "deepseek-reasoner" }], defaultModel: "deepseek-chat", efforts: EFFORTS, quota: "deepseek", status: "ready", keySet: true, keyLast4: "4f2a", threads: 0 },
+    { id: "claudeDeepseek", name: "DeepSeek", kind: "endpoint", cli: "claude", auth: "api-key", baseURL: "https://api.deepseek.com/anthropic", models: [{ id: "deepseek-chat" }, { id: "deepseek-reasoner" }, { id: "deepseek-coder" }], defaultModel: "deepseek-chat", efforts: EFFORTS, quota: "deepseek", status: "ready", keySet: true, keyLast4: "4f2a", threads: 0,
+      // V0.120: deepseek-coder is on and the provider no longer lists it (Gone); my-finetune-v3 was typed by hand and is off.
+      catalog: [...cat([{ id: "deepseek-chat" }, { id: "deepseek-reasoner" }]), ...cat([{ id: "deepseek-coder" }], { gone: true }), ...cat([{ id: "my-finetune-v3" }], { manual: true })],
+      checkedAt: ago(3 * 3600_000) },
   ];
+  if (mode === "many")
+    list.push({ id: "router", name: "OpenRouter", kind: "endpoint", cli: "claude", auth: "api-key", baseURL: "https://openrouter.ai/api", models: ROUTER_MODELS.slice(0, 2), defaultModel: ROUTER_MODELS[0].id, efforts: EFFORTS, quota: "openrouter", status: "ready", keySet: true, keyLast4: "9a8b", threads: 0, catalog: cat(ROUTER_MODELS), checkedAt: ago(2 * 60_000) });
+  if (mode === "checkfail") {
+    const y = new Date(hostNow() - 86_400_000);
+    y.setHours(14, 2, 0, 0);
+    Object.assign(list[2], { checkedAt: y.toISOString(), checkError: "api.deepseek.com/anthropic/v1/models answered 401" });
+  }
   if (mode === "none") list.length = 0;
   if (mode === "nokey") Object.assign(list[2], { keySet: false, keyLast4: undefined, status: "needs-key", need: "Paste the API key for DeepSeek." });
   const found: FoundDTO[] = [
@@ -63,10 +90,30 @@ export function createMockProviders(mode = "") {
           if (!p) return fail("no provider");
           if (typeof a.name === "string") p.name = a.name;
           const ms = models(a.models);
-          if (ms) p.models = ms;
+          // V0.120: the default stays on; an unknown id joins the catalog by hand; a switched model is no longer New.
+          if (ms && typeof a.defaultModel !== "string" && p.defaultModel && !ms.some((m) => m.id === p.defaultModel)) return fail("Star another model first.");
+          if (ms) {
+            const was = new Set(p.models.map((m) => m.id));
+            const now = new Set(ms.map((m) => m.id));
+            p.catalog = (p.catalog ?? []).map((c) => (was.has(c.id) !== now.has(c.id) ? { ...c, new: false } : c));
+            for (const m of ms) if (!p.catalog.some((c) => c.id === m.id)) p.catalog.push({ id: m.id, firstSeen: new Date().toISOString(), manual: true });
+            p.models = ms.map((m) => ({ ...(p.catalog!.find((c) => c.id === m.id) ?? {}), ...m, id: m.id }));
+            p.models = p.models.map(({ id, name, efforts }) => ({ id, ...(name ? { name } : {}), ...(efforts ? { efforts } : {}) }));
+          }
+          if (Array.isArray(a.forget)) p.catalog = (p.catalog ?? []).filter((c) => !(c.manual && (a.forget as unknown[]).includes(c.id) && !p.models.some((m) => m.id === c.id)));
           if (typeof a.defaultModel === "string") p.defaultModel = a.defaultModel;
           if (!p.models.some((m) => m.id === p.defaultModel)) p.defaultModel = p.models[0]?.id;
           if (typeof a.defaultEffort === "string") p.defaultEffort = a.defaultEffort || undefined;
+          return { ok: true };
+        }
+        // V0.120: ask the provider now. Instant in mock mode; &providers=checkfail keeps failing for DeepSeek.
+        case "provider.refreshModels": {
+          const p = get(a.id);
+          if (!p) return fail("no provider");
+          if (p.status !== "ready") return fail(`Not checked: ${p.status === "needs-key" ? "needs a key" : "needs a login"}. ${p.need ?? ""}`.trim());
+          if (mode === "checkfail" && p.id === "claudeDeepseek") return { ok: true };
+          p.checkedAt = ago(0);
+          p.checkError = undefined;
           return { ok: true };
         }
         case "provider.setKey": {

@@ -51,3 +51,22 @@ func TestHaikuModelOnAStoredClaudeLogin(t *testing.T) {
 		t.Fatalf("an endpoint got a Claude model: %q", m)
 	}
 }
+
+// V0.120 (6), V0.117 holds: a Claude login whose catalog lists Haiku but
+// whose owner turned it off still runs the default system agent on Haiku.
+func TestHaikuModelWhenHaikuIsOff(t *testing.T) {
+	const live = `{"id":"claudeAgent","name":"Claude","cli":"claude","auth":{"kind":"cli-login"},"endpoint":{},` +
+		`"models":[{"id":"claude-opus-5-5","name":"Opus 5.5"}],"defaultModel":"claude-opus-5-5",` +
+		`"catalog":[{"id":"claude-opus-5-5","name":"Opus 5.5"},{"id":"claude-haiku-5-5","name":"Haiku 5.5"}],"checkedAt":"2026-11-16T10:00:00Z"}`
+	var pv provider.Provider
+	if err := json.Unmarshal([]byte(live), &pv); err != nil {
+		t.Fatal(err)
+	}
+	p := pv.Profile(nil, "")
+	if len(p.Models) != 1 || p.Models[0] != "claude-opus-5-5" {
+		t.Fatalf("the pickers' list is not the on-list: %v", p.Models)
+	}
+	if m := HaikuModel(p); m != "claude-haiku-5-5" {
+		t.Fatalf("Haiku off: %q", m)
+	}
+}

@@ -13,6 +13,7 @@ import { useFolderPick } from "./folder-picker.tsx";
 import { deleteProjectAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { shortModel } from "./format.ts";
+import { offLabel, projectModelOff } from "./providers.ts";
 import { useApi } from "./api-context.ts";
 
 /** Threads and projects for labels deep in the tree, and a way to open a thread or a project. */
@@ -761,7 +762,7 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
         <Row
           title="Default provider and model"
           desc="What a new thread here starts with."
-          error={errs.defaults}
+          error={errs.defaults ?? projectModelOff(project, profiles)}
           stack
           class="two"
           end={
@@ -774,6 +775,7 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
               </select>
               <select aria-label="Default model" value={project.model ?? ""} disabled={!prof || env.readOnly} onChange={(e) => void save("defaults", patchFor("model", (e.target as HTMLSelectElement).value))}>
                 <option value="">{prof ? "The provider's default" : "None"}</option>
+                {prof && project.model && !prof.models.includes(project.model) && <option value={project.model}>{offLabel(project.model)}</option>}
                 {(prof?.models ?? []).map((m) => (
                   <option value={m}>{shortModel(m)}</option>
                 ))}

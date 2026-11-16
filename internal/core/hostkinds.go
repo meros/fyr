@@ -19,9 +19,12 @@ const (
 	KindDeployNow = "host.deployNow"
 )
 
+// KindRefreshModels asks a provider for its models now (V0.120).
+const KindRefreshModels = "provider.refreshModels"
+
 // ProviderKinds are the provider registry's commands (3.16).
 var ProviderKinds = []string{"provider.import", "provider.create", "provider.update", "provider.setKey",
-	"provider.login", "provider.loginCode", "provider.loginCancel", "provider.delete"}
+	"provider.login", "provider.loginCode", "provider.loginCancel", "provider.delete", KindRefreshModels}
 
 // The effects of the host kinds; Request carries the command.
 const (

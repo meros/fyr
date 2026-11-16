@@ -229,6 +229,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	poller := &github.Poller{Gh: github.Gh, Src: engine.PRWatch{E: eng}}
 	eng.OnPR = poller.Kick
 	go poller.Run(ctx)
+	go checkModels(ctx, h.reg) // V0.120: each provider's models, once a day
 	// Decision 0020: the durable effects the last run left run once or land.
 	if err := eng.ResumeEffects(); err != nil {
 		log.Printf("resume effects: %v", err)
@@ -297,7 +298,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// The front's device data (push keys and subscriptions) stays in
 		// this machine's database, where the host kept it before V0.54.
 		fr := front.New(front.Options{Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
-			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName}, hosts)
+			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st}, hosts)
 		go func() { fr.Run(ctx); close(frontDone) }()
 		// V0.81: a client-only deploy swaps the client this front serves.
 		dep.SwitchClient = func(build, dir string) error { return fr.SetClient(build, os.DirFS(dir)) }
@@ -353,7 +354,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	fr := front.New(front.Options{Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
-		Push: newPusher(st), CacheDir: filepath.Join(data, "front")}, cfg.Hosts)
+		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st}, cfg.Hosts)
 	done := make(chan struct{})
 	go func() { fr.Run(ctx); close(done) }()
 	hs := &http.Server{Handler: fr.Handler(), ReadHeaderTimeout: 10 * time.Second}
@@ -409,3 +410,19 @@ func (k *kept) client() *runner.Client {
 	return k.rc
 }
 
+
+// checkModels asks each provider that can run for its models once a day
+// (V0.120): a minute after the start, then every hour for the ones due.
+func checkModels(ctx context.Context, reg *provider.Registry) {
+	t := time.NewTimer(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		reg.CheckDaily(time.Now())
+		t.Reset(time.Hour)
+	}
+}

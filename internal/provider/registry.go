@@ -1,9 +1,11 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -40,12 +42,21 @@ type Registry struct {
 	LoginEnv     []string
 	LoginTemp    string
 	LoginTimeout time.Duration
+	// V0.120: ListModels asks a provider for its models (nil: its endpoint's
+	// /v1/models, or its CLI); Client makes the endpoint requests (nil: a
+	// plain client); AutoCheck checks a provider the owner just added.
+	ListModels func(ctx context.Context, p Provider, key string) ([]cli.Model, error)
+	Client     *http.Client
+	AutoCheck  bool
 
 	mu   sync.Mutex
 	list []Provider
 
 	lmu    sync.Mutex
 	logins map[string]*loginRun
+
+	cmu      sync.Mutex
+	checking map[string]chan struct{}
 }
 
 // Load reads the stored providers.
@@ -277,11 +288,18 @@ type DTO struct {
 	// recent login (the link and state only).
 	CanLogin bool      `json:"canLogin,omitempty"`
 	Login    *LoginDTO `json:"login,omitempty"`
+	// V0.120: what the provider reports, when it was last checked (nil:
+	// never), why the last check failed, and whether one runs now.
+	Catalog    []CatalogDTO `json:"catalog"`
+	CheckedAt  *time.Time   `json:"checkedAt,omitempty"`
+	CheckError string       `json:"checkError,omitempty"`
+	Checking   bool         `json:"checking,omitempty"`
 }
 
 // List is GET /api/providers.
 func (r *Registry) List() []DTO {
 	out := []DTO{}
+	now := time.Now()
 	for _, p := range r.Providers() {
 		d := DTO{ID: p.ID, Name: p.Name, Kind: p.Kind(), CLI: p.CLI, Color: p.Color, Auth: string(p.Auth.Kind), ConfigDir: p.Auth.ConfigDir,
 			BaseURL: p.Endpoint.BaseURL, ModelEnv: p.Endpoint.ModelEnv, Models: p.Models, DefaultModel: p.DefaultModel,
@@ -298,6 +316,12 @@ func (r *Registry) List() []DTO {
 		}
 		d.CanLogin = p.Auth.Kind == cli.CLILogin
 		d.Login = r.login(p.ID)
+		d.Catalog = catalogDTO(p.Catalog, now)
+		if !p.CheckedAt.IsZero() {
+			t := p.CheckedAt
+			d.CheckedAt = &t
+		}
+		d.CheckError, d.Checking = p.CheckError, r.isChecking(p.ID)
 		out = append(out, d)
 	}
 	return out
@@ -372,6 +396,9 @@ func (r *Registry) run(c api.Cmd) api.Reply {
 				return fail(err)
 			}
 		}
+		if r.AutoCheck {
+			go r.refreshAsync(p.ID) // V0.120: Fyr checks a new provider at once
+		}
 		return api.Reply{Result: map[string]string{"id": p.ID}}
 	case "provider.update":
 		p, ok := r.get(id)
@@ -399,6 +426,8 @@ func (r *Registry) run(c api.Cmd) api.Reply {
 		}
 		p.KeyRef = "" // the stored key wins from now on
 		return r.replace(p)
+	case "provider.refreshModels":
+		return r.refresh(id, time.Now().UTC())
 	case "provider.login":
 		return r.startLogin(id)
 	case "provider.loginCode":
@@ -495,6 +524,7 @@ func (r *Registry) fromArgs(p Provider, a map[string]any, create bool) (Provider
 			}
 		}
 	}
+	_, setsDefault := a["defaultModel"].(string)
 	if raw, ok := a["models"].([]any); ok {
 		var ids []string
 		for _, x := range raw {
@@ -506,9 +536,23 @@ func (r *Registry) fromArgs(p Provider, a map[string]any, create bool) (Provider
 				ids = append(ids, s)
 			}
 		}
-		p.Models = modelsFor(ids, p.Auth.Kind == cli.APIKey)
+		next := modelsFor(ids, p.Auth.Kind == cli.APIKey, p.Catalog...)
+		// V0.120: the default is always on; the owner stars another first.
+		if !create && !setsDefault && p.DefaultModel != "" && hasModel(p.Models, p.DefaultModel) && !hasModel(next, p.DefaultModel) {
+			return p, errors.New("Star another model first.")
+		}
+		p = setOn(p, next, time.Now().UTC())
 	} else if create && p.Auth.Kind == cli.CLILogin {
 		p.Models = modelsFor(ids(claudecli.Models), false)
+	}
+	if raw, ok := a["forget"].([]any); ok {
+		var ids []string
+		for _, x := range raw {
+			if s, _ := x.(string); s != "" {
+				ids = append(ids, s)
+			}
+		}
+		p = forget(p, ids)
 	}
 	if p.Models == nil {
 		p.Models = []cli.Model{}

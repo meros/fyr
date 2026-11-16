@@ -17,7 +17,7 @@ import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { stateLabel } from "./rows.ts";
 import { clockTime, duration, relTime, shortModel } from "./format.ts";
-import { effortsFor, startEffort } from "./providers.ts";
+import { effortsFor, offLabel, startEffort } from "./providers.ts";
 import { dividerLine, rungDone } from "./handover.ts";
 import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
@@ -352,13 +352,15 @@ function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: Thread; now
 function ModelChip({ t, profile, onRun }: { t: Thread; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
   const models = profile?.models ?? [];
   const reason = unavailableReason(t, "thread.setModel");
-  const can = models.length > 1 && !reason;
+  // V0.120 (5): a thread whose model the owner turned off keeps running on it; the chip says so until another is picked.
+  const off = !!profile && !!t.model && !models.includes(t.model);
+  const can = (models.length > 1 || (off && models.length > 0)) && !reason;
   return (
     <span class={`chip m${can ? " msel" : ""}`} title={can ? `${t.model} · change model` : reason ? `${t.model} · ${reason}` : t.model}>
-      <span>{shortModel(t.model)}</span>
+      <span>{off ? offLabel(t.model) : shortModel(t.model)}</span>
       {can && (
         <select value={t.model} aria-label="Model" onChange={(e) => onRun("thread.setModel", { model: (e.target as HTMLSelectElement).value })}>
-          {!models.includes(t.model) && <option value={t.model}>{shortModel(t.model)}</option>}
+          {!models.includes(t.model) && <option value={t.model}>{offLabel(t.model)}</option>}
           {models.map((m) => (
             <option value={m}>{shortModel(m)}</option>
           ))}
