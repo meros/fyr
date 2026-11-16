@@ -266,7 +266,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// V0.54 (decision 0016): a host sends no push; the front that serves
 	// the devices does, for the threads of all its hosts.
 	// V0.51: the host never serves the client; a front does.
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
+	id := installID(data)
+	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
 		Load:  &cgroup.Sampler{Tree: tree, Slots: pool}, // V0.80, V0.86
 		Focus: func(device, thread string, on bool) { // V0.85
@@ -311,8 +312,17 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		cfg.HostListen = net.JoinHostPort(ip, port)
 	}
 	hostHandler := srv.Handler()
+	// #148: the launcher trusts a new build once /healthz on this listener
+	// is green: the store reads, the client has its page, and the runner's
+	// processes were adopted when there is a runner.
+	health := []deploy.Check{storeHealthy(h.st), webHealthy(webFS), func() error {
+		if os.Getenv("FYR_RUNNER") != "" && rn == nil {
+			return errors.New("the runner did not answer; its agent processes were not adopted")
+		}
+		return nil
+	}}
 	if cfg.Role == "host" {
-		serve(ln, hostHandler)
+		serve(ln, deploy.Health(hostHandler, health...))
 	} else {
 		// both (V0.51): the front reaches this host over a loopback link,
 		// through the host protocol only; agents keep /mcp on the main port.
@@ -323,8 +333,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// this machine's database, where the host kept it before V0.54.
 		// V0.123 (decision 0025): other installs find this one by its
 		// well-known answer, which names where its host protocol is.
-		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen))
-		fr := front.New(front.Options{Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
+		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen), id)
+		fr := front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
 			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st,
 			WellKnown: func() peers.WellKnown { return wk }}, hosts)
 		go func() { fr.Run(ctx); close(frontDone) }()
@@ -334,7 +344,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		mux := http.NewServeMux()
 		mux.Handle("/mcp", hostHandler)
 		mux.Handle("/", fr.Handler())
-		serve(ln, mux)
+		serve(ln, deploy.Health(mux, health...))
 	}
 	switch {
 	case cfg.HostListen == "":
@@ -348,7 +358,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		log.Printf("serving fronts on the tailnet at %s", cfg.HostListen)
 	}
 	log.Printf("build %s (%s) listening on http://%s (%d threads, %d providers)", BuildID(), cfg.Role, ln.Addr(), len(eng.Snapshot()), len(h.profiles()))
-	deploy.MarkReady()
+	deploy.MarkReady(ln.Addr().String())
 	dep.ReportPending()
 	eng.AutoDeploySweep() // V0.111: the deploy asks that waited across the restart
 
@@ -384,20 +394,21 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	ln := listenLoopback(cfg.Listen)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	wk := wellKnown(cfg, name, "")
-	fr := front.New(front.Options{Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
+	id := installID(data)
+	wk := wellKnown(cfg, name, "", id)
+	fr := front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
 		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, WellKnown: func() peers.WellKnown { return wk }}, cfg.Hosts)
 	done := make(chan struct{})
 	go func() { fr.Run(ctx); close(done) }()
 	go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every) // V0.123
-	hs := &http.Server{Handler: fr.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Handler: deploy.Health(fr.Handler(), storeHealthy(st), webHealthy(webFS)), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
 	}()
 	log.Printf("build %s (front) listening on http://%s for %d hosts", BuildID(), ln.Addr(), len(cfg.Hosts))
-	deploy.MarkReady()
+	deploy.MarkReady(ln.Addr().String())
 	<-ctx.Done()
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

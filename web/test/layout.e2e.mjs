@@ -260,7 +260,7 @@ const SCREENS = [
   // SPEC V0.119 (amends V0.50): Settings is the nav and four pages, with a provider, Add provider and a project as
   // sub-pages. On every one: no control under 44 px, nothing past the right edge, the last control above the bottom
   // inset; with the keyboard up a focused field and its button stay in view.
-  { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 4 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
+  { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 5 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
   { name: "settings providers", url: "?mock=rail&settings=providers", ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section[aria-label=\"System agents\"] select').length === 4" },
   { name: "settings provider login (V0.119)", url: "?mock=rail&settings=providers/work", ready: "!!document.querySelector('.m-settings .login a.loginlink')" },
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
@@ -269,6 +269,9 @@ const SCREENS = [
   { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-approve Fyr deploys\"]')", field: ".m-settings .fieldrow .inl input" },
   { name: "settings projects (V0.119)", url: "?mock=rail&settings=projects", ready: "document.querySelectorAll('.m-settings .pli').length > 3" },
   { name: "settings device (V0.119)", url: "?mock=rail&settings=device", ready: "!!document.querySelector('.m-settings [role=switch][aria-label=Notifications]')" },
+  // V0.125: the Hosts page and a host's page with a changed id, at every phone size.
+  { name: "settings hosts (V0.125)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .sr.host').length === 4" },
+  { name: "settings host changed (V0.125)", url: "?mock=rail&hosts=2&settings=hosts/lab", ready: "!!document.querySelector('.m-settings .note.bad')" },
   { name: "board of changes", url: "?mock=1&changes" },
   // V0.116: a project with an image icon the setup agent set: Set by agent, the image buttons 44 px.
   { name: "project screen with an image icon (V0.116)", url: "?mock=rail&project=p_fyr", field: ".pedit .pname .inl input" },
@@ -537,7 +540,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   }
   if (ctx.startsWith("settings nav")) {
     const n = m.settings?.nav ?? [];
-    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|This device" && n.every((x) => x.h >= 55.5 && x.s), `${ctx}: the nav is wrong ${JSON.stringify(n)}`);
+    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|This device" && n.every((x) => x.h >= 55.5 && x.s), `${ctx}: the nav is wrong ${JSON.stringify(n)}`);
   }
   if (ctx.startsWith("settings providers")) {
     const st = m.settings;
@@ -1337,7 +1340,7 @@ try {
   await settle();
   const RECT = `(() => { const r = document.querySelector('.dlg.settings')?.getBoundingClientRect(); return r ? [Math.round(r.width), Math.round(r.height)].join('x') : ''; })()`;
   const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', nav: [...document.querySelectorAll('.dlg .stn-i .stn-t')].map(e => e.textContent), on: document.querySelector('.dlg .stn-i[aria-current=page]')?.dataset.page ?? '', rows: document.querySelectorAll('.dlg .prow').length, size: ${RECT} })`);
-  check(d.title === "Settings" && d.nav.join("|") === "Providers|Automation|Projects|This device" && d.on === "providers" && d.rows === 3, `V0.119 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  check(d.title === "Settings" && d.nav.join("|") === "Providers|Automation|Projects|Hosts|This device" && d.on === "providers" && d.rows === 3, `V0.119 desktop: Settings is wrong (${JSON.stringify(d)})`);
   // SPEC V0.115: System agents: a provider and a model for all jobs, a choice per job ("Same as default"), and what each job runs on.
   await waitFor(`document.querySelectorAll('.dlg section[aria-label="System agents"] select').length >= 4`, { soft: true });
   const sa = await evaluate(`(() => { const el = document.querySelector('.dlg section[aria-label="System agents"]'); if (!el) return null;
@@ -1348,7 +1351,7 @@ try {
   await shot("settings-providers-desktop.png");
   // The same size on all four pages; each page shows its heading.
   const sizes = {};
-  for (const page of ["automation", "projects", "device", "providers"]) {
+  for (const page of ["automation", "projects", "hosts", "device", "providers"]) {
     await evaluate(`document.querySelector('.dlg .stn-i[data-page=${page}]').click()`);
     await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === '${page}'`, { soft: true });
     await settle();
@@ -1428,7 +1431,7 @@ section('V0.119', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
-  for (const page of ["providers", "providers/claude", "providers/new", "automation", "projects", "projects/p_fyr", "device"]) {
+  for (const page of ["providers", "providers/claude", "providers/new", "automation", "projects", "projects/p_fyr", "hosts", "device"]) {
     await navigate(`${origin}/?mock=rail&dialog=settings&page=${page}`, "!!document.querySelector('.dlg.settings .stp-h h2')");
     await settle();
     await shot(`settings-${page.replace("/", "-")}-dark-desktop.png`);
@@ -1793,6 +1796,155 @@ try {
 } catch (e) {
   failures.push(`V0.54 hosts: ${e.message}`);
 }
+});
+
+// SPEC 0.5 V0.125 (decision 0026, amends V0.124 (5) and V0.119): Settings → Hosts is its own page, the same on the
+// desktop and the phone. 1 the nav has five pages and Hosts its badge; 2 the Hosts page's rows and foot; 3 a changed
+// id on the host's page and Trust; 4 a plain host's page and the way back; 5 This device's new row.
+for (const [label, w, ht] of [
+  ["desktop", 1280, 800],
+  ["phone", 390, 844],
+]) section(`V0.125 ${label}`, async (hn) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen, shot, key, tapCenter } = hn;
+  const ctx = `V0.125 ${label}`;
+  const phone = label === "phone";
+  const root = phone ? ".m-settings" : ".dlg";
+  const url = (page) => (phone ? `?mock=rail&hosts=2&settings=${page}` : `?mock=rail&hosts=2&dialog=settings&page=${page}`);
+  const open = async (page, ready) => {
+    if (phone) await openScreen({ url: url(page), ready }, w, ht);
+    else await navigate(`${origin}/${url(page)}`, ready);
+    await waitFor(ready);
+    await settle();
+  };
+  const step = async (name, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      failures.push(`${ctx} ${name}: ${e.message}`);
+    }
+  };
+  const NAV = `[...document.querySelectorAll('${root} .stn-i')].map(b => ({ t: b.querySelector('.stn-t')?.textContent, s: b.querySelector('.stn-s')?.textContent, badge: b.querySelector('.pst')?.textContent ?? '' }))`;
+  // 1. The nav.
+  await step("nav", async () => {
+    const ready = phone ? `document.querySelectorAll('.m-settings .stn-i').length === 5` : `document.querySelectorAll('.dlg .stn-i').length === 5`;
+    await open(phone ? "" : "projects", ready);
+    const n = await evaluate(NAV);
+    const hosts = n.find((x) => x.t === "Hosts"), projects = n.find((x) => x.t === "Projects");
+    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|This device", `${ctx}: the nav ${JSON.stringify(n)}`);
+    check(hosts?.s === "4 hosts · 1 needs you" && hosts?.badge === "1", `${ctx}: the Hosts nav row ${JSON.stringify(hosts)}`);
+    check(/^\d+ projects$/.test(projects?.s ?? ""), `${ctx}: the Projects summary still counts hosts ${JSON.stringify(projects)}`);
+    if (!phone) {
+      const pj = await evaluate(`({ host: document.querySelectorAll('.dlg .sr.host').length, sub: [...document.querySelectorAll('.dlg .stp-sub')].map(e => e.textContent) })`);
+      check(pj.host === 0 && !pj.sub.includes("Hosts"), `${ctx}: Projects still has a Hosts group ${JSON.stringify(pj)}`);
+    } else {
+      await open("projects", "document.querySelectorAll('.m-settings .pli').length > 3");
+      const pj = await evaluate(`document.querySelectorAll('.m-settings .sr.host').length`);
+      check(pj === 0, `${ctx}: Projects still has host rows (${pj})`);
+    }
+  });
+  // 2. The Hosts page.
+  await step("list", async () => {
+    await open("hosts", `document.querySelectorAll('${root} .sr.host').length === 4`);
+    const rows = await evaluate(`[...document.querySelectorAll('${root} .sr.host')].map(r => ({ tag: r.tagName, name: r.dataset.host, id: r.dataset.id ?? '', line: r.querySelector('.sr-d')?.textContent ?? '', bad: r.classList.contains('bad'), badge: r.querySelector('.pst')?.textContent ?? '', btns: r.querySelectorAll('button').length, dot: r.querySelector('.hdot')?.className ?? '', h: r.getBoundingClientRect().height, self: r.querySelector('.tag')?.textContent ?? '' }))`);
+    const by = Object.fromEntries(rows.map((r) => [r.name, r]));
+    check(rows.map((r) => r.name).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the order ${JSON.stringify(rows.map((r) => r.name))}`);
+    check(rows.every((r) => r.tag === "BUTTON" && r.btns === 0), `${ctx}: a row is not one button or holds a button ${JSON.stringify(rows)}`);
+    check(/^online since \d\d:\d\d · this machine · id F7QK$/.test(by.desk?.line) && by.desk?.self === "This install" && by.desk?.id === "F7QK-2M9X-AB34-CD56", `${ctx}: desk ${JSON.stringify(by.desk)}`);
+    check(/^offline since \d\d:\d\d · tailnet · id M3RS$/.test(by["host-b"]?.line) && !by["host-b"]?.bad && /off/.test(by["host-b"]?.dot), `${ctx}: the offline row ${JSON.stringify(by["host-b"])}`);
+    check(/ · LAN · no id$/.test(by["old-nuc"]?.line), `${ctx}: old-nuc ${JSON.stringify(by["old-nuc"])}`);
+    check(by.lab?.line === "Another install answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && /warn/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`);
+    if (phone) check(rows.every((r) => r.h >= 55.5), `${ctx}: a row under 56 px ${JSON.stringify(rows.map((r) => r.h))}`);
+    const foot = await evaluate(`[...document.querySelectorAll('${root} .sg-f')].map(e => e.textContent).join(' ')`);
+    check(foot === "Fyr finds your other installs on the tailnet by itself. A host it cannot see goes in fyrd's config (hosts).", `${ctx}: the foot "${foot}"`);
+    await shot(`hosts-${label}.png`);
+    if (!phone) {
+      await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+      await settle();
+      await shot(`hosts-${label}-dark.png`);
+      await send("Emulation.setEmulatedMedia", { features: [] });
+    }
+  });
+  // 3. lab's page: the changed id and Trust.
+  await step("changed", async () => {
+    await open("hosts/lab", `!!document.querySelector('${root} .note.bad')`);
+    const pg = await evaluate(`(() => { const ids = [...document.querySelectorAll('${root} .idf')].map(e => e.getAttribute('aria-label')); const b = [...document.querySelectorAll('${root} .btn')].find(x => x.textContent.trim() === 'Trust B7LA'); const r = b?.getBoundingClientRect();
+      return { note: document.querySelector('${root} .note.bad')?.textContent ?? '', ids, trust: r ? { l: r.left, r: r.right, t: r.top, b: r.bottom, h: r.height } : null, vw: innerWidth, vh: innerHeight, pill: document.querySelector('${root} .stp .pst')?.textContent ?? '', titles: [...document.querySelectorAll('${root} .sr .sr-t')].map(e => e.textContent) }; })()`);
+    check(pg.note.startsWith("Another install answers as lab.") && pg.ids.includes("id AX2C-7RTM-8PLQ-6VYD") && pg.ids.includes("id B7LA-4QZE-9KDF-3HXW") && pg.pill === "Needs you", `${ctx}: lab's page ${JSON.stringify(pg)}`);
+    check(!pg.titles.includes("Trust"), `${ctx}: the ordinary Trust row shows beside a changed id ${JSON.stringify(pg.titles)}`);
+    check(!!pg.trust && pg.trust.l >= 0 && pg.trust.r <= pg.vw && pg.trust.b <= pg.vh, `${ctx}: Trust B7LA outside the screen ${JSON.stringify(pg)}`);
+    if (phone) check((pg.trust?.h ?? 0) >= 44, `${ctx}: Trust is ${pg.trust?.h} px high`);
+    await shot(`host-changed-${label}.png`);
+    if (!phone) {
+      await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+      await settle();
+      await shot(`host-changed-${label}-dark.png`);
+      await send("Emulation.setEmulatedMedia", { features: [] });
+    }
+    await evaluate(`[...document.querySelectorAll('${root} .btn')].find(x => x.textContent.trim() === 'Trust B7LA')?.click()`);
+    await waitFor(`!document.querySelector('${root} .note.bad')`, { soft: true });
+    const after = await evaluate(`({ note: !!document.querySelector('${root} .note.bad'), id: [...document.querySelectorAll('${root} .idf')].map(e => e.getAttribute('aria-label')), cmds: ${COMMANDS("front.hostId")}.map(c => c.args.host) })`);
+    check(!after.note && after.id.join() === "id B7LA-4QZE-9KDF-3HXW" && after.cmds.join() === "lab", `${ctx}: after Trust ${JSON.stringify(after)}`);
+    // The phone goes back up (a reload would forget the mock's trust): the list, then the nav.
+    if (phone) {
+      await evaluate(`history.back()`);
+      await waitFor(`document.querySelectorAll('.m-settings .sr.host').length === 4`, { soft: true });
+      const lab = await evaluate(`document.querySelector('.m-settings .sr.host[data-host=lab]')?.classList.contains('bad')`);
+      check(lab === false, `${ctx}: lab's row is still red after Trust`);
+      await evaluate(`history.back()`);
+      await waitFor(`document.querySelectorAll('.m-settings .stn-i').length === 5`, { soft: true });
+    }
+    const n = await evaluate(NAV);
+    const hosts = n.find((x) => x.t === "Hosts");
+    check(hosts?.badge === "" && hosts?.s === "4 hosts · 1 offline", `${ctx}: the badge after Trust ${JSON.stringify(hosts)}`);
+  });
+  // 4. A plain host's page, and back to the list.
+  await step("host", async () => {
+    await open("hosts/host-b", `!!document.querySelector('${root} .idf.big')`);
+    const pg = await evaluate(`({ id: document.querySelector('${root} .idf.big')?.getAttribute('aria-label'), copy: [...document.querySelectorAll('${root} .btn')].map(b => b.textContent.trim()), rows: [...document.querySelectorAll('${root} .sr')].map(r => [r.querySelector('.sr-t')?.textContent ?? '', r.querySelector('.sr-d')?.textContent ?? '']), pill: document.querySelector('${root} .stp .pst')?.textContent ?? '' })`);
+    const row = (t) => pg.rows.find((r) => r[0] === t);
+    check(pg.id === "id M3RS-QX7P-5LKA-2WNE" && pg.pill === "Offline", `${ctx}: host-b's id ${JSON.stringify(pg)}`);
+    check(pg.copy.includes("Copy") || pg.copy.includes("Copied"), `${ctx}: no Copy ${JSON.stringify(pg.copy)}`);
+    check(row("Address")?.[1] === "http://100.64.0.9:7778 · tailnet", `${ctx}: the Address row ${JSON.stringify(row("Address"))}`);
+    check(/^Fyr found it by itself\./.test(row("Found on the tailnet")?.[1] ?? ""), `${ctx}: the origin row ${JSON.stringify(pg.rows)}`);
+    check(/^Unreachable\. Its threads show as last read/.test(pg.rows.find((r) => /^Offline since/.test(r[0]))?.[1] ?? ""), `${ctx}: the state row ${JSON.stringify(pg.rows)}`);
+    await shot(`host-${label}.png`);
+    if (!phone) {
+      await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+      await settle();
+      await shot(`host-${label}-dark.png`);
+      await send("Emulation.setEmulatedMedia", { features: [] });
+      // Esc goes to the list, the focus on the row it came from.
+      await key("Escape");
+      await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'hosts'`, { soft: true });
+      const esc = await evaluate(`({ page: document.querySelector('.dlg .stp')?.dataset.page, focus: document.activeElement?.dataset?.host ?? '' })`);
+      check(esc.page === "hosts" && esc.focus === "host-b", `${ctx}: Esc ${JSON.stringify(esc)}`);
+      // The crumb too.
+      await evaluate(`document.querySelector('.dlg .sr.host[data-host=lab]').click()`);
+      await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'hosts/lab'`, { soft: true });
+      await evaluate(`document.querySelector('.dlg .crumb')?.click()`);
+      await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'hosts'`, { soft: true });
+      check(await evaluate(`document.querySelector('.dlg .stp')?.dataset.page === 'hosts'`), `${ctx}: the crumb does not go back to Hosts`);
+    } else {
+      await open("hosts", `document.querySelectorAll('.m-settings .sr.host').length === 4`);
+      await tapCenter(".m-settings .sr.host[data-host=host-b]", `!!document.querySelector('.m-settings .idf.big')`);
+      await evaluate(`history.back()`);
+      await waitFor(`document.querySelectorAll('.m-settings .sr.host').length === 4`, { soft: true });
+      check(await evaluate(`document.querySelectorAll('.m-settings .sr.host').length === 4`), `${ctx}: Back does not return to the Hosts page`);
+    }
+  });
+  // 5. This device.
+  await step("device", async () => {
+    await open("device", `!!document.querySelector('${root} .sr.howin')`);
+    const d = await evaluate(`({ t: document.querySelector('${root} .sr.howin .sr-t')?.textContent, d: document.querySelector('${root} .sr.howin .sr-d')?.textContent, before: document.querySelector('${root} .sr.howin')?.previousElementSibling?.querySelector('.sr-t')?.textContent })`);
+    check(d.t === "How this browser gets in" && /^On this machine itself \(localhost\)\.|^At .+, as owner\./.test(d.d ?? "") && d.before === "Show tool details", `${ctx}: This device ${JSON.stringify(d)}`);
+    await shot(`device-${label}.png`);
+    if (!phone) {
+      await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+      await settle();
+      await shot(`device-${label}-dark.png`);
+      await send("Emulation.setEmulatedMedia", { features: [] });
+    }
+  });
 });
 
 // V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.

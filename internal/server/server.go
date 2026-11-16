@@ -40,7 +40,9 @@ type Server struct {
 	Engine  *engine.Engine
 	MCP     http.Handler // agents' MCP endpoint; optional
 	BuildID string
-	Host    string // host name shown in the rail; default os.Hostname
+	// ID is this install's key id (V0.124, decision 0026), in the state.
+	ID   string
+	Host string // host name shown in the rail; default os.Hostname
 	// OwnerLogin is the Tailscale login allowed over the tailnet (V0.14).
 	// Empty refuses every tailnet request.
 	OwnerLogin string
@@ -247,7 +249,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
 	profiles := s.profiles()
 	api.WriteJSON(w, 200, api.State[api.Thread, api.Project, provider.Profile]{
-		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(),
+		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID,
 		Threads: threads, Actions: acts, Profiles: profiles, Projects: projects,
 		Partial: since > 0, Deploy: s.Engine.DeployState(time.Now()),
 	})

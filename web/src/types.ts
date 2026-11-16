@@ -265,6 +265,8 @@ export interface StateDTO {
   buildId?: string;
   /** The host name for the rail's bottom indicator. */
   host?: string;
+  /** V0.124: this install's key id ("F7QK-2M9X-…"); missing from a Fyr older than V0.124 */
+  hostId?: string;
   user: string;
   threads: ThreadDTO[];
   actions: ActionInfo[];

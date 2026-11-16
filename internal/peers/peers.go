@@ -26,6 +26,8 @@ type WellKnown struct {
 	Role  string `json:"role"`
 	Build string `json:"build"`
 	Owner string `json:"owner"`
+	// ID is the install's key id (V0.124, decision 0026).
+	ID string `json:"id,omitempty"`
 	// Host is where this install serves the host protocol to fronts on other
 	// machines (its hostListen, V0.51), e.g. http://100.64.0.2:7778; empty
 	// when it serves none.

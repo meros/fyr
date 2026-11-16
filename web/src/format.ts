@@ -29,6 +29,19 @@ export function whenLabel(iso: string | null | undefined, now: number): string {
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
+/** V0.125: "08:12" today, "Mon 06:00" this week, "9 Nov 06:00" before that: a past time with its clock time. */
+export function dayTime(iso: string | null | undefined, now: number): string {
+  const hm = clockTime(iso);
+  if (!hm) return "";
+  const d = new Date(Date.parse(iso!));
+  const n = new Date(now);
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(n) - day(d)) / 86400_000);
+  if (diff === 0) return hm;
+  if (diff > 0 && diff < 7) return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${hm}`;
+  return `${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${hm}`;
+}
+
 export function clockTime(iso: string | null | undefined): string {
   if (!iso) return "";
   const t = Date.parse(iso);
