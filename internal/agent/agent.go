@@ -134,9 +134,10 @@ type session struct {
 	// lifecycle is true once the CLI reported command_lifecycle; without
 	// it a message counts as read when its turn ends.
 	lifecycle bool
-	// viewTools: the process started with the live view's prompt and
-	// tools (V0.37). The flag can change while it runs; the feed's upkeep
-	// only asks for a view the agent knows about.
+	// viewTools: the process has the view tools (V0.37). Since V0.107
+	// every process with Fyr's MCP tools has them, so a view the owner turns
+	// on during a run gets the feed's upkeep in that run; the view's prompt
+	// still comes only with a process started with the view on.
 	viewTools bool
 	// changeTools: this process has Fyr's MCP tools, the change tools
 	// among them (V0.62), and the feed's hooks.
@@ -393,8 +394,8 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		prompt = ""
 	}
 	s.changeTools = m.cfg.MCPURL != "" // V0.62
+	s.viewTools = m.cfg.MCPURL != ""   // V0.107
 	if t.ViewOn() && m.cfg.MCPURL != "" {
-		s.viewTools = true
 		prompt = strings.TrimSpace(prompt + "\n\n" + ViewPrompt)
 	}
 	l.SystemPrompt = prompt
