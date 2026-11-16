@@ -50,7 +50,7 @@ func TestChangeTools(t *testing.T) {
 		t.Fatalf("revise: %+v", c)
 	}
 	call("change_attach", map[string]any{"change": c.ID, "evidence": []any{map[string]any{"kind": "log", "url": "https://logs/x"}}})
-	if out, _ := call("change_list", map[string]any{}); !strings.Contains(out, "https://logs/x") || !strings.Contains(out, "Raise api replicas") {
+	if out, _ := call("change_list", map[string]any{"id": c.ID}); !strings.Contains(out, "https://logs/x") || !strings.Contains(out, "Raise api replicas") {
 		t.Fatalf("list: %s", out)
 	}
 	if out, isErr := call("change_request", map[string]any{"change": c.ID, "ask": "approve", "reason": "before I scale prod"}); isErr {

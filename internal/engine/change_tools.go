@@ -179,10 +179,11 @@ func (e *Engine) changeTools(s *mcp.Server) {
 		}})
 
 	s.Add(mcp.Tool{Name: "change_list",
-		Description: "List changes with what Fyr observed about them (phase, CI, review, conflicts, pushed, evidence). scope \"thread\" (default) is this thread's; \"project\" is every thread of this thread's project, so you see another agent's open change on the same target before you touch it. Read this instead of polling gh.",
+		Description: "Fyr's facts, one line per change, open changes only by default, at most 4,000 characters. id gives one change of this thread in full (phase, CI, review, conflicts, pushed, evidence). done: true lists done changes too. scope \"thread\" (default) is this thread's; \"project\" is every thread of this thread's project, so you see another agent's open change on the same target before you touch it. Read this instead of polling gh.",
 		Schema: obj(map[string]any{
 			"scope": map[string]any{"type": "string", "enum": []string{"thread", "project"}},
-			"id":    str("One change, by id or key (this thread only)."),
+			"id":    str("One change, by id or key (this thread only), in full."),
+			"done":  map[string]any{"type": "boolean", "description": "Also list done changes: landed, live, abandoned or reverted."},
 		}),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			t, ok := e.Shown(th)
@@ -195,14 +196,17 @@ func (e *Engine) changeTools(s *mcp.Server) {
 				// V0.84: the owner parked it (Not now).
 				Note string `json:"note,omitempty"`
 			}
-			var rows []row
 			if id := sArg(a, "id"); id != "" {
 				c := core.FindChange(&t, id)
 				if c == nil {
 					return "", noChange(map[string]any{"change": id})
 				}
-				rows = append(rows, row{Change: *c})
-			} else if sArg(a, "scope") == "project" && t.ProjectID != "" {
+				rows := []row{{Change: *c, Note: core.ParkedText(c)}}
+				b, _ := json.MarshalIndent(rows, "", " ")
+				return string(b), nil
+			}
+			var rows []row
+			if sArg(a, "scope") == "project" && t.ProjectID != "" {
 				seen := map[string]bool{}
 				for _, d := range e.Snapshot() {
 					if d.ProjectID != t.ProjectID || d.ArchivedAt != nil {
@@ -230,11 +234,30 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			if len(rows) == 0 {
 				return "No changes yet.", nil
 			}
+			// SPEC V0.96 (2): open changes, one line each, within 4,000
+			// characters.
+			all, _ := a["done"].(bool)
+			var lines []string
+			hidden := 0
 			for i := range rows {
-				rows[i].Note = core.ParkedText(&rows[i].Change)
+				c := &rows[i].Change
+				if !all && !core.ListedOpen(c) {
+					hidden++
+					continue
+				}
+				l := core.ChangeLine(c)
+				if rows[i].Thread != "" {
+					l += " · thread " + core.TruncHead(rows[i].Thread, 60)
+				}
+				lines = append(lines, l)
 			}
-			b, _ := json.MarshalIndent(rows, "", " ")
-			return string(b), nil
+			head := fmt.Sprintf("%d open", len(lines))
+			if all {
+				head = fmt.Sprintf("%d changes", len(lines))
+			} else if hidden > 0 {
+				head += fmt.Sprintf("; %d done not shown (done: true lists them)", hidden)
+			}
+			return core.CapLines(head+".", lines), nil
 		}})
 }
 
