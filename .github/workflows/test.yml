@@ -12,9 +12,11 @@ on:
 permissions:
   contents: read
 
+# A PR's older run is cancelled by its newer push; a push to main always runs to the end, so every merged commit
+# gets a result and a release (#146).
 concurrency:
-  group: test-${{ github.ref }}
-  cancel-in-progress: true
+  group: test-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'pr' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   go:
@@ -67,3 +69,39 @@ jobs:
             experimental-features = nix-command flakes
       - name: nix build .#fyr
         run: nix build .#fyr --no-link --print-build-logs
+
+  # #158: every green push to main publishes signed fyr and fyrd binaries for each target as the release
+  # build-<sha12> and moves the tag `deployable` forward to it. Hosts auto-update only to that.
+  release:
+    needs: [go, web, nix]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'flake.lock') }}-${{ github.sha }}
+          restore-keys: go-${{ runner.os }}-${{ hashFiles('go.sum', 'flake.lock') }}-
+      - name: build, sign and publish
+        env:
+          FYR_RELEASE_KEY: ${{ secrets.FYR_RELEASE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "fyr release"
+          git config user.email "fyr-release@users.noreply.github.com"
+          nix develop --command scripts/release.sh
