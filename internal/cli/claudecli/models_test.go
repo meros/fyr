@@ -128,6 +128,7 @@ func quickPolls(t *testing.T) {
 // keeps the CLI running and asks again while its own fetch lands.
 func TestListModelsWaitsForTheFullList(t *testing.T) {
 	quickPolls(t)
+	listWait = 5 * time.Second // three rounds of the shell fake outlast 300 ms on a busy machine (a full go test on macOS)
 	bin, starts := coldCLI(t, 3)
 	l, err := Adapter{}.ListModels(context.Background(), cli.Launch{Binary: bin, Auth: cli.Auth{Kind: cli.CLILogin}})
 	if err != nil {
