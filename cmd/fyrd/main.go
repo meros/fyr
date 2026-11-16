@@ -160,14 +160,27 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		IdleStop: time.Duration(cfg.IdleStopMinutes) * time.Minute, MCPURL: "http://" + ln.Addr().String() + "/mcp",
 		LogDir: filepath.Join(data, "logs"), Attachments: att.Get, OnRateLimit: quotas.Observe, OnCommands: eng.SetCommands, HandoverDir: filepath.Join(data, "handover"),
 		Cgroups: tree, Runner: rn.client(),
+		// V0.115: the system agents run on this host, on the owner's setting.
+		HostName: hostName, ProfileExists: func(id string) bool { _, ok := h.profile(id); return ok }, SystemAgents: eng.SystemAgents,
 	})
 	eng.Agents = mgr
 	eng.Titler = mgr.Title // V0.108
+	eng.SystemAgentResolve = func(job string) (string, string, error) { // V0.115: Settings shows what each job runs
+		a, err := mgr.SystemAgent(job)
+		return a.Profile.ID, a.Model, err
+	}
+	eng.SystemAgentProviders = func() []engine.SystemProvider {
+		var out []engine.SystemProvider
+		for _, p := range h.profiles() {
+			out = append(out, engine.SystemProvider{ID: p.ID, Name: p.Name, Models: p.Models, Haiku: agent.HaikuModel(p), Unavailable: p.Unavailable})
+		}
+		return out
+	}
 	// V0.116: project setup. The icons live with the host's data; a new
 	// project with a folder gets a setup run, and each project from before
-	// gets one once, a minute after start and 30 s apart.
+	// gets one once, a minute after start and 30 s apart. The run's provider
+	// and model are the owner's System agents setting (SystemAgentResolve).
 	eng.Icons = &projicon.Store{Dir: filepath.Join(data, "project-icons")}
-	eng.SystemAgent = systemAgent
 	eng.AutoSetup = true
 	go func() {
 		time.Sleep(time.Minute)
@@ -393,9 +406,3 @@ func (k *kept) client() *runner.Client {
 	return k.rc
 }
 
-// systemAgent is the provider and model of a system agent job (V0.116): for
-// now the host's default provider with claude-haiku-5-5. The System agents
-// setting replaces it with (*agent.Manager).SystemAgent.
-func systemAgent(job string) (profile, model string, err error) {
-	return "", "claude-haiku-5-5", nil
-}

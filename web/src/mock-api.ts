@@ -54,6 +54,19 @@ export function createMockApi(scenario: string): Api {
     async autoDeploy() {
       return { on: true };
     },
+    async systemAgents() {
+      return {
+        default: {},
+        providers: [
+          { id: "claude", name: "Claude", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], haiku: "claude-haiku-5-5" },
+          { id: "zai", name: "Z.ai", models: ["glm-4.6"] },
+        ],
+        jobs: [
+          { id: "title", name: "Thread titles", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
+          { id: "setup", name: "Project setup", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
+        ],
+      };
+    },
     async profiles() {
       return server.state().profiles;
     },

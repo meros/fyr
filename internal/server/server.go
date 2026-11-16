@@ -110,6 +110,7 @@ func (s *Server) routes() http.Handler {
 	// V0.102: the repos and the owner's auto-merge setting of each.
 	mux.HandleFunc("GET /api/autoMerge", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Engine.AutoMergeRepos()) })
 	// V0.111: the owner's auto-deploy setting.
+	mux.HandleFunc("GET /api/systemAgents", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Engine.SystemAgentsView()) }) // V0.115
 	mux.HandleFunc("GET /api/autoDeploy", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Engine.AutoDeploy()) })
 	// #42: the profiles alone, for the client after a provider changed.
 	mux.HandleFunc("GET /api/profiles", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.profiles()) })
