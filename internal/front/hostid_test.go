@@ -168,3 +168,28 @@ func decodeJSON(t *testing.T, resp *http.Response, v any) {
 		t.Fatal(err)
 	}
 }
+
+// SPEC 0.5 V0.125 (decision 0026, Settings → Hosts): each row of hosts[]
+// carries the URL the front dials for it, as configured or as discovery
+// found it, also while the host is offline.
+func TestFrontHostURL(t *testing.T) {
+	a := hostWithID(t, "a", "AAAA-AAAA-AAAA-AAAA")
+	b := hostWithID(t, "b", "BBBB-BBBB-BBBB-BBBB")
+	f := startFront(t, Options{},
+		HostConfig{Name: "a", URL: a.URL},
+		HostConfig{Name: "b", URL: b.URL + "/", Found: true},
+		HostConfig{Name: "c", URL: "http://127.0.0.1:1"})
+	eventually(t, "a and b online", func() bool {
+		ra, rb := hostRow(t, f.URL, "a"), hostRow(t, f.URL, "b")
+		return ra != nil && rb != nil && ra["online"] == true && rb["online"] == true
+	})
+	if r := hostRow(t, f.URL, "a"); r["url"] != a.URL {
+		t.Fatalf("configured host's url: %v", r)
+	}
+	if r := hostRow(t, f.URL, "b"); r["url"] != b.URL || r["found"] != true {
+		t.Fatalf("found host's url: %v", r)
+	}
+	if r := hostRow(t, f.URL, "c"); r == nil || r["online"] == true || r["url"] != "http://127.0.0.1:1" {
+		t.Fatalf("offline host's url: %v", r)
+	}
+}

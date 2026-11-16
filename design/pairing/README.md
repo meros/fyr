@@ -10,7 +10,7 @@ The design of every Settings surface that decision 0026 (keys, not networks) nee
 | `SPEC.md` | The implementation spec: part 1 to build now, part 2 what each later slice adds, part 3 the placeholders. |
 | `pairing.css` | Part 1: the proposed new CSS; copy from here. Part 2: board only. |
 | `kit.js`, `i1.js`, `i2.js`, `i3.js` | The pages. `kit.js` has the nav, the rows and the frames. |
-| `impl/` | Screenshots of the implementation, when it exists. |
+| `impl/` | Screenshots of the implementation (V0.125): Hosts, a host, a changed id and This device, desktop (light and dark) and phone. |
 
 The pages load `../settings/mock.css`, `../settings/mock.js` and the fonts there (the tokens and the V0.119 settings rows), so open them from the repository. Light and Dark are at the top right; `?theme=dark` starts dark.
 

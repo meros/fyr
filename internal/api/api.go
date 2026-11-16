@@ -145,6 +145,9 @@ type Host struct {
 	// IDWas: the host now reports another id than the pinned one; the front
 	// keeps following it and shows both until the owner trusts the new id.
 	IDWas string `json:"idWas,omitempty"`
+	// URL is the address the front dials for this host, as configured or
+	// as discovery found it (Settings → Hosts shows it and its route).
+	URL string `json:"url,omitempty"`
 }
 
 // WriteJSON is the one JSON reply of the host and the front.
