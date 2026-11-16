@@ -89,4 +89,43 @@ func TestV086SlotsOff(t *testing.T) {
 	if isErr || !strings.Contains(out, "no slots") {
 		t.Fatalf("%v %q", isErr, out)
 	}
+	// SPEC 0.5 V0.86 (1): slots 0 answers "no limit" and queues nothing.
+	e.UseSlots(slots.New(0))
+	b := bareThread(t, e)
+	for _, id := range []string{a, b} {
+		out, isErr := callAs(t, e, id, "slot_acquire", map[string]any{"kind": "test"})
+		if isErr || !strings.Contains(out, "no limit") {
+			t.Fatalf("%v %q", isErr, out)
+		}
+	}
+	if s := e.Slots.Snapshot(); len(s.Held)+len(s.Waiting) != 0 {
+		t.Fatalf("%+v", s)
+	}
+}
+
+// SPEC 0.5 V0.86 (3): after a restart a thread that held a slot without a
+// live run gives it back after 2 minutes; a queued one is told on its turn.
+func TestV086SlotsAfterRestart(t *testing.T) {
+	e, st, now := bare(t)
+	a, b := bareThread(t, e), bareThread(t, e)
+	for _, id := range []string{a, b} {
+		running(e, id)
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: id, Args: core.RunEndedArgs{}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := slots.Open(1, st)
+	p.Acquire(a, slots.Test)
+	p.Acquire(b, slots.Test)
+
+	e.UseSlots(slots.Open(1, st)) // the restarted daemon; neither thread runs
+	e.Tick()
+	*now = now.Add(2*time.Minute + time.Second)
+	e.Tick()
+	if s := e.Slots.Snapshot(); len(s.Held) != 1 || s.Held[0].Owner != b {
+		t.Fatalf("after the idle holder: %+v", s)
+	}
+	if !told(e, b, "A test slot is yours now") {
+		t.Fatal("b was not told")
+	}
 }

@@ -26,4 +26,7 @@ func TestV086LoadShowsSlots(t *testing.T) {
 	if l := (&Sampler{Proc: proc}).Get(); l.Slots != nil {
 		t.Fatalf("slots without a pool: %+v", l.Slots)
 	}
+	if l := (&Sampler{Proc: proc, Slots: slots.New(0)}).Get(); l.Slots != nil {
+		t.Fatalf("slots while off: %+v", l.Slots)
+	}
 }

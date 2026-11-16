@@ -70,8 +70,101 @@ func TestV086QueueOrder(t *testing.T) {
 }
 
 func TestV086DefaultIsTwo(t *testing.T) {
-	if New(0).Snapshot().N != 2 || New(-1).Snapshot().N != 2 || New(3).Snapshot().N != 3 {
+	if New(-1).Snapshot().N != 2 || New(3).Snapshot().N != 3 || New(-1).Off() || New(3).Off() {
 		t.Fatal("N")
+	}
+}
+
+// SPEC 0.5 V0.86 (1): slots 0 is off: every acquire holds at once, nothing
+// queues, a Wait returns at once.
+func TestV086ZeroIsOff(t *testing.T) {
+	p := New(0)
+	if !p.Off() {
+		t.Fatal("not off")
+	}
+	for _, o := range []string{"a", "b", "c"} {
+		if held, ahead := p.Acquire(o, Test); !held || ahead != 0 {
+			t.Fatalf("%s: %v %d", o, held, ahead)
+		}
+	}
+	release, err := p.Wait(context.Background(), "self-deploy", Test)
+	if err != nil || release == nil {
+		t.Fatalf("wait: %v", err)
+	}
+	release()
+	if s := p.Snapshot(); len(s.Held) != 0 || len(s.Waiting) != 0 {
+		t.Fatalf("an off pool keeps holders: %+v", s)
+	}
+	if p.Release("a") {
+		t.Fatal("an off pool released something")
+	}
+}
+
+type memKV struct {
+	mu sync.Mutex
+	m  map[string]string
+}
+
+func (k *memKV) GetKV(key string) (string, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.m[key], nil
+}
+
+func (k *memKV) SetKV(key, v string) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.m[key] = v
+	return nil
+}
+
+// SPEC 0.5 V0.86 (3): the holders and the queue survive a restart: a new
+// Pool on the same store has them, and the next in the queue is told when
+// its turn comes. The deploy's priority wait is not kept.
+func TestV086QueueSurvivesRestart(t *testing.T) {
+	kv := &memKV{m: map[string]string{}}
+	p := Open(1, kv)
+	p.Acquire("a", Test)
+	p.Acquire("b", Build)
+	p.Acquire("c", E2E)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go p.Wait(ctx, "self-deploy", Test)
+	waitFor(t, func() bool { return len(p.Snapshot().Waiting) == 3 })
+
+	q := Open(1, kv) // the restarted daemon
+	g := &grants{}
+	q.OnGrant = g.on
+	s := q.Snapshot()
+	if len(s.Held) != 1 || s.Held[0].Owner != "a" || len(s.Waiting) != 2 || s.Waiting[0].Owner != "b" || s.Waiting[0].Kind != Build || s.Waiting[1].Owner != "c" {
+		t.Fatalf("after a restart: %+v", s)
+	}
+	if _, ahead := q.Acquire("c", E2E); ahead != 1 {
+		t.Fatalf("c ahead %d", ahead)
+	}
+	q.Release("a")
+	if got := g.list(); !slices.Equal(got, []string{"b build"}) {
+		t.Fatalf("grants %v", got)
+	}
+	// Each change is written: a third start sees b holding.
+	if s := Open(1, kv).Snapshot(); len(s.Held) != 1 || s.Held[0].Owner != "b" || len(s.Waiting) != 1 {
+		t.Fatalf("not written: %+v", s)
+	}
+}
+
+// SPEC 0.5 V0.86 (3): a store from a larger pool, loaded into a smaller or
+// larger one, keeps everyone; Fill hands out free slots and tells them.
+func TestV086FillAfterLoad(t *testing.T) {
+	kv := &memKV{m: map[string]string{}}
+	p := Open(1, kv)
+	p.Acquire("a", Test)
+	p.Acquire("b", Test)
+	q := Open(2, kv)
+	g := &grants{}
+	q.OnGrant = g.on
+	q.Fill()
+	if got := g.list(); !slices.Equal(got, []string{"b test"}) || len(q.Snapshot().Held) != 2 {
+		t.Fatalf("fill: %v %+v", got, q.Snapshot())
 	}
 }
 
