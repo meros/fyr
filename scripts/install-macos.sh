@@ -23,7 +23,7 @@ domain="gui/$(id -u)"
 if [ "${1:-}" = --uninstall ]; then
   launchctl bootout "$domain/$ulabel" 2>/dev/null || true
   launchctl bootout "$domain/$label" 2>/dev/null || true
-  rm -f "$plist" "$uplist"
+  rm -rf "$plist" "$uplist" "$HOME/Applications/Fyr.app"
   echo "stopped and removed $label and $ulabel; data stays in $data"
   exit 0
 fi
@@ -112,7 +112,50 @@ cat >"$uplist" <<EOF
 </plist>
 EOF
 
-for l in "$ulabel" "$label"; do launchctl bootout "$domain/$l" 2>/dev/null || true; done
+# ~/Applications/Fyr.app, for Spotlight and the Dock: the page in a Chrome
+# app window (or the default browser), with the lighthouse icon.
+app="$HOME/Applications/Fyr.app"
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cat >"$app/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Fyr</string>
+  <key>CFBundleIdentifier</key><string>$label.app</string>
+  <key>CFBundleExecutable</key><string>Fyr</string>
+  <key>CFBundleIconFile</key><string>fyr</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>LSUIElement</key><true/>
+</dict>
+</plist>
+EOF
+cat >"$app/Contents/MacOS/Fyr" <<'EOF'
+#!/bin/sh
+url=http://127.0.0.1:7777
+chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+if [ -x "$chrome" ]; then exec "$chrome" --app="$url"; fi
+exec open "$url"
+EOF
+chmod +x "$app/Contents/MacOS/Fyr"
+icons="$(mktemp -d)/fyr.iconset"
+mkdir -p "$icons"
+for s in 16 32 128 256 512; do
+  sips -z $s $s web/dist/icons/lighthouse/icon-512.png --out "$icons/icon_${s}x${s}.png" >/dev/null
+  sips -z $((s * 2)) $((s * 2)) web/dist/icons/lighthouse/icon-512.png --out "$icons/icon_${s}x${s}@2x.png" >/dev/null
+done
+iconutil -c icns "$icons" -o "$app/Contents/Resources/fyr.icns"
+touch "$app"
+# Spotlight lists it only once LaunchServices knows it.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app"
+mdimport -i "$app" >/dev/null 2>&1 || true
+
+# bootout returns before the agent is gone; bootstrap fails until it is.
+for l in "$ulabel" "$label"; do
+  launchctl bootout "$domain/$l" 2>/dev/null || true
+  for _ in $(seq 1 50); do launchctl print "$domain/$l" >/dev/null 2>&1 || break; sleep 0.2; done
+done
 launchctl bootstrap "$domain" "$plist"
 launchctl bootstrap "$domain" "$uplist"
 echo "started $label; open http://127.0.0.1:7777 · log $log"
