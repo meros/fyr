@@ -28,6 +28,13 @@ export interface BoardFilter {
   q?: string;
   /** show abandoned and reverted changes */
   ended?: boolean;
+  /** V0.78 (#54): show the changes of settled and snoozed threads; off, only those that need the owner stay */
+  settled?: boolean;
+}
+
+/** V0.78 (#54): a thread whose work is put away. Its changes are history unless one needs the owner. */
+export function putAway(t: Thread): boolean {
+  return t.attention.section === "settled" || t.attention.section === "snoozed";
 }
 
 /** A change that fails or waits for the owner goes to Needs you, whatever its phase. */
@@ -46,8 +53,10 @@ export function boardItems(threads: Record<string, Thread>, projects: Project[],
     if (t.archivedAt) continue;
     const project = projectOf(t, projects);
     if (f.projectId && project?.id !== f.projectId) continue;
+    const away = !f.settled && putAway(t);
     for (const c of t.changes) {
       if (!f.ended && ended(c.phase)) continue;
+      if (away && columnOf(c) !== "needs") continue; // before once(): a host record shows under an open thread
       if (!once(c, seen)) continue;
       if (q && ![c.title, c.key, c.group ?? "", ...(c.targets ?? []), t.title].join(" ").toLowerCase().includes(q)) continue;
       out.push({ change: c, thread: t, project });
