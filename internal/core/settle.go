@@ -71,6 +71,22 @@ func dropSettleDone(t *Thread) {
 	DropRules(t, func(r Rule) bool { return r.ID == settleDoneRule })
 }
 
+// autoSettle is a settle Rule that the owner did not arm: the agent's
+// settle_when or watch, or Fyr's own. It never fires while the thread is
+// pinned, and unpin drops it (V0.106). The owner's Settle, now or deferred
+// (when done, when merged), is the owner's press and still fires.
+func autoSettle(r Rule) bool { return r.Purpose == PurposeSettle && r.CreatedBy != ByOwner }
+
+// DropAutoSettle disarms the settle Rules the owner did not arm (V0.106).
+func DropAutoSettle(t *Thread) { DropRules(t, autoSettle) }
+
+// settlesWhenDoneByOwner reports a "settle when done" that will fire: the
+// owner's, or anyone's on a thread that is not pinned (V0.106).
+func settlesWhenDoneByOwner(t *Thread) bool {
+	r := FindRule(t, settleDoneRule)
+	return r != nil && (t.PinnedAt == nil || !autoSettle(*r))
+}
+
 // Settling reports an armed settle Rule.
 func Settling(t *Thread) bool { return len(RulesOf(t, PurposeSettle)) > 0 }
 

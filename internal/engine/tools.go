@@ -68,12 +68,21 @@ func (e *Engine) Tools(s *mcp.Server) {
 				return "", err
 			}
 			cond, _ := out.(string)
-			return "The thread settles when " + cond + ".", nil
+			return "The thread settles when " + cond + "." + e.pinNote(th), nil
 		}})
 
 	s.Add(e.watchTool())
 	s.Add(e.stateTool())
 	e.slotTools(s) // V0.86
+}
+
+// pinNote tells the agent that its settle waits: the owner pinned the
+// thread, and only the owner settles a pinned thread (V0.106).
+func (e *Engine) pinNote(th string) string {
+	if t, ok := e.Thread(th); ok && t.PinnedAt != nil {
+		return " The owner pinned this thread: it does not settle while pinned, and unpin drops this condition."
+	}
+	return ""
 }
 
 // stateTool reads the current state of the thread's records (#47): the
@@ -121,7 +130,11 @@ func (e *Engine) watchTool() mcp.Tool {
 				return "", err
 			}
 			r, _ := out.(core.Rule)
-			return "Armed the watch " + r.ID + " (then " + sArg(a, "then") + "). Remove it with watch {remove: \"" + r.ID + "\"}.", nil
+			note := ""
+			if sArg(a, "then") == "settle" {
+				note = e.pinNote(th)
+			}
+			return "Armed the watch " + r.ID + " (then " + sArg(a, "then") + "). Remove it with watch {remove: \"" + r.ID + "\"}." + note, nil
 		}}
 }
 
