@@ -145,7 +145,7 @@
 .m-chip.nopj{background:transparent;border:1px dashed var(--line-strong);color:var(--ink-muted)}
 .m-chipsd{flex:1;display:flex;gap:6px;align-items:center;height:44px;min-width:0;padding:0}
 .m-chip.brn{flex:1 1 0;max-width:max-content;min-width:48px}
-.m-chip.prc{flex:none;font:500 12px/16px var(--mono)}
+.m-chip.prc{flex:0 1 auto;min-width:48px;overflow:hidden;text-overflow:ellipsis;font:500 12px/16px var(--mono)} /* #84: a long change chip ends in … inside the row */
 .m-chip.prc.ok{color:var(--calm)}.m-chip.prc.fail{color:var(--signal-ink)}
 .m-tabs{display:flex;padding:0 8px;min-width:0}
 .m-tabs button{height:44px;padding:0 12px;display:flex;align-items:center;font:500 15px/20px var(--ui);color:var(--ink-muted);border-bottom:2px solid transparent;white-space:nowrap;flex:none}

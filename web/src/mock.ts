@@ -477,7 +477,7 @@ function fullFixture(now: number): Fixture {
         createdAt: iso(210), updatedAt: iso(20),
       },
       {
-        id: "c_scale", key: "k8s:prod/api replicas", kind: "infra", title: "Raise api replicas to 4", targets: ["k8s:gke-prod/api"], phase: "landed", phaseBy: "agent", label: "applied to prod",
+        id: "c_scale", key: "k8s:prod/api replicas", kind: "infra", title: "Raise api replicas to 4", targets: ["k8s:gke-prod/api"], phase: "landed", phaseBy: "agent", label: "applied to prod; bot run active (claude: working); fix agent restarted the rollout",
         revisions: [{ id: "sha256:9f2c41d07aa1", summary: "replicas 2 → 4, readiness probe 5 s", by: "agent", at: iso(70) }],
         conditions: [{ type: "health", status: "fail", reason: "2 of 4 pods in CrashLoopBackOff", source: "agent", at: iso(62) }],
         evidence: [{ kind: "log", url: "https://console.cloud.google.com/logs", title: "pod logs" }],
