@@ -39,7 +39,7 @@ test("a client-only update says it updates the web client", () => {
 // reload; a failure stays until it is dismissed. (V0.118 retires the #81 fold: the inline line is already small.)
 test("the inline status shows busy and failed, a success briefly, a client-only update not at all", () => {
   const show = (q: ReturnType<typeof p> & { client?: boolean }, seenAt: number | null = null, conn = "live") => deployShown(q, deployLine(q, threads, now, conn), seenAt, now);
-  for (const ph of ["build", "test", "drain", "switch"]) assert.equal(show(p(ph)), true, ph);
+  for (const ph of ["download", "build", "smoke", "test", "drain", "switch"]) assert.equal(show(p(ph)), true, ph);
   assert.equal(show(p("client")), false, "the reload is the only sign of a client-only update");
   assert.equal(show(p("failed", { detail: "x" })), true);
   assert.equal(show(p("failed", { detail: "x" }), now - 10 * 60_000), true, "a failure stays");
@@ -74,4 +74,13 @@ test("the Restart now confirmation names the cut threads and the continue", () =
   assert.match(a.text ?? "", /“continue”/);
   const one = restartNowAsk(p("drain", { blocking: ["t_a"] }), threads);
   assert.match(one.text ?? "", /“Plan a custom client” ends its turn/);
+});
+
+// V0.126: a release update downloads and checks the new version instead of building and testing it.
+test("V0.126 release phases have their own words", () => {
+  const now = Date.parse("2026-11-16T12:04:00Z");
+  const at = { startedAt: "2026-11-16T12:00:00Z", build: "c705ef536566" };
+  assert.deepEqual(deployLine({ phase: "download", ...at }, {}, now, "live"), { text: "Updating Fyr · downloading the release c705ef536566 · 4 min", tone: "busy" });
+  assert.deepEqual(deployLine({ phase: "smoke", ...at }, {}, now, "live"), { text: "Updating Fyr · checking the new version · 4 min", tone: "busy" });
+  assert.equal(deployLine({ phase: "smoke", ...at }, {}, now, "connecting")?.text, "Restarting Fyr · back in a few seconds");
 });

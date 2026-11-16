@@ -31,8 +31,14 @@ Fyr runs Claude Code sessions on your own machines and shows one list: what need
 
 ## Run on a Mac
 
-NixOS uses `nixosModules.fyr`. On a Mac, with Homebrew `go`, `git`, `gh`, `claude` and [fnm](https://github.com/Schniz/fnm) (Node LTS, `.nvmrc`):
+NixOS uses `nixosModules.fyr`. On a Mac, with Homebrew `git`, `gh` (logged in) and `claude`, and Xcode's command line tools:
 
     scripts/install-macos.sh
 
-It builds this checkout, installs the launcher, a seed and the current build under `~/.local/share/fyr`, and starts two launchd agents: `com.github.meros.fyr` (Fyr on http://127.0.0.1:7777, log `~/Library/Logs/fyr.log`) and `com.github.meros.fyr.update`, which runs `scripts/update.sh` daily at 04:00: it builds and tests origin's default branch, links it as `next` and sends fyrd SIGHUP, so the launcher switches with its probation and rollback. It also makes `~/Applications/Fyr.app` (Spotlight, Dock) that opens Fyr in a Chrome app window. `scripts/install-macos.sh --uninstall` removes both agents and the app. Without Nix, deploys and updates build with the toolchain on the agent's PATH; the Makefile refuses a Node that is not an LTS.
+It builds nothing. It downloads the CI release that the tag `deployable` points at, checks its sums, installs the launcher, a seed and the current build under `~/.local/share/fyr`, and starts the launchd agent `com.github.meros.fyr` (Fyr on http://127.0.0.1:7777, log `~/Library/Logs/fyr.log`). It also makes `~/Applications/Fyr.app` (Spotlight, Dock), which opens Fyr in a Chrome app window. `scripts/install-macos.sh --uninstall` removes the agent and the app.
+
+## Updates
+
+Fyr updates itself only to CI-built releases (decision 0027). Every green push to main publishes signed `fyr` and `fyrd` binaries for Linux and macOS (amd64 and arm64) as the release `build-<sha12>`, and moves the tag `deployable` to it. Each host checks `deployable` every minute. After it has stayed put for 10 minutes, the host downloads the release, verifies its signature and sums, runs `fyrd selftest` on a copy of the database, and switches. The launcher checks `/healthz` after the switch and rolls back to `previous` if the build is not healthy or crashes within 10 minutes. Settings → Auto-update turns this off. To stop a bad release on every host, move the tag back: `git push -f origin <sha>:refs/tags/deployable`.
+
+To try a branch from inside Fyr, an agent asks `fyr.deploy {dir}`. It builds the checkout and switches to it once you press. Auto-update then pauses until a release contains that commit.
