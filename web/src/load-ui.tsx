@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { loadDetail, railLoad, railSlots, threadCPU, threadSlot, type HostLoad } from "./load.ts";
+import { loadDetail, MAX_PIPS, railMeter, railPips, railSlots, threadCPU, threadSlot, type HostLoad, type RailPips } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -48,24 +48,53 @@ export function useLoad(): HostLoad[] {
   return l;
 }
 
-/** The rail (desktop): each host's 1-minute load under a "load" label; the averages, pressure and agents on hover. */
+/** The rail (desktop), V0.99: each host's 1-minute load as a ring (the share of the cores, coloured calm, warm or
+ *  hot) with the figure inside, and the slots for heavy jobs as pips under it; the exact values on hover. */
 export function LoadRail() {
   const list = useLoad();
   if (!list.length) return null;
   return (
-    <div class="rld" aria-label="Machine load">
+    <div class="rld">
       {list.map((h) => {
-        const f = railLoad(h);
+        const m = railMeter(h);
+        const p = railPips(h);
         const sl = railSlots(h);
+        const label = `Load ${m.text} on ${h.cores} cores${p ? `, ${p.held} of ${p.n} slots in use${p.waiting ? `, ${p.waiting} waiting` : ""}` : ""}`;
         return (
-          <div class="rldr" title={loadDetail(h).join("\n")}>
-            <span class={f.hot ? "hot" : undefined}>{f.text}</span>
-            <small>load</small>
-            {sl && <small class={`rlds${sl.hot ? " hot" : ""}`}>{sl.text}</small>}
+          <div class={`rldr ${m.level}`} title={loadDetail(h).join("\n")} role="img" aria-label={label}>
+            <LoadRing share={m.share} text={m.text} />
+            {p && (p.n <= MAX_PIPS ? <SlotPips p={p} /> : sl && <small class={`rlds${sl.hot ? " hot" : ""}`}>{`${p.held}/${p.n}`}</small>)}
           </div>
         );
       })}
     </div>
+  );
+}
+
+const R = 12;
+const C = 2 * Math.PI * R;
+
+function LoadRing({ share, text }: { share: number; text: string }) {
+  return (
+    <span class="rring" aria-hidden="true">
+      <svg viewBox="0 0 30 30" width="30" height="30">
+        <circle class="trk" cx="15" cy="15" r={R} />
+        {share > 0 && <circle class="arc" cx="15" cy="15" r={R} stroke-dasharray={`${(share * C).toFixed(2)} ${C.toFixed(2)}`} transform="rotate(-90 15 15)" />}
+      </svg>
+      <b>{text}</b>
+    </span>
+  );
+}
+
+/** Filled pips for the slots in use, empty for the free ones; "+2" in the hot colour while threads wait. */
+function SlotPips({ p }: { p: RailPips }) {
+  return (
+    <span class={`rpips${p.waiting ? " hot" : ""}`} aria-hidden="true">
+      {Array.from({ length: p.n }, (_, i) => (
+        <i class={i < p.held ? "on" : undefined} />
+      ))}
+      {p.waiting > 0 && <em>+{p.waiting}</em>}
+    </span>
   );
 }
 
