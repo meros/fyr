@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -111,12 +112,10 @@ func readTurns(evs []store.Event) []turn {
 // ("User" for an agent reading, "Owner" in a handover).
 func speaker(person, from string) string {
 	switch from {
-	case "":
+	case "", core.OldViewTyped:
 		return person
 	case agent.FromView:
 		return person + " (live view)"
-	case agent.FromViewTyped:
-		return person + " (View tab)"
 	case agent.FromHandover:
 		return "Fyr"
 	}

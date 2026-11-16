@@ -1071,6 +1071,38 @@ try {
 }
 });
 
+// V0.128 (supersedes V0.49, V0.57): a message typed on the View tab is an ordinary send; the thread then shows the
+// Conversation tab, scrolled to the end where the new message is. Phone and desktop.
+for (const [name, w, h, mobile, field, button, tabs] of [
+  ["phone", 390, 844, true, ".m-cmp .in", ".m-send[aria-label=Send]", ".m-tabs button"],
+  ["desktop", 1280, 800, false, ".th #composer", ".th .btn.p[title^=Send]", ".th .tabs [role=tab]"],
+]) section(`V0.128 ${name}`, async ({ evaluate, waitFor, settle, navigate, openScreen }) => {
+  try {
+    if (mobile) await openScreen({ url: "?mock=1&open=t_view" }, w, h);
+    else await navigate(`${origin}/?mock=1&open=t_view`, "!!document.querySelector('.th #composer')");
+    const onTab = `[...document.querySelectorAll('${tabs}')].find((x) => x.classList.contains('on'))?.textContent.trim()`;
+    check((await evaluate(onTab)) === "View", `V0.128 ${name}: the thread did not open on View`);
+    await evaluate(`(() => { const el = document.querySelector('${field}'); el.focus(); el.value = 'Can you also check iPad?'; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await waitFor(`!document.querySelector('${button}')?.disabled`, { what: "Send enabled" });
+    await evaluate(`document.querySelector('${button}').click()`);
+    await waitFor(`${onTab} === 'Conversation' && [...document.querySelectorAll('.convo .you')].some((y) => y.textContent.includes('Can you also check iPad?'))`, { soft: true });
+    await settle();
+    const r = await evaluate(`(() => {
+      const c = document.querySelector('.convo'), you = [...document.querySelectorAll('.convo .you')].filter((y) => y.textContent.includes('Can you also check iPad?'));
+      const m = you[0]?.getBoundingClientRect(), b = c?.getBoundingClientRect();
+      return { tab: ${onTab}, mine: you.length, vtag: you.some((y) => y.classList.contains('vmsg')),
+        atEnd: c ? c.scrollHeight - c.scrollTop - c.clientHeight < 24 : false, visible: !!m && !!b && m.top >= b.top - 0.5 && m.bottom <= b.bottom + 0.5,
+        field: document.querySelector('${field}')?.value ?? null };
+    })()`);
+    check(r.tab === "Conversation", `V0.128 ${name}: after a send on the View tab the ${r.tab} tab is shown, not Conversation`);
+    check(r.mine === 1 && !r.vtag, `V0.128 ${name}: the message is not one ordinary message in the conversation ${JSON.stringify(r)}`);
+    check(r.atEnd && r.visible, `V0.128 ${name}: the conversation is not scrolled to the new message ${JSON.stringify(r)}`);
+    check(r.field === "", `V0.128 ${name}: the field kept the text ${JSON.stringify(r)}`);
+  } catch (e) {
+    failures.push(`V0.128 ${name}: ${e.message}`);
+  }
+});
+
 // V0.79: on the phone, `/` at the start of the composer lists the commands above it, inside the screen, rows 44 px
 // tall; a tap fills `/name ` and the argument hint shows above the field.
 section('V0.79', async (h) => {
@@ -1420,7 +1452,8 @@ try {
 section('V0.119 (5)', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
-  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail')");
+  // The bell shows once the push check resolves (it starts as unsupported, hidden), so wait for it, not the rail.
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .bell')");
   const bell = await evaluate(`(() => { const b = document.querySelector('.rail .bell'); b?.click(); return !!b; })()`);
   await waitFor(`!!document.querySelector('.dlg.settings')`, { soft: true });
   const b = await evaluate(`document.querySelector('.dlg .stn-i[aria-current=page]')?.dataset.page ?? ''`);
