@@ -27,6 +27,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/cgroup"
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/front"
@@ -88,6 +89,10 @@ func main() {
 	var webFS fs.FS = web.Dist()
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
+	}
+	if cmd == "selftest" {
+		selftest(*data, webFS)
+		return
 	}
 	hostName, _ := os.Hostname()
 	if cfg.Name != "" {
@@ -235,11 +240,35 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		log.Printf("deploy %s (%s): %d changes live", s.Build, s.Commit, n)
 	}
 	eng.DeployNow = dep.DeployNow               // V0.83: the owner's Restart now
-	// V0.111: Fyr approves a deploy ask by itself when the gate passes and
-	// no deploy runs; the end of one looks at the asks that wait.
-	eng.DeployGate = func(ctx context.Context, dir string) (string, string) { return deploy.Gate(ctx, nil, dir) }
+	// Decision 0027: auto-update installs CI's signed releases only.
+	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Gh: github.Gh}
+	// V0.111, #159: an ask without a checkout installs the newest release by
+	// itself; a local build of a checkout always waits for the owner's press.
+	eng.DeployGate = func(ctx context.Context, dir string) (string, string) {
+		if dir != "" {
+			return "", "a local build of " + dir + " needs your press (it is not a CI release)"
+		}
+		sha, err := dep.Releases.Deployable(ctx)
+		if err != nil {
+			return "", err.Error()
+		}
+		return sha, ""
+	}
 	eng.DeployBusy = dep.Busy
 	dep.OnIdle = eng.AutoDeploySweep
+	// #153: follow `deployable`, batched by a quiet period.
+	watcher := &deploy.Watcher{D: dep, On: func() bool { return eng.AutoDeploy().On }, Start: func(sha string) {
+		go func() {
+			req := core.EffectReq{ID: engine.NewID("fx_"), Action: core.FyrDeploy, Args: map[string]any{"commit": sha, "trigger": "deployable"}}
+			if _, err := dep.Deploy(context.Background(), "", req, ""); err != nil && !errors.Is(err, core.ErrReportLater) {
+				log.Printf("update %s: %v", sha, err)
+			}
+		}()
+	}}
+	if cfg.UpdateQuietMinutes > 0 {
+		watcher.Quiet = func() time.Duration { return time.Duration(cfg.UpdateQuietMinutes) * time.Minute }
+	}
+	go watcher.Run(ctx)
 	prDetails := &github.Details{Gh: github.Gh} // V0.43: the PR tab's details, cached 30 s
 	eng.Effects = engine.Outside{Gh: github.Gh, PR: prDetails, Deploy: dep.Deploy}
 	poller := &github.Poller{Gh: github.Gh, Src: engine.PRWatch{E: eng}}

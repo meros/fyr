@@ -3,7 +3,7 @@ import type { Thread } from "./types.ts";
 import type { Ask } from "./confirm.ts";
 
 export interface DeployProgress {
-  phase: string; // build, test, drain, switch or (V0.81) client, done, failed
+  phase: string; // download (V0.126), build, smoke (V0.126), test, drain, switch or (V0.81) client, done, failed
   detail?: string;
   blocking?: string[];
   build?: string;
@@ -24,10 +24,15 @@ function minutes(fromIso: string | undefined, now: number): string {
 
 export function deployLine(p: DeployProgress | null | undefined, threads: Record<string, Thread>, now: number, conn: string): DeployLine | null {
   if (!p || !p.phase) return null;
-  const busy = p.phase === "build" || p.phase === "test" || p.phase === "drain" || p.phase === "switch";
+  const busy = ["download", "build", "smoke", "test", "drain", "switch"].includes(p.phase);
   if (busy && conn !== "live") return { text: "Restarting Fyr · back in a few seconds", tone: "busy" };
   const took = minutes(p.startedAt, now);
   switch (p.phase) {
+    case "download":
+      // V0.126: a CI release is fetched and its signature checked.
+      return { text: `Updating Fyr · downloading the release${p.build ? ` ${p.build}` : ""}${took ? ` · ${took}` : ""}`, tone: "busy" };
+    case "smoke":
+      return { text: `Updating Fyr · checking the new version${took ? ` · ${took}` : ""}`, tone: "busy" };
     case "build":
       return { text: `Updating Fyr · building the new version${took ? ` · ${took}` : ""}`, tone: "busy" };
     case "test":

@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
 
 	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/push"
@@ -85,4 +87,30 @@ func webHealthy(webFS fs.FS) deploy.Check {
 		}
 		return nil
 	}
+}
+
+// selftest is a new build's smoke test (#150): run on a snapshot of the
+// database before a switch, it opens the data with this build's schema,
+// reads it, and checks the client it embeds. It starts no agent, effect,
+// poller or listener.
+func selftest(data string, webFS fs.FS) {
+	fail := func(f string, a ...any) {
+		fmt.Fprintf(os.Stderr, "selftest: "+f+"\n", a...)
+		os.Exit(1)
+	}
+	st, err := store.Open(filepath.Join(data, "fyr.db"))
+	if err != nil {
+		fail("opening the database: %v", err)
+	}
+	defer st.Close()
+	if err := storeHealthy(st)(); err != nil {
+		fail("%v", err)
+	}
+	if _, err := st.Changes(); err != nil {
+		fail("reading the changes: %v", err)
+	}
+	if err := webHealthy(webFS)(); err != nil {
+		fail("%v", err)
+	}
+	fmt.Printf("selftest: build %s passed\n", BuildID())
 }
