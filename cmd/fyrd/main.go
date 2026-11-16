@@ -388,7 +388,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// well-known answer, which names where its host protocol is.
 		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen), id)
 		fr := front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
-			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st,
+			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st, Auth: openAuth(h.st),
 			WellKnown: func() peers.WellKnown { return wk }}, hosts)
 		go func() { fr.Run(ctx); close(frontDone) }()
 		go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every)
@@ -398,6 +398,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		mux.Handle("/mcp", hostHandler)
 		mux.Handle("/", fr.Handler())
 		serve(ln, deploy.Health(mux, health...))
+		serveAuthSockets(fr, data, ln.Addr().String(), serve) // V0.130
 	}
 	switch {
 	case cfg.HostListen == "":
@@ -450,7 +451,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	id := installID(data)
 	wk := wellKnown(cfg, name, "", id)
 	fr := front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
-		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, WellKnown: func() peers.WellKnown { return wk }}, cfg.Hosts)
+		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, Auth: openAuth(st), WellKnown: func() peers.WellKnown { return wk }}, cfg.Hosts)
 	done := make(chan struct{})
 	go func() { fr.Run(ctx); close(done) }()
 	go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every) // V0.123
@@ -458,6 +459,17 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	go func() {
 		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
+		}
+	}()
+	var extra []*http.Server
+	serveAuthSockets(fr, data, ln.Addr().String(), func(l net.Listener, h http.Handler) { // V0.130
+		s := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+		extra = append(extra, s)
+		go s.Serve(l)
+	})
+	defer func() {
+		for _, s := range extra {
+			s.Close()
 		}
 	}()
 	log.Printf("build %s (front) listening on http://%s for %d hosts", BuildID(), ln.Addr(), len(cfg.Hosts))
