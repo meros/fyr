@@ -65,7 +65,8 @@ func target(data, name string) string {
 }
 
 func launcher(data string) *Launcher {
-	return &Launcher{Data: data, ReadyTimeout: 2 * time.Second, Probation: 500 * time.Millisecond,
+	// ReadyTimeout is loose: on a busy machine (a full `make test` on macOS) a fake daemon takes seconds to start.
+	return &Launcher{Data: data, ReadyTimeout: 10 * time.Second, Probation: 500 * time.Millisecond,
 		Env: []string{"FYR_STOP_FILE=" + filepath.Join(data, "stop")}}
 }
 
@@ -77,7 +78,15 @@ func TestLauncherPromotesNext(t *testing.T) {
 	link(t, data, "current", "a")
 	link(t, data, "next", "b")
 	l := launcher(data)
-	go func() { time.Sleep(1500 * time.Millisecond); os.WriteFile(filepath.Join(data, "stop"), nil, 0o644) }()
+	l.maxStarts = 5 // a rolled-back b would restart a (exit 75) forever
+	// Stop b once it is current and past its probation, however slow the starts.
+	go func() {
+		for i := 0; i < 1000 && target(data, "current") != "b"; i++ {
+			time.Sleep(10 * time.Millisecond)
+		}
+		time.Sleep(l.Probation + 300*time.Millisecond)
+		os.WriteFile(filepath.Join(data, "stop"), nil, 0o644)
+	}()
 	if err := l.Run(); err != nil {
 		t.Fatal(err)
 	}
@@ -98,6 +107,8 @@ func TestLauncherRollsBackCrash(t *testing.T) {
 	link(t, data, "next", "b")
 	l := launcher(data)
 	l.maxStarts = 2 // a, then b (crash) → back to a, which deploys again with no next → stops
+	// b's start on a busy machine (a fresh test binary on macOS) can outlast 500 ms; its crash must land in probation.
+	l.Probation = 5 * time.Second
 	l.Run()
 	if target(data, "current") != "a" {
 		t.Fatalf("current=%s after a crashed deploy", target(data, "current"))

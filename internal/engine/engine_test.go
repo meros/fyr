@@ -309,7 +309,7 @@ func TestRestartRecovery(t *testing.T) {
 // SPEC 0.5 V0.90: a restart of fyrd keeps the agent's turn and its open
 // question; the next fyrd adopts the process and the answer reaches it.
 func TestRunnerKeepsTurnAcrossRestart(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "runner.sock")
+	sock := rnr.SocketPath(t.TempDir())
 	srv := &rnr.Server{Logf: t.Logf}
 	if err := srv.Listen(sock); err != nil {
 		t.Fatal(err)
@@ -363,7 +363,7 @@ func TestRunnerKeepsTurnAcrossRestart(t *testing.T) {
 // list missed it) never starts a second one: the next send finds the
 // runner's process for the thread and links to it.
 func TestRunnerNeverStartsASecondProcess(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "runner.sock")
+	sock := rnr.SocketPath(t.TempDir())
 	srv := &rnr.Server{Logf: t.Logf}
 	if err := srv.Listen(sock); err != nil {
 		t.Fatal(err)

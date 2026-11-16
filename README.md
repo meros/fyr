@@ -28,3 +28,11 @@ Fyr runs Claude Code sessions on your own machines and shows one list: what need
 - Async effects: merges and similar effects are requested by the agent, approved by you, run by Fyr, and reported back as context.
 - Ready for several users per host (owner, visibility, per-user view state), but v1 has one user.
 
+
+## Run on a Mac
+
+NixOS uses `nixosModules.fyr`. On a Mac, with Homebrew `go`, `git`, `gh`, `claude` and [fnm](https://github.com/Schniz/fnm) (Node LTS, `.nvmrc`):
+
+    scripts/install-macos.sh
+
+It builds this checkout, installs the launcher, a seed and the current build under `~/.local/share/fyr`, and starts two launchd agents: `com.github.meros.fyr` (Fyr on http://127.0.0.1:7777, log `~/Library/Logs/fyr.log`) and `com.github.meros.fyr.update`, which runs `scripts/update.sh` daily at 04:00: it builds and tests origin's default branch, links it as `next` and sends fyrd SIGHUP, so the launcher switches with its probation and rollback. `scripts/install-macos.sh --uninstall` removes both agents. Without Nix, deploys and updates build with the toolchain on the agent's PATH; the Makefile refuses a Node that is not an LTS.

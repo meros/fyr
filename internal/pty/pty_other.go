@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package pty
 
@@ -8,7 +8,7 @@ import (
 	"os/exec"
 )
 
-// Start is Linux only.
+// Start is Linux and macOS only.
 func Start(cmd *exec.Cmd, cols, rows int) (*os.File, error) {
 	return nil, errors.New("no terminal on this system")
 }

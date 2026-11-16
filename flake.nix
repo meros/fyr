@@ -58,7 +58,8 @@
 
       devShells = forAll (pkgs: {
         default = pkgs.mkShell {
-          packages = with pkgs; [ go nodejs_24 gnumake git gh sqlite ];
+          # nodejs is nixpkgs' current LTS (the Makefile refuses any other).
+          packages = with pkgs; [ go nodejs gnumake git gh sqlite ];
           CGO_ENABLED = "0";
         };
       });

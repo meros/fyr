@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -202,6 +203,8 @@ func (d *Deployer) ship(run Runner, build, commit, remote, dir string) {
 	}})
 }
 
+func hasNix() bool { _, err := exec.LookPath("nix"); return err == nil }
+
 func (d *Deployer) runner() Runner {
 	if d.Run == nil {
 		return execRunner
@@ -272,10 +275,11 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		return "", err
 	}
 	// Decision 0007: build with the checkout's own pinned toolchain when it
-	// has a flake, so the system profile is never touched.
+	// has a flake, so the system profile is never touched. A host without
+	// Nix (a Mac) builds with the toolchain on its PATH.
 	build := []string{"make", "-C", dir, "build", "OUT=" + out}
 	test := []string{"make", "-C", dir, "test"}
-	if _, err := os.Stat(filepath.Join(dir, "flake.nix")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "flake.nix")); err == nil && hasNix() {
 		build = append([]string{"nix", "develop", dir, "--command"}, build...)
 		test = append([]string{"nix", "develop", dir, "--command"}, test...)
 	}

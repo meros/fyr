@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -215,6 +216,13 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// SIGHUP stops with exit 75: the launcher switches to a next build that
+	// scripts/update.sh linked (with its probation and rollback), or restarts
+	// the current one.
+	var hup atomic.Bool
+	hupc := make(chan os.Signal, 1)
+	signal.Notify(hupc, syscall.SIGHUP)
+	go func() { <-hupc; hup.Store(true); stop() }()
 	// V0.90: with the runner the agents outlive the switch: no drain.
 	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy(), Survive: rn != nil}
 	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
@@ -355,6 +363,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		<-frontDone // the front's cache is written
 	}
 	mgr.StopAll()
+	if hup.Load() {
+		os.Exit(deploy.ExitDeploy)
+	}
 	os.Exit(dep.ExitCode())
 }
 
