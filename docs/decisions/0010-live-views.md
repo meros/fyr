@@ -16,7 +16,7 @@ Date: 2026-11-14 · Status: accepted (owner, 2026-11-15, shipped in V0.37, V0.52
 |---|---|
 | Page | Self-contained HTML (or a fragment wrapped in the Fyr theme), at most 512 kB, stored once by SHA-256 in the attachment store and served like an HTML preview (`sandbox allow-scripts`, no origin, `connect-src 'none'`). The host puts a small bridge script first in `<head>`. |
 | State | A JSON object, at most 16 kB, changed with JSON Merge Patch (RFC 7396: keys merge, `null` deletes, arrays are replaced whole). `headline` (a string) is the one-line status and also the inbox row's line. The rest is free-form. |
-| Tools | `view_publish {html \| path, state}`, `view_state {patch}`, `view_unchanged {reason}`. They are listed, and callable, only for a thread with the flag. |
+| Tools | `view_publish {html \| path, state}`, `view_state {patch}`, `view_unchanged {reason}`. Every thread lists them (V0.107: the CLI reads the tool list once per process, so a view turned on during a run must already be listed); a call fails while the view is off. |
 | Events | `view.published {pageId, state}` and `view.state {state}` carry the full resulting state, so folding the log is "take the last one". `view.unchanged {reason}` records the check. |
 | Messages | MCP Apps names over `postMessage`: `ui/notifications/state` (host to page), `ui/message` (a press, page to host), `ui/notifications/size-changed` and `ui/notifications/initialized` (page to host). The host accepts a message only when `event.source` is the view's own iframe. |
 | Presses | A press becomes `thread.send {text, from: "view"}`. The agent reads it as `[From the live view] <text>`; the log shows it as a compact chip. A press never runs an Action; privileged steps still go through `effect_request`. |
