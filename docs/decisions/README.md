@@ -30,3 +30,4 @@ The owner decisions D1–D5 from the design phase stay in `../SPEC.md` 0.3. Reco
 | [0022](0022-keep-the-drain-with-a-forced-restart.md) | Keep the drain for server deploys; the owner can force a restart, and each cut turn gets "continue" (the drain stays only without a runner, 0023) | accepted |
 | [0023](0023-a-runner-holds-the-agent-processes.md) | A runner in the launcher holds the agent processes; it only stores numbered lines, and all smarts stay in fyrd | accepted |
 | [0024](0024-changes-v2-one-card-per-work.md) | Changes v2: one card per piece of work through one handle table; Fyr owns the facts, the agent only intent; code is done at merged; Needs you is computed; wake on failures and ask results only | accepted |
+| [0025](0025-fronts-find-and-mesh.md) | Fronts find the owner's Fyr installs on the tailnet and follow each one automatically; the fronts mesh, hosts dial nothing, and the client keeps one uplink | accepted |

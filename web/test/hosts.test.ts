@@ -75,3 +75,16 @@ test("hostLabel falls back to mock or local", () => {
   assert.equal(hostLabel("", true), "mock");
   assert.equal(hostLabel("", false), "local");
 });
+
+test("V0.123: a host the front found on the tailnet says so in Settings → Hosts", () => {
+  const hs = decodeHosts([
+    { name: "laptop", online: true },
+    { name: "server", online: true, found: true },
+    { name: "desk", online: false, found: true },
+  ]);
+  assert.equal(hs[1].found, true);
+  assert.equal(hs[0].found, undefined);
+  assert.equal(hostStatus(hs[0], "laptop"), "this machine · online");
+  assert.equal(hostStatus(hs[1], "laptop"), "online · found on the tailnet");
+  assert.equal(hostStatus(hs[2], "laptop"), "offline · found on the tailnet");
+});
