@@ -280,3 +280,31 @@ func TestDeleteProjectRemovesIcon(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+// SPEC V0.117: a setup run that could not start (the system agent failed) is
+// not done once: the next pass after the fix starts it, and the error goes.
+func TestSetupThatCouldNotStartRunsAgain(t *testing.T) {
+	h := setupHarness(t)
+	dir := filepath.Join(h.dir, "a")
+	os.MkdirAll(dir, 0o755)
+	h.e.SystemAgentResolve = func(string) (string, string, error) {
+		return "", "", errors.New("Claude has no Haiku model: pick a model in Settings → System agents")
+	}
+	pid := newProject(t, h, core.Args{"folder": dir})
+	if n := h.e.SetupExisting(0); n != 0 {
+		t.Fatalf("started %d with a failing system agent", n)
+	}
+	if s := projectByID(h, pid).Setup; s == nil || s.Error == "" || s.Thread != "" {
+		t.Fatalf("the failure is not shown: %+v", s)
+	}
+	h.e.SystemAgentResolve = func(string) (string, string, error) { return "", "claude-haiku-5-5", nil }
+	if n := h.e.SetupExisting(0); n != 1 {
+		t.Fatalf("after the fix a pass started %d", n)
+	}
+	if s := projectByID(h, pid).Setup; s == nil || s.Thread == "" || s.Error != "" {
+		t.Fatalf("after the retry: %+v", s)
+	}
+	if n := h.e.SetupExisting(0); n != 0 {
+		t.Fatalf("a run that started ran again: %d", n)
+	}
+}

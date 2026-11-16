@@ -13,7 +13,7 @@ func systemManager(s core.SystemAgents) *Manager {
 	profiles := []provider.Profile{
 		{ID: "claude", Name: "Claude", Models: []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"}, DefaultModel: "claude-opus-5-5"},
 		{ID: "deepseek", Name: "DeepSeek", Models: []string{"deepseek-chat"}, Endpoint: cli.Endpoint{BaseURL: "https://api.deepseek.com/anthropic", ModelEnv: map[string]string{"ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-chat-small"}}},
-		{ID: "zai", Name: "Z.ai", Models: []string{"glm-4.6"}, DefaultModel: "glm-4.6"},
+		{ID: "zai", Name: "Z.ai", Models: []string{"glm-4.6"}, DefaultModel: "glm-4.6", Auth: cli.Auth{Kind: cli.APIKey}, Endpoint: cli.Endpoint{BaseURL: "https://api.z.ai/api/anthropic"}},
 		{ID: "off", Name: "Off", Models: []string{"claude-haiku-5-5"}, Unavailable: "no login yet"},
 	}
 	return New(nil, Config{
@@ -83,6 +83,19 @@ func TestSystemAgentFailsVisibly(t *testing.T) {
 		}
 		if c.name == "no haiku" && !strings.Contains(err.Error(), "Settings → System agents") {
 			t.Fatalf("the reason does not say where to fix it: %v", err)
+		}
+	}
+}
+
+// V0.117: with no setting, a title on the live Claude login (no Haiku in its
+// stored list) runs on claude-haiku-5-5.
+func TestSystemAgentDefaultOnAStoredClaudeLogin(t *testing.T) {
+	login := provider.Profile{ID: "claudeAlt", Name: "Claude", CLI: "claude", Auth: cli.Auth{Kind: cli.CLILogin},
+		Models: []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2"}}
+	m := New(nil, Config{Profile: func(string) provider.Profile { return login }})
+	for _, job := range []string{core.JobTitle, core.JobSetup} {
+		if a, err := m.SystemAgent(job); err != nil || a.Model != "claude-haiku-5-5" {
+			t.Fatalf("%s: %+v %v", job, a, err)
 		}
 	}
 }
