@@ -169,10 +169,10 @@ export function ChangesView({ threadId, changes }: { threadId: string; changes?:
     );
   }
   if (!data.git) {
+    // #72: without git there is no diff to refresh; one quiet line, and the change cards above keep the tab's height.
     return (
-      <div class="chg">
-        {head("Not a git checkout")}
-        <div class="chg-empty">This thread's folder is not a git checkout.</div>
+      <div class="chg nogit">
+        <div class="chg-empty">No git checkout in this folder, so there is no diff.</div>
       </div>
     );
   }
