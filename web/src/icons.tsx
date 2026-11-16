@@ -84,7 +84,7 @@ export function StateIcon({ state, size = 16 }: { state: AttentionState; size?: 
 }
 
 /** The Fyr logo (V0.93): the rendered lighthouse, 128 px, shown smaller. The rail (32 px) and the phone's
- * inbox header (28 px, V0.103) share it. `alt` is empty where the word "Fyr" follows it. */
+ * inbox header (28 px, V0.103) share it; neither shows the word "Fyr" (V0.113), so `alt` is the name. */
 export function BrandMark({ size, alt = "Fyr" }: { size: number; alt?: string }) {
   return <img class="brandmark" src="/logo.png" alt={alt} width={size} height={size} />;
 }

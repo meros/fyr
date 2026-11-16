@@ -377,10 +377,9 @@ function MInbox(p: PhoneProps) {
         </div>
       ) : (
         <div class="m-ih">
-          {/* V0.103: the rail's logo (V0.93) before the name. The rail has no room for the name; this header has. */}
+          {/* V0.103, V0.113: the rail's logo (V0.93) alone, as on the desktop rail; its alt is the name. */}
           <span class="m-brand">
-            <BrandMark size={28} alt="" />
-            Fyr
+            <BrandMark size={28} />
           </span>
           <span class={`m-conn ${p.store.conn}`} title={p.store.conn}>
             <i />
