@@ -516,6 +516,8 @@ function lowerFirst(s: string): string {
 export interface GroupStats {
   failed: number;
   running: number;
+  /** #91: the last call failed (a failure earlier in the group that a later call got past is not the outcome) */
+  lastFailed: boolean;
   /** wall time from the first start to the last finish, when every call finished */
   durationMs: number | null;
 }
@@ -523,10 +525,19 @@ export interface GroupStats {
 export function groupStats(calls: ToolCall[]): GroupStats {
   const failed = calls.filter((c) => c.isError).length;
   const running = calls.filter((c) => !c.done).length;
-  if (running || !calls.length) return { failed, running, durationMs: null };
+  const lastFailed = calls.length > 0 && calls[calls.length - 1].isError;
+  if (running || !calls.length) return { failed, running, lastFailed, durationMs: null };
   const start = Math.min(...calls.map((c) => c.startedAt));
   const end = Math.max(...calls.map((c) => c.startedAt + (c.durationMs ?? 0)));
-  return { failed, running, durationMs: start ? Math.max(0, end - start) : null };
+  return { failed, running, lastFailed, durationMs: start ? Math.max(0, end - start) : null };
+}
+
+/** #91: how a folded group reads. Red only when it ended in a failure; amber when a later call got past one. */
+export type GroupTone = "failed" | "recovered" | "running" | "ok";
+export function groupTone(st: Pick<GroupStats, "failed" | "running" | "lastFailed">): GroupTone {
+  if (st.running) return "running";
+  if (st.lastFailed) return "failed";
+  return st.failed ? "recovered" : "ok";
 }
 
 /** A tool group splits into folded runs of plain calls and the subagent rows, which stay as they are (V0.16). */
@@ -717,7 +728,7 @@ export type Role = "outcome" | "process" | "end";
 
 export type Entry =
   | { kind: "item"; key: string; item: Item; role: Role }
-  | { kind: "fold"; key: string; items: Item[]; text: string; steps: number; failed: number; running: number; durationMs: number | null };
+  | { kind: "fold"; key: string; items: Item[]; text: string; steps: number; failed: number; running: number; tone: GroupTone; durationMs: number | null };
 
 function turnOf(it: Item, users: number): string {
   return it.run !== undefined ? `r${it.run}` : `o${users}`;
@@ -825,6 +836,7 @@ function foldOf(s: Item[]): Extract<Entry, { kind: "fold" }> {
     steps,
     failed: st.failed,
     running: st.running,
+    tone: groupTone(st),
     durationMs: start !== Infinity && end >= start && !st.running ? end - start : null,
   };
 }
