@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Gate is the check before Fyr approves a deploy ask by itself (V0.110):
+// Gate is the check before Fyr approves a deploy ask by itself (V0.111):
 // the checkout has no uncommitted or untracked file (the build would
 // include it), and its HEAD is the commit origin's default branch points
 // at, or an ancestor of it. Such code is code a person already merged. It

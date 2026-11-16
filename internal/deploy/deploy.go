@@ -77,12 +77,12 @@ type Deployer struct {
 	// daemon's probation, or when the client-only path switched. nil
 	// hears nothing.
 	OnShipped func(Shipped)
-	// OnIdle hears that no deploy runs any more (V0.110): one failed, or
+	// OnIdle hears that no deploy runs any more (V0.111): one failed, or
 	// the new build's probation ended. nil hears nothing.
 	OnIdle func()
 
 	exit   int
-	active int // deploys between start and return (V0.110)
+	active int // deploys between start and return (V0.111)
 	mu     sync.Mutex
 	gen    int
 	cancel context.CancelFunc
@@ -257,7 +257,7 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		return failed(errors.New(why))
 	}
 	commit, remote := source(ctx, run, dir) // V0.82: what is built
-	// V0.110: an auto-approved deploy builds only the commit the gate passed.
+	// V0.111: an auto-approved deploy builds only the commit the gate passed.
 	if want, _ := req.Args["commit"].(string); want != "" && commit != want {
 		return failed(fmt.Errorf("The checkout moved from %s to %s after the approval; nothing was built. Ask again.", short7(want), short7(commit)))
 	}
@@ -444,7 +444,7 @@ func firstErr(_ string, err error) error { return err }
 
 // Busy: a deploy builds, tests or drains here, or a switched build waits
 // out its probation (pending_deploy), so no other deploy starts by itself
-// (V0.110).
+// (V0.111).
 func (d *Deployer) Busy() bool {
 	d.mu.Lock()
 	active := d.active > 0

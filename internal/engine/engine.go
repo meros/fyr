@@ -62,7 +62,7 @@ type Engine struct {
 	// autoMerge is the repos whose merge asks Fyr approves (V0.102), by
 	// core.RepoKey.
 	autoMerge map[string]bool
-	// autoDeployOff is the owner's auto-deploy setting turned off (V0.110);
+	// autoDeployOff is the owner's auto-deploy setting turned off (V0.111);
 	// deploySeen is where each open deploy ask stands, by thread/decision,
 	// and deploys counts the deploys between approval or press and their
 	// end. deployMu makes one auto-deploy pass at a time.
@@ -71,7 +71,7 @@ type Engine struct {
 	deploys       int
 	deployMu      sync.Mutex
 	// DeployGate checks a checkout before Fyr approves a deploy ask by
-	// itself (V0.110): its HEAD, or why the ask waits for the owner. nil:
+	// itself (V0.111): its HEAD, or why the ask waits for the owner. nil:
 	// no deploy ask is approved by itself.
 	DeployGate func(ctx context.Context, dir string) (commit, why string)
 	// DeployBusy: a deploy builds or a new build waits out its probation.
@@ -194,7 +194,7 @@ func (e *Engine) Load() error {
 		e.projects[p.ID] = p
 	}
 	e.loadAutoMerge()
-	e.loadAutoDeploy() // V0.110
+	e.loadAutoDeploy() // V0.111
 	old, err := e.st.OldProjectSources()
 	if err != nil {
 		return err
@@ -462,7 +462,7 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(500, err.Error())
 		}
 		reply.Result = e.AutoMergeRepos()
-	case core.EffectAutoDeploySet: // V0.110: the owner's setting
+	case core.EffectAutoDeploySet: // V0.111: the owner's setting
 		on, _ := ef.Request.Args["on"].(bool)
 		if err := e.setAutoDeploy(on); err != nil {
 			return fail(500, err.Error())
@@ -721,7 +721,7 @@ func (e *Engine) publish(p *applied) {
 	e.start(p.threadID, p.res.Effects)
 	if p.threadID != "" {
 		e.autoApprove(p.threadID) // V0.102
-		e.autoDeploy(p.threadID)  // V0.110
+		e.autoDeploy(p.threadID)  // V0.111
 	}
 }
 

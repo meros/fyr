@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Auto-deploy (V0.110): when the owner's setting is on (the default), Fyr
+// Auto-deploy (V0.111): when the owner's setting is on (the default), Fyr
 // approves an agent's fyr.deploy ask itself once the engine's gate passed
 // the checkout: no uncommitted file, and HEAD on origin's default branch.
 // The setting is the owner's alone (KindAutoDeploySet, a host command with

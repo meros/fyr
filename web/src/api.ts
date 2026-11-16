@@ -80,7 +80,7 @@ export interface Api {
   providersFound(): Promise<FoundDTO[]>;
   /** V0.102: the repos Fyr knows and whether each merges agents' merge asks with no press. */
   autoMerge(): Promise<AutoMergeRepo[]>;
-  /** V0.110: whether Fyr approves agents' deploy asks of merged code with no press. */
+  /** V0.111: whether Fyr approves agents' deploy asks of merged code with no press. */
   autoDeploy(): Promise<AutoDeploySetting>;
   /** V0.50: the current profiles (after a provider changed). */
   profiles(): Promise<Profile[]>;

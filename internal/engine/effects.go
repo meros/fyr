@@ -110,7 +110,7 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 		if ef.Request == nil {
 			return nil, false
 		}
-		if ef.Request.Action == core.FyrDeploy { // V0.110: one deploy at a time
+		if ef.Request.Action == core.FyrDeploy { // V0.111: one deploy at a time
 			defer e.deployStarted(*ef.Request)()
 		}
 		ok, text, later := e.runFyr(threadID, *ef.Request, ef.ID)

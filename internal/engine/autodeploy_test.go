@@ -12,7 +12,7 @@ import (
 
 const goodCommit = "c0ffee1234567890c0ffee1234567890c0ffee12"
 
-// gate is a fake V0.110 gate: /src/fyr passes, any other dir is held. It
+// gate is a fake V0.111 gate: /src/fyr passes, any other dir is held. It
 // counts its calls.
 type gate struct {
 	mu sync.Mutex
@@ -50,7 +50,7 @@ func deployCalls(h *harness) []core.EffectReq {
 	return out
 }
 
-// SPEC V0.110 (1)-(3), (6): with the setting on by default, an agent's deploy
+// SPEC V0.111 (1)-(3), (6): with the setting on by default, an agent's deploy
 // ask of a clean checkout on origin's main runs with no press, bound to the
 // commit; a held ask waits for the owner with a line that says why; the
 // owner turns the setting off, and it outlives a restart.
@@ -111,7 +111,7 @@ func TestAutoDeployByTheSetting(t *testing.T) {
 	eventually(t, "the waiting ask ran", func() bool { return len(deployCalls(h2)) == 1 })
 }
 
-// SPEC V0.110 (4): one deploy at a time. While one runs, a second ask gets
+// SPEC V0.111 (4): one deploy at a time. While one runs, a second ask gets
 // the wait line once and runs when the first ends.
 func TestAutoDeployOneAtATime(t *testing.T) {
 	h := newHarness(t, time.Minute)

@@ -348,7 +348,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         if (e.data?.kind === "handover") pushItem({ kind: "effect", key, action: "handover", ok: false, text: err, line: `Handover failed: ${firstLine(err)}` });
         // V0.108: a title call that failed; the host's line says the title stays.
         if (e.data?.kind === "title") pushItem({ kind: "effect", key, action: "title", ok: false, text: err, line: firstLine(err) });
-        // V0.110: a deploy ask that Fyr did not approve by itself, or that waits for another deploy.
+        // V0.111: a deploy ask that Fyr did not approve by itself, or that waits for another deploy.
         if (e.data?.kind === "autoDeploy") pushItem({ kind: "effect", key, action: "autoDeploy", ok: false, text: err, line: firstLine(err) });
         break;
       }

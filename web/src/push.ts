@@ -1,4 +1,5 @@
 // Web Push: the pure parts (SPEC 0.5 V0.15). The browser calls live in pwa.ts, HTTP in api.ts.
+import { iconUrl } from "./icon-paths.ts";
 
 /** VAPID public keys come as base64url; pushManager.subscribe wants the raw bytes. */
 export function base64UrlToBytes(s: string): Uint8Array<ArrayBuffer> {
@@ -125,8 +126,8 @@ export function parsePayload(text: string | null | undefined): PushPayload {
 export function notificationOptions(p: PushPayload, now: number): Record<string, unknown> {
   const opts: Record<string, unknown> = {
     body: p.body ?? "",
-    icon: "/icons/icon-192.png",
-    badge: "/icons/badge-96.png",
+    icon: iconUrl("any192"),
+    badge: iconUrl("badge96"),
     data: { threadId: p.threadId },
     timestamp: now,
     vibrate: [60, 40, 60],
