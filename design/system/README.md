@@ -46,4 +46,4 @@ Fyr is a calm control room for coding agents. Like a lighthouse, it watches ever
 ## Icons
 
 - The nine state icons are part of the bundle (`StatusBadge`); they are geometric so they read at 14px: disc (asking), diamond (failed), ring with centre (blocked), dot (done), quarter arc (working), dashed ring (waiting), open ring (seen), crescent (snoozed), check (settled).
-- There is no logo yet; set the name in IBM Plex Sans 600.
+- The logo is the Fyr mark, a lighthouse on a night tile, drawn in `web/scripts/icons.ts` (the app icon). The desktop rail shows it at 32 px; where the name is set as text, use IBM Plex Sans 600.
