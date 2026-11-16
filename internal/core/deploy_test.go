@@ -78,7 +78,7 @@ func TestProductionFailureBlocks(t *testing.T) {
 	if k == nil || k.Status != "fail" || k.Reason != "deploy to prod-eu failed" {
 		t.Fatalf("deploy: %+v", k)
 	}
-	if got := ChangeBlocking(th); got != "Fix it: deploy to prod-eu failed" {
+	if got := needText(th); got != "Fix it: deploy to prod-eu failed" {
 		t.Fatalf("blocking %q", got)
 	}
 	var inv *ActionSpec

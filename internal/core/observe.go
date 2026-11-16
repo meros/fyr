@@ -11,6 +11,7 @@ func RunStarted(t *Thread, now time.Time) {
 	t.Activity = "Starting"
 	t.Subagents = 0
 	t.Failure = nil
+	t.Stopped = false
 }
 
 // RunEnded closes the run. A nil failure means it finished normally or was
@@ -22,6 +23,7 @@ func RunEnded(t *Thread, f *Failure, now time.Time) {
 	t.ActivityAt = now
 	t.Failure = f
 	t.RunEnds++
+	t.RunEndedAt = &now // V0.101: Stopped on a failure counts from here
 	if f != nil {
 		dropSettleDone(t) // the run did not finish
 	}

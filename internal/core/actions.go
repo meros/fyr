@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -478,8 +479,10 @@ func init() {
 			if t.ArchivedAt != nil {
 				return "Already archived"
 			}
-			if t.Running || len(t.Decisions) > 0 {
-				return "Stop the run first" // L3: archived threads have no live work
+			// L3: archived threads have no live work. V0.101: an agent's ask
+			// does not hold it; archiving voids the ask.
+			if t.Running || slices.ContainsFunc(t.Decisions, func(d Decision) bool { return d.Kind != DecisionEffect }) {
+				return "Stop the run first"
 			}
 			return ""
 		},

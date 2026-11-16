@@ -22,6 +22,9 @@ type Tool struct {
 	// For limits the tool to some threads: it is not listed for the others,
 	// and a call from them fails. Nil: every thread.
 	For func(thread string) bool
+	// Hidden: an alias kept for one release (V0.101): not listed, still
+	// callable.
+	Hidden bool
 }
 
 type Server struct {
@@ -105,7 +108,7 @@ func (s *Server) dispatch(ctx context.Context, thread string, req request) (any,
 		list := []any{}
 		for _, n := range names {
 			t := s.tools[n]
-			if t.For != nil && !t.For(thread) {
+			if t.Hidden || (t.For != nil && !t.For(thread)) {
 				continue
 			}
 			list = append(list, map[string]any{"name": t.Name, "description": t.Description, "inputSchema": t.Schema})

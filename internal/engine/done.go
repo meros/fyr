@@ -27,10 +27,14 @@ func (e *Engine) BoardVisit() time.Time {
 	return prev
 }
 
-// recordDone sends the owner's change.done on a host record that the thread
-// shows down the record's path (V0.98 (4)), with a receipt. ok is false when
-// the change is not such a record: the thread's own reduce takes it.
-func (e *Engine) recordDone(in core.Input, a core.Args) (api.Reply, bool) {
+// recordKinds are the owner's commands on a change that a host record takes
+// as its own kind: Done (V0.98 (4)) and Abandon (V0.101).
+var recordKinds = map[string]string{core.KindChangeDone: core.KindRecordDone, core.KindChangeEnd: core.KindRecordEnd}
+
+// recordOwner sends the owner's change.done or change.end on a host record
+// that the thread shows down the record's path, with a receipt. ok is false
+// when the change is not such a record: the thread's own reduce takes it.
+func (e *Engine) recordOwner(in core.Input, a core.Args, kind string) (api.Reply, bool) {
 	id := strings.TrimSpace(a.Str("change"))
 	e.mu.Lock()
 	t := e.threads[in.Thread]
@@ -43,7 +47,7 @@ func (e *Engine) recordDone(in core.Input, a core.Args) (api.Reply, bool) {
 	if r, done := e.replay(in.CmdID); done {
 		return r, true
 	}
-	if _, err := e.Apply(core.Input{Source: in.Source, Kind: core.KindRecordDone, Thread: in.Thread, Args: core.Args{"change": id}}); err != nil {
+	if _, err := e.Apply(core.Input{Source: in.Source, Kind: kind, Thread: in.Thread, Args: core.Args{"change": id, "reason": a.Str("reason")}}); err != nil {
 		return rejected(err), true
 	}
 	reply := api.Reply{OK: true, Status: 200, ThreadID: in.Thread}

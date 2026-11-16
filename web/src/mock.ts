@@ -81,6 +81,8 @@ function task(id: string, description: string, status: TaskDTO["status"], now: n
 }
 
 const NOT_RUNNING = { "thread.interrupt": "No run is going", "thread.retry": "Nothing failed" };
+/** V0.101: the needs the mock host left out while the owner parked them (Undo brings them back). */
+const parkedNeeds = new Map<string, NonNullable<Change["need"]>>();
 
 function askDecision(now: number): Decision {
   return {
@@ -284,7 +286,7 @@ function fullFixture(now: number): Fixture {
   add(
     base("t_done", "Triage sprint issues", now, 60, {
       project: "acme/ops",
-      attention: { state: "done", section: "needs", reason: "Done" },
+      attention: { state: "blocked", section: "needs", reason: "Placement rows load in one read: Merge" }, // V0.101: the host computes it from the Ready change below
       summary: "Filed 6 issues, closed 2 duplicates",
       unavailable: NOT_RUNNING,
     }),
@@ -481,6 +483,7 @@ function fullFixture(now: number): Fixture {
         id: "c_scale", key: "k8s:prod/api replicas", kind: "infra", title: "Raise api replicas to 4", targets: ["k8s:gke-prod/api"], phase: "landed", phaseBy: "agent", label: "applied to prod; bot run active (claude: working); fix agent restarted the rollout",
         revisions: [{ id: "sha256:9f2c41d07aa1", summary: "replicas 2 → 4, readiness probe 5 s", by: "agent", at: iso(70) }],
         conditions: [{ type: "health", status: "fail", reason: "2 of 4 pods in CrashLoopBackOff", source: "agent", at: iso(62) }],
+        need: { cause: "failure", text: "2 of 4 pods in CrashLoopBackOff", head: "sha256:9f2c41d07aa1" },
         evidence: [{ kind: "log", url: "https://console.cloud.google.com/logs", title: "pod logs" }],
         offers: [
           { id: "fix", label: "Investigate the crash loop", run: "agent", in: "this", prompt: "Read the logs of the crashing pods, find the cause, and propose a fix before you change anything.", primary: true, by: "agent", digest: dg("fix") },
@@ -490,7 +493,8 @@ function fullFixture(now: number): Fixture {
         createdAt: iso(80), updatedAt: iso(62),
       },
       {
-        id: "c_runbook", key: "doc:runbook", kind: "doc", title: "Runbook for api scaling", phase: "review", phaseBy: "agent", needs: "owner",
+        id: "c_runbook", key: "doc:runbook", kind: "doc", title: "Runbook for api scaling", phase: "review", phaseBy: "agent",
+        need: { cause: "ask", ask: "d_runbook", action: "change.approve", text: "Approve the runbook before I publish it" }, // V0.101: the host computes it
         evidence: [{ kind: "doc", url: "https://docs.example/runbook", title: "draft" }],
         offers: [{ id: "publish", label: "Publish to the wiki", run: "agent", in: "this", prompt: "Publish the runbook to the team wiki and link it here.", by: "agent", digest: dg("publish") }],
         createdAt: iso(50), updatedAt: iso(40),
@@ -500,6 +504,7 @@ function fullFixture(now: number): Fixture {
         id: "c_lasso", key: "pr:acme/web#4123", kind: "code", title: "Map: draw only visible features", branch: "fix/map-lasso-mobile", targets: ["repo:github.com/acme/web"],
         phase: "review", phaseBy: "observed",
         conditions: [{ type: "checks", status: "fail", reason: "CI failed", source: "observed", at: iso(20) }],
+        need: { cause: "failure", text: "CI failed", head: "93a7e57c1d2b3a4f5e6d7c8b9a0f1e2d3c4b5a69" },
         evidence: [{ kind: "pr", url: "https://github.com/acme/web/pull/4123", title: "#4123" }],
         annotations: [
           { path: "web/src/map/render.ts", line: 44, level: "failure", title: "no-undef", message: "'stats' is not defined.", check: "lint" },
@@ -524,7 +529,7 @@ function fullFixture(now: number): Fixture {
       // V0.97: a green PR the host reads as ready to merge; its Merge names the head, and Merge all green takes it.
       {
         id: "c_rows", key: "pr:acme/web#4131", kind: "code", title: "Placement rows load in one read", targets: ["repo:github.com/acme/web"],
-        phase: "review", phaseBy: "observed", ready: "Merge",
+        phase: "review", phaseBy: "observed", ready: "Merge", need: { cause: "ready", text: "Merge", head: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678" },
         pr: { url: "https://github.com/acme/web/pull/4131", repo: "acme/web", number: 4131, state: "OPEN", checks: "pass", review: "APPROVED", head: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", mergeState: "CLEAN" },
         conditions: [{ type: "checks", status: "ok", source: "observed", at: iso(30) }],
         evidence: [{ kind: "pr", url: "https://github.com/acme/web/pull/4131", title: "#4131" }],
@@ -1233,7 +1238,8 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         const ans = args.answers ? Object.values(args.answers as Record<string, string>).join(" · ") : args.allow ? "Allowed" : "Denied";
         emit(t.id, "decision.closed", { id: args.decisionId, answer: ans });
         if (d?.kind === "effect" && args.allow) emit(t.id, "effect.result", { action: d.effect?.action, ok: true, text: "Merged #4170 with squash." });
-        put(t, { decisions: (t.decisions ?? []).filter((x) => x.id !== args.decisionId) });
+        // V0.101: an answered or declined ask leaves Needs you.
+        put(t, { decisions: (t.decisions ?? []).filter((x) => x.id !== args.decisionId), changes: (t.changes ?? []).map((x) => (x.need?.ask && x.need.ask === args.decisionId ? { ...x, need: undefined } : x)) });
         runFor(t.id, "Thanks, continuing with that answer. (mock)");
         break;
       }
@@ -1305,7 +1311,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         if (c.phase === "abandoned" || c.phase === "reverted") return { ok: false, error: `"${c.title}" is already ${c.phase}` };
         const phase = args.phase === "reverted" ? "reverted" : "abandoned";
         const label = String(args.reason ?? "").trim() || undefined;
-        put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, phase, phaseBy: "owner" as const, label, offers: [], updatedAt: new Date(clock()).toISOString() } : x)) });
+        put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, phase, phaseBy: "owner" as const, label, offers: [], need: undefined, done: { at: new Date(clock()).toISOString(), by: "owner" as const, reason: phase }, updatedAt: new Date(clock()).toISOString() } : x)) });
         break;
       }
       case "change.done": {
@@ -1314,7 +1320,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         if (!c) return { ok: false, error: `no change ${String(args.change)}` };
         if (c.done) return { ok: false, error: `"${c.title}" is already done` };
         const at = new Date(clock()).toISOString();
-        put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, done: { at, by: "owner" as const, reason: "done" }, updatedAt: at } : x)) });
+        put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, done: { at, by: "owner" as const, reason: "done" }, need: undefined, updatedAt: at } : x)) });
         break;
       }
       case "change.park":
@@ -1323,7 +1329,18 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         const c = (t.changes ?? []).find((x) => x.id === args.change || x.key === args.change);
         if (!c) return { ok: false, error: `no change ${String(args.change)}` };
         const parked = action === "change.park" ? { at: new Date(clock()).toISOString(), seen: "mock" } : undefined;
-        put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, parked } : x)) });
+        // V0.101: the host leaves a parked change out of Needs you until its head changes.
+        if (action === "change.park" && c.need) parkedNeeds.set(c.id, c.need);
+        const need = action === "change.park" ? undefined : (c.need ?? parkedNeeds.get(c.id));
+        put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, parked, need } : x)) });
+        break;
+      }
+      case "change.refresh": {
+        // V0.101: Refresh now reads GitHub and git now; the mock reads the PR as checked now.
+        const c = (t.changes ?? []).find((x) => x.id === args.change || x.key === args.change);
+        if (!c) return { ok: false, error: `no change ${String(args.change)}` };
+        const at = new Date(clock()).toISOString();
+        put(t, { changes: (t.changes ?? []).map((x) => (x === c && x.pr ? { ...x, pr: { ...x.pr, checkedAt: at } } : x)) });
         break;
       }
       case "thread.dismissPR":

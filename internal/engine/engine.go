@@ -287,8 +287,9 @@ func (e *Engine) submit(in core.Input) api.Reply {
 		a = core.Args{}
 	}
 	in.Args = a
-	if in.Kind == core.KindChangeDone {
-		if r, ok := e.recordDone(in, a); ok { // V0.98 (4): Done on a host record
+	if kind, ok := recordKinds[in.Kind]; ok {
+		// V0.98 (4) Done and V0.101 Abandon on a host record.
+		if r, ok := e.recordOwner(in, a, kind); ok {
 			return r
 		}
 	}
@@ -772,9 +773,11 @@ func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 	changes := e.shown(t)
 	running := t.Running || t.RunningTasks() > 0
 	for i := range changes { // V0.97: derived, never stored
-		if c := &changes[i]; c.Phase.InFlight() && !c.Dismissed {
+		c := &changes[i]
+		if c.Phase.InFlight() && !c.Dismissed {
 			c.Ready = core.Ready(c.PR, running)
 		}
+		c.Need = core.ChangeNeed(t, c) // V0.101: the client only reads it
 	}
 	return api.Thread{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now),
 		PR: t.MainPR(), Project: e.projectName(t), LiveView: t.ViewOn(),

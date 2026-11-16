@@ -2,14 +2,17 @@
 // Each front adds only its wrapper (selection, swipes); the phone sets its own sizes in phone.css.
 
 import type { ComponentChildren } from "preact";
-import type { Thread } from "./types.ts";
+import type { Change, ChangeNeed, Thread } from "./types.ts";
+import { useApi } from "./api-context.ts";
+import { useAsk } from "./confirm-ui.tsx";
+import { press } from "./confirm.ts";
 import { ThreadCPU, ThreadSlot } from "./load-ui.tsx";
 import { StartedBy, ThreadProject } from "./project-ui.tsx";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState } from "./rows.ts";
 import { relTime, untilLabel, whenLabel } from "./format.ts";
 import { prChip } from "./pr.ts";
-import { changeChip } from "./offers.ts";
+import { changeChip, needLook, rowNeed } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
 
 /** What differs between the fronts, each for a reason. */
@@ -74,6 +77,7 @@ function hasChange(t: Thread): boolean {
 
 export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs }: BodyProps) {
   const st = t.attention.state;
+  const need = rowNeed(t); // V0.101: the host's cause, read only
   return (
     <div {...attrs} class={`rw${st === "done" ? " dn" : ""}${extra}`}>
       {lead ?? (
@@ -86,12 +90,40 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs }: Bod
       <span class="m ell">
         <b class={stateClass(st)}>{rowState(t)}</b> · {pre}{t.parent && <><StartedBy parentId={t.parent} link={look.link} /> · </>}{rowMeta(t, { keys: look.keys })}
       </span>
-      {hasChange(t) && (
+      {(hasChange(t) || need) && (
         <span class="cl">
-          <PrBadge t={t} />
+          {hasChange(t) && <PrBadge t={t} />}
+          {need && <NeedButton t={t} {...need} />}
         </span>
       )}
     </div>
+  );
+}
+
+/** V0.101 (decision 0024 section 9): a Needs you cause adds the beam dot and its button to the row: "Merge a1b2c3d"
+ *  for a Ready change, bound to the head the row shows (V0.97), and "Answer" for an ask, which opens the thread. */
+export function NeedButton({ t, change, need }: { t: Thread; change: Change; need: ChangeNeed }) {
+  const api = useApi();
+  const ask = useAsk();
+  const look = needLook(need);
+  const merge = (change.offers ?? []).find((o) => o.run === "fyr" && o.effect === "pr.merge");
+  const canMerge = need.cause === "ready" && !!merge && !!need.head;
+  if (need.cause !== "ask" && !canMerge) return <span class="beamdot" aria-hidden="true" />;
+  return (
+    <span class="rneed">
+      <span class="beamdot" aria-hidden="true" />
+      <button
+        class={`btn sm${canMerge ? " p" : ""}`}
+        title={look.line}
+        onClick={(e) => {
+          if (!canMerge) return; // Answer: the row's own click opens the thread
+          e.stopPropagation();
+          void press(change.id, merge!, undefined, ask, (action, args) => void api.command(action, t.id, args), need.head);
+        }}
+      >
+        {look.button}
+      </button>
+    </span>
   );
 }
 

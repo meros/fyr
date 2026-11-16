@@ -44,7 +44,7 @@ func TestAttentionTable(t *testing.T) {
 		{"asking beats running", Thread{Conversation: Conversation{Running: true}, Decisions: ask}, View{SeenAt: at(9)}, Asking},
 		{"failed stays after a visit", Thread{Conversation: Conversation{Failure: fail}}, View{SeenAt: at(9)}, Failed},
 		{"asking beats failed", Thread{Conversation: Conversation{Failure: fail}, Decisions: ask}, View{}, Asking},
-		{"blocked PR when idle", withPR(Thread{}, openFail), View{SeenAt: at(9)}, Blocked},
+		{"blocked PR when idle", withPR(Thread{Conversation: Conversation{Stopped: true}}, openFail), View{SeenAt: at(9)}, Blocked},
 		{"blocked PR hidden while working", withPR(Thread{Conversation: Conversation{Running: true}}, openFail), View{}, Working},
 		{"merged PR does not block", withPR(Thread{}, PR{State: "MERGED", Checks: "fail"}), View{SeenAt: at(9)}, Seen},
 		{"settled beats asking", Thread{Settle: Settle{At: ptr(at(1))}, Decisions: ask}, View{}, Settled},

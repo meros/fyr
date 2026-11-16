@@ -148,15 +148,15 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("merged: %+v", n)
 			}
 		},
-		// The view or the changes not touched in this run: stop, taken at
-		// the run's end in one reason.
+		// SPEC V0.101 (5): the Stop hook still delivers the view upkeep and no
+		// longer asks for the changes; an open agent change is no upkeep.
 		"upkeep.stop": func(t *testing.T) {
 			th := feedThread()
 			th.Live = &LiveView{Enabled: true}
 			OpenChange(th, ChangeOpen{Key: "k8s:x", Kind: KindInfra, Title: "x"}, ByAgent, ct0)
 			RunStarted(th, ct0.Add(time.Minute))
 			_, ns := take(t, th, FeedTake{At: AtStop, View: true, Changes: true}, ct0.Add(2*time.Minute))
-			if got := whats(ns); !slices.Equal(got, []string{ViewStopText, ChangesStopText}) || ns[0].Urgency != Stop {
+			if got := whats(ns); !slices.Equal(got, []string{ViewStopText}) || ns[0].Urgency != Stop {
 				t.Fatalf("stop: %q", got)
 			}
 			if _, ns := take(t, th, FeedTake{At: AtStop}, ct0.Add(2*time.Minute)); len(ns) != 0 {
@@ -166,7 +166,6 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("stop notices at a tool call: %q", whats(ns))
 			}
 			ViewChecked(th, ct0.Add(90*time.Second))
-			ChangesChecked(th, ct0.Add(90*time.Second))
 			if _, ns := take(t, th, FeedTake{At: AtStop, View: true, Changes: true}, ct0.Add(2*time.Minute)); len(ns) != 0 {
 				t.Fatalf("touched this run: %q", whats(ns))
 			}

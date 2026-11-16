@@ -430,6 +430,11 @@ func NextCheck(t *Thread, v *View, now time.Time) *time.Time {
 			}
 		}
 	}
+	// V0.101: a failure waits StopAfter after the last run; the clock
+	// re-reduces then, and the reduce turns Stopped on.
+	if at := stopCheck(t); at != nil && (out == nil || at.Before(*out)) {
+		out = at
+	}
 	return out
 }
 
