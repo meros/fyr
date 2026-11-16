@@ -21,7 +21,13 @@ func names(cs []core.Command) map[string]core.Command {
 // serves a thread without a session, also after a restart.
 func TestCommandsFromInitialize(t *testing.T) {
 	h := newHarness(t, time.Minute)
-	id := h.create("hello")
+	// The thread names its provider, as the clients' New thread does; the
+	// harness runs every profile on the fake.
+	r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "hello", "profile": "fake"})
+	if !r.OK {
+		t.Fatalf("create %+v", r)
+	}
+	id := r.ThreadID
 	h.wait(id, "done", state(core.Done))
 	cs, from, ok := h.e.ThreadCommands(id, "fake")
 	if !ok || from != "thread" {
@@ -49,7 +55,7 @@ func TestCommandsFromInitialize(t *testing.T) {
 	// The next host, on the same database: no session yet, the folder's list.
 	h.m.StopAll()
 	h2 := startHarness(t, h.dir, h.db, time.Minute)
-	cs2, from2, ok2 := h2.e.ThreadCommands(id, "fake")
+	cs2, from2, ok2 := h2.e.ThreadCommands(id, "")
 	if !ok2 || from2 != "folder" || len(cs2) != len(cs) {
 		t.Fatalf("after restart: %q %v %+v", from2, ok2, cs2)
 	}
