@@ -14,6 +14,9 @@ const (
 	// KindThreadAdopted is one thread adopted from T3, with its history:
 	// args Adopted.
 	KindThreadAdopted = "thread.adopted"
+	// KindDeployNow is the owner's Restart now (V0.83): a deploy that
+	// waits for running threads switches at once.
+	KindDeployNow = "host.deployNow"
 )
 
 // ProviderKinds are the provider registry's commands (3.16).
@@ -24,6 +27,8 @@ var ProviderKinds = []string{"provider.import", "provider.create", "provider.upd
 const (
 	EffectAdopt    EffectKind = "t3.adopt"
 	EffectProvider EffectKind = "provider"
+	// EffectDeployNow stops a deploy's drain (V0.83).
+	EffectDeployNow EffectKind = "deploy.now"
 )
 
 // Adopted is a thread T3 adoption made, its owner's view and its history
@@ -45,6 +50,10 @@ func init() {
 	for _, name := range ProviderKinds {
 		RegisterKind(&InputKind{Name: name, On: RecHost, From: ownerOnly, Await: true, Reduce: command(EffectProvider)})
 	}
+	// V0.83: only the owner forces a deploy; no agent tool sends it.
+	RegisterKind(&InputKind{Name: KindDeployNow, On: RecHost, From: ownerOnly, Await: true, Reduce: func(Rec, Input, time.Time) (Result, error) {
+		return Result{Effects: []Effect{{Kind: EffectDeployNow}}}, nil
+	}})
 	RegisterKind(&InputKind{Name: KindCancelMessage, From: ownerOnly, Await: true, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
 		id := mapArgs(in).Str("messageId")
 		if id == "" {

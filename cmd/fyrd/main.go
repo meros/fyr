@@ -164,6 +164,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		n := eng.SelfDeployed(agent.NormalizeRemote(s.Remote), s.Build, s.Contains)
 		log.Printf("deploy %s (%s): %d changes live", s.Build, s.Commit, n)
 	}
+	eng.DeployNow = dep.DeployNow // V0.83: the owner's Restart now
 	prDetails := &github.Details{Gh: github.Gh} // V0.43: the PR tab's details, cached 30 s
 	eng.Effects = engine.Outside{Gh: github.Gh, PR: prDetails, Deploy: dep.Deploy}
 	poller := &github.Poller{Gh: github.Gh, Src: engine.PRWatch{E: eng}}

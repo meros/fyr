@@ -9,6 +9,7 @@ import type { HostLoad } from "./load.ts";
 import { mockPrDetail } from "./mock-pr.ts";
 import { quietList } from "./quiet.ts";
 import type { SlashCommand } from "./slash.ts";
+import type { DeployProgress } from "./deploy.ts";
 
 // V0.35: a table that squeezed on the phone (a commit column, long change text).
 const TRIAGE_TABLE =
@@ -990,7 +991,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   let fileSeq = 1;
   const attachmentsOf = (args: Record<string, unknown>) =>
     (Array.isArray(args.attachments) ? (args.attachments as string[]) : []).map((aid) => files.get(aid)).filter((x): x is NonNullable<typeof x> => !!x);
-  let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void } | null = null;
+  let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void; deploy?(p: DeployProgress): void } | null = null;
   let projects = mockProjects(now0);
   // V0.46: ?quiet=<projectId> puts that project in quiet hours that started an hour ago and end in two hours, and
   // gives it a second window (weekends, ten hours ahead) so the project screen shows two rows (decision 0014 addendum).
@@ -1189,6 +1190,13 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         setTimeout(() => sub?.thread(nt), 30);
       }
       fx.t3 = fx.t3.filter((c) => !ids.includes(c.t3Id));
+      return { ok: true };
+    }
+    if (action === "host.deployNow") {
+      // V0.83: the drain stops and the mock host switches; a real one restarts here.
+      const d = mockDeploy();
+      if (d?.phase !== "drain") return { ok: false, error: "No update is waiting for running threads" };
+      setTimeout(() => sub?.deploy?.({ ...d, phase: "switch", blocking: undefined, at: new Date().toISOString() }), 30);
       return { ok: true };
     }
     if (!t) return { ok: false, error: "No such thread" };
