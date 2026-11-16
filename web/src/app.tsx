@@ -1174,6 +1174,8 @@ function App() {
       api={api}
       host={store.host}
       hosts={store.hosts}
+      hostId={store.hostId}
+      user={store.user}
       phone={!!phoneHeader}
       at={at}
       go={go}

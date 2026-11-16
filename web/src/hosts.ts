@@ -1,6 +1,6 @@
 // SPEC 0.5 V0.51 (decision 0016): a front lists its hosts; a thread on a host the front cannot reach is shown
 // from the front's cache, marked offline and read-only.
-import { clockTime } from "./format.ts";
+import { clockTime, dayTime } from "./format.ts";
 import type { Profile } from "./types.ts";
 import type { DeployProgress } from "./deploy.ts";
 
@@ -20,6 +20,8 @@ export interface HostInfo {
   id?: string;
   /** V0.124: the id the front first saw under this name, when the host now reports another */
   idWas?: string;
+  /** V0.125: the URL the front dials for it, as configured or as discovery found it; missing from an older front */
+  url?: string;
 }
 
 /** The host's name for the rail and the phone; without one in the state, "mock" or "local". */
@@ -41,6 +43,7 @@ export function decodeHosts(raw: unknown): HostInfo[] {
       ...(h.found === true ? { found: true } : {}),
       ...(typeof h.id === "string" && h.id ? { id: h.id } : {}),
       ...(typeof h.idWas === "string" && h.idWas ? { idWas: h.idWas } : {}),
+      ...(typeof h.url === "string" && h.url ? { url: h.url } : {}),
     }));
 }
 
@@ -74,14 +77,63 @@ export function hostForProject(projectHost: string | undefined, hosts: HostInfo[
 
 const BUSY = new Set(["build", "test", "drain", "switch", "client"]);
 
-/** The status words of a host row in Settings → Hosts. */
-export function hostStatus(h: HostInfo, self: string): string {
-  const here = h.name === self ? "this machine · " : "";
-  const found = h.found ? " · found on the tailnet" : "";
-  if (h.online && h.deploy && BUSY.has(h.deploy.phase)) return `${here}online · updating Fyr${found}`;
-  if (h.online) return `${here}online${found}`;
-  const at = clockTime(h.since);
-  return `${here}offline${at ? ` since ${at}` : ""}${found}`;
+/** V0.54: an update of Fyr is running on the host. */
+export function updating(h: HostInfo): boolean {
+  return h.online && !!h.deploy && BUSY.has(h.deploy.phase);
+}
+
+const UPDATE_WORDS: Record<string, string> = { build: "building the new version", test: "running the tests", drain: "waiting for its threads to finish their turn", switch: "restarting", client: "updating the web client" };
+
+/** V0.125: where an update of Fyr on the host is, in the deploy row's words ("running the tests"), or "". */
+export function updateWords(h: HostInfo): string {
+  return updating(h) ? (UPDATE_WORDS[h.deploy!.phase] ?? "") : "";
+}
+
+/** V0.125: "online since 08:12", "online since 08:12 · updating Fyr", "offline since Mon 19:40". */
+export function hostState(h: HostInfo, now: number): string {
+  const at = dayTime(h.since, now);
+  const s = `${h.online ? "online" : "offline"}${at ? ` since ${at}` : ""}`;
+  return updating(h) ? `${s} · updating Fyr` : s;
+}
+
+export type Route = "this machine" | "tailnet" | "LAN" | "by address" | "";
+
+function ipv4(host: string): number[] | null {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!m) return null;
+  const b = m.slice(1).map(Number);
+  return b.every((x) => x <= 255) ? b : null;
+}
+
+/** V0.125: the network that carries a link, from the URL the front dials. self: this install, whatever its URL. A
+ *  host without a URL (a front older than V0.125) has a route only when the front found it, on the tailnet. */
+export function routeOf(url: string | undefined, self = false, found = false): Route {
+  if (self) return "this machine";
+  if (!url) return found ? "tailnet" : "";
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+  if (!host) return "";
+  const v6 = host.startsWith("[") ? host.slice(1, -1) : null;
+  if (v6 !== null) {
+    if (v6 === "::1") return "this machine";
+    if (/^f[cd]/.test(v6) || /^fe[89ab]/.test(v6)) return "LAN";
+    return "by address";
+  }
+  const b = ipv4(host);
+  if (b) {
+    if (b[0] === 127) return "this machine";
+    if (b[0] === 100 && b[1] >= 64 && b[1] <= 127) return "tailnet";
+    if (b[0] === 10 || (b[0] === 172 && b[1] >= 16 && b[1] <= 31) || (b[0] === 192 && b[1] === 168) || (b[0] === 169 && b[1] === 254)) return "LAN";
+    return "by address";
+  }
+  if (host === "localhost" || host.endsWith(".localhost")) return "this machine";
+  if (host.endsWith(".ts.net")) return "tailnet";
+  if (host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".home.arpa") || !host.includes(".")) return "LAN";
+  return "by address";
 }
 
 /** V0.124: the short form of an install id, its first group ("F7QK"). */
@@ -89,14 +141,33 @@ export function shortID(id: string | undefined): string {
   return (id ?? "").split("-")[0];
 }
 
-/** V0.124: the status line of a host row with its short id: "online · id F7QK". */
-export function hostLine(h: HostInfo, self: string): string {
-  const s = hostStatus(h, self);
-  return h.id ? `${s} · id ${shortID(h.id)}` : s;
-}
-
-/** V0.124: a host now reports another install id than the one the front first saw under its name: what the row says, or "". */
+/** V0.124, V0.125: a host now reports another install id than the one the front first saw under its name: the line
+ *  that says so, or "". What to do about it is on the host's page. */
 export function idChangedLine(h: HostInfo): string {
   if (!h.idWas || !h.id) return "";
-  return `Another install answers as ${h.name}: id ${shortID(h.id)}, it was ${shortID(h.idWas)}. Trust it if you reinstalled or replaced this machine.`;
+  return `Another install answers as ${h.name}: id ${shortID(h.id)}, it was ${shortID(h.idWas)}.`;
+}
+
+/** V0.125: a host row's line in Settings → Hosts: "online since 08:12 · tailnet · id F7QK"; a changed id replaces it. */
+export function hostLine(h: HostInfo, self: string, now: number): string {
+  const changed = idChangedLine(h);
+  if (changed) return changed;
+  const route = routeOf(h.url, h.name === self, h.found);
+  return [hostState(h, now), route, h.id ? `id ${shortID(h.id)}` : "no id"].filter(Boolean).join(" · ");
+}
+
+/** V0.125: the Hosts page's rows: this install first, then the front's hosts in its order. A front that lists no
+ *  hosts (one install) still shows this install, with the id from the state. */
+export function hostRows(hosts: HostInfo[] | undefined, self: string, selfId: string): HostInfo[] {
+  const hs = hosts ?? [];
+  if (!hs.length) return [{ name: self, online: true, ...(selfId ? { id: selfId } : {}) }];
+  return [...hs.filter((h) => h.name === self), ...hs.filter((h) => h.name !== self)];
+}
+
+/** V0.125: how this browser reaches this Fyr, from the page's host name and the state's user (This device). */
+export function howIn(hostname: string, user: string): string {
+  const h = hostname.toLowerCase();
+  if (h.endsWith(".ts.net")) return `Through Tailscale Serve, as ${user || "your login"}. Any browser signed in to your tailnet with that login can open this Fyr.`;
+  if (routeOf(`http://${h.includes(":") && !h.startsWith("[") ? `[${h}]` : h}/`) === "this machine") return "On this machine itself (localhost). A browser on this machine is always allowed.";
+  return `At ${hostname}${user ? `, as ${user}` : ""}. What stands in front of Fyr there decides who gets in.`;
 }
