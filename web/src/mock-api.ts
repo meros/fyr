@@ -20,12 +20,37 @@ export function createMockApi(scenario: string): Api {
   const providersMode = q.get("providers") ?? "";
   const offline = q.get("conn") === "offline";
   const hostOffset = Date.parse(server.state().now) - Date.now();
-  const providers = createMockProviders(providersMode, () => Date.now() + hostOffset);
+  const hostNow = () => Date.now() + hostOffset;
+  // V0.127: with &hosts=2 every host has its own settings. desk (this install, the front's first) has the ones above;
+  // lab and old-nuc their own; host-b is offline, so the front serves what it last read (readAt) and refuses
+  // every change. A host the front does not follow is refused.
+  type MockHost = { providers: ReturnType<typeof createMockProviders>; deployOn: boolean; repos: { repo: string; on: boolean }[] };
+  const providers = createMockProviders(providersMode, hostNow);
   const log: { action: string; threadId?: string; args: Record<string, unknown> }[] = [];
   (globalThis as { __fyrCommands?: typeof log }).__fyrCommands = log;
   // V0.111, V0.102: the owner's automation settings, in memory.
-  let deployOn = true;
-  const repos = [{ repo: "meros/fyr", on: false }, { repo: "acme/web", on: true }];
+  const desk: MockHost = { providers, deployOn: true, repos: [{ repo: "meros/fyr", on: false }, { repo: "acme/web", on: true }] };
+  const others = new Map<string, MockHost>();
+  const mockHostList = () => server.state().hosts ?? [];
+  /** The host a call names: desk for none (or one host), else that host; an error for a host the front does not
+   *  follow, or one that is offline (a command), with readAt for a read of an offline host. */
+  const hostFor = (name: string | undefined): { h: MockHost; readAt?: string } | { error: string } => {
+    const hs = mockHostList();
+    if (!name || !hs.length || name === hs[0].name) return { h: desk };
+    const info = hs.find((x) => x.name === name);
+    if (!info) return { error: `this front follows no host ${name}` };
+    let h = others.get(name);
+    if (!h) {
+      h = { providers: createMockProviders(name === "lab" ? "lab" : "server", hostNow), deployOn: name !== "old-nuc", repos: name === "lab" ? [{ repo: "meros/lab-notes", on: true }] : [] };
+      others.set(name, h);
+    }
+    return info.online ? { h } : { h, readAt: new Date(Date.parse(info.since ?? server.state().now) - 60_000).toISOString() };
+  };
+  const read = <T,>(name: string | undefined, f: (h: MockHost) => T) => {
+    const r = hostFor(name);
+    if ("error" in r) throw new Error(r.error);
+    return r.readAt ? { data: f(r.h), readAt: r.readAt } : { data: f(r.h) };
+  };
   let watch = initialBuildWatch();
   // V0.121: the owner's project order, the front's own (&order=p_fyr,p_web sets one; none: by name).
   let order: string[] | null = q.get("order")?.split(",").filter(Boolean) ?? null;
@@ -59,16 +84,25 @@ export function createMockApi(scenario: string): Api {
     async command(action, threadId, args) {
       log.push({ action, threadId, args: JSON.parse(JSON.stringify(args ?? {})) });
       if (offline) return { ok: false, error: "no connection to the host" };
-      if (action.startsWith("provider.")) return providers.command(action, args ?? {});
-      if (action === "host.autoDeploy") return (deployOn = !!args?.on), { ok: true };
-      if (action === "host.updateNow") return { ok: true };
-      if (action === "host.autoMerge") {
-        const r = repos.find((x) => x.repo === args?.repo);
-        if (r) r.on = !!args?.on;
-        else repos.push({ repo: String(args?.repo), on: !!args?.on });
+      if (action.startsWith("provider.") || action === "host.autoDeploy" || action === "host.updateNow" || action === "host.autoMerge" || action === "host.systemAgents") {
+        const at = hostFor(args?.host as string | undefined);
+        if ("error" in at) return { ok: false, error: at.error };
+        if (at.readAt) return { ok: false, error: `${String(args?.host)} is offline; its settings cannot be changed until it is back` };
+        const h = at.h;
+        if (action.startsWith("provider.")) {
+          const { host: _, ...rest } = args ?? {};
+          return h.providers.command(action, rest);
+        }
+        if (action === "host.autoDeploy") return (h.deployOn = !!args?.on), { ok: true };
+        if (action === "host.updateNow") return { ok: true };
+        if (action === "host.autoMerge") {
+          const r = h.repos.find((x) => x.repo === args?.repo);
+          if (r) r.on = !!args?.on;
+          else h.repos.push({ repo: String(args?.repo), on: !!args?.on });
+          return { ok: true };
+        }
         return { ok: true };
       }
-      if (action === "host.systemAgents") return { ok: true };
       if (action === "front.hostId") {
         if (args?.host !== "lab") return { ok: false, error: `${String(args?.host)} has reported no id yet` };
         trustMockLab();
@@ -83,43 +117,64 @@ export function createMockApi(scenario: string): Api {
       }
       return server.command(newCommandId(), action, threadId, args ?? {});
     },
-    async providers() {
-      if (providersMode === "fail") throw new Error("desk did not answer in 10 s");
-      return providers.list();
+    async providers(host) {
+      return read(host, (h) => {
+        if (providersMode === "fail" && h === desk) throw new Error("desk did not answer in 10 s");
+        return h.providers.list();
+      });
     },
-    async providersFound() {
-      return providers.found();
+    async providersFound(host) {
+      return read(host, (h) => h.providers.found());
     },
-    async autoMerge() {
-      return repos.map((r) => ({ ...r }));
+    async autoMerge(host) {
+      return read(host, (h) => h.repos.map((r) => ({ ...r })));
     },
-    async autoDeploy() {
-      return { on: deployOn };
+    async autoDeploy(host) {
+      return read(host, (h) => ({ on: h.deployOn }));
     },
-    // V0.126: a host that updated twice and rolled one release back.
-    async updates() {
+    // V0.126: a host that updated twice and rolled one release back (desk); another host has no updates yet.
+    async updates(host) {
       const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
-      return {
-        live: "c705ef536566",
-        updates: [
-          { build: "c705ef536566", commit: "c705ef5365660a8608badc1fe181f9a08293e663", trigger: "deployable", result: "installed", startedAt: at(20), endedAt: at(18), logs: ["smoke.log"] },
-          { build: "9b3e1d2c4a5f", commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", trigger: "deployable", result: "rolledBack", reason: "was not healthy: the database does not answer", startedAt: at(90), endedAt: at(88), logs: ["smoke.log"] },
-        ],
-        bad: { commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", why: "was not healthy" },
-      };
+      return read(host, (h) =>
+        h === desk
+          ? {
+              live: "c705ef536566",
+              updates: [
+                { build: "c705ef536566", commit: "c705ef5365660a8608badc1fe181f9a08293e663", trigger: "deployable", result: "installed", startedAt: at(20), endedAt: at(18), logs: ["smoke.log"] },
+                { build: "9b3e1d2c4a5f", commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", trigger: "deployable", result: "rolledBack", reason: "was not healthy: the database does not answer", startedAt: at(90), endedAt: at(88), logs: ["smoke.log"] },
+              ],
+              bad: { commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", why: "was not healthy" },
+            }
+          : { live: "c705ef536566", updates: [] },
+      );
     },
-    async systemAgents() {
-      return {
-        default: {},
-        providers: [
-          { id: "claude", name: "Claude", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], haiku: "claude-haiku-5-5" },
-          { id: "zai", name: "Z.ai", models: ["glm-4.6"] },
-        ],
-        jobs: [
-          { id: "title", name: "Thread titles", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
-          { id: "setup", name: "Project setup", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
-        ],
-      };
+    async systemAgents(host) {
+      return read(host, (h) => {
+        const ps = h.providers.list();
+        if (h === desk)
+          return {
+            default: {},
+            providers: [
+              { id: "claude", name: "Claude", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], haiku: "claude-haiku-5-5" },
+              { id: "zai", name: "Z.ai", models: ["glm-4.6"] },
+            ],
+            jobs: [
+              { id: "title", name: "Thread titles", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
+              { id: "setup", name: "Project setup", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
+            ],
+          };
+        const first = ps[0];
+        const haiku = first?.models.find((m) => m.id.includes("haiku"))?.id;
+        const runs = first && haiku ? { profile: first.id, model: haiku } : { error: first ? `${first.name} has no Haiku model: pick a model in Settings → System agents` : "This host has no provider: add one in Settings → Providers" };
+        return {
+          default: {},
+          providers: ps.map((p) => ({ id: p.id, name: p.name, models: p.models.map((m) => m.id), ...(p.models.some((m) => m.id.includes("haiku")) ? { haiku: p.models.find((m) => m.id.includes("haiku"))!.id } : {}) })),
+          jobs: [
+            { id: "title", name: "Thread titles", choice: {}, ...runs },
+            { id: "setup", name: "Project setup", choice: {}, ...runs },
+          ],
+        };
+      });
     },
     async profiles() {
       return server.state().profiles;
@@ -179,7 +234,11 @@ export function createMockApi(scenario: string): Api {
       return MOCK_PREVIEWS[id] ?? "data:text/html,<p>mock preview</p>";
     },
     async quota() {
-      return mockQuota(Date.now());
+      // V0.127: the front stamps each quota with its host; lab's Claude has its own.
+      const hs = mockHostList();
+      if (!hs.length) return mockQuota(Date.now());
+      const at = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
+      return [...mockQuota(Date.now()).map((q) => ({ ...q, host: hs[0].name })), { profile: "claude", host: "lab", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 12, resetsAt: at(200) }, { name: "7 d", usedPct: 23, resetsAt: at(4 * 1440) }], updatedAt: at(-3) }];
     },
     async load() {
       return mockLoad();

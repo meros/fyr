@@ -1951,6 +1951,103 @@ for (const [label, w, ht] of [
   });
 });
 
+// SPEC V0.127 (decision 0016): from any front the owner configures every host it follows. Providers (with System
+// agents) and Automation show one part per host, this install first, the same on the desktop and the phone. 1 the
+// parts, their lines, the offline host read-only with its note; 2 a host's provider is its own page (providers/lab/
+// claude) with its host's quota, and Esc goes back to its row; 3 every change names its host (args.host); 4 the phone's
+// controls are 44 px and nothing runs past the edge.
+for (const [label, w, ht] of [
+  ["desktop", 1280, 800],
+  ["phone", 390, 844],
+]) section(`V0.127 ${label}`, async (hn) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen, shot, key } = hn;
+  const ctx = `V0.127 ${label}`;
+  const phone = label === "phone";
+  const root = phone ? ".m-settings" : ".dlg";
+  const url = (page) => (phone ? `?mock=rail&hosts=2&settings=${page}` : `?mock=rail&hosts=2&dialog=settings&page=${page}`);
+  const open = async (page, ready) => {
+    if (phone) await openScreen({ url: url(page), ready }, w, ht);
+    else await navigate(`${origin}/${url(page)}`, ready);
+    await waitFor(ready);
+    await settle();
+  };
+  const step = async (name, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      failures.push(`${ctx} ${name}: ${e.message}`);
+    }
+  };
+  const PARTS = `[...document.querySelectorAll('${root} .hpart')].map(p => ({ host: p.dataset.host, line: p.querySelector('.hpart-s')?.textContent ?? '', note: p.querySelector('.hnote')?.textContent ?? '', rows: [...p.querySelectorAll('.prow .sr-t')].map(e => e.textContent), add: p.querySelector('.addp')?.disabled ?? null, selects: [...p.querySelectorAll('select')].map(x => x.disabled) }))`;
+  // 1. The Providers page: one part per host.
+  await step("providers", async () => {
+    await open("providers", `document.querySelectorAll('${root} .hpart').length === 4 && document.querySelectorAll('${root} .hpart .prow').length === 7`);
+    const parts = await evaluate(PARTS);
+    const by = Object.fromEntries(parts.map((x) => [x.host, x]));
+    check(parts.map((x) => x.host).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the parts ${JSON.stringify(parts.map((x) => x.host))}`);
+    check(by.desk?.line === "This install" && by.desk.rows.join("|") === "Claude|Claude (work account)|DeepSeek" && by.desk.add === false, `${ctx}: desk ${JSON.stringify(by.desk)}`);
+    check(/^Online since \d\d:\d\d$/.test(by.lab?.line ?? "") && by.lab.rows.join("|") === "Claude|Z.ai" && !by.lab.note, `${ctx}: lab ${JSON.stringify(by.lab)}`);
+    const off = by["host-b"];
+    check(/^Offline since \d\d:\d\d$/.test(off?.line ?? "") && /^host-b is offline\. These are its settings as Fyr last read them at \d\d:\d\d; nothing here can be changed until it is back\.$/.test(off.note) && off.rows.join() === "Claude" && off.add === true && off.selects.length > 0 && off.selects.every(Boolean), `${ctx}: the offline host ${JSON.stringify(off)}`);
+    // The old Host picker is gone: each part has its own System agents.
+    const sa = await evaluate(`document.querySelectorAll('${root} section[aria-label="System agents"]').length`);
+    check(sa === 4 && !(await evaluate(`!!document.querySelector('${root} select[aria-label="Host"]')`)), `${ctx}: System agents per host (${sa})`);
+    if (!phone) {
+      const nav = await evaluate(`document.querySelector('.dlg .stn-i[data-page=providers] .stn-s')?.textContent`);
+      check(nav === "7 · 1 needs a login", `${ctx}: the Providers line counts every host "${nav}"`);
+    }
+    if (phone) {
+      const small = await evaluate(`[...document.querySelectorAll('.m-settings .hpart button:not(:disabled), .m-settings .hpart select:not(:disabled)')].map(b => b.getBoundingClientRect()).filter(r => r.height > 0 && r.height < 44).length`);
+      const wide = await evaluate(`document.scrollingElement.scrollWidth <= innerWidth && [...document.querySelectorAll('.m-settings .hpart')].every(p => p.getBoundingClientRect().right <= innerWidth)`);
+      check(small === 0 && wide, `${ctx}: ${small} controls under 44 px, or past the edge (${wide})`);
+    }
+    await evaluate(`document.querySelector('${root} .hpart[data-host="lab"]').scrollIntoView({ block: 'start' })`);
+    await settle();
+    await shot(`hostsettings-providers-${label}.png`);
+    await evaluate(`document.querySelector('${root} .hpart[data-host="host-b"]').scrollIntoView({ block: 'start' })`);
+    await settle();
+    await shot(`hostsettings-offline-${label}.png`);
+    if (!phone) {
+      await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+      await settle();
+      await shot(`hostsettings-offline-${label}-dark.png`);
+      await send("Emulation.setEmulatedMedia", { features: [] });
+    }
+  });
+  // 2. lab's Claude is its own page, with lab's quota; Esc goes back to its row.
+  await step("provider page", async () => {
+    await evaluate(`document.querySelector('${root} .hpart[data-host="lab"] .prow')?.click()`);
+    await waitFor(phone ? `/settings=providers\/lab(\/|%2F)claude/.test(location.search)` : `document.querySelector('.dlg .stp')?.dataset.page === 'providers/lab/claude'`, { soft: true });
+    await settle();
+    const pg = await evaluate(`({ lede: document.querySelector('${root} .stp-lede')?.textContent ?? '', search: location.search, q: document.querySelector('${root} .stp')?.textContent.includes('12 %') })`);
+    check(pg.lede === "On lab." && pg.q, `${ctx}: lab's Claude ${JSON.stringify(pg)}`);
+    await shot(`hostsettings-provider-${label}.png`);
+    if (!phone) {
+      await key("Escape");
+      await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'providers'`, { soft: true });
+      const esc = await evaluate(`({ page: document.querySelector('.dlg .stp')?.dataset.page, focus: document.activeElement?.dataset?.sub ?? '' })`);
+      check(esc.page === "providers" && esc.focus === "lab/claude", `${ctx}: Esc ${JSON.stringify(esc)}`);
+    }
+  });
+  // 3. Every change names its host.
+  await step("commands", async () => {
+    await open("providers", `document.querySelectorAll('${root} .hpart .prow').length === 7`);
+    await evaluate(`(() => { const s = document.querySelector('${root} .hpart[data-host="lab"] select[aria-label="Thread titles"]'); s.value = s.options[1].value; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await waitFor(`${COMMANDS("host.systemAgents")}.length === 1`, { soft: true });
+    const sa = await evaluate(`${COMMANDS("host.systemAgents")}.map(c => c.args)`);
+    check(sa.length === 1 && sa[0].host === "lab" && sa[0].job === "title", `${ctx}: System agents on lab ${JSON.stringify(sa)}`);
+    await open("automation", `document.querySelectorAll('${root} .hpart').length === 4 && !!document.querySelector('${root} .hpart[data-host="lab"] [role=switch]')`);
+    const parts = await evaluate(`[...document.querySelectorAll('${root} .hpart')].map(p => ({ host: p.dataset.host, repos: [...p.querySelectorAll('.sr-t.mono, .mono.sr-t')].map(e => e.textContent), switches: [...p.querySelectorAll('[role=switch]')].map(x => x.disabled) }))`);
+    const lab = parts.find((x) => x.host === "lab"), off = parts.find((x) => x.host === "host-b");
+    check(!!lab && lab.switches.length >= 2 && lab.switches.every((d) => !d) && !!off && off.switches.every(Boolean), `${ctx}: Automation per host ${JSON.stringify(parts)}`);
+    await evaluate(`document.querySelector('${root} .hpart[data-host="lab"] [role=switch]').click()`);
+    await waitFor(`${COMMANDS("host.autoDeploy")}.length === 1`, { soft: true });
+    const dep = await evaluate(`${COMMANDS("host.autoDeploy")}.map(c => c.args)`);
+    check(dep.length === 1 && dep[0].host === "lab" && dep[0].on === false, `${ctx}: auto-deploy on lab ${JSON.stringify(dep)}`);
+    await shot(`hostsettings-automation-${label}.png`);
+  });
+});
+
 // V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.
 section('V0.35', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
