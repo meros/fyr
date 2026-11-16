@@ -911,6 +911,8 @@ button.ptag{padding:0}
 .rail .rld+.railx,.rail .rld+.foot{margin-top:8px}
 .rail .rldr{display:flex;flex-direction:column;align-items:center;cursor:default;max-width:100%}
 .rail .rldr small{font:400 9px/11px var(--ui);color:var(--ink-faint)}
+/* V0.86: the slots for heavy jobs under the load figure, and a thread's slot in its row. */
+.rail .rldr small.rlds{margin-top:2px;white-space:nowrap}
 .rail .rld .hot,.tcpu.hot{color:var(--signal-ink);font-weight:600}
 .qlist{display:flex;flex-direction:column;gap:2px;min-width:0}
 /* V0.45: the handover dialog and the divider in the conversation */

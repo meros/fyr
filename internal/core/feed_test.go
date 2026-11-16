@@ -92,6 +92,14 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("declined: %+v", n)
 			}
 		},
+		// SPEC 0.5 V0.86: a slot the agent queued for is its own: wake.
+		"slot": func(t *testing.T) {
+			th, res := fstep(t, feedThread(), Input{Source: Observer(ObsHost), Kind: KindSlotGranted, Args: "test"}, ct0)
+			n := queued(t, th, "slot")
+			if n.Urgency != Wake || n.What != "A test slot is yours now: run the job, then call slot_release." || !wakes(res) {
+				t.Fatalf("slot: %+v wakes=%v", n, wakes(res))
+			}
+		},
 		// The agent's own watch fired: what it asked for, so wake.
 		"watch": func(t *testing.T) {
 			th := feedThread()
