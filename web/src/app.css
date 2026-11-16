@@ -1108,7 +1108,7 @@ label.sr{cursor:pointer}
 .qd button{height:30px;border:1px solid var(--line);border-radius:8px;font:500 12px/16px var(--ui);color:var(--ink-muted);text-align:center;padding:0 2px}
 .qd button.on{background:var(--night);border-color:var(--night);color:var(--on-night)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
-.thumb{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pimg{display:flex;align-items:center;gap:10px;flex-wrap:wrap} /* the Image tab: the thumbnail, Upload or Replace, Remove (not .thumb: that is an attachment) */
 .pemoji .inl input{max-width:120px;font-size:20px;text-align:center}
 .pfolder .ell{display:inline}
 .rail .rgear{margin-top:auto}
