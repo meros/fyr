@@ -132,3 +132,45 @@ export function boardProjects(threads: Record<string, Thread>, projects: Project
   }
   return projects.filter((p) => p.id && ids.has(p.id)).sort((a, b) => a.name.localeCompare(b.name));
 }
+
+/** V0.97: one merge of Merge all green: the press of a change's Merge, bound to the head the board showed. */
+export interface GreenMerge {
+  thread: string;
+  change: string;
+  pr: string;
+  args: { on: string; action: string; digest: string; head: string };
+}
+
+/** The PR of a URL without its tail (/files, #x) and case, so one PR is one merge. */
+const prKey = (url: string) => (/^(.*?\/pull\/\d+)/i.exec(url)?.[1] ?? url).toLowerCase();
+
+/** V0.97: the changes whose PR is ready to merge (the host's Ready is "Merge"), one per PR, in board order. */
+export function greenMerges(items: BoardItem[]): GreenMerge[] {
+  const seen = new Set<string>();
+  const out: GreenMerge[] = [];
+  for (const { change: c, thread: t } of items) {
+    const head = c.pr?.head;
+    const offer = c.offers?.find((o) => o.run === "fyr" && o.effect === "pr.merge");
+    if (c.ready !== "Merge" || !c.pr?.url || !head || !offer) continue;
+    const k = prKey(c.pr.url);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ thread: t.id, change: c.id, pr: c.pr.url, args: { on: c.id, action: offer.id, digest: offer.digest, head } });
+  }
+  return out;
+}
+
+/** V0.97: sends the merges one after another; a refusal is kept for its row (by thread/change) and the rest go on. */
+export async function mergeAllGreen(list: GreenMerge[], send: (m: GreenMerge) => Promise<{ ok: boolean; error?: string }>): Promise<Record<string, string>> {
+  const errs: Record<string, string> = {};
+  for (const m of list) {
+    let r: { ok: boolean; error?: string };
+    try {
+      r = await send(m);
+    } catch (e) {
+      r = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+    if (!r.ok) errs[`${m.thread}/${m.change}`] = r.error ?? "Not merged";
+  }
+  return errs;
+}

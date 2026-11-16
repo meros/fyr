@@ -192,18 +192,18 @@ func TestMergeBlock(t *testing.T) {
 // SPEC 0.5 V0.43: the owner's merge reads the PR first and never runs gh pr merge when it is blocked.
 func TestMergeCheckedRefuses(t *testing.T) {
 	s := &scripted{out: map[string]string{"pr view": viewJSON}}
-	if _, err := MergeChecked(context.Background(), s.run, "https://github.com/acme/app/pull/88", "squash"); err == nil || !strings.Contains(err.Error(), "failing check") {
+	if _, err := MergeChecked(context.Background(), s.run, "https://github.com/acme/app/pull/88", "squash", "abc1234def"); err == nil || !strings.Contains(err.Error(), "failing check") {
 		t.Fatalf("blocked merge: %v", err)
 	}
 	if s.count("pr merge") != 0 {
 		t.Fatal("gh pr merge ran on a blocked PR")
 	}
-	ok := &scripted{out: map[string]string{"pr view": `{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE"}`, "pr merge": "✓ Squashed and merged"}}
-	out, err := MergeChecked(context.Background(), ok.run, "https://github.com/acme/app/pull/88", "rebase")
-	if err != nil || !strings.Contains(out, "merged") || ok.count("pr merge --rebase -- https://github.com/acme/app/pull/88") != 1 {
+	ok := &scripted{out: map[string]string{"pr view": `{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","headRefOid":"abc1234def"}`, "pr merge": "✓ Squashed and merged"}}
+	out, err := MergeChecked(context.Background(), ok.run, "https://github.com/acme/app/pull/88", "rebase", "abc1234def")
+	if err != nil || !strings.Contains(out, "merged") || ok.count("pr merge --rebase --match-head-commit abc1234def -- https://github.com/acme/app/pull/88") != 1 {
 		t.Fatalf("clean merge %q %v %v", out, err, ok.calls)
 	}
-	if _, err := MergeChecked(context.Background(), ok.run, "https://github.com/acme/app/pull/88", "--admin"); err == nil {
+	if _, err := MergeChecked(context.Background(), ok.run, "https://github.com/acme/app/pull/88", "--admin", "abc1234def"); err == nil {
 		t.Fatal("an unknown method was accepted")
 	}
 }

@@ -1,6 +1,7 @@
 // SPEC 0.5 V0.27: what an effect decision says to a person. The action name and
 // its arguments stay available as details; the card leads with words.
 import type { Decision, PullRequest } from "./types.ts";
+import { headLabel, shortHead } from "./pr.ts";
 
 export interface EffectText {
   /** short name for the card header and the inbox row */
@@ -48,12 +49,14 @@ export function describeEffect(d: Decision, pr?: Pick<PullRequest, "url" | "numb
     const num = /\/pull\/(\d+)/.exec(url)?.[1] ?? (pr?.number ? String(pr.number) : "");
     const title = pr && (pr.url === url || String(pr.number) === num) ? pr.title : undefined;
     const ref = num ? `#${num}` : "the pull request";
+    // V0.97: the head fixed when the agent asked; Fyr merges only that commit.
+    const head = shortHead(typeof args.head === "string" ? args.head : "");
     return {
       label: `Merge ${ref}`,
       title: `Merge pull request${num ? " #" + num : ""}${title ? ": " + title : ""}`,
       why,
-      happens: `${METHOD[String(args.method ?? "")] ?? "GitHub merges the branch."} The agent gets the result.`,
-      yes: "Merge",
+      happens: `${METHOD[String(args.method ?? "")] ?? "GitHub merges the branch."}${head ? ` Only commit ${head}: if the branch moved since the agent asked, Fyr refuses.` : ""} The agent gets the result.`,
+      yes: headLabel("Merge", head),
       no: "Not now",
       details,
     };

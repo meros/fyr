@@ -222,6 +222,14 @@ export const MERGE_METHODS = [
 export type MergeMethod = (typeof MERGE_METHODS)[number]["id"];
 
 /** The dialog's confirm button names the result. */
+/** V0.97: the short form of a head commit, as the owner sees it on a Merge button. */
+export const shortHead = (sha?: string) => (sha ?? "").slice(0, 7);
+
+/** V0.97: a Merge button names the head it merges ("Merge a1b2c3d"). */
+export function headLabel(label: string, head?: string): string {
+  return head ? `${label} ${shortHead(head)}` : label;
+}
+
 export function mergeButton(method: MergeMethod, n: number): string {
   return method === "squash" ? `Squash and merge #${n}` : method === "rebase" ? `Rebase and merge #${n}` : `Merge #${n}`;
 }

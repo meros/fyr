@@ -44,6 +44,8 @@ type Change struct {
 	Group      string      `json:"group,omitempty"`
 	After      []string    `json:"after,omitempty"`
 	Needs      string      `json:"needs,omitempty"` // "owner" or ""
+	// Ready is core.Ready of its PR, set only in the thread DTO (V0.97).
+	Ready string `json:"ready,omitempty"`
 	// PR is the code change's pull request as GitHub last reported it (#32);
 	// its "pr" evidence is the link the Changes board shows.
 	PR *PR `json:"pr,omitempty"`
