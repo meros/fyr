@@ -58,6 +58,8 @@ export interface PrDetail {
   reviewDecision?: string;
   reviews?: PrReview[];
   checks: PrCheck[];
+  /** V0.112: the checks summed up on the host; pending also when no check has reported yet on a repo with CI */
+  checked?: "pass" | "fail" | "pending" | "none";
   threads: PrThread[];
   threadsError?: string;
   fetchedAt?: string;
@@ -94,10 +96,9 @@ export function mergeStatus(d: PrDetail): MergeStatus {
   if (d.reviewDecision === "CHANGES_REQUESTED") return blocked("Changes requested");
   if (d.reviewDecision === "REVIEW_REQUIRED") return blocked("Review required", "warn");
   if (d.mergeState === "BEHIND") return blocked(`Behind ${base}`, "warn");
-  if (g.running.length) {
-    const text = `Checks running: ${g.running.length}`;
-    return d.mergeState === "BLOCKED" ? blocked(text, "busy") : { text, tone: "busy", canMerge: true };
-  }
+  // V0.112: a merge waits for CI; no check reported on a repo with CI, or a check running, is not green.
+  if (g.running.length) return blocked(`Checks running: ${g.running.length}`, "busy");
+  if (!d.checks?.length && d.checked === "pending") return blocked("No check has reported yet", "busy");
   if (d.mergeState === "BLOCKED") return blocked("Blocked by branch rules");
   if (fails) return { text: `Ready to merge · ${plural(fails, "failing check")} ${fails === 1 ? "is" : "are"} not required`, tone: "warn", canMerge: true };
   return { text: "Ready to merge", tone: "ok", canMerge: true };
@@ -112,7 +113,7 @@ export function chipStatus(pr: PullRequest): MergeStatus {
   if (pr.checks === "fail") return blocked("Checks failing");
   if (pr.review === "CHANGES_REQUESTED") return blocked("Changes requested");
   if (pr.review === "REVIEW_REQUIRED") return blocked("Review required", "warn");
-  if (pr.checks === "pending") return { text: "Checks running", tone: "busy", canMerge: true };
+  if (pr.checks === "pending") return blocked("Checks running", "busy"); // V0.112
   return { text: "Ready to merge", tone: "ok", canMerge: true };
 }
 

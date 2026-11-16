@@ -4,9 +4,9 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
-import { allowArgs, canDone, canEnd, canPark, canRefresh, checkedText, declineArgs, doneArgs, doneText, openAndDone, endArgs, endChangeAsk, lastRun, needLook, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, pressArgs, rail, shownOffers, unavailable } from "./offers.ts";
+import { allowArgs, askYes, canDone, canEnd, canPark, canRefresh, checkedText, declineArgs, doneArgs, doneText, openAndDone, endArgs, endChangeAsk, lastRun, needLook, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, pressArgs, rail, shownOffers, unavailable } from "./offers.ts";
 import { press } from "./confirm.ts";
-import { headLabel, shortHead } from "./pr.ts";
+import { headLabel } from "./pr.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { autoMergeLine } from "./automerge.ts";
 
@@ -19,15 +19,15 @@ export function NeedLine({ c, onRun }: { c: Change; onRun: Run }) {
   const n = c.need!;
   const look = needLook(n);
   const merge = (c.offers ?? []).find((o) => o.run === "fyr" && o.effect === "pr.merge");
-  let yes: { label: string; run: () => void } | null = null;
-  if (n.cause === "ask") yes = { label: n.action === "pr.merge" ? `Merge ${shortHead(n.head)}`.trim() : "Yes", run: () => onRun("thread.answer", allowArgs(n)) };
+  let yes: { label: string; wait?: string; run: () => void } | null = null;
+  if (n.cause === "ask") yes = { ...askYes(n), run: () => onRun("thread.answer", allowArgs(n)) };
   else if (n.cause === "ready" && merge && n.head) yes = { label: look.button, run: () => onRun("action.run", pressArgs(c.id, merge, n.head)) };
   return (
     <div class={`chneed ${n.cause}${n.muted ? " muted" : ""}`} role={n.muted ? undefined : "status"}>
       {look.beam && <span class="beamdot" aria-hidden="true" />}
       <span class="chnq">{look.line}</span>
       {yes && (
-        <button class="btn p sm" onClick={yes.run}>
+        <button class="btn p sm" disabled={!!yes.wait} title={yes.wait} onClick={yes.run}>
           {yes.label}
         </button>
       )}

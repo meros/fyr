@@ -273,12 +273,14 @@ The patch is cut at 400 KB at a line end (`truncated: true`). A path without cha
   "checks": [{"name": "lint", "workflow": "CI", "state": "fail|running|pass|skipped", "status": "COMPLETED", "conclusion": "FAILURE", "startedAt": "…", "completedAt": "…", "url": "https://github.com/…/job/1"}],
   "threads": [{"path": "web/src/Card.tsx", "line": 42, "outdated": false, "url": "…", "comments": [{"author": "anna", "body": "markdown", "at": "…", "url": "…"}]}],
   "threadsError": "set when the review threads could not be read; the rest is valid",
-  "fetchedAt": "…"
+  "fetchedAt": "…",
+  "checked": "pass|fail|pending|none"
 }
 ```
 
 - `reviews` is the latest review of each reviewer. `threads` are the unresolved review threads only, at most 50, each with at most 20 comments.
 - A check is a CheckRun (`status`, `conclusion`, `workflow`) or a commit status (`status` empty, `conclusion` is its state: `SUCCESS`, `FAILURE`, `ERROR`, `PENDING`, `EXPECTED`). `state` is the host's reading of both.
+- `checked` (V0.112) is the checks summed up: `fail` when a check failed, `pending` while one runs, `pass` when at least one reported and none failed or runs. An empty list is `pending` on a repo with CI and `none` only on a repo with no CI. A change's `need` of an open ask carries `wait` while its yes cannot run (a merge on pending checks).
 - Errors return `200 {"error": "…"}`: gh is missing or not signed in, the network failed, or the thread has no PR. An unknown thread is `404`.
 
 Owner commands (through `POST /api/command`, with `threadId`):

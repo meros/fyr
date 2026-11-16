@@ -306,6 +306,13 @@ func init() {
 				e.Allow, _ = a["allow"].(bool)
 			}
 			if d.Kind == DecisionEffect {
+				// V0.112: a yes whose effect must wait (a merge on pending
+				// checks) is refused, and the ask stays open.
+				if fx := FyrEffects[d.Effect.Action]; e.Allow && fx != nil && fx.Gate != nil {
+					if why := fx.Gate(t, d.Effect.Args); why != "" {
+						return nil, &Rejection{Code: RejectUnavailable, Reason: why}
+					}
+				}
 				// SPEC 5.10: the agent is not waiting; Fyr runs the effect itself.
 				e.Kind, e.Request = EffectRun, d.Effect
 			}

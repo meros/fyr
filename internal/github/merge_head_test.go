@@ -27,7 +27,7 @@ func TestMergeCheckedRefusesStaleHead(t *testing.T) {
 
 // SPEC V0.97: a merge bound to the current head passes it to gh as --match-head-commit, so GitHub refuses a head that moves in between.
 func TestMergeCheckedMatchesHead(t *testing.T) {
-	s := &scripted{out: map[string]string{"pr view": `{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","headRefOid":"` + headA + `"}`, "pr merge": "Squashed and merged"}}
+	s := &scripted{out: map[string]string{"pr view": `{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","headRefOid":"` + headA + `",` + greenRollup + `}`, "pr merge": "Squashed and merged"}}
 	out, err := MergeChecked(context.Background(), s.run, "https://github.com/acme/app/pull/88", "rebase", headA[:7])
 	if err != nil || !strings.Contains(out, "merged") {
 		t.Fatalf("merge: %q %v", out, err)
@@ -41,7 +41,9 @@ func TestMergeCheckedMatchesHead(t *testing.T) {
 func TestFetchReadsReadyFields(t *testing.T) {
 	var asked string
 	gh := func(_ context.Context, args ...string) ([]byte, error) {
-		asked = strings.Join(args, " ")
+		if args[0] == "pr" { // V0.112: an empty check list also reads the repo's CI
+			asked = strings.Join(args, " ")
+		}
 		return []byte(`{"state":"OPEN","isDraft":true,"mergeStateStatus":"BLOCKED","autoMergeRequest":{"enabledAt":"2026-11-16T10:00:00Z"},"statusCheckRollup":[]}`), nil
 	}
 	p, err := Fetch(context.Background(), gh, "https://github.com/a/b/pull/1")
