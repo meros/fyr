@@ -991,6 +991,12 @@ button.ptag{padding:0}
 .stp-h .end{margin-left:auto;display:flex;gap:8px;align-items:center}
 .stp-lede{margin:-8px 0 0;font:400 13px/19px var(--ui);color:var(--ink-muted);max-width:60ch}
 .stp-sub{margin:8px 0 -6px;font:600 14px/20px var(--ui)}
+/* V0.127: a per-host page with several hosts: one part per host, its name and state, the same on the desktop and the phone */
+.hpart{display:flex;flex-direction:column;gap:16px;min-width:0}
+.hpart+.hpart{border-top:1px solid var(--line);padding-top:16px}
+.hpart-h{margin:0;display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;font:600 15px/22px var(--ui);min-width:0;overflow-wrap:anywhere}
+.hpart-s{font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.hpart.off .hpart-h .mono{color:var(--ink-muted)}
 .m-ban{padding:8px 16px;background:var(--sunken);border-bottom:1px solid var(--line);font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
 .m-ban.d{margin:-16px -20px 0;padding:8px 20px}
 /* a group: a label, a card of rows, a foot note */
