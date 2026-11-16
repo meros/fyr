@@ -547,7 +547,7 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
       </div>
       <div class="row2">
         <label class="fld">
-          <span>Default profile</span>
+          <span>Default provider</span>
           <select value={profile} onChange={(e) => (setProfile((e.target as HTMLSelectElement).value), setModel(""))}>
             <option value="">None</option>
             {profiles.map((p) => (
@@ -558,7 +558,7 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
         <label class="fld">
           <span>Default model</span>
           <select value={model} onChange={(e) => setModel((e.target as HTMLSelectElement).value)} disabled={!prof}>
-            <option value="">{prof ? "The profile's default" : "None"}</option>
+            <option value="">{prof ? "The provider's default" : "None"}</option>
             {(prof?.models ?? []).map((m) => (
               <option value={m}>{shortModel(m)}</option>
             ))}

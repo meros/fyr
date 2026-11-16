@@ -384,6 +384,13 @@ const check = (ok, what) => {
 };
 
 const window_innerWidth = (m) => m.innerWidth;
+// SPEC 0.5 V0.50, decision 0015 (#28): the UI says provider, never profile. Reads Fyr's own chrome (labels, options,
+// buttons, menu items, dialog text, aria-labels and placeholders); the conversation's text is the agent's, not Fyr's.
+const PROFILE_WORDS = `(() => { const out = []; const see = (s) => { if (s && /\\bprofiles?\\b/i.test(s)) out.push(s.trim().slice(0, 80)); };
+  const own = (e) => !e.closest('.convo, .msg, .you, .md, pre, code');
+  for (const e of document.querySelectorAll('label, .fld > span, option, button, [role=menuitem], .ho-from, .ho-b, .dh, h1, h2, h3')) if (own(e)) see(e.textContent);
+  for (const e of document.querySelectorAll('[aria-label], [placeholder]')) if (own(e)) { see(e.getAttribute('aria-label')); see(e.getAttribute('placeholder')); }
+  return out; })()`;
 const ctxWantsChips = (ctx) => ctx.startsWith("composer with chips");
 
 // V0.73 (2): six cards, five ended without a rail, the diff section below the last card and nothing overlapping;
@@ -716,6 +723,8 @@ async function phonePass(t, w, h) {
       await openScreen(s, w, h);
       // 1. At rest.
       assertLayout(await evaluate(MEASURE), `${ctx} at rest`);
+      const words = await evaluate(PROFILE_WORDS);
+      check(words.length === 0, `${ctx}: the UI says profile (${JSON.stringify(words)})`);
       if (process.env.FYR_SHOTS && s.name.startsWith("ended changes") && w === 390) {
         await evaluate(`(() => { const t = document.querySelector('.chtab'); t.scrollTop = t.scrollHeight; })()`); // the last cards and the diff
         await settle();
@@ -978,6 +987,8 @@ try {
   await waitFor(`!!document.querySelector('.dlg .ho-rung b') && !!document.querySelector('.dlg select')?.selectedOptions[0]`, { soft: true });
   const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .ho-rung'), rung: document.querySelector('.dlg .ho-rung b')?.textContent ?? '', to: document.querySelector('.dlg select')?.selectedOptions[0]?.textContent ?? '' })`);
   check(d.dlg && /Full history|reads the old conversation|writes a handover/.test(d.rung) && d.to !== "", `V0.45 desktop: the dialog does not show the target and the rung (${JSON.stringify(d)})`);
+  const hw = await evaluate(PROFILE_WORDS);
+  check(hw.length === 0, `V0.50 desktop: the handover dialog says profile (${JSON.stringify(hw)})`);
   await evaluate(`[...document.querySelectorAll('.dlg .df .btn')].find(b => b.textContent.trim() === 'Hand over')?.click()`);
   await waitFor(`!document.querySelector('.dlg') && !!document.querySelector('.th .hodiv')`, { soft: true });
   const r = await evaluate(`({ dlg: !!document.querySelector('.dlg'), div: document.querySelector('.th .hodiv')?.textContent ?? '' })`);

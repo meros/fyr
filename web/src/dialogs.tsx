@@ -85,7 +85,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
         </div>
         <div class="row2">
           <label class="fld">
-            <span>Profile</span>
+            <span>Provider</span>
             <select value={f.profile} onChange={(e) => n.pickProfile((e.target as HTMLSelectElement).value)}>
               {profiles.map((pr) => {
                 const q = quotaSuffix(quotas, pr.id); // V0.44

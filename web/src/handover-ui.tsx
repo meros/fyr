@@ -55,12 +55,12 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
     if (e) setErr(e);
     else p.onClose();
   };
-  if (!targets.length) return <div class="db ho-b">There is no other profile to hand this thread over to.</div>;
+  if (!targets.length) return <div class="db ho-b">There is no other provider to hand this thread over to.</div>;
   return (
     <>
     <div class={`db ho-b${p.phone ? " ho-ph" : ""}`}>
       <div class="ho-from">
-        From <b>{from}</b>. The thread keeps its conversation, project and folder; later runs use the new profile.
+        From <b>{from}</b>. The thread keeps its conversation, project and folder; later runs use the new provider.
       </div>
       <div class="row2">
         <label class="fld">
@@ -74,7 +74,7 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
         <label class="fld">
           <span>Model</span>
           <select value={model} onChange={(e) => setModel((e.target as HTMLSelectElement).value)} disabled={!prof?.models.length}>
-            {!prof?.models.length && <option value="">The profile's default</option>}
+            {!prof?.models.length && <option value="">The provider's default</option>}
             {(prof?.models ?? []).map((m) => (
               <option value={m}>{shortModel(m)}</option>
             ))}
