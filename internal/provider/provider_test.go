@@ -268,7 +268,8 @@ func TestUpdateDeleteAndQuotaIdentity(t *testing.T) {
 	if len(svc.Snapshot()) != 3 {
 		t.Fatal("one status per profile")
 	}
-	if rep := r.Run(cmd("provider.update", map[string]any{"id": "claudeNorban", "models": []any{"claude-sonnet-5-5", "my-custom"}, "defaultEffort": "high"})); !rep.OK {
+	// V0.120: turning the default off needs another star in the same update.
+	if rep := r.Run(cmd("provider.update", map[string]any{"id": "claudeNorban", "models": []any{"claude-sonnet-5-5", "my-custom"}, "defaultModel": "claude-sonnet-5-5", "defaultEffort": "high"})); !rep.OK {
 		t.Fatal(rep.Error)
 	}
 	p, _ := r.get("claudeNorban")
