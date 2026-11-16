@@ -1294,6 +1294,10 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.rename":
         put(t, { title: String(args.title ?? t.title) });
         break;
+      case "thread.regenerateTitle":
+        // V0.108: the host asks a model; the mock answers at once with a fixed title.
+        put(t, { title: "Title written from the conversation" });
+        break;
       case "thread.setProject": {
         if (args.projectId === "") {
           // V0.30: No project, by hand.

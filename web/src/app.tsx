@@ -624,6 +624,7 @@ function App() {
       else if (it.id === "copyLink") copyText(`${location.origin}/?open=${id}`);
       else if (it.id === "liveView") void cmds.run("thread.setView", [id], { on: !target.t.liveView });
       else if (it.id === "handover") (setHandoverId(id), setDialog("handover"));
+      else if (it.id === "regenTitle") void cmds.regenerateTitle(id);
       else if (MENU_ACTION[it.id]) void cmds.run(MENU_ACTION[it.id], [id]);
       return;
     }
@@ -1385,6 +1386,7 @@ function App() {
             onSnooze={() => openSnooze([view.id])}
             onMoveProject={() => openPicker([view.id])}
             onHandover={() => (setHandoverId(view.id), setDialog("handover"))}
+            onRegenerateTitle={() => void cmds.regenerateTitle(view.id)}
             onSend={send}
             onAtEnd={(b) => setTracker((tr) => setAtEnd(tr, b))}
             onFocusZone={() => {

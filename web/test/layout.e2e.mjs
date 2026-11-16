@@ -1357,6 +1357,40 @@ try {
 } catch (e) {
   failures.push(`V0.104 pin phone: ${e.message}`);
 }
+
+// V0.108: Regenerate title is in the thread's ⋯ menu on the desktop and in the thread's ⋯ sheet on the phone, the same
+// control on both; a press names the thread from its conversation (the mock answers at once).
+const REGEN = "Title written from the conversation";
+let regenId = "";
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('#sec-working [data-id]')");
+  regenId = await evaluate(`document.querySelector('#sec-working [data-id]').dataset.id`);
+  await navigate(`${origin}/?mock=rail&open=${regenId}`, "!!document.querySelector('.th .tmenu-b')");
+  await evaluate(`document.querySelector('.th .tmenu-b').click()`);
+  await waitFor(`!!document.querySelector('.tmenu-l .mi')`);
+  const has = await evaluate(`[...document.querySelectorAll('.tmenu-l .mi .ell')].some(x => x.textContent === 'Regenerate title')`);
+  check(has, "V0.108 title: the thread's ⋯ menu has no Regenerate title");
+  if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "regen-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  await evaluate(`[...document.querySelectorAll('.tmenu-l .mi')].find(b => b.querySelector('.ell')?.textContent === 'Regenerate title')?.click()`);
+  await waitFor(`document.querySelector('.th .tt')?.textContent === ${JSON.stringify(REGEN)}`, { soft: true });
+  check(await evaluate(`document.querySelector('.th .tt')?.textContent === ${JSON.stringify(REGEN)}`), "V0.108 title: the desktop press did not rename the thread");
+} catch (e) {
+  failures.push(`V0.108 title desktop: ${e.message}`);
+}
+try {
+  await openScreen({ url: `?mock=rail&open=${regenId}` }, 390, 844);
+  await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
+  const has = await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].some(b => b.querySelector('.ell')?.firstChild?.textContent === 'Regenerate title')`);
+  check(has, "V0.108 title phone: the thread sheet has no Regenerate title");
+  if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "regen-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.querySelector('.ell')?.firstChild?.textContent === 'Regenerate title')?.click()`);
+  await waitFor(`document.querySelector('.m-tt')?.textContent === ${JSON.stringify(REGEN)}`, { soft: true });
+  check(await evaluate(`document.querySelector('.m-tt')?.textContent === ${JSON.stringify(REGEN)}`), "V0.108 title phone: the press did not rename the thread");
+} catch (e) {
+  failures.push(`V0.108 title phone: ${e.message}`);
+}
 await send("Emulation.setTouchEmulationEnabled", { enabled: false });
 await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 
