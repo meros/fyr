@@ -10,7 +10,7 @@ import { useApi } from "./api-context.ts";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createContext } from "preact";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, Thread } from "./types.ts";
-import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
+import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, groupTone, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
@@ -690,6 +690,9 @@ function EntryView({ en, previews }: { en: Entry; previews: PreviewCard[] }) {
   );
 }
 
+/** #91: the icon of a group's tone; a recovered group keeps the failed shape and turns amber (.tl.rec in app.css). */
+const TONE_ICON = { failed: "failed", recovered: "failed", running: "working", ok: "settled" } as const;
+
 /** V0.41: the agent's steps between two outcomes as one quiet line; a tap shows every step in order. */
 function Fold({ en, previews }: { en: Extract<Entry, { kind: "fold" }>; previews: PreviewCard[] }) {
   const [open, setOpen] = useState(false);
@@ -697,8 +700,8 @@ function Fold({ en, previews }: { en: Extract<Entry, { kind: "fold" }>; previews
   const time = en.durationMs !== null ? duration(en.durationMs) : "";
   return (
     <div class={`foldw${open ? " open" : ""}`}>
-      <div class="tl fold" role="button" tabIndex={0} aria-expanded={open} data-keys="self" title={en.text} onClick={toggle} onKeyDown={keyActivate(toggle)}>
-        <StateIcon state={en.failed ? "failed" : en.running ? "working" : "settled"} size={12} />
+      <div class={`tl fold${en.tone === "recovered" ? " rec" : ""}`} role="button" tabIndex={0} aria-expanded={open} data-keys="self" title={en.text} onClick={toggle} onKeyDown={keyActivate(toggle)}>
+        <StateIcon state={TONE_ICON[en.tone]} size={12} />
         <span class="tlt ell">
           {en.text}
           {en.failed > 0 && <b class="tlerr"> · {en.failed} failed</b>}
@@ -833,8 +836,8 @@ function FoldGroup({ calls }: { calls: ToolCall[] }) {
   const text = calls.length === 1 ? calls[0].label : groupSummary(calls);
   return (
     <>
-      <div class="tl grp" role="button" tabIndex={0} aria-expanded={isOpen} data-keys="self" title={text} onClick={toggle} onKeyDown={keyActivate(toggle)}>
-        <StateIcon state={st.failed ? "failed" : st.running ? "working" : "settled"} size={14} />
+      <div class={`tl grp${groupTone(st) === "recovered" ? " rec" : ""}`} role="button" tabIndex={0} aria-expanded={isOpen} data-keys="self" title={text} onClick={toggle} onKeyDown={keyActivate(toggle)}>
+        <StateIcon state={TONE_ICON[groupTone(st)]} size={14} />
         <span class="tlt ell">
           {text}
           {st.failed > 0 && <b class="tlerr"> · {st.failed} failed</b>}
