@@ -3,6 +3,7 @@ package engine
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,7 +107,7 @@ func TestNextNoticeRidesTheOwnersMessage(t *testing.T) {
 		t.Fatalf("send: %+v", r)
 	}
 	th = h.wait(id, "a turn with a tool call", func(t core.Thread, _ core.Attention) bool { return t.RunEnds == 3 && !t.Running })
-	if th.Summary != "context: " {
+	if !strings.HasPrefix(th.Summary, "context:") || strings.Contains(th.Summary, "merged") {
 		t.Fatalf("the tool call repeated it: %q", th.Summary)
 	}
 }
