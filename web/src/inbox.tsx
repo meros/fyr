@@ -3,17 +3,14 @@
 import type { ComponentChildren, Ref } from "preact";
 import type { Profile, Project, Thread } from "./types.ts";
 import { QuotaRail } from "./quota-ui.tsx";
-import { LoadRail, ThreadCPU, ThreadSlot } from "./load-ui.tsx";
+import { LoadRail } from "./load-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
-import { ProjectIcon, StartedBy, ThreadProject } from "./project-ui.tsx";
+import { ProjectIcon } from "./project-ui.tsx";
+import { DESKTOP_LOOK, NeedsRowBody, OneRowBody } from "./row-ui.tsx";
 import { colorVar, pickerOrder } from "./projects.ts";
 import { SECTIONS, type Conn, type SectionKey, type Sections } from "./store.ts";
-import { StateIcon, stateClass } from "./icons.tsx";
-import { rowMeta, rowState } from "./rows.ts";
-import { count, relTime, untilLabel, whenLabel } from "./format.ts";
-import { prChip } from "./pr.ts";
-import { changeChip } from "./offers.ts";
-import { groupTasks, workingLine } from "./tasks.ts";
+import { StateIcon } from "./icons.tsx";
+import { count, untilLabel } from "./format.ts";
 import { quietNote } from "./quiet.ts";
 
 export type Theme = "system" | "light" | "dark";
@@ -99,23 +96,6 @@ export function isOpen(k: SectionKey, open: Partial<Record<SectionKey, boolean>>
   return open[k] ?? !COLLAPSED_BY_DEFAULT.includes(k);
 }
 
-function PrBadge({ t, short }: { t: Thread; short?: boolean }) {
-  const c = changeChip(t, short); // V0.59 (8): a change that is not a PR, when no PR is open
-  if (c)
-    return (
-      <span class={`pr chgchip ${c.cls}`} title={c.title}>
-        {c.text}
-      </span>
-    );
-  if (!t.pr) return <span class="pr none" aria-label="no pull request" />;
-  const l = prChip(t.pr, short);
-  return (
-    <span class={`pr ${l.cls}`} title={l.title}>
-      {l.text}
-    </span>
-  );
-}
-
 interface RowProps {
   t: Thread;
   now: number;
@@ -124,81 +104,16 @@ interface RowProps {
   onClick(): void;
 }
 
-/** A row has one shape in every section (V0.91): the project tag and the title on the first line, with the age at the
- * end; what the thread does on the second; its chips (PR or change, subagents) on a third line of their own, only when
- * it has one. Nothing shares a line with the title but the project and the age, so nothing is cut to fit a chip. */
-function RowHead({ t }: { t: Thread }) {
-  return (
-    <span class="hd">
-      <ThreadProject t={t} />
-      <span class="t ell" title={t.title}>
-        {t.title || "Untitled"}
-      </span>
-    </span>
-  );
+function rowAttrs({ t, sel, onClick }: RowProps) {
+  return { "data-id": t.id, onClick, role: "option", "aria-selected": sel };
 }
 
-function hasChange(t: Thread): boolean {
-  return !!(t.pr || changeChip(t));
+function NeedsRow(p: RowProps) {
+  return <NeedsRowBody t={p.t} now={p.now} look={DESKTOP_LOOK} extra={`${p.sel ? " sel" : ""}${p.picked ? " picked" : ""}`} attrs={rowAttrs(p)} />;
 }
 
-function NeedsRow({ t, now, sel, picked, onClick }: RowProps) {
-  const st = t.attention.state;
-  return (
-    <div class={`rw${sel ? " sel" : ""}${picked ? " picked" : ""}${st === "done" ? " dn" : ""}`} data-id={t.id} onClick={onClick} role="option" aria-selected={sel}>
-      <span class="tile">
-        <StateIcon state={st} />
-      </span>
-      <RowHead t={t} />
-      <span class="age">{relTime(t.activityAt ?? t.updatedAt, now)}</span>
-      <span class="m ell">
-        <b class={stateClass(st)}>{rowState(t)}</b> · {t.parent && <><StartedBy parentId={t.parent} /> · </>}{rowMeta(t, { keys: true })}
-      </span>
-      {hasChange(t) && (
-        <span class="cl">
-          <PrBadge t={t} />
-        </span>
-      )}
-    </div>
-  );
-}
-
-function OneRow({ t, now, sel, picked, onClick }: RowProps) {
-  const st = t.attention.state;
-  const working = t.attention.section === "working";
-  const agents = groupTasks(t.tasks).running;
-  // The project is on the first line now, so the second never falls back to it.
-  const detail = working ? (t.activity || agents.length ? workingLine(t) : "") : st === "snoozed" ? `until ${untilLabel(t.view?.snoozeUntil, now)}` : "";
-  const firstTask = agents.map((x) => x.startedAt).filter(Boolean).sort()[0];
-  const when = working ? relTime(t.runStartedAt ?? firstTask, now) : whenLabel(t.activityAt ?? t.updatedAt, now);
-  const sub = working && !agents.length && !!t.subagents; // "0 sub" says nothing
-  const chips = sub || (!working && hasChange(t));
-  return (
-    <div class={`one${sel ? " sel" : ""}${picked ? " picked" : ""}${agents.length ? " has-agents" : ""}`} data-id={t.id} onClick={onClick} role="option" aria-selected={sel}>
-      <StateIcon state={st} />
-      <RowHead t={t} />
-      <span class="age">{when}</span>
-      <span class="m">
-        <i class="ell">
-          {t.parent && (
-            <>
-              <StartedBy parentId={t.parent} />
-              {detail ? " · " : ""}
-            </>
-          )}
-          {detail}
-          {working && <ThreadCPU id={t.id} />}
-          <ThreadSlot id={t.id} />
-        </i>
-        {chips && (
-          <span class="cl">
-            {sub && <span class="sb">{t.subagents ?? 0} sub</span>}
-            {!working && <PrBadge t={t} short />}
-          </span>
-        )}
-      </span>
-    </div>
-  );
+function OneRow(p: RowProps) {
+  return <OneRowBody t={p.t} now={p.now} look={DESKTOP_LOOK} extra={`${p.sel ? " sel" : ""}${p.picked ? " picked" : ""}`} attrs={rowAttrs(p)} />;
 }
 
 function sectionHint(k: SectionKey, list: Thread[], now: number): string {
@@ -320,7 +235,7 @@ export function Inbox(p: InboxProps) {
 }
 
 /** Desktop: a compact row of projects under the search field; one click filters, the × clears. */
-function ProjectFilterRow({ projects, selected, onPick, now }: { projects: Project[]; selected: string | null; onPick(id: string | null): void; now: number }) {
+export function ProjectFilterRow({ projects, selected, onPick, now }: { projects: Project[]; selected: string | null; onPick(id: string | null): void; now: number }) {
   const list = pickerOrder(projects).filter((p) => (p.threads ?? 0) > 0 || p.id === selected);
   if (!list.length) return null;
   return (
