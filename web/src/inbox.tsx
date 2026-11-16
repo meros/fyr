@@ -121,6 +121,24 @@ interface RowProps {
   onClick(): void;
 }
 
+/** A row has one shape in every section (V0.91): the project tag and the title on the first line, with the age at the
+ * end; what the thread does on the second; its chips (PR or change, subagents) on a third line of their own, only when
+ * it has one. Nothing shares a line with the title but the project and the age, so nothing is cut to fit a chip. */
+function RowHead({ t }: { t: Thread }) {
+  return (
+    <span class="hd">
+      <ThreadProject t={t} />
+      <span class="t ell" title={t.title}>
+        {t.title || "Untitled"}
+      </span>
+    </span>
+  );
+}
+
+function hasChange(t: Thread): boolean {
+  return !!(t.pr || changeChip(t));
+}
+
 function NeedsRow({ t, now, sel, picked, onClick }: RowProps) {
   const st = t.attention.state;
   return (
@@ -128,14 +146,16 @@ function NeedsRow({ t, now, sel, picked, onClick }: RowProps) {
       <span class="tile">
         <StateIcon state={st} />
       </span>
-      <span class="t ell" title={t.title}>
-        {t.title || "Untitled"}
-      </span>
+      <RowHead t={t} />
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, now)}</span>
       <span class="m ell">
-        <b class={stateClass(st)}>{rowState(t)}</b> · {t.parent && <><StartedBy parentId={t.parent} /> · </>}<ThreadProject t={t} /> · {rowMeta(t, { keys: true })}
+        <b class={stateClass(st)}>{rowState(t)}</b> · {t.parent && <><StartedBy parentId={t.parent} /> · </>}{rowMeta(t, { keys: true })}
       </span>
-      <PrBadge t={t} />
+      {hasChange(t) && (
+        <span class="cl">
+          <PrBadge t={t} />
+        </span>
+      )}
     </div>
   );
 }
@@ -143,27 +163,37 @@ function NeedsRow({ t, now, sel, picked, onClick }: RowProps) {
 function OneRow({ t, now, sel, picked, onClick }: RowProps) {
   const st = t.attention.state;
   const working = t.attention.section === "working";
-  const sub = working ? workingLine(t) : st === "snoozed" ? `until ${untilLabel(t.view?.snoozeUntil, now)}` : t.project;
-  const firstTask = groupTasks(t.tasks).running.map((x) => x.startedAt).filter(Boolean).sort()[0];
+  const agents = groupTasks(t.tasks).running;
+  // The project is on the first line now, so the second never falls back to it.
+  const detail = working ? (t.activity || agents.length ? workingLine(t) : "") : st === "snoozed" ? `until ${untilLabel(t.view?.snoozeUntil, now)}` : "";
+  const firstTask = agents.map((x) => x.startedAt).filter(Boolean).sort()[0];
   const when = working ? relTime(t.runStartedAt ?? firstTask, now) : whenLabel(t.activityAt ?? t.updatedAt, now);
+  const sub = working && !agents.length && !!t.subagents; // "0 sub" says nothing
+  const chips = sub || (!working && hasChange(t));
   return (
-    <div class={`one${sel ? " sel" : ""}${picked ? " picked" : ""}${groupTasks(t.tasks).running.length ? " has-agents" : ""}`} data-id={t.id} onClick={onClick} role="option" aria-selected={sel}>
+    <div class={`one${sel ? " sel" : ""}${picked ? " picked" : ""}${agents.length ? " has-agents" : ""}`} data-id={t.id} onClick={onClick} role="option" aria-selected={sel}>
       <StateIcon state={st} />
-      <span class="t" title={`${t.title}\n${sub}`}>
-        <span class="tn ell">{t.title || "Untitled"}</span>
+      <RowHead t={t} />
+      <span class="age">{when}</span>
+      <span class="m">
         <i class="ell">
           {t.parent && (
             <>
-              <StartedBy parentId={t.parent} /> ·{" "}
+              <StartedBy parentId={t.parent} />
+              {detail ? " · " : ""}
             </>
           )}
-          {!working && st !== "snoozed" ? <ThreadProject t={t} /> : sub}
+          {detail}
           {working && <ThreadCPU id={t.id} />}
           <ThreadSlot id={t.id} />
         </i>
+        {chips && (
+          <span class="cl">
+            {sub && <span class="sb">{t.subagents ?? 0} sub</span>}
+            {!working && <PrBadge t={t} short />}
+          </span>
+        )}
       </span>
-      {working && !groupTasks(t.tasks).running.length ? <span class="sb">{t.subagents ?? 0} sub</span> : working ? <span /> : t.pr || changeChip(t) ? <PrBadge t={t} short /> : <span />}
-      <span class="age">{when}</span>
     </div>
   );
 }
