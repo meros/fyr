@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/provider"
 )
@@ -78,13 +79,29 @@ func (m *Manager) SystemPrint(ctx context.Context, job, system, prompt string) (
 	return pr.Print(ctx, l, system, prompt)
 }
 
-// HaikuModel is a provider's Haiku model: one in its list, else the model
-// its endpoint names for Haiku, else "".
+// HaikuModel is a provider's Haiku model: one in its list or its model
+// caps, else the model its endpoint names for Haiku, else, on a Claude login
+// (the claude CLI with no endpoint), the CLI's own Haiku (V0.117: a stored
+// login's list can lack it), else "".
 func HaikuModel(p provider.Profile) string {
-	for _, id := range p.Models {
+	ids := append([]string(nil), p.Models...)
+	for _, m := range p.ModelCaps {
+		ids = append(ids, m.ID)
+	}
+	for _, id := range ids {
 		if strings.Contains(strings.ToLower(id), "haiku") {
 			return id
 		}
 	}
-	return p.Endpoint.ModelEnv["ANTHROPIC_DEFAULT_HAIKU_MODEL"]
+	if m := p.Endpoint.ModelEnv["ANTHROPIC_DEFAULT_HAIKU_MODEL"]; m != "" {
+		return m
+	}
+	if (p.CLI == "" || p.CLI == claudecli.ID) && p.Endpoint.BaseURL == "" && p.Auth.Kind != cli.APIKey {
+		for _, m := range claudecli.Models {
+			if strings.Contains(strings.ToLower(m.ID), "haiku") {
+				return m.ID
+			}
+		}
+	}
+	return ""
 }

@@ -117,12 +117,14 @@ func (e *Engine) startSetup(id string, src core.Source, cmdID string) api.Reply 
 
 // SetupExisting starts one setup run for each project with a folder, no
 // image and no run yet (V0.116: once for the projects from before), gap
-// apart, and returns how many threads it started.
+// apart, and returns how many threads it started. A run that never started
+// (an error, no thread) gets another try (V0.117); one that started is
+// never repeated.
 func (e *Engine) SetupExisting(gap time.Duration) int {
 	e.mu.Lock()
 	var ids []string
 	for id, p := range e.projects {
-		if p.Folder != "" && p.Image == "" && p.Setup == nil {
+		if p.Folder != "" && p.Image == "" && (p.Setup == nil || p.Setup.Thread == "" && p.Setup.Error != "") {
 			ids = append(ids, id)
 		}
 	}
