@@ -609,7 +609,7 @@ function App() {
       () => cmds.showError("Could not copy"),
     );
   };
-  const MENU_ACTION: Record<string, string> = { unsettle: "thread.unsettle", unsnooze: "thread.unsnooze", markSeen: "thread.markSeen", unarchive: "thread.unarchive", interrupt: "thread.interrupt", dismissPR: "thread.dismissPR" };
+  const MENU_ACTION: Record<string, string> = { pin: "thread.pin", unpin: "thread.unpin", unsettle: "thread.unsettle", unsnooze: "thread.unsnooze", markSeen: "thread.markSeen", unarchive: "thread.unarchive", interrupt: "thread.interrupt", dismissPR: "thread.dismissPR" };
   const pickMenu = (it: MenuItem, target: MenuTarget) => {
     setCtx(null);
     if (target.kind === "thread") {

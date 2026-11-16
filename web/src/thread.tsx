@@ -1,6 +1,7 @@
 // Thread pane: header with chips and tabs, conversation, docked decision card and composer
 // (design/directions/04-rail.html).
 
+import { PIN_ICON } from "./row-ui.tsx";
 import { copySource, copyToClipboard } from "./copy.ts";
 import { useDraft } from "./drafts.ts";
 import { liveLine } from "./tasks.ts";
@@ -115,6 +116,16 @@ export function ThreadPane(p: ThreadPaneProps) {
                 Retry <kbd>r</kbd>
               </button>
             )}
+            {(() => {
+              // V0.104: the owner's pin; the phone has it in the thread's ⋯ sheet.
+              const act = t.pinnedAt ? "thread.unpin" : "thread.pin";
+              const why = unavailableReason(t, act);
+              return (
+                <button class={`btn pinb${t.pinnedAt ? " on" : ""}`} aria-pressed={!!t.pinnedAt} aria-label={t.pinnedAt ? "Unpin" : "Pin"} disabled={!!why} title={why ?? (t.pinnedAt ? "Unpin" : "Pin: keep it on top of the list")} onClick={() => p.onRun(act)}>
+                  {PIN_ICON}
+                </button>
+              );
+            })()}
             <button class="btn" disabled={!!snoozeReason} title={snoozeReason ?? "Snooze (s)"} onClick={p.onSnooze}>
               Snooze <kbd>s</kbd>
             </button>
