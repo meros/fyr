@@ -325,6 +325,7 @@ Both reply at once; the result arrives as an `effect.result` event with `"by": "
   "quota": "anthropic-oauth", "status": "needs-login", "need": "Log in once in a terminal on this host: …", "keySet": false, "threads": 0}]
 ```
 
+- V0.120: each provider also carries `catalog: [{id, name?, efforts?, firstSeen, new?, gone?, manual?}]` (what the provider reports; `new` already has its 14 days applied), `checkedAt?` (the last successful check, RFC 3339; absent: never checked), `checkError?` (why the last check failed; the catalog is then the last good one) and `checking?` (a check runs now). `models` keeps its meaning: the models that are on, in the owner's order; every picker lists only these.
 - `kind`: `claude-account` (auth `cli-login`) or `endpoint` (auth `api-key`). `status`: `ready`, `needs-login`, `needs-key`, with `need` saying what to do. `keySet` and `keyLast4` (empty for a key under 12 characters) are all a client learns of a key; `keyFrom` names where a key not yet stored by Fyr is read (an environment variable name or a file path). `efforts` are the adapter's levels; a model's `efforts` narrow them.
 
 `GET /api/providers/found`: what detection found on this host, each `{id, name, kind, source, configDir?, baseURL?, modelEnv?, models, defaultModel?, quotaKind?, keyFrom?, loggedIn?, status, note?, imported}`. `imported` is true when a provider with that `id` exists.
@@ -335,7 +336,8 @@ Commands (`POST /api/command`, no `threadId`; `400` bad arguments, `404` unknown
 |---|---|
 | `provider.import` | `foundId`: create the provider from that find; a key found in fyrd's environment or a file is copied into the secret store. `409` when imported already. Result `{"id"}` |
 | `provider.create` | `name`, `kind: "claude-account" \| "endpoint"`, `id?` (default from the name), `configDir?` (account; empty is `~/.claude`), `baseURL` (endpoint), `key?`, `models?: [id]` (account default: the CLI's list), `defaultModel?`, `defaultEffort?`, `modelEnv?: {NAME: value}`, `quotaKind?`, `color?`. Result `{"id"}` |
-| `provider.update` | `id`, then any of `name`, `configDir`, `baseURL`, `models`, `defaultModel`, `defaultEffort`, `modelEnv`, `quotaKind`, `color` |
+| `provider.update` | `id`, then any of `name`, `configDir`, `baseURL`, `models`, `defaultModel`, `defaultEffort`, `modelEnv`, `quotaKind`, `color`, `forget` (V0.120). `models` is the on-list in order; an id the catalog lacks joins it as `manual`. A `models` list without the current default is refused (`400 "Star another model first."`) unless the same update sets `defaultModel`. `forget: [id]` drops hand-typed (`manual`) models that are off |
+| `provider.refreshModels` | `id` (V0.120): ask the provider for its models now: an endpoint at `GET <baseURL>/v1/models` with its key (`x-api-key`, then `Authorization: Bearer` on 401/404; 15 s and 2 MB a page, up to 20 pages, no redirect off the host), a Claude login through its CLI's stream-json `initialize` answer plus Fyr's own list. `409` when the provider needs a login or a key. Waits for the check; a failed check is still `ok`, with `result.checkError` and the catalog unchanged. Result `{checkedAt, checkError, models}`. The host also checks each ready provider once a day, and a provider at once after `provider.create` |
 | `provider.setKey` | `id`, `key` (an endpoint's API key, or an account's login token from `claude setup-token`); `""` removes it |
 | `provider.delete` | `id`; `409` while threads that are not archived use it. Its stored key is removed |
 
@@ -368,6 +370,7 @@ The browser talks to a **front**; the front talks to its **hosts** over the **ho
 - Attachments and previews (V0.54): `POST /api/attachments`, `GET /api/attachments/{id}` and `GET /api/previews/{id}[/{path}]` take `?host=` or `?thread=` (the thread's host); without either, a read goes to the host the front learned for that id (an upload through it, or the preview page these files belong to), else to the first host. No host is tried in turn.
 - `GET /api/quota` merges every online host's list (`?host=` for one host's).
 - `GET /api/profiles` merges every online host's profiles by id, the first host's winning.
+- The owner's project order is the front's (V0.121): the state adds `projectOrder: [projectId]` (absent until set: clients sort by name), one list across all hosts. `POST /api/command {"action": "front.projectOrder", "args": {"ids": [projectId]}}` sets it (blanks and repeats dropped; a repeated `commandId` answers its first reply); the front keeps it in its database and sends the stream event `projectOrder {"ids": […]}`. No host has this command, so no agent tool or MCP call sends it. A front that cannot store it answers `500` with the reason.
 - Device data is the front's (V0.54): `POST /api/presence` and `/api/push/*` (key, subscribe, unsubscribe, status, test) are served by the front, which sends the push for the threads of all its hosts. Hosts send none.
 
 The host protocol (front → host):
