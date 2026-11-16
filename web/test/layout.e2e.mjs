@@ -1655,6 +1655,19 @@ try {
   failures.push(`V0.92 desktop: ${e.message}`);
 }
 
+// SPEC 0.5 V0.102: the phone's inbox header shows the same logo (28 px, loaded, inside the header) before the name.
+try {
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-ih .m-brand img') && document.querySelector('.m-ih .m-brand img').complete");
+  const r = await evaluate(`(() => {
+    const img = document.querySelector('.m-ih .m-brand img'), b = img.getBoundingClientRect(), h = document.querySelector('.m-ih').getBoundingClientRect();
+    return { w: b.width, h: b.height, loaded: img.naturalWidth > 0, src: img.getAttribute("src"), text: document.querySelector(".m-ih .m-brand").textContent.trim(), inside: b.left >= h.left && b.right <= h.right && b.top >= h.top && b.bottom <= h.bottom };
+  })()`);
+  check(r.src === "/logo.png" && r.w === 28 && r.h === 28 && r.loaded && r.text === "Fyr" && r.inside, `V0.102 phone: the inbox header's logo (${JSON.stringify(r)})`);
+} catch (e) {
+  failures.push(`V0.102 phone: ${e.message}`);
+}
+
 // #64: the thread header's blocks (title, chips, offers, tabs) sit 12 px apart, and the conversation starts where
 // the header ends: a thread without previews has no band between the tabs and the conversation.
 try {

@@ -9,7 +9,7 @@ import { ProjectIcon } from "./project-ui.tsx";
 import { DESKTOP_LOOK, NeedsRowBody, OneRowBody } from "./row-ui.tsx";
 import { colorVar, pickerOrder } from "./projects.ts";
 import { SECTIONS, type Conn, type SectionKey, type Sections } from "./store.ts";
-import { StateIcon } from "./icons.tsx";
+import { BrandMark, StateIcon } from "./icons.tsx";
 import { count, untilLabel } from "./format.ts";
 import { quietNote } from "./quiet.ts";
 
@@ -41,7 +41,7 @@ export function Rail(p: RailProps) {
     <nav class="rail" aria-label="Sections">
       {/* V0.93: the rendered isometric lighthouse (128 px, shown at 32) in place of the name */}
       <div class="brand" title="Fyr">
-        <img src="/logo.png" alt="Fyr" width="32" height="32" />
+        <BrandMark size={32} />
       </div>
       {SECTIONS.map((s, i) => {
         const n = p.sec[s.key].length;
