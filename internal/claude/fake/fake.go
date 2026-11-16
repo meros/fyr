@@ -322,7 +322,13 @@ func Main() {
 				hooks, _ := req["hooks"].(msg)
 				_, stopHook = hooks["Stop"]
 				_, postHook = hooks["PostToolUse"]
-				resp = msg{"commands": []any{}, "models": []any{msg{"value": "fake-model"}}}
+				// V0.79: a built-in, a terminal-only one and a skill, in the
+				// CLI's shape.
+				resp = msg{"commands": []any{
+					msg{"name": "compact", "description": "Clear the conversation but keep a summary", "argumentHint": "<optional custom summarization instructions>"},
+					msg{"name": "clear", "description": "Clear the conversation", "argumentHint": ""},
+					msg{"name": "fake-skill", "description": "A skill of the test folder", "argumentHint": "<topic>"},
+				}, "models": []any{msg{"value": "fake-model"}}}
 			}
 			write(msg{"type": "control_response", "response": msg{"subtype": "success", "request_id": id, "response": resp}})
 		case "control_response":
