@@ -17,7 +17,7 @@
 /* inbox header */
 .m-ih{flex:none;display:flex;align-items:center;height:52px;padding:0 4px 0 16px;background:var(--raised);min-width:0}
 .m-ih.sel{padding-left:4px;border-bottom:1px solid var(--line)}
-.m-brand{display:flex;align-items:center;gap:8px;font:600 20px/24px var(--ui);letter-spacing:-.015em;flex:none}
+.m-brand{display:flex;align-items:center;flex:none}
 .m-brand img{display:block;width:28px;height:28px}
 .m-conn{display:flex;min-width:0;align-items:center;gap:6px;margin-left:10px;font:400 13px/16px var(--mono);color:var(--ink-muted);flex:0 1 auto}
 .m-conn i{width:8px;height:8px;border-radius:50%;background:var(--calm);flex:none}
