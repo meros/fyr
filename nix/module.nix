@@ -283,7 +283,10 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${config.services.tailscale.package}/bin/tailscale serve --bg --https=${toString cfg.tailnet.port} http://127.0.0.1:${toString cfg.port}";
+        # V0.130 (decision 0028): Serve proxies to fyrd's own socket, the only
+        # place fyrd believes the Tailscale-User-Login header; on the loopback
+        # port any local process could send it.
+        ExecStart = "${config.services.tailscale.package}/bin/tailscale serve --bg --https=${toString cfg.tailnet.port} unix:${home}/.local/share/fyr/serve.sock";
         ExecStop = "${config.services.tailscale.package}/bin/tailscale serve --https=${toString cfg.tailnet.port} off";
       };
     };
