@@ -349,7 +349,7 @@ export interface Change {
   /** V0.98 (4): when a fact of the change last moved */
   touchedAt?: string;
   /** V0.102: Fyr approved its merge by the repo's auto-merge setting, with no press */
-  autoApproved?: { repo: string; head: string; at: string };
+  autoApproved?: { repo?: string; deploy?: boolean; head: string; at: string };
   createdAt: string;
   updatedAt: string;
 }

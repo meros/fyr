@@ -29,10 +29,13 @@ type AutoMergeArgs struct {
 
 // AutoApproval is on a change whose merge Fyr approved by the repo setting:
 // the board and the thread say so (V0.102).
+// A deploy Fyr approved by the auto-deploy setting has Deploy and no Repo;
+// Head is the commit it builds (V0.111).
 type AutoApproval struct {
-	Repo string    `json:"repo"`
-	Head string    `json:"head"`
-	At   time.Time `json:"at"`
+	Repo   string    `json:"repo,omitempty"`
+	Deploy bool      `json:"deploy,omitempty"`
+	Head   string    `json:"head"`
+	At     time.Time `json:"at"`
 }
 
 var repoName = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
@@ -151,6 +154,10 @@ func reduceAutoMerge(r Rec, in Input, now time.Time) (Result, error) {
 
 // autoLine is the first sentence of an auto-approved effect's result.
 func autoLine(req EffectReq) string {
+	if on, _ := req.Args["autoDeploy"].(bool); on && req.Action == FyrDeploy { // V0.111
+		commit, _ := req.Args["commit"].(string)
+		return fmt.Sprintf("Auto-approved by the auto-deploy setting (%s).", shortSHA(commit))
+	}
 	repo, _ := req.Args["auto"].(string)
 	if repo == "" {
 		return ""

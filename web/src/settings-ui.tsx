@@ -13,7 +13,7 @@ import { useFolderPick } from "./folder-picker.tsx";
 import { removeProviderAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import type { Project } from "./types.ts";
-import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
+import { repoKey, sortRepos, type AutoDeploySetting, type AutoMergeRepo } from "./automerge.ts";
 import { colorVar, projectSubtitle } from "./projects.ts";
 import { NewProjectStep, ProjectIcon } from "./project-ui.tsx";
 import {
@@ -37,7 +37,7 @@ import {
 } from "./providers.ts";
 
 export interface SettingsProps {
-  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge">>;
+  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy">>;
   host: string;
   /** V0.51: the front's hosts with their state */
   hosts?: HostInfo[];
@@ -61,6 +61,7 @@ export function Settings(p: SettingsProps) {
       <ProvidersSection {...p} />
       {p.projects && <ProjectsSection projects={p.projects} onOpen={(id) => p.onOpenProject?.(id)} onCreate={p.onCreateProject} />}
       {p.api.autoMerge && <AutoMergeSection api={p.api as AutoMergeApi} />}
+      {p.api.autoDeploy && <AutoDeploySection api={p.api as AutoDeployApi} />}
       <section class="sets">
         <h3>Hosts</h3>
         {p.hosts && p.hosts.length > 0 ? (
@@ -451,6 +452,54 @@ function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknow
 }
 
 type AutoMergeApi = Pick<Api, "autoMerge" | "command">;
+type AutoDeployApi = Pick<Api, "autoDeploy" | "command">;
+
+/** V0.111: whether Fyr approves an agent's Fyr deploy ask with no press when the checkout is clean and on origin's
+ *  default branch. On by default; only the owner changes it here, and no agent tool can. Desktop and phone alike. */
+function AutoDeploySection({ api }: { api: AutoDeployApi }) {
+  const [s, setS] = useState<AutoDeploySetting | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const load = async () => {
+    try {
+      setS(await api.autoDeploy());
+    } catch (e) {
+      setErr(`Could not read the auto-deploy setting: ${(e as Error).message}`);
+    }
+  };
+  useEffect(() => void load(), []);
+  const set = async (on: boolean) => {
+    const r = await api.command("host.autoDeploy", undefined, { on });
+    if (!r.ok) {
+      setErr(r.error ?? "That did not work");
+      return;
+    }
+    setErr(null);
+    await load();
+  };
+  return (
+    <section class="sets" aria-label="Auto-deploy">
+      <h3>Auto-deploy</h3>
+      <div class="setd">
+        An agent's Fyr deploy runs without your press when the checkout has no uncommitted change and its commit is on origin's default branch. One deploy
+        runs at a time; the build and the tests still decide the switch.
+      </div>
+      {err && (
+        <div class="seterr" role="alert">
+          {err}
+        </div>
+      )}
+      {s === null && !err && <div class="setd">Loading…</div>}
+      {s && (
+        <div class="amrow">
+          <span class="setn ell">Approve Fyr deploys</span>
+          <button class={`btn sbtn${s.on ? " on" : ""}`} aria-pressed={s.on} aria-label="Auto-approve Fyr deploys" onClick={() => void set(!s.on)}>
+            {s.on ? "On" : "Off"}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
 
 /** V0.102: per repo, whether Fyr merges an agent's merge ask with no press once its head is green. Only the owner
  *  changes it here; no agent tool can. */
