@@ -13,6 +13,7 @@ import { useFolderPick } from "./folder-picker.tsx";
 import { removeProviderAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import type { Project } from "./types.ts";
+import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
 import { colorVar, projectSubtitle } from "./projects.ts";
 import { NewProjectStep, ProjectIcon } from "./project-ui.tsx";
 import {
@@ -36,7 +37,7 @@ import {
 } from "./providers.ts";
 
 export interface SettingsProps {
-  api: Pick<Api, "providers" | "providersFound" | "command">;
+  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge">>;
   host: string;
   /** V0.51: the front's hosts with their state */
   hosts?: HostInfo[];
@@ -59,6 +60,7 @@ export function Settings(p: SettingsProps) {
     <div class={`set${p.phone ? " phone" : ""}`}>
       <ProvidersSection {...p} />
       {p.projects && <ProjectsSection projects={p.projects} onOpen={(id) => p.onOpenProject?.(id)} onCreate={p.onCreateProject} />}
+      {p.api.autoMerge && <AutoMergeSection api={p.api as AutoMergeApi} />}
       <section class="sets">
         <h3>Hosts</h3>
         {p.hosts && p.hosts.length > 0 ? (
@@ -445,5 +447,68 @@ function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknow
         </button>
       </div>
     </div>
+  );
+}
+
+type AutoMergeApi = Pick<Api, "autoMerge" | "command">;
+
+/** V0.102: per repo, whether Fyr merges an agent's merge ask with no press once its head is green. Only the owner
+ *  changes it here; no agent tool can. */
+function AutoMergeSection({ api }: { api: AutoMergeApi }) {
+  const [list, setList] = useState<AutoMergeRepo[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const load = async () => {
+    try {
+      setList(await api.autoMerge());
+    } catch (e) {
+      setErr(`Could not read the auto-merge setting: ${(e as Error).message}`);
+      setList([]);
+    }
+  };
+  useEffect(() => void load(), []);
+  const set = async (repo: string, on: boolean) => {
+    const r = await api.command("host.autoMerge", undefined, { repo, on });
+    if (!r.ok) {
+      setErr(r.error ?? "That did not work");
+      return;
+    }
+    setErr(null);
+    await load();
+  };
+  const typed = repoKey(name);
+  return (
+    <section class="sets" aria-label="Auto-merge">
+      <h3>Auto-merge</h3>
+      <div class="setd">An agent's merge ask in a repo turned on here merges without your press, once the checks pass on the head it asked for.</div>
+      {err && (
+        <div class="seterr" role="alert">
+          {err}
+        </div>
+      )}
+      {list === null && <div class="setd">Loading…</div>}
+      {list?.length === 0 && <div class="setd">No repos yet. A repo shows here once a thread has a PR in it.</div>}
+      {sortRepos(list ?? []).map((r) => (
+        <div class="amrow" key={r.repo}>
+          <span class="setn ell">{r.repo}</span>
+          <button class={`btn sbtn${r.on ? " on" : ""}`} aria-pressed={r.on} aria-label={`Auto-merge ${r.repo}`} onClick={() => void set(r.repo, !r.on)}>
+            {r.on ? "On" : "Off"}
+          </button>
+        </div>
+      ))}
+      <form
+        class="amrow"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!typed) return;
+          void set(typed, true).then(() => setName(""));
+        }}
+      >
+        <input placeholder="owner/repo" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} aria-label="Repo to turn on" />
+        <button class="btn sbtn" type="submit" disabled={!typed}>
+          Turn on
+        </button>
+      </form>
+    </section>
   );
 }

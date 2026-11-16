@@ -81,6 +81,9 @@ type Change struct {
 	// Parked is the owner's Not now (V0.84): it holds while the change is
 	// as the owner saw it.
 	Parked *Park `json:"parked,omitempty"`
+	// AutoApproved is set when Fyr approved the change's merge by the repo
+	// setting, with no press (V0.102).
+	AutoApproved *AutoApproval `json:"autoApproved,omitempty"`
 }
 
 // Park is when the owner pressed Not now on a change, and a fingerprint of
