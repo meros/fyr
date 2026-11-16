@@ -224,7 +224,11 @@ const SCREENS = [
   // SPEC 0.5 V0.46: quiet hours. ?quiet=p_home puts Hemmet in quiet hours: its thread leaves the inbox, comes back
   // with the project filter (whose line says until when), and the project screen's Quiet hours row fits the phone.
   { name: "inbox with a quiet project", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "" } },
-  { name: "quiet project through the filter", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "p_home" } },
+  // SPEC 0.5 V0.114: the chip alone no longer opens it: the gate (until HH:MM, the 30 s hold) shows, not the thread;
+  // after the hold (the unlock in browser storage) the chip shows it; a link (?open=) to its thread shows the gate.
+  { name: "quiet project through the filter", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "p_home", "fyr.quietShowUntil": "" } },
+  { name: "quiet project unlocked through the filter", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "p_home", "fyr.quietShowUntil": "9999999999999" } },
+  { name: "link to a quiet thread", url: "?mock=rail&quiet=p_home&open=t_dish", storage: { "fyr.projectFilter": "", "fyr.quietShowUntil": "" } },
   { name: "project screen with quiet hours", url: "?mock=rail&project=p_home&quiet=p_home", storage: { "fyr.projectFilter": "" } },
   // SPEC 0.5 V0.45: the handover sheet from the thread's ⋯; its buttons stay above the bottom inset.
   { name: "handover sheet", url: "?mock=rail&open=t_triage", sheet: "handover" },
@@ -365,6 +369,8 @@ const MEASURE = `(() => {
     innerHeight: window.innerHeight,
     dishwasher: (document.querySelector('.m-app')?.innerText ?? '').includes('Pick a dishwasher'),
     quietNote: document.querySelector('.m-screen .pfc.on .pfq')?.textContent ?? null,
+    quietGate: (() => { const g = document.querySelector('.m-app .qgate'); if (!g) return null; const h = g.querySelector('.qhold'); const r = h?.getBoundingClientRect();
+      return { head: g.querySelector('.qgh')?.textContent ?? '', hold: h?.textContent ?? '', h: r?.height ?? 0, right: g.getBoundingClientRect().right }; })(),
     quietRow: (() => {
       const el = document.querySelector('.pedit .qfld'); if (!el) return null;
       el.scrollIntoView({ block: 'center' });
@@ -492,7 +498,12 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   if (ctx.startsWith("project screen with its folder")) check(m.projFolder === "~/src/norban/web" && m.projFolderLine === "Threads started in this folder or below land here." && m.projFolderBtn === "Change…" && m.stars === 0 && m.noOldWords, `${ctx}: folder "${m.projFolder}", line "${m.projFolderLine}", button "${m.projFolderBtn}", ${m.stars} stars, old words gone ${m.noOldWords}`);
   if (ctx.startsWith("details without a project")) check(!m.makeProject, `${ctx}: a Make project button still shows`);
   if (ctx.startsWith("inbox with a quiet project")) check(!m.dishwasher && !m.quietNote, `${ctx}: the quiet project's thread shows in the inbox (${m.dishwasher}, note ${m.quietNote})`);
-  if (ctx.startsWith("quiet project through the filter")) check(m.dishwasher && /^Quiet until \d\d:\d\d$/.test(m.quietNote ?? ""), `${ctx}: the filter does not show the quiet project's thread (${m.dishwasher}) or its note ("${m.quietNote}")`);
+  if (ctx.startsWith("quiet project through the filter")) {
+    check(!m.dishwasher && /^Quiet until \d\d:\d\d$/.test(m.quietNote ?? ""), `${ctx}: the chip shows the quiet project's thread without the hold (${m.dishwasher}) or no note ("${m.quietNote}")`);
+    check(!!m.quietGate && /^Hemmet is quiet until \d\d:\d\d\.$/.test(m.quietGate.head) && /Hold here for 30 s/.test(m.quietGate.hold) && m.quietGate.h >= 44 && m.quietGate.right <= m.innerWidth + 0.5, `${ctx}: the gate is missing or wrong ${JSON.stringify(m.quietGate)}`);
+  }
+  if (ctx.startsWith("quiet project unlocked through the filter")) check(m.dishwasher && !m.quietGate, `${ctx}: after the hold the chip does not show the quiet project's thread (${m.dishwasher}, gate ${JSON.stringify(m.quietGate)})`);
+  if (ctx.startsWith("link to a quiet thread")) check(!m.dishwasher && !!m.quietGate && /Hold here for 30 s/.test(m.quietGate.hold), `${ctx}: the link opens the quiet thread without the hold (${m.dishwasher}, gate ${JSON.stringify(m.quietGate)})`);
   if (ctx.startsWith("project screen with quiet hours")) {
     const q = m.quietRow;
     // Decision 0014 addendum: two windows (the mock's daily one and a weekend one), each with its 24-hour times and

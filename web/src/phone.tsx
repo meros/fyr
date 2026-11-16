@@ -29,7 +29,7 @@ import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { TAB_LABEL, defaultTab, threadTabs } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
-import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, QuietHold, ProjectPicker, ProjectTag, StartedBy, type ProjectPatch } from "./project-ui.tsx";
+import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, QuietGate, QuietHold, ProjectPicker, ProjectTag, StartedBy, type ProjectPatch, type QuietUnlock } from "./project-ui.tsx";
 import { colorVar, projectName, projectOf } from "./projects.ts";
 import { folderHint, type NewThreadArgs } from "./new-thread.ts";
 import { useNewThreadForm } from "./new-thread-form.ts";
@@ -139,6 +139,8 @@ export interface PhoneNav {
 /** The thread on screen: its timeline, the question card's state, and the answers (they need the card). */
 export interface PhoneOpen {
   thread: Thread | undefined;
+  /** V0.114: the quiet thread the screen asked for, held behind the gate until the 30 s hold */
+  gated?: Thread;
   events: FyrEvent[] | undefined;
   onEarlier?: () => void;
   onAtEnd(atEnd: boolean): void;
@@ -185,8 +187,9 @@ export interface PhoneProps {
   nav: PhoneNav;
   /** threads, projects, profiles, hosts and the connection */
   store: Store;
-  /** the inbox's sections; what search finds: the project filter's threads, quiet ones included (V0.46) */
-  inbox: { sec: Sections; searchable: Record<string, Thread> };
+  /** the inbox's sections; what search finds: the project filter's threads, quiet ones only while the unlock runs
+   *  (V0.114); all: the same with quiet ones, to count the hits the lock hides; the one unlock of quiet projects */
+  inbox: { sec: Sections; searchable: Record<string, Thread>; all: Record<string, Thread>; unlock: QuietUnlock };
   now: number;
   /** #41: the same thread commands, undo and toasts as the desktop */
   commands: ThreadCommands;
@@ -246,7 +249,13 @@ export function PhoneApp(p: PhoneProps) {
       {s.name === "inbox" && <MInbox {...p} />}
       {s.name === "search" && <MSearch {...p} />}
       {s.name === "thread" && p.open.thread && <MThread {...p} t={p.open.thread} tab={defaultTab(p.open.thread, s.tab)} />}
-      {s.name === "thread" && !p.open.thread && (
+      {s.name === "thread" && !p.open.thread && p.open.gated && (
+        <div class="m-screen">
+          <MHeader onBack={p.nav.back} title="Quiet hours" />
+          <QuietGate project={p.store.projects.find((x) => x.id === p.open.gated!.projectId)} now={p.now} unlock={p.inbox.unlock} what="thread" />
+        </div>
+      )}
+      {s.name === "thread" && !p.open.thread && !p.open.gated && (
         <div class="m-screen">
           <MHeader onBack={p.nav.back} title="Thread" />
           <div class="m-empty">{Object.keys(p.store.threads).length ? "This thread is not here anymore." : "Loading…"}</div>
@@ -415,7 +424,7 @@ function MInbox(p: PhoneProps) {
           })}
         </div>
       )}
-      {!p.list.selecting && <ProjectFilterRow projects={p.store.projects} selected={p.filter.id} onPick={p.filter.set} now={p.now} />}
+      {!p.list.selecting && <ProjectFilterRow projects={p.store.projects} selected={p.filter.id} onPick={p.filter.set} now={p.now} unlock={p.inbox.unlock} />}
       {p.store.conn === "offline" && (
         <div class="m-cstrip">
           <span class="ell">Reconnecting to {hostName}…</span>
@@ -645,13 +654,14 @@ function MSearch(p: PhoneProps) {
   const [q, setQ] = useState("");
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => ref.current?.focus(), []);
-  // V0.46: search finds the threads of a project in its quiet hours too.
+  // V0.46: search finds the threads of a project in its quiet hours too; V0.114: only while the unlock runs.
   const all = useMemo(() => {
     const sec = sections(p.inbox.searchable);
     return SECTIONS.flatMap((s) => sec[s.key]);
   }, [p.inbox.searchable]);
   const needle = q.trim().toLowerCase();
   const hits = needle ? all.filter((t) => matchesQuery(t, needle)).slice(0, 200) : [];
+  const quietHits = needle ? Object.values(p.inbox.all).filter((t) => !p.inbox.searchable[t.id] && matchesQuery(t, needle)).length : 0;
   return (
     <div class="m-screen">
       <div class="m-ih">
@@ -661,7 +671,8 @@ function MSearch(p: PhoneProps) {
         </label>
       </div>
       <div class="m-list">
-        {needle && hits.length === 0 && <div class="m-empty">No thread matches “{q}”.</div>}
+        {quietHits > 0 && <QuietGate now={p.now} unlock={p.inbox.unlock} what="search" />}
+        {needle && hits.length === 0 && !quietHits && <div class="m-empty">No thread matches “{q}”.</div>}
         {!needle && <div class="m-empty">Titles, projects and PR numbers.</div>}
         {hits.map((t) => (
           <MRow key={t.id} t={t} p={p} needs={false} />

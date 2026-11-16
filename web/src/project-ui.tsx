@@ -5,7 +5,7 @@
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
-import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, quietLine, quietList, quietNote, setAllDay, toggleDay } from "./quiet.ts";
+import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -193,7 +193,7 @@ export function ProjectList({ projects, selectedId, onPick, allLabel, autoFocus,
 /** V0.74: the row under New thread's project list while a project is quiet. Holding it (finger or mouse button) for
  *  30 s shows quiet projects for 30 minutes; lifting, moving off or closing the list before then starts over. No key
  *  and no tap, on purpose. */
-export function QuietHold({ count, showUntil, show, hide }: { count: number; showUntil: number; show(): void; hide(): void }) {
+export function QuietHold({ count, showUntil, show, hide, text }: { count: number; showUntil: number; show(): void; hide(): void; text?: string }) {
   const [start, setStart] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const done = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -248,7 +248,64 @@ export function QuietHold({ count, showUntil, show, hide }: { count: number; sho
       }}
     >
       <span class="qhf" style={{ width: `${part * 100}%` }} />
-      <span class="qht">{start === null ? `${n} hidden. Hold here for 30 s to show them for 30 minutes.` : `Keep holding · ${left} s`}</span>
+      <span class="qht">{start === null ? (text ?? `${n} hidden. Hold here for 30 s to show them for 30 minutes.`) : `Keep holding · ${left} s`}</span>
+    </div>
+  );
+}
+
+function quietStorage(): Storage | null {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface QuietUnlock {
+  /** the end of the unlock on this device on the host's clock, or 0 when none runs */
+  showUntil: number;
+  show(): void;
+  hide(): void;
+}
+
+/** V0.114: the one unlock of quiet projects on this device. New thread, the project filter, search and the gate on a
+ *  quiet thread all read it, so one hold opens every path and Hide shuts every path; another tab follows through
+ *  the storage event. It re-renders when the 30 minutes end. clockOffset: the host's clock minus this browser's. */
+export function useQuietUnlock(clockOffset = 0): QuietUnlock {
+  const [end, setEnd] = useState(() => loadQuietShow(quietStorage()));
+  useEffect(() => {
+    const off = subscribeQuietShow(setEnd);
+    const onStorage = (e: StorageEvent) => e.key === "fyr.quietShowUntil" && setEnd(loadQuietShow(quietStorage()));
+    window.addEventListener("storage", onStorage);
+    return () => (off(), window.removeEventListener("storage", onStorage));
+  }, []);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const left = end - (Date.now() + clockOffset);
+    if (left <= 0) return;
+    const t = setTimeout(() => setTick((n) => n + 1), Math.min(left + 250, 2 ** 31 - 1));
+    return () => clearTimeout(t);
+  }, [end, clockOffset]);
+  return {
+    showUntil: end > Date.now() + clockOffset ? end : 0,
+    show: () => void setQuietShow(quietStorage(), Date.now() + clockOffset),
+    hide: () => void setQuietShow(quietStorage(), null),
+  };
+}
+
+/** V0.114: what shows instead of a quiet project's threads (the project filter, search) or a quiet thread (a link, back
+ *  and forward, a notice, a board card, ?open=, a push): the project is quiet until HH:MM, and the 30 s hold. */
+export function QuietGate({ project, now, unlock, what }: { project?: Project; now: number; unlock: QuietUnlock; what: "thread" | "threads" | "search" }) {
+  const name = project?.name ?? "This project";
+  const note = quietNote(project, now);
+  const head =
+    what === "search" ? "Threads of quiet projects are left out of search." : `${name} is ${note ? note.replace(/^Quiet/, "quiet") : "quiet"}.`;
+  const body = what === "thread" ? "This thread is in its quiet hours." : what === "threads" ? "Its threads are hidden in its quiet hours." : null;
+  return (
+    <div class="qgate" role="region" aria-label="Quiet hours">
+      <div class="qgh">{head}</div>
+      {body && <div class="qgb">{body}</div>}
+      <QuietHold count={1} showUntil={0} show={unlock.show} hide={unlock.hide} text="Hold here for 30 s to open quiet projects for 30 minutes." />
     </div>
   );
 }
