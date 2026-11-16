@@ -10,7 +10,7 @@ import { useDraft } from "./drafts.ts";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
-import { SECTIONS, isAvailable, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
+import { SECTIONS, isAvailable, unpinned, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
@@ -40,7 +40,7 @@ import { LONG_PRESS_MS, idle, longPressCancelled, settleLabel, swipeAvail, swipe
 import type { Nav, Sheet } from "./nav.ts";
 import { liveLine } from "./tasks.ts";
 import { COLLAPSED_BY_DEFAULT, ProjectFilterRow, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
-import { NeedsRowBody, OneRowBody, PHONE_LOOK } from "./row-ui.tsx";
+import { NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON } from "./row-ui.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import { QuotaList } from "./quota-ui.tsx";
@@ -434,8 +434,20 @@ function MInbox(p: PhoneProps) {
         </div>
       )}
       <div class="m-list" ref={listRef} onScroll={onScroll}>
+        {p.inbox.sec.pinned.length > 0 && (
+          // V0.104: the desktop's pinned block, above every section and always open.
+          <section id="m-sec-pinned">
+            <div class="m-sec">
+              Pinned
+              <span class="n">{stripCount(p.inbox.sec.pinned.length)}</span>
+            </div>
+            {p.inbox.sec.pinned.map((t) => (
+              <MRow key={t.id} t={t} p={p} needs={t.attention.section === "needs"} />
+            ))}
+          </section>
+        )}
         {SECTIONS.map((s) => {
-          const list = p.inbox.sec[s.key];
+          const list = unpinned(p.inbox.sec[s.key]);
           const open = isOpen(s.key, p.list.sectionOpen) && list.length > 0;
           const limit = p.list.expanded[s.key] ? list.length : SECTION_LIMIT[s.key];
           const hint = s.key === "working" ? workingHint(list) : s.key === "snoozed" ? snoozedHint(list, p.now) : s.key === "settled" ? "last 24 h" : "";
@@ -1342,6 +1354,11 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
           right={peek ? "← swipe" : undefined}
           onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "snooze", ids: [t.id] } })}
         />
+        {t.pinnedAt ? (
+          <Item label="Unpin" icon={PIN_ICON} sub={reason("thread.unpin")} disabled={!!reason("thread.unpin")} onClick={after(() => void p.commands.run("thread.unpin", [t.id]))} />
+        ) : (
+          <Item label="Pin" icon={PIN_ICON} sub={reason("thread.pin") ?? "Keep it on top of the list"} disabled={!!reason("thread.pin")} onClick={after(() => void p.commands.run("thread.pin", [t.id]))} />
+        )}
         <Item label="Project…" icon={<ProjectIcon project={projectOf(t, p.store.projects)} name={projectName(t, p.store.projects)} size={18} />} right={projectName(t, p.store.projects)} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "project", ids: [t.id] } })} />
         <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => void p.commands.run("thread.setView", [t.id], { on: !t.liveView }))} />
         <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another provider"} disabled={!!reason("thread.handover")} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "handover", ids: [t.id] } })} />

@@ -191,7 +191,18 @@ export function compareActivityDesc(a: Thread, b: Thread): number {
   return activity(b) - activity(a) || a.id.localeCompare(b.id);
 }
 
-export type Sections = Record<SectionKey, Thread[]>;
+/** Each section's threads, pinned ones included (counts and badges follow attention), and `pinned`: the pinned threads
+ * in the normal order (section order, then the section's own order), which the lists draw above every section (V0.104). */
+export type Sections = Record<SectionKey, Thread[]> & { pinned: Thread[] };
+
+export function isPinned(t: Thread): boolean {
+  return !!t.pinnedAt;
+}
+
+/** A section's rows under the pinned block: the section without its pinned threads. */
+export function unpinned(list: Thread[]): Thread[] {
+  return list.filter((t) => !isPinned(t));
+}
 
 export function sectionOf(t: Thread): SectionKey | null {
   switch (t.attention?.section) {
@@ -207,7 +218,7 @@ export function sectionOf(t: Thread): SectionKey | null {
 }
 
 export function sections(threads: Record<string, Thread>): Sections {
-  const out: Sections = { needs: [], working: [], seen: [], snoozed: [], settled: [] };
+  const out: Sections = { needs: [], working: [], seen: [], snoozed: [], settled: [], pinned: [] };
   for (const t of Object.values(threads)) {
     const k = sectionOf(t);
     if (k) out[k].push(t);
@@ -217,14 +228,15 @@ export function sections(threads: Record<string, Thread>): Sections {
   out.seen.sort(compareActivityDesc);
   out.snoozed.sort(compareActivityDesc);
   out.settled.sort(compareActivityDesc);
+  out.pinned = SECTIONS.flatMap((s) => out[s.key].filter(isPinned));
   return out;
 }
 
-/** Flat order used by j/k, in the fixed section order. */
+/** Flat order used by j/k: the pinned threads, then the fixed section order. A limit counts a section's unpinned rows. */
 export function flatOrder(sec: Sections, limits?: Partial<Record<SectionKey, number>>): string[] {
-  const ids: string[] = [];
+  const ids: string[] = sec.pinned.map((t) => t.id);
   for (const { key } of SECTIONS) {
-    const list = sec[key];
+    const list = unpinned(sec[key]);
     const n = limits?.[key] ?? list.length;
     for (let i = 0; i < Math.min(n, list.length); i++) ids.push(list[i].id);
   }

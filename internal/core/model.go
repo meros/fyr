@@ -58,6 +58,10 @@ type Thread struct {
 	Live *LiveView `json:"live,omitempty"`
 	// Settle is when the thread settled (#33); what settles it are Rules.
 	Settle Settle `json:"settle,omitzero"`
+	// PinnedAt is when the owner pinned the thread (V0.104): it sorts above
+	// every other thread. Snooze, settle and archive drop it; only the
+	// owner pins.
+	PinnedAt *time.Time `json:"pinnedAt,omitempty"`
 	// Rules are the thread's armed watches (SPEC 7, #46): settle conditions,
 	// the deploy watch, the built-in actions and the agent's own.
 	Rules []Rule `json:"rules,omitempty"`

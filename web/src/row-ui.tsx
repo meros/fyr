@@ -60,9 +60,22 @@ export function PrBadge({ t, short }: { t: Thread; short?: boolean }) {
 /** A row has one shape in every section (V0.91): the project tag and the title on the first line, with the age at the
  * end; what the thread does on the second; its chips (PR or change, subagents) on a third line of their own, only when
  * it has one. Nothing shares a line with the title but the project and the age, so nothing is cut to fit a chip. */
+/** V0.104: the pin mark (Lucide "pin", ISC). */
+export const PIN_ICON = (
+  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 17v5" />
+    <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+  </svg>
+);
+
 function RowHead({ t }: { t: Thread }) {
   return (
     <span class="hd">
+      {t.pinnedAt && (
+        <span class="pin" title="Pinned" aria-label="Pinned" role="img">
+          {PIN_ICON}
+        </span>
+      )}
       <ThreadProject t={t} />
       <span class="t ell" title={t.title}>
         {t.title || "Untitled"}

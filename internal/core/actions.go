@@ -458,6 +458,7 @@ func init() {
 				return nil, fmt.Errorf("%w: until must be a future RFC 3339 time", ErrBadArgs)
 			}
 			Snooze(v, until, now)
+			t.PinnedAt = nil // V0.104
 			v.SeenAt = now
 			return nil, nil
 		}})
@@ -471,6 +472,37 @@ func init() {
 		},
 		Apply: func(_ *Thread, v *View, _ Args, _ time.Time) ([]Effect, error) {
 			Unsnooze(v)
+			return nil, nil
+		}})
+
+	// V0.104: the owner pins a thread above every other; agents cannot.
+	register(&Action{Name: "thread.pin", Label: "Pin", Bulk: true,
+		Available: func(t *Thread, v *View, now time.Time) string {
+			if t.PinnedAt != nil {
+				return "Already pinned"
+			}
+			if t.Settle.At != nil {
+				return "Settled threads do not pin"
+			}
+			if until, _ := SnoozeOf(v); until != nil && until.After(now) {
+				return "Snoozed threads do not pin"
+			}
+			return notArchived(t, v, now)
+		},
+		Apply: func(t *Thread, _ *View, _ Args, now time.Time) ([]Effect, error) {
+			t.PinnedAt = &now
+			return nil, nil
+		}})
+
+	register(&Action{Name: "thread.unpin", Label: "Unpin", Bulk: true,
+		Available: func(t *Thread, _ *View, _ time.Time) string {
+			if t.PinnedAt == nil {
+				return "Not pinned"
+			}
+			return ""
+		},
+		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
+			t.PinnedAt = nil
 			return nil, nil
 		}})
 
@@ -488,6 +520,7 @@ func init() {
 		},
 		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
 			t.ArchivedAt = &now
+			t.PinnedAt = nil // V0.104
 			Unsnooze(v)
 			return []Effect{{Kind: EffectStop}}, nil
 		}})

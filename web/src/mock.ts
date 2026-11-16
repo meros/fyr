@@ -1253,21 +1253,28 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.dismiss":
         idle("seen", "seen", { failure: null });
         break;
+      // V0.104: the owner's pin; snooze, settle and archive drop it.
+      case "thread.pin":
+        put(t, { pinnedAt: new Date(clock()).toISOString() });
+        break;
+      case "thread.unpin":
+        put(t, { pinnedAt: null });
+        break;
       case "thread.settle":
         if (t.running) put(t, { settleWhenDone: true });
-        else idle("settled", "settled", { settledAt: new Date(clock()).toISOString() });
+        else idle("settled", "settled", { settledAt: new Date(clock()).toISOString(), pinnedAt: null });
         break;
       case "thread.unsettle":
         idle("seen", "seen", { settledAt: null, settleWhenDone: false });
         break;
       case "thread.snooze":
-        idle("snoozed", "snoozed", { view: { snoozeUntil: String(args.until) } });
+        idle("snoozed", "snoozed", { view: { snoozeUntil: String(args.until) }, pinnedAt: null });
         break;
       case "thread.unsnooze":
         idle("seen", "seen", { view: { snoozeUntil: null } });
         break;
       case "thread.archive":
-        idle("archived", "archived", { archivedAt: new Date(clock()).toISOString() });
+        idle("archived", "archived", { archivedAt: new Date(clock()).toISOString(), pinnedAt: null });
         break;
       case "thread.unarchive":
         idle("seen", "seen", { archivedAt: null });
