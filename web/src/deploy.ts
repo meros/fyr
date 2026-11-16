@@ -9,6 +9,8 @@ export interface DeployProgress {
   build?: string;
   startedAt?: string;
   at?: string;
+  /** V0.118 (3): the update changed only the web client (V0.81); its end needs no status beyond the reload */
+  client?: boolean;
 }
 
 export type DeployLine = { text: string; tone: "busy" | "ok" | "fail"; more?: string };
@@ -63,12 +65,19 @@ export function restartNowAsk(p: DeployProgress, threads: Record<string, Thread>
   return { title: "Restart Fyr now?", text: `${cut} ${after} A tool call in flight is lost.`, confirm: "Restart now", danger: true };
 }
 
-/** #81: one update keeps one key through its phases (build to switch); another build or start is another update. */
-export function updateKey(p: DeployProgress | null | undefined): string {
-  return p ? `${p.build ?? ""}:${p.startedAt ?? ""}` : "";
-}
+/** SPEC 0.5 V0.118 (2): a success shows this long from when the page first sees it, then goes by itself. */
+export const OK_SHOW_MS = 5000;
+/** V0.118 (2): a success older than this (a page opened later, within the host's two minutes) shows nothing. */
+export const OK_FRESH_MS = 60_000;
 
-/** #81: the banner is a chip while the owner folded this update and it is still busy; its end opens it again. */
-export function bannerFolded(p: DeployProgress | null | undefined, tone: DeployLine["tone"], folded: string | null): boolean {
-  return tone === "busy" && folded !== null && folded === updateKey(p);
+/** SPEC 0.5 V0.118 (2): whether the inline status shows. Busy and failed show (a failure until it is dismissed);
+ *  a client-only update shows nothing, the reload is its sign; a success shows OK_SHOW_MS from seenAt while fresh. */
+export function deployShown(p: DeployProgress | null | undefined, line: DeployLine | null, seenAt: number | null, now: number): boolean {
+  if (!p || !line) return false;
+  if (p.phase === "client") return false;
+  if (line.tone !== "ok") return true;
+  if (p.client) return false;
+  const at = p.at ? Date.parse(p.at) : NaN;
+  if (!Number.isNaN(at) && now - at > OK_FRESH_MS) return false;
+  return seenAt === null || now - seenAt < OK_SHOW_MS;
 }

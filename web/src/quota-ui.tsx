@@ -59,11 +59,24 @@ export function quotaSuffix(list: Quota[], profile: string): string {
 }
 
 /** One calm line; hover shows the details, a tap opens them below. */
-export function QuotaLine(p: { q: Quota; name: string; color?: string }) {
+export function QuotaLine(p: { q: Quota; name: string; color?: string; /** V0.119: the figures alone, no name and no button (inside a row that is a button) */ bare?: boolean }) {
   const [open, setOpen] = useState(false);
   const now = Date.now();
   const detail = quotaDetail(p.q, p.name, now);
   const parts = quotaParts(p.q);
+  if (p.bare)
+    return (
+      <span class={`qline bare${!hasData(p.q) && p.q.error ? " err" : ""}`} title={detail.join("\n")}>
+        {parts.length
+          ? parts.map((x, i) => (
+              <>
+                {i > 0 && " · "}
+                <span class={x.hot ? "hot" : undefined}>{x.text}</span>
+              </>
+            ))
+          : (p.q.error ?? "Not read yet")}
+      </span>
+    );
   return (
     <div class={`qline${p.q.stale ? " stale" : ""}${!hasData(p.q) && p.q.error ? " err" : ""}`}>
       <button type="button" class="qsum" title={detail.join("\n")} aria-expanded={open} onClick={() => setOpen((o) => !o)}>

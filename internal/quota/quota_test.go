@@ -414,3 +414,123 @@ func TestAnthropicTokenAccountWithoutToken(t *testing.T) {
 		t.Fatalf("token account without a token got usage: %+v", r)
 	}
 }
+
+// SPEC 0.5 V0.122 (1): a token account (a `claude setup-token` token, scope
+// user:inference only) is never sent to the usage endpoint, which needs
+// user:profile. Its windows come from its sessions' rate_limit_event, marked
+// as such; before the first event it shows no error and no numbers.
+func TestTokenAccountIsNeverPolled(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1); w.WriteHeader(429) }))
+	defer srv.Close()
+	c, log := newClock(), &bytes.Buffer{}
+	s := svc(c, log, Profile{ID: "n", Identity: "token:n", Spec: &Spec{Kind: KindAnthropic, Token: true, BaseURL: srv.URL},
+		Key: func() (string, error) { return fakeToken, nil }})
+	for i := 0; i < 5; i++ {
+		st := s.Get(context.Background())[0]
+		if st.Error != "" || st.Stale || st.RetryAt != nil || len(st.Windows) != 0 || st.Source != SourceSession {
+			t.Fatalf("step %d: %+v", i, st)
+		}
+		c.add(time.Hour)
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("a token account asked the usage endpoint %d times", hits.Load())
+	}
+	s.Observe("n", map[string]any{"status": "allowed", "rateLimitType": "seven_day", "unifiedWindows": map[string]any{
+		"seven_day": map[string]any{"utilization": 0.67, "resetsAt": float64(c.t.Add(48 * time.Hour).Unix())}}})
+	c.add(12 * time.Minute)
+	st := s.Get(context.Background())[0]
+	if len(st.Windows) != 1 || st.Windows[0].UsedPct != 67 || st.UpdatedAt == nil || c.t.Sub(*st.UpdatedAt) != 12*time.Minute || st.Error != "" || st.Source != SourceSession {
+		t.Fatalf("after an event: %+v", st)
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("polled after an event: %d", hits.Load())
+	}
+	noLeak(t, []Status{st}, log)
+}
+
+// SPEC 0.5 V0.122 (1): a token account without a token still says so, with no request.
+func TestTokenAccountWithoutTokenSaysSo(t *testing.T) {
+	c, log := newClock(), &bytes.Buffer{}
+	s := svc(c, log, Profile{ID: "n", Identity: "token:n", Spec: &Spec{Kind: KindAnthropic, Token: true, BaseURL: "http://127.0.0.1:1"},
+		Key: func() (string, error) { return "", os.ErrNotExist }})
+	if st := s.Get(context.Background())[0]; !strings.Contains(st.Error, "No token yet") || strings.Contains(st.Error, "expired") {
+		t.Fatalf("%+v", st)
+	}
+}
+
+// SPEC 0.5 V0.122 (2): a refused read is logged with its status and the
+// body's error type and message, never the token, even when the reply echoes it.
+func TestRefusalIsLoggedWithoutSecret(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(403)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"permission_error","message":"OAuth token lacks scope user:profile (%s)"}}`, r.Header.Get("Authorization"))
+	}))
+	defer srv.Close()
+	c, log := newClock(), &bytes.Buffer{}
+	dir := t.TempDir()
+	credentials(t, dir, c.t.Add(time.Hour))
+	s := svc(c, log, Profile{ID: "p", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}})
+	sts := s.Get(context.Background())
+	if !strings.Contains(log.String(), "HTTP 403") || !strings.Contains(log.String(), "permission_error") || !strings.Contains(log.String(), "lacks scope user:profile") {
+		t.Fatalf("log: %s", log)
+	}
+	if strings.Contains(sts[0].Error, "permission_error") {
+		t.Fatalf("the provider's words reached the owner's status: %+v", sts[0])
+	}
+	noLeak(t, sts, log)
+}
+
+// SPEC 0.5 V0.122 (3): the wait after a rate limit and the last data survive a
+// restart, so many deploys never turn into frequent requests.
+func TestBackoffSurvivesRestart(t *testing.T) {
+	var hits atomic.Int32
+	var limited atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if limited.Load() {
+			w.WriteHeader(429)
+			return
+		}
+		fmt.Fprint(w, `{"five_hour":{"utilization":10,"resets_at":null},"seven_day":{"utilization":20,"resets_at":null}}`)
+	}))
+	defer srv.Close()
+	c, log := newClock(), &bytes.Buffer{}
+	dir := t.TempDir()
+	credentials(t, dir, c.t.Add(30*24*time.Hour))
+	state := filepath.Join(t.TempDir(), "quota-state.json")
+	p := Profile{ID: "p", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}}
+	start := func() *Service {
+		s := svc(c, log)
+		s.StatePath = state
+		s.SetProfiles([]Profile{p})
+		return s
+	}
+	s := start()
+	s.Get(context.Background())
+	limited.Store(true)
+	c.add(TTL)
+	s.Get(context.Background()) // 5 min wait
+	c.add(5 * time.Minute)
+	s.Get(context.Background()) // 10 min wait
+	if hits.Load() != 3 {
+		t.Fatalf("setup: %d reads", hits.Load())
+	}
+	// A deploy every minute for ten minutes: no read until the wait ends.
+	for i := 0; i < 9; i++ {
+		c.add(time.Minute)
+		st := start().Get(context.Background())[0]
+		if hits.Load() != 3 {
+			t.Fatalf("restart %d read during the wait", i)
+		}
+		if !st.Stale || len(st.Windows) != 2 || st.RetryAt == nil {
+			t.Fatalf("restart %d lost the data: %+v", i, st)
+		}
+	}
+	c.add(time.Minute)
+	if st := start().Get(context.Background())[0]; hits.Load() != 4 || st.RetryAt.Sub(c.t) != 20*time.Minute {
+		t.Fatalf("after the wait: %d reads, %+v", hits.Load(), st)
+	}
+	b, _ := os.ReadFile(state)
+	noLeak(t, nil, bytes.NewBuffer(append(log.Bytes(), b...)))
+}

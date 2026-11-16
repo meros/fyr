@@ -143,10 +143,13 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}
 		return reg.QuotaProfiles()
 	}
-	quotas := quota.New(quotaList(), home())
-	reg.OnChange = func() { quotas.SetProfiles(quotaList()) }
+	quotas := quota.New(nil, home())
 	quotas.Client = &http.Client{Timeout: 10 * time.Second}
 	quotas.Logf = log.Printf
+	// V0.122: the data and the rate-limit wait survive a restart, so frequent deploys never mean frequent reads.
+	quotas.StatePath = filepath.Join(data, "quota-state.json")
+	quotas.SetProfiles(quotaList())
+	reg.OnChange = func() { quotas.SetProfiles(quotaList()) }
 	var mgr *agent.Manager
 	mcpSrv := mcp.New(func(tok string) (string, bool) { return mgr.ThreadForToken(tok) })
 	eng.Tools(mcpSrv)

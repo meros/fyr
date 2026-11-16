@@ -9,8 +9,9 @@ const CLAUDE_MODELS = [
   { id: "claude-haiku-5-5", name: "Haiku 5.5" },
 ];
 
-export function createMockProviders() {
-  const keys = new Map<string, string>([["claudeDeepseek", "sk-mock-deepseek-4f2a"]]);
+/** mode: "" (three providers), "none" (no providers yet), "nokey" (DeepSeek's key is missing). */
+export function createMockProviders(mode = "") {
+  const keys = new Map<string, string>(mode === "nokey" ? [] : [["claudeDeepseek", "sk-mock-deepseek-4f2a"]]);
   const list: ProviderDTO[] = [
     { id: "claude", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", defaultEffort: "high", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, imported: "profile claudeAgent", threads: 9, canLogin: true },
     { id: "work", name: "Claude (work account)", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#2f6fb0", configDir: "~/.claude-work", models: CLAUDE_MODELS.slice(1, 2), defaultModel: "claude-sonnet-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "needs-login", need: "This account logs in with a token. Press Log in to get one here (Fyr keeps it), or paste a token from `claude setup-token` as its key.", tokenLogin: true, keySet: false, imported: "profile work (claude-work)", threads: 2, canLogin: true,
@@ -18,6 +19,8 @@ export function createMockProviders() {
       login: { kind: "token", state: "waiting", url: "https://claude.com/cai/oauth/authorize?code=true&client_id=mock", expires: new Date(Date.now() + 10 * 60_000).toISOString() } },
     { id: "claudeDeepseek", name: "DeepSeek", kind: "endpoint", cli: "claude", auth: "api-key", baseURL: "https://api.deepseek.com/anthropic", models: [{ id: "deepseek-chat" }, { id: "deepseek-reasoner" }], defaultModel: "deepseek-chat", efforts: EFFORTS, quota: "deepseek", status: "ready", keySet: true, keyLast4: "4f2a", threads: 0 },
   ];
+  if (mode === "none") list.length = 0;
+  if (mode === "nokey") Object.assign(list[2], { keySet: false, keyLast4: undefined, status: "needs-key", need: "Paste the API key for DeepSeek." });
   const found: FoundDTO[] = [
     { id: "openrouter", name: "OpenRouter", kind: "endpoint", source: "OPENROUTER_API_KEY in fyrd's environment", baseURL: "https://openrouter.ai/api", models: [], quotaKind: "openrouter", keyFrom: "OPENROUTER_API_KEY in fyrd's environment", status: "ready", note: "Add the model ids this endpoint should offer.", imported: false },
     { id: "claude-old", name: "Claude (old)", kind: "claude-account", source: "~/.claude-old", configDir: "~/.claude-old", models: CLAUDE_MODELS, loggedIn: true, status: "ready", imported: false },
