@@ -13,7 +13,7 @@ import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
 import { SECTIONS, isAvailable, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
-import { StateIcon, stateClass } from "./icons.tsx";
+import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { shortModel, untilLabel } from "./format.ts";
 import { effortsFor, startEffort } from "./providers.ts";
@@ -377,7 +377,11 @@ function MInbox(p: PhoneProps) {
         </div>
       ) : (
         <div class="m-ih">
-          <span class="m-brand">Fyr</span>
+          {/* V0.103: the rail's logo (V0.93) before the name. The rail has no room for the name; this header has. */}
+          <span class="m-brand">
+            <BrandMark size={28} alt="" />
+            Fyr
+          </span>
           <span class={`m-conn ${p.store.conn}`} title={p.store.conn}>
             <i />
             <span class="ell">{hostName}</span>
