@@ -53,6 +53,9 @@ type Server struct {
 	PR PRDetails
 	// Quota lists the profiles' provider quota (V0.44); optional.
 	Quota func(ctx context.Context) any
+	// Focus raises or drops the CPU weight of a thread a device shows
+	// (V0.85); optional.
+	Focus func(device, thread string, on bool)
 	// Load reads the machine's and the threads' load (V0.80); optional.
 	Load *cgroup.Sampler
 	// HandoverPlan says which rung a handover would use (V0.45); optional.
@@ -95,6 +98,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/pr", s.prDetail)
 	mux.HandleFunc("GET /api/threads/{id}/handover", s.handoverPlan)
 	mux.HandleFunc("GET /api/threads/{id}/commands", s.threadCommands)
+	mux.HandleFunc("POST /api/threads/{id}/focus", s.focus)
 	mux.HandleFunc("GET /api/commands", s.folderCommands)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
@@ -679,4 +683,26 @@ func (s *Server) load(w http.ResponseWriter, r *http.Request) {
 	l := s.Load.Get()
 	l.Host = s.hostName()
 	api.WriteJSON(w, 200, []cgroup.Load{l})
+}
+
+// focus takes a front's presence beat for one of this host's threads
+// (V0.85): {device} raises its CPU weight, {device, off} drops it.
+func (s *Server) focus(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Device string `json:"device"`
+		Off    bool   `json:"off"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&b); err != nil || b.Device == "" {
+		api.WriteJSON(w, 400, map[string]any{"error": "device is required"})
+		return
+	}
+	id := r.PathValue("id")
+	if _, ok := s.Engine.Thread(id); !ok {
+		api.WriteJSON(w, 404, map[string]any{"error": "no such thread"})
+		return
+	}
+	if s.Focus != nil {
+		s.Focus(b.Device, id, !b.Off)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
