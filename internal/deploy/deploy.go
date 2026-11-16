@@ -36,7 +36,13 @@ type DB interface {
 type Host interface {
 	Running() []string
 	Report(threadID string, req core.EffectReq, allowed, ok bool, text string)
+	// Continue sends "continue" to a thread whose turn a forced switch cut
+	// (V0.83), as the owner's message with commandID; false: it did not.
+	Continue(threadID, commandID string) bool
 }
+
+// ErrNotDraining: Restart now came while no deploy waits for threads.
+var ErrNotDraining = errors.New("No update is waiting for running threads")
 
 // Deployer runs the fyr.deploy effect inside the daemon.
 type Deployer struct {
@@ -70,6 +76,22 @@ type Deployer struct {
 	mu     sync.Mutex
 	gen    int
 	cancel context.CancelFunc
+	force  chan struct{} // set while a deploy drains (V0.83)
+}
+
+// DeployNow is the owner's Restart now (V0.83): the deploy that drains
+// stops waiting and switches at once. ErrNotDraining when none drains.
+func (d *Deployer) DeployNow() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.force == nil {
+		return ErrNotDraining
+	}
+	select {
+	case d.force <- struct{}{}:
+	default: // pressed twice: one is enough
+	}
+	return nil
 }
 
 // Progress is where a deploy is (SPEC 0.5 V0.39): build, test, drain (with
@@ -124,6 +146,8 @@ type pending struct {
 	Commit string `json:"commit,omitempty"`
 	Remote string `json:"remote,omitempty"`
 	Dir    string `json:"dir,omitempty"`
+	// Cut are the threads whose turns a forced switch ended (V0.83).
+	Cut []string `json:"cut,omitempty"`
 }
 
 // Shipped is a deploy that succeeded (V0.82): the build id, the commit it
@@ -271,6 +295,20 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		max = 30 * time.Minute
 	}
 	deadline := time.Now().Add(max)
+	// V0.83: while this deploy drains, the owner's Restart now ends the wait.
+	force := make(chan struct{}, 1)
+	d.mu.Lock()
+	d.force = force
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		if d.force == force {
+			d.force = nil
+		}
+		d.mu.Unlock()
+	}()
+	var cut []string
+drain:
 	for {
 		// Every run must end, the requester's too: the switch stops the
 		// process, and a live turn would die with it (SPEC 0.5 V0.13).
@@ -288,6 +326,11 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		select {
 		case <-ctx.Done():
 			return failed(firstErr(fail(ctx.Err())))
+		case <-force:
+			// The turns running now end with the process; each gets
+			// "continue" from the new daemon.
+			cut = d.Host.Running()
+			break drain
 		case <-time.After(poll):
 		}
 	}
@@ -297,7 +340,8 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		return "", errReplaced
 	}
 	d.cancel = nil // past this point the switch happens; nothing cancels it
-	b, _ := json.Marshal(pending{Thread: threadID, Build: id, Req: req, Commit: commit, Remote: remote, Dir: dir})
+	d.force = nil
+	b, _ := json.Marshal(pending{Thread: threadID, Build: id, Req: req, Commit: commit, Remote: remote, Dir: dir, Cut: cut})
 	if err := d.DB.SetKV("pending_deploy", string(b)); err != nil {
 		d.mu.Unlock()
 		return "", err
@@ -329,6 +373,12 @@ func (d *Deployer) ReportPending() {
 	if json.Unmarshal([]byte(raw), &p) != nil {
 		d.DB.SetKV("pending_deploy", "")
 		return
+	}
+	// V0.83: the turns a forced switch cut resume, on this build or after a
+	// rollback alike. The command id is the build's, so a second start of
+	// this daemon sends nothing twice.
+	for _, th := range p.Cut {
+		d.Host.Continue(th, "deploy-"+p.Build+"-continue-"+th)
 	}
 	failedPath := filepath.Join(d.Data, "deploy-failed.json")
 	if b, err := os.ReadFile(failedPath); err == nil {

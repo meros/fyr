@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.39: the deploy banner says where an update is, in words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deployLine, bannerFolded, updateKey } from "../src/deploy.ts";
+import { deployLine, bannerFolded, updateKey, canRestartNow, restartNowAsk } from "../src/deploy.ts";
 import { thread } from "./helpers.ts";
 
 const now = Date.parse("2026-11-14T15:10:00Z");
@@ -46,4 +46,26 @@ test("the update banner folds while busy and opens when the update ends", () => 
   assert.equal(bannerFolded(p("failed"), "fail", k), false, "a failure opens it");
   assert.equal(bannerFolded(p("drain", "b2"), "busy", k), false, "a new update starts open");
   assert.equal(bannerFolded(p("drain"), "busy", null), false);
+});
+
+// SPEC 0.5 V0.83: Restart now shows only while the update waits for at least one running thread, with a live host;
+// its confirmation names the threads whose turns end and says each gets "continue".
+test("Restart now shows only while the update drains running threads", () => {
+  assert.equal(canRestartNow(p("drain", { blocking: ["t_a"] }), "live"), true);
+  assert.equal(canRestartNow(p("drain", { blocking: [] }), "live"), false, "nothing to wait for");
+  assert.equal(canRestartNow(p("drain"), "live"), false);
+  for (const ph of ["build", "test", "switch", "client", "done", "failed"]) assert.equal(canRestartNow(p(ph, { blocking: ["t_a"] }), "live"), false, ph);
+  assert.equal(canRestartNow(p("drain", { blocking: ["t_a"] }), "offline"), false, "the host is away");
+  assert.equal(canRestartNow(null, "live"), false);
+});
+
+test("the Restart now confirmation names the cut threads and the continue", () => {
+  const a = restartNowAsk(p("drain", { blocking: ["t_a", "t_b"] }), threads);
+  assert.equal(a.title, "Restart Fyr now?");
+  assert.equal(a.confirm, "Restart now");
+  assert.equal(a.danger, true);
+  assert.match(a.text ?? "", /Plan a custom client, Map perf/);
+  assert.match(a.text ?? "", /“continue”/);
+  const one = restartNowAsk(p("drain", { blocking: ["t_a"] }), threads);
+  assert.match(one.text ?? "", /“Plan a custom client” ends its turn/);
 });

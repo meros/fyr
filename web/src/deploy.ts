@@ -1,5 +1,6 @@
 // SPEC 0.5 V0.39: where an update of Fyr is, in words, for the banner.
 import type { Thread } from "./types.ts";
+import type { Ask } from "./confirm.ts";
 
 export interface DeployProgress {
   phase: string; // build, test, drain, switch or (V0.81) client, done, failed
@@ -47,6 +48,19 @@ export function deployLine(p: DeployProgress | null | undefined, threads: Record
     }
   }
   return null;
+}
+
+/** V0.83: Restart now shows only while the update waits for at least one running thread and the host is live. */
+export function canRestartNow(p: DeployProgress | null | undefined, conn: string): boolean {
+  return !!p && p.phase === "drain" && (p.blocking?.length ?? 0) > 0 && conn === "live";
+}
+
+/** V0.83: the confirmation before Restart now names the threads whose turns end and the "continue" each gets. */
+export function restartNowAsk(p: DeployProgress, threads: Record<string, Thread>): Ask {
+  const names = (p.blocking ?? []).map((id) => threads[id]?.title || "a thread");
+  const cut = names.length === 1 ? `“${names[0]}” ends its turn now.` : `These ${names.length} threads end their turns now: ${names.join(", ")}.`;
+  const after = names.length === 1 ? "It gets the message “continue” after the restart, so it picks the work up again." : "Each gets the message “continue” after the restart, so it picks the work up again.";
+  return { title: "Restart Fyr now?", text: `${cut} ${after} A tool call in flight is lost.`, confirm: "Restart now", danger: true };
 }
 
 /** #81: one update keeps one key through its phases (build to switch); another build or start is another update. */

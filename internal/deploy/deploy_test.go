@@ -37,9 +37,17 @@ func (k *kv) SetKV(key, v string) error {
 func (k *kv) Snapshot(path string) error { return os.WriteFile(path, []byte("db"), 0o600) }
 
 type host struct {
-	mu      sync.Mutex
-	running []string
-	reports []string
+	mu        sync.Mutex
+	running   []string
+	reports   []string
+	continued []string // V0.83: thread and command id of each "continue"
+}
+
+func (h *host) Continue(th, cmdID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.continued = append(h.continued, th+" "+cmdID)
+	return true
 }
 
 func (h *host) Running() []string {

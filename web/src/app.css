@@ -821,6 +821,7 @@ button.ptag{padding:0}
 @media (prefers-reduced-motion: reduce){.dbn-spin{animation:none}}
 .dbn-b{border:0;background:none;color:var(--ink-muted);font:inherit;cursor:pointer;padding:2px 6px;min-height:28px}
 .dbn.m .dbn-b{min-height:44px;min-width:44px}
+.dbn-b.dbn-now{color:var(--signal-ink);font-weight:600;white-space:nowrap}
 .dbn-more{flex-basis:100%;margin:0;max-height:40vh;overflow:auto;padding:8px;border-radius:8px;background:var(--sunken);font:400 12px/17px var(--mono);white-space:pre-wrap}
 /* #81: a folded busy banner: a small chip at the same corner; a press opens it */
 .dbn.dbn-chip{flex-wrap:nowrap;width:auto;max-width:none;padding:6px 12px;cursor:pointer;font:inherit;color:var(--ink);text-align:left}
