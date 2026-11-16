@@ -913,13 +913,28 @@ button.ptag{padding:0}
 .qline .qdet{margin:4px 0 0;padding:0 0 0 14px;list-style:none;font:400 12px/17px var(--ui);color:var(--ink-muted)}
 .qline .hot,.rail .rq .hot{color:var(--signal-ink);font-weight:600}
 /* SPEC 0.5 V0.80: the machine load above the quota, and a working thread's CPU in its row; colour only when hot. */
-.rail .rld{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:2px;font:400 10px/14px var(--mono);color:var(--ink-muted)}
+.rail .rld{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:8px;font:400 10px/14px var(--mono);color:var(--ink-muted)}
 .rail .rld+.rq{margin-top:8px}
 .rail .rld+.railx,.rail .rld+.foot{margin-top:8px}
-.rail .rldr{display:flex;flex-direction:column;align-items:center;cursor:default;max-width:100%}
+.rail .rldr{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:default;max-width:100%;--lv:var(--calm)}
+.rail .rldr.warm{--lv:var(--beam-mark)}
+.rail .rldr.hot{--lv:var(--signal-ink)}
 .rail .rldr small{font:400 9px/11px var(--ui);color:var(--ink-faint)}
-/* V0.86: the slots for heavy jobs under the load figure, and a thread's slot in its row. */
-.rail .rldr small.rlds{margin-top:2px;white-space:nowrap}
+/* V0.99: the load as a ring (share of the cores, coloured by level) with the figure inside. */
+.rail .rring{position:relative;display:block;width:30px;height:30px}
+.rail .rring svg{display:block}
+.rail .rring circle{fill:none;stroke-width:3}
+.rail .rring .trk{stroke:var(--line)}
+.rail .rring .arc{stroke:var(--lv);stroke-linecap:round}
+.rail .rring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:500 10px/1 var(--mono);color:var(--ink-muted)}
+.rail .rldr.hot .rring b{color:var(--signal-ink);font-weight:600}
+/* V0.86, V0.99: the slots for heavy jobs as pips under the ring (filled in use, empty free), "+n" while threads wait. */
+.rail .rpips{display:flex;align-items:center;gap:3px;height:11px}
+.rail .rpips i{width:6px;height:6px;border-radius:50%;box-sizing:border-box;border:1px solid var(--ink-faint);flex:none}
+.rail .rpips i.on{background:var(--ink-muted);border-color:var(--ink-muted)}
+.rail .rpips.hot i.on{background:var(--signal-ink);border-color:var(--signal-ink)}
+.rail .rpips em{font:600 9px/11px var(--mono);font-style:normal;color:var(--signal-ink);margin-left:1px}
+.rail .rldr small.rlds{white-space:nowrap}
 .rail .rld .hot,.tcpu.hot{color:var(--signal-ink);font-weight:600}
 .qlist{display:flex;flex-direction:column;gap:2px;min-width:0}
 /* V0.45: the handover dialog and the divider in the conversation */
