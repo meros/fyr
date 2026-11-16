@@ -143,3 +143,8 @@ export function threadTabs(t: Pick<Thread, "live" | "pr">): ThreadTab[] {
 export function showsDecision(tab: string): boolean {
   return tab === "conv" || tab === "view";
 }
+
+/** 13.2, #88: the composer is the question card's answer field wherever the card shows, so Other… always works. */
+export function composerAnswers(tab: string): boolean {
+  return showsDecision(tab);
+}

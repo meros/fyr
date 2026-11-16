@@ -30,7 +30,7 @@ import { SlashList, useSlash } from "./slash-ui.tsx";
 import type { ComponentChildren } from "preact";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
 import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
-import { TAB_LABEL, defaultTab, showsDecision, threadTabs } from "./view.ts";
+import { TAB_LABEL, composerAnswers, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
@@ -184,7 +184,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
       {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
-      <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={tab === "conv" ? p.answerField : null} />
+      <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={composerAnswers(tab) ? p.answerField : null} />
     </section>
   );
 }

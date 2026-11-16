@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.37: the live view's fold, headline, staleness and the bridge's message checks.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PRESS_MAX, bridgeMessage, defaultTab, showsDecision, liveViewOf, rowSummary, staleLabel, stateMessage, viewDimmed, viewHeight } from "../src/view.ts";
+import { PRESS_MAX, bridgeMessage, composerAnswers, defaultTab, showsDecision, liveViewOf, rowSummary, staleLabel, stateMessage, viewDimmed, viewHeight } from "../src/view.ts";
 import { threadMenu } from "../src/menu.ts";
 import { buildConversation } from "../src/conversation.ts";
 import { decodeThread } from "../src/decode.ts";
@@ -113,4 +113,9 @@ test("a decision card shows on the View tab too", () => {
   assert.equal(showsDecision("conv"), true);
   assert.equal(showsDecision("changes"), false);
   assert.equal(showsDecision("pr"), false);
+});
+
+// SPEC 13.2, #88: wherever the question card shows, the composer is its answer field (Other…, 0, Enter).
+test("the composer answers the card on every tab that shows it", () => {
+  for (const tab of ["conv", "view", "changes", "pr"]) assert.equal(composerAnswers(tab), showsDecision(tab), tab);
 });
