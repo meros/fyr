@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -252,6 +253,7 @@ func ReduceProject(ps map[string]*Project, fresh *Project, in Input, now time.Ti
 	}
 	p := *cur
 	p.Quiet = slices.Clone(cur.Quiet)
+	p.By = maps.Clone(cur.By)
 	res, err = k.Reduce(Rec{P: &p}, in, now)
 	if err != nil {
 		return nil, nil, Result{}, asRejection(err)

@@ -54,6 +54,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 	s.Add(e.showTool())
 	e.viewTools(s)
 	e.threadTools(s)
+	e.setupTools(s) // V0.116
 
 	s.Add(mcp.Tool{Name: "settle_when",
 		Description: "Mark this Fyr thread to settle (leave the user's inbox) when a condition holds: \"done\" when your current run ends, \"merged\" when the linked PR merges, \"change\" when the change (id or key) reaches phase (landed is also reached by live). Conditions add up: the first that holds settles the thread, never while a run is live.",

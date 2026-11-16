@@ -57,6 +57,9 @@ export interface Api {
   /** V0.54: `host` is the thread's host (or the one a new thread starts on); the front stores the file there. */
   uploadAttachment(file: File, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal, host?: string): Promise<UploadResult>;
   attachmentUrl(id: string, host?: string): string;
+  /** V0.116: the owner's image for a project's icon (PNG, JPEG or GIF, at most 2 MB); the front sends it to the
+   *  project's host. */
+  uploadProjectIcon(projectId: string, file: Blob): Promise<{ ok: boolean; error?: string }>;
   /** An HTML preview (V0.19), for a sandboxed iframe; from the thread's host (V0.54). */
   previewUrl(id: string, host?: string): string;
   /** The Changes tab (V0.25): the branch diff of the thread's folder. */
@@ -365,6 +368,20 @@ function createHttpApi(): Api {
       });
     },
     attachmentUrl,
+    async uploadProjectIcon(projectId, file) {
+      try {
+        const r = await fetch(`/api/projects/${encodeURIComponent(projectId)}/icon`, { method: "POST", headers: { "X-Fyr": "1", "Content-Type": file.type || "application/octet-stream" }, body: file });
+        let j: { ok?: boolean; error?: string } = {};
+        try {
+          j = await r.json();
+        } catch {
+          /* not JSON */
+        }
+        return r.ok && j.ok !== false ? { ok: true } : { ok: false, error: j.error ?? `HTTP ${r.status}` };
+      } catch {
+        return { ok: false, error: "Fyr is not reachable" };
+      }
+    },
     previewUrl,
     async commands(source) {
       const path =

@@ -25,7 +25,75 @@ type Project struct {
 	Model     string     `json:"model,omitempty"`
 	Quiet     QuietHours `json:"quiet,omitempty"` // quiet hours (V0.46): a list of windows
 	CreatedAt time.Time  `json:"createdAt"`
+	// Image is the version of the project's image icon (V0.116), served at
+	// /api/projects/<id>/icon; "" draws Icon, the glyph, in Color.
+	Image string `json:"image,omitempty"`
+	// By says who set name, color and image: ByOwner or ByAgent; "" is a
+	// placeholder that the setup agent may fill (V0.116). SetBy derives a
+	// missing key for projects from before.
+	By map[string]string `json:"by,omitempty"`
+	// Setup is the last project setup run (V0.116).
+	Setup *ProjectSetup `json:"setup,omitempty"`
 }
+
+// ProjectSetup is a project setup run (V0.116): the thread it runs in, when
+// it started, or why it could not start.
+type ProjectSetup struct {
+	Thread string    `json:"thread,omitempty"`
+	At     time.Time `json:"at"`
+	Error  string    `json:"error,omitempty"`
+}
+
+// The fields the setup agent fills (V0.116); the keys of Project.By.
+const (
+	SetupName  = "name"
+	SetupColor = "color"
+	SetupImage = "image"
+)
+
+// SetupFields are the fields the setup agent fills, in order.
+var SetupFields = []string{SetupName, SetupColor, SetupImage}
+
+// SetBy is who set field f (SetupName, SetupColor, SetupImage): ByOwner,
+// ByAgent, or "" for a placeholder. A project from before V0.116 has no
+// record: a name equal to its folder's last element and the colour picked
+// from the name are placeholders, anything else is the owner's.
+func (p *Project) SetBy(f string) string {
+	if by, ok := p.By[f]; ok {
+		return by
+	}
+	switch f {
+	case SetupName:
+		if p.Name == "" || (p.Folder != "" && p.Name == path.Base(p.Folder)) {
+			return ""
+		}
+		return ByOwner
+	case SetupColor:
+		if p.Color == "" || p.Color == DefaultColor(p.Name) {
+			return ""
+		}
+		return ByOwner
+	case SetupImage:
+		if p.Image == "" {
+			return ""
+		}
+		return ByOwner
+	}
+	return ""
+}
+
+// fillBy writes down who set each field before a reduce changes any of
+// them, so a derived placeholder stays one after the name changes.
+func (p *Project) fillBy() {
+	by := map[string]string{}
+	for _, f := range SetupFields {
+		by[f] = p.SetBy(f)
+	}
+	p.By = by
+}
+
+// setupField maps a setup field to its row in Rights.
+var setupField = map[string]Field{SetupName: FieldProjectName, SetupColor: FieldProjectColor, SetupImage: FieldProjectImage}
 
 // Covers reports whether a thread in dir lands in a project with folder:
 // the folder itself and every folder below it.
@@ -110,6 +178,12 @@ const (
 	// KindProjectMatched files a thread by its folder, not by hand (V0.55):
 	// args ProjectMatch.
 	KindProjectMatched = "project.matched"
+	// KindProjectSetup is the setup agent's fields (V0.116): args {id,
+	// name?, color?, image?}; it fills only fields the owner has not set.
+	KindProjectSetup = "project.setup"
+	// KindProjectSetupRun records a setup run (V0.116): args {id, thread?,
+	// error?}. The engine starts the thread first.
+	KindProjectSetupRun = "project.setupRun"
 )
 
 // ProjectMatch is the project a thread's folder lands it in, "" for none.
@@ -123,6 +197,12 @@ func init() {
 			id := r.P.ID
 			*r.P = Project{}
 			return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": id}}, nil
+		}},
+		{Name: KindProjectSetup, On: RecProject, From: agentOnly, Reduce: reduceProjectSetup},
+		{Name: KindProjectSetupRun, On: RecProject, From: []string{ByOwner, ByObserved}, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
+			a := mapArgs(in)
+			r.P.Setup = &ProjectSetup{Thread: a.Str("thread"), At: now, Error: a.Str("error")}
+			return Result{Events: []Event{{"project.setupRun", map[string]any{"thread": a.Str("thread"), "error": a.Str("error")}}}, Reply: map[string]any{"id": r.P.ID, "thread": a.Str("thread")}}, nil
 		}},
 		{Name: KindProjectMatched, From: observed, Untouched: true, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
 			a, err := argsOf[ProjectMatch](in)
@@ -150,6 +230,8 @@ func reduceProjectCreate(r Rec, in Input, now time.Time) (Result, error) {
 		return Result{}, reject(RejectBadArgs, "a project needs a name or a folder")
 	}
 	p.Color, p.Icon, p.CreatedAt, p.Edited = DefaultColor(p.Name), Icon{Kind: "monogram"}, now, true
+	p.By = map[string]string{SetupColor: "", SetupImage: ""}
+	p.By[SetupName] = p.SetBy(SetupName) // V0.116: a folder's name is a placeholder
 	res := Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID}}
 	if tid := a.Str("threadId"); tid != "" {
 		res.Follow = []Input{{Source: in.Source, Kind: "thread.setProject", Thread: tid, Args: Args{"projectId": p.ID}}}
@@ -163,17 +245,27 @@ func reduceProjectCreate(r Rec, in Input, now time.Time) (Result, error) {
 func reduceProjectUpdate(r Rec, in Input, _ time.Time) (Result, error) {
 	a := mapArgs(in)
 	p := r.P
+	p.fillBy() // V0.116: before the name changes
 	if _, ok := a["folder"]; ok {
 		p.Folder = a.Str("folder")
 	}
-	if n := a.trimmed("name"); n != "" {
-		p.Name = n
+	// V0.116: a value the owner changes is the owner's; saving it unchanged
+	// leaves who set it.
+	if n := a.trimmed("name"); n != "" && n != p.Name {
+		p.Name, p.By[SetupName] = n, ByOwner
 	}
 	if col := a.Str("color"); col != "" {
 		if !ValidColor(col) {
 			return Result{}, reject(RejectBadArgs, "color must be one of %v", Palette)
 		}
-		p.Color = col
+		if col != p.Color {
+			p.Color, p.By[SetupColor] = col, ByOwner
+		}
+	}
+	// The owner's upload sets image to its version; "" removes it, and the
+	// agent does not put one back (V0.116).
+	if v, ok := a["image"].(string); ok {
+		p.Image, p.By[SetupImage] = v, ByOwner
 	}
 	if raw, ok := a["icon"]; ok {
 		var ic Icon
@@ -208,4 +300,41 @@ func reduceProjectUpdate(r Rec, in Input, _ time.Time) (Result, error) {
 	}
 	p.Edited = true
 	return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID}}, nil
+}
+
+// reduceProjectSetup is the setup agent's fields (V0.116): each one the
+// owner has not set is filled and marked the agent's; the owner's are kept
+// and named in the reply.
+func reduceProjectSetup(r Rec, in Input, _ time.Time) (Result, error) {
+	a := mapArgs(in)
+	p := r.P
+	p.fillBy()
+	if col := a.Str(SetupColor); col != "" && !ValidColor(col) {
+		return Result{}, reject(RejectBadArgs, "color must be one of %v", Palette)
+	}
+	set, kept := []string{}, []string{}
+	for _, f := range SetupFields {
+		v := strings.TrimSpace(a.Str(f))
+		if f == SetupName {
+			v = strings.Join(strings.Fields(v), " ")
+		}
+		if v == "" {
+			continue
+		}
+		if CanWrite(setupField[f], in.Source.Principal(), p.By[f], "it") != nil {
+			kept = append(kept, f)
+			continue
+		}
+		switch f {
+		case SetupName:
+			p.Name = v
+		case SetupColor:
+			p.Color = v
+		case SetupImage:
+			p.Image = v
+		}
+		p.By[f] = ByAgent
+		set = append(set, f)
+	}
+	return Result{Events: []Event{{"project.setup", map[string]any{"set": set, "kept": kept}}}, Reply: map[string]any{"id": p.ID, "set": set, "kept": kept}}, nil
 }

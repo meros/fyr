@@ -32,6 +32,7 @@ import (
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/preview"
+	"github.com/meros/fyr/internal/projicon"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/runner"
@@ -175,6 +176,18 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}
 		return out
 	}
+	// V0.116: project setup. The icons live with the host's data; a new
+	// project with a folder gets a setup run, and each project from before
+	// gets one once, a minute after start and 30 s apart. The run's provider
+	// and model are the owner's System agents setting (SystemAgentResolve).
+	eng.Icons = &projicon.Store{Dir: filepath.Join(data, "project-icons")}
+	eng.AutoSetup = true
+	go func() {
+		time.Sleep(time.Minute)
+		if n := eng.SetupExisting(30 * time.Second); n > 0 {
+			log.Printf("project setup: started %d runs for projects from before", n)
+		}
+	}()
 	if rn != nil {
 		mgr.Adopt(rn.procs) // V0.90: before anything sends to a thread
 	}
@@ -392,3 +405,4 @@ func (k *kept) client() *runner.Client {
 	}
 	return k.rc
 }
+
