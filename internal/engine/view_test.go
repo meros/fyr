@@ -45,17 +45,21 @@ func toolNames(t *testing.T, e *Engine, as string) []string {
 	return names
 }
 
-// SPEC 0.5 V0.37: the view tools exist only for a thread with the flag.
+// SPEC 0.5 V0.37, V0.107: every thread lists the view tools, so a process
+// that started before the owner turned the view on can still fill it; while
+// the view is off a call is refused with a reason.
 func TestViewToolsOnlyWithFlag(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	h.e.Attach = h.att
 	plain := h.create("hello")
 	h.wait(plain, "done", state(core.Done))
-	if names := strings.Join(toolNames(t, h.e, plain), " "); strings.Contains(names, "view_") {
+	if names := strings.Join(toolNames(t, h.e, plain), " "); !strings.Contains(names, "view_publish") || !strings.Contains(names, "view_state") || !strings.Contains(names, "view_unchanged") {
 		t.Fatalf("plain thread lists %s", names)
 	}
-	if out, isErr := callAs(t, h.e, plain, "view_state", map[string]any{"patch": map[string]any{}}); !isErr {
-		t.Fatalf("plain thread called view_state: %s", out)
+	for _, tool := range []string{"view_publish", "view_state", "view_unchanged"} {
+		if out, isErr := callAs(t, h.e, plain, tool, map[string]any{"html": "<p>", "patch": map[string]any{}, "reason": "x"}); !isErr || !strings.Contains(out, "live view is off") {
+			t.Fatalf("plain thread called %s: %s", tool, out)
+		}
 	}
 	if evs := viewEvents(h, plain, "view.published"); len(evs) != 0 {
 		t.Fatalf("plain thread got a view: %v", evs)
