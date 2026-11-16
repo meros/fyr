@@ -52,6 +52,16 @@ func main() {
 		if err := pack(*commit, *dir, *src, *goV, *nodeV, *run); err != nil {
 			log.Fatal(err)
 		}
+	case "verify":
+		// verify DIR: check a downloaded release against the pinned key.
+		if len(os.Args) < 3 {
+			log.Fatal("usage: fyrrelease verify DIR")
+		}
+		info, err := release.Verify(os.Args[2], release.PublicKey)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("verified: commit %s, build %s\n", info.Commit, info.Build)
 	default:
 		log.Fatalf("unknown command %q", os.Args[1])
 	}

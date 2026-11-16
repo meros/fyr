@@ -266,7 +266,7 @@ const SCREENS = [
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
   { name: "settings add provider (V0.119)", url: "?mock=rail&settings=providers/new", ready: "!!document.querySelector('.m-settings [role=radiogroup][aria-label=Kind]')" },
-  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-approve Fyr deploys\"]')", field: ".m-settings .fieldrow .inl input" },
+  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings projects (V0.119)", url: "?mock=rail&settings=projects", ready: "document.querySelectorAll('.m-settings .pli').length > 3" },
   { name: "settings device (V0.119)", url: "?mock=rail&settings=device", ready: "!!document.querySelector('.m-settings [role=switch][aria-label=Notifications]')" },
   // V0.125: the Hosts page and a host's page with a changed id, at every phone size.
@@ -391,7 +391,8 @@ const MEASURE = `(() => {
       const right = Math.max(0, ...[...el.querySelectorAll('*')].filter(vis).map((e) => e.getBoundingClientRect().right));
       const lg = el.querySelector('.login');
       const login = lg ? { link: lg.querySelector('a.loginlink')?.getAttribute('href') ?? '', code: !!lg.querySelector('input'), cancel: [...lg.querySelectorAll('button')].some(b => b.textContent.trim() === 'Cancel') } : null;
-      const adb = el.querySelector('section[aria-label="Auto-deploy"] [role=switch]');
+      const adb = el.querySelector('section[aria-label="Auto-update"] [role=switch]');
+      const upb = el.querySelector('section[aria-label="Updates"] .sr .btn');
       const autoDeploy = adb ? { role: adb.getAttribute('role'), checked: adb.getAttribute('aria-checked'), label: adb.getAttribute('aria-label'), rowH: adb.closest('.sr').getBoundingClientRect().height } : null;
       const sas = el.querySelector('section[aria-label="System agents"]');
       const systemAgents = sas ? { selects: [...sas.querySelectorAll('select')].map((x) => x.getAttribute('aria-label')), lines: [...sas.querySelectorAll('.sajob .sr-d')].map(e => e.textContent), same: [...sas.querySelectorAll('select[aria-label="Thread titles"] option')].map((o) => o.textContent)[0] ?? '' } : null;
@@ -401,7 +402,8 @@ const MEASURE = `(() => {
       // Scrolled to the end, as far as the screen scrolls: its padding keeps the last control above the home indicator.
       const sc = el.closest('.m-nbody'); if (sc) sc.scrollTop = sc.scrollHeight;
       const lr = last ? box(last).getBoundingClientRect() : null;
-      return { nav, device, systemAgents, autoDeploy, rows: el.querySelectorAll('.prow').length, found: el.querySelectorAll('.sr.found').length,
+      const updateNow = upb ? { text: upb.textContent.trim(), h: upb.getBoundingClientRect().height } : null;
+      return { nav, device, systemAgents, autoDeploy, updateNow, rows: el.querySelectorAll('.prow').length, found: el.querySelectorAll('.sr.found').length,
         imports: [...el.querySelectorAll('.sr.found button')].filter(b => b.textContent.trim() === 'Import').length,
         needs: [...el.querySelectorAll('.pst')].map(e => e.textContent), small, login, right,
         last: lr ? { t: name(last), top: lr.top, bottom: lr.bottom } : null };
@@ -550,10 +552,12 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   }
   // SPEC 0.5 V0.53, V0.119: a running login shows on the provider's page: the sign-in link, the code field and Cancel, all 44 px.
   if (ctx.startsWith("settings provider login")) check(!!m.settings?.login && /^https:\/\/claude\.com\//.test(m.settings.login.link) && m.settings.login.code && m.settings.login.cancel, `${ctx}: the login panel is wrong ${JSON.stringify(m.settings?.login)}`);
-  // SPEC V0.111, V0.119: the Auto-deploy switch, on by default, its row 44 px or more.
+  // SPEC V0.111, V0.119, V0.126: the Auto-update switch, on by default, its row 44 px or more; Update now a 44 px target.
   if (ctx.startsWith("settings automation")) {
     const a = m.settings?.autoDeploy;
-    check(!!a && a.role === "switch" && a.checked === "true" && a.label === "Auto-approve Fyr deploys" && a.rowH >= 43.5, `${ctx}: no Auto-deploy switch ${JSON.stringify(a)}`);
+    check(!!a && a.role === "switch" && a.checked === "true" && a.label === "Auto-update Fyr" && a.rowH >= 43.5, `${ctx}: no Auto-update switch ${JSON.stringify(a)}`);
+    const u = m.settings?.updateNow;
+    check(!!u && u.text === "Update now" && u.h >= 43.5, `${ctx}: no 44 px Update now button ${JSON.stringify(u)}`);
   }
   if (ctx.startsWith("settings device")) check(!!m.settings && m.settings.device.push && m.settings.device.theme === 3, `${ctx}: This device is wrong ${JSON.stringify(m.settings?.device)}`);
   if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|Threads|Quiet hours", `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);

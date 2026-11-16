@@ -17,6 +17,7 @@ import { useAsk } from "./confirm-ui.tsx";
 import type { Profile, Project } from "./types.ts";
 import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
+import { updateRow, updateState, type UpdatesView } from "./updates.ts";
 import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
 import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
@@ -80,7 +81,7 @@ export interface ProjectActions {
 }
 
 export interface SettingsProps {
-  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "systemAgents">>;
+  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "systemAgents">>;
   host: string;
   /** V0.51: the front's hosts with their state */
   hosts?: HostInfo[];
@@ -122,6 +123,7 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
   const [found, setFound] = useState<FoundDTO[]>([]);
   const [deploy, setDeploy] = useState<boolean | null>(null);
   const [deployErr, setDeployErr] = useState<string | null>(null);
+  const [updates, setUpdates] = useState<UpdatesView | null>(null);
   const [repos, setRepos] = useState<AutoMergeRepo[] | null>(null);
   const [reposErr, setReposErr] = useState<string | null>(null);
   const hostNames = (p.hosts ?? []).map((h) => h.name);
@@ -148,6 +150,15 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
       setDeployErr(`Could not read the auto-deploy setting: ${(e as Error).message}.`);
     }
   };
+  // V0.126 (#151): the update record; a host without one shows nothing.
+  const loadUpdates = async () => {
+    if (!api.updates) return setUpdates(null);
+    try {
+      setUpdates(await api.updates());
+    } catch {
+      setUpdates(null);
+    }
+  };
   const loadRepos = async () => {
     if (!api.autoMerge) return setRepos([]);
     try {
@@ -169,6 +180,7 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
   useEffect(() => {
     void loadProviders();
     void loadDeploy();
+    void loadUpdates();
     void loadRepos();
   }, []);
   useEffect(() => void loadSa(saHost), [saHost]);
@@ -229,6 +241,9 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
     hostNames,
     runProvider,
     runDeploy: (on: boolean) => command("host.autoDeploy", { on }, loadDeploy),
+    updates,
+    loadUpdates,
+    runUpdateNow: () => command("host.updateNow", {}, loadUpdates),
     runRepo: (repo: string, on: boolean) => command("host.autoMerge", { repo, on }, loadRepos),
     runSa: (args: Record<string, unknown>) => command("host.systemAgents", saHost ? { ...args, host: saHost } : args, () => loadSa()),
   };
@@ -1141,16 +1156,17 @@ function AutomationPage({ d, hasDeploy }: { d: Data; hasDeploy: boolean }) {
         ) : d.deploy === null ? (
           <Skeleton rows={1} />
         ) : (
-          <Group label="Auto-deploy">
+          <Group label="Auto-update">
             <Row
               label
-              title="Deploy Fyr without asking"
-              desc="When an agent asks to deploy Fyr and the checkout is clean and on origin's default branch. The build and the tests still decide the switch."
+              title="Update Fyr by itself"
+              desc="Installs each signed release CI publishes for main, once it has stayed the newest for 10 minutes. The new version is checked before the switch and rolled back if it is not healthy. A local build of a checkout always waits for your press."
               error={deployErr}
-              end={<Switch on={d.deploy} label="Auto-approve Fyr deploys" onChange={async (on) => setDeployErr(await d.runDeploy(on))} />}
+              end={<Switch on={d.deploy} label="Auto-update Fyr" onChange={async (on) => setDeployErr(await d.runDeploy(on))} />}
             />
           </Group>
         ))}
+      {d.updates && <UpdatesGroup d={d} />}
       {d.repos === null && d.reposErr ? (
         <LoadError text={d.reposErr} onRetry={() => void d.loadRepos()} />
       ) : d.repos === null ? (
@@ -1170,6 +1186,57 @@ function AutomationPage({ d, hasDeploy }: { d: Data; hasDeploy: boolean }) {
         </Group>
       )}
     </>
+  );
+}
+
+/** V0.126 (#151): what runs, Update now or Back to release, and the newest updates with their logs. Desktop and phone
+ *  share it; the logs open in a new tab on both. */
+function UpdatesGroup({ d }: { d: Data }) {
+  const [err, setErr] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
+  const v = d.updates!;
+  const now = Date.now();
+  const list = all ? v.updates : v.updates.slice(0, 8);
+  const press = v.paused ? "Back to release" : "Update now";
+  return (
+    <Group title="Updates" label="Updates" foot={v.bad?.commit ? `Release ${v.bad.commit.slice(0, 7)} rolled back here (${v.bad.why}); Fyr waits for a newer one.` : undefined}>
+      <Row
+        title={updateState(v)}
+        error={err}
+        end={
+          <button type="button" class="btn" onClick={async () => setErr(await d.runUpdateNow())}>
+            {press}
+          </button>
+        }
+      />
+      {!v.updates.length && <Empty text="No updates yet on this host." />}
+      {list.map((u) => {
+        const r = updateRow(u, now);
+        return (
+          <Row
+            key={`${u.build}-${u.startedAt}`}
+            title={r.title}
+            desc={
+              <>
+                {r.desc}
+                {(u.logs ?? []).map((n) => (
+                  <>
+                    {" · "}
+                    <a href={`/api/updates/${encodeURIComponent(u.build)}/${n}`} target="_blank" rel="noopener noreferrer">
+                      {n}
+                    </a>
+                  </>
+                ))}
+              </>
+            }
+            class={r.fail ? "bad" : undefined}
+          />
+        );
+      })}
+      {v.updates.length > 8 && (
+        <Row end={<button type="button" class="btn" onClick={() => setAll(!all)}>{all ? "Fewer" : `All ${v.updates.length}`}</button>} />
+      )}
+    </Group>
   );
 }
 

@@ -121,6 +121,9 @@ func (d *Deployer) install(ctx context.Context, run Runner, prog *Progress, gen 
 	}
 	id := release.Short(sha)
 	prog.Build = id
+	if mk := prog.start; mk != nil {
+		prog.start = func() Update { u := mk(); u.Commit = sha; return u }
+	}
 	if strings.HasPrefix(d.live(), id) {
 		d.Unpause()
 		return fmt.Sprintf("Fyr already runs %s, the newest release.", id), nil

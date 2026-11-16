@@ -61,6 +61,7 @@ export function createMockApi(scenario: string): Api {
       if (offline) return { ok: false, error: "no connection to the host" };
       if (action.startsWith("provider.")) return providers.command(action, args ?? {});
       if (action === "host.autoDeploy") return (deployOn = !!args?.on), { ok: true };
+      if (action === "host.updateNow") return { ok: true };
       if (action === "host.autoMerge") {
         const r = repos.find((x) => x.repo === args?.repo);
         if (r) r.on = !!args?.on;
@@ -94,6 +95,18 @@ export function createMockApi(scenario: string): Api {
     },
     async autoDeploy() {
       return { on: deployOn };
+    },
+    // V0.126: a host that updated twice and rolled one release back.
+    async updates() {
+      const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+      return {
+        live: "c705ef536566",
+        updates: [
+          { build: "c705ef536566", commit: "c705ef5365660a8608badc1fe181f9a08293e663", trigger: "deployable", result: "installed", startedAt: at(20), endedAt: at(18), logs: ["smoke.log"] },
+          { build: "9b3e1d2c4a5f", commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", trigger: "deployable", result: "rolledBack", reason: "was not healthy: the database does not answer", startedAt: at(90), endedAt: at(88), logs: ["smoke.log"] },
+        ],
+        bad: { commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", why: "was not healthy" },
+      };
     },
     async systemAgents() {
       return {

@@ -17,6 +17,9 @@ const (
 	// KindDeployNow is the owner's Restart now (V0.83): a deploy that
 	// waits for running threads switches at once.
 	KindDeployNow = "host.deployNow"
+	// KindUpdateNow is the owner's Update now / Back to release (V0.126):
+	// install the newest CI release at once, ending a local build's pause.
+	KindUpdateNow = "host.updateNow"
 )
 
 // KindRefreshModels asks a provider for its models now (V0.120).
@@ -32,6 +35,8 @@ const (
 	EffectProvider EffectKind = "provider"
 	// EffectDeployNow stops a deploy's drain (V0.83).
 	EffectDeployNow EffectKind = "deploy.now"
+	// EffectUpdateNow starts the install of the newest release (V0.126).
+	EffectUpdateNow EffectKind = "update.now"
 )
 
 // Adopted is a thread T3 adoption made, its owner's view and its history
@@ -56,6 +61,11 @@ func init() {
 	// V0.83: only the owner forces a deploy; no agent tool sends it.
 	RegisterKind(&InputKind{Name: KindDeployNow, On: RecHost, From: ownerOnly, Await: true, Reduce: func(Rec, Input, time.Time) (Result, error) {
 		return Result{Effects: []Effect{{Kind: EffectDeployNow}}}, nil
+	}})
+	// V0.126: only the owner leaves a local build or updates outside the
+	// quiet period; an agent asks fyr.deploy instead.
+	RegisterKind(&InputKind{Name: KindUpdateNow, On: RecHost, From: ownerOnly, Await: true, Reduce: func(Rec, Input, time.Time) (Result, error) {
+		return Result{Effects: []Effect{{Kind: EffectUpdateNow}}}, nil
 	}})
 	RegisterKind(&InputKind{Name: KindCancelMessage, From: ownerOnly, Await: true, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
 		id := mapArgs(in).Str("messageId")

@@ -269,6 +269,21 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		watcher.Quiet = func() time.Duration { return time.Duration(cfg.UpdateQuietMinutes) * time.Minute }
 	}
 	go watcher.Run(ctx)
+	// V0.126: Update now / Back to release (owner only): the newest release,
+	// at once, ending a local build's pause.
+	eng.UpdateNow = func() error {
+		if dep.Busy() {
+			return errors.New("An update runs already")
+		}
+		dep.Unpause()
+		go func() {
+			req := core.EffectReq{ID: engine.NewID("fx_"), Action: core.FyrDeploy, Args: map[string]any{"trigger": "owner"}}
+			if _, err := dep.Deploy(context.Background(), "", req, ""); err != nil && !errors.Is(err, core.ErrReportLater) {
+				log.Printf("update now: %v", err)
+			}
+		}()
+		return nil
+	}
 	prDetails := &github.Details{Gh: github.Gh} // V0.43: the PR tab's details, cached 30 s
 	eng.Effects = engine.Outside{Gh: github.Gh, PR: prDetails, Deploy: dep.Deploy}
 	poller := &github.Poller{Gh: github.Gh, Src: engine.PRWatch{E: eng}}
@@ -299,6 +314,12 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
 		Load:  &cgroup.Sampler{Tree: tree, Slots: pool}, // V0.80, V0.86
+		// V0.126 (#151): the update record, the pause and the bad release.
+		Updates: func() any {
+			bad, why := dep.Bad()
+			return map[string]any{"updates": dep.Updates(), "paused": dep.PausedBy(), "bad": map[string]string{"commit": bad, "why": why}, "live": BuildID()}
+		},
+		UpdateLog: dep.UpdateLog,
 		Focus: func(device, thread string, on bool) { // V0.85
 			if on {
 				tree.Focus(device, thread, time.Now())

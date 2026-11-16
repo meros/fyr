@@ -39,10 +39,10 @@ test("Providers: the count, and what needs the owner", () => {
 
 test("Automation: deploys and the repos merged without asking", () => {
   assert.equal(automationSummary(null, null), "");
-  assert.equal(automationSummary(true, []), "Deploys on · merges off");
-  assert.equal(automationSummary(false, [{ repo: "a/b", on: false }]), "Deploys off · merges off");
-  assert.equal(automationSummary(true, [{ repo: "a/b", on: true }]), "Deploys on · merges in 1 repo");
-  assert.equal(automationSummary(true, ["a/b", "c/d", "e/f"].map((repo) => ({ repo, on: true }))), "Deploys on · merges in 3 repos");
+  assert.equal(automationSummary(true, []), "Updates on · merges off");
+  assert.equal(automationSummary(false, [{ repo: "a/b", on: false }]), "Updates off · merges off");
+  assert.equal(automationSummary(true, [{ repo: "a/b", on: true }]), "Updates on · merges in 1 repo");
+  assert.equal(automationSummary(true, ["a/b", "c/d", "e/f"].map((repo) => ({ repo, on: true }))), "Updates on · merges in 3 repos");
 });
 
 test("Projects: the projects only (V0.125: the hosts have their own page)", () => {
