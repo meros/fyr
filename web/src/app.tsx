@@ -1262,7 +1262,7 @@ function App() {
   /** V0.119 phone: a Settings page is a screen; a project is its own screen; going to the level above goes Back. */
   const phoneSettingsGo = (r: PageRef | null) => {
     if (r?.page === "projects" && r.sub) return navGo({ screen: { name: "project", id: r.sub }, sheet: null });
-    const screen: Nav["screen"] = r ? { name: "settings", page: r.page, ...(r.sub ? { sub: r.sub } : {}) } : { name: "settings" };
+    const screen: Nav["screen"] = r ? { name: "settings", page: r.page, ...(r.sub ? { sub: r.sub } : {}), ...(r.host ? { host: r.host } : {}) } : { name: "settings" };
     const up = backTarget(navRef.current);
     if (up && JSON.stringify(up.screen) === JSON.stringify(screen)) navBack();
     else navGo({ screen, sheet: null });

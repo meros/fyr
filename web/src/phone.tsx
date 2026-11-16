@@ -275,7 +275,7 @@ export function PhoneApp(p: PhoneProps) {
           </div>
         </div>
       )}
-      {s.name === "settings" && <div class="m-screen m-settings">{p.settings?.(s.page ? { page: s.page, ...(s.sub ? { sub: s.sub } : {}) } : null, (title, end) => <MHeader onBack={p.nav.back} title={title} right={end} />)}</div>}
+      {s.name === "settings" && <div class="m-screen m-settings">{p.settings?.(s.page ? { page: s.page, ...(s.sub ? { sub: s.sub } : {}), ...(s.host ? { host: s.host } : {}) } : null, (title, end) => <MHeader onBack={p.nav.back} title={title} right={end} />)}</div>}
       {bottomBar && <MBottomBar {...p} />}
       <MToast {...p} bottomBar={bottomBar} />
       {p.nav.at.sheet && <MSheets {...p} sheet={p.nav.at.sheet} t={sheetThread} />}
@@ -1249,9 +1249,10 @@ function Item({ icon, label, sub, right, disabled, onClick }: { icon?: Component
 }
 
 /** The More sheet's Settings row: what it holds, and at its right what needs the owner ("1 needs a login"). */
-function MSettingsItem({ hosts, onClick }: { hosts: HostInfo[]; onClick(): void }) {
-  // V0.125: the hosts that need the owner add to the count, as the Hosts badge does on the Settings screen.
-  const need = settingsNeed(useProvidersNeed(useApi()), hostsNeed(hosts));
+function MSettingsItem({ hosts, self, onClick }: { hosts: HostInfo[]; self: string; onClick(): void }) {
+  // V0.125: the hosts that need the owner add to the count, as the Hosts badge does on the Settings screen. V0.127:
+  // the providers of every host count.
+  const need = settingsNeed(useProvidersNeed(useApi(), hosts, self), hostsNeed(hosts));
   return <Item label="Settings" sub="Providers, automation, projects, hosts, this device" right={need || undefined} onClick={onClick} />;
 }
 
@@ -1273,7 +1274,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
       <MSheet onClose={close} label="More">
         <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.list.setSelecting(true))} />
         <Item label="Changes" sub="Every change across threads, by stage" right={needsCount(p.store.threads) ? `${needsCount(p.store.threads)} need you` : undefined} onClick={() => p.nav.replace({ screen: { name: "changes" }, sheet: null })} />
-        <MSettingsItem hosts={p.store.hosts} onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
+        <MSettingsItem hosts={p.store.hosts} self={p.store.host} onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
         <Item label="Filter by project…" right={p.filter.id ? p.store.projects.find((x) => x.id === p.filter.id)?.name : "all"} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "filter" } })} />
         <Item label="Adopt from T3" onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "adopt" } })} />
         <Item label="Show tool details" sub="Every tool group open, every machine line in full" right={toolDetails() ? "on" : "off"} onClick={after(() => setToolDetails(!toolDetails()))} />

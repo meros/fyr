@@ -5,7 +5,7 @@
 import { parsePage, pageUrl, type PageId } from "./settings-nav.ts";
 
 /** V0.119: Settings is the nav screen (no page), a page, or a page's sub-page (a provider, Add provider, a project). */
-export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" } | { name: "project"; id: string } | { name: "settings"; page?: PageId; sub?: string } | { name: "changes" };
+export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" } | { name: "project"; id: string } | { name: "settings"; page?: PageId; sub?: string; host?: string } | { name: "changes" };
 
 export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "adopt" | "project" | "filter" | "handover";
 
@@ -39,7 +39,7 @@ export function urlFor(n: Nav, currentSearch = ""): string {
   } else if (s.name === "new") p.set("new", "");
   else if (s.name === "search") p.set("search", "");
   else if (s.name === "project") p.set("project", s.id);
-  else if (s.name === "settings") p.set("settings", s.page ? pageUrl({ page: s.page, sub: s.sub }) : "");
+  else if (s.name === "settings") p.set("settings", s.page ? pageUrl({ page: s.page, sub: s.sub, host: s.host }) : "");
   else if (s.name === "changes") p.set("changes", ""); // V0.64
   const q = p.toString().replace(/=(&|$)/g, "$1").replace(/(settings=[^&]*)%2F/, "$1/");
   return q ? `/?${q}` : "/";
@@ -57,7 +57,7 @@ export function parseUrl(search: string): Nav {
     const v = p.get("settings") ?? "";
     if (!v) return { screen: { name: "settings" }, sheet: null };
     const r = parsePage(v);
-    return { screen: { name: "settings", page: r.page, ...(r.sub ? { sub: r.sub } : {}) }, sheet: null };
+    return { screen: { name: "settings", page: r.page, ...(r.sub ? { sub: r.sub } : {}), ...(r.host ? { host: r.host } : {}) }, sheet: null };
   }
   if (p.has("changes")) return { screen: { name: "changes" }, sheet: null };
   return INBOX;
