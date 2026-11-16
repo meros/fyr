@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // Budget is the module's cgroup settings (config.json "cgroups").
@@ -59,7 +60,9 @@ const (
 	serverWeight = "1000"
 	agentsWeight = "100"
 	threadWeight = "100"
-	controllers  = "+cpu +memory"
+	// focusWeight is the cpu.weight of a thread a device shows (V0.85).
+	focusWeight = "300"
+	controllers = "+cpu +memory"
 )
 
 // Tree is the unit's split cgroup. A nil Tree is the off state.
@@ -68,6 +71,15 @@ type Tree struct {
 	logf func(string, ...any)
 	mu   sync.Mutex
 	refs map[string]int
+	// focus: per device, the thread (cgroup name) it shows and the last
+	// beat (V0.85); raised: the cgroups written at focusWeight.
+	focus  map[string]focusBeat
+	raised map[string]bool
+}
+
+type focusBeat struct {
+	name string
+	at   time.Time
 }
 
 // Setup splits the unit's cgroup and sets the budget, or says once in the
@@ -153,7 +165,7 @@ func setup(o Options) (*Tree, error) {
 	if err := put(root, "cgroup.subtree_control", controllers); err != nil {
 		return nil, fmt.Errorf("enable controllers: %w", err)
 	}
-	t := &Tree{root: root, logf: o.Logf, refs: map[string]int{}}
+	t := &Tree{root: root, logf: o.Logf, refs: map[string]int{}, focus: map[string]focusBeat{}, raised: map[string]bool{}}
 	var bad []string
 	set := func(dir, file, v string) {
 		if v == "" {
@@ -290,10 +302,92 @@ func (t *Tree) make(name string) (string, error) {
 	if err := os.Mkdir(d, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
 		return "", err
 	}
-	if err := put(d, "cpu.weight", threadWeight); err != nil {
+	w := threadWeight
+	if t.raised[name] {
+		w = focusWeight
+	}
+	if err := put(d, "cpu.weight", w); err != nil {
 		return "", err
 	}
 	return d, nil
+}
+
+// FocusFor is how long a focus beat keeps a thread's weight raised: the
+// window that keeps a thread watched (notify.Watch, V0.20).
+const FocusFor = 45 * time.Second
+
+// Focus records that device shows thread at now (V0.85): the thread's
+// cgroup gets focusWeight until the beat is FocusFor old, and the thread
+// the device showed before drops back at once.
+func (t *Tree) Focus(device, thread string, now time.Time) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if name := unsafe.ReplaceAllString(thread, "_"); name == "" || name == DeployDir {
+		delete(t.focus, device)
+	} else {
+		t.focus[device] = focusBeat{name, now}
+	}
+	t.reweight(now)
+}
+
+// Unfocus ends device's focus on thread, when it is still the one it shows.
+func (t *Tree) Unfocus(device, thread string, now time.Time) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if b, ok := t.focus[device]; ok && b.name == unsafe.ReplaceAllString(thread, "_") {
+		delete(t.focus, device)
+	}
+	t.reweight(now)
+}
+
+// Expire drops the beats older than FocusFor and puts their threads back
+// to the plain weight; the host calls it every few seconds.
+func (t *Tree) Expire(now time.Time) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.reweight(now)
+}
+
+// reweight writes cpu.weight for each thread whose focus changed; a thread
+// without a cgroup gets its weight when Thread makes one. Holds t.mu.
+func (t *Tree) reweight(now time.Time) {
+	want := map[string]bool{}
+	for dev, b := range t.focus {
+		if now.Sub(b.at) > FocusFor {
+			delete(t.focus, dev)
+			continue
+		}
+		want[b.name] = true
+	}
+	set := func(name, w string) {
+		d := filepath.Join(t.root, "agents", name)
+		if _, err := os.Stat(d); err != nil {
+			return
+		}
+		if err := put(d, "cpu.weight", w); err != nil {
+			t.logf("cgroups: weight of %s: %v", name, err)
+		}
+	}
+	for name := range t.raised {
+		if !want[name] {
+			set(name, threadWeight)
+		}
+	}
+	for name := range want {
+		if !t.raised[name] {
+			set(name, focusWeight)
+		}
+	}
+	t.raised = want
 }
 
 // readKey reads "key value" lines (cpu.stat) and returns key's value.

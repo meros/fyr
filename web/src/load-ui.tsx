@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { loadDetail, railLoad, threadCPU, type HostLoad } from "./load.ts";
+import { loadDetail, railLoad, railSlots, threadCPU, threadSlot, type HostLoad } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -56,10 +56,12 @@ export function LoadRail() {
     <div class="rld" aria-label="Machine load">
       {list.map((h) => {
         const f = railLoad(h);
+        const sl = railSlots(h);
         return (
           <div class="rldr" title={loadDetail(h).join("\n")}>
             <span class={f.hot ? "hot" : undefined}>{f.text}</span>
             <small>load</small>
+            {sl && <small class={`rlds${sl.hot ? " hot" : ""}`}>{sl.text}</small>}
           </div>
         );
       })}
@@ -76,6 +78,20 @@ export function ThreadCPU({ id }: { id: string }) {
       {" · "}
       <span class={`tcpu${c.hot ? " hot" : ""}`} title="CPU of this thread and everything it started, over the last seconds">
         {c.text}
+      </span>
+    </>
+  );
+}
+
+/** V0.86: " · waiting for a test slot (2 ahead)" or " · test slot" on a thread's row; nothing without one. */
+export function ThreadSlot({ id }: { id: string }) {
+  const s = threadSlot(useLoad(), id);
+  if (!s) return null;
+  return (
+    <>
+      {" · "}
+      <span class="tslot" title="Heavy jobs (test suites, builds, e2e runs) take a slot; a few run at once across the threads">
+        {s}
       </span>
     </>
   );

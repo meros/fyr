@@ -1633,6 +1633,15 @@ export function mockLoad(): HostLoad[] {
         { id: "t_mapperf", cpu: 2.6, memory: 3e9 },
         { id: "t_search", cpu: 1.0, memory: 9e8 },
       ],
+      // V0.86: both slots taken, one thread waits.
+      slots: {
+        n: 2,
+        held: [
+          { owner: "t_w2", kind: "test" },
+          { owner: "t_mapperf", kind: "build" },
+        ],
+        waiting: [{ owner: "t_search", kind: "test" }],
+      },
     },
   ];
 }

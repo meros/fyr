@@ -19,6 +19,21 @@ export interface HostLoad {
   cgroups: boolean;
   agents?: { cpu?: number; cpuMax: number; memory: number; memoryMax: number };
   threads: ThreadLoad[];
+  /** the host's slots for heavy jobs (V0.86) */
+  slots?: Slots;
+}
+/** One owner of a slot or a place in the queue: a thread id, or "self-deploy". */
+export interface SlotHolder {
+  owner: string;
+  /** "test", "build" or "e2e" */
+  kind: string;
+  since?: string;
+  priority?: boolean;
+}
+export interface Slots {
+  n: number;
+  held: SlotHolder[];
+  waiting: SlotHolder[];
 }
 
 /** A thread at or above this many cores is coloured. */
@@ -47,12 +62,12 @@ export function loadDetail(h: HostLoad): string[] {
   const a = h.agents;
   if (!h.cgroups || !a) {
     out.push("Agents share the daemon's cgroup (no per-thread figures)");
-    return out;
+    return out.concat(slotDetail(h));
   }
   const cpu = a.cpu === undefined ? "" : a.cpuMax ? `${one(a.cpu)} of ${a.cpuMax} cores` : `${one(a.cpu)} cores, no cap`;
   const mem = a.memoryMax ? `${gb(a.memory)} of ${gb(a.memoryMax)} GB` : `${gb(a.memory)} GB`;
   out.push(`Agents ${[cpu, mem].filter(Boolean).join(" · ")}`);
-  return out;
+  return out.concat(slotDetail(h));
 }
 
 /** "0.4 cores", "1.0 core", "12 cores". */
@@ -67,6 +82,35 @@ export function threadCPU(list: HostLoad[], id: string): LoadPart | null {
   for (const h of list) {
     const t = h.threads?.find((x) => x.id === id);
     if (t) return t.cpu === undefined ? null : { text: cpuText(t.cpu), hot: t.cpu >= HOT_CORES };
+  }
+  return null;
+}
+
+// SPEC 0.5 V0.86: the slots for heavy jobs.
+
+function slotDetail(h: HostLoad): string[] {
+  const s = h.slots;
+  return s ? [`Slots: ${s.held.length} of ${s.n} in use, ${s.waiting.length} waiting`] : [];
+}
+
+/** The rail's slot figure, "1/2 slots"; hot while anyone waits. Null without slots. */
+export function railSlots(h: HostLoad): LoadPart | null {
+  const s = h.slots;
+  if (!s) return null;
+  return { text: `${s.held.length}/${s.n} slots`, hot: s.waiting.length > 0 };
+}
+
+const withArticle = (kind: string) => (/^[aeiou]/.test(kind) ? `an ${kind}` : `a ${kind}`);
+
+/** A thread's slot: "waiting for a test slot (2 ahead)" or "test slot"; null when it has none. */
+export function threadSlot(list: HostLoad[], id: string): string | null {
+  for (const h of list) {
+    const s = h.slots;
+    if (!s) continue;
+    const held = s.held.find((x) => x.owner === id);
+    if (held) return `${held.kind} slot`;
+    const i = s.waiting.findIndex((x) => x.owner === id);
+    if (i >= 0) return `waiting for ${withArticle(s.waiting[i].kind)} slot (${i} ahead)`;
   }
   return null;
 }
