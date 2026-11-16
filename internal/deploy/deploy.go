@@ -59,6 +59,8 @@ type Deployer struct {
 	// SwitchClient makes the front serve the client in dir and report build
 	// as its buildId, so open pages reload (V0.81); nil serves no client.
 	SwitchClient func(build, dir string) error
+	// Cgroup: where the build and the tests run (V0.80); "" is the daemon's.
+	Cgroup string
 
 	exit   int
 	mu     sync.Mutex
@@ -181,13 +183,16 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		build = append([]string{"nix", "develop", dir, "--command"}, build...)
 		test = append([]string{"nix", "develop", dir, "--command"}, test...)
 	}
+	// V0.80: the build and the tests run in agents/deploy/, under the agents' budget.
+	inCg, closeCg := proc.WithCgroup(ctx, d.Cgroup)
+	defer closeCg()
 	d.report(prog, "build", "", nil)
-	if b, err := run(ctx, dir, build...); err != nil {
+	if b, err := run(inCg, dir, build...); err != nil {
 		os.RemoveAll(out)
 		return failed(firstErr(fail(fmt.Errorf("build failed: %v\n%s", err, tail(b, 3000)))))
 	}
 	d.report(prog, "test", "", nil)
-	if b, err := run(ctx, dir, test...); err != nil {
+	if b, err := run(inCg, dir, test...); err != nil {
 		os.RemoveAll(out)
 		return failed(firstErr(fail(fmt.Errorf("tests failed, nothing was switched: %v\n%s", err, tail(b, 3000)))))
 	}

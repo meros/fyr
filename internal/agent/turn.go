@@ -16,6 +16,7 @@ func (m *Manager) read(s *session) {
 		m.handle(s, msg)
 	}
 	<-s.c.Done()
+	m.releaseCgroup(s) // V0.80
 	m.mu.Lock()
 	if m.sessions[s.thread] == s {
 		delete(m.sessions, s.thread)

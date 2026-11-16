@@ -81,6 +81,16 @@ type Config struct {
 	HandoverDir string
 	// Adapters by id (V0.50); claude is built in.
 	Adapters map[string]cli.Adapter
+	// Cgroups gives each thread's process a cgroup (V0.80); optional.
+	Cgroups Cgroups
+}
+
+// Cgroups is what the agent needs from the cgroup tree (*cgroup.Tree):
+// Thread returns the directory a thread's process starts in ("" for the
+// daemon's), and each Thread is matched by one Release.
+type Cgroups interface {
+	Thread(id string) string
+	Release(id string)
 }
 
 type Manager struct {
@@ -140,6 +150,17 @@ type session struct {
 	digest  *digest
 	idle    *time.Timer
 	log     io.Closer
+	// cgroup: the process took its thread's cgroup (V0.80); released when
+	// it ends.
+	cgroup bool
+}
+
+// releaseCgroup gives back the thread's cgroup once the process is gone.
+func (m *Manager) releaseCgroup(s *session) {
+	if s.cgroup {
+		s.cgroup = false
+		m.cfg.Cgroups.Release(s.thread)
+	}
 }
 
 // waiter gets the result of the turn that read message msg (#40): a
@@ -387,6 +408,11 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		delete(m.tokens, s.token)
 		m.mu.Unlock()
 	}
+	// V0.80: the CLI and everything it starts run in the thread's cgroup.
+	if m.cfg.Cgroups != nil {
+		l.Cgroup = m.cfg.Cgroups.Thread(threadID)
+		s.cgroup = l.Cgroup != ""
+	}
 	c, err := ad.Start(l, cli.Handlers{
 		CanUseTool: func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) },
 		Cancel:     func(reqID string) { m.cancelRequest(s, reqID) },
@@ -394,6 +420,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 	})
 	if err != nil {
 		dropToken()
+		m.releaseCgroup(s)
 		return nil, err
 	}
 	s.c = c
@@ -404,6 +431,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		c.Kill()
 		<-c.Done()
 		dropToken()
+		m.releaseCgroup(s)
 		if perr := c.Err(); perr != nil {
 			// The CLI's own words, e.g. "No conversation found" (V0.45).
 			return nil, fmt.Errorf("initialize: %w (%s)", err, strings.TrimSpace(perr.Error()))

@@ -85,6 +85,8 @@ type Launch struct {
 	MCPConfig      string // JSON for Fyr's MCP server; "" for none
 	AllowedTools   []string
 	Log            io.Writer
+	// Cgroup: the thread's cgroup directory (V0.80); "" is the daemon's.
+	Cgroup string
 }
 
 // Handlers answer the CLI's callbacks; they run on their own goroutines.

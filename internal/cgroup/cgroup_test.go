@@ -122,12 +122,12 @@ func TestV080RestartUnderServerFindsTheUnit(t *testing.T) {
 
 func TestV080OffRunsAsBeforeAndSaysWhyOnce(t *testing.T) {
 	cases := map[string]func(o *Options){
-		"not configured":         func(o *Options) { o.Enable = false },
-		"no cgroup v2":           func(o *Options) { write(t, o.Self, "1:name=systemd:/x\n") },
-		"not in a service unit":  func(o *Options) { write(t, o.Self, "0::/user.slice/user-1000.slice/session-3.scope\n") },
-		"controllers missing":    func(o *Options) { write(t, filepath.Join(o.FS, unit, "cgroup.controllers"), "cpu pids\n") },
-		"probe refused":          func(o *Options) { o.Probe = func(string) error { return fmt.Errorf("bad file descriptor") } },
-		"unit is not writable":   func(o *Options) { os.Chmod(filepath.Join(o.FS, unit), 0o555) },
+		"not configured":        func(o *Options) { o.Enable = false },
+		"no cgroup v2":          func(o *Options) { write(t, o.Self, "1:name=systemd:/x\n") },
+		"not in a service unit": func(o *Options) { write(t, o.Self, "0::/user.slice/user-1000.slice/session-3.scope\n") },
+		"controllers missing":   func(o *Options) { write(t, filepath.Join(o.FS, unit, "cgroup.controllers"), "cpu pids\n") },
+		"probe refused":         func(o *Options) { o.Probe = func(string) error { return fmt.Errorf("bad file descriptor") } },
+		"unit is not writable":  func(o *Options) { os.Chmod(filepath.Join(o.FS, unit), 0o555) },
 	}
 	for name, mut := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -178,7 +178,7 @@ func TestV080ThreadCgroupLivesWhileItsProcessesDo(t *testing.T) {
 	if _, err := os.Stat(d); !os.IsNotExist(err) {
 		t.Fatal("not removed after the last process")
 	}
-	if got := tr.Thread("../x"); got != filepath.Join(o.FS, unit, "agents", "_x") {
+	if got := tr.Thread("../x"); got != filepath.Join(o.FS, unit, "agents", "___x") {
 		t.Fatalf("unsafe name gave %q", got)
 	}
 	if got := tr.Deploy(); got != filepath.Join(o.FS, unit, "agents", "deploy") {
@@ -194,7 +194,9 @@ func TestV080LoadSample(t *testing.T) {
 	write(t, filepath.Join(proc, "pressure", "cpu"), "some avg10=42.50 avg60=30.00 avg300=12.00 total=1\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n")
 	agents := filepath.Join(o.FS, unit, "agents")
 	td := tr.Thread("t_busy")
-	stat := func(p string, usec int) { write(t, filepath.Join(p, "cpu.stat"), fmt.Sprintf("usage_usec %d\nuser_usec 1\nsystem_usec 1\n", usec)) }
+	stat := func(p string, usec int) {
+		write(t, filepath.Join(p, "cpu.stat"), fmt.Sprintf("usage_usec %d\nuser_usec 1\nsystem_usec 1\n", usec))
+	}
 	stat(agents, 10_000_000)
 	stat(td, 4_000_000)
 	write(t, filepath.Join(agents, "memory.current"), "3000000000\n")
