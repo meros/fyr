@@ -200,6 +200,13 @@ func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change,
 			evs = append(evs, event(c, "observed"))
 		} else {
 			before, c = c, cloneChange(c)
+			if defaultBranch(g) {
+				// V0.105 (2): an old record on the default branch is done
+				// and never observed again.
+				c.Done = &DoneMark{At: now, By: ByObserved, Reason: DoneDefaultBranch}
+				c.UpdatedAt, c.TouchedAt = now, &now
+				return before, c, []Event{event(c, "done")}, nil
+			}
 		}
 		ws := &Workspace{Repo: g.Repo, Path: g.Path, Branch: g.Branch, Base: g.Base, Head: g.Head}
 		if c.Workspace != nil {
