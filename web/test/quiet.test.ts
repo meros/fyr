@@ -146,3 +146,33 @@ test("the hold takes 30 s and shows quiet projects for 30 minutes on this device
   assert.equal(loadQuietShow(kv), 0);
   assert.equal(loadQuietShow(null), 0);
 });
+
+// V0.119: quiet hours save 600 ms after the last change, and at once when the page closes.
+import { mock } from "node:test";
+import { QUIET_SAVE_MS, quietSaver } from "../src/quiet.ts";
+
+test("the quiet-hours save keeps only the last value", () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const sent: unknown[] = [];
+    const s = quietSaver<number>((v) => sent.push(v), QUIET_SAVE_MS);
+    s.push(1);
+    mock.timers.tick(300);
+    s.push(2);
+    mock.timers.tick(300);
+    s.push(3);
+    mock.timers.tick(599);
+    assert.deepEqual(sent, [], "nothing before 600 ms of quiet");
+    mock.timers.tick(1);
+    assert.deepEqual(sent, [3]);
+    s.push(4);
+    s.flush();
+    assert.deepEqual(sent, [3, 4], "flush sends at once");
+    s.flush();
+    mock.timers.tick(1000);
+    assert.deepEqual(sent, [3, 4], "nothing is sent twice");
+    assert.equal(QUIET_SAVE_MS, 600);
+  } finally {
+    mock.timers.reset();
+  }
+});
