@@ -1243,7 +1243,6 @@ function App() {
         <ConfirmProvider value={confirmHost.ask}>
         <ProfilesContext.Provider value={store.profiles}>
         <Boundary name="Fyr">
-        <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone onRestartNow={() => void restartNow()} />
         <PreviewViewer />
         <PhoneApp
           nav={{ at: nav, go: navGo, replace: navReplace, back: navBack }}
@@ -1297,6 +1296,7 @@ function App() {
           actions={phoneActions}
           filter={{ id: projectFilter, set: setProjectFilter }}
           projectActions={projectActions}
+          status={<DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone onRestartNow={() => void restartNow()} />}
           overlay={
             <>
               {folderPickView}
