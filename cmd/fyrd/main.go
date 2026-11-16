@@ -159,9 +159,22 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		IdleStop: time.Duration(cfg.IdleStopMinutes) * time.Minute, MCPURL: "http://" + ln.Addr().String() + "/mcp",
 		LogDir: filepath.Join(data, "logs"), Attachments: att.Get, OnRateLimit: quotas.Observe, OnCommands: eng.SetCommands, HandoverDir: filepath.Join(data, "handover"),
 		Cgroups: tree, Runner: rn.client(),
+		// V0.115: the system agents run on this host, on the owner's setting.
+		HostName: hostName, ProfileExists: func(id string) bool { _, ok := h.profile(id); return ok }, SystemAgents: eng.SystemAgents,
 	})
 	eng.Agents = mgr
 	eng.Titler = mgr.Title // V0.108
+	eng.SystemAgentResolve = func(job string) (string, string, error) { // V0.115: Settings shows what each job runs
+		a, err := mgr.SystemAgent(job)
+		return a.Profile.ID, a.Model, err
+	}
+	eng.SystemAgentProviders = func() []engine.SystemProvider {
+		var out []engine.SystemProvider
+		for _, p := range h.profiles() {
+			out = append(out, engine.SystemProvider{ID: p.ID, Name: p.Name, Models: p.Models, Haiku: agent.HaikuModel(p), Unavailable: p.Unavailable})
+		}
+		return out
+	}
 	if rn != nil {
 		mgr.Adopt(rn.procs) // V0.90: before anything sends to a thread
 	}
