@@ -6,6 +6,7 @@ package claudecli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/hostfs"
+	"github.com/meros/fyr/internal/runner"
 )
 
 // ID is the adapter id providers name.
@@ -123,11 +125,20 @@ func (a Adapter) Start(l cli.Launch, h cli.Handlers) (cli.Session, error) {
 	if bin == "" {
 		bin = "claude"
 	}
-	c, err := claude.Start(claude.Spec{Binary: bin, Args: Args(l), Dir: l.Dir, Env: env, Log: l.Log, Cgroup: l.Cgroup})
+	c, err := claude.Start(claude.Spec{Binary: bin, Args: Args(l), Dir: l.Dir, Env: env, Log: l.Log, Cgroup: l.Cgroup,
+		Runner: l.Runner, ID: l.ProcID, Key: l.RunnerKey, Meta: l.Meta})
 	if err != nil {
 		return nil, err
 	}
 	c.OnCanUseTool, c.OnCancel, c.OnHook = h.CanUseTool, h.Cancel, h.Hook
+	return session{c}, nil
+}
+
+// Reattach speaks to a process the runner kept across a restart (V0.90).
+func (Adapter) Reattach(p runner.Pipe, log io.Writer, h cli.Handlers) (cli.Session, error) {
+	c := claude.Open(p, log, func(c *claude.Client) {
+		c.OnCanUseTool, c.OnCancel, c.OnHook = h.CanUseTool, h.Cancel, h.Hook
+	})
 	return session{c}, nil
 }
 
