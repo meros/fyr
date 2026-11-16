@@ -224,3 +224,89 @@ func sorted(ids ...string) []string {
 	slices.Sort(ids)
 	return ids
 }
+
+// SPEC 5.9 (a record): a squash merge leaves the branch's head outside the
+// base, so the checkout still reads one commit ahead. The record lands once,
+// when the PR of the branch merged, and later runs on the same head make no
+// new record. The live case (16 Nov 2026): a checkout left on a
+// squash-merged branch got 713 records in 27 minutes, one per run, each with
+// its own "merged" notice. A new commit on the branch is new work: a new
+// record, which the merged PR does not land.
+func TestSquashMergedBranchLandsOnce(t *testing.T) {
+	e, _, _ := bare(t)
+	g := &fakeGit{facts: map[string]core.GitFacts{}, ends: map[string][2]bool{}}
+	e.Git = g
+	dir := t.TempDir()
+	a := threadIn(t, e, dir)
+	facts := core.GitFacts{Repo: "github.com/o/r", Path: dir, Branch: "fix", Base: "origin/main", Ahead: 1, Head: "abc1234"}
+	e.observeGit(a, &facts)
+	e.mu.Lock()
+	core.ChangePRObserved(e.threads[a], core.PR{URL: "https://github.com/o/r/pull/5", Repo: "o/r", Number: 5, State: "MERGED", Branch: "fix", Head: "abc1234def5678"}, time.Now())
+	e.mu.Unlock()
+	for range 4 {
+		e.observeGit(a, &facts)
+	}
+	if len(e.records) != 1 {
+		t.Fatalf("a merged branch on the same head made %d records", len(e.records))
+	}
+	for _, rec := range e.records {
+		if rec.Phase != core.PhaseLanded {
+			t.Fatalf("the record of the merged branch: %+v", rec)
+		}
+	}
+	th, _ := e.Thread(a)
+	n := 0
+	for _, x := range th.Feed.Queue {
+		if x.What == "Branch fix: merged." {
+			n++
+		}
+	}
+	if n > 1 {
+		t.Fatalf("the thread was told %d times that the branch merged", n)
+	}
+
+	// A new commit after the merge is new work, and the merged PR is not about it.
+	facts.Head, facts.Ahead, facts.Unpushed = "fff9999", 2, 1
+	for range 3 {
+		e.observeGit(a, &facts)
+	}
+	working := 0
+	for _, rec := range e.records {
+		if rec.Phase == core.PhaseWorking {
+			working++
+		}
+	}
+	if len(e.records) != 2 || working != 1 {
+		t.Fatalf("after a new commit: %d records, %d working", len(e.records), working)
+	}
+}
+
+// SPEC 5.9 (a record): changed files on a branch whose PR merged are work
+// the merge does not hold, so the merged PR does not land their record, and
+// no run makes another.
+func TestMergedPRDoesNotLandChangedFiles(t *testing.T) {
+	e, _, _ := bare(t)
+	g := &fakeGit{facts: map[string]core.GitFacts{}, ends: map[string][2]bool{}}
+	e.Git = g
+	dir := t.TempDir()
+	a := threadIn(t, e, dir)
+	facts := core.GitFacts{Repo: "github.com/o/r", Path: dir, Branch: "fix", Base: "origin/main", Ahead: 1, Head: "abc1234"}
+	e.observeGit(a, &facts)
+	e.mu.Lock()
+	core.ChangePRObserved(e.threads[a], core.PR{URL: "https://github.com/o/r/pull/5", Repo: "o/r", Number: 5, State: "MERGED", Branch: "fix", Head: "abc1234def5678"}, time.Now())
+	e.mu.Unlock()
+	e.observeGit(a, &facts)
+	facts.Dirty = 2
+	for range 4 {
+		e.observeGit(a, &facts)
+	}
+	working := 0
+	for _, rec := range e.records {
+		if rec.Phase == core.PhaseWorking {
+			working++
+		}
+	}
+	if len(e.records) != 2 || working != 1 {
+		t.Fatalf("changed files after the merge: %d records, %d working", len(e.records), working)
+	}
+}
