@@ -266,7 +266,7 @@ const SCREENS = [
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
   { name: "settings add provider (V0.119)", url: "?mock=rail&settings=providers/new", ready: "!!document.querySelector('.m-settings [role=radiogroup][aria-label=Kind]')" },
-  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-approve Fyr deploys\"]')", field: ".m-settings .fieldrow .inl input" },
+  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings projects (V0.119)", url: "?mock=rail&settings=projects", ready: "document.querySelectorAll('.m-settings .pli').length > 3" },
   { name: "settings device (V0.119)", url: "?mock=rail&settings=device", ready: "!!document.querySelector('.m-settings [role=switch][aria-label=Notifications]')" },
   // V0.125: the Hosts page and a host's page with a changed id, at every phone size.

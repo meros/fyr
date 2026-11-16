@@ -116,6 +116,9 @@ type Engine struct {
 	// DeployNow runs host.deployNow's effect (V0.83): the deployer stops its
 	// drain; nil: this host deploys nothing.
 	DeployNow func() error
+	// UpdateNow runs host.updateNow's effect (V0.126): install the newest
+	// release now.
+	UpdateNow func() error
 	// Providers runs the provider commands' effect (3.16); nil: this host
 	// has no providers.
 	Providers Providers
@@ -477,6 +480,13 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(409, "This host runs no deploy")
 		}
 		if err := e.DeployNow(); err != nil {
+			return fail(409, err.Error())
+		}
+	case core.EffectUpdateNow:
+		if e.UpdateNow == nil {
+			return fail(409, "This host has no release source")
+		}
+		if err := e.UpdateNow(); err != nil {
 			return fail(409, err.Error())
 		}
 	case core.EffectAutoMergeSet: // V0.102: the owner's setting

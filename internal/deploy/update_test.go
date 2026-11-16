@@ -253,3 +253,50 @@ func TestPruneKeepsLinkedAndNewest(t *testing.T) {
 		}
 	}
 }
+
+// #151: a release install leaves a record with its trigger, commit and
+// phases; the new daemon's probation ends it as live.
+func TestUpdateRecordFromStartToLive(t *testing.T) {
+	d, _, steps := newDeployer(t, "")
+	d.Releases = fakeReleases(t, relSHA, false)
+	d.Run = releaseRunner(steps)
+	r := core.EffectReq{Action: "fyr.deploy", Args: map[string]any{"trigger": "deployable"}}
+	d.Deploy(context.Background(), "", r, "")
+	u := d.Updates()
+	if len(u) != 1 || u[0].Build != release.Short(relSHA) || u[0].Commit != relSHA || u[0].Trigger != "deployable" || u[0].Result != UpdateRunning {
+		t.Fatalf("record %+v", u)
+	}
+	var names []string
+	for _, p := range u[0].Phases {
+		names = append(names, p.Name)
+	}
+	if strings.Join(names, ",") != "download,smoke,switch" {
+		t.Fatalf("phases %v", names)
+	}
+	d.ReportPending()
+	for i := 0; i < 200 && d.Updates()[0].Result == UpdateRunning; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := d.Updates()[0]; got.Result != UpdateLive || got.EndedAt.IsZero() {
+		t.Fatalf("after probation %+v", got)
+	}
+	if b, err := d.UpdateLog(release.Short(relSHA), "smoke.log"); err != nil || len(b) == 0 {
+		t.Fatalf("smoke log %q %v", b, err)
+	}
+	if _, err := d.UpdateLog("../x", "smoke.log"); err == nil {
+		t.Fatal("a path outside builds was served")
+	}
+}
+
+// #151: a failed local build is recorded as failed with its first line.
+func TestUpdateRecordFailure(t *testing.T) {
+	d, _, _ := newDeployer(t, " test")
+	d.Deploy(context.Background(), "t1", req, "/src/fyr")
+	u := d.Updates()
+	if len(u) != 1 || u[0].Result != UpdateFailed || !u[0].Local || !strings.Contains(u[0].Reason, "TestX") {
+		t.Fatalf("record %+v", u)
+	}
+	if len(u[0].Logs) == 0 {
+		t.Fatal("the record lists no logs")
+	}
+}

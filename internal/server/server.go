@@ -69,6 +69,10 @@ type Server struct {
 	ProfileList func() []provider.Profile
 	// Providers serves Settings → Providers (V0.50); optional.
 	Providers Providers
+	// Updates is the update record and state (V0.126); UpdateLog reads a
+	// build's log. Optional.
+	Updates   func() any
+	UpdateLog func(build, name string) ([]byte, error)
 }
 
 // Providers is what the provider endpoints need (*provider.Registry
@@ -114,6 +118,27 @@ func (s *Server) routes() http.Handler {
 	// V0.111: the owner's auto-deploy setting.
 	mux.HandleFunc("GET /api/systemAgents", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Engine.SystemAgentsView()) }) // V0.115
 	mux.HandleFunc("GET /api/autoDeploy", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Engine.AutoDeploy()) })
+	// V0.126 (#151): the update record and the logs kept with each build.
+	mux.HandleFunc("GET /api/updates", func(w http.ResponseWriter, r *http.Request) {
+		if s.Updates == nil {
+			api.WriteJSON(w, 200, map[string]any{"updates": []any{}})
+			return
+		}
+		api.WriteJSON(w, 200, s.Updates())
+	})
+	mux.HandleFunc("GET /api/updates/{build}/{name}", func(w http.ResponseWriter, r *http.Request) {
+		if s.UpdateLog == nil {
+			http.NotFound(w, r)
+			return
+		}
+		b, err := s.UpdateLog(r.PathValue("build"), r.PathValue("name"))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write(b)
+	})
 	// #42: the profiles alone, for the client after a provider changed.
 	mux.HandleFunc("GET /api/profiles", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.profiles()) })
 	if s.Providers != nil {
