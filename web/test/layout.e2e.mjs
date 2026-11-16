@@ -1399,6 +1399,25 @@ try {
   failures.push(`#56 desktop: ${e.message}`);
 }
 
+// #64: the thread header's blocks (title, chips, offers, tabs) sit 12 px apart, and the conversation starts where
+// the header ends: a thread without previews has no band between the tabs and the conversation.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1400, height: 575, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=1&open=t_done`, "!!document.querySelector('.th .thh .offers') && !!document.querySelector('.th .convo')");
+  await settle();
+  const g = await evaluate(`(() => {
+    const r = (s) => document.querySelector('.th ' + s)?.getBoundingClientRect();
+    const tr = r('.thh .tr'), chips = r('.thh .chips'), offers = r('.thh .offers'), tabs = r('.thh .tabs'), thh = r('.thh'), convo = r('.convo');
+    return { trChips: chips.top - tr.bottom, chipsOffers: offers.top - chips.bottom, offersTabs: tabs.top - offers.bottom, headConvo: convo.top - thh.bottom, strip: !!document.querySelector('.th .cv-strip:not(:empty)') };
+  })()`);
+  const near = (v) => Math.abs(v - 12) <= 0.5;
+  check(near(g.trChips) && near(g.chipsOffers) && near(g.offersTabs), `#64 desktop: the header's gaps are not 12 px (${JSON.stringify(g)})`);
+  check(Math.abs(g.headConvo) <= 0.5, `#64 desktop: a band between the header and the conversation (${JSON.stringify(g)})`);
+} catch (e) {
+  failures.push(`#64 desktop: ${e.message}`);
+}
+
 // V0.73 (2): on the desktop, the Changes tab of six cards over an empty diff, in a tall and a short window.
 for (const [w, h] of [[1280, 800], [1024, 600]]) {
   try {

@@ -135,7 +135,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .btn[disabled]{opacity:.5}
 .btn.p{background:var(--night);border-color:var(--night);color:var(--on-night)}
 .btn.p kbd{background:transparent;color:var(--on-night);border-color:rgba(255,255,255,.3)}
-.chips{display:flex;gap:6px;margin-top:8px;min-width:0}
+.chips{display:flex;gap:6px;margin-top:12px;min-width:0}
 .chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:12px;background:var(--sunken);font:500 12px/16px var(--ui);color:var(--ink-muted);white-space:nowrap;min-width:0;flex:0 1 auto;overflow:hidden;--knock:var(--sunken);text-decoration:none}
 .chip span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .chip.st{flex:none;background:transparent;border:1px solid var(--line-strong);color:var(--ink);--knock:var(--raised)}
@@ -152,7 +152,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .spin{animation:spin 1.2s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.spin{animation:none}}
-.tabs{display:flex;gap:4px;margin-top:10px}
+.tabs{display:flex;gap:4px;margin-top:12px} /* #64: the header's blocks sit 12 px apart: title, chips, offers, tabs */
 .tabs span{padding:6px 10px 8px;font:500 13px/18px var(--ui);color:var(--ink-muted);border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer}
 .tabs span.on{color:var(--ink);border-color:var(--ink)}
 .tabs em{font:400 11px/16px var(--mono);font-style:normal;margin-left:6px}
