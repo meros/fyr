@@ -107,8 +107,8 @@ func Args(l cli.Launch) []string {
 		mode = "auto"
 	}
 	args = append(args, "--permission-mode", mode)
-	if l.MCPConfig != "" {
-		args = append(args, "--mcp-config", l.MCPConfig)
+	if l.MCPConfigFile != "" {
+		args = append(args, "--mcp-config", l.MCPConfigFile)
 	}
 	if len(l.AllowedTools) > 0 {
 		args = append(args, "--allowedTools", strings.Join(l.AllowedTools, ","))

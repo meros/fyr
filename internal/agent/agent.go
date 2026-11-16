@@ -70,7 +70,10 @@ type Config struct {
 	IdleStop time.Duration // V0.7, default 10 min
 	MCPURL   string        // Fyr's MCP endpoint; empty disables the binding
 	LogDir   string        // raw protocol logs, optional
-	Prompt   string        // appended system prompt
+	// RunDir holds each starting CLI's MCP config (V0.129 (1)): a 0600 file,
+	// removed once the CLI has started. Empty is the system's temp folder.
+	RunDir string
+	Prompt string // appended system prompt
 	// Attachments resolves stored files by id (SPEC 0.5 V0.18).
 	Attachments func(id string) (attach.Meta, error)
 	// OnRateLimit gets a session's rate_limit_info with its profile id (V0.44); optional.
@@ -197,7 +200,38 @@ func New(host Host, cfg Config) *Manager {
 	if cfg.Prompt == "" {
 		cfg.Prompt = FyrPrompt
 	}
+	// V0.129 (1): a config left by a start that a crash cut short holds a
+	// dead token; nothing is starting yet, so every one goes.
+	if cfg.RunDir != "" {
+		old, _ := filepath.Glob(filepath.Join(cfg.RunDir, "mcp-*.json"))
+		for _, f := range old {
+			os.Remove(f)
+		}
+	}
 	return &Manager{host: host, cfg: cfg, sessions: map[string]*session{}, starting: map[string]*starting{}, tokens: map[string]string{}}
+}
+
+// writeMCPConfig writes a CLI's MCP config to a new 0600 file in dir.
+func writeMCPConfig(dir string, cfg []byte) (string, error) {
+	if dir != "" {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return "", err
+		}
+	}
+	f, err := os.CreateTemp(dir, "mcp-*.json") // mode 0600
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.Write(cfg); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 // ThreadForToken maps an MCP bearer token to its thread (16.2 MCP binding).
@@ -394,7 +428,15 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		s.token = randHex(24)
 		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"fyr": map[string]any{
 			"type": "http", "url": m.cfg.MCPURL, "headers": map[string]string{"Authorization": "Bearer " + s.token}}}})
-		l.MCPConfig, l.AllowedTools = string(cfg), []string{"mcp__fyr__*"}
+		// V0.129 (1), decision 0028: the token goes in a 0600 file, never on
+		// the command line, where /proc shows it to every local user. The CLI
+		// reads it while it starts, so it is removed when start returns.
+		path, err := writeMCPConfig(m.cfg.RunDir, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("mcp config: %w", err)
+		}
+		defer os.Remove(path)
+		l.MCPConfigFile, l.AllowedTools = path, []string{"mcp__fyr__*"}
 	}
 	prompt := m.cfg.Prompt
 	if prompt == "-" {

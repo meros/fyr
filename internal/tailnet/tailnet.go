@@ -6,6 +6,7 @@ package tailnet
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -58,7 +59,13 @@ func (p Peers) Login(ctx context.Context, remoteAddr string) (string, error) {
 	return w.UserProfile.LoginName, nil
 }
 
-// Self returns the login of this node's user and its MagicDNS name.
+// ErrTagged: this node is tagged (tag:server), so it has no user. tailscaled
+// still names a user for it, whose login is the node itself, which must not
+// be taken as the owner (SPEC V0.129 (4), decision 0028).
+var ErrTagged = errors.New("this node is tagged and has no Tailscale user: set ownerLogin")
+
+// Self returns the login of this node's user and its MagicDNS name. On a
+// tagged node it returns the name with ErrTagged.
 func Self(socket string) (login, dnsName string, err error) {
 	c := localClient(socket)
 	req, _ := http.NewRequest("GET", "http://local-tailscaled.sock/localapi/v0/status", nil)
@@ -75,11 +82,15 @@ func Self(socket string) (login, dnsName string, err error) {
 		Self struct {
 			UserID  int64
 			DNSName string
+			Tags    []string
 		}
 		User map[string]struct{ LoginName string }
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
 		return "", "", err
+	}
+	if len(s.Self.Tags) > 0 {
+		return "", strings.TrimSuffix(s.Self.DNSName, "."), ErrTagged
 	}
 	login = s.User[strconv.FormatInt(s.Self.UserID, 10)].LoginName
 	if login == "" {
