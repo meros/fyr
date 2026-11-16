@@ -1,6 +1,9 @@
 package claudecli
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -69,5 +72,31 @@ func TestCaps(t *testing.T) {
 	a := Adapter{}
 	if !cli.Accepts(a, cli.APIKey) || !cli.Accepts(a, cli.CLILogin) || a.ID() != "claude" {
 		t.Fatal("caps")
+	}
+}
+
+// V0.108: a title call is one print run with no tools, no MCP servers, no
+// settings and no saved session; the system prompt replaces Claude Code's.
+func TestPrintArgs(t *testing.T) {
+	got := strings.Join(PrintArgs("claude-haiku-5-5", "SYS"), "|")
+	want := "-p|--model|claude-haiku-5-5|--system-prompt|SYS|--tools||--strict-mcp-config|--no-session-persistence|--setting-sources||--output-format|text"
+	if got != want {
+		t.Fatalf("%s\nwant %s", got, want)
+	}
+}
+
+// V0.108: Print sends the prompt on stdin and returns the answer; a failed
+// run returns the end of its stderr.
+func TestPrint(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	os.WriteFile(bin, []byte("#!/bin/sh\nread -r line\nif [ \"$line\" = fail ]; then echo 'Not logged in' >&2; exit 1; fi\necho \"title for $line ($CLAUDE_CONFIG_DIR)\"\n"), 0o755)
+	l := cli.Launch{Binary: bin, Auth: cli.Auth{Kind: cli.CLILogin, ConfigDir: "/cfg"}}
+	out, err := Adapter{}.Print(context.Background(), l, "SYS", "the login page\nmore")
+	if err != nil || out != "title for the login page (/cfg)" {
+		t.Fatalf("%q %v", out, err)
+	}
+	if _, err := (Adapter{}).Print(context.Background(), l, "SYS", "fail"); err == nil || !strings.Contains(err.Error(), "Not logged in") {
+		t.Fatalf("err %v", err)
 	}
 }

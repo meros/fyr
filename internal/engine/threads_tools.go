@@ -177,8 +177,9 @@ func (e *Engine) threadTools(s *mcp.Server) {
 		}})
 
 	s.Add(mcp.Tool{Name: "thread_rename",
-		Description: "Rename this Fyr thread, or a thread this thread started (id), so the owner's list says what the work is. Give a short, specific title (at most 80 characters) when the topic becomes clear or changes. A name the owner gave is kept.",
-		Schema:      obj(map[string]any{"title": str("The new title."), "id": str("Optional: a thread this thread started; default this thread.")}, "title"),
+		Description: "Rename this Fyr thread, or a thread this thread started (id), so the owner's list says what the work is. Give a short, specific title (at most 80 characters) when the topic becomes clear or changes. Or pass regenerate: true instead of a title, and Fyr writes one from the thread's conversation so far with a small model. A name the owner gave is kept.",
+		Schema: obj(map[string]any{"title": str("The new title."), "id": str("Optional: a thread this thread started; default this thread."),
+			"regenerate": map[string]any{"type": "boolean", "description": "Fyr writes the title from the conversation so far; give no title."}}),
 		Call: func(_ context.Context, self string, a map[string]any) (string, error) {
 			id := sArg(a, "id")
 			if id == "" {
@@ -191,7 +192,19 @@ func (e *Engine) threadTools(s *mcp.Server) {
 			if id != self && t.Parent != self {
 				return "", errors.New("you can rename this thread or a thread it started")
 			}
-			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindThreadRename, Thread: id, Args: map[string]any{"title": sArg(a, "title")}}); err != nil {
+			title := sArg(a, "title")
+			if regen, _ := a["regenerate"].(bool); regen {
+				// V0.108: no call for a name the owner keeps.
+				if err := core.CanWrite(core.FieldThreadTitle, core.ByAgent, t.TitleBy, "this thread"); err != nil {
+					return "", err
+				}
+				made, err := e.makeTitle(id)
+				if err != nil {
+					return "", errors.New(core.TitleFailed(err.Error()))
+				}
+				title = made
+			}
+			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindThreadRename, Thread: id, Args: map[string]any{"title": title}}); err != nil {
 				return "", err
 			}
 			t, _ = e.Thread(id)

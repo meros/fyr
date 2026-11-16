@@ -119,6 +119,11 @@ type Engine struct {
 	// the restart (V0.90); set before Load.
 	Kept     map[string]bool
 	slotIdle map[string]time.Time // under mu: held slots without a live run, since
+	// Titler makes a thread title from its conversation (V0.108); nil: this
+	// host makes none. titling is the threads with a call in flight.
+	Titler  Titler
+	titleMu sync.Mutex
+	titling map[string]bool
 }
 
 func New(st *store.Store) *Engine {
