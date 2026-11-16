@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"strings"
 	"net/http"
 	"os"
 	"time"
@@ -15,9 +17,13 @@ import (
 // CheckEvery is how often the host checks each provider by itself (V0.120).
 const CheckEvery = 24 * time.Hour
 
+// cliTimeout bounds a Claude login's check: the CLI may need a second start
+// while its own model list arrives (claudecli.ListModels).
+const cliTimeout = 40 * time.Second
+
 // listModels asks the provider: its endpoint's /v1/models with its key, or,
 // for a Claude login, the CLI with that login.
-func (r *Registry) listModels(ctx context.Context, p Provider, key string) ([]cli.Model, error) {
+func (r *Registry) listModels(ctx context.Context, p Provider, key string) (claudecli.Listing, error) {
 	if r.ListModels != nil {
 		return r.ListModels(ctx, p, key)
 	}
@@ -26,9 +32,14 @@ func (r *Registry) listModels(ctx context.Context, p Provider, key string) ([]cl
 		if c == nil {
 			c = &http.Client{}
 		}
-		return fetchModels(ctx, c, p.Endpoint.BaseURL, key, fetchLimits{})
+		ms, err := fetchModels(ctx, c, p.Endpoint.BaseURL, key, fetchLimits{})
+		out := claudecli.Listing{Models: ms}
+		for _, m := range ms {
+			out.Reported = append(out.Reported, m.ID)
+		}
+		return out, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	ctx, cancel := context.WithTimeout(ctx, cliTimeout)
 	defer cancel()
 	l := cli.Launch{Binary: r.LoginBinary, Dir: os.TempDir(), Auth: cli.Auth{Kind: p.Auth.Kind, ConfigDir: r.dir(p.Auth.ConfigDir)},
 		Endpoint: p.Endpoint}
@@ -83,6 +94,11 @@ func (r *Registry) refresh(id string, now time.Time) api.Reply {
 
 	key, _ := r.key(p)
 	found, err := r.listModels(context.Background(), p, key)
+	if err != nil {
+		r.logf("providers: check %s failed: %s", id, redact(err, key))
+	} else {
+		r.logf("providers: check %s: %d models reported (%s)%s", id, len(found.Reported), idList(found.Reported), map[bool]string{true: "; " + found.Note}[found.Note != ""])
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for i, x := range r.list {
@@ -92,7 +108,8 @@ func (r *Registry) refresh(id string, now time.Time) api.Reply {
 		if err != nil {
 			x.CheckError = redact(err, key)
 		} else {
-			x = mergeCatalog(x, found, now)
+			x = mergeCatalog(x, found.Models, now)
+			x.CheckNote = found.Note
 		}
 		x.TriedAt = now
 		if perr := r.put(x, i); perr != nil {
@@ -135,11 +152,25 @@ func (r *Registry) CheckDaily(now time.Time) {
 			continue
 		}
 		ran = true
-		if rep := r.refresh(p.ID, now.UTC()); rep.Error != "" {
-			log.Printf("providers: check %s: %s", p.ID, rep.Error)
-		}
+		r.refresh(p.ID, now.UTC()) // it logs its outcome
 	}
 	if ran {
 		r.changed()
 	}
+}
+
+func (r *Registry) logf(format string, args ...any) {
+	if r.Logf != nil {
+		r.Logf(format, args...)
+		return
+	}
+	log.Printf(format, args...)
+}
+
+// idList is the first 20 ids of a check for the log; the rest are counted.
+func idList(ids []string) string {
+	if len(ids) <= 20 {
+		return strings.Join(ids, ", ")
+	}
+	return strings.Join(ids[:20], ", ") + fmt.Sprintf(", … %d more", len(ids)-20)
 }
