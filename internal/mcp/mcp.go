@@ -19,9 +19,6 @@ type Tool struct {
 	Description string
 	Schema      map[string]any
 	Call        func(ctx context.Context, thread string, args map[string]any) (string, error)
-	// For limits the tool to some threads: it is not listed for the others,
-	// and a call from them fails. Nil: every thread.
-	For func(thread string) bool
 	// Hidden: an alias kept for one release (V0.101): not listed, still
 	// callable.
 	Hidden bool
@@ -108,7 +105,7 @@ func (s *Server) dispatch(ctx context.Context, thread string, req request) (any,
 		list := []any{}
 		for _, n := range names {
 			t := s.tools[n]
-			if t.Hidden || (t.For != nil && !t.For(thread)) {
+			if t.Hidden {
 				continue
 			}
 			list = append(list, map[string]any{"name": t.Name, "description": t.Description, "inputSchema": t.Schema})
@@ -125,9 +122,6 @@ func (s *Server) dispatch(ctx context.Context, thread string, req request) (any,
 		t, ok := s.tools[p.Name]
 		if !ok {
 			return nil, rpcError(-32602, "unknown tool "+p.Name)
-		}
-		if t.For != nil && !t.For(thread) {
-			return map[string]any{"content": []any{map[string]any{"type": "text", "text": p.Name + " is not available in this thread"}}, "isError": true}, nil
 		}
 		if p.Arguments == nil {
 			p.Arguments = map[string]any{}
