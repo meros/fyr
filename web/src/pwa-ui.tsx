@@ -1,7 +1,6 @@
-// The bell (Web Push) and Install controls, and the Notifications dialog (SPEC 0.5 V0.15).
+// The bell (Web Push) and Install controls (SPEC 0.5 V0.15). V0.119: the bell opens Settings → This device, where
+// Notifications are switched; the Notifications dialog is gone.
 
-import { useState } from "preact/hooks";
-import { Modal } from "./dialogs.tsx";
 import { PUSH_TITLE, type PushStatus } from "./push.ts";
 
 const BELL = (
@@ -59,62 +58,5 @@ export function PwaControls(p: PwaControlsProps) {
         </button>
       )}
     </>
-  );
-}
-
-export interface PushDialogProps {
-  status: PushStatus;
-  reason: string | null;
-  onClose(): void;
-  onOn(): Promise<string | null>;
-  onOff(): Promise<string | null>;
-  onTest(): Promise<string | null>;
-}
-
-export function PushDialog(p: PushDialogProps) {
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
-  const run = async (fn: () => Promise<string | null>, okText?: string) => {
-    setBusy(true);
-    setMsg(null);
-    const err = await fn();
-    setBusy(false);
-    if (err) setMsg({ text: err, err: true });
-    else if (okText) setMsg({ text: okText, err: false });
-  };
-  return (
-    <Modal title="Notifications" onClose={p.onClose}>
-      <div class="db">
-        <p class="lede">
-          {p.status === "on" && "This device gets a notification when a thread asks you something or fails. A newer one replaces the older one for the same thread."}
-          {p.status === "off" && "Get a notification on this device when a thread asks you something or fails."}
-          {p.status === "denied" && "Notifications are blocked for this site. Allow them in the browser's site settings, then reload Fyr."}
-          {p.status === "unsupported" && (p.reason ?? "Notifications are not available in this browser.")}
-        </p>
-        {msg && <div class={msg.err ? "err prose" : "lede"}>{msg.text}</div>}
-      </div>
-      <div class="df">
-        {p.status === "on" && (
-          <>
-            <button class="btn" disabled={busy} onClick={() => void run(p.onTest, "Sent. It should arrive in a few seconds.")}>
-              Send test
-            </button>
-            <button class="btn" disabled={busy} onClick={() => void run(p.onOff)}>
-              Turn off
-            </button>
-          </>
-        )}
-        {p.status === "off" && (
-          <button class="btn p" disabled={busy} onClick={() => void run(p.onOn)}>
-            Turn on
-          </button>
-        )}
-        {(p.status === "denied" || p.status === "unsupported") && (
-          <button class="btn" onClick={p.onClose}>
-            Close
-          </button>
-        )}
-      </div>
-    </Modal>
   );
 }

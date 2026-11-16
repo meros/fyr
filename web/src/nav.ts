@@ -2,9 +2,12 @@
 // Each screen has a URL; a sheet adds an entry without changing the URL, so Back closes the sheet,
 // then the thread. A thread opened from a deep link (a push) gets an inbox entry under it.
 
-export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" } | { name: "project"; id: string } | { name: "settings" } | { name: "changes" };
+import { parsePage, pageUrl, type PageId } from "./settings-nav.ts";
 
-export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "push" | "adopt" | "project" | "filter" | "handover";
+/** V0.119: Settings is the nav screen (no page), a page, or a page's sub-page (a provider, Add provider, a project). */
+export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" } | { name: "project"; id: string } | { name: "settings"; page?: PageId; sub?: string } | { name: "changes" };
+
+export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "adopt" | "project" | "filter" | "handover";
 
 export interface Sheet {
   kind: SheetKind;
@@ -36,9 +39,9 @@ export function urlFor(n: Nav, currentSearch = ""): string {
   } else if (s.name === "new") p.set("new", "");
   else if (s.name === "search") p.set("search", "");
   else if (s.name === "project") p.set("project", s.id);
-  else if (s.name === "settings") p.set("settings", "");
+  else if (s.name === "settings") p.set("settings", s.page ? pageUrl({ page: s.page, sub: s.sub }) : "");
   else if (s.name === "changes") p.set("changes", ""); // V0.64
-  const q = p.toString().replace(/=(&|$)/g, "$1");
+  const q = p.toString().replace(/=(&|$)/g, "$1").replace(/(settings=[^&]*)%2F/, "$1/");
   return q ? `/?${q}` : "/";
 }
 
@@ -50,21 +53,34 @@ export function parseUrl(search: string): Nav {
   if (project) return { screen: { name: "project", id: project }, sheet: null };
   if (p.has("new")) return { screen: { name: "new" }, sheet: null };
   if (p.has("search")) return { screen: { name: "search" }, sheet: null };
-  if (p.has("settings")) return { screen: { name: "settings" }, sheet: null };
+  if (p.has("settings")) {
+    const v = p.get("settings") ?? "";
+    if (!v) return { screen: { name: "settings" }, sheet: null };
+    const r = parsePage(v);
+    return { screen: { name: "settings", page: r.page, ...(r.sub ? { sub: r.sub } : {}) }, sheet: null };
+  }
   if (p.has("changes")) return { screen: { name: "changes" }, sheet: null };
   return INBOX;
 }
 
-/** The history to build on load: a deep link to anything but the inbox gets the inbox under it. */
+/** The history to build on load: a deep link to anything but the inbox gets the inbox under it; a settings page gets
+ *  every level above it too (V0.119), so Back goes one level up. */
 export function initialEntries(search: string): Nav[] {
   const n = parseUrl(search);
-  return n.screen.name === "inbox" ? [n] : [INBOX, n];
+  if (n.screen.name === "inbox") return [n];
+  const up: Nav[] = [];
+  for (let x = backTarget(n); x && x.screen.name !== "inbox"; x = backTarget(x)) up.unshift(x);
+  return [INBOX, ...up, n];
 }
 
-/** What Back does from here: close the sheet, else leave the screen for the inbox, else nothing (the app stays). */
+/** What Back does from here: close the sheet, else one settings level up, else leave the screen for the inbox, else
+ *  nothing (the app stays). */
 export function backTarget(n: Nav): Nav | null {
   if (n.sheet) return { ...n, sheet: null };
-  if (n.screen.name !== "inbox") return INBOX;
+  const s = n.screen;
+  if (s.name === "settings" && s.sub && s.page) return { screen: { name: "settings", page: s.page }, sheet: null };
+  if (s.name === "settings" && s.page) return { screen: { name: "settings" }, sheet: null };
+  if (s.name !== "inbox") return INBOX;
   return null;
 }
 

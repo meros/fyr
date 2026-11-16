@@ -72,3 +72,42 @@ test("the login button and line", () => {
   assert.equal(loginLine(l("done", "folder")), "Logged in. Claude keeps the login in this account's folder.");
   assert.equal(loginLine(l("timeout", "token", "The login timed out after 10 minutes. Start it again.")), "The login timed out after 10 minutes. Start it again.");
 });
+
+// V0.119: the provider row's line, the usage sentence, and the Models rows' edits.
+import { listLine, modelsAfter, removeLine, usageLine } from "../src/providers.ts";
+
+test("the list row's line: kind, where, model count", () => {
+  const m = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `m${i}` }));
+  assert.equal(listLine({ kind: "claude-account", models: m(3) }), "Claude account · ~/.claude · 3 models");
+  assert.equal(listLine({ kind: "claude-account", tokenLogin: true, models: m(1) }), "Claude account · token login · 1 model");
+  assert.equal(listLine({ kind: "endpoint", baseURL: "https://api.deepseek.com/anthropic", models: m(2) }), "Endpoint · api.deepseek.com · 2 models");
+  assert.equal(listLine({ kind: "endpoint", baseURL: "https://x.io", models: [] }), "Endpoint · x.io · no models");
+});
+
+test("the usage sentence per quota kind", () => {
+  assert.equal(usageLine({ quota: "anthropic-oauth", threads: 9, imported: "profile claudeAgent" }), "Read from the Claude login · imported from profile claudeAgent · used by 9 threads");
+  assert.equal(usageLine({ quota: "anthropic-oauth", threads: 1 }), "Read from the Claude login · used by 1 thread");
+  assert.equal(usageLine({ quota: "deepseek", threads: 0 }), "Read from the DeepSeek balance");
+  assert.equal(usageLine({ quota: "openrouter", threads: 0 }), "Read from the OpenRouter credits");
+  assert.equal(usageLine({ quota: "none", threads: 0 }), "This provider reports no usage.");
+  assert.equal(usageLine({ quota: "", threads: 2 }), "This provider reports no usage. · used by 2 threads");
+  assert.equal(usageLine({ quota: "zai", threads: 0 }), "Read from the provider (zai)");
+});
+
+test("the remove row says who uses the provider", () => {
+  assert.equal(removeLine(9), "9 threads use it. Hand them over first.");
+  assert.equal(removeLine(1), "1 thread uses it. Hand it over first.");
+  assert.equal(removeLine(0), "No thread uses it.");
+});
+
+test("modelsAfter: add, remove, move, star", () => {
+  const ms = ["a", "b", "c"];
+  assert.deepEqual(modelsAfter(ms, "a", { add: "  d " }), { models: ["a", "b", "c", "d"] });
+  assert.deepEqual(modelsAfter(ms, "a", { add: "b" }), { error: "b is already in the list." });
+  assert.deepEqual(modelsAfter(ms, "a", { add: "  " }), { error: "Write a model id." });
+  assert.deepEqual(modelsAfter(ms, "a", { remove: "b" }), { models: ["a", "c"] });
+  assert.deepEqual(modelsAfter(ms, "a", { remove: "a" }), { error: "Star another model first." }, "the default is not removed");
+  assert.deepEqual(modelsAfter(ms, "a", { move: [2, 0] }), { models: ["c", "a", "b"] });
+  assert.deepEqual(modelsAfter(ms, "a", { star: "c" }), { models: ms, defaultModel: "c" });
+  assert.deepEqual(modelsAfter(ms, "a", { star: "zz" }), { error: "zz is not in the list." });
+});

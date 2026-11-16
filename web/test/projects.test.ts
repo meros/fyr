@@ -211,3 +211,32 @@ test("moveToast says where the threads went, or the error", () => {
   assert.deepEqual(moveToast(2, null, null), { text: "2 threads have no project now", error: false });
   assert.deepEqual(moveToast(2, "App", "No such project"), { text: "No such project", error: true });
 });
+
+// V0.119: Settings → Projects and the project page.
+import { nameError, patchFor, projectSearchLine, searchProjects, settingsProjects } from "../src/projects.ts";
+
+test("each save sends only its own field", () => {
+  assert.deepEqual(patchFor("color", "teal"), { color: "teal" });
+  assert.deepEqual(patchFor("name", "  Fyr "), { name: "Fyr" });
+  assert.deepEqual(patchFor("icon", { kind: "emoji", value: "🏡" }), { icon: { kind: "emoji", value: "🏡" } });
+  assert.deepEqual(patchFor("profile", "claude"), { profile: "claude", model: "" }, "a provider change clears the model");
+  assert.deepEqual(patchFor("model", "claude-opus-5-5"), { model: "claude-opus-5-5" });
+  assert.deepEqual(patchFor("quiet", []), { quiet: null }, "no windows turns quiet hours off");
+  assert.deepEqual(patchFor("quiet", [{ from: "17:00", to: "06:00", days: ["mon"] }]), { quiet: [{ from: "17:00", to: "06:00", days: ["mon"] }] });
+  assert.equal(nameError("  "), "A project needs a name.");
+  assert.equal(nameError("x"), null);
+});
+
+test("the Settings list: by name, filtered over name and folder", () => {
+  const ps = [
+    { id: "b", name: "beta", folder: "/home/u/src/norban/web" },
+    { id: "a", name: "Alpha", folder: "/home/u/fyr" },
+    { id: "", name: "unsaved" },
+    { id: "c", name: "norban/api" },
+  ] as Project[];
+  assert.deepEqual(settingsProjects(ps).map((p) => p.id), ["a", "b", "c"]);
+  assert.deepEqual(searchProjects(settingsProjects(ps), "NORBAN").map((p) => p.id), ["b", "c"], "the name or the folder");
+  assert.deepEqual(searchProjects(settingsProjects(ps), " ").map((p) => p.id), ["a", "b", "c"]);
+  assert.equal(projectSearchLine(5, 43), "5 of 43 match.");
+  assert.equal(projectSearchLine(0, 43), "None of 43 match.");
+});
