@@ -73,6 +73,9 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const chromeBin = process.env.FYR_CHROME || (process.platform === "darwin" && existsSync(macChrome) ? macChrome : "google-chrome");
 const profile = mkdtempSync(join(tmpdir(), "fyr-layout-"));
+// The files a screen attaches (s.files), written once: tabs that run at the same time read them.
+writeFileSync(join(profile, "shot.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
+writeFileSync(join(profile, "build-output-with-a-very-long-name-that-does-not-fit.log"), "log line\n".repeat(200));
 const port = 9400 + Math.floor(Math.random() * 400);
 const chrome = spawn(chromeBin, ["--headless=new", "--disable-gpu", "--enable-unsafe-swiftshader", "--no-sandbox", "--hide-scrollbars", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore", detached: true });
 const cleanup = () => {
@@ -89,13 +92,22 @@ const watchdog = setTimeout(() => {
 }, 420_000); // a hang guard, not a speed check: about 35 s on a quiet 8-core machine, 140 s and more at a load average of 80 (a deploy beside other sessions' test suites, 16 Nov)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Chrome's debug port: up to 60 s, since make test starts Chrome beside the Go tests, the typecheck and the unit tests
+// (CI, 16 Nov: not up after 10 s on a busy runner).
 let version;
-for (let i = 0; i < 100; i++) {
+let chromeExit = null;
+chrome.on("exit", (code, signal) => (chromeExit = `exit ${code ?? signal}`));
+for (const t0 = Date.now(); Date.now() - t0 < 60_000 && !chromeExit; ) {
   try {
     version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
     if (version.webSocketDebuggerUrl) break;
   } catch {}
   await sleep(100);
+}
+if (!version?.webSocketDebuggerUrl) {
+  console.error(`layout test: Chrome (${chromeBin}) did not open its debug port ${port}${chromeExit ? ` (${chromeExit})` : " within 60 s"}`);
+  cleanup();
+  process.exit(1);
 }
 // One browser connection; each tab is a flat session on it (Target.attachToTarget with flatten), so the
 // sandboxed frames a tab auto-attaches come over the same socket.
@@ -133,6 +145,8 @@ async function newTab() {
   const waiters = [];
   const tab = {
     targetId: target.result.targetId,
+    browserContextId: ctx.result.browserContextId,
+    sessionId,
     attached: [], // child targets (the sandboxed live view runs out of process)
     send: (method, params = {}, sid = sessionId) => sendRaw(method, params, sid),
     // The next event of this name on this tab.
@@ -763,8 +777,6 @@ function harness(t) {
       await navigate(`${origin}/${s.url}`, ready);
     }
     if (s.files) {
-      writeFileSync(join(profile, "shot.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
-      writeFileSync(join(profile, "build-output-with-a-very-long-name-that-does-not-fit.log"), "log line\n".repeat(200));
       await send("DOM.enable");
       const doc = await send("DOM.getDocument", {});
       const q = await send("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: s.files });
@@ -823,13 +835,15 @@ function harness(t) {
     await settle();
   }
 
-  return { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached: t.attached };
+  const shot = async (name) => process.env.FYR_SHOTS && writeFileSync(join(process.env.FYR_SHOTS, name), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  const calibrate = (rate) => calibrateWith(evaluate, rate);
+  return { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached: t.attached, shot, calibrate };
 }
 
 // The phone screens at one size.
-async function phonePass(t, w, h) {
+async function phonePass(t, w, h, screens = SCREENS) {
   const { send, evaluate, waitFor, frames, settle, openScreen, viewportApplied } = harness(t);
-  for (const s of SCREENS) {
+  for (const s of screens) {
     const ctx = `${s.name} ${w}x${h}`;
     try {
       await openScreen(s, w, h);
@@ -897,14 +911,64 @@ async function phonePass(t, w, h) {
 }
 
 console.log(`insets: Emulation.setSafeAreaInsetsOverride (top ${INSETS.top}, bottom ${INSETS.bottom}); keyboard and resume: scripted visualViewport`);
-// The three sizes run at the same time, each in its own tab; the desktop and timing checks below run after
-// them in the last tab, alone, so the CPU they measure is not shared with the phone passes.
-const started = Date.now();
-const tabs = await Promise.all(SIZES.map(() => newTab()));
-await Promise.all(SIZES.map(([w, h], i) => phonePass(tabs[i], w, h)));
-const phoneDone = Date.now();
-const { send, evaluate, poll, waitIn, waitFor, settle, navigate, tapCenter, key, openScreen, attached } = harness(tabs[tabs.length - 1]);
-for (const t of tabs.slice(0, -1)) await sendRaw("Target.closeTarget", { targetId: t.targetId });
+
+// The jobs: one per phone screen and size, and one per section below. FYR_LAYOUT_TABS workers (default 8) take
+// them in turn, each in its own tab and browser context; a job starts with the origin's storage cleared. The test waits
+// on the page far more than it computes (the machine is about 30 % busy with 3 tabs), so tabs side by side are the
+// speed-up. The timed sections (V0.38, V0.32) run after the pool has drained, alone, so the CPU they measure is
+// shared with no other tab; their budgets also scale with a calibration taken in the same tab around each attempt.
+const jobs = [];
+const timedJobs = [];
+// A section: one block of desktop or phone checks. A desktop section starts at 1280 × 800 without touch; one that
+// needs another size sets it.
+function section(name, opts, fn) {
+  if (typeof opts === "function") [fn, opts] = [opts, {}];
+  (opts.timed ? timedJobs : jobs).push({ name, run: async (t) => {
+    await t.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await t.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await fn(harness(t));
+  } });
+}
+async function closeTab(t) {
+  tabsBySession.delete(t.sessionId);
+  await sendRaw("Target.closeTarget", { targetId: t.targetId });
+  await sendRaw("Target.disposeBrowserContext", { browserContextId: t.browserContextId });
+}
+const TABS = Math.max(1, Number(process.env.FYR_LAYOUT_TABS) || 8);
+const jobTimes = [];
+// A worker keeps its tab: a new window per job costs Chrome's browser process more than the job (measured: 218
+// windows kept it at 92 % of a core and made the run slower than three tabs). Between jobs the tab goes to
+// about:blank and its origin's storage (localStorage, IndexedDB, caches, service workers) is cleared, so a job still
+// starts from nothing stored.
+async function resetTab(t) {
+  await t.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  const blank = t.next("Page.loadEventFired", 20_000);
+  await t.send("Page.navigate", { url: "about:blank" });
+  await blank;
+  await t.send("Storage.clearDataForOrigin", { origin, storageTypes: "all" });
+  t.attached.length = 0;
+}
+async function runJobs(list, width) {
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(width, list.length) }, async () => {
+    const t = await newTab();
+    try {
+      while (next < list.length) {
+        const job = list[next++];
+        const t0 = Date.now();
+        try {
+          await resetTab(t);
+          await job.run(t);
+        } catch (e) {
+          failures.push(`${job.name}: ${e.message}`);
+        }
+        jobTimes.push([Date.now() - t0, job.name]);
+      }
+    } finally {
+      await closeTab(t);
+    }
+  }));
+}
 
 // Calibration of the timing budgets (#50). A budget in wall time also measures the machine: a laptop busy with other
 // sessions or a shared CI runner makes the same code slower. So a timed section runs a fixed workload in the same page
@@ -923,7 +987,7 @@ for (const t of tabs.slice(0, -1)) await sendRaw("Target.closeTarget", { targetI
 const CALIBRATION_REFERENCE = { 1: 12, 4: 26 }; // ms, one workload task at CPU throttle 1 and 4
 const CALIBRATION_CEILING = 10;
 const TIMED_ATTEMPTS = 3;
-const calibrate = (rate) =>
+const calibrateWith = (evaluate, rate) =>
   evaluate(`new Promise((done) => {
     const box = document.createElement('div');
     box.style.cssText = 'position:absolute;left:-20000px;top:0;width:600px;height:4000px;overflow:hidden;contain:strict';
@@ -962,6 +1026,8 @@ const speedFactor = (rate, label, runs) => {
 };
 
 // U8: settle the open thread from its ⋯ menu at 390 × 844; the inbox shows with the Undo toast.
+section('U8', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
   await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
@@ -978,8 +1044,11 @@ try {
 } catch (e) {
   failures.push(`U8 settle from the thread: ${e.message}`);
 }
+});
 
 // V0.29: a draft survives a reload (a deploy reloads the page); clearing it removes it.
+section('V0.29', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   const typeIn = (v) => evaluate(`(() => { const el = document.querySelector('.m-cmp .in'); el.value = ${JSON.stringify(v)}; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
@@ -993,9 +1062,12 @@ try {
 } catch (e) {
   failures.push(`V0.29 draft: ${e.message}`);
 }
+});
 
 // V0.79: on the phone, `/` at the start of the composer lists the commands above it, inside the screen, rows 44 px
 // tall; a tap fills `/name ` and the argument hint shows above the field.
+section('V0.79', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   const typeIn = (v) => evaluate(`(() => { const el = document.querySelector('.m-cmp .in'); el.focus(); el.value = ${JSON.stringify(v)}; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await openScreen({ url: "?mock=rail&open=t_triage" }, 360, 640);
@@ -1020,9 +1092,12 @@ try {
 } catch (e) {
   failures.push(`V0.79 phone / list: ${e.message}`);
 }
+});
 
 // V0.33: on the phone, a message the agent has not read waits after "Agent is here", dimmed, with
 // Waiting and a Cancel that fits the screen; Cancel strikes it through with Send again.
+section('V0.33', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await openScreen({ url: "?mock=rail&open=t_mapperf" }, 390, 844);
   await waitFor(`!!document.querySelector('.m-app .youw.pend .dlb') && !!document.querySelector('.m-app .here')`, { soft: true });
@@ -1050,9 +1125,12 @@ try {
 } catch (e) {
   failures.push(`V0.33 phone delivery: ${e.message}`);
 }
+});
 
 // V0.24: a message that fails to render shows an error card; the thread, its composer and the
 // rest of the conversation stay. (Found live: one bad field blanked the whole client.)
+section('V0.24', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await openScreen({ url: "?mock=rail&open=t_mapperf&crash=1" }, 390, 844);
   await waitFor(`!!document.querySelector('.crash')`, { soft: true });
@@ -1063,9 +1141,12 @@ try {
 } catch (e) {
   failures.push(`V0.24 crash card: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.26: on the desktop, a long tool group shows the last 3 calls behind "+N more tools",
 // and the thread ⋯ menu moves the thread to a project from the keyboard.
+section('V0.26', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -1104,9 +1185,12 @@ try {
 } catch (e) {
   failures.push(`V0.26 desktop: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.79: on the desktop, `/` in the composer opens the list; ArrowDown moves, Enter picks and does not
 // send; Escape closes the list and leaves the text.
+section('V0.79', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -1132,9 +1216,12 @@ try {
 } catch (e) {
   failures.push(`V0.79 desktop / list: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.42: on the desktop, the new thread's Change opens the folder picker from the keyboard; a typed path
 // completes with Tab, Enter opens the folder, Enter again picks it; Esc closes only the picker.
+section('V0.42', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -1185,8 +1272,11 @@ try {
 } catch (e) {
   failures.push(`V0.42 desktop folder picker: ${e.message}`);
 }
+});
 
 // V0.43: on the desktop, "Ask the agent to fix this check" posts the owner's message to the thread.
+section('V0.43', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -1205,9 +1295,12 @@ try {
 } catch (e) {
   failures.push(`V0.43 desktop: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.45: the thread ⋯ menu offers Hand over…; the dialog says how the context goes over, and a
 // confirmed handover leaves a divider that names both profiles.
+section('V0.45', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.thh .tmenu-b')");
   await evaluate(`document.querySelector('.thh .tmenu-b')?.click()`);
@@ -1227,11 +1320,13 @@ try {
 } catch (e) {
   failures.push(`V0.45 desktop: ${e.message}`);
 }
+});
 
 // SPEC V0.119 (amends V0.50): the gear at the bottom of the desktop rail opens Settings: the nav with four pages on the
 // left, Providers open with its three providers; the dialog keeps one size on every page.
-const shot = async (name) => process.env.FYR_SHOTS && writeFileSync(join(process.env.FYR_SHOTS, name), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
 const COMMANDS = (action) => `(window.__fyrCommands ?? []).filter((c) => c.action === ${JSON.stringify(action)})`;
+section('V0.119 settings', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -1291,9 +1386,12 @@ try {
 } catch (e) {
   failures.push(`V0.119 desktop: ${e.message}`);
 }
+});
 
 // SPEC V0.119 (3): save at once. A colour swatch on a project's page sends one project.update with the colour and no
 // name, and "Saved" shows beside the title for 2 s.
+section('V0.119 (3)', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await navigate(`${origin}/?mock=rail&dialog=settings&page=projects/p_web`, "!!document.querySelector('.dlg .pedit .sw')");
   await settle();
@@ -1309,8 +1407,11 @@ try {
 } catch (e) {
   failures.push(`V0.119 desktop save at once: ${e.message}`);
 }
+});
 
 // SPEC V0.119 (5): the rail's bell opens Settings on This device.
+section('V0.119 (5)', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail')");
   const bell = await evaluate(`(() => { const b = document.querySelector('.rail .bell'); b?.click(); return !!b; })()`);
@@ -1320,8 +1421,11 @@ try {
 } catch (e) {
   failures.push(`V0.119 desktop bell: ${e.message}`);
 }
+});
 
 // SPEC V0.119: every page in the dark theme renders (screenshots only).
+section('V0.119', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
   for (const page of ["providers", "providers/claude", "providers/new", "automation", "projects", "projects/p_fyr", "device"]) {
@@ -1334,9 +1438,12 @@ try {
 } finally {
   await send("Emulation.setEmulatedMedia", { features: [] });
 }
+});
 
 // SPEC V0.119 (4), phone: the Reorder mode shows ↑ and ↓ of 44 px and no × or star; ↓ on the first row swaps it with
 // the second (one provider.update); Done brings the rows back. The phone's More sheet lost Notifications and Theme.
+section('V0.119 (4), phone', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -1365,10 +1472,13 @@ try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 }
+});
 
 // SPEC V0.120: the model chooser. A provider's Models group has On (★, a switch, the default's locked) and Off (by
 // name, New marked); a switch sends the whole on-list; Refresh sends provider.refreshModels; Gone and Added by hand
 // show on DeepSeek; a provider with 40 models has a search that filters both parts and says "N of 40 match".
+section('V0.120', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -1421,11 +1531,12 @@ try {
 } catch (e) {
   failures.push(`V0.120 desktop: ${e.message}`);
 }
+});
 
 // Found live 16 Nov, after the V0.120 deploy (&providers=live is shaped like the live rows): the Providers rows say
 // how many of the reported models are on; a Claude login whose check only had Fyr's known list says so in the foot;
 // OpenRouter's 380 models render with search, "Show N more" and Refresh, on the desktop and the phone.
-for (const [w, h, phone] of [[1280, 800, false], [390, 844, true]]) {
+for (const [w, h, phone] of [[1280, 800, false], [390, 844, true]]) section(`live providers ${w}`, async ({ send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, shot }) => {
   const at = phone ? ".m-settings" : ".dlg";
   const url = (page) => (phone ? `${origin}/?mock=rail&providers=live&settings=${page}` : `${origin}/?mock=rail&providers=live&dialog=settings&page=${page}`);
   try {
@@ -1449,12 +1560,12 @@ for (const [w, h, phone] of [[1280, 800, false], [390, 844, true]]) {
   } catch (e) {
     failures.push(`live ${w}: ${e.message}`);
   }
-}
-await send("Emulation.setTouchEmulationEnabled", { enabled: false });
-await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+});
 
 // SPEC V0.121: one project order. Settings → Projects has a grip per row on the desktop; Alt+↑ sends
 // front.projectOrder with the whole list; the inbox's project chips and New thread's project list follow at once.
+section('V0.121', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.pfrow .pfc')");
@@ -1500,10 +1611,13 @@ try {
 } catch (e) {
   failures.push(`V0.121 desktop: ${e.message}`);
 }
+});
 
 // SPEC V0.121, phone: Settings → Projects has Reorder beside New project; the mode shows ↑ and ↓ of 44 px in place
 // of the thread count; ↓ on the first row sends front.projectOrder with the first two swapped; Done leaves the mode.
 // The phone's chips follow a set order (&order=). The provider page shows both parts of the model chooser.
+section('V0.121, phone', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -1537,10 +1651,13 @@ try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 }
+});
 
 // SPEC 0.5 V0.80: the rail's load line sits above the quota inside the rail and covers no other rail item; a hot
 // working thread's row shows its CPU, coloured, inside its row. V0.99: the figure sits in a ring, the ring carries the
 // level, and the mock's 2 held slots and 1 waiter are 2 filled pips and "+1".
+section('V0.80', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .rld .rldr') && !!document.querySelector('.one .tcpu')");
   const r = await evaluate(`(() => {
@@ -1565,6 +1682,7 @@ try {
 } catch (e) {
   failures.push(`V0.80 desktop: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.118: the update status is a line in the layout, never over a control. In each phase, at the desktop and
 // the phone width, with the thread open (its composer and send button) and with the details opened, the status's box
@@ -1594,8 +1712,9 @@ const OVER_CONTROLS = `(() => {
     btns: [...e.querySelectorAll('button')].map((x) => x.getAttribute('aria-label') || x.textContent.trim()) };
 })()`;
 const PHASES = ["build", "test", "drain", "switch", "failed", "done"];
+// One section per size and phase: a success waits 5 s to go by itself, so they run side by side.
 for (const [label, w, h, mobile] of [["desktop", 1280, 800, false], ["phone", 390, 844, true], ["phone", 360, 640, true]]) {
-  for (const ph of PHASES) {
+  for (const ph of PHASES) section(`V0.118 ${label} ${w}×${h} ${ph}`, async ({ send, evaluate, waitFor, settle, navigate, openScreen }) => {
     const ctx = `V0.118 ${label} ${w}×${h} ${ph}`;
     try {
       if (mobile) await openScreen({ url: `?mock=rail&open=t_mapperf&deploy=${ph}` }, w, h);
@@ -1607,7 +1726,7 @@ for (const [label, w, h, mobile] of [["desktop", 1280, 800, false], ["phone", 39
       await waitFor(`!!document.querySelector('.dbn')`, { soft: true });
       const b = await evaluate(OVER_CONTROLS);
       check(!!b, `${ctx}: no update status`);
-      if (!b) continue;
+      if (!b) return;
       if (process.env.FYR_SHOTS && w !== 360 && (ph === "drain" || ph === "failed")) writeFileSync(join(process.env.FYR_SHOTS, `deploy-${ph}-${label}.png`), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       check(b.pos !== "fixed" && b.pos !== "absolute", `${ctx}: the status floats (position ${b.pos})`);
       check(b.hits.length === 0, `${ctx}: the status covers ${JSON.stringify(b.hits)} (${JSON.stringify(b)})`);
@@ -1634,8 +1753,8 @@ for (const [label, w, h, mobile] of [["desktop", 1280, 800, false], ["phone", 39
     } catch (e) {
       failures.push(`${ctx}: ${e.message}`);
     }
-    await evaluate(`localStorage.removeItem('fyr.deploy.dismissed')`); // #85 keeps a dismissed result; the next size sees it again
-  }
+  });
+  section(`V0.118 ${label} ${w}×${h} client`, async ({ evaluate, settle, navigate, openScreen }) => {
   try {
     if (mobile) await openScreen({ url: `?mock=rail&open=t_mapperf&deploy=client` }, w, h);
     else await navigate(`${origin}/?mock=rail&open=t_mapperf&deploy=client`, "!!document.querySelector('.cmp')");
@@ -1644,11 +1763,13 @@ for (const [label, w, h, mobile] of [["desktop", 1280, 800, false], ["phone", 39
   } catch (e) {
     failures.push(`V0.118 ${label} client: ${e.message}`);
   }
+  });
 }
-await send("Emulation.setTouchEmulationEnabled", { enabled: false });
 
 // V0.54: with two hosts the phone rows name each thread's host and an offline host's rows say so; the offline
 // thread's header carries "<host> offline since HH:MM · read-only" inside the screen; one host shows no host at all.
+section('V0.54', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await openScreen({ url: "?mock=rail&hosts=2" }, 390, 844);
   const rows = await evaluate(`[...document.querySelectorAll('.m-mv')].map(r => ({ label: r.getAttribute('aria-label'), off: r.querySelector('.m-off')?.textContent ?? '', host: r.querySelector('.m-hostn')?.textContent ?? '', right: r.getBoundingClientRect().right }))`);
@@ -1672,6 +1793,7 @@ try {
 } catch (e) {
   failures.push(`V0.54 hosts: ${e.message}`);
 }
+});
 
 // V0.124 (decision 0026): Settings → Projects → Hosts shows each host's short install id, on the desktop and the
 // phone with the same row; a host that answers with another id than the one first seen says so, and "Trust <id>"
@@ -1713,6 +1835,8 @@ for (const [label, w, h, url, root] of [
 }
 
 // V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.
+section('V0.35', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
   const r = await evaluate(`(() => {
@@ -1729,9 +1853,12 @@ try {
 } catch (e) {
   failures.push(`V0.35 table: ${e.message}`);
 }
+});
 
 // V0.32: native feel on the phone: no page bounce, controls not selectable, message text is,
 // and no browser menu on a long press outside text fields.
+section('V0.32', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
   const r = await evaluate(`(() => {
@@ -1751,8 +1878,11 @@ try {
 } catch (e) {
   failures.push(`V0.32 native: ${e.message}`);
 }
+});
 
 // V0.31: a right-click on a thread row opens Fyr's menu; elsewhere nothing opens.
+section('V0.31', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -1777,9 +1907,12 @@ try {
 } catch (e) {
   failures.push(`V0.31 menu: ${e.message}`);
 }
+});
 
 // V0.104: the owner pins a thread from the row's menu; it moves above every section with a pin mark, once. Unpin
 // puts it back. The phone pins from the thread's ⋯ sheet and draws the same block on top of its list.
+section('V0.104', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 let pinId = "";
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
@@ -1827,9 +1960,12 @@ try {
 } catch (e) {
   failures.push(`V0.104 pin phone: ${e.message}`);
 }
+});
 
 // V0.108: Regenerate title is in the thread's ⋯ menu on the desktop and in the thread's ⋯ sheet on the phone, the same
 // control on both; a press names the thread from its conversation (the mock answers at once).
+section('V0.108', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 const REGEN = "Title written from the conversation";
 let regenId = "";
 try {
@@ -1861,12 +1997,13 @@ try {
 } catch (e) {
   failures.push(`V0.108 title phone: ${e.message}`);
 }
-await send("Emulation.setTouchEmulationEnabled", { enabled: false });
-await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+});
 
 // SPEC 0.5 V0.30, V0.55: from the keyboard, the project chip opens the picker; ArrowDown reaches New project from this
 // thread, Enter opens the one step prefilled with the thread's folder, Enter makes the project and files the thread; p
 // and the arrows then unfile it with No project.
+section('V0.30, V0.55', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await navigate(`${origin}/?mock=1&open=t_s4`, "!!document.querySelector('.thh .chip.pj')");
   check(!(await evaluate(`!!document.querySelector('.thh .chip.mkp')`)), "V0.55 desktop: the Make project chip still shows");
@@ -1899,9 +2036,12 @@ try {
 } catch (e) {
   failures.push(`V0.30 desktop: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.37: on the desktop, a press in the live view posts a message from the view, shown as a chip.
 // The view's sandboxed frame runs out of process, so the click goes through its own CDP session.
+section('V0.37', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
@@ -1938,9 +2078,12 @@ try {
 } catch (e) {
   failures.push(`V0.37 desktop: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.47: previews run real pages. A WebGL canvas draws inside the sandboxed frame, and a folder preview
 // loads its own script, module, JSON and image by relative URL while the rest of the host stays closed to it.
+section('V0.47', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
@@ -1986,6 +2129,7 @@ try {
 } catch (e) {
   failures.push(`V0.50 desktop: ${e.message}`);
 }
+});
 
 // V0.38: never block the main thread. While a burst of 300 thread updates and 300 messages streams in
 // (3 s), no task on the page's main thread takes over 50 ms, and the last message shows. The long tasks are
@@ -1993,6 +2137,8 @@ try {
 // navigation and reads are not in the measurement.
 // Budget on a quiet machine: no task over 100 ms, under 250 ms of long tasks in all (before V0.38: 10 tasks, 523 ms),
 // scaled by the calibration factor (#50).
+section('V0.38', { timed: true }, async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   let miss = "";
   let last = "";
@@ -2042,8 +2188,11 @@ try {
   await send("Emulation.setCPUThrottlingRate", { rate: 1 });
   failures.push(`V0.38 main thread: ${e.message}`);
 }
+});
 
 // V0.40: in a narrow desktop window the thread list starts hidden; \\ shows it, and the thread keeps its room.
+section('V0.40', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 900, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -2059,10 +2208,13 @@ try {
 } catch (e) {
   failures.push(`V0.40 list: ${e.message}`);
 }
+});
 
 // V0.32: a screen change on the phone is quick, transition included (found live: open and Back
 // took 4 s each, because the transition's update waited for a frame that a transition never draws).
 // Budget on a quiet machine: 800 ms each, scaled by the calibration factor (#50).
+section('V0.32', { timed: true }, async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
   await send("Emulation.setTouchEmulationEnabled", { enabled: true });
@@ -2098,8 +2250,11 @@ try {
 } catch (e) {
   failures.push(`V0.32 phone navigation: ${e.message}`);
 }
+});
 
 // U15: the desktop question card always shows a button that says how to finish.
+section('U15', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -2120,10 +2275,13 @@ try {
 } catch (e) {
   failures.push(`U15 desktop: ${e.message}`);
 }
+});
 
 // V0.48: Settled opened from its header shows a clock and closes by itself (30 s; the test
 // fast-forwards with a short wait on a patched clock is not possible, so it checks the clock and
 // that the rail's g5 keeps it open without one).
+section('V0.48', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -2140,9 +2298,12 @@ try {
 } catch (e) {
   failures.push(`V0.48 settled: ${e.message}`);
 }
+});
 
 // #56: a Needs you row whose state word and change word are longer than the rail. No cell passes the row's content
 // box or covers another cell, the clipped texts end in an ellipsis, and the list's scrollbar does not cover the row.
+section('line 2074', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 400, deviceScaleFactor: 1, mobile: false });
@@ -2174,9 +2335,12 @@ try {
 } catch (e) {
   failures.push(`#56 desktop: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.91: every inbox row starts with its project tag, then the title, on one line; every chip (PR, change,
 // subagents) sits below the title, inside the row; no row says "0 sub".
+section('V0.91', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
@@ -2204,8 +2368,11 @@ try {
 } catch (e) {
   failures.push(`V0.91 desktop: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.92, V0.93: the rail's top is the rendered logo (loaded, 32 px, inside the rail), not the text "Fyr".
+section('V0.92, V0.93', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .brand img') && document.querySelector('.rail .brand img').complete");
   const r = await evaluate(`(() => {
@@ -2216,11 +2383,14 @@ try {
 } catch (e) {
   failures.push(`V0.92 desktop: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.116: a project's image icon. Desktop: Settings → Projects draws Fyr's image (28 px, loaded) and a
 // project whose image does not load (no fixture) its glyph, never a broken image; Fyr's project screen marks the
 // agent's values "Set by agent" and offers Replace… and Remove (V0.119: the Image tab) and Run setup or Run again. Phone: the
 // project screen shows the image at 44 px and its buttons are 44 px high.
+section('V0.116', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -2270,9 +2440,12 @@ try {
 } catch (e) {
   failures.push(`V0.116: ${e.message}`);
 }
+});
 
 // SPEC 0.5 V0.103, V0.113: the phone's inbox header shows the same logo (28 px, loaded, inside the header) and no
 // visible name; the image's alt is the accessible name "Fyr".
+section('V0.103, V0.113', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-ih .m-brand img') && document.querySelector('.m-ih .m-brand img').complete");
@@ -2284,9 +2457,12 @@ try {
 } catch (e) {
   failures.push(`V0.103 phone: ${e.message}`);
 }
+});
 
 // #64: the thread header's blocks (title, chips, offers, tabs) sit 12 px apart, and the conversation starts where
 // the header ends: a thread without previews has no band between the tabs and the conversation.
+section('line 2218', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1400, height: 575, deviceScaleFactor: 1, mobile: false });
@@ -2303,8 +2479,11 @@ try {
 } catch (e) {
   failures.push(`#64 desktop: ${e.message}`);
 }
+});
 
 // #72: without git the Changes tab has no Refresh and no empty diff section; the change cards keep the tab's height.
+section('line 2236', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -2317,9 +2496,12 @@ try {
 } catch (e) {
   failures.push(`#72 desktop: ${e.message}`);
 }
+});
 
 // V0.118 (amends #81): the busy status is one short line already, so it has no fold; a press on it shows the whole
 // sentence and a second press makes it one line again, on the desktop and the phone (44 px there).
+section('V0.118 (amends #81)', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 for (const [w, h, mobile] of [[1280, 800, false], [390, 844, true]]) {
   const ctx = `V0.118 press ${mobile ? "phone" : "desktop"}`;
   try {
@@ -2339,9 +2521,12 @@ for (const [w, h, mobile] of [[1280, 800, false], [390, 844, true]]) {
     failures.push(`${ctx}: ${e.message}`);
   }
 }
+});
 
 // V0.83: while the update waits for running threads the banner has Restart now inside the screen (44 px on the
 // phone); a press opens Fyr's confirmation with a red Restart now, and Cancel sends nothing.
+section('V0.83', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 for (const [w, h, mobile] of [[1280, 800, false], [390, 844, true]]) {
   const ctx = `V0.83 ${mobile ? "phone" : "desktop"}`;
   try {
@@ -2364,9 +2549,12 @@ for (const [w, h, mobile] of [[1280, 800, false], [390, 844, true]]) {
     failures.push(`${ctx}: ${e.message}`);
   }
 }
+});
 
 // #85: a dismissed "Fyr is updated" stays dismissed after a reload (the mock stamps the report with a new time on
 // every load, as a restarted host may).
+section('line 2298', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -2379,8 +2567,11 @@ try {
 } catch (e) {
   failures.push(`#85 desktop: ${e.message}`);
 }
+});
 
 // V0.73 (2): on the desktop, the Changes tab of six cards over an empty diff, in a tall and a short window.
+section('V0.73 (2)', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 for (const [w, h] of [[1280, 800], [1024, 600]]) {
   try {
     await send("Emulation.setTouchEmulationEnabled", { enabled: false });
@@ -2391,9 +2582,12 @@ for (const [w, h] of [[1280, 800], [1024, 600]]) {
     failures.push(`ended changes desktop ${w}x${h}: ${e.message}`);
   }
 }
+});
 
 // SPEC 0.5 V0.68: on the desktop the confirmation is a dialog that fits the window, with focus on its primary
 // button; Escape closes it without a press, Enter presses. A click outside does not close it.
+section('V0.68', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -2432,9 +2626,12 @@ try {
 } catch (e) {
   failures.push(`V0.68 desktop: ${e.message}`);
 }
+});
 
 // V0.109: the marked row in the thread list is the open thread, whatever path opened it, and the row is in view:
 // a link from another thread, ?open= of a thread in a closed section (Settled), and j in the list.
+section('V0.109', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 400, deviceScaleFactor: 1, mobile: false });
@@ -2463,10 +2660,19 @@ try {
 } catch (e) {
   failures.push(`V0.109 desktop: ${e.message}`);
 }
+});
 
+// The phone screens after the sections: the sections are the longest jobs, so they start first and the short
+// screens fill the tabs at the end.
+for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.name} ${w}x${hh}`, run: (t) => phonePass(t, w, hh, [s]) });
+const started = Date.now();
+await runJobs(jobs, TABS);
+const poolDone = Date.now();
+await runJobs(timedJobs, 1);
 clearTimeout(watchdog);
 cleanup();
-console.log(`time: phone screens ${((phoneDone - started) / 1000).toFixed(1)} s (${SIZES.length} sizes at once), desktop and timing checks ${((Date.now() - phoneDone) / 1000).toFixed(1)} s`);
+console.log(`time: ${jobs.length} jobs in ${TABS} tabs ${((poolDone - started) / 1000).toFixed(1)} s, then ${timedJobs.length} timed sections alone ${((Date.now() - poolDone) / 1000).toFixed(1)} s`);
+if (process.env.FYR_LAYOUT_PROFILE) for (const [ms, name] of jobTimes.sort((a, b) => b[0] - a[0]).slice(0, 15)) console.log(`  ${(ms / 1000).toFixed(1)} s  ${name}`);
 if (pageErrors.length) failures.push(...pageErrors.map((e) => `page error: ${e}`));
 if (failures.length) {
   console.error(`layout test: ${failures.length} of ${checks} checks failed`);
