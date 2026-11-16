@@ -1298,6 +1298,15 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, phase, phaseBy: "owner" as const, label, offers: [], updatedAt: new Date(clock()).toISOString() } : x)) });
         break;
       }
+      case "change.park":
+      case "change.unpark": {
+        // V0.84: Not now and its Undo; the host keeps a fingerprint of what the owner saw.
+        const c = (t.changes ?? []).find((x) => x.id === args.change || x.key === args.change);
+        if (!c) return { ok: false, error: `no change ${String(args.change)}` };
+        const parked = action === "change.park" ? { at: new Date(clock()).toISOString(), seen: "mock" } : undefined;
+        put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, parked } : x)) });
+        break;
+      }
       case "thread.dismissPR":
         if (!t.pr || t.pr.state === "OPEN") return { ok: false, error: "The PR is still open" };
         put(t, { pr: null });

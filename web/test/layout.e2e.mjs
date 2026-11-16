@@ -275,6 +275,8 @@ const MEASURE = `(() => {
     commit: rect('.m-abar .m-bt'),
     sheet: rect('.m-sheet'),
     chend: [...document.querySelectorAll('.chend')].map((b) => { const r = b.getBoundingClientRect(); return { h: r.height, right: r.right }; }),
+    // V0.84: Not now, inside its card (left, right and bottom within the card's box).
+    chpark: [...document.querySelectorAll('.chpark')].map((b) => { const r = b.getBoundingClientRect(), c = b.closest('.chc')?.getBoundingClientRect(); return { h: r.height, w: r.width, inside: !!c && r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5, right: r.right }; }),
     cfm: (() => { const s = document.querySelector('.m-sheet.cfm'); if (!s) return null; const r = s.getBoundingClientRect(); const bs = [...s.querySelectorAll('.cfm-f .m-bt, .cfm-copy')].map((b) => b.getBoundingClientRect()); const p = s.querySelector('.cfm-f .m-bt.p'); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, vw: innerWidth, minBtn: Math.min(...bs.map((b) => b.height)), btnBottom: Math.max(...bs.map((b) => b.bottom)), title: s.querySelector('.cfm-t')?.textContent ?? '', code: s.querySelector('.cfm-code code')?.textContent ?? '', folder: s.querySelector('.cfm-in')?.textContent ?? '', primary: p?.textContent ?? '', danger: !!p?.classList.contains('danger'), focused: document.activeElement === p, codeOverflow: s.querySelector('.cfm-code') ? s.querySelector('.cfm-code').scrollWidth - s.querySelector('.cfm-code').clientWidth : 0 }; })(),
     sheetItem: lastSheetItem,
     chips: rect('.m-cmpw .att-strip'),
@@ -531,6 +533,11 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     if (ctx.startsWith("changes with CI")) {
       check(m.ciCounts === "2,1", `${ctx}: expected annotation counts 2 and 1 on the file rows (found "${m.ciCounts}")`);
       check(m.ciNotes === 2, `${ctx}: expected 2 lint notes in render.ts's diff (found ${m.ciNotes})`);
+    }
+    if (ctx.startsWith("changes since")) {
+      // SPEC 0.5 V0.84: the failing c_scale card offers Not now, a 44 px target inside its card and the screen.
+      check(m.chpark.length >= 1, `${ctx}: no Not now on the failing change`);
+      check(m.chpark.every((b) => b.h >= 43.5 && b.w >= 43.5 && b.inside && b.right <= window_innerWidth(m) + 0.5), `${ctx}: Not now is under 44 px or outside its card ${JSON.stringify(m.chpark)}`);
     }
     check(m.changeRight <= window_innerWidth(m) + 0.5, `${ctx}: the changes list or diff runs ${(m.changeRight - window_innerWidth(m)).toFixed(1)} px past the right edge`);
   }

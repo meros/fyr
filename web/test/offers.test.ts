@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionEventLine, canEnd, offerLook, endArgs, endChangeAsk, runState, settleLine, changeChip, changeEventLine, headerPr, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
+import { actionEventLine, canEnd, canPark, parkArgs, parkedLine,offerLook, endArgs, endChangeAsk, runState, settleLine, changeChip, changeEventLine, headerPr, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
 import type { Change, Offer, OfferRun } from "../src/types.ts";
 
 const at = "2026-11-15T09:00:00Z";
@@ -112,4 +112,20 @@ test("a button shows its action's newest run on itself", () => {
   assert.deepEqual(look([r({ running: true })]), ["running", "", "", " · running…"]);
   assert.deepEqual(look([r({ endedAt: "2026-11-15T20:57:00Z" })]), ["ok", " used", "✓ ", " · 20:57"], "a used action is quiet and says when it ran");
   assert.deepEqual(look([r({ ok: false, exit: 1 })]), ["failed", " bad", "✕ ", " · failed (exit 1)"], "a failure is loud");
+});
+
+test("SPEC 0.5 V0.84, #93: Not now on a change that needs the owner or has a failed condition; parked shows a quiet line", () => {
+  const fail = [{ type: "apply", status: "fail" as const, source: "agent", at }];
+  assert.equal(canPark(change({ needs: "owner" })), true);
+  assert.equal(canPark(change({ phase: "landed", conditions: fail })), true);
+  assert.equal(canPark(change({})), false, "nothing about it needs the owner");
+  assert.equal(canPark(change({ conditions: [{ type: "checks", status: "pending", source: "observed", at }] })), false);
+  assert.equal(canPark(change({ needs: "owner", phase: "abandoned" })), false, "ended");
+  assert.equal(canPark(change({ needs: "owner", parked: { at, seen: "f" } })), false, "already parked: Undo instead");
+  assert.equal(canPark(change({ needs: "owner", threads: ["t1"] })), false, "a host record is not the thread's");
+  assert.deepEqual(parkArgs(change({ needs: "owner" })), { change: "c_1" });
+  assert.equal(parkedLine(change({ needs: "owner" }), () => "09:00"), null);
+  assert.equal(parkedLine(change({ needs: "owner", parked: { at, seen: "f" } }), () => "10:00"), "Not now · 10:00");
+  const chip = changeChip({ changes: [change({ needs: "owner", parked: { at, seen: "f" } })] });
+  assert.ok(chip && !chip.text.includes("needs you"), "the inbox chip does not say it needs you");
 });
