@@ -3,8 +3,9 @@ package core
 // Done (SPEC V0.98, decision 0024 (3), slice 4): a finished change leaves
 // the board. Ended (abandoned, reverted) keeps its meaning for rules and
 // settle; done is when the work needs nobody any more. Fyr marks it at the
-// reduce that finishes it, so the thread's rules (the deploy watch) and its
-// other changes (a stacked PR's base) decide, and the client only reads it.
+// reduce that finishes it, so the thread's other changes (a stacked PR's
+// base) decide, and the client only reads it. A deploy watch no longer holds
+// a merged change (V0.105 (1)); it only adds live as a fact.
 
 import (
 	"encoding/json"
@@ -105,8 +106,6 @@ func doneNow(t *Thread, c *Change) (string, bool) {
 		return string(c.Phase), true
 	case !c.Phase.Reached(PhaseLanded):
 		return "", false
-	case c.Phase != PhaseLive && deployWatched(t, c):
-		return "", false // waits for live or the watch's end
 	case c.Phase == PhaseLanded && stackedWaits(t, c):
 		return "", false
 	}
@@ -114,12 +113,6 @@ func doneNow(t *Thread, c *Change) (string, bool) {
 		return "merged", true
 	}
 	return string(c.Phase), true
-}
-
-// deployWatched reports an armed deploy watch (V0.66) about c.
-func deployWatched(t *Thread, c *Change) bool {
-	r := FindRule(t, deployRuleID(c.ID))
-	return r != nil && r.Status == RuleArmed
 }
 
 // stackedWaits reports a PR merged into a branch that is not the default
@@ -213,8 +206,8 @@ func joinInto(t *Thread, keep, from string, now time.Time) *Change {
 
 // MigrateDone is the load pass of V0.98 (7) on one thread: a change Fyr
 // made for a PR folds into the open change on its repo and branch; every
-// change at or past landed is done ("landed before v2") unless its deploy
-// watch is armed, every ended one too; an open change without touchedAt is
+// change at or past landed is done ("landed before v2"; V0.105: also with
+// a deploy watch armed), every ended one too; an open change without touchedAt is
 // touched when it last moved. It reports whether the thread changed.
 func MigrateDone(t *Thread, now time.Time) bool {
 	changed := false
@@ -258,8 +251,16 @@ func MigrateRecordDone(c *Change, now time.Time) bool {
 		at := c.UpdatedAt
 		c.TouchedAt, changed = &at, true
 	}
-	if c.Done != nil || c.Phase.InFlight() {
+	if c.Done != nil {
 		return changed
+	}
+	if c.Phase.InFlight() {
+		// V0.105 (2): a record on the repo's default branch is done.
+		if !onDefaultBranch(c) {
+			return changed
+		}
+		c.Done = &DoneMark{At: now, By: ByObserved, Reason: DoneDefaultBranch}
+		return true
 	}
 	reason := string(c.Phase)
 	if c.Phase.Reached(PhaseLanded) {
@@ -267,4 +268,14 @@ func MigrateRecordDone(c *Change, now time.Time) bool {
 	}
 	c.Done = &DoneMark{At: now, By: c.PhaseBy, Reason: reason}
 	return true
+}
+
+// onDefaultBranch reports a record whose branch is its repo's default one,
+// by its workspace base, else main or master (V0.105 (2)).
+func onDefaultBranch(c *Change) bool {
+	g := GitFacts{Branch: c.Branch}
+	if c.Workspace != nil {
+		g.Base = c.Workspace.Base
+	}
+	return c.Branch != "" && defaultBranch(g)
 }

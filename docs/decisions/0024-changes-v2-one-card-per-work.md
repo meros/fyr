@@ -92,7 +92,7 @@ Phases stay: `working`, `review`, `landed`, `live`, `abandoned`, `reverted`. A c
 | Case | Done when |
 |---|---|
 | Code (Acme and every other repo) | merged into the repo's default branch (`landed`). Stacked PRs: a PR merged into another branch is checked on each poll, and is `landed` when its merge commit is an ancestor of the default branch. |
-| Fyr's own repo | `landed`. While a Fyr deploy watch (V0.66) is armed for it, the card stays until `live` or until the watch ends; a failed deploy is a failure (section 5). |
+| Fyr's own repo | `landed`, as every repo (V0.105: a deploy watch no longer holds a merged change; it held AcmeHosting changes open behind their GitHub deployments). A self-deploy (V0.82) or a deployment (V0.66) still shows `live` on the done card. |
 | Not code | `landed` or `live` as reported, or the owner's answer to an `approve` ask |
 | Any | `abandoned` (PR closed without merge, agent intent, owner) or `reverted` |
 
