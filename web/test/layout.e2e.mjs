@@ -1420,7 +1420,8 @@ try {
 section('V0.119 (5)', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
-  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail')");
+  // The bell shows once the push check resolves (it starts as unsupported, hidden), so wait for it, not the rail.
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .bell')");
   const bell = await evaluate(`(() => { const b = document.querySelector('.rail .bell'); b?.click(); return !!b; })()`);
   await waitFor(`!!document.querySelector('.dlg.settings')`, { soft: true });
   const b = await evaluate(`document.querySelector('.dlg .stn-i[aria-current=page]')?.dataset.page ?? ''`);
