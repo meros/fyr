@@ -415,7 +415,11 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 		setPhase(t, c, phase, ByObserved, now)
 	}
 	armBuiltins(t, c, now)
-	watchMerge(t, c, p, now)
+	if oldState != "MERGED" {
+		// V0.82: a merged PR is read again while its checks settle; a
+		// watch a repo without deployments ended is not armed again.
+		watchMerge(t, c, p, now)
+	}
 	if p.State == "OPEN" && p.Checks == ChecksFail {
 		c.Annotations = p.Annotations
 	} else {
@@ -604,16 +608,40 @@ func parsePRURL(url string) (string, int) {
 	return m[1], n
 }
 
-// PRURLs are the PR URLs of the thread's changes that are not ended or landed.
-func PRURLs(t *Thread) []string {
+// settleAfterMerge is how long after the merge a PR whose snapshot is not
+// final is still read (V0.82).
+const settleAfterMerge = 24 * time.Hour
+
+// PRURLs are the PR URLs to poll: the thread's changes in flight, and
+// (V0.82) a landed or live change whose PR snapshot is not final, within
+// settleAfterMerge of the merge.
+func PRURLs(t *Thread, now time.Time) []string {
 	var out []string
 	for i := range t.Changes {
 		c := &t.Changes[i]
-		if u := c.PRURL(); u != "" && c.Phase.InFlight() {
+		if u := c.PRURL(); u != "" && (c.Phase.InFlight() || settling(c, now)) {
 			out = append(out, u)
 		}
 	}
 	return out
+}
+
+// settling reports a landed or live change whose PR GitHub has not yet
+// shown merged or closed, or whose checks are pending or not read yet,
+// within settleAfterMerge of the merge (mergedAt, else when it landed).
+func settling(c *Change, now time.Time) bool {
+	if c.PR == nil || !c.Phase.Reached(PhaseLanded) || c.Phase.Ended() {
+		return false
+	}
+	at := c.PR.MergedAt
+	if at == nil {
+		at = c.LandedAt
+	}
+	if at == nil || now.Sub(*at) >= settleAfterMerge {
+		return false
+	}
+	final := c.PR.State == "MERGED" || c.PR.State == "CLOSED"
+	return !final || c.PR.Checks == ChecksPending || c.PR.Checks == ChecksNone
 }
 
 func union(a, b []string) []string {
