@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/core"
 )
 
 // scripted answers gh calls by their first arguments and records them.
@@ -162,15 +164,25 @@ func TestDetailsCache(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.43: the reasons the host refuses a merge.
+var green = []Check{{State: "pass"}}
+
+// SPEC 0.5 V0.43, V0.112: the reasons the host refuses a merge.
 func TestMergeBlock(t *testing.T) {
 	cases := []struct {
 		d    Detail
 		want string
 	}{
-		{Detail{State: "OPEN", MergeState: "CLEAN"}, ""},
-		{Detail{State: "OPEN", MergeState: "UNSTABLE"}, ""},
-		{Detail{State: "OPEN", MergeState: "UNKNOWN"}, ""},
+		{Detail{State: "OPEN", MergeState: "CLEAN", Checked: core.ChecksPass, Checks: green}, ""},
+		{Detail{State: "OPEN", MergeState: "UNSTABLE", Checked: core.ChecksPass, Checks: green}, ""},
+		{Detail{State: "OPEN", MergeState: "UNKNOWN", Checked: core.ChecksPass, Checks: green}, ""},
+		// V0.112: no check reported on a repo with CI, or a check running, is not green
+		{Detail{State: "OPEN", MergeState: "CLEAN", HeadSha: "029f9c7640b7", Checked: core.ChecksPending}, "No check has reported on 029f9c7 yet"},
+		{Detail{State: "OPEN", MergeState: "CLEAN"}, "No check has reported"},
+		{Detail{State: "OPEN", MergeState: "CLEAN", Checked: core.ChecksPending, Checks: []Check{{State: "running"}, {State: "pass"}}}, "CI has not passed"},
+		{Detail{State: "OPEN", MergeState: "BLOCKED", Checked: core.ChecksPending, Checks: []Check{{State: "running"}}}, "CI has not passed"},
+		// a repo with no CI merges; a failing check GitHub does not require keeps V0.43's rule
+		{Detail{State: "OPEN", MergeState: "CLEAN", Checked: core.ChecksNone}, ""},
+		{Detail{State: "OPEN", MergeState: "UNSTABLE", Checked: core.ChecksFail, Checks: []Check{{State: "fail"}}}, ""},
 		{Detail{State: "MERGED"}, "already merged"},
 		{Detail{State: "CLOSED"}, "closed"},
 		{Detail{State: "OPEN", Draft: true}, "draft"},
@@ -178,8 +190,8 @@ func TestMergeBlock(t *testing.T) {
 		{Detail{State: "OPEN", MergeState: "DIRTY", Base: "main"}, "Conflicts with main"},
 		{Detail{State: "OPEN", MergeState: "BEHIND", Base: "main"}, "Behind main"},
 		{Detail{State: "OPEN", MergeState: "BLOCKED", Checks: []Check{{State: "fail"}}}, "Blocked: 1 failing check"},
-		{Detail{State: "OPEN", MergeState: "BLOCKED", ReviewDecision: "REVIEW_REQUIRED"}, "Review required"},
-		{Detail{State: "OPEN", MergeState: "BLOCKED"}, "Blocked"},
+		{Detail{State: "OPEN", MergeState: "BLOCKED", ReviewDecision: "REVIEW_REQUIRED", Checked: core.ChecksPass, Checks: green}, "Review required"},
+		{Detail{State: "OPEN", MergeState: "BLOCKED", Checked: core.ChecksPass, Checks: green}, "Blocked"},
 	}
 	for i, c := range cases {
 		got := MergeBlock(c.d)
@@ -198,7 +210,7 @@ func TestMergeCheckedRefuses(t *testing.T) {
 	if s.count("pr merge") != 0 {
 		t.Fatal("gh pr merge ran on a blocked PR")
 	}
-	ok := &scripted{out: map[string]string{"pr view": `{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","headRefOid":"abc1234def"}`, "pr merge": "✓ Squashed and merged"}}
+	ok := &scripted{out: map[string]string{"pr view": `{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","headRefOid":"abc1234def",` + greenRollup + `}`, "pr merge": "✓ Squashed and merged"}}
 	out, err := MergeChecked(context.Background(), ok.run, "https://github.com/acme/app/pull/88", "rebase", "abc1234def")
 	if err != nil || !strings.Contains(out, "merged") || ok.count("pr merge --rebase --match-head-commit abc1234def -- https://github.com/acme/app/pull/88") != 1 {
 		t.Fatalf("clean merge %q %v %v", out, err, ok.calls)
@@ -206,6 +218,53 @@ func TestMergeCheckedRefuses(t *testing.T) {
 	if _, err := MergeChecked(context.Background(), ok.run, "https://github.com/acme/app/pull/88", "--admin", "abc1234def"); err == nil {
 		t.Fatal("an unknown method was accepted")
 	}
+}
+
+const greenRollup = `"statusCheckRollup":[{"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]`
+
+// SPEC V0.112: #126 merged at 16:05:33 with an empty check list while its
+// pull_request run was queued. On a repo with CI an empty list waits; the
+// merge never reaches gh. Only a repo where no PR ever had a check merges.
+func TestMergeCheckedWaitsForCI(t *testing.T) {
+	const view = `{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","headRefOid":"029f9c7640b795c9e9edcd8e875f6490e753b593","statusCheckRollup":[]}`
+	url := "https://github.com/meros/fyr/pull/126"
+	for _, c := range []struct {
+		name, ci string
+		err      error
+	}{
+		{"checks seen on the repo's PRs", "3", nil},
+		{"the CI read fails", "", errors.New("HTTP 502")},
+	} {
+		ciRepos.Clear()
+		s := &scripted{out: map[string]string{"pr view": view, "api graphql": c.ci, "pr merge": "merged"}}
+		if c.err != nil {
+			s.err = map[string]error{"api graphql": c.err}
+		}
+		_, err := MergeChecked(context.Background(), s.run, url, "squash", "029f9c7")
+		if err == nil || !strings.Contains(err.Error(), "No check has reported on 029f9c7 yet") {
+			t.Errorf("%s: %v", c.name, err)
+		}
+		if s.count("pr merge") != 0 {
+			t.Errorf("%s: gh merged with no check reported", c.name)
+		}
+	}
+	running := &scripted{out: map[string]string{"pr view": strings.Replace(view, `"statusCheckRollup":[]`,
+		`"statusCheckRollup":[{"__typename":"CheckRun","name":"test","status":"QUEUED","conclusion":""}]`, 1), "pr merge": "merged"}}
+	if _, err := MergeChecked(context.Background(), running.run, url, "squash", "029f9c7"); err == nil || running.count("pr merge") != 0 {
+		t.Errorf("a queued check merged: %v", err)
+	}
+
+	ciRepos.Clear()
+	noCI := &scripted{out: map[string]string{"pr view": view, "api graphql": "0", "pr merge": "merged"}}
+	if _, err := MergeChecked(context.Background(), noCI.run, url, "squash", "029f9c7"); err != nil || noCI.count("pr merge") != 1 {
+		t.Fatalf("a repo with no CI: %v %v", err, noCI.calls)
+	}
+	// the fact is kept: a second merge reads the repo no more
+	MergeChecked(context.Background(), noCI.run, url, "squash", "029f9c7")
+	if noCI.count("api graphql") != 1 {
+		t.Errorf("RepoHasCI read the repo %d times", noCI.count("api graphql"))
+	}
+	ciRepos.Clear()
 }
 
 // SPEC 0.5 V0.43: re-run selects only failed runs of the head commit.

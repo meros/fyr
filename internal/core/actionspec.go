@@ -232,7 +232,7 @@ func (h Holder) Available(a ActionSpec) string {
 		if fx == nil {
 			return "Fyr has no effect " + a.Effect
 		}
-		return fx.Guard(h.t, h.EffectArgs(a))
+		return fx.Blocked(h.t, h.EffectArgs(a))
 	}
 	return ""
 }
@@ -301,14 +301,30 @@ type FyrEffect struct {
 	// Guard is why it cannot run now with these args, or "". It is checked
 	// when it is offered, asked for, pressed and run.
 	Guard func(t *Thread, args map[string]any) string
+	// Gate is why the owner's yes or press, or Fyr's own approval, cannot
+	// run it now, or "": what must also hold when it runs, but not when the
+	// agent asks for it. A merge waits for CI (V0.112).
+	Gate func(t *Thread, args map[string]any) string
 	// Check validates and completes the args.
 	Check   func(args map[string]any) error
 	Timeout time.Duration
 }
 
+// Blocked is why the effect cannot run now with these args: its Guard, then
+// its Gate (V0.112).
+func (fx *FyrEffect) Blocked(t *Thread, args map[string]any) string {
+	if why := fx.Guard(t, args); why != "" {
+		return why
+	}
+	if fx.Gate != nil {
+		return fx.Gate(t, args)
+	}
+	return ""
+}
+
 // FyrEffects are every effect Fyr runs, by id.
 var FyrEffects = map[string]*FyrEffect{
-	FyrMerge: {ID: FyrMerge, Label: "Merge PR", Ask: AskMerge, Request: true, OnPR: true, Guard: prGuard(true), Timeout: 10 * time.Minute,
+	FyrMerge: {ID: FyrMerge, Label: "Merge PR", Ask: AskMerge, Request: true, OnPR: true, Guard: prGuard(true), Gate: checksWait, Timeout: 10 * time.Minute,
 		Check: func(a map[string]any) error {
 			if err := needPR(a); err != nil {
 				return err
@@ -397,7 +413,7 @@ func init() {
 			return map[string]any{}
 		}
 		register(&Action{Name: id, Label: fx.Label,
-			Available: func(t *Thread, _ *View, _ time.Time) string { return fx.Guard(t, args(t)) },
+			Available: func(t *Thread, _ *View, _ time.Time) string { return fx.Blocked(t, args(t)) },
 			Apply: func(t *Thread, _ *View, a Args, _ time.Time) ([]Effect, error) {
 				req := args(t)
 				if m, ok := a["method"].(string); ok && id == FyrMerge {
@@ -409,7 +425,7 @@ func init() {
 				if err := fx.Check(req); err != nil {
 					return nil, fmt.Errorf("%w: %v", ErrBadArgs, err)
 				}
-				if why := fx.Guard(t, req); why != "" {
+				if why := fx.Blocked(t, req); why != "" {
 					return nil, &Rejection{Code: RejectUnavailable, Reason: why}
 				}
 				return []Effect{{Kind: EffectRun, Allow: true, ByOwner: true, Request: &EffectReq{Action: id, Args: req}}}, nil

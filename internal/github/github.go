@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,19 +71,13 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	if err := json.Unmarshal(out, &v); err != nil {
 		return core.PR{}, 0, fmt.Errorf("gh pr view: %w", err)
 	}
-	checks, failed := core.ChecksNone, 0
-	if len(v.Rollup) > 0 {
-		checks = core.ChecksPass
-	}
+	states := make([]string, 0, len(v.Rollup))
 	for _, c := range v.Rollup {
-		switch {
-		case c.Conclusion == "FAILURE" || c.Conclusion == "CANCELLED" || c.Conclusion == "TIMED_OUT" ||
-			c.Conclusion == "ACTION_REQUIRED" || c.Conclusion == "STARTUP_FAILURE" || c.State == "FAILURE" || c.State == "ERROR":
-			checks = core.ChecksFail
-			failed++
-		case checks != core.ChecksFail && ((c.Typename == "CheckRun" && c.Status != "COMPLETED") || c.State == "PENDING" || c.State == "EXPECTED"):
-			checks = core.ChecksPending
-		}
+		states = append(states, CheckState(c.Typename, c.Status, c.Conclusion, c.State))
+	}
+	checks, failed := core.ChecksNone, 0
+	if v.State == "OPEN" || len(states) > 0 {
+		checks, failed = Summarize(ctx, gh, repo, states)
 	}
 	now := time.Now()
 	p := core.PR{URL: url, Repo: repo, Number: n, Title: v.Title, State: v.State, Checks: checks,
@@ -99,6 +94,89 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 		readStacked(ctx, gh, &p)
 	}
 	return p, failed, nil
+}
+
+// Summarize is the one place a PR's check list becomes its checks
+// (V0.112): fail when a check failed, pending while one runs, pass when at
+// least one check reported and none failed or runs. An empty list is
+// pending on a repo with CI, because a run can be queued before GitHub
+// lists it; it is none only on a repo with no CI (RepoHasCI). It also
+// returns the number of failed checks.
+func Summarize(ctx context.Context, gh Runner, repo string, states []string) (core.Checks, int) {
+	if len(states) == 0 {
+		if RepoHasCI(ctx, gh, repo) {
+			return core.ChecksPending, 0
+		}
+		return core.ChecksNone, 0
+	}
+	markCI(repo)
+	checks, failed := core.ChecksPass, 0
+	for _, s := range states {
+		switch s {
+		case checkFail:
+			checks = core.ChecksFail
+			failed++
+		case checkRunning:
+			if checks != core.ChecksFail {
+				checks = core.ChecksPending
+			}
+		}
+	}
+	return checks, failed
+}
+
+// CIRecheck is how long Fyr trusts that a repo has no CI before it reads
+// the repo again (V0.112). That a repo has CI is kept for the process.
+const CIRecheck = 10 * time.Minute
+
+// ciRepos is what Fyr knows of each repo's CI, by RepoKey.
+var ciRepos sync.Map
+
+type ciFact struct {
+	has bool
+	at  time.Time
+}
+
+func markCI(repo string) {
+	if k := core.RepoKey(repo); k != "" {
+		ciRepos.Store(k, ciFact{has: true})
+	}
+}
+
+// ciQuery reads the check rollup of the head commit of the repo's 20 newest
+// PRs, open or not.
+const ciQuery = `query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(last: 20) { nodes { commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } }
+  }
+}`
+
+// RepoHasCI reports whether the repo has CI (V0.112): a check reported on
+// the head of any of its 20 newest PRs, or on any PR Fyr read since it
+// started. A read that fails counts as CI, so a merge waits rather than
+// runs on a guess.
+func RepoHasCI(ctx context.Context, gh Runner, repo string) bool {
+	k := core.RepoKey(repo)
+	if k == "" {
+		return true
+	}
+	if v, ok := ciRepos.Load(k); ok {
+		if f := v.(ciFact); f.has || time.Since(f.at) < CIRecheck {
+			return f.has
+		}
+	}
+	owner, name, _ := strings.Cut(k, "/")
+	out, err := gh(ctx, "api", "graphql", "-f", "query="+ciQuery, "-F", "owner="+owner, "-F", "name="+name,
+		"--jq", "[.data.repository.pullRequests.nodes[].commits.nodes[].commit.statusCheckRollup | select(. != null)] | length")
+	if err != nil {
+		return true
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return true
+	}
+	ciRepos.Store(k, ciFact{has: n > 0, at: time.Now()})
+	return n > 0
 }
 
 // defaultBranches caches each repo's default branch (V0.98 (1)).
