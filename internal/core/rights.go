@@ -25,6 +25,13 @@ const (
 	FieldApprovalOK = FieldChangeCondition + "." + Field(CondApproval) + "=" + Field(CondOK)
 )
 
+// V0.116: a project's name, colour and image icon; the owner's is kept.
+const (
+	FieldProjectName  Field = "project.name"
+	FieldProjectColor Field = "project.color"
+	FieldProjectImage Field = "project.image"
+)
+
 // Right is one row of the table.
 type Right struct {
 	Field Field
@@ -40,6 +47,9 @@ type Right struct {
 // Rights is the one table.
 var Rights = []Right{
 	{Field: FieldThreadTitle, By: []string{ByOwner, ByAgent}, Kept: []string{ByOwner}, Over: agentOnly, Refuse: "the owner named %s; ask them to rename it"},
+	{Field: FieldProjectName, By: []string{ByOwner, ByAgent}, Kept: ownerOnly, Over: agentOnly, Refuse: "the owner named %s"},
+	{Field: FieldProjectColor, By: []string{ByOwner, ByAgent}, Kept: ownerOnly, Over: agentOnly, Refuse: "the owner chose %s"},
+	{Field: FieldProjectImage, By: []string{ByOwner, ByAgent}, Kept: ownerOnly, Over: agentOnly, Refuse: "the owner set %s"},
 	{Field: FieldThreadProject, By: ownerOnly, Refuse: "only the owner files %s in a project"},
 	{Field: FieldThreadView, By: ownerOnly, Refuse: "only the owner turns the live view of %s on or off"},
 	{Field: FieldViewSeen, By: ownerOnly, Refuse: "only the owner sees %s"},

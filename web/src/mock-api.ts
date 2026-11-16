@@ -146,6 +146,12 @@ export function createMockApi(scenario: string): Api {
       await new Promise((r) => setTimeout(r, 120));
       return server.prDetail(threadId);
     },
+    async uploadProjectIcon(projectId, file) {
+      // V0.116: the mock keeps no bytes; the project gets a new version (the layout test serves fixture icons).
+      if (file.size > 2 * 1024 * 1024) return { ok: false, error: "the picture is over 2 MB" };
+      const r = server.command(`icon-${Date.now()}`, "project.update", undefined, { id: projectId, image: `m${Date.now().toString(36)}` });
+      return { ok: r.ok, error: r.error };
+    },
     attachmentUrl(id) {
       if (MOCK_SHOTS[id]) return MOCK_SHOTS[id];
       // Fixture attachments have no bytes; images get a drawn placeholder.

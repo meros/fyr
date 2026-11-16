@@ -157,6 +157,11 @@
   "profiles": [],
   "projects": [
     {
+      "by": {
+        "color": "",
+        "image": "",
+        "name": "owner"
+      },
       "color": "green",
       "createdAt": "2026-01-01T00:00:00Z",
       "edited": true,
@@ -178,6 +183,11 @@
       "threads": 1
     },
     {
+      "by": {
+        "color": "",
+        "image": "",
+        "name": "owner"
+      },
       "color": "slate",
       "createdAt": "2026-01-01T00:00:00Z",
       "edited": true,

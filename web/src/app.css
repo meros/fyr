@@ -628,6 +628,9 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 
 /* Projects (SPEC V0.23): icon, tag, lists, filter, project screen; started-by and cross-thread messages (V0.22). */
 .pi{display:inline-grid;place-items:center;flex:none;border-radius:28%;color:var(--pc);background:color-mix(in srgb,var(--pc) 16%,transparent);font-family:var(--ui);font-weight:600;line-height:1;letter-spacing:-.02em;overflow:hidden;vertical-align:-3px}
+/* V0.116: an image icon fills the square; the glyph's tint stays behind a transparent logo. */
+.pi.img{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.pi.img img{width:100%;height:100%;object-fit:cover;display:block}
 .pi.emoji{background:color-mix(in srgb,var(--pc) 12%,transparent);font-weight:400}
 .pi.all{width:28px;height:28px;background:var(--sunken);color:var(--ink-muted);font-size:18px}
 .ptag{display:inline-flex;align-items:center;gap:4px;max-width:100%;min-width:0;color:var(--pc);font-weight:500;vertical-align:bottom}
@@ -700,6 +703,10 @@ button.ptag{padding:0}
 .pform{display:flex;flex-direction:column;gap:10px;min-width:0}
 .pformb{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .pedit{display:flex;flex-direction:column;gap:12px;min-width:0}
+.pimg{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.pnote{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.pnote.err{color:var(--signal-ink)}
+.setby{margin-left:8px;padding:1px 6px;border-radius:6px;font:500 11px/16px var(--ui);font-style:normal;color:var(--ink-muted);background:var(--sunken)}
 .phead{display:flex;align-items:center;gap:12px;min-width:0}
 .swatches{display:flex;flex-wrap:wrap;gap:8px}
 .sw{width:30px;height:30px;border-radius:15px;background:var(--pc);box-shadow:inset 0 0 0 2px var(--raised)}

@@ -597,6 +597,15 @@ func (f *Front) Handler() http.Handler {
 	mux.HandleFunc("GET /api/attachments/{id}", f.lookup)
 	mux.HandleFunc("GET /api/previews/{id}", f.lookup)
 	mux.HandleFunc("GET /api/previews/{id}/{path...}", f.lookup)
+	// V0.116: a project's icon lives on the project's host.
+	mux.HandleFunc("/api/projects/{id}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
+		l := f.projectOwner(r.PathValue("id"))
+		if l == nil {
+			http.NotFound(w, r)
+			return
+		}
+		f.forward(w, r, l)
+	})
 	mux.HandleFunc("GET /api/quota", f.quota)
 	mux.HandleFunc("GET /api/load", f.hostLoad)
 	mux.HandleFunc("GET /api/profiles", f.profiles)
