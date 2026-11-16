@@ -8,7 +8,7 @@ import (
 	"github.com/meros/fyr/internal/proc"
 )
 
-// SPEC 0.5 V0.80: the build and `make test` start in agents/deploy/; the
+// SPEC 0.5 V0.80: the build and `make test` start in agents/self-deploy/; the
 // git checks before them stay in the daemon's cgroup.
 func TestV080BuildAndTestRunInTheDeployCgroup(t *testing.T) {
 	d, _, _ := newDeployer(t, "")

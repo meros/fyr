@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.80: the machine load (rail) and each working thread's CPU (rows), as words. Pure.
 
 export interface ThreadLoad {
-  /** a thread id, or "deploy" */
+  /** a thread id, or "self-deploy" */
   id: string;
   /** cores over the last read; absent on a host's first read */
   cpu?: number;
