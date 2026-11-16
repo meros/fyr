@@ -63,7 +63,7 @@ export function hostForProject(projectHost: string | undefined, hosts: HostInfo[
   return projectHost || hosts?.[0]?.name;
 }
 
-const BUSY = new Set(["build", "test", "drain", "switch"]);
+const BUSY = new Set(["build", "test", "drain", "switch", "client"]);
 
 /** The status words of a host row in Settings → Hosts. */
 export function hostStatus(h: HostInfo, self: string): string {

@@ -72,6 +72,9 @@ type Front struct {
 	opt   Options
 	links []*link
 	hub   *stream.Hub
+	// client is the web client served and its build (V0.13); a client-only
+	// deploy swaps it (V0.81).
+	client atomic.Pointer[clientBuild]
 
 	mu       sync.Mutex // guards the caches of every link and objs
 	presence *notify.Presence
@@ -117,6 +120,11 @@ func New(opt Options, hosts []HostConfig) *Front {
 		opt.NotifyDelay = notify.Delay
 	}
 	f := &Front{opt: opt, hub: stream.NewHub(), presence: &notify.Presence{}, objs: map[string]*link{}}
+	c := &clientBuild{build: opt.BuildID, web: opt.Web, h: http.NotFoundHandler()}
+	if opt.Web != nil {
+		c.h = webClient(opt.Web)
+	}
+	f.client.Store(c)
 	for _, h := range hosts {
 		u, err := url.Parse(strings.TrimRight(h.URL, "/"))
 		if err != nil || u.Host == "" {
@@ -573,7 +581,7 @@ func (f *Front) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
 		ch := f.hub.Subscribe()
 		defer f.hub.Unsubscribe(ch)
-		stream.Serve(w, r, ch, f.opt.BuildID)
+		stream.Serve(w, r, ch, f.client.Load().build)
 	})
 	mux.HandleFunc("GET /api/threads/{id}", f.thread)
 	mux.HandleFunc("/api/threads/{id}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
@@ -596,7 +604,7 @@ func (f *Front) Handler() http.Handler {
 	})
 	mux.HandleFunc("/mcp", http.NotFound) // agents talk to their host
 	if f.opt.Web != nil {
-		mux.Handle("/", webClient(f.opt.Web))
+		mux.Handle("/", f.webClient())
 	}
 	return server.Browser(f.opt.OwnerLogin, mux)
 }
@@ -677,7 +685,7 @@ func (f *Front) forward(w http.ResponseWriter, r *http.Request, l *link) {
 func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	f.mu.Lock()
-	st := api.State[map[string]any, map[string]any, any]{Now: time.Now().UTC(), User: core.Owner, BuildID: f.opt.BuildID, Host: f.opt.Name,
+	st := api.State[map[string]any, map[string]any, any]{Now: time.Now().UTC(), User: core.Owner, BuildID: f.client.Load().build, Host: f.opt.Name,
 		Threads: []map[string]any{}, Projects: []map[string]any{}, Profiles: []any{}, Hosts: []api.Host{}, Partial: since > 0}
 	seenProfile := map[any]bool{}
 	var actions any
