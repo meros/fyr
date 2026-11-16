@@ -199,3 +199,24 @@ func TestAgentThreadToolsAreAgentInputs(t *testing.T) {
 		t.Fatalf("child: parent %q manual %v", th.Parent, th.ProjectManual)
 	}
 }
+
+// V0.106: the agent's settle_when on a pinned thread says it waits for the
+// owner.
+func TestSettleWhenOnAPinnedThreadSaysItWaits(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	a := h.create("coordinator")
+	h.wait(a, "done", state(core.Done))
+	if out, _ := callAs(t, h.e, a, "settle_when", map[string]any{"condition": "done"}); strings.Contains(out, "pinned") {
+		t.Fatalf("an unpinned thread got the pin note: %q", out)
+	}
+	if r := h.cmd("thread.pin", a, nil); !r.OK {
+		t.Fatalf("pin: %+v", r)
+	}
+	out, isErr := callAs(t, h.e, a, "settle_when", map[string]any{"condition": "done"})
+	if isErr || !strings.Contains(out, "The owner pinned this thread") {
+		t.Fatalf("%v %q", isErr, out)
+	}
+	if th, _ := h.e.Thread(a); th.Settle.At != nil {
+		t.Fatal("a pinned thread settled")
+	}
+}
