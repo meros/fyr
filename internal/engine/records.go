@@ -284,13 +284,14 @@ func (e *Engine) observeGit(threadID string, folder *core.GitFacts) {
 }
 
 // prMerged reports a merged PR of a thread's change that follows rec,
-// or is on its branch in its repo: a squash merge leaves the branch's head
-// outside the base. Call it with e.mu held.
+// or is on its branch in its repo, and that holds the record's work
+// (core.MergedByPR): a squash merge leaves the branch's head outside the
+// base. Call it with e.mu held.
 func (e *Engine) prMerged(rec *core.Change) bool {
 	repo := core.RecordRepo(rec)
 	for _, t := range e.threads {
 		for _, c := range t.Changes {
-			if c.PR == nil || c.PR.State != "MERGED" {
+			if !core.MergedByPR(rec, c.PR) {
 				continue
 			}
 			if c.Observed == rec.ID || (c.Branch != "" && c.Branch == rec.Branch && repo == "github.com/"+c.PR.Repo) {

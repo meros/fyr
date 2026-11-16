@@ -119,6 +119,12 @@ func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change,
 			if g.Ahead == 0 && g.Unpushed == 0 && g.Dirty == 0 {
 				return nil, nil, nil, nil
 			}
+			// A squash merge leaves the head outside the base, so the facts
+			// still read commits ahead: the same head with no changed files
+			// is the work that landed, not new work.
+			if g.Dirty == 0 && landedAt(rs, g.Repo, g.Branch, g.Head) {
+				return nil, nil, nil, nil
+			}
 			key := freshKey(rs, ObservedKey(g.Repo, g.Branch))
 			c = &Change{ID: ChangeID(key), Key: key, Kind: KindCode, Title: g.Branch, Branch: g.Branch, Phase: PhaseWorking, PhaseBy: ByObserved, CreatedAt: now, UpdatedAt: now}
 			if g.Repo != "" {
@@ -180,6 +186,41 @@ func gitConditions(c *Change, g GitFacts, now time.Time) {
 	if g.Head != "" && g.Ahead > 0 {
 		addRevision(c, Revision{ID: g.Head, Summary: fmt.Sprintf("%s ahead of %s", plural(g.Ahead, "commit"), g.Base), By: ByObserved}, now)
 	}
+}
+
+// lastHead is the head commit of a record's newest revision, or "".
+func lastHead(c *Change) string {
+	if n := len(c.Revisions); n > 0 {
+		return c.Revisions[n-1].ID
+	}
+	return ""
+}
+
+// SameCommit reports two names of one commit: a short and a full SHA of the
+// same commit are the same. An empty name is no commit.
+func SameCommit(a, b string) bool {
+	return a != "" && b != "" && (strings.HasPrefix(a, b) || strings.HasPrefix(b, a))
+}
+
+// landedAt reports a landed record of repo and branch whose head is head.
+func landedAt(rs []*Change, repo, branch, head string) bool {
+	return slices.ContainsFunc(rs, func(c *Change) bool {
+		return c.Branch == branch && c.Phase == PhaseLanded && RecordRepo(c) == repo && SameCommit(lastHead(c), head)
+	})
+}
+
+// MergedByPR reports that the merged PR p holds the work of record rec: the
+// record's head is the PR's head (when Fyr read the PR's head) and the
+// checkout has no changed files. A commit or changed files after the merge
+// are work the PR does not hold.
+func MergedByPR(rec *Change, p *PR) bool {
+	if p == nil || p.State != "MERGED" {
+		return false
+	}
+	if k := condition(rec, CondClean); k != nil && k.Status != CondOK {
+		return false
+	}
+	return p.Head == "" || SameCommit(lastHead(rec), p.Head)
 }
 
 // freshKey is key, or key~N when a record with that key has landed or
