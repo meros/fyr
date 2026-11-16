@@ -81,7 +81,7 @@ func startHarness(t *testing.T, dir, db string, idle time.Duration) *harness {
 			return provider.Profile{ID: "fake", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}}
 		},
 		IdleStop: idle, MCPURL: hs.URL + "/mcp",
-		Attachments: h.att.Get,
+		Attachments: h.att.Get, OnCommands: e.SetCommands,
 	})
 	e.Agents, e.Effects, h.m = m, h.r, m
 	e.AttachmentExists = func(id string) bool { _, err := h.att.Get(id); return err == nil }

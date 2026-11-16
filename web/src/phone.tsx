@@ -22,6 +22,7 @@ import { AgentsStrip, EffectBody, ThreadTabBody } from "./thread.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
+import { SlashList, useSlash } from "./slash-ui.tsx";
 import { ThreadOffers } from "./offers-ui.tsx";
 import { changeChip, headerPr } from "./offers.ts";
 import { prChip } from "./pr.ts";
@@ -848,6 +849,8 @@ function MComposer({ t, p, onView }: { t: Thread; p: PhoneProps; onView?: boolea
   const plan = sendArgs(text, att.chips);
   const empty = !text.trim() && !att.chips.length;
   const stop = t.running && empty;
+  // V0.79: `/` at the start lists the agent's commands and skills; a tap picks.
+  const slash = useSlash(reason ? null : { threadId: t.id }, text, setText, ta);
   useLayoutEffect(() => {
     const el = ta.current;
     if (!el) return;
@@ -873,6 +876,7 @@ function MComposer({ t, p, onView }: { t: Thread; p: PhoneProps; onView?: boolea
         </div>
       )}
       <ChipStrip chips={att.chips} onRemove={att.remove} />
+      <SlashList s={slash} phone />
       <div class={`m-cmp${reason ? " off" : ""}`}>
         <PhonePickers onFiles={att.add} disabled={!!reason} />
         <textarea
@@ -883,6 +887,7 @@ function MComposer({ t, p, onView }: { t: Thread; p: PhoneProps; onView?: boolea
           disabled={!!reason}
           placeholder={reason ?? (t.running ? "Steer the run…" : "Message Claude…")}
           onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+          onKeyDown={(e) => void slash.onKeyDown(e)}
           onPaste={att.onPaste}
         />
         {stop ? (
@@ -1119,6 +1124,8 @@ function MNew(p: PhoneProps) {
   const { form: f, cur, chip, folder, profiles, att } = n;
   const ta = useRef<HTMLTextAreaElement>(null);
   const ready = n.plan.ok;
+  // V0.79: `/` at the start lists the commands seen for this provider and folder.
+  const slash = useSlash(n.commandSource, f.text, (text) => n.set({ text }), ta);
 
   const paste = async () => {
     n.setErr(null);
@@ -1185,6 +1192,7 @@ function MNew(p: PhoneProps) {
           <PhonePickers onFiles={att.add} big />
         </div>
         <ChipStrip chips={att.chips} onRemove={att.remove} />
+        <SlashList s={slash} phone />
         <textarea
           ref={ta}
           class="m-ta"
@@ -1192,6 +1200,7 @@ function MNew(p: PhoneProps) {
           value={f.text}
           placeholder={att.chips.length ? "Add a note (optional)" : "What should Claude do? Optional with a screenshot."}
           onInput={(e) => n.set({ text: (e.target as HTMLTextAreaElement).value })}
+          onKeyDown={(e) => void slash.onKeyDown(e)}
           onPaste={att.onPaste}
         />
         <div class="m-defs">
@@ -1202,7 +1211,7 @@ function MNew(p: PhoneProps) {
             {I.down}
             <select
               value={`${f.profile}\u0000${f.model}`}
-              aria-label="Profile and model"
+              aria-label="Provider and model"
               onChange={(e) => {
                 const [profile, model] = (e.target as HTMLSelectElement).value.split("\u0000");
                 n.set({ profile, model });
@@ -1393,7 +1402,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
         />
         <Item label="Project…" icon={<ProjectIcon project={projectOf(t, p.store.projects)} name={projectName(t, p.store.projects)} size={18} />} right={projectName(t, p.store.projects)} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "project", ids: [t.id] } })} />
         <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => void p.commands.run("thread.setView", [t.id], { on: !t.liveView }))} />
-        <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another profile"} disabled={!!reason("thread.handover")} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "handover", ids: [t.id] } })} />
+        <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another provider"} disabled={!!reason("thread.handover")} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "handover", ids: [t.id] } })} />
         <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
         {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.list.setSelecting(true), p.list.setPicked(new Set([t.id]))))} />}
         {!peek && <Item label="Details" icon={I.right} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} />}

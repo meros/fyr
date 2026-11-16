@@ -124,6 +124,8 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     making,
     chip: projectChip(cur, making),
     folder,
+    /** V0.79: whose `/` commands the prompt lists: the newest of this provider and folder; none for a new scratch folder */
+    commandSource: folder.cwd && f.profile ? { cwd: folder.cwd, profile: f.profile, host: formHost(f, ctx) } : null,
     /** the profiles of the host the thread starts on */
     profiles,
     prof,

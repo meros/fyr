@@ -11,6 +11,7 @@ import type { SnoozePreset } from "./store.ts";
 import type { HostInfo } from "./hosts.ts";
 import { folderHint, type NewThreadArgs } from "./new-thread.ts";
 import { useNewThreadForm } from "./new-thread-form.ts";
+import { SlashList, useSlash } from "./slash-ui.tsx";
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose(): void; children: any; wide?: boolean }) {
   return (
@@ -35,6 +36,8 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
   const { form: f, cur, chip, folder, profiles, prof, att } = n;
   const quotas = useQuotas();
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  // V0.79: `/` at the start lists the commands seen for this provider and folder.
+  const slash = useSlash(n.commandSource, f.text, (text) => n.set({ text }), promptRef);
 
   useEffect(() => {
     promptRef.current?.focus();
@@ -85,7 +88,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
         </div>
         <div class="row2">
           <label class="fld">
-            <span>Profile</span>
+            <span>Provider</span>
             <select value={f.profile} onChange={(e) => n.pickProfile((e.target as HTMLSelectElement).value)}>
               {profiles.map((pr) => {
                 const q = quotaSuffix(quotas, pr.id); // V0.44
@@ -121,6 +124,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
         </label>
         <label class="fld">
           <span>Prompt</span>
+          <SlashList s={slash} />
           <textarea
             ref={promptRef}
             rows={6}
@@ -131,6 +135,7 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
             onDrop={att.onDrop}
             onDragOver={att.onDragOver}
             onKeyDown={(e) => {
+              if (slash.onKeyDown(e)) return;
               if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
                 e.preventDefault();
                 void n.submit();

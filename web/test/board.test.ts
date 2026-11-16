@@ -54,3 +54,16 @@ test("#35: an observed branch is one host record, shown in each of its threads a
   assert.deepEqual(boardItems(ts, projects).map((i) => i.change.id).sort(), ["c1", "c1", "r1"], "agent changes stay per thread");
   assert.equal(needsCount(ts), 1);
 });
+
+test("SPEC 0.5 V0.78, #54: settled and snoozed threads leave the board, except a change that needs the owner", () => {
+  const host = ch({ id: "h1", key: "host:fyr@main", kind: "code", title: "main", phase: "landed", threads: ["s1", "o1"] });
+  const s = thread("s1", "settled", "settled", { title: "Done work", changes: [host, ch({ id: "s-landed", phase: "landed" }), ch({ id: "s-live", phase: "live" }), ch({ id: "s-fail", phase: "landed", conditions: [{ type: "review", status: "fail", source: "agent", at: at(1) }] })] });
+  const z = thread("z1", "snoozed", "snoozed", { title: "Later", changes: [ch({ id: "z-review", phase: "review" }), ch({ id: "z-owner", phase: "review", needs: "owner" })] });
+  const o = thread("o1", "seen", "seen", { title: "Open", changes: [host, ch({ id: "o-work", phase: "working" })] });
+  const ts = { s1: s, z1: z, o1: o };
+  const ids = (f = {}) => boardItems(ts, projects, f).map((i) => i.change.id).sort();
+  assert.deepEqual(ids(), ["h1", "o-work", "s-fail", "z-owner"], "settled is hidden by default; Needs you and the open thread's host record stay");
+  assert.equal(boardItems(ts, projects).find((i) => i.change.id === "h1")?.thread.id, "o1", "the host record shows under the open thread");
+  assert.deepEqual(ids({ settled: true }), ["h1", "o-work", "s-fail", "s-landed", "s-live", "z-owner", "z-review"], "the toggle brings everything back");
+  assert.equal(needsCount(ts), 2, "the badge counts the Needs you changes of settled threads too");
+});

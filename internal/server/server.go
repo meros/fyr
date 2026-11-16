@@ -91,6 +91,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/threads/{id}/changes", s.changes)
 	mux.HandleFunc("GET /api/threads/{id}/pr", s.prDetail)
 	mux.HandleFunc("GET /api/threads/{id}/handover", s.handoverPlan)
+	mux.HandleFunc("GET /api/threads/{id}/commands", s.threadCommands)
+	mux.HandleFunc("GET /api/commands", s.folderCommands)
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	mux.HandleFunc("GET /api/quota", s.quota)
@@ -284,6 +286,35 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		evs = []store.Event{} // JSON [] instead of null
 	}
 	api.WriteJSON(w, 200, map[string]any{"events": engine.LeanAll(evs)})
+}
+
+// defaultProfile is the profile a thread without one runs on: the first.
+func (s *Server) defaultProfile() string {
+	if ps := s.profiles(); len(ps) > 0 {
+		return ps[0].ID
+	}
+	return ""
+}
+
+// threadCommands serves the composer's slash commands (V0.79 (2)).
+func (s *Server) threadCommands(w http.ResponseWriter, r *http.Request) {
+	cmds, from, ok := s.Engine.ThreadCommands(r.PathValue("id"), s.defaultProfile())
+	if !ok {
+		api.WriteJSON(w, 404, map[string]any{"error": "no such thread"})
+		return
+	}
+	api.WriteJSON(w, 200, map[string]any{"commands": cmds, "from": from})
+}
+
+// folderCommands serves the newest commands of a provider and folder, for
+// New thread (V0.79 (2)).
+func (s *Server) folderCommands(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	p := q.Get("profile")
+	if p == "" {
+		p = s.defaultProfile()
+	}
+	api.WriteJSON(w, 200, map[string]any{"commands": s.Engine.FolderCommands(p, q.Get("cwd"))})
 }
 
 // thread returns one thread's DTO (V0.38): a client whose copy does not

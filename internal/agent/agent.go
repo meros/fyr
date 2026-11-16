@@ -73,6 +73,9 @@ type Config struct {
 	Attachments func(id string) (attach.Meta, error)
 	// OnRateLimit gets a session's rate_limit_info with its profile id (V0.44); optional.
 	OnRateLimit func(profile string, info map[string]any)
+	// OnCommands gets the commands of a session's initialize answer with
+	// its thread, profile id and folder (V0.79); optional.
+	OnCommands func(thread, profile, cwd string, cmds []core.Command)
 	// HandoverDir holds the files a handover starts from (V0.45); empty
 	// means a folder in the system temp dir.
 	HandoverDir string
@@ -396,7 +399,8 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 	s.c = c
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if _, err := c.Initialize(ctx, initHooks(s.viewTools || s.changeTools)); err != nil {
+	answer, err := c.Initialize(ctx, initHooks(s.viewTools || s.changeTools))
+	if err != nil {
 		c.Kill()
 		<-c.Done()
 		dropToken()
@@ -405,6 +409,10 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 			return nil, fmt.Errorf("initialize: %w (%s)", err, strings.TrimSpace(perr.Error()))
 		}
 		return nil, fmt.Errorf("initialize: %w", err)
+	}
+	// V0.79: the commands and skills the composer offers.
+	if cmds := commandsOf(answer); cmds != nil && m.cfg.OnCommands != nil {
+		m.cfg.OnCommands(threadID, p.ID, t.Cwd, cmds)
 	}
 	return s, nil
 }
