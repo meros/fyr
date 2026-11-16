@@ -25,6 +25,7 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.slotIdle = map[string]time.Time{}
 	e.mu.Unlock()
 	p.OnGrant = e.slotGranted
+	p.Fill() // a pool loaded from the store may have free slots for its queue
 }
 
 // slotGranted tells a queued thread's agent that the slot is its own.
@@ -122,6 +123,9 @@ func (e *Engine) slotTools(s *mcp.Server) {
 			}
 			if e.Slots == nil {
 				return off, nil
+			}
+			if e.Slots.Off() {
+				return "Slots are off on this host: no limit, run the job.", nil
 			}
 			held, ahead := e.Slots.Acquire(th, kind)
 			if held {

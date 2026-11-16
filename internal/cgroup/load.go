@@ -68,7 +68,7 @@ type Sampler struct {
 // always read now.
 func (s *Sampler) Get() Load {
 	l := s.get()
-	if s.Slots != nil {
+	if s.Slots != nil && !s.Slots.Off() {
 		sn := s.Slots.Snapshot()
 		l.Slots = &sn
 	}

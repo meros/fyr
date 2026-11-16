@@ -63,9 +63,9 @@ in
       description = "Stop an agent process after this long without a run (SPEC V0.7).";
     };
     slots = lib.mkOption {
-      type = lib.types.ints.positive;
+      type = lib.types.ints.unsigned;
       default = 2;
-      description = "How many heavy jobs (test suites, builds, e2e runs) the agents run at once across all threads; the rest wait in a queue (SPEC V0.86).";
+      description = "How many heavy jobs (test suites, builds, e2e runs) the agents run at once across all threads; the rest wait in a queue that survives a restart. 0 turns slots off: no limit, nothing queues, and the deploy's tests take no slot (SPEC V0.86).";
     };
     role = lib.mkOption {
       type = lib.types.enum [ "both" "host" "front" ];

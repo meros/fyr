@@ -156,14 +156,22 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	eng.Agents = mgr
 	eng.ProfileExists = func(id string) bool { _, ok := h.profile(id); return ok }
 	// V0.86: at most cfg.Slots heavy jobs at once; the deploy's tests first.
-	pool := slots.New(cfg.Slots)
+	// slots: 0 is off, absent or negative is the default; the pool survives a
+	// restart in the store.
+	n := slots.Default
+	if cfg.Slots != nil {
+		n = *cfg.Slots
+	}
+	pool := slots.Open(n, h.st)
 	eng.UseSlots(pool)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy()}
 	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
-	dep.Slot = func(ctx context.Context) (func(), error) { return pool.Wait(ctx, cgroup.DeployDir, slots.Test) }
+	if !pool.Off() {
+		dep.Slot = func(ctx context.Context) (func(), error) { return pool.Wait(ctx, cgroup.DeployDir, slots.Test) }
+	}
 	// V0.82: a self-deploy makes the landed changes its build holds live.
 	dep.OnShipped = func(s deploy.Shipped) {
 		n := eng.SelfDeployed(agent.NormalizeRemote(s.Remote), s.Build, s.Contains)
