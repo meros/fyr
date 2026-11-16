@@ -7,6 +7,7 @@ import type { PrReply } from "./pr.ts";
 import type { Quota } from "./quota.ts";
 import { mockPrDetail } from "./mock-pr.ts";
 import { quietList } from "./quiet.ts";
+import type { SlashCommand } from "./slash.ts";
 
 // V0.35: a table that squeezed on the phone (a commit column, long change text).
 const TRIAGE_TABLE =
@@ -1594,3 +1595,17 @@ export function mockQuota(now: number): Quota[] {
     { profile: "work", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 86, resetsAt: at(45) }, { name: "7 d", usedPct: 40, resetsAt: at(5 * 1440) }], updatedAt: at(-14), stale: true, error: "Rate limited by the provider; trying again later", retryAt: at(6) },
   ];
 }
+
+/** SPEC 0.5 V0.79: the agent's commands and skills, as a host serves them for any thread or folder. */
+export const MOCK_COMMANDS: SlashCommand[] = [
+  { name: "compact", description: "Clear the conversation history but keep a summary in context", argumentHint: "<optional custom summarization instructions>" },
+  { name: "context", description: "Show the current context usage" },
+  { name: "init", description: "Write a CLAUDE.md file with the codebase's documentation" },
+  { name: "pr-comments", description: "Get the comments of a GitHub pull request" },
+  { name: "review", description: "Review a pull request", argumentHint: "<pr-number>" },
+  { name: "security-review", description: "Complete a security review of the pending changes on the current branch" },
+  { name: "research", description: "Research a problem in parallel via web docs, web search, and codebase exploration", argumentHint: "<question>" },
+  { name: "handover", description: "Session wrap-up: document state for resumption or handoff" },
+  { name: "dev:check", description: "The repo's single local gate: tests, typecheck, lint and format by repo type" },
+  { name: "dev:review", description: "Pre-PR review gate: one pass for correctness bugs and security only" },
+];

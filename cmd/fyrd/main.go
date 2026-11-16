@@ -132,7 +132,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string) {
 			return h.profiles()[0]
 		},
 		IdleStop: time.Duration(cfg.IdleStopMinutes) * time.Minute, MCPURL: "http://" + ln.Addr().String() + "/mcp",
-		LogDir: filepath.Join(data, "logs"), Attachments: att.Get, OnRateLimit: quotas.Observe, HandoverDir: filepath.Join(data, "handover"),
+		LogDir: filepath.Join(data, "logs"), Attachments: att.Get, OnRateLimit: quotas.Observe, OnCommands: eng.SetCommands, HandoverDir: filepath.Join(data, "handover"),
 	})
 	eng.Agents = mgr
 	eng.ProfileExists = func(id string) bool { _, ok := h.profile(id); return ok }

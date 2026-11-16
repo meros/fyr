@@ -58,6 +58,9 @@ type Engine struct {
 	projects map[string]*core.Project // V0.23
 	// records are the host change records (#35): observed branches.
 	records map[string]*core.Change
+	// cmds are each thread's commands from its session (V0.79), under cmdMu.
+	cmdMu sync.Mutex
+	cmds  map[string][]core.Command
 
 	// quietSent is the quiet hours the clients last got, per project (V0.46).
 	quietSent map[string]string
@@ -106,7 +109,7 @@ type Engine struct {
 
 func New(st *store.Store) *Engine {
 	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
-		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, quietSent: map[string]string{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
+		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
 		shotLimit: window{max: 10, span: time.Minute}, newLimit: window{max: 5, span: time.Hour}, sendLimit: window{max: 30, span: time.Hour}}
 }
 

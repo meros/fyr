@@ -14,6 +14,7 @@ import type { FoundDTO, ProviderDTO } from "./providers.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import { reloadForNewBuild } from "./pwa.ts";
+import type { SlashCommand } from "./slash.ts";
 
 export interface ApiHandlers {
   state(dto: StateDTO): void;
@@ -75,7 +76,12 @@ export interface Api {
   providersFound(): Promise<FoundDTO[]>;
   /** V0.50: the current profiles (after a provider changed). */
   profiles(): Promise<Profile[]>;
+  /** V0.79: the agent's commands and skills for a thread, or for a provider and folder (New thread). */
+  commands(source: CommandSource): Promise<SlashCommand[]>;
 }
+
+/** Whose commands: a thread's, or the newest of a provider and folder on a host (V0.79). */
+export type CommandSource = { threadId: string } | { cwd: string; profile: string; host?: string };
 
 async function fsGet<T>(path: string): Promise<T> {
   const r = await fetch(path, { headers: { Accept: "application/json" } });
@@ -347,6 +353,16 @@ function createHttpApi(): Api {
     },
     attachmentUrl,
     previewUrl,
+    async commands(source) {
+      const path =
+        "threadId" in source
+          ? `/api/threads/${encodeURIComponent(source.threadId)}/commands`
+          : `/api/commands?cwd=${encodeURIComponent(source.cwd)}&profile=${encodeURIComponent(source.profile)}${source.host ? `&host=${encodeURIComponent(source.host)}` : ""}`;
+      const r = await fetch(path, { headers: { Accept: "application/json" } });
+      const j = (await r.json().catch(() => ({}))) as { commands?: SlashCommand[]; error?: string };
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      return Array.isArray(j.commands) ? j.commands : [];
+    },
     async changes(threadId) {
       const r = await fetch(`/api/threads/${encodeURIComponent(threadId)}/changes`);
       const j = (await r.json().catch(() => ({}))) as ChangesDTO & { error?: string };
