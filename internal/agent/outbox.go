@@ -116,6 +116,14 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 		}
 		e.Text = "[From thread " + label + "] " + e.Text
 	}
+	if first {
+		// V0.95 (1): the turn this message starts carries the pending
+		// notices, before its words; they are taken, so no tool call
+		// repeats them.
+		if ns := m.take(s, threadID, core.AtTurn); len(ns) > 0 {
+			e.Text = strings.TrimSuffix(core.NoticeText(ns)+"\n\n"+e.Text, "\n\n")
+		}
+	}
 	e, metas := m.withAttachments(e)
 	ud := map[string]any{"id": e.MessageID, "text": userText, "images": len(e.Images)}
 	if metas != nil {
