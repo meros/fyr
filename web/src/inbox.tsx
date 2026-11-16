@@ -5,13 +5,13 @@ import type { Profile, Project, Thread } from "./types.ts";
 import { QuotaRail } from "./quota-ui.tsx";
 import { LoadRail } from "./load-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
-import { ProjectIcon } from "./project-ui.tsx";
+import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { DESKTOP_LOOK, NeedsRowBody, OneRowBody } from "./row-ui.tsx";
 import { colorVar, pickerOrder } from "./projects.ts";
 import { SECTIONS, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
 import { BrandMark, StateIcon } from "./icons.tsx";
 import { count, untilLabel } from "./format.ts";
-import { quietNote } from "./quiet.ts";
+import { quietLocked, quietNote } from "./quiet.ts";
 
 export type Theme = "system" | "light" | "dark";
 
@@ -169,6 +169,9 @@ interface InboxProps {
   projects: Project[];
   projectFilter: string | null;
   onProjectFilter(id: string | null): void;
+  /** V0.114: the one unlock of quiet projects, and how many search hits it hides */
+  unlock: QuietUnlock;
+  quietHits: number;
 }
 
 export function Inbox(p: InboxProps) {
@@ -195,7 +198,8 @@ export function Inbox(p: InboxProps) {
           {PLUS}
         </button>
       </div>
-      <ProjectFilterRow projects={p.projects} selected={p.projectFilter} onPick={p.onProjectFilter} now={p.now} />
+      <ProjectFilterRow projects={p.projects} selected={p.projectFilter} onPick={p.onProjectFilter} now={p.now} unlock={p.unlock} />
+      {p.quietHits > 0 && <QuietGate now={p.now} unlock={p.unlock} what="search" />}
       <div class="list" role="listbox" aria-label="Threads">
         {p.sec.pinned.length > 0 && (
           // V0.104: the pinned threads, above every section and always open; each keeps its section's row shape.
@@ -250,11 +254,14 @@ export function Inbox(p: InboxProps) {
   );
 }
 
-/** Desktop: a compact row of projects under the search field; one click filters, the × clears. */
-export function ProjectFilterRow({ projects, selected, onPick, now }: { projects: Project[]; selected: string | null; onPick(id: string | null): void; now: number }) {
+/** Desktop and phone (V0.100): a compact row of projects under the search field; one click filters, the × clears.
+ *  V0.114: picking a quiet project shows the gate under the row, not its threads, until the 30 s hold. */
+export function ProjectFilterRow({ projects, selected, onPick, now, unlock }: { projects: Project[]; selected: string | null; onPick(id: string | null): void; now: number; unlock: QuietUnlock }) {
   const list = pickerOrder(projects).filter((p) => (p.threads ?? 0) > 0 || p.id === selected);
   if (!list.length) return null;
+  const picked = projects.find((p) => p.id === selected);
   return (
+    <>
     <div class="pfrow" role="toolbar" aria-label="Filter by project">
       {selected && (
         <button class="pfx" onClick={() => onPick(null)} title="Show every project" aria-label="Clear the project filter">
@@ -262,7 +269,7 @@ export function ProjectFilterRow({ projects, selected, onPick, now }: { projects
         </button>
       )}
       {list.map((p) => {
-        // V0.46: a project in its quiet hours says so; its threads show only while it is picked here.
+        // V0.46: a project in its quiet hours says so. V0.114: picking it here opens it only after the hold.
         const note = quietNote(p, now);
         return (
           <button class={`pfc${p.id === selected ? " on" : ""}${note ? " quiet" : ""}`} aria-pressed={p.id === selected} style={{ "--pc": colorVar(p.color, p.name) }} title={`${p.name}: ${p.threads ?? 0} threads${note ? ` · ${note}, hidden from the inbox` : ""}`} onClick={() => onPick(p.id === selected ? null : p.id ?? null)}>
@@ -273,5 +280,7 @@ export function ProjectFilterRow({ projects, selected, onPick, now }: { projects
         );
       })}
     </div>
+    {picked && quietLocked(picked, now, unlock.showUntil) && <QuietGate project={picked} now={now} unlock={unlock} what="threads" />}
+    </>
   );
 }

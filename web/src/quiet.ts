@@ -181,3 +181,43 @@ export function saveQuietShow(kv: KV | null, from: number | null): number {
   }
   return end;
 }
+
+// ---- V0.114: every way into a quiet project goes through the same 30 s hold; one unlock for all of them ----
+
+/** Whether x (a thread or a project) is quiet and the device has no unlock running: the paths into it are shut. */
+export function quietLocked(x: { quietUntil?: string } | undefined, now: number, showUntil: number): boolean {
+  return isQuiet(x, now) && !(showUntil > now);
+}
+
+/** The thread the screen may show. A thread opened while its project was not quiet, or while the unlock ran, stays
+ *  open when the window starts or the unlock ends (V0.46 (6)): `prev` is that thread. Any other way to a quiet
+ *  thread (a link, back and forward, a notice, a board card, ?open=, a push) shows the gate instead. A thread that
+ *  is not here yet is not admitted, so the gate decides when it arrives. */
+export function admitThread(prev: string | null, id: string | null, t: { quietUntil?: string } | undefined, now: number, showUntil: number): { admitted: string | null; gated: boolean } {
+  if (!id) return { admitted: null, gated: false };
+  if (id === prev) return { admitted: id, gated: false };
+  if (!t) return { admitted: null, gated: false };
+  if (quietLocked(t, now, showUntil)) return { admitted: null, gated: true };
+  return { admitted: id, gated: false };
+}
+
+/** The threads search and the project filter may reach: quiet ones only while the unlock runs. */
+export function reachable(threads: Record<string, Thread>, now: number, showUntil: number): Record<string, Thread> {
+  return hideQuiet(threads, showUntil > now, now);
+}
+
+// The unlock is one value per device (browser storage), shared by New thread, the filter, search and the gate; a
+// change in one place (or another tab) reaches every listener at once.
+const listeners = new Set<(end: number) => void>();
+
+export function subscribeQuietShow(fn: (end: number) => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+/** Start (from) or end (null) the unlock and tell every listener. */
+export function setQuietShow(kv: KV | null, from: number | null): number {
+  const end = saveQuietShow(kv, from);
+  for (const fn of listeners) fn(end);
+  return end;
+}
