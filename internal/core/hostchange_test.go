@@ -131,3 +131,44 @@ func TestRecordBehindItsBaseIsNotLanded(t *testing.T) {
 		t.Fatalf("a new commit after the base moved: %+v", more)
 	}
 }
+
+// SPEC 0.5 V0.88 (1): a squash-merged branch that stays checked out is still ahead of its base. Once its record ended,
+// the same head (with or without changed files) makes no new record; a new commit does.
+func TestEndedBranchAtTheSameHeadMakesNoNewRecord(t *testing.T) {
+	g := GitFacts{Repo: "github.com/o/r", Path: "/w/r", Branch: "feat", Base: "origin/main", Ahead: 1, Head: "cf50fef89f"}
+	rs, rec := observe(t, nil, g, ct0)
+	_, landed, _, _ := ReduceRecord(rs, Input{Source: Observer(ObsGit), Kind: KindGitEnded, Args: GitEnd{Change: rec.ID, Merged: true}}, ct0)
+	rs = []*Change{landed}
+	if _, again := observe(t, rs, g, ct0); again != nil {
+		t.Fatalf("the merged head made a new record: %+v", again)
+	}
+	dirty := g
+	dirty.Dirty = 2
+	if _, again := observe(t, rs, dirty, ct0); again != nil {
+		t.Fatalf("changed files on the merged head made a new record: %+v", again)
+	}
+	next := g
+	next.Ahead, next.Unpushed, next.Head = 2, 1, "a1b2c3d4e5"
+	_, more := observe(t, rs, next, ct0)
+	if more == nil || more.ID == landed.ID || more.Phase != PhaseWorking {
+		t.Fatalf("a new commit after the merge is new work: %+v", more)
+	}
+}
+
+// SPEC 0.5 V0.88 (2): a merged PR ends a record only when the record's newest revision is the PR's head.
+func TestMergedPRCoversOnlyItsHead(t *testing.T) {
+	pr := &PR{State: "MERGED", Head: "cf50fef89f0123456789abcdef0123456789abcd"}
+	rec := &Change{Revisions: []Revision{{ID: "cf50fef89f"}}}
+	if !MergedPRCovers(pr, rec) {
+		t.Fatal("the PR's own head is merged")
+	}
+	if MergedPRCovers(pr, &Change{Revisions: []Revision{{ID: "a1b2c3d4e5"}}}) {
+		t.Fatal("a new commit after the merge is not that PR's merge")
+	}
+	if !MergedPRCovers(&PR{State: "MERGED"}, rec) || !MergedPRCovers(pr, &Change{}) {
+		t.Fatal("an unknown head keeps the old rule: the branch decides")
+	}
+	if MergedPRCovers(&PR{State: "OPEN", Head: pr.Head}, rec) {
+		t.Fatal("an open PR is not merged")
+	}
+}
