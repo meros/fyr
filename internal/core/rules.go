@@ -60,6 +60,7 @@ const (
 	RuleSuspended  = "suspended"
 	SuspendSettle  = "settle"
 	SuspendArchive = "archive"
+	SuspendPin     = "pinned" // V0.106: a settle Rule the owner did not arm waits while the thread is pinned
 	maxFirings     = 8
 	maxRejections  = 10
 	maxAgentRules  = 20
@@ -396,6 +397,9 @@ func suspend(r *Rule, t *Thread, now time.Time) {
 		if (s == SuspendSettle && t.Settle.At != nil) || (s == SuspendArchive && t.ArchivedAt != nil) {
 			why = append(why, s)
 		}
+	}
+	if autoSettle(*r) && t.PinnedAt != nil {
+		why = append(why, SuspendPin)
 	}
 	was := len(r.SuspendedBy) > 0
 	r.SuspendedBy = why

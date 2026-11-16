@@ -391,7 +391,7 @@ func init() {
 			if t.Settle.At != nil {
 				return "Already settled"
 			}
-			if SettlesWhenDone(t) {
+			if settlesWhenDoneByOwner(t) { // V0.106: the agent's rule on a pinned thread does not count
 				return "Settles when the run ends"
 			}
 			return notArchived(t, v, now)
@@ -503,6 +503,7 @@ func init() {
 		},
 		Apply: func(t *Thread, _ *View, _ Args, _ time.Time) ([]Effect, error) {
 			t.PinnedAt = nil
+			DropAutoSettle(t) // V0.106: what waited for the pin is dropped, not fired
 			return nil, nil
 		}})
 
