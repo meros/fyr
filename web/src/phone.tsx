@@ -212,6 +212,8 @@ export interface PhoneProps {
   settings?: ComponentChildren;
   /** V0.42: the folder picker sheet, over everything */
   overlay?: ComponentChildren;
+  /** V0.118: the update status, the first line of the screen below the safe area, in the layout (never over a control) */
+  status?: ComponentChildren;
 }
 
 /** The host's name in the header (the mock says so). */
@@ -246,6 +248,7 @@ export function PhoneApp(p: PhoneProps) {
   const api = useApi(); // V0.98 (3): the board visit
   return (
     <div class={`m-app${bottomBar ? " has-bar" : ""}`}>
+      {p.status}
       {s.name === "inbox" && <MInbox {...p} />}
       {s.name === "search" && <MSearch {...p} />}
       {s.name === "thread" && p.open.thread && <MThread {...p} t={p.open.thread} tab={defaultTab(p.open.thread, s.tab)} />}

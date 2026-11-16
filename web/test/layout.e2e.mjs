@@ -1258,18 +1258,86 @@ try {
   failures.push(`V0.80 desktop: ${e.message}`);
 }
 
-// V0.39: the update banner is below the top safe area and inside the screen, and names the threads it waits for.
-try {
-  await openScreen({ url: "?mock=rail&deploy=drain" }, 390, 844);
-  const b = await evaluate(`(() => { const e = document.querySelector('.dbn'); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, left: r.left, right: r.right, text: e.textContent }; })()`);
-  check(!!b, "V0.39 banner: no update banner on the phone");
-  if (b) {
-    check(b.top >= INSETS.top && b.left >= 0 && b.right <= 390, `V0.39 banner: outside the safe area (${JSON.stringify(b)})`);
-    check(/waiting for 2 threads to finish: Map perf/.test(b.text), `V0.39 banner: text "${b.text}"`);
+// SPEC 0.5 V0.118: the update status is a line in the layout, never over a control. In each phase, at the desktop and
+// the phone width, with the thread open (its composer and send button) and with the details opened, the status's box
+// overlaps no button, field or composer outside it (the rail's buttons included), sits below the top safe area and
+// inside the screen; a client-only update shows none; a success goes by itself; a failure stays with Details and ×.
+const OVER_CONTROLS = `(() => {
+  const e = document.querySelector('.dbn');
+  if (!e) return null;
+  const b = e.getBoundingClientRect();
+  const hits = [...document.querySelectorAll('button, textarea, input, select, [contenteditable=true], .cmp, .m-cmp, .rail .ri, .m-send')]
+    .filter((o) => !e.contains(o) && !o.contains(e))
+    .map((o) => {
+      // the part of the control that shows: its box cut by every scrolling or clipping ancestor
+      const r = o.getBoundingClientRect(), v = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      for (let a = o.parentElement; a; a = a.parentElement) {
+        if (getComputedStyle(a).overflow === 'visible') continue;
+        const c = a.getBoundingClientRect();
+        v.left = Math.max(v.left, c.left); v.top = Math.max(v.top, c.top); v.right = Math.min(v.right, c.right); v.bottom = Math.min(v.bottom, c.bottom);
+      }
+      return { o, r: { ...v, width: Math.max(0, v.right - v.left), height: Math.max(0, v.bottom - v.top) } };
+    })
+    .filter(({ o, r }) => r.width > 0.5 && r.height > 0.5 && getComputedStyle(o).visibility !== 'hidden')
+    .filter(({ r }) => r.left < b.right - 0.5 && b.left < r.right - 0.5 && r.top < b.bottom - 0.5 && b.top < r.bottom - 0.5)
+    .map(({ o }) => (o.getAttribute('aria-label') || o.textContent || o.className).trim().slice(0, 30));
+  const pos = getComputedStyle(e).position;
+  return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, vw: innerWidth, vh: innerHeight, pos, hits, text: e.textContent,
+    btns: [...e.querySelectorAll('button')].map((x) => x.getAttribute('aria-label') || x.textContent.trim()) };
+})()`;
+const PHASES = ["build", "test", "drain", "switch", "failed", "done"];
+for (const [label, w, h, mobile] of [["desktop", 1280, 800, false], ["phone", 390, 844, true], ["phone", 360, 640, true]]) {
+  for (const ph of PHASES) {
+    const ctx = `V0.118 ${label} ${w}×${h} ${ph}`;
+    try {
+      if (mobile) await openScreen({ url: `?mock=rail&open=t_mapperf&deploy=${ph}` }, w, h);
+      else {
+        await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+        await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+        await navigate(`${origin}/?mock=rail&open=t_mapperf&deploy=${ph}`, "!!document.querySelector('.cmp')");
+      }
+      await waitFor(`!!document.querySelector('.dbn')`, { soft: true });
+      const b = await evaluate(OVER_CONTROLS);
+      check(!!b, `${ctx}: no update status`);
+      if (!b) continue;
+      if (process.env.FYR_SHOTS && w !== 360 && (ph === "drain" || ph === "failed")) writeFileSync(join(process.env.FYR_SHOTS, `deploy-${ph}-${label}.png`), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+      check(b.pos !== "fixed" && b.pos !== "absolute", `${ctx}: the status floats (position ${b.pos})`);
+      check(b.hits.length === 0, `${ctx}: the status covers ${JSON.stringify(b.hits)} (${JSON.stringify(b)})`);
+      check(b.top >= (mobile ? INSETS.top : 0) - 0.5 && b.left >= -0.5 && b.right <= b.vw + 0.5 && b.bottom <= b.vh, `${ctx}: outside the screen or the safe area (${JSON.stringify(b)})`);
+      if (ph === "drain") {
+        check(/waiting for 2 threads to finish/.test(b.text), `${ctx}: text "${b.text}"`);
+        check(b.btns.includes("Restart now"), `${ctx}: no Restart now (V0.83) ${JSON.stringify(b.btns)}`);
+      }
+      if (ph === "failed") check(b.btns.includes("Details") && b.btns.includes("Dismiss"), `${ctx}: a failure lacks Details or Dismiss ${JSON.stringify(b.btns)}`);
+      // the details, opened by a press, are in the layout too
+      await evaluate(`(document.querySelector('.dbn .dbn-x') || [...document.querySelectorAll('.dbn button')].find((x) => x.textContent.trim() === 'Details'))?.click()`);
+      await settle();
+      const o = await evaluate(OVER_CONTROLS);
+      check(!!o && o.hits.length === 0 && o.bottom <= o.vh, `${ctx} opened: the status covers ${JSON.stringify(o?.hits)} (${JSON.stringify(o)})`);
+      if (ph === "done") {
+        await waitFor(`!document.querySelector('.dbn')`, { soft: true, timeout: 9000 });
+        check(!(await evaluate(`!!document.querySelector('.dbn')`)), `${ctx}: a success does not go by itself`);
+      }
+      if (ph === "failed") {
+        await evaluate(`document.querySelector('.dbn button[aria-label=Dismiss]')?.click()`);
+        await settle();
+        check(!(await evaluate(`!!document.querySelector('.dbn')`)), `${ctx}: Dismiss does not hide the failure`);
+      }
+    } catch (e) {
+      failures.push(`${ctx}: ${e.message}`);
+    }
+    await evaluate(`localStorage.removeItem('fyr.deploy.dismissed')`); // #85 keeps a dismissed result; the next size sees it again
   }
-} catch (e) {
-  failures.push(`V0.39 banner: ${e.message}`);
+  try {
+    if (mobile) await openScreen({ url: `?mock=rail&open=t_mapperf&deploy=client` }, w, h);
+    else await navigate(`${origin}/?mock=rail&open=t_mapperf&deploy=client`, "!!document.querySelector('.cmp')");
+    await settle();
+    check(!(await evaluate(`!!document.querySelector('.dbn')`)), `V0.118 ${label} ${w}: a client-only update shows a status`);
+  } catch (e) {
+    failures.push(`V0.118 ${label} client: ${e.message}`);
+  }
 }
+await send("Emulation.setTouchEmulationEnabled", { enabled: false });
 
 // V0.54: with two hosts the phone rows name each thread's host and an offline host's rows say so; the offline
 // thread's header carries "<host> offline since HH:MM · read-only" inside the screen; one host shows no host at all.
@@ -1901,20 +1969,23 @@ try {
   failures.push(`#72 desktop: ${e.message}`);
 }
 
-// #81: a busy update banner folds to a chip inside the screen and opens again on a press, on the desktop and the phone.
+// V0.118 (amends #81): the busy status is one short line already, so it has no fold; a press on it shows the whole
+// sentence and a second press makes it one line again, on the desktop and the phone (44 px there).
 for (const [w, h, mobile] of [[1280, 800, false], [390, 844, true]]) {
-  const ctx = `#81 ${mobile ? "phone" : "desktop"}`;
+  const ctx = `V0.118 press ${mobile ? "phone" : "desktop"}`;
   try {
     await send("Emulation.setTouchEmulationEnabled", { enabled: mobile });
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: mobile ? 3 : 1, mobile });
-    await navigate(`${origin}/?mock=rail&deploy=drain`, "!!document.querySelector('.dbn [aria-label=Fold]')");
-    await evaluate(`document.querySelector('.dbn [aria-label=Fold]').click()`);
-    await waitFor(`!!document.querySelector('.dbn.dbn-chip')`, { soft: true });
-    const c = await evaluate(`(() => { const e = document.querySelector('.dbn.dbn-chip'); if (!e) return null; const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, in: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, text: e.textContent.trim() }; })()`);
-    check(!!c && c.in && c.w <= 160 && c.text === "Updating", `${ctx}: the folded banner is not a small chip inside the screen (${JSON.stringify(c)})`);
-    await evaluate(`document.querySelector('.dbn.dbn-chip')?.click()`);
-    await waitFor(`!!document.querySelector('.dbn [aria-label=Fold]')`, { soft: true });
-    check(await evaluate(`!document.querySelector('.dbn.dbn-chip') && /waiting for/.test(document.querySelector('.dbn')?.textContent ?? '')`), `${ctx}: a press on the chip does not open the banner`);
+    await navigate(`${origin}/?mock=rail&deploy=drain`, "!!document.querySelector('.dbn .dbn-x')");
+    const one = await evaluate(`(() => { const e = document.querySelector('.dbn .dbn-x'), r = e.getBoundingClientRect(); return { h: r.height, fold: !!document.querySelector('.dbn [aria-label=Fold], .dbn-chip'), lines: Math.round(document.querySelector('.dbn .dbn-t').getBoundingClientRect().height / parseFloat(getComputedStyle(e).lineHeight)) }; })()`);
+    check(!one.fold && one.lines === 1 && one.h >= (mobile ? 44 : 28), `${ctx}: the busy status is not one line without a fold (${JSON.stringify(one)})`);
+    await evaluate(`document.querySelector('.dbn .dbn-x').click()`);
+    await waitFor(`!!document.querySelector('.dbn.open')`, { soft: true });
+    const open = await evaluate(`({ open: document.querySelector('.dbn .dbn-x').getAttribute('aria-expanded'), wraps: getComputedStyle(document.querySelector('.dbn .dbn-t')).whiteSpace })`);
+    check(open.open === "true" && open.wraps === "normal", `${ctx}: a press does not show the whole sentence (${JSON.stringify(open)})`);
+    await evaluate(`document.querySelector('.dbn .dbn-x').click()`);
+    await waitFor(`!document.querySelector('.dbn.open')`, { soft: true });
+    check(await evaluate(`!document.querySelector('.dbn.open')`), `${ctx}: a second press does not close it`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }
