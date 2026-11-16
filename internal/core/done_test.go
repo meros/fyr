@@ -101,9 +101,10 @@ func TestStackedPRNotDoneUntilInDefault(t *testing.T) {
 	}
 }
 
-// SPEC V0.98 (1): a merged change whose deploy watch is armed stays until it
-// is live or the watch ends.
-func TestDoneWaitsForDeployWatch(t *testing.T) {
+// SPEC V0.105 (1), amends V0.98 (1): a merged change is done at once, also
+// with its deploy watch armed; the watch still moves it to live, as a fact on
+// the done card.
+func TestDeployWatchAddsLiveToDoneChange(t *testing.T) {
 	merged := func(at time.Time) PR {
 		return PR{URL: "https://github.com/meros/fyr/pull/9", Repo: "meros/fyr", Number: 9, State: "MERGED", Checks: ChecksPass, MergeSHA: "m9", MergedAt: &at, CheckedAt: &at}
 	}
@@ -112,12 +113,12 @@ func TestDoneWaitsForDeployWatch(t *testing.T) {
 	if FindRule(th, deployRuleID(c.ID)) == nil {
 		t.Fatal("setup: no deploy watch")
 	}
-	if c.IsDone() {
-		t.Fatal("done while the deploy watch is armed")
+	if !c.IsDone() || c.Done.Reason != "merged" {
+		t.Fatalf("a merged change with a deploy watch is not done: %+v", c.Done)
 	}
 	live := dstep(t, th, Observer(ObsDeploy), KindDeployObserved, DeployObservedArgs{Change: c.ID, Obs: DeployObs{Deployments: []Deployment{{Env: "production", Production: true, State: "success"}}}}, dt0.Add(time.Minute))
-	if c := FindChange(live, c.ID); c.Phase != PhaseLive || !c.IsDone() || c.Done.Reason != "live" {
-		t.Fatalf("live and not done: %s %+v", c.Phase, c.Done)
+	if c := FindChange(live, c.ID); c.Phase != PhaseLive || !c.IsDone() {
+		t.Fatalf("the deploy did not show live on the done card: %s %+v", c.Phase, c.Done)
 	}
 	ended := dstep(t, th, Observer(ObsDeploy), KindDeployObserved, DeployObservedArgs{Change: c.ID, Obs: DeployObs{None: true}}, dt0.Add(time.Minute))
 	if c := FindChange(ended, c.ID); c.Phase != PhaseLanded || !c.IsDone() {
@@ -226,7 +227,7 @@ func TestGhPRCreateJoinsBranchChange(t *testing.T) {
 }
 
 // SPEC V0.98 (7): the load pass folds duplicate pairs and marks every change
-// at or past landed done, except one whose deploy watch is armed.
+// at or past landed done, also one whose deploy watch is armed (V0.105 (1)).
 func TestMigrateDone(t *testing.T) {
 	merged := &PR{URL: "https://github.com/o/r/pull/5", Repo: "o/r", Number: 5, State: "MERGED", Checks: ChecksPass, Branch: "dup"}
 	watched := &PR{URL: "https://github.com/o/r/pull/6", Repo: "o/r", Number: 6, State: "MERGED", Checks: ChecksPass, Branch: "w"}
@@ -244,7 +245,7 @@ func TestMigrateDone(t *testing.T) {
 	if FindChange(th, "pr:o/r#5") == nil || FindChange(th, "pr:o/r#5").ID != "c_agent" || len(th.Changes) != 5 {
 		t.Fatalf("the duplicate pair did not fold: %+v", th.Changes)
 	}
-	want := map[string]string{"c_agent": DoneBeforeV2, "l": DoneBeforeV2, "x": "abandoned"}
+	want := map[string]string{"c_agent": DoneBeforeV2, "l": DoneBeforeV2, "w": DoneBeforeV2, "x": "abandoned"}
 	for _, c := range th.Changes {
 		r, ok := want[c.ID]
 		if c.IsDone() != ok || (ok && c.Done.Reason != r) {
