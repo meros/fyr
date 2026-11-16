@@ -131,14 +131,20 @@ cat >"$app/Contents/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
-cat >"$app/Contents/MacOS/Fyr" <<'EOF'
-#!/bin/sh
-url=http://127.0.0.1:7777
-chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-if [ -x "$chrome" ]; then exec "$chrome" --app="$url"; fi
-exec open "$url"
+# A native (arm64 and x86_64) launcher: macOS takes a script for an Intel
+# app and asks for Rosetta.
+launcher_c="$(mktemp -d)/fyr.c" # a file: with two -arch flags cc reads its input twice
+cat >"$launcher_c" <<'EOF'
+#include <unistd.h>
+int main(void) {
+	const char *url = "http://127.0.0.1:7777";
+	if (access("/Applications/Google Chrome.app", F_OK) == 0)
+		execl("/usr/bin/open", "open", "-na", "Google Chrome", "--args", "--app=http://127.0.0.1:7777", (char *)0);
+	execl("/usr/bin/open", "open", url, (char *)0);
+	return 1;
+}
 EOF
-chmod +x "$app/Contents/MacOS/Fyr"
+cc -O2 -arch arm64 -arch x86_64 -o "$app/Contents/MacOS/Fyr" "$launcher_c"
 icons="$(mktemp -d)/fyr.iconset"
 mkdir -p "$icons"
 for s in 16 32 128 256 512; do
@@ -146,6 +152,7 @@ for s in 16 32 128 256 512; do
   sips -z $((s * 2)) $((s * 2)) web/dist/icons/lighthouse/icon-512.png --out "$icons/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$icons" -o "$app/Contents/Resources/fyr.icns"
+codesign -s - -f "$app" >/dev/null 2>&1 || true
 touch "$app"
 # Spotlight lists it only once LaunchServices knows it.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app"
