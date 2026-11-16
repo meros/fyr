@@ -35,6 +35,7 @@ import (
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/server"
+	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/tailnet"
 	"github.com/meros/fyr/web"
@@ -154,11 +155,23 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	})
 	eng.Agents = mgr
 	eng.ProfileExists = func(id string) bool { _, ok := h.profile(id); return ok }
+	// V0.86: at most cfg.Slots heavy jobs at once; the deploy's tests first.
+	// slots: 0 is off, absent or negative is the default; the pool survives a
+	// restart in the store.
+	n := slots.Default
+	if cfg.Slots != nil {
+		n = *cfg.Slots
+	}
+	pool := slots.Open(n, h.st)
+	eng.UseSlots(pool)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy()}
 	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
+	if !pool.Off() {
+		dep.Slot = func(ctx context.Context) (func(), error) { return pool.Wait(ctx, cgroup.DeployDir, slots.Test) }
+	}
 	// V0.82: a self-deploy makes the landed changes its build holds live.
 	dep.OnShipped = func(s deploy.Shipped) {
 		n := eng.SelfDeployed(agent.NormalizeRemote(s.Remote), s.Build, s.Contains)
@@ -191,9 +204,30 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// the devices does, for the threads of all its hosts.
 	// V0.51: the host never serves the client; a front does.
 	srv := &server.Server{Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
-		Quota:        func(ctx context.Context) any { return quotas.Get(ctx) },
-		Load:         &cgroup.Sampler{Tree: tree}, // V0.80
+		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
+		Load:  &cgroup.Sampler{Tree: tree, Slots: pool}, // V0.80, V0.86
+		Focus: func(device, thread string, on bool) { // V0.85
+			if on {
+				tree.Focus(device, thread, time.Now())
+			} else {
+				tree.Unfocus(device, thread, time.Now())
+			}
+		},
 		T3Candidates: func() (any, error) { return h.t3.Candidates() }}
+	if tree != nil {
+		go func() { // V0.85: a focus whose beats stopped drops back
+			t := time.NewTicker(5 * time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case now := <-t.C:
+					tree.Expire(now)
+				}
+			}
+		}()
+	}
 	var servers []*http.Server
 	frontDone := make(chan struct{})
 	serve := func(l net.Listener, hd http.Handler) {

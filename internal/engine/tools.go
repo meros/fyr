@@ -73,6 +73,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 
 	s.Add(e.watchTool())
 	s.Add(e.stateTool())
+	e.slotTools(s) // V0.86
 }
 
 // stateTool reads the current state of the thread's records (#47): the

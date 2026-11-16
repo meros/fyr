@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.80: the machine load in the rail and each working thread's CPU, as words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpuText, loadDetail, railLoad, threadCPU, type HostLoad } from "../src/load.ts";
+import { cpuText, loadDetail, railLoad, railSlots, threadCPU, threadSlot, type HostLoad } from "../src/load.ts";
 
 const busy: HostLoad = {
   host: "laptop",
@@ -43,4 +43,32 @@ test("a thread's CPU is in cores, hot from 2, and absent without a second read",
   assert.equal(threadCPU([], "t_busy"), null);
   assert.equal(cpuText(1), "1.0 core");
   assert.equal(cpuText(12.34), "12 cores");
+});
+
+// SPEC 0.5 V0.86: the slots for heavy jobs, on the rail and on a thread's row.
+test("the rail shows the slots in use, hot while anyone waits", () => {
+  const h: HostLoad = { ...busy, slots: { n: 2, held: [{ owner: "t_busy", kind: "test" }], waiting: [] } };
+  assert.deepEqual(railSlots(h), { text: "1/2 slots", hot: false });
+  const full: HostLoad = {
+    ...busy,
+    slots: {
+      n: 2,
+      held: [
+        { owner: "t_busy", kind: "test" },
+        { owner: "t_calm", kind: "build" },
+      ],
+      waiting: [
+        { owner: "self-deploy", kind: "test", priority: true },
+        { owner: "t_new", kind: "e2e" },
+      ],
+    },
+  };
+  assert.deepEqual(railSlots(full), { text: "2/2 slots", hot: true });
+  assert.equal(railSlots({ ...busy, slots: undefined }), null);
+  assert.ok(loadDetail(full).includes("Slots: 2 of 2 in use, 2 waiting"));
+  assert.equal(threadSlot([full], "t_new"), "waiting for an e2e slot (1 ahead)");
+  assert.equal(threadSlot([full], "self-deploy"), "waiting for a test slot (0 ahead)");
+  assert.equal(threadSlot([full], "t_calm"), "build slot");
+  assert.equal(threadSlot([full], "t_other"), null);
+  assert.equal(threadSlot([], "t_new"), null);
 });

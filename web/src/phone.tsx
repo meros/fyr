@@ -44,7 +44,7 @@ import { COLLAPSED_BY_DEFAULT, SECTION_LIMIT, isOpen, type Theme } from "./inbox
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import { QuotaList } from "./quota-ui.tsx";
-import { ThreadCPU } from "./load-ui.tsx";
+import { ThreadCPU, ThreadSlot } from "./load-ui.tsx";
 import { hostLabel, hostTag, offlineLine, type HostInfo } from "./hosts.ts";
 
 // ---- icons ----
@@ -647,6 +647,7 @@ function MRow({ t, p, needs }: { t: Thread; p: PhoneProps; needs: boolean }) {
           )}
           {t.attention.section !== "working" && t.attention.state !== "snoozed" ? <ThreadProject t={t} /> : oneMeta(t, p.now)}
           {t.attention.section === "working" && <ThreadCPU id={t.id} />}
+          <ThreadSlot id={t.id} />
         </i>
       </span>
       {t.attention.section !== "working" ? <MPr t={t} short /> : <span />}

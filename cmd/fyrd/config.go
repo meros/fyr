@@ -76,6 +76,9 @@ type config struct {
 	// Cgroups: the server/ and agents/ split and the agents' budget
 	// (V0.80); absent is off.
 	Cgroups *cgroup.Budget `json:"cgroups"`
+	// Slots: how many heavy jobs (test suites, builds, e2e runs) run at
+	// once across the threads (V0.86); absent or negative is 2, 0 is off.
+	Slots *int `json:"slots"`
 }
 
 func home() string { h, _ := os.UserHomeDir(); return h }

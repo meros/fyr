@@ -589,7 +589,7 @@ func (f *Front) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /api/command", f.command)
 	// V0.54: device data lives on the front: presence and push.
-	presenceRoute(mux, f.presence)
+	presenceRoute(mux, f.presence, f.focus) // V0.85: the shown thread's host raises its weight
 	if f.opt.Push != nil {
 		pushRoutes(mux, f.opt.Push)
 	}
@@ -976,4 +976,49 @@ func (f *Front) gather(ctx context.Context, path, key string) []map[string]any {
 		}
 	}
 	return out
+}
+
+// focus forwards a presence beat to the hosts it concerns (V0.85): off for
+// the thread the device showed before, on for the one it shows now. It runs
+// in the background; the beat's answer does not wait for a host.
+func (f *Front) focus(device, prev, thread string) {
+	type call struct {
+		id  string
+		off bool
+	}
+	var calls []call
+	if prev != "" && prev != thread {
+		calls = append(calls, call{prev, true})
+	}
+	if thread != "" {
+		calls = append(calls, call{thread, false})
+	}
+	if len(calls) == 0 {
+		return
+	}
+	go func() {
+		for _, c := range calls {
+			l := f.owner(c.id)
+			if l == nil {
+				continue
+			}
+			f.mu.Lock()
+			on := l.online
+			f.mu.Unlock()
+			if !on {
+				continue
+			}
+			body, _ := json.Marshal(map[string]any{"device": device, "off": c.off})
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			req, _ := http.NewRequestWithContext(ctx, "POST", l.base.String()+"/api/threads/"+url.PathEscape(c.id)+"/focus", bytes.NewReader(body))
+			req.Host = "localhost"
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Fyr", "1")
+			if resp, err := l.client.Do(req); err == nil {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+			}
+			cancel()
+		}
+	}()
 }
