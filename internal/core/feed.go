@@ -528,6 +528,14 @@ func ownerNotices(r Reduced) []Notice {
 			}
 			add("end:"+c.ID, what+". Fyr no longer watches it; open a new change with another key if the work goes on.")
 		}
+		// V0.84: Not now and its Undo.
+		was := FindChange(b, c.ID)
+		switch {
+		case c.Parked != nil && (was == nil || was.Parked == nil):
+			add("park:"+c.ID, fmt.Sprintf("The owner set %s to Not now: it no longer blocks this thread. It comes back by itself when its needs, label, phase, conditions or revision change; do not ask about it again until then.", changeName(c)))
+		case c.Parked == nil && was != nil && was.Parked != nil && r.In.Kind == KindChangeUnpark:
+			add("park:"+c.ID, fmt.Sprintf("The owner took back Not now on %s; it needs the owner again.", changeName(c)))
+		}
 	}
 	if (a.ArchivedAt != nil) != (b.ArchivedAt != nil) {
 		s := "unarchived"

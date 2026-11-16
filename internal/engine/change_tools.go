@@ -192,6 +192,8 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			type row struct {
 				Thread string `json:"thread,omitempty"`
 				core.Change
+				// V0.84: the owner parked it (Not now).
+				Note string `json:"note,omitempty"`
 			}
 			var rows []row
 			if id := sArg(a, "id"); id != "" {
@@ -227,6 +229,9 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			}
 			if len(rows) == 0 {
 				return "No changes yet.", nil
+			}
+			for i := range rows {
+				rows[i].Note = core.ParkedText(&rows[i].Change)
 			}
 			b, _ := json.MarshalIndent(rows, "", " ")
 			return string(b), nil

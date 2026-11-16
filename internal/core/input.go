@@ -213,6 +213,8 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	if err != nil {
 		return nil, nil, Result{}, asRejection(err)
 	}
+	// V0.84 (3): a change that moved since the owner said Not now is back.
+	unparkStale(t)
 	// The scheduler (#46): the Rules this Input made true fire now, in the
 	// same records and the same transaction.
 	more := EvalRules(Rec{T: t, V: v}, now)

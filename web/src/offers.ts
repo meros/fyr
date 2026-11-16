@@ -106,6 +106,23 @@ export function endArgs(c: Pick<Change, "id">, a: Pick<Ask, "choice" | "reason">
   return { change: c.id, phase: a.choice?.value || "abandoned", ...(reason ? { reason } : {}) };
 }
 
+/** V0.59 (6): a change that has not ended and fails or waits for the owner, before any Not now. */
+export const blocks = (c: Pick<Change, "phase" | "needs" | "conditions">) =>
+  !ended(c.phase) && (c.needs === "owner" || !!c.conditions?.some((k) => k.status === "fail"));
+
+/** V0.84: a change in Needs you: it blocks and the owner has not parked it. The host clears `parked` when the change
+ *  moves after the park, so a parked change here is still as the owner saw it. */
+export const needsOwner = (c: Pick<Change, "phase" | "needs" | "conditions" | "parked">) => blocks(c) && !c.parked;
+
+/** V0.84: Not now on a change of the thread (not a host record) that is in Needs you. */
+export const canPark = (c: Pick<Change, "phase" | "needs" | "conditions" | "parked" | "threads">) => needsOwner(c) && !c.threads?.length;
+
+/** The command args of change.park and change.unpark. */
+export const parkArgs = (c: Pick<Change, "id">) => ({ change: c.id });
+
+/** V0.84: the quiet line of a parked change, or null. `clock` turns the time into hh:mm. */
+export const parkedLine = (c: Pick<Change, "parked">, clock: (iso: string) => string): string | null => (c.parked ? `Not now · ${clock(c.parked.at)}` : null);
+
 /** The changes to list, newest first; PR changes too (V0.59 (8)). */
 export function changeList(t: Pick<Thread, "changes">): Change[] {
   return [...t.changes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -116,10 +133,11 @@ export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { 
   if (t.pr && (t.pr.state ?? "OPEN") === "OPEN") return null;
   const live = t.changes.filter((c) => !ended(c.phase) && !(c.evidence ?? []).some((e) => e.kind === "pr"));
   if (!live.length) return null;
-  const rank = (c: Change) => (c.conditions?.some((k) => k.status === "fail") ? 0 : c.needs === "owner" ? 1 : 2);
+  // V0.84: a parked change ranks and reads as quiet work.
+  const rank = (c: Change) => (c.parked ? 2 : c.conditions?.some((k) => k.status === "fail") ? 0 : c.needs === "owner" ? 1 : 2);
   const c = [...live].sort((a, b) => rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt))[0];
-  const fail = c.conditions?.find((k) => k.status === "fail");
-  const word = fail ? `${fail.type} failed` : c.needs === "owner" ? "needs you" : c.label || c.phase;
+  const fail = c.parked ? undefined : c.conditions?.find((k) => k.status === "fail");
+  const word = fail ? `${fail.type} failed` : c.parked ? "not now" : c.needs === "owner" ? "needs you" : c.label || c.phase;
   const more = live.length > 1 ? ` +${live.length - 1}` : "";
   return { text: short ? `${word}${more}` : `${clip(c.title)} · ${word}${more}`, cls: fail ? "fail" : c.phase === "live" ? "ok" : "", title: `${c.title} · ${phaseText(c)}` };
 }
