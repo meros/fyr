@@ -81,7 +81,7 @@ func TestRemoveActionDropsCondition(t *testing.T) {
 	if condition(c, CondAction("status")) != nil || len(c.Runs) != 1 {
 		t.Fatalf("after remove: %+v runs %d", c.Conditions, len(c.Runs))
 	}
-	if r := ChangeBlocking(th); r != "" {
+	if r := needText(th); r != "" {
 		t.Fatalf("a removed action still blocks: %q", r)
 	}
 }

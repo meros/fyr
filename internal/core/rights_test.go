@@ -28,8 +28,15 @@ func TestFieldRightsRejectTheAgent(t *testing.T) {
 			t.Fatalf("%s: got %v, want a rights rejection", what, err)
 		}
 	}
-	rights("checks ok", agent(KindChangeStatus, ChangeStatusArgs{Change: c.ID, Update: ChangeUpdate{Conditions: []Condition{{Type: CondChecks, Status: CondOK}}}}))
-	rights("phase", agent(KindChangeStatus, ChangeStatusArgs{Change: c.ID, Update: ChangeUpdate{Phase: PhaseLanded}}))
+	// V0.101: a value for an observed field is ignored, not refused; the
+	// reply names what Fyr reads (need_test.go).
+	for what, u := range map[string]ChangeUpdate{"checks ok": {Conditions: []Condition{{Type: CondChecks, Status: CondOK}}}, "phase": {Phase: PhaseLanded}} {
+		nt, _, res, err := Reduce(th, nil, Input{Source: FromAgent, Kind: KindChangeStatus, Thread: "t", Args: ChangeStatusArgs{Change: c.ID, Update: u}}, now)
+		r, _ := res.Reply.(ChangeReply)
+		if err != nil || len(r.Notes) != 1 || nt.Changes[0].Phase != PhaseReview || nt.Changes[0].Conditions[0].Status != CondFail {
+			t.Fatalf("%s: %v %q %+v", what, err, r.Notes, nt.Changes[0])
+		}
+	}
 	rights("approval ok", agent(KindChangeStatus, ChangeStatusArgs{Change: c.ID, Update: ChangeUpdate{Conditions: []Condition{{Type: CondApproval, Status: CondOK}}}}))
 	rights("review ok", agent(KindChangeStatus, ChangeStatusArgs{Change: c.ID, Update: ChangeUpdate{Conditions: []Condition{{Type: CondReview, Status: CondOK}}}}))
 	rights("pr.observed", agent(KindPRObserved, PR{URL: "https://github.com/o/r/pull/5", State: "MERGED"}))

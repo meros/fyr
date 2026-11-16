@@ -15,21 +15,21 @@ func TestLandedChangeBlocksOnlyForLaterFailures(t *testing.T) {
 	if err := UpdateChange(th, c, ChangeUpdate{Conditions: []Condition{{Type: "claude-review", Status: CondFail, Reason: "no GitHub App id"}}}, ByAgent, t0); err != nil {
 		t.Fatal(err)
 	}
-	if ChangeBlocking(th) == "" {
+	if needText(th) == "" {
 		t.Fatal("an in-flight failure did not block")
 	}
 	landed := t0.Add(34 * time.Second) // the live case: a later call
 	if err := UpdateChange(th, c, ChangeUpdate{Phase: PhaseLanded}, ByAgent, landed); err != nil {
 		t.Fatal(err)
 	}
-	if r := ChangeBlocking(th); r != "" {
+	if r := needText(th); r != "" {
 		t.Fatalf("a failure from before the landing blocked: %q", r)
 	}
 	later := landed.Add(time.Minute)
 	if err := UpdateChange(th, c, ChangeUpdate{Conditions: []Condition{{Type: "health", Status: CondFail, Reason: "500s after the release"}}}, ByAgent, later); err != nil {
 		t.Fatal(err)
 	}
-	if r := ChangeBlocking(th); r == "" {
+	if r := needText(th); r == "" {
 		t.Fatal("a failure after the landing did not block")
 	}
 }
@@ -43,7 +43,7 @@ func TestFailureWithTheLandingBlocks(t *testing.T) {
 	if err := UpdateChange(th, c, ChangeUpdate{Phase: PhaseLanded, Conditions: []Condition{{Type: "health", Status: CondFail, Reason: "2 of 4 pods crash"}}}, ByAgent, t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if ChangeBlocking(th) == "" {
+	if needText(th) == "" {
 		t.Fatal("a failure reported with the landing did not block")
 	}
 }
@@ -56,7 +56,7 @@ func TestDecodeLandedAt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r := ChangeBlocking(th); r != "" {
+	if r := needText(th); r != "" {
 		t.Fatalf("a stored landed change still blocks: %q", r)
 	}
 }
