@@ -166,12 +166,30 @@ func TestDeployNeedsLauncher(t *testing.T) {
 
 // Decision 0007: a checkout with a flake builds inside its own dev shell.
 func TestDeployUsesNixDevelopWithFlake(t *testing.T) {
+	if !hasNix() {
+		t.Skip("no nix on this host")
+	}
 	d, _, steps := newDeployer(t, "")
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "flake.nix"), []byte("{}"), 0o644)
 	d.Deploy(context.Background(), "t1", req, dir)
 	made := slices.DeleteFunc(slices.Clone(*steps), func(s string) bool { return strings.HasPrefix(s, "git ") }) // V0.82
 	if len(made) < 2 || !strings.HasPrefix(made[0], "nix develop "+dir+" --command make -C "+dir+" build") {
+		t.Fatalf("steps %v", *steps)
+	}
+}
+
+// A host without Nix (a Mac) builds a flake checkout with plain make.
+func TestDeployWithoutNixUsesMake(t *testing.T) {
+	if hasNix() {
+		t.Skip("nix on this host")
+	}
+	d, _, steps := newDeployer(t, "")
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "flake.nix"), []byte("{}"), 0o644)
+	d.Deploy(context.Background(), "t1", req, dir)
+	made := slices.DeleteFunc(slices.Clone(*steps), func(s string) bool { return strings.HasPrefix(s, "git ") })
+	if len(made) < 2 || !strings.HasPrefix(made[0], "make -C "+dir+" build") {
 		t.Fatalf("steps %v", *steps)
 	}
 }

@@ -69,7 +69,9 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
-const chromeBin = process.env.FYR_CHROME || "google-chrome";
+// macOS has no google-chrome on PATH; use the app bundle's binary.
+const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromeBin = process.env.FYR_CHROME || (process.platform === "darwin" && existsSync(macChrome) ? macChrome : "google-chrome");
 const profile = mkdtempSync(join(tmpdir(), "fyr-layout-"));
 const port = 9400 + Math.floor(Math.random() * 400);
 const chrome = spawn(chromeBin, ["--headless=new", "--disable-gpu", "--enable-unsafe-swiftshader", "--no-sandbox", "--hide-scrollbars", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore", detached: true });

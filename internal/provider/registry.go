@@ -307,6 +307,8 @@ func (r *Registry) List() []DTO {
 		d := DTO{ID: p.ID, Name: p.Name, Kind: p.Kind(), CLI: p.CLI, Color: p.Color, Auth: string(p.Auth.Kind), ConfigDir: p.Auth.ConfigDir,
 			BaseURL: p.Endpoint.BaseURL, ModelEnv: p.Endpoint.ModelEnv, Models: p.Models, DefaultModel: p.DefaultModel,
 			DefaultEffort: p.DefaultEffort, Efforts: claudecli.Efforts, Quota: p.quotaSpec().Kind, Imported: p.Imported, TokenLogin: p.TokenLogin}
+		// The login first: a status read after it sees what a finished login left.
+		d.Login = r.login(p.ID)
 		d.Status, d.Need = r.status(p)
 		if v, err := r.key(p); err == nil {
 			d.KeySet, d.KeyLast4 = true, secrets.Last4(v)
@@ -318,7 +320,6 @@ func (r *Registry) List() []DTO {
 			d.Threads = r.InUse(p.ID)
 		}
 		d.CanLogin = p.Auth.Kind == cli.CLILogin
-		d.Login = r.login(p.ID)
 		d.Catalog = catalogDTO(p.Catalog, now)
 		if !p.CheckedAt.IsZero() {
 			t := p.CheckedAt

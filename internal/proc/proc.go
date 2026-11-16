@@ -47,14 +47,6 @@ func IntoCgroup(cmd *exec.Cmd, dir string) (func(), error) {
 	return func() { f.Close() }, nil
 }
 
-func setCgroup(cmd *exec.Cmd, f *os.File) {
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	cmd.SysProcAttr.UseCgroupFD = true
-	cmd.SysProcAttr.CgroupFD = int(f.Fd())
-}
-
 type cgroupKey struct{}
 
 // WithCgroup returns a context whose Commands start in the cgroup

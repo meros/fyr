@@ -4,13 +4,14 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"testing"
 )
 
 // SPEC 0.5 V0.14: the owner is the Tailscale user of this machine.
 func TestOwnerLoginFromLocalAPI(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "ts.sock")
+	sock := sockPath(t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +36,7 @@ func TestOwnerLoginFromLocalAPI(t *testing.T) {
 // SPEC 0.5 V0.51: whois names the owner of a peer connection; a tagged node
 // has none.
 func TestPeersWhois(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "ts.sock")
+	sock := sockPath(t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +71,7 @@ func TestPeersWhois(t *testing.T) {
 // SPEC 0.5 V0.54: hostListen "tailnet:PORT" listens on this node's tailnet
 // IPv4 address, read from tailscaled.
 func TestIPv4FromLocalAPI(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "ts.sock")
+	sock := sockPath(t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +88,7 @@ func TestIPv4FromLocalAPI(t *testing.T) {
 // SPEC 0.5 V0.123 (decision 0025): a discovery candidate is a peer that is
 // online, untagged and owned by this node's own Tailscale user.
 func TestCandidatesAreTheOwnersOnlineNodes(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "ts.sock")
+	sock := sockPath(t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -115,4 +116,15 @@ func TestCandidatesAreTheOwnersOnlineNodes(t *testing.T) {
 	if _, err := Candidates(context.Background(), filepath.Join(t.TempDir(), "none.sock")); err == nil {
 		t.Fatal("missing socket gave no error")
 	}
+}
+
+// sockPath is a socket path short enough for macOS (104 bytes): t.TempDir()
+// there carries the test's name under /var/folders/….
+func sockPath(t *testing.T) string {
+	dir, err := os.MkdirTemp("", "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return filepath.Join(dir, "ts.sock")
 }

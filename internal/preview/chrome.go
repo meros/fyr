@@ -20,10 +20,16 @@ import (
 	"github.com/meros/fyr/internal/proc"
 )
 
-// FindChrome returns the first Chrome or Chromium on PATH, or "".
+// FindChrome returns the first Chrome or Chromium on PATH, else the macOS
+// app's binary, or "".
 func FindChrome() string {
 	for _, n := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"} {
 		if p, err := exec.LookPath(n); err == nil {
+			return p
+		}
+	}
+	for _, p := range []string{"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium"} {
+		if _, err := os.Stat(p); err == nil {
 			return p
 		}
 	}

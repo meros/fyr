@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/hostfs"
 	"io"
 	"math"
@@ -606,7 +607,7 @@ func (s *Service) fetchAnthropic(ctx context.Context, t target) result {
 		// A token account is never read (V0.122), and never with the folder's login (V0.50).
 		return result{err: &fail{class: errOther, msg: noToken}}
 	} else {
-		b, err := os.ReadFile(filepath.Join(t.spec.ConfigDir, ".credentials.json"))
+		b, err := claudecli.Credentials(t.spec.ConfigDir) // the file, or macOS's Keychain
 		if err != nil {
 			return result{err: &fail{class: errOther, msg: "No Claude login found; run this provider once"}}
 		}

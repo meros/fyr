@@ -210,10 +210,11 @@ func (Adapter) SessionsDir(a cli.Auth) string {
 	return filepath.Join(h, ".claude")
 }
 
-// LoggedIn: <config>/.credentials.json exists.
+// LoggedIn: <config>/.credentials.json exists, or on macOS its Keychain item.
 func (a Adapter) LoggedIn(au cli.Auth) bool {
-	st, err := os.Stat(filepath.Join(a.SessionsDir(au), ".credentials.json"))
-	return err == nil && st.Mode().IsRegular()
+	dir := a.SessionsDir(au)
+	st, err := os.Stat(filepath.Join(dir, ".credentials.json"))
+	return (err == nil && st.Mode().IsRegular()) || hasKeychainLogin(dir)
 }
 
 func (Adapter) SessionFile(dir, cwd, sid string) string { return SessionFile(dir, cwd, sid) }
