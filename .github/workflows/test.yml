@@ -1,6 +1,7 @@
-# The same gate as a local `make test` (docs/PROCESS.md): Go vet and tests, the web
-# typecheck and tests, the build, and the layout e2e in headless Chrome. The toolchain
-# comes from the flake's dev shell; Chrome is the runner's own google-chrome.
+# The same gate as a local `make test` (docs/PROCESS.md), split into jobs that run at the same time: Go (vet and
+# tests), web (typecheck, unit tests, the build and the layout e2e in headless Chrome) and the Nix package. The
+# toolchain comes from the flake's dev shell; Chrome is the runner's own google-chrome. The Go build cache and
+# web/node_modules are cached between runs.
 name: test
 
 on:
@@ -16,19 +17,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  go:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
-      - name: make test
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'flake.lock') }}-${{ github.sha }}
+          restore-keys: go-${{ runner.os }}-${{ hashFiles('go.sum', 'flake.lock') }}-
+      - name: go vet and go test
+        run: nix develop --command make -j2 --output-sync=target go-vet go-test
+
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: actions/cache@v4
+        with:
+          path: web/node_modules
+          key: node-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'flake.lock') }}
+      - name: typecheck, unit tests, build, layout e2e
         env:
           FYR_CHROME: /usr/bin/google-chrome
-        run: nix develop --command make test FYR_LAYOUT_TIMING=1
-      # The package NixOS installs runs the Go tests in the Nix sandbox (found live: a test needed git there).
+        run: |
+          nix develop --command bash -c 'make web-deps && (cd web && npm run build) && make -j3 --output-sync=target web-typecheck web-unit web-layout FYR_LAYOUT_TIMING=1'
+
+  # The package NixOS installs runs the Go tests in the Nix sandbox (found live: a test needed git there).
+  nix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
       - name: nix build .#fyr
         run: nix build .#fyr --no-link --print-build-logs
