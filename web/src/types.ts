@@ -217,6 +217,8 @@ export interface Project {
   model?: string;
   threads?: number;
   lastUsed?: string;
+  /** when the host made it; V0.121: projects the owner has not placed follow by this */
+  createdAt?: string;
   /** V0.46: quiet hours, in the host's time zone: a list of windows (decision 0014 addendum); absent is off.
    *  A host from before the addendum sends one window as an object; quietList reads both. */
   quiet?: QuietHours[] | QuietHours;
@@ -272,6 +274,8 @@ export interface StateDTO {
   deploy?: import("./deploy.ts").DeployProgress | null;
   /** V0.51: the front's hosts; missing from a host older than the split */
   hosts?: import("./hosts.ts").HostInfo[];
+  /** V0.121: the owner's project order, one list across a front's hosts; absent until set */
+  projectOrder?: string[];
 }
 
 export interface FyrEvent {

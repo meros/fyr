@@ -1349,7 +1349,8 @@ try {
   const sw = await evaluate(`${COMMANDS("provider.update")}.map(c => c.args.models)`);
   check(sw.length === 1 && JSON.stringify(sw[0]) === JSON.stringify(["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"]), `V0.119 phone: ↓ on the first model does not swap it (${JSON.stringify(sw)})`);
   await tapCenter(".m-settings .sg-h .btn.p", "!document.querySelector('.m-settings .model .mv')");
-  check(await evaluate(`document.querySelectorAll('.m-settings .model [aria-label^="Remove"]').length === 3`), "V0.119 phone: Done does not bring the rows back");
+  // V0.120: an On row ends in its switch (× is only on a hand-typed model that is off).
+  check(await evaluate(`document.querySelectorAll('.m-settings .model [role=switch]').length === 3`), "V0.119 phone: Done does not bring the rows back");
 
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-ih [aria-label=More]')");
   await tapCenter(".m-ih [aria-label=More]", "!!document.querySelector('.m-sheet .m-mi')");
@@ -1358,6 +1359,147 @@ try {
   check(more.map((x) => x.label).join("|") === "Select threads|Changes|Settings|Filter by project…|Adopt from T3|Show tool details" && more.find((x) => x.label === "Settings")?.right === "1 needs a login", `V0.119 phone: the More sheet (${JSON.stringify(more)})`);
 } catch (e) {
   failures.push(`V0.119 phone: ${e.message}`);
+} finally {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+}
+
+// SPEC V0.120: the model chooser. A provider's Models group has On (★, a switch, the default's locked) and Off (by
+// name, New marked); a switch sends the whole on-list; Refresh sends provider.refreshModels; Gone and Added by hand
+// show on DeepSeek; a provider with 40 models has a search that filters both parts and says "N of 40 match".
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail&dialog=settings&page=providers/claude`, "document.querySelectorAll('.dlg .model').length === 3 && document.querySelectorAll('.dlg .omodel').length === 3");
+  const m = await evaluate(`({ subs: [...document.querySelectorAll('.dlg .models .sg-sub')].map(e => e.textContent), on: [...document.querySelectorAll('.dlg .model .sr-t')].map(e => e.textContent), off: [...document.querySelectorAll('.dlg .omodel .sr-t')].map(e => e.textContent),
+    newTag: !!document.querySelector('.dlg .omodel[data-model="claude-fable-5-2"] .tag.new'), sw: document.querySelectorAll('.dlg .model [role=switch][aria-checked=true]').length, line: document.querySelector('.dlg .models .mchk')?.textContent ?? '' })`);
+  check(m.subs.join("|") === "On · offered in every model picker, in this order|Off · 3" && m.on.join("|") === "Opus 5.5|Sonnet 5.5|Haiku 5.5" && m.off.join("|") === "Fable 5.2New|Haiku 5.4|Sonnet 5.4" && m.newTag && m.sw === 3 && /^Checked \d+ min ago$/.test(m.line),
+    `V0.120 desktop: the Models group (${JSON.stringify(m)})`);
+  await shot("models-desktop.png");
+  // The default's switch is locked: pressing it says why on its row and sends nothing.
+  await evaluate(`document.querySelector('.dlg .model[data-model="claude-opus-5-5"] [role=switch]').click()`);
+  await waitFor(`/Star another model first/.test(document.querySelector('.dlg .model[data-model="claude-opus-5-5"]')?.textContent ?? '')`, { soft: true });
+  const lk = await evaluate(`({ err: document.querySelector('.dlg .model[data-model="claude-opus-5-5"] .sr-d.err')?.textContent ?? '', cmds: ${COMMANDS("provider.update")}.length })`);
+  check(lk.err === "Star another model first." && lk.cmds === 0, `V0.120 desktop: the default's switch is not locked (${JSON.stringify(lk)})`);
+  // Turning Fable on puts it at the end of On.
+  await evaluate(`document.querySelector('.dlg .omodel[data-model="claude-fable-5-2"] [role=switch]').click()`);
+  await waitFor(`document.querySelectorAll('.dlg .model').length === 4`, { soft: true });
+  const on = await evaluate(`({ cmds: ${COMMANDS("provider.update")}.map(c => c.args.models), last: [...document.querySelectorAll('.dlg .model')].pop()?.dataset.model })`);
+  check(on.cmds.length === 1 && JSON.stringify(on.cmds[0]) === JSON.stringify(["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-2"]) && on.last === "claude-fable-5-2", `V0.120 desktop: a switch does not turn the model on at the end (${JSON.stringify(on)})`);
+  await evaluate(`[...document.querySelectorAll('.dlg .models .sg-h .lnk')].find(b => b.textContent === 'Refresh')?.click()`);
+  await waitFor(`${COMMANDS("provider.refreshModels")}.length === 1`, { soft: true });
+  const rf = await evaluate(`({ cmds: ${COMMANDS("provider.refreshModels")}.map(c => c.args.id), line: document.querySelector('.dlg .models .mchk')?.textContent ?? '' })`);
+  check(rf.cmds.join() === "claude" && rf.line === "Checked just now", `V0.120 desktop: Refresh (${JSON.stringify(rf)})`);
+  // DeepSeek: Gone on an on model, × only on the hand-typed model that is off.
+  await navigate(`${origin}/?mock=rail&dialog=settings&page=providers/claudeDeepseek&providers=checkfail`, "document.querySelectorAll('.dlg .model').length === 3");
+  const ds = await evaluate(`({ gone: !!document.querySelector('.dlg .model[data-model="deepseek-coder"] .tag.gone'), hand: !!document.querySelector('.dlg .omodel[data-model="my-finetune-v3"] .tag'), x: [...document.querySelectorAll('.dlg .models [aria-label^="Remove"]')].map(b => b.getAttribute('aria-label')), foot: document.querySelector('.dlg .models .sg-f.err')?.textContent ?? '', line: document.querySelector('.dlg .models .mchk')?.textContent ?? '' })`);
+  check(ds.gone && ds.hand && ds.x.join() === "Remove my-finetune-v3" && /^Could not list the models: .*401\. The list below is the one from yesterday; it still works\.$/.test(ds.foot) && ds.line === "Last checked yesterday 14:02",
+    `V0.120 desktop: DeepSeek's marks and failed check (${JSON.stringify(ds)})`);
+  await shot("models-failed-desktop.png");
+  // 40 models: search filters both parts; the header counts the matches; reorder is off while it has text.
+  await navigate(`${origin}/?mock=rail&dialog=settings&page=providers/router&providers=many`, "!!document.querySelector('.dlg .models input[type=search]')");
+  await evaluate(`document.querySelector('.dlg .models input[type=search]').focus()`);
+  await send("Input.insertText", { text: "sonnet" });
+  await settle();
+  const sr = await evaluate(`({ line: document.querySelector('.dlg .models .mchk')?.textContent ?? '', rows: [...document.querySelectorAll('.dlg .models :is(.model,.omodel)')].map(r => r.dataset.model), more: document.querySelector('.dlg .models .more')?.textContent ?? '', grips: document.querySelectorAll('.dlg .models .grip').length })`);
+  // While searching, Off shows three matches and "Show N more".
+  const hidden = Number(sr.line.split(" ")[0]) - sr.rows.length;
+  check(/^\d+ of 40 match$/.test(sr.line) && sr.rows.length > 0 && sr.rows.every((x) => x.includes("sonnet")) && (hidden === 0 ? sr.more === "" : sr.more === `Show ${hidden} more`) && sr.grips === 0, `V0.120 desktop: the search over 40 models (${JSON.stringify(sr)})`);
+  await shot("models-search-desktop.png");
+  // A thread on a model that is off: its chip and Hand over say "(off)".
+  await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.thh .tmenu-b')");
+  const chip = await evaluate(`[...document.querySelectorAll('.chip.m span')].map(e => e.textContent).join('|')`);
+  await evaluate(`document.querySelector('.thh .tmenu-b')?.click()`);
+  await waitFor(`!!document.querySelector('.thh [role=menuitem]')`, { soft: true });
+  await evaluate(`[...document.querySelectorAll('.thh [role=menuitem]')].find(b => /Hand over/.test(b.textContent))?.click()`);
+  await waitFor(`!!document.querySelector('.dlg .ho-from')`, { soft: true });
+  const ho = await evaluate(`document.querySelector('.dlg .ho-from')?.textContent ?? ''`);
+  check(/opus 5\.4 \(off\)/.test(chip) && /From Claude · opus 5\.4 \(off\)\./.test(ho), `V0.120 desktop: a model that is off ("${chip}", "${ho}")`);
+  await shot("handover-off-desktop.png");
+} catch (e) {
+  failures.push(`V0.120 desktop: ${e.message}`);
+}
+
+// SPEC V0.121: one project order. Settings → Projects has a grip per row on the desktop; Alt+↑ sends
+// front.projectOrder with the whole list; the inbox's project chips and New thread's project list follow at once.
+try {
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.pfrow .pfc')");
+  const chipsOf = `[...document.querySelectorAll('.pfrow .pfc')].map(b => b.title.split(':')[0])`;
+  const before = await evaluate(chipsOf);
+  await shot("chips-before-desktop.png");
+  await navigate(`${origin}/?mock=rail&dialog=settings&page=projects`, "document.querySelectorAll('.dlg .pli.g .grip').length > 3");
+  const rows = await evaluate(`[...document.querySelectorAll('.dlg .pli.g .plb')].map(b => b.dataset.sub)`);
+  const names = await evaluate(`[...document.querySelectorAll('.dlg .pli.g .pln')].map(e => e.textContent)`);
+  check(JSON.stringify(names) === JSON.stringify([...names].sort((a, b) => a.localeCompare(b))), `V0.121 desktop: with no order set, Settings → Projects is by name (${JSON.stringify(names)})`);
+  await shot("projects-desktop.png");
+  // Move the second chip's project above the first one's, from the keyboard (Alt+↑ until it passes it).
+  const j = names.indexOf(before[1]);
+  const k = names.indexOf(before[0]);
+  check(j > k && k >= 0, `V0.121 desktop: the chips are not in the Settings order before a reorder (${JSON.stringify({ before, names })})`);
+  await evaluate(`document.querySelectorAll('.dlg .pli.g .grip')[${j}].focus()`);
+  for (let n = 0; n < j - k; n++) await key("ArrowUp", "ArrowUp", 1);
+  await waitFor(`${COMMANDS("front.projectOrder")}.length === ${j - k}`, { soft: true });
+  const want = [...rows];
+  want.splice(k, 0, ...want.splice(j, 1));
+  const po = await evaluate(`({ cmds: ${COMMANDS("front.projectOrder")}.map(c => c.args.ids), rows: [...document.querySelectorAll('.dlg .pli.g .plb')].map(b => b.dataset.sub), focus: document.activeElement?.getAttribute('aria-label') ?? '' })`);
+  check(po.cmds.length === j - k && JSON.stringify(po.cmds.at(-1)) === JSON.stringify(want) && JSON.stringify(po.rows) === JSON.stringify(want) && po.focus.startsWith(`Move ${before[1]}, ${k + 1} of `),
+    `V0.121 desktop: Alt+↑ on a project's grip (${JSON.stringify({ ...po, want })})`);
+  await shot("projects-after-desktop.png");
+  await key("Escape");
+  await waitFor(`!document.querySelector('.dlg.settings')`, { soft: true });
+  await settle();
+  // The names in the new order; the chips and New thread's list show a part of it (projects with threads; no quiet
+  // ones), in that order.
+  const nameOf = Object.fromEntries(rows.map((id, i) => [id, names[i]]));
+  const wantNames = want.map((id) => nameOf[id]);
+  const inOrder = (xs) => xs.every((x, i) => i === 0 || wantNames.indexOf(xs[i - 1]) < wantNames.indexOf(x));
+  const after = await evaluate(chipsOf);
+  check(after.length === before.length && after.length > 1 && inOrder(after) && JSON.stringify(after) !== JSON.stringify(before), `V0.121 desktop: the chips do not follow the new order (${JSON.stringify({ before, after, wantNames })})`);
+  await shot("chips-after-desktop.png");
+  await key("c");
+  await waitFor(`!!document.querySelector('.dlg .ppick')`, { soft: true });
+  await evaluate(`document.querySelector('.dlg .ppick').click()`);
+  await waitFor(`document.querySelectorAll('.dlg .plist .pli:not(.new):not(.none)').length > 1`, { soft: true });
+  const nt = await evaluate(`[...document.querySelectorAll('.dlg .plist .pli:not(.new):not(.none) .pln')].map(e => e.textContent)`);
+  check(nt.length > 1 && nt.every((n) => wantNames.includes(n)) && inOrder(nt), `V0.121 desktop: New thread's projects do not follow the new order (${JSON.stringify({ nt, wantNames })})`);
+  await shot("new-thread-after-desktop.png");
+} catch (e) {
+  failures.push(`V0.121 desktop: ${e.message}`);
+}
+
+// SPEC V0.121, phone: Settings → Projects has Reorder beside New project; the mode shows ↑ and ↓ of 44 px in place
+// of the thread count; ↓ on the first row sends front.projectOrder with the first two swapped; Done leaves the mode.
+// The phone's chips follow a set order (&order=). The provider page shows both parts of the model chooser.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${origin}/?mock=rail&settings=projects`, "document.querySelectorAll('.m-settings .pli').length > 3");
+  await shot("projects-phone.png");
+  const ids = await evaluate(`[...document.querySelectorAll('.m-settings .pli')].map(b => b.dataset.sub)`);
+  await tapCenter(".m-settings .btn.reo", "!!document.querySelector('.m-settings .pli.mvrow .mv')");
+  const r = await evaluate(`({ mv: [...document.querySelectorAll('.m-settings .pli.mvrow .mv .xb')].map(b => Math.round(b.getBoundingClientRect().height)), counts: document.querySelectorAll('.m-settings .pli .plc').length, done: !!document.querySelector('.m-settings .btn.p') })`);
+  check(r.mv.length === ids.length * 2 && r.mv.every((h) => h >= 44) && r.counts === 0 && r.done, `V0.121 phone: the Reorder mode (${JSON.stringify(r)})`);
+  await shot("projects-reorder-phone.png");
+  const first = await evaluate(`document.querySelector('.m-settings .pli.mvrow .pln')?.textContent ?? ''`);
+  await tapCenter(`.m-settings .pli.mvrow .mv .xb[aria-label="Move ${first} down"]`, `${COMMANDS("front.projectOrder")}.length === 1`);
+  const sent = await evaluate(`${COMMANDS("front.projectOrder")}.map(c => c.args.ids)`);
+  check(JSON.stringify(sent[0]) === JSON.stringify([ids[1], ids[0], ...ids.slice(2)]), `V0.121 phone: ↓ on the first project (${JSON.stringify({ sent, ids })})`);
+  await tapCenter(".m-settings .btn.p", "!document.querySelector('.m-settings .pli.mvrow')");
+  // The phone's chips in a set order.
+  await navigate(`${origin}/?mock=rail&order=p_dot,p_home,p_web`, "!!document.querySelector('.m-screen .pfrow .pfc')");
+  const pc = await evaluate(`[...document.querySelectorAll('.m-screen .pfrow .pfc')].slice(0, 3).map(b => b.title.split(':')[0])`);
+  check(pc.join("|") === "dotfiles|Garden|acme/web", `V0.121 phone: the chips do not follow the order (${JSON.stringify(pc)})`);
+  await shot("chips-after-phone.png");
+  // The provider page on the phone: both parts, the switch 44 px wide at least as a row target.
+  await navigate(`${origin}/?mock=rail&settings=providers/claude`, "document.querySelectorAll('.m-settings .model').length === 3 && document.querySelectorAll('.m-settings .omodel').length === 3");
+  const pm = await evaluate(`({ subs: document.querySelectorAll('.m-settings .models .sg-sub').length, reo: !!document.querySelector('.m-settings .models .lnk.reo'), refresh: [...document.querySelectorAll('.m-settings .models .lnk')].some(b => b.textContent === 'Refresh') })`);
+  check(pm.subs === 2 && pm.reo && pm.refresh, `V0.120 phone: the Models group (${JSON.stringify(pm)})`);
+  await shot("models-phone.png");
+  await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.m-app')");
+  await shot("thread-off-phone.png");
+} catch (e) {
+  failures.push(`V0.121 phone: ${e.message}`);
 } finally {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });

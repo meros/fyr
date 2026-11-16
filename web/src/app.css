@@ -1082,6 +1082,28 @@ label.sr{cursor:pointer}
 .sr.drop{box-shadow:inset 0 2px 0 var(--harbour)}
 .sr.dropb{box-shadow:inset 0 -2px 0 var(--harbour)}
 .sr-e.mv{gap:4px}
+/* V0.120: the model chooser. On and Off are parts of one card; an off model reads fainter; New, Gone and Added by hand are marks */
+.sg-sub{padding:6px 12px;background:var(--surface);border-bottom:1px solid var(--line);font:500 11px/16px var(--ui);letter-spacing:.03em;text-transform:uppercase;color:var(--ink-faint)}
+.sr.off .sr-t,.sr.off .sr-d{color:var(--ink-faint)}
+.tag{font:500 11px/16px var(--ui);padding:1px 6px;border-radius:6px;background:var(--sunken);color:var(--ink-muted);margin-left:6px;white-space:nowrap;vertical-align:1px}
+.tag.new{background:var(--harbour-wash);color:var(--harbour)}
+.tag.gone{background:none;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.models .mid{display:block;overflow-wrap:anywhere} /* long ids wrap; nothing is cut */
+.models .sr-t{overflow-wrap:anywhere}
+.sg-h .mchk{color:var(--ink-faint);white-space:nowrap}
+.models .sg-h{flex-wrap:wrap;row-gap:0}
+.models .sg-h .end{flex-wrap:wrap;justify-content:flex-end}
+.sg-h .lnk:disabled{color:var(--ink-faint)}
+/* V0.121: the Projects page in the owner's order: a grip before each row on the desktop, ↑ and ↓ in the phone's mode */
+.pli.g{grid-template-columns:20px minmax(0,1fr);gap:4px;padding:0 10px 0 4px}
+.pli.g .plb{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:48px;padding:6px 0;text-align:left;min-width:0}
+.pli.g:hover{background:var(--sunken)}
+.pli.g .plb:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
+.pli.lift{background:var(--select);box-shadow:0 6px 18px rgba(0,0,0,.18);position:relative;z-index:1;border-radius:8px}
+.pli.drop{box-shadow:inset 0 2px 0 var(--harbour)}
+.pli.dropb{box-shadow:inset 0 -2px 0 var(--harbour)}
+.pli.mvrow:hover{background:none}
+.pli .mv{display:flex;gap:4px}
 /* the Providers page */
 .pdot{width:8px;height:8px;border-radius:50%;background:var(--ink-faint);flex:none}
 .pst{font:500 11px/16px var(--ui);padding:2px 8px;border-radius:10px;background:var(--sunken);color:var(--ink-muted);white-space:nowrap;flex:none}
