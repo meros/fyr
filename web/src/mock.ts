@@ -295,7 +295,7 @@ function fullFixture(now: number): Fixture {
     const at = (min: number) => iso(now - min * 60_000);
     const deploy = (n: number, title: string, rev: string, summary: string): Change => ({
       id: `c_dep${n}`, key: `host:fyr deploy ${n}`, kind: "host", title, targets: ["host:fyr"], phase: "abandoned", phaseBy: "owner",
-      revisions: [{ id: rev, summary, by: "agent", at: at(60 * n) }], createdAt: at(60 * n + 5), updatedAt: at(60 * n),
+      revisions: [{ id: rev, summary, by: "agent", at: at(60 * n) }], createdAt: at(60 * n + 5), updatedAt: at(60 * n), done: { at: at(60 * n), by: "owner", reason: "abandoned" },
     });
     add(
       base("t_ended", "Fyr: review, plan and Solid core", now, 3, {
@@ -312,7 +312,7 @@ function fullFixture(now: number): Fixture {
           deploy(4, "Deploy Solid core part 1 (main f8f97d8) plus a test fix", "a9a8ec0", "f8f97d8 plus a test fix: TestMergeOneGuard failed the deploy's make test under load"),
           {
             id: "c_app88", key: "pr:acme/app#88", kind: "code", title: "acme/app#88", targets: ["repo:github.com/acme/app"], phase: "abandoned", phaseBy: "observed", label: "the PR does not exist on GitHub",
-            evidence: [{ kind: "pr", url: "https://github.com/acme/app/pull/88", title: "#88" }], createdAt: at(400), updatedAt: at(300),
+            evidence: [{ kind: "pr", url: "https://github.com/acme/app/pull/88", title: "#88" }], createdAt: at(400), updatedAt: at(300), done: { at: at(300), by: "observed", reason: "abandoned" },
           },
           {
             id: "c_v073", key: "branch:v073-live-upkeep", kind: "code", title: "A live change needs no upkeep (V0.73)", branch: "v073-live-upkeep", phase: "working", phaseBy: "agent",
@@ -519,7 +519,7 @@ function fullFixture(now: number): Fixture {
           { kind: "pr", url: "https://github.com/norban/web/pull/4100", title: "#4100" },
           { kind: "deployment", url: "https://norban.se", title: "production" },
         ],
-        createdAt: iso(600), updatedAt: iso(180),
+        createdAt: iso(600), updatedAt: iso(180), done: { at: iso(180), by: "observed", reason: "live" }, // V0.98
       },
     ];
     // V0.68: a script in a scratch folder, as on the owner's phone: its confirmation shortens the paths.
