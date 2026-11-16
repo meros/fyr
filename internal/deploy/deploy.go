@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,6 +82,12 @@ type Deployer struct {
 	// OnIdle hears that no deploy runs any more (V0.111): one failed, or
 	// the new build's probation ended. nil hears nothing.
 	OnIdle func()
+	// Releases is where auto-update gets CI's signed builds (decision 0027);
+	// nil: only local builds.
+	Releases *Releases
+	// Keep is how many builds besides current, previous and next survive a
+	// prune (#147); 0 is 3.
+	Keep int
 
 	exit   int
 	active int // deploys between start and return (V0.111)
@@ -161,6 +168,10 @@ type pending struct {
 	Dir    string `json:"dir,omitempty"`
 	// Cut are the threads whose turns a forced switch ended (V0.83).
 	Cut []string `json:"cut,omitempty"`
+	// Local: a build of a checkout, which pauses auto-update once it runs
+	// (#159); Branch is the checkout's branch.
+	Local  bool   `json:"local,omitempty"`
+	Branch string `json:"branch,omitempty"`
 }
 
 // Shipped is a deploy that succeeded (V0.82): the build id, the commit it
@@ -187,9 +198,13 @@ func source(ctx context.Context, run Runner, dir string) (commit, remote string)
 	return commit, remote
 }
 
-// ship tells OnShipped about a build of commit in dir.
+// ship tells OnShipped about a build of commit, from the checkout dir or,
+// for a release (dir ""), from GitHub's compare.
 func (d *Deployer) ship(run Runner, build, commit, remote, dir string) {
-	if d.OnShipped == nil || commit == "" || dir == "" {
+	if commit != "" {
+		d.DB.SetKV("live_commit", commit)
+	}
+	if d.OnShipped == nil || commit == "" || (dir == "" && d.Releases == nil) {
 		return
 	}
 	d.OnShipped(Shipped{Build: build, Commit: commit, Remote: remote, Dir: dir, Contains: func(sha string) bool {
@@ -198,6 +213,9 @@ func (d *Deployer) ship(run Runner, build, commit, remote, dir string) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		if dir == "" {
+			return d.Releases.Contains(ctx, commit, sha)
+		}
 		_, err := run(ctx, dir, "git", "-C", dir, "merge-base", "--is-ancestor", sha, commit)
 		return err == nil
 	}})
@@ -258,6 +276,11 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		}
 		return "", err
 	}
+	// Decision 0027: an ask without a checkout installs a release.
+	if dir == "" {
+		sha, _ := req.Args["commit"].(string)
+		return d.install(ctx, run, prog, gen, threadID, req, sha, fail, failed)
+	}
 	if why := d.olderThanLive(ctx, run, dir); why != "" {
 		return failed(errors.New(why))
 	}
@@ -271,8 +294,17 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	sum, _ := SourceSum(dir)
 	clientOnly := sum != "" && sum == d.liveSum()
 	out := filepath.Join(d.Data, "builds", id)
+	if err := diskRoom(d.Data); err != nil {
+		return failed(err)
+	}
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return "", err
+	}
+	// #145: the whole build and test output stays with the build; a failed
+	// build keeps its logs and loses its binaries.
+	dropBins := func() {
+		os.Remove(filepath.Join(out, "fyrd"))
+		os.Remove(filepath.Join(out, "fyr"))
 	}
 	// Decision 0007: build with the checkout's own pinned toolchain when it
 	// has a flake, so the system profile is never touched. A host without
@@ -287,38 +319,104 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	inCg, closeCg := proc.WithCgroup(ctx, d.Cgroup)
 	defer closeCg()
 	d.report(prog, "build", "", nil)
-	if b, err := run(inCg, dir, build...); err != nil {
-		os.RemoveAll(out)
-		return failed(firstErr(fail(fmt.Errorf("build failed: %v\n%s", err, tail(b, 3000)))))
+	b, err := run(inCg, dir, build...)
+	buildLog := filepath.Join(out, "build.log")
+	os.WriteFile(buildLog, b, 0o644)
+	if err != nil {
+		dropBins()
+		return failed(firstErr(fail(fmt.Errorf("build failed (%s), nothing was switched; log: %s\n%s", Failing(b), buildLog, tail(b, 3000)))))
 	}
-	// V0.86: the tests hold a slot for heavy jobs, ahead of every agent.
-	release := func() {}
-	if d.Slot != nil {
-		d.report(prog, "test", "waiting for a test slot", nil)
-		r, err := d.Slot(ctx)
-		if err != nil {
-			os.RemoveAll(out)
-			return failed(firstErr(fail(fmt.Errorf("no test slot, nothing was switched: %v", err))))
+	// #159: a local build runs the smoke test; the full suite only on ask.
+	if full, _ := req.Args["tests"].(bool); full {
+		// V0.86: the tests hold a slot for heavy jobs, ahead of every agent.
+		release := func() {}
+		if d.Slot != nil {
+			d.report(prog, "test", "waiting for a test slot", nil)
+			r, err := d.Slot(ctx)
+			if err != nil {
+				dropBins()
+				return failed(firstErr(fail(fmt.Errorf("no test slot, nothing was switched: %v", err))))
+			}
+			release = r
 		}
-		release = r
-	}
-	d.report(prog, "test", "", nil)
-	tb, terr := run(inCg, dir, test...)
-	release()
-	if terr != nil {
-		os.RemoveAll(out)
-		return failed(firstErr(fail(fmt.Errorf("tests failed, nothing was switched: %v\n%s", terr, tail(tb, 3000)))))
+		d.report(prog, "test", "", nil)
+		tb, terr := run(inCg, dir, test...)
+		release()
+		testLog := filepath.Join(out, "test.log")
+		os.WriteFile(testLog, tb, 0o644)
+		if terr != nil {
+			dropBins()
+			return failed(firstErr(fail(fmt.Errorf("tests failed (%s), nothing was switched; log: %s\n%s", Failing(tb), testLog, tail(tb, 3000)))))
+		}
+	} else {
+		d.report(prog, "smoke", "", nil)
+		if err := d.smoke(inCg, run, out, ""); err != nil {
+			dropBins()
+			return failed(firstErr(fail(fmt.Errorf("the smoke test failed, nothing was switched: %w", err))))
+		}
 	}
 	if sum != "" {
 		os.WriteFile(filepath.Join(out, sumFile), []byte(sum+"\n"), 0o644)
 	}
+	branch := gitBranch(ctx, run, dir)
 	if clientOnly {
 		res, err := d.deployClient(ctx, run, prog, gen, dir, out, id)
 		if err == nil {
 			d.ship(run, id, commit, remote, dir)
+			d.pause(Paused{Build: id, Commit: commit, Branch: branch, Dir: dir, At: time.Now()})
+			d.Prune()
 		}
 		return res, err
 	}
+	req.Args = withLocal(req.Args, branch)
+	return d.switchTo(ctx, prog, gen, threadID, req, id, commit, remote, dir, out)
+}
+
+// withLocal marks a deploy ask's args as a local build of branch (#159).
+func withLocal(args map[string]any, branch string) map[string]any {
+	out := map[string]any{}
+	for k, v := range args {
+		out[k] = v
+	}
+	out["local"] = true
+	if branch != "" {
+		out["branch"] = branch
+	}
+	return out
+}
+
+func gitBranch(ctx context.Context, run Runner, dir string) string {
+	b, err := run(ctx, dir, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD")
+	s := strings.TrimSpace(string(b))
+	if err != nil || strings.ContainsAny(s, " \n") {
+		return ""
+	}
+	return s
+}
+
+// switchTo is the end of every deploy, local or release: snapshot the
+// database, drain when the agents do not survive, record pending_deploy,
+// link next and stop with ExitDeploy for the launcher to switch.
+func (d *Deployer) switchTo(ctx context.Context, prog *Progress, gen int, threadID string, req core.EffectReq, id, commit, remote, dir, out string) (string, error) {
+	replaced := func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return d.gen != gen
+	}
+	fail := func(err error) (string, error) {
+		if replaced() {
+			return "", errReplaced
+		}
+		return "", err
+	}
+	failed := func(err error) (string, error) {
+		if err != nil && !errors.Is(err, core.ErrReportLater) {
+			d.report(prog, "failed", err.Error(), nil)
+		}
+		return "", err
+	}
+	local, _ := req.Args["local"].(bool)
+	branch, _ := req.Args["branch"].(string)
 	if err := d.DB.Snapshot(filepath.Join(out, "pre.db")); err != nil {
 		return failed(fmt.Errorf("database snapshot: %w", err))
 	}
@@ -376,14 +474,13 @@ drain:
 	}
 	d.cancel = nil // past this point the switch happens; nothing cancels it
 	d.force = nil
-	b, _ := json.Marshal(pending{Thread: threadID, Build: id, Req: req, Commit: commit, Remote: remote, Dir: dir, Cut: cut})
+	b, _ := json.Marshal(pending{Thread: threadID, Build: id, Req: req, Commit: commit, Remote: remote, Dir: dir, Cut: cut, Local: local, Branch: branch})
 	if err := d.DB.SetKV("pending_deploy", string(b)); err != nil {
 		d.mu.Unlock()
 		return "", err
 	}
-	next := filepath.Join(d.Data, "next")
-	os.Remove(next)
-	if err := os.Symlink(filepath.Join("builds", id), next); err != nil {
+	// #152: next is replaced atomically, never missing for a moment.
+	if err := setLink(filepath.Join(d.Data, "next"), filepath.Join("builds", id)); err != nil {
 		d.mu.Unlock()
 		return "", err
 	}
@@ -426,8 +523,11 @@ func (d *Deployer) ReportPending() {
 			msg += "\nLog tail:\n" + tail([]byte(f.Log), 1500)
 		}
 		d.report(&Progress{Build: f.Build, StartedAt: time.Now()}, "failed", msg, nil)
+		if !p.Local && p.Commit != "" {
+			d.markBad(p.Commit, f.Reason) // #154: not tried again until a newer release
+		}
 		go func() {
-			d.Host.Report(p.Thread, p.Req, true, false, msg)
+			d.tell(p.Thread, p.Req, false, msg)
 			d.idle()
 		}()
 		return
@@ -438,12 +538,60 @@ func (d *Deployer) ReportPending() {
 		wait = 65 * time.Second
 	}
 	go func() {
-		time.Sleep(wait)
+		// #148: the launcher says when the probation ended (probation-ok);
+		// a launcher from before #148 never does, so after wait plus a
+		// margin the deploy counts as good as before.
+		okPath := filepath.Join(d.Data, ProbationOK)
+		step := min(time.Second, wait/10+time.Millisecond)
+		for end := time.Now().Add(wait + wait/2); time.Now().Before(end); time.Sleep(step) {
+			if b, err := os.ReadFile(okPath); err == nil && filepath.Base(strings.TrimSpace(string(b))) == p.Build {
+				break
+			}
+		}
 		d.DB.SetKV("pending_deploy", "")
 		d.ship(d.runner(), p.Build, p.Commit, p.Remote, p.Dir)
-		d.Host.Report(p.Thread, p.Req, true, true, "Fyr now runs build "+p.Build+".")
+		msg := "Fyr now runs release " + p.Build + "."
+		if p.Local {
+			// #159: a local build holds auto-update off until a release
+			// contains it or the owner goes back to the release track.
+			d.pause(Paused{Build: p.Build, Commit: p.Commit, Branch: p.Branch, Dir: p.Dir, At: time.Now()})
+			msg = "Fyr now runs local build " + p.Build
+			if p.Branch != "" {
+				msg += " of " + p.Branch
+			}
+			msg += "; auto-update is paused until a release contains it, or until the owner presses Back to release."
+		} else {
+			d.Unpause()
+		}
+		d.Prune()
+		d.tell(p.Thread, p.Req, true, msg)
 		d.idle()
 	}()
+}
+
+// tell reports a deploy's result to the thread that asked; an update Fyr
+// started by itself has no thread and only logs.
+func (d *Deployer) tell(thread string, req core.EffectReq, ok bool, msg string) {
+	if thread == "" {
+		log.Printf("update: %s", msg)
+		return
+	}
+	d.Host.Report(thread, req, true, ok, msg)
+}
+
+// markBad keeps a release that rolled back here from being tried again
+// until deployable moves past it (#154).
+func (d *Deployer) markBad(commit, why string) {
+	b, _ := json.Marshal(map[string]string{"commit": commit, "why": why, "at": time.Now().UTC().Format(time.RFC3339)})
+	d.DB.SetKV("update_bad", string(b))
+}
+
+// Bad is the release commit that last rolled back here, and why.
+func (d *Deployer) Bad() (commit, why string) {
+	raw, _ := d.DB.GetKV("update_bad")
+	var m map[string]string
+	json.Unmarshal([]byte(raw), &m)
+	return m["commit"], m["why"]
 }
 
 func firstErr(_ string, err error) error { return err }

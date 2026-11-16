@@ -27,6 +27,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/cgroup"
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/front"
@@ -88,6 +89,10 @@ func main() {
 	var webFS fs.FS = web.Dist()
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
+	}
+	if cmd == "selftest" {
+		selftest(*data, webFS)
+		return
 	}
 	hostName, _ := os.Hostname()
 	if cfg.Name != "" {
@@ -235,11 +240,35 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		log.Printf("deploy %s (%s): %d changes live", s.Build, s.Commit, n)
 	}
 	eng.DeployNow = dep.DeployNow               // V0.83: the owner's Restart now
-	// V0.111: Fyr approves a deploy ask by itself when the gate passes and
-	// no deploy runs; the end of one looks at the asks that wait.
-	eng.DeployGate = func(ctx context.Context, dir string) (string, string) { return deploy.Gate(ctx, nil, dir) }
+	// Decision 0027: auto-update installs CI's signed releases only.
+	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Gh: github.Gh}
+	// V0.111, #159: an ask without a checkout installs the newest release by
+	// itself; a local build of a checkout always waits for the owner's press.
+	eng.DeployGate = func(ctx context.Context, dir string) (string, string) {
+		if dir != "" {
+			return "", "a local build of " + dir + " needs your press (it is not a CI release)"
+		}
+		sha, err := dep.Releases.Deployable(ctx)
+		if err != nil {
+			return "", err.Error()
+		}
+		return sha, ""
+	}
 	eng.DeployBusy = dep.Busy
 	dep.OnIdle = eng.AutoDeploySweep
+	// #153: follow `deployable`, batched by a quiet period.
+	watcher := &deploy.Watcher{D: dep, On: func() bool { return eng.AutoDeploy().On }, Start: func(sha string) {
+		go func() {
+			req := core.EffectReq{ID: engine.NewID("fx_"), Action: core.FyrDeploy, Args: map[string]any{"commit": sha, "trigger": "deployable"}}
+			if _, err := dep.Deploy(context.Background(), "", req, ""); err != nil && !errors.Is(err, core.ErrReportLater) {
+				log.Printf("update %s: %v", sha, err)
+			}
+		}()
+	}}
+	if cfg.UpdateQuietMinutes > 0 {
+		watcher.Quiet = func() time.Duration { return time.Duration(cfg.UpdateQuietMinutes) * time.Minute }
+	}
+	go watcher.Run(ctx)
 	prDetails := &github.Details{Gh: github.Gh} // V0.43: the PR tab's details, cached 30 s
 	eng.Effects = engine.Outside{Gh: github.Gh, PR: prDetails, Deploy: dep.Deploy}
 	poller := &github.Poller{Gh: github.Gh, Src: engine.PRWatch{E: eng}}
@@ -312,8 +341,17 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		cfg.HostListen = net.JoinHostPort(ip, port)
 	}
 	hostHandler := srv.Handler()
+	// #148: the launcher trusts a new build once /healthz on this listener
+	// is green: the store reads, the client has its page, and the runner's
+	// processes were adopted when there is a runner.
+	health := []deploy.Check{storeHealthy(h.st), webHealthy(webFS), func() error {
+		if os.Getenv("FYR_RUNNER") != "" && rn == nil {
+			return errors.New("the runner did not answer; its agent processes were not adopted")
+		}
+		return nil
+	}}
 	if cfg.Role == "host" {
-		serve(ln, hostHandler)
+		serve(ln, deploy.Health(hostHandler, health...))
 	} else {
 		// both (V0.51): the front reaches this host over a loopback link,
 		// through the host protocol only; agents keep /mcp on the main port.
@@ -335,7 +373,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		mux := http.NewServeMux()
 		mux.Handle("/mcp", hostHandler)
 		mux.Handle("/", fr.Handler())
-		serve(ln, mux)
+		serve(ln, deploy.Health(mux, health...))
 	}
 	switch {
 	case cfg.HostListen == "":
@@ -349,7 +387,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		log.Printf("serving fronts on the tailnet at %s", cfg.HostListen)
 	}
 	log.Printf("build %s (%s) listening on http://%s (%d threads, %d providers)", BuildID(), cfg.Role, ln.Addr(), len(eng.Snapshot()), len(h.profiles()))
-	deploy.MarkReady()
+	deploy.MarkReady(ln.Addr().String())
 	dep.ReportPending()
 	eng.AutoDeploySweep() // V0.111: the deploy asks that waited across the restart
 
@@ -392,14 +430,14 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	done := make(chan struct{})
 	go func() { fr.Run(ctx); close(done) }()
 	go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every) // V0.123
-	hs := &http.Server{Handler: fr.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Handler: deploy.Health(fr.Handler(), storeHealthy(st), webHealthy(webFS)), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
 	}()
 	log.Printf("build %s (front) listening on http://%s for %d hosts", BuildID(), ln.Addr(), len(cfg.Hosts))
-	deploy.MarkReady()
+	deploy.MarkReady(ln.Addr().String())
 	<-ctx.Done()
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
