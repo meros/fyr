@@ -5,6 +5,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -40,7 +41,7 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	if !ok {
 		return core.PR{}, 0, fmt.Errorf("not a PR URL: %s", url)
 	}
-	out, err := gh(ctx, "pr", "view", "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt,baseRefName", "--", canon)
+	out, err := gh(ctx, "pr", "view", "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt,isDraft,mergeStateStatus,autoMergeRequest,baseRefName", "--", canon)
 	if err != nil {
 		return core.PR{}, 0, err
 	}
@@ -55,8 +56,11 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 		MergeCommit    *struct {
 			Oid string `json:"oid"`
 		} `json:"mergeCommit"`
-		MergedAt *time.Time `json:"mergedAt"`
-		Rollup   []struct {
+		MergedAt   *time.Time      `json:"mergedAt"`
+		IsDraft    bool            `json:"isDraft"`
+		MergeState string          `json:"mergeStateStatus"`
+		AutoMerge  json.RawMessage `json:"autoMergeRequest"`
+		Rollup     []struct {
 			Typename   string `json:"__typename"`
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
@@ -82,7 +86,8 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	}
 	now := time.Now()
 	p := core.PR{URL: url, Repo: repo, Number: n, Title: v.Title, State: v.State, Checks: checks,
-		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", Branch: v.HeadRefName, CheckedAt: &now, Head: v.HeadRefOid}
+		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", Branch: v.HeadRefName, CheckedAt: &now, Head: v.HeadRefOid,
+		Draft: v.IsDraft, MergeState: v.MergeState, AutoMerge: len(v.AutoMerge) > 0 && string(v.AutoMerge) != "null"}
 	if v.MergeCommit != nil {
 		p.MergeSHA = v.MergeCommit.Oid
 	}
@@ -152,16 +157,20 @@ func Missing(err error) bool {
 // not finished making is not ended by a kick right after it opened.
 const MissingAfter = time.Minute
 
-// Merge merges a PR with gh (the pr.merge effect).
-func Merge(ctx context.Context, gh Runner, url, method string) (string, error) {
+// Merge merges a PR with gh (the pr.merge effect), only while its head is
+// head (V0.97): GitHub refuses the merge when the head moved.
+func Merge(ctx context.Context, gh Runner, url, method, head string) (string, error) {
 	canon, ok := core.CanonicalPR(url)
 	if !ok {
 		return "", fmt.Errorf("not a PR URL: %s", url)
 	}
+	if head == "" || strings.HasPrefix(head, "-") {
+		return "", errors.New("a merge needs the head commit")
+	}
 	if method == "" {
 		method = "squash"
 	}
-	out, err := gh(ctx, "pr", "merge", "--"+method, "--", canon)
+	out, err := gh(ctx, "pr", "merge", "--"+method, "--match-head-commit", head, "--", canon)
 	return strings.TrimSpace(string(out)), err
 }
 

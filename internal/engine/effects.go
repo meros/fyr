@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/api"
@@ -153,7 +154,7 @@ func (e *Engine) runFyr(threadID string, req core.EffectReq, id string) (ok bool
 		return false, fx.Check(req.Args).Error() + ".", false
 	}
 	if why := fx.Guard(&t, req.Args); why != "" {
-		return false, why + ".", false
+		return false, strings.TrimSuffix(why, ".") + ".", false
 	}
 	if e.Effects == nil {
 		return false, "No effect runner is configured.", false
