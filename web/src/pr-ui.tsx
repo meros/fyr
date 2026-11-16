@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import type { Thread } from "./types.ts";
-import { MERGE_METHODS, checkDuration, checksSection, chipStatus, fixCheckMessage, groupChecks, mergeButton, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
+import { MERGE_METHODS, headLabel, shortHead, checkDuration, checksSection, chipStatus, fixCheckMessage, groupChecks, mergeButton, mergeStatus, passedLabel, reviewAskLabel, reviewMessage, reviewWord, threadsByFile, updatedLabel, type MergeMethod, type MergeStatus, type PrCheck, type PrDetail, type PrThread } from "./pr.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { relTime } from "./format.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
@@ -94,7 +94,9 @@ export function PrView(p: PrViewProps) {
   const open = (d?.state ?? pr.state ?? "OPEN") === "OPEN";
   const done = !open;
   const hostReason = unavailableReason(t, "pr.merge");
-  const mergeReason = !open ? undefined : !status.canMerge ? status.reason : hostReason;
+  // V0.97: a merge is bound to the head shown here; the host refuses it when the head moved.
+  const head = d?.headSha || pr.head;
+  const mergeReason = !open ? undefined : !status.canMerge ? status.reason : (hostReason ?? (head ? undefined : "Fyr has not read the PR's head yet"));
   const groups = useMemo(() => groupChecks(d?.checks ?? []), [d]);
   const sendReason = unavailableReason(t, "thread.send");
   const title = d?.title || pr.title || t.title;
@@ -142,7 +144,7 @@ export function PrView(p: PrViewProps) {
       <div class="prv-acts">
         {open && (
           <button class="btn p prv-merge" disabled={!!mergeReason} title={mergeReason ?? "Choose how to merge"} onClick={() => setMerging(true)}>
-            Merge…
+            {headLabel("Merge", head)}…
           </button>
         )}
         {open && groups.failed.length > 0 && (
@@ -204,8 +206,8 @@ export function PrView(p: PrViewProps) {
           <Description body={d.body ?? ""} />
         </>
       )}
-      {merging && d && <MergeDialog d={d} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { method: m }, `Merging #${d.number}. The result shows in the conversation.`)} />}
-      {merging && !d && <MergeDialog d={{ url: pr.url, repo: pr.repo ?? "", number: pr.number, title, state: "OPEN", checks: [], threads: [] }} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { method: m }, `Merging #${pr.number}. The result shows in the conversation.`)} />}
+      {merging && d && <MergeDialog d={d} sha={head} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { method: m, head }, `Merging #${d.number}. The result shows in the conversation.`)} />}
+      {merging && !d && <MergeDialog d={{ url: pr.url, repo: pr.repo ?? "", number: pr.number, title, state: "OPEN", checks: [], threads: [] }} sha={head} onClose={() => setMerging(false)} onMerge={(m) => run("pr.merge", { method: m, head }, `Merging #${pr.number}. The result shows in the conversation.`)} />}
     </div>
   );
 }
@@ -377,7 +379,7 @@ function Description({ body }: { body: string }) {
   );
 }
 
-function MergeDialog({ d, onClose, onMerge }: { d: PrDetail; onClose(): void; onMerge(m: MergeMethod): Promise<boolean> }) {
+function MergeDialog({ d, sha, onClose, onMerge }: { d: PrDetail; sha?: string; onClose(): void; onMerge(m: MergeMethod): Promise<boolean> }) {
   const [method, setMethod] = useState<MergeMethod>("squash");
   const [sending, setSending] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
@@ -408,6 +410,11 @@ function MergeDialog({ d, onClose, onMerge }: { d: PrDetail; onClose(): void; on
           ) : (
             "Merges this PR on GitHub."
           )}{" "}
+          {sha && (
+            <>
+              Only commit <code>{shortHead(sha)}</code>: if the branch moves first, Fyr refuses.{" "}
+            </>
+          )}
           The result shows in the conversation.
         </p>
         <div class="prv-methods" role="radiogroup" aria-label="Merge method">

@@ -747,9 +747,16 @@ func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 	vc.ChangesLook = nil // V0.65: served with the Changes tab, not on every push
 	vd := &api.View{View: &vc}
 	vd.SnoozeUntil, vd.SnoozedAt = core.SnoozeOf(v)
+	changes := e.shown(t)
+	running := t.Running || t.RunningTasks() > 0
+	for i := range changes { // V0.97: derived, never stored
+		if c := &changes[i]; c.Phase.InFlight() && !c.Dismissed {
+			c.Ready = core.Ready(c.PR, running)
+		}
+	}
 	return api.Thread{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now),
 		PR: t.MainPR(), Project: e.projectName(t), LiveView: t.ViewOn(),
-		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t), Changes: e.shown(t)}
+		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t), Changes: changes}
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.

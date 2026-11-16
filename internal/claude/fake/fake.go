@@ -447,8 +447,8 @@ func turn(text string) (took []queued) {
 	case "merge":
 		url := strings.TrimSpace(strings.TrimPrefix(text, "merge"))
 		assistant(msg{"type": "tool_use", "id": "tu_m", "name": "mcp__fyr__effect_request",
-			"input": msg{"action": "pr.merge", "args": msg{"pr": url, "method": "squash"}}})
-		out := callMCP("effect_request", msg{"action": "pr.merge", "args": msg{"pr": url, "method": "squash"}, "reason": "asked"})
+			"input": msg{"action": "pr.merge", "args": msg{"pr": url, "method": "squash", "head": "abc1234def"}}})
+		out := callMCP("effect_request", msg{"action": "pr.merge", "args": msg{"pr": url, "method": "squash", "head": "abc1234def"}, "reason": "asked"})
 		assistant(msg{"type": "text", "text": "tool said: " + out})
 		result(false, "success", "requested")
 	case "gate":
