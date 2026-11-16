@@ -822,6 +822,9 @@ button.ptag{padding:0}
 .dbn-b{border:0;background:none;color:var(--ink-muted);font:inherit;cursor:pointer;padding:2px 6px;min-height:28px}
 .dbn.m .dbn-b{min-height:44px;min-width:44px}
 .dbn-more{flex-basis:100%;margin:0;max-height:40vh;overflow:auto;padding:8px;border-radius:8px;background:var(--sunken);font:400 12px/17px var(--mono);white-space:pre-wrap}
+/* #81: a folded busy banner: a small chip at the same corner; a press opens it */
+.dbn.dbn-chip{flex-wrap:nowrap;width:auto;max-width:none;padding:6px 12px;cursor:pointer;font:inherit;color:var(--ink);text-align:left}
+.dbn.dbn-chip.m{left:auto;right:12px;min-height:44px}
 
 /* SPEC 0.5 V0.40: the thread list can be hidden; the open thread then takes its room. */
 .app.nolist{grid-template-columns:76px minmax(0,1fr)}
