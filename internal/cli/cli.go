@@ -13,6 +13,8 @@ package cli
 import (
 	"context"
 	"io"
+
+	"github.com/meros/fyr/internal/runner"
 )
 
 // Msg is one protocol message.
@@ -87,6 +89,14 @@ type Launch struct {
 	Log            io.Writer
 	// Cgroup: the thread's cgroup directory (V0.80); "" is the daemon's.
 	Cgroup string
+	// Runner, when set, starts the process in the launcher's runner, so it
+	// outlives fyrd (V0.90); ProcID names it there and Meta is fyrd's
+	// note about it, given back after a restart.
+	Runner *runner.Client
+	ProcID string
+	// RunnerKey: the runner keeps one live process per key (the thread id).
+	RunnerKey string
+	Meta      []byte
 }
 
 // Handlers answer the CLI's callbacks; they run on their own goroutines.
@@ -108,6 +118,12 @@ type Session interface {
 	CancelMessage(ctx context.Context, uuid string) (bool, error)
 	Close() error
 	Kill()
+}
+
+// Reattacher is an adapter that can speak to a process the runner kept
+// across a restart of fyrd (V0.90).
+type Reattacher interface {
+	Reattach(p runner.Pipe, log io.Writer, h Handlers) (Session, error)
 }
 
 // Adapter is one agent CLI.

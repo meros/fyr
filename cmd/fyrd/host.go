@@ -25,12 +25,13 @@ type host struct {
 	profiles func() []provider.Profile
 }
 
-func openHost(cfg config, data, t3DB string) *host {
+func openHost(cfg config, data, t3DB string, kept map[string]bool) *host {
 	st, err := store.Open(filepath.Join(data, "fyr.db"))
 	if err != nil {
 		log.Fatal(err)
 	}
 	eng := engine.New(st)
+	eng.Kept = kept // V0.90
 	for _, r := range cfg.ScratchRoots {
 		eng.ScratchRoots = append(eng.ScratchRoots, hostfs.ExpandHome(r, home()))
 	}

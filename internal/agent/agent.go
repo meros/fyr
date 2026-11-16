@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/provider"
+	"github.com/meros/fyr/internal/runner"
 )
 
 // authOf is the profile's auth; a legacy profile is a cli-login in its
@@ -83,6 +85,9 @@ type Config struct {
 	Adapters map[string]cli.Adapter
 	// Cgroups gives each thread's process a cgroup (V0.80); optional.
 	Cgroups Cgroups
+	// Runner starts the processes in the launcher's runner, so they outlive
+	// fyrd (V0.90); nil starts them as fyrd's children.
+	Runner *runner.Client
 }
 
 // Cgroups is what the agent needs from the cgroup tree (*cgroup.Tree):
@@ -105,6 +110,9 @@ type Manager struct {
 
 type session struct {
 	thread string
+	// proc names the process (its id in the runner, V0.90); Decision ids
+	// derive from it.
+	proc   string
 	cwd    string
 	token  string
 	c      cli.Session
@@ -115,7 +123,10 @@ type session struct {
 	live      bool
 	interrupt bool
 	asks      map[string]chan core.Effect // decision id → answer
-	reqs      map[string]string           // control request id → decision id
+	// adopted: Decisions an adopted process had open (V0.90), whose
+	// request the runner has not asked again yet.
+	adopted map[string]bool
+	reqs    map[string]string // control request id → decision id
 	// out holds unread messages: id → "sent" or "queued" (V0.33);
 	// cancelling marks the ones a cancel request is out for.
 	out        map[string]string
@@ -340,6 +351,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 	if !ok {
 		return nil, fmt.Errorf("no thread %s", threadID)
 	}
+	handover := o != nil
 	if o == nil {
 		pr := m.cfg.Profile(t.Profile)
 		o = &as{profile: pr, model: t.Model, session: t.SessionID, resume: t.SessionID != "",
@@ -368,7 +380,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		}
 		l.Key = k
 	}
-	s := &session{thread: threadID, cwd: t.Cwd, asks: map[string]chan core.Effect{}, reqs: map[string]string{}, digest: newDigest(),
+	s := &session{thread: threadID, proc: threadID + "-" + randHex(6), cwd: t.Cwd, asks: map[string]chan core.Effect{}, reqs: map[string]string{}, digest: newDigest(),
 		out: map[string]string{}, cancelling: map[string]bool{}, effort: l.Effort}
 	if m.cfg.MCPURL != "" {
 		s.token = randHex(24)
@@ -413,6 +425,13 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		l.Cgroup = m.cfg.Cgroups.Thread(threadID)
 		s.cgroup = l.Cgroup != ""
 	}
+	if m.cfg.Runner != nil {
+		// V0.90: the runner holds the process; the note lets the next fyrd
+		// adopt it.
+		l.Runner, l.ProcID, l.RunnerKey = m.cfg.Runner, s.proc, threadID
+		l.Meta, _ = json.Marshal(procMeta{Thread: threadID, CLI: ad.ID(), Token: s.token, Effort: l.Effort,
+			ViewTools: s.viewTools, ChangeTools: s.changeTools, Cgroup: s.cgroup})
+	}
 	c, err := ad.Start(l, cli.Handlers{
 		CanUseTool: func(req claude.Msg) claude.Msg { return m.canUseTool(s, req) },
 		Cancel:     func(reqID string) { m.cancelRequest(s, reqID) },
@@ -421,6 +440,15 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 	if err != nil {
 		dropToken()
 		m.releaseCgroup(s)
+		if s.log != nil {
+			s.log.Close()
+		}
+		// V0.90 (1): the runner holds a live process for this thread; link
+		// to it instead of a second one. A handover needs its own process.
+		var ex *runner.ExistsError
+		if errors.As(err, &ex) && !handover {
+			return m.adoptExisting(threadID, ex.ID)
+		}
 		return nil, err
 	}
 	s.c = c
@@ -460,14 +488,23 @@ func (m *Manager) Stop(threadID string) {
 	}
 }
 
-// StopAll ends every process, for shutdown.
+// StopAll ends every process, for shutdown. With a runner it ends none
+// (V0.90): it lets go of each, and the next fyrd adopts them.
 func (m *Manager) StopAll() {
 	m.mu.Lock()
 	ids := make([]string, 0, len(m.sessions))
-	for id := range m.sessions {
+	var held []*runner.Conn
+	for id, s := range m.sessions {
+		if p := pipeOf(s); p != nil {
+			held = append(held, p)
+			continue
+		}
 		ids = append(ids, id)
 	}
 	m.mu.Unlock()
+	for _, p := range held {
+		p.Detach()
+	}
 	for _, id := range ids {
 		m.Stop(id)
 	}

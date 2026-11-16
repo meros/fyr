@@ -114,3 +114,38 @@ func TestReportPendingContinuesCutThreads(t *testing.T) {
 		t.Fatalf("a drained deploy sent %v", nh.continued)
 	}
 }
+
+// SPEC 0.5 V0.90 (6): with the runner the agents outlive the switch, so a
+// deploy switches at once with threads running, never shows the drain and
+// cuts no turn.
+func TestDeploySurvivesWithoutDrain(t *testing.T) {
+	d, h, _ := newDeployer(t, "")
+	d.Drain, d.Survive = time.Hour, true
+	h.running = []string{"t1", "busy"}
+	var phases []string
+	d.OnProgress = func(p Progress) { phases = append(phases, p.Phase) }
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.Deploy(context.Background(), "t1", req, "/src/fyr")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, core.ErrReportLater) {
+			t.Fatalf("err %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the deploy waited for running threads")
+	}
+	for _, p := range phases {
+		if p == "drain" {
+			t.Fatalf("phases %v", phases)
+		}
+	}
+	if d.ExitCode() != ExitDeploy {
+		t.Fatalf("exit code %d", d.ExitCode())
+	}
+	if p, _ := d.DB.GetKV("pending_deploy"); strings.Contains(p, `"cut"`) {
+		t.Fatalf("a turn was cut: %q", p)
+	}
+}

@@ -20,6 +20,7 @@ import (
 	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/provider"
+	rnr "github.com/meros/fyr/internal/runner"
 	"github.com/meros/fyr/internal/store"
 )
 
@@ -63,11 +64,18 @@ func newHarness(t *testing.T, idle time.Duration) *harness {
 }
 
 func startHarness(t *testing.T, dir, db string, idle time.Duration) *harness {
+	return startHarnessWith(t, dir, db, idle, nil, nil)
+}
+
+// startHarnessWith starts the agents in the runner rc (V0.90); kept is
+// what the runner's list says before Load.
+func startHarnessWith(t *testing.T, dir, db string, idle time.Duration, rc *rnr.Client, kept map[string]bool) *harness {
 	st, err := store.Open(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	e := New(st)
+	e.Kept = kept
 	if err := e.Load(); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +89,7 @@ func startHarness(t *testing.T, dir, db string, idle time.Duration) *harness {
 			return provider.Profile{ID: "fake", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}}
 		},
 		IdleStop: idle, MCPURL: hs.URL + "/mcp",
-		Attachments: h.att.Get, OnCommands: e.SetCommands,
+		Attachments: h.att.Get, OnCommands: e.SetCommands, Runner: rc,
 	})
 	e.Agents, e.Effects, h.m = m, h.r, m
 	e.AttachmentExists = func(id string) bool { _, err := h.att.Get(id); return err == nil }
@@ -285,6 +293,92 @@ func TestRestartRecovery(t *testing.T) {
 	th, _ := e2.Thread(id)
 	if th.Running || th.Failure == nil || (th.Failure.Class != "restart" && th.Failure.Class != "process") {
 		t.Fatalf("after restart: running=%v failure=%+v", th.Running, th.Failure)
+	}
+}
+
+// SPEC 0.5 V0.90: a restart of fyrd keeps the agent's turn and its open
+// question; the next fyrd adopts the process and the answer reaches it.
+func TestRunnerKeepsTurnAcrossRestart(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "runner.sock")
+	srv := &rnr.Server{Logf: t.Logf}
+	if err := srv.Listen(sock); err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	t.Cleanup(func() { srv.Close(time.Second) })
+	rc := &rnr.Client{Path: sock}
+	dir := t.TempDir()
+	db := filepath.Join(dir, "fyr.db")
+
+	h := startHarnessWith(t, dir, db, time.Minute, rc, nil)
+	id := h.create("approve")
+	th := h.wait(id, "asking", state(core.Asking))
+	did := th.Decisions[0].ID
+	h.m.StopAll() // fyrd stops; the runner keeps the process
+	h.e.st.Close()
+
+	procs, err := rc.List()
+	if err != nil || len(procs) != 1 || procs[0].Exited {
+		t.Fatalf("runner list: %+v %v", procs, err)
+	}
+	h2 := startHarnessWith(t, dir, db, time.Minute, rc, agent.Kept(procs))
+	th2, _ := h2.e.Thread(id)
+	if !th2.Running || th2.Failure != nil || len(th2.Decisions) != 1 || th2.Decisions[0].ID != did {
+		t.Fatalf("after restart: running=%v failure=%+v decisions=%+v", th2.Running, th2.Failure, th2.Decisions)
+	}
+	h2.m.Adopt(procs)
+	// The runner asks the new fyrd again; the answer goes to the same
+	// Decision once the request is back.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		r := h2.cmd("thread.answer", id, core.Args{"decisionId": did, "allow": true})
+		if r.OK {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("answer: %+v", r)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	th2 = h2.wait(id, "done", state(core.Done))
+	if th2.Summary != "Permission: allow" || th2.Failure != nil {
+		t.Fatalf("summary %q failure %+v", th2.Summary, th2.Failure)
+	}
+	if n := len(th2.Decisions); n != 0 {
+		t.Fatalf("%d decisions left open", n)
+	}
+}
+
+// SPEC 0.5 V0.90 (1), (3): a fyrd that did not adopt a kept process (its
+// list missed it) never starts a second one: the next send finds the
+// runner's process for the thread and links to it.
+func TestRunnerNeverStartsASecondProcess(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "runner.sock")
+	srv := &rnr.Server{Logf: t.Logf}
+	if err := srv.Listen(sock); err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	t.Cleanup(func() { srv.Close(time.Second) })
+	rc := &rnr.Client{Path: sock}
+	dir := t.TempDir()
+	db := filepath.Join(dir, "fyr.db")
+
+	h := startHarnessWith(t, dir, db, time.Minute, rc, nil)
+	id := h.create("first")
+	h.wait(id, "first done", func(t core.Thread, _ core.Attention) bool { return t.Summary == "echo: first" })
+	h.m.StopAll()
+	h.e.st.Close()
+	before, _ := rc.List()
+
+	h2 := startHarnessWith(t, dir, db, time.Minute, rc, nil) // no Adopt
+	if r := h2.cmd("thread.send", id, core.Args{"text": "second"}); !r.OK {
+		t.Fatalf("send: %+v", r)
+	}
+	th := h2.wait(id, "second done", func(t core.Thread, _ core.Attention) bool { return t.Summary == "echo: second" })
+	after, _ := rc.List()
+	if len(before) != 1 || len(after) != 1 || after[0].ID != before[0].ID || th.Failure != nil {
+		t.Fatalf("before %+v after %+v failure %+v", before, after, th.Failure)
 	}
 }
 

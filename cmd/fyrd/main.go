@@ -34,6 +34,7 @@ import (
 	"github.com/meros/fyr/internal/preview"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/quota"
+	"github.com/meros/fyr/internal/runner"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
@@ -100,13 +101,19 @@ func main() {
 		}
 		tree = cgroup.Setup(cgroup.Options{Budget: budget, Logf: log.Printf})
 	}
-	h := openHost(cfg, *data, filepath.Join(*t3Dir, "statev2.sqlite"))
+	// V0.90: the launcher's runner holds the agent processes. Its list
+	// comes before the restart repair, which leaves their runs live.
+	var rn *kept
+	if cmd == "serve" {
+		rn = keptProcs(os.Getenv("FYR_RUNNER"))
+	}
+	h := openHost(cfg, *data, filepath.Join(*t3Dir, "statev2.sqlite"), rn.threads())
 	defer h.st.Close()
 	switch cmd {
 	case "import-t3":
 		importT3(h.t3, *list)
 	case "serve":
-		h.serve(cfg, webFS, hostName, *data, tree)
+		h.serve(cfg, webFS, hostName, *data, tree, rn)
 	default:
 		log.Fatalf("unknown command %q", cmd)
 	}
@@ -114,7 +121,7 @@ func main() {
 
 // serve runs the host until a signal: its agents, effects and pollers, the
 // host protocol, and in role both the front on the same port (V0.51).
-func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgroup.Tree) {
+func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgroup.Tree, rn *kept) {
 	eng, reg := h.eng, h.reg
 	ln := listenLoopback(cfg.Listen)
 	att := &attach.Store{Dir: filepath.Join(data, "attachments")}
@@ -151,9 +158,12 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		},
 		IdleStop: time.Duration(cfg.IdleStopMinutes) * time.Minute, MCPURL: "http://" + ln.Addr().String() + "/mcp",
 		LogDir: filepath.Join(data, "logs"), Attachments: att.Get, OnRateLimit: quotas.Observe, OnCommands: eng.SetCommands, HandoverDir: filepath.Join(data, "handover"),
-		Cgroups: tree,
+		Cgroups: tree, Runner: rn.client(),
 	})
 	eng.Agents = mgr
+	if rn != nil {
+		mgr.Adopt(rn.procs) // V0.90: before anything sends to a thread
+	}
 	eng.ProfileExists = func(id string) bool { _, ok := h.profile(id); return ok }
 	// V0.86: at most cfg.Slots heavy jobs at once; the deploy's tests first.
 	// slots: 0 is off, absent or negative is the default; the pool survives a
@@ -167,7 +177,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy()}
+	// V0.90: with the runner the agents outlive the switch: no drain.
+	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy(), Survive: rn != nil}
 	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
 	if !pool.Off() {
 		dep.Slot = func(ctx context.Context) (func(), error) { return pool.Wait(ctx, cgroup.DeployDir, slots.Test) }
@@ -322,4 +333,42 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	defer cancel()
 	hs.Shutdown(sctx)
 	<-done // the cache is written
+}
+
+// kept is the launcher's runner and the processes it held at the start
+// (V0.90).
+type kept struct {
+	rc    *runner.Client
+	procs []runner.Proc
+}
+
+// keptProcs asks the runner at sock for its processes. Without a runner, or
+// with one this build cannot speak to, it returns nil and the agents run as
+// fyrd's children (a deploy then drains, V0.13).
+func keptProcs(sock string) *kept {
+	if sock == "" {
+		return nil
+	}
+	rc := &runner.Client{Path: sock}
+	procs, err := rc.ListWait(10 * time.Second) // V0.90 (3): never miss a kept process
+	if err != nil {
+		log.Printf("runner: %v; agents run as fyrd's children", err)
+		return nil
+	}
+	log.Printf("runner: %s holds %d agent processes", sock, len(procs))
+	return &kept{rc: rc, procs: procs}
+}
+
+func (k *kept) threads() map[string]bool {
+	if k == nil {
+		return nil
+	}
+	return agent.Kept(k.procs)
+}
+
+func (k *kept) client() *runner.Client {
+	if k == nil {
+		return nil
+	}
+	return k.rc
 }

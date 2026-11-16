@@ -21,7 +21,9 @@ func (m *Manager) canUseTool(s *session, req claude.Msg) claude.Msg {
 	input, _ := req["input"].(map[string]any)
 	reqID, _ := req["request_id"].(string)
 	agentID, _ := req["agent_id"].(string)
-	d := core.Decision{ID: "d_" + randHex(6), Assignee: core.Owner, Agent: agentID}
+	// V0.90: a request the runner asks again after a restart finds the
+	// Decision the last fyrd opened.
+	d := core.Decision{ID: decisionID(s.proc, reqID), Assignee: core.Owner, Agent: agentID}
 	if tool == "AskUserQuestion" {
 		d.Kind = core.DecisionAsk
 		b, _ := json.Marshal(input["questions"])
@@ -29,12 +31,25 @@ func (m *Manager) canUseTool(s *session, req claude.Msg) claude.Msg {
 	} else {
 		d.Kind, d.Tool, d.Input = core.DecisionApproval, tool, input
 	}
-	ch := make(chan core.Effect, 1)
+	// V0.90: an adopted process's open question has its channel already
+	// (Adopt made it), and maybe the owner's answer in it. Otherwise check
+	// before the channel exists: an answer that comes after it closes the
+	// Decision, and the check must not open it again.
 	m.mu.Lock()
-	s.asks[d.ID] = ch
+	ch, pre := s.asks[d.ID]
+	delete(s.adopted, d.ID)
+	m.mu.Unlock()
+	known := pre || m.hasDecision(s.thread, d.ID)
+	m.mu.Lock()
+	if ch == nil {
+		ch = make(chan core.Effect, 1)
+		s.asks[d.ID] = ch
+	}
 	s.reqs[reqID] = d.ID
 	m.mu.Unlock()
-	m.observe(s.thread, core.KindDecisionOpened, d)
+	if !known {
+		m.observe(s.thread, core.KindDecisionOpened, d)
+	}
 
 	ans, ok := <-ch
 	m.mu.Lock()
@@ -130,4 +145,18 @@ func (m *Manager) doInterrupt(threadID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	return s.c.Interrupt(ctx)
+}
+
+// hasDecision reports whether a thread has a Decision open with id.
+func (m *Manager) hasDecision(thread, id string) bool {
+	t, ok := m.host.Thread(thread)
+	if !ok {
+		return false
+	}
+	for _, d := range t.Decisions {
+		if d.ID == id {
+			return true
+		}
+	}
+	return false
 }
