@@ -632,6 +632,8 @@ function railFixture(now: number): Fixture {
     }),
     base("t_triage", "Triage sprint issues", now, 60, {
       project: "acme/ops",
+      // V0.120 (5): its model was turned off since; it shows as "opus 5.4 (off)" until another is picked.
+      model: "claude-opus-5-4",
       attention: { state: "done", section: "needs", reason: "Done" },
       summary: "Filed 6 issues, closed 2 duplicates",
       unavailable: quiet,
