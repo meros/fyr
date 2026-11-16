@@ -49,6 +49,17 @@ func (h *Hub) Unsubscribe(ch chan Frame) {
 	h.mu.Unlock()
 }
 
+// DropAll closes every subscription: each client reconnects and reads a
+// new hello (a client-only deploy's reload, V0.81).
+func (h *Hub) DropAll() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for ch := range h.subs {
+		delete(h.subs, ch)
+		close(ch)
+	}
+}
+
 // Send encodes v and publishes it as one frame.
 func (h *Hub) Send(event string, v any) {
 	b, err := json.Marshal(v)

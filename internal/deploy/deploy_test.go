@@ -301,3 +301,159 @@ func TestReportPendingProgress(t *testing.T) {
 		t.Fatalf("rollback not reported: %+v", got)
 	}
 }
+
+// clientOnlySetup is a checkout whose fyrd sources equal the running
+// daemon's (its server.sum), with a built client in web/dist, and a current
+// build to replace.
+func clientOnlySetup(t *testing.T, d *Deployer) (dir string, switched *[]string) {
+	t.Helper()
+	dir = t.TempDir()
+	for p, s := range map[string]string{
+		"go.mod":                 "module x\n",
+		"internal/a/a.go":        "package a\n",
+		"internal/a/a_test.go":   "package a\n",
+		"web/embed.go":           "package web\n",
+		"web/src/app.tsx":        "v1\n",
+		"web/dist/index.html":    "<html>v1</html>\n",
+		"web/dist/assets/app.js": "v1\n",
+		"docs/SPEC.md":           "spec\n",
+	} {
+		os.MkdirAll(filepath.Join(dir, filepath.Dir(p)), 0o755)
+		os.WriteFile(filepath.Join(dir, p), []byte(s), 0o644)
+	}
+	sum, err := SourceSum(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.LiveDir = filepath.Join(d.Data, "builds", "old")
+	os.MkdirAll(d.LiveDir, 0o755)
+	os.WriteFile(filepath.Join(d.LiveDir, "server.sum"), []byte(sum+"\n"), 0o644)
+	os.Symlink(filepath.Join("builds", "old"), filepath.Join(d.Data, "current"))
+	switched = &[]string{}
+	d.SwitchClient = func(build, web string) error {
+		*switched = append(*switched, build+" "+web)
+		return nil
+	}
+	steps := d.Run
+	d.Run = func(ctx context.Context, wd string, args ...string) ([]byte, error) {
+		if len(args) == 2 && strings.HasSuffix(args[0], "/fyrd") && args[1] == "version" {
+			return []byte("abc123def456\n"), nil
+		}
+		return steps(ctx, wd, args...)
+	}
+	return dir, switched
+}
+
+// SPEC 0.5 V0.81: with an equal fyrd, a deploy builds and tests, then
+// switches the client only: no drain, no restart, open pages reload.
+func TestDeployClientOnly(t *testing.T) {
+	d, h, steps := newDeployer(t, "")
+	dir, switched := clientOnlySetup(t, d)
+	var phases []string
+	d.OnProgress = func(p Progress) {
+		if len(phases) == 0 || phases[len(phases)-1] != p.Phase {
+			phases = append(phases, p.Phase)
+		}
+	}
+	// Threads keep running: the client-only path does not wait for them.
+	h.running = []string{"t1", "busy"}
+	os.WriteFile(filepath.Join(dir, "web", "src", "app.tsx"), []byte("v2\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "internal", "a", "a_test.go"), []byte("package a // more tests\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "docs", "SPEC.md"), []byte("spec 2\n"), 0o644)
+	done := make(chan struct{})
+	var out string
+	var err error
+	go func() { out, err = d.Deploy(context.Background(), "t1", req, dir); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the client-only path waited for running threads")
+	}
+	if err != nil || !strings.Contains(out, "nothing restarted") {
+		t.Fatalf("out %q err %v", out, err)
+	}
+	all := strings.Join(*steps, "\n")
+	if !strings.Contains(all, " build") || !strings.Contains(all, " test") {
+		t.Fatalf("build and test must still run: %v", *steps)
+	}
+	if d.ExitCode() != 0 {
+		t.Fatal("the daemon would restart")
+	}
+	if _, err := os.Lstat(filepath.Join(d.Data, "next")); err == nil {
+		t.Fatal("next was linked")
+	}
+	if p, _ := d.DB.GetKV("pending_deploy"); p != "" {
+		t.Fatalf("pending %q", p)
+	}
+	cur, _ := os.Readlink(filepath.Join(d.Data, "current"))
+	prev, _ := os.Readlink(filepath.Join(d.Data, "previous"))
+	if prev != filepath.Join("builds", "old") || !strings.HasPrefix(cur, "builds"+string(filepath.Separator)) || cur == prev {
+		t.Fatalf("current %q previous %q", cur, prev)
+	}
+	web := filepath.Join(d.Data, cur, "web")
+	if len(*switched) != 1 || (*switched)[0] != "abc123def456 "+web {
+		t.Fatalf("switched %v, want build abc123def456 at %s", *switched, web)
+	}
+	if b, _ := os.ReadFile(filepath.Join(web, "assets", "app.js")); string(b) != "v1\n" {
+		t.Fatalf("client not copied: %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(d.Data, cur, "server.sum")); len(strings.TrimSpace(string(b))) != 64 {
+		t.Fatalf("server.sum %q", b)
+	}
+	if got := strings.Join(phases, " "); got != "build test client done" {
+		t.Fatalf("phases %q", got)
+	}
+	if d.Live != "abc123def456" {
+		t.Fatalf("live %q", d.Live)
+	}
+}
+
+// SPEC 0.5 V0.81: a change to fyrd's sources takes the full path (V0.13).
+func TestDeployFullPathWhenFyrdChanged(t *testing.T) {
+	for name, file := range map[string]string{"go": "internal/a/a.go", "go.mod": "go.mod", "embed": "web/embed.go", "new": "internal/b/b.go"} {
+		t.Run(name, func(t *testing.T) {
+			d, _, _ := newDeployer(t, "")
+			dir, switched := clientOnlySetup(t, d)
+			os.MkdirAll(filepath.Join(dir, filepath.Dir(file)), 0o755)
+			os.WriteFile(filepath.Join(dir, file), []byte("package a // changed\n"), 0o644)
+			if _, err := d.Deploy(context.Background(), "t1", req, dir); !errors.Is(err, core.ErrReportLater) {
+				t.Fatalf("err %v", err)
+			}
+			if d.ExitCode() != ExitDeploy || len(*switched) != 0 {
+				t.Fatalf("exit %d switched %v", d.ExitCode(), *switched)
+			}
+			if _, err := os.Readlink(filepath.Join(d.Data, "next")); err != nil {
+				t.Fatal("next not linked")
+			}
+		})
+	}
+	// A daemon without server.sum (the seed, an older build) never takes
+	// the client-only path.
+	d, _, _ := newDeployer(t, "")
+	dir, switched := clientOnlySetup(t, d)
+	os.Remove(filepath.Join(d.LiveDir, "server.sum"))
+	if _, err := d.Deploy(context.Background(), "t1", req, dir); !errors.Is(err, core.ErrReportLater) || len(*switched) != 0 {
+		t.Fatalf("err %v switched %v", err, *switched)
+	}
+}
+
+// SPEC 0.5 V0.81: a failed client switch keeps the old client and links.
+func TestDeployClientOnlyFailureKeepsOld(t *testing.T) {
+	d, _, _ := newDeployer(t, "")
+	dir, _ := clientOnlySetup(t, d)
+	d.SwitchClient = func(string, string) error { return errors.New("no") }
+	var last Progress
+	d.OnProgress = func(p Progress) { last = p }
+	if _, err := d.Deploy(context.Background(), "t1", req, dir); err == nil || errors.Is(err, core.ErrReportLater) {
+		t.Fatalf("err %v", err)
+	}
+	if cur, _ := os.Readlink(filepath.Join(d.Data, "current")); cur != filepath.Join("builds", "old") {
+		t.Fatalf("current %q", cur)
+	}
+	if _, err := os.Lstat(filepath.Join(d.Data, "previous")); err == nil {
+		t.Fatal("previous left pointing at the old build after a failed switch")
+	}
+	if last.Phase != "failed" || d.ExitCode() != 0 {
+		t.Fatalf("last %+v exit %d", last, d.ExitCode())
+	}
+}
