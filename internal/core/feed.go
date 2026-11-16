@@ -365,6 +365,15 @@ func resultNotices(r Reduced) []Notice {
 			exit, _ := d["exit"].(int)
 			out = append(out, Notice{About: aboutOn(d["on"]), Key: fmt.Sprintf("result:%v:%v", d["on"], d["action"]),
 				What: ranText(fmt.Sprint(d["label"]), fmt.Sprint(d["title"]), ok, exit, str(d["output"]))})
+		case ev.Type == "decision.closed" && d["void"] == true: // 0024 §5
+			action := str(d["action"])
+			args, _ := d["args"].(map[string]any)
+			n := Notice{About: "thread", Key: "result:" + action + ":" + target(args),
+				What: fmt.Sprintf("Your request %s on %s is void: %s. Do not ask again.", action, target(args), str(d["reason"]))}
+			if c, _ := args["change"].(string); c != "" {
+				n.About = "change:" + c
+			}
+			out = append(out, n)
 		case ev.Type == "effect.result":
 			ok, _ := d["ok"].(bool)
 			action := str(d["action"])
