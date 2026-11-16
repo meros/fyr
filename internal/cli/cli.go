@@ -144,6 +144,13 @@ type Adapter interface {
 	CopySession(src, fromDir, toDir, session string) error
 }
 
+// Printer is an adapter that answers one prompt with no tools and no saved
+// session (V0.108: the title call). The prompt goes on stdin; system
+// replaces the CLI's own system prompt.
+type Printer interface {
+	Print(ctx context.Context, l Launch, system, prompt string) (string, error)
+}
+
 // Accepts reports whether the adapter takes an auth kind.
 func Accepts(a Adapter, k AuthKind) bool {
 	for _, x := range a.Caps().Auth {

@@ -346,6 +346,8 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         // V0.45: a handover that could not start; other effect errors stay for tool details.
         const err = str(e.data?.error);
         if (e.data?.kind === "handover") pushItem({ kind: "effect", key, action: "handover", ok: false, text: err, line: `Handover failed: ${firstLine(err)}` });
+        // V0.108: a title call that failed; the host's line says the title stays.
+        if (e.data?.kind === "title") pushItem({ kind: "effect", key, action: "title", ok: false, text: err, line: firstLine(err) });
         break;
       }
       case "decision.closed":
