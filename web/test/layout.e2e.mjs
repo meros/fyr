@@ -287,7 +287,7 @@ const MEASURE = `(() => {
     pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
     innerWidth: window.innerWidth,
     projectEditor: !!document.querySelector('.pedit'),
-    filterLine: !!document.querySelector('.m-pfline'),
+    filterLine: !!document.querySelector('.m-screen .pfrow .pfc.on'),
     otherProjectRows: [...document.querySelectorAll('.m-list .ptag .ptn')].filter(e => e.textContent !== 'norban/web').length,
     saveButton: rect('.pedit .pformb .btn.p'),
     toolOutput: (() => { const o = document.querySelector('.tlout'); if (!o) return null; const r = o.getBoundingClientRect(); return { right: r.right, lines: o.textContent.split(String.fromCharCode(10)).length }; })(),
@@ -358,7 +358,7 @@ const MEASURE = `(() => {
     liveFrame: rect('.m-thread .lv-f'),
     innerHeight: window.innerHeight,
     dishwasher: (document.querySelector('.m-app')?.innerText ?? '').includes('Pick a dishwasher'),
-    quietNote: document.querySelector('.m-pfq')?.textContent ?? null,
+    quietNote: document.querySelector('.m-screen .pfc.on .pfq')?.textContent ?? null,
     quietRow: (() => {
       const el = document.querySelector('.pedit .qfld'); if (!el) return null;
       el.scrollIntoView({ block: 'center' });
@@ -500,7 +500,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     }
   }
   if (ctx.startsWith("inbox filtered")) {
-    check(m.filterLine, `${ctx}: the filter line is missing`);
+    check(m.filterLine, `${ctx}: the picked project chip is missing`);
     check(m.otherProjectRows === 0, `${ctx}: ${m.otherProjectRows} rows of other projects show under the filter`);
   }
   if (ctx.startsWith("opened tool group")) {
@@ -775,6 +775,7 @@ async function phonePass(t, w, h) {
         await settle();
         writeFileSync(join(process.env.FYR_SHOTS, "changes-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       }
+      if (process.env.FYR_SHOTS && s.name.startsWith("board of changes") && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "board-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (process.env.FYR_SHOTS && s.sheet === "confirm" && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "confirm-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (s.sheet === "handover") {
         const ho = await evaluate(`({ rung: document.querySelector('.m-sheet .ho-rung')?.textContent ?? '', btn: [...document.querySelectorAll('.m-sheet .df .btn')].map(b => b.textContent.trim()) })`);

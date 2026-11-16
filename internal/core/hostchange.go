@@ -25,6 +25,9 @@ type Workspace struct {
 	Path   string `json:"path,omitempty"`
 	Branch string `json:"branch,omitempty"`
 	Base   string `json:"base,omitempty"`
+	// Head is the commit the git observer read last (V0.95 (4)): it finds
+	// an ended record by its head when the record has no revision.
+	Head string `json:"head,omitempty"`
 	// MadeByFyr: Fyr made the worktree and removes it when the change ends
 	// (#44).
 	MadeByFyr bool `json:"madeByFyr,omitempty"`
@@ -99,16 +102,40 @@ func RecordOn(rs []*Change, repo, branch string) *Change {
 	return nil
 }
 
-// endedAt reports an ended record of repo and branch whose newest revision
-// is head: a merged branch that stays checked out (V0.88 (1)).
-func endedAt(rs []*Change, repo, branch, head string) bool {
-	if head == "" {
-		return false
+// RecordHead is a record's head: its newest revision, else the head the
+// git observer stored on its workspace (V0.95 (4)), else "".
+func RecordHead(c *Change) string {
+	if n := len(c.Revisions); n > 0 {
+		return c.Revisions[n-1].ID
 	}
+	if c.Workspace != nil {
+		return c.Workspace.Head
+	}
+	return ""
+}
+
+// endedAt reports an ended record of repo and branch whose head is head: a
+// merged branch that stays checked out (V0.88 (1)). With head unknown, any
+// ended record of the branch is that work (V0.95 (4)).
+func endedAt(rs []*Change, repo, branch, head string) bool {
 	return slices.ContainsFunc(rs, func(c *Change) bool {
-		n := len(c.Revisions)
-		return c.Branch == branch && (!c.Phase.InFlight() || c.IsDone()) && RecordRepo(c) == repo && n > 0 && sameCommit(c.Revisions[n-1].ID, head)
+		if c.Branch != branch || (c.Phase.InFlight() && !c.IsDone()) || RecordRepo(c) != repo {
+			return false
+		}
+		return head == "" || sameCommit(RecordHead(c), head)
 	})
+}
+
+// defaultBranch reports the repo's default branch: origin/HEAD's branch,
+// else the base's branch, else main or master (V0.95 (4)).
+func defaultBranch(g GitFacts) bool {
+	switch {
+	case g.Default != "":
+		return g.Branch == g.Default
+	case g.Base != "" && g.Base != "origin/HEAD":
+		return g.Branch == strings.TrimPrefix(g.Base, "origin/")
+	}
+	return g.Branch == "main" || g.Branch == "master"
 }
 
 // sameCommit compares two commit ids that may be short.
@@ -125,11 +152,11 @@ func MergedPRCovers(p *PR, rec *Change) bool {
 	if p == nil || p.State != "MERGED" {
 		return false
 	}
-	n := len(rec.Revisions)
-	if p.Head == "" || n == 0 {
+	head := RecordHead(rec)
+	if p.Head == "" || head == "" {
 		return true
 	}
-	return sameCommit(p.Head, rec.Revisions[n-1].ID)
+	return sameCommit(p.Head, head)
 }
 
 // ReduceRecord applies one Input of a record kind to a copy of the record
@@ -157,7 +184,9 @@ func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change,
 		}
 		c := RecordOn(rs, g.Repo, g.Branch)
 		if c == nil {
-			if g.Ahead == 0 && g.Unpushed == 0 && g.Dirty == 0 {
+			// V0.95 (4): only commits ahead of the base on a branch that is
+			// not the default make a record.
+			if g.Ahead == 0 || defaultBranch(g) {
 				return nil, nil, nil, nil
 			}
 			if endedAt(rs, g.Repo, g.Branch, g.Head) {
@@ -172,11 +201,14 @@ func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change,
 		} else {
 			before, c = c, cloneChange(c)
 		}
-		ws := &Workspace{Repo: g.Repo, Path: g.Path, Branch: g.Branch, Base: g.Base}
+		ws := &Workspace{Repo: g.Repo, Path: g.Path, Branch: g.Branch, Base: g.Base, Head: g.Head}
 		if c.Workspace != nil {
 			ws.MadeByFyr = c.Workspace.MadeByFyr
 			if ws.Path == "" {
 				ws.Path = c.Workspace.Path
+			}
+			if ws.Head == "" {
+				ws.Head = c.Workspace.Head
 			}
 		}
 		c.Workspace = ws

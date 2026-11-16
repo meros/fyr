@@ -15,11 +15,16 @@ export function mergeStateDelta(stored: StateDTO, next: Partial): StateDTO {
   return { ...next, partial: undefined, threads: [...byId.values()] } as StateDTO;
 }
 
-/** The rev to ask "since": a microsecond before the newest (revs above 2^53 round in JS). */
+/** Revs are the host's clock in ns. Frames reach a device out of rev order (the stream holds a thread up to
+ *  100 ms, a front relays several hosts), so a frame lost when the stream drops can be older than the newest rev the
+ *  device holds. Asking a minute early fetches it again; the cost is the threads that changed in that minute. */
+const SINCE_SLACK_NS = 60_000_000_000;
+
+/** The rev to ask "since": a minute before the newest the device holds (also covers that revs above 2^53 round). */
 export function sinceRev(s: StateDTO): number {
   let max = 0;
   for (const t of s.threads) if (typeof t.rev === "number" && t.rev > max) max = t.rev;
-  return max > 0 ? max - 1000 : 0;
+  return max > SINCE_SLACK_NS ? max - SINCE_SLACK_NS : 0;
 }
 
 /** Stored and new events by seq, the newest `limit`. A full page of new events means a gap: drop the stored ones. */

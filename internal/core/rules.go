@@ -410,9 +410,11 @@ func suspend(r *Rule, t *Thread, now time.Time) {
 }
 
 // NextCheck is the earliest time a Rule of the thread or the view may fire
-// with time alone, or nil. The engine's clock sends an Input then.
+// with time alone, or when the wake budget frees for a held wake, or nil.
+// The engine's clock sends an Input then.
 func NextCheck(t *Thread, v *View, now time.Time) *time.Time {
-	var out *time.Time
+	// V0.95 (3): a wake the budget holds back is delivered when it frees.
+	out := t.Feed.FreeAt(now)
 	for _, rs := range [][]Rule{t.Rules, viewRules(v)} {
 		for i := range rs {
 			r := &rs[i]

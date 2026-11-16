@@ -36,6 +36,9 @@ func gitFacts(dir string) core.GitFacts {
 		g.Repo = g.Path
 	}
 	g.Head, _ = git("rev-parse", "--short", "HEAD")
+	if d, ok := git("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); ok {
+		g.Default = strings.TrimPrefix(d, "origin/")
+	}
 	for _, b := range []string{"origin/HEAD", "origin/main", "origin/master"} {
 		if mb, ok := git("merge-base", b, "HEAD"); ok && mb != "" {
 			g.Base = b

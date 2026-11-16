@@ -20,8 +20,8 @@ type Urgency string
 const (
 	// Wake is delivered now: a turn starts when the agent is idle.
 	Wake Urgency = "wake"
-	// Next is delivered at the next tool call or turn; an idle agent is
-	// woken for it too (owner, 2026-11-15).
+	// Next is delivered at the next tool call or turn; it never wakes an
+	// idle agent (V0.95 (1), decision 0024 section 8).
 	Next Urgency = "next"
 	// Stop is delivered at the run's end and blocks the Stop once.
 	Stop Urgency = "stop"
@@ -46,8 +46,14 @@ type Notice struct {
 	// Self: the agent's own Input caused it (no loop), or it needs nothing
 	// from the agent (the owner's settle, V0.89), so it never wakes the
 	// agent; it goes out with the next tool call or delivery.
-	Self bool      `json:"self,omitempty"`
-	At   time.Time `json:"at"`
+	Self bool `json:"self,omitempty"`
+	// Budget: an observer's or a Rule's wake, which counts against the
+	// thread's wake budget (V0.95 (3)).
+	Budget bool      `json:"budget,omitempty"`
+	At     time.Time `json:"at"`
+	// said is the dedupe key (change, field, head) of a fact notice, and
+	// state what it says (V0.95 (2)); set by the rule, never stored.
+	said, state string
 }
 
 func (n *Notice) render() {
@@ -62,9 +68,80 @@ type Feed struct {
 	// Told is the last delivery per coalesce key: the interval of the
 	// mid-turn reminders.
 	Told map[string]time.Time `json:"told,omitempty"`
+	// Said is the last state said per (change, field, head) (V0.95 (2)): a
+	// run does not clear it; it keeps the newest maxSaid keys.
+	Said map[string]Said `json:"said,omitempty"`
+	// Woke are the times an observer's or a Rule's notice woke the agent
+	// within the last wakeWindow (V0.95 (3)).
+	Woke []time.Time `json:"woke,omitempty"`
 }
 
-const maxQueue = 50
+// Said is one fact said to the agent: its state and when.
+type Said struct {
+	State string    `json:"state"`
+	At    time.Time `json:"at"`
+}
+
+const (
+	maxQueue = 50
+	maxSaid  = 200
+	// The wake budget (V0.95 (3)): at most wakeBudget wakes from observers
+	// and Rules per wakeWindow.
+	wakeBudget = 5
+	wakeWindow = 10 * time.Minute
+)
+
+// said reports a fact notice said before on the same head with the same
+// state, and otherwise records it.
+func (f *Feed) said(n Notice, now time.Time) bool {
+	if n.said == "" {
+		return false
+	}
+	if s, ok := f.Said[n.said]; ok && s.State == n.state {
+		return true
+	}
+	if f.Said == nil {
+		f.Said = map[string]Said{}
+	}
+	f.Said[n.said] = Said{State: n.state, At: now}
+	for len(f.Said) > maxSaid {
+		old := ""
+		for k, s := range f.Said {
+			if old == "" || s.At.Before(f.Said[old].At) || (s.At.Equal(f.Said[old].At) && k < old) {
+				old = k
+			}
+		}
+		delete(f.Said, old)
+	}
+	return false
+}
+
+// woke are the budgeted wakes within the window before now.
+func (f *Feed) woke(now time.Time) []time.Time {
+	return slices.DeleteFunc(slices.Clone(f.Woke), func(at time.Time) bool { return now.Sub(at) >= wakeWindow })
+}
+
+// budgetLeft reports whether an observer's or a Rule's notice may wake the
+// agent now.
+func (f *Feed) budgetLeft(now time.Time) bool { return len(f.woke(now)) < wakeBudget }
+
+// waking reports a notice that may start a turn now.
+func (f *Feed) waking(n Notice, now time.Time) bool {
+	return n.Urgency == Wake && !n.Self && (!n.Budget || f.budgetLeft(now))
+}
+
+// FreeAt is when the wake budget frees for a wake it holds back, or nil
+// (V0.95 (3)): the thread's NextCheck, so the clock delivers it then.
+func (f *Feed) FreeAt(now time.Time) *time.Time {
+	held := slices.ContainsFunc(f.Queue, func(n Notice) bool { return n.Urgency == Wake && !n.Self && n.Budget })
+	w := f.woke(now)
+	if !held || len(w) < wakeBudget {
+		return nil
+	}
+	slices.SortFunc(w, func(a, b time.Time) int { return a.Compare(b) })
+	at := w[len(w)-wakeBudget].Add(wakeWindow)
+	return &at
+}
 
 // Enqueue adds a notice, merging it into a pending one with its key.
 func (f *Feed) Enqueue(n Notice) {
@@ -77,8 +154,11 @@ func (f *Feed) Enqueue(n Notice) {
 		if q.Key != n.Key {
 			continue
 		}
-		if n.Urgency.rank() > q.Urgency.rank() {
-			q.Urgency = n.Urgency
+		switch {
+		case n.Urgency.rank() > q.Urgency.rank():
+			q.Urgency, q.Budget = n.Urgency, n.Budget
+		case n.Urgency == q.Urgency:
+			q.Budget = q.Budget && n.Budget
 		}
 		q.Self = q.Self && n.Self
 		q.At = n.At
@@ -97,9 +177,10 @@ func (f *Feed) Enqueue(n Notice) {
 	f.Queue = keepLast(append(f.Queue, n), maxQueue)
 }
 
-// wakes reports a pending notice that may start a turn.
-func (f *Feed) wakes() bool {
-	return slices.ContainsFunc(f.Queue, func(n Notice) bool { return !n.Self })
+// wakes reports a pending notice that may start a turn: only a wake, and
+// an observer's or a Rule's only within the wake budget (V0.95 (1), (3)).
+func (f *Feed) wakes(now time.Time) bool {
+	return slices.ContainsFunc(f.Queue, func(n Notice) bool { return f.waking(n, now) })
 }
 
 // take removes and returns the queued notices that match.
@@ -161,6 +242,9 @@ const (
 	AtIdle Point = "idle" // the agent is idle: a message that starts a turn
 	AtTool Point = "tool" // after a tool call: context
 	AtStop Point = "stop" // the run's end: the Stop hook's reason
+	// AtTurn: a message that starts a turn (the owner's, another thread's)
+	// carries every pending notice but the stop ones (V0.95 (1)).
+	AtTurn Point = "turn"
 )
 
 // Reduced is what a notice rule reads of one reduce.
@@ -181,8 +265,12 @@ type Taking struct {
 // NoticeRule is one row of the table: it projects a reduce (OnReduce) or a
 // delivery point (OnTake) into notices.
 type NoticeRule struct {
-	Name     string
-	Urgency  Urgency
+	Name    string
+	Urgency Urgency
+	// Budget: the rule speaks for observers or Rules, so its wakes count
+	// against the wake budget when its Input is not the owner's or the
+	// agent's (V0.95 (3)).
+	Budget   bool
 	OnReduce func(r Reduced) []Notice
 	OnTake   func(x Taking) []Notice
 }
@@ -190,10 +278,10 @@ type NoticeRule struct {
 // NoticeRules is the table; each row has a test (feed_test.go).
 var NoticeRules = []NoticeRule{
 	{Name: "result", Urgency: Wake, OnReduce: resultNotices},
-	{Name: "watch", Urgency: Wake, OnReduce: watchNotices},
-	{Name: "fact.blocks", Urgency: Wake, OnReduce: func(r Reduced) []Notice { return factNotices(r, true) }},
-	{Name: "fact.moves", Urgency: Next, OnReduce: func(r Reduced) []Notice { return factNotices(r, false) }},
-	{Name: "record", Urgency: Next, OnReduce: recordNotices},
+	{Name: "watch", Urgency: Wake, Budget: true, OnReduce: watchNotices},
+	{Name: "fact.blocks", Urgency: Wake, Budget: true, OnReduce: func(r Reduced) []Notice { return factNotices(r, true) }},
+	{Name: "fact.moves", Urgency: Next, Budget: true, OnReduce: func(r Reduced) []Notice { return factNotices(r, false) }},
+	{Name: "record", Urgency: Next, Budget: true, OnReduce: recordNotices},
 	{Name: "upkeep.stop", Urgency: Stop, OnTake: upkeepStop},
 	{Name: "upkeep.reminder", Urgency: Next, OnTake: upkeepReminder},
 	{Name: "owner", Urgency: Next, OnReduce: ownerNotices},
@@ -225,9 +313,14 @@ func slotNotices(r Reduced) []Notice {
 
 // project runs the reduce rules on one reduce and queues their notices. It
 // returns the effect that wakes the agent when a notice may start a turn:
-// a new one, or a pending one on a thread that was just revived.
+// a new one, a pending one on a thread that was just revived, or one the
+// wake budget held back, at the clock (V0.95 (3)).
 func project(r Reduced, now time.Time) []Effect {
 	t := r.After
+	if r.In.Source == FromOwner && r.In.Kind == "thread.send" {
+		t.Feed.Woke = nil // V0.95 (3): the owner's message resets the budget
+	}
+	budget := r.In.Source != FromOwner && r.In.Source != FromAgent
 	added := false
 	for _, rule := range NoticeRules {
 		if rule.OnReduce == nil {
@@ -241,13 +334,18 @@ func project(r Reduced, now time.Time) []Effect {
 				continue
 			}
 			n.Self = n.Self || r.In.Source == FromAgent // the loop guard
+			n.Budget = rule.Budget && budget
 			n.At = now
+			if t.Feed.said(n, now) {
+				continue // V0.95 (2): said on this head already
+			}
 			t.Feed.Enqueue(n)
-			added = added || !n.Self
+			added = added || t.Feed.waking(n, now)
 		}
 	}
 	revived := !r.Before.wakeable() && t.wakeable()
-	if !t.wakeable() || !t.Feed.wakes() || !(added || revived) {
+	freed := r.In.Kind == KindClock
+	if !t.wakeable() || !t.Feed.wakes(now) || !(added || revived || freed) {
 		return nil
 	}
 	return []Effect{{Kind: EffectFeed}}
@@ -267,6 +365,15 @@ func resultNotices(r Reduced) []Notice {
 			exit, _ := d["exit"].(int)
 			out = append(out, Notice{About: aboutOn(d["on"]), Key: fmt.Sprintf("result:%v:%v", d["on"], d["action"]),
 				What: ranText(fmt.Sprint(d["label"]), fmt.Sprint(d["title"]), ok, exit, str(d["output"]))})
+		case ev.Type == "decision.closed" && d["void"] == true: // 0024 §5
+			action := str(d["action"])
+			args, _ := d["args"].(map[string]any)
+			n := Notice{About: "thread", Key: "result:" + action + ":" + target(args),
+				What: fmt.Sprintf("Your request %s on %s is void: %s. Do not ask again.", action, target(args), str(d["reason"]))}
+			if c, _ := args["change"].(string); c != "" {
+				n.About = "change:" + c
+			}
+			out = append(out, n)
 		case ev.Type == "effect.result":
 			ok, _ := d["ok"].(bool)
 			action := str(d["action"])
@@ -446,7 +553,8 @@ func factNotices(r Reduced, blocks bool) []Notice {
 			if k.Status == CondFail {
 				state = failWord
 			}
-			out = append(out, Notice{About: about, Key: "cond:" + c.ID + ":" + string(k.Type), Subject: subj + " on " + changeName(c), States: []string{state}})
+			key := "cond:" + c.ID + ":" + string(k.Type)
+			out = append(out, Notice{About: about, Key: key, Subject: subj + " on " + changeName(c), States: []string{state}, said: key + "@" + changeHead(c), state: state})
 		}
 		var prevPhase Phase
 		if was != nil {
@@ -474,8 +582,10 @@ func factNotices(r Reduced, blocks bool) []Notice {
 			state = string(PhaseLive)
 		}
 		if state != "" {
-			// One key per change: "PR #12: merged → live" is one line.
-			out = append(out, Notice{About: about, Key: "phase:" + c.ID, Subject: changeName(c), States: []string{state}})
+			// One key per change: "PR #12: merged → live" is one line. An
+			// end is done, not a failure: next (V0.95 (1)).
+			key := "phase:" + c.ID
+			out = append(out, Notice{About: about, Key: key, Subject: changeName(c), States: []string{state}, Urgency: Next, said: key + "@" + changeHead(c), state: state})
 		}
 	}
 	return out
@@ -501,7 +611,17 @@ func recordNotices(r Reduced) []Notice {
 	default:
 		return nil
 	}
-	return []Notice{{About: "change:" + id, Key: "phase:" + id, Subject: "Branch " + a.After.Branch, States: []string{state}}}
+	key := "phase:" + id
+	return []Notice{{About: "change:" + id, Key: key, Subject: "Branch " + a.After.Branch, States: []string{state}, said: key + "@" + changeHead(&a.After), state: state}}
+}
+
+// changeHead is what a fact about c is said on (V0.95 (2)): the PR's head
+// commit, else the newest revision, else the head the observer stored.
+func changeHead(c *Change) string {
+	if c.PR != nil && c.PR.Head != "" {
+		return c.PR.Head
+	}
+	return RecordHead(c)
 }
 
 // owner: a change by the owner to the thread's settings, project or settle
@@ -666,10 +786,17 @@ func reduceFeedTake(r Rec, in Input, now time.Time) (Result, error) {
 	var out []Notice
 	switch a.At {
 	case AtIdle:
-		if !t.wakeable() || !f.wakes() {
+		if !t.wakeable() || !f.wakes(now) {
 			return Result{}, nil
 		}
 		out = f.take(func(Notice) bool { return true })
+		// V0.95 (3): a turn that only an observer's or a Rule's notice
+		// started is one wake of the budget.
+		if !slices.ContainsFunc(out, func(n Notice) bool { return n.Urgency == Wake && !n.Self && !n.Budget }) {
+			f.Woke = append(f.woke(now), now)
+		}
+	case AtTurn:
+		out = f.take(func(n Notice) bool { return n.Urgency != Stop })
 	case AtTool:
 		out = f.take(func(n Notice) bool { return n.Urgency != Stop })
 	case AtStop:

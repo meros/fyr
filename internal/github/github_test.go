@@ -47,14 +47,14 @@ func TestMergeRunsGh(t *testing.T) {
 		got = args
 		return []byte("✓ Squashed and merged"), nil
 	}
-	out, err := Merge(context.Background(), r, "https://github.com/a/b/pull/9", "squash")
+	out, err := Merge(context.Background(), r, "https://github.com/a/b/pull/9", "squash", "abc1234")
 	if err != nil || !strings.Contains(out, "merged") {
 		t.Fatal(out, err)
 	}
-	if strings.Join(got, " ") != "pr merge --squash -- https://github.com/a/b/pull/9" {
+	if strings.Join(got, " ") != "pr merge --squash --match-head-commit abc1234 -- https://github.com/a/b/pull/9" {
 		t.Fatalf("args %v", got)
 	}
-	if _, err := Merge(context.Background(), r, "https://evil/x", "squash"); err == nil {
+	if _, err := Merge(context.Background(), r, "https://evil/x", "squash", "abc1234"); err == nil {
 		t.Fatal("non-PR URL accepted")
 	}
 }
@@ -67,7 +67,7 @@ func TestGhPRArgsEndFlags(t *testing.T) {
 	if _, err := Fetch(context.Background(), s.run, url); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Merge(context.Background(), s.run, url, "squash"); err != nil {
+	if _, err := Merge(context.Background(), s.run, url, "squash", "abc1234"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := FetchDetail(context.Background(), s.run, url); err != nil {
@@ -86,7 +86,7 @@ func TestGhPRArgsEndFlags(t *testing.T) {
 			t.Errorf("gh %v: want ... -- https://github.com/a/b/pull/9", c)
 		}
 	}
-	if _, err := Merge(context.Background(), s.run, "--subject=x https://github.com/a/b/pull/9", "squash"); err == nil {
+	if _, err := Merge(context.Background(), s.run, "--subject=x https://github.com/a/b/pull/9", "squash", "abc1234"); err == nil {
 		t.Fatal("URL with a flag in front accepted")
 	}
 }
