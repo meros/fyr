@@ -124,8 +124,9 @@ func pushRoutes(mux *http.ServeMux, p Pusher) {
 	})
 }
 
-// presenceRoute records which thread each device shows (V0.20).
-func presenceRoute(mux *http.ServeMux, p *notify.Presence) {
+// presenceRoute records which thread each device shows (V0.20); onBeat,
+// when set, hears each beat with the thread the device showed before (V0.85).
+func presenceRoute(mux *http.ServeMux, p *notify.Presence, onBeat ...func(device, prev, thread string)) {
 	mux.HandleFunc("POST /api/presence", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			ThreadID string `json:"threadId"`
@@ -135,7 +136,10 @@ func presenceRoute(mux *http.ServeMux, p *notify.Presence) {
 			http.Error(w, "threadId and device are required", 400)
 			return
 		}
-		p.Beat(b.Device, b.ThreadID, time.Now())
+		prev := p.Beat(b.Device, b.ThreadID, time.Now())
+		for _, f := range onBeat {
+			f(b.Device, prev, b.ThreadID)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 }
