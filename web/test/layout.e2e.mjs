@@ -92,13 +92,22 @@ const watchdog = setTimeout(() => {
 }, 420_000); // a hang guard, not a speed check: about 35 s on a quiet 8-core machine, 140 s and more at a load average of 80 (a deploy beside other sessions' test suites, 16 Nov)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Chrome's debug port: up to 60 s, since make test starts Chrome beside the Go tests, the typecheck and the unit tests
+// (CI, 16 Nov: not up after 10 s on a busy runner).
 let version;
-for (let i = 0; i < 100; i++) {
+let chromeExit = null;
+chrome.on("exit", (code, signal) => (chromeExit = `exit ${code ?? signal}`));
+for (const t0 = Date.now(); Date.now() - t0 < 60_000 && !chromeExit; ) {
   try {
     version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
     if (version.webSocketDebuggerUrl) break;
   } catch {}
   await sleep(100);
+}
+if (!version?.webSocketDebuggerUrl) {
+  console.error(`layout test: Chrome (${chromeBin}) did not open its debug port ${port}${chromeExit ? ` (${chromeExit})` : " within 60 s"}`);
+  cleanup();
+  process.exit(1);
 }
 // One browser connection; each tab is a flat session on it (Target.attachToTarget with flatten), so the
 // sandboxed frames a tab auto-attaches come over the same socket.
