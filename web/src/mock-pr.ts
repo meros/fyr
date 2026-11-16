@@ -138,6 +138,7 @@ export function mockPrDetail(t: ThreadDTO | undefined, now: number): PrReply {
     author: "claude-agent",
     head: t.branch || "work",
     base: "main",
+    headSha: (Math.abs(hash(pr.url)).toString(16) + "0123456789abcdef").slice(0, 12), // V0.97: Merge names the head
     additions: 37,
     deletions: 9,
     changedFiles: 2,

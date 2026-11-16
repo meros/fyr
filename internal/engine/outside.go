@@ -25,9 +25,11 @@ func (x Outside) Run(ctx context.Context, threadID string, req core.EffectReq) (
 	case core.FyrMerge:
 		url, _ := req.Args["pr"].(string)
 		method, _ := req.Args["method"].(string)
+		head, _ := req.Args["head"].(string)
 		defer x.forget(url)
-		// V0.43: read the PR again and refuse what GitHub would refuse.
-		return github.MergeChecked(ctx, x.Gh, url, method)
+		// V0.43: read the PR again and refuse what GitHub would refuse;
+		// V0.97: merge only the head the owner saw.
+		return github.MergeChecked(ctx, x.Gh, url, method, head)
 	case core.FyrRerun:
 		url, _ := req.Args["pr"].(string)
 		defer x.forget(url)

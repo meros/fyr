@@ -219,3 +219,7 @@ Each slice is one PR that leaves Fyr working and removes a pain on its own. Size
 ## 13. Not in v2
 
 One host store with owner and follower links (the old slice 8: no evidence row needs it; revisit after slices 1–7 have run for a week), deploy readers for other repos, production, attribution of pushes by `cd`, `git -C` and edit paths, Split, Fyr-run infra applies, health probes for non-git targets, the Bash-pattern infra hint, range-diff, per-file viewed marks.
+
+## Addendum (16 Nov): slice 5's number and its first part
+
+PR #112 (the load indicator) took V0.99. Slice 5 takes the next free SPEC number when it is built (owner, 16 Nov: "Slice 5 moves"). PR #114 built the first part of slice 5's ask rule (section 5): an effect ask is void when its PR is no longer open or its change is abandoned or reverted (`voidAsks` in `internal/core/voidask.go`). Slice 5 adds "its change is done" there once `IsDone()` (V0.98) exists.

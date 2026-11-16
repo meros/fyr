@@ -332,7 +332,7 @@ func TestMergeOneGuard(t *testing.T) {
 	url := "https://github.com/acme/app/pull/9"
 	set := func(conflict bool) {
 		coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
-			core.PRObserved(t, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass", Conflict: conflict}, now)
+			core.PRObserved(t, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass", Conflict: conflict, Head: "abc1234def"}, now)
 			return nil
 		})
 	}
@@ -357,7 +357,7 @@ func TestMergeOneGuard(t *testing.T) {
 	}
 	set(false)
 	m = findOffer(changeOf(h, id, c.ID).Offers, "fyr.merge")
-	if r := h.cmdID("p2", "action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest}); !r.OK {
+	if r := h.cmdID("p2", "action.run", id, core.Args{"on": c.ID, "action": "fyr.merge", "digest": m.Digest, "head": "abc1234def"}); !r.OK {
 		t.Fatalf("press: %+v", r)
 	}
 	// A slow machine sends the conflict notice and the merge result in one

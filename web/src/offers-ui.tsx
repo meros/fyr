@@ -6,6 +6,7 @@ import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
 import { canDone, canEnd, canPark, doneArgs, doneText, openAndDone, endArgs, endChangeAsk, lastRun, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
 import { press } from "./confirm.ts";
+import { headLabel } from "./pr.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
 type Run = (action: string, args?: Record<string, unknown>) => void;
@@ -22,7 +23,9 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
   const [open, setOpen] = useState<string | null>(null);
   const ask = useAsk();
   if (!list.length) return null;
-  const onPress = (o: Offer) => press(on, o, cwd, ask, onRun);
+  // V0.97: Merge names and sends the head this card shows.
+  const headOf = (o: Offer) => (o.run === "fyr" && o.effect === "pr.merge" ? change?.pr?.head : undefined);
+  const onPress = (o: Offer) => press(on, o, cwd, ask, onRun, headOf(o));
   return (
     <div class="offers">
       <div class="offb">
@@ -34,7 +37,7 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
           return (
             <button key={o.id} class={`btn sm${cls}`} disabled={!!why} title={title} aria-busy={st === "running" || undefined} onClick={() => void onPress(o)}>
               {mark}
-              {o.label}
+              {headLabel(o.label, headOf(o))}
               {word}
             </button>
           );
