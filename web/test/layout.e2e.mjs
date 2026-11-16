@@ -1639,14 +1639,14 @@ try {
   failures.push(`V0.91 desktop: ${e.message}`);
 }
 
-// SPEC 0.5 V0.92: the rail's top is the Fyr mark (loaded, 32 px, inside the rail), not the text "Fyr".
+// SPEC 0.5 V0.92, V0.93: the rail's top is the rendered logo (loaded, 32 px, inside the rail), not the text "Fyr".
 try {
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .brand img') && document.querySelector('.rail .brand img').complete");
   const r = await evaluate(`(() => {
     const img = document.querySelector('.rail .brand img'), b = img.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
-    return { w: b.width, h: b.height, loaded: img.naturalWidth > 0, alt: img.alt, text: document.querySelector('.rail .brand').textContent.trim(), inside: b.left >= rail.left && b.right <= rail.right };
+    return { w: b.width, h: b.height, loaded: img.naturalWidth > 0, alt: img.alt, src: img.getAttribute("src"), text: document.querySelector(".rail .brand").textContent.trim(), inside: b.left >= rail.left && b.right <= rail.right };
   })()`);
-  check(r.w === 32 && r.h === 32 && r.loaded && r.alt === "Fyr" && r.text === "" && r.inside, `V0.92 desktop: the rail's mark (${JSON.stringify(r)})`);
+  check(r.src === "/logo.png" && r.w === 32 && r.h === 32 && r.loaded && r.alt === "Fyr" && r.text === "" && r.inside, `V0.92 desktop: the rail's mark (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.92 desktop: ${e.message}`);
 }

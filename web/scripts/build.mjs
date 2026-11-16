@@ -53,6 +53,9 @@ await copyFile(join(geist, "geist-sans/Geist-Variable.woff2"), join(dist, "fonts
 await copyFile(join(geist, "geist-mono/GeistMono-Variable.woff2"), join(dist, "fonts/GeistMono-Variable.woff2"));
 await copyFile(join(root, "node_modules/geist/LICENSE.txt"), join(dist, "fonts/LICENSE.txt")).catch(() => {});
 
+// V0.93: the sidebar logo, an isometric lighthouse rendered with Blender (design/logo/lighthouse.py).
+await copyFile(join(root, "assets/logo.png"), join(dist, "logo.png"));
+
 // Icons: the Fyr mark, drawn and PNG-encoded here (scripts/icons.ts).
 await mkdir(join(dist, "icons"), { recursive: true });
 const icons = {
@@ -105,6 +108,7 @@ const shell = [
   "/fonts/Geist-Variable.woff2",
   "/fonts/GeistMono-Variable.woff2",
   ...Object.keys(icons).map((n) => `/icons/${n}`),
+  "/logo.png",
 ];
 const hash = createHash("sha256");
 for (const p of shell) hash.update(await readFile(join(dist, p.slice(1))));
