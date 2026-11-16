@@ -358,7 +358,9 @@ const MEASURE = `(() => {
       const ar = add ? add.getBoundingClientRect() : null;
       const adb = el.querySelector('section[aria-label="Auto-deploy"] button'); // V0.111
       const autoDeploy = adb ? { text: adb.textContent.trim(), pressed: adb.getAttribute('aria-pressed'), h: adb.getBoundingClientRect().height } : null;
-      return { autoDeploy, rows: el.querySelectorAll('.prov:not(.found)').length, found: el.querySelectorAll('.prov.found').length,
+      const sas = el.querySelector('section[aria-label="System agents"]'); // V0.115
+      const systemAgents = sas ? { selects: sas.querySelectorAll('select').length, lines: [...sas.querySelectorAll('.sajob .setd')].map(e => e.textContent) } : null;
+      return { systemAgents, autoDeploy, rows: el.querySelectorAll('.prov:not(.found)').length, found: el.querySelectorAll('.prov.found').length,
         imports: [...el.querySelectorAll('.prov.found button')].filter(b => b.textContent.trim() === 'Import').length,
         needs: [...el.querySelectorAll('.pst')].map(e => e.textContent), small, login,
         right: Math.max(0, ...[...el.querySelectorAll('*')].map(e => e.getBoundingClientRect().right)),
@@ -496,6 +498,8 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
       check(st.small.length === 0, `${ctx}: targets under 44 px ${JSON.stringify(st.small)}`);
       // SPEC V0.111: the phone has the Auto-deploy toggle too, on by default, 44 px.
       check(!!st.autoDeploy && st.autoDeploy.text === "On" && st.autoDeploy.pressed === "true", `${ctx}: no Auto-deploy toggle ${JSON.stringify(st.autoDeploy)}`);
+      // SPEC V0.115: the phone has the System agents section too; its selects are in the 44 px check above.
+      check(!!st.systemAgents && st.systemAgents.selects === 4 && st.systemAgents.lines.length === 2, `${ctx}: no System agents section ${JSON.stringify(st.systemAgents)}`);
       // SPEC 0.5 V0.53: a running login shows its sign-in link, the code field and Cancel, all 44 px.
       check(!!st.login && /^https:\/\/claude\.com\//.test(st.login.link) && st.login.code && st.login.cancel, `${ctx}: the login panel is wrong ${JSON.stringify(st.login)}`);
       check(st.right <= m.innerWidth + 0.5, `${ctx}: Settings runs ${(st.right - m.innerWidth).toFixed(1)} px past the right edge`);
@@ -811,6 +815,9 @@ async function phonePass(t, w, h) {
         await evaluate(`document.querySelector('section[aria-label="Auto-deploy"]')?.scrollIntoView({ block: 'center' })`);
         await settle();
         writeFileSync(join(process.env.FYR_SHOTS, "autodeploy-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+        await evaluate(`document.querySelector('section[aria-label="System agents"]')?.scrollIntoView({ block: 'center' })`); // V0.115
+        await settle();
+        writeFileSync(join(process.env.FYR_SHOTS, "systemagents-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       }
       if (process.env.FYR_SHOTS && s.sheet === "confirm" && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "confirm-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (s.sheet === "handover") {
@@ -1197,7 +1204,19 @@ try {
   await waitFor(`document.querySelectorAll('.dlg .prov:not(.found)').length === 3`, { soft: true });
   await settle();
   const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', sections: [...document.querySelectorAll('.dlg .sets h3')].map(e => e.textContent), rows: document.querySelectorAll('.dlg .prov:not(.found)').length })`);
-  check(d.title === "Settings" && d.sections.join("|") === "Providers|Projects|Auto-merge|Auto-deploy|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  check(d.title === "Settings" && d.sections.join("|") === "Providers|Projects|Auto-merge|Auto-deploy|System agents|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  // SPEC V0.115: System agents: a provider and a model for all jobs, a choice per job, and what each job runs on.
+  await waitFor(`document.querySelectorAll('.dlg section[aria-label="System agents"] select').length >= 4`, { soft: true });
+  const sa = await evaluate(`(() => { const el = document.querySelector('.dlg section[aria-label="System agents"]'); if (!el) return null;
+    return { selects: [...el.querySelectorAll('select')].map(s => s.getAttribute('aria-label')), lines: [...el.querySelectorAll('.sajob .setd')].map(e => e.textContent),
+      model: el.querySelector('select[aria-label="Model"]')?.selectedOptions[0]?.textContent ?? '' }; })()`);
+  check(!!sa && sa.selects.join("|") === "Provider|Model|Thread titles|Project setup" && sa.model === "Haiku (claude-haiku-5-5)" && sa.lines.length === 2 && sa.lines.every((l) => l === "Runs on Claude · claude-haiku-5-5"),
+    `V0.115 desktop: the System agents section is wrong (${JSON.stringify(sa)})`);
+  if (process.env.FYR_SHOTS) { // V0.115
+    await evaluate(`document.querySelector('.dlg section[aria-label="System agents"]')?.scrollIntoView({ block: 'center' })`);
+    await settle();
+    writeFileSync(join(process.env.FYR_SHOTS, "systemagents-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  }
   if (process.env.FYR_SHOTS) { // V0.111
     await evaluate(`document.querySelector('.dlg section[aria-label="Auto-deploy"]')?.scrollIntoView({ block: 'center' })`);
     await settle();

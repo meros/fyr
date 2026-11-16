@@ -37,7 +37,7 @@ func setupHarness(t *testing.T) *harness {
 	h := newHarness(t, time.Minute)
 	h.e.Icons = &projicon.Store{Dir: filepath.Join(h.dir, "project-icons")}
 	h.e.FetchIcon = projicon.Fetcher{AllowLoopback: true}.Fetch
-	h.e.SystemAgent = func(job string) (string, string, error) { return "", "claude-haiku-5-5", nil }
+	h.e.SystemAgentResolve = func(job string) (string, string, error) { return "", "claude-haiku-5-5", nil }
 	return h
 }
 
@@ -177,12 +177,12 @@ func TestProjectSetupRun(t *testing.T) {
 	os.MkdirAll(dir, 0o755)
 	pid := newProject(t, h, core.Args{"folder": dir})
 	var asked string
-	h.e.SystemAgent = func(job string) (string, string, error) { asked = job; return "", "claude-haiku-5-5", nil }
+	h.e.SystemAgentResolve = func(job string) (string, string, error) { asked = job; return "", "claude-haiku-5-5", nil }
 	r := h.cmd("project.setupRun", "", core.Args{"id": pid})
 	if !r.OK {
 		t.Fatalf("%+v", r)
 	}
-	if asked != SetupJob {
+	if asked != core.JobSetup {
 		t.Fatalf("asked the system agent for %q", asked)
 	}
 	tid, _ := r.Result.(map[string]any)["thread"].(string)
@@ -212,7 +212,7 @@ func TestProjectSetupRun(t *testing.T) {
 	if r := h.cmd("project.setupRun", "", core.Args{"id": none}); r.OK || r.Status != 400 {
 		t.Fatalf("set up a project without a folder: %+v", r)
 	}
-	h.e.SystemAgent = func(string) (string, string, error) {
+	h.e.SystemAgentResolve = func(string) (string, string, error) {
 		return "", "", errors.New("no Haiku on this provider; Settings → System agents")
 	}
 	r = h.cmd("project.setupRun", "", core.Args{"id": pid})

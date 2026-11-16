@@ -68,6 +68,8 @@ type Engine struct {
 	// and deploys counts the deploys between approval or press and their
 	// end. deployMu makes one auto-deploy pass at a time.
 	autoDeployOff bool
+	// systemAgents is the owner's system agents setting (V0.115).
+	systemAgents core.SystemAgents
 	deploySeen    map[string]string
 	deploys       int
 	deployMu      sync.Mutex
@@ -90,12 +92,12 @@ type Engine struct {
 	// "": ~/.local/share/fyr/scratch.
 	ScratchDir string
 	// Project setup (V0.116): the image icons, the fetch of an icon URL
-	// (nil: projicon.Fetch), the model a setup run uses, and whether a new
-	// project with a folder gets a run by itself.
-	Icons       *projicon.Store
-	FetchIcon   func(ctx context.Context, url string) ([]byte, error)
-	SystemAgent func(job string) (profile, model string, err error)
-	AutoSetup   bool
+	// (nil: projicon.Fetch), and whether a new project with a folder gets a
+	// run by itself. The run's provider and model are SystemAgentResolve's
+	// for core.JobSetup.
+	Icons     *projicon.Store
+	FetchIcon func(ctx context.Context, url string) ([]byte, error)
+	AutoSetup bool
 	// HostID names this host in folder sources (V0.23); default the hostname.
 	HostID  string
 	lastRev int64
@@ -144,6 +146,12 @@ type Engine struct {
 	// Titler makes a thread title from its conversation (V0.108); nil: this
 	// host makes none. titling is the threads with a call in flight.
 	Titler  Titler
+	// SystemAgentResolve names the provider and the model a system job runs
+	// on now, or why it cannot run (V0.115); nil: Settings shows the
+	// setting only.
+	SystemAgentResolve func(job string) (profile, model string, err error)
+	// SystemAgentProviders lists the providers the setting can pick.
+	SystemAgentProviders func() []SystemProvider
 	titleMu sync.Mutex
 	titling map[string]bool
 }
@@ -203,6 +211,7 @@ func (e *Engine) Load() error {
 	}
 	e.loadAutoMerge()
 	e.loadAutoDeploy() // V0.111
+	e.loadSystemAgents() // V0.115
 	old, err := e.st.OldProjectSources()
 	if err != nil {
 		return err
@@ -483,6 +492,16 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(500, err.Error())
 		}
 		reply.Result = e.AutoDeploy()
+	case core.EffectSystemAgentsSet: // V0.115: the owner's setting
+		a := ef.Request.Args
+		job, _ := a["job"].(string)
+		clr, _ := a["clear"].(bool)
+		p, _ := a["profile"].(string)
+		m, _ := a["model"].(string)
+		if err := e.setSystemAgents(job, core.SystemAgentChoice{Profile: p, Model: m}, clr); err != nil {
+			return fail(400, err.Error())
+		}
+		reply.Result = e.SystemAgentsView()
 	case core.EffectProvider:
 		if e.Providers == nil {
 			return fail(404, "no providers on this host")

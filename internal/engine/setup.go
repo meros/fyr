@@ -21,10 +21,6 @@ import (
 // with a folder, once for each project from before, and when the owner
 // presses "Set up automatically".
 
-// SetupJob is the system agent job of a setup run (the owner's System
-// agents setting picks its provider and model).
-const SetupJob = "setup"
-
 // setupBrief is the setup run's first message.
 func setupBrief(p core.Project) string {
 	var b strings.Builder
@@ -95,10 +91,11 @@ func (e *Engine) startSetup(id string, src core.Source, cmdID string) api.Reply 
 		record(core.Args{"error": why}, cmdID+"/error")
 		return api.Reply{Error: "Project setup cannot start: " + why, Status: 409}
 	}
-	if e.SystemAgent == nil {
+	if e.SystemAgentResolve == nil {
 		return fail("this host runs no system agents")
 	}
-	profile, model, err := e.SystemAgent(SetupJob)
+	// V0.115: the owner's System agents setting for "Project setup".
+	profile, model, err := e.SystemAgentResolve(core.JobSetup)
 	if err != nil {
 		return fail(err.Error())
 	}
