@@ -104,7 +104,7 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
         <span class="cht ell" title={c.key}>
           {c.title}
         </span>
-        <span class="chp">{phaseText(c)}</span>
+        <span class="chp" title={phaseText(c)}>{phaseText(c)}</span>
       </header>
       {r.steps.length > 0 && (
         <ol class="chrail" aria-label={`Phase: ${c.phase}`}>
