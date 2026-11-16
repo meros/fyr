@@ -115,9 +115,6 @@ func foldChange(t *Thread, c, x *Change, now time.Time) {
 	if c.Label == "" {
 		c.Label = x.Label
 	}
-	if c.Needs == "" {
-		c.Needs = x.Needs
-	}
 	c.Dismissed = c.Dismissed || x.Dismissed
 	if c.Observed == "" {
 		c.Observed, c.Workspace = x.Observed, x.Workspace

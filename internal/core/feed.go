@@ -679,7 +679,7 @@ func ownerNotices(r Reduced) []Notice {
 		was := FindChange(b, c.ID)
 		switch {
 		case c.Parked != nil && (was == nil || was.Parked == nil):
-			add("park:"+c.ID, fmt.Sprintf("The owner set %s to Not now: it no longer blocks this thread. It comes back by itself when its needs, label, phase, conditions or revision change; do not ask about it again until then.", changeName(c)))
+			add("park:"+c.ID, fmt.Sprintf("The owner set %s to Not now: it is not in Needs you now. It comes back by itself when its head changes or a new failure appears; do not ask about it again until then.", changeName(c)))
 		case c.Parked == nil && was != nil && was.Parked != nil && r.In.Kind == KindChangeUnpark:
 			add("park:"+c.ID, fmt.Sprintf("The owner took back Not now on %s; it needs the owner again.", changeName(c)))
 		}
@@ -694,20 +694,19 @@ func ownerNotices(r Reduced) []Notice {
 	return out
 }
 
-// The upkeep sentences (SPEC 0.5 V0.37, V0.52, V0.62). They name what to
-// update and never dictate a reply (research/stop-hook-spike.md).
+// The upkeep sentences (SPEC 0.5 V0.37, V0.52). They name what to update
+// and never dictate a reply (research/stop-hook-spike.md). V0.101: the
+// changes are not upkeep any more; Fyr reads them.
 const (
-	ViewStopText        = "Update this thread's live view (view_state or view_publish), or call view_unchanged with a reason, then stop."
-	ChangesStopText     = "Update your open changes in Fyr (change_status for phase and conditions, change_revise, change_attach), or call change_unchanged with a reason, then stop."
-	ViewReminderText    = "The live view has not changed for a few minutes while you work. Update it now with view_state (the headline and the items that moved), or call view_unchanged with a reason, then continue."
-	ChangesReminderText = "Your open changes in Fyr have not been updated for a few minutes while you work. Report what moved with change_status (phase, conditions), change_revise or change_attach, or call change_unchanged with a reason, then continue."
+	ViewStopText     = "Update this thread's live view (view_state or view_publish), or call view_unchanged with a reason, then stop."
+	ViewReminderText = "The live view has not changed for a few minutes while you work. Update it now with view_state (the headline and the items that moved), or call view_unchanged with a reason, then continue."
 	// ReminderAfter is how long a running turn may go without touching its
-	// view or changes before the reminder.
+	// view before the reminder.
 	ReminderAfter = 4 * time.Minute
 )
 
-// upkeep.stop: the view or the changes the agent keeps were not touched in
-// this run (V0.37, V0.62).
+// upkeep.stop: the view the agent keeps was not touched in this run
+// (V0.37).
 func upkeepStop(x Taking) []Notice {
 	if x.At != AtStop {
 		return nil
@@ -715,9 +714,6 @@ func upkeepStop(x Taking) []Notice {
 	var out []Notice
 	if x.Arg.View && x.T.ViewOn() && !ViewTouchedThisRun(x.T) {
 		out = append(out, Notice{About: "view", Key: "upkeep:view", What: ViewStopText})
-	}
-	if x.Arg.Changes && ChangesStale(x.T) {
-		out = append(out, Notice{About: "thread", Key: "upkeep:changes", What: ChangesStopText})
 	}
 	return out
 }
@@ -742,15 +738,6 @@ func upkeepReminder(x Taking) []Notice {
 	if x.Arg.View && t.ViewOn() {
 		if due("upkeep:view", t.Live.CheckedAt) {
 			out = append(out, Notice{About: "view", Key: "upkeep:view", What: ViewReminderText})
-		}
-	}
-	if x.Arg.Changes && OpenAgentChanges(t) > 0 {
-		var checked time.Time
-		if t.ChangesCheckedAt != nil {
-			checked = *t.ChangesCheckedAt
-		}
-		if due("upkeep:changes", checked) {
-			out = append(out, Notice{About: "thread", Key: "upkeep:changes", What: ChangesReminderText})
 		}
 	}
 	return out

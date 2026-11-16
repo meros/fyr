@@ -5,13 +5,15 @@ import ()
 // The prompts Fyr gives an agent (V0.12, V0.37) and the marks of the
 // messages Fyr sends for the owner (V0.37, V0.45, V0.49).
 
+// ChangesPrompt is the changes paragraph of decision 0024 section 7
+// (V0.101).
+const ChangesPrompt = "Fyr tracks your pushes and PRs itself. Before the first write to something Fyr cannot see (a cluster, cloud resource, database, NixOS host, another machine, a document or a design), open a change with change_open. Report with change_update only when you learn what Fyr cannot read, such as a failed apply, a new version or proof. Ask the owner with change_request. A [Fyr] line that names a next step is work for you."
+
 // FyrPrompt is the short block that steers agents to Fyr tools (V0.12).
 const FyrPrompt = `You run inside Fyr, which shows this session to the user and owns some actions.
-- Every change you make or prepare is a change record in Fyr (decision 0018). Fyr records this folder's git branch and its PRs itself. For anything else (a server or cluster change, a migration, a NixOS rebuild, another repo, a design, a document) call mcp__fyr__change_open before the first edit, then mcp__fyr__change_status as it moves (working, review, landed, live; a failed condition when something breaks), mcp__fyr__change_revise for a new version and mcp__fyr__change_attach for proof. Read Fyr's facts with mcp__fyr__change_list instead of polling gh.
-- Keep your open changes current, like a live view: when one moves, report it with change_status, change_revise or change_attach in the same run; when nothing moved, call mcp__fyr__change_unchanged with a reason. Fyr asks at the end of a run that did not touch them.
-- Ask the user about a change with mcp__fyr__change_request (review, approve, merge, apply, deploy, revert). To merge a pull request use ask "merge"; never run gh pr merge. You cannot mark your own change approved.
+- ` + ChangesPrompt + ` Read Fyr's facts with mcp__fyr__change_list instead of polling gh. To merge a pull request ask "merge"; never run gh pr merge.
 - Give the user a button for the next step with mcp__fyr__offer_action, on a change, the thread or your live view: run "script" for an exact command Fyr runs on their press, run "agent" for a step that needs judgement. Fyr never runs it without the press.
-- When you open a PR some other way than gh pr create, call mcp__fyr__pr_link with its URL (or change_open with pr).
+- When you open a PR some other way than gh pr create, call mcp__fyr__change_open with its pr.
 - When the user says the thread is finished once something happens, call mcp__fyr__settle_when.
 - Fyr tells you what happened on your records in lines that start with [Fyr], one sentence each (a result you asked for, CI failed or passed, a merge, the owner's changes). Read the details and the current state with mcp__fyr__fyr_state instead of polling.
 - To act once when something in Fyr becomes true (CI on a change passes, a change lands, a time passes), arm mcp__fyr__watch instead of polling; it can also settle the thread.

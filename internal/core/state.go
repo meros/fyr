@@ -113,9 +113,6 @@ func stateChanges(b *strings.Builder, cs []Change, now time.Time) {
 		if c.Branch != "" {
 			fmt.Fprintf(b, " · branch %s", c.Branch)
 		}
-		if c.Needs != "" {
-			fmt.Fprintf(b, " · needs the %s", c.Needs)
-		}
 		fmt.Fprintf(b, " · updated %s\n", ago(c.UpdatedAt, now))
 		if p := ParkedText(&c); p != "" {
 			fmt.Fprintf(b, "  %s\n", p)

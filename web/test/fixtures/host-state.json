@@ -13,6 +13,10 @@
       "name": "change.park"
     },
     {
+      "label": "Refresh now",
+      "name": "change.refresh"
+    },
+    {
       "label": "Undo Not now",
       "name": "change.unpark"
     },
@@ -193,11 +197,13 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
+      "stopped": true,
       "title": "a thread in a quiet project",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",
         "change.park": "No change needs you",
+        "change.refresh": "No change to read",
         "change.unpark": "No change is parked",
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
@@ -255,11 +261,13 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
+      "stopped": true,
       "title": "a thread with a live view",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",
         "change.park": "No change needs you",
+        "change.refresh": "No change to read",
         "change.unpark": "No change is parked",
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
@@ -302,11 +310,13 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
+      "stopped": true,
       "title": "a thread in a clone",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",
         "change.park": "No change needs you",
+        "change.refresh": "No change to read",
         "change.unpark": "No change is parked",
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
@@ -345,11 +355,13 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
+      "stopped": true,
       "title": "a thread in the home folder",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",
         "change.park": "No change needs you",
+        "change.refresh": "No change to read",
         "change.unpark": "No change is parked",
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",
@@ -392,11 +404,13 @@
       "running": false,
       "sessionId": "",
       "source": "fyr",
+      "stopped": true,
       "title": "a thread in a folder",
       "unavailable": {
         "change.done": "No open change",
         "change.end": "No change to end",
         "change.park": "No change needs you",
+        "change.refresh": "No change to read",
         "change.unpark": "No change is parked",
         "pr.merge": "No PR",
         "pr.rerunFailed": "No PR",

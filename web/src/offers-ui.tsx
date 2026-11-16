@@ -4,12 +4,45 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
-import { canDone, canEnd, canPark, doneArgs, doneText, openAndDone, endArgs, endChangeAsk, lastRun, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
+import { allowArgs, canDone, canEnd, canPark, canRefresh, checkedText, declineArgs, doneArgs, doneText, openAndDone, endArgs, endChangeAsk, lastRun, needLook, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, pressArgs, rail, shownOffers, unavailable } from "./offers.ts";
 import { press } from "./confirm.ts";
-import { headLabel } from "./pr.ts";
+import { headLabel, shortHead } from "./pr.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
 type Run = (action: string, args?: Record<string, unknown>) => void;
+
+/** V0.101 (decision 0024 sections 5 and 9): why the change waits on the owner, inline on its card. An ask shows its
+ *  answer (a merge ask bound to its head) and Not now, which declines it; Ready shows Merge bound to the head and Not
+ *  now; a failure the agent stopped on shows Not now; a failure while the agent runs is muted, without the beam. */
+export function NeedLine({ c, onRun }: { c: Change; onRun: Run }) {
+  const n = c.need!;
+  const look = needLook(n);
+  const merge = (c.offers ?? []).find((o) => o.run === "fyr" && o.effect === "pr.merge");
+  let yes: { label: string; run: () => void } | null = null;
+  if (n.cause === "ask") yes = { label: n.action === "pr.merge" ? `Merge ${shortHead(n.head)}`.trim() : "Yes", run: () => onRun("thread.answer", allowArgs(n)) };
+  else if (n.cause === "ready" && merge && n.head) yes = { label: look.button, run: () => onRun("action.run", pressArgs(c.id, merge, n.head)) };
+  return (
+    <div class={`chneed ${n.cause}${n.muted ? " muted" : ""}`} role={n.muted ? undefined : "status"}>
+      {look.beam && <span class="beamdot" aria-hidden="true" />}
+      <span class="chnq">{look.line}</span>
+      {yes && (
+        <button class="btn p sm" onClick={yes.run}>
+          {yes.label}
+        </button>
+      )}
+      {n.cause === "ask" && (
+        <button class="btn sm" title="Decline the ask" onClick={() => onRun("thread.answer", declineArgs(n))}>
+          Not now
+        </button>
+      )}
+      {canPark(c) && (
+        <button class="btn sm chpark" title="Out of Needs you until the head changes" onClick={() => onRun("change.park", parkArgs(c))}>
+          Not now
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** Buttons for the actions of one holder, primary first, with what each runs and the newest result. */
 /** V0.75 (1), #62: the hour:minute of a run, in the owner's own time. */
@@ -143,7 +176,7 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
           ))}
         </ul>
       )}
-      {c.needs === "owner" && !c.parked && <div class="chneed">Needs you</div>}
+      {c.need && <NeedLine c={c} onRun={onRun} />}
       {parked && (
         <div class="chparked setd" title="It comes back to Needs you when something on it changes">
           {parked}
@@ -170,14 +203,15 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
       )}
       <OfferBar on={c.id} offers={c.offers} runs={c.runs} change={c} cwd={cwd} onRun={onRun} />
       {c.done && <div class="chdonel setd">{doneText(c, hhmm)}</div>}
-      {(canEnd(c) || canPark(c) || canDone(c)) && (
+      {(canEnd(c) || canDone(c) || canRefresh(c)) && (
         <div class="chfoot">
-          {/* V0.84: Not now parks it out of Needs you until something on it changes. */}
-          {canPark(c) && (
-            <button class="chpark" title="Stop asking until something on this change changes" onClick={() => onRun("change.park", parkArgs(c))}>
-              Not now
+          {/* V0.101: Refresh now reads GitHub and git now; the line says when Fyr last read them. */}
+          {canRefresh(c) && (
+            <button class="chpark" title="Read GitHub and git now" onClick={() => onRun("change.refresh", { change: c.id })}>
+              Refresh now
             </button>
           )}
+          {c.pr?.checkedAt && <span class="chchk setd">{checkedText(c.pr.checkedAt, Date.now())}</span>}
           {/* V0.98 (4): the owner's Done; the host sends it to a host record when the card is one. */}
           {canDone(c) && (
             <button class="chpark" title="Mark this change done: it leaves the board" onClick={() => onRun("change.done", doneArgs(c))}>

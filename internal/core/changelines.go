@@ -55,9 +55,6 @@ func ChangeLine(c *Change) string {
 			facts = append(facts, string(k.Type)+" pending")
 		}
 	}
-	if c.Needs != "" {
-		facts = append(facts, "needs the "+c.Needs)
-	}
 	if c.Parked != nil {
 		facts = append(facts, "parked")
 	}

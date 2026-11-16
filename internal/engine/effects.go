@@ -96,6 +96,13 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 	case core.EffectGit:
 		e.observeGit(threadID, ef.Git)
 		return nil, false
+	case core.EffectChangeRefresh:
+		// V0.101: Refresh now reads git and GitHub now.
+		e.observeGit(threadID, nil)
+		if e.OnPR != nil {
+			e.OnPR(threadID)
+		}
+		return nil, false
 	case core.EffectRun:
 		if ef.Request == nil {
 			return nil, false
