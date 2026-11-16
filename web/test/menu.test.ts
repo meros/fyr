@@ -8,7 +8,7 @@ const labels = (m: MenuEntry[]) => m.map((x) => ("sep" in x ? "—" : x.label));
 
 test("a thread row gets the thread's actions in a fixed order", () => {
   const t = thread("t1", "seen", "seen");
-  assert.deepEqual(labels(threadMenu(t)), ["Open", "—", "Settle", "Snooze…", "Mark unseen", "Archive", "—", "Project…", "Turn on live view", "Hand over…", "—", "Copy link"]); // V0.37 adds the live view, V0.45 the handover
+  assert.deepEqual(labels(threadMenu(t)), ["Open", "—", "Pin", "Settle", "Snooze…", "Mark unseen", "Archive", "—", "Project…", "Turn on live view", "Hand over…", "—", "Copy link"]); // V0.37 adds the live view, V0.45 the handover
 });
 
 test("the menu follows the thread's state", () => {
@@ -18,6 +18,13 @@ test("the menu follows the thread's state", () => {
   assert.ok(labels(threadMenu(running)).includes("Stop run"));
   const snoozed = thread("t4", "snoozed", "snoozed", { view: { snoozeUntil: "2099-01-01T00:00:00Z" } });
   assert.ok(labels(threadMenu(snoozed)).includes("Unsnooze"));
+});
+
+// V0.104: the owner pins and unpins from the menu.
+test("a pinned thread offers Unpin", () => {
+  const t = thread("t6", "working", "working", { pinnedAt: "2026-11-16T10:00:00Z" });
+  const m = labels(threadMenu(t));
+  assert.ok(m.includes("Unpin") && !m.includes("Pin"));
 });
 
 test("an action the host says is unavailable is disabled with its reason", () => {

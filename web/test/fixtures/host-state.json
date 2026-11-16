@@ -70,6 +70,11 @@
       "name": "thread.markUnseen"
     },
     {
+      "bulk": true,
+      "label": "Pin",
+      "name": "thread.pin"
+    },
+    {
       "label": "Rename",
       "name": "thread.rename"
     },
@@ -115,6 +120,11 @@
       "bulk": true,
       "label": "Unarchive",
       "name": "thread.unarchive"
+    },
+    {
+      "bulk": true,
+      "label": "Unpin",
+      "name": "thread.unpin"
     },
     {
       "bulk": true,
@@ -203,6 +213,7 @@
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
         "thread.unarchive": "Not archived",
+        "thread.unpin": "Not pinned",
         "thread.unsettle": "Not settled",
         "thread.unsnooze": "Not snoozed"
       },
@@ -264,6 +275,7 @@
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
         "thread.unarchive": "Not archived",
+        "thread.unpin": "Not pinned",
         "thread.unsettle": "Not settled",
         "thread.unsnooze": "Not snoozed"
       },
@@ -310,6 +322,7 @@
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
         "thread.unarchive": "Not archived",
+        "thread.unpin": "Not pinned",
         "thread.unsettle": "Not settled",
         "thread.unsnooze": "Not snoozed"
       },
@@ -352,6 +365,7 @@
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
         "thread.unarchive": "Not archived",
+        "thread.unpin": "Not pinned",
         "thread.unsettle": "Not settled",
         "thread.unsnooze": "Not snoozed"
       },
@@ -398,6 +412,7 @@
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
         "thread.unarchive": "Not archived",
+        "thread.unpin": "Not pinned",
         "thread.unsettle": "Not settled",
         "thread.unsnooze": "Not snoozed"
       },

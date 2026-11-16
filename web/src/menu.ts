@@ -26,6 +26,7 @@ export function threadMenu(t: Thread): MenuEntry[] {
   const snoozed = t.attention.state === "snoozed";
   const unseen = t.attention.section === "needs";
   const out: MenuEntry[] = [{ id: "open", label: "Open", key: "↵" }, SEP];
+  out.push(t.pinnedAt ? item(t, "unpin", "thread.unpin", "Unpin") : item(t, "pin", "thread.pin", "Pin")); // V0.104
   out.push(settled ? item(t, "unsettle", "thread.unsettle", "Unsettle") : item(t, "settle", "thread.settle", "Settle", "e"));
   out.push(snoozed ? item(t, "unsnooze", "thread.unsnooze", "Unsnooze") : item(t, "snooze", "thread.snooze", "Snooze…", "s"));
   out.push(unseen ? item(t, "markSeen", "thread.markSeen", "Mark seen") : item(t, "markUnseen", "thread.markUnseen", "Mark unseen", "u"));

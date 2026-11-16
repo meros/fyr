@@ -8,7 +8,7 @@ import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon } from "./project-ui.tsx";
 import { DESKTOP_LOOK, NeedsRowBody, OneRowBody } from "./row-ui.tsx";
 import { colorVar, pickerOrder } from "./projects.ts";
-import { SECTIONS, type Conn, type SectionKey, type Sections } from "./store.ts";
+import { SECTIONS, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
 import { StateIcon } from "./icons.tsx";
 import { count, untilLabel } from "./format.ts";
 import { quietNote } from "./quiet.ts";
@@ -197,8 +197,24 @@ export function Inbox(p: InboxProps) {
       </div>
       <ProjectFilterRow projects={p.projects} selected={p.projectFilter} onPick={p.onProjectFilter} now={p.now} />
       <div class="list" role="listbox" aria-label="Threads">
+        {p.sec.pinned.length > 0 && (
+          // V0.104: the pinned threads, above every section and always open; each keeps its section's row shape.
+          <div id="sec-pinned">
+            <div class="sec">
+              Pinned
+              <span class="n">{count(p.sec.pinned.length)}</span>
+            </div>
+            {p.sec.pinned.map((t) =>
+              t.attention.section === "needs" ? (
+                <NeedsRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} onClick={() => p.onClick(t.id)} />
+              ) : (
+                <OneRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} onClick={() => p.onClick(t.id)} />
+              ),
+            )}
+          </div>
+        )}
         {SECTIONS.map((s) => {
-          const list = p.sec[s.key];
+          const list = unpinned(p.sec[s.key]);
           const open = isOpen(s.key, p.open) && list.length > 0;
           const limit = p.expanded[s.key] ? list.length : SECTION_LIMIT[s.key];
           const shown = open ? list.slice(0, limit) : [];
