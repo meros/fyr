@@ -71,7 +71,8 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 
 /* rail */
 .rail{display:flex;flex-direction:column;align-items:stretch;background:var(--sunken);border-right:1px solid var(--line);padding:10px 6px;gap:4px;min-height:0;--knock:var(--sunken)}
-.rail .brand{font:600 15px/20px var(--ui);text-align:center;margin-bottom:10px}
+.rail .brand{display:flex;justify-content:center;margin-bottom:10px}
+.rail .brand img{display:block;width:32px;height:32px;border-radius:7px}
 .ri{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0 6px;border-radius:8px;color:var(--ink-muted);text-align:center}
 .ri:hover:not(.on){background:var(--select);--knock:var(--select)}
 .ri.on{background:var(--raised);color:var(--ink);box-shadow:0 0 0 1px var(--line);--knock:var(--raised)}
