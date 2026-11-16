@@ -151,10 +151,10 @@ func slug(s string) string {
 // so threads keep their profile.
 func fromProfile(h Host, p Profile) Found {
 	env := parseEnv(p.Env)
-	src := "profile " + p.ID
+	src := "provider " + p.ID
 	var note []string
 	if p.Binary != "" && p.Binary != "claude" {
-		src = "profile " + p.ID + " (" + p.Binary + ")"
+		src = "provider " + p.ID + " (" + p.Binary + ")"
 		if w, ok := readWrapper(h, p.Binary); ok {
 			env = mergeEnv(w, env)
 		} else {

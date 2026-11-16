@@ -505,7 +505,7 @@ func (s *Service) get(ctx context.Context, url, token string, hdr map[string]str
 	return nil
 }
 
-const loginExpired = "Login expired; run this profile once"
+const loginExpired = "Login expired; run this provider once"
 
 func (s *Service) fetchAnthropic(ctx context.Context, t target) result {
 	var cred struct {
@@ -526,10 +526,10 @@ func (s *Service) fetchAnthropic(ctx context.Context, t target) result {
 	} else {
 		b, err := os.ReadFile(filepath.Join(t.spec.ConfigDir, ".credentials.json"))
 		if err != nil {
-			return result{err: &fail{errOther, "No Claude login found; run this profile once"}}
+			return result{err: &fail{errOther, "No Claude login found; run this provider once"}}
 		}
 		if json.Unmarshal(b, &cred) != nil || cred.OAuth.AccessToken == "" {
-			return result{err: &fail{errOther, "No Claude login found; run this profile once"}}
+			return result{err: &fail{errOther, "No Claude login found; run this provider once"}}
 		}
 	}
 	if ms := cred.OAuth.ExpiresAt; ms > 0 && s.now().After(time.UnixMilli(int64(ms))) {
