@@ -1161,7 +1161,7 @@ try {
   await waitFor(`document.querySelectorAll('.dlg .prov:not(.found)').length === 3`, { soft: true });
   await settle();
   const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', sections: [...document.querySelectorAll('.dlg .sets h3')].map(e => e.textContent), rows: document.querySelectorAll('.dlg .prov:not(.found)').length })`);
-  check(d.title === "Settings" && d.sections.join("|") === "Providers|Projects|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  check(d.title === "Settings" && d.sections.join("|") === "Providers|Projects|Auto-merge|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
   await evaluate(`document.querySelector('.dlg .prov .provh')?.click()`);
   await waitFor(`!!document.querySelector('.dlg .prov.open textarea')`, { soft: true });
   const o = await evaluate(`({ ta: !!document.querySelector('.dlg .prov.open textarea'), key: document.querySelector('.dlg .prov.open input[type=password]')?.value ?? null })`);
