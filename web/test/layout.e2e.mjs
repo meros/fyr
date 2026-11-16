@@ -75,7 +75,7 @@ const watchdog = setTimeout(() => {
   console.error("layout test: timed out");
   cleanup();
   process.exit(2);
-}, 150_000); // about 35 s on a quiet 8-core machine, about 60 s under a 6-core CPU load
+}, 420_000); // a hang guard, not a speed check: about 35 s on a quiet 8-core machine, 140 s and more at a load average of 80 (a deploy beside other sessions' test suites, 16 Nov)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let version;
@@ -381,6 +381,14 @@ let checks = 0;
 const check = (ok, what) => {
   checks++;
   if (!ok) failures.push(what);
+};
+// The timing budgets (V0.38, V0.32) measure wall time, so a machine busy with other work fails them (#50). The deploy
+// gate (`make test`) runs with FYR_LAYOUT_TIMING=0 and skips only these budgets; CI and `make test-timing` keep them.
+const TIMING = process.env.FYR_LAYOUT_TIMING !== "0";
+let timingSkipped = 0;
+const timed = (ok, what) => {
+  if (TIMING) check(ok, what);
+  else timingSkipped++;
 };
 
 const window_innerWidth = (m) => m.innerWidth;
@@ -1330,7 +1338,7 @@ try {
   const r = await evaluate(`({ last: [...document.querySelectorAll('.th .md')].map((x) => x.textContent).filter((t) => /Burst message/.test(t)).pop() ?? '' })`);
   const total = burst.long.reduce((a, b) => a + b, 0);
   // Budget: no task over 100 ms, under 250 ms of long tasks in all (before V0.38: 10 tasks, 523 ms).
-  check(Math.max(0, ...burst.long) <= 100 && total < 250, `V0.38 main thread: long tasks during the burst (${burst.ms} ms): ${burst.long.length}, ${total} ms in all (${burst.long.slice(0, 8).join(", ")} ms)`);
+  timed(Math.max(0, ...burst.long) <= 100 && total < 250, `V0.38 main thread: long tasks during the burst (${burst.ms} ms): ${burst.long.length}, ${total} ms in all (${burst.long.slice(0, 8).join(", ")} ms)`);
   check(/Burst message 300/.test(r.last), `V0.38 main thread: the last burst message is not shown ("${r.last.slice(0, 60)}")`);
 } catch (e) {
   await send("Emulation.setCPUThrottlingRate", { rate: 1 });
@@ -1373,8 +1381,8 @@ try {
   const open = await tapAndWait(".m-app .m-mv", "!!document.querySelector('.m-tth')");
   await settle();
   const back = await tapAndWait(".m-tth .b44", "!document.querySelector('.m-tth')");
-  check(open >= 0 && open < 800, `V0.32 phone: opening a thread took ${open} ms`);
-  check(back >= 0 && back < 800, `V0.32 phone: Back to the list took ${back} ms`);
+  timed(open >= 0 && open < 800, `V0.32 phone: opening a thread took ${open} ms`);
+  timed(back >= 0 && back < 800, `V0.32 phone: Back to the list took ${back} ms`);
 } catch (e) {
   failures.push(`V0.32 phone navigation: ${e.message}`);
 }
@@ -1473,6 +1481,20 @@ try {
   failures.push(`#64 desktop: ${e.message}`);
 }
 
+// #72: without git the Changes tab has no Refresh and no empty diff section; the change cards keep the tab's height.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail&open=t_deploy&tab=changes`, "!!document.querySelector('.th .chtab .chg .chg-empty')");
+  const n = await evaluate(`(() => {
+    const tab = document.querySelector('.th .chtab'), chg = tab.querySelector('.chg'), chl = tab.querySelector('.chl');
+    return { refresh: !!tab.querySelector('.chg-ref'), chgH: chg.getBoundingClientRect().height, cap: chl ? getComputedStyle(chl).maxHeight : 'none', text: chg.textContent };
+  })()`);
+  check(!n.refresh && n.chgH <= 48 && n.cap === "none", `#72 desktop: the non-git Changes tab still draws its diff section (${JSON.stringify(n)})`);
+} catch (e) {
+  failures.push(`#72 desktop: ${e.message}`);
+}
+
 // V0.73 (2): on the desktop, the Changes tab of six cards over an empty diff, in a tall and a short window.
 for (const [w, h] of [[1280, 800], [1024, 600]]) {
   try {
@@ -1530,5 +1552,5 @@ if (failures.length) {
   if (failures.length > 60) console.error(`  … ${failures.length - 60} more`);
   process.exit(1);
 }
-console.log(`layout test: ${checks} checks passed (${SCREENS.length} screens × ${SIZES.length} sizes)`);
+console.log(`layout test: ${checks} checks passed (${SCREENS.length} screens × ${SIZES.length} sizes)${timingSkipped ? `; ${timingSkipped} timing budgets skipped (FYR_LAYOUT_TIMING=0)` : ""}`);
 process.exit(0);
