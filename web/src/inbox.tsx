@@ -98,7 +98,7 @@ function PrBadge({ t, short }: { t: Thread; short?: boolean }) {
   const c = changeChip(t, short); // V0.59 (8): a change that is not a PR, when no PR is open
   if (c)
     return (
-      <span class={`pr chg ${c.cls}`} title={c.title}>
+      <span class={`pr chgchip ${c.cls}`} title={c.title}>
         {c.text}
       </span>
     );

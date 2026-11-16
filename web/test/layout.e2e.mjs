@@ -1366,6 +1366,39 @@ try {
   failures.push(`V0.48 settled: ${e.message}`);
 }
 
+// #56: a Needs you row whose state word and change word are longer than the rail. No cell passes the row's content
+// box or covers another cell, the clipped texts end in an ellipsis, and the list's scrollbar does not cover the row.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 400, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.list .rw .m b')");
+  const r = await evaluate(`(() => {
+    const row = document.querySelector('.list .rw'), list = row.closest('.list');
+    row.querySelector('.m b').textContent = "You've hit your weekly limit · resets Mon";
+    const pr = row.querySelector('.pr'); pr.className = 'pr chgchip'; pr.textContent = 'nodependabotconfig · landed +1';
+    const box = row.getBoundingClientRect(), cs = getComputedStyle(row);
+    const inner = { left: box.left + parseFloat(cs.paddingLeft), right: box.right - parseFloat(cs.paddingRight) };
+    const cells = [...row.children].map((e) => ({ c: e.className, ...JSON.parse(JSON.stringify(e.getBoundingClientRect())) }));
+    const out = cells.filter((c) => c.width > 0 && (c.right > inner.right + 0.5 || c.left < inner.left - 0.5)).map((c) => c.c);
+    const hit = [];
+    for (let i = 0; i < cells.length; i++) for (let j = i + 1; j < cells.length; j++) {
+      const a = cells[i], b = cells[j];
+      if (a.width && b.width && a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) hit.push(a.c + ' × ' + b.c + ' ' + JSON.stringify([a.left, a.top, a.right, a.bottom, b.left, b.top, b.right, b.bottom].map(Math.round)));
+    }
+    const cut = (e) => getComputedStyle(e).textOverflow === 'ellipsis' && e.scrollWidth > e.clientWidth;
+    const m = row.querySelector('.m');
+    const sb = list.offsetWidth - list.clientWidth; // a classic scrollbar takes width; an overlay one takes none
+    const gutter = getComputedStyle(list).scrollbarGutter;
+    return { out, hit, mCut: cut(m), prCut: cut(pr), prRight: pr.getBoundingClientRect().right, listInner: list.getBoundingClientRect().right - sb, gutter };
+  })()`);
+  check(r.out.length === 0, `#56 desktop: a row cell passes the row (${JSON.stringify(r)})`);
+  check(r.hit.length === 0, `#56 desktop: two row cells overlap (${JSON.stringify(r)})`);
+  check(r.mCut && r.prCut, `#56 desktop: a clipped row text has no ellipsis (${JSON.stringify(r)})`);
+  check(r.gutter.includes("stable"), `#56 desktop: the list does not reserve its scrollbar's width (${JSON.stringify(r)})`);
+} catch (e) {
+  failures.push(`#56 desktop: ${e.message}`);
+}
+
 // V0.73 (2): on the desktop, the Changes tab of six cards over an empty diff, in a tall and a short window.
 for (const [w, h] of [[1280, 800], [1024, 600]]) {
   try {
