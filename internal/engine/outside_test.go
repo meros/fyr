@@ -183,3 +183,44 @@ func TestEndedPRIsNotPolled(t *testing.T) {
 		t.Fatalf("an ended change is still polled: %+v", s)
 	}
 }
+
+// SPEC 0.5 V0.82: a merged PR whose checks were pending is still polled; a
+// self-deploy moves the landed changes of the deployed repo, in any thread,
+// whose merge commit is in the build to live through the Input path.
+func TestV082SelfDeployAndMergedChecks(t *testing.T) {
+	e, _, _ := bare(t)
+	a, b := bareThread(t, e), bareThread(t, e)
+	merged := e.Now().Add(-time.Hour)
+	w := PRWatch{E: e}
+	obs := func(id, url string, n int, sha string, checks core.Checks) {
+		w.Observe(id, core.PR{URL: url, Repo: "meros/fyr", Number: n, State: "MERGED", Checks: checks, MergeSHA: sha, MergedAt: &merged})
+	}
+	obs(a, "https://github.com/meros/fyr/pull/71", 71, "m71", core.ChecksPending)
+	obs(b, "https://github.com/meros/fyr/pull/73", 73, "m73", core.ChecksPass)
+	obs(b, "https://github.com/meros/fyr/pull/90", 90, "m90", core.ChecksPass)
+	if s := w.Snapshot(); len(s) != 1 || s[0].URL != "https://github.com/meros/fyr/pull/71" {
+		t.Fatalf("snapshot %+v", s)
+	}
+	in := map[string]bool{"m71": true, "m73": true}
+	var asked []string
+	n := e.SelfDeployed("github.com/meros/fyr", "20261116-073115", func(sha string) bool { asked = append(asked, sha); return in[sha] })
+	if n != 2 || len(asked) != 3 {
+		t.Fatalf("moved %d, asked %v", n, asked)
+	}
+	phase := func(id, key string) core.Phase {
+		th, _ := e.Thread(id)
+		for _, c := range th.Changes {
+			if c.Key == key {
+				return c.Phase
+			}
+		}
+		return ""
+	}
+	if phase(a, "pr:meros/fyr#71") != core.PhaseLive || phase(b, "pr:meros/fyr#73") != core.PhaseLive || phase(b, "pr:meros/fyr#90") != core.PhaseLanded {
+		t.Fatalf("phases %s %s %s", phase(a, "pr:meros/fyr#71"), phase(b, "pr:meros/fyr#73"), phase(b, "pr:meros/fyr#90"))
+	}
+	// Another repo's deploy moves nothing.
+	if n := e.SelfDeployed("github.com/meros/other", "b2", func(string) bool { return true }); n != 0 {
+		t.Fatalf("another repo moved %d", n)
+	}
+}

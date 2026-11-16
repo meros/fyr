@@ -100,7 +100,13 @@ func TestDeploySwitches(t *testing.T) {
 	if time.Since(start) < 110*time.Millisecond {
 		t.Fatal("did not wait for every running thread, the requester included")
 	}
-	if len(*steps) != 2 || !strings.HasPrefix((*steps)[0], "make -C /src/fyr build") || (*steps)[1] != "make -C /src/fyr test" {
+	var made []string // V0.82: git reads HEAD and the remote first
+	for _, s := range *steps {
+		if !strings.HasPrefix(s, "git ") {
+			made = append(made, s)
+		}
+	}
+	if len(made) != 2 || !strings.HasPrefix(made[0], "make -C /src/fyr build") || made[1] != "make -C /src/fyr test" {
 		t.Fatalf("steps %v", *steps)
 	}
 	next, err := os.Readlink(filepath.Join(d.Data, "next"))
