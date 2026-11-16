@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"mime"
 	"net"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 	"github.com/meros/fyr/internal/gitdiff"
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/hostfs"
+	"github.com/meros/fyr/internal/projicon"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/stream"
@@ -116,6 +118,9 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("GET /api/providers", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Providers.List()) })
 		mux.HandleFunc("GET /api/providers/found", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Providers.Found()) })
 	}
+	// V0.116: a project's image icon.
+	mux.HandleFunc("GET /api/projects/{id}/icon", s.projectIcon)
+	mux.HandleFunc("POST /api/projects/{id}/icon", s.projectIconUpload)
 	if s.Attach != nil {
 		mux.HandleFunc("POST /api/attachments", s.upload)
 		mux.HandleFunc("GET /api/attachments/{id}", s.download)
@@ -505,6 +510,51 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.WriteJSON(w, 200, m)
+}
+
+// projectIcon serves a project's image icon (V0.116): ?size=128 for the
+// larger square, else 64. The client's URL carries the version (?v=), so
+// the browser may keep it.
+func (s *Server) projectIcon(w http.ResponseWriter, r *http.Request) {
+	n := 64
+	if r.URL.Query().Get("size") == "128" {
+		n = 128
+	}
+	p := s.Engine.ProjectIconPath(r.PathValue("id"), n)
+	f, err := os.Open(p)
+	if p == "" || err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox")
+	if r.URL.Query().Get("v") != "" {
+		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+	http.ServeContent(w, r, "icon.png", time.Time{}, f)
+}
+
+// projectIconUpload is the owner's upload of a project's icon (V0.116):
+// the body is the picture, at most 2 MB.
+func (s *Server) projectIconUpload(w http.ResponseWriter, r *http.Request) {
+	b, err := io.ReadAll(io.LimitReader(r.Body, projicon.MaxBytes+1))
+	if err != nil {
+		api.WriteJSON(w, 400, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	if len(b) > projicon.MaxBytes {
+		api.WriteJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"ok": false, "error": "the picture is over 2 MB"})
+		return
+	}
+	rep := s.Engine.UploadProjectImage(r.PathValue("id"), b)
+	if rep.Status == 0 {
+		rep.Status = 200
+	}
+	api.WriteJSON(w, rep.Status, rep)
 }
 
 func (s *Server) download(w http.ResponseWriter, r *http.Request) {

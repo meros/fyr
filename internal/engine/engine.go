@@ -24,6 +24,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/projicon"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/stream"
@@ -90,6 +91,13 @@ type Engine struct {
 	// ScratchDir is where thread.create makes a scratch folder (V0.42);
 	// "": ~/.local/share/fyr/scratch.
 	ScratchDir string
+	// Project setup (V0.116): the image icons, the fetch of an icon URL
+	// (nil: projicon.Fetch), and whether a new project with a folder gets a
+	// run by itself. The run's provider and model are SystemAgentResolve's
+	// for core.JobSetup.
+	Icons     *projicon.Store
+	FetchIcon func(ctx context.Context, url string) ([]byte, error)
+	AutoSetup bool
 	// HostID names this host in folder sources (V0.23); default the hostname.
 	HostID  string
 	lastRev int64
@@ -325,8 +333,15 @@ func (e *Engine) submit(in core.Input) api.Reply {
 	if k.Await {
 		return e.await(in, k)
 	}
+	if in.Kind == core.KindProjectSetupRun { // V0.116: the thread first
+		return e.startSetup(a.Str("id"), in.Source, in.CmdID)
+	}
 	if k.On == core.RecProject {
-		return e.applyProject(in)
+		r := e.applyProject(in)
+		if r.OK {
+			e.afterProject(in, r)
+		}
+		return r
 	}
 	if in.Kind == "thread.setProject" && a.Str("projectId") != "" {
 		e.mu.Lock()

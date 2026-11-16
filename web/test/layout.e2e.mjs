@@ -52,6 +52,15 @@ const server = createServer((req, res) => {
     res.end(readFileSync(file));
     return;
   }
+  // V0.116: project image icons, as the host serves them: a fixture per project id (FYR_PROJECT_ICONS first, so
+  // screenshots can use icons that are not committed); none is a 404 and the client draws the glyph.
+  const icon = path.match(/^\/api\/projects\/([A-Za-z0-9_-]+)\/icon$/);
+  if (icon) {
+    const f = [process.env.FYR_PROJECT_ICONS, join(fixtures, "project-icons")].filter(Boolean).map((d) => join(d, `${icon[1]}.png`)).find((x) => existsSync(x));
+    if (!f) return void res.writeHead(404).end();
+    res.writeHead(200, { "Content-Type": "image/png", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" });
+    return void res.end(readFileSync(f));
+  }
   let file = join(dist, path === "/" ? "index.html" : path);
   if (!file.startsWith(dist) || !existsSync(file) || statSync(file).isDirectory()) file = join(dist, "index.html");
   res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream", "Cache-Control": "no-store" });
@@ -236,6 +245,8 @@ const SCREENS = [
   // provider; every target 44 px and inside the safe areas.
   { name: "settings providers", url: "?mock=rail&settings" },
   { name: "board of changes", url: "?mock=1&changes" },
+  // V0.116: a project with an image icon the setup agent set: Set by agent, the image buttons 44 px.
+  { name: "project screen with an image icon (V0.116)", url: "?mock=rail&project=p_fyr" },
   // V0.101: the inbox row of a thread in Needs you carries the beam and its button; the Changes tab shows the ask
   // inline with its answer and Not now, Ready with Merge bound to the head, and Refresh now.
   { name: "inbox with a ready change (V0.101)", url: "?mock=1" },
@@ -1789,6 +1800,58 @@ try {
   check(r.src === "/logo.png" && r.w === 32 && r.h === 32 && r.loaded && r.alt === "Fyr" && r.text === "" && r.inside, `V0.92 desktop: the rail's mark (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.92 desktop: ${e.message}`);
+}
+
+// SPEC 0.5 V0.116: a project's image icon. Desktop: Settings → Projects draws Fyr's image (28 px, loaded) and a
+// project whose image does not load (no fixture) its glyph, never a broken image; Fyr's project screen marks the
+// agent's values "Set by agent" and offers Replace image…, Remove image and Set up automatically. Phone: the
+// project screen shows the image at 44 px and its buttons are 44 px high.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .rgear')");
+  await evaluate(`document.querySelector('.rail .rgear').click()`);
+  await waitFor(`[...document.querySelectorAll('.dlg .pli')].some((b) => b.textContent.includes('Fyr') && b.querySelector('.pi.img img')?.complete)`);
+  await waitFor(`![...document.querySelectorAll('.dlg .pli .pi.img img')].some((i) => i.complete && !i.naturalWidth)`, { soft: true });
+  const r = await evaluate(`(() => {
+    const rows = [...document.querySelectorAll('.dlg .pli')];
+    const fyr = rows.find((b) => b.textContent.includes('Fyr')), img = fyr.querySelector('.pi.img img'), b = img.getBoundingClientRect();
+    const broken = [...document.querySelectorAll('.dlg .pli .pi.img img')].filter((i) => i.complete && !i.naturalWidth).length;
+    const glyphs = rows.filter((x) => x.querySelector('.pi:not(.img)')).length;
+    return { w: b.width, h: b.height, loaded: img.naturalWidth > 0, broken, glyphs };
+  })()`);
+  check(r.loaded && r.w === 28 && r.h === 28 && r.broken === 0 && r.glyphs > 0, `V0.116 desktop: the project image icons in Settings (${JSON.stringify(r)})`);
+  if (process.env.FYR_SHOTS) {
+    await evaluate(`document.querySelector('.dlg section[aria-label="Projects"]')?.scrollIntoView({ block: 'start' })`);
+    await settle();
+    writeFileSync(join(process.env.FYR_SHOTS, "project-icons-settings-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  }
+  await evaluate(`[...document.querySelectorAll('.dlg .pli')].find((b) => b.textContent.includes('Fyr')).click()`);
+  await waitFor(`!!document.querySelector('.pedit .pimg')`);
+  await settle();
+  const e = await evaluate(`(() => {
+    const ed = document.querySelector('.pedit');
+    return { setby: [...ed.querySelectorAll('.fld > span')].filter((s) => s.querySelector('.setby')).map((s) => s.firstChild.textContent.trim()), buttons: [...ed.querySelectorAll('.pimg button')].map((b) => b.textContent.trim()), head: ed.querySelector('.phead .pi.img img')?.naturalWidth > 0 };
+  })()`);
+  check(e.head && e.setby.join("|") === "Name|Colour|Image" && e.buttons.join("|") === "Replace image…|Remove image|Set up automatically", `V0.116 desktop: Fyr's project screen (${JSON.stringify(e)})`);
+  if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "project-screen-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${origin}/?mock=rail&project=p_fyr`, "!!document.querySelector('.pedit .phead .pi.img img') && document.querySelector('.pedit .phead .pi.img img').complete");
+  await settle();
+  const m = await evaluate(`(() => {
+    const img = document.querySelector('.pedit .phead .pi.img img'), b = img.getBoundingClientRect();
+    return { w: b.width, loaded: img.naturalWidth > 0, heights: [...document.querySelectorAll('.pedit .pimg button')].map((x) => x.getBoundingClientRect().height), setby: document.querySelectorAll('.pedit .setby').length };
+  })()`);
+  check(m.loaded && m.w === 44 && m.heights.length === 3 && m.heights.every((x) => x >= 44) && m.setby === 3, `V0.116 phone: Fyr's project screen (${JSON.stringify(m)})`);
+  if (process.env.FYR_SHOTS) {
+    writeFileSync(join(process.env.FYR_SHOTS, "project-screen-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+    await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-ih')");
+    await settle();
+    writeFileSync(join(process.env.FYR_SHOTS, "inbox-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  }
+} catch (e) {
+  failures.push(`V0.116: ${e.message}`);
 }
 
 // SPEC 0.5 V0.103, V0.113: the phone's inbox header shows the same logo (28 px, loaded, inside the header) and no
