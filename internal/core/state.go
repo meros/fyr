@@ -117,6 +117,9 @@ func stateChanges(b *strings.Builder, cs []Change, now time.Time) {
 			fmt.Fprintf(b, " · needs the %s", c.Needs)
 		}
 		fmt.Fprintf(b, " · updated %s\n", ago(c.UpdatedAt, now))
+		if p := ParkedText(&c); p != "" {
+			fmt.Fprintf(b, "  %s\n", p)
+		}
 		if p := c.PR; p != nil {
 			fmt.Fprintf(b, "  PR #%d %s · checks %s", p.Number, p.State, p.Checks)
 			if p.Review != "" {

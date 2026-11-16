@@ -115,7 +115,7 @@ test("a button shows its action's newest run on itself", () => {
 });
 
 test("SPEC 0.5 V0.84, #93: Not now on a change that needs the owner or has a failed condition; parked shows a quiet line", () => {
-  const fail = [{ type: "apply", status: "fail" as const, source: "agent", at }];
+  const fail = [{ type: "apply", status: "fail" as const, source: "agent" as const, at }];
   assert.equal(canPark(change({ needs: "owner" })), true);
   assert.equal(canPark(change({ phase: "landed", conditions: fail })), true);
   assert.equal(canPark(change({})), false, "nothing about it needs the owner");

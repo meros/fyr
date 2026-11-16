@@ -28,7 +28,9 @@ const (
 	KindChangeStatus    = "change.status"
 	KindChangeAttach    = "change.attach"
 	KindChangeUnchanged = "change.unchanged"
-	KindChangeEnd       = "change.end" // the owner's command (V0.72)
+	KindChangeEnd       = "change.end"    // the owner's command (V0.72)
+	KindChangePark      = "change.park"   // the owner's Not now (V0.84)
+	KindChangeUnpark    = "change.unpark" // its Undo (V0.84)
 	KindActionOffer     = "action.offer"
 	KindActionPress     = "action.run"
 	KindViewPublish     = "view.publish"

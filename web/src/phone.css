@@ -403,4 +403,5 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-sheet.cfm .cfm-opt,.m-sheet.cfm .cfm-why input{height:44px;font-size:15px}
 .m-sheet.cfm .cfm-opt{flex:1}
 .m-app .chend{min-height:44px}
+.m-app .chpark,.m-app .chundo{min-height:44px;min-width:44px}
 .cfm-f{display:flex;gap:8px;padding:8px 16px 0;flex:none}.cfm-f .m-bt{flex:1}
