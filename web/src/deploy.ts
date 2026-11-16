@@ -48,3 +48,13 @@ export function deployLine(p: DeployProgress | null | undefined, threads: Record
   }
   return null;
 }
+
+/** #81: one update keeps one key through its phases (build to switch); another build or start is another update. */
+export function updateKey(p: DeployProgress | null | undefined): string {
+  return p ? `${p.build ?? ""}:${p.startedAt ?? ""}` : "";
+}
+
+/** #81: the banner is a chip while the owner folded this update and it is still busy; its end opens it again. */
+export function bannerFolded(p: DeployProgress | null | undefined, tone: DeployLine["tone"], folded: string | null): boolean {
+  return tone === "busy" && folded !== null && folded === updateKey(p);
+}
