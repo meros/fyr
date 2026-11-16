@@ -118,6 +118,7 @@ Actions and their args:
 | `thread.settle` | `now?: true` for bulk settle |
 | `thread.snooze` | `until` (RFC 3339, future) |
 | `thread.rename` | `title` |
+| `thread.regenerateTitle` (V0.108, owner only): Fyr writes the title from the conversation; the result lands later as `thread.renamed`, or a failed line | none |
 | `thread.setProject` | `projectId`: file the thread into a project by hand; folder matching keeps it (V0.23). `""` unfiles it: no project, still filed by hand, so matching leaves it unfiled (V0.30) |
 | `thread.setModel` | `model?`, `effort?` (at least one; V0.50: an effort alone keeps the model; `""` returns to the provider's default). The thread DTO carries `effort` when set |
 | `thread.handover` | `profile`, `model?` (default: the profile's default model): hand the thread over to another profile (V0.45). `409` while a run is live, a question is open, a handover is going or the thread is archived; `400` for an unknown profile or the thread's own. While it runs the thread has `"handover": {"to": "…", "model": "…", "at": "…"}` and sends are unavailable |
