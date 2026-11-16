@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -26,7 +27,10 @@ func TestFetchParsesChecks(t *testing.T) {
 		{`{"state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","status":"COMPLETED","conclusion":"FAILURE"}]}`, "fail", false, "OPEN"},
 		{`{"state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","status":"IN_PROGRESS","conclusion":""}]}`, "pending", false, "OPEN"},
 		{`{"state":"OPEN","statusCheckRollup":[{"__typename":"StatusContext","state":"ERROR"}]}`, "fail", false, "OPEN"},
-		{`{"state":"OPEN","mergeable":"CONFLICTING","statusCheckRollup":[]}`, "none", true, "OPEN"},
+		// V0.112: an empty list on an open PR is pending unless the repo has no CI (here the CI read fails)
+		{`{"state":"OPEN","mergeable":"CONFLICTING","statusCheckRollup":[]}`, "pending", true, "OPEN"},
+		{`{"state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","status":"QUEUED","conclusion":""}]}`, "pending", false, "OPEN"},
+		{`{"state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SKIPPED"},{"__typename":"StatusContext","state":"SUCCESS"}]}`, "pass", false, "OPEN"},
 		{`{"state":"MERGED","statusCheckRollup":null}`, "none", false, "MERGED"},
 	}
 	for i, c := range cases {
@@ -38,6 +42,32 @@ func TestFetchParsesChecks(t *testing.T) {
 			t.Errorf("case %d: %+v", i, p)
 		}
 	}
+}
+
+// SPEC V0.112: an open PR with no check reported is pending on a repo with
+// CI and none only on a repo where no PR had a check.
+func TestFetchEmptyChecksByRepoCI(t *testing.T) {
+	const view = `{"state":"OPEN","headRefOid":"029f9c7","statusCheckRollup":[]}`
+	for ci, want := range map[string]core.Checks{"4": core.ChecksPending, "0": core.ChecksNone} {
+		ciRepos.Clear()
+		s := &scripted{out: map[string]string{"pr view": view, "api graphql": ci}}
+		p, err := Fetch(context.Background(), s.run, "https://github.com/meros/fyr/pull/126")
+		if err != nil || p.Checks != want {
+			t.Errorf("CI count %s: %v %v, want %s", ci, p.Checks, err, want)
+		}
+		if got := s.calls[len(s.calls)-1]; strings.Join(got[:2], " ") != "api graphql" || !slices.Contains(got, "owner=meros") || !slices.Contains(got, "name=fyr") {
+			t.Errorf("the CI read %v", got)
+		}
+	}
+	// a check seen on any PR of the repo is enough; the repo is not read again
+	ciRepos.Clear()
+	seen := &scripted{out: map[string]string{"pr view": `{"state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"}]}`}}
+	Fetch(context.Background(), seen.run, "https://github.com/meros/fyr/pull/125")
+	seen.out["pr view"] = view
+	if p, _ := Fetch(context.Background(), seen.run, "https://github.com/meros/fyr/pull/126"); p.Checks != core.ChecksPending || seen.count("api graphql") != 0 {
+		t.Errorf("after a check on #125: %v, %d reads", p.Checks, seen.count("api graphql"))
+	}
+	ciRepos.Clear()
 }
 
 // SPEC 5.10: Fyr merges with the method the agent asked for.

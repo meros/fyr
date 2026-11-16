@@ -35,6 +35,24 @@ func Ready(pr *PR, threadRunning bool) string {
 	return ""
 }
 
+// checksWait is why a merge of args.pr waits for CI, or "" (V0.112): Fyr
+// reads its checks as pending, which is also an empty check list on a repo
+// with CI (the poller decides that). A repo with no CI reads none and does
+// not wait; failed checks keep V0.43's rule, and GitHub refuses a merge its
+// branch rules block. The runner reads GitHub again before it merges.
+func checksWait(t *Thread, args map[string]any) string {
+	url, _ := args["pr"].(string)
+	c := changeByPR(t, url)
+	if c == nil || c.PR == nil || c.PR.State != "OPEN" || c.PR.Checks != ChecksPending {
+		return ""
+	}
+	on := "this PR"
+	if c.PR.Head != "" {
+		on = shortSHA(c.PR.Head)
+	}
+	return "CI has not passed on " + on + " yet: Merge waits for the checks"
+}
+
 // SameHead reports whether head, the full SHA or a prefix of at least 7
 // characters that the owner saw, names the commit sha (V0.97).
 func SameHead(sha, head string) bool {

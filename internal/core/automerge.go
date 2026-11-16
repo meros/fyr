@@ -67,7 +67,7 @@ func autoMergeable(t *Thread, d Decision) (repo, why string) {
 	case Ready(c.PR, t.Running || t.RunningTasks() > 0) != ReadyMerge:
 		return "", "The PR is not ready to merge"
 	}
-	if why := FyrEffects[FyrMerge].Guard(t, a); why != "" {
+	if why := FyrEffects[FyrMerge].Blocked(t, a); why != "" {
 		return "", why
 	}
 	return c.PR.Repo, ""

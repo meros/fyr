@@ -305,6 +305,8 @@ export interface ChangeNeed {
   ask?: string;
   action?: string;
   muted?: boolean;
+  /** V0.112: why the ask's yes cannot run yet (a merge on pending checks); the yes is disabled with it */
+  wait?: string;
 }
 
 export interface Change {
