@@ -88,6 +88,13 @@ type Config struct {
 	// Runner starts the processes in the launcher's runner, so they outlive
 	// fyrd (V0.90); nil starts them as fyrd's children.
 	Runner *runner.Client
+	// V0.115: the system agents. HostName names this host; ProfileExists
+	// tells a provider of the host from Profile's fallback; SystemAgents
+	// reads the owner's setting (nil: the default, Haiku on the host's
+	// default provider).
+	HostName      string
+	ProfileExists func(id string) bool
+	SystemAgents  func() core.SystemAgents
 }
 
 // Cgroups is what the agent needs from the cgroup tree (*cgroup.Tree):

@@ -14,6 +14,7 @@ import { removeProviderAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import type { Project } from "./types.ts";
 import { repoKey, sortRepos, type AutoDeploySetting, type AutoMergeRepo } from "./automerge.ts";
+import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
 import { colorVar, projectSubtitle } from "./projects.ts";
 import { NewProjectStep, ProjectIcon } from "./project-ui.tsx";
 import {
@@ -37,7 +38,7 @@ import {
 } from "./providers.ts";
 
 export interface SettingsProps {
-  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy">>;
+  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "systemAgents">>;
   host: string;
   /** V0.51: the front's hosts with their state */
   hosts?: HostInfo[];
@@ -62,6 +63,7 @@ export function Settings(p: SettingsProps) {
       {p.projects && <ProjectsSection projects={p.projects} onOpen={(id) => p.onOpenProject?.(id)} onCreate={p.onCreateProject} />}
       {p.api.autoMerge && <AutoMergeSection api={p.api as AutoMergeApi} />}
       {p.api.autoDeploy && <AutoDeploySection api={p.api as AutoDeployApi} />}
+      {p.api.systemAgents && <SystemAgentsSection api={p.api as SystemAgentsApi} hosts={(p.hosts ?? []).map((h) => h.name)} />}
       <section class="sets">
         <h3>Hosts</h3>
         {p.hosts && p.hosts.length > 0 ? (
@@ -453,6 +455,97 @@ function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknow
 
 type AutoMergeApi = Pick<Api, "autoMerge" | "command">;
 type AutoDeployApi = Pick<Api, "autoDeploy" | "command">;
+type SystemAgentsApi = Pick<Api, "systemAgents" | "command">;
+
+function Pick1({ label, value, options, onPick }: { label: string; value: string; options: Option[]; onPick(v: string): void }) {
+  return (
+    <label class="fld">
+      <span>{label}</span>
+      <select value={value} aria-label={label} onChange={(e) => onPick((e.target as HTMLSelectElement).value)}>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** V0.115: the provider and model of the calls Fyr starts itself (thread titles, project setup), per host: for all
+ *  jobs, and per job. No provider is the host's default, no model is its Haiku; a job that cannot run says why here
+ *  and fails visibly, never on a bigger model. Only the owner changes it here; no agent tool can. Desktop and phone
+ *  alike (the shared Settings body). */
+function SystemAgentsSection({ api, hosts }: { api: SystemAgentsApi; hosts: string[] }) {
+  const [host, setHost] = useState(hosts[0] ?? "");
+  const [v, setV] = useState<SystemAgentsView | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const load = async (h: string) => {
+    try {
+      setV(await api.systemAgents(h || undefined));
+      setErr(null);
+    } catch (e) {
+      setV(null);
+      setErr(`Could not read the system agents setting: ${(e as Error).message}`);
+    }
+  };
+  useEffect(() => void load(host), [host]);
+  // A job "" is the default; null clears a job's own choice.
+  const set = async (job: string, c: SystemAgentChoice | null) => {
+    const args: Record<string, unknown> = c ? { job, profile: c.profile ?? "", model: c.model ?? "" } : { job, clear: true };
+    if (host) args.host = host;
+    const r = await api.command("host.systemAgents", undefined, args);
+    if (!r.ok) {
+      setErr(r.error ?? "That did not work");
+      return;
+    }
+    await load(host);
+  };
+  const def = v?.default ?? {};
+  return (
+    <section class="sets" aria-label="System agents">
+      <h3>System agents</h3>
+      <div class="setd">The model calls Fyr makes itself, such as thread titles and project setup. They run on this provider and model. A job that cannot run fails and shows why; it never moves to a bigger model.</div>
+      {hosts.length > 1 && (
+        <div class="sarow">
+          <Pick1 label="Host" value={host} options={hosts.map((h) => ({ value: h, label: h }))} onPick={setHost} />
+        </div>
+      )}
+      {err && (
+        <div class="seterr" role="alert">
+          {err}
+        </div>
+      )}
+      {v === null && !err && <div class="setd">Loading…</div>}
+      {v && (
+        <>
+          <div class="sarow">
+            <Pick1 label="Provider" value={def.profile ?? ""} options={providerOptions(v)} onPick={(x) => void set("", { profile: x })} />
+            <Pick1 label="Model" value={def.model ?? ""} options={modelOptions(v, def.profile ?? "")} onPick={(x) => void set("", { profile: def.profile, model: x })} />
+          </div>
+          {v.jobs.map((j) => {
+            const line = jobLine(v, j);
+            const own = j.choice.profile ?? def.profile ?? "";
+            return (
+              <div class="sajob" key={j.id}>
+                <div class="sarow">
+                  <Pick1
+                    label={j.name}
+                    value={j.override ? (j.choice.profile ?? "") : "="}
+                    options={[{ value: "=", label: "Same as above" }, ...providerOptions(v).slice(1)]}
+                    onPick={(x) => void set(j.id, x === "=" ? null : { profile: x })}
+                  />
+                  {j.override && <Pick1 label="Model" value={j.choice.model ?? ""} options={modelOptions(v, own)} onPick={(x) => void set(j.id, { profile: j.choice.profile, model: x })} />}
+                </div>
+                <div class={line.error ? "seterr" : "setd"}>{line.text}</div>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </section>
+  );
+}
 
 /** V0.111: whether Fyr approves an agent's Fyr deploy ask with no press when the checkout is clean and on origin's
  *  default branch. On by default; only the owner changes it here, and no agent tool can. Desktop and phone alike. */

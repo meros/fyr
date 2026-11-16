@@ -67,6 +67,8 @@ type Engine struct {
 	// and deploys counts the deploys between approval or press and their
 	// end. deployMu makes one auto-deploy pass at a time.
 	autoDeployOff bool
+	// systemAgents is the owner's system agents setting (V0.115).
+	systemAgents core.SystemAgents
 	deploySeen    map[string]string
 	deploys       int
 	deployMu      sync.Mutex
@@ -136,6 +138,12 @@ type Engine struct {
 	// Titler makes a thread title from its conversation (V0.108); nil: this
 	// host makes none. titling is the threads with a call in flight.
 	Titler  Titler
+	// SystemAgentResolve names the provider and the model a system job runs
+	// on now, or why it cannot run (V0.115); nil: Settings shows the
+	// setting only.
+	SystemAgentResolve func(job string) (profile, model string, err error)
+	// SystemAgentProviders lists the providers the setting can pick.
+	SystemAgentProviders func() []SystemProvider
 	titleMu sync.Mutex
 	titling map[string]bool
 }
@@ -195,6 +203,7 @@ func (e *Engine) Load() error {
 	}
 	e.loadAutoMerge()
 	e.loadAutoDeploy() // V0.111
+	e.loadSystemAgents() // V0.115
 	old, err := e.st.OldProjectSources()
 	if err != nil {
 		return err
@@ -468,6 +477,16 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(500, err.Error())
 		}
 		reply.Result = e.AutoDeploy()
+	case core.EffectSystemAgentsSet: // V0.115: the owner's setting
+		a := ef.Request.Args
+		job, _ := a["job"].(string)
+		clr, _ := a["clear"].(bool)
+		p, _ := a["profile"].(string)
+		m, _ := a["model"].(string)
+		if err := e.setSystemAgents(job, core.SystemAgentChoice{Profile: p, Model: m}, clr); err != nil {
+			return fail(400, err.Error())
+		}
+		reply.Result = e.SystemAgentsView()
 	case core.EffectProvider:
 		if e.Providers == nil {
 			return fail(404, "no providers on this host")
