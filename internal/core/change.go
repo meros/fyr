@@ -169,7 +169,6 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 		}
 	}
 	if c != nil {
-		defer linkRef(t, c)
 		if c.Title == "" {
 			c.Title = o.Title
 		}
@@ -188,7 +187,8 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 			addRevision(c, *o.Revision, now)
 		}
 		c.UpdatedAt = now
-		return c, false, nil
+		linkRef(t, c)
+		return joinPRWork(t, c, now), false, nil
 	}
 	if o.Kind == "" {
 		o.Kind = KindOther
@@ -208,7 +208,8 @@ func OpenChange(t *Thread, o ChangeOpen, by string, now time.Time) (*Change, boo
 	trimChanges(t, now)
 	c = FindChange(t, nc.ID)
 	linkRef(t, c)
-	return c, true, nil
+	// V0.87 (2): the change Fyr made for this work's PR folds into it.
+	return joinPRWork(t, c, now), true, nil
 }
 
 // ReviseChange adds a revision; the same id twice is one revision. A new
@@ -353,7 +354,7 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	if p.Repo == "" || p.Number == 0 {
 		p.Repo, p.Number = parsePRURL(p.URL)
 	}
-	c := changeByPR(t, p.URL)
+	c := onePRChange(t, p.URL, now) // V0.87 (2): two changes that hold the PR fold into one
 	if p.State == PRMissing && c == nil {
 		return nil // V0.72: no change is made for a PR that does not exist
 	}
@@ -361,20 +362,14 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 		return c // V0.72: the owner ended it; a fact does not move it again
 	}
 	if c == nil && p.Branch != "" {
-		for i := range t.Changes {
-			x := &t.Changes[i]
-			if x.Kind == KindCode && x.Branch == p.Branch && !x.Phase.Ended() && x.PRURL() == "" {
-				c = x
-				break
-			}
-		}
+		c = changeOnPRBranch(t, p.Branch)
 	}
 	if c == nil {
 		title := p.Title
 		if title == "" {
 			title = fmt.Sprintf("%s#%d", p.Repo, p.Number)
 		}
-		c, _, _ = OpenChange(t, ChangeOpen{Key: fmt.Sprintf("pr:%s#%d", p.Repo, p.Number), Kind: KindCode, Title: title, Branch: p.Branch}, ByObserved, now)
+		c, _, _ = OpenChange(t, ChangeOpen{Key: PRKey(p.Repo, p.Number), Kind: KindCode, Title: title, Branch: p.Branch}, ByObserved, now)
 		if c == nil {
 			return nil
 		}
@@ -592,6 +587,26 @@ func addEvidence(c *Change, ev Evidence) {
 		repo, n := parsePRURL(ev.URL)
 		c.PR = &PR{URL: ev.URL, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending}
 	}
+}
+
+// changeOnPRBranch is the change a PR found by its head branch attaches to
+// (V0.59 (4), V0.87 (2)): a change of any kind on that branch that has not
+// ended and has no PR, the one that follows a host record first.
+func changeOnPRBranch(t *Thread, branch string) *Change {
+	var first *Change
+	for i := range t.Changes {
+		x := &t.Changes[i]
+		if x.Branch != branch || x.Phase.Ended() || x.PRURL() != "" {
+			continue
+		}
+		if x.Observed != "" {
+			return x
+		}
+		if first == nil {
+			first = x
+		}
+	}
+	return first
 }
 
 // changeByPR is the change whose PR has this URL, or nil.

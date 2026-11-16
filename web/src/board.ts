@@ -1,7 +1,7 @@
 // The Changes board (SPEC 0.5 V0.64): every change of every thread on one screen, grouped by stage. Pure.
 
 import type { Change, Project, Thread } from "./types.ts";
-import { ended, needsOwner } from "./offers.ts";
+import { changeList, ended, needsOwner } from "./offers.ts";
 import { projectOf } from "./projects.ts";
 
 export type Column = "needs" | "working" | "review" | "landed" | "live" | "ended";
@@ -49,29 +49,33 @@ export function columnOf(c: Change): Column {
 export function boardItems(threads: Record<string, Thread>, projects: Project[], f: BoardFilter = {}): BoardItem[] {
   const q = (f.q ?? "").trim().toLowerCase();
   const out: BoardItem[] = [];
-  const seen = new Set<string>();
   for (const t of Object.values(threads)) {
     if (t.archivedAt) continue;
     const project = projectOf(t, projects);
     if (f.projectId && project?.id !== f.projectId) continue;
     const away = !f.settled && putAway(t);
-    for (const c of t.changes) {
+    for (const c of changeList(t)) {
       if (!f.ended && ended(c.phase)) continue;
       if (away && columnOf(c) !== "needs") continue; // before once(): a host record shows under an open thread
-      if (!once(c, seen)) continue;
       if (q && ![c.title, c.key, c.group ?? "", ...(c.targets ?? []), t.title].join(" ").toLowerCase().includes(q)) continue;
       out.push({ change: c, thread: t, project });
     }
   }
-  return out;
+  return once(out);
 }
 
-/** #35: a host record (an observed branch) is in every thread that shows it, and once on the board. */
-function once(c: Change, seen: Set<string>): boolean {
-  if (!c.threads) return true;
-  if (seen.has(c.id)) return false;
-  seen.add(c.id);
-  return true;
+/** #35: a host record (an observed branch) is in every thread that shows it, and once on the board. V0.87 (3), #69:
+ *  a record that a shown change follows is that change's card; a thread's change is one card per id. */
+function once<T extends { change: Change; thread: Thread }>(items: T[]): T[] {
+  const followed = new Set(items.map((i) => i.change.observed).filter((id): id is string => !!id));
+  const seen = new Set<string>();
+  return items.filter(({ change: c, thread: t }) => {
+    if (c.threads && followed.has(c.id)) return false;
+    const key = c.threads ? c.id : `${t.id}/${c.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** A column's entries: changes of one group together under the group's name (a cross-repo set), a stack in the
@@ -114,10 +118,9 @@ export function stackOrder(items: BoardItem[]): BoardItem[] {
 
 /** The rail and menu badge: how many changes need the owner. */
 export function needsCount(threads: Record<string, Thread>): number {
-  let n = 0;
-  const seen = new Set<string>();
-  for (const t of Object.values(threads)) if (!t.archivedAt) for (const c of t.changes) if (columnOf(c) === "needs" && once(c, seen)) n++;
-  return n;
+  const items: { change: Change; thread: Thread }[] = [];
+  for (const t of Object.values(threads)) if (!t.archivedAt) for (const c of changeList(t)) if (columnOf(c) === "needs") items.push({ change: c, thread: t });
+  return once(items).length;
 }
 
 /** The projects that have changes, for the filter chips. */

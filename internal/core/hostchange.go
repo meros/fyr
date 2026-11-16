@@ -5,8 +5,8 @@ package core
 // A thread holds references to the records it shows (every thread in the
 // record's folder, and the thread whose run observed it); a record that
 // moves is sent to each of them as a change.observed Input, so each thread
-// gets its own notices. A code change of the thread on the same repo and
-// branch (the agent's, or a PR's) follows the record: the record's git
+// gets its own notices. A change of the thread on the same repo and branch
+// (the agent's of any kind, or a PR's: V0.87) follows the record: the record's git
 // facts are copied onto it, and the thread shows that change instead of the
 // record. Agent changes stay per thread.
 
@@ -213,7 +213,7 @@ func init() {
 }
 
 // reduceChangeObserved keeps the thread's reference to a record, and copies
-// the record's git facts onto the thread's code change that follows it.
+// the record's git facts onto the thread's change that follows it.
 func reduceChangeObserved(r Rec, in Input, now time.Time) (Result, error) {
 	a, err := argsOf[ChangeObservedArgs](in)
 	if err != nil {
@@ -240,9 +240,9 @@ func repoTargets(repo string) []string {
 	return []string{"repo:" + repo}
 }
 
-// follower is the thread's code change that follows rec: the one linked to
-// it, else an in-flight code change on its branch and repo that follows no
-// record in flight.
+// follower is the thread's change that follows rec: the one linked to it,
+// else an in-flight change of any kind on its branch and repo that follows
+// no record in flight (V0.87 (1)).
 func follower(t *Thread, rec *Change) *Change {
 	for i := range t.Changes {
 		if t.Changes[i].Observed == rec.ID {
@@ -254,7 +254,7 @@ func follower(t *Thread, rec *Change) *Change {
 	}
 	for i := range t.Changes {
 		c := &t.Changes[i]
-		if c.Kind == KindCode && c.Branch == rec.Branch && c.Phase.InFlight() && freeToLink(t, c) && sameRepo(c.Targets, repoTargets(RecordRepo(rec))) {
+		if c.Branch != "" && c.Branch == rec.Branch && c.Phase.InFlight() && freeToLink(t, c) && sameRepo(c.Targets, repoTargets(RecordRepo(rec))) {
 			return c
 		}
 	}
@@ -270,11 +270,11 @@ func freeToLink(t *Thread, c *Change) bool {
 	return i < 0 || t.Refs[i].Ended
 }
 
-// linkRef links a code change of the thread to the in-flight record it
-// references on the same repo and branch (change_open, a PR). The facts
-// arrive with the record's next move.
+// linkRef links a change of the thread with a branch, of any kind (V0.87
+// (1)), to the in-flight record it references on the same repo and branch
+// (change_open, a PR). The facts arrive with the record's next move.
 func linkRef(t *Thread, c *Change) {
-	if c == nil || c.Kind != KindCode || c.Branch == "" || !c.Phase.InFlight() || !freeToLink(t, c) {
+	if c == nil || c.Branch == "" || !c.Phase.InFlight() || !freeToLink(t, c) {
 		return
 	}
 	for _, ref := range t.Refs {
@@ -286,8 +286,9 @@ func linkRef(t *Thread, c *Change) {
 }
 
 // follow copies a record's git facts onto the change that follows it: the
-// workspace, pushed and clean, the newest revision, and the end of its
-// branch unless a PR says how the change ended.
+// workspace, pushed and clean, the record's revisions (all of them until
+// the agent writes one of its own, then the newest: V0.87 (1)), and the end
+// of its branch unless a PR says how the change ended.
 func follow(t *Thread, c *Change, rec *Change, now time.Time) {
 	was := cloneChange(c)
 	c.Observed = rec.ID
@@ -302,7 +303,9 @@ func follow(t *Thread, c *Change, rec *Change, now time.Time) {
 			dropConditions(c, typ)
 		}
 	}
-	if n := len(rec.Revisions); n > 0 {
+	if !slices.ContainsFunc(c.Revisions, func(r Revision) bool { return r.By != ByObserved }) {
+		c.Revisions = slices.Clone(rec.Revisions)
+	} else if n := len(rec.Revisions); n > 0 {
 		addRevision(c, rec.Revisions[n-1], now)
 	}
 	if !rec.Phase.InFlight() && c.Phase.InFlight() && c.PR == nil {
