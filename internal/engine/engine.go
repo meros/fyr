@@ -24,6 +24,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/stream"
 )
@@ -108,6 +109,10 @@ type Engine struct {
 	// OnAttention is called, outside the lock, when a thread's attention
 	// state changes (push, SPEC 0.5 V0.15). prev is "" for a new thread.
 	OnAttention func(d api.Thread, prev core.State)
+	// Slots is the host's pool of slots for heavy jobs (V0.86); set it with
+	// UseSlots. nil: the slot tools say there are none.
+	Slots    *slots.Pool
+	slotIdle map[string]time.Time // under mu: held slots without a live run, since
 }
 
 func New(st *store.Store) *Engine {
@@ -469,6 +474,7 @@ type applied struct {
 	evs      []store.Event
 	newPR    bool
 	replayed bool
+	runEnded bool // V0.86: the thread's run ended in this reduce
 }
 
 // apply is the one path (decision 0020): replay the receipt, load, reduce,
@@ -565,6 +571,7 @@ func (e *Engine) stage(cur *core.Thread, in core.Input, now time.Time, fresh boo
 			}
 		}
 	}
+	s.runEnded = cur.Running && !t.Running
 	s.doneFx, s.fromEffect = strings.CutPrefix(string(in.Source), "effect:")
 	return s, nil
 }
@@ -657,6 +664,9 @@ func (e *Engine) publish(p *applied) {
 	}
 	if p.newPR && e.OnPR != nil {
 		e.OnPR(p.threadID)
+	}
+	if p.runEnded {
+		e.slotRunEnded(p.threadID)
 	}
 	e.start(p.threadID, p.res.Effects)
 }
@@ -838,6 +848,7 @@ func (e *Engine) Tick() {
 		e.Hub.Send(stream.FrameThread, c.d)
 		e.notify(c.d, c.prev)
 	}
+	e.sweepSlots() // V0.86
 }
 
 // EventsBefore pages back: the newest limit events older than before.

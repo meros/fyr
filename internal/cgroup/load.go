@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/meros/fyr/internal/slots"
 )
 
 // Load is what GET /api/load answers for one host (SPEC 0.5 V0.80).
@@ -23,6 +25,9 @@ type Load struct {
 	Cgroups     bool         `json:"cgroups"`
 	Agents      *Use         `json:"agents,omitempty"`
 	Threads     []ThreadLoad `json:"threads"`
+	// Slots: the host's slots for heavy jobs (V0.86), read fresh on each
+	// Get; nil without a pool.
+	Slots *slots.Snapshot `json:"slots,omitempty"`
 }
 
 // Use is agents/ as a whole.
@@ -50,6 +55,7 @@ type Sampler struct {
 	Proc  string // default /proc
 	Cores int    // default runtime.NumCPU()
 	Now   func() time.Time
+	Slots *slots.Pool // V0.86; optional
 
 	mu     sync.Mutex
 	at     time.Time
@@ -58,8 +64,19 @@ type Sampler struct {
 	cached bool
 }
 
-// Get returns the load, read now or at most MinGap ago.
+// Get returns the load, read now or at most MinGap ago; the slots are
+// always read now.
 func (s *Sampler) Get() Load {
+	l := s.get()
+	if s.Slots != nil {
+		sn := s.Slots.Snapshot()
+		l.Slots = &sn
+	}
+	return l
+}
+
+// get reads the machine and the cgroups at most every MinGap.
+func (s *Sampler) get() Load {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
