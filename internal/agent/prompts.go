@@ -3,7 +3,7 @@ package agent
 import ()
 
 // The prompts Fyr gives an agent (V0.12, V0.37) and the marks of the
-// messages Fyr sends for the owner (V0.37, V0.45, V0.49).
+// messages Fyr sends for the owner (V0.37, V0.45).
 
 // ChangesPrompt is the changes paragraph of decision 0024 section 7
 // (V0.101).
@@ -28,15 +28,11 @@ const ViewPrompt = `This thread has a live view: a small page pinned above the c
 - In the page, window.fyr.state is the current state; fyr.onState(fn) runs fn now and on every change; an element with data-text="field.path" shows that field. Fragments get the Fyr theme (CSS variables --bg --fg --muted --line --accent, light and dark). The page cannot call Fyr or other hosts; it may load libraries from cdn.jsdelivr.net, unpkg.com, esm.sh, cdnjs.cloudflare.com and ajax.googleapis.com.
 - Buttons send messages: fyr.send(text), or an element with data-send="text", sends that text to you as a message from the view, as if the user typed it. Use buttons for choices and next steps; they never run anything by themselves.
 - A button can also run an action you declared on the view with mcp__fyr__offer_action {on: "view", id, …}: an element with data-action="<id>", or fyr.run("<id>"). Fyr runs it on the user's press: a script exactly as declared, or a prompt to you or a new thread. Use it for an exact step (run the e2e suite, apply the plan); use data-send for a choice.
-- A message marked [Typed on the live view tab] was written while the user looks at the view, not the conversation. Answer it first in one or two plain, spoken sentences (the answer, or what you will do now); that reply is shown next to their message on the View tab. Then do the work and update the view.
 - Update the view as the work moves, not only at the end: when you start or finish an item, change the headline and the items that moved. Fyr reminds you after a few minutes without an update.
 - Before you end a turn, update the view if anything it shows changed, or call mcp__fyr__view_unchanged {reason}. Keep it short and current; it is the first thing the user reads.`
 
 // FromView marks a message sent by a press in the live view (V0.37).
 const FromView = "view"
-
-// FromViewTyped marks a message the user typed on the View tab (V0.49).
-const FromViewTyped = "view-typed"
 
 // FromHandover marks the messages Fyr sends during a handover (V0.45).
 const FromHandover = "handover"

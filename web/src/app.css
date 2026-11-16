@@ -965,18 +965,6 @@ button.ptag{padding:0}
 @keyframes ahc{from{--p:100%}to{--p:0%}}
 @media (prefers-reduced-motion: reduce){.sec .ahc{animation:none}}
 
-/* SPEC 0.5 V0.49: the View tab's chat: your last message there and the agent's spoken reply */
-.vchat{position:relative;margin:8px 16px 0;min-width:0}
-.vchat-o{display:flex;flex-direction:column;gap:6px;align-items:stretch;width:100%;padding:0 0 0 36px;border:0;background:none;text-align:left;cursor:pointer;color:inherit;font:inherit;min-width:0}
-.vchat-x{position:absolute;left:0;top:0;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--raised);color:var(--ink-muted);font:400 16px/1 var(--ui);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
-.vchat-x:hover{color:var(--ink)}
-@media (pointer:coarse){.vchat-x{width:44px;height:44px}.vchat-o{padding-left:52px}}
-.vchat-me{align-self:flex-end;display:flex;flex-direction:column;align-items:flex-end;gap:2px;max-width:80%}
-.vchat-b{padding:7px 12px;border-radius:14px 14px 4px 14px;background:var(--select);color:var(--ink);font:400 14px/20px var(--ui);overflow-wrap:anywhere}
-.vchat-s{font:400 11px/14px var(--ui);color:var(--ink-faint)}
-.vchat-re{align-self:flex-start;max-width:85%;padding:7px 12px;border-radius:14px 14px 14px 4px;background:var(--raised);border:1px solid var(--line);font:400 14px/20px var(--ui);color:var(--ink);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
-.vchat-live{color:var(--ink-muted);font-size:13px}
-
 /* SPEC V0.119 (amends V0.50): Settings. One nav, four pages, and one set of rows and controls for the desktop and the
    phone (design/settings/mock.css, part 3). Desktop: the dialog's nav column and a pane. Phone: the nav is the
    Settings screen and a page is the next screen; its sizes come from the one rule set under .set.phone below. */

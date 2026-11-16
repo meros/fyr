@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.33: message delivery in the conversation fold.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildConversation, deliveryLabel, viewChat, type Item } from "../src/conversation.ts";
+import { buildConversation, deliveryLabel, type Item } from "../src/conversation.ts";
 
 let seq = 0;
 const ev = (type: string, data: unknown) => ({ seq: ++seq, at: new Date(1_700_000_000_000 + seq * 1000).toISOString(), subject: "t", type, data });
@@ -90,25 +90,17 @@ test("a message not in the outbox is not waiting, even without its read event", 
   assert.equal((still.find((i) => i.kind === "user" && i.id === "m1") as Extract<Item, { kind: "user" }>).pending, true, "in the outbox: still waiting");
 });
 
-// SPEC 0.5 V0.49: the View tab shows the last message typed there and the agent's spoken reply.
-test("the View tab's chat: my last message there and the reply after it", () => {
-  const T = Date.parse("2026-11-14T18:00:00Z");
-  let seq = 0;
-  const ev = (type: string, data: unknown) => ({ seq: ++seq, at: new Date(T + seq * 1000).toISOString(), subject: "t", type, data });
-  const say = (text: string) => ev("msg", { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text }] } });
-  const evs = [
-    ev("user", { id: "a", text: "first, in conversation" }), ev("message.state", { id: "a", state: "read" }), say("ok"),
-    ev("user", { id: "b", text: "Can you also check iPad?", from: "view-typed" }), ev("message.state", { id: "b", state: "read" }),
-    say("Yes, I'll run the iPad layout next and add it to the view."), say("Done: the iPad layout passes."),
-  ];
-  const c = viewChat(buildConversation(evs, { outbox: [] }));
-  assert.equal(c?.mine.text, "Can you also check iPad?");
-  assert.equal(c?.reply, "Yes, I'll run the iPad layout next and add it to the view.", "the first spoken answer after it");
-  const waiting = viewChat(buildConversation([...evs.slice(0, 3), ev("user", { id: "c", text: "and Android", from: "view-typed" }), ev("message.state", { id: "c", state: "queued" })], { outbox: ["c"] }));
-  assert.equal(waiting?.mine.text, "and Android");
-  assert.equal(waiting?.mine.delivery, "queued");
-  assert.equal(waiting?.reply, null);
-  assert.equal(viewChat(buildConversation(evs.slice(0, 3))), null, "nothing typed on the View tab yet");
+// SPEC V0.128 (supersedes V0.49, V0.57): a message typed on the View tab is an ordinary message. One stored with
+// the old mark (`from: "view-typed"`) renders as the owner's own message: no View tag, and it can be the last read.
+test("V0.128 an old View-tab message is an ordinary message", () => {
+  const items = buildConversation([
+    ev("user", { id: "a", text: "first, in conversation" }), state("a", "read"), say("ok"),
+    ev("user", { id: "b", text: "Can you also check iPad?", from: "view-typed" }), state("b", "read"), say("Yes."),
+  ], { outbox: [] });
+  const b = users(items).find((u) => u.id === "b")!;
+  assert.equal(b.from, undefined, "no surface mark");
+  assert.equal(b.lastRead, true, "the last read message of the owner");
+  assert.equal(deliveryLabel(b), "Read");
 });
 
 // SPEC 0.5 V0.33 (found live twice): a message whose read event never reached this device is read

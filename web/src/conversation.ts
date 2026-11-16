@@ -222,12 +222,14 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           break;
         }
         const id = str(e.data?.id);
+        // V0.128: a message stored with the old View-tab mark ("view-typed", V0.49) is the owner's ordinary message.
+        const from = str(e.data?.from);
         const it: Extract<Item, { kind: "user" }> = {
           kind: "user",
           key,
           text: str(e.data?.text),
           images: Number(e.data?.images) || 0,
-          from: str(e.data?.from) || undefined,
+          from: from && from !== "view-typed" ? from : undefined,
           attachments: (Array.isArray(e.data?.attachments) ? e.data.attachments : [])
             .filter((a: any) => a && typeof a.id === "string")
             .map((a: any) => ({ id: a.id, name: str(a.name) || "file", mediaType: str(a.mediaType), size: Number(a.size) || 0 })),
@@ -371,7 +373,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
   }
   const out = calmTools(items);
   let last: Extract<Item, { kind: "user" }> | undefined;
-  for (const it of out) if (it.kind === "user" && it.delivery === "read" && (!it.from || it.from === "view-typed")) last = it;
+  for (const it of out) if (it.kind === "user" && it.delivery === "read" && !it.from) last = it;
   if (last) last.lastRead = true;
   for (const it of held.values()) out.push({ ...it, pending: true });
   return out;
@@ -843,25 +845,4 @@ function foldOf(s: Item[]): Extract<Entry, { kind: "fold" }> {
     tone: groupTone(st),
     durationMs: start !== Infinity && end >= start && !st.running ? end - start : null,
   };
-}
-
-/** SPEC 0.5 V0.49: the View tab's chat: the last message typed there and the first spoken reply after it. */
-export function viewChat(items: Item[]): { mine: Extract<Item, { kind: "user" }>; reply: string | null } | null {
-  let at = -1;
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    if (it.kind === "user" && it.from === "view-typed") at = i;
-  }
-  if (at < 0) return null;
-  const mine = items[at] as Extract<Item, { kind: "user" }>;
-  let reply: string | null = null;
-  for (let i = at + 1; i < items.length; i++) {
-    const it = items[i];
-    if (it.kind === "user") break;
-    if (it.kind === "assistant" && !it.quiet && it.text.trim()) {
-      reply = it.text.trim();
-      break;
-    }
-  }
-  return { mine, reply };
 }
