@@ -120,6 +120,8 @@ export interface ThreadDTO {
   offers?: Offer[];
   runs?: OfferRun[];
   settledAt?: string | null;
+  /** V0.104: when the owner pinned the thread; a pinned thread sorts above every other */
+  pinnedAt?: string | null;
   archivedAt?: string | null;
   settleWhenDone?: boolean;
   settleWhenMerged?: boolean;

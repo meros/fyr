@@ -1308,6 +1308,58 @@ try {
   failures.push(`V0.31 menu: ${e.message}`);
 }
 
+// V0.104: the owner pins a thread from the row's menu; it moves above every section with a pin mark, once. Unpin
+// puts it back. The phone pins from the thread's ⋯ sheet and draws the same block on top of its list.
+let pinId = "";
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('#sec-working [data-id]')");
+  check(!(await evaluate(`!!document.querySelector('#sec-pinned')`)), "V0.104 pin: a Pinned block shows with nothing pinned");
+  const row = await evaluate(`(() => { const el = [...document.querySelectorAll('#sec-working [data-id]')].pop(); const r = el.getBoundingClientRect(); return { id: el.dataset.id, x: r.left + 40, y: r.top + r.height / 2 }; })()`);
+  pinId = row.id;
+  const menuPick = async (label) => {
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x: row.x, y: row.y, button: "right", clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: row.x, y: row.y, button: "right", clickCount: 1 });
+    await settle();
+    return evaluate(`(() => { const it = [...document.querySelectorAll('.ctxm-i')].find(x => x.querySelector('.ell')?.textContent === ${JSON.stringify(label)}); it?.click(); return !!it; })()`);
+  };
+  check(await menuPick("Pin"), "V0.104 pin: the row menu has no Pin");
+  await waitFor(`!!document.querySelector('#sec-pinned [data-id="${pinId}"]')`, { soft: true });
+  const r = await evaluate(`(() => {
+    const blocks = [...document.querySelectorAll('.list > div')].filter(d => d.querySelector('[data-id]'));
+    const pinned = document.querySelector('#sec-pinned [data-id="${pinId}"]');
+    return { first: blocks[0]?.id, mark: !!pinned?.querySelector('.hd .pin'), once: document.querySelectorAll('.list [data-id="${pinId}"]').length };
+  })()`);
+  check(r.first === "sec-pinned", `V0.104 pin: the Pinned block is not on top (${r.first})`);
+  check(r.mark, "V0.104 pin: the pinned row has no pin mark");
+  check(r.once === 1, `V0.104 pin: the pinned row shows ${r.once} times`);
+  if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "pin-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  // The row now sits in the Pinned block: right-click it there.
+  Object.assign(row, await evaluate(`(() => { const r = document.querySelector('#sec-pinned [data-id="${pinId}"]').getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; })()`));
+  check(await menuPick("Unpin"), "V0.104 pin: the pinned row's menu has no Unpin");
+  await waitFor(`!document.querySelector('#sec-pinned')`, { soft: true });
+  check(await evaluate(`!document.querySelector('#sec-pinned') && !!document.querySelector('#sec-working [data-id="${pinId}"]')`), "V0.104 pin: Unpin does not put the row back");
+} catch (e) {
+  failures.push(`V0.104 pin desktop: ${e.message}`);
+}
+try {
+  await openScreen({ url: `?mock=rail&open=${pinId}` }, 390, 844);
+  await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
+  check(await evaluate(`(() => { const b = [...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.querySelector('.ell')?.firstChild?.textContent === 'Pin'); b?.click(); return !!b; })()`), "V0.104 pin phone: the thread sheet has no Pin");
+  await waitFor(`!document.querySelector('.m-sheet')`, { soft: true });
+  await tapCenter('button[aria-label="Back to the inbox"]', "!!document.querySelector('.m-list')");
+  await waitFor(`!!document.querySelector('#m-sec-pinned')`, { soft: true });
+  const r = await evaluate(`(() => { const secs = [...document.querySelectorAll('.m-list > section')]; const p = document.querySelector('#m-sec-pinned'); return { first: secs[0]?.id, rows: p ? p.querySelectorAll('.pin').length : 0 }; })()`);
+  check(r.first === "m-sec-pinned", `V0.104 pin phone: the Pinned block is not on top (${r.first})`);
+  check(r.rows === 1, `V0.104 pin phone: the Pinned block has ${r.rows} marked rows`);
+  if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "pin-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+} catch (e) {
+  failures.push(`V0.104 pin phone: ${e.message}`);
+}
+await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+
 // SPEC 0.5 V0.30, V0.55: from the keyboard, the project chip opens the picker; ArrowDown reaches New project from this
 // thread, Enter opens the one step prefilled with the thread's folder, Enter makes the project and files the thread; p
 // and the arrows then unfile it with No project.

@@ -90,7 +90,7 @@ func threadText(evs []store.Event) string {
 func (e *Engine) threadTools(s *mcp.Server) {
 
 	s.Add(mcp.Tool{Name: "threads",
-		Description: "List the user's Fyr threads (other agent sessions): id, state, title, project, PR and age, newest first, at most 30. Use it to find related work before starting new work.",
+		Description: "List the user's Fyr threads (other agent sessions): id, pinned (the owner's pin), state, title, project, PR and age, newest first, at most 30. Use it to find related work before starting new work.",
 		Schema:      obj(map[string]any{"query": str("Filter on title, project or PR."), "state": str("Only this state: asking, failed, blocked, done, working, waiting, seen, snoozed, settled.")}),
 		Call: func(_ context.Context, self string, a map[string]any) (string, error) {
 			q := strings.ToLower(strings.TrimSpace(fmt.Sprint(orEmpty(a["query"]))))
@@ -105,7 +105,11 @@ func (e *Engine) threadTools(s *mcp.Server) {
 				if d.PR != nil {
 					pr = fmt.Sprintf(" · PR #%d %s", d.PR.Number, strings.ToLower(d.PR.State))
 				}
-				line := fmt.Sprintf("%s · %s · %s · %s%s · %s", d.ID, d.Attention.State, d.Title, d.Project, pr, age(d.UpdatedAt))
+				pin := "" // V0.104: the owner's pin; agents read it, never set it
+				if d.PinnedAt != nil {
+					pin = "pinned · "
+				}
+				line := fmt.Sprintf("%s · %s%s · %s · %s%s · %s", d.ID, pin, d.Attention.State, d.Title, d.Project, pr, age(d.UpdatedAt))
 				if q != "" && !strings.Contains(strings.ToLower(line), q) {
 					continue
 				}

@@ -52,9 +52,11 @@ func SettleWhenMerged(t *Thread, by string, now time.Time) bool {
 	return true
 }
 
-// settleNow settles the thread and clears every settle Rule.
+// settleNow settles the thread and clears every settle Rule and the pin
+// (V0.104).
 func settleNow(t *Thread, now time.Time) {
 	t.Settle.At = &now
+	t.PinnedAt = nil
 	DropSettleRules(t)
 }
 

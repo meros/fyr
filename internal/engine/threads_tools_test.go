@@ -46,6 +46,14 @@ func TestThreadsListAndRead(t *testing.T) {
 	if isErr || !strings.Contains(list, b) || !strings.Contains(list, "lasso work") || !strings.Contains(list, "done") {
 		t.Fatalf("%v %q", isErr, list)
 	}
+	// V0.104: the tool shows the owner's pin.
+	if r := h.cmd("thread.pin", b, nil); !r.OK {
+		t.Fatalf("pin: %+v", r)
+	}
+	list, _ = callAs(t, h.e, a, "threads", map[string]any{})
+	if !strings.Contains(list, b+" · pinned · ") || strings.Contains(list, a+" · pinned") {
+		t.Fatalf("the pin is not shown: %q", list)
+	}
 	only, _ := callAs(t, h.e, a, "threads", map[string]any{"query": "lasso"})
 	if strings.Contains(only, "hello from A") {
 		t.Fatalf("query did not filter: %q", only)
