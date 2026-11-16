@@ -75,7 +75,7 @@ const watchdog = setTimeout(() => {
   console.error("layout test: timed out");
   cleanup();
   process.exit(2);
-}, 150_000); // about 35 s on a quiet 8-core machine, about 60 s under a 6-core CPU load
+}, 420_000); // a hang guard, not a speed check: about 35 s on a quiet 8-core machine, 140 s and more at a load average of 80 (a deploy beside other sessions' test suites, 16 Nov)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let version;
@@ -1471,6 +1471,20 @@ try {
   check(Math.abs(g.headConvo) <= 0.5, `#64 desktop: a band between the header and the conversation (${JSON.stringify(g)})`);
 } catch (e) {
   failures.push(`#64 desktop: ${e.message}`);
+}
+
+// #72: without git the Changes tab has no Refresh and no empty diff section; the change cards keep the tab's height.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail&open=t_deploy&tab=changes`, "!!document.querySelector('.th .chtab .chg .chg-empty')");
+  const n = await evaluate(`(() => {
+    const tab = document.querySelector('.th .chtab'), chg = tab.querySelector('.chg'), chl = tab.querySelector('.chl');
+    return { refresh: !!tab.querySelector('.chg-ref'), chgH: chg.getBoundingClientRect().height, cap: chl ? getComputedStyle(chl).maxHeight : 'none', text: chg.textContent };
+  })()`);
+  check(!n.refresh && n.chgH <= 48 && n.cap === "none", `#72 desktop: the non-git Changes tab still draws its diff section (${JSON.stringify(n)})`);
+} catch (e) {
+  failures.push(`#72 desktop: ${e.message}`);
 }
 
 // V0.73 (2): on the desktop, the Changes tab of six cards over an empty diff, in a tall and a short window.
