@@ -42,8 +42,8 @@ func TestEnvPerAuth(t *testing.T) {
 }
 
 func TestArgs(t *testing.T) {
-	got := strings.Join(Args(cli.Launch{Model: "claude-opus-5-5", Effort: "high", Session: "s", Resume: true, MCPConfig: "{}", AllowedTools: []string{"mcp__fyr__*"}}), " ")
-	if got != "--model claude-opus-5-5 --effort high --resume s --permission-mode auto --mcp-config {} --allowedTools mcp__fyr__*" {
+	got := strings.Join(Args(cli.Launch{Model: "claude-opus-5-5", Effort: "high", Session: "s", Resume: true, MCPConfigFile: "/run/mcp.json", AllowedTools: []string{"mcp__fyr__*"}}), " ")
+	if got != "--model claude-opus-5-5 --effort high --resume s --permission-mode auto --mcp-config /run/mcp.json --allowedTools mcp__fyr__*" {
 		t.Fatal(got)
 	}
 	if strings.Contains(strings.Join(Args(cli.Launch{Session: "s"}), " "), "--effort") {

@@ -84,7 +84,7 @@ type Launch struct {
 	AddDirs        []string
 	PermissionMode string
 	SystemPrompt   string // appended
-	MCPConfig      string // JSON for Fyr's MCP server; "" for none
+	MCPConfigFile  string // a 0600 file with the JSON for Fyr's MCP server (V0.129); "" for none
 	AllowedTools   []string
 	Log            io.Writer
 	// Cgroup: the thread's cgroup directory (V0.80); "" is the daemon's.

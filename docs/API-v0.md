@@ -6,6 +6,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 
 - Every request must have a loopback `Host` (`127.0.0.1:*`, `localhost:*`, `[::1]:*`), else `403`.
 - `POST` requests must have the header `X-Fyr: 1`, else `403`.
+- `/mcp` uses its bearer token instead, and refuses any request that carries `Origin` with `403` (V0.129).
 
 ## `GET /api/state`
 

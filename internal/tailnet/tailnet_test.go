@@ -2,6 +2,7 @@ package tailnet
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -127,4 +128,26 @@ func sockPath(t *testing.T) string {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return filepath.Join(dir, "ts.sock")
+}
+
+// SPEC V0.129 (4), decision 0028 slice 0: a tagged node has no owner. Its
+// tailscaled names a user for it whose login is the node itself; Self must
+// not hand that out as the owner.
+func TestSelfOfATaggedNodeNamesNoOwner(t *testing.T) {
+	sock := sockPath(t)
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Self":{"UserID":7,"Tags":["tag:server"],"DNSName":"meros-server.tail.ts.net."},"User":{"7":{"LoginName":"meros-server"}}}`))
+	}))
+	login, _, err := Self(sock)
+	if err == nil || login != "" {
+		t.Fatalf("tagged node gave owner %q, err %v", login, err)
+	}
+	if !errors.Is(err, ErrTagged) {
+		t.Fatalf("want ErrTagged, got %v", err)
+	}
 }

@@ -34,6 +34,7 @@ import (
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/peers"
+	"github.com/meros/fyr/internal/pipe"
 	"github.com/meros/fyr/internal/preview"
 	"github.com/meros/fyr/internal/projicon"
 	"github.com/meros/fyr/internal/provider"
@@ -175,7 +176,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			return h.profiles()[0]
 		},
 		IdleStop: time.Duration(cfg.IdleStopMinutes) * time.Minute, MCPURL: "http://" + ln.Addr().String() + "/mcp",
-		LogDir: filepath.Join(data, "logs"), Attachments: att.Get, OnRateLimit: quotas.Observe, OnCommands: eng.SetCommands, HandoverDir: filepath.Join(data, "handover"),
+		LogDir: filepath.Join(data, "logs"), RunDir: filepath.Join(data, "run"), Attachments: att.Get, OnRateLimit: quotas.Observe, OnCommands: eng.SetCommands, HandoverDir: filepath.Join(data, "handover"),
 		Cgroups: tree, Runner: rn.client(),
 		// V0.115: the system agents run on this host, on the owner's setting.
 		HostName: hostName, ProfileExists: func(id string) bool { _, ok := h.profile(id); return ok }, SystemAgents: eng.SystemAgents,
@@ -376,9 +377,11 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	} else {
 		// both (V0.51): the front reaches this host over a loopback link,
 		// through the host protocol only; agents keep /mcp on the main port.
-		link := listenLoopback("127.0.0.1:0")
+		// V0.129 (3), decision 0028: in-process, so no loopback port is
+		// open for a local process to drive the host protocol through.
+		link := pipe.New()
 		serve(link, hostHandler)
-		hosts := append([]front.HostConfig{{Name: hostName, URL: "http://" + link.Addr().String()}}, cfg.Hosts...)
+		hosts := append([]front.HostConfig{{Name: hostName, URL: front.LocalURL, Dial: link.Dial}}, cfg.Hosts...)
 		// The front's device data (push keys and subscriptions) stays in
 		// this machine's database, where the host kept it before V0.54.
 		// V0.123 (decision 0025): other installs find this one by its
