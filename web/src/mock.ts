@@ -5,6 +5,7 @@ import type { Change, CommandReply, Decision, FsDir, FsListing, Project, QuietHo
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import type { Quota } from "./quota.ts";
+import type { HostLoad } from "./load.ts";
 import { mockPrDetail } from "./mock-pr.ts";
 import { quietList } from "./quiet.ts";
 import type { SlashCommand } from "./slash.ts";
@@ -1593,6 +1594,29 @@ export function mockQuota(now: number): Quota[] {
   return [
     { profile: "claude", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34, resetsAt: at(140) }, { name: "7 d", usedPct: 61, resetsAt: at(3 * 1440) }], updatedAt: at(-2) },
     { profile: "work", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 86, resetsAt: at(45) }, { name: "7 d", usedPct: 40, resetsAt: at(5 * 1440) }], updatedAt: at(-14), stale: true, error: "Rate limited by the provider; trying again later", retryAt: at(6) },
+  ];
+}
+
+/** SPEC 0.5 V0.80: a busy host: load past the cores, the agents at their cap; one thread in each fixture is hot
+ * (t_w2, t_mapperf), one calm, one without a second read yet. */
+export function mockLoad(): HostLoad[] {
+  return [
+    {
+      host: "laptop",
+      cores: 8,
+      load: [10.4, 7.9, 5.2],
+      cpuPressure: 46.3,
+      cgroups: true,
+      agents: { cpu: 3.96, cpuMax: 4, memory: 9.1e9, memoryMax: 14 * 2 ** 30 },
+      threads: [
+        { id: "t_w1", cpu: 0.4, memory: 6e8 },
+        { id: "t_w2", cpu: 2.7, memory: 3.2e9 },
+        { id: "t_w3", memory: 2e8 },
+        { id: "t_babysit", cpu: 0.3, memory: 5e8 },
+        { id: "t_mapperf", cpu: 2.6, memory: 3e9 },
+        { id: "t_search", cpu: 1.0, memory: 9e8 },
+      ],
+    },
   ];
 }
 

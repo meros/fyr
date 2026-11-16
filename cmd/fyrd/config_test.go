@@ -7,6 +7,22 @@ import (
 	"testing"
 )
 
+// SPEC 0.5 V0.80: the module's cgroups block, as nix/module.nix writes it;
+// a config without one has none (off).
+func TestV080ConfigCgroups(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.json")
+	os.WriteFile(p, []byte(`{"cgroups": {"enable": true, "serverMemoryLow": "1G", "agentsCpuMax": "400000 100000",
+	  "agentsMemoryHigh": "13G", "agentsMemoryMax": "14G", "agentsMemorySwapMax": "16G"}}`), 0o600)
+	c := loadConfig(p, filepath.Join(t.TempDir(), "none.json"))
+	if g := c.Cgroups; g == nil || !g.Enable || g.ServerMemoryLow != "1G" || g.AgentsCPUMax != "400000 100000" ||
+		g.AgentsMemoryHigh != "13G" || g.AgentsMemoryMax != "14G" || g.AgentsMemorySwapMax != "16G" {
+		t.Fatalf("%+v", c.Cgroups)
+	}
+	if c := loadConfig(filepath.Join(t.TempDir(), "none.json"), filepath.Join(t.TempDir(), "none.json")); c.Cgroups != nil {
+		t.Fatalf("%+v", c.Cgroups)
+	}
+}
+
 // SPEC 0.5 V0.44: the config's quota map, by profile id, wins over a
 // profile's own quota; a profile in neither keeps none.
 func TestConfigQuotaByProfile(t *testing.T) {

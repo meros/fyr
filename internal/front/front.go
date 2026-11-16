@@ -598,6 +598,7 @@ func (f *Front) Handler() http.Handler {
 	mux.HandleFunc("GET /api/previews/{id}", f.lookup)
 	mux.HandleFunc("GET /api/previews/{id}/{path...}", f.lookup)
 	mux.HandleFunc("GET /api/quota", f.quota)
+	mux.HandleFunc("GET /api/load", f.hostLoad)
 	mux.HandleFunc("GET /api/profiles", f.profiles)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		f.forward(w, r, f.byName(r.URL.Query().Get("host")))
@@ -923,6 +924,15 @@ func (f *Front) quota(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/quota", "profile"))
+}
+
+// hostLoad joins the load of every online host (V0.80), one entry per host.
+func (f *Front) hostLoad(w http.ResponseWriter, r *http.Request) {
+	if l := f.target(r); l != nil {
+		f.forward(w, r, l)
+		return
+	}
+	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/load", "host"))
 }
 
 // profiles asks each online host for its profiles (#42), merged by id with

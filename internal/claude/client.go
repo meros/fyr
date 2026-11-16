@@ -28,6 +28,9 @@ type Spec struct {
 	Dir    string
 	Env    []string  // added to os.Environ()
 	Log    io.Writer // optional raw protocol log
+	// Cgroup: the cgroup directory the process starts in (V0.80); "" is
+	// the daemon's.
+	Cgroup string
 }
 
 type Client struct {
@@ -63,6 +66,11 @@ func Start(s Spec) (*Client, error) {
 	cmd := exec.Command(s.Binary, append(base, s.Args...)...)
 	cmd.Dir = s.Dir
 	proc.Group(cmd) // Kill stops the CLI and what it started (#39)
+	closeCg, err := proc.IntoCgroup(cmd, s.Cgroup)
+	if err != nil {
+		return nil, fmt.Errorf("cgroup: %w", err)
+	}
+	defer closeCg()
 	cmd.Env = append(os.Environ(), "CLAUDE_CODE_ENTRYPOINT=sdk-go")
 	cmd.Env = append(cmd.Env, s.Env...)
 	tl := &tail{max: 4096}
