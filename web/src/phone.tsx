@@ -38,8 +38,11 @@ import { answerOf, goTo, pickStay, chooseOther, questionsOf, setOther, type Card
 import { ADVANCE_MS, activeSection, allowCommit, askCommit, stepLabel, stripCount, type Choice } from "./mobile.ts";
 import { LONG_PRESS_MS, idle, longPressCancelled, settleLabel, swipeAvail, swipeEnd, swipeMove, swipeOffset, swipeStart, type Swipe, type SwipeAvail } from "./gesture.ts";
 import type { Nav, Sheet } from "./nav.ts";
+import type { PageRef } from "./settings-nav.ts";
+import { useProvidersNeed } from "./settings-ui.tsx";
+import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
 import { liveLine } from "./tasks.ts";
-import { COLLAPSED_BY_DEFAULT, ProjectFilterRow, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
+import { COLLAPSED_BY_DEFAULT, ProjectFilterRow, SECTION_LIMIT, isOpen } from "./inbox.tsx";
 import { NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON } from "./row-ui.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
@@ -162,7 +165,7 @@ export interface PhoneList {
   setSelecting(b: boolean): void;
 }
 
-/** This device: push, install and theme. */
+/** This device: push and install (V0.119: the theme is in Settings → This device). */
 export interface PhoneDevice {
   push: PushStatus;
   pushReason: string | null;
@@ -170,8 +173,6 @@ export interface PhoneDevice {
   standalone: boolean;
   canInstall: boolean;
   onInstall(): void;
-  theme: Theme;
-  setTheme(t: Theme): void;
 }
 
 /** What the phone does differently from a plain thread command: U8 leaves the open thread after a settle or
@@ -208,10 +209,12 @@ export interface PhoneProps {
     delete(id: string): Promise<string | null>;
   };
   actions: PhoneActions;
-  /** V0.50: the Settings body (the app builds it with its Api) */
-  settings?: ComponentChildren;
+  /** V0.119: a Settings screen (the app builds it with its Api): the nav (null) or a page, under this header */
+  settings?(at: PageRef | null, header: (title: ComponentChildren, end?: ComponentChildren) => ComponentChildren): ComponentChildren;
   /** V0.42: the folder picker sheet, over everything */
   overlay?: ComponentChildren;
+  /** V0.118: the update status, the first line of the screen below the safe area, in the layout (never over a control) */
+  status?: ComponentChildren;
 }
 
 /** The host's name in the header (the mock says so). */
@@ -246,6 +249,7 @@ export function PhoneApp(p: PhoneProps) {
   const api = useApi(); // V0.98 (3): the board visit
   return (
     <div class={`m-app${bottomBar ? " has-bar" : ""}`}>
+      {p.status}
       {s.name === "inbox" && <MInbox {...p} />}
       {s.name === "search" && <MSearch {...p} />}
       {s.name === "thread" && p.open.thread && <MThread {...p} t={p.open.thread} tab={defaultTab(p.open.thread, s.tab)} />}
@@ -271,12 +275,7 @@ export function PhoneApp(p: PhoneProps) {
           </div>
         </div>
       )}
-      {s.name === "settings" && (
-        <div class="m-screen m-settings">
-          <MHeader onBack={p.nav.back} title="Settings" />
-          <div class="m-nbody">{p.settings}</div>
-        </div>
-      )}
+      {s.name === "settings" && <div class="m-screen m-settings">{p.settings?.(s.page ? { page: s.page, ...(s.sub ? { sub: s.sub } : {}) } : null, (title, end) => <MHeader onBack={p.nav.back} title={title} right={end} />)}</div>}
       {bottomBar && <MBottomBar {...p} />}
       <MToast {...p} bottomBar={bottomBar} />
       {p.nav.at.sheet && <MSheets {...p} sheet={p.nav.at.sheet} t={sheetThread} />}
@@ -400,7 +399,7 @@ function MInbox(p: PhoneProps) {
             pushReason={p.device.pushReason}
             showUnsupported={false}
             canInstall={p.device.canInstall}
-            onBell={() => p.nav.go({ ...p.nav.at, sheet: { kind: "push" } })}
+            onBell={() => p.nav.go({ screen: { name: "settings", page: "device" }, sheet: null })}
             onInstall={p.device.onInstall}
           />
           <button class="b44" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "menu" } })} aria-label="More">
@@ -433,7 +432,7 @@ function MInbox(p: PhoneProps) {
       {showIos && !p.list.selecting && (
         <div class="m-iosrow">
           <span class="ell">Add Fyr to the Home Screen to get notifications.</span>
-          <button class="m-tbtn" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "push" } })}>
+          <button class="m-tbtn" onClick={() => p.nav.go({ screen: { name: "settings", page: "device" }, sheet: null })}>
             How
           </button>
           <button class="b44" aria-label="Dismiss" onClick={() => (store(STORAGE_IOS, "1"), setIosDismissed(true))}>
@@ -1249,6 +1248,12 @@ function Item({ icon, label, sub, right, disabled, onClick }: { icon?: Component
   );
 }
 
+/** The More sheet's Settings row: what it holds, and at its right what needs the owner ("1 needs a login"). */
+function MSettingsItem({ onClick }: { onClick(): void }) {
+  const need = useProvidersNeed(useApi());
+  return <Item label="Settings" sub="Providers, automation, projects, this device" right={need || undefined} onClick={onClick} />;
+}
+
 function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   const close = p.nav.back;
   const { sheet, t } = p;
@@ -1261,18 +1266,16 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
     return <SnoozeSheet ids={ids} title={ids.length === 1 ? p.store.threads[ids[0]]?.title : undefined} onClose={close} onPick={(d) => (close(), void p.commands.run("thread.snooze", ids, { until: d.toISOString() }), p.list.setSelecting(false), p.list.setPicked(new Set()))} />;
   }
   if (sheet.kind === "menu") {
+    // V0.119: Notifications and Theme live in Settings → This device now (the owner's choice); Settings says what
+    // needs the owner, as the Providers badge does.
     return (
       <MSheet onClose={close} label="More">
         <Item label="Select threads" icon={<i class="m-ck" />} onClick={after(() => p.list.setSelecting(true))} />
         <Item label="Changes" sub="Every change across threads, by stage" right={needsCount(p.store.threads) ? `${needsCount(p.store.threads)} need you` : undefined} onClick={() => p.nav.replace({ screen: { name: "changes" }, sheet: null })} />
-        <Item label="Settings" sub="Providers, notifications, appearance" onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
+        <MSettingsItem onClick={() => p.nav.replace({ screen: { name: "settings" }, sheet: null })} />
         <Item label="Filter by project…" right={p.filter.id ? p.store.projects.find((x) => x.id === p.filter.id)?.name : "all"} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "filter" } })} />
         <Item label="Adopt from T3" onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "adopt" } })} />
-        <Item label="Notifications" right={p.device.push} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "push" } })} />
         <Item label="Show tool details" sub="Every tool group open, every machine line in full" right={toolDetails() ? "on" : "off"} onClick={after(() => setToolDetails(!toolDetails()))} />
-        {(["system", "light", "dark"] as Theme[]).map((th) => (
-          <Item label={`Theme: ${th === "system" ? "auto" : th}`} right={p.device.theme === th ? "✓" : ""} onClick={() => p.device.setTheme(th)} />
-        ))}
       </MSheet>
     );
   }
@@ -1505,13 +1508,19 @@ function MProjectChip({ t, projects, onClick }: { t: Thread; projects: Project[]
   );
 }
 
-/** The project screen (V0.55): name, folder, quiet hours, colour, icon and defaults. */
+/** The project screen (V0.55; V0.119: the same page as Settings → Projects → a project, titled with its name; Saved at
+ *  the right of the header, because the phone's header carries the title). */
 function MProject(p: PhoneProps & { id: string }) {
   const pr = p.store.projects.find((x) => x.id === p.id);
+  const sv = useSaved();
+  const offline = p.store.conn === "offline";
   return (
+    <SetContext.Provider value={{ readOnly: offline, phone: true, saved: sv.mark }}>
     <div class="m-screen m-project">
-      <MHeader onBack={p.nav.back} title="Project" />
+      <MHeader onBack={p.nav.back} title={pr?.name ?? "Project"} right={<SavedMark shown={sv.shown} />} />
+      {offline && <div class="m-ban">No connection to {p.store.host || "the host"}. Settings show what was last read and cannot be changed until it is back.</div>}
       <div class="m-nbody">
+        <div class={`set phone${offline ? " ro" : ""}`}>
         {pr ? (
           <ProjectEditor
             project={pr}
@@ -1528,7 +1537,9 @@ function MProject(p: PhoneProps & { id: string }) {
         ) : (
           <div class="m-empty">{p.store.projects.length ? "This project is not here anymore." : "Loading…"}</div>
         )}
+        </div>
       </div>
     </div>
+    </SetContext.Provider>
   );
 }

@@ -366,7 +366,9 @@ func TestDeployClientOnly(t *testing.T) {
 	d, h, steps := newDeployer(t, "")
 	dir, switched := clientOnlySetup(t, d)
 	var phases []string
+	var last Progress
 	d.OnProgress = func(p Progress) {
+		last = p
 		if len(phases) == 0 || phases[len(phases)-1] != p.Phase {
 			phases = append(phases, p.Phase)
 		}
@@ -387,6 +389,10 @@ func TestDeployClientOnly(t *testing.T) {
 	}
 	if err != nil || !strings.Contains(out, "nothing restarted") {
 		t.Fatalf("out %q err %v", out, err)
+	}
+	// SPEC 0.5 V0.118 (3): the client-only path marks its progress, so the page shows no banner for its done.
+	if last.Phase != "done" || !last.Client {
+		t.Fatalf("the client-only done is not marked client: %+v", last)
 	}
 	all := strings.Join(*steps, "\n")
 	if !strings.Contains(all, " build") || !strings.Contains(all, " test") {

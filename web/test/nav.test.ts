@@ -57,3 +57,34 @@ test("settings screen url", () => {
   assert.deepEqual(parseUrl("?settings"), n);
   assert.deepEqual(backTarget(n), INBOX);
 });
+
+// V0.119: Settings is a nav screen and a page screen per page and sub-page; Back goes one level up.
+test("settings pages to and from the URL", () => {
+  const nav = { screen: { name: "settings" as const }, sheet: null };
+  const prov = { screen: { name: "settings" as const, page: "providers" as const }, sheet: null };
+  const one = { screen: { name: "settings" as const, page: "providers" as const, sub: "work" }, sheet: null };
+  assert.equal(urlFor(nav, "?mock=rail"), "/?mock=rail&settings", "?settings alone is the nav");
+  assert.equal(urlFor(prov), "/?settings=providers");
+  assert.equal(urlFor(one), "/?settings=providers/work");
+  assert.equal(urlFor({ screen: { name: "settings", page: "providers", sub: "new" }, sheet: null }), "/?settings=providers/new");
+  assert.equal(urlFor({ screen: { name: "settings", page: "device" }, sheet: null }), "/?settings=device");
+  assert.deepEqual(parseUrl("?settings"), nav);
+  assert.deepEqual(parseUrl("?settings="), nav);
+  assert.deepEqual(parseUrl("?settings=providers"), prov);
+  assert.deepEqual(parseUrl("?settings=providers/work"), one);
+  assert.deepEqual(parseUrl("?settings=providers%2Fwork"), one);
+  assert.deepEqual(parseUrl("?mock=rail&settings=nonsense"), prov, "an unknown page falls back to providers");
+  assert.deepEqual(parseUrl("?project=p_fyr"), { screen: { name: "project", id: "p_fyr" }, sheet: null }, "?project= is unchanged");
+  assert.equal(urlFor({ screen: { name: "project", id: "p_fyr" }, sheet: null }), "/?project=p_fyr");
+});
+
+test("a deep link into settings builds every level under it, so Back goes one level up", () => {
+  const e = initialEntries("?settings=providers/work");
+  assert.deepEqual(
+    e.map((n) => n.screen),
+    [{ name: "inbox" }, { name: "settings" }, { name: "settings", page: "providers" }, { name: "settings", page: "providers", sub: "work" }],
+  );
+  assert.deepEqual(backTarget({ screen: { name: "settings", page: "providers", sub: "work" }, sheet: null }), { screen: { name: "settings", page: "providers" }, sheet: null });
+  assert.deepEqual(backTarget({ screen: { name: "settings", page: "device" }, sheet: null }), { screen: { name: "settings" }, sheet: null });
+  assert.deepEqual(backTarget({ screen: { name: "settings" }, sheet: null }), INBOX);
+});

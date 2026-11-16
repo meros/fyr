@@ -1,6 +1,7 @@
 // Projects (SPEC 0.5 V0.23): palette, icons, ordering, filtering; and started-by labels (V0.22). Pure.
 
-import type { NewProjectDraft, Profile, Project, ProjectIconSpec, SetupField, Thread } from "./types.ts";
+import type { NewProjectDraft, Profile, Project, ProjectIconSpec, QuietHours, SetupField, Thread } from "./types.ts";
+import { cleanWindow } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 
 /** Ten hues tuned to the Rail tokens, light and dark. Never amber: the beam marks only what needs the user. */
@@ -258,4 +259,54 @@ export function iconFileError(f: { type: string; size: number }): string | null 
   if (!/^image\/(png|jpeg|gif)$/.test(f.type)) return "Choose a PNG, JPEG or GIF image.";
   if (f.size > ICON_MAX_BYTES) return "The image is over 2 MB.";
   return null;
+}
+
+// ---- V0.119: Settings → Projects and the project page ----
+
+/** The fields of project.update the project page saves, one at a time. */
+export interface ProjectFields {
+  name: string;
+  color: string;
+  icon: { kind: string; value: string };
+  profile: string;
+  model: string;
+  quiet: QuietHours[];
+}
+export type ProjectFieldPatch = { name?: string; color?: string; icon?: { kind: string; value: string }; profile?: string; model?: string; quiet?: QuietHours[] | null };
+
+/** project.update's args for one field, and only that field, so an untouched field never becomes the owner's
+ *  (V0.116 (2)). A new provider clears the model; no quiet windows turns quiet hours off. */
+export function patchFor<K extends keyof ProjectFields>(field: K, value: ProjectFields[K]): ProjectFieldPatch {
+  switch (field) {
+    case "name":
+      return { name: (value as string).trim() };
+    case "profile":
+      return { profile: value as string, model: "" };
+    case "quiet": {
+      const q = value as QuietHours[];
+      return { quiet: q.length ? q.map(cleanWindow) : null };
+    }
+  }
+  return { [field]: value } as ProjectFieldPatch;
+}
+
+/** The name field's refusal, shown on its row. */
+export function nameError(name: string): string | null {
+  return name.trim() ? null : "A project needs a name.";
+}
+
+/** Settings → Projects: the saved projects by name (V0.58). */
+export function settingsProjects(projects: Project[]): Project[] {
+  return projects.filter((p) => p.id).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The search over Settings → Projects: the name or the folder. */
+export function searchProjects(projects: Project[], q: string): Project[] {
+  const s = q.trim().toLowerCase();
+  if (!s) return projects;
+  return projects.filter((p) => p.name.toLowerCase().includes(s) || (p.folder ?? "").toLowerCase().includes(s));
+}
+
+export function projectSearchLine(n: number, total: number): string {
+  return `${n ? n : "None"} of ${total} match.`;
 }

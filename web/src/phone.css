@@ -293,15 +293,6 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-fline{justify-content:space-between;font:400 15px/20px var(--mono)}
 .m-fchg{flex:none;height:44px;margin-right:-8px;padding:0 8px;font:500 15px/20px var(--ui);color:var(--harbour)}
 .m-fhint{font:400 13px/18px var(--ui);color:var(--ink-muted);padding:0 4px}
-.m-app .sw{width:40px;height:40px;border-radius:20px}
-.m-app .seg button{height:44px}
-.m-app .qtog{min-height:44px;font-size:16px}
-.m-app .fld .qtog input{width:22px;height:22px}
-.m-app .fld .qtime select{height:44px;font-size:16px;padding:0 8px}
-.m-app .qrm{width:44px;height:44px;margin-right:-6px;font-size:22px}
-.m-app .qadd .btn{height:44px;padding:0 14px;font-size:15px}
-.m-app .ig{height:44px}
-.m-app .igrid{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
 .m-app .addsrc input{height:44px;font-size:16px}
 .m-app .src-x{width:44px;height:44px;margin-right:-8px}
 .m-app .fromthread{max-width:85%}
@@ -383,8 +374,7 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 /* SPEC 0.5 V0.44: quota lines on the new-thread screen, 44 px targets. */
 .m-new .qlist .qsum{min-height:44px;font-size:13px}
 /* SPEC 0.5 V0.50: Settings screen; the last row clears the home indicator */
-.m-settings .m-nbody{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
-.set.phone .qsum{min-height:44px;width:100%;text-align:left}
+.m-settings .m-nbody,.m-project .m-nbody{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
 /* V0.54: an offline host's thread says so under the header chips; rows name the host with more than one */
 .m-offl{margin:0 16px 8px;padding:8px 12px;border-radius:8px;background:var(--sunken);color:var(--ink-muted);font:500 13px/18px var(--ui);overflow-wrap:anywhere}
 .m-off{color:var(--ink-muted);font-weight:600}
@@ -404,5 +394,3 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-app .chend{min-height:44px}
 .m-app .chpark,.m-app .chundo{min-height:44px;min-width:44px}
 .cfm-f{display:flex;gap:8px;padding:8px 16px 0;flex:none}.cfm-f .m-bt{flex:1}
-/* V0.116: the image buttons of the project screen are 44 px high on the phone (touch size); 30 px on the desktop. */
-.m-nbody .pimg .btn{height:44px;padding:0 14px}

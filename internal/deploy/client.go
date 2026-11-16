@@ -107,6 +107,7 @@ func (d *Deployer) deployClient(ctx context.Context, run Runner, prog *Progress,
 	}
 	d.cancel = nil // past this point the switch happens; nothing cancels it
 	d.mu.Unlock()
+	prog.Client = true // V0.118 (3)
 	d.report(prog, "client", "", nil)
 	build, err := d.switchClient(context.WithoutCancel(ctx), run, dir, out, id)
 	if err != nil {

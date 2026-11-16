@@ -113,6 +113,8 @@ type Progress struct {
 	Build     string    `json:"build,omitempty"`
 	StartedAt time.Time `json:"startedAt"`
 	At        time.Time `json:"at"`
+	// Client marks the client-only path (V0.81), so the page shows nothing beyond its reload (V0.118 (3)).
+	Client bool `json:"client,omitempty"`
 }
 
 func (d *Deployer) report(p *Progress, phase, detail string, blocking []string) {
