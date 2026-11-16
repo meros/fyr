@@ -477,6 +477,7 @@ type GitFacts struct {
 	Unpushed int // commits not on the upstream; all when there is none
 	Dirty    int // changed and untracked files
 	Head     string
+	Default  string // the default branch, from origin/HEAD, or "" (V0.95 (4))
 }
 
 // ChangeBlocking is why a change of the thread needs the owner (V0.59 (6)),
