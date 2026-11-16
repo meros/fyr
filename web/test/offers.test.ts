@@ -21,7 +21,8 @@ test("an ended change has no rail, only its end word; the header drops the chip 
   assert.equal(headerPr({ pr, changes: [change({ key: "pr:acme/app#88", phase: "abandoned", phaseBy: "observed" })] }), null);
   assert.equal(headerPr({ pr: { ...pr, state: "OPEN" }, changes: [change({ key: "x", evidence: [{ kind: "pr", url: pr.url }], phase: "abandoned", phaseBy: "owner" })] }), null);
   assert.equal(headerPr({ pr: { ...pr, state: "OPEN" }, changes: [change({ key: "pr:acme/app#88", phase: "review" })] })?.number, 88);
-  assert.equal(headerPr({ pr: { ...pr, state: "MERGED" }, changes: [change({ key: "pr:acme/app#88", phase: "reverted" })] })?.number, 88);
+  // SPEC V0.98 (6): a reverted change is done; the header never shows a done change's PR.
+  assert.equal(headerPr({ pr: { ...pr, state: "MERGED" }, changes: [change({ key: "pr:acme/app#88", phase: "reverted" })] }), null);
   assert.equal(headerPr({ pr: null, changes: [] }), null);
 });
 

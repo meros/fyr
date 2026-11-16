@@ -295,7 +295,7 @@ function fullFixture(now: number): Fixture {
     const at = (min: number) => iso(now - min * 60_000);
     const deploy = (n: number, title: string, rev: string, summary: string): Change => ({
       id: `c_dep${n}`, key: `host:fyr deploy ${n}`, kind: "host", title, targets: ["host:fyr"], phase: "abandoned", phaseBy: "owner",
-      revisions: [{ id: rev, summary, by: "agent", at: at(60 * n) }], createdAt: at(60 * n + 5), updatedAt: at(60 * n),
+      revisions: [{ id: rev, summary, by: "agent", at: at(60 * n) }], createdAt: at(60 * n + 5), updatedAt: at(60 * n), done: { at: at(60 * n), by: "owner", reason: "abandoned" },
     });
     add(
       base("t_ended", "Fyr: review, plan and Solid core", now, 3, {
@@ -312,7 +312,7 @@ function fullFixture(now: number): Fixture {
           deploy(4, "Deploy Solid core part 1 (main f8f97d8) plus a test fix", "a9a8ec0", "f8f97d8 plus a test fix: TestMergeOneGuard failed the deploy's make test under load"),
           {
             id: "c_app88", key: "pr:acme/app#88", kind: "code", title: "acme/app#88", targets: ["repo:github.com/acme/app"], phase: "abandoned", phaseBy: "observed", label: "the PR does not exist on GitHub",
-            evidence: [{ kind: "pr", url: "https://github.com/acme/app/pull/88", title: "#88" }], createdAt: at(400), updatedAt: at(300),
+            evidence: [{ kind: "pr", url: "https://github.com/acme/app/pull/88", title: "#88" }], createdAt: at(400), updatedAt: at(300), done: { at: at(300), by: "observed", reason: "abandoned" },
           },
           {
             id: "c_v073", key: "branch:v073-live-upkeep", kind: "code", title: "A live change needs no upkeep (V0.73)", branch: "v073-live-upkeep", phase: "working", phaseBy: "agent",
@@ -519,7 +519,7 @@ function fullFixture(now: number): Fixture {
           { kind: "pr", url: "https://github.com/acme/web/pull/4100", title: "#4100" },
           { kind: "deployment", url: "https://example.com", title: "production" },
         ],
-        createdAt: iso(600), updatedAt: iso(180),
+        createdAt: iso(600), updatedAt: iso(180), done: { at: iso(180), by: "observed", reason: "live" }, // V0.98
       },
       // V0.97: a green PR the host reads as ready to merge; its Merge names the head, and Merge all green takes it.
       {
@@ -1313,6 +1313,15 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         const phase = args.phase === "reverted" ? "reverted" : "abandoned";
         const label = String(args.reason ?? "").trim() || undefined;
         put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, phase, phaseBy: "owner" as const, label, offers: [], updatedAt: new Date(clock()).toISOString() } : x)) });
+        break;
+      }
+      case "change.done": {
+        // V0.98 (4): the owner's Done; the change leaves the board.
+        const c = (t.changes ?? []).find((x) => x.id === args.change || x.key === args.change);
+        if (!c) return { ok: false, error: `no change ${String(args.change)}` };
+        if (c.done) return { ok: false, error: `"${c.title}" is already done` };
+        const at = new Date(clock()).toISOString();
+        put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, done: { at, by: "owner" as const, reason: "done" }, updatedAt: at } : x)) });
         break;
       }
       case "change.park":
