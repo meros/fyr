@@ -290,7 +290,7 @@ func (e *Engine) prMerged(rec *core.Change) bool {
 	repo := core.RecordRepo(rec)
 	for _, t := range e.threads {
 		for _, c := range t.Changes {
-			if c.PR == nil || c.PR.State != "MERGED" {
+			if !core.MergedPRCovers(c.PR, rec) {
 				continue
 			}
 			if c.Observed == rec.ID || (c.Branch != "" && c.Branch == rec.Branch && repo == "github.com/"+c.PR.Repo) {
