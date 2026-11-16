@@ -81,6 +81,10 @@ type Detail struct {
 	Threads        []ReviewThread `json:"threads"`
 	ThreadsError   string         `json:"threadsError,omitempty"`
 	FetchedAt      time.Time      `json:"fetchedAt"`
+
+	// Checked is the checks summed up (Summarize, V0.112): pending also
+	// when no check has reported yet on a repo with CI.
+	Checked core.Checks `json:"checked"`
 }
 
 const viewFields = "number,url,title,body,state,isDraft,author,headRefName,baseRefName,headRefOid,additions,deletions,changedFiles,labels,mergeable,mergeStateStatus,reviewDecision,latestReviews,statusCheckRollup"
@@ -103,6 +107,12 @@ func ts(t time.Time) *time.Time {
 	}
 	return &t
 }
+
+// The states CheckState gives a check.
+const (
+	checkFail    string = "fail"
+	checkRunning string = "running"
+)
 
 // CheckState reads a CheckRun (status, conclusion) or a commit status (state)
 // as fail, running, pass or skipped.
@@ -199,6 +209,14 @@ func FetchDetail(ctx context.Context, gh Runner, url string) (Detail, error) {
 		}
 		ck.State = CheckState(c.Typename, c.Status, c.Conclusion, c.State)
 		d.Checks = append(d.Checks, ck)
+	}
+	d.Checked = core.ChecksNone
+	if d.State == "OPEN" || len(d.Checks) > 0 {
+		states := make([]string, len(d.Checks))
+		for i, c := range d.Checks {
+			states[i] = c.State
+		}
+		d.Checked, _ = Summarize(ctx, gh, repo, states)
 	}
 	return d, nil
 }
@@ -316,18 +334,30 @@ func MergeBlock(d Detail) string {
 		return "Conflicts with " + base
 	case d.MergeState == "BEHIND":
 		return "Behind " + base + ": update the branch first"
-	case d.MergeState == "BLOCKED":
-		fails := 0
-		for _, c := range d.Checks {
-			if c.State == "fail" {
-				fails++
-			}
+	}
+	fails := 0
+	for _, c := range d.Checks {
+		if c.State == "fail" {
+			fails++
 		}
+	}
+	switch {
+	case d.MergeState == "BLOCKED" && fails == 1:
+		return "Blocked: 1 failing check"
+	case d.MergeState == "BLOCKED" && fails > 1:
+		return fmt.Sprintf("Blocked: %d failing checks", fails)
+	case d.Checked == core.ChecksPending || (d.Checked == "" && len(d.Checks) == 0):
+		// V0.112: a merge waits for CI; no check reported is not green
+		// (a detail that was not summed up, with no checks, neither).
+		return waitCI(d)
+	}
+	for _, c := range d.Checks { // a detail that was not summed up
+		if c.State == checkRunning {
+			return waitCI(d)
+		}
+	}
+	if d.MergeState == "BLOCKED" {
 		switch {
-		case fails == 1:
-			return "Blocked: 1 failing check"
-		case fails > 1:
-			return fmt.Sprintf("Blocked: %d failing checks", fails)
 		case d.ReviewDecision == "REVIEW_REQUIRED":
 			return "Review required"
 		case d.ReviewDecision == "CHANGES_REQUESTED":
@@ -336,6 +366,18 @@ func MergeBlock(d Detail) string {
 		return "Blocked by branch rules"
 	}
 	return ""
+}
+
+// waitCI is MergeBlock's refusal while CI has not passed (V0.112).
+func waitCI(d Detail) string {
+	on := "the head"
+	if len(d.HeadSha) >= 7 {
+		on = d.HeadSha[:7]
+	}
+	if len(d.Checks) == 0 {
+		return "No check has reported on " + on + " yet: Merge waits for CI"
+	}
+	return "CI has not passed on " + on + " yet: Merge waits for the checks"
 }
 
 var methods = map[string]bool{"squash": true, "merge": true, "rebase": true}

@@ -43,6 +43,9 @@ type Need struct {
 	Action string `json:"action,omitempty"`
 	// Muted: shown on the card, not in Needs you (CauseFixing).
 	Muted bool `json:"muted,omitempty"`
+	// Wait is why the ask's yes cannot run yet (V0.112: a merge on
+	// pending checks); the card shows it and its yes is disabled.
+	Wait string `json:"wait,omitempty"`
 }
 
 // ChangeNeed is why c, a change t shows, waits on the owner, or nil. A
@@ -60,7 +63,11 @@ func ChangeNeed(t *Thread, c *Change) *Need {
 			if text == "" {
 				text = askWord(d.Effect.Action)
 			}
-			return &Need{Cause: CauseAsk, Ask: d.ID, Action: d.Effect.Action, Head: head, Text: text}
+			n := &Need{Cause: CauseAsk, Ask: d.ID, Action: d.Effect.Action, Head: head, Text: text}
+			if fx := FyrEffects[d.Effect.Action]; fx != nil && fx.Gate != nil {
+				n.Wait = fx.Gate(t, d.Effect.Args)
+			}
+			return n
 		}
 	}
 	running := t.Running || t.RunningTasks() > 0
