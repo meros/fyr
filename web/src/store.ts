@@ -25,6 +25,8 @@ export interface Store {
   clockOffset: number;
   user: string;
   host: string;
+  /** V0.125: this install's id (the state's hostId, V0.124), for Settings → Hosts when the front lists no hosts */
+  hostId: string;
   /** V0.51 */
   hosts: HostInfo[];
   threads: Record<string, Thread>;
@@ -50,6 +52,7 @@ export function initialStore(): Store {
     clockOffset: 0,
     user: "",
     host: "",
+    hostId: "",
     hosts: [],
     threads: {},
     actions: [],
@@ -101,6 +104,7 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     clockOffset: ts(dto.now) ? ts(dto.now) - clientNow : s.clockOffset,
     user: dto.user ?? "",
     host: dto.host ?? "",
+    hostId: typeof dto.hostId === "string" ? dto.hostId : "",
     hosts: dto.hosts ?? [],
     threads,
     actions: dto.actions ?? [],
@@ -113,7 +117,7 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
 
 /** The state as the device stores it (V0.38); applySnapshot reads it back on an offline start. */
 export function stateForCache(s: Store, now: string): StateDTO {
-  return { now, user: s.user, host: s.host, hosts: s.hosts, deploy: s.deploy, threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: s.projects, ...(s.projectOrder ? { projectOrder: s.projectOrder } : {}) };
+  return { now, user: s.user, host: s.host, ...(s.hostId ? { hostId: s.hostId } : {}), hosts: s.hosts, deploy: s.deploy, threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: s.projects, ...(s.projectOrder ? { projectOrder: s.projectOrder } : {}) };
 }
 
 export function upsertThread(s: Store, raw: ThreadDTO): Store {
