@@ -7,7 +7,7 @@ import { LoadRail } from "./load-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { DESKTOP_LOOK, NeedsRowBody, OneRowBody } from "./row-ui.tsx";
-import { colorVar, pickerOrder } from "./projects.ts";
+import { colorVar } from "./projects.ts";
 import { SECTIONS, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
 import { BrandMark, StateIcon } from "./icons.tsx";
 import { count, untilLabel } from "./format.ts";
@@ -257,7 +257,8 @@ export function Inbox(p: InboxProps) {
 /** Desktop and phone (V0.100): a compact row of projects under the search field; one click filters, the × clears.
  *  V0.114: picking a quiet project shows the gate under the row, not its threads, until the 30 s hold. */
 export function ProjectFilterRow({ projects, selected, onPick, now, unlock }: { projects: Project[]; selected: string | null; onPick(id: string | null): void; now: number; unlock: QuietUnlock }) {
-  const list = pickerOrder(projects).filter((p) => (p.threads ?? 0) > 0 || p.id === selected);
+  // V0.121: in the owner's order (the store keeps it), on the desktop and the phone alike.
+  const list = projects.filter((p) => (p.threads ?? 0) > 0 || p.id === selected);
   if (!list.length) return null;
   const picked = projects.find((p) => p.id === selected);
   return (

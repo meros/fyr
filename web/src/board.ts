@@ -153,14 +153,14 @@ export function needsCount(threads: Record<string, Thread>): number {
   return once(items).length;
 }
 
-/** The projects that have changes, for the filter chips. */
+/** The projects that have changes, for the filter chips, in the owner's order (V0.121). */
 export function boardProjects(threads: Record<string, Thread>, projects: Project[]): Project[] {
   const ids = new Set<string>();
   for (const t of Object.values(threads)) if (!t.archivedAt && t.changes.length) {
     const p = projectOf(t, projects);
     if (p?.id) ids.add(p.id);
   }
-  return projects.filter((p) => p.id && ids.has(p.id)).sort((a, b) => a.name.localeCompare(b.name));
+  return projects.filter((p) => p.id && ids.has(p.id));
 }
 
 /** V0.97: one merge of Merge all green: the press of a change's Merge, bound to the head the board showed. */

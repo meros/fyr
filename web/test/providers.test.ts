@@ -41,7 +41,7 @@ test("the Add provider form", () => {
   assert.deepEqual(createArgs({ ...EMPTY_FORM, name: "Work", configDir: "~/.claude-work" }), { args: { kind: "claude-account", name: "Work", configDir: "~/.claude-work" } });
   const ep = { ...EMPTY_FORM, kind: "endpoint" as const, name: "Router" };
   assert.deepEqual(createArgs(ep), { error: "The base URL starts with https://" });
-  assert.deepEqual(createArgs({ ...ep, baseURL: "https://openrouter.ai/api" }), { error: "Add at least one model id" });
+  assert.deepEqual(createArgs({ ...ep, baseURL: "https://openrouter.ai/api" }), { args: { kind: "endpoint", name: "Router", baseURL: "https://openrouter.ai/api" } }, "V0.120: model ids are optional; Fyr asks the endpoint");
   assert.deepEqual(createArgs({ ...ep, baseURL: "https://openrouter.ai/api", models: "z-ai/glm", key: " sk " }), {
     args: { kind: "endpoint", name: "Router", baseURL: "https://openrouter.ai/api", models: ["z-ai/glm"], key: "sk" },
   });
@@ -110,4 +110,94 @@ test("modelsAfter: add, remove, move, star", () => {
   assert.deepEqual(modelsAfter(ms, "a", { move: [2, 0] }), { models: ["c", "a", "b"] });
   assert.deepEqual(modelsAfter(ms, "a", { star: "c" }), { models: ms, defaultModel: "c" });
   assert.deepEqual(modelsAfter(ms, "a", { star: "zz" }), { error: "zz is not in the list." });
+});
+
+// ---- V0.120: the model chooser ----
+import { checkErrorLine, checkLine, modelParts, needsCheck, newCount, offLimit, projectModelOff, withCurrent } from "../src/providers.ts";
+import type { ProviderDTO } from "../src/providers.ts";
+
+const T = Date.parse("2026-11-16T12:00:00Z");
+const dto = (o: Partial<ProviderDTO> = {}): ProviderDTO => ({
+  id: "claude", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", efforts: [], quota: "anthropic-oauth", status: "ready", keySet: false, threads: 0,
+  models: [{ id: "claude-opus-5-5", name: "Opus 5.5" }, { id: "claude-sonnet-5-5", name: "Sonnet 5.5" }, { id: "claude-opus-5-4", name: "Opus 5.4" }],
+  defaultModel: "claude-opus-5-5",
+  catalog: [
+    { id: "claude-opus-5-5", name: "Opus 5.5", firstSeen: "2026-11-01T00:00:00Z" },
+    { id: "claude-sonnet-5-5", name: "Sonnet 5.5", firstSeen: "2026-11-01T00:00:00Z" },
+    { id: "claude-opus-5-4", name: "Opus 5.4", firstSeen: "2026-11-01T00:00:00Z", gone: true },
+    { id: "claude-sonnet-5-4", name: "Sonnet 5.4", firstSeen: "2026-11-01T00:00:00Z" },
+    { id: "claude-fable-5-2", name: "Fable 5.2", firstSeen: "2026-11-15T00:00:00Z", new: true },
+    { id: "my-tune", firstSeen: "2026-11-15T00:00:00Z", manual: true },
+  ],
+  checkedAt: "2026-11-16T11:48:00Z",
+  ...o,
+});
+
+test("V0.120 (4): the two parts from a DTO: On in the owner's order with ★ and marks, Off by name", () => {
+  const m = modelParts(dto());
+  assert.deepEqual(m.on.map((x) => x.id), ["claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-5-4"]);
+  assert.ok(m.on[0].star && !m.on[1].star);
+  assert.ok(m.on[2].gone);
+  assert.deepEqual(m.off.map((x) => x.id), ["claude-fable-5-2", "my-tune", "claude-sonnet-5-4"], "by name: Fable, my-tune, Sonnet");
+  assert.ok(m.off[0].isNew && m.off[1].manual);
+  assert.equal(m.total, 6);
+  // A provider never checked: the stored list is on, nothing is off.
+  const old = modelParts(dto({ catalog: [], checkedAt: undefined }));
+  assert.equal(old.on.length, 3);
+  assert.equal(old.off.length, 0);
+});
+
+test("V0.120 (4): search filters both parts by name and id", () => {
+  const m = modelParts(dto(), "SONNET");
+  assert.deepEqual(m.on.map((x) => x.id), ["claude-sonnet-5-5"]);
+  assert.deepEqual(m.off.map((x) => x.id), ["claude-sonnet-5-4"]);
+  assert.equal(m.matched, 2);
+  assert.equal(modelParts(dto(), "tune").matched, 1);
+  assert.equal(offLimit(false), 8);
+  assert.equal(offLimit(true), 3);
+});
+
+test("V0.120 (1): the header line per state", () => {
+  assert.equal(checkLine(dto(), T), "Checked 12 min ago");
+  assert.equal(checkLine(dto({ checkedAt: "2026-11-16T11:59:40Z" }), T), "Checked just now");
+  assert.equal(checkLine(dto({ checking: true }), T), "Checking…");
+  assert.equal(checkLine(dto({ status: "needs-login" }), T), "Not checked: needs a login");
+  assert.equal(checkLine(dto({ status: "needs-key" }), T), "Not checked: needs a key");
+  assert.equal(checkLine(dto({ checkedAt: undefined }), T), "Not checked yet");
+  const y = new Date(T - 24 * 3600_000);
+  y.setHours(14, 2, 0, 0);
+  assert.equal(checkLine(dto({ checkedAt: y.toISOString(), checkError: "x" }), T), "Last checked yesterday 14:02");
+  assert.equal(checkErrorLine(dto({ checkedAt: y.toISOString(), checkError: "api.deepseek.com/v1/models answered 401" }), T), "Could not list the models: api.deepseek.com/v1/models answered 401. The list below is the one from yesterday; it still works.");
+  assert.equal(checkErrorLine(dto({ checkedAt: undefined, checkError: "no answer in 15s" }), T), "Could not list the models: no answer in 15s.");
+  assert.equal(checkErrorLine(dto(), T), null);
+  // The page checks on open when the last check is over 10 minutes old; never for one that needs a login.
+  assert.equal(needsCheck(dto(), T), true);
+  assert.equal(needsCheck(dto({ checkedAt: "2026-11-16T11:55:00Z" }), T), false);
+  assert.equal(needsCheck(dto({ status: "needs-key" }), T), false);
+  assert.equal(needsCheck(dto({ checking: true }), T), false);
+});
+
+test("V0.120 (2): turning models on and off; the default stays on; a hand id can be forgotten when off", () => {
+  const ms = ["a", "b"];
+  assert.deepEqual(modelsAfter(ms, "a", { on: "c" }), { models: ["a", "b", "c"] }, "on goes to the end of On");
+  assert.deepEqual(modelsAfter(ms, "a", { off: "b" }), { models: ["a"] });
+  assert.deepEqual(modelsAfter(ms, "a", { off: "a" }), { error: "Star another model first." });
+  assert.deepEqual(modelsAfter(ms, "a", { forget: "x" }), { forget: ["x"] });
+  assert.deepEqual(modelsAfter(ms, "a", { forget: "b" }), { error: "Turn it off first." });
+});
+
+test("V0.120 (4): the Providers row adds the New count", () => {
+  assert.equal(newCount(dto()), 1);
+  assert.equal(listLine(dto()), "Claude account · ~/.claude · 3 models · 1 new");
+});
+
+test("V0.120 (5): a model in use that is off shows as (off) in its picker, and nowhere else", () => {
+  const opts = [{ value: "", label: "Default" }, { value: "claude-opus-5-5", label: "opus 5.5" }];
+  assert.deepEqual(withCurrent(opts, "claude-opus-5-4"), [...opts, { value: "claude-opus-5-4", label: "opus 5.4 (off)" }]);
+  assert.equal(withCurrent(opts, "claude-opus-5-5"), opts);
+  assert.equal(withCurrent(opts, ""), opts);
+  const claude = { id: "claude", name: "Claude", color: "", models: ["claude-opus-5-5"] } as Profile;
+  assert.equal(projectModelOff({ name: "x", profile: "claude", model: "claude-opus-5-4" }, [claude]), "opus 5.4 is turned off in Claude. New threads here start on Claude's default until you pick another.");
+  assert.equal(projectModelOff({ name: "x", profile: "claude", model: "claude-opus-5-5" }, [claude]), null);
+  assert.equal(projectModelOff({ name: "x", profile: "gone", model: "m" }, [claude]), null);
 });

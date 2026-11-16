@@ -70,6 +70,7 @@ export function decodeState(raw: unknown): DecodedState {
     actions: arr(s.actions),
     profiles: arr(s.profiles),
     hosts: decodeHosts(s.hosts),
+    projectOrder: Array.isArray(s.projectOrder) ? s.projectOrder.filter((x): x is string => typeof x === "string") : undefined,
     deploy: s.deploy && typeof s.deploy === "object" && typeof (s.deploy as { phase?: unknown }).phase === "string" ? s.deploy : null,
   };
 }

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PALETTE, moveToast, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, paletteColor, pickerOrder, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
+import { PALETTE, moveToast, PALETTE_NAMES, colorName, filterByProject, lineName, matchProjects, messageFrom, monogram, orderProjects, paletteColor, projectDefaults, projectName, projectOf, projectSubtitle, resolveIcon, startedBy } from "../src/projects.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 import { applySnapshot, initialStore, upsertProject } from "../src/store.ts";
@@ -73,8 +73,8 @@ const projects: Project[] = [
   { id: "p_old", name: "archive" },
 ];
 
-test("picker order, subtitles and search", () => {
-  assert.deepEqual(pickerOrder(projects).map((p) => p.id), ["p_web", "p_home", "p_fyr", "p_old"]);
+test("subtitles, and search that filters without reordering (V0.121: amends V0.30's order by last use)", () => {
+  assert.deepEqual(matchProjects(projects, "").map((p) => p.id), ["p_web", "p_fyr", "p_home", "p_old"], "the order given, not by last use");
   assert.equal(projectSubtitle(projects[0]), "~/src/web");
   assert.equal(projectSubtitle({ name: "x", folder: "/home/owner/src/x" }), "~/src/x");
   assert.equal(projectSubtitle(projects[1]), "~/git/fyr");
@@ -153,7 +153,7 @@ test("SPEC 0.5 V0.61: Enter picks an existing project only by its exact name; el
   assert.equal(enter("   "), null);
 });
 
-test("SPEC 0.5 V0.30: a new thread starts on the inbox filter, else the last project used, else the most recent", async () => {
+test("SPEC 0.5 V0.30, V0.121: a new thread starts on the inbox filter, else the last project used, else the first in the owner's order", async () => {
   const { startProject } = await import("../src/projects.ts");
   const ps = [
     { id: "a", name: "A", lastUsed: "2026-11-10T00:00:00Z" },
@@ -161,7 +161,7 @@ test("SPEC 0.5 V0.30: a new thread starts on the inbox filter, else the last pro
   ] as Project[];
   assert.equal(startProject(ps, "a", "b"), "a");
   assert.equal(startProject(ps, null, "a"), "a");
-  assert.equal(startProject(ps, "gone", "gone"), "b");
+  assert.equal(startProject(ps, "gone", "gone"), "a", "the first in the order given");
   assert.equal(startProject([], null, null), undefined);
 });
 
@@ -179,11 +179,12 @@ test("projects keep the copy with the higher rev", () => {
   const frame = { id: "p1", name: "New name", rev: 20 } as Project;
   let s = upsertProject(initialStore(), frame);
   s = applySnapshot(s, { now: "", user: "", threads: [], actions: [], profiles: [], projects: [{ id: "p1", name: "Old name", rev: 10 } as Project, { id: "p2", name: "B", rev: 10 } as Project] }, Date.now());
-  assert.deepEqual(s.projects.map((p) => p.name), ["New name", "B"]);
+  assert.deepEqual(s.projects.map((p) => p.name), ["B", "New name"], "V0.121: with no order set, by name");
   s = upsertProject(s, { id: "p2", name: "Older", rev: 5 } as Project);
-  assert.equal(s.projects[1].name, "B", "an older frame is ignored");
+  const p2 = () => s.projects.find((x) => x.id === "p2")?.name;
+  assert.equal(p2(), "B", "an older frame is ignored");
   s = upsertProject(s, { id: "p2", name: "Same rev", rev: 10 } as Project);
-  assert.equal(s.projects[1].name, "Same rev", "an equal rev replaces");
+  assert.equal(p2(), "Same rev", "an equal rev replaces");
   s = applySnapshot(s, { now: "", user: "", threads: [], actions: [], profiles: [], projects: [{ id: "p1", name: "Newest", rev: 30 } as Project] }, Date.now());
   assert.deepEqual(s.projects.map((p) => p.name), ["Newest"], "a newer snapshot wins and drops what it lacks");
   s = upsertProject(s, { id: "p1", name: "No rev" } as Project);
@@ -227,16 +228,52 @@ test("each save sends only its own field", () => {
   assert.equal(nameError("x"), null);
 });
 
-test("the Settings list: by name, filtered over name and folder", () => {
+test("V0.121: the Settings list keeps the given order (the owner's), drops unsaved projects, filters over name and folder", () => {
   const ps = [
     { id: "b", name: "beta", folder: "/home/u/src/norban/web" },
     { id: "a", name: "Alpha", folder: "/home/u/fyr" },
     { id: "", name: "unsaved" },
     { id: "c", name: "norban/api" },
   ] as Project[];
-  assert.deepEqual(settingsProjects(ps).map((p) => p.id), ["a", "b", "c"]);
+  assert.deepEqual(settingsProjects(ps).map((p) => p.id), ["b", "a", "c"]);
   assert.deepEqual(searchProjects(settingsProjects(ps), "NORBAN").map((p) => p.id), ["b", "c"], "the name or the folder");
-  assert.deepEqual(searchProjects(settingsProjects(ps), " ").map((p) => p.id), ["a", "b", "c"]);
+  assert.deepEqual(searchProjects(settingsProjects(ps), " ").map((p) => p.id), ["b", "a", "c"]);
   assert.equal(projectSearchLine(5, 43), "5 of 43 match.");
   assert.equal(projectSearchLine(0, 43), "None of 43 match.");
+});
+
+// ---- V0.121: one project order ----
+import { setProjectOrder } from "../src/store.ts";
+import { createProjects } from "../src/quiet.ts";
+
+const ordered: Project[] = [
+  { id: "p1", name: "beta", createdAt: "2026-11-01T00:00:00Z" },
+  { id: "p2", name: "Alpha", createdAt: "2026-11-03T00:00:00Z" },
+  { id: "p3", name: "gamma", createdAt: "2026-11-02T00:00:00Z" },
+  { id: "p4", name: "delta", createdAt: "2026-11-05T00:00:00Z" },
+];
+
+test("V0.121: listed projects first in the owner's order, then the rest by creation time; unknown ids ignored", () => {
+  assert.deepEqual(orderProjects(ordered, ["p4", "gone", "p2"]).map((p) => p.id), ["p4", "p2", "p1", "p3"]);
+  assert.deepEqual(orderProjects(ordered, []).map((p) => p.id), ["p1", "p3", "p2", "p4"], "an empty order: by creation time, a new project last");
+  assert.deepEqual(orderProjects(ordered, null).map((p) => p.id), ["p2", "p1", "p4", "p3"], "no order set: by name");
+  assert.deepEqual(ordered.map((p) => p.id), ["p1", "p2", "p3", "p4"], "the input is not changed");
+});
+
+test("V0.121: the store keeps its projects in the owner's order: the snapshot, a frame, the order event", () => {
+  let s = applySnapshot(initialStore(), { now: "", user: "", buildId: "", host: "", threads: [], actions: [], profiles: [], projects: ordered, projectOrder: ["p3", "p1"] } as never, 0);
+  assert.deepEqual(s.projects.map((p) => p.id), ["p3", "p1", "p2", "p4"]);
+  s = upsertProject(s, { id: "p5", name: "aaa", createdAt: "2026-11-09T00:00:00Z" } as Project);
+  assert.deepEqual(s.projects.map((p) => p.id), ["p3", "p1", "p2", "p4", "p5"], "a new project lands last");
+  s = upsertProject(s, { id: "p3", name: "zzz renamed", createdAt: "2026-11-02T00:00:00Z" } as Project);
+  assert.equal(s.projects[0].id, "p3", "a rename keeps its place");
+  s = setProjectOrder(s, ["p4", "p5"]);
+  assert.deepEqual(s.projects.map((p) => p.id), ["p4", "p5", "p1", "p3", "p2"], "the rest by creation time");
+  assert.deepEqual(s.projectOrder, ["p4", "p5"]);
+});
+
+test("V0.121: hiding quiet projects keeps the order of the rest", () => {
+  const now = Date.parse("2026-11-16T22:00:00Z");
+  const ps = orderProjects([...ordered.slice(0, 2), { ...ordered[2], quietUntil: "2026-11-17T06:00:00Z" }, ordered[3]], ["p4", "p3", "p2", "p1"]);
+  assert.deepEqual(createProjects(ps, now, 0).map((p) => p.id), ["p4", "p2", "p1"]);
 });

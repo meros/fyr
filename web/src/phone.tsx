@@ -16,7 +16,7 @@ import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { shortModel, untilLabel } from "./format.ts";
-import { effortsFor, startEffort } from "./providers.ts";
+import { effortsFor, offLabel, startEffort } from "./providers.ts";
 import { AgentsStrip, EffectBody, ThreadTabBody } from "./thread.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
@@ -1395,7 +1395,9 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   }
   if (sheet.kind === "details") {
     const prof = p.store.profiles.find((x) => x.id === t.profile);
-    const canModel = (prof?.models.length ?? 0) > 1 && !reason("thread.setModel");
+    // V0.120 (5): a model the owner turned off shows as "(off)" until another is picked; the desktop's chip does the same.
+    const modelOff = !!prof && !!t.model && !prof.models.includes(t.model);
+    const canModel = ((prof?.models.length ?? 0) > 1 || (modelOff && (prof?.models.length ?? 0) > 0)) && !reason("thread.setModel");
     const row = (k: string, v: ComponentChildren) => (
       <div class="m-kvrow">
         <span class="k">{k}</span>
@@ -1427,10 +1429,13 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
             "Model",
             canModel ? (
               <select class="m-msel" value={t.model} onChange={(e) => void p.commands.run("thread.setModel", [t.id], { model: (e.target as HTMLSelectElement).value })}>
+                {modelOff && <option value={t.model}>{offLabel(t.model)}</option>}
                 {prof!.models.map((m) => (
                   <option value={m}>{shortModel(m)}</option>
                 ))}
               </select>
+            ) : modelOff ? (
+              offLabel(t.model)
             ) : (
               shortModel(t.model)
             ),

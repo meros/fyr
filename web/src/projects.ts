@@ -124,17 +124,28 @@ export function projectSubtitle(p: Project): string {
   return p.folder ? shortPath(p.folder) : "No folder: filed by hand";
 }
 
-/** The new-thread picker: projects by last use (newest first), then by name. */
-export function pickerOrder(projects: Project[]): Project[] {
-  return [...projects].sort((a, b) => (b.lastUsed ?? "").localeCompare(a.lastUsed ?? "") || a.name.localeCompare(b.name));
+/** V0.121 (amends V0.30's order by last use): the owner's one project order. The projects named in `order` first,
+ *  in that order; then the rest by creation time, so a new project lands last; an id that no longer exists is
+ *  ignored. Before the owner has set an order (null), by name, as Settings listed them before. The store keeps its
+ *  projects in this order, so every list of projects (New thread, the picker, the filter sheet, the chips, Settings)
+ *  shows it by keeping the order it is given. */
+export function orderProjects(projects: readonly Project[], order: readonly string[] | null | undefined): Project[] {
+  if (!order) return [...projects].sort((a, b) => a.name.localeCompare(b.name));
+  const at = new Map(order.map((id, i) => [id, i]));
+  const pos = (p: Project) => (p.id ? at.get(p.id) : undefined);
+  return [...projects].sort((a, b) => {
+    const ia = pos(a);
+    const ib = pos(b);
+    if (ia !== undefined || ib !== undefined) return (ia ?? Infinity) - (ib ?? Infinity);
+    return (a.createdAt ?? "").localeCompare(b.createdAt ?? "") || a.name.localeCompare(b.name);
+  });
 }
 
-/** Search in the project list (Move to project, the picker). */
+/** Search in the project list (Move to project, the picker): it filters, it does not reorder (V0.121). */
 export function matchProjects(projects: Project[], query: string): Project[] {
   const q = query.trim().toLowerCase();
-  const list = pickerOrder(projects);
-  if (!q) return list;
-  return list.filter((p) => `${p.name} ${projectSubtitle(p)}`.toLowerCase().includes(q));
+  if (!q) return projects;
+  return projects.filter((p) => `${p.name} ${projectSubtitle(p)}`.toLowerCase().includes(q));
 }
 
 /** Started-by (V0.22): "from <parent title>", or null. */
@@ -205,11 +216,12 @@ export function enterAction(projects: Project[], matches: Project[], q: string, 
   return exact ? { pick: exact } : { create: q.trim() };
 }
 
-/** The project a new thread starts on: the inbox filter, else the last one used on this device, else the most recent. */
+/** The project a new thread starts on: the inbox filter, else the last one used on this device, else the first in
+ *  the owner's order (V0.121). */
 export function startProject(projects: Project[], filterId: string | null | undefined, lastId: string | null | undefined): string | undefined {
   if (filterId && projects.some((p) => p.id === filterId)) return filterId;
   if (lastId && projects.some((p) => p.id === lastId)) return lastId;
-  return pickerOrder(projects)[0]?.id;
+  return projects[0]?.id;
 }
 
 
@@ -295,9 +307,9 @@ export function nameError(name: string): string | null {
   return name.trim() ? null : "A project needs a name.";
 }
 
-/** Settings → Projects: the saved projects by name (V0.58). */
+/** Settings → Projects: the saved projects, in the owner's order (V0.121; the store keeps it). */
 export function settingsProjects(projects: Project[]): Project[] {
-  return projects.filter((p) => p.id).sort((a, b) => a.name.localeCompare(b.name));
+  return projects.filter((p) => p.id);
 }
 
 /** The search over Settings → Projects: the name or the folder. */
