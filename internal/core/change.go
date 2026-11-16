@@ -79,6 +79,13 @@ type Change struct {
 	// Parked is the owner's Not now (V0.84): it holds while the change is
 	// as the owner saw it.
 	Parked *Park `json:"parked,omitempty"`
+	// Done: the change is finished and off the board (V0.98); Ended keeps
+	// its meaning for rules and settle.
+	Done *DoneMark `json:"done,omitempty"`
+	// TouchedAt is when a fact of the change last moved: a push, a PR
+	// event, a report, an owner action (V0.98 (4)). A poll that reads the
+	// same PR again does not move it.
+	TouchedAt *time.Time `json:"touchedAt,omitempty"`
 }
 
 // Park is when the owner pressed Not now on a change, and a fingerprint of
@@ -358,11 +365,18 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	if p.State == PRMissing && c == nil {
 		return nil // V0.72: no change is made for a PR that does not exist
 	}
+	if c != nil && madeForPR(c) && p.Branch != "" {
+		// V0.98 (5): the PR of gh pr create came without a branch; now that
+		// its head is read, it joins the open change on that branch.
+		if x := changeOnPRBranch(t, p.Branch, p.Repo, c.ID); x != nil {
+			c = joinInto(t, x.ID, c.ID, now)
+		}
+	}
 	if c != nil && CanWrite(FieldChangePhase, ByObserved, c.PhaseBy, "") != nil {
 		return c // V0.72: the owner ended it; a fact does not move it again
 	}
 	if c == nil && p.Branch != "" {
-		c = changeOnPRBranch(t, p.Branch)
+		c = changeOnPRBranch(t, p.Branch, p.Repo, "")
 	}
 	if c == nil {
 		title := p.Title
@@ -398,11 +412,7 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	}
 	addEvidence(c, Evidence{Kind: "pr", URL: p.URL, Title: fmt.Sprintf("#%d", p.Number)})
 	if p.Repo != "" {
-		repo := p.Repo
-		if strings.Count(repo, "/") == 1 {
-			repo = "github.com/" + repo // the git observer's form
-		}
-		c.Targets = union(c.Targets, []string{"repo:" + repo})
+		c.Targets = union(c.Targets, []string{"repo:" + prTargetRepo(p.Repo)})
 	}
 	linkRef(t, c)
 	phase := PhaseReview
@@ -500,7 +510,7 @@ func (c *Change) Blocking() string {
 
 // blocks is Blocking without the owner's Not now.
 func (c *Change) blocks() string {
-	if c.Phase.Ended() {
+	if c.Phase.Ended() || c.MarkedDone() {
 		return ""
 	}
 	for _, k := range c.Conditions {
@@ -590,13 +600,14 @@ func addEvidence(c *Change, ev Evidence) {
 }
 
 // changeOnPRBranch is the change a PR found by its head branch attaches to
-// (V0.59 (4), V0.87 (2)): a change of any kind on that branch that has not
-// ended and has no PR, the one that follows a host record first.
-func changeOnPRBranch(t *Thread, branch string) *Change {
+// (V0.59 (4), V0.87 (2)): a change of any kind on that branch in the PR's
+// repo (V0.98 (5)) that is open and has no PR, other than skip, the one that
+// follows a host record first.
+func changeOnPRBranch(t *Thread, branch, repo, skip string) *Change {
 	var first *Change
 	for i := range t.Changes {
 		x := &t.Changes[i]
-		if x.Branch != branch || x.Phase.Ended() || x.PRURL() != "" {
+		if x.ID == skip || x.Branch != branch || x.Phase.Ended() || x.IsDone() || x.PRURL() != "" || !sameRepo(x.Targets, repoTargets(prTargetRepo(repo))) {
 			continue
 		}
 		if x.Observed != "" {
@@ -646,14 +657,15 @@ func parsePRURL(url string) (string, int) {
 // final is still read (V0.82).
 const settleAfterMerge = 24 * time.Hour
 
-// PRURLs are the PR URLs to poll: the thread's changes in flight, and
-// (V0.82) a landed or live change whose PR snapshot is not final, within
-// settleAfterMerge of the merge.
+// PRURLs are the PR URLs to poll: the thread's changes in flight that are
+// not done, (V0.82) a landed or live change whose PR snapshot is not final,
+// within settleAfterMerge of the merge, and (V0.98 (1)) a merged stacked PR
+// until its merge commit is in the default branch.
 func PRURLs(t *Thread, now time.Time) []string {
 	var out []string
 	for i := range t.Changes {
 		c := &t.Changes[i]
-		if u := c.PRURL(); u != "" && (c.Phase.InFlight() || settling(c, now)) {
+		if u := c.PRURL(); u != "" && ((c.Phase.InFlight() && !c.IsDone()) || settling(c, now) || stackedOpen(c)) {
 			out = append(out, u)
 		}
 	}
@@ -705,12 +717,14 @@ func plural(n int, word string) string {
 	return fmt.Sprintf("%d %ss", n, word)
 }
 
-// trimChanges keeps at most maxChanges: ended changes older than 30 days go
-// first, then the oldest ended ones, then the oldest.
+// trimChanges keeps at most maxChanges: ended or done (V0.98 (2)) changes
+// older than 30 days go first, then the oldest ended or done ones, then the
+// oldest.
 func trimChanges(t *Thread, now time.Time) {
+	gone := func(c *Change) bool { return c.Phase.Ended() || c.IsDone() }
 	keep := t.Changes[:0]
 	for _, c := range t.Changes {
-		if c.Phase.Ended() && now.Sub(c.UpdatedAt) > endedKeep {
+		if gone(&c) && now.Sub(c.UpdatedAt) > endedKeep {
 			continue
 		}
 		keep = append(keep, c)
@@ -719,7 +733,7 @@ func trimChanges(t *Thread, now time.Time) {
 	for len(t.Changes) > maxChanges {
 		idx := -1
 		for i, c := range t.Changes {
-			if c.Phase.Ended() && (idx < 0 || c.UpdatedAt.Before(t.Changes[idx].UpdatedAt)) {
+			if gone(&c) && (idx < 0 || c.UpdatedAt.Before(t.Changes[idx].UpdatedAt)) {
 				idx = i
 			}
 		}

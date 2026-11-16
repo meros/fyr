@@ -1298,6 +1298,15 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, phase, phaseBy: "owner" as const, label, offers: [], updatedAt: new Date(clock()).toISOString() } : x)) });
         break;
       }
+      case "change.done": {
+        // V0.98 (4): the owner's Done; the change leaves the board.
+        const c = (t.changes ?? []).find((x) => x.id === args.change || x.key === args.change);
+        if (!c) return { ok: false, error: `no change ${String(args.change)}` };
+        if (c.done) return { ok: false, error: `"${c.title}" is already done` };
+        const at = new Date(clock()).toISOString();
+        put(t, { changes: (t.changes ?? []).map((x) => (x === c ? { ...x, done: { at, by: "owner" as const, reason: "done" }, updatedAt: at } : x)) });
+        break;
+      }
       case "change.park":
       case "change.unpark": {
         // V0.84: Not now and its Undo; the host keeps a fingerprint of what the owner saw.

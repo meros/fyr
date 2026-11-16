@@ -154,7 +154,8 @@ export function ThreadPane(p: ThreadPaneProps) {
           )}
           <ModelChip t={t} profile={profile} onRun={p.onRun} />
           <EffortChip t={t} profile={profile} onRun={p.onRun} />
-          {headerPr(t) && <PrChip pr={headerPr(t)!} onDismiss={isAvailable(t, "thread.dismissPR") ? () => p.onRun("thread.dismissPR") : undefined} />}
+          {/* V0.98 (6): the newest open change's PR; Dismiss acts on the thread's main PR, so only when it is that one. */}
+          {headerPr(t) && <PrChip pr={headerPr(t)!} onDismiss={isAvailable(t, "thread.dismissPR") && headerPr(t)!.url === t.pr?.url ? () => p.onRun("thread.dismissPR") : undefined} />}
           {(() => {
             const c = changeChip(t); // V0.59 (8)
             return c ? (

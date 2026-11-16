@@ -229,8 +229,8 @@ func TestMigrateDone(t *testing.T) {
 	merged := &PR{URL: "https://github.com/o/r/pull/5", Repo: "o/r", Number: 5, State: "MERGED", Checks: ChecksPass, Branch: "dup"}
 	watched := &PR{URL: "https://github.com/o/r/pull/6", Repo: "o/r", Number: 6, State: "MERGED", Checks: ChecksPass, Branch: "w"}
 	th := &Thread{ID: "t", Changes: []Change{
-		{ID: "a", Key: "agent:dup", Kind: KindCode, Title: "Dup", Branch: "dup", Targets: []string{"repo:github.com/o/r"}, Phase: PhaseWorking, PhaseBy: ByAgent},
-		{ID: "p", Key: "pr:o/r#5", Kind: KindCode, Title: "Dup PR", Branch: "dup", Targets: []string{"repo:github.com/o/r"}, Phase: PhaseLanded, PhaseBy: ByObserved, PR: merged},
+		{ID: "c_agent", Key: "agent:dup", Kind: KindCode, Title: "Dup", Branch: "dup", Targets: []string{"repo:github.com/o/r"}, Phase: PhaseWorking, PhaseBy: ByAgent},
+		{ID: "c_pr5", Key: "pr:o/r#5", Kind: KindCode, Title: "Dup PR", Branch: "dup", Targets: []string{"repo:github.com/o/r"}, Phase: PhaseLanded, PhaseBy: ByObserved, PR: merged},
 		{ID: "l", Key: "doc", Kind: KindDoc, Title: "Doc", Phase: PhaseLive, PhaseBy: ByAgent},
 		{ID: "w", Key: "pr:o/r#6", Kind: KindCode, Title: "Watched", Branch: "w", Phase: PhaseLanded, PhaseBy: ByObserved, PR: watched},
 		{ID: "x", Key: "gone", Kind: KindOther, Title: "Gone", Phase: PhaseAbandoned, PhaseBy: ByOwner},
@@ -239,10 +239,10 @@ func TestMigrateDone(t *testing.T) {
 	if !MigrateDone(th, dt0) {
 		t.Fatal("nothing migrated")
 	}
-	if FindChange(th, "pr:o/r#5") == nil || FindChange(th, "pr:o/r#5").ID != "a" || len(th.Changes) != 5 {
+	if FindChange(th, "pr:o/r#5") == nil || FindChange(th, "pr:o/r#5").ID != "c_agent" || len(th.Changes) != 5 {
 		t.Fatalf("the duplicate pair did not fold: %+v", th.Changes)
 	}
-	want := map[string]string{"a": DoneBeforeV2, "l": DoneBeforeV2, "x": "abandoned"}
+	want := map[string]string{"c_agent": DoneBeforeV2, "l": DoneBeforeV2, "x": "abandoned"}
 	for _, c := range th.Changes {
 		r, ok := want[c.ID]
 		if c.IsDone() != ok || (ok && c.Done.Reason != r) {

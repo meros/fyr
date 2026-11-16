@@ -220,6 +220,8 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	more := EvalRules(Rec{T: t, V: v}, now)
 	res.Events = append(res.Events, more.Events...)
 	res.Effects = append(res.Effects, more.Effects...)
+	// V0.98: touchedAt and done, after the rules (a deploy watch's end).
+	markDone(before, t, now)
 	// The agent feed (#47): the notice rules project this reduce.
 	res.Effects = append(res.Effects, project(Reduced{Before: before, After: t, In: in, Events: res.Events}, now)...)
 	return t, v, res, nil
