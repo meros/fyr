@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.51: Settings → Hosts lists the front's hosts; an offline host's threads say so and are read-only.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeHosts, hostLabel, hostForProject, hostStatus, hostTag, multiHost, offlineLine, profilesOn } from "../src/hosts.ts";
+import { decodeHosts, hostLabel, hostForProject, hostLine, hostStatus, idChangedLine, shortID, hostTag, multiHost, offlineLine, profilesOn } from "../src/hosts.ts";
 import { attachmentUrl } from "../src/attach.ts";
 import { previewCard, previewUrl } from "../src/previews.ts";
 import { renderMarkdown, setMarkdownOrigin } from "../src/markdown.ts";
@@ -87,4 +87,21 @@ test("V0.123: a host the front found on the tailnet says so in Settings → Host
   assert.equal(hostStatus(hs[0], "laptop"), "this machine · online");
   assert.equal(hostStatus(hs[1], "laptop"), "online · found on the tailnet");
   assert.equal(hostStatus(hs[2], "laptop"), "offline · found on the tailnet");
+});
+
+test("V0.124: a host row shows its short install id, and says so when another install answers under its name", () => {
+  const hs = decodeHosts([
+    { name: "laptop", online: true, id: "F7QK-2M9X-AB34-CD56" },
+    { name: "server", online: true, id: "BBBB-CCCC-DDDD-EEEE", idWas: "AAAA-CCCC-DDDD-EEEE" },
+    { name: "old", online: true, id: "", idWas: 3 },
+  ]);
+  assert.equal(hs[0].id, "F7QK-2M9X-AB34-CD56");
+  assert.equal(hs[0].idWas, undefined);
+  assert.equal(hs[2].id, undefined);
+  assert.equal(hs[2].idWas, undefined);
+  assert.equal(shortID(hs[0].id), "F7QK");
+  assert.equal(hostLine(hs[0], "laptop"), "this machine · online · id F7QK");
+  assert.equal(hostLine(hs[2], "laptop"), "online");
+  assert.equal(idChangedLine(hs[0]), "");
+  assert.equal(idChangedLine(hs[1]), "Another install answers as server: id BBBB, it was AAAA. Trust it if you reinstalled or replaced this machine.");
 });

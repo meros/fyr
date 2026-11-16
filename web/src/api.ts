@@ -8,6 +8,7 @@ import type { Conn, ThreadPatch } from "./store.ts";
 import type { CommandReply, FsDir, FsListing, FyrEvent, Profile, Project, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import { attachmentUrl, hostQuery, type UploadReply } from "./attach.ts";
 import { previewUrl } from "./previews.ts";
+import { decodeHosts, type HostInfo } from "./hosts.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
 import type { HostLoad } from "./load.ts";
@@ -30,6 +31,8 @@ export interface ApiHandlers {
   project?(p: Project): void;
   /** V0.121: the owner's project order changed (the front's own event) */
   projectOrder?(ids: string[]): void;
+  /** V0.124: the front's hosts changed (state, id); the front's own event */
+  hosts?(hs: HostInfo[]): void;
   event(e: FyrEvent): void;
   conn(c: Conn): void;
 }
@@ -193,6 +196,13 @@ function createHttpApi(): Api {
       try {
         const ids = (JSON.parse((m as MessageEvent).data) as { ids?: unknown }).ids;
         if (Array.isArray(ids)) h.projectOrder?.(ids.filter((x): x is string => typeof x === "string"));
+      } catch {
+        /* ignore malformed */
+      }
+    });
+    es.addEventListener("hosts", (m) => {
+      try {
+        h.hosts?.(decodeHosts((JSON.parse((m as MessageEvent).data) as { hosts?: unknown }).hosts));
       } catch {
         /* ignore malformed */
       }

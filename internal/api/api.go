@@ -97,14 +97,17 @@ type Project struct {
 // hosts' records as it got them, stamped with their host, and Hosts (V0.51,
 // V0.54).
 type State[T, P, F any] struct {
-	Now      time.Time `json:"now"`
-	User     string    `json:"user"`
-	BuildID  string    `json:"buildId"`
-	Host     string    `json:"host"`
-	Threads  []T       `json:"threads"`
-	Actions  []Action  `json:"actions"`
-	Profiles []F       `json:"profiles"`
-	Projects []P       `json:"projects"`
+	Now     time.Time `json:"now"`
+	User    string    `json:"user"`
+	BuildID string    `json:"buildId"`
+	Host    string    `json:"host"`
+	// HostID is the install's key id (V0.124, decision 0026): a host's own,
+	// or, in a front's merged state, the front's install.
+	HostID   string   `json:"hostId,omitempty"`
+	Threads  []T      `json:"threads"`
+	Actions  []Action `json:"actions"`
+	Profiles []F      `json:"profiles"`
+	Projects []P      `json:"projects"`
 	// Partial: ?since=REV listed only the threads changed after REV (V0.38).
 	Partial bool `json:"partial"`
 	// Deploy is the deploy progress to show (V0.39), or nil.
@@ -136,6 +139,12 @@ type Host struct {
 	Deploy   any   `json:"deploy,omitempty"`
 	// Found: discovery found it on the tailnet (V0.123); else it is configured.
 	Found bool `json:"found,omitempty"`
+	// ID is the host's key id (V0.124, decision 0026): the one it reports,
+	// else the one the front pinned when it first saw it.
+	ID string `json:"id,omitempty"`
+	// IDWas: the host now reports another id than the pinned one; the front
+	// keeps following it and shows both until the owner trusts the new id.
+	IDWas string `json:"idWas,omitempty"`
 }
 
 // WriteJSON is the one JSON reply of the host and the front.
