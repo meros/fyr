@@ -242,6 +242,9 @@ const (
 	AtIdle Point = "idle" // the agent is idle: a message that starts a turn
 	AtTool Point = "tool" // after a tool call: context
 	AtStop Point = "stop" // the run's end: the Stop hook's reason
+	// AtTurn: a message that starts a turn (the owner's, another thread's)
+	// carries every pending notice but the stop ones (V0.95 (1)).
+	AtTurn Point = "turn"
 )
 
 // Reduced is what a notice rule reads of one reduce.
@@ -783,6 +786,8 @@ func reduceFeedTake(r Rec, in Input, now time.Time) (Result, error) {
 		if !slices.ContainsFunc(out, func(n Notice) bool { return n.Urgency == Wake && !n.Self && !n.Budget }) {
 			f.Woke = append(f.woke(now), now)
 		}
+	case AtTurn:
+		out = f.take(func(n Notice) bool { return n.Urgency != Stop })
 	case AtTool:
 		out = f.take(func(n Notice) bool { return n.Urgency != Stop })
 	case AtStop:
