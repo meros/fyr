@@ -78,12 +78,12 @@ func TestPRBecomesCodeChange(t *testing.T) {
 	}
 	// A second PR of the same thread is its own change.
 	ChangePRObserved(th, PR{URL: "https://github.com/o/other/pull/3", Repo: "o/other", Number: 3, State: "OPEN"}, ct0)
-	if len(th.Changes) != 2 || len(PRURLs(th)) != 2 {
+	if len(th.Changes) != 2 || len(PRURLs(th, ct0)) != 2 {
 		t.Fatalf("second PR: %+v", th.Changes)
 	}
 	ChangePRObserved(th, PR{URL: "https://github.com/o/r/pull/9", Repo: "o/r", Number: 9, State: "MERGED", Branch: "feat"}, ct0.Add(time.Hour))
 	ChangePRObserved(th, PR{URL: "https://github.com/o/other/pull/3", Repo: "o/other", Number: 3, State: "CLOSED"}, ct0.Add(time.Hour))
-	if th.Changes[0].Phase != PhaseLanded || th.Changes[1].Phase != PhaseAbandoned || len(PRURLs(th)) != 0 {
+	if th.Changes[0].Phase != PhaseLanded || th.Changes[1].Phase != PhaseAbandoned || len(PRURLs(th, ct0)) != 0 {
 		t.Fatalf("after merge and close: %s %s", th.Changes[0].Phase, th.Changes[1].Phase)
 	}
 	// PRObserved makes the change and the main change.
@@ -338,7 +338,7 @@ func TestPRLivesOnItsChange(t *testing.T) {
 	// Evidence the agent attaches gives a change its PR, which the poller reads.
 	c, _, _ := OpenChange(th, ChangeOpen{Key: "api", Kind: KindCode, Title: "API"}, ByAgent, ct0)
 	AttachEvidence(c, []Evidence{{Kind: "pr", URL: "https://github.com/o/api/pull/4"}}, ct0)
-	if c.PR == nil || c.PR.Repo != "o/api" || c.PR.Number != 4 || !slices.Contains(PRURLs(th), "https://github.com/o/api/pull/4") {
+	if c.PR == nil || c.PR.Repo != "o/api" || c.PR.Number != 4 || !slices.Contains(PRURLs(th, ct0), "https://github.com/o/api/pull/4") {
 		t.Fatalf("attached PR: %+v", c.PR)
 	}
 }
