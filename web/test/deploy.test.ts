@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.39: the deploy banner says where an update is, in words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deployLine, bannerFolded, updateKey, canRestartNow, restartNowAsk } from "../src/deploy.ts";
+import { deployLine, deployShown, OK_SHOW_MS, OK_FRESH_MS, canRestartNow, restartNowAsk } from "../src/deploy.ts";
 import { thread } from "./helpers.ts";
 
 const now = Date.parse("2026-11-14T15:10:00Z");
@@ -34,18 +34,24 @@ test("a client-only update says it updates the web client", () => {
   assert.equal(deployLine(p("done"), threads, now, "live")?.text, "Fyr is updated · build 20261114-160324");
 });
 
-// SPEC 0.5 V0.39, #81: a busy banner folds to a chip and stays folded through the update's phases; the end opens it.
-test("the update banner folds while busy and opens when the update ends", () => {
-  const p = (phase: string, build = "b1") => ({ phase, build, startedAt: "2026-11-16T07:00:00Z" });
-  const k = updateKey(p("drain"));
-  assert.equal(k, updateKey(p("test")), "one update keeps one key through its phases");
-  assert.notEqual(k, updateKey(p("drain", "b2")), "another build is another update");
-  assert.equal(bannerFolded(p("drain"), "busy", k), true);
-  assert.equal(bannerFolded(p("switch"), "busy", k), true, "still folded in a later phase");
-  assert.equal(bannerFolded(p("done"), "ok", k), false, "done opens it");
-  assert.equal(bannerFolded(p("failed"), "fail", k), false, "a failure opens it");
-  assert.equal(bannerFolded(p("drain", "b2"), "busy", k), false, "a new update starts open");
-  assert.equal(bannerFolded(p("drain"), "busy", null), false);
+// SPEC 0.5 V0.118 (2): the inline status is calm. Building, testing, waiting and restarting show; a success shows a few
+// seconds from when this page first sees it and only while it is fresh; a client-only update shows nothing beyond the
+// reload; a failure stays until it is dismissed. (V0.118 retires the #81 fold: the inline line is already small.)
+test("the inline status shows busy and failed, a success briefly, a client-only update not at all", () => {
+  const show = (q: ReturnType<typeof p> & { client?: boolean }, seenAt: number | null = null, conn = "live") => deployShown(q, deployLine(q, threads, now, conn), seenAt, now);
+  for (const ph of ["build", "test", "drain", "switch"]) assert.equal(show(p(ph)), true, ph);
+  assert.equal(show(p("client")), false, "the reload is the only sign of a client-only update");
+  assert.equal(show(p("failed", { detail: "x" })), true);
+  assert.equal(show(p("failed", { detail: "x" }), now - 10 * 60_000), true, "a failure stays");
+  const done = p("done", { at: new Date(now - 3000).toISOString() });
+  assert.equal(show(done), true, "a fresh success shows");
+  assert.equal(show(done, now - 1000), true, "for a few seconds");
+  assert.equal(show(done, now - OK_SHOW_MS), false, "then goes by itself");
+  assert.equal(show({ ...done, client: true }), false, "a client-only success shows nothing");
+  assert.equal(show(p("done", { at: new Date(now - OK_FRESH_MS - 1000).toISOString() })), false, "a success read late (a page opened later) shows nothing");
+  assert.equal(show(p("drain"), null, "offline"), true, "restarting while the host is away");
+  assert.equal(deployShown(null, null, null, now), false);
+  assert.ok(OK_SHOW_MS >= 2000 && OK_SHOW_MS <= 8000, "a few seconds");
 });
 
 // SPEC 0.5 V0.83: Restart now shows only while the update waits for at least one running thread, with a live host;
