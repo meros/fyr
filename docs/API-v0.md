@@ -123,6 +123,7 @@ Actions and their args:
 | `thread.handover` | `profile`, `model?` (default: the profile's default model): hand the thread over to another profile (V0.45). `409` while a run is live, a question is open, a handover is going or the thread is archived; `400` for an unknown profile or the thread's own. While it runs the thread has `"handover": {"to": "…", "model": "…", "at": "…"}` and sends are unavailable |
 | `thread.cancelMessage` | `messageId`: withdraw a message the agent has not read (V0.33). `409` when it was read already, is unknown, or the agent cannot withdraw it |
 | `t3.adopt` (no `threadId`) | `t3Ids: [..]` |
+| `host.deployNow` (no `threadId`) | none: a deploy that waits for running threads switches now; their turns end and each gets "continue" after the restart (V0.83). `409` when no deploy drains |
 | `provider.*` (no `threadId`) | see Providers (V0.50) |
 
 ## `GET /api/threads/{id}/handover?profile=P` (SPEC 0.5 V0.45)
