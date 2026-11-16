@@ -384,7 +384,8 @@ const check = (ok, what) => {
   checks++;
   if (!ok) failures.push(what);
 };
-// The timing budgets (V0.38, V0.32) measure wall time, so a machine busy with other work fails them (#50). The deploy
+// The timing budgets (V0.38, V0.32) measure wall time, so a machine busy with other work is slower; they scale with a
+// calibration run (see "Calibration of the timing budgets"), up to a ceiling, and a heavier load still fails them (#50). The deploy
 // gate (`make test`) runs with FYR_LAYOUT_TIMING=0 and skips only these budgets; CI and `make test-timing` keep them.
 const TIMING = process.env.FYR_LAYOUT_TIMING !== "0";
 let timingSkipped = 0;
@@ -827,6 +828,61 @@ await Promise.all(SIZES.map(([w, h], i) => phonePass(tabs[i], w, h)));
 const phoneDone = Date.now();
 const { send, evaluate, poll, waitIn, waitFor, settle, navigate, tapCenter, key, openScreen, attached } = harness(tabs[tabs.length - 1]);
 for (const t of tabs.slice(0, -1)) await sendRaw("Target.closeTarget", { targetId: t.targetId });
+
+// Calibration of the timing budgets (#50). A budget in wall time also measures the machine: a laptop busy with other
+// sessions or a shared CI runner makes the same code slower. So a timed section runs a fixed workload in the same page
+// under its own CPU throttle, right before and right after its measurement: short tasks that each build, lay out and
+// drop a block of message-like DOM, then run a fixed loop of script. The mean time of one task against
+// CALIBRATION_REFERENCE (the same workload on an idle machine) is the machine's speed factor, and each budget of the
+// section is multiplied by it, at least 1 (the budgets as written) and at most CALIBRATION_CEILING. The ceiling keeps
+// the V0.38 budget under 2.5 s of long tasks: a 100 ms blocking loop in message rendering gives about 4.5 s of them
+// during the burst even on an idle machine, so it fails at any load. Load comes and goes within seconds, so a section
+// that misses its scaled budget runs again, up to TIMED_ATTEMPTS times, with a fresh calibration; a real regression
+// misses every attempt. The factor and the scaled budgets are printed. FYR_LAYOUT_FACTOR=<n> sets the factor by hand
+// (1: the budgets as written).
+// The reference is the lowest per-task time seen on an 8-core laptop at a load average of 50 to 80 (16 Nov), no idle
+// window being available: the true idle time is at most this, so the factor errs low (strict), never lenient. To
+// re-measure, run `make test-timing` on an idle machine and take the means printed by the calibration lines.
+const CALIBRATION_REFERENCE = { 1: 12, 4: 26 }; // ms, one workload task at CPU throttle 1 and 4
+const CALIBRATION_CEILING = 10;
+const TIMED_ATTEMPTS = 3;
+const calibrate = (rate) =>
+  evaluate(`new Promise((done) => {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:absolute;left:-20000px;top:0;width:600px;height:4000px;overflow:hidden;contain:strict';
+    document.body.appendChild(box);
+    const text = 'Calibration text of a message with a few words, some of them long enough to wrap the line. '.repeat(3);
+    const once = () => {
+      const t0 = performance.now();
+      let h = '';
+      for (let i = 0; i < 150; i++) h += '<div class="md"><p><b>Message ' + i + '</b> ' + text + '</p><ul><li>one</li><li>two</li></ul></div>';
+      box.innerHTML = h;
+      let y = 0;
+      for (const p of box.querySelectorAll('p')) y += p.getBoundingClientRect().height > 0 ? 1 : 0;
+      box.textContent = '';
+      let x = 0;
+      for (let i = 0; i < 300000; i++) x = (x * 31 + i) % 1000003;
+      return performance.now() - t0 + (x < 0 || y < 0 ? 1 : 0);
+    };
+    // 7 to 20 tasks, at most about 2 s: enough samples on a busy machine without making a quiet run slow.
+    const runs = [];
+    const start = performance.now();
+    const step = () => {
+      runs.push(Math.round(once() * 10) / 10);
+      if (runs.length < 7 || (runs.length < 20 && performance.now() - start < 2000)) setTimeout(step, 10);
+      else { box.remove(); done(runs); }
+    };
+    setTimeout(step, 10);
+  })`);
+// The budget factor from the calibration runs around one attempt of a section.
+const speedFactor = (rate, label, runs) => {
+  const mean = runs.reduce((a, b) => a + b, 0) / runs.length;
+  const forced = Number(process.env.FYR_LAYOUT_FACTOR);
+  const measured = mean / CALIBRATION_REFERENCE[rate];
+  const factor = forced > 0 ? forced : Math.min(CALIBRATION_CEILING, Math.max(1, measured));
+  console.log(`calibration ${label}: ${runs.length} workload tasks at CPU throttle ${rate}x, mean ${mean.toFixed(1)} ms (reference ${CALIBRATION_REFERENCE[rate]} ms; ${runs.join(" ")}), speed factor ${measured.toFixed(2)}, budget factor ${factor.toFixed(2)}${forced > 0 ? " (FYR_LAYOUT_FACTOR)" : ""}`);
+  return factor;
+};
 
 // U8: settle the open thread from its ⋯ menu at 390 × 844; the inbox shows with the Undo toast.
 try {
@@ -1369,37 +1425,53 @@ try {
 // (3 s), no task on the page's main thread takes over 50 ms, and the last message shows. The long tasks are
 // observed inside the page from the burst's start until its last message has drawn, so the test's own
 // navigation and reads are not in the measurement.
+// Budget on a quiet machine: no task over 100 ms, under 250 ms of long tasks in all (before V0.38: 10 tasks, 523 ms),
+// scaled by the calibration factor (#50).
 try {
-  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
-  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await navigate(`${origin}/?mock=rail&open=t_mapperf`, "!!document.querySelector('.th .md') && typeof window.__fyrBurst === 'function'");
-  // A mid-range phone's speed: 4 times slower than this machine's CPU.
-  await send("Emulation.setCPUThrottlingRate", { rate: 4 });
-  const burst = await evaluate(`new Promise((done) => {
-    const long = [];
-    const po = new PerformanceObserver((l) => { for (const e of l.getEntries()) long.push(Math.round(e.duration)); });
-    po.observe({ type: "longtask", buffered: false });
-    window.__fyrBurst("t_mapperf", 300);
-    const t0 = performance.now();
-    const end = (shown) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
-      for (const e of po.takeRecords()) long.push(Math.round(e.duration));
-      po.disconnect();
-      done({ long, shown, ms: Math.round(performance.now() - t0) });
-    }, 0)));
-    const poll = () => {
-      const all = document.querySelectorAll('.th .md');
-      if (/Burst message 300/.test(all[all.length - 1]?.textContent ?? '')) end(true);
-      else if (performance.now() - t0 > 30000) end(false);
-      else setTimeout(poll, 100);
-    };
-    setTimeout(poll, 100);
-  })`);
-  await send("Emulation.setCPUThrottlingRate", { rate: 1 });
-  const r = await evaluate(`({ last: [...document.querySelectorAll('.th .md')].map((x) => x.textContent).filter((t) => /Burst message/.test(t)).pop() ?? '' })`);
-  const total = burst.long.reduce((a, b) => a + b, 0);
-  // Budget: no task over 100 ms, under 250 ms of long tasks in all (before V0.38: 10 tasks, 523 ms).
-  timed(Math.max(0, ...burst.long) <= 100 && total < 250, `V0.38 main thread: long tasks during the burst (${burst.ms} ms): ${burst.long.length}, ${total} ms in all (${burst.long.slice(0, 8).join(", ")} ms)`);
-  check(/Burst message 300/.test(r.last), `V0.38 main thread: the last burst message is not shown ("${r.last.slice(0, 60)}")`);
+  let miss = "";
+  let last = "";
+  for (let attempt = 1; attempt <= (TIMING ? TIMED_ATTEMPTS : 1); attempt++) {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail&open=t_mapperf`, "!!document.querySelector('.th .md') && typeof window.__fyrBurst === 'function'");
+    // A mid-range phone's speed: 4 times slower than this machine's CPU.
+    await send("Emulation.setCPUThrottlingRate", { rate: 4 });
+    const before = TIMING ? await calibrate(4) : [];
+    const burst = await evaluate(`new Promise((done) => {
+      const long = [];
+      const po = new PerformanceObserver((l) => { for (const e of l.getEntries()) long.push(Math.round(e.duration)); });
+      po.observe({ type: "longtask", buffered: false });
+      window.__fyrBurst("t_mapperf", 300);
+      const t0 = performance.now();
+      const end = (shown) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
+        for (const e of po.takeRecords()) long.push(Math.round(e.duration));
+        po.disconnect();
+        done({ long, shown, ms: Math.round(performance.now() - t0) });
+      }, 0)));
+      const poll = () => {
+        const all = document.querySelectorAll('.th .md');
+        if (/Burst message 300/.test(all[all.length - 1]?.textContent ?? '')) end(true);
+        else if (performance.now() - t0 > 30000) end(false);
+        else setTimeout(poll, 100);
+      };
+      setTimeout(poll, 100);
+    })`);
+    const after = TIMING ? await calibrate(4) : [];
+    await send("Emulation.setCPUThrottlingRate", { rate: 1 });
+    last = (await evaluate(`[...document.querySelectorAll('.th .md')].map((x) => x.textContent).filter((t) => /Burst message/.test(t)).pop() ?? ''`)) ?? "";
+    if (!TIMING) break;
+    const f = speedFactor(4, `V0.38 attempt ${attempt}`, [...before, ...after]);
+    const maxTask = Math.round(100 * f);
+    const maxTotal = Math.round(250 * f);
+    const total = burst.long.reduce((a, b) => a + b, 0);
+    const longest = Math.max(0, ...burst.long);
+    const ok = longest <= maxTask && total < maxTotal;
+    console.log(`V0.38 attempt ${attempt}: ${burst.long.length} long tasks, ${total} ms in all, longest ${longest} ms; budget ${maxTask} ms per task and ${maxTotal} ms in all (100 and 250 ms × ${f.toFixed(2)}): ${ok ? "within" : "over"}`);
+    miss = ok ? "" : `V0.38 main thread: long tasks during the burst (${burst.ms} ms): ${burst.long.length}, ${total} ms in all (${burst.long.slice(0, 8).join(", ")} ms), over the budget of ${maxTask} ms per task and ${maxTotal} ms in all (factor ${f.toFixed(2)}), ${attempt} of ${TIMED_ATTEMPTS} attempts`;
+    if (ok) break;
+  }
+  timed(!miss, miss);
+  check(/Burst message 300/.test(last), `V0.38 main thread: the last burst message is not shown ("${last.slice(0, 60)}")`);
 } catch (e) {
   await send("Emulation.setCPUThrottlingRate", { rate: 1 });
   failures.push(`V0.38 main thread: ${e.message}`);
@@ -1424,6 +1496,7 @@ try {
 
 // V0.32: a screen change on the phone is quick, transition included (found live: open and Back
 // took 4 s each, because the transition's update waited for a frame that a transition never draws).
+// Budget on a quiet machine: 800 ms each, scaled by the calibration factor (#50).
 try {
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
   await send("Emulation.setTouchEmulationEnabled", { enabled: true });
@@ -1438,11 +1511,24 @@ try {
     await evaluate(`new Promise((ok) => { const t0 = performance.now(); const tick = () => { if ((${cond}) && !${inVT}) ok(); else if (performance.now() - t0 > 6000) ok(); else requestAnimationFrame(tick); }; requestAnimationFrame(tick); })`);
     return Date.now() - t0;
   };
-  const open = await tapAndWait(".m-app .m-mv", "!!document.querySelector('.m-tth')");
-  await settle();
-  const back = await tapAndWait(".m-tth .b44", "!document.querySelector('.m-tth')");
-  timed(open >= 0 && open < 800, `V0.32 phone: opening a thread took ${open} ms`);
-  timed(back >= 0 && back < 800, `V0.32 phone: Back to the list took ${back} ms`);
+  let miss = [];
+  for (let attempt = 1; attempt <= (TIMING ? TIMED_ATTEMPTS : 1); attempt++) {
+    const before = TIMING ? await calibrate(1) : [];
+    const open = await tapAndWait(".m-app .m-mv", "!!document.querySelector('.m-tth')");
+    await settle();
+    const back = await tapAndWait(".m-tth .b44", "!document.querySelector('.m-tth')");
+    if (!TIMING) break;
+    await settle();
+    const f = speedFactor(1, `V0.32 attempt ${attempt}`, [...before, ...(await calibrate(1))]);
+    const maxNav = Math.round(800 * f);
+    miss = [];
+    if (!(open >= 0 && open < maxNav)) miss.push(`V0.32 phone: opening a thread took ${open} ms, over the budget of ${maxNav} ms (factor ${f.toFixed(2)}), ${attempt} of ${TIMED_ATTEMPTS} attempts`);
+    if (!(back >= 0 && back < maxNav)) miss.push(`V0.32 phone: Back to the list took ${back} ms, over the budget of ${maxNav} ms (factor ${f.toFixed(2)}), ${attempt} of ${TIMED_ATTEMPTS} attempts`);
+    console.log(`V0.32 attempt ${attempt}: open ${open} ms, Back ${back} ms; budget ${maxNav} ms each (800 ms × ${f.toFixed(2)}): ${miss.length ? "over" : "within"}`);
+    if (!miss.length) break;
+  }
+  timed(!miss[0], miss[0]);
+  timed(!miss[1], miss[1]);
 } catch (e) {
   failures.push(`V0.32 phone navigation: ${e.message}`);
 }
