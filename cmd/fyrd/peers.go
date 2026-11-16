@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"strconv"
@@ -56,7 +57,7 @@ func newDiscovery(cfg config, self peers.WellKnown, listen string, fr *front.Fro
 		}}
 	if _, err := os.Stat(tailnet.DefaultSocket); err == nil && cfg.OwnerLogin != "" {
 		opt.Nodes = func(ctx context.Context) ([]string, error) { return tailnet.Candidates(ctx, tailnet.DefaultSocket) }
-		if _, dns, err := tailnet.Self(tailnet.DefaultSocket); err == nil && dns != "" {
+		if _, dns, err := tailnet.Self(tailnet.DefaultSocket); (err == nil || errors.Is(err, tailnet.ErrTagged)) && dns != "" {
 			port := 7443
 			if len(cfg.PeerPorts) > 0 {
 				port = cfg.PeerPorts[0]

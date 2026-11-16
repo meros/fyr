@@ -260,7 +260,12 @@ func Main() {
 					Headers map[string]string `json:"headers"`
 				} `json:"mcpServers"`
 			}
-			json.Unmarshal([]byte(os.Args[i+1]), &cfg)
+			// V0.129 (1): Fyr passes a file; a JSON string still works.
+			raw := []byte(os.Args[i+1])
+			if !strings.HasPrefix(strings.TrimSpace(os.Args[i+1]), "{") {
+				raw, _ = os.ReadFile(os.Args[i+1])
+			}
+			json.Unmarshal(raw, &cfg)
 			mcpURL, mcpAuth = cfg.MCPServers["fyr"].URL, cfg.MCPServers["fyr"].Headers["Authorization"]
 		}
 		if a == "--model" && i+1 < len(os.Args) {

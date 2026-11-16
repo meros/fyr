@@ -28,7 +28,8 @@ let
     };
   } // lib.optionalAttrs (cfg.role != "both") { role = cfg.role; }
     // lib.optionalAttrs (cfg.hosts != [ ]) { hosts = cfg.hosts; }
-    // lib.optionalAttrs (hostListen != null) { hostListen = hostListen; });
+    // lib.optionalAttrs (hostListen != null) { hostListen = hostListen; }
+    // lib.optionalAttrs (cfg.ownerLogin != null) { ownerLogin = cfg.ownerLogin; });
   # V0.54: hostPort listens on this machine's tailnet address, which fyrd
   # reads from tailscaled at start; hostListen names an address by hand.
   hostListen = if cfg.hostListen != null then cfg.hostListen
@@ -51,6 +52,17 @@ in
       type = lib.types.port;
       default = 7777;
       description = "Loopback port (v0 serves loopback only, decision 0002).";
+    };
+    ownerLogin = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "you@example.com";
+      description = ''
+        The Tailscale login that owns this Fyr over the tailnet (V0.14). Unset,
+        fyrd takes this machine's Tailscale user. A tagged node (tag:server)
+        has no user, so it must be set there, or Fyr serves no browser over
+        the tailnet (decision 0028, slice 0).
+      '';
     };
     permissionMode = lib.mkOption {
       type = lib.types.str;
