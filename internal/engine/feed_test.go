@@ -43,7 +43,7 @@ func TestFeedRunningAtToolCall(t *testing.T) {
 
 // #47: a settled thread's notices queue without waking the agent. Reviving
 // it is a next notice (V0.95 (1)): it wakes nobody, and the notices go out
-// together at the next turn's tool call.
+// together with the owner's next message.
 func TestFeedSettledQueuesUntilRevived(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("hello")
@@ -65,12 +65,12 @@ func TestFeedSettledQueuesUntilRevived(t *testing.T) {
 	if th, _ := h.e.Thread(id); th.RunEnds != 1 || th.Running || len(th.Feed.Queue) != 2 {
 		t.Fatalf("unsettle woke the agent: runs %d, queue %+v", th.RunEnds, th.Feed.Queue)
 	}
-	if r := h.cmd("thread.send", id, core.Args{"text": "tool 800"}); !r.OK {
+	if r := h.cmd("thread.send", id, core.Args{"text": "go on"}); !r.OK {
 		t.Fatalf("send: %+v", r)
 	}
 	th := h.wait(id, "one turn", func(t core.Thread, _ core.Attention) bool { return t.RunEnds == 2 && !t.Running })
 	// The summary is the first line of what the agent read.
-	if !strings.HasPrefix(th.Summary, "context: [Fyr] The owner set this thread: settled → not settled.") {
+	if !strings.HasPrefix(th.Summary, "echo: [Fyr] The owner set this thread: settled → not settled.") {
 		t.Fatalf("the agent read %q", th.Summary)
 	}
 	time.Sleep(300 * time.Millisecond)

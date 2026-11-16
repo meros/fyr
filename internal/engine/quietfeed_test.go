@@ -79,6 +79,38 @@ func TestObservedMergeDoesNotStartARun(t *testing.T) {
 	h.wait(id, "woken by CI failed", func(t core.Thread, _ core.Attention) bool { return t.RunEnds == 2 && !t.Running })
 }
 
+// SPEC V0.95 (1): a next notice goes out with the next turn: the owner's
+// message carries it, before the owner's words, and a later tool call does
+// not repeat it.
+func TestNextNoticeRidesTheOwnersMessage(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("hello")
+	h.wait(id, "done", state(core.Done))
+	gh := core.Observer(core.ObsGitHub)
+	pr := core.PR{URL: "https://github.com/o/r/pull/13", Repo: "o/r", Number: 13, State: "OPEN", Checks: core.ChecksPending, Branch: "perf/x", Head: "h1"}
+	for _, s := range []string{"OPEN", "MERGED"} {
+		pr.State = s
+		if _, err := h.e.Apply(core.Input{Source: gh, Kind: core.KindPRObserved, Thread: id, Args: pr}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if r := h.cmd("thread.send", id, core.Args{"text": "hello again"}); !r.OK {
+		t.Fatalf("send: %+v", r)
+	}
+	// The fake echoes its input; the summary is its first line.
+	th := h.wait(id, "the owner's turn", func(t core.Thread, _ core.Attention) bool { return t.RunEnds == 2 && !t.Running })
+	if th.Summary != "echo: [Fyr] PR #13: merged." || len(th.Feed.Queue) != 0 {
+		t.Fatalf("the turn read %q, queue %+v", th.Summary, th.Feed.Queue)
+	}
+	if r := h.cmd("thread.send", id, core.Args{"text": "tool 300"}); !r.OK {
+		t.Fatalf("send: %+v", r)
+	}
+	th = h.wait(id, "a turn with a tool call", func(t core.Thread, _ core.Attention) bool { return t.RunEnds == 3 && !t.Running })
+	if th.Summary != "context: " {
+		t.Fatalf("the tool call repeated it: %q", th.Summary)
+	}
+}
+
 // SPEC V0.95 (5): the load pass deletes the ~N records that ended and that no
 // thread change follows, with the threads' references, and the leaked
 // acme/app#88 fixture change; a second load changes nothing.
