@@ -7,6 +7,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/claudecli"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/secrets"
@@ -25,9 +26,9 @@ func TestRefreshModelsOwnerCommand(t *testing.T) {
 	defer st.Close()
 	reg := &provider.Registry{DB: st, Secrets: secrets.Files(filepath.Join(dir, "secrets")), Home: dir}
 	calls := 0
-	reg.ListModels = func(context.Context, provider.Provider, string) ([]cli.Model, error) {
+	reg.ListModels = func(context.Context, provider.Provider, string) (claudecli.Listing, error) {
 		calls++
-		return []cli.Model{{ID: "m1"}, {ID: "m2"}}, nil
+		return claudecli.Listing{Models: []cli.Model{{ID: "m1"}, {ID: "m2"}}}, nil
 	}
 	e := New(st)
 	e.Load()

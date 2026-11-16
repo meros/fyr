@@ -188,7 +188,8 @@ test("V0.120 (2): turning models on and off; the default stays on; a hand id can
 
 test("V0.120 (4): the Providers row adds the New count", () => {
   assert.equal(newCount(dto()), 1);
-  assert.equal(listLine(dto()), "Claude account · ~/.claude · 3 models · 1 new");
+  assert.equal(listLine(dto()), "Claude account · ~/.claude · 3 of 6 models on · 1 new", "found live 16 Nov: the row shows what the provider reports");
+  assert.equal(listLine({ kind: "endpoint", baseURL: "https://openrouter.ai/api", models: [{ id: "m0" }], catalog: Array.from({ length: 380 }, (_, i) => ({ id: `m${i}`, firstSeen: "" })) }), "Endpoint · openrouter.ai · 1 of 380 models on");
 });
 
 test("V0.120 (5): a model in use that is off shows as (off) in its picker, and nowhere else", () => {
@@ -200,4 +201,14 @@ test("V0.120 (5): a model in use that is off shows as (off) in its picker, and n
   assert.equal(projectModelOff({ name: "x", profile: "claude", model: "claude-opus-5-4" }, [claude]), "opus 5.4 is turned off in Claude. New threads here start on Claude's default until you pick another.");
   assert.equal(projectModelOff({ name: "x", profile: "claude", model: "claude-opus-5-5" }, [claude]), null);
   assert.equal(projectModelOff({ name: "x", profile: "gone", model: "m" }, [claude]), null);
+});
+
+// Found live 16 Nov: a check that only has Fyr's known list says so in the foot (not as an error); a failed check's
+// reason wins; otherwise the group's own sentence.
+import { modelsFoot } from "../src/providers.ts";
+test("V0.120: the Models foot: a failed check, the known-list note, else what the group does", () => {
+  const known = "Claude answered with its short names only (its own list was not ready), so this is Fyr's known list. Refresh in a minute.";
+  assert.deepEqual(modelsFoot(dto({ checkNote: known }), T), { text: known, error: false });
+  assert.deepEqual(modelsFoot(dto({ checkNote: known, checkError: "claude ended without listing its models" }), T), { text: "Could not list the models: claude ended without listing its models. The list below is the one from today; it still works.", error: true });
+  assert.deepEqual(modelsFoot(dto(), T), { text: "★ is the default for a new thread. Fyr asks the provider for its models when you open this page and once a day.", error: false });
 });

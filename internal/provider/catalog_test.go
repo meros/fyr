@@ -2,13 +2,16 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/claudecli"
 )
 
 func catIDs(p Provider) []string {
@@ -101,12 +104,12 @@ func TestFailedCheckChangesNothing(t *testing.T) {
 	r := newReg(t, f)
 	r.Run(cmd("provider.create", map[string]any{"id": "ds", "name": "DS", "kind": "endpoint", "baseURL": "https://e.example", "key": "k-123456789", "models": []any{"m1"}}))
 	calls := 0
-	r.ListModels = func(context.Context, Provider, string) ([]cli.Model, error) {
+	r.ListModels = func(context.Context, Provider, string) (claudecli.Listing, error) {
 		calls++
 		if calls == 1 {
-			return []cli.Model{{ID: "m1"}, {ID: "m2"}}, nil
+			return claudecli.Listing{Models: []cli.Model{{ID: "m1"}, {ID: "m2"}}}, nil
 		}
-		return nil, errors.New("e.example/v1/models answered 401")
+		return claudecli.Listing{}, errors.New("e.example/v1/models answered 401")
 	}
 	if rep := r.Run(cmd("provider.refreshModels", map[string]any{"id": "ds"})); !rep.OK {
 		t.Fatal(rep.Error)
@@ -136,9 +139,9 @@ func TestUpdateOnListAndManual(t *testing.T) {
 	f := newFixture(t)
 	r := newReg(t, f)
 	r.Run(cmd("provider.create", map[string]any{"id": "ds", "name": "DS", "kind": "endpoint", "baseURL": "https://e.example", "key": "k-123456789", "models": []any{"m1"}}))
-	r.ListModels = func(context.Context, Provider, string) ([]cli.Model, error) { return []cli.Model{{ID: "m1"}}, nil }
+	r.ListModels = func(context.Context, Provider, string) (claudecli.Listing, error) { return claudecli.Listing{Models: []cli.Model{{ID: "m1"}}}, nil }
 	r.Run(cmd("provider.refreshModels", map[string]any{"id": "ds"}))
-	r.ListModels = func(context.Context, Provider, string) ([]cli.Model, error) { return []cli.Model{{ID: "m1"}, {ID: "m2"}}, nil }
+	r.ListModels = func(context.Context, Provider, string) (claudecli.Listing, error) { return claudecli.Listing{Models: []cli.Model{{ID: "m1"}, {ID: "m2"}}}, nil }
 	r.Run(cmd("provider.refreshModels", map[string]any{"id": "ds"}))
 	if p, _ := r.get("ds"); !catOf(p, "m2").New {
 		t.Fatal("m2 not New")
@@ -177,9 +180,9 @@ func TestCheckSkipsUnready(t *testing.T) {
 	r.Run(cmd("provider.create", map[string]any{"id": "nokey", "name": "No key", "kind": "endpoint", "baseURL": "https://e.example", "models": []any{"m1"}}))
 	r.Run(cmd("provider.create", map[string]any{"id": "ok", "name": "OK", "kind": "endpoint", "baseURL": "https://e.example", "key": "k-123456789", "models": []any{"m1"}}))
 	var asked []string
-	r.ListModels = func(_ context.Context, p Provider, key string) ([]cli.Model, error) {
+	r.ListModels = func(_ context.Context, p Provider, key string) (claudecli.Listing, error) {
 		asked = append(asked, p.ID)
-		return []cli.Model{{ID: "m1"}}, nil
+		return claudecli.Listing{Models: []cli.Model{{ID: "m1"}}}, nil
 	}
 	if rep := r.Run(cmd("provider.refreshModels", map[string]any{"id": "nokey"})); rep.OK || rep.Status != 409 {
 		t.Fatalf("checked a provider with no key: %+v", rep)
@@ -193,5 +196,46 @@ func TestCheckSkipsUnready(t *testing.T) {
 	r.CheckDaily(now.Add(25 * time.Hour))
 	if !slices.Equal(asked, []string{"ok", "ok"}) {
 		t.Fatalf("daily asked %v", asked)
+	}
+}
+
+// Found live 16 Nov (after the V0.120 deploy): the stored Claude logins had
+// a catalog of the 4 known models and no error, because the CLI answered
+// with its aliases only and Fyr took that quietly. A check that only has
+// Fyr's known list says so (checkNote), on the DTO, and the check is logged.
+func TestCheckSaysWhenTheCLIListsOnlyAliases(t *testing.T) {
+	f := newFixture(t)
+	r := newReg(t, f)
+	const live = `{"id":"claudeAgent","name":"Claude","cli":"claude","auth":{"kind":"cli-login"},"endpoint":{},` +
+		`"models":[{"id":"claude-opus-5-5","name":"Opus 5.5"},{"id":"claude-sonnet-5-5","name":"Sonnet 5.5"},{"id":"claude-haiku-5-5","name":"Haiku 5.5"}],"defaultModel":"claude-opus-5-5"}`
+	var p Provider
+	if err := json.Unmarshal([]byte(live), &p); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.add(p); err != nil {
+		t.Fatal(err)
+	}
+	r.ListModels = func(context.Context, Provider, string) (claudecli.Listing, error) {
+		return claudecli.Listing{Models: claudecli.Models, Reported: []string{"claude-opus-5-5"}, Note: "Claude answered with its short names only; this is Fyr's known list."}, nil
+	}
+	var logged strings.Builder
+	r.Logf = func(format string, a ...any) { fmt.Fprintf(&logged, format+"\n", a...) }
+	if rep := r.Run(cmd("provider.refreshModels", map[string]any{"id": "claudeAgent"})); !rep.OK {
+		t.Fatal(rep.Error)
+	}
+	d := r.List()[0]
+	if !strings.Contains(d.CheckNote, "Fyr's known list") || d.CheckError != "" || len(d.Catalog) != 4 {
+		t.Fatalf("%+v", d)
+	}
+	if !strings.Contains(logged.String(), "providers: check claudeAgent: 1 models reported (claude-opus-5-5)") || !strings.Contains(logged.String(), "known list") {
+		t.Fatalf("log %q", logged.String())
+	}
+	// A full answer clears the note.
+	r.ListModels = func(context.Context, Provider, string) (claudecli.Listing, error) {
+		return claudecli.Listing{Models: claudecli.Models}, nil
+	}
+	r.Run(cmd("provider.refreshModels", map[string]any{"id": "claudeAgent"}))
+	if d := r.List()[0]; d.CheckNote != "" {
+		t.Fatalf("note stays: %q", d.CheckNote)
 	}
 }

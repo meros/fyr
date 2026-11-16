@@ -1420,6 +1420,37 @@ try {
   failures.push(`V0.120 desktop: ${e.message}`);
 }
 
+// Found live 16 Nov, after the V0.120 deploy (&providers=live is shaped like the live rows): the Providers rows say
+// how many of the reported models are on; a Claude login whose check only had Fyr's known list says so in the foot;
+// OpenRouter's 380 models render with search, "Show N more" and Refresh, on the desktop and the phone.
+for (const [w, h, phone] of [[1280, 800, false], [390, 844, true]]) {
+  const at = phone ? ".m-settings" : ".dlg";
+  const url = (page) => (phone ? `${origin}/?mock=rail&providers=live&settings=${page}` : `${origin}/?mock=rail&providers=live&dialog=settings&page=${page}`);
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: phone, maxTouchPoints: phone ? 5 : 0 });
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: phone });
+    await navigate(url("providers"), `document.querySelectorAll('${at} .prow').length === 3`);
+    const rows = await evaluate(`[...document.querySelectorAll('${at} .prow .sr-d')].map(e => e.textContent)`);
+    check(rows[0]?.includes("3 of 4 models on") && rows[2]?.includes("1 of 380 models on"), `live ${w}: the Providers rows (${JSON.stringify(rows)})`);
+    await navigate(url("providers/claudeAgent"), `document.querySelectorAll('${at} .model').length === 3`);
+    const c = await evaluate(`({ off: document.querySelectorAll('${at} .omodel').length, foot: document.querySelector('${at} .models .sg-f')?.textContent ?? '' })`);
+    check(c.off === 1 && /Fyr's known list/.test(c.foot), `live ${w}: a Claude login on the known list (${JSON.stringify(c)})`);
+    await navigate(url("providers/claudeDeepseek"), `document.querySelectorAll('${at} .omodel').length > 0`);
+    const o = await evaluate(`({ on: document.querySelectorAll('${at} .model').length, off: document.querySelectorAll('${at} .omodel').length, sub: [...document.querySelectorAll('${at} .models .sg-sub')].map(e => e.textContent), more: document.querySelector('${at} .models .more')?.textContent ?? '', refresh: [...document.querySelectorAll('${at} .models .lnk')].some(b => b.textContent === 'Refresh'), search: document.querySelector('${at} .models input[type=search]')?.placeholder ?? '' })`);
+    check(o.on === 1 && o.off === 8 && o.sub[1] === "Off · 379" && o.more === "Show 371 more" && o.refresh && o.search === "Search 380 models", `live ${w}: OpenRouter's 380 models (${JSON.stringify(o)})`);
+    await evaluate(`document.querySelector('${at} .models input[type=search]').focus()`);
+    await send("Input.insertText", { text: "anthropic" });
+    await settle();
+    const q = await evaluate(`({ line: document.querySelector('${at} .models .mchk')?.textContent ?? '', rows: [...document.querySelectorAll('${at} .models :is(.model,.omodel)')].map(r => r.dataset.model) })`);
+    check(q.line === "38 of 380 match" && q.rows.length === 4 && q.rows.every((x) => x.startsWith("anthropic/")), `live ${w}: the search over 380 models (${JSON.stringify(q)})`);
+    await shot(`live-openrouter-${phone ? "phone" : "desktop"}.png`);
+  } catch (e) {
+    failures.push(`live ${w}: ${e.message}`);
+  }
+}
+await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+
 // SPEC V0.121: one project order. Settings → Projects has a grip per row on the desktop; Alt+↑ sends
 // front.projectOrder with the whole list; the inbox's project chips and New thread's project list follow at once.
 try {

@@ -36,8 +36,8 @@ import {
   loginActive,
   loginButton,
   loginLine,
-  checkErrorLine,
   checkLine,
+  modelsFoot,
   modelParts,
   modelsAfter,
   needsCheck,
@@ -828,7 +828,7 @@ function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run
   const limit = offLimit(searching);
   const offShown = more ? parts.off : parts.off.slice(0, limit);
   const line = searching ? `${parts.matched} of ${parts.total} match` : checkLine({ ...p, checking: p.checking || checking }, now);
-  const failed = checkErrorLine(p, now);
+  const foot = modelsFoot(p, now);
   const hasEfforts = p.models.some((m) => m.efforts?.length);
   return (
     <Group
@@ -862,8 +862,8 @@ function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run
           }
         </>
       }
-      foot={failed ?? "★ is the default for a new thread. Fyr asks the provider for its models when you open this page and once a day."}
-      footErr={!!failed}
+      foot={foot.text}
+      footErr={foot.error}
     >
       {rowErr("check") && <Row error={rowErr("check")} />}
       {!ro.mode && parts.total >= 9 && (
