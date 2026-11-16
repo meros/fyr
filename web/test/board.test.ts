@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { boardItems, boardProjects, columnOf, columns, needsCount, stackOrder } from "../src/board.ts";
 import type { Change, Project, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
+import { changeList } from "../src/offers.ts";
 
 const at = (m: number) => new Date(Date.UTC(2026, 10, 15, 9, m)).toISOString();
 const ch = (p: Partial<Change>): Change => ({ id: "c", key: "k", kind: "infra", title: "x", phase: "working", phaseBy: "agent", createdAt: at(0), updatedAt: at(0), ...p });
@@ -81,4 +82,26 @@ test("SPEC 0.5 V0.84, #93: a parked change sits in its phase column, out of Need
   assert.equal(by.working.count, 1);
   const away = { s1: thread("s1", "settled", "settled", { title: "Done", changes: [ch({ id: "sp", phase: "review", needs: "owner", parked })] }) };
   assert.deepEqual(boardItems(away, projects).map((i) => i.change.id), [], "a parked change of a settled thread is history, like the rest of it");
+});
+
+test("SPEC 0.5 V0.87 (3), #69: one card per change id in a thread, the newest, with its branch", () => {
+  const old = ch({ id: "same", key: "doc:x", kind: "doc", branch: "main", updatedAt: at(1) });
+  const shown = ch({ id: "same", key: "doc:x", kind: "doc", branch: "fix/y", updatedAt: at(5) });
+  const list = changeList({ changes: [old, shown] });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].branch, "fix/y");
+  const ts = { t1: thread("t1", "seen", "seen", { title: "One", changes: [old, shown] }) };
+  const items = boardItems(ts, projects);
+  assert.equal(items.length, 1, "one card on the board");
+  assert.equal(items[0].change.branch, "fix/y");
+});
+
+test("SPEC 0.5 V0.87 (3), #69: a host record and the change that follows it are one card on the board", () => {
+  const rec = ch({ id: "r1", key: "git:github.com/meros/fyr#fix/y", kind: "code", branch: "fix/y", phaseBy: "observed", threads: ["t1", "t2"], updatedAt: at(1) });
+  const follower = ch({ id: "c1", key: "fyr:decision-0021", kind: "doc", branch: "fix/y", observed: "r1", phase: "review", updatedAt: at(2) });
+  const ts = {
+    t2: thread("t2", "seen", "seen", { title: "Other thread in the folder", changes: [rec] }),
+    t1: thread("t1", "seen", "seen", { title: "The work", changes: [follower] }),
+  };
+  assert.deepEqual(boardItems(ts, projects).map((i) => `${i.thread.id}/${i.change.id}`), ["t1/c1"], "the follower's card, under its thread");
 });
