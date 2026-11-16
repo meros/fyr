@@ -28,6 +28,9 @@ const (
 	// DoneBeforeV2 is the reason the load pass gives a change that landed
 	// before V0.98 (7).
 	DoneBeforeV2 = "landed before v2"
+	// DoneDefaultBranch is the reason of a record on the repo's default
+	// branch (V0.105 (2)).
+	DoneDefaultBranch = "default branch"
 	// KindChangeDone is the owner's Done on a change of the thread; the host
 	// sends it to a host record as KindRecordDone.
 	KindChangeDone = "change.done"
