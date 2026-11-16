@@ -213,6 +213,8 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	if err != nil {
 		return nil, nil, Result{}, asRejection(err)
 	}
+	// 0024 §5: an ask whose change is done or whose PR closed is void.
+	res.Events = append(res.Events, voidAsks(t)...)
 	// V0.84 (3): a change that moved since the owner said Not now is back.
 	unparkStale(t)
 	// The scheduler (#46): the Rules this Input made true fire now, in the

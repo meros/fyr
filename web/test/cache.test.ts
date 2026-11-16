@@ -17,10 +17,20 @@ test("a partial state replaces only the threads it carries", () => {
   assert.deepEqual(mergeStateDelta(stored, full).threads.map((t) => t.id), ["c"], "a full state replaces everything");
 });
 
-test("the since rev asks a little early, never late", () => {
+test("the since rev asks a minute early, never late", () => {
   const s = state([thread("a", "seen", "seen", { rev: 1794666946312324400 }), thread("b", "seen", "seen", { rev: 1794666946312320000 })]);
-  assert.ok(sinceRev(s) < 1794666946312324400 && sinceRev(s) > 1794666946312320000);
+  assert.ok(sinceRev(s) < 1794666946312320000, "never late");
   assert.equal(sinceRev(state([])), 0);
+});
+
+// Found live (16 Nov): a settled thread stayed in Needs you on two devices. The stream holds a thread's frame up
+// to 100 ms while other threads' frames go out at once, so a device can hold a newer rev of thread B before the
+// last frame of thread A. When the stream drops in that window, ?since= from B's rev skipped A's update for good.
+test("a thread whose last frame was overtaken by a newer one is asked for again", () => {
+  const settledA = 1794833739804779693; // A settled
+  const laterB = settledA + 80_000_000; // B changed 80 ms later and reached the device first
+  const stored = state([thread("a", "asking", "needs", { rev: settledA - 600_000_000_000 }), thread("b", "seen", "seen", { rev: laterB })]);
+  assert.ok(sinceRev(stored) < settledA, `since ${sinceRev(stored)} skips A's frame at ${settledA}`);
 });
 
 test("stored and new events merge by seq; a gap drops the stored copy", () => {
