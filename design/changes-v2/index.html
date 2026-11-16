@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Changes v2 mockups</title>
+<style>
+:root{--surface:#f6f7f8;--surface-raised:#fff;--surface-sunken:#edeff2;--surface-select:#e6ecf3;--line:#dde1e6;--line-strong:#b4bcc6;--ink:#111820;--ink-muted:#56616d;--ink-faint:#7d8894;--night:#14212d;--on-night:#f6f7f8;--beam:#e8960f;--beam-mark:#b86e00;--beam-ink:#8f5300;--beam-wash:#fdf1dc;--signal:#d93a2b;--signal-ink:#b42318;--harbour:#2f6fb0;--harbour-wash:#e7f0fa;--calm:#2e7d5b;
+--sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--surface:#0f1419;--surface-raised:#161d24;--surface-sunken:#0b0f13;--surface-select:#1c2733;--line:#26303a;--line-strong:#3d4957;--ink:#e8ecf0;--ink-muted:#9aa6b2;--ink-faint:#6f7b87;--night:#24323f;--beam:#f5a524;--beam-mark:#f5a524;--beam-ink:#f5b54a;--beam-wash:#2a2112;--signal:#ff6b5b;--signal-ink:#ff8a7d;--harbour:#6fa8e8;--harbour-wash:#15253a;--calm:#5cc49a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--surface);color:var(--ink);font:400 13px/18px var(--sans)}
+.wrap{max-width:1280px;margin:0 auto;padding:24px 16px 64px}
+h1{font:600 20px/28px var(--sans);margin:0 0 4px}
+.lede{color:var(--ink-muted);font-size:15px;line-height:24px;max-width:760px;margin:0 0 20px}
+nav.tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:20px}
+nav.tabs button{font:500 13px var(--sans);background:none;border:0;padding:8px 12px;color:var(--ink-muted);cursor:pointer;border-bottom:2px solid transparent}
+nav.tabs button[aria-selected=true]{color:var(--ink);border-color:var(--ink)}
+section.screen{display:none}section.screen.on{display:block}
+.note{color:var(--ink-muted);font-size:12px;line-height:16px;margin:8px 0 0;max-width:900px}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:16px}
+.notes div{background:var(--surface-raised);border:1px solid var(--line);border-radius:10px;padding:12px}
+.notes b{display:block;font-weight:600;margin-bottom:4px}
+.notes span{color:var(--ink-muted);font-size:12px;line-height:16px}
+.mono{font-family:var(--mono);font-size:12px}
+.muted{color:var(--ink-muted)}.faint{color:var(--ink-faint)}
+.label{font:600 12px/16px var(--sans);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-muted)}
+/* app frame */
+.app{display:grid;grid-template-columns:64px 1fr;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;min-height:640px}
+.rail{background:var(--surface-sunken);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:14px;padding:14px 0;font-size:11px;color:var(--ink-muted)}
+.rail .on{color:var(--ink);font-weight:600}
+.rail .ic{width:18px;height:18px;border:1.5px solid currentColor;border-radius:4px;margin:0 auto 2px}
+.main{padding:16px 20px;min-width:0}
+.btn{font:500 12px var(--sans);border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--ink);border-radius:6px;padding:4px 10px;cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--night);color:var(--on-night);border-color:var(--night)}
+.btn.ghost{border-color:transparent;background:none;color:var(--ink-muted)}
+.chip{display:inline-flex;align-items:center;gap:4px;font:400 12px/16px var(--mono);border:1px solid var(--line);border-radius:3px;padding:1px 6px;color:var(--ink-muted);white-space:nowrap;background:var(--surface-raised)}
+.chip.fail{color:var(--signal-ink);border-color:color-mix(in srgb,var(--signal) 40%,transparent)}
+.chip.ok{color:var(--calm)}
+.chip.beam{color:var(--beam-ink);border-color:var(--beam);background:var(--beam-wash)}
+.proj{display:inline-flex;align-items:center;gap:6px;font-weight:500;white-space:nowrap}
+.pi{width:16px;height:16px;border-radius:4px;display:inline-grid;place-items:center;font:600 10px var(--sans);color:#fff;flex:none}
+.pi.n{background:#8a5a44}.pi.f{background:#c0392b}.pi.p{background:#6d5fb3}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--beam);display:inline-block;flex:none}
+.sum{display:flex;gap:16px;flex-wrap:wrap;align-items:baseline;margin:4px 0 16px}
+.sum b{font-variant-numeric:tabular-nums}
+.sum .beamn{color:var(--beam-ink)}
+/* cards / rows */
+.block{background:var(--surface-raised);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden}
+.bh{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface-sunken);border-bottom:1px solid var(--line)}
+.bh .grow{flex:1}
+.bh.beam{background:var(--beam-wash)}
+.row{display:grid;grid-template-columns:minmax(0,2.2fr) 150px minmax(0,2fr) auto;gap:12px;align-items:center;padding:8px 12px;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.row .t{min-width:0}
+.row .t .title{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .t .sub{color:var(--ink-muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .facts{color:var(--ink-muted);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .act{display:flex;gap:6px;align-items:center}
+.fail{color:var(--signal-ink)}.ok{color:var(--calm)}
+/* phase rail */
+.prail{display:flex;align-items:center;gap:0}
+.prail i{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--line-strong);display:inline-block;background:var(--surface-raised)}
+.prail i.f{background:var(--ink-muted);border-color:var(--ink-muted)}
+.prail i.now{background:var(--harbour);border-color:var(--harbour)}
+.prail i.x{background:var(--signal);border-color:var(--signal)}
+.prail i.fin{border-radius:2px}
+.prail u{width:14px;height:1.5px;background:var(--line-strong);display:inline-block}
+.prail u.f{background:var(--ink-muted)}
+.prail em{font-style:normal;font-size:11px;color:var(--ink-faint);margin-left:6px;white-space:nowrap}
+.lane{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--line);cursor:pointer}
+.lane:first-child{border-top:0}
+.lane .counts{color:var(--ink-muted);font-size:12px}
+.strip{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px dashed var(--line-strong);color:var(--ink-muted);font-size:12px;background:var(--surface)}
+.menu{position:relative}
+.pop{position:absolute;right:0;top:26px;background:var(--surface-raised);border:1px solid var(--line);border-radius:6px;box-shadow:0 12px 32px rgba(17,24,32,.14);padding:4px;z-index:3;min-width:180px}
+.pop div{padding:6px 10px;border-radius:4px}
+.pop div:hover{background:var(--surface-select)}
+.pop .sep{height:1px;background:var(--line);padding:0;margin:4px 0}
+/* thread */
+.thead{border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:12px}
+.thead h2{font:600 20px/28px var(--sans);margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thead .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ttabs{display:flex;gap:16px;margin-top:10px}
+.ttabs span{padding:6px 0;color:var(--ink-muted)}.ttabs span.on{color:var(--ink);border-bottom:2px solid var(--ink)}
+.card{background:var(--surface-raised);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+.card .top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.card .top .title{font-weight:500;font-size:15px;flex:1;min-width:200px}
+.card .line{margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--ink-muted)}
+.ask{margin-top:10px;border:1px solid var(--beam);background:var(--beam-wash);border-radius:6px;padding:8px 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ask .q{flex:1;min-width:200px;color:var(--ink)}
+.fold{margin-top:8px;color:var(--ink-muted);font-size:12px;display:flex;gap:16px}
+.bigrail{display:flex;align-items:center;margin-top:10px;font-size:12px}
+.bigrail .st{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:84px;color:var(--ink-faint)}
+.bigrail .st.f{color:var(--ink-muted)}.bigrail .st.now{color:var(--harbour);font-weight:600}
+.bigrail .st i{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--line-strong);background:var(--surface-raised)}
+.bigrail .st.f i{background:var(--ink-muted);border-color:var(--ink-muted)}
+.bigrail .st.now i{background:var(--harbour);border-color:var(--harbour)}
+.bigrail .st.fin i{border-radius:3px}
+.bigrail .bar{flex:1;height:1.5px;background:var(--line-strong);margin-bottom:18px;max-width:80px}
+.bigrail .bar.f{background:var(--ink-muted)}
+.sect{margin:18px 0 8px;display:flex;gap:8px;align-items:center}
+/* inbox */
+.inbox{background:var(--surface-raised);border:1px solid var(--line);border-radius:10px;max-width:420px}
+.irow{display:grid;grid-template-columns:20px 1fr auto;gap:4px 10px;padding:10px 12px;border-top:1px solid var(--line)}
+.irow:first-child{border-top:0}
+.irow.sel{background:var(--surface-select)}
+.irow .l1{display:flex;gap:8px;align-items:center;min-width:0}
+.irow .l1 .tt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;min-width:0}
+.irow .l2{grid-column:2/4;display:flex;gap:8px;align-items:center;min-width:0;font-size:12px;color:var(--ink-muted)}
+.irow .l2 .act{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;font-family:var(--mono)}
+.irow .tm{font-family:var(--mono);font-size:12px;color:var(--ink-muted)}
+.st{width:14px;height:14px;border-radius:50%;margin-top:2px}
+.st.ask{background:var(--beam)}.st.work{border:2px solid var(--ink-faint);border-right-color:transparent}.st.blk{border:2px solid var(--harbour)}
+.grp{padding:8px 12px;background:var(--surface-sunken);font-size:12px;color:var(--ink-muted);border-top:1px solid var(--line)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.cap{font-weight:600;margin:0 0 8px}
+/* phone */
+.phones{display:flex;gap:24px;flex-wrap:wrap}
+.phone{width:390px;max-width:100%;border:1px solid var(--line-strong);border-radius:28px;background:var(--surface);padding:14px 12px 20px;min-height:760px}
+.phone .ph{display:flex;justify-content:space-between;align-items:center;margin:4px 4px 10px}
+.phone .ph b{font:600 20px var(--sans)}
+.pcard{background:var(--surface-raised);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.pcard .a{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--ink-muted)}
+.pcard .b{font-weight:500;font-size:15px;line-height:22px;margin:4px 0}
+.pcard .c{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--ink-muted)}
+.pcard .btn{min-height:36px;padding:6px 14px;font-size:13px}
+.plane{display:flex;justify-content:space-between;padding:12px;border-top:1px solid var(--line);min-height:44px;align-items:center}
+/* agent */
+pre{font:400 12px/18px var(--mono);background:var(--surface-sunken);border:1px solid var(--line);border-radius:6px;padding:12px;overflow:auto;white-space:pre-wrap;margin:0}
+.fyrline{display:flex;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+.fyrline:first-child{border-top:0}
+.fyrline .u{font:600 11px var(--mono);border-radius:3px;padding:1px 5px;flex:none}
+.u.wake{background:var(--beam-wash);color:var(--beam-ink)}.u.next{background:var(--harbour-wash);color:var(--harbour)}.u.silent{background:var(--surface-sunken);color:var(--ink-muted)}
+table{border-collapse:collapse;width:100%;background:var(--surface-raised);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:8px 12px;border-top:1px solid var(--line);vertical-align:top}
+th{background:var(--surface-sunken);font-weight:600;font-size:12px;border-top:0}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+@media (max-width:900px){.row{grid-template-columns:1fr;gap:4px}.two{grid-template-columns:1fr}.app{grid-template-columns:1fr}.rail{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Changes v2</h1>
+<p class="lede">One card per piece of work. Fyr keeps the facts current until the finish line, then the card leaves. Needs you shows only what waits on you, and you can correct any card. Data below is from today's threads.</p>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" aria-selected="true" data-s="board">Board</button>
+  <button role="tab" aria-selected="false" data-s="thread">Thread · Changes tab</button>
+  <button role="tab" aria-selected="false" data-s="inbox">Inbox row</button>
+  <button role="tab" aria-selected="false" data-s="phone">Phone</button>
+  <button role="tab" aria-selected="false" data-s="agent">Agent side</button>
+  <button role="tab" aria-selected="false" data-s="fixes">Pain and fix</button>
+  <button role="tab" aria-selected="false" data-s="order">Build order</button>
+</nav>
+
+<!-- BOARD -->
+<section class="screen on" id="board">
+<div class="app">
+  <div class="rail"><div><div class="ic"></div>Needs</div><div><div class="ic"></div>Inbox</div><div class="on"><div class="ic"></div>Changes</div></div>
+  <div class="main">
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <h1 style="margin:0">Changes</h1>
+      <div class="sum">
+        <span class="beamn"><b>3</b> need you</span>
+        <span><b>2</b> fixing</span>
+        <span><b>6</b> in review</span>
+        <span><b>4</b> working</span>
+        <span class="muted">checked 20 s ago</span>
+      </div>
+    </div>
+
+    <div class="block" style="overflow:visible">
+      <div class="bh beam" style="border-radius:10px 10px 0 0"><span class="dot"></span><span class="label" style="color:var(--beam-ink)">Needs you · 3</span><span class="grow"></span><button class="btn primary">Merge all green (2)</button></div>
+      <div class="row">
+        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Norban</span> &nbsp;#13256 Placement rows load in one read</div><div class="sub">Ready: merge · head <span class="mono">a1b2c3d</span> · thread: Make a real effort on map perf</div></div>
+        <div class="prail"><i class="f"></i><u class="f"></u><i class="now"></i><u></u><i class="fin"></i><em>to merged</em></div>
+        <div class="facts"><span class="ok">✓ 41/41</span> · approved · mergeable</div>
+        <div class="act"><button class="btn primary">Merge a1b2c3d</button><button class="btn ghost">Not now</button><span class="menu"><button class="btn ghost">⋯</button></span></div>
+      </div>
+      <div class="row">
+        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Norban</span> &nbsp;collector#810 Re-scrape one listing</div><div class="sub">Ask: "Approve the new column on external_listing? It is irreversible on prod." · thread: Re-scrape a single listing</div></div>
+        <div class="prail"><i class="f"></i><u class="f"></u><i class="now"></i><u></u><i class="fin"></i><em>to landed</em></div>
+        <div class="facts"><span class="ok">✓ checks</span> · review not needed</div>
+        <div class="act"><button class="btn">Approve</button><button class="btn">Answer…</button><button class="btn ghost">Not now</button></div>
+      </div>
+      <div class="row">
+        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Norban</span> &nbsp;hosting:proxy-quota Raise the proxy quota</div><div class="sub">Stopped on a failure 12 min ago: tofu apply failed, 403 on the quota API · thread: LC automation</div></div>
+        <div class="prail"><i class="f"></i><u class="f"></u><i class="x"></i><u></u><i class="fin"></i><em>to landed</em></div>
+        <div class="facts"><span class="fail">◆ apply failed</span> · reported</div>
+        <div class="act"><button class="btn">Open thread</button><button class="btn ghost">Not now</button>
+          <span class="menu"><button class="btn ghost" aria-expanded="true">⋯</button>
+            <div class="pop"><div>Refresh now</div><div>Done</div><div>Abandon</div><div class="sep"></div><div>Move to thread…</div><div>Open PR</div></div>
+          </span></div>
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="lane" style="cursor:default"><span>▾</span><span class="proj"><span class="pi n">N</span>Norban</span><span class="counts">2 fixing · 4 in review · 3 working</span></div>
+      <div class="row">
+        <div class="t"><div class="title">#13251 Map: area names first, the rest on demand</div><div class="sub">thread: Listing map · branch <span class="mono">perf/13251-areas</span></div></div>
+        <div class="prail"><i class="f"></i><u class="f"></u><i class="now"></i><u></u><i class="fin"></i><em>to merged</em></div>
+        <div class="facts">CI running 9/17 · 0 failed</div>
+        <div class="act"><span class="mono muted">1 min</span></div>
+      </div>
+      <div class="row">
+        <div class="t"><div class="title">#13254 Test-lab homes on the map at once</div><div class="sub">thread: Make a real effort on map perf · fixing</div></div>
+        <div class="prail"><i class="f"></i><u class="f"></u><i class="now"></i><u></u><i class="fin"></i><em>to merged</em></div>
+        <div class="facts"><span class="fail">e2e failed</span> · Agent is fixing CI</div>
+        <div class="act"><span class="mono muted">3 min</span></div>
+      </div>
+      <div class="row">
+        <div class="t"><div class="title">LC: compare 100 random external listings</div><div class="sub">thread: Pick 100 external listings · branch <span class="mono">lc/random-100</span> pushed, no PR yet</div></div>
+        <div class="prail"><i class="now"></i><u></u><i></i><u></u><i class="fin"></i><em>to merged</em></div>
+        <div class="facts">working · pushed 4 min ago</div>
+        <div class="act"><span class="mono muted">4 min</span></div>
+      </div>
+      <div class="lane"><span class="muted">+ 6 more in Norban</span></div>
+    </div>
+
+    <div class="block">
+      <div class="lane" style="cursor:default"><span>▾</span><span class="label">No thread · 1</span><span class="counts">Fyr saw the push but cannot tell which thread made it</span></div>
+      <div class="row">
+        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Norban</span> &nbsp;branch fix/13235-bosthlm-map</div><div class="sub">pushed 11:08 from the shared Norban checkout</div></div>
+        <div class="prail"><i class="now"></i><u></u><i></i><u></u><i class="fin"></i><em>to landed</em></div>
+        <div class="facts">pushed · no PR</div>
+        <div class="act"><button class="btn">Give to thread…</button><button class="btn ghost">Abandon</button></div>
+      </div>
+      <div class="lane" style="cursor:default"><span>▸</span><span class="label">Untouched for 3 days · 1</span><span class="counts">doc:changes-v2 · nothing new since Fri</span><span style="flex:1"></span><button class="btn">Done</button></div>
+    </div>
+
+    <div class="block">
+      <div class="lane"><span>▸</span><span class="proj"><span class="pi f">F</span>Fyr</span><span class="counts">1 in review · 1 working</span><span style="flex:1"></span><span class="mono muted">#104 runner · review</span></div>
+      <div class="lane"><span>▸</span><span class="proj"><span class="pi p">R</span>recept</span><span class="counts">0 open</span></div>
+    </div>
+
+    <div class="block">
+      <div class="lane"><span>▸</span><span class="label">Finished since your last visit · 7</span><span style="flex:1"></span><span class="muted" style="font-size:12px">#13245 merged 10:42 · #13252 merged 11:05 · Fyr #103 live 12:30 · +4</span></div>
+    </div>
+  </div>
+</div>
+<div class="notes">
+  <div><b>Needs you is computed</b><span>Three causes only: an open ask, a PR that is green and waits for your merge, or a failure the agent stopped on. A CI failure the agent is fixing stays in its lane, muted.</span></div>
+  <div><b>Swim lanes are projects</b><span>One lane per project, project first. Each row has a phase rail that ends at its finish line ("to merged", "to live"). Lanes fold to one line.</span></div>
+  <div><b>Every card has an exit</b><span>A finish line (Norban: merged; Fyr: live after its own deploy), or abandon. "No thread" and "Untouched for 3 days" (one-press Done) hold the rest.</span></div>
+  <div><b>Every card has your corrections</b><span>Refresh now, Done, Abandon, Move to thread, Give to thread. No broadcast to threads to fix records.</span></div>
+</div>
+</section>
+
+<!-- THREAD -->
+<section class="screen" id="thread">
+<div class="app">
+  <div class="rail"><div class="on"><div class="ic"></div>Inbox</div><div><div class="ic"></div>Changes</div></div>
+  <div class="main">
+    <div class="thead">
+      <h2>Make a real effort to figure out the last performance issues loading data on the map</h2>
+      <div class="chips">
+        <span class="proj"><span class="pi n">N</span>Norban</span>
+        <span class="chip beam"><span class="dot"></span>#13256 ready to merge</span>
+        <span class="chip">opus 5.5</span>
+        <span class="chip">settles when #13256 is merged</span>
+      </div>
+      <div class="ttabs"><span>Conversation</span><span class="on">Changes 3</span><span>PR #13256</span></div>
+    </div>
+
+    <div class="sect"><span class="label">Open · 2</span><span style="flex:1"></span><button class="btn">Refresh all</button></div>
+
+    <div class="card">
+      <div class="top"><span class="title">#13256 Placement rows load in one read</span><span class="mono muted">NorbanDev/Norban · perf/13256-rows</span><button class="btn ghost">⋯</button></div>
+      <div class="bigrail">
+        <div class="st f"><i></i>working</div><div class="bar f"></div>
+        <div class="st now"><i></i>review</div><div class="bar"></div>
+        <div class="st fin"><i></i>merged</div>
+      </div>
+      <div class="line"><span class="ok">✓ checks 41/41</span><span>approved by claude-review</span><span>mergeable</span><span>head <span class="mono">a1b2c3d</span></span><span class="faint">checked 30 s ago</span></div>
+      <div class="ask"><span class="dot"></span><span class="q">Green and waiting for your merge. Auto-merge is off.</span><button class="btn primary">Merge a1b2c3d</button><button class="btn">Not now</button></div>
+      <div class="fold"><span>▸ 3 revisions</span><span>▸ evidence 2</span><span>▸ diff, 12 files</span><span>▸ history: joined with branch perf/13256-rows at 11:12</span></div>
+    </div>
+
+    <div class="card">
+      <div class="top"><span class="title">#13254 Test-lab homes on the map at once</span><span class="mono muted">NorbanDev/Norban · fix/13254-testlab</span><button class="btn ghost">⋯</button></div>
+      <div class="bigrail">
+        <div class="st f"><i></i>working</div><div class="bar f"></div>
+        <div class="st now"><i></i>review</div><div class="bar"></div>
+        <div class="st fin"><i></i>merged</div>
+      </div>
+      <div class="line"><span class="fail">◆ e2e failed on 93a7e57</span><span>Agent is fixing CI (run started 2 min ago)</span><span class="faint">checked 30 s ago</span></div>
+    </div>
+
+    <div class="sect"><span class="label">Following · 1</span></div>
+    <div class="card" style="padding:8px 12px">
+      <div class="top"><span class="title" style="font-size:13px">#13251 Map: area names first</span><span class="muted">owned by thread "Listing map"</span><span class="chip">review · CI running</span></div>
+    </div>
+
+    <div class="sect"><span class="label">Done here · 2</span></div>
+    <div class="card" style="padding:8px 12px;color:var(--ink-muted)">
+      #13245 Map performance work · <span class="ok">merged 10:42</span> &nbsp;·&nbsp; #13252 Cache warm-up · <span class="ok">merged 11:05</span>
+    </div>
+  </div>
+</div>
+<div class="notes">
+  <div><b>The header chip is stable</b><span>It shows the change this thread touched last, not "the last PR seen". A side-quest PR in another repo is a normal card in the list. The beam dot says another card waits on you.</span></div>
+  <div><b>The rail ends at the finish line</b><span>Merged is the end for Norban. When it is reached, the card moves to Done here with the reason and time.</span></div>
+  <div><b>Freshness is shown</b><span>"checked 30 s ago" on every fact line. Refresh all reads GitHub and git now.</span></div>
+  <div><b>Joins are visible</b><span>History says when Fyr joined a branch and a PR, and the ⋯ menu has Move to thread when a card is on the wrong thread.</span></div>
+</div>
+</section>
+
+<!-- INBOX -->
+<section class="screen" id="inbox">
+<div class="two">
+  <div>
+    <p class="cap">Today</p>
+    <div class="inbox">
+      <div class="grp">Needs you 1</div>
+      <div class="irow sel"><span class="st blk"></span><div class="l1"><span class="tt">Make a real effort to figure o…</span></div><span class="tm">4 min</span>
+        <div class="l2"><span class="act" style="color:var(--harbour)">Listing map: areas and own h…</span><span class="chip">#13254 merged</span></div></div>
+      <div class="grp">Working 4</div>
+      <div class="irow"><span class="st work"></span><div class="l1"><span class="tt">Listing map:…</span><span class="mono muted">from Make a real</span></div><span class="tm">4 min</span><div class="l2"><span class="chip">PR #116 merged</span></div></div>
+    </div>
+    <p class="note">Blocked although merged; the chip shows a PR of another repo (#116 is a plugin PR); no project; the chip and the activity text fight for one line.</p>
+  </div>
+  <div>
+    <p class="cap">v2</p>
+    <div class="inbox">
+      <div class="grp">Needs you 1</div>
+      <div class="irow sel"><span class="st ask"></span><div class="l1"><span class="pi n">N</span><span class="tt">Make a real effort to figure out the map perf</span></div><span class="tm">4 min</span>
+        <div class="l2"><span class="act">Waiting for you</span><span class="chip beam">#13256 ready to merge</span><button class="btn primary">Merge</button></div></div>
+      <div class="grp">Working 4</div>
+      <div class="irow"><span class="st work"></span><div class="l1"><span class="pi n">N</span><span class="tt">Listing map: area names first</span></div><span class="tm">1 min</span>
+        <div class="l2"><span class="act">Waiting for CI on #13251</span><span class="chip">#13251 review</span></div></div>
+      <div class="irow"><span class="st work"></span><div class="l1"><span class="pi n">N</span><span class="tt">Pick 100 external listings on true random</span></div><span class="tm">4 min</span>
+        <div class="l2"><span class="act">Writing 4-ludvika.md</span><span class="chip">LC pushed</span></div></div>
+      <div class="irow"><span class="st work"></span><div class="l1"><span class="pi f">F</span><span class="tt">Build the Claude in a long-living process</span></div><span class="tm">3 min</span>
+        <div class="l2"><span class="act">Trace the runner restart</span><span class="chip">#104 review</span><span class="muted">+1</span></div></div>
+    </div>
+    <p class="note">Line 1: project icon, title, time. Line 2: activity first, then one change chip and +N. An ask or "ready to merge" adds the beam dot and its button on the row.</p>
+  </div>
+</div>
+</section>
+
+<!-- PHONE -->
+<section class="screen" id="phone">
+<div class="phones">
+  <div class="phone">
+    <div class="ph"><b>Changes</b><button class="btn">Refresh</button></div>
+    <div class="sum" style="margin:0 4px 10px"><span class="beamn"><b>3</b> need you</span><span><b>6</b> review</span><span><b>4</b> working</span></div>
+    <button class="btn primary" style="width:100%;min-height:44px;margin-bottom:10px">Merge all green (2)</button>
+    <div class="pcard"><div class="a"><span class="dot"></span><span class="pi n">N</span>Norban · map perf</div><div class="b">#13256 Placement rows load in one read</div><div class="c"><span class="ok">✓ 41/41 · approved</span><button class="btn primary">Merge</button></div></div>
+    <div class="pcard"><div class="a"><span class="dot"></span><span class="pi n">N</span>Norban · re-scrape</div><div class="b">collector#810 Approve the new column?</div><div class="c"><span>irreversible on prod</span><button class="btn">Answer</button></div></div>
+    <div class="pcard"><div class="a"><span class="dot"></span><span class="pi n">N</span>Norban · LC automation</div><div class="b">Proxy quota: tofu apply failed</div><div class="c"><span class="fail">◆ 403 on the quota API</span><button class="btn">Open</button></div></div>
+    <div class="block" style="margin-top:12px">
+      <div class="plane"><span class="proj"><span class="pi n">N</span>Norban</span><span class="muted">2 fixing · 4 review · 3 working ▸</span></div>
+      <div class="plane"><span class="proj"><span class="pi f">F</span>Fyr</span><span class="muted">1 review · 1 working ▸</span></div>
+      <div class="plane"><span class="muted">No thread 1 · Untouched 1</span><span class="muted">▸</span></div>
+      <div class="plane"><span class="muted">Finished since your visit · 7</span><span class="muted">▸</span></div>
+    </div>
+  </div>
+  <div class="phone">
+    <div class="ph"><b style="font-size:15px">‹ Map perf</b><span class="chip beam"><span class="dot"></span>#13256</span></div>
+    <div class="ttabs" style="margin:0 4px 10px"><span>Chat</span><span class="on">Changes 3</span><span>PR</span></div>
+    <div class="pcard">
+      <div class="b">#13256 Placement rows load in one read</div>
+      <div class="prail" style="margin:6px 0"><i class="f"></i><u class="f"></u><i class="now"></i><u></u><i></i><u></u><i class="fin"></i><em>review, to merged</em></div>
+      <div class="c"><span class="ok">✓ 41/41 · approved</span><span class="faint">30 s</span></div>
+      <div class="ask" style="margin-top:8px"><span class="q">Waiting for your merge</span><button class="btn primary">Merge a1b2c3d</button></div>
+    </div>
+    <div class="pcard">
+      <div class="b">#13254 Test-lab homes on the map</div>
+      <div class="prail" style="margin:6px 0"><i class="f"></i><u class="f"></u><i class="now"></i><u></u><i></i><u></u><i class="fin"></i><em>review, to merged</em></div>
+      <div class="c"><span class="fail">◆ e2e failed</span><span>Agent is fixing CI</span></div>
+    </div>
+    <div class="plane" style="border:0"><span class="muted">Following 1 · Done here 2</span><span class="muted">▸</span></div>
+  </div>
+</div>
+</section>
+
+<!-- AGENT -->
+<section class="screen" id="agent">
+<div class="two">
+  <div>
+    <p class="cap">Notices the agent gets (one PR, start to finish)</p>
+    <div class="block" style="padding:4px 12px">
+      <div class="fyrline"><span class="u silent">silent</span><span>Fyr made a card for branch perf/13256-rows (first push).</span></div>
+      <div class="fyrline"><span class="u silent">silent</span><span>Joined PR #13256 with branch perf/13256-rows.</span></div>
+      <div class="fyrline"><span class="u wake">wake</span><span>CI on #13256 failed on 93a7e57: e2e "map shows test-lab homes".</span></div>
+      <div class="fyrline"><span class="u silent">silent</span><span>CI on #13256 passed on a1b2c3d.</span></div>
+      <div class="fyrline"><span class="u next">next</span><span>The owner merged #13256 at a1b2c3d. Done.</span></div>
+      
+    </div>
+    <p class="note">Wake budget: at most 5 observer wakes per thread in 10 min without an owner message; the rest wait for the next turn. Dedupe on change, field and head SHA.</p>
+  </div>
+  <div>
+    <p class="cap">Four tools, no upkeep</p>
+<pre>change_open    {key?, pr?, branch?, repo?, kind, title,
+                targets?, group?, after?}
+change_update  {change, phase?, label?, conditions?,
+                revision?, evidence?}     # only what changed
+change_request {change, ask, args?, reason}
+change_list    {scope?, id?, done?}       # at most 4k chars
+
+change = id | key | PR URL | owner/repo#N | #N | branch
+
+removed: change_unchanged, change_status, change_revise,
+         change_attach, pr_link (aliases for one release),
+         the Stop "update your changes" reason</pre>
+    <p class="cap" style="margin-top:16px">A write to a fact Fyr reads</p>
+<pre>&gt; change_update {change: "#13219", phase: "landed"}
+Fyr reads #13219 from GitHub: merged 10:42. Updated.</pre>
+    <p class="note">Today the same call is refused ("a report cannot change it"): 17 refusals, 61 change_unchanged calls and about 108 Stop nudges in two days.</p>
+  </div>
+</div>
+</section>
+
+<!-- ORDER -->
+<section class="screen" id="order">
+<table>
+<tr><th>#</th><th>Slice (one PR each)</th><th>Removes</th><th>Size</th></tr>
+<tr><td class="n">1</td><td>Notices: next stops waking, dedupe on change, field and head, wake budget; no record without commits ahead; delete the ~N loop records</td><td>The loop</td><td class="n">~200</td></tr>
+<tr><td class="n">2</td><td>change_list: open changes only, one line each, at most 4,000 chars; open changes in handover and compaction</td><td>Overflow</td><td class="n">~120</td></tr>
+<tr><td class="n">3</td><td>Merge bound to the head (--match-head-commit); the Ready rule; Merge all green</td><td>Dropped commits</td><td class="n">~180</td></tr>
+<tr><td class="n">4</td><td>Done on every change; Finished since your last visit; Untouched for 3 days; stacked PRs; stopgaps: a new PR joins its branch's card, header = newest open change</td><td>Lingering cards, 11 of 12 duplicates, wrong header</td><td class="n">~400</td></tr>
+<tr><td class="n">5</td><td>Computed Needs you; Not now by head; your corrections; four agent tools; remove needs: owner and the Stop upkeep for changes</td><td>Stuck Needs you, upkeep tax, refused corrections, broadcasts</td><td class="n">~550</td></tr>
+<tr><td class="n">6</td><td>Handles and one attach; change_open {branch, repo}; delete prfold.go and MainChange</td><td>The rest of the duplicates</td><td class="n">~500</td></tr>
+<tr><td class="n">7</td><td>Reflog push observer for repos under the folder; No thread and Give to thread; branch-only exits</td><td>Blind Norban folder</td><td class="n">~400</td></tr>
+</table>
+<p class="note">Sizes are estimates in lines of production code. Slices 1 to 5 run on today's storage and remove most of today's pain. Out of v2: one host store with followers (no evidence row needs it), deploy readers beyond Fyr's own, production.</p>
+</section>
+
+<!-- FIXES -->
+<section class="screen" id="fixes">
+<table>
+<tr><th>Today's pain</th><th>Count (15–16 Nov)</th><th>v2 mechanism</th></tr>
+<tr><td>Duplicate cards for one PR</td><td class="n">12 pairs, 6 threads</td><td>One handle table. A PR is joined through its head branch from the first read. A late join is a merge with an alias, so old references still work.</td></tr>
+<tr><td>713 records and 714 runs in a loop</td><td class="n">30 min</td><td>Fyr reads only refs that this run moved, handles are released on done, and a wake budget caps observer wakes at 5 per 10 min.</td></tr>
+<tr><td>Wrong PR in the header (#116, #102)</td><td class="n">2 threads</td><td>No "main PR". The chip is the change this thread touched last.</td></tr>
+<tr><td>Stale after merge, a broadcast to 7 threads</td><td class="n">~25 items</td><td>Fyr reads until the finish line. Freshness is shown. You have Refresh, Mark done and Move.</td></tr>
+<tr><td>Stuck Needs you</td><td class="n">4 complaints</td><td>Computed from 3 causes. Every cause has Not now. No sticky flag.</td></tr>
+<tr><td>Cards that linger</td><td class="n">78 of 102</td><td>Each change has a finish line. Done cards fold into "Finished since your last visit". Production is one strip.</td></tr>
+<tr><td>Upkeep busywork for agents</td><td class="n">61 + 108 calls, ~108 nudges</td><td>The Stop reason is removed. The agent reports only what Fyr cannot read.</td></tr>
+<tr><td>Blind in the Norban folder</td><td class="n">23 of 52 threads</td><td>Fyr reads repos one level down and their worktrees, through the reflog.</td></tr>
+<tr><td>A merge dropped 3 commits</td><td class="n">1</td><td>Merge sends the head SHA that you saw.</td></tr>
+<tr><td>change_list overflow</td><td class="n">3 × 83–100k chars</td><td>Open changes only, one line each, at most 4k chars.</td></tr>
+</table>
+</section>
+</div>
+<script>
+document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b));
+  document.querySelectorAll('section.screen').forEach(s=>s.classList.toggle('on',s.id===b.dataset.s));
+});
+</script>
+</body>
+</html>
