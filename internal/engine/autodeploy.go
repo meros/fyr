@@ -10,7 +10,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 )
 
-// autoDeployKey is the host kv key of the auto-deploy setting (V0.110):
+// autoDeployKey is the host kv key of the auto-deploy setting (V0.111):
 // "off", or "on"; empty is on, the owner's default.
 const autoDeployKey = "autoDeploy"
 
@@ -19,7 +19,7 @@ type AutoDeploySetting struct {
 	On bool `json:"on"`
 }
 
-// Where an open deploy ask stands for the auto-deploy pass (V0.110).
+// Where an open deploy ask stands for the auto-deploy pass (V0.111).
 const (
 	deployHeld      = "held"      // the gate refused: it waits for the owner
 	deployWaiting   = "wait"      // another deploy ran; the line was shown
@@ -85,7 +85,7 @@ func (e *Engine) deployAsks(id string) []core.AutoDeployAsk {
 	return out
 }
 
-// autoDeploy starts the pass for the thread's open deploy asks (V0.110).
+// autoDeploy starts the pass for the thread's open deploy asks (V0.111).
 // publish calls it after every Input; the gate reads git, so the pass runs
 // in the background.
 func (e *Engine) autoDeploy(id string) {

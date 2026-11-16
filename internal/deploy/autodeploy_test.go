@@ -10,7 +10,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 )
 
-// SPEC V0.110 (5): an auto-approved deploy builds only the commit the gate
+// SPEC V0.111 (5): an auto-approved deploy builds only the commit the gate
 // passed; a checkout that moved after the approval builds nothing.
 func TestDeployRefusesAMovedCommit(t *testing.T) {
 	d, _, steps := newDeployer(t, "")
@@ -31,7 +31,7 @@ func TestDeployRefusesAMovedCommit(t *testing.T) {
 	}
 }
 
-// SPEC V0.110 (4): Busy while a deploy builds and until the new build's
+// SPEC V0.111 (4): Busy while a deploy builds and until the new build's
 // probation ends; OnIdle hears the end of both.
 func TestDeployBusy(t *testing.T) {
 	d, _, _ := newDeployer(t, "test")
@@ -85,7 +85,7 @@ func TestDeployBusy(t *testing.T) {
 	}
 }
 
-// SPEC V0.110 (2): the gate passes a clean checkout whose HEAD is on
+// SPEC V0.111 (2): the gate passes a clean checkout whose HEAD is on
 // origin's default branch, and says why it refuses anything else.
 func TestGate(t *testing.T) {
 	const head, main = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"

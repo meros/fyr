@@ -454,7 +454,7 @@ function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknow
 type AutoMergeApi = Pick<Api, "autoMerge" | "command">;
 type AutoDeployApi = Pick<Api, "autoDeploy" | "command">;
 
-/** V0.110: whether Fyr approves an agent's Fyr deploy ask with no press when the checkout is clean and on origin's
+/** V0.111: whether Fyr approves an agent's Fyr deploy ask with no press when the checkout is clean and on origin's
  *  default branch. On by default; only the owner changes it here, and no agent tool can. Desktop and phone alike. */
 function AutoDeploySection({ api }: { api: AutoDeployApi }) {
   const [s, setS] = useState<AutoDeploySetting | null>(null);

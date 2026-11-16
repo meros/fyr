@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// V0.110: Fyr approves an agent's deploy ask itself when the engine's gate
+// V0.111: Fyr approves an agent's deploy ask itself when the engine's gate
 // passed the checkout. The approval is an observer's Input; the agent and a
 // client cannot send it, and the setting is the owner's alone.
 

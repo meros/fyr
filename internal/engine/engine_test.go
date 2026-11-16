@@ -36,7 +36,7 @@ type runner struct {
 	mu    sync.Mutex
 	calls []core.EffectReq
 	// deploy, when set, holds each fyr.deploy until a value or a close
-	// arrives (V0.110).
+	// arrives (V0.111).
 	deploy chan error
 }
 
