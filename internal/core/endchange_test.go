@@ -41,8 +41,8 @@ func TestMissingPREndsTheChange(t *testing.T) {
 	if c.Phase != PhaseAbandoned || c.PhaseBy != ByObserved || c.Label != MissingPRLabel {
 		t.Fatalf("phase %s by %s, label %q", c.Phase, c.PhaseBy, c.Label)
 	}
-	if len(PRURLs(th)) != 0 {
-		t.Fatalf("still polled: %v", PRURLs(th))
+	if len(PRURLs(th, ct0)) != 0 {
+		t.Fatalf("still polled: %v", PRURLs(th, ct0))
 	}
 	if len(c.Offers) != 0 {
 		t.Fatalf("actions remain: %+v", c.Offers)
@@ -89,7 +89,7 @@ func TestOwnerEndsAnObservedChange(t *testing.T) {
 	if c.Phase != PhaseReverted || c.PhaseBy != ByOwner || c.Label != "a test fixture" || len(c.Offers) != 0 {
 		t.Fatalf("after the end: %s by %s, %q, %d offers", c.Phase, c.PhaseBy, c.Label, len(c.Offers))
 	}
-	if len(PRURLs(th)) != 0 {
+	if len(PRURLs(th, ct0)) != 0 {
 		t.Fatal("still polled")
 	}
 	if txt := NoticeText(th.Feed.Queue); !strings.Contains(txt, "The owner ended") {

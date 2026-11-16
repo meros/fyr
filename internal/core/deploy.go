@@ -184,3 +184,47 @@ func firstOf(xs ...string) string {
 	}
 	return ""
 }
+
+// SelfDeployCandidates are the thread's landed code changes in repo (the
+// git observer's form, github.com/owner/name) with a merged PR's merge
+// commit: what a self-deploy of repo may have made live (V0.82). The host
+// asks git which of them the build holds.
+func SelfDeployCandidates(t *Thread, repo string) []DeployRef {
+	var out []DeployRef
+	for i := range t.Changes {
+		c := &t.Changes[i]
+		if selfDeployable(c, repo) {
+			out = append(out, DeployRef{Change: c.ID, Repo: repo, SHA: c.PR.MergeSHA})
+		}
+	}
+	return out
+}
+
+func selfDeployable(c *Change, repo string) bool {
+	if c.Kind != KindCode || c.Phase != PhaseLanded || c.PR == nil || c.PR.MergeSHA == "" || repo == "" {
+		return false
+	}
+	return slices.ContainsFunc(c.Targets, func(x string) bool {
+		r, ok := strings.CutPrefix(x, "repo:")
+		return ok && strings.EqualFold(r, repo)
+	})
+}
+
+// ChangesSelfDeployed moves the changes a self-deploy's build holds to live
+// (V0.82): observed, with the condition deploy ok and the build as
+// evidence. A change that is no longer landed, or that the owner ended,
+// stays.
+func ChangesSelfDeployed(t *Thread, a SelfDeployedArgs, now time.Time) {
+	for _, id := range a.Changes {
+		c := FindChange(t, id)
+		if c == nil || c.Kind != KindCode || c.Phase != PhaseLanded || CanWrite(FieldChangePhase, ByObserved, c.PhaseBy, "") != nil {
+			continue
+		}
+		setCondition(c, CondDeploy, CondOK, "", ByObserved, now)
+		if a.Build != "" {
+			addEvidence(c, Evidence{Kind: "build", Title: a.Build})
+		}
+		setPhase(t, c, PhaseLive, ByObserved, now)
+		c.UpdatedAt = now
+	}
+}

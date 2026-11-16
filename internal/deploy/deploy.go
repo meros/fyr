@@ -61,6 +61,10 @@ type Deployer struct {
 	SwitchClient func(build, dir string) error
 	// Cgroup: where the build and the tests run (V0.80); "" is the daemon's.
 	Cgroup string
+	// OnShipped hears a deploy that succeeded (V0.82): after the new
+	// daemon's probation, or when the client-only path switched. nil
+	// hears nothing.
+	OnShipped func(Shipped)
 
 	exit   int
 	mu     sync.Mutex
@@ -115,6 +119,58 @@ type pending struct {
 	Thread string         `json:"thread"`
 	Build  string         `json:"build"`
 	Req    core.EffectReq `json:"req"`
+	// V0.82: what was built, so the new daemon can say which changes it
+	// holds.
+	Commit string `json:"commit,omitempty"`
+	Remote string `json:"remote,omitempty"`
+	Dir    string `json:"dir,omitempty"`
+}
+
+// Shipped is a deploy that succeeded (V0.82): the build id, the commit it
+// was built from (HEAD of the checkout), the checkout's origin remote as
+// git printed it, and Contains, which reports a commit that is an ancestor
+// of Commit in the checkout.
+type Shipped struct {
+	Build, Commit, Remote, Dir string
+	Contains                   func(sha string) bool
+}
+
+// source reads the checkout's HEAD and origin remote before the build
+// (V0.82); either is "" when git cannot say.
+func source(ctx context.Context, run Runner, dir string) (commit, remote string) {
+	if b, err := run(ctx, dir, "git", "-C", dir, "rev-parse", "HEAD"); err == nil {
+		commit = strings.TrimSpace(string(b))
+	}
+	if b, err := run(ctx, dir, "git", "-C", dir, "remote", "get-url", "origin"); err == nil {
+		remote = strings.TrimSpace(string(b))
+	}
+	if strings.ContainsAny(commit, " \n\t") {
+		commit = ""
+	}
+	return commit, remote
+}
+
+// ship tells OnShipped about a build of commit in dir.
+func (d *Deployer) ship(run Runner, build, commit, remote, dir string) {
+	if d.OnShipped == nil || commit == "" || dir == "" {
+		return
+	}
+	d.OnShipped(Shipped{Build: build, Commit: commit, Remote: remote, Dir: dir, Contains: func(sha string) bool {
+		if sha == "" || strings.HasPrefix(sha, "-") { // never an option to git
+			return false
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, err := run(ctx, dir, "git", "-C", dir, "merge-base", "--is-ancestor", sha, commit)
+		return err == nil
+	}})
+}
+
+func (d *Deployer) runner() Runner {
+	if d.Run == nil {
+		return execRunner
+	}
+	return d.Run
 }
 
 func (d *Deployer) ExitCode() int { return d.exit }
@@ -130,10 +186,7 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	if os.Getenv("FYR_LAUNCHER") != "1" {
 		return "", errors.New("Fyr is not running under the fyr launcher, so it cannot switch builds. Start it with `fyr` (see README)")
 	}
-	run := d.Run
-	if run == nil {
-		run = execRunner
-	}
+	run := d.runner()
 	// One deploy at a time: a newer one cancels one that has not switched.
 	d.mu.Lock()
 	if d.cancel != nil {
@@ -167,6 +220,7 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	if why := d.olderThanLive(ctx, run, dir); why != "" {
 		return failed(errors.New(why))
 	}
+	commit, remote := source(ctx, run, dir) // V0.82: what is built
 	// V0.81: fyrd's sources as they are built; equal to the running
 	// daemon's, only the web client changes.
 	sum, _ := SourceSum(dir)
@@ -200,7 +254,11 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		os.WriteFile(filepath.Join(out, sumFile), []byte(sum+"\n"), 0o644)
 	}
 	if clientOnly {
-		return d.deployClient(ctx, run, prog, gen, dir, out, id)
+		res, err := d.deployClient(ctx, run, prog, gen, dir, out, id)
+		if err == nil {
+			d.ship(run, id, commit, remote, dir)
+		}
+		return res, err
 	}
 	if err := d.DB.Snapshot(filepath.Join(out, "pre.db")); err != nil {
 		return failed(fmt.Errorf("database snapshot: %w", err))
@@ -239,7 +297,7 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		return "", errReplaced
 	}
 	d.cancel = nil // past this point the switch happens; nothing cancels it
-	b, _ := json.Marshal(pending{Thread: threadID, Build: id, Req: req})
+	b, _ := json.Marshal(pending{Thread: threadID, Build: id, Req: req, Commit: commit, Remote: remote, Dir: dir})
 	if err := d.DB.SetKV("pending_deploy", string(b)); err != nil {
 		d.mu.Unlock()
 		return "", err
@@ -294,6 +352,7 @@ func (d *Deployer) ReportPending() {
 	go func() {
 		time.Sleep(wait)
 		d.DB.SetKV("pending_deploy", "")
+		d.ship(d.runner(), p.Build, p.Commit, p.Remote, p.Dir)
 		d.Host.Report(p.Thread, p.Req, true, true, "Fyr now runs build "+p.Build+".")
 	}()
 }

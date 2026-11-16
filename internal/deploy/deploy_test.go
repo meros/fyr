@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -100,7 +101,13 @@ func TestDeploySwitches(t *testing.T) {
 	if time.Since(start) < 110*time.Millisecond {
 		t.Fatal("did not wait for every running thread, the requester included")
 	}
-	if len(*steps) != 2 || !strings.HasPrefix((*steps)[0], "make -C /src/fyr build") || (*steps)[1] != "make -C /src/fyr test" {
+	var made []string // V0.82: git reads HEAD and the remote first
+	for _, s := range *steps {
+		if !strings.HasPrefix(s, "git ") {
+			made = append(made, s)
+		}
+	}
+	if len(made) != 2 || !strings.HasPrefix(made[0], "make -C /src/fyr build") || made[1] != "make -C /src/fyr test" {
 		t.Fatalf("steps %v", *steps)
 	}
 	next, err := os.Readlink(filepath.Join(d.Data, "next"))
@@ -155,7 +162,8 @@ func TestDeployUsesNixDevelopWithFlake(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "flake.nix"), []byte("{}"), 0o644)
 	d.Deploy(context.Background(), "t1", req, dir)
-	if len(*steps) < 2 || !strings.HasPrefix((*steps)[0], "nix develop "+dir+" --command make -C "+dir+" build") {
+	made := slices.DeleteFunc(slices.Clone(*steps), func(s string) bool { return strings.HasPrefix(s, "git ") }) // V0.82
+	if len(made) < 2 || !strings.HasPrefix(made[0], "nix develop "+dir+" --command make -C "+dir+" build") {
 		t.Fatalf("steps %v", *steps)
 	}
 }

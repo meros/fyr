@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/github"
@@ -52,15 +53,17 @@ func (x Outside) forget(url string) {
 // to read, and the observations, as Inputs from the observers.
 type PRWatch struct{ E *Engine }
 
-// Snapshot is the PR of every code change in flight, the main one among
+// Snapshot is the PR of every code change in flight, and of a merged one
+// whose checks have not settled (V0.82), the main one among
 // them (V0.59 (4), #32), of the threads that are not archived.
 func (w PRWatch) Snapshot() []github.PRThread {
 	var out []github.PRThread
+	now := w.E.Now()
 	for _, t := range w.E.Snapshot() {
 		if t.ArchivedAt != nil {
 			continue
 		}
-		for _, u := range core.PRURLs(t.Thread) {
+		for _, u := range core.PRURLs(t.Thread, now) {
 			out = append(out, github.PRThread{ID: t.ID, URL: u})
 		}
 	}
@@ -88,6 +91,33 @@ func (w PRWatch) Deploys() []github.DeployThread {
 
 func (w PRWatch) ObserveDeploy(id, change string, d core.DeployObs) {
 	w.E.Apply(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindDeployObserved, Thread: id, Args: core.DeployObservedArgs{Change: change, Obs: d}})
+}
+
+// SelfDeployed makes live, in every thread, the landed code changes of repo
+// whose merge commit the deployed build holds (V0.82): contains asks git,
+// outside the engine's lock, and each thread's changes go down the Input
+// path as one observation of the deploy observer. It returns how many
+// changes it sent.
+func (e *Engine) SelfDeployed(repo, build string, contains func(sha string) bool) int {
+	n := 0
+	for _, t := range e.Snapshot() {
+		var ids []string
+		for _, r := range core.SelfDeployCandidates(t.Thread, repo) {
+			if contains(r.SHA) {
+				ids = append(ids, r.Change)
+			}
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsDeploy), Kind: core.KindSelfDeployed, Thread: t.ID,
+			Args: core.SelfDeployedArgs{Build: build, Changes: ids}}); err != nil {
+			log.Printf("self-deploy %s: thread %s: %v", build, t.ID, err)
+			continue
+		}
+		n += len(ids)
+	}
+	return n
 }
 
 // ThreadsOn counts the threads on a profile that are not archived; a

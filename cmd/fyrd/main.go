@@ -159,7 +159,12 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	defer stop()
 	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy()}
 	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
-	prDetails := &github.Details{Gh: github.Gh}                            // V0.43: the PR tab's details, cached 30 s
+	// V0.82: a self-deploy makes the landed changes its build holds live.
+	dep.OnShipped = func(s deploy.Shipped) {
+		n := eng.SelfDeployed(agent.NormalizeRemote(s.Remote), s.Build, s.Contains)
+		log.Printf("deploy %s (%s): %d changes live", s.Build, s.Commit, n)
+	}
+	prDetails := &github.Details{Gh: github.Gh} // V0.43: the PR tab's details, cached 30 s
 	eng.Effects = engine.Outside{Gh: github.Gh, PR: prDetails, Deploy: dep.Deploy}
 	poller := &github.Poller{Gh: github.Gh, Src: engine.PRWatch{E: eng}}
 	eng.OnPR = poller.Kick
