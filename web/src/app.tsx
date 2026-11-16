@@ -19,6 +19,7 @@ import {
   resumeSeq,
   resumed,
   sectionOf,
+  isPinned,
   sections,
   setConn,
   presetForKey,
@@ -33,6 +34,7 @@ import {
   type Store,
   applyThreadPatch,
 } from "./store.ts";
+import { markedRow, revealRow, rowAfter } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { dialogAfterClose, keyHints } from "./keys.ts";
@@ -182,8 +184,10 @@ function App() {
   // #41: every component reaches the host through ApiContext; a test can provide a fake Api.
   const api = useApi();
   const [store, setStore] = useState<Store>(initialStore);
-  const [sel, setSel] = useState<string | null>(null);
+  // V0.109: the list keeps no cursor of its own. The marked row is the open thread; with nothing open, the last one.
+  const [lastOpen, setLastOpen] = useState<string | null>(null);
   const [view, setView] = useState<{ id: string; mode: "open" | "peek" } | null>(null);
+  const sel = markedRow(view?.id ?? null, lastOpen);
   const [zone, setZone] = useState<Zone>("list");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -363,7 +367,7 @@ function App() {
     // On a phone the inbox comes first; open a thread only when asked (?open=).
     const phone = typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches;
     if (first && (!phone || want)) {
-      setSel(first);
+      setLastOpen(first);
       setView({ id: first, mode: "open" });
       setZone("thread");
       setTracker((tr) => openView(tr, first, "open", Date.now(), document.hasFocus()));
@@ -502,12 +506,6 @@ function App() {
     document.title = n ? `(${n}) Fyr` : "Fyr";
   }, [sec.needs.length]);
 
-  // Keep the selected row visible.
-  useEffect(() => {
-    if (!sel) return;
-    document.querySelector(`[data-id="${CSS.escape(sel)}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [sel]);
-
   // Track whether focus is in a text field (for the key-hint bar).
   useEffect(() => {
     const f = () => setInText(isTextTarget(document.activeElement));
@@ -523,7 +521,7 @@ function App() {
   // ---- actions (#41: run, undo, toasts and errors live in useThreadCommands) ----
 
   const openThread = (id: string, mode: "open" | "peek" = "open") => {
-    setSel(id);
+    setLastOpen(id);
     setView({ id, mode });
     setTracker((tr) => openView(tr, id, mode, Date.now(), document.hasFocus()));
     if (mode === "open") setZone("thread");
@@ -537,16 +535,19 @@ function App() {
   /** The thread an action applies to: the open thread when the thread pane has focus, else the selected row. */
   const target = (): string | null => (zone === "thread" && view ? view.id : sel);
 
-  /** Move the cursor off a row that is about to leave the list. */
+  /** In the list, the marked row is about to leave: open the next row (V0.109: the mark is the open thread). In the
+   * thread pane the thread stays open. */
   const stepPast = (ids: string[]) => {
-    if (!sel || !ids.includes(sel)) return;
-    const i = order.indexOf(sel);
-    const next = order.slice(i + 1).find((x) => !ids.includes(x)) ?? order.slice(0, i).reverse().find((x) => !ids.includes(x)) ?? null;
-    setSel(next);
+    if (zone !== "list") return;
+    const next = rowAfter(order, sel, ids);
+    if (!next) return;
+    if (view) openThread(next, view.mode);
+    else setLastOpen(next);
+    setZone("list");
   };
 
   const settle = (id: string) => {
-    if (zone === "list") stepPast([id]);
+    stepPast([id]);
     void cmds.run("thread.settle", [id]);
   };
 
@@ -715,10 +716,30 @@ function App() {
     const first = sec[k][0];
     document.getElementById(`sec-${k}`)?.scrollIntoView({ block: "start" });
     if (first) {
-      setSel(first.id);
+      // V0.109: the row g1–g5 marks is the open thread.
+      if (view) openThread(first.id, view.mode);
+      else setLastOpen(first.id);
       setZone("list");
     }
   };
+
+  // V0.109: the open thread's row is drawn: a closed section opens, a cut one shows all, also when the row moves
+  // to another section while it is open. A row that search or the filter hides stays hidden, and no row is marked.
+  const openSection = view && store.threads[view.id] ? sectionOf(store.threads[view.id]) : null;
+  useEffect(() => {
+    const r = revealRow(sec, view?.id ?? null, limits, SECTION_LIMIT);
+    if (!r) return;
+    if (r.section === "settled" && !isOpen("settled", sectionOpen)) setSettledDeadline(Date.now() + AUTO_HIDE_MS); // closes 30 s after the owner leaves it (V0.48)
+    setSectionOpen((o) => ({ ...o, [r.section]: true }));
+    if (r.expand) setExpanded((x) => ({ ...x, [r.section]: true }));
+  }, [view?.id, openSection]);
+
+  // Keep the marked row visible: when it changes, moves to another section or the pinned block, or is drawn again.
+  const selPlace = sel && shown[sel] ? `${sectionOf(shown[sel])}:${isPinned(shown[sel])}:${order.includes(sel)}` : "";
+  useEffect(() => {
+    if (!sel) return;
+    document.querySelector(`.list [data-id="${CSS.escape(sel)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [sel, selPlace, listOn]);
 
   const send = async (args: SendArgs): Promise<boolean> => (view ? cmds.send(view.id, args) : false);
 
@@ -978,9 +999,12 @@ function App() {
         const dir = k === "j" || k === "ArrowDown" ? 1 : -1;
         const i = sel ? order.indexOf(sel) : -1;
         const j = Math.max(0, Math.min(order.length - 1, i + dir));
-        if (order[j]) setSel(order[j]);
+        // V0.109: j/k opens the row it marks when a thread is open; with nothing open it only marks it.
+        if (order[j]) {
+          if (view) openThread(order[j], view.mode);
+          else setLastOpen(order[j]);
+        }
         setZone("list");
-        if (view?.mode === "peek" && order[j]) openThread(order[j], "peek");
         return;
       }
       case "n":

@@ -1905,6 +1905,37 @@ try {
   failures.push(`V0.68 desktop: ${e.message}`);
 }
 
+// V0.109: the marked row in the thread list is the open thread, whatever path opened it, and the row is in view:
+// a link from another thread, ?open= of a thread in a closed section (Settled), and j in the list.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 400, deviceScaleFactor: 1, mobile: false });
+  const MARK = `(() => {
+    const rows = [...document.querySelectorAll('.list [aria-selected="true"]')];
+    const list = document.querySelector('.list').getBoundingClientRect(), r = rows[0]?.getBoundingClientRect();
+    return { ids: rows.map((x) => x.dataset.id), title: rows[0]?.querySelector('.hd .t')?.textContent ?? null, pane: document.querySelector('.th .tt')?.getAttribute('title') ?? null,
+      inView: !!r && r.top >= list.top - 0.5 && r.bottom <= list.bottom + 0.5 };
+  })()`;
+  const ok = (m) => m.ids.length === 1 && m.title === m.pane && m.inView;
+  await navigate(`${origin}/?mock=rail&open=t_babysit`, "!!document.querySelector('.th .fth')");
+  await evaluate(`document.querySelector('.th .fth').click()`);
+  await waitFor(`${MARK}.pane === 'Map perf'`, { soft: true });
+  await settle();
+  const a = await evaluate(MARK);
+  check(ok(a) && a.ids[0] === "t_mapperf", `V0.109 desktop: after a "From thread" link the marked row is not the open thread in view (${JSON.stringify(a)})`);
+  await navigate(`${origin}/?mock=rail&open=t_set7`, "!!document.querySelector('.th .tt')");
+  await waitFor(`${MARK}.ids.length === 1`, { soft: true });
+  await settle();
+  const b = await evaluate(MARK);
+  check(ok(b) && b.ids[0] === "t_set7", `V0.109 desktop: a thread opened in the closed Settled section has no marked row in view (${JSON.stringify(b)})`);
+  await evaluate(`document.querySelector('.list').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
+  await key("k", "KeyK");
+  const c = await evaluate(MARK);
+  check(ok(c) && c.ids[0] !== "t_set7", `V0.109 desktop: k in the list marks a row that is not the open thread (${JSON.stringify(c)})`);
+} catch (e) {
+  failures.push(`V0.109 desktop: ${e.message}`);
+}
+
 clearTimeout(watchdog);
 cleanup();
 console.log(`time: phone screens ${((phoneDone - started) / 1000).toFixed(1)} s (${SIZES.length} sizes at once), desktop and timing checks ${((Date.now() - phoneDone) / 1000).toFixed(1)} s`);
