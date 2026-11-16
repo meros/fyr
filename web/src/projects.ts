@@ -1,6 +1,6 @@
 // Projects (SPEC 0.5 V0.23): palette, icons, ordering, filtering; and started-by labels (V0.22). Pure.
 
-import type { NewProjectDraft, Profile, Project, ProjectIconSpec, Thread } from "./types.ts";
+import type { NewProjectDraft, Profile, Project, ProjectIconSpec, SetupField, Thread } from "./types.ts";
 import { LINE_ICONS } from "./lucide.ts";
 
 /** Ten hues tuned to the Rail tokens, light and dark. Never amber: the beam marks only what needs the user. */
@@ -229,4 +229,33 @@ export function moveToast(n: number, where: string | null, error: string | null)
   if (error) return { text: error, error: true };
   const text = n === 1 ? (where ? `Filed in ${where}` : "No project now") : where ? `Filed ${n} threads in ${where}` : `${n} threads have no project now`;
   return { text, error: false };
+}
+
+// ---- V0.116: image icons and project setup ----
+
+/** The URL of a project's image icon at a size that is sharp at `px` CSS pixels, or null when it has none. The
+ *  version in the URL lets the browser keep it; the front sends the request to the project's host. */
+export function projectIconUrl(p: Pick<Project, "id" | "image"> | undefined, px: number): string | null {
+  if (!p?.id || !p.image) return null;
+  return `/api/projects/${encodeURIComponent(p.id)}/icon?size=${px > 32 ? 128 : 64}&v=${encodeURIComponent(p.image)}`;
+}
+
+/** Whether the setup agent set this field (the project screen marks it "Set by agent"). */
+export function setByAgent(p: Pick<Project, "by">, f: SetupField): boolean {
+  return p.by?.[f] === "agent";
+}
+
+/** The setup line of the project screen: what the last run did, or why it could not start; null before any. */
+export function setupLine(p: Pick<Project, "setup" | "folder">): { text: string; error: boolean } | null {
+  if (!p.setup) return null;
+  if (p.setup.error) return { text: `Automatic setup could not start: ${p.setup.error}`, error: true };
+  return { text: "Set up automatically: an agent filled in what you had not set.", error: false };
+}
+
+/** The owner's upload is checked before it is sent: an image, at most 2 MB (the host checks it again). */
+export const ICON_MAX_BYTES = 2 * 1024 * 1024;
+export function iconFileError(f: { type: string; size: number }): string | null {
+  if (!/^image\/(png|jpeg|gif)$/.test(f.type)) return "Choose a PNG, JPEG or GIF image.";
+  if (f.size > ICON_MAX_BYTES) return "The image is over 2 MB.";
+  return null;
 }

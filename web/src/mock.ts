@@ -925,12 +925,13 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
 export function mockProjects(now: number): Project[] {
   const ago = (h: number) => iso(now - h * 3600_000);
   return [
-    { id: "p_web", name: "acme/web", color: "teal", icon: { kind: "line", value: "Globe" }, folder: "/home/owner/src/acme/web", profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1) },
+    // V0.116: an image icon the setup agent set (name and colour too); the glyph stays the fallback.
+    { id: "p_web", name: "acme/web", color: "teal", icon: { kind: "line", value: "Globe" }, image: "nb1", by: { name: "owner", color: "agent", image: "agent" }, setup: { at: ago(20), thread: "t_setup" }, folder: "/home/owner/src/acme/web", profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1) },
     { id: "p_ops", name: "acme/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, folder: "/home/owner/src/acme/ops", threads: 2, lastUsed: ago(1) },
     { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram" }, folder: "/home/owner/src/" + LONG_PROJECT, threads: 3, lastUsed: ago(5) },
     { id: "p_dot", name: "dotfiles", color: "olive", icon: { kind: "line", value: "terminal" }, folder: "/home/owner/dotfiles", threads: 1, lastUsed: ago(2) },
     { id: "p_api", name: "acme/api", color: "sky", icon: { kind: "line", value: "server" }, folder: "/home/owner/src/acme/api", threads: 0, lastUsed: ago(30) },
-    { id: "p_fyr", name: "fyr", color: "violet", icon: { kind: "line", value: "FolderGit2" }, folder: "/home/owner/git/fyr", threads: 0, lastUsed: ago(48) },
+    { id: "p_fyr", name: "Fyr", color: "brown", icon: { kind: "line", value: "FolderGit2" }, image: "fy1", by: { name: "agent", color: "agent", image: "agent" }, setup: { at: ago(48), thread: "t_setup" }, folder: "/home/owner/git/fyr", threads: 0, lastUsed: ago(48) },
     { id: "p_home", name: "Garden", color: "green", icon: { kind: "emoji", value: "🏡" }, threads: 1, lastUsed: ago(3) },
     { id: "p_infra", name: "acme/infra", color: "slate", icon: { kind: "line", value: "no-such-icon" }, folder: "/home/owner/src/acme/infra", threads: 1, lastUsed: ago(10) },
     { id: "p_maplab", name: "Map perf lab", color: "blue", icon: { kind: "line", value: "map" }, folder: "/home/owner/src/maplab", threads: 0, lastUsed: ago(70) },
@@ -1144,6 +1145,11 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       if (!p) return { ok: false, error: "No such project" };
       const patch: Partial<Project> = {};
       for (const k of ["name", "color", "icon", "profile", "model", "quiet"] as const) if (k in args) (patch as Record<string, unknown>)[k] = args[k] ?? undefined;
+      // V0.116: a changed value is the owner's; the image's upload or remove too.
+      const by = { ...p.by };
+      for (const k of ["name", "color"] as const) if (k in args && args[k] !== p[k]) by[k] = "owner";
+      if ("image" in args) (patch.image = args.image ? String(args.image) : undefined), (by.image = "owner");
+      patch.by = by;
       if ("folder" in args) patch.folder = args.folder ? expand(String(args.folder)) : undefined;
       const np = putProject({ ...p, ...patch });
       // V0.46: the threads carry the project's quietUntil, so they change with it.
@@ -1174,6 +1180,14 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         }, 1200);
       }
       return { ok: true, result: { on, action: o.id } };
+    }
+    if (action === "project.setupRun") {
+      // V0.116: Set up automatically: a thread in the project's folder; the mock agent sets nothing.
+      const p = projects.find((x) => x.id === args.id);
+      if (!p) return { ok: false, error: `no project ${args.id}` };
+      if (!p.folder) return { ok: false, error: "a project needs a folder to be set up" };
+      putProject({ ...p, setup: { at: new Date(clock()).toISOString(), thread: "t_setup" } });
+      return { ok: true, result: { id: p.id, thread: "t_setup" } };
     }
     if (action === "project.delete") {
       const p = projects.find((x) => x.id === args.id);

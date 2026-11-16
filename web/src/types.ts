@@ -224,7 +224,16 @@ export interface Project {
   quietUntil?: string;
   /** V0.58: only on the stream, `{id, deleted: true}` after project.delete */
   deleted?: boolean;
+  /** V0.116: the version of the project's image icon (served at /api/projects/<id>/icon); absent draws the glyph */
+  image?: string;
+  /** V0.116: who set name, color and image: "owner", "agent", or "" for a placeholder; a key may be missing */
+  by?: Partial<Record<SetupField, string>>;
+  /** V0.116: the last project setup run: its thread, when, or why it could not start */
+  setup?: { thread?: string; at: string; error?: string };
 }
+
+/** V0.116: the fields the setup agent fills. */
+export type SetupField = "name" | "color" | "image";
 
 /** One window of a project's quiet hours (V0.46): HH:MM; to not after from crosses midnight, from equal to to is
  *  all day; days are the start days, absent = every day. */

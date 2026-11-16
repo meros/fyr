@@ -7,11 +7,12 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, iconFileError, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { deleteProjectAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { shortModel } from "./format.ts";
+import { useApi } from "./api-context.ts";
 
 /** Threads and projects for labels deep in the tree, and a way to open a thread or a project. */
 export interface Directory {
@@ -29,6 +30,15 @@ export const useDirectory = () => useContext(DirectoryContext);
 
 export function ProjectIcon({ project, name, size = 16 }: { project?: Project; name: string; size?: number }) {
   const nm = project?.name ?? name;
+  // V0.116: the image icon where there is one; the glyph when there is none or it does not load.
+  const url = projectIconUrl(project, size);
+  const [broken, setBroken] = useState<string | null>(null);
+  if (url && broken !== url)
+    return (
+      <span class="pi img" style={{ width: `${size}px`, height: `${size}px` }} aria-hidden="true">
+        <img src={url} alt="" width={size} height={size} decoding="async" draggable={false} onError={() => setBroken(url)} />
+      </span>
+    );
   const icon = resolveIcon(project?.icon, nm);
   const color = colorVar(project?.color, nm);
   const style = { "--pc": color, width: `${size}px`, height: `${size}px`, fontSize: `${Math.round(size * (icon.kind === "emoji" ? 0.78 : icon.value.length > 1 ? 0.46 : 0.58))}px` };
@@ -42,6 +52,15 @@ export function ProjectIcon({ project, name, size = 16 }: { project?: Project; n
     <span class={`pi ${icon.kind}`} style={style} aria-hidden="true">
       {icon.value}
     </span>
+  );
+}
+
+/** V0.116: the mark beside a field the setup agent filled; the owner's change makes it theirs. */
+function SetBy() {
+  return (
+    <em class="setby" title="Set by the project setup agent. Change it and it is yours.">
+      Set by agent
+    </em>
   );
 }
 
@@ -540,6 +559,30 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
   const [quiet, setQuiet] = useState<QuietHours[]>(quietList(project.quiet));
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const ask = useAsk();
+  const api = useApi();
+  const file = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  // V0.116: the image icon and the setup run act at once, apart from Save.
+  const upload = async (f: File | undefined) => {
+    if (!f || !project.id) return;
+    const bad = iconFileError(f);
+    if (bad) return setMsg({ text: bad, err: true });
+    setBusy(true);
+    const r = await api.uploadProjectIcon(project.id, f);
+    setBusy(false);
+    setMsg(r.ok ? { text: "Image set", err: false } : { text: r.error ?? "The upload did not work", err: true });
+  };
+  const removeImage = async () => {
+    const r = await api.command("project.update", undefined, { id: project.id, image: "" });
+    setMsg(r.ok ? { text: "Image removed: the icon below shows", err: false } : { text: r.error ?? "That did not work", err: true });
+  };
+  const setup = async () => {
+    setBusy(true);
+    const r = await api.command("project.setupRun", undefined, { id: project.id });
+    setBusy(false);
+    setMsg(r.ok ? { text: `Started “Set up ${project.name}”: an agent fills in what you have not set`, err: false } : { text: r.error ?? "That did not work", err: true });
+  };
+  const setup0 = setupLine(project);
   useEffect(() => {
     setName(project.name);
   }, [project.id]);
@@ -562,7 +605,9 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
         </div>
       </div>
       <label class="fld">
-        <span>Name</span>
+        <span>
+          Name{setByAgent(project, "name") && <SetBy />}
+        </span>
         <input value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
       </label>
       <FolderField
@@ -575,7 +620,9 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
       />
       <QuietRow value={quiet} onChange={setQuiet} note={quietNote(project, now)} />
       <div class="fld">
-        <span>Colour</span>
+        <span>
+          Colour{setByAgent(project, "color") && <SetBy />}
+        </span>
         <div class="swatches" role="radiogroup" aria-label="Colour">
           {PALETTE_NAMES.map((c) => (
             <button class={`sw${c === color ? " on" : ""}`} role="radio" aria-checked={c === color} aria-label={c} title={c} style={{ "--pc": `var(--p-${c})` }} onClick={() => setColor(c)} />
@@ -583,7 +630,30 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
         </div>
       </div>
       <div class="fld">
-        <span>Icon</span>
+        <span>
+          Image{setByAgent(project, "image") && project.image && <SetBy />}
+        </span>
+        <div class="pimg">
+          <button class="btn sm" disabled={busy || !project.id} onClick={() => file.current?.click()}>
+            {project.image ? "Replace image…" : "Upload image…"}
+          </button>
+          {project.image && (
+            <button class="btn sm" disabled={busy} onClick={() => void removeImage()}>
+              Remove image
+            </button>
+          )}
+          {project.folder && (
+            <button class="btn sm" disabled={busy} onClick={() => void setup()} title="An agent looks for the project's logo and real name and fills in what you have not set">
+              Set up automatically
+            </button>
+          )}
+          <input ref={file} type="file" accept="image/png,image/jpeg,image/gif" hidden onChange={(e) => (void upload((e.target as HTMLInputElement).files?.[0]), ((e.target as HTMLInputElement).value = ""))} />
+        </div>
+        <span class="pnote">{project.image ? "Shown wherever the project's icon shows. The icon below is the fallback." : "PNG, JPEG or GIF, at most 2 MB. Without an image the icon below shows."}</span>
+        {setup0 && <span class={setup0.error ? "pnote err" : "pnote"}>{setup0.text}</span>}
+      </div>
+      <div class="fld">
+        <span>{project.image ? "Icon without the image" : "Icon"}</span>
         <div class="seg" role="tablist">
           {(["monogram", "emoji", "line"] as const).map((k) => (
             <button class={kind === k ? "on" : ""} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}>
