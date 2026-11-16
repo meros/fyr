@@ -23,9 +23,10 @@ The owner decisions D1–D5 from the design phase stay in `../SPEC.md` 0.3. Reco
 | [0015](0015-hosts-providers-models.md) | Hosts, providers, models, projects and workspaces: a provider is a CLI adapter, an auth, an endpoint and its models, per host | accepted |
 | [0016](0016-fronts-and-hosts.md) | Fronts and hosts: no hub, one owner per record; each front connects to a list of hosts | accepted |
 | [0017](0017-a-project-is-one-folder.md) | A project is one folder | accepted |
-| [0018](0018-changes-are-records.md) | Changes are records: one model for git and non-git changes, six agent tools, facts beat claims, git observed first | accepted |
+| [0018](0018-changes-are-records.md) | Changes are records: one model for git and non-git changes, six agent tools, facts beat claims, git observed first (identity, upkeep and attention replaced by 0024) | accepted |
 | [0019](0019-worktree-per-change.md) | A worktree per change: parallel changes get their own worktrees, stacked ones branch from the change they build on, multi-repo changes are a group | accepted |
 | [0020](0020-state-machine-and-agent-feed.md) | One state machine beside the agent: records, one reducer path, effects run by Fyr, Rules, and one feed of notices to the agent | accepted |
 | [0021](0021-dual-installs-and-host-discovery.md) | Dual installs by default; a front's static host list routes, the tailnet only suggests candidates; tailnet identity stands | accepted |
 | [0022](0022-keep-the-drain-with-a-forced-restart.md) | Keep the drain for server deploys; the owner can force a restart, and each cut turn gets "continue" (the drain stays only without a runner, 0023) | accepted |
 | [0023](0023-a-runner-holds-the-agent-processes.md) | A runner in the launcher holds the agent processes; it only stores numbered lines, and all smarts stay in fyrd | accepted |
+| [0024](0024-changes-v2-one-card-per-work.md) | Changes v2: one card per piece of work through one handle table; Fyr owns the facts, the agent only intent; code is done at merged; Needs you is computed; wake on failures and ask results only | accepted |
