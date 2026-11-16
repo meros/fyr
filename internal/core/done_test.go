@@ -29,7 +29,9 @@ func TestIsDoneByKindAndPhase(t *testing.T) {
 		{"code review", Change{Kind: KindCode, Phase: PhaseReview}, false, false, ""},
 		{"code landed, no PR", Change{Kind: KindCode, Phase: PhaseLanded}, false, true, "landed"},
 		{"code merged", Change{Kind: KindCode, Phase: PhaseLanded, PR: merged}, false, true, "merged"},
-		{"code merged, deploy watch armed", Change{Kind: KindCode, Phase: PhaseLanded, PR: merged}, true, false, ""},
+		// V0.105: merged is done in every repo; a deploy watch only adds live as a fact.
+		{"code merged, deploy watch armed", Change{Kind: KindCode, Phase: PhaseLanded, PR: merged}, true, true, "merged"},
+		{"infra merged, deploy watch armed", Change{Kind: KindInfra, Phase: PhaseLanded, PR: merged}, true, true, "merged"},
 		{"code live, deploy watch armed", Change{Kind: KindCode, Phase: PhaseLive, PR: merged}, true, true, "live"},
 		{"doc landed", Change{Kind: KindDoc, Phase: PhaseLanded}, false, true, "landed"},
 		{"infra live", Change{Kind: KindInfra, Phase: PhaseLive}, false, true, "live"},
