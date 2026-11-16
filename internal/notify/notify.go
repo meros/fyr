@@ -48,14 +48,17 @@ type beat struct {
 	at     time.Time
 }
 
-// Beat records that device shows thread (or nothing, with "") at now.
-func (p *Presence) Beat(device, thread string, now time.Time) {
+// Beat records that device shows thread (or nothing, with "") at now, and
+// returns the thread its last beat named (V0.85).
+func (p *Presence) Beat(device, thread string, now time.Time) (prev string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.shows == nil {
 		p.shows = map[string]beat{}
 	}
+	prev = p.shows[device].thread
 	p.shows[device] = beat{thread, now}
+	return prev
 }
 
 // Watched reports whether any device showed thread within Watch of now.
