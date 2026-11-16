@@ -9,6 +9,8 @@ export interface PageRef {
   page: PageId;
   /** a sub-page: a provider's id or "new" (providers), a project's id (projects), a host's name (hosts) */
   sub?: string;
+  /** V0.127: the host of a provider's page (or Add provider) when the front has several; missing with one */
+  host?: string;
 }
 
 export const PAGES: { id: PageId; title: string }[] = [
@@ -26,24 +28,30 @@ export function isPage(s: string | null | undefined): s is PageId {
   return !!s && PAGES.some((p) => p.id === s);
 }
 
-/** "providers/abc" → {page, sub}; an unknown page is providers. */
+const dec = (s: string) => {
+  try {
+    return decodeURIComponent(s); // a host's name is URL-encoded
+  } catch {
+    return s;
+  }
+};
+
+/** "providers/abc" → {page, sub}; "providers/lab/abc" → {page, host, sub} (V0.127); an unknown page is providers. */
 export function parsePage(s: string | null | undefined): PageRef {
   const raw = (s ?? "").trim();
   const i = raw.indexOf("/");
   const page = i < 0 ? raw : raw.slice(0, i);
   const sub = i < 0 ? "" : raw.slice(i + 1);
   if (!isPage(page)) return { page: "providers" };
-  let dec = sub;
-  try {
-    dec = decodeURIComponent(sub); // a host's name is URL-encoded
-  } catch {
-    /* keep it as it is */
-  }
-  return dec && SUBS[page] ? { page, sub: dec } : { page };
+  const j = sub.indexOf("/");
+  if (page === "providers" && j > 0 && j < sub.length - 1) return { page, host: dec(sub.slice(0, j)), sub: dec(sub.slice(j + 1)) };
+  const one = dec(sub);
+  return one && SUBS[page] ? { page, sub: one } : { page };
 }
 
 export function pageUrl(r: PageRef): string {
-  return r.sub ? `${r.page}/${encodeURIComponent(r.sub)}` : r.page;
+  if (!r.sub) return r.page;
+  return r.host ? `${r.page}/${encodeURIComponent(r.host)}/${encodeURIComponent(r.sub)}` : `${r.page}/${encodeURIComponent(r.sub)}`;
 }
 
 type Status = { status: "ready" | "needs-login" | "needs-key" };
