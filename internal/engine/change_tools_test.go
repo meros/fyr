@@ -139,11 +139,15 @@ func TestChangeActions(t *testing.T) {
 	// V0.101: the failure wakes the agent; it is the owner's 5 minutes
 	// after that run, when the clock re-reduces the thread.
 	h.e.Now = func() time.Time { return time.Now().Add(30 * time.Minute) }
+	// Judge one snapshot: a second read can land after the woken agent
+	// has moved the thread on (Working, empty reason).
+	var d api.Thread
 	eventually(t, "stopped on the failure", func() bool {
 		h.e.Tick()
-		return dtoOf(h.e, id).Attention.State == core.Blocked
+		d = dtoOf(h.e, id)
+		return d.Attention.State == core.Blocked
 	})
-	if d := dtoOf(h.e, id); !strings.Contains(d.Attention.Reason, "Roll back failed (exit 3)") {
+	if !strings.Contains(d.Attention.Reason, "Roll back failed (exit 3)") {
 		t.Fatalf("blocked reason: %q", d.Attention.Reason)
 	}
 }
