@@ -30,7 +30,7 @@ import { sendArgs } from "./attach.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import type { ComponentChildren } from "preact";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
-import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
+import { LiveViewPanel } from "./view-ui.tsx";
 import { TAB_LABEL, composerAnswers, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
@@ -202,7 +202,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
       {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
-      <Composer key={t.id} t={t} now={p.now} onSend={tab === "view" ? (a) => p.onSend({ ...a, from: "view-typed" }) : p.onSend} onInterrupt={() => p.onRun("thread.interrupt")} answer={composerAnswers(tab) ? p.answerField : null} />
+      <Composer key={t.id} t={t} now={p.now} onSend={(a) => sendFrom(tab, a, p.onSend, setTab)} onInterrupt={() => p.onRun("thread.interrupt")} answer={composerAnswers(tab) ? p.answerField : null} />
     </section>
   );
 }
@@ -232,7 +232,6 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
   return (
     <>
       {tab === "view" && <LiveViewPanel full t={t} now={now} onPress={(text) => send({ text, from: "view" })} onAction={viewAction} />}
-      {tab === "view" && <ViewChat t={t} events={events} now={now} onOpen={() => setTab("conv")} />}
       {tab === "conv" && (
         <Conversation
           strip={<Filmstrip cards={previews} collapsible={phone} />}
@@ -760,11 +759,11 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
     case "user": {
       // V0.33: unread messages are dimmed; a cancelled or lost one is struck through.
       const cls = it.pending ? " pend" : it.delivery === "cancelled" || it.delivery === "lost" ? " gone" : "";
-      if (it.from === "view" || it.from === "view-typed")
-        // V0.37 a press, V0.49 a message typed on the View tab: one bubble with the same View tag.
+      if (it.from === "view")
+        // V0.37: a press in the live view, with the View tag.
         return (
           <div class={`youw${cls}`}>
-            <div class={`you prose vmsg${it.from === "view" ? " vchip" : ""}`} title={it.from === "view" ? "Pressed in the live view" : "Typed on the View tab"}>
+            <div class="you prose vmsg vchip" title="Pressed in the live view">
               <span class="vk">View</span>
               {it.text}
             </div>
@@ -1123,8 +1122,16 @@ function AskCard(p: CardProps & { card: CardState }) {
 export interface SendArgs {
   text: string;
   attachments?: string[];
-  /** V0.37: a press in the live view; V0.49: typed on the View tab */
-  from?: "view" | "view-typed";
+  /** V0.37: a press in the live view */
+  from?: "view";
+}
+
+/** SPEC V0.128: the composer sends an ordinary message on every tab; sent from the View tab, the thread then shows
+ *  the Conversation tab, which opens at its end, where the new message is. Desktop and phone. */
+export async function sendFrom(tab: string, args: SendArgs, send: (a: SendArgs) => Promise<boolean>, setTab: (tab: string) => void): Promise<boolean> {
+  const ok = await send(args);
+  if (ok && tab === "view") setTab("conv");
+  return ok;
 }
 
 interface ComposerProps {

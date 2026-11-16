@@ -204,24 +204,25 @@ func TestStoreOnce(t *testing.T) {
 }
 
 // #36: thread_read and the handover conversation read the log with one
-// parser, so both know every sender: the View tab and a handover included.
+// parser, so both know every sender: a handover included. V0.128: a message
+// stored with the old View-tab mark reads as the owner's own.
 func TestOneTurnParser(t *testing.T) {
 	e, st, _ := bare(t)
 	id := bareThread(t, e)
 	e.record(id,
-		core.Event{Type: "user", Data: map[string]any{"text": "typed on the view", "from": agent.FromViewTyped}},
+		core.Event{Type: "user", Data: map[string]any{"text": "typed on the view", "from": "view-typed"}},
 		core.Event{Type: "user", Data: map[string]any{"text": "carry on", "from": agent.FromHandover}},
 		core.Event{Type: "msg", Data: map[string]any{"type": "assistant", "parent_tool_use_id": nil, "message": map[string]any{"content": []any{
 			map[string]any{"type": "text", "text": "Done åäö"}, map[string]any{"type": "tool_use", "name": "Bash", "input": map[string]any{"command": "ls"}}}}}})
 	evs, _ := st.EventsFor(id, 0, 100, false)
 	text := threadText(evs)
 	conv, _ := e.Conversation(id)
-	for _, want := range []string{"User (View tab): typed on the view", "Fyr: carry on", "Agent: Done åäö", "(1 tool calls)"} {
+	for _, want := range []string{"User: typed on the view", "Fyr: carry on", "Agent: Done åäö", "(1 tool calls)"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("thread_read lacks %q:\n%s", want, text)
 		}
 	}
-	for _, want := range []string{"## Owner (View tab)", "## Fyr", "Done åäö\n- Bash `ls`"} {
+	for _, want := range []string{"## Owner · ", "## Fyr", "Done åäö\n- Bash `ls`"} {
 		if !strings.Contains(conv, want) {
 			t.Fatalf("conversation lacks %q:\n%s", want, conv)
 		}

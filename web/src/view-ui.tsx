@@ -2,14 +2,11 @@
 // sandbox as HTML previews (no origin; CDN libraries only, V0.47); the app sends it the full state on load and on every change,
 // and a press in it becomes a message `from: "view"`.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { bridgeMessage, liveViewOf, pressReply, staleLabel, stateMessage, viewDimmed, viewHeight } from "./view.ts";
 import { FRAME_ALLOW } from "./previews.ts";
 import { useApi } from "./api-context.ts";
-import type { FyrEvent, Thread, Offer } from "./types.ts";
-import { buildConversation, deliveryLabel, viewChat } from "./conversation.ts";
-import { liveLine } from "./tasks.ts";
-import { chatHidden, chatKey, loadDismissed, saveDismissed } from "./view-chat.ts";
+import type { Thread, Offer } from "./types.ts";
 
 const COLLAPSED_KEY = "fyr.view.collapsed";
 
@@ -124,42 +121,6 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; 
           onLoad={sendState}
         />
       )}
-    </div>
-  );
-}
-
-/** SPEC 0.5 V0.49: the View tab's chat: your last message typed here, its state, and the agent's
- *  spoken reply (or its current step while it works). A tap opens Conversation. */
-export function ViewChat({ t, events, now, onOpen }: { t: Thread; events: FyrEvent[] | undefined; now: number; onOpen(): void }) {
-  const outKey = t.outbox.map((o) => o.id).join(",");
-  const c = useMemo(() => viewChat(buildConversation(events ?? [], { outbox: outKey ? outKey.split(",") : [] })), [events, outKey]);
-  const [dismissed, setDismissed] = useState(loadDismissed);
-  if (!c) return null;
-  const key = chatKey(c.mine);
-  if (chatHidden(dismissed, t.id, key)) return null; // V0.57
-  const state = deliveryLabel(c.mine);
-  const working = !c.reply && t.running;
-  const dismiss = () => {
-    const d = { ...loadDismissed(), [t.id]: key };
-    saveDismissed(d);
-    setDismissed(d);
-  };
-  return (
-    <div class="vchat">
-      <button class="vchat-x" onClick={dismiss} title="Dismiss" aria-label="Dismiss">
-        ×
-      </button>
-      <button class="vchat-o" onClick={onOpen} title="Open the conversation">
-        <span class="vchat-me">
-          <span class="vchat-b">{c.mine.text}</span>
-          {state && <span class="vchat-s">{state}</span>}
-        </span>
-        {c.reply ? (
-          <span class="vchat-re">{c.reply}</span>
-        ) : working ? (
-          <span class="vchat-re vchat-live">{liveLine(t, now)}</span>
-        ) : null}
-      </button>
     </div>
   );
 }
