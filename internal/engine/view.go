@@ -61,12 +61,17 @@ func viewPage(html string) string {
 	return viewBridge + html
 }
 
-// viewFor is true for threads with the live view flag.
-func (e *Engine) viewFor(th string) bool {
+// viewOff refuses a view tool while the thread's live view is off. Every
+// thread lists the view tools (V0.107): the CLI reads the tool list once,
+// when the process starts, so a process that started before the owner
+// turned the view on could otherwise never fill it.
+func (e *Engine) viewOff(th string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	t := e.threads[th]
-	return t != nil && t.ViewOn()
+	if t := e.threads[th]; t != nil && t.ViewOn() {
+		return nil
+	}
+	return errors.New("the live view is off in this thread; only the owner turns it on, and Fyr tells you when they do")
 }
 
 func stateArg(a map[string]any, key string) (map[string]any, error) {
@@ -82,7 +87,7 @@ func stateArg(a map[string]any, key string) (map[string]any, error) {
 }
 
 func (e *Engine) viewTools(s *mcp.Server) {
-	s.Add(mcp.Tool{Name: "view_publish", For: e.viewFor,
+	s.Add(mcp.Tool{Name: "view_publish",
 		Description: "Publish this thread's live view: a self-contained HTML page (or fragment) pinned above the conversation, plus its full JSON state. Give html or path (an .html file), and state. Republish only when the layout must change; use view_state for new data. Identical pages are stored once.",
 		Schema: obj(map[string]any{
 			"html":  str("A self-contained HTML page or fragment (at most 512 kB). It reads window.fyr.state."),
@@ -90,6 +95,9 @@ func (e *Engine) viewTools(s *mcp.Server) {
 			"state": map[string]any{"type": "object", "description": "The full state (at most 16 kB as JSON); \"headline\" is the one-line status."},
 		}),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+			if err := e.viewOff(th); err != nil {
+				return "", err
+			}
 			if e.Attach == nil {
 				return "", errors.New("Fyr has no attachment store")
 			}
@@ -139,12 +147,15 @@ func (e *Engine) viewTools(s *mcp.Server) {
 			return fmt.Sprintf("Published the live view (page %s). Update it with view_state from now on.", id), nil
 		}})
 
-	s.Add(mcp.Tool{Name: "view_state", For: e.viewFor,
+	s.Add(mcp.Tool{Name: "view_state",
 		Description: "Update this thread's live view state with a JSON Merge Patch (RFC 7396): keys merge, null deletes a key, arrays are replaced whole. The page gets the full new state at once.",
 		Schema: obj(map[string]any{
 			"patch": map[string]any{"type": "object", "description": "The merge patch, e.g. {\"headline\": \"Tests pass; PR open\", \"blockers\": null}."},
 		}, "patch"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+			if err := e.viewOff(th); err != nil {
+				return "", err
+			}
 			patch, err := stateArg(a, "patch")
 			if err != nil {
 				return "", err
@@ -158,10 +169,13 @@ func (e *Engine) viewTools(s *mcp.Server) {
 			return "Updated the live view.", nil
 		}})
 
-	s.Add(mcp.Tool{Name: "view_unchanged", For: e.viewFor,
+	s.Add(mcp.Tool{Name: "view_unchanged",
 		Description: "Say that this thread's live view is still current after this turn, with a short reason. Call it instead of view_state when nothing the view shows changed.",
 		Schema:      obj(map[string]any{"reason": str("Why the view is still current, in a few words.")}, "reason"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+			if err := e.viewOff(th); err != nil {
+				return "", err
+			}
 			reason, _ := a["reason"].(string)
 			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindViewUnchanged, Thread: th, Args: reason}); err != nil {
 				return "", err
