@@ -245,6 +245,21 @@ func TestNoticeRules(t *testing.T) {
 			if n := queued(t, th, "owner:settle"); n.What != "The owner set this thread: settled → not settled." || !wakes(res) {
 				t.Fatalf("revived: %+v wakes=%v", n, wakes(res))
 			}
+			// V0.89: Settle on an idle thread with an open PR is "settle when
+			// merged", which leaves the thread awake; its notice never wakes it.
+			th = feedThread()
+			th.MainChange = th.Changes[0].ID
+			th, res = fstep(t, th, Input{Source: FromOwner, Kind: "thread.settle"}, ct0)
+			if n := queued(t, th, "owner:settle"); n.What != "The owner set this thread: settles when its PR merges." || !n.Self || wakes(res) {
+				t.Fatalf("settle when merged: %+v wakes=%v", n, wakes(res))
+			}
+			if _, ns := take(t, th, FeedTake{At: AtIdle}, ct0); len(ns) != 0 {
+				t.Fatalf("the owner's settle woke the agent: %q", whats(ns))
+			}
+			th, res = fstep(t, th, Input{Source: FromOwner, Kind: "thread.unsettle"}, ct0)
+			if n := queued(t, th, "owner:settle"); n.Self || !wakes(res) {
+				t.Fatalf("unsettle after settle when merged: %+v wakes=%v", n, wakes(res))
+			}
 		},
 	}
 	for _, r := range NoticeRules {
