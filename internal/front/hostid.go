@@ -3,6 +3,7 @@ package front
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/api"
@@ -80,7 +81,7 @@ func (f *Front) pinLocked(l *link) {
 
 // hostLocked is one host's row in hosts[]; the caller holds f.mu.
 func (f *Front) hostLocked(l *link) api.Host {
-	h := api.Host{Name: l.name(), Online: l.online, Found: l.cfg.Found, ID: l.reportedID(), IDWas: l.idWas}
+	h := api.Host{Name: l.name(), Online: l.online, Found: l.cfg.Found, ID: l.reportedID(), IDWas: l.idWas, URL: strings.TrimRight(l.cfg.URL, "/")}
 	if h.ID == "" {
 		h.ID = f.pins[h.Name]
 	}

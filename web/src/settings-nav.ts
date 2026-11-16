@@ -1,12 +1,13 @@
-// SPEC V0.119: Settings is four pages behind one nav. The pages, their one line of state, the badge and the page ids
-// (`providers/<id>`). Pure.
+// SPEC V0.119, V0.125: Settings is five pages behind one nav. The pages, their one line of state, the badges and the
+// page ids (`providers/<id>`, `hosts/<name>`). Pure.
 import type { AutoMergeRepo } from "./automerge.ts";
 import type { PushStatus } from "./push.ts";
+import type { HostInfo } from "./hosts.ts";
 
-export type PageId = "providers" | "automation" | "projects" | "device";
+export type PageId = "providers" | "automation" | "projects" | "hosts" | "device";
 export interface PageRef {
   page: PageId;
-  /** a sub-page: a provider's id or "new" (providers), a project's id (projects) */
+  /** a sub-page: a provider's id or "new" (providers), a project's id (projects), a host's name (hosts) */
   sub?: string;
 }
 
@@ -14,11 +15,12 @@ export const PAGES: { id: PageId; title: string }[] = [
   { id: "providers", title: "Providers" },
   { id: "automation", title: "Automation" },
   { id: "projects", title: "Projects" },
+  { id: "hosts", title: "Hosts" },
   { id: "device", title: "This device" },
 ];
 
 /** The pages with sub-pages. */
-const SUBS: Record<PageId, boolean> = { providers: true, automation: false, projects: true, device: false };
+const SUBS: Record<PageId, boolean> = { providers: true, automation: false, projects: true, hosts: true, device: false };
 
 export function isPage(s: string | null | undefined): s is PageId {
   return !!s && PAGES.some((p) => p.id === s);
@@ -31,11 +33,17 @@ export function parsePage(s: string | null | undefined): PageRef {
   const page = i < 0 ? raw : raw.slice(0, i);
   const sub = i < 0 ? "" : raw.slice(i + 1);
   if (!isPage(page)) return { page: "providers" };
-  return sub && SUBS[page] ? { page, sub } : { page };
+  let dec = sub;
+  try {
+    dec = decodeURIComponent(sub); // a host's name is URL-encoded
+  } catch {
+    /* keep it as it is */
+  }
+  return dec && SUBS[page] ? { page, sub: dec } : { page };
 }
 
 export function pageUrl(r: PageRef): string {
-  return r.sub ? `${r.page}/${r.sub}` : r.page;
+  return r.sub ? `${r.page}/${encodeURIComponent(r.sub)}` : r.page;
 }
 
 type Status = { status: "ready" | "needs-login" | "needs-key" };
@@ -75,9 +83,32 @@ export function automationSummary(deploy: boolean | null, repos: AutoMergeRepo[]
   return `Deploys ${deploy ? "on" : "off"} · ${on ? `merges in ${plural(on, "repo", "repos")}` : "merges off"}`;
 }
 
-/** "10 projects · 1 host"; no hosts listed is this host. */
-export function projectsSummary(projects: number, hosts: number): string {
-  return `${projects ? plural(projects, "project", "projects") : "No projects"} · ${plural(Math.max(1, hosts), "host", "hosts")}`;
+/** "10 projects", "No projects" (V0.125: the hosts have their own page). */
+export function projectsSummary(projects: number): string {
+  return projects ? plural(projects, "project", "projects") : "No projects";
+}
+
+/** V0.125: the hosts that need the owner: another install answers under the name (V0.124). */
+export function hostsNeed(hosts: Pick<HostInfo, "online" | "idWas">[] | undefined): number {
+  return (hosts ?? []).filter((h) => h.idWas).length;
+}
+
+/** V0.125: "3 hosts", "3 hosts · 1 offline", "3 hosts · 1 needs you"; one install is "This install only". */
+export function hostsSummary(hosts: Pick<HostInfo, "online" | "idWas">[] | undefined): string {
+  const hs = hosts ?? [];
+  if (hs.length <= 1) return "This install only";
+  const need = hostsNeed(hs);
+  const off = hs.filter((h) => !h.online).length;
+  const tail = need ? ` · ${need === 1 ? "1 needs you" : `${need} need you`}` : off ? ` · ${off} offline` : "";
+  return `${plural(hs.length, "host", "hosts")}${tail}`;
+}
+
+/** V0.125: the More sheet's Settings line: the providers' words (providersNeed), with the hosts that need the owner
+ *  added to the count. */
+export function settingsNeed(providers: string, hosts: number): string {
+  if (!hosts) return providers;
+  const n = (Number.parseInt(providers, 10) || 0) + hosts;
+  return n === 1 ? "1 needs you" : `${n} need you`;
 }
 
 const PUSH_WORD: Record<PushStatus, string> = { on: "Notifications on", off: "Notifications off", denied: "Notifications blocked", unsupported: "No notifications here" };

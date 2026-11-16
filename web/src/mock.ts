@@ -1411,6 +1411,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       return {
         now: new Date(clock()).toISOString(),
         host: "desk",
+        hostId: "F7QK-2M9X-AB34-CD56",
         user: "owner",
         buildId: "mock",
         deploy: mockDeploy(),
@@ -1663,9 +1664,11 @@ export function trustMockLab() {
 export function mockHosts(now: number, labTrusted = mockLabTrusted) {
   const iso = (ms: number) => new Date(ms).toISOString();
   return [
-    { name: "desk", online: true, since: iso(now - 3 * 3600_000), id: "F7QK-2M9X-AB34-CD56" },
-    { name: "host-b", online: false, since: iso(now - 25 * 60_000), error: "unreachable", found: true, id: "M3RS-QX7P-5LKA-2WNE" },
-    { name: "lab", online: true, since: iso(now - 40 * 60_000), id: "B7LA-4QZE-9KDF-3HXW", ...(labTrusted ? {} : { idWas: "AX2C-7RTM-8PLQ-6VYD" }) },
+    { name: "desk", online: true, since: iso(now - 3 * 3600_000), id: "F7QK-2M9X-AB34-CD56", url: "http://127.0.0.1:7777" },
+    { name: "host-b", online: false, since: iso(now - 25 * 60_000), error: "unreachable", found: true, id: "M3RS-QX7P-5LKA-2WNE", url: "http://100.64.0.9:7778" },
+    { name: "lab", online: true, since: iso(now - 40 * 60_000), id: "B7LA-4QZE-9KDF-3HXW", url: "http://100.64.0.7:7778", ...(labTrusted ? {} : { idWas: "AX2C-7RTM-8PLQ-6VYD" }) },
+    // V0.125: a host older than V0.124 (no id), on the LAN
+    { name: "old-nuc", online: true, since: iso(now - 5 * 3600_000), url: "http://old-nuc.lan:7778" },
   ];
 }
 function mockHostOf(t: ThreadDTO, now: number): ThreadDTO {
