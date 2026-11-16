@@ -1795,6 +1795,43 @@ try {
 }
 });
 
+// V0.124 (decision 0026): Settings → Projects → Hosts shows each host's short install id, on the desktop and the
+// phone with the same row; a host that answers with another id than the one first seen says so, and "Trust <id>"
+// (44 px on the phone, inside the screen) clears it through front.hostId.
+for (const [label, w, h, url, root] of [
+  ["desktop", 1280, 800, "?mock=rail&hosts=2&dialog=settings&page=projects", ".dlg"],
+  ["phone", 390, 844, "?mock=rail&hosts=2&settings=projects", ".m-settings"],
+]) section(`V0.124 ${label}`, async (hn) => {
+  const { evaluate, waitFor, settle, navigate, openScreen, shot } = hn;
+  const ctx = `V0.124 ${label}`;
+  try {
+    const ready = `document.querySelectorAll('${root} .sr.host').length === 3`;
+    // A section starts at 1280 × 800 without touch, the desktop case; the phone opens its own screen.
+    if (label === "phone") await openScreen({ url }, w, h);
+    else await navigate(`${origin}/${url}`, ready);
+    await waitFor(ready);
+    // Hosts is the last group of the page: bring it into view as the owner would scroll to it.
+    await evaluate(`document.querySelector('${root} .sr.host:last-of-type')?.scrollIntoView({ block: 'center' })`);
+    await settle();
+    const rowsOf = `[...document.querySelectorAll('${root} .sr.host')].map(r => { const b = r.querySelector('button'); const br = b?.getBoundingClientRect(); return { name: r.querySelector('.sr-t')?.textContent, text: r.querySelector('.sr-d')?.textContent ?? '', id: r.dataset.id ?? '', btn: b?.textContent.trim() ?? '', bh: br?.height ?? 0, bl: br?.left ?? 0, brt: br?.right ?? 0, bb: br?.bottom ?? 0, vw: innerWidth, vh: innerHeight }; })`;
+    const rows = await evaluate(rowsOf);
+    const desk = rows.find((r) => r.name === "desk"), lab = rows.find((r) => r.name === "lab");
+    check(!!desk && / · id F7QK$/.test(desk.text) && desk.id === "F7QK-2M9X-AB34-CD56" && !desk.btn, `${ctx}: the desk row ${JSON.stringify(desk)}`);
+    check(!!lab && /^online · Another install answers as lab: id B7LA, it was AX2C\./.test(lab.text) && lab.btn === "Trust B7LA", `${ctx}: the lab row ${JSON.stringify(lab)}`);
+    if (lab?.btn) {
+      check(lab.bl >= 0 && lab.brt <= lab.vw && lab.bb <= lab.vh, `${ctx}: Trust is outside the screen ${JSON.stringify(lab)}`);
+      if (label === "phone") check(lab.bh >= 44, `${ctx}: Trust is ${lab.bh} px high on the phone`);
+    }
+    await shot(`hosts-id-${label}.png`);
+    await evaluate(`[...document.querySelectorAll('${root} .sr.host button')].find(b => b.textContent.trim() === 'Trust B7LA')?.click()`);
+    await waitFor(`![...document.querySelectorAll('${root} .sr.host button')].some(b => b.textContent.includes('Trust'))`, { soft: true });
+    const after = (await evaluate(rowsOf)).find((r) => r.name === "lab");
+    check(!!after && !after.btn && /online · id B7LA$/.test(after.text), `${ctx}: after Trust ${JSON.stringify(after)}`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+
 // V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.
 section('V0.35', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;

@@ -3,8 +3,9 @@
 
 import { newCommandId, type Api, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
-import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockLoad, mockQuota } from "./mock.ts";
+import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, trustMockLab, mockChanges, mockFilePatch, mockLoad, mockQuota } from "./mock.ts";
 import { createMockProviders } from "./mock-providers.ts";
+import { decodeHosts } from "./hosts.ts";
 
 const MOCK_IMAGE =
   "data:image/svg+xml," +
@@ -29,6 +30,7 @@ export function createMockApi(scenario: string): Api {
   // V0.121: the owner's project order, the front's own (&order=p_fyr,p_web sets one; none: by name).
   let order: string[] | null = q.get("order")?.split(",").filter(Boolean) ?? null;
   let onOrder: ((ids: string[]) => void) | undefined;
+  let onHosts: ((hs: import("./hosts.ts").HostInfo[]) => void) | undefined;
   return {
     mock: true,
     start(h) {
@@ -36,6 +38,7 @@ export function createMockApi(scenario: string): Api {
       watch = observeBuildId(watch, server.buildId).watch;
       server.subscribe({ thread: h.thread, event: h.event, project: (p) => h.project?.(p) });
       onOrder = h.projectOrder;
+      onHosts = h.hosts;
       setTimeout(() => {
         h.state({ ...server.state(), ...(order ? { projectOrder: order } : {}) });
         h.conn(offline ? "offline" : "live");
@@ -65,6 +68,12 @@ export function createMockApi(scenario: string): Api {
         return { ok: true };
       }
       if (action === "host.systemAgents") return { ok: true };
+      if (action === "front.hostId") {
+        if (args?.host !== "lab") return { ok: false, error: `${String(args?.host)} has reported no id yet` };
+        trustMockLab();
+        setTimeout(() => onHosts?.(decodeHosts(mockHosts(Date.now()))), 0); // the front's hosts event (V0.124)
+        return { ok: true, result: { host: "lab" } };
+      }
       if (action === "front.projectOrder") {
         order = Array.isArray(args?.ids) ? (args.ids as unknown[]).filter((x): x is string => typeof x === "string") : [];
         const ids = order;
