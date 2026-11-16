@@ -1002,8 +1002,8 @@ button.ptag{padding:0}
 .offrun{font:400 12px/16px var(--ui);color:var(--ink-muted)}
 .offrun.ok{color:var(--calm)}.offrun.fail{color:var(--signal-ink)}
 /* V0.75 (1), #62: a used action stays in place, quiet; a failure keeps its weight and turns to the signal colour. */
-.btn.used{color:var(--ink-faint);background:transparent;border-color:var(--line)}
-.btn.used:hover:not(:disabled){color:var(--ink-muted);background:var(--sunken)}
+.btn.used{color:var(--ink-muted);background:transparent;border-color:var(--line);font-weight:400} /* #62: AA, 6.3:1 light and 6.9:1 dark; --ink-faint was 3.6 and 3.9 */
+.btn.used:hover:not(:disabled){color:var(--ink);background:var(--sunken)}
 .btn.bad{color:var(--signal-ink);border-color:var(--signal-ink)}
 .offout-b{flex:none;width:24px;height:24px;border-radius:6px;font:400 12px/22px var(--mono);color:var(--ink-muted);border:1px solid var(--line)}
 .offout-b.on{background:var(--sunken);color:var(--ink)}

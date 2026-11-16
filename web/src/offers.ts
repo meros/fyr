@@ -68,6 +68,18 @@ export function runState(runs: OfferRun[] | undefined, id: string): RunState {
   return !r ? "fresh" : r.running ? "running" : r.ok ? "ok" : "failed";
 }
 
+/** V0.75 (1), #62: how a button shows its action: the state from the newest run, the class (a used action is quiet,
+ *  a failure loud), the mark before the label and the result after it. `clock` turns a run's time into hh:mm. */
+export function offerLook(o: Offer, runs: OfferRun[] | undefined, clock: (iso: string) => string) {
+  const state = runState(runs, o.id);
+  const last = lastRun(runs, o.id);
+  const cls = o.primary && state === "fresh" ? " p" : state === "ok" ? " used" : state === "failed" ? " bad" : "";
+  const mark = state === "ok" ? "✓ " : state === "failed" ? "✕ " : o.run === "agent" ? "✦ " : "";
+  const word =
+    state === "running" ? " · running…" : state === "ok" ? ` · ${clock((last!.endedAt ?? last!.at)!)}` : state === "failed" ? ` · failed${last!.exit ? ` (exit ${last!.exit})` : ""}` : "";
+  return { state, last, cls, mark, word };
+}
+
 /** The command args of a press: what the owner saw is what runs. */
 export function pressArgs(on: string, o: Offer) {
   return { on, action: o.id, digest: o.digest };
