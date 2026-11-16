@@ -43,8 +43,9 @@ type Notice struct {
 	// passed". A notice without a subject is replaced by a newer one.
 	Subject string   `json:"subject,omitempty"`
 	States  []string `json:"states,omitempty"`
-	// Self: the agent's own Input caused it, so it never wakes the agent
-	// (no loop); it goes out with the next tool call or delivery.
+	// Self: the agent's own Input caused it (no loop), or it needs nothing
+	// from the agent (the owner's settle, V0.89), so it never wakes the
+	// agent; it goes out with the next tool call or delivery.
 	Self bool      `json:"self,omitempty"`
 	At   time.Time `json:"at"`
 }
@@ -541,7 +542,9 @@ func ownerNotices(r Reduced) []Notice {
 		return "not settled"
 	}
 	if s := settle(a); s != settle(b) {
-		out = append(out, Notice{About: "thread", Key: "owner:settle", Subject: "The owner set this thread", States: []string{s}})
+		// V0.89: a settle needs nothing from the agent, so it never wakes it
+		// (settle when merged leaves the thread awake). Unsettle wakes.
+		out = append(out, Notice{About: "thread", Key: "owner:settle", Subject: "The owner set this thread", States: []string{s}, Self: s != "not settled"})
 	}
 	for i := range a.Changes {
 		c := &a.Changes[i]
