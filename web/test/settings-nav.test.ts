@@ -1,7 +1,7 @@
 // V0.119: the Settings nav: four pages, one line of state each, the badge, the page ids.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PAGES, automationSummary, deviceSummary, navBadge, pageUrl, parsePage, projectsSummary, providersNeed, providersSummary } from "../src/settings-nav.ts";
+import { PAGES, escapeTarget, automationSummary, deviceSummary, navBadge, pageUrl, parsePage, projectsSummary, providersNeed, providersSummary } from "../src/settings-nav.ts";
 
 const ready = { status: "ready" as const };
 const login = { status: "needs-login" as const };
@@ -67,4 +67,11 @@ test("a page id to and from its URL form", () => {
   assert.deepEqual(parsePage(null), { page: "providers" });
   assert.deepEqual(parsePage("automation/x"), { page: "automation" }, "a page without sub-pages drops the sub");
   for (const s of ["providers", "providers/abc", "projects/p_x", "device", "automation"]) assert.equal(pageUrl(parsePage(s)), s);
+});
+
+// V0.119 (amends the V0.58 Project dialog): Esc on a sub-page goes to its list; on a page it closes Settings.
+test("Esc goes one level up, then closes", () => {
+  assert.deepEqual(escapeTarget({ page: "projects", sub: "p_fyr" }), { page: "projects" });
+  assert.deepEqual(escapeTarget({ page: "providers", sub: "new" }), { page: "providers" });
+  assert.equal(escapeTarget({ page: "device" }), null);
 });
