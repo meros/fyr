@@ -67,6 +67,9 @@ type Deployer struct {
 	SwitchClient func(build, dir string) error
 	// Cgroup: where the build and the tests run (V0.80); "" is the daemon's.
 	Cgroup string
+	// Slot waits, with priority, for a slot for `make test` (V0.86) and
+	// returns its release; nil runs the tests without one.
+	Slot func(ctx context.Context) (release func(), err error)
 	// OnShipped hears a deploy that succeeded (V0.82): after the new
 	// daemon's probation, or when the client-only path switched. nil
 	// hears nothing.
@@ -269,10 +272,23 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		os.RemoveAll(out)
 		return failed(firstErr(fail(fmt.Errorf("build failed: %v\n%s", err, tail(b, 3000)))))
 	}
+	// V0.86: the tests hold a slot for heavy jobs, ahead of every agent.
+	release := func() {}
+	if d.Slot != nil {
+		d.report(prog, "test", "waiting for a test slot", nil)
+		r, err := d.Slot(ctx)
+		if err != nil {
+			os.RemoveAll(out)
+			return failed(firstErr(fail(fmt.Errorf("no test slot, nothing was switched: %v", err))))
+		}
+		release = r
+	}
 	d.report(prog, "test", "", nil)
-	if b, err := run(inCg, dir, test...); err != nil {
+	tb, terr := run(inCg, dir, test...)
+	release()
+	if terr != nil {
 		os.RemoveAll(out)
-		return failed(firstErr(fail(fmt.Errorf("tests failed, nothing was switched: %v\n%s", err, tail(b, 3000)))))
+		return failed(firstErr(fail(fmt.Errorf("tests failed, nothing was switched: %v\n%s", terr, tail(tb, 3000)))))
 	}
 	if sum != "" {
 		os.WriteFile(filepath.Join(out, sumFile), []byte(sum+"\n"), 0o644)

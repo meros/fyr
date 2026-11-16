@@ -15,6 +15,7 @@ let
     listen = "127.0.0.1:${toString cfg.port}";
     permissionMode = cfg.permissionMode;
     idleStopMinutes = cfg.idleStopMinutes;
+    slots = cfg.slots;
     profiles = cfg.profiles;
     scanRoots = cfg.scanRoots;
     quota = lib.mapAttrs (_: q: lib.filterAttrs (_: v: v != null) q) cfg.quota;
@@ -60,6 +61,11 @@ in
       type = lib.types.int;
       default = 10;
       description = "Stop an agent process after this long without a run (SPEC V0.7).";
+    };
+    slots = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 2;
+      description = "How many heavy jobs (test suites, builds, e2e runs) the agents run at once across all threads; the rest wait in a queue (SPEC V0.86).";
     };
     role = lib.mkOption {
       type = lib.types.enum [ "both" "host" "front" ];
