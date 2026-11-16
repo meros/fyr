@@ -77,8 +77,12 @@ type Deployer struct {
 	// daemon's probation, or when the client-only path switched. nil
 	// hears nothing.
 	OnShipped func(Shipped)
+	// OnIdle hears that no deploy runs any more (V0.111): one failed, or
+	// the new build's probation ended. nil hears nothing.
+	OnIdle func()
 
 	exit   int
+	active int // deploys between start and return (V0.111)
 	mu     sync.Mutex
 	gen    int
 	cancel context.CancelFunc
@@ -222,6 +226,8 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	if d.cancel != nil {
 		d.cancel()
 	}
+	d.active++
+	defer d.ended()
 	d.gen++
 	gen := d.gen
 	ctx, cancel := context.WithCancel(ctx)
@@ -251,6 +257,10 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		return failed(errors.New(why))
 	}
 	commit, remote := source(ctx, run, dir) // V0.82: what is built
+	// V0.111: an auto-approved deploy builds only the commit the gate passed.
+	if want, _ := req.Args["commit"].(string); want != "" && commit != want {
+		return failed(fmt.Errorf("The checkout moved from %s to %s after the approval; nothing was built. Ask again.", short7(want), short7(commit)))
+	}
 	// V0.81: fyrd's sources as they are built; equal to the running
 	// daemon's, only the web client changes.
 	sum, _ := SourceSum(dir)
@@ -410,7 +420,10 @@ func (d *Deployer) ReportPending() {
 			msg += "\nLog tail:\n" + tail([]byte(f.Log), 1500)
 		}
 		d.report(&Progress{Build: f.Build, StartedAt: time.Now()}, "failed", msg, nil)
-		go d.Host.Report(p.Thread, p.Req, true, false, msg)
+		go func() {
+			d.Host.Report(p.Thread, p.Req, true, false, msg)
+			d.idle()
+		}()
 		return
 	}
 	d.report(&Progress{Build: p.Build, StartedAt: time.Now()}, "done", "", nil)
@@ -423,7 +436,50 @@ func (d *Deployer) ReportPending() {
 		d.DB.SetKV("pending_deploy", "")
 		d.ship(d.runner(), p.Build, p.Commit, p.Remote, p.Dir)
 		d.Host.Report(p.Thread, p.Req, true, true, "Fyr now runs build "+p.Build+".")
+		d.idle()
 	}()
 }
 
 func firstErr(_ string, err error) error { return err }
+
+// Busy: a deploy builds, tests or drains here, or a switched build waits
+// out its probation (pending_deploy), so no other deploy starts by itself
+// (V0.111).
+func (d *Deployer) Busy() bool {
+	d.mu.Lock()
+	active := d.active > 0
+	d.mu.Unlock()
+	if active {
+		return true
+	}
+	p, _ := d.DB.GetKV("pending_deploy")
+	return p != ""
+}
+
+// ended counts a deploy out; the last one to fail tells OnIdle. A deploy
+// that switched leaves pending_deploy and the daemon stops, so Busy holds.
+func (d *Deployer) ended() {
+	d.mu.Lock()
+	d.active--
+	if d.active == 0 && d.cancel != nil {
+		d.cancel = nil
+	}
+	last := d.active == 0
+	d.mu.Unlock()
+	if last {
+		d.idle()
+	}
+}
+
+func (d *Deployer) idle() {
+	if d.OnIdle != nil && !d.Busy() {
+		d.OnIdle()
+	}
+}
+
+func short7(s string) string {
+	if len(s) > 7 {
+		return s[:7]
+	}
+	return s
+}
