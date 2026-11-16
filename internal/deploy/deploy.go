@@ -123,10 +123,15 @@ type Progress struct {
 	At        time.Time `json:"at"`
 	// Client marks the client-only path (V0.81), so the page shows nothing beyond its reload (V0.118 (3)).
 	Client bool `json:"client,omitempty"`
+	// start makes this update's record (#151) when its first phase comes.
+	start func() Update
 }
 
 func (d *Deployer) report(p *Progress, phase, detail string, blocking []string) {
 	p.Phase, p.Detail, p.Blocking, p.At = phase, detail, blocking, time.Now()
+	if p.start != nil {
+		d.recordPhase(*p, p.start)
+	}
 	if d.OnProgress != nil {
 		d.OnProgress(*p)
 	}
@@ -270,6 +275,15 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	}
 	id := time.Now().Format("20060102-150405")
 	prog := &Progress{Build: id, StartedAt: time.Now()}
+	// #151: the record of this attempt: why it ran and what it builds.
+	trigger, _ := req.Args["trigger"].(string)
+	if trigger == "" {
+		trigger = "agent"
+	}
+	recCommit, _ := req.Args["commit"].(string)
+	prog.start = func() Update {
+		return Update{Build: prog.Build, Commit: recCommit, Trigger: trigger, Local: dir != "", Thread: threadID, Result: UpdateRunning, StartedAt: prog.StartedAt}
+	}
 	failed := func(err error) (string, error) {
 		if err != nil && !errors.Is(err, core.ErrReportLater) {
 			d.report(prog, "failed", err.Error(), nil)
@@ -285,6 +299,11 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		return failed(errors.New(why))
 	}
 	commit, remote := source(ctx, run, dir) // V0.82: what is built
+	recCommit = commit
+	branch := gitBranch(ctx, run, dir)
+	if mk := prog.start; mk != nil {
+		prog.start = func() Update { u := mk(); u.Branch = branch; return u }
+	}
 	// V0.111: an auto-approved deploy builds only the commit the gate passed.
 	if want, _ := req.Args["commit"].(string); want != "" && commit != want {
 		return failed(fmt.Errorf("The checkout moved from %s to %s after the approval; nothing was built. Ask again.", short7(want), short7(commit)))
@@ -358,7 +377,6 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	if sum != "" {
 		os.WriteFile(filepath.Join(out, sumFile), []byte(sum+"\n"), 0o644)
 	}
-	branch := gitBranch(ctx, run, dir)
 	if clientOnly {
 		res, err := d.deployClient(ctx, run, prog, gen, dir, out, id)
 		if err == nil {
@@ -526,6 +544,7 @@ func (d *Deployer) ReportPending() {
 		if !p.Local && p.Commit != "" {
 			d.markBad(p.Commit, f.Reason) // #154: not tried again until a newer release
 		}
+		d.finish(f.Build, UpdateRolledBack, f.Reason)
 		go func() {
 			d.tell(p.Thread, p.Req, false, msg)
 			d.idle()
@@ -563,6 +582,7 @@ func (d *Deployer) ReportPending() {
 		} else {
 			d.Unpause()
 		}
+		d.finish(p.Build, UpdateLive, "")
 		d.Prune()
 		d.tell(p.Thread, p.Req, true, msg)
 		d.idle()
