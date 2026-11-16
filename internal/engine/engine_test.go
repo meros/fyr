@@ -35,12 +35,22 @@ func TestMain(m *testing.M) {
 type runner struct {
 	mu    sync.Mutex
 	calls []core.EffectReq
+	// deploy, when set, holds each fyr.deploy until a value or a close
+	// arrives (V0.110).
+	deploy chan error
 }
 
 func (r *runner) Run(_ context.Context, _ string, req core.EffectReq) (string, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.calls = append(r.calls, req)
+	wait := r.deploy
+	r.mu.Unlock()
+	if wait != nil && req.Action == core.FyrDeploy {
+		if err := <-wait; err != nil {
+			return "", err
+		}
+		return "deployed", nil
+	}
 	return "merged", nil
 }
 

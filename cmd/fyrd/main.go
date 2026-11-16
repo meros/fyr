@@ -190,6 +190,11 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		log.Printf("deploy %s (%s): %d changes live", s.Build, s.Commit, n)
 	}
 	eng.DeployNow = dep.DeployNow               // V0.83: the owner's Restart now
+	// V0.110: Fyr approves a deploy ask by itself when the gate passes and
+	// no deploy runs; the end of one looks at the asks that wait.
+	eng.DeployGate = func(ctx context.Context, dir string) (string, string) { return deploy.Gate(ctx, nil, dir) }
+	eng.DeployBusy = dep.Busy
+	dep.OnIdle = eng.AutoDeploySweep
 	prDetails := &github.Details{Gh: github.Gh} // V0.43: the PR tab's details, cached 30 s
 	eng.Effects = engine.Outside{Gh: github.Gh, PR: prDetails, Deploy: dep.Deploy}
 	poller := &github.Poller{Gh: github.Gh, Src: engine.PRWatch{E: eng}}
@@ -287,6 +292,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	log.Printf("build %s (%s) listening on http://%s (%d threads, %d providers)", BuildID(), cfg.Role, ln.Addr(), len(eng.Snapshot()), len(h.profiles()))
 	deploy.MarkReady()
 	dep.ReportPending()
+	eng.AutoDeploySweep() // V0.110: the deploy asks that waited across the restart
 
 	<-ctx.Done()
 	log.Printf("shutting down")

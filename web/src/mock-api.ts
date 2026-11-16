@@ -51,6 +51,9 @@ export function createMockApi(scenario: string): Api {
     async autoMerge() {
       return [{ repo: "meros/fyr", on: false }];
     },
+    async autoDeploy() {
+      return { on: true };
+    },
     async profiles() {
       return server.state().profiles;
     },
