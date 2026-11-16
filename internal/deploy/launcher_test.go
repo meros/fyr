@@ -1,7 +1,11 @@
 package deploy
 
 import (
+	"errors"
+	"net"
+	"net/http"
 	"os"
+	"strings"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -28,6 +32,29 @@ func fakeDaemon(mode string) {
 		os.Exit(1)
 	case "slow":
 		time.Sleep(time.Hour)
+	case "healthy", "sick", "latecrash":
+		// #148: serve /healthz (200, or 503 when sick) and say where.
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			os.Exit(3)
+		}
+		check := func() error { return nil }
+		if mode == "sick" {
+			check = func() error { return errors.New("the database does not answer") }
+		}
+		go http.Serve(ln, Health(http.NotFoundHandler(), check))
+		MarkReady(ln.Addr().String())
+		if mode == "latecrash" {
+			time.Sleep(1500 * time.Millisecond) // past the 500 ms probation
+			os.Exit(1)
+		}
+		for i := 0; i < 1000; i++ {
+			if _, err := os.Stat(os.Getenv("FYR_STOP_FILE")); err == nil {
+				os.Exit(0)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		os.Exit(0)
 	}
 	MarkReady()
 	if mode == "deploy" {
@@ -189,5 +216,77 @@ func TestLauncherRollsBackToSeed(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(data, "deploy-failed.json")); err != nil {
 		t.Fatal("no rollback report")
+	}
+}
+
+// #148: a next that is ready but answers /healthz with 503 is rolled back,
+// and the report says why.
+func TestLauncherRollsBackUnhealthy(t *testing.T) {
+	data := t.TempDir()
+	build(t, data, "a", "deploy")
+	build(t, data, "b", "sick")
+	link(t, data, "current", "a")
+	link(t, data, "next", "b")
+	l := launcher(data)
+	l.ReadyTimeout = 3 * time.Second
+	l.maxStarts = 2
+	l.Run()
+	if target(data, "current") != "a" {
+		t.Fatalf("current=%s after an unhealthy deploy", target(data, "current"))
+	}
+	b, _ := os.ReadFile(filepath.Join(data, "deploy-failed.json"))
+	if !strings.Contains(string(b), "not healthy") || !strings.Contains(string(b), "database") {
+		t.Fatalf("rollback report %s", b)
+	}
+}
+
+// #148: a next that passes its probation and then crashes within the watch
+// window goes back to previous instead of crash-looping.
+func TestLauncherRollsBackLateCrash(t *testing.T) {
+	data := t.TempDir()
+	build(t, data, "a", "deploy")
+	build(t, data, "b", "latecrash")
+	link(t, data, "current", "a")
+	link(t, data, "next", "b")
+	l := launcher(data)
+	l.maxStarts = 2 // a (deploys) → b (crashes late) → rollback, stop
+	l.Run()
+	if target(data, "current") != "a" {
+		t.Fatalf("current=%s after a late crash", target(data, "current"))
+	}
+	b, _ := os.ReadFile(filepath.Join(data, "deploy-failed.json"))
+	if !strings.Contains(string(b), "crashed with code 1") {
+		t.Fatalf("rollback report %s", b)
+	}
+	if target(data, "previous") == "b" {
+		t.Fatal("previous points at the failed build")
+	}
+}
+
+// #148: a healthy next gets probation-ok with its build once its probation
+// ended.
+func TestLauncherWritesProbationOK(t *testing.T) {
+	data := t.TempDir()
+	build(t, data, "a", "deploy")
+	build(t, data, "b", "healthy")
+	link(t, data, "current", "a")
+	link(t, data, "next", "b")
+	l := launcher(data)
+	l.maxStarts = 5
+	go func() {
+		for i := 0; i < 1000; i++ {
+			if b, err := os.ReadFile(filepath.Join(data, ProbationOK)); err == nil && filepath.Base(string(b)) == "b" {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		os.WriteFile(filepath.Join(data, "stop"), nil, 0o644)
+	}()
+	if err := l.Run(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(data, ProbationOK))
+	if err != nil || filepath.Base(string(b)) != "b" || target(data, "current") != "b" {
+		t.Fatalf("probation-ok %q (%v), current=%s", b, err, target(data, "current"))
 	}
 }

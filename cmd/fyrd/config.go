@@ -54,6 +54,11 @@ type config struct {
 	Listen          string             `json:"listen"`
 	PermissionMode  string             `json:"permissionMode"`
 	IdleStopMinutes int                `json:"idleStopMinutes"`
+	// UpdateRepo is where auto-update reads releases (decision 0027);
+	// empty is meros/fyr. UpdateQuietMinutes is how long `deployable` must
+	// stay put before a host installs it (#153); 0 is 10.
+	UpdateRepo         string `json:"updateRepo,omitempty"`
+	UpdateQuietMinutes int    `json:"updateQuietMinutes,omitempty"`
 	OwnerLogin      string             `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)
 	Profiles        []provider.Profile `json:"profiles"`
 	// ScratchRoots: folders whose children are scratch folders (V0.28);

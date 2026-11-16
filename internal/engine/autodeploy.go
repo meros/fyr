@@ -122,9 +122,9 @@ func (e *Engine) gateDeploys(id string) {
 			continue // the line is shown; the deployer's OnIdle comes back
 		case busy:
 			args.Wait, state = true, deployWaiting
-		case a.Dir == "":
-			args.Held, state = "the ask names no checkout", deployHeld
 		default:
+			// Decision 0027: no checkout is the newest release (approved by
+			// the setting); a checkout is a local build (held, #159).
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			args.Commit, args.Held = e.DeployGate(ctx, a.Dir)
 			cancel()

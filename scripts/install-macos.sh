@@ -1,61 +1,72 @@
 #!/usr/bin/env bash
 # Installs Fyr on a Mac as a launchd agent of the logged-in user (the Mac's
-# stand-in for the NixOS module, decision 0007): builds this checkout, makes
-# it the current build, keeps a copy as the seed, starts the launcher at
-# login, and runs scripts/update.sh once a day at 04:00 (it builds origin's
-# default branch and switches to it). Self-deploys and updates build with
-# the toolchain on the agent's PATH (no Nix needed). Run it again to rebuild
-# and restart; `--uninstall` stops both agents and removes their plists (the
-# data folder stays).
+# stand-in for the NixOS module, decision 0007). It builds nothing: it
+# downloads the CI release the tag `deployable` points at (decision 0027,
+# #158) with your gh login, checks its SHA256SUMS, makes it the current build,
+# keeps a copy as the seed and starts the launcher at login. From then on the
+# running fyrd updates itself to each new release (signed, verified, smoke-
+# tested, #153). Run it again to reinstall and restart; `--uninstall` stops the
+# agent and removes its plist (the data folder stays).
 #
 #	scripts/install-macos.sh [--uninstall]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 label=com.github.meros.fyr
-ulabel=$label.update
+ulabel=$label.update # the daily update.sh job before decision 0027; removed
 data="$HOME/.local/share/fyr"
 plist="$HOME/Library/LaunchAgents/$label.plist"
 uplist="$HOME/Library/LaunchAgents/$ulabel.plist"
 log="$HOME/Library/Logs/fyr.log"
 domain="gui/$(id -u)"
+repo="${FYR_REPO:-meros/fyr}"
 
 if [ "${1:-}" = --uninstall ]; then
   launchctl bootout "$domain/$ulabel" 2>/dev/null || true
   launchctl bootout "$domain/$label" 2>/dev/null || true
   rm -rf "$plist" "$uplist" "$HOME/Applications/Fyr.app"
-  echo "stopped and removed $label and $ulabel; data stays in $data"
+  echo "stopped and removed $label; data stays in $data"
   exit 0
 fi
 
-# The web client needs a Node LTS (Makefile node-lts). fnm's lts-latest alias
-# is a stable path that follows the newest LTS it installed.
-if command -v fnm >/dev/null; then
-  fnm install --lts >/dev/null 2>&1 || true # its corepack hook fails on Node 26 (no corepack); the install stands
-  node_bin="$(fnm exec --using=lts-latest sh -c 'dirname "$(command -v node)"')"
-  lts_alias="${FNM_DIR:-$HOME/.local/share/fnm}/aliases/lts-latest/bin"
-  [ -d "$lts_alias" ] && node_bin="$lts_alias"
-else
-  node_bin="$(dirname "$(command -v node)")"
-fi
-export PATH="$node_bin:$PATH"
-
-for t in go git gh claude; do
+for t in git gh claude; do
   command -v "$t" >/dev/null || { echo "missing $t on PATH (brew install $t)" >&2; exit 1; }
 done
+gh auth status >/dev/null 2>&1 || { echo "gh is not logged in: run gh auth login (Fyr reads its releases with it)" >&2; exit 1; }
 
-make build
-mkdir -p "$data/seed" "$data/launcher" "$(dirname "$plist")" "$(dirname "$log")"
-install -m 0755 bin/fyrd "$data/seed/fyrd"
-install -m 0755 bin/fyr "$data/launcher/fyr"
-install -m 0755 scripts/update.sh "$data/update.sh"
-bin/fyr install -data "$data" bin
+case "$(uname -m)" in
+  arm64) target=darwin-arm64 ;;
+  x86_64) target=darwin-amd64 ;;
+  *) echo "unsupported Mac: $(uname -m)" >&2; exit 1 ;;
+esac
+sha="$(gh api "repos/$repo/git/ref/tags/deployable" --jq .object.sha)"
+short="${sha:0:12}"
+dl="$(mktemp -d)"
+echo "downloading release build-$short for $target"
+gh release download "build-$short" -R "$repo" -D "$dl" \
+  -p "fyrd-$target" -p "fyr-$target" -p manifest.json -p SHA256SUMS -p SHA256SUMS.sig
+# The running fyrd verifies the signature of every later update; this
+# first install trusts your gh login and checks the sums.
+(cd "$dl" && grep -E "  (fyrd-$target|fyr-$target|manifest.json)\$" SHA256SUMS | shasum -a 256 -c -)
 
-# What the agents and a self-deploy need: node (LTS), go, git, gh, claude, make.
-path="$node_bin"
-for t in go git gh claude; do
+build="$data/builds/$short"
+mkdir -p "$build" "$data/seed" "$data/launcher" "$(dirname "$plist")" "$(dirname "$log")"
+install -m 0755 "$dl/fyrd-$target" "$build/fyrd"
+install -m 0755 "$dl/fyr-$target" "$build/fyr"
+cp "$dl/manifest.json" "$dl/SHA256SUMS" "$dl/SHA256SUMS.sig" "$build/"
+date -u +%FT%TZ >"$build/.verified"
+install -m 0755 "$build/fyrd" "$data/seed/fyrd"
+install -m 0755 "$build/fyr" "$data/launcher/fyr"
+ln -sfn "builds/$short" "$data/current.tmp" && mv -fh "$data/current.tmp" "$data/current"
+rm -rf "$dl" "$data/update.sh" "$data/src" "$data/src-built"
+
+# What the agents need on their PATH: git, gh, claude, and node/go when you
+# have them (the projects you work on may).
+path=""
+for t in git gh claude node go; do
+  command -v "$t" >/dev/null || continue
   d="$(dirname "$(command -v "$t")")"
-  case ":$path:" in *":$d:"*) ;; *) path="$path:$d" ;; esac
+  case ":$path:" in *":$d:"*) ;; *) path="${path:+$path:}$d" ;; esac
 done
 path="$path:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
@@ -83,31 +94,6 @@ cat >"$plist" <<EOF
   <key>ProcessType</key><string>Interactive</string>
   <key>StandardOutPath</key><string>$log</string>
   <key>StandardErrorPath</key><string>$log</string>
-</dict>
-</plist>
-EOF
-
-cat >"$uplist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>$ulabel</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string><string>$data/update.sh</string>
-    <string>-data</string><string>$data</string>
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key><string>$path</string>
-    <key>HOME</key><string>$HOME</string>
-  </dict>
-  <key>StartCalendarInterval</key>
-  <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>
-  <key>ProcessType</key><string>Background</string>
-  <key>StandardOutPath</key><string>$HOME/Library/Logs/fyr-update.log</string>
-  <key>StandardErrorPath</key><string>$HOME/Library/Logs/fyr-update.log</string>
 </dict>
 </plist>
 EOF
@@ -148,8 +134,8 @@ cc -O2 -arch arm64 -arch x86_64 -o "$app/Contents/MacOS/Fyr" "$launcher_c"
 icons="$(mktemp -d)/fyr.iconset"
 mkdir -p "$icons"
 for s in 16 32 128 256 512; do
-  sips -z $s $s web/dist/icons/lighthouse/icon-512.png --out "$icons/icon_${s}x${s}.png" >/dev/null
-  sips -z $((s * 2)) $((s * 2)) web/dist/icons/lighthouse/icon-512.png --out "$icons/icon_${s}x${s}@2x.png" >/dev/null
+  sips -z $s $s design/logo/lighthouse-512.png --out "$icons/icon_${s}x${s}.png" >/dev/null
+  sips -z $((s * 2)) $((s * 2)) design/logo/lighthouse-512.png --out "$icons/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$icons" -o "$app/Contents/Resources/fyr.icns"
 codesign -s - -f "$app" >/dev/null 2>&1 || true
@@ -159,11 +145,11 @@ touch "$app"
 mdimport -i "$app" >/dev/null 2>&1 || true
 
 # bootout returns before the agent is gone; bootstrap fails until it is.
+rm -f "$uplist"
 for l in "$ulabel" "$label"; do
   launchctl bootout "$domain/$l" 2>/dev/null || true
   for _ in $(seq 1 50); do launchctl print "$domain/$l" >/dev/null 2>&1 || break; sleep 0.2; done
 done
 launchctl bootstrap "$domain" "$plist"
-launchctl bootstrap "$domain" "$uplist"
 echo "started $label; open http://127.0.0.1:7777 · log $log"
-echo "daily update $ulabel at 04:00 · log ~/Library/Logs/fyr-update.log · run now: launchctl kickstart $domain/$ulabel"
+echo "release $short is current; fyrd installs each new release by itself (Settings → Auto-update)"

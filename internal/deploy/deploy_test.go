@@ -77,7 +77,8 @@ func newDeployer(t *testing.T, failStep string) (*Deployer, *host, *[]string) {
 	return d, h, steps
 }
 
-var req = core.EffectReq{Action: "fyr.deploy", Args: map[string]any{"dir": "/src/fyr"}}
+// tests: true keeps the full local path (#159); the smoke path has its own tests.
+var req = core.EffectReq{Action: "fyr.deploy", Args: map[string]any{"dir": "/src/fyr", "tests": true}}
 
 // SPEC 0.5 V0.13: red tests stop the deploy before any switch.
 func TestDeployStopsOnRedTests(t *testing.T) {

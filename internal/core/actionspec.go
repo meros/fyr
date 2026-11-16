@@ -342,12 +342,15 @@ var FyrEffects = map[string]*FyrEffect{
 			return nil
 		}},
 	FyrRerun: {ID: FyrRerun, Label: "Re-run failed checks", OnPR: true, Guard: prGuard(false), Check: needPR, Timeout: 10 * time.Minute},
-	// A deploy builds, tests and then drains for up to 30 minutes (V0.13).
+	// A deploy installs a release, or builds a checkout, then drains for up
+	// to 30 minutes (V0.13, decision 0027).
 	FyrDeploy: {ID: FyrDeploy, Label: "Deploy Fyr", Ask: AskDeploy, Request: true, Timeout: 60 * time.Minute,
 		Guard: func(*Thread, map[string]any) string { return "" },
 		Check: func(a map[string]any) error {
-			if d, _ := a["dir"].(string); d == "" {
-				return errors.New("args.dir must be the Fyr checkout to build")
+			if d, ok := a["dir"]; ok {
+				if s, _ := d.(string); s == "" {
+					return errors.New("args.dir, when given, must be the Fyr checkout to build")
+				}
 			}
 			return nil
 		}},
