@@ -111,7 +111,10 @@ type Engine struct {
 	OnAttention func(d api.Thread, prev core.State)
 	// Slots is the host's pool of slots for heavy jobs (V0.86); set it with
 	// UseSlots. nil: the slot tools say there are none.
-	Slots    *slots.Pool
+	Slots *slots.Pool
+	// Kept: the threads whose processes the launcher's runner kept across
+	// the restart (V0.90); set before Load.
+	Kept     map[string]bool
 	slotIdle map[string]time.Time // under mu: held slots without a live run, since
 }
 
@@ -193,7 +196,8 @@ func (e *Engine) Load() error {
 	// V0.6, V0.33, V0.45: repair what the last run left, through the path
 	// (no broadcast: no client is connected yet).
 	for _, id := range ids {
-		if _, err := e.apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindHostRestarted, Thread: id}, nil); err != nil {
+		in := core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindHostRestarted, Thread: id, Args: core.RestartArgs{Kept: e.Kept[id]}}
+		if _, err := e.apply(in, nil); err != nil {
 			e.mu.Lock()
 			return err
 		}

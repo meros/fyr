@@ -672,12 +672,28 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 	return res, nil
 }
 
+// RestartArgs are the args of host.restarted.
+type RestartArgs struct {
+	// Kept: the launcher's runner still holds the thread's process (V0.90),
+	// so its run, its queue and its questions go on.
+	Kept bool
+}
+
 // reduceRestarted repairs what the last run of the host left behind (SPEC
 // 0.5 V0.6): the agent's queue (V0.33), a handover (V0.45) and live work,
-// which becomes failed with class restart.
-func reduceRestarted(r Rec, _ Input, now time.Time) (Result, error) {
+// which becomes failed with class restart. A thread whose process the
+// runner kept loses only its handover (V0.90).
+func reduceRestarted(r Rec, in Input, now time.Time) (Result, error) {
 	t := r.T
 	var res Result
+	a, _ := in.Args.(RestartArgs)
+	if a.Kept {
+		if t.Handover != nil {
+			t.Handover = nil
+			res.Events = append(res.Events, Event{"effect.error", map[string]any{"kind": "handover", "error": "Fyr restarted during the handover"}})
+		}
+		return res, nil
+	}
 	for _, m := range t.Outbox {
 		res.Events = append(res.Events, Event{"message.state", map[string]any{"id": m.ID, "state": "lost"}})
 	}

@@ -14,8 +14,12 @@ import (
 func (m *Manager) read(s *session) {
 	for msg := range s.c.Out() {
 		m.handle(s, msg)
+		handled(s, msg) // V0.90: a later fyrd does not get it again
 	}
 	<-s.c.Done()
+	if p := pipeOf(s); p != nil {
+		p.Forget() // V0.90: this fyrd saw the exit; the runner drops it
+	}
 	m.releaseCgroup(s) // V0.80
 	m.mu.Lock()
 	if m.sessions[s.thread] == s {
@@ -147,6 +151,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 				m.delivered(s, id, "read")
 			}
 		}
+		m.dropAdopted(s) // V0.90
 		if !ended {
 			return // a stray result outside a turn
 		}

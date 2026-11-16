@@ -46,11 +46,14 @@ var ErrNotDraining = errors.New("No update is waiting for running threads")
 
 // Deployer runs the fyr.deploy effect inside the daemon.
 type Deployer struct {
-	Data      string
-	DB        DB
-	Host      Host
-	Quit      func() // stops the daemon gracefully
-	Run       Runner
+	Data string
+	DB   DB
+	Host Host
+	Quit func() // stops the daemon gracefully
+	Run  Runner
+	// Survive: the agent processes outlive the switch (the launcher's
+	// runner holds them, V0.90), so a deploy does not drain.
+	Survive   bool
 	Poll      time.Duration // drain poll interval
 	Drain     time.Duration // max drain wait
 	Probation time.Duration // wait before reporting success
@@ -330,7 +333,7 @@ drain:
 		// process, and a live turn would die with it (SPEC 0.5 V0.13).
 		running := d.Host.Running()
 		others := len(running)
-		if others == 0 {
+		if others == 0 || d.Survive {
 			break
 		}
 		if strings.Join(running, ",") != strings.Join(prog.Blocking, ",") || prog.Phase != "drain" {
