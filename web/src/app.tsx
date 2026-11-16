@@ -62,6 +62,7 @@ import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars }
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
 import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
 import { DeployBanner } from "./deploy-ui.tsx";
+import { restartNowAsk } from "./deploy.ts";
 import { cache, mergeEventLists } from "./cache.ts";
 import { navTransition } from "./native.ts";
 import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
@@ -863,6 +864,14 @@ function App() {
     return null;
   };
 
+  // V0.83: Restart now on the update banner: Fyr's confirmation first, then the deploy stops waiting and switches.
+  const restartNow = async () => {
+    const p = store.deploy;
+    if (!p || !(await confirmHost.ask(restartNowAsk(p, store.threads)))) return;
+    const r = await api.command("host.deployNow");
+    if (!r.ok) cmds.notify(r.error ?? "Fyr could not restart now");
+  };
+
   const cycleTheme = () => setTheme((t) => (t === "system" ? "light" : t === "light" ? "dark" : "system"));
 
   // ---- keyboard ----
@@ -1189,7 +1198,7 @@ function App() {
         <ConfirmProvider value={confirmHost.ask}>
         <ProfilesContext.Provider value={store.profiles}>
         <Boundary name="Fyr">
-        <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone />
+        <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone onRestartNow={() => void restartNow()} />
         <PreviewViewer />
         <PhoneApp
           nav={{ at: nav, go: navGo, replace: navReplace, back: navBack }}
@@ -1288,7 +1297,7 @@ function App() {
 
   return (
     <div class="shell">
-      <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} />
+      <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} onRestartNow={() => void restartNow()} />
       {ctxMenu}
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>

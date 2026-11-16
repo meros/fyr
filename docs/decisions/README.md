@@ -27,3 +27,4 @@ The owner decisions D1–D5 from the design phase stay in `../SPEC.md` 0.3. Reco
 | [0019](0019-worktree-per-change.md) | A worktree per change: parallel changes get their own worktrees, stacked ones branch from the change they build on, multi-repo changes are a group | accepted |
 | [0020](0020-state-machine-and-agent-feed.md) | One state machine beside the agent: records, one reducer path, effects run by Fyr, Rules, and one feed of notices to the agent | accepted |
 | [0021](0021-dual-installs-and-host-discovery.md) | Dual installs by default; a front's static host list routes, the tailnet only suggests candidates; tailnet identity stands | accepted |
+| [0022](0022-keep-the-drain-with-a-forced-restart.md) | Keep the drain for server deploys; the owner can force a restart, and each cut turn gets "continue" | accepted |

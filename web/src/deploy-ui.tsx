@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.39: the update banner. A spinner and a sentence while Fyr updates; green when it is
 // updated; red with the reason when it failed. The page reloads by itself onto the new build.
 import { useEffect, useState } from "preact/hooks";
-import { bannerFolded, deployLine, updateKey, type DeployProgress } from "./deploy.ts";
+import { bannerFolded, canRestartNow, deployLine, updateKey, type DeployProgress } from "./deploy.ts";
 import type { Thread } from "./types.ts";
 
 const DISMISSED_KEY = "fyr.deploy.dismissed";
@@ -23,7 +23,20 @@ function saveDismissed(key: string): void {
   }
 }
 
-export function DeployBanner({ p, threads, conn, phone }: { p: DeployProgress | null; threads: Record<string, Thread>; conn: string; phone?: boolean }) {
+export function DeployBanner({
+  p,
+  threads,
+  conn,
+  phone,
+  onRestartNow,
+}: {
+  p: DeployProgress | null;
+  threads: Record<string, Thread>;
+  conn: string;
+  phone?: boolean;
+  /** V0.83: confirm, then stop the drain and switch now */
+  onRestartNow?: () => void;
+}) {
   const [now, setNow] = useState(Date.now());
   const [hidden, setHidden] = useState<string | null>(readDismissed); // #85: a dismissed result stays dismissed on reload
   const [open, setOpen] = useState(false);
@@ -51,6 +64,11 @@ export function DeployBanner({ p, threads, conn, phone }: { p: DeployProgress | 
       {line.more && (
         <button class="dbn-b" onClick={() => setOpen(!open)}>
           {open ? "Hide" : "Details"}
+        </button>
+      )}
+      {onRestartNow && canRestartNow(p, conn) && (
+        <button class="dbn-b dbn-now" title="Stop waiting: the running turns end and each gets “continue” after the restart" onClick={onRestartNow}>
+          Restart now
         </button>
       )}
       {line.tone === "busy" && (
