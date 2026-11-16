@@ -47,6 +47,11 @@ func main() {
 	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
 		cmd, args = args[0], args[1:]
 	}
+	if cmd == "version" {
+		// V0.81: the deployer reads a new build's id before a client-only switch.
+		os.Stdout.WriteString(BuildID() + "\n")
+		return
+	}
 	fl := flag.NewFlagSet(cmd, flag.ExitOnError)
 	data := fl.String("data", filepath.Join(home(), ".local", "share", "fyr"), "data directory")
 	cfgPath := fl.String("config", filepath.Join(home(), ".config", "fyr", "config.json"), "config file")
@@ -194,6 +199,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string) {
 		fr := front.New(front.Options{Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
 			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName}, hosts)
 		go func() { fr.Run(ctx); close(frontDone) }()
+		// V0.81: a client-only deploy swaps the client this front serves.
+		dep.SwitchClient = func(build, dir string) error { return fr.SetClient(build, os.DirFS(dir)) }
 		mux := http.NewServeMux()
 		mux.Handle("/mcp", hostHandler)
 		mux.Handle("/", fr.Handler())

@@ -25,3 +25,11 @@ test("the end: updated, or failed with the first line of the reason", () => {
   assert.deepEqual(deployLine(p("failed", { detail: "tests failed, nothing was switched: exit 2\nFAIL TestX" }), threads, now, "live"), { text: "The update failed: tests failed, nothing was switched: exit 2", tone: "fail", more: "tests failed, nothing was switched: exit 2\nFAIL TestX" });
   assert.equal(deployLine(null, threads, now, "live"), null);
 });
+
+// SPEC 0.5 V0.81: a client-only update says so, never waits for threads,
+// and does not claim a restart while the page reconnects.
+test("a client-only update says it updates the web client", () => {
+  assert.deepEqual(deployLine(p("client"), threads, now, "live"), { text: "Updating the web client · this page reloads by itself", tone: "busy" });
+  assert.equal(deployLine(p("client"), threads, now, "connecting")?.text, "Updating the web client · this page reloads by itself");
+  assert.equal(deployLine(p("done"), threads, now, "live")?.text, "Fyr is updated · build 20261114-160324");
+});

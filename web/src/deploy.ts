@@ -2,7 +2,7 @@
 import type { Thread } from "./types.ts";
 
 export interface DeployProgress {
-  phase: string; // build, test, drain, switch, done, failed
+  phase: string; // build, test, drain, switch or (V0.81) client, done, failed
   detail?: string;
   blocking?: string[];
   build?: string;
@@ -36,6 +36,9 @@ export function deployLine(p: DeployProgress | null | undefined, threads: Record
     }
     case "switch":
       return { text: "Restarting Fyr · this page reloads by itself", tone: "busy" };
+    case "client":
+      // V0.81: only the web client changes; nothing restarts, the page reloads.
+      return { text: "Updating the web client · this page reloads by itself", tone: "busy" };
     case "done":
       return { text: `Fyr is updated${p.build ? ` · build ${p.build}` : ""}`, tone: "ok" };
     case "failed": {

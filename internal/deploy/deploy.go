@@ -53,6 +53,12 @@ type Deployer struct {
 	// Live is the build id of this daemon (a commit, maybe with -dirty-…).
 	// A deploy of an older commit is refused (SPEC 0.5 V0.24).
 	Live string
+	// LiveDir holds the running fyrd and its server.sum (V0.81); empty is
+	// the folder of this executable.
+	LiveDir string
+	// SwitchClient makes the front serve the client in dir and report build
+	// as its buildId, so open pages reload (V0.81); nil serves no client.
+	SwitchClient func(build, dir string) error
 
 	exit   int
 	mu     sync.Mutex
@@ -82,7 +88,9 @@ var errReplaced = errors.New("a newer deploy replaced this one; nothing was swit
 
 // olderThanLive reports why dir's HEAD must not replace the live build, or "".
 func (d *Deployer) olderThanLive(ctx context.Context, run Runner, dir string) string {
+	d.mu.Lock()
 	live, _, _ := strings.Cut(d.Live, "-")
+	d.mu.Unlock()
 	if live == "" {
 		return ""
 	}
@@ -157,6 +165,10 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	if why := d.olderThanLive(ctx, run, dir); why != "" {
 		return failed(errors.New(why))
 	}
+	// V0.81: fyrd's sources as they are built; equal to the running
+	// daemon's, only the web client changes.
+	sum, _ := SourceSum(dir)
+	clientOnly := sum != "" && sum == d.liveSum()
 	out := filepath.Join(d.Data, "builds", id)
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return "", err
@@ -178,6 +190,12 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	if b, err := run(ctx, dir, test...); err != nil {
 		os.RemoveAll(out)
 		return failed(firstErr(fail(fmt.Errorf("tests failed, nothing was switched: %v\n%s", err, tail(b, 3000)))))
+	}
+	if sum != "" {
+		os.WriteFile(filepath.Join(out, sumFile), []byte(sum+"\n"), 0o644)
+	}
+	if clientOnly {
+		return d.deployClient(ctx, run, prog, gen, dir, out, id)
 	}
 	if err := d.DB.Snapshot(filepath.Join(out, "pre.db")); err != nil {
 		return failed(fmt.Errorf("database snapshot: %w", err))

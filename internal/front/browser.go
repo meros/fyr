@@ -2,6 +2,8 @@ package front
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -29,6 +31,36 @@ type Pusher interface {
 
 // webClient serves the built web client with fresh pages (V0.13, V0.15).
 func webClient(web fs.FS) http.Handler { return noCacheIndex(http.FileServerFS(web)) }
+
+// clientBuild is a web client and the build id the browsers compare.
+type clientBuild struct {
+	build string
+	web   fs.FS
+	h     http.Handler
+}
+
+// webClient serves whichever client is current at each request (V0.81).
+func (f *Front) webClient() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.client.Load().h.ServeHTTP(w, r)
+	})
+}
+
+// SetClient serves the client in web as build from now on, without a
+// restart, and closes every browser stream: each page reconnects, reads the
+// new buildId in hello and reloads (V0.81, V0.13). A client without
+// index.html is refused and the old one stays.
+func (f *Front) SetClient(build string, web fs.FS) error {
+	if web == nil {
+		return errors.New("no web client")
+	}
+	if _, err := fs.Stat(web, "index.html"); err != nil {
+		return fmt.Errorf("the web client has no index.html: %w", err)
+	}
+	f.client.Store(&clientBuild{build: build, web: web, h: webClient(web)})
+	f.hub.DropAll()
+	return nil
+}
 
 func init() { mime.AddExtensionType(".webmanifest", "application/manifest+json") }
 
