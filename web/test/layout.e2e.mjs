@@ -1495,6 +1495,25 @@ try {
   failures.push(`#72 desktop: ${e.message}`);
 }
 
+// #81: a busy update banner folds to a chip inside the screen and opens again on a press, on the desktop and the phone.
+for (const [w, h, mobile] of [[1280, 800, false], [390, 844, true]]) {
+  const ctx = `#81 ${mobile ? "phone" : "desktop"}`;
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: mobile });
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: mobile ? 3 : 1, mobile });
+    await navigate(`${origin}/?mock=rail&deploy=drain`, "!!document.querySelector('.dbn [aria-label=Fold]')");
+    await evaluate(`document.querySelector('.dbn [aria-label=Fold]').click()`);
+    await waitFor(`!!document.querySelector('.dbn.dbn-chip')`, { soft: true });
+    const c = await evaluate(`(() => { const e = document.querySelector('.dbn.dbn-chip'); if (!e) return null; const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, in: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, text: e.textContent.trim() }; })()`);
+    check(!!c && c.in && c.w <= 160 && c.text === "Updating", `${ctx}: the folded banner is not a small chip inside the screen (${JSON.stringify(c)})`);
+    await evaluate(`document.querySelector('.dbn.dbn-chip')?.click()`);
+    await waitFor(`!!document.querySelector('.dbn [aria-label=Fold]')`, { soft: true });
+    check(await evaluate(`!document.querySelector('.dbn.dbn-chip') && /waiting for/.test(document.querySelector('.dbn')?.textContent ?? '')`), `${ctx}: a press on the chip does not open the banner`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+}
+
 // V0.73 (2): on the desktop, the Changes tab of six cards over an empty diff, in a tall and a short window.
 for (const [w, h] of [[1280, 800], [1024, 600]]) {
   try {

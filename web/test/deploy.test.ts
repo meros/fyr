@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.39: the deploy banner says where an update is, in words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deployLine } from "../src/deploy.ts";
+import { deployLine, bannerFolded, updateKey } from "../src/deploy.ts";
 import { thread } from "./helpers.ts";
 
 const now = Date.parse("2026-11-14T15:10:00Z");
@@ -32,4 +32,18 @@ test("a client-only update says it updates the web client", () => {
   assert.deepEqual(deployLine(p("client"), threads, now, "live"), { text: "Updating the web client · this page reloads by itself", tone: "busy" });
   assert.equal(deployLine(p("client"), threads, now, "connecting")?.text, "Updating the web client · this page reloads by itself");
   assert.equal(deployLine(p("done"), threads, now, "live")?.text, "Fyr is updated · build 20261114-160324");
+});
+
+// SPEC 0.5 V0.39, #81: a busy banner folds to a chip and stays folded through the update's phases; the end opens it.
+test("the update banner folds while busy and opens when the update ends", () => {
+  const p = (phase: string, build = "b1") => ({ phase, build, startedAt: "2026-11-16T07:00:00Z" });
+  const k = updateKey(p("drain"));
+  assert.equal(k, updateKey(p("test")), "one update keeps one key through its phases");
+  assert.notEqual(k, updateKey(p("drain", "b2")), "another build is another update");
+  assert.equal(bannerFolded(p("drain"), "busy", k), true);
+  assert.equal(bannerFolded(p("switch"), "busy", k), true, "still folded in a later phase");
+  assert.equal(bannerFolded(p("done"), "ok", k), false, "done opens it");
+  assert.equal(bannerFolded(p("failed"), "fail", k), false, "a failure opens it");
+  assert.equal(bannerFolded(p("drain", "b2"), "busy", k), false, "a new update starts open");
+  assert.equal(bannerFolded(p("drain"), "busy", null), false);
 });
