@@ -341,7 +341,9 @@ const MEASURE = `(() => {
       const login = lg ? { link: lg.querySelector('a.loginlink')?.getAttribute('href') ?? '', code: !!lg.querySelector('input'), cancel: [...lg.querySelectorAll('button')].some(b => b.textContent.trim() === 'Cancel') } : null;
       const add = el.querySelector('.addp'); add?.scrollIntoView({ block: 'center' }); // V0.58: Projects follow Providers, so Add provider is no longer at the end
       const ar = add ? add.getBoundingClientRect() : null;
-      return { rows: el.querySelectorAll('.prov:not(.found)').length, found: el.querySelectorAll('.prov.found').length,
+      const adb = el.querySelector('section[aria-label="Auto-deploy"] button'); // V0.111
+      const autoDeploy = adb ? { text: adb.textContent.trim(), pressed: adb.getAttribute('aria-pressed'), h: adb.getBoundingClientRect().height } : null;
+      return { autoDeploy, rows: el.querySelectorAll('.prov:not(.found)').length, found: el.querySelectorAll('.prov.found').length,
         imports: [...el.querySelectorAll('.prov.found button')].filter(b => b.textContent.trim() === 'Import').length,
         needs: [...el.querySelectorAll('.pst')].map(e => e.textContent), small, login,
         right: Math.max(0, ...[...el.querySelectorAll('*')].map(e => e.getBoundingClientRect().right)),
@@ -475,6 +477,8 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     check(!!st && st.rows === 3 && st.found >= 1 && st.imports === st.found && st.needs.includes("Needs a login"), `${ctx}: the Providers section is wrong ${JSON.stringify(st)}`);
     if (st) {
       check(st.small.length === 0, `${ctx}: targets under 44 px ${JSON.stringify(st.small)}`);
+      // SPEC V0.111: the phone has the Auto-deploy toggle too, on by default, 44 px.
+      check(!!st.autoDeploy && st.autoDeploy.text === "On" && st.autoDeploy.pressed === "true", `${ctx}: no Auto-deploy toggle ${JSON.stringify(st.autoDeploy)}`);
       // SPEC 0.5 V0.53: a running login shows its sign-in link, the code field and Cancel, all 44 px.
       check(!!st.login && /^https:\/\/claude\.com\//.test(st.login.link) && st.login.code && st.login.cancel, `${ctx}: the login panel is wrong ${JSON.stringify(st.login)}`);
       check(st.right <= m.innerWidth + 0.5, `${ctx}: Settings runs ${(st.right - m.innerWidth).toFixed(1)} px past the right edge`);
@@ -781,6 +785,11 @@ async function phonePass(t, w, h) {
       }
       if (process.env.FYR_SHOTS && s.name.endsWith("(V0.101)") && w === 390) writeFileSync(join(process.env.FYR_SHOTS, s.name.startsWith("inbox") ? "inbox-phone.png" : "changes-tab-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (process.env.FYR_SHOTS && s.name.startsWith("board of changes") && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "board-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+      if (process.env.FYR_SHOTS && s.name.startsWith("settings providers") && w === 390) { // V0.111
+        await evaluate(`document.querySelector('section[aria-label="Auto-deploy"]')?.scrollIntoView({ block: 'center' })`);
+        await settle();
+        writeFileSync(join(process.env.FYR_SHOTS, "autodeploy-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+      }
       if (process.env.FYR_SHOTS && s.sheet === "confirm" && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "confirm-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (s.sheet === "handover") {
         const ho = await evaluate(`({ rung: document.querySelector('.m-sheet .ho-rung')?.textContent ?? '', btn: [...document.querySelectorAll('.m-sheet .df .btn')].map(b => b.textContent.trim()) })`);
@@ -1166,7 +1175,12 @@ try {
   await waitFor(`document.querySelectorAll('.dlg .prov:not(.found)').length === 3`, { soft: true });
   await settle();
   const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', sections: [...document.querySelectorAll('.dlg .sets h3')].map(e => e.textContent), rows: document.querySelectorAll('.dlg .prov:not(.found)').length })`);
-  check(d.title === "Settings" && d.sections.join("|") === "Providers|Projects|Auto-merge|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  check(d.title === "Settings" && d.sections.join("|") === "Providers|Projects|Auto-merge|Auto-deploy|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  if (process.env.FYR_SHOTS) { // V0.111
+    await evaluate(`document.querySelector('.dlg section[aria-label="Auto-deploy"]')?.scrollIntoView({ block: 'center' })`);
+    await settle();
+    writeFileSync(join(process.env.FYR_SHOTS, "autodeploy-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  }
   await evaluate(`document.querySelector('.dlg .prov .provh')?.click()`);
   await waitFor(`!!document.querySelector('.dlg .prov.open textarea')`, { soft: true });
   const o = await evaluate(`({ ta: !!document.querySelector('.dlg .prov.open textarea'), key: document.querySelector('.dlg .prov.open input[type=password]')?.value ?? null })`);
