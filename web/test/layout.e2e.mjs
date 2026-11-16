@@ -1567,6 +1567,31 @@ for (const [w, h, mobile] of [[1280, 800, false], [390, 844, true]]) {
   }
 }
 
+// V0.83: while the update waits for running threads the banner has Restart now inside the screen (44 px on the
+// phone); a press opens Fyr's confirmation with a red Restart now, and Cancel sends nothing.
+for (const [w, h, mobile] of [[1280, 800, false], [390, 844, true]]) {
+  const ctx = `V0.83 ${mobile ? "phone" : "desktop"}`;
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: mobile });
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: mobile ? 3 : 1, mobile });
+    await navigate(`${origin}/?mock=rail&deploy=drain`, "!!document.querySelector('.dbn')");
+    const b = await evaluate(`(() => { const e = document.querySelector('.dbn .dbn-now'); if (!e) return null; const r = e.getBoundingClientRect(); return { text: e.textContent.trim(), w: r.width, h: r.height, in: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight }; })()`);
+    check(!!b && b.text === "Restart now" && b.in, `${ctx}: no Restart now inside the screen (${JSON.stringify(b)})`);
+    if (mobile) check(!!b && b.h >= 44 && b.w >= 44, `${ctx}: Restart now is smaller than 44 px (${JSON.stringify(b)})`);
+    await evaluate(`document.querySelector('.dbn .dbn-now')?.click()`);
+    const sel = mobile ? ".m-sheet.cfm" : ".dlg.cfm";
+    const prim = mobile ? ".cfm-f .m-bt.p" : ".df .btn.p";
+    await waitFor(`!!document.querySelector('${sel}')`, { soft: true });
+    const c = await evaluate(`(() => { const d = document.querySelector('${sel}'); if (!d) return null; const p = d.querySelector('${prim}'); return { title: d.querySelector('.cfm-t')?.textContent ?? '', text: d.querySelector('.cfm-text')?.textContent ?? '', primary: p?.textContent.replace('⏎', '').trim(), danger: !!p?.classList.contains('danger') }; })()`);
+    check(!!c && c.title === "Restart Fyr now?" && c.primary === "Restart now" && c.danger && /continue/.test(c.text), `${ctx}: pressing Restart now does not open its confirmation (${JSON.stringify(c)})`);
+    await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await waitFor(`!document.querySelector('${sel}')`, { soft: true });
+    check(await evaluate(`!document.querySelector('${sel}') && /waiting for/.test(document.querySelector('.dbn')?.textContent ?? '')`), `${ctx}: Cancel does not close the confirmation or the banner changed`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+}
+
 // #85: a dismissed "Fyr is updated" stays dismissed after a reload (the mock stamps the report with a new time on
 // every load, as a restarted host may).
 try {
