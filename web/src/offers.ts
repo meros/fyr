@@ -8,6 +8,26 @@ export const RAIL: ChangePhase[] = ["working", "review", "landed", "live"];
 
 export const ended = (p: ChangePhase) => p === "abandoned" || p === "reverted";
 
+/** V0.98: a finished change; the host marks it, the client only reads the mark. */
+export const isDone = (c: Pick<Change, "done">) => !!c.done;
+
+/** V0.98 (3): why a done change finished, for its card: "merged 10:42", "abandoned by you", "marked done by you". */
+export function doneText(c: Pick<Change, "done">, clock: (iso: string) => string): string {
+  const d = c.done;
+  if (!d) return "";
+  if (d.reason === "done") return "marked done by you";
+  if (d.by === "owner") return `${d.reason} by you`;
+  if (d.reason.includes(" ")) return d.reason;
+  return `${d.reason} ${clock(d.at)}`;
+}
+
+/** V0.98 (3): the thread's Changes tab: open changes, then the done ones ("Done here"), newest done first. */
+export function openAndDone(t: Pick<Thread, "changes">): { open: Change[]; done: Change[] } {
+  const list = changeList(t);
+  const done = list.filter(isDone).sort((a, b) => Date.parse(b.done!.at) - Date.parse(a.done!.at));
+  return { open: list.filter((c) => !isDone(c)), done };
+}
+
 /** The phase rail: each step done, current or ahead. An ended change has no steps (V0.73 (2)): its header says the end. */
 export function rail(c: Pick<Change, "phase">): { steps: { phase: ChangePhase; state: "done" | "now" | "ahead" }[]; end?: ChangePhase } {
   if (ended(c.phase)) return { steps: [], end: c.phase };
@@ -86,7 +106,13 @@ export function pressArgs(on: string, o: Offer, head?: string) {
 }
 
 /** V0.72: the owner can end every change of the thread that has not ended (a host record on the board is not one). */
-export const canEnd = (c: Pick<Change, "phase" | "threads">) => !ended(c.phase) && !c.threads?.length;
+export const canEnd = (c: Pick<Change, "phase" | "threads" | "done">) => !ended(c.phase) && !isDone(c) && !c.threads?.length;
+
+/** V0.98 (4): Done on an open change, of the thread or a host record; the host routes it. */
+export const canDone = (c: Pick<Change, "done">) => !isDone(c);
+
+/** The command args of change.done. */
+export const doneArgs = (c: Pick<Change, "id">) => ({ change: c.id });
 
 /** V0.72: Fyr's confirmation before End this change: the end (abandoned by default, or reverted) and a reason. */
 export function endChangeAsk(c: Pick<Change, "evidence">): Ask & { choice: NonNullable<Ask["choice"]>; reason: NonNullable<Ask["reason"]> } {
@@ -106,9 +132,10 @@ export function endArgs(c: Pick<Change, "id">, a: Pick<Ask, "choice" | "reason">
   return { change: c.id, phase: a.choice?.value || "abandoned", ...(reason ? { reason } : {}) };
 }
 
-/** V0.59 (6): a change that has not ended and fails or waits for the owner, before any Not now. */
-export const blocks = (c: Pick<Change, "phase" | "needs" | "conditions">) =>
-  !ended(c.phase) && (c.needs === "owner" || !!c.conditions?.some((k) => k.status === "fail"));
+/** V0.59 (6): a change that has not ended and fails or waits for the owner, before any Not now; V0.98 (4): not one
+ *  the owner marked done. */
+export const blocks = (c: Pick<Change, "phase" | "needs" | "conditions"> & { done?: Change["done"] }) =>
+  !ended(c.phase) && c.done?.reason !== "done" && (c.needs === "owner" || !!c.conditions?.some((k) => k.status === "fail"));
 
 /** V0.84: a change in Needs you: it blocks and the owner has not parked it. The host clears `parked` when the change
  *  moves after the park, so a parked change here is still as the owner saw it. */
@@ -133,7 +160,7 @@ export function changeList(t: Pick<Thread, "changes">): Change[] {
 /** The inbox chip when the thread has no open PR: the most urgent change that is not a PR (V0.59 (8)). */
 export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { text: string; cls: string; title: string } | null {
   if (t.pr && (t.pr.state ?? "OPEN") === "OPEN") return null;
-  const live = t.changes.filter((c) => !ended(c.phase) && !(c.evidence ?? []).some((e) => e.kind === "pr"));
+  const live = t.changes.filter((c) => !ended(c.phase) && !isDone(c) && !(c.evidence ?? []).some((e) => e.kind === "pr"));
   if (!live.length) return null;
   // V0.84: a parked change ranks and reads as quiet work.
   const rank = (c: Change) => (c.parked ? 2 : c.conditions?.some((k) => k.status === "fail") ? 0 : c.needs === "owner" ? 1 : 2);
@@ -144,13 +171,15 @@ export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { 
   return { text: short ? `${word}${more}` : `${clip(c.title)} · ${word}${more}`, cls: fail ? "fail" : c.phase === "live" ? "ok" : "", title: `${c.title} · ${phaseText(c)}` };
 }
 
-/** The thread's main PR for the header chip (V0.73 (2)): none once its change has ended (closed, missing on GitHub,
- *  or ended by the owner); a merged PR keeps its chip. */
+/** The header chip (V0.98 (6), amends V0.73 (2)): the PR of the thread's newest open change that has one; never a
+ *  done or ended change's, and none when no change is open. A change without its own snapshot shows the thread's PR
+ *  when that PR is its own. */
 export function headerPr(t: Pick<Thread, "changes" | "pr">): PullRequest | null {
-  const pr = t.pr;
-  if (!pr || pr.state === "MERGED") return pr ?? null;
-  const its = (c: Change) => c.key === `pr:${pr.repo}#${pr.number}` || (c.evidence ?? []).some((e) => e.kind === "pr" && e.url === pr.url);
-  return t.changes.some((c) => its(c) && ended(c.phase)) ? null : pr;
+  const main = t.pr;
+  const its = (c: Change) => !!main && (c.key === `pr:${main.repo}#${main.number}` || (c.evidence ?? []).some((e) => e.kind === "pr" && e.url === main.url));
+  const prOf = (c: Change) => c.pr ?? (its(c) ? main! : null);
+  const open = t.changes.filter((c) => !ended(c.phase) && !isDone(c) && prOf(c)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return open.length ? prOf(open[0]) : null;
 }
 
 const clip = (s: string) => (s.length > 24 ? `${s.slice(0, 23)}…` : s);

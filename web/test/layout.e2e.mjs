@@ -256,7 +256,7 @@ const FLOW = `(() => {
   cards.forEach((c, i) => { if (hit(c, d)) overlaps.push('card ' + (i + 1) + ' and the diff'); cards.slice(i + 1).forEach((o, j) => hit(c, o) && overlaps.push('cards ' + (i + 1) + ' and ' + (i + j + 2))); });
   const last = cards[cards.length - 1];
   return { cards: chl.querySelectorAll('.chc').length, lastBottom: last ? last.bottom : null, listBottom: clip ? l.bottom : (last ? last.bottom : l.bottom), diffTop: d.top, overlaps,
-    rails: [...chl.querySelectorAll('.chc.end .chrail')].length, ended: chl.querySelectorAll('.chc.end').length,
+    rails: [...chl.querySelectorAll('.chc.end .chrail')].length, ended: chl.querySelectorAll('.chc.end').length, doneRows: chl.querySelectorAll('.chdone .chdrow').length,
     empty: chg.querySelector('.chg-empty')?.textContent ?? '', prChip: [...document.querySelectorAll('.chip.pr, .m-chip.prc')].map((e) => e.textContent).join('|') };
 })()`;
 
@@ -433,7 +433,8 @@ const ctxWantsChips = (ctx) => ctx.startsWith("composer with chips");
 // V0.73 (2): six cards, five ended without a rail, the diff section below the last card and nothing overlapping;
 // the header has no chip for the ended main PR.
 function checkFlow(f, ctx) {
-  check(!!f && f.cards === 6 && f.ended === 5, `${ctx}: expected 6 change cards, 5 ended (${JSON.stringify(f)})`);
+  // V0.98 (3): the five ended changes are done: they fold under Done here; the open one stays a card.
+  check(!!f && f.cards === 1 && f.ended === 0 && f.doneRows === 5, `${ctx}: expected 1 change card and 5 rows under Done here (${JSON.stringify(f)})`);
   if (!f) return;
   check(f.empty === "No changes against origin/main.", `${ctx}: the diff section says "${f.empty}"`);
   check(f.diffTop >= f.listBottom - 0.5 && (f.lastBottom === null || f.diffTop >= f.lastBottom - 0.5), `${ctx}: the diff section starts at ${f.diffTop.toFixed(1)}, above the last card's bottom ${f.lastBottom?.toFixed(1)} (list ${f.listBottom.toFixed(1)})`);
@@ -1705,6 +1706,19 @@ try {
   check(r.src === "/logo.png" && r.w === 32 && r.h === 32 && r.loaded && r.alt === "Fyr" && r.text === "" && r.inside, `V0.92 desktop: the rail's mark (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.92 desktop: ${e.message}`);
+}
+
+// SPEC 0.5 V0.103: the phone's inbox header shows the same logo (28 px, loaded, inside the header) before the name.
+try {
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-ih .m-brand img') && document.querySelector('.m-ih .m-brand img').complete");
+  const r = await evaluate(`(() => {
+    const img = document.querySelector('.m-ih .m-brand img'), b = img.getBoundingClientRect(), h = document.querySelector('.m-ih').getBoundingClientRect();
+    return { w: b.width, h: b.height, loaded: img.naturalWidth > 0, src: img.getAttribute("src"), text: document.querySelector(".m-ih .m-brand").textContent.trim(), inside: b.left >= h.left && b.right <= h.right && b.top >= h.top && b.bottom <= h.bottom };
+  })()`);
+  check(r.src === "/logo.png" && r.w === 28 && r.h === 28 && r.loaded && r.text === "Fyr" && r.inside, `V0.103 phone: the inbox header's logo (${JSON.stringify(r)})`);
+} catch (e) {
+  failures.push(`V0.103 phone: ${e.message}`);
 }
 
 // #64: the thread header's blocks (title, chips, offers, tabs) sit 12 px apart, and the conversation starts where

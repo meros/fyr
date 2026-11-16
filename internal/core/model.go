@@ -236,6 +236,12 @@ type PR struct {
 	Draft      bool   `json:"draft,omitempty"`
 	MergeState string `json:"mergeState,omitempty"`
 	AutoMerge  bool   `json:"autoMerge,omitempty"`
+	// V0.98 (1): the base branch; Stacked when it is not the repo's
+	// default branch, and InDefault, read after the merge, whether the
+	// merge commit is in the default branch (nil: not known).
+	Base      string `json:"base,omitempty"`
+	Stacked   bool   `json:"stacked,omitempty"`
+	InDefault *bool  `json:"inDefault,omitempty"`
 }
 
 // PRMissing is the state Fyr observes when GitHub answers that the PR or its

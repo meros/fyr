@@ -72,7 +72,9 @@ type ChangeObservedArgs struct {
 }
 
 // IsRecordKind reports an Input kind of a host change record.
-func IsRecordKind(kind string) bool { return kind == KindGitObserved || kind == KindGitEnded }
+func IsRecordKind(kind string) bool {
+	return kind == KindGitObserved || kind == KindGitEnded || kind == KindRecordDone
+}
 
 // ObservedKey is the key of the record of repo and branch.
 func ObservedKey(repo, branch string) string { return "git:" + repo + "#" + branch }
@@ -93,7 +95,7 @@ func RecordRepo(c *Change) string {
 // RecordOn is the record of repo and branch that has not landed, or nil.
 func RecordOn(rs []*Change, repo, branch string) *Change {
 	for _, c := range rs {
-		if c.Branch == branch && c.Phase.InFlight() && RecordRepo(c) == repo {
+		if c.Branch == branch && c.Phase.InFlight() && !c.IsDone() && RecordRepo(c) == repo {
 			return c
 		}
 	}
@@ -117,7 +119,7 @@ func RecordHead(c *Change) string {
 // ended record of the branch is that work (V0.95 (4)).
 func endedAt(rs []*Change, repo, branch, head string) bool {
 	return slices.ContainsFunc(rs, func(c *Change) bool {
-		if c.Branch != branch || c.Phase.InFlight() || RecordRepo(c) != repo {
+		if c.Branch != branch || (c.Phase.InFlight() && !c.IsDone()) || RecordRepo(c) != repo {
 			return false
 		}
 		return head == "" || sameCommit(RecordHead(c), head)
@@ -162,7 +164,13 @@ func MergedPRCovers(p *PR, rec *Change) bool {
 // before (nil for a new one) and after (nil when the Input is about no
 // record), and the record's events.
 func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change, evs []Event, err error) {
-	if in.Source.Principal() != ByObserved {
+	// V0.98 (4): the owner's Done is the one Input a record takes from
+	// anyone but an observer.
+	want := ByObserved
+	if in.Kind == KindRecordDone {
+		want = ByOwner
+	}
+	if in.Source.Principal() != want {
 		return nil, nil, nil, reject(RejectRights, "%s cannot send %s", in.Source, in.Kind)
 	}
 	event := func(c *Change, op string) Event {
@@ -185,7 +193,7 @@ func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change,
 				return nil, nil, nil, nil // V0.88 (1): the work that ended, still checked out
 			}
 			key := freshKey(rs, ObservedKey(g.Repo, g.Branch))
-			c = &Change{ID: ChangeID(key), Key: key, Kind: KindCode, Title: g.Branch, Branch: g.Branch, Phase: PhaseWorking, PhaseBy: ByObserved, CreatedAt: now, UpdatedAt: now}
+			c = &Change{ID: ChangeID(key), Key: key, Kind: KindCode, Title: g.Branch, Branch: g.Branch, Phase: PhaseWorking, PhaseBy: ByObserved, CreatedAt: now, UpdatedAt: now, TouchedAt: &now}
 			if g.Repo != "" {
 				c.Targets = []string{"repo:" + g.Repo}
 			}
@@ -206,7 +214,7 @@ func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change,
 		c.Workspace = ws
 		gitConditions(c, g, now)
 		if before != nil && !sameChange(before, c) {
-			c.UpdatedAt = now
+			c.UpdatedAt, c.TouchedAt = now, &now
 		}
 		return before, c, evs, nil
 	case KindGitEnded:
@@ -227,7 +235,20 @@ func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change,
 		setPhase(nil, c, phase, ByObserved, now)
 		// Pushed and clean described the branch before it ended.
 		dropConditions(c, CondPushed, CondClean)
+		c.TouchedAt = &now
+		if c.Done == nil { // V0.98 (1)
+			c.Done = &DoneMark{At: now, By: ByObserved, Reason: string(phase)}
+			if a.Merged {
+				c.Done.Reason = "merged"
+			}
+		}
 		return before, c, []Event{event(c, op)}, nil
+	case KindRecordDone:
+		before, c, err := recordDone(rs, in, now)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return before, c, []Event{event(c, "done")}, nil
 	}
 	return nil, nil, nil, reject(RejectBadArgs, "unknown action %s", in.Kind)
 }
@@ -288,7 +309,7 @@ func reduceChangeObserved(r Rec, in Input, now time.Time) (Result, error) {
 		return Result{}, err
 	}
 	t, rec := r.T, &a.After
-	ref := Ref{ID: rec.ID, Repo: RecordRepo(rec), Branch: rec.Branch, Ended: !rec.Phase.InFlight()}
+	ref := Ref{ID: rec.ID, Repo: RecordRepo(rec), Branch: rec.Branch, Ended: !rec.Phase.InFlight() || rec.IsDone()}
 	if i := slices.IndexFunc(t.Refs, func(x Ref) bool { return x.ID == rec.ID }); i >= 0 {
 		t.Refs[i] = ref
 	} else {
@@ -449,5 +470,5 @@ func MigrateObserved(t *Thread, rs map[string]*Change) bool {
 // RecordExpired reports a record that landed or ended more than 30 days
 // ago: the host drops it, and the threads their references.
 func RecordExpired(c *Change, now time.Time) bool {
-	return !c.Phase.InFlight() && now.Sub(c.UpdatedAt) > endedKeep
+	return (!c.Phase.InFlight() || c.IsDone()) && now.Sub(c.UpdatedAt) > endedKeep
 }

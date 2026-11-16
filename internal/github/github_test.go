@@ -201,3 +201,39 @@ func TestPollReportsAMissingPR(t *testing.T) {
 		t.Fatalf("an answer in between did not reset the count: %+v", src.got)
 	}
 }
+
+// SPEC V0.98 (1): a merged PR into a branch that is not the repo's default
+// one is stacked; the compare of the default branch with its merge commit
+// says whether it is in the default branch yet.
+func TestFetchReadsStackedPR(t *testing.T) {
+	pr := `{"state":"MERGED","baseRefName":"feat/a","mergeCommit":{"oid":"m1"},"statusCheckRollup":[]}`
+	run := func(status string) Runner {
+		return func(_ context.Context, args ...string) ([]byte, error) {
+			switch {
+			case args[0] == "pr":
+				return []byte(pr), nil
+			case args[1] == "repos/st/ack":
+				return []byte("main\n"), nil
+			case args[1] == "repos/st/ack/compare/main...m1":
+				return []byte(status + "\n"), nil
+			}
+			return nil, errors.New("unexpected " + strings.Join(args, " "))
+		}
+	}
+	p, err := Fetch(context.Background(), run("diverged"), "https://github.com/st/ack/pull/2")
+	if err != nil || p.Base != "feat/a" || !p.Stacked || p.InDefault == nil || *p.InDefault {
+		t.Fatalf("not yet in main: %+v %v", p, err)
+	}
+	p, _ = Fetch(context.Background(), run("behind"), "https://github.com/st/ack/pull/2")
+	if p.InDefault == nil || !*p.InDefault {
+		t.Fatalf("in main: %+v", p)
+	}
+	p, _ = Fetch(context.Background(), run(""), "https://github.com/st/ack/pull/2")
+	if !p.Stacked || p.InDefault != nil {
+		t.Fatalf("an unread compare is known: %+v", p)
+	}
+	pr = `{"state":"MERGED","baseRefName":"main","mergeCommit":{"oid":"m1"},"statusCheckRollup":[]}`
+	if p, _ = Fetch(context.Background(), run("diverged"), "https://github.com/st/ack/pull/2"); p.Stacked {
+		t.Fatalf("a PR into the default branch is stacked: %+v", p)
+	}
+}

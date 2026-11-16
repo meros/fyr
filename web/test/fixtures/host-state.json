@@ -1,6 +1,10 @@
 {
   "actions": [
     {
+      "label": "Done",
+      "name": "change.done"
+    },
+    {
       "label": "End this change",
       "name": "change.end"
     },
@@ -201,6 +205,7 @@
       "source": "fyr",
       "title": "a thread in a quiet project",
       "unavailable": {
+        "change.done": "No open change",
         "change.end": "No change to end",
         "change.park": "No change needs you",
         "change.unpark": "No change is parked",
@@ -263,6 +268,7 @@
       "source": "fyr",
       "title": "a thread with a live view",
       "unavailable": {
+        "change.done": "No open change",
         "change.end": "No change to end",
         "change.park": "No change needs you",
         "change.unpark": "No change is parked",
@@ -310,6 +316,7 @@
       "source": "fyr",
       "title": "a thread in a clone",
       "unavailable": {
+        "change.done": "No open change",
         "change.end": "No change to end",
         "change.park": "No change needs you",
         "change.unpark": "No change is parked",
@@ -353,6 +360,7 @@
       "source": "fyr",
       "title": "a thread in the home folder",
       "unavailable": {
+        "change.done": "No open change",
         "change.end": "No change to end",
         "change.park": "No change needs you",
         "change.unpark": "No change is parked",
@@ -400,6 +408,7 @@
       "source": "fyr",
       "title": "a thread in a folder",
       "unavailable": {
+        "change.done": "No open change",
         "change.end": "No change to end",
         "change.park": "No change needs you",
         "change.unpark": "No change is parked",
