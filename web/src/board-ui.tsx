@@ -7,6 +7,7 @@ import { boardItems, boardProjects, columns, type BoardItem } from "./board.ts";
 import { ChangeCard } from "./offers-ui.tsx";
 import { ProjectIcon } from "./project-ui.tsx";
 import { colorVar } from "./projects.ts";
+import { boardSettledPref, setBoardSettledPref } from "./prefs.ts";
 
 export interface BoardProps {
   threads: Record<string, Thread>;
@@ -21,7 +22,8 @@ export function ChangesBoard(p: BoardProps) {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [showEnded, setShowEnded] = useState(false);
-  const items = boardItems(p.threads, p.projects, { projectId, q, ended: showEnded });
+  const [showSettled, setShowSettled] = useState(boardSettledPref); // V0.78 (#54): remembered per device
+  const items = boardItems(p.threads, p.projects, { projectId, q, ended: showEnded, settled: showSettled });
   const cols = columns(items, showEnded);
   const chips = boardProjects(p.threads, p.projects);
   const total = items.length;
@@ -42,6 +44,10 @@ export function ChangesBoard(p: BoardProps) {
           <label class="bdend">
             <input type="checkbox" checked={showEnded} onChange={(e) => setShowEnded((e.target as HTMLInputElement).checked)} />
             <span>Show ended</span>
+          </label>
+          <label class="bdend">
+            <input type="checkbox" checked={showSettled} onChange={(e) => { const on = (e.target as HTMLInputElement).checked; setShowSettled(on); setBoardSettledPref(on); }} />
+            <span>Show settled</span>
           </label>
         </div>
       </div>

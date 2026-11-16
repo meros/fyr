@@ -61,3 +61,25 @@ export function setListPref(on: boolean): void {
     /* the choice lasts this session */
   }
 }
+
+// ---- the Changes board (SPEC 0.5 V0.78, #54) ----
+
+const BOARD_SETTLED_KEY = "fyr.board.settled";
+
+/** Show the changes of settled and snoozed threads on the board; off by default. */
+export function boardSettledPref(): boolean {
+  try {
+    return localStorage.getItem(BOARD_SETTLED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setBoardSettledPref(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(BOARD_SETTLED_KEY, "1");
+    else localStorage.removeItem(BOARD_SETTLED_KEY);
+  } catch {
+    /* the choice lasts this session */
+  }
+}
