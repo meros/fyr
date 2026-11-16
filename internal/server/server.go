@@ -23,6 +23,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
+	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/gitdiff"
@@ -52,6 +53,8 @@ type Server struct {
 	PR PRDetails
 	// Quota lists the profiles' provider quota (V0.44); optional.
 	Quota func(ctx context.Context) any
+	// Load reads the machine's and the threads' load (V0.80); optional.
+	Load *cgroup.Sampler
 	// HandoverPlan says which rung a handover would use (V0.45); optional.
 	HandoverPlan func(threadID, profile string) agent.Plan
 	// ProfileList is the current profiles (the providers, V0.50); it wins
@@ -96,6 +99,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/command", s.command)
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	mux.HandleFunc("GET /api/quota", s.quota)
+	mux.HandleFunc("GET /api/load", s.load)
 	// #42: the profiles alone, for the client after a provider changed.
 	mux.HandleFunc("GET /api/profiles", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.profiles()) })
 	if s.Providers != nil {
@@ -663,4 +667,16 @@ func (s *Server) quota(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	api.WriteJSON(w, 200, s.Quota(ctx))
+}
+
+// load answers GET /api/load (V0.80): this host's load as a list of one,
+// so a front joins its hosts' lists.
+func (s *Server) load(w http.ResponseWriter, r *http.Request) {
+	if s.Load == nil {
+		api.WriteJSON(w, 200, []any{})
+		return
+	}
+	l := s.Load.Get()
+	l.Host = s.hostName()
+	api.WriteJSON(w, 200, []cgroup.Load{l})
 }

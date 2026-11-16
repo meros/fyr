@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/quota"
@@ -72,6 +73,9 @@ type config struct {
 	// HostListen: a tailnet address where the host also serves the host
 	// protocol to fronts on other machines (V0.51); empty is none.
 	HostListen string `json:"hostListen"`
+	// Cgroups: the server/ and agents/ split and the agents' budget
+	// (V0.80); absent is off.
+	Cgroups *cgroup.Budget `json:"cgroups"`
 }
 
 func home() string { h, _ := os.UserHomeDir(); return h }

@@ -108,6 +108,10 @@
         assert server.config.networking.firewall.interfaces.tailscale0.allowedTCPPorts == [ 7778 ];
         assert builtins.elem "tailscaled.service" server.config.systemd.services.fyr.after;
         assert !(builtins.elem "tailscaled.service" sys.config.systemd.services.fyr.after);
+        # V0.80: the unit delegates cpu and memory; the budget is fyrd's to write on agents/.
+        assert fyr.Delegate == "cpu memory" && fyr.MemoryLow == "1G" && !(fyr ? MemoryMax) && !(fyr ? MemoryHigh);
+        assert conf.cgroups == { enable = true; serverMemoryLow = "1G"; agentsCpuMax = "400000 100000";
+          agentsMemoryHigh = "13G"; agentsMemoryMax = "14G"; agentsMemorySwapMax = "16G"; };
         nixpkgs.legacyPackages.x86_64-linux.runCommand "fyr-module-check" { } "touch $out";
 
       nixosModules.fyr = import ./nix/module.nix self;
