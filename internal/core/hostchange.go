@@ -97,6 +97,39 @@ func RecordOn(rs []*Change, repo, branch string) *Change {
 	return nil
 }
 
+// endedAt reports an ended record of repo and branch whose newest revision
+// is head: a merged branch that stays checked out (V0.88 (1)).
+func endedAt(rs []*Change, repo, branch, head string) bool {
+	if head == "" {
+		return false
+	}
+	return slices.ContainsFunc(rs, func(c *Change) bool {
+		n := len(c.Revisions)
+		return c.Branch == branch && !c.Phase.InFlight() && RecordRepo(c) == repo && n > 0 && sameCommit(c.Revisions[n-1].ID, head)
+	})
+}
+
+// sameCommit compares two commit ids that may be short.
+func sameCommit(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return strings.HasPrefix(a, b) || strings.HasPrefix(b, a)
+}
+
+// MergedPRCovers reports a merged PR that ends rec: the PR's head is rec's
+// newest revision, or either is unknown (V0.88 (2)).
+func MergedPRCovers(p *PR, rec *Change) bool {
+	if p == nil || p.State != "MERGED" {
+		return false
+	}
+	n := len(rec.Revisions)
+	if p.Head == "" || n == 0 {
+		return true
+	}
+	return sameCommit(p.Head, rec.Revisions[n-1].ID)
+}
+
 // ReduceRecord applies one Input of a record kind to a copy of the record
 // it is about, among the host's records rs (pure). It returns the record
 // before (nil for a new one) and after (nil when the Input is about no
@@ -118,6 +151,9 @@ func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change,
 		if c == nil {
 			if g.Ahead == 0 && g.Unpushed == 0 && g.Dirty == 0 {
 				return nil, nil, nil, nil
+			}
+			if endedAt(rs, g.Repo, g.Branch, g.Head) {
+				return nil, nil, nil, nil // V0.88 (1): the work that ended, still checked out
 			}
 			key := freshKey(rs, ObservedKey(g.Repo, g.Branch))
 			c = &Change{ID: ChangeID(key), Key: key, Kind: KindCode, Title: g.Branch, Branch: g.Branch, Phase: PhaseWorking, PhaseBy: ByObserved, CreatedAt: now, UpdatedAt: now}
