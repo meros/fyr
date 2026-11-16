@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/api"
+	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/peers"
@@ -59,6 +60,8 @@ type Options struct {
 	Name       string // this machine, shown in the rail
 	BuildID    string // the client's build (V0.13 reload)
 	OwnerLogin string // the browser guard's tailnet owner (V0.14)
+	// Auth keeps the browser sessions (V0.130); nil keeps none.
+	Auth *auth.Store
 	Web        fs.FS  // the built client
 	// MinBackoff is the first wait before reconnecting to a host; default 500 ms.
 	MinBackoff time.Duration
@@ -735,7 +738,7 @@ func (f *Front) Handler() http.Handler {
 	if f.opt.Web != nil {
 		mux.Handle("/", f.webClient())
 	}
-	return server.Browser(f.opt.OwnerLogin, mux)
+	return server.Browser(f.opt.OwnerLogin, f.withAuth(mux))
 }
 
 // byName is the host with that name; "" is the first host. A name the

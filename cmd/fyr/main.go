@@ -5,6 +5,7 @@
 //
 //	fyr [-data DIR] [fyrd flags…]
 //	fyr install BUILD_DIR   make BUILD_DIR/fyrd the current build
+//	fyr open [-app]         sign this machine's browser in and open Fyr (V0.130)
 package main
 
 import (
@@ -34,6 +35,14 @@ func main() {
 			log.Fatal("usage: fyr install BUILD_DIR")
 		}
 		if err := install(*data, fl.Arg(0)); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	if len(args) > 0 && args[0] == "open" {
+		app := fl.Bool("app", false, "open Fyr in a Chrome app window")
+		fl.Parse(args[1:])
+		if err := open(*data, *app); err != nil {
 			log.Fatal(err)
 		}
 		return

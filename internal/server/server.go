@@ -197,7 +197,9 @@ func guard(owner string, next http.Handler) http.Handler {
 		}
 		host = strings.Trim(host, "[]")
 		ip := net.ParseIP(host)
-		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		// V0.130: fyr.localhost (any *.localhost) is loopback too; browsers
+		// resolve it locally, so no rebinding page can carry it.
+		if !localName(host) && (ip == nil || !ip.IsLoopback()) {
 			http.Error(w, "Fyr v0 serves loopback only", http.StatusForbidden)
 			return
 		}
@@ -208,6 +210,26 @@ func guard(owner string, next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// localName: localhost or a name under it (RFC 6761).
+func localName(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	return host == "localhost" || (strings.HasSuffix(host, ".localhost") && len(host) > len(".localhost"))
+}
+
+type viaServeKey struct{}
+
+// ViaServe marks every request of a handler as come through Tailscale
+// Serve's own socket (V0.130 (3)): only there is Tailscale-User-Login set by
+// tailscaled itself, which strips any copy the browser sent.
+func ViaServe(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), viaServeKey{}, true)))
+	})
+}
+
+// IsViaServe reports whether a request came through Serve's socket.
+func IsViaServe(r *http.Request) bool { v, _ := r.Context().Value(viaServeKey{}).(bool); return v }
 
 // tailnetHost reports whether a Host header names a MagicDNS host, the only
 // name Tailscale Serve answers on with HTTPS.
