@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/fstest"
@@ -26,6 +27,25 @@ type host struct {
 	hs   *httptest.Server
 	eng  *engine.Engine
 	down atomic.Bool
+	// focus records the host's focus calls (V0.85): "device thread on|off".
+	focusMu sync.Mutex
+	focus   []string
+}
+
+func (h *host) focused() []string {
+	h.focusMu.Lock()
+	defer h.focusMu.Unlock()
+	return append([]string(nil), h.focus...)
+}
+
+func (h *host) recordFocus(device, thread string, on bool) {
+	h.focusMu.Lock()
+	defer h.focusMu.Unlock()
+	st := "on"
+	if !on {
+		st = "off"
+	}
+	h.focus = append(h.focus, device+" "+thread+" "+st)
 }
 
 func newHost(t *testing.T, name string, profiles ...provider.Profile) *host {
@@ -34,7 +54,7 @@ func newHost(t *testing.T, name string, profiles ...provider.Profile) *host {
 		t.Fatal(err)
 	}
 	h := &host{eng: engine.New(st)}
-	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name, Profiles: profiles}
+	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name, Profiles: profiles, Focus: h.recordFocus}
 	inner := s.Handler()
 	h.hs = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h.down.Load() {
