@@ -18,21 +18,26 @@ export function createMockApi(scenario: string): Api {
   const q = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
   const providersMode = q.get("providers") ?? "";
   const offline = q.get("conn") === "offline";
-  const providers = createMockProviders(providersMode);
+  const hostOffset = Date.parse(server.state().now) - Date.now();
+  const providers = createMockProviders(providersMode, () => Date.now() + hostOffset);
   const log: { action: string; threadId?: string; args: Record<string, unknown> }[] = [];
   (globalThis as { __fyrCommands?: typeof log }).__fyrCommands = log;
   // V0.111, V0.102: the owner's automation settings, in memory.
   let deployOn = true;
   const repos = [{ repo: "meros/fyr", on: false }, { repo: "acme/web", on: true }];
   let watch = initialBuildWatch();
+  // V0.121: the owner's project order, the front's own (&order=p_fyr,p_web sets one; none: by name).
+  let order: string[] | null = q.get("order")?.split(",").filter(Boolean) ?? null;
+  let onOrder: ((ids: string[]) => void) | undefined;
   return {
     mock: true,
     start(h) {
       h.conn("connecting");
       watch = observeBuildId(watch, server.buildId).watch;
       server.subscribe({ thread: h.thread, event: h.event, project: (p) => h.project?.(p) });
+      onOrder = h.projectOrder;
       setTimeout(() => {
-        h.state(server.state());
+        h.state({ ...server.state(), ...(order ? { projectOrder: order } : {}) });
         h.conn(offline ? "offline" : "live");
       }, 0);
       // V0.38 perf guard (mock only): a burst of n thread updates and n messages for one thread,
@@ -60,6 +65,12 @@ export function createMockApi(scenario: string): Api {
         return { ok: true };
       }
       if (action === "host.systemAgents") return { ok: true };
+      if (action === "front.projectOrder") {
+        order = Array.isArray(args?.ids) ? (args.ids as unknown[]).filter((x): x is string => typeof x === "string") : [];
+        const ids = order;
+        setTimeout(() => onOrder?.(ids), 0); // the front's event, as on every device
+        return { ok: true, result: { ids } };
+      }
       return server.command(newCommandId(), action, threadId, args ?? {});
     },
     async providers() {

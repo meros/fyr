@@ -5,7 +5,7 @@
 // is the next screen); the reason for the difference is width.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { ComponentChildren } from "preact";
+import { Fragment, type ComponentChildren } from "preact";
 import type { Api } from "./api.ts";
 import { hostStatus, type HostInfo } from "./hosts.ts";
 import { quotaFor } from "./quota.ts";
@@ -23,6 +23,7 @@ import { quietNote } from "./quiet.ts";
 import { NewProjectStep, ProjectEditor, ProjectIcon, type ProjectPatch } from "./project-ui.tsx";
 import { pushRow, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
+import { move } from "./reorder.ts";
 import { PAGES, automationSummary, deviceSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
 import { Empty, Grip, Group, LoadError, MoveButtons, Row, SaveField, SavedMark, Seg, SetContext, Skeleton, Switch, useReorder, useSaved, useSet } from "./settings-rows.tsx";
 import {
@@ -35,13 +36,20 @@ import {
   loginActive,
   loginButton,
   loginLine,
+  checkErrorLine,
+  checkLine,
+  modelParts,
   modelsAfter,
+  needsCheck,
+  offLimit,
+  withCurrent,
   removeLine,
   STATUS_TEXT,
   usageLine,
   whereText,
   type FoundDTO,
   type LoginDTO,
+  type ModelRow,
   type ModelsOp,
   type ProviderDTO,
   type ProviderForm,
@@ -67,6 +75,8 @@ export interface ProjectActions {
   delete(id: string): Promise<string | null>;
   /** New project without a thread; the error, or null */
   create(name: string, folder: string): Promise<string | null>;
+  /** V0.121: the owner's project order (front.projectOrder); the error, or null */
+  order(ids: string[]): Promise<string | null>;
 }
 
 export interface SettingsProps {
@@ -90,6 +100,8 @@ export interface SettingsProps {
   profiles: Profile[];
   /** the host's clock */
   now: number;
+  /** the first state has arrived, so `now` is the host's clock (V0.120: the page's check on open waits for it) */
+  clockKnown?: boolean;
   projectActions: ProjectActions;
 }
 
@@ -186,9 +198,17 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
     }
     return e;
   };
+  /** V0.120: ask a provider for its models now. Not a save: no Saved mark. The reply waits for the check. */
+  const refreshModels = async (id: string): Promise<string | null> => {
+    const r = await api.command("provider.refreshModels", undefined, { id });
+    await loadProviders();
+    if (r.ok) p.onChanged?.();
+    return r.ok ? null : (r.error ?? "That did not work");
+  };
   return {
     providers,
     provErr,
+    refreshModels,
     found,
     loadProviders,
     deploy,
@@ -239,8 +259,10 @@ export function Settings(p: SettingsProps) {
   };
   const badge = navBadge(data.providers, blocked);
   const [adding, setAdding] = useState(false);
-  useEffect(() => setAdding(false), [p.at?.page]);
-  const ui: PageUi = { adding, setAdding, empty: settingsProjects(p.projects).length === 0 };
+  const [q, setQ] = useState("");
+  const [reordering, setReordering] = useState(false);
+  useEffect(() => (setAdding(false), setReordering(false), setQ("")), [p.at?.page]);
+  const ui: PageUi = { adding, setAdding, empty: settingsProjects(p.projects).length === 0, q, setQ, reordering, setReordering };
   const view = p.at ? pageView(p.at, p, data, ui) : null;
 
   // Opening a page moves focus to its heading; coming back from a sub-page focuses the row it came from.
@@ -381,6 +403,11 @@ interface PageUi {
   adding: boolean;
   setAdding(b: boolean): void;
   empty: boolean;
+  /** V0.121: the Projects page's search and the phone's Reorder mode, kept here because the header holds Reorder */
+  q: string;
+  setQ(q: string): void;
+  reordering: boolean;
+  setReordering(b: boolean): void;
 }
 
 function pageView(at: PageRef, p: SettingsProps, d: Data, ui: PageUi): PageView {
@@ -394,7 +421,7 @@ function pageView(at: PageRef, p: SettingsProps, d: Data, ui: PageUi): PageView 
           title: x?.name ?? "Provider",
           parent: "Providers",
           end: x && <ProviderBadge p={x} />,
-          body: x ? <ProviderPage key={x.id} p={x} run={d.runProvider} onRemoved={() => go({ page: "providers" })} /> : d.providers === null && !d.provErr ? <Skeleton rows={4} /> : d.provErr ? <LoadError text={d.provErr} onRetry={() => void d.loadProviders()} /> : <Group><Empty text="This provider is not here anymore." /></Group>,
+          body: x ? <ProviderPage key={x.id} p={x} run={d.runProvider} refresh={() => d.refreshModels(x.id)} now={p.now} clockKnown={p.clockKnown ?? true} onRemoved={() => go({ page: "providers" })} /> : d.providers === null && !d.provErr ? <Skeleton rows={4} /> : d.provErr ? <LoadError text={d.provErr} onRetry={() => void d.loadProviders()} /> : <Group><Empty text="This provider is not here anymore." /></Group>,
         };
       }
       return { title: "Providers", body: <ProvidersPage d={d} go={go} /> };
@@ -581,7 +608,7 @@ function SystemAgents({ d }: { d: Data }) {
         end={
           <>
             <Select label="Provider" value={def.profile ?? ""} options={providerOptions(v)} onPick={(x) => void set("", "", { profile: x })} />
-            <Select label="Model" value={def.model ?? ""} options={modelOptions(v, def.profile ?? "")} onPick={(x) => void set("", "", { profile: def.profile, model: x })} />
+            <Select label="Model" value={def.model ?? ""} options={withCurrent(modelOptions(v, def.profile ?? ""), def.model)} onPick={(x) => void set("", "", { profile: def.profile, model: x })} />
           </>
         }
       />
@@ -599,7 +626,7 @@ function SystemAgents({ d }: { d: Data }) {
             end={
               <>
                 <Select label={j.name} value={j.override ? (j.choice.profile ?? "") : "="} options={[{ value: "=", label: "Same as default" }, ...providerOptions(v).slice(1)]} onPick={(x) => void set(j.id, j.id, x === "=" ? null : { profile: x })} />
-                {j.override && <Select label="Model" value={j.choice.model ?? ""} options={modelOptions(v, own)} onPick={(x) => void set(j.id, j.id, { profile: j.choice.profile, model: x })} />}
+                {j.override && <Select label="Model" value={j.choice.model ?? ""} options={withCurrent(modelOptions(v, own), j.choice.model)} onPick={(x) => void set(j.id, j.id, { profile: j.choice.profile, model: x })} />}
               </>
             }
           />
@@ -610,7 +637,7 @@ function SystemAgents({ d }: { d: Data }) {
 }
 
 /** A provider's page: what blocks it first (a login, a key), its models, its usage, Remove last. */
-function ProviderPage({ p, run, onRemoved }: { p: ProviderDTO; run: Run; onRemoved(): void }) {
+function ProviderPage({ p, run, refresh, now, clockKnown, onRemoved }: { p: ProviderDTO; run: Run; refresh(): Promise<string | null>; now: number; clockKnown: boolean; onRemoved(): void }) {
   const quota = quotaFor(useQuotas(), p.id);
   const ask = useAsk();
   const env = useSet();
@@ -624,7 +651,7 @@ function ProviderPage({ p, run, onRemoved }: { p: ProviderDTO; run: Run; onRemov
       ) : (
         <LoginGroup p={p} run={run} />
       )}
-      <ModelsGroup p={p} run={run} />
+      <ModelsGroup p={p} run={run} refresh={refresh} now={now} clockKnown={clockKnown} />
       <Group title="Usage" class="usage">
         <Row title={quota ? <QuotaLine q={quota} name={p.name} bare /> : "No reading yet"} desc={usageLine(p)} />
       </Group>
@@ -745,84 +772,175 @@ function KeyRow({ p, run }: { p: ProviderDTO; run: Run }) {
   );
 }
 
-/** Models (part 1, over the stored list): one row per model in the owner's order, a grip, ★ for the default, × to
- *  remove; a field to add an id; the default effort. Each change sends provider.update with the whole list. */
-function ModelsGroup({ p, run }: { p: ProviderDTO; run: Run }) {
+/** V0.120 (amends V0.44, V0.50): the model chooser. What the provider reports, in two parts: On (what every model
+ *  picker offers, in this order; a grip, ★ for the default, a switch) and Off (by name, a switch). Search from nine
+ *  models filters both. Refresh asks the provider now; the page asks on open when the last check is over 10 minutes
+ *  old. Each change sends provider.update with the whole on-list. */
+function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run: Run; refresh(): Promise<string | null>; now: number; clockKnown: boolean }) {
   const env = useSet();
   const ids = p.models.map((m) => m.id);
+  const [q, setQ] = useState("");
+  const [more, setMore] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [err, setErr] = useState<{ row: string; text: string } | null>(null);
+  const parts = modelParts(p, q);
+  const searching = !!q.trim();
   const apply = async (row: string, op: ModelsOp) => {
     const r = modelsAfter(ids, p.defaultModel, op);
-    if ("error" in r) return setErr({ row, text: r.error });
+    if ("error" in r) return setErr({ row, text: r.error }), r.error;
     const args: Record<string, unknown> = { id: p.id };
-    if ("star" in op) args.defaultModel = r.defaultModel;
+    if ("forget" in r) args.forget = r.forget;
+    else if ("star" in op) args.defaultModel = r.defaultModel;
     else args.models = r.models;
     const e = await run("provider.update", args);
     setErr(e ? { row, text: e } : null);
     return e;
   };
+  const doRefresh = async () => {
+    setChecking(true);
+    const e = await refresh();
+    setChecking(false);
+    setErr(e ? { row: "check", text: e } : null);
+  };
+  // The page asks the provider once when it opens and the last check is over 10 minutes old (by the host's clock).
+  const asked = useRef(false);
+  useEffect(() => {
+    if (asked.current || !clockKnown) return;
+    asked.current = true;
+    if (needsCheck(p, now) && !env.readOnly) void doRefresh();
+  }, [p.id, clockKnown]);
   const ro = useReorder(ids, (from, to) => void apply(ids[from], { move: [from, to] }));
-  const hasEfforts = p.models.some((m) => m.efforts?.length);
+  const canReorder = !searching && ids.length > 1 && !env.readOnly; // while the search has text, reorder is off
   const rowErr = (row: string) => (err?.row === row ? err.text : null);
+  const tags = (m: ModelRow) => (
+    <>
+      {m.isNew && <span class="tag new">New</span>}
+      {m.gone && <span class="tag gone">Gone</span>}
+      {m.manual && <span class="tag">Added by hand</span>}
+    </>
+  );
+  const desc = (m: ModelRow) => (
+    <>
+      {m.name !== m.id && <span class="mono mid">{m.id}</span>}
+      {m.gone && <span class="sr-d2">The provider no longer lists it. Threads on it keep running.</span>}
+    </>
+  );
+  const limit = offLimit(searching);
+  const offShown = more ? parts.off : parts.off.slice(0, limit);
+  const line = searching ? `${parts.matched} of ${parts.total} match` : checkLine({ ...p, checking: p.checking || checking }, now);
+  const failed = checkErrorLine(p, now);
+  const hasEfforts = p.models.some((m) => m.efforts?.length);
   return (
     <Group
       title="Models"
       label="Models"
+      class="models"
       end={
-        // The phone reorders in a mode: touch has no hover to reveal a grip, and a drag on a list fights the page's
-        // scroll. The desktop drags the grip instead, so it has no Reorder button.
-        env.phone &&
-        ids.length > 1 &&
-        !env.readOnly &&
-        (ro.mode ? (
-          <button type="button" class="btn p" onClick={() => ro.setMode(false)}>
-            Done
-          </button>
-        ) : (
-          <button type="button" class="lnk reo" onClick={() => ro.setMode(true)}>
-            Reorder
-          </button>
-        ))
+        <>
+          <span class="mchk" aria-live="polite">
+            {line}
+          </span>
+          {!ro.mode && p.status === "ready" && (
+            <button type="button" class="lnk" disabled={checking || p.checking || env.readOnly} onClick={() => void doRefresh()}>
+              Refresh
+            </button>
+          )}
+          {
+            // The phone reorders in a mode: touch has no hover to reveal a grip, and a drag on a list fights the
+            // page's scroll. The desktop drags the grip instead, so it has no Reorder button.
+            env.phone &&
+              canReorder &&
+              (ro.mode ? (
+                <button type="button" class="btn p" onClick={() => ro.setMode(false)}>
+                  Done
+                </button>
+              ) : (
+                <button type="button" class="lnk reo" onClick={() => ro.setMode(true)}>
+                  Reorder
+                </button>
+              ))
+          }
+        </>
       }
-      foot="★ is the default for a new thread. The order here is the order of every model picker."
+      foot={failed ?? "★ is the default for a new thread. Fyr asks the provider for its models when you open this page and once a day."}
+      footErr={!!failed}
     >
-      {p.models.map((m, i) => {
-        const def = m.id === p.defaultModel;
-        const name = m.name || m.id;
+      {rowErr("check") && <Row error={rowErr("check")} />}
+      {!ro.mode && parts.total >= 9 && (
+        <Row class="srch">
+          <input class="pq" type="search" placeholder={`Search ${parts.total} models`} aria-label="Search models" value={q} onInput={(e) => (setQ((e.target as HTMLInputElement).value), setMore(false))} />
+        </Row>
+      )}
+      {parts.on.length > 0 && <div class="sg-sub">On · offered in every model picker, in this order</div>}
+      {parts.on.map((m) => {
+        const i = ids.indexOf(m.id);
         const r = ro.row(i);
         return (
           <Row
             key={m.id}
-            class={`model ${r.class as string}`}
+            class={`model ${searching ? "" : (r.class as string)}`}
             rowRef={r.ref as (el: HTMLElement | null) => void}
+            data={{ model: m.id }}
             error={rowErr(m.id)}
             lead={
               !ro.mode && (
                 <>
-                  <Grip {...ro.grip(i, name)} />
-                  <button type="button" class="star" aria-pressed={def} aria-label={def ? "The default model" : `Make ${m.id} the default`} disabled={env.readOnly} onClick={() => !def && void apply(m.id, { star: m.id })}>
-                    {def ? "★" : "☆"}
+                  {canReorder && <Grip {...ro.grip(i, m.name)} />}
+                  <button type="button" class="star" aria-pressed={m.star} aria-label={m.star ? "The default model" : `Make ${m.id} the default`} disabled={env.readOnly} onClick={() => !m.star && void apply(m.id, { star: m.id })}>
+                    {m.star ? "★" : "☆"}
                   </button>
                 </>
               )
             }
-            title={name}
-            desc={m.name && m.name !== m.id ? <span class="mono">{m.id}</span> : undefined}
-            end={
-              ro.mode ? undefined : (
-                <button type="button" class="xb" aria-label={`Remove ${m.id}`} title={def ? "Star another model first" : "Remove"} disabled={def || env.readOnly} onClick={() => void apply(m.id, { remove: m.id })}>
-                  ×
-                </button>
-              )
+            title={
+              <>
+                {m.name}
+                {tags(m)}
+              </>
             }
+            desc={desc(m)}
+            end={ro.mode ? undefined : <Switch on label={`Offer ${m.id}`} onChange={() => void apply(m.id, { off: m.id })} />}
           >
-            {ro.mode && <MoveButtons name={name} i={i} n={ids.length} onMove={(f, t) => void apply(ids[f], { move: [f, t] })} />}
+            {ro.mode && <MoveButtons name={m.name} i={i} n={ids.length} onMove={(f, t) => void apply(ids[f], { move: [f, t] })} />}
           </Row>
         );
       })}
+      {!ro.mode && parts.off.length > 0 && <div class="sg-sub">Off · {parts.off.length}</div>}
+      {!ro.mode &&
+        offShown.map((m) => (
+          <Row
+            key={m.id}
+            class="omodel off"
+            data={{ model: m.id }}
+            error={rowErr(m.id)}
+            title={
+              <>
+                {m.name}
+                {tags(m)}
+              </>
+            }
+            desc={desc(m)}
+            end={
+              <>
+                {m.manual && (
+                  <button type="button" class="xb" aria-label={`Remove ${m.id}`} title="Remove" disabled={env.readOnly} onClick={() => void apply(m.id, { forget: m.id })}>
+                    ×
+                  </button>
+                )}
+                <Switch on={false} label={`Offer ${m.id}`} onChange={() => void apply(m.id, { on: m.id })} />
+              </>
+            }
+          />
+        ))}
+      {!ro.mode && !more && parts.off.length > limit && (
+        <button type="button" class="more" onClick={() => setMore(true)}>
+          Show {parts.off.length - limit} more
+        </button>
+      )}
+      {!ro.mode && searching && parts.matched === 0 && <Row desc={`No model matches “${q.trim()}”.`} />}
       {!ro.mode && (
         <Row error={rowErr("+")} class="fieldrow">
-          <SaveField value="" label="Model id to add" placeholder="Add a model id" mono clears alwaysButton button="Add" onError={(e) => setErr(e ? { row: "+", text: e } : null)} onSave={async (v) => (await apply("+", { add: v })) ?? null} check={(v) => { const r = modelsAfter(ids, p.defaultModel, { add: v }); return "error" in r ? r.error : null; }} />
+          <SaveField value="" label="Model id to add" placeholder="Add a model id by hand" mono clears alwaysButton button="Add" onError={(e) => setErr(e ? { row: "+", text: e } : null)} onSave={async (v) => (await apply("+", { add: v })) ?? null} check={(v) => { const r = modelsAfter(ids, p.defaultModel, { add: v }); return "error" in r ? r.error : null; }} />
         </Row>
       )}
       {!ro.mode && hasEfforts && (
@@ -963,7 +1081,7 @@ function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknow
         )}
         <Row col>
           <label class="fld">
-            <span>Model ids, one per line{f.kind === "claude-account" ? " (empty: Claude's list)" : ""}</span>
+            <span>Model ids, one per line{f.kind === "claude-account" ? " (empty: Claude's list)" : " (optional: Fyr asks the endpoint for its list)"}</span>
             <textarea rows={3} class="mono" value={f.models} onInput={set("models")} disabled={env.readOnly} />
           </label>
         </Row>
@@ -1048,28 +1166,55 @@ function RepoAdd({ run }: { run(repo: string, on: boolean): Promise<string | nul
 
 function projectsPage(p: SettingsProps, ui: PageUi): Omit<PageView, "title"> {
   return {
-    end: <NewProjectButton ui={ui} />,
+    end: <NewProjectButton ui={ui} n={settingsProjects(p.projects).length} />,
     body: <ProjectsPage p={p} ui={ui} />,
   };
 }
 
-function NewProjectButton({ ui }: { ui: PageUi }) {
+function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
   const env = useSet();
   if (ui.adding) return null;
+  // The phone reorders in a mode: touch has no hover to reveal a grip, and a drag on a list fights the page's
+  // scroll. The desktop drags the grip on each row instead, so it has no Reorder button.
+  if (env.phone && ui.reordering)
+    return (
+      <button type="button" class="btn p" onClick={() => ui.setReordering(false)}>
+        Done
+      </button>
+    );
   return (
-    <button type="button" class={`btn addp${ui.empty ? " p" : ""}`} disabled={env.readOnly} onClick={() => ui.setAdding(true)}>
-      New project
-    </button>
+    <>
+      {env.phone && n > 1 && !ui.q.trim() && !env.readOnly && (
+        <button type="button" class="btn reo" onClick={() => ui.setReordering(true)}>
+          Reorder
+        </button>
+      )}
+      <button type="button" class={`btn addp${ui.empty ? " p" : ""}`} disabled={env.readOnly} onClick={() => ui.setAdding(true)}>
+        New project
+      </button>
+    </>
   );
 }
 
-/** V0.58: every project by name, with its icon, folder and thread count; a row opens the project's page. Search
- *  from nine projects. Hosts (V0.51) under their own heading. */
+/** V0.58: every project with its icon, folder and thread count; a row opens the project's page. Search from nine
+ *  projects. V0.121: in the owner's one order, which this page sets with the one reorder control (a grip on the
+ *  desktop, a Reorder mode with ↑ and ↓ on the phone); quiet projects are listed and keep their place. Hosts (V0.51)
+ *  under their own heading. */
 function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
-  const { adding, setAdding } = ui;
-  const [q, setQ] = useState("");
+  const { adding, setAdding, q, setQ } = ui;
+  const env = useSet();
   const all = settingsProjects(p.projects);
   const list = searchProjects(all, q);
+  const ids = all.map((x) => x.id!);
+  const [err, setErr] = useState<string | null>(null);
+  const reorder = async (from: number, to: number) => {
+    const e = await p.projectActions.order(move(ids, from, to));
+    setErr(e);
+    if (!e) env.saved();
+  };
+  const ro = useReorder(ids, (f, t) => void reorder(f, t));
+  const mode = env.phone && ui.reordering;
+  const grips = !env.phone && !q.trim() && ids.length > 1 && !env.readOnly; // while the search has text, reorder is off
   return (
     <>
       {adding ? (
@@ -1090,7 +1235,12 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
         </Group>
       ) : (
         <section class="sg" aria-label="Projects">
-          {all.length >= 9 && <input class="pq" type="search" placeholder={`Search ${all.length} projects`} aria-label="Search projects" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
+          {all.length >= 9 && !mode && <input class="pq" type="search" placeholder={`Search ${all.length} projects`} aria-label="Search projects" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
+          {err && (
+            <div class="seterr" role="alert">
+              {err}
+            </div>
+          )}
           {all.length === 0 ? (
             <div class="sg-c">
               <Empty title="No projects yet" text="A project gathers the threads of one folder. Fyr makes one when you start a thread in a new folder." />
@@ -1099,8 +1249,9 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
             <div class="pls setpl">
               {list.map((x) => {
                 const quiet = quietNote(x, p.now);
-                return (
-                  <button type="button" key={x.id} data-sub={x.id} class="pli" style={{ "--pc": colorVar(x.color, x.name) }} onClick={() => p.go({ page: "projects", sub: x.id! })}>
+                const i = ids.indexOf(x.id!);
+                const body = (
+                  <>
                     <ProjectIcon project={x} name={x.name} size={28} />
                     <span class="plt">
                       <span class="ell pln">{x.name}</span>
@@ -1109,26 +1260,53 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
                         {projectSubtitle(x)}
                       </span>
                     </span>
+                  </>
+                );
+                const style = { "--pc": colorVar(x.color, x.name) };
+                if (mode)
+                  return (
+                    <div key={x.id} class="pli mvrow" data-sub={x.id} style={style}>
+                      {body}
+                      <MoveButtons name={x.name} i={i} n={ids.length} onMove={(f, t) => void reorder(f, t)} />
+                    </div>
+                  );
+                const go = () => p.go({ page: "projects", sub: x.id! });
+                const open = (
+                  <button type="button" data-sub={x.id} class={grips ? "plb" : "pli"} style={grips ? undefined : style} onClick={grips ? undefined : go}>
+                    {body}
                     <span class="plc" title={`${x.threads ?? 0} threads`}>
                       {x.threads ?? 0}
                     </span>
                   </button>
                 );
+                if (!grips) return <Fragment key={x.id}>{open}</Fragment>;
+                const r = ro.row(i);
+                return (
+                  // The whole row opens the project, as without a grip; the grip only moves it.
+                  <div key={x.id} class={`pli g ${r.class as string}`} ref={r.ref as (el: HTMLElement | null) => void} style={style} onClick={(e) => !(e.target as Element).closest(".grip") && go()}>
+                    <Grip {...ro.grip(i, x.name)} />
+                    {open}
+                  </div>
+                );
               })}
               {!list.length && <div class="plempty">No project matches “{q}”.</div>}
             </div>
           )}
-          {q.trim() && <div class="sg-f">{projectSearchLine(list.length, all.length)}</div>}
+          {q.trim() ? <div class="sg-f">{projectSearchLine(list.length, all.length)}</div> : all.length > 1 && <div class="sg-f">This order is used in New thread, the project chips and every list of projects, on all your devices.</div>}
         </section>
       )}
-      <h3 class="stp-sub">Hosts</h3>
-      <Group label="Hosts">
-        {p.hosts && p.hosts.length > 0 ? (
-          p.hosts.map((h) => <Row key={h.name} title={h.name} mono class="host" desc={h.error ? undefined : hostStatus(h, p.host)} error={h.error ? `${hostStatus(h, p.host)} · ${h.error}` : null} />)
-        ) : (
-          <Row title={p.host || "This host"} mono class="host" desc="this machine" />
-        )}
-      </Group>
+      {!mode && (
+        <>
+          <h3 class="stp-sub">Hosts</h3>
+          <Group label="Hosts">
+            {p.hosts && p.hosts.length > 0 ? (
+              p.hosts.map((h) => <Row key={h.name} title={h.name} mono class="host" desc={h.error ? undefined : hostStatus(h, p.host)} error={h.error ? `${hostStatus(h, p.host)} · ${h.error}` : null} />)
+            ) : (
+              <Row title={p.host || "This host"} mono class="host" desc="this machine" />
+            )}
+          </Group>
+        </>
+      )}
     </>
   );
 }

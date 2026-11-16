@@ -1,0 +1,145 @@
+package provider
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/meros/fyr/internal/api"
+	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/cli/claudecli"
+)
+
+// CheckEvery is how often the host checks each provider by itself (V0.120).
+const CheckEvery = 24 * time.Hour
+
+// listModels asks the provider: its endpoint's /v1/models with its key, or,
+// for a Claude login, the CLI with that login.
+func (r *Registry) listModels(ctx context.Context, p Provider, key string) ([]cli.Model, error) {
+	if r.ListModels != nil {
+		return r.ListModels(ctx, p, key)
+	}
+	if p.Auth.Kind == cli.APIKey && p.Endpoint.BaseURL != "" {
+		c := r.Client
+		if c == nil {
+			c = &http.Client{}
+		}
+		return fetchModels(ctx, c, p.Endpoint.BaseURL, key, fetchLimits{})
+	}
+	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	defer cancel()
+	l := cli.Launch{Binary: r.LoginBinary, Dir: os.TempDir(), Auth: cli.Auth{Kind: p.Auth.Kind, ConfigDir: r.dir(p.Auth.ConfigDir)},
+		Endpoint: p.Endpoint}
+	if l.Auth.Kind == cli.CLILogin && (p.TokenLogin || key != "") {
+		l.Key = key
+	}
+	if l.Auth.Kind == cli.APIKey {
+		l.Key = key
+	}
+	return claudecli.Adapter{}.ListModels(ctx, l)
+}
+
+func (r *Registry) isChecking(id string) bool {
+	r.cmu.Lock()
+	defer r.cmu.Unlock()
+	_, ok := r.checking[id]
+	return ok
+}
+
+// refresh checks one provider now (provider.refreshModels). A provider that
+// needs a login or a key is not checked. While a check of it runs, a second
+// waits for that one instead of starting another. A failed check stores its
+// reason and changes nothing else; the reply is OK either way, since the
+// check ran.
+func (r *Registry) refresh(id string, now time.Time) api.Reply {
+	p, ok := r.get(id)
+	if !ok {
+		return api.Reply{Error: "no provider " + id, Status: 404}
+	}
+	if st, need := r.status(p); st != Ready {
+		return api.Reply{Error: "Not checked: " + map[string]string{NeedsLogin: "needs a login", NeedsKey: "needs a key"}[st] + ". " + need, Status: 409}
+	}
+	r.cmu.Lock()
+	if ch, busy := r.checking[id]; busy {
+		r.cmu.Unlock()
+		<-ch
+		return r.checkReply(id)
+	}
+	if r.checking == nil {
+		r.checking = map[string]chan struct{}{}
+	}
+	ch := make(chan struct{})
+	r.checking[id] = ch
+	r.cmu.Unlock()
+	r.changed() // the page shows Checking…
+	defer func() {
+		r.cmu.Lock()
+		delete(r.checking, id)
+		r.cmu.Unlock()
+		close(ch)
+	}()
+
+	key, _ := r.key(p)
+	found, err := r.listModels(context.Background(), p, key)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i, x := range r.list {
+		if x.ID != id {
+			continue
+		}
+		if err != nil {
+			x.CheckError = redact(err, key)
+		} else {
+			x = mergeCatalog(x, found, now)
+		}
+		x.TriedAt = now
+		if perr := r.put(x, i); perr != nil {
+			return fail(perr)
+		}
+		r.list[i] = x
+		return api.Reply{Result: checkResult(x)}
+	}
+	return api.Reply{Error: "no provider " + id, Status: 404}
+}
+
+func checkResult(p Provider) map[string]any {
+	return map[string]any{"checkedAt": p.CheckedAt, "checkError": p.CheckError, "models": len(p.Catalog)}
+}
+
+func (r *Registry) checkReply(id string) api.Reply {
+	p, ok := r.get(id)
+	if !ok {
+		return api.Reply{Error: "no provider " + id, Status: 404}
+	}
+	return api.Reply{Result: checkResult(p)}
+}
+
+// refreshAsync checks a provider outside a command and tells the clients.
+func (r *Registry) refreshAsync(id string) {
+	if rep := r.refresh(id, time.Now().UTC()); rep.Error == "" {
+		r.changed()
+	}
+}
+
+// CheckDaily checks each provider that can run and has not been checked in
+// CheckEvery (V0.120). The host calls it every hour.
+func (r *Registry) CheckDaily(now time.Time) {
+	ran := false
+	for _, p := range r.Providers() {
+		if now.Sub(p.TriedAt) < CheckEvery {
+			continue
+		}
+		if st, _ := r.status(p); st != Ready {
+			continue
+		}
+		ran = true
+		if rep := r.refresh(p.ID, now.UTC()); rep.Error != "" {
+			log.Printf("providers: check %s: %s", p.ID, rep.Error)
+		}
+	}
+	if ran {
+		r.changed()
+	}
+}

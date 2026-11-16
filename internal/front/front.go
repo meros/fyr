@@ -66,6 +66,9 @@ type Options struct {
 	// Local is the host in this process (role both): its deploy is this
 	// front's own update, shown as the banner (V0.54). Empty: the first host.
 	Local string
+	// Store keeps the owner's settings that span the hosts (V0.121: the
+	// project order); nil keeps none.
+	Store KV
 }
 
 type Front struct {
@@ -82,6 +85,10 @@ type Front struct {
 	// ?host= or ?thread=, or uploaded (V0.54), so a preview's own files
 	// reach the same host.
 	objs map[string]*link
+	// order is the owner's project order (V0.121); receipts the replies of
+	// the front's own commands by commandId.
+	order    []string
+	receipts map[string]api.Reply
 }
 
 // link is a front's connection to one host and its cache of that host's
@@ -125,6 +132,7 @@ func New(opt Options, hosts []HostConfig) *Front {
 		c.h = webClient(opt.Web)
 	}
 	f.client.Store(c)
+	f.loadOrder()
 	for _, h := range hosts {
 		u, err := url.Parse(strings.TrimRight(h.URL, "/"))
 		if err != nil || u.Host == "" {
@@ -736,6 +744,7 @@ func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 		st.Hosts = append(st.Hosts, h)
 	}
 	st.Actions = actionsOf(actions)
+	st.ProjectOrder = f.order
 	b, err := json.Marshal(st)
 	f.mu.Unlock()
 	if err != nil {
@@ -783,12 +792,17 @@ func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var c struct {
-		Action   string         `json:"action"`
-		ThreadID string         `json:"threadId"`
-		Args     map[string]any `json:"args"`
+		CommandID string         `json:"commandId"`
+		Action    string         `json:"action"`
+		ThreadID  string         `json:"threadId"`
+		Args      map[string]any `json:"args"`
 	}
 	if err := json.Unmarshal(body, &c); err != nil {
 		api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "bad JSON: " + err.Error()})
+		return
+	}
+	if c.Action == KindProjectOrder { // V0.121: the front's own, no host's
+		f.orderCommand(w, c.CommandID, c.Args)
 		return
 	}
 	var l *link
