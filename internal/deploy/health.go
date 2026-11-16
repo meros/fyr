@@ -36,7 +36,7 @@ func Health(next http.Handler, checks ...Check) http.Handler {
 				return
 			}
 		}
-		fmt.Fprintln(w, "ok")
+		fmt.Fprintln(w, "healthy")
 	})
 }
 
