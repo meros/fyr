@@ -1089,6 +1089,17 @@ button.ptag{padding:0}
 .bdfrom:hover{color:var(--ink)}
 .bdempty{padding:24px 0;font:400 13px/18px var(--ui);color:var(--ink-muted)}
 .board.phone .bdcols{grid-template-columns:1fr}
+/* V0.98: Untouched for 3 days and Finished since your last visit fold under the columns; Done here under a thread's changes. */
+.bdfold,.chdone{border-top:1px solid var(--line);padding-top:8px;margin-top:12px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.bdfold summary,.chdone summary{cursor:pointer;font:600 13px/18px var(--ui);display:flex;gap:6px;align-items:center;list-style:none}
+.bdfold summary::before,.chdone summary::before{content:"▸";color:var(--ink-muted)}
+.bdfold[open] summary::before,.chdone[open] summary::before{content:"▾"}
+.bdrow,.chdrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto) auto auto;gap:4px 12px;align-items:center;font:400 13px/18px var(--ui);padding:4px 0;min-width:0}
+.chdrow{grid-template-columns:minmax(0,1fr) auto;color:var(--ink-muted)}
+.bdrow.done{grid-template-columns:minmax(0,1fr) minmax(0,auto) auto;color:var(--ink-muted)}
+.bdrow .ok,.chdrow .ok,.chdonel{color:var(--calm);font:400 12px/16px var(--ui)}
+.board.phone .bdrow{grid-template-columns:minmax(0,1fr) auto}
+.board.phone .bdrow .bdfrom,.board.phone .bdrow .setd{grid-column:1}
 .rchg{position:relative}
 .rchg .rb{position:absolute;top:-2px;right:2px;min-width:16px;height:16px;border-radius:8px;background:var(--signal-ink);color:var(--bg,#fff);font:600 10px/16px var(--ui);text-align:center;padding:0 4px}
 

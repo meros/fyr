@@ -324,6 +324,11 @@ export interface Change {
   threads?: string[];
   /** V0.84: the owner's Not now and a fingerprint of what they saw; the host clears it when the change moves */
   parked?: { at: string; seen: string };
+  /** V0.98: the change is finished and off the board; reason is the phase, "merged", "done" (the owner's Done) or
+   *  "landed before v2" */
+  done?: { at: string; by: "agent" | "observed" | "owner"; reason: string };
+  /** V0.98 (4): when a fact of the change last moved */
+  touchedAt?: string;
   /** V0.102: Fyr approved its merge by the repo's auto-merge setting, with no press */
   autoApproved?: { repo: string; head: string; at: string };
   createdAt: string;

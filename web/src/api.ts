@@ -84,6 +84,8 @@ export interface Api {
   profiles(): Promise<Profile[]>;
   /** V0.79: the agent's commands and skills for a thread, or for a provider and folder (New thread). */
   commands(source: CommandSource): Promise<SlashCommand[]>;
+  /** V0.98 (3): opening the Changes board is a visit; the host keeps the owner's boardSeenAt and returns the one before. */
+  boardVisit?(): Promise<string | null>;
 }
 
 /** Whose commands: a thread's, or the newest of a provider and folder on a host (V0.79). */
@@ -400,6 +402,15 @@ function createHttpApi(): Api {
         return r.ok && Array.isArray(j) ? (j as Quota[]) : [];
       } catch {
         return [];
+      }
+    },
+    async boardVisit() {
+      try {
+        const r = await fetch("/api/board/visit", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: "{}" });
+        const j = (await r.json().catch(() => ({}))) as { seenAt?: string | null };
+        return r.ok && typeof j.seenAt === "string" ? j.seenAt : null;
+      } catch {
+        return null;
       }
     },
     async load() {

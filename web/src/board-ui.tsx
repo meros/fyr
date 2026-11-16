@@ -1,13 +1,14 @@
 // The Changes board (SPEC 0.5 V0.64): every open change of every thread, by stage, with its actions. The same body on
 // desktop (a dialog) and phone (a screen).
 
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { Project, Thread } from "./types.ts";
-import { boardItems, boardProjects, columns, greenMerges, mergeAllGreen, type BoardItem } from "./board.ts";
+import { boardItems, boardProjects, columns, finishedSince, greenMerges, mergeAllGreen, untouchedItems, type BoardItem } from "./board.ts";
 import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { shortHead } from "./pr.ts";
 import { ChangeCard } from "./offers-ui.tsx";
+import { doneArgs, doneText } from "./offers.ts";
 import { ProjectIcon } from "./project-ui.tsx";
 import { colorVar } from "./projects.ts";
 import { boardSettledPref, setBoardSettledPref } from "./prefs.ts";
@@ -19,15 +20,39 @@ export interface BoardProps {
   onRun(threadId: string, action: string, args?: Record<string, unknown>): void;
   onOpenThread(id: string): void;
   phone?: boolean;
+  /** V0.98 (3): a visit of the board; the host stores it and returns the visit before (null at the first) */
+  visit?(): Promise<string | null>;
+  /** the clock (tests); Date.now by default */
+  now?: number;
 }
+
+/** V0.98 (3): the hour:minute of a done mark, in the owner's own time. */
+const hhmm = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toTimeString().slice(0, 5);
+};
 
 export function ChangesBoard(p: BoardProps) {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [showEnded, setShowEnded] = useState(false);
   const [showSettled, setShowSettled] = useState(boardSettledPref); // V0.78 (#54): remembered per device
-  const items = boardItems(p.threads, p.projects, { projectId, q, ended: showEnded, settled: showSettled });
-  const cols = columns(items, showEnded);
+  // V0.98 (3): opening the board is a visit; what finished since the one before folds into its own group.
+  const [seenAt, setSeenAt] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!p.visit) return setSeenAt(null);
+    let live = true;
+    p.visit().then((s) => live && setSeenAt(s), () => live && setSeenAt(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const now = p.now ?? Date.now();
+  const filter = { projectId, q, ended: showEnded, settled: showSettled };
+  const items = boardItems(p.threads, p.projects, filter);
+  const cols = columns(items, showEnded, now);
+  const stale = untouchedItems(items, now);
+  const finished = seenAt === undefined ? [] : finishedSince(p.threads, p.projects, seenAt, filter);
   const chips = boardProjects(p.threads, p.projects);
   const total = items.length;
   // V0.97: Merge all green: one merge per ready PR, one after another, each bound to the head shown here.
@@ -74,7 +99,7 @@ export function ChangesBoard(p: BoardProps) {
       </div>
       {total === 0 ? (
         <div class="bdempty">{q || projectId ? "No change matches." : "No changes in flight. Agents record them with change_open; Fyr records git branches and PRs itself."}</div>
-      ) : (
+      ) : total === stale.length ? null : (
         <div class="bdcols">
           <div class="bdsum">
             <span>{cols.map((c) => `${c.label} ${c.count}`).join(" · ")}</span>
@@ -107,9 +132,50 @@ export function ChangesBoard(p: BoardProps) {
           ))}
         </div>
       )}
+      {stale.length > 0 && (
+        <details class="bdfold" open>
+          <summary>
+            Untouched for 3 days <span class="bdn">{stale.length}</span>
+          </summary>
+          {stale.map((i) => (
+            <div key={i.change.id + i.thread.id} class="bdrow">
+              <span class="ell">{i.change.title}</span>
+              <button class="bdfrom" onClick={() => p.onOpenThread(i.thread.id)} title="Open the thread">
+                <span class="ell">{i.thread.title || "Untitled thread"}</span>
+              </button>
+              <span class="setd">since {weekday(i.change.touchedAt ?? i.change.updatedAt)}</span>
+              <button class="btn sm" title="Mark this change done: it leaves the board" onClick={() => p.onRun(i.thread.id, "change.done", doneArgs(i.change))}>
+                Done
+              </button>
+            </div>
+          ))}
+        </details>
+      )}
+      {finished.length > 0 && (
+        <details class="bdfold">
+          <summary>
+            Finished since your last visit <span class="bdn">{finished.length}</span>
+          </summary>
+          {finished.map((i) => (
+            <div key={i.change.id + i.thread.id} class="bdrow done">
+              <span class="ell">{i.change.title}</span>
+              <button class="bdfrom" onClick={() => p.onOpenThread(i.thread.id)} title="Open the thread">
+                <span class="ell">{i.thread.title || "Untitled thread"}</span>
+              </button>
+              <span class="ok">{doneText(i.change, hhmm)}</span>
+            </div>
+          ))}
+        </details>
+      )}
     </div>
   );
 }
+
+/** The day of a time, for "since Fri". */
+const weekday = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { weekday: "short" });
+};
 
 function Card({ i, p, err }: { i: BoardItem; p: BoardProps; err?: string }) {
   const from = (

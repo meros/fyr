@@ -164,6 +164,9 @@ func (e *Engine) Load() error {
 	if err := e.loadRecords(); err != nil {
 		return err
 	}
+	if err := e.migrateDone(); err != nil { // V0.98 (7)
+		return err
+	}
 	ps, err := e.st.Projects()
 	if err != nil {
 		return err
@@ -284,6 +287,11 @@ func (e *Engine) submit(in core.Input) api.Reply {
 		a = core.Args{}
 	}
 	in.Args = a
+	if in.Kind == core.KindChangeDone {
+		if r, ok := e.recordDone(in, a); ok { // V0.98 (4): Done on a host record
+			return r
+		}
+	}
 	if k.Await {
 		return e.await(in, k)
 	}
