@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildConversation, callLabel, fullOutputOf, runLabel, cutOutput, friendlyName, groupStats, groupSummary, hiddenCall, middleTruncate, pastTense, relPath, segments, type Item } from "../src/conversation.ts";
+import { buildConversation, callLabel, fullOutputOf, runLabel, cutOutput, friendlyName, groupStats, groupSummary, groupTone, hiddenCall, middleTruncate, pastTense, relPath, segments, type Item } from "../src/conversation.ts";
 
 let seq = 0;
 const T0 = Date.parse("2026-11-14T09:00:00Z");
@@ -158,4 +158,13 @@ test("a cut tool output can be loaded whole", () => {
   const full = { seq: res.seq, data: { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "u1", content: [{ type: "text", text: "the whole output" }] }] } } };
   assert.equal(fullOutputOf(full, "u1"), "the whole output");
   assert.equal(fullOutputOf(full, "other"), null);
+});
+
+// SPEC 0.5 V0.16, V0.41, #91: a group whose last call succeeded after a failure is recovered (amber), not failed (red).
+test("group tone: failed only when the last call failed; recovered when a later call succeeded", () => {
+  const tone = (evs: unknown[]) => groupTone(groupStats(tools(buildConversation(evs as never))[0].calls));
+  assert.equal(tone([use("a", "Read", { file_path: "/x" }), use("b", "Read", { file_path: "/y" }), res("a", true, "no such file"), res("b")]), "recovered");
+  assert.equal(tone([use("a", "Read", { file_path: "/x" }), use("b", "Bash", { command: "false" }), res("a"), res("b", true, "exit 1")]), "failed");
+  assert.equal(tone([use("a", "Read", { file_path: "/x" }), res("a")]), "ok");
+  assert.equal(tone([use("a", "Read", { file_path: "/x" }), use("b", "Bash", { command: "sleep 9" }), res("a", true, "x")]), "running");
 });
