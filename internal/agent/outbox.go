@@ -105,9 +105,6 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 	} else if e.From == FromView {
 		// V0.37: a press in the live view; the user pressed it.
 		e.Text = "[From the live view] " + e.Text
-	} else if e.From == FromViewTyped {
-		// V0.49: typed while the user looks at the view, not the conversation.
-		e.Text = "[Typed on the live view tab] " + e.Text
 	} else if e.From != "" {
 		// V0.22: tell the receiving agent which thread wrote this.
 		label := e.From
