@@ -13,7 +13,17 @@ const MOCK_IMAGE =
 export function createMockApi(scenario: string): Api {
   const server = createMockServer(scenario, Date.now());
   const mockFiles = new Map<string, string>();
-  const providers = createMockProviders();
+  // V0.119, for screenshots and the layout test: &providers=fail (the read fails), none (no providers), nokey (DeepSeek
+  // has no key); &conn=offline (the host never answers); every command is recorded in window.__fyrCommands.
+  const q = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
+  const providersMode = q.get("providers") ?? "";
+  const offline = q.get("conn") === "offline";
+  const providers = createMockProviders(providersMode);
+  const log: { action: string; threadId?: string; args: Record<string, unknown> }[] = [];
+  (globalThis as { __fyrCommands?: typeof log }).__fyrCommands = log;
+  // V0.111, V0.102: the owner's automation settings, in memory.
+  let deployOn = true;
+  const repos = [{ repo: "meros/fyr", on: false }, { repo: "acme/web", on: true }];
   let watch = initialBuildWatch();
   return {
     mock: true,
@@ -23,7 +33,7 @@ export function createMockApi(scenario: string): Api {
       server.subscribe({ thread: h.thread, event: h.event, project: (p) => h.project?.(p) });
       setTimeout(() => {
         h.state(server.state());
-        h.conn("live");
+        h.conn(offline ? "offline" : "live");
       }, 0);
       // V0.38 perf guard (mock only): a burst of n thread updates and n messages for one thread,
       // one pair every 10 ms, the way a busy agent streams.
@@ -39,20 +49,31 @@ export function createMockApi(scenario: string): Api {
       };
     },
     async command(action, threadId, args) {
+      log.push({ action, threadId, args: JSON.parse(JSON.stringify(args ?? {})) });
+      if (offline) return { ok: false, error: "no connection to the host" };
       if (action.startsWith("provider.")) return providers.command(action, args ?? {});
+      if (action === "host.autoDeploy") return (deployOn = !!args?.on), { ok: true };
+      if (action === "host.autoMerge") {
+        const r = repos.find((x) => x.repo === args?.repo);
+        if (r) r.on = !!args?.on;
+        else repos.push({ repo: String(args?.repo), on: !!args?.on });
+        return { ok: true };
+      }
+      if (action === "host.systemAgents") return { ok: true };
       return server.command(newCommandId(), action, threadId, args ?? {});
     },
     async providers() {
+      if (providersMode === "fail") throw new Error("desk did not answer in 10 s");
       return providers.list();
     },
     async providersFound() {
       return providers.found();
     },
     async autoMerge() {
-      return [{ repo: "meros/fyr", on: false }];
+      return repos.map((r) => ({ ...r }));
     },
     async autoDeploy() {
-      return { on: true };
+      return { on: deployOn };
     },
     async systemAgents() {
       return {

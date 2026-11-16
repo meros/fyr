@@ -1133,7 +1133,7 @@ label.sr{cursor:pointer}
 .set.phone .fld{font-size:13px}
 .set.phone .xb,.set.phone .star{width:44px;height:44px}
 .set.phone .star{font-size:20px;margin:0 -8px}
-.set.phone .lnk{min-height:44px;padding:0 8px;font-size:14px;margin:-14px 0}
+.set.phone .lnk{min-height:44px;padding:0 8px;font-size:14px}
 .set.phone .sw{width:44px;height:44px;border-radius:22px}
 .set.phone .qd{max-width:none}
 .set.phone .qd button{height:44px}
