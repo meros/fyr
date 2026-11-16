@@ -702,14 +702,14 @@ func TestOwnerMergeFromTab(t *testing.T) {
 	h.wait(id, "pr", func(t core.Thread, _ core.Attention) bool { return t.MainPR() != nil })
 	h.wait(id, "done", state(core.Done))
 	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
-		core.PRObserved(t, core.PR{URL: t.MainPR().URL, Repo: t.MainPR().Repo, Number: t.MainPR().Number, State: "OPEN", Checks: "pass"}, now)
+		core.PRObserved(t, core.PR{URL: t.MainPR().URL, Repo: t.MainPR().Repo, Number: t.MainPR().Number, State: "OPEN", Checks: "pass", Head: "abc1234def"}, now)
 		return nil
 	})
 	if r := h.cmd("pr.merge", id, core.Args{"method": "fast"}); r.OK || r.Status != 400 {
 		t.Fatalf("bad method: %+v", r)
 	}
-	r1 := h.cmdID("m1", "pr.merge", id, core.Args{"method": "rebase"})
-	r2 := h.cmdID("m1", "pr.merge", id, core.Args{"method": "rebase"})
+	r1 := h.cmdID("m1", "pr.merge", id, core.Args{"method": "rebase", "head": "abc1234def"})
+	r2 := h.cmdID("m1", "pr.merge", id, core.Args{"method": "rebase", "head": "abc1234def"})
 	if !r1.OK || !r2.OK {
 		t.Fatalf("merge %+v %+v", r1, r2)
 	}

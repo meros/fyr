@@ -521,6 +521,16 @@ function fullFixture(now: number): Fixture {
         ],
         createdAt: iso(600), updatedAt: iso(180),
       },
+      // V0.97: a green PR the host reads as ready to merge; its Merge names the head, and Merge all green takes it.
+      {
+        id: "c_rows", key: "pr:norban/web#4131", kind: "code", title: "Placement rows load in one read", targets: ["repo:github.com/norban/web"],
+        phase: "review", phaseBy: "observed", ready: "Merge",
+        pr: { url: "https://github.com/norban/web/pull/4131", repo: "norban/web", number: 4131, state: "OPEN", checks: "pass", review: "APPROVED", head: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", mergeState: "CLEAN" },
+        conditions: [{ type: "checks", status: "ok", source: "observed", at: iso(30) }],
+        evidence: [{ kind: "pr", url: "https://github.com/norban/web/pull/4131", title: "#4131" }],
+        offers: [{ id: "fyr.merge", label: "Merge", run: "fyr", effect: "pr.merge", primary: true, by: "observed", digest: dg("fyr.merge") }],
+        createdAt: iso(60), updatedAt: iso(30),
+      },
     ];
     // V0.68: a script in a scratch folder, as on the owner's phone: its confirmation shortens the paths.
     const scratch = "/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-norban-claude-long-term-token";

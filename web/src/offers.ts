@@ -81,8 +81,8 @@ export function offerLook(o: Offer, runs: OfferRun[] | undefined, clock: (iso: s
 }
 
 /** The command args of a press: what the owner saw is what runs. */
-export function pressArgs(on: string, o: Offer) {
-  return { on, action: o.id, digest: o.digest };
+export function pressArgs(on: string, o: Offer, head?: string) {
+  return head ? { on, action: o.id, digest: o.digest, head } : { on, action: o.id, digest: o.digest };
 }
 
 /** V0.72: the owner can end every change of the thread that has not ended (a host record on the board is not one). */

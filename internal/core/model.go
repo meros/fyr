@@ -227,6 +227,11 @@ type PR struct {
 	MergeSHA    string       `json:"mergeSha,omitempty"`
 	MergedAt    *time.Time   `json:"mergedAt,omitempty"`
 	Annotations []Annotation `json:"-"`
+	// V0.97: what the Ready rule reads. MergeState is GitHub's
+	// mergeStateStatus (CLEAN, HAS_HOOKS, BLOCKED, BEHIND, ...).
+	Draft      bool   `json:"draft,omitempty"`
+	MergeState string `json:"mergeState,omitempty"`
+	AutoMerge  bool   `json:"autoMerge,omitempty"`
 }
 
 // PRMissing is the state Fyr observes when GitHub answers that the PR or its

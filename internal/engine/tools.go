@@ -27,7 +27,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 		}})
 
 	s.Add(mcp.Tool{Name: "effect_request",
-		Description: "Ask Fyr to perform an effect that needs the user's approval. Returns at once; do not wait or poll. The user approves or declines in Fyr, Fyr runs it, and the result arrives as a later message starting with [Fyr]. Actions: \"pr.merge\" with args {pr: <url>, method: squash|merge|rebase} (use this instead of gh pr merge); \"fyr.deploy\" with args {dir: <Fyr checkout>} builds, tests and switches the running Fyr to that checkout.",
+		Description: "Ask Fyr to perform an effect that needs the user's approval. Returns at once; do not wait or poll. The user approves or declines in Fyr, Fyr runs it, and the result arrives as a later message starting with [Fyr]. Actions: \"pr.merge\" with args {pr: <url>, method: squash|merge|rebase, head?: <commit SHA, default the head Fyr reads now>} (use this instead of gh pr merge; Fyr merges only that head); \"fyr.deploy\" with args {dir: <Fyr checkout>} builds, tests and switches the running Fyr to that checkout.",
 		Schema: obj(map[string]any{
 			"action": map[string]any{"type": "string", "enum": requestable()},
 			"args":   map[string]any{"type": "object"},
