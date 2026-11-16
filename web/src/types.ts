@@ -314,6 +314,8 @@ export interface Change {
   observed?: string;
   /** #35: set on a host record (an observed branch): the threads that show it. It is one change on the board. */
   threads?: string[];
+  /** V0.84: the owner's Not now and a fingerprint of what they saw; the host clears it when the change moves */
+  parked?: { at: string; seen: string };
   createdAt: string;
   updatedAt: string;
 }

@@ -76,6 +76,16 @@ type Change struct {
 	// Threads are the threads that reference a host record; set only where
 	// it is shown (the thread DTO, change_list), never stored.
 	Threads []string `json:"threads,omitempty"`
+	// Parked is the owner's Not now (V0.84): it holds while the change is
+	// as the owner saw it.
+	Parked *Park `json:"parked,omitempty"`
+}
+
+// Park is when the owner pressed Not now on a change, and a fingerprint of
+// what they saw then (V0.84).
+type Park struct {
+	At   time.Time `json:"at"`
+	Seen string    `json:"seen"`
 }
 
 // Revision is one version of a change: a commit, a plan digest, a doc version.
@@ -460,10 +470,10 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 // GitFacts are what the host reads from one checkout: the thread's folder
 // or a change's workspace.
 type GitFacts struct {
-	Repo     string // the origin remote, normalised (github.com/owner/name), or the root folder
-	Path     string // the checkout's root folder
-	Branch   string
-	Base     string
+	Repo   string // the origin remote, normalised (github.com/owner/name), or the root folder
+	Path   string // the checkout's root folder
+	Branch string
+	Base   string
 	// BaseHead is where the base points (origin/main); V0.76 (1): a branch behind it is not merged into it.
 	BaseHead string
 	Ahead    int // commits since the merge base with the base
@@ -484,8 +494,17 @@ func ChangeBlocking(t *Thread) string {
 }
 
 // Blocking is why this change needs the owner, or "": a failed condition
-// (a PR's checks, review or conflict among them) or needs owner.
+// (a PR's checks, review or conflict among them) or needs owner. A change
+// the owner parked does not block while it is as they saw it (V0.84).
 func (c *Change) Blocking() string {
+	if c.ParkHolds() {
+		return ""
+	}
+	return c.blocks()
+}
+
+// blocks is Blocking without the owner's Not now.
+func (c *Change) blocks() string {
 	if c.Phase.Ended() {
 		return ""
 	}

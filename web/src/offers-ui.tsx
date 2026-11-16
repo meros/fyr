@@ -4,7 +4,7 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
-import { canEnd, changeList, endArgs, endChangeAsk, lastRun, offerDetail, offerLook, openConditions, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
+import { canEnd, canPark, changeList, endArgs, endChangeAsk, lastRun, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
 import { press } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
@@ -89,6 +89,7 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
   const conds = openConditions(c);
   const rev = c.revisions?.at(-1);
   const ask = useAsk();
+  const parked = parkedLine(c, hhmm);
   // V0.72: the owner ends any change that has not ended, through Fyr's own confirmation.
   const end = async () => {
     const a = endChangeAsk(c);
@@ -125,7 +126,15 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
           ))}
         </ul>
       )}
-      {c.needs === "owner" && <div class="chneed">Needs you</div>}
+      {c.needs === "owner" && !c.parked && <div class="chneed">Needs you</div>}
+      {parked && (
+        <div class="chparked setd" title="It comes back to Needs you when something on it changes">
+          {parked}
+          <button class="chundo" onClick={() => onRun("change.unpark", parkArgs(c))}>
+            Undo
+          </button>
+        </div>
+      )}
       <div class="chmeta setd">
         {[c.branch && `branch ${c.branch}`, ...(c.targets ?? []), c.group && `group ${c.group}`, rev && `rev ${rev.id.slice(0, 12)}${rev.summary ? `: ${rev.summary}` : ""}`].filter(Boolean).join(" · ")}
       </div>
@@ -143,10 +152,20 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
         </div>
       )}
       <OfferBar on={c.id} offers={c.offers} runs={c.runs} change={c} cwd={cwd} onRun={onRun} />
-      {canEnd(c) && (
-        <button class="chend" onClick={() => void end()}>
-          End this change
-        </button>
+      {(canEnd(c) || canPark(c)) && (
+        <div class="chfoot">
+          {/* V0.84: Not now parks it out of Needs you until something on it changes. */}
+          {canPark(c) && (
+            <button class="chpark" title="Stop asking until something on this change changes" onClick={() => onRun("change.park", parkArgs(c))}>
+              Not now
+            </button>
+          )}
+          {canEnd(c) && (
+            <button class="chend" onClick={() => void end()}>
+              End this change
+            </button>
+          )}
+        </div>
       )}
     </article>
   );

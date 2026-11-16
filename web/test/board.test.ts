@@ -67,3 +67,18 @@ test("SPEC 0.5 V0.78, #54: settled and snoozed threads leave the board, except a
   assert.deepEqual(ids({ settled: true }), ["h1", "o-work", "s-fail", "s-landed", "s-live", "z-owner", "z-review"], "the toggle brings everything back");
   assert.equal(needsCount(ts), 2, "the badge counts the Needs you changes of settled threads too");
 });
+
+test("SPEC 0.5 V0.84, #93: a parked change sits in its phase column, out of Needs you and the count", () => {
+  const parked = { at: at(3), seen: "f1" };
+  assert.equal(columnOf(ch({ phase: "review", needs: "owner", parked })), "review");
+  assert.equal(columnOf(ch({ phase: "landed", conditions: [{ type: "x", status: "fail", source: "agent", at: at(0) }], parked })), "landed");
+  const ts = {
+    t1: thread("t1", "seen", "seen", { title: "Coordinator", changes: [ch({ id: "p1", phase: "working", needs: "owner", parked }), ch({ id: "n1", phase: "review", needs: "owner" })] }),
+  };
+  assert.equal(needsCount(ts), 1, "only the change that still needs the owner counts");
+  const by = Object.fromEntries(columns(boardItems(ts, projects)).map((c) => [c.key, c]));
+  assert.equal(by.needs.count, 1);
+  assert.equal(by.working.count, 1);
+  const away = { s1: thread("s1", "settled", "settled", { title: "Done", changes: [ch({ id: "sp", phase: "review", needs: "owner", parked })] }) };
+  assert.deepEqual(boardItems(away, projects).map((i) => i.change.id), [], "a parked change of a settled thread is history, like the rest of it");
+});

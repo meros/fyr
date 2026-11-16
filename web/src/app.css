@@ -1082,5 +1082,12 @@ button.ptag{padding:0}
 .cfm-why input{height:32px;padding:0 10px;border:1px solid var(--line);border-radius:7px;background:var(--raised);min-width:0}
 .chend{align-self:flex-start;padding:0;font:400 12px/16px var(--ui);color:var(--ink-muted);text-decoration:underline;text-underline-offset:2px}
 .chend:hover{color:var(--ink)}
+/* V0.84: Not now beside End this change; a parked card says so quietly, with Undo. */
+.chfoot{display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px}
+.chpark{padding:0;font:600 12px/16px var(--ui);color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+.chpark:hover{color:var(--signal-ink)}
+.chparked{display:flex;align-items:center;gap:8px;font:400 12px/16px var(--ui)}
+.chundo{padding:0;font:400 12px/16px var(--ui);color:var(--ink-muted);text-decoration:underline;text-underline-offset:2px}
+.chundo:hover{color:var(--ink)}
 .btn.p.danger,.m-bt.p.danger{background:var(--signal-ink);border-color:var(--signal-ink);color:var(--raised)}
 .btn.p.danger kbd{color:var(--raised)}
