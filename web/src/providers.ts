@@ -42,6 +42,8 @@ export interface ProviderDTO {
   /** V0.120: the last successful check (absent: never), why the last one failed, and whether one runs now */
   checkedAt?: string;
   checkError?: string;
+  /** the last check is only Fyr's known list: the CLI named its aliases only (found live 16 Nov) */
+  checkNote?: string;
   checking?: boolean;
 }
 
@@ -220,7 +222,10 @@ export function loginLine(l: LoginDTO): string {
 export function listLine(p: { kind: string; configDir?: string; baseURL?: string; tokenLogin?: boolean; models: unknown[]; catalog?: CatalogModel[] }): string {
   const n = p.models.length;
   const fresh = newCount(p);
-  return `${kindLabel(p.kind)} · ${whereText(p)} · ${n ? `${n} model${n === 1 ? "" : "s"}` : "no models"}${fresh ? ` · ${fresh} new` : ""}`;
+  // V0.120: once checked, how many of what the provider reports are on (found live 16 Nov: "3 models" hid it).
+  const total = modelParts({ models: p.models as ProviderModel[], catalog: p.catalog }).total;
+  const count = p.catalog?.length ? `${n} of ${total} models on` : n ? `${n} model${n === 1 ? "" : "s"}` : "no models";
+  return `${kindLabel(p.kind)} · ${whereText(p)} · ${count}${fresh ? ` · ${fresh} new` : ""}`;
 }
 
 const USAGE: Record<string, string> = {
@@ -377,4 +382,13 @@ export function projectModelOff(pr: Pick<Project, "name" | "profile" | "model">,
   const prof = profiles.find((x) => x.id === pr.profile);
   if (!prof || !pr.model || prof.models.includes(pr.model)) return null;
   return `${shortModel(pr.model)} is turned off in ${prof.name}. New threads here start on ${prof.name}'s default until you pick another.`;
+}
+
+/** The Models group's foot: a failed check's reason (red), else the note that the list is only Fyr's known one, else
+ *  what the group does. Never a quiet fallback (found live 16 Nov). */
+export function modelsFoot(p: Pick<ProviderDTO, "checkedAt" | "checkError" | "checkNote">, now: number): { text: string; error: boolean } {
+  const failed = checkErrorLine(p, now);
+  if (failed) return { text: failed, error: true };
+  if (p.checkNote) return { text: p.checkNote, error: false };
+  return { text: "★ is the default for a new thread. Fyr asks the provider for its models when you open this page and once a day.", error: false };
 }

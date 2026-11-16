@@ -58,6 +58,9 @@ type Provider struct {
 	Catalog    []CatalogModel `json:"catalog,omitempty"`
 	CheckedAt  time.Time      `json:"checkedAt,omitzero"`
 	CheckError string         `json:"checkError,omitempty"`
+	// CheckNote: the last successful check is only Fyr's known list (the
+	// CLI named its aliases only); "" when the provider gave its own list.
+	CheckNote string `json:"checkNote,omitempty"`
 	TriedAt    time.Time      `json:"triedAt,omitzero"`
 }
 

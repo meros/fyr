@@ -41,6 +41,23 @@ export function createMockProviders(mode = "", hostNow: () => number = Date.now)
   ];
   if (mode === "many")
     list.push({ id: "router", name: "OpenRouter", kind: "endpoint", cli: "claude", auth: "api-key", baseURL: "https://openrouter.ai/api", models: ROUTER_MODELS.slice(0, 2), defaultModel: ROUTER_MODELS[0].id, efforts: EFFORTS, quota: "openrouter", status: "ready", keySet: true, keyLast4: "9a8b", threads: 0, catalog: cat(ROUTER_MODELS), checkedAt: ago(2 * 60_000) });
+  // Found live 16 Nov, after the V0.120 deploy: two Claude logins whose check gave only Fyr's known list (4 models,
+  // 3 on), and an OpenRouter endpoint with 380 models and 1 on.
+  if (mode === "live") {
+    const known = [...CLAUDE_MODELS, { id: "claude-fable-5-2", name: "Fable 5.2", efforts: EFFORTS }];
+    const note = "Claude answered with its short names only (its own list was not ready), so this is Fyr's known list. Refresh in a minute.";
+    const router = Array.from({ length: 380 }, (_, i) => {
+      const v = ["anthropic", "openai", "google", "meta-llama", "mistralai", "qwen", "deepseek", "z-ai", "x-ai", "cohere"][i % 10];
+      const id = `${v}/model-${String(i).padStart(3, "0")}${i % 7 === 0 ? "-preview-with-a-long-name" : ""}`;
+      return { id, name: i % 3 ? `${v[0].toUpperCase()}${v.slice(1)}: Model ${i}` : undefined };
+    });
+    list.length = 0;
+    list.push(
+      { id: "claudeAlt", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, threads: 12, canLogin: true, catalog: cat(known), checkedAt: ago(4 * 60_000), checkNote: note },
+      { id: "claudeAcme", name: "Claude (acme)", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#2f6fb0", configDir: "~/.claude-acme", tokenLogin: true, models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: true, keyLast4: "zzzz", threads: 3, canLogin: true, catalog: cat(known), checkedAt: ago(4 * 60_000), checkNote: note },
+      { id: "claudeDeepseek", name: "OpenRouter", kind: "endpoint", cli: "claude", auth: "api-key", baseURL: "https://openrouter.ai/api", models: [{ id: router[0].id, name: router[0].name }], defaultModel: router[0].id, efforts: EFFORTS, quota: "openrouter", status: "ready", keySet: true, keyLast4: "4f2a", threads: 1, catalog: cat(router), checkedAt: ago(4 * 60_000) },
+    );
+  }
   if (mode === "checkfail") {
     const y = new Date(hostNow() - 86_400_000);
     y.setHours(14, 2, 0, 0);

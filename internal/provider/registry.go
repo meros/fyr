@@ -45,7 +45,9 @@ type Registry struct {
 	// V0.120: ListModels asks a provider for its models (nil: its endpoint's
 	// /v1/models, or its CLI); Client makes the endpoint requests (nil: a
 	// plain client); AutoCheck checks a provider the owner just added.
-	ListModels func(ctx context.Context, p Provider, key string) ([]cli.Model, error)
+	ListModels func(ctx context.Context, p Provider, key string) (claudecli.Listing, error)
+	// Logf writes the checks' log lines (nil: log.Printf).
+	Logf func(format string, args ...any)
 	Client     *http.Client
 	AutoCheck  bool
 
@@ -293,6 +295,7 @@ type DTO struct {
 	Catalog    []CatalogDTO `json:"catalog"`
 	CheckedAt  *time.Time   `json:"checkedAt,omitempty"`
 	CheckError string       `json:"checkError,omitempty"`
+	CheckNote  string       `json:"checkNote,omitempty"`
 	Checking   bool         `json:"checking,omitempty"`
 }
 
@@ -321,7 +324,7 @@ func (r *Registry) List() []DTO {
 			t := p.CheckedAt
 			d.CheckedAt = &t
 		}
-		d.CheckError, d.Checking = p.CheckError, r.isChecking(p.ID)
+		d.CheckError, d.CheckNote, d.Checking = p.CheckError, p.CheckNote, r.isChecking(p.ID)
 		out = append(out, d)
 	}
 	return out
