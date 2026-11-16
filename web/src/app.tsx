@@ -53,9 +53,9 @@ import { PUSH_TITLE, rememberOpen, shouldClearNotification, takeOpen, unsupporte
 import { PushDialog, PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
-import { DirectoryContext, ProjectEditor, ProjectPicker, type Directory, type ProjectPatch } from "./project-ui.tsx";
+import { DirectoryContext, ProjectEditor, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, filterByProject, moveToast } from "./projects.ts";
-import { hideQuiet, nextQuietEnd } from "./quiet.ts";
+import { admitThread, hideQuiet, nextQuietEnd, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
@@ -268,11 +268,21 @@ function App() {
     return () => clearTimeout(t);
   }, [store.threads, store.projects, store.clockOffset, quietClock]);
   const filterOn = !!projectFilter && store.projects.some((p) => p.id === projectFilter);
-  // What search may find: the project filter only, quiet threads included (V0.46).
-  const searchable = useMemo(() => filterByProject(store.threads, filterOn ? projectFilter : null, store.projects), [store.threads, store.projects, projectFilter, filterOn]);
+  // V0.114: one unlock of quiet projects on this device for every path (New thread, the filter, search, the gate).
+  const unlock = useQuietUnlock(store.clockOffset);
+  const filtered = useMemo(() => filterByProject(store.threads, filterOn ? projectFilter : null, store.projects), [store.threads, store.projects, projectFilter, filterOn]);
+  // What search and the filter may reach: quiet threads only while the unlock runs (V0.114; V0.46 (4) showed them).
+  const searchable = useMemo(() => reachable(filtered, Date.now() + store.clockOffset, unlock.showUntil), [filtered, unlock.showUntil, quietClock, store.clockOffset]);
+  // V0.114: search hits the lock leaves out, so the search says why and offers the hold (desktop).
+  const quietHits = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return 0;
+    return Object.values(filtered).filter((t) => !searchable[t.id] && matchesQuery(t, q)).length;
+  }, [filtered, searchable, query]);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    // V0.46: a quiet project's threads leave the inbox and its counts, unless the filter picks it or a search is typed.
+    // V0.46: a quiet project's threads leave the inbox and its counts, unless the filter picks it or a search is typed
+    // (and, V0.114, the unlock runs: searchable holds them only then).
     const base = hideQuiet(searchable, filterOn || !!q, Date.now() + store.clockOffset);
     if (!q) return base;
     const out: Record<string, Thread> = {};
@@ -288,7 +298,16 @@ function App() {
     return l;
   }, [expanded, sectionOpen]);
   const order = useMemo(() => flatOrder(sec, limits), [sec, limits]);
-  const viewThread = view ? store.threads[view.id] : undefined;
+  // V0.114: a quiet thread opens only through the hold, whatever path opened it (a link, back and forward, a notice,
+  // a board card, ?open=, a push tap). The thread already open when its window starts stays open (V0.46 (6)).
+  const admittedRef = useRef<string | null>(null);
+  const wantId = phone ? (nav.screen.name === "thread" ? nav.screen.id : null) : (view?.id ?? null);
+  const gate = admitThread(admittedRef.current, wantId, wantId ? store.threads[wantId] : undefined, Date.now() + store.clockOffset, unlock.showUntil);
+  const gatedRef = useRef(false);
+  gatedRef.current = gate.gated;
+  admittedRef.current = gate.admitted;
+  const gatedThread = gate.gated && wantId ? store.threads[wantId] : undefined;
+  const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;
 
   // ---- connection ----
   useEffect(() => {
@@ -392,7 +411,7 @@ function App() {
   };
 
   // Load the open thread's events; after a reconnect fetch what was missed.
-  const openId = view?.id ?? null;
+  const openId = view && !gate.gated ? view.id : null;
 
   // Presence (V0.20): tell the host which thread is shown while visible.
   const beatRef = useRef<BeatState>({ last: "", at: 0 });
@@ -483,7 +502,8 @@ function App() {
     const iv = setInterval(() => {
       const tr = trackerRef.current;
       const t = tr.threadId ? threadsRef.current[tr.threadId] : undefined;
-      if (t && shouldMarkSeen(tr, t, Date.now())) {
+      // V0.114: a thread behind the quiet gate is not on screen, so it is not seen.
+      if (t && !gatedRef.current && shouldMarkSeen(tr, t, Date.now())) {
         setTracker((x) => markSent(x, t));
         // upTo: only what this view showed counts as seen (API v0, SPEC 6.4).
         void api.command("thread.markSeen", t.id, { upTo: t.activityAt });
@@ -1228,11 +1248,12 @@ function App() {
         <PhoneApp
           nav={{ at: nav, go: navGo, replace: navReplace, back: navBack }}
           store={store}
-          inbox={{ sec, searchable }}
+          inbox={{ sec, searchable, all: filtered, unlock }}
           now={now}
           commands={cmds}
           open={{
-            thread: nav.screen.name === "thread" ? store.threads[nav.screen.id] : undefined,
+            thread: nav.screen.name === "thread" && !gate.gated ? store.threads[nav.screen.id] : undefined,
+            gated: gatedThread,
             events: nav.screen.name === "thread" ? store.events[nav.screen.id] : undefined,
             onEarlier: view && earlier[view.id] ? () => loadEarlier(view.id) : undefined,
             onAtEnd: (b) => setTracker((tr) => setAtEnd(tr, b)),
@@ -1359,6 +1380,8 @@ function App() {
           projects={store.projects}
           projectFilter={projectFilter}
           onProjectFilter={setProjectFilter}
+          unlock={unlock}
+          quietHits={quietHits}
           extra={pwaControls}
           onFocusZone={() => setZone("list")}
         />
@@ -1395,6 +1418,10 @@ function App() {
             }}
           />
           </Boundary>
+        ) : gatedThread ? (
+          <section class="th empty-th">
+            <QuietGate project={store.projects.find((x) => x.id === gatedThread.projectId)} now={Date.now() + store.clockOffset} unlock={unlock} what="thread" />
+          </section>
         ) : (
           <section class="th empty-th">
             <div class="sys">{store.loaded ? "Pick a thread with j / k and Enter, or start one with c." : store.conn === "offline" ? "Fyr is not reachable. Retrying…" : "Connecting…"}</div>
