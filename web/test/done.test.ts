@@ -18,7 +18,7 @@ function threads(): Record<string, Thread> {
     ch({ id: "old", title: "done before", phase: "landed", done: { at: at(-30), by: "observed", reason: "landed before v2" } }),
     ch({ id: "gone", title: "abandoned", phase: "abandoned", phaseBy: "owner", done: { at: at(3), by: "owner", reason: "abandoned" } }),
     ch({ id: "stale", title: "stale", phase: "working", touchedAt: at(-80) }),
-    ch({ id: "fail", title: "failing and stale", phase: "review", touchedAt: at(-80), conditions: [{ type: "checks", status: "fail", source: "observed", at: at(-80) }] }),
+    ch({ id: "fail", title: "failing and stale", phase: "review", touchedAt: at(-80), conditions: [{ type: "checks", status: "fail", source: "observed", at: at(-80) }], need: { cause: "failure", text: "CI failed" } }),
   ];
   return { t1: thread("t1", "seen", "seen", { title: "Work", changes }) };
 }

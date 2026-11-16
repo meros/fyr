@@ -10,17 +10,19 @@ const ch = (p: Partial<Change>): Change => ({ id: "c", key: "k", kind: "infra", 
 const projects = [{ id: "p1", name: "ops" }, { id: "p2", name: "web" }] as Project[];
 
 function threads(): Record<string, Thread> {
-  const a = thread("t1", "seen", "seen", { title: "Scale api", projectId: "p1", changes: [ch({ id: "c1", title: "replicas", phase: "landed", conditions: [{ type: "health", status: "fail", source: "agent", at: at(1) }] }), ch({ id: "c2", title: "runbook", phase: "review", updatedAt: at(5) })] });
+  const a = thread("t1", "seen", "seen", { title: "Scale api", projectId: "p1", changes: [ch({ id: "c1", title: "replicas", phase: "landed", conditions: [{ type: "health", status: "fail", source: "agent", at: at(1) }], need: { cause: "failure", text: "health failed" } }), ch({ id: "c2", title: "runbook", phase: "review", updatedAt: at(5) })] });
   const b = thread("t2", "seen", "seen", { title: "Search", projectId: "p2", changes: [ch({ id: "c3", key: "api", title: "api part", phase: "review", group: "search-v2", kind: "code", updatedAt: at(2) }), ch({ id: "c4", title: "web part", phase: "review", group: "search-v2", after: ["api"], updatedAt: at(9) }), ch({ id: "c5", title: "old", phase: "abandoned" })] });
   const c = thread("t3", "archived", "archived", { title: "Archived", archivedAt: at(0), changes: [ch({ id: "c6", title: "hidden" })] });
   return { t1: a, t2: b, t3: c };
 }
 
-test("SPEC 0.5 V0.64: a failing or waiting change is in Needs you, whatever its phase", () => {
-  assert.equal(columnOf(ch({ phase: "landed", conditions: [{ type: "x", status: "fail", source: "agent", at: at(0) }] })), "needs");
-  assert.equal(columnOf(ch({ phase: "review", needs: "owner" })), "needs");
+test("SPEC 0.5 V0.64, V0.101: a change the host puts in Needs you is there, whatever its phase; a failure alone is not", () => {
+  assert.equal(columnOf(ch({ phase: "landed", need: { cause: "failure", text: "x failed" } })), "needs");
+  assert.equal(columnOf(ch({ phase: "review", conditions: [{ type: "x", status: "fail", source: "agent", at: at(0) }] })), "review", "the client never derives it");
+  assert.equal(columnOf(ch({ phase: "review", need: { cause: "fixing", text: "Agent is fixing CI", muted: true } })), "review", "muted");
+  assert.equal(columnOf(ch({ phase: "review", need: { cause: "ask", ask: "d1" } })), "needs");
   assert.equal(columnOf(ch({ phase: "live" })), "live");
-  assert.equal(columnOf(ch({ phase: "reverted", needs: "owner" })), "ended");
+  assert.equal(columnOf(ch({ phase: "reverted", need: { cause: "ask", ask: "d1" } })), "ended");
 });
 
 test("SPEC 0.5 V0.64: every thread but archived ones; filters by project, text and ended", () => {
@@ -46,7 +48,7 @@ test("SPEC 0.5 V0.64: columns by stage; a group stays together, its stack base f
 });
 
 test("#35: an observed branch is one host record, shown in each of its threads and once on the board", () => {
-  const rec = ch({ id: "r1", key: "git:github.com/meros/fyr#v0", kind: "code", title: "v0", phaseBy: "observed", threads: ["t1", "t2"], conditions: [{ type: "x", status: "fail", source: "observed", at: at(0) }] });
+  const rec = ch({ id: "r1", key: "git:github.com/meros/fyr#v0", kind: "code", title: "v0", phaseBy: "observed", threads: ["t1", "t2"], conditions: [{ type: "x", status: "fail", source: "observed", at: at(0) }], need: { cause: "failure", text: "x failed" } });
   const own = ch({ id: "c1", key: "k", title: "same key, another thread" });
   const ts = {
     t1: thread("t1", "seen", "seen", { title: "One", changes: [rec, own] }),
@@ -58,8 +60,8 @@ test("#35: an observed branch is one host record, shown in each of its threads a
 
 test("SPEC 0.5 V0.78, #54: settled and snoozed threads leave the board, except a change that needs the owner", () => {
   const host = ch({ id: "h1", key: "host:fyr@main", kind: "code", title: "main", phase: "landed", threads: ["s1", "o1"] });
-  const s = thread("s1", "settled", "settled", { title: "Done work", changes: [host, ch({ id: "s-landed", phase: "landed" }), ch({ id: "s-live", phase: "live" }), ch({ id: "s-fail", phase: "landed", conditions: [{ type: "review", status: "fail", source: "agent", at: at(1) }] })] });
-  const z = thread("z1", "snoozed", "snoozed", { title: "Later", changes: [ch({ id: "z-review", phase: "review" }), ch({ id: "z-owner", phase: "review", needs: "owner" })] });
+  const s = thread("s1", "settled", "settled", { title: "Done work", changes: [host, ch({ id: "s-landed", phase: "landed" }), ch({ id: "s-live", phase: "live" }), ch({ id: "s-fail", phase: "landed", conditions: [{ type: "review", status: "fail", source: "agent", at: at(1) }], need: { cause: "failure", text: "review failed" } })] });
+  const z = thread("z1", "snoozed", "snoozed", { title: "Later", changes: [ch({ id: "z-review", phase: "review" }), ch({ id: "z-owner", phase: "review", need: { cause: "ask", ask: "d1" } })] });
   const o = thread("o1", "seen", "seen", { title: "Open", changes: [host, ch({ id: "o-work", phase: "working" })] });
   const ts = { s1: s, z1: z, o1: o };
   const ids = (f = {}) => boardItems(ts, projects, f).map((i) => i.change.id).sort();
@@ -71,16 +73,16 @@ test("SPEC 0.5 V0.78, #54: settled and snoozed threads leave the board, except a
 
 test("SPEC 0.5 V0.84, #93: a parked change sits in its phase column, out of Needs you and the count", () => {
   const parked = { at: at(3), seen: "f1" };
-  assert.equal(columnOf(ch({ phase: "review", needs: "owner", parked })), "review");
+  assert.equal(columnOf(ch({ phase: "review", parked })), "review");
   assert.equal(columnOf(ch({ phase: "landed", conditions: [{ type: "x", status: "fail", source: "agent", at: at(0) }], parked })), "landed");
   const ts = {
-    t1: thread("t1", "seen", "seen", { title: "Coordinator", changes: [ch({ id: "p1", phase: "working", needs: "owner", parked }), ch({ id: "n1", phase: "review", needs: "owner" })] }),
+    t1: thread("t1", "seen", "seen", { title: "Coordinator", changes: [ch({ id: "p1", phase: "working", parked }), ch({ id: "n1", phase: "review", need: { cause: "ask", ask: "d1" } })] }),
   };
   assert.equal(needsCount(ts), 1, "only the change that still needs the owner counts");
   const by = Object.fromEntries(columns(boardItems(ts, projects)).map((c) => [c.key, c]));
   assert.equal(by.needs.count, 1);
   assert.equal(by.working.count, 1);
-  const away = { s1: thread("s1", "settled", "settled", { title: "Done", changes: [ch({ id: "sp", phase: "review", needs: "owner", parked })] }) };
+  const away = { s1: thread("s1", "settled", "settled", { title: "Done", changes: [ch({ id: "sp", phase: "review", parked })] }) };
   assert.deepEqual(boardItems(away, projects).map((i) => i.change.id), [], "a parked change of a settled thread is history, like the rest of it");
 });
 

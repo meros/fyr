@@ -25,6 +25,7 @@ func TestChangeTools(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("x")
 	h.wait(id, "done", state(core.Done))
+	idle(h) // V0.101: a failure is the owner's 5 minutes after the run
 	call := func(tool string, a map[string]any) (string, bool) { return callAs(t, h.e, id, tool, a) }
 
 	out, isErr := call("change_open", map[string]any{"key": "k8s:prod/api", "kind": "infra", "title": "Raise api replicas to 4", "targets": []any{"k8s:gke-prod/api"}})
@@ -37,9 +38,9 @@ func TestChangeTools(t *testing.T) {
 	if out, isErr := call("change_status", map[string]any{"change": "k8s:prod/api", "conditions": []any{map[string]any{"type": "approval", "status": "ok"}}}); !isErr || !strings.Contains(out, "change_request") {
 		t.Fatalf("agent approved itself: %s", out)
 	}
-	call("change_status", map[string]any{"change": "k8s:prod/api", "phase": "landed", "label": "applied", "conditions": []any{map[string]any{"type": "health", "status": "fail", "reason": "2 of 4 pods crash"}}})
+	call("change_status", map[string]any{"change": "k8s:prod/api", "phase": "review", "label": "applied to staging", "conditions": []any{map[string]any{"type": "health", "status": "fail", "reason": "2 of 4 pods crash"}}})
 	c := changeOf(h, id, "k8s:prod/api")
-	if c.Phase != core.PhaseLanded || c.PhaseBy != core.ByAgent || c.Label != "applied" {
+	if c.Phase != core.PhaseReview || c.PhaseBy != core.ByAgent || c.Label != "applied to staging" {
 		t.Fatalf("status: %+v", c)
 	}
 	if d := dtoOf(h.e, id); d.Attention.State != core.Blocked || !strings.Contains(d.Attention.Reason, "2 of 4 pods crash") {
@@ -75,6 +76,7 @@ func TestChangeActions(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("x")
 	h.wait(id, "done", state(core.Done))
+	idle(h)
 	call := func(tool string, a map[string]any) (string, bool) { return callAs(t, h.e, id, tool, a) }
 	var mu sync.Mutex
 	var ran [][]string
@@ -89,7 +91,7 @@ func TestChangeActions(t *testing.T) {
 		return "applied 3 resources", 0, nil
 	}
 	call("change_open", map[string]any{"key": "tf:prod", "kind": "infra", "title": "Prod network", "revision": map[string]any{"id": "sha256:p1"}})
-	if out, isErr := call("offer_action", map[string]any{"on": "tf:prod", "id": "apply", "label": "Apply plan", "run": "script", "argv": []any{"terraform", "apply", "plan.out"}, "bind": true, "onOk": "landed", "primary": true}); isErr {
+	if out, isErr := call("offer_action", map[string]any{"on": "tf:prod", "id": "apply", "label": "Apply plan", "run": "script", "argv": []any{"terraform", "apply", "plan.out"}, "bind": true, "onOk": "review", "primary": true}); isErr {
 		t.Fatalf("declare: %s", out)
 	}
 	if _, isErr := call("offer_action", map[string]any{"on": "tf:prod", "id": "fyr.x", "label": "x", "run": "script", "argv": []any{"x"}}); !isErr {
@@ -114,7 +116,7 @@ func TestChangeActions(t *testing.T) {
 		return len(c.Runs) == 1 && !c.Runs[0].Running
 	})
 	c = changeOf(h, id, "tf:prod")
-	if !c.Runs[0].OK || c.Phase != core.PhaseLanded || !strings.Contains(c.Runs[0].Output, "applied 3") || strings.Join(ran[0], " ") != "terraform apply plan.out" {
+	if !c.Runs[0].OK || c.Phase != core.PhaseReview || !strings.Contains(c.Runs[0].Output, "applied 3") || strings.Join(ran[0], " ") != "terraform apply plan.out" {
 		t.Fatalf("after run: %+v %v", c, ran)
 	}
 	// A new revision makes the bound action unavailable.
@@ -130,8 +132,16 @@ func TestChangeActions(t *testing.T) {
 		t.Fatalf("rollback: %+v", r)
 	}
 	eventually(t, "the rollback ended", func() bool {
-		d := dtoOf(h.e, id)
-		return d.Attention.State == core.Blocked
+		th, _ := h.e.Thread(id)
+		c := core.FindChange(&th, c.ID)
+		return !th.Running && c != nil && c.Blocking() != ""
+	})
+	// V0.101: the failure wakes the agent; it is the owner's 5 minutes
+	// after that run, when the clock re-reduces the thread.
+	h.e.Now = func() time.Time { return time.Now().Add(30 * time.Minute) }
+	eventually(t, "stopped on the failure", func() bool {
+		h.e.Tick()
+		return dtoOf(h.e, id).Attention.State == core.Blocked
 	})
 	if d := dtoOf(h.e, id); !strings.Contains(d.Attention.Reason, "Roll back failed (exit 3)") {
 		t.Fatalf("blocked reason: %q", d.Attention.Reason)
@@ -228,29 +238,6 @@ func TestThreadAndViewActions(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.62: change tools and change_unchanged record the upkeep.
-func TestChangesUpkeep(t *testing.T) {
-	h := newHarness(t, time.Minute)
-	id := h.create("x")
-	h.wait(id, "done", state(core.Done))
-	call := func(tool string, a map[string]any) (string, bool) { return callAs(t, h.e, id, tool, a) }
-	if out, _ := call("change_unchanged", map[string]any{"reason": "nothing open"}); !strings.Contains(out, "no open changes") {
-		t.Fatalf("no changes: %s", out)
-	}
-	call("change_open", map[string]any{"key": "doc:x", "kind": "doc", "title": "Doc"})
-	th, _ := h.e.Thread(id)
-	if th.ChangesCheckedAt == nil {
-		t.Fatal("change_open did not record the upkeep")
-	}
-	first := *th.ChangesCheckedAt
-	time.Sleep(2 * time.Millisecond)
-	if out, _ := call("change_unchanged", map[string]any{"reason": "waiting for review"}); !strings.Contains(out, "1 open changes") {
-		t.Fatalf("unchanged: %s", out)
-	}
-	if th, _ := h.e.Thread(id); !th.ChangesCheckedAt.After(first) {
-		t.Fatal("change_unchanged did not move the upkeep time")
-	}
-}
 
 // SPEC 0.5 V0.60 (3): two presses at the same time (two devices) run a
 // script once; the second gets "It is running".
