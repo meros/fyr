@@ -1455,6 +1455,7 @@ function App() {
               threads={store.threads}
               projects={store.projects}
               onRun={(id, a, args) => void cmds.run(a, [id], args)}
+              visit={api.boardVisit ? () => api.boardVisit!() : undefined}
               onOpenThread={(id) => {
                 setDialog(null);
                 openThread(id, "open");

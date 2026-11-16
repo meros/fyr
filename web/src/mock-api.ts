@@ -111,6 +111,10 @@ export function createMockApi(scenario: string): Api {
     async load() {
       return mockLoad();
     },
+    async boardVisit() {
+      // V0.98 (3): the mock's last visit was a day ago, so its done changes show under Finished.
+      return new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    },
     async commands() {
       return MOCK_COMMANDS;
     },

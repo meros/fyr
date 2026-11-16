@@ -1,7 +1,7 @@
 // The Changes board (SPEC 0.5 V0.64): every change of every thread on one screen, grouped by stage. Pure.
 
 import type { Change, Project, Thread } from "./types.ts";
-import { changeList, ended, needsOwner } from "./offers.ts";
+import { changeList, ended, isDone, needsOwner } from "./offers.ts";
 import { projectOf } from "./projects.ts";
 
 export type Column = "needs" | "working" | "review" | "landed" | "live" | "ended";
@@ -45,8 +45,13 @@ export function columnOf(c: Change): Column {
   return c.phase as Column;
 }
 
-/** Every change of every thread that is not archived, filtered. */
+/** Every change of every thread that is not archived, filtered. V0.98 (2): a done change is not on the board, unless
+ *  it still needs the owner, or "Show ended" asks for the ended ones. */
 export function boardItems(threads: Record<string, Thread>, projects: Project[], f: BoardFilter = {}): BoardItem[] {
+  return collect(threads, projects, f, (c) => (f.ended && ended(c.phase)) || (!isDone(c) && !ended(c.phase)) || columnOf(c) === "needs");
+}
+
+function collect(threads: Record<string, Thread>, projects: Project[], f: BoardFilter, keep: (c: Change) => boolean): BoardItem[] {
   const q = (f.q ?? "").trim().toLowerCase();
   const out: BoardItem[] = [];
   for (const t of Object.values(threads)) {
@@ -55,7 +60,7 @@ export function boardItems(threads: Record<string, Thread>, projects: Project[],
     if (f.projectId && project?.id !== f.projectId) continue;
     const away = !f.settled && putAway(t);
     for (const c of changeList(t)) {
-      if (!f.ended && ended(c.phase)) continue;
+      if (!keep(c)) continue;
       if (away && columnOf(c) !== "needs") continue; // before once(): a host record shows under an open thread
       if (q && ![c.title, c.key, c.group ?? "", ...(c.targets ?? []), t.title].join(" ").toLowerCase().includes(q)) continue;
       out.push({ change: c, thread: t, project });
@@ -82,9 +87,11 @@ function once<T extends { change: Change; thread: Thread }>(items: T[]): T[] {
  *  order it builds (base first), the rest newest first. */
 export type Entry = { kind: "one"; item: BoardItem } | { kind: "group"; group: string; items: BoardItem[] };
 
-export function columns(items: BoardItem[], showEnded = false): { key: Column; label: string; entries: Entry[]; count: number }[] {
+export function columns(items: BoardItem[], showEnded = false, now?: number): { key: Column; label: string; entries: Entry[]; count: number }[] {
+  // V0.98 (4): with the time, an untouched change is in its own group, not in a column.
+  const shown = now === undefined ? items : items.filter((i) => !untouched(i.change, now));
   return COLUMNS.filter((c) => c.key !== "ended" || showEnded).map((col) => {
-    const mine = items.filter((i) => columnOf(i.change) === col.key).sort((a, b) => b.change.updatedAt.localeCompare(a.change.updatedAt));
+    const mine = shown.filter((i) => columnOf(i.change) === col.key).sort((a, b) => b.change.updatedAt.localeCompare(a.change.updatedAt));
     const groups = new Map<string, BoardItem[]>();
     const entries: Entry[] = [];
     for (const i of mine) {
@@ -102,6 +109,29 @@ export function columns(items: BoardItem[], showEnded = false): { key: Column; l
     for (const e of entries) if (e.kind === "group") e.items.splice(0, e.items.length, ...stackOrder(e.items));
     return { key: col.key, label: col.label, entries, count: mine.length };
   });
+}
+
+/** V0.98 (4): an open change goes to "Untouched for 3 days" after 3 days without a push, PR event, report or owner
+ *  action. One that needs the owner stays in Needs you. */
+export const UNTOUCHED_MS = 3 * 24 * 3600 * 1000;
+
+export function untouched(c: Change, now: number): boolean {
+  if (isDone(c) || ended(c.phase) || columnOf(c) === "needs") return false;
+  const at = Date.parse(c.touchedAt ?? c.updatedAt);
+  return !Number.isNaN(at) && now - at >= UNTOUCHED_MS;
+}
+
+/** V0.98 (4): the board's Untouched group, the longest untouched first. */
+export function untouchedItems(items: BoardItem[], now: number): BoardItem[] {
+  const at = (i: BoardItem) => i.change.touchedAt ?? i.change.updatedAt;
+  return items.filter((i) => untouched(i.change, now)).sort((a, b) => Date.parse(at(a)) - Date.parse(at(b)));
+}
+
+/** V0.98 (3): Finished since your last visit: the changes done after seenAt (every done one before a first visit),
+ *  newest first, with the board's project and text filter. */
+export function finishedSince(threads: Record<string, Thread>, projects: Project[], seenAt: string | null, f: BoardFilter = {}): BoardItem[] {
+  const items = collect(threads, projects, { ...f, settled: true }, (c) => isDone(c) && (!seenAt || Date.parse(c.done!.at) > Date.parse(seenAt)));
+  return items.sort((a, b) => Date.parse(b.change.done!.at) - Date.parse(a.change.done!.at));
 }
 
 /** Base first: a change comes after the changes it builds on (`after`, by id or key). */

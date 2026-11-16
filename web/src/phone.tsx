@@ -241,6 +241,7 @@ export function PhoneApp(p: PhoneProps) {
   const s = p.nav.at.screen;
   const sheetThread = p.nav.at.sheet?.ids?.length === 1 ? p.store.threads[p.nav.at.sheet.ids[0]] : undefined;
   const bottomBar = !p.list.selecting && (s.name === "inbox" || s.name === "search");
+  const api = useApi(); // V0.98 (3): the board visit
   return (
     <div class={`m-app${bottomBar ? " has-bar" : ""}`}>
       {s.name === "inbox" && <MInbox {...p} />}
@@ -258,7 +259,7 @@ export function PhoneApp(p: PhoneProps) {
         <div class="m-screen m-changes">
           <MHeader onBack={p.nav.back} title="Changes" />
           <div class="m-nbody">
-            <ChangesBoard phone threads={p.store.threads} projects={p.store.projects} onRun={(id, a, args) => void p.commands.run(a, [id], args)} onOpenThread={(id) => p.nav.go({ screen: { name: "thread", id }, sheet: null })} />
+            <ChangesBoard phone threads={p.store.threads} projects={p.store.projects} visit={api.boardVisit ? () => api.boardVisit!() : undefined} onRun={(id, a, args) => void p.commands.run(a, [id], args)} onOpenThread={(id) => p.nav.go({ screen: { name: "thread", id }, sheet: null })} />
           </div>
         </div>
       )}
@@ -782,7 +783,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
             </span>
           )}
           {(() => {
-            const pr = headerPr(t); // V0.73 (2): no chip for an ended main PR
+            const pr = headerPr(t); // V0.98 (6): the newest open change's PR, never a done one
             if (!pr) return null;
             const l = prChip(pr);
             return <span class={`m-chip prc ${l.cls}`} title={l.title}>{l.text}</span>;

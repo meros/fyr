@@ -4,7 +4,7 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
-import { canEnd, canPark, changeList, endArgs, endChangeAsk, lastRun, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
+import { canDone, canEnd, canPark, doneArgs, doneText, openAndDone, endArgs, endChangeAsk, lastRun, offerDetail, offerLook, openConditions, parkArgs, parkedLine, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
 import { press } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
@@ -69,15 +69,29 @@ export function useViewAction(onRun: Run, cwd?: string) {
 
 const KIND: Record<string, string> = { code: "⌥", infra: "☁", host: "▣", data: "⛁", doc: "▤", design: "◇", other: "•" };
 
-/** The Changes tab's list (V0.59 (8)): every change, newest first, above the branch diff. */
+/** The Changes tab's list (V0.59 (8)): the open changes, newest first, above the branch diff; V0.98 (3): then the
+ *  done ones, folded under "Done here", each with why it finished. */
 export function ChangeList({ t, onRun }: { t: Thread; onRun: Run }) {
-  const list = changeList(t);
-  if (!list.length) return null;
+  const { open, done } = openAndDone(t);
+  if (!open.length && !done.length) return null;
   return (
     <section class="chl" aria-label="Changes">
-      {list.map((c) => (
+      {open.map((c) => (
         <ChangeCard key={c.id} c={c} cwd={t.cwd} onRun={onRun} />
       ))}
+      {done.length > 0 && (
+        <details class="chdone">
+          <summary>
+            Done here <span class="bdn">{done.length}</span>
+          </summary>
+          {done.map((c) => (
+            <div key={c.id} class="chdrow" title={c.key}>
+              <span class="ell">{c.title}</span>
+              <span class="ok">{doneText(c, hhmm)}</span>
+            </div>
+          ))}
+        </details>
+      )}
     </section>
   );
 }
@@ -152,12 +166,19 @@ export function ChangeCard({ c, cwd, onRun, from }: { c: Change; cwd?: string; o
         </div>
       )}
       <OfferBar on={c.id} offers={c.offers} runs={c.runs} change={c} cwd={cwd} onRun={onRun} />
-      {(canEnd(c) || canPark(c)) && (
+      {c.done && <div class="chdonel setd">{doneText(c, hhmm)}</div>}
+      {(canEnd(c) || canPark(c) || canDone(c)) && (
         <div class="chfoot">
           {/* V0.84: Not now parks it out of Needs you until something on it changes. */}
           {canPark(c) && (
             <button class="chpark" title="Stop asking until something on this change changes" onClick={() => onRun("change.park", parkArgs(c))}>
               Not now
+            </button>
+          )}
+          {/* V0.98 (4): the owner's Done; the host sends it to a host record when the card is one. */}
+          {canDone(c) && (
+            <button class="chpark" title="Mark this change done: it leaves the board" onClick={() => onRun("change.done", doneArgs(c))}>
+              Done
             </button>
           )}
           {canEnd(c) && (
