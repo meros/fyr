@@ -5,6 +5,8 @@
 package claudecli
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/hostfs"
+	"github.com/meros/fyr/internal/proc"
 	"github.com/meros/fyr/internal/runner"
 )
 
@@ -132,6 +135,54 @@ func (a Adapter) Start(l cli.Launch, h cli.Handlers) (cli.Session, error) {
 	}
 	c.OnCanUseTool, c.OnCancel, c.OnHook = h.CanUseTool, h.Cancel, h.Hook
 	return session{c}, nil
+}
+
+// PrintArgs are the flags of a one-shot print run (V0.108): no tools, no
+// MCP servers, no settings files and no saved session, and system replaces
+// Claude Code's system prompt, so the call reads little more than the prompt.
+func PrintArgs(model, system string) []string {
+	args := []string{"-p"}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	return append(args, "--system-prompt", system, "--tools", "", "--strict-mcp-config", "--no-session-persistence",
+		"--setting-sources", "", "--output-format", "text")
+}
+
+// Print runs `claude -p` once with the launch's auth and endpoint, in
+// l.Dir, and returns its answer.
+func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string) (string, error) {
+	env, err := a.Env(l)
+	if err != nil {
+		return "", err
+	}
+	bin := l.Binary
+	if bin == "" {
+		bin = "claude"
+	}
+	cmd := proc.Command(ctx, bin, PrintArgs(l.Model, system)...)
+	cmd.Dir = l.Dir
+	cmd.Env = append(append(os.Environ(), "CLAUDE_CODE_ENTRYPOINT=sdk-go"), env...)
+	cmd.Stdin = strings.NewReader(prompt)
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("no answer in time")
+		}
+		msg := strings.TrimSpace(errb.String())
+		if msg == "" {
+			msg = strings.TrimSpace(out.String())
+		}
+		if r := []rune(msg); len(r) > 300 {
+			msg = "…" + string(r[len(r)-300:])
+		}
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", fmt.Errorf("claude: %s", msg)
+	}
+	return strings.TrimSpace(out.String()), nil
 }
 
 // Reattach speaks to a process the runner kept across a restart (V0.90).
