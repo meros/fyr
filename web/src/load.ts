@@ -55,6 +55,24 @@ export function railLoad(h: HostLoad): LoadPart {
   return { text: l >= 10 ? String(Math.round(l)) : one(l), hot: l > h.cores || (h.cpuPressure ?? 0) >= HOT_PRESSURE };
 }
 
+/** V0.99: the rail ring's level. calm under 70 % of the cores, warm up to the cores, hot as railLoad. */
+export type LoadLevel = "calm" | "warm" | "hot";
+export const WARM_SHARE = 0.7;
+
+export interface RailMeter {
+  text: string;
+  /** the 1-minute load over the cores, 0 to 1; a full ring past the cores */
+  share: number;
+  level: LoadLevel;
+}
+
+/** The rail's ring: the figure of railLoad, the share of the cores it fills and its colour level. */
+export function railMeter(h: HostLoad): RailMeter {
+  const f = railLoad(h);
+  const share = h.cores > 0 ? Math.min(1, Math.max(0, h.load[0] / h.cores)) : 1;
+  return { text: f.text, share, level: f.hot ? "hot" : share >= WARM_SHARE ? "warm" : "calm" };
+}
+
 /** The rail's tooltip lines. */
 export function loadDetail(h: HostLoad): string[] {
   const out = [`${h.host}: load ${h.load.map(one).join(" · ")} (1, 5, 15 min) on ${h.cores} cores`];
@@ -98,6 +116,22 @@ export function railSlots(h: HostLoad): LoadPart | null {
   const s = h.slots;
   if (!s) return null;
   return { text: `${s.held.length}/${s.n} slots`, hot: s.waiting.length > 0 };
+}
+
+/** Above this many slots the rail writes "3/8" in place of the pips. */
+export const MAX_PIPS = 6;
+
+export interface RailPips {
+  n: number;
+  held: number;
+  waiting: number;
+}
+
+/** The rail's slot pips (V0.99): n pips, the first `held` filled; null without slots. */
+export function railPips(h: HostLoad): RailPips | null {
+  const s = h.slots;
+  if (!s) return null;
+  return { n: s.n, held: Math.min(s.held.length, s.n), waiting: s.waiting.length };
 }
 
 const withArticle = (kind: string) => (/^[aeiou]/.test(kind) ? `an ${kind}` : `a ${kind}`);
