@@ -49,7 +49,7 @@ func openHost(cfg config, data, t3DB string, kept map[string]bool) *host {
 	// as providers; then they come from Settings → Providers and the
 	// config's or T3's profiles only feed detection.
 	reg := &provider.Registry{DB: st, Secrets: secrets.Files(filepath.Join(data, "secrets")), Home: home(),
-		PermissionMode: cfg.PermissionMode, Getenv: os.Getenv, InUse: eng.ThreadsOn}
+		PermissionMode: cfg.PermissionMode, Getenv: os.Getenv, InUse: eng.ThreadsOn, AutoCheck: true}
 	detectHost := provider.Host{Home: home(), Profiles: cfg.Profiles, Getenv: os.Getenv, LookPath: exec.LookPath}
 	reg.Detect = func() []provider.Found { return provider.Detect(detectHost) }
 	if err := reg.Load(); err != nil {

@@ -1,4 +1,5 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
+import { orderProjects } from "./projects.ts";
 import type { HostInfo } from "./hosts.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { decodeProject, decodeState, decodeThread } from "./decode.ts";
@@ -29,7 +30,10 @@ export interface Store {
   threads: Record<string, Thread>;
   actions: ActionInfo[];
   profiles: Profile[];
+  /** in the owner's order (V0.121: orderProjects) */
   projects: Project[];
+  /** V0.121: the owner's project order; null until set (by name then) */
+  projectOrder: string[] | null;
   /** V0.39 */
   deploy: DeployProgress | null;
   /** timeline events per thread, oldest first; only for threads the client has loaded */
@@ -51,6 +55,7 @@ export function initialStore(): Store {
     actions: [],
     profiles: [],
     projects: [],
+    projectOrder: null,
     events: {},
     resumeFrom: {},
     deploy: null,
@@ -100,14 +105,15 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     threads,
     actions: dto.actions ?? [],
     profiles: dto.profiles ?? [],
-    projects,
+    projects: orderProjects(projects, dto.projectOrder ?? null),
+    projectOrder: dto.projectOrder ?? null,
     deploy: dto.deploy ?? null,
   };
 }
 
 /** The state as the device stores it (V0.38); applySnapshot reads it back on an offline start. */
 export function stateForCache(s: Store, now: string): StateDTO {
-  return { now, user: s.user, host: s.host, hosts: s.hosts, deploy: s.deploy, threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: s.projects };
+  return { now, user: s.user, host: s.host, hosts: s.hosts, deploy: s.deploy, threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: s.projects, ...(s.projectOrder ? { projectOrder: s.projectOrder } : {}) };
 }
 
 export function upsertThread(s: Store, raw: ThreadDTO): Store {
@@ -361,7 +367,12 @@ export function upsertProject(s: Store, raw: Project): Store {
   const i = s.projects.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
   if (i >= 0 && !newerProject(s.projects[i], p)) return s;
   const projects = i >= 0 ? s.projects.map((x, j) => (j === i ? p : x)) : [...s.projects, p];
-  return { ...s, projects };
+  return { ...s, projects: orderProjects(projects, s.projectOrder) };
+}
+
+/** V0.121: the owner's project order changed (the front's `projectOrder` event, or this device's own move). */
+export function setProjectOrder(s: Store, ids: string[]): Store {
+  return { ...s, projectOrder: ids, projects: orderProjects(s.projects, ids) };
 }
 
 /** RFC 7396 JSON Merge Patch: objects merge key by key, null deletes, anything else replaces. */

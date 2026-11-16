@@ -44,11 +44,11 @@ test("#41: an old key written after the record wins; broken JSON and blocked sto
   assert.deepEqual(loadRemembered(out), { projectId: "", profile: "work", model: "sonnet" });
 });
 
-test("#41: the start project is the filter's, else the remembered one, else the picker's first; none while projects load", () => {
+test("#41, V0.121: the start project is the filter's, else the remembered one, else the first in the owner's order; none while projects load", () => {
   assert.equal(settleForm(initialForm(), { projects: [], profiles }, null, {}).projectId, null, "projects still loading");
   assert.equal(settleForm(initialForm(), ctx, "p_a", { projectId: "p_b" }).projectId, "p_a");
   assert.equal(settleForm(initialForm(), ctx, null, { projectId: "p_b" }).projectId, "p_b");
-  assert.equal(settleForm(initialForm(), ctx, "gone", { projectId: "gone" }).projectId, "p_b", "picker order: most recent first");
+  assert.equal(settleForm(initialForm(), ctx, "gone", { projectId: "gone" }).projectId, "p_a", "V0.121: the first in the owner's order");
 });
 
 test("#41: the profile is the project's default, else the remembered one, else the first that can run", () => {

@@ -27,6 +27,7 @@ import {
   stateForCache,
   upsertThread,
   upsertProject,
+  setProjectOrder,
   setDeploy,
   UNDO_MS,
   type SectionKey,
@@ -55,7 +56,7 @@ import { PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, filterByProject, moveToast } from "./projects.ts";
+import { FILTER_KEY, filterByProject, moveToast, orderProjects } from "./projects.ts";
 import { admitThread, hideQuiet, nextQuietEnd, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
@@ -373,6 +374,7 @@ function App() {
       },
       event: (e) => batch((s) => liveEvent(s, e)),
       project: (p) => batch((s) => upsertProject(s, p)),
+      projectOrder: (ids) => batch((s) => setProjectOrder(s, ids)),
       deploy: (p) => batch((s) => setDeploy(s, p)),
       conn: (c) => batch((s) => setConn(s, c)),
     });
@@ -795,6 +797,15 @@ function App() {
       if (!e) cmds.notify(`Deleted ${name}`);
       return e;
     },
+    /** V0.121: the owner's one project order. It shows at once on this device; a refusal puts the last order back. */
+    order: async (ids: string[]): Promise<string | null> => {
+      const before = store.projectOrder;
+      setStore((s) => setProjectOrder(s, ids));
+      const r = await api.command("front.projectOrder", undefined, { ids });
+      if (r.ok) return null;
+      setStore((s) => (before ? setProjectOrder(s, before) : { ...s, projectOrder: null, projects: orderProjects(s.projects, null) }));
+      return r.error ?? "That did not work";
+    },
     /** File threads into a project; null: No project. Shows the result or the error as a toast. */
     move: async (ids: string[], projectId: string | null): Promise<string | null> => {
       const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId: projectId ?? "" }, id)))).filter(Boolean);
@@ -1168,6 +1179,7 @@ function App() {
       header={phoneHeader}
       offline={store.conn === "offline"}
       onChanged={reloadProfiles}
+      clockKnown={store.loaded}
       device={settingsDevice}
       projects={store.projects}
       profiles={store.profiles}
@@ -1177,6 +1189,7 @@ function App() {
         setFolder: projectActions.setFolder,
         delete: projectActions.delete,
         create: async (name, folder) => (await projectActions.create(name, folder)).error,
+        order: projectActions.order,
       }}
     />
   );

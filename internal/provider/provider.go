@@ -52,6 +52,13 @@ type Provider struct {
 	// Imported: where an imported provider came from ("" when made here).
 	Imported  string    `json:"imported,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
+	// V0.120: what the provider reports (Models is the part that is on),
+	// when a check last succeeded, why the last one failed ("" when it did
+	// not), and when one last ran (the daily check's clock).
+	Catalog    []CatalogModel `json:"catalog,omitempty"`
+	CheckedAt  time.Time      `json:"checkedAt,omitzero"`
+	CheckError string         `json:"checkError,omitempty"`
+	TriedAt    time.Time      `json:"triedAt,omitzero"`
 }
 
 // Kind is the UI's word for the auth.
@@ -161,9 +168,10 @@ func (p Provider) Profile(key func() (string, error), permissionMode string) Pro
 		ModelCaps: p.Models, DefaultEffort: p.DefaultEffort}
 }
 
-// modelsFor gives known claude models their effort levels; other ids get
+// modelsFor gives each id its name and effort levels: the catalog's
+// (V0.120), else a known claude model's on a Claude login; other ids get
 // none.
-func modelsFor(ids []string, endpoint bool) []cli.Model {
+func modelsFor(ids []string, endpoint bool, catalog ...CatalogModel) []cli.Model {
 	out := []cli.Model{}
 	seen := map[string]bool{}
 	for _, id := range ids {
@@ -173,7 +181,9 @@ func modelsFor(ids []string, endpoint bool) []cli.Model {
 		}
 		seen[id] = true
 		m := cli.Model{ID: id}
-		if !endpoint {
+		if c, ok := (Provider{Catalog: catalog}).catalogModel(id); ok && !c.Manual {
+			m = cli.Model{ID: id, Name: c.Name, Efforts: c.Efforts}
+		} else if !endpoint {
 			for _, k := range claudecli.Models {
 				if k.ID == id {
 					m = k
