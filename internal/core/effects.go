@@ -113,8 +113,7 @@ func answerEffect(t *Thread, res *Result, req EffectReq, allow bool, now time.Ti
 		if a := ChangeAsk(ask); a == AskReview || a == AskApprove {
 			id, _ := req.Args["change"].(string)
 			if c := FindChange(t, id); c != nil {
-				no := ""
-				UpdateChange(t, c, ChangeUpdate{Conditions: []Condition{{Type: CondApproval, Status: CondOK, Reason: "the owner said yes"}}, Needs: &no}, ByOwner, now)
+				UpdateChange(t, c, ChangeUpdate{Conditions: []Condition{{Type: CondApproval, Status: CondOK, Reason: "the owner said yes"}}}, ByOwner, now)
 			}
 		}
 		report(res, req, true, true, fmt.Sprintf("The owner said yes to %s %q.", ask, title))

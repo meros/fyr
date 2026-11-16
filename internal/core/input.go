@@ -224,6 +224,11 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	res.Effects = append(res.Effects, more.Effects...)
 	// V0.98: touchedAt and done, after the rules (a deploy watch's end).
 	markDone(before, t, now)
+	// V0.101: once more after the done marks (an ask on a change this
+	// reduce finished is void); the 5-minute rule of Stopped on a failure is
+	// read at each reduce (the clock's included).
+	res.Events = append(res.Events, voidAsks(t)...)
+	t.Stopped = stoppedNow(t, now)
 	// The agent feed (#47): the notice rules project this reduce.
 	res.Effects = append(res.Effects, project(Reduced{Before: before, After: t, In: in, Events: res.Events}, now)...)
 	return t, v, res, nil

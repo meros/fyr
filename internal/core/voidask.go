@@ -37,9 +37,16 @@ func askVoid(t *Thread, d Decision) string {
 		return ""
 	}
 	a := d.Effect.Args
+	// V0.101: an archived thread's asks are void, and so is an ask on a done
+	// change (a deploy ask follows the merge and stays).
+	if t.ArchivedAt != nil {
+		return "the thread is archived"
+	}
 	if id, _ := a["change"].(string); id != "" {
 		if c := FindChange(t, id); c != nil && c.Phase.Ended() {
 			return fmt.Sprintf("%q is %s", c.Title, c.Phase)
+		} else if c != nil && c.IsDone() && d.Effect.Action != FyrDeploy {
+			return fmt.Sprintf("%q is done", c.Title)
 		}
 	}
 	if fx := FyrEffects[d.Effect.Action]; fx != nil && fx.OnPR {

@@ -73,7 +73,7 @@ type ChangeObservedArgs struct {
 
 // IsRecordKind reports an Input kind of a host change record.
 func IsRecordKind(kind string) bool {
-	return kind == KindGitObserved || kind == KindGitEnded || kind == KindRecordDone
+	return kind == KindGitObserved || kind == KindGitEnded || kind == KindRecordDone || kind == KindRecordEnd
 }
 
 // ObservedKey is the key of the record of repo and branch.
@@ -167,7 +167,7 @@ func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change,
 	// V0.98 (4): the owner's Done is the one Input a record takes from
 	// anyone but an observer.
 	want := ByObserved
-	if in.Kind == KindRecordDone {
+	if in.Kind == KindRecordDone || in.Kind == KindRecordEnd { // V0.101: and Abandon
 		want = ByOwner
 	}
 	if in.Source.Principal() != want {
@@ -249,6 +249,12 @@ func ReduceRecord(rs []*Change, in Input, now time.Time) (before, after *Change,
 			return nil, nil, nil, err
 		}
 		return before, c, []Event{event(c, "done")}, nil
+	case KindRecordEnd:
+		before, c, err := recordEnd(rs, in, now)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return before, c, []Event{event(c, "end")}, nil
 	}
 	return nil, nil, nil, reject(RejectBadArgs, "unknown action %s", in.Kind)
 }
@@ -443,7 +449,7 @@ func MigrateObserved(t *Thread, rs map[string]*Change) bool {
 		}
 		changed = true
 		rec := cloneChange(&c)
-		rec.Aliases, rec.PR, rec.Actions, rec.Evidence, rec.Label, rec.Group, rec.After, rec.Needs, rec.Dismissed, rec.Annotations = nil, nil, Actions{}, nil, "", "", nil, "", false, nil
+		rec.Aliases, rec.PR, rec.Actions, rec.Evidence, rec.Label, rec.Group, rec.After, rec.Dismissed, rec.Annotations = nil, nil, Actions{}, nil, "", "", nil, false, nil
 		repo := RecordRepo(rec)
 		if rec.Workspace == nil {
 			rec.Workspace = &Workspace{Repo: repo, Path: t.Cwd, Branch: rec.Branch}
@@ -455,7 +461,7 @@ func MigrateObserved(t *Thread, rs map[string]*Change) bool {
 			t.Refs = append(t.Refs, Ref{ID: rec.ID, Repo: repo, Branch: rec.Branch, Ended: !rec.Phase.InFlight()})
 		}
 		pure := c.PR == nil && len(c.Aliases) == 0 && len(c.Offers) == 0 && len(c.Runs) == 0 && len(c.Evidence) == 0 &&
-			c.Label == "" && c.Group == "" && len(c.After) == 0 && c.Needs == "" && t.MainChange != c.ID && !strings.Contains(string(rules), c.ID)
+			c.Label == "" && c.Group == "" && len(c.After) == 0 && t.MainChange != c.ID && !strings.Contains(string(rules), c.ID)
 		if !pure {
 			c.Observed = rec.ID
 			keep = append(keep, c)

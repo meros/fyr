@@ -81,11 +81,14 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 		}
 		return Attention{Waiting, WorkingSec, reason}
 	}
-	if r := ChangeBlocking(t); r != "" { // V0.59 (6); PRs too (#32)
-		return Attention{Blocked, NeedsYou, r}
+	// V0.101: Needs you is computed: Ready or Stopped on a failure (asks
+	// are decisions, above). A finished run whose result the owner has not
+	// seen is unread in Seen, not in Needs you.
+	if c, n := ThreadNeed(t); n != nil {
+		return Attention{Blocked, NeedsYou, c.Title + ": " + n.Text}
 	}
 	if v == nil || t.ActivityAt.After(v.SeenAt) {
-		return Attention{Done, NeedsYou, ""}
+		return Attention{Done, SeenSec, ""}
 	}
 	return Attention{Seen, SeenSec, ""}
 }

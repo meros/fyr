@@ -43,9 +43,11 @@ type Change struct {
 	Evidence   []Evidence  `json:"evidence,omitempty"`
 	Group      string      `json:"group,omitempty"`
 	After      []string    `json:"after,omitempty"`
-	Needs      string      `json:"needs,omitempty"` // "owner" or ""
 	// Ready is core.Ready of its PR, set only in the thread DTO (V0.97).
 	Ready string `json:"ready,omitempty"`
+	// Need is why it waits on the owner (ChangeNeed), set only in the
+	// thread DTO (V0.101); the client only reads it.
+	Need *Need `json:"need,omitempty"`
 	// PR is the code change's pull request as GitHub last reported it (#32);
 	// its "pr" evidence is the link the Changes board shows.
 	PR *PR `json:"pr,omitempty"`
@@ -138,7 +140,50 @@ func FindChange(t *Thread, ref string) *Change {
 			return &t.Changes[i]
 		}
 	}
-	return nil
+	return changeByPRRef(t, ref)
+}
+
+var (
+	repoNumRe = regexp.MustCompile(`^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d+)$`)
+	numRe     = regexp.MustCompile(`^#(\d+)$`)
+)
+
+// changeByPRRef is the change whose PR a reference names (V0.101): a PR
+// URL, owner/repo#N, or #N when one change of the thread has PR number N.
+func changeByPRRef(t *Thread, ref string) *Change {
+	ref = strings.TrimSpace(ref)
+	repo, n := parsePRURL(ref)
+	if m := repoNumRe.FindStringSubmatch(ref); m != nil {
+		repo, n = m[1], atoi(m[2])
+	}
+	if repo != "" && n > 0 {
+		for i := range t.Changes {
+			if p := t.Changes[i].PR; p != nil && p.Number == n && strings.EqualFold(p.Repo, repo) {
+				return &t.Changes[i]
+			}
+		}
+		return nil
+	}
+	m := numRe.FindStringSubmatch(ref)
+	if m == nil {
+		return nil
+	}
+	n = atoi(m[1])
+	var found *Change
+	for i := range t.Changes {
+		if p := t.Changes[i].PR; p != nil && p.Number == n {
+			if found != nil {
+				return nil // not unique in the thread
+			}
+			found = &t.Changes[i]
+		}
+	}
+	return found
+}
+
+func atoi(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
 }
 
 // ChangeOpen is what the agent (or an observer) starts a change with.
@@ -242,7 +287,75 @@ type ChangeUpdate struct {
 	Phase      Phase
 	Label      *string
 	Conditions []Condition
-	Needs      *string
+}
+
+// StillOpenText is the reply to the agent's abandoned on a PR GitHub shows
+// open (V0.101): the card leaves, the PR stays.
+const StillOpenText = "Still open on GitHub. Close it with gh pr close if it is dead."
+
+// ReportChange is the agent's report (change_update, V0.101): a value for
+// a field Fyr observes is not refused but ignored, and the reply names
+// what Fyr reads; abandoned on a PR GitHub shows open is taken, and the
+// reply says it is still open. The owner's overrides still refuse (an end,
+// a Done). It returns the notes for the reply.
+func ReportChange(t *Thread, c *Change, u ChangeUpdate, by string, now time.Time) ([]string, error) {
+	if by != ByAgent {
+		return nil, UpdateChange(t, c, u, by, now)
+	}
+	var notes []string
+	if c.MarkedDone() && u.Phase != "" && u.Phase != c.Phase {
+		return nil, reject(RejectRights, "the owner marked %q done; open a new change with another key if the work goes on", c.Title)
+	}
+	if u.Phase.Valid() && u.Phase != c.Phase && c.PhaseBy == ByObserved {
+		if u.Phase == PhaseAbandoned && c.PR != nil && c.PR.State == "OPEN" {
+			setPhase(t, c, PhaseAbandoned, ByAgent, now)
+			c.Offers, c.Annotations = nil, nil
+			notes = append(notes, StillOpenText)
+		} else {
+			notes = append(notes, observedNote(c))
+		}
+		u.Phase = ""
+	}
+	conds := u.Conditions[:0:0]
+	for _, k := range u.Conditions {
+		if x := condition(c, k.Type); x != nil && x.Source == ByObserved && k.Status.Valid() && condField(k.Type, k.Status) == "" {
+			if x.Status != k.Status {
+				notes = append(notes, observedCondNote(c, x))
+			}
+			continue
+		}
+		conds = append(conds, k)
+	}
+	u.Conditions = conds
+	return notes, UpdateChange(t, c, u, by, now)
+}
+
+// observedNote is what Fyr reads of a change's phase, for an agent that
+// sent another one: "Fyr reads #13219 from GitHub: merged 10:42."
+func observedNote(c *Change) string {
+	if p := c.PR; p != nil {
+		state := strings.ToLower(p.State)
+		if p.State == "MERGED" && p.MergedAt != nil {
+			state += " " + p.MergedAt.Local().Format("15:04")
+		}
+		if state == "" {
+			state = string(c.Phase)
+		}
+		return fmt.Sprintf("Fyr reads #%d from GitHub: %s.", p.Number, state)
+	}
+	return fmt.Sprintf("Fyr reads %q from git: %s.", c.Title, c.Phase)
+}
+
+// observedCondNote is what Fyr reads of an observed condition.
+func observedCondNote(c *Change, k *Condition) string {
+	what := string(k.Status)
+	if k.Reason != "" {
+		what += " (" + k.Reason + ")"
+	}
+	if p := c.PR; p != nil {
+		return fmt.Sprintf("Fyr reads %s of #%d from GitHub: %s.", k.Type, p.Number, what)
+	}
+	return fmt.Sprintf("Fyr reads %s of %q from git: %s.", k.Type, c.Title, what)
 }
 
 // UpdateChange applies a status report from by (V0.59 (2)). What by may
@@ -278,9 +391,6 @@ func UpdateChange(t *Thread, c *Change, u ChangeUpdate, by string, now time.Time
 			return err
 		}
 	}
-	if u.Needs != nil && *u.Needs != "" && *u.Needs != "owner" {
-		return errors.New(`needs must be "owner" or empty`)
-	}
 	if u.Phase != "" {
 		setPhase(t, c, u.Phase, by, now)
 	}
@@ -289,12 +399,6 @@ func UpdateChange(t *Thread, c *Change, u ChangeUpdate, by string, now time.Time
 	}
 	for _, k := range u.Conditions {
 		setCondition(c, k.Type, k.Status, k.Reason, by, now)
-	}
-	if u.Needs != nil {
-		c.Needs = *u.Needs
-		if c.Needs != "" {
-			t.ActivityAt = now
-		}
 	}
 	c.UpdatedAt = now
 	return nil
@@ -376,6 +480,9 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	}
 	if c != nil && CanWrite(FieldChangePhase, ByObserved, c.PhaseBy, "") != nil {
 		return c // V0.72: the owner ended it; a fact does not move it again
+	}
+	if c != nil && c.Phase == PhaseAbandoned && c.PhaseBy == ByAgent && p.State == "OPEN" {
+		return c // V0.101: the agent abandoned it; the PR still open does not bring it back
 	}
 	if c == nil && p.Branch != "" {
 		c = changeOnPRBranch(t, p.Branch, p.Repo, "")
@@ -490,20 +597,10 @@ type GitFacts struct {
 	Default  string // the default branch, from origin/HEAD, or "" (V0.95 (4))
 }
 
-// ChangeBlocking is why a change of the thread needs the owner (V0.59 (6)),
-// or "". It is the one source of "blocked", PRs included (#32).
-func ChangeBlocking(t *Thread) string {
-	for i := len(t.Changes) - 1; i >= 0; i-- {
-		if r := t.Changes[i].Blocking(); r != "" {
-			return t.Changes[i].Title + ": " + r
-		}
-	}
-	return ""
-}
-
-// Blocking is why this change needs the owner, or "": a failed condition
-// (a PR's checks, review or conflict among them) or needs owner. A change
-// the owner parked does not block while it is as they saw it (V0.84).
+// Blocking is a failed condition of the change (a PR's checks, review or
+// conflict among them), or "". A change the owner parked does not block
+// while it is as they saw it (V0.84). Whether it waits on the owner is
+// ChangeNeed (V0.101).
 func (c *Change) Blocking() string {
 	if c.ParkHolds() {
 		return ""
@@ -523,9 +620,6 @@ func (c *Change) blocks() string {
 			}
 			return string(k.Type) + " failed"
 		}
-	}
-	if c.Needs == "owner" {
-		return "needs you"
 	}
 	return ""
 }

@@ -2,34 +2,27 @@ package core
 
 import (
 	"fmt"
-	"hash/fnv"
+	"slices"
 	"strings"
 	"time"
 )
 
-// Not now (SPEC 0.5 V0.84, #93): the owner parks a change that needs them.
-// It stops blocking its thread and leaves Needs you until something the
-// owner saw on it changes: its needs, label, phase, failed or pending
-// conditions with their reasons, or its newest revision.
+// Not now (SPEC 0.5 V0.84, #93; V0.101): the owner parks a change that
+// waits on them. It leaves Needs you until its head changes (the PR's head,
+// else its newest revision) or a new failure type appears (decision 0024
+// section 5). Not now on an ask declines the ask instead.
 
-// fingerprint is what the owner sees of a change when they park it.
+// fingerprint is what a park is keyed to: the change's head and the sorted
+// set of its failing condition types.
 func (c *Change) fingerprint() string {
-	h := fnv.New64a()
-	w := func(s string) { h.Write([]byte(s)); h.Write([]byte{0}) }
-	w(c.Needs)
-	w(c.Label)
-	w(string(c.Phase))
+	var types []string
 	for _, k := range c.Conditions {
-		if k.Status == CondFail || k.Status == CondPending {
-			w(string(k.Type))
-			w(string(k.Status))
-			w(k.Reason)
+		if k.Status == CondFail && !slices.Contains(types, string(k.Type)) {
+			types = append(types, string(k.Type))
 		}
 	}
-	if n := len(c.Revisions); n > 0 {
-		w(c.Revisions[n-1].ID)
-	}
-	return fmt.Sprintf("%016x", h.Sum64())
+	slices.Sort(types)
+	return changeHead(c) + "|" + strings.Join(types, ",")
 }
 
 // ParkHolds reports a change the owner parked that is still as they saw it.
@@ -47,18 +40,30 @@ func unparkStale(t *Thread) {
 	}
 }
 
+// BackText is when a parked change comes back, for the card and the agent.
+const BackText = "back when the head changes"
+
 // ParkedText says that the owner parked a change, for the agent's view of
 // it (fyr_state, change_list), or "".
 func ParkedText(c *Change) string {
 	if !c.ParkHolds() {
 		return ""
 	}
-	return fmt.Sprintf("the owner parked it (Not now) at %s: it does not block the thread now; it comes back by itself when its needs, label, phase, conditions or revision change, so do not ask about it again until then",
+	return fmt.Sprintf("the owner parked it (Not now) at %s: it is not in Needs you now; it comes back by itself when its head changes or a new failure appears, so do not ask about it again until then",
 		c.Parked.At.UTC().Format("2006-01-02 15:04 UTC"))
 }
 
+// parkable reports a change with a Ready or failure cause, before any Not
+// now: what the owner can park (an ask is declined instead).
+func parkable(t *Thread, c *Change) bool {
+	x := *c
+	x.Parked = nil
+	n := ChangeNeed(t, &x)
+	return n != nil && (n.Cause == CauseReady || n.Cause == CauseFailure)
+}
+
 // parkChange is the owner's change.park {change}: Not now on a change that
-// blocks.
+// waits on them.
 func parkChange(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
 	c := FindChange(t, strings.TrimSpace(a.Str("change")))
 	if c == nil {
@@ -67,7 +72,7 @@ func parkChange(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
 	if c.ParkHolds() {
 		return nil, reject(RejectUnavailable, "%q is already parked", c.Title)
 	}
-	if c.blocks() == "" {
+	if !parkable(t, c) {
 		return nil, reject(RejectUnavailable, "nothing about %q needs you", c.Title)
 	}
 	c.Parked = &Park{At: now, Seen: c.fingerprint()}
@@ -92,7 +97,7 @@ func init() {
 	register(&Action{Name: KindChangePark, Label: "Not now",
 		Available: func(t *Thread, _ *View, _ time.Time) string {
 			for i := range t.Changes {
-				if t.Changes[i].Blocking() != "" {
+				if parkable(t, &t.Changes[i]) && !t.Changes[i].ParkHolds() {
 					return ""
 				}
 			}

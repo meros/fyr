@@ -69,6 +69,8 @@ export interface PullRequest {
   draft?: boolean;
   mergeState?: string;
   autoMerge?: boolean;
+  /** V0.101: when Fyr last read the PR, for "checked N s ago" */
+  checkedAt?: string;
 }
 
 /** A subagent or background task of a thread (SPEC V0.16). */
@@ -292,6 +294,17 @@ export interface T3Candidate {
 /** V0.59 (decision 0018): one change a thread makes or asks for. */
 export type ChangePhase = "working" | "review" | "landed" | "live" | "abandoned" | "reverted";
 
+/** V0.101 (decision 0024 section 5): why a change waits on the owner, as the host computed it. head is the commit the
+ *  cause is about (a Merge button is bound to it); ask and action name an open ask. */
+export interface ChangeNeed {
+  cause: "ask" | "ready" | "failure" | "fixing";
+  head?: string;
+  text?: string;
+  ask?: string;
+  action?: string;
+  muted?: boolean;
+}
+
 export interface Change {
   id: string;
   key: string;
@@ -306,7 +319,9 @@ export interface Change {
   evidence?: { kind: string; url?: string; attachment?: string; title?: string }[];
   group?: string;
   after?: string[];
-  needs?: string;
+  /** V0.101: why it waits on the owner, computed on the host; the client only reads it. cause: ask, ready, failure,
+   *  or fixing (muted: a failure while the agent runs) */
+  need?: ChangeNeed;
   /** V0.97: the change's PR as Fyr last read it, and what it waits for from the owner (the host's Ready rule) */
   pr?: PullRequest;
   ready?: "Merge" | "Review and merge";
@@ -329,8 +344,6 @@ export interface Change {
   done?: { at: string; by: "agent" | "observed" | "owner"; reason: string };
   /** V0.98 (4): when a fact of the change last moved */
   touchedAt?: string;
-  /** #32: the PR as GitHub last reported it */
-  pr?: PullRequest;
   createdAt: string;
   updatedAt: string;
 }

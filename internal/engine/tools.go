@@ -12,8 +12,8 @@ import (
 
 // Tools registers the agent tools of SPEC 0.5 V0.12 on an MCP server.
 func (e *Engine) Tools(s *mcp.Server) {
-	s.Add(mcp.Tool{Name: "pr_link",
-		Description: "Link a GitHub pull request to this Fyr thread. Call it when you open a PR other than with `gh pr create`, or to switch the thread to another PR.",
+	s.Add(mcp.Tool{Name: "pr_link", Hidden: true, // V0.101: change_open {pr} does this
+		Description: alias("change_open {pr}", "Link a GitHub pull request to this Fyr thread. Call it when you open a PR other than with `gh pr create`, or to switch the thread to another PR."),
 		Schema:      obj(map[string]any{"url": str("The PR URL, https://github.com/<owner>/<repo>/pull/<n>")}, "url"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			url, ok := core.CanonicalPR(sArg(a, "url"))
