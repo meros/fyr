@@ -61,6 +61,8 @@ func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 			return m.stopHook(s, in)
 		}
 		return m.toolHook(s)
+	case "compact":
+		return m.compactHook(s)
 	}
 	name, _ := in["tool_name"].(string)
 	ti, _ := in["tool_input"].(map[string]any)
@@ -123,13 +125,29 @@ func orNil(v any) any {
 }
 
 // initHooks is what a process registers at start: the merge gate always,
-// and the agent feed's Stop and PostToolUse hooks only for a process with
+// and the agent feed's Stop and PostToolUse hooks and the SessionStart
+// hook after a compaction (V0.96) only for a process with
 // Fyr's tools, so other processes get no extra round trip.
 func initHooks(feed bool) claude.Msg {
 	h := claude.Msg{"PreToolUse": []claude.Msg{{"matcher": "Bash", "hookCallbackIds": []string{"gate"}}}}
 	if feed {
 		h["Stop"] = []claude.Msg{{"hookCallbackIds": []string{"view"}}}
 		h["PostToolUse"] = []claude.Msg{{"hookCallbackIds": []string{"viewnudge"}}}
+		h["SessionStart"] = []claude.Msg{{"matcher": "compact", "hookCallbackIds": []string{"compact"}}}
 	}
 	return h
+}
+
+// compactHook answers the SessionStart hook after a compaction (SPEC V0.96
+// (5)): one line per open change, so the agent keeps the changes' ids.
+func (m *Manager) compactHook(s *session) claude.Msg {
+	t, ok := m.host.Thread(s.thread)
+	if !ok {
+		return nil
+	}
+	lines := core.OpenChangesText(&t)
+	if lines == "" {
+		return nil
+	}
+	return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "SessionStart", "additionalContext": lines}}
 }
