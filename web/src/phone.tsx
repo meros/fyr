@@ -376,7 +376,7 @@ function MInbox(p: PhoneProps) {
         </div>
       ) : (
         <div class="m-ih">
-          {/* V0.102: the rail's logo (V0.93) before the name. The rail has no room for the name; this header has. */}
+          {/* V0.103: the rail's logo (V0.93) before the name. The rail has no room for the name; this header has. */}
           <span class="m-brand">
             <BrandMark size={28} alt="" />
             Fyr
