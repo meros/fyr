@@ -11,6 +11,7 @@ The design work for the Settings screens and the project screen (owner, 16 Nov: 
 | `mock.css` | Part 1: tokens and components copied from `web/src/app.css`. Part 2: the board. Part 3: the proposed new CSS (`.stx`, `.stn`, `.sg`, `.sr`, `.swt`, `.grip` and the rest); copy from here. |
 | `mock.js`, `i1.js`, `i2.js`, `i3.js` | The pages. A page is written once and drawn in the desktop dialog and the phone screen. |
 | `before/` | Screenshots of today's screens (`?mock=rail`, V0.116) at desktop and phone width. |
+| `impl/` | V0.119 (part 1): the screens before and after the implementation in mock mode, at desktop and phone width; `after/` has every page and sub-page light, each desktop page dark, and the states (no key, a failed read, no connection, no providers, the phone's Reorder mode and More sheet). |
 
 Open an `iN.html` file in a browser. The Light and Dark buttons are at the top right; `?theme=dark` starts dark.
 
