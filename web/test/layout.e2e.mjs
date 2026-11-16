@@ -1801,16 +1801,14 @@ try {
 for (const [label, w, h, url, root] of [
   ["desktop", 1280, 800, "?mock=rail&hosts=2&dialog=settings&page=projects", ".dlg"],
   ["phone", 390, 844, "?mock=rail&hosts=2&settings=projects", ".m-settings"],
-]) {
+]) section(`V0.124 ${label}`, async (hn) => {
+  const { evaluate, waitFor, settle, navigate, openScreen, shot } = hn;
   const ctx = `V0.124 ${label}`;
   try {
     const ready = `document.querySelectorAll('${root} .sr.host').length === 3`;
+    // A section starts at 1280 × 800 without touch, the desktop case; the phone opens its own screen.
     if (label === "phone") await openScreen({ url }, w, h);
-    else {
-      await send("Emulation.setTouchEmulationEnabled", { enabled: false });
-      await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
-      await navigate(`${origin}/${url}`, ready);
-    }
+    else await navigate(`${origin}/${url}`, ready);
     await waitFor(ready);
     // Hosts is the last group of the page: bring it into view as the owner would scroll to it.
     await evaluate(`document.querySelector('${root} .sr.host:last-of-type')?.scrollIntoView({ block: 'center' })`);
@@ -1832,7 +1830,7 @@ for (const [label, w, h, url, root] of [
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }
-}
+});
 
 // V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.
 section('V0.35', async (h) => {
