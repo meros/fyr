@@ -19,13 +19,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -205,21 +203,6 @@ func setup(o Options) (*Tree, error) {
 		}
 	}
 	return t, nil
-}
-
-func probe(dir string) error {
-	bin, err := exec.LookPath("true")
-	if err != nil {
-		return nil // nothing to try it with; the first agent will tell
-	}
-	f, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	cmd := exec.Command(bin)
-	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(f.Fd())}
-	return cmd.Run()
 }
 
 func put(dir, file, v string) error { return os.WriteFile(filepath.Join(dir, file), []byte(v), 0o644) }
