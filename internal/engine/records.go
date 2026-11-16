@@ -13,6 +13,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/meros/fyr/internal/agent"
@@ -53,9 +54,14 @@ func (e *Engine) loadRecords() error {
 			dirty = append(dirty, t)
 		}
 	}
+	for _, t := range e.threads {
+		if dropFixture(t) && !slices.Contains(dirty, t) {
+			dirty = append(dirty, t)
+		}
+	}
 	var gone []string
 	for id, c := range e.records {
-		if core.RecordExpired(c, now) {
+		if core.RecordExpired(c, now) || e.loopRecord(c) {
 			gone = append(gone, id)
 			delete(e.records, id)
 		}
@@ -91,6 +97,45 @@ func (e *Engine) loadRecords() error {
 		return nil
 	})
 	return err
+}
+
+// leakedFixture is the PR of a test fixture that reached live threads
+// (V0.95 (5)).
+const leakedFixture = "https://github.com/acme/app/pull/88"
+
+// dropFixture removes the change of the leaked fixture PR from t, by that
+// exact URL (V0.95 (5)). It reports whether t changed.
+func dropFixture(t *core.Thread) bool {
+	n := len(t.Changes)
+	t.Changes = slices.DeleteFunc(t.Changes, func(c core.Change) bool {
+		return (c.PR != nil && c.PR.URL == leakedFixture) || slices.ContainsFunc(c.Evidence, func(ev core.Evidence) bool { return ev.URL == leakedFixture })
+	})
+	if len(t.Changes) == n {
+		return false
+	}
+	if t.MainChange != "" && core.FindChange(t, t.MainChange) == nil {
+		t.MainChange = ""
+	}
+	return true
+}
+
+// loopRecord reports a record the loop of 16 Nov left (V0.95 (5)): a key
+// git:<repo>#<branch>~N, not in flight, and no thread change follows it.
+// Call it with e.mu held.
+func (e *Engine) loopRecord(c *core.Change) bool {
+	i := strings.LastIndex(c.Key, "~")
+	if !strings.HasPrefix(c.Key, "git:") || i < 0 || c.Phase.InFlight() {
+		return false
+	}
+	if _, err := strconv.Atoi(c.Key[i+1:]); err != nil {
+		return false
+	}
+	for _, t := range e.threads {
+		if slices.ContainsFunc(t.Changes, func(x core.Change) bool { return x.Observed == c.ID }) {
+			return false
+		}
+	}
+	return true
 }
 
 // applyRecord is the path of a host record's Input (#35): the record's
@@ -239,9 +284,7 @@ func (e *Engine) observeGit(threadID string, folder *core.GitFacts) {
 			continue
 		}
 		k := check{id: rec.ID, path: rec.Workspace.Path, branch: rec.Branch, base: rec.Workspace.Base}
-		if n := len(rec.Revisions); n > 0 {
-			k.head = rec.Revisions[n-1].ID
-		}
+		k.head = core.RecordHead(rec)
 		checks = append(checks, k)
 		merged[rec.ID] = e.prMerged(rec)
 	}

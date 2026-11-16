@@ -44,6 +44,8 @@ type Change struct {
 	Group      string      `json:"group,omitempty"`
 	After      []string    `json:"after,omitempty"`
 	Needs      string      `json:"needs,omitempty"` // "owner" or ""
+	// Ready is core.Ready of its PR, set only in the thread DTO (V0.97).
+	Ready string `json:"ready,omitempty"`
 	// PR is the code change's pull request as GitHub last reported it (#32);
 	// its "pr" evidence is the link the Changes board shows.
 	PR *PR `json:"pr,omitempty"`
@@ -485,6 +487,7 @@ type GitFacts struct {
 	Unpushed int // commits not on the upstream; all when there is none
 	Dirty    int // changed and untracked files
 	Head     string
+	Default  string // the default branch, from origin/HEAD, or "" (V0.95 (4))
 }
 
 // ChangeBlocking is why a change of the thread needs the owner (V0.59 (6)),

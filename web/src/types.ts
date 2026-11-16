@@ -64,6 +64,11 @@ export interface PullRequest {
   checks?: "pass" | "fail" | "pending" | "none" | string;
   review?: string;
   conflict?: boolean;
+  /** V0.97: the head commit Fyr last read, and what the Ready rule reads */
+  head?: string;
+  draft?: boolean;
+  mergeState?: string;
+  autoMerge?: boolean;
 }
 
 /** A subagent or background task of a thread (SPEC V0.16). */
@@ -302,6 +307,9 @@ export interface Change {
   group?: string;
   after?: string[];
   needs?: string;
+  /** V0.97: the change's PR as Fyr last read it, and what it waits for from the owner (the host's Ready rule) */
+  pr?: PullRequest;
+  ready?: "Merge" | "Review and merge";
   phaseBy: "agent" | "observed" | "owner";
   /** V0.60, #31: the change's actions and their last runs */
   offers?: Offer[];
@@ -321,8 +329,6 @@ export interface Change {
   done?: { at: string; by: "agent" | "observed" | "owner"; reason: string };
   /** V0.98 (4): when a fact of the change last moved */
   touchedAt?: string;
-  /** #32: the PR as GitHub last reported it */
-  pr?: PullRequest;
   createdAt: string;
   updatedAt: string;
 }

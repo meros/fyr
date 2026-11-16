@@ -313,6 +313,9 @@ var FyrEffects = map[string]*FyrEffect{
 			if err := needPR(a); err != nil {
 				return err
 			}
+			if err := needHead(a); err != nil { // V0.97: a merge is bound to a head
+				return err
+			}
 			switch m, _ := a["method"].(string); m {
 			case "":
 				a["method"] = "squash"
@@ -375,6 +378,8 @@ func prGuard(merge bool) func(*Thread, map[string]any) string {
 			return "The PR has merge conflicts"
 		case merge && changes:
 			return "Changes requested"
+		case merge:
+			return headMoved(t, a) // V0.97
 		}
 		return ""
 	}
@@ -398,8 +403,14 @@ func init() {
 				if m, ok := a["method"].(string); ok && id == FyrMerge {
 					req["method"] = m
 				}
+				if h, ok := a["head"].(string); ok && id == FyrMerge {
+					req["head"] = h // V0.97: the head the PR tab showed
+				}
 				if err := fx.Check(req); err != nil {
 					return nil, fmt.Errorf("%w: %v", ErrBadArgs, err)
+				}
+				if why := fx.Guard(t, req); why != "" {
+					return nil, &Rejection{Code: RejectUnavailable, Reason: why}
 				}
 				return []Effect{{Kind: EffectRun, Allow: true, ByOwner: true, Request: &EffectReq{Action: id, Args: req}}}, nil
 			}})

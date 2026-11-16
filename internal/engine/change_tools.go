@@ -153,7 +153,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 		}})
 
 	s.Add(mcp.Tool{Name: "change_request",
-		Description: "Ask the owner about a change. Returns at once; do not wait or poll. The owner answers in Fyr and the answer arrives as a later message starting with [Fyr]. ask: review (look at it), approve (accept it before you go on), merge (Fyr merges the change's PR; args {method: squash|merge|rebase}; use this instead of gh pr merge), apply (you apply it after the yes), deploy (Fyr deploys a Fyr checkout; args {dir}), revert. An approve or review that the owner accepts marks the change's approval ok.",
+		Description: "Ask the owner about a change. Returns at once; do not wait or poll. The owner answers in Fyr and the answer arrives as a later message starting with [Fyr]. ask: review (look at it), approve (accept it before you go on), merge (Fyr merges the change's PR at the head it reads when you ask, and refuses if the head moves; args {method: squash|merge|rebase}; use this instead of gh pr merge), apply (you apply it after the yes), deploy (Fyr deploys a Fyr checkout; args {dir}), revert. An approve or review that the owner accepts marks the change's approval ok.",
 		Schema: obj(map[string]any{
 			"change": str(changeRef),
 			"ask":    map[string]any{"type": "string", "enum": core.Names(core.ChangeAsks())},
