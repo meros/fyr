@@ -398,6 +398,18 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .cmp .in::placeholder{color:var(--ink-muted);opacity:1}
 .cmp .hint{font:400 12px/16px var(--ui);color:var(--ink-muted);white-space:nowrap}
 .cmp.off{background:var(--sunken)}
+/* V0.79: the `/` list of commands and skills, above the field */
+.slash{display:flex;flex-direction:column;margin:0 0 6px;padding:4px;max-height:min(320px,40vh);overflow-y:auto;background:var(--raised);border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.12);min-width:0}
+.slash-i{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;align-items:baseline;text-align:left;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--ink);cursor:pointer;min-width:0}
+.slash-i.on{background:var(--select)}
+.slash-n{font:500 13px/18px var(--mono);color:var(--ink);white-space:nowrap}
+.slash-a{font:400 12px/18px var(--mono);color:var(--ink-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slash-d{grid-column:1/-1;font:400 12px/16px var(--ui);color:var(--ink-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slash-hint{margin:0 0 6px;padding:0 4px;font:400 12px/16px var(--ui);color:var(--ink-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slash-hint .slash-n{font-size:12px;line-height:16px;color:var(--ink-muted)}
+.slash.m{border-radius:16px;max-height:min(300px,38vh)}
+.slash.m .slash-i{min-height:44px;padding:6px 12px;align-content:center}
+.slash.m .slash-n{font-size:14px}
 .thumbs{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
 .thumb{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--sunken)}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}

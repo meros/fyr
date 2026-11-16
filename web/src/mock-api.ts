@@ -3,7 +3,7 @@
 
 import { newCommandId, type Api, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
-import { MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockQuota } from "./mock.ts";
+import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockChanges, mockFilePatch, mockQuota } from "./mock.ts";
 import { createMockProviders } from "./mock-providers.ts";
 
 const MOCK_IMAGE =
@@ -107,6 +107,9 @@ export function createMockApi(scenario: string): Api {
     },
     async quota() {
       return mockQuota(Date.now());
+    },
+    async commands() {
+      return MOCK_COMMANDS;
     },
     async changes(threadId) {
       return mockChanges(threadId);

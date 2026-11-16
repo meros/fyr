@@ -809,6 +809,33 @@ try {
   failures.push(`V0.29 draft: ${e.message}`);
 }
 
+// V0.79: on the phone, `/` at the start of the composer lists the commands above it, inside the screen, rows 44 px
+// tall; a tap fills `/name ` and the argument hint shows above the field.
+try {
+  const typeIn = (v) => evaluate(`(() => { const el = document.querySelector('.m-cmp .in'); el.focus(); el.value = ${JSON.stringify(v)}; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await openScreen({ url: "?mock=rail&open=t_triage" }, 360, 640);
+  await typeIn("/re");
+  await waitFor(`document.querySelectorAll('.slash.m .slash-i').length > 0`, { what: "the / list" });
+  await settle();
+  const r = await evaluate(`(() => {
+    const l = document.querySelector('.slash.m').getBoundingClientRect();
+    const c = document.querySelector('.m-cmp').getBoundingClientRect();
+    const rows = [...document.querySelectorAll('.slash.m .slash-i')];
+    return { top: l.top, bottom: l.bottom, left: l.left, right: l.right, cmp: c.top, vw: innerWidth, vh: innerHeight,
+      names: rows.map((x) => x.querySelector('.slash-n').textContent), minH: Math.min(...rows.map((x) => x.getBoundingClientRect().height)),
+      wide: document.documentElement.scrollWidth > innerWidth };
+  })()`);
+  check(r.names[0] === "/research" && r.names.includes("/review") && r.names.includes("/security-review"), `V0.79 phone: the list for "/re" is ${JSON.stringify(r.names)}`);
+  check(r.top >= 0 && r.left >= 0 && r.right <= r.vw + 0.5 && r.bottom <= r.cmp + 0.5 && !r.wide, `V0.79 phone: the list is not inside the screen above the composer ${JSON.stringify(r)}`);
+  check(r.minH >= 44, `V0.79 phone: a row is ${r.minH} px tall`);
+  await tapCenter(".slash.m .slash-i", "document.querySelector('.m-cmp .in').value === '/research '");
+  const h = await evaluate(`({ list: !!document.querySelector('.slash.m'), hint: document.querySelector('.slash-hint')?.textContent ?? '' })`);
+  check(!h.list && /\/research\s+<question>/.test(h.hint), `V0.79 phone: after the tap the list stays or the hint is "${h.hint}"`);
+  await typeIn("");
+} catch (e) {
+  failures.push(`V0.79 phone / list: ${e.message}`);
+}
+
 // V0.33: on the phone, a message the agent has not read waits after "Agent is here", dimmed, with
 // Waiting and a Cancel that fits the screen; Cancel strikes it through with Send again.
 try {
@@ -891,6 +918,34 @@ try {
   check(!r.dlg && /Hemmet/.test(r.chip), `V0.26, V0.61 desktop: Enter on an exact project name does not move the thread there (chip "${r.chip}")`);
 } catch (e) {
   failures.push(`V0.26 desktop: ${e.message}`);
+}
+
+// SPEC 0.5 V0.79: on the desktop, `/` in the composer opens the list; ArrowDown moves, Enter picks and does not
+// send; Escape closes the list and leaves the text.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('#composer')");
+  await evaluate(`document.querySelector('#composer').focus()`);
+  await send("Input.insertText", { text: "/" });
+  await waitFor(`document.querySelectorAll('.cmpw .slash .slash-i').length > 0`, { what: "the / list" });
+  const l = await evaluate(`({ names: [...document.querySelectorAll('.cmpw .slash .slash-n')].map((x) => x.textContent), on: document.querySelector('.cmpw .slash .slash-i.on .slash-n')?.textContent ?? '' })`);
+  check(l.names.length === 8 && l.on === "/compact", `V0.79 desktop: the "/" list is ${JSON.stringify(l)}`);
+  await key("ArrowDown");
+  const on = await evaluate(`document.querySelector('.cmpw .slash .slash-i.on .slash-n')?.textContent ?? ''`);
+  check(on === "/context", `V0.79 desktop: ArrowDown moved to "${on}"`);
+  await key("Enter");
+  const p = await evaluate(`({ v: document.querySelector('#composer').value, list: !!document.querySelector('.cmpw .slash') })`);
+  check(p.v === "/context " && !p.list, `V0.79 desktop: Enter did not pick /context (${JSON.stringify(p)})`);
+  await evaluate(`(() => { const el = document.querySelector('#composer'); el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await send("Input.insertText", { text: "/rev" });
+  await waitFor(`!!document.querySelector('.cmpw .slash')`, { what: "the / list for /rev" });
+  await key("Escape");
+  const x = await evaluate(`({ v: document.querySelector('#composer').value, list: !!document.querySelector('.cmpw .slash'), focus: document.activeElement?.id ?? '' })`);
+  check(x.v === "/rev" && !x.list && x.focus === "composer", `V0.79 desktop: Escape did not just close the list (${JSON.stringify(x)})`);
+  await evaluate(`(() => { const el = document.querySelector('#composer'); el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+} catch (e) {
+  failures.push(`V0.79 desktop / list: ${e.message}`);
 }
 
 // SPEC 0.5 V0.42: on the desktop, the new thread's Change opens the folder picker from the keyboard; a typed path

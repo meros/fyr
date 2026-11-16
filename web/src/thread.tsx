@@ -26,6 +26,7 @@ import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./proje
 import { colorVar, projectName, projectOf } from "./projects.ts";
 import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
+import { SlashList, useSlash } from "./slash-ui.tsx";
 import type { ComponentChildren } from "preact";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
 import { LiveViewPanel, ViewChat } from "./view-ui.tsx";
@@ -1117,6 +1118,8 @@ function Composer({ t, now, answer, onSend, onInterrupt }: ComposerProps) {
   const text = answer ? answer.text : draft;
   const setText = answer ? answer.setText : setDraft;
   const disabled = !answer && !!sendReason;
+  // V0.79: `/` at the start lists the agent's commands and skills (not in the answer field).
+  const slash = useSlash(answer || disabled ? null : { threadId: t.id }, text, setText, ta);
 
   useLayoutEffect(() => {
     const el = ta.current;
@@ -1154,6 +1157,7 @@ function Composer({ t, now, answer, onSend, onInterrupt }: ComposerProps) {
         </div>
       )}
       <ChipStrip chips={att.chips} onRemove={att.remove} />
+      <SlashList s={slash} />
       <div class={`cmp${disabled ? " off" : ""}`}>
         <ClipPicker onFiles={att.add} disabled={!!sendReason} />
         <textarea
@@ -1169,6 +1173,7 @@ function Composer({ t, now, answer, onSend, onInterrupt }: ComposerProps) {
           onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
           onPaste={att.onPaste}
           onKeyDown={(e) => {
+            if (slash.onKeyDown(e)) return;
             if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
             e.preventDefault();
             e.stopPropagation();
