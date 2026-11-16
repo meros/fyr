@@ -20,6 +20,8 @@ export interface Quota {
   stale?: boolean;
   error?: string;
   retryAt?: string;
+  /** V0.122: "session" when the windows come only from the last session's rate_limit_event (a token account). */
+  source?: "session";
 }
 
 /** A window at or above this share is coloured; nothing else is. */
@@ -60,7 +62,8 @@ export function quotaParts(q: Quota): QuotaPart[] {
 export function quotaSummary(q: Quota, name: string): string {
   const parts = quotaParts(q);
   if (parts.length) return `${name} ${parts.map((p) => p.text).join(" · ")}`;
-  return q.error ? `${name}: ${q.error}` : `${name}: not read yet`;
+  if (q.error) return `${name}: ${q.error}`;
+  return q.source === "session" ? `${name}: usage shows after the next run` : `${name}: not read yet`;
 }
 
 /** The rail's one short figure: the busiest window ("61%") or the balance ("¥12"). */
@@ -85,7 +88,7 @@ export function quotaDetail(q: Quota, name: string, now: number): string[] {
   const b = q.balance;
   if (b?.amount !== undefined) lines.push(`${name}: ${money(b.amount, b.currency)} left`);
   else if (b?.spent !== undefined) lines.push(`${name}: ${money(b.spent, b.currency)} used (no limit on the key)`);
-  if (q.updatedAt) lines.push(`Updated ${relTime(q.updatedAt, now)} ago`);
+  if (q.updatedAt) lines.push(q.source === "session" ? `From the last session, ${relTime(q.updatedAt, now)} ago` : `Updated ${relTime(q.updatedAt, now)} ago`);
   // V0.77 (1), #65: the error and its next try appear once in the detail, never again in the line above it.
   if (q.stale) lines.push("Stale: showing the last data read");
   if (q.error && hasData(q)) lines.push(q.error);
@@ -95,15 +98,31 @@ export function quotaDetail(q: Quota, name: string, now: number): string[] {
 
 /** V0.77 (1), #65: what the card's badge says. "Ready" means nothing is wrong, so a limited, expired, stale or unread
  *  account never shows Ready beside its own error. */
-export type CardState = "ready" | "limited" | "expired" | "stale" | "unknown";
+/** V0.122: the badge names the error it has; only a rate limit says "Rate limited", and a token account waiting for
+ *  its first session says so. */
+export type CardState = "ready" | "limited" | "expired" | "notoken" | "error" | "stale" | "waiting" | "unknown";
 export function cardState(q: Quota): CardState {
-  if (!hasData(q) && q.error) return /expired|login/i.test(q.error) ? "expired" : "limited";
-  if (q.error) return "limited";
+  if (q.error) {
+    if (/rate limit/i.test(q.error)) return "limited";
+    if (/no token/i.test(q.error)) return "notoken";
+    if (/expired|login/i.test(q.error)) return "expired";
+    return "error";
+  }
   if (q.stale) return "stale";
-  return hasData(q) ? "ready" : "unknown";
+  if (hasData(q)) return "ready";
+  return q.source === "session" ? "waiting" : "unknown";
 }
 
-export const CARD_WORD: Record<CardState, string> = { ready: "Ready", limited: "Rate limited", expired: "Login expired", stale: "Stale", unknown: "Not read yet" };
+export const CARD_WORD: Record<CardState, string> = {
+  ready: "Ready",
+  limited: "Rate limited",
+  expired: "Login expired",
+  notoken: "No token",
+  error: "Can't read",
+  stale: "Stale",
+  waiting: "After a run",
+  unknown: "Not read yet",
+};
 
 export function quotaFor(list: Quota[], profile: string): Quota | undefined {
   return list.find((q) => q.profile === profile);
