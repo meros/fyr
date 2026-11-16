@@ -82,3 +82,9 @@ export function StateIcon({ state, size = 16 }: { state: AttentionState; size?: 
     </svg>
   );
 }
+
+/** The Fyr logo (V0.93): the rendered lighthouse, 128 px, shown smaller. The rail (32 px) and the phone's
+ * inbox header (28 px, V0.102) share it. `alt` is empty where the word "Fyr" follows it. */
+export function BrandMark({ size, alt = "Fyr" }: { size: number; alt?: string }) {
+  return <img class="brandmark" src="/logo.png" alt={alt} width={size} height={size} />;
+}
