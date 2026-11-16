@@ -27,6 +27,8 @@ export interface ThreadCommands {
   /** V0.45: thread.handover; resolves to the host's error text, or null */
   handover(id: string | null, profile?: string, model?: string): Promise<string | null>;
   doUndo(): Promise<void>;
+  /** V0.108: asks Fyr for a new title from the conversation; the title changes when the model answers. */
+  regenerateTitle(id: string): Promise<void>;
   notify(text: string, error?: boolean): void;
   showError(text: string): void;
 }
@@ -84,6 +86,10 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     return r.ok ? null : (r.error ?? "The handover could not start");
   };
 
+  const regenerateTitle = async (id: string) => {
+    if (await run("thread.regenerateTitle", [id])) notify("Fyr is writing a new title");
+  };
+
   const doUndo = async () => {
     const entry = undoRef.current;
     const cmds = undoCommands(entry, Date.now());
@@ -96,5 +102,5 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     opts.current.onUndone?.(entry, !bad);
   };
 
-  return { toast, undo, canUndo: () => undoLive(undo, Date.now()), run, send, handover, doUndo, notify, showError };
+  return { toast, undo, canUndo: () => undoLive(undo, Date.now()), run, send, handover, doUndo, regenerateTitle, notify, showError };
 }

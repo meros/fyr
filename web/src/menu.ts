@@ -34,6 +34,7 @@ export function threadMenu(t: Thread): MenuEntry[] {
   out.push(SEP, item(t, "project", "thread.setProject", "Project…", "p"));
   out.push(item(t, "liveView", "thread.setView", t.liveView ? "Turn off live view" : "Turn on live view"));
   out.push(item(t, "handover", "thread.handover", "Hand over…"));
+  out.push(item(t, "regenTitle", "thread.regenerateTitle", "Regenerate title")); // V0.108
   if (t.running) out.push(item(t, "interrupt", "thread.interrupt", "Stop run", "Esc"));
   if (t.pr && (t.pr.state === "MERGED" || t.pr.state === "CLOSED" || t.pr.state === "MISSING")) out.push(item(t, "dismissPR", "thread.dismissPR", "Dismiss PR"));
   out.push(SEP, { id: "copyLink", label: "Copy link" });

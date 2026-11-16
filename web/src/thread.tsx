@@ -75,6 +75,8 @@ export interface ThreadPaneProps {
   onMoveProject?: () => void;
   /** Opens the handover dialog (V0.45). */
   onHandover?: () => void;
+  /** V0.108: asks Fyr for a new title from the conversation. */
+  onRegenerateTitle?: () => void;
 }
 
 /** A deep link `/?open=<id>&tab=pr` opens that tab on the desktop too. */
@@ -132,7 +134,7 @@ export function ThreadPane(p: ThreadPaneProps) {
             <button class="btn" disabled={!!settleReason} title={settleReason ?? (t.running ? "Settle when done (e)" : "Settle (e)")} onClick={() => p.onRun("thread.settle")}>
               Settle <kbd>e</kbd>
             </button>
-            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} liveView={!!t.liveView} onLiveView={() => p.onRun("thread.setView", { on: !t.liveView })} onHandover={p.onHandover} handoverReason={unavailableReason(t, "thread.handover")} />}
+            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} liveView={!!t.liveView} onLiveView={() => p.onRun("thread.setView", { on: !t.liveView })} onHandover={p.onHandover} handoverReason={unavailableReason(t, "thread.handover")} onRegenerateTitle={p.onRegenerateTitle} regenerateReason={unavailableReason(t, "thread.regenerateTitle")} />}
           </div>
         </div>
         <div class="chips">
@@ -258,7 +260,7 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
 }
 
 /** The thread ⋯ menu (V0.26): opens on click or Enter, arrows move, Esc closes and returns focus. */
-function ThreadMenu({ onMove, liveView, onLiveView, onHandover, handoverReason }: { onMove(): void; liveView: boolean; onLiveView(): void; onHandover?: () => void; handoverReason?: string }) {
+function ThreadMenu({ onMove, liveView, onLiveView, onHandover, handoverReason, onRegenerateTitle, regenerateReason }: { onMove(): void; liveView: boolean; onLiveView(): void; onHandover?: () => void; handoverReason?: string; onRegenerateTitle?: () => void; regenerateReason?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
@@ -312,6 +314,13 @@ function ThreadMenu({ onMove, liveView, onLiveView, onHandover, handoverReason }
             <button class="mi" role="menuitem" disabled={!!handoverReason} title={handoverReason} onClick={run(onHandover)}>
               <span />
               <span class="ell">Hand over…</span>
+              <span />
+            </button>
+          )}
+          {onRegenerateTitle && (
+            <button class="mi" role="menuitem" disabled={!!regenerateReason} title={regenerateReason ?? "Name the thread from its conversation so far"} onClick={run(onRegenerateTitle)}>
+              <span />
+              <span class="ell">Regenerate title</span>
               <span />
             </button>
           )}

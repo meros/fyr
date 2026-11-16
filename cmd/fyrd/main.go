@@ -161,6 +161,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		Cgroups: tree, Runner: rn.client(),
 	})
 	eng.Agents = mgr
+	eng.Titler = mgr.Title // V0.108
 	if rn != nil {
 		mgr.Adopt(rn.procs) // V0.90: before anything sends to a thread
 	}
