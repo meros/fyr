@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/meros/fyr/internal/front"
+	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peers"
 	"github.com/meros/fyr/internal/tailnet"
 )
@@ -20,9 +21,22 @@ func hostURL(hostListen string) string {
 	return "http://" + hostListen
 }
 
-// wellKnown is this install's /.well-known/fyr answer (V0.123).
-func wellKnown(cfg config, name, host string) peers.WellKnown {
-	return peers.WellKnown{Fyr: 1, Name: name, Role: cfg.Role, Build: BuildID(), Owner: cfg.OwnerLogin, Host: host}
+// wellKnown is this install's /.well-known/fyr answer (V0.123), with its
+// key id (V0.124).
+func wellKnown(cfg config, name, host, id string) peers.WellKnown {
+	return peers.WellKnown{Fyr: 1, Name: name, Role: cfg.Role, Build: BuildID(), Owner: cfg.OwnerLogin, Host: host, ID: id}
+}
+
+// installID is this install's key id (V0.124, decision 0026): the key is
+// made at the first start and kept in the data folder. fyrd does not start
+// without it, so the id never changes behind the owner's back.
+func installID(data string) string {
+	k, err := identity.Load(data)
+	if err != nil {
+		log.Fatalf("install key: %v", err)
+	}
+	log.Printf("install key id %s", k.ID())
+	return k.ID()
 }
 
 // newDiscovery finds the owner's other Fyr hosts (V0.123, decision 0025):

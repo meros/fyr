@@ -266,7 +266,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// V0.54 (decision 0016): a host sends no push; the front that serves
 	// the devices does, for the threads of all its hosts.
 	// V0.51: the host never serves the client; a front does.
-	srv := &server.Server{Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
+	id := installID(data)
+	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
 		Load:  &cgroup.Sampler{Tree: tree, Slots: pool}, // V0.80, V0.86
 		Focus: func(device, thread string, on bool) { // V0.85
@@ -323,8 +324,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// this machine's database, where the host kept it before V0.54.
 		// V0.123 (decision 0025): other installs find this one by its
 		// well-known answer, which names where its host protocol is.
-		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen))
-		fr := front.New(front.Options{Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
+		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen), id)
+		fr := front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
 			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st,
 			WellKnown: func() peers.WellKnown { return wk }}, hosts)
 		go func() { fr.Run(ctx); close(frontDone) }()
@@ -384,8 +385,9 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	ln := listenLoopback(cfg.Listen)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	wk := wellKnown(cfg, name, "")
-	fr := front.New(front.Options{Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
+	id := installID(data)
+	wk := wellKnown(cfg, name, "", id)
+	fr := front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
 		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, WellKnown: func() peers.WellKnown { return wk }}, cfg.Hosts)
 	done := make(chan struct{})
 	go func() { fr.Run(ctx); close(done) }()

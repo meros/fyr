@@ -16,6 +16,10 @@ export interface HostInfo {
   deploy?: DeployProgress;
   /** V0.123: the front found it on the tailnet (decision 0025); else it is configured */
   found?: boolean;
+  /** V0.124 (decision 0026): the host's install key id ("F7QK-2M9X-…"); missing from a host older than V0.124 */
+  id?: string;
+  /** V0.124: the id the front first saw under this name, when the host now reports another */
+  idWas?: string;
 }
 
 /** The host's name for the rail and the phone; without one in the state, "mock" or "local". */
@@ -35,6 +39,8 @@ export function decodeHosts(raw: unknown): HostInfo[] {
       profiles: Array.isArray(h.profiles) ? (h.profiles as Profile[]) : undefined,
       deploy: h.deploy && typeof h.deploy === "object" && typeof (h.deploy as { phase?: unknown }).phase === "string" ? (h.deploy as DeployProgress) : undefined,
       ...(h.found === true ? { found: true } : {}),
+      ...(typeof h.id === "string" && h.id ? { id: h.id } : {}),
+      ...(typeof h.idWas === "string" && h.idWas ? { idWas: h.idWas } : {}),
     }));
 }
 
@@ -76,4 +82,21 @@ export function hostStatus(h: HostInfo, self: string): string {
   if (h.online) return `${here}online${found}`;
   const at = clockTime(h.since);
   return `${here}offline${at ? ` since ${at}` : ""}${found}`;
+}
+
+/** V0.124: the short form of an install id, its first group ("F7QK"). */
+export function shortID(id: string | undefined): string {
+  return (id ?? "").split("-")[0];
+}
+
+/** V0.124: the status line of a host row with its short id: "online · id F7QK". */
+export function hostLine(h: HostInfo, self: string): string {
+  const s = hostStatus(h, self);
+  return h.id ? `${s} · id ${shortID(h.id)}` : s;
+}
+
+/** V0.124: a host now reports another install id than the one the front first saw under its name: what the row says, or "". */
+export function idChangedLine(h: HostInfo): string {
+  if (!h.idWas || !h.id) return "";
+  return `Another install answers as ${h.name}: id ${shortID(h.id)}, it was ${shortID(h.idWas)}. Trust it if you reinstalled or replaced this machine.`;
 }
