@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.80: the machine load in the rail and each working thread's CPU, as words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpuText, loadDetail, railLoad, railSlots, threadCPU, threadSlot, type HostLoad } from "../src/load.ts";
+import { cpuText, loadDetail, railLoad, railMeter, railPips, railSlots, threadCPU, threadSlot, type HostLoad } from "../src/load.ts";
 
 const busy: HostLoad = {
   host: "laptop",
@@ -71,4 +71,21 @@ test("the rail shows the slots in use, hot while anyone waits", () => {
   assert.equal(threadSlot([full], "t_calm"), "build slot");
   assert.equal(threadSlot([full], "t_other"), null);
   assert.equal(threadSlot([], "t_new"), null);
+});
+
+test("V0.99: the ring fills with the load over the cores; calm, warm from 70 %, hot by the V0.80 rule", () => {
+  const h = (l: number, p?: number): HostLoad => ({ ...busy, load: [l, 1, 1], cpuPressure: p });
+  assert.deepEqual(railMeter(h(2)), { text: "2.0", share: 0.25, level: "calm" });
+  assert.deepEqual(railMeter(h(5.6)), { text: "5.6", share: 0.7, level: "warm" });
+  assert.deepEqual(railMeter(h(8)), { text: "8.0", share: 1, level: "warm" });
+  assert.deepEqual(railMeter(h(10.4)), { text: "10", share: 1, level: "hot" });
+  assert.deepEqual(railMeter(h(1, 45)), { text: "1.0", share: 0.125, level: "hot" });
+  assert.equal(railMeter({ ...h(1), cores: 0 }).share, 1);
+});
+
+test("V0.99: the pips count the slots, the holders and the waiters; none without slots", () => {
+  assert.equal(railPips(busy), null);
+  const slots = { n: 2, held: [{ owner: "t_busy", kind: "test" }, { owner: "t_calm", kind: "build" }], waiting: [{ owner: "t_new", kind: "test" }] };
+  assert.deepEqual(railPips({ ...busy, slots }), { n: 2, held: 2, waiting: 1 });
+  assert.deepEqual(railPips({ ...busy, slots: { n: 3, held: [], waiting: [] } }), { n: 3, held: 0, waiting: 0 });
 });
