@@ -70,3 +70,13 @@ func TestRoleFlags(t *testing.T) {
 		t.Fatalf("a missing config must leave the role to the default (both): %+v", c)
 	}
 }
+
+// SPEC 0.5 V0.123: a hostListen on loopback serves a second install on the
+// same machine; anything else is a tailnet address.
+func TestLoopbackHostListen(t *testing.T) {
+	for addr, want := range map[string]bool{"127.0.0.1:7778": true, "localhost:7778": true, "[::1]:7778": true, "100.64.0.2:7778": false, "tailnet:7778": false, "nope": false} {
+		if got := loopbackAddr(addr); got != want {
+			t.Errorf("loopbackAddr(%q) = %v", addr, got)
+		}
+	}
+}
