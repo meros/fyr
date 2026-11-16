@@ -28,7 +28,8 @@ import {
 } from "./new-thread.ts";
 import { projectChip } from "./projects.ts";
 import { effortsFor, startEffort } from "./providers.ts";
-import { createProjects, isQuiet, loadQuietShow, saveQuietShow } from "./quiet.ts";
+import { createProjects, isQuiet } from "./quiet.ts";
+import { useQuietUnlock } from "./project-ui.tsx";
 import type { Project } from "./types.ts";
 
 export interface NewThreadFormOptions extends FormCtx {
@@ -51,19 +52,14 @@ function storage(): KeyValue | null {
 
 export function useNewThreadForm(o: NewThreadFormOptions) {
   // V0.74: quiet projects stay out of the list until a 30 s hold shows them for 30 minutes; the picked one stays.
-  const [showUntil, setShowUntil] = useState(() => loadQuietShow(storage()));
-  const [, setTick] = useState(0);
-  const keep = useRef<string | undefined>(undefined);
+  // V0.114: the unlock is the one every path shares.
   const off = o.clockOffset ?? 0;
+  const unlock = useQuietUnlock(off);
+  const showUntil = unlock.showUntil;
+  const keep = useRef<string | undefined>(undefined);
   const now = Date.now() + off;
   const offered = createProjects(o.projects, now, showUntil, keep.current);
   const quietCount = o.projects.filter((x) => isQuiet(x, now)).length;
-  useEffect(() => {
-    const left = showUntil - (Date.now() + off);
-    if (left <= 0) return;
-    const t = setTimeout(() => setTick((n) => n + 1), Math.min(left + 250, 2 ** 31 - 1));
-    return () => clearTimeout(t);
-  }, [showUntil]);
   const ctx: FormCtx = { projects: offered, profiles: o.profiles, hosts: o.hosts };
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
@@ -116,9 +112,9 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     /** V0.74: the hold row under the project list */
     quiet: {
       count: quietCount,
-      showUntil: showUntil > now ? showUntil : 0,
-      show: () => setShowUntil(saveQuietShow(storage(), Date.now() + off)),
-      hide: () => setShowUntil(saveQuietShow(storage(), null)),
+      showUntil,
+      show: unlock.show,
+      hide: unlock.hide,
     },
     cur,
     making,
