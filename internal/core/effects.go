@@ -65,6 +65,9 @@ func reduceEffectResult(r Rec, in Input, now time.Time) (Result, error) {
 // report records the result of a request the agent made; the agent feed
 // tells the agent (feed.go, the result rule).
 func report(res *Result, req EffectReq, allowed, ok bool, text string) {
+	if line := autoLine(req); line != "" { // V0.102
+		text = strings.TrimSpace(line + " " + text)
+	}
 	data := map[string]any{"action": req.Action, "args": req.Args, "ok": ok, "text": text}
 	if !allowed {
 		data["declined"] = true

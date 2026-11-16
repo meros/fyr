@@ -59,6 +59,9 @@ type Engine struct {
 	projects map[string]*core.Project // V0.23
 	// records are the host change records (#35): observed branches.
 	records map[string]*core.Change
+	// autoMerge is the repos whose merge asks Fyr approves (V0.102), by
+	// core.RepoKey.
+	autoMerge map[string]bool
 	// cmds are each thread's commands from its session (V0.79), under cmdMu.
 	cmdMu sync.Mutex
 	cmds  map[string][]core.Command
@@ -171,6 +174,7 @@ func (e *Engine) Load() error {
 	for _, p := range ps {
 		e.projects[p.ID] = p
 	}
+	e.loadAutoMerge()
 	old, err := e.st.OldProjectSources()
 	if err != nil {
 		return err
@@ -431,6 +435,13 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 		if err := e.DeployNow(); err != nil {
 			return fail(409, err.Error())
 		}
+	case core.EffectAutoMergeSet: // V0.102: the owner's setting
+		repo, _ := ef.Request.Args["repo"].(string)
+		on, _ := ef.Request.Args["on"].(bool)
+		if err := e.setAutoMerge(repo, on); err != nil {
+			return fail(500, err.Error())
+		}
+		reply.Result = e.AutoMergeRepos()
 	case core.EffectProvider:
 		if e.Providers == nil {
 			return fail(404, "no providers on this host")
@@ -682,6 +693,9 @@ func (e *Engine) publish(p *applied) {
 		e.slotRunEnded(p.threadID)
 	}
 	e.start(p.threadID, p.res.Effects)
+	if p.threadID != "" {
+		e.autoApprove(p.threadID) // V0.102
+	}
 }
 
 // record appends events to a thread without changing it.

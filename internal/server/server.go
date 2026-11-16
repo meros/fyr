@@ -105,6 +105,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/quota", s.quota)
 	mux.HandleFunc("GET /api/load", s.load)
 	mux.HandleFunc("POST /api/board/visit", s.boardVisit)
+	// V0.102: the repos and the owner's auto-merge setting of each.
+	mux.HandleFunc("GET /api/autoMerge", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Engine.AutoMergeRepos()) })
 	// #42: the profiles alone, for the client after a provider changed.
 	mux.HandleFunc("GET /api/profiles", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.profiles()) })
 	if s.Providers != nil {

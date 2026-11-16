@@ -90,6 +90,9 @@ type Change struct {
 	// event, a report, an owner action (V0.98 (4)). A poll that reads the
 	// same PR again does not move it.
 	TouchedAt *time.Time `json:"touchedAt,omitempty"`
+	// AutoApproved is set when Fyr approved the change's merge by the repo
+	// setting, with no press (V0.102).
+	AutoApproved *AutoApproval `json:"autoApproved,omitempty"`
 }
 
 // Park is when the owner pressed Not now on a change, and a fingerprint of
