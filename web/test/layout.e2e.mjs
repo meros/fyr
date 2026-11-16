@@ -1754,22 +1754,23 @@ try {
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .brand img') && document.querySelector('.rail .brand img').complete");
   const r = await evaluate(`(() => {
     const img = document.querySelector('.rail .brand img'), b = img.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
-    return { w: b.width, h: b.height, loaded: img.naturalWidth > 0, alt: img.alt, src: img.getAttribute("src"), text: document.querySelector(".rail .brand").textContent.trim(), inside: b.left >= rail.left && b.right <= rail.right };
+    return { w: b.width, h: b.height, loaded: img.naturalWidth > 0, alt: img.alt, src: img.getAttribute("src"), alt: img.getAttribute("alt"), text: document.querySelector(".rail .brand").textContent.trim(), inside: b.left >= rail.left && b.right <= rail.right };
   })()`);
   check(r.src === "/logo.png" && r.w === 32 && r.h === 32 && r.loaded && r.alt === "Fyr" && r.text === "" && r.inside, `V0.92 desktop: the rail's mark (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.92 desktop: ${e.message}`);
 }
 
-// SPEC 0.5 V0.103: the phone's inbox header shows the same logo (28 px, loaded, inside the header) before the name.
+// SPEC 0.5 V0.103, V0.113: the phone's inbox header shows the same logo (28 px, loaded, inside the header) and no
+// visible name; the image's alt is the accessible name "Fyr".
 try {
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-ih .m-brand img') && document.querySelector('.m-ih .m-brand img').complete");
   const r = await evaluate(`(() => {
     const img = document.querySelector('.m-ih .m-brand img'), b = img.getBoundingClientRect(), h = document.querySelector('.m-ih').getBoundingClientRect();
-    return { w: b.width, h: b.height, loaded: img.naturalWidth > 0, src: img.getAttribute("src"), text: document.querySelector(".m-ih .m-brand").textContent.trim(), inside: b.left >= h.left && b.right <= h.right && b.top >= h.top && b.bottom <= h.bottom };
+    return { w: b.width, h: b.height, loaded: img.naturalWidth > 0, src: img.getAttribute("src"), alt: img.getAttribute("alt"), text: document.querySelector(".m-ih .m-brand").textContent.trim(), inside: b.left >= h.left && b.right <= h.right && b.top >= h.top && b.bottom <= h.bottom };
   })()`);
-  check(r.src === "/logo.png" && r.w === 28 && r.h === 28 && r.loaded && r.text === "Fyr" && r.inside, `V0.103 phone: the inbox header's logo (${JSON.stringify(r)})`);
+  check(r.src === "/logo.png" && r.w === 28 && r.h === 28 && r.loaded && r.alt === "Fyr" && !r.text.includes("Fyr") && r.inside, `V0.103 phone: the inbox header's logo (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.103 phone: ${e.message}`);
 }
