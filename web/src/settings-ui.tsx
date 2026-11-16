@@ -1,13 +1,13 @@
-// SPEC V0.119 (amends V0.50): Settings is four pages behind one nav: Providers (with System agents), Automation
-// (Auto-deploy, Auto-merge), Projects (with Hosts) and This device (Notifications, Theme, Show tool details, Install).
-// A provider, Add provider and a project are sub-pages. Every change saves at once. The same pages on the desktop (a
+// SPEC V0.119 (amends V0.50), V0.125: Settings is five pages behind one nav: Providers (with System agents),
+// Automation (Auto-deploy, Auto-merge), Projects, Hosts and This device (Notifications, Theme, Show tool details,
+// Install, How this browser gets in). A provider, Add provider, a project and a host are sub-pages. Every change saves at once. The same pages on the desktop (a
 // dialog: the nav is its left column, the page its right pane) and the phone (the nav is the Settings screen, a page
 // is the next screen); the reason for the difference is width.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
 import type { Api } from "./api.ts";
-import { hostStatus, type HostInfo } from "./hosts.ts";
+import { hostLine, hostRows, hostState, howIn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
 import { quotaFor } from "./quota.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { CARD_WORD, cardState } from "./quota.ts";
@@ -24,7 +24,7 @@ import { NewProjectStep, ProjectEditor, ProjectIcon, type ProjectPatch } from ".
 import { pushRow, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { move } from "./reorder.ts";
-import { PAGES, automationSummary, deviceSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
+import { PAGES, automationSummary, deviceSummary, hostsNeed, hostsSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
 import { Empty, Grip, Group, LoadError, MoveButtons, Row, SaveField, SavedMark, Seg, SetContext, Skeleton, Switch, useReorder, useSaved, useSet } from "./settings-rows.tsx";
 import {
   createArgs,
@@ -84,6 +84,10 @@ export interface SettingsProps {
   host: string;
   /** V0.51: the front's hosts with their state */
   hosts?: HostInfo[];
+  /** V0.125: this install's id (the state's hostId, V0.124), shown when the front lists no hosts */
+  hostId?: string;
+  /** V0.125: the state's user, for How this browser gets in */
+  user?: string;
   phone?: boolean;
   /** the page shown; null is the phone's nav screen (the desktop always shows a page) */
   at: PageRef | null;
@@ -254,10 +258,11 @@ export function Settings(p: SettingsProps) {
   const summaries: Record<PageId, string> = {
     providers: providersSummary(data.providers, blocked),
     automation: automationSummary(p.api.autoDeploy ? data.deploy : false, data.repos),
-    projects: projectsSummary(settingsProjects(p.projects).length, p.hosts?.length ?? 0),
+    projects: projectsSummary(settingsProjects(p.projects).length),
+    hosts: hostsSummary(p.hosts),
     device: deviceSummary(p.device.push, p.device.theme),
   };
-  const badge = navBadge(data.providers, blocked);
+  const badges: Partial<Record<PageId, number>> = { providers: navBadge(data.providers, blocked), hosts: hostsNeed(p.hosts) };
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
   const [reordering, setReordering] = useState(false);
@@ -289,7 +294,7 @@ export function Settings(p: SettingsProps) {
       phone={!!p.phone}
       active={p.at?.page ?? null}
       summaries={summaries}
-      badge={badge}
+      badges={badges}
       onPick={(id, keys) => {
         byKeys.current = !!keys;
         p.go({ page: id });
@@ -355,10 +360,11 @@ export function Settings(p: SettingsProps) {
 
 const pageKey = (r: PageRef) => (r.sub ? `${r.page}/${r.sub}` : r.page);
 
-/** The four pages: a title and a line of state each, and the amber count on Providers. Desktop: the dialog's left
+/** The five pages: a title and a line of state each, and the amber count on a page that needs the owner (Providers,
+ *  V0.125 Hosts). Desktop: the dialog's left
  *  column; ↑ and ↓ move between pages and the page follows the focus. Phone: the Settings screen; the chevron shows
  *  there only, because there the row leaves the screen. */
-export function SettingsNav({ phone, active, summaries, badge, onPick }: { phone: boolean; active: PageId | null; summaries: Record<PageId, string>; badge: number; onPick(id: PageId, keys?: boolean): void }) {
+export function SettingsNav({ phone, active, summaries, badges, onPick }: { phone: boolean; active: PageId | null; summaries: Record<PageId, string>; badges: Partial<Record<PageId, number>>; onPick(id: PageId, keys?: boolean): void }) {
   const ref = useRef<HTMLElement>(null);
   const onKey = (e: KeyboardEvent) => {
     if (phone || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
@@ -378,7 +384,7 @@ export function SettingsNav({ phone, active, summaries, badge, onPick }: { phone
             <span class="stn-t">{x.title}</span>
             <span class="stn-s">{summaries[x.id]}</span>
             <span class="stn-a">
-              {x.id === "providers" && badge > 0 && <span class="pst needs-login">{badge}</span>}
+              {(badges[x.id] ?? 0) > 0 && <span class="pst needs-login">{badges[x.id]}</span>}
               {phone && <span class="chev">›</span>}
             </span>
           </button>
@@ -457,8 +463,22 @@ function pageView(at: PageRef, p: SettingsProps, d: Data, ui: PageUi): PageView 
       }
       return { title: "Projects", ...projectsPage(p, ui) };
     }
+    case "hosts": {
+      const self = p.host || "local";
+      const rows = hostRows(p.hosts, self, p.hostId ?? "");
+      const h = at.sub ? rows.find((x) => x.name === at.sub) : undefined;
+      // An unknown name shows the Hosts page.
+      if (h)
+        return {
+          title: <span class="mono">{h.name}</span>,
+          parent: "Hosts",
+          end: <HostPill h={h} />,
+          body: <HostPage key={h.name} h={h} self={self} api={p.api} now={p.now} />,
+        };
+      return { title: "Hosts", body: <HostsPage rows={rows} self={self} now={p.now} go={go} /> };
+    }
     case "device":
-      return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} /> };
+      return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} user={p.user ?? ""} /> };
   }
 }
 
@@ -1196,10 +1216,224 @@ function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
   );
 }
 
+// ---- Hosts (V0.125, decision 0026 slice 1) ----
+
+/** One host in Settings → Hosts, the same row on the desktop and the phone (the phone's 56 px and larger type come from
+ *  the one `.set.phone` rule set, for touch): the state mark, the name, one line (state, route, short id); a changed id
+ *  replaces the line and is the only red row. The row opens the host's page, where every action is. */
+function HostRow({ h, self, now, go }: { h: HostInfo; self: string; now: number; go(r: PageRef): void }) {
+  const line = hostLine(h, self, now);
+  return (
+    <Row
+      class="host"
+      onClick={() => go({ page: "hosts", sub: h.name })}
+      lead={<span class={`hdot${h.idWas ? " warn" : h.online ? "" : " off"}`} aria-hidden="true" />}
+      title={
+        <>
+          {h.name}
+          {h.name === self && <span class="tag">This install</span>}
+        </>
+      }
+      mono
+      desc={h.idWas ? undefined : line}
+      error={h.idWas ? line : null}
+      data={{ host: h.name, sub: h.name, ...(h.id ? { id: h.id } : {}) }}
+      end={
+        <>
+          {h.idWas && <span class="pst needs-login">Needs you</span>}
+          <span class="chev">›</span>
+        </>
+      }
+    />
+  );
+}
+
+const HOSTS_FOOT = (
+  <>
+    Fyr finds your other installs on the tailnet by itself. A host it cannot see goes in fyrd's config (<span class="mono">hosts</span>).
+  </>
+);
+
+/** The Hosts page: this install first, then the front's hosts in its order. No buttons: today a host gets on the list
+ *  by discovery or by the config, and the foot says so. */
+function HostsPage({ rows, self, now, go }: { rows: HostInfo[]; self: string; now: number; go(r: PageRef): void }) {
+  return (
+    <Group
+      label="Hosts"
+      foot={
+        <>
+          {rows.length <= 1 && "This is your only Fyr install. "}
+          {HOSTS_FOOT}
+        </>
+      }
+    >
+      {rows.map((h) => (
+        <HostRow key={h.name} h={h} self={self} now={now} go={go} />
+      ))}
+    </Group>
+  );
+}
+
+/** The status pill at the end of a host's title (desktop) or first on its page (phone: its header has only the title
+ *  and Back). */
+function HostPill({ h }: { h: HostInfo }) {
+  if (h.idWas) return <span class="pst needs-login">Needs you</span>;
+  return <span class="pst">{h.online ? "Online" : "Offline"}</span>;
+}
+
+/** An install id in full: four groups, the first (the short form) in ink. */
+function IdFull({ id, big }: { id: string; big?: boolean }) {
+  return (
+    <span class={`idf${big ? " big" : ""}`} aria-label={`id ${id}`}>
+      {id.split("-").map((g, i) => (
+        <span key={i} class={i ? undefined : "s"}>
+          {g}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Copy writes the id with its dashes; "Copied" for 2 s. Not rendered where the browser has no clipboard API. */
+function CopyId({ id }: { id: string }) {
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => setDone(false), 2000);
+    return () => clearTimeout(t);
+  }, [done]);
+  if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return null;
+  return (
+    <button type="button" class="btn" aria-label={`Copy the id ${id}`} onClick={() => void navigator.clipboard.writeText(id).then(() => setDone(true), () => {})}>
+      {done ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
+/** A row whose text is a label, an id in full and a line under it (the id rows of a host's page). */
+function IdRow({ title, id, desc, end, bad }: { title: string; id: string; desc: ComponentChildren; end?: ComponentChildren; bad?: boolean }) {
+  return (
+    <div class={`sr idr${bad ? " bad" : ""}`}>
+      <span class="sr-b">
+        <span class="sr-t">{title}</span>
+        <IdFull id={id} big />
+        <span class="sr-d">{desc}</span>
+      </span>
+      {end && <span class="sr-e">{end}</span>}
+    </div>
+  );
+}
+
+const sentence = (s: string) => {
+  const t = s.trim();
+  if (!t) return "";
+  return `${t[0].toUpperCase()}${t.slice(1)}${/[.!?]$/.test(t) ? "" : "."}`;
+};
+
+/** A host's page: Identity (the full id, Copy, how Fyr trusts it today) and Connection (state, address and route, how
+ *  it got on the list). A changed id: the note, both ids in full and Trust <new> (front.hostId); the foot says what
+ *  Fyr does meanwhile. The same page on the desktop and the phone. */
+function HostPage({ h, self, api, now }: { h: HostInfo; self: string; api: SettingsProps["api"]; now: number }) {
+  const env = useSet();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const isSelf = h.name === self;
+  const route = routeOf(h.url, isSelf, h.found);
+  const trust = async () => {
+    setBusy(true);
+    const r = await api.command("front.hostId", undefined, { host: h.name });
+    setBusy(false);
+    if (r.ok) {
+      setErr(null);
+      env.saved(); // the hosts stream event makes this page the ordinary one
+    } else setErr(r.error || "the id could not be saved");
+  };
+  const state = hostState({ ...h, deploy: undefined }, now);
+  const TRUST_ROW = !isSelf && <Row title="Trust" desc="Through your tailnet: Fyr follows it because it is a node of your Tailscale login, not because of its key." />;
+  const identity =
+    h.idWas && h.id ? (
+      <Group title="Identity" foot={`Fyr still follows ${h.name} meanwhile: today it trusts a host through your tailnet login, not its key. If you do not know this install, take that machine off your tailnet.`}>
+        <IdRow title="It was" id={h.idWas} desc={`The id Fyr first saw for ${h.name}.`} />
+        <IdRow title="It is now" id={h.id} bad desc={`To check, open Fyr on ${h.name}: its Hosts page shows its own id.`} end={<CopyId id={h.id} />} />
+        <Row
+          class="trust"
+          title={`Trust ${shortID(h.id)} as ${h.name}`}
+          desc={err ? undefined : "Fyr then remembers the new id and stops warning."}
+          error={err ? `Not trusted: ${self} answered “${err}”. Nothing changed.` : null}
+          end={
+            <button type="button" class="btn" disabled={env.readOnly || busy} onClick={() => void trust()}>
+              Trust {shortID(h.id)}
+            </button>
+          }
+        />
+      </Group>
+    ) : (
+      <Group title="Identity">
+        {h.id ? (
+          <IdRow
+            title="Id"
+            id={h.id}
+            desc={isSelf ? `The id of the Fyr you are using. Your other installs show this id for ${h.name}.` : "Fyr remembers this id and tells you when another install answers under this name."}
+            end={<CopyId id={h.id} />}
+          />
+        ) : (
+          <Row title="Id" desc="None. This host runs a Fyr older than V0.124, which has no install key. It shows an id after its next update." />
+        )}
+        {TRUST_ROW}
+      </Group>
+    );
+  const under = !h.online ? (
+    <>
+      {h.error && <span class="err">{sentence(h.error)} </span>}
+      Its threads show as last read and cannot be changed.
+    </>
+  ) : h.deploy && updateWords(h) ? (
+    `Updating Fyr: ${updateWords(h)}`
+  ) : undefined;
+  return (
+    <>
+      {h.idWas && h.id && (
+        <div class="note bad" role="alert">
+          <span>
+            <b>Another install answers as {h.name}.</b> That is normal after you reinstalled or replaced {h.name}. It is wrong if you did not.
+          </span>
+        </div>
+      )}
+      {identity}
+      <Group title="Connection">
+        <Row class="hstate" title={state[0].toUpperCase() + state.slice(1)} desc={under} />
+        {h.url && (
+          <Row
+            title="Address"
+            desc={
+              <>
+                <span class="mono">{h.url}</span>
+                {route && ` · ${route}`}
+              </>
+            }
+          />
+        )}
+        {!isSelf &&
+          (h.found ? (
+            <Row title="Found on the tailnet" desc="Fyr found it by itself. It leaves this list 30 days after its last answer." />
+          ) : (
+            <Row
+              title="Set in this front's config"
+              desc={
+                <>
+                  It stays on this list until it is taken out of <span class="mono">hosts</span> there.
+                </>
+              }
+            />
+          ))}
+      </Group>
+    </>
+  );
+}
+
 /** V0.58: every project with its icon, folder and thread count; a row opens the project's page. Search from nine
  *  projects. V0.121: in the owner's one order, which this page sets with the one reorder control (a grip on the
- *  desktop, a Reorder mode with ↑ and ↓ on the phone); quiet projects are listed and keep their place. Hosts (V0.51)
- *  under their own heading. */
+ *  desktop, a Reorder mode with ↑ and ↓ on the phone); quiet projects are listed and keep their place. V0.125: the hosts have their own page. */
 function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
   const { adding, setAdding, q, setQ } = ui;
   const env = useSet();
@@ -1295,18 +1529,6 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
           {q.trim() ? <div class="sg-f">{projectSearchLine(list.length, all.length)}</div> : all.length > 1 && <div class="sg-f">This order is used in New thread, the project chips and every list of projects, on all your devices.</div>}
         </section>
       )}
-      {!mode && (
-        <>
-          <h3 class="stp-sub">Hosts</h3>
-          <Group label="Hosts">
-            {p.hosts && p.hosts.length > 0 ? (
-              p.hosts.map((h) => <Row key={h.name} title={h.name} mono class="host" desc={h.error ? undefined : hostStatus(h, p.host)} error={h.error ? `${hostStatus(h, p.host)} · ${h.error}` : null} />)
-            ) : (
-              <Row title={p.host || "This host"} mono class="host" desc="this machine" />
-            )}
-          </Group>
-        </>
-      )}
     </>
   );
 }
@@ -1321,7 +1543,7 @@ function useToolDetailsPref(): boolean {
 
 /** Notifications (V0.15), Theme, Show tool details, Install: kept in this browser. Never read-only: none of it goes to
  *  the host except the push subscription, which says so when it fails. */
-function DevicePage({ d }: { d: SettingsDevice }) {
+function DevicePage({ d, user }: { d: SettingsDevice; user: string }) {
   const [tested, setTested] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1381,6 +1603,8 @@ function DevicePage({ d }: { d: SettingsDevice }) {
           }
         />
         <Row label title="Show tool details" desc="Every tool group open, every machine line in full." end={<Switch on={details} label="Show tool details" onChange={setToolDetails} />} />
+        {/* V0.125: how this browser reaches this Fyr; the device list replaces it in slice 5 of decision 0026 */}
+        <Row class="howin" title="How this browser gets in" desc={howIn(typeof location === "undefined" ? "" : location.hostname, user)} />
         {d.canInstall && (
           <Row
             title="Install Fyr"

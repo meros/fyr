@@ -1,0 +1,96 @@
+// Package identity is an install's own key (decision 0026, SPEC 0.5 V0.124).
+// Each fyrd makes one Ed25519 key pair at its first start and keeps it in its
+// data folder. The key's id names the install: a host is known by its id,
+// not by its address or its name.
+package identity
+
+import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base32"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// File is the key's file name in the data folder.
+const File = "identity.key"
+
+const pemType = "FYR ED25519 PRIVATE KEY"
+
+// Key is an install's key pair.
+type Key struct {
+	Private ed25519.PrivateKey
+	Public  ed25519.PublicKey
+}
+
+// Load reads the key in dir, or makes one when there is none. A key file
+// that cannot be read as a key is an error: it is never replaced, because a
+// new key is a new install to every front that knew the old one.
+func Load(dir string) (*Key, error) {
+	path := filepath.Join(dir, File)
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return create(dir, path)
+	}
+	if err != nil {
+		return nil, err
+	}
+	blk, _ := pem.Decode(b)
+	if blk == nil || blk.Type != pemType || len(blk.Bytes) != ed25519.SeedSize {
+		return nil, fmt.Errorf("%s is not a Fyr install key; move it away to make a new one (a new key is a new install to the other fronts)", path)
+	}
+	priv := ed25519.NewKeyFromSeed(blk.Bytes)
+	return &Key{Private: priv, Public: priv.Public().(ed25519.PublicKey)}, nil
+}
+
+func create(dir, path string) (*Key, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	b := pem.EncodeToMemory(&pem.Block{Type: pemType, Bytes: priv.Seed()})
+	// O_EXCL: two processes starting at once keep one key.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return Load(dir)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		os.Remove(path)
+		return nil, err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return nil, err
+	}
+	return &Key{Private: priv, Public: pub}, nil
+}
+
+// ID is the install's id: the SHA-256 of its public key, the first 80 bits
+// in base32, as four groups of four ("F7QK-2M9X-…").
+func (k *Key) ID() string { return IDOf(k.Public) }
+
+// IDOf is the id of a public key.
+func IDOf(pub ed25519.PublicKey) string {
+	sum := sha256.Sum256(pub)
+	s := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:10])
+	return s[0:4] + "-" + s[4:8] + "-" + s[8:12] + "-" + s[12:16]
+}
+
+// Short is the first group of an id, the form a row shows.
+func Short(id string) string {
+	s, _, _ := strings.Cut(id, "-")
+	return s
+}

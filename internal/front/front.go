@@ -75,6 +75,9 @@ type Options struct {
 	// WellKnown is this install's /.well-known/fyr answer (V0.123, decision
 	// 0025), by which other installs find it; nil serves none.
 	WellKnown func() peers.WellKnown
+	// ID is this install's key id (V0.124, decision 0026), in the merged
+	// state's hostId.
+	ID string
 }
 
 type Front struct {
@@ -102,6 +105,9 @@ type Front struct {
 	// the front's own commands by commandId.
 	order    []string
 	receipts map[string]api.Reply
+	// pins: the key id the front first saw for each host, by name (V0.124,
+	// decision 0026), stored under front.hostIds.
+	pins map[string]string
 }
 
 // link is a front's connection to one host and its cache of that host's
@@ -124,6 +130,8 @@ type link struct {
 	since    time.Time
 	err      string
 	dirty    bool // changed since the cache was written
+	// idWas: the pinned id, when the host now reports another (V0.124).
+	idWas string
 }
 
 func New(opt Options, hosts []HostConfig) *Front {
@@ -147,6 +155,7 @@ func New(opt Options, hosts []HostConfig) *Front {
 	f.client.Store(c)
 	f.links.Store(&[]*link{})
 	f.loadOrder()
+	f.loadPins()
 	for _, h := range hosts {
 		if l := f.newLink(h); l != nil {
 			f.append(l)
@@ -428,12 +437,13 @@ func (f *Front) load(l *link, st map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	env := map[string]any{}
-	for _, k := range []string{"actions", "profiles", "deploy", "user", "host"} {
+	for _, k := range []string{"actions", "profiles", "deploy", "user", "host", "hostId"} {
 		if v, ok := st[k]; ok {
 			env[k] = v
 		}
 	}
 	l.setEnv(env)
+	f.pinLocked(l)
 	raw := map[string]map[string]any{}
 	ts, _ := st["threads"].([]any)
 	for _, x := range ts {
@@ -471,6 +481,7 @@ func (f *Front) load(l *link, st map[string]any) {
 	for id := range raw {
 		f.publishLocked(l, id)
 	}
+	f.publishHostsLocked()
 }
 
 func (f *Front) stampProject(l *link, p map[string]any) map[string]any {
@@ -649,6 +660,7 @@ func (f *Front) setOffline(l *link, err error) {
 	for id := range l.raw {
 		f.publishLocked(l, id)
 	}
+	f.publishHostsLocked()
 }
 
 // Handler serves the browser API (unchanged, plus host stamps) and the client.
@@ -776,7 +788,7 @@ func (f *Front) forward(w http.ResponseWriter, r *http.Request, l *link) {
 func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	f.mu.Lock()
-	st := api.State[map[string]any, map[string]any, any]{Now: time.Now().UTC(), User: core.Owner, BuildID: f.client.Load().build, Host: f.opt.Name,
+	st := api.State[map[string]any, map[string]any, any]{Now: time.Now().UTC(), User: core.Owner, BuildID: f.client.Load().build, Host: f.opt.Name, HostID: f.opt.ID,
 		Threads: []map[string]any{}, Projects: []map[string]any{}, Profiles: []any{}, Hosts: []api.Host{}, Partial: since > 0}
 	seenProfile := map[any]bool{}
 	var actions any
@@ -787,15 +799,8 @@ func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		st.Projects = append(st.Projects, l.projects...)
-		h := api.Host{Name: l.name(), Online: l.online, Found: l.cfg.Found}
-		if !l.since.IsZero() {
-			h.Since = l.since.UTC().Format(time.RFC3339)
-		}
-		if !l.online && l.err != "" {
-			h.Error = l.err
-		}
+		h := f.hostLocked(l)
 		if ps, ok := l.env["profiles"].([]any); ok {
-			h.Profiles = ps
 			for _, p := range ps {
 				pm, _ := p.(map[string]any)
 				if pm == nil || seenProfile[pm["id"]] {
@@ -805,11 +810,8 @@ func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 				st.Profiles = append(st.Profiles, p)
 			}
 		}
-		if d := l.env["deploy"]; d != nil {
-			h.Deploy = d
-			if f.isLocal(l) {
-				st.Deploy = d
-			}
+		if d := l.env["deploy"]; d != nil && f.isLocal(l) {
+			st.Deploy = d
 		}
 		if actions == nil && l.env["actions"] != nil {
 			actions = l.env["actions"]
@@ -876,6 +878,10 @@ func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.Action == KindProjectOrder { // V0.121: the front's own, no host's
 		f.orderCommand(w, c.CommandID, c.Args)
+		return
+	}
+	if c.Action == KindHostID { // V0.124: the front's own, no host's
+		f.hostIDCommand(w, c.CommandID, c.Args)
 		return
 	}
 	var l *link

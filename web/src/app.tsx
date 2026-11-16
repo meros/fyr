@@ -376,6 +376,7 @@ function App() {
       project: (p) => batch((s) => upsertProject(s, p)),
       projectOrder: (ids) => batch((s) => setProjectOrder(s, ids)),
       deploy: (p) => batch((s) => setDeploy(s, p)),
+      hosts: (hs) => batch((s) => ({ ...s, hosts: hs })),
       conn: (c) => batch((s) => setConn(s, c)),
     });
     const iv = setInterval(() => setTick(Date.now()), 15_000);
@@ -1173,6 +1174,8 @@ function App() {
       api={api}
       host={store.host}
       hosts={store.hosts}
+      hostId={store.hostId}
+      user={store.user}
       phone={!!phoneHeader}
       at={at}
       go={go}
