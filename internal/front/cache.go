@@ -25,6 +25,8 @@ type cacheFile struct {
 	Pub      map[string]map[string]any `json:"pub"`
 	Projects []map[string]any          `json:"projects"`
 	Env      map[string]any            `json:"env"`
+	// Settings: the host's last settings reads (V0.127), by path.
+	Settings map[string]settingsRead `json:"settings,omitempty"`
 }
 
 // key names a host's cache file: its configured name, which stays the same
@@ -61,6 +63,9 @@ func (f *Front) restore(l *link) {
 		l.pub = c.Pub
 	}
 	l.projects = c.Projects
+	if c.Settings != nil {
+		l.settings = c.Settings
+	}
 	l.setEnv(c.Env)
 	l.since = c.Since
 	if c.Online {
@@ -90,7 +95,7 @@ func (f *Front) saveDirty() {
 		}
 		l.dirty = false
 		b, err := json.Marshal(cacheFile{Name: l.name(), SavedAt: time.Now(), Online: l.online, Since: l.since,
-			Raw: l.raw, Pub: l.pub, Projects: l.projects, Env: l.env})
+			Raw: l.raw, Pub: l.pub, Projects: l.projects, Env: l.env, Settings: l.settings})
 		if err != nil {
 			f.opt.Logf("front: cache %s: %v", l.key(), err)
 			continue

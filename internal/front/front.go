@@ -132,6 +132,9 @@ type link struct {
 	dirty    bool // changed since the cache was written
 	// idWas: the pinned id, when the host now reports another (V0.124).
 	idWas string
+	// settings: the last answer of each settings read (V0.127), served
+	// while the host is offline.
+	settings map[string]settingsRead
 }
 
 func New(opt Options, hosts []HostConfig) *Front {
@@ -212,7 +215,7 @@ func (f *Front) newLink(h HostConfig) *link {
 		return nil
 	}
 	l := &link{cfg: h, base: u, client: opt.Client, raw: map[string]map[string]any{},
-		pub: map[string]map[string]any{}, known: map[string]bool{}}
+		pub: map[string]map[string]any{}, known: map[string]bool{}, settings: map[string]settingsRead{}}
 	l.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(l.base)
@@ -698,7 +701,13 @@ func (f *Front) Handler() http.Handler {
 	mux.HandleFunc("GET /api/quota", f.quota)
 	mux.HandleFunc("GET /api/load", f.hostLoad)
 	mux.HandleFunc("GET /api/profiles", f.profiles)
+	for _, p := range settingsPaths { // V0.127: a host's settings, also while it is offline
+		mux.HandleFunc("GET "+p, f.settingsRead)
+	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		if f.badHost(w, r) {
+			return
+		}
 		f.forward(w, r, f.byName(r.URL.Query().Get("host")))
 	})
 	mux.HandleFunc("/mcp", http.NotFound) // agents talk to their host
@@ -711,7 +720,9 @@ func (f *Front) Handler() http.Handler {
 	return server.Browser(f.opt.OwnerLogin, mux)
 }
 
-// byName is the host with that name, else the first host.
+// byName is the host with that name; "" is the first host. A name the
+// front does not follow is nil (V0.127): a call meant for one host never
+// goes to another.
 func (f *Front) byName(name string) *link {
 	if name != "" {
 		f.mu.Lock()
@@ -721,6 +732,7 @@ func (f *Front) byName(name string) *link {
 				return l
 			}
 		}
+		return nil
 	}
 	ls := f.all()
 	if len(ls) == 0 {
@@ -753,6 +765,21 @@ func (f *Front) projectOwner(id string) *link {
 		}
 	}
 	return nil
+}
+
+// noHost refuses a call that names a host this front does not follow (V0.127).
+func noHost(w http.ResponseWriter, name string) {
+	api.WriteJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": fmt.Sprintf("this front follows no host %s", name)})
+}
+
+// badHost refuses a call whose ?host= names a host the front does not
+// follow; true when it did.
+func (f *Front) badHost(w http.ResponseWriter, r *http.Request) bool {
+	if h := r.URL.Query().Get("host"); h != "" && f.byName(h) == nil {
+		noHost(w, h)
+		return true
+	}
+	return false
 }
 
 // unavailable answers for a host that cannot take the call now.
@@ -894,7 +921,10 @@ func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 	case c.ThreadID != "":
 		l = f.owner(c.ThreadID)
 	case host != "":
-		l = f.byName(host)
+		if l = f.byName(host); l == nil {
+			noHost(w, host)
+			return
+		}
 	case pid != "":
 		if l = f.projectOwner(pid); l == nil {
 			l = f.byName("")
@@ -958,6 +988,9 @@ func (f *Front) remember(id string, l *link) {
 // upload stores a file on the host the client names (the thread's, or the
 // host a new thread will start on), else the first host (V0.54).
 func (f *Front) upload(w http.ResponseWriter, r *http.Request) {
+	if f.badHost(w, r) {
+		return
+	}
 	l := f.target(r)
 	if l == nil {
 		l = f.byName("")
@@ -1002,6 +1035,9 @@ func (r *recorder) Write(b []byte) (int, error) {
 // that id (an upload, or the preview page whose files these are), else the
 // first host. No host is tried in turn.
 func (f *Front) lookup(w http.ResponseWriter, r *http.Request) {
+	if f.badHost(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	l := f.target(r)
 	if l != nil {
@@ -1021,31 +1057,39 @@ func (f *Front) lookup(w http.ResponseWriter, r *http.Request) {
 // are per host (0015); a profile id on two hosts shows the first's. With
 // ?host= it is that host's only.
 func (f *Front) quota(w http.ResponseWriter, r *http.Request) {
+	if f.badHost(w, r) {
+		return
+	}
 	if l := f.target(r); l != nil {
 		f.forward(w, r, l)
 		return
 	}
-	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/quota", "profile"))
+	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/quota", "profile", true))
 }
 
 // hostLoad joins the load of every online host (V0.80), one entry per host.
 func (f *Front) hostLoad(w http.ResponseWriter, r *http.Request) {
+	if f.badHost(w, r) {
+		return
+	}
 	if l := f.target(r); l != nil {
 		f.forward(w, r, l)
 		return
 	}
-	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/load", "host"))
+	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/load", "host", false))
 }
 
 // profiles asks each online host for its profiles (#42), merged by id with
 // the first host's winning, as in the state.
 func (f *Front) profiles(w http.ResponseWriter, r *http.Request) {
-	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/profiles", "id"))
+	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/profiles", "id", false))
 }
 
 // gather GETs a list from each online host and joins them in host order,
-// keeping the first item for each value of key.
-func (f *Front) gather(ctx context.Context, path, key string) []map[string]any {
+// keeping the first item for each value of key. perHost (V0.127, the quota): each item is stamped with its
+// host and kept once per host, so the same provider id on two hosts is two
+// items.
+func (f *Front) gather(ctx context.Context, path, key string, perHost bool) []map[string]any {
 	var on []*link
 	f.mu.Lock()
 	for _, l := range f.all() {
@@ -1062,6 +1106,11 @@ func (f *Front) gather(ctx context.Context, path, key string) []map[string]any {
 			defer wg.Done()
 			var q []map[string]any
 			if err := f.get(ctx, l, path, &q); err == nil {
+				if perHost {
+					for _, x := range q {
+						x["host"] = l.name()
+					}
+				}
 				parts[i] = q
 			}
 		}()
@@ -1071,8 +1120,12 @@ func (f *Front) gather(ctx context.Context, path, key string) []map[string]any {
 	seen := map[any]bool{}
 	for _, p := range parts {
 		for _, q := range p {
-			if !seen[q[key]] {
-				seen[q[key]] = true
+			k := q[key]
+			if perHost {
+				k = fmt.Sprint(q["host"], "\x00", q[key])
+			}
+			if !seen[k] {
+				seen[k] = true
 				out = append(out, q)
 			}
 		}
