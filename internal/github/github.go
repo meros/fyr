@@ -41,7 +41,7 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	if !ok {
 		return core.PR{}, 0, fmt.Errorf("not a PR URL: %s", url)
 	}
-	out, err := gh(ctx, "pr", "view", "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt,isDraft,mergeStateStatus,autoMergeRequest", "--", canon)
+	out, err := gh(ctx, "pr", "view", "--json", "state,mergeable,reviewDecision,statusCheckRollup,title,headRefName,headRefOid,mergeCommit,mergedAt,isDraft,mergeStateStatus,autoMergeRequest,baseRefName", "--", canon)
 	if err != nil {
 		return core.PR{}, 0, err
 	}
@@ -52,6 +52,7 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 		Title          string `json:"title"`
 		HeadRefName    string `json:"headRefName"`
 		HeadRefOid     string `json:"headRefOid"`
+		BaseRefName    string `json:"baseRefName"`
 		MergeCommit    *struct {
 			Oid string `json:"oid"`
 		} `json:"mergeCommit"`
@@ -93,7 +94,50 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	if v.MergedAt != nil && !v.MergedAt.IsZero() {
 		p.MergedAt = v.MergedAt
 	}
+	p.Base = v.BaseRefName
+	if p.State == "MERGED" && p.Base != "" {
+		readStacked(ctx, gh, &p)
+	}
 	return p, failed, nil
+}
+
+// defaultBranches caches each repo's default branch (V0.98 (1)).
+var defaultBranches sync.Map
+
+// readStacked tells a merged PR whose base is not the repo's default branch
+// (stacked), and whether its merge commit is in the default branch yet
+// (V0.98 (1)): GitHub's compare of the default branch with the merge
+// commit is "behind" or "identical". A read that fails leaves it unknown.
+func readStacked(ctx context.Context, gh Runner, p *core.PR) {
+	def, ok := defaultBranches.Load(p.Repo)
+	if !ok {
+		out, err := gh(ctx, "api", "repos/"+p.Repo, "--jq", ".default_branch")
+		name := strings.TrimSpace(string(out))
+		if err != nil || name == "" || strings.ContainsAny(name, " {\n") {
+			return
+		}
+		def, _ = defaultBranches.LoadOrStore(p.Repo, name)
+	}
+	if def.(string) == p.Base {
+		return
+	}
+	p.Stacked = true
+	if p.MergeSHA == "" {
+		return
+	}
+	out, err := gh(ctx, "api", fmt.Sprintf("repos/%s/compare/%s...%s", p.Repo, def, p.MergeSHA), "--jq", ".status")
+	if err != nil {
+		return
+	}
+	in := false
+	switch strings.TrimSpace(string(out)) {
+	case "behind", "identical":
+		in = true
+	case "ahead", "diverged":
+	default:
+		return
+	}
+	p.InDefault = &in
 }
 
 // Missing reports an error by which GitHub answered that the PR or its

@@ -104,6 +104,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/t3/candidates", s.t3)
 	mux.HandleFunc("GET /api/quota", s.quota)
 	mux.HandleFunc("GET /api/load", s.load)
+	mux.HandleFunc("POST /api/board/visit", s.boardVisit)
 	// V0.102: the repos and the owner's auto-merge setting of each.
 	mux.HandleFunc("GET /api/autoMerge", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Engine.AutoMergeRepos()) })
 	// #42: the profiles alone, for the client after a provider changed.
@@ -685,6 +686,17 @@ func (s *Server) load(w http.ResponseWriter, r *http.Request) {
 	l := s.Load.Get()
 	l.Host = s.hostName()
 	api.WriteJSON(w, 200, []cgroup.Load{l})
+}
+
+// boardVisit is the owner opening the Changes board (V0.98 (3)): the host
+// stores the time as boardSeenAt and returns the visit before, null at the
+// first.
+func (s *Server) boardVisit(w http.ResponseWriter, r *http.Request) {
+	var seen any
+	if prev := s.Engine.BoardVisit(); !prev.IsZero() {
+		seen = prev
+	}
+	api.WriteJSON(w, 200, map[string]any{"seenAt": seen})
 }
 
 // focus takes a front's presence beat for one of this host's threads
