@@ -834,24 +834,29 @@ button.ptag{padding:0}
    each one's real height once it has been drawn, so scrolling stays exact. */
 .convo-in>*{content-visibility:auto;contain-intrinsic-size:auto 64px}
 
-/* SPEC 0.5 V0.39: the update banner */
-.dbn{position:fixed;z-index:70;left:88px;bottom:14px;max-width:min(560px,calc(100vw - 100px));display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 12px;border-radius:12px;background:var(--raised);border:1px solid var(--line-strong);box-shadow:0 8px 28px rgba(0,0,0,.18);font:500 13px/18px var(--ui);color:var(--ink)}
-.dbn.m{left:12px;right:12px;bottom:auto;max-width:none;top:calc(env(safe-area-inset-top) + 8px);font-size:14px;line-height:20px}
-.dbn-t{flex:1;min-width:0;overflow-wrap:anywhere}
-.dbn.ok{border-color:var(--calm)}
-.dbn.fail{border-color:var(--signal-ink)}
+/* SPEC 0.5 V0.39, V0.118: the update status, a line in the layout (never over a control). The desktop's .shell is a
+   column: the status on top, the app below it takes the rest. On the phone it is the first line of .m-app. */
+.shell{display:flex;flex-direction:column;height:100vh;height:100dvh}
+.shell>.app{flex:1;min-height:0;height:auto}
+.dbn{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px;min-height:30px;padding:0 6px 0 12px;background:var(--sunken);border-bottom:1px solid var(--line);font:500 12.5px/18px var(--ui);color:var(--ink-muted);min-width:0}
+.dbn-x{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;min-height:30px;padding:0;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.dbn-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dbn.open .dbn-t{white-space:normal;overflow-wrap:anywhere;padding:6px 0}
+.dbn.ok{color:var(--ink)}
+.dbn.fail{color:var(--signal-ink);background:color-mix(in srgb,var(--signal-ink) 8%,var(--sunken))}
 .dbn-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--calm)}
 .dbn.fail .dbn-dot{background:var(--signal-ink)}
-.dbn-spin{width:14px;height:14px;flex:none;border-radius:50%;border:2px solid var(--line-strong);border-top-color:var(--ink);animation:dbn-r .8s linear infinite}
+.dbn-spin{width:12px;height:12px;flex:none;border-radius:50%;border:2px solid var(--line-strong);border-top-color:var(--ink-muted);animation:dbn-r .8s linear infinite}
 @keyframes dbn-r{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.dbn-spin{animation:none}}
-.dbn-b{border:0;background:none;color:var(--ink-muted);font:inherit;cursor:pointer;padding:2px 6px;min-height:28px}
-.dbn.m .dbn-b{min-height:44px;min-width:44px}
+.dbn-b{flex:none;border:0;background:none;color:var(--ink-muted);font:inherit;cursor:pointer;padding:0 8px;min-height:28px;border-radius:6px}
+.dbn-b:hover{color:var(--ink);background:var(--raised)}
 .dbn-b.dbn-now{color:var(--signal-ink);font-weight:600;white-space:nowrap}
-.dbn-more{flex-basis:100%;margin:0;max-height:40vh;overflow:auto;padding:8px;border-radius:8px;background:var(--sunken);font:400 12px/17px var(--mono);white-space:pre-wrap}
-/* #81: a folded busy banner: a small chip at the same corner; a press opens it */
-.dbn.dbn-chip{flex-wrap:nowrap;width:auto;max-width:none;padding:6px 12px;cursor:pointer;font:inherit;color:var(--ink);text-align:left}
-.dbn.dbn-chip.m{left:auto;right:12px;min-height:44px}
+.dbn-more{flex-basis:100%;margin:0 0 8px;max-height:30vh;overflow:auto;padding:8px;border-radius:8px;background:var(--raised);color:var(--ink);font:400 12px/17px var(--mono);white-space:pre-wrap}
+/* the phone: 44 px targets (touch), a slightly larger type */
+.dbn.m{padding:0 0 0 16px;font-size:14px;line-height:20px}
+.dbn.m .dbn-x{min-height:44px}
+.dbn.m .dbn-b{min-height:44px;min-width:44px}
 
 /* SPEC 0.5 V0.40: the thread list can be hidden; the open thread then takes its room. */
 .app.nolist{grid-template-columns:76px minmax(0,1fr)}
