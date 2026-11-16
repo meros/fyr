@@ -1,7 +1,7 @@
 // The Changes board (SPEC 0.5 V0.64): every change of every thread on one screen, grouped by stage. Pure.
 
 import type { Change, Project, Thread } from "./types.ts";
-import { ended } from "./offers.ts";
+import { ended, needsOwner } from "./offers.ts";
 import { projectOf } from "./projects.ts";
 
 export type Column = "needs" | "working" | "review" | "landed" | "live" | "ended";
@@ -37,10 +37,11 @@ export function putAway(t: Thread): boolean {
   return t.attention.section === "settled" || t.attention.section === "snoozed";
 }
 
-/** A change that fails or waits for the owner goes to Needs you, whatever its phase. */
+/** A change that fails or waits for the owner goes to Needs you, whatever its phase; one the owner parked with Not
+ *  now (V0.84) stays in its phase. */
 export function columnOf(c: Change): Column {
   if (ended(c.phase)) return "ended";
-  if (c.needs === "owner" || c.conditions?.some((k) => k.status === "fail")) return "needs";
+  if (needsOwner(c)) return "needs";
   return c.phase as Column;
 }
 
