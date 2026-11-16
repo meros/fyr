@@ -31,6 +31,7 @@ import (
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/mcp"
+	"github.com/meros/fyr/internal/peers"
 	"github.com/meros/fyr/internal/preview"
 	"github.com/meros/fyr/internal/projicon"
 	"github.com/meros/fyr/internal/provider"
@@ -66,6 +67,7 @@ func main() {
 	list := fl.Bool("list", false, "import-t3: only list the candidates")
 	role := fl.String("role", "", "host, front or both (default from config role, else both)")
 	hostsFlag := fl.String("hosts", "", "front: other hosts as name=url,… (default from config hosts)")
+	peersFlag := fl.String("peers", "", "other Fyr page origins to probe, comma separated (default from config peers; V0.123)")
 	hostListen := fl.String("host-listen", "", "host: also serve fronts on this tailnet address, or tailnet:PORT (default from config hostListen)")
 	fl.Parse(args)
 
@@ -79,11 +81,17 @@ func main() {
 	}
 	cfg := loadConfig(*cfgPath, filepath.Join(*t3Dir, "settings.json"))
 	cfg.override(*listen, *ownerLogin, *role, *hostsFlag, *hostListen)
+	if *peersFlag != "" {
+		cfg.Peers = strings.Split(*peersFlag, ",")
+	}
 	var webFS fs.FS = web.Dist()
 	if *webDir != "" {
 		webFS = os.DirFS(*webDir)
 	}
 	hostName, _ := os.Hostname()
+	if cfg.Name != "" {
+		hostName = cfg.Name
+	}
 	if cfg.Role == "front" {
 		if cmd != "serve" {
 			log.Fatalf("%s needs the host role", cmd)
@@ -286,6 +294,14 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			}
 		}()
 	}
+	// V0.54: "tailnet:PORT" is this machine's tailnet address.
+	if port, ok := strings.CutPrefix(cfg.HostListen, "tailnet:"); ok {
+		ip, err := tailnet.IPv4(tailnet.DefaultSocket)
+		if err != nil {
+			log.Fatalf("hostListen %s: %v", cfg.HostListen, err)
+		}
+		cfg.HostListen = net.JoinHostPort(ip, port)
+	}
 	hostHandler := srv.Handler()
 	if cfg.Role == "host" {
 		serve(ln, hostHandler)
@@ -297,9 +313,14 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		hosts := append([]front.HostConfig{{Name: hostName, URL: "http://" + link.Addr().String()}}, cfg.Hosts...)
 		// The front's device data (push keys and subscriptions) stays in
 		// this machine's database, where the host kept it before V0.54.
+		// V0.123 (decision 0025): other installs find this one by its
+		// well-known answer, which names where its host protocol is.
+		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen))
 		fr := front.New(front.Options{Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
-			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st}, hosts)
+			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st,
+			WellKnown: func() peers.WellKnown { return wk }}, hosts)
 		go func() { fr.Run(ctx); close(frontDone) }()
+		go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every)
 		// V0.81: a client-only deploy swaps the client this front serves.
 		dep.SwitchClient = func(build, dir string) error { return fr.SetClient(build, os.DirFS(dir)) }
 		mux := http.NewServeMux()
@@ -307,15 +328,14 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		mux.Handle("/", fr.Handler())
 		serve(ln, mux)
 	}
-	if cfg.HostListen != "" {
-		// V0.54: "tailnet:PORT" is this machine's tailnet address.
-		if port, ok := strings.CutPrefix(cfg.HostListen, "tailnet:"); ok {
-			ip, err := tailnet.IPv4(tailnet.DefaultSocket)
-			if err != nil {
-				log.Fatalf("hostListen %s: %v", cfg.HostListen, err)
-			}
-			cfg.HostListen = net.JoinHostPort(ip, port)
-		}
+	switch {
+	case cfg.HostListen == "":
+	case loopbackAddr(cfg.HostListen):
+		// V0.123: a second install on this machine (development, tests)
+		// follows this host on loopback, behind the loopback guard (V0.14).
+		serve(listenLoopback(cfg.HostListen), hostHandler)
+		log.Printf("serving fronts on loopback at %s", cfg.HostListen)
+	default:
 		serve(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: tailnet.DefaultSocket}))
 		log.Printf("serving fronts on the tailnet at %s", cfg.HostListen)
 	}
@@ -353,10 +373,12 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	ln := listenLoopback(cfg.Listen)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	wk := wellKnown(cfg, name, "")
 	fr := front.New(front.Options{Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
-		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st}, cfg.Hosts)
+		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, WellKnown: func() peers.WellKnown { return wk }}, cfg.Hosts)
 	done := make(chan struct{})
 	go func() { fr.Run(ctx); close(done) }()
+	go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every) // V0.123
 	hs := &http.Server{Handler: fr.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
