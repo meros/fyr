@@ -14,6 +14,7 @@ import type { Quota } from "./quota.ts";
 import type { HostLoad } from "./load.ts";
 import type { FoundDTO, ProviderDTO } from "./providers.ts";
 import type { AutoDeploySetting, AutoMergeRepo } from "./automerge.ts";
+import type { UpdatesView } from "./updates.ts";
 import type { SystemAgentsView } from "./system-agents.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
@@ -91,6 +92,8 @@ export interface Api {
   autoMerge(): Promise<AutoMergeRepo[]>;
   /** V0.111: whether Fyr approves agents' deploy asks of merged code with no press. */
   autoDeploy(): Promise<AutoDeploySetting>;
+  /** V0.126 (#151): the update record and whether a local build pauses auto-update. */
+  updates(): Promise<UpdatesView>;
   /** V0.115: the system agents setting of a host ("" or missing: the front's first host) */
   systemAgents(host?: string): Promise<SystemAgentsView>;
   /** V0.50: the current profiles (after a provider changed). */
@@ -436,6 +439,9 @@ function createHttpApi(): Api {
     },
     async autoDeploy() {
       return fsGet<AutoDeploySetting>("/api/autoDeploy");
+    },
+    async updates() {
+      return fsGet<UpdatesView>("/api/updates");
     },
     async systemAgents(host) {
       return fsGet<SystemAgentsView>(`/api/systemAgents${host ? `?host=${encodeURIComponent(host)}` : ""}`);

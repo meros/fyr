@@ -80,7 +80,7 @@ export function providersSummary(list: Status[] | null, blocked: number): string
 export function automationSummary(deploy: boolean | null, repos: AutoMergeRepo[] | null): string {
   if (deploy === null || repos === null) return "";
   const on = repos.filter((r) => r.on).length;
-  return `Deploys ${deploy ? "on" : "off"} · ${on ? `merges in ${plural(on, "repo", "repos")}` : "merges off"}`;
+  return `Updates ${deploy ? "on" : "off"} · ${on ? `merges in ${plural(on, "repo", "repos")}` : "merges off"}`;
 }
 
 /** "10 projects", "No projects" (V0.125: the hosts have their own page). */
