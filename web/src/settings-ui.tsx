@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
 import type { Api } from "./api.ts";
-import { hostStatus, type HostInfo } from "./hosts.ts";
+import { hostLine, hostStatus, idChangedLine, shortID, type HostInfo } from "./hosts.ts";
 import { quotaFor } from "./quota.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { CARD_WORD, cardState } from "./quota.ts";
@@ -1196,6 +1196,42 @@ function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
   );
 }
 
+/** V0.51, V0.124: one host in Settings → Projects → Hosts, the same row on the desktop and the phone: its status and
+ *  short install id; when another install answers under its name (a reinstall, or a machine with the same name), the
+ *  row says so and "Trust <id>" pins the new id (front.hostId). The front keeps following the host either way. */
+function HostRow({ h, self, api }: { h: HostInfo; self: string; api: SettingsProps["api"] }) {
+  const env = useSet();
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const changed = idChangedLine(h);
+  const trust = async () => {
+    setBusy(true);
+    const r = await api.command("front.hostId", undefined, { host: h.name });
+    setBusy(false);
+    setErr(r.ok ? null : r.error || "Could not trust the new id");
+  };
+  const line = hostLine(h, self);
+  // The changed line names both ids, so the status before it does not repeat the short id.
+  const error = err ?? (h.error ? `${line} · ${h.error}` : changed ? `${hostStatus(h, self)} · ${changed}` : null);
+  return (
+    <Row
+      title={h.name}
+      mono
+      class="host"
+      desc={error ? undefined : line}
+      error={error}
+      data={h.id ? { id: h.id } : undefined}
+      end={
+        changed && (
+          <button type="button" class="btn" disabled={env.readOnly || busy} onClick={() => void trust()}>
+            Trust {shortID(h.id)}
+          </button>
+        )
+      }
+    />
+  );
+}
+
 /** V0.58: every project with its icon, folder and thread count; a row opens the project's page. Search from nine
  *  projects. V0.121: in the owner's one order, which this page sets with the one reorder control (a grip on the
  *  desktop, a Reorder mode with ↑ and ↓ on the phone); quiet projects are listed and keep their place. Hosts (V0.51)
@@ -1300,7 +1336,7 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
           <h3 class="stp-sub">Hosts</h3>
           <Group label="Hosts">
             {p.hosts && p.hosts.length > 0 ? (
-              p.hosts.map((h) => <Row key={h.name} title={h.name} mono class="host" desc={h.error ? undefined : hostStatus(h, p.host)} error={h.error ? `${hostStatus(h, p.host)} · ${h.error}` : null} />)
+              p.hosts.map((h) => <HostRow key={h.name} h={h} self={p.host} api={p.api} />)
             ) : (
               <Row title={p.host || "This host"} mono class="host" desc="this machine" />
             )}

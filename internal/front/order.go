@@ -43,24 +43,9 @@ func (f *Front) loadOrder() {
 	f.order = ids
 }
 
-// orderCommand runs front.projectOrder {ids}: one list of project ids across
-// all hosts, the owner's; blanks and repeats are dropped. A commandId that
-// already ran answers its first reply and changes nothing.
-func (f *Front) orderCommand(w http.ResponseWriter, commandID string, args map[string]any) {
-	reply := func(code int, rep api.Reply) {
-		if commandID != "" && code < 500 {
-			f.mu.Lock()
-			if f.receipts == nil {
-				f.receipts = map[string]api.Reply{}
-			}
-			if len(f.receipts) >= maxReceipts {
-				clear(f.receipts)
-			}
-			f.receipts[commandID] = rep
-			f.mu.Unlock()
-		}
-		api.WriteJSON(w, code, rep)
-	}
+// frontCommand runs one of the front's own commands (V0.121, V0.124). A
+// commandId that already ran answers its first reply and changes nothing.
+func (f *Front) frontCommand(w http.ResponseWriter, commandID string, run func() (int, api.Reply)) {
 	if commandID != "" {
 		f.mu.Lock()
 		rep, ok := f.receipts[commandID]
@@ -70,39 +55,55 @@ func (f *Front) orderCommand(w http.ResponseWriter, commandID string, args map[s
 			return
 		}
 	}
-	raw, ok := args["ids"].([]any)
-	if !ok {
-		reply(400, api.Reply{Error: "ids must be a list of project ids", Status: 400})
-		return
-	}
-	if len(raw) > maxOrderIDs {
-		reply(400, api.Reply{Error: fmt.Sprintf("at most %d projects", maxOrderIDs), Status: 400})
-		return
-	}
-	ids := make([]string, 0, len(raw))
-	seen := map[string]bool{}
-	for _, x := range raw {
-		s, _ := x.(string)
-		s = strings.TrimSpace(s)
-		if s == "" || len(s) > 200 || seen[s] {
-			continue
+	code, rep := run()
+	if commandID != "" && code < 500 {
+		f.mu.Lock()
+		if f.receipts == nil {
+			f.receipts = map[string]api.Reply{}
 		}
-		seen[s] = true
-		ids = append(ids, s)
+		if len(f.receipts) >= maxReceipts {
+			clear(f.receipts)
+		}
+		f.receipts[commandID] = rep
+		f.mu.Unlock()
 	}
-	if f.opt.Store == nil {
-		reply(500, api.Reply{Error: "This front keeps no settings", Status: 500})
-		return
-	}
-	b, _ := json.Marshal(ids)
-	if err := f.opt.Store.SetKV(projectOrderKey, string(b)); err != nil {
-		reply(500, api.Reply{Error: "Could not save the project order: " + err.Error(), Status: 500})
-		return
-	}
-	f.mu.Lock()
-	f.order = ids
-	f.mu.Unlock()
-	ev, _ := json.Marshal(map[string]any{"ids": ids})
-	f.hub.Publish("projectOrder", ev)
-	reply(200, api.Reply{OK: true, Status: 200, Result: map[string]any{"ids": ids}})
+	api.WriteJSON(w, code, rep)
+}
+
+// orderCommand runs front.projectOrder {ids}: one list of project ids across
+// all hosts, the owner's; blanks and repeats are dropped.
+func (f *Front) orderCommand(w http.ResponseWriter, commandID string, args map[string]any) {
+	f.frontCommand(w, commandID, func() (int, api.Reply) {
+		raw, ok := args["ids"].([]any)
+		if !ok {
+			return 400, api.Reply{Error: "ids must be a list of project ids", Status: 400}
+		}
+		if len(raw) > maxOrderIDs {
+			return 400, api.Reply{Error: fmt.Sprintf("at most %d projects", maxOrderIDs), Status: 400}
+		}
+		ids := make([]string, 0, len(raw))
+		seen := map[string]bool{}
+		for _, x := range raw {
+			s, _ := x.(string)
+			s = strings.TrimSpace(s)
+			if s == "" || len(s) > 200 || seen[s] {
+				continue
+			}
+			seen[s] = true
+			ids = append(ids, s)
+		}
+		if f.opt.Store == nil {
+			return 500, api.Reply{Error: "This front keeps no settings", Status: 500}
+		}
+		b, _ := json.Marshal(ids)
+		if err := f.opt.Store.SetKV(projectOrderKey, string(b)); err != nil {
+			return 500, api.Reply{Error: "Could not save the project order: " + err.Error(), Status: 500}
+		}
+		f.mu.Lock()
+		f.order = ids
+		f.mu.Unlock()
+		ev, _ := json.Marshal(map[string]any{"ids": ids})
+		f.hub.Publish("projectOrder", ev)
+		return 200, api.Reply{OK: true, Status: 200, Result: map[string]any{"ids": ids}}
+	})
 }
