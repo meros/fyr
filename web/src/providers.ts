@@ -1,5 +1,6 @@
 // SPEC 0.5 V0.50: Settings → Providers, as words and command arguments. Pure.
 import type { Profile } from "./types.ts";
+import { move } from "./reorder.ts";
 
 export interface ProviderModel {
   id: string;
@@ -193,4 +194,53 @@ export function loginLine(l: LoginDTO): string {
     case "failed":
       return l.message || "The login did not finish. Start it again.";
   }
+}
+
+// ---- V0.119: the Providers page and a provider's page ----
+
+/** The list row's line: "Claude account · ~/.claude · 3 models". */
+export function listLine(p: { kind: string; configDir?: string; baseURL?: string; tokenLogin?: boolean; models: unknown[] }): string {
+  const n = p.models.length;
+  return `${kindLabel(p.kind)} · ${whereText(p)} · ${n ? `${n} model${n === 1 ? "" : "s"}` : "no models"}`;
+}
+
+const USAGE: Record<string, string> = {
+  "anthropic-oauth": "Read from the Claude login",
+  deepseek: "Read from the DeepSeek balance",
+  openrouter: "Read from the OpenRouter credits",
+};
+
+/** The Usage group's line: where the reading comes from, where the provider was imported from, who uses it. */
+export function usageLine(p: { quota: string; imported?: string; threads: number }): string {
+  const src = !p.quota || p.quota === "none" ? "This provider reports no usage." : (USAGE[p.quota] ?? `Read from the provider (${p.quota})`);
+  const parts = [src];
+  if (p.imported) parts.push(`imported from ${p.imported}`);
+  if (p.threads) parts.push(`used by ${p.threads} thread${p.threads === 1 ? "" : "s"}`);
+  return parts.join(" · ");
+}
+
+/** The Remove provider row's line. */
+export function removeLine(threads: number): string {
+  if (!threads) return "No thread uses it.";
+  return threads === 1 ? "1 thread uses it. Hand it over first." : `${threads} threads use it. Hand them over first.`;
+}
+
+export type ModelsOp = { add: string } | { remove: string } | { move: [number, number] } | { star: string };
+
+/** A provider's model ids after one edit of the Models rows, or why not. Each edit sends the whole list (and, for ★,
+ *  the default). The default is not removed: star another first. */
+export function modelsAfter(ids: string[], def: string | undefined, op: ModelsOp): { models: string[]; defaultModel?: string } | { error: string } {
+  if ("add" in op) {
+    const id = op.add.trim();
+    if (!id) return { error: "Write a model id." };
+    if (ids.includes(id)) return { error: `${id} is already in the list.` };
+    return { models: [...ids, id] };
+  }
+  if ("remove" in op) {
+    if (op.remove === def) return { error: "Star another model first." };
+    return { models: ids.filter((x) => x !== op.remove) };
+  }
+  if ("move" in op) return { models: move(ids, op.move[0], op.move[1]) };
+  if (!ids.includes(op.star)) return { error: `${op.star} is not in the list.` };
+  return { models: ids, defaultModel: op.star };
 }
