@@ -5,9 +5,10 @@
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
-import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, cleanWindow, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
+import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, quietSaver, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, iconFileError, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, iconFileError, nameError, patchFor, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { Group, Row, SaveField, Seg, Switch, useSet } from "./settings-rows.tsx";
 import { useFolderPick } from "./folder-picker.tsx";
 import { deleteProjectAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
@@ -463,19 +464,20 @@ const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "
 
 /** A 24-hour HH:MM picker from two selects, so no browser locale turns it into AM/PM (decision 0014 addendum). */
 function TimePick({ value, label, onChange }: { value: string; label: string; onChange(v: string): void }) {
+  const env = useSet();
   const m = /^(\d{1,2}):(\d\d)$/.exec(value);
   const h = m ? m[1].padStart(2, "0") : "00";
   const mm = m ? m[2] : "00";
   const mins = MINUTES.includes(mm) ? MINUTES : [...MINUTES, mm].sort();
   return (
     <span class="qtime" role="group" aria-label={label}>
-      <select value={h} aria-label={`${label}, hour`} onChange={(e) => onChange(`${(e.target as HTMLSelectElement).value}:${mm}`)}>
+      <select value={h} aria-label={`${label}, hour`} disabled={env.readOnly} onChange={(e) => onChange(`${(e.target as HTMLSelectElement).value}:${mm}`)}>
         {HOURS.map((x) => (
           <option value={x}>{x}</option>
         ))}
       </select>
       <span aria-hidden="true">:</span>
-      <select value={mm} aria-label={`${label}, minutes`} onChange={(e) => onChange(`${h}:${(e.target as HTMLSelectElement).value}`)}>
+      <select value={mm} aria-label={`${label}, minutes`} disabled={env.readOnly} onChange={(e) => onChange(`${h}:${(e.target as HTMLSelectElement).value}`)}>
         {mins.map((x) => (
           <option value={x}>{x}</option>
         ))}
@@ -484,41 +486,39 @@ function TimePick({ value, label, onChange }: { value: string; label: string; on
   );
 }
 
-/** V0.46 and the decision 0014 addendum: the project screen's Quiet hours. Each row is one window: from–to in
- *  24-hour time or All day, the seven day toggles, and × to remove it. "+ Add quiet hours" and the presets add rows;
- *  no rows is off. One line says what all the rows do. */
-export function QuietRow({ value, onChange, note }: { value: QuietHours[]; onChange(q: QuietHours[]): void; note?: string | null }) {
+/** V0.46, the decision 0014 addendum, V0.119: the project page's Quiet hours group. One row per window: from–to in
+ *  24-hour time, an All day switch, ×, and the seven day chips under them; the last row adds a window or a preset
+ *  that is not there yet; the foot says what all the rows do. No rows is off. */
+export function QuietGroup({ value, onChange, note }: { value: QuietHours[]; onChange(q: QuietHours[]): void; note?: string | null }) {
+  const env = useSet();
   const set = (i: number, w: QuietHours) => onChange(value.map((x, k) => (k === i ? w : x)));
   const presets = QUIET_PRESETS.filter((p) => !hasWindow(value, p.window));
   return (
-    <div class="fld qfld">
-      <span>Quiet hours</span>
+    <Group title="Quiet hours" end={note ?? undefined} class="qfld" label="Quiet hours" foot={quietLine(value)}>
       {value.map((w, i) => {
         const days = new Set(w.days?.length ? w.days : WEEK.map((d) => d.key));
         const all = isAllDay(w);
         return (
-          <div class="qwin" key={i}>
-            <div class="qrow">
-              {all ? (
-                <span class="qall">All day</span>
-              ) : (
+          <div class="sr col qwin" key={i}>
+            <div class="qw-top">
+              {!all && (
                 <span class="qtimes">
                   <TimePick value={w.from} label="Quiet from" onChange={(v) => set(i, { ...w, from: v })} />
                   <span aria-hidden="true">–</span>
                   <TimePick value={w.to} label="Quiet until" onChange={(v) => set(i, { ...w, to: v })} />
                 </span>
               )}
-              <label class="qtog">
-                <input type="checkbox" checked={all} onChange={(e) => set(i, setAllDay(w, (e.target as HTMLInputElement).checked))} />
-                <span>All day</span>
+              <label class={`allday qtog${all ? " first" : ""}`}>
+                All day
+                <Switch on={all} label="All day" onChange={(on) => set(i, setAllDay(w, on))} />
               </label>
-              <button class="qrm" aria-label="Remove these quiet hours" title="Remove" onClick={() => onChange(value.filter((_, k) => k !== i))}>
+              <button type="button" class="xb qrm" aria-label="Remove these quiet hours" title="Remove" disabled={env.readOnly} onClick={() => onChange(value.filter((_, k) => k !== i))}>
                 ×
               </button>
             </div>
-            <div class="seg qdays" role="group" aria-label="Days">
+            <div class="qd qdays" role="group" aria-label="Days">
               {WEEK.map((d) => (
-                <button class={days.has(d.key) ? "on" : ""} aria-pressed={days.has(d.key)} onClick={() => set(i, { ...w, days: toggleDay(w.days, d.key) })}>
+                <button type="button" class={days.has(d.key) ? "on" : ""} aria-pressed={days.has(d.key)} disabled={env.readOnly} onClick={() => set(i, { ...w, days: toggleDay(w.days, d.key) })}>
                   {d.label}
                 </button>
               ))}
@@ -526,191 +526,296 @@ export function QuietRow({ value, onChange, note }: { value: QuietHours[]; onCha
           </div>
         );
       })}
-      <div class="qadd">
-        <button class="btn sm" onClick={() => onChange([...value, { ...DEFAULT_QUIET }])}>
-          + Add quiet hours
-        </button>
-        {presets.map((p) => (
-          <button class="btn sm qpre" onClick={() => onChange([...value, { ...p.window, days: p.window.days && [...p.window.days] }])}>
-            {p.label} <span>{p.hint}</span>
+      <div class="sr qadd">
+        <div class="chips">
+          <button type="button" class="btn" disabled={env.readOnly} onClick={() => onChange([...value, { ...DEFAULT_QUIET }])}>
+            Add quiet hours
           </button>
-        ))}
+          {presets.map((p) => (
+            <button type="button" class="btn qpre" disabled={env.readOnly} onClick={() => onChange([...value, { ...p.window, days: p.window.days && [...p.window.days] }])}>
+              {p.label} <span>{p.hint}</span>
+            </button>
+          ))}
+        </div>
       </div>
-      <p class="lede">
-        {quietLine(value)}
-        {note ? ` ${note}.` : ""}
-      </p>
-    </div>
+    </Group>
   );
 }
 
-const quietKey = (q: QuietHours[]) => JSON.stringify(q.map(cleanWindow));
+type IconTab = "image" | "monogram" | "emoji" | "line";
 
-/** Edit a project (V0.55): name, its one folder (Change… through the folder picker), quiet hours, colour, icon and
- *  defaults; Delete project… at the end (V0.58). */
+/** A project's page (V0.55, V0.58, V0.116; V0.119 amends the Save button away): Identity, Threads, Quiet hours, Delete.
+ *  Each change saves at once with only its own field (V0.116 (2)); quiet hours 600 ms after the last change and at
+ *  once when the page closes. The same page in the desktop Settings and on the phone's project screen. */
 export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onDelete }: { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null>; /** V0.58: after the one question; the error, or null */ onDelete?(): Promise<string | null> }) {
-  const [name, setName] = useState(project.name);
-  const [color, setColor] = useState(colorName(project.color, project.name));
-  const [kind, setKind] = useState<"monogram" | "emoji" | "line">(resolveIcon(project.icon, project.name).kind);
-  const [emoji, setEmoji] = useState(project.icon?.kind === "emoji" ? (project.icon.value ?? "") : "");
-  const [line, setLine] = useState(resolveIcon(project.icon, project.name).kind === "line" ? resolveIcon(project.icon, project.name).value : "folder");
-  const [profile, setProfile] = useState(project.profile ?? "");
-  const [model, setModel] = useState(project.model ?? "");
-  const [quiet, setQuiet] = useState<QuietHours[]>(quietList(project.quiet));
-  const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
-  const ask = useAsk();
+  const env = useSet();
   const api = useApi();
-  const file = useRef<HTMLInputElement>(null);
+  const ask = useAsk();
+  const picker = useFolderPick();
+  const [errs, setErrs] = useState<Record<string, string | null>>({});
+  const err = (k: string, e: string | null) => setErrs((x) => ({ ...x, [k]: e }));
+  const save = async (k: string, patch: ProjectPatch): Promise<string | null> => {
+    const e = await onSave(patch);
+    err(k, e);
+    if (!e) env.saved();
+    return e;
+  };
+  // What the owner just picked shows at once; the host's answer replaces it (a refusal puts it back).
+  const [color, setColor] = useState<string | null>(null);
+  useEffect(() => setColor(null), [project.color]);
+  const shownColor = color ?? colorName(project.color, project.name);
+  const icon0 = resolveIcon(project.icon, project.name);
+  const [tab, setTab] = useState<IconTab>(project.image ? "image" : icon0.kind);
+  const [quiet, setQuiet] = useState<QuietHours[]>(quietList(project.quiet));
+  const saver = useRef(quietSaver<QuietHours[]>((q) => void save("quiet", patchFor("quiet", q))));
+  useEffect(() => () => saver.current.flush(), []);
   const [busy, setBusy] = useState(false);
-  // V0.116: the image icon and the setup run act at once, apart from Save.
+  const file = useRef<HTMLInputElement>(null);
+  const prof = profiles.find((p) => p.id === (project.profile ?? ""));
+  const preview: Project = { ...project, color: shownColor };
+
   const upload = async (f: File | undefined) => {
     if (!f || !project.id) return;
     const bad = iconFileError(f);
-    if (bad) return setMsg({ text: bad, err: true });
+    if (bad) return err("icon", bad);
     setBusy(true);
     const r = await api.uploadProjectIcon(project.id, f);
     setBusy(false);
-    setMsg(r.ok ? { text: "Image set", err: false } : { text: r.error ?? "The upload did not work", err: true });
+    err("icon", r.ok ? null : (r.error ?? "The upload did not work"));
+    if (r.ok) env.saved();
   };
   const removeImage = async () => {
     const r = await api.command("project.update", undefined, { id: project.id, image: "" });
-    setMsg(r.ok ? { text: "Image removed: the icon below shows", err: false } : { text: r.error ?? "That did not work", err: true });
+    err("icon", r.ok ? null : (r.error ?? "That did not work"));
+    if (r.ok) env.saved();
   };
   const setup = async () => {
     setBusy(true);
     const r = await api.command("project.setupRun", undefined, { id: project.id });
     setBusy(false);
-    setMsg(r.ok ? { text: `Started “Set up ${project.name}”: an agent fills in what you have not set`, err: false } : { text: r.error ?? "That did not work", err: true });
+    err("setup", r.ok ? null : (r.error ?? "That did not work"));
   };
   const setup0 = setupLine(project);
-  useEffect(() => {
-    setName(project.name);
-  }, [project.id]);
-  const prof = profiles.find((p) => p.id === profile);
-  const icon = kind === "emoji" ? { kind, value: emoji } : kind === "line" ? { kind, value: line } : { kind, value: "" };
-  const preview: Project = { ...project, name: name || project.name, color, icon };
-  const save = async () => {
-    const patch: ProjectPatch = { name: name.trim() || project.name, color, icon, profile, model };
-    if (quietKey(quiet) !== quietKey(quietList(project.quiet))) patch.quiet = quiet.length ? quiet.map(cleanWindow) : null;
-    const e = await onSave(patch);
-    setMsg(e ? { text: e, err: true } : { text: "Saved", err: false });
-  };
+  const n = project.threads ?? 0;
+  const iconBy = setByAgent(project, "image") && !!project.image;
   return (
-    <div class="pedit" style={{ "--pc": colorVar(color, name) }}>
+    <div class="pedit" style={{ "--pc": colorVar(shownColor, project.name) }}>
       <div class="phead">
-        <ProjectIcon project={preview} name={preview.name} size={44} />
+        <ProjectIcon project={preview} name={project.name} size={44} />
         <div class="plt">
-          <span class="pln big">{preview.name}</span>
-          <span class="pls2">{projectSubtitle(project)}</span>
+          <span class="pln big">{project.name}</span>
+          <span class="pls2">
+            {project.folder ? shortPath(project.folder) : "No folder"} · {n === 1 ? "1 thread" : `${n} threads`}
+          </span>
         </div>
       </div>
-      <label class="fld">
-        <span>
-          Name{setByAgent(project, "name") && <SetBy />}
-        </span>
-        <input value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
-      </label>
-      <FolderField
-        folder={project.folder ?? ""}
-        title={`Folder for ${project.name}`}
-        onPick={async (path) => {
-          const e = await onSetFolder(path);
-          setMsg(e ? { text: e, err: true } : null);
+      <Group title="Identity" label="Identity">
+        <Row
+          title={<>Name{setByAgent(project, "name") && <SetBy />}</>}
+          error={errs.name}
+          stack
+          wide
+          class="pname"
+          end={<SaveField value={project.name} label="Name" check={nameError} onError={(e) => err("name", e)} onSave={(v) => save("name", patchFor("name", v))} />}
+        />
+        <Row
+          title={<>Colour{setByAgent(project, "color") && <SetBy />}</>}
+          error={errs.color}
+          stack
+          end={
+            <div class="swatches" role="radiogroup" aria-label="Colour">
+              {PALETTE_NAMES.map((c) => (
+                <button
+                  type="button"
+                  class={`sw${c === shownColor ? " on" : ""}`}
+                  role="radio"
+                  aria-checked={c === shownColor}
+                  aria-label={c}
+                  title={c}
+                  style={{ "--pc": `var(--p-${c})` }}
+                  disabled={env.readOnly}
+                  onClick={async () => {
+                    if (c === shownColor) return;
+                    setColor(c);
+                    if (await save("color", patchFor("color", c))) setColor(null);
+                  }}
+                />
+              ))}
+            </div>
+          }
+        />
+        <div class={`sr col picon${errs.icon ? " bad" : ""}`}>
+          <div class="sbar">
+            <span class="sr-t">Icon{iconBy && <SetBy />}</span>
+            <span class="end">
+              <Seg
+                label="Icon"
+                value={tab}
+                options={[
+                  { value: "image", label: "Image" },
+                  { value: "monogram", label: "Letters" },
+                  { value: "emoji", label: "Emoji" },
+                  { value: "line", label: "Symbol" },
+                ]}
+                onChange={(t) => {
+                  setTab(t);
+                  // Letters has nothing more to pick: the tab is the pick.
+                  if (t === "monogram" && (project.icon?.kind ?? "monogram") !== "monogram") void save("icon", patchFor("icon", { kind: "monogram", value: "" }));
+                }}
+              />
+            </span>
+          </div>
+          {tab === "image" ? (
+            <div class="pimg">
+              {project.image && <ProjectIcon project={project} name={project.name} size={44} />}
+              <button type="button" class="btn" disabled={busy || !project.id || env.readOnly} onClick={() => file.current?.click()}>
+                {project.image ? "Replace…" : "Upload…"}
+              </button>
+              {project.image && (
+                <button type="button" class="btn" disabled={busy || env.readOnly} onClick={() => void removeImage()}>
+                  Remove
+                </button>
+              )}
+              <span class="sr-d">PNG, JPEG or GIF, at most 2 MB.</span>
+              <input ref={file} type="file" accept="image/png,image/jpeg,image/gif" hidden onChange={(e) => (void upload((e.target as HTMLInputElement).files?.[0]), ((e.target as HTMLInputElement).value = ""))} />
+            </div>
+          ) : (
+            project.image && <span class="sr-d">Used when the image is removed or cannot load.</span>
+          )}
+          {tab === "monogram" && <span class="sr-d">{monogram(project.name)} · the first letters of the name.</span>}
+          {tab === "emoji" && (
+            <span class="pemoji">
+              <SaveField value={project.icon?.kind === "emoji" ? (project.icon.value ?? "") : ""} label="Emoji" placeholder="🏡" onError={(e) => err("icon", e)} onSave={(v) => save("icon", patchFor("icon", { kind: "emoji", value: v.trim() }))} />
+            </span>
+          )}
+          {tab === "line" && (
+            <div class="igrid" role="radiogroup" aria-label="Symbol">
+              {ICON_GRID.map((nm) => {
+                const on = icon0.kind === "line" && icon0.value === nm;
+                return (
+                  <button type="button" class={`ig${on ? " on" : ""}`} role="radio" aria-checked={on} title={nm} aria-label={nm} disabled={env.readOnly} onClick={() => !on && void save("icon", patchFor("icon", { kind: "line", value: nm }))}>
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML={{ __html: LINE_ICONS[nm] }} />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {errs.icon && (
+            <span class="sr-d err" role="alert">
+              {errs.icon}
+            </span>
+          )}
+        </div>
+        <Row
+          title="Set up automatically"
+          class="psetup"
+          desc={
+            !errs.setup && !setup0?.error ? (
+              <>
+                An agent finds the logo and the real name and fills in what you have not set.
+                {!project.folder ? " Needs a folder." : setup0 ? ` ${setup0.text}` : ""}
+              </>
+            ) : undefined
+          }
+          error={errs.setup ?? (setup0?.error ? setup0.text : null)}
+          end={
+            <button type="button" class="btn" disabled={busy || !project.folder || env.readOnly} onClick={() => void setup()}>
+              {project.setup ? "Run again" : "Run setup"}
+            </button>
+          }
+        />
+      </Group>
+      <Group title="Threads" label="Threads">
+        <Row
+          title="Folder"
+          error={errs.folder}
+          desc={
+            project.folder ? (
+              <span class="pfolder">
+                <span class="ell mono" title={project.folder}>
+                  {shortPath(project.folder)}
+                </span>{" "}
+                · <span class="srcl">{FOLDER_LINE}</span>
+              </span>
+            ) : (
+              `${NO_FOLDER_LINE}.`
+            )
+          }
+          end={
+            <button
+              type="button"
+              class="btn pfchg"
+              disabled={env.readOnly}
+              onClick={async () => {
+                const path = await picker.pick({ title: `Folder for ${project.name}` });
+                if (!path) return;
+                const e = await onSetFolder(path);
+                err("folder", e);
+                if (!e) env.saved();
+              }}
+            >
+              {project.folder ? "Change…" : "Choose…"}
+            </button>
+          }
+        />
+        <Row
+          title="Default provider and model"
+          desc="What a new thread here starts with."
+          error={errs.defaults}
+          stack
+          class="two"
+          end={
+            <>
+              <select aria-label="Default provider" value={project.profile ?? ""} disabled={env.readOnly} onChange={(e) => void save("defaults", patchFor("profile", (e.target as HTMLSelectElement).value))}>
+                <option value="">None</option>
+                {profiles.map((p) => (
+                  <option value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <select aria-label="Default model" value={project.model ?? ""} disabled={!prof || env.readOnly} onChange={(e) => void save("defaults", patchFor("model", (e.target as HTMLSelectElement).value))}>
+                <option value="">{prof ? "The provider's default" : "None"}</option>
+                {(prof?.models ?? []).map((m) => (
+                  <option value={m}>{shortModel(m)}</option>
+                ))}
+              </select>
+            </>
+          }
+        />
+      </Group>
+      <QuietGroup
+        value={quiet}
+        note={quietNote(project, now)}
+        onChange={(q) => {
+          setQuiet(q);
+          saver.current.push(q);
         }}
       />
-      <QuietRow value={quiet} onChange={setQuiet} note={quietNote(project, now)} />
-      <div class="fld">
-        <span>
-          Colour{setByAgent(project, "color") && <SetBy />}
-        </span>
-        <div class="swatches" role="radiogroup" aria-label="Colour">
-          {PALETTE_NAMES.map((c) => (
-            <button class={`sw${c === color ? " on" : ""}`} role="radio" aria-checked={c === color} aria-label={c} title={c} style={{ "--pc": `var(--p-${c})` }} onClick={() => setColor(c)} />
-          ))}
+      {errs.quiet && (
+        <div class="seterr" role="alert">
+          {errs.quiet}
         </div>
-      </div>
-      <div class="fld">
-        <span>
-          Image{setByAgent(project, "image") && project.image && <SetBy />}
-        </span>
-        <div class="pimg">
-          <button class="btn sm" disabled={busy || !project.id} onClick={() => file.current?.click()}>
-            {project.image ? "Replace image…" : "Upload image…"}
-          </button>
-          {project.image && (
-            <button class="btn sm" disabled={busy} onClick={() => void removeImage()}>
-              Remove image
-            </button>
-          )}
-          {project.folder && (
-            <button class="btn sm" disabled={busy} onClick={() => void setup()} title="An agent looks for the project's logo and real name and fills in what you have not set">
-              Set up automatically
-            </button>
-          )}
-          <input ref={file} type="file" accept="image/png,image/jpeg,image/gif" hidden onChange={(e) => (void upload((e.target as HTMLInputElement).files?.[0]), ((e.target as HTMLInputElement).value = ""))} />
-        </div>
-        <span class="pnote">{project.image ? "Shown wherever the project's icon shows. The icon below is the fallback." : "PNG, JPEG or GIF, at most 2 MB. Without an image the icon below shows."}</span>
-        {setup0 && <span class={setup0.error ? "pnote err" : "pnote"}>{setup0.text}</span>}
-      </div>
-      <div class="fld">
-        <span>{project.image ? "Icon without the image" : "Icon"}</span>
-        <div class="seg" role="tablist">
-          {(["monogram", "emoji", "line"] as const).map((k) => (
-            <button class={kind === k ? "on" : ""} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}>
-              {k === "monogram" ? `Letters (${monogram(name || project.name)})` : k === "emoji" ? "Emoji" : "Icon"}
-            </button>
-          ))}
-        </div>
-        {kind === "emoji" && <input class="emoji" value={emoji} placeholder="🏡" onInput={(e) => setEmoji((e.target as HTMLInputElement).value)} aria-label="Emoji" />}
-        {kind === "line" && (
-          <div class="igrid">
-            {ICON_GRID.map((n) => (
-              <button class={`ig${n === line ? " on" : ""}`} title={n} aria-label={n} onClick={() => setLine(n)}>
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML={{ __html: LINE_ICONS[n] }} />
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      <div class="row2">
-        <label class="fld">
-          <span>Default provider</span>
-          <select value={profile} onChange={(e) => (setProfile((e.target as HTMLSelectElement).value), setModel(""))}>
-            <option value="">None</option>
-            {profiles.map((p) => (
-              <option value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </label>
-        <label class="fld">
-          <span>Default model</span>
-          <select value={model} onChange={(e) => setModel((e.target as HTMLSelectElement).value)} disabled={!prof}>
-            <option value="">{prof ? "The provider's default" : "None"}</option>
-            {(prof?.models ?? []).map((m) => (
-              <option value={m}>{shortModel(m)}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {msg && <div class={msg.err ? "err prose" : "lede"}>{msg.text}</div>}
-      <div class="pformb">
-        <button class="btn p" onClick={() => void save()}>
-          Save
-        </button>
-      </div>
+      )}
       {onDelete && (
-        <div class="pdel">
-          <button
-            class="btn sm danger"
-            onClick={async () => {
-              if (!(await ask(deleteProjectAsk(project)))) return;
-              const e = await onDelete();
-              if (e) setMsg({ text: e, err: true });
-            }}
-          >
-            Delete project…
-          </button>
-        </div>
+        <Group danger class="pdel">
+          <Row
+            title="Delete project"
+            desc={n ? `Its ${n === 1 ? "thread stays" : `${n} threads stay`}, without a project.` : "It has no threads."}
+            error={errs.delete}
+            end={
+              <button
+                type="button"
+                class="btn danger"
+                disabled={env.readOnly}
+                onClick={async () => {
+                  if (!(await ask(deleteProjectAsk(project)))) return;
+                  err("delete", await onDelete());
+                }}
+              >
+                Delete…
+              </button>
+            }
+          />
+        </Group>
       )}
     </div>
   );

@@ -37,8 +37,9 @@ import {
 import { markedRow, revealRow, rowAfter } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
-import { dialogAfterClose, keyHints } from "./keys.ts";
-import { Settings } from "./settings-ui.tsx";
+import { keyHints } from "./keys.ts";
+import { escapeTarget, parsePage, type PageRef } from "./settings-nav.ts";
+import { Settings, type SettingsDevice, type SettingsProps } from "./settings-ui.tsx";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
@@ -49,11 +50,11 @@ import { PreviewViewer } from "./preview-ui.tsx";
 import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu } from "./dialogs.tsx";
 import type { NewThreadArgs } from "./new-thread.ts";
 import { clearThreadNotification, disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
-import { PUSH_TITLE, rememberOpen, shouldClearNotification, takeOpen, unsupportedReason, type PushStatus } from "./push.ts";
-import { PushDialog, PwaControls } from "./pwa-ui.tsx";
+import { rememberOpen, shouldClearNotification, takeOpen, unsupportedReason, type PushStatus } from "./push.ts";
+import { PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
-import { DirectoryContext, ProjectEditor, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
+import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, filterByProject, moveToast } from "./projects.ts";
 import { admitThread, hideQuiet, nextQuietEnd, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
@@ -144,7 +145,7 @@ const PAGE = 400;
 const hostApi = await createApi(); // #42: the mock Api is a chunk loaded only in mock mode
 const params = new URLSearchParams(location.search);
 
-type Dialog = "new" | "adopt" | "snooze" | "push" | "project" | "picker" | "handover" | "settings" | "changes" | null;
+type Dialog = "new" | "adopt" | "snooze" | "picker" | "handover" | "settings" | "changes" | null;
 type Zone = "list" | "thread";
 
 function readTheme(): Theme {
@@ -249,9 +250,12 @@ function App() {
       /* storage blocked */
     }
   };
-  const [projectId, setProjectId] = useState<string | null>(null);
-  // V0.58: the desktop project screen opened from Settings returns there when it closes.
-  const [projectFrom, setProjectFrom] = useState<"settings" | null>(null);
+  // V0.119: the page the desktop Settings dialog shows (`?dialog=settings&page=providers/<id>` for screenshots).
+  const [settingsAt, setSettingsAt] = useState<PageRef>(() => parsePage(params.get("page")));
+  const openSettings = (at: PageRef) => {
+    setSettingsAt(at);
+    setDialog("settings");
+  };
   // The project picker (V0.30): the threads it files.
   const [pickIds, setPickIds] = useState<string[]>([]);
   const openPicker = (ids: string[]) => {
@@ -844,23 +848,11 @@ function App() {
       )
     : null;
 
-  const openProjectScreen = (id: string, from: "settings" | null = null) => {
+  /** V0.119: a project's page. Desktop: Settings at projects/<id> (the separate Project dialog is gone); phone: the
+   *  project screen. */
+  const openProjectScreen = (id: string) => {
     if (phoneRef.current) navGo({ screen: { name: "project", id }, sheet: null });
-    else {
-      setProjectId(id);
-      setProjectFrom(from);
-      setDialog("project");
-    }
-  };
-  // V0.58: a project deleted elsewhere closes its open screen (desktop).
-  useEffect(() => {
-    if (dialog === "project" && projectId && !store.projects.some((p) => p.id === projectId)) setDialog(projectFrom);
-  }, [dialog, projectId, store.projects]);
-  /** V0.58: Settings' Projects section, the same on desktop and phone. */
-  const projectsInSettings = {
-    projects: store.projects,
-    onOpenProject: (id: string) => openProjectScreen(id, "settings"),
-    onCreateProject: async (name: string, folder: string) => (await projectActions.create(name, folder)).error,
+    else openSettings({ page: "projects", sub: id });
   };
   const directory: Directory = {
     threads: store.threads,
@@ -935,7 +927,10 @@ function App() {
     if (dialog) {
       if (k === "Escape") {
         e.preventDefault();
-        setDialog(dialogAfterClose(dialog, projectFrom));
+        // V0.119: on a Settings sub-page Esc goes to its list (a changed text field took its Esc first).
+        const up = dialog === "settings" ? escapeTarget(settingsAt) : null;
+        if (up) setSettingsAt(up);
+        else setDialog(null);
         return;
       }
       if (dialog === "snooze") {
@@ -1132,23 +1127,57 @@ function App() {
 
   // V0.50: Settings reloads the profiles after a provider changed.
   const reloadProfiles = () => void api.profiles().then((ps) => ps.length && setStore((s) => ({ ...s, profiles: ps })));
-  const themeControl = (
-    <div class="setbar" style={{ justifyContent: "flex-start" }} role="radiogroup" aria-label="Theme">
-      {(["system", "light", "dark"] as Theme[]).map((th) => (
-        <button class={`btn sbtn${theme === th ? " p" : ""}`} role="radio" aria-checked={theme === th} onClick={() => setTheme(th)}>
-          {th === "system" ? "Auto" : th === "light" ? "Light" : "Dark"}
-        </button>
-      ))}
-    </div>
-  );
+  // V0.119: the rail's bell opens Settings at This device (the Notifications dialog is gone).
   const pwaControls = (
     <PwaControls
       push={pushSt}
       pushReason={pushReason}
       showUnsupported={env.ios && !env.standalone}
       canInstall={canInstall && !isStandalone()}
-      onBell={() => setDialog("push")}
+      onBell={() => openSettings({ page: "device" })}
       onInstall={() => void promptInstall().then((ok) => ok && setCanInstall(false))}
+    />
+  );
+  /** V0.119: This device, in Settings on the desktop and the phone. */
+  const settingsDevice: SettingsDevice = {
+    push: pushSt,
+    pushReason,
+    setPush: async (on) => {
+      const r = on ? await enablePush(api) : await disablePush(api);
+      setPushSt(r.status);
+      return r.error ?? null;
+    },
+    testPush: async () => {
+      const r = await api.pushTest();
+      return r.ok ? null : (r.error ?? "The test was not sent");
+    },
+    theme,
+    setTheme,
+    canInstall: canInstall && !isStandalone(),
+    onInstall: () => void promptInstall().then((ok) => ok && setCanInstall(false)),
+  };
+  /** The Settings pages, the same on the desktop (a dialog) and the phone (screens). */
+  const settingsFor = (at: PageRef | null, go: (r: PageRef | null) => void, phoneHeader?: SettingsProps["header"]) => (
+    <Settings
+      api={api}
+      host={store.host}
+      hosts={store.hosts}
+      phone={!!phoneHeader}
+      at={at}
+      go={go}
+      header={phoneHeader}
+      offline={store.conn === "offline"}
+      onChanged={reloadProfiles}
+      device={settingsDevice}
+      projects={store.projects}
+      profiles={store.profiles}
+      now={now}
+      projectActions={{
+        update: projectActions.update,
+        setFolder: projectActions.setFolder,
+        delete: projectActions.delete,
+        create: async (name, folder) => (await projectActions.create(name, folder)).error,
+      }}
     />
   );
 
@@ -1214,27 +1243,14 @@ function App() {
     create,
   };
 
-  const pushDialog = (onClose: () => void) => (
-    <PushDialog
-      status={pushSt}
-      reason={pushReason}
-      onClose={onClose}
-      onOn={async () => {
-        const r = await enablePush(api);
-        setPushSt(r.status);
-        return r.error ?? null;
-      }}
-      onOff={async () => {
-        const r = await disablePush(api);
-        setPushSt(r.status);
-        return r.error ?? null;
-      }}
-      onTest={async () => {
-        const r = await api.pushTest();
-        return r.ok ? null : (r.error ?? "The test was not sent");
-      }}
-    />
-  );
+  /** V0.119 phone: a Settings page is a screen; a project is its own screen; going to the level above goes Back. */
+  const phoneSettingsGo = (r: PageRef | null) => {
+    if (r?.page === "projects" && r.sub) return navGo({ screen: { name: "project", id: r.sub }, sheet: null });
+    const screen: Nav["screen"] = r ? { name: "settings", page: r.page, ...(r.sub ? { sub: r.sub } : {}) } : { name: "settings" };
+    const up = backTarget(navRef.current);
+    if (up && JSON.stringify(up.screen) === JSON.stringify(screen)) navBack();
+    else navGo({ screen, sheet: null });
+  };
 
   if (phone) {
     return (
@@ -1274,25 +1290,8 @@ function App() {
             standalone: env.standalone,
             canInstall: canInstall && !isStandalone(),
             onInstall: () => void promptInstall().then((ok) => ok && setCanInstall(false)),
-            theme,
-            setTheme,
           }}
-          settings={
-            <Settings
-              api={api}
-              host={store.host}
-              hosts={store.hosts}
-              phone
-              push={
-                <button class="btn sbtn" onClick={() => navGo({ ...nav, sheet: { kind: "push" } })}>
-                  {PUSH_TITLE[pushSt]}
-                </button>
-              }
-              appearance={themeControl}
-              onChanged={reloadProfiles}
-              {...projectsInSettings}
-            />
-          }
+          settings={(at, header) => settingsFor(at, phoneSettingsGo, header)}
           actions={phoneActions}
           filter={{ id: projectFilter, set: setProjectFilter }}
           projectActions={projectActions}
@@ -1304,7 +1303,6 @@ function App() {
             </>
           }
         />
-        {nav.sheet?.kind === "push" && pushDialog(navBack)}
         {nav.sheet?.kind === "adopt" && (
           <AdoptDialog
             load={() => api.t3Candidates()}
@@ -1458,24 +1456,6 @@ function App() {
         </div>
       )}
       {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={projectFilter} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
-      {dialog === "project" && projectId && store.projects.find((p) => p.id === projectId) && (
-        <Modal title="Project" onClose={() => setDialog(dialogAfterClose(dialog, projectFrom))} wide>
-          <div class="db">
-            <ProjectEditor
-              project={store.projects.find((p) => p.id === projectId)!}
-              profiles={store.profiles}
-              now={now}
-              onSave={(patch) => projectActions.update(projectId, patch)}
-              onSetFolder={(v) => projectActions.setFolder(projectId, v)}
-              onDelete={async () => {
-                const e = await projectActions.delete(projectId);
-                if (!e) setDialog(projectFrom);
-                return e;
-              }}
-            />
-          </div>
-        </Modal>
-      )}
       {dialog === "picker" && (
         <Modal title={pickIds.length > 1 ? `Project for ${pickIds.length} threads` : "Project"} onClose={() => setDialog(null)} wide>
           <div class="db">
@@ -1500,7 +1480,6 @@ function App() {
         <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m) => cmds.handover(handoverId, pr, m)} />
       )}
       {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
-      {dialog === "push" && pushDialog(() => setDialog(null))}
       {dialog === "changes" && (
         <Modal title="Changes" wide onClose={() => setDialog(null)}>
           <div class="db">
@@ -1518,8 +1497,8 @@ function App() {
         </Modal>
       )}
       {dialog === "settings" && (
-        <Modal title="Settings" wide onClose={() => setDialog(null)}>
-          <Settings api={api} host={store.host} hosts={store.hosts} push={pwaControls} appearance={themeControl} onChanged={reloadProfiles} {...projectsInSettings} />
+        <Modal title="Settings" wide cls="settings" onClose={() => setDialog(null)}>
+          {settingsFor(settingsAt, (r) => setSettingsAt(r ?? { page: "providers" }))}
         </Modal>
       )}
       {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}

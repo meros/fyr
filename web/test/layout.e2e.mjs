@@ -241,12 +241,21 @@ const SCREENS = [
   { name: "project screen with quiet hours", url: "?mock=rail&project=p_home&quiet=p_home", storage: { "fyr.projectFilter": "" } },
   // SPEC 0.5 V0.45: the handover sheet from the thread's ⋯; its buttons stay above the bottom inset.
   { name: "handover sheet", url: "?mock=rail&open=t_triage", sheet: "handover" },
-  // SPEC 0.5 V0.50: Settings → Providers from the phone menu: the providers, Found on this host with Import, Add
-  // provider; every target 44 px and inside the safe areas.
-  { name: "settings providers", url: "?mock=rail&settings" },
+  // SPEC V0.119 (amends V0.50): Settings is the nav and four pages, with a provider, Add provider and a project as
+  // sub-pages. On every one: no control under 44 px, nothing past the right edge, the last control above the bottom
+  // inset; with the keyboard up a focused field and its button stay in view.
+  { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 4 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
+  { name: "settings providers", url: "?mock=rail&settings=providers", ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section[aria-label=\"System agents\"] select').length === 4" },
+  { name: "settings provider login (V0.119)", url: "?mock=rail&settings=providers/work", ready: "!!document.querySelector('.m-settings .login a.loginlink')" },
+  { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
+  { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
+  { name: "settings add provider (V0.119)", url: "?mock=rail&settings=providers/new", ready: "!!document.querySelector('.m-settings [role=radiogroup][aria-label=Kind]')" },
+  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-approve Fyr deploys\"]')", field: ".m-settings .fieldrow .inl input" },
+  { name: "settings projects (V0.119)", url: "?mock=rail&settings=projects", ready: "document.querySelectorAll('.m-settings .pli').length > 3" },
+  { name: "settings device (V0.119)", url: "?mock=rail&settings=device", ready: "!!document.querySelector('.m-settings [role=switch][aria-label=Notifications]')" },
   { name: "board of changes", url: "?mock=1&changes" },
   // V0.116: a project with an image icon the setup agent set: Set by agent, the image buttons 44 px.
-  { name: "project screen with an image icon (V0.116)", url: "?mock=rail&project=p_fyr" },
+  { name: "project screen with an image icon (V0.116)", url: "?mock=rail&project=p_fyr", field: ".pedit .pname .inl input" },
   // V0.101: the inbox row of a thread in Needs you carries the beam and its button; the Changes tab shows the ask
   // inline with its answer and Not now, Ready with Merge bound to the head, and Refresh now.
   { name: "inbox with a ready change (V0.101)", url: "?mock=1" },
@@ -308,7 +317,10 @@ const MEASURE = `(() => {
     projectEditor: !!document.querySelector('.pedit'),
     filterLine: !!document.querySelector('.m-screen .pfrow .pfc.on'),
     otherProjectRows: [...document.querySelectorAll('.m-list .ptag .ptn')].filter(e => e.textContent !== 'acme/web').length,
-    saveButton: rect('.pedit .pformb .btn.p'),
+    saveButton: [...document.querySelectorAll('.pedit button')].some((b) => b.textContent.trim() === 'Save' && b.getBoundingClientRect().height > 0),
+    projectGroups: [...document.querySelectorAll('.pedit > .sg > .sg-h .sg-t')].map((e) => e.textContent),
+    // V0.119: the button beside a focused text field (Save, Add, Save key) stays in view with the keyboard up.
+    fieldButton: (() => { const b = document.activeElement?.closest?.('.inl')?.querySelector('.btn'); if (!b) return null; const r = b.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; })(),
     toolOutput: (() => { const o = document.querySelector('.tlout'); if (!o) return null; const r = o.getBoundingClientRect(); return { right: r.right, lines: o.textContent.split(String.fromCharCode(10)).length }; })(),
     changeRows: document.querySelectorAll('.chg-file').length,
     flow: ${FLOW},
@@ -349,22 +361,31 @@ const MEASURE = `(() => {
         askAll: v.querySelector('.prv-askall')?.textContent ?? '', merge: !!v.querySelector('.prv-merge'), mergeDisabled: !!v.querySelector('.prv-merge')?.disabled, small, right };
     })(),
     settings: (() => {
-      const el = document.querySelector('.m-settings .set'); if (!el) return null;
-      const targets = [...el.querySelectorAll('button, select, input, a.sbtn')].filter(e => e.getBoundingClientRect().height > 0);
-      const small = targets.map(e => ({ t: (e.textContent || e.getAttribute('aria-label') || e.tagName).trim().slice(0, 30), h: e.getBoundingClientRect().height })).filter(x => x.h < 43.5);
+      // V0.119: every Settings page and sub-page, and the project screen (the same page).
+      const el = document.querySelector('.m-settings .set, .m-project .set'); if (!el) return null;
+      const vis = (e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.width > 0; };
+      const targets = [...el.querySelectorAll('button, select, input:not([type=file]), a.btn')].filter(vis);
+      // A switch's target is its row (a label, 56 px): the whole row toggles it.
+      const box = (e) => (e.matches('[role=switch]') ? e.closest('label, .sr') : null) || e;
+      const name = (e) => (e.textContent || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.tagName).trim().slice(0, 30);
+      const small = targets.map((e) => ({ t: name(e), h: box(e).getBoundingClientRect().height })).filter((x) => x.h < 43.5);
+      const right = Math.max(0, ...[...el.querySelectorAll('*')].filter(vis).map((e) => e.getBoundingClientRect().right));
       const lg = el.querySelector('.login');
       const login = lg ? { link: lg.querySelector('a.loginlink')?.getAttribute('href') ?? '', code: !!lg.querySelector('input'), cancel: [...lg.querySelectorAll('button')].some(b => b.textContent.trim() === 'Cancel') } : null;
-      const add = el.querySelector('.addp'); add?.scrollIntoView({ block: 'center' }); // V0.58: Projects follow Providers, so Add provider is no longer at the end
-      const ar = add ? add.getBoundingClientRect() : null;
-      const adb = el.querySelector('section[aria-label="Auto-deploy"] button'); // V0.111
-      const autoDeploy = adb ? { text: adb.textContent.trim(), pressed: adb.getAttribute('aria-pressed'), h: adb.getBoundingClientRect().height } : null;
-      const sas = el.querySelector('section[aria-label="System agents"]'); // V0.115
-      const systemAgents = sas ? { selects: sas.querySelectorAll('select').length, lines: [...sas.querySelectorAll('.sajob .setd')].map(e => e.textContent) } : null;
-      return { systemAgents, autoDeploy, rows: el.querySelectorAll('.prov:not(.found)').length, found: el.querySelectorAll('.prov.found').length,
-        imports: [...el.querySelectorAll('.prov.found button')].filter(b => b.textContent.trim() === 'Import').length,
-        needs: [...el.querySelectorAll('.pst')].map(e => e.textContent), small, login,
-        right: Math.max(0, ...[...el.querySelectorAll('*')].map(e => e.getBoundingClientRect().right)),
-        add: ar ? { top: ar.top, bottom: ar.bottom } : null };
+      const adb = el.querySelector('section[aria-label="Auto-deploy"] [role=switch]');
+      const autoDeploy = adb ? { role: adb.getAttribute('role'), checked: adb.getAttribute('aria-checked'), label: adb.getAttribute('aria-label'), rowH: adb.closest('.sr').getBoundingClientRect().height } : null;
+      const sas = el.querySelector('section[aria-label="System agents"]');
+      const systemAgents = sas ? { selects: [...sas.querySelectorAll('select')].map((x) => x.getAttribute('aria-label')), lines: [...sas.querySelectorAll('.sajob .sr-d')].map(e => e.textContent), same: [...sas.querySelectorAll('select[aria-label="Thread titles"] option')].map((o) => o.textContent)[0] ?? '' } : null;
+      const nav = [...el.querySelectorAll('.stn-i')].map((b) => ({ t: b.querySelector('.stn-t').textContent, s: b.querySelector('.stn-s').textContent, h: b.getBoundingClientRect().height }));
+      const device = { push: !!el.querySelector('[role=switch][aria-label="Notifications"]'), theme: el.querySelectorAll('[role=radiogroup][aria-label="Theme"] [role=radio]').length };
+      const last = targets[targets.length - 1];
+      // Scrolled to the end, as far as the screen scrolls: its padding keeps the last control above the home indicator.
+      const sc = el.closest('.m-nbody'); if (sc) sc.scrollTop = sc.scrollHeight;
+      const lr = last ? box(last).getBoundingClientRect() : null;
+      return { nav, device, systemAgents, autoDeploy, rows: el.querySelectorAll('.prow').length, found: el.querySelectorAll('.sr.found').length,
+        imports: [...el.querySelectorAll('.sr.found button')].filter(b => b.textContent.trim() === 'Import').length,
+        needs: [...el.querySelectorAll('.pst')].map(e => e.textContent), small, login, right,
+        last: lr ? { t: name(last), top: lr.top, bottom: lr.bottom } : null };
     })(),
     // Content that paints outside its box: an element whose overflow is visible while its height is capped
     // (a max-height, or a flex item shrunk below its content). The rows then draw over the sections below.
@@ -394,11 +415,11 @@ const MEASURE = `(() => {
       const box = (b) => b.getBoundingClientRect();
       const days = [...el.querySelectorAll('.qdays button')].map(box);
       const times = [...el.querySelectorAll('.qtime select')].map(box);
-      const others = [...el.querySelectorAll('.qrm, .qtog, .qadd button')].map(box);
+      const others = [...el.querySelectorAll('.qrm, .qtog, .qadd button')].map(box); // .qtog: the All day switch's label, the switch's target
       const all = [...days, ...times, ...others];
       return { parts, right: Math.max(r.right, ...all.map(d => d.right)), rows: el.querySelectorAll('.qwin').length,
         add: [...el.querySelectorAll('.qadd button')].map(b => b.textContent.replace(/\\s+/g, ' ').trim()),
-        line: el.querySelector('.lede')?.textContent ?? '', days: days.length, times: times.length, small: all.filter(d => d.height < 43.5).length };
+        line: el.querySelector('.sg-f')?.textContent ?? '', note: el.querySelector('.sg-h .end')?.textContent ?? '', days: days.length, times: times.length, small: all.filter(d => d.height < 43.5).length };
     })(),
   };
 })()`;
@@ -491,21 +512,32 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     check(m.previewOverflow <= 0.5, `${ctx}: a preview card runs ${m.previewOverflow.toFixed(1)} px past the right edge`);
   }
   if (ctx.startsWith("project screen")) check(m.projectEditor, `${ctx}: no project editor`);
+  // V0.119: every Settings page and sub-page, and the project screen.
+  if (m.settings) {
+    const st = m.settings;
+    check(st.small.length === 0, `${ctx}: targets under 44 px ${JSON.stringify(st.small)}`);
+    check(st.right <= m.innerWidth + 0.5, `${ctx}: Settings runs ${(st.right - m.innerWidth).toFixed(1)} px past the right edge`);
+    if (st.last && !keyboard) check(st.last.top >= m.top + insetTop - 0.5 && st.last.bottom <= m.bottom - insetBottom + 0.5, `${ctx}: the last control "${st.last.t}" (${st.last.top.toFixed(1)}–${st.last.bottom.toFixed(1)}) is outside the safe areas`);
+  }
+  if (ctx.startsWith("settings nav")) {
+    const n = m.settings?.nav ?? [];
+    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|This device" && n.every((x) => x.h >= 55.5 && x.s), `${ctx}: the nav is wrong ${JSON.stringify(n)}`);
+  }
   if (ctx.startsWith("settings providers")) {
     const st = m.settings;
-    check(!!st && st.rows === 3 && st.found >= 1 && st.imports === st.found && st.needs.includes("Needs a login"), `${ctx}: the Providers section is wrong ${JSON.stringify(st)}`);
-    if (st) {
-      check(st.small.length === 0, `${ctx}: targets under 44 px ${JSON.stringify(st.small)}`);
-      // SPEC V0.111: the phone has the Auto-deploy toggle too, on by default, 44 px.
-      check(!!st.autoDeploy && st.autoDeploy.text === "On" && st.autoDeploy.pressed === "true", `${ctx}: no Auto-deploy toggle ${JSON.stringify(st.autoDeploy)}`);
-      // SPEC V0.115: the phone has the System agents section too; its selects are in the 44 px check above.
-      check(!!st.systemAgents && st.systemAgents.selects === 4 && st.systemAgents.lines.length === 2, `${ctx}: no System agents section ${JSON.stringify(st.systemAgents)}`);
-      // SPEC 0.5 V0.53: a running login shows its sign-in link, the code field and Cancel, all 44 px.
-      check(!!st.login && /^https:\/\/claude\.com\//.test(st.login.link) && st.login.code && st.login.cancel, `${ctx}: the login panel is wrong ${JSON.stringify(st.login)}`);
-      check(st.right <= m.innerWidth + 0.5, `${ctx}: Settings runs ${(st.right - m.innerWidth).toFixed(1)} px past the right edge`);
-      if (st.add) check(st.add.top >= m.top + insetTop - 0.5 && st.add.bottom <= m.bottom - insetBottom + 0.5, `${ctx}: Add provider (${st.add.top.toFixed(1)}–${st.add.bottom.toFixed(1)}) is outside the safe areas`);
-    }
+    check(!!st && st.rows === 3 && st.found >= 1 && st.imports === st.found && st.needs.includes("Needs a login") && !st.login, `${ctx}: the Providers page is wrong ${JSON.stringify(st)}`);
+    // SPEC V0.115: the phone has System agents too; the labels are unchanged and a job reads "Same as default".
+    check(!!st?.systemAgents && st.systemAgents.selects.join("|") === "Provider|Model|Thread titles|Project setup" && st.systemAgents.lines.length === 2 && st.systemAgents.same === "Same as default", `${ctx}: System agents are wrong ${JSON.stringify(st?.systemAgents)}`);
   }
+  // SPEC 0.5 V0.53, V0.119: a running login shows on the provider's page: the sign-in link, the code field and Cancel, all 44 px.
+  if (ctx.startsWith("settings provider login")) check(!!m.settings?.login && /^https:\/\/claude\.com\//.test(m.settings.login.link) && m.settings.login.code && m.settings.login.cancel, `${ctx}: the login panel is wrong ${JSON.stringify(m.settings?.login)}`);
+  // SPEC V0.111, V0.119: the Auto-deploy switch, on by default, its row 44 px or more.
+  if (ctx.startsWith("settings automation")) {
+    const a = m.settings?.autoDeploy;
+    check(!!a && a.role === "switch" && a.checked === "true" && a.label === "Auto-approve Fyr deploys" && a.rowH >= 43.5, `${ctx}: no Auto-deploy switch ${JSON.stringify(a)}`);
+  }
+  if (ctx.startsWith("settings device")) check(!!m.settings && m.settings.device.push && m.settings.device.theme === 3, `${ctx}: This device is wrong ${JSON.stringify(m.settings?.device)}`);
+  if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|Threads|Quiet hours", `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
   if (ctx.startsWith("project picker")) check(m.pickerRows[0] === "New project from this thread" && m.pickerRows[1] === "No project", `${ctx}: the picker's first rows are ${JSON.stringify(m.pickerRows)}`);
   if (ctx.startsWith("new project step")) check(m.stepName === "lasso-app" && m.stepSources === 1 && m.stepFolder === "~/src/lasso-app", `${ctx}: the step is not prefilled from the thread (name ${m.stepName}, ${m.stepSources} folders, folder "${m.stepFolder}")`);
   if (ctx.startsWith("new thread, project without")) check(m.newProject === "Garden" && m.folderLine === "A fresh scratch folder", `${ctx}: expected Garden in a fresh scratch folder (${m.newProject}, ${m.folderLine})`);
@@ -523,8 +555,8 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     const q = m.quietRow;
     // Decision 0014 addendum: two windows (the mock's daily one and a weekend one), each with its 24-hour times and
     // seven days, "+ Add quiet hours" and both presets, and one line for all of them.
-    check(!!q && q.rows === 2 && q.days === 14 && q.times === 8 && q.add.join("|") === "+ Add quiet hours|Weeknights 17:00–06:00|All weekend Sat–Sun"
-      && /^Threads hide and send no notifications daily \d\d:\d\d–\d\d:\d\d and weekends \d\d:\d\d–\d\d:\d\d\. Quiet until \d\d:\d\d\.$/.test(q.line), `${ctx}: the Quiet hours rows are wrong ${JSON.stringify(q)}`);
+    check(!!q && q.rows === 2 && q.days === 14 && q.times === 8 && q.add.join("|") === "Add quiet hours|Weeknights 17:00–06:00|All weekend Sat–Sun"
+      && /^Threads hide and send no notifications daily \d\d:\d\d–\d\d:\d\d and weekends \d\d:\d\d–\d\d:\d\d\.$/.test(q.line) && /^Quiet (now, until|until) \d\d:\d\d/.test(q.note), `${ctx}: the Quiet hours rows are wrong ${JSON.stringify(q)}`);
     if (q) {
       for (const [i, p] of q.parts.entries())
         check(p.top >= m.top + insetTop - 0.5 && p.bottom <= m.bottom - insetBottom + 0.5, `${ctx}: quiet hours part ${i + 1} (${p.top.toFixed(1)}–${p.bottom.toFixed(1)}) is outside the safe areas`);
@@ -624,6 +656,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   if (keyboard) {
     check(!!m.focused, `${ctx}: no field is focused`);
     if (m.focused) check(m.focused.top >= visTop - 0.5 && m.focused.bottom <= visBottom + 0.5, `${ctx}: the focused field (${m.focused.top.toFixed(1)}–${m.focused.bottom.toFixed(1)}) is outside the visible area ${visTop}–${visBottom}`);
+    if (m.fieldButton) check(m.fieldButton.top >= visTop - 0.5 && m.fieldButton.bottom <= visBottom + 0.5, `${ctx}: the field's button (${m.fieldButton.top.toFixed(1)}–${m.fieldButton.bottom.toFixed(1)}) is outside the visible area ${visTop}–${visBottom}`);
   }
 }
 
@@ -709,10 +742,10 @@ function harness(t) {
     await waitFor(until, { what: `${until} after a tap on ${sel}` });
     await settle();
   };
-  const key = async (k, code = k) => {
+  const key = async (k, code = k, modifiers = 0) => {
     const vk = { Enter: 13, Escape: 27, ArrowDown: 40, ArrowUp: 38, Tab: 9 }[k] ?? 0;
-    await send("Input.dispatchKeyEvent", k === "Enter" ? { type: "keyDown", key: k, code, text: "\r", windowsVirtualKeyCode: vk } : { type: "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk });
-    await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code });
+    await send("Input.dispatchKeyEvent", k === "Enter" ? { type: "keyDown", key: k, code, text: "\r", windowsVirtualKeyCode: vk, modifiers } : { type: "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk, modifiers });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, modifiers });
     await settle();
   };
   // The phone layout has applied the visual viewport (useViewportVars in app.tsx): --app-h and --app-top match it.
@@ -812,9 +845,6 @@ async function phonePass(t, w, h) {
       if (process.env.FYR_SHOTS && s.name.endsWith("(V0.101)") && w === 390) writeFileSync(join(process.env.FYR_SHOTS, s.name.startsWith("inbox") ? "inbox-phone.png" : "changes-tab-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (process.env.FYR_SHOTS && s.name.startsWith("board of changes") && w === 390) writeFileSync(join(process.env.FYR_SHOTS, "board-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
       if (process.env.FYR_SHOTS && s.name.startsWith("settings providers") && w === 390) { // V0.111
-        await evaluate(`document.querySelector('section[aria-label="Auto-deploy"]')?.scrollIntoView({ block: 'center' })`);
-        await settle();
-        writeFileSync(join(process.env.FYR_SHOTS, "autodeploy-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
         await evaluate(`document.querySelector('section[aria-label="System agents"]')?.scrollIntoView({ block: 'center' })`); // V0.115
         await settle();
         writeFileSync(join(process.env.FYR_SHOTS, "systemagents-phone.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
@@ -1196,38 +1226,141 @@ try {
   failures.push(`V0.45 desktop: ${e.message}`);
 }
 
-// SPEC 0.5 V0.50: the gear at the bottom of the desktop rail opens Settings with the Providers section.
+// SPEC V0.119 (amends V0.50): the gear at the bottom of the desktop rail opens Settings: the nav with four pages on the
+// left, Providers open with its three providers; the dialog keeps one size on every page.
+const shot = async (name) => process.env.FYR_SHOTS && writeFileSync(join(process.env.FYR_SHOTS, name), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+const COMMANDS = (action) => `(window.__fyrCommands ?? []).filter((c) => c.action === ${JSON.stringify(action)})`;
 try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .rgear')");
   const g = await evaluate(`(() => { const b = document.querySelector('.rail .rgear'); if (!b) return null; const r = b.getBoundingClientRect(), f = document.querySelector('.rail .foot').getBoundingClientRect(); b.click(); return { below: r.top > window.innerHeight / 2, aboveFoot: r.bottom <= f.top + 0.5 }; })()`);
   check(!!g && g.below && g.aboveFoot, `V0.50 desktop: no gear at the bottom of the rail (${JSON.stringify(g)})`);
-  await waitFor(`document.querySelectorAll('.dlg .prov:not(.found)').length === 3`, { soft: true });
+  await waitFor(`document.querySelectorAll('.dlg .prow').length === 3`, { soft: true });
   await settle();
-  const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', sections: [...document.querySelectorAll('.dlg .sets h3')].map(e => e.textContent), rows: document.querySelectorAll('.dlg .prov:not(.found)').length })`);
-  check(d.title === "Settings" && d.sections.join("|") === "Providers|Projects|Auto-merge|Auto-deploy|System agents|Hosts|Notifications|Appearance" && d.rows === 3, `V0.50 desktop: Settings is wrong (${JSON.stringify(d)})`);
-  // SPEC V0.115: System agents: a provider and a model for all jobs, a choice per job, and what each job runs on.
+  const RECT = `(() => { const r = document.querySelector('.dlg.settings')?.getBoundingClientRect(); return r ? [Math.round(r.width), Math.round(r.height)].join('x') : ''; })()`;
+  const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', nav: [...document.querySelectorAll('.dlg .stn-i .stn-t')].map(e => e.textContent), on: document.querySelector('.dlg .stn-i[aria-current=page]')?.dataset.page ?? '', rows: document.querySelectorAll('.dlg .prow').length, size: ${RECT} })`);
+  check(d.title === "Settings" && d.nav.join("|") === "Providers|Automation|Projects|This device" && d.on === "providers" && d.rows === 3, `V0.119 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  // SPEC V0.115: System agents: a provider and a model for all jobs, a choice per job ("Same as default"), and what each job runs on.
   await waitFor(`document.querySelectorAll('.dlg section[aria-label="System agents"] select').length >= 4`, { soft: true });
   const sa = await evaluate(`(() => { const el = document.querySelector('.dlg section[aria-label="System agents"]'); if (!el) return null;
-    return { selects: [...el.querySelectorAll('select')].map(s => s.getAttribute('aria-label')), lines: [...el.querySelectorAll('.sajob .setd')].map(e => e.textContent),
-      model: el.querySelector('select[aria-label="Model"]')?.selectedOptions[0]?.textContent ?? '' }; })()`);
-  check(!!sa && sa.selects.join("|") === "Provider|Model|Thread titles|Project setup" && sa.model === "Haiku (claude-haiku-5-5)" && sa.lines.length === 2 && sa.lines.every((l) => l === "Runs on Claude · claude-haiku-5-5"),
+    return { selects: [...el.querySelectorAll('select')].map(s => s.getAttribute('aria-label')), lines: [...el.querySelectorAll('.sajob .sr-d')].map(e => e.textContent),
+      model: el.querySelector('select[aria-label="Model"]')?.selectedOptions[0]?.textContent ?? '', same: el.querySelector('select[aria-label="Thread titles"]')?.selectedOptions[0]?.textContent ?? '' }; })()`);
+  check(!!sa && sa.selects.join("|") === "Provider|Model|Thread titles|Project setup" && sa.model === "Haiku (claude-haiku-5-5)" && sa.same === "Same as default" && sa.lines.length === 2 && sa.lines.every((l) => l === "Runs on Claude · claude-haiku-5-5"),
     `V0.115 desktop: the System agents section is wrong (${JSON.stringify(sa)})`);
-  if (process.env.FYR_SHOTS) { // V0.115
-    await evaluate(`document.querySelector('.dlg section[aria-label="System agents"]')?.scrollIntoView({ block: 'center' })`);
+  await shot("settings-providers-desktop.png");
+  // The same size on all four pages; each page shows its heading.
+  const sizes = {};
+  for (const page of ["automation", "projects", "device", "providers"]) {
+    await evaluate(`document.querySelector('.dlg .stn-i[data-page=${page}]').click()`);
+    await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === '${page}'`, { soft: true });
     await settle();
-    writeFileSync(join(process.env.FYR_SHOTS, "systemagents-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+    sizes[page] = await evaluate(RECT);
+    if (page !== "providers") await shot(`settings-${page}-desktop.png`);
   }
-  if (process.env.FYR_SHOTS) { // V0.111
-    await evaluate(`document.querySelector('.dlg section[aria-label="Auto-deploy"]')?.scrollIntoView({ block: 'center' })`);
-    await settle();
-    writeFileSync(join(process.env.FYR_SHOTS, "autodeploy-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
-  }
-  await evaluate(`document.querySelector('.dlg .prov .provh')?.click()`);
-  await waitFor(`!!document.querySelector('.dlg .prov.open textarea')`, { soft: true });
-  const o = await evaluate(`({ ta: !!document.querySelector('.dlg .prov.open textarea'), key: document.querySelector('.dlg .prov.open input[type=password]')?.value ?? null })`);
-  check(o.ta && o.key === "", `V0.50 desktop: an opened provider has no models field or a key in the page (${JSON.stringify(o)})`);
+  check(new Set(Object.values(sizes)).size === 1 && sizes.providers === d.size, `V0.119 desktop: the dialog changes size between pages (${JSON.stringify({ first: d.size, ...sizes })})`);
+  // ↓ in the nav moves to the next page; the page follows the focus.
+  await evaluate(`document.querySelector('.dlg .stn-i[data-page=providers]').focus()`);
+  await key("ArrowDown");
+  const kn = await evaluate(`({ page: document.querySelector('.dlg .stp')?.dataset.page, focus: document.activeElement?.dataset?.page })`);
+  check(kn.page === "automation" && kn.focus === "automation", `V0.119 desktop: ↓ in the nav does not move to Automation (${JSON.stringify(kn)})`);
+  // A provider is a sub-page; its models are rows, not a text box; no key is in the page.
+  await evaluate(`document.querySelector('.dlg .stn-i[data-page=providers]').click()`);
+  await waitFor(`document.querySelectorAll('.dlg .prow').length === 3`, { soft: true });
+  await evaluate(`document.querySelector('.dlg .prow[data-sub=claude]').click()`);
+  await waitFor(`document.querySelectorAll('.dlg .model').length === 3`, { soft: true });
+  await settle();
+  const o = await evaluate(`({ ta: !!document.querySelector('.dlg .stp textarea'), keys: [...document.querySelectorAll('.dlg input[type=password]')].map(i => i.value), crumb: document.querySelector('.dlg .crumb')?.textContent ?? '', title: document.querySelector('.dlg .stp-h h2')?.textContent ?? '', models: [...document.querySelectorAll('.dlg .model .sr-t')].map(e => e.textContent), star: document.querySelector('.dlg .model .star[aria-pressed=true]')?.closest('.model')?.querySelector('.sr-t')?.textContent ?? '' })`);
+  check(!o.ta && o.keys.every((k) => k === "") && /Providers/.test(o.crumb) && o.title === "Claude" && o.models.join("|") === "Opus 5.5|Sonnet 5.5|Haiku 5.5" && o.star === "Opus 5.5", `V0.119 desktop: the provider page is wrong (${JSON.stringify(o)})`);
+  await shot("settings-provider-desktop.png");
+  // Reorder from the keyboard: the second model's grip, Alt+↑, one provider.update with the two ids swapped; the focus stays on the moved row's grip.
+  await evaluate(`document.querySelectorAll('.dlg .model .grip')[1].focus()`);
+  await key("ArrowUp", "ArrowUp", 1);
+  await waitFor(`${COMMANDS("provider.update")}.length === 1 && document.querySelector('.dlg .model .sr-t')?.textContent === 'Sonnet 5.5'`, { soft: true });
+  const ro = await evaluate(`({ cmds: ${COMMANDS("provider.update")}.map(c => c.args), focus: document.activeElement?.getAttribute('aria-label') ?? '' })`);
+  check(ro.cmds.length === 1 && JSON.stringify(ro.cmds[0].models) === JSON.stringify(["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"]) && ro.focus === "Move Sonnet 5.5, 1 of 3", `V0.119 desktop: Alt+↑ on a grip does not move the model (${JSON.stringify(ro)})`);
+  // Esc on a sub-page goes to its list and focuses the row it came from; Esc again closes Settings.
+  await key("Escape");
+  await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'providers'`, { soft: true });
+  const esc = await evaluate(`({ page: document.querySelector('.dlg .stp')?.dataset.page, focus: document.activeElement?.dataset?.sub ?? '' })`);
+  check(esc.page === "providers" && esc.focus === "claude", `V0.119 desktop: Esc on a provider does not go back to its row (${JSON.stringify(esc)})`);
+  await key("Escape");
+  check(await evaluate(`!document.querySelector('.dlg.settings')`), "V0.119 desktop: Esc on a page does not close Settings");
 } catch (e) {
-  failures.push(`V0.50 desktop: ${e.message}`);
+  failures.push(`V0.119 desktop: ${e.message}`);
+}
+
+// SPEC V0.119 (3): save at once. A colour swatch on a project's page sends one project.update with the colour and no
+// name, and "Saved" shows beside the title for 2 s.
+try {
+  await navigate(`${origin}/?mock=rail&dialog=settings&page=projects/p_web`, "!!document.querySelector('.dlg .pedit .sw')");
+  await settle();
+  const pg = await evaluate(`({ save: [...document.querySelectorAll('.dlg .pedit button')].some(b => b.textContent.trim() === 'Save'), groups: [...document.querySelectorAll('.dlg .pedit > .sg > .sg-h .sg-t')].map(e => e.textContent), title: document.querySelector('.dlg .stp-h h2')?.textContent })`);
+  check(!pg.save && pg.groups.join("|") === "Identity|Threads|Quiet hours" && pg.title === "acme/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
+  await shot("settings-project-desktop.png");
+  await evaluate(`document.querySelector('.dlg .pedit .sw:not(.on)').click()`);
+  await waitFor(`${COMMANDS("project.update")}.length >= 1 && !!document.querySelector('.dlg .stp-h .saved')`, { soft: true });
+  const c = await evaluate(`({ cmds: ${COMMANDS("project.update")}.map(c => Object.keys(c.args).sort().join(',')), saved: !!document.querySelector('.dlg .stp-h .saved') })`);
+  check(c.cmds.length === 1 && c.cmds[0] === "color,id" && c.saved, `V0.119 desktop: a swatch does not save its colour alone at once (${JSON.stringify(c)})`);
+  await sleep(2300);
+  check(await evaluate(`!document.querySelector('.dlg .stp-h .saved')`), "V0.119 desktop: Saved still shows after 2 s");
+} catch (e) {
+  failures.push(`V0.119 desktop save at once: ${e.message}`);
+}
+
+// SPEC V0.119 (5): the rail's bell opens Settings on This device.
+try {
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail')");
+  const bell = await evaluate(`(() => { const b = document.querySelector('.rail .bell'); b?.click(); return !!b; })()`);
+  await waitFor(`!!document.querySelector('.dlg.settings')`, { soft: true });
+  const b = await evaluate(`document.querySelector('.dlg .stn-i[aria-current=page]')?.dataset.page ?? ''`);
+  check(bell && b === "device", `V0.119 desktop: the bell does not open Settings on This device (bell ${bell}, page "${b}")`);
+} catch (e) {
+  failures.push(`V0.119 desktop bell: ${e.message}`);
+}
+
+// SPEC V0.119: every page in the dark theme renders (screenshots only).
+try {
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+  for (const page of ["providers", "providers/claude", "providers/new", "automation", "projects", "projects/p_fyr", "device"]) {
+    await navigate(`${origin}/?mock=rail&dialog=settings&page=${page}`, "!!document.querySelector('.dlg.settings .stp-h h2')");
+    await settle();
+    await shot(`settings-${page.replace("/", "-")}-dark-desktop.png`);
+  }
+} catch (e) {
+  failures.push(`V0.119 desktop dark: ${e.message}`);
+} finally {
+  await send("Emulation.setEmulatedMedia", { features: [] });
+}
+
+// SPEC V0.119 (4), phone: the Reorder mode shows ↑ and ↓ of 44 px and no × or star; ↓ on the first row swaps it with
+// the second (one provider.update); Done brings the rows back. The phone's More sheet lost Notifications and Theme.
+try {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${origin}/?mock=rail&settings=providers/claude`, "document.querySelectorAll('.m-settings .model').length === 3");
+  await settle();
+  await tapCenter(".m-settings .lnk.reo", "!!document.querySelector('.m-settings .model .mv')");
+  const r = await evaluate(`({ mv: [...document.querySelectorAll('.m-settings .model .mv .xb')].map(b => Math.round(b.getBoundingClientRect().height)), others: document.querySelectorAll('.m-settings .model [aria-label^="Remove"], .m-settings .model .star, .m-settings .model [role=switch]').length })`);
+  check(r.mv.length === 6 && r.mv.every((h) => h >= 44) && r.others === 0, `V0.119 phone: the Reorder mode (${JSON.stringify(r)})`);
+  await shot("settings-reorder-phone.png");
+  await tapCenter(".m-settings .model .mv .xb[aria-label='Move Opus 5.5 down']", `${COMMANDS("provider.update")}.length === 1`);
+  await waitFor(`document.querySelector('.m-settings .model .sr-t')?.textContent === 'Sonnet 5.5'`, { soft: true });
+  const sw = await evaluate(`${COMMANDS("provider.update")}.map(c => c.args.models)`);
+  check(sw.length === 1 && JSON.stringify(sw[0]) === JSON.stringify(["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"]), `V0.119 phone: ↓ on the first model does not swap it (${JSON.stringify(sw)})`);
+  await tapCenter(".m-settings .sg-h .btn.p", "!document.querySelector('.m-settings .model .mv')");
+  check(await evaluate(`document.querySelectorAll('.m-settings .model [aria-label^="Remove"]').length === 3`), "V0.119 phone: Done does not bring the rows back");
+
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-ih [aria-label=More]')");
+  await tapCenter(".m-ih [aria-label=More]", "!!document.querySelector('.m-sheet .m-mi')");
+  await waitFor(`/needs a login/.test([...document.querySelectorAll('.m-sheet .m-mi')].find((b) => b.textContent.startsWith('Settings'))?.textContent ?? '')`, { soft: true });
+  const more = await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].map((b) => ({ label: b.querySelector('.ell')?.firstChild?.textContent ?? '', right: b.querySelector('.w')?.textContent ?? '' }))`);
+  check(more.map((x) => x.label).join("|") === "Select threads|Changes|Settings|Filter by project…|Adopt from T3|Show tool details" && more.find((x) => x.label === "Settings")?.right === "1 needs a login", `V0.119 phone: the More sheet (${JSON.stringify(more)})`);
+} catch (e) {
+  failures.push(`V0.119 phone: ${e.message}`);
+} finally {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 }
 
 // SPEC 0.5 V0.80: the rail's load line sits above the quota inside the rail and covers no other rail item; a hot
@@ -1872,13 +2005,15 @@ try {
 
 // SPEC 0.5 V0.116: a project's image icon. Desktop: Settings → Projects draws Fyr's image (28 px, loaded) and a
 // project whose image does not load (no fixture) its glyph, never a broken image; Fyr's project screen marks the
-// agent's values "Set by agent" and offers Replace image…, Remove image and Set up automatically. Phone: the
+// agent's values "Set by agent" and offers Replace… and Remove (V0.119: the Image tab) and Run setup or Run again. Phone: the
 // project screen shows the image at 44 px and its buttons are 44 px high.
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .rgear')");
   await evaluate(`document.querySelector('.rail .rgear').click()`);
+  await waitFor(`!!document.querySelector('.dlg .stn-i[data-page=projects]')`);
+  await evaluate(`document.querySelector('.dlg .stn-i[data-page=projects]').click()`); // V0.119: Projects is its own page
   await waitFor(`[...document.querySelectorAll('.dlg .pli')].some((b) => b.textContent.includes('Fyr') && b.querySelector('.pi.img img')?.complete)`);
   await waitFor(`![...document.querySelectorAll('.dlg .pli .pi.img img')].some((i) => i.complete && !i.naturalWidth)`, { soft: true });
   const r = await evaluate(`(() => {
@@ -1899,9 +2034,9 @@ try {
   await settle();
   const e = await evaluate(`(() => {
     const ed = document.querySelector('.pedit');
-    return { setby: [...ed.querySelectorAll('.fld > span')].filter((s) => s.querySelector('.setby')).map((s) => s.firstChild.textContent.trim()), buttons: [...ed.querySelectorAll('.pimg button')].map((b) => b.textContent.trim()), head: ed.querySelector('.phead .pi.img img')?.naturalWidth > 0 };
+    return { setby: [...ed.querySelectorAll('.sr-t')].filter((s) => s.querySelector('.setby')).map((s) => s.firstChild.textContent.trim()), buttons: [...ed.querySelectorAll('.pimg button, .psetup button')].map((b) => b.textContent.trim()), head: ed.querySelector('.phead .pi.img img')?.naturalWidth > 0 };
   })()`);
-  check(e.head && e.setby.join("|") === "Name|Colour|Image" && e.buttons.join("|") === "Replace image…|Remove image|Set up automatically", `V0.116 desktop: Fyr's project screen (${JSON.stringify(e)})`);
+  check(e.head && e.setby.join("|") === "Name|Colour|Icon" && /^Replace…\|Remove\|Run (setup|again)$/.test(e.buttons.join("|")), `V0.116 desktop: Fyr's project screen (${JSON.stringify(e)})`);
   if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "project-screen-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
 
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -1909,7 +2044,7 @@ try {
   await settle();
   const m = await evaluate(`(() => {
     const img = document.querySelector('.pedit .phead .pi.img img'), b = img.getBoundingClientRect();
-    return { w: b.width, loaded: img.naturalWidth > 0, heights: [...document.querySelectorAll('.pedit .pimg button')].map((x) => x.getBoundingClientRect().height), setby: document.querySelectorAll('.pedit .setby').length };
+    return { w: b.width, loaded: img.naturalWidth > 0, heights: [...document.querySelectorAll('.pedit .pimg button, .pedit .psetup button')].map((x) => x.getBoundingClientRect().height), setby: document.querySelectorAll('.pedit .setby').length };
   })()`);
   check(m.loaded && m.w === 44 && m.heights.length === 3 && m.heights.every((x) => x >= 44) && m.setby === 3, `V0.116 phone: Fyr's project screen (${JSON.stringify(m)})`);
   if (process.env.FYR_SHOTS) {

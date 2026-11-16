@@ -221,3 +221,28 @@ export function setQuietShow(kv: KV | null, from: number | null): number {
   for (const fn of listeners) fn(end);
   return end;
 }
+
+// ---- V0.119: the project page saves quiet hours 600 ms after the last change, and at once when it closes ----
+
+export const QUIET_SAVE_MS = 600;
+
+/** A saver that sends only the last value pushed, `ms` after the last push; flush sends a waiting value at once. */
+export function quietSaver<T>(send: (v: T) => void, ms = QUIET_SAVE_MS): { push(v: T): void; flush(): void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let waiting: { v: T } | null = null;
+  const flush = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    const w = waiting;
+    waiting = null;
+    if (w) send(w.v);
+  };
+  return {
+    push(v: T) {
+      waiting = { v };
+      clearTimeout(timer);
+      timer = setTimeout(flush, ms);
+    },
+    flush,
+  };
+}

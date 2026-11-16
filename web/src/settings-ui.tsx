@@ -1,41 +1,73 @@
-// SPEC 0.5 V0.50: Settings. Providers (list, Found on this host, Add provider), Projects (V0.58), Hosts,
-// Notifications, Appearance. The same body on desktop (a dialog) and phone (a screen).
+// SPEC V0.119 (amends V0.50): Settings is four pages behind one nav: Providers (with System agents), Automation
+// (Auto-deploy, Auto-merge), Projects (with Hosts) and This device (Notifications, Theme, Show tool details, Install).
+// A provider, Add provider and a project are sub-pages. Every change saves at once. The same pages on the desktop (a
+// dialog: the nav is its left column, the page its right pane) and the phone (the nav is the Settings screen, a page
+// is the next screen); the reason for the difference is width.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Api } from "./api.ts";
 import { hostStatus, type HostInfo } from "./hosts.ts";
-import type { Quota } from "./quota.ts";
 import { quotaFor } from "./quota.ts";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { CARD_WORD, cardState } from "./quota.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { removeProviderAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
-import type { Project } from "./types.ts";
-import { repoKey, sortRepos, type AutoDeploySetting, type AutoMergeRepo } from "./automerge.ts";
+import type { Profile, Project } from "./types.ts";
+import type { Theme } from "./inbox.tsx";
+import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
 import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
-import { colorVar, projectSubtitle } from "./projects.ts";
-import { NewProjectStep, ProjectIcon } from "./project-ui.tsx";
+import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects } from "./projects.ts";
+import { quietNote } from "./quiet.ts";
+import { NewProjectStep, ProjectEditor, ProjectIcon, type ProjectPatch } from "./project-ui.tsx";
+import { pushRow, type PushStatus } from "./push.ts";
+import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
+import { PAGES, automationSummary, deviceSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
+import { Empty, Grip, Group, LoadError, MoveButtons, Row, SaveField, SavedMark, Seg, SetContext, Skeleton, Switch, useReorder, useSaved, useSet } from "./settings-rows.tsx";
 import {
   createArgs,
   EMPTY_FORM,
   importable,
   keyLine,
   kindLabel,
+  listLine,
   loginActive,
   loginButton,
   loginLine,
-  modelsSummary,
-  modelsText,
-  parseModelIds,
+  modelsAfter,
+  removeLine,
   STATUS_TEXT,
+  usageLine,
   whereText,
   type FoundDTO,
   type LoginDTO,
+  type ModelsOp,
   type ProviderDTO,
   type ProviderForm,
 } from "./providers.ts";
+
+
+/** This device: kept in this browser. */
+export interface SettingsDevice {
+  push: PushStatus;
+  pushReason: string | null;
+  /** turn notifications on or off; the error, or null */
+  setPush(on: boolean): Promise<string | null>;
+  testPush(): Promise<string | null>;
+  theme: Theme;
+  setTheme(t: Theme): void;
+  canInstall: boolean;
+  onInstall(): void;
+}
+
+export interface ProjectActions {
+  update(id: string, patch: ProjectPatch): Promise<string | null>;
+  setFolder(id: string, path: string): Promise<string | null>;
+  delete(id: string): Promise<string | null>;
+  /** New project without a thread; the error, or null */
+  create(name: string, folder: string): Promise<string | null>;
+}
 
 export interface SettingsProps {
   api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "systemAgents">>;
@@ -43,306 +75,793 @@ export interface SettingsProps {
   /** V0.51: the front's hosts with their state */
   hosts?: HostInfo[];
   phone?: boolean;
-  /** the push control (Notifications) */
-  push?: ComponentChildren;
-  /** the theme control (Appearance) */
-  appearance?: ComponentChildren;
+  /** the page shown; null is the phone's nav screen (the desktop always shows a page) */
+  at: PageRef | null;
+  /** open a page (null: the phone's nav) */
+  go(r: PageRef | null): void;
+  /** phone: the screen's header (title, and what sits at its right) */
+  header?(title: ComponentChildren, end?: ComponentChildren): ComponentChildren;
+  /** no connection to the host: what was last read shows and nothing can be changed */
+  offline?: boolean;
   /** the providers changed: reload the state's profiles */
   onChanged?(): void;
-  /** V0.58: the Projects section; without it the section is left out */
-  projects?: Project[];
-  onOpenProject?(id: string): void;
-  /** New project without a thread; the error, or null */
-  onCreateProject?(name: string, folder: string): Promise<string | null>;
+  device: SettingsDevice;
+  projects: Project[];
+  profiles: Profile[];
+  /** the host's clock */
+  now: number;
+  projectActions: ProjectActions;
 }
 
-export function Settings(p: SettingsProps) {
-  return (
-    <div class={`set${p.phone ? " phone" : ""}`}>
-      <ProvidersSection {...p} />
-      {p.projects && <ProjectsSection projects={p.projects} onOpen={(id) => p.onOpenProject?.(id)} onCreate={p.onCreateProject} />}
-      {p.api.autoMerge && <AutoMergeSection api={p.api as AutoMergeApi} />}
-      {p.api.autoDeploy && <AutoDeploySection api={p.api as AutoDeployApi} />}
-      {p.api.systemAgents && <SystemAgentsSection api={p.api as SystemAgentsApi} hosts={(p.hosts ?? []).map((h) => h.name)} />}
-      <section class="sets">
-        <h3>Hosts</h3>
-        {p.hosts && p.hosts.length > 0 ? (
-          p.hosts.map((h) => (
-            <div class="setrow" key={h.name} title={h.error}>
-              <span class="setn">{h.name}</span>
-              <span class="setd">{hostStatus(h, p.host)}</span>
-            </div>
-          ))
-        ) : (
-          <div class="setrow">
-            <span class="setn">{p.host || "This host"}</span>
-            <span class="setd">this host</span>
-          </div>
-        )}
-      </section>
-      <section class="sets">
-        <h3>Notifications</h3>
-        {p.push ?? <div class="setd">Not available in this browser.</div>}
-      </section>
-      <section class="sets">
-        <h3>Appearance</h3>
-        {p.appearance ?? <div class="setd">Theme follows the system.</div>}
-      </section>
-    </div>
-  );
-}
+const OFFLINE = (host: string) => `No connection to ${host || "the host"}. Settings show what was last read and cannot be changed until it is back.`;
 
-/** V0.58: every project by name, with its icon, folder and thread count; a row opens the project screen. */
-export function ProjectsSection({ projects, onOpen, onCreate }: { projects: Project[]; onOpen(id: string): void; onCreate?(name: string, folder: string): Promise<string | null> }) {
-  const [adding, setAdding] = useState(false);
-  const list = [...projects].filter((x) => x.id).sort((a, b) => a.name.localeCompare(b.name));
-  return (
-    <section class="sets" aria-label="Projects">
-      <h3>Projects</h3>
-      {list.length === 0 && <div class="setd">No projects yet.</div>}
-      {list.length > 0 && (
-        <div class="pls setpl">
-          {list.map((x) => (
-            <button key={x.id} class="pli" style={{ "--pc": colorVar(x.color, x.name) }} onClick={() => onOpen(x.id!)}>
-              <ProjectIcon project={x} name={x.name} size={28} />
-              <span class="plt">
-                <span class="ell pln">{x.name}</span>
-                <span class="ell pls2">{projectSubtitle(x)}</span>
-              </span>
-              <span class="plc" title={`${x.threads ?? 0} threads`}>
-                {x.threads ?? 0}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-      {onCreate &&
-        (adding ? (
-          <NewProjectStep
-            initialName=""
-            initialFolder=""
-            fromThread={false}
-            onCancel={() => setAdding(false)}
-            onCreate={async (name, folder) => {
-              const e = await onCreate(name, folder);
-              if (!e) setAdding(false);
-              return e;
-            }}
-          />
-        ) : (
-          <button class="btn sbtn addp" onClick={() => setAdding(true)}>
-            New project
-          </button>
-        ))}
-    </section>
-  );
-}
+// ---- the data every page and the nav read; each part loads by itself ----
 
-function ProvidersSection(p: SettingsProps) {
-  const [list, setList] = useState<ProviderDTO[] | null>(null);
+type Run = (action: string, args: Record<string, unknown>) => Promise<string | null>;
+
+function useSettingsData(p: SettingsProps, saved: () => void) {
+  const api = p.api;
+  const [providers, setProviders] = useState<ProviderDTO[] | null>(null);
+  const [provErr, setProvErr] = useState<string | null>(null);
   const [found, setFound] = useState<FoundDTO[]>([]);
-  const [err, setErr] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
-  const quotas = useQuotas();
-  const load = async () => {
+  const [deploy, setDeploy] = useState<boolean | null>(null);
+  const [deployErr, setDeployErr] = useState<string | null>(null);
+  const [repos, setRepos] = useState<AutoMergeRepo[] | null>(null);
+  const [reposErr, setReposErr] = useState<string | null>(null);
+  const hostNames = (p.hosts ?? []).map((h) => h.name);
+  const [saHost, setSaHost] = useState(hostNames[0] ?? "");
+  const [sa, setSa] = useState<SystemAgentsView | null>(null);
+  const [saErr, setSaErr] = useState<string | null>(null);
+
+  const loadProviders = async () => {
     try {
-      const [l, f] = await Promise.all([p.api.providers(), p.api.providersFound().catch(() => [] as FoundDTO[])]);
-      setList(l);
+      const [l, f] = await Promise.all([api.providers(), api.providersFound().catch(() => [] as FoundDTO[])]);
+      setProviders(l);
       setFound(f);
+      setProvErr(null);
     } catch (e) {
-      setErr(`Could not read the providers: ${(e as Error).message}`);
-      setList([]);
+      setProvErr(`Could not read the providers: ${(e as Error).message}.`);
     }
   };
-  useEffect(() => void load(), []);
+  const loadDeploy = async () => {
+    if (!api.autoDeploy) return setDeploy(null);
+    try {
+      setDeploy((await api.autoDeploy()).on);
+      setDeployErr(null);
+    } catch (e) {
+      setDeployErr(`Could not read the auto-deploy setting: ${(e as Error).message}.`);
+    }
+  };
+  const loadRepos = async () => {
+    if (!api.autoMerge) return setRepos([]);
+    try {
+      setRepos(await api.autoMerge());
+      setReposErr(null);
+    } catch (e) {
+      setReposErr(`Could not read the auto-merge setting: ${(e as Error).message}.`);
+    }
+  };
+  const loadSa = async (h = saHost) => {
+    if (!api.systemAgents) return;
+    try {
+      setSa(await api.systemAgents(h || undefined));
+      setSaErr(null);
+    } catch (e) {
+      setSaErr(`Could not read the system agents: ${(e as Error).message}.`);
+    }
+  };
+  useEffect(() => {
+    void loadProviders();
+    void loadDeploy();
+    void loadRepos();
+  }, []);
+  useEffect(() => void loadSa(saHost), [saHost]);
   // V0.53: while a login runs, follow it (its link, the code's answer, the end).
-  const logging = !!list?.some((x) => loginActive(x.login));
+  const logging = !!providers?.some((x) => loginActive(x.login));
   useEffect(() => {
     if (!logging) return;
-    const t = setInterval(() => void load(), 1500);
+    const t = setInterval(() => void loadProviders(), 1500);
     return () => {
       clearInterval(t);
       p.onChanged?.(); // a login ended: the profiles' status may have changed
     };
   }, [logging]);
-  const run = async (action: string, args: Record<string, unknown>): Promise<boolean> => {
-    const r = await p.api.command(action, undefined, args);
+
+  /** One owner command; ok shows Saved and reloads what it changed. The error is shown on the row that sent it. */
+  const command = async (action: string, args: Record<string, unknown>, reload: () => Promise<void>): Promise<string | null> => {
+    const r = await api.command(action, undefined, args);
     if (!r.ok) {
-      setErr(r.error ?? "That did not work");
-      return false;
+      await reload(); // the control goes back to what the host has
+      return r.error ?? "That did not work";
     }
-    setErr(null);
-    await load();
-    p.onChanged?.();
-    return true;
+    saved();
+    await reload();
+    return null;
   };
-  const finds = importable(found);
-  return (
-    <section class="sets" aria-label="Providers">
-      <h3>Providers</h3>
-      {err && (
-        <div class="seterr" role="alert">
-          {err}
+  const runProvider: Run = async (action, args) => {
+    const e = await command(action, args, loadProviders);
+    if (!e) {
+      p.onChanged?.();
+      void loadSa();
+    }
+    return e;
+  };
+  return {
+    providers,
+    provErr,
+    found,
+    loadProviders,
+    deploy,
+    deployErr,
+    loadDeploy,
+    repos,
+    reposErr,
+    loadRepos,
+    sa,
+    saErr,
+    saHost,
+    setSaHost,
+    loadSa,
+    hostNames,
+    runProvider,
+    runDeploy: (on: boolean) => command("host.autoDeploy", { on }, loadDeploy),
+    runRepo: (repo: string, on: boolean) => command("host.autoMerge", { repo, on }, loadRepos),
+    runSa: (args: Record<string, unknown>) => command("host.systemAgents", saHost ? { ...args, host: saHost } : args, () => loadSa()),
+  };
+}
+type Data = ReturnType<typeof useSettingsData>;
+
+/** What needs the owner on the Providers page, for the phone's More sheet ("1 needs a login"); "" while unknown. */
+export function useProvidersNeed(api: SettingsProps["api"]): string {
+  const [v, setV] = useState("");
+  useEffect(() => {
+    let live = true;
+    void Promise.all([api.providers(), api.systemAgents ? api.systemAgents().catch(() => null) : null])
+      .then(([l, sa]) => live && setV(providersNeed(l, sa?.jobs.filter((j) => j.error).length ?? 0)))
+      .catch(() => {});
+    return () => void (live = false);
+  }, []);
+  return v;
+}
+
+// ---- the shell ----
+
+export function Settings(p: SettingsProps) {
+  const sv = useSaved();
+  const data = useSettingsData(p, sv.mark);
+  const env = { readOnly: !!p.offline, phone: !!p.phone, saved: sv.mark };
+  const blocked = data.sa?.jobs.filter((j) => j.error).length ?? 0;
+  const summaries: Record<PageId, string> = {
+    providers: providersSummary(data.providers, blocked),
+    automation: automationSummary(p.api.autoDeploy ? data.deploy : false, data.repos),
+    projects: projectsSummary(settingsProjects(p.projects).length, p.hosts?.length ?? 0),
+    device: deviceSummary(p.device.push, p.device.theme),
+  };
+  const badge = navBadge(data.providers, blocked);
+  const [adding, setAdding] = useState(false);
+  useEffect(() => setAdding(false), [p.at?.page]);
+  const ui: PageUi = { adding, setAdding, empty: settingsProjects(p.projects).length === 0 };
+  const view = p.at ? pageView(p.at, p, data, ui) : null;
+
+  // Opening a page moves focus to its heading; coming back from a sub-page focuses the row it came from.
+  const pane = useRef<HTMLDivElement>(null);
+  const prev = useRef<PageRef | null>(p.at);
+  const byKeys = useRef(false);
+  useEffect(() => {
+    const was = prev.current;
+    prev.current = p.at;
+    if (!p.at || (was && was.page === p.at.page && was.sub === p.at.sub)) return;
+    if (byKeys.current) return void (byKeys.current = false);
+    const el = pane.current ?? document;
+    requestAnimationFrame(() => {
+      if (was?.sub && was.page === p.at!.page && !p.at!.sub) {
+        const row = el.querySelector<HTMLElement>(`[data-sub="${CSS.escape(was.sub)}"]`);
+        if (row) return row.focus();
+      }
+      if (!p.phone) el.querySelector<HTMLElement>(".stp-h h2")?.focus();
+    });
+  }, [p.at?.page, p.at?.sub]);
+
+  const nav = (
+    <SettingsNav
+      phone={!!p.phone}
+      active={p.at?.page ?? null}
+      summaries={summaries}
+      badge={badge}
+      onPick={(id, keys) => {
+        byKeys.current = !!keys;
+        p.go({ page: id });
+      }}
+    />
+  );
+
+  if (p.phone) {
+    // Phone: the nav is the Settings screen and a page is the next screen (no room for two columns). The header
+    // carries the title and Back, so the Saved mark sits at its right.
+    return (
+      <SetContext.Provider value={env}>
+        {p.header?.(view ? view.title : "Settings", view ? <SavedMark shown={sv.shown} /> : undefined)}
+        {p.offline && <div class="m-ban">{OFFLINE(p.host)}</div>}
+        <div class="m-nbody" ref={pane}>
+          <div class={`set phone${p.offline ? " ro" : ""}`}>
+            {view ? (
+              <div class="stp" data-page={pageKey(p.at!)}>
+                {view.end && <div class="sbar">{view.end}</div>}
+                {view.lede && <p class="stp-lede">{view.lede}</p>}
+                {view.body}
+              </div>
+            ) : (
+              nav
+            )}
+          </div>
         </div>
-      )}
-      {list === null && <div class="setd">Loading…</div>}
-      {list?.length === 0 && <div class="setd">No providers yet. Import one below or add one.</div>}
-      <ul class="provs">
-        {list?.map((x) => (
-          <ProviderRow key={x.id} p={x} quota={quotaFor(quotas, x.id)} open={open === x.id} onToggle={() => setOpen(open === x.id ? null : x.id)} run={run} />
-        ))}
-      </ul>
-      {finds.length > 0 && (
-        <>
-          <h4>Found on this host</h4>
-          <ul class="provs">
-            {finds.map((f) => (
-              <li class="prov found">
-                <div class="provh">
-                  <span class="provn">
-                    <b>{f.name}</b>
-                    <span class="setd">
-                      {kindLabel(f.kind)} · {f.source}
-                    </span>
-                    {f.keyFrom && <span class="setd">Key: {f.keyFrom}</span>}
-                    {f.note && <span class="setd">{f.note}</span>}
-                  </span>
-                  <span class={`pst ${f.status}`}>{STATUS_TEXT[f.status]}</span>
-                  <button class="btn sbtn" onClick={() => void run("provider.import", { foundId: f.id })}>
-                    Import
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {adding ? (
-        <AddProvider onCancel={() => setAdding(false)} onCreate={async (args) => (await run("provider.create", args)) && (setAdding(false), true)} />
-      ) : (
-        <button class="btn sbtn addp" onClick={() => setAdding(true)}>
-          Add provider
-        </button>
-      )}
-    </section>
+      </SetContext.Provider>
+    );
+  }
+  const v = view ?? pageView({ page: "providers" }, p, data, ui);
+  const at = p.at ?? { page: "providers" };
+  return (
+    <SetContext.Provider value={env}>
+      <div class={`set stx${p.offline ? " ro" : ""}`}>
+        {nav}
+        <div class="stp" ref={pane} data-page={pageKey(at)}>
+          {p.offline && <div class="m-ban d">{OFFLINE(p.host)}</div>}
+          <div class="stp-h">
+            {v.parent && (
+              <>
+                <button type="button" class="crumb" onClick={() => p.go({ page: at.page })}>
+                  ‹ {v.parent}
+                </button>
+                <span class="sep">/</span>
+              </>
+            )}
+            <h2 tabIndex={-1} class={at.sub ? "wrap" : ""}>
+              {v.title}
+            </h2>
+            <span class="end">
+              <SavedMark shown={sv.shown} />
+              {v.end}
+            </span>
+          </div>
+          {v.lede && <p class="stp-lede">{v.lede}</p>}
+          {v.body}
+        </div>
+      </div>
+    </SetContext.Provider>
   );
 }
 
-function ProviderRow({ p, quota, open, onToggle, run }: { p: ProviderDTO; quota?: Quota; open: boolean; onToggle(): void; run(a: string, args: Record<string, unknown>): Promise<boolean> }) {
-  const [models, setModels] = useState(modelsText(p.models));
-  const [key, setKey] = useState("");
-  const ask = useAsk();
-  useEffect(() => setModels(modelsText(p.models)), [p.models.map((m) => m.id).join("\n")]);
-  const effortModels = p.models.filter((m) => m.efforts?.length);
-  const kl = keyLine(p);
+const pageKey = (r: PageRef) => (r.sub ? `${r.page}/${r.sub}` : r.page);
+
+/** The four pages: a title and a line of state each, and the amber count on Providers. Desktop: the dialog's left
+ *  column; ↑ and ↓ move between pages and the page follows the focus. Phone: the Settings screen; the chevron shows
+ *  there only, because there the row leaves the screen. */
+export function SettingsNav({ phone, active, summaries, badge, onPick }: { phone: boolean; active: PageId | null; summaries: Record<PageId, string>; badge: number; onPick(id: PageId, keys?: boolean): void }) {
+  const ref = useRef<HTMLElement>(null);
+  const onKey = (e: KeyboardEvent) => {
+    if (phone || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+    const items = [...(ref.current?.querySelectorAll<HTMLButtonElement>(".stn-i") ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const j = Math.max(0, Math.min(items.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)));
+    items[j].focus();
+    onPick(PAGES[j].id, true);
+  };
   return (
-    <li class={`prov${open ? " open" : ""}`}>
-      <button class="provh" aria-expanded={open} onClick={onToggle}>
-        <span class="pdot" style={p.color ? { background: p.color } : undefined} />
-        <span class="provn">
-          <b>{p.name}</b>
-          <span class="setd">
-            {kindLabel(p.kind)} · {whereText(p)} · {modelsSummary(p.models)}
+    <nav class="stn" aria-label="Settings" ref={ref} onKeyDown={onKey}>
+      <div class="stn-c">
+        {PAGES.map((x) => (
+          <button type="button" class={`stn-i${x.id === active ? " on" : ""}`} aria-current={x.id === active ? "page" : undefined} data-page={x.id} onClick={() => onPick(x.id)}>
+            <span class="stn-t">{x.title}</span>
+            <span class="stn-s">{summaries[x.id]}</span>
+            <span class="stn-a">
+              {x.id === "providers" && badge > 0 && <span class="pst needs-login">{badge}</span>}
+              {phone && <span class="chev">›</span>}
+            </span>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+interface PageView {
+  title: ComponentChildren;
+  /** the sub-page's parent, for the desktop crumb */
+  parent?: string;
+  /** at the end of the title line (desktop); first on the page (phone) */
+  end?: ComponentChildren;
+  lede?: string;
+  body: ComponentChildren;
+}
+
+/** Page state the shell keeps, so a page's title line and its body agree (New project). */
+interface PageUi {
+  adding: boolean;
+  setAdding(b: boolean): void;
+  empty: boolean;
+}
+
+function pageView(at: PageRef, p: SettingsProps, d: Data, ui: PageUi): PageView {
+  const go = p.go;
+  switch (at.page) {
+    case "providers": {
+      if (at.sub === "new") return { title: "Add provider", parent: "Providers", body: <AddProvider onCancel={() => go({ page: "providers" })} onCreate={async (args) => { const e = await d.runProvider("provider.create", args); if (!e) go({ page: "providers" }); return e; }} /> };
+      if (at.sub) {
+        const x = d.providers?.find((y) => y.id === at.sub);
+        return {
+          title: x?.name ?? "Provider",
+          parent: "Providers",
+          end: x && <ProviderBadge p={x} />,
+          body: x ? <ProviderPage key={x.id} p={x} run={d.runProvider} onRemoved={() => go({ page: "providers" })} /> : d.providers === null && !d.provErr ? <Skeleton rows={4} /> : d.provErr ? <LoadError text={d.provErr} onRetry={() => void d.loadProviders()} /> : <Group><Empty text="This provider is not here anymore." /></Group>,
+        };
+      }
+      return { title: "Providers", body: <ProvidersPage d={d} go={go} /> };
+    }
+    case "automation":
+      return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} /> };
+    case "projects": {
+      if (at.sub) {
+        const pr = p.projects.find((x) => x.id === at.sub);
+        return {
+          title: pr?.name ?? "Project",
+          parent: "Projects",
+          body: pr ? (
+            <ProjectEditor
+              key={pr.id}
+              project={pr}
+              profiles={p.profiles}
+              now={p.now}
+              onSave={(patch) => p.projectActions.update(pr.id!, patch)}
+              onSetFolder={(v) => p.projectActions.setFolder(pr.id!, v)}
+              onDelete={async () => {
+                const e = await p.projectActions.delete(pr.id!);
+                if (!e) go({ page: "projects" });
+                return e;
+              }}
+            />
+          ) : (
+            <Group>
+              <Empty text={p.projects.length ? "This project is not here anymore." : "Loading…"} />
+            </Group>
+          ),
+        };
+      }
+      return { title: "Projects", ...projectsPage(p, ui) };
+    }
+    case "device":
+      return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} /> };
+  }
+}
+
+// ---- Providers ----
+
+/** The status badge: today's words; V0.77 (1), #65: it tells the truth about the account, so Ready never sits beside
+ *  its own error. */
+function ProviderBadge({ p }: { p: ProviderDTO }) {
+  const quota = quotaFor(useQuotas(), p.id);
+  return <span class={`pst ${p.status}`}>{quota && p.status === "ready" ? CARD_WORD[cardState(quota)] : STATUS_TEXT[p.status]}</span>;
+}
+
+function ProvidersPage({ d, go }: { d: Data; go(r: PageRef): void }) {
+  const quotas = useQuotas();
+  const [more, setMore] = useState(false);
+  const env = useSet();
+  const finds = importable(d.found);
+  const [importErr, setImportErr] = useState<{ id: string; text: string } | null>(null);
+  const none = d.providers?.length === 0;
+  return (
+    <>
+      {d.provErr && d.providers === null ? (
+        <LoadError text={d.provErr} onRetry={() => void d.loadProviders()} />
+      ) : d.providers === null ? (
+        <Skeleton rows={3} label="Loading the providers" />
+      ) : none ? (
+        <Group>
+          <Empty title="No providers yet" text="A provider is a Claude login or an API endpoint that threads run on." />
+        </Group>
+      ) : (
+        <Group label="Providers">
+          {d.providers.map((x) => {
+            const q = quotaFor(quotas, x.id);
+            return (
+              <Row
+                onClick={() => go({ page: "providers", sub: x.id })}
+                data={{ sub: x.id }}
+                class="prow"
+                lead={<span class="pdot" style={x.color ? { background: x.color } : undefined} />}
+                title={x.name}
+                ell
+                desc={
+                  <>
+                    {listLine(x)}
+                    {q && <QuotaLine q={q} name={x.name} bare />}
+                  </>
+                }
+                end={
+                  <>
+                    <ProviderBadge p={x} />
+                    <span class="chev">›</span>
+                  </>
+                }
+              />
+            );
+          })}
+        </Group>
+      )}
+      {finds.length > 0 && (
+        <Group title="Found on this host" label="Found on this host" foot="Logins and keys Fyr found here. Import makes one a provider; nothing is copied off this host.">
+          {(more ? finds : finds.slice(0, 3)).map((f) => (
+            <Row
+              class="found"
+              title={f.name}
+              error={importErr?.id === f.id ? importErr.text : null}
+              desc={
+                <>
+                  {kindLabel(f.kind)} · {f.keyFrom ? `key from ${f.keyFrom}` : f.source}
+                  {f.note && <span class="sr-d2">{f.note}</span>}
+                </>
+              }
+              end={
+                <button
+                  type="button"
+                  class="btn"
+                  disabled={env.readOnly}
+                  onClick={async () => {
+                    const e = await d.runProvider("provider.import", { foundId: f.id });
+                    setImportErr(e ? { id: f.id, text: e } : null);
+                  }}
+                >
+                  Import
+                </button>
+              }
+            />
+          ))}
+          {!more && finds.length > 3 && (
+            <button type="button" class="more" onClick={() => setMore(true)}>
+              Show {finds.length - 3} more
+            </button>
+          )}
+        </Group>
+      )}
+      <div class="sbar">
+        <button type="button" class={`btn addp${none ? " p" : ""}`} disabled={env.readOnly} data-sub="new" onClick={() => go({ page: "providers", sub: "new" })}>
+          Add provider
+        </button>
+      </div>
+      <h3 class="stp-sub">System agents</h3>
+      {none ? (
+        <Group label="System agents">
+          <Empty text="Add a provider first. System agents run on one of them." />
+        </Group>
+      ) : (
+        <SystemAgents d={d} />
+      )}
+    </>
+  );
+}
+
+function Select({ label, value, options, onPick }: { label: string; value: string; options: Option[]; onPick(v: string): void }) {
+  const env = useSet();
+  return (
+    <select value={value} aria-label={label} disabled={env.readOnly} onChange={(e) => onPick((e.target as HTMLSelectElement).value)}>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** V0.115: the provider and model of the calls Fyr starts itself (thread titles, project setup), per host: for all
+ *  jobs, and per job. No provider is the host's default, no model is its Haiku; a job that cannot run says why on its
+ *  row and fails visibly, never on a bigger model. Only the owner changes it; no agent tool can. */
+function SystemAgents({ d }: { d: Data }) {
+  const [err, setErr] = useState<{ row: string; text: string } | null>(null);
+  const v = d.sa;
+  const set = async (row: string, job: string, c: SystemAgentChoice | null) => {
+    const e = await d.runSa(c ? { job, profile: c.profile ?? "", model: c.model ?? "" } : { job, clear: true });
+    setErr(e ? { row, text: e } : null);
+  };
+  const rowErr = (row: string) => (err?.row === row ? err.text : null);
+  if (!v && d.saErr) return <LoadError text={d.saErr} onRetry={() => void d.loadSa()} />;
+  if (!v) return <Skeleton rows={2} label="Loading the system agents" />;
+  const def = v.default ?? {};
+  return (
+    <Group label="System agents" foot="The model calls Fyr makes itself. A job that cannot run fails and says why; it never moves to a bigger model.">
+      {d.hostNames.length > 1 && <Row title="Host" desc="Each host runs these on its own providers." stack end={<Select label="Host" value={d.saHost} options={d.hostNames.map((h) => ({ value: h, label: h }))} onPick={d.setSaHost} />} />}
+      <Row
+        title="Default"
+        desc="For every job that has no choice of its own."
+        error={rowErr("")}
+        stack
+        class="two"
+        end={
+          <>
+            <Select label="Provider" value={def.profile ?? ""} options={providerOptions(v)} onPick={(x) => void set("", "", { profile: x })} />
+            <Select label="Model" value={def.model ?? ""} options={modelOptions(v, def.profile ?? "")} onPick={(x) => void set("", "", { profile: def.profile, model: x })} />
+          </>
+        }
+      />
+      {v.jobs.map((j) => {
+        const line = jobLine(v, j);
+        const own = j.choice.profile ?? def.profile ?? "";
+        return (
+          <Row
+            key={j.id}
+            title={j.name}
+            desc={line.error ? undefined : line.text}
+            error={rowErr(j.id) ?? (line.error ? line.text : null)}
+            stack
+            class={`sajob${j.override ? " two" : ""}`}
+            end={
+              <>
+                <Select label={j.name} value={j.override ? (j.choice.profile ?? "") : "="} options={[{ value: "=", label: "Same as default" }, ...providerOptions(v).slice(1)]} onPick={(x) => void set(j.id, j.id, x === "=" ? null : { profile: x })} />
+                {j.override && <Select label="Model" value={j.choice.model ?? ""} options={modelOptions(v, own)} onPick={(x) => void set(j.id, j.id, { profile: j.choice.profile, model: x })} />}
+              </>
+            }
+          />
+        );
+      })}
+    </Group>
+  );
+}
+
+/** A provider's page: what blocks it first (a login, a key), its models, its usage, Remove last. */
+function ProviderPage({ p, run, onRemoved }: { p: ProviderDTO; run: Run; onRemoved(): void }) {
+  const quota = quotaFor(useQuotas(), p.id);
+  const ask = useAsk();
+  const env = useSet();
+  const [rmErr, setRmErr] = useState<string | null>(null);
+  return (
+    <>
+      {p.kind === "endpoint" ? (
+        <Group title="API key">
+          <KeyRow p={p} run={run} />
+        </Group>
+      ) : (
+        <LoginGroup p={p} run={run} />
+      )}
+      <ModelsGroup p={p} run={run} />
+      <Group title="Usage" class="usage">
+        <Row title={quota ? <QuotaLine q={quota} name={p.name} bare /> : "No reading yet"} desc={usageLine(p)} />
+      </Group>
+      <Group danger>
+        <Row
+          title="Remove provider"
+          desc={removeLine(p.threads)}
+          error={rmErr}
+          end={
+            <button
+              type="button"
+              class="btn danger"
+              disabled={p.threads > 0 || env.readOnly}
+              onClick={async () => {
+                if (!(await ask(removeProviderAsk(p)))) return;
+                const e = await run("provider.delete", { id: p.id });
+                setRmErr(e);
+                if (!e) onRemoved();
+              }}
+            >
+              Remove…
+            </button>
+          }
+        />
+      </Group>
+    </>
+  );
+}
+
+/** A Claude account's login: the login panel while one runs or is needed, else who is logged in; then its token. */
+function LoginGroup({ p, run }: { p: ProviderDTO; run: Run }) {
+  const env = useSet();
+  const [err, setErr] = useState<string | null>(null);
+  const lb = loginButton(p);
+  const start = async () => setErr(await run("provider.login", { id: p.id }));
+  const panel = p.login && (loginActive(p.login) || p.status === "needs-login");
+  return (
+    <Group title="Login">
+      {panel ? (
+        <Row col>
+          <LoginPanel p={p} l={p.login!} run={run} />
+        </Row>
+      ) : p.status === "needs-login" ? (
+        <Row title="Not logged in" desc={p.need} error={err} end={lb && <button type="button" class="btn p" disabled={env.readOnly} onClick={() => void start()}>{lb}</button>} />
+      ) : (
+        <Row
+          title="Logged in"
+          desc={<span class="mono">{whereText(p)}</span>}
+          error={err}
+          end={lb && (
+            <button type="button" class="btn" disabled={env.readOnly} onClick={() => void start()}>
+              {lb}
+            </button>
+          )}
+        />
+      )}
+      {p.auth !== "none" && <KeyRow p={p} run={run} />}
+    </Group>
+  );
+}
+
+/** The API key (an endpoint) or the login token (a Claude account): "Set" or "Not set" with Replace… / Set…, which
+ *  shows the field in place. A missing key comes first, open and focused, with the page's primary Save key. */
+function KeyRow({ p, run }: { p: ProviderDTO; run: Run }) {
+  const missing = p.kind === "endpoint" && !p.keySet;
+  const [open, setOpen] = useState(missing);
+  const [err, setErr] = useState<string | null>(null);
+  const env = useSet();
+  const what = p.kind === "endpoint" ? "API key" : "Login token";
+  useEffect(() => setOpen(missing), [missing]);
+  if (open)
+    return (
+      <Row col error={null} class={`keyrow${missing ? " bad" : ""}`}>
+        <span class="sr-b">
+          <span class="sr-t">{what}</span>
+          <span class={`sr-d${err || missing ? " err" : ""}`} role={err ? "alert" : undefined}>
+            {err ?? (missing ? "The key is missing. Paste it to use this provider." : p.kind === "endpoint" ? "Paste the new key." : "Paste a token from `claude setup-token`.")}
           </span>
         </span>
-        {/* V0.77 (1), #65: the badge tells the truth about the account, so Ready never sits beside its own error. */}
-        <span class={`pst ${p.status}`}>{quota && p.status === "ready" ? CARD_WORD[cardState(quota)] : STATUS_TEXT[p.status]}</span>
-      </button>
-      {quota && <QuotaLine q={quota} name={p.name} />}
-      {p.need && !loginActive(p.login) && <div class="setneed">{p.need}</div>}
-      {p.login && <LoginPanel p={p} l={p.login} run={run} />}
-      {p.status === "needs-login" && loginButton(p) && (
-        <div class="setbar">
-          <button class="btn p sbtn" onClick={() => void run("provider.login", { id: p.id })}>
-            {loginButton(p)}
+        <span class="keyf">
+          <SaveField
+            value=""
+            label={what}
+            type="password"
+            placeholder={p.kind === "endpoint" ? "Paste the key" : "Paste the token"}
+            button={p.kind === "endpoint" ? "Save key" : "Save token"}
+            primary={missing}
+            alwaysButton
+            clears
+            autoFocus={missing}
+            onError={setErr}
+            onSave={async (v) => {
+              const e = await run("provider.setKey", { id: p.id, key: v });
+              if (!e) setOpen(false);
+              return e;
+            }}
+          />
+          {!missing && (
+            <button type="button" class="btn" onClick={() => (setOpen(false), setErr(null))}>
+              Cancel
+            </button>
+          )}
+        </span>
+        <span class="sr-d">Kept in a private file on this host. It is never shown again.</span>
+      </Row>
+    );
+  const kl = keyLine(p);
+  return (
+    <Row
+      title={what}
+      desc={p.keySet ? `Set · ${kl.replace(/^(Key|Login token) /, "")}` : "Not set. Optional: a token is used instead of the browser sign-in."}
+      end={
+        <button type="button" class="btn" disabled={env.readOnly} onClick={() => setOpen(true)}>
+          {p.keySet ? "Replace…" : "Set…"}
+        </button>
+      }
+    />
+  );
+}
+
+/** Models (part 1, over the stored list): one row per model in the owner's order, a grip, ★ for the default, × to
+ *  remove; a field to add an id; the default effort. Each change sends provider.update with the whole list. */
+function ModelsGroup({ p, run }: { p: ProviderDTO; run: Run }) {
+  const env = useSet();
+  const ids = p.models.map((m) => m.id);
+  const [err, setErr] = useState<{ row: string; text: string } | null>(null);
+  const apply = async (row: string, op: ModelsOp) => {
+    const r = modelsAfter(ids, p.defaultModel, op);
+    if ("error" in r) return setErr({ row, text: r.error });
+    const args: Record<string, unknown> = { id: p.id };
+    if ("star" in op) args.defaultModel = r.defaultModel;
+    else args.models = r.models;
+    const e = await run("provider.update", args);
+    setErr(e ? { row, text: e } : null);
+    return e;
+  };
+  const ro = useReorder(ids, (from, to) => void apply(ids[from], { move: [from, to] }));
+  const hasEfforts = p.models.some((m) => m.efforts?.length);
+  const rowErr = (row: string) => (err?.row === row ? err.text : null);
+  return (
+    <Group
+      title="Models"
+      label="Models"
+      end={
+        // The phone reorders in a mode: touch has no hover to reveal a grip, and a drag on a list fights the page's
+        // scroll. The desktop drags the grip instead, so it has no Reorder button.
+        env.phone &&
+        ids.length > 1 &&
+        !env.readOnly &&
+        (ro.mode ? (
+          <button type="button" class="btn p" onClick={() => ro.setMode(false)}>
+            Done
           </button>
-        </div>
-      )}
-      {open && (
-        <div class="provb">
-          <label class="fld">
-            <span>Models (one id per line)</span>
-            <textarea rows={Math.min(6, Math.max(2, p.models.length + 1))} value={models} onInput={(e) => setModels((e.target as HTMLTextAreaElement).value)} />
-          </label>
-          <div class="row2">
-            <label class="fld">
-              <span>Default model</span>
-              <select value={p.defaultModel ?? ""} onChange={(e) => void run("provider.update", { id: p.id, defaultModel: (e.target as HTMLSelectElement).value })}>
-                {p.models.map((m) => (
-                  <option value={m.id}>{m.name || m.id}</option>
-                ))}
-              </select>
-            </label>
-            {effortModels.length > 0 && (
-              <label class="fld">
-                <span>Default effort</span>
-                <select value={p.defaultEffort ?? ""} onChange={(e) => void run("provider.update", { id: p.id, defaultEffort: (e.target as HTMLSelectElement).value })}>
-                  <option value="">CLI default</option>
-                  {p.efforts.map((x) => (
-                    <option value={x}>{x}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-          <div class="setbar">
-            <button class="btn sbtn" disabled={models === modelsText(p.models)} onClick={() => void run("provider.update", { id: p.id, models: parseModelIds(models) })}>
-              Save models
-            </button>
-          </div>
-          {p.auth !== "none" && (
-            <label class="fld">
-              <span>{p.kind === "endpoint" ? "API key" : p.tokenLogin ? "Login token" : "Login token (optional)"}</span>
-              {kl && <span class="setd">{kl}</span>}
-              <div class="setkey">
-                <input type="password" autocomplete="off" spellcheck={false} value={key} placeholder={p.keySet ? "Paste a new key to replace it" : "Paste the key"} onInput={(e) => setKey((e.target as HTMLInputElement).value)} />
-                <button class="btn sbtn" disabled={!key.trim()} onClick={() => void run("provider.setKey", { id: p.id, key }).then((ok) => ok && setKey(""))}>
-                  Save key
+        ) : (
+          <button type="button" class="lnk reo" onClick={() => ro.setMode(true)}>
+            Reorder
+          </button>
+        ))
+      }
+      foot="★ is the default for a new thread. The order here is the order of every model picker."
+    >
+      {p.models.map((m, i) => {
+        const def = m.id === p.defaultModel;
+        const name = m.name || m.id;
+        const r = ro.row(i);
+        return (
+          <Row
+            key={m.id}
+            class={`model ${r.class as string}`}
+            rowRef={r.ref as (el: HTMLElement | null) => void}
+            error={rowErr(m.id)}
+            lead={
+              !ro.mode && (
+                <>
+                  <Grip {...ro.grip(i, name)} />
+                  <button type="button" class="star" aria-pressed={def} aria-label={def ? "The default model" : `Make ${m.id} the default`} disabled={env.readOnly} onClick={() => !def && void apply(m.id, { star: m.id })}>
+                    {def ? "★" : "☆"}
+                  </button>
+                </>
+              )
+            }
+            title={name}
+            desc={m.name && m.name !== m.id ? <span class="mono">{m.id}</span> : undefined}
+            end={
+              ro.mode ? undefined : (
+                <button type="button" class="xb" aria-label={`Remove ${m.id}`} title={def ? "Star another model first" : "Remove"} disabled={def || env.readOnly} onClick={() => void apply(m.id, { remove: m.id })}>
+                  ×
                 </button>
-              </div>
-            </label>
-          )}
-          {p.status !== "needs-login" && loginButton(p) && (
-            <div class="setbar">
-              <button class="btn sbtn" onClick={() => void run("provider.login", { id: p.id })}>
-                {loginButton(p)}
-              </button>
-            </div>
-          )}
-          <div class="setd">
-            {p.quota !== "none" ? `Quota: ${p.quota}` : "No quota reading"}
-            {p.imported ? ` · imported from ${p.imported}` : ""}
-            {p.threads ? ` · ${p.threads} thread${p.threads === 1 ? "" : "s"}` : ""}
-          </div>
-          <div class="setbar">
-            <button class="btn sbtn danger" disabled={p.threads > 0} title={p.threads > 0 ? "Threads use it; hand them over first" : ""} onClick={async () => (await ask(removeProviderAsk(p))) && void run("provider.delete", { id: p.id })}>
-              Remove
-            </button>
-          </div>
-        </div>
+              )
+            }
+          >
+            {ro.mode && <MoveButtons name={name} i={i} n={ids.length} onMove={(f, t) => void apply(ids[f], { move: [f, t] })} />}
+          </Row>
+        );
+      })}
+      {!ro.mode && (
+        <Row error={rowErr("+")} class="fieldrow">
+          <SaveField value="" label="Model id to add" placeholder="Add a model id" mono clears alwaysButton button="Add" onError={(e) => setErr(e ? { row: "+", text: e } : null)} onSave={async (v) => (await apply("+", { add: v })) ?? null} check={(v) => { const r = modelsAfter(ids, p.defaultModel, { add: v }); return "error" in r ? r.error : null; }} />
+        </Row>
       )}
-    </li>
+      {!ro.mode && hasEfforts && (
+        <Row
+          title="Default effort"
+          error={rowErr("effort")}
+          end={
+            <select aria-label="Default effort" value={p.defaultEffort ?? ""} disabled={env.readOnly} onChange={async (e) => { const x = await run("provider.update", { id: p.id, defaultEffort: (e.target as HTMLSelectElement).value }); setErr(x ? { row: "effort", text: x } : null); }}>
+              <option value="">CLI default</option>
+              {p.efforts.map((x) => (
+                <option value={x}>{x}</option>
+              ))}
+            </select>
+          }
+        />
+      )}
+    </Group>
   );
 }
 
 // V0.53: a login Fyr runs with the CLI: the sign-in link, the code field, Cancel. The code goes to the CLI only.
-function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run(a: string, args: Record<string, unknown>): Promise<boolean> }) {
+function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run: Run }) {
   const [code, setCode] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const env = useSet();
   const active = loginActive(l);
   const ends = new Date(l.expires);
-  const send = () => void run("provider.loginCode", { id: p.id, code }).then((ok) => ok && setCode(""));
+  const send = () => void run("provider.loginCode", { id: p.id, code }).then((e) => (setErr(e), !e && setCode("")));
   return (
     <div class={`login ${l.state}`} aria-live="polite">
       <div class="setd">{loginLine(l)}</div>
-      {active && l.message && (
+      {((active && l.message) || err) && (
         <div class="seterr" role="alert">
-          {l.message}
+          {err ?? l.message}
         </div>
       )}
       {active && l.url && (
         <>
-          <a class="btn p sbtn loginlink" href={l.url} target="_blank" rel="noopener noreferrer">
+          <a class="btn p loginlink" href={l.url} target="_blank" rel="noopener noreferrer">
             Open the sign-in page
           </a>
           <label class="fld">
@@ -354,11 +873,11 @@ function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run(a: string,
                 spellcheck={false}
                 value={code}
                 placeholder="Paste the code"
-                disabled={l.state === "checking"}
+                disabled={l.state === "checking" || env.readOnly}
                 onInput={(e) => setCode((e.target as HTMLInputElement).value)}
                 onKeyDown={(e) => e.key === "Enter" && code.trim() && send()}
               />
-              <button class="btn sbtn" disabled={!code.trim() || l.state === "checking"} onClick={send}>
+              <button type="button" class="btn" disabled={!code.trim() || l.state === "checking" || env.readOnly} onClick={send}>
                 Send code
               </button>
             </div>
@@ -368,14 +887,14 @@ function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run(a: string,
       <div class="setbar">
         {active ? (
           <>
-            <span class="setd">Ends at {isNaN(ends.getTime()) ? "" : ends.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-            <button class="btn sbtn" onClick={() => void run("provider.loginCancel", { id: p.id })}>
+            <span class="setd">The sign-in ends at {isNaN(ends.getTime()) ? "" : ends.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            <button type="button" class="btn" disabled={env.readOnly} onClick={() => void run("provider.loginCancel", { id: p.id })}>
               Cancel
             </button>
           </>
         ) : (
-          (l.state === "failed" || l.state === "timeout") && (
-            <button class="btn sbtn" onClick={() => void run("provider.login", { id: p.id })}>
+          (l.state === "failed" || l.state === "timeout" || l.state === "cancelled") && (
+            <button type="button" class="btn" disabled={env.readOnly} onClick={() => void run("provider.login", { id: p.id })}>
               Try again
             </button>
           )
@@ -385,272 +904,317 @@ function LoginPanel({ p, l, run }: { p: ProviderDTO; l: LoginDTO; run(a: string,
   );
 }
 
-function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknown>): Promise<boolean> }) {
+/** Add provider (A5): today's fields and validation, as a page. */
+function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknown>): Promise<string | null> }) {
   const [f, setF] = useState<ProviderForm>(EMPTY_FORM);
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const env = useSet();
   const picker = useFolderPick();
   const set = (k: keyof ProviderForm) => (e: Event) => setF({ ...f, [k]: (e.target as HTMLInputElement).value });
   const submit = async () => {
     const r = createArgs(f);
     if ("error" in r) return setErr(r.error);
     setErr(null);
-    await p.onCreate(r.args);
+    setBusy(true);
+    const e = await p.onCreate(r.args);
+    setBusy(false);
+    if (e) setErr(e);
   };
   return (
-    <div class="addf">
-      <div class="seg" role="radiogroup" aria-label="Kind">
-        {(["claude-account", "endpoint"] as const).map((k) => (
-          <button role="radio" aria-checked={f.kind === k} class={`sbtn${f.kind === k ? " on" : ""}`} onClick={() => setF({ ...f, kind: k })}>
-            {kindLabel(k)}
-          </button>
-        ))}
-      </div>
-      <label class="fld">
-        <span>Name</span>
-        <input value={f.name} onInput={set("name")} placeholder={f.kind === "endpoint" ? "OpenRouter" : "Claude (work)"} />
-      </label>
-      {f.kind === "claude-account" ? (
-        <label class="fld">
-          <span>Config folder (empty: ~/.claude)</span>
-          <div class="setkey">
-            <input value={f.configDir} onInput={set("configDir")} placeholder="~/.claude-work" />
-            <button class="btn sbtn" onClick={() => void picker.pick({ title: "Config folder" }).then((d) => d && setF({ ...f, configDir: d }))}>
-              Choose…
-            </button>
-          </div>
-          <span class="setd">After adding it, press Log in: Fyr runs claude's login in this folder and shows the sign-in link here.</span>
-        </label>
-      ) : (
-        <>
+    <>
+      <Group>
+        <Row title="Kind" stack end={<Seg label="Kind" value={f.kind} options={(["claude-account", "endpoint"] as const).map((k) => ({ value: k, label: kindLabel(k) }))} onChange={(k) => setF({ ...f, kind: k })} />} />
+        <Row col>
           <label class="fld">
-            <span>Base URL</span>
-            <input value={f.baseURL} onInput={set("baseURL")} placeholder="https://openrouter.ai/api" inputMode="url" />
+            <span>Name</span>
+            <input value={f.name} onInput={set("name")} placeholder={f.kind === "endpoint" ? "OpenRouter" : "Claude (work)"} disabled={env.readOnly} />
           </label>
+        </Row>
+        {f.kind === "claude-account" ? (
+          <Row col>
+            <label class="fld">
+              <span>Config folder (empty: ~/.claude)</span>
+              <div class="setkey">
+                <input value={f.configDir} onInput={set("configDir")} placeholder="~/.claude-work" disabled={env.readOnly} />
+                <button type="button" class="btn" disabled={env.readOnly} onClick={() => void picker.pick({ title: "Config folder" }).then((d) => d && setF({ ...f, configDir: d }))}>
+                  Choose…
+                </button>
+              </div>
+            </label>
+            <span class="sr-d">After adding it, press Log in on its page: Fyr runs claude's login in this folder and shows the sign-in link there.</span>
+          </Row>
+        ) : (
+          <>
+            <Row col>
+              <label class="fld">
+                <span>Base URL</span>
+                <input value={f.baseURL} onInput={set("baseURL")} placeholder="https://openrouter.ai/api" inputMode="url" disabled={env.readOnly} />
+              </label>
+            </Row>
+            <Row col>
+              <label class="fld">
+                <span>API key</span>
+                <input type="password" autocomplete="off" value={f.key} onInput={set("key")} placeholder="Paste the key" disabled={env.readOnly} />
+              </label>
+              <span class="sr-d">Kept in a private file on this host.</span>
+            </Row>
+          </>
+        )}
+        <Row col>
           <label class="fld">
-            <span>API key</span>
-            <input type="password" autocomplete="off" value={f.key} onInput={set("key")} placeholder="Kept in a private file on this host" />
+            <span>Model ids, one per line{f.kind === "claude-account" ? " (empty: Claude's list)" : ""}</span>
+            <textarea rows={3} class="mono" value={f.models} onInput={set("models")} disabled={env.readOnly} />
           </label>
-        </>
-      )}
-      <label class="fld">
-        <span>Model ids (one per line{f.kind === "claude-account" ? "; empty: Claude's list" : ""})</span>
-        <textarea rows={3} value={f.models} onInput={set("models")} />
-      </label>
+        </Row>
+      </Group>
       {err && (
         <div class="seterr" role="alert">
           {err}
         </div>
       )}
-      <div class="setbar">
-        <button class="btn sbtn" onClick={p.onCancel}>
+      <div class="sbar">
+        <button type="button" class="btn end" onClick={p.onCancel}>
           Cancel
         </button>
-        <button class="btn p sbtn" onClick={() => void submit()}>
-          Add
+        <button type="button" class="btn p" disabled={busy || env.readOnly} onClick={() => void submit()}>
+          Add provider
         </button>
       </div>
-    </div>
+    </>
   );
 }
 
-type AutoMergeApi = Pick<Api, "autoMerge" | "command">;
-type AutoDeployApi = Pick<Api, "autoDeploy" | "command">;
-type SystemAgentsApi = Pick<Api, "systemAgents" | "command">;
+// ---- Automation ----
 
-function Pick1({ label, value, options, onPick }: { label: string; value: string; options: Option[]; onPick(v: string): void }) {
+/** V0.111 Auto-deploy and V0.102 Auto-merge: what Fyr does without the owner's press. Only the owner changes them here;
+ *  no agent tool can. */
+function AutomationPage({ d, hasDeploy }: { d: Data; hasDeploy: boolean }) {
+  const [deployErr, setDeployErr] = useState<string | null>(null);
+  const [repoErr, setRepoErr] = useState<{ repo: string; text: string } | null>(null);
+  const [q, setQ] = useState("");
+  const repos = sortRepos(d.repos ?? []);
+  const shown = q.trim() ? repos.filter((r) => r.repo.includes(q.trim().toLowerCase())) : repos;
   return (
-    <label class="fld">
-      <span>{label}</span>
-      <select value={value} aria-label={label} onChange={(e) => onPick((e.target as HTMLSelectElement).value)}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
+    <>
+      {hasDeploy &&
+        (d.deploy === null && d.deployErr ? (
+          <LoadError text={d.deployErr} onRetry={() => void d.loadDeploy()} />
+        ) : d.deploy === null ? (
+          <Skeleton rows={1} />
+        ) : (
+          <Group label="Auto-deploy">
+            <Row
+              label
+              title="Deploy Fyr without asking"
+              desc="When an agent asks to deploy Fyr and the checkout is clean and on origin's default branch. The build and the tests still decide the switch."
+              error={deployErr}
+              end={<Switch on={d.deploy} label="Auto-approve Fyr deploys" onChange={async (on) => setDeployErr(await d.runDeploy(on))} />}
+            />
+          </Group>
         ))}
-      </select>
-    </label>
+      {d.repos === null && d.reposErr ? (
+        <LoadError text={d.reposErr} onRetry={() => void d.loadRepos()} />
+      ) : d.repos === null ? (
+        <Skeleton rows={2} />
+      ) : (
+        <Group title="Merge without asking" label="Auto-merge" foot="In a repo that is on, an agent's merge ask merges once the checks pass on the head it asked for. A repo shows here once a thread has a pull request in it.">
+          {repos.length > 8 && (
+            <div class="sr srch">
+              <input class="pq" type="search" placeholder={`Search ${repos.length} repos`} aria-label="Search repos" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+            </div>
+          )}
+          {!repos.length && <Empty text="No repos yet. A repo shows here once a thread has a pull request in it." />}
+          {shown.map((r) => (
+            <Row key={r.repo} label title={r.repo} mono error={repoErr?.repo === r.repo ? repoErr.text : null} end={<Switch on={r.on} label={`Auto-merge ${r.repo}`} onChange={async (on) => { const e = await d.runRepo(r.repo, on); setRepoErr(e ? { repo: r.repo, text: e } : null); }} />} />
+          ))}
+          <RepoAdd run={d.runRepo} />
+        </Group>
+      )}
+    </>
   );
 }
 
-/** V0.115: the provider and model of the calls Fyr starts itself (thread titles, project setup), per host: for all
- *  jobs, and per job. No provider is the host's default, no model is its Haiku; a job that cannot run says why here
- *  and fails visibly, never on a bigger model. Only the owner changes it here; no agent tool can. Desktop and phone
- *  alike (the shared Settings body). */
-function SystemAgentsSection({ api, hosts }: { api: SystemAgentsApi; hosts: string[] }) {
-  const [host, setHost] = useState(hosts[0] ?? "");
-  const [v, setV] = useState<SystemAgentsView | null>(null);
+function RepoAdd({ run }: { run(repo: string, on: boolean): Promise<string | null> }) {
   const [err, setErr] = useState<string | null>(null);
-  const load = async (h: string) => {
-    try {
-      setV(await api.systemAgents(h || undefined));
-      setErr(null);
-    } catch (e) {
-      setV(null);
-      setErr(`Could not read the system agents setting: ${(e as Error).message}`);
-    }
-  };
-  useEffect(() => void load(host), [host]);
-  // A job "" is the default; null clears a job's own choice.
-  const set = async (job: string, c: SystemAgentChoice | null) => {
-    const args: Record<string, unknown> = c ? { job, profile: c.profile ?? "", model: c.model ?? "" } : { job, clear: true };
-    if (host) args.host = host;
-    const r = await api.command("host.systemAgents", undefined, args);
-    if (!r.ok) {
-      setErr(r.error ?? "That did not work");
-      return;
-    }
-    await load(host);
-  };
-  const def = v?.default ?? {};
   return (
-    <section class="sets" aria-label="System agents">
-      <h3>System agents</h3>
-      <div class="setd">The model calls Fyr makes itself, such as thread titles and project setup. They run on this provider and model. A job that cannot run fails and shows why; it never moves to a bigger model.</div>
-      {hosts.length > 1 && (
-        <div class="sarow">
-          <Pick1 label="Host" value={host} options={hosts.map((h) => ({ value: h, label: h }))} onPick={setHost} />
-        </div>
-      )}
-      {err && (
-        <div class="seterr" role="alert">
-          {err}
-        </div>
-      )}
-      {v === null && !err && <div class="setd">Loading…</div>}
-      {v && (
-        <>
-          <div class="sarow">
-            <Pick1 label="Provider" value={def.profile ?? ""} options={providerOptions(v)} onPick={(x) => void set("", { profile: x })} />
-            <Pick1 label="Model" value={def.model ?? ""} options={modelOptions(v, def.profile ?? "")} onPick={(x) => void set("", { profile: def.profile, model: x })} />
-          </div>
-          {v.jobs.map((j) => {
-            const line = jobLine(v, j);
-            const own = j.choice.profile ?? def.profile ?? "";
-            return (
-              <div class="sajob" key={j.id}>
-                <div class="sarow">
-                  <Pick1
-                    label={j.name}
-                    value={j.override ? (j.choice.profile ?? "") : "="}
-                    options={[{ value: "=", label: "Same as above" }, ...providerOptions(v).slice(1)]}
-                    onPick={(x) => void set(j.id, x === "=" ? null : { profile: x })}
-                  />
-                  {j.override && <Pick1 label="Model" value={j.choice.model ?? ""} options={modelOptions(v, own)} onPick={(x) => void set(j.id, { profile: j.choice.profile, model: x })} />}
-                </div>
-                <div class={line.error ? "seterr" : "setd"}>{line.text}</div>
-              </div>
-            );
-          })}
-        </>
-      )}
-    </section>
+    <Row error={err} class="fieldrow">
+      <SaveField value="" label="Repo to add" placeholder="owner/repo" mono clears alwaysButton button="Add" onError={setErr} check={(v) => (repoKey(v) ? null : "Write it as owner/repo.")} onSave={(v) => run(repoKey(v), true)} />
+    </Row>
   );
 }
 
-/** V0.111: whether Fyr approves an agent's Fyr deploy ask with no press when the checkout is clean and on origin's
- *  default branch. On by default; only the owner changes it here, and no agent tool can. Desktop and phone alike. */
-function AutoDeploySection({ api }: { api: AutoDeployApi }) {
-  const [s, setS] = useState<AutoDeploySetting | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const load = async () => {
-    try {
-      setS(await api.autoDeploy());
-    } catch (e) {
-      setErr(`Could not read the auto-deploy setting: ${(e as Error).message}`);
-    }
+// ---- Projects ----
+
+function projectsPage(p: SettingsProps, ui: PageUi): Omit<PageView, "title"> {
+  return {
+    end: <NewProjectButton ui={ui} />,
+    body: <ProjectsPage p={p} ui={ui} />,
   };
-  useEffect(() => void load(), []);
-  const set = async (on: boolean) => {
-    const r = await api.command("host.autoDeploy", undefined, { on });
-    if (!r.ok) {
-      setErr(r.error ?? "That did not work");
-      return;
-    }
-    setErr(null);
-    await load();
-  };
+}
+
+function NewProjectButton({ ui }: { ui: PageUi }) {
+  const env = useSet();
+  if (ui.adding) return null;
   return (
-    <section class="sets" aria-label="Auto-deploy">
-      <h3>Auto-deploy</h3>
-      <div class="setd">
-        An agent's Fyr deploy runs without your press when the checkout has no uncommitted change and its commit is on origin's default branch. One deploy
-        runs at a time; the build and the tests still decide the switch.
-      </div>
-      {err && (
-        <div class="seterr" role="alert">
-          {err}
-        </div>
-      )}
-      {s === null && !err && <div class="setd">Loading…</div>}
-      {s && (
-        <div class="amrow">
-          <span class="setn ell">Approve Fyr deploys</span>
-          <button class={`btn sbtn${s.on ? " on" : ""}`} aria-pressed={s.on} aria-label="Auto-approve Fyr deploys" onClick={() => void set(!s.on)}>
-            {s.on ? "On" : "Off"}
-          </button>
-        </div>
-      )}
-    </section>
+    <button type="button" class={`btn addp${ui.empty ? " p" : ""}`} disabled={env.readOnly} onClick={() => ui.setAdding(true)}>
+      New project
+    </button>
   );
 }
 
-/** V0.102: per repo, whether Fyr merges an agent's merge ask with no press once its head is green. Only the owner
- *  changes it here; no agent tool can. */
-function AutoMergeSection({ api }: { api: AutoMergeApi }) {
-  const [list, setList] = useState<AutoMergeRepo[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const load = async () => {
-    try {
-      setList(await api.autoMerge());
-    } catch (e) {
-      setErr(`Could not read the auto-merge setting: ${(e as Error).message}`);
-      setList([]);
-    }
-  };
-  useEffect(() => void load(), []);
-  const set = async (repo: string, on: boolean) => {
-    const r = await api.command("host.autoMerge", undefined, { repo, on });
-    if (!r.ok) {
-      setErr(r.error ?? "That did not work");
-      return;
-    }
-    setErr(null);
-    await load();
-  };
-  const typed = repoKey(name);
+/** V0.58: every project by name, with its icon, folder and thread count; a row opens the project's page. Search
+ *  from nine projects. Hosts (V0.51) under their own heading. */
+function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
+  const { adding, setAdding } = ui;
+  const [q, setQ] = useState("");
+  const all = settingsProjects(p.projects);
+  const list = searchProjects(all, q);
   return (
-    <section class="sets" aria-label="Auto-merge">
-      <h3>Auto-merge</h3>
-      <div class="setd">An agent's merge ask in a repo turned on here merges without your press, once the checks pass on the head it asked for.</div>
-      {err && (
-        <div class="seterr" role="alert">
-          {err}
-        </div>
+    <>
+      {adding ? (
+        <Group title="New project">
+          <Row col>
+            <NewProjectStep
+              initialName=""
+              initialFolder=""
+              fromThread={false}
+              onCancel={() => setAdding(false)}
+              onCreate={async (name, folder) => {
+                const e = await p.projectActions.create(name, folder);
+                if (!e) setAdding(false);
+                return e;
+              }}
+            />
+          </Row>
+        </Group>
+      ) : (
+        <section class="sg" aria-label="Projects">
+          {all.length >= 9 && <input class="pq" type="search" placeholder={`Search ${all.length} projects`} aria-label="Search projects" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
+          {all.length === 0 ? (
+            <div class="sg-c">
+              <Empty title="No projects yet" text="A project gathers the threads of one folder. Fyr makes one when you start a thread in a new folder." />
+            </div>
+          ) : (
+            <div class="pls setpl">
+              {list.map((x) => {
+                const quiet = quietNote(x, p.now);
+                return (
+                  <button type="button" key={x.id} data-sub={x.id} class="pli" style={{ "--pc": colorVar(x.color, x.name) }} onClick={() => p.go({ page: "projects", sub: x.id! })}>
+                    <ProjectIcon project={x} name={x.name} size={28} />
+                    <span class="plt">
+                      <span class="ell pln">{x.name}</span>
+                      <span class="ell pls2">
+                        {quiet ? `${quiet} · ` : ""}
+                        {projectSubtitle(x)}
+                      </span>
+                    </span>
+                    <span class="plc" title={`${x.threads ?? 0} threads`}>
+                      {x.threads ?? 0}
+                    </span>
+                  </button>
+                );
+              })}
+              {!list.length && <div class="plempty">No project matches “{q}”.</div>}
+            </div>
+          )}
+          {q.trim() && <div class="sg-f">{projectSearchLine(list.length, all.length)}</div>}
+        </section>
       )}
-      {list === null && <div class="setd">Loading…</div>}
-      {list?.length === 0 && <div class="setd">No repos yet. A repo shows here once a thread has a PR in it.</div>}
-      {sortRepos(list ?? []).map((r) => (
-        <div class="amrow" key={r.repo}>
-          <span class="setn ell">{r.repo}</span>
-          <button class={`btn sbtn${r.on ? " on" : ""}`} aria-pressed={r.on} aria-label={`Auto-merge ${r.repo}`} onClick={() => void set(r.repo, !r.on)}>
-            {r.on ? "On" : "Off"}
-          </button>
-        </div>
-      ))}
-      <form
-        class="amrow"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!typed) return;
-          void set(typed, true).then(() => setName(""));
-        }}
-      >
-        <input placeholder="owner/repo" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} aria-label="Repo to turn on" />
-        <button class="btn sbtn" type="submit" disabled={!typed}>
-          Turn on
-        </button>
-      </form>
-    </section>
+      <h3 class="stp-sub">Hosts</h3>
+      <Group label="Hosts">
+        {p.hosts && p.hosts.length > 0 ? (
+          p.hosts.map((h) => <Row key={h.name} title={h.name} mono class="host" desc={h.error ? undefined : hostStatus(h, p.host)} error={h.error ? `${hostStatus(h, p.host)} · ${h.error}` : null} />)
+        ) : (
+          <Row title={p.host || "This host"} mono class="host" desc="this machine" />
+        )}
+      </Group>
+    </>
+  );
+}
+
+// ---- This device ----
+
+function useToolDetailsPref(): boolean {
+  const [on, setOn] = useState(toolDetails());
+  useEffect(() => onToolDetails(setOn), []);
+  return on;
+}
+
+/** Notifications (V0.15), Theme, Show tool details, Install: kept in this browser. Never read-only: none of it goes to
+ *  the host except the push subscription, which says so when it fails. */
+function DevicePage({ d }: { d: SettingsDevice }) {
+  const [tested, setTested] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const details = useToolDetailsPref();
+  const row = pushRow(d.push, d.pushReason, tested);
+  useEffect(() => {
+    if (!tested) return;
+    const t = setTimeout(() => setTested(false), 5000);
+    return () => clearTimeout(t);
+  }, [tested]);
+  const toggle = async (on: boolean) => {
+    setBusy(true);
+    setErr(await d.setPush(on));
+    setBusy(false);
+  };
+  const test = async () => {
+    setBusy(true);
+    const e = await d.testPush();
+    setBusy(false);
+    setErr(e);
+    setTested(!e);
+  };
+  return (
+    <SetContext.Provider value={{ ...useSet(), readOnly: false }}>
+      <Group label="This device">
+        <Row
+          label={!row.disabled}
+          title="Notifications"
+          desc={row.error ? undefined : row.desc}
+          error={err ?? (row.error ? row.desc : null)}
+          class="push"
+          end={
+            <>
+              {row.test && (
+                <button type="button" class="btn" disabled={busy} onClick={(e) => (e.preventDefault(), void test())}>
+                  Send test
+                </button>
+              )}
+              <Switch on={row.on} label="Notifications" disabled={row.disabled || busy} onChange={(on) => void toggle(on)} />
+            </>
+          }
+        />
+        <Row
+          title="Theme"
+          stack
+          end={
+            <Seg
+              label="Theme"
+              value={d.theme}
+              options={[
+                { value: "system", label: "Auto" },
+                { value: "light", label: "Light" },
+                { value: "dark", label: "Dark" },
+              ]}
+              onChange={d.setTheme}
+            />
+          }
+        />
+        <Row label title="Show tool details" desc="Every tool group open, every machine line in full." end={<Switch on={details} label="Show tool details" onChange={setToolDetails} />} />
+        {d.canInstall && (
+          <Row
+            title="Install Fyr"
+            desc="As an app with its own window."
+            end={
+              <button type="button" class="btn" onClick={d.onInstall}>
+                Install
+              </button>
+            }
+          />
+        )}
+      </Group>
+    </SetContext.Provider>
   );
 }

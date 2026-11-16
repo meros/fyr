@@ -26,7 +26,7 @@ export interface PushEnv {
 
 /** Why push cannot be turned on here, or null when it can. */
 export function unsupportedReason(env: PushEnv): string | null {
-  if (env.ios && !env.standalone) return "On iPhone and iPad, add Fyr to the home screen first (Share, then Add to Home Screen), then turn on notifications in the installed app.";
+  if (env.ios && !env.standalone) return "On an iPhone, add Fyr to the Home Screen first: Share, then Add to Home Screen.";
   if (!env.secure) return "Notifications need a secure address: the tailnet https:// address or localhost.";
   if (!env.serviceWorker || !env.pushManager || !env.notification) return "This browser does not support Web Push.";
   return null;
@@ -182,4 +182,19 @@ export function openTargets<W extends { url: string }>(wins: W[], origin: string
       return false;
     }
   });
+}
+
+/** V0.119: Settings → This device → Notifications: the row's line under its label, and its switch. */
+export function pushRow(status: PushStatus, reason: string | null, tested: boolean): { desc: string; error: boolean; disabled: boolean; on: boolean; test: boolean } {
+  const plain = "When a thread asks you something or fails.";
+  switch (status) {
+    case "on":
+      return { desc: tested ? "Sent. It should arrive in a few seconds." : plain, error: false, disabled: false, on: true, test: true };
+    case "off":
+      return { desc: plain, error: false, disabled: false, on: false, test: false };
+    case "denied":
+      return { desc: "Blocked for this site. Allow them in the browser's site settings, then reload Fyr.", error: true, disabled: true, on: false, test: false };
+    case "unsupported":
+      return { desc: reason ?? "Notifications are not available in this browser.", error: false, disabled: true, on: false, test: false };
+  }
 }
