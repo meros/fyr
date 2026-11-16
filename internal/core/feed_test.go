@@ -383,3 +383,14 @@ func TestFeedCost(t *testing.T) {
 		t.Errorf("%d notices for one PR's life; coalescing failed", len(delivered))
 	}
 }
+
+// V0.107: the owner turns the view on during a run; the notice asks the
+// running agent to publish it now, because its process has the view tools.
+func TestViewOnNoticeAsksForPublish(t *testing.T) {
+	b := &Thread{}
+	a := &Thread{Live: &LiveView{Enabled: true}}
+	ns := ownerNotices(Reduced{Before: b, After: a, In: Input{Source: FromOwner, Kind: "thread.setView"}})
+	if len(ns) != 1 || ns[0].What != ViewOnText || !strings.Contains(ns[0].What, "view_publish") || strings.Contains(ns[0].What, "next process") {
+		t.Fatalf("notices %+v", ns)
+	}
+}

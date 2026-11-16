@@ -645,7 +645,7 @@ func ownerNotices(r Reduced) []Notice {
 	}
 	if a.ViewOn() != b.ViewOn() {
 		if a.ViewOn() {
-			add("view", "The owner turned the live view on; it takes effect with your next process.")
+			add("view", ViewOnText)
 		} else {
 			add("view", "The owner turned the live view off.")
 		}
@@ -698,6 +698,10 @@ func ownerNotices(r Reduced) []Notice {
 // and never dictate a reply (research/stop-hook-spike.md). V0.101: the
 // changes are not upkeep any more; Fyr reads them.
 const (
+	// ViewOnText tells a running agent that the owner turned the view on
+	// (V0.107): the view tools work at once; the view's prompt comes with
+	// the next process, so the sentence carries the essentials.
+	ViewOnText       = "The owner turned the live view on: publish it now with mcp__fyr__view_publish {html or path, state} (a small page pinned above the conversation that shows where your work stands; state.headline is its one-line status), then keep it current with view_state {patch} as items start and finish."
 	ViewStopText     = "Update this thread's live view (view_state or view_publish), or call view_unchanged with a reason, then stop."
 	ViewReminderText = "The live view has not changed for a few minutes while you work. Update it now with view_state (the headline and the items that moved), or call view_unchanged with a reason, then continue."
 	// ReminderAfter is how long a running turn may go without touching its
