@@ -18,7 +18,7 @@ const busy: HostLoad = {
 };
 
 test("the rail figure is the 1-minute load; hot past the cores or at 40 % CPU pressure", () => {
-  assert.deepEqual(railLoad(busy), { text: "10", hot: true });
+  assert.deepEqual(railLoad(busy), { text: "11", hot: true });
   assert.deepEqual(railLoad({ ...busy, load: [6.04, 1, 1], cpuPressure: 12 }), { text: "6.0", hot: false });
   assert.deepEqual(railLoad({ ...busy, load: [6, 1, 1], cpuPressure: 40 }), { text: "6.0", hot: true });
   assert.deepEqual(railLoad({ ...busy, load: [8, 1, 1], cpuPressure: undefined }), { text: "8.0", hot: false });

@@ -1077,6 +1077,31 @@ try {
   failures.push(`V0.50 desktop: ${e.message}`);
 }
 
+// SPEC 0.5 V0.80: the rail's load line sits above the quota inside the rail and covers no other rail item; a hot
+// working thread's row shows its CPU, coloured, inside its row.
+try {
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.rail .rld .rldr') && !!document.querySelector('.one .tcpu')");
+  const r = await evaluate(`(() => {
+    const rail = document.querySelector('.rail').getBoundingClientRect();
+    const ld = document.querySelector('.rail .rld'), b = ld.getBoundingClientRect();
+    const fig = ld.querySelector('.rldr span');
+    const others = [...document.querySelectorAll('.rail > *')].filter((e) => e !== ld).map((e) => e.getBoundingClientRect());
+    const hit = others.filter((o) => o.width && o.height && o.left < b.right - 0.5 && b.left < o.right - 0.5 && o.top < b.bottom - 0.5 && b.top < o.bottom - 0.5).length;
+    const q = document.querySelector('.rail .rq')?.getBoundingClientRect();
+    const tc = [...document.querySelectorAll('.one')].find((x) => x.dataset.id === 't_mapperf');
+    const c = tc?.querySelector('.tcpu'), cr = c?.getBoundingClientRect(), rr = tc?.getBoundingClientRect();
+    return { text: fig.textContent, hot: fig.classList.contains('hot'), tip: ld.querySelector('.rldr').title,
+      inside: b.left >= rail.left - 0.5 && b.right <= rail.right + 0.5 && b.top >= rail.top && b.bottom <= rail.bottom, hit,
+      aboveQuota: !q || b.bottom <= q.top + 0.5,
+      cpu: c?.textContent ?? '', cpuHot: !!c?.classList.contains('hot'), inRow: !!cr && cr.top >= rr.top - 0.5 && cr.bottom <= rr.bottom + 0.5 };
+  })()`);
+  check(r.text === "10" && r.hot && /load 10\.4/.test(r.tip) && /CPU pressure 46 %/.test(r.tip), `V0.80 desktop: the rail's load is wrong (${JSON.stringify(r)})`);
+  check(r.inside && r.hit === 0 && r.aboveQuota, `V0.80 desktop: the load line is outside the rail, covers an item or sits below the quota (${JSON.stringify(r)})`);
+  check(r.cpu === "2.6 cores" && r.cpuHot && r.inRow, `V0.80 desktop: the hot thread's CPU is missing or outside its row (${JSON.stringify(r)})`);
+} catch (e) {
+  failures.push(`V0.80 desktop: ${e.message}`);
+}
+
 // V0.39: the update banner is below the top safe area and inside the screen, and names the threads it waits for.
 try {
   await openScreen({ url: "?mock=rail&deploy=drain" }, 390, 844);
