@@ -20,7 +20,7 @@ test("the summary line reads like the spec", () => {
   assert.equal(quotaSummary(ds, "DeepSeek"), "DeepSeek ¥12.40 left");
   const or: Quota = { profile: "or", kind: "openrouter", balance: { spent: 3.25, currency: "USD" } };
   assert.equal(quotaSummary(or, "Router"), "Router $3.25 used");
-  assert.equal(quotaSummary({ profile: "x", kind: "anthropic-oauth", error: "Login expired; run this profile once" }, "Work"), "Work: Login expired; run this profile once");
+  assert.equal(quotaSummary({ profile: "x", kind: "anthropic-oauth", error: "Login expired; run this provider once" }, "Work"), "Work: Login expired; run this provider once");
   assert.equal(quotaSummary({ profile: "x", kind: "deepseek" }, "D"), "D: not read yet");
 });
 
@@ -57,14 +57,14 @@ test("the card says one error and its next try, once", () => {
   assert.deepEqual(d.filter((l) => /Rate limited/.test(l)).length, 1, `one mention: ${d.join(" | ")}`);
   assert.equal(d.filter((l) => /Next try/.test(l)).length, 1);
   // the same, with no windows: the error is the line, not the name twice plus the error
-  const bare: Quota = { profile: "x", kind: "anthropic-oauth", error: "Login expired; run this profile once", retryAt: "2026-11-14T10:31:00Z" };
-  assert.equal(quotaSummary(bare, "Work"), "Work: Login expired; run this profile once");
+  const bare: Quota = { profile: "x", kind: "anthropic-oauth", error: "Login expired; run this provider once", retryAt: "2026-11-14T10:31:00Z" };
+  assert.equal(quotaSummary(bare, "Work"), "Work: Login expired; run this provider once");
 });
 
 test("the card's badge says Ready only when nothing is wrong", () => {
   assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }] }), "ready");
   assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }], error: "Rate limited by the provider; trying again later", retryAt: "2026-11-14T10:31:00Z" }), "limited");
-  assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", error: "Login expired; run this profile once" }), "expired");
+  assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", error: "Login expired; run this provider once" }), "expired");
   assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }], stale: true }), "stale");
   assert.equal(cardState({ profile: "x", kind: "anthropic-oauth" }), "unknown");
 });

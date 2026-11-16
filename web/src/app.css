@@ -93,23 +93,23 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .search kbd{margin-left:auto}
 .ibtn{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:8px;color:var(--ink-muted)}
 .ibtn:hover{background:var(--sunken);color:var(--ink)}
-.list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 6px 8px;scrollbar-width:thin}
+.list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 6px 8px;scrollbar-width:thin;scrollbar-gutter:stable}
 .sec{display:flex;align-items:center;gap:8px;height:30px;padding:8px 8px 0;font:500 12px/16px var(--ui);color:var(--ink-muted);min-width:0}
 .sec.tog{cursor:pointer}
 .sec .n{font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums}
 .sec .h{margin-left:auto;font-size:11px;min-width:0;max-width:62%}
 .more{display:block;width:100%;height:30px;padding:0 8px 0 46px;font:500 12px/30px var(--ui);color:var(--harbour);border-radius:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .more:hover{background:var(--sunken)}
-.rw{display:grid;grid-template-columns:28px minmax(0,1fr) auto;column-gap:10px;grid-template-rows:20px 18px;height:52px;padding:7px 8px;border-radius:10px;align-content:center;cursor:pointer}
+.rw{display:grid;grid-template-columns:28px minmax(0,1fr) minmax(0,max-content);column-gap:10px;grid-template-rows:20px 18px;height:52px;padding:7px 8px;border-radius:10px;align-content:center;cursor:pointer}
 .rw:hover:not(.sel),.one:hover:not(.sel){background:var(--surface)}
 .rw.sel{background:var(--select);--knock:var(--select)}
 .tile{grid-row:1/3;width:28px;height:28px;border-radius:8px;background:var(--sunken);display:grid;place-items:center;align-self:center;--knock:var(--sunken)}
 .rw.sel .tile{background:var(--raised);--knock:var(--raised)}
 .rw .t{font:500 13px/20px var(--ui)}
 .rw.dn .t{font-weight:600}
-.rw .age{font:400 12px/20px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-muted);text-align:right;white-space:nowrap}
+.rw .age{justify-self:end;align-self:start;min-width:0;font:400 12px/20px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-muted);text-align:right;white-space:nowrap}
 .rw .m{font:400 12px/18px var(--ui);color:var(--ink-muted)}
-.rw .pr{justify-self:end;align-self:center}
+.rw .pr,.rw .pr.chgchip{justify-self:end;align-self:center;max-width:140px}
 .pr{display:inline-block;height:18px;padding:0 7px;border-radius:9px;border:1px solid var(--line);font:500 11px/16px var(--mono);color:var(--ink-muted);white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis}
 .pr.ok{color:var(--calm)}.pr.fail{color:var(--signal-ink);border-color:var(--signal-ink)}.pr.merged{background:var(--sunken)}
 .pr.none{display:none}
@@ -135,7 +135,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .btn[disabled]{opacity:.5}
 .btn.p{background:var(--night);border-color:var(--night);color:var(--on-night)}
 .btn.p kbd{background:transparent;color:var(--on-night);border-color:rgba(255,255,255,.3)}
-.chips{display:flex;gap:6px;margin-top:8px;min-width:0}
+.chips{display:flex;gap:6px;margin-top:12px;min-width:0}
 .chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:12px;background:var(--sunken);font:500 12px/16px var(--ui);color:var(--ink-muted);white-space:nowrap;min-width:0;flex:0 1 auto;overflow:hidden;--knock:var(--sunken);text-decoration:none}
 .chip span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .chip.st{flex:none;background:transparent;border:1px solid var(--line-strong);color:var(--ink);--knock:var(--raised)}
@@ -152,7 +152,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .spin{animation:spin 1.2s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.spin{animation:none}}
-.tabs{display:flex;gap:4px;margin-top:10px}
+.tabs{display:flex;gap:4px;margin-top:12px} /* #64: the header's blocks sit 12 px apart: title, chips, offers, tabs */
 .tabs span{padding:6px 10px 8px;font:500 13px/18px var(--ui);color:var(--ink-muted);border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer}
 .tabs span.on{color:var(--ink);border-color:var(--ink)}
 .tabs em{font:400 11px/16px var(--mono);font-style:normal;margin-left:6px}
@@ -398,6 +398,18 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .cmp .in::placeholder{color:var(--ink-muted);opacity:1}
 .cmp .hint{font:400 12px/16px var(--ui);color:var(--ink-muted);white-space:nowrap}
 .cmp.off{background:var(--sunken)}
+/* V0.79: the `/` list of commands and skills, above the field */
+.slash{display:flex;flex-direction:column;margin:0 0 6px;padding:4px;max-height:min(320px,40vh);overflow-y:auto;background:var(--raised);border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.12);min-width:0}
+.slash-i{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;align-items:baseline;text-align:left;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--ink);cursor:pointer;min-width:0}
+.slash-i.on{background:var(--select)}
+.slash-n{font:500 13px/18px var(--mono);color:var(--ink);white-space:nowrap}
+.slash-a{font:400 12px/18px var(--mono);color:var(--ink-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slash-d{grid-column:1/-1;font:400 12px/16px var(--ui);color:var(--ink-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slash-hint{margin:0 0 6px;padding:0 4px;font:400 12px/16px var(--ui);color:var(--ink-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slash-hint .slash-n{font-size:12px;line-height:16px;color:var(--ink-muted)}
+.slash.m{border-radius:16px;max-height:min(300px,38vh)}
+.slash.m .slash-i{min-height:44px;padding:6px 12px;align-content:center}
+.slash.m .slash-n{font-size:14px}
 .thumbs{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
 .thumb{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--sunken)}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
@@ -977,7 +989,7 @@ button.ptag{padding:0}
 .set.phone .setkey input{flex:1 1 180px}
 .set.phone .login .loginlink{align-self:stretch}
 /* V0.59, V0.60: changes and their actions */
-.pr.chg{max-width:180px}
+.pr.chgchip{max-width:180px} /* not .chg: that is the Changes tab pane (#56) */
 .chtab{display:flex;flex-direction:column;min-height:0;overflow-y:auto}
 .chl{display:flex;flex-direction:column;gap:8px;padding:12px 16px 4px;flex:0 1 auto;min-height:0;max-height:50%;overflow-y:auto;scrollbar-width:thin}
 .chc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--raised);min-width:0}
@@ -1002,8 +1014,8 @@ button.ptag{padding:0}
 .offrun{font:400 12px/16px var(--ui);color:var(--ink-muted)}
 .offrun.ok{color:var(--calm)}.offrun.fail{color:var(--signal-ink)}
 /* V0.75 (1), #62: a used action stays in place, quiet; a failure keeps its weight and turns to the signal colour. */
-.btn.used{color:var(--ink-faint);background:transparent;border-color:var(--line)}
-.btn.used:hover:not(:disabled){color:var(--ink-muted);background:var(--sunken)}
+.btn.used{color:var(--ink-muted);background:transparent;border-color:var(--line);font-weight:400} /* #62: AA, 6.3:1 light and 6.9:1 dark; --ink-faint was 3.6 and 3.9 */
+.btn.used:hover:not(:disabled){color:var(--ink);background:var(--sunken)}
 .btn.bad{color:var(--signal-ink);border-color:var(--signal-ink)}
 .offout-b{flex:none;width:24px;height:24px;border-radius:6px;font:400 12px/22px var(--mono);color:var(--ink-muted);border:1px solid var(--line)}
 .offout-b.on{background:var(--sunken);color:var(--ink)}

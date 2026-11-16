@@ -4,7 +4,7 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Change, Offer, OfferRun, Thread } from "./types.ts";
-import { canEnd, changeList, endArgs, endChangeAsk, lastRun, offerDetail, openConditions, phaseText, rail, runState, shownOffers, unavailable } from "./offers.ts";
+import { canEnd, changeList, endArgs, endChangeAsk, lastRun, offerDetail, offerLook, openConditions, phaseText, rail, shownOffers, unavailable } from "./offers.ts";
 import { press } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 
@@ -28,14 +28,11 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
       <div class="offb">
         {list.map((o) => {
           const why = unavailable(o, runs, change);
-          const st = runState(runs, o.id);
-          const last = lastRun(runs, o.id);
           // V0.75 (1), #62: a used action carries its result on the button and turns quiet; a failure keeps its weight.
-          const word = st === "running" ? " · running…" : st === "ok" ? ` · ${hhmm((last!.endedAt ?? last!.at)!)}` : st === "failed" ? ` · failed${last!.exit ? ` (exit ${last!.exit})` : ""}` : "";
-          const mark = st === "ok" ? "✓ " : st === "failed" ? "✕ " : o.run === "agent" ? "✦ " : "";
+          const { state: st, last, cls, mark, word } = offerLook(o, runs, hhmm);
           const title = st === "fresh" ? (why ?? offerDetail(o, cwd)) : `${offerDetail(o, cwd)} · the last run ${last?.running ? "is running" : last?.ok ? "succeeded" : "failed"}`;
           return (
-            <button key={o.id} class={`btn sm${o.primary && st === "fresh" ? " p" : ""}${st === "ok" ? " used" : st === "failed" ? " bad" : ""}`} disabled={!!why} title={title} aria-busy={st === "running" || undefined} onClick={() => void onPress(o)}>
+            <button key={o.id} class={`btn sm${cls}`} disabled={!!why} title={title} aria-busy={st === "running" || undefined} onClick={() => void onPress(o)}>
               {mark}
               {o.label}
               {word}

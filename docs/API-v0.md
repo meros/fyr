@@ -129,6 +129,14 @@ Actions and their args:
 
 `{"rung": "resume" | "adopt" | "brief", "note"?: "why rung 1 does not apply"}`: the rung a handover to `P` would use now. The handover itself still falls back when the rung fails.
 
+## Slash commands (SPEC 0.5 V0.79)
+
+`GET /api/threads/{id}/commands` returns `{"commands": [{"name": "review", "description": "…", "argumentHint": "<pr-number>"}], "from": "thread" | "folder" | ""}`: the commands and skills of the thread's session (its `initialize` answer, without the terminal-only ones), else the newest list the host saw for the thread's provider and folder, else `[]` with `from: ""`. `404` for an unknown thread.
+
+`GET /api/commands?cwd=<folder>&profile=<id>` returns `{"commands": […]}`, the newest list for a provider and folder (New thread); without `profile`, the host's first profile. A front forwards it to `?host=`.
+
+The client sends a command as an ordinary message (`/review 12`); the CLI runs it.
+
 ## `GET /api/t3/candidates`
 
 `{"threads": [{"t3Id": "…", "title": "…", "cwd": "…", "profile": "claudeAgent", "model": "…", "sessionId": "…", "prUrl": "…", "updatedAt": "…", "hasTranscript": true}]}`, open top-level T3 threads not yet adopted.
