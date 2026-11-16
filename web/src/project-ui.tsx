@@ -666,7 +666,7 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
             </span>
           </div>
           {tab === "image" ? (
-            <div class="thumb pimg">
+            <div class="pimg">
               {project.image && <ProjectIcon project={project} name={project.name} size={44} />}
               <button type="button" class="btn" disabled={busy || !project.id || env.readOnly} onClick={() => file.current?.click()}>
                 {project.image ? "Replace…" : "Upload…"}
