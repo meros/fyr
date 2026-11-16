@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
 	"log"
 	"net"
 
+	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
 )
@@ -61,4 +65,24 @@ func tailnetIP(ip net.IP) bool {
 		}
 	}
 	return false
+}
+
+// storeHealthy: the database answers a read (#148).
+func storeHealthy(st *store.Store) deploy.Check {
+	return func() error {
+		if _, err := st.GetKV("autoDeploy"); err != nil {
+			return fmt.Errorf("the database does not answer: %v", err)
+		}
+		return nil
+	}
+}
+
+// webHealthy: the client this build serves has its page (#148).
+func webHealthy(webFS fs.FS) deploy.Check {
+	return func() error {
+		if _, err := fs.Stat(webFS, "index.html"); err != nil {
+			return errors.New("the web client has no index.html")
+		}
+		return nil
+	}
 }
