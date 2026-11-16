@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionEventLine, canEnd, endArgs, endChangeAsk, runState, settleLine, changeChip, changeEventLine, headerPr, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
+import { actionEventLine, canEnd, offerLook, endArgs, endChangeAsk, runState, settleLine, changeChip, changeEventLine, headerPr, offerDetail, phaseText, pressArgs, rail, shownOffers, unavailable } from "../src/offers.ts";
 import type { Change, Offer, OfferRun } from "../src/types.ts";
 
 const at = "2026-11-15T09:00:00Z";
@@ -99,4 +99,17 @@ test("an action's state comes from its newest run", () => {
   assert.equal(runState([r({})], "a"), "ok");
   assert.equal(runState([r({ action: "other" }), r({})], "a"), "ok");
   assert.equal(runState([r({}), r({ ok: false, exit: 1 })], "a"), "failed", "the newest run of this action wins");
+});
+
+// SPEC 0.5 V0.75 (1), #62: one helper gives the button its state, class, mark and result; the label of a used action
+// carries the time of its last run.
+test("a button shows its action's newest run on itself", () => {
+  const r = (p: Partial<OfferRun>): OfferRun => ({ action: "a", label: "Apply", by: "owner", at, ok: true, ...p });
+  const o = { id: "a", label: "Apply", run: "script", primary: true } as Offer;
+  const clock = (iso: string) => iso.slice(11, 16);
+  const look = (runs: OfferRun[]) => { const l = offerLook(o, runs, clock); return [l.state, l.cls, l.mark, l.word]; };
+  assert.deepEqual(look([]), ["fresh", " p", "", ""], "an unused primary action keeps its weight");
+  assert.deepEqual(look([r({ running: true })]), ["running", "", "", " · running…"]);
+  assert.deepEqual(look([r({ endedAt: "2026-11-15T20:57:00Z" })]), ["ok", " used", "✓ ", " · 20:57"], "a used action is quiet and says when it ran");
+  assert.deepEqual(look([r({ ok: false, exit: 1 })]), ["failed", " bad", "✕ ", " · failed (exit 1)"], "a failure is loud");
 });
