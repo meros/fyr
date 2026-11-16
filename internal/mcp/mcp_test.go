@@ -80,3 +80,24 @@ func TestInitializeListCall(t *testing.T) {
 		t.Fatalf("unknown tool: %v", out)
 	}
 }
+
+// SPEC V0.129 (2), decision 0028 slice 0: a browser always sends Origin on a
+// cross-origin POST and an agent's MCP client sends none, so a call that
+// carries one is refused, even with a valid token (MCP transports: servers
+// MUST validate Origin).
+func TestOriginRefused(t *testing.T) {
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	for _, origin := range []string{"https://evil.example", "http://127.0.0.1:7777", "null"} {
+		r := httptest.NewRequest("POST", "/mcp", bytes.NewReader(b))
+		r.Header.Set("Authorization", "Bearer tok")
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		newServer().ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("Origin %q: code %d", origin, w.Code)
+		}
+	}
+	if w, _ := rpc(t, newServer(), "tok", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}); w.Code != 200 {
+		t.Fatalf("no Origin: code %d", w.Code)
+	}
+}

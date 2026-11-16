@@ -43,6 +43,13 @@ type request struct {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// V0.129 (2), decision 0028: an agent's MCP client sends no Origin; a
+	// browser always does on a cross-origin POST. The MCP transport spec
+	// asks servers to validate it, against DNS rebinding and CSRF.
+	if r.Header.Get("Origin") != "" {
+		http.Error(w, "Fyr's MCP endpoint serves agents, not web pages", http.StatusForbidden)
+		return
+	}
 	tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	thread, ok := s.auth(tok)
 	if tok == "" || !ok {

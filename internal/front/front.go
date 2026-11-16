@@ -17,6 +17,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -44,7 +45,15 @@ type HostConfig struct {
 	Remote bool `json:"-"`
 	// Found: discovery found it (V0.123), it is not in the config.
 	Found bool `json:"-"`
+	// Dial, when set, connects to the host in-process (V0.129 (3)): the
+	// both role's own host, reached at LocalURL with no port open.
+	Dial func(ctx context.Context, network, addr string) (net.Conn, error) `json:"-"`
 }
+
+// LocalURL is the URL of a host the front dials in-process (V0.129 (3)). It
+// names loopback, so the host's guard and the route ("this machine") read it
+// as local.
+const LocalURL = "http://localhost"
 
 type Options struct {
 	Name       string // this machine, shown in the rail
@@ -214,7 +223,16 @@ func (f *Front) newLink(h HostConfig) *link {
 		opt.Logf("front: host %s: bad url %q", h.Name, h.URL)
 		return nil
 	}
-	l := &link{cfg: h, base: u, client: opt.Client, raw: map[string]map[string]any{},
+	client := opt.Client
+	if h.Dial != nil {
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		if base, ok := opt.Client.Transport.(*http.Transport); ok {
+			tr = base.Clone()
+		}
+		tr.DialContext, tr.Proxy = h.Dial, nil
+		client = &http.Client{Transport: tr, Timeout: opt.Client.Timeout}
+	}
+	l := &link{cfg: h, base: u, client: client, raw: map[string]map[string]any{},
 		pub: map[string]map[string]any{}, known: map[string]bool{}, settings: map[string]settingsRead{}}
 	l.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -225,7 +243,7 @@ func (f *Front) newLink(h HostConfig) *link {
 				pr.Out.Header.Del("Tailscale-User-Login")
 			}
 		},
-		Transport:     opt.Client.Transport,
+		Transport:     client.Transport,
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			api.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})
