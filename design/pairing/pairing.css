@@ -1,0 +1,79 @@
+/* Pairing and discovery mockups. Loads after ../settings/mock.css (the tokens, the board and the V0.119 settings
+   rows). Part 1 is the proposed new CSS: copy from here into web/src/app.css. Part 2 is board-only. */
+
+/* ---------- 1. proposed ---------- */
+/* a host's state mark: never the only sign, the words beside it say the same */
+.hdot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--calm)}
+.hdot.off{background:none;box-shadow:inset 0 0 0 1.5px var(--ink-faint)}
+.hdot.warn{background:var(--signal-ink)}
+.hdot.new{background:none;border-radius:2px;box-shadow:inset 0 0 0 1.5px var(--harbour)}
+.hdot.gone{background:var(--line-strong)}
+/* an install id: four groups, the first (the short form) in ink */
+.idf{display:inline-flex;flex-wrap:wrap;gap:0 .6ch;font:500 13px/18px var(--mono);color:var(--ink-muted);font-variant-numeric:tabular-nums}
+.idf .s{color:var(--ink);font-weight:600}
+.idf.big{font-size:17px;line-height:24px}
+.phx .idf{font-size:14px;line-height:20px}
+.phx .idf.big{font-size:18px;line-height:26px}
+.pst.bad{background:color-mix(in srgb,var(--signal-ink) 12%,transparent);color:var(--signal-ink)}
+.sr.host{cursor:pointer}
+.sr.gone .sr-t,.sr.gone .sr-d{color:var(--ink-faint)}
+.sr.gone .sr-t{text-decoration:line-through}
+/* a row whose buttons go under its text on the phone (two 44 px buttons do not fit beside it) */
+.phx .sr.acts{flex-wrap:wrap}
+.phx .sr.acts .sr-b{flex:1 1 calc(100% - 20px)}
+.phx .sr.acts .sr-e{max-width:none;flex:1 1 100%;justify-content:flex-end}
+/* notes: what Fyr did or found, above the group it is about */
+.note{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:10px;background:var(--harbour-wash);font:400 13px/18px var(--ui);color:var(--ink)}
+.note.warn{background:var(--beam-wash)}
+.note.bad{background:color-mix(in srgb,var(--signal-ink) 9%,var(--raised));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--signal-ink) 35%,var(--line))}
+.note>span{flex:1;min-width:0}
+.note .btn,.note .xb{margin:-4px -4px -4px 0}
+.phx .note{flex-wrap:wrap;font-size:14px;line-height:20px}
+.phx .note>span{flex:1 1 100%}
+.phx .note .btn{margin:0}
+/* the pairing panel: the code, who it is for, what to do on the other side */
+.pair{display:flex;flex-direction:column;gap:14px;padding:16px;min-width:0}
+.pair-top{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.pcode{font:600 40px/48px var(--mono);letter-spacing:.04em;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.pcode.off{color:var(--ink-faint);text-decoration:line-through}
+.pcode-in,.fld input.pcode-in,.phx .fld input.pcode-in{flex:none;width:7.2em;height:56px;border:1px solid var(--line-strong);border-radius:10px;background:var(--raised);padding:0 12px;font:600 28px/36px var(--mono);letter-spacing:.08em;font-variant-numeric:tabular-nums;text-align:center}
+.pcode-in[aria-invalid="true"]{border-color:var(--signal-ink)}
+.pair-who{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pair-who small{font:500 11px/14px var(--ui);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint)}
+.steps{margin:0;padding:0 0 0 18px;display:flex;flex-direction:column;gap:8px;font:400 13px/19px var(--ui);color:var(--ink)}
+.phx .steps{font-size:14px;line-height:20px}
+.cmd{display:flex;align-items:center;gap:8px;margin-top:4px;background:var(--sunken);border-radius:8px;padding:4px 4px 4px 10px;min-width:0}
+.cmd code{flex:1;min-width:0;overflow-wrap:anywhere;font:400 13px/18px var(--mono)}
+.cmd .lnk{flex:none;padding:6px 8px}
+.pair-st{display:flex;align-items:center;gap:8px;font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.pair-st.ok{color:var(--ink)}
+.pair-st.ok::before{content:"✓";color:var(--calm);font-weight:600}
+.pair-st.err{color:var(--signal-ink)}
+.qr{flex:none;width:132px;height:132px;padding:8px;border-radius:10px;background:#fff;box-shadow:inset 0 0 0 1px var(--line)}
+.qr svg{display:block;width:100%;height:100%}
+.qr.off{opacity:.25}
+/* a terminal: what fyrd prints on a headless host */
+.term{margin:0;background:#0b0f13;color:#e8ecf0;border-radius:10px;padding:12px 14px;font:400 12px/18px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.term .p{color:#6f7b87}
+.term .ok{color:#5cc49a}
+.term .er{color:#ff8a7d}
+.term b{font-weight:600;color:#fff}
+/* history: the roster statements about one install, newest first */
+.hist{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 12px;padding:8px 12px;font:400 12px/20px var(--ui);color:var(--ink-muted)}
+.hist time{font-family:var(--mono);white-space:nowrap}
+.hist span{color:var(--ink)}
+.phx .hist{font-size:13px;line-height:22px}
+/* the page a browser gets when it is not paired: no app, no data */
+.gate{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:32px 24px;flex:1}
+.gate h2{margin:0;font:600 18px/24px var(--ui)}
+.gate p{margin:0;max-width:34ch;font:400 14px/21px var(--ui);color:var(--ink-muted)}
+
+/* ---------- 2. the board ---------- */
+.bd-tbl{border-collapse:collapse;font:400 13px/18px var(--ui);max-width:1100px}
+.bd-tbl th,.bd-tbl td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+.bd-tbl th{font-weight:600;background:var(--raised)}
+.bd-tbl td:first-child{font-weight:500;white-space:nowrap}
+.bd-tbl .now{background:var(--harbour-wash)}
+.bd-wide{width:620px;max-width:100%}
+.bd-s .slice{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:10px;background:var(--harbour-wash);color:var(--harbour);font:500 11px/16px var(--ui);vertical-align:2px}
+.bd-s .slice.now{background:var(--night);color:var(--on-night)}
