@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.44: provider quota words: the summary line, colour from 80 %, the rail figure, details.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardState, money, quotaDetail, quotaParts, quotaSummary, railFigure, type Quota } from "../src/quota.ts";
+import { CARD_WORD, cardState, money, quotaDetail, quotaParts, quotaSummary, railFigure, type Quota } from "../src/quota.ts";
 
 const now = Date.parse("2026-11-14T10:00:00Z");
 const claude: Quota = {
@@ -67,4 +67,28 @@ test("the card's badge says Ready only when nothing is wrong", () => {
   assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", error: "Login expired; run this provider once" }), "expired");
   assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }], stale: true }), "stale");
   assert.equal(cardState({ profile: "x", kind: "anthropic-oauth" }), "unknown");
+});
+
+// SPEC 0.5 V0.122: a token account's windows come from its last session's rate_limit_event, never from the usage
+// endpoint (a setup-token token cannot read it). The card says where the numbers come from and how old they are; with
+// none yet it says when they will show, and its badge never says "Rate limited".
+test("a token account shows its last session's windows with their age, or when they will show", () => {
+  const q: Quota = { profile: "claudeAcme", kind: "anthropic-oauth", source: "session", windows: [{ name: "7 d", usedPct: 67 }], updatedAt: "2026-11-14T09:48:00Z" };
+  assert.equal(quotaSummary(q, "Claude (acme)"), "Claude (acme) 7 d 67 %");
+  const d = quotaDetail(q, "Claude (acme)", now);
+  assert.ok(d.includes("From the last session, 12 min ago"), d.join(" | "));
+  assert.ok(!d.some((l) => l.startsWith("Updated")), d.join(" | "));
+  assert.equal(cardState(q), "ready");
+  const none: Quota = { profile: "claudeAcme", kind: "anthropic-oauth", source: "session" };
+  assert.equal(quotaSummary(none, "Claude (acme)"), "Claude (acme): usage shows after the next run");
+  assert.equal(cardState(none), "waiting");
+  assert.equal(CARD_WORD[cardState(none)], "After a run");
+});
+
+// SPEC 0.5 V0.122: the badge names the error it has; only a rate limit says "Rate limited".
+test("the badge says Rate limited only for a rate limit", () => {
+  assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", source: "session", error: "No token yet; paste it in Settings → Providers" }), "notoken");
+  assert.equal(CARD_WORD.notoken, "No token");
+  assert.equal(cardState({ profile: "x", kind: "deepseek", error: "The provider failed (HTTP 502)" }), "error");
+  assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", error: "Rate limited by the provider; trying again later" }), "limited");
 });
