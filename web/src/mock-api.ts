@@ -48,6 +48,9 @@ export function createMockApi(scenario: string): Api {
     async providersFound() {
       return providers.found();
     },
+    async autoMerge() {
+      return [{ repo: "meros/fyr", on: false }];
+    },
     async profiles() {
       return server.state().profiles;
     },

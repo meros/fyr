@@ -12,6 +12,7 @@ import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
 import type { HostLoad } from "./load.ts";
 import type { FoundDTO, ProviderDTO } from "./providers.ts";
+import type { AutoMergeRepo } from "./automerge.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import { reloadForNewBuild } from "./pwa.ts";
@@ -77,6 +78,8 @@ export interface Api {
   providers(): Promise<ProviderDTO[]>;
   /** V0.50: logins, endpoints and keys found on this host. */
   providersFound(): Promise<FoundDTO[]>;
+  /** V0.102: the repos Fyr knows and whether each merges agents' merge asks with no press. */
+  autoMerge(): Promise<AutoMergeRepo[]>;
   /** V0.50: the current profiles (after a provider changed). */
   profiles(): Promise<Profile[]>;
   /** V0.79: the agent's commands and skills for a thread, or for a provider and folder (New thread). */
@@ -385,6 +388,9 @@ function createHttpApi(): Api {
     },
     async providersFound() {
       return fsGet<FoundDTO[]>("/api/providers/found");
+    },
+    async autoMerge() {
+      return fsGet<AutoMergeRepo[]>("/api/autoMerge");
     },
     async profiles() {
       return fsGet<Profile[]>("/api/profiles");
