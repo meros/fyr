@@ -179,7 +179,8 @@ export function createMockApi(scenario: string): Api {
     async autoDeploy(host) {
       return read(host, (h) => ({ on: h.deployOn }));
     },
-    // V0.126: a host that updated twice and rolled one release back (desk); another host has no updates yet.
+    // V0.126: a host that updated twice and rolled one release back (desk); another host never updated itself and sends
+    // null for the list, as an older fyrd on a NixOS host did (the owner's Settings could not close, 17 Nov).
     async updates(host) {
       const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
       return read(host, (h) =>
@@ -192,7 +193,7 @@ export function createMockApi(scenario: string): Api {
               ],
               bad: { commit: "9b3e1d2c4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d", why: "was not healthy" },
             }
-          : { live: "c705ef536566", updates: [] },
+          : { live: "nix-d8b9560", updates: null as unknown as [] },
       );
     },
     async systemAgents(host) {

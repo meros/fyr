@@ -1451,6 +1451,80 @@ try {
 }
 });
 
+// SPEC V0.119, V0.24: Settings closes every way, on every page, at desktop heights and on the phone. The owner could
+// not close it (17 Nov): a host that never updated itself (a NixOS host) sent "updates": null, the Automation page threw
+// on it, and the error left the app unable to render, so Close, Esc and the backdrop did nothing. The mock's second host
+// (&hosts=2) sends that null. Desktop at 700 and 900 px: open Settings at Automation (both hosts' Updates show, no crash
+// card), then close it by the × (a real mouse click at its centre, which must be the ×), Esc, and a press on the
+// backdrop; each time the dialog is gone and the gear opens it again. Back is not a way on the desktop: V0.145 (5) keeps
+// dialogs out of the history. Phone: Automation is a screen; its Back goes to the Settings list, and the browser's back
+// from there leaves Settings.
+for (const [w, hh, phone] of [[1280, 700, false], [1280, 900, false], [390, 844, true]]) section(`V0.119 settings closes ${phone ? "phone" : `desktop ${hh}`}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, tapCenter } = h;
+  const ctx = `V0.119 settings closes ${phone ? "phone" : `desktop ${w}x${hh}`}`;
+try {
+  // Both hosts' Updates: desk's list and the null host's line (it runs nix-d8b9560), and no crash card.
+  const UPD = `/Fyr runs c705ef536566/.test(document.body.textContent) && /Fyr runs nix-d8b9560/.test(document.body.textContent) && !document.querySelector('.crash')`;
+  if (phone) {
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: true });
+    await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    await navigate(`${origin}/?mock=rail&hosts=2&settings=automation`, "!!document.querySelector('.m-settings .stp')");
+    await waitFor(UPD, { soft: true });
+    check(await evaluate(UPD), `${ctx}: Automation does not show both hosts' Updates without a crash (${await evaluate("[...document.querySelectorAll('.crash')].map((e) => e.textContent).join(' | ')")})`);
+    await tapCenter(".m-settings .m-nh .b44[aria-label=Back]", "!document.querySelector('.m-settings .stp')");
+    await waitFor("!!document.querySelector('.m-settings .stn') && !document.querySelector('.m-settings .stp')", { soft: true });
+    check(await evaluate("!!document.querySelector('.m-settings .stn') && !document.querySelector('.m-settings .stp')"), `${ctx}: Back on Automation does not go to the Settings list`);
+    await evaluate("history.back()");
+    await waitFor("!document.querySelector('.m-settings') && !!document.querySelector('.m-app')", { soft: true });
+    check(await evaluate("!document.querySelector('.m-settings')"), `${ctx}: back from the Settings list does not leave Settings`);
+    return;
+  }
+  await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.rail .rgear')");
+  // A page that throws can leave the app re-rendering without end, so a step never returns: the closes have 60 s.
+  await Promise.race([closes(), sleep(60_000).then(() => { throw new Error("Settings did not close within 60 s (the page stopped answering)"); })]);
+  async function closes() {
+  const open = async (how) => {
+    await evaluate("document.querySelector('.rail .rgear').click()");
+    await waitFor("!!document.querySelector('.dlg.settings .stn-i[data-page=automation]')", { soft: true });
+    await evaluate("document.querySelector('.dlg.settings .stn-i[data-page=automation]')?.click()");
+    await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'automation' && ${UPD}`, { soft: true });
+    await settle();
+    const s = await evaluate(`({ open: !!document.querySelector('.dlg.settings'), page: document.querySelector('.dlg .stp')?.dataset.page ?? null, updates: ${UPD}, runs: document.querySelector('.dlg .stp')?.textContent.match(/Fyr runs \\S+/g) ?? [], crash: [...document.querySelectorAll('.crash')].map((e) => e.textContent) })`);
+    check(s.open && s.page === "automation" && s.updates && !s.crash.length, `${ctx}: Settings at Automation before closing by ${how} (${JSON.stringify(s)})`);
+  };
+  const mouse = async (x, y) => {
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 });
+  };
+  const gone = async (how) => {
+    await waitFor("!document.querySelector('.dlg.settings')", { soft: true });
+    check(await evaluate("!document.querySelector('.dlg.settings')"), `${ctx}: ${how} does not close Settings`);
+  };
+  // The ×: in the window, and the element at its centre is the × (nothing covers it).
+  await open("the ×");
+  const x = await evaluate(`(() => { const b = document.querySelector('.dlg.settings .dh .x'); if (!b) return null; const r = b.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, top = document.elementFromPoint(cx, cy); return { c: [cx, cy], inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth, hit: !!top && (top === b || b.contains(top)), top: top?.className ?? null }; })()`);
+  check(!!x && x.inView && x.hit, `${ctx}: the × is out of view or covered (${JSON.stringify(x)})`);
+  if (x) await mouse(x.c[0], x.c[1]);
+  await gone("the ×");
+  await open("Esc");
+  await h.key("Escape");
+  await gone("Esc");
+  // The backdrop: a press beside the dialog, in the scrim.
+  await open("the backdrop");
+  const bd = await evaluate(`(() => { const r = document.querySelector('.dlg.settings').getBoundingClientRect(); const p = [Math.max(8, r.left / 2), innerHeight - 8]; return { p, scrim: document.elementFromPoint(p[0], p[1])?.classList.contains('scrim') ?? false }; })()`);
+  check(bd.scrim, `${ctx}: the point beside the dialog is not the backdrop (${JSON.stringify(bd)})`);
+  await mouse(bd.p[0], bd.p[1]);
+  await gone("a press on the backdrop");
+  // And it opens again.
+  await open("reopening");
+  }
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // SPEC V0.119 (3): save at once. A colour swatch on a project's page sends one project.update with the colour and no
 // name, and "Saved" shows beside the title for 2 s.
 section('V0.119 (3)', async (h) => {

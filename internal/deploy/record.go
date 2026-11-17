@@ -56,11 +56,15 @@ var LogNames = []string{"build.log", "test.log", "smoke.log"}
 
 var recMu sync.Mutex
 
-// Updates is the record, newest first.
+// Updates is the record, newest first; an empty record is an empty list, never null (a host that never updated
+// itself, such as a NixOS host, sent "updates": null and the Automation page threw on it).
 func (d *Deployer) Updates() []Update {
 	recMu.Lock()
 	defer recMu.Unlock()
-	return d.readLog()
+	if u := d.readLog(); u != nil {
+		return u
+	}
+	return []Update{}
 }
 
 func (d *Deployer) readLog() []Update {
