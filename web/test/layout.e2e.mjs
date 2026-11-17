@@ -3077,7 +3077,7 @@ try {
       hosts: [...document.querySelectorAll('${root}.pfrow .pfh')].map(chip),
       projects: [...document.querySelectorAll('${root}.pfrow .pfc')].map(chip),
       // The phone rows name their host (V0.54); the desktop rows do not, so there the ids say it.
-      rowHosts: [...new Set(rows.map((r) => r.querySelector('.m-hostn')?.textContent ?? r.dataset.id ?? ''))],
+      rowHosts: [...new Set(rows.map((r) => r.querySelector('.m-hostn')?.textContent ?? r.querySelector('.m-off')?.textContent.replace(/ offline$/, '') ?? r.dataset.id ?? ''))],
       rows: rows.length,
       empty: document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})?.innerText ?? null,
       stored: localStorage.getItem('fyr.hostFilter'),
@@ -3088,10 +3088,11 @@ try {
   const one = await evaluate(STATE);
   check(one.hosts.length === 0, `${ctx}: one host shows host chips (${JSON.stringify(one.hosts)})`);
   check(one.projects.length > 1 && one.projects.every((c) => c.n >= 1), `${ctx}: a project chip without a thread in view (${JSON.stringify(one.projects)})`);
-  // 3. Opening Settled may add projects whose only threads are settled; closing it takes them away again.
-  await click(secHead("settled"), "true");
-  const opened = await evaluate(STATE);
-  check(opened.projects.length > one.projects.length && one.projects.every((c) => opened.projects.some((d) => d.name === c.name)), `${ctx}: opening Settled does not add its projects (${JSON.stringify({ before: one.projects.map((c) => c.name), after: opened.projects.map((c) => c.name) })})`);
+  // 3. Folded sections are not considered: fold Needs, Working and Seen (Snoozed and Settled are folded already) and
+  // only the pinned threads' projects keep a chip. (Not by opening Settled: its auto-close clock keeps the DOM moving.)
+  for (const k of ["needs", "working", "seen"]) await click(secHead(k), "true");
+  const foldedAll = await evaluate(`({ s: ${STATE}, pinned: document.querySelectorAll(${JSON.stringify(phone ? "#m-sec-pinned .m-mv" : "#sec-pinned [data-id]")}).length })`);
+  check(foldedAll.s.projects.length < one.projects.length && foldedAll.s.projects.reduce((a, c) => a + c.n, 0) <= foldedAll.pinned, `${ctx}: folding the sections does not take their projects' chips away (${JSON.stringify({ before: one.projects.map((c) => c.name), after: foldedAll.s.projects, pinned: foldedAll.pinned })})`);
   await go("?mock=rail&hosts=2&hostOrder=meros-server,desk");
   const two = await evaluate(STATE);
   check(JSON.stringify(two.hosts.map((c) => c.name)) === JSON.stringify(["meros-server", "desk"]) && two.hosts.every((c) => !c.on && c.n >= 1), `${ctx}: the host chips (${JSON.stringify(two.hosts)})`);
@@ -3126,9 +3127,6 @@ try {
 // The phone screens after the sections: the sections are the longest jobs, so they start first and the short
 // screens fill the tabs at the end.
 for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.name} ${w}x${hh}`, run: (t) => phonePass(t, w, hh, [s]) });
-// FYR_LAYOUT_ONLY=<text>: run only the jobs whose name holds it (to iterate on one section; CI runs every job).
-const only = process.env.FYR_LAYOUT_ONLY;
-if (only) for (const list of [jobs, timedJobs]) list.splice(0, list.length, ...list.filter((j) => j.name.includes(only)));
 const started = Date.now();
 await runJobs(jobs, TABS);
 const poolDone = Date.now();
