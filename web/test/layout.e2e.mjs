@@ -2921,6 +2921,14 @@ section('V0.162', async (h) => {
     check(/^Settled \d+ threads; 1 pinned thread kept/.test(r.toast), `V0.162 desktop: the toast does not name the kept pinned thread ("${r.toast}")`);
     check(r.pinned && !r.sent, `V0.162 desktop: ⇧E settled or unpinned the pinned thread (${JSON.stringify(r)})`);
     check(r.seen === 0, `V0.162 desktop: ⇧E left ${r.seen} unpinned Seen rows`);
+    // The owner's own Settle on the pinned thread (the header button, as `e` and the row menu) still settles it and
+    // removes the pin: it sends no `now`, so the host's bulk refusal does not apply.
+    await evaluate(`document.querySelector('#sec-pinned [data-id=t_poly]')?.click()`);
+    await waitFor(`/Lasso polygon perf/.test(document.querySelector('.thh .tt')?.textContent ?? '')`, { soft: true });
+    await evaluate(`[...document.querySelectorAll('.thh .acts .btn')].find(b => b.textContent.startsWith('Settle'))?.click()`);
+    await waitFor(`!document.querySelector('#sec-pinned')`, { soft: true });
+    const o = await evaluate(`({ sends: (window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle' && c.threadId === 't_poly').map(c => !!c.args?.now), pinned: !!document.querySelector('#sec-pinned') })`);
+    check(JSON.stringify(o.sends) === "[false]" && !o.pinned, `V0.162 desktop: the owner's own Settle of a pinned thread did not settle it (${JSON.stringify(o)})`);
   } catch (e) {
     failures.push(`V0.162 desktop: ${e.message}`);
   }
@@ -2940,6 +2948,18 @@ section('V0.162', async (h) => {
     const r = await evaluate(`({ toast: document.querySelector('.m-toast')?.textContent ?? '', pinned: document.querySelectorAll('#m-sec-pinned .pin').length, sent: ${settledPinned} })`);
     check(/^Settled \d+ threads; 1 pinned thread kept/.test(r.toast), `V0.162 phone: the toast does not name the kept pinned thread ("${r.toast}")`);
     check(r.pinned === 1 && !r.sent, `V0.162 phone: Settle N settled or unpinned the pinned thread (${JSON.stringify(r)})`);
+    // The owner's own Settle in the thread's sheet still settles the pinned thread and removes the pin.
+    await evaluate(`document.querySelector('.m-selbar') && document.querySelector('button[aria-label="Cancel selection"]')?.click()`);
+    await openScreen({ url: "?mock=rail&open=t_poly" }, 390, 844);
+    await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
+    await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.querySelector('.ell')?.firstChild?.textContent === 'Pin')?.click()`);
+    await waitFor(`!document.querySelector('.m-sheet')`, { soft: true });
+    await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
+    await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => /^Settle/.test(b.querySelector('.ell')?.firstChild?.textContent ?? ''))?.click()`);
+    await waitFor(`(window.__fyrCommands ?? []).some(c => c.action === 'thread.settle' && c.threadId === 't_poly')`, { soft: true });
+    await tapCenter('button[aria-label="Back to the inbox"]', "!!document.querySelector('.m-list')");
+    const o = await evaluate(`({ sends: (window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle' && c.threadId === 't_poly').map(c => !!c.args?.now), pinned: !!document.querySelector('#m-sec-pinned') })`);
+    check(JSON.stringify(o.sends) === "[false]" && !o.pinned, `V0.162 phone: the owner's own Settle of a pinned thread did not settle it (${JSON.stringify(o)})`);
   } catch (e) {
     failures.push(`V0.162 phone: ${e.message}`);
   }
