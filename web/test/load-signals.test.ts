@@ -28,7 +28,7 @@ test("the ring is calm under a 1.5× slowdown, warm from 1.5×, hot from 3× (th
   assert.equal(railMeter({ ...host, slowdown: 3 }).level, "hot");
   // A high load average alone no longer colours the ring when the host measures its slowdown.
   assert.equal(railMeter({ ...host, load: [9, 9, 9] }).level, "calm");
-  assert.equal(railMeter({ ...host, load: [9, 9, 9] }).text, "9.0");
+  assert.equal(railMeter({ ...host, load: [9, 9, 9] }).text, `${Math.round(900 / host.cores)}%`);
 });
 
 test("the memory stall level colours the ring too", () => {

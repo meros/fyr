@@ -1802,11 +1802,12 @@ try {
       cpu: c?.textContent ?? '', cpuHot: !!c?.classList.contains('hot'), inRow: !!cr && cr.top >= rr.top - 0.5 && cr.bottom <= rr.bottom + 0.5,
       job: js?.textContent ?? '', jobIn: !!jb && jb.top >= jrr.top - 0.5 && jb.bottom <= jrr.bottom + 0.5 && jb.right <= Math.min(jrr.right, js.closest('.ell').getBoundingClientRect().right) + 0.5 };
   })()`);
-  check(r.text === "10" && r.hot && /load 10\.4/.test(r.tip) && /CPU pressure 46 %/.test(r.tip), `V0.80 desktop: the rail's load is wrong (${JSON.stringify(r)})`);
-  // Decision 0029 S2: a host that admits by a budget shows it as a bar ("2.0/2", full, hot with "+1") in place of the pips.
+  check(r.text === "130%" && r.hot && /load 10\.4/.test(r.tip) && /CPU pressure 46 %/.test(r.tip), `V0.80 desktop: the rail's load is wrong (${JSON.stringify(r)})`);
+  // Decision 0029 S2, V0.152: a host that admits by a budget shows it as a bar (full, hot, "1 waits" under it) in place of
+  // the pips.
   const why = await evaluate(`(() => { const w = document.querySelector('#sec-slots .sqwhy'), s = document.querySelector('.list')?.getBoundingClientRect(), b = w?.getBoundingClientRect(); return { text: w?.textContent ?? '', inside: !!b && !!s && b.left >= s.left - 0.5 && b.right <= s.right + 0.5 }; })()`);
   check(why.text === "The next waits: 2.0 of 2.0 in use" && why.inside, `S2 desktop: the queue does not say why the next job waits (${JSON.stringify(why)})`);
-  check(r.pips === 0 && r.bar === "2.0/2+1" && r.barHot && r.barFill === 100 && r.wait === "+1" && r.barIn, `S2 desktop: the rail's slot budget bar is wrong (${JSON.stringify(r)})`);
+  check(r.pips === 0 && r.bar === "1 waits" && r.barHot && r.barFill === 100 && r.barIn, `S2 desktop: the rail's slot budget bar is wrong (${JSON.stringify(r)})`);
   check(r.inside && r.hit === 0 && r.aboveQuota, `V0.80 desktop: the load line is outside the rail, covers an item or sits below the quota (${JSON.stringify(r)})`);
   check(r.cpu === "2.6 cores" && r.cpuHot && r.inRow, `V0.80 desktop: the hot thread's CPU is missing or outside its row (${JSON.stringify(r)})`);
   // Decision 0029 S1 (V0.142): the ring is hot from the 3.4× slowdown; the tooltip names it; a holder's row names its job, first on its line and not cut.
@@ -1886,6 +1887,52 @@ section('V0.141', async (h) => {
       failures.push(`${ctx}: ${e.message}`);
     }
   }
+});
+
+// SPEC V0.152: the rail's middle is one card per host and a quota grid. With two hosts and four providers at 1280 × 1000
+// (room for all) and 1280 × 700, in light and dark: each card is centred in the rail and holds its ring (the load as a
+// share of the cores, "130%"), its host's short name with the full name on hover, and its slot meter with its own
+// tooltip; "1 waits" in the hot colour only while a job waits; the quota lines are one 2-column grid, each with its
+// provider's initial (Claude and Claude (work account) apart: C and W), its value right-aligned, red only from 80 %,
+// and a tooltip naming the provider and its host; nothing in the middle leaves the rail's width.
+section('V0.152', async (h) => {
+  const { send, evaluate, settle, navigate } = h;
+  for (const [ht, dark] of [[1000, false], [1000, true], [700, false]]) {
+    const ctx = `V0.152 desktop 1280x${ht}${dark ? " dark" : ""}`;
+    try {
+      await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: ht, deviceScaleFactor: 1, mobile: false });
+      await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
+      await navigate(`${origin}/?mock=rail&hosts=2`, "document.querySelectorAll('.rail .rmid .rldr').length === 2 && document.querySelectorAll('.rail .rmid .rqr').length === 4");
+      await settle();
+      const r = await evaluate(`(() => {
+        const rail = document.querySelector('.rail').getBoundingClientRect(), mid = document.querySelector('.rail .rmid');
+        const cx = (e) => { const b = e.getBoundingClientRect(); return b.left + b.width / 2; };
+        const cards = [...mid.querySelectorAll('.rldr')].map((c) => ({ fig: c.querySelector('.rring b').textContent, name: c.querySelector('.rldh')?.textContent ?? '', full: c.querySelector('.rldh')?.title ?? '',
+          meterTip: (c.querySelector('.rbar, .rpips, .rlds')?.title) ?? '', note: c.querySelector('.rbar small')?.textContent ?? '', noteHot: !!c.querySelector('.rbar.hot'),
+          noteColor: c.querySelector('.rbar small') ? getComputedStyle(c.querySelector('.rbar small')).color : '' }));
+        const ld = mid.querySelector('.rld'), rq = mid.querySelector('.rq');
+        const qs = [...mid.querySelectorAll('.rqr')].map((q) => ({ ini: q.querySelector('i').textContent, v: q.querySelector('span').textContent, hot: q.querySelector('span').classList.contains('hot'), tip: q.title.split('\\n')[0],
+          left: Math.round(q.getBoundingClientRect().left), top: Math.round(q.getBoundingClientRect().top), right: q.getBoundingClientRect().right }));
+        const wide = [...mid.querySelectorAll('*')].filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.left < rail.left - 0.5 || b.right > rail.right + 0.5); }).map((e) => e.className);
+        return { cards, qs, wide, cols: new Set(qs.map((q) => q.left)).size, rows: new Set(qs.map((q) => q.top)).size,
+          centred: Math.abs(cx(ld) - (rail.left + rail.width / 2)) < 2 && Math.abs(cx(rq) - (rail.left + rail.width / 2)) < 2,
+          signal: getComputedStyle(document.documentElement).getPropertyValue('--signal-ink').trim(), midScroll: mid.scrollHeight - mid.clientHeight };
+      })()`);
+      const [desk, lab] = r.cards;
+      check(desk.fig === "130%" && /^\d+%$/.test(lab.fig), `${ctx}: a ring's figure is not a share of the cores (${JSON.stringify(r.cards)})`);
+      check(desk.name === "desk" && lab.name === "lab" && desk.full === "desk" && lab.full === "lab", `${ctx}: the cards do not name their hosts (${JSON.stringify(r.cards)})`);
+      check(r.cards.every((c) => /^Slots for heavy jobs/.test(c.meterTip)), `${ctx}: a slot meter has no tooltip saying what it is (${JSON.stringify(r.cards)})`);
+      check(desk.note === "1 waits" && desk.noteHot && lab.note === "", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
+      check(r.qs.map((q) => q.ini).join() === "C,W,C,Z" && r.cols === 2 && r.rows === 2, `${ctx}: the quota grid or its initials are wrong (${JSON.stringify(r.qs)})`);
+      check(r.qs.every((q) => q.hot === (parseInt(q.v) >= 80)), `${ctx}: a quota is red below 80 % or plain above (${JSON.stringify(r.qs)})`);
+      check(r.qs[2].tip.startsWith("Claude on lab") && r.qs[0].tip.startsWith("Claude on "), `${ctx}: a quota's tooltip does not name its provider and host (${JSON.stringify(r.qs)})`);
+      check(r.centred && r.wide.length === 0, `${ctx}: the rail's middle is off-centre or wider than the rail (${JSON.stringify({ centred: r.centred, wide: r.wide })})`);
+      if (ht === 1000) check(r.midScroll <= 0, `${ctx}: the rail's middle scrolls with room for all (${r.midScroll} px)`);
+    } catch (e) {
+      failures.push(`${ctx}: ${e.message}`);
+    }
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
 });
 
 // SPEC 0.5 V0.118: the update status is a line in the layout, never over a control. In each phase, at the desktop and

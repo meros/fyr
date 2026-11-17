@@ -118,7 +118,8 @@ export function railMeter(h: HostLoad): RailMeter {
   const f = railLoad(h);
   const share = h.cores > 0 ? Math.min(1, Math.max(0, h.load[0] / h.cores)) : 1;
   const level = signalLevel(h) ?? (f.hot ? "hot" : share >= WARM_SHARE ? "warm" : "calm");
-  return { text: f.text, share, level };
+  // V0.152: the figure is the load as a share of the cores, on the arc's scale, so hosts of any size read alike.
+  return { text: h.cores > 0 ? `${Math.round(Math.max(0, h.load[0]) / h.cores * 100)}%` : f.text, share, level };
 }
 
 /** The rail's tooltip lines. */
@@ -173,6 +174,8 @@ function slotDetail(h: HostLoad): string[] {
 
 export interface RailBudget {
   text: string;
+  /** V0.152: "full", "1 waits" or "" */
+  note: string;
   /** used over the budget, 0 to 1 */
   share: number;
   hot: boolean;
@@ -185,7 +188,33 @@ export function railBudget(h: HostLoad): RailBudget | null {
   const s = h.slots;
   if (!s || s.used === undefined) return null;
   const share = s.n > 0 ? Math.min(1, Math.max(0, s.used / s.n)) : 1;
-  return { text: `${one(s.used)}/${s.n}`, share: Math.round(share * 100) / 100, hot: s.waiting.length > 0, waiting: s.waiting.length };
+  const waiting = s.waiting.length;
+  // V0.152: a word under the bar only when it matters; red (hot) only while a job is held back.
+  const note = waiting ? `${waiting} ${waiting === 1 ? "waits" : "wait"}` : s.used >= s.n - 0.05 ? "full" : "";
+  return { text: `${one(s.used)}/${s.n}`, note, share: Math.round(share * 100) / 100, hot: waiting > 0, waiting };
+}
+
+/** V0.152: the slot meter's own tooltip: what it is, the budget in use, each holder's cost, who waits and why. */
+export function slotTip(h: HostLoad): string {
+  const d = slotDetail(h)[0];
+  return d ? d.replace(/^Slots: /, "Slots for heavy jobs (tests, builds, e2e runs): ") : "";
+}
+
+/** V0.152: a short distinct name per host for the rail: the tokens all names share at the start or the end go
+ *  ("meros-laptop", "meros-server" → "laptop", "server"); the full name if that leaves one empty or two alike. */
+export function shortHostNames(names: string[]): Map<string, string> {
+  const out = new Map(names.map((n) => [n, n]));
+  if (names.length < 2) return out;
+  const toks = names.map((n) => n.split(/(?<=[-_.])/));
+  const strip = (t: string) => t.replace(/[-_.]$/, "");
+  let a = 0;
+  while (toks.every((t) => t.length > a + 1 && strip(t[a]) === strip(toks[0][a]))) a++;
+  let b = 0;
+  while (toks.every((t) => t.length > a + b + 1 && strip(t[t.length - 1 - b]) === strip(toks[0][toks[0].length - 1 - b]))) b++;
+  const short = toks.map((t) => strip(t.slice(a, t.length - b).join("")));
+  if (short.some((x) => !x) || new Set(short).size !== short.length) return out;
+  names.forEach((n, i) => out.set(n, short[i]));
+  return out;
 }
 
 /** The rail's slot figure, "1/2 slots"; hot while anyone waits. Null without slots. */
@@ -248,7 +277,7 @@ export function railLabel(h: HostLoad, several: boolean): string {
   const p = railPips(h);
   const b = railBudget(h);
   const slots = b ? `, ${one(h.slots!.used!)} of ${h.slots!.n} slot budget in use${b.waiting ? `, ${b.waiting} waiting` : ""}` : p ? `, ${p.held} of ${p.n} slots in use${p.waiting ? `, ${p.waiting} waiting` : ""}` : "";
-  const s = `oad ${m.text} on ${h.cores} cores${slots}`;
+  const s = `oad ${railLoad(h).text} on ${h.cores} cores${h.cores > 0 ? ` (${m.text} of the cores)` : ""}${slots}`;
   return several ? `${h.host}: l${s}` : `L${s}`;
 }
 

@@ -8,8 +8,8 @@ import { cardHost } from "../src/board.ts";
 const desk: HostLoad = { host: "desk", cores: 8, load: [2.6, 2, 1], threads: [], slots: { n: 2, held: [{ thread: "t1", kind: "test" }] as never, waiting: [] as never } } as unknown as HostLoad;
 
 test("V0.140: a load ring's label names its host when the rail has several", () => {
-  assert.equal(railLabel(desk, true), "desk: load 2.6 on 8 cores, 1 of 2 slots in use");
-  assert.equal(railLabel(desk, false), "Load 2.6 on 8 cores, 1 of 2 slots in use");
+  assert.equal(railLabel(desk, true), "desk: load 2.6 on 8 cores (33% of the cores), 1 of 2 slots in use");
+  assert.equal(railLabel(desk, false), "Load 2.6 on 8 cores (33% of the cores), 1 of 2 slots in use");
 });
 
 test("V0.140: a change card names its thread's host with several hosts", () => {
