@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/meros/fyr/internal/discovery"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peerlink"
 	"github.com/meros/fyr/internal/peers"
@@ -59,6 +60,10 @@ type Env struct {
 	// the link (a success of that way). Both optional.
 	Enforce  func() bool
 	OnServed func()
+
+	// LAN is where mDNS answers come from (decision 0030 3.6); nil: none. An answer is
+	// an address and a claim, never trust.
+	LAN discovery.Source
 
 	// Mesh is the two-way link manager (decision 0030 Amendment 1); nil keeps the
 	// one-way per-request dial of slice 3.

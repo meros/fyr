@@ -140,6 +140,24 @@ type config struct {
 	// V0.158): host:port, TLS 1.3 pinned to install keys, any interface; empty
 	// is no peer port. The NixOS module sets it from services.fyr.peerPort.
 	PeerListen string `json:"peerListen"`
+	// Discovery.MDNS: false turns mDNS off, advertising and browsing (decision 0030 3.6);
+	// absent is on, with a peer port. LANBusFile: a JSON list of candidates read as the
+	// mDNS answers (the test harness's bus, or a LAN where multicast does not pass).
+	Discovery struct {
+		MDNS *bool `json:"mdns"`
+	} `json:"discovery"`
+	LANBusFile string `json:"lanBusFile"`
+	// TLS: the owner's certificate and key (decision 0030 3.5). With them fyrd also
+	// serves the front over HTTPS on Listen (an address on the LAN, "0.0.0.0:7778"); a
+	// phone signs in there by QR or code. Name is the host a phone reaches it by (it is
+	// in the certificate) and the one the QR link carries. Without them nothing is
+	// served off loopback.
+	TLS struct {
+		Cert   string `json:"cert"`
+		Key    string `json:"key"`
+		Listen string `json:"listen"`
+		Name   string `json:"name"`
+	} `json:"tls"`
 	// PeerEverySeconds: how often installs pair and sync; 0 is 60.
 	PeerEverySeconds int `json:"peerEverySeconds"`
 	// ResolveFile: a JSON object, host:port (or a host alone, for every port) → the

@@ -182,7 +182,7 @@ func Start(o Options) (*Fyrd, error) {
 		_ = rm // Stop removes the folder
 	}
 	root := filepath.Dir(f.Data)
-	cfg := map[string]any{"listen": "127.0.0.1:0", "role": orDefault(o.Role, "both"), "stepUpMinutes": 0} // a test names the step-up it wants
+	cfg := map[string]any{"listen": "127.0.0.1:0", "role": orDefault(o.Role, "both"), "stepUpMinutes": 0, "discovery": map[string]any{"mdns": false}} // a test names the step-up it wants
 	if o.Name != "" {
 		cfg["name"] = o.Name
 	}

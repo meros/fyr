@@ -663,6 +663,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		mux.Handle("/", fr.Handler())
 		serve(ln, deploy.Health(mux, health...))
 		serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), cfg.ServeSocketUsers, serve) // V0.130
+		serveLAN(cfg, fr, serve)
 		if cfg.WellKnownListen != "" {
 			serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, func() peers.WellKnown { return wk }))
 			log.Printf("answering /.well-known/fyr for Tailscale Serve at %s", cfg.WellKnownListen)
@@ -768,6 +769,11 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	}()
 	var extra []*http.Server
 	serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), cfg.ServeSocketUsers, func(l net.Listener, h http.Handler) { // V0.130
+		s := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+		extra = append(extra, s)
+		go s.Serve(l)
+	})
+	serveLAN(cfg, fr, func(l net.Listener, h http.Handler) {
 		s := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		extra = append(extra, s)
 		go s.Serve(l)
