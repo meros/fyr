@@ -3,7 +3,7 @@
 
 import { currentDecision } from "./decode.ts";
 import { describeEffect } from "./effects.ts";
-import type { AttentionState, Thread } from "./types.ts";
+import type { AttentionState, Project, Thread } from "./types.ts";
 import { rowSummary } from "./view.ts";
 
 const LABEL: Record<AttentionState, string> = {
@@ -18,6 +18,14 @@ const LABEL: Record<AttentionState, string> = {
   settled: "Settled",
   archived: "Archived",
 };
+
+/** V0.135: a row shows its project as the icon before the title. The name goes on the second line, muted, only when
+ *  the icon is not an image (a monogram or a glyph alone may not say which project it is) and no project filter is
+ *  on (then every row is that project). */
+export function rowProjectName(p: Pick<Project, "name" | "image"> | undefined, name: string, filter: string | null): string | null {
+  if (filter || p?.image) return null;
+  return (p?.name ?? name) || null;
+}
 
 export function stateLabel(s: AttentionState): string {
   return LABEL[s] ?? s;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rowMeta, rowState } from "../src/rows.ts";
+import { rowMeta, rowProjectName, rowState } from "../src/rows.ts";
 import type { Decision } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -37,4 +37,14 @@ test("other rows take the attention reason and the summary", () => {
   t.attention.reason = "checks failed";
   assert.equal(rowState(t), "checks failed");
   assert.equal(rowMeta(t), "waiting on CI");
+});
+
+// V0.135: the row's project is its icon; the name shows on the second line only when the icon is not an image and
+// no project filter is on.
+test("a row names its project only without an image icon and without a project filter", () => {
+  assert.equal(rowProjectName({ name: "Fyr", image: "fy1" }, "Fyr", null), null);
+  assert.equal(rowProjectName({ name: "dotfiles" }, "dotfiles", null), "dotfiles");
+  assert.equal(rowProjectName({ name: "dotfiles" }, "dotfiles", "p_dot"), null);
+  assert.equal(rowProjectName(undefined, "loose", null), "loose");
+  assert.equal(rowProjectName(undefined, "", null), null);
 });
