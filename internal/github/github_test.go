@@ -70,6 +70,23 @@ func TestFetchEmptyChecksByRepoCI(t *testing.T) {
 	ciRepos.Clear()
 }
 
+// SPEC V0.136: the poller counts the head's finished checks and names the
+// failed ones, from the rollup it already reads.
+func TestFetchCountsChecks(t *testing.T) {
+	p, err := Fetch(context.Background(), fakeGh(`{"state":"OPEN","statusCheckRollup":[
+		{"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"FAILURE"},
+		{"__typename":"CheckRun","name":"lint","status":"COMPLETED","conclusion":"SUCCESS"},
+		{"__typename":"CheckRun","name":"e2e","status":"IN_PROGRESS","conclusion":""},
+		{"__typename":"StatusContext","context":"codecov","state":"ERROR"},
+		{"__typename":"CheckRun","name":"docs","status":"COMPLETED","conclusion":"SKIPPED"}]}`), "https://github.com/a/b/pull/1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ChecksDone != 4 || p.ChecksTotal != 5 || !slices.Equal(p.FailedChecks, []string{"test", "codecov"}) {
+		t.Fatalf("counts %d of %d, failed %v", p.ChecksDone, p.ChecksTotal, p.FailedChecks)
+	}
+}
+
 // SPEC 5.10: Fyr merges with the method the agent asked for.
 func TestMergeRunsGh(t *testing.T) {
 	var got []string

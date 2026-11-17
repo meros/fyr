@@ -1,0 +1,184 @@
+package core
+
+import (
+	"strings"
+	"testing"
+	"time"
+)
+
+// V0.136: an agent's merge ask reaches the owner only when the merge can
+// run now. While CI has not passed on the asked head Fyr holds the ask: no
+// card, no Needs you, no push; the change shows "Waiting for CI". Green
+// opens the ask (or auto-merges); red, a conflict or a required review
+// closes it, and the agent hears why.
+
+const askHead = "7333251aa0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5"
+const askURL = "https://github.com/acme/acmelistingcollector/pull/846"
+
+func askPR(at time.Time, f func(*PR)) Input {
+	p := PR{URL: askURL, Repo: "acme/monorepoListingCollector", Number: 846, State: "OPEN", Head: askHead,
+		Checks: ChecksPending, MergeState: "BLOCKED", ChecksDone: 2, ChecksTotal: 5, CheckedAt: &at}
+	if f != nil {
+		f(&p)
+	}
+	return Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Thread: "t1", Args: p}
+}
+
+// heldAsk is #846 on 17 Nov: the agent pushed 7333251 and asked for the
+// merge at once, while 3 of 5 checks still ran.
+func heldAsk(t *testing.T, now time.Time) (*Thread, Result) {
+	t.Helper()
+	th, _, _, err := Reduce(&Thread{ID: "t1"}, &View{}, askPR(now, nil), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, _, res, err := Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindChangeRequest, Thread: "t1",
+		Args: ChangeRequest{ID: "d_merge", Change: th.Changes[0].ID, Ask: AskMerge, Reason: "Tonight's nightly needs it"}}, now)
+	if err != nil {
+		t.Fatalf("the agent may ask while CI runs: %v", err)
+	}
+	return th, res
+}
+
+func hasEvent(res Result, typ string) map[string]any {
+	for _, ev := range res.Events {
+		if d, _ := ev.Data.(map[string]any); ev.Type == typ {
+			return d
+		}
+	}
+	return nil
+}
+
+func TestMergeAskOnPendingHeadIsHeld(t *testing.T) {
+	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	th, res := heldAsk(t, now)
+	if len(th.Decisions) != 0 {
+		t.Fatalf("a merge ask on pending checks reached the owner: %+v", th.Decisions)
+	}
+	if len(th.HeldAsks) != 1 || th.HeldAsks[0].ID != "d_merge" || th.HeldAsks[0].Effect.Args["head"] != askHead {
+		t.Fatalf("the ask is not recorded: %+v", th.HeldAsks)
+	}
+	if hasEvent(res, "decision.opened") != nil || hasEvent(res, "decision.held") == nil {
+		t.Fatalf("events %+v", res.Events)
+	}
+	if a := Compute(th, &View{}, now); a.Section == NeedsYou {
+		t.Fatalf("a held ask counts in Needs you: %+v", a)
+	}
+	for _, o := range th.Changes[0].Offers {
+		if o.ID == "fyr.merge" {
+			t.Fatal("the card offers Merge while CI runs")
+		}
+	}
+	n := ChangeNeed(th, &th.Changes[0])
+	if n == nil || n.Cause != CauseWaiting || !n.Muted || n.Text != "Waiting for CI: 2 of 5 checks done" || n.Head != askHead {
+		t.Fatalf("the card does not say it waits for CI: %+v", n)
+	}
+	// more checks finish: the count follows the poller, still no ask
+	later := now.Add(2 * time.Minute)
+	th, _, _, err := Reduce(th, &View{}, askPR(later, func(p *PR) { p.ChecksDone = 4 }), later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Decisions) != 0 || ChangeNeed(th, &th.Changes[0]).Text != "Waiting for CI: 4 of 5 checks done" {
+		t.Fatalf("after 4 of 5: %+v %+v", th.Decisions, ChangeNeed(th, &th.Changes[0]))
+	}
+	// no check reported yet on a repo with CI
+	th, _, _, _ = Reduce(th, &View{}, askPR(later, func(p *PR) { p.ChecksDone, p.ChecksTotal = 0, 0 }), later)
+	if got := ChangeNeed(th, &th.Changes[0]).Text; got != "Waiting for CI: no check has reported yet" {
+		t.Fatalf("no checks yet: %q", got)
+	}
+}
+
+func TestHeldMergeAskOpensOnGreen(t *testing.T) {
+	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	th, _ := heldAsk(t, now)
+	green := now.Add(6 * time.Minute)
+	th, _, res, err := Reduce(th, &View{}, askPR(green, func(p *PR) { p.Checks, p.MergeState, p.ChecksDone = ChecksPass, "CLEAN", 5 }), green)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.HeldAsks) != 0 || len(th.Decisions) != 1 || th.Decisions[0].ID != "d_merge" {
+		t.Fatalf("green did not open the ask: held %+v decisions %+v", th.HeldAsks, th.Decisions)
+	}
+	if hasEvent(res, "decision.opened") == nil {
+		t.Fatalf("events %+v", res.Events)
+	}
+	if a := Compute(th, &View{}, green); a.State != Asking {
+		t.Fatalf("attention %+v", a)
+	}
+	if n := ChangeNeed(th, &th.Changes[0]); n == nil || n.Cause != CauseAsk {
+		t.Fatalf("need %+v", n)
+	}
+	// the repo's auto-merge setting (V0.102) sees it as any open merge ask
+	if asks := AutoMergeAsks(th); len(asks) != 1 || asks[0].Decision != "d_merge" {
+		t.Fatalf("auto-merge asks %+v", asks)
+	}
+}
+
+func TestHeldMergeAskClosesOnRed(t *testing.T) {
+	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		pr   func(*PR)
+		want string
+	}{
+		{"CI failed", func(p *PR) { p.Checks, p.FailedChecks = ChecksFail, []string{"test", "lint"} }, "CI failed on 7333251: test, lint"},
+		{"conflict", func(p *PR) { p.Conflict, p.MergeState, p.Base = true, "DIRTY", "main" }, "it conflicts with main"},
+		{"review", func(p *PR) { p.Checks, p.MergeState, p.Review = ChecksPass, "BLOCKED", "REVIEW_REQUIRED" }, "a review is required"},
+		{"push", func(p *PR) { p.Head = "9999999aaaabbbb" }, "the head moved to 9999999"},
+	}
+	for _, c := range cases {
+		th, _ := heldAsk(t, now)
+		red := now.Add(4 * time.Minute)
+		th, _, res, err := Reduce(th, &View{}, askPR(red, c.pr), red)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(th.HeldAsks) != 0 || len(th.Decisions) != 0 {
+			t.Errorf("%s: the ask is still there: held %+v decisions %+v", c.name, th.HeldAsks, th.Decisions)
+			continue
+		}
+		d := hasEvent(res, "decision.closed")
+		if d == nil || d["gate"] != true || !strings.Contains(str(d["reason"]), c.want) {
+			t.Errorf("%s: decision.closed %+v", c.name, d)
+			continue
+		}
+		var said string
+		for _, n := range resultNotices(Reduced{Before: th, After: th, Events: res.Events}) {
+			said += n.What
+		}
+		if !strings.Contains(said, c.want) || strings.Contains(said, "Do not ask again") || !strings.Contains(said, "ask again") {
+			t.Errorf("%s: the agent hears %q", c.name, said)
+		}
+		if a := Compute(th, &View{}, red); a.State == Asking {
+			t.Errorf("%s: the owner is asked", c.name)
+		}
+	}
+}
+
+// An ask on a PR that is already red is refused at once with the reason;
+// an ask on a green PR opens at once, as before.
+func TestMergeAskOnRedOrGreenHead(t *testing.T) {
+	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	ask := func(f func(*PR)) (*Thread, error) {
+		th, _, _, err := Reduce(&Thread{ID: "t1"}, &View{}, askPR(now, f), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		th, _, _, err = Reduce(th, &View{}, Input{Source: FromAgent, Kind: KindEffectRequest, Thread: "t1",
+			Args: EffectRequest{ID: "d_merge", Action: FyrMerge, Args: map[string]any{"pr": askURL, "method": "squash"}}}, now)
+		return th, err
+	}
+	if _, err := ask(func(p *PR) { p.Checks, p.FailedChecks = ChecksFail, []string{"test"} }); err == nil || !strings.Contains(err.Error(), "CI failed on 7333251: test") {
+		t.Fatalf("an ask on red: %v", err)
+	}
+	th, err := ask(func(p *PR) { p.Checks, p.MergeState = ChecksPass, "CLEAN" })
+	if err != nil || len(th.Decisions) != 1 || len(th.HeldAsks) != 0 {
+		t.Fatalf("an ask on green: %v %+v", err, th.Decisions)
+	}
+	// a repo with no CI does not wait
+	th, err = ask(func(p *PR) { p.Checks, p.MergeState, p.ChecksTotal, p.ChecksDone = ChecksNone, "CLEAN", 0, 0 })
+	if err != nil || len(th.Decisions) != 1 {
+		t.Fatalf("an ask in a repo with no CI: %v %+v", err, th.Decisions)
+	}
+}

@@ -63,6 +63,8 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 		AutoMerge  json.RawMessage `json:"autoMergeRequest"`
 		Rollup     []struct {
 			Typename   string `json:"__typename"`
+			Name       string `json:"name"`
+			Context    string `json:"context"`
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
 			State      string `json:"state"`
@@ -72,8 +74,20 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 		return core.PR{}, 0, fmt.Errorf("gh pr view: %w", err)
 	}
 	states := make([]string, 0, len(v.Rollup))
+	done, failedNames := 0, []string(nil)
 	for _, c := range v.Rollup {
-		states = append(states, CheckState(c.Typename, c.Status, c.Conclusion, c.State))
+		s := CheckState(c.Typename, c.Status, c.Conclusion, c.State)
+		states = append(states, s)
+		if s != checkRunning { // V0.136: "n of m checks done"
+			done++
+		}
+		if s == checkFail {
+			name := c.Name
+			if name == "" {
+				name = c.Context
+			}
+			failedNames = append(failedNames, name)
+		}
 	}
 	checks, failed := core.ChecksNone, 0
 	if v.State == "OPEN" || len(states) > 0 {
@@ -82,7 +96,8 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	now := time.Now()
 	p := core.PR{URL: url, Repo: repo, Number: n, Title: v.Title, State: v.State, Checks: checks,
 		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", Branch: v.HeadRefName, CheckedAt: &now, Head: v.HeadRefOid,
-		Draft: v.IsDraft, MergeState: v.MergeState, AutoMerge: len(v.AutoMerge) > 0 && string(v.AutoMerge) != "null"}
+		Draft: v.IsDraft, MergeState: v.MergeState, AutoMerge: len(v.AutoMerge) > 0 && string(v.AutoMerge) != "null",
+		ChecksDone: done, ChecksTotal: len(states), FailedChecks: failedNames}
 	if v.MergeCommit != nil {
 		p.MergeSHA = v.MergeCommit.Oid
 	}

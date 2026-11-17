@@ -365,6 +365,14 @@ func resultNotices(r Reduced) []Notice {
 			exit, _ := d["exit"].(int)
 			out = append(out, Notice{About: aboutOn(d["on"]), Key: fmt.Sprintf("result:%v:%v", d["on"], d["action"]),
 				What: ranText(fmt.Sprint(d["label"]), fmt.Sprint(d["title"]), ok, exit, str(d["output"]))})
+		case ev.Type == "decision.closed" && d["gate"] == true: // V0.136
+			args, _ := d["args"].(map[string]any)
+			n := Notice{About: "thread", Key: "result:" + str(d["action"]) + ":" + target(args),
+				What: fmt.Sprintf("Fyr did not ask the owner to merge %s: %s. Fix it, push, and ask again; Fyr shows the new ask when CI is green on its head.", target(args), str(d["reason"]))}
+			if c, _ := args["change"].(string); c != "" {
+				n.About = "change:" + c
+			}
+			out = append(out, n)
 		case ev.Type == "decision.closed" && d["void"] == true: // 0024 §5
 			action := str(d["action"])
 			args, _ := d["args"].(map[string]any)
