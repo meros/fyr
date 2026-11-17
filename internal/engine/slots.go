@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -32,6 +33,8 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.slotIdle = map[string]time.Time{}
 	e.slotNudged = map[string]time.Time{}
 	e.slotOverTold = map[string]time.Time{}
+	e.undTold, e.undRun = map[string]time.Time{}, map[string]int{}
+	e.undNote, e.undFroze = map[string]time.Time{}, map[string]time.Time{}
 	e.mu.Unlock()
 	p.OnGrant = e.slotGranted
 	p.Fill() // a pool loaded from the store may have free slots for its queue
@@ -146,6 +149,7 @@ func (e *Engine) sweepSlots() {
 	}
 	e.memoryGuard(s)
 	e.heavierThanPredicted(s)
+	e.tellUndeclared()
 	e.freezeGuard(s)
 	e.adaptBudget(s)
 	// Decision 0029 S2: the conditions change without a release.
@@ -203,6 +207,10 @@ func (e *Engine) adaptBudget(s slots.Snapshot) {
 type frozenJob struct {
 	owner, since string // the hold: owner and its grant
 	at, okSince  time.Time
+	// V0.164: undeclared work frozen instead of a hold; episode is the
+	// flag's since.
+	undeclared bool
+	episode    time.Time
 }
 
 // Decision 0029 S5: how long memory must be fine before a frozen job thaws,
@@ -232,6 +240,15 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	e.mu.Unlock()
 	if f.owner != "" {
 		holding := false
+		if f.undeclared {
+			// The episode goes on while the thread is still flagged with the
+			// same start; admitted, ended or released, it is not.
+			for _, u := range e.flags() {
+				if u.Thread == f.owner && u.Since.Equal(f.episode) {
+					holding = true
+				}
+			}
+		}
 		for _, h := range s.Held {
 			if h.Owner == f.owner && h.Since.Format(time.RFC3339Nano) == f.since {
 				holding = true
@@ -251,14 +268,25 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		}
 		e.mu.Unlock()
 		if thaw {
-			e.SlotThaw(f.owner)
+			if f.undeclared {
+				e.UndeclaredThaw(f.owner)
+			} else {
+				e.SlotThaw(f.owner)
+			}
 			if holding {
-				e.slotNotice(f.owner, map[string]any{"resumed": true})
+				if f.undeclared {
+					e.slotNotice(f.owner, map[string]any{"resumed": true, "work": true})
+				} else {
+					e.slotNotice(f.owner, map[string]any{"resumed": true})
+				}
 			}
 		}
 		return
 	}
 	if !short {
+		return
+	}
+	if e.freezeUndeclared(sig, now, len(s.Held) > 0) {
 		return
 	}
 	var running []slots.Holder
@@ -300,6 +328,167 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	e.frozeHolds[newest.Owner] = newest.Since
 	e.mu.Unlock()
 	e.slotNotice(newest.Owner, map[string]any{"paused": why})
+}
+
+// flags are the threads that run undeclared heavy work now.
+func (e *Engine) flags() []slots.Undeclared {
+	if e.Undeclared == nil {
+		return nil
+	}
+	return e.Undeclared()
+}
+
+// freezeUndeclared freezes the newest flagged thread whose memory is over
+// (V0.164 section 7), before any job that asked: one at a time on the host,
+// each episode once, and never when it would help nobody (no admitted job and
+// no other flagged thread). It reports whether it froze one.
+func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted bool) bool {
+	if e.UndeclaredFreeze == nil || e.UndeclaredThaw == nil {
+		return false
+	}
+	fl := e.flags()
+	if !admitted && len(fl) < 2 {
+		return false
+	}
+	var pick *slots.Undeclared
+	e.mu.Lock()
+	for i := range fl {
+		f := &fl[i]
+		if !f.MemOver || e.undFroze[f.Thread].Equal(f.Since) || e.threads[f.Thread] == nil {
+			continue
+		}
+		if pick == nil || f.Since.After(pick.Since) {
+			pick = f
+		}
+	}
+	e.mu.Unlock()
+	if pick == nil || !e.UndeclaredFreeze(pick.Thread) {
+		return false
+	}
+	why := "memory stalls (critical)"
+	if sig.Headroom != nil && *sig.Headroom < e.SlotPolicy.MemoryReserve {
+		why = fmt.Sprintf("memory: %.0f %% free", *sig.Headroom*100)
+	}
+	e.mu.Lock()
+	e.frozen = frozenJob{owner: pick.Thread, at: now, undeclared: true, episode: pick.Since}
+	e.undFroze[pick.Thread] = pick.Since
+	e.mu.Unlock()
+	cmd := pick.Command
+	if cmd == "" {
+		cmd = "unknown command"
+	}
+	e.slotNotice(pick.Thread, map[string]any{"paused": why, "work": cmd})
+	return true
+}
+
+// undeclaredText is what the agent hears of a flag (V0.164 section 5), with
+// the host's numbers.
+func (e *Engine) undeclaredText(f slots.Undeclared) string {
+	cpuPct, memPct := f.CPUPct, f.MemPct // the shares of the host, filled by the sampler
+	both := !f.OverCPU && !f.OverMem
+	var parts []string
+	if f.OverMem || both {
+		p := slots.GB(float64(f.Mem)) + " memory"
+		if memPct > 0 {
+			p += fmt.Sprintf(" (%.0f %% of %s)", memPct, e.hostName())
+		}
+		parts = append(parts, p)
+	}
+	if f.OverCPU || both {
+		p := fmt.Sprintf("%.1f cores", f.CPU)
+		if cpuPct > 0 {
+			p += fmt.Sprintf(" (%.0f %%)", cpuPct)
+		}
+		parts = append(parts, p)
+	}
+	from, ex := "", "…"
+	kind := "test"
+	if f.Command != "" {
+		from = ", from `" + f.Command + "`"
+		ex = f.Command
+		kind = heavy.KindOf(f.Command)
+	}
+	win := int(f.Window / time.Second)
+	if win <= 0 {
+		win = int(cgroupWindow / time.Second)
+	}
+	call := "Call it now for the job that runs."
+	if f.Queued {
+		call = "You are queued and not admitted yet: do not run the job until Fyr tells you."
+	}
+	cmdJSON, _ := json.Marshal(ex)
+	return fmt.Sprintf("This thread runs heavy work Fyr did not admit: about %s for %d s%s. Before a heavy job call mcp__fyr__slot_acquire {\"kind\":%q,\"command\":%s}, run it once admitted, then call mcp__fyr__slot_release; a subagent's or a background run counts too. %s Fyr counts this use against the host either way, so other jobs wait; nothing is stopped, but if memory runs short Fyr may pause it.",
+		strings.Join(parts, " and "), win, from, kind, cmdJSON, call)
+}
+
+// cgroupWindow is the default window of a flag when it does not say.
+const cgroupWindow = 45 * time.Second
+
+// tellUndeclared tells a flagged thread's agent once per episode and at most
+// once per run, as a Next notice (V0.164 section 5): the next tool call or the
+// next message that starts a run, never a wake.
+func (e *Engine) tellUndeclared() {
+	fl := e.flags()
+	type tell struct {
+		f   slots.Undeclared
+		run int
+	}
+	var tells []tell
+	e.mu.Lock()
+	live := map[string]bool{}
+	for _, f := range fl {
+		live[f.Thread] = true
+		t := e.threads[f.Thread]
+		if t == nil || e.undTold[f.Thread].Equal(f.Since) {
+			continue
+		}
+		e.undTold[f.Thread] = f.Since
+		if r, ok := e.undRun[f.Thread]; ok && r == t.RunEnds {
+			continue // a second episode in the same run
+		}
+		e.undRun[f.Thread] = t.RunEnds
+		tells = append(tells, tell{f, t.RunEnds})
+	}
+	for th := range e.undNote {
+		if !live[th] {
+			delete(e.undNote, th)
+		}
+	}
+	e.mu.Unlock()
+	now := e.Now()
+	for _, x := range tells {
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotUndeclared, Thread: x.f.Thread,
+			Args: core.SlotUndeclaredArgs{Text: e.undeclaredText(x.f), Mem: x.f.Mem, CPU: x.f.CPU}}); err != nil {
+			log.Printf("slot undeclared %s: %v", x.f.Thread, err)
+			continue
+		}
+		if e.UndeclaredTold != nil {
+			e.UndeclaredTold(x.f.Thread, x.f.Since, now)
+		}
+	}
+}
+
+// UndeclaredSubagentNote is the text a subagent's first Bash call of a
+// flagged thread carries, once per episode (V0.164 section 5): the main agent
+// may make no tool call while it waits for the subagent. "" when the thread is
+// not flagged or the episode already had its note.
+func (e *Engine) UndeclaredSubagentNote(thread string) string {
+	for _, f := range e.flags() {
+		if f.Thread != thread {
+			continue
+		}
+		e.mu.Lock()
+		given := e.undNote[thread].Equal(f.Since)
+		if !given {
+			e.undNote[thread] = f.Since
+		}
+		e.mu.Unlock()
+		if given {
+			return ""
+		}
+		return e.undeclaredText(f)
+	}
+	return ""
 }
 
 // slotNotice records a slot event for the thread's agent (decision 0029).
@@ -358,6 +547,9 @@ func (e *Engine) HeavyGate(thread, class string) string {
 		if w.Owner == thread {
 			return fmt.Sprintf("Heavy job (%s): it is queued, not admitted yet (%d ahead; it needs %s of %s). Do not run it now; Fyr tells you in a [Fyr] message when it is admitted. Do other work meanwhile or end your turn.", class, i, strings.TrimPrefix(jobShare(s, w.Owner), "≈ "), e.hostName())
 		}
+	}
+	if e.HeavyRefused != nil {
+		e.HeavyRefused(class) // V0.164: an added pattern counts its refusals
 	}
 	kind := heavy.KindOf(class)
 	return fmt.Sprintf("Heavy job (%s) not admitted: call mcp__fyr__slot_acquire {\"kind\":%q, \"command\":\"…\"} first; Fyr admits it when its share of %s fits. Run it once admitted, then call mcp__fyr__slot_release. A subagent's run counts too; a single test file or `go test ./pkg -run X` needs no admission.", class, kind, e.hostName())

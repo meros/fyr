@@ -100,7 +100,9 @@ func (r *Releases) fetch(ctx context.Context, sha, dir string) (release.Info, er
 }
 
 // releaseDir is the build folder of a release: builds/<sha12>.
-func (d *Deployer) releaseDir(sha string) string { return filepath.Join(d.Data, "builds", release.Short(sha)) }
+func (d *Deployer) releaseDir(sha string) string {
+	return filepath.Join(d.Data, "builds", release.Short(sha))
+}
 
 // verifiedMark marks a release build that downloaded and verified whole.
 const verifiedMark = ".verified"

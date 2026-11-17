@@ -109,7 +109,7 @@ func out(ctx context.Context, dir string, args ...string) (string, error) {
 // state is where the diff starts.
 type state struct {
 	root, branch, base, mergeBase, from, head string
-	commits                             int
+	commits                                   int
 }
 
 func isTimeout(err error) bool {

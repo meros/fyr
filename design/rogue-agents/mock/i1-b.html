@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heavy work without asking · iteration 1 · B</title>
+<link rel="stylesheet" href="app.css">
+<style>
+html,body{height:auto;overflow:auto}
+body{margin:0;background:var(--surface);color:var(--ink);font:400 14px/21px var(--ui)}
+.bd{max-width:1340px;margin:0 auto;padding:20px 16px 80px}
+.bd h1{font:600 20px/26px var(--ui);margin:0 0 4px}
+.bd h2{font:600 15px/22px var(--ui);margin:36px 0 2px}
+.bd p{margin:0 0 10px;color:var(--ink-muted);max-width:86ch}
+.bd .top{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.bd .top .sp{margin-left:auto}
+.fr{border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;background:var(--raised);position:relative}
+.fr iframe{border:0;display:block;transform-origin:0 0}
+.fr.desk{width:100%}
+.ph{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.ph figure{margin:0}
+.ph .fr{width:390px;max-width:100%}
+figcaption,.cap{font:500 12px/16px var(--ui);color:var(--ink-muted);margin:0 0 6px}
+.tag{display:inline-block;padding:1px 7px;border-radius:9px;background:var(--night);color:var(--on-night);font:600 11px/16px var(--ui);margin-right:6px}
+</style></head><body><div class="bd">
+<div class="top"><h1>Heavy work without asking · iteration 1 · B</h1><span class="sp"></span><span class="seg"><button data-t="light" class="on">Light</button><button data-t="dark">Dark</button></span></div>
+
+<h2><span class="tag">B</span>Louder: a chip on the row, the thread's icon on the rail, a strip on the thread</h2>
+<p>The row gets a chip like a pull request's. The rail shows the thread's project icon under the host. The thread has a strip under its header with the command, the numbers and the two things the owner can do.</p>
+<p class="cap">Desktop, 1280 px</p><div class="fr desk"><iframe src="frames/i1-desk-b.html" width="1280" height="800" title="i1-desk-b"></iframe></div><div class="ph"><figure><figcaption>Phone inbox</figcaption><div class="fr"><iframe src="frames/i1-phone-inbox-b.html" width="390" height="844" title="i1-phone-inbox-b"></iframe></div></figure><figure><figcaption>Phone thread</figcaption><div class="fr"><iframe src="frames/i1-phone-thread-b.html" width="390" height="844" title="i1-phone-thread-b"></iframe></div></figure></div>
+</div>
+<script>
+function fit(){document.querySelectorAll('.fr').forEach(function(f){var i=f.firstElementChild,w=+i.getAttribute('width'),h=+i.getAttribute('height'),s=Math.min(1,f.clientWidth/w);i.style.transform='scale('+s+')';f.style.height=Math.round(h*s)+'px'})}
+addEventListener('resize',fit);fit();
+document.querySelectorAll('.seg button').forEach(function(b){b.onclick=function(){var t=b.dataset.t;document.documentElement.setAttribute('data-theme',t);document.querySelectorAll('.seg button').forEach(function(x){x.classList.toggle('on',x===b)});document.querySelectorAll('iframe').forEach(function(i){i.src=i.src.split('?')[0]+'?theme='+t})}});
+</script></body></html>

@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/lockwatch"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -48,6 +49,11 @@ type Load struct {
 	AgentsPressure *float64  `json:"agentsCpuPressure,omitempty"`
 	// Jobs: the measured slot holds per class, the newest first.
 	Jobs []JobClass `json:"jobs,omitempty"`
+	// V0.164: the suggested heavy jobs, the ones the owner added, and the
+	// thresholds of "undeclared".
+	Suggestions        []heavy.Suggestion `json:"suggestions,omitempty"`
+	HeavyAdded         []heavy.Added      `json:"heavyAdded,omitempty"`
+	UndeclaredSettings *UndeclaredView    `json:"undeclaredSettings,omitempty"`
 }
 
 // Use is agents/ as a whole.
@@ -67,7 +73,10 @@ type ThreadLoad struct {
 	// memory.peak, and the class of the job its slot runs now.
 	CPUPressure *float64 `json:"cpuPressure,omitempty"`
 	Peak        uint64   `json:"peak,omitempty"`
-	Job         string   `json:"job,omitempty"`
+	// Working is the working set, memory.current less inactive_file (V0.164):
+	// what the undeclared-work detector reads; Memory stays the raw reading.
+	Working uint64 `json:"-"`
+	Job     string `json:"job,omitempty"`
 	// Paused: the memory guard froze this thread's job (decision 0029 S5).
 	Paused bool `json:"paused,omitempty"`
 }
@@ -88,6 +97,17 @@ type Sampler struct {
 	Jobs  *Jobs
 	// Groups keeps the holders' jobs in their own cgroups (S5); optional.
 	Groups *JobGroups
+	// V0.164: the detector of undeclared heavy work, its settings (nil is the
+	// defaults) and, on a host without the cgroup tree, the reader of the
+	// process tree under each thread's CLI (CLIs says each thread's pid).
+	Detect       *Detector
+	DetectConfig func() UndeclaredConfig
+	Settings     *UndeclaredSettings        // GET /api/load shows it
+	Book         *heavy.Book                // the suggestions and added patterns GET /api/load shows
+	Project      func(thread string) string // a thread's project name, asked outside every lock
+	names        atomic.Pointer[map[string]string]
+	Trees        *TreeReader
+	CLIs         func() map[string]int
 
 	mu     lockwatch.Mutex
 	pub    atomic.Pointer[Load] // the last read, for readers that must not wait
@@ -107,6 +127,13 @@ func (s *Sampler) Get() Load {
 	if s.Slots != nil && !s.Slots.Off() {
 		sn := s.Slots.View()
 		l.Heavy, l.Slots = &sn, &sn
+	}
+	if s.Book != nil && l.Provider != "" {
+		l.Suggestions, l.HeavyAdded = s.Book.Suggestions(), s.Book.Added()
+	}
+	if s.Settings != nil && l.Provider != "" {
+		v := s.Settings.View()
+		l.UndeclaredSettings = &v
 	}
 	if s.Jobs != nil {
 		v := s.Jobs.View()
@@ -158,6 +185,7 @@ func (s *Sampler) now() time.Time {
 // host calls it every ProbeEvery, whether or not a client asks.
 func (s *Sampler) Tick() {
 	l := s.get()
+	s.detect(l)
 	if s.Jobs == nil || s.Slots == nil || s.Slots.Off() {
 		return
 	}
@@ -287,6 +315,10 @@ func (s *Sampler) get() Load {
 			}
 			d := filepath.Join(agents, e.Name())
 			t := ThreadLoad{ID: e.Name(), Memory: readBytes(filepath.Join(d, "memory.current")), Peak: readBytes(filepath.Join(d, "memory.peak"))}
+			t.Working = t.Memory
+			if in, ok := readKey(filepath.Join(d, "memory.stat"), "inactive_file"); ok && in <= t.Memory {
+				t.Working -= in
+			}
 			if u, ok := readKey(filepath.Join(d, "cpu.stat"), "usage_usec"); ok {
 				t.CPU = cpu(e.Name(), u)
 			}

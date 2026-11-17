@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/api"

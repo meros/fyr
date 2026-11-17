@@ -17,54 +17,54 @@ import (
 
 // The kinds' names.
 const (
-	KindRecord          = "record"
-	KindPRLink          = "pr.link"
-	KindThreadRename    = "thread.retitle"
-	KindEffectRequest   = "effect.request"
-	KindChangeRequest   = "change.request"
-	KindSettleWhen      = "settle.when"
-	KindChangeOpen      = "change.open"
-	KindChangeRevise    = "change.revise"
-	KindChangeStatus    = "change.status"
-	KindChangeAttach    = "change.attach"
-	KindChangeUpdate    = "change.update" // V0.101: status, revision and proof in one
-	KindChangeEnd       = "change.end"    // the owner's command (V0.72)
-	KindChangePark      = "change.park"   // the owner's Not now (V0.84)
-	KindChangeUnpark    = "change.unpark" // its Undo (V0.84)
-	KindActionOffer     = "action.offer"
-	KindActionPress     = "action.run"
-	KindViewPublish     = "view.publish"
-	KindViewState       = "view.state"
-	KindViewUnchanged   = "view.unchanged"
-	KindPRObserved      = "pr.observed"
-	KindDeployObserved  = "deploy.observed"
-	KindSelfDeployed    = "deploy.self" // V0.82
-	KindHostRestarted   = "host.restarted"
-	KindMessageSent     = "message.sent"
-	KindMessageState    = "message.state"
-	KindSendFailed      = "send.failed"
-	KindRunStarted      = "run.started"
-	KindRunEnded        = "run.ended"
-	KindProcessLost     = "process.lost"
+	KindRecord         = "record"
+	KindPRLink         = "pr.link"
+	KindThreadRename   = "thread.retitle"
+	KindEffectRequest  = "effect.request"
+	KindChangeRequest  = "change.request"
+	KindSettleWhen     = "settle.when"
+	KindChangeOpen     = "change.open"
+	KindChangeRevise   = "change.revise"
+	KindChangeStatus   = "change.status"
+	KindChangeAttach   = "change.attach"
+	KindChangeUpdate   = "change.update" // V0.101: status, revision and proof in one
+	KindChangeEnd      = "change.end"    // the owner's command (V0.72)
+	KindChangePark     = "change.park"   // the owner's Not now (V0.84)
+	KindChangeUnpark   = "change.unpark" // its Undo (V0.84)
+	KindActionOffer    = "action.offer"
+	KindActionPress    = "action.run"
+	KindViewPublish    = "view.publish"
+	KindViewState      = "view.state"
+	KindViewUnchanged  = "view.unchanged"
+	KindPRObserved     = "pr.observed"
+	KindDeployObserved = "deploy.observed"
+	KindSelfDeployed   = "deploy.self" // V0.82
+	KindHostRestarted  = "host.restarted"
+	KindMessageSent    = "message.sent"
+	KindMessageState   = "message.state"
+	KindSendFailed     = "send.failed"
+	KindRunStarted     = "run.started"
+	KindRunEnded       = "run.ended"
+	KindProcessLost    = "process.lost"
 	// V0.143: the agent process stops or starts taking what Fyr writes,
 	// and Fyr restarts it.
 	KindUnresponsive = "agent.unresponsive"
 	KindResponsive   = "agent.responsive"
 	KindRestarted    = "agent.restarted"
 	// V0.153: Fyr waits for a thrashing host ("" Why: it no longer waits).
-	KindMachineWait = "agent.machineWait"
-	KindTask            = "task"
-	KindSession         = "session"
-	KindDigest          = "digest"
-	KindDecisionOpened  = "decision.opened"
-	KindDecisionGone    = "decision.withdrawn"
-	KindHandoverFailed  = "handover.failed"
-	KindHandoverDone    = "handover.done"
-	KindSlotGranted     = "slot.granted" // V0.86: a queued slot is the thread's now
-	KindSlotIdle        = "slot.idle"    // #174: a held slot ran no heavy job for a while
-	KindSlotMemory      = "slot.memory"  // decision 0029 S2: memory is short; this job grew most
-	KindSlotOver        = "slot.over"    // decision 0029 S3: a running job is heavier than predicted
-	KindSlotPause       = "slot.pause"   // decision 0029 S5: the memory guard froze or thawed this job
+	KindMachineWait    = "agent.machineWait"
+	KindTask           = "task"
+	KindSession        = "session"
+	KindDigest         = "digest"
+	KindDecisionOpened = "decision.opened"
+	KindDecisionGone   = "decision.withdrawn"
+	KindHandoverFailed = "handover.failed"
+	KindHandoverDone   = "handover.done"
+	KindSlotGranted    = "slot.granted" // V0.86: a queued slot is the thread's now
+	KindSlotIdle       = "slot.idle"    // #174: a held slot ran no heavy job for a while
+	KindSlotMemory     = "slot.memory"  // decision 0029 S2: memory is short; this job grew most
+	KindSlotOver       = "slot.over"    // decision 0029 S3: a running job is heavier than predicted
+	KindSlotPause      = "slot.pause"   // decision 0029 S5: the memory guard froze or thawed this job
 )
 
 // The typed args of the kinds that are not a map.

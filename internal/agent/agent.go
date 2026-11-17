@@ -92,6 +92,10 @@ type Config struct {
 	// runs, at the gate hook (decision 0029 S1, #185); a reason refuses it
 	// (#174: a heavy job without a slot), "" lets it run. Optional.
 	OnBash func(thread, command string) string
+	// UndeclaredNote gives the text a subagent's Bash call carries while its
+	// thread runs undeclared heavy work (V0.164); "" for none. It gives it
+	// once per episode, so the hook asks on every subagent Bash call.
+	UndeclaredNote func(thread string) string
 	// Runner starts the processes in the launcher's runner, so they outlive
 	// fyrd (V0.90); nil starts them as fyrd's children.
 	Runner *runner.Client
@@ -297,6 +301,13 @@ func writeMCPConfig(dir string, cfg []byte) (string, error) {
 func (m *Manager) SetOnBash(f func(thread, command string) string) {
 	m.mu.Lock()
 	m.cfg.OnBash = f
+	m.mu.Unlock()
+}
+
+// SetUndeclaredNote sets Config.UndeclaredNote after New (V0.164).
+func (m *Manager) SetUndeclaredNote(f func(thread string) string) {
+	m.mu.Lock()
+	m.cfg.UndeclaredNote = f
 	m.mu.Unlock()
 }
 
@@ -624,4 +635,19 @@ func (m *Manager) StopAll() {
 	for _, id := range ids {
 		m.Stop(id)
 	}
+}
+
+// CLIs are the pids of the live agent CLIs by thread, for a host without the
+// cgroup tree to read each thread's process tree (V0.164 section 10); a
+// session that does not know its pid is left out.
+func (m *Manager) CLIs() map[string]int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]int{}
+	for th, s := range m.sessions {
+		if p, ok := s.c.(interface{ Pid() int }); ok && p.Pid() > 0 {
+			out[th] = p.Pid()
+		}
+	}
+	return out
 }

@@ -79,7 +79,21 @@ func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 				"permissionDecision": "deny", "permissionDecisionReason": r}}
 		}
 	}
-	if n := core.GateNudge(name, ti); n != "" { // V0.143
+	n := core.GateNudge(name, ti) // V0.143
+	// V0.164: the first Bash call of a subagent of a thread that runs
+	// undeclared heavy work carries the text too, once per episode; the main
+	// agent's own notice is not used up.
+	if sub, _ := in["agent_id"].(string); sub != "" && name == "Bash" && s != nil {
+		m.mu.Lock()
+		note := m.cfg.UndeclaredNote
+		m.mu.Unlock()
+		if note != nil {
+			if u := note(s.thread); u != "" {
+				n = strings.TrimSpace(n + "\n" + u)
+			}
+		}
+	}
+	if n != "" {
 		return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse", "additionalContext": n}}
 	}
 	return nil

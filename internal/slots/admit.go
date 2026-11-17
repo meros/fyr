@@ -125,6 +125,24 @@ const (
 // the held jobs' needs, and no more than the real headroom above the
 // reserve); a job that is not cheap waits while new jobs run slow.
 func Decide(p Policy, s Signals, f Factors, n int, held []Need, head Need) (ok bool, why, binding string) {
+	return DecideWith(p, s, f, n, held, nil, "", head)
+}
+
+// Extra is the use of a thread that runs heavy work Fyr did not admit
+// (V0.164): one more Need in the budget beside the admitted jobs, and not one
+// of them: "one job always runs" looks at the admitted jobs only. A thread's
+// own use does not count against its own request (Owner is the thread).
+type Extra struct {
+	Owner string
+	Name  string // what the wait reason calls it: the thread's title
+	Need  Need
+}
+
+// DecideWith is Decide with the undeclared use of other threads counted
+// (V0.164): added to what the held jobs use, except headOwner's own, which its
+// request stands in for. The wait reason names the largest when it is what
+// binds: "needs ≈ 30 % CPU, 10 % free (Map perf uses 50 % undeclared)".
+func DecideWith(p Policy, s Signals, f Factors, n int, held []Need, extra []Extra, headOwner string, head Need) (ok bool, why, binding string) {
 	if s.Provider == "" || s.CPU <= 0 || s.Memory == 0 {
 		if len(held) < n {
 			return true, "", ""
@@ -144,22 +162,63 @@ func Decide(p Policy, s Signals, f Factors, n int, held []Need, head Need) (ok b
 	for _, h := range held {
 		used = used.Plus(h)
 	}
+	var others []Extra
+	for _, x := range extra {
+		if x.Owner != headOwner || headOwner == "" {
+			others = append(others, x)
+			used = used.Plus(x.Need)
+		}
+	}
 	cpuFree := f.CPU*s.CPU - used.CPU
 	if head.CPU > cpuFree+1e-9 {
-		return false, fmt.Sprintf("needs ≈ %.0f %% CPU, %.0f %% free", Pct(head.CPU/s.CPU), max(0, Pct(cpuFree/s.CPU))), ResCPU
+		return false, fmt.Sprintf("needs ≈ %.0f %% CPU, %.0f %% free", Pct(head.CPU/s.CPU), max(0, Pct(cpuFree/s.CPU))) + undeclaredWhy(others, s, ResCPU), ResCPU
 	}
 	memFree := f.Mem*float64(s.Memory) - float64(used.Mem)
 	if s.Headroom != nil {
 		memFree = min(memFree, (*s.Headroom-p.MemoryReserve)*float64(s.Memory))
 	}
 	if float64(head.Mem) > memFree+1 {
-		return false, fmt.Sprintf("needs ≈ %s memory, %s free", GB(float64(head.Mem)), GB(max(0, memFree))), ResMem
+		return false, fmt.Sprintf("needs ≈ %s memory, %s free", GB(float64(head.Mem)), GB(max(0, memFree))) + undeclaredWhy(others, s, ResMem), ResMem
 	}
 	c, m := head.Shares(s)
 	if (c > CheapShare || m > CheapShare) && s.Slowdown != nil && *s.Slowdown >= p.SlowdownMax {
 		return false, fmt.Sprintf("CPU: new jobs run %.1f× slower", *s.Slowdown), ResCPU
 	}
 	return true, "", ""
+}
+
+// undeclaredWhy names the largest undeclared use in res, with "+N" for the
+// others, or "" when none uses any of it.
+func undeclaredWhy(others []Extra, s Signals, res string) string {
+	var big *Extra
+	var bigShare float64
+	k := 0
+	for i := range others {
+		c, m := others[i].Need.Shares(s)
+		sh := c
+		if res == ResMem {
+			sh = m
+		}
+		if sh <= 0 {
+			continue
+		}
+		k++
+		if sh > bigShare {
+			big, bigShare = &others[i], sh
+		}
+	}
+	if big == nil {
+		return ""
+	}
+	use := fmt.Sprintf("%.0f %%", Pct(bigShare))
+	if res == ResMem {
+		use = GB(float64(big.Need.Mem))
+	}
+	more := ""
+	if k > 1 {
+		more = fmt.Sprintf(" +%d", k-1)
+	}
+	return fmt.Sprintf(" (%s uses %s undeclared%s)", big.Name, use, more)
 }
 
 // Cheap says whether a need ignores the slowdown and may always backfill.

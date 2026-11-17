@@ -52,16 +52,16 @@ func BuildID() string {
 }
 
 type config struct {
-	Listen          string             `json:"listen"`
-	PermissionMode  string             `json:"permissionMode"`
-	IdleStopMinutes int                `json:"idleStopMinutes"`
+	Listen          string `json:"listen"`
+	PermissionMode  string `json:"permissionMode"`
+	IdleStopMinutes int    `json:"idleStopMinutes"`
 	// UpdateRepo is where auto-update reads releases (decision 0027);
 	// empty is meros/fyr. UpdateQuietMinutes is how long `deployable` must
 	// stay put before a host installs it (#153); 0 is 10.
-	UpdateRepo         string `json:"updateRepo,omitempty"`
-	UpdateQuietMinutes int    `json:"updateQuietMinutes,omitempty"`
-	OwnerLogin      string             `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)
-	Profiles        []provider.Profile `json:"profiles"`
+	UpdateRepo         string             `json:"updateRepo,omitempty"`
+	UpdateQuietMinutes int                `json:"updateQuietMinutes,omitempty"`
+	OwnerLogin         string             `json:"ownerLogin"` // Tailscale login allowed over the tailnet (V0.14)
+	Profiles           []provider.Profile `json:"profiles"`
 	// ScratchRoots: folders whose children are scratch folders (V0.28);
 	// empty means ~/.t3/scratch and ~/.local/share/fyr/scratch.
 	ScratchRoots []string `json:"scratchRoots"`
@@ -96,6 +96,16 @@ type config struct {
 	// (default 0.10); 0 is the default.
 	SlotSlowdownMax   float64 `json:"slotSlowdownMax"`
 	SlotMemoryReserve float64 `json:"slotMemoryReserve"`
+	// V0.164: heavy work that nobody asked for. Undeclared "off" turns all of
+	// it off on this host; the thresholds are shares of what the host gives
+	// its agents (0 is the default: 0.25 of the cores, 0.08 of the memory,
+	// 45 s, 30–120); what the owner saves in Settings wins over these.
+	// HeavyAdded are patterns read after heavyCommands (or the defaults).
+	Undeclared       string          `json:"undeclared"`
+	UndeclaredCPU    float64         `json:"undeclaredCpu"`
+	UndeclaredMemory float64         `json:"undeclaredMemory"`
+	UndeclaredAfter  int             `json:"undeclaredAfter"`
+	HeavyAdded       []heavy.Pattern `json:"heavyAdded"`
 	// Peers: Fyr page origins probed as they are (V0.123, decision 0025),
 	// besides the tailnet's own nodes; for development and non-tailnet hosts.
 	Peers []string `json:"peers"`

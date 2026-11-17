@@ -52,7 +52,9 @@ func TestSlowStartWaitsUnderPressure(t *testing.T) {
 	h.wait(id, "waiting for the machine", func(th core.Thread, a core.Attention) bool {
 		return th.MachineWait != nil && th.MachineWait.Why == "memory pressure"
 	})
-	th := h.wait(id, "answered", func(th core.Thread, _ core.Attention) bool { return !th.Running && strings.HasPrefix(th.Summary, "echo:") })
+	th := h.wait(id, "answered", func(th core.Thread, _ core.Attention) bool {
+		return !th.Running && strings.HasPrefix(th.Summary, "echo:")
+	})
 	if th.MachineWait != nil || th.Failure != nil {
 		t.Fatalf("after the start: wait %+v failure %+v", th.MachineWait, th.Failure)
 	}
@@ -84,7 +86,9 @@ func TestFailedStartRetriesUnderPressure(t *testing.T) {
 	id := r.ThreadID
 	h.wait(id, "waiting for the machine", func(th core.Thread, _ core.Attention) bool { return th.MachineWait != nil })
 	os.WriteFile(f, []byte("0"), 0o600) // the host recovers
-	th := h.wait(id, "answered", func(th core.Thread, _ core.Attention) bool { return !th.Running && strings.HasPrefix(th.Summary, "echo:") })
+	th := h.wait(id, "answered", func(th core.Thread, _ core.Attention) bool {
+		return !th.Running && strings.HasPrefix(th.Summary, "echo:")
+	})
 	if th.Failure != nil {
 		t.Fatalf("failure %+v", th.Failure)
 	}
@@ -107,5 +111,7 @@ func TestNoAutoRestartUnderPressure(t *testing.T) {
 		t.Fatal("restarted while the host thrashes")
 	}
 	p.on.Store(false)
-	h.wait(id, "restarted once calm", func(core.Thread, core.Attention) bool { return hasEvent(h.events(id), "agent.restarted", "automatically") })
+	h.wait(id, "restarted once calm", func(core.Thread, core.Attention) bool {
+		return hasEvent(h.events(id), "agent.restarted", "automatically")
+	})
 }

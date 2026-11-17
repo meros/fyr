@@ -95,7 +95,8 @@ test("a page id to and from its URL form", () => {
   assert.deepEqual(parsePage("nonsense/x"), { page: "providers" }, "an unknown page falls back to providers");
   assert.deepEqual(parsePage(""), { page: "providers" });
   assert.deepEqual(parsePage(null), { page: "providers" });
-  assert.deepEqual(parsePage("automation/x"), { page: "automation" }, "a page without sub-pages drops the sub");
+  assert.deepEqual(parsePage("automation/x"), { page: "automation", sub: "x" }, "V0.164: Automation's sub names the suggestion the strip's Add as heavy job… opened it at");
+  assert.deepEqual(parsePage("device/x"), { page: "device" }, "a page without sub-pages drops the sub");
   for (const s of ["providers", "providers/abc", "projects/p_x", "device", "automation", "hosts", "hosts/lab"]) assert.equal(pageUrl(parsePage(s)), s);
 });
 
@@ -104,6 +105,7 @@ test("Esc goes one level up, then closes", () => {
   assert.deepEqual(escapeTarget({ page: "projects", sub: "p_fyr" }), { page: "projects" });
   assert.deepEqual(escapeTarget({ page: "providers", sub: "new" }), { page: "providers" });
   assert.deepEqual(escapeTarget({ page: "hosts", sub: "lab" }), { page: "hosts" });
+  assert.equal(escapeTarget({ page: "automation", sub: "s1" }), null, "Automation's sub is a place on the page, not a page: Esc closes Settings");
   assert.equal(escapeTarget({ page: "hosts" }), null);
   assert.equal(escapeTarget({ page: "device" }), null);
 });
