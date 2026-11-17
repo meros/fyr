@@ -38,7 +38,24 @@ func (l *link) key() string {
 	return l.base.Host
 }
 
+// cachePath is a host's cache file: named by its install id once the front
+// knows it (decision 0031 4.3: a rename keeps the cache), else by its name.
 func (f *Front) cachePath(l *link) string {
+	f.mu.Lock()
+	id := f.idOfLocked(l)
+	f.mu.Unlock()
+	return f.cachePathFor(l, id)
+}
+
+func (f *Front) cachePathFor(l *link, id string) string {
+	if id == "" {
+		id = l.key()
+	}
+	return filepath.Join(f.opt.CacheDir, url.PathEscape(id)+".json")
+}
+
+// legacyCachePath is the file the front wrote before the id named it.
+func (f *Front) legacyCachePath(l *link) string {
 	return filepath.Join(f.opt.CacheDir, url.PathEscape(l.key())+".json")
 }
 
@@ -47,7 +64,9 @@ func (f *Front) cachePath(l *link) string {
 func (f *Front) restore(l *link) {
 	b, err := os.ReadFile(f.cachePath(l))
 	if err != nil {
-		return
+		if b, err = os.ReadFile(f.legacyCachePath(l)); err != nil {
+			return
+		}
 	}
 	var c cacheFile
 	dec := json.NewDecoder(bytes.NewReader(b))
@@ -84,8 +103,8 @@ func (f *Front) saveDirty() {
 		return
 	}
 	type job struct {
-		path string
-		b    []byte
+		path, legacy string
+		b            []byte
 	}
 	var jobs []job
 	f.mu.Lock()
@@ -100,7 +119,12 @@ func (f *Front) saveDirty() {
 			f.opt.Logf("front: cache %s: %v", l.key(), err)
 			continue
 		}
-		jobs = append(jobs, job{f.cachePath(l), b})
+		id := f.idOfLocked(l)
+		legacy := ""
+		if id != "" {
+			legacy = f.legacyCachePath(l) // moved to the id's file
+		}
+		jobs = append(jobs, job{f.cachePathFor(l, id), legacy, b})
 	}
 	f.mu.Unlock()
 	if len(jobs) == 0 {
@@ -118,6 +142,8 @@ func (f *Front) saveDirty() {
 		}
 		if err := os.Rename(tmp, j.path); err != nil {
 			f.opt.Logf("front: cache: %v", err)
+		} else if j.legacy != "" && j.legacy != j.path {
+			os.Remove(j.legacy)
 		}
 	}
 }

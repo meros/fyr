@@ -59,6 +59,7 @@ func (f *Front) SetClient(build string, web fs.FS) error {
 	}
 	f.client.Store(&clientBuild{build: build, web: web, h: webClient(web)})
 	f.hub.DropAll()
+	f.hub2.DropAll()
 	return nil
 }
 
@@ -82,10 +83,10 @@ func noCacheIndex(next http.Handler) http.Handler {
 // pushRoutes serves the Web Push endpoints (V0.15) for p: a host's before
 // decision 0016, a front's since V0.54 (the front holds the device data).
 func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string)) {
-	mux.HandleFunc("GET /api/push/key", func(w http.ResponseWriter, r *http.Request) {
+	both(mux, "GET", "/push/key", func(w http.ResponseWriter, r *http.Request) {
 		api.WriteJSON(w, 200, map[string]string{"publicKey": p.PublicKey()})
 	})
-	mux.HandleFunc("POST /api/push/subscribe", func(w http.ResponseWriter, r *http.Request) {
+	both(mux, "POST", "/push/subscribe", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Subscription push.Subscription `json:"subscription"`
 			Device       string            `json:"device"`
@@ -103,7 +104,7 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		}
 		api.WriteJSON(w, 200, map[string]any{"ok": true})
 	})
-	mux.HandleFunc("POST /api/push/unsubscribe", func(w http.ResponseWriter, r *http.Request) {
+	both(mux, "POST", "/push/unsubscribe", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
@@ -114,14 +115,14 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		p.Unsubscribe(b.Endpoint)
 		api.WriteJSON(w, 200, map[string]any{"ok": true})
 	})
-	mux.HandleFunc("POST /api/push/status", func(w http.ResponseWriter, r *http.Request) {
+	both(mux, "POST", "/push/status", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Endpoint string `json:"endpoint"`
 		}
 		json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b)
 		api.WriteJSON(w, 200, map[string]bool{"known": b.Endpoint != "" && p.Known(b.Endpoint)})
 	})
-	mux.HandleFunc("POST /api/push/test", func(w http.ResponseWriter, r *http.Request) {
+	both(mux, "POST", "/push/test", func(w http.ResponseWriter, r *http.Request) {
 		n := p.Notify(core.Owner, push.Payload{Title: "Fyr", Body: "Notifications work on this device.", State: "test"})
 		api.WriteJSON(w, 200, map[string]int{"delivered": n})
 	})

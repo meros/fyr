@@ -41,7 +41,14 @@ func (f *Front) settingsRead(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	path := r.URL.Path
+	f.settingsFor(w, r, l, r.URL.Path, func() { f.unavailable(w, l) })
+}
+
+// settingsFor answers one settings read of one host: from the host, kept, or
+// the kept answer while the host is offline (decision 0031 2.2 keeps V0.127's
+// rule for the prefix too). A host that cannot be reached and has no kept
+// answer is 503 (host-offline on the prefix's route, as the old routes said).
+func (f *Front) settingsFor(w http.ResponseWriter, r *http.Request, l *link, path string, offline func()) {
 	f.mu.Lock()
 	on := l.online
 	last, kept := l.settings[path]
@@ -58,7 +65,7 @@ func (f *Front) settingsRead(w http.ResponseWriter, r *http.Request) {
 	}
 	if !on {
 		if !stale() {
-			f.unavailable(w, l)
+			offline()
 		}
 		return
 	}
