@@ -1544,3 +1544,6 @@ label.sr{cursor:pointer}
 /* the labels stay quiet when a value is hot (the rail's older ".rld .hot" rule colours whole rows) */
 .hmr .hmk,.rail .rld .hmr.hot .hmk{color:var(--ink-faint);font-weight:400}
 .rail .rld .hmr.hot{font-weight:400}
+
+/* Amendment 1 of decision 0030: a host's link line under its state line. */
+.set .hlink { display: block; opacity: .75; }

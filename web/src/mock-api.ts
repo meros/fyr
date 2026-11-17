@@ -465,8 +465,8 @@ const mockPeers: PeerState = {
   signedIn: true,
   members: [
     { id: "F7QK-2M9X-AB34-CD56", name: "desk", self: true, drive: true, via: "paired" },
-    { id: "QX2C-7LD4-9PWE-1ABN", name: "mac", port: 7779, drive: true, via: "paired" },
-    { id: "H3TT-8KQM-2ZRD-4VYC", name: "box", port: 7779, drive: false, via: "vouched", by: "mac" },
+    { id: "QX2C-7LD4-9PWE-1ABN", name: "mac", port: 7779, drive: true, via: "paired", link: { state: "up", via: "peer", opened: "them", since: new Date(Date.now() - 40 * 60_000).toISOString() } },
+    { id: "H3TT-8KQM-2ZRD-4VYC", name: "box", port: 7779, drive: false, via: "vouched", by: "mac", link: { state: "down", via: "peer", error: { kind: "timeout", text: "" } } },
   ],
   candidates: [
     { name: "server.tail1234.ts.net", online: true, kind: "tagged" },

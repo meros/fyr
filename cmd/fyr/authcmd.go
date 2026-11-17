@@ -145,6 +145,9 @@ func authCommand(word string, args []string) error {
 			if d, _ := m["drive"].(bool); !d {
 				note += "  may not drive this host"
 			}
+			if l, _ := m["link"].(map[string]any); l != nil {
+				note += "  " + linkWords(l)
+			}
 			fmt.Printf("%-21v %-24v%s\n", m["id"], m["name"], note)
 		}
 		cs, _ := out["candidates"].([]any)
@@ -228,4 +231,19 @@ func pairCommand(data, addr string, args []string) error {
 	}
 	fmt.Printf("Paired with %v (%v).\n", out["name"], out["addr"])
 	return nil
+}
+
+// linkWords says a link in a few words: up (which side opened it) or down (why).
+func linkWords(l map[string]any) string {
+	switch l["state"] {
+	case "up":
+		who := map[string]string{"here": "opened from here", "them": "opened by it"}[fmt.Sprint(l["opened"])]
+		return strings.TrimSpace("link up " + who)
+	case "connecting":
+		return "link connecting"
+	}
+	if e, _ := l["error"].(map[string]any); e != nil {
+		return fmt.Sprintf("link down: %v (%v)", e["kind"], e["text"])
+	}
+	return "link down"
 }

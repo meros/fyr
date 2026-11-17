@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
 import { Boundary } from "./boundary.tsx";
 import type { Api } from "./api.ts";
-import { hostForProject, hostLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
+import { hostForProject, hostLine, linkLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, withHost, type SettingsHost } from "./host-settings.ts";
 import { quotaFor } from "./quota.ts";
 import { budgetLine, jobLines, type HostLoad } from "./load.ts";
@@ -1624,6 +1624,7 @@ function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
  *  replaces the line and is the only red row. The row opens the host's page, where every action is. */
 function HostRow({ h, self, now, go, still }: { h: HostInfo; self: string; now: number; go(r: PageRef): void; /** the phone's Reorder mode: the row does not open */ still?: boolean }) {
   const line = hostLine(h, self, now);
+  const link = linkLine(h.link, now); // decision 0030 Amendment 1: how the front reaches it, and why not
   return (
     <Row
       class="host"
@@ -1636,7 +1637,7 @@ function HostRow({ h, self, now, go, still }: { h: HostInfo; self: string; now: 
         </>
       }
       mono
-      desc={h.idWas ? undefined : line}
+      desc={h.idWas ? undefined : link ? <>{line}<span class="hlink">{link}</span></> : line}
       error={h.idWas ? line : null}
       data={{ host: h.name, sub: h.name, ...(h.id ? { id: h.id } : {}) }}
       end={

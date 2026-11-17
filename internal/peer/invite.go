@@ -367,6 +367,8 @@ type MemberView struct {
 	// "vouched" by the member named in By.
 	Via string `json:"via"`
 	By  string `json:"by,omitempty"`
+	// Link is the state of the link to it (Amendment 1); nil for this install.
+	Link *peerlink.Status `json:"link,omitempty"`
 }
 
 // Members lists the roster with how each member came in.
@@ -382,6 +384,10 @@ func (e *Env) Members() []MemberView {
 		v := MemberView{ID: m.ID, Name: m.Name, Self: m.ID == self, Port: m.Port, Drive: e.Drive.MayDrive(m.ID), Via: "paired"}
 		if m.AddedBy != self && m.AddedBy != m.ID && m.ID != self {
 			v.Via, v.By = "vouched", nameOr(names[m.AddedBy], m.AddedBy)
+		}
+		if e.Mesh != nil && m.ID != self {
+			st := e.Mesh.Status(m.ID)
+			v.Link = &st
 		}
 		out = append(out, v)
 	}

@@ -145,6 +145,11 @@ type config struct {
 	// own CA).
 	ResolveFile string `json:"resolveFile"`
 	RootCAs     string `json:"rootCAs"`
+	// LinkBackoffMillis and LinkDialMillis tune the mesh's connectors (the wait between
+	// dials to one install, doubling to five minutes, and the time one dial may take;
+	// 1000 and 8000 when absent): the test harness makes them short.
+	LinkBackoffMillis int `json:"linkBackoffMillis"`
+	LinkDialMillis    int `json:"linkDialMillis"`
 	// StepUpMinutes: how old a browser session must be to widen trust (approve a
 	// device, add one, pair an install); absent is 5, 0 turns the rule off. The owner
 	// socket is never asked (decision 0030 3.4).

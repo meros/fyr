@@ -177,9 +177,9 @@ type Host struct {
 
 // Link is the state of the front's link to one host.
 type Link struct {
-	State  string     `json:"state"`  // up | down
-	Via    string     `json:"via"`    // peer | whois | pipe
-	Opened string     `json:"opened"` // here | them
+	State  string     `json:"state"`            // up | connecting | down
+	Via    string     `json:"via"`              // peer | whois | pipe
+	Opened string     `json:"opened,omitempty"` // here | them
 	Since  string     `json:"since,omitempty"`
 	Error  *LinkError `json:"error,omitempty"`
 }
