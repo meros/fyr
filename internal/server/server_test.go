@@ -636,3 +636,19 @@ func TestPeerGuard(t *testing.T) {
 		}
 	}
 }
+
+// A request on Serve's socket carries tailscaled's identity header with a
+// Host that is not a ts.net name; the owner is served, any other login is not.
+func TestServeSocketNeedsNoTailnetHost(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
+	defer st.Close()
+	s := &Server{Engine: engine.New(st), BuildID: "b1", OwnerLogin: "owner@example.com"}
+	hs := httptest.NewServer(ViaServe(s.Handler()))
+	defer hs.Close()
+	if r := do(t, "GET", hs.URL+"/api/state", "localhost", map[string]string{"Tailscale-User-Login": "owner@example.com"}, ""); r.StatusCode != 200 {
+		t.Fatalf("owner on the Serve socket: %d", r.StatusCode)
+	}
+	if r := do(t, "GET", hs.URL+"/api/state", "localhost", map[string]string{"Tailscale-User-Login": "guest@example.com"}, ""); r.StatusCode != 403 {
+		t.Fatalf("other login on the Serve socket: %d", r.StatusCode)
+	}
+}

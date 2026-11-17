@@ -172,11 +172,14 @@ func (s *Server) routes() http.Handler {
 // the browser's Host (https://<host>.ts.net) and adds Tailscale-User-Login;
 // it must equal owner. The header alone proves nothing: a DNS-rebinding page
 // reaches loopback too and may set any header, but its Host is its own
-// domain, never a ts.net name (review 2026-11-15).
+// domain, never a ts.net name (review 2026-11-15). Serve's own socket is the
+// exception: tailscaled reaches it through a root-only file, sets the header
+// itself and does not pass the browser's Host on (the request arrives as
+// localhost), so a request on that socket needs no ts.net Host.
 func guard(owner string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if login := r.Header.Get("Tailscale-User-Login"); login != "" {
-			if !tailnetHost(r.Host) {
+			if !IsViaServe(r) && !tailnetHost(r.Host) {
 				http.Error(w, "the tailnet identity header needs a ts.net host", http.StatusForbidden)
 				return
 			}
