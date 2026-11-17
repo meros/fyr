@@ -16,7 +16,7 @@ export function markedRow(openId: string | null, lastOpen: string | null): strin
 export function revealRow(sec: Sections, id: string | null, limits: Partial<Record<SectionKey, number>>, full: Record<SectionKey, number>): { section: SectionKey; expand: boolean } | null {
   if (!id || sec.pinned.some((t) => t.id === id)) return null;
   for (const { key } of SECTIONS) {
-    const i = unpinned(sec[key]).findIndex((t) => t.id === id);
+    const i = unpinned(sec[key], key).findIndex((t) => t.id === id);
     if (i < 0) continue;
     if (i < (limits[key] ?? Infinity)) return null;
     return { section: key, expand: i >= full[key] };
