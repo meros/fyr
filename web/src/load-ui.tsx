@@ -1,6 +1,7 @@
 // SPEC 0.5 V0.80: the machine load in the desktop rail and a working thread's CPU in its row. One poll for the
 // whole client, every 5 s while the page is visible; the host reads at most every 2 s.
 
+import { HostMark } from "./host-mark-ui.tsx";
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
@@ -77,8 +78,10 @@ export function HostMeters({ h, name, full, jobsTip, offline }: { h?: HostLoad; 
   return (
     <span class={`hm${m ? ` ${m.level}` : ""}${offline ? " off" : ""}`}>
       {name && (
+        // V0.170: the host's mark before its short name.
         <span class="hmn mono" title={full}>
-          {name}
+          <HostMark name={full ?? name} size={11} />
+          <span class="ell">{name}</span>
         </span>
       )}
       {offline || !m ? (
@@ -145,7 +148,7 @@ export function LoadStrip({ hosts, onOpen }: { hosts: StripHost[]; onOpen(): voi
     <button type="button" class="m-load" onClick={onOpen} aria-label={`Host load: ${label}. Show details`}>
       {shown.map((h) => (
         <span class={`mlh${h.load ? "" : " off"}`}>
-          <HostMeters h={h.load} offline={!h.load} name={several ? short.get(h.name) : undefined} />
+          <HostMeters h={h.load} offline={!h.load} name={several ? short.get(h.name) : undefined} full={h.name} />
         </span>
       ))}
       {hosts.length > shown.length && <span class="mlmore mono">+{hosts.length - shown.length}</span>}

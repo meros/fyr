@@ -535,7 +535,7 @@ func (f *Front) load(l *link, st map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	env := map[string]any{}
-	for _, k := range []string{"actions", "profiles", "deploy", "stall", "user", "host", "hostId", "hostOrder"} {
+	for _, k := range []string{"actions", "profiles", "deploy", "stall", "user", "host", "hostId", "hostOrder", "machine", "os"} {
 		if v, ok := st[k]; ok {
 			env[k] = v
 		}

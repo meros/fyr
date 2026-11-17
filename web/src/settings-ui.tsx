@@ -4,6 +4,7 @@
 // dialog: the nav is its left column, the page its right pane) and the phone (the nav is the Settings screen, a page
 // is the next screen); the reason for the difference is width.
 
+import { HostMark } from "./host-mark-ui.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
 import { Boundary } from "./boundary.tsx";
@@ -1624,7 +1625,7 @@ function HostRow({ h, self, now, go, still }: { h: HostInfo; self: string; now: 
     <Row
       class="host"
       onClick={still ? undefined : () => go({ page: "hosts", sub: h.name })}
-      lead={<span class={`hdot${h.idWas ? " warn" : h.online ? "" : " off"}`} aria-hidden="true" />}
+      lead={<HostMark name={h.name} size={24} />}
       title={
         <>
           {h.name}

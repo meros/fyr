@@ -112,10 +112,12 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 /* V0.135: the title wraps to two lines before it is cut, and its box is always two lines high, so a row does not jump
    while a title streams in; the project is its icon at the title's start, inline, so the second line starts under it. */
 .rw .hd,.one .hd{position:relative;grid-column:2;grid-row:1;min-width:0}
-.rw .hd .t,.one .hd .t{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;height:2lh;overflow:hidden;overflow-wrap:anywhere;color:var(--ink);text-indent:calc(var(--ri) + 6px)}
-.hd.pinned .t{text-indent:calc(var(--ri) + 22px)}
-.hd .rpi{position:absolute;left:0;top:calc((var(--tlh) - var(--ri)) / 2);display:flex;z-index:1}
-.rw .hd .pin,.one .hd .pin{position:absolute;left:calc(var(--ri) + 5px);top:calc((var(--tlh) - 12px) / 2);display:grid;place-items:center;color:var(--harbour)}
+.rw .hd .t,.one .hd .t{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;height:2lh;overflow:hidden;overflow-wrap:anywhere;color:var(--ink);text-indent:calc(var(--rh,0px) + var(--ri) + 6px)}
+.hd.pinned .t{text-indent:calc(var(--rh,0px) + var(--ri) + 22px)}
+.hd .rpi{position:absolute;left:var(--rh,0px);top:calc((var(--tlh) - var(--ri)) / 2);display:flex;z-index:1}
+/* V0.170: the host's mark before the project's icon, with more than one host. */
+.hd .rhm{position:absolute;left:0;top:calc((var(--tlh) - var(--ri)) / 2);display:flex;z-index:1}
+.rw .hd .pin,.one .hd .pin{position:absolute;left:calc(var(--rh,0px) + var(--ri) + 5px);top:calc((var(--tlh) - 12px) / 2);display:grid;place-items:center;color:var(--harbour)}
 .rpn{color:var(--ink-muted)}
 .from.mark{margin-right:5px;color:var(--ink-faint);font:inherit;text-decoration:none}
 .from.mark.link:hover{color:var(--ink);text-decoration:none}
@@ -667,6 +669,10 @@ button.ptag{padding:0}
 .pfc .pfq{flex:none;font-weight:400;color:var(--ink-muted)}
 .pfc.quiet:not(.on) .ell{opacity:.6}
 .pfx{flex:none;width:26px;height:26px;border-radius:13px;background:var(--sunken);color:var(--ink-muted);font-size:15px;line-height:26px;text-align:center}
+/* V0.170: the host mark: a circle (hosts) with the machine's glyph in the host's colour; squares are projects. */
+.hmark{flex:none;position:relative;display:inline-grid;place-items:center;width:var(--hs,16px);height:var(--hs,16px);border-radius:50%;background:color-mix(in srgb,var(--hc) 16%,transparent);color:var(--hc)}
+.hmark svg{width:calc(var(--hs,16px) * .62);height:calc(var(--hs,16px) * .62)}
+.hmark.off::after{content:"";position:absolute;right:-2px;bottom:-2px;width:6px;height:6px;border-radius:50%;background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--ink-faint)}
 /* V0.169: the filter rows. Row 1 is a switch with one segment per host (dot, short name, its count); a host turned
    off is grey, struck through and says "hidden". Row 2 is the project chips. One line under both. */
 .frows{flex:none;border-bottom:1px solid var(--line)}
@@ -1505,7 +1511,10 @@ label.sr{cursor:pointer}
 .hm{display:flex;flex-direction:column;gap:2px;width:64px;min-width:0;--lv:var(--calm)}
 .hm.warm{--lv:var(--beam-mark)}
 .hm.hot{--lv:var(--signal-ink)}
-.hmn{font:500 9.5px/11px var(--mono);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hmn{display:flex;align-items:center;gap:3px;min-width:0;font:500 9.5px/11px var(--mono);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hostc .hmark{margin-left:-3px}
+.hostsel{display:flex;align-items:center;gap:8px;min-width:0}
+.hostsel select{flex:1}
 .hmr{display:grid;grid-template-columns:17px minmax(8px,1fr) auto;align-items:center;column-gap:3px;font:400 9px/11px var(--mono);color:var(--ink-faint);cursor:default}
 .hmb{display:flex;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
 .hmb i{display:block;flex:none;height:100%}
