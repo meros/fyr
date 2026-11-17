@@ -68,8 +68,14 @@ export function Rail(p: RailProps) {
           <span class="k">\</span>
         </button>
       )}
-      {p.profiles && <LoadRail />}
-      {p.profiles && <QuotaRail profiles={p.profiles} />}
+      {/* V0.141: the load and the quota are the rail's middle, its own scroll area; the sections above and the bell,
+          Changes and Settings below keep their size, so the rail never runs past the window. */}
+      {p.profiles && (
+        <div class="rmid">
+          <LoadRail />
+          <QuotaRail profiles={p.profiles} />
+        </div>
+      )}
       {p.extra && <div class="railx">{p.extra}</div>}
       {p.onChanges && (
         <button class="ri rchg" title="Changes across threads" aria-label={`Changes${p.changesNeeds ? `, ${p.changesNeeds} need you` : ""}`} onClick={p.onChanges}>
