@@ -51,7 +51,8 @@ export interface Api {
   thread(threadId: string): Promise<ThreadDTO | null>;
   /** V0.38: one event whole (the stream and the list cut large tool output) */
   fullEvent(threadId: string, seq: number): Promise<FyrEvent | null>;
-  t3Candidates(): Promise<T3Candidate[]>;
+  /** V0.139: `host` names whose T3 ("" or missing: the first host) */
+  t3Candidates(host?: string): Promise<T3Candidate[]>;
   /** Web Push (SPEC V0.15): the host's VAPID public key, base64url. */
   pushKey(): Promise<string>;
   pushSubscribe(subscription: PushSubscriptionJSON, device: string): Promise<PushReply>;
@@ -363,8 +364,8 @@ function createHttpApi(): Api {
       const j = (await r.json()) as { events?: FyrEvent[] };
       return j.events ?? [];
     },
-    async t3Candidates() {
-      const r = await fetch("/api/t3/candidates");
+    async t3Candidates(host) {
+      const r = await fetch(fsQuery("/api/t3/candidates", host)); // V0.139: that host's T3
       if (!r.ok) throw new Error(`candidates ${r.status}`);
       const j = (await r.json()) as { threads?: T3Candidate[] };
       return j.threads ?? [];
