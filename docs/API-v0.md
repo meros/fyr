@@ -104,7 +104,7 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
  "effect": {"action": "pr.merge", "args": {"pr": "…", "method": "squash"}, "reason": "…"}}
 ```
 
-## The front's API: the host in the path (decision 0031, V0.171)
+## The front's API: the host in the path (decision 0031, V0.172)
 
 A front serves two prefixes; every other `/api/` path is an old route (`Deprecation: true`, counted, removed one release after the client stops using it). The host protocol below does not change: a host never sees the prefix.
 
