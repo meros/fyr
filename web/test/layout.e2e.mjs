@@ -1724,15 +1724,15 @@ try {
 }
 });
 
-// SPEC V0.140: the rail fits the window at any height. With two hosts (two load rings) and four providers (four quota
+// SPEC V0.141: the rail fits the window at any height. With two hosts (two load rings) and four providers (four quota
 // lines), at 1280 × 700 and 1280 × 900: the rail's first item (the brand) and last (the host line) are inside the
 // window, and so are every section, List, the bell, Changes and Settings; the document does not scroll; the rail is
 // the window's height; the middle (the rings and the quota) is the only part that may scroll, and at 900 it shows
 // everything; at 700 the rail is compact (no key hints) and the two rings sit side by side.
-section('V0.140', async (h) => {
+section('V0.141', async (h) => {
   const { send, evaluate, waitFor, settle, navigate } = h;
   for (const ht of [700, 900]) {
-    const ctx = `V0.140 desktop 1280x${ht}`;
+    const ctx = `V0.141 desktop 1280x${ht}`;
     try {
       await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: ht, deviceScaleFactor: 1, mobile: false });
       await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.rail .bell') && document.querySelectorAll('.rail .rmid .rldr').length === 2 && document.querySelectorAll('.rail .rmid .rqr').length === 4");

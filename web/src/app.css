@@ -1328,7 +1328,7 @@ label.sr{cursor:pointer}
 .btn.p.danger,.m-bt.p.danger{background:var(--signal-ink);border-color:var(--signal-ink);color:var(--raised)}
 .btn.p.danger kbd{color:var(--raised)}
 
-/* SPEC V0.140 (amends V0.99, V0.118): the rail fits the window at any height. The shell is the window's height and
+/* SPEC V0.141 (amends V0.99, V0.118): the rail fits the window at any height. The shell is the window's height and
    never scrolls; each column scrolls on its own. In the rail only the middle (the load rings and slot pips per host,
    the quota lines) gives way: it is its own scroll area, so the sections, List, the bell, Changes, Settings and the
    host line keep their size and stay in view. The rings and the quota lines sit two to a row where they fit. A
@@ -1347,6 +1347,8 @@ label.sr{cursor:pointer}
 .rail .rmid~.foot{margin-top:6px}
 .rail .rmid>.rld{flex-direction:row;flex-wrap:wrap;justify-content:center;align-items:flex-start;gap:6px 4px}
 .rail .rmid>.rq{flex-direction:row;flex-wrap:wrap;justify-content:center;gap:3px 6px}
+/* V0.140's host name under each ring (several hosts) is cut to the ring's column, so two rings still sit side by side. */
+.rail .rmid .rldh{max-width:36px}
 @container rail (max-height: 860px){
   .rail .ri .k{display:none}
   .rail .ri{padding:5px 0 4px}

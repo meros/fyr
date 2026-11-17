@@ -65,7 +65,7 @@ export function Rail(p: RailProps) {
           <span class="k">\</span>
         </button>
       )}
-      {/* V0.140: the load and the quota are the rail's middle, its own scroll area; the sections above and the bell,
+      {/* V0.141: the load and the quota are the rail's middle, its own scroll area; the sections above and the bell,
           Changes and Settings below keep their size, so the rail never runs past the window. */}
       {p.profiles && (
         <div class="rmid">
