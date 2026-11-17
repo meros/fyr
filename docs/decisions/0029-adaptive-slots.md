@@ -175,10 +175,7 @@ B is shown, never hidden. AIMD is the TCP and Netflix concurrency-limits pattern
 - V0.80 already shows each thread's CPU in its row; S1 adds nothing more for unslotted threads.
 - In the window, unslotted work was about 1.3–1.6 units most of the time. Without #174 making that work take slots, the pressure gate will often be the binding rule.
 
-The option that was not chosen, kept for the record: count a thread without a slot as load **U** when it uses more than 0.5 cores or 1.5 GB above its baseline over 30 s;
-- with B = 2.0, only cheap jobs would have been admitted, and the rail would have said why: "1.5 of 2.0 used by work without a slot".
-
-and add U to rule 1. It can be revisited from S1's data if #174 does not close the gap.
+The option that was not chosen, kept for the record: count a thread without a slot as load **U** when it uses more than 0.5 cores or 1.5 GB above its baseline over 30 s, and add U to rule 1. With B = 2.0, only cheap jobs would then have been admitted in the window. It can be revisited from S1's data if #174 does not close the gap.
 
 ## 6. Slices
 
