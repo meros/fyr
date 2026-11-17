@@ -2343,6 +2343,46 @@ for (const [label, w, ht] of [
     });
 });
 
+// SPEC V0.140: the display surfaces say which host, with several hosts. 1 each ring of the desktop rail's load names
+// its host (under it, and first in its label); one host: no name. 2 a change card on the board names its thread's
+// host, the same on the desktop and the phone.
+section("V0.140 rail", async (hn) => {
+  const { evaluate, waitFor, navigate } = hn;
+  const ctx = "V0.140 rail";
+  try {
+    await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.shell')");
+    await waitFor("document.querySelectorAll('.rldr').length === 2");
+    const r = await evaluate(`[...document.querySelectorAll('.rldr')].map(x => ({ name: x.querySelector('.rldh')?.textContent ?? '', label: x.getAttribute('aria-label') }))`);
+    check(r.length === 2 && r[0].name === "desk" && r[1].name === "lab" && r.every((x) => x.label.startsWith(`${x.name}: load `)), `${ctx}: the rings name their hosts ${JSON.stringify(r)}`);
+    await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.shell')");
+    await waitFor("document.querySelectorAll('.rldr').length === 1");
+    const one = await evaluate(`({ name: !!document.querySelector('.rldh'), label: document.querySelector('.rldr')?.getAttribute('aria-label') ?? '' })`);
+    check(!one.name && one.label.startsWith("Load "), `${ctx}: one host names none ${JSON.stringify(one)}`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+for (const [label, w, ht] of [
+  ["desktop", 1280, 800],
+  ["phone", 390, 844],
+]) section(`V0.140 board ${label}`, async (hn) => {
+  const { evaluate, waitFor, navigate, openScreen, shot } = hn;
+  const ctx = `V0.140 board ${label}`;
+  const phone = label === "phone";
+  try {
+    if (phone) await openScreen({ url: "?mock=1&hosts=2&changes", ready: "document.querySelectorAll('.bdfrom').length > 0" }, w, ht);
+    else await navigate(`${origin}/?mock=1&hosts=2&dialog=changes`, "document.querySelectorAll('.bdfrom').length > 0");
+    const cards = await evaluate(`[...document.querySelectorAll('.bdfrom')].map(b => b.querySelector('.bdhost')?.textContent ?? '')`);
+    check(cards.length > 0 && cards.every((h) => h === "desk" || h === "host-b"), `${ctx}: every card names its host ${JSON.stringify(cards)}`);
+    await shot(`hostdisplay-board-${label}.png`);
+    if (phone) await openScreen({ url: "?mock=1&changes", ready: "document.querySelectorAll('.bdfrom').length > 0" }, w, ht);
+    else await navigate(`${origin}/?mock=1&dialog=changes`, "document.querySelectorAll('.bdfrom').length > 0");
+    check((await evaluate("document.querySelectorAll('.bdhost').length")) === 0, `${ctx}: one host: no host on the cards`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+
 // V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.
 section('V0.35', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
