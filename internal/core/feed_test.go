@@ -228,6 +228,15 @@ func TestNoticeRules(t *testing.T) {
 			}
 		},
 		// state: next, which wakes nobody (V0.95 (1)); unsettle too.
+		// V0.149 (8): an agent message that asks the owner to run a
+		// command in prose: the tool's name at the next step.
+		"runrequest": func(t *testing.T) {
+			msg := map[string]any{"type": "assistant", "message": map[string]any{"content": []any{map[string]any{"type": "text", "text": "```\n! ls\n```"}}}}
+			th, res := fstep(t, feedThread(), Input{Source: Observer(ObsProcess), Kind: KindDigest, Args: DigestArgs{Log: []Event{{"msg", msg}}}}, ct0)
+			if n := queued(t, th, "prose-command"); n.Urgency != Next || n.What != ProseCommandText || wakes(res) {
+				t.Fatalf("prose command: %+v", n)
+			}
+		},
 		"owner": func(t *testing.T) {
 			th, res := fstep(t, feedThread(), Input{Source: FromOwner, Kind: "thread.rename", Args: Args{"title": "Login fix"}}, ct0)
 			if n := queued(t, th, "owner:title"); n.Urgency != Next || n.What != `The owner renamed this thread to "Login fix".` || wakes(res) {

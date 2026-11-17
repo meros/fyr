@@ -239,6 +239,14 @@ export function changeEventLine(d: Record<string, unknown> | undefined): string 
 
 /** An `action` event (a press or its result) as one conversation line (V0.60 (4)). */
 export function actionEventLine(d: Record<string, unknown> | undefined): { line: string; ok: boolean } {
+  if (d?.request) {
+    // V0.149 (6): a run request's lines name its why
+    const why = String(d.why ?? d.label ?? "the command");
+    if (d.dismissed) return { line: d.ran ? `You closed “${why}”` : `You chose Not now for “${why}”`, ok: true };
+    if (!d.ended) return { line: `You ran “${why}”${d.root ? " as root" : ""}`, ok: true };
+    const ok = !!d.ok;
+    return { line: ok ? `“${why}” succeeded` : `“${why}” failed${d.exit ? ` (exit ${d.exit})` : ""}`, ok };
+  }
   const label = String(d?.label ?? "Action");
   if (!d?.ended) return { line: `You pressed “${label}” on ${d?.title ?? "this thread"}`, ok: true };
   const ok = !!d.ok;

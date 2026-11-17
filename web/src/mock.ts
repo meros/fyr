@@ -1,7 +1,7 @@
 // Fixtures for ?mock=1 (full stress set) and ?mock=2 (sparse: empty sections). A tiny in-memory fyrd:
 // commands change the fixtures and push thread upserts, so the UI can be clicked through without a host.
 
-import type { Change, CommandReply, Decision, FsDir, FsListing, Project, QuietHours, TaskDTO, FyrEvent, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
+import type { Change, CommandReply, Decision, FsDir, FsListing, Project, QuietHours, TaskDTO, FyrEvent, Offer, StateDTO, T3Candidate, ThreadDTO } from "./types.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import type { Quota } from "./quota.ts";
@@ -759,6 +759,32 @@ function railFixture(now: number): Fixture {
   // V0.22: Search index was started by Map perf's agent, which also wrote to Babysit PR #4170.
   for (const t of threads) if (t.id === "t_search") t.parent = "t_mapperf";
   for (const t of threads) if (t.id === "t_dish") t.cwd = "/home/owner/scratch/2026-11-14-dishwasher";
+  // V0.149: &runs=1 adds a thread whose agent asked the owner to run two commands (a root one with a Nix store path,
+  // one that ran and failed) and wrote a third in prose; &rootprompt=no says no polkit agent runs on its host.
+  if (MOCK_RUNS) {
+    const mint = "/nix/store/prc4lv5v5kppd7rgz3h2fh9wq3n4zj9y-nfc-mint-0.3.1/bin/nfc-mint --device /dev/sdc1 --profile lab-badge --out /run/media/owner/SD/badges";
+    const req = (id: string, command: string, why: string, root: boolean): Offer => ({ id, on: "thread", label: root ? "Run as root" : "Run", run: "script", argv: ["bash", "-euo", "pipefail", "-c", command], cwd: "/home/owner/src/badges", request: true, command, why, root, by: "agent", digest: `d-${id}` });
+    const t = base("t_run", "Mint the lab badges", now, 1, {
+      project: "acme/ops",
+      cwd: "/home/owner/src/badges",
+      summary: "The minting needs the SD card mounted and root for the NFC device.",
+      attention: { state: "blocked", section: "needs", reason: "Run: Mount the SD card and mint the badge onto it" },
+      offers: [
+        req("run-1", `udisksctl mount -b /dev/sdc1\n${mint}`, "Mount the SD card and mint the badge onto it", true),
+        req("run-2", "nix build .#badges --print-build-logs", "Build the badge images", false),
+      ],
+      runs: [{ action: "run-2", label: "Run", by: "owner", at: min(4), ok: false, exit: 1, endedAt: min(3), output: Array.from({ length: 16 }, (_, i) => `badges> building layer ${i + 1}/16`).join("\n") + "\nerror: builder for '/nix/store/x3k9-badges.drv' failed with exit code 1" }],
+      ...(MOCK_ROOTPROMPT ? { rootPrompt: "no polkit authentication agent runs in your session" } : {}),
+      unavailable: quiet,
+    });
+    threads.unshift(t);
+    events.t_run = [
+      ev(1, now - 6 * 60_000, "t_run", "user", { text: "Mint the lab badges onto the SD card.", images: 0 }),
+      ev(2, now - 6 * 60_000 + 1000, "t_run", "run.started", {}),
+      ev(3, now - 5 * 60_000, "t_run", "msg", assistantText("The minting needs a device:\n\n```\n! sudo " + mint + "\n! udisksctl mount -b /dev/sdc1\n```\n\nThe minting runs in a bwrap sandbox, so it cannot open the device itself.")),
+      ev(4, now - 5 * 60_000 + 1000, "t_run", "run.ended", { failure: null, interrupted: false, costUsd: 0.12, durationMs: 60_000 }),
+    ];
+  }
   events.t_babysit = [
     ...events.t_babysit,
     ev(events.t_babysit.length + 1, now - 2 * 60_000, "t_babysit", "user", { text: "The map tests pass on map-perf now. Rebase on it before you merge #4170.", from: "t_mapperf" }),
@@ -1684,6 +1710,8 @@ function mockDeploy() {
 
 /** V0.54: ?hosts=2 in the mock shows a front with two hosts, the second (host-b, with t_lasso and t_triage)
  *  offline for 25 minutes (the layout test uses it). Read once at load, as ?deploy=. */
+const MOCK_RUNS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("runs") === "1" : false;
+const MOCK_ROOTPROMPT = typeof location !== "undefined" ? new URLSearchParams(location.search).get("rootprompt") === "no" : false;
 const MOCK_HOSTS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("hosts") === "2" : false;
 const MOCK_REMOTE = new Set(["t_lasso", "t_triage"]);
 /** V0.124: "lab" answers with another install id than the one the front first saw, until the owner trusts it. */

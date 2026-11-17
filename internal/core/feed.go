@@ -286,6 +286,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "upkeep.reminder", Urgency: Next, OnTake: upkeepReminder},
 	{Name: "owner", Urgency: Next, OnReduce: ownerNotices},
 	{Name: "slot", Urgency: Wake, OnReduce: slotNotices},
+	{Name: "runrequest", Urgency: Next, OnReduce: runRequestNotices},
 }
 
 // EventSlot is the event of a slot for a heavy job that became the
@@ -400,6 +401,16 @@ func resultNotices(r Reduced) []Notice {
 			out = append(out, n)
 		case ev.Type == "action" && d["ended"] == true && d["run"] == RunAgent && d["ok"] == true && str(d["output"]) == "":
 			// An agent action sent to this agent: the message itself is the news.
+		case ev.Type == "action" && d["dismissed"] == true && d["ran"] != true:
+			out = append(out, Notice{About: "thread", Key: fmt.Sprintf("result:thread:%v", d["action"]),
+				What: fmt.Sprintf("The owner chose Not now for %q; do not ask again unless they ask.", str(d["why"]))})
+		case ev.Type == "action" && d["dismissed"] == true:
+		case ev.Type == "action" && d["ended"] == true && d["request"] == true:
+			ok, _ := d["ok"].(bool)
+			exit, _ := d["exit"].(int)
+			root, _ := d["root"].(bool)
+			out = append(out, Notice{About: "thread", Key: fmt.Sprintf("result:thread:%v", d["action"]),
+				What: requestResultText(str(d["why"]), root, ok, exit, str(d["output"]))})
 		case ev.Type == "action" && d["ended"] == true:
 			ok, _ := d["ok"].(bool)
 			exit, _ := d["exit"].(int)

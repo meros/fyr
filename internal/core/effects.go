@@ -50,7 +50,7 @@ func reduceEffectResult(r Rec, in Input, now time.Time) (Result, error) {
 			h.Ended(p.Action, x.OK, x.Exit, x.Text, now)
 		}
 		short := TruncTail(strings.TrimSpace(x.Text), 2000)
-		res.Events = append(res.Events, Event{"action", map[string]any{"on": p.On, "title": p.Title, "action": p.Action.ID, "label": p.Action.Label, "run": p.Action.Run, "ok": x.OK, "exit": x.Exit, "output": short, "ended": true}})
+		res.Events = append(res.Events, Event{"action", pressData(p.On, p.Title, p.Action, map[string]any{"ok": x.OK, "exit": x.Exit, "output": short, "ended": true})})
 	case ef.Kind == EffectRun && ef.Request != nil && ef.ByOwner:
 		req := *ef.Request
 		res.Events = append(res.Events, Event{"effect.result", map[string]any{"action": req.Action, "args": req.Args, "ok": x.OK, "text": ownerLine(req, x.OK, x.Text), "output": TruncTail(strings.TrimSpace(x.Text), 2000), "by": "owner"}})

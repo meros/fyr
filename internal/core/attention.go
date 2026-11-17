@@ -91,6 +91,10 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 	if c, n := ThreadNeed(t); n != nil {
 		return Attention{Blocked, NeedsYou, c.Title + ": " + n.Text}
 	}
+	// V0.149 (5): a command the agent asked the owner to run.
+	if a := PendingRequest(t); a != nil {
+		return Attention{Blocked, NeedsYou, "Run: " + a.Why}
+	}
 	if v == nil || t.ActivityAt.After(v.SeenAt) {
 		return Attention{Done, SeenSec, ""}
 	}

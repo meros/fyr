@@ -94,6 +94,8 @@ export interface ThreadDTO {
   host?: string;
   /** V0.51: the host is unreachable since then (RFC 3339): the front shows its cached copy, read-only */
   hostOffline?: string;
+  /** V0.149 (4): why a root run request cannot ask for the password on the thread's host; absent when it can */
+  rootPrompt?: string;
   id: string;
   title: string;
   cwd: string;
@@ -408,6 +410,11 @@ export interface Offer {
   revision?: string;
   onOk?: ChangePhase;
   primary?: boolean;
+  /** V0.149: a run request: the shell text the owner runs, why, and whether it runs as root through pkexec */
+  request?: boolean;
+  command?: string;
+  why?: string;
+  root?: boolean;
   by: "agent" | "observed";
   digest: string;
 }

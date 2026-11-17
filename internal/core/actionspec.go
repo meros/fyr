@@ -53,8 +53,15 @@ type ActionSpec struct {
 	Revision string  `json:"revision,omitempty"`
 	OnOK     Phase   `json:"onOk,omitempty"`
 	Primary  bool    `json:"primary,omitempty"`
-	By       string  `json:"by"` // agent or observed
-	Digest   string  `json:"digest"`
+	// Request, Command, Why and Root are a run request's (V0.149): the
+	// shell text the owner sees and runs (argv is bash -c it), one line
+	// why, and whether it runs as root through pkexec.
+	Request bool   `json:"request,omitempty"`
+	Command string `json:"command,omitempty"`
+	Why     string `json:"why,omitempty"`
+	Root    bool   `json:"root,omitempty"`
+	By      string `json:"by"` // agent or observed
+	Digest  string `json:"digest"`
 }
 
 // ActionRun is one press of an action and its result. On names the holder
@@ -82,6 +89,9 @@ type Actions struct {
 func (a ActionSpec) digest() string {
 	h := fnv.New64a()
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%q\x00%s\x00%d\x00%s\x00%s\x00%q\x00%s\x00%s", a.On, a.Label, a.Run, a.Effect, a.Argv, a.Cwd, a.TimeoutSec, a.Prompt, a.In, a.When, a.Revision, a.OnOK)
+	if a.Request { // V0.149: what the card shows; older digests stay as they were
+		fmt.Fprintf(h, "\x00%q\x00%q\x00%t", a.Command, a.Why, a.Root)
+	}
 	return fmt.Sprintf("%016x", h.Sum64())
 }
 
@@ -116,7 +126,17 @@ func HolderOf(t *Thread, on string) (Holder, error) {
 // needs argv; an agent action a prompt; ids starting with "fyr." are Fyr's.
 // The digest covers every field, so an action changed after the owner looked
 // does not run on the old press.
-func (h Holder) Declare(a ActionSpec) error {
+func (h Holder) Declare(a ActionSpec) error { return h.declare(a, false) }
+
+// declare is Declare; request: run_request declares it (V0.149), and only
+// it may.
+func (h Holder) declare(a ActionSpec, request bool) error {
+	if a.Request != request {
+		return errors.New("a run request is declared with run_request")
+	}
+	if !request {
+		a.Command, a.Why, a.Root = "", "", false
+	}
 	a.ID, a.Label = strings.TrimSpace(a.ID), strings.TrimSpace(a.Label)
 	if a.ID == "" || a.Label == "" {
 		return errors.New("an action needs an id and a label")
