@@ -469,8 +469,8 @@ function MInbox(p: PhoneProps) {
                 queue={queue}
                 threads={p.inbox.sec.slots}
                 row={(t, a) => (
-                  <div ref={a.attrs.ref} class={a.attrs.class || undefined} data-id={t.id}>
-                    <MRow key={t.id} t={t} p={p} needs={false} lead={a.lead} />
+                  <div key={t.id} ref={a.attrs.ref} class={a.attrs.class || undefined} data-id={t.id}>
+                    <MRow t={t} p={p} needs={false} lead={a.lead} />
                   </div>
                 )}
               />

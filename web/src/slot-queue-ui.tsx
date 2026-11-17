@@ -39,9 +39,10 @@ const HINT = "Heavy jobs (test suites, builds, e2e runs) take a slot; the first 
 export function SlotQueueSection(p: Props) {
   // The section shows only while a queue has anyone in it (V0.137 (1)); it has no collapse: it is short and passing.
   const [reordering, setReordering] = useState(false);
-  if (!p.queue.length) return null;
-  const parts = queueParts(p.queue);
   const shown = Object.fromEntries(p.threads.map((t) => [t.id, t]));
+  // Nothing to draw when every queued thread is hidden (a filter, a search, Needs you) and no priority wait is queued.
+  if (!withQueue(p.queue, shown).length) return null;
+  const parts = queueParts(p.queue);
   const movable = p.threads.length > 1;
   const n = p.threads.length;
   const body = parts.map((part) => <Part key={part.host} part={part} shown={shown} phone={p.phone} reordering={reordering && movable} row={p.row} />);
@@ -107,7 +108,7 @@ function Part({ part, shown, phone, reordering, row }: { part: QueuePart; shown:
         if (!r.thread)
           return (
             // The deploy's or the updater's tests go ahead of every thread (V0.86 (1)); nobody moves them.
-            <div class={phone ? "sqp m" : "sqp"} data-owner={r.entry.owner} title="Fyr's own tests go first and cannot be moved">
+            <div key={r.entry.owner} class={phone ? "sqp m" : "sqp"} data-owner={r.entry.owner} title="Fyr's own tests go first and cannot be moved">
               <span class="sqn pin">#{r.entry.pos}</span>
               <span class="ell">{priorityLabel(r.entry)}</span>
               <span class="sqk">first</span>
@@ -132,7 +133,7 @@ function Part({ part, shown, phone, reordering, row }: { part: QueuePart; shown:
         const ra = ro.row(k) as SlotRowArgs["attrs"];
         const el = row(t, { lead, attrs: ra });
         return phone && reordering ? (
-          <div class="sqmv" data-id={t.id}>
+          <div key={t.id} class="sqmv" data-id={t.id}>
             <div class="sqrow">{el}</div>
             <MoveButtons name={name} i={k} n={ids.length} onMove={(f, to) => void send(f, to)} />
           </div>

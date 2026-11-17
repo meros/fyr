@@ -225,7 +225,7 @@ export function Inbox(p: InboxProps) {
                 queue={queue}
                 threads={p.sec.slots}
                 row={(t, a) => (
-                  <OneRowBody t={t} now={p.now} look={DESKTOP_LOOK} lead={a.lead} extra={`${p.selected === t.id ? " sel" : ""}${p.picked.has(t.id) ? " picked" : ""}${a.attrs.class ? " " + a.attrs.class : ""}`} attrs={{ ...rowAttrs({ t, now: p.now, sel: p.selected === t.id, picked: p.picked.has(t.id), onClick: () => p.onClick(t.id) }), ref: a.attrs.ref }} />
+                  <OneRowBody key={t.id} t={t} now={p.now} look={DESKTOP_LOOK} lead={a.lead} extra={`${p.selected === t.id ? " sel" : ""}${p.picked.has(t.id) ? " picked" : ""}${a.attrs.class ? " " + a.attrs.class : ""}`} attrs={{ ...rowAttrs({ t, now: p.now, sel: p.selected === t.id, picked: p.picked.has(t.id), onClick: () => p.onClick(t.id) }), ref: a.attrs.ref }} />
                 )}
               />
             );
