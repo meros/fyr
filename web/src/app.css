@@ -103,10 +103,16 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .more:hover{background:var(--sunken)}
 .rw{display:grid;grid-template-columns:28px minmax(0,1fr) max-content;column-gap:10px;grid-auto-rows:auto;min-height:52px;padding:7px 8px;border-radius:10px;align-content:center;cursor:pointer}
 .rw .tile{grid-row:1/span 2;align-self:start}
-.rw .hd,.one .hd{grid-column:2;grid-row:1;display:flex;align-items:baseline;gap:6px;min-width:0}
-.rw .hd .ptag,.one .hd .ptag{flex:0 1 auto;max-width:45%;font:500 12px/20px var(--ui)}
-.rw .hd .t,.one .hd .t{flex:1 1 0;min-width:0}
-.rw .hd .pin,.one .hd .pin{flex:none;align-self:center;display:grid;place-items:center;color:var(--harbour)}
+/* V0.135: the title wraps to two lines before it is cut, and its box is always two lines high, so a row does not jump
+   while a title streams in; the project is its icon at the title's start, inline, so the second line starts under it. */
+.rw .hd,.one .hd{position:relative;grid-column:2;grid-row:1;min-width:0}
+.rw .hd .t,.one .hd .t{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;height:2lh;overflow:hidden;overflow-wrap:anywhere;color:var(--ink);text-indent:calc(var(--ri) + 6px)}
+.hd.pinned .t{text-indent:calc(var(--ri) + 22px)}
+.hd .rpi{position:absolute;left:0;top:calc((var(--tlh) - var(--ri)) / 2);display:flex;z-index:1}
+.rw .hd .pin,.one .hd .pin{position:absolute;left:calc(var(--ri) + 5px);top:calc((var(--tlh) - 12px) / 2);display:grid;place-items:center;color:var(--harbour)}
+.rpn{color:var(--ink-muted)}
+.from.mark{margin-right:5px;color:var(--ink-faint);font:inherit;text-decoration:none}
+.from.mark.link:hover{color:var(--ink);text-decoration:none}
 .rw .cl{grid-column:2/4;display:flex;flex-wrap:wrap;gap:4px;min-width:0;margin-top:3px}
 .rw .cl .pr{max-width:100%}
 .rw:hover:not(.sel),.one:hover:not(.sel){background:var(--surface)}
@@ -114,24 +120,25 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .tile{grid-row:1/3;width:28px;height:28px;border-radius:8px;background:var(--sunken);display:grid;place-items:center;align-self:center;--knock:var(--sunken)}
 .rw.sel .tile{background:var(--raised);--knock:var(--raised)}
 .rw .t{font:500 13px/20px var(--ui)}
+.rw .hd{--tlh:20px}
 .rw.dn .t{font-weight:600}
 .rw .age{grid-column:3;grid-row:1;justify-self:end;align-self:start;min-width:0;font:400 12px/20px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-muted);text-align:right;white-space:nowrap}
 .rw .m{grid-column:2/4;font:400 12px/18px var(--ui);color:var(--ink-muted)}
 .pr{display:inline-block;height:18px;padding:0 7px;border-radius:9px;border:1px solid var(--line);font:500 11px/16px var(--mono);color:var(--ink-muted);white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis}
 .pr.ok{color:var(--calm)}.pr.fail{color:var(--signal-ink);border-color:var(--signal-ink)}.pr.merged{background:var(--sunken)}
 .pr.none{display:none}
-.one{display:grid;grid-template-columns:28px minmax(0,1fr) 64px;column-gap:10px;align-items:center;min-height:30px;padding:4px 8px;border-radius:8px;font:400 12px/16px var(--ui);color:var(--ink-muted);cursor:pointer}
+.one{display:grid;grid-template-columns:28px minmax(0,1fr) 64px;column-gap:10px;align-items:start;min-height:30px;padding:4px 8px;border-radius:8px;font:400 12px/16px var(--ui);color:var(--ink-muted);cursor:pointer}
 .one.sel{background:var(--select);--knock:var(--select)}
-.one .ic{justify-self:center;grid-row:1}
-.one .t{font:500 13px/20px var(--ui);color:var(--ink-muted)}
-.one.sel .t{color:var(--ink)}
+.one .ic{justify-self:center;grid-row:1;margin-top:1px}
+.one .t{font:500 13px/18px var(--ui)}
+.one .hd{--tlh:18px}
 .one .m{grid-column:2/4;display:flex;align-items:center;gap:4px 8px;min-width:0}
 .one .m:not(:has(.cl)):has(> i:empty){display:none}
-.one .m i{flex:1 1 0;min-width:0;font:400 11px/16px var(--mono);font-style:normal}
+.one .m i{flex:1 1 0;min-width:0;font:400 12px/16px var(--ui);font-style:normal}
 .one .m i:empty{display:none}
 .one .cl{display:flex;gap:4px;flex:none;margin-left:auto}
 .one .m i:empty+.cl{margin-left:0}
-.one .age{grid-column:3;grid-row:1;font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden}
+.one .age{grid-column:3;grid-row:1;font:400 12px/18px var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden}
 .sb{font:400 11px/16px var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .rw.picked,.one.picked{box-shadow:inset 0 0 0 1px var(--harbour)}
 

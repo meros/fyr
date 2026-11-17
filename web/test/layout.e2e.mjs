@@ -335,7 +335,7 @@ const MEASURE = `(() => {
     innerWidth: window.innerWidth,
     projectEditor: !!document.querySelector('.pedit'),
     filterLine: !!document.querySelector('.m-screen .pfrow .pfc.on'),
-    otherProjectRows: [...document.querySelectorAll('.m-list .ptag .ptn')].filter(e => e.textContent !== 'acme/web').length,
+    otherProjectRows: [...document.querySelectorAll('.m-list .rpi')].filter(e => e.getAttribute('title') !== 'acme/web').length, // V0.135: the row's project is its icon
     saveButton: [...document.querySelectorAll('.pedit button')].some((b) => b.textContent.trim() === 'Save' && b.getBoundingClientRect().height > 0),
     projectGroups: [...document.querySelectorAll('.pedit > .sg > .sg-h .sg-t')].map((e) => e.textContent),
     // V0.119: the button beside a focused text field (Save, Add, Save key) stays in view with the keyboard up.
@@ -2727,16 +2727,16 @@ section('V0.91', async (h) => {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
-  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.list .rw .hd .ptag') && !!document.querySelector('.list .one .hd .ptag')");
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.list .rw .hd .rpi') && !!document.querySelector('.list .one .hd .rpi')");
   const r = await evaluate(`(() => {
     const bad = [];
     const rows = [...document.querySelectorAll('.list .rw, .list .one')];
     for (const row of rows) {
       const id = row.dataset.id, box = row.getBoundingClientRect();
-      const tag = row.querySelector('.hd .ptag'), title = row.querySelector('.hd .t');
+      const tag = row.querySelector('.hd .rpi'), title = row.querySelector('.hd .t'); // V0.135: the project is its icon
       if (!tag || !title) { bad.push(id + ': no project or title'); continue; }
       const a = tag.getBoundingClientRect(), b = title.getBoundingClientRect();
-      if (a.right > b.left + 0.5) bad.push(id + ': project not before the title');
+      if (a.left > b.left + 2) bad.push(id + ': project not at the title start');
       if (Math.abs(a.top - b.top) > 4) bad.push(id + ': project and title not on one line');
       for (const c of row.querySelectorAll('.pr:not(.none), .sb')) {
         const cr = c.getBoundingClientRect();
@@ -2750,6 +2750,50 @@ try {
   check(r.n >= 8 && r.bad.length === 0, `V0.91 desktop: inbox rows (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.91 desktop: ${e.message}`);
+}
+});
+
+// SPEC 0.5 V0.135: the title gets the room. At the desktop list and at 390 px on the phone, every inbox row's title
+// box is at least 60 % of the row and always two lines high (clamped at two, so a title that streams in does not
+// move the row); the project is its icon before the title (the name only on the second line, muted, and only without
+// an image icon); a thread started by another shows a quiet ↳ (UI font, not link blue), never "from <parent title>".
+for (const [front, w, h, list] of [["desktop", 1280, 900, ".list"], ["phone", 390, 844, ".m-list"]]) section(`V0.135 ${front}`, async ({ send, evaluate, navigate, openScreen }) => {
+try {
+  if (front === "desktop") {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.list .one .hd .t')");
+  } else await openScreen({ url: "?mock=rail", ready: "!!document.querySelector('.m-list .hd .t')" }, w, h);
+  const r = await evaluate(`(() => {
+    const bad = [], rows = [...document.querySelectorAll('${list} .rw, ${list} .one')];
+    let marks = 0, named = 0, clamped = 0;
+    for (const row of rows) {
+      const id = row.dataset.id || row.textContent.slice(0, 24), box = row.getBoundingClientRect();
+      const t = row.querySelector('.hd .t'), icon = row.querySelector('.hd .rpi');
+      if (!t || !icon) { bad.push(id + ': no title or project icon'); continue; }
+      const tb = t.getBoundingClientRect(), ib = icon.getBoundingClientRect(), cs = getComputedStyle(t), lh = parseFloat(cs.lineHeight);
+      if (tb.width < box.width * 0.6) bad.push(id + ': title ' + Math.round(tb.width) + ' of ' + Math.round(box.width) + ' px');
+      if (Math.abs(tb.height - 2 * lh) > 1) bad.push(id + ': title box ' + tb.height + ' px, not 2 lines of ' + lh);
+      if (cs.webkitLineClamp !== '2') bad.push(id + ': title not clamped at 2 lines (' + cs.webkitLineClamp + ')');
+      if (ib.left > tb.left + 2 || Math.abs(ib.top - tb.top) > 6) bad.push(id + ': project icon not at the title start');
+      if (row.querySelector('.hd .ptn')) bad.push(id + ': project name on the title line');
+      if (t.scrollHeight > t.clientHeight + 1) clamped++;
+      if (row.querySelector('.m .rpn')) named++;
+      if (/from /.test(row.querySelector('.m')?.textContent ?? '')) bad.push(id + ': repeats "from <parent>"');
+      for (const f of row.querySelectorAll('.from')) {
+        marks++;
+        const fs = getComputedStyle(f);
+        if (f.textContent.trim() !== '↳' || !(f.getAttribute('title') || '').startsWith('from ')) bad.push(id + ': parent mark is ' + f.textContent);
+        if (/mono/i.test(fs.fontFamily)) bad.push(id + ': parent mark in monospace');
+        if (fs.color === getComputedStyle(document.documentElement).getPropertyValue('--harbour').trim() || fs.textDecorationLine === 'underline') bad.push(id + ': parent mark looks like a link');
+      }
+    }
+    return { n: rows.length, marks, named, clamped, bad: bad.slice(0, 12) };
+  })()`);
+  check(r.n >= 8 && r.marks >= 1 && r.named >= 1 && r.bad.length === 0, `V0.135 ${front}: inbox rows (${JSON.stringify(r)})`);
+  if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, `rows-${front}.png`), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+} catch (e) {
+  failures.push(`V0.135 ${front}: ${e.message}`);
 }
 });
 
@@ -3127,6 +3171,8 @@ try {
 // The phone screens after the sections: the sections are the longest jobs, so they start first and the short
 // screens fill the tabs at the end.
 for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.name} ${w}x${hh}`, run: (t) => phonePass(t, w, hh, [s]) });
+// FYR_SECTIONS=<regex> runs only the jobs whose name matches (a quick local run of one section; CI runs them all).
+if (process.env.FYR_SECTIONS) { const re = new RegExp(process.env.FYR_SECTIONS); for (const l of [jobs, timedJobs]) l.splice(0, l.length, ...l.filter((j) => re.test(j.name))); }
 const started = Date.now();
 await runJobs(jobs, TABS);
 const poolDone = Date.now();

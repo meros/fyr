@@ -927,6 +927,7 @@ function App() {
     openProject: openProjectScreen,
     pickProject: (id) => (phoneRef.current ? navGo({ ...navRef.current, sheet: { kind: "project", ids: [id] } }) : openPicker([id])),
     host: store.host,
+    projectFilter: filterOn ? projectFilter : null,
   };
 
   const create = async (a: NewThreadArgs): Promise<string | null> => {
