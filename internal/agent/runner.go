@@ -181,7 +181,8 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 	}
 	s := &session{thread: t.ID, proc: p.ID, cwd: t.Cwd, token: meta.Token, asks: map[string]chan core.Effect{}, reqs: map[string]string{},
 		digest: newDigest(), out: map[string]string{}, cancelling: map[string]bool{}, effort: meta.Effort,
-		viewTools: meta.ViewTools, changeTools: meta.ChangeTools, live: t.Running, lifecycle: true}
+		viewTools: meta.ViewTools, changeTools: meta.ChangeTools, live: t.Running, lifecycle: true,
+		bg: t.RunningTasks()} // V0.133: until the CLI reports its tasks again
 	for _, o := range t.Outbox {
 		s.out[o.ID] = o.State
 	}

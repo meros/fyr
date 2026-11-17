@@ -329,6 +329,15 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         pushItem({ kind: "effect", key, action: str(e.data?.action), ok: !!e.data?.ok, text, line: firstLine(text) || (e.data?.ok ? "Done" : "Failed") });
         break;
       }
+      case "tool.refused": {
+        // V0.133: the agent CLI refused a tool call without asking Fyr (its
+        // input was closed); one failed line, so "stopped at your request"
+        // is not read as the owner's doing.
+        const tool = str(e.data?.tool) || "A tool call";
+        const why = str(e.data?.why) || "The agent CLI refused it without asking Fyr; not the owner.";
+        pushItem({ kind: "effect", key, action: "refused", ok: false, text: why, line: `${tool} was refused without asking you` });
+        break;
+      }
       case "change": {
         // V0.59: a change tool call, one line; the Changes tab holds the record.
         const line = changeEventLine(e.data);
