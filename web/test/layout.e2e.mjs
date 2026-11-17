@@ -3237,6 +3237,69 @@ try {
 }
 });
 
+// SPEC 0.5 V0.138: a thread that opens clears the filters it fails, so its row is in the list and marked (V0.109).
+// 1 filtered to desk and norban/web, a link to t_lasso (meros-server, norban/web) clears only the host filter and
+// marks its row. 2 with both filters failing, both clear. 3 V0.114: a link to a quiet thread shows the gate and
+// clears nothing.
+for (const phone of [false, true]) section(`V0.138 ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen } = h;
+  const ctx = `V0.138 ${phone ? "phone" : "desktop"}`;
+try {
+  const open = async (url, storage, ready) => {
+    if (phone) await openScreen({ url, storage: Object.fromEntries(Object.entries(storage).filter(([, v]) => v !== null)), ready }, 390, 844);
+    else {
+      await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/${url}`, "!!document.querySelector('.ib .list')");
+      await evaluate(`(() => { const s = ${JSON.stringify(storage)}; for (const k in s) s[k] === null ? localStorage.removeItem(k) : localStorage.setItem(k, s[k]); return true; })()`);
+      await navigate(`${origin}/${url}`, ready);
+    }
+    await settle();
+  };
+  const F = `({ host: localStorage.getItem('fyr.hostFilter'), project: localStorage.getItem('fyr.projectFilter') })`;
+  const MARK = `({ ids: [...document.querySelectorAll('.list [aria-selected="true"]')].map((x) => x.dataset.id), pane: document.querySelector('.th .tt')?.getAttribute('title') ?? null })`;
+  const threadReady = phone ? "!!document.querySelector('.m-thread, .qgate')" : "!!document.querySelector('.th .tt, .qgate')";
+  // 1. Only the host filter fails.
+  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostFilter": "desk", "fyr.projectFilter": "p_web" }, threadReady);
+  await waitFor(`${F}.host === null`, { soft: true });
+  const a = await evaluate(F);
+  check(a.host === null && a.project === "p_web", `${ctx}: a link to a meros-server thread under the desk filter (${JSON.stringify(a)})`);
+  if (!phone) {
+    await waitFor(`${MARK}.ids[0] === 't_lasso'`, { soft: true });
+    const m = await evaluate(MARK);
+    check(m.ids.length === 1 && m.ids[0] === "t_lasso" && m.pane === "Fix map lasso on mobile", `${ctx}: the opened thread's row is not marked (${JSON.stringify(m)})`);
+    // Picking a filter while the thread is open does not clear it again.
+    await evaluate(`[...document.querySelectorAll('.ib .pfrow .pfh')].find((b) => b.textContent.includes('desk'))?.click()`);
+    await waitFor(`${F}.host === 'desk'`, { soft: true });
+    await settle();
+    check((await evaluate(F)).host === "desk", `${ctx}: a host picked while the thread is open is cleared again`);
+  } else {
+    // Back to the list: the thread's row is there.
+    await evaluate(`history.back()`);
+    await waitFor(`[...document.querySelectorAll('.m-list .m-mv')].some((r) => r.textContent.includes('Fix map lasso'))`, { soft: true });
+    check(await evaluate(`[...document.querySelectorAll('.m-list .m-mv')].some((r) => r.textContent.includes('Fix map lasso'))`), `${ctx}: the opened thread's row is not in the list after Back`);
+  }
+  // 2. Both fail.
+  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostFilter": "desk", "fyr.projectFilter": "p_home" }, threadReady);
+  await waitFor(`${F}.host === null && ${F}.project === null`, { soft: true });
+  const b = await evaluate(F);
+  check(b.host === null && b.project === null, `${ctx}: both filters failing (${JSON.stringify(b)})`);
+  if (!phone) {
+    // 2b. A thread in the folded Settled section: the filter clears, then its section opens and its row is marked.
+    await open("?mock=rail&hosts=2&open=t_set7", { "fyr.hostFilter": "meros-server", "fyr.projectFilter": null }, "!!document.querySelector('.th .tt')");
+    await waitFor(`${MARK}.ids[0] === 't_set7'`, { soft: true });
+    const m = await evaluate(MARK);
+    check(m.ids.length === 1 && m.ids[0] === "t_set7" && (await evaluate(F)).host === null, `${ctx}: a Settled thread opened under another host's filter (${JSON.stringify(m)})`);
+  }
+  // 3. A quiet thread: the gate, and the filter stays.
+  await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostFilter": "meros-server", "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");
+  await settle();
+  const c = await evaluate(F);
+  check(c.host === "meros-server", `${ctx}: a link to a quiet thread cleared the filter before the hold (${JSON.stringify(c)})`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // The phone screens after the sections: the sections are the longest jobs, so they start first and the short
 // screens fill the tabs at the end.
 for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.name} ${w}x${hh}`, run: (t) => phonePass(t, w, hh, [s]) });
