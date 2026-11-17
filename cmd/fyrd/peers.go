@@ -30,6 +30,15 @@ func wellKnown(cfg config, name, host, id string) peers.WellKnown {
 // installID is this install's key id (V0.124, decision 0026): the key is
 // made at the first start and kept in the data folder. fyrd does not start
 // without it, so the id never changes behind the owner's back.
+func installKey(data string) *identity.Key {
+	k, err := identity.Load(data)
+	if err != nil {
+		log.Fatalf("install key: %v", err)
+	}
+	log.Printf("install key id %s", k.ID())
+	return k
+}
+
 func installID(data string) string {
 	k, err := identity.Load(data)
 	if err != nil {

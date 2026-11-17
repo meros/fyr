@@ -487,6 +487,9 @@ func (f *Front) OwnerHandler(origin string) http.Handler {
 		}
 		api.WriteJSON(w, 200, f.authState())
 	})
+	if f.opt.OwnerRoutes != nil {
+		f.opt.OwnerRoutes(mux)
+	}
 	return mux
 }
 

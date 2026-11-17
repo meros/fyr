@@ -68,7 +68,7 @@ func authCommand(word string, args []string) error {
 		args = args[1:]
 	}
 	if len(rest) == 0 {
-		return fmt.Errorf("usage: fyr %s %s", word, map[string]string{"auth": "status | observe [browser|peer] | enforce [browser|peer]", "device": "add [-name N] | approve CODE | revoke ID | list"}[word])
+		return fmt.Errorf("usage: fyr %s %s", word, map[string]string{"auth": "status | observe [browser|peer] | enforce [browser|peer]", "device": "add [-name N] | approve CODE | revoke ID | list", "host": "list | drive ID on|off"}[word])
 	}
 	verb, more := rest[0], rest[1:]
 	switch word + " " + verb {
@@ -116,6 +116,33 @@ func authCommand(word string, args []string) error {
 			return err
 		}
 		fmt.Printf("Revoked %v.\n", out["revoked"])
+	case "host list":
+		out, err := ownerCall(*data, "GET", "/host/list", nil)
+		if err != nil {
+			return err
+		}
+		ms, _ := out["members"].([]any)
+		for _, x := range ms {
+			m, _ := x.(map[string]any)
+			note := ""
+			if self, _ := m["self"].(bool); self {
+				note = "  (this install)"
+			} else if d, _ := m["drive"].(bool); !d {
+				note = "  may not drive this host"
+			}
+			fmt.Printf("%-21v %-24v%s\n", m["id"], m["name"], note)
+		}
+		if n, ok := out["whoisLinkUses"].(float64); ok && n > 0 {
+			fmt.Printf("%d requests went over a whois link although a peer link exists.\n", int(n))
+		}
+	case "host drive":
+		if len(more) != 2 || (more[1] != "on" && more[1] != "off") {
+			return fmt.Errorf("usage: fyr host drive ID on|off")
+		}
+		if _, err := ownerCall(*data, "POST", "/host/drive", map[string]any{"id": more[0], "on": more[1] == "on"}); err != nil {
+			return err
+		}
+		fmt.Printf("%s %s drive this host.\n", more[0], map[string]string{"on": "may", "off": "may not"}[more[1]])
 	case "device list":
 		out, err := ownerCall(*data, "GET", "/device/list", nil)
 		if err != nil {

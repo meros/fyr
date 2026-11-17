@@ -478,7 +478,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// V0.54 (decision 0016): a host sends no push; the front that serves
 	// the devices does, for the threads of all its hosts.
 	// V0.51: the host never serves the client; a front does.
-	id := installID(data)
+	key := installKey(data)
+	id := key.ID()
 	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
 		Load:  sampler,
@@ -541,6 +542,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}}
 	if cfg.Role == "host" {
 		serve(ln, deploy.Health(hostHandler, health...))
+		startPeer(ctx, cfg, data, hostName, srv, nil, nil, key) // a host-only install pairs and serves its peer port too
 	} else {
 		// both (V0.51): the front reaches this host over a loopback link,
 		// through the host protocol only; agents keep /mcp on the main port.
@@ -554,10 +556,19 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// V0.123 (decision 0025): other installs find this one by its
 		// well-known answer, which names where its host protocol is.
 		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen), id)
-		fr := front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
-			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st, Auth: openAuth(h.st), Tailnet: tailnetNodes(cfg),
-			WellKnown: func() peers.WellKnown { return wk }}, hosts)
+		var fr *front.Front
+		var ps *peerSide
+		authStore := openAuth(h.st)
+		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
+			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st, Auth: authStore, Tailnet: tailnetNodes(cfg),
+			OwnerRoutes: func(mux *http.ServeMux) {
+				if ps != nil {
+					ps.ownerRoutes(fr)(mux)
+				}
+			},
+			WellKnown: func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }}, hosts)
 		go func() { fr.Run(ctx); close(frontDone) }()
+		ps = startPeer(ctx, cfg, data, hostName, srv, fr, authStore, key) // decision 0030 3.6
 		go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every)
 		// V0.81: a client-only deploy swaps the client this front serves.
 		dep.SwitchClient = func(build, dir string) error { return fr.SetClient(build, os.DirFS(dir)) }
@@ -615,13 +626,24 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	ln := listenLoopback(cfg.Listen)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	id := installID(data)
+	key := installKey(data)
+	id := key.ID()
 	wk := wellKnown(cfg, name, "", id)
-	fr := front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
-		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, Auth: openAuth(st), Tailnet: tailnetNodes(cfg), WellKnown: func() peers.WellKnown { return wk }}, cfg.Hosts)
+	var fr *front.Front
+	var ps *peerSide
+	authStore := openAuth(st)
+	fr = front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
+		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, Auth: authStore, Tailnet: tailnetNodes(cfg),
+		OwnerRoutes: func(mux *http.ServeMux) {
+			if ps != nil {
+				ps.ownerRoutes(fr)(mux)
+			}
+		},
+		WellKnown: func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }}, cfg.Hosts)
 	done := make(chan struct{})
 	go func() { fr.Run(ctx); close(done) }()
 	go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every) // V0.123
+	ps = startPeer(ctx, cfg, data, name, nil, fr, authStore, key)
 	hs := &http.Server{Handler: deploy.Health(fr.Handler(), storeHealthy(st), webHealthy(webFS)), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

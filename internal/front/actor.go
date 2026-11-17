@@ -6,9 +6,14 @@ package front
 // put on the request.
 
 import (
+	"errors"
 	"net/http"
+	"net/url"
+	"sync/atomic"
+	"time"
 
 	"github.com/meros/fyr/internal/authn"
+	"github.com/meros/fyr/internal/peerlink"
 	"github.com/meros/fyr/internal/server"
 )
 
@@ -110,3 +115,107 @@ func (m *routeMux) HandleFunc(p string, h func(http.ResponseWriter, *http.Reques
 // RoutePatterns lists the patterns of the browser API's mux (the test of
 // decision 0030 4.2 requests each).
 func (f *Front) RoutePatterns() []string { return f.mux().patterns }
+
+// PeerEndpoint is a host's peer link (decision 0030 3.6, V0.158): TLS 1.3 pinned
+// to the host's install id, on its peer port.
+type PeerEndpoint struct {
+	ID   string
+	Addr string // host:port of its peer port
+	Dial *peerlink.Dialer
+}
+
+type peerRoute struct {
+	rt   http.RoundTripper
+	base *url.URL
+}
+
+// linkTransport is how a front reaches one host. The peer link is preferred
+// once a roster member has one; the V0.51 whois link stays as the fallback (a
+// host with no peer link yet is followed as before), and its use is counted.
+type linkTransport struct {
+	whois     http.RoundTripper
+	whoisBase *url.URL // nil: the host has only a peer link
+	peer      atomic.Pointer[peerRoute]
+	downUntil atomic.Int64 // unix nanos: the peer link failed to connect; use the whois link until then
+	uses      atomic.Int64 // requests sent over the whois link although a peer link is attached
+}
+
+func (t *linkTransport) attach(ep PeerEndpoint) {
+	base, err := url.Parse("https://" + ep.Addr)
+	if err != nil || ep.Dial == nil {
+		return
+	}
+	t.peer.Store(&peerRoute{rt: ep.Dial.Transport(ep.ID, ep.Addr), base: base})
+	t.downUntil.Store(0)
+}
+
+func (t *linkTransport) hasPeer() bool { return t.peer.Load() != nil }
+
+func (t *linkTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	p := t.peer.Load()
+	if p != nil && time.Now().UnixNano() >= t.downUntil.Load() {
+		resp, err := p.rt.RoundTrip(reroute(r, p.base))
+		if err == nil {
+			return resp, nil
+		}
+		var de *peerlink.DialError
+		if !errors.As(err, &de) || t.whoisBase == nil {
+			return nil, err // a failure after the link was made is the request's own
+		}
+		t.downUntil.Store(time.Now().Add(30 * time.Second).UnixNano())
+	}
+	if t.whoisBase == nil {
+		return nil, errors.New("no route to the host: its peer link is down and it has no other")
+	}
+	if p != nil {
+		t.uses.Add(1)
+	}
+	rt := t.whois
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
+	return rt.RoundTrip(reroute(r, t.whoisBase))
+}
+
+// reroute is r sent to base: the scheme and host change, the path stays.
+func reroute(r *http.Request, base *url.URL) *http.Request {
+	r2 := r.Clone(r.Context())
+	r2.URL.Scheme, r2.URL.Host = base.Scheme, base.Host
+	r2.Host = ""
+	return r2
+}
+
+// UsePeerLink gives the host with that install id (or, failing that, that name)
+// a peer link; with none followed yet, it is followed over the peer link alone.
+// The whois link stays beside it as the fallback.
+func (f *Front) UsePeerLink(id, name string, ep PeerEndpoint) {
+	f.mu.Lock()
+	var found *link
+	for _, l := range f.all() {
+		if (id != "" && l.reportedID() == id) || (found == nil && l.name() == name && l.cfg.Dial == nil) {
+			found = l
+		}
+	}
+	f.mu.Unlock()
+	if found != nil {
+		if found.lt != nil && !found.lt.hasPeer() {
+			found.lt.attach(ep)
+			f.opt.Logf("front: host %s now over the peer link (%s)", found.name(), ep.Addr)
+		}
+		return
+	}
+	f.AddHost(HostConfig{Name: name, URL: "https://" + ep.Addr, Remote: true, Found: true, Peer: &ep})
+}
+
+// WhoisLinkUses counts the requests that went over a whois link although the
+// host has a peer link (decision 0030 slice 3: counted, until the peer way in
+// enforces).
+func (f *Front) WhoisLinkUses() int64 {
+	var n int64
+	for _, l := range f.all() {
+		if l.lt != nil {
+			n += l.lt.uses.Load()
+		}
+	}
+	return n
+}

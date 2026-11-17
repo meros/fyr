@@ -288,3 +288,64 @@ func (p Peers) Node(ctx context.Context, remoteAddr string) (NodeInfo, error) {
 	}
 	return n, nil
 }
+
+// StatusNode is a node as tailscaled's status lists it.
+type StatusNode struct {
+	Name    string // MagicDNS name, no trailing dot
+	UserID  int64
+	Login   string // the user's login; "" for a tagged node
+	Tags    []string
+	Online  bool
+	Shared  bool // shared in from another tailnet
+	Expired bool // the node key has expired
+	IPs     []string
+}
+
+// Untagged: the node belongs to a user, not to a tag.
+func (n StatusNode) Untagged() bool { return len(n.Tags) == 0 }
+
+// Status is this node and its peers (decision 0030 3.6 condition 1 reads who is
+// the same user's, untagged, not shared in and not expired).
+func Status(ctx context.Context, socket string) (self StatusNode, peers []StatusNode, err error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", "http://local-tailscaled.sock/localapi/v0/status", nil)
+	req.Header.Set("Sec-Tailscale", "localapi")
+	resp, err := localClient(socket).Do(req)
+	if err != nil {
+		return self, nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return self, nil, fmt.Errorf("tailscaled status: %s", resp.Status)
+	}
+	type node struct {
+		DNSName      string
+		UserID       int64
+		Tags         []string
+		Online       bool
+		ShareeNode   bool
+		Expired      bool
+		TailscaleIPs []string
+	}
+	var s struct {
+		Self node
+		Peer map[string]node
+		User map[string]struct{ LoginName string }
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
+		return self, nil, err
+	}
+	mk := func(n node) StatusNode {
+		out := StatusNode{Name: strings.TrimSuffix(n.DNSName, "."), UserID: n.UserID, Tags: n.Tags, Online: n.Online, Shared: n.ShareeNode, Expired: n.Expired, IPs: n.TailscaleIPs}
+		if len(n.Tags) == 0 {
+			out.Login = s.User[strconv.FormatInt(n.UserID, 10)].LoginName
+		}
+		return out
+	}
+	self = mk(s.Self)
+	self.Online = true
+	for _, p := range s.Peer {
+		peers = append(peers, mk(p))
+	}
+	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
+	return self, peers, nil
+}
