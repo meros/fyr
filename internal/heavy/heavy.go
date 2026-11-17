@@ -61,8 +61,9 @@ func Default() *Matcher {
 	return m
 }
 
-// quoted is a quoted string, so "git commit -m 'make test'" is not a run.
-var quoted = regexp.MustCompile(`'[^']*'|"[^"]*"`)
+// message is a quoted message or title argument, so "git commit -m 'make
+// test'" is not a run; a quoted script (sh -c '...') still is.
+var message = regexp.MustCompile(`(?:\s-[mt]|\s--(?:message|title|body|subject))(?:=|\s+)(?:'[^']*'|"[^"]*")`)
 
 // Class is the class of cmd's heavy command, the longest match of all
 // patterns, or "" when it runs none.
@@ -70,7 +71,7 @@ func (m *Matcher) Class(cmd string) string {
 	if m == nil {
 		return ""
 	}
-	cmd = quoted.ReplaceAllString(cmd, "''")
+	cmd = message.ReplaceAllString(cmd, " ''")
 	best, bestLen := "", 0
 	for _, r := range m.rules {
 		loc := r.re.FindStringSubmatchIndex(cmd)
