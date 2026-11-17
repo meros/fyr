@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,6 +65,8 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 		AutoMerge  json.RawMessage `json:"autoMergeRequest"`
 		Rollup     []struct {
 			Typename   string `json:"__typename"`
+			Name       string `json:"name"`
+			Context    string `json:"context"`
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
 			State      string `json:"state"`
@@ -72,8 +76,23 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 		return core.PR{}, 0, fmt.Errorf("gh pr view: %w", err)
 	}
 	states := make([]string, 0, len(v.Rollup))
+	done, failedNames, passed := 0, []string(nil), map[string]bool{}
 	for _, c := range v.Rollup {
-		states = append(states, CheckState(c.Typename, c.Status, c.Conclusion, c.State))
+		s := CheckState(c.Typename, c.Status, c.Conclusion, c.State)
+		states = append(states, s)
+		if s != checkRunning && s != checkFail {
+			passed[c.Name+c.Context] = true
+		}
+		if s != checkRunning { // V0.136: "n of m checks done"
+			done++
+		}
+		if s == checkFail {
+			name := c.Name
+			if name == "" {
+				name = c.Context
+			}
+			failedNames = append(failedNames, name)
+		}
 	}
 	checks, failed := core.ChecksNone, 0
 	if v.State == "OPEN" || len(states) > 0 {
@@ -82,7 +101,8 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	now := time.Now()
 	p := core.PR{URL: url, Repo: repo, Number: n, Title: v.Title, State: v.State, Checks: checks,
 		Review: v.ReviewDecision, Conflict: v.Mergeable == "CONFLICTING", Branch: v.HeadRefName, CheckedAt: &now, Head: v.HeadRefOid,
-		Draft: v.IsDraft, MergeState: v.MergeState, AutoMerge: len(v.AutoMerge) > 0 && string(v.AutoMerge) != "null"}
+		Draft: v.IsDraft, MergeState: v.MergeState, AutoMerge: len(v.AutoMerge) > 0 && string(v.AutoMerge) != "null",
+		ChecksDone: done, ChecksTotal: len(states), FailedChecks: failedNames}
 	if v.MergeCommit != nil {
 		p.MergeSHA = v.MergeCommit.Oid
 	}
@@ -90,6 +110,16 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 		p.MergedAt = v.MergedAt
 	}
 	p.Base = v.BaseRefName
+	if p.State == "OPEN" && p.MergeState == "BLOCKED" && (checks == core.ChecksPass || checks == core.ChecksNone) {
+		// V0.136: name what blocks it, once per repo and base (cached).
+		rs := readRules(ctx, gh, repo, p.Base)
+		p.Rules, p.Protected = rs.types, rs.protected
+		for _, ctxName := range rs.required {
+			if !passed[ctxName] {
+				p.MissingChecks = append(p.MissingChecks, ctxName)
+			}
+		}
+	}
 	if p.State == "MERGED" && p.Base != "" {
 		readStacked(ctx, gh, &p)
 	}
@@ -177,6 +207,79 @@ func RepoHasCI(ctx context.Context, gh Runner, repo string) bool {
 	}
 	ciRepos.Store(k, ciFact{has: n > 0, at: time.Now()})
 	return n > 0
+}
+
+// RulesRecheck is how long Fyr keeps what it read of a base branch's rules
+// (V0.136).
+const RulesRecheck = 30 * time.Minute
+
+// baseRules caches the rules of a repo's base branch, by "repo@base".
+var baseRules sync.Map
+
+type ruleSet struct {
+	types     []string // the rule types active on the branch (rulesets)
+	required  []string // the required status checks, of rulesets and classic protection
+	protected bool     // classic branch protection
+	at        time.Time
+}
+
+// readRules reads what GitHub enforces on base (V0.136): the active rules
+// of its rulesets (GET repos/{repo}/rules/branches/{base}, readable with
+// read access) and, when they set none, whether classic branch protection
+// is on and which checks it requires (GET repos/{repo}/branches/{base}).
+// The poller asks only for a PR GitHub reads as BLOCKED with green checks,
+// and keeps the answer RulesRecheck per repo and base. A failed read is an
+// empty set, not cached: the words fall back to "the branch rules".
+func readRules(ctx context.Context, gh Runner, repo, base string) ruleSet {
+	k := core.RepoKey(repo)
+	if k == "" || base == "" || strings.HasPrefix(base, "-") || strings.ContainsAny(base, " \n") {
+		return ruleSet{}
+	}
+	key := k + "@" + base
+	if v, ok := baseRules.Load(key); ok && time.Since(v.(ruleSet).at) < RulesRecheck {
+		return v.(ruleSet)
+	}
+	out, err := gh(ctx, "api", "repos/"+k+"/rules/branches/"+url.PathEscape(base))
+	if err != nil {
+		return ruleSet{}
+	}
+	var rules []struct {
+		Type       string `json:"type"`
+		Parameters struct {
+			Checks []struct {
+				Context string `json:"context"`
+			} `json:"required_status_checks"`
+		} `json:"parameters"`
+	}
+	if json.Unmarshal(out, &rules) != nil {
+		return ruleSet{}
+	}
+	rs := ruleSet{at: time.Now()}
+	for _, r := range rules {
+		if !slices.Contains(rs.types, r.Type) {
+			rs.types = append(rs.types, r.Type)
+		}
+		for _, c := range r.Parameters.Checks {
+			rs.required = append(rs.required, c.Context)
+		}
+	}
+	if len(rs.types) == 0 {
+		if out, err := gh(ctx, "api", "repos/"+k+"/branches/"+url.PathEscape(base)); err == nil {
+			var b struct {
+				Protected  bool `json:"protected"`
+				Protection struct {
+					Checks struct {
+						Contexts []string `json:"contexts"`
+					} `json:"required_status_checks"`
+				} `json:"protection"`
+			}
+			if json.Unmarshal(out, &b) == nil {
+				rs.protected, rs.required = b.Protected, b.Protection.Checks.Contexts
+			}
+		}
+	}
+	baseRules.Store(key, rs)
+	return rs
 }
 
 // defaultBranches caches each repo's default branch (V0.98 (1)).

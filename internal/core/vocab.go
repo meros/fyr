@@ -95,6 +95,7 @@ const (
 	CondPushed   CondType = "pushed"
 	CondClean    CondType = "clean"
 	CondApproval CondType = "approval"
+	CondMerge    CondType = "mergeable" // GitHub refused a merge Fyr ran (V0.136)
 
 	condActionPrefix = "action:"
 	condDeployPrefix = "deploy:"

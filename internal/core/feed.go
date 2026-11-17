@@ -355,9 +355,22 @@ func project(r Reduced, now time.Time) []Effect {
 // anyone pressed on its records (V0.60 (4)).
 func resultNotices(r Reduced) []Notice {
 	var out []Notice
+	refused := false // V0.136: merge.refused is the one notice of a failed merge
+	for _, ev := range r.Events {
+		refused = refused || ev.Type == "merge.refused"
+	}
 	for _, ev := range r.Events {
 		d, _ := ev.Data.(map[string]any)
+		failedMerge := d["ok"] == false && (d["action"] == FyrMerge || d["action"] == "fyr.merge")
 		switch {
+		case refused && failedMerge && (ev.Type == "effect.result" || ev.Type == "action"):
+		case ev.Type == "merge.refused":
+			n := Notice{About: "thread", Key: "merge.refused:" + str(d["pr"]),
+				What: fmt.Sprintf("The merge of %s failed: %s. Next: %s.", target(map[string]any{"pr": d["pr"]}), str(d["reason"]), str(d["next"]))}
+			if c := str(d["change"]); c != "" {
+				n.About = "change:" + c
+			}
+			out = append(out, n)
 		case ev.Type == "action" && d["ended"] == true && d["run"] == RunAgent && d["ok"] == true && str(d["output"]) == "":
 			// An agent action sent to this agent: the message itself is the news.
 		case ev.Type == "action" && d["ended"] == true:
@@ -365,6 +378,14 @@ func resultNotices(r Reduced) []Notice {
 			exit, _ := d["exit"].(int)
 			out = append(out, Notice{About: aboutOn(d["on"]), Key: fmt.Sprintf("result:%v:%v", d["on"], d["action"]),
 				What: ranText(fmt.Sprint(d["label"]), fmt.Sprint(d["title"]), ok, exit, str(d["output"]))})
+		case ev.Type == "decision.closed" && d["gate"] == true: // V0.136
+			args, _ := d["args"].(map[string]any)
+			n := Notice{About: "thread", Key: "result:" + str(d["action"]) + ":" + target(args),
+				What: fmt.Sprintf("Fyr did not ask the owner to merge %s: %s. Next: %s; then ask again, and Fyr shows the ask when the PR can merge.", target(args), str(d["reason"]), str(d["next"]))}
+			if c, _ := args["change"].(string); c != "" {
+				n.About = "change:" + c
+			}
+			out = append(out, n)
 		case ev.Type == "decision.closed" && d["void"] == true: // 0024 §5
 			action := str(d["action"])
 			args, _ := d["args"].(map[string]any)

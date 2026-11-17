@@ -42,7 +42,7 @@ func TestNoRawVocabulary(t *testing.T) {
 	}
 	add(Names(Phases())...)
 	add(Names(CondStatuses())...)
-	add(Names([]CondType{CondChecks, CondReview, CondConflict, CondDeploy, CondPushed, CondClean, CondApproval})...)
+	add(Names([]CondType{CondChecks, CondReview, CondConflict, CondDeploy, CondPushed, CondClean, CondApproval, CondMerge})...)
 	add(Names([]DecisionKind{DecisionAsk, DecisionApproval, DecisionEffect})...)
 	// Of the task statuses only running is Fyr's word; the CLI reports the
 	// others, and "failed" or "completed" mean other things elsewhere.
