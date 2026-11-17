@@ -43,7 +43,7 @@ import { hostsNeed, settingsNeed, type PageRef } from "./settings-nav.ts";
 import { useProvidersNeed } from "./settings-ui.tsx";
 import { HostField } from "./host-pick-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
-import { liveLine } from "./tasks.ts";
+import { AgentStatus } from "./agent-status.tsx";
 import { COLLAPSED_BY_DEFAULT, FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
 import { NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON } from "./row-ui.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
@@ -853,14 +853,7 @@ function MComposer({ t, p, tab, setTab }: { t: Thread; p: PhoneProps; tab: strin
   };
   return (
     <div class="m-cmpw" onDrop={att.onDrop} onDragOver={att.onDragOver}>
-      {t.running && (
-        <div class="sys m-status">
-          <span class="spin icw">
-            <StateIcon state="working" size={14} />
-          </span>
-          <span class="ell">{liveLine(t, p.now)}</span>
-        </div>
-      )}
+      <AgentStatus phone t={t} now={p.now} onRestart={() => void p.commands.run("thread.restart", [t.id])} />
       <ChipStrip chips={att.chips} onRemove={att.remove} />
       <SlashList s={slash} phone />
       <div class={`m-cmp${reason ? " off" : ""}`}>

@@ -84,9 +84,12 @@ type rproc struct {
 	// alone: when the last link ended (rule 2 and 3 count from it).
 	alone   time.Time
 	closing time.Time // rule 2: when stdin was closed
-	exited  bool
-	err     string
-	stderr  *tail
+	// inClosed: the CLI's stdin is closed (V0.142); a write after it
+	// reaches nothing, and fyrd learns it from the process's info.
+	inClosed bool
+	exited   bool
+	err      string
+	stderr   *tail
 }
 
 func (s *Server) logf(f string, a ...any) {
@@ -217,7 +220,7 @@ func (s *Server) sweep() {
 			s.logf("runner: %s: no fyrd collected it; dropped", p.id)
 		case closing.IsZero():
 			s.logf("runner: %s: no fyrd for %s; ending it", p.id, abandon)
-			p.in.Close()
+			p.closeInput()
 		case now.Sub(closing) >= grace:
 			p.kill()
 		}
@@ -300,7 +303,17 @@ func (s *Server) allowed(c net.Conn) (int, bool) {
 func (p *rproc) info() Proc {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return Proc{ID: p.id, Key: p.key, Pid: p.cmd.Process.Pid, Meta: p.meta, Started: p.started, Exited: p.exited, Linked: p.linked}
+	return Proc{ID: p.id, Key: p.key, Pid: p.cmd.Process.Pid, Meta: p.meta, Started: p.started, Exited: p.exited, Linked: p.linked, InputClosed: p.inClosed}
+}
+
+// closeInput closes the CLI's stdin and remembers it (V0.142).
+func (p *rproc) closeInput() {
+	p.wmu.Lock()
+	p.in.Close()
+	p.wmu.Unlock()
+	p.mu.Lock()
+	p.inClosed = true
+	p.mu.Unlock()
 }
 
 func (p *rproc) isExited() bool {
@@ -479,8 +492,11 @@ func (s *Server) ops(p *rproc, r *bufio.Reader, gen int) {
 		switch f.Op {
 		case "write":
 			p.wmu.Lock()
-			p.in.Write([]byte(f.Text + "\n"))
+			_, err := p.in.Write([]byte(f.Text + "\n"))
 			p.wmu.Unlock()
+			if err != nil {
+				s.logf("runner: %s: a write to its input was lost: %v", p.id, err) // V0.142
+			}
 		case "ack":
 			// Drop every line up to Seq that fyrd does not ask to keep.
 			keep := make(map[int64]bool, len(f.Keep))
@@ -499,7 +515,7 @@ func (s *Server) ops(p *rproc, r *bufio.Reader, gen int) {
 			p.lines = kept
 			p.mu.Unlock()
 		case "close":
-			p.in.Close()
+			p.closeInput()
 		case "kill":
 			p.kill()
 		case "forget":

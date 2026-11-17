@@ -147,6 +147,8 @@ export interface ThreadDTO {
   live?: { pageId?: string; state?: Record<string, unknown>; updatedAt?: string; checkedAt?: string; headline?: string; offers?: Offer[]; runs?: OfferRun[] } | null;
   /** V0.33: messages the host still holds (queued or sent, not yet read) */
   outbox?: { id: string; state: string }[] | null;
+  /** V0.142: the live agent process takes nothing Fyr writes; since its last output, and why */
+  unresponsive?: { since: string; at: string; reason: string } | null;
   attention: Attention;
   view?: { seenAt?: string | null; snoozeUntil?: string | null } | null;
   unavailable?: Record<string, string> | null;

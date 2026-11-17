@@ -99,6 +99,9 @@ type Conversation struct {
 	Stopped bool `json:"stopped,omitempty"`
 	// Outbox holds the messages the agent has not read yet (V0.33).
 	Outbox []OutMsg `json:"outbox,omitempty"`
+	// Unresponsive is set while the live agent process does not take what
+	// Fyr writes to it (V0.142): a message, a Stop. Any output clears it.
+	Unresponsive *Unresponsive `json:"unresponsive,omitempty"`
 	// Handover is set while the thread moves to another profile (V0.45).
 	Handover *Handover `json:"handover,omitempty"`
 }
@@ -119,6 +122,17 @@ type Handover struct {
 type OutMsg struct {
 	ID    string `json:"id"`
 	State string `json:"state"`
+	// Text is what Fyr wrote to the CLI (V0.142): a restart delivers it
+	// again to the next process.
+	Text string `json:"text,omitempty"`
+}
+
+// Unresponsive says since when the agent process has said nothing and why
+// Fyr holds it unresponsive (V0.142).
+type Unresponsive struct {
+	Since  time.Time `json:"since"`
+	At     time.Time `json:"at"`
+	Reason string    `json:"reason"`
 }
 
 // View is the per-user state of one entity (R19): the read watermark and the
@@ -306,6 +320,15 @@ func SetOutbox(t *Thread, id, state string) {
 	}
 	if state == "sent" || state == "queued" {
 		t.Outbox = append(t.Outbox, OutMsg{ID: id, State: state})
+	}
+}
+
+// SetOutboxText keeps the text of an unread message (V0.142).
+func SetOutboxText(t *Thread, id, text string) {
+	for i := range t.Outbox {
+		if t.Outbox[i].ID == id {
+			t.Outbox[i].Text = text
+		}
 	}
 }
 

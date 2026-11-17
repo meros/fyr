@@ -79,7 +79,7 @@ func startHarness(t *testing.T, dir, db string, idle time.Duration) *harness {
 
 // startHarnessWith starts the agents in the runner rc (V0.90); kept is
 // what the runner's list says before Load.
-func startHarnessWith(t *testing.T, dir, db string, idle time.Duration, rc *rnr.Client, kept map[string]bool) *harness {
+func startHarnessWith(t *testing.T, dir, db string, idle time.Duration, rc *rnr.Client, kept map[string]bool, opts ...func(*agent.Config)) *harness {
 	st, err := store.Open(db)
 	if err != nil {
 		t.Fatal(err)
@@ -94,13 +94,17 @@ func startHarnessWith(t *testing.T, dir, db string, idle time.Duration, rc *rnr.
 	srv := mcp.New(func(tok string) (string, bool) { return m.ThreadForToken(tok) })
 	e.Tools(srv)
 	hs := httptest.NewServer(srv)
-	m = agent.New(e, agent.Config{
+	cfg := agent.Config{
 		Profile: func(string) provider.Profile {
 			return provider.Profile{ID: "fake", Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}}
 		},
 		IdleStop: idle, MCPURL: hs.URL + "/mcp",
 		Attachments: h.att.Get, OnCommands: e.SetCommands, Runner: rc,
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	m = agent.New(e, cfg)
 	e.Agents, e.Effects, h.m = m, h.r, m
 	e.AttachmentExists = func(id string) bool { _, err := h.att.Get(id); return err == nil }
 	t.Cleanup(func() { m.StopAll(); hs.Close(); st.Close() })

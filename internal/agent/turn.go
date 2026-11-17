@@ -16,8 +16,10 @@ func (m *Manager) read(s *session) {
 	for msg := range s.c.Out() {
 		m.handle(s, msg)
 		handled(s, msg) // V0.90: a later fyrd does not get it again
+		m.heard(s)      // V0.142
 	}
 	<-s.c.Done()
+	defer close(s.gone)
 	if p := pipeOf(s); p != nil {
 		p.Forget() // V0.90: this fyrd saw the exit; the runner drops it
 	}
@@ -43,9 +45,32 @@ func (m *Manager) read(s *session) {
 	if s.log != nil {
 		s.log.Close()
 	}
+	m.mu.Lock()
+	restarting, closedIn := s.restarting, s.inputClosed
+	if s.restartAt != nil {
+		s.restartAt.Stop()
+	}
+	m.mu.Unlock()
+	if restarting != "" {
+		return // V0.142: restart observes it and delivers the unread messages
+	}
+	// V0.142: a process whose input was closed never read what waits: the
+	// next process of the session gets it.
+	if closedIn && len(m.unread(s)) > 0 {
+		var tasks []string
+		if t, ok := m.host.Thread(s.thread); ok {
+			tasks = runningTasks(t)
+		}
+		m.observe(s.thread, core.KindRestarted, core.RestartedArgs{Why: "its process ended with its input closed, so it never read the messages that wait", Tasks: tasks})
+		go m.redeliver(s.thread, "", nil)
+		return
+	}
 	// V0.33: the CLI's queue died with the process.
 	for _, id := range m.unread(s) {
 		m.delivered(s, id, "lost")
+	}
+	if !live && s.unresponsive {
+		m.observe(s.thread, core.KindResponsive, nil)
 	}
 	if live {
 		msg := "The agent process exited during the run"
