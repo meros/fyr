@@ -220,7 +220,7 @@ B is shown, never hidden. AIMD is the TCP and Netflix concurrency-limits pattern
 
 ## 5. Agents that never call slot_acquire (#174)
 
-**Owner, Q2: ignore it in the budget.** Work without a slot is left to #174 (the prompt rule and the gate hook's nudge); the budget counts only slotted jobs. Consequences, stated so they are not surprises:
+**Owner, Q2: ignore it in the budget.** *(Reversed on 17 Nov by V0.164: work that did not ask is seen from its cgroup, told once, counted in the budget and, under memory pressure, paused before a job that asked; this section is the option not chosen then.)* Work without a slot is left to #174 (the prompt rule and the gate hook's nudge); the budget counts only slotted jobs. Consequences, stated so they are not surprises:
 - The CPU pressure gate (rule 2) and the memory rules (3, 4) read machine-level signals, so they still feel unslotted work. A job can wait because of it, and its wait reason names the pressure, not a thread.
 - V0.80 already shows each thread's CPU in its row; S1 adds nothing more for unslotted threads.
 - In the window, unslotted work was about 1.3–1.6 units most of the time. Without #174 making that work take slots, the pressure gate will often be the binding rule.
@@ -262,7 +262,7 @@ The owner, after S1–S5: "Slots don't make sense in this model... It should be 
 ## The owner's answers (17 Nov)
 
 1. **CPU overload signal:** PSI some, with the run queue for the size above PSI's ceiling (recommended). Revised for machine independence (section 0): the slowdown probe takes the run queue's role on every host, and PSI is used where it exists.
-2. **Unslotted heavy work:** ignore it in the budget (the recommendation was to count it as U). Section 5 records the consequences.
+2. **Unslotted heavy work:** ignore it in the budget (the recommendation was to count it as U). Section 5 records the consequences. *Reversed on 17 Nov by V0.164 (owner: "do it"): the 24 % of heavy runs the gate still missed, a layout e2e run at 2.8 GB and `yarn pre-push:check`, drove a memory thrash; undeclared work is now seen, told, counted and, only under memory pressure, paused.*
 3. **A job heavier than predicted, under memory pressure:** stop admissions, notify, **and freeze the newest job** (the recommendation was notices only). Section 4 gives the rules; S5 is now required for it.
 4. **Backfill:** EASY backfill with an aging cap (recommended).
 5. **After the first draft:** "The algorithms NEED to be machine indepentant - work for any host". Section 0.
