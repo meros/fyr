@@ -1,7 +1,7 @@
 // SPEC V0.173: Settings → Automation shows the account's GitHub REST limit and this host's top callers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { githubRows, githubState } from "../src/updates.ts";
+import { githubPause, githubRows, githubState } from "../src/updates.ts";
 
 const since = "2026-11-17T19:00:00";
 
@@ -22,4 +22,10 @@ test("V0.173 the rows name the kind, the repo and the free 304s", () => {
     { title: "rest deployments · o/r", desc: "3 calls (2 answered 304, free)" },
     { title: "graphql pr view", desc: "1 call" },
   ]);
+});
+
+test("V0.178 while the budget holds polls back, a row says until when and why; none while they run", () => {
+  const v = { since, calls: 0, uses: [], paused: { resource: "core", until: "2026-11-17T20:51:14", remaining: 120, why: "the account has 120 calls left; Fyr keeps 500 for merges, the updater and agents", deferred: 4 } };
+  assert.deepEqual(githubPause(v), { title: "Polls wait until 20:51", desc: "The account has 120 calls left; Fyr keeps 500 for merges, the updater and agents. Merges and updates still run." });
+  assert.equal(githubPause({ since, calls: 0, uses: [] }), null);
 });

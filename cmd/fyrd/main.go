@@ -456,8 +456,12 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// Decision 0027: auto-update installs CI's signed releases only.
 	// V0.173: every gh call of fyrd is counted, and the account's limit
 	// read every 10 minutes (free), for daemon.log and Settings.
-	ghMeter := &github.Meter{}
-	gh := ghMeter.Wrap(github.Gh)
+	// V0.178: one budget: polls give way while the account is low or
+	// rate limited; the updater, merges, re-runs and the PR tab run.
+	ghBudget := &github.Budget{}
+	ghMeter := &github.Meter{OnRate: ghBudget.SetRate}
+	metered := ghMeter.Wrap(github.Gh)
+	gh, pollGh := ghBudget.Runner(metered, github.Act), ghBudget.Runner(metered, github.Poll)
 	go ghMeter.Run(ctx, github.Gh)
 	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Gh: gh}
 	// V0.111, #159: an ask without a checkout installs the newest release by
@@ -503,9 +507,10 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}()
 		return nil
 	}
+	ghView := func() github.MeterView { v := ghMeter.View(); v.Paused = ghBudget.Paused(); return v }
 	prDetails := &github.Details{Gh: gh} // V0.43: the PR tab's details, cached 30 s
 	eng.Effects = engine.Outside{Gh: gh, PR: prDetails, Deploy: dep.Deploy}
-	poller := &github.Poller{Gh: gh, Src: engine.PRWatch{E: eng}}
+	poller := &github.Poller{Gh: pollGh, Src: engine.PRWatch{E: eng}}
 	eng.OnPR = poller.Kick
 	go poller.Run(ctx)
 	go checkModels(ctx, h.reg) // V0.120: each provider's models, once a day
@@ -562,7 +567,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// V0.126 (#151): the update record, the pause and the bad release.
 		Updates: func() any {
 			bad, why := dep.Bad()
-			return map[string]any{"updates": dep.Updates(), "paused": dep.PausedBy(), "bad": map[string]string{"commit": bad, "why": why}, "live": BuildID(), "github": ghMeter.View()}
+			return map[string]any{"updates": dep.Updates(), "paused": dep.PausedBy(), "bad": map[string]string{"commit": bad, "why": why}, "live": BuildID(), "github": ghView()}
 		},
 		UpdateLog: dep.UpdateLog,
 		Focus: func(device, thread string, on bool) { // V0.85

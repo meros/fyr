@@ -45,11 +45,15 @@ type MeterView struct {
 	Since time.Time `json:"since"`
 	Uses  []Use     `json:"uses"`
 	Calls int       `json:"calls"` // REST calls that counted, this hour
+	// Paused is the budget's pause of the polls (V0.178), set by fyrd.
+	Paused *Pause `json:"paused,omitempty"`
 }
 
 // Meter counts gh calls. The zero value works.
 type Meter struct {
 	Now func() time.Time
+	// OnRate gets each read of rate_limit (V0.178: the budget).
+	OnRate func(Rate)
 
 	mu    sync.Mutex
 	since time.Time
@@ -208,6 +212,9 @@ func (m *Meter) Run(ctx context.Context, gh Runner) {
 		defer cancel()
 		if r, err := ReadRate(c, gh, m.now()); err == nil {
 			m.SetRate(r)
+			if m.OnRate != nil {
+				m.OnRate(r)
+			}
 		} else {
 			log.Printf("github rate: %v", err)
 		}
@@ -277,7 +284,7 @@ func Kind(args []string) (kind, repo string) {
 			repo, seg = seg[1]+"/"+seg[2], seg[3:]
 		}
 		for i, s := range seg {
-			if numSeg.MatchString(s) || shaSeg.MatchString(s) {
+			if numSeg.MatchString(s) || shaSeg.MatchString(s) || strings.Contains(s, "...") {
 				seg[i] = ":id"
 			}
 		}

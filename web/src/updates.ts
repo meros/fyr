@@ -83,6 +83,8 @@ export interface GitHubView {
   since: string;
   uses: GitHubUse[] | null;
   calls: number;
+  /** V0.178: the budget holds this host's polls back until `until`. */
+  paused?: { resource: string; until: string; remaining: number; why: string; deferred: number } | null;
 }
 
 function hhmm(iso: string): string {
@@ -104,4 +106,12 @@ export function githubRows(v: GitHubView, n = 6): { title: string; desc: string 
     title: `${u.kind}${u.repo ? ` · ${u.repo}` : ""}`,
     desc: `${u.calls} call${u.calls === 1 ? "" : "s"}${u.free ? ` (${u.free} answered 304, free)` : ""}`,
   }));
+}
+
+/** V0.178: the row that says this host's polls wait; null while they run. */
+export function githubPause(v: GitHubView): { title: string; desc: string } | null {
+  const p = v.paused;
+  if (!p) return null;
+  const what = p.resource === "graphql" ? "PR reads" : "Polls";
+  return { title: `${what} wait until ${hhmm(p.until)}`, desc: `${p.why[0].toUpperCase()}${p.why.slice(1)}. Merges and updates still run.` };
 }

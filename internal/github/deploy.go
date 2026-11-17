@@ -6,6 +6,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -48,7 +49,9 @@ func (p *Poller) annotations(ctx context.Context, url string, pr core.PR, failed
 	}
 	notes, err := FetchAnnotations(ctx, p.Gh, pr.Repo, pr.Head)
 	if err != nil {
-		log.Printf("annotations %s: %v", url, err)
+		if !errors.Is(err, ErrBudget) {
+			log.Printf("annotations %s: %v", url, err)
+		}
 		return nil
 	}
 	if p.notes == nil {
@@ -84,6 +87,10 @@ func (p *Poller) pollDeploy(ctx context.Context, src DeploySource, d DeployThrea
 	c, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	obs, err := FetchDeployments(c, p.Gh, d.Repo, d.SHA, d.First)
+	if errors.Is(err, ErrBudget) {
+		delete(p.deployAt, key) // not read: due again at the next poll
+		return
+	}
 	if err != nil {
 		log.Printf("deployments %s@%s: %v", d.Repo, short(d.SHA), err)
 		return

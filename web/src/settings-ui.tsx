@@ -29,7 +29,7 @@ import { useAsk } from "./confirm-ui.tsx";
 import type { Profile, Project } from "./types.ts";
 import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
-import { githubRows, githubState, updateRow, updateState, type UpdatesView } from "./updates.ts";
+import { githubPause, githubRows, githubState, updateRow, updateState, type UpdatesView } from "./updates.ts";
 import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
 import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
@@ -1655,9 +1655,11 @@ function UpdatesGroup({ d }: { d: Data }) {
 function GitHubGroup({ d }: { d: Data }) {
   const v = d.updates!.github!;
   const s = githubState(v);
+  const pause = githubPause(v);
   return (
     <Group title="GitHub API" label="GitHub API" foot="Every agent, every host's Fyr and your own gh share this limit. Fyr reads it every 10 minutes; a call answered 304 costs nothing.">
       <Row title={s.title} desc={s.desc} class={s.low ? "bad" : undefined} />
+      {pause && <Row title={pause.title} desc={pause.desc} />}
       {githubRows(v).map((r) => (
         <Row key={r.title} title={r.title} desc={r.desc} mono />
       ))}

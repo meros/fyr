@@ -87,6 +87,7 @@ func TestKind(t *testing.T) {
 		{[]string{"api", "-i", "-H", "If-None-Match: x", "repos/o/r/deployments/12/statuses?per_page=1"}, "rest deployments/:id/statuses", "o/r"},
 		{[]string{"api", "repos/o/r/commits/0123abc/check-runs?per_page=100"}, "rest commits/:id/check-runs", "o/r"},
 		{[]string{"api", "repos/o/r", "--jq", ".default_branch"}, "rest repo", "o/r"},
+		{[]string{"api", "repos/o/r/compare/57004c76a9...06765cbc86", "--jq", ".status"}, "rest compare/:id", "o/r"},
 		{[]string{"api", "graphql", "-f", "query=q", "-F", "owner=o", "-F", "name=r"}, "graphql", "o/r"},
 		{[]string{"pr", "view", "--json", "state", "--", "https://github.com/o/r/pull/3"}, "graphql pr view", "o/r"},
 		{[]string{"run", "list", "--repo", "o/r"}, "rest run list", "o/r"},
