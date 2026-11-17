@@ -3,7 +3,7 @@
 
 import { newCommandId, type Api, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
-import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, trustMockLab, mockChanges, mockFilePatch, mockLoad, mockQuota } from "./mock.ts";
+import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab, mockChanges, mockFilePatch, mockLoad, mockQuota } from "./mock.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { decodeHosts } from "./hosts.ts";
 
@@ -36,7 +36,10 @@ export function createMockApi(scenario: string): Api {
    *  follow, or one that is offline (a command), with readAt for a read of an offline host. */
   const hostFor = (name: string | undefined): { h: MockHost; readAt?: string } | { error: string } => {
     const hs = mockHostList();
-    if (!name || !hs.length || name === hs[0].name) return { h: desk };
+    // V0.132: no host is the first in the owner's order; desk is this install.
+    const target = name || hs[0]?.name;
+    if (!hs.length || target === server.state().host) return { h: desk };
+    name = target;
     const info = hs.find((x) => x.name === name);
     if (!info) return { error: `this front follows no host ${name}` };
     let h = others.get(name);
@@ -46,7 +49,7 @@ export function createMockApi(scenario: string): Api {
     }
     return info.online ? { h } : { h, readAt: new Date(Date.parse(info.since ?? server.state().now) - 60_000).toISOString() };
   };
-  // V0.131: another host's folders (null: desk's, the fixture tree).
+  // V0.132: another host's folders (null: desk's, the fixture tree).
   const otherFs = new Map<string, ReturnType<typeof smallFs>>();
   const fsOf = (name: string | undefined) => {
     const r = hostFor(name);
@@ -119,6 +122,12 @@ export function createMockApi(scenario: string): Api {
         trustMockLab();
         setTimeout(() => onHosts?.(decodeHosts(mockHosts(Date.now()))), 0); // the front's hosts event (V0.124)
         return { ok: true, result: { host: "lab" } };
+      }
+      if (action === "front.hostOrder") {
+        const names = Array.isArray(args?.names) ? (args.names as unknown[]).filter((x): x is string => typeof x === "string") : [];
+        setMockHostOrder(names);
+        setTimeout(() => onHosts?.(decodeHosts(mockHosts(Date.now()))), 0); // the front's hosts event, on every device
+        return { ok: true, result: { names } };
       }
       if (action === "front.projectOrder") {
         order = Array.isArray(args?.ids) ? (args.ids as unknown[]).filter((x): x is string => typeof x === "string") : [];
@@ -267,7 +276,7 @@ export function createMockApi(scenario: string): Api {
     async filePatch(_threadId, path) {
       return mockFilePatch(path);
     },
-    // V0.131: each host's own folders; desk's are the fixture tree, another host has a small one of its own, and an
+    // V0.132: each host's own folders; desk's are the fixture tree, another host has a small one of its own, and an
     // offline host's cannot be read.
     async fsList(path, host) {
       const f = fsOf(host);
@@ -303,7 +312,7 @@ export function createMockApi(scenario: string): Api {
   };
 }
 
-/** V0.131: a small home folder for a mock host other than desk; the first two folders are repos. */
+/** V0.132: a small home folder for a mock host other than desk; the first two folders are repos. */
 function smallFs(dirs: string[]) {
   const home = "/home/owner";
   const all = new Set([home, ...dirs.map((d) => `${home}/${d}`)]);

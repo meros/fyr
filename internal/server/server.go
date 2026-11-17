@@ -296,7 +296,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
 	profiles := s.profiles()
 	api.WriteJSON(w, 200, api.State[api.Thread, api.Project, provider.Profile]{
-		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID,
+		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(),
 		Threads: threads, Actions: acts, Profiles: profiles, Projects: projects,
 		Partial: since > 0, Deploy: s.Engine.DeployState(time.Now()),
 	})
@@ -821,4 +821,12 @@ func (s *Server) focus(w http.ResponseWriter, r *http.Request) {
 		s.Focus(b.Device, id, !b.Off)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// hostOrder is the host's copy of the owner's host order (V0.132), or nil.
+func (s *Server) hostOrder() any {
+	if o := s.Engine.HostOrder(); len(o.Names) > 0 {
+		return o
+	}
+	return nil
 }

@@ -156,9 +156,9 @@ test("V0.125: a host row's line: state since, route, short id", () => {
   assert.equal(decodeHosts([{ name: "a", online: true, url: 3 }])[0].url, undefined);
 });
 
-test("V0.125: the Hosts page lists this install first, and this install alone when the front lists no hosts", () => {
+test("V0.125, V0.132: the Hosts page lists the hosts in the owner's order (the front's), and this install alone when the front lists no hosts", () => {
   const hs = decodeHosts([{ name: "lab", online: true }, { name: "desk", online: true, id: "F7QK-2M9X-AB34-CD56" }]);
-  assert.deepEqual(hostRows(hs, "desk", "F7QK-2M9X-AB34-CD56").map((h) => h.name), ["desk", "lab"]);
+  assert.deepEqual(hostRows(hs, "desk", "F7QK-2M9X-AB34-CD56").map((h) => h.name), ["lab", "desk"]);
   assert.deepEqual(hostRows([], "desk", "F7QK-2M9X-AB34-CD56"), [{ name: "desk", online: true, id: "F7QK-2M9X-AB34-CD56" }]);
   assert.deepEqual(hostRows(undefined, "desk", ""), [{ name: "desk", online: true }], "a front older than V0.124 sends no id");
 });

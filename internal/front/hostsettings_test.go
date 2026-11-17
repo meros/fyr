@@ -26,7 +26,7 @@ import (
 type settingsHost struct {
 	*host
 	reg *provider.Registry
-	// home is the host's home folder, the root of its folder picker (V0.131).
+	// home is the host's home folder, the root of its folder picker (V0.132).
 	home string
 }
 

@@ -105,7 +105,7 @@ func (f *Front) hostLocked(l *link) api.Host {
 // caller holds f.mu.
 func (f *Front) publishHostsLocked() {
 	hs := []api.Host{}
-	for _, l := range f.all() {
+	for _, l := range f.orderedLocked() { // V0.132: the owner's order
 		hs = append(hs, f.hostLocked(l))
 	}
 	b, err := json.Marshal(map[string]any{"hosts": hs})

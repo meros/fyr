@@ -203,7 +203,7 @@ export interface PhoneProps {
   projectActions: {
     update(id: string, patch: ProjectPatch): Promise<string | null>;
     setFolder(id: string, path: string): Promise<string | null>;
-    /** V0.131: on `host`, else the threads' host */
+    /** V0.132: on `host`, else the threads' host */
     create(name: string, folder: string, threadIds?: string[], host?: string): Promise<{ error: string | null; id?: string }>;
     /** null: No project */
     move(ids: string[], projectId: string | null): Promise<string | null>;

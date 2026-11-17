@@ -117,6 +117,10 @@ type State[T, P, F any] struct {
 	// ProjectOrder is the owner's project order, one list of ids across a
 	// front's hosts (V0.121); absent until the owner sets one.
 	ProjectOrder []string `json:"projectOrder,omitempty"`
+	// HostOrder is the owner's host order as a host keeps it (V0.132):
+	// {names, at}; nil when none was set. A front reads the newest from its
+	// hosts and orders hosts[] by it.
+	HostOrder any `json:"hostOrder,omitempty"`
 }
 
 // Action is an owner action as clients list it.

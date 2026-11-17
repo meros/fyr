@@ -68,6 +68,8 @@ type Engine struct {
 	// and deploys counts the deploys between approval or press and their
 	// end. deployMu makes one auto-deploy pass at a time.
 	autoDeployOff bool
+	// hostOrder is the owner's host order (V0.132).
+	hostOrder HostOrder
 	// systemAgents is the owner's system agents setting (V0.115).
 	systemAgents core.SystemAgents
 	deploySeen    map[string]string
@@ -214,6 +216,7 @@ func (e *Engine) Load() error {
 	}
 	e.loadAutoMerge()
 	e.loadAutoDeploy() // V0.111
+	e.loadHostOrder()  // V0.132
 	e.loadSystemAgents() // V0.115
 	old, err := e.st.OldProjectSources()
 	if err != nil {
@@ -502,6 +505,17 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(500, err.Error())
 		}
 		reply.Result = e.AutoDeploy()
+	case core.EffectHostOrderSet: // V0.132: the owner's host order, newest wins
+		var o HostOrder
+		for _, x := range ef.Request.Args["names"].([]any) {
+			o.Names = append(o.Names, x.(string))
+		}
+		o.At, _ = time.Parse(time.RFC3339Nano, ef.Request.Args["at"].(string))
+		kept, err := e.setHostOrder(o)
+		if err != nil {
+			return fail(500, err.Error())
+		}
+		reply.Result = kept
 	case core.EffectSystemAgentsSet: // V0.115: the owner's setting
 		a := ef.Request.Args
 		job, _ := a["job"].(string)

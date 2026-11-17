@@ -335,7 +335,7 @@ export function QuietGate({ project, now, unlock, what }: { project?: Project; n
 
 /** A project's one folder (V0.55): the short path and what it does with "Change…" through the host folder picker, or
  *  that threads are filed by hand with "Choose folder…". × leaves the folder out where onClear is given. */
-export function FolderField({ folder, title, host, onPick, onClear }: { folder: string; title: string; /** V0.131: whose folders */ host?: string; onPick(path: string): void; onClear?(): void }) {
+export function FolderField({ folder, title, host, onPick, onClear }: { folder: string; title: string; /** V0.132: whose folders */ host?: string; onPick(path: string): void; onClear?(): void }) {
   const picker = useFolderPick();
   const pick = async () => {
     const path = await picker.pick({ title, ...(host ? { host } : {}) });
@@ -369,7 +369,7 @@ export function FolderField({ folder, title, host, onPick, onClear }: { folder: 
 }
 
 /** New project, one step (V0.30, V0.55): a name (required) and the one folder, prefilled from the thread. The rest is
- *  on the project screen. V0.131: with several hosts, the host it lives on comes first: picked here (Settings), or set
+ *  on the project screen. V0.132: with several hosts, the host it lives on comes first: picked here (Settings), or set
  *  by the caller (`host`: the New thread form's host, or the threads' host when it is made from them); the folder is
  *  that host's, and a new host drops a folder picked on another. */
 export function NewProjectStep({ initialName, initialFolder, fromThread, host: fixed, onCreate, onCancel, onDraft }: { initialName: string; initialFolder: string; fromThread: boolean; host?: string; onCreate(name: string, folder: string, host?: string): Promise<string | null>; onCancel(): void; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void }) {
@@ -393,7 +393,7 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, host: f
       nameRef.current?.focus();
       return setErr("A project needs a name.");
     }
-    if (down) return setErr(down); // V0.131: never on another host instead
+    if (down) return setErr(down); // V0.132: never on another host instead
     setBusy(true);
     setErr(null);
     const e = await onCreate(name.trim(), folder, host || undefined);
@@ -448,7 +448,7 @@ export function ProjectPicker({ projects, threads, onPick, onCreate, onEdit }: {
   const base = one ? newProjectDraft(one) : { name: "", folder: "" };
   const [draft, setDraft] = useState<{ name: string; folder: string } | null>(null);
   const cur = one ? projectOf(one, projects) : undefined;
-  // V0.131: a project made from threads lives on their host.
+  // V0.132: a project made from threads lives on their host.
   if (draft) return <NewProjectStep initialName={draft.name} initialFolder={draft.folder} fromThread={threads.length > 0} host={threads[0]?.host ?? ""} onCreate={onCreate} onCancel={() => setDraft(null)} />;
   const sub = base.folder ? `${base.name} · threads in ${shortPath(base.folder)} land there` : "Just a name; file threads here by hand";
   return (
@@ -770,7 +770,7 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
               class="btn pfchg"
               disabled={env.readOnly}
               onClick={async () => {
-                const path = await picker.pick({ title: `Folder for ${project.name}`, ...(project.host ? { host: project.host } : {}) }); // V0.131: on its host
+                const path = await picker.pick({ title: `Folder for ${project.name}`, ...(project.host ? { host: project.host } : {}) }); // V0.132: on its host
                 if (!path) return;
                 const e = await onSetFolder(path);
                 err("folder", e);
