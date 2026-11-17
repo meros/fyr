@@ -85,7 +85,7 @@ func (w PRWatch) Deploys() []github.DeployThread {
 			continue
 		}
 		for _, d := range core.DeployWatches(t.Thread, now) {
-			out = append(out, github.DeployThread{ID: t.ID, Change: d.Change, Repo: d.Repo, SHA: d.SHA, First: d.First})
+			out = append(out, github.DeployThread{ID: t.ID, Change: d.Change, Repo: d.Repo, SHA: d.SHA, First: d.First, Since: d.Since})
 		}
 	}
 	return out
