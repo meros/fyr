@@ -2165,7 +2165,8 @@ for (const [label, w, ht] of [
   await step("new thread", async () => {
     await open(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", `!!document.querySelector('${root} .hostf select')`);
     const locked = await evaluate(`({ dis: document.querySelector('${root} .hostf select').disabled, line: document.querySelector('${root} .hostf .srcl')?.textContent ?? '' })`);
-    check(locked.dis && /^Follows .+\.$/.test(locked.line), `${ctx}: a project holds the host ${JSON.stringify(locked)}`);
+    // V0.139: host first; the Host field is always the owner's pick (it no longer follows the project).
+    check(!locked.dis && /^The thread runs there\./.test(locked.line), `${ctx}: the Host field is the owner's pick ${JSON.stringify(locked)}`);
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick')?.click()`);
     await settle();
     await click(`${root} button, ${root} [role=option]`, "No project");
