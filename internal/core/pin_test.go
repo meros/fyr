@@ -113,3 +113,31 @@ func TestPinnedNeverAutoSettles(t *testing.T) {
 		t.Fatalf("the owner's settle: settled %v, pinned %v", th.Settle.At, th.PinnedAt)
 	}
 }
+
+// V0.162: a bulk settle (Settle merged, ⇧E, the phone's Settle N) skips a
+// pinned thread: it is refused, nothing changes, the pin stays. A running
+// pinned thread gets no "settle when done" either. The owner's Settle on
+// the thread itself still settles it.
+func TestBulkSettleSkipsAPinnedThread(t *testing.T) {
+	for _, running := range []bool{false, true} {
+		th, v := &Thread{ID: "t_1", ActivityAt: ct0}, &View{SeenAt: ct0}
+		step(t, th, v, Input{Source: FromOwner, Kind: "thread.pin"}, ct0)
+		if running {
+			RunStarted(th, ct0)
+		}
+		_, _, _, err := Reduce(th, v, Input{Source: FromOwner, Kind: "thread.settle", Thread: "t_1", Args: Args{"now": true}}, ct0)
+		var r *Rejection
+		if !errors.As(err, &r) || r.Code != RejectConflict {
+			t.Fatalf("running %v: a bulk settle of a pinned thread: %v", running, err)
+		}
+		if th.PinnedAt == nil || th.Settle.At != nil || Settling(th) {
+			t.Fatalf("running %v: pinned %v, settled %v, rules %+v", running, th.PinnedAt, th.Settle.At, th.Rules)
+		}
+	}
+	th, v := &Thread{ID: "t_1", ActivityAt: ct0}, &View{SeenAt: ct0}
+	step(t, th, v, Input{Source: FromOwner, Kind: "thread.pin"}, ct0)
+	step(t, th, v, Input{Source: FromOwner, Kind: "thread.settle"}, ct0)
+	if th.Settle.At == nil || th.PinnedAt != nil {
+		t.Fatalf("the owner's own Settle: settled %v, pinned %v", th.Settle.At, th.PinnedAt)
+	}
+}

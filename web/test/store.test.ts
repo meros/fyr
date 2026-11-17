@@ -16,6 +16,8 @@ import {
   recordUndo,
   sections,
   unpinned,
+  bulkSettle,
+  bulkSettleText,
   presetForKey,
   snoozePresets,
   stateForCache,
@@ -266,4 +268,21 @@ test("undoVerb names the deferred action", () => {
   assert.equal(undoVerb("settle"), "Settled");
   assert.equal(undoVerb("archive"), "Archived");
   assert.equal(undoVerb("snooze"), "Snoozed");
+});
+
+// V0.162: a bulk settle skips pinned threads (no settle, no unpin) and says how many it kept.
+test("a bulk settle leaves pinned threads out and counts them", () => {
+  const pin = { pinnedAt: at(0) };
+  const ts = [
+    thread("a", "seen", "seen"),
+    thread("b", "seen", "seen", pin),
+    thread("c", "seen", "seen", { unavailable: { "thread.settle": "Already settled" } }),
+    thread("d", "done", "needs"),
+  ];
+  assert.deepEqual(bulkSettle(ts), { ids: ["a", "d"], kept: 1 });
+  assert.deepEqual(bulkSettle([ts[1]]), { ids: [], kept: 1 });
+  assert.equal(bulkSettleText(7, 1), "Settled 7 threads; 1 pinned thread kept");
+  assert.equal(bulkSettleText(1, 2), "Settled; 2 pinned threads kept");
+  assert.equal(bulkSettleText(0, 1), "Nothing settled; 1 pinned thread kept");
+  assert.equal(bulkSettleText(3, 0), "Settled 3 threads");
 });

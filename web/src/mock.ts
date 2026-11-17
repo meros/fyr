@@ -1333,6 +1333,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         put(t, { pinnedAt: null });
         break;
       case "thread.settle":
+        if (args.now && t.pinnedAt) return { ok: false, error: "A pinned thread settles only by its own Settle" }; // V0.162
         if (t.running) put(t, { settleWhenDone: true });
         else idle("settled", "settled", { settledAt: new Date(clock()).toISOString(), pinnedAt: null });
         break;

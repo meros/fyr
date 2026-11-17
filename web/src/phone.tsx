@@ -11,7 +11,7 @@ import type { ComponentChildren, VNode } from "preact";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
-import { SECTIONS, isAvailable, unpinned, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
+import { SECTIONS, isAvailable, isPinned, unpinned, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
@@ -374,7 +374,9 @@ function MInbox(p: PhoneProps) {
   };
 
   const all = SECTIONS.flatMap((s) => p.inbox.sec[s.key]);
-  const merged = p.inbox.sec.seen.filter((t) => t.pr?.state === "MERGED" && isAvailable(t, "thread.settle"));
+  // V0.162: the button shows while a merged thread can settle; the bulk settle leaves pinned ones out and counts them.
+  const merged = p.inbox.sec.seen.filter((t) => t.pr?.state === "MERGED" && (isPinned(t) || isAvailable(t, "thread.settle")));
+  const canSettleMerged = merged.some((t) => !isPinned(t));
 
   return (
     <div class="m-screen">
@@ -483,12 +485,12 @@ function MInbox(p: PhoneProps) {
           return (
             <section id={`m-sec-${s.key}`}>
               <div
-                class={`m-sec${collapsible ? (open ? " exp" : " col") : ""}${s.key === "seen" && merged.length && !p.list.selecting ? " hasbtn" : ""}`}
+                class={`m-sec${collapsible ? (open ? " exp" : " col") : ""}${s.key === "seen" && canSettleMerged && !p.list.selecting ? " hasbtn" : ""}`}
                 onClick={() => list.length && p.list.setSectionOpen((o) => ({ ...o, [s.key]: !isOpen(s.key, o) }))}
               >
                 {s.label}
                 <span class="n">{stripCount(list.length)}</span>
-                {s.key === "seen" && merged.length > 0 && !p.list.selecting ? (
+                {s.key === "seen" && canSettleMerged && !p.list.selecting ? (
                   <button
                     class="m-sbtn"
                     onClick={(e) => {

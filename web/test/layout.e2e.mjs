@@ -2899,6 +2899,54 @@ try {
 }
 });
 
+// V0.162: a bulk settle skips a pinned thread: no settle command for it, the pin stays, and the toast names it. Desktop:
+// ⇧E on the Seen section; phone: Select all, then Settle N. Both go through the same settleBulk.
+section('V0.162', async (h) => {
+  const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
+  const settledPinned = `(window.__fyrCommands ?? []).some(c => c.action === 'thread.settle' && c.threadId === 't_poly')`;
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail&open=t_nix`, "!!document.querySelector('#sec-seen [data-id=t_poly]')");
+    const row = await evaluate(`(() => { const r = document.querySelector('#sec-seen [data-id=t_poly]').getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; })()`);
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x: row.x, y: row.y, button: "right", clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: row.x, y: row.y, button: "right", clickCount: 1 });
+    await settle();
+    await evaluate(`[...document.querySelectorAll('.ctxm-i')].find(x => x.querySelector('.ell')?.textContent === 'Pin')?.click()`);
+    await waitFor(`!!document.querySelector('#sec-pinned [data-id=t_poly]')`, { soft: true });
+    await evaluate(`document.activeElement?.blur()`);
+    await key("E", "KeyE", 8);
+    await waitFor(`/pinned thread kept/.test(document.querySelector('.toast')?.textContent ?? '')`, { soft: true });
+    const r = await evaluate(`({ toast: document.querySelector('.toast')?.textContent ?? '', pinned: !!document.querySelector('#sec-pinned [data-id=t_poly] .hd .pin'), seen: document.querySelectorAll('#sec-seen [data-id]').length, sent: ${settledPinned} })`);
+    check(/^Settled \d+ threads; 1 pinned thread kept/.test(r.toast), `V0.162 desktop: the toast does not name the kept pinned thread ("${r.toast}")`);
+    check(r.pinned && !r.sent, `V0.162 desktop: ⇧E settled or unpinned the pinned thread (${JSON.stringify(r)})`);
+    check(r.seen === 0, `V0.162 desktop: ⇧E left ${r.seen} unpinned Seen rows`);
+  } catch (e) {
+    failures.push(`V0.162 desktop: ${e.message}`);
+  }
+  try {
+    await openScreen({ url: "?mock=rail&open=t_poly" }, 390, 844);
+    await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
+    await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.querySelector('.ell')?.firstChild?.textContent === 'Pin')?.click()`);
+    await waitFor(`!document.querySelector('.m-sheet')`, { soft: true });
+    await tapCenter('button[aria-label="Back to the inbox"]', "!!document.querySelector('#m-sec-pinned')");
+    await tapCenter("#m-sec-pinned .m-mv", "!!document.querySelector('.m-sheet .m-mi')", { long: true });
+    await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.querySelector('.ell')?.firstChild?.textContent === 'Select')?.click()`);
+    await waitFor(`!!document.querySelector('.m-selbar')`, { soft: true });
+    await evaluate(`[...document.querySelectorAll('.m-tbtn')].find(b => b.textContent === 'Select all')?.click()`);
+    await settle();
+    await evaluate(`document.querySelector('.m-selbar .m-bt.p')?.click()`);
+    await waitFor(`/pinned thread kept/.test(document.querySelector('.m-toast')?.textContent ?? '')`, { soft: true });
+    const r = await evaluate(`({ toast: document.querySelector('.m-toast')?.textContent ?? '', pinned: document.querySelectorAll('#m-sec-pinned .pin').length, sent: ${settledPinned} })`);
+    check(/^Settled \d+ threads; 1 pinned thread kept/.test(r.toast), `V0.162 phone: the toast does not name the kept pinned thread ("${r.toast}")`);
+    check(r.pinned === 1 && !r.sent, `V0.162 phone: Settle N settled or unpinned the pinned thread (${JSON.stringify(r)})`);
+  } catch (e) {
+    failures.push(`V0.162 phone: ${e.message}`);
+  }
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+});
+
 // V0.108: Regenerate title is in the thread's ⋯ menu on the desktop and in the thread's ⋯ sheet on the phone, the same
 // control on both; a press names the thread from its conversation (the mock answers at once).
 section('V0.108', async (h) => {

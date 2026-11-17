@@ -331,6 +331,25 @@ export function recordUndo(kind: UndoKind, threadIds: string[], now: number, lab
   return { kind, threadIds, at: now, label: label ?? (n === 1 ? verb : `${verb} ${n} threads`) };
 }
 
+/** V0.162: a bulk settle (⇧E, Settle merged, the phone's Settle N) takes the threads that can settle and leaves the
+ * pinned ones out: no settle, no unpin. `kept` counts the pinned threads it left. */
+export function bulkSettle(threads: Thread[]): { ids: string[]; kept: number } {
+  const ids: string[] = [];
+  let kept = 0;
+  for (const t of threads) {
+    if (isPinned(t)) kept++;
+    else if (isAvailable(t, "thread.settle")) ids.push(t.id);
+  }
+  return { ids, kept };
+}
+
+/** The toast after a bulk settle: "Settled 7 threads; 1 pinned thread kept". */
+export function bulkSettleText(settled: number, kept: number): string {
+  const head = settled === 0 ? "Nothing settled" : settled === 1 ? "Settled" : `Settled ${settled} threads`;
+  if (!kept) return head;
+  return `${head}; ${kept} pinned ${kept === 1 ? "thread" : "threads"} kept`;
+}
+
 export function undoLive(u: UndoEntry | null, now: number): boolean {
   return !!u && now - u.at < UNDO_MS;
 }

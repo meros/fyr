@@ -21,7 +21,7 @@ export interface ThreadCommands {
   /** Undo is still offered */
   canUndo(): boolean;
   /** Runs `action` on each thread; resolves to how many the host took. An undoable one offers Undo; failures show as an error. */
-  run(action: string, ids: string[], args?: Record<string, unknown>): Promise<number>;
+  run(action: string, ids: string[], args?: Record<string, unknown>, o?: RunOptions): Promise<number>;
   /** thread.send; false (and the error shown) when the host did not take it */
   send(id: string, args: SendArgs): Promise<boolean>;
   /** V0.45: thread.handover; resolves to the host's error text, or null */
@@ -31,6 +31,11 @@ export interface ThreadCommands {
   regenerateTitle(id: string): Promise<void>;
   notify(text: string, error?: boolean): void;
   showError(text: string): void;
+}
+
+export interface RunOptions {
+  /** the toast's text for n threads taken, in place of the undo label (V0.162: a bulk settle names the pinned it kept) */
+  label?: (n: number) => string;
 }
 
 export interface CommandOptions {
@@ -59,14 +64,14 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
   const notify = (text: string, error = false) => setToast(error ? { text, undo: false, error: true, at: Date.now() } : { text, undo: false, at: Date.now() });
   const showError = (text: string) => notify(text, true);
 
-  const run = async (action: string, ids: string[], args?: Record<string, unknown>): Promise<number> => {
+  const run = async (action: string, ids: string[], args?: Record<string, unknown>, ro?: RunOptions): Promise<number> => {
     if (!ids.length) return 0;
     const replies = await Promise.all(ids.map((id) => api.command(action, id, args).then((r) => ({ id, r }))));
     const ok = replies.filter((x) => x.r.ok).map((x) => x.id);
     const bad = replies.filter((x) => !x.r.ok);
     const kind = undoKindOf(action);
     if (kind && ok.length) {
-      const u = recordUndo(kind, ok, Date.now());
+      const u = recordUndo(kind, ok, Date.now(), ro?.label?.(ok.length));
       setUndo(u);
       setToast({ text: u.label, undo: true, at: Date.now() });
     }
