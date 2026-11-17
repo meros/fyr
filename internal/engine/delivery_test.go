@@ -84,7 +84,9 @@ func TestMessageDeliveryStates(t *testing.T) {
 // it; a read message cannot be cancelled (409).
 func TestCancelUnreadMessage(t *testing.T) {
 	h := newHarness(t, time.Minute)
-	id := h.create("slow 900")
+	// The turn takes its queue in only after "release" below: under load a
+	// fixed delay ran out before the cancel, and B was read (409).
+	id := h.create("hold")
 	h.wait(id, "working", state(core.Working))
 	a := messageID(t, h.cmd("thread.send", id, core.Args{"text": "steer A"}))
 	b := messageID(t, h.cmd("thread.send", id, core.Args{"text": "steer B"}))
@@ -101,8 +103,9 @@ func TestCancelUnreadMessage(t *testing.T) {
 	if r := h.cmdID("cancel-b", "thread.cancelMessage", id, core.Args{"messageId": b}); !r.OK {
 		t.Fatalf("same command twice: %+v", r)
 	}
+	h.cmd("thread.send", id, core.Args{"text": "release"})
 	th = h.wait(id, "done", state(core.Done))
-	if th.Summary != "took in: steer A" {
+	if th.Summary != "took in: steer A, release" {
 		t.Fatalf("the agent saw %q", th.Summary)
 	}
 	if r := h.cmd("thread.cancelMessage", id, core.Args{"messageId": a}); r.OK || r.Status != 409 {
