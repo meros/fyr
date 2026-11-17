@@ -9,7 +9,7 @@ import { clockTime } from "./format.ts";
 import { ContextMenu } from "./menu-ui.tsx";
 import { UndIcon, useUnd } from "./undeclared-ctx.tsx";
 import { railUndeclared } from "./undeclared.ts";
-import { loadDetail, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, slotTip, STRIP_MAX, undeclaredTip, type StripHost, threadCPU, threadJob, threadSlot, type HostLoad, type RailBudget, type Slots } from "./load.ts";
+import { loadDetail, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, slotTip, STRIP_MAX, undeclaredTip, type StripHost, threadCPU, threadJob, threadSlot, type HostLoad, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -64,8 +64,54 @@ export function useLoad(): HostLoad[] {
   return l;
 }
 
-/** The rail (desktop), V0.99: each host's 1-minute load as a ring (the share of the cores, coloured calm, warm or
- *  hot) with the figure inside, and the slots for heavy jobs as pips under it; the exact values on hover. */
+/** V0.167: what the two meters are, first in every host's tooltip. */
+export const METERS_LEGEND = "ld: the load, % of the cores (1 min) · job: heavy jobs' use of their budget (the tighter of CPU and memory)";
+
+/** V0.167: one host's load and heavy jobs as two labelled meters, the same on the desktop rail, the phone's strip and
+ *  its sheet: the host's name (when given), "ld" with a bar in the load colour (V0.99's and decision 0029's rule) and
+ *  the load as a share of the cores (V0.152), "job" with a blue bar and the heavy jobs' use (V0.163; V0.164's
+ *  undeclared part hatched; red with "+n" while jobs wait). An offline host: its name and "offline". */
+export function HostMeters({ h, name, full, jobsTip, offline }: { h?: HostLoad; name?: string; full?: string; jobsTip?: string; offline?: boolean }) {
+  const m = h && railMeter(h);
+  const bud = h && railBudget(h);
+  return (
+    <span class={`hm${m ? ` ${m.level}` : ""}${offline ? " off" : ""}`}>
+      {name && (
+        <span class="hmn mono" title={full}>
+          {name}
+        </span>
+      )}
+      {offline || !m ? (
+        <span class="hmo mono">offline</span>
+      ) : (
+        <>
+          <span class={`hmr ld${m.level === "hot" ? " hot" : ""}`}>
+            <span class="hmk">ld</span>
+            <span class="hmb">
+              <i style={{ width: `${Math.round(m.share * 100)}%` }} />
+            </span>
+            <span class="hmv">{m.text}</span>
+          </span>
+          {bud && (
+            <span class={`hmr job${bud.hot ? " hot" : ""}`} title={jobsTip}>
+              <span class="hmk">job</span>
+              <span class="hmb">
+                <i style={{ width: `${Math.round(bud.share * 100)}%` }} />
+                {!!bud.und && <i class="und" style={{ width: `${Math.round(bud.und * 100)}%` }} />}
+              </span>
+              <span class="hmv">
+                {bud.text.replace(" ", "")}
+                {bud.waiting > 0 && <em>+{bud.waiting}</em>}
+              </span>
+            </span>
+          )}
+        </>
+      )}
+    </span>
+  );
+}
+
+/** The rail (desktop), V0.99, V0.167: per host its two meters (HostMeters), stacked; the exact values on hover. */
 export function LoadRail() {
   const list = useLoad();
   if (!list.length) return null;
@@ -74,32 +120,20 @@ export function LoadRail() {
   const und = useUnd();
   return (
     <div class="rld">
-      {list.map((h) => {
-        const m = railMeter(h);
-        const bud = railBudget(h);
-        const label = railLabel(h, several); // V0.140: with several hosts each ring names its host
-        return (
-          <div class="rldw">
-          <div class={`rldr ${m.level}`} title={loadDetail(h).join("\n")} role="img" aria-label={label}>
-            <LoadRing share={m.share} text={m.text} />
-            {several && (
-              <small class="rldh mono" title={h.host}>
-                {short.get(h.host)}
-              </small>
-            )}
-            {bud && <SlotBar b={bud} tip={slotTip(h, { lookup: und.lookup, now: und.now() })} />}
+      {list.map((h) => (
+        <div class="rldw">
+          <div class={`rldr ${railMeter(h).level}`} title={[METERS_LEGEND, ...loadDetail(h)].join("\n")} role="img" aria-label={railLabel(h, several)}>
+            <HostMeters h={h} name={several ? short.get(h.host) : undefined} full={h.host} jobsTip={slotTip(h, { lookup: und.lookup, now: und.now() })} />
           </div>
           <RailUndeclared h={h} />
-          </div>
-        );
-      })}
+        </div>
+      ))}
     </div>
   );
 }
 
-/** V0.166: the phone's load strip, in the inbox header: per host the rail's ring (the load as a share of the cores),
- *  its short name with several hosts, and the heavy jobs' use as a percentage (V0.163) in the hot colour while jobs
- *  wait; an offline host as an empty ring and "off". One button: a tap opens the sheet. The same pieces as the rail. */
+/** V0.166, V0.167: the phone's load strip, in the inbox header: per host the rail's two meters (HostMeters) with its
+ *  short name when there are several; an offline host as its name and "offline". One button: a tap opens the sheet. */
 export function LoadStrip({ hosts, onOpen }: { hosts: StripHost[]; onOpen(): void }) {
   if (!hosts.length) return null;
   const several = hosts.length > 1;
@@ -109,56 +143,35 @@ export function LoadStrip({ hosts, onOpen }: { hosts: StripHost[]; onOpen(): voi
   const label = hosts.map((h) => (h.load ? railLabel(h.load, true) : `${h.name}: offline`)).join("; ");
   return (
     <button type="button" class="m-load" onClick={onOpen} aria-label={`Host load: ${label}. Show details`}>
-      {shown.map((h) => {
-        if (!h.load) {
-          return (
-            <span class="mlh off">
-              <LoadRing share={0} text="–" />
-              <span class="mlc">
-                {several && <small class="mono">{short.get(h.name)}</small>}
-                <small class="mono">off</small>
-              </span>
-            </span>
-          );
-        }
-        const m = railMeter(h.load);
-        const bud = railBudget(h.load);
-        return (
-          <span class={`mlh rldr ${m.level}`}>
-            <LoadRing share={m.share} text={m.text} />
-            <span class="mlc">
-              {several && <small class="mono">{short.get(h.name)}</small>}
-              {bud && <small class={`mono${bud.hot ? " hot" : ""}`}>{bud.text.replace(" ", "")}{bud.waiting > 0 && <em>+{bud.waiting}</em>}</small>}
-            </span>
-          </span>
-        );
-      })}
+      {shown.map((h) => (
+        <span class={`mlh${h.load ? "" : " off"}`}>
+          <HostMeters h={h.load} offline={!h.load} name={several ? short.get(h.name) : undefined} />
+        </span>
+      ))}
       {hosts.length > shown.length && <span class="mlmore mono">+{hosts.length - shown.length}</span>}
     </button>
   );
 }
 
-/** V0.166: the phone's load sheet: per host the ring, the full name and state, the heavy jobs' bar, and the rail's
- *  tooltip lines as text (the load, the signals, CPU and memory in use and their budget, the running jobs with their
- *  share, who waits and why, undeclared work); then the provider quotas. */
+/** V0.166, V0.167: the phone's load sheet: per host its full name and state, its two meters, and the rail's tooltip
+ *  lines as text (the load, the signals, CPU and memory in use and their budget, the running jobs with their share,
+ *  who waits and why, undeclared work); then the provider quotas. */
 export function LoadSheetBody({ hosts, quotas }: { hosts: StripHost[]; quotas: ComponentChildren }) {
   const und = useUnd();
   return (
     <div class="m-lsheet">
+      <p class="mlsk">{METERS_LEGEND}</p>
       {hosts.map((h) => {
-        const m = h.load && railMeter(h.load);
-        const bud = h.load && railBudget(h.load);
         const lines = h.load ? loadDetail(h.load) : [];
         const ut = h.load ? undeclaredTip(h.load, und.lookup, und.now()) : "";
         return (
           <section class={`mls${h.load ? "" : " off"}`} aria-label={h.name}>
-            <div class={`mlsh rldr ${m ? m.level : ""}`}>
-              <LoadRing share={m ? m.share : 0} text={m ? m.text : "–"} />
+            <div class="mlsh">
               <span class="mlsn">
                 <b class="mono ell">{h.name}</b>
-                <small>{h.load ? `Load ${m!.text} of the cores` : `Offline${h.offline && clockTime(h.offline) ? ` since ${clockTime(h.offline)}` : ""}; no load until it is back`}</small>
+                {!h.load && <small>{`Offline${h.offline && clockTime(h.offline) ? ` since ${clockTime(h.offline)}` : ""}; no load until it is back`}</small>}
               </span>
-              {bud && <SlotBar b={bud} tip="" />}
+              {h.load && <HostMeters h={h.load} />}
             </div>
             {lines.length > 0 && (
               <ul class="mlsl">
@@ -176,44 +189,6 @@ export function LoadSheetBody({ hosts, quotas }: { hosts: StripHost[]; quotas: C
         {quotas}
       </section>
     </div>
-  );
-}
-
-const R = 12;
-const C = 2 * Math.PI * R;
-
-/** V0.152: the figure is a share of the cores; its "%" is set smaller so three digits fit the ring. */
-function LoadRing({ share, text }: { share: number; text: string }) {
-  const pct = text.endsWith("%");
-  return (
-    <span class="rring" aria-hidden="true">
-      <svg viewBox="0 0 30 30" width="30" height="30">
-        <circle class="trk" cx="15" cy="15" r={R} />
-        {share > 0 && <circle class="arc" cx="15" cy="15" r={R} stroke-dasharray={`${(share * C).toFixed(2)} ${C.toFixed(2)}`} transform="rotate(-90 15 15)" />}
-      </svg>
-      <b class={text.length > 3 ? "w3" : undefined}>
-        {pct ? text.slice(0, -1) : text}
-        {pct && <small>%</small>}
-      </b>
-    </span>
-  );
-}
-
-/** Decision 0029 S2, V0.152, V0.163: heavy jobs' use of their budget as a thin bar with its percentage under it (the
- *  tighter of CPU and memory), "+2" in the hot colour while jobs wait; both resources and every job on hover. No count. */
-function SlotBar({ b, tip }: { b: RailBudget; tip: string }) {
-  return (
-    <span class={`rbar${b.hot ? " hot" : ""}`} title={tip}>
-      <span class="trk">
-        <i style={{ width: `${Math.round(b.share * 100)}%` }} />
-        {/* V0.164: the use Fyr did not admit, hatched, after the admitted part */}
-        {!!b.und && <i class="und" style={{ width: `${Math.round(b.und * 100)}%` }} />}
-      </span>
-      <small class="mono">
-        {b.text}
-        {b.waiting > 0 && <em>+{b.waiting}</em>}
-      </small>
-    </span>
   );
 }
 
