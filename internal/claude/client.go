@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/runner"
 )
 
@@ -82,8 +83,10 @@ func Start(s Spec) (*Client, error) {
 	base := []string{"--output-format", "stream-json", "--verbose", "--input-format", "stream-json",
 		"--permission-prompt-tool", "stdio"}
 	args := append(base, s.Args...)
-	env := append(os.Environ(), "CLAUDE_CODE_ENTRYPOINT=sdk-go")
-	env = append(env, s.Env...)
+	// #167: an agent process never gets the launcher's variables, which
+	// name the live install (its runner and ready file).
+	env := append(launchenv.Scrub(os.Environ()), "CLAUDE_CODE_ENTRYPOINT=sdk-go")
+	env = append(env, launchenv.Scrub(s.Env)...)
 	if s.Runner != nil {
 		p, err := s.Runner.Spawn(runner.Spawn{ID: s.ID, Key: s.Key, Binary: s.Binary, Args: args, Dir: s.Dir, Env: env, Cgroup: s.Cgroup, Meta: s.Meta})
 		if err != nil {

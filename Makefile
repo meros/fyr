@@ -1,5 +1,7 @@
 # Fyr. CGO is off: the SQLite driver is pure Go and NixOS has no global gcc.
 export CGO_ENABLED := 0
+# #167: these name the live install (its runner and ready file). A make run from an agent's shell never passes them on.
+unexport FYR_RUNNER FYR_LAUNCHER FYR_READY_FILE FYR_LAUNCHER_PID
 OUT ?= bin
 BUILD_ID ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null)$(shell git diff --quiet 2>/dev/null || echo -dirty-$$(date +%s))
 

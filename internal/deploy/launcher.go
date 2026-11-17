@@ -12,9 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/meros/fyr/internal/launchenv"
+	"github.com/meros/fyr/internal/runner"
 )
 
 // ExitDeploy is the daemon's exit code for "switch to next".
@@ -23,8 +27,12 @@ const ExitDeploy = 75
 // MarkReady tells the launcher that the daemon serves requests. With addr
 // (host:port of the loopback listener) the launcher also asks its
 // /healthz before it trusts a new build (#148).
+//
+// The file is the one launchenv.Init kept: this install's, under its
+// launcher (#167). An agent's fyrd, which inherited the live install's
+// variables before #167, writes nothing.
 func MarkReady(addr ...string) {
-	if p := os.Getenv("FYR_READY_FILE"); p != "" {
+	if p := launchenv.Current().ReadyFile; p != "" {
 		s := fmt.Sprint(os.Getpid())
 		if len(addr) > 0 && addr[0] != "" {
 			s += " " + addr[0]
@@ -137,7 +145,9 @@ func (l *Launcher) Run() error {
 		logPath := l.path("daemon.log")
 		logf, _ := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		cmd := exec.Command(exe, l.Args...)
-		cmd.Env = append(append(os.Environ(), "FYR_LAUNCHER=1", "FYR_READY_FILE="+ready), l.Env...)
+		// #167: what this launcher says, never what it inherited.
+		cmd.Env = append(append(launchenv.Scrub(os.Environ()), launchenv.Launcher+"=1", launchenv.ReadyFile+"="+ready,
+			launchenv.LauncherPid+"="+strconv.Itoa(os.Getpid())), l.Env...)
 		cmd.Stdout, cmd.Stderr = logf, logf
 		if err := cmd.Start(); err != nil {
 			logf.Close()
@@ -161,6 +171,7 @@ func (l *Launcher) Run() error {
 		exited := false
 		if promoted {
 			deadline := time.After(l.ReadyTimeout)
+			ignored := 0
 		waitReady:
 			for {
 				select {
@@ -175,14 +186,18 @@ func (l *Launcher) Run() error {
 					promoted = false
 					goto next
 				case <-time.After(20 * time.Millisecond):
-					if _, e := os.Stat(ready); e == nil {
+					// #167: only the fyrd this launcher started says it is ready.
+					if pid, ok := readyPid(ready); ok && pid == cmd.Process.Pid {
 						break waitReady
+					} else if ok && pid != ignored {
+						ignored = pid
+						log.Printf("fyr: ignoring %s from pid %d: the build runs as pid %d", ready, pid, cmd.Process.Pid)
 					}
 				}
 			}
 			// #148: a build that wrote its address must also answer
 			// /healthz within what is left of the ready timeout.
-			if addr := readyAddr(ready); !exited && addr != "" {
+			if addr := readyAddr(ready, cmd.Process.Pid); !exited && addr != "" {
 				left := l.ReadyTimeout - time.Since(started)
 				if left < 2*time.Second {
 					left = 2 * time.Second
@@ -305,4 +320,30 @@ func tailFile(p string, n int) string {
 		b = b[len(b)-n:]
 	}
 	return string(b)
+}
+
+// ChildPid is the pid of the fyrd running now, 0 before the first start.
+func (l *Launcher) ChildPid() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.child == nil {
+		return 0
+	}
+	return l.child.Pid
+}
+
+// ServeRunner starts the runner that holds the agent processes for as long
+// as the launcher lives (V0.90) on the data folder's socket, and names it
+// to fyrd. Only the fyrd this launcher started may use it (#167): a fyrd
+// that an agent or a test starts cannot list, take over or end the
+// processes of the live one.
+func (l *Launcher) ServeRunner(logf func(string, ...any)) (*runner.Server, error) {
+	srv := &runner.Server{Logf: logf, Allow: func(pid int) bool { return pid != 0 && pid == l.ChildPid() }}
+	sock := runner.SocketPath(l.Data)
+	if err := srv.Listen(sock); err != nil {
+		return nil, err
+	}
+	go srv.Serve()
+	l.Env = append(l.Env, launchenv.Runner+"="+sock)
+	return srv, nil
 }
