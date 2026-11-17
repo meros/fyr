@@ -271,71 +271,87 @@ export function Inbox(p: InboxProps) {
   );
 }
 
-/** The filters as the app computed them (V0.134), shared by the desktop and the phone. */
+/** The filters as the app computed them (V0.134, V0.169), shared by the desktop and the phone. */
 export interface FilterView {
   hosts: HostChip[];
   projects: ProjectChip[];
   sel: FilterSel;
-  setHost(name: string | null): void;
+  /** V0.169: turn a host off, or back on */
+  toggleHost(name: string): void;
   setProject(id: string | null): void;
-  /** clears both */
+  /** every host on and no project picked */
   clear(): void;
   /** filterEmpty: null, or the second line of the empty state */
   empty: string | null;
 }
 
-/** Desktop and phone (V0.100, V0.134): one compact row of chips under the search field: the hosts, then the projects,
- *  each group only with more than one value in view or a value selected. A click filters, a click on the selected chip
- *  clears it, the × clears both. V0.114: picking a quiet project shows the gate under the row, not its threads, until
- *  the 30 s hold. */
+/** Desktop and phone (V0.100, V0.134, V0.169): two rows under the search field. Row 1 is a switch with one segment
+ *  per host (its dot from Settings → Hosts, its short name, its threads in view); a click turns the host off (grey,
+ *  struck through, "hidden") or back on; the last host on cannot be turned off. Row 2 is the project chips, counted
+ *  over the hosts that are on: a click picks a project, a click on the picked one or the × clears it. Each row shows
+ *  only when it has a choice. V0.114: picking a quiet project shows the gate under the rows, not its threads, until the
+ *  30 s hold. */
 export function FilterRow({ f, now, unlock }: { f: FilterView; now: number; unlock: QuietUnlock }) {
   if (!f.hosts.length && !f.projects.length) return null;
   const picked = f.projects.find((c) => c.selected)?.project;
   const n = (x: number) => `${x.toLocaleString()} thread${x === 1 ? "" : "s"} in view`;
   return (
     <>
-    <div class="pfrow" role="toolbar" aria-label="Filter threads">
-      {(f.sel.host || f.sel.project) && (
-        <button class="pfx" onClick={f.clear} title="Show every thread" aria-label="Clear the filter">
-          ×
-        </button>
-      )}
-      {f.hosts.map((h) => {
-        // The host's mark in Settings → Hosts: its dot, filled when online, a ring when offline, signal when changed.
-        const state = !h.info ? "not listed" : h.info.idWas ? "its id changed" : h.info.online ? "online" : "offline";
-        return (
-          <button class={`pfh${h.selected ? " on" : ""}`} aria-pressed={h.selected} title={`${h.name}: ${n(h.n)} · ${state}`} onClick={() => f.setHost(h.selected ? null : h.name)}>
-            <span class={`hdot${!h.info || h.info.idWas ? " warn" : h.info.online ? "" : " off"}`} aria-hidden="true" />
-            <span class="ell">{h.name}</span>
+    <div class="frows">
+    {f.hosts.length > 0 && (
+      <div class="hfrow" role="group" aria-label="Hosts">
+        {f.hosts.map((h) => {
+          // The host's mark in Settings → Hosts: its dot, filled when online, a ring when offline, signal when changed.
+          const state = !h.info ? "not listed" : h.info.idWas ? "its id changed" : h.info.online ? "online" : "offline";
+          const tip = `${h.name}: ${n(h.n)} · ${state} · ${h.on ? (h.last ? "the last host shown; turn another one on first" : "shown; click to hide its threads") : "hidden; click to show its threads"}`;
+          return (
+            <button class={`hft${h.on ? "" : " off"}`} aria-pressed={h.on} aria-disabled={h.last || undefined} title={tip} aria-label={`${h.name}, ${h.on ? "shown" : "hidden"}`} onClick={() => !h.last && f.toggleHost(h.name)}>
+              <span class={`hdot${!h.info || h.info.idWas ? " warn" : h.info.online ? "" : " off"}`} aria-hidden="true" />
+              <span class="ell nm">{h.short}</span>
+              <span class="hn">{h.on ? h.n.toLocaleString() : "hidden"}</span>
+            </button>
+          );
+        })}
+      </div>
+    )}
+    {f.projects.length > 0 && (
+      <div class="pfrow" role="toolbar" aria-label="Filter by project">
+        {f.sel.project && (
+          <button class="pfx" onClick={() => f.setProject(null)} title="Show every project" aria-label="Clear the project filter">
+            ×
           </button>
-        );
-      })}
-      {f.hosts.length > 0 && f.projects.length > 0 && <span class="pfsep" aria-hidden="true" />}
-      {f.projects.map(({ project: p, n: k, selected }) => {
-        // V0.46: a project in its quiet hours says so. V0.114: picking it here opens it only after the hold.
-        const note = quietNote(p, now);
-        return (
-          <button class={`pfc${selected ? " on" : ""}${note ? " quiet" : ""}`} aria-pressed={selected} style={{ "--pc": colorVar(p.color, p.name) }} title={`${p.name}: ${n(k)}${note ? ` · ${note}, hidden from the inbox` : ""}`} onClick={() => f.setProject(selected ? null : p.id ?? null)}>
-            <ProjectIcon project={p} name={p.name} size={16} />
-            <span class="ell">{p.name}</span>
-            {note && selected && <span class="pfq">{note}</span>}
-          </button>
-        );
-      })}
+        )}
+        {f.projects.map(({ project: p, n: k, selected }) => {
+          // V0.46: a project in its quiet hours says so. V0.114: picking it here opens it only after the hold.
+          const note = quietNote(p, now);
+          return (
+            <button class={`pfc${selected ? " on" : ""}${note ? " quiet" : ""}`} aria-pressed={selected} style={{ "--pc": colorVar(p.color, p.name) }} title={`${p.name}: ${n(k)}${note ? ` · ${note}, hidden from the inbox` : ""}`} onClick={() => f.setProject(selected ? null : p.id ?? null)}>
+              <ProjectIcon project={p} name={p.name} size={16} />
+              <span class="ell">{p.name}</span>
+              {note && selected && <span class="pfq">{note}</span>}
+            </button>
+          );
+        })}
+      </div>
+    )}
     </div>
     {picked && quietLocked(picked, now, unlock.showUntil) && <QuietGate project={picked} now={now} unlock={unlock} what="threads" />}
     </>
   );
 }
 
-/** V0.134: the list when a filter is on and none of its threads is in view (its last one left, or is in a folded
- *  section): what is picked, how many wait in folded sections, and Clear filter. */
+/** V0.134, V0.169: the list when a filter is on and none of its threads is in view (its last one left, or is in a
+ *  folded section): what is picked or hidden, how many wait in folded sections, and Clear filter (every host on, no
+ *  project). */
 export function FilterEmpty({ f, cls }: { f: FilterView; cls: string }) {
   if (f.empty === null) return null;
-  const what = [f.hosts.find((h) => h.selected)?.name, f.projects.find((c) => c.selected)?.project.name].filter(Boolean).join(" · ");
+  // V0.169: "for fyr", "with server hidden", "for fyr with server hidden".
+  const project = f.projects.find((c) => c.selected)?.project.name;
+  const off = f.hosts.filter((h) => !h.on).map((h) => h.short);
+  const what = [project ? `for ${project}` : "", off.length ? `with ${off.join(", ")} hidden` : ""].filter(Boolean).join(" ");
   return (
     <div class={cls} role="status">
-      <span class="fe1">No threads in view for {what || "this filter"}.</span>
+      <span class="fe1">No threads in view {what || "for this filter"}.</span>
       {f.empty && <span class="fe2">{f.empty}</span>}
       <button class="btn fe3" onClick={f.clear}>
         Clear filter
