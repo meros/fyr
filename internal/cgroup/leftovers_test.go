@@ -1,6 +1,6 @@
 package cgroup
 
-// V0.175: leftover processes. These tests start real processes (a fake CLI
+// V0.176: leftover processes. These tests start real processes (a fake CLI
 // with a child, orphans whose parent exited, a `timeout` orphan) and list
 // their pids in a scratch cgroupfs in a temp dir; the live tree is never read
 // or written. /proc is the real one, so ppid, start time and argv are real.
@@ -127,7 +127,7 @@ func byPID(ls []Leftover) map[int]Leftover {
 	return m
 }
 
-func TestV175ALeftoverIsWhatIsNotTheCLIsTree(t *testing.T) {
+func TestV176ALeftoverIsWhatIsNotTheCLIsTree(t *testing.T) {
 	needLinux(t)
 	tr, agents := scratch(t)
 	cli, child := startCLI(t)
@@ -163,7 +163,7 @@ func TestV175ALeftoverIsWhatIsNotTheCLIsTree(t *testing.T) {
 	}
 }
 
-func TestV175AThreadWithoutALiveCLILeavesEverythingAndAnUnknownPidLeavesNothing(t *testing.T) {
+func TestV176AThreadWithoutALiveCLILeavesEverythingAndAnUnknownPidLeavesNothing(t *testing.T) {
 	needLinux(t)
 	tr, agents := scratch(t)
 	cli, child := startCLI(t)
@@ -202,7 +202,7 @@ func newTracker(t *testing.T, tr *Tree, clis map[string]int, th fakeThreads, now
 	return l, &lines
 }
 
-func TestV175BSettledThreadsLeftoversEndAtOnceAndLeaveALine(t *testing.T) {
+func TestV176BSettledThreadsLeftoversEndAtOnceAndLeaveALine(t *testing.T) {
 	needLinux(t)
 	tr, agents := scratch(t)
 	cli, child := startCLI(t)
@@ -220,7 +220,7 @@ func TestV175BSettledThreadsLeftoversEndAtOnceAndLeaveALine(t *testing.T) {
 	}
 }
 
-func TestV175BLiveThreadKeepsLeftoversUntilIdleLimitUnlessKeptOrTimed(t *testing.T) {
+func TestV176BLiveThreadKeepsLeftoversUntilIdleLimitUnlessKeptOrTimed(t *testing.T) {
 	needLinux(t)
 	tr, agents := scratch(t)
 	cli, child := startCLI(t)
@@ -272,7 +272,7 @@ func TestV175BLiveThreadKeepsLeftoversUntilIdleLimitUnlessKeptOrTimed(t *testing
 	waitFor(t, func() bool { return !alive(kept) && !alive(timed) })
 }
 
-func TestV175BOwnerKeepHoldsThroughSettleAndOwnerEndEndsAtOnce(t *testing.T) {
+func TestV176BOwnerKeepHoldsThroughSettleAndOwnerEndEndsAtOnce(t *testing.T) {
 	needLinux(t)
 	tr, agents := scratch(t)
 	a := orphan(t, "sleep 307")
@@ -308,7 +308,7 @@ func TestV175BOwnerKeepHoldsThroughSettleAndOwnerEndEndsAtOnce(t *testing.T) {
 	}
 }
 
-func TestV175BOrphanCgroupEndsAfterTheGraceAndPidReuseIsRefused(t *testing.T) {
+func TestV176BOrphanCgroupEndsAfterTheGraceAndPidReuseIsRefused(t *testing.T) {
 	needLinux(t)
 	tr, agents := scratch(t)
 	a := orphan(t, "sleep 309")
@@ -335,7 +335,7 @@ func TestV175BOrphanCgroupEndsAfterTheGraceAndPidReuseIsRefused(t *testing.T) {
 	}
 }
 
-func TestV175EProcessTreeModeFollowsTheCLIsDescendantsAfterItEnds(t *testing.T) {
+func TestV176EProcessTreeModeFollowsTheCLIsDescendantsAfterItEnds(t *testing.T) {
 	needLinux(t)
 	cli, child := startCLI(t)
 	now := time.Now()
@@ -358,7 +358,7 @@ func TestV175EProcessTreeModeFollowsTheCLIsDescendantsAfterItEnds(t *testing.T) 
 	}
 }
 
-func TestV175TimeoutDuration(t *testing.T) {
+func TestV176TimeoutDuration(t *testing.T) {
 	for in, want := range map[string]time.Duration{
 		"timeout 12h kubectl port-forward x": 12 * time.Hour,
 		"timeout -s INT 90 sleep 1":          90 * time.Second,
@@ -373,7 +373,7 @@ func TestV175TimeoutDuration(t *testing.T) {
 	}
 }
 
-func TestV175NameIsShort(t *testing.T) {
+func TestV176NameIsShort(t *testing.T) {
 	for in, want := range map[string]string{
 		"/nix/store/abc-chromium/bin/chromium --headless --user-data-dir=/tmp/x": "chromium",
 		"python3 -m http.server 8000":                                            "http.server",
@@ -388,7 +388,7 @@ func TestV175NameIsShort(t *testing.T) {
 	}
 }
 
-func TestV175EPsTableKeepsAProcessIdentityAcrossReads(t *testing.T) {
+func TestV176EPsTableKeepsAProcessIdentityAcrossReads(t *testing.T) {
 	out := "  101     1  2048 01:02:03 /usr/bin/python3 -m http.server 8000\n  102   101   100 1-00:00:05 timeout 4h cloud-sql-proxy x\n"
 	now := time.Now()
 	a, b := psTable(out, now), psTable(out, now.Add(1500*time.Millisecond))

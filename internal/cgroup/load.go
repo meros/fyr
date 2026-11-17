@@ -54,7 +54,7 @@ type Load struct {
 	Suggestions        []heavy.Suggestion `json:"suggestions,omitempty"`
 	HeavyAdded         []heavy.Added      `json:"heavyAdded,omitempty"`
 	UndeclaredSettings *UndeclaredView    `json:"undeclaredSettings,omitempty"`
-	// V0.175: the leftover processes past their grace, and the temporary
+	// V0.176: the leftover processes past their grace, and the temporary
 	// folders listed for the owner (settled threads' worktrees).
 	Leftovers []Leftover `json:"leftovers,omitempty"`
 	Temps     []Temp     `json:"temps,omitempty"`
@@ -112,7 +112,7 @@ type Sampler struct {
 	names        atomic.Pointer[map[string]string]
 	Trees        *TreeReader
 	CLIs         func() map[string]int
-	// V0.175: the leftover tracker and the temp sweep; optional.
+	// V0.176: the leftover tracker and the temp sweep; optional.
 	Leftovers *Leftovers
 	Temps     *Temps
 

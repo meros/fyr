@@ -64,7 +64,7 @@ export interface HostLoad {
   undeclaredSettings?: UndeclaredSettings;
   suggestions?: HeavySuggestion[];
   heavyAdded?: HeavyAdded[];
-  /** V0.175: the processes threads left running, past their grace, and the settled threads' worktrees */
+  /** V0.176: the processes threads left running, past their grace, and the settled threads' worktrees */
   leftovers?: Leftover[];
   temps?: Temp[];
 }

@@ -1330,7 +1330,7 @@ function HeavyJobsGroup({ host, api, focus }: { host: string; api: SettingsProps
   );
 }
 
-/** V0.175: the processes threads left running on this host (End now, Keep for a day) and the settled threads'
+/** V0.176: the processes threads left running on this host (End now, Keep for a day) and the settled threads'
  *  worktrees (Remove when pushed and clean). Absent when there is nothing. The rail's count lands here (sub
  *  "leftovers"). Desktop and phone share it. */
 function LeftoverGroups({ h, host, api, focus }: { h: HostLoad; host: string; api: SettingsProps["api"]; focus?: string }) {

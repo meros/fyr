@@ -1,4 +1,4 @@
-// SPEC V0.175: leftover processes on the open thread; the rail's and the phone sheet's count are in load-ui.tsx,
+// SPEC V0.176: leftover processes on the open thread; the rail's and the phone sheet's count are in load-ui.tsx,
 // Settings' lists in settings-ui.tsx. The texts are leftovers.ts's. One component serves the desktop and the phone unless a reason is
 // written beside it.
 

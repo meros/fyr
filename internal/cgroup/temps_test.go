@@ -28,7 +28,7 @@ func byPath(ts []Temp) map[string]Temp {
 	return m
 }
 
-func TestV175CLayoutProfilesWhoseChromeIsGoneAreRemovedOthersStay(t *testing.T) {
+func TestV176CLayoutProfilesWhoseChromeIsGoneAreRemovedOthersStay(t *testing.T) {
 	tmp := t.TempDir()
 	now := time.Now()
 	old, busy, fresh := filepath.Join(tmp, "fyr-layout-old"), filepath.Join(tmp, "fyr-layout-busy"), filepath.Join(tmp, "fyr-layout-new")
@@ -51,7 +51,7 @@ func TestV175CLayoutProfilesWhoseChromeIsGoneAreRemovedOthersStay(t *testing.T) 
 	}
 }
 
-func TestV175CScratchOfAnAsleepThreadWithoutCLIGoesAndAnAwakeOneStays(t *testing.T) {
+func TestV176CScratchOfAnAsleepThreadWithoutCLIGoesAndAnAwakeOneStays(t *testing.T) {
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "claude-1000", "-home-x-proj", "sess-a")
 	b := filepath.Join(tmp, "claude-1000", "-home-x-proj", "sess-b")
@@ -77,7 +77,7 @@ func TestV175CScratchOfAnAsleepThreadWithoutCLIGoesAndAnAwakeOneStays(t *testing
 	}
 }
 
-func TestV175CWorktreesOfSettledThreadsAreListedOnlyAPushedCleanOneCanGo(t *testing.T) {
+func TestV176CWorktreesOfSettledThreadsAreListedOnlyAPushedCleanOneCanGo(t *testing.T) {
 	root := t.TempDir()
 	origin, repo := filepath.Join(root, "origin.git"), filepath.Join(root, "repo")
 	git(t, root, "init", "-q", "--bare", "-b", "main", origin)

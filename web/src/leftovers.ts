@@ -1,4 +1,4 @@
-// SPEC V0.175: leftover processes (what a thread left running outside its CLI) and the settled threads' worktrees, as
+// SPEC V0.176: leftover processes (what a thread left running outside its CLI) and the settled threads' worktrees, as
 // words for the open thread's strip, the rail, the phone's load sheet and Settings. Pure texts; the components print them.
 import type { HostLoad, Lookup } from "./load.ts";
 

@@ -2229,7 +2229,7 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}
   }
 });
 
-// SPEC V0.175: leftover processes. ?leftovers=1: Map perf left a Chrome and a mockup server, Nix flake update a
+// SPEC V0.176: leftover processes. ?leftovers=1: Map perf left a Chrome and a mockup server, Nix flake update a
 // port-forward under timeout, Babysit PR #4170 a dev server its agent kept, a test binary is in no thread's cgroup, and two
 // settled threads' worktrees are listed. Desktop at 1280 × 800, light and dark: the rail shows "5 left" under the host's
 // meters (the rail does not scroll at 1000 px) and a press opens Settings → Automation at "Leftover processes"; the open
@@ -2237,8 +2237,8 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}
 // Phone at 390 × 844: the same strip with 44 px buttons under the text, the load sheet's line, and Settings' groups
 // with 44 px controls; nothing is wider than the screen.
 const LFT_COMMANDS = (action) => `(window.__fyrCommands || []).filter((c) => c.action === '${action}').map((c) => c.args)`;
-for (const dark of [false, true]) section(`V0.175 desktop${dark ? " dark" : ""}`, async ({ send, evaluate, waitFor, settle, navigate, shot }) => {
-  const ctx = `V0.175 desktop${dark ? " dark" : ""}`;
+for (const dark of [false, true]) section(`V0.176 desktop${dark ? " dark" : ""}`, async ({ send, evaluate, waitFor, settle, navigate, shot }) => {
+  const ctx = `V0.176 desktop${dark ? " dark" : ""}`;
   const tag = dark ? "dark" : "light";
   try {
     await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
@@ -2286,8 +2286,8 @@ for (const dark of [false, true]) section(`V0.175 desktop${dark ? " dark" : ""}`
   await send("Emulation.setEmulatedMedia", { features: [] });
 });
 
-for (const dark of [false, true]) section(`V0.175 phone${dark ? " dark" : ""}`, async ({ send, evaluate, waitFor, settle, openScreen, shot }) => {
-  const ctx = `V0.175 phone${dark ? " dark" : ""}`;
+for (const dark of [false, true]) section(`V0.176 phone${dark ? " dark" : ""}`, async ({ send, evaluate, waitFor, settle, openScreen, shot }) => {
+  const ctx = `V0.176 phone${dark ? " dark" : ""}`;
   const tag = dark ? "dark" : "light";
   const W = 390;
   try {

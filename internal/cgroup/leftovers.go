@@ -1,11 +1,11 @@
 package cgroup
 
-// V0.175: leftover processes. A thread's cgroup (agents/<thread>/ and its
+// V0.176: leftover processes. A thread's cgroup (agents/<thread>/ and its
 // subgroups) holds its CLI and everything the CLI starts. A process there that
 // is not the CLI or a descendant of it, or any process in the cgroup of a
 // thread with no live CLI, is a leftover: a Chrome a layout run left, a
 // mockup server, a port-forward of a thread that settled. Fyr shows them and
-// ends them by policy (SPEC V0.175):
+// ends them by policy (SPEC V0.176):
 //
 //   - a settled or archived thread's: at once;
 //   - a cgroup no thread of this host has: after LeftoverGrace;

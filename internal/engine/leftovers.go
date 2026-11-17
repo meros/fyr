@@ -11,7 +11,7 @@ import (
 	"github.com/meros/fyr/internal/mcp"
 )
 
-// V0.175: what the leftover tracker and the temp sweep ask of the engine,
+// V0.176: what the leftover tracker and the temp sweep ask of the engine,
 // the line on a thread whose leftovers Fyr ended, and keep_process.
 
 // LeftoverThread says whether id is a thread of this host, asleep (settled or

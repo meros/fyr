@@ -207,7 +207,7 @@ type Engine struct {
 	HeavySuggestion    func(id, do, pattern, kind string) error
 	HeavyRemove        func(pattern string) bool
 	HeavyRefused       func(class string)
-	// V0.175: leftover processes and temporary files. LeftoverSweep looks
+	// V0.176: leftover processes and temporary files. LeftoverSweep looks
 	// now (a run ended, a thread settled); the others are the owner's
 	// commands and the agent's keep_process. All optional.
 	LeftoverSweep   func()
@@ -625,7 +625,7 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(400, err.Error())
 		}
 		reply.Result = map[string]any{"id": id, "do": do}
-	case core.EffectLeftoverEnd: // V0.175
+	case core.EffectLeftoverEnd: // V0.176
 		id, _ := ef.Request.Args["id"].(string)
 		if e.LeftoverEnd == nil {
 			return fail(409, "This host does not track leftover processes")
@@ -743,7 +743,7 @@ type applied struct {
 	newPR    bool
 	replayed bool
 	runEnded bool // V0.86: the thread's run ended in this reduce
-	slept    bool // V0.175: the thread settled or was archived in this reduce
+	slept    bool // V0.176: the thread settled or was archived in this reduce
 }
 
 // apply is the one path (decision 0020): replay the receipt, load, reduce,
@@ -939,7 +939,7 @@ func (e *Engine) publish(p *applied) {
 		e.slotRunEnded(p.threadID)
 	}
 	if (p.runEnded || p.slept) && e.LeftoverSweep != nil {
-		go e.LeftoverSweep() // V0.175: it may wait seconds for a process to end
+		go e.LeftoverSweep() // V0.176: it may wait seconds for a process to end
 	}
 	e.start(p.threadID, p.res.Effects)
 	if p.threadID != "" {

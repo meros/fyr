@@ -110,7 +110,7 @@ type config struct {
 	// 45 s, 30–120); what the owner saves in Settings wins over these.
 	// HeavyAdded are patterns read after heavyCommands (or the defaults).
 	Undeclared string `json:"undeclared"`
-	// V0.175: Leftovers "off" turns off the leftover tracker and the temp
+	// V0.176: Leftovers "off" turns off the leftover tracker and the temp
 	// sweep on this host (nothing is listed or ended).
 	Leftovers        string          `json:"leftovers"`
 	UndeclaredCPU    float64         `json:"undeclaredCpu"`

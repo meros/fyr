@@ -1480,7 +1480,7 @@ label.sr{cursor:pointer}
 .undb .btn{height:26px;padding:0 10px;border-radius:7px;font-size:12px}
 .undb.paused{background:var(--harbour-wash);border-bottom-color:color-mix(in srgb,var(--harbour) 35%,var(--line))}
 .undb.paused .undb-b b,.undb.paused .und-ic{color:var(--harbour)}
-/* V0.175: what a thread left running (leftovers-ui.tsx), and its count under a host's meters in the rail */
+/* V0.176: what a thread left running (leftovers-ui.tsx), and its count under a host's meters in the rail */
 .lftb{flex:none;display:flex;align-items:center;gap:10px;padding:6px 24px;background:var(--sunken);border-bottom:1px solid var(--line);font:400 12px/17px var(--ui);color:var(--ink-muted)}
 .lftb-b{flex:1;min-width:0;overflow-wrap:anywhere}
 .lftb-b .err{color:var(--signal-ink)}

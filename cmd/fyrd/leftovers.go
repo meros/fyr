@@ -17,7 +17,7 @@ import (
 // after a restart, so an adopted CLI is never taken for a leftover.
 const leftoverStart = 2 * time.Minute
 
-// runLeftovers starts V0.175: the leftover tracker (every LeftoverTick, at a
+// runLeftovers starts V0.176: the leftover tracker (every LeftoverTick, at a
 // run's end and at a settle) and the temp sweep (scratch and layout profiles
 // every 10 min with the worktree list).
 func runLeftovers(ctx context.Context, tree *cgroup.Tree, sampler *cgroup.Sampler, eng *engine.Engine, mgr *agent.Manager, h *host) {

@@ -443,7 +443,7 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-lsheet .mls.off .mlsn small{color:var(--ink-faint)}
 .m-lsheet .mlsl{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
 .m-lsheet .mlsl li.und{color:var(--beam-ink)}
-/* V0.175: the leftover strip's buttons under the text (touch: 44 px), as the undeclared strip's */
+/* V0.176: the leftover strip's buttons under the text (touch: 44 px), as the undeclared strip's */
 .m-thread .lftb{padding:8px 16px;flex-wrap:wrap;font-size:13px;line-height:18px}
 .m-thread .lftb-a{flex:1 1 100%}
 .m-thread .lftb .btn{height:44px;padding:0 14px;border-radius:10px;font-size:14px}

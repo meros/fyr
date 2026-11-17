@@ -196,7 +196,7 @@ export function createMockApi(scenario: string): Api {
         if (!h) return { ok: false, error: `this front follows no host ${String(args?.host)}` };
         return mockUndeclaredCommand(h, action, args ?? {}, Date.now());
       }
-      // V0.175: the owner's End, Keep and Remove of leftovers, as the host answers them.
+      // V0.176: the owner's End, Keep and Remove of leftovers, as the host answers them.
       if (action === "host.leftoverEnd" || action === "host.leftoverKeep" || action === "host.tempRemove") {
         const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
         if (!h) return { ok: false, error: `this front follows no host ${String(args?.host)}` };

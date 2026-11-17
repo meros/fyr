@@ -1,6 +1,6 @@
 package cgroup
 
-// V0.175 (3): temporary files threads leave. A layout run's Chrome profile
+// V0.176 (3): temporary files threads leave. A layout run's Chrome profile
 // (<tmp>/fyr-layout-*) whose Chrome is gone, and the CLI's scratch folder of
 // a settled or archived thread with no live CLI (<tmp>/claude-<uid>/<project>/
 // <session>/), are removed by the sweep. A worktree of a settled thread (its

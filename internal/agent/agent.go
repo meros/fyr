@@ -638,7 +638,7 @@ func (m *Manager) StopAll() {
 }
 
 // LeftoverCLIs are the CLIs the leftover tracker must never take for
-// leftovers (V0.175): each live session's pid, and 0 for a session whose pid
+// leftovers (V0.176): each live session's pid, and 0 for a session whose pid
 // is unknown or a CLI that is starting (the tracker then leaves that thread's
 // cgroup alone).
 func (m *Manager) LeftoverCLIs() map[string]int {

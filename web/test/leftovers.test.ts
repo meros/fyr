@@ -1,4 +1,4 @@
-// SPEC V0.175: leftover processes and temporary folders on the open thread, the rail, the phone's load sheet and in
+// SPEC V0.176: leftover processes and temporary folders on the open thread, the rail, the phone's load sheet and in
 // Settings. Pure texts; the components only print them.
 import { test } from "node:test";
 import assert from "node:assert/strict";

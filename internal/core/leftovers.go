@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// V0.175: leftover processes and temporary files. The host ends a thread's
+// V0.176: leftover processes and temporary files. The host ends a thread's
 // leftovers by policy and leaves a line on its thread (leftover.ended, an
 // EventSlot with "leftovers"; the agent hears it at its next run, never a
 // wake); the owner's End and Keep of one leftover, and Remove of a listed

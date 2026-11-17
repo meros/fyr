@@ -1787,7 +1787,7 @@ export function mockLoad(): HostLoad[] {
   return withLeftovers(withUndeclared(mockLoadBase(), MOCK_UNDECLARED), MOCK_LEFTOVERS);
 }
 
-/** V0.175: ?leftovers=1: Map perf left a Chrome and a mockup server, Nix flake update a port-forward under timeout, a
+/** V0.176: ?leftovers=1: Map perf left a Chrome and a mockup server, Nix flake update a port-forward under timeout, a
  *  dev server Babysit PR #4170's agent kept, a test binary in a cgroup of no thread, and two settled threads' worktrees. */
 const MOCK_LEFTOVERS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("leftovers") ?? "" : "";
 export function withLeftovers(list: HostLoad[], mode: string, now = railNow(Date.now())): HostLoad[] {
@@ -1808,7 +1808,7 @@ export function withLeftovers(list: HostLoad[], mode: string, now = railNow(Date
   return [{ ...h, leftovers, temps }, ...rest];
 }
 
-/** V0.175: host.leftoverEnd, host.leftoverKeep and host.tempRemove on the mock host's load, as the host answers them. */
+/** V0.176: host.leftoverEnd, host.leftoverKeep and host.tempRemove on the mock host's load, as the host answers them. */
 export function mockLeftoverCommand(h: HostLoad, action: string, args: Record<string, unknown>, now = Date.now()): CommandReply {
   if (action === "host.tempRemove") {
     const t = h.temps?.find((x) => x.path === args.path);

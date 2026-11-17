@@ -1,4 +1,4 @@
-// V0.175: the line Fyr leaves when it ends a thread's leftovers, the owner's
+// V0.176: the line Fyr leaves when it ends a thread's leftovers, the owner's
 // End, Keep and Remove, keep_process, and the look at a run's end and a settle.
 package engine
 
@@ -12,7 +12,7 @@ import (
 	"github.com/meros/fyr/internal/core/coretest"
 )
 
-func TestV175TheEndedLineIsOnTheThreadAndANoticeNotAWake(t *testing.T) {
+func TestV176TheEndedLineIsOnTheThreadAndANoticeNotAWake(t *testing.T) {
 	e, _, _ := bare(t)
 	a := bareThread(t, e)
 	e.LeftoversEnded(a, []LeftoverItem{{Name: "chromium", RSS: 2 << 30}, {Name: "http.server", RSS: 20 << 20}}, "the thread settled")
@@ -32,7 +32,7 @@ func TestV175TheEndedLineIsOnTheThreadAndANoticeNotAWake(t *testing.T) {
 	}
 }
 
-func TestV175TheOwnersCommandsReachTheHostAndAreTheOwnersOnly(t *testing.T) {
+func TestV176TheOwnersCommandsReachTheHostAndAreTheOwnersOnly(t *testing.T) {
 	e, _, _ := bare(t)
 	var ended, kept, removed []string
 	var keptFor time.Duration
@@ -62,7 +62,7 @@ func TestV175TheOwnersCommandsReachTheHostAndAreTheOwnersOnly(t *testing.T) {
 	_ = kept
 }
 
-func TestV175ARunsEndAndASettleLookAtOnce(t *testing.T) {
+func TestV176ARunsEndAndASettleLookAtOnce(t *testing.T) {
 	e, _, now := bare(t)
 	a := bareThread(t, e)
 	looked := make(chan struct{}, 4)
@@ -87,7 +87,7 @@ func TestV175ARunsEndAndASettleLookAtOnce(t *testing.T) {
 	}
 }
 
-func TestV175KeepProcessDeclaresForTheCallingThread(t *testing.T) {
+func TestV176KeepProcessDeclaresForTheCallingThread(t *testing.T) {
 	e, _, _ := bare(t)
 	var got struct {
 		th, match, why string
