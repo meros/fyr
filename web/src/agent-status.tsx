@@ -1,5 +1,5 @@
 // SPEC 0.5 V0.143: the status line above the composer, one component on desktop and phone. While a run goes it
-// spins with the live line; while the agent does not respond it says since when and why, and offers Restart.
+// spins with the live line (V0.153: "Waiting for the machine (memory pressure)" while Fyr waits for the host); while the agent does not respond it says since when and why, and offers Restart.
 import { StateIcon } from "./icons.tsx";
 import { liveLine } from "./tasks.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
@@ -7,7 +7,7 @@ import type { Thread } from "./types.ts";
 
 export function AgentStatus({ t, now, phone, onRestart }: { t: Thread; now: number; phone?: boolean; onRestart(): void }) {
   const stuck = t.unresponsive;
-  if (!t.running && !stuck) return null;
+  if (!t.running && !stuck && !t.machineWait) return null;
   const cls = phone ? "sys m-status" : "sys live";
   if (!stuck) {
     return (

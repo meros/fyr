@@ -37,6 +37,7 @@ func RunEnded(t *Thread, f *Failure, now time.Time) {
 // Effect Decisions (5.10) do not need the process and stay open.
 func ProcessLost(t *Thread, class, msg string, now time.Time) {
 	t.Unresponsive = nil // V0.143: the process is gone
+	t.MachineWait = nil  // V0.153
 	var keep []Decision
 	live := t.Running
 	for _, d := range t.Decisions {

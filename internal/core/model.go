@@ -102,6 +102,9 @@ type Conversation struct {
 	// Unresponsive is set while the live agent process does not take what
 	// Fyr writes to it (V0.143): a message, a Stop. Any output clears it.
 	Unresponsive *Unresponsive `json:"unresponsive,omitempty"`
+	// MachineWait is set while Fyr holds off starting or judging the agent
+	// because the host thrashes (V0.153): it waits instead of killing.
+	MachineWait *MachineWait `json:"machineWait,omitempty"`
 	// Handover is set while the thread moves to another profile (V0.45).
 	Handover *Handover `json:"handover,omitempty"`
 }
@@ -125,6 +128,12 @@ type OutMsg struct {
 	// Text is what Fyr wrote to the CLI (V0.143): a restart delivers it
 	// again to the next process.
 	Text string `json:"text,omitempty"`
+}
+
+// MachineWait: since when and why Fyr waits for the machine (V0.153).
+type MachineWait struct {
+	Since time.Time `json:"since"`
+	Why   string    `json:"why"`
 }
 
 // Unresponsive says since when the agent process has said nothing and why

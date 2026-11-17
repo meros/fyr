@@ -273,6 +273,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	if cfg.SlotMemoryReserve > 0 {
 		policy.MemoryReserve = cfg.SlotMemoryReserve
 	}
+	// V0.153: on a thrashing host the agents wait; Fyr kills no CLI for
+	// being slow and restarts none into the same thrash.
+	mgr.SetPressure(func() (bool, string) { return slots.Thrashing(sampler.Signals(), policy) })
 	// Decision 0029 S3 (#187): a job's cost is its class's learned cost
 	// (the prior 1.0 until learned), a holder's at least what it uses now.
 	predict := func(h slots.Holder) (cost, wall float64) {

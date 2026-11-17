@@ -149,3 +149,20 @@ func EASY(now time.Time, cost, wall float64, ends []time.Time) bool {
 	}
 	return !now.Add(time.Duration(wall * float64(time.Second))).After(earliest)
 }
+
+// ThrashFactor: the slowdown, as a multiple of the policy's SlowdownMax,
+// at which the host thrashes (V0.153); admission holds new jobs well before.
+const ThrashFactor = 2.0
+
+// Thrashing says whether the host is under so much pressure that a slow
+// agent CLI is slow because of it, and why (V0.153): memory stalls at the
+// critical level, or new jobs run ThrashFactor × SlowdownMax slower.
+func Thrashing(s Signals, p Policy) (bool, string) {
+	if s.Stall == StallCritical {
+		return true, "memory pressure"
+	}
+	if s.Slowdown != nil && p.SlowdownMax > 0 && *s.Slowdown >= ThrashFactor*p.SlowdownMax {
+		return true, fmt.Sprintf("CPU pressure: new jobs run %.1f× slower", *s.Slowdown)
+	}
+	return false, ""
+}
