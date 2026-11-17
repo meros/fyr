@@ -1,11 +1,13 @@
 // SPEC V0.132: where a new project or thread lives, with several hosts. One field for the desktop and the phone (New
 // thread, New project); the phone's 44 px comes from its stylesheet. The hosts come from the shell (HostsContext), so a
 // form deep in a screen needs no props for them.
+import { HostMark } from "./host-mark-ui.tsx";
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import { hostChoices, hostOfflineNote, type HostInfo } from "./hosts.ts";
 
-export const HostsContext = createContext<{ hosts: HostInfo[]; self: string; now: number }>({ hosts: [], self: "", now: 0 });
+/** V0.170: machine is what this install runs on, for its own mark when hosts[] does not name it (one host). */
+export const HostsContext = createContext<{ hosts: HostInfo[]; self: string; now: number; machine?: string }>({ hosts: [], self: "", now: 0 });
 export const useHosts = () => useContext(HostsContext);
 
 /** The Host field, where the host is a choice (New project, New thread: host first, V0.139): nothing with one host;
@@ -18,13 +20,17 @@ export function HostField({ value, onPick, what = "It lives there: its folders a
   return (
     <label class="fld hostf">
       <span>Host</span>
-      <select value={value} onChange={(e) => onPick((e.target as HTMLSelectElement).value)}>
-        {choices.map((c) => (
-          <option key={c.name} value={c.name}>
-            {c.label}
-          </option>
-        ))}
-      </select>
+      {/* V0.170: the picked host's mark beside the list (a native list draws no icons in its options). */}
+      <span class="hostsel">
+        <HostMark name={value} size={20} />
+        <select value={value} onChange={(e) => onPick((e.target as HTMLSelectElement).value)}>
+          {choices.map((c) => (
+            <option key={c.name} value={c.name}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </span>
       {note ? (
         <span class="srcl hbad" role="alert">
           {note}

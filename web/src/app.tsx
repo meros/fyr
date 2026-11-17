@@ -955,7 +955,7 @@ function App() {
       <FolderPicker key={pickHost} fs={pickFs} first={folderPick?.first} onPick={closeFolderPick} autoFocus={autoFocus} />
     );
   // V0.132: the hosts a new project or thread can live on (HostField, NewProjectStep).
-  const hostsCtx = useMemo(() => ({ hosts: store.hosts, self: store.host, now }), [store.hosts, store.host, Math.floor(now / 60_000)]);
+  const hostsCtx = useMemo(() => ({ hosts: store.hosts, self: store.host, now, machine: store.machine }), [store.hosts, store.host, store.machine, Math.floor(now / 60_000)]);
   const folderPickView = folderPick
     ? phone ? (
         <div class="m-scrim fscrim" onClick={(e) => e.target === e.currentTarget && Date.now() - folderPick.at > 500 && closeFolderPick(null)}>

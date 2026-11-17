@@ -8,6 +8,7 @@ import { LoadRail } from "./load-ui.tsx";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
+import { HostMark } from "./host-mark-ui.tsx";
 import { DESKTOP_LOOK, NeedsRowBody, OneRowBody } from "./row-ui.tsx";
 import { colorVar } from "./projects.ts";
 import { SECTIONS, isOpen, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
@@ -301,12 +302,12 @@ export function FilterRow({ f, now, unlock }: { f: FilterView; now: number; unlo
     {f.hosts.length > 0 && (
       <div class="hfrow" role="group" aria-label="Hosts">
         {f.hosts.map((h) => {
-          // The host's mark in Settings → Hosts: its dot, filled when online, a ring when offline, signal when changed.
+          // V0.170: the host's mark, as everywhere (an offline host's has a ring at its corner).
           const state = !h.info ? "not listed" : h.info.idWas ? "its id changed" : h.info.online ? "online" : "offline";
           const tip = `${h.name}: ${n(h.n)} · ${state} · ${h.on ? (h.last ? "the last host shown; turn another one on first" : "shown; click to hide its threads") : "hidden; click to show its threads"}`;
           return (
             <button class={`hft${h.on ? "" : " off"}`} aria-pressed={h.on} aria-disabled={h.last || undefined} title={tip} aria-label={`${h.name}, ${h.on ? "shown" : "hidden"}`} onClick={() => !h.last && f.toggleHost(h.name)}>
-              <span class={`hdot${!h.info || h.info.idWas ? " warn" : h.info.online ? "" : " off"}`} aria-hidden="true" />
+              <HostMark name={h.name} size={16} />
               <span class="ell nm">{h.short}</span>
               <span class="hn">{h.on ? h.n.toLocaleString() : "hidden"}</span>
             </button>

@@ -32,6 +32,8 @@ export interface Store {
   host: string;
   /** V0.125: this install's id (the state's hostId, V0.124), for Settings → Hosts when the front lists no hosts */
   hostId: string;
+  /** V0.170: what this install runs on, for its mark when the front lists no hosts */
+  machine: string;
   /** V0.51 */
   hosts: HostInfo[];
   threads: Record<string, Thread>;
@@ -60,6 +62,7 @@ export function initialStore(): Store {
     user: "",
     host: "",
     hostId: "",
+    machine: "",
     hosts: [],
     threads: {},
     actions: [],
@@ -113,6 +116,7 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     user: dto.user ?? "",
     host: dto.host ?? "",
     hostId: typeof dto.hostId === "string" ? dto.hostId : "",
+    machine: typeof dto.machine === "string" ? dto.machine : "",
     hosts: dto.hosts ?? [],
     threads,
     actions: dto.actions ?? [],

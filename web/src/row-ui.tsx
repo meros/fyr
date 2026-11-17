@@ -9,6 +9,9 @@ import { press } from "./confirm.ts";
 import { ThreadCPU, ThreadJob, ThreadSlot, useThreadJob } from "./load-ui.tsx";
 import { RowUndeclared, useRowUndeclared } from "./undeclared-ui.tsx";
 import { RowProject, RowProjectName, StartedBy } from "./project-ui.tsx";
+import { useHosts } from "./host-pick-ui.tsx";
+import { HostMark } from "./host-mark-ui.tsx";
+import { hostOf, multiHost } from "./hosts.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState } from "./rows.ts";
 import { relTime, untilLabel, whenLabel } from "./format.ts";
@@ -73,10 +76,19 @@ export const PIN_ICON = (
 );
 
 function RowHead({ t, look }: { t: Thread; look: RowLook }) {
+  // V0.170: with more than one host, the host's mark comes first, then the project's icon (circles are hosts, squares
+  // are projects); --rh moves the icon, the pin and the title's indent past it.
+  const { hosts } = useHosts();
+  const host = multiHost(hosts) ? hostOf(t, hosts) : undefined;
   return (
-    // The icon and the pin sit over the title's first-line indent (app.css): inside the clamped box an element would
+    // The icons and the pin sit over the title's first-line indent (app.css): inside the clamped box an element would
     // become a block of its own (-webkit-box), and Safari clamps only plain text.
-    <span class={`hd${t.pinnedAt ? " pinned" : ""}`} style={{ "--ri": `${look.icon}px` }}>
+    <span class={`hd${t.pinnedAt ? " pinned" : ""}`} style={{ "--ri": `${look.icon}px`, ...(host ? { "--rh": `${look.icon + 4}px` } : {}) }}>
+      {host && (
+        <span class="rhm">
+          <HostMark name={host} size={look.icon} label />
+        </span>
+      )}
       <RowProject t={t} size={look.icon} />
       {t.pinnedAt && (
         <span class="pin" title="Pinned" aria-label="Pinned" role="img">

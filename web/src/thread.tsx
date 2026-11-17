@@ -23,6 +23,7 @@ import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "
 import { isAvailable, unavailableReason } from "./store.ts";
 import { hostChip, hostOf, offlineLine, profilesOfHost } from "./hosts.ts";
 import { useHosts } from "./host-pick-ui.tsx";
+import { HostMark } from "./host-mark-ui.tsx";
 import { onToolDetails, toolDetails } from "./prefs.ts";
 import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
 import { colorVar, projectName, projectOf } from "./projects.ts";
@@ -168,13 +169,15 @@ export function ThreadPane(p: ThreadPaneProps) {
             </span>
           )}
           {t.hostOffline ? (
-            <span class="chip m" title="The front shows this thread from its last copy; commands wait until the host is back">
+            <span class="chip m hostc" title="The front shows this thread from its last copy; commands wait until the host is back">
+              {hc && <HostMark name={hc.name} />}
               <span>{offlineLine(t)}</span>
             </span>
           ) : (
-            // V0.139: the host it runs on, as the phone's header shows it.
+            // V0.139: the host it runs on, as the phone's header shows it; V0.170: with its mark.
             hc && (
               <span class="chip m hostc" title={`Runs on ${hc.name}`}>
+                <HostMark name={hc.name} />
                 <span>{hc.name}</span>
               </span>
             )
