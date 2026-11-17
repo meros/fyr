@@ -148,6 +148,10 @@ type Engine struct {
 	// the restart (V0.90); set before Load.
 	Kept     map[string]bool
 	slotIdle map[string]time.Time // under mu: held slots without a live run, since
+	// SlotActive tells when a held slot last ran a heavy job (#174: the
+	// job tracker's last heavy command or busy reading); optional.
+	SlotActive func(owner string) (time.Time, bool)
+	slotNudged map[string]time.Time // under mu: owner → the hold (its since) already reminded
 	// Titler makes a thread title from its conversation (V0.108); nil: this
 	// host makes none. titling is the threads with a call in flight.
 	Titler  Titler

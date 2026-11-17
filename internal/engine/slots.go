@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"log"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -16,6 +18,10 @@ import (
 // grant's wake did not start one) before the slot goes back (V0.86 (3)).
 const SlotIdle = 2 * time.Minute
 
+// SlotIdleNudge is how long a held slot may run no heavy job before its
+// agent is reminded once to release it (#174).
+const SlotIdleNudge = 5 * time.Minute
+
 // UseSlots gives the engine the host's pool of slots for heavy jobs
 // (V0.86): the agent's slot tools, the notice when a queued slot is the
 // thread's, and the release when its run ends.
@@ -23,6 +29,7 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.mu.Lock()
 	e.Slots = p
 	e.slotIdle = map[string]time.Time{}
+	e.slotNudged = map[string]time.Time{}
 	e.mu.Unlock()
 	p.OnGrant = e.slotGranted
 	p.Fill() // a pool loaded from the store may have free slots for its queue
@@ -70,8 +77,18 @@ func (e *Engine) sweepSlots() {
 	}
 	s := e.Slots.Snapshot()
 	var drop []string
+	type nudge struct {
+		owner, kind string
+		min         int
+	}
+	var nudges []nudge
 	e.mu.Lock()
 	now := e.Now()
+	for owner, since := range e.slotNudged {
+		if h, ok := e.Slots.Holding(owner); !ok || !h.Since.Equal(since) {
+			delete(e.slotNudged, owner)
+		}
+	}
 	for _, h := range s.Held {
 		if h.Priority {
 			continue // the self-deploy releases its own
@@ -82,6 +99,20 @@ func (e *Engine) sweepSlots() {
 			drop = append(drop, h.Owner)
 		case t.Running:
 			delete(e.slotIdle, h.Owner)
+			// #174: a held slot that ran no heavy job for SlotIdleNudge: one
+			// reminder per hold to release it.
+			if e.SlotActive != nil {
+				if since, done := e.slotNudged[h.Owner]; !done || !since.Equal(h.Since) {
+					at, ok := e.SlotActive(h.Owner)
+					if !ok || at.Before(h.Since) {
+						at = h.Since
+					}
+					if idle := now.Sub(at); idle >= SlotIdleNudge {
+						e.slotNudged[h.Owner] = h.Since
+						nudges = append(nudges, nudge{h.Owner, h.Kind, int(idle / time.Minute)})
+					}
+				}
+			}
 		default:
 			since, ok := e.slotIdle[h.Owner]
 			if !ok {
@@ -100,6 +131,31 @@ func (e *Engine) sweepSlots() {
 	for _, id := range drop {
 		e.dropSlot(id)
 	}
+	for _, n := range nudges {
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotIdle, Thread: n.owner, Args: core.SlotIdleArgs{Kind: n.kind, Minutes: n.min}}); err != nil {
+			log.Printf("slot idle %s: %v", n.owner, err)
+		}
+	}
+}
+
+// HeavyGate answers the gate hook for a heavy command of class (#174): ""
+// lets it run (no class, slots off, or the thread holds a slot); else the
+// reason it is refused, with the call that fixes it.
+func (e *Engine) HeavyGate(thread, class string) string {
+	if class == "" || e.Slots == nil || e.Slots.Off() {
+		return ""
+	}
+	if _, ok := e.Slots.Holding(thread); ok {
+		return ""
+	}
+	s := e.Slots.Snapshot()
+	for i, w := range s.Waiting {
+		if w.Owner == thread {
+			return fmt.Sprintf("Heavy job (%s): you are queued for %s slot (%d ahead) and hold none yet. Do not run it now; Fyr tells you in a [Fyr] message when the slot is yours. Do other work meanwhile or end your turn.", class, article(w.Kind), i)
+		}
+	}
+	kind := heavy.KindOf(class)
+	return fmt.Sprintf("Heavy job (%s) without a slot: call mcp__fyr__slot_acquire {\"kind\":%q} first, run it once you hold the slot, then call mcp__fyr__slot_release. A subagent's run counts too; a single test file or `go test ./pkg -run X` needs no slot.", class, kind)
 }
 
 func article(kind string) string {
