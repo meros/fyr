@@ -207,11 +207,19 @@ type Engine struct {
 	HeavySuggestion    func(id, do, pattern, kind string) error
 	HeavyRemove        func(pattern string) bool
 	HeavyRefused       func(class string)
-	undTold            map[string]time.Time // under mu: thread → the episode (its since) already told
-	undRun             map[string]int       // under mu: thread → the run (RunEnds) already told in
-	undNote            map[string]time.Time // under mu: thread → the episode a subagent's note was given for
-	undFroze           map[string]time.Time // under mu: thread → the episode already frozen once
-	memGuard           bool                 // under mu: the guard told a thread in this episode
+	// V0.176: leftover processes and temporary files. LeftoverSweep looks
+	// now (a run ended, a thread settled); the others are the owner's
+	// commands and the agent's keep_process. All optional.
+	LeftoverSweep   func()
+	LeftoverEnd     func(id string) error
+	LeftoverKeep    func(id string, d time.Duration) error
+	LeftoverDeclare func(thread string, pid int, match string, d time.Duration, why string) error
+	TempRemove      func(path string) error
+	undTold         map[string]time.Time // under mu: thread → the episode (its since) already told
+	undRun          map[string]int       // under mu: thread → the run (RunEnds) already told in
+	undNote         map[string]time.Time // under mu: thread → the episode a subagent's note was given for
+	undFroze        map[string]time.Time // under mu: thread → the episode already frozen once
+	memGuard        bool                 // under mu: the guard told a thread in this episode
 	// Titler makes a thread title from its conversation (V0.108); nil: this
 	// host makes none. titling is the threads with a call in flight.
 	Titler Titler
@@ -617,6 +625,34 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(400, err.Error())
 		}
 		reply.Result = map[string]any{"id": id, "do": do}
+	case core.EffectLeftoverEnd: // V0.176
+		id, _ := ef.Request.Args["id"].(string)
+		if e.LeftoverEnd == nil {
+			return fail(409, "This host does not track leftover processes")
+		}
+		if err := e.LeftoverEnd(id); err != nil {
+			return fail(404, err.Error())
+		}
+		reply.Result = map[string]any{"id": id}
+	case core.EffectLeftoverKeep:
+		id, _ := ef.Request.Args["id"].(string)
+		h, _ := ef.Request.Args["hours"].(float64)
+		if e.LeftoverKeep == nil {
+			return fail(409, "This host does not track leftover processes")
+		}
+		if err := e.LeftoverKeep(id, time.Duration(h*float64(time.Hour))); err != nil {
+			return fail(404, err.Error())
+		}
+		reply.Result = map[string]any{"id": id, "hours": h}
+	case core.EffectTempRemove:
+		p, _ := ef.Request.Args["path"].(string)
+		if e.TempRemove == nil {
+			return fail(409, "This host lists no temporary folders")
+		}
+		if err := e.TempRemove(p); err != nil {
+			return fail(409, err.Error())
+		}
+		reply.Result = map[string]any{"path": p}
 	case core.EffectHeavyRemove:
 		p, _ := ef.Request.Args["pattern"].(string)
 		if e.HeavyRemove == nil || !e.HeavyRemove(p) {
@@ -707,6 +743,7 @@ type applied struct {
 	newPR    bool
 	replayed bool
 	runEnded bool // V0.86: the thread's run ended in this reduce
+	slept    bool // V0.176: the thread settled or was archived in this reduce
 }
 
 // apply is the one path (decision 0020): replay the receipt, load, reduce,
@@ -804,6 +841,7 @@ func (e *Engine) stage(cur *core.Thread, in core.Input, now time.Time, fresh boo
 		}
 	}
 	s.runEnded = cur.Running && !t.Running
+	s.slept = !cur.Asleep() && t.Asleep()
 	s.doneFx, s.fromEffect = strings.CutPrefix(string(in.Source), "effect:")
 	return s, nil
 }
@@ -899,6 +937,9 @@ func (e *Engine) publish(p *applied) {
 	}
 	if p.runEnded {
 		e.slotRunEnded(p.threadID)
+	}
+	if (p.runEnded || p.slept) && e.LeftoverSweep != nil {
+		go e.LeftoverSweep() // V0.176: it may wait seconds for a process to end
 	}
 	e.start(p.threadID, p.res.Effects)
 	if p.threadID != "" {

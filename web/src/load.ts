@@ -1,4 +1,5 @@
 // SPEC 0.5 V0.80: the machine load (rail) and each working thread's CPU (rows), as words. Pure.
+import type { Leftover, Temp } from "./leftovers.ts";
 
 export interface ThreadLoad {
   /** a thread id, or "self-deploy" */
@@ -63,6 +64,9 @@ export interface HostLoad {
   undeclaredSettings?: UndeclaredSettings;
   suggestions?: HeavySuggestion[];
   heavyAdded?: HeavyAdded[];
+  /** V0.176: the processes threads left running, past their grace, and the settled threads' worktrees */
+  leftovers?: Leftover[];
+  temps?: Temp[];
 }
 /** V0.164: when a thread counts as heavy: shares of what the host gives its agents, and for how many seconds. */
 export interface UndeclaredSettings {

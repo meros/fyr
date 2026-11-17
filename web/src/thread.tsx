@@ -46,6 +46,7 @@ import { changeChip, headerPr, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
+import { LeftoverStrip } from "./leftovers-ui.tsx";
 import { UndIcon } from "./undeclared-ctx.tsx";
 
 export interface AnswerField {
@@ -222,6 +223,7 @@ export function ThreadPane(p: ThreadPaneProps) {
         </div>
       </div>
       <UndeclaredStrip id={t.id} now={p.now} />
+      <LeftoverStrip id={t.id} now={p.now} />
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
       {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}

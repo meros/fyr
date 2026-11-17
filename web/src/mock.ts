@@ -6,6 +6,7 @@ import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import type { Quota } from "./quota.ts";
 import type { HostLoad, Slots, UndeclaredUse } from "./load.ts";
+import type { Leftover, Temp } from "./leftovers.ts";
 import { mockPrDetail } from "./mock-pr.ts";
 import { quietList } from "./quiet.ts";
 import type { SlashCommand } from "./slash.ts";
@@ -1783,7 +1784,49 @@ export function mockQuota(now: number): Quota[] {
 /** SPEC 0.5 V0.80: a busy host: load past the cores, the agents at their cap; one thread in each fixture is hot
  * (t_w2, t_mapperf), one calm, one without a second read yet. */
 export function mockLoad(): HostLoad[] {
-  return withUndeclared(mockLoadBase(), MOCK_UNDECLARED);
+  return withLeftovers(withUndeclared(mockLoadBase(), MOCK_UNDECLARED), MOCK_LEFTOVERS);
+}
+
+/** V0.176: ?leftovers=1: Map perf left a Chrome and a mockup server, Nix flake update a port-forward under timeout, a
+ *  dev server Babysit PR #4170's agent kept, a test binary in a cgroup of no thread, and two settled threads' worktrees. */
+const MOCK_LEFTOVERS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("leftovers") ?? "" : "";
+export function withLeftovers(list: HostLoad[], mode: string, now = railNow(Date.now())): HostLoad[] {
+  if (!mode) return list;
+  const [h, ...rest] = list;
+  const ago = (min: number) => new Date(now - min * 60_000).toISOString();
+  const leftovers: Leftover[] = [
+    { id: "41022@100", thread: "t_mapperf", pid: 41022, name: "chromium", command: "/nix/store/x-chromium/bin/chromium --headless --user-data-dir=/tmp/fyr-layout-a1", procs: 9, rss: 1.9e9, started: ago(65), seen: ago(60), endsAt: ago(-25) },
+    { id: "41090@101", thread: "t_mapperf", pid: 41090, name: "http.server", command: "python3 -m http.server 8000", procs: 1, rss: 21e6, started: ago(60), seen: ago(58), endsAt: ago(-27) },
+    { id: "38810@102", thread: "t_nix", pid: 38810, name: "kubectl port-forward", command: "timeout 12h kubectl port-forward svc/db 5432", procs: 2, rss: 62e6, started: ago(90), seen: ago(88), until: ago(-630) },
+    { id: "39001@103", thread: "t_babysit", pid: 39001, name: "vite", command: "node /w/node_modules/.bin/vite --port 5173", procs: 3, rss: 180e6, started: ago(40), seen: ago(38), kept: { thread: "t_babysit", pid: 39001, until: ago(-180), why: "the dev server the owner asked for", by: "agent" } },
+    { id: "37777@104", thread: "t_0ld", orphan: true, pid: 37777, name: "engine.test", command: "/tmp/go-build1/b001/engine.test -test.run=TestX", procs: 1, rss: 8e6, started: ago(360), seen: ago(1), endsAt: ago(-1) },
+  ];
+  const temps: Temp[] = [
+    { path: "/home/me/fyr/.claude/worktrees/map-perf", kind: "worktree", thread: "t_mapperf", bytes: 412e6, safe: true },
+    { path: "/home/me/fyr/.claude/worktrees/nix-bump", kind: "worktree", thread: "t_nix", bytes: 3e6, safe: false, why: "2 commits not pushed" },
+  ];
+  return [{ ...h, leftovers, temps }, ...rest];
+}
+
+/** V0.176: host.leftoverEnd, host.leftoverKeep and host.tempRemove on the mock host's load, as the host answers them. */
+export function mockLeftoverCommand(h: HostLoad, action: string, args: Record<string, unknown>, now = Date.now()): CommandReply {
+  if (action === "host.tempRemove") {
+    const t = h.temps?.find((x) => x.path === args.path);
+    if (!t) return { ok: false, error: "not a listed folder" };
+    if (!t.safe) return { ok: false, error: `kept: ${t.why ?? "not safe"}` };
+    h.temps = h.temps!.filter((x) => x !== t);
+    return { ok: true, result: { path: t.path } };
+  }
+  const l = h.leftovers?.find((x) => x.id === args.id);
+  if (!l) return { ok: false, error: "no such leftover process" };
+  if (action === "host.leftoverEnd") {
+    h.leftovers = h.leftovers!.filter((x) => x !== l);
+    return { ok: true, result: { id: l.id } };
+  }
+  const hours = typeof args.hours === "number" ? args.hours : 24;
+  l.kept = { thread: l.thread, pid: l.pid, until: new Date(now + hours * 3600_000).toISOString(), why: "kept by the owner", by: "owner" };
+  delete l.endsAt;
+  return { ok: true, result: { id: l.id, hours } };
 }
 
 /** V0.164: the mock host's view of undeclared work (mode "" is none): the threads, the shares in the pool, the wait

@@ -383,6 +383,8 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
       case "slot":
         // V0.164: the notice about undeclared heavy work; the other slot events stay out of the log.
         if (str(e.data?.undeclared)) pushItem({ kind: "undeclared", key, text: str(e.data?.undeclared), line: toldLine(e.data ?? {}) });
+        // V0.176: Fyr ended the thread's leftover processes.
+        if (str(e.data?.leftovers)) pushItem({ kind: "note", key, text: str(e.data?.leftovers), line: str(e.data?.leftovers).replace(/^Fyr /, "") }); // shown as "Fyr: ended …"
         break;
       case "decision.closed":
         if (str(e.data?.answer)) pushItem({ kind: "answer", key, text: str(e.data?.answer) });
