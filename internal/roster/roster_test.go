@@ -455,3 +455,25 @@ func newInstQuiet(t *testing.T) Statement {
 	s.Sig = ed25519.Sign(k.Private, s.signBytes())
 	return s
 }
+
+// An install's own statements order by when it made them, even within one second: a
+// restart that moves its port a moment after the last start must win over the old one.
+func TestAnInstallsLaterStatementWinsWithinTheSameSecond(t *testing.T) {
+	now := time.Date(2026, 11, 17, 20, 0, 0, 0, time.UTC)
+	for i := 0; i < 20; i++ { // the hash order is arbitrary: try many keys
+		dir := t.TempDir()
+		k, err := identity.Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := Open(dir, k, "a", func() time.Time { return now })
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.SetAddress("a", "", 1000+i)
+		r.SetAddress("a", "", 2000+i)
+		if got := r.Members()[0].Port; got != 2000+i {
+			t.Fatalf("round %d: the port is %d, want %d (the later statement lost to the earlier)", i, got, 2000+i)
+		}
+	}
+}

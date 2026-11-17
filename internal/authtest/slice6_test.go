@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -230,7 +231,6 @@ func TestAPairedIdIsFollowedAtANewAddress(t *testing.T) {
 	}
 	waitOthersLAN(t, a, "b")
 	waitOthersLAN(t, b, "a")
-	oldA, oldB := a.addr(), b.addr()
 	a.StopKeep()
 	b.StopKeep()
 	if err := a.Restart(); err != nil {
@@ -239,11 +239,24 @@ func TestAPairedIdIsFollowedAtANewAddress(t *testing.T) {
 	if err := b.Restart(); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "new peer ports", func() bool { return a.port() != 0 && b.port() != 0 && (a.addr() != oldA || b.addr() != oldB) })
-	lan.Advertise(a.id, a.addr())
-	lan.Advertise(b.id, b.addr())
-	waitFor(t, "a's link to b is up at its new address", func() bool { return strings.Contains(hostList(a), "link up") })
-	waitFor(t, "b's link to a is up at its new address", func() bool { return strings.Contains(hostList(b), "link up") })
+	// each install announces where it is now, whatever the roster showed a moment ago
+	moved := func() bool {
+		if a.port() != 0 {
+			lan.Announce(a.id, a.addr())
+		}
+		if b.port() != 0 {
+			lan.Announce(b.id, b.addr())
+		}
+		return strings.Contains(hostList(a), "link up") && strings.Contains(hostList(b), "link up")
+	}
+	defer func() {
+		if t.Failed() {
+			rj, _ := os.ReadFile(filepath.Join(a.Data, "roster.json"))
+			t.Logf("a roster.json: %s", rj)
+			t.Logf("a (%s):\n%s\n%s\nb (%s):\n%s\n%s", a.addr(), hostList(a), a.Log(), b.addr(), hostList(b), b.Log())
+		}
+	}()
+	waitFor(t, "both links up at the new addresses", moved)
 	if r, _ := a.Roster(); len(r.Others()) != 1 {
 		t.Errorf("the roster changed: %v", r.Others())
 	}

@@ -48,6 +48,20 @@ func (l *LAN) Advertise(id, addr string) {
 	l.flush()
 }
 
+// Announce makes addr the one answer for id: what an install does when it moves.
+func (l *LAN) Announce(id, addr string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	keep := l.answers[:0]
+	for _, a := range l.answers {
+		if a.ID != id {
+			keep = append(keep, a)
+		}
+	}
+	l.answers = append(keep, discovery.Candidate{ID: id, Addr: addr, Source: "mdns"})
+	l.flush()
+}
+
 // Spoof adds an answer that claims id at an address that is not the install's.
 // It is the same on the bus; the name says what the test means.
 func (l *LAN) Spoof(id, attackerAddr string) { l.Advertise(id, attackerAddr) }
