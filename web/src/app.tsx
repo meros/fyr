@@ -43,7 +43,7 @@ import { escapeTarget, parsePage, type PageRef } from "./settings-nav.ts";
 import { Settings, type SettingsDevice, type SettingsProps } from "./settings-ui.tsx";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
-import { Inbox, Rail, SECTION_LIMIT, isOpen, type Theme } from "./inbox.tsx";
+import { Inbox, Rail, SECTION_LIMIT, isOpen, type FilterView, type Theme } from "./inbox.tsx";
 import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
 import { HandoverDialog } from "./handover-ui.tsx";
 import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
@@ -56,8 +56,9 @@ import { PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, filterByProject, moveToast, orderProjects } from "./projects.ts";
-import { admitThread, hideQuiet, nextQuietEnd, reachable } from "./quiet.ts";
+import { FILTER_KEY, moveToast, orderProjects } from "./projects.ts";
+import { HOST_FILTER_KEY, activeFilters, applyFilters, filterEmpty, type FilterSel } from "./filters.ts";
+import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
@@ -252,6 +253,23 @@ function App() {
       /* storage blocked */
     }
   };
+  // V0.134: the host filter, remembered per device beside the project filter.
+  const [hostFilter, setHostFilterState] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(HOST_FILTER_KEY) || null;
+    } catch {
+      return null;
+    }
+  });
+  const setHostFilter = (name: string | null) => {
+    setHostFilterState(name);
+    try {
+      if (name) localStorage.setItem(HOST_FILTER_KEY, name);
+      else localStorage.removeItem(HOST_FILTER_KEY);
+    } catch {
+      /* storage blocked */
+    }
+  };
   // V0.119: the page the desktop Settings dialog shows (`?dialog=settings&page=providers/<id>` for screenshots).
   const [settingsAt, setSettingsAt] = useState<PageRef>(() => parsePage(params.get("page")));
   const openSettings = (at: PageRef) => {
@@ -276,7 +294,9 @@ function App() {
   const filterOn = !!projectFilter && store.projects.some((p) => p.id === projectFilter);
   // V0.114: one unlock of quiet projects on this device for every path (New thread, the filter, search, the gate).
   const unlock = useQuietUnlock(store.clockOffset);
-  const filtered = useMemo(() => filterByProject(store.threads, filterOn ? projectFilter : null, store.projects), [store.threads, store.projects, projectFilter, filterOn]);
+  const filterSel = useMemo<FilterSel>(() => ({ host: hostFilter, project: projectFilter || null }), [hostFilter, projectFilter]);
+  // V0.134: host AND project.
+  const filtered = useMemo(() => applyFilters(store.threads, filterSel, store.projects, store.host ?? ""), [store.threads, store.projects, filterSel, store.host]);
   // What search and the filter may reach: quiet threads only while the unlock runs (V0.114; V0.46 (4) showed them).
   const searchable = useMemo(() => reachable(filtered, Date.now() + store.clockOffset, unlock.showUntil), [filtered, unlock.showUntil, quietClock, store.clockOffset]);
   // V0.114: search hits the lock leaves out, so the search says why and offers the hold (desktop).
@@ -298,6 +318,20 @@ function App() {
     return out;
   }, [searchable, filterOn, query, quietClock, store.clockOffset]);
   const sec = useMemo(() => sections(shown), [shown]);
+  // V0.134: the chips (only values with threads in view; a selected one stays) and the empty state, on both fronts.
+  const filterView = useMemo<FilterView>(() => {
+    const chips = activeFilters({ threads: store.threads, projects: store.projects, hosts: store.hosts, self: store.host ?? "", sel: filterSel, open: sectionOpen, now: Date.now() + store.clockOffset, showUntil: unlock.showUntil });
+    const locked = !!filterSel.project && chips.projects.some((c) => c.selected && quietLocked(c.project, Date.now() + store.clockOffset, unlock.showUntil));
+    return {
+      ...chips,
+      sel: filterSel,
+      setHost: setHostFilter,
+      setProject: setProjectFilter,
+      clear: () => (setHostFilter(null), setProjectFilter(null)),
+      // V0.114: a locked quiet project shows its gate instead.
+      empty: locked ? null : filterEmpty(hideQuiet(searchable, filterOn, Date.now() + store.clockOffset), filterSel, sectionOpen),
+    };
+  }, [store.threads, store.projects, store.hosts, store.host, filterSel, sectionOpen, unlock.showUntil, searchable, filterOn, quietClock, store.clockOffset]);
   const limits = useMemo(() => {
     const l: Partial<Record<SectionKey, number>> = {};
     for (const s of SECTIONS) l[s.key] = !isOpen(s.key, sectionOpen) ? 0 : expanded[s.key] ? Infinity : SECTION_LIMIT[s.key];
@@ -1333,6 +1367,7 @@ function App() {
           settings={(at, header) => settingsFor(at, phoneSettingsGo, header)}
           actions={phoneActions}
           filter={{ id: projectFilter, set: setProjectFilter }}
+          filters={filterView}
           projectActions={projectActions}
           status={<DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone onRestartNow={() => void restartNow()} />}
           overlay={
@@ -1416,9 +1451,7 @@ function App() {
           onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
           onNew={() => setDialog("new")}
           onAdopt={() => setDialog("adopt")}
-          projects={store.projects}
-          projectFilter={projectFilter}
-          onProjectFilter={setProjectFilter}
+          filter={filterView}
           unlock={unlock}
           quietHits={quietHits}
           extra={pwaControls}
