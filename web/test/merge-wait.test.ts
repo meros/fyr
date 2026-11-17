@@ -1,19 +1,21 @@
-// SPEC V0.112: a merge waits for CI. No check reported on a repo with CI, or a check running, is not green: the ask's
-// Merge and the PR tab's Merge are disabled with the reason, on desktop and phone alike (one component each).
+// SPEC V0.112, V0.136: a merge waits for CI. No check reported on a repo with CI, or a check running, is not green: the
+// PR tab's Merge is disabled with the reason, and an agent's merge ask waits (muted, no button) until CI is green.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { askYes, needLook } from "../src/offers.ts";
+import { askYes, needLook, needsOwner } from "../src/offers.ts";
+import { columnOf } from "../src/board.ts";
 import { chipStatus, mergeStatus, type PrDetail } from "../src/pr.ts";
 
 const head = "029f9c7640b795c9e9edcd8e875f6490e753b593";
-const wait = "CI has not passed on 029f9c7 yet: Merge waits for the checks";
 
-test("SPEC V0.112: a merge ask on pending checks shows Merge disabled, with the host's reason", () => {
-  const n = { cause: "ask" as const, ask: "d_merge", action: "pr.merge", head, text: "Merge #126", wait };
-  assert.deepEqual(askYes(n), { label: "Merge 029f9c7", wait });
-  assert.equal(needLook(n).line, `Merge #126 · ${wait}`);
-  assert.deepEqual(askYes({ ...n, wait: undefined }), { label: "Merge 029f9c7", wait: undefined }, "green: the yes runs");
-  assert.deepEqual(askYes({ cause: "ask", ask: "d2", text: "Approve" }), { label: "Yes", wait: undefined });
+test("SPEC V0.136: a merge ask that waits for CI is a muted line with no button, out of Needs you and the board's Needs you", () => {
+  const c = { id: "c1", key: "pr:x#846", kind: "code", title: "#846", phase: "review" as const, phaseBy: "observed" as const, createdAt: "", updatedAt: "",
+    need: { cause: "waiting" as const, ask: "d_merge", action: "pr.merge", head, text: "Waiting for CI: 2 of 5 checks done", muted: true } };
+  assert.deepEqual(needLook(c.need), { button: "", line: "Waiting for CI: 2 of 5 checks done on 029f9c7. Fyr asks you to merge when it is green.", beam: false });
+  assert.equal(needsOwner(c), false);
+  assert.equal(columnOf(c), "review");
+  assert.deepEqual(askYes({ cause: "ask", ask: "d_merge", action: "pr.merge", head }), { label: "Merge 029f9c7" }, "shown only when green: the yes runs");
+  assert.deepEqual(askYes({ cause: "ask", ask: "d2", text: "Approve" }), { label: "Yes" });
 });
 
 const base: PrDetail = {

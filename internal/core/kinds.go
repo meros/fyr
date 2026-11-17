@@ -543,11 +543,15 @@ func canRequest(t *Thread, fx *FyrEffect, args map[string]any) error {
 	return fx.Check(args)
 }
 
-// openRequest opens the owner's Decision for an agent's request.
-func openRequest(t *Thread, id string, req EffectReq, now time.Time) Result {
+// openRequest opens the owner's Decision for an agent's request; a merge
+// ask goes through the CI gate first (V0.136).
+func openRequest(t *Thread, id string, req EffectReq, now time.Time) (Result, error) {
 	d := Decision{ID: id, Kind: DecisionEffect, Assignee: Owner, Effect: &req, CreatedAt: now}
+	if req.Action == FyrMerge {
+		return openMergeAsk(t, d)
+	}
 	DecisionOpened(t, d)
-	return Result{Events: []Event{{"decision.opened", map[string]any{"decision": d}}}}
+	return Result{Events: []Event{{"decision.opened", map[string]any{"decision": d}}}}, nil
 }
 
 func reduceEffectRequest(r Rec, in Input, now time.Time) (Result, error) {
@@ -565,7 +569,18 @@ func reduceEffectRequest(r Rec, in Input, now time.Time) (Result, error) {
 	if err := canRequest(r.T, fx, a.Args); err != nil {
 		return Result{}, err
 	}
-	return openRequest(r.T, a.ID, EffectReq{Action: a.Action, Args: a.Args, Reason: a.Reason}, now), nil
+	var linked []Event
+	if url, _ := a.Args["pr"].(string); a.Action == FyrMerge && changeByPR(r.T, url) == nil {
+		// V0.136: a merge ask waits for CI on its PR, so Fyr watches a PR
+		// the thread did not track yet (as pr_link does).
+		if repo, n := parsePRURL(url); n != 0 {
+			PRObserved(r.T, PR{URL: url, Repo: repo, Number: n, State: "OPEN", Checks: ChecksPending}, now)
+			linked = []Event{{"pr.linked", map[string]any{"url": url}}}
+		}
+	}
+	res, err := openRequest(r.T, a.ID, EffectReq{Action: a.Action, Args: a.Args, Reason: a.Reason}, now)
+	res.Events = append(linked, res.Events...)
+	return res, err
 }
 
 func reduceChangeRequest(r Rec, in Input, now time.Time) (Result, error) {
@@ -600,7 +615,10 @@ func reduceChangeRequest(r Rec, in Input, now time.Time) (Result, error) {
 	if _, ok := a.Args["title"]; !ok {
 		a.Args["title"] = c.Title
 	}
-	res := openRequest(r.T, a.ID, EffectReq{Action: action, Args: a.Args, Reason: a.Reason}, now)
+	res, err := openRequest(r.T, a.ID, EffectReq{Action: action, Args: a.Args, Reason: a.Reason}, now)
+	if err != nil {
+		return Result{}, err
+	}
 	res.Reply = *c
 	return res, nil
 }

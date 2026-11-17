@@ -41,11 +41,8 @@ type Need struct {
 	// Ask and Action are the open ask's decision id and action.
 	Ask    string `json:"ask,omitempty"`
 	Action string `json:"action,omitempty"`
-	// Muted: shown on the card, not in Needs you (CauseFixing).
+	// Muted: shown on the card, not in Needs you (CauseFixing, CauseWaiting).
 	Muted bool `json:"muted,omitempty"`
-	// Wait is why the ask's yes cannot run yet (V0.112: a merge on
-	// pending checks); the card shows it and its yes is disabled.
-	Wait string `json:"wait,omitempty"`
 }
 
 // ChangeNeed is why c, a change t shows, waits on the owner, or nil. A
@@ -63,12 +60,11 @@ func ChangeNeed(t *Thread, c *Change) *Need {
 			if text == "" {
 				text = askWord(d.Effect.Action)
 			}
-			n := &Need{Cause: CauseAsk, Ask: d.ID, Action: d.Effect.Action, Head: head, Text: text}
-			if fx := FyrEffects[d.Effect.Action]; fx != nil && fx.Gate != nil {
-				n.Wait = fx.Gate(t, d.Effect.Args)
-			}
-			return n
+			return &Need{Cause: CauseAsk, Ask: d.ID, Action: d.Effect.Action, Head: head, Text: text}
 		}
+	}
+	if n := heldNeed(t, c); n != nil { // V0.136: a merge ask waits for CI
+		return n
 	}
 	running := t.Running || t.RunningTasks() > 0
 	if r := Ready(c.PR, running); r != "" {
