@@ -238,7 +238,11 @@ func TestLauncherRollsBackUnhealthy(t *testing.T) {
 	link(t, data, "current", "a")
 	link(t, data, "next", "b")
 	l := launcher(data)
-	l.ReadyTimeout = 3 * time.Second
+	// The health probe retries a 503 until the deadline, so this run lasts about the deadline. 3 s was too short
+	// under load (load average 31: no answer came before it, so the report said "context deadline exceeded"); 8 s is
+	// generous and stays under the fake's 10 s life. The report keeps the last answer (probeHealth), so the
+	// connection errors after the fake exits cannot hide the 503's cause.
+	l.ReadyTimeout = 8 * time.Second
 	l.maxStarts = 2
 	l.Run()
 	if target(data, "current") != "a" {

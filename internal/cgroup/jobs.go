@@ -74,7 +74,7 @@ type hold struct {
 	class             string
 	cpu0, stall0      uint64
 	cpu, stall        uint64
-	mem0, maxMem      uint64
+	mem0, maxMem, mem uint64
 	base              float64
 	peak              *os.File
 	sSum              float64
@@ -143,6 +143,20 @@ func (j *Jobs) now() time.Time {
 // busyAbove is how many cores above its baseline a holder must use to count
 // as running its job (#174).
 const busyAbove = 0.25
+
+// Growth is how much thread's memory grew since its slot was granted, at
+// the last reading (decision 0029 S2's memory guard); 0 without a hold.
+func (j *Jobs) Growth(thread string) uint64 {
+	if j == nil {
+		return 0
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if h := j.holds[thread]; h != nil && h.mem > h.mem0 {
+		return h.mem - h.mem0
+	}
+	return 0
+}
 
 // Active is when thread's hold last ran its job: its newest heavy command
 // or a reading above its baseline; false without a hold (#174).
@@ -244,7 +258,7 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 					h.stall0, h.stall, h.hasStall = p.someTotal, p.someTotal, true
 				}
 				h.mem0 = readBytes(filepath.Join(dir, "memory.current"))
-				h.maxMem = h.mem0
+				h.maxMem, h.mem = h.mem0, h.mem0
 				// memory.peak reset per fd (kernel 6.12+): this fd reads the
 				// job's own peak; without it the sampled maximum counts.
 				if f, err := os.OpenFile(filepath.Join(dir, "memory.peak"), os.O_RDWR, 0); err == nil {
@@ -270,7 +284,8 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 			if p, ok := readPSI(filepath.Join(dir, "cpu.pressure")); ok {
 				h.stall = p.someTotal
 			}
-			h.maxMem = max(h.maxMem, readBytes(filepath.Join(dir, "memory.current")))
+			h.mem = readBytes(filepath.Join(dir, "memory.current"))
+			h.maxMem = max(h.maxMem, h.mem)
 		}
 		if s != nil {
 			h.sSum += *s

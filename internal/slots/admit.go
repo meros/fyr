@@ -1,0 +1,89 @@
+package slots
+
+// Decision 0029 slice S2 (#186): admission by a budget of costs instead of
+// a count. The pool's queue and order stay (V0.86, V0.137); only "may the
+// head start now" changes. Every threshold is a share or a slowdown, so the
+// same rules hold on any host; a host without a provider (no /proc: macOS
+// for now) keeps the fixed count.
+
+import (
+	"fmt"
+	"time"
+)
+
+// Signals are the host's measures the rules read (V0.142).
+type Signals struct {
+	// Provider is "" without one: then the fixed count holds.
+	Provider string
+	// Slowdown is s, how much slower a new job runs now; nil without a
+	// fresh probe.
+	Slowdown *float64
+	// Headroom is the share of the agents' memory left; nil when unknown.
+	Headroom *float64
+	// Stall is the memory stall level; "" when unknown.
+	Stall Stall
+}
+
+// Stall is a memory stall level (V0.142).
+type Stall string
+
+// The levels.
+const (
+	StallOK       Stall = "ok"
+	StallElevated Stall = "elevated"
+	StallCritical Stall = "critical"
+)
+
+// Policy is the host's thresholds.
+type Policy struct {
+	// SlowdownMax: at or above it a job costing more than CheapCost waits.
+	SlowdownMax float64
+	// MemoryReserve: the share of the agents' memory that must stay free.
+	MemoryReserve float64
+}
+
+// DefaultPolicy is decision 0029's: 1.5× and 10 %.
+var DefaultPolicy = Policy{SlowdownMax: 1.5, MemoryReserve: 0.10}
+
+// CheapCost is the cost at or under which a job ignores the slowdown.
+const CheapCost = 0.25
+
+// IdleCost is the cost of a held slot that runs no job: no heavy command
+// and no busy reading for IdleAfter.
+const IdleCost = 0.1
+
+// IdleAfter is how long a hold must be idle to cost IdleCost.
+const IdleAfter = 3 * time.Minute
+
+// Decide says whether a job of cost head may start beside held (their
+// costs) under budget, and why not. In order: without a provider the fixed
+// count; memory short or stalling holds every job; with nothing held the
+// head starts (one job always runs); the budget; the slowdown.
+func Decide(p Policy, s Signals, budget float64, held []float64, head float64) (bool, string) {
+	if s.Provider == "" {
+		if float64(len(held)) < budget {
+			return true, ""
+		}
+		return false, fmt.Sprintf("all %d slots in use", int(budget))
+	}
+	if s.Headroom != nil && *s.Headroom < p.MemoryReserve {
+		return false, fmt.Sprintf("memory: %.0f %% free", *s.Headroom*100)
+	}
+	if s.Stall != "" && s.Stall != StallOK {
+		return false, fmt.Sprintf("memory stalls (%s)", s.Stall)
+	}
+	if len(held) == 0 {
+		return true, ""
+	}
+	used := 0.0
+	for _, c := range held {
+		used += c
+	}
+	if used+head > budget+1e-9 {
+		return false, fmt.Sprintf("%.1f of %.1f in use", used, budget)
+	}
+	if head > CheapCost && s.Slowdown != nil && *s.Slowdown >= p.SlowdownMax {
+		return false, fmt.Sprintf("CPU: new jobs run %.1f× slower", *s.Slowdown)
+	}
+	return true, ""
+}

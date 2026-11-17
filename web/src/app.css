@@ -955,6 +955,14 @@ button.ptag{padding:0}
 .rail .rpips.hot i.on{background:var(--signal-ink);border-color:var(--signal-ink)}
 .rail .rpips em{font:600 9px/11px var(--mono);font-style:normal;color:var(--signal-ink);margin-left:1px}
 .rail .rldr small.rlds{white-space:nowrap}
+/* Decision 0029 S2: the slot budget in use as a bar under the ring. */
+.rail .rbar{display:flex;flex-direction:column;align-items:center;gap:1px;width:30px}
+.rail .rbar .trk{display:block;width:100%;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
+.rail .rbar .trk i{display:block;height:100%;background:var(--ink-muted)}
+.rail .rbar.hot .trk i{background:var(--signal-ink)}
+.rail .rbar small{font:600 9px/11px var(--mono);color:var(--ink-muted);white-space:nowrap}
+.rail .rbar.hot small,.rail .rbar em{color:var(--signal-ink)}
+.rail .rbar em{font-style:normal;margin-left:1px}
 .rail .rld .hot,.tcpu.hot{color:var(--signal-ink);font-weight:600}
 .qlist{display:flex;flex-direction:column;gap:2px;min-width:0}
 /* V0.45: the handover dialog and the divider in the conversation */

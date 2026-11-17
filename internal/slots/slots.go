@@ -43,6 +43,9 @@ type Holder struct {
 	Kind     string    `json:"kind"`
 	Since    time.Time `json:"since"`
 	Priority bool      `json:"priority,omitempty"`
+	// Cost is a holder's share of the budget in a snapshot (decision 0029
+	// S2); 0 without Pool.Cost.
+	Cost float64 `json:"cost,omitempty"`
 
 	ready chan struct{} // a Wait's: closed on the grant
 }
@@ -52,6 +55,10 @@ type Snapshot struct {
 	N       int      `json:"n"`
 	Held    []Holder `json:"held"`
 	Waiting []Holder `json:"waiting"`
+	// Decision 0029 S2: Used is the holders' costs summed (nil without
+	// Pool.Cost); Why is why the head waits ("" when nothing holds it).
+	Used *float64 `json:"used,omitempty"`
+	Why  string   `json:"why,omitempty"`
 }
 
 // Pool is one host's slots.
@@ -60,12 +67,19 @@ type Pool struct {
 	// the lock; a Wait's grant is its return instead.
 	OnGrant func(owner, kind string)
 	Now     func() time.Time
+	// Admit decides whether head may start beside held (decision 0029 S2),
+	// and why not; nil is the count rule. It runs under the pool's lock and
+	// must not call the pool.
+	Admit func(head Holder, held []Holder) (bool, string)
+	// Cost is a holder's share of the budget for the snapshot; optional.
+	Cost func(h Holder) float64
 
 	mu   sync.Mutex
 	n    int
 	kv   KV
 	held []Holder
 	wait []Holder
+	why  string
 }
 
 // New is a pool of n slots kept in memory only: 0 is off, below 0 Default.
@@ -149,7 +163,7 @@ func (p *Pool) Acquire(owner, kind string) (held bool, ahead int) {
 	}
 	h := Holder{Owner: owner, Kind: kind, Since: p.now()}
 	defer p.save()
-	if len(p.wait) == 0 && len(p.held) < p.n {
+	if len(p.wait) == 0 && p.admitLocked(h) {
 		p.held = append(p.held, h)
 		return true, 0
 	}
@@ -165,7 +179,7 @@ func (p *Pool) Wait(ctx context.Context, owner, kind string) (release func(), er
 	}
 	release = func() { p.Release(owner) }
 	p.mu.Lock()
-	if len(p.held) < p.n && !slices.ContainsFunc(p.wait, func(h Holder) bool { return h.Priority }) {
+	if !slices.ContainsFunc(p.wait, func(h Holder) bool { return h.Priority }) && p.admitLocked(Holder{Owner: owner, Kind: kind, Priority: true}) {
 		p.held = append(p.held, Holder{Owner: owner, Kind: kind, Since: p.now(), Priority: true})
 		p.mu.Unlock()
 		return release, nil
@@ -226,7 +240,7 @@ func (p *Pool) Fill() {
 // fillLocked promotes waiters, saves, unlocks p.mu and tells the agents.
 func (p *Pool) fillLocked() {
 	var told []Holder
-	for len(p.held) < p.n && len(p.wait) > 0 {
+	for len(p.wait) > 0 && p.admitLocked(p.wait[0]) {
 		h := p.wait[0]
 		p.wait = p.wait[1:]
 		h.Since = p.now()
@@ -248,6 +262,25 @@ func (p *Pool) fillLocked() {
 	}
 }
 
+// admitLocked asks Admit (else the count rule) about head and keeps why it
+// waits; call it with p.mu held.
+func (p *Pool) admitLocked(head Holder) bool {
+	if p.Admit == nil {
+		ok := len(p.held) < p.n
+		p.why = ""
+		return ok
+	}
+	ok, why := p.Admit(head, slices.Clone(p.held))
+	p.why = why
+	if ok {
+		p.why = ""
+	}
+	return ok
+}
+
+// Budget is the pool's capacity in cost units: N.
+func (p *Pool) Budget() float64 { return float64(p.n) }
+
 // Holding reports owner's slot.
 func (p *Pool) Holding(owner string) (Holder, bool) {
 	p.mu.Lock()
@@ -267,6 +300,18 @@ func (p *Pool) Snapshot() Snapshot {
 	copy(s.Waiting, p.wait)
 	for i := range s.Waiting {
 		s.Waiting[i].ready = nil
+	}
+	if len(s.Waiting) > 0 {
+		s.Why = p.why
+	}
+	if p.Cost != nil {
+		used := 0.0
+		for i := range s.Held {
+			s.Held[i].Cost = p.Cost(s.Held[i])
+			used += s.Held[i].Cost
+		}
+		used = float64(int(used*100+0.5)) / 100
+		s.Used = &used
 	}
 	return s
 }

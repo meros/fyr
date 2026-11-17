@@ -1758,12 +1758,14 @@ function laptopLoad(): HostLoad[] {
         { id: "t_mapperf", cpu: 2.6, memory: 3e9, job: "yarn build" },
         { id: "t_search", cpu: 1.0, memory: 9e8 },
       ],
-      // V0.86: both slots taken, one thread waits.
+      // V0.86: both slots taken, one thread waits. Decision 0029 S2: the budget is full (2.0 of 2), so the head waits.
       slots: {
         n: 2,
+        used: 2,
+        why: "2.0 of 2.0 in use",
         held: [
-          { owner: "t_w2", kind: "test" },
-          { owner: "t_mapperf", kind: "build" },
+          { owner: "t_w2", kind: "test", cost: 1 },
+          { owner: "t_mapperf", kind: "build", cost: 1 },
         ],
         waiting: [{ owner: "t_search", kind: "test" }],
       },
