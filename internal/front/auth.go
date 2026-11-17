@@ -672,6 +672,9 @@ func (f *Front) watchAuth(ctx context.Context) {
 		defer f.authTicks.Add(1)
 		for _, way := range st.Tick() {
 			msg := "Fyr now asks every browser to sign in (" + way + " way in). Run `fyr auth observe` to go back."
+			if way == auth.WayPeer {
+				msg = "Fyr now takes other installs only over their pinned links; the old host listeners are removed. Run `fyr auth observe peer` to go back."
+			}
 			log.Printf("auth: %s", msg)
 			if f.opt.Push != nil {
 				f.opt.Push.Notify(core.Owner, push.Payload{Title: "Fyr", Body: msg, State: "auth"})
