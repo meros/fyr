@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildConversation } from "../src/conversation.ts";
+import { mockLoad, mockUndeclaredCommand, withUndeclared } from "../src/mock.ts";
 import { railBudget, slotTip, threadSlot, type HostLoad, type UndeclaredUse } from "../src/load.ts";
 import {
   addedRows,
@@ -228,4 +229,35 @@ test("N9: the event the host writes for the agent's notice is one machine line t
   // one measure only
   const m = buildConversation([{ seq: 1, at: "2026-11-17T14:29:00Z", subject: "t", type: "slot", data: { undeclared: full, mem: 2.8e9, cpu: 0 } }])[0] as { line: string };
   assert.equal(m.line, "Fyr told the agent: heavy work it did not ask for (2.8 GB); ask before a heavy job");
+});
+
+// The mock state ?mock=rail&undeclared=1 (=paused, =2) feeds all of the above, and answers the owner's commands.
+test("the mock load: one thread, paused, and two flagged with a third dismissed; the commands update it", () => {
+  const same = (id: string) => ({ title: id });
+  assert.equal(mockLoad()[0].slots?.undeclared, undefined, "without ?undeclared the mock host sends none");
+  const one = withUndeclared(mockLoad(), "1", NOW)[0];
+  assert.deepEqual(one.slots!.undeclared!.map((u) => [u.thread, u.paused, u.dismissed]), [["t_mapperf", false, false]]);
+  assert.equal(one.slots!.undeclaredCpuPct, 52);
+  assert.match(one.slots!.why!, /\(Map perf uses 52 % undeclared\)$/);
+  assert.equal(rowUndeclared([one], "t_mapperf", NOW)?.text, "undeclared · 2.8 GB · 2.1 cores");
+  const paused = withUndeclared(mockLoad(), "paused", NOW)[0];
+  assert.equal(rowUndeclared([paused], "t_mapperf", NOW)?.text, "undeclared · paused: memory");
+  assert.equal(stripView(paused, paused.slots!.undeclared![0], NOW).paused, true);
+  const two = withUndeclared(mockLoad(), "2", NOW)[0];
+  assert.deepEqual(two.slots!.undeclared!.map((u) => u.dismissed), [false, false, true]);
+  assert.equal(railUndeclared(two, same)!.count, 2);
+  assert.equal(mockUndeclaredCommand(two, "host.undeclaredDismiss", { thread: "t_map" }, NOW).ok, false);
+  assert.equal(mockUndeclaredCommand(two, "host.undeclaredDismiss", { thread: "t_mapperf", on: true }, NOW).ok, true);
+  assert.equal(railUndeclared(two, same)!.count, 1);
+  assert.equal(mockUndeclaredCommand(two, "host.heavySuggestion", { id: "sg1", do: "add", pattern: "(", kind: "e2e" }, NOW).ok, false);
+  assert.equal(mockUndeclaredCommand(two, "host.heavySuggestion", { id: "sg1", do: "add", pattern: "node test/layout\\.e2e\\.mjs", kind: "e2e" }, NOW).ok, true);
+  assert.equal(two.suggestions!.length, 1);
+  assert.equal(two.heavyAdded![0].pattern, "node test/layout\\.e2e\\.mjs");
+  assert.equal(two.slots!.undeclared![0].matched, true, "its strip has no Add now");
+  assert.equal(mockUndeclaredCommand(two, "host.heavySuggestion", { id: "sg2", do: "ignore" }, NOW).ok, true);
+  assert.equal(two.suggestions!.length, 0);
+  assert.equal(mockUndeclaredCommand(two, "host.heavyRemove", { pattern: "x" }, NOW).ok, false);
+  assert.equal(mockUndeclaredCommand(two, "host.undeclaredSettings", { cpu: 0.5 }, NOW).ok, true);
+  assert.equal(two.undeclaredSettings!.cpu, 0.5);
+  assert.equal(mockUndeclaredCommand(two, "host.undeclaredSettings", { after: 5 }, NOW).ok, false);
 });

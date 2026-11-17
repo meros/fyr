@@ -11,7 +11,10 @@ import type { Api } from "./api.ts";
 import { hostForProject, hostLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, withHost, type SettingsHost } from "./host-settings.ts";
 import { quotaFor } from "./quota.ts";
-import { budgetLine, jobLines } from "./load.ts";
+import { budgetLine, jobLines, type HostLoad } from "./load.ts";
+import { useUnd } from "./undeclared-ctx.tsx";
+import { UndIcon } from "./undeclared-ctx.tsx";
+import { addedRows, parseThreshold, thresholdError, suggestionRows, thresholdRows, undeclaredRows } from "./undeclared.ts";
 import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { CARD_WORD, cardState } from "./quota.ts";
@@ -393,7 +396,7 @@ export function Settings(p: SettingsProps) {
                 <span class="sep">/</span>
               </>
             )}
-            <h2 tabIndex={-1} class={at.sub ? "wrap" : ""}>
+            <h2 tabIndex={-1} class={at.sub && at.page !== "automation" ? "wrap" : ""}>
               {v.title}
             </h2>
             <span class="end">
@@ -510,7 +513,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi): Pa
       return { title: "Providers", body: <HostParts s={s} now={p.now} part={(d) => <ProvidersPage d={d} go={go} grouped={s.grouped} />} /> };
     }
     case "automation":
-      return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <HostParts s={s} now={p.now} part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} api={p.api} />} /> };
+      return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <HostParts s={s} now={p.now} part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} api={p.api} focus={at.sub} />} /> };
     case "projects": {
       if (at.sub) {
         const pr = p.projects.find((x) => x.id === at.sub);
@@ -1238,7 +1241,7 @@ function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknow
 
 /** V0.111 Auto-deploy and V0.102 Auto-merge: what Fyr does without the owner's press. Only the owner changes them here;
  *  no agent tool can. */
-function AutomationPage({ d, hasDeploy, api }: { d: Data; hasDeploy: boolean; api: SettingsProps["api"] }) {
+function AutomationPage({ d, hasDeploy, api, focus }: { d: Data; hasDeploy: boolean; api: SettingsProps["api"]; focus?: string }) {
   const [deployErr, setDeployErr] = useState<string | null>(null);
   const [repoErr, setRepoErr] = useState<{ repo: string; text: string } | null>(null);
   const [q, setQ] = useState("");
@@ -1263,7 +1266,7 @@ function AutomationPage({ d, hasDeploy, api }: { d: Data; hasDeploy: boolean; ap
           </Group>
         ))}
       {d.updates && <UpdatesGroup d={d} />}
-      <HeavyJobsGroup host={d.host.name} api={api} />
+      <HeavyJobsGroup host={d.host.name} api={api} focus={focus} />
       {d.repos === null && d.reposErr ? (
         <LoadError text={d.reposErr} onRetry={() => void d.loadRepos()} />
       ) : d.repos === null ? (
@@ -1286,14 +1289,185 @@ function AutomationPage({ d, hasDeploy, api }: { d: Data; hasDeploy: boolean; ap
   );
 }
 
-/** Decision 0029 S1 (#185): the heavy jobs this host measured, per class (project and command), the newest first.
- *  Only shown; nothing is admitted by these numbers yet. Desktop and phone share it. */
-function HeavyJobsGroup({ host, api }: { host: string; api: SettingsProps["api"] }) {
+/** Decision 0029 S1 (#185), V0.164: heavy jobs on this host: what runs undeclared now, the commands behind it that no
+ *  pattern names yet, the patterns the owner added, when a thread counts as heavy, and the classes the host measured.
+ *  Desktop and phone share it; a read-only front shows it all with its buttons disabled. */
+function HeavyJobsGroup({ host, api, focus }: { host: string; api: SettingsProps["api"]; focus?: string }) {
   const env = useSet();
   const list = useLoad();
-  const [err, setErr] = useState<{ class: string; text: string } | null>(null);
   const h = list.find((x) => x.host === host) ?? (list.length === 1 ? list[0] : undefined);
   if (!h?.provider) return null;
+  return (
+    <>
+      <UndeclaredGroups h={h} host={host} api={api} focus={focus} />
+      <MeasuredJobs h={h} host={host} api={api} env={env} />
+    </>
+  );
+}
+
+/** A command to the host, with the Saved mark and a fresh read of the load. */
+function useHostCommand(host: string, api: SettingsProps["api"]): (action: string, args: Record<string, unknown>) => Promise<string | null> {
+  const env = useSet();
+  return async (action, args) => {
+    const r = await api.command(action, undefined, withHost(args, host));
+    if (r.ok) (env.saved(), refreshLoad());
+    return r.ok ? null : (r.error ?? "That did not work");
+  };
+}
+
+/** V0.164 (SPEC 8.5). A group is absent when it has nothing to show; the thresholds are absent on a host that does not
+ *  send them. */
+function UndeclaredGroups({ h, host, api, focus }: { h: HostLoad; host: string; api: SettingsProps["api"]; focus?: string }) {
+  const env = useSet();
+  const und = useUnd();
+  const run = useHostCommand(host, api);
+  const [err, setErr] = useState<{ key: string; text: string } | null>(null);
+  const fail = (key: string) => (text: string | null) => setErr(text ? { key, text } : null);
+  const act = async (key: string, action: string, args: Record<string, unknown>) => fail(key)(await run(action, args));
+  // "Add as heavy job…" lands here: the suggestion of the strip's command is scrolled to and marked.
+  useEffect(() => {
+    if (focus) document.querySelector(`[data-sug="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "center" });
+  }, [focus, h.suggestions?.length]);
+  const now = Date.now();
+  const rows = undeclaredRows(h, now, und.lookup);
+  const sugg = suggestionRows(h, und.lookup);
+  const added = addedRows(h);
+  const th = thresholdRows(h);
+  return (
+    <>
+      {rows.length > 0 && (
+        <Group label="Undeclared now" title="Undeclared now" foot="Threads that use clearly more than their idle level without having asked for a heavy job. Fyr tells the agent once and counts the use against this host's heavy jobs, so jobs that asked wait instead of overloading it. Only when memory is short does Fyr pause the newest one; nothing is killed.">
+          {rows.map((r) => (
+            <Row
+              key={r.thread}
+              class={`undrow${r.dismissed ? " off" : ""}`}
+              title={
+                <>
+                  {!r.dismissed && <UndIcon size={13} />}
+                  {r.title}
+                </>
+              }
+              desc={
+                <>
+                  {r.project && `${r.project} · `}
+                  <span class="mono">{r.command}</span> · {r.usage}
+                  {r.tail && ` · ${r.tail}`}
+                </>
+              }
+              error={err?.key === `u:${r.thread}` ? err.text : null}
+              end={
+                <>
+                  <button type="button" class="btn" onClick={() => und.openThread(r.thread)}>
+                    Open
+                  </button>
+                  <button type="button" class="btn" disabled={env.readOnly} onClick={() => void act(`u:${r.thread}`, "host.undeclaredDismiss", { thread: r.thread, on: !r.dismissed })}>
+                    {r.dismissed ? "Show again" : "Dismiss"}
+                  </button>
+                </>
+              }
+            />
+          ))}
+        </Group>
+      )}
+      {sugg.length > 0 && (
+        <Group label="Suggested heavy jobs" title="Suggested heavy jobs" foot="The commands behind undeclared work. Once added, Fyr refuses the command until its thread has asked for a heavy job, as it does for make test. Ignore hides a suggestion for good.">
+          {sugg.map((s) => (
+            <Suggestion key={s.id} s={s} picked={s.id === focus} error={err?.key === `s:${s.id}` ? err.text : null} onDo={(args) => act(`s:${s.id}`, "host.heavySuggestion", { id: s.id, ...args })} />
+          ))}
+        </Group>
+      )}
+      {added.length > 0 && (
+        <Group label="Heavy jobs you added" title="Heavy jobs you added" foot="Besides the built-in ones (make test, go test ./..., playwright, nix build and the like).">
+          {added.map((a) => (
+            <Row
+              key={a.pattern}
+              title={a.pattern}
+              mono
+              desc={a.line}
+              error={err?.key === `a:${a.pattern}` ? err.text : null}
+              end={
+                <button type="button" class="btn" disabled={env.readOnly} onClick={() => void act(`a:${a.pattern}`, "host.heavyRemove", { pattern: a.pattern })}>
+                  Remove
+                </button>
+              }
+            />
+          ))}
+        </Group>
+      )}
+      {th && (
+        <Group label="When a thread counts as heavy" title="When a thread counts as heavy" foot="A thread's idle level is what its agent uses between jobs (the CLI and the servers it keeps running), learned per thread.">
+          {th.map((r) => (
+            <Row
+              key={r.key}
+              label
+              title={r.title}
+              desc={r.now}
+              error={err?.key === `t:${r.key}` ? err.text : null}
+              end={
+                <>
+                  <SaveField
+                    cls="pq num"
+                    numeric
+                    value={r.value}
+                    label={r.title}
+                    check={(v) => thresholdError(parseThreshold(r.key, v))}
+                    onError={(e) => fail(`t:${r.key}`)(e)}
+                    onSave={(v) => {
+                      const p = parseThreshold(r.key, v);
+                      return thresholdError(p) ? Promise.resolve(thresholdError(p)) : run("host.undeclaredSettings", p as Record<string, number>);
+                    }}
+                  />
+                  <span class="unit">{r.unit}</span>
+                </>
+              }
+            />
+          ))}
+        </Group>
+      )}
+    </>
+  );
+}
+
+/** One suggestion: the command, how often it was seen, the pattern the owner may edit, its kind, Add and Ignore. */
+function Suggestion({ s, picked, error, onDo }: { s: ReturnType<typeof suggestionRows>[number]; picked: boolean; error: string | null; onDo(args: Record<string, unknown>): Promise<void> }) {
+  const env = useSet();
+  const [pattern, setPattern] = useState(s.pattern);
+  const [kind, setKind] = useState(s.kind);
+  const [busy, setBusy] = useState(false);
+  const go = async (args: Record<string, unknown>) => {
+    setBusy(true);
+    await onDo(args);
+    setBusy(false);
+  };
+  return (
+    <Row col class={picked ? "pick" : undefined} data={{ sug: s.id }} error={error}>
+      <span class="sr-b">
+        <span class="cmd">{s.command}</span>
+        <span class="sr-d">{s.line}</span>
+      </span>
+      <span class="inl">
+        <input class="mono" type="text" value={pattern} aria-label={`Pattern for ${s.command}`} spellcheck={false} disabled={env.readOnly} onInput={(e) => setPattern((e.target as HTMLInputElement).value)} />
+        <select value={kind} aria-label="Kind" disabled={env.readOnly} onChange={(e) => setKind((e.target as HTMLSelectElement).value)}>
+          {["test", "build", "e2e"].map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </select>
+        <button type="button" class="btn" disabled={env.readOnly || busy || !pattern.trim()} onClick={() => void go({ do: "add", pattern: pattern.trim(), kind })}>
+          Add
+        </button>
+        <button type="button" class="btn" disabled={env.readOnly || busy} onClick={() => void go({ do: "ignore" })}>
+          Ignore
+        </button>
+      </span>
+    </Row>
+  );
+}
+
+/** Decision 0029 S1 (#185): the heavy jobs this host measured, per class (project and command), the newest first. */
+function MeasuredJobs({ h, host, api, env }: { h: HostLoad; host: string; api: SettingsProps["api"]; env: { readOnly: boolean } }) {
+  const [err, setErr] = useState<{ class: string; text: string } | null>(null);
   const lines = jobLines(h);
   const budget = budgetLine(h); // V0.163: the budget as percentages of the host
   // Decision 0029 S3: Reset forgets a class's learned cost on this host (owner only); it counts as 1.0 again.

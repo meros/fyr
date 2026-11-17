@@ -22,7 +22,8 @@ export const PAGES: { id: PageId; title: string }[] = [
 ];
 
 /** The pages with sub-pages. */
-const SUBS: Record<PageId, boolean> = { providers: true, automation: false, projects: true, hosts: true, device: false };
+/** Automation's sub is not a page: it names the suggestion V0.164's "Add as heavy job…" opened it at (scrolled to, marked). */
+const SUBS: Record<PageId, boolean> = { providers: true, automation: true, projects: true, hosts: true, device: false };
 
 export function isPage(s: string | null | undefined): s is PageId {
   return !!s && PAGES.some((p) => p.id === s);
@@ -128,5 +129,5 @@ export function deviceSummary(push: PushStatus, theme: "system" | "light" | "dar
 
 /** Esc in the desktop dialog (outside a changed text field): a sub-page goes to its list; a page closes Settings (null). */
 export function escapeTarget(r: PageRef): PageRef | null {
-  return r.sub ? { page: r.page } : null;
+  return r.sub && r.page !== "automation" ? { page: r.page } : null;
 }

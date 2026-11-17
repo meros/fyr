@@ -415,3 +415,8 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-app .runc-b .btn{min-height:44px;padding:0 14px;font-size:15px}
 .m-app .runc-cmd{font-size:13px;line-height:19px}
 .m-app .runc-why{font-size:14px;line-height:20px}
+
+/* V0.164: the strip under a thread's header and its touch-sized buttons (design/rogue-agents/mock/rogue.css) */
+.m-thread .undb{padding:8px 16px;flex-wrap:wrap;font-size:13px;line-height:18px}
+.m-thread .undb-a{flex:1 1 100%;padding-left:24px}
+.m-thread .undb .btn{height:44px;padding:0 14px;border-radius:10px;font-size:14px}

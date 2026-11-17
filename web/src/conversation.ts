@@ -3,6 +3,7 @@
 import { actionEventLine, changeEventLine } from "./offers.ts";
 import type { Failure, FyrEvent } from "./types.ts";
 import { taskEventText } from "./tasks.ts";
+import { toldLine } from "./undeclared.ts";
 import { previewCard, type PreviewCard } from "./previews.ts";
 import type { ContentUrls } from "./attach.ts";
 
@@ -59,6 +60,8 @@ export type Item = (
   | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number; compact: boolean }
   | { kind: "effect"; key: string; action: string; ok: boolean; text: string; line: string }
   | { kind: "note"; key: string; text: string; line: string }
+  /** V0.164 (N9): what Fyr told the agent about heavy work it did not ask for; `text` is the whole notice */
+  | { kind: "undeclared"; key: string; text: string; line: string }
   | { kind: "answer"; key: string; text: string }
   | { kind: "preview"; key: string; card: PreviewCard }
   | { kind: "task"; key: string; text: string; status: string; started: boolean }
@@ -377,6 +380,10 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         if (e.data?.kind === "autoDeploy") pushItem({ kind: "effect", key, action: "autoDeploy", ok: false, text: err, line: firstLine(err) });
         break;
       }
+      case "slot":
+        // V0.164: the notice about undeclared heavy work; the other slot events stay out of the log.
+        if (str(e.data?.undeclared)) pushItem({ kind: "undeclared", key, text: str(e.data?.undeclared), line: toldLine(e.data ?? {}) });
+        break;
       case "decision.closed":
         if (str(e.data?.answer)) pushItem({ kind: "answer", key, text: str(e.data?.answer) });
         break;

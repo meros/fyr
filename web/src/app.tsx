@@ -48,6 +48,7 @@ import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type FilterView, type Theme } from "./inbox.tsx";
 import { useSlotQueue } from "./slot-queue-ui.tsx";
+import { UndContext, type UndNav } from "./undeclared-ctx.tsx";
 import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
 import { HandoverDialog } from "./handover-ui.tsx";
 import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
@@ -1400,11 +1401,22 @@ function App() {
     else navGo({ screen, sheet: null });
   };
 
+  // V0.164: undeclared work's components find a thread's title and go to a thread or to Settings through this, on both fronts.
+  const undNav: UndNav = {
+    lookup: (id) => ({ title: store.threads[id]?.title || id, project: store.threads[id]?.project }),
+    openThread: (id) => {
+      if (!phoneRef.current) setDialog(null); // the desktop's Settings is a dialog over the list
+      directory.openThread(id);
+    },
+    openSettings: (at) => (phoneRef.current ? phoneSettingsGo(at) : openSettings(at)),
+  };
+
   if (phone) {
     return (
       <DirectoryContext.Provider value={directory}>
         <FolderPickContext.Provider value={folderPicker}>
-        <HostsContext.Provider value={hostsCtx}>
+        <UndContext.Provider value={undNav}>
+<HostsContext.Provider value={hostsCtx}>
         <ConfirmProvider value={confirmHost.ask}>
         <ProfilesContext.Provider value={store.profiles}>
         <Boundary name="Fyr">
@@ -1474,6 +1486,7 @@ function App() {
         </ProfilesContext.Provider>
         </ConfirmProvider>
         </HostsContext.Provider>
+</UndContext.Provider>
         </FolderPickContext.Provider>
       </DirectoryContext.Provider>
     );
@@ -1503,7 +1516,8 @@ function App() {
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>
       <FolderPickContext.Provider value={folderPicker}>
-        <HostsContext.Provider value={hostsCtx}>
+        <UndContext.Provider value={undNav}>
+<HostsContext.Provider value={hostsCtx}>
       <ConfirmProvider value={confirmHost.ask}>
       <ProfilesContext.Provider value={store.profiles}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
@@ -1663,6 +1677,7 @@ function App() {
       {confirmHost.view}
       </ConfirmProvider>
       </HostsContext.Provider>
+</UndContext.Provider>
         </FolderPickContext.Provider>
       </DirectoryContext.Provider>
     </div>
