@@ -1,0 +1,161 @@
+package cgroup
+
+// Decision 0029 S3 (#187): each finished record teaches its class. The
+// table keeps raw measures (cores, bytes, seconds), so a changed capacity or
+// another host does not invalidate them; the cost is computed at admission
+// (slots.CostOf).
+
+import (
+	"encoding/json"
+	"log"
+	"slices"
+	"time"
+)
+
+// costsKey is where the table is kept in the store's KV table.
+const costsKey = "slot-costs"
+
+// Learning rates: α for a run, half for a starved one (its demand factor
+// above starvedAt); the memory peak decays by peakDecay a run.
+const (
+	alpha     = 0.3
+	starvedAt = 3.0
+	peakDecay = 0.9
+	keepWalls = 10
+)
+
+// seenFor is how long a thread's named job (a refused or announced heavy
+// command) names its class while it waits.
+const seenFor = 30 * time.Minute
+
+// Learned is one class's raw measures.
+type Learned struct {
+	Demand float64   `json:"demand"`
+	Peak   uint64    `json:"peak"`
+	Walls  []float64 `json:"walls"`
+	Runs   int       `json:"runs"`
+}
+
+// WallP90 is the 90th percentile of the last wall times, 0 without any.
+func (l Learned) WallP90() float64 {
+	if len(l.Walls) == 0 {
+		return 0
+	}
+	w := slices.Clone(l.Walls)
+	slices.Sort(w)
+	return w[min(len(w)-1, int(0.9*float64(len(w))))]
+}
+
+// learn adds r to its class; holds j.mu (and j.load ran).
+func (j *Jobs) learn(r JobRecord) {
+	if j.table == nil {
+		j.table = map[string]Learned{}
+	}
+	l := j.table[r.Class]
+	a := alpha
+	if r.Cores > 0 && r.Demand/r.Cores > starvedAt {
+		a = alpha / 2
+	}
+	if l.Runs == 0 {
+		l.Demand, l.Peak = r.Demand, r.Peak
+	} else {
+		l.Demand = round2((1-a)*l.Demand + a*r.Demand)
+		l.Peak = max(r.Peak, uint64(peakDecay*float64(l.Peak)))
+	}
+	l.Walls = append(l.Walls, r.Wall)
+	if len(l.Walls) > keepWalls {
+		l.Walls = l.Walls[len(l.Walls)-keepWalls:]
+	}
+	l.Runs++
+	j.table[r.Class] = l
+	j.saveTable()
+}
+
+func (j *Jobs) saveTable() {
+	if j.KV == nil {
+		return
+	}
+	b, _ := json.Marshal(j.table)
+	if err := j.KV.SetKV(costsKey, string(b)); err != nil {
+		log.Printf("jobs: store costs: %v", err)
+	}
+}
+
+func (j *Jobs) loadTable() {
+	j.table = map[string]Learned{}
+	if j.KV == nil {
+		return
+	}
+	if raw, _ := j.KV.GetKV(costsKey); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &j.table); err != nil {
+			log.Printf("jobs: stored costs unreadable, starting empty: %v", err)
+			j.table = map[string]Learned{}
+		}
+	}
+}
+
+// Learned is class's measures; false before its first run.
+func (j *Jobs) Learned(class string) (Learned, bool) {
+	if j == nil {
+		return Learned{}, false
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.load()
+	l, ok := j.table[class]
+	return l, ok
+}
+
+// Reset forgets class (the owner's Reset); false when it was not learned.
+func (j *Jobs) Reset(class string) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.load()
+	if _, ok := j.table[class]; !ok {
+		return false
+	}
+	delete(j.table, class)
+	j.saveTable()
+	return true
+}
+
+// ClassOf is the class a thread's slot runs or will run: its project and
+// the heavy command of its hold, or the one it named while waiting (within
+// seenFor), else the slot's kind.
+func (j *Jobs) ClassOf(thread, kind string) string {
+	j.mu.Lock()
+	c := ""
+	if h := j.holds[thread]; h != nil && h.class != "" {
+		c = h.class
+	} else if s, ok := j.seen[thread]; ok && j.now().Sub(j.seenAt[thread]) < seenFor {
+		c = s
+	}
+	j.mu.Unlock()
+	if c == "" {
+		c = kind
+	}
+	if j.Project != nil {
+		if p := j.Project(thread); p != "" {
+			return p + ": " + c
+		}
+	}
+	return c
+}
+
+// LiveUse is thread's hold now: its cores over the last reading and how much
+// its memory grew since the grant; false without a hold or a reading.
+func (j *Jobs) LiveUse(thread string) (cores float64, grew uint64, ok bool) {
+	if j == nil {
+		return 0, 0, false
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	h := j.holds[thread]
+	if h == nil || h.rateAt.IsZero() {
+		return 0, 0, false
+	}
+	if h.mem > h.mem0 {
+		grew = h.mem - h.mem0
+	}
+	return max(0, h.rate-h.base), grew, true
+}

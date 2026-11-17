@@ -61,6 +61,7 @@ const (
 	KindSlotGranted     = "slot.granted" // V0.86: a queued slot is the thread's now
 	KindSlotIdle        = "slot.idle"    // #174: a held slot ran no heavy job for a while
 	KindSlotMemory      = "slot.memory"  // decision 0029 S2: memory is short; this job grew most
+	KindSlotOver        = "slot.over"    // decision 0029 S3: a running job is heavier than predicted
 )
 
 // The typed args of the kinds that are not a map.
@@ -316,6 +317,13 @@ func init() {
 				return Result{}, errors.New("slot.memory needs the reason")
 			}
 			return Result{Events: []Event{{EventSlot, map[string]any{"memory": a.Why, "grew": a.Grew}}}}, nil
+		}},
+		{Name: KindSlotOver, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
+			a, err := argsOf[SlotOverArgs](in)
+			if err != nil || a.Class == "" {
+				return Result{}, errors.New("slot.over needs the class")
+			}
+			return Result{Events: []Event{{EventSlot, map[string]any{"over": a.Class, "live": a.Live, "predicted": a.Predicted}}}}, nil
 		}},
 		{Name: KindMessageSent, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a, err := argsOf[MessageSentArgs](in)

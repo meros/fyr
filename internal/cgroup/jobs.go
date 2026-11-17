@@ -65,12 +65,18 @@ type JobClass struct {
 	Peak   uint64    `json:"peak"`
 	Wall   float64   `json:"wall"`
 	At     time.Time `json:"at"`
+	// Decision 0029 S3: the class's cost on this host now and how many
+	// runs it is learned from; 0 when not learned.
+	Cost    float64 `json:"cost,omitempty"`
+	Learned int     `json:"learned,omitempty"`
 }
 
 type hold struct {
 	kind              string
 	since, last       time.Time
 	active            time.Time // #174: the newest heavy command or busy reading
+	rate              float64   // decision 0029 S3: cores over the last reading
+	rateAt            time.Time
 	class             string
 	cpu0, stall0      uint64
 	cpu, stall        uint64
@@ -92,8 +98,10 @@ type Jobs struct {
 
 	mu     sync.Mutex
 	holds  map[string]*hold
-	seen   map[string]string // thread → class of its newest heavy command in a hold
+	seen   map[string]string    // thread → class of its newest heavy command (in a hold or while waiting)
+	seenAt map[string]time.Time // and when
 	recs   []JobRecord
+	table  map[string]Learned // decision 0029 S3: per class
 	loaded bool
 }
 
@@ -103,8 +111,9 @@ func (j *Jobs) load() {
 	}
 	j.loaded = true
 	if j.holds == nil {
-		j.holds, j.seen = map[string]*hold{}, map[string]string{}
+		j.holds, j.seen, j.seenAt = map[string]*hold{}, map[string]string{}, map[string]time.Time{}
 	}
+	j.loadTable()
 	if j.KV == nil {
 		return
 	}
@@ -130,7 +139,7 @@ func (j *Jobs) Saw(thread, class string) {
 		h.class = class
 		h.active = j.now()
 	}
-	j.seen[thread] = class
+	j.seen[thread], j.seenAt[thread] = class, j.now()
 }
 
 func (j *Jobs) now() time.Time {
@@ -277,8 +286,11 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 		if dir != "" {
 			if u, ok := readKey(filepath.Join(dir, "cpu.stat"), "usage_usec"); ok {
 				h.cpu = u
-				if dt := now.Sub(prevAt).Seconds(); dt > 0 && u >= prevCPU && float64(u-prevCPU)/1e6/dt > h.base+busyAbove {
-					h.active = now
+				if dt := now.Sub(prevAt).Seconds(); dt > 0 && u >= prevCPU {
+					h.rate, h.rateAt = float64(u-prevCPU)/1e6/dt, now
+					if h.rate > h.base+busyAbove {
+						h.active = now
+					}
 				}
 			}
 			if p, ok := readPSI(filepath.Join(dir, "cpu.pressure")); ok {
@@ -297,9 +309,10 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 			j.end(owner, h)
 		}
 	}
-	for th := range j.seen {
-		if !live[th] {
+	for th, at := range j.seenAt {
+		if !live[th] && now.Sub(at) >= seenFor {
 			delete(j.seen, th)
+			delete(j.seenAt, th)
 		}
 	}
 }
@@ -351,6 +364,7 @@ func (j *Jobs) end(owner string, h *hold) {
 	if h.sN > 0 {
 		r.Slowdown = round2(h.sSum / float64(h.sN))
 	}
+	j.learn(r)
 	j.recs = append(j.recs, r)
 	if len(j.recs) > KeepJobs {
 		j.recs = j.recs[len(j.recs)-KeepJobs:]

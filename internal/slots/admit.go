@@ -22,6 +22,9 @@ type Signals struct {
 	Headroom *float64
 	// Stall is the memory stall level; "" when unknown.
 	Stall Stall
+	// CPU and Memory are the agents' capacity (V0.142); 0 when unknown.
+	CPU    float64
+	Memory uint64
 }
 
 // Stall is a memory stall level (V0.142).
@@ -86,4 +89,61 @@ func Decide(p Policy, s Signals, budget float64, held []float64, head float64) (
 		return false, fmt.Sprintf("CPU: new jobs run %.1f× slower", *s.Slowdown)
 	}
 	return true, ""
+}
+
+// Decision 0029 S3 (#187): learned costs.
+
+// MinCost and MaxCost bound a learned cost; LearnRuns is how many runs a
+// class needs before its cost may fall under the prior 1.0.
+const (
+	MinCost   = 0.1
+	MaxCost   = 2.0
+	LearnRuns = 3
+)
+
+// CostOf is a job's cost from its raw measures (demand in cores, peak in
+// bytes): the larger of its shares of the host's capacity over n, bounded
+// MinCost–MaxCost; under LearnRuns runs never below 1.0. Without a capacity
+// it is the prior 1.0.
+func CostOf(demand float64, peak uint64, runs int, cpu float64, mem uint64, n float64) float64 {
+	if cpu <= 0 || mem == 0 || n <= 0 {
+		return 1
+	}
+	c := max(demand/(cpu/n), float64(peak)/(float64(mem)/n))
+	c = min(MaxCost, max(MinCost, c))
+	if runs < LearnRuns {
+		c = max(c, 1)
+	}
+	return float64(int(c*100+0.5)) / 100
+}
+
+// The backfill cap (EASY): a head is passed at most BackfillPasses times,
+// and not at all once it has waited BackfillFor.
+const (
+	BackfillPasses = 3
+	BackfillFor    = 10 * time.Minute
+)
+
+// EASY says whether a job that already fits may pass the queue's head
+// (decision 0029 S3): a cheap one always; else only when its p90 wall time
+// (seconds) ends by the earliest expected end of the running jobs, so the
+// head starts no later. A zero end is a holder without an estimate: no
+// promise can be kept.
+func EASY(now time.Time, cost, wall float64, ends []time.Time) bool {
+	if cost <= CheapCost {
+		return true
+	}
+	if wall <= 0 || len(ends) == 0 {
+		return false
+	}
+	earliest := ends[0]
+	for _, e := range ends {
+		if e.IsZero() {
+			return false
+		}
+		if e.Before(earliest) {
+			earliest = e
+		}
+	}
+	return !now.Add(time.Duration(wall * float64(time.Second))).After(earliest)
 }

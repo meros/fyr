@@ -299,6 +299,14 @@ type SlotMemoryArgs struct {
 	Grew uint64 `json:"grew"`
 }
 
+// SlotOverArgs is slot.over's (decision 0029 S3): the job's class, its cost
+// measured now and the cost Fyr predicted.
+type SlotOverArgs struct {
+	Class     string  `json:"class"`
+	Live      float64 `json:"live"`
+	Predicted float64 `json:"predicted"`
+}
+
 // SlotIdleArgs is slot.idle's (#174): the held slot's kind and how many
 // minutes it ran no heavy job.
 type SlotIdleArgs struct {
@@ -314,6 +322,12 @@ func slotNotices(r Reduced) []Notice {
 	for _, ev := range r.Events {
 		d, _ := ev.Data.(map[string]any)
 		if ev.Type != EventSlot {
+			continue
+		}
+		if class, ok := d["over"].(string); ok {
+			live, _ := d["live"].(float64)
+			pred, _ := d["predicted"].(float64)
+			out = append(out, Notice{About: "thread", Key: "slot.over", Urgency: Next, What: fmt.Sprintf("Your job (%s) uses %.1f of the slot budget; Fyr expected %.1f. Other heavy jobs wait until it ends; nothing is stopped. Fyr learns the new cost from this run.", class, live, pred)})
 			continue
 		}
 		if why, ok := d["memory"].(string); ok {

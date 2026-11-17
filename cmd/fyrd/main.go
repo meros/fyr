@@ -272,20 +272,75 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	if cfg.SlotMemoryReserve > 0 {
 		policy.MemoryReserve = cfg.SlotMemoryReserve
 	}
+	// Decision 0029 S3 (#187): a job's cost is its class's learned cost
+	// (the prior 1.0 until learned), a holder's at least what it uses now.
+	predict := func(h slots.Holder) (cost, wall float64) {
+		sig := sampler.Signals()
+		l, ok := jobs.Learned(jobs.ClassOf(h.Owner, h.Kind))
+		if !ok {
+			return 1, 0
+		}
+		return slots.CostOf(l.Demand, l.Peak, l.Runs, sig.CPU, sig.Memory, pool.Budget()), l.WallP90()
+	}
+	live := func(h slots.Holder) (float64, bool) {
+		cores, grew, ok := jobs.LiveUse(h.Owner)
+		sig := sampler.Signals()
+		if !ok || sig.CPU == 0 {
+			return 0, false
+		}
+		return slots.CostOf(cores, grew, slots.LearnRuns, sig.CPU, sig.Memory, pool.Budget()), true
+	}
 	pool.Cost = func(h slots.Holder) float64 {
-		if at, ok := jobs.Active(h.Owner); ok && !h.Priority && time.Since(at) >= slots.IdleAfter {
+		if h.Priority {
+			return 1
+		}
+		if at, ok := jobs.Active(h.Owner); ok && time.Since(at) >= slots.IdleAfter {
 			return slots.IdleCost
 		}
-		return 1
+		c, _ := predict(h)
+		if l, ok := live(h); ok {
+			c = max(c, l)
+		}
+		return c
 	}
-	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string) {
+	heldCosts := func(held []slots.Holder) []float64 {
 		costs := make([]float64, len(held))
 		for i, h := range held {
 			costs[i] = pool.Cost(h)
 		}
-		return slots.Decide(policy, sampler.Signals(), pool.Budget(), costs, 1)
+		return costs
+	}
+	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string) {
+		c, _ := predict(head)
+		return slots.Decide(policy, sampler.Signals(), pool.Budget(), heldCosts(held), c)
+	}
+	// EASY backfill: c may pass the head when it fits now and is cheap, or
+	// ends (its class's p90) before the earliest running job is expected to.
+	pool.Backfill = func(head, c slots.Holder, held []slots.Holder) bool {
+		cc, wall := predict(c)
+		if ok, _ := slots.Decide(policy, sampler.Signals(), pool.Budget(), heldCosts(held), cc); !ok {
+			return false
+		}
+		ends := make([]time.Time, len(held))
+		for i, h := range held {
+			if _, w := predict(h); w > 0 {
+				ends[i] = h.Since.Add(time.Duration(w * float64(time.Second)))
+			}
+		}
+		return slots.EASY(time.Now(), cc, wall, ends)
 	}
 	eng.SlotSignals, eng.SlotGrowth, eng.SlotPolicy = sampler.Signals, jobs.Growth, policy
+	eng.SlotJob = func(thread, c string) { jobs.Saw(thread, heavyCmds.Class(c)) }
+	eng.JobReset = jobs.Reset
+	eng.SlotOver = func(owner string) (string, float64, float64, bool) {
+		h, ok := pool.Holding(owner)
+		if !ok {
+			return "", 0, 0, false
+		}
+		p, _ := predict(h)
+		l, ok := live(h)
+		return jobs.ClassOf(owner, h.Kind), l, p, ok && l > p+0.25
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

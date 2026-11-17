@@ -99,6 +99,13 @@ func (s *Sampler) Get() Load {
 	}
 	if s.Jobs != nil {
 		l.Jobs = s.Jobs.Classes()
+		// Decision 0029 S3: each class's cost on this host now.
+		for i, c := range l.Jobs {
+			if lr, ok := s.Jobs.Learned(c.Class); ok && l.Capacity != nil && s.Slots != nil && !s.Slots.Off() {
+				l.Jobs[i].Cost = slots.CostOf(lr.Demand, lr.Peak, lr.Runs, l.Capacity.CPU, l.Capacity.Memory, s.Slots.Budget())
+				l.Jobs[i].Learned = lr.Runs
+			}
+		}
 		th := make([]ThreadLoad, len(l.Threads))
 		for i, t := range l.Threads {
 			t.Job = s.Jobs.Live(t.ID)
@@ -134,7 +141,11 @@ func (s *Sampler) Tick() {
 // MinGap old.
 func (s *Sampler) Signals() slots.Signals {
 	l := s.get()
-	return slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall)}
+	sig := slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall)}
+	if l.Capacity != nil {
+		sig.CPU, sig.Memory = l.Capacity.CPU, l.Capacity.Memory
+	}
+	return sig
 }
 
 // Run ticks until ctx ends.
