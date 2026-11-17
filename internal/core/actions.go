@@ -438,6 +438,11 @@ func init() {
 		// settle when merged; else now. Args{"now": true} (bulk, U11) settles now.
 		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
 			force, _ := a["now"].(bool)
+			if force && t.PinnedAt != nil {
+				// V0.162: a bulk settle skips a pinned thread; only the
+				// thread's own Settle (or unpin) lets it go.
+				return nil, reject(RejectConflict, "A pinned thread settles only by its own Settle")
+			}
 			if t.Running { // also for bulk: a live run is never hidden as settled
 				SettleWhenDone(t, ByOwner, now)
 				return nil, nil
