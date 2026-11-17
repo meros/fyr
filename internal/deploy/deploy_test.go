@@ -63,6 +63,19 @@ func (h *host) Report(th string, req core.EffectReq, allowed, ok bool, text stri
 	h.reports = append(h.reports, th+" "+strings.Fields(map[bool]string{true: "ok", false: "fail"}[ok])[0]+" "+text)
 }
 
+// reportsAfter waits up to 5 s for n reports and returns them, read under
+// the host's lock (V0.147: the report comes from ReportPending's goroutine).
+func (h *host) reportsAfter(n int) []string {
+	for end := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		h.mu.Lock()
+		got := append([]string{}, h.reports...)
+		h.mu.Unlock()
+		if len(got) >= n || time.Now().After(end) {
+			return got
+		}
+	}
+}
+
 func newDeployer(t *testing.T, failStep string) (*Deployer, *host, *[]string) {
 	launchenv.Set(launchenv.Env{Launcher: true})
 	t.Cleanup(func() { launchenv.Set(launchenv.Env{}) })
@@ -143,17 +156,15 @@ func TestReportPending(t *testing.T) {
 	d, h, _ := newDeployer(t, "")
 	d.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b2","req":{"action":"fyr.deploy","args":{"dir":"/src/fyr"}}}`)
 	d.ReportPending()
-	time.Sleep(50 * time.Millisecond)
-	if len(h.reports) != 1 || !strings.HasPrefix(h.reports[0], "t1 ok") {
-		t.Fatalf("%v", h.reports)
+	if r := h.reportsAfter(1); len(r) != 1 || !strings.HasPrefix(r[0], "t1 ok") {
+		t.Fatalf("%v", r)
 	}
 	d2, h2, _ := newDeployer(t, "")
 	d2.DB.SetKV("pending_deploy", `{"thread":"t1","build":"b2","req":{"action":"fyr.deploy"}}`)
 	os.WriteFile(filepath.Join(d2.Data, "deploy-failed.json"), []byte(`{"build":"b2","reason":"exited with code 1 after 0s","log":"panic: x"}`), 0o600)
 	d2.ReportPending()
-	time.Sleep(50 * time.Millisecond)
-	if len(h2.reports) != 1 || !strings.HasPrefix(h2.reports[0], "t1 fail") || !strings.Contains(h2.reports[0], "rolled back") {
-		t.Fatalf("%v", h2.reports)
+	if r := h2.reportsAfter(1); len(r) != 1 || !strings.HasPrefix(r[0], "t1 fail") || !strings.Contains(r[0], "rolled back") {
+		t.Fatalf("%v", r)
 	}
 	if _, err := os.Stat(filepath.Join(d2.Data, "deploy-failed.json")); err == nil {
 		t.Fatal("failure report not consumed")
