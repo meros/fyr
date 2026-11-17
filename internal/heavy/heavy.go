@@ -65,8 +65,9 @@ func Default() *Matcher {
 }
 
 // message is a quoted message or title argument, so "git commit -m 'make
-// test'" is not a run; a quoted script (sh -c '...') still is.
-var message = regexp.MustCompile(`(?:\s-[mt]|\s--(?:message|title|body|subject))(?:=|\s+)(?:'[^']*'|"[^"]*")`)
+// test'" is not a run; a quoted script (sh -c '...') still is. A message
+// ends at its line, so a --body "$(cat <<'EOF'" keeps its heredoc.
+var message = regexp.MustCompile(`(?:\s-[mt]|\s--(?:message|title|body|subject))(?:=|\s+)(?:'[^'\n]*'|"[^"\n]*")`)
 
 var (
 	heredoc = regexp.MustCompile(`<<-?\s*['"]?(\w+)['"]?`)
