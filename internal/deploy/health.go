@@ -74,6 +74,7 @@ func readyPid(path string) (int, bool) {
 func probeHealth(ctx context.Context, addr string) error {
 	c := &http.Client{Timeout: 3 * time.Second}
 	last := fmt.Errorf("no answer from %s%s", addr, HealthPath)
+	answered := false // an answer names the cause; a later connection error does not replace it
 	for {
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+HealthPath, nil)
 		if resp, err := c.Do(req); err == nil {
@@ -83,8 +84,8 @@ func probeHealth(ctx context.Context, addr string) error {
 			if resp.StatusCode == http.StatusOK {
 				return nil
 			}
-			last = fmt.Errorf("%s answered %d: %s", HealthPath, resp.StatusCode, strings.TrimSpace(string(b[:n])))
-		} else {
+			last, answered = fmt.Errorf("%s answered %d: %s", HealthPath, resp.StatusCode, strings.TrimSpace(string(b[:n]))), true
+		} else if !answered {
 			last = fmt.Errorf("%s: %v", HealthPath, err)
 		}
 		select {

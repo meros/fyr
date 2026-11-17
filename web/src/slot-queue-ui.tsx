@@ -95,10 +95,13 @@ function Part({ part, shown, phone, reordering, row }: { part: QueuePart; shown:
     refreshLoad();
   };
   const ro = useReorder(ids, (f, t) => void send(f, t));
+  // Decision 0029 S2: why the next job of this host waits, on both fronts (a row's line is cut at its end).
+  const why = useLoad().find((h) => h.host === part.host)?.slots?.why;
   let i = 0;
   return (
     <div class="sqh" data-host={part.host}>
       {part.label && <div class={phone ? "sqhn m" : "sqhn"}>{part.label}</div>}
+      {why && <div class={phone ? "sqwhy m" : "sqwhy"}>The next waits: {why}</div>}
       {err && (
         <div class="sqerr" role="alert">
           {err}

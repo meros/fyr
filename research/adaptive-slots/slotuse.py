@@ -15,7 +15,7 @@ PAT = [
     ("cargo test", r"cargo\s+test\b"),
     ("pytest", r"pytest\b"),
 ]
-MSG = re.compile(r"""(?:\s-[mt]|\s--(?:message|title|body|subject))(?:=|\s+)(?:'[^']*'|"[^"]*")""")
+MSG = re.compile(r"""(?:\s-[mt]|\s--(?:message|title|body|subject))(?:=|\s+)(?:'[^'\n]*'|"[^"\n]*")""")
 
 
 HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")

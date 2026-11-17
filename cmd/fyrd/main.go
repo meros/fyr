@@ -261,6 +261,31 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	})
 	eng.SlotActive = jobs.Active
 	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs} // V0.80, V0.86
+	// Decision 0029 S2 (#186): admission by a budget of costs (N), gated by
+	// the slowdown and memory; one job always runs; no provider (macOS)
+	// keeps the fixed count. Costs are 1.0, an idle hold 0.1, until S3
+	// learns them.
+	policy := slots.DefaultPolicy
+	if cfg.SlotSlowdownMax > 0 {
+		policy.SlowdownMax = cfg.SlotSlowdownMax
+	}
+	if cfg.SlotMemoryReserve > 0 {
+		policy.MemoryReserve = cfg.SlotMemoryReserve
+	}
+	pool.Cost = func(h slots.Holder) float64 {
+		if at, ok := jobs.Active(h.Owner); ok && !h.Priority && time.Since(at) >= slots.IdleAfter {
+			return slots.IdleCost
+		}
+		return 1
+	}
+	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string) {
+		costs := make([]float64, len(held))
+		for i, h := range held {
+			costs[i] = pool.Cost(h)
+		}
+		return slots.Decide(policy, sampler.Signals(), pool.Budget(), costs, 1)
+	}
+	eng.SlotSignals, eng.SlotGrowth, eng.SlotPolicy = sampler.Signals, jobs.Growth, policy
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

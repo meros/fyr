@@ -292,6 +292,13 @@ var NoticeRules = []NoticeRule{
 // thread's (V0.86).
 const EventSlot = "slot"
 
+// SlotMemoryArgs is slot.memory's (decision 0029 S2): why memory is short
+// and how many bytes the thread's job grew since its grant.
+type SlotMemoryArgs struct {
+	Why  string `json:"why"`
+	Grew uint64 `json:"grew"`
+}
+
 // SlotIdleArgs is slot.idle's (#174): the held slot's kind and how many
 // minutes it ran no heavy job.
 type SlotIdleArgs struct {
@@ -307,6 +314,11 @@ func slotNotices(r Reduced) []Notice {
 	for _, ev := range r.Events {
 		d, _ := ev.Data.(map[string]any)
 		if ev.Type != EventSlot {
+			continue
+		}
+		if why, ok := d["memory"].(string); ok {
+			grew, _ := d["grew"].(uint64)
+			out = append(out, Notice{About: "thread", Key: "slot.memory", Urgency: Next, What: fmt.Sprintf("Memory is short on this host (%s); your job grew %.1f GB since its slot was granted, the most of the running jobs. New heavy jobs wait until memory recovers; nothing is stopped. If you can, finish or shrink the job.", why, float64(grew)/1e9)})
 			continue
 		}
 		if m, ok := d["idle"].(int); ok {

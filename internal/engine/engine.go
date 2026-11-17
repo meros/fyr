@@ -152,6 +152,12 @@ type Engine struct {
 	// job tracker's last heavy command or busy reading); optional.
 	SlotActive func(owner string) (time.Time, bool)
 	slotNudged map[string]time.Time // under mu: owner → the hold (its since) already reminded
+	// SlotSignals and SlotGrowth feed decision 0029 S2's memory guard:
+	// the host's measures and how much a holder's memory grew; optional.
+	SlotSignals func() slots.Signals
+	SlotGrowth  func(owner string) uint64
+	SlotPolicy  slots.Policy
+	memGuard    bool // under mu: the guard told a thread in this episode
 	// Titler makes a thread title from its conversation (V0.108); nil: this
 	// host makes none. titling is the threads with a call in flight.
 	Titler  Titler

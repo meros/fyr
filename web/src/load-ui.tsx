@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { loadDetail, MAX_PIPS, railLabel, railMeter, railPips, railSlots, threadCPU, threadJob, threadSlot, type HostLoad, type RailPips, type Slots } from "./load.ts";
+import { loadDetail, MAX_PIPS, railBudget, railLabel, railMeter, railPips, railSlots, threadCPU, threadJob, threadSlot, type HostLoad, type RailBudget, type RailPips, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -68,6 +68,7 @@ export function LoadRail() {
       {list.map((h) => {
         const m = railMeter(h);
         const p = railPips(h);
+        const bud = railBudget(h);
         const sl = railSlots(h);
         const several = list.length > 1;
         const label = railLabel(h, several); // V0.140: with several hosts each ring names its host
@@ -75,6 +76,7 @@ export function LoadRail() {
           <div class={`rldr ${m.level}`} title={loadDetail(h).join("\n")} role="img" aria-label={label}>
             <LoadRing share={m.share} text={m.text} />
             {several && <small class="rldh mono">{h.host}</small>}
+            {bud && <SlotBar b={bud} />}
             {p && (p.n <= MAX_PIPS ? <SlotPips p={p} /> : sl && <small class={`rlds${sl.hot ? " hot" : ""}`}>{`${p.held}/${p.n}`}</small>)}
           </div>
         );
@@ -94,6 +96,22 @@ function LoadRing({ share, text }: { share: number; text: string }) {
         {share > 0 && <circle class="arc" cx="15" cy="15" r={R} stroke-dasharray={`${(share * C).toFixed(2)} ${C.toFixed(2)}`} transform="rotate(-90 15 15)" />}
       </svg>
       <b>{text}</b>
+    </span>
+  );
+}
+
+/** Decision 0029 S2: the slot budget in use as a bar with "1.1/2" under it; the hot colour and "+2" while threads
+ *  wait. */
+function SlotBar({ b }: { b: RailBudget }) {
+  return (
+    <span class={`rbar${b.hot ? " hot" : ""}`} aria-hidden="true">
+      <span class="trk">
+        <i style={{ width: `${Math.round(b.share * 100)}%` }} />
+      </span>
+      <small class="mono">
+        {b.text}
+        {b.waiting > 0 && <em>+{b.waiting}</em>}
+      </small>
     </span>
   );
 }
