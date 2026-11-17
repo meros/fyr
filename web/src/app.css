@@ -1007,6 +1007,9 @@ button.ptag{padding:0}
 .stp-h .end{margin-left:auto;display:flex;gap:8px;align-items:center}
 .stp-lede{margin:-8px 0 0;font:400 13px/19px var(--ui);color:var(--ink-muted);max-width:60ch}
 .stp-sub{margin:8px 0 -6px;font:600 14px/20px var(--ui)}
+/* V0.140: the host a change card's thread runs on, and each load ring's host on the rail, with several hosts */
+.bdhost{flex:none;font:400 11px/16px var(--mono);color:var(--ink-muted);border:1px solid var(--line);border-radius:5px;padding:0 5px}
+.rldh{display:block;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:400 10px/13px var(--mono);color:var(--ink-muted);text-align:center}
 /* V0.132: the Host field of New project and New thread; an offline host's note in the error colour */
 .hostf .srcl.hbad{color:var(--signal-ink)}
 .fnote{margin:4px 0}
