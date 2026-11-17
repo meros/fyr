@@ -1,13 +1,15 @@
 // SPEC 0.5 V0.80: the machine load in the desktop rail and a working thread's CPU in its row. One poll for the
 // whole client, every 5 s while the page is visible; the host reads at most every 2 s.
 
+import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
+import { clockTime } from "./format.ts";
 import { ContextMenu } from "./menu-ui.tsx";
 import { UndIcon, useUnd } from "./undeclared-ctx.tsx";
 import { railUndeclared } from "./undeclared.ts";
-import { loadDetail, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, slotTip, threadCPU, threadJob, threadSlot, type HostLoad, type RailBudget, type Slots } from "./load.ts";
+import { loadDetail, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, slotTip, STRIP_MAX, undeclaredTip, type StripHost, threadCPU, threadJob, threadSlot, type HostLoad, type RailBudget, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -91,6 +93,88 @@ export function LoadRail() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** V0.166: the phone's load strip, in the inbox header: per host the rail's ring (the load as a share of the cores),
+ *  its short name with several hosts, and the heavy jobs' use as a percentage (V0.163) in the hot colour while jobs
+ *  wait; an offline host as an empty ring and "off". One button: a tap opens the sheet. The same pieces as the rail. */
+export function LoadStrip({ hosts, onOpen }: { hosts: StripHost[]; onOpen(): void }) {
+  if (!hosts.length) return null;
+  const several = hosts.length > 1;
+  const short = shortHostNames(hosts.map((h) => h.name));
+  // the hosts with a load first (in the owner's order), so an offline host never hides a live one behind "+n"
+  const shown = [...hosts.filter((h) => h.load), ...hosts.filter((h) => !h.load)].slice(0, STRIP_MAX);
+  const label = hosts.map((h) => (h.load ? railLabel(h.load, true) : `${h.name}: offline`)).join("; ");
+  return (
+    <button type="button" class="m-load" onClick={onOpen} aria-label={`Host load: ${label}. Show details`}>
+      {shown.map((h) => {
+        if (!h.load) {
+          return (
+            <span class="mlh off">
+              <LoadRing share={0} text="–" />
+              <span class="mlc">
+                {several && <small class="mono">{short.get(h.name)}</small>}
+                <small class="mono">off</small>
+              </span>
+            </span>
+          );
+        }
+        const m = railMeter(h.load);
+        const bud = railBudget(h.load);
+        return (
+          <span class={`mlh rldr ${m.level}`}>
+            <LoadRing share={m.share} text={m.text} />
+            <span class="mlc">
+              {several && <small class="mono">{short.get(h.name)}</small>}
+              {bud && <small class={`mono${bud.hot ? " hot" : ""}`}>{bud.text.replace(" ", "")}{bud.waiting > 0 && <em>+{bud.waiting}</em>}</small>}
+            </span>
+          </span>
+        );
+      })}
+      {hosts.length > shown.length && <span class="mlmore mono">+{hosts.length - shown.length}</span>}
+    </button>
+  );
+}
+
+/** V0.166: the phone's load sheet: per host the ring, the full name and state, the heavy jobs' bar, and the rail's
+ *  tooltip lines as text (the load, the signals, CPU and memory in use and their budget, the running jobs with their
+ *  share, who waits and why, undeclared work); then the provider quotas. */
+export function LoadSheetBody({ hosts, quotas }: { hosts: StripHost[]; quotas: ComponentChildren }) {
+  const und = useUnd();
+  return (
+    <div class="m-lsheet">
+      {hosts.map((h) => {
+        const m = h.load && railMeter(h.load);
+        const bud = h.load && railBudget(h.load);
+        const lines = h.load ? loadDetail(h.load) : [];
+        const ut = h.load ? undeclaredTip(h.load, und.lookup, und.now()) : "";
+        return (
+          <section class={`mls${h.load ? "" : " off"}`} aria-label={h.name}>
+            <div class={`mlsh rldr ${m ? m.level : ""}`}>
+              <LoadRing share={m ? m.share : 0} text={m ? m.text : "–"} />
+              <span class="mlsn">
+                <b class="mono ell">{h.name}</b>
+                <small>{h.load ? `Load ${m!.text} of the cores` : `Offline${h.offline && clockTime(h.offline) ? ` since ${clockTime(h.offline)}` : ""}; no load until it is back`}</small>
+              </span>
+              {bud && <SlotBar b={bud} tip="" />}
+            </div>
+            {lines.length > 0 && (
+              <ul class="mlsl">
+                {lines.slice(1).map((l) => (
+                  <li>{l}</li>
+                ))}
+                {ut && <li class="und">{ut}</li>}
+              </ul>
+            )}
+          </section>
+        );
+      })}
+      <section class="mls" aria-label="Quota">
+        <div class="mlsq">Provider quotas</div>
+        {quotas}
+      </section>
     </div>
   );
 }

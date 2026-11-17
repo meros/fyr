@@ -420,3 +420,35 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-thread .undb{padding:8px 16px;flex-wrap:wrap;font-size:13px;line-height:18px}
 .m-thread .undb-a{flex:1 1 100%;padding-left:24px}
 .m-thread .undb .btn{height:44px;padding:0 14px;border-radius:10px;font-size:14px}
+
+/* SPEC V0.166: each host's load in the inbox header, the desktop rail's ring and figures (app.css shares the ring's
+   and the bar's rules with .m-load and .m-lsheet). One button, 44 px high (touch); it never wraps or grows the header:
+   two hosts show, the rest are "+n". */
+.m-load{flex:none;display:flex;align-items:center;gap:6px;height:44px;padding:0 6px;margin-right:2px;border-radius:10px;min-width:0}
+.m-load:active{background:var(--select)}
+.m-conn.dot .ell{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.m-load .mlh,.m-load .mlh.rldr{display:flex;flex-direction:row;align-items:center;gap:3px;max-width:none}
+.m-load .mlh.off{--lv:var(--line)}
+.m-load .mlh .rring{width:26px;height:26px}
+.m-load .mlh .rring svg{width:26px;height:26px}
+.m-load .mlh .rring b{font-size:9px}
+.m-load .mlh .rring b.w3{font-size:7.5px}
+.m-load .mlc{display:flex;flex-direction:column;align-items:flex-start;min-width:0}
+.m-load .mlh .mlc small{font:500 10px/12px var(--mono);color:var(--ink-muted);white-space:nowrap;max-width:44px;overflow:hidden;text-overflow:ellipsis}
+.m-load .mlh .mlc small:first-child{color:var(--ink)}
+.m-load .mlh .mlc small.hot,.m-load .mlh .mlc em{color:var(--signal-ink);font-weight:600;font-style:normal}
+.m-load .mlh.off .rring b,.m-load .mlh.off .mlc small{color:var(--ink-faint)}
+.m-load .mlmore{font:500 11px/1 var(--mono);color:var(--ink-muted)}
+/* the sheet: per host a head (ring, name, state, the heavy jobs' bar), then the rail's tooltip lines as text */
+.m-lsheet{display:flex;flex-direction:column;gap:14px;padding:4px 16px 16px;overflow-y:auto;min-height:0}
+.m-lsheet .mls{display:flex;flex-direction:column;gap:6px}
+.m-lsheet .mlsh,.m-lsheet .mlsh.rldr{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;column-gap:10px;gap:0 10px;max-width:none}
+.m-lsheet .mlsn{display:flex;flex-direction:column;min-width:0}
+.m-lsheet .mlsn b{font:600 14px/20px var(--mono);color:var(--ink)}
+.m-lsheet .mlsn small{font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.m-lsheet .mls.off .mlsn small{color:var(--ink-faint)}
+.m-lsheet .mlsh .rbar{width:72px;height:auto;gap:2px}
+.m-lsheet .mlsh .rbar small{font:600 11px/14px var(--mono)}
+.m-lsheet .mlsl{margin:0;padding:0 0 0 40px;list-style:none;display:flex;flex-direction:column;gap:4px;font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.m-lsheet .mlsl li.und{color:var(--beam-ink)}
+.m-lsheet .mlsq{font:600 13px/18px var(--ui);color:var(--ink);padding-top:2px}

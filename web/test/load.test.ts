@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.80: the machine load in the rail and each working thread's CPU, as words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpuText, loadDetail, railBudget, railLoad, railMeter, shortHostNames, threadCPU, threadSlot, type HostLoad } from "../src/load.ts";
+import { cpuText, loadDetail, railBudget, railLoad, railMeter, shortHostNames, stripHosts, threadCPU, threadSlot, type HostLoad } from "../src/load.ts";
 
 const busy: HostLoad = {
   host: "laptop",
@@ -93,4 +93,18 @@ test("V0.152: the rail names hosts by the part that differs, the full name when 
   assert.deepEqual(m(["build-1.lan", "build-2.lan", "desk"]), ["build-1.lan", "build-2.lan", "desk"]);
   assert.deepEqual(m(["meros-pc", "meros"]), ["meros-pc", "meros"]);
   assert.deepEqual(m(["solo-host"]), ["solo-host"]);
+});
+
+test("V0.166: the phone's strip lists hosts in the owner's order: those with a load, and the offline ones", () => {
+  const l = (host: string): HostLoad => ({ host, cores: 4, load: [1, 1, 1], cgroups: false, threads: [] });
+  const hosts = [
+    { name: "desk", online: true },
+    { name: "server", online: false, since: "2026-11-17T10:00:00Z" },
+    { name: "nuc", online: true }, // reports no load: left out
+    { name: "lab", online: true },
+  ];
+  const r = stripHosts([l("lab"), l("desk")], hosts);
+  assert.deepEqual(r.map((h) => [h.name, !!h.load, h.offline ?? null]), [["desk", true, null], ["server", false, "2026-11-17T10:00:00Z"], ["lab", true, null]]);
+  assert.deepEqual(stripHosts([l("a")], []).map((h) => h.name), ["a"]); // no host list: the load's own
+  assert.deepEqual(stripHosts([l("other")], [{ name: "desk", online: true }]).map((h) => h.name), ["other"]);
 });

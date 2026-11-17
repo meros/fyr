@@ -2181,6 +2181,52 @@ section('V0.141', async (h) => {
   }
 });
 
+// SPEC V0.166: the phone shows each host's load. With 2 hosts that report a load, one offline and 4 providers, at
+// 390 × 844 and 360 × 640: the inbox header holds one strip button (44 px, inside the header, nothing past the screen's
+// edge) with a card per host that has a load (two at most, then "+n"; the offline host is named in its label); each
+// card's ring figure and heavy-jobs % equal the desktop rail's for the same mock state; the connection keeps its dot
+// only. A tap opens the Host load sheet: every host (the offline one says Offline), the rail's tooltip lines (Heavy
+// jobs, Running, waiting), and the provider quotas. Back closes it.
+for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}`, async (h) => {
+  const { evaluate, waitFor, settle, navigate, openScreen } = h;
+  const ctx = `V0.166 phone ${w}x${ht}`;
+  try {
+    // the desktop rail first, for the same mock state
+    await navigate(`${origin}/?mock=rail&hosts=2`, "document.querySelectorAll('.rail .rmid .rldr').length === 2");
+    const desk = await evaluate(`[...document.querySelectorAll('.rail .rmid .rldr')].map((c) => ({ fig: c.querySelector('.rring b').textContent, heavy: (c.querySelector('.rbar small')?.textContent ?? '').replace(/\\s/g, '') }))`);
+    await openScreen({ url: "?mock=rail&hosts=2", ready: "!!document.querySelector('.m-load .mlh')" }, w, ht);
+    await settle();
+    const r = await evaluate(`(() => {
+      const b = document.querySelector('.m-load'), bb = b.getBoundingClientRect(), hd = document.querySelector('.m-ih').getBoundingClientRect();
+      const cards = [...b.querySelectorAll('.mlh')].map((c) => ({ fig: c.querySelector('.rring b').textContent, off: c.classList.contains('off'), names: [...c.querySelectorAll('.mlc small')].map((x) => x.textContent.replace(/\\s/g, '')) }));
+      const conn = document.querySelector('.m-conn .ell').getBoundingClientRect();
+      return { h: Math.round(bb.height), inHeader: bb.top >= hd.top - 0.5 && bb.bottom <= hd.bottom + 0.5 && bb.left >= 0 && bb.right <= innerWidth, over: document.documentElement.scrollWidth - innerWidth,
+        cards, more: b.querySelector('.mlmore')?.textContent ?? '', connHidden: conn.width <= 1, label: b.getAttribute('aria-label') };
+    })()`);
+    check(r.h >= 44 && r.inHeader && r.over <= 0, `${ctx}: the strip is not a 44 px button inside the header (${JSON.stringify(r)})`);
+    check(r.cards.length === 2 && r.cards.every((c) => !c.off) && r.more === "+1" && /host-b: offline/.test(r.label), `${ctx}: the strip does not show the two live hosts and "+1" for the offline one (${JSON.stringify(r)})`);
+    check(r.cards[0].names[0] === "desk" && r.cards[1].names[0] === "lab" && r.connHidden, `${ctx}: the cards do not name their hosts, or the connection still writes its name (${JSON.stringify(r)})`);
+    check(r.cards.every((c, i) => c.fig === desk[i].fig && (c.names[1] ?? "") === desk[i].heavy), `${ctx}: the strip's figures differ from the desktop rail's (phone ${JSON.stringify(r.cards)}, desktop ${JSON.stringify(desk)})`);
+    await evaluate(`document.querySelector('.m-load').click()`);
+    await waitFor(`!!document.querySelector('.m-sheet[aria-label="Host load"] .m-lsheet')`);
+    await settle();
+    const s = await evaluate(`(() => {
+      const sh = document.querySelector('.m-sheet[aria-label="Host load"]'), secs = [...sh.querySelectorAll('.mls[aria-label]')];
+      const b = sh.getBoundingClientRect();
+      return { hosts: secs.map((x) => x.getAttribute('aria-label')), off: secs.filter((x) => x.classList.contains('off')).map((x) => x.querySelector('.mlsn small').textContent),
+        lines: sh.querySelector('.mlsl')?.textContent ?? '', quotas: sh.querySelectorAll('.qlist > *').length, fig: sh.querySelector('.mlsh .rring b')?.textContent ?? '',
+        inside: b.left >= 0 && b.right <= innerWidth + 0.5 && b.bottom <= innerHeight + 0.5 };
+    })()`);
+    check(s.hosts.join() === "desk,host-b,lab,Quota" && s.off.length === 1 && /^Offline/.test(s.off[0]), `${ctx}: the sheet does not list every host with the offline one marked (${JSON.stringify(s)})`);
+    check(/Heavy jobs: CPU \d+ %/.test(s.lines) && /Running: /.test(s.lines) && /waiting/.test(s.lines) && s.fig === desk[0].fig, `${ctx}: the sheet does not say what the rail's tooltip says (${JSON.stringify(s)})`);
+    check(s.quotas >= 4 && s.inside, `${ctx}: the sheet has no provider quotas or leaves the screen (${JSON.stringify(s)})`);
+    await evaluate(`history.back()`);
+    await waitFor(`!document.querySelector('.m-sheet[aria-label="Host load"]')`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+
 // SPEC V0.152: the rail's middle is one card per host and a quota grid. With two hosts and four providers at 1280 × 1000
 // (room for all) and 1280 × 700, in light and dark: each card is centred in the rail and holds its ring (the load as a
 // share of the cores, "130%"), its host's short name with the full name on hover, and its slot meter with its own
