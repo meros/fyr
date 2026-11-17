@@ -1,6 +1,6 @@
 # 0030 Every hop names who acts: one authenticator per listener, an explicit principal across every proxy, keys between installs, sessions for browsers, and tests for every way in
 
-Date: 2026-11-17 · Status: **proposed** · Supersedes the overlapping parts of 0025 ((1) proof, (2) following), 0026 ((3) pairing by PAKE and the roster's rules, (4), (5) browser authentication, the slices) and 0028 ((1), (3), (4), (7), the slices); what it keeps from them is listed under "What stands" · Builds on 0016, 0021, 0027 · Spec rows: one per slice, numbered when the slice's PR opens
+Date: 2026-11-17 · Status: **proposed**; the owner answered Q1–Q4 on 17 Nov (see "The owner's answers"); accepted when the owner merges this record · Supersedes the overlapping parts of 0025 ((1) proof, (2) following), 0026 ((3) pairing by PAKE and the roster's rules, (4), (5) browser authentication, the slices) and 0028 ((1), (3), (4), (7), the slices); what it keeps from them is listed under "What stands" · Builds on 0016, 0021, 0027 · Spec rows: one per slice, numbered when the slice's PR opens
 
 **The owner's words, 17 Nov:** "Start a Fable review, a clean-room redesign and then a Sonnet implementation of the whole authentication chain. It should be easy to set up on a tailnet, but work on any LAN. Clients must be able to authenticate either automatically or via some form of pairing/token. Hosts must be able to find each other on a LAN, with automatic pairing under certain safe circumstances." And: "the whole thing must have tests too".
 
@@ -59,10 +59,10 @@ Where they differ, the stronger choice and why:
 | Where device records live | in the roster: every host knows every device id and checks revocation itself | per front | **clean-room** | a lost phone is revoked from any install, and a host refuses a revoked device even when a stale front still forwards it |
 | The actor header | plain header inside mTLS; no signed assertion | the same | **both** | the signer would be the channel's own key. A signature adds a replay cache and a clock and stops nothing a compromised front can do |
 | Rebinding and CSRF | `Origin` and `Sec-Fetch-Site`, Host only as depth | exact Host allowlist and `Origin` | **clean-room, with the Host allowlist kept on TCP** | Serve's socket has no useful Host (#225); `Origin` is what a page cannot forge |
-| Host pairing code | an invite `fyr1.<id>.<secret>` and a 6-digit commit-and-reveal code | one code that carries the install id and a secret; no short code | **the invite; the 6-digit code is an owner question (Q1)** | the invite needs no custom cryptography: the joiner pins the id, then sends the secret inside the pinned channel. 0026's CPace has no standard-library implementation |
+| Host pairing code | an invite `fyr1.<id>.<secret>` and a 6-digit commit-and-reveal code | one code that carries the install id and a secret; no short code | **the invite only (Q1)** | the invite needs no custom cryptography: the joiner pins the id, then sends the secret inside the pinned channel. 0026's CPace has no standard-library implementation |
 | Agent tokens | a Unix socket (`agent.sock`), never TCP | the loopback bearer of V0.129, removed from the peer listener | **review-based now; the socket is named for later** | the CLI's MCP client speaks HTTP to a URL; a socket needs a stdio bridge in every session. The token is not a boundary against a same-UID process either way (0028 Q3) |
 | Cookie name | `__Host-fyr` | keep `fyr_session` | **review-based** | renaming signs every device out; the migration must not |
-| Enforce | per rule, after 7 clean days, the owner confirms | stored state, never a release default; ready after 3 clean days | **stored state, per way in; the trigger is an owner question (Q2)** | a release must never change who may act (finding 4) |
+| Enforce | per rule, after 7 clean days, the owner confirms | stored state, never a release default; ready after 3 clean days | **stored state, per way in; automatic after 3 clean days (Q2)** | a release must never change who may act (finding 4) |
 | A front that follows hosts through a third | forbidden: a request with an actor header is never proxied on | not addressed | **clean-room** | no chains, so one hop is the whole proof |
 | Offline revocation | sync the roster with other members before honouring a peer | tombstones win; sync first on every connection | **sync first on every connection**, the 10-minute rule dropped | one rule that is easy to test; the residual is stated in the threat table |
 | Revoked signers | adds signed by a revoked key are void; the revoker re-signs survivors | undecided | **clean-room** | it is the only rule that gives every host the same roster regardless of the order statements arrive in |
@@ -118,7 +118,7 @@ This removes the class behind #225 and #226: there is no second guess at the bro
 
 | Way | Check | Result |
 |---|---|---|
-| **Tailnet** (automatic) | on `serve.sock`: `Tailscale-User-Login` equals the roster's owner login (config `ownerLogin` wins; else this node's own user; a tagged node has none until it pairs or the option is set). The node comes from tailscaled whois of Serve's `X-Forwarded-For`: untagged, not shared in, not blocked | a node already approved gets a session silently. A new node gets a **pending** session (0028 Q1) |
+| **Tailnet** (automatic) | on `serve.sock`: `Tailscale-User-Login` equals the roster's owner login (config `ownerLogin` wins; else this node's own user; a tagged node has none until it pairs or the option is set). The node comes from tailscaled whois of Serve's `X-Forwarded-For`: untagged, not shared in, not blocked | a node already approved gets a session silently. A new node gets a **pending** session (0028 Q1). The one exception (Q4): while the install has no device at all, the first such node is approved at once |
 | **Link or QR** | `fyr open` (60 s) or `fyr device add` (10 min, prints a QR in the terminal) over `owner.sock`, or **Add a device** on a signed-in device: `<origin>/auth/once#<128-bit token>`, single use, posted from the fragment | a session |
 | **Approval code** | any browser without a session sees "This device is not signed in" with an 8-character code (40 bits, 5 min). The owner types it on a signed-in device (Settings → Devices → Approve) or runs `fyr device approve <code>`. 5 wrong tries end the code; 10 tries a minute per front. This is also how a pending tailnet node is allowed, and how an installed iOS PWA signs in (it does not share Safari's cookies) | a session |
 
@@ -137,7 +137,7 @@ A browser cannot pin a key, and a service worker, an installed PWA and Web Push 
 | A phone, no Tailscale, own certificate | config `tls: {cert, key}` (ACME DNS-01 on the owner's domain, or the owner's CA); sign-in by QR or approval code | everything; push also needs the internet |
 | A phone, no Tailscale, no certificate | **nothing is served.** fyrd offers no plain HTTP and no self-signed browser page off loopback | the page says which of the rows above to use |
 
-A built-in, name-constrained local CA (`fyr ca`) is owner question Q3.
+A built-in, name-constrained local CA is not built (Q3).
 
 ### 3.6 Installs: discovery proposes, a roster decides
 
@@ -200,14 +200,14 @@ Out of scope: several owners, root on a trusted machine, the tailnet's control p
 
 0016 and 0021 (roles, dual by default, one owner per record, the client's one uplink). 0025 (3)–(5). 0026 (1) the key and id, (2) sources, (6) the tailnet as one route, and its browser-path table. 0028 (2) the owner socket, (5) step-up, (6) agents named for what they are, Q1–Q4. V0.129 and V0.130 as built.
 
-### Questions for the owner
+### The owner's answers (17 Nov)
 
-| Q | Question | Recommended | Other |
+| Q | Asked | Recommended | Owner |
 |---|---|---|---|
-| Q1 | The host pairing code | the invite only (`fyr1-…`, text, QR, link); no custom cryptography | also a 6-digit commit-and-reveal code typed on a paired device (slice 6) |
-| Q2 | When a way in moves from observe to enforce | Fyr says "ready" after 3 days with no request that would be refused, and the owner presses once | automatically after those 3 days, with a notice; or by hand only |
-| Q3 | A phone on a LAN with no Tailscale and no certificate of the owner's | not built now: Tailscale or `tls: {cert, key}` | a built-in name-constrained CA (`fyr ca`) in slice 6 |
-| Q4 | The first tailnet device of a fresh install (no device exists to approve it) | let it in when it is the owner's login and the device list is empty | always require `fyr device add` on the machine |
+| Q1 | The host pairing code | the invite only (`fyr1-…`, text, QR, link); no custom cryptography | **the invite only**. No 6-digit code is built; 0026's CPace is dropped |
+| Q2 | When a way in moves from observe to enforce | Fyr says "ready" after 3 clean days and the owner presses | **automatically after 3 clean days**, with a notice |
+| Q3 | A built-in local CA for a phone on a LAN with no Tailscale | not now | **not now**: Tailscale or `tls: {cert, key}` |
+| Q4 | The first tailnet device of a fresh install | let it in when it is the owner's login and the device list is empty | **let it in when the list is empty** |
 
 ---
 
@@ -272,7 +272,7 @@ Tests are part of each slice: a slice's PR opens with its tests red in the first
 
 1. **`owner.sock` is never gated.** `fyr open`, `fyr device add` and `fyr auth observe` work from any shell in every mode.
 2. **Each way in has a stored mode**, `observe` or `enforce`, in the install's database: `browser`, `peer`. A release never changes one. In observe the new rule decides, counts what it would refuse (`fyr auth status`, Settings → Devices and Hosts) and serves it the old way.
-3. **Ready** means 3 days with no would-refuse on that way in and at least one success of each credential in use. Then Q2 decides who presses.
+3. **Ready** means 3 days with no would-refuse on that way in and at least one success of each credential in use. The install then moves that way in to enforce by itself (Q2), tells every device with a push and an in-app notice that names `fyr auth observe` as the way back, and writes an audit entry. A mode the owner set back by hand stays until the owner changes it.
 4. **New beside old.** A new credential works for a full slice before the old one can be switched off, and the old listener is removed only in the slice after its mode reached enforce on every install.
 5. **Nothing is re-issued.** Existing cookies, device records and the install key are used as they are.
 
@@ -285,7 +285,7 @@ Tests are part of each slice: a slice's PR opens with its tests red in the first
 | laptop ↔ Mac (untagged, the same user) | condition 1 pairs them when both run slice 3; the front moves to the peer link and keeps the whois link as a fallback until `peer` is enforced | Serve on the Mac (the install script) |
 | meros-server (tagged) | keeps today's one-way whois link and `ownerLogin` until it pairs: `ssh meros-server fyr pair`, paste on the laptop (slice 4). Then it follows the laptop too, and learns the owner's login from the roster | one code, once |
 | the plain `100.x:7778` listener | from slice 1 it requires `Fyr-Actor` from fronts that send it and refuses `Origin` and foreign Hosts; removed in slice 5 | nothing |
-| `browser` enforce | when ready (rule 3). Closes ways A, B and F | one press (Q2) |
+| `browser` enforce | by itself when ready (rule 3), with a notice. Closes ways A, B and F | nothing |
 
 ---
 
@@ -297,11 +297,11 @@ One Sonnet thread builds them in order, one PR per slice, because every slice to
 |---|---|---|---|
 | **0. Harness, and today pinned** | 4.1 entire; config `tailscaleSocket`; no behaviour change | the fake tailscaled reproduces #225 (Host `localhost` on `serve.sock`) and #226 (upload and preview through Serve) against today's code and they pass; the live fixture loads; `TestMigrationKeepsTheOwnerSignedIn` step 0; `auth.e2e.mjs` signs in by tailnet identity; CI runs both | none needed |
 | **1. The principal on every hop** | `internal/authn`; one authenticator per listener (3.2), still serving the old ways as `Principal{How: legacy}` in observe; `forward(p, …)`; `Fyr-Actor`, `Fyr-Origin`; the host stops guarding by Host on the pipe and the peer listener; headers stripped; `/mcp` off the peer listener; `Origin` and Host refusal on the whois listener; `Input.actor`; `serve.sock` checks its peer | the hop row of 4.2 over every route; `Fyr-Actor` on loopback is 400; a rebinding request to the whois listener gets nothing; `/mcp` on the peer listener is 404; the audit entry names the device | an old front (no `Fyr-Actor`) is still served by a new host and counted; the migration test passes with mixed versions |
-| **2. Sessions decide; Devices** | stored modes and `fyr auth`; the `browser` way enforceable; whois of `X-Forwarded-For`, approved and blocked nodes, the pending session; links, QR and approval codes; `fyr device …`; device records in a local roster; Settings → Devices (desktop and phone); revoke with cascade; the `Origin` / `Sec-Fetch-Site` rules | the `serve.sock`, loopback and browser rows of 4.2; rebinding, CSRF, spoofed header, replayed code and stolen cookie rows of 4.3; e2e: tailnet, QR, code, revoked | enforce only by a signed-in device or `owner.sock`; `fyr auth observe` restores; the fixture's two cookies survive |
+| **2. Sessions decide; Devices** | stored modes and `fyr auth`; the `browser` way enforceable; whois of `X-Forwarded-For`, approved and blocked nodes, the pending session; links, QR and approval codes; `fyr device …`; device records in a local roster; Settings → Devices (desktop and phone); revoke with cascade; the `Origin` / `Sec-Fetch-Site` rules | the `serve.sock`, loopback and browser rows of 4.2; rebinding, CSRF, spoofed header, replayed code and stolen cookie rows of 4.3; the first node of an empty install is approved and the second waits (Q4); a way in enforces itself after 3 clean days on a fake clock and not after a would-refuse (Q2); e2e: tailnet, QR, code, revoked | enforce by rule 3 or by a signed-in device or `owner.sock`, never by a release; a mode set back by hand stays; `fyr auth observe` restores; the fixture's two cookies survive |
 | **3. Roster and the pinned link; the tailnet pairs** | the peer listener; signed statements and sync; condition 1; fronts prefer the peer link and fall back; device statements spread, hosts check them; drive switch; discovery reads `{fyr, id}` | two scratch installs under one fake user pair with no press and follow each other over TLS; another user, a shared-in node, a tagged node and "peer port without Serve" do not; a device revoked on A is refused on C through B; a wrong key fails the handshake | the whois link stays and is counted; a host with no peer link yet is followed as before |
 | **4. The invite; tagged nodes; Hosts** | `fyr pair`, the invite as text, QR and link; Settings → Hosts: Pair, Add, not-paired candidates (desktop and phone); tagged peers as candidates; the owner's login in the roster; vouching shown | three installs: A–B by invite, C learns B by vouching; the invite's replay, expiry, wrong tries and man-in-the-middle rows; a tagged install serves no tailnet browser until paired, then does | pairing only adds; nothing existing is refused |
-| **5. Removal, rotation, and the old link ends** | `install-remove` with re-signing; `fyr rotate-key`; step-up on trust-widening changes everywhere; `peer` enforceable; the plain whois listener and loopback `hostListen` removed once every install enforces | the compromised-install and rotation rows; a removed member's adds are void unless re-signed; the whois listener is gone and the front still follows every host; selftest fails on a broken roster | `peer` enforce needs every followed host on the pinned link; `fyr auth observe` on each host |
-| **6. The LAN** | mDNS advertise and browse; address follows the key; the browser TLS listener with `tls: {cert, key}`; the "nothing is served" page text in the docs; Q1's 6-digit code and Q3's CA if the owner chose them | the spoofed-mDNS rows; two installs with no tailscaled find each other on the bus and pair by invite; a paired id is followed at a new address; no plain HTTP off loopback; QR sign-in over the test certificate | off by default for browsers; nothing on the tailnet path changes |
+| **5. Removal, rotation, and the old link ends** | `install-remove` with re-signing; `fyr rotate-key`; step-up on trust-widening changes everywhere; `peer` enforceable; the plain whois listener and loopback `hostListen` removed once every install enforces | the compromised-install and rotation rows; a removed member's adds are void unless re-signed; the whois listener is gone and the front still follows every host; selftest fails on a broken roster | `peer` enforces itself only when every followed host is on the pinned link (rule 3); `fyr auth observe` on each host |
+| **6. The LAN** | mDNS advertise and browse; address follows the key; the browser TLS listener with `tls: {cert, key}`; the "nothing is served" page text in the docs | the spoofed-mDNS rows; two installs with no tailscaled find each other on the bus and pair by invite; a paired id is followed at a new address; no plain HTTP off loopback; QR sign-in over the test certificate | off by default for browsers; nothing on the tailnet path changes |
 
 ## Consequences
 
