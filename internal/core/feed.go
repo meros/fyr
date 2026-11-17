@@ -292,13 +292,28 @@ var NoticeRules = []NoticeRule{
 // thread's (V0.86).
 const EventSlot = "slot"
 
+// SlotIdleArgs is slot.idle's (#174): the held slot's kind and how many
+// minutes it ran no heavy job.
+type SlotIdleArgs struct {
+	Kind    string `json:"kind"`
+	Minutes int    `json:"minutes"`
+}
+
 // slot: a slot the agent queued for is its own now; it ended its turn to
-// wait, so wake it.
+// wait, so wake it. #174: a held slot that ran no heavy job for a while is
+// a reminder at the next tool call, never a wake.
 func slotNotices(r Reduced) []Notice {
 	var out []Notice
 	for _, ev := range r.Events {
 		d, _ := ev.Data.(map[string]any)
-		if ev.Type != EventSlot || d["granted"] != true {
+		if ev.Type != EventSlot {
+			continue
+		}
+		if m, ok := d["idle"].(int); ok {
+			out = append(out, Notice{About: "thread", Key: "slot.idle", Urgency: Next, What: fmt.Sprintf("You hold %s slot but no heavy job ran in it for %d min. If the job ended, call mcp__fyr__slot_release so another thread can run.", article(str(d["kind"])), m)})
+			continue
+		}
+		if d["granted"] != true {
 			continue
 		}
 		kind := str(d["kind"])
@@ -839,4 +854,12 @@ func reduceFeedTake(r Rec, in Input, now time.Time) (Result, error) {
 	// The most urgent first: a result before the facts that moved.
 	slices.SortStableFunc(out, func(x, y Notice) int { return y.Urgency.rank() - x.Urgency.rank() })
 	return Result{Reply: out}, nil
+}
+
+// article is "a test", "an e2e".
+func article(kind string) string {
+	if kind != "" && strings.ContainsAny(kind[:1], "aeiou") {
+		return "an " + kind
+	}
+	return "a " + kind
 }
