@@ -1,4 +1,4 @@
-// SPEC V0.136: the section "Waiting for a slot", one component for the desktop list and the phone inbox. Each front
+// SPEC V0.137: the section "Waiting for a slot", one component for the desktop list and the phone inbox. Each front
 // draws its own row (it passes `row`); this draws the header, one part per host with a queue, the priority waits
 // pinned on top, the place of each thread ("#2") and the reorder control of V0.119 (4).
 
@@ -37,7 +37,7 @@ interface Props {
 const HINT = "Heavy jobs (test suites, builds, e2e runs) take a slot; the first in the queue gets the next free one";
 
 export function SlotQueueSection(p: Props) {
-  // The section shows only while a queue has anyone in it (V0.136 (1)); it has no collapse: it is short and passing.
+  // The section shows only while a queue has anyone in it (V0.137 (1)); it has no collapse: it is short and passing.
   const [reordering, setReordering] = useState(false);
   if (!p.queue.length) return null;
   const parts = queueParts(p.queue);

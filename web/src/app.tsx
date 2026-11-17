@@ -318,7 +318,7 @@ function App() {
     }
     return out;
   }, [searchable, filterOn, query, quietClock, store.clockOffset]);
-  const queue = useSlotQueue(); // V0.136
+  const queue = useSlotQueue(); // V0.137
   const sec = useMemo(() => sections(shown, queue), [shown, queue]);
   // V0.134: the chips (only values with threads in view; a selected one stays) and the empty state, on both fronts.
   const filterView = useMemo<FilterView>(() => {
@@ -1051,7 +1051,7 @@ function App() {
     if (gPending.current && Date.now() - gPending.current < 1500 && /^[1-5]$/.test(k)) {
       gPending.current = 0;
       e.preventDefault();
-      const g = SECTIONS.find((s) => s.g === Number(k)); // V0.136: Waiting for a slot has no g key
+      const g = SECTIONS.find((s) => s.g === Number(k)); // V0.137: Waiting for a slot has no g key
       if (g) jump(g.key);
       return;
     }

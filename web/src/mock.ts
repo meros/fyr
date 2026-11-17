@@ -1738,8 +1738,9 @@ export function mockLoad(): HostLoad[] {
   ];
 }
 
-/** SPEC V0.136, for screenshots and the layout test: &slots=queue puts the deploy's tests and three threads in the
- *  queue; &slots=two adds a second host (lab) with a queue of its own. */
+/** SPEC V0.137, for screenshots and the layout test: &slots=queue puts the deploy's tests and three threads in the
+ *  queue; &slots=two adds a second host (lab) with a queue of its own; &slots=none
+ *  has no queue. */
 export function mockQueueLoad(mode: string): HostLoad[] {
   const [h] = mockLoad();
   h.slots = {
@@ -1752,6 +1753,7 @@ export function mockQueueLoad(mode: string): HostLoad[] {
       { owner: "t_nix", kind: "build" },
     ],
   };
+  if (mode === "none") h.slots.waiting = [];
   if (mode !== "two") return [h];
   return [h, { host: "lab", cores: 4, load: [1.2, 1, 0.8], cgroups: false, threads: [], slots: { n: 1, held: [{ owner: "t_snap", kind: "test" }], waiting: [{ owner: "t_poly", kind: "test" }] } }];
 }

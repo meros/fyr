@@ -131,10 +131,10 @@ func TestV086SlotsAfterRestart(t *testing.T) {
 	}
 }
 
-// SPEC V0.136: the owner reorders the queue with host.slotOrder (owner only,
+// SPEC V0.137: the owner reorders the queue with host.slotOrder (owner only,
 // with a receipt), and the next free slot goes to the thread now first; the
 // self-deploy's priority wait stays ahead and an agent cannot reorder.
-func TestV0136SlotOrderDecidesTheNextGrant(t *testing.T) {
+func TestV0137SlotOrderDecidesTheNextGrant(t *testing.T) {
 	e, _, _ := bare(t)
 	e.UseSlots(slots.New(1))
 	a, b, c := bareThread(t, e), bareThread(t, e), bareThread(t, e)

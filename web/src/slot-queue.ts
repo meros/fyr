@@ -1,4 +1,4 @@
-// SPEC V0.136: the threads that wait for a slot for a heavy job (V0.86) have their own section in the thread list,
+// SPEC V0.137: the threads that wait for a slot for a heavy job (V0.86) have their own section in the thread list,
 // numbered by their real place in their host's queue, and the owner reorders it. Pure.
 
 import type { HostLoad } from "./load.ts";

@@ -242,7 +242,7 @@ func waitFor(t *testing.T, ok func() bool) {
 	t.Fatal("timed out")
 }
 
-// SPEC V0.136: Reorder puts the listed waiters first in the given order and
+// SPEC V0.137: Reorder puts the listed waiters first in the given order and
 // keeps the rest after them; priority waiters stay at the front, an owner
 // that no longer waits is ignored, and the order is stored.
 func TestReorder(t *testing.T) {

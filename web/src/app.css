@@ -1328,7 +1328,7 @@ label.sr{cursor:pointer}
 .btn.p.danger,.m-bt.p.danger{background:var(--signal-ink);border-color:var(--signal-ink);color:var(--raised)}
 .btn.p.danger kbd{color:var(--raised)}
 
-/* V0.136: Waiting for a slot. The place in the queue ("#2") stands where the state icon stands; on the desktop it is
+/* V0.137: Waiting for a slot. The place in the queue ("#2") stands where the state icon stands; on the desktop it is
    the grip (drag, or Alt+↑/↓). The deploy's own tests sit pinned on top. On the phone a Reorder mode adds ↑ and ↓ of
    44 px beside each row (touch: no drag handle beside a swipe row, no hover). */
 .sqn{justify-self:center;grid-row:1;min-width:22px;height:18px;padding:0 3px;display:inline-grid;place-items:center;border-radius:5px;background:var(--sunken);color:var(--ink-muted);font:500 11px/1 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}

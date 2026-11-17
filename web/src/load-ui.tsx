@@ -26,7 +26,7 @@ function onVisible(): void {
   if (document.visibilityState === "visible" && Date.now() - lastAt > POLL_MS) void poll();
 }
 
-/** V0.136: the pool of one host as a reorder's receipt or the page's own move gives it, shown at once (the next poll
+/** V0.137: the pool of one host as a reorder's receipt or the page's own move gives it, shown at once (the next poll
  *  confirms it); `refresh` reads the load now. */
 export function patchSlots(host: string, slots: Slots | ((s: Slots) => Slots)): void {
   current = current.map((h) => (h.host === host && h.slots ? { ...h, slots: typeof slots === "function" ? slots(h.slots) : slots } : h));

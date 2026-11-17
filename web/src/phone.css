@@ -28,7 +28,8 @@
 .m-nh .m-nt{margin-left:4px}
 
 /* count strip */
-.m-strip{flex:none;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:6px 8px;background:var(--sunken);border-block:1px solid var(--line);--knock:var(--sunken)}
+.m-strip{flex:none;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;padding:6px 8px;background:var(--sunken);border-block:1px solid var(--line);--knock:var(--sunken)}
+/* V0.137: Waiting for a slot adds a sixth segment while threads wait; every segment stays one column of the strip. */
 .m-seg{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:56px;border-radius:12px;color:var(--ink-muted);min-width:0}
 .m-seg .c{display:flex;align-items:center;gap:4px;max-width:100%}
 .m-seg .n{font:500 15px/20px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}

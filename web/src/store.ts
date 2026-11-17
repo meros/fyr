@@ -9,7 +9,7 @@ import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, 
 
 export type SectionKey = "needs" | "working" | "slots" | "seen" | "snoozed" | "settled";
 
-/** `g`: the section's key after g on the desktop (g1–g5). V0.136: Waiting for a slot has none, so the others keep their
+/** `g`: the section's key after g on the desktop (g1–g5). V0.137: Waiting for a slot has none, so the others keep their
  *  keys; it shows only while a host's queue is not empty (`transient`). */
 export const SECTIONS: { key: SectionKey; label: string; short: string; state: AttentionState; g?: number; transient?: boolean }[] = [
   { key: "needs", label: "Needs you", short: "Needs", state: "asking", g: 1 },
@@ -223,7 +223,7 @@ export function isPinned(t: Thread): boolean {
 
 /** A section's rows under the pinned block: the section without its pinned threads. */
 export function unpinned(list: Thread[], key?: SectionKey): Thread[] {
-  if (key === "slots") return list; // V0.136: the queue keeps its pinned threads, in its order
+  if (key === "slots") return list; // V0.137: the queue keeps its pinned threads, in its order
   return list.filter((t) => !isPinned(t));
 }
 
@@ -240,7 +240,7 @@ export function sectionOf(t: Thread): SectionKey | null {
   }
 }
 
-/** V0.136: `queue` (slotQueue of the load) moves every queued thread to Waiting for a slot, in the queue's order (host by
+/** V0.137: `queue` (slotQueue of the load) moves every queued thread to Waiting for a slot, in the queue's order (host by
  *  host, then its place), except a thread in Needs you, which stays there: the owner acts on it first. A pinned queued
  *  thread is in the queue's section and not in the pinned block, so the queue reads in its real order. */
 export function sections(threads: Record<string, Thread>, queue: readonly QueueEntry[] = []): Sections {

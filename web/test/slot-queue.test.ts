@@ -1,4 +1,4 @@
-// SPEC V0.136: the threads that wait for a slot have their own section, numbered by their real place in the host's
+// SPEC V0.137: the threads that wait for a slot have their own section, numbered by their real place in the host's
 // queue, and the owner reorders it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -16,7 +16,7 @@ const host = (name: string, waiting: { owner: string; kind: string; priority?: b
   slots: { n: 2, held: Array.from({ length: held }, (_, i) => ({ owner: `h${name}${i}`, kind: "test" })), waiting },
 });
 
-test("V0.136: the queue is numbered per host by the real place, priority waiters first and not movable", () => {
+test("V0.137: the queue is numbered per host by the real place, priority waiters first and not movable", () => {
   const q = slotQueue([
     host("desk", [
       { owner: "self-deploy", kind: "test", priority: true },
@@ -39,7 +39,7 @@ test("V0.136: the queue is numbered per host by the real place, priority waiters
   assert.deepEqual(slotQueue([{ ...host("desk", []), slots: undefined }]), []);
 });
 
-test("V0.136: a queued thread moves to Waiting for a slot from its section; Needs you keeps its own", () => {
+test("V0.137: a queued thread moves to Waiting for a slot from its section; Needs you keeps its own", () => {
   const threads = {
     t_a: thread("t_a", "done", "seen"),
     t_b: thread("t_b", "working", "working"),
@@ -72,7 +72,7 @@ test("V0.136: a queued thread moves to Waiting for a slot from its section; Need
   assert.deepEqual(sections(threads).slots, []);
 });
 
-test("V0.136: a pinned queued thread stays in the queue's section, not in the pinned block", () => {
+test("V0.137: a pinned queued thread stays in the queue's section, not in the pinned block", () => {
   const threads = { t_a: thread("t_a", "done", "seen", { pinnedAt: "2026-11-17T09:00:00Z" }) };
   const sec = sections(threads, slotQueue([host("desk", [{ owner: "t_a", kind: "test" }])]));
   assert.deepEqual(
@@ -83,7 +83,7 @@ test("V0.136: a pinned queued thread stays in the queue's section, not in the pi
   assert.deepEqual(flatOrder(sec), ["t_a"]);
 });
 
-test("V0.136: the section's parts are one per host with a queue; the host shows only when more than one has one", () => {
+test("V0.137: the section's parts are one per host with a queue; the host shows only when more than one has one", () => {
   const one = queueParts(slotQueue([host("desk", [{ owner: "t_a", kind: "test" }]), host("lab", [])]));
   assert.equal(one.length, 1);
   assert.equal(one[0].label, null);
@@ -97,7 +97,7 @@ test("V0.136: the section's parts are one per host with a queue; the host shows 
   );
 });
 
-test("V0.136: withQueue matches entries to the threads shown; a hidden thread keeps its number", () => {
+test("V0.137: withQueue matches entries to the threads shown; a hidden thread keeps its number", () => {
   const q = slotQueue([host("desk", [{ owner: "self-deploy", kind: "test", priority: true }, { owner: "t_a", kind: "test" }, { owner: "t_hidden", kind: "test" }, { owner: "t_b", kind: "e2e" }])]);
   const rows = withQueue(q, { t_a: thread("t_a", "done", "seen"), t_b: thread("t_b", "done", "seen") });
   assert.deepEqual(
@@ -110,7 +110,7 @@ test("V0.136: withQueue matches entries to the threads shown; a hidden thread ke
   );
 });
 
-test("V0.136: a move among the rows shown keeps hidden waiters in their place; priority waiters are never sent", () => {
+test("V0.137: a move among the rows shown keeps hidden waiters in their place; priority waiters are never sent", () => {
   const all = ["t_a", "t_hidden", "t_b", "t_c"];
   const shown = ["t_a", "t_b", "t_c"];
   // t_c to the top of what is shown
