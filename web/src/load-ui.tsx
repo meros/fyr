@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { loadDetail, MAX_PIPS, railBudget, railLabel, railMeter, railPips, railSlots, shortHostNames, slotTip, threadCPU, threadJob, threadSlot, type HostLoad, type RailBudget, type RailPips, type Slots } from "./load.ts";
+import { loadDetail, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, slotTip, threadCPU, threadJob, threadSlot, type HostLoad, type RailBudget, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -17,7 +17,8 @@ const subs = new Set<(l: HostLoad[]) => void>();
 async function poll(): Promise<void> {
   if (!source || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
   lastAt = Date.now();
-  const l = await source.load().catch(() => current);
+  // V0.163: a host's `heavy` (an older one's `slots`) read as one field.
+  const l = await source.load().then(normalizeLoad).catch(() => current);
   current = l;
   for (const s of subs) s(l);
 }
@@ -69,9 +70,7 @@ export function LoadRail() {
     <div class="rld">
       {list.map((h) => {
         const m = railMeter(h);
-        const p = railPips(h);
         const bud = railBudget(h);
-        const sl = railSlots(h);
         const label = railLabel(h, several); // V0.140: with several hosts each ring names its host
         return (
           <div class={`rldr ${m.level}`} title={loadDetail(h).join("\n")} role="img" aria-label={label}>
@@ -82,7 +81,6 @@ export function LoadRail() {
               </small>
             )}
             {bud && <SlotBar b={bud} tip={slotTip(h)} />}
-            {p && (p.n <= MAX_PIPS ? <SlotPips p={p} tip={slotTip(h)} /> : sl && <small class={`rlds${sl.hot ? " hot" : ""}`} title={slotTip(h)}>{`${p.held}/${p.n}`}</small>)}
           </div>
         );
       })}
@@ -110,27 +108,18 @@ function LoadRing({ share, text }: { share: number; text: string }) {
   );
 }
 
-/** Decision 0029 S2, V0.152: the slot budget in use as a thin bar; under it a word only when it matters ("full", or
- *  "1 waits" in the hot colour while a job is held back); the meaning and the figures on hover. */
+/** Decision 0029 S2, V0.152, V0.163: heavy jobs' use of their budget as a thin bar with its percentage under it (the
+ *  tighter of CPU and memory), "+2" in the hot colour while jobs wait; both resources and every job on hover. No count. */
 function SlotBar({ b, tip }: { b: RailBudget; tip: string }) {
   return (
     <span class={`rbar${b.hot ? " hot" : ""}`} title={tip}>
       <span class="trk">
         <i style={{ width: `${Math.round(b.share * 100)}%` }} />
       </span>
-      {b.note && <small class="mono">{b.note}</small>}
-    </span>
-  );
-}
-
-/** Filled pips for the slots in use, empty for the free ones; "+2" in the hot colour while threads wait. */
-function SlotPips({ p, tip }: { p: RailPips; tip: string }) {
-  return (
-    <span class={`rpips${p.waiting ? " hot" : ""}`} title={tip}>
-      {Array.from({ length: p.n }, (_, i) => (
-        <i class={i < p.held ? "on" : undefined} />
-      ))}
-      {p.waiting > 0 && <em>+{p.waiting}</em>}
+      <small class="mono">
+        {b.text}
+        {b.waiting > 0 && <em>+{b.waiting}</em>}
+      </small>
     </span>
   );
 }
@@ -149,14 +138,14 @@ export function ThreadCPU({ id }: { id: string }) {
   );
 }
 
-/** V0.86: " · waiting for a test slot (2 ahead)" or " · test slot" on a thread's row; nothing without one. */
+/** V0.86, V0.163: " · waiting (2 ahead) · needs ≈ 30 %" or " · build job ≈ 45 %" on a thread's row; nothing without one. */
 export function ThreadSlot({ id }: { id: string }) {
   const s = threadSlot(useLoad(), id);
   if (!s) return null;
   return (
     <>
       {" · "}
-      <span class="tslot" title="Heavy jobs (test suites, builds, e2e runs) take a slot; a few run at once across the threads">
+      <span class="tslot" title="Heavy jobs (test suites, builds, e2e runs) run when their share of the host (CPU and memory) fits">
         {s}
       </span>
     </>
@@ -170,7 +159,7 @@ export function useThreadJob(id: string): string | null {
 
 export function ThreadJob({ text }: { text: string }) {
   return (
-    <span class="tslot" title="The heavy job this thread's slot runs, and the thread's memory now">
+    <span class="tslot" title="The heavy job this thread runs, and its share of the host (the larger of CPU and memory)">
       {text}
     </span>
   );

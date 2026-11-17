@@ -15,7 +15,7 @@ export type SectionKey = "needs" | "working" | "slots" | "seen" | "snoozed" | "s
 export const SECTIONS: { key: SectionKey; label: string; short: string; state: AttentionState; g?: number; transient?: boolean }[] = [
   { key: "needs", label: "Needs you", short: "Needs", state: "asking", g: 1 },
   { key: "working", label: "Working", short: "Working", state: "working", g: 2 },
-  { key: "slots", label: "Waiting for a slot", short: "Slots", state: "waiting", transient: true },
+  { key: "slots", label: "Waiting to run", short: "Waiting", state: "waiting", transient: true },
   { key: "seen", label: "Seen", short: "Seen", state: "seen", g: 3 },
   { key: "snoozed", label: "Snoozed", short: "Snoozed", state: "snoozed", g: 4 },
   { key: "settled", label: "Settled", short: "Settled", state: "settled", g: 5 },
