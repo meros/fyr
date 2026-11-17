@@ -44,7 +44,7 @@ import { useProvidersNeed } from "./settings-ui.tsx";
 import { HostField } from "./host-pick-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
 import { liveLine } from "./tasks.ts";
-import { COLLAPSED_BY_DEFAULT, ProjectFilterRow, SECTION_LIMIT, isOpen } from "./inbox.tsx";
+import { COLLAPSED_BY_DEFAULT, FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
 import { NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON } from "./row-ui.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
@@ -199,8 +199,10 @@ export interface PhoneProps {
   open: PhoneOpen;
   list: PhoneList;
   device: PhoneDevice;
-  /** the project filter (V0.23) */
+  /** the project filter (V0.23), for the menu's Filter by project sheet */
   filter: { id: string | null; set(id: string | null): void };
+  /** V0.134: the host and project chips and the empty state, as the desktop shows them */
+  filters: FilterView;
   projectActions: {
     update(id: string, patch: ProjectPatch): Promise<string | null>;
     setFolder(id: string, path: string): Promise<string | null>;
@@ -428,7 +430,7 @@ function MInbox(p: PhoneProps) {
           })}
         </div>
       )}
-      {!p.list.selecting && <ProjectFilterRow projects={p.store.projects} selected={p.filter.id} onPick={p.filter.set} now={p.now} unlock={p.inbox.unlock} />}
+      {!p.list.selecting && <FilterRow f={p.filters} now={p.now} unlock={p.inbox.unlock} />}
       {p.store.conn === "offline" && (
         <div class="m-cstrip">
           <span class="ell">Reconnecting to {hostName}…</span>
@@ -446,6 +448,7 @@ function MInbox(p: PhoneProps) {
         </div>
       )}
       <div class="m-list" ref={listRef} onScroll={onScroll}>
+        {!p.list.selecting && <FilterEmpty f={p.filters} cls="m-fempty" />}
         {p.inbox.sec.pinned.length > 0 && (
           // V0.104: the desktop's pinned block, above every section and always open.
           <section id="m-sec-pinned">

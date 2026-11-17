@@ -665,6 +665,15 @@ button.ptag{padding:0}
 .pfc .pfq{flex:none;font-weight:400;color:var(--ink-muted)}
 .pfc.quiet:not(.on) .ell{opacity:.6}
 .pfx{flex:none;width:26px;height:26px;border-radius:13px;background:var(--sunken);color:var(--ink-muted);font-size:15px;line-height:26px;text-align:center}
+/* V0.134: a host chip carries the host's dot from Settings → Hosts and its name in mono; a thin line parts the groups. */
+.pfh{flex:none;display:inline-flex;align-items:center;gap:6px;max-width:150px;height:26px;padding:0 9px;border:1px solid var(--line);border-radius:13px;font:500 12px/16px var(--mono);color:var(--ink-muted);min-width:0}
+.pfh.on{border-color:var(--ink-muted);color:var(--ink);background:var(--sunken)}
+.pfsep{flex:none;width:1px;height:16px;background:var(--line)}
+/* V0.134: the list when the filter leaves nothing in view. */
+.fempty{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.fempty .fe1,.m-fempty .fe1{font:500 13px/18px var(--ui);color:var(--ink)}
+.fempty .fe2,.m-fempty .fe2{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.fempty .fe3{margin-top:6px}
 .plist{display:flex;flex-direction:column;gap:6px;min-width:0}
 .pq{height:34px;padding:0 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised);color:var(--ink);font:400 14px/20px var(--ui);min-width:0}
 .pls{display:flex;flex-direction:column;max-height:320px;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
