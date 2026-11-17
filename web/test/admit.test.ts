@@ -3,7 +3,7 @@
 // provider), the pips stay.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadDetail, railBudget, railLabel, railPips, threadSlot, type HostLoad } from "../src/load.ts";
+import { loadDetail, railBudget, railLabel, railPips, slotTip, threadSlot, type HostLoad } from "../src/load.ts";
 
 const host: HostLoad = {
   host: "desk",
@@ -29,17 +29,22 @@ const host: HostLoad = {
 };
 
 test("the rail shows the budget in use, hot while anyone waits; pips without a budget", () => {
-  assert.deepEqual(railBudget(host), { text: "1.1/2", share: 0.55, hot: true, waiting: 2 });
+  assert.deepEqual(railBudget(host), { text: "1.1/2", note: "2 wait", share: 0.55, hot: true, waiting: 2 });
   assert.equal(railPips(host), null);
   const plain: HostLoad = { ...host, slots: { n: 2, held: [{ owner: "t_a", kind: "test" }], waiting: [] } };
   assert.equal(railBudget(plain), null);
   assert.deepEqual(railPips(plain), { n: 2, held: 1, waiting: 0 });
-  assert.deepEqual(railBudget({ ...host, slots: { ...host.slots!, used: 2.4, waiting: [] } }), { text: "2.4/2", share: 1, hot: false, waiting: 0 });
+  assert.deepEqual(railBudget({ ...host, slots: { ...host.slots!, used: 2.4, waiting: [] } }), { text: "2.4/2", note: "full", share: 1, hot: false, waiting: 0 });
+  // V0.152: a word only when it matters: none while there is room, "1 waits" (hot) while one job is held back.
+  assert.equal(railBudget({ ...host, slots: { ...host.slots!, used: 1.1, waiting: [] } })!.note, "");
+  assert.deepEqual(railBudget({ ...host, slots: { ...host.slots!, waiting: [{ owner: "t_c", kind: "test" }] } })!.note, "1 waits");
 });
 
 test("the tooltip lists the holders' costs and why the next job waits", () => {
   assert.ok(loadDetail(host).includes("Slots: 1.1 of 2 in use (test 1.0, e2e 0.1 idle), 2 waiting; the next waits: CPU: new jobs run 2.1× slower"), loadDetail(host).join("\n"));
   assert.match(railLabel(host, false), /1\.1 of 2 slot budget in use, 2 waiting/);
+  // V0.152: the slot meter's own tooltip says what it is.
+  assert.equal(slotTip(host), "Slots for heavy jobs (tests, builds, e2e runs): 1.1 of 2 in use (test 1.0, e2e 0.1 idle), 2 waiting; the next waits: CPU: new jobs run 2.1× slower");
 });
 
 test("the first waiting thread's row says why it waits; the others their place", () => {

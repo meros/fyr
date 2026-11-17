@@ -5,7 +5,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Profile } from "./types.ts";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { hasData, quotaDetail, quotaFor, quotaParts, quotaSummary, railFigure, type Quota } from "./quota.ts";
+import { hasData, quotaDetail, quotaFor, quotaParts, quotaSummary, railFigure, railInitials, type Quota } from "./quota.ts";
 
 const POLL_MS = 60_000;
 
@@ -125,20 +125,28 @@ export function QuotaList(p: { profiles: Profile[] }) {
   );
 }
 
-/** The rail footer (desktop): each profile's colour and its busiest window or balance; details on hover. */
+/** The rail footer (desktop): each profile's initial in its colour and its busiest window or balance; details on
+ *  hover. */
 export function QuotaRail(p: { profiles: Profile[] }) {
   const list = useQuotas();
   const now = Date.now();
   const rows = list.map((q) => ({ q, f: railFigure(q) })).filter((r) => r.f || r.q.error);
   if (!rows.length) return null;
+  const initials = railInitials(rows.map(({ q }) => nameOf(p.profiles, q.profile)));
+  // V0.152: with several hosts the tooltip says whose quota it is ("Claude on lab").
+  const hosts = new Set(rows.map(({ q }) => q.host).filter(Boolean));
   return (
     <div class="rq" aria-label="Quota">
-      {rows.map(({ q, f }) => {
+      {rows.map(({ q, f }, i) => {
         const name = nameOf(p.profiles, q.profile);
-        const tip = [quotaSummary(q, name), ...quotaDetail(q, name, now).filter((l) => !l.startsWith(`${name} `))].join("\n");
+        const who = hosts.size > 1 && q.host ? `${name} on ${q.host}` : name;
+        const tip = [quotaSummary(q, who), ...quotaDetail(q, name, now).filter((l) => !l.startsWith(`${name} `))].join("\n");
         return (
           <div class={`rqr${q.stale ? " stale" : ""}`} title={tip}>
-            <i style={{ background: p.profiles.find((x) => x.id === q.profile)?.color ?? "var(--ink-faint)" }} />
+            {/* V0.152: the provider's initial in its colour, so a value says whose it is */}
+            <i style={{ "--qc": p.profiles.find((x) => x.id === q.profile)?.color ?? "var(--ink-faint)" }} aria-hidden="true">
+              {initials[i]}
+            </i>
             <span class={f?.hot ? "hot" : undefined}>{f ? f.text : "!"}</span>
           </div>
         );

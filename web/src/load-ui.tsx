@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { loadDetail, MAX_PIPS, railBudget, railLabel, railMeter, railPips, railSlots, threadCPU, threadJob, threadSlot, type HostLoad, type RailBudget, type RailPips, type Slots } from "./load.ts";
+import { loadDetail, MAX_PIPS, railBudget, railLabel, railMeter, railPips, railSlots, shortHostNames, slotTip, threadCPU, threadJob, threadSlot, type HostLoad, type RailBudget, type RailPips, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -63,6 +63,8 @@ export function useLoad(): HostLoad[] {
 export function LoadRail() {
   const list = useLoad();
   if (!list.length) return null;
+  const several = list.length > 1;
+  const short = shortHostNames(list.map((h) => h.host));
   return (
     <div class="rld">
       {list.map((h) => {
@@ -70,14 +72,17 @@ export function LoadRail() {
         const p = railPips(h);
         const bud = railBudget(h);
         const sl = railSlots(h);
-        const several = list.length > 1;
         const label = railLabel(h, several); // V0.140: with several hosts each ring names its host
         return (
           <div class={`rldr ${m.level}`} title={loadDetail(h).join("\n")} role="img" aria-label={label}>
             <LoadRing share={m.share} text={m.text} />
-            {several && <small class="rldh mono">{h.host}</small>}
-            {bud && <SlotBar b={bud} />}
-            {p && (p.n <= MAX_PIPS ? <SlotPips p={p} /> : sl && <small class={`rlds${sl.hot ? " hot" : ""}`}>{`${p.held}/${p.n}`}</small>)}
+            {several && (
+              <small class="rldh mono" title={h.host}>
+                {short.get(h.host)}
+              </small>
+            )}
+            {bud && <SlotBar b={bud} tip={slotTip(h)} />}
+            {p && (p.n <= MAX_PIPS ? <SlotPips p={p} tip={slotTip(h)} /> : sl && <small class={`rlds${sl.hot ? " hot" : ""}`} title={slotTip(h)}>{`${p.held}/${p.n}`}</small>)}
           </div>
         );
       })}
@@ -88,38 +93,40 @@ export function LoadRail() {
 const R = 12;
 const C = 2 * Math.PI * R;
 
+/** V0.152: the figure is a share of the cores; its "%" is set smaller so three digits fit the ring. */
 function LoadRing({ share, text }: { share: number; text: string }) {
+  const pct = text.endsWith("%");
   return (
     <span class="rring" aria-hidden="true">
       <svg viewBox="0 0 30 30" width="30" height="30">
         <circle class="trk" cx="15" cy="15" r={R} />
         {share > 0 && <circle class="arc" cx="15" cy="15" r={R} stroke-dasharray={`${(share * C).toFixed(2)} ${C.toFixed(2)}`} transform="rotate(-90 15 15)" />}
       </svg>
-      <b>{text}</b>
+      <b class={text.length > 3 ? "w3" : undefined}>
+        {pct ? text.slice(0, -1) : text}
+        {pct && <small>%</small>}
+      </b>
     </span>
   );
 }
 
-/** Decision 0029 S2: the slot budget in use as a bar with "1.1/2" under it; the hot colour and "+2" while threads
- *  wait. */
-function SlotBar({ b }: { b: RailBudget }) {
+/** Decision 0029 S2, V0.152: the slot budget in use as a thin bar; under it a word only when it matters ("full", or
+ *  "1 waits" in the hot colour while a job is held back); the meaning and the figures on hover. */
+function SlotBar({ b, tip }: { b: RailBudget; tip: string }) {
   return (
-    <span class={`rbar${b.hot ? " hot" : ""}`} aria-hidden="true">
+    <span class={`rbar${b.hot ? " hot" : ""}`} title={tip}>
       <span class="trk">
         <i style={{ width: `${Math.round(b.share * 100)}%` }} />
       </span>
-      <small class="mono">
-        {b.text}
-        {b.waiting > 0 && <em>+{b.waiting}</em>}
-      </small>
+      {b.note && <small class="mono">{b.note}</small>}
     </span>
   );
 }
 
 /** Filled pips for the slots in use, empty for the free ones; "+2" in the hot colour while threads wait. */
-function SlotPips({ p }: { p: RailPips }) {
+function SlotPips({ p, tip }: { p: RailPips; tip: string }) {
   return (
-    <span class={`rpips${p.waiting ? " hot" : ""}`} aria-hidden="true">
+    <span class={`rpips${p.waiting ? " hot" : ""}`} title={tip}>
       {Array.from({ length: p.n }, (_, i) => (
         <i class={i < p.held ? "on" : undefined} />
       ))}
