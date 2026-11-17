@@ -991,6 +991,9 @@ button.ptag{padding:0}
 .stp-h .end{margin-left:auto;display:flex;gap:8px;align-items:center}
 .stp-lede{margin:-8px 0 0;font:400 13px/19px var(--ui);color:var(--ink-muted);max-width:60ch}
 .stp-sub{margin:8px 0 -6px;font:600 14px/20px var(--ui)}
+/* V0.132: the Host field of New project and New thread; an offline host's note in the error colour */
+.hostf .srcl.hbad{color:var(--signal-ink)}
+.fnote{margin:4px 0}
 /* V0.127: a per-host page with several hosts: one part per host, its name and state, the same on the desktop and the phone */
 .hpart{display:flex;flex-direction:column;gap:16px;min-width:0}
 .hpart+.hpart{border-top:1px solid var(--line);padding-top:16px}
@@ -1116,6 +1119,11 @@ label.sr{cursor:pointer}
 .pli.lift{background:var(--select);box-shadow:0 6px 18px rgba(0,0,0,.18);position:relative;z-index:1;border-radius:8px}
 .pli.drop{box-shadow:inset 0 2px 0 var(--harbour)}
 .pli.dropb{box-shadow:inset 0 -2px 0 var(--harbour)}
+/* V0.132: a host row with its grip (desktop) or ↑ ↓ (the phone's Reorder mode) */
+.hreo{display:flex;align-items:center;gap:4px;padding-left:4px;border-bottom:1px solid var(--line);min-width:0}
+.hreo:last-child{border-bottom:0}
+.hreo .sr{border-bottom:0;flex:1;min-width:0;padding-left:4px}
+.hreo.mvrow{padding-right:8px}
 .pli.mvrow:hover{background:none}
 .pli .mv{display:flex;gap:4px}
 /* the Providers page */

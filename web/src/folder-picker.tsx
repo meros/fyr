@@ -18,6 +18,8 @@ export interface PickOptions {
   title?: string;
   /** rows above Recent, e.g. the project's other folders */
   first?: { title: string; dirs: FsDir[] };
+  /** V0.132: the host whose folders it browses; missing: the front's first host (one host) */
+  host?: string;
 }
 
 /** Opens the picker where it belongs (a dialog or a sheet); null when the owner closed it. */

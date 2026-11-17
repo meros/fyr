@@ -4,7 +4,7 @@
 // comes in as an argument.
 
 import type { PickOptions } from "./folder-picker.tsx";
-import { hostForProject, profilesOn, type HostInfo } from "./hosts.ts";
+import { hostForProject, multiHost, profilesOn, type HostInfo } from "./hosts.ts";
 import { localProject, newThreadFolder, projectDefaults, startProject } from "./projects.ts";
 import type { Profile, Project } from "./types.ts";
 
@@ -24,6 +24,8 @@ export interface NewThreadArgs {
   view?: boolean;
   /** V0.50: effort; "" is the provider's default */
   effort?: string;
+  /** V0.132: the host it starts on, with several hosts */
+  host?: string;
 }
 
 // ---- the one remembered-defaults record ----
@@ -120,10 +122,12 @@ export interface NewThreadForm {
   text: string;
   title: string;
   liveView: boolean;
+  /** V0.132: the host the owner picked, for a thread with no project or a project made here; "" the front's first */
+  host: string;
 }
 
 export function initialForm(): NewThreadForm {
-  return { projectId: null, made: null, picking: false, creating: null, draft: null, picked: "", profile: "", model: "", effortPick: "", text: "", title: "", liveView: false };
+  return { projectId: null, made: null, picking: false, creating: null, draft: null, picked: "", profile: "", model: "", effortPick: "", text: "", title: "", liveView: false, host: "" };
 }
 
 /** The projects to pick from: the host's, and one made here that the host has not sent yet. */
@@ -140,9 +144,28 @@ export function makingProject(f: NewThreadForm): { name: string; folder: string 
   return f.creating !== null ? (f.draft ?? { name: f.creating, folder: "" }) : null;
 }
 
-/** V0.54: the host the thread starts on. */
+/** V0.54, V0.132: the host the thread starts on: its project's; with no project, or a project made here, the one the
+ *  owner picked, else the front's first. */
 export function formHost(f: NewThreadForm, ctx: FormCtx): string | undefined {
-  return hostForProject(currentProject(f, ctx)?.host, ctx.hosts);
+  const cur = makingProject(f) ? undefined : currentProject(f, ctx);
+  if (cur) return hostForProject(cur.host, ctx.hosts);
+  return f.host || hostForProject(undefined, ctx.hosts);
+}
+
+/** V0.132: the project that holds the host (the Host field is locked to it), or "" when the owner picks it. */
+export function hostLock(f: NewThreadForm, ctx: FormCtx): string {
+  if (makingProject(f)) return "";
+  return currentProject(f, ctx)?.name ?? "";
+}
+
+/** V0.132: pick the host (no project, or a project made here): a folder picked on another host is dropped, and the
+ *  provider moves to one that host has. */
+export function chooseHost(f: NewThreadForm, host: string, ctx: FormCtx, last: Remembered = {}): NewThreadForm {
+  if (hostLock(f, ctx)) return f;
+  const next: NewThreadForm = { ...f, host, picked: host === formHost(f, ctx) ? f.picked : "" };
+  const there = profilesOn(host, ctx.hosts, ctx.profiles);
+  if (!there.length) return next;
+  return { ...next, ...profileFor(undefined, there, f, last) };
 }
 
 /** The profiles of that host. */
@@ -203,7 +226,7 @@ export function pickProfile(f: NewThreadForm, id: string, ctx: FormCtx): NewThre
 
 /** V0.63: a project made in the form is picked at once. */
 export function madeProject(f: NewThreadForm, id: string, name: string, folder: string, ctx: FormCtx): NewThreadForm {
-  const np = localProject(id, name, folder);
+  const np = { ...localProject(id, name, folder), host: formHost(f, ctx) }; // V0.132: made on the form's host
   return chooseProject({ ...f, made: np }, np, { ...ctx, projects: [...ctx.projects.filter((x) => x.id !== id), np] });
 }
 
@@ -220,14 +243,15 @@ export function createArgs(f: NewThreadForm, ctx: FormCtx, send: { text: string;
     title: f.title.trim() || undefined,
     projectId: pid,
     view: f.liveView || undefined,
+    ...(multiHost(ctx.hosts) ? { host: formHost(f, ctx) } : {}),
   };
 }
 
 /** "Change" offers the project's folder first when another one is picked (V0.42, V0.55). */
-export function changeOptions(pr: Project | undefined, current: string): PickOptions {
+export function changeOptions(pr: Project | undefined, current: string, host?: string): PickOptions {
   const f = pr?.folder;
   const dirs = f && f !== current ? [{ name: f.split("/").pop() || f, path: f }] : [];
-  return { title: "Folder for this thread", first: dirs.length ? { title: `${pr!.name}'s folder`, dirs } : undefined };
+  return { title: "Folder for this thread", first: dirs.length ? { title: `${pr!.name}'s folder`, dirs } : undefined, ...(host ? { host } : {}) }; // V0.132: the thread's host
 }
 
 /** One line under the folder: how the folder and the project relate (V0.42, V0.55). */

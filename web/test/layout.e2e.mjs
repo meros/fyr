@@ -1892,7 +1892,8 @@ for (const [label, w, ht] of [
     check(by.lab?.line === "Another install answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && /warn/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`);
     if (phone) check(rows.every((r) => r.h >= 55.5), `${ctx}: a row under 56 px ${JSON.stringify(rows.map((r) => r.h))}`);
     const foot = await evaluate(`[...document.querySelectorAll('${root} .sg-f')].map(e => e.textContent).join(' ')`);
-    check(foot === "Fyr finds your other installs on the tailnet by itself. A host it cannot see goes in fyrd's config (hosts).", `${ctx}: the foot "${foot}"`);
+    // V0.132 adds the order's sentence before it.
+    check(foot === "The first host is the default for New project, New thread and the folder picker. This order is kept on your hosts, so every device shows it. Fyr finds your other installs on the tailnet by itself. A host it cannot see goes in fyrd's config (hosts).", `${ctx}: the foot "${foot}"`);
     await shot(`hosts-${label}.png`);
     if (!phone) {
       await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
@@ -2078,6 +2079,141 @@ for (const [label, w, ht] of [
     const dep = await evaluate(`${COMMANDS("host.autoDeploy")}.map(c => c.args)`);
     check(dep.length === 1 && dep[0].host === "lab" && dep[0].on === false, `${ctx}: auto-deploy on lab ${JSON.stringify(dep)}`);
     await shot(`hostsettings-automation-${label}.png`);
+  });
+});
+
+// SPEC V0.132: New project, Change folder and New thread browse the chosen host's folders, the same on the desktop
+// and the phone. 1 New project in Settings: the Host field (this install first, the offline host named), lab's folders
+// in the picker, project.create with host lab; 2 an offline host says so and nothing is sent; 3 New thread: with no
+// project the owner picks the host and the picker is that host's, thread.create names it; a project locks the host.
+for (const [label, w, ht] of [
+  ["desktop", 1280, 800],
+  ["phone", 390, 844],
+]) section(`V0.132 ${label}`, async (hn) => {
+  const { evaluate, waitFor, settle, navigate, openScreen, shot } = hn;
+  const ctx = `V0.132 ${label}`;
+  const phone = label === "phone";
+  const root = phone ? ".m-app" : ".dlg";
+  const open = async (url, ready) => {
+    if (phone) await openScreen({ url, ready }, w, ht);
+    else await navigate(`${origin}/${url}`, ready);
+    await waitFor(ready);
+    await settle();
+  };
+  const step = async (name, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      failures.push(`${ctx} ${name}: ${e.message}`);
+    }
+  };
+  const setHost = (h) => evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); s.value = ${JSON.stringify(h)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const click = (sel, text) => evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find(x => x.textContent.trim().startsWith(${JSON.stringify(text)})); b?.click(); return !!b; })()`);
+  const PICKER = `({ title: (document.querySelector('.fsheet .m-shh') ?? document.querySelector('.fmodal .dh b'))?.textContent ?? '', rows: [...document.querySelectorAll('.fpick .fsec.browse .fpr')].map(b => b.textContent.trim()), note: document.querySelector('.fnote')?.textContent ?? '' })`;
+  const closePicker = () => evaluate(`(document.querySelector('.fsheet .m-fchg') ?? document.querySelector('.fmodal .dh button'))?.click()`);
+  // 1. New project on lab.
+  await step("new project", async () => {
+    await open(phone ? "?mock=rail&hosts=2&settings=projects" : "?mock=rail&hosts=2&dialog=settings&page=projects", `document.querySelectorAll('${root} .pli').length > 3`);
+    if (!(await click(`${root} button`, "New project"))) throw new Error("no New project button");
+    await waitFor(`!!document.querySelector('${root} .hostf select')`);
+    const opts = await evaluate(`[...document.querySelectorAll('${root} .hostf option')].map(o => o.textContent)`);
+    check(opts.join("|") === "desk (this install)|host-b (offline)|lab|old-nuc", `${ctx}: the hosts offered ${JSON.stringify(opts)}`);
+    if (phone) {
+      const h = await evaluate(`document.querySelector('${root} .hostf select').getBoundingClientRect().height`);
+      check(h >= 44, `${ctx}: the Host field is ${h} px high`);
+    }
+    await setHost("lab");
+    await click(`${root} button`, "Choose folder");
+    await waitFor(`document.querySelectorAll('.fpick .fsec.browse .fpr').length > 0`);
+    await settle();
+    const pk = await evaluate(PICKER);
+    check(/ on lab$/.test(pk.title) && pk.rows.some((r) => r.includes("lab-notes")) && pk.rows.every((r) => /lab-notes|experiments/.test(r)), `${ctx}: the picker shows lab's folders ${JSON.stringify(pk)}`);
+    await shot(`hostfolders-picker-${label}.png`);
+    await evaluate(`[...document.querySelectorAll('.fpick .fpr[data-row]:not([data-enter])')].find(b => b.textContent.includes('lab-notes'))?.click()`);
+    await waitFor(`!document.querySelector('.fpick')`);
+    await evaluate(`(() => { const i = document.querySelector('${root} .pform input'); i.value = 'Lab notes'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await settle();
+    await shot(`hostfolders-newproject-${label}.png`);
+    await click(`${root} .pform button`, "Create project");
+    await waitFor(`${COMMANDS("project.create")}.length === 1`, { soft: true });
+    const c = await evaluate(`${COMMANDS("project.create")}.map(c => c.args)`);
+    check(c.length === 1 && c[0].host === "lab" && c[0].folder === "/home/owner/lab-notes" && c[0].name === "Lab notes", `${ctx}: project.create ${JSON.stringify(c)}`);
+  });
+  // 2. An offline host: said plainly, nothing sent, no other host's folders.
+  await step("offline", async () => {
+    await open(phone ? "?mock=rail&hosts=2&settings=projects" : "?mock=rail&hosts=2&dialog=settings&page=projects", `document.querySelectorAll('${root} .pli').length > 3`);
+    await click(`${root} button`, "New project");
+    await waitFor(`!!document.querySelector('${root} .hostf select')`);
+    await setHost("host-b");
+    await settle();
+    const note = await evaluate(`document.querySelector('${root} .hostf .hbad')?.textContent ?? ''`);
+    check(/^host-b is offline since \d\d:\d\d\. Its folders cannot be read/.test(note), `${ctx}: the offline note "${note}"`);
+    await click(`${root} button`, "Choose folder");
+    await waitFor(`!!document.querySelector('.fnote')`, { soft: true });
+    const pk = await evaluate(PICKER);
+    check(/^host-b is offline/.test(pk.note) && pk.rows.length === 0, `${ctx}: the picker of an offline host ${JSON.stringify(pk)}`);
+    await shot(`hostfolders-offline-${label}.png`);
+    await closePicker();
+    await waitFor(`!document.querySelector('.fpick, .fnote')`, { soft: true });
+    await evaluate(`(() => { const i = document.querySelector('${root} .pform input'); i.value = 'X'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await click(`${root} .pform button`, "Create project");
+    await settle();
+    const after = await evaluate(`({ n: ${COMMANDS("project.create")}.length, err: document.querySelector('${root} .pform .err')?.textContent ?? '' })`);
+    check(after.n === 0 && /^host-b is offline/.test(after.err), `${ctx}: a create on an offline host ${JSON.stringify(after)}`);
+  });
+  // 3. New thread: the host follows the project; with no project the owner picks it.
+  await step("new thread", async () => {
+    await open(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", `!!document.querySelector('${root} .hostf select')`);
+    const locked = await evaluate(`({ dis: document.querySelector('${root} .hostf select').disabled, line: document.querySelector('${root} .hostf .srcl')?.textContent ?? '' })`);
+    check(locked.dis && /^Follows .+\.$/.test(locked.line), `${ctx}: a project holds the host ${JSON.stringify(locked)}`);
+    await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick')?.click()`);
+    await settle();
+    await click(`${root} button, ${root} [role=option]`, "No project");
+    await waitFor(`!document.querySelector('${root} .hostf select').disabled`);
+    await setHost("lab");
+    await settle();
+    await evaluate(`(document.querySelector('${root} .m-fchg') ?? [...document.querySelectorAll('${root} .fline .btn')][0])?.click()`);
+    await waitFor(`document.querySelectorAll('.fpick .fsec.browse .fpr').length > 0`);
+    const pk = await evaluate(PICKER);
+    check(/ on lab$/.test(pk.title) && pk.rows.some((r) => r.includes("experiments")), `${ctx}: New thread's picker ${JSON.stringify(pk)}`);
+    await evaluate(`[...document.querySelectorAll('.fpick .fpr[data-row]:not([data-enter])')].find(b => b.textContent.includes('experiments'))?.click()`);
+    await waitFor(`!document.querySelector('.fpick')`);
+    await evaluate(`(() => { const t = document.querySelector('${root} textarea'); t.value = 'Map the arm'; t.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await settle();
+    await shot(`hostfolders-newthread-${label}.png`);
+    await evaluate(`[...document.querySelectorAll('${root} button')].find(b => /^Start/.test(b.textContent.trim()))?.click()`);
+    await waitFor(`${COMMANDS("thread.create")}.length === 1`, { soft: true });
+    const c = await evaluate(`${COMMANDS("thread.create")}.map(c => c.args)`);
+    check(c.length === 1 && c[0].host === "lab" && c[0].cwd === "/home/owner/experiments" && !c[0].projectId, `${ctx}: thread.create ${JSON.stringify(c)}`);
+  });
+  // 4. The owner's host order: reorder on the Hosts page (grip and Alt+↑ on the desktop, the Reorder mode on the
+  // phone); the first host is the default in New project and New thread, and the per-host groups follow it.
+  await step("host order", async () => {
+    await open(phone ? "?mock=rail&hosts=2&settings=hosts" : "?mock=rail&hosts=2&dialog=settings&page=hosts", `document.querySelectorAll('${root} .sr.host').length === 4`);
+    const ROWS = `[...document.querySelectorAll('${root} .sr.host')].map(r => r.dataset.host).join('|')`;
+    if (phone) {
+      await click(`${root} button`, "Reorder");
+      await waitFor(`!!document.querySelector('${root} .hreo.mvrow')`);
+      await evaluate(`document.querySelector('${root} [aria-label="Move lab up"]').click()`);
+    } else {
+      await evaluate(`document.querySelectorAll('.dlg .hreo .grip')[2].focus()`);
+      await hn.key("ArrowUp", "ArrowUp", 1);
+    }
+    await waitFor(`${COMMANDS("front.hostOrder")}.length === 1`, { soft: true });
+    await waitFor(`${ROWS} === 'desk|lab|host-b|old-nuc'`, { soft: true });
+    const o = await evaluate(`({ cmds: ${COMMANDS("front.hostOrder")}.map(c => c.args.names.join('|')), rows: ${ROWS} })`);
+    check(o.cmds.join() === "desk|lab|host-b|old-nuc" && o.rows === "desk|lab|host-b|old-nuc", `${ctx}: reorder the hosts ${JSON.stringify(o)}`);
+    await shot(`hostorder-${label}.png`);
+    // lab first (as set on another front): it is the default.
+    const q = "?mock=rail&hosts=2&hostOrder=lab,desk";
+    await open(phone ? `${q}&settings=projects` : `${q}&dialog=settings&page=projects`, `document.querySelectorAll('${root} .pli').length > 3`);
+    await click(`${root} button`, "New project");
+    await waitFor(`!!document.querySelector('${root} .hostf select')`);
+    const np = await evaluate(`({ v: document.querySelector('${root} .hostf select').value, first: document.querySelector('${root} .hostf option')?.value })`);
+    check(np.v === "lab" && np.first === "lab", `${ctx}: New project's default host ${JSON.stringify(np)}`);
+    await open(phone ? `${q}&settings=providers` : `${q}&dialog=settings&page=providers`, `document.querySelectorAll('${root} .hpart').length === 4`);
+    const parts = await evaluate(`[...document.querySelectorAll('${root} .hpart')].map(p => p.dataset.host).join('|')`);
+    check(parts.startsWith("lab|desk"), `${ctx}: the per-host groups follow the order (${parts})`);
   });
 });
 
