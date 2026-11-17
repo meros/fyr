@@ -151,7 +151,7 @@ type inviteResp struct {
 // by this install, and the answer says who this is.
 func (e *Env) joinInvite(w http.ResponseWriter, r *http.Request) {
 	pub, ok := peerlink.Caller(r)
-	if !ok {
+	if !ok || e.Roster.SelfRemoved() {
 		http.Error(w, "a key is needed", http.StatusForbidden)
 		return
 	}

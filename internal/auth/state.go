@@ -143,13 +143,10 @@ func (s *Store) SetMode(way, mode, by string) error {
 	if way != WayBrowser && way != WayPeer || (mode != ModeObserve && mode != ModeEnforce) {
 		return fmt.Errorf("auth: %q %q: %w", way, mode, ErrWay)
 	}
-	if way == WayPeer && mode == ModeEnforce {
-		return fmt.Errorf("auth: the peer way in cannot enforce before the peer link exists (decision 0030 slice 5): %w", ErrWay)
-	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	m := s.modes[way]
 	if m.Mode == mode {
+		s.mu.Unlock()
 		return nil
 	}
 	now := s.now()
@@ -159,6 +156,8 @@ func (s *Store) SetMode(way, mode, by string) error {
 	}
 	s.saveModesLocked()
 	s.auditLocked("mode", by, way+" is now "+mode)
+	s.mu.Unlock()
+	s.modeChanged(way, mode)
 	return nil
 }
 
@@ -208,8 +207,6 @@ func (s *Store) readyLocked(way string) (bool, string) {
 	switch {
 	case m == nil || m.Mode != ModeObserve:
 		return false, "already enforcing"
-	case way != WayBrowser:
-		return false, "this way in cannot enforce yet"
 	case m.Hand:
 		return false, "set back to observe by hand; it stays until you enforce it"
 	}
@@ -219,6 +216,19 @@ func (s *Store) readyLocked(way string) (bool, string) {
 	}
 	if left := ReadyAfter - s.now().Sub(from); left > 0 {
 		return false, fmt.Sprintf("%s of clean days to go", left.Round(time.Minute))
+	}
+	if way == WayPeer {
+		// The peer way in enforces only when every followed host is on the pinned link:
+		// the whois link and the loopback host port are then removed (3.6, 5.1 rule 3).
+		if s.peerGate != nil {
+			if ok, why := s.peerGate(); !ok {
+				return false, why
+			}
+		}
+		if m.Success["link"] == 0 && s.peerLinks() > 0 {
+			return false, "no request has come over the peer link yet"
+		}
+		return true, ""
 	}
 	// One success of each way a device in use got in.
 	inUse := map[string]bool{}
@@ -246,9 +256,8 @@ func (s *Store) readyLocked(way string) (bool, string) {
 // caller tells the devices.
 func (s *Store) Tick() []string {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	var moved []string
-	for _, way := range []string{WayBrowser} {
+	for _, way := range []string{WayBrowser, WayPeer} {
 		if ok, _ := s.readyLocked(way); !ok {
 			continue
 		}
@@ -257,6 +266,10 @@ func (s *Store) Tick() []string {
 		s.saveModesLocked()
 		s.auditLocked("mode", "auto", way+" moved to enforce after "+fmt.Sprint(int(ReadyAfter.Hours()/24))+" clean days; `fyr auth observe` goes back")
 		moved = append(moved, way)
+	}
+	s.mu.Unlock()
+	for _, way := range moved {
+		s.modeChanged(way, ModeEnforce)
 	}
 	return moved
 }
@@ -676,4 +689,68 @@ func (s *Store) Has(id string) bool {
 		}
 	}
 	return false
+}
+
+// SetPeerGate says when the peer way in may enforce by itself: every host this
+// install follows is on the pinned link (the front knows). links reports how many
+// other installs are paired; with none, a success over the link is not asked for.
+func (s *Store) SetPeerGate(gate func() (bool, string), links func() int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.peerGate, s.peerLinksFn = gate, links
+}
+
+func (s *Store) peerLinks() int {
+	if s.peerLinksFn == nil {
+		return 0
+	}
+	return s.peerLinksFn()
+}
+
+// OnMode sets what hears of a way in changing mode (the host removes or restores
+// its old listeners).
+func (s *Store) OnMode(f func(way, mode string)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onMode = append(s.onMode, f)
+}
+
+func (s *Store) modeChanged(way, mode string) {
+	s.mu.Lock()
+	fs := append([]func(string, string){}, s.onMode...)
+	s.mu.Unlock()
+	for _, f := range fs {
+		f(way, mode)
+	}
+}
+
+// DefaultStepUp is how old a session has to be to widen trust (approve a device,
+// add one, pair an install): a session that was just made by a link or a code
+// cannot, until it has lived this long, or the owner uses the owner socket
+// (decision 0030 3.4, 0028's step-up).
+const DefaultStepUp = 5 * time.Minute
+
+// SetStepUp sets the age; zero or less turns the rule off.
+func (s *Store) SetStepUp(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stepUp = d
+}
+
+// ErrStepUp: the session is too new to change who is trusted.
+var ErrStepUp = errors.New("this session is too new to change who is trusted: wait a few minutes, or run the command on the machine that runs Fyr (fyr device …, fyr pair)")
+
+// StepUp checks that a device's session is old enough to widen trust.
+func (s *Store) StepUp(deviceID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stepUp <= 0 {
+		return nil
+	}
+	for _, d := range s.devices {
+		if d.ID == deviceID && !d.Pending && s.now().Sub(d.Created) >= s.stepUp {
+			return nil
+		}
+	}
+	return ErrStepUp
 }

@@ -34,6 +34,12 @@ const (
 	// owner, from an install that knows it (an untagged node). A tagged install
 	// has no login of its own and takes this one (decision 0030 3.4).
 	KindOwnerLogin = "owner-login"
+	// KindInstallRemove ends an install for ever (decision 0030 3.6): what it signed
+	// counts for nothing, and the members only it vouched for are signed for again by
+	// the member that removed it. KindKeyRotate moves an install to a new key, signed
+	// by the old one, so a peer that was offline follows it.
+	KindInstallRemove = "install-remove"
+	KindKeyRotate     = "key-rotate"
 )
 
 // Statement is one signed fact. Sig covers every other field.
@@ -93,13 +99,16 @@ type Roster struct {
 	path string
 	now  func() time.Time
 
-	mu       sync.Mutex
-	stmts    map[string]Statement
-	members  map[string]Member
-	revoked  map[string]bool
-	devices  map[string]Statement
-	owner    string
-	onChange []func()
+	mu          sync.Mutex
+	stmts       map[string]Statement
+	members     map[string]Member
+	revoked     map[string]bool
+	devices     map[string]Statement
+	owner       string
+	removed     map[string]bool
+	successor   map[string]string
+	selfRemoved bool
+	onChange    []func()
 }
 
 // Open reads the roster in dir (roster.json), or starts one: the install is its
@@ -147,46 +156,118 @@ func (r *Roster) addLocked(s Statement) bool {
 	return true
 }
 
-// recomputeLocked finds the members: this install, and every install a member
-// added, to a fixpoint; and the devices.
+// recomputeLocked finds the members and what they said. This install is a member
+// by its own word, the root of what it trusts; an install a member added is a
+// member; a rotation moves a member to its new key; a removal by a member ends
+// an install for ever, and what the removed one signed counts for nothing, so the
+// members it alone vouched for drop out until a live member signs for them again.
+// The sets only grow, so every install that holds the same statements computes the
+// same members whatever the order they arrived in.
 func (r *Roster) recomputeLocked() {
-	members := map[string]Member{}
 	selfID := r.self.ID()
-	// This install is a member by its own word (its first statement), the root of
-	// what it trusts.
-	var adds []Statement
+	var adds, removes, rotates []Statement
 	for _, s := range r.stmts {
-		if s.Kind == KindInstallAdd {
+		switch s.Kind {
+		case KindInstallAdd:
 			adds = append(adds, s)
+		case KindInstallRemove:
+			removes = append(removes, s)
+		case KindKeyRotate:
+			rotates = append(rotates, s)
 		}
 	}
-	sort.Slice(adds, func(i, j int) bool { // by time, then by id: every install orders them alike
-		if !adds[i].At.Equal(adds[j].At) {
-			return adds[i].At.Before(adds[j].At)
-		}
-		return adds[i].ID() < adds[j].ID()
-	})
+	byTime := func(l []Statement) {
+		sort.Slice(l, func(i, j int) bool { // by time, then by id: every install orders them alike
+			if !l[i].At.Equal(l[j].At) {
+				return l[i].At.Before(l[j].At)
+			}
+			return l[i].ID() < l[j].ID()
+		})
+	}
+	byTime(adds)
+	byTime(removes)
+	byTime(rotates)
+	// the keys installs signed their own first statement with
+	genesis := map[string]ed25519.PublicKey{}
 	for _, s := range adds {
-		if s.Subject == selfID && s.By == selfID && ed25519.PublicKey(s.Key).Equal(r.self.Public) && verifyWith(r.self.Public, s) {
-			members[selfID] = memberOf(s)
+		if s.By == s.Subject && identity.IDOf(s.Key) == s.Subject && verifyWith(ed25519.PublicKey(s.Key), s) {
+			genesis[s.Subject] = ed25519.PublicKey(s.Key)
 		}
 	}
-	for changed := true; changed; {
-		changed = false
-		for _, s := range adds {
-			if _, in := members[s.Subject]; in {
-				continue
+	removed := map[string]bool{} // R: the installs a member removed, and what rotated from them
+	var members map[string]Member
+	var retired map[string]string // an old id → the id its key rotated to
+	for {
+		members = map[string]Member{}
+		retired = map[string]string{}
+		if g, ok := genesis[selfID]; ok && g.Equal(r.self.Public) && !removed[selfID] {
+			for _, s := range adds {
+				if s.Subject == selfID && s.By == selfID {
+					members[selfID] = memberOf(s)
+				}
 			}
+		}
+		// This install's own earlier keys: a rotation to this key, signed by the old
+		// one, keeps what the old key signed.
+		for _, s := range rotates {
+			if ed25519.PublicKey(s.Key).Equal(r.self.Public) && !removed[s.Subject] {
+				if old, ok := genesis[s.Subject]; ok && s.By == s.Subject && verifyWith(old, s) {
+					for _, a := range adds {
+						if a.Subject == s.Subject && a.By == s.Subject {
+							members[s.Subject] = memberOf(a)
+						}
+					}
+					retired[s.Subject] = selfID
+				}
+			}
+		}
+		for changed := true; changed; {
+			changed = false
+			for _, s := range adds {
+				if _, in := members[s.Subject]; in || removed[s.Subject] {
+					continue
+				}
+				signer, ok := members[s.By]
+				if !ok || removed[s.By] || !verifyWith(signer.Key, s) || identity.IDOf(s.Key) != s.Subject {
+					continue
+				}
+				members[s.Subject] = memberOf(s)
+				changed = true
+			}
+			for _, s := range rotates {
+				old, ok := members[s.Subject]
+				newID := identity.IDOf(s.Key)
+				if !ok || removed[s.Subject] || s.By != s.Subject || len(s.Key) != ed25519.PublicKeySize || !verifyWith(old.Key, s) {
+					continue
+				}
+				if _, in := members[newID]; in {
+					continue
+				}
+				m := old
+				m.ID, m.Key, m.AddedBy = newID, ed25519.PublicKey(s.Key), s.By
+				members[newID] = m
+				retired[s.Subject] = newID
+				changed = true
+			}
+		}
+		grew := false
+		for _, s := range removes {
 			signer, ok := members[s.By]
-			if !ok || !verifyWith(signer.Key, s) || identity.IDOf(s.Key) != s.Subject {
+			if !ok || removed[s.By] || !verifyWith(signer.Key, s) || removed[s.Subject] {
 				continue
 			}
-			members[s.Subject] = memberOf(s)
-			changed = true
+			for id := s.Subject; id != ""; id = retired[id] { // an install is removed with every key it rotated to
+				removed[id] = true
+			}
+			grew = true
+		}
+		if !grew {
+			break
 		}
 	}
-	// Where to reach a member: what the member itself last said wins; a hint from
-	// another member (who paired with it) is used until it has said. Never its key.
+	// A later add of a member updates where to reach it: what the member itself last
+	// said wins; a hint from another member (who paired with it) is used until it has
+	// said. Never its key.
 	own := map[string]bool{}
 	for _, s := range adds {
 		m, in := members[s.Subject]
@@ -194,7 +275,7 @@ func (r *Roster) recomputeLocked() {
 			continue
 		}
 		signer, ok := members[s.By]
-		if !ok || !verifyWith(signer.Key, s) {
+		if !ok || removed[s.By] || !verifyWith(signer.Key, s) {
 			continue
 		}
 		self := s.By == s.Subject
@@ -205,13 +286,29 @@ func (r *Roster) recomputeLocked() {
 		members[s.Subject] = m
 		own[s.Subject] = own[s.Subject] || self
 	}
+	// what signers said: any member that was one when it signed (a rotated key too)
+	signers := map[string]Member{}
+	for id, m := range members {
+		if !removed[id] {
+			signers[id] = m
+		}
+	}
+	r.selfRemoved = removed[selfID]
+	r.removed = removed
+	r.successor = retired
+	for id := range retired {
+		delete(members, id) // the old key is no longer a member: its link is refused
+	}
+	for id := range removed {
+		delete(members, id)
+	}
 	revoked := map[string]bool{}
 	devices := map[string]Statement{}
 	for _, s := range r.stmts {
 		if s.Kind != KindDeviceAdd && s.Kind != KindDeviceRevoke {
 			continue
 		}
-		signer, ok := members[s.By]
+		signer, ok := signers[s.By]
 		if !ok || !verifyWith(signer.Key, s) {
 			continue
 		}
@@ -228,7 +325,7 @@ func (r *Roster) recomputeLocked() {
 		if s.Kind != KindOwnerLogin || s.Subject == "" {
 			continue
 		}
-		signer, ok := members[s.By]
+		signer, ok := signers[s.By]
 		if !ok || !verifyWith(signer.Key, s) {
 			continue
 		}
@@ -434,6 +531,14 @@ func (r *Roster) Merge(list []Statement) bool {
 			if len(s.Key) != ed25519.PublicKeySize || identity.IDOf(s.Key) != s.Subject {
 				continue
 			}
+		case KindInstallRemove:
+			if s.Subject == "" {
+				continue
+			}
+		case KindKeyRotate:
+			if s.Subject == "" || s.By != s.Subject || len(s.Key) != ed25519.PublicKeySize {
+				continue
+			}
 		case KindDeviceAdd, KindDeviceRevoke, KindOwnerLogin:
 			if s.Subject == "" {
 				continue
@@ -477,4 +582,161 @@ func (r *Roster) SetOwnerLogin(login string) {
 	r.saveLocked()
 	r.mu.Unlock()
 	r.changed()
+}
+
+// SelfRemoved: a member removed this install. It serves nothing and pairs with no
+// one until the owner pairs it again (with a new key).
+func (r *Roster) SelfRemoved() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.selfRemoved
+}
+
+// Removed: the install (or a key it rotated from) was removed.
+func (r *Roster) Removed(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.removed[id]
+}
+
+// Successor is the id the install rotated to, "" when it did not.
+func (r *Roster) Successor(id string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.successor[id]
+}
+
+// Remove ends an install for ever: a statement signed by this install, and the
+// members the removed one alone vouched for signed for again by this one in the
+// same batch, so the owner keeps them. A device the removed install revoked stays
+// revoked (a revoke is protective); a device it added is not kept.
+func (r *Roster) Remove(id string) error {
+	r.mu.Lock()
+	if id == r.self.ID() {
+		r.mu.Unlock()
+		return errors.New("this install cannot remove itself: run the removal on another member")
+	}
+	if _, in := r.members[id]; !in {
+		r.mu.Unlock()
+		return errors.New("no such install in the roster")
+	}
+	before := map[string]Member{}
+	for k, m := range r.members {
+		before[k] = m
+	}
+	var oldRevokes []string
+	for _, s := range r.stmts {
+		if s.Kind == KindDeviceRevoke && (s.By == id || r.successor[id] == s.By) {
+			oldRevokes = append(oldRevokes, s.Subject)
+		}
+	}
+	r.addLocked(r.sign(Statement{Kind: KindInstallRemove, Subject: id}))
+	r.recomputeLocked()
+	for k, m := range before { // the members that fell with it, kept by this one
+		if _, still := r.members[k]; !still && !r.removed[k] && k != id {
+			r.addLocked(r.sign(Statement{Kind: KindInstallAdd, Subject: k, Key: m.Key, Name: m.Name, Host: m.Host, Port: m.Port}))
+		}
+	}
+	r.recomputeLocked()
+	for _, dev := range oldRevokes {
+		r.addLocked(r.sign(Statement{Kind: KindDeviceRevoke, Subject: dev}))
+	}
+	r.recomputeLocked()
+	r.saveLocked()
+	r.mu.Unlock()
+	r.changed()
+	return nil
+}
+
+// Rotate records that this install moves to newKey: a statement signed by the old
+// key (this install's current one). After the restart on the new key the roster is
+// opened with it; the old key is refused from then on, and a peer that was offline
+// follows the new one by this statement.
+func (r *Roster) Rotate(newKey ed25519.PublicKey) Statement {
+	r.mu.Lock()
+	s := r.sign(Statement{Kind: KindKeyRotate, Subject: r.self.ID(), Key: newKey})
+	r.addLocked(s)
+	r.recomputeLocked()
+	r.saveLocked()
+	r.mu.Unlock()
+	r.changed()
+	return s
+}
+
+// CheckRotation reports whether stmt is a rotation of the install whose key is
+// old: signed by that key, about that install, to the key `to`.
+func CheckRotation(stmt Statement, old, to ed25519.PublicKey) bool {
+	return stmt.Kind == KindKeyRotate && stmt.By == stmt.Subject && stmt.Subject == identity.IDOf(old) &&
+		ed25519.PublicKey(stmt.Key).Equal(to) && verifyWith(old, stmt)
+}
+
+// RotationChain is the rotations that lead to this install's key, oldest first:
+// what it shows in its certificate, so a peer that was offline (and knows only an
+// older key) follows it.
+func (r *Roster) RotationChain() []Statement {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var chain []Statement
+	cur := r.self.Public
+	for i := 0; i < 16; i++ { // a bounded walk back
+		var found *Statement
+		for _, s := range r.stmts {
+			if s.Kind == KindKeyRotate && ed25519.PublicKey(s.Key).Equal(cur) {
+				c := s
+				found = &c
+				break
+			}
+		}
+		if found == nil {
+			break
+		}
+		chain = append([]Statement{*found}, chain...)
+		// the key before: from that install's own first statement
+		var prev ed25519.PublicKey
+		for _, s := range r.stmts {
+			if s.Kind == KindInstallAdd && s.Subject == found.Subject && s.By == s.Subject {
+				prev = ed25519.PublicKey(s.Key)
+			}
+		}
+		if prev == nil {
+			break
+		}
+		cur = prev
+	}
+	return chain
+}
+
+// ChainFrom follows a chain of rotations from the key `from`: each statement is
+// signed by the key before it. It returns the key the chain ends at, false when
+// a link does not hold.
+func ChainFrom(chain []Statement, from ed25519.PublicKey) (ed25519.PublicKey, bool) {
+	cur := from
+	for _, s := range chain {
+		next := ed25519.PublicKey(s.Key)
+		if !CheckRotation(s, cur, next) {
+			return nil, false
+		}
+		cur = next
+	}
+	return cur, len(chain) > 0
+}
+
+// HasRotationTo reports whether the roster file in dir holds a rotation to the key
+// `to`, without opening it as an install: a restart after `fyr rotate-key` takes
+// the waiting key into use only when the roster already says so.
+func HasRotationTo(dir string, to ed25519.PublicKey) bool {
+	b, err := os.ReadFile(filepath.Join(dir, "roster.json"))
+	if err != nil {
+		return false
+	}
+	var list []Statement
+	if json.Unmarshal(b, &list) != nil {
+		return false
+	}
+	for _, s := range list {
+		if s.Kind == KindKeyRotate && ed25519.PublicKey(s.Key).Equal(to) {
+			return true
+		}
+	}
+	return false
 }

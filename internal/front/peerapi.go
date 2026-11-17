@@ -25,6 +25,19 @@ func (f *Front) peerAPI(mux muxer) {
 		}
 		return true
 	}
+	// wide: pairing widens trust, so the session must have lived a while (step-up).
+	wide := func(w http.ResponseWriter, r *http.Request) bool {
+		if !need(w, r) {
+			return false
+		}
+		if pr, _ := signedIn(r); f.opt.Auth != nil {
+			if err := f.opt.Auth.StepUp(pr.ID); err != nil {
+				api.WriteJSON(w, http.StatusForbidden, map[string]any{"ok": false, "error": err.Error()})
+				return false
+			}
+		}
+		return true
+	}
 	mux.HandleFunc("GET /api/peer/state", func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := signedIn(r); !ok && f.opt.Auth != nil && f.opt.Auth.Mode("browser") == "enforce" {
 			f.signedOut(w, r, false, nil)
@@ -39,7 +52,7 @@ func (f *Front) peerAPI(mux muxer) {
 		api.WriteJSON(w, 200, out)
 	})
 	mux.HandleFunc("POST /api/peer/invite", func(w http.ResponseWriter, r *http.Request) {
-		if !need(w, r) {
+		if !wide(w, r) {
 			return
 		}
 		code, until := p.NewInvite()
@@ -49,8 +62,20 @@ func (f *Front) peerAPI(mux muxer) {
 		}
 		api.WriteJSON(w, 200, out)
 	})
+	mux.HandleFunc("POST /api/peer/remove", func(w http.ResponseWriter, r *http.Request) {
+		if !need(w, r) { // ending trust needs no step-up: a lost phone is removed at once
+			return
+		}
+		var b struct{ ID string }
+		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+		if err := p.Remove(b.ID); err != nil {
+			api.WriteJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		api.WriteJSON(w, 200, map[string]any{"ok": true})
+	})
 	mux.HandleFunc("POST /api/peer/join", func(w http.ResponseWriter, r *http.Request) {
-		if !need(w, r) {
+		if !wide(w, r) {
 			return
 		}
 		var b struct{ Code, Addr string }
@@ -63,4 +88,3 @@ func (f *Front) peerAPI(mux muxer) {
 		api.WriteJSON(w, 200, map[string]any{"ok": true, "name": res.Name, "addr": res.Addr})
 	})
 }
-

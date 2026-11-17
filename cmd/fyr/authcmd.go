@@ -71,8 +71,16 @@ func authCommand(word string, args []string) error {
 	if word == "pair" {
 		return pairCommand(*data, *addr, rest)
 	}
-	if len(rest) == 0 {
-		return fmt.Errorf("usage: fyr %s %s", word, map[string]string{"auth": "status | observe [browser|peer] | enforce [browser|peer]", "device": "add [-name N] | approve CODE | revoke ID | list", "host": "list | drive ID on|off", "pair": "[CODE [-addr host:port]]"}[word])
+	if word == "rotate-key" {
+		out, err := ownerCall(*data, "POST", "/host/rotate", nil)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("The install key moves from %v to %v. Fyr restarts on the new key now; installs that were offline follow it by the rotation statement the old key signed.\nA key that may be stolen is removed (fyr host remove ID on another install) and paired again, not rotated.\n", out["from"], out["to"])
+		return nil
+	}
+	if len(rest) == 0 && word != "rotate-key" {
+		return fmt.Errorf("usage: fyr %s %s", word, map[string]string{"auth": "status | observe [browser|peer] | enforce [browser|peer]", "device": "add [-name N] | approve CODE | revoke ID | list", "host": "list | remove ID | drive ID on|off", "pair": "[CODE [-addr host:port]]", "rotate-key": ""}[word])
 	}
 	verb, more := rest[0], rest[1:]
 	switch word + " " + verb {
@@ -147,6 +155,14 @@ func authCommand(word string, args []string) error {
 		if n, ok := out["whoisLinkUses"].(float64); ok && n > 0 {
 			fmt.Printf("%d requests went over a whois link although a peer link exists.\n", int(n))
 		}
+	case "host remove":
+		if len(more) != 1 {
+			return fmt.Errorf("usage: fyr host remove ID")
+		}
+		if _, err := ownerCall(*data, "POST", "/host/remove", map[string]string{"id": more[0]}); err != nil {
+			return err
+		}
+		fmt.Printf("%s is removed from the roster, for ever: its link closed, what it signed counts for nothing. The next sync tells the other installs.\n", more[0])
 	case "host drive":
 		if len(more) != 2 || (more[1] != "on" && more[1] != "off") {
 			return fmt.Errorf("usage: fyr host drive ID on|off")

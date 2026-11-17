@@ -6,6 +6,7 @@ package front
 // put on the request.
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -127,6 +128,8 @@ type PeerEndpoint struct {
 type peerRoute struct {
 	rt   http.RoundTripper
 	base *url.URL
+	id   string
+	addr string
 }
 
 // linkTransport is how a front reaches one host. The peer link is preferred
@@ -145,11 +148,26 @@ func (t *linkTransport) attach(ep PeerEndpoint) {
 	if err != nil || ep.Dial == nil {
 		return
 	}
-	t.peer.Store(&peerRoute{rt: ep.Dial.Transport(ep.ID, ep.Addr), base: base})
+	t.peer.Store(&peerRoute{rt: ep.Dial.Transport(ep.ID, ep.Addr), base: base, id: ep.ID, addr: ep.Addr})
 	t.downUntil.Store(0)
 }
 
+// peerID is the install the peer link is pinned to, "" with none.
+func (t *linkTransport) peerID() string {
+	if p := t.peer.Load(); p != nil {
+		return p.id
+	}
+	return ""
+}
+
 func (t *linkTransport) hasPeer() bool { return t.peer.Load() != nil }
+
+func (t *linkTransport) peerAddr() string {
+	if p := t.peer.Load(); p != nil {
+		return p.addr
+	}
+	return ""
+}
 
 func (t *linkTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	p := t.peer.Load()
@@ -192,13 +210,20 @@ func (f *Front) UsePeerLink(id, name string, ep PeerEndpoint) {
 	f.mu.Lock()
 	var found *link
 	for _, l := range f.all() {
-		if (id != "" && l.reportedID() == id) || (found == nil && l.name() == name && l.cfg.Dial == nil) {
+		if l.gone {
+			continue
+		}
+		if (id != "" && (l.reportedID() == id || (l.lt != nil && l.lt.peerID() == id))) || (found == nil && l.name() == name && l.cfg.Dial == nil) {
 			found = l
 		}
 	}
 	f.mu.Unlock()
 	if found != nil {
-		if found.lt != nil && !found.lt.hasPeer() {
+		if found.lt != nil && (!found.lt.hasPeer() || found.lt.peerID() != id || found.lt.peerAddr() != ep.Addr) {
+			// a new peer link, or the same install on a new key or address (a rotation)
+			if was := found.lt.peerID(); was != "" && was != id {
+				f.followKey(found.name(), was, id)
+			}
 			found.lt.attach(ep)
 			f.opt.Logf("front: host %s now over the peer link (%s)", found.name(), ep.Addr)
 		}
@@ -218,4 +243,74 @@ func (f *Front) WhoisLinkUses() int64 {
 		}
 	}
 	return n
+}
+
+// followKey moves the pinned id of a host that rotated its key to the new one,
+// so Settings → Hosts does not say another install answers under its name
+// (V0.124): the roster proved the new key came from the old one.
+func (f *Front) followKey(name, oldID, newID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.pins[name] == oldID {
+		f.pins[name] = newID
+		if err := f.savePinsLocked(); err != nil {
+			f.opt.Logf("front: host ids: %v", err)
+		}
+	}
+}
+
+// DropPeers stops following the hosts that were reached only over a peer link to
+// an install that is no longer a member (it was removed), and takes the peer link
+// off a host that also has a whois link, which stays as it was.
+func (f *Front) DropPeers(member func(id string) bool) {
+	f.mu.Lock()
+	var cancels []context.CancelFunc
+	keep := make([]*link, 0, len(f.all()))
+	for _, l := range f.all() {
+		id := ""
+		if l.lt != nil {
+			id = l.lt.peerID()
+		}
+		if id == "" || member(id) {
+			keep = append(keep, l)
+			continue
+		}
+		if l.lt.whoisBase != nil { // also followed over the old link: it stays, without the peer link
+			l.lt.peer.Store(nil)
+			keep = append(keep, l)
+			continue
+		}
+		l.gone = true
+		if l.cancel != nil {
+			cancels = append(cancels, l.cancel)
+		}
+		f.opt.Logf("front: host %s dropped: its install was removed from the roster", l.name())
+	}
+	changed := len(keep) != len(f.all())
+	if changed {
+		f.links.Store(&keep)
+		f.publishHostsLocked()
+	}
+	f.mu.Unlock()
+	for _, c := range cancels {
+		c()
+	}
+}
+
+// AllOnPeerLink says whether every host this front follows (the one in this
+// process aside) is reached over a pinned peer link: the condition for the peer
+// way in to enforce by itself, which removes the whois link and the loopback host
+// port (decision 0030 5.1 rule 3). When it is not, it names a host that is not.
+func (f *Front) AllOnPeerLink() (bool, string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, l := range f.all() {
+		if l.cfg.Dial != nil || l.gone { // the host in this process, over the pipe
+			continue
+		}
+		if l.lt == nil || !l.lt.hasPeer() {
+			return false, "host " + l.name() + " is still followed over the whois link or a configured address: pair it (it needs a peer port)"
+		}
+	}
+	return true, ""
 }

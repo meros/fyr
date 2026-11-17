@@ -94,3 +94,56 @@ func Short(id string) string {
 	s, _, _ := strings.Cut(id, "-")
 	return s
 }
+
+// NextFile is where a rotated key waits until it takes over (decision 0030 3.6).
+const NextFile = "identity.key.next"
+
+// New makes a key pair that is kept nowhere yet.
+func New() (*Key, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	return &Key{Private: priv, Public: pub}, nil
+}
+
+func encode(k *Key) []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: pemType, Bytes: k.Private.Seed()})
+}
+
+// WriteNext keeps a new key beside the current one, 0600; Promote makes it the
+// install's key once the roster says so.
+func WriteNext(dir string, k *Key) error {
+	return os.WriteFile(filepath.Join(dir, NextFile), encode(k), 0o600)
+}
+
+// LoadNext reads the waiting key; nil with no error when there is none.
+func LoadNext(dir string) (*Key, error) {
+	b, err := os.ReadFile(filepath.Join(dir, NextFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	blk, _ := pem.Decode(b)
+	if blk == nil || blk.Type != pemType || len(blk.Bytes) != ed25519.SeedSize {
+		return nil, fmt.Errorf("%s is not a Fyr install key", NextFile)
+	}
+	priv := ed25519.NewKeyFromSeed(blk.Bytes)
+	return &Key{Private: priv, Public: priv.Public().(ed25519.PublicKey)}, nil
+}
+
+// Promote makes the waiting key the install's key: the old one is kept as
+// identity.key.old, the new one is moved over it. A key that may be stolen is
+// removed, not rotated: the old file is only for the owner's records.
+func Promote(dir string) error {
+	cur := filepath.Join(dir, File)
+	if b, err := os.ReadFile(cur); err == nil {
+		os.WriteFile(filepath.Join(dir, File+".old"), b, 0o600)
+	}
+	return os.Rename(filepath.Join(dir, NextFile), cur)
+}
+
+// DropNext removes a waiting key that was never taken into use.
+func DropNext(dir string) { os.Remove(filepath.Join(dir, NextFile)) }

@@ -9,6 +9,7 @@ import (
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peers"
+	"github.com/meros/fyr/internal/roster"
 	"github.com/meros/fyr/internal/tailnet"
 )
 
@@ -30,7 +31,28 @@ func wellKnown(cfg config, name, host, id string) peers.WellKnown {
 // installID is this install's key id (V0.124, decision 0026): the key is
 // made at the first start and kept in the data folder. fyrd does not start
 // without it, so the id never changes behind the owner's back.
+// finishRotation takes a waiting key (fyr rotate-key) into use once the roster
+// holds the rotation to it; a waiting key the roster does not know is dropped.
+func finishRotation(data string) {
+	next, err := identity.LoadNext(data)
+	if err != nil {
+		log.Fatalf("install key: %v", err)
+	}
+	if next == nil {
+		return
+	}
+	if roster.HasRotationTo(data, next.Public) {
+		if err := identity.Promote(data); err != nil {
+			log.Fatalf("install key: %v", err)
+		}
+		log.Printf("install key: rotated to %s", next.ID())
+		return
+	}
+	identity.DropNext(data)
+}
+
 func installKey(data string) *identity.Key {
+	finishRotation(data)
 	k, err := identity.Load(data)
 	if err != nil {
 		log.Fatalf("install key: %v", err)
