@@ -2217,12 +2217,12 @@ for (const [label, w, ht] of [
   });
 });
 
-// SPEC V0.141: the display surfaces say which host, with several hosts. 1 each ring of the desktop rail's load names
+// SPEC V0.140: the display surfaces say which host, with several hosts. 1 each ring of the desktop rail's load names
 // its host (under it, and first in its label); one host: no name. 2 a change card on the board names its thread's
 // host, the same on the desktop and the phone.
-section("V0.141 rail", async (hn) => {
+section("V0.140 rail", async (hn) => {
   const { evaluate, waitFor, navigate } = hn;
-  const ctx = "V0.141 rail";
+  const ctx = "V0.140 rail";
   try {
     await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.shell')");
     await waitFor("document.querySelectorAll('.rldr').length === 2");
@@ -2239,9 +2239,9 @@ section("V0.141 rail", async (hn) => {
 for (const [label, w, ht] of [
   ["desktop", 1280, 800],
   ["phone", 390, 844],
-]) section(`V0.141 board ${label}`, async (hn) => {
+]) section(`V0.140 board ${label}`, async (hn) => {
   const { evaluate, waitFor, navigate, openScreen, shot } = hn;
-  const ctx = `V0.141 board ${label}`;
+  const ctx = `V0.140 board ${label}`;
   const phone = label === "phone";
   try {
     if (phone) await openScreen({ url: "?mock=rail&hosts=2&changes", ready: "document.querySelectorAll('.bdfrom').length > 0" }, w, ht);

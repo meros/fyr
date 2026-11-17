@@ -205,7 +205,7 @@ export async function mergeAllGreen(list: GreenMerge[], send: (m: GreenMerge) =>
   return errs;
 }
 
-/** V0.141: the host a change card names: its thread's, with several hosts; "" with one. */
+/** V0.140: the host a change card names: its thread's, with several hosts; "" with one. */
 export function cardHost(i: { thread: { host?: string } }, hosts: { name: string }[] | undefined): string {
   return (hosts?.length ?? 0) > 1 && i.thread.host ? i.thread.host : "";
 }

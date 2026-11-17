@@ -66,7 +66,7 @@ func (f *Front) send(host string, m map[string]any) {
 		return
 	}
 	meta, detail := AttentionDetail(d)
-	// V0.141: with several hosts a push says which one the thread runs on.
+	// V0.140: with several hosts a push says which one the thread runs on.
 	if host != "" && len(f.all()) > 1 {
 		if meta == "" {
 			meta = host
