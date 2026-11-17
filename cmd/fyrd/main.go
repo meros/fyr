@@ -481,6 +481,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	if cfg.UpdateQuietMinutes > 0 {
 		watcher.Quiet = func() time.Duration { return time.Duration(cfg.UpdateQuietMinutes) * time.Minute }
 	}
+	watcher.Every = time.Duration(cfg.UpdateEveryMinutes) * time.Minute
 	go watcher.Run(ctx)
 	// V0.126: Update now / Back to release (owner only): the newest release,
 	// at once, ending a local build's pause.

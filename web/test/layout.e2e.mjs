@@ -4131,22 +4131,26 @@ try {
 }
 });
 
-// SPEC 0.5 V0.134: the host filter, and only active filter values, the same on the desktop and the phone. 1 two hosts
-// with threads in view: a host chip each, in the owner's order, with the host's dot; one host: none. 2 a host chip
-// filters (AND the project chips, which then count only that host's threads) and is remembered. 3 every chip that is
-// not selected has a thread in view; a project with threads only in folded sections has no chip until its section
-// opens. 4 folding the last section the picked host has threads in keeps its chip, selected, and shows the empty state;
-// Clear filter clears it.
-for (const [w, hh, phone] of [[1280, 800, false], [390, 844, true]]) section(`V0.134 ${phone ? "phone" : "desktop"}`, async (h) => {
+// SPEC 0.5 V0.134, V0.169: the filter rows, the same on the desktop and the phone. 1 one host: no host row; every project
+// chip has a thread in view, and folding the sections takes their projects' chips away. 2 two hosts: row 1 is a switch,
+// one segment per host in the owner's order, all on, with its dot and count, above row 2. 3 turning host-b off hides its
+// threads, drops the projects only it has from row 2, is remembered, and leaves desk as the last host on, which cannot
+// be turned off. 4 a host turned off stays when its threads are folded away; the empty state names it; Clear filter
+// turns every host on. 5 V0.134's one-host filter is dropped.
+for (const [w, hh, phone] of [[1280, 800, false], [390, 844, true]]) section(`V0.169 ${phone ? "phone" : "desktop"}`, async (h) => {
   const { send, evaluate, waitFor, settle, navigate, openScreen, shot } = h;
-  const ctx = `V0.134 ${phone ? "phone" : "desktop"}`;
+  const ctx = `V0.169 ${phone ? "phone" : "desktop"}`;
 try {
   const root = phone ? ".m-screen " : ".ib ";
-  const go = async (url) => {
-    if (phone) await openScreen({ url, ready: "!!document.querySelector('.m-list')" }, w, hh);
+  const go = async (url, storage) => {
+    if (phone) await openScreen({ url, storage, ready: "!!document.querySelector('.m-list')" }, w, hh);
     else {
       await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
       await navigate(`${origin}/${url}`, "!!document.querySelector('.ib .list')");
+      if (storage) {
+        await evaluate(`(() => { const s = ${JSON.stringify(storage)}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+        await navigate(`${origin}/${url}`, "!!document.querySelector('.ib .list')");
+      }
     }
     await settle();
   };
@@ -4155,64 +4159,76 @@ try {
     await waitFor(until, { soft: true });
     await settle();
   };
+  const seg = (name) => `${root}.hfrow .hft[aria-label^="${name},"]`;
   const secHead = (k) => (phone ? `#m-sec-${k} .m-sec` : `#sec-${k} .sec`);
   const STATE = `(() => {
-    const chip = (b) => ({ name: b.querySelector('.ell')?.textContent ?? '', on: b.classList.contains('on'), n: Number((/: (\\d+) thread/.exec(b.title) ?? [])[1] ?? -1), dot: b.querySelector('.hdot')?.className ?? null, h: Math.round(b.getBoundingClientRect().height) });
+    const box = (e) => e?.getBoundingClientRect();
     const rows = [...document.querySelectorAll(${JSON.stringify(phone ? ".m-list .m-mv" : ".ib .list [data-id]")})];
     return {
-      hosts: [...document.querySelectorAll('${root}.pfrow .pfh')].map(chip),
-      projects: [...document.querySelectorAll('${root}.pfrow .pfc')].map(chip),
+      hosts: [...document.querySelectorAll('${root}.hfrow .hft')].map((b) => ({ name: b.querySelector('.nm')?.textContent ?? '', on: b.getAttribute('aria-pressed') === 'true', last: b.getAttribute('aria-disabled') === 'true', n: b.querySelector('.hn')?.textContent ?? '', struck: getComputedStyle(b.querySelector('.nm')).textDecorationLine, dot: b.querySelector('.hdot')?.className ?? null, h: Math.round(box(b).height) })),
+      projects: [...document.querySelectorAll('${root}.pfrow .pfc')].map((b) => ({ name: b.querySelector('.ell')?.textContent ?? '', n: Number((/: (\\d+) thread/.exec(b.title) ?? [])[1] ?? -1), h: Math.round(box(b).height) })),
+      order: (() => { const a = box(document.querySelector('${root}.hfrow')), b = box(document.querySelector('${root}.pfrow')); return a && b ? b.top >= a.bottom : null; })(),
+      fits: [...document.querySelectorAll('${root}.hfrow, ${root}.pfrow')].every((e) => box(e).right <= innerWidth + 0.5),
       // The phone rows name their host (V0.54); the desktop rows do not, so there the ids say it.
       rowHosts: [...new Set(rows.map((r) => r.querySelector('.m-hostn')?.textContent ?? r.querySelector('.m-off')?.textContent.replace(/ offline$/, '') ?? r.dataset.id ?? ''))],
       rows: rows.length,
       empty: document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})?.innerText ?? null,
-      stored: localStorage.getItem('fyr.hostFilter'),
+      stored: localStorage.getItem('fyr.hostsOff'),
+      old: localStorage.getItem('fyr.hostFilter'),
     };
   })()`;
-  // 1. One host: no host chips. Two hosts: one chip each, in the owner's order, with its dot.
+  // 1. One host: no host row; folded sections are not considered.
   await go("?mock=rail");
   const one = await evaluate(STATE);
-  check(one.hosts.length === 0, `${ctx}: one host shows host chips (${JSON.stringify(one.hosts)})`);
+  check(one.hosts.length === 0 && !(await evaluate(`!!document.querySelector('${root}.hfrow')`)), `${ctx}: one host shows a host row (${JSON.stringify(one.hosts)})`);
   check(one.projects.length > 1 && one.projects.every((c) => c.n >= 1), `${ctx}: a project chip without a thread in view (${JSON.stringify(one.projects)})`);
-  // 3. Folded sections are not considered: fold Needs, Working and Seen (Snoozed and Settled are folded already) and
-  // only the pinned threads' projects keep a chip. (Not by opening Settled: its auto-close clock keeps the DOM moving.)
+  // Fold Needs, Working and Seen (Snoozed and Settled are folded already): only the pinned threads' projects keep a
+  // chip. (Not by opening Settled: its auto-close clock keeps the DOM moving.)
   for (const k of ["needs", "working", "seen"]) await click(secHead(k), "true");
   const foldedAll = await evaluate(`({ s: ${STATE}, pinned: document.querySelectorAll(${JSON.stringify(phone ? "#m-sec-pinned .m-mv" : "#sec-pinned [data-id]")}).length })`);
   check(foldedAll.s.projects.length < one.projects.length && foldedAll.s.projects.reduce((a, c) => a + c.n, 0) <= foldedAll.pinned, `${ctx}: folding the sections does not take their projects' chips away (${JSON.stringify({ before: one.projects.map((c) => c.name), after: foldedAll.s.projects, pinned: foldedAll.pinned })})`);
-  await go("?mock=rail&hosts=2&hostOrder=host-b,desk");
+  // 2. Two hosts: the switch, all on, in the owner's order, above the projects. 5: the old key is dropped.
+  await go("?mock=rail&hosts=2&hostOrder=host-b,desk", { "fyr.hostFilter": "desk" });
   const two = await evaluate(STATE);
-  check(JSON.stringify(two.hosts.map((c) => c.name)) === JSON.stringify(["host-b", "desk"]) && two.hosts.every((c) => !c.on && c.n >= 1), `${ctx}: the host chips (${JSON.stringify(two.hosts)})`);
+  check(JSON.stringify(two.hosts.map((c) => c.name)) === JSON.stringify(["host-b", "desk"]) && two.hosts.every((c) => c.on && !c.last && Number(c.n) >= 1), `${ctx}: the host switch (${JSON.stringify(two.hosts)})`);
   check(two.hosts[0]?.dot === "hdot off" && two.hosts[1]?.dot === "hdot", `${ctx}: the hosts' dots (${JSON.stringify(two.hosts.map((c) => c.dot))})`);
-  if (phone) check([...two.hosts, ...two.projects].every((c) => c.h >= 32), `${ctx}: a chip under 32 px on the phone`);
-  await shot(`host-filter-${phone ? "phone" : "desktop"}.png`);
-  // 2. Picking host-b: only its threads; the project chips count only its threads; remembered.
-  await click(`${root}.pfrow .pfh`, `localStorage.getItem('fyr.hostFilter') === 'host-b'`);
-  const picked = await evaluate(STATE);
-  check(picked.hosts[0]?.on && picked.stored === "host-b" && picked.rows >= 1 && picked.rows < two.rows, `${ctx}: picking a host (${JSON.stringify({ hosts: picked.hosts, rows: picked.rows, before: two.rows, stored: picked.stored })})`);
-  check(picked.rowHosts.every((x) => (phone ? x === "host-b" : ["t_lasso", "t_triage"].includes(x))), `${ctx}: a row of another host under the host filter (${JSON.stringify(picked.rowHosts)})`);
-  check(picked.projects.every((c) => c.n >= 1) && picked.projects.reduce((a, c) => a + c.n, 0) <= picked.rows, `${ctx}: the project chips do not count only the picked host's threads (${JSON.stringify(picked.projects)})`);
-  await shot(`host-filter-picked-${phone ? "phone" : "desktop"}.png`);
+  check(two.order === true && two.fits, `${ctx}: the host row is not above the project row, or a row runs past the edge (${JSON.stringify({ order: two.order, fits: two.fits })})`);
+  check(two.old === null && two.stored === null && two.rows > 2, `${ctx}: V0.134's one-host filter still applies (${JSON.stringify({ old: two.old, stored: two.stored, rows: two.rows })})`);
+  if (phone) check(two.hosts.every((c) => c.h >= 36) && two.projects.every((c) => c.h >= 32), `${ctx}: a host segment under 36 px or a chip under 32 px on the phone`);
+  await shot(`host-rows-${phone ? "phone" : "desktop"}.png`);
+  // 3. host-b off: its threads go, its projects fall out of row 2, remembered; desk is the last one on.
+  await click(seg("host-b"), `localStorage.getItem('fyr.hostsOff') === '["host-b"]'`);
+  const off = await evaluate(STATE);
+  check(off.hosts[0]?.on === false && off.hosts[0]?.n === "hidden" && off.hosts[0]?.struck === "line-through" && off.hosts[1]?.on && off.hosts[1]?.last, `${ctx}: host-b off (${JSON.stringify(off.hosts)})`);
+  check(off.rows >= 1 && off.rows < two.rows && off.rowHosts.every((x) => (phone ? x === "desk" : !["t_lasso", "t_triage"].includes(x))), `${ctx}: a host-b thread with host-b off (${JSON.stringify({ rowHosts: off.rowHosts, rows: off.rows, before: two.rows })})`);
+  const gone = two.projects.map((c) => c.name).filter((n) => !off.projects.some((c) => c.name === n));
+  check(gone.includes("acme/ops") && off.projects.every((c) => c.n >= 1 && two.projects.some((d) => d.name === c.name)), `${ctx}: host-b's projects do not fall out of row 2 (${JSON.stringify({ before: two.projects.map((c) => c.name), after: off.projects })})`);
+  await shot(`host-rows-off-${phone ? "phone" : "desktop"}.png`);
+  await click(seg("desk"), "true");
+  check((await evaluate(STATE)).stored === '["host-b"]', `${ctx}: the last host on was turned off`);
   await go("?mock=rail&hosts=2&hostOrder=host-b,desk");
   const again = await evaluate(STATE);
-  check(again.hosts[0]?.on && again.rows === picked.rows, `${ctx}: the host filter is not remembered on this device (${JSON.stringify(again.hosts)})`);
-  // 4. Fold Needs (host-b's threads are there): its chip stays, selected; the empty state names it.
+  check(again.hosts[0]?.on === false && again.rows === off.rows, `${ctx}: the hosts turned off are not remembered on this device (${JSON.stringify(again.hosts)})`);
+  await click(seg("host-b"), `!localStorage.getItem('fyr.hostsOff')`);
+  check((await evaluate(STATE)).hosts.every((c) => c.on), `${ctx}: host-b back on`);
+  // 4. desk off, then fold Needs (host-b's threads are there): desk stays off; the empty state; Clear filter.
+  await click(seg("desk"), `localStorage.getItem('fyr.hostsOff') === '["desk"]'`);
   await click(secHead("needs"), `!!document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})`);
   const folded = await evaluate(STATE);
-  check(folded.hosts.some((c) => c.name === "host-b" && c.on && c.n === 0) && folded.stored === "host-b", `${ctx}: the selected host's chip after its threads were folded away (${JSON.stringify(folded.hosts)})`);
-  check(/^No threads in view for host-b\.\s*\d+ more in folded sections?\.\s*Clear filter$/.test(folded.empty ?? ""), `${ctx}: the empty state "${folded.empty}"`);
-  check(folded.projects.length === 0, `${ctx}: project chips with no thread in view (${JSON.stringify(folded.projects)})`);
-  await shot(`host-filter-empty-${phone ? "phone" : "desktop"}.png`);
-  await click(`${phone ? ".m-fempty" : ".fempty"} .fe3`, `!localStorage.getItem('fyr.hostFilter')`);
+  check(folded.hosts.some((c) => c.name === "desk" && !c.on), `${ctx}: the host turned off after the other host's threads were folded away (${JSON.stringify(folded.hosts)})`);
+  check(/^No threads in view with desk hidden\.\s*\d+ more in folded sections?\.\s*Clear filter$/.test(folded.empty ?? ""), `${ctx}: the empty state "${folded.empty}"`);
+  await shot(`host-rows-empty-${phone ? "phone" : "desktop"}.png`);
+  await click(`${phone ? ".m-fempty" : ".fempty"} .fe3`, `!localStorage.getItem('fyr.hostsOff')`);
   const cleared = await evaluate(STATE);
-  check(cleared.empty === null && cleared.hosts.every((c) => !c.on) && cleared.stored === null, `${ctx}: Clear filter (${JSON.stringify(cleared)})`);
+  check(cleared.empty === null && cleared.stored === null, `${ctx}: Clear filter (${JSON.stringify(cleared)})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }
 });
 
 // SPEC 0.5 V0.138: a thread that opens clears the filters it fails, so its row is in the list and marked (V0.109).
-// 1 filtered to desk and acme/web, a link to t_lasso (host-b, acme/web) clears only the host filter and
-// marks its row. 2 with both filters failing, both clear. 3 V0.114: a link to a quiet thread shows the gate and
+// V0.169: per row. 1 with host-b off and acme/web picked, a link to t_lasso (host-b, acme/web) turns host-b back on,
+// keeps the project and marks its row. 2 with both filters failing, both clear. 3 V0.114: a link to a quiet thread shows the gate and
 // clears nothing.
 for (const phone of [false, true]) section(`V0.138 ${phone ? "phone" : "desktop"}`, async (h) => {
   const { send, evaluate, waitFor, settle, navigate, openScreen } = h;
@@ -4228,23 +4244,23 @@ try {
     }
     await settle();
   };
-  const F = `({ host: localStorage.getItem('fyr.hostFilter'), project: localStorage.getItem('fyr.projectFilter') })`;
+  const F = `({ off: localStorage.getItem('fyr.hostsOff'), project: localStorage.getItem('fyr.projectFilter') })`;
   const MARK = `({ ids: [...document.querySelectorAll('.list [aria-selected="true"]')].map((x) => x.dataset.id), pane: document.querySelector('.th .tt')?.getAttribute('title') ?? null })`;
   const threadReady = phone ? "!!document.querySelector('.m-thread, .qgate')" : "!!document.querySelector('.th .tt, .qgate')";
   // 1. Only the host filter fails.
-  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostFilter": "desk", "fyr.projectFilter": "p_web" }, threadReady);
-  await waitFor(`${F}.host === null`, { soft: true });
+  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": "p_web" }, threadReady);
+  await waitFor(`${F}.off === null`, { soft: true });
   const a = await evaluate(F);
-  check(a.host === null && a.project === "p_web", `${ctx}: a link to a host-b thread under the desk filter (${JSON.stringify(a)})`);
+  check(a.off === null && a.project === "p_web", `${ctx}: a link to a host-b thread with host-b off (${JSON.stringify(a)})`);
   if (!phone) {
     await waitFor(`${MARK}.ids[0] === 't_lasso'`, { soft: true });
     const m = await evaluate(MARK);
     check(m.ids.length === 1 && m.ids[0] === "t_lasso" && m.pane === "Fix map lasso on mobile", `${ctx}: the opened thread's row is not marked (${JSON.stringify(m)})`);
-    // Picking a filter while the thread is open does not clear it again.
-    await evaluate(`[...document.querySelectorAll('.ib .pfrow .pfh')].find((b) => b.textContent.includes('desk'))?.click()`);
-    await waitFor(`${F}.host === 'desk'`, { soft: true });
+    // Turning a host off while the thread is open is not undone.
+    await evaluate(`document.querySelector('.ib .hfrow .hft[aria-label^="host-b,"]')?.click()`);
+    await waitFor(`${F}.off === '["host-b"]'`, { soft: true });
     await settle();
-    check((await evaluate(F)).host === "desk", `${ctx}: a host picked while the thread is open is cleared again`);
+    check((await evaluate(F)).off === '["host-b"]', `${ctx}: a host turned off while the thread is open is turned back on`);
   } else {
     // Back to the list: the thread's row is there.
     await evaluate(`history.back()`);
@@ -4252,22 +4268,22 @@ try {
     check(await evaluate(`[...document.querySelectorAll('.m-list .m-mv')].some((r) => r.textContent.includes('Fix map lasso'))`), `${ctx}: the opened thread's row is not in the list after Back`);
   }
   // 2. Both fail.
-  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostFilter": "desk", "fyr.projectFilter": "p_home" }, threadReady);
-  await waitFor(`${F}.host === null && ${F}.project === null`, { soft: true });
+  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": "p_home" }, threadReady);
+  await waitFor(`${F}.off === null && ${F}.project === null`, { soft: true });
   const b = await evaluate(F);
-  check(b.host === null && b.project === null, `${ctx}: both filters failing (${JSON.stringify(b)})`);
+  check(b.off === null && b.project === null, `${ctx}: both filters failing (${JSON.stringify(b)})`);
   if (!phone) {
     // 2b. A thread in the folded Settled section: the filter clears, then its section opens and its row is marked.
-    await open("?mock=rail&hosts=2&open=t_set7", { "fyr.hostFilter": "host-b", "fyr.projectFilter": null }, "!!document.querySelector('.th .tt')");
+    await open("?mock=rail&hosts=2&open=t_set7", { "fyr.hostsOff": '["desk"]', "fyr.projectFilter": null }, "!!document.querySelector('.th .tt')");
     await waitFor(`${MARK}.ids[0] === 't_set7'`, { soft: true });
     const m = await evaluate(MARK);
-    check(m.ids.length === 1 && m.ids[0] === "t_set7" && (await evaluate(F)).host === null, `${ctx}: a Settled thread opened under another host's filter (${JSON.stringify(m)})`);
+    check(m.ids.length === 1 && m.ids[0] === "t_set7" && (await evaluate(F)).off === null, `${ctx}: a Settled thread opened with its host off (${JSON.stringify(m)})`);
   }
   // 3. A quiet thread: the gate, and the filter stays.
-  await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostFilter": "host-b", "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");
+  await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostsOff": '["desk"]', "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");
   await settle();
   const c = await evaluate(F);
-  check(c.host === "host-b", `${ctx}: a link to a quiet thread cleared the filter before the hold (${JSON.stringify(c)})`);
+  check(c.off === '["desk"]', `${ctx}: a link to a quiet thread turned its host on before the hold (${JSON.stringify(c)})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }

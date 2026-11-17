@@ -62,7 +62,7 @@ import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, moveToast, orderProjects } from "./projects.ts";
-import { HOST_FILTER_KEY, activeFilters, applyFilters, clearFor, filterEmpty, type FilterSel } from "./filters.ts";
+import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clearFor, filterEmpty, parseHostsOff, toggleHost, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
@@ -275,19 +275,20 @@ function App() {
       /* storage blocked */
     }
   };
-  // V0.134: the host filter, remembered per device beside the project filter.
-  const [hostFilter, setHostFilterState] = useState<string | null>(() => {
+  // V0.169: the hosts turned off, remembered per device beside the project filter. V0.134's one host is dropped.
+  const [hostsOff, setHostsOffState] = useState<string[]>(() => {
     try {
-      return localStorage.getItem(HOST_FILTER_KEY) || null;
+      localStorage.removeItem(OLD_HOST_FILTER_KEY);
+      return parseHostsOff(localStorage.getItem(HOSTS_OFF_KEY));
     } catch {
-      return null;
+      return [];
     }
   });
-  const setHostFilter = (name: string | null) => {
-    setHostFilterState(name);
+  const setHostsOff = (names: string[]) => {
+    setHostsOffState(names);
     try {
-      if (name) localStorage.setItem(HOST_FILTER_KEY, name);
-      else localStorage.removeItem(HOST_FILTER_KEY);
+      if (names.length) localStorage.setItem(HOSTS_OFF_KEY, JSON.stringify(names));
+      else localStorage.removeItem(HOSTS_OFF_KEY);
     } catch {
       /* storage blocked */
     }
@@ -316,7 +317,7 @@ function App() {
   const filterOn = !!projectFilter && store.projects.some((p) => p.id === projectFilter);
   // V0.114: one unlock of quiet projects on this device for every path (New thread, the filter, search, the gate).
   const unlock = useQuietUnlock(store.clockOffset);
-  const filterSel = useMemo<FilterSel>(() => ({ host: hostFilter, project: projectFilter || null }), [hostFilter, projectFilter]);
+  const filterSel = useMemo<FilterSel>(() => ({ hostsOff, project: projectFilter || null }), [hostsOff, projectFilter]);
   // V0.134: host AND project.
   const filtered = useMemo(() => applyFilters(store.threads, filterSel, store.projects, store.host ?? ""), [store.threads, store.projects, filterSel, store.host]);
   // What search and the filter may reach: quiet threads only while the unlock runs (V0.114; V0.46 (4) showed them).
@@ -341,16 +342,17 @@ function App() {
   }, [searchable, filterOn, query, quietClock, store.clockOffset]);
   const queue = useSlotQueue(); // V0.137
   const sec = useMemo(() => sections(shown, queue), [shown, queue]);
-  // V0.134: the chips (only values with threads in view; a selected one stays) and the empty state, on both fronts.
+  // V0.134, V0.169: the two rows (only values with threads in view; a selected one stays) and the empty state, on both
+  // fronts.
   const filterView = useMemo<FilterView>(() => {
     const chips = activeFilters({ threads: store.threads, projects: store.projects, hosts: store.hosts, self: store.host ?? "", sel: filterSel, open: sectionOpen, now: Date.now() + store.clockOffset, showUntil: unlock.showUntil });
     const locked = !!filterSel.project && chips.projects.some((c) => c.selected && quietLocked(c.project, Date.now() + store.clockOffset, unlock.showUntil));
     return {
       ...chips,
       sel: filterSel,
-      setHost: setHostFilter,
+      toggleHost: (name) => setHostsOff(toggleHost(filterSel.hostsOff, name)),
       setProject: setProjectFilter,
-      clear: () => (setHostFilter(null), setProjectFilter(null)),
+      clear: () => (setHostsOff([]), setProjectFilter(null)),
       // V0.114: a locked quiet project shows its gate instead.
       empty: locked ? null : filterEmpty(hideQuiet(searchable, filterOn, Date.now() + store.clockOffset), filterSel, sectionOpen),
     };
@@ -384,7 +386,7 @@ function App() {
     clearedForRef.current = admittedThread.id;
     const next = clearFor(admittedThread, filterSel, store.projects, store.host ?? "");
     if (!next) return;
-    if (next.host !== filterSel.host) setHostFilter(next.host);
+    if (next.hostsOff.length !== filterSel.hostsOff.length) setHostsOff(next.hostsOff); // V0.169: its host back on
     if (next.project !== filterSel.project) setProjectFilter(next.project);
   }, [gate.admitted, !!admittedThread]);
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;

@@ -1,7 +1,8 @@
-// SPEC 0.5 V0.134: the inbox filters (host and project) show only active values; a selected value stays.
+// SPEC 0.5 V0.134, V0.138, V0.169: the inbox filters. Row 1 toggles each host on or off (all on is no filter); row 2,
+// the projects, follows from it. Only active values show; a selected value (a project picked, a host off) stays.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activeFilters, applyFilters, clearFor, filterEmpty, inView, threadHost } from "../src/filters.ts";
+import { activeFilters, applyFilters, clearFor, filterEmpty, inView, parseHostsOff, threadHost, toggleHost, type FilterSel } from "../src/filters.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Project, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
@@ -15,6 +16,7 @@ const byId = (...ts: Thread[]) => Object.fromEntries(ts.map((t) => [t.id, t]));
 const T = (id: string, section: "needs" | "working" | "seen" | "snoozed" | "settled", projectId: string, host: string, extra: Record<string, unknown> = {}) =>
   thread(id, "done", section, { projectId, project: projects.find((p) => p.id === projectId)?.name ?? "", host, ...extra });
 const base = { projects, hosts, self: "desk", now: NOW, showUntil: 0, open: {} };
+const S = (hostsOff: string[] = [], project: string | null = null): FilterSel => ({ hostsOff, project });
 const names = (f: ReturnType<typeof activeFilters>) => ({ hosts: f.hosts.map((h) => h.name), projects: f.projects.map((p) => p.project.name) });
 
 test("a thread's host: its own, else the front's own host", () => {
@@ -32,91 +34,108 @@ test("in view: an unfolded section or pinned; Snoozed and Settled are folded by 
   assert.equal(inView(thread("x", "done", "archived" as never), {}), false);
 });
 
-test("one chip per host and project with threads in view, in the owner's order", () => {
-  const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "working", "p_web", "lab"), T("c", "seen", "p_web", "server"));
-  const f = activeFilters({ ...base, threads, sel: { host: null, project: null } });
-  assert.deepEqual(names(f), { hosts: ["lab", "desk", "server"], projects: ["web", "fyr"] });
-  assert.deepEqual(f.hosts.map((h) => h.n), [1, 1, 1]);
-  assert.equal(f.hosts[2].info?.online, false, "an offline host still has threads, so it counts");
+test("V0.169: row 1 has a toggle per host with threads in view, in the owner's order, all on by default, with short names", () => {
+  const hs = [H("meros-laptop"), H("meros-server", false)];
+  const threads = byId(T("a", "needs", "p_fyr", "meros-laptop"), T("b", "working", "p_web", "meros-server"), T("c", "seen", "p_web", "meros-laptop"));
+  const f = activeFilters({ ...base, hosts: hs, self: "meros-laptop", threads, sel: S() });
+  assert.deepEqual(f.hosts.map((h) => [h.name, h.short, h.n, h.on, h.last]), [["meros-laptop", "laptop", 2, true, false], ["meros-server", "server", 1, true, false]]);
+  assert.equal(f.hosts[1].info?.online, false, "an offline host still has threads, so it counts");
 });
 
-test("a group with one active value shows no chips", () => {
+test("V0.169: row 1 is hidden with one host; row 2 with one project in view", () => {
   const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "working", "p_web", "desk"));
-  assert.deepEqual(names(activeFilters({ ...base, threads, sel: { host: null, project: null } })), { hosts: [], projects: ["web", "fyr"] });
+  assert.deepEqual(names(activeFilters({ ...base, threads, sel: S() })), { hosts: [], projects: ["web", "fyr"] });
   const one = byId(T("a", "needs", "p_fyr", "desk"), T("b", "working", "p_fyr", "lab"));
-  assert.deepEqual(names(activeFilters({ ...base, threads: one, sel: { host: null, project: null } })), { hosts: ["lab", "desk"], projects: [] });
+  assert.deepEqual(names(activeFilters({ ...base, threads: one, sel: S() })), { hosts: ["lab", "desk"], projects: [] });
 });
 
-test("folded sections are not considered", () => {
+test("folded sections are not considered, in either row", () => {
   const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "settled", "p_web", "lab"), T("c", "snoozed", "p_home", "server"));
-  assert.deepEqual(names(activeFilters({ ...base, threads, sel: { host: null, project: null } })), { hosts: [], projects: [] });
-  assert.deepEqual(names(activeFilters({ ...base, threads, open: { settled: true }, sel: { host: null, project: null } })), { hosts: ["lab", "desk"], projects: ["web", "fyr"] });
+  assert.deepEqual(names(activeFilters({ ...base, threads, sel: S() })), { hosts: [], projects: [] });
+  assert.deepEqual(names(activeFilters({ ...base, threads, open: { settled: true }, sel: S() })), { hosts: ["lab", "desk"], projects: ["web", "fyr"] });
 });
 
-test("each group counts the threads the other group lets through (host AND project)", () => {
-  const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "needs", "p_web", "lab"), T("c", "needs", "p_web", "desk"));
-  // With desk picked, web and fyr both have threads there.
-  assert.deepEqual(names(activeFilters({ ...base, threads, sel: { host: "desk", project: null } })).projects, ["web", "fyr"]);
-  // With fyr picked, only desk has fyr threads: the host group has one value and nothing selected, so it hides.
-  assert.deepEqual(names(activeFilters({ ...base, threads, sel: { host: null, project: "p_fyr" } })).hosts, []);
-  // With web picked, lab and desk both have web threads.
-  assert.deepEqual(names(activeFilters({ ...base, threads, sel: { host: null, project: "p_web" } })).hosts, ["lab", "desk"]);
+test("V0.169: a host turned off hides its threads, and its projects fall out of row 2", () => {
+  const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "needs", "p_web", "lab"), T("c", "needs", "p_home", "lab"), T("d", "needs", "p_web", "desk"));
+  const f = activeFilters({ ...base, threads, sel: S(["lab"]) });
+  assert.deepEqual(names(f), { hosts: ["lab", "desk"], projects: ["web", "fyr"] }, "home is only on lab: it falls out; web is on desk too: it stays");
+  assert.deepEqual(f.hosts.map((h) => [h.name, h.on, h.n, h.last]), [["lab", false, 2, false], ["desk", true, 2, true]], "row 1 keeps counting every host; desk is the last one on");
+  assert.deepEqual(Object.keys(applyFilters(threads, S(["lab"]), projects, "desk")), ["a", "d"]);
 });
 
-test("a selected value stays, selected, after its last thread leaves or is folded away; its group stays too", () => {
+test("V0.169: row 1 does not follow the project filter; row 2 follows row 1", () => {
+  const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "needs", "p_web", "lab"));
+  // fyr is only on desk, yet row 1 still offers lab: the rows are separate, and row 1 comes first.
+  assert.deepEqual(names(activeFilters({ ...base, threads, sel: S([], "p_fyr") })).hosts, ["lab", "desk"]);
+});
+
+test("V0.169: a host that is off stays in row 1 when its last thread leaves, is folded away, or the front stops listing it", () => {
   const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "settled", "p_web", "lab"));
-  const f = activeFilters({ ...base, threads, sel: { host: "lab", project: "p_web" } });
-  assert.deepEqual(names(f), { hosts: ["lab"], projects: ["web"] });
-  assert.equal(f.hosts[0].selected && f.projects[0].selected, true);
-  assert.equal(f.hosts[0].n + f.projects[0].n, 0);
-  // A host that is no longer on the front's list keeps its chip by name.
-  const g = activeFilters({ ...base, threads, sel: { host: "gone", project: null } });
-  assert.deepEqual(g.hosts.map((h) => [h.name, h.selected, h.info]), [["desk", false, hosts[1]], ["gone", true, undefined]], "desk still has a thread in view; gone goes after the listed hosts");
+  const f = activeFilters({ ...base, threads, sel: S(["lab"]) });
+  assert.deepEqual(f.hosts.map((h) => [h.name, h.on, h.n]), [["lab", false, 0], ["desk", true, 1]]);
+  const g = activeFilters({ ...base, threads, sel: S(["gone"]) });
+  assert.deepEqual(g.hosts.map((h) => [h.name, h.on, h.info]), [["desk", true, hosts[1]], ["gone", false, undefined]], "after the listed hosts, by name");
 });
 
-test("a selected value sits in the owner's order among the active ones", () => {
-  const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "needs", "p_home", "desk"));
-  assert.deepEqual(names(activeFilters({ ...base, threads, sel: { host: null, project: "p_web" } })).projects, ["web", "fyr", "home"]);
+test("V0.134: a selected project stays, selected, after its last thread leaves; its row stays too", () => {
+  const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "settled", "p_web", "desk"));
+  const f = activeFilters({ ...base, threads, sel: S([], "p_web") });
+  assert.deepEqual(f.projects.map((c) => [c.project.name, c.selected, c.n]), [["web", true, 0], ["fyr", false, 1]]);
+  // A project picked whose threads are all on a host turned off stays, selected, too.
+  const g = activeFilters({ ...base, threads: byId(T("a", "needs", "p_fyr", "desk"), T("b", "needs", "p_web", "lab")), sel: S(["lab"], "p_web") });
+  assert.deepEqual(g.projects.map((c) => [c.project.name, c.selected, c.n]), [["web", true, 0], ["fyr", false, 1]], "fyr is on desk, which is on");
 });
 
 test("V0.114: a quiet project is not shown or counted while locked; unlocked, it is; selected, it stays", () => {
   const quietUntil = "2026-11-17T18:00:00Z";
   const qp = [P("p_web", "web"), P("p_fyr", "fyr"), P("p_home", "home", { quietUntil })];
   const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "needs", "p_web", "desk"), T("c", "needs", "p_home", "lab", { quietUntil }));
-  const locked = activeFilters({ ...base, projects: qp, threads, sel: { host: null, project: null } });
+  const locked = activeFilters({ ...base, projects: qp, threads, sel: S() });
   assert.deepEqual(names(locked), { hosts: [], projects: ["web", "fyr"] }, "lab has only quiet threads: not counted");
-  const unlocked = activeFilters({ ...base, projects: qp, threads, showUntil: NOW + 60_000, sel: { host: null, project: null } });
+  const unlocked = activeFilters({ ...base, projects: qp, threads, showUntil: NOW + 60_000, sel: S() });
   assert.deepEqual(names(unlocked).projects, ["web", "fyr", "home"]);
   assert.deepEqual(names(unlocked).hosts, [], "unlocked quiet threads stay out of the inbox (V0.46) unless their project is picked");
-  const picked = activeFilters({ ...base, projects: qp, threads, sel: { host: null, project: "p_home" } });
+  const picked = activeFilters({ ...base, projects: qp, threads, sel: S([], "p_home") });
   assert.deepEqual(names(picked).projects, ["web", "fyr", "home"]);
   assert.equal(picked.projects[2].selected, true);
 });
 
-test("applyFilters: host AND project; a project that no longer exists filters nothing", () => {
-  const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "needs", "p_web", "lab"), T("c", "needs", "p_web", "desk"));
-  assert.deepEqual(Object.keys(applyFilters(threads, { host: "desk", project: "p_web" }, projects, "desk")), ["c"]);
-  assert.deepEqual(Object.keys(applyFilters(threads, { host: "desk", project: null }, projects, "desk")), ["a", "c"]);
-  assert.deepEqual(Object.keys(applyFilters(threads, { host: null, project: "p_gone" }, projects, "desk")), ["a", "b", "c"]);
+test("toggleHost: off and on again; the list stays in no order but without repeats", () => {
+  assert.deepEqual(toggleHost([], "lab"), ["lab"]);
+  assert.deepEqual(toggleHost(["lab"], "lab"), []);
+  assert.deepEqual(toggleHost(["lab"], "desk"), ["lab", "desk"]);
+});
+
+test("parseHostsOff: what the device stored, else none off", () => {
+  assert.deepEqual(parseHostsOff(null), []);
+  assert.deepEqual(parseHostsOff('["lab","desk"]'), ["lab", "desk"]);
+  assert.deepEqual(parseHostsOff("not json"), []);
+  assert.deepEqual(parseHostsOff('[1,"lab",null]'), ["lab"]);
+});
+
+test("applyFilters: hosts on AND project; a project that no longer exists filters nothing", () => {
+  const threads = byId(T("a", "needs", "p_fyr", "desk"), T("b", "needs", "p_web", "lab"), T("c", "needs", "p_web", "desk"), thread("n", "done", "needs"));
+  assert.deepEqual(Object.keys(applyFilters(threads, S(["lab"], "p_web"), projects, "desk")), ["c"]);
+  assert.deepEqual(Object.keys(applyFilters(threads, S(["desk"]), projects, "desk")), ["b"], "a thread that names no host is on the front's own host");
+  assert.deepEqual(Object.keys(applyFilters(threads, S([], "p_gone"), projects, "desk")), ["a", "b", "c", "n"]);
 });
 
 test("the empty state: a filter is on and nothing it lets through is in view", () => {
   const threads = byId(T("a", "settled", "p_web", "lab"), T("b", "settled", "p_web", "lab"));
-  assert.equal(filterEmpty(threads, { host: null, project: null }, {}), null, "no filter: the plain list");
-  assert.equal(filterEmpty(threads, { host: "lab", project: null }, {}), "2 more in folded sections.");
-  assert.equal(filterEmpty({}, { host: "lab", project: null }, {}), "");
-  assert.equal(filterEmpty(threads, { host: "lab", project: null }, { settled: true }), null, "a thread in view: no empty state");
+  assert.equal(filterEmpty(threads, S(), {}), null, "no filter: the plain list");
+  assert.equal(filterEmpty(threads, S(["desk"]), {}), "2 more in folded sections.");
+  assert.equal(filterEmpty({}, S([], "p_web"), {}), "");
+  assert.equal(filterEmpty(threads, S(["desk"]), { settled: true }), null, "a thread in view: no empty state");
 });
 
-// SPEC 0.5 V0.138: an open thread the filters hide clears the filters it fails, and only those.
-test("clearFor: the filters the open thread fails, and only those", () => {
+test("V0.138, V0.169: opening a thread turns its host back on and clears a project it fails; only those", () => {
   const onLab = T("a", "needs", "p_web", "lab");
-  assert.equal(clearFor(onLab, { host: null, project: null }, projects, "desk"), null, "no filter: nothing to clear");
-  assert.equal(clearFor(onLab, { host: "lab", project: "p_web" }, projects, "desk"), null, "it passes both");
-  assert.deepEqual(clearFor(onLab, { host: "desk", project: "p_web" }, projects, "desk"), { host: null, project: "p_web" }, "only the host");
-  assert.deepEqual(clearFor(onLab, { host: "lab", project: "p_fyr" }, projects, "desk"), { host: "lab", project: null }, "only the project");
-  assert.deepEqual(clearFor(onLab, { host: "desk", project: "p_fyr" }, projects, "desk"), { host: null, project: null }, "both");
-  assert.equal(clearFor(onLab, { host: "lab", project: "p_gone" }, projects, "desk"), null, "a project that no longer exists filters nothing, so it is not cleared");
-  assert.deepEqual(clearFor(thread("n", "done", "needs"), { host: "lab", project: null }, projects, "desk"), { host: null, project: null }, "no host named: the front's own host");
-  assert.deepEqual(clearFor(thread("n", "done", "needs", { project: "", projectId: undefined }), { host: null, project: "p_web" }, projects, "desk"), { host: null, project: null }, "No project fails a project filter");
+  assert.equal(clearFor(onLab, S(), projects, "desk"), null, "no filter: nothing to clear");
+  assert.equal(clearFor(onLab, S(["desk"], "p_web"), projects, "desk"), null, "its host is on and its project picked");
+  assert.deepEqual(clearFor(onLab, S(["lab", "server"], "p_web"), projects, "desk"), S(["server"], "p_web"), "only its host comes back on");
+  assert.deepEqual(clearFor(onLab, S(["server"], "p_fyr"), projects, "desk"), S(["server"], null), "only the project");
+  assert.deepEqual(clearFor(onLab, S(["lab"], "p_fyr"), projects, "desk"), S([], null), "both");
+  assert.equal(clearFor(onLab, S([], "p_gone"), projects, "desk"), null, "a project that no longer exists filters nothing, so it is not cleared");
+  assert.deepEqual(clearFor(thread("n", "done", "needs"), S(["desk"]), projects, "desk"), S([], null), "no host named: the front's own host");
+  assert.deepEqual(clearFor(thread("n", "done", "needs", { project: "", projectId: undefined }), S([], "p_web"), projects, "desk"), S([], null), "No project fails a project filter");
 });
