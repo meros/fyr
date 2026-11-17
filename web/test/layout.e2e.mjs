@@ -3145,13 +3145,15 @@ section('V0.162', async (h) => {
     await openScreen({ url: "?mock=rail&open=t_poly" }, 390, 844);
     await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
     await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.querySelector('.ell')?.firstChild?.textContent === 'Pin')?.click()`);
-    await waitFor(`!document.querySelector('.m-sheet')`, { soft: true });
-    await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
-    await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => /^Settle/.test(b.querySelector('.ell')?.firstChild?.textContent ?? ''))?.click()`);
-    await waitFor(`(window.__fyrCommands ?? []).some(c => c.action === 'thread.settle' && c.threadId === 't_poly')`, { soft: true });
-    // A settle leaves the open thread by itself (leaveOpenThread); Back is pressed only when the thread is still open.
-    await evaluate(`document.querySelector('button[aria-label="Back to the inbox"]')?.click()`);
-    await waitFor(`!!document.querySelector('.m-list') && !document.querySelector('#m-sec-pinned')`, { soft: true });
+    await waitFor(`!document.querySelector('.m-sheet')`, { what: "the sheet to close after Pin" });
+    // The sheet sends Pin after it closes: the reopened sheet offers Unpin once the pin is in.
+    const sheetItem = (re) => `[...document.querySelectorAll('.m-sheet .m-mi')].find(b => ${re}.test(b.querySelector('.ell')?.firstChild?.textContent ?? ''))`;
+    await tapCenter(".m-tr1 .b44:last-child", `!!${sheetItem("/^Unpin$/")}`);
+    await evaluate(`${sheetItem("/^Settle/")}?.click()`);
+    // The settle leaves the open thread by itself (leaveOpenThread, after the host's answer); the check presses no Back,
+    // because a Back pressed before that answer is a second history step, out of the page. It waits for the inbox
+    // without a Pinned block, still on the page that sent the settle.
+    await waitFor(`(window.__fyrCommands ?? []).some(c => c.action === 'thread.settle' && c.threadId === 't_poly') && !!document.querySelector('.m-list') && !document.querySelector('#m-sec-pinned')`, { what: "the inbox without a Pinned block after the owner's Settle", soft: true });
     const o = await evaluate(`({ sends: (window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle' && c.threadId === 't_poly').map(c => !!c.args?.now), pinned: !!document.querySelector('#m-sec-pinned') })`);
     check(JSON.stringify(o.sends) === "[false]" && !o.pinned, `V0.162 phone: the owner's own Settle of a pinned thread did not settle it (${JSON.stringify(o)})`);
   } catch (e) {
