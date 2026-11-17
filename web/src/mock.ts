@@ -1806,9 +1806,9 @@ function laptopLoad(): HostLoad[] {
       memoryStall: "ok",
       agentsCpuPressure: 88,
       jobs: [
-        { class: "fyr: make test", runs: 14, cores: 2.3, demand: 3.4, peak: 2.1e9, wall: 95, at: "2026-11-17T09:12:00Z" },
-        { class: "Acme: yarn screenshot:diff", runs: 6, cores: 1.1, demand: 1.9, peak: 6.4e9, wall: 437, at: "2026-11-17T08:40:00Z" },
-        { class: "fyr: e2e", runs: 3, cores: 0.9, demand: 1.2, peak: 1.8e9, wall: 254, at: "2026-11-17T08:02:00Z" },
+        { class: "fyr: make test", runs: 14, cores: 2.3, demand: 3.4, peak: 2.1e9, wall: 95, at: "2026-11-17T09:12:00Z", cost: 1.7, learned: 14 },
+        { class: "Acme: yarn screenshot:diff", runs: 6, cores: 1.1, demand: 1.9, peak: 6.4e9, wall: 437, at: "2026-11-17T08:40:00Z", cost: 1, learned: 6 },
+        { class: "fyr: e2e", runs: 3, cores: 0.9, demand: 1.2, peak: 1.8e9, wall: 254, at: "2026-11-17T08:02:00Z", cost: 0.6, learned: 2 },
       ],
     },
   ];

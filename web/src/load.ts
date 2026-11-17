@@ -21,6 +21,9 @@ export interface JobClass {
   /** seconds */
   wall: number;
   at: string;
+  /** decision 0029 S3: the class's cost on this host now and how many runs it is learned from */
+  cost?: number;
+  learned?: number;
 }
 export interface HostLoad {
   host: string;
@@ -289,9 +292,12 @@ const duration = (sec: number) => {
 
 /** Decision 0029 S1: Settings → Automation's line per measured job class: its runs, the cores its newest run used
  *  (and would have used when starved), its memory peak, and its typical wall time. */
-export function jobLines(h: HostLoad): { class: string; text: string }[] {
+export function jobLines(h: HostLoad): { class: string; text: string; cost: string; learned: boolean }[] {
   return (h.jobs ?? []).map((j) => {
     const cores = cpuText(j.cores) + (j.demand >= j.cores + 0.05 ? `, would use ${one(j.demand)}` : "");
-    return { class: j.class, text: `${j.runs} ${j.runs === 1 ? "run" : "runs"} · ${cores} · peak ${gb(j.peak)} GB · ${duration(j.wall)}` };
+    // Decision 0029 S3: the learned cost; under three runs a class still counts as at least 1.0.
+    const n = j.learned ?? 0;
+    const cost = j.cost === undefined || !n ? "" : n >= 3 ? `cost ${one(j.cost)} · learned from ${n} runs` : `cost ${one(j.cost)} · ${n} of 3 runs to learn`;
+    return { class: j.class, text: `${j.runs} ${j.runs === 1 ? "run" : "runs"} · ${cores} · peak ${gb(j.peak)} GB · ${duration(j.wall)}`, cost, learned: n > 0 };
   });
 }

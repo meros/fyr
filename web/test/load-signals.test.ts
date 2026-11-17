@@ -68,8 +68,8 @@ test("Settings lists each measured job class in words", () => {
     ],
   };
   assert.deepEqual(jobLines(h), [
-    { class: "fyr: make test", text: "12 runs · 2.3 cores, would use 3.1 · peak 2.1 GB · 1 min 35 s" },
-    { class: "Acme: yarn screenshot:diff", text: "1 run · 1.0 core · peak 6.5 GB · 7 min 17 s" },
+    { class: "fyr: make test", text: "12 runs · 2.3 cores, would use 3.1 · peak 2.1 GB · 1 min 35 s", cost: "", learned: false },
+    { class: "Acme: yarn screenshot:diff", text: "1 run · 1.0 core · peak 6.5 GB · 7 min 17 s", cost: "", learned: false },
   ]);
   assert.deepEqual(jobLines(host), []);
 });

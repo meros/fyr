@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -68,7 +69,10 @@ func TestS1SignalsByProvider(t *testing.T) {
 	if l.Provider != "proc" || l.MemoryStall != "critical" || l.Headroom == nil || fmt.Sprintf("%.3f", *l.Headroom) != fmt.Sprintf("%.3f", 20.0/(0.8*32)) {
 		t.Fatalf("proc provider %+v %q %v", l.Provider, l.MemoryStall, l.Headroom)
 	}
-	// No /proc (macOS, decision 0029 deferred): no signals at all, as before.
+	// No /proc: macOS reads sysctl (host_darwin_test.go); any other host has no signals at all.
+	if runtime.GOOS == "darwin" {
+		return
+	}
 	l = (&Sampler{Proc: t.TempDir(), Cores: 4}).Get()
 	if l.Provider != "" || l.Capacity != nil || l.Headroom != nil || l.MemoryStall != "" || l.Slowdown != nil {
 		t.Fatalf("no provider %+v", l)
@@ -127,7 +131,7 @@ func TestS1ASlotHoldLeavesAJobRecord(t *testing.T) {
 	pool := slots.New(2)
 	pool.Now = func() time.Time { return now }
 	store := kv{}
-	j := &Jobs{KV: store, Project: func(id string) string { return map[string]string{"t_a": "fyr"}[id] }}
+	j := &Jobs{KV: store, Project: func(id string) string { return map[string]string{"t_a": "fyr"}[id] }, Now: func() time.Time { return now }}
 	s := &Sampler{Tree: tr, Proc: proc, Cores: 4, Slots: pool, Jobs: j, Now: func() time.Time { return now }}
 
 	pool.Acquire("t_a", slots.Test)
@@ -250,5 +254,66 @@ func TestHeadroomCountsTheWorkingSetNotTheCache(t *testing.T) {
 	want := float64(9216-(9215-5456)) / 9216
 	if l.Headroom == nil || fmt.Sprintf("%.3f", *l.Headroom) != fmt.Sprintf("%.3f", want) {
 		t.Fatalf("headroom %v, want %.3f", l.Headroom, want)
+	}
+}
+
+// Decision 0029 S3 (#187): each finished record teaches its class: an EMA of demand (half weight when starved), a
+// decaying max of the peak, the last ten wall times; kept in the store; Reset forgets a class. A waiting thread's
+// class is the heavy command it named (slot_acquire's command or the refused one).
+func TestS3JobsLearnPerClass(t *testing.T) {
+	store := kv{}
+	j := &Jobs{KV: store, Project: func(string) string { return "fyr" }}
+	rec := func(class string, demand, cores float64, peak uint64, wall float64) {
+		j.mu.Lock()
+		j.load()
+		j.learn(JobRecord{Class: class, Demand: demand, Cores: cores, Peak: peak, Wall: wall})
+		raw := j.tableRaw()
+		j.mu.Unlock()
+		j.storeTable(raw) // as finish does: stored after the unlock
+	}
+	rec("fyr: make test", 2, 2, 4<<30, 100)
+	rec("fyr: make test", 3, 3, 2<<30, 120)
+	l, ok := j.Learned("fyr: make test")
+	four := float64(4 << 30)
+	if !ok || l.Runs != 2 || l.Demand != 2.3 || l.Peak != uint64(0.9*four) {
+		t.Fatalf("after two runs %+v", l)
+	}
+	rec("fyr: make test", 4.3, 1, 1<<30, 300) // starved (4.3×): half weight, 0.85·2.3 + 0.15·4.3
+	if l, _ := j.Learned("fyr: make test"); l.Demand != 2.6 || l.WallP90() != 300 {
+		t.Fatalf("a starved run %+v p90 %v", l, l.WallP90())
+	}
+	j2 := &Jobs{KV: store}
+	if l, ok := j2.Learned("fyr: make test"); !ok || l.Runs != 3 {
+		t.Fatalf("not kept %+v", l)
+	}
+	if !j2.Reset("fyr: make test") {
+		t.Fatal("reset")
+	}
+	if _, ok := (&Jobs{KV: store}).Learned("fyr: make test"); ok {
+		t.Fatal("reset not kept")
+	}
+	// A waiting thread named its job: its class, else its kind.
+	j.RefreshProjects([]string{"t_w", "t_x"})
+	j.Saw("t_w", "yarn screenshot:diff")
+	if c := j.ClassOf("t_w", "e2e"); c != "fyr: yarn screenshot:diff" {
+		t.Fatalf("class of a waiter %q", c)
+	}
+	if c := j.ClassOf("t_x", "test"); c != "fyr: test" {
+		t.Fatalf("class by kind %q", c)
+	}
+}
+
+// Decision 0029 S3 with #206's lock order: ClassOf runs under the pool's lock (Admit, Backfill, Cost), so it never
+// calls Project (the engine); it reads the names Tick cached outside every lock.
+func TestS3ClassOfReadsCachedProjectNames(t *testing.T) {
+	calls := 0
+	j := &Jobs{KV: kv{}, Project: func(id string) string { calls++; return "fyr" }}
+	if c := j.ClassOf("t_a", "test"); c != "test" || calls != 0 {
+		t.Fatalf("before a refresh: %q, %d calls", c, calls)
+	}
+	j.RefreshProjects([]string{"t_a"})
+	j.Saw("t_a", "make test")
+	if c := j.ClassOf("t_a", "test"); c != "fyr: make test" || calls != 1 {
+		t.Fatalf("after: %q, %d calls", c, calls)
 	}
 }

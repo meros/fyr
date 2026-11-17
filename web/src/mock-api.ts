@@ -156,6 +156,14 @@ export function createMockApi(scenario: string): Api {
         h.slots = { ...h.slots, waiting: [...next, ...rest] };
         return { ok: true, result: JSON.parse(JSON.stringify(h.slots)) };
       }
+      if (action === "host.jobReset") {
+        // Decision 0029 S3: as the host does it: the class's learned cost is forgotten.
+        const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
+        const j = h?.jobs?.find((x) => x.class === args?.class && x.learned);
+        if (!h || !j) return { ok: false, error: `No learned job class ${String(args?.class ?? "")}` };
+        h.jobs = h.jobs!.map((x) => (x === j ? { ...x, cost: undefined, learned: undefined } : x));
+        return { ok: true, result: { class: j.class } };
+      }
       if (action === "front.projectOrder") {
         order = Array.isArray(args?.ids) ? (args.ids as unknown[]).filter((x): x is string => typeof x === "string") : [];
         const ids = order;

@@ -3,8 +3,9 @@ package cgroup
 // Decision 0029 section 0 (#185): what a host may give its agents (its
 // capacity C) and the signals the slots read, each as a share or a level so
 // the same rules hold on any host. A provider reads them: "cgroups" (a
-// delegated cgroup v2 tree), "proc" (Linux /proc without the tree) or none
-// (no /proc: macOS for now, which keeps the fixed count).
+// delegated cgroup v2 tree), "proc" (Linux /proc without the tree),
+// "sysctl" (macOS: the probe and the kernel's memory figures) or none, which
+// keeps the fixed count.
 
 import (
 	"bufio"
@@ -194,16 +195,24 @@ func round2(v float64) float64 { return float64(int(v*100+0.5)) / 100 }
 // signals fills l's decision 0029 fields; agentsMem is agents/memory.current
 // (0 without the tree).
 func (s *Sampler) signals(l *Load, proc string, agentsMem uint64) {
-	total, avail, ok := meminfo(proc)
-	if !ok {
-		return // no provider: the fields stay absent
+	_, avail, ok := meminfo(proc)
+	var c Capacity
+	if ok {
+		l.Provider = "proc"
+		if s.Tree != nil {
+			l.Provider = "cgroups"
+		}
+		c = capacity(s.Tree, proc, l.Cores, MemoryShare)
+	} else {
+		var total uint64
+		var stall Stall
+		if total, avail, stall, ok = hostMemory(); !ok {
+			return // no provider: the fields stay absent
+		}
+		l.Provider = "sysctl"
+		c = Capacity{CPU: float64(l.Cores), Memory: uint64(float64(total) * MemoryShare)}
+		l.MemoryStall = stall
 	}
-	_ = total
-	l.Provider = "proc"
-	if s.Tree != nil {
-		l.Provider = "cgroups"
-	}
-	c := capacity(s.Tree, proc, l.Cores, MemoryShare)
 	l.Capacity = &c
 	if c.Memory > 0 {
 		h := float64(avail) / float64(c.Memory)
