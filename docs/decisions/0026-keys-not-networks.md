@@ -1,6 +1,6 @@
 # 0026 An install is its key: discovery from many sources, trust from pairing, TLS pinned to keys; the tailnet is one route
 
-Date: 2026-11-16 · Status: accepted (owner, 16 Nov: PAKE code, the tailnet shortcut for untagged nodes, a shared signed roster; the browser path "is up to the installation") · Amends 0016 (front auth), 0021 (6) and 0025 (1), (2) · Supersedes the parts of 0025 that rest on the tailnet · Spec rows follow with each slice
+Date: 2026-11-16 · Status: accepted (owner, 16 Nov: PAKE code, the tailnet shortcut for untagged nodes, a shared signed roster; the browser path "is up to the installation") · Amends 0016 (front auth), 0021 (6) and 0025 (1), (2) · Supersedes the parts of 0025 that rest on the tailnet · Spec rows follow with each slice · Superseded in part by 0030 ((3)–(5) and the slices), once 0030 is accepted
 
 **The owner's words, 16 Nov:**
 - "Make a more robust plan for auto discovery and authentication that doesn't directly rely on tailnet. We should be able to run on a lan for instance."
