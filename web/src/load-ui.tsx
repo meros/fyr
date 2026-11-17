@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { loadDetail, MAX_PIPS, railLabel, railMeter, railPips, railSlots, threadCPU, threadSlot, type HostLoad, type RailPips, type Slots } from "./load.ts";
+import { loadDetail, MAX_PIPS, railLabel, railMeter, railPips, railSlots, threadCPU, threadJob, threadSlot, type HostLoad, type RailPips, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -135,5 +135,18 @@ export function ThreadSlot({ id }: { id: string }) {
         {s}
       </span>
     </>
+  );
+}
+
+/** Decision 0029 S1: the job a thread's slot runs ("yarn build · 3.0 GB"), or null; the row puts it first on its line. */
+export function useThreadJob(id: string): string | null {
+  return threadJob(useLoad(), id);
+}
+
+export function ThreadJob({ text }: { text: string }) {
+  return (
+    <span class="tslot" title="The heavy job this thread's slot runs, and the thread's memory now">
+      {text}
+    </span>
   );
 }

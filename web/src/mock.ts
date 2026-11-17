@@ -1741,7 +1741,7 @@ function laptopLoad(): HostLoad[] {
         { id: "t_w2", cpu: 2.7, memory: 3.2e9 },
         { id: "t_w3", memory: 2e8 },
         { id: "t_babysit", cpu: 0.3, memory: 5e8 },
-        { id: "t_mapperf", cpu: 2.6, memory: 3e9 },
+        { id: "t_mapperf", cpu: 2.6, memory: 3e9, job: "yarn build" },
         { id: "t_search", cpu: 1.0, memory: 9e8 },
       ],
       // V0.86: both slots taken, one thread waits.
@@ -1753,6 +1753,19 @@ function laptopLoad(): HostLoad[] {
         ],
         waiting: [{ owner: "t_search", kind: "test" }],
       },
+      // Decision 0029 S1: the host's signals and the measured job classes.
+      provider: "cgroups",
+      capacity: { cpu: 4, memory: 13 * 2 ** 30 },
+      slowdown: 3.4,
+      headroom: 0.31,
+      memoryPressure: 1.2,
+      memoryStall: "ok",
+      agentsCpuPressure: 88,
+      jobs: [
+        { class: "fyr: make test", runs: 14, cores: 2.3, demand: 3.4, peak: 2.1e9, wall: 95, at: "2026-11-17T09:12:00Z" },
+        { class: "Norban: yarn screenshot:diff", runs: 6, cores: 1.1, demand: 1.9, peak: 6.4e9, wall: 437, at: "2026-11-17T08:40:00Z" },
+        { class: "fyr: e2e", runs: 3, cores: 0.9, demand: 1.2, peak: 1.8e9, wall: 254, at: "2026-11-17T08:02:00Z" },
+      ],
     },
   ];
 }
