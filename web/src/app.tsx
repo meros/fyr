@@ -978,8 +978,8 @@ function App() {
     return null;
   };
 
-  const adopt = async (ids: string[]): Promise<string | null> => {
-    const r = await api.command("t3.adopt", undefined, { t3Ids: ids });
+  const adopt = async (ids: string[], host?: string): Promise<string | null> => {
+    const r = await api.command("t3.adopt", undefined, { t3Ids: ids, ...(host && multiHost(store.hosts) ? { host } : {}) }); // V0.139
     if (!r.ok) return r.error ?? "Could not adopt";
     setDialog(null);
     cmds.notify(ids.length === 1 ? "Adopted 1 thread" : `Adopted ${ids.length} threads`);
@@ -1400,11 +1400,11 @@ function App() {
         />
         {nav.sheet?.kind === "adopt" && (
           <AdoptDialog
-            load={() => api.t3Candidates()}
+            load={(h) => api.t3Candidates(h)}
             now={now}
             onClose={navBack}
-            onAdopt={async (ids) => {
-              const e = await adopt(ids);
+            onAdopt={async (ids, h) => {
+              const e = await adopt(ids, h);
               if (!e) navBack();
               return e;
             }}
@@ -1574,7 +1574,7 @@ function App() {
       {dialog === "handover" && handoverId && store.threads[handoverId] && (
         <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m) => cmds.handover(handoverId, pr, m)} />
       )}
-      {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
+      {dialog === "adopt" && <AdoptDialog load={(h) => api.t3Candidates(h)} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "changes" && (
         <Modal title="Changes" wide onClose={() => setDialog(null)}>
           <div class="db">

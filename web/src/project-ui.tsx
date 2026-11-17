@@ -8,11 +8,11 @@ import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, quietSaver, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
 import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, iconFileError, nameError, patchFor, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
-import { Group, Row, SaveField, Seg, Switch, useSet } from "./settings-rows.tsx";
+import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settings-rows.tsx";
 import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
-import { HostField, useHosts } from "./host-pick-ui.tsx";
-import { hostChoices, hostOfflineNote, multiHost } from "./hosts.ts";
+import { HostChip, HostField, useHosts } from "./host-pick-ui.tsx";
+import { hostChip, hostChoices, hostOf, hostOfflineNote, multiHost, profilesOfHost } from "./hosts.ts";
 import { deleteProjectAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { shortModel } from "./format.ts";
@@ -596,7 +596,38 @@ type IconTab = "image" | "monogram" | "emoji" | "line";
 /** A project's page (V0.55, V0.58, V0.116; V0.119 amends the Save button away): Identity, Threads, Quiet hours, Delete.
  *  Each change saves at once with only its own field (V0.116 (2)); quiet hours 600 ms after the last change and at
  *  once when the page closes. The same page in the desktop Settings and on the phone's project screen. */
-export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onDelete }: { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null>; /** V0.58: after the one question; the error, or null */ onDelete?(): Promise<string | null> }) {
+type EditorProps = { project: Project; profiles: Profile[]; /** the host's clock (V0.46) */ now: number; onSave(patch: ProjectPatch): Promise<string | null>; onSetFolder(path: string): Promise<string | null>; /** V0.58: after the one question; the error, or null */ onDelete?(): Promise<string | null> };
+
+/** V0.139: a project lives on one host. With several hosts its screen says which, first, read-only (a project does not
+ *  move); its providers and folders are that host's; while that host is offline the screen is read-only and says so.
+ *  The same on the desktop (Settings → Projects → a project) and the phone (the project screen). */
+export function ProjectEditor(p: EditorProps) {
+  const hs = useHosts();
+  const env = useSet();
+  const chip = hostChip(p.project.host, hs.hosts, hs.now);
+  const profiles = profilesOfHost(hostOf(p.project, hs.hosts), hs.hosts, p.profiles);
+  return (
+    <SetContext.Provider value={{ ...env, readOnly: env.readOnly || !!chip?.offline }}>
+      <ProjectEditorBody
+        {...p}
+        profiles={profiles}
+        host={
+          chip && (
+            <Group title="Host" label="Host">
+              <Row
+                class="hostrow"
+                title={<HostChip chip={chip} />}
+                desc={chip.offline ? `${chip.name} is ${chip.line.replace(" · read-only", "")}. This project shows as last read and cannot be changed until it is back.` : "The project lives here: its folder, its threads and the providers below are this host's. A project does not move to another host."}
+              />
+            </Group>
+          )
+        }
+      />
+    </SetContext.Provider>
+  );
+}
+
+function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren }) {
   const env = useSet();
   const api = useApi();
   const ask = useAsk();
@@ -658,6 +689,7 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
           </span>
         </div>
       </div>
+      {host}
       <Group title="Identity" label="Identity">
         <Row
           title={<>Name{setByAgent(project, "name") && <SetBy />}</>}

@@ -16,7 +16,6 @@ import {
   formHost,
   formProfiles,
   formProjects,
-  hostLock,
   initialForm,
   loadRemembered,
   madeProject,
@@ -139,9 +138,8 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     setErr,
     busy,
     choose: (pr: Project | null) => setF((x) => chooseProject(x, pr, ctxRef.current)),
-    /** V0.132: the host the thread starts on, and the project that holds it ("" when the owner picks it) */
+    /** V0.132, V0.139: the host the thread starts on, picked first */
     host: formHost(f, ctx) ?? "",
-    hostLock: hostLock(f, ctx),
     chooseHost: (h: string) => setF((x) => chooseHost(x, h, ctxRef.current, last)),
     pickProfile: (id: string) => setF((x) => pickProfile(x, id, ctxRef.current)),
     togglePicking: () => set({ picking: !f.picking, creating: null, draft: null }),
