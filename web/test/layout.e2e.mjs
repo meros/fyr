@@ -4273,6 +4273,269 @@ try {
 }
 });
 
+// SPEC 0.5 V0.165: previews are usable at any size, the app around them is static. On desktop and phone: every
+// preview opens full screen (the Fullscreen API where the browser has it, else an in-app layer) and leaves it by
+// Escape, the Close button and Back (the phone's back gesture is a Back); an image zooms by pinch, wheel and double
+// tap while the page's own scale stays 1; an HTML page and the live view fill the screen in place (the same frame,
+// so the live view's bridge keeps working) with zoom steps; the chrome around them does not zoom, and an input's
+// focus does not zoom it on a phone.
+// The page's real scale, from the browser: the harness's window.visualViewport is scripted and always says 1.
+const pageScale = async (send) => {
+  const m = (await send("Page.getLayoutMetrics")).result;
+  return Math.round((m.cssVisualViewport ?? m.visualViewport).scale * 1000) / 1000;
+};
+for (const [front, w, hh] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.165 fullscreen ${front}`, async ({ send, evaluate, waitFor, settle, navigate, openScreen, key, shot }) => {
+  const ctx = `V0.165 fullscreen ${front}`;
+  const phone = front === "phone";
+  // A real press (a user gesture, so the Fullscreen API may run): a tap on the phone, a mouse click on the desktop.
+  // The point is taken once it holds still for two frames: entries under content-visibility: auto take their real
+  // height as they draw, so the card can move just after a layer closes.
+  const press = async (sel) => {
+    const c = await evaluate(`new Promise((done) => { let last = '', n = 0, f = 0; const step = () => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return done(null); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); const p = [r.left + r.width / 2, r.top + r.height / 2]; const k = p.join(','); if ((k === last && ++n >= 2) || ++f > 120) return done(p); if (k !== last) n = 0; last = k; requestAnimationFrame(step); }; step(); })`);
+    if (!c) throw new Error(`no element ${sel}`);
+    if (phone) {
+      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: c[0], y: c[1] }] });
+      await sleep(40);
+      await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    } else {
+      for (const type of ["mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: c[0], y: c[1], button: "left", clickCount: 1 });
+    }
+  };
+  const COVERS = (sel) => `(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; const r = el.getBoundingClientRect(); return r.left <= 0.5 && r.top <= 0.5 && Math.abs(r.width - innerWidth) <= 1 && Math.abs(r.height - innerHeight) <= 1; })()`;
+  const STATE = `({ url: location.search, fs: !!document.fullscreenElement, viewer: !!document.querySelector('.pv-full'), card: !!document.querySelector('.pv.isfs'), lv: !!document.querySelector('.lv.isfs') })`;
+  const leave = async (how, closeSel) => {
+    if (how === "Escape") await key("Escape");
+    else if (how === "Close") await press(closeSel);
+    else await evaluate(`history.back()`);
+  };
+try {
+  const url = "?mock=1&open=t_w3";
+  const ready = phone ? "!!document.querySelector('.m-app .pv.image')" : "!!document.querySelector('.th .pv.image')";
+  if (phone) await openScreen({ url, ready }, w, hh);
+  else {
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/${url}`, ready);
+  }
+  await shot(`v0165-thread-${front}.png`);
+  const cards = await evaluate(`[...document.querySelectorAll('.pv')].map((c) => ({ kind: c.classList.contains('html') ? 'html' : 'image', fs: !!c.querySelector('.pv-fs') }))`);
+  check(cards.length > 0 && cards.every((c) => c.fs), `${ctx}: a preview card has no Full screen button (${JSON.stringify(cards)})`);
+  // 1. An image: the viewer covers the screen; each way out leaves the thread where it was.
+  for (const how of ["Escape", "Close", "Back"]) {
+    await press(".pv.image .pv-fs");
+    await waitFor(COVERS(".pv-full"), { soft: true });
+    const inn = await evaluate(`({ covers: ${COVERS(".pv-full")}, ...${STATE} })`);
+    check(inn.covers, `${ctx}: the image viewer does not cover the screen (${JSON.stringify(inn)})`);
+    if (!phone) check(inn.fs, `${ctx}: the image viewer did not use the Fullscreen API on the desktop (${JSON.stringify(inn)})`);
+    if (how === "Escape") await shot(`v0165-image-full-${front}.png`);
+    await leave(how, ".pv-full .pv-x");
+    await waitFor(`!document.querySelector('.pv-full') && !document.fullscreenElement`, { soft: true });
+    await settle();
+    const out = await evaluate(STATE);
+    check(!out.viewer && !out.fs && /open=t_w3/.test(out.url), `${ctx}: ${how} did not leave the image viewer for the thread (${JSON.stringify(out)})`);
+  }
+  // 2. An HTML preview fills the screen in place, with zoom steps that scale its page, and leaves by each way.
+  for (const how of ["Escape", "Close", "Back"]) {
+    await press(".pv.html .pv-fs");
+    await waitFor(COVERS(".pv.isfs"), { soft: true });
+    const inn = await evaluate(`({ covers: ${COVERS(".pv.isfs")}, frame: Math.round(document.querySelector('.pv.isfs iframe')?.getBoundingClientRect().height ?? 0), ...${STATE} })`);
+    check(inn.covers && inn.frame > hh * 0.6, `${ctx}: the HTML preview does not fill the screen (${JSON.stringify(inn)})`);
+    if (how === "Escape") {
+      await press(".pv.isfs .fz-in");
+      await waitFor(`/scale\\(1\\.25\\)/.test(document.querySelector('.pv.isfs iframe')?.style.transform ?? '')`, { soft: true });
+      const z = { ...(await evaluate(`({ t: document.querySelector('.pv.isfs iframe')?.style.transform ?? '', label: document.querySelector('.pv.isfs .fz-reset')?.textContent ?? '' })`)), vv: await pageScale(send) };
+      check(/scale\(1\.25\)/.test(z.t) && /125/.test(z.label) && z.vv === 1, `${ctx}: zoom in does not scale the HTML page alone (${JSON.stringify(z)})`);
+      await shot(`v0165-html-full-${front}.png`);
+    }
+    await leave(how, ".pv.isfs .fz-x");
+    await waitFor(`!document.querySelector('.pv.isfs') && !document.fullscreenElement`, { soft: true });
+    await settle();
+    const out = await evaluate(STATE);
+    check(!out.card && !out.fs && /open=t_w3/.test(out.url), `${ctx}: ${how} did not leave the HTML preview's full screen (${JSON.stringify(out)})`);
+  }
+  // 3. Without the Fullscreen API (iPhone Safari, the iOS PWA): the in-app layer still covers the screen.
+  await evaluate(`Object.defineProperty(Document.prototype, 'fullscreenEnabled', { configurable: true, get: () => false }); true`);
+  await press(".pv.html .pv-fs");
+  await waitFor(COVERS(".pv.isfs"), { soft: true });
+  const noApi = await evaluate(`({ covers: ${COVERS(".pv.isfs")}, ...${STATE} })`);
+  check(noApi.covers && !noApi.fs, `${ctx}: without the Fullscreen API the HTML preview does not cover the screen (${JSON.stringify(noApi)})`);
+  await evaluate(`history.back()`);
+  await waitFor(`!document.querySelector('.pv.isfs')`, { soft: true });
+  await press(".pv.image .pv-fs");
+  await waitFor(COVERS(".pv-full"), { soft: true });
+  const noApiImg = await evaluate(`({ covers: ${COVERS(".pv-full")}, r: (() => { const r = document.querySelector('.pv-full')?.getBoundingClientRect(); return r ? [r.left, r.top, r.width, r.height] : null; })(), ...${STATE} })`);
+  check(noApiImg.covers, `${ctx}: without the Fullscreen API the image viewer does not cover the screen (${JSON.stringify(noApiImg)})`);
+  await key("Escape");
+  await waitFor(`!document.querySelector('.pv-full')`, { soft: true });
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
+for (const [front, w, hh] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.165 image zoom ${front}`, async ({ send, evaluate, waitFor, settle, navigate, openScreen, key, tapCenter, shot }) => {
+  const ctx = `V0.165 image zoom ${front}`;
+  const phone = front === "phone";
+  const SCALE = `Number(document.querySelector('.pv-stage')?.dataset.scale ?? 0)`;
+  const IMG = `(() => { const s = document.querySelector('.pv-stage')?.getBoundingClientRect(); const i = document.querySelector('.pv-stage img')?.getBoundingClientRect(); return s && i ? { s: [s.left, s.top, s.right, s.bottom].map(Math.round), i: [i.left, i.top, i.right, i.bottom].map(Math.round), title: document.querySelector('.pv-ft')?.textContent ?? '', n: document.querySelector('.pv-fn')?.textContent ?? '' } : null; })()`;
+  const center = async () => evaluate(`(() => { const r = document.querySelector('.pv-stage').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
+try {
+  const url = "?mock=1&open=t_w3";
+  const ready = phone ? "!!document.querySelector('.m-app .pv.image')" : "!!document.querySelector('.th .pv.image')";
+  if (phone) await openScreen({ url, ready }, w, hh);
+  else {
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/${url}`, ready);
+  }
+  // The tall full-page image (390 × 2600) opens fitted: all of it inside the stage.
+  await evaluate(`[...document.querySelectorAll('.pv.image')].find((c) => (c.querySelector('img')?.getAttribute('height') ?? '') === '2600')?.querySelector('.pv-img')?.click()`);
+  await waitFor(`${SCALE} === 1 && (document.querySelector('.pv-stage img')?.complete ?? false)`, { soft: true });
+  await settle();
+  const fit = await evaluate(IMG);
+  check(!!fit && fit.i[0] >= fit.s[0] && fit.i[1] >= fit.s[1] && fit.i[2] <= fit.s[2] && fit.i[3] <= fit.s[3], `${ctx}: the tall image is cut off at fit (${JSON.stringify(fit)})`);
+  // Arrow keys and swipes move between the thread's images.
+  await key("ArrowLeft");
+  await waitFor(`${IMG}?.title !== ${JSON.stringify(fit?.title ?? "")}`, { soft: true });
+  const prev = await evaluate(IMG);
+  check(!!prev && prev.title !== fit?.title, `${ctx}: ArrowLeft did not move to the previous image (${JSON.stringify([fit?.n, prev?.n])})`);
+  const [cx, cy] = await center();
+  if (phone) {
+    await send("Input.synthesizePinchGesture", { x: cx, y: cy, scaleFactor: 2.2, relativeSpeed: 600, gestureSourceType: "touch" });
+    await waitFor(`${SCALE} > 1.3`, { soft: true });
+    const r = { scale: await evaluate(SCALE), page: await pageScale(send) };
+    check(r.scale > 1.3 && r.page === 1, `${ctx}: a pinch on the image did not zoom it alone (${JSON.stringify(r)})`);
+    // A double tap: two taps within 300 ms of the page's clock. On a busy runner the CDP calls can land further apart
+    // than that, so the gesture is tried again while the page saw its taps too far apart (it records each gap).
+    await evaluate(`(() => { window.__taps = []; document.querySelector('.pv-stage').addEventListener('pointerup', (e) => __taps.push(e.timeStamp)); return true; })()`);
+    const doubleTapUntil = async (until) => {
+      let gap = 0;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await evaluate(`(__taps.length = 0, true)`);
+        for (let i = 0; i < 2; i++) {
+          await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: cx, y: cy }] });
+          await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        }
+        const ok = await waitFor(until, { soft: true, timeout: 1500 });
+        if (ok) return { ok: true };
+        gap = await evaluate(`__taps.length === 2 ? Math.round(__taps[1] - __taps[0]) : -1`);
+        if (gap >= 0 && gap < 300) return { ok: false, gap }; // the page saw a real double tap and did nothing
+        await sleep(400); // let the lone tap expire before the next try
+      }
+      return { ok: false, gap };
+    };
+    const back = await doubleTapUntil(`${SCALE} === 1`);
+    check(back.ok, `${ctx}: a double tap on a zoomed image does not go back to fit (${JSON.stringify(back)})`);
+    // ...and a double tap at fit zooms in.
+    const zin = await doubleTapUntil(`${SCALE} > 1`);
+    const dt = { ...zin, scale: await evaluate(SCALE), page: await pageScale(send) };
+    check(dt.ok && dt.scale > 1 && dt.page === 1, `${ctx}: a double tap at fit does not zoom the image (${JSON.stringify(dt)})`);
+    await shot(`v0165-image-zoomed-${front}.png`);
+  } else {
+    await send("Input.dispatchMouseEvent", { type: "mouseWheel", x: cx, y: cy, deltaX: 0, deltaY: -400 });
+    await waitFor(`${SCALE} > 1.3`, { soft: true });
+    const a = { scale: await evaluate(SCALE), page: await pageScale(send), t: await evaluate(`document.querySelector('.pv-stage img')?.style.transform`) };
+    check(a.scale > 1.3 && a.page === 1, `${ctx}: the wheel did not zoom the image (${JSON.stringify(a)})`);
+    // A drag pans the zoomed image.
+    const before = await evaluate(IMG);
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x: cx, y: cy, button: "left", buttons: 1, clickCount: 1 });
+    for (let i = 1; i <= 5; i++) await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: cx + i * 20, y: cy, button: "left", buttons: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: cx + 100, y: cy, button: "left", buttons: 0, clickCount: 1 });
+    await settle();
+    const after = await evaluate(IMG);
+    check(after.i[0] > before.i[0], `${ctx}: a drag does not pan the zoomed image (${JSON.stringify([before.i, after.i])})`);
+    // A double click goes back to fit, and again to 100 %.
+    for (const n of [1, 2]) await send("Input.dispatchMouseEvent", { type: "mousePressed", x: cx, y: cy, button: "left", clickCount: n }), await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: cx, y: cy, button: "left", clickCount: n });
+    await waitFor(`${SCALE} === 1`, { soft: true });
+    check((await evaluate(SCALE)) === 1, `${ctx}: a double click on a zoomed image does not go back to fit`);
+    await send("Input.dispatchMouseEvent", { type: "mouseWheel", x: cx, y: cy, deltaX: 0, deltaY: -200, modifiers: 2 });
+    await waitFor(`${SCALE} > 1`, { soft: true });
+    check((await evaluate(SCALE)) > 1, `${ctx}: a trackpad pinch (ctrl+wheel) does not zoom the image`);
+    await shot(`v0165-image-zoomed-${front}.png`);
+  }
+  await key("Escape");
+  await waitFor(`!document.querySelector('.pv-full')`, { soft: true });
+  // An attachment the owner sent opens in the same viewer (fx_img in t_ask).
+  // On the phone the thread opens on its question; Read all shows the conversation under it.
+  if (phone) {
+    await openScreen({ url: "?mock=1&open=t_ask", ready: "!!document.querySelector('.m-app')" }, w, hh);
+    await evaluate(`document.querySelector('.m-ah [aria-label="Show the conversation"]')?.click()`);
+    await evaluate(`document.querySelector('.att-sent')?.scrollIntoView({ block: 'center' })`);
+    await waitFor(`!!document.querySelector('.att-img')`, { what: "the sent image on the phone" });
+  } else await navigate(`${origin}/?mock=1&open=t_ask`, "!!document.querySelector('.att-img')");
+  await evaluate(`document.querySelector('.att-img')?.click()`);
+  await waitFor(`!!document.querySelector('.pv-full .pv-stage img')`, { soft: true });
+  check(await evaluate(`!!document.querySelector('.pv-full .pv-stage img')`), `${ctx}: a sent image does not open in the zooming viewer`);
+  const pdf = await evaluate(`[...document.querySelectorAll('.att-file')].map((a) => ({ n: a.textContent, href: a.getAttribute('href') ?? '', t: a.getAttribute('target') }))`);
+  check(pdf.some((p) => /spec\.pdf/.test(p.n) && p.href && p.t === "_blank"), `${ctx}: a sent PDF has no Open link (${JSON.stringify(pdf)})`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
+for (const [front, w, hh] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.165 live view ${front}`, async ({ send, evaluate, waitFor, settle, navigate, openScreen, key, shot }) => {
+  const ctx = `V0.165 live view ${front}`;
+  const phone = front === "phone";
+  const COVERS = `(() => { const el = document.querySelector('.lv.isfs'); if (!el) return false; const r = el.getBoundingClientRect(); return r.left <= 0.5 && r.top <= 0.5 && Math.abs(r.width - innerWidth) <= 1 && Math.abs(r.height - innerHeight) <= 1; })()`;
+try {
+  const url = "?mock=1&open=t_view";
+  if (phone) await openScreen({ url, ready: "!!document.querySelector('.lv-f')" }, w, hh);
+  else {
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/${url}`, "!!document.querySelector('.lv-f')");
+  }
+  await evaluate(`window.__lvf = document.querySelector('.lv-f'); true`);
+  await evaluate(`document.querySelector('.lv .pv-fs')?.click()`);
+  await waitFor(COVERS, { soft: true });
+  const r = await evaluate(`({ covers: ${COVERS}, same: document.querySelector('.lv.isfs .lv-f') === window.__lvf, h: Math.round(document.querySelector('.lv.isfs .lv-f')?.getBoundingClientRect().height ?? 0) })`);
+  check(r.covers && r.same && r.h > hh * 0.6, `${ctx}: the live view does not fill the screen with its own frame (${JSON.stringify(r)})`);
+  await shot(`v0165-live-full-${front}.png`);
+  await key("Escape");
+  await waitFor(`!document.querySelector('.lv.isfs')`, { soft: true });
+  const out = await evaluate(`({ fs: !!document.querySelector('.lv.isfs'), same: document.querySelector('.lv-f') === window.__lvf, url: location.search })`);
+  check(!out.fs && out.same && /open=t_view/.test(out.url), `${ctx}: Escape did not bring the live view back in place (${JSON.stringify(out)})`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
+// The app's chrome is static on a phone: a pinch or a double tap on it does not zoom the page, and focusing an
+// input does not either (every field is at least 16 px, iOS's threshold).
+section(`V0.165 static chrome phone`, async ({ send, evaluate, waitFor, settle, openScreen }) => {
+  const ctx = `V0.165 static chrome phone`;
+try {
+  await openScreen({ url: "?mock=1&open=t_w3", ready: "!!document.querySelector('.m-app textarea')" }, 390, 844);
+  const meta = await evaluate(`document.querySelector('meta[name=viewport]')?.content ?? ''`);
+  check(/maximum-scale=1/.test(meta) && /user-scalable=no/.test(meta), `${ctx}: the viewport lets the page zoom (${meta})`);
+  // A touch pinch over the chrome does not zoom headless Chrome's page even without the fix; a mouse-source pinch
+  // (the browser's own pinch-zoom path) does, so both are tried.
+  for (const src of ["touch", "mouse"]) {
+    await send("Input.synthesizePinchGesture", { x: 195, y: 300, scaleFactor: 2, relativeSpeed: 600, gestureSourceType: src });
+    await settle();
+    check((await pageScale(send)) === 1, `${ctx}: a ${src} pinch on the conversation zoomed the page`);
+  }
+  for (let i = 0; i < 2; i++) {
+    await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 195, y: 300 }] });
+    await sleep(30);
+    await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await sleep(60);
+  }
+  await settle();
+  check((await pageScale(send)) === 1, `${ctx}: a double tap on the conversation zoomed the page`);
+  const small = (sel) => evaluate(`[...document.querySelectorAll(${JSON.stringify(sel)})].filter((e) => e.getClientRects().length && !['checkbox', 'radio', 'range', 'file', 'hidden', 'color'].includes(e.type)).map((e) => ({ c: e.className || e.tagName, px: parseFloat(getComputedStyle(e).fontSize) })).filter((e) => e.px < 16)`);
+  const s1 = await small("input, textarea, select");
+  check(s1.length === 0, `${ctx}: fields under 16 px in a thread (iOS zooms on their focus) ${JSON.stringify(s1)}`);
+  await evaluate(`document.querySelector('.m-app textarea')?.focus()`);
+  await settle();
+  check((await pageScale(send)) === 1, `${ctx}: focusing the composer zoomed the page`);
+  // The confirmation sheet's reason field was 15 px.
+  await openScreen({ url: "?mock=rail&open=t_triage", ready: "!!document.querySelector('.m-app')" }, 390, 844);
+  const s2 = await small("input, textarea, select");
+  check(s2.length === 0, `${ctx}: fields under 16 px ${JSON.stringify(s2)}`);
+  const css = await evaluate(`(() => { for (const sh of document.styleSheets) { try { for (const r of sh.cssRules) if (r.media && /coarse/.test(r.media.mediaText) && /font-size/.test(r.cssText) && /input/.test(r.cssText)) return true; } catch {} } return false; })()`);
+  check(css, `${ctx}: no rule keeps every field at 16 px or more on a touch screen`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // The phone screens after the sections: the sections are the longest jobs, so they start first and the short
 // screens fill the tabs at the end.
 for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.name} ${w}x${hh}`, run: (t) => phonePass(t, w, hh, [s]) });

@@ -69,7 +69,7 @@ await writeFile(
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Fyr</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="${THEME.light}" media="(prefers-color-scheme: light)">

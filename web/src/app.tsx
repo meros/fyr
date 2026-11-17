@@ -108,6 +108,20 @@ function usePhone(): boolean {
 }
 
 /**
+ * V0.165: the app's chrome does not zoom. iOS Safari ignores user-scalable=no in the viewport, so its gesture events
+ * are stopped here too; previews zoom inside their own viewer, from pointer events, which this does not touch.
+ */
+function useStaticPage() {
+  useEffect(() => {
+    const no = (e: Event) => e.preventDefault();
+    for (const t of ["gesturestart", "gesturechange"]) document.addEventListener(t, no, { passive: false });
+    return () => {
+      for (const t of ["gesturestart", "gesturechange"]) document.removeEventListener(t, no);
+    };
+  }, []);
+}
+
+/**
  * The phone layout height follows the visual viewport (SPEC V0.17): --app-h, --app-top and kb-open on
  * <html>, re-read on every event that can change them, and again on the next frames after a resume.
  */
@@ -221,6 +235,7 @@ function App() {
   const phoneRef = useRef(phone);
   phoneRef.current = phone;
   useViewportVars(phone);
+  useStaticPage();
   // U8: Undo of a settle or archive that left the open thread on a phone reopens it.
   const reopenRef = useRef<string | null>(null);
   const navGoRef = useRef<(n: Nav) => void>(() => {});

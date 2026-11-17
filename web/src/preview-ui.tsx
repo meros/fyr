@@ -1,32 +1,93 @@
-// Preview cards in the log, the full-screen viewer and the filmstrip (SPEC 0.5 V0.19, V0.47).
+// Preview cards in the log, the full-screen viewer and the filmstrip (SPEC 0.5 V0.19, V0.47, V0.165).
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { FRAME_ALLOW, filmstrip, frameHeight, stepImage, type PreviewCard } from "./previews.ts";
+import { FRAME_ALLOW, filmstrip, frameHeight, type PreviewCard } from "./previews.ts";
 import { bridgeMessage } from "./view.ts";
+import { requestFullscreen, useLayer } from "./fullscreen.ts";
+import { FIT, FRAME_ZOOMS, clampView, doubleTap, stepFrameZoom, toggleView, wheelFactor, zoomAt, type Point, type Tap, type View } from "./zoom.ts";
 
-/** One open viewer at a time: an image (with the thread's other images to swipe to) or an HTML frame. */
-type Open = { card: PreviewCard; all: PreviewCard[] } | null;
+/** An image the viewer shows: a preview card's, or an attachment the owner sent (V0.165). */
+export interface ViewerImage {
+  key: string;
+  src: string;
+  title: string;
+  caption?: string;
+}
+/** One open viewer at a time: the images it can swipe between and the one on screen. */
+type Open = { items: ViewerImage[]; at: number } | null;
 let setOpenGlobal: ((o: Open) => void) | null = null;
 
-function openViewer(card: PreviewCard, all: PreviewCard[]) {
-  setOpenGlobal?.({ card, all });
+/** Open the viewer on `items[at]`, full screen where the browser can (call it inside the press). */
+export function openImages(items: ViewerImage[], at: number) {
+  if (!items[at]) return;
+  requestFullscreen(document.documentElement);
+  setOpenGlobal?.({ items, at });
+}
+
+function cardImages(all: PreviewCard[]): ViewerImage[] {
+  return all
+    .filter((x) => x.kind === "image")
+    .sort((a, b) => a.seq - b.seq)
+    .map((c) => ({ key: `pv-${c.seq}`, src: c.src, title: c.title, caption: c.caption }));
+}
+
+function openCard(card: PreviewCard, all: PreviewCard[]) {
+  const items = cardImages(all.some((x) => x.seq === card.seq) ? all : [...all, card]);
+  openImages(items, items.findIndex((x) => x.key === `pv-${card.seq}`));
 }
 
 export function previewDomId(seq: number): string {
   return `pv-${seq}`;
 }
 
-/** V0.47: put the frame itself full screen, where the browser can (not iPhone Safari). */
-function canFullscreen(): boolean {
-  return typeof document !== "undefined" && !!document.fullscreenEnabled;
-}
-
-function FullscreenButton({ frame }: { frame: { current: HTMLIFrameElement | null } }) {
-  if (!canFullscreen()) return null;
+/** The Full screen button of every preview card and the live view (V0.165). */
+export function FsButton({ onPress }: { onPress(): void }) {
   return (
-    <button class="pv-fs" aria-label="Full screen" title="Full screen" onClick={() => void frame.current?.requestFullscreen?.().catch(() => {})}>
+    <button class="pv-fs" aria-label="Full screen" title="Full screen" onClick={onPress}>
       ⛶
     </button>
+  );
+}
+
+/**
+ * V0.165: an HTML page (a preview or the live view) full screen in place: the same frame, so it does not reload and
+ * the live view's bridge keeps working. The page zooms by steps (it lays out at width / zoom and is scaled up),
+ * which keeps the sandbox as it is; a page may also handle its own pinch.
+ */
+export function useFrameFullscreen(box: { current: HTMLElement | null }) {
+  const [on, setOn] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const leave = useLayer(on, () => {
+    setOn(false);
+    setZoom(1);
+  });
+  const enter = () => {
+    requestFullscreen(box.current);
+    setOn(true);
+  };
+  const frameStyle = (inline?: Record<string, string>) =>
+    on ? { width: `${100 / zoom}%`, height: `${100 / zoom}%`, transform: `scale(${zoom})`, transformOrigin: "0 0" } : inline;
+  return { on, enter, leave, zoom, setZoom, frameStyle };
+}
+
+/** The bar over a full-screen page: its title, the zoom steps and Close. */
+export function FsBar({ title, fs }: { title: string; fs: ReturnType<typeof useFrameFullscreen> }) {
+  return (
+    <div class="fz-bar">
+      <span class="pv-ft">{title}</span>
+      <button class="fz-out" aria-label="Zoom out" title="Zoom out" disabled={fs.zoom <= FRAME_ZOOMS[0]} onClick={() => fs.setZoom(stepFrameZoom(fs.zoom, -1))}>
+        −
+      </button>
+      <button class="fz-reset" title="Actual size" onClick={() => fs.setZoom(1)}>
+        {Math.round(fs.zoom * 100)} %
+      </button>
+      <button class="fz-in" aria-label="Zoom in" title="Zoom in" disabled={fs.zoom >= FRAME_ZOOMS[FRAME_ZOOMS.length - 1]} onClick={() => fs.setZoom(stepFrameZoom(fs.zoom, 1))}>
+        +
+      </button>
+      <button class="fz-x pv-x" aria-label="Close" title="Close" onClick={fs.leave}>
+        ×
+      </button>
+    </div>
   );
 }
 
@@ -37,6 +98,7 @@ export function PreviewCardView({ card, all }: { card: PreviewCard; all: Preview
   const box = useRef<HTMLElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const html = card.kind === "html";
+  const fs = useFrameFullscreen(box);
 
   // V0.47: 16:10 of the card's width until the page reports its own height (ui/notifications/size-changed).
   useLayoutEffect(() => {
@@ -59,50 +121,50 @@ export function PreviewCardView({ card, all }: { card: PreviewCard; all: Preview
   }, [html]);
 
   const h = frameHeight(card.height, expanded, reported, width);
+  const title = card.title || (html ? "Preview" : "Screenshot");
   return (
-    <figure class={`pv ${card.kind}`} id={previewDomId(card.seq)} ref={box}>
-      <figcaption class="pv-h">
-        <span class="pv-t">{card.title || (html ? "Preview" : "Screenshot")}</span>
-        {html ? (
-          <>
-            <FullscreenButton frame={frame} />
-            <button class="pv-open" onClick={() => openViewer(card, all)}>
-              Open
-            </button>
-          </>
-        ) : (
-          card.width > 0 && (
+    <figure class={`pv ${card.kind}${fs.on ? " isfs" : ""}`} id={previewDomId(card.seq)} ref={box}>
+      {fs.on ? (
+        <FsBar key="bar" title={title} fs={fs} />
+      ) : (
+        <figcaption key="head" class="pv-h">
+          <span class="pv-t">{title}</span>
+          {!html && card.width > 0 && (
             <span class="pv-sz">
               {card.width} × {card.height}
             </span>
-          )
-        )}
-      </figcaption>
+          )}
+          <FsButton onPress={() => (html ? fs.enter() : openCard(card, all))} />
+        </figcaption>
+      )}
       {card.kind === "image" ? (
-        <button class="pv-img" onClick={() => openViewer(card, all)} aria-label={`Open ${card.title || "screenshot"} full screen`}>
-          <img src={card.src} alt={card.title} loading="lazy" width={card.width || undefined} height={card.height || undefined} />
+        <button class="pv-img" onClick={() => openCard(card, all)} aria-label={`Open ${card.title || "screenshot"} full screen`}>
+          <img src={card.src} alt={card.title} loading="lazy" decoding="async" width={card.width || undefined} height={card.height || undefined} />
         </button>
       ) : (
         <>
-          <iframe
-            ref={frame}
-            class="pv-frame"
-            src={card.src}
-            sandbox="allow-scripts"
-            allow={FRAME_ALLOW}
-            allowFullScreen
-            loading="lazy"
-            title={card.title || "Preview"}
-            style={{ height: `${h}px` }}
-          />
-          {frameHeight(card.height, true, reported, width) > frameHeight(card.height, false, reported, width) && (
-            <button class="pv-more" onClick={() => setExpanded(!expanded)}>
+          {/* keyed: the header's swap with the bar must never take this wrapper, or the frame reloads */}
+          <div key="frame" class="fzw">
+            <iframe
+              ref={frame}
+              class="pv-frame"
+              src={card.src}
+              sandbox="allow-scripts"
+              allow={FRAME_ALLOW}
+              allowFullScreen
+              loading="lazy"
+              title={title}
+              style={fs.frameStyle({ height: `${h}px` })}
+            />
+          </div>
+          {!fs.on && frameHeight(card.height, true, reported, width) > frameHeight(card.height, false, reported, width) && (
+            <button key="more" class="pv-more" onClick={() => setExpanded(!expanded)}>
               {expanded ? "Show less" : "Show all"}
             </button>
           )}
         </>
       )}
-      {(card.caption || card.url) && (
+      {!fs.on && (card.caption || card.url) && (
         <div class="pv-c">
           {card.caption && <span class="prose">{card.caption}</span>}
           {card.url && (
@@ -116,20 +178,28 @@ export function PreviewCardView({ card, all }: { card: PreviewCard; all: Preview
   );
 }
 
-/** Mounted once by the app: the full-screen viewer. Esc and Back close it; swipe or arrows move between images. */
+/**
+ * Mounted once by the app: the image viewer (V0.19, V0.165). Fitted by default, never cut off; pinch, wheel or a
+ * trackpad pinch zoom about the fingers or the pointer, a drag pans, a double tap or double click toggles fit and
+ * 100 %; swipe or the arrow keys move between the images. Esc, Close and Back leave.
+ */
 export function PreviewViewer() {
   const [open, setOpen] = useState<Open>(null);
-  const [scale, setScale] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const gesture = useRef<{ dist: number; scale: number; x0: number; y0: number; pan: { x: number; y: number } } | null>(null);
-  const pushed = useRef(false);
-  const fframe = useRef<HTMLIFrameElement>(null);
+  const [view, setView] = useState<View>(FIT);
+  const [natural, setNatural] = useState({ width: 0, height: 0 });
+  const stage = useRef<HTMLDivElement>(null);
+  const pointers = useRef(new Map<number, Point>());
+  const gesture = useRef<{ d0: number; m0: Point; v0: View; p0: Point; moved: boolean } | null>(null);
+  const lastTap = useRef<Tap | null>(null);
+  const lastPointer = useRef("mouse");
 
+  const reset = () => {
+    setView(FIT);
+    setNatural({ width: 0, height: 0 });
+  };
   useEffect(() => {
     setOpenGlobal = (o) => {
-      setScale(1);
-      setPan({ x: 0, y: 0 });
+      reset();
       setOpen(o);
     };
     return () => {
@@ -137,119 +207,155 @@ export function PreviewViewer() {
     };
   }, []);
 
-  const close = () => {
-    if (pushed.current) {
-      pushed.current = false;
-      history.back(); // popstate closes
-    } else setOpen(null);
-  };
+  const close = useLayer(!!open, () => setOpen(null));
   const go = (dir: 1 | -1) => {
-    if (!open || open.card.kind !== "image") return;
-    const next = stepImage(open.all, open.card.seq, dir);
-    if (next) {
-      setScale(1);
-      setPan({ x: 0, y: 0 });
-      setOpen({ ...open, card: next });
-    }
+    if (!open || !open.items[open.at + dir]) return;
+    reset();
+    setOpen({ ...open, at: open.at + dir });
   };
-
-  // A history entry, so the system Back closes the viewer and nothing else.
   useEffect(() => {
     if (!open) return;
-    if (!pushed.current) {
-      history.pushState({ ...(history.state ?? {}), viewer: true }, "");
-      pushed.current = true;
-    }
-    const onPop = () => {
-      pushed.current = false;
-      setOpen(null);
-    };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-      else if (e.key === "ArrowRight") go(1);
+      if (e.key === "ArrowRight") go(1);
       else if (e.key === "ArrowLeft") go(-1);
       else return;
       e.preventDefault();
       e.stopImmediatePropagation();
     };
-    window.addEventListener("popstate", onPop);
     window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("popstate", onPop);
-      window.removeEventListener("keydown", onKey, true);
-    };
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [open]);
 
   if (!open) return null;
-  const c = open.card;
+  const c = open.items[open.at];
 
-  const down = (e: PointerEvent) => {
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const geom = () => {
+    const r = stage.current?.getBoundingClientRect();
+    const st = { width: r?.width ?? 1, height: r?.height ?? 1 };
+    const f = natural.width > 0 && natural.height > 0 ? Math.min(1, st.width / natural.width, st.height / natural.height) : 1;
+    const fitted = natural.width > 0 ? { width: natural.width * f, height: natural.height * f } : st;
+    return { st, fitted, left: r?.left ?? 0, top: r?.top ?? 0 };
+  };
+  const local = (e: { clientX: number; clientY: number }, g = geom()): Point => ({ x: e.clientX - g.left, y: e.clientY - g.top });
+
+  const start = () => {
     const ps = [...pointers.current.values()];
-    gesture.current = { dist: ps.length === 2 ? Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) : 0, scale, x0: e.clientX, y0: e.clientY, pan };
+    const g = geom();
+    const m = ps.length === 2 ? { x: (ps[0].x + ps[1].x) / 2, y: (ps[0].y + ps[1].y) / 2 } : ps[0];
+    gesture.current = { d0: ps.length === 2 ? Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) : 0, m0: { x: m.x - g.left, y: m.y - g.top }, v0: view, p0: ps[0], moved: gesture.current?.moved ?? false };
+  };
+  const down = (e: PointerEvent) => {
+    lastPointer.current = e.pointerType;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    if (pointers.current.size === 0) gesture.current = null;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    start();
   };
   const move = (e: PointerEvent) => {
     if (!pointers.current.has(e.pointerId)) return;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    const g = gesture.current;
-    if (!g) return;
+    const gs = gesture.current;
+    if (!gs) return;
     const ps = [...pointers.current.values()];
-    if (ps.length === 2 && g.dist > 0) {
+    const g = geom();
+    if (ps.length === 2 && gs.d0 > 0) {
+      gs.moved = true;
       const d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
-      setScale(Math.min(5, Math.max(1, (g.scale * d) / g.dist)));
-    } else if (ps.length === 1 && scale > 1) {
-      setPan({ x: g.pan.x + e.clientX - g.x0, y: g.pan.y + e.clientY - g.y0 });
+      const m = { x: (ps[0].x + ps[1].x) / 2 - g.left, y: (ps[0].y + ps[1].y) / 2 - g.top };
+      const z = zoomAt(gs.v0, d / gs.d0, gs.m0, g.st, g.fitted);
+      setView(clampView({ ...z, x: z.x + m.x - gs.m0.x, y: z.y + m.y - gs.m0.y }, g.st, g.fitted));
+    } else if (ps.length === 1) {
+      const dx = e.clientX - gs.p0.x;
+      const dy = e.clientY - gs.p0.y;
+      if (Math.hypot(dx, dy) > 8) gs.moved = true;
+      if (gs.v0.scale > 1) setView(clampView({ ...gs.v0, x: gs.v0.x + dx, y: gs.v0.y + dy }, g.st, g.fitted));
     }
   };
   const up = (e: PointerEvent) => {
-    const g = gesture.current;
+    if (!pointers.current.has(e.pointerId)) return;
+    const gs = gesture.current;
     pointers.current.delete(e.pointerId);
-    if (pointers.current.size === 0 && g && scale <= 1.02 && g.dist === 0) {
-      const dx = e.clientX - g.x0;
-      const dy = e.clientY - g.y0;
-      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1);
-    }
-    if (scale < 1.02) {
-      setScale(1);
-      setPan({ x: 0, y: 0 });
+    if (pointers.current.size > 0) {
+      start(); // a finger lifted from a pinch: the other one pans on from here
+      return;
     }
     gesture.current = null;
+    if (!gs) return;
+    const dx = e.clientX - gs.p0.x;
+    const dy = e.clientY - gs.p0.y;
+    if (gs.d0 === 0 && gs.v0.scale <= 1.01 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      lastTap.current = null;
+      go(dx < 0 ? 1 : -1);
+      return;
+    }
+    // A double tap on touch (a phone sends no dependable dblclick with touch-action: none).
+    if (e.pointerType !== "mouse" && !gs.moved && e.type === "pointerup") {
+      const tap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+      if (doubleTap(lastTap.current, tap)) {
+        lastTap.current = null;
+        const g = geom();
+        setView(toggleView(view, local(e, g), g.st, g.fitted, natural.width));
+      } else lastTap.current = tap;
+    }
   };
-  const imgs = open.all.filter((x) => x.kind === "image").sort((a, b) => a.seq - b.seq);
-  const pos = imgs.findIndex((x) => x.seq === c.seq);
+  const dbl = (e: MouseEvent) => {
+    if (lastPointer.current !== "mouse") return;
+    const g = geom();
+    setView(toggleView(view, local(e, g), g.st, g.fitted, natural.width));
+  };
+  const wheel = (e: WheelEvent) => {
+    e.preventDefault();
+    const g = geom();
+    setView(zoomAt(view, wheelFactor(e.deltaY, e.deltaMode, e.ctrlKey), local(e, g), g.st, g.fitted));
+  };
 
   return (
     <div class="pv-full" role="dialog" aria-label={c.title || "Preview"}>
       <div class="pv-fh">
         <span class="pv-ft">{c.title}</span>
-        {c.kind === "html" && <FullscreenButton frame={fframe} />}
-        {c.kind === "image" && imgs.length > 1 && (
+        {open.items.length > 1 && (
           <span class="pv-fn">
-            {pos + 1} / {imgs.length}
+            {open.at + 1} / {open.items.length}
           </span>
         )}
         <button class="pv-x" aria-label="Close" onClick={close}>
           ×
         </button>
       </div>
-      {c.kind === "image" ? (
-        <div class="pv-stage" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onDblClick={() => (setScale(scale > 1 ? 1 : 2.5), setPan({ x: 0, y: 0 }))}>
-          <img src={c.src} alt={c.title} draggable={false} style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})` }} />
-          {pos > 0 && (
-            <button class="pv-nav l" aria-label="Previous preview" onClick={() => go(-1)}>
-              ‹
-            </button>
-          )}
-          {pos >= 0 && pos < imgs.length - 1 && (
-            <button class="pv-nav r" aria-label="Next preview" onClick={() => go(1)}>
-              ›
-            </button>
-          )}
-        </div>
-      ) : (
-        <iframe ref={fframe} class="pv-fframe" src={c.src} sandbox="allow-scripts" allow={FRAME_ALLOW} allowFullScreen title={c.title || "Preview"} />
-      )}
+      <div
+        class={`pv-stage${view.scale > 1 ? " zoomed" : ""}`}
+        ref={stage}
+        data-scale={String(Math.round(view.scale * 1000) / 1000)}
+        onPointerDown={down}
+        onPointerMove={move}
+        onPointerUp={up}
+        onPointerCancel={up}
+        onDblClick={dbl}
+        onWheel={wheel}
+      >
+        <img
+          key={c.key}
+          src={c.src}
+          alt={c.title}
+          draggable={false}
+          onLoad={(e) => {
+            const i = e.currentTarget as HTMLImageElement;
+            setNatural({ width: i.naturalWidth, height: i.naturalHeight });
+          }}
+          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
+        />
+        {open.at > 0 && (
+          <button class="pv-nav l" aria-label="Previous preview" onPointerDown={(e) => e.stopPropagation()} onClick={() => go(-1)}>
+            ‹
+          </button>
+        )}
+        {open.at < open.items.length - 1 && (
+          <button class="pv-nav r" aria-label="Next preview" onPointerDown={(e) => e.stopPropagation()} onClick={() => go(1)}>
+            ›
+          </button>
+        )}
+      </div>
       {c.caption && <div class="pv-fc prose">{c.caption}</div>}
     </div>
   );
