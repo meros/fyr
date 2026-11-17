@@ -5,8 +5,8 @@ import { sections, type SectionKey } from "../src/store.ts";
 import { markedRow, revealRow, rowAfter } from "../src/selection.ts";
 import { thread } from "./helpers.ts";
 
-const FULL: Record<SectionKey, number> = { needs: 500, working: 500, seen: 2, snoozed: 200, settled: 60 };
-const OPEN: Record<SectionKey, number> = { needs: 500, working: 500, seen: 2, snoozed: 0, settled: 0 };
+const FULL: Record<SectionKey, number> = { needs: 500, working: 500, slots: 500, seen: 2, snoozed: 200, settled: 60 };
+const OPEN: Record<SectionKey, number> = { needs: 500, working: 500, slots: 500, seen: 2, snoozed: 0, settled: 0 };
 
 function sec() {
   const at = (m: number) => new Date(Date.UTC(2026, 10, 16, 9, m)).toISOString();

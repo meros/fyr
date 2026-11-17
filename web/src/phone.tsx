@@ -7,7 +7,8 @@
 import { haptic } from "./native.ts";
 import { useApi } from "./api-context.ts";
 import { useDraft } from "./drafts.ts";
-import type { ComponentChildren } from "preact";
+import type { ComponentChildren, VNode } from "preact";
+import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
 import { SECTIONS, isAvailable, unpinned, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
@@ -348,6 +349,7 @@ function MBottomBar(p: PhoneProps) {
 // ---- inbox ----
 
 function MInbox(p: PhoneProps) {
+  const queue = useSlotQueue();
   const hostName = useHostName(p);
   const listRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<SectionKey | null>("needs");
@@ -357,7 +359,7 @@ function MInbox(p: PhoneProps) {
   const onScroll = () => {
     const el = listRef.current;
     if (!el) return;
-    const tops = SECTIONS.map((s) => ({ key: s.key, top: (document.getElementById(`m-sec-${s.key}`)?.offsetTop ?? 0) - el.offsetTop }));
+    const tops = SECTIONS.filter((s) => document.getElementById(`m-sec-${s.key}`)).map((s) => ({ key: s.key, top: document.getElementById(`m-sec-${s.key}`)!.offsetTop - el.offsetTop }));
     setActive(activeSection(tops, el.scrollTop));
   };
 
@@ -415,6 +417,7 @@ function MInbox(p: PhoneProps) {
         <div class="m-strip" role="tablist" aria-label="Sections">
           {SECTIONS.map((s) => {
             const n = p.inbox.sec[s.key].length;
+            if (s.transient && n === 0) return null; // V0.137: Waiting for a slot only while threads wait
             return (
               <button class={`m-seg${active === s.key ? " on" : ""}${s.key === "needs" && n > 0 ? " att" : ""}`} onClick={() => jump(s.key)} title={`${s.label}: ${n}`}>
                 <span class="c">
@@ -459,6 +462,19 @@ function MInbox(p: PhoneProps) {
           </section>
         )}
         {SECTIONS.map((s) => {
+          if (s.key === "slots")
+            return (
+              <SlotQueueSection
+                phone
+                queue={queue}
+                threads={p.inbox.sec.slots}
+                row={(t, a) => (
+                  <div key={t.id} ref={a.attrs.ref} class={a.attrs.class || undefined} data-id={t.id}>
+                    <MRow t={t} p={p} needs={false} lead={a.lead} />
+                  </div>
+                )}
+              />
+            );
           const list = unpinned(p.inbox.sec[s.key]);
           const open = isOpen(s.key, p.list.sectionOpen) && list.length > 0;
           const limit = p.list.expanded[s.key] ? list.length : SECTION_LIMIT[s.key];
@@ -537,7 +553,7 @@ function MHost({ t, hosts }: { t: Thread; hosts?: HostInfo[] }) {
 }
 
 /** A row with swipes (right settles, left snoozes), long press (actions) and selection. */
-function MRow({ t, p, needs }: { t: Thread; p: PhoneProps; needs: boolean }) {
+function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; needs: boolean; /** V0.137: the queue's "#2" */ lead?: VNode }) {
   const avail: SwipeAvail = useMemo(() => swipeAvail(t), [t]);
   const [sw, setSw] = useState<Swipe>(idle);
   const swRef = useRef<Swipe>(idle);
@@ -618,7 +634,7 @@ function MRow({ t, p, needs }: { t: Thread; p: PhoneProps; needs: boolean }) {
   const side = off > 0 ? avail.right : off < 0 ? avail.left : null;
   const st = t.attention.state;
   const picked = p.list.picked.has(t.id);
-  const lead = p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : undefined;
+  const lead = p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : own;
   const pre = <MHost t={t} hosts={p.store.hosts} />;
   // V0.109: no row is marked here. The phone shows the inbox or one thread, never both, so there is no open thread
   // beside the list for a mark to follow; the desktop marks the open thread's row (app.tsx, selection.ts).
