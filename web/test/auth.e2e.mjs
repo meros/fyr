@@ -147,6 +147,15 @@ async function newTab(size) {
   return { evaluate, waitFor, navigate, cookies, setCookie, text, send };
 }
 
+// Runs action in the page of `press` every 500 ms until the page of `watch` shows expr; false after ms.
+async function pressUntil(press, action, watch, expr, ms) {
+  for (const t0 = Date.now(); Date.now() - t0 < ms; ) {
+    await press.evaluate(action);
+    for (const t1 = Date.now(); Date.now() - t1 < 500; await sleep(50)) if (await watch.evaluate(`!!(${expr})`)) return true;
+  }
+  return false;
+}
+
 const sizes = [
   { name: "desktop", w: 1280, h: 800, mobile: false },
   { name: "phone", w: 390, h: 844, mobile: true },
@@ -208,11 +217,18 @@ try {
     await s2.waitFor(`document.querySelector('.dev.wait')`, `${size.name}: the waiting tablet to show in Devices`);
     check((await s2.evaluate(`document.documentElement.scrollWidth <= innerWidth`)) === true, `${size.name}: Devices does not scroll sideways`);
     check((await s2.evaluate(`!!document.querySelector('.qrimg') || true`)) === true, `${size.name}: Devices renders`);
-    await s2.evaluate(`[...document.querySelectorAll('.dev.wait button')].find((b) => b.textContent.trim() === 'Allow').click()`);
-    await w.waitFor(app, `${size.name}: the tablet to go in once Allow was pressed`);
+    // A button is disabled while the page has no connection to Fyr yet (Settings is read-only then), and a click on a
+    // disabled button does nothing: wait for it to be enabled, and press again until the tablet is in.
+    const allow = `[...document.querySelectorAll('.dev.wait button')].find((b) => b.textContent.trim() === 'Allow' && !b.disabled)`;
+    await s2.waitFor(allow, `${size.name}: Allow to be enabled`);
+    const tabletIn = await pressUntil(s2, `${allow}?.click()`, w, app, 30_000);
+    if (!tabletIn) failures.push(`timed out waiting for ${size.name}: the tablet to go in once Allow was pressed`), console.log(`FAIL timed out waiting for ${size.name}: the tablet to go in once Allow was pressed`);
+    else console.log(`ok   ${size.name}: the tablet went in once Allow was pressed`);
 
     // Add a device on a signed-in device: a link and a QR image show.
-    await s2.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Add a device').click()`);
+    const addBtn = `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Add a device' && !b.disabled)`;
+    await s2.waitFor(addBtn, `${size.name}: Add a device to be enabled`);
+    await s2.evaluate(`${addBtn}.click()`);
     await s2.waitFor(`document.querySelector('.qrimg') && document.querySelector('input[aria-label="Sign-in link"]').value.includes('/auth/once#')`, `${size.name}: Add a device to show a link and a QR code`);
 
     // Revoke: the device lands on the signed-out page, its stream closes, and its cookie is dead.

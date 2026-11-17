@@ -80,7 +80,8 @@ type Store struct {
 	audit  []Audit
 	wrong  []time.Time // recent wrong approval-code tries
 	asked  []time.Time // recent approval attempts and code requests, for the rate limits
-	onGone func(ids []string)
+	onGone []func(ids []string)
+	onAdd  []func(d Device)
 }
 
 // Open loads the devices from kv. now is time.Now when nil.
@@ -178,7 +179,12 @@ func (s *Store) MintFor(how, name, node, by string) (string, *Device) {
 	s.mu.Lock()
 	s.devices[d.Hash] = d
 	s.saveLocked()
+	adds := s.onAdd
+	cp := *d
 	s.mu.Unlock()
+	for _, f := range adds {
+		f(cp)
+	}
 	return session, d
 }
 

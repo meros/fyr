@@ -29,6 +29,7 @@ let
   } // lib.optionalAttrs (cfg.role != "both") { role = cfg.role; }
     // lib.optionalAttrs (cfg.hosts != [ ]) { hosts = cfg.hosts; }
     // lib.optionalAttrs (hostListen != null) { hostListen = hostListen; }
+    // lib.optionalAttrs (cfg.peerPort != null) { peerListen = "0.0.0.0:${toString cfg.peerPort}"; }
     // lib.optionalAttrs (cfg.ownerLogin != null) { ownerLogin = cfg.ownerLogin; });
   # V0.54: hostPort listens on this machine's tailnet address, which fyrd
   # reads from tailscaled at start; hostListen names an address by hand.
@@ -119,6 +120,23 @@ in
         tailnet address (V0.54): sets `hostListen` to `tailnet:PORT` and
         opens the port on the tailscale0 interface only. `hostListen` wins.
       '';
+    };
+    peerPort = lib.mkOption {
+      type = lib.types.nullOr lib.types.port;
+      default = null;
+      example = 7779;
+      description = ''
+        The peer port (decision 0030 3.6, V0.158): other Fyr installs reach this
+        one here, over TLS 1.3 pinned to install keys, on any interface (the
+        tailnet, a LAN). It serves only installs in this install's roster;
+        installs of the same tailnet user pair by themselves (Tailscale Serve
+        must be up on both). Null: no peer port.
+      '';
+    };
+    openFirewall = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Open `peerPort` in the firewall. The port speaks only mutual TLS with keys from the roster.";
     };
     profiles = lib.mkOption {
       type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
@@ -269,6 +287,7 @@ in
       { assertion = !(cfg.tailnet.enable && cfg.role == "host"); message = "services.fyr: tailnet publishes the front; role host serves no page."; }
       { assertion = hostListen == null || cfg.role != "front"; message = "services.fyr: hostListen and hostPort need the host role (host or both)."; }
     ];
+    networking.firewall.allowedTCPPorts = lib.mkIf (cfg.openFirewall && cfg.peerPort != null) [ cfg.peerPort ];
     networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkIf (cfg.hostPort != null && cfg.hostListen == null) [ cfg.hostPort ];
     environment.systemPackages = [ cfg.package ];
     environment.etc."fyr/config.json".text = configJSON;

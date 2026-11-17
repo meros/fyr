@@ -508,6 +508,13 @@ func (s *Store) approveLocked(d *Device, by string) (*Device, error) {
 		s.approveNodeLocked(d.Node, d.Name, d.ID)
 	}
 	s.saveLocked()
+	cp := *d
+	adds := s.onAdd
+	defer func() {
+		for _, f := range adds {
+			go f(cp)
+		}
+	}()
 	by2 := by
 	if by2 == "" {
 		by2 = "owner.sock"
@@ -539,7 +546,16 @@ func (s *Store) Deny(id, by string) bool {
 func (s *Store) OnRevoke(f func(ids []string)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.onGone = f
+	s.onGone = append(s.onGone, f)
+}
+
+// OnDevice sets what hears of a device that is signed in (a session made, or a
+// waiting one approved): the roster tells every install about it (decision 0030
+// 3.4).
+func (s *Store) OnDevice(f func(d Device)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onAdd = append(s.onAdd, f)
 }
 
 // Revoke ends a device's session, and with it the devices it added (the
@@ -579,9 +595,9 @@ func (s *Store) Revoke(id, by string) []string {
 	s.saveLocked()
 	s.saveJSON(kvNodes, s.nodes)
 	s.auditLocked("revoke", by, strings.Join(order, ", "))
-	f := s.onGone
+	fs := append([]func([]string){}, s.onGone...)
 	s.mu.Unlock()
-	if f != nil {
+	for _, f := range fs {
 		f(order)
 	}
 	return order
@@ -635,4 +651,29 @@ func (s *Store) List() []DeviceView {
 		return out[i].LastSeen.After(out[j].LastSeen)
 	})
 	return out
+}
+
+// Signed lists the devices that are signed in (not waiting), for the roster.
+func (s *Store) Signed() []Device {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Device
+	for _, d := range s.devices {
+		if !d.Pending {
+			out = append(out, *d)
+		}
+	}
+	return out
+}
+
+// Has reports whether a device is signed in here.
+func (s *Store) Has(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, d := range s.devices {
+		if d.ID == id {
+			return true
+		}
+	}
+	return false
 }

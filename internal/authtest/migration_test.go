@@ -55,8 +55,27 @@ var steps = []step{
 			t.Fatalf("observe again, a browser with no session: %v %d (want 200)", err, r.Status)
 		}
 	}},
-	// Slices 3 to 6 add: the roster, the peer link beside the whois link, the
-	// invite, removal, the LAN.
+	// Slice 3: the laptop restarts with a peer port, as a release restarts it,
+	// and the owner's Mac (the same tailnet user, Serve up on both) pairs with it
+	// by condition 1 with no press. The laptop's front follows the Mac over the
+	// peer link and its static host as before; the cookies, the phone and fyr open
+	// all still work (checks run after the step).
+	{"slice 3: a peer port; the Mac pairs by condition 1", func(t *testing.T, l *authtest.Live) {
+		mac, err := l.EnablePeers()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := l.Laptop.WaitRoster(30*time.Second, func(r *authtest.Roster) bool { return strings.Contains(strings.Join(r.Others(), ","), "mac") }); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := mac.Fyrd.WaitRoster(30*time.Second, func(r *authtest.Roster) bool { return strings.Contains(strings.Join(r.Others(), ","), "laptop") }); err != nil {
+			t.Fatal(err)
+		}
+		if hosts, err := l.WaitHostsOnline(l.Local, 30*time.Second, "laptop", "server", "mac"); err != nil || !hosts["mac"] || !hosts["server"] {
+			t.Fatalf("the front follows %v (%v): want laptop, server and mac\n%s", hosts, err, l.Laptop.Log())
+		}
+	}},
+	// Slices 4 to 6 add: the invite, removal, the LAN.
 }
 
 func TestMigrationKeepsTheOwnerSignedIn(t *testing.T) {

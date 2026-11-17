@@ -116,6 +116,44 @@ func (s *Server) PeerHandler(peers PeerAuth) http.Handler {
 	return PeerGuard(s.OwnerLogin, peers, withActor(actorPeer, "", withGzip(withDeadline(s.routes(false)))))
 }
 
+// PeerGate is what the host asks of the roster on the peer port (decision 0030
+// 3.3, 3.7): which install a connection is, whether a device was revoked, and
+// whether the install may drive this host.
+type PeerGate interface {
+	// Member is the install whose key the connection proved, when the roster
+	// holds it.
+	Member(r *http.Request) (id string, ok bool)
+	DeviceRevoked(id string) bool
+	MayDrive(install string) bool
+}
+
+// LinkHandler serves the host protocol on the peer port (V0.158): the channel
+// proved which install speaks, so Fyr-Actor says which device it acts for. The
+// header is read as on the pipe; a device the roster says was revoked is
+// refused (401) whichever front forwards it; a call that changes things from an
+// install the owner switched off here is refused (403). No /mcp.
+func (s *Server) LinkHandler(g PeerGate) http.Handler {
+	inner := withActor(actorLink, "", withGzip(withDeadline(s.routes(false))))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := g.Member(r)
+		if !ok {
+			http.Error(w, "this install is not in the roster", http.StatusForbidden)
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !g.MayDrive(id) {
+			api.WriteJSON(w, http.StatusForbidden, map[string]any{"ok": false, "error": "this host does not take commands from that install"})
+			return
+		}
+		inner.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), linkKey{}, linkInfo{id, g})))
+	})
+}
+
+type linkKey struct{}
+type linkInfo struct {
+	install string
+	gate    PeerGate
+}
+
 // routes is the host protocol; mcp adds the agents' endpoint, which only the
 // main port serves.
 func (s *Server) routes(mcp bool) http.Handler {
@@ -369,6 +407,7 @@ type actorMode int
 const (
 	actorPipe actorMode = iota // required
 	actorPeer                  // optional: an older front sends none
+	actorLink                  // required, and the install is the key the link proved
 )
 
 var (
@@ -396,7 +435,7 @@ func withActor(mode actorMode, self string, next http.Handler) http.Handler {
 				api.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "malformed " + authn.Header})
 				return
 			}
-		} else if mode == actorPipe {
+		} else if mode == actorPipe || mode == actorLink {
 			api.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "missing " + authn.Header})
 			return
 		} else {
@@ -409,6 +448,14 @@ func withActor(mode actorMode, self string, next http.Handler) http.Handler {
 		}
 		if mode == actorPipe {
 			p.Front = self
+		}
+		if mode == actorLink {
+			li, _ := r.Context().Value(linkKey{}).(linkInfo)
+			p.Front = li.install // the key the link proved, whatever the header says
+			if p.Kind == authn.KindDevice && li.gate != nil && li.gate.DeviceRevoked(p.ID) {
+				api.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "that device was revoked"})
+				return
+			}
 		}
 		ctx := authn.With(r.Context(), p)
 		if o := r.Header.Get(authn.OriginHeader); o != "" && originRe.MatchString(o) {

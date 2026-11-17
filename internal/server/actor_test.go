@@ -4,6 +4,7 @@ package server
 // and the peer listener only; the peer listener also refuses a browser.
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -115,5 +116,55 @@ func TestPipeHandlerOrigin(t *testing.T) {
 		if origin != want {
 			t.Errorf("Fyr-Origin %q -> %q (want %q)", in, origin, want)
 		}
+	}
+}
+
+type fakeGate struct {
+	member  bool
+	revoked map[string]bool
+	noDrive bool
+}
+
+func (g fakeGate) Member(*http.Request) (string, bool) { return "FRNT-0000-0000-0000", g.member }
+func (g fakeGate) DeviceRevoked(id string) bool        { return g.revoked[id] }
+func (g fakeGate) MayDrive(string) bool                { return !g.noDrive }
+
+// SPEC V0.158 (decision 0030 3.3, 3.7): the host's peer-port handler. A key that
+// is not in the roster is 403; the principal comes from Fyr-Actor and is
+// required; a device the roster says was revoked is 401 whichever front forwards
+// it; a call that changes things from an install switched off here is 403; the
+// front is the key the link proved; no /mcp.
+func TestLinkHandler(t *testing.T) {
+	s := &Server{MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("mcp")) })}
+	good := map[string]string{"Fyr-Actor": goodActor}
+	for name, c := range map[string]struct {
+		g      fakeGate
+		method string
+		path   string
+		hdr    map[string]string
+		want   int
+	}{
+		"a member":                      {fakeGate{member: true}, "GET", "/api/profiles", good, 200},
+		"not in the roster":             {fakeGate{}, "GET", "/api/profiles", good, 403},
+		"no Fyr-Actor":                  {fakeGate{member: true}, "GET", "/api/profiles", nil, 401},
+		"a revoked device":              {fakeGate{member: true, revoked: map[string]bool{"dev_x": true}}, "GET", "/api/profiles", good, 401},
+		"an install reads when off":     {fakeGate{member: true, noDrive: true}, "GET", "/api/profiles", good, 200},
+		"an install drives when off":    {fakeGate{member: true, noDrive: true}, "POST", "/api/command", good, 403},
+		"an install drives when on":     {fakeGate{member: true}, "POST", "/api/command", good, 400},
+		"/mcp is not served":            {fakeGate{member: true}, "GET", "/mcp", good, 404},
+		"a revoked device is not asked": {fakeGate{member: true, revoked: map[string]bool{"other": true}}, "GET", "/api/profiles", good, 200},
+	} {
+		if w := serveReq(s.LinkHandler(c.g), c.method, c.path, c.hdr); w.Code != c.want {
+			t.Errorf("%s: %d (want %d) %s", name, w.Code, c.want, w.Body)
+		}
+	}
+	var got authn.Principal
+	probe := withActor(actorLink, "", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got, _ = authn.From(r.Context()) }))
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probe.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), linkKey{}, linkInfo{"THEM-0000-0000-0000", fakeGate{}})))
+	})
+	serveReq(h, "GET", "/x", map[string]string{"Fyr-Actor": "v=1; kind=device; id=dev_x; how=tailnet; front=LIAR-0000-0000-0000"})
+	if got.Front != "THEM-0000-0000-0000" {
+		t.Errorf("the front is %q: it is the key the link proved, not what the header says", got.Front)
 	}
 }
