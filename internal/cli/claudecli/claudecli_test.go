@@ -18,8 +18,8 @@ func TestEnvPerAuth(t *testing.T) {
 	if err != nil || len(env) != 0 {
 		t.Fatalf("main login: %v %v", env, err)
 	}
-	env, _ = a.Env(cli.Launch{Auth: cli.Auth{Kind: cli.CLILogin, ConfigDir: "/x/.claude-norban"}})
-	if !slices.Equal(env, []string{"CLAUDE_CONFIG_DIR=/x/.claude-norban"}) {
+	env, _ = a.Env(cli.Launch{Auth: cli.Auth{Kind: cli.CLILogin, ConfigDir: "/x/.claude-acme"}})
+	if !slices.Equal(env, []string{"CLAUDE_CONFIG_DIR=/x/.claude-acme"}) {
 		t.Fatalf("account: %v", env)
 	}
 	env, _ = a.Env(cli.Launch{Auth: cli.Auth{Kind: cli.CLILogin, ConfigDir: "/x/n"}, Key: "tok"})

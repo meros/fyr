@@ -34,14 +34,14 @@ export function createMockApi(scenario: string): Api {
   const hostOffset = Date.parse(server.state().now) - Date.now();
   const hostNow = () => Date.now() + hostOffset;
   // V0.127: with &hosts=2 every host has its own settings. desk (this install, the front's first) has the ones above;
-  // lab and old-nuc their own; meros-server is offline, so the front serves what it last read (readAt) and refuses
+  // lab and old-nuc their own; host-b is offline, so the front serves what it last read (readAt) and refuses
   // every change. A host the front does not follow is refused.
   type MockHost = { providers: ReturnType<typeof createMockProviders>; deployOn: boolean; repos: { repo: string; on: boolean }[] };
   const providers = createMockProviders(providersMode, hostNow);
   const log: { action: string; threadId?: string; args: Record<string, unknown> }[] = [];
   (globalThis as { __fyrCommands?: typeof log }).__fyrCommands = log;
   // V0.111, V0.102: the owner's automation settings, in memory.
-  const desk: MockHost = { providers, deployOn: true, repos: [{ repo: "meros/fyr", on: false }, { repo: "norban/web", on: true }] };
+  const desk: MockHost = { providers, deployOn: true, repos: [{ repo: "meros/fyr", on: false }, { repo: "acme/web", on: true }] };
   const others = new Map<string, MockHost>();
   const mockHostList = () => server.state().hosts ?? [];
   /** The host a call names: desk for none (or one host), else that host; an error for a host the front does not

@@ -246,7 +246,7 @@ const SCREENS = [
   // SPEC 0.5 V0.43: the PR tab with a failing check and 2 unresolved review threads, and the Merge dialog.
   { name: "PR tab with a failing check", url: "?mock=1&open=t_block&tab=pr", prTab: true, ready: PR_LOADED },
   { name: "PR merge dialog", url: "?mock=1&open=t_s2&tab=pr", sheet: "merge", ready: PR_LOADED },
-  // SPEC 0.5 V0.46: quiet hours. ?quiet=p_home puts Hemmet in quiet hours: its thread leaves the inbox, comes back
+  // SPEC 0.5 V0.46: quiet hours. ?quiet=p_home puts Garden in quiet hours: its thread leaves the inbox, comes back
   // with the project filter (whose line says until when), and the project screen's Quiet hours row fits the phone.
   { name: "inbox with a quiet project", url: "?mock=rail&quiet=p_home", storage: { "fyr.projectFilter": "" } },
   // SPEC 0.5 V0.114: the chip alone no longer opens it: the gate (until HH:MM, the 30 s hold) shows, not the thread;
@@ -335,7 +335,7 @@ const MEASURE = `(() => {
     innerWidth: window.innerWidth,
     projectEditor: !!document.querySelector('.pedit'),
     filterLine: !!document.querySelector('.m-screen .pfrow .pfc.on'),
-    otherProjectRows: [...document.querySelectorAll('.m-list .rpi')].filter(e => e.getAttribute('title') !== 'norban/web').length, // V0.135: the row's project is its icon
+    otherProjectRows: [...document.querySelectorAll('.m-list .rpi')].filter(e => e.getAttribute('title') !== 'acme/web').length, // V0.135: the row's project is its icon
     saveButton: [...document.querySelectorAll('.pedit button')].some((b) => b.textContent.trim() === 'Save' && b.getBoundingClientRect().height > 0),
     projectGroups: [...document.querySelectorAll('.pedit > .sg > .sg-h .sg-t')].map((e) => e.textContent),
     // V0.119: the button beside a focused text field (Save, Add, Save key) stays in view with the keyboard up.
@@ -563,14 +563,14 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   if (ctx.startsWith("project screen")) check(!m.saveButton && m.projectGroups.join("|") === "Identity|Threads|Quiet hours", `${ctx}: the project page has a Save button (${m.saveButton}) or its groups are ${JSON.stringify(m.projectGroups)}`);
   if (ctx.startsWith("project picker")) check(m.pickerRows[0] === "New project from this thread" && m.pickerRows[1] === "No project", `${ctx}: the picker's first rows are ${JSON.stringify(m.pickerRows)}`);
   if (ctx.startsWith("new project step")) check(m.stepName === "lasso-app" && m.stepSources === 1 && m.stepFolder === "~/src/lasso-app", `${ctx}: the step is not prefilled from the thread (name ${m.stepName}, ${m.stepSources} folders, folder "${m.stepFolder}")`);
-  if (ctx.startsWith("new thread, project without")) check(m.newProject === "Hemmet" && m.folderLine === "A fresh scratch folder", `${ctx}: expected Hemmet in a fresh scratch folder (${m.newProject}, ${m.folderLine})`);
+  if (ctx.startsWith("new thread, project without")) check(m.newProject === "Garden" && m.folderLine === "A fresh scratch folder", `${ctx}: expected Garden in a fresh scratch folder (${m.newProject}, ${m.folderLine})`);
   if (ctx.startsWith("folder picker sheet")) check(m.folderSections.join("|") === "Recent|Repos found|Browse" && m.browseRows >= 4, `${ctx}: sections ${JSON.stringify(m.folderSections)}, ${m.browseRows} browse rows`);
-  if (ctx.startsWith("project screen with its folder")) check(m.projFolder === "~/src/norban/web" && m.projFolderLine === "Threads started in this folder or below land here." && m.projFolderBtn === "Change…" && m.stars === 0 && m.noOldWords, `${ctx}: folder "${m.projFolder}", line "${m.projFolderLine}", button "${m.projFolderBtn}", ${m.stars} stars, old words gone ${m.noOldWords}`);
+  if (ctx.startsWith("project screen with its folder")) check(m.projFolder === "~/src/acme/web" && m.projFolderLine === "Threads started in this folder or below land here." && m.projFolderBtn === "Change…" && m.stars === 0 && m.noOldWords, `${ctx}: folder "${m.projFolder}", line "${m.projFolderLine}", button "${m.projFolderBtn}", ${m.stars} stars, old words gone ${m.noOldWords}`);
   if (ctx.startsWith("details without a project")) check(!m.makeProject, `${ctx}: a Make project button still shows`);
   if (ctx.startsWith("inbox with a quiet project")) check(!m.dishwasher && !m.quietNote, `${ctx}: the quiet project's thread shows in the inbox (${m.dishwasher}, note ${m.quietNote})`);
   if (ctx.startsWith("quiet project through the filter")) {
     check(!m.dishwasher && /^Quiet until \d\d:\d\d$/.test(m.quietNote ?? ""), `${ctx}: the chip shows the quiet project's thread without the hold (${m.dishwasher}) or no note ("${m.quietNote}")`);
-    check(!!m.quietGate && /^Hemmet is quiet until \d\d:\d\d\.$/.test(m.quietGate.head) && /Hold here for 30 s/.test(m.quietGate.hold) && m.quietGate.h >= 44 && m.quietGate.right <= m.innerWidth + 0.5, `${ctx}: the gate is missing or wrong ${JSON.stringify(m.quietGate)}`);
+    check(!!m.quietGate && /^Garden is quiet until \d\d:\d\d\.$/.test(m.quietGate.head) && /Hold here for 30 s/.test(m.quietGate.hold) && m.quietGate.h >= 44 && m.quietGate.right <= m.innerWidth + 0.5, `${ctx}: the gate is missing or wrong ${JSON.stringify(m.quietGate)}`);
   }
   if (ctx.startsWith("quiet project unlocked through the filter")) check(m.dishwasher && !m.quietGate, `${ctx}: after the hold the chip does not show the quiet project's thread (${m.dishwasher}, gate ${JSON.stringify(m.quietGate)})`);
   if (ctx.startsWith("link to a quiet thread")) check(!m.dishwasher && !!m.quietGate && /Hold here for 30 s/.test(m.quietGate.hold), `${ctx}: the link opens the quiet thread without the hold (${m.dishwasher}, gate ${JSON.stringify(m.quietGate)})`);
@@ -672,8 +672,8 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
       check(c.btnBottom <= visBottom - insetBottom + 0.5, `${ctx}: the buttons end at ${c.btnBottom.toFixed(1)}, below ${visBottom - insetBottom}`);
       check(c.focused, `${ctx}: focus is not on the primary button`);
       check(c.codeOverflow <= 0.5, `${ctx}: the command runs ${c.codeOverflow} px past its box`);
-      if (ctx.startsWith("confirm sheet for a script")) check(c.title === "Set the Norban token" && c.primary === "Run" && !c.danger && c.code === "bash …/20261115-130828-find-the-norban-claude-long-term-token/set-norban-token.sh" && c.folder === "in ~/…/scratch/20261115-130828-find-the-norban-claude-long-term-token", `${ctx}: words ${JSON.stringify(c)}`);
-      else check(c.title === "Delete norban/web?" && c.primary === "Delete project" && c.danger, `${ctx}: words ${JSON.stringify(c)}`);
+      if (ctx.startsWith("confirm sheet for a script")) check(c.title === "Set the Acme token" && c.primary === "Run" && !c.danger && c.code === "bash …/20261115-130828-find-the-acme-claude-long-term-token/set-acme-token.sh" && c.folder === "in ~/…/scratch/20261115-130828-find-the-acme-claude-long-term-token", `${ctx}: words ${JSON.stringify(c)}`);
+      else check(c.title === "Delete acme/web?" && c.primary === "Delete project" && c.danger, `${ctx}: words ${JSON.stringify(c)}`);
     }
   }
   if (keyboard) {
@@ -831,7 +831,7 @@ function harness(t) {
     } else if (s.sheet === "merge") {
       await tapCenter(".prv-merge", "!!document.querySelector('.dlg .df .btn.p')");
     } else if (s.sheet === "confirm") {
-      await evaluate(`[...document.querySelectorAll('.offb .btn')].find((b) => b.textContent.includes('Set the Norban token'))?.click()`);
+      await evaluate(`[...document.querySelectorAll('.offb .btn')].find((b) => b.textContent.includes('Set the Acme token'))?.click()`);
       await waitFor(`!!document.querySelector('.m-sheet.cfm')`, { what: "the confirmation sheet" });
     } else if (s.sheet === "confirm-delete") {
       await evaluate(`document.querySelector('.pdel .btn')?.scrollIntoView({ block: 'center' })`);
@@ -1239,12 +1239,12 @@ try {
   await key("Enter");
   const d = await evaluate(`({ dlg: !!document.querySelector('.dlg .plist'), focus: document.activeElement?.classList.contains('pq') })`);
   check(d.dlg && d.focus, "V0.26 desktop: Project… does not open the project picker with the search focused");
-  await send("Input.insertText", { text: "hemmet" }); // V0.61: Enter picks a project by its exact name (any case)
+  await send("Input.insertText", { text: "garden" }); // V0.61: Enter picks a project by its exact name (any case)
   await settle();
   await key("Enter");
-  await waitFor(`!document.querySelector('.dlg') && /Hemmet/.test(document.querySelector('.thh .chip.proj')?.textContent ?? '')`, { soft: true });
+  await waitFor(`!document.querySelector('.dlg') && /Garden/.test(document.querySelector('.thh .chip.proj')?.textContent ?? '')`, { soft: true });
   const r = await evaluate(`({ dlg: !!document.querySelector('.dlg'), chip: document.querySelector('.thh .chip.proj')?.textContent ?? '' })`);
-  check(!r.dlg && /Hemmet/.test(r.chip), `V0.26, V0.61 desktop: Enter on an exact project name does not move the thread there (chip "${r.chip}")`);
+  check(!r.dlg && /Garden/.test(r.chip), `V0.26, V0.61 desktop: Enter on an exact project name does not move the thread there (chip "${r.chip}")`);
 } catch (e) {
   failures.push(`V0.26 desktop: ${e.message}`);
 }
@@ -1292,36 +1292,36 @@ try {
   await evaluate(`localStorage.setItem("fyr.lastProject", "p_web"); localStorage.setItem("fyr.projectFilter", ""); true`);
   await navigate(`${origin}/?mock=rail&dialog=new`, "!!document.querySelector('.dlg .fline .ell')");
   const before = await evaluate(`document.querySelector('.dlg .fline .ell')?.textContent ?? ''`);
-  check(before === "~/src/norban/web", `V0.42 desktop: a new thread in norban/web does not start in its folder ("${before}")`);
+  check(before === "~/src/acme/web", `V0.42 desktop: a new thread in acme/web does not start in its folder ("${before}")`);
   await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change')?.focus()`);
   await key("Enter");
   await waitFor(`!!document.querySelector('.fpick .fsec h4')`, { soft: true });
   const o = await evaluate(`({ picker: !!document.querySelector('.fpick'), focus: document.activeElement?.classList.contains('pq') && !!document.activeElement.closest('.fpick'), first: document.querySelector('.fpick .fsec h4')?.textContent ?? '' })`);
   check(o.picker && o.focus, `V0.42 desktop: Change does not open the folder picker with its field focused (${JSON.stringify(o)})`);
   check(o.first === "Recent", `V0.55 desktop: the picker offers a project folder that is already picked ("${o.first}")`);
-  // norban and norban-platform-… share "norban": Tab completes to the common start; Enter opens the exact name.
-  await send("Input.insertText", { text: "~/src/no" });
+  // acme and acme-platform-… share "acme": Tab completes to the common start; Enter opens the exact name.
+  await send("Input.insertText", { text: "~/src/ac" });
   await settle();
   await key("Tab");
-  await waitFor(`document.querySelector('.fpick .pq')?.value === '~/src/norban'`, { soft: true });
+  await waitFor(`document.querySelector('.fpick .pq')?.value === '~/src/acme'`, { soft: true });
   const v = await evaluate(`document.querySelector('.fpick .pq')?.value ?? ''`);
-  check(v === "~/src/norban", `V0.42 desktop: Tab does not complete the common start ("${v}")`);
+  check(v === "~/src/acme", `V0.42 desktop: Tab does not complete the common start ("${v}")`);
   await key("Enter");
-  await waitFor(`document.querySelector('.fpick .pq')?.value === '~/src/norban/'`, { soft: true });
+  await waitFor(`document.querySelector('.fpick .pq')?.value === '~/src/acme/'`, { soft: true });
   await settle();
   const v2 = await evaluate(`document.querySelector('.fpick .pq')?.value ?? ''`);
-  check(v2 === "~/src/norban/", `V0.42 desktop: Enter does not open the exact folder ("${v2}")`);
+  check(v2 === "~/src/acme/", `V0.42 desktop: Enter does not open the exact folder ("${v2}")`);
   await send("Input.insertText", { text: "o" });
   await settle();
   await key("Tab");
-  await waitFor(`document.querySelector('.fpick .pq')?.value === '~/src/norban/ops/'`, { soft: true });
+  await waitFor(`document.querySelector('.fpick .pq')?.value === '~/src/acme/ops/'`, { soft: true });
   const v3 = await evaluate(`document.querySelector('.fpick .pq')?.value ?? ''`);
-  check(v3 === "~/src/norban/ops/", `V0.42 desktop: Tab does not complete the one match ("${v3}")`);
+  check(v3 === "~/src/acme/ops/", `V0.42 desktop: Tab does not complete the one match ("${v3}")`);
   await settle();
   await key("Enter");
   await waitFor(`!document.querySelector('.fpick')`, { soft: true });
   const r = await evaluate(`({ picker: !!document.querySelector('.fpick'), dlg: !!document.querySelector('.dlg'), folder: document.querySelector('.dlg .fline .ell')?.textContent ?? '' })`);
-  check(!r.picker && r.dlg && r.folder === "~/src/norban/ops", `V0.42 desktop: Enter does not pick the typed folder (${JSON.stringify(r)})`);
+  check(!r.picker && r.dlg && r.folder === "~/src/acme/ops", `V0.42 desktop: Enter does not pick the typed folder (${JSON.stringify(r)})`);
   await evaluate(`[...document.querySelectorAll('.dlg .fline .btn')].find(b => b.textContent.trim() === 'Change')?.focus()`);
   await key("Enter");
   await waitFor(`!!document.querySelector('.fpick .fpr')`, { soft: true });
@@ -1459,7 +1459,7 @@ try {
   await navigate(`${origin}/?mock=rail&dialog=settings&page=projects/p_web`, "!!document.querySelector('.dlg .pedit .sw')");
   await settle();
   const pg = await evaluate(`({ save: [...document.querySelectorAll('.dlg .pedit button')].some(b => b.textContent.trim() === 'Save'), groups: [...document.querySelectorAll('.dlg .pedit > .sg > .sg-h .sg-t')].map(e => e.textContent), title: document.querySelector('.dlg .stp-h h2')?.textContent })`);
-  check(!pg.save && pg.groups.join("|") === "Identity|Threads|Quiet hours" && pg.title === "norban/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
+  check(!pg.save && pg.groups.join("|") === "Identity|Threads|Quiet hours" && pg.title === "acme/web", `V0.119 desktop: the project page (${JSON.stringify(pg)})`);
   await shot("settings-project-desktop.png");
   await evaluate(`document.querySelector('.dlg .pedit .sw:not(.on)').click()`);
   await waitFor(`${COMMANDS("project.update")}.length >= 1 && !!document.querySelector('.dlg .stp-h .saved')`, { soft: true });
@@ -1609,7 +1609,7 @@ for (const [w, h, phone] of [[1280, 800, false], [390, 844, true]]) section(`liv
     await navigate(url("providers"), `document.querySelectorAll('${at} .prow').length === 3`);
     const rows = await evaluate(`[...document.querySelectorAll('${at} .prow .sr-d')].map(e => e.textContent)`);
     check(rows[0]?.includes("3 of 4 models on") && rows[2]?.includes("1 of 380 models on"), `live ${w}: the Providers rows (${JSON.stringify(rows)})`);
-    await navigate(url("providers/claudeAgent"), `document.querySelectorAll('${at} .model').length === 3`);
+    await navigate(url("providers/claudeAlt"), `document.querySelectorAll('${at} .model').length === 3`);
     const c = await evaluate(`({ off: document.querySelectorAll('${at} .omodel').length, foot: document.querySelector('${at} .models .sg-f')?.textContent ?? '' })`);
     check(c.off === 1 && /Fyr's known list/.test(c.foot), `live ${w}: a Claude login on the known list (${JSON.stringify(c)})`);
     await navigate(url("providers/claudeDeepseek"), `document.querySelectorAll('${at} .omodel').length > 0`);
@@ -1700,7 +1700,7 @@ try {
   // The phone's chips in a set order.
   await navigate(`${origin}/?mock=rail&order=p_dot,p_home,p_web`, "!!document.querySelector('.m-screen .pfrow .pfc')");
   const pc = await evaluate(`[...document.querySelectorAll('.m-screen .pfrow .pfc')].slice(0, 3).map(b => b.title.split(':')[0])`);
-  check(pc.join("|") === "dotfiles|Hemmet|norban/web", `V0.121 phone: the chips do not follow the order (${JSON.stringify(pc)})`);
+  check(pc.join("|") === "dotfiles|Garden|acme/web", `V0.121 phone: the chips do not follow the order (${JSON.stringify(pc)})`);
   await shot("chips-after-phone.png");
   // The provider page on the phone: both parts, the switch 44 px wide at least as a row target.
   await navigate(`${origin}/?mock=rail&settings=providers/claude`, "document.querySelectorAll('.m-settings .model').length === 3 && document.querySelectorAll('.m-settings .omodel').length === 3");
@@ -1911,7 +1911,7 @@ try {
   await openScreen({ url: "?mock=rail&hosts=2" }, 390, 844);
   const rows = await evaluate(`[...document.querySelectorAll('.m-mv')].map(r => ({ label: r.getAttribute('aria-label'), off: r.querySelector('.m-off')?.textContent ?? '', host: r.querySelector('.m-hostn')?.textContent ?? '', right: r.getBoundingClientRect().right }))`);
   const off = rows.filter((r) => r.off);
-  check(off.length >= 1 && off.every((r) => r.off === "meros-server offline"), `V0.54 rows: offline host not named (${JSON.stringify(off)})`);
+  check(off.length >= 1 && off.every((r) => r.off === "host-b offline"), `V0.54 rows: offline host not named (${JSON.stringify(off)})`);
   check(rows.some((r) => r.host === "desk"), `V0.54 rows: no row names its host (${JSON.stringify(rows.slice(0, 3))})`);
   check(rows.every((r) => r.right <= 390), "V0.54 rows: a row runs past the edge");
   await openScreen({ url: "?mock=rail&hosts=2&open=t_triage" }, 390, 844);
@@ -1919,7 +1919,7 @@ try {
   check(!!b, "V0.54 header: no offline line on the phone");
   if (b) {
     check(b.top >= INSETS.top && b.left >= 0 && b.right <= 390 && b.bottom < b.vh, `V0.54 header: offline line outside the screen (${JSON.stringify(b)})`);
-    check(/^meros-server offline since \d\d:\d\d · read-only$/.test(b.text), `V0.54 header: text "${b.text}"`);
+    check(/^host-b offline since \d\d:\d\d · read-only$/.test(b.text), `V0.54 header: text "${b.text}"`);
   }
   await openScreen({ url: "?mock=rail&hosts=2&open=t_mapperf" }, 390, 844);
   const chip = await evaluate(`document.querySelector('.m-hostc')?.textContent ?? ''`);
@@ -1981,10 +1981,10 @@ for (const [label, w, ht] of [
     await open("hosts", `document.querySelectorAll('${root} .sr.host').length === 4`);
     const rows = await evaluate(`[...document.querySelectorAll('${root} .sr.host')].map(r => ({ tag: r.tagName, name: r.dataset.host, id: r.dataset.id ?? '', line: r.querySelector('.sr-d')?.textContent ?? '', bad: r.classList.contains('bad'), badge: r.querySelector('.pst')?.textContent ?? '', btns: r.querySelectorAll('button').length, dot: r.querySelector('.hdot')?.className ?? '', h: r.getBoundingClientRect().height, self: r.querySelector('.tag')?.textContent ?? '' }))`);
     const by = Object.fromEntries(rows.map((r) => [r.name, r]));
-    check(rows.map((r) => r.name).join("|") === "desk|meros-server|lab|old-nuc", `${ctx}: the order ${JSON.stringify(rows.map((r) => r.name))}`);
+    check(rows.map((r) => r.name).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the order ${JSON.stringify(rows.map((r) => r.name))}`);
     check(rows.every((r) => r.tag === "BUTTON" && r.btns === 0), `${ctx}: a row is not one button or holds a button ${JSON.stringify(rows)}`);
     check(/^online since \d\d:\d\d · this machine · id F7QK$/.test(by.desk?.line) && by.desk?.self === "This install" && by.desk?.id === "F7QK-2M9X-AB34-CD56", `${ctx}: desk ${JSON.stringify(by.desk)}`);
-    check(/^offline since \d\d:\d\d · tailnet · id M3RS$/.test(by["meros-server"]?.line) && !by["meros-server"]?.bad && /off/.test(by["meros-server"]?.dot), `${ctx}: the offline row ${JSON.stringify(by["meros-server"])}`);
+    check(/^offline since \d\d:\d\d · tailnet · id M3RS$/.test(by["host-b"]?.line) && !by["host-b"]?.bad && /off/.test(by["host-b"]?.dot), `${ctx}: the offline row ${JSON.stringify(by["host-b"])}`);
     check(/ · LAN · no id$/.test(by["old-nuc"]?.line), `${ctx}: old-nuc ${JSON.stringify(by["old-nuc"])}`);
     check(by.lab?.line === "Another install answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && /warn/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`);
     if (phone) check(rows.every((r) => r.h >= 55.5), `${ctx}: a row under 56 px ${JSON.stringify(rows.map((r) => r.h))}`);
@@ -2034,10 +2034,10 @@ for (const [label, w, ht] of [
   });
   // 4. A plain host's page, and back to the list.
   await step("host", async () => {
-    await open("hosts/meros-server", `!!document.querySelector('${root} .idf.big')`);
+    await open("hosts/host-b", `!!document.querySelector('${root} .idf.big')`);
     const pg = await evaluate(`({ id: document.querySelector('${root} .idf.big')?.getAttribute('aria-label'), copy: [...document.querySelectorAll('${root} .btn')].map(b => b.textContent.trim()), rows: [...document.querySelectorAll('${root} .sr')].map(r => [r.querySelector('.sr-t')?.textContent ?? '', r.querySelector('.sr-d')?.textContent ?? '']), pill: document.querySelector('${root} .stp .pst')?.textContent ?? '' })`);
     const row = (t) => pg.rows.find((r) => r[0] === t);
-    check(pg.id === "id M3RS-QX7P-5LKA-2WNE" && pg.pill === "Offline", `${ctx}: meros-server's id ${JSON.stringify(pg)}`);
+    check(pg.id === "id M3RS-QX7P-5LKA-2WNE" && pg.pill === "Offline", `${ctx}: host-b's id ${JSON.stringify(pg)}`);
     check(pg.copy.includes("Copy") || pg.copy.includes("Copied"), `${ctx}: no Copy ${JSON.stringify(pg.copy)}`);
     check(row("Address")?.[1] === "http://100.64.0.9:7778 · tailnet", `${ctx}: the Address row ${JSON.stringify(row("Address"))}`);
     check(/^Fyr found it by itself\./.test(row("Found on the tailnet")?.[1] ?? ""), `${ctx}: the origin row ${JSON.stringify(pg.rows)}`);
@@ -2052,7 +2052,7 @@ for (const [label, w, ht] of [
       await key("Escape");
       await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'hosts'`, { soft: true });
       const esc = await evaluate(`({ page: document.querySelector('.dlg .stp')?.dataset.page, focus: document.activeElement?.dataset?.host ?? '' })`);
-      check(esc.page === "hosts" && esc.focus === "meros-server", `${ctx}: Esc ${JSON.stringify(esc)}`);
+      check(esc.page === "hosts" && esc.focus === "host-b", `${ctx}: Esc ${JSON.stringify(esc)}`);
       // The crumb too.
       await evaluate(`document.querySelector('.dlg .sr.host[data-host=lab]').click()`);
       await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === 'hosts/lab'`, { soft: true });
@@ -2061,7 +2061,7 @@ for (const [label, w, ht] of [
       check(await evaluate(`document.querySelector('.dlg .stp')?.dataset.page === 'hosts'`), `${ctx}: the crumb does not go back to Hosts`);
     } else {
       await open("hosts", `document.querySelectorAll('.m-settings .sr.host').length === 4`);
-      await tapCenter(".m-settings .sr.host[data-host=meros-server]", `!!document.querySelector('.m-settings .idf.big')`);
+      await tapCenter(".m-settings .sr.host[data-host=host-b]", `!!document.querySelector('.m-settings .idf.big')`);
       await evaluate(`history.back()`);
       await waitFor(`document.querySelectorAll('.m-settings .sr.host').length === 4`, { soft: true });
       check(await evaluate(`document.querySelectorAll('.m-settings .sr.host').length === 4`), `${ctx}: Back does not return to the Hosts page`);
@@ -2115,11 +2115,11 @@ for (const [label, w, ht] of [
     await open("providers", `document.querySelectorAll('${root} .hpart').length === 4 && document.querySelectorAll('${root} .hpart .prow').length === 7`);
     const parts = await evaluate(PARTS);
     const by = Object.fromEntries(parts.map((x) => [x.host, x]));
-    check(parts.map((x) => x.host).join("|") === "desk|meros-server|lab|old-nuc", `${ctx}: the parts ${JSON.stringify(parts.map((x) => x.host))}`);
+    check(parts.map((x) => x.host).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the parts ${JSON.stringify(parts.map((x) => x.host))}`);
     check(by.desk?.line === "This install" && by.desk.rows.join("|") === "Claude|Claude (work account)|DeepSeek" && by.desk.add === false, `${ctx}: desk ${JSON.stringify(by.desk)}`);
     check(/^Online since \d\d:\d\d$/.test(by.lab?.line ?? "") && by.lab.rows.join("|") === "Claude|Z.ai" && !by.lab.note, `${ctx}: lab ${JSON.stringify(by.lab)}`);
-    const off = by["meros-server"];
-    check(/^Offline since \d\d:\d\d$/.test(off?.line ?? "") && /^meros-server is offline\. These are its settings as Fyr last read them at \d\d:\d\d; nothing here can be changed until it is back\.$/.test(off.note) && off.rows.join() === "Claude" && off.add === true && off.selects.length > 0 && off.selects.every(Boolean), `${ctx}: the offline host ${JSON.stringify(off)}`);
+    const off = by["host-b"];
+    check(/^Offline since \d\d:\d\d$/.test(off?.line ?? "") && /^host-b is offline\. These are its settings as Fyr last read them at \d\d:\d\d; nothing here can be changed until it is back\.$/.test(off.note) && off.rows.join() === "Claude" && off.add === true && off.selects.length > 0 && off.selects.every(Boolean), `${ctx}: the offline host ${JSON.stringify(off)}`);
     // The old Host picker is gone: each part has its own System agents.
     const sa = await evaluate(`document.querySelectorAll('${root} section[aria-label="System agents"]').length`);
     check(sa === 4 && !(await evaluate(`!!document.querySelector('${root} select[aria-label="Host"]')`)), `${ctx}: System agents per host (${sa})`);
@@ -2135,7 +2135,7 @@ for (const [label, w, ht] of [
     await evaluate(`document.querySelector('${root} .hpart[data-host="lab"]').scrollIntoView({ block: 'start' })`);
     await settle();
     await shot(`hostsettings-providers-${label}.png`);
-    await evaluate(`document.querySelector('${root} .hpart[data-host="meros-server"]').scrollIntoView({ block: 'start' })`);
+    await evaluate(`document.querySelector('${root} .hpart[data-host="host-b"]').scrollIntoView({ block: 'start' })`);
     await settle();
     await shot(`hostsettings-offline-${label}.png`);
     if (!phone) {
@@ -2169,7 +2169,7 @@ for (const [label, w, ht] of [
     check(sa.length === 1 && sa[0].host === "lab" && sa[0].job === "title", `${ctx}: System agents on lab ${JSON.stringify(sa)}`);
     await open("automation", `document.querySelectorAll('${root} .hpart').length === 4 && !!document.querySelector('${root} .hpart[data-host="lab"] [role=switch]')`);
     const parts = await evaluate(`[...document.querySelectorAll('${root} .hpart')].map(p => ({ host: p.dataset.host, repos: [...p.querySelectorAll('.sr-t.mono, .mono.sr-t')].map(e => e.textContent), switches: [...p.querySelectorAll('[role=switch]')].map(x => x.disabled) }))`);
-    const lab = parts.find((x) => x.host === "lab"), off = parts.find((x) => x.host === "meros-server");
+    const lab = parts.find((x) => x.host === "lab"), off = parts.find((x) => x.host === "host-b");
     check(!!lab && lab.switches.length >= 2 && lab.switches.every((d) => !d) && !!off && off.switches.every(Boolean), `${ctx}: Automation per host ${JSON.stringify(parts)}`);
     await evaluate(`document.querySelector('${root} .hpart[data-host="lab"] [role=switch]').click()`);
     await waitFor(`${COMMANDS("host.autoDeploy")}.length === 1`, { soft: true });
@@ -2214,7 +2214,7 @@ for (const [label, w, ht] of [
     if (!(await click(`${root} button`, "New project"))) throw new Error("no New project button");
     await waitFor(`!!document.querySelector('${root} .hostf select')`);
     const opts = await evaluate(`[...document.querySelectorAll('${root} .hostf option')].map(o => o.textContent)`);
-    check(opts.join("|") === "desk (this install)|meros-server (offline)|lab|old-nuc", `${ctx}: the hosts offered ${JSON.stringify(opts)}`);
+    check(opts.join("|") === "desk (this install)|host-b (offline)|lab|old-nuc", `${ctx}: the hosts offered ${JSON.stringify(opts)}`);
     if (phone) {
       const h = await evaluate(`document.querySelector('${root} .hostf select').getBoundingClientRect().height`);
       check(h >= 44, `${ctx}: the Host field is ${h} px high`);
@@ -2241,14 +2241,14 @@ for (const [label, w, ht] of [
     await open(phone ? "?mock=rail&hosts=2&settings=projects" : "?mock=rail&hosts=2&dialog=settings&page=projects", `document.querySelectorAll('${root} .pli').length > 3`);
     await click(`${root} button`, "New project");
     await waitFor(`!!document.querySelector('${root} .hostf select')`);
-    await setHost("meros-server");
+    await setHost("host-b");
     await settle();
     const note = await evaluate(`document.querySelector('${root} .hostf .hbad')?.textContent ?? ''`);
-    check(/^meros-server is offline since \d\d:\d\d\. Its folders cannot be read/.test(note), `${ctx}: the offline note "${note}"`);
+    check(/^host-b is offline since \d\d:\d\d\. Its folders cannot be read/.test(note), `${ctx}: the offline note "${note}"`);
     await click(`${root} button`, "Choose folder");
     await waitFor(`!!document.querySelector('.fnote')`, { soft: true });
     const pk = await evaluate(PICKER);
-    check(/^meros-server is offline/.test(pk.note) && pk.rows.length === 0, `${ctx}: the picker of an offline host ${JSON.stringify(pk)}`);
+    check(/^host-b is offline/.test(pk.note) && pk.rows.length === 0, `${ctx}: the picker of an offline host ${JSON.stringify(pk)}`);
     await shot(`hostfolders-offline-${label}.png`);
     await closePicker();
     await waitFor(`!document.querySelector('.fpick, .fnote')`, { soft: true });
@@ -2256,7 +2256,7 @@ for (const [label, w, ht] of [
     await click(`${root} .pform button`, "Create project");
     await settle();
     const after = await evaluate(`({ n: ${COMMANDS("project.create")}.length, err: document.querySelector('${root} .pform .err')?.textContent ?? '' })`);
-    check(after.n === 0 && /^meros-server is offline/.test(after.err), `${ctx}: a create on an offline host ${JSON.stringify(after)}`);
+    check(after.n === 0 && /^host-b is offline/.test(after.err), `${ctx}: a create on an offline host ${JSON.stringify(after)}`);
   });
   // 3. New thread: the host follows the project; with no project the owner picks it.
   await step("new thread", async () => {
@@ -2298,9 +2298,9 @@ for (const [label, w, ht] of [
       await hn.key("ArrowUp", "ArrowUp", 1);
     }
     await waitFor(`${COMMANDS("front.hostOrder")}.length === 1`, { soft: true });
-    await waitFor(`${ROWS} === 'desk|lab|meros-server|old-nuc'`, { soft: true });
+    await waitFor(`${ROWS} === 'desk|lab|host-b|old-nuc'`, { soft: true });
     const o = await evaluate(`({ cmds: ${COMMANDS("front.hostOrder")}.map(c => c.args.names.join('|')), rows: ${ROWS} })`);
-    check(o.cmds.join() === "desk|lab|meros-server|old-nuc" && o.rows === "desk|lab|meros-server|old-nuc", `${ctx}: reorder the hosts ${JSON.stringify(o)}`);
+    check(o.cmds.join() === "desk|lab|host-b|old-nuc" && o.rows === "desk|lab|host-b|old-nuc", `${ctx}: reorder the hosts ${JSON.stringify(o)}`);
     await shot(`hostorder-${label}.png`);
     // lab first (as set on another front): it is the default.
     const q = "?mock=rail&hosts=2&hostOrder=lab,desk";
@@ -2353,7 +2353,7 @@ for (const [label, w, ht] of [
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick').click()`);
     await settle();
     const list = await evaluate(`[...document.querySelectorAll('${root} .plist .pln, ${root} .m-pickpanel .pln')].map(e => e.textContent)`);
-    check(list.includes("Robot arm") && !list.includes("Server ops") && !list.some((n) => /Hemmet|dotfiles/.test(n)), `${ctx}: lab's projects only ${JSON.stringify(list)}`);
+    check(list.includes("Robot arm") && !list.includes("Server ops") && !list.some((n) => /Garden|dotfiles/.test(n)), `${ctx}: lab's projects only ${JSON.stringify(list)}`);
     await shot(`hostaware-newthread-${label}.png`);
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick').click()`);
     await setHost("desk");
@@ -2382,7 +2382,7 @@ for (const [label, w, ht] of [
     const ed = phone ? ".m-app" : ".dlg";
     await open(phone ? "?mock=rail&hosts=2&project=p_srv" : "?mock=rail&hosts=2&dialog=settings&page=projects/p_srv", `!!document.querySelector('${ed} .hostrow')`);
     const s = await evaluate(`({ line: document.querySelector('${ed} .hostrow')?.textContent ?? '', name: document.querySelector('${ed} .pname input')?.disabled ?? document.querySelector('${ed} .pname input')?.readOnly, change: [...document.querySelectorAll('${ed} .pedit button')].find(b => b.textContent.trim().startsWith('Change'))?.disabled })`);
-    check(/meros-server.*offline since \d\d:\d\d/.test(s.line) && /cannot be changed until it is back/.test(s.line) && s.name === true && s.change === true, `${ctx}: an offline host's project ${JSON.stringify(s)}`);
+    check(/host-b.*offline since \d\d:\d\d/.test(s.line) && /cannot be changed until it is back/.test(s.line) && s.name === true && s.change === true, `${ctx}: an offline host's project ${JSON.stringify(s)}`);
     await shot(`hostaware-offline-${label}.png`);
   });
   // 4. The thread header names the host (the phone did since V0.54).
@@ -2424,7 +2424,7 @@ for (const [label, w, ht] of [
     if (phone) await openScreen({ url: "?mock=1&hosts=2&changes", ready: "document.querySelectorAll('.bdfrom').length > 0" }, w, ht);
     else await navigate(`${origin}/?mock=1&hosts=2&dialog=changes`, "document.querySelectorAll('.bdfrom').length > 0");
     const cards = await evaluate(`[...document.querySelectorAll('.bdfrom')].map(b => b.querySelector('.bdhost')?.textContent ?? '')`);
-    check(cards.length > 0 && cards.every((h) => h === "desk" || h === "meros-server"), `${ctx}: every card names its host ${JSON.stringify(cards)}`);
+    check(cards.length > 0 && cards.every((h) => h === "desk" || h === "host-b"), `${ctx}: every card names its host ${JSON.stringify(cards)}`);
     await shot(`hostdisplay-board-${label}.png`);
     if (phone) await openScreen({ url: "?mock=1&changes", ready: "document.querySelectorAll('.bdfrom').length > 0" }, w, ht);
     else await navigate(`${origin}/?mock=1&dialog=changes`, "document.querySelectorAll('.bdfrom').length > 0");
@@ -3304,19 +3304,19 @@ section('V0.68', async (h) => {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await navigate(`${origin}/?mock=1&open=t_done`, "[...document.querySelectorAll('.th .offb .btn')].some((b) => b.textContent.includes('Set the Norban token'))");
-  const press = () => evaluate(`[...document.querySelectorAll('.th .offb .btn')].find((b) => b.textContent.includes('Set the Norban token'))?.click()`);
+  await navigate(`${origin}/?mock=1&open=t_done`, "[...document.querySelectorAll('.th .offb .btn')].some((b) => b.textContent.includes('Set the Acme token'))");
+  const press = () => evaluate(`[...document.querySelectorAll('.th .offb .btn')].find((b) => b.textContent.includes('Set the Acme token'))?.click()`);
   const dlg = () => evaluate(`(() => { const d = document.querySelector('.dlg.cfm'); if (!d) return null; const r = d.getBoundingClientRect(); const p = d.querySelector('.df .btn.p'); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, title: d.querySelector('.cfm-t')?.textContent ?? '', primary: p?.textContent.replace('⏎', '').trim(), focused: document.activeElement === p, hover: d.querySelector('.cfm-code')?.title ?? '', runs: document.querySelectorAll('.th .offrun').length }; })()`);
   // V0.75 (1), #62: an action's result shows on its own button, so the buttons are what this check reads.
-  const runs = () => evaluate(`[...document.querySelectorAll('.th .offb .btn')].map((r) => r.textContent).filter((t) => !/^✦|^Set the Norban token$/.test(t) || /✓|failed|running/.test(t)).join('|')`);
+  const runs = () => evaluate(`[...document.querySelectorAll('.th .offb .btn')].map((r) => r.textContent).filter((t) => !/^✦|^Set the Acme token$/.test(t) || /✓|failed|running/.test(t)).join('|')`);
   const opened = `document.activeElement === document.querySelector('.dlg.cfm .df .btn.p')`;
   await press();
   await waitFor(opened, { soft: true });
   await settle();
   const a = await dlg();
   check(!!a && a.top >= 0 && a.bottom <= 800 && a.left >= 0 && a.right <= 1280, `V0.68 desktop: the dialog does not fit the window (${JSON.stringify(a)})`);
-  check(!!a && a.title === "Set the Norban token" && a.primary === "Run" && a.focused, `V0.68 desktop: title, primary or focus wrong (${JSON.stringify(a)})`);
-  check(!!a && a.hover.includes("/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-norban-claude-long-term-token/set-norban-token.sh"), `V0.68 desktop: no full command on hover ("${a?.hover}")`);
+  check(!!a && a.title === "Set the Acme token" && a.primary === "Run" && a.focused, `V0.68 desktop: title, primary or focus wrong (${JSON.stringify(a)})`);
+  check(!!a && a.hover.includes("/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-acme-claude-long-term-token/set-acme-token.sh"), `V0.68 desktop: no full command on hover ("${a?.hover}")`);
   if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "confirm-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
   await evaluate(`document.querySelector('.cfm-scrim')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
   await settle();
@@ -3327,9 +3327,9 @@ try {
   await press();
   await waitFor(opened, { soft: true });
   await key("Enter");
-  await waitFor(`!document.querySelector('.dlg.cfm') && [...document.querySelectorAll('.th .offers .btn')].some((r) => /Set the Norban token.*(✓|failed|running)/.test(r.textContent))`, { soft: true }); // V0.75 (1): the result is on the button
+  await waitFor(`!document.querySelector('.dlg.cfm') && [...document.querySelectorAll('.th .offers .btn')].some((r) => /Set the Acme token.*(✓|failed|running)/.test(r.textContent))`, { soft: true }); // V0.75 (1): the result is on the button
   const after = await runs();
-  check(!(await dlg()) && /Set the Norban token/.test(after), `V0.68 desktop: Enter does not run the action (runs "${after}")`);
+  check(!(await dlg()) && /Set the Acme token/.test(after), `V0.68 desktop: Enter does not run the action (runs "${after}")`);
   if (process.env.FYR_SHOTS) {
     // V0.101: the desktop inbox next to the thread's Changes tab, with the causes inline.
     await navigate(`${origin}/?mock=1&open=t_done&tab=changes`, "!!document.querySelector('.chtab')");
@@ -3483,27 +3483,27 @@ try {
   for (const k of ["needs", "working", "seen"]) await click(secHead(k), "true");
   const foldedAll = await evaluate(`({ s: ${STATE}, pinned: document.querySelectorAll(${JSON.stringify(phone ? "#m-sec-pinned .m-mv" : "#sec-pinned [data-id]")}).length })`);
   check(foldedAll.s.projects.length < one.projects.length && foldedAll.s.projects.reduce((a, c) => a + c.n, 0) <= foldedAll.pinned, `${ctx}: folding the sections does not take their projects' chips away (${JSON.stringify({ before: one.projects.map((c) => c.name), after: foldedAll.s.projects, pinned: foldedAll.pinned })})`);
-  await go("?mock=rail&hosts=2&hostOrder=meros-server,desk");
+  await go("?mock=rail&hosts=2&hostOrder=host-b,desk");
   const two = await evaluate(STATE);
-  check(JSON.stringify(two.hosts.map((c) => c.name)) === JSON.stringify(["meros-server", "desk"]) && two.hosts.every((c) => !c.on && c.n >= 1), `${ctx}: the host chips (${JSON.stringify(two.hosts)})`);
+  check(JSON.stringify(two.hosts.map((c) => c.name)) === JSON.stringify(["host-b", "desk"]) && two.hosts.every((c) => !c.on && c.n >= 1), `${ctx}: the host chips (${JSON.stringify(two.hosts)})`);
   check(two.hosts[0]?.dot === "hdot off" && two.hosts[1]?.dot === "hdot", `${ctx}: the hosts' dots (${JSON.stringify(two.hosts.map((c) => c.dot))})`);
   if (phone) check([...two.hosts, ...two.projects].every((c) => c.h >= 32), `${ctx}: a chip under 32 px on the phone`);
   await shot(`host-filter-${phone ? "phone" : "desktop"}.png`);
-  // 2. Picking meros-server: only its threads; the project chips count only its threads; remembered.
-  await click(`${root}.pfrow .pfh`, `localStorage.getItem('fyr.hostFilter') === 'meros-server'`);
+  // 2. Picking host-b: only its threads; the project chips count only its threads; remembered.
+  await click(`${root}.pfrow .pfh`, `localStorage.getItem('fyr.hostFilter') === 'host-b'`);
   const picked = await evaluate(STATE);
-  check(picked.hosts[0]?.on && picked.stored === "meros-server" && picked.rows >= 1 && picked.rows < two.rows, `${ctx}: picking a host (${JSON.stringify({ hosts: picked.hosts, rows: picked.rows, before: two.rows, stored: picked.stored })})`);
-  check(picked.rowHosts.every((x) => (phone ? x === "meros-server" : ["t_lasso", "t_triage"].includes(x))), `${ctx}: a row of another host under the host filter (${JSON.stringify(picked.rowHosts)})`);
+  check(picked.hosts[0]?.on && picked.stored === "host-b" && picked.rows >= 1 && picked.rows < two.rows, `${ctx}: picking a host (${JSON.stringify({ hosts: picked.hosts, rows: picked.rows, before: two.rows, stored: picked.stored })})`);
+  check(picked.rowHosts.every((x) => (phone ? x === "host-b" : ["t_lasso", "t_triage"].includes(x))), `${ctx}: a row of another host under the host filter (${JSON.stringify(picked.rowHosts)})`);
   check(picked.projects.every((c) => c.n >= 1) && picked.projects.reduce((a, c) => a + c.n, 0) <= picked.rows, `${ctx}: the project chips do not count only the picked host's threads (${JSON.stringify(picked.projects)})`);
   await shot(`host-filter-picked-${phone ? "phone" : "desktop"}.png`);
-  await go("?mock=rail&hosts=2&hostOrder=meros-server,desk");
+  await go("?mock=rail&hosts=2&hostOrder=host-b,desk");
   const again = await evaluate(STATE);
   check(again.hosts[0]?.on && again.rows === picked.rows, `${ctx}: the host filter is not remembered on this device (${JSON.stringify(again.hosts)})`);
-  // 4. Fold Needs (meros-server's threads are there): its chip stays, selected; the empty state names it.
+  // 4. Fold Needs (host-b's threads are there): its chip stays, selected; the empty state names it.
   await click(secHead("needs"), `!!document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})`);
   const folded = await evaluate(STATE);
-  check(folded.hosts.some((c) => c.name === "meros-server" && c.on && c.n === 0) && folded.stored === "meros-server", `${ctx}: the selected host's chip after its threads were folded away (${JSON.stringify(folded.hosts)})`);
-  check(/^No threads in view for meros-server\.\s*\d+ more in folded sections?\.\s*Clear filter$/.test(folded.empty ?? ""), `${ctx}: the empty state "${folded.empty}"`);
+  check(folded.hosts.some((c) => c.name === "host-b" && c.on && c.n === 0) && folded.stored === "host-b", `${ctx}: the selected host's chip after its threads were folded away (${JSON.stringify(folded.hosts)})`);
+  check(/^No threads in view for host-b\.\s*\d+ more in folded sections?\.\s*Clear filter$/.test(folded.empty ?? ""), `${ctx}: the empty state "${folded.empty}"`);
   check(folded.projects.length === 0, `${ctx}: project chips with no thread in view (${JSON.stringify(folded.projects)})`);
   await shot(`host-filter-empty-${phone ? "phone" : "desktop"}.png`);
   await click(`${phone ? ".m-fempty" : ".fempty"} .fe3`, `!localStorage.getItem('fyr.hostFilter')`);
@@ -3515,7 +3515,7 @@ try {
 });
 
 // SPEC 0.5 V0.138: a thread that opens clears the filters it fails, so its row is in the list and marked (V0.109).
-// 1 filtered to desk and norban/web, a link to t_lasso (meros-server, norban/web) clears only the host filter and
+// 1 filtered to desk and acme/web, a link to t_lasso (host-b, acme/web) clears only the host filter and
 // marks its row. 2 with both filters failing, both clear. 3 V0.114: a link to a quiet thread shows the gate and
 // clears nothing.
 for (const phone of [false, true]) section(`V0.138 ${phone ? "phone" : "desktop"}`, async (h) => {
@@ -3539,7 +3539,7 @@ try {
   await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostFilter": "desk", "fyr.projectFilter": "p_web" }, threadReady);
   await waitFor(`${F}.host === null`, { soft: true });
   const a = await evaluate(F);
-  check(a.host === null && a.project === "p_web", `${ctx}: a link to a meros-server thread under the desk filter (${JSON.stringify(a)})`);
+  check(a.host === null && a.project === "p_web", `${ctx}: a link to a host-b thread under the desk filter (${JSON.stringify(a)})`);
   if (!phone) {
     await waitFor(`${MARK}.ids[0] === 't_lasso'`, { soft: true });
     const m = await evaluate(MARK);
@@ -3562,16 +3562,16 @@ try {
   check(b.host === null && b.project === null, `${ctx}: both filters failing (${JSON.stringify(b)})`);
   if (!phone) {
     // 2b. A thread in the folded Settled section: the filter clears, then its section opens and its row is marked.
-    await open("?mock=rail&hosts=2&open=t_set7", { "fyr.hostFilter": "meros-server", "fyr.projectFilter": null }, "!!document.querySelector('.th .tt')");
+    await open("?mock=rail&hosts=2&open=t_set7", { "fyr.hostFilter": "host-b", "fyr.projectFilter": null }, "!!document.querySelector('.th .tt')");
     await waitFor(`${MARK}.ids[0] === 't_set7'`, { soft: true });
     const m = await evaluate(MARK);
     check(m.ids.length === 1 && m.ids[0] === "t_set7" && (await evaluate(F)).host === null, `${ctx}: a Settled thread opened under another host's filter (${JSON.stringify(m)})`);
   }
   // 3. A quiet thread: the gate, and the filter stays.
-  await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostFilter": "meros-server", "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");
+  await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostFilter": "host-b", "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");
   await settle();
   const c = await evaluate(F);
-  check(c.host === "meros-server", `${ctx}: a link to a quiet thread cleared the filter before the hold (${JSON.stringify(c)})`);
+  check(c.host === "host-b", `${ctx}: a link to a quiet thread cleared the filter before the hold (${JSON.stringify(c)})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }

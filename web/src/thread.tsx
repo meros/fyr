@@ -836,7 +836,7 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
   }
 }
 
-/** V0.45: "Handed over from Claude to Claude (norban) · 17:20", and how the context went over. */
+/** V0.45: "Handed over from Claude to Claude (acme) · 17:20", and how the context went over. */
 function HandoverDivider({ it }: { it: Extract<Item, { kind: "handover" }> }) {
   const profiles = useContext(ProfilesContext);
   return (

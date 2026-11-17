@@ -5,7 +5,7 @@ import { CARD_WORD, cardState, money, quotaDetail, quotaParts, quotaSummary, rai
 
 const now = Date.parse("2026-11-14T10:00:00Z");
 const claude: Quota = {
-  profile: "claudeAgent",
+  profile: "claudeAlt",
   kind: "anthropic-oauth",
   windows: [
     { name: "5 h", usedPct: 34.2, resetsAt: "2026-11-14T13:00:00Z" },
@@ -51,9 +51,9 @@ test("details: resets in local time, freshness, the stale note and the next try"
 // SPEC 0.5 V0.77 (1), #65: the card says each thing once. Today it repeated the same sentence three times (the line,
 // its own detail, and the profile's line above), all while the badge said Ready.
 test("the card says one error and its next try, once", () => {
-  const q: Quota = { profile: "claudeNorban", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }], stale: true, error: "Rate limited by the provider; trying again later", retryAt: "2026-11-14T10:31:00Z" };
-  assert.equal(quotaSummary(q, "Claude (norban)"), "Claude (norban) 5 h 34 %");
-  const d = quotaDetail(q, "Claude (norban)", now);
+  const q: Quota = { profile: "claudeAcme", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 34 }], stale: true, error: "Rate limited by the provider; trying again later", retryAt: "2026-11-14T10:31:00Z" };
+  assert.equal(quotaSummary(q, "Claude (acme)"), "Claude (acme) 5 h 34 %");
+  const d = quotaDetail(q, "Claude (acme)", now);
   assert.deepEqual(d.filter((l) => /Rate limited/.test(l)).length, 1, `one mention: ${d.join(" | ")}`);
   assert.equal(d.filter((l) => /Next try/.test(l)).length, 1);
   // the same, with no windows: the error is the line, not the name twice plus the error
@@ -73,14 +73,14 @@ test("the card's badge says Ready only when nothing is wrong", () => {
 // endpoint (a setup-token token cannot read it). The card says where the numbers come from and how old they are; with
 // none yet it says when they will show, and its badge never says "Rate limited".
 test("a token account shows its last session's windows with their age, or when they will show", () => {
-  const q: Quota = { profile: "claudeNorban", kind: "anthropic-oauth", source: "session", windows: [{ name: "7 d", usedPct: 67 }], updatedAt: "2026-11-14T09:48:00Z" };
-  assert.equal(quotaSummary(q, "Claude (norban)"), "Claude (norban) 7 d 67 %");
-  const d = quotaDetail(q, "Claude (norban)", now);
+  const q: Quota = { profile: "claudeAcme", kind: "anthropic-oauth", source: "session", windows: [{ name: "7 d", usedPct: 67 }], updatedAt: "2026-11-14T09:48:00Z" };
+  assert.equal(quotaSummary(q, "Claude (acme)"), "Claude (acme) 7 d 67 %");
+  const d = quotaDetail(q, "Claude (acme)", now);
   assert.ok(d.includes("From the last session, 12 min ago"), d.join(" | "));
   assert.ok(!d.some((l) => l.startsWith("Updated")), d.join(" | "));
   assert.equal(cardState(q), "ready");
-  const none: Quota = { profile: "claudeNorban", kind: "anthropic-oauth", source: "session" };
-  assert.equal(quotaSummary(none, "Claude (norban)"), "Claude (norban): usage shows after the next run");
+  const none: Quota = { profile: "claudeAcme", kind: "anthropic-oauth", source: "session" };
+  assert.equal(quotaSummary(none, "Claude (acme)"), "Claude (acme): usage shows after the next run");
   assert.equal(cardState(none), "waiting");
   assert.equal(CARD_WORD[cardState(none)], "After a run");
 });

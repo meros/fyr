@@ -17,7 +17,7 @@ function run(name: string, state: PrCheck["state"], now: number, startMin: numbe
     conclusion: state === "fail" ? "FAILURE" : state === "skipped" ? "SKIPPED" : state === "pass" ? "SUCCESS" : "",
     startedAt,
     completedAt: done ? iso(now - startMin * 60_000 + secs * 1000) : undefined,
-    url: `https://github.com/norban/web/actions/runs/4417/job/${Math.abs(hash(name))}`,
+    url: `https://github.com/acme/web/actions/runs/4417/job/${Math.abs(hash(name))}`,
   };
 }
 
@@ -58,7 +58,7 @@ Closes #77.`;
 export function mockPrDetail(t: ThreadDTO | undefined, now: number): PrReply {
   const pr = t?.pr;
   if (!t || !pr) return { error: "This thread has no PR." };
-  const common = { url: pr.url, repo: pr.repo ?? "norban/web", number: pr.number, fetchedAt: iso(now - 4000) };
+  const common = { url: pr.url, repo: pr.repo ?? "acme/web", number: pr.number, fetchedAt: iso(now - 4000) };
   if (pr.number === 88) {
     const checks = [run("lint", "fail", now, 12, 74), run("e2e (mobile-safari)", "running", now, 6, 0), ...PASSING.map((n, i) => run(n, "pass", now, 12, 40 + i * 13)), run("deploy preview", "skipped", now, 12, 0, "Preview")];
     return {
@@ -91,9 +91,9 @@ export function mockPrDetail(t: ThreadDTO | undefined, now: number): PrReply {
           path: "web/src/listing/CardGrid.tsx",
           line: 42,
           outdated: false,
-          url: "https://github.com/norban/web/pull/88#discussion_r1001",
+          url: "https://github.com/acme/web/pull/88#discussion_r1001",
           comments: [
-            { author: "anna-k", body: "This recomputes the column count on every render. Use the `useContainerWidth` hook we already have, and memo the result.", at: iso(now - 40 * 60_000), url: "https://github.com/norban/web/pull/88#discussion_r1001" },
+            { author: "anna-k", body: "This recomputes the column count on every render. Use the `useContainerWidth` hook we already have, and memo the result.", at: iso(now - 40 * 60_000), url: "https://github.com/acme/web/pull/88#discussion_r1001" },
             { author: "claude-agent", body: "Will do.", at: iso(now - 30 * 60_000) },
           ],
         },
@@ -101,8 +101,8 @@ export function mockPrDetail(t: ThreadDTO | undefined, now: number): PrReply {
           path: "web/src/listing/ListingCard.tsx",
           line: 118,
           outdated: true,
-          url: "https://github.com/norban/web/pull/88#discussion_r1002",
-          comments: [{ author: "johan", body: "The price should use `formatPrice(locale)`; in Swedish it reads **4 950 000 kr**, not 4,950,000 SEK.", at: iso(now - 25 * 60_000), url: "https://github.com/norban/web/pull/88#discussion_r1002" }],
+          url: "https://github.com/acme/web/pull/88#discussion_r1002",
+          comments: [{ author: "johan", body: "The price should use `formatPrice(locale)`; in Swedish it reads **4 950 000 kr**, not 4,950,000 SEK.", at: iso(now - 25 * 60_000), url: "https://github.com/acme/web/pull/88#discussion_r1002" }],
         },
       ],
     } satisfies PrDetail;

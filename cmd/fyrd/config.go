@@ -118,7 +118,7 @@ func loadConfig(path, t3Settings string) config {
 		}
 	}
 	if len(c.Profiles) == 0 {
-		c.Profiles = []provider.Profile{{ID: "claudeAgent", Name: "Claude", Binary: "claude", Color: "#d97757",
+		c.Profiles = []provider.Profile{{ID: "claudeAlt", Name: "Claude", Binary: "claude", Color: "#d97757",
 			Models: t3.DefaultModels, DefaultModel: t3.DefaultModels[0]}}
 	}
 	for i := range c.Profiles {

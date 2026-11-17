@@ -121,10 +121,10 @@ func TestThreadRenameTool(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	a := h.create("parent")
 	other := h.create("other")
-	if text, isErr := callAs(t, h.e, a, "thread_rename", map[string]any{"title": "Norban token"}); isErr {
+	if text, isErr := callAs(t, h.e, a, "thread_rename", map[string]any{"title": "Acme token"}); isErr {
 		t.Fatalf("%q", text)
 	}
-	if th, _ := h.e.Thread(a); th.Title != "Norban token" {
+	if th, _ := h.e.Thread(a); th.Title != "Acme token" {
 		t.Fatalf("title %q", th.Title)
 	}
 	if _, isErr := callAs(t, h.e, a, "thread_new", map[string]any{"cwd": h.dir, "text": "child work", "title": "Child"}); isErr {

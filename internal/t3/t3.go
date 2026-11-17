@@ -166,7 +166,7 @@ func History(home, session string, limit int) ([]core.Event, []time.Time, error)
 }
 
 // Profiles turns T3's claude provider instances into Fyr profiles. The
-// built-in instance claudeAgent (the plain `claude` binary) is always first.
+// built-in instance claudeAlt (the plain `claude` binary) is always first.
 func Profiles(settings string) ([]provider.Profile, error) {
 	b, err := os.ReadFile(settings)
 	if err != nil {
@@ -204,12 +204,12 @@ func Profiles(settings string) ([]provider.Profile, error) {
 				out = append(out, m)
 			}
 		}
-		if len(out) == 0 && id == "claudeAgent" {
+		if len(out) == 0 && id == "claudeAlt" {
 			out = DefaultModels
 		}
 		return out
 	}
-	out := []provider.Profile{{ID: "claudeAgent", Name: "Claude", Binary: "claude", Color: "#d97757", Models: models("claudeAgent", nil)}}
+	out := []provider.Profile{{ID: "claudeAlt", Name: "Claude", Binary: "claude", Color: "#d97757", Models: models("claudeAlt", nil)}}
 	ids := make([]string, 0, len(s.ProviderInstances))
 	for id := range s.ProviderInstances {
 		ids = append(ids, id)
@@ -217,7 +217,7 @@ func Profiles(settings string) ([]provider.Profile, error) {
 	sort.Strings(ids)
 	for _, id := range ids {
 		pi := s.ProviderInstances[id]
-		if pi.Driver != "claudeAgent" || (pi.Enabled != nil && !*pi.Enabled) || id == "claudeAgent" {
+		if pi.Driver != "claudeAlt" || (pi.Enabled != nil && !*pi.Enabled) || id == "claudeAlt" {
 			continue
 		}
 		var custom []string

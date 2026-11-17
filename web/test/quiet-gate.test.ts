@@ -11,12 +11,12 @@ import { thread } from "./helpers.ts";
 const now = Date.parse("2026-11-16T20:00:00Z");
 const until = "2026-11-17T05:00:00Z";
 const projects = [
-  { id: "p_norban", name: "Norban", quietUntil: until },
+  { id: "p_acme", name: "Acme", quietUntil: until },
   { id: "p_fyr", name: "Fyr" },
 ] as Project[];
 const threads = {
-  q1: thread("q1", "asking", "needs", { projectId: "p_norban", quietUntil: until }),
-  q2: thread("q2", "seen", "seen", { projectId: "p_norban", quietUntil: until }),
+  q1: thread("q1", "asking", "needs", { projectId: "p_acme", quietUntil: until }),
+  q2: thread("q2", "seen", "seen", { projectId: "p_acme", quietUntil: until }),
   f1: thread("f1", "done", "needs", { projectId: "p_fyr" }),
 };
 const unlocked = now + QUIET_SHOW_MS;
@@ -34,8 +34,8 @@ function inbox(filter: string | null, query: string, showUntil: number) {
 }
 
 test("project filter (desktop chip, phone chips): a quiet project picked shows none of its threads without the hold", () => {
-  assert.deepEqual(Object.keys(inbox("p_norban", "", 0)), [], "V0.46 (4) showed them on one tap");
-  assert.deepEqual(Object.keys(inbox("p_norban", "", unlocked)).sort(), ["q1", "q2"], "after the hold they show");
+  assert.deepEqual(Object.keys(inbox("p_acme", "", 0)), [], "V0.46 (4) showed them on one tap");
+  assert.deepEqual(Object.keys(inbox("p_acme", "", unlocked)).sort(), ["q1", "q2"], "after the hold they show");
   assert.deepEqual(Object.keys(inbox("p_fyr", "", 0)), ["f1"], "a project that is not quiet is not touched");
 });
 
@@ -50,7 +50,7 @@ test("New thread: the same unlock as every other path", () => {
   const s = kv();
   assert.deepEqual(createProjects(projects, now, loadQuietShow(s)).map((p) => p.id), ["p_fyr"]);
   setQuietShow(s, now);
-  assert.deepEqual(createProjects(projects, now, loadQuietShow(s)).map((p) => p.id), ["p_norban", "p_fyr"]);
+  assert.deepEqual(createProjects(projects, now, loadQuietShow(s)).map((p) => p.id), ["p_acme", "p_fyr"]);
 });
 
 test("one hold opens every path; Hide shuts every path, and listeners hear both", () => {
@@ -96,7 +96,7 @@ test("an open thread keeps working when its window starts (V0.46 (6))", () => {
 });
 
 test("j/k and g1–g5 walk the inbox order, which holds no quiet thread without the hold", () => {
-  const order = flatOrder(sections(inbox("p_norban", "", 0)), { needs: Infinity, working: Infinity, seen: Infinity, settled: Infinity, snoozed: Infinity });
+  const order = flatOrder(sections(inbox("p_acme", "", 0)), { needs: Infinity, working: Infinity, seen: Infinity, settled: Infinity, snoozed: Infinity });
   assert.deepEqual(order, []);
   const all = flatOrder(sections(inbox(null, "", 0)), { needs: Infinity, working: Infinity, seen: Infinity, settled: Infinity, snoozed: Infinity });
   assert.deepEqual(all, ["f1"]);

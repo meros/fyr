@@ -58,7 +58,7 @@ function profileName(id: string, profiles: Profile[]): string {
   return profiles.find((p) => p.id === id)?.name ?? id;
 }
 
-/** The divider in the conversation: "Handed over from Claude to Claude (norban) · 17:20". */
+/** The divider in the conversation: "Handed over from Claude to Claude (acme) · 17:20". */
 export function dividerLine(d: { from?: string; to?: string }, profiles: Profile[], clock: string): string {
   return `Handed over from ${profileName(d.from ?? "", profiles)} to ${profileName(d.to ?? "", profiles)}${clock ? ` · ${clock}` : ""}`;
 }

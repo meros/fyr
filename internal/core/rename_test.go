@@ -10,15 +10,15 @@ import (
 // a title is one trimmed line of at most 80 characters.
 func TestAgentRename(t *testing.T) {
 	now := time.Date(2026, 11, 15, 13, 0, 0, 0, time.UTC)
-	th := &Thread{ID: "t1", Title: "Find the norban token"}
+	th := &Thread{ID: "t1", Title: "Find the acme token"}
 	in := func(title string) Input {
 		return Input{Source: FromAgent, Kind: KindThreadRename, Thread: "t1", Args: map[string]any{"title": title}}
 	}
-	th, _, _, err := Reduce(th, &View{}, in("  Norban token\n for Fyr  "), now)
+	th, _, _, err := Reduce(th, &View{}, in("  Acme token\n for Fyr  "), now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if th.Title != "Norban token for Fyr" || th.TitleBy != ByAgent {
+	if th.Title != "Acme token for Fyr" || th.TitleBy != ByAgent {
 		t.Fatalf("title %q by %q", th.Title, th.TitleBy)
 	}
 	if _, _, _, err := Reduce(th, &View{}, in(" "), now); err == nil {

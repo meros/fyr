@@ -95,23 +95,23 @@ const automation = {
     group(
       "Merge without asking",
       `<label class="sr"><span class="sr-b"><span class="sr-t mono">meros/fyr</span></span><span class="sr-e">${swt(false, "Merge without asking in meros/fyr")}</span></label>
-<label class="sr"><span class="sr-b"><span class="sr-t mono">norban/web</span></span><span class="sr-e">${swt(true, "Merge without asking in norban/web")}</span></label>
+<label class="sr"><span class="sr-b"><span class="sr-t mono">acme/web</span></span><span class="sr-e">${swt(true, "Merge without asking in acme/web")}</span></label>
 <div class="sr"><span class="inl"><input placeholder="owner/repo" aria-label="Repo to add" class="mono"></span><span class="sr-e"><button class="btn" disabled>Add</button></span></div>`,
       "In a repo that is on, an agent's merge ask merges once the checks pass on the head it asked for. A repo shows here once a thread has a pull request in it.",
     ),
 };
 
 const PROJECTS = [
-  { n: "Bokföring åt Övik", f: "~/ekonomi", c: 0, i: { mono: "BÅ", color: "brown" } },
+  { n: "Bokföring åt Åsa", f: "~/ekonomi", c: 0, i: { mono: "BÅ", color: "brown" } },
   { n: "dotfiles", f: "~/dotfiles", c: 1, i: { mono: "›_", color: "olive" } },
   { n: "Fyr", f: "~/git/fyr", c: 0, i: { img: "fyr.png", color: "brown" } },
-  { n: "Hemmet", f: "No folder: filed by hand", c: 1, i: { emoji: "🏡", color: "green" } },
+  { n: "Garden", f: "No folder: filed by hand", c: 1, i: { emoji: "🏡", color: "green" } },
   { n: "Map perf lab", f: "~/src/maplab", c: 0, i: { mono: "M", color: "blue" } },
-  { n: "norban-platform-infrastructure-terraform-modules", f: "~/src/norban-platform-infrastructure-terraform-modules", c: 3, i: { mono: "NP", color: "indigo" } },
-  { n: "norban/api", f: "~/src/norban/api", c: 0, i: { mono: "NA", color: "sky" } },
-  { n: "norban/infra", f: "~/src/norban/infra", c: 1, i: { mono: "NI", color: "slate" } },
-  { n: "norban/ops", f: "~/src/norban/ops", c: 2, i: { emoji: "🚀", color: "rose" } },
-  { n: "norban/web", f: "~/src/norban/web", c: 9, i: { mono: "NW", color: "teal" } },
+  { n: "acme-platform-infrastructure-terraform-modules", f: "~/src/acme-platform-infrastructure-terraform-modules", c: 3, i: { mono: "NP", color: "indigo" } },
+  { n: "acme/api", f: "~/src/acme/api", c: 0, i: { mono: "NA", color: "sky" } },
+  { n: "acme/infra", f: "~/src/acme/infra", c: 1, i: { mono: "NI", color: "slate" } },
+  { n: "acme/ops", f: "~/src/acme/ops", c: 2, i: { emoji: "🚀", color: "rose" } },
+  { n: "acme/web", f: "~/src/acme/web", c: 9, i: { mono: "NW", color: "teal" } },
 ];
 const plist = (list, cls = "") =>
   `<div class="pls ${cls}">${list.map((p) => `<button class="pli" style="--pc:var(--p-${p.i.color})">${pi(p.i)}<span class="plt"><span class="ell pln">${p.n}</span><span class="ell pls2">${p.f}</span></span><span class="plc" title="${p.c} threads">${p.c}</span></button>`).join("")}</div>`;

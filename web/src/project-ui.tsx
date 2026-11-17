@@ -437,7 +437,7 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, host: f
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.isComposing) (e.preventDefault(), void submit());
           }}
-          placeholder="Hemmet"
+          placeholder="Garden"
           autocapitalize="sentences"
         />
       </label>

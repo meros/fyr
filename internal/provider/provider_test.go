@@ -24,7 +24,7 @@ const (
 	wrapTok   = "sk-ant-oat01-WRAPPERTOKEN-zzzz"
 )
 
-// fixture is a home with ~/.claude logged in, ~/.claude-norban without a
+// fixture is a home with ~/.claude logged in, ~/.claude-acme without a
 // login, two wrappers on a PATH dir and a key file.
 type fixture struct {
 	home, bin, keyFile string
@@ -36,14 +36,14 @@ func newFixture(t *testing.T) fixture {
 	root := t.TempDir()
 	f := fixture{home: filepath.Join(root, "home"), bin: filepath.Join(root, "bin"), keyFile: filepath.Join(root, "run", "ds.key"),
 		env: map[string]string{"OPENROUTER_API_KEY": routerKey}}
-	for _, d := range []string{".claude", ".claude-norban", ".claude-empty"} {
+	for _, d := range []string{".claude", ".claude-acme", ".claude-empty"} {
 		os.MkdirAll(filepath.Join(f.home, d), 0o700)
 	}
 	os.WriteFile(filepath.Join(f.home, ".claude", ".credentials.json"), []byte(`{}`), 0o600)
 	os.MkdirAll(f.bin, 0o755)
 	os.MkdirAll(filepath.Dir(f.keyFile), 0o700)
 	os.WriteFile(f.keyFile, []byte(dsKey+"\n"), 0o600)
-	os.WriteFile(filepath.Join(f.bin, "claude-norban"), []byte("#!/usr/bin/env bash\nexport CLAUDE_CONFIG_DIR=\"$HOME/.claude-norban\"\nexport CLAUDE_CODE_OAUTH_TOKEN='"+wrapTok+"'\nexec claude \"$@\"\n"), 0o755)
+	os.WriteFile(filepath.Join(f.bin, "claude-acme"), []byte("#!/usr/bin/env bash\nexport CLAUDE_CONFIG_DIR=\"$HOME/.claude-acme\"\nexport CLAUDE_CODE_OAUTH_TOKEN='"+wrapTok+"'\nexec claude \"$@\"\n"), 0o755)
 	// As on the live host: a token and no folder, so ~/.claude (the main login) is not its login.
 	os.WriteFile(filepath.Join(f.bin, "claude-tok"), []byte("#!/usr/bin/env bash\nexport CLAUDE_CODE_OAUTH_TOKEN="+wrapTok+"\nexec claude \"$@\"\n"), 0o755)
 	os.WriteFile(filepath.Join(f.bin, "claude-deepseek"), []byte("#!/bin/sh\n# wrapper\nANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic ANTHROPIC_AUTH_TOKEN=\"$(cat "+f.keyFile+")\" ANTHROPIC_MODEL=deepseek-chat ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-chat exec claude \"$@\"\n"), 0o755)
@@ -60,8 +60,8 @@ func (f fixture) host() Host {
 			return p, nil
 		},
 		Profiles: []Profile{
-			{ID: "claudeAgent", Name: "Claude", Binary: "claude", Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"}},
-			{ID: "claudeNorban", Name: "Claude (norban)", Binary: "claude-norban", Models: []string{"claude-opus-5-5"}},
+			{ID: "claudeAlt", Name: "Claude", Binary: "claude", Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"}},
+			{ID: "claudeAcme", Name: "Claude (acme)", Binary: "claude-acme", Models: []string{"claude-opus-5-5"}},
 			{ID: "claudeDeepseek", Name: "DeepSeek", Binary: "claude-deepseek", Models: []string{"deepseek-chat", "deepseek-reasoner"}},
 			{ID: "claudeTok", Name: "Claude (tok)", Binary: "claude-tok"},
 		}}
@@ -81,12 +81,12 @@ func TestDetect(t *testing.T) {
 	f := newFixture(t)
 	fs := Detect(f.host())
 	m := byID(fs)
-	a, n, d, r := m["claudeAgent"], m["claudeNorban"], m["claudeDeepseek"], m["openrouter"]
+	a, n, d, r := m["claudeAlt"], m["claudeAcme"], m["claudeDeepseek"], m["openrouter"]
 	if a.Kind != KindAccount || a.ConfigDir != "" || a.Status != Ready || !a.LoggedIn {
 		t.Fatalf("main: %+v", a)
 	}
-	if n.Kind != KindAccount || n.ConfigDir != "~/.claude-norban" || n.Status != NeedsLogin || !strings.Contains(n.Note, "which Fyr does not read") {
-		t.Fatalf("norban: %+v", n)
+	if n.Kind != KindAccount || n.ConfigDir != "~/.claude-acme" || n.Status != NeedsLogin || !strings.Contains(n.Note, "which Fyr does not read") {
+		t.Fatalf("acme: %+v", n)
 	}
 	if d.Kind != KindEndpoint || d.BaseURL != "https://api.deepseek.com/anthropic" || d.Status != Ready || d.KeyRef != "file:"+f.keyFile ||
 		d.ModelEnv["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "deepseek-chat" || len(d.Models) != 2 || len(d.Models[0].Efforts) != 0 {
@@ -101,8 +101,8 @@ func TestDetect(t *testing.T) {
 	if _, ok := m["claude-empty"]; ok {
 		t.Fatal("a folder without a login is not a find")
 	}
-	if _, ok := m["claude-norban"]; ok {
-		t.Fatal("~/.claude-norban is the norban profile's, not a second find")
+	if _, ok := m["claude-acme"]; ok {
+		t.Fatal("~/.claude-acme is the acme profile's, not a second find")
 	}
 	if len(a.Models[0].Efforts) == 0 {
 		t.Fatal("claude models carry efforts")
@@ -141,7 +141,7 @@ func newReg(t *testing.T, f fixture) *Registry {
 func TestCutoverKeepsIDs(t *testing.T) {
 	f := newFixture(t)
 	r := newReg(t, f)
-	n, err := r.Cutover(r.Found(), []string{"claudeAgent", "claudeNorban", "claudeDeepseek", "claudeTok"})
+	n, err := r.Cutover(r.Found(), []string{"claudeAlt", "claudeAcme", "claudeDeepseek", "claudeTok"})
 	if err != nil || n != 4 {
 		t.Fatalf("%d %v", n, err)
 	}
@@ -152,7 +152,7 @@ func TestCutoverKeepsIDs(t *testing.T) {
 			t.Fatalf("%s runs %s, not claude", p.ID, p.Binary)
 		}
 	}
-	if !slices.Equal(got, []string{"claudeAgent", "claudeNorban", "claudeDeepseek", "claudeTok"}) {
+	if !slices.Equal(got, []string{"claudeAlt", "claudeAcme", "claudeDeepseek", "claudeTok"}) {
 		t.Fatal(got)
 	}
 	if r.Secrets.Has(SecretName("claudeDeepseek")) {
@@ -162,7 +162,7 @@ func TestCutoverKeepsIDs(t *testing.T) {
 	for _, d := range r.List() {
 		st[d.ID] = d.Status
 	}
-	if st["claudeAgent"] != Ready || st["claudeNorban"] != NeedsLogin || st["claudeDeepseek"] != Ready || st["claudeTok"] != NeedsLogin {
+	if st["claudeAlt"] != Ready || st["claudeAcme"] != NeedsLogin || st["claudeDeepseek"] != Ready || st["claudeTok"] != NeedsLogin {
 		t.Fatal(st)
 	}
 	// The token account never starts as the main login: it needs its token.
@@ -183,7 +183,7 @@ func TestCutoverKeepsIDs(t *testing.T) {
 	r2 := newReg(t, f)
 	r2.DB = r.DB
 	r2.Load()
-	if n, _ := r2.Cutover(r2.Found(), []string{"claudeAgent"}); n != 0 {
+	if n, _ := r2.Cutover(r2.Found(), []string{"claudeAlt"}); n != 0 {
 		t.Fatal("cut-over ran twice")
 	}
 	// The deepseek profile starts plain claude with the key from the file.
@@ -258,7 +258,7 @@ func TestKeysNeverLeave(t *testing.T) {
 func TestUpdateDeleteAndQuotaIdentity(t *testing.T) {
 	f := newFixture(t)
 	r := newReg(t, f)
-	r.Cutover(r.Found(), []string{"claudeAgent", "claudeNorban"})
+	r.Cutover(r.Found(), []string{"claudeAlt", "claudeAcme"})
 	r.Run(cmd("provider.create", map[string]any{"name": "Claude again", "kind": "claude-account", "configDir": f.home + "/.claude"}))
 	qs := r.QuotaProfiles()
 	if len(qs) != 3 || qs[0].Identity != qs[2].Identity || qs[0].Identity == qs[1].Identity {
@@ -269,18 +269,18 @@ func TestUpdateDeleteAndQuotaIdentity(t *testing.T) {
 		t.Fatal("one status per profile")
 	}
 	// V0.120: turning the default off needs another star in the same update.
-	if rep := r.Run(cmd("provider.update", map[string]any{"id": "claudeNorban", "models": []any{"claude-sonnet-5-5", "my-custom"}, "defaultModel": "claude-sonnet-5-5", "defaultEffort": "high"})); !rep.OK {
+	if rep := r.Run(cmd("provider.update", map[string]any{"id": "claudeAcme", "models": []any{"claude-sonnet-5-5", "my-custom"}, "defaultModel": "claude-sonnet-5-5", "defaultEffort": "high"})); !rep.OK {
 		t.Fatal(rep.Error)
 	}
-	p, _ := r.get("claudeNorban")
+	p, _ := r.get("claudeAcme")
 	if len(p.Models) != 2 || p.DefaultModel != "claude-sonnet-5-5" || p.DefaultEffort != "high" || len(p.Models[1].Efforts) != 0 {
 		t.Fatalf("%+v", p)
 	}
-	r.InUse = func(id string) int { return map[string]int{"claudeAgent": 2}[id] }
-	if rep := r.Run(cmd("provider.delete", map[string]any{"id": "claudeAgent"})); rep.OK || rep.Status != 409 {
+	r.InUse = func(id string) int { return map[string]int{"claudeAlt": 2}[id] }
+	if rep := r.Run(cmd("provider.delete", map[string]any{"id": "claudeAlt"})); rep.OK || rep.Status != 409 {
 		t.Fatal("deleted a provider in use")
 	}
-	if rep := r.Run(cmd("provider.delete", map[string]any{"id": "claudeNorban"})); !rep.OK {
+	if rep := r.Run(cmd("provider.delete", map[string]any{"id": "claudeAcme"})); !rep.OK {
 		t.Fatal(rep.Error)
 	}
 	if rep := r.Run(cmd("provider.create", map[string]any{"name": "x", "kind": "endpoint", "id": "../evil", "baseURL": "https://e"})); rep.OK {
@@ -294,23 +294,23 @@ func TestUpdateDeleteAndQuotaIdentity(t *testing.T) {
 func TestTokenLoginOwnIdentityAndUnavailable(t *testing.T) {
 	f := newFixture(t)
 	r := newReg(t, f)
-	main := Provider{ID: "claudeAgent", Auth: cli.Auth{Kind: cli.CLILogin}}
-	tok := Provider{ID: "claudeNorban", Auth: cli.Auth{Kind: cli.CLILogin, ConfigDir: "~/.claude"}, TokenLogin: true}
+	main := Provider{ID: "claudeAlt", Auth: cli.Auth{Kind: cli.CLILogin}}
+	tok := Provider{ID: "claudeAcme", Auth: cli.Auth{Kind: cli.CLILogin, ConfigDir: "~/.claude"}, TokenLogin: true}
 	if main.identity(f.home) == tok.identity(f.home) {
 		t.Fatalf("token account shares the folder's quota: %q", tok.identity(f.home))
 	}
 	if s := tok.quotaSpec(); !s.Token {
 		t.Fatalf("token account reads the folder's login for quota: %+v", s)
 	}
-	r.Cutover(r.Found(), []string{"claudeAgent", "claudeNorban"})
-	p, _ := r.get("claudeNorban")
+	r.Cutover(r.Found(), []string{"claudeAlt", "claudeAcme"})
+	p, _ := r.get("claudeAcme")
 	p.TokenLogin = true
 	r.put(p, -1)
 	for _, pr := range r.Profiles() {
-		if pr.ID == "claudeNorban" && pr.Unavailable == "" {
+		if pr.ID == "claudeAcme" && pr.Unavailable == "" {
 			t.Fatal("a token account without its token is offered")
 		}
-		if pr.ID == "claudeAgent" && pr.Unavailable != "" {
+		if pr.ID == "claudeAlt" && pr.Unavailable != "" {
 			t.Fatalf("a ready account is unavailable: %q", pr.Unavailable)
 		}
 	}

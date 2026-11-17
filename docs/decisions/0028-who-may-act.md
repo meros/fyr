@@ -2,16 +2,16 @@
 
 Date: 2026-11-16 · Status: **accepted** (owner, 17 Nov: "Accept, start slices 0 and 1"); the owner answered Q1–Q4 on 16 Nov (see "The owner's answers"); slice 0 is V0.129; slice 1's first release (observe) is V0.130 · Builds on 0026 (keys, roster, mTLS, device pairing) · Amends 0026 (5) (loopback is no longer trusted; device sessions move from slice 5 to the first slice), V0.14, V0.51 (5), V0.12 (the token's transport) · Spec rows: the draft at the end, numbered when each slice is built
 
-**Why now (16 Nov, adding meros-server as a second host).** On meros-server, `stacks-plex-1` runs with Docker host networking. It shares the host's network namespace ([Docker docs](https://docs.docker.com/engine/network/drivers/host/)), so it reaches `127.0.0.1:7777`, and `guard()` treats any loopback `Host` as the owner. A compromised Plex (LAN port 32400) can start agents as `meros` (wheel, docker, Nix trusted user), so it is effectively root. The same survey found four more ways in that trust only "you are on this machine" (below).
+**Why now (16 Nov, adding host-b as a second host).** On host-b, `stacks-plex-1` runs with Docker host networking. It shares the host's network namespace ([Docker docs](https://docs.docker.com/engine/network/drivers/host/)), so it reaches `127.0.0.1:7777`, and `guard()` treats any loopback `Host` as the owner. A compromised Plex (LAN port 32400) can start agents as the owner's user (wheel, docker, Nix trusted user), so it is effectively root. The same survey found four more ways in that trust only "you are on this machine" (below).
 
 ## What changes for the owner, day to day
 
 - **Phone (PWA over the tailnet):** nothing visible. The first visit after the change signs the phone in by its tailnet identity, as today, and it stays signed in with a cookie.
-- **Laptop:** `fyr-app` (Super+Ctrl+Return) becomes `fyr open --app`, a single line in `~/nixos`. Typing `http://127.0.0.1:7777` into another browser shows "Open Fyr from this machine: run `fyr open`". The address is `http://fyr.localhost:7777` from then on.
+- **Laptop:** `fyr-app` (Super+Ctrl+Return) becomes `fyr open --app`, a single line in `~/nixos-config`. Typing `http://127.0.0.1:7777` into another browser shows "Open Fyr from this machine: run `fyr open`". The address is `http://fyr.localhost:7777` from then on.
 - **Settings → Devices** (desktop and phone) lists every browser that can open this Fyr, with how it got in and when it was last used. Revoke works on a tailnet phone too, without taking it off the tailnet.
 - **A new device waits for you** (Q1): a phone or browser Fyr has not seen, even on your tailnet login, shows "Waiting for approval" until you press Allow on a device you already use (or run `fyr open` on the machine). Your current phone and laptop are approved during the migration and never see this.
 - **Pairing a host or a device** asks for a fresh confirmation on the device you are holding (see "Step-up").
-- **meros-server** gets an `ownerLogin` option in the module (the `mkForce`'d ExecStart goes away), pairs with the laptop by code (0026 slice 3), and drives the laptop in full (Q2: the mesh is two-way).
+- **host-b** gets an `ownerLogin` option in the module (the `mkForce`'d ExecStart goes away), pairs with the laptop by code (0026 slice 3), and drives the laptop in full (Q2: the mesh is two-way).
 - **Agents** are unchanged. They still run with your full account (Q3). The record says so plainly instead of implying the MCP token contains them.
 
 ---
@@ -71,7 +71,7 @@ Every browser request to a front needs a **session cookie**: `fyr_session`, Http
 - **Expiry:** a session unseen for 90 days ends, as in 0026 and Home Assistant. An approved tailnet node re-mints silently while it is not blocked, so for the phone this only matters after a Revoke.
 - **The origin `fyr.localhost`**, not `127.0.0.1`. Cookies are not isolated by port: any other local web app the laptop browser visits at `127.0.0.1:<port>` would receive a `127.0.0.1` cookie. Browsers resolve `*.localhost` to loopback and treat it as a secure context. The Host check accepts `fyr.localhost`, `localhost` and the loopback IPs (the last two only for `/auth/*` and a redirect).
 - **CSRF and rebinding:** `X-Fyr` on POSTs and the Host allowlist stay. The cookie is SameSite=Strict. WebSocket and SSE upgrades check `Origin` against the front's own names (code-server's CVE-2023-26114).
-- **The phone pays nothing:** every node that signs in while slice 1 runs in observe mode is approved then, so the live phone never waits. The laptop pays one changed line in `~/nixos`.
+- **The phone pays nothing:** every node that signs in while slice 1 runs in observe mode is approved then, so the live phone never waits. The laptop pays one changed line in `~/nixos-config`.
 
 **Rejected:** a per-boot secret in a file read by the launcher (the Jupyter model). It works, but it is a second secret with the same reach as the socket, it lands in backups, and it does not stop a host-networked container any better than file permissions already do. A cookie bootstrapped from a "local-only page" is rejected because "local-only" is exactly what cannot be decided over TCP.
 
@@ -95,7 +95,7 @@ The header path B must stop being reachable from loopback. Two options:
 |---|---|---|
 | How | `tailscale serve --https=7443 unix:<runtime>/fyr/serve.sock`. Only requests on that socket may carry `Tailscale-User-Login`; on TCP the header is refused | fyrd binds `100.x:7443` with the MagicDNS certificate from LocalAPI `cert/<name>` and whois-es each connection (as PeerGuard does), so no header is trusted at all |
 | Pros | small; Serve stays the owner of the cert and its renewal | one less moving part; identity from the connection, not a header; works for tagged nodes' browsers with `ownerLogin` |
-| Cons | needs Serve's Unix-socket backend: **to verify on 1.104 in the slice**. tailscaled runs as root, so it can open a 0660 socket | the cert call needs LocalAPI *write*: root or `tailscale set --operator=meros`. fyrd now owns renewal |
+| Cons | needs Serve's Unix-socket backend: **to verify on 1.104 in the slice**. tailscaled runs as root, so it can open a 0660 socket | the cert call needs LocalAPI *write*: root or `tailscale set --operator=owner`. fyrd now owns renewal |
 
 **Recommendation: (a)**, with (b) as the fallback if the Unix backend is missing or misbehaves. (a) is the smaller change and keeps today's NixOS shape (`fyr-tailnet.service`).
 
@@ -105,9 +105,9 @@ The header path B must stop being reachable from loopback. Two options:
 
 - **No `/mcp` on the peer port.** Agents are local, and the peer listener serves the host protocol only.
 - **The local link (way D) is in-process.** The `both` role's front talks to its own host over an in-memory listener (`net.Pipe`-backed), not a TCP port. Nothing to scan, nothing to authenticate.
-- **A host grants "may drive me" per front.** The roster says who is the owner's. It does not say that every one of them should run agents everywhere. A front on meros-server, which is exposed to the LAN through Plex and others, is a weaker machine than the laptop. If it is compromised, its install key drives every host in the mesh. So each host keeps a **drive list**: the fronts whose commands it accepts. Reads (state, stream) go to every roster front; commands go only to the listed ones. The list is signed by the host and **only the host can change it** (locally, or from a front already on it after step-up). It is not gossiped as a roster statement, so a rogue roster member cannot add itself. The default for a new pairing is "drives" (today's behaviour), with the switch on the pairing screen and the host's page. **Q2 (owner): meros-server drives the laptop in full.** The drive list stays as the mechanism, so the owner can switch it off for one front without removing it.
-- **Tagged nodes:** the key is the identity (0026 (6)). For the browser on a tagged node, the module gains **`services.fyr.ownerLogin`** (now: it removes the `mkForce` in `~/nixos`). fyrd stops taking the node's own name as the owner when `tailnet.Self` names no user: it logs "tagged node: set ownerLogin" and serves no tailnet browser until it is set.
-- **Reaching the laptop from meros-server** is a tailnet policy grant (`tag:server` → the laptop's host port), not a Fyr change. After slice 2 that port is mTLS, so the grant opens a door that needs a roster key.
+- **A host grants "may drive me" per front.** The roster says who is the owner's. It does not say that every one of them should run agents everywhere. A front on host-b, which is exposed to the LAN through Plex and others, is a weaker machine than the laptop. If it is compromised, its install key drives every host in the mesh. So each host keeps a **drive list**: the fronts whose commands it accepts. Reads (state, stream) go to every roster front; commands go only to the listed ones. The list is signed by the host and **only the host can change it** (locally, or from a front already on it after step-up). It is not gossiped as a roster statement, so a rogue roster member cannot add itself. The default for a new pairing is "drives" (today's behaviour), with the switch on the pairing screen and the host's page. **Q2 (owner): host-b drives the laptop in full.** The drive list stays as the mechanism, so the owner can switch it off for one front without removing it.
+- **Tagged nodes:** the key is the identity (0026 (6)). For the browser on a tagged node, the module gains **`services.fyr.ownerLogin`** (now: it removes the `mkForce` in `~/nixos-config`). fyrd stops taking the node's own name as the owner when `tailnet.Self` names no user: it logs "tagged node: set ownerLogin" and serves no tailnet browser until it is set.
+- **Reaching the laptop from host-b** is a tailnet policy grant (`tag:server` → the laptop's host port), not a Fyr change. After slice 2 that port is mTLS, so the grant opens a door that needs a roster key.
 - **Rejected for host trust: tailnet app capabilities (`CapMap`).** They would let the tailnet policy say "tag:server is a Fyr peer" with no pairing, but they tie trust to the tailnet again, which 0026 moved away from. They could later be a pairing shortcut for tagged nodes, as whois is for untagged ones.
 
 ### 5. Authorization: one owner, two kinds of power, one step-up
@@ -127,10 +127,10 @@ A one-owner system does not need roles. It does need to tell "use Fyr" from "cha
 
 **What a thread's token can do** (`internal/engine/threads_tools.go`): read and list other threads, `thread_send` to one with no open Decision (30 an hour), `thread_new` (5 an hour), rename its own and its children, open changes, request effects, offer actions. It **cannot** answer a Decision, approve an effect or press an offered action. The owner's source (`FromOwner`) is reached only through the browser API. As an MCP surface this is sound: a prompt-injected agent can at worst send loud messages to other threads (each marked with the sender), which their agents treat as input from a peer, not from the owner.
 
-**But the MCP surface is not the boundary today.** An agent with `Bash` (permission mode `auto`) runs as `meros`. It can:
+**But the MCP surface is not the boundary today.** An agent with `Bash` (permission mode `auto`) runs as the owner's user. It can:
 1. `curl -H 'X-Fyr: 1' 127.0.0.1:7777/api/command`: the owner, approving its own effects (closed by points 1–2);
 2. read another thread's token from `/proc/*/cmdline` (closed by passing `--mcp-config` as a 0600 file, slice 1);
-3. read `<data>/identity.key`, the session table and Chrome's cookie store; connect to `owner.sock`; and, beyond Fyr, `ssh meros-server` (Tailscale SSH), use `gh`, use the docker group.
+3. read `<data>/identity.key`, the session table and Chrome's cookie store; connect to `owner.sock`; and, beyond Fyr, `ssh host-b` (Tailscale SSH), use `gh`, use the docker group.
 
 Item 3 is not something Fyr can close from inside fyrd: the same UID is the same principal. So the record says it plainly. **An agent with an unrestricted shell is the owner on that machine, and Fyr's tokens scope only what it does through Fyr.** The options:
 
@@ -150,9 +150,9 @@ Item 3 is not something Fyr can close from inside fyrd: the same UID is the same
 - **Recovery with no trusted device left:** any shell on any install (console, SSH) runs `fyrd device add`, which prints a QR in the terminal. The roster and all the data survive, because recovery is a new session, not a new identity. With no shell on any install, there is nothing to recover *to*: that is the honest floor of a one-owner system.
 - **Rotation:** install keys per 0026 (`fyrd rotate-key`). Session tokens are not rotated on a timer; Revoke is the tool. The owner socket has no secret to rotate.
 
-### 8. Headless hosts (meros-server)
+### 8. Headless hosts (host-b)
 
-They have no browser and no screen. `ssh meros-server fyrd pair` shows the 6-digit code and a terminal QR, and `fyrd device add` mints a device code the same way. Both go through the owner socket, so they need no network trust at all.
+They have no browser and no screen. `ssh host-b fyrd pair` shows the 6-digit code and a terminal QR, and `fyrd device add` mints a device code the same way. Both go through the owner socket, so they need no network trust at all.
 
 ---
 
@@ -160,7 +160,7 @@ They have no browser and no screen. `ssh meros-server fyrd pair` shows the 6-dig
 
 | Threat | Today | After |
 |---|---|---|
-| **A host-networked container** (Plex on meros-server) connects to `127.0.0.1:7777` | owner | a page with no data. The API needs a session; `owner.sock` is in another mount namespace; the local link is in-process; the Serve socket is not in the container (slice 1) |
+| **A host-networked container** (Plex on host-b) connects to `127.0.0.1:7777` | owner | a page with no data. The API needs a session; `owner.sock` is in another mount namespace; the local link is in-process; the Serve socket is not in the container (slice 1) |
 | it forges `Host: x.ts.net` + `Tailscale-User-Login` | owner | refused: the header counts only on the Serve socket, or with (b) no header counts at all |
 | it reads an MCP token from `/proc` | it can, if the container shares the PID namespace (Plex does not) | the token is in a 0600 file |
 | **Another local user** on the machine | owner via A, D, B; tokens via `/proc` | nothing: socket mode, peer credentials, file token |
@@ -169,7 +169,7 @@ They have no browser and no screen. `ssh meros-server fyrd pair` shows the 6-dig
 | a prompt-injected agent **through Bash** | owner via `curl` loopback | it needs the owner's files (the socket, the key, Chrome's cookies): still the owner's UID. **Not closed** without Q3 (ii)/(iii). Named in Settings |
 | **A stolen phone**, unlocked | full Fyr until it leaves the tailnet; can't be revoked in Fyr | Revoke + node block + cascade; it cannot add a device or pair without step-up; the log shows what it did |
 | a stolen phone, locked | as above | as above. Passkey step-up needs its biometrics |
-| **A compromised meros-server** (root) | its whois login was refused anyway (tagged); after the `ownerLogin` workaround nothing to the laptop | **it drives the laptop** (Q2: full mesh, the owner's choice), so it starts agents there as the owner. Remove it from any other install, or switch it off the laptop's drive list. Hence the Plex stopgap below matters more |
+| **A compromised host-b** (root) | its whois login was refused anyway (tagged); after the `ownerLogin` workaround nothing to the laptop | **it drives the laptop** (Q2: full mesh, the owner's choice), so it starts agents there as the owner. Remove it from any other install, or switch it off the laptop's drive list. Hence the Plex stopgap below matters more |
 | a compromised laptop | owner of everything | the same: a trusted install with the owner's shell. Remove it from another |
 | **A tailnet device of the owner's login the owner did not expect** (a re-added old tablet, or a phished Google login) | full Fyr silently | a pending session with no data until the owner allows it on an older device (Q1); Deny blocks the node |
 | lockout during migration | n/a | each slice keeps the old way until the new one is proved (below); `fyrd device add` from any shell |
@@ -182,26 +182,26 @@ Out of scope: several owners, an attacker with root on a trusted machine, the ta
 
 | Slice | What | Shippable because | Migration, no lockout |
 |---|---|---|---|
-| **0 (hours, independent)** | `--mcp-config` as a 0600 file path; `/mcp` refuses a foreign `Origin`; the `both` role's front → host link in-process; the module's `ownerLogin` option; a tagged node without `ownerLogin` serves no tailnet browser (instead of naming itself owner) | no change for a browser | `~/nixos` swaps the `mkForce` for `ownerLogin` in the same change |
+| **0 (hours, independent)** | `--mcp-config` as a 0600 file path; `/mcp` refuses a foreign `Origin`; the `both` role's front → host link in-process; the module's `ownerLogin` option; a tagged node without `ownerLogin` serves no tailnet browser (instead of naming itself owner) | no change for a browser | `~/nixos-config` swaps the `mkForce` for `ownerLogin` in the same change |
 | **1: loopback is not the owner** | `owner.sock`; sessions and device records; `/auth/once`; `fyr open [--app]`; `fyr.localhost`; the Serve socket (3a, or 3b); a new tailnet node waits for approval (Allow/Deny push to older devices; Allow also on the waiting page of a local session); the browser API needs a session; loopback TCP serves only the shell page, `/auth/*`, `/.well-known/fyr` (`{fyr, id}`) and `/mcp` (bearer); `hostListen: unix:` for development | closes Plex, other users and the header forgery. **This is the point-1 fix** | The build first **mints silently** on the old paths (a loopback or Serve request without a cookie gets one) for one release, while it logs every request that would be refused. The owner switches `fyr-app` and the Serve unit. The next build turns refusal on. The launcher's rollback covers a bad build, and `fyrd device add` from a shell covers the rest |
 | **2: Devices** | Settings → Devices (0026's "This device" renamed, desktop and phone): every device, how it got in, last used; Revoke with node block and cascade; the audit log and a device's last actions | the owner sees and controls what slice 1 made | nothing to migrate: slice 1's sessions appear as devices ("this laptop · local", "Pixel 9 · tailnet") |
 | **3 = 0026 slice 2** | roster, pinned mTLS on the host port, no `/mcp` there | | as 0026 |
-| **4 = 0026 slice 3, + drive lists + step-up** | pairing by code, `fyrd pair` and `fyrd device add` over `owner.sock`; each host's drive list; step-up by a confirm on another device | meros-server pairs, and the laptop decides whether it drives | today's links default to "drives", so nothing stops |
+| **4 = 0026 slice 3, + drive lists + step-up** | pairing by code, `fyrd pair` and `fyrd device add` over `owner.sock`; each host's drive list; step-up by a confirm on another device | host-b pairs, and the laptop decides whether it drives | today's links default to "drives", so nothing stops |
 | 5 = 0026 slices 4–6 | mDNS, the device QR off the tailnet, removal and rotation spreading, the whois listener dropped | as 0026 | as 0026 |
 | later | passkeys for step-up on `*.ts.net` (`ts.net` is on the Public Suffix List, so the RP ID is the machine's own name or the tailnet's `<tailnet>.ts.net`); agent confinement if Q3 says so | named only | |
 
-**A stopgap for meros-server today, outside Fyr** (more urgent with Q2's full mesh, since the server will drive the laptop). Until slice 1 ships, take Plex off host networking (bridge mode with its published ports), or stop `fyr.service` there. A UID firewall rule does not help: the container's UID is likely 1000 too. An nftables `socket cgroupv2` match on the Docker scope could work, but it is fiddly and unverified here.
+**A stopgap for host-b today, outside Fyr** (more urgent with Q2's full mesh, since the server will drive the laptop). Until slice 1 ships, take Plex off host networking (bridge mode with its published ports), or stop `fyr.service` there. A UID firewall rule does not help: the container's UID is likely 1000 too. An nftables `socket cgroupv2` match on the Docker scope could work, but it is fiddly and unverified here.
 
 ## The owner's answers (16 Nov)
 
 | Q | Asked | Recommended | Owner |
 |---|---|---|---|
 | Q1 | A tailnet device of your login that Fyr has never seen opens Fyr | sign in at once, push an alert | **wait for approval on a device you already use** |
-| Q2 | May meros-server's front run agents on the laptop? | read-only until Plex is off host networking | **full: it drives the laptop** |
+| Q2 | May host-b's front run agents on the laptop? | read-only until Plex is off host networking | **full: it drives the laptop** |
 | Q3 | Sandbox agents (no Fyr data, `~/.ssh`, docker)? | not now, document it | **not now, document it** |
 | Q4 | A read-only device kind? | no | **no** |
 
-What follows from them, written into the sections above: Q1 adds the pending session and Allow/Deny to slice 1 (point 1, the slice table, D2 (3)); the nodes seen during observe mode are approved, so the live phone is never locked out. Q2 keeps the drive list as a switch but defaults every front, meros-server included, to drives; the threat model says what that costs. Q3 and Q4 drop their options.
+What follows from them, written into the sections above: Q1 adds the pending session and Allow/Deny to slice 1 (point 1, the slice table, D2 (3)); the nodes seen during observe mode are approved, so the live phone is never locked out. Q2 keeps the drive list as a switch but defaults every front, host-b included, to drives; the threat model says what that costs. Q3 and Q4 drop their options.
 
 ## Consequences
 
@@ -211,7 +211,7 @@ What follows from them, written into the sections above: Q1 adds the pending ses
 - V0.12: the token travels in a file, not in argv.
 - New front data: device records, the audit log. New host data: the drive list, the audit log.
 - First-time tailnet devices wait for approval (Q1): new front data `approvedNodes`.
-- `~/nixos`: `fyr-app` runs `fyr open --app`; `services.fyr.ownerLogin` on meros-server; the Serve unit's target changes (3a).
+- `~/nixos-config`: `fyr-app` runs `fyr open --app`; `services.fyr.ownerLogin` on host-b; the Serve unit's target changes (3a).
 
 ---
 

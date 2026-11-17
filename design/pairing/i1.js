@@ -13,7 +13,7 @@ const hostsNow = {
   body: group(
     "",
     hrow({ name: "desk", self: 1, line: `online since 08:12 · id ${sid(ID.desk)}` }) +
-      hrow({ name: "meros-server", state: "off", line: `offline since 19:40 · unreachable · tailnet · id ${sid(ID.server)}` }) +
+      hrow({ name: "host-b", state: "off", line: `offline since 19:40 · unreachable · tailnet · id ${sid(ID.server)}` }) +
       hrow({ name: "lab", state: "warn", err: 1, line: `Another install answers as lab: id ${sid(ID.labNew)}, it was ${sid(ID.labOld)}.`, badge: "Needs you", badgeCls: "needs-login" }),
     FOOT_NOW,
   ),
@@ -23,7 +23,7 @@ const CANDS =
   crow({ title: `Fyr install ${idf(ID.other)}`, line: "192.168.1.31:7778 · found on this LAN · first seen 20:58" }) +
   crow({ title: `<span class="mono">nas</span> ${idf(ID.nas)}`, line: "nas.tail1234.ts.net · found on the tailnet · a tagged node, so it pairs by code" });
 const SOURCES =
-  row("Tailnet", "On · alexander@github · 5 nodes, 4 run Fyr") +
+  row("Tailnet", "On · owner@github · 5 nodes, 4 run Fyr") +
   row("This LAN", "On · 192.168.1.0/24 · 2 installs answer") +
   row("By address", "1 address · vps.example.net:7778");
 
@@ -37,8 +37,8 @@ const hostsFull = {
     group(
       "",
       hrow({ name: "desk", self: 1, line: `online since 08:12 · id ${sid(ID.desk)}` }) +
-        hrow({ name: "meros-laptop", line: `online since 08:31 · tailnet and LAN · id ${sid(ID.laptop)}` }) +
-        hrow({ name: "meros-server", state: "off", line: `offline since 19:40 · tailnet · id ${sid(ID.server)}` }) +
+        hrow({ name: "host-a", line: `online since 08:31 · tailnet and LAN · id ${sid(ID.laptop)}` }) +
+        hrow({ name: "host-b", state: "off", line: `offline since 19:40 · tailnet · id ${sid(ID.server)}` }) +
         hrow({ name: "vps", line: `online since Mon 06:00 · by address · id ${sid(ID.vps)}` }),
       "The installs you trust. Each one knows this list and refuses everything else.",
     ) +
@@ -52,7 +52,7 @@ const hostNow = {
   nav: "hosts",
   navset: "need",
   parent: "Hosts",
-  title: "meros-server",
+  title: "host-b",
   mono: 1,
   end: pst("Offline"),
   body:
@@ -63,28 +63,28 @@ const hostFull = {
   nav: "hosts",
   navset: "full",
   parent: "Hosts",
-  title: "meros-laptop",
+  title: "host-a",
   mono: 1,
   end: pst("Online"),
   body:
-    group("Identity", idrow(ID.laptop) + row("Paired automatically", "16 Nov 20:31, by desk. It is an untagged node of your Tailscale user, alexander@github.") + row("Front and host", "Build 20261116-2030")) +
-    group("Addresses", arow("meros-laptop.tail1234.ts.net:7778", "Tailnet · in use · answered just now") + arow("192.168.1.23:7778", "This LAN · answered 20:58"), "Fyr dials whichever address answers with this key.") +
+    group("Identity", idrow(ID.laptop) + row("Paired automatically", "16 Nov 20:31, by desk. It is an untagged node of your Tailscale user, owner@github.") + row("Front and host", "Build 20261116-2030")) +
+    group("Addresses", arow("host-a.tail1234.ts.net:7778", "Tailnet · in use · answered just now") + arow("192.168.1.23:7778", "This LAN · answered 20:58"), "Fyr dials whichever address answers with this key.") +
     group("History", hist([["16 Nov 20:31", "Paired automatically by desk (tailnet)"], ["16 Nov 20:31", "First seen on the tailnet"]])) +
-    group("", row("Remove meros-laptop", "Every install refuses it once it hears. Only a new pairing by code brings it back.", btn("Remove…", "danger")), "", "danger-z"),
+    group("", row("Remove host-a", "Every install refuses it once it hears. Only a new pairing by code brings it back.", btn("Remove…", "danger")), "", "danger-z"),
 };
 
 // ---- the states of a row ----
 const rowStates = `<div class="bd-f"><span class="bd-cap">A host row · every state</span><div class="dlgx one"><div class="stp">${group(
   "Today (V0.124 data)",
   hrow({ name: "desk", self: 1, line: `online since 08:12 · id ${sid(ID.desk)}` }) +
-    hrow({ name: "meros-laptop", line: `online since 08:31 · tailnet · id ${sid(ID.laptop)}` }) +
+    hrow({ name: "host-a", line: `online since 08:31 · tailnet · id ${sid(ID.laptop)}` }) +
     hrow({ name: "build-box", line: "online since Mon 06:00 · updating Fyr · configured · id T5BX" }) +
-    hrow({ name: "meros-server", state: "off", line: `offline since 19:40 · unreachable · tailnet · id ${sid(ID.server)}` }) +
+    hrow({ name: "host-b", state: "off", line: `offline since 19:40 · unreachable · tailnet · id ${sid(ID.server)}` }) +
     hrow({ name: "old-nuc", line: "online since 07:02 · configured · no id: its Fyr is older than V0.124" }) +
     hrow({ name: "lab", state: "warn", err: 1, line: `Another install answers as lab: id ${sid(ID.labNew)}, it was ${sid(ID.labOld)}.`, badge: "Needs you", badgeCls: "needs-login" }),
 )}${group(
   "Added by the later slices",
-  hrow({ name: "meros-laptop", line: `online since 08:31 · tailnet and LAN · id ${sid(ID.laptop)}` }) +
+  hrow({ name: "host-a", line: `online since 08:31 · tailnet and LAN · id ${sid(ID.laptop)}` }) +
     hrow({ name: "vps", state: "off", line: `offline since 19:40 · by address · no address answers from this network · id ${sid(ID.vps)}` }) +
     hrow({ name: "lab", line: `online since 20:40 · LAN · id K9RT`, tag: tag("New key", "new") }) +
     hrow({ name: "old-laptop", state: "gone", line: `removed 12 Nov on desk · id H2OL`, badge: "Removed" }),

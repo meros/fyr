@@ -17,7 +17,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "now": "2026-11-14T09:00:00Z",
   "user": "owner",
   "buildId": "git sha or build time",
-  "host": "meros-laptop",
+  "host": "host-a",
   "threads": [ThreadDTO],
   "actions": [{"name": "thread.settle", "label": "Settle", "key": "e", "bulk": true}],
   "profiles": [{"id": "claude", "name": "Claude", "color": "#d97757", "models": ["claude-opus-5-5"], "defaultModel": "claude-opus-5-5"}],
@@ -98,7 +98,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 | `view.published` | `{"pageId": "…", "state": {…}}` the agent published its live view's page (V0.37); the page loads from `/api/previews/{pageId}` |
 | `view.state` | `{"state": {…}}` the live view's full state after a patch (V0.37) |
 | `view.unchanged` | `{"reason": "…"}` the agent said the view is current (V0.37) |
-| `handover` | `{"from": "claudeAgent", "to": "claudeNorban", "model": "claude-opus-5-5", "rung": "resume" \| "adopt" \| "brief", "path"?: "…", "note"?: "why an earlier rung was skipped"}` the thread moved to another profile (V0.45); `path` is the file the new agent started from (`adopt`, `brief`) |
+| `handover` | `{"from": "claudeAlt", "to": "claudeAcme", "model": "claude-opus-5-5", "rung": "resume" \| "adopt" \| "brief", "path"?: "…", "note"?: "why an earlier rung was skipped"}` the thread moved to another profile (V0.45); `path` is the file the new agent started from (`adopt`, `brief`) |
 | `effect.error` | `{"kind": "handover", "error": "…"}` an effect failed; for a handover the thread stays on its profile |
 
 Other types may appear; the client ignores them.
@@ -147,7 +147,7 @@ The client sends a command as an ordinary message (`/review 12`); the CLI runs i
 
 ## `GET /api/t3/candidates`
 
-`{"threads": [{"t3Id": "…", "title": "…", "cwd": "…", "profile": "claudeAgent", "model": "…", "sessionId": "…", "prUrl": "…", "updatedAt": "…", "hasTranscript": true}]}`, open top-level T3 threads not yet adopted.
+`{"threads": [{"t3Id": "…", "title": "…", "cwd": "…", "profile": "claudeAlt", "model": "…", "sessionId": "…", "prUrl": "…", "updatedAt": "…", "hasTranscript": true}]}`, open top-level T3 threads not yet adopted.
 
 ## Web Push (SPEC 0.5 V0.15)
 
@@ -326,7 +326,7 @@ Both reply at once; the result arrives as an `effect.result` event with `"by": "
   "models": [{"id": "deepseek-chat"}], "defaultModel": "deepseek-chat", "efforts": ["low", "medium", "high", "xhigh", "max"],
   "quota": "deepseek", "status": "ready", "keySet": true, "keyLast4": "4f2a", "keyFrom": "/run/secrets/deepseek",
   "imported": "profile claudeDeepseek (claude-deepseek)", "threads": 3},
- {"id": "claudeNorban", "name": "Claude (norban)", "kind": "claude-account", "auth": "cli-login", "configDir": "~/.claude-norban",
+ {"id": "claudeAcme", "name": "Claude (acme)", "kind": "claude-account", "auth": "cli-login", "configDir": "~/.claude-acme",
   "models": [{"id": "claude-opus-5-5", "name": "Opus 5.5", "efforts": ["low", "medium", "high", "xhigh", "max"]}],
   "quota": "anthropic-oauth", "status": "needs-login", "need": "Log in once in a terminal on this host: …", "keySet": false, "threads": 0}]
 ```
@@ -353,7 +353,7 @@ Commands (`POST /api/command`, no `threadId`; `400` bad arguments, `404` unknown
 
 ```json
 [
-  {"profile": "claudeAgent", "kind": "anthropic-oauth",
+  {"profile": "claudeAlt", "kind": "anthropic-oauth",
    "windows": [{"name": "5 h", "usedPct": 34, "resetsAt": "…"}, {"name": "7 d", "usedPct": 61, "resetsAt": "…"}],
    "updatedAt": "…"},
   {"profile": "claudeDeepseek", "kind": "deepseek", "balance": {"amount": 12.4, "currency": "CNY"}, "updatedAt": "…"},
@@ -371,8 +371,8 @@ Commands (`POST /api/command`, no `threadId`; `400` bad arguments, `404` unknown
 
 The browser talks to a **front**; the front talks to its **hosts** over the **host protocol**, which is this API without the web client. The browser API above does not change; the front adds:
 
-- `GET /api/state`: every thread and project carries `host` (its host's name); a thread whose host is unreachable carries `hostOffline` (RFC 3339, since when). The state adds `hosts: [{"name": "meros-laptop", "online": true, "since": "…", "error"?: "…", "profiles": […], "deploy"?: {…}}]` (V0.54: each host's profiles and update). Each row may add `found: true` (V0.123: discovery found it on the tailnet), `id` and `idWas` (V0.124: its install id, and the pinned one when the host now reports another) and `url` (V0.125: the URL the front dials for it, as configured or as found, also while it is offline). The state's `hostId` is the front's own install id (V0.124). The top-level `profiles` is every host's, merged by id (the first host's wins); `deploy` is the front's own machine's; `actions` the first host's. After a front restart a host it cannot reach is served from the front's cache on disk, `hostOffline` since the front last had it online.
-- Commands and thread calls (`/api/threads/{id}/…`) go to the thread's host. A call without a thread goes to `args.host` (command) or `?host=` (other calls) when given, a `project.*` command to the project's host, else to the first host. A thread on an offline host is read-only: `503 {"ok": false, "error": "meros-laptop is offline since 19:40; its threads are read-only"}`.
+- `GET /api/state`: every thread and project carries `host` (its host's name); a thread whose host is unreachable carries `hostOffline` (RFC 3339, since when). The state adds `hosts: [{"name": "host-a", "online": true, "since": "…", "error"?: "…", "profiles": […], "deploy"?: {…}}]` (V0.54: each host's profiles and update). Each row may add `found: true` (V0.123: discovery found it on the tailnet), `id` and `idWas` (V0.124: its install id, and the pinned one when the host now reports another) and `url` (V0.125: the URL the front dials for it, as configured or as found, also while it is offline). The state's `hostId` is the front's own install id (V0.124). The top-level `profiles` is every host's, merged by id (the first host's wins); `deploy` is the front's own machine's; `actions` the first host's. After a front restart a host it cannot reach is served from the front's cache on disk, `hostOffline` since the front last had it online.
+- Commands and thread calls (`/api/threads/{id}/…`) go to the thread's host. A call without a thread goes to `args.host` (command) or `?host=` (other calls) when given, a `project.*` command to the project's host, else to the first host. A thread on an offline host is read-only: `503 {"ok": false, "error": "host-a is offline since 19:40; its threads are read-only"}`.
 - Attachments and previews (V0.54): `POST /api/attachments`, `GET /api/attachments/{id}` and `GET /api/previews/{id}[/{path}]` take `?host=` or `?thread=` (the thread's host); without either, a read goes to the host the front learned for that id (an upload through it, or the preview page these files belong to), else to the first host. No host is tried in turn.
 - `GET /api/quota` merges every online host's list (`?host=` for one host's).
 - `GET /api/profiles` merges every online host's profiles by id, the first host's winning.
@@ -393,30 +393,30 @@ Guard on the host: the loopback guard as above; on a `hostListen` tailnet addres
 
 ### Two machines on NixOS (V0.54)
 
-The laptop and meros-server each run `fyrd` as host and front (`role` both, the default). Each serves the host protocol on its tailnet address and lists the other as a host; the laptop's front serves its browser on localhost, meros-server's front serves the phone through Tailscale Serve. The owner applies these blocks in the NixOS configuration; tailscaled must be logged in as the owner on both machines.
+The laptop and host-b each run `fyrd` as host and front (`role` both, the default). Each serves the host protocol on its tailnet address and lists the other as a host; the laptop's front serves its browser on localhost, host-b's front serves the phone through Tailscale Serve. The owner applies these blocks in the NixOS configuration; tailscaled must be logged in as the owner on both machines.
 
-meros-server:
+host-b:
 
 ```nix
 services.tailscale.enable = true;
 services.fyr = {
   enable = true;
-  user = "meros";
+  user = "owner";
   # role = "both";                   # the default: a host and the phone's front
   hostPort = 7778;                   # serve fronts on this machine's tailnet address (tailnet:7778), port open on tailscale0 only
-  hosts = [ { name = "meros-laptop"; url = "http://meros-laptop:7778"; } ];
-  tailnet.enable = true;             # Tailscale Serve: https://meros-server.<tailnet>.ts.net:7443 → the front
+  hosts = [ { name = "host-a"; url = "http://host-a:7778"; } ];
+  tailnet.enable = true;             # Tailscale Serve: https://host-b.<tailnet>.ts.net:7443 → the front
   scanRoots = [ "~/git" ];
 };
 ```
 
-meros-laptop (its existing block, plus):
+host-a (its existing block, plus):
 
 ```nix
 services.fyr = {
   hostPort = 7778;
-  hosts = [ { name = "meros-server"; url = "http://meros-server:7778"; } ];
+  hosts = [ { name = "host-b"; url = "http://host-b:7778"; } ];
 };
 ```
 
-`meros-laptop` and `meros-server` are MagicDNS names; a full name (`meros-server.<tailnet>.ts.net`) or a `100.x` address works too. Each front's local host comes first and needs no entry. The phone subscribes to notifications again on meros-server's front (its own device data); a subscription made on the laptop's front stays with that front.
+`host-a` and `host-b` are MagicDNS names; a full name (`host-b.<tailnet>.ts.net`) or a `100.x` address works too. Each front's local host comes first and needs no entry. The phone subscribes to notifications again on host-b's front (its own device data); a subscription made on the laptop's front stays with that front.

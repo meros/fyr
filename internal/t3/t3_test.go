@@ -40,7 +40,7 @@ func fixture(t *testing.T) (db, home string) {
 		mustExec(`INSERT INTO orchestration_v2_projection_provider_threads VALUES (?,?,?)`, "pt-"+id, id, pt)
 	}
 	native := func(s string) string { return `{"nativeThreadRef":{"nativeId":"` + s + `"}}` }
-	add("open", `{"providerInstanceId":"claudeNorban","modelSelection":{"model":"claude-opus-5-5"},"worktreePath":"/src/app-wt","lineage":{"parentThreadId":null},"settledAt":null}`, native("sess-open"))
+	add("open", `{"providerInstanceId":"claudeAcme","modelSelection":{"model":"claude-opus-5-5"},"worktreePath":"/src/app-wt","lineage":{"parentThreadId":null},"settledAt":null}`, native("sess-open"))
 	add("child", `{"lineage":{"parentThreadId":"open"},"settledAt":null}`, native("sess-child"))
 	add("settled", `{"lineage":{"parentThreadId":null},"settledAt":"2026-11-13T12:00:00Z"}`, native("sess-settled"))
 	add("nosession", `{"lineage":{"parentThreadId":null}}`, `{}`)
@@ -71,7 +71,7 @@ func TestCandidates(t *testing.T) {
 		t.Fatalf("got %d candidates: %+v", len(cs), cs)
 	}
 	c := cs[0]
-	if c.T3ID != "open" || c.SessionID != "sess-open" || c.Cwd != "/src/app-wt" || c.Profile != "claudeNorban" ||
+	if c.T3ID != "open" || c.SessionID != "sess-open" || c.Cwd != "/src/app-wt" || c.Profile != "claudeAcme" ||
 		c.Model != "claude-opus-5-5" || c.PRURL != "https://github.com/acme/app/pull/42" || !c.HasTranscript {
 		t.Fatalf("%+v", c)
 	}
@@ -93,17 +93,17 @@ func TestHistoryFromTranscript(t *testing.T) {
 
 func TestProfilesFromSettings(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "settings.json")
-	os.WriteFile(p, []byte(`{"providerInstances":{"claudeNorban":{"driver":"claudeAgent","displayName":"Claude (norban)","accentColor":"#262428","enabled":true,"config":{"binaryPath":"/nix/store/x/bin/claude-norban"}},"codex":{"driver":"codex","enabled":false}},
- "providerModelPreferences":{"claudeNorban":{"hiddenModels":["claude-fable-5-1"],"modelOrder":["claude-opus-5-5","claude-fable-5-1","claude-sonnet-5-5"]}}}`), 0o644)
+	os.WriteFile(p, []byte(`{"providerInstances":{"claudeAcme":{"driver":"claudeAlt","displayName":"Claude (acme)","accentColor":"#262428","enabled":true,"config":{"binaryPath":"/nix/store/x/bin/claude-acme"}},"codex":{"driver":"codex","enabled":false}},
+ "providerModelPreferences":{"claudeAcme":{"hiddenModels":["claude-fable-5-1"],"modelOrder":["claude-opus-5-5","claude-fable-5-1","claude-sonnet-5-5"]}}}`), 0o644)
 	ps, err := Profiles(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var found bool
 	for _, x := range ps {
-		if x.ID == "claudeNorban" {
+		if x.ID == "claudeAcme" {
 			found = true
-			if x.Binary != "/nix/store/x/bin/claude-norban" || len(x.Models) != 2 || x.Models[0] != "claude-opus-5-5" || x.Name != "Claude (norban)" {
+			if x.Binary != "/nix/store/x/bin/claude-acme" || len(x.Models) != 2 || x.Models[0] != "claude-opus-5-5" || x.Name != "Claude (acme)" {
 				t.Fatalf("%+v", x)
 			}
 		}
@@ -111,7 +111,7 @@ func TestProfilesFromSettings(t *testing.T) {
 			t.Fatal("non-claude driver became a profile")
 		}
 	}
-	if !found || ps[0].ID != "claudeAgent" {
+	if !found || ps[0].ID != "claudeAlt" {
 		t.Fatalf("%+v", ps)
 	}
 }

@@ -24,7 +24,7 @@ type Msg = map[string]any
 
 // Spec says how to start one agent process.
 type Spec struct {
-	Binary string   // "claude" or a wrapper such as "claude-norban"
+	Binary string   // "claude" or a wrapper such as "claude-acme"
 	Args   []string // extra flags: --model, --resume, --permission-mode
 	Dir    string
 	Env    []string  // added to os.Environ()

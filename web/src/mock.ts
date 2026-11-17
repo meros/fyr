@@ -17,10 +17,10 @@ const TRIAGE_TABLE =
 
 const LONG_TITLE =
   "Migrate the listing search from the legacy Elasticsearch cluster to OpenSearch without downtime and keep the old index readable for rollback";
-const LONG_PROJECT = "norban-platform-infrastructure-terraform-modules-and-tooling"; // 59 chars
+const LONG_PROJECT = "acme-platform-infrastructure-terraform-modules-and-tooling"; // 59 chars
 const LONG_BRANCH = "feature/very-long-branch-name-without-any-spaces-that-keeps-going-and-going-until-it-overflows";
 const LONG_URL =
-  "https://github.com/norban/web/actions/runs/12345678901/job/98765432101234567890?pr=1234&check_suite_focus=true&very_long_query_parameter=abcdefghijklmnopqrstuvwxyz";
+  "https://github.com/acme/web/actions/runs/12345678901/job/98765432101234567890?pr=1234&check_suite_focus=true&very_long_query_parameter=abcdefghijklmnopqrstuvwxyz";
 const LONG_OPTION =
   "Keep both gestures, but only enable tap-outside on screens wider than 400 px so the lasso never fights with the backdrop on small phones";
 
@@ -48,8 +48,8 @@ function base(id: string, title: string, now: number, ageMin: number, extra: Par
   return {
     id,
     title,
-    cwd: `/home/owner/src/${extra.project ?? "norban/web"}`,
-    project: "norban/web",
+    cwd: `/home/owner/src/${extra.project ?? "acme/web"}`,
+    project: "acme/web",
     profile: "claude",
     model: "claude-opus-5-5",
     sessionId: `sess-${id}`,
@@ -213,7 +213,7 @@ function fullFixture(now: number): Fixture {
       attention: { state: "asking", section: "needs", reason: "2 questions" },
       decisions: [askDecision(now)],
       summary: "The lasso no longer closes the sheet.",
-      pr: { url: "https://github.com/norban/web/pull/1234", repo: "norban/web", number: 1234, state: "OPEN", checks: "pass", review: "", conflict: false },
+      pr: { url: "https://github.com/acme/web/pull/1234", repo: "acme/web", number: 1234, state: "OPEN", checks: "pass", review: "", conflict: false },
       unavailable: { ...NOT_RUNNING, "thread.settle": "A question is open" },
     }),
     askEvents("t_ask", now),
@@ -229,7 +229,7 @@ function fullFixture(now: number): Fixture {
     base("t_block", "Listing cards v2", now, 21, {
       attention: { state: "blocked", section: "needs", reason: "CI failed" },
       summary: "lint: 2 errors in CardGrid.tsx",
-      pr: { url: "https://github.com/norban/web/pull/88", repo: "norban/web", number: 88, state: "OPEN", checks: "fail", conflict: false },
+      pr: { url: "https://github.com/acme/web/pull/88", repo: "acme/web", number: 88, state: "OPEN", checks: "fail", conflict: false },
       unavailable: NOT_RUNNING,
     }),
   );
@@ -268,7 +268,7 @@ function fullFixture(now: number): Fixture {
   );
   add(
     base("t_effect", "Åtgärda översättningar för sökfältet på ändringssidan", now, 6, {
-      project: "norban/web",
+      project: "acme/web",
       attention: { state: "asking", section: "needs", reason: "Merge" },
       decisions: [
         {
@@ -276,16 +276,16 @@ function fullFixture(now: number): Fixture {
           kind: "effect",
           createdAt: iso(now - 6 * 60_000),
           agent: "",
-          effect: { action: "pr.merge", args: { pr: "https://github.com/norban/web/pull/4170", method: "squash" }, reason: "CI is green and the review is approved; the översättningar are verified." },
+          effect: { action: "pr.merge", args: { pr: "https://github.com/acme/web/pull/4170", method: "squash" }, reason: "CI is green and the review is approved; the översättningar are verified." },
         },
       ],
-      pr: { url: "https://github.com/norban/web/pull/4170", repo: "norban/web", number: 4170, state: "OPEN", checks: "pass", review: "APPROVED", conflict: false },
+      pr: { url: "https://github.com/acme/web/pull/4170", repo: "acme/web", number: 4170, state: "OPEN", checks: "pass", review: "APPROVED", conflict: false },
       unavailable: { ...NOT_RUNNING, "thread.settle": "A question is open" },
     }),
   );
   add(
     base("t_done", "Triage sprint issues", now, 60, {
-      project: "norban/ops",
+      project: "acme/ops",
       attention: { state: "blocked", section: "needs", reason: "Placement rows load in one read: Merge" }, // V0.101: the host computes it from the Ready change below
       summary: "Filed 6 issues, closed 2 duplicates",
       unavailable: NOT_RUNNING,
@@ -353,7 +353,7 @@ function fullFixture(now: number): Fixture {
       project: LONG_PROJECT,
       attention: { state: "done", section: "needs", reason: "Done" },
       summary: "Pushed " + LONG_BRANCH + " and opened " + LONG_URL,
-      pr: { url: "https://github.com/norban/infra/pull/9999", repo: "norban/infra", number: 9999, state: "OPEN", checks: "pending", conflict: true },
+      pr: { url: "https://github.com/acme/infra/pull/9999", repo: "acme/infra", number: 9999, state: "OPEN", checks: "pending", conflict: true },
       unavailable: NOT_RUNNING,
     }),
   );
@@ -393,7 +393,7 @@ function fullFixture(now: number): Fixture {
   add(
     base("t_s1", "Lasso polygon perf", now, 40, {
       summary: "Merged; the polygon is simplified before hit-testing.",
-      pr: { url: "https://github.com/norban/web/pull/1201", repo: "norban/web", number: 1201, state: "MERGED", checks: "pass", conflict: false },
+      pr: { url: "https://github.com/acme/web/pull/1201", repo: "acme/web", number: 1201, state: "MERGED", checks: "pass", conflict: false },
       unavailable: NOT_RUNNING,
     }),
   );
@@ -427,7 +427,7 @@ function fullFixture(now: number): Fixture {
   );
   add(
     base("t_z2", "Check deploy on Monday", now, 500, {
-      project: "norban/ops",
+      project: "acme/ops",
       attention: { state: "snoozed", section: "snoozed", reason: "until Monday 06:00" },
       view: { seenAt: null, snoozeUntil: iso(now + 72 * 3600_000) },
       unavailable: NOT_RUNNING,
@@ -444,7 +444,7 @@ function fullFixture(now: number): Fixture {
   // 9999 settled threads: the count and the long list.
   for (let i = 0; i < 9999; i++) {
     const t = base(`t_set${i}`, i % 7 === 0 ? `Settled thread ${i} – ändrade översättningar` : `Settled thread ${i}`, now, 30 + i * 0.14, {
-      project: i % 3 === 0 ? "norban/web" : "norban/api",
+      project: i % 3 === 0 ? "acme/web" : "acme/api",
       attention: { state: "settled", section: "settled", reason: "" },
       settledAt: iso(now - (30 + i * 0.14) * 60_000),
       summary: "Settled.",
@@ -459,9 +459,9 @@ function fullFixture(now: number): Fixture {
   events.t_w2 = [...events.t_w2, ev(events.t_w2.length + 1, now - 60_000, "t_w2", "user", { text: "Use the new index for the map tiles; " + LONG_URL, from: "t_w3" })];
 
   const t3: T3Candidate[] = [
-    { t3Id: "t3_a", title: "Refactor booking calendar", cwd: "/home/owner/src/norban/web", profile: "claudeAgent", model: "claude-opus-5-5", updatedAt: iso(now - 3600_000), hasTranscript: true, prUrl: "https://github.com/norban/web/pull/4100" },
-    { t3Id: "t3_b", title: LONG_TITLE, cwd: "/home/owner/src/" + LONG_PROJECT, profile: "claudeAgent", model: "claude-opus-5-5", updatedAt: iso(now - 7200_000), hasTranscript: false },
-    { t3Id: "t3_c", title: "Översätt e-postmallar", cwd: "/home/owner/src/norban/mail", profile: "codex", model: "gpt-5", updatedAt: iso(now - 86400_000), hasTranscript: true },
+    { t3Id: "t3_a", title: "Refactor booking calendar", cwd: "/home/owner/src/acme/web", profile: "claudeAlt", model: "claude-opus-5-5", updatedAt: iso(now - 3600_000), hasTranscript: true, prUrl: "https://github.com/acme/web/pull/4100" },
+    { t3Id: "t3_b", title: LONG_TITLE, cwd: "/home/owner/src/" + LONG_PROJECT, profile: "claudeAlt", model: "claude-opus-5-5", updatedAt: iso(now - 7200_000), hasTranscript: false },
+    { t3Id: "t3_c", title: "Översätt e-postmallar", cwd: "/home/owner/src/acme/mail", profile: "codex", model: "gpt-5", updatedAt: iso(now - 86400_000), hasTranscript: true },
   ];
   // V0.59, V0.60: changes that are not a PR, with actions, on one thread.
   const ops = threads.find((x) => x.id === "t_done");
@@ -501,11 +501,11 @@ function fullFixture(now: number): Fixture {
       },
       // V0.66: a PR whose checks fail, with annotations on the diff lines, and a merged PR that GitHub deployed.
       {
-        id: "c_lasso", key: "pr:norban/web#4123", kind: "code", title: "Map: draw only visible features", branch: "fix/map-lasso-mobile", targets: ["repo:github.com/norban/web"],
+        id: "c_lasso", key: "pr:acme/web#4123", kind: "code", title: "Map: draw only visible features", branch: "fix/map-lasso-mobile", targets: ["repo:github.com/acme/web"],
         phase: "review", phaseBy: "observed",
         conditions: [{ type: "checks", status: "fail", reason: "CI failed", source: "observed", at: iso(20) }],
         need: { cause: "failure", text: "CI failed", head: "93a7e57c1d2b3a4f5e6d7c8b9a0f1e2d3c4b5a69" },
-        evidence: [{ kind: "pr", url: "https://github.com/norban/web/pull/4123", title: "#4123" }],
+        evidence: [{ kind: "pr", url: "https://github.com/acme/web/pull/4123", title: "#4123" }],
         annotations: [
           { path: "web/src/map/render.ts", line: 44, level: "failure", title: "no-undef", message: "'stats' is not defined.", check: "lint" },
           { path: "web/src/map/render.ts", line: 210, level: "warning", message: "Function renderMap has a complexity of 14. Maximum allowed is 12.", check: "lint" },
@@ -514,44 +514,44 @@ function fullFixture(now: number): Fixture {
         createdAt: iso(40), updatedAt: iso(20),
       },
       {
-        id: "c_cal", key: "pr:norban/web#4100", kind: "code", title: "Refactor booking calendar", targets: ["repo:github.com/norban/web"], phase: "live", phaseBy: "observed",
+        id: "c_cal", key: "pr:acme/web#4100", kind: "code", title: "Refactor booking calendar", targets: ["repo:github.com/acme/web"], phase: "live", phaseBy: "observed",
         conditions: [
           { type: "checks", status: "ok", source: "observed", at: iso(300) },
           { type: "deploy:staging", status: "ok", source: "observed", at: iso(200) },
           { type: "deploy", status: "ok", source: "observed", at: iso(180) },
         ],
         evidence: [
-          { kind: "pr", url: "https://github.com/norban/web/pull/4100", title: "#4100" },
-          { kind: "deployment", url: "https://norban.se", title: "production" },
+          { kind: "pr", url: "https://github.com/acme/web/pull/4100", title: "#4100" },
+          { kind: "deployment", url: "https://example.com", title: "production" },
         ],
         createdAt: iso(600), updatedAt: iso(180), done: { at: iso(180), by: "observed", reason: "live" }, // V0.98
       },
       // V0.136: the agent asked to merge while CI runs; the ask is held, the card says so, and nobody is asked yet.
       {
-        id: "c_nightly", key: "pr:norban/collector#846", kind: "code", title: "fix(nightly): run every source and alarm on a short night", targets: ["repo:github.com/norban/collector"],
+        id: "c_nightly", key: "pr:acme/collector#846", kind: "code", title: "fix(nightly): run every source and alarm on a short night", targets: ["repo:github.com/acme/collector"],
         phase: "review", phaseBy: "observed",
         need: { cause: "waiting", ask: "d_nightly", action: "pr.merge", head: "7333251aa0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5", text: "Waiting for CI: 3 of 5 checks done", muted: true },
-        pr: { url: "https://github.com/norban/collector/pull/846", repo: "norban/collector", number: 846, state: "OPEN", checks: "pending", head: "7333251aa0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5", mergeState: "BLOCKED" },
+        pr: { url: "https://github.com/acme/collector/pull/846", repo: "acme/collector", number: 846, state: "OPEN", checks: "pending", head: "7333251aa0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5", mergeState: "BLOCKED" },
         conditions: [{ type: "checks", status: "pending", source: "observed", at: iso(3) }],
-        evidence: [{ kind: "pr", url: "https://github.com/norban/collector/pull/846", title: "#846" }],
+        evidence: [{ kind: "pr", url: "https://github.com/acme/collector/pull/846", title: "#846" }],
         createdAt: iso(8), updatedAt: iso(3),
       },
       // V0.97: a green PR the host reads as ready to merge; its Merge names the head, and Merge all green takes it.
       {
-        id: "c_rows", key: "pr:norban/web#4131", kind: "code", title: "Placement rows load in one read", targets: ["repo:github.com/norban/web"],
+        id: "c_rows", key: "pr:acme/web#4131", kind: "code", title: "Placement rows load in one read", targets: ["repo:github.com/acme/web"],
         phase: "review", phaseBy: "observed", ready: "Merge", need: { cause: "ready", text: "Merge", head: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678" },
-        pr: { url: "https://github.com/norban/web/pull/4131", repo: "norban/web", number: 4131, state: "OPEN", checks: "pass", review: "APPROVED", head: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", mergeState: "CLEAN" },
+        pr: { url: "https://github.com/acme/web/pull/4131", repo: "acme/web", number: 4131, state: "OPEN", checks: "pass", review: "APPROVED", head: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", mergeState: "CLEAN" },
         conditions: [{ type: "checks", status: "ok", source: "observed", at: iso(30) }],
-        evidence: [{ kind: "pr", url: "https://github.com/norban/web/pull/4131", title: "#4131" }],
+        evidence: [{ kind: "pr", url: "https://github.com/acme/web/pull/4131", title: "#4131" }],
         offers: [{ id: "fyr.merge", label: "Merge", run: "fyr", effect: "pr.merge", primary: true, by: "observed", digest: dg("fyr.merge") }],
         createdAt: iso(60), updatedAt: iso(30),
       },
     ];
     // V0.68: a script in a scratch folder, as on the owner's phone: its confirmation shortens the paths.
-    const scratch = "/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-norban-claude-long-term-token";
+    const scratch = "/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-acme-claude-long-term-token";
     ops.offers = [
       { id: "smoke", on: "thread", label: "Run smoke tests", run: "script", argv: ["make", "smoke"], by: "agent", digest: dg("smoke") },
-      { id: "token", on: "thread", label: "Set the Norban token", run: "script", argv: ["bash", `${scratch}/set-norban-token.sh`], cwd: scratch, by: "agent", digest: dg("token") },
+      { id: "token", on: "thread", label: "Set the Acme token", run: "script", argv: ["bash", `${scratch}/set-acme-token.sh`], cwd: scratch, by: "agent", digest: dg("token") },
     ];
   }
   return { threads, events, t3 };
@@ -626,7 +626,7 @@ function railFixture(now: number): Fixture {
       branch: "fix/map-lasso-mobile",
       attention: { state: "asking", section: "needs", reason: "" },
       decisions: [ask],
-      pr: { url: "https://github.com/norban/web/pull/1234", repo: "norban/web", number: 1234, state: "OPEN", checks: "pass", conflict: false },
+      pr: { url: "https://github.com/acme/web/pull/1234", repo: "acme/web", number: 1234, state: "OPEN", checks: "pass", conflict: false },
       unavailable: { ...quiet, "thread.settle": "A question is open" },
     }),
     base("t_e2e", "Speed up e2e suite", now, 9, {
@@ -637,11 +637,11 @@ function railFixture(now: number): Fixture {
     base("t_cards", "Listing cards v2", now, 21, {
       attention: { state: "blocked", section: "needs", reason: "CI failed" },
       summary: "lint: 2 errors in CardGrid.tsx",
-      pr: { url: "https://github.com/norban/web/pull/88", repo: "norban/web", number: 88, state: "OPEN", checks: "fail", conflict: false },
+      pr: { url: "https://github.com/acme/web/pull/88", repo: "acme/web", number: 88, state: "OPEN", checks: "fail", conflict: false },
       unavailable: quiet,
     }),
     base("t_triage", "Triage sprint issues", now, 60, {
-      project: "norban/ops",
+      project: "acme/ops",
       // V0.120 (5): its model was turned off since; it shows as "opus 5.4 (off)" until another is picked.
       model: "claude-opus-5-4",
       attention: { state: "done", section: "needs", reason: "Done" },
@@ -652,7 +652,7 @@ function railFixture(now: number): Fixture {
   // V0.143: a live agent that takes nothing Fyr writes; Needs you, with Restart above the composer.
   threads.push(
     base("t_stuck", "Area tree production switch", now, 38, {
-      project: "norban/web",
+      project: "acme/web",
       running: true,
       runStartedAt: min(39),
       activity: "Starting",
@@ -691,18 +691,18 @@ function railFixture(now: number): Fixture {
     );
   }
   const seen: [string, string, string, number, number, boolean][] = [
-    ["t_poly", "Lasso polygon perf", "norban/web", 14, 20, true],
+    ["t_poly", "Lasso polygon perf", "acme/web", 14, 20, true],
     ["t_nix", "Nix flake update", "dotfiles", 13, 5, false],
-    ["t_pw", "Bump Playwright to 1.58", "norban/web", 11, 48, false],
-    ["t_copy", "Rewrite onboarding copy", "norban/web", 10, 12, false],
-    ["t_snap", "Fix flaky map snapshot test", "norban/web", 9, 30, false],
-    ["t_dish", "Pick a dishwasher under 8 000 kr", "Hemmet", 8, 5, false],
+    ["t_pw", "Bump Playwright to 1.58", "acme/web", 11, 48, false],
+    ["t_copy", "Rewrite onboarding copy", "acme/web", 10, 12, false],
+    ["t_snap", "Fix flaky map snapshot test", "acme/web", 9, 30, false],
+    ["t_dish", "Pick a dishwasher under 8 000 kr", "Garden", 8, 5, false],
   ];
   for (const [id, title, project, h, m, merged] of seen) {
     const t = base(id, title, now, 0, { project, summary: "Done.", unavailable: quiet });
     t.activityAt = at(h, m);
     t.updatedAt = at(h, m);
-    if (merged) t.pr = { url: "https://github.com/norban/web/pull/1201", repo: "norban/web", number: 1201, state: "MERGED", checks: "pass", conflict: false };
+    if (merged) t.pr = { url: "https://github.com/acme/web/pull/1201", repo: "acme/web", number: 1201, state: "MERGED", checks: "pass", conflict: false };
     threads.push(t);
   }
   const tomorrow6 = new Date(now);
@@ -886,7 +886,7 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   let seq = 0;
   const T = now - 20 * 60_000;
   const e = (sec: number, type: string, data: unknown) => out.push(ev(++seq, T + sec * 1000, subject, type, data));
-  const cwd = "/home/owner/src/norban/web";
+  const cwd = "/home/owner/src/acme/web";
   e(0, "user", { id: "m_map1", text: "Map perf: the vitest suite for src/map takes 38 s. Find the slow tests and fix them.", images: 0 });
   e(0, "message.state", { id: "m_map1", state: "read" });
   e(0, "run.started", {});
@@ -932,7 +932,7 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   e((t += 30), "decision.closed", { id: "d_dep", answer: "Approve" });
   e((t += 60), "effect.result", { action: "deploy.staging", ok: true, text: "Deploy succeeded · build 20261114-112026\n\nhttps://staging.example/build/20261114-112026\n12 services restarted, 0 errors." });
   e((t += 0.1), "user", { text: "[Fyr] Your effect_request deploy.staging succeeded: Deploy succeeded · build 20261114-112026", images: 0 });
-  e((t += 2), "msg", toolUse("pl1", "mcp__fyr__pr_link", { url: "https://github.com/norban/web/pull/4182" }));
+  e((t += 2), "msg", toolUse("pl1", "mcp__fyr__pr_link", { url: "https://github.com/acme/web/pull/4182" }));
   e((t += 0.2), "msg", toolResult("pl1"));
   e((t += 1), "msg", assistantText("Snapshot test still fails on the sheet; the other two files now take 9 s instead of 24 s."));
   e((t += 1), "run.ended", { failure: null, interrupted: false, costUsd: 0.42, durationMs: 840_000 });
@@ -952,26 +952,26 @@ export function mockProjects(now: number): Project[] {
   const ago = (h: number) => iso(now - h * 3600_000);
   return [
     // V0.116: an image icon the setup agent set (name and colour too); the glyph stays the fallback.
-    { id: "p_web", name: "norban/web", color: "teal", icon: { kind: "line", value: "Globe" }, image: "nb1", by: { name: "owner", color: "agent", image: "agent" }, setup: { at: ago(20), thread: "t_setup" }, folder: "/home/owner/src/norban/web", profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1) },
-    { id: "p_ops", name: "norban/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, folder: "/home/owner/src/norban/ops", threads: 2, lastUsed: ago(1) },
+    { id: "p_web", name: "acme/web", color: "teal", icon: { kind: "line", value: "Globe" }, image: "nb1", by: { name: "owner", color: "agent", image: "agent" }, setup: { at: ago(20), thread: "t_setup" }, folder: "/home/owner/src/acme/web", profile: "claude", model: "claude-sonnet-5-5", threads: 9, lastUsed: ago(0.1) },
+    { id: "p_ops", name: "acme/ops", color: "rose", icon: { kind: "emoji", value: "🚀" }, folder: "/home/owner/src/acme/ops", threads: 2, lastUsed: ago(1) },
     { id: "p_long", name: LONG_PROJECT, color: "indigo", icon: { kind: "monogram" }, folder: "/home/owner/src/" + LONG_PROJECT, threads: 3, lastUsed: ago(5) },
     { id: "p_dot", name: "dotfiles", color: "olive", icon: { kind: "line", value: "terminal" }, folder: "/home/owner/dotfiles", threads: 1, lastUsed: ago(2) },
-    { id: "p_api", name: "norban/api", color: "sky", icon: { kind: "line", value: "server" }, folder: "/home/owner/src/norban/api", threads: 0, lastUsed: ago(30) },
+    { id: "p_api", name: "acme/api", color: "sky", icon: { kind: "line", value: "server" }, folder: "/home/owner/src/acme/api", threads: 0, lastUsed: ago(30) },
     { id: "p_fyr", name: "Fyr", color: "brown", icon: { kind: "line", value: "FolderGit2" }, image: "fy1", by: { name: "agent", color: "agent", image: "agent" }, setup: { at: ago(48), thread: "t_setup" }, folder: "/home/owner/git/fyr", threads: 0, lastUsed: ago(48) },
-    { id: "p_home", name: "Hemmet", color: "green", icon: { kind: "emoji", value: "🏡" }, threads: 1, lastUsed: ago(3) },
-    { id: "p_infra", name: "norban/infra", color: "slate", icon: { kind: "line", value: "no-such-icon" }, folder: "/home/owner/src/norban/infra", threads: 1, lastUsed: ago(10) },
+    { id: "p_home", name: "Garden", color: "green", icon: { kind: "emoji", value: "🏡" }, threads: 1, lastUsed: ago(3) },
+    { id: "p_infra", name: "acme/infra", color: "slate", icon: { kind: "line", value: "no-such-icon" }, folder: "/home/owner/src/acme/infra", threads: 1, lastUsed: ago(10) },
     { id: "p_maplab", name: "Map perf lab", color: "blue", icon: { kind: "line", value: "map" }, folder: "/home/owner/src/maplab", threads: 0, lastUsed: ago(70) },
-    { id: "p_book", name: "Bokföring åt Övik", icon: { kind: "monogram" }, color: "brown", folder: "/home/owner/ekonomi", threads: 0, lastUsed: ago(200) },
+    { id: "p_book", name: "Bokföring åt Åsa", icon: { kind: "monogram" }, color: "brown", folder: "/home/owner/ekonomi", threads: 0, lastUsed: ago(200) },
   ];
 }
 
 // V0.42: the mock folders that are git repositories (the folder picker's "Repos found").
 const MOCK_REPOS = [
-  "/home/owner/src/norban/web",
-  "/home/owner/src/norban/web-docs",
-  "/home/owner/src/norban/ops",
-  "/home/owner/src/norban/api",
-  "/home/owner/src/norban/infra",
+  "/home/owner/src/acme/web",
+  "/home/owner/src/acme/web-docs",
+  "/home/owner/src/acme/ops",
+  "/home/owner/src/acme/api",
+  "/home/owner/src/acme/infra",
   "/home/owner/src/" + LONG_PROJECT,
   "/home/owner/src/lasso-app",
   "/home/owner/dotfiles",
@@ -989,7 +989,7 @@ function mockTree(extra: string[]): { dirs: Set<string>; repos: Set<string> } {
     for (let at = p; at.startsWith(MOCK_HOME); at = at.slice(0, at.lastIndexOf("/"))) dirs.add(at);
   };
   for (const p of [...repos, ...extra]) add(p);
-  for (const p of ["Documents", "Downloads", "notes", "ekonomi", "git/fyr/web", "git/fyr/internal", "src/maplab", ".config/nvim", ".local/share/fyr/scratch", "src/norban/web/node_modules"]) add(`${MOCK_HOME}/${p}`);
+  for (const p of ["Documents", "Downloads", "notes", "ekonomi", "git/fyr/web", "git/fyr/internal", "src/maplab", ".config/nvim", ".local/share/fyr/scratch", "src/acme/web/node_modules"]) add(`${MOCK_HOME}/${p}`);
   return { dirs, repos };
 }
 
@@ -1038,7 +1038,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
   // V0.139: with &hosts=2 a project lives on lab, so its screen and New thread can show another host's project.
   // A front stamps every project with its host (V0.55); the fixture's are desk's.
   if (MOCK_HOSTS) projects = [...projects.map((p) => ({ ...p, host: p.host ?? "desk" })), { id: "p_arm", name: "Robot arm", folder: "/home/owner/experiments/robot-arm", host: "lab", threads: 0, lastUsed: new Date(now0 - 86_400_000).toISOString() },
-    { id: "p_srv", name: "Server ops", folder: "/home/owner/ops", host: "meros-server", threads: 0, lastUsed: new Date(now0 - 2 * 86_400_000).toISOString() }];
+    { id: "p_srv", name: "Server ops", folder: "/home/owner/ops", host: "host-b", threads: 0, lastUsed: new Date(now0 - 2 * 86_400_000).toISOString() }];
   // V0.46: ?quiet=<projectId> puts that project in quiet hours that started an hour ago and end in two hours, and
   // gives it a second window (weekends, ten hours ahead) so the project screen shows two rows (decision 0014 addendum).
   if (MOCK_QUIET) {
@@ -1568,7 +1568,7 @@ export function mockChanges(threadId: string): ChangesDTO {
   ].map((f) => ({ ...f, viewed: mockViewed.get(`${threadId}:${f.path}`) === (f.blob ?? "") && mockViewed.has(`${threadId}:${f.path}`) }));
   const c: ChangesDTO = {
     git: true,
-    root: "/home/owner/src/norban/web",
+    root: "/home/owner/src/acme/web",
     branch: "fix/map-lasso-mobile",
     base: "origin/main",
     mergeBase: "3f2a9c1d0e",
@@ -1682,7 +1682,7 @@ function mockDeploy() {
   return { phase: ph, startedAt: started, at: new Date().toISOString(), build: "20261114-160324", blocking: ph === "drain" ? ["t_mapperf", "t_lasso"] : undefined, detail: ph === "failed" ? "tests failed, nothing was switched: exit status 2\nFAIL TestX" : undefined };
 }
 
-/** V0.54: ?hosts=2 in the mock shows a front with two hosts, the second (meros-server, with t_lasso and t_triage)
+/** V0.54: ?hosts=2 in the mock shows a front with two hosts, the second (host-b, with t_lasso and t_triage)
  *  offline for 25 minutes (the layout test uses it). Read once at load, as ?deploy=. */
 const MOCK_HOSTS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("hosts") === "2" : false;
 const MOCK_REMOTE = new Set(["t_lasso", "t_triage"]);
@@ -1707,7 +1707,7 @@ function mockHostsRaw(now: number, labTrusted: boolean) {
   const iso = (ms: number) => new Date(ms).toISOString();
   return [
     { name: "desk", online: true, since: iso(now - 3 * 3600_000), id: "F7QK-2M9X-AB34-CD56", url: "http://127.0.0.1:7777" },
-    { name: "meros-server", online: false, since: iso(now - 25 * 60_000), error: "unreachable", found: true, id: "M3RS-QX7P-5LKA-2WNE", url: "http://100.64.0.9:7778" },
+    { name: "host-b", online: false, since: iso(now - 25 * 60_000), error: "unreachable", found: true, id: "M3RS-QX7P-5LKA-2WNE", url: "http://100.64.0.9:7778" },
     { name: "lab", online: true, since: iso(now - 40 * 60_000), id: "B7LA-4QZE-9KDF-3HXW", url: "http://100.64.0.7:7778", ...(labTrusted ? {} : { idWas: "AX2C-7RTM-8PLQ-6VYD" }),
       // V0.132: lab's own providers, so a thread started there offers them
       profiles: [
@@ -1722,7 +1722,7 @@ function mockHostOf(t: ThreadDTO, now: number): ThreadDTO {
   if (!MOCK_HOSTS) return t;
   if (t.host && t.host !== "desk") return t; // V0.132: made on another host
   if (!MOCK_REMOTE.has(t.id)) return { ...t, host: "desk" };
-  return { ...t, host: "meros-server", hostOffline: new Date(now - 25 * 60_000).toISOString() };
+  return { ...t, host: "host-b", hostOffline: new Date(now - 25 * 60_000).toISOString() };
 }
 
 /** SPEC 0.5 V0.44: provider quota for the mock profiles; "work" is busy and stale. */
@@ -1777,7 +1777,7 @@ function laptopLoad(): HostLoad[] {
       agentsCpuPressure: 88,
       jobs: [
         { class: "fyr: make test", runs: 14, cores: 2.3, demand: 3.4, peak: 2.1e9, wall: 95, at: "2026-11-17T09:12:00Z" },
-        { class: "Norban: yarn screenshot:diff", runs: 6, cores: 1.1, demand: 1.9, peak: 6.4e9, wall: 437, at: "2026-11-17T08:40:00Z" },
+        { class: "Acme: yarn screenshot:diff", runs: 6, cores: 1.1, demand: 1.9, peak: 6.4e9, wall: 437, at: "2026-11-17T08:40:00Z" },
         { class: "fyr: e2e", runs: 3, cores: 0.9, demand: 1.2, peak: 1.8e9, wall: 254, at: "2026-11-17T08:02:00Z" },
       ],
     },

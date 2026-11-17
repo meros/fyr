@@ -67,7 +67,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			"key":      str("A stable name, unique in this thread, for example \"k8s:prod/api replicas\" or \"doc:design-v2\". The same key returns the same change."),
 			"kind":     map[string]any{"type": "string", "enum": core.ChangeKinds()},
 			"title":    str("One line for the owner: what changes."),
-			"targets":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Where it lands, as kind:name, for example \"k8s:gke-prod/api\", \"host:meros-server\", \"repo:github.com/o/r\", \"env:production\"."},
+			"targets":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Where it lands, as kind:name, for example \"k8s:gke-prod/api\", \"host:host-b\", \"repo:github.com/o/r\", \"env:production\"."},
 			"branch":   str("For code: the git branch."),
 			"pr":       str("For code: a GitHub PR URL; Fyr watches its checks and reviews."),
 			"group":    str("A name shared by changes that belong together, for example one feature across several repos."),

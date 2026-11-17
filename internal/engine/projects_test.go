@@ -101,23 +101,23 @@ func TestNoAutoProjectAndCreate(t *testing.T) {
 // refused.
 func TestProjectUpdate(t *testing.T) {
 	h := newHarness(t, time.Minute)
-	ws := filepath.Join(h.dir, "norban")
+	ws := filepath.Join(h.dir, "acme")
 	os.MkdirAll(filepath.Join(ws, "web"), 0o755)
-	h.cmd("project.create", "", core.Args{"name": "norban", "folder": ws})
+	h.cmd("project.create", "", core.Args{"name": "acme", "folder": ws})
 	r := h.cmd("thread.create", "", core.Args{"cwd": filepath.Join(ws, "web"), "text": "x"})
 	p := projectOf(h.e, r.ThreadID)
-	if p.Name != "norban" {
+	if p.Name != "acme" {
 		t.Fatalf("%+v", p)
 	}
-	up := h.e.Command(api.Cmd{CommandID: "u1", Action: "project.update", Args: core.Args{"id": p.ID, "name": "Norban", "color": "violet", "icon": map[string]any{"kind": "emoji", "value": "🏠"}}})
+	up := h.e.Command(api.Cmd{CommandID: "u1", Action: "project.update", Args: core.Args{"id": p.ID, "name": "Acme", "color": "violet", "icon": map[string]any{"kind": "emoji", "value": "🏠"}}})
 	if !up.OK {
 		t.Fatalf("%+v", up)
 	}
 	p = projectOf(h.e, r.ThreadID)
-	if p.Name != "Norban" || p.Color != "violet" || p.Icon.Value != "🏠" || p.Folder != ws {
+	if p.Name != "Acme" || p.Color != "violet" || p.Icon.Value != "🏠" || p.Folder != ws {
 		t.Fatalf("%+v", p)
 	}
-	if d := dtoOf(h.e, r.ThreadID); d.Project != "Norban" {
+	if d := dtoOf(h.e, r.ThreadID); d.Project != "Acme" {
 		t.Fatalf("the thread kept the old name: %q", d.Project)
 	}
 	if bad := h.e.Command(api.Cmd{CommandID: "u2", Action: "project.update", Args: core.Args{"id": p.ID, "color": "amber"}}); bad.OK || bad.Status != 400 {
@@ -161,7 +161,7 @@ func TestMatchAtLoad(t *testing.T) {
 func TestProjectWithoutFolderAndManualFiling(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	h.cmd("project.create", "", core.Args{"name": "Here", "folder": h.dir})
-	r := h.e.Command(api.Cmd{CommandID: "p1", Action: "project.create", Args: core.Args{"name": "Hemmet"}})
+	r := h.e.Command(api.Cmd{CommandID: "p1", Action: "project.create", Args: core.Args{"name": "Garden"}})
 	if !r.OK {
 		t.Fatalf("a project without a folder was refused: %+v", r)
 	}
@@ -170,7 +170,7 @@ func TestProjectWithoutFolderAndManualFiling(t *testing.T) {
 	if mv := h.cmd("thread.setProject", th.ThreadID, core.Args{"projectId": pid}); !mv.OK {
 		t.Fatalf("%+v", mv)
 	}
-	if p := projectOf(h.e, th.ThreadID); p.Name != "Hemmet" {
+	if p := projectOf(h.e, th.ThreadID); p.Name != "Garden" {
 		t.Fatalf("not filed: %+v", p)
 	}
 	h.cmd("thread.send", th.ThreadID, core.Args{"text": "again"})
@@ -181,7 +181,7 @@ func TestProjectWithoutFolderAndManualFiling(t *testing.T) {
 	defer st.Close()
 	e2 := New(st)
 	e2.Load()
-	if p := projectOf(e2, th.ThreadID); p.Name != "Hemmet" {
+	if p := projectOf(e2, th.ThreadID); p.Name != "Garden" {
 		t.Fatalf("folder matching moved the thread back: %+v", p)
 	}
 	if bad := h.e.Command(api.Cmd{CommandID: "x", Action: "thread.setProject", ThreadID: th.ThreadID, Args: core.Args{"projectId": "p_nope"}}); bad.OK {
@@ -208,7 +208,7 @@ func TestHomeGitRootMakesNoProject(t *testing.T) {
 // path; a change of folder matches threads again at once, the longest folder
 // wins, a hand-filed thread stays, and a thread that nothing covers keeps
 // its project. (Found
-// live: a project made with the typo /home/meris/… matched nothing.)
+// live: a project made with the typo /home/owner/… matched nothing.)
 func TestFolderChecksAndRematch(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	repo := filepath.Join(h.dir, "src", "fyr")
@@ -377,7 +377,7 @@ func TestHomeFolderThreadHasNoProject(t *testing.T) {
 // matching. An unknown thread is a 404 and makes nothing.
 func TestCreateAndFile(t *testing.T) {
 	h := newHarness(t, time.Minute)
-	dir := filepath.Join(h.dir, "Hemmet")
+	dir := filepath.Join(h.dir, "Garden")
 	os.MkdirAll(dir, 0o755)
 	a := h.cmd("thread.create", "", core.Args{"cwd": dir, "text": "a"})
 	b := h.cmd("thread.create", "", core.Args{"cwd": dir, "text": "b"})

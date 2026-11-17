@@ -377,10 +377,10 @@ func TestMergeOneGuard(t *testing.T) {
 // pressing thread's provider, model and effort and names it as its parent;
 // a second press while the first runs starts nothing (the live case, 15 Nov:
 // two threads per press, on the owner's personal account instead of
-// claudeNorban).
+// claudeAcme).
 func TestNewThreadActionFollowsParent(t *testing.T) {
 	h := newHarness(t, time.Minute)
-	r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "x", "profile": "claudeNorban", "model": "claude-opus-5-5", "effort": "high"})
+	r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "x", "profile": "claudeAcme", "model": "claude-opus-5-5", "effort": "high"})
 	if !r.OK {
 		t.Fatalf("create: %+v", r)
 	}
@@ -421,7 +421,7 @@ func TestNewThreadActionFollowsParent(t *testing.T) {
 		t.Fatalf("%d threads for one press", len(children))
 	}
 	c := children[0]
-	if c.Profile != "claudeNorban" || c.Model != "claude-opus-5-5" || c.Effort != "high" {
+	if c.Profile != "claudeAcme" || c.Model != "claude-opus-5-5" || c.Effort != "high" {
 		t.Fatalf("child provider %q model %q effort %q", c.Profile, c.Model, c.Effort)
 	}
 }

@@ -102,9 +102,9 @@ func TestProjectSetupToolFromURL(t *testing.T) {
 		w.Write(logoPNG(t, color.NRGBA{190, 40, 90, 255}))
 	}))
 	defer srv.Close()
-	dir := filepath.Join(h.dir, "norban")
+	dir := filepath.Join(h.dir, "acme")
 	os.MkdirAll(dir, 0o755)
-	pid := newProject(t, h, core.Args{"name": "Norban", "folder": dir})
+	pid := newProject(t, h, core.Args{"name": "Acme", "folder": dir})
 	th := h.cmd("thread.create", "", core.Args{"cwd": dir, "text": "set up"}).ThreadID
 	if out, isErr := callAs(t, h.e, th, "project_setup", map[string]any{"icon": srv.URL + "/bad"}); !isErr || !strings.Contains(out, "image") {
 		t.Fatalf("a page was taken as an icon: %q", out)
@@ -114,7 +114,7 @@ func TestProjectSetupToolFromURL(t *testing.T) {
 		t.Fatal(out)
 	}
 	p := projectByID(h, pid)
-	if p.Image == "" || p.Name != "Norban" || p.Color != "rose" {
+	if p.Image == "" || p.Name != "Acme" || p.Color != "rose" {
 		t.Fatalf("%+v", p)
 	}
 	if !strings.Contains(out, "owner") || !strings.Contains(out, "name") {

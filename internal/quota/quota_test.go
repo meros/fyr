@@ -61,7 +61,7 @@ func TestResolveDefaults(t *testing.T) {
 		want Spec
 	}{
 		{Profile{ID: "a", Binary: "claude"}, Spec{Kind: KindAnthropic, ConfigDir: "/home/u/.claude", BaseURL: "https://api.anthropic.com"}},
-		{Profile{ID: "b", Binary: "claude", Env: []string{"CLAUDE_CONFIG_DIR=/home/u/.claude-norban"}}, Spec{Kind: KindAnthropic, ConfigDir: "/home/u/.claude-norban", BaseURL: "https://api.anthropic.com"}},
+		{Profile{ID: "b", Binary: "claude", Env: []string{"CLAUDE_CONFIG_DIR=/home/u/.claude-acme"}}, Spec{Kind: KindAnthropic, ConfigDir: "/home/u/.claude-acme", BaseURL: "https://api.anthropic.com"}},
 		{Profile{ID: "c", Binary: "claude", Env: []string{"ANTHROPIC_BASE_URL=https://x"}}, Spec{Kind: KindNone}},
 		{Profile{ID: "d", Binary: "claude-deepseek"}, Spec{Kind: KindNone}},
 		{Profile{ID: "e", Binary: "claude-deepseek", Spec: &Spec{Kind: KindDeepSeek}}, Spec{Kind: KindDeepSeek, KeyEnv: "DEEPSEEK_API_KEY", BaseURL: "https://api.deepseek.com"}},
@@ -94,7 +94,7 @@ func TestAnthropicUsage(t *testing.T) {
 	c, log := newClock(), &bytes.Buffer{}
 	dir := t.TempDir()
 	credentials(t, dir, c.t.Add(time.Hour))
-	s := svc(c, log, Profile{ID: "claudeAgent", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}})
+	s := svc(c, log, Profile{ID: "claudeAlt", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}})
 	sts := s.Get(context.Background())
 	if len(sts) != 1 || sts[0].Error != "" || len(sts[0].Windows) != 2 {
 		t.Fatalf("got %+v", sts)
@@ -295,9 +295,9 @@ func TestTransientFailureRetriesSoon(t *testing.T) {
 
 func TestStreamEventUpdatesWindows(t *testing.T) {
 	c, log := newClock(), &bytes.Buffer{}
-	s := svc(c, log, Profile{ID: "claudeAgent", Binary: "claude"}, Profile{ID: "ds", Spec: &Spec{Kind: KindDeepSeek}})
+	s := svc(c, log, Profile{ID: "claudeAlt", Binary: "claude"}, Profile{ID: "ds", Spec: &Spec{Kind: KindDeepSeek}})
 	reset := float64(c.t.Add(2 * time.Hour).Unix())
-	s.Observe("claudeAgent", map[string]any{"status": "allowed", "unifiedWindows": map[string]any{
+	s.Observe("claudeAlt", map[string]any{"status": "allowed", "unifiedWindows": map[string]any{
 		"seven_day": map[string]any{"utilization": 0.61, "resetsAt": reset},
 		"five_hour": map[string]any{"utilization": 0.342, "resetsAt": reset},
 	}})
@@ -306,7 +306,7 @@ func TestStreamEventUpdatesWindows(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 	// An event with one window replaces only that one.
-	s.Observe("claudeAgent", map[string]any{"status": "allowed_warning", "rateLimitType": "five_hour", "utilization": 0.9, "resetsAt": reset})
+	s.Observe("claudeAlt", map[string]any{"status": "allowed_warning", "rateLimitType": "five_hour", "utilization": 0.9, "resetsAt": reset})
 	st = s.Snapshot()[0]
 	if st.Windows[0].UsedPct != 90 || st.Windows[1].UsedPct != 61 {
 		t.Fatalf("%+v", st.Windows)
@@ -352,7 +352,7 @@ func TestAnthropicUsageToleratesOtherFields(t *testing.T) {
 	c, log := newClock(), &bytes.Buffer{}
 	dir := t.TempDir()
 	credentials(t, dir, c.t.Add(time.Hour))
-	s := svc(c, log, Profile{ID: "claudeAgent", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}})
+	s := svc(c, log, Profile{ID: "claudeAlt", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}})
 	st := s.Get(context.Background())[0]
 	if st.Error != "" || len(st.Windows) != 2 || st.Windows[0].Name != "5 h" || st.Windows[0].UsedPct != 12.5 || st.Windows[1].UsedPct != 91 {
 		t.Fatalf("%+v", st)
@@ -366,11 +366,11 @@ func TestStreamEventKeepsAPIError(t *testing.T) {
 	c, log := newClock(), &bytes.Buffer{}
 	dir := t.TempDir()
 	credentials(t, dir, c.t.Add(time.Hour))
-	s := svc(c, log, Profile{ID: "claudeAgent", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}})
+	s := svc(c, log, Profile{ID: "claudeAlt", Spec: &Spec{Kind: KindAnthropic, ConfigDir: dir, BaseURL: srv.URL}})
 	if st := s.Get(context.Background())[0]; st.Error == "" {
 		t.Fatalf("setup: no error %+v", st)
 	}
-	s.Observe("claudeAgent", map[string]any{"rateLimitType": "seven_day", "utilization": 0.91, "resetsAt": float64(c.t.Add(48 * time.Hour).Unix())})
+	s.Observe("claudeAlt", map[string]any{"rateLimitType": "seven_day", "utilization": 0.91, "resetsAt": float64(c.t.Add(48 * time.Hour).Unix())})
 	st := s.Snapshot()[0]
 	if st.Error == "" {
 		t.Fatalf("the stream event hid the API error: %+v", st)

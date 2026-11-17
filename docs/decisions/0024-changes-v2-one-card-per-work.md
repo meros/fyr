@@ -8,7 +8,7 @@ Date: 2026-11-16 · Status: accepted (owner: "Decision 0024, then slices 1-5") �
 
 Each piece of work gets one card, whatever route it came in by: a pushed branch, a PR, or the agent's own words. Fyr keeps the card's facts current until the work is merged or ended, and then the card leaves the board. Needs you shows only what waits on the owner, and the owner can correct any card in one press.
 
-**Limits.** Fyr still cannot see work on servers, in documents or in designs by itself, so those cards depend on the agent's report. A code change is finished when it is merged: Fyr does not follow Norban work to development or production. In the shared Norban folder, a push with no PR yet can show as "No thread" until a PR or the owner gives it one.
+**Limits.** Fyr still cannot see work on servers, in documents or in designs by itself, so those cards depend on the agent's report. A code change is finished when it is merged: Fyr does not follow Acme work to development or production. In the shared Acme folder, a push with no PR yet can show as "No thread" until a PR or the owner gives it one.
 
 ## Evidence (15–16 Nov)
 
@@ -21,7 +21,7 @@ Each piece of work gets one card, whatever route it came in by: a pushed branch,
 | Stuck "Needs you" | 4 owner complaints | `needs: owner` is a sticky flag only the agent clears |
 | Cards that linger | 78 of 102 thread changes landed/live | `landed`/`live` never count as ended (`vocab.go:70`) |
 | Upkeep tax | 61 `change_unchanged`, 108 status calls with no phase, ~108 Stop nudges | V0.62 Stop reason on every run |
-| Git observer blind | 23 of 52 threads | cwd is the multi-repo Norban folder |
+| Git observer blind | 23 of 52 threads | cwd is the multi-repo Acme folder |
 | `change_list` overflow | 3 calls at 83–100k chars | Lists every record, ended ones too |
 | Merge dropped 3 commits | 1 | `Merge` passes no SHA to gh (`github.go:112`) |
 
@@ -91,8 +91,8 @@ Phases stay: `working`, `review`, `landed`, `live`, `abandoned`, `reverted`. A c
 
 | Case | Done when |
 |---|---|
-| Code (Norban and every other repo) | merged into the repo's default branch (`landed`). Stacked PRs: a PR merged into another branch is checked on each poll, and is `landed` when its merge commit is an ancestor of the default branch. |
-| Fyr's own repo | `landed`, as every repo (V0.105: a deploy watch no longer holds a merged change; it held NorbanHosting changes open behind their GitHub deployments). A self-deploy (V0.82) or a deployment (V0.66) still shows `live` on the done card. |
+| Code (Acme and every other repo) | merged into the repo's default branch (`landed`). Stacked PRs: a PR merged into another branch is checked on each poll, and is `landed` when its merge commit is an ancestor of the default branch. |
+| Fyr's own repo | `landed`, as every repo (V0.105: a deploy watch no longer holds a merged change; it held AcmeHosting changes open behind their GitHub deployments). A self-deploy (V0.82) or a deployment (V0.66) still shows `live` on the done card. |
 | Not code | `landed` or `live` as reported, or the owner's answer to an `approve` ask |
 | Any | `abandoned` (PR closed without merge, agent intent, owner) or `reverted` |
 
@@ -201,7 +201,7 @@ Each slice is one PR that leaves Fyr working and removes a pain on its own. Size
 | 4 | V0.98 | `DoneMark{At, By, Reason}` on `core.Change` (both storages share it) and `IsDone()`; `Ended()` keeps its meaning for rules and settle; done leaves the board; Finished since your last visit; Untouched for 3 days; stacked-PR check; Fyr's deploy watch rule. Stopgap for duplicates: a PR from `gh pr create` reads its head on the first poll and joins the open code change on that branch in the same thread. Stopgap header: the newest open change | lingering, 11 of 12 duplicates, wrong header | ~400 |
 | 5 | V0.99 | Computed Needs you (section 5) with `RunEndedAt`; Not now by head; owner corrections on both storages; the four-tool surface with aliases and the observed-field reply; remove `needs: owner` and the changes part of the Stop and PostToolUse upkeep (the hooks stay registered for the view and the notices) | stuck Needs you, upkeep tax, refused corrections, broadcasts | ~550 |
 | 6 | later | Handles and `attach`; `change_open {branch, repo}`; the PR head read as a retried effect; delete `prfold.go` and `MainChange` | the rest of the duplicates, header for good | ~500 |
-| 7 | later | Reflog push observer for repos under the folder; No thread and Give to thread; branch-only exits; replaces branch observation in `hostchange.go` | blind Norban folder | ~400 |
+| 7 | later | Reflog push observer for repos under the folder; No thread and Give to thread; branch-only exits; replaces branch observation in `hostchange.go` | blind Acme folder | ~400 |
 
 ## 11. Migration (data first, then UI)
 
@@ -212,7 +212,7 @@ Each slice is one PR that leaves Fyr working and removes a pain on its own. Size
 ## 12. Owner decisions (16 Nov)
 
 1. Wake for failures and ask results only. 0020's "wake for every notice" is replaced by section 8 and the wake budget.
-2. Code changes finish at `landed`, Norban included. No Norban deploy reader. Production is out of v2.
+2. Code changes finish at `landed`, Acme included. No Acme deploy reader. Production is out of v2.
 3. "Ready" (green and waiting for the owner's merge or review) is a Needs you cause, with a button bound to the head.
 4. Four review rounds, then this record, then slices 1–5 (V0.95–V0.99).
 

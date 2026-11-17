@@ -47,7 +47,7 @@ function graphemes(s: string): string[] {
   return Array.from(s);
 }
 
-/** 1 or 2 letters: the first letters of the first two words ("norban/web" → NW), else the first letter. */
+/** 1 or 2 letters: the first letters of the first two words ("acme/web" → AW), else the first letter. */
 export function monogram(name: string): string {
   const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   if (!words.length) return "?";

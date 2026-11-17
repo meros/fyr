@@ -147,7 +147,7 @@ func TestTailnetIdentity(t *testing.T) {
 	s := &Server{Engine: engine.New(st), BuildID: "b1", OwnerLogin: "owner@example.com"}
 	hs := httptest.NewServer(s.Handler())
 	defer hs.Close()
-	ts := "meros-laptop.example.ts.net"
+	ts := "host-a.example.ts.net"
 	if r := do(t, "GET", hs.URL+"/api/state", ts, map[string]string{"Tailscale-User-Login": "owner@example.com"}, ""); r.StatusCode != 200 {
 		t.Fatalf("owner over tailnet: %d", r.StatusCode)
 	}

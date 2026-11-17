@@ -173,19 +173,19 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     <div class="block" style="overflow:visible">
       <div class="bh beam" style="border-radius:10px 10px 0 0"><span class="dot"></span><span class="label" style="color:var(--beam-ink)">Needs you · 3</span><span class="grow"></span><button class="btn primary">Merge all green (2)</button></div>
       <div class="row">
-        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Norban</span> &nbsp;#13256 Placement rows load in one read</div><div class="sub">Ready: merge · head <span class="mono">a1b2c3d</span> · thread: Make a real effort on map perf</div></div>
+        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Acme</span> &nbsp;#13256 Placement rows load in one read</div><div class="sub">Ready: merge · head <span class="mono">a1b2c3d</span> · thread: Make a real effort on map perf</div></div>
         <div class="prail"><i class="f"></i><u class="f"></u><i class="now"></i><u></u><i class="fin"></i><em>to merged</em></div>
         <div class="facts"><span class="ok">✓ 41/41</span> · approved · mergeable</div>
         <div class="act"><button class="btn primary">Merge a1b2c3d</button><button class="btn ghost">Not now</button><span class="menu"><button class="btn ghost">⋯</button></span></div>
       </div>
       <div class="row">
-        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Norban</span> &nbsp;collector#810 Re-scrape one listing</div><div class="sub">Ask: "Approve the new column on external_listing? It is irreversible on prod." · thread: Re-scrape a single listing</div></div>
+        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Acme</span> &nbsp;collector#810 Re-scrape one listing</div><div class="sub">Ask: "Approve the new column on external_listing? It is irreversible on prod." · thread: Re-scrape a single listing</div></div>
         <div class="prail"><i class="f"></i><u class="f"></u><i class="now"></i><u></u><i class="fin"></i><em>to landed</em></div>
         <div class="facts"><span class="ok">✓ checks</span> · review not needed</div>
         <div class="act"><button class="btn">Approve</button><button class="btn">Answer…</button><button class="btn ghost">Not now</button></div>
       </div>
       <div class="row">
-        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Norban</span> &nbsp;hosting:proxy-quota Raise the proxy quota</div><div class="sub">Stopped on a failure 12 min ago: tofu apply failed, 403 on the quota API · thread: LC automation</div></div>
+        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Acme</span> &nbsp;hosting:proxy-quota Raise the proxy quota</div><div class="sub">Stopped on a failure 12 min ago: tofu apply failed, 403 on the quota API · thread: LC automation</div></div>
         <div class="prail"><i class="f"></i><u class="f"></u><i class="x"></i><u></u><i class="fin"></i><em>to landed</em></div>
         <div class="facts"><span class="fail">◆ apply failed</span> · reported</div>
         <div class="act"><button class="btn">Open thread</button><button class="btn ghost">Not now</button>
@@ -196,7 +196,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
 
     <div class="block">
-      <div class="lane" style="cursor:default"><span>▾</span><span class="proj"><span class="pi n">N</span>Norban</span><span class="counts">2 fixing · 4 in review · 3 working</span></div>
+      <div class="lane" style="cursor:default"><span>▾</span><span class="proj"><span class="pi n">N</span>Acme</span><span class="counts">2 fixing · 4 in review · 3 working</span></div>
       <div class="row">
         <div class="t"><div class="title">#13251 Map: area names first, the rest on demand</div><div class="sub">thread: Listing map · branch <span class="mono">perf/13251-areas</span></div></div>
         <div class="prail"><i class="f"></i><u class="f"></u><i class="now"></i><u></u><i class="fin"></i><em>to merged</em></div>
@@ -215,13 +215,13 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
         <div class="facts">working · pushed 4 min ago</div>
         <div class="act"><span class="mono muted">4 min</span></div>
       </div>
-      <div class="lane"><span class="muted">+ 6 more in Norban</span></div>
+      <div class="lane"><span class="muted">+ 6 more in Acme</span></div>
     </div>
 
     <div class="block">
       <div class="lane" style="cursor:default"><span>▾</span><span class="label">No thread · 1</span><span class="counts">Fyr saw the push but cannot tell which thread made it</span></div>
       <div class="row">
-        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Norban</span> &nbsp;branch fix/13235-bosthlm-map</div><div class="sub">pushed 11:08 from the shared Norban checkout</div></div>
+        <div class="t"><div class="title"><span class="proj"><span class="pi n">N</span>Acme</span> &nbsp;branch fix/13235-city-map</div><div class="sub">pushed 11:08 from the shared Acme checkout</div></div>
         <div class="prail"><i class="now"></i><u></u><i></i><u></u><i class="fin"></i><em>to landed</em></div>
         <div class="facts">pushed · no PR</div>
         <div class="act"><button class="btn">Give to thread…</button><button class="btn ghost">Abandon</button></div>
@@ -242,7 +242,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 <div class="notes">
   <div><b>Needs you is computed</b><span>Three causes only: an open ask, a PR that is green and waits for your merge, or a failure the agent stopped on. A CI failure the agent is fixing stays in its lane, muted.</span></div>
   <div><b>Swim lanes are projects</b><span>One lane per project, project first. Each row has a phase rail that ends at its finish line ("to merged", "to live"). Lanes fold to one line.</span></div>
-  <div><b>Every card has an exit</b><span>A finish line (Norban: merged; Fyr: live after its own deploy), or abandon. "No thread" and "Untouched for 3 days" (one-press Done) hold the rest.</span></div>
+  <div><b>Every card has an exit</b><span>A finish line (Acme: merged; Fyr: live after its own deploy), or abandon. "No thread" and "Untouched for 3 days" (one-press Done) hold the rest.</span></div>
   <div><b>Every card has your corrections</b><span>Refresh now, Done, Abandon, Move to thread, Give to thread. No broadcast to threads to fix records.</span></div>
 </div>
 </section>
@@ -255,7 +255,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     <div class="thead">
       <h2>Make a real effort to figure out the last performance issues loading data on the map</h2>
       <div class="chips">
-        <span class="proj"><span class="pi n">N</span>Norban</span>
+        <span class="proj"><span class="pi n">N</span>Acme</span>
         <span class="chip beam"><span class="dot"></span>#13256 ready to merge</span>
         <span class="chip">opus 5.5</span>
         <span class="chip">settles when #13256 is merged</span>
@@ -266,7 +266,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     <div class="sect"><span class="label">Open · 2</span><span style="flex:1"></span><button class="btn">Refresh all</button></div>
 
     <div class="card">
-      <div class="top"><span class="title">#13256 Placement rows load in one read</span><span class="mono muted">NorbanDev/Norban · perf/13256-rows</span><button class="btn ghost">⋯</button></div>
+      <div class="top"><span class="title">#13256 Placement rows load in one read</span><span class="mono muted">acme/monorepo · perf/13256-rows</span><button class="btn ghost">⋯</button></div>
       <div class="bigrail">
         <div class="st f"><i></i>working</div><div class="bar f"></div>
         <div class="st now"><i></i>review</div><div class="bar"></div>
@@ -278,7 +278,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
 
     <div class="card">
-      <div class="top"><span class="title">#13254 Test-lab homes on the map at once</span><span class="mono muted">NorbanDev/Norban · fix/13254-testlab</span><button class="btn ghost">⋯</button></div>
+      <div class="top"><span class="title">#13254 Test-lab homes on the map at once</span><span class="mono muted">acme/monorepo · fix/13254-testlab</span><button class="btn ghost">⋯</button></div>
       <div class="bigrail">
         <div class="st f"><i></i>working</div><div class="bar f"></div>
         <div class="st now"><i></i>review</div><div class="bar"></div>
@@ -300,7 +300,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 </div>
 <div class="notes">
   <div><b>The header chip is stable</b><span>It shows the change this thread touched last, not "the last PR seen". A side-quest PR in another repo is a normal card in the list. The beam dot says another card waits on you.</span></div>
-  <div><b>The rail ends at the finish line</b><span>Merged is the end for Norban. When it is reached, the card moves to Done here with the reason and time.</span></div>
+  <div><b>The rail ends at the finish line</b><span>Merged is the end for Acme. When it is reached, the card moves to Done here with the reason and time.</span></div>
   <div><b>Freshness is shown</b><span>"checked 30 s ago" on every fact line. Refresh all reads GitHub and git now.</span></div>
   <div><b>Joins are visible</b><span>History says when Fyr joined a branch and a PR, and the ⋯ menu has Move to thread when a card is on the wrong thread.</span></div>
 </div>
@@ -346,11 +346,11 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     <div class="ph"><b>Changes</b><button class="btn">Refresh</button></div>
     <div class="sum" style="margin:0 4px 10px"><span class="beamn"><b>3</b> need you</span><span><b>6</b> review</span><span><b>4</b> working</span></div>
     <button class="btn primary" style="width:100%;min-height:44px;margin-bottom:10px">Merge all green (2)</button>
-    <div class="pcard"><div class="a"><span class="dot"></span><span class="pi n">N</span>Norban · map perf</div><div class="b">#13256 Placement rows load in one read</div><div class="c"><span class="ok">✓ 41/41 · approved</span><button class="btn primary">Merge</button></div></div>
-    <div class="pcard"><div class="a"><span class="dot"></span><span class="pi n">N</span>Norban · re-scrape</div><div class="b">collector#810 Approve the new column?</div><div class="c"><span>irreversible on prod</span><button class="btn">Answer</button></div></div>
-    <div class="pcard"><div class="a"><span class="dot"></span><span class="pi n">N</span>Norban · LC automation</div><div class="b">Proxy quota: tofu apply failed</div><div class="c"><span class="fail">◆ 403 on the quota API</span><button class="btn">Open</button></div></div>
+    <div class="pcard"><div class="a"><span class="dot"></span><span class="pi n">N</span>Acme · map perf</div><div class="b">#13256 Placement rows load in one read</div><div class="c"><span class="ok">✓ 41/41 · approved</span><button class="btn primary">Merge</button></div></div>
+    <div class="pcard"><div class="a"><span class="dot"></span><span class="pi n">N</span>Acme · re-scrape</div><div class="b">collector#810 Approve the new column?</div><div class="c"><span>irreversible on prod</span><button class="btn">Answer</button></div></div>
+    <div class="pcard"><div class="a"><span class="dot"></span><span class="pi n">N</span>Acme · LC automation</div><div class="b">Proxy quota: tofu apply failed</div><div class="c"><span class="fail">◆ 403 on the quota API</span><button class="btn">Open</button></div></div>
     <div class="block" style="margin-top:12px">
-      <div class="plane"><span class="proj"><span class="pi n">N</span>Norban</span><span class="muted">2 fixing · 4 review · 3 working ▸</span></div>
+      <div class="plane"><span class="proj"><span class="pi n">N</span>Acme</span><span class="muted">2 fixing · 4 review · 3 working ▸</span></div>
       <div class="plane"><span class="proj"><span class="pi f">F</span>Fyr</span><span class="muted">1 review · 1 working ▸</span></div>
       <div class="plane"><span class="muted">No thread 1 · Untouched 1</span><span class="muted">▸</span></div>
       <div class="plane"><span class="muted">Finished since your visit · 7</span><span class="muted">▸</span></div>
@@ -422,7 +422,7 @@ Fyr reads #13219 from GitHub: merged 10:42. Updated.</pre>
 <tr><td class="n">4</td><td>Done on every change; Finished since your last visit; Untouched for 3 days; stacked PRs; stopgaps: a new PR joins its branch's card, header = newest open change</td><td>Lingering cards, 11 of 12 duplicates, wrong header</td><td class="n">~400</td></tr>
 <tr><td class="n">5</td><td>Computed Needs you; Not now by head; your corrections; four agent tools; remove needs: owner and the Stop upkeep for changes</td><td>Stuck Needs you, upkeep tax, refused corrections, broadcasts</td><td class="n">~550</td></tr>
 <tr><td class="n">6</td><td>Handles and one attach; change_open {branch, repo}; delete prfold.go and MainChange</td><td>The rest of the duplicates</td><td class="n">~500</td></tr>
-<tr><td class="n">7</td><td>Reflog push observer for repos under the folder; No thread and Give to thread; branch-only exits</td><td>Blind Norban folder</td><td class="n">~400</td></tr>
+<tr><td class="n">7</td><td>Reflog push observer for repos under the folder; No thread and Give to thread; branch-only exits</td><td>Blind Acme folder</td><td class="n">~400</td></tr>
 </table>
 <p class="note">Sizes are estimates in lines of production code. Slices 1 to 5 run on today's storage and remove most of today's pain. Out of v2: one host store with followers (no evidence row needs it), deploy readers beyond Fyr's own, production.</p>
 </section>
@@ -438,7 +438,7 @@ Fyr reads #13219 from GitHub: merged 10:42. Updated.</pre>
 <tr><td>Stuck Needs you</td><td class="n">4 complaints</td><td>Computed from 3 causes. Every cause has Not now. No sticky flag.</td></tr>
 <tr><td>Cards that linger</td><td class="n">78 of 102</td><td>Each change has a finish line. Done cards fold into "Finished since your last visit". Production is one strip.</td></tr>
 <tr><td>Upkeep busywork for agents</td><td class="n">61 + 108 calls, ~108 nudges</td><td>The Stop reason is removed. The agent reports only what Fyr cannot read.</td></tr>
-<tr><td>Blind in the Norban folder</td><td class="n">23 of 52 threads</td><td>Fyr reads repos one level down and their worktrees, through the reflog.</td></tr>
+<tr><td>Blind in the Acme folder</td><td class="n">23 of 52 threads</td><td>Fyr reads repos one level down and their worktrees, through the reflog.</td></tr>
 <tr><td>A merge dropped 3 commits</td><td class="n">1</td><td>Merge sends the head SHA that you saw.</td></tr>
 <tr><td>change_list overflow</td><td class="n">3 × 83–100k chars</td><td>Open changes only, one line each, at most 4k chars.</td></tr>
 </table>

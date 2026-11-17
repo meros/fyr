@@ -21,7 +21,7 @@ test("model ids from a text field", () => {
 
 test("where a provider is", () => {
   assert.equal(whereText({ kind: "claude-account" }), "~/.claude");
-  assert.equal(whereText({ kind: "claude-account", configDir: "~/.claude-norban" }), "~/.claude-norban");
+  assert.equal(whereText({ kind: "claude-account", configDir: "~/.claude-acme" }), "~/.claude-acme");
   assert.equal(whereText({ kind: "endpoint", baseURL: "https://openrouter.ai/api" }), "openrouter.ai");
 });
 
@@ -85,7 +85,7 @@ test("the list row's line: kind, where, model count", () => {
 });
 
 test("the usage sentence per quota kind", () => {
-  assert.equal(usageLine({ quota: "anthropic-oauth", threads: 9, imported: "profile claudeAgent" }), "Read from the Claude login · imported from profile claudeAgent · used by 9 threads");
+  assert.equal(usageLine({ quota: "anthropic-oauth", threads: 9, imported: "profile claudeAlt" }), "Read from the Claude login · imported from profile claudeAlt · used by 9 threads");
   assert.equal(usageLine({ quota: "anthropic-oauth", threads: 1 }), "Read from the Claude login · used by 1 thread");
   assert.equal(usageLine({ quota: "deepseek", threads: 0 }), "Read from the DeepSeek balance");
   assert.equal(usageLine({ quota: "openrouter", threads: 0 }), "Read from the OpenRouter credits");

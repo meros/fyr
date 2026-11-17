@@ -29,23 +29,23 @@ func TestConfigQuotaByProfile(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
 	os.WriteFile(p, []byte(`{
 	  "profiles": [
-	    {"id": "claudeAgent", "name": "Claude", "binary": "claude"},
-	    {"id": "claudeNorban", "name": "Claude (norban)", "binary": "claude-norban", "quota": {"kind": "none"}},
+	    {"id": "claudeAlt", "name": "Claude", "binary": "claude"},
+	    {"id": "claudeAcme", "name": "Claude (acme)", "binary": "claude-acme", "quota": {"kind": "none"}},
 	    {"id": "claudeDeepseek", "name": "DeepSeek", "binary": "claude-deepseek", "quota": {"kind": "deepseek", "keyEnv": "A"}}
 	  ],
 	  "quota": {
-	    "claudeNorban": {"kind": "anthropic-oauth", "configDir": "~/.claude-norban"},
+	    "claudeAcme": {"kind": "anthropic-oauth", "configDir": "~/.claude-acme"},
 	    "claudeDeepseek": {"kind": "deepseek", "keyFile": "/run/secrets/deepseek"}
 	  }
 	}`), 0o600)
 	c := loadConfig(p, filepath.Join(t.TempDir(), "none.json"))
 	ps := c.Profiles
-	if ps[0].Quota != nil || ps[1].Quota.Kind != "anthropic-oauth" || ps[1].Quota.ConfigDir != "~/.claude-norban" ||
+	if ps[0].Quota != nil || ps[1].Quota.Kind != "anthropic-oauth" || ps[1].Quota.ConfigDir != "~/.claude-acme" ||
 		ps[2].Quota.KeyFile != "/run/secrets/deepseek" || ps[2].Quota.KeyEnv != "" {
 		t.Fatalf("%+v %+v %+v", ps[0].Quota, ps[1].Quota, ps[2].Quota)
 	}
 	qs := quotaProfiles(ps)
-	if qs[1].Binary != "claude-norban" || qs[2].Spec.Kind != "deepseek" {
+	if qs[1].Binary != "claude-acme" || qs[2].Spec.Kind != "deepseek" {
 		t.Fatalf("%+v", qs)
 	}
 }
@@ -53,8 +53,8 @@ func TestConfigQuotaByProfile(t *testing.T) {
 // SPEC 0.5 V0.51: -hosts lists a front's hosts; hostListen is a tailnet
 // address only.
 func TestRoleFlags(t *testing.T) {
-	hs, err := parseHosts("meros-server=http://meros-server:7778, laptop=http://100.64.0.5:7778")
-	if err != nil || len(hs) != 2 || hs[0].Name != "meros-server" || hs[1].URL != "http://100.64.0.5:7778" {
+	hs, err := parseHosts("host-b=http://host-b:7778, laptop=http://100.64.0.5:7778")
+	if err != nil || len(hs) != 2 || hs[0].Name != "host-b" || hs[1].URL != "http://100.64.0.5:7778" {
 		t.Fatalf("%+v %v", hs, err)
 	}
 	if _, err := parseHosts("nourl"); err == nil {

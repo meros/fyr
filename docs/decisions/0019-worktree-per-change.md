@@ -6,7 +6,7 @@ Date: 2026-11-15 · Status: accepted (owner: "I am happy with your recommendatio
 
 Today:
 - Decision 0015 defines a workspace as one path with one branch per thread.
-- A folder that holds many repos (the Norban workspace is not itself a git repo) gives Fyr no git facts.
+- A folder that holds many repos (the Acme workspace is not itself a git repo) gives Fyr no git facts.
 - Fyr makes no worktrees. A hook in the owner's Claude config blocks a branch switch in a busy folder and tells the agent to add a worktree by hand.
 
 **Options.**

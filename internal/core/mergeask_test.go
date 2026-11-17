@@ -13,10 +13,10 @@ import (
 // closes it, and the agent hears why.
 
 const askHead = "7333251aa0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5"
-const askURL = "https://github.com/norbandev/norbanlistingcollector/pull/846"
+const askURL = "https://github.com/acme/acmelistingcollector/pull/846"
 
 func askPR(at time.Time, f func(*PR)) Input {
-	p := PR{URL: askURL, Repo: "NorbanDev/NorbanListingCollector", Number: 846, State: "OPEN", Head: askHead,
+	p := PR{URL: askURL, Repo: "acme/monorepoListingCollector", Number: 846, State: "OPEN", Head: askHead,
 		Checks: ChecksPending, MergeState: "BLOCKED", ChecksDone: 2, ChecksTotal: 5, CheckedAt: &at}
 	if f != nil {
 		f(&p)

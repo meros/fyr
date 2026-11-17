@@ -49,11 +49,11 @@ e = html.escape
 
 # ---- stress data (same as design/generators/make_directions.py) ----
 T140 = "Investigate why the nightly Playwright run on the staging cluster times out only when map tiles come from the secondary CDN region again, EU"
-P59 = "norban-platform-infrastructure-terraform-modules-eu-north-1"
+P59 = "acme-platform-infrastructure-terraform-modules-eu-north-1"
 BR = "feature/very-long-branch-name-without-any-spaces-that-keeps-going-2026-11-14-final"
-URL = "https://github.com/NorbanDev/norban-web/actions/runs/12345678901/job/98765432109?check_suite_focus=true"
+URL = "https://github.com/acme/web/actions/runs/12345678901/job/98765432109?check_suite_focus=true"
 SV = "Ändra översättningar för sökfältet på kartan så att å, ä och ö visas rätt"
-QLONG = ("The staging deploy for norban/web fails at the database migration step because the new column "
+QLONG = ("The staging deploy for acme/web fails at the database migration step because the new column "
          "listings.lasso_polygon is NOT NULL and 18402 existing rows have no value. I can backfill it from the "
          "saved search areas, which takes about 40 minutes on staging and locks the table for writes, or I can "
          "make the column nullable now and backfill in a background job after the deploy. The second option keeps "
@@ -122,24 +122,24 @@ def bnav(n=4, on="inbox"):
 
 def normal_list():
     return ('<div class="list">' + sec("Needs you", 4) +
-        needs("ask", "Fix map lasso on mobile", "2 min", "2 questions", "norban/web · Which gesture should close the filter sheet?", "#1234 ✓", "ok") +
-        needs("fail", "Speed up e2e suite", "9 min", "API error", "norban/web · stopped after 14 min") +
-        needs("block", "Listing cards v2", "21 min", "CI failed", "norban/web · lint: 2 errors in CardGrid.tsx", "#88 ✗ CI", "fail") +
-        needs("done", "Triage sprint issues", "1 h", "Done", "norban/ops · Filed 6 issues, closed 2 duplicates", cls="dn") +
+        needs("ask", "Fix map lasso on mobile", "2 min", "2 questions", "acme/web · Which gesture should close the filter sheet?", "#1234 ✓", "ok") +
+        needs("fail", "Speed up e2e suite", "9 min", "API error", "acme/web · stopped after 14 min") +
+        needs("block", "Listing cards v2", "21 min", "CI failed", "acme/web · lint: 2 errors in CardGrid.tsx", "#88 ✗ CI", "fail") +
+        needs("done", "Triage sprint issues", "1 h", "Done", "acme/ops · Filed 6 issues, closed 2 duplicates", cls="dn") +
         sec("Working", 4, "1 waiting for a build slot") +
         one("work", "Babysit PR #4170", "git rebase", "3 min") +
         one("work", "Map perf", "2 sub · yarn vitest", "12 min") +
         one("wait", "Deploy check", "monitor: deploy", "9 min") +
         sec("Seen", 5, btn="Settle merged") +
-        one("seen", "Lasso polygon perf", "norban/web", "14:20", "merged", "merged") +
+        one("seen", "Lasso polygon perf", "acme/web", "14:20", "merged", "merged") +
         "</div>")
 
 def stress_list():
     return ('<div class="list">' + sec("Needs you", 9999) +
         needs("ask", "Fix", "0 s", "1 question", "a · Ok?") +
         needs("fail", T140, "59 min", "API error", P59 + " · " + BR, "#12345 ✗ CI", "fail") +
-        needs("block", URL, "12 d", "CI failed", "norban/web · " + URL, "merged", "merged") +
-        needs("done", SV, "Mon 06:00", "Done", "norban/web · Översättningarna är klara; 0 fel, 1234 strängar.", "#7 ✓", "ok", cls="dn") +
+        needs("block", URL, "12 d", "CI failed", "acme/web · " + URL, "merged", "merged") +
+        needs("done", SV, "Mon 06:00", "Done", "acme/web · Översättningarna är klara; 0 fel, 1234 strängar.", "#7 ✓", "ok", cls="dn") +
         sec("Working", 9999, "7 waiting for a build slot on " + HOST) +
         one("work", "Fix", "starting", "0 s") +
         one("work", T140, "1234 sub · Bash " + BR, "999 h") +
@@ -183,12 +183,12 @@ def section_switch(theme, stress=False):
     lst += '<div class="grp-h">PR merged · 2</div>'
     if stress:
         lst += one("seen", T140, P59, "Mon 06:00", "merged", "merged") + one("seen", "x", "a", "0 s", "merged", "merged")
-        lst += '<div class="grp-h">Other · 9997</div>' + one("seen", SV, "norban/web", "13:05") + one("seen", URL, "dotfiles", "11:48")
+        lst += '<div class="grp-h">Other · 9997</div>' + one("seen", SV, "acme/web", "13:05") + one("seen", URL, "dotfiles", "11:48")
         lst += '<div class="more">Show 9993 more</div>'
         lst += sec("Snoozed", 0, "none", "col") + sec("Settled", 9999, "last 24 h", "col")
     else:
-        lst += one("seen", "Lasso polygon perf", "norban/web", "14:20", "merged", "merged") + one("seen", "Card grid spacing", "norban/web", "14:31", "merged", "merged")
-        lst += '<div class="grp-h">Other · 3</div>' + one("seen", "Nix flake update", "dotfiles", "13:05") + one("seen", "Bump Playwright to 1.58", "norban/web", "11:48") + one("seen", "Rewrite onboarding copy", "norban/web", "10:12")
+        lst += one("seen", "Lasso polygon perf", "acme/web", "14:20", "merged", "merged") + one("seen", "Card grid spacing", "acme/web", "14:31", "merged", "merged")
+        lst += '<div class="grp-h">Other · 3</div>' + one("seen", "Nix flake update", "dotfiles", "13:05") + one("seen", "Bump Playwright to 1.58", "acme/web", "11:48") + one("seen", "Rewrite onboarding copy", "acme/web", "10:12")
         lst += sec("Snoozed", 3, "next: tomorrow 06:00", "exp") + one("snz", "Recipe scaler", "until tomorrow 06:00", "Tue") + sec("Settled", 11, "last 24 h", "col")
     lst += "</div>"
     return body + lst + bnav(9999 if stress else 4) + home() + ("" if stress else tap(1, 196, 120))
@@ -200,13 +200,13 @@ fig("switch-stress", "light", "Section switch · stress", section_switch("light"
 
 # 3 row actions
 def swipe_rows(stress=False):
-    a = needs("ask", "Fix map lasso on mobile" if not stress else T140, "2 min", "2 questions", "norban/web · Which gesture should close the filter sheet?", "#1234 ✓", "ok")
+    a = needs("ask", "Fix map lasso on mobile" if not stress else T140, "2 min", "2 questions", "acme/web · Which gesture should close the filter sheet?", "#1234 ✓", "ok")
     settle = ('<div class="swp"><div class="under l set">' + ic("set", 18) + '<span>Settle</span></div>'
               '<div class="mv" style="transform:translateX(116px)">' +
-              needs("done", "Triage sprint issues", "1 h", "Done", "norban/ops · Filed 6 issues, closed 2 duplicates", cls="dn") + '</div></div>')
+              needs("done", "Triage sprint issues", "1 h", "Done", "acme/ops · Filed 6 issues, closed 2 duplicates", cls="dn") + '</div></div>')
     snooze = ('<div class="swp"><div class="under r snz"><span>Snooze…</span>' + ic("snz", 18) + '</div>'
               '<div class="mv" style="transform:translateX(-116px)">' +
-              needs("block", "Listing cards v2", "21 min", "CI failed", "norban/web · lint: 2 errors in CardGrid.tsx", "#88 ✗ CI", "fail") + '</div></div>')
+              needs("block", "Listing cards v2", "21 min", "CI failed", "acme/web · lint: 2 errors in CardGrid.tsx", "#88 ✗ CI", "fail") + '</div></div>')
     blocked = ('<div class="swp"><div class="under l no"><span>Answer first</span></div>'
                '<div class="mv" style="transform:translateX(96px)">' + a + '</div></div>')
     if stress:
@@ -215,7 +215,7 @@ def swipe_rows(stress=False):
 
 def row_actions(theme, stress=False):
     lst = '<div class="list">' + sec("Needs you", 4) + swipe_rows(stress)
-    lst += needs("fail", "Speed up e2e suite", "9 min", "API error", "norban/web · stopped after 14 min")
+    lst += needs("fail", "Speed up e2e suite", "9 min", "API error", "acme/web · stopped after 14 min")
     lst += sec("Working", 4) + one("work", "Map perf", "2 sub · yarn vitest", "12 min") + "</div>"
     toast = ('<div class="toast" style="bottom:106px"><span class="ell">Settled “Triage sprint issues”</span>'
              '<span class="tb">' + G["undo"] + 'Undo</span></div>')
@@ -226,7 +226,7 @@ fig("swipe-light", "light", "Row actions · swipe", row_actions("light"),
 
 def peek_sheet(theme, stress=False):
     title = T140 if stress else "Fix map lasso on mobile"
-    proj = P59 if stress else "norban/web"
+    proj = P59 if stress else "acme/web"
     brn = BR if stress else "fix/map-lasso-mobile"
     back = sbar() + inbox_header() + strip() + normal_list() + bnav() + home()
     sheet = ('<div class="scrim"></div><div class="sheet"><div class="grab"></div>'
@@ -256,10 +256,10 @@ def select_mode(theme, stress=False):
     lst = '<div class="list">' + sec("Seen", 9999 if stress else 5) + '<div class="grp-h">PR merged · 2</div>'
     if stress:
         lst += one("seen", T140, P59, "Mon 06:00", "merged", "merged", "picked", ck) + one("seen", "x", "a", "0 s", "merged", "merged", "picked", ck)
-        lst += one("seen", SV, "norban/web", "13:05", lead=cko) + one("seen", URL, BR, "11:48", lead=cko)
+        lst += one("seen", SV, "acme/web", "13:05", lead=cko) + one("seen", URL, BR, "11:48", lead=cko)
     else:
-        lst += one("seen", "Lasso polygon perf", "norban/web", "14:20", "merged", "merged", "picked", ck) + one("seen", "Card grid spacing", "norban/web", "14:31", "merged", "merged", "picked", ck)
-        lst += '<div class="grp-h">Other · 3</div>' + one("seen", "Nix flake update", "dotfiles", "13:05", lead=cko) + one("seen", "Bump Playwright to 1.58", "norban/web", "11:48", lead=cko) + one("seen", "Rewrite onboarding copy", "norban/web", "10:12", lead=cko)
+        lst += one("seen", "Lasso polygon perf", "acme/web", "14:20", "merged", "merged", "picked", ck) + one("seen", "Card grid spacing", "acme/web", "14:31", "merged", "merged", "picked", ck)
+        lst += '<div class="grp-h">Other · 3</div>' + one("seen", "Nix flake update", "dotfiles", "13:05", lead=cko) + one("seen", "Bump Playwright to 1.58", "acme/web", "11:48", lead=cko) + one("seen", "Rewrite onboarding copy", "acme/web", "10:12", lead=cko)
     lst += sec("Snoozed", 0 if stress else 3, cls="col") + "</div>"
     n = "9999" if stress else "2"
     bar = (f'<div class="selbar"><span class="bt p">Settle {n}</span><span class="bt">Snooze…</span>{b44("more","More actions")}</div>')
@@ -318,7 +318,7 @@ def thread(theme, stress=False):
     if stress:
         h = thread_header(T140, "fail", P59, BR, "", "", chg="+12345 −9876")
         return sbar() + h + thread_body(True) + composer() + home("raised0")
-    h = thread_header("Map perf", "work", "norban/web", "perf/map-vitest", "#4182 ✓", "ok")
+    h = thread_header("Map perf", "work", "acme/web", "perf/map-vitest", "#4182 ✓", "ok")
     return sbar() + h + thread_body() + composer(run=True) + home("raised0")
 
 fig("thread-light", "light", "Thread · working", thread("light"),
@@ -356,7 +356,7 @@ def opt(a, d="", on=False, multi=False, other=False):
     dd = f'<span class="d">{e(d)}</span>' if d else ""
     return f'<div class="{cls}"><span class="mk"></span><span class="ot"><span class="a">{e(a)}</span>{dd}</span></div>'
 
-def thread_top_for_card(title="Fix map lasso on mobile", proj="norban/web", brn="fix/map-lasso-mobile", prt="#1234 ✓", ctx="Claude: The lasso no longer closes the sheet, and the tests pass…"):
+def thread_top_for_card(title="Fix map lasso on mobile", proj="acme/web", brn="fix/map-lasso-mobile", prt="#1234 ✓", ctx="Claude: The lasso no longer closes the sheet, and the tests pass…"):
     return (sbar() + f'<header class="tth"><div class="tr1">{b44("back","Back")}<span class="tt">{e(title)}</span>{b44("more","Thread actions")}</div>'
             f'<div class="chips"><span class="chip st">{ic("ask",14)}<span>Asking</span></span><span class="chip pj"><span>{e(proj)}</span></span>'
             f'<span class="chip m brn"><span>{e(brn)}</span></span>' + (f'<span class="chip prc ok">{e(prt)}</span>' if prt else '<span class="chip prc">no PR</span>') + '</div></header>'
@@ -425,7 +425,7 @@ fig("q-stress-dark", "dark", "Question · stress · dark", q_stress("dark"))
 # 6 approval / effect
 def approval(theme, stress=False):
     cmd = ("psql \"$STAGING_DATABASE_URL\" --no-psqlrc --quiet --tuples-only -c 'select count(*) from listings where lasso_polygon is null' && curl -fsS " + URL) if stress else "yarn test src/map/lasso --run"
-    cwd = "~/src/" + P59 if stress else "~/src/norban-web"
+    cwd = "~/src/" + P59 if stress else "~/src/acme-web"
     card = ('<div class="ask">' + f'<div class="ah">{ic("ask",14)}<b>Approval</b><span class="sp"></span>' +
             ('<span class="mt">+9999 more</span>' if stress else "") + f'{b44("chev","Collapse card")}</div>'
             '<div class="abody"><div class="asker ell">Asked by ' + ('subagent “explore-every-migration-in-the-repository”' if stress else 'the thread') + '</div>'
@@ -434,16 +434,16 @@ def approval(theme, stress=False):
             opt("Allow", "Run it once.", on=True) + opt("Deny", "The agent is told no and continues.") + '</div></div>' +
             abar("Allow") + '</div>')
     title = T140 if stress else "Speed up e2e suite"
-    return thread_top_for_card(title if stress else "Map perf", P59 if stress else "norban/web", BR if stress else "perf/map-vitest", "", "Claude: " + ("x" if stress else "I want to rerun the lasso tests with the new timeout.")) + card + home("raised0")
+    return thread_top_for_card(title if stress else "Map perf", P59 if stress else "acme/web", BR if stress else "perf/map-vitest", "", "Claude: " + ("x" if stress else "I want to rerun the lasso tests with the new timeout.")) + card + home("raised0")
 
 def effect(theme, stress=False):
     card = ('<div class="ask">' + f'<div class="ah">{ic("ask",14)}<b>Fyr action</b><span class="sp"></span>{b44("chev","Collapse card")}</div>'
             '<div class="abody"><div class="asker ell">Asked by the thread · the agent does not wait</div>'
             f'<div class="q">Merge {"#12345" if stress else "#4170"} with squash</div>'
-            f'<pre>{{"pr": "{e(URL if stress else "https://github.com/NorbanDev/norban-web/pull/4170")}",\n "method": "squash"}}</pre><div class="opts">' +
+            f'<pre>{{"pr": "{e(URL if stress else "https://github.com/acme/web/pull/4170")}",\n "method": "squash"}}</pre><div class="opts">' +
             opt("Approve", "CI is green and the review approved. Fyr runs it; the agent does not wait.", on=True) +
             opt("Decline", "Nothing is run.") + '</div></div>' + abar("Approve") + '</div>')
-    return thread_top_for_card("Babysit PR #4170" if not stress else SV, P59 if stress else "norban/web", BR if stress else "fix/babysit-4170", "#4170 ✓", "Claude: CI is green and the review is approved. I asked Fyr to merge.") + card + home("raised0")
+    return thread_top_for_card("Babysit PR #4170" if not stress else SV, P59 if stress else "acme/web", BR if stress else "fix/babysit-4170", "#4170 ✓", "Claude: CI is green and the review is approved. I asked Fyr to merge.") + card + home("raised0")
 
 fig("approval-light", "light", "Approval card", approval("light"),
     "Every Decision on the phone is: pick a tile, then one commit button. The button names the pick.")
@@ -465,7 +465,7 @@ def new_thread(theme, state="empty"):
     txt = {"empty": '<span class="ph-t">What should Claude do? Optional with a screenshot.</span>',
            "pasted": '<span class="ph-t">What should Claude do? Optional with a screenshot.</span>',
            "stress": e(SV + ". Se " + URL)}[state]
-    proj = P59 if stress else "norban/web"
+    proj = P59 if stress else "acme/web"
     prof = "claude-deepseek-endpoint-second-account · opus 5.5 (1M context)" if stress else "claude · sonnet 5.5"
     defs = (f'<div class="defs"><div class="dl">Starts in <span>last used</span></div>'
             f'<span class="dchip"><span class="ell">{e(proj)}</span>{G["chev"]}</span>'
@@ -522,7 +522,7 @@ def lock(theme, stress=False):
         ns = (notif("Fix map lasso on mobile", "2 questions · Which gesture should close the filter sheet?") +
               notif("Map perf", "Approval · Allow Bash: yarn test src/map/lasso --run", "1 min ago") +
               notif("Babysit PR #4170", "Fyr action · Merge #4170 with squash?", "4 min ago") +
-              notif("Speed up e2e suite", "Failed · API error after 14 min · norban/web", "9 min ago") +
+              notif("Speed up e2e suite", "Failed · API error after 14 min · acme/web", "9 min ago") +
               notif("Fyr", "Since 14:02: 3 done · 1 blocked", "12 min ago"))
     t = "" if stress else tap(1, 330, 330)
     return (f'<div class="lock">{sbar()}<div class="lt">14:03</div><div class="ld">Saturday 14 November</div>'

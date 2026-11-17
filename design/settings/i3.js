@@ -137,8 +137,8 @@ const manyProjects = {
   title: "Projects",
   end: '<button class="btn">New project</button>',
   body:
-    `<div class="sg"><input class="pq" type="search" placeholder="Search 43 projects" value="norban" aria-label="Search projects">${plist(PROJECTS.filter((p) => p.n.startsWith("norban")))}<div class="sg-f">5 of 43 match. Reorder is off while you search.</div></div>` +
-    hostsGroup([["desk", "This host · online since 08:12"], ["meros-laptop", "Offline since 19:40 · its threads are read-only"], ["build-box-eu-north-1-with-a-long-name.tail1234.ts.net", "Online since Mon 06:00 · updating Fyr: running the tests"], ["nas", "Offline since Sun 22:15 · connection refused", 1]]),
+    `<div class="sg"><input class="pq" type="search" placeholder="Search 43 projects" value="acme" aria-label="Search projects">${plist(PROJECTS.filter((p) => p.n.startsWith("acme")))}<div class="sg-f">5 of 43 match. Reorder is off while you search.</div></div>` +
+    hostsGroup([["desk", "This host · online since 08:12"], ["host-a", "Offline since 19:40 · its threads are read-only"], ["build-box-eu-north-1-with-a-long-name.tail1234.ts.net", "Online since Mon 06:00 · updating Fyr: running the tests"], ["nas", "Offline since Sun 22:15 · connection refused", 1]]),
 };
 const emptyProjects = { nav: "projects", title: "Projects", end: '<button class="btn p">New project</button>', body: group("", `<div class="empty"><b>No projects yet</b>A project gathers the threads of one folder. Fyr makes one when you start a thread in a new folder.</div>`) + hostsGroup([["desk", "This host · online since 08:12"]]) };
 const emptyAuto = {
@@ -148,11 +148,11 @@ const emptyAuto = {
     group("Merge without asking", `<div class="empty">No repos yet. A repo shows here once a thread has a pull request in it.</div><div class="sr"><span class="inl"><input placeholder="owner/repo" aria-label="Repo to add" class="mono" value="meros/fyr/extra"></span><span class="sr-e"><button class="btn" disabled>Add</button></span></div>`, '<span class="sr-d err">Write it as owner/repo.</span>'),
 };
 const offline = { ...automation, banner: "No connection to desk. Settings show what was last read and cannot be changed until it is back.", body: `<div class="ro">${automation.body}</div>` };
-const sysMulti = { nav: "providers", title: "Providers", body: `<div class="setd">(the providers above)</div>` + sysAgents({ hosts: ["desk", "meros-laptop", "build-box-eu-north-1"], badJob: true }) };
+const sysMulti = { nav: "providers", title: "Providers", body: `<div class="setd">(the providers above)</div>` + sysAgents({ hosts: ["desk", "host-a", "build-box-eu-north-1"], badJob: true }) };
 const projEdge = {
   nav: "projects",
   parent: "Projects",
-  title: "norban-platform-infrastructure-terraform-modules",
+  title: "acme-platform-infrastructure-terraform-modules",
   body:
     group(
       "Identity",

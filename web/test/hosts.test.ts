@@ -10,8 +10,8 @@ import { clockTime } from "../src/format.ts";
 
 test("an offline thread names its host and the time; an online one says nothing", () => {
   const since = "2026-11-14T18:40:00Z";
-  assert.equal(offlineLine({ host: "meros-laptop", hostOffline: since }), `meros-laptop offline since ${clockTime(since)} · read-only`);
-  assert.equal(offlineLine({ host: "meros-laptop" }), "");
+  assert.equal(offlineLine({ host: "host-a", hostOffline: since }), `host-a offline since ${clockTime(since)} · read-only`);
+  assert.equal(offlineLine({ host: "host-a" }), "");
 });
 
 test("hosts decode leniently and read as words", () => {
@@ -58,7 +58,7 @@ test("profiles and deploy are per host; an older front's state falls back to the
 });
 
 test("attachments, previews and markdown images load from the thread's host", () => {
-  assert.equal(attachmentUrl("att_1", "meros-server"), "/api/attachments/att_1?host=meros-server");
+  assert.equal(attachmentUrl("att_1", "host-b"), "/api/attachments/att_1?host=host-b");
   assert.equal(attachmentUrl("att_1"), "/api/attachments/att_1");
   assert.equal(previewCard(1, "", { kind: "html", attachmentId: "pv_1" }, "b")?.src, "/api/previews/pv_1?host=b");
   assert.equal(previewUrl("pv_1"), "/api/previews/pv_1");
@@ -122,7 +122,7 @@ test("V0.125: routeOf names the network that carries a link", () => {
   assert.equal(routeOf("http://old-nuc.lan:7778"), "LAN");
   assert.equal(routeOf("http://nas.local:7778"), "LAN");
   assert.equal(routeOf("http://box.home.arpa:7778"), "LAN");
-  assert.equal(routeOf("http://meros-laptop:7778"), "LAN", "a bare name");
+  assert.equal(routeOf("http://host-a:7778"), "LAN", "a bare name");
   assert.equal(routeOf("https://fyr.example.net"), "by address");
   assert.equal(routeOf("http://203.0.113.5:7778"), "by address");
   assert.equal(routeOf(undefined), "", "a front older than V0.125 sends no url");
@@ -135,7 +135,7 @@ test("V0.125: a host row's line: state since, route, short id", () => {
   const at = (d: number, h: number, m: number) => new Date(2026, 10, d, h, m).toISOString();
   const hs = decodeHosts([
     { name: "desk", online: true, since: at(16, 8, 12), id: "F7QK-2M9X-AB34-CD56", url: "http://127.0.0.1:7777" },
-    { name: "meros-server", online: false, since: at(16, 19, 40), error: "unreachable", found: true, id: "M3RS-QX7P-5LKA-2WNE", url: "http://100.64.0.9:7778" },
+    { name: "host-b", online: false, since: at(16, 19, 40), error: "unreachable", found: true, id: "M3RS-QX7P-5LKA-2WNE", url: "http://100.64.0.9:7778" },
     { name: "build", online: true, since: at(16, 8, 31), deploy: { phase: "test" }, id: "K2VD-7HPA-M4QS-9TXE", url: "http://build-box.lan:7778" },
     { name: "old-nuc", online: true, since: at(16, 9, 0), url: "http://old-nuc.lan:7778" },
     { name: "lab", online: true, since: at(16, 20, 12), id: "B7LA-4QZE-9KDF-3HXW", idWas: "AX2C-7RTM-8PLQ-6VYD", url: "http://100.64.0.7:7778" },
@@ -164,10 +164,10 @@ test("V0.125, V0.132: the Hosts page lists the hosts in the owner's order (the f
 });
 
 test("V0.125: how this browser gets in, from the page's host and the state's user", () => {
-  assert.equal(howIn("desk.tail1234.ts.net", "alexander@github"), "Through Tailscale Serve, as alexander@github. Any browser signed in to your tailnet with that login can open this Fyr.");
+  assert.equal(howIn("desk.tail1234.ts.net", "owner@github"), "Through Tailscale Serve, as owner@github. Any browser signed in to your tailnet with that login can open this Fyr.");
   assert.equal(howIn("localhost", "owner"), "On this machine itself (localhost). A browser on this machine is always allowed.");
   assert.equal(howIn("127.0.0.1", "owner"), "On this machine itself (localhost). A browser on this machine is always allowed.");
   assert.equal(howIn("[::1]", "owner"), "On this machine itself (localhost). A browser on this machine is always allowed.");
-  assert.equal(howIn("fyr.example.net", "alexander@github"), "At fyr.example.net, as alexander@github. What stands in front of Fyr there decides who gets in.");
+  assert.equal(howIn("fyr.example.net", "owner@github"), "At fyr.example.net, as owner@github. What stands in front of Fyr there decides who gets in.");
   assert.equal(howIn("fyr.example.net", ""), "At fyr.example.net. What stands in front of Fyr there decides who gets in.");
 });

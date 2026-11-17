@@ -31,7 +31,7 @@ func TestHaikuModel(t *testing.T) {
 // claude-haiku-5-5 on it (claudecli's own list), not fail. An endpoint keeps
 // its own rule.
 func TestHaikuModelOnAStoredClaudeLogin(t *testing.T) {
-	const live = `{"id":"claudeAgent","name":"Claude","color":"#d97757","cli":"claude","auth":{"kind":"cli-login"},"endpoint":{},` +
+	const live = `{"id":"claudeAlt","name":"Claude","color":"#d97757","cli":"claude","auth":{"kind":"cli-login"},"endpoint":{},` +
 		`"models":[{"id":"claude-opus-5-5","name":"Opus 5.5"},{"id":"claude-sonnet-5-5","name":"Sonnet 5.5"},{"id":"claude-fable-5-2","name":"Fable 5.2"}]}`
 	var pv provider.Provider
 	if err := json.Unmarshal([]byte(live), &pv); err != nil {
@@ -42,7 +42,7 @@ func TestHaikuModelOnAStoredClaudeLogin(t *testing.T) {
 		t.Fatalf("stored Claude login: %q", m)
 	}
 	token := p
-	token.Auth.Secret = "claudeNorban.key" // a login by token is still a Claude login
+	token.Auth.Secret = "claudeAcme.key" // a login by token is still a Claude login
 	if m := HaikuModel(token); m != "claude-haiku-5-5" {
 		t.Fatalf("token login: %q", m)
 	}
@@ -55,7 +55,7 @@ func TestHaikuModelOnAStoredClaudeLogin(t *testing.T) {
 // V0.120 (6), V0.117 holds: a Claude login whose catalog lists Haiku but
 // whose owner turned it off still runs the default system agent on Haiku.
 func TestHaikuModelWhenHaikuIsOff(t *testing.T) {
-	const live = `{"id":"claudeAgent","name":"Claude","cli":"claude","auth":{"kind":"cli-login"},"endpoint":{},` +
+	const live = `{"id":"claudeAlt","name":"Claude","cli":"claude","auth":{"kind":"cli-login"},"endpoint":{},` +
 		`"models":[{"id":"claude-opus-5-5","name":"Opus 5.5"}],"defaultModel":"claude-opus-5-5",` +
 		`"catalog":[{"id":"claude-opus-5-5","name":"Opus 5.5"},{"id":"claude-haiku-5-5","name":"Haiku 5.5"}],"checkedAt":"2026-11-16T10:00:00Z"}`
 	var pv provider.Provider

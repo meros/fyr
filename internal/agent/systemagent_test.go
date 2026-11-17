@@ -17,7 +17,7 @@ func systemManager(s core.SystemAgents) *Manager {
 		{ID: "off", Name: "Off", Models: []string{"claude-haiku-5-5"}, Unavailable: "no login yet"},
 	}
 	return New(nil, Config{
-		HostName: "meros-laptop",
+		HostName: "host-a",
 		Profile: func(id string) provider.Profile {
 			for _, p := range profiles {
 				if p.ID == id {
@@ -43,7 +43,7 @@ func systemManager(s core.SystemAgents) *Manager {
 func TestSystemAgent(t *testing.T) {
 	m := systemManager(core.SystemAgents{})
 	a, err := m.SystemAgent(core.JobTitle)
-	if err != nil || a.Host != "meros-laptop" || a.Profile.ID != "claude" || a.Model != "claude-haiku-5-5" {
+	if err != nil || a.Host != "host-a" || a.Profile.ID != "claude" || a.Model != "claude-haiku-5-5" {
 		t.Fatalf("default: %+v %v", a, err)
 	}
 
@@ -90,7 +90,7 @@ func TestSystemAgentFailsVisibly(t *testing.T) {
 // V0.117: with no setting, a title on the live Claude login (no Haiku in its
 // stored list) runs on claude-haiku-5-5.
 func TestSystemAgentDefaultOnAStoredClaudeLogin(t *testing.T) {
-	login := provider.Profile{ID: "claudeAgent", Name: "Claude", CLI: "claude", Auth: cli.Auth{Kind: cli.CLILogin},
+	login := provider.Profile{ID: "claudeAlt", Name: "Claude", CLI: "claude", Auth: cli.Auth{Kind: cli.CLILogin},
 		Models: []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2"}}
 	m := New(nil, Config{Profile: func(string) provider.Profile { return login }})
 	for _, job := range []string{core.JobTitle, core.JobSetup} {

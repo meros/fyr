@@ -47,7 +47,7 @@ export function decodeHosts(raw: unknown): HostInfo[] {
     }));
 }
 
-/** "meros-laptop offline since 19:40 · read-only", or "" while the thread's host is reachable. */
+/** "host-a offline since 19:40 · read-only", or "" while the thread's host is reachable. */
 export function offlineLine(t: { host?: string; hostOffline?: string }): string {
   if (!t.hostOffline) return "";
   const at = clockTime(t.hostOffline);

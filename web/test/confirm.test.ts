@@ -4,36 +4,36 @@ import assert from "node:assert/strict";
 import { deleteProjectAsk, offerAsk, press, removeProviderAsk, shortArg, shortFolder } from "../src/confirm.ts";
 import type { Offer } from "../src/types.ts";
 
-const SCRATCH = "/home/meros/.local/share/fyr/scratch/20261115-130828-find-the-norban-claude-long-term-token";
-const offer = (p: Partial<Offer>): Offer => ({ id: "a", label: "Set the Norban token", run: "script", argv: ["bash", `${SCRATCH}/set-norban-token.sh`], by: "agent", digest: "d1", ...p });
+const SCRATCH = "/home/owner/.local/share/fyr/scratch/20261115-130828-find-the-acme-claude-long-term-token";
+const offer = (p: Partial<Offer>): Offer => ({ id: "a", label: "Set the Acme token", run: "script", argv: ["bash", `${SCRATCH}/set-acme-token.sh`], by: "agent", digest: "d1", ...p });
 
 test("V0.68: a path is shortened: home as ~, inside a scratch folder as …/<folder>/", () => {
-  assert.equal(shortArg(`${SCRATCH}/set-norban-token.sh`), "…/20261115-130828-find-the-norban-claude-long-term-token/set-norban-token.sh");
-  assert.equal(shortArg("/home/meros/src/fyr/scripts/x.sh"), "~/src/fyr/scripts/x.sh");
+  assert.equal(shortArg(`${SCRATCH}/set-acme-token.sh`), "…/20261115-130828-find-the-acme-claude-long-term-token/set-acme-token.sh");
+  assert.equal(shortArg("/home/owner/src/fyr/scripts/x.sh"), "~/src/fyr/scripts/x.sh");
   assert.equal(shortArg("/usr/bin/make"), "/usr/bin/make");
   assert.equal(shortArg("deploy/api"), "deploy/api", "a relative argument stays as written");
   assert.equal(shortArg("--context"), "--context");
-  assert.equal(shortFolder(SCRATCH), "~/…/scratch/20261115-130828-find-the-norban-claude-long-term-token");
-  assert.equal(shortFolder(`${SCRATCH}/sub`), "~/…/scratch/20261115-130828-find-the-norban-claude-long-term-token/sub");
-  assert.equal(shortFolder("/home/meros/src/fyr"), "~/src/fyr");
+  assert.equal(shortFolder(SCRATCH), "~/…/scratch/20261115-130828-find-the-acme-claude-long-term-token");
+  assert.equal(shortFolder(`${SCRATCH}/sub`), "~/…/scratch/20261115-130828-find-the-acme-claude-long-term-token/sub");
+  assert.equal(shortFolder("/home/owner/src/fyr"), "~/src/fyr");
   assert.equal(shortFolder("/srv/app"), "/srv/app");
 });
 
 test("V0.68: a script asks with its label, the short command, the folder and Run", () => {
-  const a = offerAsk(offer({ cwd: SCRATCH }), "/home/meros/src/fyr")!;
-  assert.equal(a.title, "Set the Norban token");
+  const a = offerAsk(offer({ cwd: SCRATCH }), "/home/owner/src/fyr")!;
+  assert.equal(a.title, "Set the Acme token");
   assert.equal(a.confirm, "Run");
   assert.ok(!a.danger);
-  assert.equal(a.command?.short, "bash …/20261115-130828-find-the-norban-claude-long-term-token/set-norban-token.sh");
-  assert.equal(a.command?.full, `bash ${SCRATCH}/set-norban-token.sh`);
-  assert.equal(a.command?.folder, "~/…/scratch/20261115-130828-find-the-norban-claude-long-term-token");
+  assert.equal(a.command?.short, "bash …/20261115-130828-find-the-acme-claude-long-term-token/set-acme-token.sh");
+  assert.equal(a.command?.full, `bash ${SCRATCH}/set-acme-token.sh`);
+  assert.equal(a.command?.folder, "~/…/scratch/20261115-130828-find-the-acme-claude-long-term-token");
   assert.equal(a.command?.folderFull, SCRATCH);
 });
 
 test("V0.68: arguments keep their shell quoting; the thread's folder is the default; a bound action says so", () => {
-  const a = offerAsk(offer({ argv: ["sh", "-c", "echo 'hi there'", "/home/meros/My Files/x"], revision: "3f2a9c1" }), "/home/meros/src/fyr")!;
+  const a = offerAsk(offer({ argv: ["sh", "-c", "echo 'hi there'", "/home/owner/My Files/x"], revision: "3f2a9c1" }), "/home/owner/src/fyr")!;
   assert.equal(a.command?.short, `sh -c 'echo '\\''hi there'\\''' '~/My Files/x'`);
-  assert.equal(a.command?.full, `sh -c 'echo '\\''hi there'\\''' '/home/meros/My Files/x'`);
+  assert.equal(a.command?.full, `sh -c 'echo '\\''hi there'\\''' '/home/owner/My Files/x'`);
   assert.equal(a.command?.folder, "~/src/fyr");
   assert.equal(a.command?.note, "Only on revision 3f2a9c1");
   assert.equal(offerAsk(offer({}))?.command?.folder, undefined, "no folder known: no folder line");
@@ -51,8 +51,8 @@ test("V0.68: a fyr action says in words what happens and its button is its label
 });
 
 test("V0.68, V0.58: Delete project states the consequence, with a red Delete project", () => {
-  const a = deleteProjectAsk({ name: "Hemmet", threads: 12 });
-  assert.equal(a.title, "Delete Hemmet?");
+  const a = deleteProjectAsk({ name: "Garden", threads: 12 });
+  assert.equal(a.title, "Delete Garden?");
   assert.equal(a.text, "Its 12 threads stay and land in a project whose folder covers them, or in No project. The folder on disk is not touched.");
   assert.equal(a.confirm, "Delete project");
   assert.equal(a.danger, true);
@@ -80,5 +80,5 @@ test("V0.68 (8): a live view's page runs a script only after the owner confirms;
   assert.deepEqual(runs, [["action.run", { on: "view", action: "a", digest: "d1" }]]);
   assert.equal(await press("view", offer({ id: "b", run: "agent", prompt: "p" }), SCRATCH, no, run), true);
   assert.equal(runs.length, 2);
-  assert.deepEqual(asked, ["Set the Norban token", "Set the Norban token"], "an agent action asked");
+  assert.deepEqual(asked, ["Set the Acme token", "Set the Acme token"], "an agent action asked");
 });

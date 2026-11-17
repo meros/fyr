@@ -22,7 +22,7 @@ const showCode = (k = "wait", o = {}) => {
           : `<span class="pair-st" style="margin-right:auto">The code ended at 21:09 unused.</span>${btn("Show a new code")}`;
   if (k === "done")
     return card(
-      `<div class="pair-st ok"><b>Paired with meros-server</b></div><div class="pair-top"><span class="pair-who"><small>Its id</small>${idf(ID.server, true)}</span>${me("desk", ID.desk)}</div><div class="setd">meros-server shows the same two ids. Your other installs learn of it within a minute.</div><div class="setbar">${btn("Open meros-server")}${btn("Done", "p")}</div>`,
+      `<div class="pair-st ok"><b>Paired with host-b</b></div><div class="pair-top"><span class="pair-who"><small>Its id</small>${idf(ID.server, true)}</span>${me("desk", ID.desk)}</div><div class="setd">host-b shows the same two ids. Your other installs learn of it within a minute.</div><div class="setbar">${btn("Open host-b")}${btn("Done", "p")}</div>`,
     );
   return card(
     `${o.for ? `<div class="setd">A code for <b>${o.for}</b>. No other install can use it.</div>` : seg2(0)}<div class="pair-top">${window.FINAL ? qr(5, dead) : ""}<span class="pcode${dead ? " off" : ""}" aria-label="The code">482 913</span>${me("desk", ID.desk)}</div>${dead ? "" : STEPS("482913")}<div class="setbar">${st}</div>`,
@@ -42,34 +42,34 @@ const enterCode = (k = "empty", o = {}) => {
   }[k];
   if (k === "done")
     return card(
-      `<div class="pair-st ok"><b>Paired with desk</b></div><div class="pair-top"><span class="pair-who"><small>Its id</small>${idf(ID.desk, true)}</span>${me("meros-server", ID.server)}</div><div class="setd">desk shows the same two ids. It tells your other installs; they show here within a minute.</div><div class="setbar">${btn("Open desk")}${btn("Done", "p")}</div>`,
+      `<div class="pair-st ok"><b>Paired with desk</b></div><div class="pair-top"><span class="pair-who"><small>Its id</small>${idf(ID.desk, true)}</span>${me("host-b", ID.server)}</div><div class="setd">desk shows the same two ids. It tells your other installs; they show here within a minute.</div><div class="setbar">${btn("Open desk")}${btn("Done", "p")}</div>`,
     );
   return card(
-    `${o.for ? `<div class="setd">Pairing with <b>${o.for}</b>.</div>` : seg2(1)}<label class="fld"><span>The code the other install shows</span><div class="pair-top"><input class="pcode-in" inputmode="numeric" autocomplete="one-time-code" placeholder="000 000" value="${v}"${k === "busy" ? " disabled" : ""}${k === "wrong" ? ' aria-invalid="true"' : ""}>${window.FINAL && k !== "busy" ? btn("Scan…") : ""}${me("meros-server", ID.server)}</div></label>${k === "none" || k === "gone" || o.addr ? `<label class="fld"><span>Its address (only when Fyr cannot find it)</span><input placeholder="192.168.1.10:7778" value="${k === "gone" ? "192.168.1.10:7778" : ""}" class="mono"></label>` : ""}<div class="setbar"><span style="margin-right:auto">${msg}</span>${k === "busy" ? btn("Cancel") : btn("Pair", "p", k === "empty")}</div>`,
+    `${o.for ? `<div class="setd">Pairing with <b>${o.for}</b>.</div>` : seg2(1)}<label class="fld"><span>The code the other install shows</span><div class="pair-top"><input class="pcode-in" inputmode="numeric" autocomplete="one-time-code" placeholder="000 000" value="${v}"${k === "busy" ? " disabled" : ""}${k === "wrong" ? ' aria-invalid="true"' : ""}>${window.FINAL && k !== "busy" ? btn("Scan…") : ""}${me("host-b", ID.server)}</div></label>${k === "none" || k === "gone" || o.addr ? `<label class="fld"><span>Its address (only when Fyr cannot find it)</span><input placeholder="192.168.1.10:7778" value="${k === "gone" ? "192.168.1.10:7778" : ""}" class="mono"></label>` : ""}<div class="setbar"><span style="margin-right:auto">${msg}</span>${k === "busy" ? btn("Cancel") : btn("Pair", "p", k === "empty")}</div>`,
     k === "empty" ? "Fyr asks the installs it has found for the one that shows this code. A code tried on a wrong install tells it nothing." : "",
   );
 };
 const pairPage = (body, t = "Pair", set = "full") => ({ nav: "hosts", navset: set, parent: "Hosts", title: t, body });
 const term = (lines) => `<pre class="term">${lines}</pre>`;
-const TERM_OK = term(`<span class="p">meros-server $</span> <b>fyrd pair 482913</b>
-This install   meros-server   ${ID.server}
+const TERM_OK = term(`<span class="p">host-b $</span> <b>fyrd pair 482913</b>
+This install   host-b   ${ID.server}
 Looking for the install that shows this code…
   192.168.1.31:7778   ${ID.other}   shows no code
   192.168.1.10:7778   ${ID.desk}   the code matches
 <span class="ok">Paired with desk   ${ID.desk}</span>
 desk shows the same two ids.`);
-const TERM_BAD = term(`<span class="p">meros-server $</span> <b>fyrd pair 482931</b>
-This install   meros-server   ${ID.server}
+const TERM_BAD = term(`<span class="p">host-b $</span> <b>fyrd pair 482931</b>
+This install   host-b   ${ID.server}
 Looking for the install that shows this code…
   192.168.1.10:7778   ${ID.desk}   <span class="er">did not accept the code (2 tries left)</span>
 <span class="er">Not paired.</span> Read the code again on the other install.
 
-<span class="p">meros-server $</span> <b>fyrd pair 482913</b>
+<span class="p">host-b $</span> <b>fyrd pair 482913</b>
 <span class="er">No install that shows a code was found on this LAN or the tailnet.</span>
 Give its address:  fyrd pair 482913 192.168.1.10:7778
 
-<span class="p">meros-server $</span> <b>fyrd pair</b>
-This install   meros-server   ${ID.server}
+<span class="p">host-b $</span> <b>fyrd pair</b>
+This install   host-b   ${ID.server}
 Code   <b>731 204</b>   until 21:14. Enter it on the other install.
 Waiting…  (Ctrl-C cancels the code)`);
 const wide = (cap, inner, w = 620) => `<div class="bd-f"><span class="bd-cap">${cap}</span><div class="dlgx one" style="width:${w}px"><div class="stp">${inner}</div></div></div>`;
@@ -85,7 +85,7 @@ const foundHd = `Found, not paired <span class="end">Looked 20 s ago${lnk("Look 
 const FOUND_FOOT = "Any Fyr on this LAN or your tailnet shows here. Being found gives it nothing: only pairing does. An install you do not know is probably someone else's: ignore it.";
 const hostsRows =
   hrow({ name: "desk", self: 1, line: `online since 08:12 · id ${sid(ID.desk)}` }) +
-  hrow({ name: "meros-laptop", line: `online since 08:31 · tailnet and LAN · id ${sid(ID.laptop)}` }) +
+  hrow({ name: "host-a", line: `online since 08:31 · tailnet and LAN · id ${sid(ID.laptop)}` }) +
   hrow({ name: "lab", state: "off", line: `offline since 20:12 · LAN · id ${sid(ID.labOld)}` });
 const foundPage = {
   nav: "hosts",
@@ -107,28 +107,28 @@ const shortcutPage = {
   title: "Hosts",
   end: btn("Add by address…") + btn("Pair…"),
   body:
-    note("<b>Fyr paired meros-laptop and lab by itself.</b> They are untagged nodes of your Tailscale user, alexander@github, so they need no code. A tagged node pairs by code.", btn("OK")) +
+    note("<b>Fyr paired host-a and lab by itself.</b> They are untagged nodes of your Tailscale user, owner@github, so they need no code. A tagged node pairs by code.", btn("OK")) +
     group(
       "",
       hrow({ name: "desk", self: 1, line: `online since 08:12 · id ${sid(ID.desk)}` }) +
-        hrow({ name: "meros-laptop", line: `online since 08:31 · tailnet · id ${sid(ID.laptop)}`, tag: tag("Paired by itself", "new") }) +
+        hrow({ name: "host-a", line: `online since 08:31 · tailnet · id ${sid(ID.laptop)}`, tag: tag("Paired by itself", "new") }) +
         hrow({ name: "lab", line: `online since 20:40 · tailnet · id ${sid(ID.labNew)}`, tag: tag("Paired by itself", "new") }) +
         hrow({ name: "old-nuc", line: "online since 07:02 · tailnet · not paired: its Fyr is older than pairing" }),
     ) +
-    group(foundHd, crow({ title: `<span class="mono">meros-server</span> ${idf(ID.server)}`, line: "meros-server.tail1234.ts.net · found on the tailnet · a tagged node, so it pairs by code" })) +
-    group("Where Fyr looks", row("Tailnet", "On · alexander@github · 5 nodes, 4 run Fyr") + row("Pair my own tailnet nodes without a code", "Untagged nodes of alexander@github. Off: they show under Found and pair by code.", swt(true, "Pair my own tailnet nodes without a code"))),
+    group(foundHd, crow({ title: `<span class="mono">host-b</span> ${idf(ID.server)}`, line: "host-b.tail1234.ts.net · found on the tailnet · a tagged node, so it pairs by code" })) +
+    group("Where Fyr looks", row("Tailnet", "On · owner@github · 5 nodes, 4 run Fyr") + row("Pair my own tailnet nodes without a code", "Untagged nodes of owner@github. Off: they show under Found and pair by code.", swt(true, "Pair my own tailnet nodes without a code"))),
 };
 const shortcutHost = {
   nav: "hosts",
   navset: "full",
   parent: "Hosts",
-  title: "meros-laptop",
+  title: "host-a",
   mono: 1,
   end: pst("Online"),
   body:
-    group("Identity", idrow(ID.laptop) + row("Paired by itself", "16 Nov 20:31, by desk. It is an untagged node of your Tailscale user, alexander@github.")) +
-    group("Addresses", arow("meros-laptop.tail1234.ts.net:7778", "Tailnet · in use · answered just now")) +
-    group("", row("Remove meros-laptop", "The undo of the pairing. Every install refuses it once it hears, and Fyr does not pair it by itself again: only a code brings it back.", btn("Remove…", "danger")), "", "danger-z"),
+    group("Identity", idrow(ID.laptop) + row("Paired by itself", "16 Nov 20:31, by desk. It is an untagged node of your Tailscale user, owner@github.")) +
+    group("Addresses", arow("host-a.tail1234.ts.net:7778", "Tailnet · in use · answered just now")) +
+    group("", row("Remove host-a", "The undo of the pairing. Every install refuses it once it hears, and Fyr does not pair it by itself again: only a code brings it back.", btn("Remove…", "danger")), "", "danger-z"),
 };
 
 // ---- add by address ----
@@ -137,7 +137,7 @@ const addForm = (v, res) =>
 const addPage = (v, res) => ({ nav: "hosts", navset: "full", parent: "Hosts", title: "Add by address", body: addForm(v, res) });
 const ADD_FOUND = { html: `<div class="pair-top"><span class="pair-who"><small>A Fyr install answers there</small>${idf(ID.vps, true)}</span></div><div class="setbar"><span class="setd" style="margin-right:auto">It is not paired. The address is kept either way; it shows under Found.</span>${btn("Pair…", "p")}</div>` };
 const ADD_STATES = [
-  ["Already paired", { html: `<div class="setbar"><span class="setd" style="margin-right:auto;color:var(--ink)">That is <span class="mono">meros-laptop</span> (K2VD), which you already trust. Fyr now also dials it there.</span>${btn("Open meros-laptop")}</div>` }, "10.8.0.4:7778"],
+  ["Already paired", { html: `<div class="setbar"><span class="setd" style="margin-right:auto;color:var(--ink)">That is <span class="mono">host-a</span> (K2VD), which you already trust. Fyr now also dials it there.</span>${btn("Open host-a")}</div>` }, "10.8.0.4:7778"],
   ["No answer", { bad: 1, html: `<span class="sr-d err" role="alert">Nothing answered at vps.example.net:7778 in 3 s. Check the port, and that fyrd listens there for other installs (<span class="mono">hostListen</span>).</span>` }, "vps.example.net:7778"],
   ["Not Fyr", { bad: 1, html: `<span class="sr-d err" role="alert">Something answers at 192.168.1.1:80, but it is not Fyr.</span>` }, "192.168.1.1:80"],
   ["Removed earlier", { html: `<div class="setbar"><span class="setd" style="margin-right:auto;color:var(--ink)">That is <span class="mono">old-laptop</span> (H2OL), which you removed on 12 Nov. A new pairing by code brings it back.</span>${btn("Pair…")}</div>` }, "192.168.1.77:7778"],
@@ -184,7 +184,7 @@ const accessNow = {
     row("Notifications", "When a thread asks you something or fails.", swt(false, "Notifications")) +
       `<div class="sr stack"><span class="sr-b"><span class="sr-t">Theme</span></span><span class="sr-e"><span class="seg" role="radiogroup" aria-label="Theme"><button class="on">Auto</button><button>Light</button><button>Dark</button></span></span></div>` +
       row("Show tool details", "Every tool group open, every machine line in full.", swt(false, "Show tool details")) +
-      row("How this browser gets in", "Through Tailscale Serve, as alexander@github. Any browser signed in to your tailnet with that login can open this Fyr."),
+      row("How this browser gets in", "Through Tailscale Serve, as owner@github. Any browser signed in to your tailnet with that login can open this Fyr."),
     "Kept in this browser. Each device has its own.",
   ),
 };
@@ -204,7 +204,7 @@ const devicesPage = (o = {}) => ({
     ) +
     group(
       "Devices that can open this Fyr",
-      (o.me === "pixel" ? "" : row(`This browser${tag("This device")}`, "On desk itself (localhost) · always allowed, never listed as a device")) + devRows(o) + (o.serve ? row("Anyone on your tailnet as alexander@github", "Through Tailscale Serve · turned on in this install's config, not here") : ""),
+      (o.me === "pixel" ? "" : row(`This browser${tag("This device")}`, "On desk itself (localhost) · always allowed, never listed as a device")) + devRows(o) + (o.serve ? row("Anyone on your tailnet as owner@github", "Through Tailscale Serve · turned on in this install's config, not here") : ""),
       "A paired device that is not used for 90 days is signed out.",
     ) +
     `<div class="sbar">${btn("Add a device…")}</div>`,
@@ -245,12 +245,12 @@ if (!window.FINAL)
 <li><b>Build now</b> marks what ships first. Everything else is drawn so the later slices plug in.</li></ul>`,
     screens: [
       { h: `F1. Pair: this install shows a code ${sl(3)}`, why: "Hosts, Pair. The code, this install's own id beside it, and the two ways to enter it on the other machine. Cancel ends the code.", page: pairPage(showCode()) },
-      { h: `F2. Pair: the other install enters the code ${sl(3)}`, why: "Left: in the other install's Settings (here meros-server). One field. Right: the same on a machine with no screen. fyrd pair with no code shows a code instead, for two machines without screens.", raw: frame("Desktop · meros-server's Settings", desk(pairPage(enterCode())), "bd-desk") + frame("Phone · the same page", phone(pairPage(enterCode())), "bd-phone") },
-      { h: `F3. Progress and success, on both sides ${sl(3)}`, why: "While it looks, the field is locked and Cancel stops it. When it is done both sides show the same two ids; that is the check. The terminal prints the same.", raw: wide("meros-server · checking, then paired", lab("Checking") + enterCode("busy") + lab("Paired") + enterCode("done")) + wide("desk · paired", lab("Paired") + showCode("done") + lab("fyrd pair on a machine with no screen") + TERM_OK) },
-      { h: `F4. A wrong code, three wrong codes, a code that ended, no install found ${sl(3)}`, why: "Left: the side that shows the code. It says where a wrong try came from. Right: the side that types it. Each message says what to do next.", raw: wide("desk · shows the code", lab("One wrong try") + showCode("wrong") + lab("Three wrong tries") + showCode("dead") + lab("Ended") + showCode("ended")) + wide("meros-server · enters the code", lab("Wrong code") + enterCode("wrong") + lab("Cancelled") + enterCode("dead") + lab("No install shows a code") + enterCode("none") + lab("The terminal") + TERM_BAD) },
+      { h: `F2. Pair: the other install enters the code ${sl(3)}`, why: "Left: in the other install's Settings (here host-b). One field. Right: the same on a machine with no screen. fyrd pair with no code shows a code instead, for two machines without screens.", raw: frame("Desktop · host-b's Settings", desk(pairPage(enterCode())), "bd-desk") + frame("Phone · the same page", phone(pairPage(enterCode())), "bd-phone") },
+      { h: `F3. Progress and success, on both sides ${sl(3)}`, why: "While it looks, the field is locked and Cancel stops it. When it is done both sides show the same two ids; that is the check. The terminal prints the same.", raw: wide("host-b · checking, then paired", lab("Checking") + enterCode("busy") + lab("Paired") + enterCode("done")) + wide("desk · paired", lab("Paired") + showCode("done") + lab("fyrd pair on a machine with no screen") + TERM_OK) },
+      { h: `F4. A wrong code, three wrong codes, a code that ended, no install found ${sl(3)}`, why: "Left: the side that shows the code. It says where a wrong try came from. Right: the side that types it. Each message says what to do next.", raw: wide("desk · shows the code", lab("One wrong try") + showCode("wrong") + lab("Three wrong tries") + showCode("dead") + lab("Ended") + showCode("ended")) + wide("host-b · enters the code", lab("Wrong code") + enterCode("wrong") + lab("Cancelled") + enterCode("dead") + lab("No install shows a code") + enterCode("none") + lab("The terminal") + TERM_BAD) },
       { h: `F5. Found installs: plain, tagged, one install at two addresses, and one at lab's address ${sl(4)}`, why: "Pair… on a found install opens the pairing page with the code bound to that id. The last row is how a spoofed answer or a reinstall looks: it cannot do anything, and it is not offered Pair.", page: foundPage },
       { h: `F5b. Pair from a found install; the ignored list; a known name with a new id ${sl(4)}`, why: "Left: the code is for that install only. Middle: Ignore is per install and can be undone. Right: the tailnet says “lab”, but the id is new.", raw: wide("Pair… on a found install", showCode("wait", { for: `Fyr install ${ID.other} at 192.168.1.31` }), 520) + wide("2 ignored, unfolded", ignored, 520) + wide("A known name, another id", group(foundHd, candName), 520) },
-      { h: `F6. The tailnet shortcut ${sl(2)}`, why: "After the update that brings the roster, your untagged nodes are paired with no press. The note shows once. old-nuc runs an older Fyr: it is still followed through the tailnet login, and the row says so. meros-server is tagged, so it waits under Found for a code.", page: shortcutPage },
+      { h: `F6. The tailnet shortcut ${sl(2)}`, why: "After the update that brings the roster, your untagged nodes are paired with no press. The note shows once. old-nuc runs an older Fyr: it is still followed through the tailnet login, and the row says so. host-b is tagged, so it waits under Found for a code.", page: shortcutPage },
       { h: `F6b. Undoing it ${sl(2)}`, why: "The host's page says how it was paired. Remove is the undo, for one install; the switch on the Hosts page stops it for all.", page: shortcutHost },
       { h: `F7. Add by address ${sl(3)}`, why: "For a host no source can see. Look up asks the address who it is before anything is added; then it pairs by code like any found install.", page: addPage("vps.example.net:7778", ADD_FOUND), phonePage: addPage("", null) },
       { h: `F7b. Add by address: the other answers ${sl(3)}`, why: "", raw: wide("Look up · four other results", ADD_STATES.map((s) => lab(s[0]) + addForm(s[2], s[1])).join("")) },

@@ -18,7 +18,7 @@ func TestFrontProjectIconOnItsHost(t *testing.T) {
 	b.eng.Icons = &projicon.Store{Dir: t.TempDir()}
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
 	online(t, fs.URL, 2)
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p1","action":"project.create","args":{"name":"Norban","host":"b"}}`)
+	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p1","action":"project.create","args":{"name":"Acme","host":"b"}}`)
 	pid, _ := rep["result"].(map[string]any)["id"].(string)
 	if code != 200 || pid == "" {
 		t.Fatalf("%d %v", code, rep)

@@ -17,7 +17,7 @@ const zai: Profile = { id: "zai", name: "Z.ai", color: "#111", models: ["glm-5"]
 const hosts = [
   { name: "lab", online: true, since: iso(40), profiles: [labClaude, zai] },
   { name: "desk", online: true, since: iso(180), profiles: [claude] },
-  { name: "meros-server", online: false, since: iso(25), profiles: [claude] },
+  { name: "host-b", online: false, since: iso(25), profiles: [claude] },
 ];
 const projects: Project[] = [
   { id: "p_d", name: "Desk project", folder: "/home/o/d", host: "desk" },
@@ -47,7 +47,7 @@ test("V0.139: picking a host lists its projects and starts on its remembered or 
   assert.equal(f.projectId, "p_d");
   f = chooseHost(f, "lab", ctx, { projectId: "p_l2" });
   assert.equal(f.projectId, "p_l2");
-  f = chooseHost(f, "meros-server", ctx);
+  f = chooseHost(f, "host-b", ctx);
   assert.equal(f.projectId, undefined, "a host with no projects: No project");
   assert.deepEqual(formProjects(f, ctx), []);
   // No project stays No project on a host change.
@@ -63,7 +63,7 @@ test("V0.139: one host: every project, as before", () => {
 
 test("V0.139: the read-only host chip of a project or thread: its name, and offline said with the time", () => {
   assert.deepEqual(hostChip("lab", hosts, now), { name: "lab", line: "", offline: false });
-  assert.deepEqual(hostChip("meros-server", hosts, now), { name: "meros-server", line: `offline since ${dayTime(iso(25), now)} · read-only`, offline: true });
+  assert.deepEqual(hostChip("host-b", hosts, now), { name: "host-b", line: `offline since ${dayTime(iso(25), now)} · read-only`, offline: true });
   assert.equal(hostChip("desk", [hosts[1]], now), null, "one host: no chip");
   assert.equal(hostChip(undefined, hosts, now)?.name, "lab", "a record with no host is the first host's");
 });

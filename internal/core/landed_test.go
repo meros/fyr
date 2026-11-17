@@ -66,15 +66,15 @@ func TestDecodeLandedAt(t *testing.T) {
 func TestOpenCodeChangeJoinsItsBranch(t *testing.T) {
 	t0 := time.Date(2026, 11, 15, 13, 0, 0, 0, time.UTC)
 	th := &Thread{}
-	ChangePRObserved(th, PR{URL: "https://github.com/NorbanDev/claude-plugins/pull/113", Repo: "NorbanDev/claude-plugins", Number: 113, State: "OPEN", Branch: "fix/x"}, t0)
-	c, made, err := OpenChange(th, ChangeOpen{Key: "claude-plugins:fix/x", Kind: KindCode, Title: "Pin Node", Branch: "fix/x", Targets: []string{"repo:github.com/NorbanDev/claude-plugins"}}, ByAgent, t0)
+	ChangePRObserved(th, PR{URL: "https://github.com/acme/claude-plugins/pull/113", Repo: "acme/claude-plugins", Number: 113, State: "OPEN", Branch: "fix/x"}, t0)
+	c, made, err := OpenChange(th, ChangeOpen{Key: "claude-plugins:fix/x", Kind: KindCode, Title: "Pin Node", Branch: "fix/x", Targets: []string{"repo:github.com/acme/claude-plugins"}}, ByAgent, t0)
 	if err != nil || made || len(th.Changes) != 1 || c.PRURL() == "" {
 		t.Fatalf("made %v, %d changes, %+v, %v", made, len(th.Changes), c, err)
 	}
 	if FindChange(th, "claude-plugins:fix/x") != c {
 		t.Fatal("the agent's key does not find the joined change")
 	}
-	other, made, _ := OpenChange(th, ChangeOpen{Key: "web:fix/x", Kind: KindCode, Branch: "fix/x", Targets: []string{"repo:github.com/NorbanDev/norban-web"}}, ByAgent, t0)
+	other, made, _ := OpenChange(th, ChangeOpen{Key: "web:fix/x", Kind: KindCode, Branch: "fix/x", Targets: []string{"repo:github.com/acme/web"}}, ByAgent, t0)
 	if !made || other == c {
 		t.Fatal("the same branch name in another repo joined the change")
 	}

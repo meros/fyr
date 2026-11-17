@@ -7,11 +7,11 @@ import (
 
 // SPEC 0.5 V0.23: the default colour is stable for a name and never the beam.
 func TestDefaultColor(t *testing.T) {
-	if DefaultColor("norban") != DefaultColor("norban") {
+	if DefaultColor("acme") != DefaultColor("acme") {
 		t.Fatal("not stable")
 	}
 	seen := map[string]bool{}
-	for _, n := range []string{"norban", "wayout", "nixos", "fyr", "recept", "utdelningar", "a", "b", "c", "d", "e", "f"} {
+	for _, n := range []string{"acme", "wayout", "nixos", "fyr", "recept", "utdelningar", "a", "b", "c", "d", "e", "f"} {
 		c := DefaultColor(n)
 		if !ValidColor(c) || c == "amber" {
 			t.Fatalf("%s → %q", n, c)
@@ -27,7 +27,7 @@ func TestDefaultColor(t *testing.T) {
 }
 
 func TestMonogram(t *testing.T) {
-	cases := map[string]string{"norban": "N", "my-app": "MA", "fyr_web": "FW", "åsa": "Å", "": "?"}
+	cases := map[string]string{"acme": "A", "my-app": "MA", "fyr_web": "FW", "åsa": "Å", "": "?"}
 	for in, want := range cases {
 		if got := Monogram(in); got != want {
 			t.Errorf("%q: got %q want %q", in, got, want)
@@ -90,12 +90,12 @@ func TestProjectSetBy(t *testing.T) {
 	if p.SetBy("name") != ByOwner || p.SetBy("color") != "" {
 		t.Fatalf("a typed name is not the owner's: %+v", p.By)
 	}
-	old := &Project{ID: "p_old", Name: "norban", Folder: "/src/norban", Color: DefaultColor("norban")}
+	old := &Project{ID: "p_old", Name: "acme", Folder: "/src/acme", Color: DefaultColor("acme")}
 	if old.SetBy("name") != "" || old.SetBy("color") != "" {
 		t.Fatalf("an old placeholder is the owner's")
 	}
-	old2 := &Project{ID: "p_old2", Name: "Norban", Folder: "/src/norban", Color: "teal"}
-	if DefaultColor("Norban") == "teal" {
+	old2 := &Project{ID: "p_old2", Name: "Acme", Folder: "/src/acme", Color: "teal"}
+	if DefaultColor("Acme") == "teal" {
 		old2.Color = "rose"
 	}
 	if old2.SetBy("name") != ByOwner || old2.SetBy("color") != ByOwner {

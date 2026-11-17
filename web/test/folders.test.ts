@@ -49,10 +49,10 @@ test("breadcrumbs start at ~", () => {
 test("search across sections: every word in the name or path; a folder shows once; empty sections go", () => {
   const sections = [
     { key: "recent", title: "Recent", dirs: [d("fyr", `${H}/git`), d("notes")] },
-    { key: "repos", title: "Repos found", dirs: [d("fyr", `${H}/git`), d("web", `${H}/src/norban`)] },
+    { key: "repos", title: "Repos found", dirs: [d("fyr", `${H}/git`), d("web", `${H}/src/acme`)] },
   ];
   assert.deepEqual(filterSections(sections, "").map((s) => s.dirs.map((x) => x.name)), [["fyr", "notes"], ["web"]]);
-  assert.deepEqual(filterSections(sections, "norban").map((s) => s.key), ["repos"]);
+  assert.deepEqual(filterSections(sections, "acme").map((s) => s.key), ["repos"]);
   assert.deepEqual(filterSections(sections, "git fyr", H).map((s) => s.dirs.length), [1]);
   assert.deepEqual(filterSections(sections, "zzz"), []);
 });

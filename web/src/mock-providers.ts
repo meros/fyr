@@ -28,7 +28,7 @@ export function createMockProviders(mode = "", hostNow: () => number = Date.now)
   const ago = (ms: number) => new Date(hostNow() - ms).toISOString();
   const keys = new Map<string, string>(mode === "nokey" ? [] : [["claudeDeepseek", "sk-mock-deepseek-4f2a"], ["zai", "sk-mock-zai-7c1e"]]);
   const list: ProviderDTO[] = [
-    { id: "claude", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", defaultEffort: "high", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, imported: "profile claudeAgent", threads: 9, canLogin: true,
+    { id: "claude", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", defaultEffort: "high", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, imported: "profile claudeAlt", threads: 9, canLogin: true,
       // V0.120: checked 4 min ago (the page does not ask again); Fable 5.2 is New, Sonnet 5.4 and Haiku 5.4 are off.
       catalog: [...cat(CLAUDE_MODELS), ...cat([{ id: "claude-fable-5-2", name: "Fable 5.2", efforts: EFFORTS }], { new: true, firstSeen: new Date(Date.now() - 86_400_000).toISOString() }), ...cat([{ id: "claude-sonnet-5-4", name: "Sonnet 5.4", efforts: EFFORTS }, { id: "claude-haiku-5-4", name: "Haiku 5.4" }])],
       checkedAt: ago(4 * 60_000) },
@@ -54,8 +54,8 @@ export function createMockProviders(mode = "", hostNow: () => number = Date.now)
     });
     list.length = 0;
     list.push(
-      { id: "claudeAgent", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, threads: 12, canLogin: true, catalog: cat(known), checkedAt: ago(4 * 60_000), checkNote: note },
-      { id: "claudeNorban", name: "Claude (norban)", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#2f6fb0", configDir: "~/.claude-norban", tokenLogin: true, models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: true, keyLast4: "zzzz", threads: 3, canLogin: true, catalog: cat(known), checkedAt: ago(4 * 60_000), checkNote: note },
+      { id: "claudeAlt", name: "Claude", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#d97757", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: false, threads: 12, canLogin: true, catalog: cat(known), checkedAt: ago(4 * 60_000), checkNote: note },
+      { id: "claudeAcme", name: "Claude (acme)", kind: "claude-account", cli: "claude", auth: "cli-login", color: "#2f6fb0", configDir: "~/.claude-acme", tokenLogin: true, models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5", efforts: EFFORTS, quota: "anthropic-oauth", status: "ready", keySet: true, keyLast4: "zzzz", threads: 3, canLogin: true, catalog: cat(known), checkedAt: ago(4 * 60_000), checkNote: note },
       { id: "claudeDeepseek", name: "OpenRouter", kind: "endpoint", cli: "claude", auth: "api-key", baseURL: "https://openrouter.ai/api", models: [{ id: router[0].id, name: router[0].name }], defaultModel: router[0].id, efforts: EFFORTS, quota: "openrouter", status: "ready", keySet: true, keyLast4: "4f2a", threads: 1, catalog: cat(router), checkedAt: ago(4 * 60_000) },
     );
   }

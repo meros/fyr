@@ -93,7 +93,7 @@ in
       type = lib.types.listOf (lib.types.submodule {
         options = {
           name = lib.mkOption { type = lib.types.str; description = "The host's name, shown in the client."; };
-          url = lib.mkOption { type = lib.types.str; example = "http://meros-server:7778"; description = "Where the host serves fronts (its `hostListen`) on the tailnet."; };
+          url = lib.mkOption { type = lib.types.str; example = "http://host-b:7778"; description = "Where the host serves fronts (its `hostListen`) on the tailnet."; };
         };
       });
       default = [ ];
@@ -171,7 +171,7 @@ in
       default = { };
       example = lib.literalExpression ''
         {
-          claudeNorban = { kind = "anthropic-oauth"; configDir = "~/.claude-norban"; };
+          claudeAcme = { kind = "anthropic-oauth"; configDir = "~/.claude-acme"; };
           claudeDeepseek = { kind = "deepseek"; keyFile = "/run/secrets/deepseek-api-key"; };
         }
       '';

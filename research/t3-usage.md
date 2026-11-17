@@ -8,7 +8,7 @@ Read-only analysis of the local T3 Code v0.1.7 database (`statev2.sqlite`) and s
 |---|---|
 | Threads | 1,255 total: 196 started by the owner, 999 subagent child threads, 54 v1 imports, 6 forks. About 18 own threads a day |
 | Where started | 148 desktop/web, 54 phone (27 %), over Tailscale |
-| Projects | norban 942 (185 own), wayout 145, scratch 92, nixos 73, small others |
+| Projects | acme 942 (185 own), wayout 145, scratch 92, nixos 73, small others |
 | Hosts | 1 environment; 0 peer links |
 | Worktree mode | never used on a repo; agents create worktrees themselves |
 | Runs | 3,052; per top-level thread median 7, p90 40, max 133 |
@@ -35,7 +35,7 @@ Read-only analysis of the local T3 Code v0.1.7 database (`statev2.sqlite`) and s
 
 ## Kinds of work (own thread titles, ±5)
 
-Product UI for norban (~70) · bug/incident/CI fixes (~22) · agent pipeline and dev-loop tooling (~22) · NixOS, desktop and T3 itself (~18) · screenshot-only starts (~16) · triage and coordination (~14) · life and errands (~13) · research and specs (~12) · hardware and firmware (~9).
+Product UI for acme (~70) · bug/incident/CI fixes (~22) · agent pipeline and dev-loop tooling (~22) · NixOS, desktop and T3 itself (~18) · screenshot-only starts (~16) · triage and coordination (~14) · life and errands (~13) · research and specs (~12) · hardware and firmware (~9).
 
 ## Consequences used in the spec
 

@@ -17,7 +17,7 @@ Date: 2026-11-16 · Status: accepted (owner, 16 Nov: PAKE code, the tailnet shor
 | Encryption | WireGuard. The host protocol itself is plain HTTP (`http://100.x:7778`) | `hostListen tailnet:PORT` (V0.54 (7)) |
 | A trusted HTTPS origin for the PWA, service worker and push | Serve's `*.ts.net` certificate | NixOS `services.fyr.tailnet` |
 
-On a plain LAN none of these exist. And because the tailnet's identity is a *user*, a tagged node such as meros-server has no owner and cannot take part (0025 (1), put off by the owner).
+On a plain LAN none of these exist. And because the tailnet's identity is a *user*, a tagged node such as host-b has no owner and cannot take part (0025 (1), put off by the owner).
 
 The fix is to stop letting the network say who someone is. **An install is known by its key. A network only carries bytes and proposes addresses.**
 
@@ -92,7 +92,7 @@ All three paths depend on the install. The owner's own setup keeps Serve for the
 ### 6. How the tailnet fits
 
 - It is one **discovery source** (tagged peers now included), one **route** under the pinned TLS, the phone's **away-from-home origin** via Serve, and optionally a **pairing shortcut** (point 3).
-- **Tagged nodes such as meros-server** stop being a special case. Their key is their identity; they pair once with a code (the whois shortcut does not apply to them, since a tagged node has no user). For the browser over Serve on a tagged node, `ownerLogin` is set in its config, as V0.14 already allows.
+- **Tagged nodes such as host-b** stop being a special case. Their key is their identity; they pair once with a code (the whois shortcut does not apply to them, since a tagged node has no user). For the browser over Serve on a tagged node, `ownerLogin` is set in its config, as V0.14 already allows.
 
 ## Threat model
 
@@ -120,7 +120,7 @@ The live setup keeps working at every step: the old whois listener and Serve sta
 |---|---|---|
 | **1 (small)** | Install key and id. `/.well-known/fyr` adds `id`; Settings → Hosts shows each host's short id on desktop and phone; the front remembers the id it first saw per host and warns when it changes | no trust changes; the owner can see the ids before anything depends on them |
 | 2 | Roster and pinned mTLS. A second host listener with TLS pinned to the roster. Over the tailnet the whois shortcut pairs the owner's untagged installs with no press, and fronts move their links to TLS | today's machines migrate with no action; whois remains the fallback |
-| 3 | Pairing by code: CPace, **Pair…** in Settings (desktop and phone), `fyrd pair` for headless hosts; add a host by URL. meros-server (tagged) pairs here | a LAN or a tagged node now works between fyrds, with hand-typed addresses |
+| 3 | Pairing by code: CPace, **Pair…** in Settings (desktop and phone), `fyrd pair` for headless hosts; add a host by URL. host-b (tagged) pairs here | a LAN or a tagged node now works between fyrds, with hand-typed addresses |
 | 4 | mDNS source `_fyr._tcp`; unpaired candidates in Settings; a paired id followed at any address | LAN discovery with no typing |
 | 5 | The browser off the tailnet: config `tls` for the install's own certificate, device pairing by QR, Settings → Devices with Revoke (desktop and phone) | a phone on the LAN with no tailnet runs the PWA with push, given a certificate it trusts |
 | 6 | Removal and rotation spread through the roster; the plain whois listener is dropped; tailnet discovery takes tagged peers | one transport; the tailnet is only a route |

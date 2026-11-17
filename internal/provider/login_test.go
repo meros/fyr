@@ -187,47 +187,47 @@ func (lf *loginFix) fake(t *testing.T) map[string]string {
 func TestLoginTokenAccount(t *testing.T) {
 	lf := newLoginFix(t, "token")
 	r := lf.r
-	if err := r.add(Provider{ID: "claudeNorban", Name: "Claude (norban)", CLI: "claude", TokenLogin: true,
+	if err := r.add(Provider{ID: "claudeAcme", Name: "Claude (acme)", CLI: "claude", TokenLogin: true,
 		Auth: cli.Auth{Kind: cli.CLILogin, ConfigDir: "~/.claude"}, Models: []cli.Model{}}); err != nil {
 		t.Fatal(err)
 	}
-	if d := lf.dto("claudeNorban"); d.Status != NeedsLogin || !d.CanLogin || d.Login != nil {
+	if d := lf.dto("claudeAcme"); d.Status != NeedsLogin || !d.CanLogin || d.Login != nil {
 		t.Fatalf("before: %+v", d)
 	}
-	if rep := lf.cmd("provider.login", map[string]any{"id": "claudeNorban"}); !rep.OK {
+	if rep := lf.cmd("provider.login", map[string]any{"id": "claudeAcme"}); !rep.OK {
 		t.Fatalf("login: %+v", rep)
 	}
-	if rep := lf.cmd("provider.login", map[string]any{"id": "claudeNorban"}); rep.OK || rep.Status != 409 {
+	if rep := lf.cmd("provider.login", map[string]any{"id": "claudeAcme"}); rep.OK || rep.Status != 409 {
 		t.Fatalf("a second login for the same provider: %+v", rep)
 	}
-	d := lf.wait(t, "claudeNorban", "the link", func(l *LoginDTO) bool { return l.State == LoginWaiting && l.URL != "" })
+	d := lf.wait(t, "claudeAcme", "the link", func(l *LoginDTO) bool { return l.State == LoginWaiting && l.URL != "" })
 	if d.Login.URL != "https://claude.com/cai/oauth/authorize?code=true&client_id=fake&state=abc" || d.Login.Kind != "token" {
 		t.Fatalf("link: %+v", d.Login)
 	}
-	if rep := lf.cmd("provider.loginCode", map[string]any{"id": "claudeNorban", "code": "wrong#code"}); !rep.OK {
+	if rep := lf.cmd("provider.loginCode", map[string]any{"id": "claudeAcme", "code": "wrong#code"}); !rep.OK {
 		t.Fatalf("code: %+v", rep)
 	}
 	// setup-token starts over on Enter; Fyr presses it and shows the new link.
-	d = lf.wait(t, "claudeNorban", "the new link", func(l *LoginDTO) bool { return l.State == LoginWaiting && strings.HasSuffix(l.URL, "state=def") })
+	d = lf.wait(t, "claudeAcme", "the new link", func(l *LoginDTO) bool { return l.State == LoginWaiting && strings.HasSuffix(l.URL, "state=def") })
 	if !strings.Contains(d.Login.Message, "wasn't accepted") || !strings.Contains(d.Login.Message, "new link is ready") {
 		t.Fatalf("message after a wrong code: %q", d.Login.Message)
 	}
-	if rep := lf.cmd("provider.loginCode", map[string]any{"id": "claudeNorban", "code": " " + goodCode + " "}); !rep.OK {
+	if rep := lf.cmd("provider.loginCode", map[string]any{"id": "claudeAcme", "code": " " + goodCode + " "}); !rep.OK {
 		t.Fatalf("code: %+v", rep)
 	}
 	start := time.Now()
-	d = lf.wait(t, "claudeNorban", "done", func(l *LoginDTO) bool { return l.State == LoginDone })
+	d = lf.wait(t, "claudeAcme", "done", func(l *LoginDTO) bool { return l.State == LoginDone })
 	if time.Since(start) > 5*time.Second {
 		t.Fatalf("the login waited for the CLI to end after the token (%s)", time.Since(start))
 	}
 	if d.Status != Ready || !d.KeySet || d.KeyLast4 != fakeToken[len(fakeToken)-4:] || d.Need != "" {
 		t.Fatalf("after: %+v", d)
 	}
-	if v, err := r.Secrets.Get(SecretName("claudeNorban")); err != nil || v != fakeToken {
+	if v, err := r.Secrets.Get(SecretName("claudeAcme")); err != nil || v != fakeToken {
 		t.Fatalf("secret store: %v", err)
 	}
 	for _, pr := range r.Profiles() {
-		if pr.ID == "claudeNorban" && pr.Unavailable != "" {
+		if pr.ID == "claudeAcme" && pr.Unavailable != "" {
 			t.Fatalf("still unavailable: %q", pr.Unavailable)
 		}
 	}

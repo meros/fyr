@@ -3,8 +3,8 @@ package core
 import "testing"
 
 func TestParsePR(t *testing.T) {
-	repo, n, ok := ParsePR("https://github.com/NorbanDev/norban-web/pull/12345")
-	if !ok || repo != "NorbanDev/norban-web" || n != 12345 {
+	repo, n, ok := ParsePR("https://github.com/acme/web/pull/12345")
+	if !ok || repo != "acme/web" || n != 12345 {
 		t.Fatal(repo, n, ok)
 	}
 	if _, _, ok := ParsePR("https://github.com/a/b/issues/1"); ok {

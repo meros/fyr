@@ -10,8 +10,8 @@ const ask = (cap, title, text, ok, danger) =>
 // ================= A. build now =================
 const R = {
   desk: hrow({ name: "desk", self: 1, line: `online since 08:12 · this machine · id ${sid(ID.desk)}` }),
-  laptop: hrow({ name: "meros-laptop", line: `online since 08:31 · tailnet · id ${sid(ID.laptop)}` }),
-  server: hrow({ name: "meros-server", state: "off", line: `offline since 19:40 · tailnet · id ${sid(ID.server)}` }),
+  laptop: hrow({ name: "host-a", line: `online since 08:31 · tailnet · id ${sid(ID.laptop)}` }),
+  server: hrow({ name: "host-b", state: "off", line: `offline since 19:40 · tailnet · id ${sid(ID.server)}` }),
   lab: hrow({ name: "lab", state: "warn", err: 1, line: `Another install answers as lab: id ${sid(ID.labNew)}, it was ${sid(ID.labOld)}.`, badge: "Needs you", badgeCls: "needs-login" }),
   labOk: hrow({ name: "lab", line: `online since 20:12 · tailnet · id ${sid(ID.labNew)}` }),
 };
@@ -21,7 +21,7 @@ const TRUST_NOW = row("Trust", "Through your tailnet: Fyr follows it because it 
 const ID_NOW = "Fyr remembers this id and tells you when another install answers under this name.";
 const hostPage = (o) => ({ nav: "hosts", navset: o.navset || "now", parent: "Hosts", title: o.name, mono: 1, end: o.end || pst("Online"), saved: o.saved, body: o.body });
 const aHost = hostPage({
-  name: "meros-laptop",
+  name: "host-a",
   body:
     group("Identity", idrow(ID.laptop, ID_NOW) + TRUST_NOW) +
     group("Connection", row("Online since 08:31", "") + row("Address", '<span class="mono">http://100.64.0.2:7778</span> · tailnet') + row("Found on the tailnet", "Fyr found it by itself. It leaves this list 30 days after its last answer.")),
@@ -66,9 +66,9 @@ const aDevice = (how) => ({
   ),
 });
 const HOW = {
-  serve: "Through Tailscale Serve, as alexander@github. Any browser signed in to your tailnet with that login can open this Fyr.",
+  serve: "Through Tailscale Serve, as owner@github. Any browser signed in to your tailnet with that login can open this Fyr.",
   local: "On this machine itself (localhost). A browser on this machine is always allowed.",
-  other: "At fyr.example.net, as alexander@github. What stands in front of Fyr there decides who gets in.",
+  other: "At fyr.example.net, as owner@github. What stands in front of Fyr there decides who gets in.",
 };
 const howStates = wide("How this browser gets in · the three texts", group("", row("How this browser gets in", HOW.serve) + row("How this browser gets in", HOW.local) + row("How this browser gets in", HOW.other), "First: the page's address ends in .ts.net. Second: localhost or a loopback address. Third: anything else."), 520);
 
@@ -81,14 +81,14 @@ const bHosts = {
   body:
     group(
       "",
-      R.desk + hrow({ name: "meros-laptop", line: `online since 08:31 · tailnet and LAN · id ${sid(ID.laptop)}` }) + R.server + hrow({ name: "vps", line: `online since Mon 06:00 · by address · id ${sid(ID.vps)}` }),
+      R.desk + hrow({ name: "host-a", line: `online since 08:31 · tailnet and LAN · id ${sid(ID.laptop)}` }) + R.server + hrow({ name: "vps", line: `online since Mon 06:00 · by address · id ${sid(ID.vps)}` }),
       "The installs you trust. Each one knows this list and refuses everything else.",
     ) +
     group(foundHd, candNear + candTag, FOUND_FOOT) +
-    group("Where Fyr looks", row("Tailnet", "On · alexander@github · 5 nodes, 4 run Fyr") + row("Pair my own tailnet nodes without a code", "Untagged nodes of alexander@github. Off: they show under Found and pair by code.", swt(true, "Pair my own tailnet nodes without a code")) + row("This LAN", "On · 192.168.1.0/24 · 2 installs answer") + row("By address", "1 address · vps.example.net:7778")) +
+    group("Where Fyr looks", row("Tailnet", "On · owner@github · 5 nodes, 4 run Fyr") + row("Pair my own tailnet nodes without a code", "Untagged nodes of owner@github. Off: they show under Found and pair by code.", swt(true, "Pair my own tailnet nodes without a code")) + row("This LAN", "On · 192.168.1.0/24 · 2 installs answer") + row("By address", "1 address · vps.example.net:7778")) +
     `<div class="sbar">${fold("1 ignored")}${fold("1 removed")}</div>`,
 };
-const ROSTER_OK = group("Your installs", row("4 installs, in step", "This install's list of trusted installs matches the others. Last compared with meros-laptop just now."));
+const ROSTER_OK = group("Your installs", row("4 installs, in step", "This install's list of trusted installs matches the others. Last compared with host-a just now."));
 const bSelf = hostPage({
   name: "desk",
   navset: "full",
@@ -106,7 +106,7 @@ const scan = (k) =>
 const shortcutOff = wide(
   "The switch off · your own nodes wait for a code",
   group(foundHd, crow({ title: `<span class="mono">work-mac</span> ${idf("W2MC-9DHE-T4KQ-6BVN")}`, line: "work-mac.tail1234.ts.net · found on the tailnet · your own node; pairing without a code is off" })) +
-    group("Where Fyr looks", row("Tailnet", "On · alexander@github · 5 nodes, 4 run Fyr") + row("Pair my own tailnet nodes without a code", "Untagged nodes of alexander@github. Off: they show under Found and pair by code.", swt(false, "Pair my own tailnet nodes without a code"))),
+    group("Where Fyr looks", row("Tailnet", "On · owner@github · 5 nodes, 4 run Fyr") + row("Pair my own tailnet nodes without a code", "Untagged nodes of owner@github. Off: they show under Found and pair by code.", swt(false, "Pair my own tailnet nodes without a code"))),
   560,
 );
 const changedTail = hostPage({
@@ -123,8 +123,8 @@ const changedTail = hostPage({
 });
 
 // ================= C. states =================
-const removedNote = note("<b>meros-laptop is removed.</b> 2 of your 3 other installs have heard. meros-server is offline and learns it when it is back; until then it still lets meros-laptop in.", btn("OK"));
-const removedGroup = (line) => group("Removed", hrow({ name: "meros-laptop", state: "gone", line, badge: "Removed" }), "A removed install is refused by every install that has heard. Only a new pairing by code brings it back.");
+const removedNote = note("<b>host-a is removed.</b> 2 of your 3 other installs have heard. host-b is offline and learns it when it is back; until then it still lets host-a in.", btn("OK"));
+const removedGroup = (line) => group("Removed", hrow({ name: "host-a", state: "gone", line, badge: "Removed" }), "A removed install is refused by every install that has heard. Only a new pairing by code brings it back.");
 const cRemoved = {
   nav: "hosts",
   navset: "full",
@@ -133,17 +133,17 @@ const cRemoved = {
   body: removedNote + group("", R.desk + R.server + hrow({ name: "vps", line: `online since Mon 06:00 · by address · id ${sid(ID.vps)}` })) + removedGroup(`removed today 21:30 on desk · told 2 of 3 · id ${sid(ID.laptop)}`),
 };
 const cRemovedHost = hostPage({
-  name: "meros-laptop",
+  name: "host-a",
   navset: "full",
   end: pst("Removed"),
   body:
-    group("Identity", idrow(ID.laptop) + row("Removed today 21:30, on desk", "desk and vps refuse it. meros-server has not heard yet: it is offline since 19:40.")) +
+    group("Identity", idrow(ID.laptop) + row("Removed today 21:30, on desk", "desk and vps refuse it. host-b has not heard yet: it is offline since 19:40.")) +
     group("History", hist([["16 Nov 21:30", "Removed on desk"], ["16 Nov 20:31", "Paired by itself by desk (tailnet)"]])) +
     group("", row("Its threads", "They show as last read for 30 days and cannot be changed.") + row("Bring it back", "Pair it again by code. Fyr never pairs a removed install by itself.", btn("Pair again…"))),
 });
 const cElsewhere = wide(
   "On another install (vps) · it heard of the removal",
-  note("<b>desk removed meros-laptop</b> today at 21:30. This install refuses it now.", btn("OK")) + removedGroup(`removed today 21:30 on desk · id ${sid(ID.laptop)}`),
+  note("<b>desk removed host-a</b> today at 21:30. This install refuses it now.", btn("OK")) + removedGroup(`removed today 21:30 on desk · id ${sid(ID.laptop)}`),
   560,
 );
 const cSelfRemoved = {
@@ -155,7 +155,7 @@ const cSelfRemoved = {
     note("<b>This install was removed.</b> desk removed it today at 21:30, so your other installs refuse it. Threads on this machine keep running. To bring it back, pair it again by code with any of them.", "", "bad") +
     group(
       "",
-      hrow({ name: "meros-laptop", self: 1, line: `online since 08:31 · this machine · id ${sid(ID.laptop)}` }) + hrow({ name: "desk", state: "off", line: `refuses this install since 21:30 · tailnet · id ${sid(ID.desk)}` }) + hrow({ name: "vps", state: "off", line: `refuses this install since 21:31 · by address · id ${sid(ID.vps)}` }),
+      hrow({ name: "host-a", self: 1, line: `online since 08:31 · this machine · id ${sid(ID.laptop)}` }) + hrow({ name: "desk", state: "off", line: `refuses this install since 21:30 · tailnet · id ${sid(ID.desk)}` }) + hrow({ name: "vps", state: "off", line: `refuses this install since 21:31 · by address · id ${sid(ID.vps)}` }),
     ),
 };
 const TERM_ROT = term(`<span class="p">lab $</span> <b>fyrd rotate-key</b>
@@ -189,7 +189,7 @@ const cSources = wide(
   "Where Fyr looks · every state of a source",
   group(
     "Tailnet",
-    row("Tailnet", "On · alexander@github · 5 nodes, 4 run Fyr") +
+    row("Tailnet", "On · owner@github · 5 nodes, 4 run Fyr") +
       row("Tailnet", "Off: tailscaled does not answer on this machine. Fyr looks on the LAN and at the addresses you gave.") +
       row("Tailnet", "Signed out: Tailscale runs here but is not logged in.") +
       row("Tailnet", '<span class="err">Could not ask tailscaled: permission denied on its socket. Last answer 20:12.</span>', "", "bad"),
@@ -210,7 +210,7 @@ const cAway = hostPage({
   end: pst("Offline"),
   body:
     note("<b>No address of vps answers from this network.</b> It may be up and only out of reach from here. Add an address that works from this network, or wait until this machine is back on a network that reaches it.", btn("Add by address…"), "warn") +
-    group("Identity", idrow(ID.vps) + row("Paired by code", "9 Nov 14:20, on meros-laptop. desk learned it from meros-laptop.")) +
+    group("Identity", idrow(ID.vps) + row("Paired by code", "9 Nov 14:20, on host-a. desk learned it from host-a.")) +
     group("Addresses", arow("vps.example.net:7778", "By address · no answer since 19:40") + arow("192.168.40.12:7778", "A LAN this machine is not on · last answered 12 Nov"), "Fyr dials whichever address answers with this key."),
 });
 const cStale = hostPage({
@@ -223,9 +223,9 @@ const cStale = hostPage({
 const cStaleNote = wide(
   "The Hosts page of an install that is behind, and of one that waits for it",
   note("<b>This install's list may be old.</b> It has reached none of your other installs for 3 days. A removal made elsewhere is not known here.", "", "warn") +
-    group("", R.desk + hrow({ name: "meros-laptop", state: "off", line: `offline since 13 Nov 18:02 · tailnet and LAN · id ${sid(ID.laptop)}` }) + hrow({ name: "vps", state: "off", line: `offline since 13 Nov 18:02 · by address · id ${sid(ID.vps)}` })) +
-    lab("On desk, after a removal that meros-server has not heard") +
-    group("", hrow({ name: "meros-server", state: "off", line: `offline since 19:40 · has not heard that meros-laptop is removed · id ${sid(ID.server)}` })),
+    group("", R.desk + hrow({ name: "host-a", state: "off", line: `offline since 13 Nov 18:02 · tailnet and LAN · id ${sid(ID.laptop)}` }) + hrow({ name: "vps", state: "off", line: `offline since 13 Nov 18:02 · by address · id ${sid(ID.vps)}` })) +
+    lab("On desk, after a removal that host-b has not heard") +
+    group("", hrow({ name: "host-b", state: "off", line: `offline since 19:40 · has not heard that host-a is removed · id ${sid(ID.server)}` })),
   560,
 );
 const cMany = {
@@ -248,7 +248,7 @@ const cLoad = wide(
   520,
 );
 const revokeAsk = ask("Revoke… on another device", "Revoke Pixel 9 · Chrome?", "It is signed out at once and gets no more notifications. Pair it again with Add a device.", "Revoke", 1) + ask("Revoke… on the device you are using", "Revoke this device?", "This signs out the browser you are using now. To get back in you need another paired device, or the browser on desk itself.", "Revoke this device", 1);
-const removeAsk = ask("Remove… on a host's page", "Remove meros-laptop?", `Every install refuses <span class="mono">${ID.laptop}</span> once it has heard. Its threads here show as last read for 30 days. Only a new pairing by code brings it back.`, "Remove", 1);
+const removeAsk = ask("Remove… on a host's page", "Remove host-a?", `Every install refuses <span class="mono">${ID.laptop}</span> once it has heard. Its threads here show as last read for 30 days. Only a new pairing by code brings it back.`, "Remove", 1);
 const trustAsk = ask("Trust B7LA… (slice 2, a reinstall on your tailnet)", "Trust B7LA as lab?", `lab was <span class="mono">${ID.labOld}</span>. It becomes <span class="mono">${ID.labNew}</span>, and the old id is removed on every install.`, "Trust B7LA");
 const blockAsk = ask("Block B7LA", "Block B7LA?", "Fyr stops dialling it and stops showing it. You find it under Ignored. lab stays as it was.", "Block", 1);
 
@@ -299,7 +299,7 @@ render({
     { h: `B9b. The new device, the gates, Revoke ${s(5)}`, why: "After the scan the phone names itself. An unpaired or revoked browser gets a page with no app and no data.", raw: ph("New phone · after the scan", gate("ask")) + ph("Any browser that is not paired", gate("not")) + ph("A revoked device, at its next request", gate("out")) + wide("Added, and a code that ended", lab("Added") + addDevice("done").body + lab("Ended") + addDevice("ended").body, 520) + revokeAsk },
 
     { h: `C1. Removal: on the install that removed ${s(6)}`, why: "After Remove the page says how far the news has spread. The removed install moves to its own group.", page: cRemoved, phonePage: cRemovedHost, phoneCap: "Phone · the removed host's page" },
-    { h: `C2. Removal: on the other installs, and on the removed machine ${s(6)}`, why: "Left: any other install says who removed what. Right: the removed machine says so at the top of Hosts, counts it in the nav, and offers the way back.", raw: cElsewhere + frame("Desktop · on meros-laptop itself", desk(cSelfRemoved), "bd-desk") },
+    { h: `C2. Removal: on the other installs, and on the removed machine ${s(6)}`, why: "Left: any other install says who removed what. Right: the removed machine says so at the top of Hosts, counts it in the nav, and offers the way back.", raw: cElsewhere + frame("Desktop · on host-a itself", desk(cSelfRemoved), "bd-desk") },
     { h: `C3. A new key ${s(6)}`, why: "fyrd rotate-key signs the change with the old key, so the others accept it with no question. It is calm: a tag for a week and a line in the history. Compare A4, where nothing vouches for the new id.", page: cRotHost, desktop: false, raw: frame("Desktop · lab after its key changed", desk(cRotHost), "bd-desk") + cRotRows },
     { h: `C4. No other install ${s(3)}`, why: "The one time Pair… is the primary button. The sources say why nothing is found.", page: bEmpty },
     { h: `C5. A source that is off, blocked or failing ${s(4)}`, why: "No tailnet, a network that drops mDNS, an address that stopped answering. Each says what Fyr does instead.", raw: cSources },

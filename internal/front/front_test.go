@@ -177,8 +177,8 @@ func (s sse) next(t *testing.T) (string, string) {
 // comes back to the browser on the front's state and stream, stamped with the
 // host's name.
 func TestFrontCommandAndStateRoundTrip(t *testing.T) {
-	h := newHost(t, "meros-laptop")
-	fs := newFront(t, HostConfig{Name: "meros-laptop", URL: h.hs.URL})
+	h := newHost(t, "host-a")
+	fs := newFront(t, HostConfig{Name: "host-a", URL: h.hs.URL})
 	online(t, fs.URL, 1)
 
 	resp, err := http.Get(fs.URL + "/api/stream")
@@ -208,7 +208,7 @@ func TestFrontCommandAndStateRoundTrip(t *testing.T) {
 		var d map[string]any
 		json.Unmarshal([]byte(data), &d)
 		if d["id"] == id {
-			if d["host"] != "meros-laptop" || d["title"] != "hi" {
+			if d["host"] != "host-a" || d["title"] != "hi" {
 				t.Fatalf("streamed thread: %s", data)
 			}
 			break
@@ -218,7 +218,7 @@ func TestFrontCommandAndStateRoundTrip(t *testing.T) {
 	if s.BuildID != "front-build" || len(s.Actions) < 10 {
 		t.Fatalf("state envelope: %+v", s)
 	}
-	if d := threadOf(s, id); d == nil || d["host"] != "meros-laptop" {
+	if d := threadOf(s, id); d == nil || d["host"] != "host-a" {
 		t.Fatalf("state thread: %v", d)
 	}
 
@@ -278,8 +278,8 @@ func TestFrontRoutesToTheThreadsHost(t *testing.T) {
 // SPEC 0.5 V0.51: when a host goes away the front keeps its last threads,
 // marks them hostOffline and read-only; when it returns the mark clears.
 func TestFrontMarksOfflineHost(t *testing.T) {
-	h := newHost(t, "meros-laptop")
-	fs := newFront(t, HostConfig{Name: "meros-laptop", URL: h.hs.URL})
+	h := newHost(t, "host-a")
+	fs := newFront(t, HostConfig{Name: "host-a", URL: h.hs.URL})
 	online(t, fs.URL, 1)
 	_, rep := post(t, fs.URL+"/api/command", `{"commandId":"c1","action":"thread.create","args":{"cwd":"/tmp","text":"hi"}}`)
 	id, _ := rep["threadId"].(string)
@@ -305,11 +305,11 @@ func TestFrontMarksOfflineHost(t *testing.T) {
 		t.Fatalf("cached thread lost its data: %v", d)
 	}
 	s := getState(t, fs.URL)
-	if len(s.Hosts) != 1 || s.Hosts[0]["online"] != false || s.Hosts[0]["name"] != "meros-laptop" {
+	if len(s.Hosts) != 1 || s.Hosts[0]["online"] != false || s.Hosts[0]["name"] != "host-a" {
 		t.Fatalf("hosts: %v", s.Hosts)
 	}
 	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"c2","action":"thread.rename","threadId":"`+id+`","args":{"title":"x"}}`)
-	if code != 503 || !strings.Contains(rep["error"].(string), "meros-laptop is offline") {
+	if code != 503 || !strings.Contains(rep["error"].(string), "host-a is offline") {
 		t.Fatalf("command to an offline host: %d %v", code, rep)
 	}
 	if r, _ := http.Get(fs.URL + "/api/threads/" + id + "/events"); r.StatusCode != 503 {
@@ -345,8 +345,8 @@ func TestFrontServesClientAndGuards(t *testing.T) {
 // SPEC 0.5 V0.58: project.delete through the front reaches the project's
 // host, and the front drops the project from its state.
 func TestFrontDropsDeletedProject(t *testing.T) {
-	h := newHost(t, "meros-laptop")
-	fs := newFront(t, HostConfig{Name: "meros-laptop", URL: h.hs.URL})
+	h := newHost(t, "host-a")
+	fs := newFront(t, HostConfig{Name: "host-a", URL: h.hs.URL})
 	online(t, fs.URL, 1)
 	projects := func() []any {
 		resp, err := http.Get(fs.URL + "/api/state")
@@ -360,7 +360,7 @@ func TestFrontDropsDeletedProject(t *testing.T) {
 		json.NewDecoder(resp.Body).Decode(&s)
 		return s.Projects
 	}
-	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p1","action":"project.create","args":{"name":"Hemmet"}}`)
+	code, rep := post(t, fs.URL+"/api/command", `{"commandId":"p1","action":"project.create","args":{"name":"Garden"}}`)
 	res, _ := rep["result"].(map[string]any)
 	pid, _ := res["id"].(string)
 	if code != 200 || pid == "" {

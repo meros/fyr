@@ -98,7 +98,7 @@ func TestScratchThread(t *testing.T) {
 	if t2, _ := h.e.Thread(r2.ThreadID); t2.Cwd == th.Cwd {
 		t.Fatal("two threads share a scratch folder")
 	}
-	lbl := h.cmd("project.create", "", core.Args{"name": "Hemmet"})
+	lbl := h.cmd("project.create", "", core.Args{"name": "Garden"})
 	pid := lbl.Result.(map[string]any)["id"].(string)
 	r3 := h.cmd("thread.create", "", core.Args{"text": "", "projectId": pid, "attachments": []any{}})
 	if r3.OK {

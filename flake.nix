@@ -85,11 +85,11 @@
             tailnet.enable = true; scanRoots = [ "~/git" ];
             quota.claudeDeepseek = { kind = "deepseek"; keyFile = "/run/secrets/deepseek"; };
           };
-          # V0.54: meros-server as docs/API-v0.md configures it: a host on its
+          # V0.54: host-b as docs/API-v0.md configures it: a host on its
           # tailnet address and the phone's front, which also lists the laptop.
           server = mkSys {
             tailnet.enable = true; hostPort = 7778;
-            hosts = [ { name = "meros-laptop"; url = "http://meros-laptop:7778"; } ];
+            hosts = [ { name = "host-a"; url = "http://host-a:7778"; } ];
           };
           sconf = builtins.fromJSON server.config.environment.etc."fyr/config.json".text;
           fyr = sys.config.systemd.services.fyr.serviceConfig;
@@ -105,7 +105,7 @@
         # V0.51: the default role (both) writes no role, hosts or hostListen.
         assert !(conf ? role) && !(conf ? hosts) && !(conf ? hostListen);
         assert sconf.hostListen == "tailnet:7778" && !(sconf ? role);
-        assert sconf.hosts == [ { name = "meros-laptop"; url = "http://meros-laptop:7778"; } ];
+        assert sconf.hosts == [ { name = "host-a"; url = "http://host-a:7778"; } ];
         assert server.config.networking.firewall.interfaces.tailscale0.allowedTCPPorts == [ 7778 ];
         assert builtins.elem "tailscaled.service" server.config.systemd.services.fyr.after;
         assert !(builtins.elem "tailscaled.service" sys.config.systemd.services.fyr.after);

@@ -104,11 +104,11 @@ func TestT3Adopt(t *testing.T) {
 		`{"type":"user","message":{"role":"user","content":"Fix the lasso"},"timestamp":"2026-11-13T10:00:00Z"}
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Fixed the lasso."}]},"timestamp":"2026-11-13T10:00:05Z"}
 `), 0o644)
-	x := T3{E: e, Home: home, Profiles: func() []string { return []string{"claudeAgent", "claudeNorban"} }}
+	x := T3{E: e, Home: home, Profiles: func() []string { return []string{"claudeAlt", "claudeAcme"} }}
 	at := time.Date(2026, 11, 13, 11, 0, 0, 0, time.UTC)
 	cs := []t3.Candidate{
 		{T3ID: "a", Title: "A", Cwd: "/src/app", Profile: "gone", SessionID: "s1", PRURL: "https://github.com/acme/app/pull/4", UpdatedAt: at},
-		{T3ID: "b", Title: "B", Cwd: "/src/app", Profile: "claudeNorban", SessionID: "s2", UpdatedAt: at},
+		{T3ID: "b", Title: "B", Cwd: "/src/app", Profile: "claudeAcme", SessionID: "s2", UpdatedAt: at},
 	}
 	if n, err := x.adopt(cs, []string{"a", "b"}); err != nil || n != 2 {
 		t.Fatalf("adopt: %d %v", n, err)
@@ -121,10 +121,10 @@ func TestT3Adopt(t *testing.T) {
 		got[d.T3ID] = d
 	}
 	a, b := got["a"], got["b"]
-	if a.Thread == nil || a.Profile != "claudeAgent" || a.Source != "t3" || a.PR == nil || a.PR.Number != 4 || a.Summary != "Fixed the lasso." {
+	if a.Thread == nil || a.Profile != "claudeAlt" || a.Source != "t3" || a.PR == nil || a.PR.Number != 4 || a.Summary != "Fixed the lasso." {
 		t.Fatalf("a: %+v", a.Thread)
 	}
-	if b.Thread == nil || b.Profile != "claudeNorban" || b.PR != nil {
+	if b.Thread == nil || b.Profile != "claudeAcme" || b.PR != nil {
 		t.Fatalf("b: %+v", b.Thread)
 	}
 	// #48: adopted through the path, it keeps T3's time and its history's.

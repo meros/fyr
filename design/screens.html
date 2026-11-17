@@ -435,7 +435,7 @@ function PhoneApprove() {
       h('div',{className:'b'},
         h('div',{className:'fy-q-text'},'Merge pull request #4170?'),
         h('div',{className:'cmd'},'gh pr merge 4170 --squash --delete-branch'),
-        h('div',{className:'kv'}, h('span',null,'host'), h('b',null,'desk'), h('span',null,'directory'), h('b',null,'~/norban/web'), h('span',null,'checks'), h('b',null,'14/14 passed'), h('span',null,'policy'), h('b',null,'merge → verified (v3)'), h('span',null,'expires'), h('b',null,'in 23 h · then denied')),
+        h('div',{className:'kv'}, h('span',null,'host'), h('b',null,'desk'), h('span',null,'directory'), h('b',null,'~/acme/web'), h('span',null,'checks'), h('b',null,'14/14 passed'), h('span',null,'policy'), h('b',null,'merge → verified (v3)'), h('span',null,'expires'), h('b',null,'in 23 h · then denied')),
         h(F.Button,{variant:'primary',className:'big'},'Approve with Face ID'),
         h(F.Button,{className:'big'},'Deny'))),
     h('div',{className:'pfoot'}, h('b',null,'Inbox'), h('span',null,'Search'), h('span',null,'Hosts')));
@@ -444,7 +444,7 @@ function Coord() {
   var step = function(s, text, st){ return h('div',{className:'step'}, h('span',{className:'fy-s-'+s}, h(F.StatusBadge,{state:s,label:' '})), h('span',null,text), h('span',{className:'s'},st)); };
   return h('div',{className:'coord'},
     h('div',{className:'cmain'},
-      h('div',{style:{display:'flex',alignItems:'center',gap:'10px'}}, h('span',{className:'title',style:{font:'600 20px/28px var(--font-sans)'}},'PR babysitter · norban'), h(F.StatusBadge,{state:'working',label:'Running'}), h('span',{style:{marginLeft:'auto',display:'flex',gap:'8px'}}, h(F.Button,{variant:'ghost'},'Wake'), h(F.Button,{variant:'danger'},'Stop'))),
+      h('div',{style:{display:'flex',alignItems:'center',gap:'10px'}}, h('span',{className:'title',style:{font:'600 20px/28px var(--font-sans)'}},'PR babysitter · acme'), h(F.StatusBadge,{state:'working',label:'Running'}), h('span',{style:{marginLeft:'auto',display:'flex',gap:'8px'}}, h(F.Button,{variant:'ghost'},'Wake'), h(F.Button,{variant:'danger'},'Stop'))),
       h('div',{className:'h2'},'Plan'),
       h('div',null, step('settled','Rebase #4170 on main','done 09:12'), step('working','Fix lint in #4177 (steering Listing cards v2)','running'), step('waiting','#4165 waits for review from a person','since 08:40'), step('seen','Nightly: check stale PRs older than 3 days','06:00')),
       h('div',{className:'h2'},'Proposal · needs you'),
@@ -459,7 +459,7 @@ function Coord() {
       h('div',{className:'h2'},'Budget today'),
       h('div',null, h('div',{className:'meter'}, h('i')), h('div',{className:'grant',style:{marginTop:'6px'}},'380k of 1M tokens · 2 of 3 threads')),
       h('div',{className:'h2'},'Grant'),
-      h('div',{className:'grant'}, h('div',null,'Repos ', h('b',null,'norban/web, norban/api')), h('div',null,'Actions ', h('b',null,'start, send, snooze, link')), h('div',null,'Mode ceiling ', h('b',null,'auto')), h('div',null,'Never ', h('b',null,'approve, merge, widen scope')), h('div',null,'Signed ', h('b',null,'Face ID · expires 13 Dec')))));
+      h('div',{className:'grant'}, h('div',null,'Repos ', h('b',null,'acme/web, acme/api')), h('div',null,'Actions ', h('b',null,'start, send, snooze, link')), h('div',null,'Mode ceiling ', h('b',null,'auto')), h('div',null,'Never ', h('b',null,'approve, merge, widen scope')), h('div',null,'Signed ', h('b',null,'Face ID · expires 13 Dec')))));
 }
 function Stage() {
   return h('div',{className:'stage'},

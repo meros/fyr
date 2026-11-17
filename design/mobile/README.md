@@ -137,7 +137,7 @@ The host pushes when a thread enters `asking` or `failed` (V0.15). Payload `{tit
 | asking, questions | thread title | `2 questions · Which gesture should close the filter sheet?` or `Question · <text>` |
 | asking, approval | thread title | `Approval · Allow Bash: yarn test src/map/lasso --run` |
 | asking, effect | thread title | `Fyr action · Merge #4170 with squash?` |
-| failed | thread title | `Failed · API error after 14 min · norban/web` |
+| failed | thread title | `Failed · API error after 14 min · acme/web` |
 | done, blocked (M4 batch, after 10 min away) | `Fyr` | `Since 14:02: 3 done · 1 blocked` |
 
 Rules:

@@ -47,29 +47,29 @@ test("the palette tokens in app.css match the palette", () => {
 });
 
 test("monogram: 1 or 2 letters", () => {
-  assert.equal(monogram("norban/web"), "NW");
+  assert.equal(monogram("acme/web"), "AW");
   assert.equal(monogram("fyr"), "F");
-  assert.equal(monogram("Bokföring åt Övik"), "BÅ");
+  assert.equal(monogram("Bokföring åt Åsa"), "BÅ");
   assert.equal(monogram("öl-listan"), "ÖL");
   assert.equal(monogram("—"), "?");
 });
 
 test("icons: emoji, curated line icons (T3 names too), else the monogram", () => {
-  assert.deepEqual(resolveIcon({ kind: "emoji", value: "🏡 hem" }, "Hemmet"), { kind: "emoji", value: "🏡" });
+  assert.deepEqual(resolveIcon({ kind: "emoji", value: "🏡 hem" }, "Garden"), { kind: "emoji", value: "🏡" });
   // The host omits an empty value (Go omitempty): {"kind":"monogram"} must not crash.
-  for (const kind of ["monogram", "emoji", "line"] as const) assert.deepEqual(resolveIcon(JSON.parse(`{"kind":"${kind}"}`), "norban"), { kind: "monogram", value: "N" });
+  for (const kind of ["monogram", "emoji", "line"] as const) assert.deepEqual(resolveIcon(JSON.parse(`{"kind":"${kind}"}`), "acme"), { kind: "monogram", value: "A" });
   assert.deepEqual(resolveIcon({ kind: "line", value: "FolderGit2" }, "x"), { kind: "line", value: "folder-git-2" });
   assert.deepEqual(resolveIcon({ kind: "line", value: "Home" }, "x"), { kind: "line", value: "house" });
-  assert.deepEqual(resolveIcon({ kind: "line", value: "no-such-icon" }, "norban/infra"), { kind: "monogram", value: "NI" });
+  assert.deepEqual(resolveIcon({ kind: "line", value: "no-such-icon" }, "acme/infra"), { kind: "monogram", value: "AI" });
   assert.deepEqual(resolveIcon(undefined, "fyr"), { kind: "monogram", value: "F" });
   assert.deepEqual(resolveIcon({ kind: "emoji", value: "  " }, "fyr"), { kind: "monogram", value: "F" });
   assert.equal(lineName("bar_chart"), "chart-column");
 });
 
 const projects: Project[] = [
-  { id: "p_web", name: "norban/web", folder: "/home/o/src/web", lastUsed: "2026-11-14T10:00:00Z", profile: "claude", model: "sonnet" },
-  { id: "p_fyr", name: "fyr", folder: "/home/meros/git/fyr", lastUsed: "2026-11-10T10:00:00Z" },
-  { id: "p_home", name: "Hemmet", lastUsed: "2026-11-13T10:00:00Z" },
+  { id: "p_web", name: "acme/web", folder: "/home/o/src/web", lastUsed: "2026-11-14T10:00:00Z", profile: "claude", model: "sonnet" },
+  { id: "p_fyr", name: "fyr", folder: "/home/owner/git/fyr", lastUsed: "2026-11-10T10:00:00Z" },
+  { id: "p_home", name: "Garden", lastUsed: "2026-11-13T10:00:00Z" },
   { id: "p_old", name: "archive" },
 ];
 
@@ -85,13 +85,13 @@ test("subtitles, and search that filters without reordering (V0.121: amends V0.3
 
 test("project filter and a thread's project", () => {
   const ts = {
-    a: thread("a", "seen", "seen", { project: "norban/web", projectId: "p_web" }),
-    b: thread("b", "seen", "seen", { project: "Hemmet", projectId: "p_home" }),
-    c: thread("c", "seen", "seen", { project: "norban/web" }),
+    a: thread("a", "seen", "seen", { project: "acme/web", projectId: "p_web" }),
+    b: thread("b", "seen", "seen", { project: "Garden", projectId: "p_home" }),
+    c: thread("c", "seen", "seen", { project: "acme/web" }),
   };
   assert.deepEqual(Object.keys(filterByProject(ts, "p_web", projects)).sort(), ["a", "c"], "by id, else by name");
   assert.equal(filterByProject(ts, null, projects), ts);
-  assert.equal(projectOf(ts.b, projects)?.name, "Hemmet");
+  assert.equal(projectOf(ts.b, projects)?.name, "Garden");
 });
 
 test("picking a project fills its folder and default profile and model", () => {
@@ -101,7 +101,7 @@ test("picking a project fills its folder and default profile and model", () => {
 });
 
 test("started-by and cross-thread messages", () => {
-  const parent = thread("p", "working", "working", { title: "Map perf", project: "norban/web", projectId: "p_web" });
+  const parent = thread("p", "working", "working", { title: "Map perf", project: "acme/web", projectId: "p_web" });
   const ts = { p: parent };
   assert.deepEqual(startedBy({ parent: "p" }, ts), { id: "p", title: "Map perf" });
   assert.deepEqual(startedBy({ parent: "gone" }, ts), { id: "gone", title: "another thread" });
@@ -112,7 +112,7 @@ test("started-by and cross-thread messages", () => {
 
 test("SPEC 0.5 V0.55: New project from this thread starts from the host's folder, else a name only", async () => {
   const { newProjectDraft } = await import("../src/projects.ts");
-  assert.deepEqual(newProjectDraft({ newProject: { name: "Hemmet", folder: "/home/o/Hemmet" } }), { name: "Hemmet", folder: "/home/o/Hemmet" });
+  assert.deepEqual(newProjectDraft({ newProject: { name: "Garden", folder: "/home/o/Garden" } }), { name: "Garden", folder: "/home/o/Garden" });
   // A scratch folder, the home folder or a folder a project has: just a name field.
   assert.deepEqual(newProjectDraft({}), { name: "", folder: "" });
 });
@@ -137,18 +137,18 @@ test("SPEC 0.5 V0.30, V0.61: the picker's first row names what it makes", async 
   assert.equal(newRowLabel("", false, true), "New project from this thread");
   assert.equal(newRowLabel("", false, false), "New project");
   assert.equal(newRowLabel("hem", false, true), "New project “hem”", "a partial match still names the new project");
-  assert.equal(newRowLabel("Hemmet", true, true), "New project from this thread", "an exact name is the existing project");
+  assert.equal(newRowLabel("Garden", true, true), "New project from this thread", "an exact name is the existing project");
   assert.equal(newRowLabel("Kök ", false, false), "New project “Kök”");
 });
 
 test("SPEC 0.5 V0.61: Enter picks an existing project only by its exact name; else it makes the new one", async () => {
   const { enterAction, matchProjects } = await import("../src/projects.ts");
-  const list = [{ id: "p1", name: "fyr", folder: "/home/me/git/fyr" }, { id: "p2", name: "Hemmet" }] as Project[];
+  const list = [{ id: "p1", name: "fyr", folder: "/home/me/git/fyr" }, { id: "p2", name: "Garden" }] as Project[];
   const enter = (q: string, canCreate = true) => enterAction(list, matchProjects(list, q), q, canCreate);
   assert.deepEqual(enter("fyr2"), { create: "fyr2" });
   assert.deepEqual(enter("fy"), { create: "fy" }, "a partial match is not picked");
   assert.deepEqual(enter("git"), { create: "git" }, "a folder match is not picked");
-  assert.equal((enter(" HEMMET ") as { pick: Project }).pick.id, "p2");
+  assert.equal((enter(" GARDEN ") as { pick: Project }).pick.id, "p2");
   assert.equal((enter("fy", false) as { pick: Project }).pick.id, "p1", "the filter has no New project row: first match");
   assert.equal(enter("   "), null);
 });
@@ -167,7 +167,7 @@ test("SPEC 0.5 V0.30, V0.121: a new thread starts on the inbox filter, else the 
 
 test("a deleted project leaves the store (V0.58)", () => {
   const a = { id: "p1", name: "App" } as Project;
-  const b = { id: "p2", name: "Hemmet" } as Project;
+  const b = { id: "p2", name: "Garden" } as Project;
   let s = upsertProject(upsertProject(initialStore(), a), b);
   s = upsertProject(s, { id: "p1", deleted: true } as unknown as Project);
   assert.deepEqual(s.projects.map((p) => p.id), ["p2"]);
@@ -230,13 +230,13 @@ test("each save sends only its own field", () => {
 
 test("V0.121: the Settings list keeps the given order (the owner's), drops unsaved projects, filters over name and folder", () => {
   const ps = [
-    { id: "b", name: "beta", folder: "/home/u/src/norban/web" },
+    { id: "b", name: "beta", folder: "/home/u/src/acme/web" },
     { id: "a", name: "Alpha", folder: "/home/u/fyr" },
     { id: "", name: "unsaved" },
-    { id: "c", name: "norban/api" },
+    { id: "c", name: "acme/api" },
   ] as Project[];
   assert.deepEqual(settingsProjects(ps).map((p) => p.id), ["b", "a", "c"]);
-  assert.deepEqual(searchProjects(settingsProjects(ps), "NORBAN").map((p) => p.id), ["b", "c"], "the name or the folder");
+  assert.deepEqual(searchProjects(settingsProjects(ps), "ACME").map((p) => p.id), ["b", "c"], "the name or the folder");
   assert.deepEqual(searchProjects(settingsProjects(ps), " ").map((p) => p.id), ["b", "a", "c"]);
   assert.equal(projectSearchLine(5, 43), "5 of 43 match.");
   assert.equal(projectSearchLine(0, 43), "None of 43 match.");

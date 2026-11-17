@@ -15,10 +15,10 @@ e = html.escape
 # ---------------------------------------------------------------- content
 LONG140 = ("Investigate why the nightly Playwright run on the staging cluster times out "
            "only when map tiles come from the secondary CDN region again, EU")
-LONGPROJ = "norban-platform-infrastructure-terraform-modules-eu-north-1"
+LONGPROJ = "acme-platform-infrastructure-terraform-modules-eu-north-1"
 BRANCH = "feature/very-long-branch-name-without-any-spaces-that-keeps-going-2026-11-14-final"
-URL = "https://github.com/NorbanDev/norban-web/actions/runs/12345678901/job/98765432109?check_suite_focus=true"
-Q6 = ("The staging deploy for norban/web fails at the database migration step because the new column "
+URL = "https://github.com/acme/web/actions/runs/12345678901/job/98765432109?check_suite_focus=true"
+Q6 = ("The staging deploy for acme/web fails at the database migration step because the new column "
       "listings.lasso_polygon is NOT NULL and 18402 existing rows have no value. I can backfill it from the "
       "saved search areas, which takes about 40 minutes on staging and locks the table for writes, or I can "
       "make the column nullable now and backfill in a background job after the deploy. The second option keeps "
@@ -32,27 +32,27 @@ NORMAL = dict(
     work_hint="1 waiting for a build slot",
     snooze_hint="next: tomorrow 06:00",
     needs=[
-        dict(st="a", title="Fix map lasso on mobile", proj="norban/web", pr=("ok", "#1234 ✓"), time="2 min",
+        dict(st="a", title="Fix map lasso on mobile", proj="acme/web", pr=("ok", "#1234 ✓"), time="2 min",
              lead="2 questions", meta="Which gesture should close the filter sheet?", sel=True),
-        dict(st="f", title="Speed up e2e suite", proj="norban/web", pr=None, time="9 min",
+        dict(st="f", title="Speed up e2e suite", proj="acme/web", pr=None, time="9 min",
              lead="API error", meta="stopped after 14 min · r to retry"),
-        dict(st="b", title="Listing cards v2", proj="norban/web", pr=("fail", "#88 ✗ CI"), time="21 min",
+        dict(st="b", title="Listing cards v2", proj="acme/web", pr=("fail", "#88 ✗ CI"), time="21 min",
              lead="CI failed", meta="lint: 2 errors in CardGrid.tsx"),
-        dict(st="d", title="Triage sprint issues", proj="norban/ops", pr=None, time="1 h",
+        dict(st="d", title="Triage sprint issues", proj="acme/ops", pr=None, time="1 h",
              lead="Done", meta="Filed 6 issues, closed 2 duplicates"),
     ],
     work=[
-        dict(st="w", title="Babysit PR #4170", proj="norban/web", time="3 min", tool="Bash git rebase origin/main", subs="0", key="1"),
-        dict(st="w", title="Map perf", proj="norban/web", time="12 min", tool="Bash yarn vitest src/map", subs="2", key="2"),
-        dict(st="h", title="Deploy check", proj="norban/infra", time="9 min", tool="waiting on monitor: deploy", subs="0", key="3"),
+        dict(st="w", title="Babysit PR #4170", proj="acme/web", time="3 min", tool="Bash git rebase origin/main", subs="0", key="1"),
+        dict(st="w", title="Map perf", proj="acme/web", time="12 min", tool="Bash yarn vitest src/map", subs="2", key="2"),
+        dict(st="h", title="Deploy check", proj="acme/infra", time="9 min", tool="waiting on monitor: deploy", subs="0", key="3"),
         dict(st="w", title="Search index", proj="fyr", time="22 min", tool="Read src/index/build.rs", subs="1", key="4"),
     ],
     seen=[
-        dict(st="s", title="Lasso polygon perf", proj="norban/web", pr=("merged", "merged"), time="14:20", meta="PR merged"),
+        dict(st="s", title="Lasso polygon perf", proj="acme/web", pr=("merged", "merged"), time="14:20", meta="PR merged"),
         dict(st="s", title="Nix flake update", proj="dotfiles", pr=None, time="13:05", meta="seen"),
     ],
     thread=dict(
-        title="Fix map lasso on mobile", proj="norban/web", model="sonnet 5.5", branch="fix/map-lasso-mobile",
+        title="Fix map lasso on mobile", proj="acme/web", model="sonnet 5.5", branch="fix/map-lasso-mobile",
         pr=("ok", "#1234 ✓"), st="a", changes="+42 −18", started="13:58", elapsed="9 min",
         convo=[
             ("user", "14:00", "The lasso tool closes the filter sheet on iPhone mini. Fix it and open a PR."),
@@ -82,9 +82,9 @@ STRESS = dict(
         dict(st="a", title="Fix", proj="a", pr=None, time="0 s", lead="1 question", meta="Ok?", sel=True),
         dict(st="f", title=LONG140, proj=LONGPROJ, pr=("fail", "#12345 ✗ CI"), time="59 min",
              lead="API error", meta=BRANCH),
-        dict(st="b", title=URL, proj="norban/web", pr=("merged", "merged"), time="12 d",
+        dict(st="b", title=URL, proj="acme/web", pr=("merged", "merged"), time="12 d",
              lead="CI failed", meta=URL),
-        dict(st="d", title="Ändra översättningar för sökfältet på kartan så att å, ä och ö visas rätt", proj="norban/web", pr=("ok", "#7 ✓"), time="Mon 06:00",
+        dict(st="d", title="Ändra översättningar för sökfältet på kartan så att å, ä och ö visas rätt", proj="acme/web", pr=("ok", "#7 ✓"), time="Mon 06:00",
              lead="Done", meta="Översättningarna är klara och granskade; 0 fel, 1234 strängar."),
     ],
     work=[

@@ -20,12 +20,12 @@ func TestRateLimitEventReachesQuota(t *testing.T) {
 	var gotProfile string
 	var gotInfo map[string]any
 	m := New(rlHost{}, Config{
-		Profile:     func(string) provider.Profile { return provider.Profile{ID: "claudeAgent"} },
+		Profile:     func(string) provider.Profile { return provider.Profile{ID: "claudeAlt"} },
 		OnRateLimit: func(p string, info map[string]any) { gotProfile, gotInfo = p, info },
 	})
 	s := &session{thread: "t1", digest: newDigest()}
 	m.handle(s, map[string]any{"type": "rate_limit_event", "rate_limit_info": map[string]any{"status": "allowed", "utilization": 0.4}})
-	if gotProfile != "claudeAgent" || gotInfo["utilization"] != 0.4 {
+	if gotProfile != "claudeAlt" || gotInfo["utilization"] != 0.4 {
 		t.Fatalf("got %q %v", gotProfile, gotInfo)
 	}
 }

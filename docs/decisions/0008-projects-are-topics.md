@@ -23,7 +23,7 @@ The owner asked for one data model and no special cases. Scratch folders, plain 
 Project   { id, name, color, icon, instructions, actions[], sources[]: Ref, archived }
 Workspace { id, host, path, provider, refs[]: Ref, branch?, base? }   // where one thread runs
 Thread    { …, workspace: Workspace.id, projectId?, projectManual }
-Ref       { kind, key }   // "folder", "meros-laptop:/home/meros/nixos" · "repo", "github.com/meros/fyr"
+Ref       { kind, key }   // "folder", "host-a:/home/owner/nixos" · "repo", "github.com/meros/fyr"
 ```
 
 A **provider** is the only place where a kind of place has its own code:

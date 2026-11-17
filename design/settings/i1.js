@@ -100,16 +100,16 @@ const automation = {
 };
 
 const PROJECTS = [
-  { n: "Bokföring åt Övik", f: "~/ekonomi", c: 0, i: { mono: "BÅ", color: "brown" } },
+  { n: "Bokföring åt Åsa", f: "~/ekonomi", c: 0, i: { mono: "BÅ", color: "brown" } },
   { n: "dotfiles", f: "~/dotfiles", c: 1, i: { mono: "›_", color: "olive" } },
   { n: "Fyr", f: "~/git/fyr", c: 0, i: { img: "fyr.png", color: "brown" } },
-  { n: "Hemmet", f: "No folder: filed by hand", c: 1, i: { emoji: "🏡", color: "green" } },
+  { n: "Garden", f: "No folder: filed by hand", c: 1, i: { emoji: "🏡", color: "green" } },
   { n: "Map perf lab", f: "~/src/maplab", c: 0, i: { mono: "M", color: "blue" } },
-  { n: "norban-platform-infrastructure-terraform-modules", f: "~/src/norban-platform-infrastructure-terraform-modules", c: 3, i: { mono: "NP", color: "indigo" } },
-  { n: "norban/api", f: "~/src/norban/api", c: 0, i: { mono: "NA", color: "sky" } },
-  { n: "norban/infra", f: "~/src/norban/infra", c: 1, i: { mono: "NI", color: "slate" } },
-  { n: "norban/ops", f: "~/src/norban/ops", c: 2, i: { emoji: "🚀", color: "rose" } },
-  { n: "norban/web", f: "~/src/norban/web", c: 9, i: { mono: "NW", color: "teal" } },
+  { n: "acme-platform-infrastructure-terraform-modules", f: "~/src/acme-platform-infrastructure-terraform-modules", c: 3, i: { mono: "NP", color: "indigo" } },
+  { n: "acme/api", f: "~/src/acme/api", c: 0, i: { mono: "NA", color: "sky" } },
+  { n: "acme/infra", f: "~/src/acme/infra", c: 1, i: { mono: "NI", color: "slate" } },
+  { n: "acme/ops", f: "~/src/acme/ops", c: 2, i: { emoji: "🚀", color: "rose" } },
+  { n: "acme/web", f: "~/src/acme/web", c: 9, i: { mono: "NW", color: "teal" } },
 ];
 const plist = (list) =>
   `<div class="pls">${list.map((p) => `<button class="pli" style="--pc:var(--p-${p.i.color})">${pi(p.i)}<span class="plt"><span class="ell pln">${p.n}</span><span class="ell pls2">${p.f}</span></span><span class="plc">${p.c}</span></button>`).join("")}</div>`;
@@ -127,11 +127,11 @@ const time = (a, b) => `<span class="qt">${sel(a)}:${sel(b)}</span>`;
 const project = {
   nav: "projects",
   parent: "Projects",
-  title: "Hemmet",
+  title: "Garden",
   body: h`
-<div class="sbar" style="--pc:var(--p-green)">${pi({ emoji: "🏡", color: "green" }, 44)}<span class="plt"><span class="pln big">Hemmet</span><span class="pls2">No folder: filed by hand</span></span></div>
+<div class="sbar" style="--pc:var(--p-green)">${pi({ emoji: "🏡", color: "green" }, 44)}<span class="plt"><span class="pln big">Garden</span><span class="pls2">No folder: filed by hand</span></span></div>
 <div class="sg"><div class="sg-h">Identity</div><div class="sg-c">
-<div class="sr col"><label class="fld"><span>Name</span><input value="Hemmet"></label></div>
+<div class="sr col"><label class="fld"><span>Name</span><input value="Garden"></label></div>
 <div class="sr col"><div class="fld"><span>Colour</span><div class="swatches">${["slate", "blue", "sky", "teal", "green", "olive", "violet", "indigo", "rose", "brown"].map((c) => `<button class="sw${c === "green" ? " on" : ""}" style="--pc:var(--p-${c})" aria-label="${c}"></button>`).join("")}</div></div></div>
 <div class="sr col"><div class="fld"><span>Icon</span><div class="seg"><button>Image</button><button>Letters (H)</button><button class="on">Emoji</button><button>Icon</button></div><input value="🏡" style="max-width:90px;text-align:center"></div></div>
 </div><div class="sg-f">A project with a folder can be set up by an agent: it finds the logo and the real name, and fills in what you have not set.</div></div>
@@ -154,7 +154,7 @@ const hosts = {
   body: h`
 <div class="sg"><div class="sg-c">
 <div class="sr"><span class="sr-b"><span class="sr-t mono">desk</span><span class="sr-d">this host · online since 08:12</span></span></div>
-<div class="sr"><span class="sr-b"><span class="sr-t mono">meros-laptop</span><span class="sr-d">offline since 19:40 · its threads are read-only</span></span></div>
+<div class="sr"><span class="sr-b"><span class="sr-t mono">host-a</span><span class="sr-d">offline since 19:40 · its threads are read-only</span></span></div>
 </div></div>`,
 };
 
@@ -196,7 +196,7 @@ render({
   note: h`<ul>
 <li><b>One long page becomes seven short ones.</b> Today Settings is eight sections in one scroll (about 3 900 px on the phone; the desktop dialog shows a section and a half). Now: a nav with seven pages in three groups. On desktop the nav is the dialog's left column; on the phone the same nav is the Settings screen and a page is the next screen. One component, two placements; the reason for the difference is width.</li>
 <li><b>Order follows use.</b> Agents (providers, system agents, automation) first, then Work (projects, hosts), then This device. Auto-merge and Auto-deploy are one page, Automation: both are "Fyr acts without your press".</li>
-<li><b>A list row opens a page.</b> A provider no longer unfolds inside the list; it opens Providers / Claude. The project screen becomes Projects / Hemmet inside Settings on desktop too (today it is a second dialog).</li>
+<li><b>A list row opens a page.</b> A provider no longer unfolds inside the list; it opens Providers / Claude. The project screen becomes Projects / Garden inside Settings on desktop too (today it is a second dialog).</li>
 <li><b>The project page is grouped</b>: Identity (name, colour, icon), Threads (folder, default provider and model), Quiet hours. Today the nine fields are one column and Quiet hours sits between Name and Colour.</li>
 <li><b>Each nav row says the state</b> (3 providers, 1 needs a login; notifications off), so the phone's Settings screen is also a status page.</li>
 <li>Controls and words are still today's here. Iteration 2 does those.</li></ul>`,

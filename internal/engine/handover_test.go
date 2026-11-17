@@ -41,7 +41,7 @@ func newHandoverHarness(t *testing.T) *handoverHarness {
 	fake := []string{"FYR_FAKE_CLAUDE=1"}
 	profiles := map[string]provider.Profile{
 		"a":    {ID: "a", Name: "Claude", Binary: os.Args[0], Env: fake, ConfigDir: hh.dirA, DefaultModel: "model-a"},
-		"b":    {ID: "b", Name: "Claude (norban)", Binary: os.Args[0], Env: fake, ConfigDir: hh.dirB, Models: []string{"model-b", "model-b2"}, DefaultModel: "model-b"},
+		"b":    {ID: "b", Name: "Claude (acme)", Binary: os.Args[0], Env: fake, ConfigDir: hh.dirB, Models: []string{"model-b", "model-b2"}, DefaultModel: "model-b"},
 		"s":    {ID: "s", Name: "Same dir", Binary: os.Args[0], Env: append([]string{"CLAUDE_CONFIG_DIR=" + hh.dirA}, fake...)},
 		"x":    {ID: "x", Name: "No resume", Binary: os.Args[0], Env: append([]string{"FYR_FAKE_NORESUME=1"}, fake...), ConfigDir: hh.dirB},
 		"dead": {ID: "dead", Name: "Dead", Binary: filepath.Join(dir, "missing-binary")},

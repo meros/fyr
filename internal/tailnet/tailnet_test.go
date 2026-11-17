@@ -141,7 +141,7 @@ func TestSelfOfATaggedNodeNamesNoOwner(t *testing.T) {
 	}
 	defer ln.Close()
 	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"Self":{"UserID":7,"Tags":["tag:server"],"DNSName":"meros-server.tail.ts.net."},"User":{"7":{"LoginName":"meros-server"}}}`))
+		w.Write([]byte(`{"Self":{"UserID":7,"Tags":["tag:server"],"DNSName":"host-b.tail.ts.net."},"User":{"7":{"LoginName":"host-b"}}}`))
 	}))
 	login, _, err := Self(sock)
 	if err == nil || login != "" {

@@ -16,7 +16,7 @@ const zai: Profile = { id: "zai", name: "Z.ai", color: "#111", models: ["glm-5"]
 const hosts = [
   { name: "desk", online: true, since: iso(180), profiles: [claude] },
   { name: "lab", online: true, since: iso(40), profiles: [zai] },
-  { name: "meros-server", online: false, since: iso(25), profiles: [claude] },
+  { name: "host-b", online: false, since: iso(25), profiles: [claude] },
 ];
 const projects: Project[] = [
   { id: "p_d", name: "Desk project", folder: "/home/o/d", host: "desk" },
@@ -28,21 +28,21 @@ test("V0.132: the hosts to pick from, in the owner's order, this install and off
   assert.deepEqual(hostChoices(hosts, "lab"), [
     { name: "desk", label: "desk", online: true },
     { name: "lab", label: "lab (this install)", online: true },
-    { name: "meros-server", label: "meros-server (offline)", online: false },
+    { name: "host-b", label: "host-b (offline)", online: false },
   ]);
   assert.deepEqual(hostChoices([{ name: "desk", online: true }], "desk"), []);
   assert.deepEqual(hostChoices(undefined, "desk"), []);
 });
 
 test("V0.132: an offline host says so plainly; an online or unknown one says nothing", () => {
-  assert.equal(hostOfflineNote("meros-server", hosts, now), `meros-server is offline since ${dayTime(iso(25), now)}. Its folders cannot be read and nothing can be made on it until it is back; pick another host or wait.`);
+  assert.equal(hostOfflineNote("host-b", hosts, now), `host-b is offline since ${dayTime(iso(25), now)}. Its folders cannot be read and nothing can be made on it until it is back; pick another host or wait.`);
   assert.equal(hostOfflineNote("lab", hosts, now), "");
   assert.equal(hostOfflineNote("", hosts, now), "");
 });
 
 test("V0.132: the picker's reads name the host", () => {
   assert.equal(fsQuery("/api/fs/list?path=%2Fhome", "lab"), "/api/fs/list?path=%2Fhome&host=lab");
-  assert.equal(fsQuery("/api/fs/recent", "meros server"), "/api/fs/recent?host=meros%20server");
+  assert.equal(fsQuery("/api/fs/recent", "host b"), "/api/fs/recent?host=host%20b");
   assert.equal(fsQuery("/api/fs/recent", undefined), "/api/fs/recent");
   assert.equal(fsQuery("/api/fs/recent", ""), "/api/fs/recent");
 });
@@ -68,7 +68,7 @@ test("V0.132, V0.139: picking a host drops a folder of the old one; its provider
   assert.equal(a.host, "lab");
   assert.equal(a.cwd, "/home/o/x");
   // An offline host can be picked; the form says why it cannot start (hostOfflineNote).
-  assert.equal(formHost(chooseHost(f, "meros-server", ctx), ctx), "meros-server");
+  assert.equal(formHost(chooseHost(f, "host-b", ctx), ctx), "host-b");
 });
 
 test("V0.132: a project made in the New thread form is made on the form's host", () => {

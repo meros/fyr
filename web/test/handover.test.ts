@@ -9,7 +9,7 @@ import type { Profile } from "../src/types.ts";
 
 const profiles: Profile[] = [
   { id: "claude", name: "Claude", color: "", models: ["opus", "haiku"], defaultModel: "opus" },
-  { id: "norban", name: "Claude (norban)", color: "", models: ["sonnet"] },
+  { id: "acme", name: "Claude (acme)", color: "", models: ["sonnet"] },
   { id: "bare", name: "Bare", color: "", models: [] },
 ];
 
@@ -21,7 +21,7 @@ test("the dialog names each rung in the owner's words", () => {
 
 test("the targets are the other profiles, each with its own model", () => {
   const t = thread("t1", "seen", "seen");
-  assert.deepEqual(handoverTargets(t, profiles).map((p) => p.id), ["norban", "bare"]);
+  assert.deepEqual(handoverTargets(t, profiles).map((p) => p.id), ["acme", "bare"]);
   assert.equal(targetModel(profiles[1]), "sonnet");
   assert.equal(targetModel(profiles[2]), "");
 });
@@ -34,14 +34,14 @@ test("the plan comes from the host; without one, a session means resume", () => 
 });
 
 test("the divider names both profiles and the time", () => {
-  assert.equal(dividerLine({ from: "claude", to: "norban" }, profiles, "17:20"), "Handed over from Claude to Claude (norban) · 17:20");
+  assert.equal(dividerLine({ from: "claude", to: "acme" }, profiles, "17:20"), "Handed over from Claude to Claude (acme) · 17:20");
   assert.equal(rungDone("resume"), "Full history");
   assert.equal(rungDone("adopt"), "The new agent read the old conversation");
 });
 
 test("a handover event becomes a divider; a failed one a failed line", () => {
   const items = buildConversation([
-    { seq: 1, at: "2026-11-14T16:20:00Z", subject: "t", type: "handover", data: { from: "claude", to: "norban", rung: "adopt", note: "Resume failed: x" } },
+    { seq: 1, at: "2026-11-14T16:20:00Z", subject: "t", type: "handover", data: { from: "claude", to: "acme", rung: "adopt", note: "Resume failed: x" } },
     { seq: 2, at: "2026-11-14T16:21:00Z", subject: "t", type: "effect.error", data: { kind: "handover", error: "Dead could not start" } },
   ]);
   assert.equal(items[0].kind, "handover");
@@ -65,5 +65,5 @@ test("the thread menu offers Hand over…, disabled with the host's reason", () 
 test("V0.50 an unavailable provider is no handover target", () => {
   const t = thread("t1", "seen", "seen", { profile: "claude" });
   const ps: Profile[] = [...profiles, { id: "x", name: "X", color: "", models: [], unavailable: "Paste the token" }];
-  assert.deepEqual(handoverTargets(t, ps).map((p) => p.id), ["norban", "bare"]);
+  assert.deepEqual(handoverTargets(t, ps).map((p) => p.id), ["acme", "bare"]);
 });

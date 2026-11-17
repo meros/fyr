@@ -206,7 +206,7 @@ func TestCheckSkipsUnready(t *testing.T) {
 func TestCheckSaysWhenTheCLIListsOnlyAliases(t *testing.T) {
 	f := newFixture(t)
 	r := newReg(t, f)
-	const live = `{"id":"claudeAgent","name":"Claude","cli":"claude","auth":{"kind":"cli-login"},"endpoint":{},` +
+	const live = `{"id":"claudeAlt","name":"Claude","cli":"claude","auth":{"kind":"cli-login"},"endpoint":{},` +
 		`"models":[{"id":"claude-opus-5-5","name":"Opus 5.5"},{"id":"claude-sonnet-5-5","name":"Sonnet 5.5"},{"id":"claude-haiku-5-5","name":"Haiku 5.5"}],"defaultModel":"claude-opus-5-5"}`
 	var p Provider
 	if err := json.Unmarshal([]byte(live), &p); err != nil {
@@ -220,21 +220,21 @@ func TestCheckSaysWhenTheCLIListsOnlyAliases(t *testing.T) {
 	}
 	var logged strings.Builder
 	r.Logf = func(format string, a ...any) { fmt.Fprintf(&logged, format+"\n", a...) }
-	if rep := r.Run(cmd("provider.refreshModels", map[string]any{"id": "claudeAgent"})); !rep.OK {
+	if rep := r.Run(cmd("provider.refreshModels", map[string]any{"id": "claudeAlt"})); !rep.OK {
 		t.Fatal(rep.Error)
 	}
 	d := r.List()[0]
 	if !strings.Contains(d.CheckNote, "Fyr's known list") || d.CheckError != "" || len(d.Catalog) != 4 {
 		t.Fatalf("%+v", d)
 	}
-	if !strings.Contains(logged.String(), "providers: check claudeAgent: 1 models reported (claude-opus-5-5)") || !strings.Contains(logged.String(), "known list") {
+	if !strings.Contains(logged.String(), "providers: check claudeAlt: 1 models reported (claude-opus-5-5)") || !strings.Contains(logged.String(), "known list") {
 		t.Fatalf("log %q", logged.String())
 	}
 	// A full answer clears the note.
 	r.ListModels = func(context.Context, Provider, string) (claudecli.Listing, error) {
 		return claudecli.Listing{Models: claudecli.Models}, nil
 	}
-	r.Run(cmd("provider.refreshModels", map[string]any{"id": "claudeAgent"}))
+	r.Run(cmd("provider.refreshModels", map[string]any{"id": "claudeAlt"}))
 	if d := r.List()[0]; d.CheckNote != "" {
 		t.Fatalf("note stays: %q", d.CheckNote)
 	}

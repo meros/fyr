@@ -106,7 +106,7 @@ type Change = {
   phaseBy: "agent" | "observed" | "owner";
   createdAt: string; updatedAt: string;
 };
-type Target = { ref: string; url?: string };          // Backstage-style "repo:github.com/meros/fyr@main", "k8s:gke-prod/api", "host:meros-server", "env:production"
+type Target = { ref: string; url?: string };          // Backstage-style "repo:github.com/meros/fyr@main", "k8s:gke-prod/api", "host:host-b", "env:production"
 type Revision = { id: string; at: string; summary?: string; url?: string; by: "agent" | "observed" }; // a commit SHA, a plan digest, a doc version, a file SHA-256
 type Condition = { type: string; status: "ok" | "fail" | "pending"; reason?: string; at: string; source: "agent" | "observed" | "owner" };
 type Evidence = { kind: string; url?: string; attachment?: string; title?: string; state?: string };

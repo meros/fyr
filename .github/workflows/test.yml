@@ -1,5 +1,5 @@
 # The same gate as a local `make test` (docs/PROCESS.md), split into jobs that run at the same time: Go (vet and
-# tests), web (typecheck, unit tests, the build and the layout e2e in headless Chrome) and the Nix package. The
+# tests), web (typecheck, unit tests, the build and the layout e2e in headless Chrome), the Nix package and a secret scan. The
 # toolchain comes from the flake's dev shell; Chrome is the runner's own google-chrome. The Go build cache and
 # web/node_modules are cached between runs.
 name: test
@@ -70,10 +70,26 @@ jobs:
       - name: nix build .#fyr
         run: nix build .#fyr --no-link --print-build-logs
 
+  # Go public (#196): no secret enters the history. gitleaks from the flake's pinned nixpkgs scans every commit
+  # (a few seconds); .gitleaks.toml allows only the test placeholders. A release needs it green.
+  secrets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: gitleaks over the full history
+        run: nix shell --inputs-from . nixpkgs#gitleaks -c gitleaks git --config .gitleaks.toml --redact --log-opts=--all .
+
   # #158: every green push to main publishes signed fyr and fyrd binaries for each target as the release
   # build-<sha12> and moves the tag `deployable` forward to it. Hosts auto-update only to that.
   release:
-    needs: [go, web, nix]
+    needs: [go, web, nix, secrets]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 20

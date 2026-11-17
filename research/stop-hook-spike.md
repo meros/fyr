@@ -36,7 +36,7 @@ The callback the CLI sends after the assistant's final message (trimmed):
 
 ```json
 {"type":"control_request","request_id":"5c436248-...","request":{"subtype":"hook_callback","callback_id":"view","input":{
-  "session_id":"3d2e2ac7-...","transcript_path":"/home/meros/.claude/projects/-tmp-claude-1000-viewspike-work/3d2e2ac7-....jsonl",
+  "session_id":"3d2e2ac7-...","transcript_path":"/home/owner/.claude/projects/-tmp-claude-1000-viewspike-work/3d2e2ac7-....jsonl",
   "cwd":"/tmp/claude-1000/viewspike/work","prompt_id":"fa01a578-...","permission_mode":"default","effort":{"level":"medium"},
   "hook_event_name":"Stop","stop_hook_active":false,
   "last_assistant_message":"Hi. I'm running in `/tmp/claude-1000/viewspike/work`, ...",

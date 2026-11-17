@@ -76,7 +76,7 @@ test("labels: the agent's description first, else a sentence; paths relative and
   assert.equal(callLabel("Read", { file_path: "/home/owner/notes.md" }, cwd), "Read ~/notes.md");
   assert.equal(callLabel("Edit", { file_path: "/home/owner/src/fyr/web/src/thread.tsx", old_string: "a\nb\nc", new_string: Array(12).fill("x").join("\n") }, cwd), "Edited web/src/thread.tsx (+12 −3)");
   assert.equal(callLabel("Grep", { pattern: "presence" }, cwd), 'Searched for "presence"');
-  assert.equal(callLabel("WebFetch", { url: "https://github.com/norban/web/pull/4182/files?diff=split" }, cwd), "Fetched github.com/norb…ll/4182/files?diff=split");
+  assert.equal(callLabel("WebFetch", { url: "https://github.com/acme/web/pull/4182/files?diff=split" }, cwd), "Fetched github.com/acme…ll/4182/files?diff=split");
   assert.equal(callLabel("LS", { path: "/home/owner/src/fyr/web/src" }, cwd), "Listed web/src");
   assert.equal(relPath("/home/owner/src/fyr/web/src/very/deeply/nested/folder/structure/tiles.test.ts", cwd), "web/src/very/de…/structure/tiles.test.ts");
   assert.equal(middleTruncate("abcdefghij", 7), "ab…ghij");
