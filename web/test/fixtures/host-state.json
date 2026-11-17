@@ -156,7 +156,9 @@
   "buildId": "b1",
   "deploy": null,
   "host": "host",
+  "machine": "laptop",
   "now": "2026-01-01T00:00:00Z",
+  "os": "linux",
   "partial": false,
   "profiles": [],
   "projects": [

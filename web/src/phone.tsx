@@ -52,6 +52,7 @@ import { NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON } from "./row-ui.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import { QuotaList } from "./quota-ui.tsx";
+import { HostMark } from "./host-mark-ui.tsx";
 import { hostLabel, hostOf, hostTag, offlineLine, profilesOfHost, type HostInfo } from "./hosts.ts";
 
 // ---- icons ----
@@ -555,11 +556,10 @@ function snoozedHint(list: Thread[], now: number): string {
   return next ? `next: ${untilLabel(next, now)}` : "none";
 }
 
-/** V0.54: a row names the thread's host when the front has more than one; an offline host says so on any front. */
-function MHost({ t, hosts }: { t: Thread; hosts?: HostInfo[] }) {
-  if (t.hostOffline) return <><b class="m-off">{t.host || "host"} offline</b> · </>;
-  const h = hostTag(t, hosts);
-  return h ? <><span class="m-hostn">{h}</span> · </> : null;
+/** V0.54, V0.170: an offline host says so on a row, in words (it is state). Which host a row is on is its mark at the
+ *  title's start (row-ui.tsx), as on the desktop, so the words for an online host are gone. */
+function MHost({ t }: { t: Thread }) {
+  return t.hostOffline ? <><b class="m-off">{t.host || "host"} offline</b> · </> : null;
 }
 
 /** A row with swipes (right settles, left snoozes), long press (actions) and selection. */
@@ -645,7 +645,7 @@ function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; needs: boo
   const st = t.attention.state;
   const picked = p.list.picked.has(t.id);
   const lead = p.list.selecting ? <i class={`m-ck${picked ? " on" : ""}`} /> : own;
-  const pre = <MHost t={t} hosts={p.store.hosts} />;
+  const pre = <MHost t={t} />;
   // V0.109: no row is marked here. The phone shows the inbox or one thread, never both, so there is no open thread
   // beside the list for a mark to follow; the desktop marks the open thread's row (app.tsx, selection.ts).
   const body = needs ? <NeedsRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} /> : <OneRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} />;
@@ -766,6 +766,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           </span>
           {hostTag(t, p.store.hosts) && !t.hostOffline && (
             <span class="m-chip m m-hostc">
+              <HostMark name={t.host!} />
               <span>{t.host}</span>
             </span>
           )}

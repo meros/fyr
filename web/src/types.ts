@@ -273,6 +273,8 @@ export interface StateDTO {
   host?: string;
   /** V0.124: this install's key id ("F7QK-2M9X-…"); missing from a Fyr older than V0.124 */
   hostId?: string;
+  /** V0.170: what this install runs on (laptop, desktop, server); missing from a Fyr older than V0.170 */
+  machine?: string;
   user: string;
   threads: ThreadDTO[];
   actions: ActionInfo[];

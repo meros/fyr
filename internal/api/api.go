@@ -129,6 +129,10 @@ type State[T, P, F any] struct {
 	// {names, at}; nil when none was set. A front reads the newest from its
 	// hosts and orders hosts[] by it.
 	HostOrder any `json:"hostOrder,omitempty"`
+	// Machine is what this host runs on (V0.170): laptop, desktop or server;
+	// OS is its operating system ("linux", "darwin"). The fronts draw its mark.
+	Machine string `json:"machine,omitempty"`
+	OS      string `json:"os,omitempty"`
 }
 
 // Action is an owner action as clients list it.
@@ -160,6 +164,9 @@ type Host struct {
 	// URL is the address the front dials for this host, as configured or
 	// as discovery found it (Settings → Hosts shows it and its route).
 	URL string `json:"url,omitempty"`
+	// Machine and OS as the host reports them (V0.170); none until it is seen.
+	Machine string `json:"machine,omitempty"`
+	OS      string `json:"os,omitempty"`
 }
 
 // WriteJSON is the one JSON reply of the host and the front.

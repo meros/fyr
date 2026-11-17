@@ -22,6 +22,9 @@ export interface HostInfo {
   idWas?: string;
   /** V0.125: the URL the front dials for it, as configured or as discovery found it; missing from an older front */
   url?: string;
+  /** V0.170: what it runs on (laptop, desktop, server) and its OS ("linux", "darwin"); missing until it is seen */
+  machine?: string;
+  os?: string;
 }
 
 /** The host's name for the rail and the phone; without one in the state, "mock" or "local". */
@@ -44,6 +47,8 @@ export function decodeHosts(raw: unknown): HostInfo[] {
       ...(typeof h.id === "string" && h.id ? { id: h.id } : {}),
       ...(typeof h.idWas === "string" && h.idWas ? { idWas: h.idWas } : {}),
       ...(typeof h.url === "string" && h.url ? { url: h.url } : {}),
+      ...(typeof h.machine === "string" && h.machine ? { machine: h.machine } : {}),
+      ...(typeof h.os === "string" && h.os ? { os: h.os } : {}),
     }));
 }
 

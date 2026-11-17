@@ -2392,7 +2392,7 @@ section('V0.54', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await openScreen({ url: "?mock=rail&hosts=2" }, 390, 844);
-  const rows = await evaluate(`[...document.querySelectorAll('.m-mv')].map(r => ({ label: r.getAttribute('aria-label'), off: r.querySelector('.m-off')?.textContent ?? '', host: r.querySelector('.m-hostn')?.textContent ?? '', right: r.getBoundingClientRect().right }))`);
+  const rows = await evaluate(`[...document.querySelectorAll('.m-mv')].map(r => ({ label: r.getAttribute('aria-label'), off: r.querySelector('.m-off')?.textContent ?? '', host: r.querySelector('.rhm .hmark')?.dataset.host ?? '', right: r.getBoundingClientRect().right }))`);
   const off = rows.filter((r) => r.off);
   check(off.length >= 1 && off.every((r) => r.off === "host-b offline"), `V0.54 rows: offline host not named (${JSON.stringify(off)})`);
   check(rows.some((r) => r.host === "desk"), `V0.54 rows: no row names its host (${JSON.stringify(rows.slice(0, 3))})`);
@@ -2408,7 +2408,7 @@ try {
   const chip = await evaluate(`document.querySelector('.m-hostc')?.textContent ?? ''`);
   check(chip === "desk", `V0.54 header: an online thread's host chip reads "${chip}"`);
   await openScreen({ url: "?mock=rail&open=t_mapperf" }, 390, 844);
-  const none = await evaluate(`!document.querySelector('.m-hostc, .m-hostn, .m-offl')`);
+  const none = await evaluate(`!document.querySelector('.m-hostc, .m-hostn, .m-offl, .rhm')`);
   check(none, "V0.54: one host still shows a host on the phone");
 } catch (e) {
   failures.push(`V0.54 hosts: ${e.message}`);
@@ -2462,14 +2462,14 @@ for (const [label, w, ht] of [
   // 2. The Hosts page.
   await step("list", async () => {
     await open("hosts", `document.querySelectorAll('${root} .sr.host').length === 4`);
-    const rows = await evaluate(`[...document.querySelectorAll('${root} .sr.host')].map(r => ({ tag: r.tagName, name: r.dataset.host, id: r.dataset.id ?? '', line: r.querySelector('.sr-d')?.textContent ?? '', bad: r.classList.contains('bad'), badge: r.querySelector('.pst')?.textContent ?? '', btns: r.querySelectorAll('button').length, dot: r.querySelector('.hdot')?.className ?? '', h: r.getBoundingClientRect().height, self: r.querySelector('.tag')?.textContent ?? '' }))`);
+    const rows = await evaluate(`[...document.querySelectorAll('${root} .sr.host')].map(r => ({ tag: r.tagName, name: r.dataset.host, id: r.dataset.id ?? '', line: r.querySelector('.sr-d')?.textContent ?? '', bad: r.classList.contains('bad'), badge: r.querySelector('.pst')?.textContent ?? '', btns: r.querySelectorAll('button').length, dot: r.querySelector('.hmark')?.className ?? '', h: r.getBoundingClientRect().height, self: r.querySelector('.tag')?.textContent ?? '' }))`);
     const by = Object.fromEntries(rows.map((r) => [r.name, r]));
     check(rows.map((r) => r.name).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the order ${JSON.stringify(rows.map((r) => r.name))}`);
     check(rows.every((r) => r.tag === "BUTTON" && r.btns === 0), `${ctx}: a row is not one button or holds a button ${JSON.stringify(rows)}`);
     check(/^online since \d\d:\d\d · this machine · id F7QK$/.test(by.desk?.line) && by.desk?.self === "This install" && by.desk?.id === "F7QK-2M9X-AB34-CD56", `${ctx}: desk ${JSON.stringify(by.desk)}`);
     check(/^offline since \d\d:\d\d · tailnet · id M3RS$/.test(by["host-b"]?.line) && !by["host-b"]?.bad && /off/.test(by["host-b"]?.dot), `${ctx}: the offline row ${JSON.stringify(by["host-b"])}`);
     check(/ · LAN · no id$/.test(by["old-nuc"]?.line), `${ctx}: old-nuc ${JSON.stringify(by["old-nuc"])}`);
-    check(by.lab?.line === "Another install answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && /warn/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`);
+    check(by.lab?.line === "Another install answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && /^hmark/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`); // V0.170: the mark; the line and the pill say the id changed
     if (phone) check(rows.every((r) => r.h >= 55.5), `${ctx}: a row under 56 px ${JSON.stringify(rows.map((r) => r.h))}`);
     const foot = await evaluate(`[...document.querySelectorAll('${root} section[aria-label="Hosts"] .sg-f')].map(e => e.textContent).join(' ')`); // V0.159: the installs panel has its own groups
     // V0.132 adds the order's sentence before it.
@@ -4165,12 +4165,12 @@ try {
     const box = (e) => e?.getBoundingClientRect();
     const rows = [...document.querySelectorAll(${JSON.stringify(phone ? ".m-list .m-mv" : ".ib .list [data-id]")})];
     return {
-      hosts: [...document.querySelectorAll('${root}.hfrow .hft')].map((b) => ({ name: b.querySelector('.nm')?.textContent ?? '', on: b.getAttribute('aria-pressed') === 'true', last: b.getAttribute('aria-disabled') === 'true', n: b.querySelector('.hn')?.textContent ?? '', struck: getComputedStyle(b.querySelector('.nm')).textDecorationLine, dot: b.querySelector('.hdot')?.className ?? null, h: Math.round(box(b).height) })),
+      hosts: [...document.querySelectorAll('${root}.hfrow .hft')].map((b) => ({ name: b.querySelector('.nm')?.textContent ?? '', on: b.getAttribute('aria-pressed') === 'true', last: b.getAttribute('aria-disabled') === 'true', n: b.querySelector('.hn')?.textContent ?? '', struck: getComputedStyle(b.querySelector('.nm')).textDecorationLine, dot: (() => { const m = b.querySelector('.hmark'); return m ? m.className + ':' + m.dataset.glyph : null; })(), h: Math.round(box(b).height) })),
       projects: [...document.querySelectorAll('${root}.pfrow .pfc')].map((b) => ({ name: b.querySelector('.ell')?.textContent ?? '', n: Number((/: (\\d+) thread/.exec(b.title) ?? [])[1] ?? -1), h: Math.round(box(b).height) })),
       order: (() => { const a = box(document.querySelector('${root}.hfrow')), b = box(document.querySelector('${root}.pfrow')); return a && b ? b.top >= a.bottom : null; })(),
       fits: [...document.querySelectorAll('${root}.hfrow, ${root}.pfrow')].every((e) => box(e).right <= innerWidth + 0.5),
-      // The phone rows name their host (V0.54); the desktop rows do not, so there the ids say it.
-      rowHosts: [...new Set(rows.map((r) => r.querySelector('.m-hostn')?.textContent ?? r.querySelector('.m-off')?.textContent.replace(/ offline$/, '') ?? r.dataset.id ?? ''))],
+      // The phone rows carry their host's mark (V0.170); the desktop rows too, but there the ids say it.
+      rowHosts: [...new Set(rows.map((r) => (${JSON.stringify(phone)} ? r.querySelector('.rhm .hmark')?.dataset.host : r.dataset.id) ?? ''))],
       rows: rows.length,
       empty: document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})?.innerText ?? null,
       stored: localStorage.getItem('fyr.hostsOff'),
@@ -4191,7 +4191,8 @@ try {
   await go("?mock=rail&hosts=2&hostOrder=host-b,desk", { "fyr.hostFilter": "desk" });
   const two = await evaluate(STATE);
   check(JSON.stringify(two.hosts.map((c) => c.name)) === JSON.stringify(["host-b", "desk"]) && two.hosts.every((c) => c.on && !c.last && Number(c.n) >= 1), `${ctx}: the host switch (${JSON.stringify(two.hosts)})`);
-  check(two.hosts[0]?.dot === "hdot off" && two.hosts[1]?.dot === "hdot", `${ctx}: the hosts' dots (${JSON.stringify(two.hosts.map((c) => c.dot))})`);
+  // V0.170: the segments carry the host's mark (an offline host's with its ring).
+  check(two.hosts[0]?.dot === "hmark off:server" && two.hosts[1]?.dot === "hmark:laptop", `${ctx}: the hosts' marks (${JSON.stringify(two.hosts.map((c) => c.dot))})`);
   check(two.order === true && two.fits, `${ctx}: the host row is not above the project row, or a row runs past the edge (${JSON.stringify({ order: two.order, fits: two.fits })})`);
   check(two.old === null && two.stored === null && two.rows > 2, `${ctx}: V0.134's one-host filter still applies (${JSON.stringify({ old: two.old, stored: two.stored, rows: two.rows })})`);
   if (phone) check(two.hosts.every((c) => c.h >= 36) && two.projects.every((c) => c.h >= 32), `${ctx}: a host segment under 36 px or a chip under 32 px on the phone`);
@@ -4221,6 +4222,72 @@ try {
   await click(`${phone ? ".m-fempty" : ".fempty"} .fe3`, `!localStorage.getItem('fyr.hostsOff')`);
   const cleared = await evaluate(STATE);
   check(cleared.empty === null && cleared.stored === null, `${ctx}: Clear filter (${JSON.stringify(cleared)})`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
+// SPEC 0.5 V0.170: each host's mark (a circle with its machine's glyph in its colour), the same everywhere, on the
+// desktop and the phone. 1 one host: no mark on rows. 2 two hosts: every row has its host's mark before the project's
+// icon, named by its tooltip, without overlap, and the title keeps its two lines; the phone rows no longer say the host
+// in words (an offline one still does); the host switch's segments use the mark. 3 the thread header, Settings → Hosts
+// (a laptop, a server, a desktop, each its own colour), the load meters and the Host field.
+for (const [w, hh, phone] of [[1280, 800, false], [390, 844, true]]) section(`V0.170 ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen, shot } = h;
+  const ctx = `V0.170 ${phone ? "phone" : "desktop"}`;
+try {
+  const go = async (url, ready) => {
+    if (phone) await openScreen({ url, ready }, w, hh);
+    else {
+      await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/${url}`, ready);
+    }
+    await settle();
+  };
+  const listReady = phone ? "!!document.querySelector('.m-list .hd')" : "!!document.querySelector('.ib .list .hd')";
+  const ROWS = `[...document.querySelectorAll(${JSON.stringify(phone ? ".m-list .hd" : ".ib .list .hd")})].map((hd) => {
+    const m = hd.querySelector('.rhm .hmark'), p = hd.querySelector('.rpi'), t = hd.querySelector('.t');
+    const mb = m?.getBoundingClientRect(), pb = p?.getBoundingClientRect(), lh = parseFloat(getComputedStyle(t).lineHeight);
+    return { host: m?.dataset.host ?? null, title: m?.getAttribute('title') ?? null, label: m?.getAttribute('aria-label') ?? null, apart: !!mb && !!pb && mb.right <= pb.left + 0.5, lines: Math.round(t.getBoundingClientRect().height / lh), words: !!hd.closest('.m-mv')?.querySelector('.m-hostn') };
+  })`;
+  // 1. One host: no marks on rows.
+  await go("?mock=rail", listReady);
+  const one = await evaluate(ROWS);
+  check(one.length > 3 && one.every((r) => r.host === null), `${ctx}: one host shows host marks on rows (${JSON.stringify(one.slice(0, 2))})`);
+  // 2. Two hosts.
+  await go("?mock=rail&hosts=2", listReady);
+  const rows = await evaluate(ROWS);
+  check(rows.length > 3 && rows.every((r) => r.host && r.title?.startsWith(r.host) && r.label?.startsWith("Host ") && r.apart && r.lines === 2), `${ctx}: a row without its host's mark, or with the mark over the project icon, or a title not two lines (${JSON.stringify(rows.filter((r) => !(r.host && r.apart && r.lines === 2)).slice(0, 3))})`);
+  check(rows.some((r) => r.host === "host-b" && r.title === "host-b · offline") && rows.some((r) => r.host === "desk"), `${ctx}: the rows' hosts (${JSON.stringify([...new Set(rows.map((r) => r.title))])})`);
+  if (phone) {
+    check(rows.every((r) => !r.words), `${ctx}: a phone row still names its host in words`);
+    check(await evaluate(`[...document.querySelectorAll('.m-list .m-off')].some((e) => e.textContent === 'host-b offline')`), `${ctx}: an offline host's row no longer says so`);
+  }
+  const segs = await evaluate(`[...document.querySelectorAll('${phone ? ".m-screen" : ".ib"} .hfrow .hft')].map((b) => ({ mark: b.querySelector('.hmark')?.dataset.host ?? null, dot: !!b.querySelector('.hdot') }))`);
+  check(segs.length === 2 && segs.every((s) => s.mark && !s.dot), `${ctx}: the host switch's segments (${JSON.stringify(segs)})`);
+  await shot(`host-marks-${phone ? "phone" : "desktop"}.png`);
+  // 3. The thread header.
+  await go("?mock=rail&hosts=2&open=t_mapperf", phone ? "!!document.querySelector('.m-hostc')" : "!!document.querySelector('.th .hostc')");
+  const hc = await evaluate(`(() => { const c = document.querySelector(${JSON.stringify(phone ? ".m-hostc" : ".th .hostc")}); return { mark: c?.querySelector('.hmark')?.dataset.host ?? null, text: c?.textContent ?? '' }; })()`);
+  check(hc.mark === "desk" && hc.text === "desk", `${ctx}: the header's host chip (${JSON.stringify(hc)})`);
+  // Settings → Hosts: a laptop, a server, a desktop, each its own colour.
+  await go(phone ? "?mock=rail&hosts=2&settings=hosts" : "?mock=rail&hosts=2&dialog=settings&page=hosts", `document.querySelectorAll('.sr.host .hmark').length === 4`);
+  const sh = await evaluate(`[...document.querySelectorAll('.sr.host .hmark')].map((m) => ({ host: m.dataset.host, glyph: m.dataset.glyph, color: getComputedStyle(m).color }))`);
+  const g = Object.fromEntries(sh.map((x) => [x.host, x.glyph]));
+  check(g.desk === "laptop" && g["host-b"] === "server" && g.lab === "monitor" && g["old-nuc"] === "server", `${ctx}: Settings → Hosts glyphs (${JSON.stringify(g)})`);
+  check(new Set(sh.map((x) => x.color)).size === sh.length, `${ctx}: two hosts share a colour (${JSON.stringify(sh)})`);
+  await shot(`host-marks-settings-${phone ? "phone" : "desktop"}.png`);
+  // The load meters (the desktop rail; the phone's strip in the inbox header) name each host with its mark.
+  await go("?mock=rail&hosts=2", listReady);
+  const lm = await evaluate(`[...document.querySelectorAll('.hmn')].map((n) => n.querySelector('.hmark')?.dataset.host ?? null)`);
+  check(lm.length >= 2 && lm.every(Boolean), `${ctx}: a load meter's host without its mark (${JSON.stringify(lm)})`);
+  // The Host field (New project): the picked host's mark beside the list.
+  const root = phone ? ".m-app" : ".dlg";
+  await go(phone ? "?mock=rail&hosts=2&settings=projects" : "?mock=rail&hosts=2&dialog=settings&page=projects", `document.querySelectorAll('${root} .pli').length > 3`);
+  await evaluate(`[...document.querySelectorAll('${root} button')].find((x) => x.textContent.trim().startsWith('New project'))?.click()`);
+  await waitFor(`!!document.querySelector('${root} .hostf .hostsel .hmark')`, { soft: true });
+  const hf = await evaluate(`document.querySelector('${root} .hostf .hostsel .hmark')?.dataset.host ?? null`);
+  check(hf === "desk", `${ctx}: the Host field's mark (${hf})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }

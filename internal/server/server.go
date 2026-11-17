@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/meros/fyr/internal/machine"
 	"io"
 	"log"
 	"mime"
@@ -488,7 +489,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
 	profiles := s.profiles()
 	api.WriteJSON(w, 200, api.State[api.Thread, api.Project, provider.Profile]{
-		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(),
+		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(), Machine: machine.Kind(), OS: machine.OS(),
 		Threads: threads, Actions: acts, Profiles: profiles, Projects: projects,
 		Partial: since > 0, Deploy: s.Engine.DeployState(time.Now()), Stall: s.Engine.StallState(time.Now()),
 	})
