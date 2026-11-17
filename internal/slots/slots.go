@@ -271,7 +271,7 @@ func (p *Pool) Snapshot() Snapshot {
 	return s
 }
 
-// Reorder is the owner's order of the queue (SPEC V0.136): the listed
+// Reorder is the owner's order of the queue (SPEC V0.137): the listed
 // owners that wait without priority go first, in the given order, and the
 // other waiters follow in their own order; priority waiters stay ahead of
 // all of them and cannot be moved. An owner that no longer waits is

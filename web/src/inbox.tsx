@@ -47,7 +47,7 @@ export function Rail(p: RailProps) {
       </div>
       {SECTIONS.map((s) => {
         const n = p.sec[s.key].length;
-        if (s.transient && n === 0) return null; // V0.136: Waiting for a slot only while threads wait
+        if (s.transient && n === 0) return null; // V0.137: Waiting for a slot only while threads wait
         const g = s.g ? ` (g${s.g})` : "";
         return (
           <button class={`ri${s.key === "needs" && n > 0 ? " att" : ""}${p.active === s.key && n > 0 ? " on" : ""}`} data-sec={s.key} title={n ? `${s.label}: ${n}${g}` : `${s.label}: none`} disabled={n === 0} onClick={() => p.onJump(s.key)}>

@@ -417,7 +417,7 @@ function MInbox(p: PhoneProps) {
         <div class="m-strip" role="tablist" aria-label="Sections">
           {SECTIONS.map((s) => {
             const n = p.inbox.sec[s.key].length;
-            if (s.transient && n === 0) return null; // V0.136: Waiting for a slot only while threads wait
+            if (s.transient && n === 0) return null; // V0.137: Waiting for a slot only while threads wait
             return (
               <button class={`m-seg${active === s.key ? " on" : ""}${s.key === "needs" && n > 0 ? " att" : ""}`} onClick={() => jump(s.key)} title={`${s.label}: ${n}`}>
                 <span class="c">
@@ -469,7 +469,7 @@ function MInbox(p: PhoneProps) {
                 queue={queue}
                 threads={p.inbox.sec.slots}
                 row={(t, a) => (
-                  <div ref={a.attrs.ref} class={a.attrs.class || undefined}>
+                  <div ref={a.attrs.ref} class={a.attrs.class || undefined} data-id={t.id}>
                     <MRow key={t.id} t={t} p={p} needs={false} lead={a.lead} />
                   </div>
                 )}
@@ -553,7 +553,7 @@ function MHost({ t, hosts }: { t: Thread; hosts?: HostInfo[] }) {
 }
 
 /** A row with swipes (right settles, left snoozes), long press (actions) and selection. */
-function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; needs: boolean; /** V0.136: the queue's "#2" */ lead?: VNode }) {
+function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; needs: boolean; /** V0.137: the queue's "#2" */ lead?: VNode }) {
   const avail: SwipeAvail = useMemo(() => swipeAvail(t), [t]);
   const [sw, setSw] = useState<Swipe>(idle);
   const swRef = useRef<Swipe>(idle);

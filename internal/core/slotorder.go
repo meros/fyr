@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// The owner's order of the queue for heavy-job slots (SPEC V0.136): which
+// The owner's order of the queue for heavy-job slots (SPEC V0.137): which
 // queued thread gets the next free slot. Owner only (a host command with a
 // receipt); no agent tool sends it, so an agent cannot jump the queue.
 const (

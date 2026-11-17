@@ -20,8 +20,17 @@ export function createMockApi(scenario: string): Api {
   const q = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
   const providersMode = q.get("providers") ?? "";
   const offline = q.get("conn") === "offline";
-  // V0.136: the load, kept so that a reorder (host.slotOrder) shows on the next read.
+  // V0.137: the load, kept so that a reorder (host.slotOrder) shows on the next read.
   const load: HostLoad[] = q.get("slots") ? mockQueueLoad(q.get("slots")!) : mockLoad();
+  // The layout test's hook: a queued thread gets its slot, or its run ends (it leaves the queue); the page sees it on
+  // its next read of the load.
+  (globalThis as { __fyrSlot?: (owner: string, grant: boolean) => void }).__fyrSlot = (owner, grant) => {
+    for (const h of load) {
+      const w = h.slots?.waiting.find((x) => x.owner === owner);
+      if (!w || !h.slots) continue;
+      h.slots = { ...h.slots, waiting: h.slots.waiting.filter((x) => x !== w), held: grant ? [...h.slots.held.slice(1), w] : h.slots.held };
+    }
+  };
   const hostOffset = Date.parse(server.state().now) - Date.now();
   const hostNow = () => Date.now() + hostOffset;
   // V0.127: with &hosts=2 every host has its own settings. desk (this install, the front's first) has the ones above;
@@ -133,7 +142,7 @@ export function createMockApi(scenario: string): Api {
         return { ok: true, result: { names } };
       }
       if (action === "host.slotOrder") {
-        // V0.136: as the host's pool does it: priority waits first, then the listed ones, then the rest.
+        // V0.137: as the host's pool does it: priority waits first, then the listed ones, then the rest.
         const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
         if (!h?.slots) return { ok: false, error: "This host has no slots for heavy jobs" };
         const owners = Array.isArray(args?.owners) ? (args.owners as unknown[]).filter((x): x is string => typeof x === "string") : [];
