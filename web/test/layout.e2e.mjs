@@ -1300,7 +1300,7 @@ try {
   check(o.picker && o.focus, `V0.42 desktop: Change does not open the folder picker with its field focused (${JSON.stringify(o)})`);
   check(o.first === "Recent", `V0.55 desktop: the picker offers a project folder that is already picked ("${o.first}")`);
   // acme and acme-platform-… share "acme": Tab completes to the common start; Enter opens the exact name.
-  await send("Input.insertText", { text: "~/src/no" });
+  await send("Input.insertText", { text: "~/src/ac" });
   await settle();
   await key("Tab");
   await waitFor(`document.querySelector('.fpick .pq')?.value === '~/src/acme'`, { soft: true });

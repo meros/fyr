@@ -1,0 +1,12 @@
+# gitleaks (CI job `secrets`): the default rules, minus test placeholders that look like keys.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "test and mock placeholders, never real keys"
+regexTarget = "line"
+regexes = [
+  '''MOCK_VAPID_KEY = ''',
+  '''sec\.Put\("ds\.key", "sk-test''',
+  '''"ANTHROPIC_[A-Z_]+="\+l\.Key''',
+]

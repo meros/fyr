@@ -60,7 +60,7 @@ test("icons: emoji, curated line icons (T3 names too), else the monogram", () =>
   for (const kind of ["monogram", "emoji", "line"] as const) assert.deepEqual(resolveIcon(JSON.parse(`{"kind":"${kind}"}`), "acme"), { kind: "monogram", value: "A" });
   assert.deepEqual(resolveIcon({ kind: "line", value: "FolderGit2" }, "x"), { kind: "line", value: "folder-git-2" });
   assert.deepEqual(resolveIcon({ kind: "line", value: "Home" }, "x"), { kind: "line", value: "house" });
-  assert.deepEqual(resolveIcon({ kind: "line", value: "no-such-icon" }, "acme/infra"), { kind: "monogram", value: "NI" });
+  assert.deepEqual(resolveIcon({ kind: "line", value: "no-such-icon" }, "acme/infra"), { kind: "monogram", value: "AI" });
   assert.deepEqual(resolveIcon(undefined, "fyr"), { kind: "monogram", value: "F" });
   assert.deepEqual(resolveIcon({ kind: "emoji", value: "  " }, "fyr"), { kind: "monogram", value: "F" });
   assert.equal(lineName("bar_chart"), "chart-column");
