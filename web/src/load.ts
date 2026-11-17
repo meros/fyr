@@ -439,3 +439,31 @@ export function jobLines(h: HostLoad): { class: string; text: string; cost: stri
     return { class: j.class, text: `${j.runs} ${j.runs === 1 ? "run" : "runs"} · ${cores} · peak ${gb(j.peak)} GB · ${duration(j.wall)}`, cost, learned: n > 0 };
   });
 }
+
+/** V0.166: one host of the phone's load strip and sheet: its name, its load when it reports one, and since when it is
+ *  offline. */
+export interface StripHost {
+  name: string;
+  load?: HostLoad;
+  /** offline since (RFC 3339, "" when unknown); absent while online */
+  offline?: string;
+}
+
+/** V0.166: the hosts the phone shows load for, in the owner's host order (the front's `hosts`): each online host that
+ *  reports a load, and each offline host (its load gone). A host that reports no load while online (older than V0.80)
+ *  is left out. Without a host list (a front older than V0.54), the load's own order. */
+export function stripHosts(load: HostLoad[], hosts: { name: string; online: boolean; since?: string }[]): StripHost[] {
+  const by = new Map(load.map((h) => [h.host, h]));
+  if (!hosts.length) return load.map((h) => ({ name: h.host, load: h }));
+  const out: StripHost[] = [];
+  for (const h of hosts) {
+    if (!h.online) out.push({ name: h.name, offline: h.since ?? "" });
+    else if (by.has(h.name)) out.push({ name: h.name, load: by.get(h.name) });
+  }
+  // a load from a host the list does not name (a front that names its own host otherwise) still shows
+  for (const h of load) if (!hosts.some((x) => x.name === h.host)) out.push({ name: h.host, load: h });
+  return out;
+}
+
+/** V0.166: the strip shows this many hosts; the rest are "+n" and in the sheet. */
+export const STRIP_MAX = 2;
