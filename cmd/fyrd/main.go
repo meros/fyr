@@ -252,16 +252,18 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
 	// #174: the gate hook refuses a heavy command without a held slot.
+	groups := &cgroup.JobGroups{Tree: tree} // decision 0029 S5: each holder's job in a cgroup of its own
 	mgr.SetOnBash(func(thread, c string) string {
-		class := heavyCmds.Class(c)
+		class, text := heavyCmds.Match(c)
 		jobs.Saw(thread, class)
+		groups.Seen(thread, text)
 		if cfg.HeavyGate == "off" {
 			return ""
 		}
 		return eng.HeavyGate(thread, class)
 	})
 	eng.SlotActive = jobs.Active
-	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs} // V0.80, V0.86
+	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups} // V0.80, V0.86
 	// Decision 0029 S2 (#186): admission by a budget of costs (N), gated by
 	// the slowdown and memory; one job always runs; no provider (macOS)
 	// keeps the fixed count. Costs are 1.0, an idle hold 0.1, until S3
@@ -331,7 +333,12 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		return slots.EASY(time.Now(), cc, wall, ends)
 	}
 	eng.SlotSignals, eng.SlotGrowth, eng.SlotPolicy = sampler.Signals, jobs.Growth, policy
-	eng.SlotJob = func(thread, c string) { jobs.Saw(thread, heavyCmds.Class(c)) }
+	eng.SlotJob = func(thread, c string) {
+		class, text := heavyCmds.Match(c)
+		jobs.Saw(thread, class)
+		groups.Seen(thread, text)
+	}
+	eng.SlotFreeze, eng.SlotThaw = groups.Freeze, groups.Thaw // decision 0029 S5
 	eng.JobReset = jobs.Reset
 	eng.SlotOver = func(owner string) (string, float64, float64, bool) {
 		h, ok := pool.Holding(owner)

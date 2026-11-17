@@ -1713,6 +1713,8 @@ function mockDeploy() {
 const MOCK_RUNS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("runs") === "1" : false;
 const MOCK_ROOTPROMPT = typeof location !== "undefined" ? new URLSearchParams(location.search).get("rootprompt") === "no" : false;
 const MOCK_HOSTS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("hosts") === "2" : false;
+/** Decision 0029 S5: ?paused=1 has the memory guard freeze map perf's job. */
+const MOCK_PAUSED = typeof location !== "undefined" ? new URLSearchParams(location.search).get("paused") === "1" : false;
 const MOCK_REMOTE = new Set(["t_lasso", "t_triage"]);
 /** V0.124: "lab" answers with another install id than the one the front first saw, until the owner trusts it. */
 let mockLabTrusted = false;
@@ -1783,7 +1785,7 @@ function laptopLoad(): HostLoad[] {
         { id: "t_w2", cpu: 2.7, memory: 3.2e9 },
         { id: "t_w3", memory: 2e8 },
         { id: "t_babysit", cpu: 0.3, memory: 5e8 },
-        { id: "t_mapperf", cpu: 2.6, memory: 3e9, job: "yarn build" },
+        { id: "t_mapperf", cpu: 2.6, memory: 3e9, job: "yarn build", paused: MOCK_PAUSED || undefined },
         { id: "t_search", cpu: 1.0, memory: 9e8 },
       ],
       // V0.86: both slots taken, one thread waits. Decision 0029 S2: the budget is full (2.0 of 2), so the head waits.

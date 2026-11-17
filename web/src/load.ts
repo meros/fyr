@@ -10,6 +10,8 @@ export interface ThreadLoad {
   cpuPressure?: number;
   peak?: number;
   job?: string;
+  /** decision 0029 S5: the memory guard froze this thread's job */
+  paused?: boolean;
 }
 /** Decision 0029 S1: one measured job class (its newest run's measures, the median wall time of its last ten). */
 export interface JobClass {
@@ -220,8 +222,11 @@ const withArticle = (kind: string) => (/^[aeiou]/.test(kind) ? `an ${kind}` : `a
  *  otherwise. The row shows it first on its line, since the line is cut at its end. */
 export function threadJob(list: HostLoad[], id: string): string | null {
   for (const h of list) {
-    if (!h.slots?.held.some((x) => x.owner === id)) continue;
+    const held = h.slots?.held.find((x) => x.owner === id);
+    if (!held) continue;
     const t = h.threads?.find((x) => x.id === id);
+    // Decision 0029 S5: a frozen job says so first, whether or not its command is known.
+    if (t?.paused) return `${t.job ?? `${held.kind} slot`} · paused: memory`;
     return t?.job ? `${t.job} · ${gb(t.memory)} GB` : null;
   }
   return null;

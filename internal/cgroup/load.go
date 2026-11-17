@@ -66,6 +66,8 @@ type ThreadLoad struct {
 	CPUPressure *float64 `json:"cpuPressure,omitempty"`
 	Peak        uint64   `json:"peak,omitempty"`
 	Job         string   `json:"job,omitempty"`
+	// Paused: the memory guard froze this thread's job (decision 0029 S5).
+	Paused bool `json:"paused,omitempty"`
 }
 
 // MinGap is how often the host reads at most; a client asks every 5 s.
@@ -82,6 +84,8 @@ type Sampler struct {
 	// Decision 0029 S1: the slowdown probe and the job records; optional.
 	Probe *Slowdown
 	Jobs  *Jobs
+	// Groups keeps the holders' jobs in their own cgroups (S5); optional.
+	Groups *JobGroups
 
 	mu     lockwatch.Mutex
 	pub    atomic.Pointer[Load] // the last read, for readers that must not wait
@@ -117,6 +121,7 @@ func (s *Sampler) Get() Load {
 		th := make([]ThreadLoad, len(l.Threads))
 		for i, t := range l.Threads {
 			t.Job = v.Live[t.ID]
+			t.Paused = s.Groups.Frozen(t.ID)
 			th[i] = t
 		}
 		l.Threads = th
@@ -152,6 +157,16 @@ func (s *Sampler) Tick() {
 	// Decision 0029 S3: the project names ClassOf reads under the pool's
 	// lock, asked here outside every lock.
 	snap := s.Slots.Snapshot()
+	// Decision 0029 S5: the holders' jobs in their own cgroups.
+	if s.Groups != nil {
+		held := make([]string, 0, len(snap.Held))
+		for _, h := range snap.Held {
+			if !h.Priority {
+				held = append(held, h.Owner)
+			}
+		}
+		s.Groups.Tick(held)
+	}
 	owners := make([]string, 0, len(snap.Held)+len(snap.Waiting))
 	for _, h := range append(snap.Held, snap.Waiting...) {
 		owners = append(owners, h.Owner)

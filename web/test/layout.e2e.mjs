@@ -1847,6 +1847,32 @@ section('V0.142', async (h) => {
 // window, and so are every section (V0.137's Slots too, while threads wait), List, the bell, Changes and Settings; the document does not scroll; the rail is
 // the window's height; the middle (the rings and the quota) is the only part that may scroll, and at 900 it shows
 // everything; at 700 the rail is compact (no key hints) and the two rings sit side by side.
+// Decision 0029 S5: a frozen job's row says "paused: memory" first on its line, not cut, on the desktop and the
+// phone (the phone's Working section).
+section('S5 paused', async (h) => {
+  const { send, evaluate, navigate, waitFor, settle } = h;
+  const read = `(() => { const s = [...document.querySelectorAll('.tslot')].find((x) => x.textContent.includes('paused')); if (!s) return null; const a = s.closest('.one').getBoundingClientRect(), b = s.getBoundingClientRect(), e = s.closest('.ell').getBoundingClientRect(); return { text: s.textContent, inside: b.top >= a.top - 0.5 && b.bottom <= a.bottom + 0.5 && b.right <= Math.min(a.right, e.right) + 0.5 }; })()`;
+  try {
+    await navigate(`${origin}/?mock=rail&paused=1`, "[...document.querySelectorAll('.tslot')].some((x) => x.textContent.includes('paused'))");
+    const r = await evaluate(read);
+    check(r && r.text === "yarn build · paused: memory" && r.inside, `S5 desktop: the paused job's row is wrong (${JSON.stringify(r)})`);
+  } catch (e) {
+    failures.push(`S5 desktop: ${e.message}`);
+  }
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await navigate(`${origin}/?mock=rail&paused=1`, "!!document.querySelector('.m-seg')");
+    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Working')).click()`);
+    await waitFor("[...document.querySelectorAll('.tslot')].some((x) => x.textContent.includes('paused'))", { what: "the paused row on the phone" });
+    await settle();
+    const r = await evaluate(read);
+    check(r && r.text === "yarn build · paused: memory" && r.inside, `S5 phone: the paused job's row is wrong (${JSON.stringify(r)})`);
+  } catch (e) {
+    failures.push(`S5 phone: ${e.message}`);
+  }
+});
+
 section('V0.141', async (h) => {
   const { send, evaluate, waitFor, settle, navigate } = h;
   for (const ht of [700, 900]) {
