@@ -51,6 +51,10 @@ type HostConfig struct {
 	// Dial, when set, connects to the host in-process (V0.129 (3)): the
 	// both role's own host, reached at LocalURL with no port open.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error) `json:"-"`
+	// Peer is the host's peer link (decision 0030 3.6, V0.158), preferred over
+	// URL, the V0.51 whois link, which stays as the fallback. A host reached
+	// only by a peer link has the link's address as its URL.
+	Peer *PeerEndpoint `json:"-"`
 }
 
 // LocalURL is the URL of a host the front dials in-process (V0.129 (3)). It
@@ -92,6 +96,8 @@ type Options struct {
 	// Tailnet asks tailscaled which node a Serve request came from (decision
 	// 0030 3.4); nil enrols a tailnet browser by its login alone, as V0.130 did.
 	Tailnet NodeAuth
+	// OwnerRoutes adds calls to the owner socket (the roster's: fyr host …).
+	OwnerRoutes func(mux *http.ServeMux)
 	// AuthTick is how often rule 3 looks at the modes; default 10 minutes.
 	AuthTick time.Duration
 	// ID is this install's key id (V0.124, decision 0026), in the merged
@@ -143,6 +149,9 @@ type link struct {
 	base   *url.URL
 	client *http.Client
 	proxy  *httputil.ReverseProxy
+	// lt routes this link's requests: the peer link when there is one, else the
+	// transport the link was made with.
+	lt *linkTransport
 
 	raw      map[string]map[string]any // the host's thread DTOs, host revs
 	pub      map[string]map[string]any // what the browser gets: stamped, front revs
@@ -258,9 +267,16 @@ func (f *Front) newLink(h HostConfig) *link {
 	if self.ID == "" {
 		self.ID = "front"
 	}
+	lt := &linkTransport{whois: client.Transport}
+	if h.Peer == nil || h.URL != "https://"+h.Peer.Addr {
+		lt.whoisBase = u
+	}
+	if h.Peer != nil {
+		lt.attach(*h.Peer)
+	}
 	selfClient := *client
-	selfClient.Transport = actorTransport{rt: client.Transport, self: self}
-	l := &link{cfg: h, base: u, client: &selfClient, raw: map[string]map[string]any{},
+	selfClient.Transport = actorTransport{rt: lt, self: self}
+	l := &link{cfg: h, base: u, lt: lt, client: &selfClient, raw: map[string]map[string]any{},
 		pub: map[string]map[string]any{}, known: map[string]bool{}, settings: map[string]settingsRead{}}
 	l.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -278,7 +294,7 @@ func (f *Front) newLink(h HostConfig) *link {
 				pr.Out.Header.Set(authn.OriginHeader, o)
 			}
 		},
-		Transport:     client.Transport,
+		Transport:     lt,
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			api.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})

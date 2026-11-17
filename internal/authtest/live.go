@@ -2,7 +2,9 @@ package authtest
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -178,4 +180,81 @@ func (l *Live) WaitHostsOnline(cookie string, d time.Duration, names ...string) 
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
+}
+
+// Mac is the owner's second install, started by EnablePeers.
+type Mac struct {
+	Fyrd *Fyrd
+	TS   *Tailscaled
+	Node Node
+}
+
+// EnablePeers is slice 3's state change of the live install (decision 0030 5.2):
+// the laptop restarts as a release would restart it, with a peer port, and the
+// owner's Mac (the same tailnet user, Serve up on both) pairs with it by condition
+// 1. The laptop's data folder, sessions and static host stay as they were; the
+// Mac is a new install beside them.
+func (l *Live) EnablePeers() (*Mac, error) {
+	ca, err := NewCA()
+	if err != nil {
+		return nil, err
+	}
+	dir, rm, err := NewDataDir()
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, rm)
+	macNode := Node{Name: "mac.tail-test.ts.net", IP: "100.64.0.9", UserID: 1, Online: true}
+	l.TS.AddNode(macNode)
+	macTS, err := NewTailscaled(dir, macNode, User{1, l.OwnerLogin}, User{2, "guest@example.com"})
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, macTS.Close)
+	macTS.AddNode(l.Self)
+	macData, rm2, err := NewDataDir()
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, rm2)
+	root := filepath.Dir(macData)
+	pemFile := filepath.Join(root, "ca.pem")
+	if err := os.WriteFile(pemFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Cert.Raw}), 0o600); err != nil {
+		return nil, err
+	}
+	laptopData := l.Laptop.Data
+	// Each one's view of the other's Serve.
+	toMac, err := macTS.ServeTLS(l.Self, auth.SocketPath(macData, auth.ServeSocket), ca)
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, toMac.Close)
+	toLaptop, err := l.TS.ServeTLS(macNode, auth.SocketPath(laptopData, auth.ServeSocket), ca)
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, toLaptop.Close)
+	res := func(name, serve string) string {
+		p := filepath.Join(root, "resolve-"+name+".json")
+		b, _ := json.Marshal(map[string]string{l.Self.Name: "127.0.0.1", macNode.Name: "127.0.0.1", net.JoinHostPort(map[string]string{"laptop": macNode.Name, "mac": l.Self.Name}[name], "7443"): serve})
+		os.WriteFile(p, b, 0o600)
+		return p
+	}
+	peerCfg := func(resolve string) map[string]any {
+		return map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": resolve, "rootCAs": pemFile}
+	}
+	// The release restarts the laptop with a peer port; its data stays.
+	l.Laptop.Stop()
+	cfg := peerCfg(res("laptop", toMac.Addr))
+	l.Laptop, err = Start(Options{Name: "laptop", Data: laptopData, Tailscale: l.TS, Extra: cfg, Hosts: []HostEntry{{Name: "server", URL: l.Rec.URL}}})
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, l.Laptop.Stop)
+	mac, err := Start(Options{Name: "mac", Data: macData, Tailscale: macTS, Extra: peerCfg(res("mac", toLaptop.Addr))})
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, mac.Stop)
+	return &Mac{Fyrd: mac, TS: macTS, Node: macNode}, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/meros/fyr/internal/auth"
 )
@@ -67,4 +68,60 @@ func (f *Fyrd) Mode(way string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no mode for %s in %v", way, out)
+}
+
+// Member is an install of the roster, as `fyr host list` shows it.
+type Member struct {
+	ID    string
+	Name  string
+	Self  bool
+	Port  int
+	Drive bool
+}
+
+// Roster is `fyr host list`.
+type Roster struct {
+	Members       []Member
+	WhoisLinkUses int64
+	Rounds        int64
+}
+
+// Roster reads the install's roster through the owner socket.
+func (f *Fyrd) Roster() (*Roster, error) {
+	out, err := f.OwnerCall("GET", "/host/list", nil)
+	if err != nil {
+		return nil, err
+	}
+	b, _ := json.Marshal(out)
+	var r Roster
+	json.Unmarshal(b, &r)
+	return &r, nil
+}
+
+// MemberNames is the names of the installs this one knows besides itself.
+func (r *Roster) Others() []string {
+	var out []string
+	for _, m := range r.Members {
+		if !m.Self {
+			out = append(out, m.Name)
+		}
+	}
+	return out
+}
+
+// WaitRoster polls until cond holds for the install's roster, or the deadline.
+func (f *Fyrd) WaitRoster(d time.Duration, cond func(*Roster) bool) (*Roster, error) {
+	end := time.Now().Add(d)
+	var last *Roster
+	var lastErr error
+	for {
+		last, lastErr = f.Roster()
+		if lastErr == nil && cond(last) {
+			return last, nil
+		}
+		if time.Now().After(end) {
+			return last, fmt.Errorf("roster condition not met (%v): %+v\n%s", lastErr, last, f.Log())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

@@ -32,6 +32,10 @@ type WellKnown struct {
 	// machines (its hostListen, V0.51), e.g. http://100.64.0.2:7778; empty
 	// when it serves none.
 	Host string `json:"host,omitempty"`
+	// Peer is this install's peer port (decision 0030 3.6): the port other
+	// installs of the same tailnet user dial, pinned to ID, once they have
+	// checked this answer over WebPKI.
+	Peer int `json:"peer,omitempty"`
 }
 
 // Peer is one discovered Fyr host, as the client gets it.

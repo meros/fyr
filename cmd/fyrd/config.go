@@ -130,6 +130,18 @@ type config struct {
 	// root only. The test harness adds its own user, since its Serve
 	// emulator is not root.
 	ServeSocketUsers []int `json:"serveSocketUsers"`
+	// PeerListen: where this install's peer port listens (decision 0030 3.6,
+	// V0.158): host:port, TLS 1.3 pinned to install keys, any interface; empty
+	// is no peer port. The NixOS module sets it from services.fyr.peerPort.
+	PeerListen string `json:"peerListen"`
+	// PeerEverySeconds: how often installs pair and sync; 0 is 60.
+	PeerEverySeconds int `json:"peerEverySeconds"`
+	// ResolveFile: a JSON object, host:port (or a host alone, for every port) → the
+	// address to connect to, read at each dial (a network with no MagicDNS; the test harness). RootCAs: extra
+	// PEM roots for the Serve probe of condition 1 (a Serve behind the owner's
+	// own CA).
+	ResolveFile string `json:"resolveFile"`
+	RootCAs     string `json:"rootCAs"`
 }
 
 // tsSocket is the LocalAPI socket this install asks about the tailnet.
