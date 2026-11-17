@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -61,6 +62,9 @@ type Snapshot struct {
 	// Pool.Cost); Why is why the head waits ("" when nothing holds it).
 	Used *float64 `json:"used,omitempty"`
 	Why  string   `json:"why,omitempty"`
+	// Decision 0029 S4: the budget now (nil while it is N) and why.
+	Budget    *float64 `json:"budget,omitempty"`
+	BudgetWhy string   `json:"budgetWhy,omitempty"`
 }
 
 // Pool is one host's slots.
@@ -87,6 +91,12 @@ type Pool struct {
 	held []Holder
 	wait []Holder
 	why  string
+	// Decision 0029 S4: the budget (0 is N), why, and the last grant.
+	budget    float64
+	budgetWhy string
+	lastGrant time.Time
+	// budgetBits mirrors budget for Budget, which Admit calls under p.mu.
+	budgetBits atomic.Uint64
 	// passes: the head (owner and since) and how often backfill passed it.
 	passHead  string
 	passSince time.Time
@@ -176,6 +186,7 @@ func (p *Pool) Acquire(owner, kind string) (held bool, ahead int) {
 	defer p.save()
 	if len(p.wait) == 0 && p.admitLocked(h) {
 		p.held = append(p.held, h)
+		p.lastGrant = h.Since
 		return true, 0
 	}
 	p.wait = append(p.wait, h)
@@ -303,6 +314,7 @@ func (p *Pool) grantLocked(i int, told []Holder) []Holder {
 	h := p.wait[i]
 	p.wait = slices.Delete(p.wait, i, i+1)
 	h.Since = p.now()
+	p.lastGrant = h.Since
 	if h.ready != nil {
 		close(h.ready)
 		h.ready = nil
@@ -354,8 +366,36 @@ func (p *Pool) admitLocked(head Holder) bool {
 	return ok
 }
 
-// Budget is the pool's capacity in cost units: N.
-func (p *Pool) Budget() float64 { return float64(p.n) }
+// Budget is the pool's capacity in cost units: N, or what S4's controller
+// set. Admit calls it under the pool's lock, so it reads a value the
+// controller stores atomically enough: a float set under p.mu.
+func (p *Pool) Budget() float64 {
+	if b := p.budgetLoad(); b > 0 {
+		return b
+	}
+	return float64(p.n)
+}
+
+// SetBudget sets the budget and why (decision 0029 S4), and grants the
+// queue what now fits.
+func (p *Pool) SetBudget(b float64, why string) {
+	if p.Off() {
+		return
+	}
+	p.mu.Lock()
+	p.budget, p.budgetWhy = b, why
+	p.budgetBits.Store(math.Float64bits(b))
+	p.fillLocked()
+}
+
+func (p *Pool) budgetLoad() float64 { return math.Float64frombits(p.budgetBits.Load()) }
+
+// LastGrant is when the pool last admitted a job.
+func (p *Pool) LastGrant() time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.lastGrant
+}
 
 // Holding reports owner's slot.
 func (p *Pool) Holding(owner string) (Holder, bool) {
@@ -397,6 +437,10 @@ func (p *Pool) snapshotLocked() Snapshot {
 	}
 	if len(s.Waiting) > 0 {
 		s.Why = p.why
+	}
+	if p.budget > 0 && p.budget != float64(p.n) {
+		b := p.budget
+		s.Budget, s.BudgetWhy = &b, p.budgetWhy
 	}
 	if p.Cost != nil {
 		used := 0.0

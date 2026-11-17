@@ -181,6 +181,9 @@ type Engine struct {
 	JobReset    func(class string) bool
 	// Decision 0029 S5: freeze and thaw a holder's job (its own cgroup, not
 	// its CLI); optional. frozen is the one frozen now, under mu.
+	// SlotAIMD adapts the pool's budget at each tick (decision 0029 S4);
+	// optional.
+	SlotAIMD   *slots.AIMD
 	SlotFreeze func(owner string) bool
 	SlotThaw   func(owner string)
 	frozen     frozenJob

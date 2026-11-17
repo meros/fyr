@@ -57,3 +57,10 @@ test("S5: a frozen job's row says so first, with or without its command", () => 
   assert.equal(threadJob([h], "t_a"), "make test · paused: memory");
   assert.equal(threadJob([h], "t_b"), "e2e slot · paused: memory");
 });
+
+test("S4: the bar and the tooltip follow the adapted budget and say why", () => {
+  const h: HostLoad = { ...host, slots: { ...host.slots!, used: 2.1, budget: 2.5, budgetWhy: "the host is calm and jobs wait" } };
+  assert.deepEqual(railBudget(h), { text: "2.1/2.5", note: "2 wait", share: 0.84, hot: true, waiting: 2 });
+  assert.ok(loadDetail(h).includes("Budget 2.5 (N 2): the host is calm and jobs wait"), loadDetail(h).join("\n"));
+  assert.ok(!loadDetail(host).some((l) => l.startsWith("Budget")));
+});
