@@ -5,6 +5,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { bridgeMessage, liveViewOf, pressReply, staleLabel, stateMessage, viewDimmed, viewHeight } from "./view.ts";
 import { FRAME_ALLOW } from "./previews.ts";
+import { FsBar, FsButton, useFrameFullscreen } from "./preview-ui.tsx";
 import { useApi } from "./api-context.ts";
 import type { Thread, Offer } from "./types.ts";
 
@@ -40,6 +41,8 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; 
   const actionRef = useRef({ onAction, offers: t.live?.offers });
   actionRef.current = { onAction, offers: t.live?.offers };
   const stateRef = useRef(v?.state ?? {});
+  // V0.165: full screen in place, the same frame (its bridge and state stay).
+  const fs = useFrameFullscreen(box);
   stateRef.current = v?.state ?? {};
 
   useEffect(() => {
@@ -99,27 +102,37 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; 
   const dim = viewDimmed(t);
   const stamp = staleLabel(v.updatedAt, now);
   return (
-    <div class={`lv${dim ? " dim" : ""}${collapsed ? " shut" : ""}${full ? " full" : ""}`} ref={box} data-testid="live-view">
-      <button class="lv-h" onClick={full ? undefined : toggle} aria-expanded={!collapsed} title={full ? v.updatedAt : collapsed ? "Show the live view" : "Hide the live view"}>
-        <span class="lv-k">Live view</span>
-        {collapsed && v.headline && <span class="lv-hl ell">{v.headline}</span>}
-        <span class="lv-s" title={dim ? "The agent is working; this may change" : v.updatedAt}>
-          {dim ? `${stamp} · agent working` : stamp}
-        </span>
-        {!full && <span class="chev">{collapsed ? "▸" : "▾"}</span>}
-      </button>
+    <div class={`lv${dim ? " dim" : ""}${collapsed ? " shut" : ""}${full ? " full" : ""}${fs.on ? " isfs" : ""}`} ref={box} data-testid="live-view">
+      {fs.on ? (
+        <FsBar key="bar" title={v.headline || "Live view"} fs={fs} />
+      ) : (
+        <div key="top" class="lv-top">
+          <button class="lv-h" onClick={full ? undefined : toggle} aria-expanded={!collapsed} title={full ? v.updatedAt : collapsed ? "Show the live view" : "Hide the live view"}>
+            <span class="lv-k">Live view</span>
+            {collapsed && v.headline && <span class="lv-hl ell">{v.headline}</span>}
+            <span class="lv-s" title={dim ? "The agent is working; this may change" : v.updatedAt}>
+              {dim ? `${stamp} · agent working` : stamp}
+            </span>
+            {!full && <span class="chev">{collapsed ? "▸" : "▾"}</span>}
+          </button>
+          {!collapsed && <FsButton onPress={fs.enter} />}
+        </div>
+      )}
       {!collapsed && (
-        <iframe
-          ref={frame}
-          class="lv-f"
-          src={api.previewUrl(v.pageId, t.host)}
-          sandbox="allow-scripts"
-          allow={FRAME_ALLOW}
-          allowFullScreen
-          title={v.headline || "Live view"}
-          style={full ? undefined : { height: `${viewHeight(reported, pane)}px` }}
-          onLoad={sendState}
-        />
+        // keyed: the header's swap with the bar must never take this wrapper, or the frame reloads and loses its state
+        <div key="frame" class="fzw">
+          <iframe
+            ref={frame}
+            class="lv-f"
+            src={api.previewUrl(v.pageId, t.host)}
+            sandbox="allow-scripts"
+            allow={FRAME_ALLOW}
+            allowFullScreen
+            title={v.headline || "Live view"}
+            style={fs.frameStyle(full ? undefined : { height: `${viewHeight(reported, pane)}px` })}
+            onLoad={sendState}
+          />
+        </div>
       )}
     </div>
   );

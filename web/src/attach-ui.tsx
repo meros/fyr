@@ -1,8 +1,9 @@
-// Attachment chips, pickers and the full-screen image viewer (SPEC 0.5 V0.18).
+// Attachment chips, pickers and a sent message's attachments (SPEC 0.5 V0.18, V0.165).
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { addChips, chipDone, chipError, chipProgress, fileLabel, formatSize, isImage, removeChip, type Chip } from "./attach.ts";
 import { useApi } from "./api-context.ts";
+import { openImages, type ViewerImage } from "./preview-ui.tsx";
 
 let keySeq = 0;
 
@@ -169,17 +170,18 @@ export interface SentAttachment {
   size: number;
 }
 
-/** A user message's attachments: image thumbnails (tap: full screen) and file chips (open in a new tab). */
+/** A user message's attachments: image thumbnails (tap: the zooming viewer, V0.165, swiping between this message's
+ *  images) and file chips (open in a new tab: the phone hands a PDF to its own viewer). */
 export function SentAttachments({ items, host }: { items: SentAttachment[]; host?: string }) {
   const { attachmentUrl } = useApi();
-  const [full, setFull] = useState<SentAttachment | null>(null);
   if (!items.length) return null;
+  const images: ViewerImage[] = items.filter((a) => isImage(a.mediaType)).map((a) => ({ key: a.id, src: attachmentUrl(a.id, host), title: a.name }));
   return (
     <div class="att-sent">
       {items.map((a) =>
         isImage(a.mediaType) ? (
-          <button class="att-img" onClick={() => setFull(a)} aria-label={`Open ${a.name}`}>
-            <img src={attachmentUrl(a.id, host)} alt={a.name} loading="lazy" />
+          <button class="att-img" onClick={() => openImages(images, images.findIndex((x) => x.key === a.id))} aria-label={`Open ${a.name}`}>
+            <img src={attachmentUrl(a.id, host)} alt={a.name} loading="lazy" decoding="async" />
           </button>
         ) : (
           <a class="att-file" href={attachmentUrl(a.id, host)} target="_blank" rel="noopener noreferrer" title={a.name}>
@@ -190,14 +192,6 @@ export function SentAttachments({ items, host }: { items: SentAttachment[]; host
             </span>
           </a>
         ),
-      )}
-      {full && (
-        <div class="att-full" role="dialog" aria-label={full.name} onClick={() => setFull(null)}>
-          <img src={attachmentUrl(full.id, host)} alt={full.name} />
-          <button class="att-close" aria-label="Close" onClick={() => setFull(null)}>
-            ×
-          </button>
-        </div>
       )}
     </div>
   );
