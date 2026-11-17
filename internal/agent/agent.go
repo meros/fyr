@@ -166,6 +166,15 @@ type session struct {
 	// refresh: end the process after this run, so the next one starts
 	// with the current flag.
 	refresh bool
+	// bg: the background tasks (Bash, Monitor, agents) the CLI reports
+	// running (background_tasks_changed). V0.133: Fyr never closes the
+	// input while bg > 0; the CLI would live on for them and refuse every
+	// tool call of the turn it then starts by itself.
+	bg int
+	// inputClosed: Fyr closed the process's stdin (closeInput).
+	inputClosed bool
+	// tools: tool_use id → tool name, until its result (V0.133).
+	tools map[string]string
 	// results wait for turn results (a handover waits on the source's
 	// turn, V0.45).
 	results []waiter
@@ -529,7 +538,7 @@ func (m *Manager) Stop(threadID string) {
 	s := m.sessions[threadID]
 	m.mu.Unlock()
 	if s != nil {
-		s.c.Close()
+		m.closeInput(s)
 		select {
 		case <-s.c.Done():
 		case <-time.After(5 * time.Second):
