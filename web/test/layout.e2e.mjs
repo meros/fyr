@@ -2081,6 +2081,112 @@ for (const [label, w, ht] of [
   });
 });
 
+// SPEC V0.131: New project, Change folder and New thread browse the chosen host's folders, the same on the desktop
+// and the phone. 1 New project in Settings: the Host field (this install first, the offline host named), lab's folders
+// in the picker, project.create with host lab; 2 an offline host says so and nothing is sent; 3 New thread: with no
+// project the owner picks the host and the picker is that host's, thread.create names it; a project locks the host.
+for (const [label, w, ht] of [
+  ["desktop", 1280, 800],
+  ["phone", 390, 844],
+]) section(`V0.131 ${label}`, async (hn) => {
+  const { evaluate, waitFor, settle, navigate, openScreen, shot } = hn;
+  const ctx = `V0.131 ${label}`;
+  const phone = label === "phone";
+  const root = phone ? ".m-app" : ".dlg";
+  const open = async (url, ready) => {
+    if (phone) await openScreen({ url, ready }, w, ht);
+    else await navigate(`${origin}/${url}`, ready);
+    await waitFor(ready);
+    await settle();
+  };
+  const step = async (name, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      failures.push(`${ctx} ${name}: ${e.message}`);
+    }
+  };
+  const setHost = (h) => evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); s.value = ${JSON.stringify(h)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const click = (sel, text) => evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find(x => x.textContent.trim().startsWith(${JSON.stringify(text)})); b?.click(); return !!b; })()`);
+  const PICKER = `({ title: (document.querySelector('.fsheet .m-shh') ?? document.querySelector('.fmodal .dh b'))?.textContent ?? '', rows: [...document.querySelectorAll('.fpick .fsec.browse .fpr')].map(b => b.textContent.trim()), note: document.querySelector('.fnote')?.textContent ?? '' })`;
+  const closePicker = () => evaluate(`(document.querySelector('.fsheet .m-fchg') ?? document.querySelector('.fmodal .dh button'))?.click()`);
+  // 1. New project on lab.
+  await step("new project", async () => {
+    await open(phone ? "?mock=rail&hosts=2&settings=projects" : "?mock=rail&hosts=2&dialog=settings&page=projects", `document.querySelectorAll('${root} .pli').length > 3`);
+    if (!(await click(`${root} button`, "New project"))) throw new Error("no New project button");
+    await waitFor(`!!document.querySelector('${root} .hostf select')`);
+    const opts = await evaluate(`[...document.querySelectorAll('${root} .hostf option')].map(o => o.textContent)`);
+    check(opts.join("|") === "desk (this install)|meros-server (offline)|lab|old-nuc", `${ctx}: the hosts offered ${JSON.stringify(opts)}`);
+    if (phone) {
+      const h = await evaluate(`document.querySelector('${root} .hostf select').getBoundingClientRect().height`);
+      check(h >= 44, `${ctx}: the Host field is ${h} px high`);
+    }
+    await setHost("lab");
+    await click(`${root} button`, "Choose folder");
+    await waitFor(`document.querySelectorAll('.fpick .fsec.browse .fpr').length > 0`);
+    await settle();
+    const pk = await evaluate(PICKER);
+    check(/ on lab$/.test(pk.title) && pk.rows.some((r) => r.includes("lab-notes")) && pk.rows.every((r) => /lab-notes|experiments/.test(r)), `${ctx}: the picker shows lab's folders ${JSON.stringify(pk)}`);
+    await shot(`hostfolders-picker-${label}.png`);
+    await evaluate(`[...document.querySelectorAll('.fpick .fpr[data-row]:not([data-enter])')].find(b => b.textContent.includes('lab-notes'))?.click()`);
+    await waitFor(`!document.querySelector('.fpick')`);
+    await evaluate(`(() => { const i = document.querySelector('${root} .pform input'); i.value = 'Lab notes'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await settle();
+    await shot(`hostfolders-newproject-${label}.png`);
+    await click(`${root} .pform button`, "Create project");
+    await waitFor(`${COMMANDS("project.create")}.length === 1`, { soft: true });
+    const c = await evaluate(`${COMMANDS("project.create")}.map(c => c.args)`);
+    check(c.length === 1 && c[0].host === "lab" && c[0].folder === "/home/owner/lab-notes" && c[0].name === "Lab notes", `${ctx}: project.create ${JSON.stringify(c)}`);
+  });
+  // 2. An offline host: said plainly, nothing sent, no other host's folders.
+  await step("offline", async () => {
+    await open(phone ? "?mock=rail&hosts=2&settings=projects" : "?mock=rail&hosts=2&dialog=settings&page=projects", `document.querySelectorAll('${root} .pli').length > 3`);
+    await click(`${root} button`, "New project");
+    await waitFor(`!!document.querySelector('${root} .hostf select')`);
+    await setHost("meros-server");
+    await settle();
+    const note = await evaluate(`document.querySelector('${root} .hostf .hbad')?.textContent ?? ''`);
+    check(/^meros-server is offline since \d\d:\d\d\. Its folders cannot be read/.test(note), `${ctx}: the offline note "${note}"`);
+    await click(`${root} button`, "Choose folder");
+    await waitFor(`!!document.querySelector('.fnote')`, { soft: true });
+    const pk = await evaluate(PICKER);
+    check(/^meros-server is offline/.test(pk.note) && pk.rows.length === 0, `${ctx}: the picker of an offline host ${JSON.stringify(pk)}`);
+    await shot(`hostfolders-offline-${label}.png`);
+    await closePicker();
+    await waitFor(`!document.querySelector('.fpick, .fnote')`, { soft: true });
+    await evaluate(`(() => { const i = document.querySelector('${root} .pform input'); i.value = 'X'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await click(`${root} .pform button`, "Create project");
+    await settle();
+    const after = await evaluate(`({ n: ${COMMANDS("project.create")}.length, err: document.querySelector('${root} .pform .err')?.textContent ?? '' })`);
+    check(after.n === 0 && /^meros-server is offline/.test(after.err), `${ctx}: a create on an offline host ${JSON.stringify(after)}`);
+  });
+  // 3. New thread: the host follows the project; with no project the owner picks it.
+  await step("new thread", async () => {
+    await open(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", `!!document.querySelector('${root} .hostf select')`);
+    const locked = await evaluate(`({ dis: document.querySelector('${root} .hostf select').disabled, line: document.querySelector('${root} .hostf .srcl')?.textContent ?? '' })`);
+    check(locked.dis && /^Follows .+\.$/.test(locked.line), `${ctx}: a project holds the host ${JSON.stringify(locked)}`);
+    await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick')?.click()`);
+    await settle();
+    await click(`${root} button, ${root} [role=option]`, "No project");
+    await waitFor(`!document.querySelector('${root} .hostf select').disabled`);
+    await setHost("lab");
+    await settle();
+    await evaluate(`(document.querySelector('${root} .m-fchg') ?? [...document.querySelectorAll('${root} .fline .btn')][0])?.click()`);
+    await waitFor(`document.querySelectorAll('.fpick .fsec.browse .fpr').length > 0`);
+    const pk = await evaluate(PICKER);
+    check(/ on lab$/.test(pk.title) && pk.rows.some((r) => r.includes("experiments")), `${ctx}: New thread's picker ${JSON.stringify(pk)}`);
+    await evaluate(`[...document.querySelectorAll('.fpick .fpr[data-row]:not([data-enter])')].find(b => b.textContent.includes('experiments'))?.click()`);
+    await waitFor(`!document.querySelector('.fpick')`);
+    await evaluate(`(() => { const t = document.querySelector('${root} textarea'); t.value = 'Map the arm'; t.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await settle();
+    await shot(`hostfolders-newthread-${label}.png`);
+    await evaluate(`[...document.querySelectorAll('${root} button')].find(b => /^Start/.test(b.textContent.trim()))?.click()`);
+    await waitFor(`${COMMANDS("thread.create")}.length === 1`, { soft: true });
+    const c = await evaluate(`${COMMANDS("thread.create")}.map(c => c.args)`);
+    check(c.length === 1 && c[0].host === "lab" && c[0].cwd === "/home/owner/experiments" && !c[0].projectId, `${ctx}: thread.create ${JSON.stringify(c)}`);
+  });
+});
+
 // V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.
 section('V0.35', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;

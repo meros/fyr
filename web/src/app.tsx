@@ -58,10 +58,11 @@ import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, filterByProject, moveToast, orderProjects } from "./projects.ts";
 import { admitThread, hideQuiet, nextQuietEnd, reachable } from "./quiet.ts";
-import { FolderPickContext, FolderPicker, type FolderPick, type PickOptions } from "./folder-picker.tsx";
+import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
-import { hostLabel } from "./hosts.ts";
+import { hostLabel, hostOfflineNote, multiHost } from "./hosts.ts";
+import { HostsContext } from "./host-pick-ui.tsx";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
 import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
@@ -780,8 +781,11 @@ function App() {
     /** V0.55: the project's one folder, from the picker. */
     setFolder: (id: string, path: string) => projectCommand("project.update", { id, folder: path }),
     /** New project (V0.30): with threadIds, the host files one thread in the same write; more are filed after. */
-    create: async (name: string, folder: string, threadIds: string[] = []): Promise<{ error: string | null; id?: string }> => {
+    create: async (name: string, folder: string, threadIds: string[] = [], host?: string): Promise<{ error: string | null; id?: string }> => {
       const args: Record<string, unknown> = { name };
+      // V0.131: on the host picked, else the threads' host (a project made from threads lives where they run).
+      const on = host || (threadIds.length ? store.threads[threadIds[0]]?.host : undefined);
+      if (on && multiHost(store.hosts)) args.host = on;
       if (folder) args.folder = folder;
       if (threadIds.length === 1) args.threadId = threadIds[0];
       const r = await api.command("project.create", undefined, args);
@@ -835,25 +839,41 @@ function App() {
   };
   // V0.68: Fyr's own confirmation, a sheet on the phone and a dialog on the desktop.
   const confirmHost = useConfirmHost(phone);
+  // V0.131: the picker reads the folders of the host it was opened for; an offline host says so, and no other host's
+  // folders stand in.
+  const pickHost = folderPick?.host ?? "";
+  const pickFs: FsApi = { fsList: (p) => api.fsList(p, pickHost), fsRecent: () => api.fsRecent(pickHost), fsRepos: () => api.fsRepos(pickHost), fsMkdir: (a, b) => api.fsMkdir(a, b, pickHost) };
+  const pickTitle = `${folderPick?.title ?? "Pick a folder"}${pickHost && multiHost(store.hosts) ? ` on ${pickHost}` : ""}`;
+  const pickNote = hostOfflineNote(pickHost, store.hosts, now);
+  const pickBody = (autoFocus: boolean) =>
+    pickNote ? (
+      <div class="note fnote" role="alert">
+        {pickNote}
+      </div>
+    ) : (
+      <FolderPicker key={pickHost} fs={pickFs} first={folderPick?.first} onPick={closeFolderPick} autoFocus={autoFocus} />
+    );
+  // V0.131: the hosts a new project or thread can live on (HostField, NewProjectStep).
+  const hostsCtx = useMemo(() => ({ hosts: store.hosts, self: store.host, now }), [store.hosts, store.host, Math.floor(now / 60_000)]);
   const folderPickView = folderPick
     ? phone ? (
         <div class="m-scrim fscrim" onClick={(e) => e.target === e.currentTarget && Date.now() - folderPick.at > 500 && closeFolderPick(null)}>
-          <div class="m-sheet fsheet" role="dialog" aria-modal="true" aria-label={folderPick.title ?? "Pick a folder"}>
+          <div class="m-sheet fsheet" role="dialog" aria-modal="true" aria-label={pickTitle}>
             <div class="m-grab" />
             <div class="fsh">
-              <span class="m-shh">{folderPick.title ?? "Pick a folder"}</span>
+              <span class="m-shh">{pickTitle}</span>
               <button class="m-fchg" onClick={() => closeFolderPick(null)}>
                 Cancel
               </button>
             </div>
-            <FolderPicker fs={api} first={folderPick.first} onPick={closeFolderPick} autoFocus={false} />
+            {pickBody(false)}
           </div>
         </div>
       ) : (
         <div class="fmodal">
-          <Modal title={folderPick.title ?? "Pick a folder"} onClose={() => closeFolderPick(null)} wide>
+          <Modal title={pickTitle} onClose={() => closeFolderPick(null)} wide>
             <div class="db">
-              <FolderPicker fs={api} first={folderPick.first} onPick={closeFolderPick} />
+              {pickBody(true)}
             </div>
           </Modal>
         </div>
@@ -884,6 +904,7 @@ function App() {
     if (a.title) args.title = a.title;
     if (a.view) args.view = true;
     if (a.effort) args.effort = a.effort;
+    if (a.host) args.host = a.host; // V0.131
     const r = await api.command("thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
@@ -1191,7 +1212,7 @@ function App() {
         update: projectActions.update,
         setFolder: projectActions.setFolder,
         delete: projectActions.delete,
-        create: async (name, folder) => (await projectActions.create(name, folder)).error,
+        create: async (name, folder, host) => (await projectActions.create(name, folder, [], host)).error,
         order: projectActions.order,
       }}
     />
@@ -1272,6 +1293,7 @@ function App() {
     return (
       <DirectoryContext.Provider value={directory}>
         <FolderPickContext.Provider value={folderPicker}>
+        <HostsContext.Provider value={hostsCtx}>
         <ConfirmProvider value={confirmHost.ask}>
         <ProfilesContext.Provider value={store.profiles}>
         <Boundary name="Fyr">
@@ -1334,6 +1356,7 @@ function App() {
         </Boundary>
         </ProfilesContext.Provider>
         </ConfirmProvider>
+        </HostsContext.Provider>
         </FolderPickContext.Provider>
       </DirectoryContext.Provider>
     );
@@ -1362,6 +1385,7 @@ function App() {
       <PreviewViewer />
       <DirectoryContext.Provider value={directory}>
       <FolderPickContext.Provider value={folderPicker}>
+        <HostsContext.Provider value={hostsCtx}>
       <ConfirmProvider value={confirmHost.ask}>
       <ProfilesContext.Provider value={store.profiles}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
@@ -1471,7 +1495,7 @@ function App() {
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={projectFilter} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder) => projectActions.create(name, folder)} />}
+      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={projectFilter} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
       {dialog === "picker" && (
         <Modal title={pickIds.length > 1 ? `Project for ${pickIds.length} threads` : "Project"} onClose={() => setDialog(null)} wide>
           <div class="db">
@@ -1522,7 +1546,8 @@ function App() {
       {folderPickView}
       {confirmHost.view}
       </ConfirmProvider>
-      </FolderPickContext.Provider>
+      </HostsContext.Provider>
+        </FolderPickContext.Provider>
       </DirectoryContext.Provider>
     </div>
   );

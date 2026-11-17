@@ -171,3 +171,21 @@ export function howIn(hostname: string, user: string): string {
   if (routeOf(`http://${h.includes(":") && !h.startsWith("[") ? `[${h}]` : h}/`) === "this machine") return "On this machine itself (localhost). A browser on this machine is always allowed.";
   return `At ${hostname}${user ? `, as ${user}` : ""}. What stands in front of Fyr there decides who gets in.`;
 }
+
+/** V0.131: the hosts New project and New thread offer: this install first, then the front's order; an offline one is
+ *  named so. None when the front has one host (nothing to pick). */
+export function hostChoices(hosts: Pick<HostInfo, "name" | "online">[] | undefined, self: string): { name: string; label: string; online: boolean }[] {
+  const hs = hosts ?? [];
+  if (hs.length <= 1) return [];
+  const ordered = [...hs.filter((h) => h.name === self), ...hs.filter((h) => h.name !== self)];
+  return ordered.map((h) => ({ name: h.name, label: h.name === self ? `${h.name} (this install)` : h.online ? h.name : `${h.name} (offline)`, online: h.online }));
+}
+
+/** V0.131: why nothing can be made on a picked host now; "" when it is online (or none is picked). Nothing falls back
+ *  to another host. */
+export function hostOfflineNote(name: string | undefined, hosts: Pick<HostInfo, "name" | "online" | "since">[] | undefined, now: number): string {
+  const h = name ? hosts?.find((x) => x.name === name) : undefined;
+  if (!h || h.online) return "";
+  const at = dayTime(h.since, now);
+  return `${h.name} is offline${at ? ` since ${at}` : ""}. Its folders cannot be read and nothing can be made on it until it is back; pick another host or wait.`;
+}

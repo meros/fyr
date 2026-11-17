@@ -10,6 +10,7 @@ import { attachmentUrl, hostQuery, type UploadReply } from "./attach.ts";
 import { previewUrl } from "./previews.ts";
 import { decodeHosts, type HostInfo } from "./hosts.ts";
 import { settingsPath } from "./host-settings.ts";
+import { fsQuery } from "./folders.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
 import type { HostLoad } from "./load.ts";
@@ -75,12 +76,13 @@ export interface Api {
   filePatch(threadId: string, path: string, since?: string): Promise<FilePatchDTO>;
   /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
   prDetail(threadId: string, fresh?: boolean): Promise<PrReply>;
-  /** The host folder picker (V0.42); every path stays inside the owner's home folder. */
-  fsList(path: string): Promise<FsListing>;
-  fsRecent(): Promise<FsDir[]>;
-  fsRepos(): Promise<FsDir[]>;
+  /** The host folder picker (V0.42); every path stays inside the owner's home folder. V0.131: `host` names whose
+   *  folders ("" or missing: the front's first host). */
+  fsList(path: string, host?: string): Promise<FsListing>;
+  fsRecent(host?: string): Promise<FsDir[]>;
+  fsRepos(host?: string): Promise<FsDir[]>;
   /** Makes parent/name and returns its path. */
-  fsMkdir(parent: string, name: string): Promise<string>;
+  fsMkdir(parent: string, name: string, host?: string): Promise<string>;
   /** V0.44: each profile's provider quota; [] when the host cannot say. */
   quota(): Promise<Quota[]>;
   /** V0.80: each host's load and its threads' CPU; [] when no host can say. */
@@ -291,18 +293,18 @@ function createHttpApi(): Api {
 
   return {
     mock: false,
-    async fsList(path) {
-      const l = await fsGet<FsListing>(`/api/fs/list?path=${encodeURIComponent(path)}`);
+    async fsList(path, host) {
+      const l = await fsGet<FsListing>(fsQuery(`/api/fs/list?path=${encodeURIComponent(path)}`, host));
       return { path: l.path, parent: l.parent ?? "", dirs: l.dirs ?? [] };
     },
-    async fsRecent() {
-      return (await fsGet<{ dirs?: FsDir[] }>("/api/fs/recent")).dirs ?? [];
+    async fsRecent(host) {
+      return (await fsGet<{ dirs?: FsDir[] }>(fsQuery("/api/fs/recent", host))).dirs ?? [];
     },
-    async fsRepos() {
-      return (await fsGet<{ dirs?: FsDir[] }>("/api/fs/repos")).dirs ?? [];
+    async fsRepos(host) {
+      return (await fsGet<{ dirs?: FsDir[] }>(fsQuery("/api/fs/repos", host))).dirs ?? [];
     },
-    async fsMkdir(parent, name) {
-      const r = await fetch("/api/fs/mkdir", { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ parent, name }) });
+    async fsMkdir(parent, name, host) {
+      const r = await fetch(fsQuery("/api/fs/mkdir", host), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ parent, name }) });
       const j = (await r.json().catch(() => ({}))) as { path?: string; error?: string };
       if (!r.ok || !j.path) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j.path;

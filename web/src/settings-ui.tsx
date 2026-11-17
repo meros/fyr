@@ -75,8 +75,8 @@ export interface ProjectActions {
   update(id: string, patch: ProjectPatch): Promise<string | null>;
   setFolder(id: string, path: string): Promise<string | null>;
   delete(id: string): Promise<string | null>;
-  /** New project without a thread; the error, or null */
-  create(name: string, folder: string): Promise<string | null>;
+  /** New project without a thread; the error, or null. V0.131: on `host` (several hosts) */
+  create(name: string, folder: string, host?: string): Promise<string | null>;
   /** V0.121: the owner's project order (front.projectOrder); the error, or null */
   order(ids: string[]): Promise<string | null>;
 }
@@ -1609,8 +1609,8 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
               initialFolder=""
               fromThread={false}
               onCancel={() => setAdding(false)}
-              onCreate={async (name, folder) => {
-                const e = await p.projectActions.create(name, folder);
+              onCreate={async (name, folder, host) => {
+                const e = await p.projectActions.create(name, folder, host);
                 if (!e) setAdding(false);
                 return e;
               }}

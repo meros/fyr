@@ -103,3 +103,8 @@ export function folderNameError(name: string, existing: string[]): string | null
   if (existing.includes(n)) return `${n} is already there.`;
   return null;
 }
+
+/** V0.131: a folder picker call names the host whose folders it reads ("" or missing: the front's first host). */
+export function fsQuery(url: string, host: string | undefined): string {
+  return host ? `${url}${url.includes("?") ? "&" : "?"}host=${encodeURIComponent(host)}` : url;
+}
