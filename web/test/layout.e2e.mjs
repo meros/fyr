@@ -4325,25 +4325,31 @@ try {
     await waitFor(`${SCALE} > 1.3`, { soft: true });
     const r = { scale: await evaluate(SCALE), page: await pageScale(send) };
     check(r.scale > 1.3 && r.page === 1, `${ctx}: a pinch on the image did not zoom it alone (${JSON.stringify(r)})`);
-    // A double tap goes back to fit.
-    for (let i = 0; i < 2; i++) {
-      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: cx, y: cy }] });
-      await sleep(30);
-      await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      await sleep(60);
-    }
-    await waitFor(`${SCALE} === 1`, { soft: true });
-    check((await evaluate(SCALE)) === 1, `${ctx}: a double tap on a zoomed image does not go back to fit`);
+    // A double tap: two taps within 300 ms of the page's clock. On a busy runner the CDP calls can land further apart
+    // than that, so the gesture is tried again while the page saw its taps too far apart (it records each gap).
+    await evaluate(`(() => { window.__taps = []; document.querySelector('.pv-stage').addEventListener('pointerup', (e) => __taps.push(e.timeStamp)); return true; })()`);
+    const doubleTapUntil = async (until) => {
+      let gap = 0;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await evaluate(`(__taps.length = 0, true)`);
+        for (let i = 0; i < 2; i++) {
+          await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: cx, y: cy }] });
+          await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        }
+        const ok = await waitFor(until, { soft: true, timeout: 1500 });
+        if (ok) return { ok: true };
+        gap = await evaluate(`__taps.length === 2 ? Math.round(__taps[1] - __taps[0]) : -1`);
+        if (gap >= 0 && gap < 300) return { ok: false, gap }; // the page saw a real double tap and did nothing
+        await sleep(400); // let the lone tap expire before the next try
+      }
+      return { ok: false, gap };
+    };
+    const back = await doubleTapUntil(`${SCALE} === 1`);
+    check(back.ok, `${ctx}: a double tap on a zoomed image does not go back to fit (${JSON.stringify(back)})`);
     // ...and a double tap at fit zooms in.
-    for (let i = 0; i < 2; i++) {
-      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: cx, y: cy }] });
-      await sleep(30);
-      await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      await sleep(60);
-    }
-    await waitFor(`${SCALE} > 1`, { soft: true });
-    const dt = { scale: await evaluate(SCALE), page: await pageScale(send) };
-    check(dt.scale > 1 && dt.page === 1, `${ctx}: a double tap at fit does not zoom the image (${JSON.stringify(dt)})`);
+    const zin = await doubleTapUntil(`${SCALE} > 1`);
+    const dt = { ...zin, scale: await evaluate(SCALE), page: await pageScale(send) };
+    check(dt.ok && dt.scale > 1 && dt.page === 1, `${ctx}: a double tap at fit does not zoom the image (${JSON.stringify(dt)})`);
     await shot(`v0165-image-zoomed-${front}.png`);
   } else {
     await send("Input.dispatchMouseEvent", { type: "mouseWheel", x: cx, y: cy, deltaX: 0, deltaY: -400 });
