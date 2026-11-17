@@ -1,6 +1,6 @@
 # 0031 The client names the host: one host-addressed API, the same for every host; the front's own host is one entry in the list
 
-Date: 2026-11-17 · Status: **proposed** · Builds on 0016 (fronts and hosts), 0025 (the client keeps one uplink), 0026 (an install is its key), 0030 (every hop names who acts) and its Amendment 1 (two-way links) · Amends V0.51, V0.54, V0.121, V0.127, V0.132, V0.134, V0.139, V0.140, V0.169 where they say "the first host", "this install" or name a host by its name on the wire · Spec rows: one per slice, numbered when the slice's PR opens
+Date: 2026-11-17 · Status: **accepted** (the owner answered Q1–Q4 on 17 Nov, each as recommended; see "The owner's answers") · Builds on 0016 (fronts and hosts), 0025 (the client keeps one uplink), 0026 (an install is its key), 0030 (every hop names who acts) and its Amendment 1 (two-way links) · Amends V0.51, V0.54, V0.121, V0.127, V0.132, V0.134, V0.139, V0.140, V0.169 where they say "the first host", "this install" or name a host by its name on the wire · Spec rows: one per slice, numbered when the slice's PR opens
 
 **The owner's words, 17 Nov:** "Start a new review and refactor of the frontend. A frontend connects to a backend and gets a list of hosts. From that point on, the whole protocol is neutral to who it is connected to. All operations need to include what host to direct to. I.e. a frontend doesn't *really* know what host it's connected to (it does, but it doesn't affect the UX)."
 
@@ -148,7 +148,7 @@ A record is named by a **ref**: the pair (host id, record id), written `<hostId>
 - **`localStorage`** keys that name a record use the ref (`fyr.draft.<hostId>/<threadId>`); `fyr.hostsOff` is a list of ids; `fyr.newDefaults` and `fyr.lastProject` are per host.
 - **Rotation:** on `idWas`, the client moves the host's state, cache and keys from the old id to the new one.
 
-These live per origin, as browser storage does: a draft typed through the laptop's front is not on the same phone through the server's front. That is true today, and this decision does not change it (see the open questions).
+These live per origin, as browser storage does: a draft typed through the laptop's front is not on the same phone through the server's front. That is true today, and this decision does not change it (Q4).
 
 ### 2.6 The one place that knows the front
 
@@ -186,14 +186,14 @@ The client is served by the front it talks to, so the two are always of one buil
 
 The host protocol; MCP (agents talk to their host); the roster, pairing and sessions; the owner's host order and project order and where they are kept; the push plan; the front's cache of an offline host; one uplink per client (0025).
 
-### Open questions for the owner
+### The owner's answers (17 Nov)
 
-| # | Question | Recommended |
+| # | Question | Answer |
 |---|---|---|
-| Q1 | The host in the path (`/api/h/<id>/…`), or a host field or header on every request? | the path (2.2) |
-| Q2 | One stream with the host on every frame, or one stream per host? | one stream (2.4) |
-| Q3 | "(this install)" and "This install" go from the pickers and Settings groups, and the rail and phone header stop naming the front; only Settings → This device says where the browser is connected. Or keep a small mark on the connected host everywhere? | they go (2.6) |
-| Q4 | What a device remembers (drafts, the filter rows, New thread's defaults) lives per origin, so it differs between fronts on one phone. Leave that, or move the owner's view choices (filters, defaults) to the owner's settings on the hosts, as the host order is? | leave it in this work; a follow-up decision if it is wanted |
+| Q1 | The host in the path (`/api/h/<id>/…`), or a host field or header on every request? | **In the path** (2.2) |
+| Q2 | One stream with the host on every frame, or one stream per host? | **One stream** (2.4) |
+| Q3 | Do "(this install)", "This install" and the front's name in the rail and the phone header stay? | **Only in Settings:** they go; Settings → This device says where the browser is connected (2.6) |
+| Q4 | What a device remembers (drafts, the filter rows, New thread's defaults) lives per origin and so differs between fronts on one phone. Sync it now? | **Leave it** in this work; syncing the owner's view choices to the hosts is a later decision if it is wanted |
 
 ---
 
