@@ -42,3 +42,7 @@ It builds nothing. It downloads the CI release that the tag `deployable` points 
 Fyr updates itself only to CI-built releases (decision 0027). Every green push to main publishes signed `fyr` and `fyrd` binaries for Linux and macOS (amd64 and arm64) as the release `build-<sha12>`, and moves the tag `deployable` to it. Each host checks `deployable` every minute. After it has stayed put for 10 minutes, the host downloads the release, verifies its signature and sums, runs `fyrd selftest` on a copy of the database, and switches. The launcher checks `/healthz` after the switch and rolls back to `previous` if the build is not healthy or crashes within 10 minutes. Settings → Auto-update turns this off. To stop a bad release on every host, move the tag back: `git push -f origin <sha>:refs/tags/deployable`.
 
 To try a branch from inside Fyr, an agent asks `fyr.deploy {dir}`. It builds the checkout and switches to it once you press. Auto-update then pauses until a release contains that commit.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The Geist fonts in `web` (from the `geist` package) and in `design/settings/fonts` are under the SIL Open Font License 1.1 ([OFL.txt](design/settings/fonts/OFL.txt)).
