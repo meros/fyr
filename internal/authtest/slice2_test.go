@@ -55,7 +55,7 @@ func TestBrowserEnforceAndTheWayBack(t *testing.T) {
 		"no cookie, a command":          {authtest.Request{Method: "POST", Path: "/api/command", Header: map[string]string{"Origin": l.Laptop.URL()}, Body: strings.NewReader("{}")}, 401},
 		"a made-up cookie":              {authtest.Request{Path: "/api/state", Cookie: "nope"}, 401},
 		"no cookie, a navigation":       {authtest.Request{Path: "/", Header: doc()}, 401},
-		"no cookie, a script":           {authtest.Request{Path: "/app.js", Header: map[string]string{"Sec-Fetch-Dest": "script"}}, 404},
+		"no cookie, a script":           {authtest.Request{Path: "/nope.js", Header: map[string]string{"Sec-Fetch-Dest": "script"}}, 404},
 		"no cookie, the well-known":     {authtest.Request{Path: "/.well-known/fyr"}, 200},
 		"no cookie, a preview":          {authtest.Request{Path: "/api/previews/pv_none"}, 404},
 		"a header only tailscaled sets": {authtest.Request{Path: "/api/state", Cookie: l.Local, Header: map[string]string{"Tailscale-User-Login": l.OwnerLogin}}, 400},
@@ -141,7 +141,7 @@ func TestTailnetNodesInEnforce(t *testing.T) {
 	st := status(t, s2.URL, authtest.Request{Path: "/auth/status", Cookie: pend})
 	var sb struct{ State, Code string }
 	json.Unmarshal(st.Body, &sb)
-	if sb.State != "pending" || len(sb.Code) != 8 {
+	if sb.State != "waiting" || len(sb.Code) != 8 {
 		t.Fatalf("status %s", st.Body)
 	}
 	// The owner approves it from the shell, and the same session works.

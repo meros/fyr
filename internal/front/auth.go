@@ -351,7 +351,7 @@ func (f *Front) authStatus(w http.ResponseWriter, r *http.Request) {
 	case !ok:
 		api.WriteJSON(w, 200, map[string]any{"state": "none"})
 	case d.Pending:
-		api.WriteJSON(w, 200, map[string]any{"state": "pending", "code": d.Code, "until": d.CodeUntil})
+		api.WriteJSON(w, 200, map[string]any{"state": "waiting", "code": d.Code, "until": d.CodeUntil})
 	default:
 		api.WriteJSON(w, 200, map[string]any{"state": "in"})
 	}
@@ -386,7 +386,7 @@ const show = j => { if (j.code) { document.getElementById("c").textContent = j.c
 post().then(j => { if (j.signedIn) location.replace("/"); else if (j.error) document.getElementById("m").textContent = j.error; else show(j); });
 const t = setInterval(() => status().then(j => {
   if (j.state === "in") { clearInterval(t); location.replace("/"); }
-  else if (j.state === "pending") show(j);
+  else if (j.state === "waiting") show(j);
   else if (until && Date.now() > until) { clearInterval(t); document.getElementById("m").textContent = "The code ended. Reload to get a new one."; }
 }).catch(() => {}), 2000);
 </script>`
