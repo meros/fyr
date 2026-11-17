@@ -2165,7 +2165,8 @@ for (const [label, w, ht] of [
   await step("new thread", async () => {
     await open(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", `!!document.querySelector('${root} .hostf select')`);
     const locked = await evaluate(`({ dis: document.querySelector('${root} .hostf select').disabled, line: document.querySelector('${root} .hostf .srcl')?.textContent ?? '' })`);
-    check(locked.dis && /^Follows .+\.$/.test(locked.line), `${ctx}: a project holds the host ${JSON.stringify(locked)}`);
+    // V0.139: host first; the Host field is always the owner's pick (it no longer follows the project).
+    check(!locked.dis && /^The thread runs there\./.test(locked.line), `${ctx}: the Host field is the owner's pick ${JSON.stringify(locked)}`);
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick')?.click()`);
     await settle();
     await click(`${root} button, ${root} [role=option]`, "No project");
@@ -2215,6 +2216,85 @@ for (const [label, w, ht] of [
     const parts = await evaluate(`[...document.querySelectorAll('${root} .hpart')].map(p => p.dataset.host).join('|')`);
     check(parts.startsWith("lab|desk"), `${ctx}: the per-host groups follow the order (${parts})`);
   });
+});
+
+// SPEC V0.139: every screen that acts on a host says which. 1 New thread is host first: the first host in the owner's
+// order, its projects only, its providers; another host switches them. 2 a project's screen: its host read-only under
+// the header, its host's providers, Change folder on its host. 3 a project on an offline host is read-only and says
+// so. 4 the desktop thread header names the host, as the phone's does.
+for (const [label, w, ht] of [
+  ["desktop", 1280, 800],
+  ["phone", 390, 844],
+]) section(`V0.139 ${label}`, async (hn) => {
+  const { evaluate, waitFor, settle, navigate, openScreen, shot } = hn;
+  const ctx = `V0.139 ${label}`;
+  const phone = label === "phone";
+  const root = phone ? ".m-app" : ".dlg";
+  const open = async (url, ready) => {
+    if (phone) await openScreen({ url, ready }, w, ht);
+    else await navigate(`${origin}/${url}`, ready);
+    await waitFor(ready);
+    await settle();
+  };
+  const step = async (name, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      failures.push(`${ctx} ${name}: ${e.message}`);
+    }
+  };
+  const setHost = (h) => evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); s.value = ${JSON.stringify(h)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const chipName = `(document.querySelector('${root} .ppick .pln, ${root} .m-ppick .pln')?.textContent ?? '')`;
+  // 1. New thread, host first.
+  await step("new thread", async () => {
+    await open(phone ? "?mock=rail&hosts=2&hostOrder=lab,desk&new" : "?mock=rail&hosts=2&hostOrder=lab,desk&dialog=new", `!!document.querySelector('${root} .hostf select')`);
+    const s = await evaluate(`(() => { const host = document.querySelector('${root} .hostf'); const pick = document.querySelector('${root} .ppick, ${root} .m-ppick');
+      return { first: !!host && !!pick && !!(host.compareDocumentPosition(pick) & Node.DOCUMENT_POSITION_FOLLOWING), v: host?.querySelector('select').value, proj: ${chipName},
+        provs: [...document.querySelectorAll('${root} .row2 select')][0] ? [...[...document.querySelectorAll('${root} .row2 select')][0].options].map(o => o.value) : null }; })()`);
+    check(s.first && s.v === "lab" && s.proj === "Robot arm", `${ctx}: host first, lab, lab's project ${JSON.stringify(s)}`);
+    if (!phone) check(s.provs?.join() === "claude,zai", `${ctx}: lab's providers ${JSON.stringify(s.provs)}`);
+    await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick').click()`);
+    await settle();
+    const list = await evaluate(`[...document.querySelectorAll('${root} .plist .pln, ${root} .m-pickpanel .pln')].map(e => e.textContent)`);
+    check(list.includes("Robot arm") && !list.includes("Server ops") && !list.some((n) => /Hemmet|dotfiles/.test(n)), `${ctx}: lab's projects only ${JSON.stringify(list)}`);
+    await shot(`hostaware-newthread-${label}.png`);
+    await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick').click()`);
+    await setHost("desk");
+    await settle();
+    const d = await evaluate(`({ proj: ${chipName}, provs: [...document.querySelectorAll('${root} .row2 select')][0] ? [...[...document.querySelectorAll('${root} .row2 select')][0].options].map(o => o.value) : null })`);
+    check(d.proj !== "Robot arm" && d.proj !== "", `${ctx}: desk's project after the switch ${JSON.stringify(d)}`);
+    if (!phone) check(!d.provs?.includes("zai"), `${ctx}: desk's providers after the switch ${JSON.stringify(d.provs)}`);
+  });
+  // 2. A project's screen: its host, its providers, its folders.
+  await step("project editor", async () => {
+    const ed = phone ? ".m-app" : ".dlg";
+    await open(phone ? "?mock=rail&hosts=2&project=p_arm" : "?mock=rail&hosts=2&dialog=settings&page=projects/p_arm", `!!document.querySelector('${ed} .hostrow')`);
+    const s = await evaluate(`(() => { const r = document.querySelector('${ed} .hostrow'); const head = document.querySelector('${ed} .phead');
+      return { name: r.querySelector('.hchip .mono')?.textContent, after: !!head && !!(head.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING),
+        provs: [...document.querySelectorAll('${ed} .pedit select')].map(x => [...x.options].map(o => o.textContent).join('|')) }; })()`);
+    check(s.name === "lab" && s.after, `${ctx}: the project's host under its header ${JSON.stringify(s)}`);
+    check(s.provs.some((o) => o.includes("Z.ai")), `${ctx}: lab's providers in the defaults ${JSON.stringify(s.provs)}`);
+    await shot(`hostaware-project-${label}.png`);
+    await evaluate(`[...document.querySelectorAll('${ed} .pedit button')].find(b => b.textContent.trim().startsWith('Change'))?.click()`);
+    await waitFor(`document.querySelectorAll('.fpick .fsec.browse .fpr').length > 0`);
+    const t = await evaluate(`(document.querySelector('.fsheet .m-shh') ?? document.querySelector('.fmodal .dh b'))?.textContent ?? ''`);
+    check(/ on lab$/.test(t), `${ctx}: Change folder browses lab ("${t}")`);
+  });
+  // 3. A project on an offline host.
+  await step("offline project", async () => {
+    const ed = phone ? ".m-app" : ".dlg";
+    await open(phone ? "?mock=rail&hosts=2&project=p_srv" : "?mock=rail&hosts=2&dialog=settings&page=projects/p_srv", `!!document.querySelector('${ed} .hostrow')`);
+    const s = await evaluate(`({ line: document.querySelector('${ed} .hostrow')?.textContent ?? '', name: document.querySelector('${ed} .pname input')?.disabled ?? document.querySelector('${ed} .pname input')?.readOnly, change: [...document.querySelectorAll('${ed} .pedit button')].find(b => b.textContent.trim().startsWith('Change'))?.disabled })`);
+    check(/meros-server.*offline since \d\d:\d\d/.test(s.line) && /cannot be changed until it is back/.test(s.line) && s.name === true && s.change === true, `${ctx}: an offline host's project ${JSON.stringify(s)}`);
+    await shot(`hostaware-offline-${label}.png`);
+  });
+  // 4. The thread header names the host (the phone did since V0.54).
+  if (!phone)
+    await step("thread header", async () => {
+      await open("?mock=rail&hosts=2&open=t_mapperf", "!!document.querySelector('.thh .chips')");
+      const c = await evaluate(`document.querySelector('.thh .hostc')?.textContent ?? ''`);
+      check(c === "desk", `${ctx}: the header's host chip "${c}"`);
+    });
 });
 
 // V0.35: a table in a message reads as cards on the phone: no cell is squeezed, nothing runs past the edge.

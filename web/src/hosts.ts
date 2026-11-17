@@ -188,3 +188,22 @@ export function hostOfflineNote(name: string | undefined, hosts: Pick<HostInfo, 
   const at = dayTime(h.since, now);
   return `${h.name} is offline${at ? ` since ${at}` : ""}. Its folders cannot be read and nothing can be made on it until it is back; pick another host or wait.`;
 }
+
+/** V0.139: the host a project or thread lives on: its own, else the first in the owner's order. */
+export function hostOf(r: { host?: string }, hosts: HostInfo[] | undefined): string | undefined {
+  return hostForProject(r.host, hosts);
+}
+
+/** V0.139: the providers of a host (a project's, a thread's): that host's, else the merged list (one host). */
+export const profilesOfHost = profilesOn;
+
+/** V0.139: the read-only host chip of an existing project or thread, in the same place on every screen: its name, and
+ *  "offline since 19:40 · read-only" when it is. null with one host (nothing to say). */
+export function hostChip(name: string | undefined, hosts: Pick<HostInfo, "name" | "online" | "since">[] | undefined, now: number): { name: string; line: string; offline: boolean } | null {
+  if (!hosts || hosts.length < 2) return null;
+  const n = name || hosts[0].name;
+  const h = hosts.find((x) => x.name === n);
+  if (!h || h.online) return { name: n, line: "", offline: false };
+  const at = dayTime(h.since, now);
+  return { name: n, line: `offline${at ? ` since ${at}` : ""} · read-only`, offline: true };
+}

@@ -8,9 +8,9 @@ import { hostChoices, hostOfflineNote, type HostInfo } from "./hosts.ts";
 export const HostsContext = createContext<{ hosts: HostInfo[]; self: string; now: number }>({ hosts: [], self: "", now: 0 });
 export const useHosts = () => useContext(HostsContext);
 
-/** The Host field: nothing with one host. lock: the project that holds the host (the field shows it and cannot
- *  change); an offline host's note says why nothing can be made there. */
-export function HostField({ value, onPick, lock, what = "It lives there: its folders and providers are that host's." }: { value: string; onPick(h: string): void; lock?: string; what?: string }) {
+/** The Host field, where the host is a choice (New project, New thread: host first, V0.139): nothing with one host;
+ *  an offline host's note says why nothing can be made there. */
+export function HostField({ value, onPick, what = "It lives there: its folders and providers are that host's." }: { value: string; onPick(h: string): void; what?: string }) {
   const { hosts, self, now } = useHosts();
   const choices = hostChoices(hosts, self);
   if (!choices.length) return null;
@@ -18,7 +18,7 @@ export function HostField({ value, onPick, lock, what = "It lives there: its fol
   return (
     <label class="fld hostf">
       <span>Host</span>
-      <select value={value} disabled={!!lock} onChange={(e) => onPick((e.target as HTMLSelectElement).value)}>
+      <select value={value} onChange={(e) => onPick((e.target as HTMLSelectElement).value)}>
         {choices.map((c) => (
           <option key={c.name} value={c.name}>
             {c.label}
@@ -30,8 +30,20 @@ export function HostField({ value, onPick, lock, what = "It lives there: its fol
           {note}
         </span>
       ) : (
-        <span class="srcl">{lock ? `Follows ${lock}.` : what}</span>
+        <span class="srcl">{what}</span>
       )}
     </label>
+  );
+}
+
+/** V0.139: the host of an existing project or thread, read-only, in the same place on every screen: its name in mono,
+ *  and "offline since 19:40 · read-only" when it is. */
+export function HostChip({ chip }: { chip: { name: string; line: string; offline: boolean } }) {
+  return (
+    <span class={`hchip${chip.offline ? " off" : ""}`} title={`Runs on ${chip.name}`}>
+      <span class="hdot" aria-hidden="true" />
+      <span class="mono">{chip.name}</span>
+      {chip.line && <span class="hchip-l"> · {chip.line}</span>}
+    </span>
   );
 }

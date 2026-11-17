@@ -1021,6 +1021,10 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     (Array.isArray(args.attachments) ? (args.attachments as string[]) : []).map((aid) => files.get(aid)).filter((x): x is NonNullable<typeof x> => !!x);
   let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void; deploy?(p: DeployProgress): void } | null = null;
   let projects = mockProjects(now0);
+  // V0.139: with &hosts=2 a project lives on lab, so its screen and New thread can show another host's project.
+  // A front stamps every project with its host (V0.55); the fixture's are desk's.
+  if (MOCK_HOSTS) projects = [...projects.map((p) => ({ ...p, host: p.host ?? "desk" })), { id: "p_arm", name: "Robot arm", folder: "/home/owner/experiments/robot-arm", host: "lab", threads: 0, lastUsed: new Date(now0 - 86_400_000).toISOString() },
+    { id: "p_srv", name: "Server ops", folder: "/home/owner/ops", host: "meros-server", threads: 0, lastUsed: new Date(now0 - 2 * 86_400_000).toISOString() }];
   // V0.46: ?quiet=<projectId> puts that project in quiet hours that started an hour ago and end in two hours, and
   // gives it a second window (weekends, ten hours ahead) so the project screen shows two rows (decision 0014 addendum).
   if (MOCK_QUIET) {
