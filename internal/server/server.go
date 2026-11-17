@@ -87,12 +87,12 @@ type PRDetails interface {
 	Get(ctx context.Context, url string, fresh bool) (github.Detail, error)
 }
 
-func (s *Server) Handler() http.Handler { return guard(s.OwnerLogin, withGzip(s.routes())) }
+func (s *Server) Handler() http.Handler { return guard(s.OwnerLogin, withGzip(withDeadline(s.routes()))) }
 
 // PeerHandler serves the host protocol on a tailnet listener (V0.51): the
 // same routes as Handler, guarded by the peer's Tailscale identity.
 func (s *Server) PeerHandler(peers PeerAuth) http.Handler {
-	return PeerGuard(s.OwnerLogin, peers, withGzip(s.routes()))
+	return PeerGuard(s.OwnerLogin, peers, withGzip(withDeadline(s.routes())))
 }
 
 func (s *Server) routes() http.Handler {
@@ -298,7 +298,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	api.WriteJSON(w, 200, api.State[api.Thread, api.Project, provider.Profile]{
 		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(),
 		Threads: threads, Actions: acts, Profiles: profiles, Projects: projects,
-		Partial: since > 0, Deploy: s.Engine.DeployState(time.Now()),
+		Partial: since > 0, Deploy: s.Engine.DeployState(time.Now()), Stall: s.Engine.StallState(time.Now()),
 	})
 }
 

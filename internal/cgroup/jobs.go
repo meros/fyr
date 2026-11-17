@@ -16,8 +16,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/meros/fyr/internal/lockwatch"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -90,7 +92,9 @@ type Jobs struct {
 	// Now is the clock of Saw; default time.Now.
 	Now func() time.Time
 
-	mu     sync.Mutex
+	mu     lockwatch.Mutex
+	saveMu sync.Mutex // orders the KV writes; taken without mu
+	view   atomic.Pointer[JobsView]
 	holds  map[string]*hold
 	seen   map[string]string // thread → class of its newest heavy command in a hold
 	recs   []JobRecord
@@ -131,6 +135,7 @@ func (j *Jobs) Saw(thread, class string) {
 		h.active = j.now()
 	}
 	j.seen[thread] = class
+	j.publishLocked()
 }
 
 func (j *Jobs) now() time.Time {
@@ -198,8 +203,9 @@ func (j *Jobs) Live(thread string) string {
 }
 
 // Classes sums the records per class, the newest class first.
-func (j *Jobs) Classes() []JobClass {
-	recs := j.Records()
+func (j *Jobs) Classes() []JobClass { return classes(j.Records()) }
+
+func classes(recs []JobRecord) []JobClass {
 	by := map[string]*JobClass{}
 	walls := map[string][]float64{}
 	var order []string
@@ -225,66 +231,127 @@ func (j *Jobs) Classes() []JobClass {
 	return out
 }
 
+// reading is one cgroup's measures, read without j.mu (V0.147).
+type reading struct {
+	cpu, stall       uint64
+	mem              uint64
+	hasCPU, hasStall bool
+}
+
+func readCgroup(dir string) reading {
+	var r reading
+	r.cpu, r.hasCPU = readKey(filepath.Join(dir, "cpu.stat"), "usage_usec")
+	if p, ok := readPSI(filepath.Join(dir, "cpu.pressure")); ok {
+		r.stall, r.hasStall = p.someTotal, true
+	}
+	r.mem = readBytes(filepath.Join(dir, "memory.current"))
+	return r
+}
+
+// openPeak opens dir's memory.peak and resets it for this fd (kernel
+// 6.12+): the fd then reads the job's own peak; nil without it, and the
+// sampled maximum counts.
+func openPeak(dir string) *os.File {
+	f, err := os.OpenFile(filepath.Join(dir, "memory.peak"), os.O_RDWR, 0)
+	if err != nil {
+		return nil
+	}
+	if _, err := f.WriteString("reset\n"); err != nil {
+		f.Close()
+		return nil
+	}
+	return f
+}
+
+// ended is a hold that ended, to be recorded without j.mu.
+type ended struct {
+	owner string
+	h     *hold
+}
+
 // tick follows the pool: a new holder gets its baseline, a holder still
 // there its newest reading, a holder gone its record. rates are the
 // threads' cores over the last read (the baseline); s is the host's
-// slowdown now.
+// slowdown now. V0.147: the cgroup files are read, the project asked and
+// the records stored without j.mu, so j.mu is never held across I/O or a
+// call out of the tracker (the engine's tick asks Active under e.mu).
 func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *float64, now time.Time) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.load()
 	now = now.UTC()
+	dirOf := func(owner string) string {
+		if t == nil {
+			return ""
+		}
+		return filepath.Join(t.root, "agents", unsafe.ReplaceAllString(owner, "_"))
+	}
+	// 1. Which holds are new (under j.mu, no I/O).
+	j.mu.Lock()
+	j.load()
+	fresh := map[string]bool{}
+	for _, sh := range snap.Held {
+		if h := j.holds[sh.Owner]; h == nil || !h.since.Equal(sh.Since) {
+			fresh[sh.Owner] = true
+		}
+	}
+	j.mu.Unlock()
+	// 2. The readings and the new holds' peak fds (no lock).
+	reads := map[string]reading{}
+	peaks := map[string]*os.File{}
+	for _, sh := range snap.Held {
+		dir := dirOf(sh.Owner)
+		if dir == "" {
+			continue
+		}
+		reads[sh.Owner] = readCgroup(dir)
+		if fresh[sh.Owner] {
+			peaks[sh.Owner] = openPeak(dir)
+		}
+	}
+	// 3. Apply (under j.mu, no I/O).
+	var done []ended
+	j.mu.Lock()
 	live := map[string]bool{}
 	for _, sh := range snap.Held {
 		live[sh.Owner] = true
 		h := j.holds[sh.Owner]
 		if h != nil && !h.since.Equal(sh.Since) {
-			j.end(sh.Owner, h) // released and taken again between two ticks
+			delete(j.holds, sh.Owner) // released and taken again between two ticks
+			done = append(done, ended{sh.Owner, h})
 			h = nil
 		}
-		dir := ""
-		if t != nil {
-			dir = filepath.Join(t.root, "agents", unsafe.ReplaceAllString(sh.Owner, "_"))
-		}
+		r, hasDir := reads[sh.Owner]
 		if h == nil {
 			h = &hold{kind: sh.Kind, since: sh.Since, last: now, active: now, class: j.seen[sh.Owner]}
 			if r := rates[sh.Owner]; r != nil {
 				h.base = min(*r, baselineMax)
 			}
-			if dir != "" {
-				h.cpu0, _ = readKey(filepath.Join(dir, "cpu.stat"), "usage_usec")
-				h.cpu = h.cpu0
-				if p, ok := readPSI(filepath.Join(dir, "cpu.pressure")); ok {
-					h.stall0, h.stall, h.hasStall = p.someTotal, p.someTotal, true
+			if hasDir {
+				h.cpu0, h.cpu = r.cpu, r.cpu
+				if r.hasStall {
+					h.stall0, h.stall, h.hasStall = r.stall, r.stall, true
 				}
-				h.mem0 = readBytes(filepath.Join(dir, "memory.current"))
-				h.maxMem, h.mem = h.mem0, h.mem0
-				// memory.peak reset per fd (kernel 6.12+): this fd reads the
-				// job's own peak; without it the sampled maximum counts.
-				if f, err := os.OpenFile(filepath.Join(dir, "memory.peak"), os.O_RDWR, 0); err == nil {
-					if _, err := f.WriteString("reset\n"); err == nil {
-						h.peak, h.hasPeak = f, true
-					} else {
-						f.Close()
-					}
-				}
+				h.mem0, h.maxMem, h.mem = r.mem, r.mem, r.mem
+			}
+			if f := peaks[sh.Owner]; f != nil {
+				h.peak, h.hasPeak = f, true
+				delete(peaks, sh.Owner)
 			}
 			j.holds[sh.Owner] = h
 			continue
 		}
 		prevAt, prevCPU := h.last, h.cpu
 		h.last = now
-		if dir != "" {
-			if u, ok := readKey(filepath.Join(dir, "cpu.stat"), "usage_usec"); ok {
+		if hasDir {
+			if r.hasCPU {
+				u := r.cpu
 				h.cpu = u
 				if dt := now.Sub(prevAt).Seconds(); dt > 0 && u >= prevCPU && float64(u-prevCPU)/1e6/dt > h.base+busyAbove {
 					h.active = now
 				}
 			}
-			if p, ok := readPSI(filepath.Join(dir, "cpu.pressure")); ok {
-				h.stall = p.someTotal
+			if r.hasStall {
+				h.stall = r.stall
 			}
-			h.mem = readBytes(filepath.Join(dir, "memory.current"))
+			h.mem = r.mem
 			h.maxMem = max(h.maxMem, h.mem)
 		}
 		if s != nil {
@@ -294,7 +361,8 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 	}
 	for owner, h := range j.holds {
 		if !live[owner] {
-			j.end(owner, h)
+			delete(j.holds, owner)
+			done = append(done, ended{owner, h})
 		}
 	}
 	for th := range j.seen {
@@ -302,11 +370,54 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 			delete(j.seen, th)
 		}
 	}
+	j.publishLocked()
+	j.mu.Unlock()
+	for _, f := range peaks {
+		if f != nil {
+			f.Close() // a concurrent tick made the hold first
+		}
+	}
+	j.finish(done)
 }
 
-// end makes h's record; holds j.mu.
-func (j *Jobs) end(owner string, h *hold) {
-	delete(j.holds, owner)
+// finish makes the ended holds' records: the peak and the project are read
+// without j.mu, the records added under it and stored after it.
+func (j *Jobs) finish(done []ended) {
+	if len(done) == 0 {
+		return
+	}
+	var recs []JobRecord
+	for _, e := range done {
+		if r, ok := j.record(e.owner, e.h); ok {
+			recs = append(recs, r)
+		}
+	}
+	if len(recs) == 0 {
+		return
+	}
+	j.mu.Lock()
+	j.recs = append(j.recs, recs...)
+	if len(j.recs) > KeepJobs {
+		j.recs = j.recs[len(j.recs)-KeepJobs:]
+	}
+	var raw []byte
+	if j.KV != nil {
+		raw, _ = json.Marshal(j.recs)
+	}
+	j.publishLocked()
+	j.mu.Unlock()
+	if raw != nil {
+		j.saveMu.Lock()
+		defer j.saveMu.Unlock()
+		if err := j.KV.SetKV(jobsKey, string(raw)); err != nil {
+			log.Printf("jobs: store: %v", err)
+		}
+	}
+}
+
+// record is h's record; false for a hold of no length. Call it without j.mu:
+// it reads h's peak fd and asks Project (the engine).
+func (j *Jobs) record(owner string, h *hold) (JobRecord, bool) {
 	peak := h.maxMem
 	if h.peak != nil {
 		buf := make([]byte, 32)
@@ -322,7 +433,7 @@ func (j *Jobs) end(owner string, h *hold) {
 	end := h.last.UTC()
 	wall := end.Sub(h.since).Seconds()
 	if wall <= 0 {
-		return
+		return JobRecord{}, false
 	}
 	cs := float64(h.cpu-h.cpu0)/1e6 - h.base*wall
 	cs = max(0, cs)
@@ -351,14 +462,36 @@ func (j *Jobs) end(owner string, h *hold) {
 	if h.sN > 0 {
 		r.Slowdown = round2(h.sSum / float64(h.sN))
 	}
-	j.recs = append(j.recs, r)
-	if len(j.recs) > KeepJobs {
-		j.recs = j.recs[len(j.recs)-KeepJobs:]
+	return r, true
+}
+
+// JobsView is what GET /api/load shows of the tracker, published after
+// each change so a read takes no lock (V0.147).
+type JobsView struct {
+	Classes []JobClass
+	Live    map[string]string // thread → the class of its hold now
+}
+
+// publishLocked publishes the view; call it with j.mu held.
+func (j *Jobs) publishLocked() {
+	live := make(map[string]string, len(j.holds))
+	for th, h := range j.holds {
+		live[th] = h.class
 	}
-	if j.KV != nil {
-		b, _ := json.Marshal(j.recs)
-		if err := j.KV.SetKV(jobsKey, string(b)); err != nil {
-			log.Printf("jobs: store: %v", err)
-		}
+	j.view.Store(&JobsView{Classes: classes(j.recs), Live: live})
+}
+
+// View is the newest published view; never nil.
+func (j *Jobs) View() *JobsView {
+	if j == nil {
+		return &JobsView{}
 	}
+	if v := j.view.Load(); v != nil {
+		return v
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.load()
+	j.publishLocked()
+	return j.view.Load()
 }

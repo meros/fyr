@@ -333,3 +333,52 @@ func TestListSaysInputClosed(t *testing.T) {
 		return len(ps) == 1 && ps[0].Exited
 	})
 }
+
+// SPEC 0.5 V0.147: a process that reads nothing fills its stdin pipe; the
+// runner still reads the link, so fyrd's writes and its kill do not hang.
+func TestV147KillReachesAProcessThatReadsNothing(t *testing.T) {
+	// No t.Logf: the writer logs the lost writes after the kill. A short
+	// directory: this test's name in t.TempDir() makes the socket path
+	// longer than a unix socket allows (108 bytes) under CI's temp dir.
+	dir, err := os.MkdirTemp("", "fyr-r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "r.sock")
+	srv := &runner.Server{}
+	if err := srv.Listen(sock); err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	t.Cleanup(func() { srv.Close(time.Second) })
+	rc := &runner.Client{Path: sock}
+	sleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("no sleep on PATH")
+	}
+	deaf, err := rc.Spawn(runner.Spawn{ID: "deaf", Key: "t1", Binary: sleep, Args: []string{"30"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := []byte(strings.Repeat("x", 4096))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 200 { // 800 KB: far over a pipe's 64 KB
+			if err := deaf.WriteLine(line); err != nil {
+				return
+			}
+		}
+		deaf.Kill()
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("writes to a process that reads nothing blocked the link")
+	}
+	until(t, "the deaf process was killed", func() bool {
+		ps := procs(t, rc)
+		return len(ps) == 1 && ps[0].Exited
+	})
+}

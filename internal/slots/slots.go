@@ -11,8 +11,10 @@ import (
 	"encoding/json"
 	"log"
 	"slices"
-	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/meros/fyr/internal/lockwatch"
 )
 
 // The kinds of heavy job; they all take from the same pool.
@@ -74,7 +76,8 @@ type Pool struct {
 	// Cost is a holder's share of the budget for the snapshot; optional.
 	Cost func(h Holder) float64
 
-	mu   sync.Mutex
+	mu   lockwatch.Mutex
+	pub  atomic.Pointer[Snapshot] // the last snapshot, for View
 	n    int
 	kv   KV
 	held []Holder
@@ -295,6 +298,24 @@ func (p *Pool) Holding(owner string) (Holder, bool) {
 func (p *Pool) Snapshot() Snapshot {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	return p.snapshotLocked()
+}
+
+// View is the pool for a reader that must not wait (V0.147: GET
+// /api/load): a fresh copy when the lock is free, else the last copy any
+// Snapshot or View took.
+func (p *Pool) View() Snapshot {
+	if p.mu.TryLock() {
+		defer p.mu.Unlock()
+		return p.snapshotLocked()
+	}
+	if v := p.pub.Load(); v != nil {
+		return *v
+	}
+	return p.Snapshot()
+}
+
+func (p *Pool) snapshotLocked() Snapshot {
 	s := Snapshot{N: p.n, Held: make([]Holder, len(p.held)), Waiting: make([]Holder, len(p.wait))}
 	copy(s.Held, p.held)
 	copy(s.Waiting, p.wait)
@@ -313,6 +334,9 @@ func (p *Pool) Snapshot() Snapshot {
 		used = float64(int(used*100+0.5)) / 100
 		s.Used = &used
 	}
+	pub := s
+	pub.Held, pub.Waiting = slices.Clone(s.Held), slices.Clone(s.Waiting)
+	p.pub.Store(&pub)
 	return s
 }
 

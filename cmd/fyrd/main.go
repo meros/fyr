@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"github.com/meros/fyr/internal/lockwatch"
 	"io/fs"
 	"log"
 	"net"
@@ -199,7 +200,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		HostName: hostName, ProfileExists: func(id string) bool { _, ok := h.profile(id); return ok }, SystemAgents: eng.SystemAgents,
 	})
 	eng.Agents = mgr
-	eng.Titler = mgr.Title // V0.108
+	eng.Titler = mgr.Title                                              // V0.108
 	eng.SystemAgentResolve = func(job string) (string, string, error) { // V0.115: Settings shows what each job runs
 		a, err := mgr.SystemAgent(job)
 		return a.Profile.ID, a.Model, err
@@ -307,7 +308,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		n := eng.SelfDeployed(agent.NormalizeRemote(s.Remote), s.Build, s.Contains)
 		log.Printf("deploy %s (%s): %d changes live", s.Build, s.Commit, n)
 	}
-	eng.DeployNow = dep.DeployNow               // V0.83: the owner's Restart now
+	eng.DeployNow = dep.DeployNow // V0.83: the owner's Restart now
 	// Decision 0027: auto-update installs CI's signed releases only.
 	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Gh: github.Gh}
 	// V0.111, #159: an ask without a checkout installs the newest release by
@@ -359,6 +360,24 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	go poller.Run(ctx)
 	go checkModels(ctx, h.reg) // V0.120: each provider's models, once a day
 	go sampler.Run(ctx)
+	// V0.147: the stall watchdog. A watched lock held or a request running
+	// past lockwatch.StallAfter writes every goroutine's stack to
+	// <data>/stalls and tells the owner; the engine's lock held past
+	// lockwatch.ExitAfter ends fyrd (exit 70) for the launcher to restart
+	// it; the runner keeps the agents (V0.90). SIGQUIT writes the same dump.
+	wd := &lockwatch.Watchdog{Dir: filepath.Join(data, "stalls"), OnStall: eng.SetStall}
+	if s, ok := lockwatch.Latest(wd.Dir, time.Now().Add(-engine.StallShown)); ok {
+		eng.SetStall(s) // a stall before this start, such as the exit that led to it
+	}
+	go wd.Run(ctx.Done())
+	quitc := make(chan os.Signal, 1)
+	signal.Notify(quitc, syscall.SIGQUIT)
+	go func() {
+		<-quitc
+		wd.Dump("SIGQUIT", nil, time.Now())
+		os.Stderr.Write(lockwatch.Stacks()) // daemon.log keeps the dump too, as before
+		os.Exit(2)
+	}()
 	if self, err := os.Executable(); err == nil {
 		go sampler.Probe.RunProbe(ctx, cgroup.ProbeCommand(tree, self), sampler.CPUPressureNow)
 	}
@@ -589,7 +608,6 @@ func (k *kept) client() *runner.Client {
 	}
 	return k.rc
 }
-
 
 // checkModels asks each provider that can run for its models once a day
 // (V0.120): a minute after the start, then every hour for the ones due.

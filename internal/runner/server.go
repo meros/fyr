@@ -70,7 +70,11 @@ type rproc struct {
 	cmd     *exec.Cmd
 	in      io.WriteCloser
 	out     io.ReadCloser
-	wmu     sync.Mutex
+	// V0.147: fyrd's writes wait in inq for one writer goroutine, so a CLI
+	// that reads nothing (a full pipe) never stops the link's reader: its
+	// close, kill and ack frames still arrive.
+	inq     []string
+	writing bool
 
 	mu    sync.Mutex
 	cond  *sync.Cond
@@ -308,10 +312,43 @@ func (p *rproc) info() Proc {
 
 // closeInput closes the CLI's stdin and remembers it (V0.143).
 func (p *rproc) closeInput() {
-	p.in.Close() // not under wmu: a write blocked on a full pipe ends with it
+	p.in.Close() // a write blocked on a full pipe ends with it
 	p.mu.Lock()
 	p.inClosed = true
 	p.mu.Unlock()
+}
+
+// enqueue hands text to p's writer, starting it when none runs; the
+// writer writes in order and ends when the queue is empty.
+func (p *rproc) enqueue(s *Server, text string) {
+	p.mu.Lock()
+	p.inq = append(p.inq, text)
+	start := !p.writing
+	p.writing = true
+	p.mu.Unlock()
+	if !start {
+		return
+	}
+	go func() {
+		for {
+			p.mu.Lock()
+			if len(p.inq) == 0 {
+				p.writing = false
+				p.mu.Unlock()
+				return
+			}
+			t := p.inq[0]
+			p.inq = p.inq[1:]
+			p.mu.Unlock()
+			if _, err := p.in.Write([]byte(t + "\n")); err != nil {
+				p.mu.Lock()
+				n := len(p.inq)
+				p.inq = nil // the input is gone: the rest is lost too
+				p.mu.Unlock()
+				s.logf("runner: %s: %d writes to its input were lost: %v", p.id, n+1, err) // V0.143
+			}
+		}
+	}()
 }
 
 func (p *rproc) isExited() bool {
@@ -489,12 +526,7 @@ func (s *Server) ops(p *rproc, r *bufio.Reader, gen int) {
 		}
 		switch f.Op {
 		case "write":
-			p.wmu.Lock()
-			_, err := p.in.Write([]byte(f.Text + "\n"))
-			p.wmu.Unlock()
-			if err != nil {
-				s.logf("runner: %s: a write to its input was lost: %v", p.id, err) // V0.143
-			}
+			p.enqueue(s, f.Text)
 		case "ack":
 			// Drop every line up to Seq that fyrd does not ask to keep.
 			keep := make(map[int64]bool, len(f.Keep))

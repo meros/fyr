@@ -82,10 +82,25 @@ func (e *Engine) sweepSlots() {
 		min         int
 	}
 	var nudges []nudge
+	// V0.147: the tracker is asked before e.mu is taken. Asking it under
+	// e.mu deadlocked fyrd on 17 Nov: the tracker's tick held its own lock
+	// and asked the engine for a thread's project.
+	held := map[string]time.Time{}
+	active := map[string]time.Time{}
+	for _, h := range s.Held {
+		held[h.Owner] = h.Since
+		if e.SlotActive != nil && !h.Priority {
+			at, ok := e.SlotActive(h.Owner)
+			if !ok || at.Before(h.Since) {
+				at = h.Since
+			}
+			active[h.Owner] = at
+		}
+	}
 	e.mu.Lock()
 	now := e.Now()
 	for owner, since := range e.slotNudged {
-		if h, ok := e.Slots.Holding(owner); !ok || !h.Since.Equal(since) {
+		if h, ok := held[owner]; !ok || !h.Equal(since) {
 			delete(e.slotNudged, owner)
 		}
 	}
@@ -101,12 +116,8 @@ func (e *Engine) sweepSlots() {
 			delete(e.slotIdle, h.Owner)
 			// #174: a held slot that ran no heavy job for SlotIdleNudge: one
 			// reminder per hold to release it.
-			if e.SlotActive != nil {
+			if at, ok := active[h.Owner]; ok {
 				if since, done := e.slotNudged[h.Owner]; !done || !since.Equal(h.Since) {
-					at, ok := e.SlotActive(h.Owner)
-					if !ok || at.Before(h.Since) {
-						at = h.Since
-					}
 					if idle := now.Sub(at); idle >= SlotIdleNudge {
 						e.slotNudged[h.Owner] = h.Since
 						nudges = append(nudges, nudge{h.Owner, h.Kind, int(idle / time.Minute)})

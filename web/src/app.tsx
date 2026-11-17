@@ -29,6 +29,7 @@ import {
   upsertProject,
   setProjectOrder,
   setDeploy,
+  setStall,
   UNDO_MS,
   type SectionKey,
   type SnoozePreset,
@@ -69,6 +70,7 @@ import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars }
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
 import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
 import { DeployBanner } from "./deploy-ui.tsx";
+import { StallBanner } from "./stall-ui.tsx";
 import { restartNowAsk } from "./deploy.ts";
 import { cache, mergeEventLists } from "./cache.ts";
 import { navTransition } from "./native.ts";
@@ -431,6 +433,7 @@ function App() {
       project: (p) => batch((s) => upsertProject(s, p)),
       projectOrder: (ids) => batch((s) => setProjectOrder(s, ids)),
       deploy: (p) => batch((s) => setDeploy(s, p)),
+      stall: (raw) => batch((s) => setStall(s, raw)),
       hosts: (hs) => batch((s) => ({ ...s, hosts: hs })),
       conn: (c) => batch((s) => setConn(s, c)),
     });
@@ -1422,7 +1425,12 @@ function App() {
           filter={{ id: projectFilter, set: setProjectFilter }}
           filters={filterView}
           projectActions={projectActions}
-          status={<DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone onRestartNow={() => void restartNow()} />}
+          status={
+            <>
+              <StallBanner stalls={store.stalls} multiHost={store.hosts.length > 1} phone />
+              <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} phone onRestartNow={() => void restartNow()} />
+            </>
+          }
           overlay={
             <>
               {folderPickView}
@@ -1469,6 +1477,7 @@ function App() {
 
   return (
     <div class="shell">
+      <StallBanner stalls={store.stalls} multiHost={store.hosts.length > 1} />
       <DeployBanner p={store.deploy} threads={store.threads} conn={store.conn} onRestartNow={() => void restartNow()} />
       {ctxMenu}
       <PreviewViewer />

@@ -8,9 +8,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/meros/fyr/internal/lockwatch"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -82,7 +83,8 @@ type Sampler struct {
 	Probe *Slowdown
 	Jobs  *Jobs
 
-	mu     sync.Mutex
+	mu     lockwatch.Mutex
+	pub    atomic.Pointer[Load] // the last read, for readers that must not wait
 	at     time.Time
 	last   Load
 	usage  map[string]uint64 // cgroup name ("" is agents/) → usage_usec at `at`
@@ -90,23 +92,38 @@ type Sampler struct {
 }
 
 // Get returns the load, read now or at most MinGap ago; the slots and the
-// live jobs are always read now.
+// live jobs are always the newest the pool and the tracker published.
+// V0.147: Get never waits on a lock another path can hold across I/O or a
+// call out: while a read of the machine runs it answers the last one, and
+// the pool and the tracker are read from their published views.
 func (s *Sampler) Get() Load {
-	l := s.get()
+	l := s.base()
 	if s.Slots != nil && !s.Slots.Off() {
-		sn := s.Slots.Snapshot()
+		sn := s.Slots.View()
 		l.Slots = &sn
 	}
 	if s.Jobs != nil {
-		l.Jobs = s.Jobs.Classes()
+		v := s.Jobs.View()
+		l.Jobs = v.Classes
 		th := make([]ThreadLoad, len(l.Threads))
 		for i, t := range l.Threads {
-			t.Job = s.Jobs.Live(t.ID)
+			t.Job = v.Live[t.ID]
 			th[i] = t
 		}
 		l.Threads = th
 	}
 	return l
+}
+
+// base is the machine's load: read now if no read runs, else the last.
+func (s *Sampler) base() Load {
+	if p := s.pub.Load(); p != nil {
+		if !s.mu.TryLock() {
+			return *p
+		}
+		s.mu.Unlock()
+	}
+	return s.get()
 }
 
 func (s *Sampler) now() time.Time {
@@ -130,10 +147,16 @@ func (s *Sampler) Tick() {
 	s.Jobs.tick(s.Tree, s.Slots.Snapshot(), rates, l.Slowdown, s.now())
 }
 
-// Signals are the measures admission reads (decision 0029 S2), at most
-// MinGap old.
+// Signals are the measures admission reads (decision 0029 S2): the last
+// published read (V0.147: admission runs under the pool's lock, so it does
+// no I/O; the sampler's tick reads every ProbeEvery). The first call reads.
 func (s *Sampler) Signals() slots.Signals {
-	l := s.get()
+	var l Load
+	if p := s.pub.Load(); p != nil {
+		l = *p
+	} else {
+		l = s.get()
+	}
 	return slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall)}
 }
 
@@ -236,5 +259,7 @@ func (s *Sampler) get() Load {
 	}
 	s.signals(&l, proc, agentsMem)
 	s.at, s.usage, s.last, s.cached = now, usage, l, true
+	pub := l
+	s.pub.Store(&pub)
 	return l
 }

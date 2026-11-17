@@ -3,6 +3,7 @@ import { orderProjects } from "./projects.ts";
 import type { QueueEntry } from "./slot-queue.ts";
 import type { HostInfo } from "./hosts.ts";
 import type { DeployProgress } from "./deploy.ts";
+import { decodeStall, stallsOf, upsertStall, type StallInfo } from "./stall.ts";
 import { decodeProject, decodeState, decodeThread } from "./decode.ts";
 
 import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, Thread, ThreadDTO } from "./types.ts";
@@ -42,6 +43,8 @@ export interface Store {
   projectOrder: string[] | null;
   /** V0.39 */
   deploy: DeployProgress | null;
+  /** V0.147: the hosts' stalls, one per host */
+  stalls: StallInfo[];
   /** timeline events per thread, oldest first; only for threads the client has loaded */
   events: Record<string, FyrEvent[]>;
   /** The last seq of each loaded timeline when the stream left live: a refetch starts there, not after the
@@ -66,6 +69,7 @@ export function initialStore(): Store {
     events: {},
     resumeFrom: {},
     deploy: null,
+    stalls: [],
   };
 }
 
@@ -116,12 +120,13 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     projects: orderProjects(projects, dto.projectOrder ?? null),
     projectOrder: dto.projectOrder ?? null,
     deploy: dto.deploy ?? null,
+    stalls: stallsOf(dto),
   };
 }
 
 /** The state as the device stores it (V0.38); applySnapshot reads it back on an offline start. */
 export function stateForCache(s: Store, now: string): StateDTO {
-  return { now, user: s.user, host: s.host, ...(s.hostId ? { hostId: s.hostId } : {}), hosts: s.hosts, deploy: s.deploy, threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: s.projects, ...(s.projectOrder ? { projectOrder: s.projectOrder } : {}) };
+  return { now, user: s.user, host: s.host, ...(s.hostId ? { hostId: s.hostId } : {}), hosts: s.hosts, deploy: s.deploy, ...(s.stalls.length ? { stalls: s.stalls } : {}), threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: s.projects, ...(s.projectOrder ? { projectOrder: s.projectOrder } : {}) };
 }
 
 export function upsertThread(s: Store, raw: ThreadDTO): Store {
@@ -425,6 +430,12 @@ export function applyThreadPatch(s: Store, p: ThreadPatch): { store: Store; need
   if (!cur || cur.rev !== p.base) return { store: s, needFull: true };
   const next = decodeThread(mergePatch(cur, p.patch));
   return { store: { ...s, threads: { ...s.threads, [p.id]: next } }, needFull: false };
+}
+
+/** V0.147: a stall from the stream. */
+export function setStall(s: Store, raw: unknown): Store {
+  const st = decodeStall(raw, s.host || undefined);
+  return st ? { ...s, stalls: upsertStall(s.stalls, st) } : s;
 }
 
 /** V0.39: a deploy progress from the stream. */
