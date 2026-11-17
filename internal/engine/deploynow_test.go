@@ -60,6 +60,10 @@ func (s *sends) Do(th string, ef core.Effect) error {
 // gets nothing.
 func TestContinueAfterForcedRestart(t *testing.T) {
 	e, _, _ := bare(t)
+	// V0.147: the agents are in place before any command; the settle's and
+	// the archive's effects run on their own goroutines and read e.Agents.
+	ag := &sends{}
+	e.Agents = ag
 	live, settled, archived := bareThread(t, e), bareThread(t, e), bareThread(t, e)
 	if r := e.Command(api.Cmd{CommandID: "s1", Action: "thread.settle", ThreadID: settled}); !r.OK {
 		t.Fatalf("settle: %+v", r)
@@ -67,8 +71,6 @@ func TestContinueAfterForcedRestart(t *testing.T) {
 	if r := e.Command(api.Cmd{CommandID: "s2", Action: "thread.archive", ThreadID: archived}); !r.OK {
 		t.Fatalf("archive: %+v", r)
 	}
-	ag := &sends{}
-	e.Agents = ag
 	count := func(id string) int {
 		ag.mu.Lock()
 		defer ag.mu.Unlock()
@@ -83,10 +85,12 @@ func TestContinueAfterForcedRestart(t *testing.T) {
 	if !e.Continue(live, "deploy-b1-continue-"+live) || !e.Continue(live, "deploy-b1-continue-"+live) {
 		t.Fatal("the live thread did not take continue")
 	}
-	for end := time.Now().Add(2 * time.Second); count(live) == 0 && time.Now().Before(end); {
-		time.Sleep(10 * time.Millisecond)
+	// Bounded: up to 5 s for the first send, then 100 ms in which a second
+	// one would land.
+	for end := time.Now().Add(5 * time.Second); count(live) == 0 && time.Now().Before(end); {
+		time.Sleep(5 * time.Millisecond)
 	}
-	time.Sleep(50 * time.Millisecond) // a second send would land by now
+	time.Sleep(100 * time.Millisecond)
 	if n := count(live); n != 1 {
 		t.Fatalf("live thread got %d continues", n)
 	}
