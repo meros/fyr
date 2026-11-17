@@ -92,6 +92,8 @@ export interface ThreadDTO {
   rev?: number;
   /** V0.51: the name of the host that runs the thread */
   host?: string;
+  /** Decision 0031: the install id of the host whose state or frame the thread came in; the client stamps it */
+  hostId?: string;
   /** V0.51: the host is unreachable since then (RFC 3339): the front shows its cached copy, read-only */
   hostOffline?: string;
   /** V0.149 (4): why a root run request cannot ask for the password on the thread's host; absent when it can */
@@ -213,6 +215,8 @@ export interface Project {
   rev?: number;
   /** V0.51: the host the project lives on (a front stamps it) */
   host?: string;
+  /** Decision 0031: the install id of the host the project came from; the client stamps it */
+  hostId?: string;
   name: string;
   /** a palette name: slate blue sky teal green olive violet indigo rose brown */
   color?: string;

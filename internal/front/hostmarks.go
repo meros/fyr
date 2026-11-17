@@ -84,7 +84,7 @@ func (f *Front) newestMarksLocked() hostMarks {
 // publishMarksLocked sends the newest marks to the browsers; the caller holds f.mu.
 func (f *Front) publishMarksLocked() {
 	if b, err := json.Marshal(map[string]any{"marks": f.newestMarksLocked().Marks}); err == nil {
-		f.hub.Publish("hostMarks", b)
+		f.publishFront("hostMarks", b)
 	}
 }
 

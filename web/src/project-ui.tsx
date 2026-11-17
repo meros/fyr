@@ -659,19 +659,19 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
     const bad = iconFileError(f);
     if (bad) return err("icon", bad);
     setBusy(true);
-    const r = await api.uploadProjectIcon(project.id, f);
+    const r = await api.uploadProjectIcon(project.hostId ?? "", project.id, f);
     setBusy(false);
     err("icon", r.ok ? null : (r.error ?? "The upload did not work"));
     if (r.ok) env.saved();
   };
   const removeImage = async () => {
-    const r = await api.command("project.update", undefined, { id: project.id, image: "" });
+    const r = await api.command(project.hostId ?? "", "project.update", undefined, { id: project.id, image: "" });
     err("icon", r.ok ? null : (r.error ?? "That did not work"));
     if (r.ok) env.saved();
   };
   const setup = async () => {
     setBusy(true);
-    const r = await api.command("project.setupRun", undefined, { id: project.id });
+    const r = await api.command(project.hostId ?? "", "project.setupRun", undefined, { id: project.id });
     setBusy(false);
     err("setup", r.ok ? null : (r.error ?? "That did not work"));
   };

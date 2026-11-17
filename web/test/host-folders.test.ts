@@ -5,7 +5,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { changeOptions, chooseHost, chooseProject, createArgs, formHost, formProfiles, initialForm, makingProject, settleForm, type FormCtx } from "../src/new-thread.ts";
 import { hostChoices, hostOfflineNote } from "../src/hosts.ts";
-import { fsQuery } from "../src/folders.ts";
 import { dayTime } from "../src/format.ts";
 import type { Profile, Project } from "../src/types.ts";
 
@@ -38,13 +37,6 @@ test("V0.132: an offline host says so plainly; an online or unknown one says not
   assert.equal(hostOfflineNote("host-b", hosts, now), `host-b is offline since ${dayTime(iso(25), now)}. Its folders cannot be read and nothing can be made on it until it is back; pick another host or wait.`);
   assert.equal(hostOfflineNote("lab", hosts, now), "");
   assert.equal(hostOfflineNote("", hosts, now), "");
-});
-
-test("V0.132: the picker's reads name the host", () => {
-  assert.equal(fsQuery("/api/fs/list?path=%2Fhome", "lab"), "/api/fs/list?path=%2Fhome&host=lab");
-  assert.equal(fsQuery("/api/fs/recent", "host b"), "/api/fs/recent?host=host%20b");
-  assert.equal(fsQuery("/api/fs/recent", undefined), "/api/fs/recent");
-  assert.equal(fsQuery("/api/fs/recent", ""), "/api/fs/recent");
 });
 
 test("V0.132, V0.139: the host decides the project: picking a project of another host moves the host to it", () => {

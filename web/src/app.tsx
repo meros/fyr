@@ -67,7 +67,7 @@ import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
-import { hostLabel, hostOfflineNote, multiHost } from "./hosts.ts";
+import { hostIdByName, hostLabel, hostOfflineNote, multiHost } from "./hosts.ts";
 import { HostsContext } from "./host-pick-ui.tsx";
 import { HostMarksContext } from "./host-mark-ui.tsx";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
@@ -242,6 +242,7 @@ function App() {
   const navGoRef = useRef<(n: Nav) => void>(() => {});
   const cmds = useThreadCommands({
     undoMs: phone ? PHONE_UNDO_MS : UNDO_MS,
+    hostOf: (id) => threadsRef.current[id]?.hostId ?? "",
     onUndone: (entry, ok) => {
       const back = reopenRef.current;
       reopenRef.current = null;
@@ -446,7 +447,7 @@ function App() {
         if (st && shouldClearNotification(st)) clearThreadNotification(p.id);
         batch((s) => {
           const r = applyThreadPatch(s, p);
-          if (r.needFull) queueMicrotask(() => void api.thread(p.id).then((t) => t && setStore((x) => upsertThread(x, t))));
+          if (r.needFull) queueMicrotask(() => void api.thread(s.threads[p.id]?.hostId ?? "", p.id).then((t) => t && setStore((x) => upsertThread(x, t))));
           return r.store;
         });
       },
@@ -492,7 +493,7 @@ function App() {
   const loadEarlier = (id: string) => {
     const first = store.events[id]?.[0]?.seq;
     if (!first) return;
-    void api.eventsBefore(id, first, PAGE).then((evs) => {
+    void api.eventsBefore(store.threads[id]?.hostId ?? "", id, first, PAGE).then((evs) => {
       setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
       setStore((s) => mergeEvents(s, id, evs));
     });
@@ -510,7 +511,7 @@ function App() {
       const now = Date.now();
       if (shouldBeat(beatRef.current, target, now)) {
         beatRef.current = { last: target, at: now };
-        void api.presence(target, device);
+        void api.presence(threadsRef.current[target]?.hostId ?? "", target, device);
       }
     };
     tick();
@@ -537,7 +538,7 @@ function App() {
       if (stored?.length) setStore((s) => (s.events[id] ? s : mergeEvents(s, id, stored, true)));
       const from = known ? after : stored?.length ? stored[stored.length - 1].seq : 0;
       try {
-        const evs = await api.events(id, from, PAGE);
+        const evs = await api.events(threadsRef.current[id]?.hostId ?? "", id, from, PAGE);
         if (cancelled) return;
         if (!known && !stored?.length) setEarlier((m) => ({ ...m, [id]: evs.length >= PAGE }));
         if (!known && stored?.length) {
@@ -594,7 +595,7 @@ function App() {
       if (t && !gatedRef.current && shouldMarkSeen(tr, t, Date.now())) {
         setTracker((x) => markSent(x, t));
         // upTo: only what this view showed counts as seen (API v0, SPEC 6.4).
-        void api.command("thread.markSeen", t.id, { upTo: t.activityAt });
+        void api.command(t.hostId ?? "", "thread.markSeen", t.id, { upTo: t.activityAt });
       }
     }, 250);
     const onFocus = () => setTracker((x) => setWindowFocus(x, true, Date.now()));
@@ -876,7 +877,10 @@ function App() {
 
   // ---- projects (V0.23) ----
   const projectCommand = async (action: string, args: Record<string, unknown>, threadId?: string): Promise<string | null> => {
-    const r = await api.command(action, threadId, args);
+    // A project command goes to the project's host, a thread's to the thread's (decision 0031).
+    const pid = typeof args.id === "string" ? args.id : typeof args.projectId === "string" ? args.projectId : "";
+    const host = (threadId ? store.threads[threadId]?.hostId : store.projects.find((p) => p.id === pid)?.hostId) ?? "";
+    const r = await api.command(host, action, threadId, args);
     return r.ok ? null : (r.error ?? "That did not work");
   };
   const projectActions = {
@@ -887,11 +891,10 @@ function App() {
     create: async (name: string, folder: string, threadIds: string[] = [], host?: string): Promise<{ error: string | null; id?: string }> => {
       const args: Record<string, unknown> = { name };
       // V0.132: on the host picked, else the threads' host (a project made from threads lives where they run).
-      const on = host || (threadIds.length ? store.threads[threadIds[0]]?.host : undefined);
-      if (on && multiHost(store.hosts)) args.host = on;
+      const on = host ? hostIdByName(store.hosts, host) : threadIds.length ? (store.threads[threadIds[0]]?.hostId ?? "") : hostIdByName(store.hosts);
       if (folder) args.folder = folder;
       if (threadIds.length === 1) args.threadId = threadIds[0];
-      const r = await api.command("project.create", undefined, args);
+      const r = await api.command(on, "project.create", undefined, args);
       if (!r.ok) return { error: r.error ?? "That did not work" };
       const id = r.result?.id;
       if (threadIds.length > 1 && id) await Promise.all(threadIds.map((t) => projectCommand("thread.setProject", { projectId: id }, t)));
@@ -909,7 +912,7 @@ function App() {
     order: async (ids: string[]): Promise<string | null> => {
       const before = store.projectOrder;
       setStore((s) => setProjectOrder(s, ids));
-      const r = await api.command("front.projectOrder", undefined, { ids });
+      const r = await api.frontCommand("front.projectOrder", { ids });
       if (r.ok) return null;
       setStore((s) => (before ? setProjectOrder(s, before) : { ...s, projectOrder: null, projects: orderProjects(s.projects, null) }));
       return r.error ?? "That did not work";
@@ -945,7 +948,8 @@ function App() {
   // V0.132: the picker reads the folders of the host it was opened for; an offline host says so, and no other host's
   // folders stand in.
   const pickHost = folderPick?.host ?? "";
-  const pickFs: FsApi = { fsList: (p) => api.fsList(p, pickHost), fsRecent: () => api.fsRecent(pickHost), fsRepos: () => api.fsRepos(pickHost), fsMkdir: (a, b) => api.fsMkdir(a, b, pickHost) };
+  const pickId = hostIdByName(store.hosts, pickHost);
+  const pickFs: FsApi = { fsList: (p) => api.fsList(pickId, p), fsRecent: () => api.fsRecent(pickId), fsRepos: () => api.fsRepos(pickId), fsMkdir: (a, b) => api.fsMkdir(pickId, a, b) };
   const pickTitle = `${folderPick?.title ?? "Pick a folder"}${pickHost && multiHost(store.hosts) ? ` on ${pickHost}` : ""}`;
   const pickNote = hostOfflineNote(pickHost, store.hosts, now);
   const pickBody = (autoFocus: boolean) =>
@@ -1008,8 +1012,9 @@ function App() {
     if (a.title) args.title = a.title;
     if (a.view) args.view = true;
     if (a.effort) args.effort = a.effort;
-    if (a.host) args.host = a.host; // V0.132
-    const r = await api.command("thread.create", undefined, args);
+    // V0.132: the host picked; else the project's; else the first, as the picker's default (the call names it).
+    const on = a.host ? hostIdByName(store.hosts, a.host) : a.projectId ? (store.projects.find((p) => p.id === a.projectId)?.hostId ?? "") : hostIdByName(store.hosts);
+    const r = await api.command(on, "thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
     if (r.threadId) {
@@ -1028,7 +1033,7 @@ function App() {
   };
 
   const adopt = async (ids: string[], host?: string): Promise<string | null> => {
-    const r = await api.command("t3.adopt", undefined, { t3Ids: ids, ...(host && multiHost(store.hosts) ? { host } : {}) }); // V0.139
+    const r = await api.command(hostIdByName(store.hosts, host), "t3.adopt", undefined, { t3Ids: ids }); // V0.139
     if (!r.ok) return r.error ?? "Could not adopt";
     setDialog(null);
     cmds.notify(ids.length === 1 ? "Adopted 1 thread" : `Adopted ${ids.length} threads`);
@@ -1039,7 +1044,7 @@ function App() {
   const restartNow = async () => {
     const p = store.deploy;
     if (!p || !(await confirmHost.ask(restartNowAsk(p, store.threads)))) return;
-    const r = await api.command("host.deployNow");
+    const r = await api.command(store.hostId, "host.deployNow"); // the update of the host the front runs in
     if (!r.ok) cmds.notify(r.error ?? "Fyr could not restart now");
   };
 
@@ -1493,7 +1498,7 @@ function App() {
         />
         {nav.sheet?.kind === "adopt" && (
           <AdoptDialog
-            load={(h) => api.t3Candidates(h)}
+            load={(h) => api.t3Candidates(hostIdByName(store.hosts, h))}
             now={now}
             onClose={navBack}
             onAdopt={async (ids, h) => {
@@ -1672,7 +1677,7 @@ function App() {
       {dialog === "handover" && handoverId && store.threads[handoverId] && (
         <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m) => cmds.handover(handoverId, pr, m)} />
       )}
-      {dialog === "adopt" && <AdoptDialog load={(h) => api.t3Candidates(h)} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
+      {dialog === "adopt" && <AdoptDialog load={(h) => api.t3Candidates(hostIdByName(store.hosts, h))} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "changes" && (
         <Modal title="Changes" wide onClose={() => setDialog(null)}>
           <div class="db">

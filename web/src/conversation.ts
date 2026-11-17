@@ -161,7 +161,7 @@ export function previewsOf(events: FyrEvent[], host?: string, urls?: ContentUrls
   const out: PreviewCard[] = [];
   for (const e of events) {
     if (e.type !== "preview") continue;
-    const c = previewCard(e.seq, e.at, e.data, host, urls);
+    const c = previewCard(e.seq, e.at, e.data, host ?? "", urls);
     if (c) out.push(c);
   }
   return out;
@@ -317,7 +317,7 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         break;
       }
       case "preview": {
-        const card = previewCard(e.seq, e.at, e.data, opts.host, opts.urls);
+        const card = previewCard(e.seq, e.at, e.data, opts.host ?? "", opts.urls);
         if (card) pushItem({ kind: "preview", key, card });
         break;
       }

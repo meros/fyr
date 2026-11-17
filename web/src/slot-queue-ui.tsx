@@ -2,6 +2,8 @@
 // draws its own row (it passes `row`); this draws the header, one part per host with a queue, the priority waits
 // pinned on top, the place of each thread ("#2") and the reorder control of V0.119 (4).
 
+import { hostIdByName } from "./hosts.ts";
+import { useHosts } from "./host-pick-ui.tsx";
 import type { ComponentChildren, VNode } from "preact";
 import { useMemo, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
@@ -82,6 +84,7 @@ function Part({ part, shown, phone, reordering, row }: { part: QueuePart; shown:
   const threads = rows.filter((r) => r.thread);
   const ids = threads.map((r) => r.entry.owner);
   const all = part.entries.filter((e) => !e.priority).map((e) => e.owner);
+  const { hosts } = useHosts();
   const send = async (from: number, to: number) => {
     const owners = reorderOwners(all, ids, from, to);
     const pri = part.entries.filter((e) => e.priority).map((e) => ({ owner: e.owner, kind: e.kind, priority: true }));
@@ -89,7 +92,7 @@ function Part({ part, shown, phone, reordering, row }: { part: QueuePart; shown:
     // Shown on this device first; the receipt (the host's queue as it is now) or the next poll corrects it.
     patchSlots(part.host, (s) => ({ ...s, waiting: [...pri, ...owners.map((o) => ({ owner: o, kind: kinds.get(o) ?? "" }))] }));
     setErr(null);
-    const r = await api.command("host.slotOrder", undefined, { host: part.host, owners });
+    const r = await api.command(hostIdByName(hosts, part.host), "host.slotOrder", undefined, { owners });
     if (r.ok && r.result && typeof r.result === "object" && "waiting" in (r.result as object)) patchSlots(part.host, r.result as unknown as Slots);
     else if (!r.ok) setErr(r.error ?? "The order did not change");
     refreshLoad();

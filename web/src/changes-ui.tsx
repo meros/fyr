@@ -43,7 +43,7 @@ function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-export function ChangesView({ threadId, changes }: { threadId: string; changes?: Change[] }) {
+export function ChangesView({ host, threadId, changes }: { host: string; threadId: string; changes?: Change[] }) {
   const source = useApi();
   const [data, setData] = useState<ChangesDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export function ChangesView({ threadId, changes }: { threadId: string; changes?:
   const flush = () => {
     const s = shown.current;
     shown.current = null;
-    if (s) void source.command("thread.changesSeen", s.threadId, { head: s.look.head, files: s.look.files }).catch(() => {});
+    if (s) void source.command(host, "thread.changesSeen", s.threadId, { head: s.look.head, files: s.look.files }).catch(() => {});
   };
 
   const load = (first = false) => {
@@ -67,7 +67,7 @@ export function ChangesView({ threadId, changes }: { threadId: string; changes?:
     setLoading(true);
     setError(null);
     setPatches({});
-    source.changes(threadId).then(
+    source.changes(host, threadId).then(
       (c) => {
         if (g !== gen.current) return;
         setData(c);
@@ -94,7 +94,7 @@ export function ChangesView({ threadId, changes }: { threadId: string; changes?:
     // The since diff runs from the seen head; a seen commit that is gone falls back to the branch diff.
     const since = m === "since" && c?.since && c.since.mode !== "missing" ? c.since.head : undefined;
     setPatches((p) => ({ ...p, [key]: { kind: "loading" } }));
-    source.filePatch(threadId, path, since).then(
+    source.filePatch(host, threadId, path, since).then(
       (p) => g === gen.current && setPatches((s) => ({ ...s, [key]: { kind: "ok", p } })),
       (e) => g === gen.current && setPatches((s) => ({ ...s, [key]: { kind: "error", error: message(e) } })),
     );
@@ -139,7 +139,7 @@ export function ChangesView({ threadId, changes }: { threadId: string; changes?:
       next.delete(f.path);
       setOpen(next);
     }
-    void source.command("thread.fileViewed", threadId, { path: f.path, blob, viewed: on }).catch(() => setMarks((x) => ({ ...x, [f.path]: on ? null : blob })));
+    void source.command(host, "thread.fileViewed", threadId, { path: f.path, blob, viewed: on }).catch(() => setMarks((x) => ({ ...x, [f.path]: on ? null : blob })));
   };
 
   const head = (text: string) => (
