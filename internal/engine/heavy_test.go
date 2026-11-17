@@ -57,6 +57,7 @@ func TestH174AnIdleHeldSlotGetsOneReminder(t *testing.T) {
 	start := *now
 	active := start
 	e.SlotActive = func(owner string) (time.Time, bool) { return active, owner == a }
+	guardDeps(t, e)
 	e.Slots.Acquire(a, slots.Test)
 	*now = start.Add(4 * time.Minute)
 	e.Tick()

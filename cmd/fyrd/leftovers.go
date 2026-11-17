@@ -57,16 +57,18 @@ func runLeftovers(ctx context.Context, tree *cgroup.Tree, sampler *cgroup.Sample
 		return out
 	}}
 	sampler.Leftovers, sampler.Temps = lt, tp
-	eng.LeftoverEnd, eng.LeftoverKeep, eng.TempRemove = lt.End, lt.Keep, tp.Remove
-	eng.LeftoverDeclare = func(thread string, pid int, match string, d time.Duration, why string) error {
-		return lt.Declare(thread, pid, match, d, why, "agent")
-	}
 	var started atomic.Bool
-	eng.LeftoverSweep = func() {
-		if started.Load() {
-			lt.Tick()
-			tp.Sweep(false)
-		}
+	eng.LeftoverDeps = engine.LeftoverDeps{
+		LeftoverEnd: lt.End, LeftoverKeep: lt.Keep, TempRemove: tp.Remove,
+		LeftoverDeclare: func(thread string, pid int, match string, d time.Duration, why string) error {
+			return lt.Declare(thread, pid, match, d, why, "agent")
+		},
+		LeftoverSweep: func() {
+			if started.Load() {
+				lt.Tick()
+				tp.Sweep(false)
+			}
+		},
 	}
 	go func() {
 		select {

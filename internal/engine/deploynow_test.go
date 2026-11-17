@@ -20,6 +20,7 @@ func TestDeployNowCommand(t *testing.T) {
 	}
 	calls := 0
 	e.DeployNow = func() error { calls++; return nil }
+	guardDeps(t, e)
 	if r := e.Command(api.Cmd{CommandID: "n1", Action: core.KindDeployNow}); !r.OK {
 		t.Fatalf("deployNow: %+v", r)
 	}
@@ -27,11 +28,13 @@ func TestDeployNowCommand(t *testing.T) {
 		t.Fatalf("calls %d", calls)
 	}
 	e.DeployNow = func() error { return errors.New("No update is waiting for running threads") }
+	guardDeps(t, e)
 	if r := e.Command(api.Cmd{CommandID: "n2", Action: core.KindDeployNow}); r.OK || r.Status != 409 || !strings.Contains(r.Error, "No update") {
 		t.Fatalf("refused: %+v", r)
 	}
 	id := bareThread(t, e)
 	e.DeployNow = func() error { calls++; return nil }
+	guardDeps(t, e)
 	if r := e.submit(core.Input{Source: core.FromAgent, From: id, Kind: core.KindDeployNow, CmdID: "n3"}); r.OK {
 		t.Fatalf("an agent forced a deploy: %+v", r)
 	}

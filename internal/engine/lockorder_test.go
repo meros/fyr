@@ -6,9 +6,12 @@
 package engine
 
 import (
+	"github.com/meros/fyr/internal/api"
+	"github.com/meros/fyr/internal/core"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -39,6 +42,7 @@ func TestV147LoadSlotsAndTicksDoNotDeadlock(t *testing.T) {
 	e.UseSlots(pool)
 	jobs := &cgroup.Jobs{Project: e.ThreadProject}
 	e.SlotActive = jobs.Active
+	guardDeps(t, e)
 	proc := t.TempDir()
 	if err := os.WriteFile(filepath.Join(proc, "loadavg"), []byte("1.00 1.00 1.00 1/1 1\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -110,5 +114,38 @@ func TestV147StallIsToldWhileTheEngineIsStuck(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no stall frame")
+	}
+}
+
+// SPEC 0.5 V0.182: the hooks no other test reaches are called without e.mu
+// too: the owner's heavy-job and update commands, the gate's refusal count
+// and the record of a told episode.
+func TestV182DepsAreCalledWithoutTheEngineLock(t *testing.T) {
+	e, _, now, a := undEngine(t)
+	var calls []string
+	e.HeavySuggestion = func(id, do, pattern, kind string) error { calls = append(calls, "suggestion "+id+" "+do); return nil }
+	e.HeavyRemove = func(p string) bool { calls = append(calls, "remove "+p); return true }
+	e.UndeclaredSettings = func(map[string]any) error { calls = append(calls, "settings"); return nil }
+	e.UpdateNow = func() error { calls = append(calls, "update"); return nil }
+	e.HeavyRefused = func(class string) { calls = append(calls, "refused "+class) }
+	e.UndeclaredTold = func(thread string, _, _ time.Time) { calls = append(calls, "told "+thread) }
+	e.Undeclared = func() []slots.Undeclared { return []slots.Undeclared{flagFor(a, *now)} }
+	guardDeps(t, e)
+	for i, c := range []api.Cmd{
+		{Action: core.KindHeavySuggestion, Args: map[string]any{"id": "s1", "do": "add", "pattern": "make check", "kind": "test"}},
+		{Action: core.KindHeavyRemove, Args: map[string]any{"pattern": "make check"}},
+		{Action: core.KindUndeclaredSettings, Args: map[string]any{"on": false}},
+		{Action: core.KindUpdateNow},
+	} {
+		c.CommandID = "c" + string(rune('0'+i))
+		if r := e.Command(c); !r.OK {
+			t.Fatalf("%s: %+v", c.Action, r)
+		}
+	}
+	e.HeavyGate(a, "make check")
+	e.Tick()
+	want := []string{"suggestion s1 add", "remove make check", "settings", "update", "refused make check", "told " + a}
+	if !slices.Equal(calls, want) {
+		t.Fatalf("calls %v, want %v", calls, want)
 	}
 }

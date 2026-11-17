@@ -27,6 +27,7 @@ func undEngine(t *testing.T) (*Engine, *und, *time.Time, string) {
 	e.HostName = "desk"
 	u := &und{}
 	e.Undeclared = func() []slots.Undeclared { return u.flags }
+	guardDeps(t, e)
 	a := bareThread(t, e)
 	running(e, a)
 	return e, u, now, a
@@ -241,6 +242,7 @@ func fzEngine(t *testing.T) (*Engine, *und, *time.Time, *fz, []string) {
 	e.SlotThaw = func(o string) { delete(z.slotted, o) }
 	e.UndeclaredFreeze = func(o string) bool { z.frozen[o] = true; return true }
 	e.UndeclaredThaw = func(o string) { delete(z.frozen, o) }
+	guardDeps(t, e)
 	b := bareThread(t, e)
 	running(e, b)
 	return e, u, now, z, []string{a, b}
@@ -400,6 +402,7 @@ func TestF12WhereNothingCanBeFrozenNothingIsToldItWasPaused(t *testing.T) {
 	a, b := th[0], th[1]
 	e.Slots.Acquire(b, slots.Test)
 	e.UndeclaredFreeze = func(string) bool { return false } // no cgroups
+	guardDeps(t, e)
 	u.flags = []slots.Undeclared{flagFor(a, *now)}
 	z.free = 0.04
 	e.Tick()
@@ -414,6 +417,7 @@ func TestC9TheCommandsAreTheOwnersOnly(t *testing.T) {
 	e, _, _, _ := undEngine(t)
 	var got []string
 	e.UndeclaredDismiss = func(th string, on bool) bool { got = append(got, th); return true }
+	guardDeps(t, e)
 	for _, k := range []string{core.KindUndeclaredDismiss, core.KindHeavySuggestion, core.KindHeavyRemove, core.KindUndeclaredSettings} {
 		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: k, Args: map[string]any{"thread": "t_a", "on": true}}); err == nil {
 			t.Errorf("%s accepted from an observer", k)

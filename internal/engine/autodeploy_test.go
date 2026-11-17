@@ -58,6 +58,7 @@ func TestAutoDeployByTheSetting(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	g := &gate{}
 	h.e.DeployGate = g.check
+	guardDeps(t, h.e)
 	if !h.e.AutoDeploy().On {
 		t.Fatal("the setting is not on by default")
 	}
@@ -105,6 +106,7 @@ func TestAutoDeployByTheSetting(t *testing.T) {
 	}
 	// On again: the waiting clean ask runs at once.
 	h2.e.DeployGate = g.check
+	guardDeps(t, h2.e)
 	if r := h2.cmd(core.KindAutoDeploySet, "", core.Args{"on": true}); !r.OK {
 		t.Fatalf("on: %+v", r)
 	}
@@ -117,6 +119,7 @@ func TestAutoDeployOneAtATime(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	g := &gate{}
 	h.e.DeployGate = g.check
+	guardDeps(t, h.e)
 	h.r.deploy = make(chan error)
 	a := h.create("a")
 	b := h.create("b")
@@ -145,6 +148,7 @@ func TestAutoDeployOneAtATime(t *testing.T) {
 	busy := true
 	var mu sync.Mutex
 	h.e.DeployBusy = func() bool { mu.Lock(); defer mu.Unlock(); return busy }
+	guardDeps(t, h.e)
 	h.r.deploy <- errors.New("tests failed, nothing was switched")
 	eventually(t, "the first result landed", func() bool { return hasEvent(h.events(a), "effect.result", "tests failed") })
 	time.Sleep(100 * time.Millisecond)

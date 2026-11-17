@@ -82,12 +82,6 @@ type Engine struct {
 	deploySeen   map[string]string
 	deploys      int
 	deployMu     sync.Mutex
-	// DeployGate checks a checkout before Fyr approves a deploy ask by
-	// itself (V0.111): its HEAD, or why the ask waits for the owner. nil:
-	// no deploy ask is approved by itself.
-	DeployGate func(ctx context.Context, dir string) (commit, why string)
-	// DeployBusy: a deploy builds or a new build waits out its probation.
-	DeployBusy func() bool
 	// cmds are each thread's commands from its session (V0.79), under cmdMu.
 	cmdMu sync.Mutex
 	cmds  map[string][]core.Command
@@ -108,11 +102,19 @@ type Engine struct {
 	FetchIcon func(ctx context.Context, url string) ([]byte, error)
 	AutoSetup bool
 	// HostID names this host in folder sources (V0.23); default the hostname.
-	HostID  string
-	lastRev int64
+	HostID string
+	// HostName names this host in the heavy-job answers (V0.163).
+	HostName string
+	lastRev  int64
 
-	Agents  Agents
-	Effects EffectRunner
+	// The parts of the host the engine calls (deps.go): each group is set
+	// once by the host's wiring, and called without e.mu.
+	AgentDeps
+	OutsideDeps
+	DeployDeps
+	SlotDeps
+	UndeclaredDeps
+	LeftoverDeps
 	// Git reads checkouts for the git observer (#35); nil reads with git.
 	Git GitReader
 	// Scripts runs script actions of changes, the thread and its view (V0.60);
@@ -130,17 +132,6 @@ type Engine struct {
 	rootAt     time.Time
 	Hub        *stream.Hub
 	Now        func() time.Time
-	// Adopt runs t3.adopt's effect; set by main.
-	Adopt func(ids []string) (int, error)
-	// DeployNow runs host.deployNow's effect (V0.83): the deployer stops its
-	// drain; nil: this host deploys nothing.
-	DeployNow func() error
-	// UpdateNow runs host.updateNow's effect (V0.126): install the newest
-	// release now.
-	UpdateNow func() error
-	// Providers runs the provider commands' effect (3.16); nil: this host
-	// has no providers.
-	Providers Providers
 	// Attach stores files for the show tool (V0.19); Shooter takes screenshots.
 	Attach  *attach.Store
 	Shooter Shooter
@@ -148,89 +139,25 @@ type Engine struct {
 	shotLimit window
 	newLimit  window
 	sendLimit window
-	// AttachmentExists checks ids in thread.create and thread.send (V0.18).
-	AttachmentExists func(id string) bool
-	// ProfileExists checks the target of thread.handover (V0.45); nil
-	// accepts any.
-	ProfileExists func(id string) bool
-	// OnPR is called when a thread gets a new PR, so the poller looks now.
-	OnPR func(threadID string)
-	// OnAttention is called, outside the lock, when a thread's attention
-	// state changes (push, SPEC 0.5 V0.15). prev is "" for a new thread.
-	OnAttention func(d api.Thread, prev core.State)
 	// Slots is the host's pool of slots for heavy jobs (V0.86); set it with
 	// UseSlots. nil: the slot tools say there are none.
 	Slots *slots.Pool
 	// Kept: the threads whose processes the launcher's runner kept across
 	// the restart (V0.90); set before Load.
-	Kept     map[string]bool
-	slotIdle map[string]time.Time // under mu: held slots without a live run, since
-	// SlotActive tells when a held slot last ran a heavy job (#174: the
-	// job tracker's last heavy command or busy reading); optional.
-	SlotActive func(owner string) (time.Time, bool)
+	Kept       map[string]bool
+	slotIdle   map[string]time.Time // under mu: held slots without a live run, since
 	slotNudged map[string]time.Time // under mu: owner → the hold (its since) already reminded
-	// SlotSignals and SlotGrowth feed decision 0029 S2's memory guard:
-	// the host's measures and how much a holder's memory grew; optional.
-	SlotSignals func() slots.Signals
-	SlotGrowth  func(owner string) uint64
-	SlotPolicy  slots.Policy
-	// Decision 0029 S3: SlotJob hears the command a slot_acquire names;
-	// SlotOver says whether a holder's job is heavier than predicted (its
-	// class, live and predicted cost); JobReset forgets a learned class
-	// (the owner's Reset). All optional.
-	SlotJob func(thread, command string)
-	// HostName names this host in the heavy-job answers (V0.163).
-	HostName string
-	SlotOver func(owner string) (class string, live, predicted float64, over bool)
-	JobReset func(class string) bool
-	// Decision 0029 S5: freeze and thaw a holder's job (its own cgroup, not
-	// its CLI); optional. frozen is the one frozen now, under mu.
-	// SlotAIMD adapts the pool's budget at each tick (decision 0029 S4);
-	// optional.
-	SlotAIMD     *slots.AIMD
-	SlotFreeze   func(owner string) bool
-	SlotThaw     func(owner string)
+	// frozen is the job frozen now (decision 0029 S5), under mu.
 	frozen       frozenJob
 	frozeHolds   map[string]time.Time // under mu: holds frozen once already (owner → since)
 	slotOverTold map[string]time.Time // under mu: owner → the hold already told
-	// V0.164: undeclared heavy work. Undeclared lists the flagged threads
-	// (the detector's published view); UndeclaredTold records when a thread's
-	// agent was told; UndeclaredFreeze and UndeclaredThaw move a thread's
-	// undeclared work in and out of its frozen cgroup; the others are the
-	// owner's commands. All optional.
-	Undeclared         func() []slots.Undeclared
-	UndeclaredTold     func(thread string, since, at time.Time)
-	UndeclaredFreeze   func(thread string) bool
-	UndeclaredThaw     func(thread string)
-	UndeclaredDismiss  func(thread string, on bool) bool
-	UndeclaredSettings func(args map[string]any) error
-	HeavySuggestion    func(id, do, pattern, kind string) error
-	HeavyRemove        func(pattern string) bool
-	HeavyRefused       func(class string)
-	// V0.176: leftover processes and temporary files. LeftoverSweep looks
-	// now (a run ended, a thread settled); the others are the owner's
-	// commands and the agent's keep_process. All optional.
-	LeftoverSweep   func()
-	LeftoverEnd     func(id string) error
-	LeftoverKeep    func(id string, d time.Duration) error
-	LeftoverDeclare func(thread string, pid int, match string, d time.Duration, why string) error
-	TempRemove      func(path string) error
-	undTold         map[string]time.Time // under mu: thread → the episode (its since) already told
-	undRun          map[string]int       // under mu: thread → the run (RunEnds) already told in
-	undNote         map[string]time.Time // under mu: thread → the episode a subagent's note was given for
-	undFroze        map[string]time.Time // under mu: thread → the episode already frozen once
-	memGuard        bool                 // under mu: the guard told a thread in this episode
-	// Titler makes a thread title from its conversation (V0.108); nil: this
-	// host makes none. titling is the threads with a call in flight.
-	Titler Titler
-	// SystemAgentResolve names the provider and the model a system job runs
-	// on now, or why it cannot run (V0.115); nil: Settings shows the
-	// setting only.
-	SystemAgentResolve func(job string) (profile, model string, err error)
-	// SystemAgentProviders lists the providers the setting can pick.
-	SystemAgentProviders func() []SystemProvider
-	titleMu              sync.Mutex
-	titling              map[string]bool
+	undTold      map[string]time.Time // under mu: thread → the episode (its since) already told
+	undRun       map[string]int       // under mu: thread → the run (RunEnds) already told in
+	undNote      map[string]time.Time // under mu: thread → the episode a subagent's note was given for
+	undFroze     map[string]time.Time // under mu: thread → the episode already frozen once
+	memGuard     bool                 // under mu: the guard told a thread in this episode
+	titleMu      sync.Mutex
+	titling      map[string]bool
 }
 
 func New(st *store.Store) *Engine {
