@@ -11,6 +11,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,11 +22,71 @@ import (
 // DefaultSocket is tailscaled's LocalAPI socket on Linux.
 const DefaultSocket = "/run/tailscale/tailscaled.sock"
 
+// MacDir is where the macOS Tailscale app (the standalone app, and the
+// open-source tailscaled) leaves its LocalAPI port: ipnport names it and
+// sameuserproof-<port> holds the token. The app has no Unix socket.
+var MacDir = "/Library/Tailscale"
+
+// macLocalAPI reads the port and the token from dir; false without them.
+func macLocalAPI(dir string) (port, token string, ok bool) {
+	port, err := os.Readlink(filepath.Join(dir, "ipnport"))
+	if err != nil {
+		b, err := os.ReadFile(filepath.Join(dir, "ipnport"))
+		if err != nil {
+			return "", "", false
+		}
+		port = string(b)
+	}
+	port = strings.TrimSpace(port)
+	if _, err := strconv.Atoi(port); err != nil {
+		return "", "", false
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "sameuserproof-"+port))
+	if err != nil {
+		return "", "", false
+	}
+	token = strings.TrimSpace(string(b))
+	return port, token, token != ""
+}
+
+// Available reports a LocalAPI to talk to: the socket, or the macOS app's
+// port.
+func Available(socket string) bool {
+	if _, err := os.Stat(socket); err == nil {
+		return true
+	}
+	_, _, ok := macLocalAPI(MacDir)
+	return ok
+}
+
+// localClient talks to the LocalAPI at socket, or, when there is none, at
+// the macOS app's port with its token.
 func localClient(socket string) *http.Client {
+	if _, err := os.Stat(socket); err != nil {
+		if port, token, ok := macLocalAPI(MacDir); ok {
+			return &http.Client{Timeout: 3 * time.Second, Transport: tokenTransport{token: token, rt: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", port))
+				}}}}
+		}
+	}
 	return &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 		}}}
+}
+
+// tokenTransport sends the macOS app's token as the LocalAPI asks: basic
+// auth with an empty user.
+type tokenTransport struct {
+	token string
+	rt    http.RoundTripper
+}
+
+func (t tokenTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.SetBasicAuth("", t.token)
+	return t.rt.RoundTrip(r)
 }
 
 // Peers names the owner of a tailnet peer by the address of its connection
