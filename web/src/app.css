@@ -1358,6 +1358,8 @@ label.sr{cursor:pointer}
 .rail .rmid>.rq{flex-direction:row;flex-wrap:wrap;justify-content:center;gap:3px 6px}
 /* V0.140's host name under each ring (several hosts) is cut to the ring's column, so two rings still sit side by side. */
 .rail .rmid .rldh{max-width:36px}
+/* V0.140: the host label is a line of the ring, not a row of its own, so two rings and their names fit the rail's middle */
+.rail .rmid .rldh{margin-top:-3px;font-size:9px;line-height:11px}
 @container rail (max-height: 860px){
   .rail .ri .k{display:none}
   .rail .ri{padding:5px 0 4px}
