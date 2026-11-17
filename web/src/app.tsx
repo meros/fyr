@@ -8,6 +8,8 @@ import { currentDecision } from "./decode.ts";
 import { ApiContext, useApi } from "./api-context.ts";
 import { useThreadCommands } from "./commands.ts";
 import {
+  bulkSettle,
+  bulkSettleText,
   SECTIONS,
   applySnapshot,
   flatOrder,
@@ -644,17 +646,27 @@ function App() {
     void cmds.run("thread.settle", [id]);
   };
 
+  /** V0.162: every bulk settle, desktop and phone, goes through here: pinned threads are left out and counted. */
+  const settleBulk = (ids: string[]): Promise<string[]> => {
+    const { ids: take, kept } = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t));
+    if (!take.length) {
+      if (kept) cmds.notify(bulkSettleText(0, kept));
+      else cmds.showError("Nothing here can be settled");
+      return Promise.resolve([]);
+    }
+    return cmds.run("thread.settle", take, { now: true }, { label: (n) => bulkSettleText(n, kept) }).then((n) => (n ? take : []));
+  };
+
   const settleGroup = () => {
     let ids = [...picked];
     if (!ids.length && sel) {
       const k = sectionOf(store.threads[sel]);
       if (k) ids = sec[k].map((t) => t.id);
     }
-    ids = ids.filter((id) => isAvailable(store.threads[id], "thread.settle"));
-    if (!ids.length) return cmds.showError("Nothing here can be settled");
-    stepPast(ids);
+    const { ids: take } = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t));
+    stepPast(take);
     setPicked(new Set());
-    void cmds.run("thread.settle", ids, { now: true });
+    void settleBulk(ids);
   };
 
   const archive = (ids: string[]) => {
@@ -1370,7 +1382,10 @@ function App() {
   }, [phone, nav.screen.name === "thread" ? nav.screen.id : nav.screen.name]);
 
   const phoneActions: PhoneActions = {
-    settle: (ids, bulk) => void cmds.run("thread.settle", ids, bulk ? { now: true } : undefined).then((n) => n && leaveOpenThread("settle", ids)),
+    settle: (ids, bulk) =>
+      bulk
+        ? void settleBulk(ids).then((done) => done.length && leaveOpenThread("settle", done))
+        : void cmds.run("thread.settle", ids).then((n) => n && leaveOpenThread("settle", ids)),
     archive: (ids) => void cmds.run("thread.archive", ids).then((n) => n && leaveOpenThread("archive", ids)),
     markUnseen: (id) => markUnseen(id),
     create,
