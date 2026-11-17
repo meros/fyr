@@ -11,6 +11,7 @@ package front
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -84,7 +85,7 @@ func (f *Front) refuseTailscale(next http.Handler) http.Handler {
 		if f.opt.Auth != nil && !server.IsViaServe(r) && f.opt.Auth.Mode(auth.WayBrowser) == auth.ModeEnforce {
 			for k := range r.Header {
 				if strings.HasPrefix(strings.ToLower(k), "tailscale-") {
-					http.Error(w, "this listener does not take Tailscale headers", http.StatusBadRequest)
+					refuse(w, r, "this listener does not take Tailscale headers", http.StatusBadRequest)
 					return
 				}
 			}
@@ -100,19 +101,19 @@ func (f *Front) refuseTailscale(next http.Handler) http.Handler {
 func (f *Front) browserRules(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if o := r.Header.Get("Origin"); o != "" && o != originOf(r) {
-			http.Error(w, "this request comes from another origin", http.StatusForbidden)
+			refuse(w, r, "this request comes from another origin", http.StatusForbidden)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			switch r.Header.Get("Sec-Fetch-Site") {
 			case "", "same-origin":
 			default:
-				http.Error(w, "this request comes from another site", http.StatusForbidden)
+				refuse(w, r, "this request comes from another site", http.StatusForbidden)
 				return
 			}
 			if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Header.Get("Origin") == "" &&
 				f.opt.Auth != nil && f.opt.Auth.Mode(auth.WayBrowser) == auth.ModeEnforce {
-				http.Error(w, "missing Origin", http.StatusForbidden)
+				refuse(w, r, "missing Origin", http.StatusForbidden)
 				return
 			}
 		}
@@ -178,6 +179,7 @@ func (f *Front) withAuth(next http.Handler) http.Handler {
 // signedOut answers a request that has no session in enforce mode: the sign-in
 // page for a browser navigation, a 401 for everything else.
 func (f *Front) signedOut(w http.ResponseWriter, r *http.Request, pending bool, d *auth.Device) {
+	drain(r)
 	w.Header().Set("Cache-Control", "no-store")
 	if isDocument(r) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -748,4 +750,19 @@ func BrowserName(ua string) string {
 		}
 	}
 	return b
+}
+
+// drain reads what a request that is about to be refused has sent of its body
+// (at most 64 KB), so the refusal reaches a proxy that is still writing it
+// (Tailscale Serve answers a browser 502 when the host closes first).
+func drain(r *http.Request) {
+	if r.Body != nil && r.Body != http.NoBody {
+		io.Copy(io.Discard, io.LimitReader(r.Body, 64<<10))
+	}
+}
+
+// refuse is http.Error after draining the body.
+func refuse(w http.ResponseWriter, r *http.Request, msg string, code int) {
+	drain(r)
+	http.Error(w, msg, code)
 }

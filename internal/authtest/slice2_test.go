@@ -358,6 +358,6 @@ func TestOriginAndFetchSiteRules(t *testing.T) {
 		t.Errorf("a command with Serve's own origin: %d", r.Status)
 	}
 	if r := status(t, l.Phones.URL, authtest.Request{Method: "POST", Path: "/api/command", Cookie: l.Tailnet, Header: map[string]string{"Origin": "https://evil.example"}, Body: strings.NewReader(`{}`)}); r.Status != 403 {
-		t.Errorf("a cross-origin command through Serve: %d", r.Status)
+		t.Errorf("a cross-origin command through Serve: %d %s\n%s", r.Status, r.Body, l.Laptop.Log())
 	}
 }
