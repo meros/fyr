@@ -117,8 +117,9 @@ type Options struct {
 }
 
 type Front struct {
-	opt     Options
-	streams streams
+	lanOrigin atomic.Pointer[string] // see SetLANOrigin
+	opt       Options
+	streams   streams
 	// authTicks counts rule 3's looks at the modes (a test waits for some).
 	authTicks atomic.Int64
 	// oldRouteUses counts calls to the routes without a host prefix (decision 0031 2.8).

@@ -19,6 +19,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -222,7 +223,7 @@ func (e *Env) Join(ctx context.Context, code, addrHint string) (*JoinResult, err
 		}
 		addrs = append(addrs, addrHint)
 	} else {
-		addrs = e.candidateAddrs(ctx)
+		addrs = e.candidateAddrs(ctx, id)
 	}
 	if len(addrs) == 0 {
 		return nil, errors.New("no address to try: give one with -addr host:port")
@@ -246,8 +247,8 @@ type joinRefused struct{ msg string }
 
 func (j *joinRefused) Error() string { return j.msg }
 
-func (e *Env) candidateAddrs(ctx context.Context) []string {
-	var out []string
+func (e *Env) candidateAddrs(ctx context.Context, id string) []string {
+	out := e.LANAddrs(ctx, id) // the id came with the code: what the LAN says for it comes first
 	if e.TS != nil {
 		if _, nodes, err := e.TS.Status(ctx); err == nil {
 			for _, n := range nodes {
@@ -317,10 +318,56 @@ type Candidate struct {
 	// an invite), other-user, shared, expired, waiting (the same user's, untagged:
 	// it pairs by itself once its Serve and peer port are up).
 	Kind string `json:"kind"`
+	// ID and Addr: for a LAN candidate, the id it claims and where it was heard.
+	ID   string `json:"id,omitempty"`
+	Addr string `json:"addr,omitempty"`
 }
 
-// Candidates lists the tailnet nodes that are not members.
+// LANAddrs is what mDNS says for an install id: addresses to try, never trust.
+func (e *Env) LANAddrs(ctx context.Context, id string) []string {
+	if e.LAN == nil {
+		return nil
+	}
+	cs, _ := e.LAN.Candidates(ctx)
+	var out []string
+	for _, c := range cs {
+		if c.ID == id && c.Addr != "" && !slices.Contains(out, c.Addr) {
+			out = append(out, c.Addr)
+		}
+	}
+	return out
+}
+
+// lanCandidates lists the installs heard on the LAN that are not members: shown
+// "not paired", pairable by the owner's invite, never followed.
+func (e *Env) lanCandidates(ctx context.Context) []Candidate {
+	if e.LAN == nil {
+		return nil
+	}
+	cs, _ := e.LAN.Candidates(ctx)
+	var out []Candidate
+	seen := map[string]bool{}
+	for _, c := range cs {
+		if c.ID == "" || c.ID == e.Key.ID() || seen[c.ID+c.Addr] {
+			continue
+		}
+		if _, in := e.Roster.Member(c.ID); in {
+			continue
+		}
+		seen[c.ID+c.Addr] = true
+		out = append(out, Candidate{Name: "fyr-" + strings.ToLower(strings.ReplaceAll(c.ID, "-", ""))[:min(8, len(strings.ReplaceAll(c.ID, "-", "")))], ID: c.ID, Addr: c.Addr, Online: true, Kind: "lan"})
+	}
+	return out
+}
+
+// Candidates lists the nodes of the tailnet and the installs of the LAN that are not
+// members.
 func (e *Env) Candidates(ctx context.Context) []Candidate {
+	out := e.tailnetCandidates(ctx)
+	return append(out, e.lanCandidates(ctx)...)
+}
+
+func (e *Env) tailnetCandidates(ctx context.Context) []Candidate {
 	if e.TS == nil {
 		return nil
 	}
