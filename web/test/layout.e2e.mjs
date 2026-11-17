@@ -2957,7 +2957,9 @@ section('V0.162', async (h) => {
     await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
     await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => /^Settle/.test(b.querySelector('.ell')?.firstChild?.textContent ?? ''))?.click()`);
     await waitFor(`(window.__fyrCommands ?? []).some(c => c.action === 'thread.settle' && c.threadId === 't_poly')`, { soft: true });
-    await tapCenter('button[aria-label="Back to the inbox"]', "!!document.querySelector('.m-list')");
+    // A settle leaves the open thread by itself (leaveOpenThread); Back is pressed only when the thread is still open.
+    await evaluate(`document.querySelector('button[aria-label="Back to the inbox"]')?.click()`);
+    await waitFor(`!!document.querySelector('.m-list') && !document.querySelector('#m-sec-pinned')`, { soft: true });
     const o = await evaluate(`({ sends: (window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle' && c.threadId === 't_poly').map(c => !!c.args?.now), pinned: !!document.querySelector('#m-sec-pinned') })`);
     check(JSON.stringify(o.sends) === "[false]" && !o.pinned, `V0.162 phone: the owner's own Settle of a pinned thread did not settle it (${JSON.stringify(o)})`);
   } catch (e) {
