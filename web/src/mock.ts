@@ -1709,6 +1709,11 @@ export function mockQuota(now: number): Quota[] {
 /** SPEC 0.5 V0.80: a busy host: load past the cores, the agents at their cap; one thread in each fixture is hot
  * (t_w2, t_mapperf), one calm, one without a second read yet. */
 export function mockLoad(): HostLoad[] {
+  // V0.140: with ?hosts=2, lab's load follows the laptop's (calm, two free slots), as a front with two hosts shows.
+  const lab: HostLoad[] = MOCK_HOSTS ? [{ host: "lab", cores: 16, load: [0.3, 0.5, 0.6], cpuPressure: 0.4, cgroups: true, agents: { cpu: 0.1, cpuMax: 8, memory: 1e9, memoryMax: 28 * 2 ** 30 }, threads: [], slots: { n: 2, held: [], waiting: [] } }] : [];
+  return [...laptopLoad(), ...lab];
+}
+function laptopLoad(): HostLoad[] {
   return [
     {
       host: "laptop",

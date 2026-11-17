@@ -1704,7 +1704,7 @@ try {
     const rail = document.querySelector('.rail').getBoundingClientRect();
     const ld = document.querySelector('.rail .rld'), b = ld.getBoundingClientRect();
     const fig = ld.querySelector('.rldr .rring b'), row = ld.querySelector('.rldr'), pips = ld.querySelector('.rpips');
-    const others = [...document.querySelectorAll('.rail > *')].filter((e) => e !== ld).map((e) => e.getBoundingClientRect());
+    const others = [...document.querySelectorAll('.rail > *')].filter((e) => !e.contains(ld)).map((e) => e.getBoundingClientRect());
     const hit = others.filter((o) => o.width && o.height && o.left < b.right - 0.5 && b.left < o.right - 0.5 && o.top < b.bottom - 0.5 && b.top < o.bottom - 0.5).length;
     const q = document.querySelector('.rail .rq')?.getBoundingClientRect();
     const tc = [...document.querySelectorAll('.one')].find((x) => x.dataset.id === 't_mapperf');
@@ -1722,6 +1722,52 @@ try {
 } catch (e) {
   failures.push(`V0.80 desktop: ${e.message}`);
 }
+});
+
+// SPEC V0.140: the rail fits the window at any height. With two hosts (two load rings) and four providers (four quota
+// lines), at 1280 × 700 and 1280 × 900: the rail's first item (the brand) and last (the host line) are inside the
+// window, and so are every section, List, the bell, Changes and Settings; the document does not scroll; the rail is
+// the window's height; the middle (the rings and the quota) is the only part that may scroll, and at 900 it shows
+// everything; at 700 the rail is compact (no key hints) and the two rings sit side by side.
+section('V0.140', async (h) => {
+  const { send, evaluate, waitFor, settle, navigate } = h;
+  for (const ht of [700, 900]) {
+    const ctx = `V0.140 desktop 1280x${ht}`;
+    try {
+      await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: ht, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.rail .bell') && document.querySelectorAll('.rail .rmid .rldr').length === 2 && document.querySelectorAll('.rail .rmid .rqr').length === 4");
+      await settle();
+      const r = await evaluate(`(() => {
+        const vh = innerHeight, de = document.documentElement;
+        const rail = document.querySelector('.rail'), rb = rail.getBoundingClientRect();
+        const items = [...rail.children].filter((e) => !e.classList.contains('rmid') && e.getBoundingClientRect().height > 0);
+        const box = (e) => { const b = e.getBoundingClientRect(); return { c: e.className, top: Math.round(b.top), bottom: Math.round(b.bottom) }; };
+        const out = items.map(box).filter((b) => b.top < 0 || b.bottom > vh);
+        const first = box(rail.firstElementChild), last = box(rail.lastElementChild);
+        const mid = rail.querySelector('.rmid'), rings = [...mid.querySelectorAll('.rldr')].map((e) => e.getBoundingClientRect());
+        const buttons = ['.rail .bell', '.rail .rchg', '.rail .rgear'].map((q) => document.querySelector(q)).filter(Boolean).length;
+        return { vh, first, last, out, sections: rail.querySelectorAll('.ri:not(.lt):not(.rchg):not(.rgear)').length, buttons,
+          docScroll: de.scrollHeight - de.clientHeight, scrollY, bodyScroll: document.body.scrollHeight - document.body.clientHeight,
+          railTop: Math.round(rb.top), railBottom: Math.round(rb.bottom), railScroll: rail.scrollHeight - rail.clientHeight,
+          midScroll: mid.scrollHeight - mid.clientHeight, midH: mid.clientHeight,
+          sideBySide: rings.length === 2 && Math.abs(rings[0].top - rings[1].top) < 1,
+          hints: [...rail.querySelectorAll('.ri .k')].filter((k) => k.getBoundingClientRect().height > 0).length };
+      })()`);
+      check(r.first.c === "brand" && r.first.top >= 0 && r.last.c.startsWith("foot") && r.last.bottom <= r.vh, `${ctx}: the rail's first or last item is outside the window (${JSON.stringify(r)})`);
+      check(r.out.length === 0 && r.sections === 5 && r.buttons === 3, `${ctx}: a section or a bottom item is outside the window (${JSON.stringify(r)})`);
+      check(r.docScroll <= 0 && r.bodyScroll <= 0 && r.scrollY === 0, `${ctx}: the document scrolls (${JSON.stringify(r)})`);
+      check(r.railTop >= 0 && r.railBottom <= r.vh && r.railScroll <= 0, `${ctx}: the rail is not the window's height or scrolls as a whole (${JSON.stringify(r)})`);
+      check(r.sideBySide, `${ctx}: the two hosts' rings are not side by side (${JSON.stringify(r)})`);
+      if (ht === 900) check(r.midScroll <= 0 && r.hints === 6, `${ctx}: the rail's middle does not show everything, or the key hints are gone (${JSON.stringify(r)})`);
+      else check(r.hints === 0 && r.midH >= 40, `${ctx}: the rail is not compact or its middle has no room (${JSON.stringify(r)})`);
+      // The middle scrolls on its own: a wheel over it moves it, not the document.
+      await evaluate(`document.querySelector('.rail .rmid').scrollTop = 1e6`);
+      const y = await evaluate(`[scrollY, document.documentElement.scrollTop]`);
+      check(y[0] === 0 && y[1] === 0, `${ctx}: scrolling the rail's middle scrolled the document (${JSON.stringify(y)})`);
+    } catch (e) {
+      failures.push(`${ctx}: ${e.message}`);
+    }
+  }
 });
 
 // SPEC 0.5 V0.118: the update status is a line in the layout, never over a control. In each phase, at the desktop and
