@@ -96,7 +96,7 @@ func (m *Manager) writeHandoverFile(threadID, kind, text string) (string, error)
 // end stops a process ensureAs has already taken out of the session map
 // (the reader may still be draining it).
 func (m *Manager) end(threadID string, s *session) {
-	s.c.Close()
+	m.closeInput(s)
 	select {
 	case <-s.c.Done():
 	case <-time.After(5 * time.Second):
