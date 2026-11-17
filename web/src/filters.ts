@@ -70,6 +70,16 @@ export function applyFilters(threads: Record<string, Thread>, sel: FilterSel, pr
   return out;
 }
 
+/** V0.138: the filters after the open thread's are cleared: the ones it fails become null, the others stay; null
+ *  when it passes every filter (nothing to change). A project filter whose project no longer exists filters nothing,
+ *  so it is not cleared. */
+export function clearFor(t: Thread, sel: FilterSel, projects: Project[], self: string): FilterSel | null {
+  const host = !hostOk(t, sel.host, self);
+  const project = !projectOk(t, liveProject(sel, projects), projects);
+  if (!host && !project) return null;
+  return { host: host ? null : sel.host, project: project ? null : sel.project };
+}
+
 export interface FilterInput {
   threads: Record<string, Thread>;
   projects: Project[];
