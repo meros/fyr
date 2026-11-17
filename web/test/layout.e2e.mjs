@@ -266,7 +266,7 @@ const SCREENS = [
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
   { name: "settings add provider (V0.119)", url: "?mock=rail&settings=providers/new", ready: "!!document.querySelector('.m-settings [role=radiogroup][aria-label=Kind]')" },
-  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3", field: ".m-settings .fieldrow .inl input" },
+  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] .sr').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings projects (V0.119)", url: "?mock=rail&settings=projects", ready: "document.querySelectorAll('.m-settings .pli').length > 3" },
   { name: "settings device (V0.119)", url: "?mock=rail&settings=device", ready: "!!document.querySelector('.m-settings [role=switch][aria-label=Notifications]')" },
   // V0.125: the Hosts page and a host's page with a changed id, at every phone size.
@@ -1732,20 +1732,47 @@ try {
     const hit = others.filter((o) => o.width && o.height && o.left < b.right - 0.5 && b.left < o.right - 0.5 && o.top < b.bottom - 0.5 && b.top < o.bottom - 0.5).length;
     const q = document.querySelector('.rail .rq')?.getBoundingClientRect();
     const tc = [...document.querySelectorAll('.one')].find((x) => x.dataset.id === 't_mapperf');
+    const jr = tc, js = jr?.querySelector('.tslot'), jb = js?.getBoundingClientRect(), jrr = jr?.getBoundingClientRect();
     const c = tc?.querySelector('.tcpu'), cr = c?.getBoundingClientRect(), rr = tc?.getBoundingClientRect();
     return { text: fig.textContent, hot: row.classList.contains('hot'), tip: row.title,
       pips: pips ? pips.querySelectorAll('i').length : 0, held: pips ? pips.querySelectorAll('i.on').length : 0, wait: pips?.querySelector('em')?.textContent ?? '',
       inside: b.left >= rail.left - 0.5 && b.right <= rail.right + 0.5 && b.top >= rail.top && b.bottom <= rail.bottom, hit,
       aboveQuota: !q || b.bottom <= q.top + 0.5,
-      cpu: c?.textContent ?? '', cpuHot: !!c?.classList.contains('hot'), inRow: !!cr && cr.top >= rr.top - 0.5 && cr.bottom <= rr.bottom + 0.5 };
+      cpu: c?.textContent ?? '', cpuHot: !!c?.classList.contains('hot'), inRow: !!cr && cr.top >= rr.top - 0.5 && cr.bottom <= rr.bottom + 0.5,
+      job: js?.textContent ?? '', jobIn: !!jb && jb.top >= jrr.top - 0.5 && jb.bottom <= jrr.bottom + 0.5 && jb.right <= Math.min(jrr.right, js.closest('.ell').getBoundingClientRect().right) + 0.5 };
   })()`);
   check(r.text === "10" && r.hot && /load 10\.4/.test(r.tip) && /CPU pressure 46 %/.test(r.tip), `V0.80 desktop: the rail's load is wrong (${JSON.stringify(r)})`);
   check(r.pips === 2 && r.held === 2 && r.wait === "+1", `V0.99 desktop: the rail's slot pips are wrong (${JSON.stringify(r)})`);
   check(r.inside && r.hit === 0 && r.aboveQuota, `V0.80 desktop: the load line is outside the rail, covers an item or sits below the quota (${JSON.stringify(r)})`);
   check(r.cpu === "2.6 cores" && r.cpuHot && r.inRow, `V0.80 desktop: the hot thread's CPU is missing or outside its row (${JSON.stringify(r)})`);
+  // Decision 0029 S1 (V0.142): the ring is hot from the 3.4× slowdown; the tooltip names it; a holder's row names its job, first on its line and not cut.
+  check(/Slowdown 3\.4×/.test(r.tip) && /Signals: cgroups/.test(r.tip), `V0.142 desktop: the tooltip lacks the slowdown or the provider (${JSON.stringify(r)})`);
+  check(r.job === "yarn build · 3.0 GB" && r.jobIn, `V0.142 desktop: the holder's job is missing or outside its row (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.80 desktop: ${e.message}`);
 }
+});
+
+// Decision 0029 S1 (V0.142): the phone's row of a slot holder names its job the same way, first on its line and not
+// cut (the phone shows no ring, V0.99 (3)).
+section('V0.142', async (h) => {
+  const { send, evaluate, navigate, settle, waitFor } = h;
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-seg')");
+    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Working')).click()`);
+    await waitFor("[...document.querySelectorAll('.tslot')].some((x) => x.textContent.startsWith('yarn build'))", { what: "the Working section's holder with a job" });
+    await settle();
+    const r = await evaluate(`(() => {
+      const s = [...document.querySelectorAll('.tslot')].find((x) => x.textContent.startsWith('yarn build')), row = s.closest('.one');
+      const a = row.getBoundingClientRect(), b = s.getBoundingClientRect();
+      return { text: s.textContent, inside: b.top >= a.top - 0.5 && b.bottom <= a.bottom + 0.5 && b.right <= Math.min(a.right, s.closest('.ell').getBoundingClientRect().right) + 0.5, vw: innerWidth };
+    })()`);
+    check(r.text === "yarn build · 3.0 GB" && r.inside, `V0.142 phone: the holder's job is missing or outside its row (${JSON.stringify(r)})`);
+  } catch (e) {
+    failures.push(`V0.142 phone: ${e.message}`);
+  }
 });
 
 // SPEC V0.141: the rail fits the window at any height. With two hosts (two load rings) and four providers (four quota

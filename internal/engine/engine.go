@@ -826,6 +826,17 @@ func (e *Engine) Thread(id string) (core.Thread, bool) {
 	return *core.CloneThread(t), true
 }
 
+// ThreadProject is the name of thread id's project, or "" (decision 0029:
+// a job's class starts with it).
+func (e *Engine) ThreadProject(id string) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if t := e.threads[id]; t != nil {
+		return e.projectName(t)
+	}
+	return ""
+}
+
 // notify reports an attention change; call it without e.mu held.
 func (e *Engine) notify(d api.Thread, prev core.State) {
 	if e.OnAttention != nil && d.Attention.State != prev {

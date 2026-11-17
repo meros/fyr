@@ -6,6 +6,21 @@ export interface ThreadLoad {
   /** cores over the last read; absent on a host's first read */
   cpu?: number;
   memory: number;
+  /** decision 0029 S1: the cgroup's cpu.pressure some avg10, its memory.peak, the class of its slot's job now */
+  cpuPressure?: number;
+  peak?: number;
+  job?: string;
+}
+/** Decision 0029 S1: one measured job class (its newest run's measures, the median wall time of its last ten). */
+export interface JobClass {
+  class: string;
+  runs: number;
+  cores: number;
+  demand: number;
+  peak: number;
+  /** seconds */
+  wall: number;
+  at: string;
 }
 export interface HostLoad {
   host: string;
@@ -21,6 +36,18 @@ export interface HostLoad {
   threads: ThreadLoad[];
   /** the host's slots for heavy jobs (V0.86) */
   slots?: Slots;
+  /** Decision 0029 S1 (#185), absent without a provider (no /proc: macOS for now). */
+  provider?: string;
+  capacity?: { cpu: number; memory: number };
+  /** s: how much slower a new job runs now, 1.0 on an idle host */
+  slowdown?: number;
+  /** the share of capacity.memory left, 0 to 1 */
+  headroom?: number;
+  /** PSI memory full avg10, percent, and its level */
+  memoryPressure?: number;
+  memoryStall?: "ok" | "elevated" | "critical";
+  agentsCpuPressure?: number;
+  jobs?: JobClass[];
 }
 /** One owner of a slot or a place in the queue: a thread id, or "self-deploy". */
 export interface SlotHolder {
@@ -66,17 +93,40 @@ export interface RailMeter {
   level: LoadLevel;
 }
 
-/** The rail's ring: the figure of railLoad, the share of the cores it fills and its colour level. */
+/** Decision 0029 S1: the slowdown that colours the ring warm, and hot. */
+export const WARM_SLOWDOWN = 1.5;
+export const HOT_SLOWDOWN = 3;
+
+/** Decision 0029 S1: the ring's level from the slowdown and the memory stall level; null when the host measures
+ *  neither (no provider), so the V0.99 rule holds. */
+export function signalLevel(h: HostLoad): LoadLevel | null {
+  if (h.slowdown === undefined && h.memoryStall === undefined) return null;
+  const s = h.slowdown ?? 1;
+  if (s >= HOT_SLOWDOWN || h.memoryStall === "critical") return "hot";
+  if (s >= WARM_SLOWDOWN || h.memoryStall === "elevated") return "warm";
+  return "calm";
+}
+
+/** The rail's ring: the figure of railLoad, the share of the cores it fills and its colour level (decision 0029:
+ *  from the slowdown and the memory stall where the host measures them). */
 export function railMeter(h: HostLoad): RailMeter {
   const f = railLoad(h);
   const share = h.cores > 0 ? Math.min(1, Math.max(0, h.load[0] / h.cores)) : 1;
-  return { text: f.text, share, level: f.hot ? "hot" : share >= WARM_SHARE ? "warm" : "calm" };
+  const level = signalLevel(h) ?? (f.hot ? "hot" : share >= WARM_SHARE ? "warm" : "calm");
+  return { text: f.text, share, level };
 }
 
 /** The rail's tooltip lines. */
 export function loadDetail(h: HostLoad): string[] {
   const out = [`${h.host}: load ${h.load.map(one).join(" · ")} (1, 5, 15 min) on ${h.cores} cores`];
+  if (h.slowdown !== undefined) out.push(`Slowdown ${one(h.slowdown)}× (a new job runs ${one(h.slowdown)}× slower than on an idle host)`);
   if (h.cpuPressure !== undefined) out.push(`CPU pressure ${Math.round(h.cpuPressure)} % (10 s)`);
+  if (h.agentsCpuPressure !== undefined) out.push(`Agents' CPU pressure ${Math.round(h.agentsCpuPressure)} % (10 s)`);
+  if (h.headroom !== undefined && h.capacity) {
+    const stall = h.memoryStall ? ` · stall ${h.memoryStall}${h.memoryPressure !== undefined ? ` (${one(h.memoryPressure)} %)` : ""}` : "";
+    out.push(`Memory ${Math.round(h.headroom * 100)} % free of ${gb(h.capacity.memory)} GB for agents${stall}`);
+  }
+  if (h.provider) out.push(`Signals: ${h.provider}`);
   const a = h.agents;
   if (!h.cgroups || !a) {
     out.push("Agents share the daemon's cgroup (no per-thread figures)");
@@ -136,13 +186,28 @@ export function railPips(h: HostLoad): RailPips | null {
 
 const withArticle = (kind: string) => (/^[aeiou]/.test(kind) ? `an ${kind}` : `a ${kind}`);
 
+/** Decision 0029 S1: the job a thread's slot runs, "make test · 3.2 GB", once the gate hook saw its command; null
+ *  otherwise. The row shows it first on its line, since the line is cut at its end. */
+export function threadJob(list: HostLoad[], id: string): string | null {
+  for (const h of list) {
+    if (!h.slots?.held.some((x) => x.owner === id)) continue;
+    const t = h.threads?.find((x) => x.id === id);
+    return t?.job ? `${t.job} · ${gb(t.memory)} GB` : null;
+  }
+  return null;
+}
+
 /** A thread's slot: "waiting for a test slot (2 ahead)" or "test slot"; null when it has none. */
 export function threadSlot(list: HostLoad[], id: string): string | null {
   for (const h of list) {
     const s = h.slots;
     if (!s) continue;
     const held = s.held.find((x) => x.owner === id);
-    if (held) return `${held.kind} slot`;
+    if (held) {
+      // Decision 0029 S1: the job the slot runs, by the heavy command the thread ran, and its memory now.
+      const t = h.threads?.find((x) => x.id === id);
+      return t?.job ? `${t.job} · ${gb(t.memory)} GB` : `${held.kind} slot`;
+    }
     const i = s.waiting.findIndex((x) => x.owner === id);
     if (i >= 0) return `waiting for ${withArticle(s.waiting[i].kind)} slot (${i} ahead)`;
   }
@@ -156,4 +221,19 @@ export function railLabel(h: HostLoad, several: boolean): string {
   const p = railPips(h);
   const s = `oad ${m.text} on ${h.cores} cores${p ? `, ${p.held} of ${p.n} slots in use${p.waiting ? `, ${p.waiting} waiting` : ""}` : ""}`;
   return several ? `${h.host}: l${s}` : `L${s}`;
+}
+
+const duration = (sec: number) => {
+  const m = Math.floor(sec / 60);
+  const r = Math.round(sec % 60);
+  return m ? `${m} min ${r} s` : `${r} s`;
+};
+
+/** Decision 0029 S1: Settings → Automation's line per measured job class: its runs, the cores its newest run used
+ *  (and would have used when starved), its memory peak, and its typical wall time. */
+export function jobLines(h: HostLoad): { class: string; text: string }[] {
+  return (h.jobs ?? []).map((j) => {
+    const cores = cpuText(j.cores) + (j.demand >= j.cores + 0.05 ? `, would use ${one(j.demand)}` : "");
+    return { class: j.class, text: `${j.runs} ${j.runs === 1 ? "run" : "runs"} · ${cores} · peak ${gb(j.peak)} GB · ${duration(j.wall)}` };
+  });
 }
