@@ -55,10 +55,10 @@ func newStuckHost(t *testing.T, name, id string) *stuckHost {
 }
 
 type stallHostRow struct {
-	ID     string         `json:"id"`
-	Name   string         `json:"name"`
-	Online bool           `json:"online"`
-	Error  string         `json:"error"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Online bool   `json:"online"`
+	Error  string `json:"error"`
 }
 
 func frontHosts(t *testing.T, base string) map[string]stallHostRow {
