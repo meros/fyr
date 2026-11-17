@@ -1,9 +1,10 @@
 // The Changes board (SPEC 0.5 V0.64): every open change of every thread, by stage, with its actions. The same body on
 // desktop (a dialog) and phone (a screen).
 
+import { useHosts } from "./host-pick-ui.tsx";
 import { useEffect, useState } from "preact/hooks";
 import type { Project, Thread } from "./types.ts";
-import { boardItems, boardProjects, columns, finishedSince, greenMerges, mergeAllGreen, untouchedItems, type BoardItem } from "./board.ts";
+import { boardItems, boardProjects, columns, finishedSince, greenMerges, mergeAllGreen, untouchedItems, type BoardItem, cardHost } from "./board.ts";
 import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { shortHead } from "./pr.ts";
@@ -178,10 +179,12 @@ const weekday = (iso: string) => {
 };
 
 function Card({ i, p, err }: { i: BoardItem; p: BoardProps; err?: string }) {
+  const host = cardHost(i, useHosts().hosts); // V0.140: with several hosts, the host the change is made on
   const from = (
     <button class="bdfrom" onClick={() => p.onOpenThread(i.thread.id)} title="Open the thread">
       {i.project && <ProjectIcon project={i.project} name={i.project.name} size={14} />}
       <span class="ell">{i.thread.title || "Untitled thread"}</span>
+      {host && <span class="bdhost mono">{host}</span>}
       <span aria-hidden="true">›</span>
     </button>
   );

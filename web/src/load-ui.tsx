@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { loadDetail, MAX_PIPS, railMeter, railPips, railSlots, threadCPU, threadSlot, type HostLoad, type RailPips } from "./load.ts";
+import { loadDetail, MAX_PIPS, railMeter, railPips, railSlots, threadCPU, threadSlot, type HostLoad, type RailPips, railLabel } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -59,10 +59,12 @@ export function LoadRail() {
         const m = railMeter(h);
         const p = railPips(h);
         const sl = railSlots(h);
-        const label = `Load ${m.text} on ${h.cores} cores${p ? `, ${p.held} of ${p.n} slots in use${p.waiting ? `, ${p.waiting} waiting` : ""}` : ""}`;
+        const several = list.length > 1;
+        const label = railLabel(h, several); // V0.140: with several hosts each ring names its host
         return (
           <div class={`rldr ${m.level}`} title={loadDetail(h).join("\n")} role="img" aria-label={label}>
             <LoadRing share={m.share} text={m.text} />
+            {several && <small class="rldh mono">{h.host}</small>}
             {p && (p.n <= MAX_PIPS ? <SlotPips p={p} /> : sl && <small class={`rlds${sl.hot ? " hot" : ""}`}>{`${p.held}/${p.n}`}</small>)}
           </div>
         );
