@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/auth"
+	"github.com/meros/fyr/internal/discovery"
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peer"
@@ -182,8 +183,17 @@ func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, f
 			return peerOf(m), ok
 		},
 		SelfRemoved: ros.SelfRemoved,
+		Candidates:  func(id string) []string { return env.LANAddrs(ctx, id) },
 		OnUp:        func(string) { env.Kick() }})
 	env.Mesh = mesh
+	var mdns *discovery.MDNS
+	switch {
+	case cfg.LANBusFile != "":
+		env.LAN = discovery.File(cfg.LANBusFile)
+	case cfg.PeerListen != "" && (cfg.Discovery.MDNS == nil || *cfg.Discovery.MDNS):
+		mdns = &discovery.MDNS{ID: key.ID(), Logf: log.Printf}
+		env.LAN = mdns
+	}
 	ros.OnChange(mesh.Changed)
 	go mesh.Run(ctx)
 	if cfg.PeerListen != "" {
@@ -201,6 +211,12 @@ func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, f
 		go func() { <-ctx.Done(); hs.Close() }()
 		ros.SetAddress(name, selfHost, int(p.port.Load()))
 		log.Printf("peer: peer port at %s (TLS 1.3, key %s)", ln.Addr(), key.ID())
+		if mdns != nil {
+			mdns.Port = int(p.port.Load())
+			if err := mdns.Start(ctx); err != nil {
+				log.Printf("peer: mDNS: %v; this install is not found on the LAN, and finds no one there", err)
+			}
+		}
 	}
 	// The peer way in's mode (decision 0030 5.1): enforce removes the old listeners, and
 	// is reached by itself only when every followed host is on the pinned link.

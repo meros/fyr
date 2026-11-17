@@ -8,10 +8,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -97,4 +100,22 @@ func (f *TLSFront) Client() *http.Client {
 		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, network, f.Addr)
 		}}}
+}
+
+// WriteCert issues a leaf for the names and writes it as PEM files in dir: what a
+// `tls: {cert, key}` in a config points at.
+func (ca *CA) WriteCert(dir string, names ...string) (certFile, keyFile string, err error) {
+	c, err := ca.Issue(names...)
+	if err != nil {
+		return "", "", err
+	}
+	kb, err := x509.MarshalPKCS8PrivateKey(c.PrivateKey)
+	if err != nil {
+		return "", "", err
+	}
+	certFile, keyFile = filepath.Join(dir, "lan.crt"), filepath.Join(dir, "lan.key")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Certificate[0]}), 0o600); err != nil {
+		return "", "", err
+	}
+	return certFile, keyFile, os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: kb}), 0o600)
 }

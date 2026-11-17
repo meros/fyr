@@ -143,6 +143,14 @@ func Open(dir string, self *identity.Key, name string, now func() time.Time) (*R
 
 func (r *Roster) sign(s Statement) Statement {
 	s.V, s.By, s.At = 1, r.self.ID(), r.now().UTC().Truncate(time.Second)
+	// What an install says later must order after what it said before: statements are
+	// ordered by their second, and two in one second would be ordered by their hash, so
+	// a restart in the same second as the last start could lose its own new address.
+	for _, o := range r.stmts {
+		if o.By == s.By && !o.At.Before(s.At) {
+			s.At = o.At.Add(time.Second)
+		}
+	}
 	s.Sig = ed25519.Sign(r.self.Private, s.signBytes())
 	return s
 }

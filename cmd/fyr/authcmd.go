@@ -153,6 +153,10 @@ func authCommand(word string, args []string) error {
 		cs, _ := out["candidates"].([]any)
 		for _, x := range cs {
 			c, _ := x.(map[string]any)
+			if c["kind"] == "lan" {
+				fmt.Printf("not paired: %-21v at %v: heard on the LAN; pair it with an invite (fyr pair)\n", c["id"], c["addr"])
+				continue
+			}
 			fmt.Printf("not paired: %-40v %v\n", c["name"], map[string]string{"tagged": "tagged: pair it with an invite (fyr pair)", "other-user": "another tailnet user's", "shared": "shared in from another tailnet", "expired": "its key has expired", "waiting": "the same user's: pairs by itself once its Serve and peer port are up"}[fmt.Sprint(c["kind"])])
 		}
 		if n, ok := out["whoisLinkUses"].(float64); ok && n > 0 {
