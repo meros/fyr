@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// SPEC V0.141: with several hosts a push says which host the thread runs on,
+// SPEC V0.140: with several hosts a push says which host the thread runs on,
 // first in its body; with one host it says nothing more.
 func TestFrontPushNamesTheHost(t *testing.T) {
 	a, b := fullHost(t, "a", "pa"), fullHost(t, "b", "pb")

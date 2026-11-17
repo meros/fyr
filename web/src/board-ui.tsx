@@ -179,7 +179,7 @@ const weekday = (iso: string) => {
 };
 
 function Card({ i, p, err }: { i: BoardItem; p: BoardProps; err?: string }) {
-  const host = cardHost(i, useHosts().hosts); // V0.141: with several hosts, the host the change is made on
+  const host = cardHost(i, useHosts().hosts); // V0.140: with several hosts, the host the change is made on
   const from = (
     <button class="bdfrom" onClick={() => p.onOpenThread(i.thread.id)} title="Open the thread">
       {i.project && <ProjectIcon project={i.project} name={i.project.name} size={14} />}
