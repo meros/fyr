@@ -30,7 +30,9 @@ func fakeReleases(t *testing.T, sha string, signWithOther bool) *Releases {
 		sign = other
 	}
 	tgt := release.Here()
-	return &Releases{Key: base64.StdEncoding.EncodeToString(pub), Gh: func(_ context.Context, args ...string) ([]byte, error) {
+	return &Releases{Key: base64.StdEncoding.EncodeToString(pub), Git: func(_ context.Context, args ...string) ([]byte, error) {
+		return []byte(sha + "\trefs/tags/deployable\n"), nil
+	}, Gh: func(_ context.Context, args ...string) ([]byte, error) {
 		a := strings.Join(args, " ")
 		switch {
 		case strings.Contains(a, "git/ref/tags/deployable"):
