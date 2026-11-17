@@ -1862,7 +1862,7 @@ try {
   const r = await evaluate(`(() => {
     const rail = document.querySelector('.rail').getBoundingClientRect();
     const ld = document.querySelector('.rail .rld'), b = ld.getBoundingClientRect();
-    const fig = ld.querySelector('.rldr .rring b'), row = ld.querySelector('.rldr'), pips = ld.querySelector('.rpips'), bar = ld.querySelector('.rbar');
+    const fig = ld.querySelector('.rldr .hmr.ld .hmv'), row = ld.querySelector('.rldr'), pips = null, bar = ld.querySelector('.hmr.job');
     const bb = bar?.getBoundingClientRect(), rb = row.getBoundingClientRect();
     const others = [...document.querySelectorAll('.rail > *')].filter((e) => !e.contains(ld)).map((e) => e.getBoundingClientRect());
     const hit = others.filter((o) => o.width && o.height && o.left < b.right - 0.5 && b.left < o.right - 0.5 && o.top < b.bottom - 0.5 && b.top < o.bottom - 0.5).length;
@@ -1872,7 +1872,7 @@ try {
     const c = tc?.querySelector('.tcpu'), cr = c?.getBoundingClientRect(), rr = tc?.getBoundingClientRect();
     return { text: fig.textContent, hot: row.classList.contains('hot'), tip: row.title,
       pips: pips ? pips.querySelectorAll('i').length : 0, held: pips ? pips.querySelectorAll('i.on').length : 0, wait: (pips ?? bar)?.querySelector('em')?.textContent ?? '',
-      bar: bar?.querySelector('small')?.textContent ?? '', barHot: !!bar?.classList.contains('hot'), barFill: bar ? Math.round(bar.querySelector('.trk i').getBoundingClientRect().width / bar.querySelector('.trk').getBoundingClientRect().width * 100) : -1,
+      bar: bar?.querySelector('.hmv')?.textContent ?? '', barHot: !!bar?.classList.contains('hot'), barFill: bar ? Math.round(bar.querySelector('.hmb i').getBoundingClientRect().width / bar.querySelector('.hmb').getBoundingClientRect().width * 100) : -1,
       barIn: !!bb && bb.left >= rb.left - 0.5 && bb.right <= rb.right + 0.5 && bb.bottom <= rb.bottom + 0.5,
       inside: b.left >= rail.left - 0.5 && b.right <= rail.right + 0.5 && b.top >= rail.top && b.bottom <= rail.bottom, hit,
       aboveQuota: !q || b.bottom <= q.top + 0.5,
@@ -1884,7 +1884,7 @@ try {
   // the pips.
   const why = await evaluate(`(() => { const w = document.querySelector('#sec-slots .sqwhy'), s = document.querySelector('.list')?.getBoundingClientRect(), b = w?.getBoundingClientRect(); return { text: w?.textContent ?? '', inside: !!b && !!s && b.left >= s.left - 0.5 && b.right <= s.right + 0.5 }; })()`);
   check(why.text === "The next waits: needs ≈ 30 % CPU, 5 % free" && why.inside, `S2 desktop: the queue does not say why the next job waits (${JSON.stringify(why)})`);
-  check(r.pips === 0 && r.bar === "95 %+1" && r.barHot && r.barFill === 95 && r.barIn, `V0.163 desktop: the rail's heavy-job bar is not a percentage (${JSON.stringify(r)})`);
+  check(r.pips === 0 && r.bar === "95%+1" && r.barHot && r.barFill === 95 && r.barIn, `V0.163 desktop: the rail's heavy-job bar is not a percentage (${JSON.stringify(r)})`);
   check(r.inside && r.hit === 0 && r.aboveQuota, `V0.80 desktop: the load line is outside the rail, covers an item or sits below the quota (${JSON.stringify(r)})`);
   check(r.cpu === "2.6 cores" && r.cpuHot && r.inRow, `V0.80 desktop: the hot thread's CPU is missing or outside its row (${JSON.stringify(r)})`);
   // Decision 0029 S1 (V0.142): the ring is hot from the 3.4× slowdown; the tooltip names it; a holder's row names its job, first on its line and not cut.
@@ -1982,8 +1982,8 @@ for (const dark of [false, true]) section(`V0.164 desktop${dark ? " dark" : ""}`
     check(r.why, `${ctx}: the wait reason does not name the undeclared use`);
     // The meter and the rail's button.
     const m = await evaluate(`(() => {
-      const bar = document.querySelector('.rail .rbar'), parts = [...bar.querySelectorAll('.trk i')], und = bar.querySelector('.trk i.und');
-      const trk = bar.querySelector('.trk').getBoundingClientRect();
+      const bar = document.querySelector('.rail .hmr.job'), parts = [...bar.querySelectorAll('.hmb i')], und = bar.querySelector('.hmb i.und');
+      const trk = bar.querySelector('.hmb').getBoundingClientRect();
       const b = document.querySelector('.rail .rund'), br = b?.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
       return { parts: parts.length, hatch: und ? getComputedStyle(und).backgroundImage.startsWith('repeating-linear-gradient') : false, fits: parts.every((p) => p.getBoundingClientRect().right <= trk.right + 0.5),
         tip: bar.title, btn: b?.textContent ?? '', aria: b?.getAttribute('aria-label') ?? '', bright: br ? br.right <= rail.right + 0.5 && br.left >= rail.left - 0.5 : false,
@@ -2023,7 +2023,7 @@ for (const dark of [false, true]) section(`V0.164 desktop${dark ? " dark" : ""}`
     // Dismiss hides the mark and the button's count; the meter keeps the hatched part.
     await evaluate(`[...document.querySelectorAll('.undb .btn')].find((b) => b.textContent === 'Dismiss').click()`);
     await waitFor(`!document.querySelector('.undb') && document.querySelectorAll('.one .tund').length === 1`, { what: "Dismiss to hide the mark" });
-    const dm = await evaluate(`({ btn: document.querySelector('.rail .rund')?.textContent, hatch: !!document.querySelector('.rail .rbar .trk i.und'), sent: ${UND_COMMANDS("host.undeclaredDismiss")} })`);
+    const dm = await evaluate(`({ btn: document.querySelector('.rail .rund')?.textContent, hatch: !!document.querySelector('.rail .hmr.job .hmb i.und'), sent: ${UND_COMMANDS("host.undeclaredDismiss")} })`);
     check(dm.btn === "1" && dm.hatch && dm.sent.length === 1 && dm.sent[0].thread === "t_mapperf" && dm.sent[0].on === true, `${ctx}: Dismiss did not hide the mark, keep the meter, or send the command (${JSON.stringify(dm)})`);
     // The rail does not scroll at 1000 px with two hosts and the button.
     await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false });
@@ -2168,8 +2168,9 @@ section('V0.141', async (h) => {
       check(r.out.length === 0 && r.sections >= 5 && r.buttons === 3, `${ctx}: a section or a bottom item is outside the window (${JSON.stringify(r)})`);
       check(r.docScroll <= 0 && r.bodyScroll <= 0 && r.scrollY === 0, `${ctx}: the document scrolls (${JSON.stringify(r)})`);
       check(r.railTop >= 0 && r.railBottom <= r.vh && r.railScroll <= 0, `${ctx}: the rail is not the window's height or scrolls as a whole (${JSON.stringify(r)})`);
-      check(r.sideBySide, `${ctx}: the two hosts' rings are not side by side (${JSON.stringify(r)})`);
-      if (ht === 900) check(r.midScroll <= 0 && r.hints === r.keys && r.keys >= 6, `${ctx}: the rail's middle does not show everything, or the key hints are gone (${JSON.stringify(r)})`);
+      // V0.167: the hosts' meters stack (two rows each), no longer side by side.
+      // V0.167: the rail is compact under 940 px, so at 900 the key hints go and the middle shows everything.
+      if (ht === 900) check(r.midScroll <= 0 && r.hints === 0, `${ctx}: the rail's middle does not show everything, or the rail is not compact (${JSON.stringify(r)})`);
       else check(r.hints === 0 && r.midH >= 40, `${ctx}: the rail is not compact or its middle has no room (${JSON.stringify(r)})`);
       // The middle scrolls on its own: a wheel over it moves it, not the document.
       await evaluate(`document.querySelector('.rail .rmid').scrollTop = 1e6`);
@@ -2193,12 +2194,12 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}
   try {
     // the desktop rail first, for the same mock state
     await navigate(`${origin}/?mock=rail&hosts=2`, "document.querySelectorAll('.rail .rmid .rldr').length === 2");
-    const desk = await evaluate(`[...document.querySelectorAll('.rail .rmid .rldr')].map((c) => ({ fig: c.querySelector('.rring b').textContent, heavy: (c.querySelector('.rbar small')?.textContent ?? '').replace(/\\s/g, '') }))`);
+    const desk = await evaluate(`[...document.querySelectorAll('.rail .rmid .rldr')].map((c) => ({ fig: c.querySelector('.hmr.ld .hmv').textContent, heavy: (c.querySelector('.hmr.job .hmv')?.textContent ?? '').replace(/\\s/g, '') }))`);
     await openScreen({ url: "?mock=rail&hosts=2", ready: "!!document.querySelector('.m-load .mlh')" }, w, ht);
     await settle();
     const r = await evaluate(`(() => {
       const b = document.querySelector('.m-load'), bb = b.getBoundingClientRect(), hd = document.querySelector('.m-ih').getBoundingClientRect();
-      const cards = [...b.querySelectorAll('.mlh')].map((c) => ({ fig: c.querySelector('.rring b').textContent, off: c.classList.contains('off'), names: [...c.querySelectorAll('.mlc small')].map((x) => x.textContent.replace(/\\s/g, '')) }));
+      const cards = [...b.querySelectorAll('.mlh')].map((c) => ({ fig: c.querySelector('.hmr.ld .hmv')?.textContent ?? '', off: c.classList.contains('off'), names: [c.querySelector('.hmn'), c.querySelector('.hmr.job .hmv')].filter(Boolean).map((x) => x.textContent.replace(/\\s/g, '')) }));
       const conn = document.querySelector('.m-conn .ell').getBoundingClientRect();
       return { h: Math.round(bb.height), inHeader: bb.top >= hd.top - 0.5 && bb.bottom <= hd.bottom + 0.5 && bb.left >= 0 && bb.right <= innerWidth, over: document.documentElement.scrollWidth - innerWidth,
         cards, more: b.querySelector('.mlmore')?.textContent ?? '', connHidden: conn.width <= 1, label: b.getAttribute('aria-label') };
@@ -2214,7 +2215,7 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}
       const sh = document.querySelector('.m-sheet[aria-label="Host load"]'), secs = [...sh.querySelectorAll('.mls[aria-label]')];
       const b = sh.getBoundingClientRect();
       return { hosts: secs.map((x) => x.getAttribute('aria-label')), off: secs.filter((x) => x.classList.contains('off')).map((x) => x.querySelector('.mlsn small').textContent),
-        lines: sh.querySelector('.mlsl')?.textContent ?? '', quotas: sh.querySelectorAll('.qlist > *').length, fig: sh.querySelector('.mlsh .rring b')?.textContent ?? '',
+        lines: sh.querySelector('.mlsl')?.textContent ?? '', quotas: sh.querySelectorAll('.qlist > *').length, fig: sh.querySelector('.mlsh .hmr.ld .hmv')?.textContent ?? '',
         inside: b.left >= 0 && b.right <= innerWidth + 0.5 && b.bottom <= innerHeight + 0.5 };
     })()`);
     check(s.hosts.join() === "desk,host-b,lab,Quota" && s.off.length === 1 && /^Offline/.test(s.off[0]), `${ctx}: the sheet does not list every host with the offline one marked (${JSON.stringify(s)})`);
@@ -2225,6 +2226,36 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }
+});
+
+// SPEC V0.167: the rail's middle at 1280 × 900 with 2 hosts and 4 providers, light and dark: no element of it is wider
+// than the rail or sticks out of it; no scrollbar shows (none is drawn and nothing scrolls); each host is its two
+// labelled meters, "ld" and "job", with the legend first in its tooltip; the parts are at least 8 px apart and no
+// rule is drawn between them.
+for (const dark of [false, true]) section(`V0.167 desktop 1280x900${dark ? " dark" : ""}`, async (h) => {
+  const { send, evaluate, settle, navigate } = h;
+  const ctx = `V0.167 desktop 1280x900${dark ? " dark" : ""}`;
+  try {
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
+    await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.rail .bell') && document.querySelectorAll('.rail .rmid .rldr').length === 2 && document.querySelectorAll('.rail .rmid .rqr').length === 4");
+    await settle();
+    const r = await evaluate(`(() => {
+      const rail = document.querySelector('.rail').getBoundingClientRect(), mid = document.querySelector('.rail .rmid'), cs = getComputedStyle(mid);
+      const out = [...mid.querySelectorAll('*')].filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.left < rail.left - 0.5 || b.right > rail.right + 0.5 || e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow === 'visible'); }).map((e) => e.className);
+      const hosts = [...mid.querySelectorAll('.rldr')].map((c) => ({ keys: [...c.querySelectorAll('.hmk')].map((k) => k.textContent).join(), tip: c.title.split('\\n')[0] }));
+      const ld = mid.querySelector('.rld').getBoundingClientRect(), rq = mid.querySelector('.rq').getBoundingClientRect();
+      return { out, hosts, bar: mid.offsetWidth - mid.clientWidth, sw: cs.scrollbarWidth, scroll: mid.scrollHeight - mid.clientHeight, gap: Math.round(rq.top - ld.bottom),
+        rule: getComputedStyle(mid.querySelector('.rq')).backgroundImage, borders: [mid.querySelector('.rq'), mid.querySelector('.rld')].map((e) => getComputedStyle(e).borderTopWidth) };
+    })()`);
+    check(r.out.length === 0, `${ctx}: part of the rail's middle sticks out of the rail (${JSON.stringify(r.out)})`);
+    check(r.bar === 0 && r.sw === "none" && r.scroll <= 0, `${ctx}: the rail's middle shows a scrollbar or scrolls (${JSON.stringify(r)})`);
+    check(r.hosts.length === 2 && r.hosts[0].keys === "ld,job" && r.hosts.every((x) => x.keys.startsWith("ld") && x.tip.startsWith("ld: the load")), `${ctx}: a host is not its two labelled meters with the legend (${JSON.stringify(r.hosts)})`);
+    check(r.gap >= 8 && r.rule === "none" && r.borders.every((b) => b === "0px"), `${ctx}: the parts are uneven or a rule is drawn (${JSON.stringify(r)})`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
 });
 
 // SPEC V0.152: the rail's middle is one card per host and a quota grid. With two hosts and four providers at 1280 × 1000
@@ -2245,9 +2276,8 @@ section('V0.152', async (h) => {
       const r = await evaluate(`(() => {
         const rail = document.querySelector('.rail').getBoundingClientRect(), mid = document.querySelector('.rail .rmid');
         const cx = (e) => { const b = e.getBoundingClientRect(); return b.left + b.width / 2; };
-        const cards = [...mid.querySelectorAll('.rldr')].map((c) => ({ fig: c.querySelector('.rring b').textContent, name: c.querySelector('.rldh')?.textContent ?? '', full: c.querySelector('.rldh')?.title ?? '',
-          meter: !!c.querySelector('.rbar, .rpips, .rlds'), meterTip: (c.querySelector('.rbar, .rpips, .rlds')?.title) ?? '', note: c.querySelector('.rbar small')?.textContent ?? '', noteHot: !!c.querySelector('.rbar.hot'),
-          noteColor: c.querySelector('.rbar small') ? getComputedStyle(c.querySelector('.rbar small')).color : '' }));
+        const cards = [...mid.querySelectorAll('.rldr')].map((c) => ({ fig: c.querySelector('.hmr.ld .hmv').textContent, name: c.querySelector('.hmn')?.textContent ?? '', full: c.querySelector('.hmn')?.title ?? '',
+          meter: !!c.querySelector('.hmr.job'), meterTip: c.querySelector('.hmr.job')?.title ?? '', note: c.querySelector('.hmr.job .hmv')?.textContent ?? '', noteHot: !!c.querySelector('.hmr.job.hot') }));
         const ld = mid.querySelector('.rld'), rq = mid.querySelector('.rq');
         const qs = [...mid.querySelectorAll('.rqr')].map((q) => ({ ini: q.querySelector('i').textContent, v: q.querySelector('span').textContent, hot: q.querySelector('span').classList.contains('hot'), tip: q.title.split('\\n')[0],
           left: Math.round(q.getBoundingClientRect().left), top: Math.round(q.getBoundingClientRect().top), right: q.getBoundingClientRect().right }));
@@ -2260,7 +2290,7 @@ section('V0.152', async (h) => {
       check(desk.fig === "130%" && /^\d+%$/.test(lab.fig), `${ctx}: a ring's figure is not a share of the cores (${JSON.stringify(r.cards)})`);
       check(desk.name === "desk" && lab.name === "lab" && desk.full === "desk" && lab.full === "lab", `${ctx}: the cards do not name their hosts (${JSON.stringify(r.cards)})`);
       check(desk.meter && r.cards.every((c) => !c.meter || /^Heavy jobs: /.test(c.meterTip)), `${ctx}: a slot meter has no tooltip saying what it is (${JSON.stringify(r.cards)})`);
-      check(desk.note === "95 %+1" && desk.noteHot && lab.note === "", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
+      check(desk.note === "95%+1" && desk.noteHot && lab.note === "", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
       check(r.qs.map((q) => q.ini).join() === "C,W,C,Z" && r.cols === 2 && r.rows === 2, `${ctx}: the quota grid or its initials are wrong (${JSON.stringify(r.qs)})`);
       check(r.qs.every((q) => q.hot === (parseInt(q.v) >= 80)), `${ctx}: a quota is red below 80 % or plain above (${JSON.stringify(r.qs)})`);
       check(r.qs[2].tip.startsWith("Claude on lab") && r.qs[0].tip.startsWith("Claude on "), `${ctx}: a quota's tooltip does not name its provider and host (${JSON.stringify(r.qs)})`);
@@ -2855,11 +2885,11 @@ section("V0.140 rail", async (hn) => {
   try {
     await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.shell')");
     await waitFor("document.querySelectorAll('.rldr').length === 2");
-    const r = await evaluate(`[...document.querySelectorAll('.rldr')].map(x => ({ name: x.querySelector('.rldh')?.textContent ?? '', label: x.getAttribute('aria-label') }))`);
+    const r = await evaluate(`[...document.querySelectorAll('.rldr')].map(x => ({ name: x.querySelector('.hmn')?.textContent ?? '', label: x.getAttribute('aria-label') }))`);
     check(r.length === 2 && r[0].name === "desk" && r[1].name === "lab" && r.every((x) => x.label.startsWith(`${x.name}: load `)), `${ctx}: the rings name their hosts ${JSON.stringify(r)}`);
     await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.shell')");
     await waitFor("document.querySelectorAll('.rldr').length === 1");
-    const one = await evaluate(`({ name: !!document.querySelector('.rldh'), label: document.querySelector('.rldr')?.getAttribute('aria-label') ?? '' })`);
+    const one = await evaluate(`({ name: !!document.querySelector('.hmn'), label: document.querySelector('.rldr')?.getAttribute('aria-label') ?? '' })`);
     check(!one.name && one.label.startsWith("Load "), `${ctx}: one host names none ${JSON.stringify(one)}`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);

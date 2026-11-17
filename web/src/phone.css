@@ -428,27 +428,23 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-load:active{background:var(--select)}
 .m-conn.dot .ell{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .m-load .mlh,.m-load .mlh.rldr{display:flex;flex-direction:row;align-items:center;gap:3px;max-width:none}
-.m-load .mlh.off{--lv:var(--line)}
-.m-load .mlh .rring{width:26px;height:26px}
-.m-load .mlh .rring svg{width:26px;height:26px}
-.m-load .mlh .rring b{font-size:9px}
-.m-load .mlh .rring b.w3{font-size:7.5px}
-.m-load .mlc{display:flex;flex-direction:column;align-items:flex-start;min-width:0}
-.m-load .mlh .mlc small{font:500 10px/12px var(--mono);color:var(--ink-muted);white-space:nowrap;max-width:44px;overflow:hidden;text-overflow:ellipsis}
-.m-load .mlh .mlc small:first-child{color:var(--ink)}
-.m-load .mlh .mlc small.hot,.m-load .mlh .mlc em{color:var(--signal-ink);font-weight:600;font-style:normal}
-.m-load .mlh.off .rring b,.m-load .mlh.off .mlc small{color:var(--ink-faint)}
 .m-load .mlmore{font:500 11px/1 var(--mono);color:var(--ink-muted)}
 /* the sheet: per host a head (ring, name, state, the heavy jobs' bar), then the rail's tooltip lines as text */
 .m-lsheet{display:flex;flex-direction:column;gap:14px;padding:4px 16px 16px;overflow-y:auto;min-height:0}
 .m-lsheet .mls{display:flex;flex-direction:column;gap:6px}
-.m-lsheet .mlsh,.m-lsheet .mlsh.rldr{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;column-gap:10px;gap:0 10px;max-width:none}
+.m-lsheet .mlsh{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:10px;gap:0 10px;max-width:none}
 .m-lsheet .mlsn{display:flex;flex-direction:column;min-width:0}
 .m-lsheet .mlsn b{font:600 14px/20px var(--mono);color:var(--ink)}
 .m-lsheet .mlsn small{font:400 13px/18px var(--ui);color:var(--ink-muted)}
 .m-lsheet .mls.off .mlsn small{color:var(--ink-faint)}
-.m-lsheet .mlsh .rbar{width:72px;height:auto;gap:2px}
-.m-lsheet .mlsh .rbar small{font:600 11px/14px var(--mono)}
-.m-lsheet .mlsl{margin:0;padding:0 0 0 40px;list-style:none;display:flex;flex-direction:column;gap:4px;font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.m-lsheet .mlsl{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
 .m-lsheet .mlsl li.und{color:var(--beam-ink)}
 .m-lsheet .mlsq{font:600 13px/18px var(--ui);color:var(--ink);padding-top:2px}
+
+/* V0.167: the strip's hosts are the rail's two meters (HostMeters); the sheet's are wider and larger (touch reading). */
+.m-load .mlh{display:flex;align-items:center}
+.m-load .mlh .hm{width:62px}
+.m-lsheet .mlsk{margin:0;font:400 12px/17px var(--ui);color:var(--ink-faint)}
+.m-lsheet .mlsh .hm{width:150px;gap:3px}
+.m-lsheet .mlsh .hmr{grid-template-columns:24px minmax(20px,1fr) auto;font-size:12px;line-height:16px;column-gap:6px}
+.m-lsheet .mlsh .hmb{height:6px;border-radius:3px}
