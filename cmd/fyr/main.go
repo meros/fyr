@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/deploy"
-	"github.com/meros/fyr/internal/runner"
 )
 
 func main() {
@@ -51,19 +50,15 @@ func main() {
 	l := &deploy.Launcher{Data: *data, Seed: *seed, Args: append([]string{"serve", "-data", *data}, fl.Args()...)}
 	// V0.90: the runner holds the agent processes for as long as the
 	// launcher lives, so a new fyrd (a deploy, a crash) takes them over.
-	srv := &runner.Server{Logf: log.Printf}
-	sock := runner.SocketPath(*data)
-	if err := srv.Listen(sock); err != nil {
+	// #167: only the fyrd this launcher starts may use it.
+	srv, err := l.ServeRunner(log.Printf)
+	if err != nil {
 		log.Printf("fyr: runner: %v; agents run as fyrd's children", err)
-		srv = nil
-	} else {
-		go srv.Serve()
-		l.Env = append(l.Env, "FYR_RUNNER="+sock)
 	}
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() { l.Signal(<-sig) }()
-	err := l.Run()
+	err = l.Run()
 	if srv != nil {
 		srv.Close(5 * time.Second) // the agents end with the launcher
 	}

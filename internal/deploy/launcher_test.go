@@ -5,11 +5,13 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/meros/fyr/internal/launchenv"
 )
 
 // The test binary doubles as a fake daemon: FYR_FAKE_DAEMON=<mode>.
@@ -27,7 +29,15 @@ func TestMain(m *testing.M) {
 }
 
 func fakeDaemon(mode string) {
+	if mode != "runner" && mode != "stray" {
+		launchenv.Init(filepath.Dir(os.Getenv(launchenv.ReadyFile)), "")
+	}
 	switch mode {
+	case "runner":
+		liveDaemon()
+	case "stray":
+		strayDaemon()
+		os.Exit(0)
 	case "crash":
 		os.Exit(1)
 	case "slow":

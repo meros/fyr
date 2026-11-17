@@ -17,6 +17,7 @@ import (
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/hostfs"
+	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/proc"
 	"github.com/meros/fyr/internal/runner"
 )
@@ -162,7 +163,7 @@ func (a Adapter) Print(ctx context.Context, l cli.Launch, system, prompt string)
 	}
 	cmd := proc.Command(ctx, bin, PrintArgs(l.Model, system)...)
 	cmd.Dir = l.Dir
-	cmd.Env = append(append(os.Environ(), "CLAUDE_CODE_ENTRYPOINT=sdk-go"), env...)
+	cmd.Env = append(append(launchenv.Scrub(os.Environ()), "CLAUDE_CODE_ENTRYPOINT=sdk-go"), env...) // #167
 	cmd.Stdin = strings.NewReader(prompt)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
