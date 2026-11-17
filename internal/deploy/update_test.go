@@ -288,6 +288,15 @@ func TestUpdateRecordFromStartToLive(t *testing.T) {
 	}
 }
 
+// A host that never updated itself sends an empty list, not null: the Automation page reads its length.
+func TestUpdatesEmptyIsAList(t *testing.T) {
+	d, _, _ := newDeployer(t, "")
+	b, _ := json.Marshal(d.Updates())
+	if string(b) != "[]" {
+		t.Fatalf("no updates encode as %s, want []", b)
+	}
+}
+
 // #151: a failed local build is recorded as failed with its first line.
 func TestUpdateRecordFailure(t *testing.T) {
 	d, _, _ := newDeployer(t, " test")

@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
+import { Boundary } from "./boundary.tsx";
 import type { Api } from "./api.ts";
 import { hostForProject, hostLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, withHost, type SettingsHost } from "./host-settings.ts";
@@ -168,7 +169,9 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
   const loadUpdates = async (host: string) => {
     if (!api.updates) return patch(host, { updates: null });
     try {
-      patch(host, { updates: (await api.updates(host)).data });
+      // A host that never updated itself (a NixOS host) sends "updates": null from an older fyrd: an empty list.
+      const v = (await api.updates(host)).data;
+      patch(host, { updates: { ...v, updates: v.updates ?? [] } });
     } catch {
       patch(host, { updates: null });
     }
@@ -361,7 +364,9 @@ export function Settings(p: SettingsProps) {
               <div class="stp" data-page={pageKey(p.at!)}>
                 {view.end && <div class="sbar">{view.end}</div>}
                 {view.lede && <p class="stp-lede">{view.lede}</p>}
-                {view.body}
+                <Boundary name="This page" resetKey={pageKey(p.at!)}>
+                  {view.body}
+                </Boundary>
               </div>
             ) : (
               nav
@@ -397,7 +402,10 @@ export function Settings(p: SettingsProps) {
             </span>
           </div>
           {v.lede && <p class="stp-lede">{v.lede}</p>}
-          {v.body}
+          {/* V0.24: a page that fails to render shows the crash card in the pane; the nav and Close keep working */}
+          <Boundary name="This page" resetKey={pageKey(at)}>
+            {v.body}
+          </Boundary>
         </div>
       </div>
     </SetContext.Provider>
