@@ -85,7 +85,7 @@ export function LoadRail() {
                 {short.get(h.host)}
               </small>
             )}
-            {bud && <SlotBar b={bud} tip={slotTip(h, { lookup: und.lookup, now: Date.now() })} />}
+            {bud && <SlotBar b={bud} tip={slotTip(h, { lookup: und.lookup, now: und.now() })} />}
           </div>
           <RailUndeclared h={h} />
           </div>

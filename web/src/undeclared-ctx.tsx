@@ -9,10 +9,12 @@ import type { PageRef } from "./settings-nav.ts";
  *  desktop closes Settings and selects the row, the phone pushes a screen). */
 export interface UndNav {
   lookup: Lookup;
+  /** the host's clock (a mock runs on its own) */
+  now(): number;
   openThread(id: string): void;
   openSettings(at: PageRef): void;
 }
-export const UndContext = createContext<UndNav>({ lookup: (id) => ({ title: id }), openThread: () => {}, openSettings: () => {} });
+export const UndContext = createContext<UndNav>({ lookup: (id) => ({ title: id }), now: () => Date.now(), openThread: () => {}, openSettings: () => {} });
 export const useUnd = () => useContext(UndContext);
 
 /** The warning mark (a triangle). */

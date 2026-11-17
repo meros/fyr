@@ -1802,14 +1802,15 @@ export function withUndeclared(list: HostLoad[], mode: string, now = railNow(Dat
   const und: UndeclaredUse[] = [use("t_mapperf", 2.8e9, 2.1, 20, 52, 180, "node test/layout.e2e.mjs", at(14, 29), { paused: mode === "paused" })];
   if (mode === "2")
     und.push(use("t_babysit", 1.6e9, 1.2, 11, 30, 50, "yarn pre-push:check", at(14, 31)), use("t_nix", 1.9e9, 0.2, 14, 5, 22 * 60, "nix flake check", at(14, 10), { dismissed: true, overCpu: false }));
-  const admitted = { cpu: 18, mem: 16 };
+  const admitted = { cpu: 13, mem: 16 };
   const uCpu = und.reduce((n, u) => n + u.cpuPct, 0);
   const uMem = und.reduce((n, u) => n + u.memPct, 0);
   const cpuPct = admitted.cpu + uCpu;
   const memPct = admitted.mem + uMem;
   const need = 45;
   const free = Math.max(0, 100 - cpuPct);
-  const names = und.length > 1 ? `Map perf uses ${uCpu} % undeclared (+${und.length - 1})` : `Map perf uses ${uCpu} % undeclared`;
+  // the host names the largest and "+N" for the others
+  const names = `Map perf uses ${und[0].cpuPct} % undeclared${und.length > 1 ? ` +${und.length - 1}` : ""}`;
   const slots: Slots = {
     ...s,
     held: [{ owner: "t_w2", kind: "test", cost: 1, cpuPct: admitted.cpu, memPct: admitted.mem, pct: admitted.cpu }],

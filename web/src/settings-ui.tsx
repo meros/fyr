@@ -1328,7 +1328,7 @@ function UndeclaredGroups({ h, host, api, focus }: { h: HostLoad; host: string; 
   useEffect(() => {
     if (focus) document.querySelector(`[data-sug="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "center" });
   }, [focus, h.suggestions?.length]);
-  const now = Date.now();
+  const now = und.now();
   const rows = undeclaredRows(h, now, und.lookup);
   const sugg = suggestionRows(h, und.lookup);
   const added = addedRows(h);

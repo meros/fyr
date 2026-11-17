@@ -1404,6 +1404,7 @@ function App() {
   // V0.164: undeclared work's components find a thread's title and go to a thread or to Settings through this, on both fronts.
   const undNav: UndNav = {
     lookup: (id) => ({ title: store.threads[id]?.title || id, project: store.threads[id]?.project }),
+    now: () => Date.now() + store.clockOffset,
     openThread: (id) => {
       if (!phoneRef.current) setDialog(null); // the desktop's Settings is a dialog over the list
       directory.openThread(id);
