@@ -2797,6 +2797,75 @@ try {
 }
 });
 
+// SPEC V0.137: Waiting for a slot. Desktop: the section sits after Working with the deploy's tests pinned as #1 and the
+// queued threads as #2… in the queue's order (they leave their own section); the rail counts them; Alt+↑ on a place
+// sends host.slotOrder with the host's whole order and the rows renumber; a thread that gets its slot or leaves the
+// queue leaves the section and the others renumber; without a queue there is no section and no rail item; with two
+// hosts each has its part under its name. Phone: the strip stays one line, Reorder shows ↑ and ↓ of 44 px, ↓ sends
+// the order, and nothing is wider than the screen.
+section('V0.137', async (h) => {
+  const { send, evaluate, waitFor, navigate, tapCenter, key, openScreen } = h;
+  const rows = (root) => `[...document.querySelectorAll('${root} .sqh > .sqp, ${root} .sqh > [data-id]')].map(r => (r.dataset.owner ?? r.dataset.id) + ' ' + (r.querySelector('.sqn')?.textContent ?? ''))`;
+  const shot = async (name) => {
+    if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, name), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  };
+try {
+  await navigate(`${origin}/?mock=rail&slots=queue`, "!!document.querySelector('#sec-slots .one')");
+  const d = await evaluate(`({
+    order: [...document.querySelectorAll('.list > div[id^=sec-]')].map(e => e.id),
+    rows: ${rows(".list")},
+    inWorking: !!document.querySelector('#sec-working [data-id=t_search]'),
+    rail: document.querySelector('.rail [data-sec=slots] .n')?.textContent ?? null,
+    head: document.querySelector('#sec-slots .sec')?.textContent ?? '' })`);
+  const wo = d.order.indexOf("sec-working"), so = d.order.indexOf("sec-slots"), se = d.order.indexOf("sec-seen");
+  check(wo >= 0 && so === wo + 1 && se === so + 1, `V0.137 desktop: the section sits after Working (${JSON.stringify(d.order)})`);
+  check(JSON.stringify(d.rows) === JSON.stringify(["self-deploy #1", "t_search #2", "t_pw #3", "t_nix #4"]) && !d.inWorking && d.rail === "3" && d.head.startsWith("Waiting for a slot3"),
+    `V0.137 desktop: the rows, their places and the rail (${JSON.stringify(d)})`);
+  check(!(await evaluate(`!!document.querySelector('#sec-slots .sqp .grip')`)), "V0.137 desktop: the deploy's place is movable");
+  await evaluate(`document.querySelector('#sec-slots .one[data-id=t_nix] .sqn.grip').focus()`);
+  await key("ArrowUp", "ArrowUp", 1);
+  await waitFor(`${COMMANDS("host.slotOrder")}.length === 1`, { soft: true });
+  await evaluate(`document.querySelector('#sec-slots .one[data-id=t_nix] .sqn.grip').focus()`);
+  await key("ArrowUp", "ArrowUp", 1);
+  await waitFor(`${COMMANDS("host.slotOrder")}.length === 2`, { soft: true });
+  const mv = await evaluate(`({ sent: ${COMMANDS("host.slotOrder")}.map(c => c.args), rows: ${rows(".list")} })`);
+  check(JSON.stringify(mv.sent.at(-1)) === JSON.stringify({ host: "laptop", owners: ["t_nix", "t_search", "t_pw"] }) && JSON.stringify(mv.rows) === JSON.stringify(["self-deploy #1", "t_nix #2", "t_search #3", "t_pw #4"]),
+    `V0.137 desktop: Alt+↑ twice on t_nix's place (${JSON.stringify(mv)})`);
+  await shot("slots-desktop.png");
+  // Live: t_nix gets its slot, t_pw's run ends; both leave and t_search is #2.
+  await evaluate(`(window.__fyrSlot('t_nix', true), window.__fyrSlot('t_pw', false))`);
+  const live = await waitFor(`JSON.stringify(${rows(".list")}) === JSON.stringify(["self-deploy #1", "t_search #2"])`, { soft: true, timeout: 12_000 });
+  check(live !== false, `V0.137 desktop: a granted or released thread leaves the section (${JSON.stringify(await evaluate(rows(".list")))})`);
+  check(await evaluate(`!!document.querySelector('#sec-seen [data-id=t_pw]') && document.querySelector('.rail [data-sec=slots] .n')?.textContent === '1'`), "V0.137 desktop: t_pw is back in Seen and the rail counts 1");
+  // No queue: no section, no rail item.
+  await navigate(`${origin}/?mock=rail&slots=none`, "!!document.querySelector('.list .one')");
+  check(await evaluate(`!document.querySelector('#sec-slots') && !document.querySelector('.rail [data-sec=slots]') && !!document.querySelector('#sec-working [data-id=t_search]')`), "V0.137 desktop: a section or a rail item without a queue");
+  // Two hosts with a queue: one part each, under its name.
+  await navigate(`${origin}/?mock=rail&slots=two`, "!!document.querySelector('#sec-slots .sqhn')");
+  const two = await evaluate(`[...document.querySelectorAll('#sec-slots .sqh')].map(p => [p.querySelector('.sqhn')?.textContent, [...p.querySelectorAll('.sqp, .one')].map(r => r.dataset.id ?? r.dataset.owner)])`);
+  check(JSON.stringify(two) === JSON.stringify([["laptop", ["self-deploy", "t_search", "t_pw", "t_nix"]], ["lab", ["t_poly"]]]), `V0.137 desktop: one part per host (${JSON.stringify(two)})`);
+
+  // Phone.
+  await openScreen({ url: "?mock=rail&slots=queue", ready: "!!document.querySelector('#m-sec-slots .one')" }, 390, 844);
+  const p = await evaluate(`({
+    tops: [...new Set([...document.querySelectorAll('.m-strip .m-seg')].map(b => Math.round(b.getBoundingClientRect().top)))].length,
+    segs: document.querySelectorAll('.m-strip .m-seg').length,
+    rows: ${rows(".m-list")},
+    wide: document.documentElement.scrollWidth > innerWidth })`);
+  check(p.tops === 1 && p.segs === 6 && JSON.stringify(p.rows) === JSON.stringify(["self-deploy #1", "t_search #2", "t_pw #3", "t_nix #4"]) && !p.wide, `V0.137 phone: the strip and the rows (${JSON.stringify(p)})`);
+  await evaluate(`document.getElementById('m-sec-slots').scrollIntoView()`);
+  await tapCenter("#m-sec-slots .m-sbtn", "!!document.querySelector('#m-sec-slots .sqmv .mv')");
+  const r = await evaluate(`({ mv: [...document.querySelectorAll('#m-sec-slots .sqmv .mv .xb')].map(b => Math.round(Math.min(b.getBoundingClientRect().width, b.getBoundingClientRect().height))), wide: [...document.querySelectorAll('#m-sec-slots .sqmv, #m-sec-slots .sqmv .xb, #m-sec-slots .m-sec, #m-sec-slots .m-sbtn')].some(e => e.getBoundingClientRect().right > innerWidth + 0.5) })`);
+  check(r.mv.length === 6 && r.mv.every((x) => x >= 44) && !r.wide, `V0.137 phone: the Reorder mode (${JSON.stringify(r)})`);
+  await shot("slots-phone.png");
+  await tapCenter(`#m-sec-slots .sqmv[data-id=t_search] .mv .xb[aria-label$="down"]`, `${COMMANDS("host.slotOrder")}.length === 1`);
+  const ps = await evaluate(`({ sent: ${COMMANDS("host.slotOrder")}.map(c => c.args), rows: ${rows(".m-list")} })`);
+  check(JSON.stringify(ps.sent[0]) === JSON.stringify({ host: "laptop", owners: ["t_pw", "t_search", "t_nix"] }) && JSON.stringify(ps.rows) === JSON.stringify(["self-deploy #1", "t_pw #2", "t_search #3", "t_nix #4"]), `V0.137 phone: ↓ on t_search (${JSON.stringify(ps)})`);
+} catch (e) {
+  failures.push(`V0.137: ${e.message}`);
+}
+});
+
 // SPEC 0.5 V0.92, V0.93: the rail's top is the rendered logo (loaded, 32 px, inside the rail), not the text "Fyr".
 section('V0.92, V0.93', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
