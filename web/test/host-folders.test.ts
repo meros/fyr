@@ -3,7 +3,7 @@
 // picks the host. An offline host says so and nothing falls back to another.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { changeOptions, chooseHost, chooseProject, createArgs, formHost, formProfiles, hostLock, initialForm, makingProject, settleForm, type FormCtx } from "../src/new-thread.ts";
+import { changeOptions, chooseHost, chooseProject, createArgs, formHost, formProfiles, initialForm, makingProject, settleForm, type FormCtx } from "../src/new-thread.ts";
 import { hostChoices, hostOfflineNote } from "../src/hosts.ts";
 import { fsQuery } from "../src/folders.ts";
 import { dayTime } from "../src/format.ts";
@@ -47,37 +47,33 @@ test("V0.132: the picker's reads name the host", () => {
   assert.equal(fsQuery("/api/fs/recent", ""), "/api/fs/recent");
 });
 
-test("V0.132: a thread follows its project's host, and the host is locked while a project is chosen", () => {
-  let f = chooseProject(settleForm(initialForm(), ctx, "p_d", {}), projects[1], ctx);
+test("V0.132, V0.139: the host decides the project: picking a project of another host moves the host to it", () => {
+  let f = settleForm(initialForm(), ctx, "p_l", {});
   assert.equal(formHost(f, ctx), "lab");
   assert.deepEqual(formProfiles(f, ctx).map((p) => p.id), ["zai"]);
-  assert.equal(hostLock(f, ctx), "Lab notes");
   assert.equal(createArgs(f, ctx, { text: "go" }, "p_l").host, "lab");
-  // Picking a host does nothing while the project holds it.
-  assert.equal(formHost(chooseHost(f, "desk", ctx), ctx), "lab");
+  f = chooseProject(f, projects[0], ctx);
+  assert.equal(formHost(f, ctx), "desk", "a desk project puts the thread on desk");
 });
 
-test("V0.132: with no project the owner picks the host; its providers follow and the picked folder is dropped", () => {
-  let f = chooseProject(settleForm(initialForm(), ctx, "p_d", {}), null, ctx);
-  assert.equal(hostLock(f, ctx), "");
-  assert.equal(formHost(f, ctx), "desk", "the front's first host until one is picked");
+test("V0.132, V0.139: picking a host drops a folder of the old one; its providers follow", () => {
+  let f = chooseProject(settleForm(initialForm(), ctx, null, {}), null, ctx);
+  assert.equal(formHost(f, ctx), "desk", "the first host in the owner's order");
   f = { ...f, picked: "/home/o/on-desk" };
   f = chooseHost(f, "lab", ctx);
   assert.equal(formHost(f, ctx), "lab");
   assert.equal(f.picked, "", "a folder of another host does not come along");
   assert.deepEqual([f.profile, f.model], ["zai", "glm-5"]);
-  const a = createArgs({ ...f, picked: "/home/o/x" }, ctx, { text: "go" }, undefined);
+  const a = createArgs({ ...f, picked: "/home/o/x" }, ctx, { text: "go" }, f.projectId ?? undefined);
   assert.equal(a.host, "lab");
   assert.equal(a.cwd, "/home/o/x");
-  // An offline host can be shown but is the owner's pick; the form says why it cannot start (hostOfflineNote).
+  // An offline host can be picked; the form says why it cannot start (hostOfflineNote).
   assert.equal(formHost(chooseHost(f, "host-b", ctx), ctx), "host-b");
 });
 
 test("V0.132: a project made in the New thread form is made on the form's host", () => {
-  let f = chooseProject(settleForm(initialForm(), ctx, "p_d", {}), null, ctx);
-  f = chooseHost(f, "lab", ctx);
+  let f = chooseHost(chooseProject(settleForm(initialForm(), ctx, null, {}), null, ctx), "lab", ctx);
   f = { ...f, creating: "New", draft: { name: "New", folder: "/home/o/new" } };
-  assert.equal(hostLock(f, ctx), "", "the host stays the owner's pick while the project is made");
   assert.equal(formHost(f, ctx), "lab");
   assert.deepEqual(makingProject(f), { name: "New", folder: "/home/o/new" });
   assert.equal(createArgs(f, ctx, { text: "go" }, "p_new").host, "lab");

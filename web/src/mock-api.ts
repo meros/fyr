@@ -239,8 +239,10 @@ export function createMockApi(scenario: string): Api {
       const all = server.events(threadId, 0, 1_000_000).filter((e) => e.seq < before);
       return all.slice(Math.max(0, all.length - limit));
     },
-    async t3Candidates() {
-      return server.t3Candidates();
+    async t3Candidates(host) {
+      const r = hostFor(host); // V0.139: only desk has T3 in the mock
+      if ("error" in r) throw new Error(r.error);
+      return r.h === desk ? server.t3Candidates() : [];
     },
     async pushKey() {
       return server.pushKey();

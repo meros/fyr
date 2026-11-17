@@ -49,7 +49,7 @@ import { NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON } from "./row-ui.tsx";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import { QuotaList } from "./quota-ui.tsx";
-import { hostLabel, hostTag, offlineLine, type HostInfo } from "./hosts.ts";
+import { hostLabel, hostOf, hostTag, offlineLine, profilesOfHost, type HostInfo } from "./hosts.ts";
 
 // ---- icons ----
 const I = {
@@ -1135,6 +1135,8 @@ function MNew(p: PhoneProps) {
       <MHeader onBack={p.nav.back} title="New thread" close />
       <div class="m-nbody" onDrop={att.onDrop} onDragOver={att.onDragOver}>
         <div class="m-defs">
+          {/* V0.139: host first, as on the desktop */}
+          <HostField value={n.host} onPick={n.chooseHost} what="The thread runs there. The projects, folders and providers below are that host's." />
           <div class="m-dl">Project</div>
           <button class="m-dchip m-ppick" onClick={n.togglePicking} aria-expanded={f.picking} style={cur && !chip.isNew ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
             {chip.isNew ? <span class="pi all">+</span> : cur ? <ProjectIcon project={cur} name={cur.name} size={28} /> : <span class="pi all" />}
@@ -1161,7 +1163,6 @@ function MNew(p: PhoneProps) {
               <NewProjectStep initialName={f.creating} initialFolder="" fromThread={false} host={n.host} onDraft={n.setDraft} onCancel={n.cancelCreating} onCreate={n.createProject} />
             </div>
           )}
-          <HostField value={n.host} lock={n.hostLock} onPick={n.chooseHost} what="The thread runs there, in that host's folders, on its providers." />
           <div class="m-dl">Folder</div>
           <div class={`m-dchip m-fline${folder.scratch ? " scratch" : ""}`}>
             <span class="ell">{folder.label}</span>
@@ -1418,7 +1419,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
     );
   }
   if (sheet.kind === "details") {
-    const prof = p.store.profiles.find((x) => x.id === t.profile);
+    const prof = profilesOfHost(hostOf(t, p.store.hosts), p.store.hosts, p.store.profiles).find((x) => x.id === t.profile); // V0.139: its host's
     // V0.120 (5): a model the owner turned off shows as "(off)" until another is picked; the desktop's chip does the same.
     const modelOff = !!prof && !!t.model && !prof.models.includes(t.model);
     const canModel = ((prof?.models.length ?? 0) > 1 || (modelOff && (prof?.models.length ?? 0) > 0)) && !reason("thread.setModel");
