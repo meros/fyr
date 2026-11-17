@@ -112,7 +112,7 @@ func TestUnansweredStopMarksUnresponsive(t *testing.T) {
 // new process of the same session.
 func TestAdoptedClosedInputIsNotWrittenTo(t *testing.T) {
 	sock := rnr.SocketPath(t.TempDir())
-	srv := &rnr.Server{Logf: t.Logf}
+	srv := &rnr.Server{} // no t.Logf: the runner logs exits from its own goroutines
 	if err := srv.Listen(sock); err != nil {
 		t.Fatal(err)
 	}
