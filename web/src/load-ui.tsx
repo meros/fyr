@@ -10,6 +10,7 @@ import { clockTime } from "./format.ts";
 import { ContextMenu } from "./menu-ui.tsx";
 import { UndIcon, useUnd } from "./undeclared-ctx.tsx";
 import { railUndeclared } from "./undeclared.ts";
+import { hostLeftovers } from "./leftovers.ts";
 import { loadDetail, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, slotTip, STRIP_MAX, undeclaredTip, type StripHost, threadCPU, threadJob, threadSlot, type HostLoad, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
@@ -129,6 +130,7 @@ export function LoadRail() {
             <HostMeters h={h} name={several ? short.get(h.host) : undefined} full={h.host} jobsTip={slotTip(h, { lookup: und.lookup, now: und.now() })} />
           </div>
           <RailUndeclared h={h} />
+          <RailLeftovers h={h} />
         </div>
       ))}
     </div>
@@ -182,6 +184,7 @@ export function LoadSheetBody({ hosts, quotas }: { hosts: StripHost[]; quotas: C
                   <li>{l}</li>
                 ))}
                 {ut && <li class="und">{ut}</li>}
+                {h.load && <SheetLeftovers h={h.load} />}
               </ul>
             )}
           </section>
@@ -265,3 +268,22 @@ function RailUndeclared({ h }: { h: HostLoad }) {
   );
 }
 
+/** The rail's count under a host's meters (desktop: the phone has no rail and shows SheetLeftovers in its load sheet).
+ *  A press opens Settings → Automation, where each one has End and Keep. Null without any. */
+function RailLeftovers({ h }: { h: HostLoad }) {
+  const nav = useUnd();
+  const r = hostLeftovers(h);
+  if (!r) return null;
+  return (
+    <button type="button" class="rlft" title={r.title} aria-label={`${h.host}: ${r.text}. Show them`} onClick={() => nav.openSettings({ page: "automation", sub: "leftovers" })}>
+      {r.count} left
+    </button>
+  );
+}
+
+/** The phone's load sheet line for the same count (the rail's title, as text: no hover on a phone). */
+function SheetLeftovers({ h }: { h: HostLoad }) {
+  const r = hostLeftovers(h);
+  if (!r) return null;
+  return <li class="lft">{r.title.replace("Processes threads left running", `${r.text}: processes threads left running`)}</li>;
+}

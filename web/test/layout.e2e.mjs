@@ -2229,6 +2229,101 @@ for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}
   }
 });
 
+// SPEC V0.175: leftover processes. ?leftovers=1: Map perf left a Chrome and a mockup server, Nix flake update a
+// port-forward under timeout, Babysit PR #4170 a dev server its agent kept, a test binary is in no thread's cgroup, and two
+// settled threads' worktrees are listed. Desktop at 1280 × 800, light and dark: the rail shows "5 left" under the host's
+// meters (the rail does not scroll at 1000 px) and a press opens Settings → Automation at "Leftover processes"; the open
+// thread has one strip under the header with Keep and End; End sends host.leftoverEnd for each and the strip goes.
+// Phone at 390 × 844: the same strip with 44 px buttons under the text, the load sheet's line, and Settings' groups
+// with 44 px controls; nothing is wider than the screen.
+const LFT_COMMANDS = (action) => `(window.__fyrCommands || []).filter((c) => c.action === '${action}').map((c) => c.args)`;
+for (const dark of [false, true]) section(`V0.175 desktop${dark ? " dark" : ""}`, async ({ send, evaluate, waitFor, settle, navigate, shot }) => {
+  const ctx = `V0.175 desktop${dark ? " dark" : ""}`;
+  const tag = dark ? "dark" : "light";
+  try {
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
+    await navigate(`${origin}/?mock=rail&leftovers=1`, "!!document.querySelector('.rail .rlft')");
+    const r = await evaluate(`(() => { const b = document.querySelector('.rail .rlft'), br = b.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
+      return { text: b.textContent, aria: b.getAttribute('aria-label'), title: b.title, inside: br.right <= rail.right + 0.5 && br.left >= rail.left - 0.5 && br.height > 0 }; })()`);
+    check(r.text === "5 left" && r.aria === "laptop: 5 leftover processes · 2.2 GB. Show them" && r.title.startsWith("Processes threads left running: chromium (1.9 GB), vite (180 MB),") && r.inside, `${ctx}: the rail's count is wrong (${JSON.stringify(r)})`);
+    await shot(`leftovers-rail-${tag}-desktop.png`);
+    await evaluate(`document.querySelector('.rail .rlft').click()`);
+    await waitFor(`!!document.querySelector('.dlg section[aria-label="Leftover processes"]')`, { what: "Settings at the leftovers" });
+    await settle();
+    const st = await evaluate(`(() => { const d = document.querySelector('.dlg'), sec = d.querySelector('section[aria-label="Leftover processes"]'), wt = d.querySelector('section[aria-label="Worktrees of settled threads"]');
+      const r = sec.getBoundingClientRect(), dr = d.querySelector('.stp').getBoundingClientRect();
+      return { rows: [...sec.querySelectorAll('.sr')].map((e) => e.innerText.replace(/\\s+/g, ' ').trim()), visible: r.top >= dr.top - 1 && r.top <= dr.bottom,
+        wt: [...wt.querySelectorAll('.sr')].map((e) => [e.querySelector('.sr-d').textContent, e.querySelectorAll('button').length]) }; })()`);
+    check(st.rows.length === 5 && /^chromium · 9 processes · 1\.9 GB Map perf · acme\/web · ends in \d+ min ?Open ?Keep ?End$/.test(st.rows[0]) && st.visible, `${ctx}: Settings' leftovers are wrong (${JSON.stringify(st)})`);
+    check(st.rows.some((x) => /^vite · 3 processes · 180 MB .* kept for \d+ h by the agent: the dev server the owner asked for ?Open ?End$/.test(x)) && st.rows.some((x) => /^engine\.test · 8 MB in no thread's cgroup · ends in 1 min ?Keep ?End$/.test(x)), `${ctx}: a kept or an orphan row is wrong (${JSON.stringify(st.rows)})`);
+    check(st.wt.length === 2 && st.wt[0][1] === 1 && st.wt[1][1] === 0 && /kept: 2 commits not pushed$/.test(st.wt[1][0]), `${ctx}: the worktrees are wrong (${JSON.stringify(st.wt)})`);
+    await shot(`leftovers-settings-${tag}-desktop.png`);
+    await evaluate(`[...document.querySelectorAll('.dlg section[aria-label="Worktrees of settled threads"] .btn')].find((b) => b.textContent === 'Remove').click()`);
+    await waitFor(`document.querySelectorAll('.dlg section[aria-label="Worktrees of settled threads"] .sr').length === 1`, { what: "Remove to take the worktree out" });
+    // The thread's strip.
+    await navigate(`${origin}/?mock=rail&leftovers=1&open=t_mapperf`, "!!document.querySelector('.th .lftb')");
+    await settle();
+    const s = await evaluate(`(() => { const e = document.querySelector('.th .lftb'), th = document.querySelector('.th'), conv = document.querySelector('.convo'), b = e.getBoundingClientRect(), c = conv.getBoundingClientRect();
+      return { n: document.querySelectorAll('.lftb').length, text: e.querySelector('.lftb-b').innerText, btns: [...e.querySelectorAll('.btn')].map((x) => x.textContent), full: Math.abs(b.width - th.getBoundingClientRect().width) < 1,
+        h: Math.round(b.height), below: b.bottom <= c.top + 0.5, convH: Math.round(c.height), wide: document.documentElement.scrollWidth > innerWidth }; })()`);
+    check(s.n === 1 && /^2 leftover processes: chromium \(1\.9 GB\), http\.server · Fyr ends them in \d+ min$/.test(s.text) && s.btns.join("|") === "Keep|End", `${ctx}: the strip is wrong (${JSON.stringify(s)})`);
+    check(s.full && s.h <= 48 && s.below && s.convH > 150 && !s.wide, `${ctx}: the strip is not one block under the header (${JSON.stringify(s)})`);
+    await shot(`leftovers-thread-strip-${tag}-desktop.png`);
+    await evaluate(`[...document.querySelectorAll('.th .lftb .btn')].find((b) => b.textContent === 'End').click()`);
+    await waitFor(`!document.querySelector('.th .lftb')`, { what: "End to end the thread's leftovers" });
+    const sent = await evaluate(LFT_COMMANDS("host.leftoverEnd"));
+    check(sent.map((x) => x.id).join() === "41022@100,41090@101", `${ctx}: End sent ${JSON.stringify(sent)}`);
+    // The rail does not scroll at 1000 px with two hosts, the undeclared button and the count.
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail&hosts=2&undeclared=2&leftovers=1`, "!!document.querySelector('.rail .rlft') && document.querySelectorAll('.rail .rmid .rldr').length === 2");
+    const rs = await evaluate(`(() => { const rail = document.querySelector('.rail'), mid = rail.querySelector('.rmid'), b = document.querySelector('.rail .rlft').getBoundingClientRect();
+      return { railScroll: rail.scrollHeight - rail.clientHeight, midScroll: mid.scrollHeight - mid.clientHeight, btn: b.height > 0 && b.bottom <= innerHeight }; })()`);
+    check(rs.railScroll <= 0 && rs.midScroll <= 0 && rs.btn, `${ctx}: the rail scrolls at 1000 px with the count (${JSON.stringify(rs)})`);
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
+});
+
+for (const dark of [false, true]) section(`V0.175 phone${dark ? " dark" : ""}`, async ({ send, evaluate, waitFor, settle, openScreen, shot }) => {
+  const ctx = `V0.175 phone${dark ? " dark" : ""}`;
+  const tag = dark ? "dark" : "light";
+  const W = 390;
+  try {
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
+    await openScreen({ url: "?mock=rail&leftovers=1&open=t_mapperf", ready: "!!document.querySelector('.m-thread .lftb')" }, W, 844);
+    const s = await evaluate(`(() => { const e = document.querySelector('.m-thread .lftb'), t = e.querySelector('.lftb-b').getBoundingClientRect(), bs = [...e.querySelectorAll('.btn')].map((b) => b.getBoundingClientRect());
+      return { text: e.querySelector('.lftb-b').innerText, labels: [...e.querySelectorAll('.btn')].map((b) => b.textContent), minH: Math.min(...bs.map((b) => b.height)), under: bs.every((b) => b.top >= t.bottom - 0.5),
+        inside: [e, ...e.querySelectorAll('*')].every((x) => { const b = x.getBoundingClientRect(); return b.right <= innerWidth + 0.5 && b.left >= -0.5; }), wide: document.documentElement.scrollWidth > innerWidth }; })()`);
+    check(/^2 leftover processes: chromium \(1\.9 GB\), http\.server · Fyr ends them in \d+ min$/.test(s.text) && s.labels.join("|") === "Keep|End" && s.minH >= 44 && s.under && s.inside && !s.wide, `${ctx}: the phone's strip is wrong (${JSON.stringify(s)})`);
+    await shot(`leftovers-thread-strip-${tag}-phone.png`);
+    // The load sheet says it in a line.
+    await openScreen({ url: "?mock=rail&leftovers=1", ready: "!!document.querySelector('.m-load .mlh')" }, W, 844);
+    await settle();
+    await evaluate(`document.querySelector('.m-load').click()`);
+    await waitFor(`!!document.querySelector('.m-sheet[aria-label="Host load"] .m-lsheet li.lft')`, { what: "the sheet's leftovers line" });
+    const l = await evaluate(`(() => { const li = document.querySelector('.m-lsheet li.lft'), b = li.getBoundingClientRect(); return { text: li.textContent, inside: b.right <= innerWidth + 0.5 }; })()`);
+    check(/^5 leftover processes · 2\.2 GB: processes threads left running: chromium \(1\.9 GB\), vite \(180 MB\), /.test(l.text) && l.inside, `${ctx}: the sheet's line is wrong (${JSON.stringify(l)})`);
+    await shot(`leftovers-load-sheet-${tag}-phone.png`);
+    await evaluate(`history.back()`);
+    await waitFor(`!document.querySelector('.m-sheet[aria-label="Host load"]')`);
+    // Settings: 44 px controls, nothing past the screen's edge.
+    await openScreen({ url: "?mock=rail&leftovers=1&settings=automation", ready: "!!document.querySelector('.set.phone section[aria-label=\"Leftover processes\"]')" }, W, 844);
+    const g = await evaluate(`(() => { const secs = ['Leftover processes', 'Worktrees of settled threads'].map((l) => document.querySelector('.set.phone section[aria-label="' + l + '"]'));
+      const ctl = secs.flatMap((s) => s ? [...s.querySelectorAll('button')] : []).filter((e) => e.getBoundingClientRect().height > 0);
+      return { have: secs.map((s) => !!s), n: ctl.length, minH: Math.min(...ctl.map((e) => e.getBoundingClientRect().height)),
+        off: secs.filter(Boolean).flatMap((s) => [...s.querySelectorAll('*')]).filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.right > innerWidth + 0.5 || b.left < -0.5); }).map((e) => e.className || e.tagName),
+        wide: document.documentElement.scrollWidth > innerWidth }; })()`);
+    check(g.have.every(Boolean) && g.n >= 10 && g.minH >= 44 && g.off.length === 0 && !g.wide, `${ctx}: Settings' leftover groups on the phone (${JSON.stringify(g)})`);
+    await evaluate(`document.querySelector('.set.phone section[aria-label="Leftover processes"]').scrollIntoView({ block: 'start' })`);
+    await shot(`leftovers-settings-${tag}-phone.png`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
+});
+
 // SPEC V0.167: the rail's middle at 1280 × 900 with 2 hosts and 4 providers, light and dark: no element of it is wider
 // than the rail or sticks out of it; no scrollbar shows (none is drawn and nothing scrolls); each host is its two
 // labelled meters, "ld" and "job", with the legend first in its tooltip; the parts are at least 8 px apart and no

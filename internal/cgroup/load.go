@@ -54,6 +54,10 @@ type Load struct {
 	Suggestions        []heavy.Suggestion `json:"suggestions,omitempty"`
 	HeavyAdded         []heavy.Added      `json:"heavyAdded,omitempty"`
 	UndeclaredSettings *UndeclaredView    `json:"undeclaredSettings,omitempty"`
+	// V0.175: the leftover processes past their grace, and the temporary
+	// folders listed for the owner (settled threads' worktrees).
+	Leftovers []Leftover `json:"leftovers,omitempty"`
+	Temps     []Temp     `json:"temps,omitempty"`
 }
 
 // Use is agents/ as a whole.
@@ -108,6 +112,9 @@ type Sampler struct {
 	names        atomic.Pointer[map[string]string]
 	Trees        *TreeReader
 	CLIs         func() map[string]int
+	// V0.175: the leftover tracker and the temp sweep; optional.
+	Leftovers *Leftovers
+	Temps     *Temps
 
 	mu     lockwatch.Mutex
 	pub    atomic.Pointer[Load] // the last read, for readers that must not wait
@@ -134,6 +141,12 @@ func (s *Sampler) Get() Load {
 	if s.Settings != nil && l.Provider != "" {
 		v := s.Settings.View()
 		l.UndeclaredSettings = &v
+	}
+	if s.Leftovers != nil {
+		l.Leftovers = s.Leftovers.View()
+	}
+	if s.Temps != nil {
+		l.Temps = s.Temps.View()
 	}
 	if s.Jobs != nil {
 		v := s.Jobs.View()
