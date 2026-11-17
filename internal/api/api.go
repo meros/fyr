@@ -171,6 +171,24 @@ type Host struct {
 	// Machine and OS as the host reports them (V0.170); none until it is seen.
 	Machine string `json:"machine,omitempty"`
 	OS      string `json:"os,omitempty"`
+	// Link is how the front reaches the host (decision 0031 2.7, 0030 5b).
+	Link *Link `json:"link,omitempty"`
+}
+
+// Link is the state of the front's link to one host.
+type Link struct {
+	State  string     `json:"state"`  // up | down
+	Via    string     `json:"via"`    // peer | whois | pipe
+	Opened string     `json:"opened"` // here | them
+	Since  string     `json:"since,omitempty"`
+	Error  *LinkError `json:"error,omitempty"`
+}
+
+// LinkError says why a link is down: kind is one of acl, no-route, key-mismatch,
+// refused, timeout, removed, revoked.
+type LinkError struct {
+	Kind string `json:"kind"`
+	Text string `json:"text"`
 }
 
 // WriteJSON is the one JSON reply of the host and the front.

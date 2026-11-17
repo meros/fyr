@@ -85,6 +85,7 @@ func (f *Front) hostLocked(l *link) api.Host {
 	if h.ID == "" {
 		h.ID = f.pins[h.Name]
 	}
+	h.Link = f.linkOf(l)
 	if !l.since.IsZero() {
 		h.Since = l.since.UTC().Format(time.RFC3339)
 	}

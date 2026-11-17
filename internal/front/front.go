@@ -118,7 +118,9 @@ type Front struct {
 	streams streams
 	// authTicks counts rule 3's looks at the modes (a test waits for some).
 	authTicks atomic.Int64
-	subMu     sync.Mutex
+	// oldRouteUses counts calls to the routes without a host prefix (decision 0031 2.8).
+	oldRouteUses atomic.Int64
+	subMu        sync.Mutex
 	// links: the hosts followed, copy on write (a found host joins while the
 	// front runs, V0.123); read with all().
 	links atomic.Pointer[[]*link]
@@ -128,6 +130,10 @@ type Front struct {
 	runCtx context.Context
 	runWG  *sync.WaitGroup
 	hub    *stream.Hub
+	// hub2 is /api/front/stream: each frame of a host carries host: <id> (decision 0031 2.4).
+	hub2 *stream.Hub
+	// shown: the host of the thread each device last said it shows (the focus's off).
+	shown map[string]*link
 	// client is the web client served and its build (V0.13); a client-only
 	// deploy swaps it (V0.81).
 	client atomic.Pointer[clientBuild]
@@ -198,7 +204,7 @@ func New(opt Options, hosts []HostConfig) *Front {
 	if opt.NotifyDelay <= 0 {
 		opt.NotifyDelay = notify.Delay
 	}
-	f := &Front{opt: opt, hub: stream.NewHub(), presence: &notify.Presence{}, objs: map[string]*link{}}
+	f := &Front{opt: opt, hub: stream.NewHub(), hub2: stream.NewHub(), presence: &notify.Presence{}, objs: map[string]*link{}}
 	c := &clientBuild{build: opt.BuildID, web: opt.Web, h: http.NotFoundHandler()}
 	if opt.Web != nil {
 		c.h = webClient(opt.Web)
@@ -702,6 +708,7 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 		}
 	default: // event and anything newer: the client ignores what it does not know
 		f.hub.Publish(ev, data)
+		f.publishFrame(l, ev, data)
 	}
 }
 
@@ -721,6 +728,9 @@ func (f *Front) take(l *link, m map[string]any) {
 	l.raw[id] = m
 	delete(l.known, id)
 	f.publishLocked(l, id)
+	if b, err := json.Marshal(m); err == nil { // the host's own thread, whole
+		f.publishFrameLocked(l, "thread", b)
+	}
 }
 
 // publishLocked stamps a thread with its host (and hostOffline while the
@@ -798,28 +808,39 @@ func (f *Front) setOffline(l *link, err error) {
 
 // Handler serves the browser API (unchanged, plus host stamps) and the client.
 func (f *Front) Handler() http.Handler {
-	inner := f.browserRules(f.withAuth(f.mux()))
+	inner := f.browserRules(f.withAuth(f.withDeprecation(f.mux())))
 	return refuseActor(f.refuseTailscale(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// the owner's login may arrive after the start (a tagged install's, by sync)
 		server.Browser(f.ownerLogin(), inner).ServeHTTP(w, r)
 	})))
 }
 
-// mux is the browser API's routes.
-func (f *Front) mux() *routeMux {
-	mux := &routeMux{ServeMux: http.NewServeMux()}
-	mux.HandleFunc("GET /api/state", f.state)
-	mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
-		if p, ok := signedIn(r); ok { // a revoke closes this stream (decision 0030 3.4)
+// serveStream serves one hub as a browser's stream; a revoke closes it
+// (decision 0030 3.4).
+func (f *Front) serveStream(hub *stream.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if p, ok := signedIn(r); ok {
 			ctx, cancel := context.WithCancel(r.Context())
 			defer cancel()
 			defer f.streams.add(p.ID, cancel)()
 			r = r.WithContext(ctx)
 		}
-		ch := f.hub.Subscribe()
-		defer f.hub.Unsubscribe(ch)
+		ch := hub.Subscribe()
+		defer hub.Unsubscribe(ch)
 		stream.Serve(w, r, ch, f.client.Load().build)
-	})
+	}
+}
+
+// mux is the browser API's routes.
+func (f *Front) mux() *routeMux {
+	mux := &routeMux{ServeMux: http.NewServeMux()}
+	mux.HandleFunc("GET /api/state", f.state)
+	mux.HandleFunc("GET /api/stream", f.serveStream(f.hub))
+	mux.HandleFunc("GET /api/front/stream", f.serveStream(f.hub2))
+	mux.HandleFunc("GET /api/front/state", f.frontState)
+	mux.HandleFunc("POST /api/front/command", f.frontCommandRoute)
+	mux.HandleFunc("POST /api/front/presence", f.presenceRoute2)
+	mux.HandleFunc(hostPrefix+"{id}/{rest...}", f.hostRoute) // decision 0031: the one handler of a host's calls
 	mux.HandleFunc("GET /api/threads/{id}", f.thread)
 	mux.HandleFunc("/api/threads/{id}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
 		f.forward(principalOf(r), w, r, f.owner(r.PathValue("id")))
@@ -1306,27 +1327,35 @@ func (f *Front) gather(ctx context.Context, path, key string, perHost bool) []ma
 	return out
 }
 
+// focusCall is one focus message: the thread of a host, on or off.
+type focusCall struct {
+	l   *link
+	id  string
+	off bool
+}
+
 // focus forwards a presence beat to the hosts it concerns (V0.85): off for
 // the thread the device showed before, on for the one it shows now. It runs
-// in the background; the beat's answer does not wait for a host.
+// in the background; the beat's answer does not wait for a host. The old
+// route finds the host by the thread's id; /api/front/presence names it.
 func (f *Front) focus(device, prev, thread string) {
-	type call struct {
-		id  string
-		off bool
-	}
-	var calls []call
+	var calls []focusCall
 	if prev != "" && prev != thread {
-		calls = append(calls, call{prev, true})
+		calls = append(calls, focusCall{f.owner(prev), prev, true})
 	}
 	if thread != "" {
-		calls = append(calls, call{thread, false})
+		calls = append(calls, focusCall{f.owner(thread), thread, false})
 	}
+	f.sendFocus(device, calls)
+}
+
+func (f *Front) sendFocus(device string, calls []focusCall) {
 	if len(calls) == 0 {
 		return
 	}
 	go func() {
 		for _, c := range calls {
-			l := f.owner(c.id)
+			l := c.l
 			if l == nil {
 				continue
 			}
@@ -1349,3 +1378,6 @@ func (f *Front) focus(device, prev, thread string) {
 		}
 	}()
 }
+
+// OldRouteUses is how many calls came to a route outside /api/h/ and /api/front/.
+func (f *Front) OldRouteUses() int64 { return f.oldRouteUses.Load() }

@@ -41,16 +41,24 @@ func Serve(w http.ResponseWriter, r *http.Request, ch <-chan Frame, buildID stri
 			return
 		}
 		id, _ := m["id"].(string)
-		lastAt[id] = time.Now()
-		if prev, ok := sent[id]; ok {
-			out, err := json.Marshal(map[string]any{"id": id, "rev": m["rev"], "base": prev["rev"], "patch": MergePatchDiff(prev, m)})
+		// A front's stream names the host on each frame (decision 0031 2.4): the
+		// same thread id on two hosts is two threads.
+		host, _ := m["host"].(string)
+		key := host + "/" + id
+		lastAt[key] = time.Now()
+		if prev, ok := sent[key]; ok {
+			frame := map[string]any{"id": id, "rev": m["rev"], "base": prev["rev"], "patch": MergePatchDiff(prev, m)}
+			if host != "" {
+				frame["host"] = host
+			}
+			out, err := json.Marshal(frame)
 			if err == nil && len(out) < len(data) {
-				sent[id] = m
+				sent[key] = m
 				fmt.Fprintf(w, "event: thread.patch\ndata: %s\n\n", out)
 				return
 			}
 		}
-		sent[id] = m
+		sent[key] = m
 		fmt.Fprintf(w, "event: thread\ndata: %s\n\n", data)
 	}
 	for {
@@ -61,14 +69,16 @@ func Serve(w http.ResponseWriter, r *http.Request, ch <-chan Frame, buildID stri
 			}
 			if f.Event == "thread" {
 				var head struct {
-					ID string `json:"id"`
+					ID   string `json:"id"`
+					Host string `json:"host"`
 				}
 				json.Unmarshal(f.Data, &head)
-				if time.Since(lastAt[head.ID]) < 100*time.Millisecond {
-					pending[head.ID] = f.Data
+				key := head.Host + "/" + head.ID
+				if time.Since(lastAt[key]) < 100*time.Millisecond {
+					pending[key] = f.Data
 					continue
 				}
-				delete(pending, head.ID)
+				delete(pending, key)
 				sendThread(f.Data)
 				fl.Flush()
 				continue

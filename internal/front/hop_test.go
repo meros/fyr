@@ -70,7 +70,11 @@ var routes = map[string]routeClass{
 	"GET /api/quota": hops, "GET /api/load": hops, "GET /api/profiles": local,
 	"GET /api/providers": local, "GET /api/providers/found": local, "GET /api/systemAgents": local, "GET /api/autoDeploy": local,
 	"GET /api/autoMerge": local, "GET /api/auth/state": local, "POST /api/auth/approve": local, "POST /api/auth/deny": local,
-	"POST /api/auth/revoke": local, "POST /api/auth/add": local, "POST /api/auth/mode": local, "GET /api/updates": local, "/api/": hops, "/mcp": local, "/": local,
+	"POST /api/auth/revoke": local, "POST /api/auth/add": local, "POST /api/auth/mode": local, "GET /api/updates": local, "/api/": hops,
+	// decision 0031: the host in the path forwards, the front's own routes answer.
+	"/api/h/{id}/{rest...}": hops, "GET /api/front/state": local, "GET /api/front/stream": local, "POST /api/front/command": local,
+	"POST /api/front/presence": local, "GET /api/front/auth/state": local, "POST /api/front/auth/approve": local, "POST /api/front/auth/deny": local,
+	"POST /api/front/auth/revoke": local, "POST /api/front/auth/add": local, "POST /api/front/auth/mode": local, "/mcp": local, "/": local,
 }
 
 func TestHopCarriesThePrincipalOnEveryRoute(t *testing.T) {
@@ -225,6 +229,9 @@ func concretize(pat, projectID string) string {
 	id := "t_probe"
 	if strings.Contains(pat, "/projects/") {
 		id = projectID
+	}
+	if strings.HasPrefix(pat, "/api/h/") {
+		id = "HOST-0000-0000-0000" // the host's install id
 	}
 	r := strings.NewReplacer("{id}", id, "{rest...}", "x", "{path...}", "x/y", "{seq}", "1", "{build}", "b", "{name}", "n")
 	p := r.Replace(pat)
