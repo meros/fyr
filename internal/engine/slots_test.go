@@ -34,11 +34,11 @@ func TestV086SlotToolsAndRunEnd(t *testing.T) {
 	running(e, b)
 
 	out, isErr := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"})
-	if isErr || !strings.Contains(out, "You hold a test slot") {
+	if isErr || !strings.Contains(out, "Admitted: your test job") {
 		t.Fatalf("a: %v %q", isErr, out)
 	}
 	out, isErr = callAs(t, e, b, "slot_acquire", map[string]any{"kind": "test"})
-	if isErr || !strings.Contains(out, "Queued for a test slot: 0 ahead") {
+	if isErr || !strings.Contains(out, "(0 ahead)") {
 		t.Fatalf("b: %v %q", isErr, out)
 	}
 	if _, isErr := callAs(t, e, b, "slot_acquire", map[string]any{"kind": "nap"}); !isErr {
@@ -58,7 +58,7 @@ func TestV086SlotToolsAndRunEnd(t *testing.T) {
 	if s := e.Slots.Snapshot(); len(s.Held) != 1 || s.Held[0].Owner != b {
 		t.Fatalf("after a's run: %+v", s)
 	}
-	if !told(e, b, "A test slot is yours now") {
+	if !told(e, b, "Your test job is admitted now") {
 		th, _ := e.Thread(b)
 		t.Fatalf("b was not told: %+v", th.Feed.Queue)
 	}
@@ -87,15 +87,15 @@ func TestV086SlotsOff(t *testing.T) {
 	e, _, _ := bare(t)
 	a := bareThread(t, e)
 	out, isErr := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"})
-	if isErr || !strings.Contains(out, "no slots") {
+	if isErr || !strings.Contains(out, "does not limit heavy jobs") {
 		t.Fatalf("%v %q", isErr, out)
 	}
-	// SPEC 0.5 V0.86 (1): slots 0 answers "no limit" and queues nothing.
+	// SPEC 0.5 V0.86 (1): slots 0 answers that heavy jobs are not limited and queues nothing.
 	e.UseSlots(slots.New(0))
 	b := bareThread(t, e)
 	for _, id := range []string{a, b} {
 		out, isErr := callAs(t, e, id, "slot_acquire", map[string]any{"kind": "test"})
-		if isErr || !strings.Contains(out, "no limit") {
+		if isErr || !strings.Contains(out, "does not limit heavy jobs") {
 			t.Fatalf("%v %q", isErr, out)
 		}
 	}
@@ -126,7 +126,7 @@ func TestV086SlotsAfterRestart(t *testing.T) {
 	if s := e.Slots.Snapshot(); len(s.Held) != 1 || s.Held[0].Owner != b {
 		t.Fatalf("after the idle holder: %+v", s)
 	}
-	if !told(e, b, "A test slot is yours now") {
+	if !told(e, b, "Your test job is admitted now") {
 		t.Fatal("b was not told")
 	}
 }
@@ -163,7 +163,7 @@ func TestV0137SlotOrderDecidesTheNextGrant(t *testing.T) {
 	if s := e.Slots.Snapshot(); len(s.Held) != 1 || s.Held[0].Owner != c {
 		t.Fatalf("the next slot did not go to c: %+v", s)
 	}
-	if !told(e, c, "A test slot is yours now") || told(e, b, "slot is yours") {
+	if !told(e, c, "Your test job is admitted now") || told(e, b, "is admitted now") {
 		t.Fatal("the wrong thread was told")
 	}
 }

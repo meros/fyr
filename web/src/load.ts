@@ -23,9 +23,12 @@ export interface JobClass {
   /** seconds */
   wall: number;
   at: string;
-  /** decision 0029 S3: the class's cost on this host now and how many runs it is learned from */
+  /** decision 0029 S3: the class's cost on this host now (older hosts) and how many runs it is learned from */
   cost?: number;
   learned?: number;
+  /** V0.163: the class's need as percentages of this host */
+  cpuPct?: number;
+  memPct?: number;
 }
 export interface HostLoad {
   host: string;
@@ -39,8 +42,10 @@ export interface HostLoad {
   cgroups: boolean;
   agents?: { cpu?: number; cpuMax: number; memory: number; memoryMax: number };
   threads: ThreadLoad[];
-  /** the host's slots for heavy jobs (V0.86) */
+  /** the host's heavy jobs (V0.86; V0.163 in percent). The API calls it `heavy`; an older host sends `slots`;
+   *  normalizeLoad puts either here, so the client reads one field. */
   slots?: Slots;
+  heavy?: Slots;
   /** Decision 0029 S1 (#185), absent without a provider (no /proc: macOS for now). */
   provider?: string;
   capacity?: { cpu: number; memory: number };
@@ -61,8 +66,12 @@ export interface SlotHolder {
   kind: string;
   since?: string;
   priority?: boolean;
-  /** decision 0029 S2: the holder's share of the budget (1.0 a job, 0.1 an idle hold) */
+  /** decision 0029 S2: the holder's share of the budget (1.0 a job, 0.1 an idle hold); older hosts */
   cost?: number;
+  /** V0.163: the job's need as percentages of the host, CPU and memory, and pct the larger */
+  cpuPct?: number;
+  memPct?: number;
+  pct?: number;
 }
 export interface Slots {
   n: number;
@@ -74,6 +83,24 @@ export interface Slots {
   /** decision 0029 S4: the adapted budget (absent while it is n) and why */
   budget?: number;
   budgetWhy?: string;
+  /** V0.163, percent of what the host gives its agents: in use, the budget and what is free in it per resource; usedPct
+   *  is the tighter resource's use of its budget (the rail's bar) and tight names it; binding is what holds the head
+   *  back; needPct is the head's larger need. A host that counts jobs sends only usedPct. */
+  cpuPct?: number;
+  memPct?: number;
+  cpuBudgetPct?: number;
+  memBudgetPct?: number;
+  cpuFreePct?: number;
+  memFreePct?: number;
+  usedPct?: number;
+  tight?: "cpu" | "memory";
+  binding?: "cpu" | "memory";
+  needPct?: number;
+}
+
+/** V0.163: `heavy` (the API's name) or an older host's `slots`, read as one field. */
+export function normalizeLoad(list: HostLoad[]): HostLoad[] {
+  return list.map((h) => (h.heavy && !h.slots ? { ...h, slots: h.heavy } : h));
 }
 
 /** A thread at or above this many cores is coloured. */
@@ -170,17 +197,23 @@ export function threadCPU(list: HostLoad[], id: string): LoadPart | null {
 
 // SPEC 0.5 V0.86: the slots for heavy jobs.
 
-function slotDetail(h: HostLoad): string[] {
+/** V0.163: what heavy jobs use of the host, in words: CPU and memory in use and the budget; each running job's share;
+ *  who waits and why. A host that counts jobs says that instead. */
+export function heavyDetail(h: HostLoad): string[] {
   const s = h.slots;
   if (!s) return [];
-  if (s.used === undefined) return [`Slots: ${s.held.length} of ${s.n} in use, ${s.waiting.length} waiting`];
-  // Decision 0029 S2: the budget in use, each holder's cost, and why the next job waits.
-  const costs = s.held.map((x) => `${x.kind} ${one(x.cost ?? 1)}${(x.cost ?? 1) < 0.2 ? " idle" : ""}`).join(", ");
-  const why = s.waiting.length && s.why ? `; the next waits: ${s.why}` : "";
-  const out = [`Slots: ${one(s.used)} of ${s.budget ?? s.n} in use${costs ? ` (${costs})` : ""}, ${s.waiting.length} waiting${why}`];
-  // Decision 0029 S4: the budget adapts to the host; say to what and why.
-  if (s.budget !== undefined) out.push(`Budget ${s.budget} (N ${s.n})${s.budgetWhy ? `: ${s.budgetWhy}` : ""}`);
+  if (s.cpuPct === undefined || s.memPct === undefined) {
+    const used = s.usedPct ?? Math.round((s.held.length / Math.max(1, s.n)) * 100);
+    return [`Heavy jobs: ${used} % of this host's count in use (${s.held.length} of ${s.n} jobs; no load measures)${s.waiting.length ? `, ${s.waiting.length} waiting` : ""}`];
+  }
+  const out = [`Heavy jobs: CPU ${s.cpuPct} % · memory ${s.memPct} % of this host in use; the budget is CPU ${s.cpuBudgetPct ?? 100} % · memory ${s.memBudgetPct ?? 100} %${s.budgetWhy ? ` (${s.budgetWhy})` : ""}`];
+  if (s.held.length) out.push(`Running: ${s.held.map((x) => `${x.kind} ≈ ${x.cpuPct ?? x.pct ?? 0} % CPU · ${x.memPct ?? 0} % memory`).join("; ")}`);
+  if (s.waiting.length) out.push(`${s.waiting.length} waiting${s.why ? `; the next ${s.why}` : ""}`);
   return out;
+}
+
+function slotDetail(h: HostLoad): string[] {
+  return heavyDetail(h);
 }
 
 export interface RailBudget {
@@ -197,19 +230,26 @@ export interface RailBudget {
  *  admission by a budget (then the pips show). */
 export function railBudget(h: HostLoad): RailBudget | null {
   const s = h.slots;
-  if (!s || s.used === undefined) return null;
-  const b = s.budget ?? s.n; // decision 0029 S4: the adapted budget
-  const share = b > 0 ? Math.min(1, Math.max(0, s.used / b)) : 1;
+  if (!s) return null;
+  // V0.163: the tighter resource's use of its budget, in percent; a host that counts jobs: its share of the count.
+  const used = s.usedPct ?? Math.round((s.held.length / Math.max(1, s.n)) * 100);
   const waiting = s.waiting.length;
-  // V0.152: a word under the bar only when it matters; red (hot) only while a job is held back.
-  const note = waiting ? `${waiting} ${waiting === 1 ? "waits" : "wait"}` : s.used >= b - 0.05 ? "full" : "";
-  return { text: `${one(s.used)}/${b}`, note, share: Math.round(share * 100) / 100, hot: waiting > 0, waiting };
+  const note = waiting ? `${waiting} ${waiting === 1 ? "waits" : "wait"}` : used >= 99.5 ? "full" : "";
+  return { text: `${Math.round(used)} %`, note, share: Math.round(Math.min(1, Math.max(0, used / 100)) * 100) / 100, hot: waiting > 0, waiting };
 }
 
-/** V0.152: the slot meter's own tooltip: what it is, the budget in use, each holder's cost, who waits and why. */
+/** V0.152, V0.163: the heavy-job meter's own tooltip: what it is, CPU and memory in use, each job's share, who waits
+ *  and why. */
 export function slotTip(h: HostLoad): string {
-  const d = slotDetail(h)[0];
-  return d ? d.replace(/^Slots: /, "Slots for heavy jobs (tests, builds, e2e runs): ") : "";
+  return heavyDetail(h).join("\n");
+}
+
+/** V0.163: Settings → Heavy jobs: the budget as percentages of what the host gives its agents. */
+export function budgetLine(h: HostLoad): string {
+  const s = h.slots;
+  if (!s || s.cpuBudgetPct === undefined) return "";
+  const cap = h.capacity ? ` (${h.capacity.cpu} cores, ${gb(h.capacity.memory)} GB)` : "";
+  return `CPU ${s.cpuBudgetPct} % · memory ${s.memBudgetPct ?? 100} % of what this host gives its agents${cap}`;
 }
 
 /** V0.152: a short distinct name per host for the rail: the tokens all names share at the start or the end go
@@ -229,30 +269,6 @@ export function shortHostNames(names: string[]): Map<string, string> {
   return out;
 }
 
-/** The rail's slot figure, "1/2 slots"; hot while anyone waits. Null without slots. */
-export function railSlots(h: HostLoad): LoadPart | null {
-  const s = h.slots;
-  if (!s) return null;
-  return { text: `${s.held.length}/${s.n} slots`, hot: s.waiting.length > 0 };
-}
-
-/** Above this many slots the rail writes "3/8" in place of the pips. */
-export const MAX_PIPS = 6;
-
-export interface RailPips {
-  n: number;
-  held: number;
-  waiting: number;
-}
-
-/** The rail's slot pips (V0.99): n pips, the first `held` filled; null without slots. */
-export function railPips(h: HostLoad): RailPips | null {
-  const s = h.slots;
-  if (!s || s.used !== undefined) return null;
-  return { n: s.n, held: Math.min(s.held.length, s.n), waiting: s.waiting.length };
-}
-
-const withArticle = (kind: string) => (/^[aeiou]/.test(kind) ? `an ${kind}` : `a ${kind}`);
 
 /** Decision 0029 S1: the job a thread's slot runs, "make test · 3.2 GB", once the gate hook saw its command; null
  *  otherwise. The row shows it first on its line, since the line is cut at its end. */
@@ -261,26 +277,29 @@ export function threadJob(list: HostLoad[], id: string): string | null {
     const held = h.slots?.held.find((x) => x.owner === id);
     if (!held) continue;
     const t = h.threads?.find((x) => x.id === id);
+    const share = held.pct !== undefined ? ` ≈ ${held.pct} %` : "";
     // Decision 0029 S5: a frozen job says so first, whether or not its command is known.
-    if (t?.paused) return `${t.job ?? `${held.kind} slot`} · paused: memory`;
-    return t?.job ? `${t.job} · ${gb(t.memory)} GB` : null;
+    if (t?.paused) return `${t.job ?? `${held.kind} job`} · paused: memory`;
+    return t?.job ? `${t.job}${share}` : null;
   }
   return null;
 }
 
-/** A thread's slot: "waiting for a test slot (2 ahead)" or "test slot"; null when it has none. */
+/** A thread's heavy job (V0.163, in percent of the host): "build job ≈ 46 %" while admitted; the queue's head says why it
+ *  waits ("waiting: needs ≈ 45 % CPU, 40 % free"), the others their place and need; null when it has none. */
 export function threadSlot(list: HostLoad[], id: string): string | null {
   for (const h of list) {
     const s = h.slots;
     if (!s) continue;
     const held = s.held.find((x) => x.owner === id);
     if (held) {
-      // Decision 0029 S1: the job the slot runs, by the heavy command the thread ran, and its memory now.
       const t = h.threads?.find((x) => x.id === id);
-      return t?.job ? `${t.job} · ${gb(t.memory)} GB` : `${held.kind} slot`;
+      const share = held.pct !== undefined ? ` ≈ ${held.pct} %` : "";
+      return t?.job ? `${t.job}${share}` : `${held.kind} job${share}`;
     }
     const i = s.waiting.findIndex((x) => x.owner === id);
-    if (i >= 0) return `waiting for ${withArticle(s.waiting[i].kind)} slot (${i} ahead)${i === 0 && s.why ? `: ${s.why}` : ""}`;
+    if (i === 0 && s.why) return `waiting: ${s.why}`;
+    if (i >= 0) return `waiting (${i} ahead)${s.waiting[i].pct !== undefined ? ` · needs ≈ ${s.waiting[i].pct} %` : ""}`;
   }
   return null;
 }
@@ -289,10 +308,10 @@ export function threadSlot(list: HostLoad[], id: string): string | null {
  *  starts with the host's name. */
 export function railLabel(h: HostLoad, several: boolean): string {
   const m = railMeter(h);
-  const p = railPips(h);
   const b = railBudget(h);
-  const slots = b ? `, ${one(h.slots!.used!)} of ${h.slots!.n} slot budget in use${b.waiting ? `, ${b.waiting} waiting` : ""}` : p ? `, ${p.held} of ${p.n} slots in use${p.waiting ? `, ${p.waiting} waiting` : ""}` : "";
-  const s = `oad ${railLoad(h).text} on ${h.cores} cores${h.cores > 0 ? ` (${m.text} of the cores)` : ""}${slots}`;
+  const of = h.slots?.tight ? ` of their ${h.slots.tight === "memory" ? "memory" : "CPU"} budget` : " of their budget";
+  const heavy = b ? `, heavy jobs use ${b.text}${of}${b.waiting ? `, ${b.waiting} waiting` : ""}` : "";
+  const s = `oad ${railLoad(h).text} on ${h.cores} cores${h.cores > 0 ? ` (${m.text} of the cores)` : ""}${heavy}`;
   return several ? `${h.host}: l${s}` : `L${s}`;
 }
 
@@ -307,9 +326,11 @@ const duration = (sec: number) => {
 export function jobLines(h: HostLoad): { class: string; text: string; cost: string; learned: boolean }[] {
   return (h.jobs ?? []).map((j) => {
     const cores = cpuText(j.cores) + (j.demand >= j.cores + 0.05 ? `, would use ${one(j.demand)}` : "");
-    // Decision 0029 S3: the learned cost; under three runs a class still counts as at least 1.0.
+    // Decision 0029 S3, V0.163: the learned need, CPU and memory as percentages of this host; under three runs a class
+    // still counts as at least the prior.
     const n = j.learned ?? 0;
-    const cost = j.cost === undefined || !n ? "" : n >= 3 ? `cost ${one(j.cost)} · learned from ${n} runs` : `cost ${one(j.cost)} · ${n} of 3 runs to learn`;
+    const need = j.cpuPct !== undefined ? `≈ ${j.cpuPct} % CPU · ${j.memPct ?? 0} % memory of this host` : j.cost !== undefined ? `cost ${one(j.cost)}` : "";
+    const cost = !need || !n ? "" : n >= 3 ? `${need} · learned from ${n} runs` : `${need} · ${n} of 3 runs to learn`;
     return { class: j.class, text: `${j.runs} ${j.runs === 1 ? "run" : "runs"} · ${cores} · peak ${gb(j.peak)} GB · ${duration(j.wall)}`, cost, learned: n > 0 };
   });
 }

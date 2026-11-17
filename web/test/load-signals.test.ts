@@ -51,10 +51,10 @@ test("the tooltip names the slowdown, the memory and the provider", () => {
   assert.ok(!loadDetail({ ...host, slowdown: undefined }).some((l) => l.startsWith("Slowdown")));
 });
 
-test("a slot holder's row names its job and its memory; without a matched command its kind", () => {
-  assert.equal(threadSlot([host], "t_a"), "make test · 3.2 GB");
-  assert.equal(threadSlot([host], "t_b"), "e2e slot");
-  assert.equal(threadJob([host], "t_a"), "make test · 3.2 GB");
+test("a holder's row names its job (V0.163: its share without a host's percentages); without a matched command its kind", () => {
+  assert.equal(threadSlot([host], "t_a"), "make test");
+  assert.equal(threadSlot([host], "t_b"), "e2e job");
+  assert.equal(threadJob([host], "t_a"), "make test");
   assert.equal(threadJob([host], "t_b"), null);
   assert.equal(threadJob([{ ...host, slots: { n: 2, held: [], waiting: [] } }], "t_a"), null);
 });

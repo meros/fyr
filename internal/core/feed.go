@@ -300,7 +300,7 @@ type SlotMemoryArgs struct {
 	Grew uint64 `json:"grew"`
 }
 
-// SlotOverArgs is slot.over's (decision 0029 S3): the job's class, its cost
+// SlotOverArgs is slot.over's (decision 0029 S3; V0.163: in % of the host): the job's class, its cost
 // measured now and the cost Fyr predicted.
 type SlotOverArgs struct {
 	Class     string  `json:"class"`
@@ -336,7 +336,7 @@ func slotNotices(r Reduced) []Notice {
 		if class, ok := d["over"].(string); ok {
 			live, _ := d["live"].(float64)
 			pred, _ := d["predicted"].(float64)
-			out = append(out, Notice{About: "thread", Key: "slot.over", Urgency: Next, What: fmt.Sprintf("Your job (%s) uses %.1f of the slot budget; Fyr expected %.1f. Other heavy jobs wait until it ends; nothing is stopped. Fyr learns the new cost from this run.", class, live, pred)})
+			out = append(out, Notice{About: "thread", Key: "slot.over", Urgency: Next, What: fmt.Sprintf("Your job (%s) uses ≈ %.0f %% of this host; Fyr expected ≈ %.0f %%. Other heavy jobs wait until it ends; nothing is stopped. Fyr learns the new cost from this run.", class, live, pred)})
 			continue
 		}
 		if why, ok := d["memory"].(string); ok {
@@ -345,18 +345,14 @@ func slotNotices(r Reduced) []Notice {
 			continue
 		}
 		if m, ok := d["idle"].(int); ok {
-			out = append(out, Notice{About: "thread", Key: "slot.idle", Urgency: Next, What: fmt.Sprintf("You hold %s slot but no heavy job ran in it for %d min. If the job ended, call mcp__fyr__slot_release so another thread can run.", article(str(d["kind"])), m)})
+			out = append(out, Notice{About: "thread", Key: "slot.idle", Urgency: Next, What: fmt.Sprintf("Your admitted %s job ran nothing heavy for %d min. If it ended, call mcp__fyr__slot_release so its share of the host goes back to the others.", str(d["kind"]), m)})
 			continue
 		}
 		if d["granted"] != true {
 			continue
 		}
 		kind := str(d["kind"])
-		a := "A "
-		if strings.ContainsAny(kind[:min(1, len(kind))], "aeiou") {
-			a = "An "
-		}
-		out = append(out, Notice{About: "thread", Key: "slot", What: a + kind + " slot is yours now: run the job, then call slot_release."})
+		out = append(out, Notice{About: "thread", Key: "slot", What: "Your " + kind + " job is admitted now: run it, then call slot_release."})
 	}
 	return out
 }

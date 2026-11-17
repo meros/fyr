@@ -7,40 +7,15 @@ import (
 	"time"
 )
 
-func TestS3CostIsTheDominantShareOfTheHost(t *testing.T) {
-	const gb = 1 << 30
-	for _, c := range []struct {
-		name   string
-		demand float64
-		peak   uint64
-		runs   int
-		cpu    float64
-		mem    uint64
-		want   float64
-	}{
-		{"a 2-core job on 4 cores, N 2", 2, 1 * gb, 5, 4, 13 * gb, 1},
-		{"memory dominates", 0.5, 13 * gb, 5, 4, 13 * gb, 2},
-		{"a light job", 0.2, gb / 5, 5, 4, 13 * gb, 0.1},
-		{"the same job on a 16-core host is cheap", 2, 1 * gb, 5, 16, 52 * gb, 0.25},
-		{"under 3 runs never below the prior", 0.2, gb / 5, 2, 4, 13 * gb, 1},
-		{"under 3 runs, above the prior counts", 4, 1 * gb, 1, 4, 13 * gb, 2},
-		{"no capacity: the prior", 2, gb, 5, 0, 0, 1},
-	} {
-		if got := CostOf(c.demand, c.peak, c.runs, c.cpu, c.mem, 2); got != c.want {
-			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
-		}
-	}
-}
-
 func TestS3BackfillPassesTheHeadAtMostThreeTimesAndForTenMinutes(t *testing.T) {
 	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	p := New(2)
 	p.Now = func() time.Time { return now }
-	p.Admit = func(head Holder, held []Holder) (bool, string) {
+	p.Admit = func(head Holder, held []Holder) (bool, string, string) {
 		if len(held) == 0 {
-			return true, ""
+			return true, "", ""
 		}
-		return len(head.Owner) < 3 || head.Owner[:3] != "big", "1.0 of 2.0 in use; the next needs 1.5"
+		return len(head.Owner) < 3 || head.Owner[:3] != "big", "needs ≈ 75 % CPU, 50 % free", ResCPU
 	}
 	p.Backfill = func(head, c Holder, held []Holder) bool { return len(c.Owner) > 4 && c.Owner[:5] == "small" }
 	p.Acquire("a", Test)
@@ -77,20 +52,20 @@ func TestS3EASYPromise(t *testing.T) {
 	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	end := now.Add(5 * time.Minute)
 	for _, c := range []struct {
-		name string
-		cost float64
-		wall float64
-		ends []time.Time
-		ok   bool
+		name  string
+		cheap bool
+		wall  float64
+		ends  []time.Time
+		ok    bool
 	}{
-		{"cheap: always", 0.2, 0, nil, true},
-		{"ends before the earliest end", 1, 120, []time.Time{end, end.Add(time.Hour)}, true},
-		{"would end after it", 1, 600, []time.Time{end}, false},
-		{"no estimate of its own", 1, 0, []time.Time{end}, false},
-		{"a holder without an estimate", 1, 60, []time.Time{end, {}}, false},
-		{"nothing held", 1, 60, nil, false},
+		{"cheap: always", true, 0, nil, true},
+		{"ends before the earliest end", false, 120, []time.Time{end, end.Add(time.Hour)}, true},
+		{"would end after it", false, 600, []time.Time{end}, false},
+		{"no estimate of its own", false, 0, []time.Time{end}, false},
+		{"a holder without an estimate", false, 60, []time.Time{end, {}}, false},
+		{"nothing held", false, 60, nil, false},
 	} {
-		if got := EASY(now, c.cost, c.wall, c.ends); got != c.ok {
+		if got := EASY(now, c.cheap, c.wall, c.ends); got != c.ok {
 			t.Errorf("%s: got %v", c.name, got)
 		}
 	}

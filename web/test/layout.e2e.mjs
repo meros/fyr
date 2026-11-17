@@ -266,7 +266,7 @@ const SCREENS = [
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
   { name: "settings add provider (V0.119)", url: "?mock=rail&settings=providers/new", ready: "!!document.querySelector('.m-settings [role=radiogroup][aria-label=Kind]')" },
-  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] .sr').length === 3 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] button').length === 3", field: ".m-settings .fieldrow .inl input" },
+  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] .sr').length === 4 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] button').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings projects (V0.119)", url: "?mock=rail&settings=projects", ready: "document.querySelectorAll('.m-settings .pli').length > 3" },
   { name: "settings device (V0.119)", url: "?mock=rail&settings=device", ready: "!!document.querySelector('.m-settings [role=switch][aria-label=Notifications]')" },
   // V0.125: the Hosts page and a host's page with a changed id, at every phone size.
@@ -1852,7 +1852,7 @@ try {
 
 // SPEC 0.5 V0.80: the rail's load line sits above the quota inside the rail and covers no other rail item; a hot
 // working thread's row shows its CPU, coloured, inside its row. V0.99: the figure sits in a ring, the ring carries the
-// level, and the mock's 2 held slots and 1 waiter are 2 filled pips and "+1".
+// level; V0.163: the heavy jobs' use as a percentage bar ("95 %", "+1" while one waits), no pips.
 section('V0.80', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
@@ -1881,13 +1881,13 @@ try {
   // Decision 0029 S2, V0.152: a host that admits by a budget shows it as a bar (full, hot, "1 waits" under it) in place of
   // the pips.
   const why = await evaluate(`(() => { const w = document.querySelector('#sec-slots .sqwhy'), s = document.querySelector('.list')?.getBoundingClientRect(), b = w?.getBoundingClientRect(); return { text: w?.textContent ?? '', inside: !!b && !!s && b.left >= s.left - 0.5 && b.right <= s.right + 0.5 }; })()`);
-  check(why.text === "The next waits: 2.0 of 2.0 in use" && why.inside, `S2 desktop: the queue does not say why the next job waits (${JSON.stringify(why)})`);
-  check(r.pips === 0 && r.bar === "1 waits" && r.barHot && r.barFill === 100 && r.barIn, `S2 desktop: the rail's slot budget bar is wrong (${JSON.stringify(r)})`);
+  check(why.text === "The next waits: needs ≈ 30 % CPU, 5 % free" && why.inside, `S2 desktop: the queue does not say why the next job waits (${JSON.stringify(why)})`);
+  check(r.pips === 0 && r.bar === "95 %+1" && r.barHot && r.barFill === 95 && r.barIn, `V0.163 desktop: the rail's heavy-job bar is not a percentage (${JSON.stringify(r)})`);
   check(r.inside && r.hit === 0 && r.aboveQuota, `V0.80 desktop: the load line is outside the rail, covers an item or sits below the quota (${JSON.stringify(r)})`);
   check(r.cpu === "2.6 cores" && r.cpuHot && r.inRow, `V0.80 desktop: the hot thread's CPU is missing or outside its row (${JSON.stringify(r)})`);
   // Decision 0029 S1 (V0.142): the ring is hot from the 3.4× slowdown; the tooltip names it; a holder's row names its job, first on its line and not cut.
   check(/Slowdown 3\.4×/.test(r.tip) && /Signals: cgroups/.test(r.tip), `V0.142 desktop: the tooltip lacks the slowdown or the provider (${JSON.stringify(r)})`);
-  check(r.job === "yarn build · 3.0 GB" && r.jobIn, `V0.142 desktop: the holder's job is missing or outside its row (${JSON.stringify(r)})`);
+  check(r.job === "yarn build ≈ 45 %" && r.jobIn, `V0.142 desktop: the holder's job is missing or outside its row (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.80 desktop: ${e.message}`);
 }
@@ -1909,10 +1909,10 @@ section('V0.142', async (h) => {
       const a = row.getBoundingClientRect(), b = s.getBoundingClientRect();
       return { text: s.textContent, inside: b.top >= a.top - 0.5 && b.bottom <= a.bottom + 0.5 && b.right <= Math.min(a.right, s.closest('.ell').getBoundingClientRect().right) + 0.5, vw: innerWidth };
     })()`);
-    check(r.text === "yarn build · 3.0 GB" && r.inside, `V0.142 phone: the holder's job is missing or outside its row (${JSON.stringify(r)})`);
+    check(r.text === "yarn build ≈ 45 %" && r.inside, `V0.142 phone: the holder's job is missing or outside its row (${JSON.stringify(r)})`);
     // Decision 0029 S2: the phone's queue says why the next job waits too, inside the screen.
     const w = await evaluate(`(() => { const e = document.querySelector('#m-sec-slots .sqwhy'), b = e?.getBoundingClientRect(); return { text: e?.textContent ?? '', inside: !!b && b.left >= 0 && b.right <= innerWidth + 0.5 }; })()`);
-    check(w.text === "The next waits: 2.0 of 2.0 in use" && w.inside, `S2 phone: the queue does not say why the next job waits (${JSON.stringify(w)})`);
+    check(w.text === "The next waits: needs ≈ 30 % CPU, 5 % free" && w.inside, `S2 phone: the queue does not say why the next job waits (${JSON.stringify(w)})`);
   } catch (e) {
     failures.push(`V0.142 phone: ${e.message}`);
   }
@@ -2022,8 +2022,8 @@ section('V0.152', async (h) => {
       const [desk, lab] = r.cards;
       check(desk.fig === "130%" && /^\d+%$/.test(lab.fig), `${ctx}: a ring's figure is not a share of the cores (${JSON.stringify(r.cards)})`);
       check(desk.name === "desk" && lab.name === "lab" && desk.full === "desk" && lab.full === "lab", `${ctx}: the cards do not name their hosts (${JSON.stringify(r.cards)})`);
-      check(desk.meter && r.cards.every((c) => !c.meter || /^Slots for heavy jobs/.test(c.meterTip)), `${ctx}: a slot meter has no tooltip saying what it is (${JSON.stringify(r.cards)})`);
-      check(desk.note === "1 waits" && desk.noteHot && lab.note === "", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
+      check(desk.meter && r.cards.every((c) => !c.meter || /^Heavy jobs: /.test(c.meterTip)), `${ctx}: a slot meter has no tooltip saying what it is (${JSON.stringify(r.cards)})`);
+      check(desk.note === "95 %+1" && desk.noteHot && lab.note === "", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
       check(r.qs.map((q) => q.ini).join() === "C,W,C,Z" && r.cols === 2 && r.rows === 2, `${ctx}: the quota grid or its initials are wrong (${JSON.stringify(r.qs)})`);
       check(r.qs.every((q) => q.hot === (parseInt(q.v) >= 80)), `${ctx}: a quota is red below 80 % or plain above (${JSON.stringify(r.qs)})`);
       check(r.qs[2].tip.startsWith("Claude on lab") && r.qs[0].tip.startsWith("Claude on "), `${ctx}: a quota's tooltip does not name its provider and host (${JSON.stringify(r.qs)})`);
@@ -3374,7 +3374,7 @@ try {
     head: document.querySelector('#sec-slots .sec')?.textContent ?? '' })`);
   const wo = d.order.indexOf("sec-working"), so = d.order.indexOf("sec-slots"), se = d.order.indexOf("sec-seen");
   check(wo >= 0 && so === wo + 1 && se === so + 1, `V0.137 desktop: the section sits after Working (${JSON.stringify(d.order)})`);
-  check(JSON.stringify(d.rows) === JSON.stringify(["self-deploy #1", "t_search #2", "t_pw #3", "t_nix #4"]) && !d.inWorking && d.rail === "3" && d.head.startsWith("Waiting for a slot3"),
+  check(JSON.stringify(d.rows) === JSON.stringify(["self-deploy #1", "t_search #2", "t_pw #3", "t_nix #4"]) && !d.inWorking && d.rail === "3" && d.head.startsWith("Waiting to run3"),
     `V0.137 desktop: the rows, their places and the rail (${JSON.stringify(d)})`);
   check(!(await evaluate(`!!document.querySelector('#sec-slots .sqp .grip')`)), "V0.137 desktop: the deploy's place is movable");
   await evaluate(`document.querySelector('#sec-slots .one[data-id=t_nix] .sqn.grip').focus()`);
@@ -3731,9 +3731,19 @@ try {
   const [A, B, C] = ids.filter((x) => x !== first);
   const titleOf = (id) => evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}] .hd .t')?.textContent ?? null`);
   const titles = { [A]: await titleOf(A), [B]: await titleOf(B), [C]: await titleOf(C) };
+  // Real clicks, as the owner's: Chrome marks an entry pushed without user activation (a scripted el.click()) as
+  // skippable, and its own Back (the side buttons, Alt+Left) jumps over such entries; history.back() does not. With
+  // scripted clicks the press's own mousedown usually activated the page just in time, but not under load, and then
+  // Back had nothing to go to (the flake after #205: "the mouse's Back button from C does not show B").
+  const realClick = async (sel) => {
+    const p = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return [r.left + Math.min(r.width / 2, 40), r.top + r.height / 2]; })()`);
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: p[0], y: p[1] });
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x: p[0], y: p[1], button: "left", buttons: 1, clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: p[0], y: p[1], button: "left", buttons: 0, clickCount: 1 });
+  };
   const open = async (id) => {
     await evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}]').scrollIntoView({ block: 'center' })`);
-    await evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}]').click()`);
+    await realClick(`.ib .list [data-id=${JSON.stringify(id)}] .hd .t`);
     await waitFor(`${AT}.marked === ${JSON.stringify(id)}`, { soft: true });
     await settle();
   };
@@ -3741,10 +3751,15 @@ try {
   await open(A);
   await open(B);
   // B on a tab that is not its first, when it has one.
-  const bTab = await evaluate(`(() => { const t = [...document.querySelectorAll('.th [role=tab]')].find((x) => !x.classList.contains('on')); t?.click(); return t?.textContent ?? null; })()`);
+  const bTab = await evaluate(`(() => { const t = [...document.querySelectorAll('.th [role=tab]')].find((x) => !x.classList.contains('on')); if (t) t.dataset.pick = '1'; return t?.textContent ?? null; })()`);
+  if (bTab) {
+    await realClick(`.th [role=tab][data-pick]`);
+    await waitFor(`document.querySelector('.th [role=tab].on')?.textContent === ${JSON.stringify(bTab)}`, { soft: true });
+  }
   await settle();
   await open(C);
   const atC = await evaluate(AT);
+  check(await evaluate(`navigator.userActivation.hasBeenActive`), `V0.145 desktop: the page has no user activation, so Chrome's Back would skip its entries`);
   check(atC.n === n0 + 3 && atC.open === C, `V0.145 desktop: opening three threads does not add three entries (${JSON.stringify({ n0, atC })})`);
   await new Promise((r) => setTimeout(r, 1500));
   await settle();

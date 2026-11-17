@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.80: the machine load in the rail and each working thread's CPU, as words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpuText, loadDetail, railLoad, railMeter, railPips, railSlots, shortHostNames, threadCPU, threadSlot, type HostLoad } from "../src/load.ts";
+import { cpuText, loadDetail, railBudget, railLoad, railMeter, shortHostNames, threadCPU, threadSlot, type HostLoad } from "../src/load.ts";
 
 const busy: HostLoad = {
   host: "laptop",
@@ -45,10 +45,11 @@ test("a thread's CPU is in cores, hot from 2, and absent without a second read",
   assert.equal(cpuText(12.34), "12 cores");
 });
 
-// SPEC 0.5 V0.86: the slots for heavy jobs, on the rail and on a thread's row.
-test("the rail shows the slots in use, hot while anyone waits", () => {
+// SPEC 0.5 V0.86, V0.163: heavy jobs on the rail and on a thread's row; a host that counts jobs (no measures) shows
+// its share of the count in percent, not a count.
+test("a counted host's heavy jobs read as a share of the count, hot while anyone waits", () => {
   const h: HostLoad = { ...busy, slots: { n: 2, held: [{ owner: "t_busy", kind: "test" }], waiting: [] } };
-  assert.deepEqual(railSlots(h), { text: "1/2 slots", hot: false });
+  assert.deepEqual(railBudget(h), { text: "50 %", note: "", share: 0.5, hot: false, waiting: 0 });
   const full: HostLoad = {
     ...busy,
     slots: {
@@ -63,12 +64,12 @@ test("the rail shows the slots in use, hot while anyone waits", () => {
       ],
     },
   };
-  assert.deepEqual(railSlots(full), { text: "2/2 slots", hot: true });
-  assert.equal(railSlots({ ...busy, slots: undefined }), null);
-  assert.ok(loadDetail(full).includes("Slots: 2 of 2 in use, 2 waiting"));
-  assert.equal(threadSlot([full], "t_new"), "waiting for an e2e slot (1 ahead)");
-  assert.equal(threadSlot([full], "self-deploy"), "waiting for a test slot (0 ahead)");
-  assert.equal(threadSlot([full], "t_calm"), "build slot");
+  assert.deepEqual(railBudget(full), { text: "100 %", note: "2 wait", share: 1, hot: true, waiting: 2 });
+  assert.equal(railBudget({ ...busy, slots: undefined }), null);
+  assert.ok(loadDetail(full).includes("Heavy jobs: 100 % of this host's count in use (2 of 2 jobs; no load measures), 2 waiting"), loadDetail(full).join("\n"));
+  assert.equal(threadSlot([full], "t_new"), "waiting (1 ahead)");
+  assert.equal(threadSlot([full], "self-deploy"), "waiting (0 ahead)");
+  assert.equal(threadSlot([full], "t_calm"), "build job");
   assert.equal(threadSlot([full], "t_other"), null);
   assert.equal(threadSlot([], "t_new"), null);
 });
@@ -82,13 +83,6 @@ test("V0.99: the ring fills with the load over the cores; calm, warm from 70 %, 
   assert.deepEqual(railMeter(h(1, 45)), { text: "13%", share: 0.125, level: "hot" });
   assert.equal(railMeter({ ...h(1), cores: 0 }).share, 1);
   assert.equal(railMeter({ ...h(1), cores: 0 }).text, "1.0"); // no cores known: the load itself
-});
-
-test("V0.99: the pips count the slots, the holders and the waiters; none without slots", () => {
-  assert.equal(railPips(busy), null);
-  const slots = { n: 2, held: [{ owner: "t_busy", kind: "test" }, { owner: "t_calm", kind: "build" }], waiting: [{ owner: "t_new", kind: "test" }] };
-  assert.deepEqual(railPips({ ...busy, slots }), { n: 2, held: 2, waiting: 1 });
-  assert.deepEqual(railPips({ ...busy, slots: { n: 3, held: [], waiting: [] } }), { n: 3, held: 0, waiting: 0 });
 });
 
 test("V0.152: the rail names hosts by the part that differs, the full name when that is not enough", () => {

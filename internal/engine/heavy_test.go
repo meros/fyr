@@ -23,10 +23,10 @@ func TestH174HeavyCommandWithoutASlotIsRefused(t *testing.T) {
 		t.Fatalf("a quick command was refused: %q", r)
 	}
 	r := e.HeavyGate(a, "make test")
-	if !strings.Contains(r, "make test") || !strings.Contains(r, `mcp__fyr__slot_acquire {"kind":"test"}`) {
+	if !strings.Contains(r, "make test") || !strings.Contains(r, `mcp__fyr__slot_acquire {"kind":"test"`) {
 		t.Fatalf("no slot: %q", r)
 	}
-	if r := e.HeavyGate(a, "yarn screenshot:diff"); !strings.Contains(r, `{"kind":"e2e"}`) {
+	if r := e.HeavyGate(a, "yarn screenshot:diff"); !strings.Contains(r, `{"kind":"e2e"`) {
 		t.Fatalf("the kind follows the class: %q", r)
 	}
 	e.Slots.Acquire(a, slots.Test)
@@ -65,7 +65,7 @@ func TestH174AnIdleHeldSlotGetsOneReminder(t *testing.T) {
 	}
 	*now = start.Add(5*time.Minute + time.Second)
 	e.Tick()
-	if !told(e, a, "You hold a test slot but no heavy job ran in it for 5 min") {
+	if !told(e, a, "Your admitted test job ran nothing heavy for 5 min") {
 		th, _ := e.Thread(a)
 		t.Fatalf("no reminder: %+v", th.Feed.Queue)
 	}
