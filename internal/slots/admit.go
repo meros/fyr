@@ -69,7 +69,9 @@ func Decide(p Policy, s Signals, budget float64, held []float64, head float64) (
 	if s.Headroom != nil && *s.Headroom < p.MemoryReserve {
 		return false, fmt.Sprintf("memory: %.0f %% free", *s.Headroom*100)
 	}
-	if s.Stall != "" && s.Stall != StallOK {
+	// Only a critical stall holds: reclaiming page cache at memory.high
+	// alone keeps PSI full near 5 % (elevated) with plenty of memory free.
+	if s.Stall == StallCritical {
 		return false, fmt.Sprintf("memory stalls (%s)", s.Stall)
 	}
 	if len(held) == 0 {
