@@ -8,6 +8,7 @@ import { handoverTargets, parsePlan, planGuess, rungText, targetModel, type Hand
 import { shortModel } from "./format.ts";
 import { offLabel } from "./providers.ts";
 import { Modal } from "./dialogs.tsx";
+import { hostPath } from "./urls.ts";
 
 export interface HandoverProps {
   t: Thread;
@@ -19,7 +20,7 @@ export interface HandoverProps {
 
 async function fetchPlan(t: Thread, profile: string): Promise<HandoverPlan> {
   try {
-    const r = await fetch(`/api/threads/${encodeURIComponent(t.id)}/handover?profile=${encodeURIComponent(profile)}`, { headers: { Accept: "application/json" } });
+    const r = await fetch(hostPath(t.hostId ?? "", `/threads/${encodeURIComponent(t.id)}/handover?profile=${encodeURIComponent(profile)}`), { headers: { Accept: "application/json" } });
     if (r.ok) return parsePlan(await r.json()) ?? planGuess(t);
   } catch {
     /* the mock client and old hosts have no plan */

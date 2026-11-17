@@ -124,7 +124,7 @@ export function LiveViewPanel({ t, now, onPress, onAction, full }: { t: Thread; 
           <iframe
             ref={frame}
             class="lv-f"
-            src={api.previewUrl(v.pageId, t.host)}
+            src={api.previewUrl(t.hostId ?? "", v.pageId)}
             sandbox="allow-scripts"
             allow={FRAME_ALLOW}
             allowFullScreen

@@ -42,7 +42,7 @@ export function PrView(p: PrViewProps) {
   const fetchDetail = (fresh: boolean) => {
     const g = ++gen.current;
     setBusy(true);
-    source.prDetail(t.id, fresh).then((r) => {
+    source.prDetail(t.hostId ?? "", t.id, fresh).then((r) => {
       if (g !== gen.current) return;
       setBusy(false);
       if ("error" in r) {
@@ -78,7 +78,7 @@ export function PrView(p: PrViewProps) {
   };
 
   const run = async (action: string, args: Record<string, unknown>, sent: string) => {
-    const r = await source.command(action, t.id, args);
+    const r = await source.command(t.hostId ?? "", action, t.id, args);
     setNote(r.ok ? { text: sent } : { text: r.error ?? "Failed", fail: true });
     if (r.ok) refreshSoon(4000);
     return r.ok;

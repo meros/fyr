@@ -121,7 +121,7 @@ func (f *Front) publishHostsLocked() {
 	}
 	b, err := json.Marshal(map[string]any{"hosts": hs})
 	if err == nil {
-		f.hub.Publish("hosts", b)
+		f.publishFront("hosts", b)
 	}
 }
 

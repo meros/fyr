@@ -4,15 +4,17 @@
 
 import { useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
-import { withHost } from "./host-settings.ts";
+import { hostIdByName } from "./hosts.ts";
+import { useHosts } from "./host-pick-ui.tsx";
 import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { findLeftovers, stripText } from "./leftovers.ts";
 
 /** A host command on a leftover (End, Keep, Remove), then a fresh read of the load; the error text or null. */
 export function useLeftoverCommand(): (host: string, action: string, args: Record<string, unknown>) => Promise<string | null> {
   const api = useApi();
+  const { hosts } = useHosts();
   return async (host, action, args) => {
-    const r = await api.command(action, undefined, withHost(args, host));
+    const r = await api.command(hostIdByName(hosts, host), action, undefined, args);
     refreshLoad();
     return r.ok ? null : (r.error ?? "That did not work");
   };

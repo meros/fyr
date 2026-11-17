@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { useFolderPick } from "./folder-picker.tsx";
-import { hostOfflineNote } from "./hosts.ts";
+import { hostIdByName, hostOfflineNote } from "./hosts.ts";
 import {
   changeOptions,
   chooseHost,
@@ -78,7 +78,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const making = makingProject(f);
   const profiles = formProfiles(f, ctx);
   // V0.54: the files upload to the host the thread starts on.
-  const att = useAttachments(formHost(f, ctx));
+  const att = useAttachments(hostIdByName(o.hosts, formHost(f, ctx)));
   const folder = formFolder(f, ctx);
   const prof = profiles.find((x) => x.id === f.profile);
   const effort = startEffort(prof, f.model, f.effortPick);
@@ -126,7 +126,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     chip: projectChip(cur, making),
     folder,
     /** V0.79: whose `/` commands the prompt lists: the newest of this provider and folder; none for a new scratch folder */
-    commandSource: folder.cwd && f.profile ? { cwd: folder.cwd, profile: f.profile, host: formHost(f, ctx) } : null,
+    commandSource: folder.cwd && f.profile ? { cwd: folder.cwd, profile: f.profile, host: hostIdByName(o.hosts, formHost(f, ctx)) } : null,
     /** the profiles of the host the thread starts on */
     profiles,
     prof,

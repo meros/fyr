@@ -8,7 +8,9 @@ import type { HostInfo } from "./hosts.ts";
 import type { AutoMergeRepo } from "./automerge.ts";
 
 export interface SettingsHost {
-  /** the host's name for ?host= and args.host; "" for the one part of a front with one host */
+  /** the host's install id, which every call names (decision 0031); "" for a host that reports none */
+  id: string;
+  /** the host's name, the key of its part; "" for the one part of a front with one host */
   name: string;
   /** the name shown */
   label: string;
@@ -21,10 +23,10 @@ export interface SettingsHost {
 
 /** The parts of a per-host page: one without a host name when the front has one host or none, else one per host, in
  *  the owner's host order (V0.132; the front sends hosts[] in it). */
-export function settingsHosts(hosts: Pick<HostInfo, "name" | "online" | "since">[] | undefined, self: string): SettingsHost[] {
+export function settingsHosts(hosts: Pick<HostInfo, "id" | "name" | "online" | "since">[] | undefined, self: string): SettingsHost[] {
   const hs = hosts ?? [];
-  if (hs.length <= 1) return [{ name: "", label: hs[0]?.name || self, self: true, online: true }];
-  return hs.map((h) => ({ name: h.name, label: h.name, self: h.name === self, online: h.online, ...(h.since ? { since: h.since } : {}) }));
+  if (hs.length <= 1) return [{ id: hs[0]?.id ?? "", name: "", label: hs[0]?.name || self, self: true, online: true }];
+  return hs.map((h) => ({ id: h.id ?? "", name: h.name, label: h.name, self: h.name === self, online: h.online, ...(h.since ? { since: h.since } : {}) }));
 }
 
 /** The line under a group's heading: "This install", "Online since 08:31", "Offline since 19:40". */
@@ -40,16 +42,6 @@ export function readOnlyNote(h: SettingsHost, readAt: string | null, now: number
   if (h.online) return "";
   if (!readAt) return `${h.label} is offline, and Fyr has not read its settings yet. They show when it is back.`;
   return `${h.label} is offline. These are its settings as Fyr last read them at ${dayTime(readAt, now)}; nothing here can be changed until it is back.`;
-}
-
-/** A per-host read's path: ?host= names the host; the one part of a one-host front names none. */
-export function settingsPath(path: string, host: string): string {
-  return host ? `${path}?host=${encodeURIComponent(host)}` : path;
-}
-
-/** A per-host command's args: args.host names the host the front sends it to. */
-export function withHost(args: Record<string, unknown>, host: string): Record<string, unknown> {
-  return host ? { ...args, host } : args;
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;

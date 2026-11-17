@@ -69,7 +69,7 @@ export function ChangesBoard(p: BoardProps) {
     setMerging(true);
     setMergeErrs({});
     try {
-      setMergeErrs(await mergeAllGreen(list, (m) => api.command("action.run", m.thread, m.args)));
+      setMergeErrs(await mergeAllGreen(list, (m) => api.command(m.host, "action.run", m.thread, m.args)));
     } finally {
       setMerging(false);
     }

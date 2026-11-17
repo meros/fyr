@@ -38,7 +38,7 @@ export function useAttachments(host?: string) {
       const ac = new AbortController();
       aborts.current.set(nf.key, ac);
       const named = file.name ? file : new File([file], nf.name, { type: file.type });
-      void api.uploadAttachment(named, (l, t) => setChips((c) => chipProgress(c, nf.key, l, t)), ac.signal, hostRef.current).then((r) => {
+      void api.uploadAttachment(hostRef.current ?? "", named, (l, t) => setChips((c) => chipProgress(c, nf.key, l, t)), ac.signal).then((r) => {
         aborts.current.delete(nf.key);
         if (ac.signal.aborted) return;
         setChips((c) => (r.ok ? chipDone(c, nf.key, r.reply) : chipError(c, nf.key, r.status, r.error)));
@@ -175,16 +175,16 @@ export interface SentAttachment {
 export function SentAttachments({ items, host }: { items: SentAttachment[]; host?: string }) {
   const { attachmentUrl } = useApi();
   if (!items.length) return null;
-  const images: ViewerImage[] = items.filter((a) => isImage(a.mediaType)).map((a) => ({ key: a.id, src: attachmentUrl(a.id, host), title: a.name }));
+  const images: ViewerImage[] = items.filter((a) => isImage(a.mediaType)).map((a) => ({ key: a.id, src: attachmentUrl(host ?? "", a.id), title: a.name }));
   return (
     <div class="att-sent">
       {items.map((a) =>
         isImage(a.mediaType) ? (
           <button class="att-img" onClick={() => openImages(images, images.findIndex((x) => x.key === a.id))} aria-label={`Open ${a.name}`}>
-            <img src={attachmentUrl(a.id, host)} alt={a.name} loading="lazy" decoding="async" />
+            <img src={attachmentUrl(host ?? "", a.id)} alt={a.name} loading="lazy" decoding="async" />
           </button>
         ) : (
-          <a class="att-file" href={attachmentUrl(a.id, host)} target="_blank" rel="noopener noreferrer" title={a.name}>
+          <a class="att-file" href={attachmentUrl(host ?? "", a.id)} target="_blank" rel="noopener noreferrer" title={a.name}>
             <span class="att-th lab">{fileLabel(a.mediaType, a.name)}</span>
             <span class="att-tx">
               <span class="att-n">{a.name}</span>

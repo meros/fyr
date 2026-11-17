@@ -279,6 +279,13 @@ func (f *Front) publishFrameLocked(l *link, ev string, data []byte) {
 	}
 }
 
+// publishFront sends one of the front's own frames (hosts, projectOrder,
+// hostMarks) on both streams.
+func (f *Front) publishFront(ev string, data []byte) {
+	f.hub.Publish(ev, data)
+	f.hub2.Publish(ev, data)
+}
+
 func (f *Front) publishFrame(l *link, ev string, data []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -299,6 +306,9 @@ func (f *Front) frontState(w http.ResponseWriter, r *http.Request) {
 	}
 	out := map[string]any{"now": time.Now().UTC(), "user": core.Owner, "buildId": f.client.Load().build,
 		"front": map[string]any{"id": f.opt.ID, "name": f.opt.Name}, "hosts": hosts, "projectOrder": order}
+	if ms := f.newestMarksLocked().Marks; len(ms) > 0 { // V0.171: by host install id
+		out["hostMarks"] = ms
+	}
 	b, err := json.Marshal(out)
 	f.mu.Unlock()
 	if err != nil {

@@ -165,6 +165,8 @@ export function boardProjects(threads: Record<string, Thread>, projects: Project
 
 /** V0.97: one merge of Merge all green: the press of a change's Merge, bound to the head the board showed. */
 export interface GreenMerge {
+  /** the install id of the thread's host */
+  host: string;
   thread: string;
   change: string;
   pr: string;
@@ -185,7 +187,7 @@ export function greenMerges(items: BoardItem[]): GreenMerge[] {
     const k = prKey(c.pr.url);
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ thread: t.id, change: c.id, pr: c.pr.url, args: { on: c.id, action: offer.id, digest: offer.digest, head } });
+    out.push({ host: t.hostId ?? "", thread: t.id, change: c.id, pr: c.pr.url, args: { on: c.id, action: offer.id, digest: offer.digest, head } });
   }
   return out;
 }

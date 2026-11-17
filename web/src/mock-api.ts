@@ -10,6 +10,7 @@ import { decodeHosts } from "./hosts.ts";
 import type { AuthState } from "./devices.ts";
 import type { PeerState } from "./peers.ts";
 import type { HostLoad } from "./load.ts";
+import type { ThreadDTO, Project } from "./types.ts";
 
 const MOCK_IMAGE =
   "data:image/svg+xml," +
@@ -41,7 +42,7 @@ export function createMockApi(scenario: string): Api {
   // every change. A host the front does not follow is refused.
   type MockHost = { providers: ReturnType<typeof createMockProviders>; deployOn: boolean; repos: { repo: string; on: boolean }[] };
   const providers = createMockProviders(providersMode, hostNow);
-  const log: { action: string; threadId?: string; args: Record<string, unknown> }[] = [];
+  const log: { host?: string; action: string; threadId?: string; args: Record<string, unknown> }[] = [];
   (globalThis as { __fyrCommands?: typeof log }).__fyrCommands = log;
   // V0.111, V0.102: the owner's automation settings, in memory.
   const desk: MockHost = { providers, deployOn: true, repos: [{ repo: "meros/fyr", on: false }, { repo: "acme/web", on: true }] };
@@ -80,6 +81,24 @@ export function createMockApi(scenario: string): Api {
     if ("error" in r) throw new Error(r.error);
     return r.readAt ? { data: f(r.h), readAt: r.readAt } : { data: f(r.h) };
   };
+  // Decision 0031: a call names its host by install id. The fixtures name hosts; these two map between them. A front
+  // without a host list is one host (desk), reached by any id; a host with no id (old-nuc) is stamped "".
+  // The ids do not change (the order does), so they are read once: stamping runs for every thread of every frame.
+  const startHosts = mockHostList();
+  const selfId = server.state().hostId ?? "";
+  const idOfName = (name: string | undefined): string => {
+    if (!startHosts.length) return selfId;
+    return startHosts.find((h) => h.name === (name || startHosts[0].name))?.id ?? "";
+  };
+  const nameOf = (id: string): string => {
+    const hs = mockHostList();
+    if (!hs.length) return "";
+    // A host with no install id (older than V0.124) cannot be addressed (decision 0031): there is no name to fall back to.
+    return hs.find((h) => h.id === id)?.name ?? "\u0000" + id;
+  };
+  const stampT = (t: ThreadDTO): ThreadDTO => ({ ...t, hostId: idOfName(t.host) });
+  const stampP = (p: Project): Project => ({ ...p, hostId: idOfName(p.host) });
+  const stampState = (st: ReturnType<typeof server.state>) => ({ ...st, threads: st.threads.map(stampT), projects: st.projects.map(stampP) });
   let watch = initialBuildWatch();
   // V0.121: the owner's project order, the front's own (&order=p_fyr,p_web sets one; none: by name).
   let order: string[] | null = q.get("order")?.split(",").filter(Boolean) ?? null;
@@ -99,12 +118,12 @@ export function createMockApi(scenario: string): Api {
     start(h) {
       h.conn("connecting");
       watch = observeBuildId(watch, server.buildId).watch;
-      server.subscribe({ thread: h.thread, event: h.event, project: (p) => h.project?.(p) });
+      server.subscribe({ thread: (t) => h.thread(stampT(t)), event: h.event, project: (p) => h.project?.(stampP(p)) });
       onOrder = h.projectOrder;
       onHosts = h.hosts;
       onMarks = h.hostMarks;
       setTimeout(() => {
-        h.state({ ...server.state(), ...(order ? { projectOrder: order } : {}), ...(Object.keys(marks).length ? { hostMarks: marks } : {}) });
+        h.state({ ...stampState(server.state()), ...(order ? { projectOrder: order } : {}), ...(Object.keys(marks).length ? { hostMarks: marks } : {}) });
         h.conn(offline ? "offline" : "live");
       }, 0);
       // V0.38 perf guard (mock only): a burst of n thread updates and n messages for one thread,
@@ -120,17 +139,20 @@ export function createMockApi(scenario: string): Api {
         }
       };
     },
-    async command(action, threadId, args) {
-      log.push({ action, threadId, args: JSON.parse(JSON.stringify(args ?? {})) });
+    frontCommand(action, args) {
+      return this.command("", action, undefined, args);
+    },
+    async command(host, action, threadId, args) {
+      log.push({ host, action, threadId, args: JSON.parse(JSON.stringify(args ?? {})) });
       if (offline) return { ok: false, error: "no connection to the host" };
+      const hn = nameOf(host);
       if (action.startsWith("provider.") || action === "host.autoDeploy" || action === "host.updateNow" || action === "host.autoMerge" || action === "host.systemAgents") {
-        const at = hostFor(args?.host as string | undefined);
+        const at = hostFor(hn);
         if ("error" in at) return { ok: false, error: at.error };
-        if (at.readAt) return { ok: false, error: `${String(args?.host)} is offline; its settings cannot be changed until it is back` };
+        if (at.readAt) return { ok: false, error: `${hn} is offline; its settings cannot be changed until it is back` };
         const h = at.h;
         if (action.startsWith("provider.")) {
-          const { host: _, ...rest } = args ?? {};
-          return h.providers.command(action, rest);
+          return h.providers.command(action, args ?? {});
         }
         if (action === "host.autoDeploy") return (h.deployOn = !!args?.on), { ok: true };
         if (action === "host.updateNow") return { ok: true };
@@ -143,7 +165,7 @@ export function createMockApi(scenario: string): Api {
         return { ok: true };
       }
       if (action === "front.hostId") {
-        if (args?.host !== "lab") return { ok: false, error: `${String(args?.host)} has reported no id yet` };
+        if (args?.host !== mockHosts(Date.now()).find((x) => x.name === "lab")?.id) return { ok: false, error: `${String(args?.host)} has reported no id yet` };
         trustMockLab();
         setTimeout(() => onHosts?.(decodeHosts(mockHosts(Date.now()))), 0); // the front's hosts event (V0.124)
         return { ok: true, result: { host: "lab" } };
@@ -162,14 +184,14 @@ export function createMockApi(scenario: string): Api {
         return { ok: true, result: { id } };
       }
       if (action === "front.hostOrder") {
-        const names = Array.isArray(args?.names) ? (args.names as unknown[]).filter((x): x is string => typeof x === "string") : [];
+        const names = (Array.isArray(args?.ids) ? (args.ids as unknown[]).filter((x): x is string => typeof x === "string") : []).map(nameOf);
         setMockHostOrder(names);
         setTimeout(() => onHosts?.(decodeHosts(mockHosts(Date.now()))), 0); // the front's hosts event, on every device
         return { ok: true, result: { names } };
       }
       if (action === "host.slotOrder") {
         // V0.137: as the host's pool does it: priority waits first, then the listed ones, then the rest.
-        const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
+        const h = load.find((x) => x.host === (hn || load[0]?.host));
         if (!h?.slots) return { ok: false, error: "This host has no slots for heavy jobs" };
         const owners = Array.isArray(args?.owners) ? (args.owners as unknown[]).filter((x): x is string => typeof x === "string") : [];
         const pri = h.slots.waiting.filter((w) => w.priority);
@@ -184,7 +206,7 @@ export function createMockApi(scenario: string): Api {
       }
       if (action === "host.jobReset") {
         // Decision 0029 S3: as the host does it: the class's learned cost is forgotten.
-        const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
+        const h = load.find((x) => x.host === (hn || load[0]?.host));
         const j = h?.jobs?.find((x) => x.class === args?.class && x.learned);
         if (!h || !j) return { ok: false, error: `No learned job class ${String(args?.class ?? "")}` };
         h.jobs = h.jobs!.map((x) => (x === j ? { ...x, cost: undefined, learned: undefined } : x));
@@ -192,15 +214,15 @@ export function createMockApi(scenario: string): Api {
       }
       // V0.164: the owner's commands on undeclared heavy work, as the host answers them (and updates its load).
       if (action === "host.undeclaredDismiss" || action === "host.heavySuggestion" || action === "host.heavyRemove" || action === "host.undeclaredSettings") {
-        const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
-        if (!h) return { ok: false, error: `this front follows no host ${String(args?.host)}` };
-        return mockUndeclaredCommand(h, action, args ?? {}, Date.now());
+        const h = load.find((x) => x.host === (hn || load[0]?.host));
+        if (!h) return { ok: false, error: `this front follows no host ${hn}` };
+        return mockUndeclaredCommand(h, action, { ...(args ?? {}), host: h.host }, Date.now());
       }
       // V0.176: the owner's End, Keep and Remove of leftovers, as the host answers them.
       if (action === "host.leftoverEnd" || action === "host.leftoverKeep" || action === "host.tempRemove") {
-        const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
-        if (!h) return { ok: false, error: `this front follows no host ${String(args?.host)}` };
-        return mockLeftoverCommand(h, action, args ?? {}, Date.now());
+        const h = load.find((x) => x.host === (hn || load[0]?.host));
+        if (!h) return { ok: false, error: `this front follows no host ${hn}` };
+        return mockLeftoverCommand(h, action, { ...(args ?? {}), host: h.host }, Date.now());
       }
       if (action === "front.projectOrder") {
         order = Array.isArray(args?.ids) ? (args.ids as unknown[]).filter((x): x is string => typeof x === "string") : [];
@@ -208,22 +230,24 @@ export function createMockApi(scenario: string): Api {
         setTimeout(() => onOrder?.(ids), 0); // the front's event, as on every device
         return { ok: true, result: { ids } };
       }
-      return server.command(newCommandId(), action, threadId, args ?? {});
+      if (hn.startsWith("\u0000")) return { ok: false, error: `this front follows no host ${host}` };
+      // The fixture server places a new thread or project by name (a front without hosts: desk).
+      return server.command(newCommandId(), action, threadId, mockHostList().length && hn && !threadId ? { ...(args ?? {}), host: hn } : (args ?? {}));
     },
     async providers(host) {
-      return read(host, (h) => {
+      return read(nameOf(host), (h) => {
         if (providersMode === "fail" && h === desk) throw new Error("desk did not answer in 10 s");
         return h.providers.list();
       });
     },
     async providersFound(host) {
-      return read(host, (h) => h.providers.found());
+      return read(nameOf(host), (h) => h.providers.found());
     },
     async autoMerge(host) {
-      return read(host, (h) => h.repos.map((r) => ({ ...r })));
+      return read(nameOf(host), (h) => h.repos.map((r) => ({ ...r })));
     },
     async autoDeploy(host) {
-      return read(host, (h) => ({ on: h.deployOn }));
+      return read(nameOf(host), (h) => ({ on: h.deployOn }));
     },
     // V0.157: Settings → Devices: this device, a phone that got in through Tailscale, a tablet added by a link and one
     // that waits with a code.
@@ -262,7 +286,7 @@ export function createMockApi(scenario: string): Api {
     // null for the list, as an older fyrd on a NixOS host did (the owner's Settings could not close, 17 Nov).
     async updates(host) {
       const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
-      return read(host, (h) =>
+      return read(nameOf(host), (h) =>
         h === desk
           ? {
               live: "c705ef536566",
@@ -276,7 +300,7 @@ export function createMockApi(scenario: string): Api {
       );
     },
     async systemAgents(host) {
-      return read(host, (h) => {
+      return read(nameOf(host), (h) => {
         const ps = h.providers.list();
         if (h === desk)
           return {
@@ -306,7 +330,7 @@ export function createMockApi(scenario: string): Api {
     async profiles() {
       return server.state().profiles;
     },
-    async events(threadId, after = 0, limit = 400) {
+    async events(_host, threadId, after = 0, limit = 400) {
       return server.events(threadId, after, limit);
     },
     async thread() {
@@ -315,12 +339,12 @@ export function createMockApi(scenario: string): Api {
     async fullEvent() {
       return null; // the mock never cuts
     },
-    async eventsBefore(threadId, before, limit = 400) {
+    async eventsBefore(_host, threadId, before, limit = 400) {
       const all = server.events(threadId, 0, 1_000_000).filter((e) => e.seq < before);
       return all.slice(Math.max(0, all.length - limit));
     },
     async t3Candidates(host) {
-      const r = hostFor(host); // V0.139: only desk has T3 in the mock
+      const r = hostFor(nameOf(host)); // V0.139: only desk has T3 in the mock
       if ("error" in r) throw new Error(r.error);
       return r.h === desk ? server.t3Candidates() : [];
     },
@@ -336,13 +360,13 @@ export function createMockApi(scenario: string): Api {
     async pushTest() {
       return server.pushTest();
     },
-    async presence() {
+    async presence(_host, _threadId, _device) {
       /* the mock has no push */
     },
     async pushStatus(endpoint) {
       return server.pushSubscriptions().some((s) => s.endpoint === endpoint);
     },
-    uploadAttachment(file, onProgress, signal) {
+    uploadAttachment(_host, file, onProgress, signal) {
       // An in-memory store; progress in four steps so the chip shows it.
       return new Promise<UploadResult>((resolve) => {
         if (file.size > 25 * 1024 * 1024) return resolve({ ok: false, status: 413 });
@@ -359,7 +383,7 @@ export function createMockApi(scenario: string): Api {
         setTimeout(tick, 120);
       });
     },
-    previewUrl(id) {
+    previewUrl(_host, id) {
       return MOCK_PREVIEWS[id] ?? "data:text/html,<p>mock preview</p>";
     },
     async quota() {
@@ -384,41 +408,41 @@ export function createMockApi(scenario: string): Api {
     async commands() {
       return MOCK_COMMANDS;
     },
-    async changes(threadId) {
+    async changes(_host, threadId) {
       return mockChanges(threadId);
     },
-    async filePatch(_threadId, path) {
+    async filePatch(_host, _threadId, path) {
       return mockFilePatch(path);
     },
     // V0.132: each host's own folders; desk's are the fixture tree, another host has a small one of its own, and an
     // offline host's cannot be read.
-    async fsList(path, host) {
-      const f = fsOf(host);
+    async fsList(host, path) {
+      const f = fsOf(nameOf(host));
       return f ? f.list(path) : server.fsList(path);
     },
     async fsRecent(host) {
-      const f = fsOf(host);
+      const f = fsOf(nameOf(host));
       return f ? [] : server.fsRecent();
     },
     async fsRepos(host) {
-      const f = fsOf(host);
+      const f = fsOf(nameOf(host));
       return f ? f.repos() : server.fsRepos();
     },
-    async fsMkdir(parent, name, host) {
-      const f = fsOf(host);
+    async fsMkdir(host, parent, name) {
+      const f = fsOf(nameOf(host));
       return f ? f.mkdir(parent, name) : server.fsMkdir(parent, name);
     },
-    async prDetail(threadId) {
+    async prDetail(_host, threadId) {
       await new Promise((r) => setTimeout(r, 120));
       return server.prDetail(threadId);
     },
-    async uploadProjectIcon(projectId, file) {
+    async uploadProjectIcon(_host, projectId, file) {
       // V0.116: the mock keeps no bytes; the project gets a new version (the layout test serves fixture icons).
       if (file.size > 2 * 1024 * 1024) return { ok: false, error: "the picture is over 2 MB" };
       const r = server.command(`icon-${Date.now()}`, "project.update", undefined, { id: projectId, image: `m${Date.now().toString(36)}` });
       return { ok: r.ok, error: r.error };
     },
-    attachmentUrl(id) {
+    attachmentUrl(_host, id) {
       if (MOCK_SHOTS[id]) return MOCK_SHOTS[id];
       // Fixture attachments have no bytes; images get a drawn placeholder.
       return mockFiles.get(id) ?? (id === "fx_img" ? MOCK_IMAGE : "data:text/plain,mock%20attachment%20" + encodeURIComponent(id));
