@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.134: the inbox filters (host and project) show only active values; a selected value stays.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activeFilters, applyFilters, filterEmpty, inView, threadHost } from "../src/filters.ts";
+import { activeFilters, applyFilters, clearFor, filterEmpty, inView, threadHost } from "../src/filters.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Project, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
@@ -106,4 +106,17 @@ test("the empty state: a filter is on and nothing it lets through is in view", (
   assert.equal(filterEmpty(threads, { host: "lab", project: null }, {}), "2 more in folded sections.");
   assert.equal(filterEmpty({}, { host: "lab", project: null }, {}), "");
   assert.equal(filterEmpty(threads, { host: "lab", project: null }, { settled: true }), null, "a thread in view: no empty state");
+});
+
+// SPEC 0.5 V0.138: an open thread the filters hide clears the filters it fails, and only those.
+test("clearFor: the filters the open thread fails, and only those", () => {
+  const onLab = T("a", "needs", "p_web", "lab");
+  assert.equal(clearFor(onLab, { host: null, project: null }, projects, "desk"), null, "no filter: nothing to clear");
+  assert.equal(clearFor(onLab, { host: "lab", project: "p_web" }, projects, "desk"), null, "it passes both");
+  assert.deepEqual(clearFor(onLab, { host: "desk", project: "p_web" }, projects, "desk"), { host: null, project: "p_web" }, "only the host");
+  assert.deepEqual(clearFor(onLab, { host: "lab", project: "p_fyr" }, projects, "desk"), { host: "lab", project: null }, "only the project");
+  assert.deepEqual(clearFor(onLab, { host: "desk", project: "p_fyr" }, projects, "desk"), { host: null, project: null }, "both");
+  assert.equal(clearFor(onLab, { host: "lab", project: "p_gone" }, projects, "desk"), null, "a project that no longer exists filters nothing, so it is not cleared");
+  assert.deepEqual(clearFor(thread("n", "done", "needs"), { host: "lab", project: null }, projects, "desk"), { host: null, project: null }, "no host named: the front's own host");
+  assert.deepEqual(clearFor(thread("n", "done", "needs", { project: "", projectId: undefined }), { host: null, project: "p_web" }, projects, "desk"), { host: null, project: null }, "No project fails a project filter");
 });

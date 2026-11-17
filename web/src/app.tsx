@@ -58,7 +58,7 @@ import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, moveToast, orderProjects } from "./projects.ts";
-import { HOST_FILTER_KEY, activeFilters, applyFilters, filterEmpty, type FilterSel } from "./filters.ts";
+import { HOST_FILTER_KEY, activeFilters, applyFilters, clearFor, filterEmpty, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
@@ -349,6 +349,23 @@ function App() {
   gatedRef.current = gate.gated;
   admittedRef.current = gate.admitted;
   const gatedThread = gate.gated && wantId ? store.threads[wantId] : undefined;
+  // V0.138: a thread that opens (any path: a link, a notice, ?open=, back and forward, a board card, a new thread)
+  // clears the filters it fails, so its row is in the list and marked (V0.109). Once per opening, after the V0.114
+  // gate admits it: picking a filter while a thread is open does not clear it again. No hint; the chips change.
+  const clearedForRef = useRef<string | null>(null);
+  const admittedThread = gate.admitted ? store.threads[gate.admitted] : undefined;
+  useEffect(() => {
+    if (!admittedThread) {
+      if (!gate.admitted) clearedForRef.current = null;
+      return;
+    }
+    if (clearedForRef.current === admittedThread.id) return;
+    clearedForRef.current = admittedThread.id;
+    const next = clearFor(admittedThread, filterSel, store.projects, store.host ?? "");
+    if (!next) return;
+    if (next.host !== filterSel.host) setHostFilter(next.host);
+    if (next.project !== filterSel.project) setProjectFilter(next.project);
+  }, [gate.admitted, !!admittedThread]);
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;
 
   // ---- connection ----
@@ -788,7 +805,8 @@ function App() {
   };
 
   // V0.109: the open thread's row is drawn: a closed section opens, a cut one shows all, also when the row moves
-  // to another section while it is open. A row that search or the filter hides stays hidden, and no row is marked.
+  // to another section while it is open. A row that search hides stays hidden, and no row is marked; one the filters
+  // hide clears them first (V0.138).
   const openSection = view && store.threads[view.id] ? sectionOf(store.threads[view.id]) : null;
   useEffect(() => {
     const r = revealRow(sec, view?.id ?? null, limits, SECTION_LIMIT);
@@ -796,7 +814,7 @@ function App() {
     if (r.section === "settled" && !isOpen("settled", sectionOpen)) setSettledDeadline(Date.now() + AUTO_HIDE_MS); // closes 30 s after the owner leaves it (V0.48)
     setSectionOpen((o) => ({ ...o, [r.section]: true }));
     if (r.expand) setExpanded((x) => ({ ...x, [r.section]: true }));
-  }, [view?.id, openSection]);
+  }, [view?.id, openSection, !!(view && shown[view.id])]); // V0.138: again once a cleared filter lets the row in
 
   // Keep the marked row visible: when it changes, moves to another section or the pinned block, or is drawn again.
   const selPlace = sel && shown[sel] ? `${sectionOf(shown[sel])}:${isPinned(shown[sel])}:${order.includes(sel)}` : "";
