@@ -133,7 +133,8 @@ export function projectSubtitle(p: Project): string {
 export function orderProjects(projects: readonly Project[], order: readonly string[] | null | undefined): Project[] {
   if (!order) return [...projects].sort((a, b) => a.name.localeCompare(b.name));
   const at = new Map(order.map((id, i) => [id, i]));
-  const pos = (p: Project) => (p.id ? at.get(p.id) : undefined);
+  // The order names projects by ref (decision 0031); one saved before that names the host's own id: it still places it.
+  const pos = (p: Project) => (p.id ? (at.get(p.id) ?? (p.rid ? at.get(p.rid) : undefined)) : undefined);
   return [...projects].sort((a, b) => {
     const ia = pos(a);
     const ib = pos(b);
