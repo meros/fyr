@@ -158,19 +158,38 @@ func TestLauncherIgnoresAnotherProcesssReadyFile(t *testing.T) {
 	l := launcher(data)
 	l.ReadyTimeout = time.Second
 	l.maxStarts = 3
-	// While b starts and never gets ready, another process writes ready.
+	// While b starts and never gets ready, another process writes ready. The
+	// writer stops once Run has returned and the test waits for it, so no
+	// ready file lands in the temp dir while it is removed.
+	done, writer := make(chan struct{}), make(chan struct{})
 	go func() {
+		defer close(writer)
+		wait := func(d time.Duration) bool {
+			select {
+			case <-done:
+				return false
+			case <-time.After(d):
+				return true
+			}
+		}
 		for i := 0; i < 500 && target(data, "current") != "b"; i++ {
-			time.Sleep(10 * time.Millisecond)
+			if !wait(10 * time.Millisecond) {
+				return
+			}
 		}
 		for i := 0; i < 50; i++ {
 			os.WriteFile(filepath.Join(data, "ready"), []byte("1"), 0o600)
-			time.Sleep(10 * time.Millisecond)
+			if !wait(10 * time.Millisecond) {
+				return
+			}
 		}
-		time.Sleep(2 * time.Second)
-		l.Signal(syscall.SIGTERM) // a trusted b would run for an hour
+		if wait(2 * time.Second) {
+			l.Signal(syscall.SIGTERM) // a trusted b would run for an hour
+		}
 	}()
 	l.Run()
+	close(done)
+	<-writer
 	if target(data, "current") != "a" {
 		t.Fatalf("a build that never got ready was trusted on another process's ready file: current=%s", target(data, "current"))
 	}

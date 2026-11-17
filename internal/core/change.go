@@ -509,6 +509,9 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 			t.ActivityAt = now
 		}
 	}()
+	if c.PR != nil && c.PR.Head != "" && p.Head != "" && c.PR.Head != p.Head {
+		dropConditions(c, CondMerge) // V0.136: a refused merge was about the old head
+	}
 	snap := p
 	snap.Annotations = nil
 	if p.State == PRMissing && c.PR != nil {
@@ -555,7 +558,7 @@ func ChangePRObserved(t *Thread, p PR, now time.Time) *Change {
 	if p.State != "OPEN" {
 		// Checks, review and conflict describe the PR before it merged or
 		// closed; they no longer need anyone (decision 0018).
-		dropConditions(c, CondChecks, CondReview, CondConflict)
+		dropConditions(c, CondChecks, CondReview, CondConflict, CondMerge)
 		c.UpdatedAt = now
 		return c
 	}

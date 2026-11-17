@@ -5,7 +5,8 @@ import type { Profile, Project, T3Candidate } from "./types.ts";
 import { ProfileQuota, quotaSuffix, useQuotas } from "./quota-ui.tsx";
 import { ChipStrip, ClipPicker } from "./attach-ui.tsx";
 import { NewProjectStep, ProjectIcon, ProjectList, QuietHold } from "./project-ui.tsx";
-import { HostField } from "./host-pick-ui.tsx";
+import { HostField, useHosts } from "./host-pick-ui.tsx";
+import { hostChoices, hostOfflineNote } from "./hosts.ts";
 import { colorVar } from "./projects.ts";
 import { relTime, shortModel } from "./format.ts";
 import type { SnoozePreset } from "./store.ts";
@@ -52,6 +53,8 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
   return (
     <Modal title="New thread" onClose={p.onClose} wide>
       <div class="db">
+        {/* V0.139: host first; it decides the projects, folders and providers below */}
+        <HostField value={n.host} onPick={n.chooseHost} what="The thread runs there. The projects, folders and providers below are that host's." />
         <div class="fld">
           <span>Project</span>
           <button class="ppick" onClick={n.togglePicking} aria-expanded={f.picking} style={cur && !chip.isNew ? { "--pc": colorVar(cur.color, cur.name) } : undefined}>
@@ -75,7 +78,6 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
           )}
           {f.creating !== null && <NewProjectStep initialName={f.creating} initialFolder="" fromThread={false} host={n.host} onDraft={n.setDraft} onCancel={n.cancelCreating} onCreate={n.createProject} />}
         </div>
-        <HostField value={n.host} lock={n.hostLock} onPick={n.chooseHost} what="The thread runs there, in that host's folders, on its providers." />
         <div class="fld">
           <span>Folder</span>
           <div class={`fline${folder.scratch ? " scratch" : ""}`}>
@@ -167,15 +169,22 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
   );
 }
 
-export function AdoptDialog(p: { load(): Promise<T3Candidate[]>; now: number; onClose(): void; onAdopt(ids: string[]): Promise<string | null> }) {
+export function AdoptDialog(p: { load(host?: string): Promise<T3Candidate[]>; now: number; onClose(): void; onAdopt(ids: string[], host?: string): Promise<string | null> }) {
   const [cands, setCands] = useState<T3Candidate[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  // V0.139: T3's threads are a host's; the owner picks which (the first in the host order), and they run there.
+  const hs = useHosts();
+  const [host, setHost] = useState(() => hostChoices(hs.hosts, hs.self)[0]?.name ?? "");
 
   useEffect(() => {
-    p.load().then(setCands, () => setErr("Could not load T3 threads."));
-  }, []);
+    setCands(null);
+    setErr(null);
+    setPicked(new Set());
+    if (hostOfflineNote(host, hs.hosts, hs.now)) return;
+    p.load(host || undefined).then(setCands, () => setErr("Could not load T3 threads."));
+  }, [host]);
 
   const toggle = (id: string) => {
     const n = new Set(picked);
@@ -187,7 +196,7 @@ export function AdoptDialog(p: { load(): Promise<T3Candidate[]>; now: number; on
   const submit = async () => {
     if (!picked.size || busy) return;
     setBusy(true);
-    const e = await p.onAdopt([...picked]);
+    const e = await p.onAdopt([...picked], host || undefined);
     setBusy(false);
     if (e) setErr(e);
   };
@@ -207,8 +216,9 @@ export function AdoptDialog(p: { load(): Promise<T3Candidate[]>; now: number; on
   return (
     <Modal title="Adopt from T3" onClose={p.onClose} wide>
       <div class="db">
+        <HostField value={host} onPick={setHost} what="T3's threads on that host; an adopted thread runs there." />
         <p class="lede">Open top-level T3 threads that Fyr does not track yet. Adopting keeps the Claude session, so the thread continues here.</p>
-        {cands === null && !err && <div class="sys">Loading…</div>}
+        {cands === null && !err && !hostOfflineNote(host, hs.hosts, hs.now) && <div class="sys">Loading…</div>}
         {cands && cands.length === 0 && <div class="sys">No T3 threads to adopt.</div>}
         {cands && cands.length > 0 && (
           <div class="cands">

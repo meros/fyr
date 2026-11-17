@@ -526,6 +526,16 @@ function fullFixture(now: number): Fixture {
         ],
         createdAt: iso(600), updatedAt: iso(180), done: { at: iso(180), by: "observed", reason: "live" }, // V0.98
       },
+      // V0.136: the agent asked to merge while CI runs; the ask is held, the card says so, and nobody is asked yet.
+      {
+        id: "c_nightly", key: "pr:acme/collector#846", kind: "code", title: "fix(nightly): run every source and alarm on a short night", targets: ["repo:github.com/acme/collector"],
+        phase: "review", phaseBy: "observed",
+        need: { cause: "waiting", ask: "d_nightly", action: "pr.merge", head: "7333251aa0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5", text: "Waiting for CI: 3 of 5 checks done", muted: true },
+        pr: { url: "https://github.com/acme/collector/pull/846", repo: "acme/collector", number: 846, state: "OPEN", checks: "pending", head: "7333251aa0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5", mergeState: "BLOCKED" },
+        conditions: [{ type: "checks", status: "pending", source: "observed", at: iso(3) }],
+        evidence: [{ kind: "pr", url: "https://github.com/acme/collector/pull/846", title: "#846" }],
+        createdAt: iso(8), updatedAt: iso(3),
+      },
       // V0.97: a green PR the host reads as ready to merge; its Merge names the head, and Merge all green takes it.
       {
         id: "c_rows", key: "pr:acme/web#4131", kind: "code", title: "Placement rows load in one read", targets: ["repo:github.com/acme/web"],
@@ -1011,6 +1021,10 @@ export function createMockServer(scenario: string, real0: number): MockServer {
     (Array.isArray(args.attachments) ? (args.attachments as string[]) : []).map((aid) => files.get(aid)).filter((x): x is NonNullable<typeof x> => !!x);
   let sub: { thread(t: ThreadDTO): void; event(e: FyrEvent): void; project?(p: Project): void; deploy?(p: DeployProgress): void } | null = null;
   let projects = mockProjects(now0);
+  // V0.139: with &hosts=2 a project lives on lab, so its screen and New thread can show another host's project.
+  // A front stamps every project with its host (V0.55); the fixture's are desk's.
+  if (MOCK_HOSTS) projects = [...projects.map((p) => ({ ...p, host: p.host ?? "desk" })), { id: "p_arm", name: "Robot arm", folder: "/home/owner/experiments/robot-arm", host: "lab", threads: 0, lastUsed: new Date(now0 - 86_400_000).toISOString() },
+    { id: "p_srv", name: "Server ops", folder: "/home/owner/ops", host: "host-b", threads: 0, lastUsed: new Date(now0 - 2 * 86_400_000).toISOString() }];
   // V0.46: ?quiet=<projectId> puts that project in quiet hours that started an hour ago and end in two hours, and
   // gives it a second window (weekends, ten hours ahead) so the project screen shows two rows (decision 0014 addendum).
   if (MOCK_QUIET) {
@@ -1736,6 +1750,26 @@ export function mockLoad(): HostLoad[] {
       },
     },
   ];
+}
+
+/** SPEC V0.137, for screenshots and the layout test: &slots=queue puts the deploy's tests and three threads in the
+ *  queue; &slots=two adds a second host (lab) with a queue of its own; &slots=none
+ *  has no queue. */
+export function mockQueueLoad(mode: string): HostLoad[] {
+  const [h] = mockLoad();
+  h.slots = {
+    n: 2,
+    held: h.slots!.held,
+    waiting: [
+      { owner: "self-deploy", kind: "test", priority: true },
+      { owner: "t_search", kind: "test" },
+      { owner: "t_pw", kind: "e2e" },
+      { owner: "t_nix", kind: "build" },
+    ],
+  };
+  if (mode === "none") h.slots.waiting = [];
+  if (mode !== "two") return [h];
+  return [h, { host: "lab", cores: 4, load: [1.2, 1, 0.8], cgroups: false, threads: [], slots: { n: 1, held: [{ owner: "t_snap", kind: "test" }], waiting: [{ owner: "t_poly", kind: "test" }] } }];
 }
 
 /** SPEC 0.5 V0.79: the agent's commands and skills, as a host serves them for any thread or folder. */

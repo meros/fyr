@@ -41,6 +41,10 @@ type Thread struct {
 	// a run ends, a question opens, a failure, a PR change.
 	ActivityAt time.Time  `json:"activityAt"`
 	Decisions  []Decision `json:"decisions,omitempty"`
+	// HeldAsks are the agent's merge asks that wait for CI on their head
+	// (V0.136): recorded, not asked. Fyr opens one as a Decision when the
+	// merge can run, and closes it when CI fails or GitHub cannot merge.
+	HeldAsks []Decision `json:"heldAsks,omitempty"`
 	// Changes are the thread's change records (V0.59, decision 0018). A PR
 	// lives on its code change (#32).
 	Changes []Change `json:"changes,omitempty"`
@@ -247,6 +251,18 @@ type PR struct {
 	Base      string `json:"base,omitempty"`
 	Stacked   bool   `json:"stacked,omitempty"`
 	InDefault *bool  `json:"inDefault,omitempty"`
+	// V0.136: how many of the head's checks finished, of how many GitHub
+	// lists, and the names of the failed ones (the poller's read).
+	ChecksDone   int      `json:"checksDone,omitempty"`
+	ChecksTotal  int      `json:"checksTotal,omitempty"`
+	FailedChecks []string `json:"failedChecks,omitempty"`
+	// V0.136: when GitHub reads the PR as BLOCKED with its checks green,
+	// the rule types active on its base (GitHub's rules API: pull_request,
+	// required_signatures, ...), the required checks that did not report on
+	// the head, and whether the base has classic branch protection.
+	Rules         []string `json:"rules,omitempty"`
+	MissingChecks []string `json:"missingChecks,omitempty"`
+	Protected     bool     `json:"protected,omitempty"`
 }
 
 // PRMissing is the state Fyr observes when GitHub answers that the PR or its

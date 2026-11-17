@@ -2165,7 +2165,8 @@ for (const [label, w, ht] of [
   await step("new thread", async () => {
     await open(phone ? "?mock=rail&hosts=2&new" : "?mock=rail&hosts=2&dialog=new", `!!document.querySelector('${root} .hostf select')`);
     const locked = await evaluate(`({ dis: document.querySelector('${root} .hostf select').disabled, line: document.querySelector('${root} .hostf .srcl')?.textContent ?? '' })`);
-    check(locked.dis && /^Follows .+\.$/.test(locked.line), `${ctx}: a project holds the host ${JSON.stringify(locked)}`);
+    // V0.139: host first; the Host field is always the owner's pick (it no longer follows the project).
+    check(!locked.dis && /^The thread runs there\./.test(locked.line), `${ctx}: the Host field is the owner's pick ${JSON.stringify(locked)}`);
     await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick')?.click()`);
     await settle();
     await click(`${root} button, ${root} [role=option]`, "No project");
@@ -2217,6 +2218,83 @@ for (const [label, w, ht] of [
   });
 });
 
+// SPEC V0.139: every screen that acts on a host says which. 1 New thread is host first: the first host in the owner's
+// order, its projects only, its providers; another host switches them. 2 a project's screen: its host read-only under
+// the header, its host's providers, Change folder on its host. 3 a project on an offline host is read-only and says
+// so. 4 the desktop thread header names the host, as the phone's does.
+for (const [label, w, ht] of [
+  ["desktop", 1280, 800],
+  ["phone", 390, 844],
+]) section(`V0.139 ${label}`, async (hn) => {
+  const { evaluate, waitFor, settle, navigate, openScreen, shot } = hn;
+  const ctx = `V0.139 ${label}`;
+  const phone = label === "phone";
+  const root = phone ? ".m-app" : ".dlg";
+  const open = async (url, ready) => {
+    if (phone) await openScreen({ url, ready }, w, ht);
+    else await navigate(`${origin}/${url}`, ready);
+    await waitFor(ready);
+    await settle();
+  };
+  const step = async (name, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      failures.push(`${ctx} ${name}: ${e.message}`);
+    }
+  };
+  const setHost = (h) => evaluate(`(() => { const s = document.querySelector('${root} .hostf select'); s.value = ${JSON.stringify(h)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const chipName = `(document.querySelector('${root} .ppick .pln, ${root} .m-ppick .pln')?.textContent ?? '')`;
+  // 1. New thread, host first.
+  await step("new thread", async () => {
+    await open(phone ? "?mock=rail&hosts=2&hostOrder=lab,desk&new" : "?mock=rail&hosts=2&hostOrder=lab,desk&dialog=new", `!!document.querySelector('${root} .hostf select')`);
+    const s = await evaluate(`(() => { const host = document.querySelector('${root} .hostf'); const pick = document.querySelector('${root} .ppick, ${root} .m-ppick');
+      return { first: !!host && !!pick && !!(host.compareDocumentPosition(pick) & Node.DOCUMENT_POSITION_FOLLOWING), v: host?.querySelector('select').value, proj: ${chipName},
+        provs: [...document.querySelectorAll('${root} .row2 select')][0] ? [...[...document.querySelectorAll('${root} .row2 select')][0].options].map(o => o.value) : null }; })()`);
+    check(s.first && s.v === "lab" && s.proj === "Robot arm", `${ctx}: host first, lab, lab's project ${JSON.stringify(s)}`);
+    if (!phone) check(s.provs?.join() === "claude,zai", `${ctx}: lab's providers ${JSON.stringify(s.provs)}`);
+    await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick').click()`);
+    await settle();
+    const list = await evaluate(`[...document.querySelectorAll('${root} .plist .pln, ${root} .m-pickpanel .pln')].map(e => e.textContent)`);
+    check(list.includes("Robot arm") && !list.includes("Server ops") && !list.some((n) => /Garden|dotfiles/.test(n)), `${ctx}: lab's projects only ${JSON.stringify(list)}`);
+    await shot(`hostaware-newthread-${label}.png`);
+    await evaluate(`document.querySelector('${root} .ppick, ${root} .m-ppick').click()`);
+    await setHost("desk");
+    await settle();
+    const d = await evaluate(`({ proj: ${chipName}, provs: [...document.querySelectorAll('${root} .row2 select')][0] ? [...[...document.querySelectorAll('${root} .row2 select')][0].options].map(o => o.value) : null })`);
+    check(d.proj !== "Robot arm" && d.proj !== "", `${ctx}: desk's project after the switch ${JSON.stringify(d)}`);
+    if (!phone) check(!d.provs?.includes("zai"), `${ctx}: desk's providers after the switch ${JSON.stringify(d.provs)}`);
+  });
+  // 2. A project's screen: its host, its providers, its folders.
+  await step("project editor", async () => {
+    const ed = phone ? ".m-app" : ".dlg";
+    await open(phone ? "?mock=rail&hosts=2&project=p_arm" : "?mock=rail&hosts=2&dialog=settings&page=projects/p_arm", `!!document.querySelector('${ed} .hostrow')`);
+    const s = await evaluate(`(() => { const r = document.querySelector('${ed} .hostrow'); const head = document.querySelector('${ed} .phead');
+      return { name: r.querySelector('.hchip .mono')?.textContent, after: !!head && !!(head.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING),
+        provs: [...document.querySelectorAll('${ed} .pedit select')].map(x => [...x.options].map(o => o.textContent).join('|')) }; })()`);
+    check(s.name === "lab" && s.after, `${ctx}: the project's host under its header ${JSON.stringify(s)}`);
+    check(s.provs.some((o) => o.includes("Z.ai")), `${ctx}: lab's providers in the defaults ${JSON.stringify(s.provs)}`);
+    await shot(`hostaware-project-${label}.png`);
+    await evaluate(`[...document.querySelectorAll('${ed} .pedit button')].find(b => b.textContent.trim().startsWith('Change'))?.click()`);
+    await waitFor(`document.querySelectorAll('.fpick .fsec.browse .fpr').length > 0`);
+    const t = await evaluate(`(document.querySelector('.fsheet .m-shh') ?? document.querySelector('.fmodal .dh b'))?.textContent ?? ''`);
+    check(/ on lab$/.test(t), `${ctx}: Change folder browses lab ("${t}")`);
+  });
+  // 3. A project on an offline host.
+  await step("offline project", async () => {
+    const ed = phone ? ".m-app" : ".dlg";
+    await open(phone ? "?mock=rail&hosts=2&project=p_srv" : "?mock=rail&hosts=2&dialog=settings&page=projects/p_srv", `!!document.querySelector('${ed} .hostrow')`);
+    const s = await evaluate(`({ line: document.querySelector('${ed} .hostrow')?.textContent ?? '', name: document.querySelector('${ed} .pname input')?.disabled ?? document.querySelector('${ed} .pname input')?.readOnly, change: [...document.querySelectorAll('${ed} .pedit button')].find(b => b.textContent.trim().startsWith('Change'))?.disabled })`);
+    check(/host-b.*offline since \d\d:\d\d/.test(s.line) && /cannot be changed until it is back/.test(s.line) && s.name === true && s.change === true, `${ctx}: an offline host's project ${JSON.stringify(s)}`);
+    await shot(`hostaware-offline-${label}.png`);
+  });
+  // 4. The thread header names the host (the phone did since V0.54).
+  if (!phone)
+    await step("thread header", async () => {
+      await open("?mock=rail&hosts=2&open=t_mapperf", "!!document.querySelector('.thh .chips')");
+      const c = await evaluate(`document.querySelector('.thh .hostc')?.textContent ?? ''`);
+      check(c === "desk", `${ctx}: the header's host chip "${c}"`);
+    });
 // SPEC V0.140: the display surfaces say which host, with several hosts. 1 each ring of the desktop rail's load names
 // its host (under it, and first in its label); one host: no name. 2 a change card on the board names its thread's
 // host, the same on the desktop and the phone.
@@ -2834,6 +2912,75 @@ try {
   if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, `rows-${front}.png`), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
 } catch (e) {
   failures.push(`V0.135 ${front}: ${e.message}`);
+}
+});
+
+// SPEC V0.137: Waiting for a slot. Desktop: the section sits after Working with the deploy's tests pinned as #1 and the
+// queued threads as #2… in the queue's order (they leave their own section); the rail counts them; Alt+↑ on a place
+// sends host.slotOrder with the host's whole order and the rows renumber; a thread that gets its slot or leaves the
+// queue leaves the section and the others renumber; without a queue there is no section and no rail item; with two
+// hosts each has its part under its name. Phone: the strip stays one line, Reorder shows ↑ and ↓ of 44 px, ↓ sends
+// the order, and nothing is wider than the screen.
+section('V0.137', async (h) => {
+  const { send, evaluate, waitFor, navigate, tapCenter, key, openScreen } = h;
+  const rows = (root) => `[...document.querySelectorAll('${root} .sqh > .sqp, ${root} .sqh > [data-id]')].map(r => (r.dataset.owner ?? r.dataset.id) + ' ' + (r.querySelector('.sqn')?.textContent ?? ''))`;
+  const shot = async (name) => {
+    if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, name), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  };
+try {
+  await navigate(`${origin}/?mock=rail&slots=queue`, "!!document.querySelector('#sec-slots .one')");
+  const d = await evaluate(`({
+    order: [...document.querySelectorAll('.list > div[id^=sec-]')].map(e => e.id),
+    rows: ${rows(".list")},
+    inWorking: !!document.querySelector('#sec-working [data-id=t_search]'),
+    rail: document.querySelector('.rail [data-sec=slots] .n')?.textContent ?? null,
+    head: document.querySelector('#sec-slots .sec')?.textContent ?? '' })`);
+  const wo = d.order.indexOf("sec-working"), so = d.order.indexOf("sec-slots"), se = d.order.indexOf("sec-seen");
+  check(wo >= 0 && so === wo + 1 && se === so + 1, `V0.137 desktop: the section sits after Working (${JSON.stringify(d.order)})`);
+  check(JSON.stringify(d.rows) === JSON.stringify(["self-deploy #1", "t_search #2", "t_pw #3", "t_nix #4"]) && !d.inWorking && d.rail === "3" && d.head.startsWith("Waiting for a slot3"),
+    `V0.137 desktop: the rows, their places and the rail (${JSON.stringify(d)})`);
+  check(!(await evaluate(`!!document.querySelector('#sec-slots .sqp .grip')`)), "V0.137 desktop: the deploy's place is movable");
+  await evaluate(`document.querySelector('#sec-slots .one[data-id=t_nix] .sqn.grip').focus()`);
+  await key("ArrowUp", "ArrowUp", 1);
+  await waitFor(`${COMMANDS("host.slotOrder")}.length === 1`, { soft: true });
+  await evaluate(`document.querySelector('#sec-slots .one[data-id=t_nix] .sqn.grip').focus()`);
+  await key("ArrowUp", "ArrowUp", 1);
+  await waitFor(`${COMMANDS("host.slotOrder")}.length === 2`, { soft: true });
+  const mv = await evaluate(`({ sent: ${COMMANDS("host.slotOrder")}.map(c => c.args), rows: ${rows(".list")} })`);
+  check(JSON.stringify(mv.sent.at(-1)) === JSON.stringify({ host: "laptop", owners: ["t_nix", "t_search", "t_pw"] }) && JSON.stringify(mv.rows) === JSON.stringify(["self-deploy #1", "t_nix #2", "t_search #3", "t_pw #4"]),
+    `V0.137 desktop: Alt+↑ twice on t_nix's place (${JSON.stringify(mv)})`);
+  await shot("slots-desktop.png");
+  // Live: t_nix gets its slot, t_pw's run ends; both leave and t_search is #2.
+  await evaluate(`(window.__fyrSlot('t_nix', true), window.__fyrSlot('t_pw', false))`);
+  const live = await waitFor(`JSON.stringify(${rows(".list")}) === JSON.stringify(["self-deploy #1", "t_search #2"])`, { soft: true, timeout: 12_000 });
+  check(live !== false, `V0.137 desktop: a granted or released thread leaves the section (${JSON.stringify(await evaluate(rows(".list")))})`);
+  check(await evaluate(`!!document.querySelector('#sec-seen [data-id=t_pw]') && document.querySelector('.rail [data-sec=slots] .n')?.textContent === '1'`), "V0.137 desktop: t_pw is back in Seen and the rail counts 1");
+  // No queue: no section, no rail item.
+  await navigate(`${origin}/?mock=rail&slots=none`, "!!document.querySelector('.list .one')");
+  check(await evaluate(`!document.querySelector('#sec-slots') && !document.querySelector('.rail [data-sec=slots]') && !!document.querySelector('#sec-working [data-id=t_search]')`), "V0.137 desktop: a section or a rail item without a queue");
+  // Two hosts with a queue: one part each, under its name.
+  await navigate(`${origin}/?mock=rail&slots=two`, "!!document.querySelector('#sec-slots .sqhn')");
+  const two = await evaluate(`[...document.querySelectorAll('#sec-slots .sqh')].map(p => [p.querySelector('.sqhn')?.textContent, [...p.querySelectorAll('.sqp, .one')].map(r => r.dataset.id ?? r.dataset.owner)])`);
+  check(JSON.stringify(two) === JSON.stringify([["laptop", ["self-deploy", "t_search", "t_pw", "t_nix"]], ["lab", ["t_poly"]]]), `V0.137 desktop: one part per host (${JSON.stringify(two)})`);
+
+  // Phone.
+  await openScreen({ url: "?mock=rail&slots=queue", ready: "!!document.querySelector('#m-sec-slots .one')" }, 390, 844);
+  const p = await evaluate(`({
+    tops: [...new Set([...document.querySelectorAll('.m-strip .m-seg')].map(b => Math.round(b.getBoundingClientRect().top)))].length,
+    segs: document.querySelectorAll('.m-strip .m-seg').length,
+    rows: ${rows(".m-list")},
+    wide: document.documentElement.scrollWidth > innerWidth })`);
+  check(p.tops === 1 && p.segs === 6 && JSON.stringify(p.rows) === JSON.stringify(["self-deploy #1", "t_search #2", "t_pw #3", "t_nix #4"]) && !p.wide, `V0.137 phone: the strip and the rows (${JSON.stringify(p)})`);
+  await evaluate(`document.getElementById('m-sec-slots').scrollIntoView()`);
+  await tapCenter("#m-sec-slots .m-sbtn", "!!document.querySelector('#m-sec-slots .sqmv .mv')");
+  const r = await evaluate(`({ mv: [...document.querySelectorAll('#m-sec-slots .sqmv .mv .xb')].map(b => Math.round(Math.min(b.getBoundingClientRect().width, b.getBoundingClientRect().height))), wide: [...document.querySelectorAll('#m-sec-slots .sqmv, #m-sec-slots .sqmv .xb, #m-sec-slots .m-sec, #m-sec-slots .m-sbtn')].some(e => e.getBoundingClientRect().right > innerWidth + 0.5) })`);
+  check(r.mv.length === 6 && r.mv.every((x) => x >= 44) && !r.wide, `V0.137 phone: the Reorder mode (${JSON.stringify(r)})`);
+  await shot("slots-phone.png");
+  await tapCenter(`#m-sec-slots .sqmv[data-id=t_search] .mv .xb[aria-label$="down"]`, `${COMMANDS("host.slotOrder")}.length === 1`);
+  const ps = await evaluate(`({ sent: ${COMMANDS("host.slotOrder")}.map(c => c.args), rows: ${rows(".m-list")} })`);
+  check(JSON.stringify(ps.sent[0]) === JSON.stringify({ host: "laptop", owners: ["t_pw", "t_search", "t_nix"] }) && JSON.stringify(ps.rows) === JSON.stringify(["self-deploy #1", "t_pw #2", "t_search #3", "t_nix #4"]), `V0.137 phone: ↓ on t_search (${JSON.stringify(ps)})`);
+} catch (e) {
+  failures.push(`V0.137: ${e.message}`);
 }
 });
 

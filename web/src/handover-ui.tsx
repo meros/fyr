@@ -1,5 +1,7 @@
 // SPEC 0.5 V0.45, decision 0013: the handover dialog. Pick the profile and model, see which rung the host will
 // use, confirm. The same form sits in a desktop modal and in a phone sheet.
+import { useHosts } from "./host-pick-ui.tsx";
+import { hostOf, profilesOfHost } from "./hosts.ts";
 import { useEffect, useState } from "preact/hooks";
 import type { Profile, Thread } from "./types.ts";
 import { handoverTargets, parsePlan, planGuess, rungText, targetModel, type HandoverPlan } from "./handover.ts";
@@ -26,7 +28,9 @@ async function fetchPlan(t: Thread, profile: string): Promise<HandoverPlan> {
 }
 
 export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
-  const targets = handoverTargets(p.t, p.profiles);
+  // V0.139: a thread is handed over on its host, to that host's providers.
+  const hs = useHosts();
+  const targets = handoverTargets(p.t, profilesOfHost(hostOf(p.t, hs.hosts), hs.hosts, p.profiles));
   const [profile, setProfile] = useState(targets[0]?.id ?? "");
   const prof = targets.find((x) => x.id === profile);
   const [model, setModel] = useState(targetModel(prof));

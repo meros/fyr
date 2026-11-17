@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { loadDetail, MAX_PIPS, railMeter, railPips, railSlots, threadCPU, threadSlot, type HostLoad, type RailPips, railLabel } from "./load.ts";
+import { loadDetail, MAX_PIPS, railLabel, railMeter, railPips, railSlots, threadCPU, threadSlot, type HostLoad, type RailPips, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
 
@@ -24,6 +24,16 @@ async function poll(): Promise<void> {
 
 function onVisible(): void {
   if (document.visibilityState === "visible" && Date.now() - lastAt > POLL_MS) void poll();
+}
+
+/** V0.137: the pool of one host as a reorder's receipt or the page's own move gives it, shown at once (the next poll
+ *  confirms it); `refresh` reads the load now. */
+export function patchSlots(host: string, slots: Slots | ((s: Slots) => Slots)): void {
+  current = current.map((h) => (h.host === host && h.slots ? { ...h, slots: typeof slots === "function" ? slots(h.slots) : slots } : h));
+  for (const s of subs) s(current);
+}
+export function refreshLoad(): void {
+  void poll();
 }
 
 export function useLoad(): HostLoad[] {
