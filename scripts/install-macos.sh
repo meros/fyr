@@ -119,15 +119,23 @@ cat >"$app/Contents/Info.plist" <<EOF
 </plist>
 EOF
 # A native (arm64 and x86_64) launcher: macOS takes a script for an Intel
-# app and asks for Rosetta.
+# app and asks for Rosetta. It runs `fyr open -app` (V0.130), so the window
+# opens signed in on http://fyr.localhost:PORT, the origin fyr open uses; a
+# bare http://127.0.0.1 has no session and keeps its own saved filters.
+# Only when fyr open fails (fyrd is down) does it open the plain address.
 launcher_c="$(mktemp -d)/fyr.c" # a file: with two -arch flags cc reads its input twice
-cat >"$launcher_c" <<'EOF'
+cat >"$launcher_c" <<EOF
+#include <spawn.h>
+#include <sys/wait.h>
 #include <unistd.h>
+extern char **environ;
 int main(void) {
-	const char *url = "http://127.0.0.1:7777";
-	if (access("/Applications/Google Chrome.app", F_OK) == 0)
-		execl("/usr/bin/open", "open", "-na", "Google Chrome", "--args", "--app=http://127.0.0.1:7777", (char *)0);
-	execl("/usr/bin/open", "open", url, (char *)0);
+	char *argv[] = {"fyr", "open", "-app", "-data", "$data", 0};
+	pid_t pid;
+	int st;
+	if (posix_spawn(&pid, "$data/launcher/fyr", 0, 0, argv, environ) == 0 && waitpid(pid, &st, 0) == pid && WIFEXITED(st) && WEXITSTATUS(st) == 0)
+		return 0;
+	execl("/usr/bin/open", "open", "http://127.0.0.1:7777", (char *)0);
 	return 1;
 }
 EOF
