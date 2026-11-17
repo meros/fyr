@@ -32,6 +32,7 @@ import { SlashList, useSlash } from "./slash-ui.tsx";
 import type { ComponentChildren } from "preact";
 import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
 import { LiveViewPanel } from "./view-ui.tsx";
+import { rememberTab } from "./desk-history.ts";
 import { TAB_LABEL, composerAnswers, defaultTab, showsDecision, threadTabs } from "./view.ts";
 import type { PreviewCard } from "./previews.ts";
 import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
@@ -94,7 +95,10 @@ export function ThreadPane(p: ThreadPaneProps) {
   // defaultTab (no View without a view, no PR tab without a PR).
   const [pick, setPick] = useState<{ id: string; tab: string } | null>(null);
   const tab = defaultTab(t, pick?.id === t.id ? pick.tab : urlTab(t.id));
-  const setTab = (tab: string) => setPick({ id: t.id, tab });
+  const setTab = (tab: string) => {
+    setPick({ id: t.id, tab });
+    rememberTab(t.id, tab); // V0.145: Back to this thread shows this tab
+  };
   useEffect(() => setPick(null), [t.id]); // another thread opens on its own default
   const hs = useHosts();
   // V0.139: the thread's provider is its host's (the same id on another host is another provider).

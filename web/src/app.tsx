@@ -75,6 +75,7 @@ import { navTransition } from "./native.ts";
 import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
 import { ContextMenu } from "./menu-ui.tsx";
 import { Boundary } from "./boundary.tsx";
+import { isDeskEntry, popStep, recordOpen, type OpenCause } from "./desk-history.ts";
 
 /** Run when the browser is idle (V0.38: storing never competes with input). */
 const idle = (fn: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(fn, { timeout: 3000 });
@@ -447,6 +448,7 @@ function App() {
     // On a phone the inbox comes first; open a thread only when asked (?open=).
     const phone = typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches;
     if (first && (!phone || want)) {
+      if (!phone) recordOpen(first, "auto");
       setLastOpen(first);
       setView({ id: first, mode: "open" });
       setZone("thread");
@@ -601,7 +603,14 @@ function App() {
 
   // ---- actions (#41: run, undo, toasts and errors live in useThreadCommands) ----
 
-  const openThread = (id: string, mode: "open" | "peek" = "open") => {
+  /** V0.145: on the desktop a thread the owner opens is one history entry; Fyr's own openings (back and forward, the
+   *  first thread on load) add none. The phone keeps its own history (nav.ts). */
+  const deskAtRef = useRef(0); // the place of the desktop entry on screen (a pop's direction)
+  const openThread = (id: string, mode: "open" | "peek" = "open", cause: OpenCause = "owner") => {
+    if (!phoneRef.current) {
+      recordOpen(id, cause);
+      if (isDeskEntry(history.state)) deskAtRef.current = history.state.desk;
+    }
     setLastOpen(id);
     setView({ id, mode });
     setTracker((tr) => openView(tr, id, mode, Date.now(), document.hasFocus()));
@@ -1316,6 +1325,29 @@ function App() {
       const n = navFromHistory(e.state, location.search);
       if (JSON.stringify(n.screen) !== JSON.stringify(navRef.current.screen)) navTransition("back", () => setNav(n));
       else setNav(n);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [phone]);
+  // V0.145: Back and Forward on the desktop (the mouse's side buttons, Alt+Left and Alt+Right, the browser's arrows)
+  // open the thread of the entry, with the tab it had (ThreadPane reads it from the URL). A thread archived or deleted
+  // since is skipped in the same direction. The browser handles the side buttons itself, in a tab and in the installed
+  // window alike, so Fyr listens to popstate only.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  useEffect(() => {
+    if (phone) return;
+    if (isDeskEntry(history.state)) deskAtRef.current = history.state.desk;
+    const onPop = (e: PopStateEvent) => {
+      const gone = (id: string) => {
+        const t = threadsRef.current[id];
+        return !t || t.attention.state === "archived";
+      };
+      const step = popStep(e.state, deskAtRef.current, viewRef.current?.id ?? null, gone);
+      if (isDeskEntry(e.state)) deskAtRef.current = e.state.desk;
+      if (!step) return;
+      if ("skip" in step) history.go(step.skip);
+      else openThread(step.open, "open", "auto");
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
