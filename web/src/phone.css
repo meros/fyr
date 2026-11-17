@@ -82,6 +82,12 @@
 .m-screen .pfrow{padding:8px 12px;gap:8px}
 .m-screen .pfc{height:32px;border-radius:16px;font-size:13px;max-width:180px}
 .m-screen .pfx{width:32px;height:32px;border-radius:16px;line-height:32px}
+/* V0.134: the host chips at the phone's touch size, as the project chips. */
+.m-screen .pfh{height:32px;border-radius:16px;font-size:13px;max-width:180px}
+.m-fempty{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:16px}
+.m-fempty .fe1{font-size:15px;line-height:20px}
+.m-fempty .fe2{font-size:13px}
+.m-fempty .fe3{margin-top:8px;min-height:44px}
 .m-ck{width:22px;height:22px;border:2px solid var(--line-strong);border-radius:6px;display:inline-block;flex:none}
 .m-ck.on{background:var(--harbour);border-color:var(--harbour);box-shadow:inset 0 0 0 3px var(--raised)}
 .m-swp.picked .m-ck.on{box-shadow:inset 0 0 0 3px var(--select)}
