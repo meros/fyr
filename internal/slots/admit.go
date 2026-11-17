@@ -3,8 +3,8 @@ package slots
 // Decision 0029 slice S2 (#186): admission by a budget of costs instead of
 // a count. The pool's queue and order stay (V0.86, V0.137); only "may the
 // head start now" changes. Every threshold is a share or a slowdown, so the
-// same rules hold on any host; a host without a provider (no /proc: macOS
-// for now) keeps the fixed count.
+// same rules hold on any host; a host without a provider keeps the fixed
+// count.
 
 import (
 	"fmt"

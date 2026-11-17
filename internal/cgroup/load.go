@@ -31,8 +31,8 @@ type Load struct {
 	// Get; nil without a pool.
 	Slots *slots.Snapshot `json:"slots,omitempty"`
 
-	// Decision 0029 S1 (#185), absent without a provider (no /proc):
-	// Provider reads the signals ("cgroups" or "proc"); Capacity is what
+	// Decision 0029 S1 (#185), absent without a provider:
+	// Provider reads the signals ("cgroups", "proc" or "sysctl"); Capacity is what
 	// agents may use; Slowdown is s (1.0 idle), nil without a fresh probe;
 	// Headroom is the share of Capacity.Memory left; MemoryPressure is PSI
 	// memory full avg10 and MemoryStall its level (ok, elevated,
@@ -216,6 +216,8 @@ func (s *Sampler) get() Load {
 		for i := 0; i < 3 && i < len(f); i++ {
 			l.Load[i], _ = strconv.ParseFloat(f[i], 64)
 		}
+	} else if la, ok := hostLoadavg(); ok {
+		l.Load = la
 	}
 	if b, err := os.ReadFile(filepath.Join(proc, "pressure", "cpu")); err == nil {
 		for _, w := range strings.Fields(strings.SplitN(string(b), "\n", 2)[0]) {

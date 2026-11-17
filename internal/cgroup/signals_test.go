@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -68,7 +69,10 @@ func TestS1SignalsByProvider(t *testing.T) {
 	if l.Provider != "proc" || l.MemoryStall != "critical" || l.Headroom == nil || fmt.Sprintf("%.3f", *l.Headroom) != fmt.Sprintf("%.3f", 20.0/(0.8*32)) {
 		t.Fatalf("proc provider %+v %q %v", l.Provider, l.MemoryStall, l.Headroom)
 	}
-	// No /proc (macOS, decision 0029 deferred): no signals at all, as before.
+	// No /proc: macOS reads sysctl (host_darwin_test.go); any other host has no signals at all.
+	if runtime.GOOS == "darwin" {
+		return
+	}
 	l = (&Sampler{Proc: t.TempDir(), Cores: 4}).Get()
 	if l.Provider != "" || l.Capacity != nil || l.Headroom != nil || l.MemoryStall != "" || l.Slowdown != nil {
 		t.Fatalf("no provider %+v", l)
