@@ -8,7 +8,7 @@ The question: "can we make slots adaptive somehow? Let's assume a job is normall
 
 ## What would change for the owner, day to day
 
-- The rail's pips become a **budget bar**: "1.4 / 2.0", filled by the cost of each running job. The ring's colour comes from the slowdown and memory headroom, not from the load average. The same rules run on every host (Linux with or without cgroups, macOS); only the way each signal is read differs.
+- The rail's pips become a **budget bar**: "1.4 / 2.0", filled by the cost of each running job. The ring's colour comes from the slowdown and memory headroom, not from the load average. The same rules run on every host (Linux with or without cgroups); only the way each signal is read differs. macOS keeps today's fixed count for now.
 - A cheap job (for example a `go test ./internal/x/...` that uses 0.3 cores) starts beside a full `make test` instead of queueing behind it.
 - When the box is already overloaded by work outside the slots, a new job waits even if a pip is free. Today it would start, and everything would get slower.
 - A slot held by a thread that is not running a job (it is writing the spec) costs almost nothing, so it no longer blocks others.
@@ -75,13 +75,13 @@ No GB and no core counts are written into the rules. Old forms and the new ones:
 | memory stop: PSI full > 5 % / 10 % | the host's memory stall level: *elevated* or *critical* (below) |
 
 **(b) Capacity is read from the host, never configured in absolute terms.**
-- C_cpu = the smallest of `agents/cpu.max`, the cpuset and the CPU count (macOS: `hw.ncpu`).
-- C_mem = `agents/memory.high`, else the RAM times the host's share setting (default 80 %; macOS: `hw.memsize`).
+- C_cpu = the smallest of `agents/cpu.max`, the cpuset and the CPU count.
+- C_mem = `agents/memory.high`, else the RAM times the host's share setting (default 80 %).
 - An owner's cap is a share ("agents may use 75 % of RAM"), never a number of GB.
 
 **(c) One signal interface; each kind of host gets the provider it can support.** The algorithm sees only the right-hand column.
 
-| Signal the algorithm uses | Linux + cgroup v2 + PSI | Linux without delegated cgroups | macOS (no cgo) and anything else |
+| Signal the algorithm uses | Linux + cgroup v2 + PSI | Linux without delegated cgroups | macOS (later; sketch only) |
 |---|---|---|---|
 | **Slowdown s** (how much slower a new job runs now; 1.0 = idle) | the probe, smoothed with `agents/cpu.pressure` some | the probe, smoothed with `/proc/pressure/cpu` (if present) | the probe |
 | **Memory headroom** (share of C_mem left) | C_mem − `agents/memory.current`, capped by MemAvailable | MemAvailable | `vm.page_free_count` + purgeable and inactive pages via `sysctl` (x/sys/unix, no cgo); to be verified in S1 |
@@ -233,7 +233,7 @@ Each slice ships alone and is useful alone.
 
 | Slice | What | The owner sees | Risk |
 |---|---|---|---|
-| **S1 Measure and show (#185)** (no behaviour change) | Capacity detection and the signal providers of section 0 (cgroups and PSI, the process tree, the probe, macOS sysctl). `GET /api/load` adds the slowdown s, the headroom as a share, the memory stall level, the provider, and per thread its CPU and memory (and its cgroup PSI where available). Per slot hold, a record: class, cores, demand, peak, wall time. The rail ring's colour moves from load average to PSI and headroom. | The ring is honest. Desktop tooltip and phone thread row: "1.8 cores · no slot" or "make test · 2.1 cores · 3.2 GB". Settings → Automation lists the measured jobs. | Low. Wrong attribution only mislabels. |
+| **S1 Measure and show (#185)** (no behaviour change) | Capacity detection and the signal providers of section 0 for Linux (cgroups and PSI, the process tree, the probe). `GET /api/load` adds the slowdown s, the headroom as a share, the memory stall level, the provider, and per thread its CPU and memory (and its cgroup PSI where available). Per slot hold, a record: class, cores, demand, peak, wall time. The rail ring's colour moves from load average to PSI and headroom. | The ring is honest. Desktop tooltip and phone thread row: "1.8 cores · no slot" or "make test · 2.1 cores · 3.2 GB". Settings → Automation lists the measured jobs. | Low. Wrong attribution only mislabels. |
 | **S2 Budget admission (#186)** | Costs fixed at 1.0 except the idle-hold rule. Rules 1–4, the progress guarantee, the memory guard and its notices. B fixed at N. Pips become a bar. | Fewer jobs start while the box is under pressure. A queued thread says why it waits. | Too strict: the owner sees more waiting while pressure is high. That is the point, but the thresholds may need tuning; each is a host setting. |
 | **S3 Learn costs, backfill (#187)** | The class table, the EMA and decaying max, the 3-run rule, EASY backfill with aging, and the "heavier than predicted" notice. | Cheap jobs run beside big ones. Settings lists each class's cost and how many runs it is based on, with **Reset**. | A bad learned cost: bounded 0.1–2.0, memory never learned down fast, and the memory guard holds regardless. |
 | **S4 Adaptive B (#188)** | AIMD on B from PSI. | The bar's capacity moves (for example "2.5"), with the reason in the tooltip. | Oscillation: slow steps, 60 s holds, bounds 1.0–2·N. |
@@ -247,9 +247,9 @@ Desktop and phone stay in sync: the phone has no rail ring (V0.99 (3)), but the 
 - **Attribution by thread is coarse** (section 2). The idle-hold rule and S5 are the answers.
 - **An overloaded box was the normal state in this window.** With the proposal, jobs would have waited more, not less, until #174 makes the unslotted work take slots. The win from S3 comes from cheap jobs and idle holds; the win against overload comes from S2.
 - **The probe measured from one thread cgroup** with cpu.weight 100 (300 while the owner watches it, V0.85). Other threads saw similar or worse stretch. The AUC ranking is what matters, not the absolute values.
-- **One 30-minute window on one host.** The thresholds are in shares and slowdowns, so they transfer, but they were seen on one machine. S1 records continuously on every host, including the probe beside PSI; S_max, R_mem and the AIMD bounds should be checked on at least the desktop, the headless server and a Mac before S2 is enabled.
+- **One 30-minute window on one host.** The thresholds are in shares and slowdowns, so they transfer, but they were seen on one machine. S1 records continuously on every host, including the probe beside PSI; S_max, R_mem and the AIMD bounds should be checked on at least the desktop and the headless server before S2 is enabled.
 - **The probe's noise and cost.** It is about 0.1 % of a core. A single probe can be hit by a burst, so the median of 3 is used. On Linux it must run in `agents/`, not `server/` (weight 1000), or it would feel less than a job does.
-- **macOS headroom** from sysctl page counts is the least certain provider. If it proves unreliable, the stall level alone guards memory there.
+- **macOS is deferred** (owner, 17 Nov: "Don't worry too much about mac - we can fix that later"). Until a later issue adds its provider, a macOS host keeps the fixed count of V0.86 (the "none of the above" row). The macOS column above is a sketch for that issue, not part of S1–S5. Because the rules are in shares and slowdowns, adding it later is only a provider.
 
 ## The owner's answers (17 Nov)
 
@@ -258,6 +258,7 @@ Desktop and phone stay in sync: the phone has no rail ring (V0.99 (3)), but the 
 3. **A job heavier than predicted, under memory pressure:** stop admissions, notify, **and freeze the newest job** (the recommendation was notices only). Section 4 gives the rules; S5 is now required for it.
 4. **Backfill:** EASY backfill with an aging cap (recommended).
 5. **After the first draft:** "The algorithms NEED to be machine indepentant - work for any host". Section 0.
+6. **Then:** "Don't worry too much about mac - we can fix that later". macOS keeps the fixed count until a later issue; S1–S5 cover Linux with and without cgroups.
 
 ## Sources
 
