@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/cli"
+	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/proc"
 )
 
@@ -96,7 +97,7 @@ func (a Adapter) ask(ctx context.Context, l cli.Launch, wait time.Duration) ([]c
 	if cmd.Dir == "" {
 		cmd.Dir = os.TempDir()
 	}
-	cmd.Env = append(append(os.Environ(), "CLAUDE_CODE_ENTRYPOINT=sdk-go"), env...)
+	cmd.Env = append(append(launchenv.Scrub(os.Environ()), "CLAUDE_CODE_ENTRYPOINT=sdk-go"), env...) // #167
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, false, err

@@ -63,6 +63,21 @@ func Kept(procs []runner.Proc) map[string]bool {
 // process is read to its end only when its thread has no live one, so its
 // last output and its exit reach the thread.
 func (m *Manager) Adopt(procs []runner.Proc) {
+	// #167: a runner none of whose processes belongs to a thread here is
+	// another install's (a fyrd an agent started with the live install's
+	// variables). Ending them would end the live install's runs: leave
+	// them alone; the runner's own rules end what nobody collects.
+	known := false
+	for _, p := range procs {
+		if _, ok := m.host.Thread(threadOf(p)); ok {
+			known = true
+			break
+		}
+	}
+	if len(procs) > 0 && !known {
+		log.Printf("runner: none of its %d processes belongs to a thread here; another install's runner, left alone", len(procs))
+		return
+	}
 	best := map[string]runner.Proc{}
 	for _, p := range procs {
 		t := threadOf(p)

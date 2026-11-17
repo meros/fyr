@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+
+	"github.com/meros/fyr/internal/launchenv"
 )
 
 type kv struct {
@@ -62,7 +64,8 @@ func (h *host) Report(th string, req core.EffectReq, allowed, ok bool, text stri
 }
 
 func newDeployer(t *testing.T, failStep string) (*Deployer, *host, *[]string) {
-	t.Setenv("FYR_LAUNCHER", "1")
+	launchenv.Set(launchenv.Env{Launcher: true})
+	t.Cleanup(func() { launchenv.Set(launchenv.Env{}) })
 	steps := &[]string{}
 	h := &host{}
 	d := &Deployer{Data: t.TempDir(), DB: &kv{m: map[string]string{}}, Host: h, Quit: func() {},
@@ -159,7 +162,7 @@ func TestReportPending(t *testing.T) {
 
 func TestDeployNeedsLauncher(t *testing.T) {
 	d, _, _ := newDeployer(t, "")
-	t.Setenv("FYR_LAUNCHER", "")
+	launchenv.Set(launchenv.Env{})
 	if _, err := d.Deploy(context.Background(), "t1", req, "/src/fyr"); err == nil || !strings.Contains(err.Error(), "launcher") {
 		t.Fatalf("err %v", err)
 	}

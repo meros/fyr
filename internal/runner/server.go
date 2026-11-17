@@ -43,6 +43,13 @@ type Server struct {
 	Grace   time.Duration // 0 is DefaultGrace
 	Tick    time.Duration // how often rules (2) and (3) are checked; 0 is a minute
 	Now     func() time.Time
+	// Allow says whether the process with this pid may use the runner
+	// (#167): the launcher allows only the fyrd it started, so a fyrd that
+	// an agent or a test starts with the live install's variables cannot
+	// list, take over or end its processes. nil allows every process of
+	// this user (the socket is 0600). Where the OS gives no peer pid, every
+	// connection is allowed.
+	Allow func(pid int) bool
 
 	mu    sync.Mutex
 	procs map[string]*rproc
@@ -221,6 +228,11 @@ func (s *Server) conn(c net.Conn) {
 	defer c.Close()
 	r := bufio.NewReaderSize(c, 64<<10)
 	enc := &encoder{w: c}
+	if pid, ok := s.allowed(c); !ok {
+		s.logf("runner: refused pid %d: not the fyrd this launcher started (#167)", pid)
+		enc.send(frame{Error: fmt.Sprintf("this runner serves only its launcher's fyrd, not pid %d", pid)})
+		return
+	}
 	var f frame
 	if err := readFrame(r, &f); err != nil {
 		return
@@ -263,6 +275,26 @@ func (s *Server) conn(c net.Conn) {
 	default:
 		enc.send(frame{Error: "unknown op " + f.Op})
 	}
+}
+
+// allowed applies Allow to the connecting process. A fyrd may connect a
+// moment before the launcher has noted its pid, so a refusal is asked
+// again for up to a second.
+func (s *Server) allowed(c net.Conn) (int, bool) {
+	if s.Allow == nil {
+		return 0, true
+	}
+	pid, err := connPeerPid(c)
+	if err != nil {
+		return 0, true
+	}
+	for i := 0; i < 10; i++ {
+		if s.Allow(pid) {
+			return pid, true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return pid, false
 }
 
 func (p *rproc) info() Proc {

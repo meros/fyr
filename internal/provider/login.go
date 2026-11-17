@@ -16,6 +16,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/cli"
 	"github.com/meros/fyr/internal/cli/claudecli"
+	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/pty"
 )
 
@@ -171,7 +172,7 @@ func (r *Registry) runLogin(p Provider, l *loginRun) error {
 	}
 	base := r.LoginEnv
 	if base == nil {
-		base = os.Environ()
+		base = launchenv.Scrub(os.Environ()) // #167
 	}
 	cmd := exec.Command(bin, args...)
 	cmd.Env = claudecli.LoginEnv(base, dir)

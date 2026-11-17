@@ -32,6 +32,7 @@ import (
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/github"
+	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/peers"
 	"github.com/meros/fyr/internal/pipe"
@@ -71,9 +72,19 @@ func main() {
 	role := fl.String("role", "", "host, front or both (default from config role, else both)")
 	hostsFlag := fl.String("hosts", "", "front: other hosts as name=url,… (default from config hosts)")
 	peersFlag := fl.String("peers", "", "other Fyr page origins to probe, comma separated (default from config peers; V0.123)")
+	runnerFlag := fl.String("runner", "", "use this runner socket even when it is not this install's launcher's (#167; development)")
 	hostListen := fl.String("host-listen", "", "host: also serve fronts on this tailnet address, or tailnet:PORT (default from config hostListen)")
 	fl.Parse(args)
 
+	// #167: the launcher's variables name the live install. Take them out
+	// of the environment before anything starts, so no agent or test
+	// inherits them, and keep only what belongs to this data folder and a
+	// parent that is its launcher.
+	if le, dropped := launchenv.Init(*data, *runnerFlag); len(dropped) > 0 {
+		log.Printf("launcher: not this install's, left alone: %s", strings.Join(dropped, "; "))
+	} else if le.Launcher {
+		log.Printf("launcher: pid %d, runner %q", os.Getppid(), le.Runner)
+	}
 	os.MkdirAll(*data, 0o700)
 	// A systemd unit has a minimal PATH; agents need the user's tools.
 	if u := os.Getenv("USER"); u != "" || home() != "" {
@@ -121,7 +132,7 @@ func main() {
 	// comes before the restart repair, which leaves their runs live.
 	var rn *kept
 	if cmd == "serve" {
-		rn = keptProcs(os.Getenv("FYR_RUNNER"))
+		rn = keptProcs(launchenv.Current().Runner)
 	}
 	h := openHost(cfg, *data, filepath.Join(*t3Dir, "statev2.sqlite"), rn.threads())
 	defer h.st.Close()
@@ -367,7 +378,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// is green: the store reads, the client has its page, and the runner's
 	// processes were adopted when there is a runner.
 	health := []deploy.Check{storeHealthy(h.st), webHealthy(webFS), func() error {
-		if os.Getenv("FYR_RUNNER") != "" && rn == nil {
+		if launchenv.Current().Runner != "" && rn == nil {
 			return errors.New("the runner did not answer; its agent processes were not adopted")
 		}
 		return nil

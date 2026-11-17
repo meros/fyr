@@ -23,8 +23,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -133,4 +135,34 @@ func SocketPath(data string) string {
 	}
 	sum := sha256.Sum256([]byte(data))
 	return filepath.Join(dir, "fyr-runner-"+hex.EncodeToString(sum[:6])+".sock")
+}
+
+// PeerPid is the pid of the process that listens on the Unix socket at
+// path: for an install's runner, its launcher (#167). errors.ErrUnsupported
+// where the OS does not say.
+func PeerPid(path string) (int, error) {
+	c, err := net.DialTimeout("unix", path, 2*time.Second)
+	if err != nil {
+		return 0, err
+	}
+	defer c.Close()
+	return connPeerPid(c)
+}
+
+// connPeerPid is the pid of the process at the other end of a Unix socket
+// connection, as of its connect or listen.
+func connPeerPid(c net.Conn) (int, error) {
+	uc, ok := c.(*net.UnixConn)
+	if !ok {
+		return 0, errors.ErrUnsupported
+	}
+	raw, err := uc.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+	pid, perr := 0, error(nil)
+	if err := raw.Control(func(fd uintptr) { pid, perr = peerPidFd(int(fd)) }); err != nil {
+		return 0, err
+	}
+	return pid, perr
 }

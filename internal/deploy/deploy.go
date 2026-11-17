@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/proc"
 )
 
@@ -245,7 +246,7 @@ func tail(b []byte, n int) string {
 // thread runs, links next and stops the daemon with ExitDeploy. It returns
 // core.ErrReportLater on success: the new daemon reports the result.
 func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectReq, dir string) (string, error) {
-	if os.Getenv("FYR_LAUNCHER") != "1" {
+	if !launchenv.Current().Launcher {
 		return "", errors.New("Fyr is not running under the fyr launcher, so it cannot switch builds. Start it with `fyr` (see README)")
 	}
 	run := d.runner()

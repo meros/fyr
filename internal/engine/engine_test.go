@@ -852,3 +852,53 @@ func TestDTODerivesSettleViewAndProject(t *testing.T) {
 		t.Fatalf("dto after the run: %s", b)
 	}
 }
+
+// #167: a fyrd with another database (an agent's `fyrd serve -data
+// scratch` that reached the live runner) adopts nothing and ends nothing:
+// the live thread's process keeps its pending question, and the live fyrd
+// still gets it and its answer reaches the CLI.
+func TestAdoptLeavesAnotherInstallsProcesses(t *testing.T) {
+	sock := rnr.SocketPath(t.TempDir())
+	srv := &rnr.Server{Logf: t.Logf}
+	if err := srv.Listen(sock); err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	t.Cleanup(func() { srv.Close(time.Second) })
+	rc := &rnr.Client{Path: sock}
+	dir := t.TempDir()
+	db := filepath.Join(dir, "fyr.db")
+
+	h := startHarnessWith(t, dir, db, time.Minute, rc, nil)
+	id := h.create("approve")
+	th := h.wait(id, "asking", state(core.Asking))
+	did := th.Decisions[0].ID
+	h.m.StopAll()
+	h.e.st.Close()
+
+	procs, _ := rc.List()
+	other := t.TempDir()
+	stray := startHarnessWith(t, other, filepath.Join(other, "fyr.db"), time.Minute, rc, agent.Kept(procs))
+	stray.m.Adopt(procs)
+	time.Sleep(100 * time.Millisecond)
+	after, err := rc.List()
+	if err != nil || len(after) != 1 || after[0].Exited || after[0].ID != procs[0].ID {
+		t.Fatalf("another install's fyrd ended the live process: %+v %v", after, err)
+	}
+
+	h2 := startHarnessWith(t, dir, db, time.Minute, rc, agent.Kept(after))
+	h2.m.Adopt(after)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if r := h2.cmd("thread.answer", id, core.Args{"decisionId": did, "allow": true}); r.OK {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the pending question did not come back to the live fyrd")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if th := h2.wait(id, "done", state(core.Done)); th.Summary != "Permission: allow" || th.Failure != nil {
+		t.Fatalf("summary %q failure %+v", th.Summary, th.Failure)
+	}
+}
