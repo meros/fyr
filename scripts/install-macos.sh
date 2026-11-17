@@ -159,7 +159,8 @@ mdimport -i "$app" >/dev/null 2>&1 || true
 # https://<this Mac>.ts.net:7443/.well-known/fyr and follow it at its
 # hostListen. The macOS app's Serve proxies to TCP only, never to Fyr's Unix
 # socket, so it goes to a port that answers the well-known and nothing else.
-# Keys already in the config are kept.
+# The peer port is where installs of the same tailnet user pair and link
+# (decision 0030). Keys already in the config are kept.
 cfg="$HOME/.config/fyr/config.json"
 if command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
   mkdir -p "$(dirname "$cfg")"
@@ -169,6 +170,7 @@ p = sys.argv[1]
 c = json.load(open(p)) if os.path.exists(p) else {}
 c.setdefault("hostListen", "tailnet:7778")
 c.setdefault("wellKnownListen", "127.0.0.1:7779")
+c.setdefault("peerListen", "0.0.0.0:7780")  # the peer port (V0.158); 7779 is taken by wellKnownListen
 json.dump(c, open(p, "w"), indent=2)
 PY
   wk="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("wellKnownListen", ""))' "$cfg")"

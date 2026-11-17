@@ -670,7 +670,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), cfg.ServeSocketUsers, serve) // V0.130
 		serveLAN(cfg, fr, serve)
 		if cfg.WellKnownListen != "" {
-			serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, func() peers.WellKnown { return wk }))
+			serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w })) // the macOS Serve's way to this answer: it names the peer port too, or no install pairs with this one
 			log.Printf("answering /.well-known/fyr for Tailscale Serve at %s", cfg.WellKnownListen)
 		}
 	}
