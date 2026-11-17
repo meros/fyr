@@ -10,6 +10,8 @@ import type { Api } from "./api.ts";
 import { hostForProject, hostLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, withHost, type SettingsHost } from "./host-settings.ts";
 import { quotaFor } from "./quota.ts";
+import { jobLines } from "./load.ts";
+import { useLoad } from "./load-ui.tsx";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { CARD_WORD, cardState } from "./quota.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -1253,6 +1255,7 @@ function AutomationPage({ d, hasDeploy }: { d: Data; hasDeploy: boolean }) {
           </Group>
         ))}
       {d.updates && <UpdatesGroup d={d} />}
+      <HeavyJobsGroup host={d.host.name} />
       {d.repos === null && d.reposErr ? (
         <LoadError text={d.reposErr} onRetry={() => void d.loadRepos()} />
       ) : d.repos === null ? (
@@ -1272,6 +1275,23 @@ function AutomationPage({ d, hasDeploy }: { d: Data; hasDeploy: boolean }) {
         </Group>
       )}
     </>
+  );
+}
+
+/** Decision 0029 S1 (#185): the heavy jobs this host measured, per class (project and command), the newest first.
+ *  Only shown; nothing is admitted by these numbers yet. Desktop and phone share it. */
+function HeavyJobsGroup({ host }: { host: string }) {
+  const list = useLoad();
+  const h = list.find((x) => x.host === host) ?? (list.length === 1 ? list[0] : undefined);
+  if (!h?.provider) return null;
+  const lines = jobLines(h);
+  return (
+    <Group title="Heavy jobs" label="Heavy jobs" foot="What each kind of heavy job used the last time it held a slot, measured from its thread. Fyr will use this to let cheap jobs run side by side.">
+      {!lines.length && <Empty text="No heavy job measured yet. A job is measured while its thread holds a slot." />}
+      {lines.slice(0, 12).map((l) => (
+        <Row key={l.class} title={l.class} mono desc={l.text} />
+      ))}
+    </Group>
   );
 }
 

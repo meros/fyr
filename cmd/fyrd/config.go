@@ -11,6 +11,7 @@ import (
 
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/front"
+	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/quota"
 	"github.com/meros/fyr/internal/t3"
@@ -84,6 +85,9 @@ type config struct {
 	// Slots: how many heavy jobs (test suites, builds, e2e runs) run at
 	// once across the threads (V0.86); absent or negative is 2, 0 is off.
 	Slots *int `json:"slots"`
+	// HeavyCommands: the patterns of heavy commands and their classes
+	// (decision 0029, #185, #174); absent: heavy.Defaults.
+	HeavyCommands []heavy.Pattern `json:"heavyCommands"`
 	// Peers: Fyr page origins probed as they are (V0.123, decision 0025),
 	// besides the tailnet's own nodes; for development and non-tailnet hosts.
 	Peers []string `json:"peers"`

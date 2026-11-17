@@ -6,7 +6,7 @@ import type { Change, ChangeNeed, Thread } from "./types.ts";
 import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { press } from "./confirm.ts";
-import { ThreadCPU, ThreadSlot } from "./load-ui.tsx";
+import { ThreadCPU, ThreadJob, ThreadSlot, useThreadJob } from "./load-ui.tsx";
 import { RowProject, RowProjectName, StartedBy } from "./project-ui.tsx";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState } from "./rows.ts";
@@ -168,6 +168,7 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs }: BodyP
   const when = working ? relTime(t.runStartedAt ?? firstTask, now) : whenLabel(t.activityAt ?? t.updatedAt, now);
   const sub = working && !agents.length && !!t.subagents; // "0 sub" says nothing
   const chips = sub || (!working && hasChange(t));
+  const job = useThreadJob(t.id); // decision 0029 S1: first on the line, which is cut at its end
   return (
     <div {...attrs} class={`one${agents.length ? " has-agents" : ""}${extra}`}>
       {lead ?? <StateIcon state={st} />}
@@ -176,10 +177,12 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs }: BodyP
       <span class="m">
         <i class="ell">
           {pre}
-          <RowFrom t={t} look={look} more={!!detail} />
+          <RowFrom t={t} look={look} more={!!detail || !!job} />
+          {job && <ThreadJob text={job} />}
+          {job && detail ? " · " : ""}
           {detail}
           {working && <ThreadCPU id={t.id} />}
-          <ThreadSlot id={t.id} />
+          {!job && <ThreadSlot id={t.id} />}
         </i>
         {chips && (
           <span class="cl">

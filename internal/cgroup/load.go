@@ -1,6 +1,7 @@
 package cgroup
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,6 +29,22 @@ type Load struct {
 	// Slots: the host's slots for heavy jobs (V0.86), read fresh on each
 	// Get; nil without a pool.
 	Slots *slots.Snapshot `json:"slots,omitempty"`
+
+	// Decision 0029 S1 (#185), absent without a provider (no /proc):
+	// Provider reads the signals ("cgroups" or "proc"); Capacity is what
+	// agents may use; Slowdown is s (1.0 idle), nil without a fresh probe;
+	// Headroom is the share of Capacity.Memory left; MemoryPressure is PSI
+	// memory full avg10 and MemoryStall its level (ok, elevated,
+	// critical); AgentsPressure is agents/cpu.pressure some avg10.
+	Provider       string    `json:"provider,omitempty"`
+	Capacity       *Capacity `json:"capacity,omitempty"`
+	Slowdown       *float64  `json:"slowdown,omitempty"`
+	Headroom       *float64  `json:"headroom,omitempty"`
+	MemoryPressure *float64  `json:"memoryPressure,omitempty"`
+	MemoryStall    Stall     `json:"memoryStall,omitempty"`
+	AgentsPressure *float64  `json:"agentsCpuPressure,omitempty"`
+	// Jobs: the measured slot holds per class, the newest first.
+	Jobs []JobClass `json:"jobs,omitempty"`
 }
 
 // Use is agents/ as a whole.
@@ -43,6 +60,11 @@ type ThreadLoad struct {
 	ID     string   `json:"id"`
 	CPU    *float64 `json:"cpu,omitempty"` // cores, nil on the first read
 	Memory uint64   `json:"memory"`
+	// Decision 0029 S1: the cgroup's cpu.pressure some avg10, its
+	// memory.peak, and the class of the job its slot runs now.
+	CPUPressure *float64 `json:"cpuPressure,omitempty"`
+	Peak        uint64   `json:"peak,omitempty"`
+	Job         string   `json:"job,omitempty"`
 }
 
 // MinGap is how often the host reads at most; a client asks every 5 s.
@@ -56,6 +78,9 @@ type Sampler struct {
 	Cores int    // default runtime.NumCPU()
 	Now   func() time.Time
 	Slots *slots.Pool // V0.86; optional
+	// Decision 0029 S1: the slowdown probe and the job records; optional.
+	Probe *Slowdown
+	Jobs  *Jobs
 
 	mu     sync.Mutex
 	at     time.Time
@@ -64,25 +89,66 @@ type Sampler struct {
 	cached bool
 }
 
-// Get returns the load, read now or at most MinGap ago; the slots are
-// always read now.
+// Get returns the load, read now or at most MinGap ago; the slots and the
+// live jobs are always read now.
 func (s *Sampler) Get() Load {
 	l := s.get()
 	if s.Slots != nil && !s.Slots.Off() {
 		sn := s.Slots.Snapshot()
 		l.Slots = &sn
 	}
+	if s.Jobs != nil {
+		l.Jobs = s.Jobs.Classes()
+		th := make([]ThreadLoad, len(l.Threads))
+		for i, t := range l.Threads {
+			t.Job = s.Jobs.Live(t.ID)
+			th[i] = t
+		}
+		l.Threads = th
+	}
 	return l
+}
+
+func (s *Sampler) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+// Tick reads the load and follows the slot holds (decision 0029 S1); the
+// host calls it every ProbeEvery, whether or not a client asks.
+func (s *Sampler) Tick() {
+	l := s.get()
+	if s.Jobs == nil || s.Slots == nil || s.Slots.Off() {
+		return
+	}
+	rates := map[string]*float64{}
+	for _, t := range l.Threads {
+		rates[t.ID] = t.CPU
+	}
+	s.Jobs.tick(s.Tree, s.Slots.Snapshot(), rates, l.Slowdown, s.now())
+}
+
+// Run ticks until ctx ends.
+func (s *Sampler) Run(ctx context.Context) {
+	t := time.NewTicker(ProbeEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.Tick()
+		}
+	}
 }
 
 // get reads the machine and the cgroups at most every MinGap.
 func (s *Sampler) get() Load {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := time.Now()
-	if s.Now != nil {
-		now = s.Now()
-	}
+	now := s.now()
 	if s.cached && now.Sub(s.at) < MinGap {
 		return s.last
 	}
@@ -145,14 +211,23 @@ func (s *Sampler) get() Load {
 				continue
 			}
 			d := filepath.Join(agents, e.Name())
-			t := ThreadLoad{ID: e.Name(), Memory: readBytes(filepath.Join(d, "memory.current"))}
+			t := ThreadLoad{ID: e.Name(), Memory: readBytes(filepath.Join(d, "memory.current")), Peak: readBytes(filepath.Join(d, "memory.peak"))}
 			if u, ok := readKey(filepath.Join(d, "cpu.stat"), "usage_usec"); ok {
 				t.CPU = cpu(e.Name(), u)
+			}
+			if p, ok := readPSI(filepath.Join(d, "cpu.pressure")); ok {
+				v := p.some
+				t.CPUPressure = &v
 			}
 			l.Threads = append(l.Threads, t)
 		}
 		sort.Slice(l.Threads, func(i, j int) bool { return l.Threads[i].ID < l.Threads[j].ID })
 	}
+	var agentsMem uint64
+	if l.Agents != nil {
+		agentsMem = l.Agents.Memory
+	}
+	s.signals(&l, proc, agentsMem)
 	s.at, s.usage, s.last, s.cached = now, usage, l, true
 	return l
 }
