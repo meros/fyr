@@ -110,6 +110,11 @@ type config struct {
 	// tailnet.DefaultSocket. Decision 0030 slice 0: the test harness points a
 	// scratch fyrd at a fake tailscaled with it.
 	TailscaleSocket string `json:"tailscaleSocket"`
+	// ServeSocketUsers: user ids besides root that may connect to serve.sock
+	// (decision 0030 3.2: its peer is tailscaled, which is root). Empty is
+	// root only. The test harness adds its own user, since its Serve
+	// emulator is not root.
+	ServeSocketUsers []int `json:"serveSocketUsers"`
 }
 
 // tsSocket is the LocalAPI socket this install asks about the tailnet.

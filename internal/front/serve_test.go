@@ -31,7 +31,7 @@ func TestV130ServeSocketProxiesWithThePublicHost(t *testing.T) {
 	}
 	s := &server.Server{Engine: engine.New(st), BuildID: "host-build", Host: "desk", OwnerLogin: owner,
 		Attach: &attach.Store{Dir: t.TempDir()}}
-	hs := httptest.NewServer(s.Handler())
+	hs := httptest.NewServer(s.PipeHandler()) // decision 0030: a front reaches its host through the pipe or the peer listener, which read Fyr-Origin
 	t.Cleanup(func() { hs.Close(); st.Close() })
 
 	f := New(Options{Name: "front", BuildID: "front-build", OwnerLogin: owner, MinBackoff: 50 * time.Millisecond,

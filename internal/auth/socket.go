@@ -72,3 +72,34 @@ func (l OwnerListener) Accept() (net.Conn, error) {
 		c.Close()
 	}
 }
+
+// PeerListener accepts only connections whose peer's user Allow accepts; any
+// other is closed and logged (decision 0030 3.2: serve.sock's peer is root,
+// which is tailscaled).
+type PeerListener struct {
+	net.Listener
+	Name  string
+	Allow func(uid int) bool
+	// UID reads a connection's peer user; nil reads the kernel's credentials.
+	// A test fakes it.
+	UID func(net.Conn) (int, error)
+}
+
+func (l PeerListener) Accept() (net.Conn, error) {
+	for {
+		c, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		get := l.UID
+		if get == nil {
+			get = peerUID
+		}
+		uid, err := get(c)
+		if err == nil && l.Allow(uid) {
+			return c, nil
+		}
+		log.Printf("auth: %s refused a connection (uid %d, %v)", l.Name, uid, err)
+		c.Close()
+	}
+}

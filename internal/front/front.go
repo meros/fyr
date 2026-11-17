@@ -31,6 +31,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/auth"
+	"github.com/meros/fyr/internal/authn"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/peers"
@@ -240,19 +241,32 @@ func (f *Front) newLink(h HostConfig) *link {
 		tr.DialContext, tr.Proxy = h.Dial, nil
 		client = &http.Client{Transport: tr, Timeout: opt.Client.Timeout}
 	}
-	l := &link{cfg: h, base: u, client: client, raw: map[string]map[string]any{},
+	// Decision 0030 3.3: a request the front makes for itself (its stream, its
+	// state reads, its settings) is the install's own: it carries Fyr-Actor
+	// kind=install, and the host's own name as Host, whatever the call set.
+	// A call for a browser sets its own Fyr-Actor first and keeps it.
+	self := authn.Principal{Kind: authn.KindInstall, ID: opt.ID, How: authn.HowLink}
+	if self.ID == "" {
+		self.ID = "front"
+	}
+	selfClient := *client
+	selfClient.Transport = actorTransport{rt: client.Transport, self: self}
+	l := &link{cfg: h, base: u, client: &selfClient, raw: map[string]map[string]any{},
 		pub: map[string]map[string]any{}, known: map[string]bool{}, settings: map[string]settingsRead{}}
 	l.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(l.base)
-			// Previews build their CSP from the browser's Host (V0.47).
-			pr.Out.Host = pr.In.Host
-			// Rewrite drops X-Forwarded-Proto; Serve's socket is HTTPS (V0.130).
-			if server.IsViaServe(pr.In) {
-				pr.Out.Header.Set("X-Forwarded-Proto", "https")
-			}
-			if l.cfg.Remote {
-				pr.Out.Header.Del("Tailscale-User-Login")
+			// Decision 0030 3.3: nothing the browser or Tailscale put on the
+			// request goes on. The host's own name is the Host (a preview's
+			// CSP takes the browser's origin from Fyr-Origin instead), and the
+			// principal travels as Fyr-Actor.
+			authn.Strip(pr.Out.Header)
+			pr.Out.Host = l.base.Host
+			p := principalOf(pr.In)
+			p.Front = opt.ID
+			pr.Out.Header.Set(authn.Header, p.Header())
+			if o := originOf(pr.In); o != "" {
+				pr.Out.Header.Set(authn.OriginHeader, o)
 			}
 		},
 		Transport:     client.Transport,
@@ -372,7 +386,6 @@ func (f *Front) session(ctx context.Context, l *link) error {
 	watchdog := time.AfterFunc(idle, cancel)
 	defer watchdog.Stop()
 	req, _ := http.NewRequestWithContext(ctx, "GET", l.base.String()+"/api/stream", nil)
-	req.Host = "localhost"
 	req.Header.Set("Accept-Encoding", "identity") // each frame at once
 	resp, err := l.client.Do(req)
 	if err != nil {
@@ -430,7 +443,6 @@ func (f *Front) get(ctx context.Context, l *link, path string, v any) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", l.base.String()+path, nil)
-	req.Host = "localhost"
 	resp, err := l.client.Do(req)
 	if err != nil {
 		return err
@@ -721,7 +733,12 @@ func (f *Front) setOffline(l *link, err error) {
 
 // Handler serves the browser API (unchanged, plus host stamps) and the client.
 func (f *Front) Handler() http.Handler {
-	mux := http.NewServeMux()
+	return refuseActor(server.Browser(f.opt.OwnerLogin, f.withAuth(f.mux())))
+}
+
+// mux is the browser API's routes.
+func (f *Front) mux() *routeMux {
+	mux := &routeMux{ServeMux: http.NewServeMux()}
 	mux.HandleFunc("GET /api/state", f.state)
 	mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
 		ch := f.hub.Subscribe()
@@ -730,7 +747,7 @@ func (f *Front) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /api/threads/{id}", f.thread)
 	mux.HandleFunc("/api/threads/{id}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
-		f.forward(w, r, f.owner(r.PathValue("id")))
+		f.forward(principalOf(r), w, r, f.owner(r.PathValue("id")))
 	})
 	mux.HandleFunc("POST /api/command", f.command)
 	// V0.54: device data lives on the front: presence and push.
@@ -749,7 +766,7 @@ func (f *Front) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		f.forward(w, r, l)
+		f.forward(principalOf(r), w, r, l)
 	})
 	mux.HandleFunc("GET /api/quota", f.quota)
 	mux.HandleFunc("GET /api/load", f.hostLoad)
@@ -761,7 +778,7 @@ func (f *Front) Handler() http.Handler {
 		if f.badHost(w, r) {
 			return
 		}
-		f.forward(w, r, f.byName(r.URL.Query().Get("host")))
+		f.forward(principalOf(r), w, r, f.byName(r.URL.Query().Get("host")))
 	})
 	mux.HandleFunc("/mcp", http.NotFound) // agents talk to their host
 	if f.opt.WellKnown != nil {           // V0.123: how other installs find this one
@@ -770,7 +787,7 @@ func (f *Front) Handler() http.Handler {
 	if f.opt.Web != nil {
 		mux.Handle("/", f.webClient())
 	}
-	return server.Browser(f.opt.OwnerLogin, f.withAuth(mux))
+	return mux
 }
 
 // byName is the host with that name; "" is the first host in the owner's
@@ -855,11 +872,14 @@ func (f *Front) unavailable(w http.ResponseWriter, l *link) bool {
 	return true
 }
 
-func (f *Front) forward(w http.ResponseWriter, r *http.Request, l *link) {
+// forward sends the browser's request to a host as p (decision 0030 3.3): there
+// is no form without a principal. The proxy takes it from the request's
+// context.
+func (f *Front) forward(p authn.Principal, w http.ResponseWriter, r *http.Request, l *link) {
 	if f.unavailable(w, l) {
 		return
 	}
-	l.proxy.ServeHTTP(w, r)
+	l.proxy.ServeHTTP(w, r.WithContext(authn.With(r.Context(), p)))
 }
 
 // state merges the hosts' states. The records are per host and stamped;
@@ -1001,9 +1021,9 @@ func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, _ := http.NewRequestWithContext(r.Context(), "POST", l.base.String()+"/api/command", bytes.NewReader(body))
-	req.Host = "localhost"
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Fyr", "1")
+	setActor(req, principalOf(r), f.opt.ID, originOf(r))
 	resp, err := l.client.Do(req)
 	if err != nil {
 		api.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})
@@ -1064,7 +1084,7 @@ func (f *Front) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec := &recorder{ResponseWriter: w}
-	l.proxy.ServeHTTP(rec, r)
+	l.proxy.ServeHTTP(rec, r.WithContext(authn.With(r.Context(), principalOf(r))))
 	var m struct {
 		ID string `json:"id"`
 	}
@@ -1115,7 +1135,7 @@ func (f *Front) lookup(w http.ResponseWriter, r *http.Request) {
 	if l == nil {
 		l = f.byName("")
 	}
-	f.forward(w, r, l)
+	f.forward(principalOf(r), w, r, l)
 }
 
 // quota merges the provider quota of every online host (V0.54): profiles
@@ -1126,7 +1146,7 @@ func (f *Front) quota(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if l := f.target(r); l != nil {
-		f.forward(w, r, l)
+		f.forward(principalOf(r), w, r, l)
 		return
 	}
 	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/quota", "profile", true))
@@ -1138,7 +1158,7 @@ func (f *Front) hostLoad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if l := f.target(r); l != nil {
-		f.forward(w, r, l)
+		f.forward(principalOf(r), w, r, l)
 		return
 	}
 	api.WriteJSON(w, 200, f.gather(r.Context(), "/api/load", "host", false))
@@ -1231,8 +1251,7 @@ func (f *Front) focus(device, prev, thread string) {
 			body, _ := json.Marshal(map[string]any{"device": device, "off": c.off})
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			req, _ := http.NewRequestWithContext(ctx, "POST", l.base.String()+"/api/threads/"+url.PathEscape(c.id)+"/focus", bytes.NewReader(body))
-			req.Host = "localhost"
-			req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Fyr", "1")
 			if resp, err := l.client.Do(req); err == nil {
 				io.Copy(io.Discard, resp.Body)

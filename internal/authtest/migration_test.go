@@ -25,8 +25,13 @@ type step struct {
 
 var steps = []step{
 	{"slice 0: today (V0.130, observe)", func(t *testing.T, l *authtest.Live) {}},
-	// Slice 1 adds: the new front and the old host, then the old front and the
-	// new host, a mixed-version pair.
+	// Slice 1: the principal on every hop. A new front with an older host (the
+	// recorder drops Fyr-Actor, as an older build ignores it) is checked in
+	// TestNewFrontFollowsAnOlderHost; a front without Fyr-Actor against a new
+	// host is TestPeerHandlerServesALegacyFront (internal/server).
+	{"slice 1: Fyr-Actor on every hop", func(t *testing.T, l *authtest.Live) {
+		l.Rec.SetStripActor(false)
+	}},
 	// Slice 2 adds: the stored modes, `fyr auth enforce` on browser, then
 	// `fyr auth observe` back.
 	// Slices 3 to 6 add: the roster, the peer link beside the whois link, the
@@ -35,16 +40,17 @@ var steps = []step{
 
 func TestMigrationKeepsTheOwnerSignedIn(t *testing.T) {
 	l := live(t)
-	for _, s := range steps {
+	for i, s := range steps {
 		s.apply(t, l)
-		t.Run(s.name, func(t *testing.T) { checks(t, l) })
+		t.Run(s.name, func(t *testing.T) { checks(t, l, i) })
 		if t.Failed() {
 			return // the later steps start from a state that is already wrong
 		}
 	}
 }
 
-func checks(t *testing.T, l *authtest.Live) {
+// checks runs after step n; a slice's checks run from its step on.
+func checks(t *testing.T, l *authtest.Live, n int) {
 	t.Helper()
 	// 1. The fixture's two cookies still get the API on the laptop's loopback
 	//    port (the laptop's browser) ...
@@ -80,6 +86,29 @@ func checks(t *testing.T, l *authtest.Live) {
 		t.Error("fyr open minted no session")
 	} else if r, err := l.Laptop.Get("/api/state", session); err != nil || r.Status != 200 {
 		t.Errorf("the session fyr open minted: %v %d", err, r.Status)
+	}
+	// 4b. From slice 1: what the front sent its host names who acted, and
+	//     carries no browser credential.
+	if n >= 1 {
+		mark := l.Rec.Mark()
+		if _, err := l.Laptop.Get("/api/commands?host=server", l.Local); err != nil { // forwarded to the server host as this device
+			t.Fatalf("a call to the server host: %v", err)
+		}
+		var sawDevice bool
+		for _, s := range l.Rec.Since(mark) {
+			if !s.Has("Fyr-Actor") {
+				t.Errorf("%s %s went to the host with no Fyr-Actor", s.Method, s.Path)
+			}
+			for _, h := range []string{"Cookie", "Authorization", "Tailscale-User-Login", "X-Forwarded-For", "Origin"} {
+				if s.Has(h) {
+					t.Errorf("%s %s went to the host with %s", s.Method, s.Path, h)
+				}
+			}
+			sawDevice = sawDevice || strings.Contains(s.Header.Get("Fyr-Actor"), "kind=device; id="+l.LocalID)
+		}
+		if !sawDevice {
+			t.Errorf("the host never saw the laptop's device %s", l.LocalID)
+		}
 	}
 	// 5. After enforce, `fyr auth observe` restores the old ways: added by
 	//    slice 2, which also makes the first way in enforceable.

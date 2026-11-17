@@ -3,6 +3,7 @@ package authtest
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -27,6 +28,11 @@ type Live struct {
 	ID         string // the laptop's install id
 	Local      string // the session `fyr open` made (How local)
 	Tailnet    string // the session the phone got through Serve (How tailnet)
+	LocalID    string // the device ids of those sessions
+	TailnetID  string
+
+	// Rec records what the laptop's front sends its static host (Server).
+	Rec *Recorder
 
 	Self  Node // the laptop's node
 	Phone Node // the owner's phone: untagged, the owner's user
@@ -90,13 +96,22 @@ func NewLive() (l *Live, err error) {
 		st.Close()
 		return nil, err
 	}
-	l.Local, _ = a.Mint(auth.HowLocal, "Chrome on Linux · on laptop")
-	l.Tailnet, _ = a.Mint(auth.HowTailnet, "Chrome on Android")
+	var d1, d2 *auth.Device
+	l.Local, d1 = a.Mint(auth.HowLocal, "Chrome on Linux · on laptop")
+	l.Tailnet, d2 = a.Mint(auth.HowTailnet, "Chrome on Android")
+	l.LocalID, l.TailnetID = d1.ID, d2.ID
 	if err := st.Close(); err != nil {
 		return nil, err
 	}
-	l.Laptop, err = Start(Options{Name: "laptop", Data: data, Tailscale: l.TS,
-		Hosts: []HostEntry{{Name: "server", URL: l.Server.URL()}}})
+	if l.Rec, err = NewRecorder(l.Server.URL()); err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, l.Rec.Close)
+	// Serve's emulator is not root: decision 0030 3.2 closes serve.sock to
+	// every user but root, so the harness names its own user (config
+	// serveSocketUsers).
+	l.Laptop, err = Start(Options{Name: "laptop", Data: data, Tailscale: l.TS, Extra: map[string]any{"serveSocketUsers": []int{os.Getuid()}},
+		Hosts: []HostEntry{{Name: "server", URL: l.Rec.URL}}})
 	if err != nil {
 		return nil, err
 	}

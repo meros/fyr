@@ -71,7 +71,6 @@ func (f *Front) settingsRead(w http.ResponseWriter, r *http.Request) {
 		u += "?" + q.Encode()
 	}
 	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
-	req.Host = "localhost"
 	resp, err := l.client.Do(req)
 	if err != nil {
 		if stale() {

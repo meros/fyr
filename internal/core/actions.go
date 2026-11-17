@@ -264,6 +264,12 @@ func register(a *Action) {
 			if by != ByOwner {
 				ev["by"], ev["from"] = by, in.From
 			}
+			if in.Actor != "" {
+				ev["actor"] = in.Actor
+				if in.Front != "" {
+					ev["front"] = in.Front
+				}
+			}
 			res := Result{Events: []Event{{"command", ev}}}
 			for _, ef := range effs {
 				// The owner's answer to an agent's request (5.10) settles here,

@@ -343,11 +343,16 @@ func (e *Engine) ChangesLook(id string) *core.ChangesLook {
 
 // Command applies one owner command exactly once per CommandID (I7): it
 // builds the owner's Input and submits it.
-func (e *Engine) Command(c api.Cmd) api.Reply {
+func (e *Engine) Command(c api.Cmd) api.Reply { return e.CommandAs(c, "", "") }
+
+// CommandAs is Command with who acted (decision 0030 3.3): actor is
+// "device:<id>", "local:owner" or "install:<id>", front the install whose front
+// forwarded it. The command's event records both.
+func (e *Engine) CommandAs(c api.Cmd, actor, front string) api.Reply {
 	if c.CommandID == "" {
 		return api.Reply{Error: "commandId is required", Status: 400}
 	}
-	return e.submit(core.Input{Source: core.FromOwner, Kind: c.Action, Thread: c.ThreadID, Args: c.Args, CmdID: c.CommandID})
+	return e.submit(core.Input{Source: core.FromOwner, Kind: c.Action, Thread: c.ThreadID, Args: c.Args, CmdID: c.CommandID, Actor: actor, Front: front})
 }
 
 // submit sends a command's Input down the one path: the owner's commands
