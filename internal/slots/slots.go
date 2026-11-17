@@ -47,8 +47,10 @@ type Holder struct {
 	Since    time.Time `json:"since"`
 	Priority bool      `json:"priority,omitempty"`
 	// Cost is a holder's share of the budget in a snapshot (decision 0029
-	// S2); 0 without Pool.Cost.
+	// S2); 0 without Pool.Cost. Pct is the same as a percentage of the host
+	// (V0.163): for a waiter, its predicted cost.
 	Cost float64 `json:"cost,omitempty"`
+	Pct  float64 `json:"pct,omitempty"`
 
 	ready chan struct{} // a Wait's: closed on the grant
 }
@@ -65,6 +67,13 @@ type Snapshot struct {
 	// Decision 0029 S4: the budget now (nil while it is N) and why.
 	Budget    *float64 `json:"budget,omitempty"`
 	BudgetWhy string   `json:"budgetWhy,omitempty"`
+	// V0.163, in percent of what the host gives its agents: the jobs in
+	// use, the budget (100 % is N), what is free, and what the queue's head
+	// needs.
+	UsedPct   *float64 `json:"usedPct,omitempty"`
+	BudgetPct *float64 `json:"budgetPct,omitempty"`
+	FreePct   *float64 `json:"freePct,omitempty"`
+	NeedPct   *float64 `json:"needPct,omitempty"`
 }
 
 // Pool is one host's slots.
@@ -442,14 +451,38 @@ func (p *Pool) snapshotLocked() Snapshot {
 		b := p.budget
 		s.Budget, s.BudgetWhy = &b, p.budgetWhy
 	}
-	if p.Cost != nil {
-		used := 0.0
-		for i := range s.Held {
-			s.Held[i].Cost = p.Cost(s.Held[i])
-			used += s.Held[i].Cost
+	n := float64(p.n)
+	used := 0.0
+	for i := range s.Held {
+		c := 1.0
+		if p.Cost != nil {
+			c = p.Cost(s.Held[i])
+			s.Held[i].Cost = c
 		}
-		used = float64(int(used*100+0.5)) / 100
-		s.Used = &used
+		s.Held[i].Pct = Pct(c, n)
+		used += c
+	}
+	for i := range s.Waiting {
+		c := 1.0
+		if p.Cost != nil {
+			c = p.Cost(s.Waiting[i])
+		}
+		s.Waiting[i].Pct = Pct(c, n)
+	}
+	if p.Cost != nil {
+		u := float64(int(used*100+0.5)) / 100
+		s.Used = &u
+	}
+	// V0.163: the same in percent of the host (100 % is N).
+	b := n
+	if bb := p.budgetLoad(); bb > 0 {
+		b = bb
+	}
+	up, bp, fp := Pct(used, n), Pct(b, n), max(0, Pct(b-used, n))
+	s.UsedPct, s.BudgetPct, s.FreePct = &up, &bp, &fp
+	if len(s.Waiting) > 0 {
+		need := s.Waiting[0].Pct
+		s.NeedPct = &need
 	}
 	pub := s
 	pub.Held, pub.Waiting = slices.Clone(s.Held), slices.Clone(s.Waiting)

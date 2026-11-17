@@ -58,16 +58,26 @@ const IdleCost = 0.1
 // IdleAfter is how long a hold must be idle to cost IdleCost.
 const IdleAfter = 3 * time.Minute
 
+// Pct is units as a percentage of the host (V0.163): a cost in units over
+// n is a job's dominant share of what the host gives its agents.
+func Pct(units, n float64) float64 {
+	if n <= 0 {
+		return 0
+	}
+	return float64(int(units/n*100 + 0.5))
+}
+
 // Decide says whether a job of cost head may start beside held (their
-// costs) under budget, and why not. In order: without a provider the fixed
+// costs) under budget, and why not (V0.163: in percent of the host; n is
+// the configured count, what 100 % is). In order: without a provider the fixed
 // count; memory short or stalling holds every job; with nothing held the
 // head starts (one job always runs); the budget; the slowdown.
-func Decide(p Policy, s Signals, budget float64, held []float64, head float64) (bool, string) {
+func Decide(p Policy, s Signals, budget, n float64, held []float64, head float64) (bool, string) {
 	if s.Provider == "" {
 		if float64(len(held)) < budget {
 			return true, ""
 		}
-		return false, fmt.Sprintf("all %d slots in use", int(budget))
+		return false, fmt.Sprintf("%d of %d heavy jobs run (this host counts jobs: no load measures)", len(held), int(budget))
 	}
 	if s.Headroom != nil && *s.Headroom < p.MemoryReserve {
 		return false, fmt.Sprintf("memory: %.0f %% free", *s.Headroom*100)
@@ -85,7 +95,7 @@ func Decide(p Policy, s Signals, budget float64, held []float64, head float64) (
 		used += c
 	}
 	if used+head > budget+1e-9 {
-		return false, fmt.Sprintf("%.1f of %.1f in use", used, budget)
+		return false, fmt.Sprintf("needs ≈ %.0f %%, %.0f %% free", Pct(head, n), max(0, Pct(budget-used, n)))
 	}
 	if head > CheapCost && s.Slowdown != nil && *s.Slowdown >= p.SlowdownMax {
 		return false, fmt.Sprintf("CPU: new jobs run %.1f× slower", *s.Slowdown)

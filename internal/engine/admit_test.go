@@ -20,7 +20,7 @@ func TestS2QueuedWithAReasonAndGrantedAtTheTick(t *testing.T) {
 		for i := range c {
 			c[i] = 1
 		}
-		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), c, 1)
+		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), 2, c, 1)
 	}
 	e.UseSlots(p)
 	a, b := bareThread(t, e), bareThread(t, e)

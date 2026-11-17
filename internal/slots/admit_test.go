@@ -21,7 +21,7 @@ func TestS2DecideByTheRules(t *testing.T) {
 		why  string
 	}{
 		{"fits", calm, []float64{1}, 1, true, ""},
-		{"over the budget", calm, []float64{1, 1}, 1, false, "2.0 of 2.0 in use"},
+		{"over the budget", calm, []float64{1, 1}, 1, false, "needs ≈ 50 %, 0 % free"},
 		{"an idle hold leaves room", calm, []float64{1, 0.1}, 0.5, true, ""},
 		{"slow CPU holds a normal job", Signals{Provider: "cgroups", Slowdown: f(2.1), Headroom: f(0.4), Stall: StallOK}, []float64{1}, 1, false, "new jobs run 2.1× slower"},
 		{"slow CPU lets a cheap job in", Signals{Provider: "cgroups", Slowdown: f(2.1), Headroom: f(0.4), Stall: StallOK}, []float64{1}, 0.25, true, ""},
@@ -30,10 +30,10 @@ func TestS2DecideByTheRules(t *testing.T) {
 		{"an elevated stall alone holds nothing (cache reclaim at memory.high)", Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.4), Stall: StallElevated}, nil, 1, true, ""},
 		{"a critical stall holds", Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.4), Stall: StallCritical}, nil, 1, false, "memory stalls (critical)"},
 		{"no provider: the fixed count", Signals{}, []float64{1}, 1, true, ""},
-		{"no provider: full", Signals{}, []float64{0.1, 0.1}, 1, false, "all 2 slots in use"},
+		{"no provider: full", Signals{}, []float64{0.1, 0.1}, 1, false, "2 of 2 heavy jobs run"},
 		{"no slowdown yet: budget and memory only", Signals{Provider: "proc", Headroom: f(0.5)}, []float64{1}, 1, true, ""},
 	} {
-		ok, why := Decide(p, c.sig, 2, c.held, c.head)
+		ok, why := Decide(p, c.sig, 2, 2, c.held, c.head)
 		if ok != c.ok || !strings.Contains(why, c.why) || (c.ok && why != "") {
 			t.Errorf("%s: got %v %q, want %v %q", c.name, ok, why, c.ok, c.why)
 		}

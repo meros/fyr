@@ -23,3 +23,15 @@ func TestH174PromptStatesTheSlotRuleConcretely(t *testing.T) {
 		}
 	}
 }
+
+// V0.163: the prompt speaks a share of the host, not slots (the tool names stay).
+func TestV163PromptSpeaksPercent(t *testing.T) {
+	for _, w := range []string{"share of this host", "%", "mcp__fyr__slot_acquire {kind, command}", "mcp__fyr__slot_release"} {
+		if !strings.Contains(FyrPrompt, w) {
+			t.Errorf("the prompt lacks %q", w)
+		}
+	}
+	if strings.Contains(FyrPrompt, "take a slot") || strings.Contains(FyrPrompt, "the slot is yours") {
+		t.Error("the prompt still speaks slots")
+	}
+}

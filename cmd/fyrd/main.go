@@ -318,13 +318,13 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string) {
 		c, _ := predict(head)
-		return slots.Decide(policy, sampler.Signals(), pool.Budget(), heldCosts(held), c)
+		return slots.Decide(policy, sampler.Signals(), pool.Budget(), float64(n), heldCosts(held), c)
 	}
 	// EASY backfill: c may pass the head when it fits now and is cheap, or
 	// ends (its class's p90) before the earliest running job is expected to.
 	pool.Backfill = func(head, c slots.Holder, held []slots.Holder) bool {
 		cc, wall := predict(c)
-		if ok, _ := slots.Decide(policy, sampler.Signals(), pool.Budget(), heldCosts(held), cc); !ok {
+		if ok, _ := slots.Decide(policy, sampler.Signals(), pool.Budget(), float64(n), heldCosts(held), cc); !ok {
 			return false
 		}
 		ends := make([]time.Time, len(held))
@@ -336,6 +336,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		return slots.EASY(time.Now(), cc, wall, ends)
 	}
 	eng.SlotSignals, eng.SlotGrowth, eng.SlotPolicy = sampler.Signals, jobs.Growth, policy
+	eng.HostName = hostName // V0.163: the heavy-job answers name this host
 	eng.SlotJob = func(thread, c string) {
 		class, text := heavyCmds.Match(c)
 		jobs.Saw(thread, class)

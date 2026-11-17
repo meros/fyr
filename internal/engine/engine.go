@@ -177,6 +177,8 @@ type Engine struct {
 	// class, live and predicted cost); JobReset forgets a learned class
 	// (the owner's Reset). All optional.
 	SlotJob     func(thread, command string)
+	// HostName names this host in the heavy-job answers (V0.163).
+	HostName string
 	SlotOver    func(owner string) (class string, live, predicted float64, over bool)
 	JobReset    func(class string) bool
 	// Decision 0029 S5: freeze and thaw a holder's job (its own cgroup, not

@@ -21,7 +21,7 @@ func TestS4TheTickRaisesTheBudgetOnACalmHost(t *testing.T) {
 		for i := range c {
 			c[i] = 0.5
 		}
-		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), c, 1)
+		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), 1, c, 1)
 	}
 	e.UseSlots(p)
 	e.SlotSignals = func() slots.Signals { return sig }

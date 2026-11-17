@@ -179,7 +179,8 @@ func (e *Engine) heavierThanPredicted(s slots.Snapshot) {
 		e.mu.Lock()
 		e.slotOverTold[h.Owner] = h.Since
 		e.mu.Unlock()
-		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotOver, Thread: h.Owner, Args: core.SlotOverArgs{Class: class, Live: live, Predicted: pred}}); err != nil {
+		n := float64(s.N) // V0.163: the notice speaks a share of the host
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotOver, Thread: h.Owner, Args: core.SlotOverArgs{Class: class, Live: slots.Pct(live, n), Predicted: slots.Pct(pred, n)}}); err != nil {
 			log.Printf("slot over %s: %v", h.Owner, err)
 		}
 	}
@@ -354,11 +355,32 @@ func (e *Engine) HeavyGate(thread, class string) string {
 	s := e.Slots.Snapshot()
 	for i, w := range s.Waiting {
 		if w.Owner == thread {
-			return fmt.Sprintf("Heavy job (%s): you are queued for %s slot (%d ahead) and hold none yet. Do not run it now; Fyr tells you in a [Fyr] message when the slot is yours. Do other work meanwhile or end your turn.", class, article(w.Kind), i)
+			return fmt.Sprintf("Heavy job (%s): it is queued, not admitted yet (%d ahead; it needs ≈ %.0f %% of %s). Do not run it now; Fyr tells you in a [Fyr] message when it is admitted. Do other work meanwhile or end your turn.", class, i, w.Pct, e.hostName())
 		}
 	}
 	kind := heavy.KindOf(class)
-	return fmt.Sprintf("Heavy job (%s) without a slot: call mcp__fyr__slot_acquire {\"kind\":%q} first, run it once you hold the slot, then call mcp__fyr__slot_release. A subagent's run counts too; a single test file or `go test ./pkg -run X` needs no slot.", class, kind)
+	return fmt.Sprintf("Heavy job (%s) not admitted: call mcp__fyr__slot_acquire {\"kind\":%q, \"command\":\"…\"} first; Fyr admits it when its share of %s fits. Run it once admitted, then call mcp__fyr__slot_release. A subagent's run counts too; a single test file or `go test ./pkg -run X` needs no admission.", class, kind, e.hostName())
+}
+
+// hostName is how the heavy-job answers name this host (V0.163).
+func (e *Engine) hostName() string {
+	if e.HostName != "" {
+		return e.HostName
+	}
+	return "this host"
+}
+
+// share is a holder's share of the host and what is left, from a snapshot.
+func share(s slots.Snapshot, owner string) (pct, left float64) {
+	for _, h := range append(s.Held, s.Waiting...) {
+		if h.Owner == owner {
+			pct = h.Pct
+		}
+	}
+	if s.FreePct != nil {
+		left = *s.FreePct
+	}
+	return pct, left
 }
 
 func article(kind string) string {
@@ -371,9 +393,11 @@ func article(kind string) string {
 // slotTools are slot_acquire and slot_release (V0.86 (2)): both answer at
 // once; a queued thread hears later, in a [Fyr] notice.
 func (e *Engine) slotTools(s *mcp.Server) {
-	off := "This host has no slots for heavy jobs; run the job."
+	// V0.163: the names stay (prompts, hooks and habits use them); the
+	// answers speak a share of the host, not slots.
+	off := "This host does not limit heavy jobs; run the job."
 	s.Add(mcp.Tool{Name: "slot_acquire",
-		Description: "Take a slot before a heavy job (a full test suite, a build, an e2e run): at most a few run at once across the user's threads. It answers at once: either you hold the slot (run the job, then call slot_release), or you are queued with your position; then do not start the job, do other work or end your turn, and Fyr tells you in a [Fyr] message when the slot is yours. The slot also goes back when your run ends.",
+		Description: "Ask to run a heavy job (a full test suite, a build, an e2e run). Fyr admits it when its share of this host (its learned cost, as a % of the CPU or memory the host gives its agents, whichever is tighter) fits the heavy-job budget across the user's threads. It answers at once: admitted (run the job, then call slot_release), or queued with the reason; then do not start the job, do other work or end your turn, and Fyr tells you in a [Fyr] message when it is admitted. Admission also ends when your run ends.",
 		Schema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": slots.Kinds()},
 			"command": map[string]any{"type": "string", "description": "The command you will run, e.g. \"make test\"; Fyr then knows what the job costs."}}, "kind"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
@@ -388,29 +412,34 @@ func (e *Engine) slotTools(s *mcp.Server) {
 				return off, nil
 			}
 			if e.Slots.Off() {
-				return "Slots are off on this host: no limit, run the job.", nil
+				return off, nil
 			}
 			held, ahead := e.Slots.Acquire(th, kind)
+			s := e.Slots.Snapshot()
+			pct, left := share(s, th)
 			if held {
-				h, _ := e.Slots.Holding(th)
-				return "You hold " + article(h.Kind) + " slot. Run the job now, then call slot_release. It also goes back when your run ends.", nil
+				return fmt.Sprintf("Admitted: your %s job ≈ %.0f %% of %s; %.0f %% left. Run the job now, then call slot_release. Admission also ends when your run ends.", kind, pct, e.hostName(), left), nil
 			}
 			why := ""
-			if s := e.Slots.Snapshot(); ahead == 0 && s.Why != "" {
+			if ahead == 0 && s.Why != "" {
 				why = " Waiting: " + s.Why + "." // decision 0029 S2
 			}
-			return fmt.Sprintf("Queued for %s slot: %d ahead.%s Do not start the job; Fyr tells you in a [Fyr] message when the slot is yours. Do other work meanwhile or end your turn.", article(kind), ahead, why), nil
+			return fmt.Sprintf("Queued: your %s job needs ≈ %.0f %% of %s, %.0f %% free (%d ahead).%s Do not start the job; Fyr tells you in a [Fyr] message when it is admitted. Do other work meanwhile or end your turn.", kind, pct, e.hostName(), left, ahead, why), nil
 		}})
 	s.Add(mcp.Tool{Name: "slot_release",
-		Description: "Give back your slot for a heavy job when the job ended, or leave the queue for one.",
+		Description: "End your heavy job's admission when the job ended (its share of the host goes back), or leave the queue.",
 		Schema:      obj(map[string]any{}),
 		Call: func(_ context.Context, th string, _ map[string]any) (string, error) {
 			if e.Slots == nil {
 				return off, nil
 			}
 			if !e.dropSlot(th) {
-				return "", errors.New("you hold no slot and wait for none")
+				return "", errors.New("you have no admitted or queued heavy job")
 			}
-			return "Released.", nil
+			left := 0.0
+			if s := e.Slots.Snapshot(); s.FreePct != nil {
+				left = *s.FreePct
+			}
+			return fmt.Sprintf("Released: ≈ %.0f %% of %s is free for heavy jobs.", left, e.hostName()), nil
 		}})
 }
