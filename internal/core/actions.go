@@ -357,6 +357,20 @@ func init() {
 			return []Effect{{Kind: EffectSend, Text: msg}}, nil
 		}})
 
+	// V0.143: the agent process does not take what Fyr writes; end it and
+	// resume the session, delivering the unread messages again.
+	register(&Action{Name: "thread.restart", Label: "Restart agent",
+		Available: func(t *Thread, _ *View, _ time.Time) string {
+			if t.Unresponsive == nil {
+				return "The agent is responding"
+			}
+			return ""
+		},
+		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
+			v.SeenAt = now
+			return []Effect{{Kind: EffectRestart}}, nil
+		}})
+
 	register(&Action{Name: "thread.dismissPR", Label: "Dismiss PR",
 		Available: func(t *Thread, _ *View, _ time.Time) string {
 			p := t.MainPR()

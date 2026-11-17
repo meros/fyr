@@ -46,6 +46,11 @@ const (
 	KindRunStarted      = "run.started"
 	KindRunEnded        = "run.ended"
 	KindProcessLost     = "process.lost"
+	// V0.143: the agent process stops or starts taking what Fyr writes,
+	// and Fyr restarts it.
+	KindUnresponsive = "agent.unresponsive"
+	KindResponsive   = "agent.responsive"
+	KindRestarted    = "agent.restarted"
 	KindTask            = "task"
 	KindSession         = "session"
 	KindDigest          = "digest"
@@ -131,6 +136,19 @@ type (
 		ID    string
 		First bool
 		Log   []Event
+		// Text is what went to the CLI (V0.143), kept in the outbox.
+		Text string
+	}
+	// UnresponsiveArgs: since the process's last output, and why (V0.143).
+	UnresponsiveArgs struct {
+		Since  time.Time
+		Reason string
+	}
+	// RestartedArgs: why Fyr restarted the process and the background
+	// tasks that ended with it (V0.143).
+	RestartedArgs struct {
+		Why   string
+		Tasks []string
 	}
 	MessageStateArgs struct{ ID, State string }
 	SendFailedArgs   struct {
@@ -300,6 +318,9 @@ func init() {
 				RunStarted(r.T, now)
 			}
 			SetOutbox(r.T, a.ID, "sent")
+			if a.Text != "" {
+				SetOutboxText(r.T, a.ID, a.Text)
+			}
 			return Result{Events: a.Log}, nil
 		}},
 		{Name: KindMessageState, From: observed, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
@@ -351,6 +372,34 @@ func init() {
 			msg, _ := in.Args.(string)
 			ProcessLost(r.T, "process", msg, now)
 			return Result{Events: []Event{{"run.ended", map[string]any{"failure": map[string]any{"class": "process", "message": msg}}}}}, nil
+		}},
+		{Name: KindUnresponsive, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
+			a, err := argsOf[UnresponsiveArgs](in)
+			if err != nil {
+				return Result{}, err
+			}
+			r.T.Unresponsive = &Unresponsive{Since: a.Since, At: now, Reason: a.Reason}
+			r.T.ActivityAt = now
+			return Result{Events: []Event{{"agent.unresponsive", map[string]any{"since": a.Since, "reason": a.Reason}}}}, nil
+		}},
+		{Name: KindResponsive, From: observed, Reduce: func(r Rec, _ Input, _ time.Time) (Result, error) {
+			if r.T.Unresponsive == nil {
+				return Result{}, nil
+			}
+			r.T.Unresponsive = nil
+			return Result{Events: []Event{{"agent.responsive", map[string]any{}}}}, nil
+		}},
+		{Name: KindRestarted, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
+			a, err := argsOf[RestartedArgs](in)
+			if err != nil {
+				return Result{}, err
+			}
+			Restarted(r.T, now)
+			d := map[string]any{"why": a.Why}
+			if len(a.Tasks) > 0 {
+				d["tasks"] = a.Tasks
+			}
+			return Result{Events: []Event{{"agent.restarted", d}}}, nil
 		}},
 		{Name: KindTask, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a, err := argsOf[TaskArgs](in)

@@ -2,6 +2,7 @@ package core
 
 import (
 	"regexp"
+	"time"
 )
 
 // GateRule denies a generic tool call that Fyr owns and names the Fyr tool
@@ -26,4 +27,26 @@ func Gate(tool string, input map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// LongBackground is the longest background Bash Fyr lets pass without a
+// word (V0.143). The CLI ends a background Bash at its timeout (at most 2 h).
+const LongBackground = time.Hour
+
+// GateNudge returns a note for the model on an allowed tool call, or "":
+// a background Bash meant to run an hour or more (V0.143).
+func GateNudge(tool string, input map[string]any) string {
+	if tool != "Bash" {
+		return ""
+	}
+	if bg, _ := input["run_in_background"].(bool); !bg {
+		return ""
+	}
+	ms, _ := input["timeout"].(float64)
+	if time.Duration(ms)*time.Millisecond < LongBackground {
+		return ""
+	}
+	return "[Fyr] This background Bash may run for hours. The CLI ends a background Bash at its timeout (at most 2 h), and a long one keeps this session's process busy. " +
+		"For a process that must stay up (a proxy, a tunnel, a server), start it detached with a bounded lifetime instead: " +
+		"`setsid nohup timeout 4h <cmd> > <log> 2>&1 & echo $! > <pidfile>`; check it with the pid file, stop it with `kill $(cat <pidfile>)` when done, and watch its log with Monitor if you need its events."
 }

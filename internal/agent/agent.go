@@ -102,6 +102,14 @@ type Config struct {
 	HostName      string
 	ProfileExists func(id string) bool
 	SystemAgents  func() core.SystemAgents
+	// V0.143, the watchdog. AckTimeout: how long a written message may
+	// wait for the CLI's command_lifecycle report (default 60 s);
+	// ControlTimeout: the same for a control request, a Stop (default
+	// 20 s); RestartAfter: how long Fyr leaves a process unresponsive
+	// before it restarts it itself (default 10 min).
+	AckTimeout     time.Duration
+	ControlTimeout time.Duration
+	RestartAfter   time.Duration
 }
 
 // Cgroups is what the agent needs from the cgroup tree (*cgroup.Tree):
@@ -179,6 +187,18 @@ type session struct {
 	inputClosed bool
 	// tools: tool_use id → tool name, until its result (V0.133).
 	tools map[string]string
+	// V0.143, the watchdog. lastOut: the process's last output;
+	// unresponsive: Fyr reported it unresponsive; restartAt restarts it;
+	// sentAt: when each unread message was written; held: messages Fyr
+	// kept back because the input is closed; restarting: why Fyr ends it
+	// to start it again; gone closes when its reader ended.
+	lastOut      time.Time
+	unresponsive bool
+	restartAt    *time.Timer
+	sentAt       map[string]time.Time
+	held         map[string]bool
+	restarting   string
+	gone         chan struct{}
 	// results wait for turn results (a handover waits on the source's
 	// turn, V0.45).
 	results []waiter
@@ -209,6 +229,15 @@ type waiter struct {
 func New(host Host, cfg Config) *Manager {
 	if cfg.IdleStop == 0 {
 		cfg.IdleStop = 10 * time.Minute
+	}
+	if cfg.AckTimeout == 0 {
+		cfg.AckTimeout = time.Minute
+	}
+	if cfg.ControlTimeout == 0 {
+		cfg.ControlTimeout = 20 * time.Second
+	}
+	if cfg.RestartAfter == 0 {
+		cfg.RestartAfter = 10 * time.Minute
 	}
 	if cfg.Prompt == "" {
 		cfg.Prompt = FyrPrompt
@@ -306,6 +335,8 @@ func (m *Manager) Do(threadID string, e core.Effect) error {
 	case core.EffectHandover:
 		m.handover(threadID, e)
 		return nil
+	case core.EffectRestart:
+		return m.restart(threadID, "the owner pressed Restart")
 	case core.EffectSetModel:
 		m.mu.Lock()
 		s := m.sessions[threadID]
@@ -444,7 +475,8 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		l.Key = k
 	}
 	s := &session{thread: threadID, proc: threadID + "-" + randHex(6), cwd: t.Cwd, asks: map[string]chan core.Effect{}, reqs: map[string]string{}, digest: newDigest(),
-		out: map[string]string{}, cancelling: map[string]bool{}, effort: l.Effort}
+		out: map[string]string{}, cancelling: map[string]bool{}, effort: l.Effort,
+		lastOut: time.Now(), sentAt: map[string]time.Time{}, held: map[string]bool{}, gone: make(chan struct{})}
 	if m.cfg.MCPURL != "" {
 		s.token = randHex(24)
 		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"fyr": map[string]any{

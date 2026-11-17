@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/meros/fyr/internal/claude"
 	"github.com/meros/fyr/internal/core"
@@ -142,9 +141,14 @@ func (m *Manager) doInterrupt(threadID string) error {
 	if s == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), m.cfg.ControlTimeout)
 	defer cancel()
-	return s.c.Interrupt(ctx)
+	err := s.c.Interrupt(ctx)
+	if err != nil && ctx.Err() != nil {
+		// V0.143: the CLI did not answer the Stop.
+		m.markUnresponsive(s, fmt.Sprintf("it did not answer Stop within %s", short(m.cfg.ControlTimeout)))
+	}
+	return err
 }
 
 // hasDecision reports whether a thread has a Decision open with id.
