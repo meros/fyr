@@ -34,6 +34,7 @@ import (
 	"github.com/meros/fyr/internal/gitdiff"
 	"github.com/meros/fyr/internal/github"
 	"github.com/meros/fyr/internal/hostfs"
+	"github.com/meros/fyr/internal/httpguard"
 	"github.com/meros/fyr/internal/projicon"
 	"github.com/meros/fyr/internal/provider"
 	"github.com/meros/fyr/internal/store"
@@ -41,9 +42,10 @@ import (
 )
 
 type Server struct {
-	Engine  *engine.Engine
-	MCP     http.Handler // agents' MCP endpoint; optional
-	BuildID string
+	legacyFronts atomic.Int64 // LegacyFronts
+	Engine       *engine.Engine
+	MCP          http.Handler // agents' MCP endpoint; optional
+	BuildID      string
 	// OnWhois hears each request served on the whois listener (the old link), which
 	// the peer way in's enforce mode removes (decision 0030 slice 5).
 	OnWhois func()
@@ -99,7 +101,7 @@ type PRDetails interface {
 // listeners, where the channel proved which install speaks, read them
 // (decision 0030 3.3).
 func (s *Server) Handler() http.Handler {
-	return guard(s.OwnerLogin, withGzip(withDeadline(s.routes(true))))
+	return httpguard.Guard(s.OwnerLogin, httpguard.Gzip(withDeadline(s.routes(true))))
 }
 
 // PipeHandler serves the in-process pipe between a front and its own host
@@ -108,7 +110,7 @@ func (s *Server) Handler() http.Handler {
 // missing or malformed one is 401, never a default). No /mcp: agents use the
 // main port.
 func (s *Server) PipeHandler() http.Handler {
-	return withActor(actorPipe, s.ID, withGzip(withDeadline(s.routes(false))))
+	return withActor(actorPipe, s.ID, nil, httpguard.Gzip(withDeadline(s.routes(false))))
 }
 
 // PeerHandler serves the host protocol on a tailnet listener (V0.51): the
@@ -117,7 +119,7 @@ func (s *Server) PipeHandler() http.Handler {
 // slice 1). A front of an older build sends no Fyr-Actor and is still served,
 // as a legacy front, and counted (LegacyFronts).
 func (s *Server) PeerHandler(peers PeerAuth) http.Handler {
-	inner := withActor(actorPeer, "", withGzip(withDeadline(s.routes(false))))
+	inner := withActor(actorPeer, "", &s.legacyFronts, httpguard.Gzip(withDeadline(s.routes(false))))
 	return PeerGuard(s.OwnerLogin, peers, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.OnWhois != nil { // a request over the old link: what the peer way's enforce will refuse
 			s.OnWhois()
@@ -153,7 +155,7 @@ type PeerGate interface {
 // refused (401) whichever front forwards it; a call that changes things from an
 // install the owner switched off here is refused (403). No /mcp.
 func (s *Server) LinkHandler(g PeerGate) http.Handler {
-	inner := withActor(actorLink, "", withGzip(withDeadline(s.routes(false))))
+	inner := withActor(actorLink, "", nil, httpguard.Gzip(withDeadline(s.routes(false))))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := g.Member(r)
 		if !ok {
@@ -248,135 +250,6 @@ func (s *Server) routes(mcp bool) http.Handler {
 	return mux
 }
 
-// guard refuses requests that are neither local nor the owner over the
-// tailnet, and POSTs without X-Fyr (cross-site form posts). The MCP endpoint
-// uses its bearer token.
-//
-// Local: a loopback Host header (this also stops DNS rebinding).
-// Tailnet (SPEC 0.5 V0.14): Tailscale Serve proxies from loopback, keeps
-// the browser's Host (https://<host>.ts.net) and adds Tailscale-User-Login;
-// it must equal owner. The header alone proves nothing: a DNS-rebinding page
-// reaches loopback too and may set any header, but its Host is its own
-// domain, never a ts.net name (review 2026-11-15). Serve's own socket is the
-// exception: tailscaled reaches it through a root-only file, sets the header
-// itself and does not pass the browser's Host on (the request arrives as
-// localhost), so a request on that socket needs no ts.net Host.
-func guard(owner string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if login := r.Header.Get("Tailscale-User-Login"); login != "" {
-			if !IsViaServe(r) && !tailnetHost(r.Host) {
-				http.Error(w, "the tailnet identity header needs a ts.net host", http.StatusForbidden)
-				return
-			}
-			if owner == "" || login != owner {
-				http.Error(w, "this Fyr belongs to another tailnet user", http.StatusForbidden)
-				return
-			}
-			if r.Method == http.MethodPost && r.URL.Path != "/mcp" && r.Header.Get("X-Fyr") != "1" {
-				http.Error(w, "missing X-Fyr header", http.StatusForbidden)
-				return
-			}
-			next.ServeHTTP(w, r)
-			return
-		}
-		host := r.Host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
-		}
-		host = strings.Trim(host, "[]")
-		ip := net.ParseIP(host)
-		// V0.130: fyr.localhost (any *.localhost) is loopback too; browsers
-		// resolve it locally, so no rebinding page can carry it.
-		if !IsViaLAN(r) && !localName(host) && (ip == nil || !ip.IsLoopback()) {
-			http.Error(w, "Fyr v0 serves loopback only", http.StatusForbidden)
-			return
-		}
-		if r.Method == http.MethodPost && r.URL.Path != "/mcp" && r.Header.Get("X-Fyr") != "1" {
-			http.Error(w, "missing X-Fyr header", http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// localName: localhost or a name under it (RFC 6761).
-func localName(host string) bool {
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	return host == "localhost" || (strings.HasSuffix(host, ".localhost") && len(host) > len(".localhost"))
-}
-
-type viaServeKey struct{}
-
-// ViaServe marks every request of a handler as come through Tailscale
-// Serve's own socket (V0.130 (3)): only there is Tailscale-User-Login set by
-// tailscaled itself, which strips any copy the browser sent.
-func ViaServe(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), viaServeKey{}, true)))
-	})
-}
-
-// ServeSocket serves Tailscale Serve's socket (V0.130 (3)): ViaServe, and
-// the request's Host becomes the public name the browser used. tailscaled
-// does not keep the browser's Host on this socket (#225), and a front proxies
-// to its hosts with the Host it got: the host's guard needs a ts.net name for
-// the identity header, and a preview's CSP names its folder by that Host.
-// The name is X-Forwarded-Host when tailscaled sets a ts.net one, else
-// public (<node>.ts.net:<Serve port>); "" keeps the Host. Only this socket
-// trusts it: tailscaled alone reaches it, so no rebinding page sets it.
-func ServeSocket(public string, next http.Handler) http.Handler {
-	var logged atomic.Bool
-	return ViaServe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if logged.CompareAndSwap(false, true) {
-			log.Printf("serve socket: first request: Host %q, X-Forwarded-Host %q, X-Forwarded-Proto %q; public %q",
-				r.Host, r.Header.Get("X-Forwarded-Host"), r.Header.Get("X-Forwarded-Proto"), public)
-		}
-		if fh := r.Header.Get("X-Forwarded-Host"); tailnetHost(fh) && hostRe.MatchString(fh) {
-			r.Host = fh
-		} else if public != "" {
-			r.Host = public
-		}
-		r.Header.Set("X-Forwarded-Proto", "https") // Serve answers on HTTPS only
-		next.ServeHTTP(w, r)
-	}))
-}
-
-type viaLANKey struct{}
-
-// ViaLAN marks every request of a handler as come over the owner's HTTPS listener
-// (decision 0030 3.5): a browser on the LAN. Nothing is trusted for being near: the
-// front serves such a request to a signed-in device only, whatever the modes say, and
-// refuses a Tailscale header on it.
-func ViaLAN(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.TLS == nil {
-			http.Error(w, "this listener serves HTTPS only", http.StatusBadRequest)
-			return
-		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), viaLANKey{}, true)))
-	})
-}
-
-// IsViaLAN reports whether a request came over the HTTPS listener.
-func IsViaLAN(r *http.Request) bool { v, _ := r.Context().Value(viaLANKey{}).(bool); return v }
-
-// IsViaServe reports whether a request came through Serve's socket.
-func IsViaServe(r *http.Request) bool { v, _ := r.Context().Value(viaServeKey{}).(bool); return v }
-
-// tailnetHost reports whether a Host header names a MagicDNS host, the only
-// name Tailscale Serve answers on with HTTPS.
-func tailnetHost(host string) bool {
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	return strings.HasSuffix(host, ".ts.net") && len(host) > len(".ts.net")
-}
-
-// Browser wraps a browser-facing handler (the host's own, or a front's,
-// V0.51) in the loopback and tailnet guard and gzip.
-func Browser(owner string, next http.Handler) http.Handler { return guard(owner, withGzip(next)) }
-
 // PeerAuth names the Tailscale login that owns the peer at a remote address
 // (tailscaled whois; V0.51).
 type PeerAuth interface {
@@ -430,7 +303,7 @@ func peerHostOK(r *http.Request, peers PeerAuth) bool {
 		host = h
 	}
 	host = strings.Trim(strings.ToLower(strings.TrimSuffix(host, ".")), "[]")
-	if net.ParseIP(host) != nil || tailnetHost(host) {
+	if net.ParseIP(host) != nil || httpguard.TailnetHost(host) {
 		return true
 	}
 	if pn, ok := peers.(PeerNames); ok {
@@ -453,23 +326,21 @@ const (
 	actorLink                  // required, and the install is the key the link proved
 )
 
-var (
-	legacyFronts atomic.Int64
-	legacyLogged atomic.Int64 // unix seconds of the last log line
-)
+var legacyLogged atomic.Int64 // unix seconds of the last log line
 
-// LegacyFronts counts the requests a host served without a Fyr-Actor from a
-// front of an older build (decision 0030 slice 1: still served, and counted;
-// `fyr auth status` shows it from slice 2).
-func LegacyFronts() int64 { return legacyFronts.Load() }
+// LegacyFronts counts the requests this host served without a Fyr-Actor from
+// a front of an older build (decision 0030 slice 1: still served, and
+// counted; `fyr auth status` shows it from slice 2). V0.183: the host's
+// count, which fyrd gives its front, not a package global.
+func (s *Server) LegacyFronts() int64 { return s.legacyFronts.Load() }
 
 var originRe = regexp.MustCompile(`^https?://[A-Za-z0-9.\-]+(:[0-9]+)?$|^https?://\[[0-9A-Fa-f:.]+\](:[0-9]+)?$`)
 
 // withActor reads Fyr-Actor and Fyr-Origin into the request's context. It is
 // only used on the pipe and the peer listener, where the channel says which
 // install speaks. self is this install's id, which names the front on the
-// pipe.
-func withActor(mode actorMode, self string, next http.Handler) http.Handler {
+// pipe; legacy counts the fronts served without one (actorPeer; nil: none).
+func withActor(mode actorMode, self string, legacy *atomic.Int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var p authn.Principal
 		if h := r.Header.Get(authn.Header); h != "" {
@@ -483,7 +354,9 @@ func withActor(mode actorMode, self string, next http.Handler) http.Handler {
 			return
 		} else {
 			p = authn.Principal{Kind: authn.KindInstall, ID: "legacy", How: authn.HowLegacy}
-			legacyFronts.Add(1)
+			if legacy != nil {
+				legacy.Add(1)
+			}
 			if now := time.Now().Unix(); now-legacyLogged.Load() > 600 {
 				legacyLogged.Store(now)
 				log.Printf("auth (observe): a front without %s was served (%s %s); update that install", authn.Header, r.Method, r.URL.Path)
@@ -881,8 +754,6 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 // and Basis decoders three.js and model-viewer load by default.
 var previewCDNs = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://esm.sh https://ajax.googleapis.com https://www.gstatic.com"
 
-var hostRe = regexp.MustCompile(`^[A-Za-z0-9.\-]+(:[0-9]+)?$|^\[[0-9A-Fa-f:.]+\](:[0-9]+)?$`)
-
 // previewCSP is the policy of every preview response (V0.19, V0.47): a
 // sandbox without allow-same-origin, so the page never has Fyr's origin and
 // cannot call the API; it may load from its own folder and the CDN list.
@@ -893,7 +764,7 @@ func previewCSP(r *http.Request, id string) string {
 		// Decision 0030 3.3: the origin the browser used, from the front, on a
 		// channel that proved it is one.
 		base = o + "/api/previews/" + id + "/ "
-	} else if hostRe.MatchString(r.Host) {
+	} else if httpguard.ValidHost(r.Host) {
 		scheme := "http" // CSP3: an http source also matches https
 		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 			scheme = "https"
