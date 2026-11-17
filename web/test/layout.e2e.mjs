@@ -3386,14 +3386,16 @@ try {
 
 // V0.145: one history entry per thread the owner opens on the desktop. Open A, B and C from the list (B on another
 // tab), then the mouse's Back button (button 3) and history.back() go to B and A, history.forward() to B on the tab it
-// had. Waiting adds no entry (the stream, the view refreshing).
+// had. Waiting adds no entry (the stream, the view refreshing). Entries are counted by Fyr's own place in
+// history.state, not history.length: Chrome caps that at 50 and the harness reuses a tab across jobs, so a tab that
+// ran many sections is at the cap already (#194's CI failure: 48 before, 50 after three opens).
 section('V0.145 desktop', async (h) => {
   const { send, evaluate, waitFor, settle, navigate } = h;
 try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.ib .list [data-id]') && !!document.querySelector('.th .tt')");
   const AT = `(() => ({ marked: document.querySelector('.ib .list [aria-selected="true"]')?.dataset.id ?? null, pane: document.querySelector('.th .tt')?.getAttribute('title') ?? null,
-    tab: document.querySelector('.th [role=tab].on')?.textContent ?? null, open: new URLSearchParams(location.search).get('open'), n: history.length }))()`;
+    tab: document.querySelector('.th [role=tab].on')?.textContent ?? null, open: new URLSearchParams(location.search).get('open'), n: history.state?.desk ?? null }))()`;
   const ids = await evaluate(`[...document.querySelectorAll('.ib .list [data-id]')].map((r) => r.dataset.id)`);
   const first = (await evaluate(AT)).marked;
   const [A, B, C] = ids.filter((x) => x !== first);
@@ -3412,7 +3414,7 @@ try {
   const bTab = await evaluate(`(() => { const t = [...document.querySelectorAll('.th [role=tab]')].find((x) => !x.classList.contains('on')); t?.click(); return t?.textContent ?? null; })()`);
   await settle();
   await open(C);
-  const atC = await evaluate(AT);
+  const atC = await waitFor(`(() => { const s = ${AT}; return s.n === ${n0} + 3 && s.open === ${JSON.stringify(C)} && s; })()`, { soft: true, timeout: 5000 }) || (await evaluate(AT));
   check(atC.n === n0 + 3 && atC.open === C, `V0.145 desktop: opening three threads does not add three entries (${JSON.stringify({ n0, atC })})`);
   await new Promise((r) => setTimeout(r, 1500));
   await settle();
