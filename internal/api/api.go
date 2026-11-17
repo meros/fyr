@@ -112,6 +112,10 @@ type State[T, P, F any] struct {
 	Partial bool `json:"partial"`
 	// Deploy is the deploy progress to show (V0.39), or nil.
 	Deploy any `json:"deploy"`
+	// Stall is the host's newest stall of the last 24 h (V0.147), or nil.
+	Stall any `json:"stall,omitempty"`
+	// Stalls are a front's hosts' stalls, each with its host (V0.147).
+	Stalls []any `json:"stalls,omitempty"`
 	// Hosts are a front's hosts (V0.51); a host sends none.
 	Hosts []Host `json:"hosts,omitempty"`
 	// ProjectOrder is the owner's project order, one list of ids across a

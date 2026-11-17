@@ -280,6 +280,10 @@ export interface StateDTO {
   hosts?: import("./hosts.ts").HostInfo[];
   /** V0.121: the owner's project order, one list across a front's hosts; absent until set */
   projectOrder?: string[];
+  /** V0.147: a host's newest stall of the last 24 h */
+  stall?: unknown;
+  /** V0.147: a front's hosts' stalls, each with its host */
+  stalls?: unknown;
 }
 
 export interface FyrEvent {

@@ -14,6 +14,8 @@ const (
 	FrameThread  = "thread"
 	FrameProject = "project"
 	FrameDeploy  = "deploy"
+	// FrameStall is a stall the watchdog saw (V0.147).
+	FrameStall = "stall"
 	// FrameHostOrder is the owner's host order (V0.132), as a host keeps it.
 	FrameHostOrder = "hostOrder"
 	FrameEvent     = "event"

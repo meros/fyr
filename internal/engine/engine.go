@@ -6,6 +6,7 @@
 package engine
 
 import (
+	"github.com/meros/fyr/internal/lockwatch"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -47,7 +48,11 @@ type EffectRunner interface {
 
 type Engine struct {
 	deploy *deployState // V0.39
-	mu     sync.Mutex
+	stall  *lockwatch.Stall // V0.147, under stallMu
+	// mu is the core lock (V0.147: watched; held past lockwatch.ExitAfter,
+	// fyrd dumps and exits). Under it the engine calls no other package's
+	// locking method and no callback field: read them before or after.
+	mu lockwatch.Mutex
 	// press serializes the kinds whose reply waits for their effects
 	// (await), so the receipt check, the work and the receipt are one step.
 	// Everything else is one step under mu in apply.
@@ -172,7 +177,7 @@ type Engine struct {
 }
 
 func New(st *store.Store) *Engine {
-	return &Engine{st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
+	return &Engine{mu: lockwatch.Mutex{Critical: true, Name: "engine.mu"}, st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
 		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, deploySeen: map[string]string{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
 		shotLimit: window{max: 10, span: time.Minute}, newLimit: window{max: 5, span: time.Hour}, sendLimit: window{max: 30, span: time.Hour}}
 }

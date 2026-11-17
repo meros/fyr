@@ -8,6 +8,7 @@
 package front
 
 import (
+	"maps"
 	"bufio"
 	"bytes"
 	"context"
@@ -465,7 +466,7 @@ func (f *Front) load(l *link, st map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	env := map[string]any{}
-	for _, k := range []string{"actions", "profiles", "deploy", "user", "host", "hostId", "hostOrder"} {
+	for _, k := range []string{"actions", "profiles", "deploy", "stall", "user", "host", "hostId", "hostOrder"} {
 		if v, ok := st[k]; ok {
 			env[k] = v
 		}
@@ -603,6 +604,20 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 		}
 		if f.isLocal(l) {
 			f.hub.Publish(ev, data)
+		}
+	case "stall":
+		// V0.147: every host's stall shows, named by its host.
+		if d, err := decode(data); err == nil {
+			f.mu.Lock()
+			l.env["stall"] = d
+			l.dirty = true
+			name := l.name()
+			f.mu.Unlock()
+			m := maps.Clone(d)
+			m["host"] = name
+			if b, err := json.Marshal(m); err == nil {
+				f.hub.Publish(ev, b)
+			}
 		}
 	default: // event and anything newer: the client ignores what it does not know
 		f.hub.Publish(ev, data)
@@ -876,6 +891,11 @@ func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 		}
 		if d := l.env["deploy"]; d != nil && f.isLocal(l) {
 			st.Deploy = d
+		}
+		if m, ok := l.env["stall"].(map[string]any); ok { // V0.147
+			c := maps.Clone(m)
+			c["host"] = l.name()
+			st.Stalls = append(st.Stalls, c)
 		}
 		if actions == nil && l.env["actions"] != nil {
 			actions = l.env["actions"]

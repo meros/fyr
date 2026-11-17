@@ -314,6 +314,12 @@ Both reply at once; the result arrives as an `effect.result` event with `"by": "
 - Stream `event: deploy` `data: {"phase": "build|test|drain|switch|done|failed", "detail"?, "blocking"?: [threadId], "build", "startedAt", "at"}`.
 - `GET /api/state` has `deploy` with the latest progress while an update runs and for two minutes after it ended; otherwise `null`.
 
+## Stalls (SPEC 0.5 V0.147)
+
+- Stream `event: stall` `data: {"at", "what", "file", "exiting"}`: the host's watchdog saw a watched lock held, or a request running, past its limit (`what` names the longest holder; `file` is the goroutine dump on that host). A front adds `"host"`.
+- `GET /api/state` has `stall` (a host's newest stall of the last 24 h, absent without one); a front's state has `stalls: [{…, "host"}]`, one per host.
+- A request other than the stream, `/mcp`, attachments, previews and update files answers `503` with `{"error": "Fyr did not answer in time: …"}` after 10 s (GET, HEAD) or 60 s (other methods).
+
 ## Providers (SPEC 0.5 V0.50)
 
 `GET /api/state` `profiles` are the providers as launch configs (same ids), each with `cli`, `models` (ids), `modelCaps: [{id, name?, efforts?}]`, `defaultModel`, `defaultEffort?`, `quota: {kind}`; never `env` or a key. `GET /api/profiles` returns the same list alone, for a client after a provider changed.

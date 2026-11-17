@@ -28,6 +28,8 @@ export interface ApiHandlers {
   thread(t: ThreadDTO): void;
   /** V0.39: where an update of Fyr is */
   deploy?(p: DeployProgress): void;
+  /** V0.147 */
+  stall?(raw: unknown): void;
   /** V0.38: a merge patch against the thread copy with rev === base */
   threadPatch?(p: ThreadPatch): void;
   /** a project made or changed (V0.23); optional for older callers */
@@ -226,6 +228,13 @@ function createHttpApi(): Api {
     es.addEventListener("hosts", (m) => {
       try {
         h.hosts?.(decodeHosts((JSON.parse((m as MessageEvent).data) as { hosts?: unknown }).hosts));
+      } catch {
+        /* ignore malformed */
+      }
+    });
+    es.addEventListener("stall", (m) => {
+      try {
+        h.stall?.(JSON.parse((m as MessageEvent).data));
       } catch {
         /* ignore malformed */
       }
