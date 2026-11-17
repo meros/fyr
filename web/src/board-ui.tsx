@@ -143,6 +143,7 @@ export function ChangesBoard(p: BoardProps) {
               <span class="ell">{i.change.title}</span>
               <button class="bdfrom" onClick={() => p.onOpenThread(i.thread.id)} title="Open the thread">
                 <span class="ell">{i.thread.title || "Untitled thread"}</span>
+                <BoardHost i={i} />
               </button>
               <span class="setd">since {weekday(i.change.touchedAt ?? i.change.updatedAt)}</span>
               <button class="btn sm" title="Mark this change done: it leaves the board" onClick={() => p.onRun(i.thread.id, "change.done", doneArgs(i.change))}>
@@ -162,6 +163,7 @@ export function ChangesBoard(p: BoardProps) {
               <span class="ell">{i.change.title}</span>
               <button class="bdfrom" onClick={() => p.onOpenThread(i.thread.id)} title="Open the thread">
                 <span class="ell">{i.thread.title || "Untitled thread"}</span>
+                <BoardHost i={i} />
               </button>
               <span class="ok">{doneText(i.change, hhmm)}</span>
             </div>
@@ -178,13 +180,18 @@ const weekday = (iso: string) => {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { weekday: "short" });
 };
 
+/** V0.140: with several hosts, the host a change is made on, after its thread's title (cards and the folded rows). */
+function BoardHost({ i }: { i: BoardItem }) {
+  const host = cardHost(i, useHosts().hosts);
+  return host ? <span class="bdhost mono">{host}</span> : null;
+}
+
 function Card({ i, p, err }: { i: BoardItem; p: BoardProps; err?: string }) {
-  const host = cardHost(i, useHosts().hosts); // V0.140: with several hosts, the host the change is made on
   const from = (
     <button class="bdfrom" onClick={() => p.onOpenThread(i.thread.id)} title="Open the thread">
       {i.project && <ProjectIcon project={i.project} name={i.project.name} size={14} />}
       <span class="ell">{i.thread.title || "Untitled thread"}</span>
-      {host && <span class="bdhost mono">{host}</span>}
+      <BoardHost i={i} />
       <span aria-hidden="true">›</span>
     </button>
   );

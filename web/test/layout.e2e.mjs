@@ -2244,13 +2244,13 @@ for (const [label, w, ht] of [
   const ctx = `V0.140 board ${label}`;
   const phone = label === "phone";
   try {
-    if (phone) await openScreen({ url: "?mock=rail&hosts=2&changes", ready: "document.querySelectorAll('.bdfrom').length > 0" }, w, ht);
-    else await navigate(`${origin}/?mock=rail&hosts=2&dialog=changes`, "document.querySelectorAll('.bdfrom').length > 0");
+    if (phone) await openScreen({ url: "?mock=1&hosts=2&changes", ready: "document.querySelectorAll('.bdfrom').length > 0" }, w, ht);
+    else await navigate(`${origin}/?mock=1&hosts=2&dialog=changes`, "document.querySelectorAll('.bdfrom').length > 0");
     const cards = await evaluate(`[...document.querySelectorAll('.bdfrom')].map(b => b.querySelector('.bdhost')?.textContent ?? '')`);
     check(cards.length > 0 && cards.every((h) => h === "desk" || h === "host-b"), `${ctx}: every card names its host ${JSON.stringify(cards)}`);
     await shot(`hostdisplay-board-${label}.png`);
-    if (phone) await openScreen({ url: "?mock=rail&changes", ready: "document.querySelectorAll('.bdfrom').length > 0" }, w, ht);
-    else await navigate(`${origin}/?mock=rail&dialog=changes`, "document.querySelectorAll('.bdfrom').length > 0");
+    if (phone) await openScreen({ url: "?mock=1&changes", ready: "document.querySelectorAll('.bdfrom').length > 0" }, w, ht);
+    else await navigate(`${origin}/?mock=1&dialog=changes`, "document.querySelectorAll('.bdfrom').length > 0");
     check((await evaluate("document.querySelectorAll('.bdhost').length")) === 0, `${ctx}: one host: no host on the cards`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
