@@ -577,6 +577,9 @@ func TestFrontCommandOrdersHostsByID(t *testing.T) {
 	if code, b := probePost(t, fs.URL+"/api/front/command", `{"action":"front.hostOrder","args":{"ids":["ZZZZ-9999-ZZZZ-9999"]}}`); code != 404 || !strings.Contains(string(b), "no-host") {
 		t.Errorf("hostOrder with an unknown id: %d %s", code, b)
 	}
+	if code, b := probePost(t, fs.URL+"/api/front/command", `{"commandId":"m1","action":"front.hostMark","args":{"id":"`+idTwo+`","icon":"house","color":"teal"}}`); code != 200 {
+		t.Errorf("front.hostMark on the front's route: %d %s", code, b)
+	}
 	if code, _ := probePost(t, fs.URL+"/api/front/command", `{"action":"thread.send","threadId":"t_same","args":{}}`); code != 400 {
 		t.Errorf("a host's command on the front's route: %d", code)
 	}

@@ -331,6 +331,8 @@ func (f *Front) frontCommandRoute(w http.ResponseWriter, r *http.Request) {
 	switch c.Action {
 	case KindProjectOrder:
 		f.orderCommand(w, c.CommandID, c.Args)
+	case KindHostMark: // V0.171: keyed by install id already
+		f.hostMarkCommand(w, c.CommandID, c.Args)
 	case KindHostOrder:
 		ids, ok := c.Args["ids"].([]any)
 		if !ok {
