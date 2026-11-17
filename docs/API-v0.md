@@ -8,7 +8,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 - `POST` requests must have the header `X-Fyr: 1`, else `403`.
 - `/mcp` uses its bearer token instead, and refuses any request that carries `Origin` with `403` (V0.129).
 - `fyr.localhost` (any `*.localhost`) counts as a loopback `Host` (V0.130).
-- **Sessions (V0.130).** `fyr_session` names the browser's device. `GET`/`POST /auth/once` redeem a one-time link from the owner socket (`<data>/owner.sock`, `POST /session/once`). Through Serve's socket (`<data>/serve.sock`) the owner's `Tailscale-User-Login` mints one. In this release a request without a session is still served and logged; the next one refuses it.
+- **Sessions (V0.130).** `fyr_session` names the browser's device. `GET`/`POST /auth/once` redeem a one-time link from the owner socket (`<data>/owner.sock`, `POST /session/once`). Through Serve's socket (`<data>/serve.sock`) the owner's `Tailscale-User-Login` mints one. tailscaled does not keep the browser's `Host` on that socket, so a request there takes the public name: `X-Forwarded-Host` when it is a `ts.net` name, else the node's MagicDNS name and Serve port (the first `peerPorts`, default 7443), over https. A host behind the front sees that `Host`, for its guard and a preview's CSP. In this release a request without a session is still served and logged; the next one refuses it.
 
 ## `GET /api/state`
 
