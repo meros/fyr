@@ -239,3 +239,52 @@ func (p Peers) Names(ctx context.Context) []string {
 	}
 	return []string{dns, strings.SplitN(dns, ".", 2)[0]}
 }
+
+// NodeInfo is what tailscaled's whois says about the node at an address
+// (decision 0030 3.4): which node a request came from, not only whose it is.
+type NodeInfo struct {
+	StableID string // the node's stable id: what the owner approves or blocks
+	Name     string // MagicDNS name without the trailing dot
+	Login    string // the user's login; "" for a tagged node
+	UserID   int64
+	Tags     []string
+	// Shared: the node was shared into this tailnet by another (Sharer is set).
+	Shared bool
+}
+
+// Node asks whois about the node at remoteAddr (an IP or IP:port).
+func (p Peers) Node(ctx context.Context, remoteAddr string) (NodeInfo, error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", "http://local-tailscaled.sock/localapi/v0/whois?addr="+url.QueryEscape(remoteAddr), nil)
+	req.Header.Set("Sec-Tailscale", "localapi")
+	resp, err := localClient(p.Socket).Do(req)
+	if err != nil {
+		return NodeInfo{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return NodeInfo{}, fmt.Errorf("tailscaled whois %s: %s", remoteAddr, resp.Status)
+	}
+	var w struct {
+		Node struct {
+			StableID string
+			Name     string
+			Tags     []string
+			Sharer   int64
+		}
+		UserProfile struct {
+			ID        int64
+			LoginName string
+		}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&w); err != nil {
+		return NodeInfo{}, err
+	}
+	n := NodeInfo{StableID: w.Node.StableID, Name: strings.TrimSuffix(w.Node.Name, "."), Tags: w.Node.Tags, Shared: w.Node.Sharer != 0}
+	if len(w.Node.Tags) == 0 {
+		n.Login, n.UserID = w.UserProfile.LoginName, w.UserProfile.ID
+	}
+	if n.StableID == "" {
+		return NodeInfo{}, fmt.Errorf("tailscaled whois %s: no node id", remoteAddr)
+	}
+	return n, nil
+}
