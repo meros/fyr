@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"log"
 	"strings"
 	"time"
 
@@ -88,9 +89,11 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		return
 	case "system":
 		if msg["subtype"] == "background_tasks_changed" {
-			for _, k := range taskList(msg) {
+			ks := taskList(msg)
+			for _, k := range ks {
 				m.observe(s.thread, core.KindTask, core.TaskArgs{Task: k})
 			}
+			m.backgroundChanged(s, len(ks))
 			return
 		}
 		if k, ev, ok := taskFromSystem(msg); ok {
@@ -132,6 +135,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			d.PR = &core.PR{URL: o.PRURL, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPending}
 		}
 		m.observe(s.thread, core.KindDigest, d)
+		m.noteRefusals(s, msg) // V0.133: after the message it explains
 	case "result":
 		m.mu.Lock()
 		ended := s.live
@@ -143,7 +147,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		restore := s.stopBlocked && !s.forcedWork
 		summary := s.summary
 		s.stopBlocked, s.inForced, s.forcedWork, s.summary = false, false, false, ""
-		refresh := s.refresh && len(s.out) == 0
+		refresh := s.refresh && len(s.out) == 0 && s.bg == 0 // V0.133: after the background work
 		m.mu.Unlock()
 		if noReports {
 			// An older CLI reports no delivery: its turn read every message.
@@ -193,7 +197,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 				delete(m.sessions, s.thread)
 			}
 			m.mu.Unlock()
-			s.c.Close()
+			m.closeInput(s)
 			go m.feed(s.thread) // the next process takes what waits
 			return
 		}
@@ -241,7 +245,7 @@ func (m *Manager) refreshView(threadID string) {
 		m.mu.Unlock()
 		return
 	}
-	idle := !s.live && len(s.asks) == 0 && len(s.out) == 0
+	idle := !s.live && len(s.asks) == 0 && len(s.out) == 0 && s.bg == 0 // V0.133
 	if idle {
 		delete(m.sessions, threadID) // the next send starts a new process
 	} else {
@@ -249,7 +253,7 @@ func (m *Manager) refreshView(threadID string) {
 	}
 	m.mu.Unlock()
 	if idle {
-		s.c.Close()
+		m.closeInput(s)
 	}
 }
 
@@ -276,10 +280,12 @@ func (m *Manager) armIdle(s *session) {
 	}
 	s.idle = time.AfterFunc(m.cfg.IdleStop, func() {
 		m.mu.Lock()
-		quiet := !s.live && len(s.asks) == 0
+		// V0.133: not while the CLI has background work; the idle stop
+		// is armed again when it ends (backgroundChanged).
+		quiet := !s.live && len(s.asks) == 0 && s.bg == 0
 		m.mu.Unlock()
 		if quiet {
-			s.c.Close() // V0.7: the next message resumes the session
+			m.closeInput(s) // V0.7: the next message resumes the session
 		}
 	})
 }
@@ -328,4 +334,88 @@ func copyMap(m map[string]any) map[string]any {
 		c[k] = v
 	}
 	return c
+}
+
+// closeInput closes the process's stdin: the CLI ends its session and exits
+// once it has no background work left (V0.7, V0.133).
+func (m *Manager) closeInput(s *session) {
+	m.mu.Lock()
+	s.inputClosed = true
+	m.mu.Unlock()
+	s.c.Close()
+}
+
+// backgroundChanged takes the CLI's count of running background tasks
+// (V0.133). When the last one ends between turns, the refresh or idle stop
+// that waited for it goes ahead.
+func (m *Manager) backgroundChanged(s *session, n int) {
+	m.mu.Lock()
+	s.bg = n
+	settle := n == 0 && !s.live && !s.inputClosed
+	refresh := settle && s.refresh && len(s.out) == 0 && len(s.asks) == 0
+	if refresh && m.sessions[s.thread] == s {
+		delete(m.sessions, s.thread)
+	}
+	m.mu.Unlock()
+	switch {
+	case refresh:
+		m.closeInput(s)
+		go m.feed(s.thread) // the next process takes what waits
+	case settle:
+		m.armIdle(s)
+	}
+}
+
+// RejectText starts the text claude 2.1.322 writes for a tool call it
+// cancels without asking Fyr, for one when its input is closed. Fyr's own
+// denials say something else (decisions.go), so this text is never the
+// owner (V0.133).
+const RejectText = "The user doesn't want to take this action right now"
+
+// noteRefusals records each tool call the CLI refused with RejectText as a
+// tool.refused event, so the thread says what happened instead of the
+// agent's "stopped at your request".
+func (m *Manager) noteRefusals(s *session, msg claude.Msg) {
+	inner, _ := msg["message"].(map[string]any)
+	blocks, _ := inner["content"].([]any)
+	var evs []core.Event
+	m.mu.Lock()
+	if s.tools == nil {
+		s.tools = map[string]string{}
+	}
+	for _, x := range blocks {
+		b, _ := x.(map[string]any)
+		id, _ := b["id"].(string)
+		switch b["type"] {
+		case "tool_use":
+			if name, _ := b["name"].(string); id != "" {
+				s.tools[id] = name
+			}
+		case "tool_result":
+			use, _ := b["tool_use_id"].(string)
+			name := s.tools[use]
+			delete(s.tools, use)
+			text, _ := b["content"].(string)
+			if isErr, _ := b["is_error"].(bool); !isErr || !strings.HasPrefix(text, RejectText) {
+				continue
+			}
+			why := "The agent CLI refused this tool call without asking Fyr; not the owner."
+			if s.inputClosed {
+				why = "Fyr had closed the agent's input, so the CLI could not ask for permission and refused this tool call; not the owner."
+			}
+			d := map[string]any{"tool": name, "toolUseId": use, "why": why}
+			if p, _ := msg["parent_tool_use_id"].(string); p != "" {
+				d["subagent"] = true
+			}
+			evs = append(evs, core.Event{Type: "tool.refused", Data: d})
+		}
+	}
+	closed := s.inputClosed
+	m.mu.Unlock()
+	for _, e := range evs {
+		log.Printf("thread %s: the CLI refused %v without asking Fyr (input closed: %v)", s.thread, e.Data.(map[string]any)["tool"], closed)
+	}
+	if len(evs) > 0 {
+		m.observe(s.thread, core.KindRecord, evs)
+	}
 }
