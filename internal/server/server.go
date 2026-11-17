@@ -287,7 +287,7 @@ func guard(owner string, next http.Handler) http.Handler {
 		ip := net.ParseIP(host)
 		// V0.130: fyr.localhost (any *.localhost) is loopback too; browsers
 		// resolve it locally, so no rebinding page can carry it.
-		if !localName(host) && (ip == nil || !ip.IsLoopback()) {
+		if !IsViaLAN(r) && !localName(host) && (ip == nil || !ip.IsLoopback()) {
 			http.Error(w, "Fyr v0 serves loopback only", http.StatusForbidden)
 			return
 		}
@@ -340,6 +340,25 @@ func ServeSocket(public string, next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	}))
 }
+
+type viaLANKey struct{}
+
+// ViaLAN marks every request of a handler as come over the owner's HTTPS listener
+// (decision 0030 3.5): a browser on the LAN. Nothing is trusted for being near: the
+// front serves such a request to a signed-in device only, whatever the modes say, and
+// refuses a Tailscale header on it.
+func ViaLAN(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS == nil {
+			http.Error(w, "this listener serves HTTPS only", http.StatusBadRequest)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), viaLANKey{}, true)))
+	})
+}
+
+// IsViaLAN reports whether a request came over the HTTPS listener.
+func IsViaLAN(r *http.Request) bool { v, _ := r.Context().Value(viaLANKey{}).(bool); return v }
 
 // IsViaServe reports whether a request came through Serve's socket.
 func IsViaServe(r *http.Request) bool { v, _ := r.Context().Value(viaServeKey{}).(bool); return v }

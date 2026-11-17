@@ -155,6 +155,9 @@ func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
 			caller.HostPort = freePort()
 			extra["hostListen"] = net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.HostPort))
 		}
+		if len(caller.Spec.Block) > 0 { // before it starts: it never dials an earlier node's peer port, so no link is opened the other way before the block is set
+			caller.SetBlocked(caller.Spec.Block...)
+		}
 		caller.Fyrd, err = Start(Options{Name: caller.Name, Role: caller.Spec.Role, Data: datas[i], Tailscale: caller.TS, Extra: extra})
 		if err != nil {
 			return nil, err

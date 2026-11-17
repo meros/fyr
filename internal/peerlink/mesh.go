@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -90,6 +91,10 @@ type Config struct {
 	// SelfRemoved: this install was removed from the roster; it dials nobody.
 	SelfRemoved func() bool
 	Logf        func(string, ...any)
+	// Candidates are the addresses a source other than the roster (mDNS on a LAN) gives
+	// for a member's id. An address is a guess: the dial is pinned to the id, so the
+	// install that answers there is that member or the dial fails.
+	Candidates func(id string) []string
 	// OnUp hears a link coming up (the roster syncs over it at once).
 	OnUp func(peerID string)
 	// MinBackoff and MaxBackoff bound the wait between dials to one member;
@@ -102,6 +107,7 @@ type Mesh struct {
 	cfg Config
 
 	mu      sync.Mutex
+	good    map[string]string  // the address a peer was last reached at, by peer id
 	links   map[string]*Link   // the link in use, by peer id
 	status  map[string]*Status // by peer id
 	conns   map[string]context.CancelFunc
@@ -252,8 +258,8 @@ func (m *Mesh) connector(ctx context.Context, id string, key ed25519.PublicKey) 
 		if !ok {
 			return
 		}
-		a := p.addr()
-		if a == "" {
+		addrs := m.addrs(p)
+		if len(addrs) == 0 {
 			m.setIfNotUp(id, Status{State: "down", Since: time.Now(), Err: &LinkErr{Kind: ErrNoAddress, Text: "no address for it yet; it may open the link itself"}})
 			if !m.sleep(ctx, 5*time.Second) {
 				return
@@ -261,7 +267,7 @@ func (m *Mesh) connector(ctx context.Context, id string, key ed25519.PublicKey) 
 			continue
 		}
 		m.setIfNotUp(id, Status{State: "connecting", Since: time.Now()})
-		l, err := m.dial(ctx, p, a)
+		l, err := m.dialAny(ctx, p, addrs)
 		if err != nil {
 			var le *LinkErr
 			if !errors.As(err, &le) {
@@ -281,6 +287,55 @@ func (m *Mesh) connector(ctx context.Context, id string, key ed25519.PublicKey) 
 		backoff = m.cfg.MinBackoff
 		m.register(l)
 	}
+}
+
+// addrs is where to try a member: the address last found good, the roster's, then what
+// a source says for its id.
+func (m *Mesh) addrs(p Peer) []string {
+	var out []string
+	add := func(a string) {
+		if a != "" && !slices.Contains(out, a) {
+			out = append(out, a)
+		}
+	}
+	m.mu.Lock()
+	add(m.good[p.ID])
+	m.mu.Unlock()
+	add(p.addr())
+	if m.cfg.Candidates != nil {
+		for _, a := range m.cfg.Candidates(p.ID) {
+			add(a)
+		}
+	}
+	return out
+}
+
+// dialAny tries each address in turn; the first error is the one reported (the
+// roster's address is the one the owner knows).
+func (m *Mesh) dialAny(ctx context.Context, p Peer, addrs []string) (*Link, error) {
+	var first error
+	for _, a := range addrs {
+		l, err := m.dial(ctx, p, a)
+		if err == nil {
+			m.mu.Lock()
+			if m.good == nil {
+				m.good = map[string]string{}
+			}
+			if a != p.addr() && m.good[p.ID] != a {
+				m.logf("peer: %s found at %s", p.Name, a)
+			}
+			m.good[p.ID] = a
+			m.mu.Unlock()
+			return l, nil
+		}
+		if first == nil {
+			first = err
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return nil, first
 }
 
 func (m *Mesh) setIfNotUp(id string, s Status) {

@@ -2,6 +2,8 @@ package authtest
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"sync"
 
 	"github.com/meros/fyr/internal/discovery"
@@ -13,6 +15,29 @@ import (
 type LAN struct {
 	mu      sync.Mutex
 	answers []discovery.Candidate
+	file    string
+}
+
+// File makes the bus readable by real fyrds: every change is written to path as
+// JSON, and an install started with config lanBusFile reads it as its mDNS source.
+func (l *LAN) File(path string) *LAN {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.file = path
+	l.flush()
+	return l
+}
+
+// flush writes the answers; the caller holds l.mu.
+func (l *LAN) flush() {
+	if l.file == "" {
+		return
+	}
+	b, _ := json.Marshal(l.answers)
+	tmp := l.file + ".tmp"
+	if os.WriteFile(tmp, b, 0o600) == nil {
+		os.Rename(tmp, l.file)
+	}
 }
 
 // Advertise adds an answer: install id at addr.
@@ -20,6 +45,21 @@ func (l *LAN) Advertise(id, addr string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.answers = append(l.answers, discovery.Candidate{ID: id, Addr: addr, Source: "mdns"})
+	l.flush()
+}
+
+// Announce makes addr the one answer for id: what an install does when it moves.
+func (l *LAN) Announce(id, addr string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	keep := l.answers[:0]
+	for _, a := range l.answers {
+		if a.ID != id {
+			keep = append(keep, a)
+		}
+	}
+	l.answers = append(keep, discovery.Candidate{ID: id, Addr: addr, Source: "mdns"})
+	l.flush()
 }
 
 // Spoof adds an answer that claims id at an address that is not the install's.
@@ -37,6 +77,7 @@ func (l *LAN) Withdraw(addr string) {
 		}
 	}
 	l.answers = keep
+	l.flush()
 }
 
 // Candidates implements discovery.Source.

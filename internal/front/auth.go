@@ -102,7 +102,7 @@ func isDocument(r *http.Request) bool {
 // anything else is looked at. Only tailscaled, through Serve's socket, sets one.
 func (f *Front) refuseTailscale(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if f.opt.Auth != nil && !server.IsViaServe(r) && f.opt.Auth.Mode(auth.WayBrowser) == auth.ModeEnforce {
+		if server.IsViaLAN(r) || (f.opt.Auth != nil && !server.IsViaServe(r) && f.opt.Auth.Mode(auth.WayBrowser) == auth.ModeEnforce) {
 			for k := range r.Header {
 				if strings.HasPrefix(strings.ToLower(k), "tailscale-") {
 					refuse(w, r, "this listener does not take Tailscale headers", http.StatusBadRequest)
@@ -132,7 +132,7 @@ func (f *Front) browserRules(next http.Handler) http.Handler {
 				return
 			}
 			if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Header.Get("Origin") == "" &&
-				f.opt.Auth != nil && f.opt.Auth.Mode(auth.WayBrowser) == auth.ModeEnforce {
+				(server.IsViaLAN(r) || f.opt.Auth != nil && f.opt.Auth.Mode(auth.WayBrowser) == auth.ModeEnforce) {
 				refuse(w, r, "missing Origin", http.StatusForbidden)
 				return
 			}
@@ -163,7 +163,7 @@ func (f *Front) withAuth(next http.Handler) http.Handler {
 		if pending {
 			ok = false
 		}
-		enforce := st.Mode(auth.WayBrowser) == auth.ModeEnforce
+		enforce := st.Mode(auth.WayBrowser) == auth.ModeEnforce || server.IsViaLAN(r) // the LAN is never observed
 		if !ok && server.IsViaServe(r) && f.ownerLogin() != "" && r.Header.Get("Tailscale-User-Login") == f.ownerLogin() {
 			if nd, p, refused := f.enrolTailnet(w, r, enforce); refused {
 				return
@@ -413,6 +413,10 @@ const t = setInterval(() => status().then(j => {
 }).catch(() => {}), 2000);
 </script>`
 
+// SetLANOrigin is the https://host:port a phone reaches this front at (decision 0030
+// 3.5); fyr device add makes its QR link there. "" is none.
+func (f *Front) SetLANOrigin(o string) { f.lanOrigin.Store(&o) }
+
 // OwnerHandler serves the owner socket (V0.130 (1), V0.157): the one local
 // channel, which no mode gates. fyr open, fyr device add|approve|revoke|list
 // and fyr auth status|observe|enforce come through it.
@@ -437,7 +441,11 @@ func (f *Front) OwnerHandler(origin string) http.Handler {
 		}
 		var b struct{ Name string }
 		json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
-		api.WriteJSON(w, 200, f.oneTimeLink(link, auth.HowLink, nameOr(b.Name, "a new device"), "", 10*time.Minute))
+		add := link
+		if o := f.lanOrigin.Load(); o != nil && *o != "" { // a phone is far from the owner socket's own origin: its link is the HTTPS one
+			add = func(tok string) string { return strings.TrimRight(*o, "/") + "/auth/once#" + tok }
+		}
+		api.WriteJSON(w, 200, f.oneTimeLink(add, auth.HowLink, nameOr(b.Name, "a new device"), "", 10*time.Minute))
 	})
 	mux.HandleFunc("POST /device/approve", func(w http.ResponseWriter, r *http.Request) {
 		if !needAuth(w) {
