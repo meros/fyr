@@ -1,12 +1,13 @@
 package slots
 
-// Decision 0029 slice S4 (#188): the budget adapts slowly to the host
-// (AIMD, as TCP and Netflix's concurrency limits do): up by a step while
-// jobs wait on a calm host and nothing was admitted for a while, down by a
-// quarter when new jobs run slow for a minute or memory is short. Slow
-// steps and holds, because the probe, PSI and the jobs themselves take time
-// to show a change. Every threshold is a slowdown or a share, so the same
-// rule holds on any host; without a provider the budget stays N.
+// Decision 0029 slice S4 (#188), V0.163 per resource: the budget adapts
+// slowly to the host (AIMD, as TCP and Netflix's concurrency limits do).
+// Memory pressure (headroom under the reserve, or a critical stall) cuts the
+// memory budget; new jobs running slow for a minute cut the CPU budget;
+// while a job waits on a calm host and nothing was admitted for a while, the
+// resource that held it back grows. Slow steps and holds, because the probe,
+// PSI and the jobs take time to show a change. Without a provider the
+// budget stays full (the fixed count holds).
 
 import (
 	"fmt"
@@ -17,33 +18,36 @@ import (
 const (
 	AIMDEvery = 30 * time.Second // at most one step this often
 	AIMDHold  = 60 * time.Second // the calm or the slowdown must last this long
-	AIMDUp    = 0.25             // added a step
-	AIMDDown  = 0.75             // the budget's share kept on a cut
+	AIMDUp    = 0.125            // added to a factor a step (12.5 % of the host)
+	AIMDDown  = 0.75             // a factor's share kept on a cut
 	AIMDCalm  = 1.2              // a slowdown under this is calm
-	AIMDSlow  = 3.0              // a slowdown over this, held AIMDHold, cuts
+	AIMDSlow  = 3.0              // a slowdown over this, held AIMDHold, cuts CPU
+	AIMDMax   = 2.0              // a factor's ceiling
 )
 
-// AIMD is one host's budget controller; N is the configured slot count.
+// AIMD is one host's budget controller; N is the host's `slots` setting:
+// a factor never falls under 1/N (one prior job's share).
 type AIMD struct {
 	N float64
 
-	b         float64
-	last      time.Time // the last step
+	f         Factors
+	started   bool
+	last      time.Time
 	slowSince time.Time
 	why       string
 }
 
-// Step moves the budget at now from the host's signals: waiting is whether
-// a job waits; lastGrant is the pool's last admission. It returns the
-// budget and why it is what it is.
-func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time) (float64, string) {
-	if a.b == 0 {
-		a.b, a.last, a.why = a.N, now, fmt.Sprintf("N = %g", a.N)
-		return a.b, a.why
+// Step moves the budget at now: waiting is whether a job waits, lastGrant
+// the pool's last admission, binding the resource that holds the head back
+// (ResCPU, ResMem or ""). It returns the factors and why.
+func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time, binding string) (Factors, string) {
+	if !a.started {
+		a.started, a.f, a.last, a.why = true, Full, now, "the full budget"
+		return a.f, a.why
 	}
 	if s.Provider == "" {
-		a.b, a.why = a.N, "no measures on this host: the fixed count"
-		return a.b, a.why
+		a.f, a.why = Full, "no measures on this host: the fixed count"
+		return a.f, a.why
 	}
 	slow := s.Slowdown != nil && *s.Slowdown > AIMDSlow
 	if !slow {
@@ -52,23 +56,32 @@ func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time)
 		a.slowSince = now
 	}
 	if now.Sub(a.last) < AIMDEvery {
-		return a.b, a.why
+		return a.f, a.why
 	}
 	a.last = now
+	floor := 1.0
+	if a.N > 0 {
+		floor = 1 / a.N
+	}
 	short := (s.Headroom != nil && *s.Headroom < DefaultPolicy.MemoryReserve) || s.Stall == StallCritical
 	calm := s.Slowdown != nil && *s.Slowdown < AIMDCalm && !short && s.Stall != StallElevated
 	switch {
 	case short:
-		a.b = max(1, round(a.b*AIMDDown))
-		a.why = "memory is short"
+		a.f.Mem = max(floor, round(a.f.Mem*AIMDDown))
+		a.why = "memory is short: the memory budget shrinks"
 	case slow && now.Sub(a.slowSince) >= AIMDHold:
-		a.b = max(1, round(a.b*AIMDDown))
-		a.why = fmt.Sprintf("new jobs run %.1f× slower", *s.Slowdown)
+		a.f.CPU = max(floor, round(a.f.CPU*AIMDDown))
+		a.why = fmt.Sprintf("new jobs run %.1f× slower: the CPU budget shrinks", *s.Slowdown)
 	case calm && waiting && (lastGrant.IsZero() || now.Sub(lastGrant) >= AIMDHold):
-		a.b = min(2*a.N, a.b+AIMDUp)
-		a.why = "the host is calm and jobs wait"
+		if binding == ResMem {
+			a.f.Mem = min(AIMDMax, a.f.Mem+AIMDUp)
+			a.why = "the host is calm and a job waits for memory: the memory budget grows"
+		} else {
+			a.f.CPU = min(AIMDMax, a.f.CPU+AIMDUp)
+			a.why = "the host is calm and a job waits for CPU: the CPU budget grows"
+		}
 	}
-	return a.b, a.why
+	return a.f, a.why
 }
 
-func round(v float64) float64 { return float64(int(v*100+0.5)) / 100 }
+func round(v float64) float64 { return float64(int(v*1000+0.5)) / 1000 }

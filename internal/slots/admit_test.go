@@ -10,30 +10,36 @@ import (
 func f(v float64) *float64 { return &v }
 
 func TestS2DecideByTheRules(t *testing.T) {
+	// V0.163: a host of 4 cores and 8 GiB; the prior (1/N of N 2) is 2 cores and 4 GiB.
 	p := Policy{SlowdownMax: 1.5, MemoryReserve: 0.10}
-	calm := Signals{Provider: "cgroups", Slowdown: f(1.1), Headroom: f(0.4), Stall: StallOK}
+	host := func(slow, free float64, st Stall) Signals {
+		return Signals{Provider: "cgroups", Slowdown: f(slow), Headroom: f(free), Stall: st, CPU: 4, Memory: 8 * gb}
+	}
+	job := Need{CPU: 2, Mem: 2 * gb}
+	idle := Need{CPU: 0.2, Mem: gb / 2}
+	cheap := Need{CPU: 0.4, Mem: gb / 2}
 	for _, c := range []struct {
 		name string
 		sig  Signals
-		held []float64
-		head float64
+		held []Need
+		head Need
 		ok   bool
 		why  string
 	}{
-		{"fits", calm, []float64{1}, 1, true, ""},
-		{"over the budget", calm, []float64{1, 1}, 1, false, "needs ≈ 50 %, 0 % free"},
-		{"an idle hold leaves room", calm, []float64{1, 0.1}, 0.5, true, ""},
-		{"slow CPU holds a normal job", Signals{Provider: "cgroups", Slowdown: f(2.1), Headroom: f(0.4), Stall: StallOK}, []float64{1}, 1, false, "new jobs run 2.1× slower"},
-		{"slow CPU lets a cheap job in", Signals{Provider: "cgroups", Slowdown: f(2.1), Headroom: f(0.4), Stall: StallOK}, []float64{1}, 0.25, true, ""},
-		{"progress: nothing runs, slow CPU", Signals{Provider: "cgroups", Slowdown: f(5), Headroom: f(0.4), Stall: StallOK}, nil, 1, true, ""},
-		{"memory short holds even with nothing running", Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.06), Stall: StallOK}, nil, 1, false, "memory: 6 % free"},
-		{"an elevated stall alone holds nothing (cache reclaim at memory.high)", Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.4), Stall: StallElevated}, nil, 1, true, ""},
-		{"a critical stall holds", Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.4), Stall: StallCritical}, nil, 1, false, "memory stalls (critical)"},
-		{"no provider: the fixed count", Signals{}, []float64{1}, 1, true, ""},
-		{"no provider: full", Signals{}, []float64{0.1, 0.1}, 1, false, "2 of 2 heavy jobs run"},
-		{"no slowdown yet: budget and memory only", Signals{Provider: "proc", Headroom: f(0.5)}, []float64{1}, 1, true, ""},
+		{"fits", host(1.1, 0.6, StallOK), []Need{job}, job, true, ""},
+		{"over the CPU budget", host(1.1, 0.6, StallOK), []Need{job, job}, job, false, "needs ≈ 50 % CPU, 0 % free"},
+		{"an idle hold leaves room", host(1.1, 0.6, StallOK), []Need{job, idle}, Need{CPU: 1.5, Mem: gb}, true, ""},
+		{"slow CPU holds a normal job", host(2.1, 0.6, StallOK), []Need{job}, job, false, "new jobs run 2.1× slower"},
+		{"slow CPU lets a cheap job in", host(2.1, 0.6, StallOK), []Need{job}, cheap, true, ""},
+		{"progress: nothing runs, slow CPU", host(5, 0.6, StallOK), nil, job, true, ""},
+		{"memory short holds even with nothing running", host(1, 0.06, StallOK), nil, job, false, "memory: 6 % free"},
+		{"an elevated stall alone holds nothing (cache reclaim at memory.high)", host(1, 0.6, StallElevated), nil, job, true, ""},
+		{"a critical stall holds", host(1, 0.6, StallCritical), nil, job, false, "memory stalls (critical)"},
+		{"no provider: the fixed count", Signals{}, []Need{job}, job, true, ""},
+		{"no provider: full", Signals{}, []Need{idle, idle}, job, false, "2 of 2 heavy jobs run"},
+		{"no slowdown yet: budget and memory only", Signals{Provider: "proc", Headroom: f(0.6), CPU: 4, Memory: 8 * gb}, []Need{job}, job, true, ""},
 	} {
-		ok, why := Decide(p, c.sig, 2, 2, c.held, c.head)
+		ok, why, _ := Decide(p, c.sig, Full, 2, c.held, c.head)
 		if ok != c.ok || !strings.Contains(why, c.why) || (c.ok && why != "") {
 			t.Errorf("%s: got %v %q, want %v %q", c.name, ok, why, c.ok, c.why)
 		}
@@ -43,11 +49,11 @@ func TestS2DecideByTheRules(t *testing.T) {
 func TestS2ThePoolAsksAdmitAndKeepsItsOrder(t *testing.T) {
 	p := New(2)
 	open := false
-	p.Admit = func(head Holder, held []Holder) (bool, string) {
+	p.Admit = func(head Holder, held []Holder) (bool, string, string) {
 		if len(held) == 0 || open {
-			return true, ""
+			return true, "", ""
 		}
-		return false, "CPU: new jobs run 2.0× slower"
+		return false, "CPU: new jobs run 2.0× slower", ResCPU
 	}
 	if held, _ := p.Acquire("a", Test); !held {
 		t.Fatal("progress: the first job is admitted")
@@ -70,16 +76,21 @@ func TestS2ThePoolAsksAdmitAndKeepsItsOrder(t *testing.T) {
 
 func TestS2SnapshotCarriesCostsAndUse(t *testing.T) {
 	p := New(2)
-	p.Cost = func(h Holder) float64 {
+	p.Host = func() Signals { return Signals{Provider: "cgroups", CPU: 4, Memory: 8 * gb} }
+	p.Cost = func(h Holder) Need {
 		if h.Owner == "idle" {
-			return 0.1
+			return Need{CPU: 0.2, Mem: gb / 2}
 		}
-		return 1
+		return Need{CPU: 2, Mem: gb}
 	}
 	p.Acquire("busy", Test)
 	p.Acquire("idle", E2E)
 	s := p.Snapshot()
-	if s.Used == nil || *s.Used != 1.1 || s.Held[0].Cost != 1 || s.Held[1].Cost != 0.1 {
-		t.Fatalf("%+v", s)
+	if s.Held[0].CPUPct != 50 || s.Held[0].MemPct != 13 || s.Held[1].CPUPct != 5 || *s.CPUPct != 55 || *s.MemPct != 19 || s.Tight != ResCPU {
+		t.Fatalf("%+v %+v", s, s.Held)
+	}
+	// Older fronts read the one-number cost and use for one release.
+	if s.Used == nil || *s.Used != 1.13 || s.Held[0].Cost != 1 {
+		t.Fatalf("old fields %+v", s)
 	}
 }
