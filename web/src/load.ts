@@ -149,7 +149,7 @@ export function threadSlot(list: HostLoad[], id: string): string | null {
   return null;
 }
 
-/** V0.99, V0.140: a ring's label (its title and aria-label): the load, the cores and the slots; with several hosts it
+/** V0.99, V0.141: a ring's label (its title and aria-label): the load, the cores and the slots; with several hosts it
  *  starts with the host's name. */
 export function railLabel(h: HostLoad, several: boolean): string {
   const m = railMeter(h);
