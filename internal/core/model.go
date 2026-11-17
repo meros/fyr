@@ -256,6 +256,13 @@ type PR struct {
 	ChecksDone   int      `json:"checksDone,omitempty"`
 	ChecksTotal  int      `json:"checksTotal,omitempty"`
 	FailedChecks []string `json:"failedChecks,omitempty"`
+	// V0.136: when GitHub reads the PR as BLOCKED with its checks green,
+	// the rule types active on its base (GitHub's rules API: pull_request,
+	// required_signatures, ...), the required checks that did not report on
+	// the head, and whether the base has classic branch protection.
+	Rules         []string `json:"rules,omitempty"`
+	MissingChecks []string `json:"missingChecks,omitempty"`
+	Protected     bool     `json:"protected,omitempty"`
 }
 
 // PRMissing is the state Fyr observes when GitHub answers that the PR or its

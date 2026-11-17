@@ -182,3 +182,82 @@ func TestMergeAskOnRedOrGreenHead(t *testing.T) {
 		t.Fatalf("an ask in a repo with no CI: %v %+v", err, th.Decisions)
 	}
 }
+
+// V0.136: GitHub reads the asked head as BLOCKED while its checks are
+// green. The owner is not asked; the agent hears the rule GitHub enforces
+// and its next step, as for a CI failure.
+func TestBlockedMergeAskTellsTheAgentTheRule(t *testing.T) {
+	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name      string
+		pr        func(*PR)
+		why, next string
+	}{
+		{"review", func(p *PR) { p.Review = "REVIEW_REQUIRED" }, "a review is required by the rules of main", "gh pr edit --add-reviewer"},
+		{"signed", func(p *PR) { p.Rules = []string{"required_signatures"} }, "the rules of main require signed commits", "sign the commits"},
+		{"required check", func(p *PR) { p.Rules, p.MissingChecks = []string{"required_status_checks"}, []string{"build"} }, "a required check has not reported on 7333251: build", "make the required checks run"},
+		{"merge queue", func(p *PR) { p.Rules = []string{"merge_queue"} }, "main merges through a merge queue", "merge queue on GitHub"},
+		{"classic protection", func(p *PR) { p.Protected = true }, "the branch protection of main blocks it", "admin rights"},
+	}
+	for _, c := range cases {
+		th, _ := heldAsk(t, now)
+		at := now.Add(5 * time.Minute)
+		th, _, res, err := Reduce(th, &View{}, askPR(at, func(p *PR) {
+			p.Checks, p.MergeState, p.ChecksDone, p.Base = ChecksPass, "BLOCKED", 5, "main"
+			c.pr(p)
+		}), at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(th.Decisions) != 0 || len(th.HeldAsks) != 0 || Compute(th, &View{}, at).State == Asking {
+			t.Errorf("%s: the owner is asked: %+v", c.name, th.Decisions)
+			continue
+		}
+		var said string
+		for _, n := range resultNotices(Reduced{Before: th, After: th, Events: res.Events}) {
+			said += n.What
+		}
+		if !strings.Contains(said, c.why) || !strings.Contains(said, "Next: ") || !strings.Contains(said, c.next) {
+			t.Errorf("%s: the agent hears %q", c.name, said)
+		}
+	}
+}
+
+// V0.136: GitHub refuses a merge Fyr runs (here the owner's yes to a green
+// ask). The change carries GitHub's words, so the card shows them and
+// Stopped on a failure applies; the agent hears them once, with the next
+// step. A push clears it.
+func TestRefusedMergeTellsTheAgent(t *testing.T) {
+	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	th, _ := heldAsk(t, now)
+	green := now.Add(5 * time.Minute)
+	th, _, _, err := Reduce(th, &View{}, askPR(green, func(p *PR) { p.Checks, p.MergeState, p.Base = ChecksPass, "CLEAN", "main" }), green)
+	if err != nil || len(th.Decisions) != 1 {
+		t.Fatalf("setup: %v %+v", err, th.Decisions)
+	}
+	th, _, res, err := Reduce(th, &View{}, Input{Source: FromOwner, Kind: "thread.answer", Thread: "t1", Args: Args{"decisionId": "d_merge", "allow": true}}, green)
+	if err != nil || len(res.Effects) != 1 {
+		t.Fatalf("yes: %v %+v", err, res.Effects)
+	}
+	ghErr := "GraphQL: Base branch policy prohibits the merge. (mergePullRequest)"
+	at := green.Add(10 * time.Second)
+	th, _, res, err = Reduce(th, &View{}, Input{Source: FromEffect("fx1"), Kind: KindEffectResult, Thread: "t1",
+		Args: EffectResult{Effect: res.Effects[0], OK: false, Text: ghErr}}, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k := condition(&th.Changes[0], CondMerge)
+	if k == nil || k.Status != CondFail || !strings.Contains(k.Reason, "Base branch policy prohibits the merge") {
+		t.Fatalf("the card does not show the refusal: %+v", th.Changes[0].Conditions)
+	}
+	notices := resultNotices(Reduced{Before: th, After: th, Events: res.Events})
+	if len(notices) != 1 || !strings.Contains(notices[0].What, "The merge of PR #846 failed: GraphQL: Base branch policy prohibits the merge") || !strings.Contains(notices[0].What, "Next: ") {
+		t.Fatalf("the agent hears %+v", notices)
+	}
+	// a push: the refusal was about the old head
+	push := at.Add(time.Minute)
+	th, _, _, _ = Reduce(th, &View{}, askPR(push, func(p *PR) { p.Head = "9999999aaaabbbb" }), push)
+	if condition(&th.Changes[0], CondMerge) != nil {
+		t.Fatal("a push kept the refused merge on the card")
+	}
+}

@@ -38,7 +38,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
   "heldAsks": [Decision],
   "outbox": [{"id": "…", "state": "sent|queued"}],
   "tasks": [{"id": "a803…", "description": "Design mobile translation", "type": "local_agent", "status": "running|completed|failed|stopped", "activity": "Running build", "summary": "…", "toolUses": 14, "tokens": 143218, "startedAt": "…", "updatedAt": "…"}],
-  "pr": {"url": "…", "repo": "acme/app", "number": 42, "title": "…", "state": "OPEN", "checks": "pass|fail|pending|none", "review": "APPROVED", "conflict": false, "checksDone": 3, "checksTotal": 5, "failedChecks": ["test"]},
+  "pr": {"url": "…", "repo": "acme/app", "number": 42, "title": "…", "state": "OPEN", "checks": "pass|fail|pending|none", "review": "APPROVED", "conflict": false, "checksDone": 3, "checksTotal": 5, "failedChecks": ["test"], "rules": ["pull_request"], "missingChecks": ["build"], "protected": false},
   "settledAt": null, "archivedAt": null, "settleWhenDone": false, "settleWhenMerged": false,
   "source": "fyr|t3",
   "parent": "t_… (the thread whose agent started this one, V0.22)",
@@ -58,7 +58,7 @@ The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC
 
 `liveView` is the live view flag and `live` the view itself (V0.37); both are absent on a thread without them. The flag is stored as `live.enabled` (#33), which the DTO also carries. `live.headline` is `state.headline` when it is a string; `checkedAt` is the last `view_*` call, `updatedAt` the last change of page or state.
 
-`heldAsks` (V0.136) are the agent's merge asks that wait for CI on their head: recorded, never in `decisions`, never counted as asking. A change with one carries `need {cause: "waiting", muted: true, text: "Waiting for CI: 3 of 5 checks done", head, ask}`. `checksDone`, `checksTotal` and `failedChecks` count and name the head's checks from the poller's read.
+`heldAsks` (V0.136) are the agent's merge asks that wait for CI on their head: recorded, never in `decisions`, never counted as asking. A change with one carries `need {cause: "waiting", muted: true, text: "Waiting for CI: 3 of 5 checks done", head, ask}`. `checksDone`, `checksTotal` and `failedChecks` count and name the head's checks from the poller's read. `rules` (the base's active rule types), `missingChecks` (required checks that did not report on the head) and `protected` (classic branch protection) are read only when GitHub reads the PR as BLOCKED with green checks. A merge Fyr ran that failed leaves the change condition `mergeable` failed with "Merge refused: …" until a push or the merge.
 
 `rev` increases on every change, also across host restarts: keep the copy with the higher `rev`. An action name missing from `unavailable` is available. The client never computes status; it renders `attention`.
 
