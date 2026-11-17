@@ -75,7 +75,7 @@ test("a CLI refusal shows as a line that names the tool and says it was not the 
   assert.match(line.text, /not the owner/);
 });
 
-// SPEC V0.142: the agent stopping to respond and Fyr's restart each show as one line in the conversation, the
+// SPEC V0.143: the agent stopping to respond and Fyr's restart each show as one line in the conversation, the
 // restart naming the background tasks that ended with the process.
 test("an unresponsive agent and its restart show as lines", () => {
   const items = buildConversation([

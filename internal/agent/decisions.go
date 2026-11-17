@@ -145,7 +145,7 @@ func (m *Manager) doInterrupt(threadID string) error {
 	defer cancel()
 	err := s.c.Interrupt(ctx)
 	if err != nil && ctx.Err() != nil {
-		// V0.142: the CLI did not answer the Stop.
+		// V0.143: the CLI did not answer the Stop.
 		m.markUnresponsive(s, fmt.Sprintf("it did not answer Stop within %s", short(m.cfg.ControlTimeout)))
 	}
 	return err

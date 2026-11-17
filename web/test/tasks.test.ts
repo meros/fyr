@@ -66,7 +66,7 @@ test("live line while working", () => {
   assert.equal(liveLine(withAgents, now), "Working · 1 agent · 12 min");
 });
 
-// SPEC 0.5 V0.142: a live agent that takes nothing Fyr writes is not "Starting · 1 agent · 39 min" (the incident's
+// SPEC 0.5 V0.143: a live agent that takes nothing Fyr writes is not "Starting · 1 agent · 39 min" (the incident's
 // line): the live line says since when it is silent and why, on desktop and phone.
 test("live line of an agent that does not respond", () => {
   const now = Date.parse("2026-11-17T09:48:00Z");

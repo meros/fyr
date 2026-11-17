@@ -1387,6 +1387,6 @@ label.sr{cursor:pointer}
 .sqmv .sqrow{flex:1;min-width:0}
 .sqmv .mv{display:flex;gap:4px;flex:none;padding-right:8px}
 .sqmv .xb{width:44px;height:44px}
-/* V0.142: an agent that does not respond; the line takes the room, the button keeps its own */
+/* V0.143: an agent that does not respond; the line takes the room, the button keeps its own */
 .sys.stuck{color:var(--signal-ink)}
 .sys.stuck .btn,.sys.stuck .m-bt{flex:none;margin-left:auto}

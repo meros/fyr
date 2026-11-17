@@ -24,7 +24,7 @@
 //	deaf N   starts a background task of N ms, ends its turn, and from
 //	         then on reads nothing more from stdin (no message, no control
 //	         request), as claude 2.1.322 after its input closed; when the
-//	         task ends it starts one turn by itself and exits (V0.142)
+//	         task ends it starts one turn by itself and exits (V0.143)
 //	refused  makes one Bash call that the CLI refuses with its reject
 //	         text, without asking Fyr (V0.133)
 //	sub      runs one subagent (Task tool) before it answers
@@ -98,7 +98,7 @@ var (
 	// closed: stdin closed; eof is closed with it; bgwg: background tasks
 	// the exit waits for.
 	closed atomic.Bool
-	// deaf: the fake reads nothing more (V0.142).
+	// deaf: the fake reads nothing more (V0.143).
 	deaf atomic.Bool
 	eof  = make(chan struct{})
 	bgwg sync.WaitGroup

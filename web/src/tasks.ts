@@ -94,7 +94,7 @@ export function taskEventText(d: { kind?: string; description?: string; status?:
 
 /** SPEC 0.5 V0.21: the live line under a working thread, desktop and phone. */
 export function liveLine(t: Thread, now: number): string {
-  // V0.142: a process that takes nothing Fyr writes is not "Starting" or "Working".
+  // V0.143: a process that takes nothing Fyr writes is not "Starting" or "Working".
   if (t.unresponsive) return `Not responding since ${clockTime(t.unresponsive.since)} · ${t.unresponsive.reason}`;
   const running = groupTasks(t.tasks).running.length;
   return [t.activity || "Working", running ? agentsLabel(running) : "", relTime(t.runStartedAt, now)].filter(Boolean).join(" · ");

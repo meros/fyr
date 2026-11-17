@@ -1,4 +1,4 @@
-// SPEC 0.5 V0.142: the status line above the composer, one component on desktop and phone. While a run goes it
+// SPEC 0.5 V0.143: the status line above the composer, one component on desktop and phone. While a run goes it
 // spins with the live line; while the agent does not respond it says since when and why, and offers Restart.
 import { StateIcon } from "./icons.tsx";
 import { liveLine } from "./tasks.ts";

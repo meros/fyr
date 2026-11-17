@@ -1133,9 +1133,9 @@ try {
 }
 });
 
-// V0.142: an agent that does not respond says so above the composer, since when and why, with Restart; the same
+// V0.143: an agent that does not respond says so above the composer, since when and why, with Restart; the same
 // line on desktop and phone (one component), the button inside the screen and 44 px tall on the phone.
-for (const [front, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.142 ${front}`, async ({ send, evaluate, navigate, openScreen }) => {
+for (const [front, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.143 ${front}`, async ({ send, evaluate, navigate, openScreen }) => {
 try {
   const row = front === "phone" ? ".m-app .m-status.stuck" : ".th .sys.live.stuck";
   if (front === "desktop") {
@@ -1148,12 +1148,12 @@ try {
     return { text: el?.querySelector('.ell')?.textContent ?? '', btn: btn?.textContent ?? '', disabled: !!btn?.disabled, spin: !!el?.querySelector('.spin'),
       box: b ? { left: b.left, right: b.right, top: b.top, bottom: b.bottom, h: b.height } : null, row: e ? { right: e.right } : null, vw: innerWidth, vh: innerHeight };
   })()`);
-  check(/^Not responding since \d\d:\d\d · it did not take a message/.test(r.text), `V0.142 ${front}: the status line says "${r.text}"`);
-  check(r.btn === "Restart agent" && !r.disabled && !r.spin, `V0.142 ${front}: no enabled Restart, or it still spins (${JSON.stringify(r)})`);
-  check(!!r.box && r.box.left >= 0 && r.box.right <= r.vw + 0.5 && r.box.bottom <= r.vh + 0.5 && r.row.right <= r.vw + 0.5, `V0.142 ${front}: Restart or its line is out of the screen ${JSON.stringify(r)}`);
-  if (front === "phone") check(r.box.h >= 44, `V0.142 phone: Restart is ${r.box.h} px tall, under 44`);
+  check(/^Not responding since \d\d:\d\d · it did not take a message/.test(r.text), `V0.143 ${front}: the status line says "${r.text}"`);
+  check(r.btn === "Restart agent" && !r.disabled && !r.spin, `V0.143 ${front}: no enabled Restart, or it still spins (${JSON.stringify(r)})`);
+  check(!!r.box && r.box.left >= 0 && r.box.right <= r.vw + 0.5 && r.box.bottom <= r.vh + 0.5 && r.row.right <= r.vw + 0.5, `V0.143 ${front}: Restart or its line is out of the screen ${JSON.stringify(r)}`);
+  if (front === "phone") check(r.box.h >= 44, `V0.143 phone: Restart is ${r.box.h} px tall, under 44`);
 } catch (e) {
-  failures.push(`V0.142 ${front}: ${e.message}`);
+  failures.push(`V0.143 ${front}: ${e.message}`);
 }
 });
 

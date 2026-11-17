@@ -46,7 +46,7 @@ const (
 	KindRunStarted      = "run.started"
 	KindRunEnded        = "run.ended"
 	KindProcessLost     = "process.lost"
-	// V0.142: the agent process stops or starts taking what Fyr writes,
+	// V0.143: the agent process stops or starts taking what Fyr writes,
 	// and Fyr restarts it.
 	KindUnresponsive = "agent.unresponsive"
 	KindResponsive   = "agent.responsive"
@@ -135,16 +135,16 @@ type (
 		ID    string
 		First bool
 		Log   []Event
-		// Text is what went to the CLI (V0.142), kept in the outbox.
+		// Text is what went to the CLI (V0.143), kept in the outbox.
 		Text string
 	}
-	// UnresponsiveArgs: since the process's last output, and why (V0.142).
+	// UnresponsiveArgs: since the process's last output, and why (V0.143).
 	UnresponsiveArgs struct {
 		Since  time.Time
 		Reason string
 	}
 	// RestartedArgs: why Fyr restarted the process and the background
-	// tasks that ended with it (V0.142).
+	// tasks that ended with it (V0.143).
 	RestartedArgs struct {
 		Why   string
 		Tasks []string

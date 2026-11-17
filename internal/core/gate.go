@@ -30,11 +30,11 @@ func Gate(tool string, input map[string]any) string {
 }
 
 // LongBackground is the longest background Bash Fyr lets pass without a
-// word (V0.142). The CLI ends a background Bash at its timeout (at most 2 h).
+// word (V0.143). The CLI ends a background Bash at its timeout (at most 2 h).
 const LongBackground = time.Hour
 
 // GateNudge returns a note for the model on an allowed tool call, or "":
-// a background Bash meant to run an hour or more (V0.142).
+// a background Bash meant to run an hour or more (V0.143).
 func GateNudge(tool string, input map[string]any) string {
 	if tool != "Bash" {
 		return ""

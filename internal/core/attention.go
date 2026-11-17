@@ -72,7 +72,7 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 	case t.Failure != nil:
 		return Attention{Failed, NeedsYou, t.Failure.Message}
 	case t.Unresponsive != nil:
-		// V0.142: a live process that takes nothing Fyr writes needs the
+		// V0.143: a live process that takes nothing Fyr writes needs the
 		// owner: Restart, or wait for the automatic one.
 		return Attention{Blocked, NeedsYou, UnresponsiveText(t.Unresponsive)}
 	case t.Running:
@@ -98,7 +98,7 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 }
 
 // UnresponsiveText is the one line that names an unresponsive agent
-// (V0.142): "Agent not responding since 08:58: <reason>". The clock is
+// (V0.143): "Agent not responding since 08:58: <reason>". The clock is
 // the host's local time.
 func UnresponsiveText(u *Unresponsive) string {
 	return "Agent not responding since " + u.Since.Local().Format("15:04") + ": " + u.Reason

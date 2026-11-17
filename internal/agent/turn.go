@@ -16,7 +16,7 @@ func (m *Manager) read(s *session) {
 	for msg := range s.c.Out() {
 		m.handle(s, msg)
 		handled(s, msg) // V0.90: a later fyrd does not get it again
-		m.heard(s)      // V0.142
+		m.heard(s)      // V0.143
 	}
 	<-s.c.Done()
 	defer close(s.gone)
@@ -52,9 +52,9 @@ func (m *Manager) read(s *session) {
 	}
 	m.mu.Unlock()
 	if restarting != "" {
-		return // V0.142: restart observes it and delivers the unread messages
+		return // V0.143: restart observes it and delivers the unread messages
 	}
-	// V0.142: the messages Fyr held back because the input was closed were
+	// V0.143: the messages Fyr held back because the input was closed were
 	// never written: the next process of the session gets them. What was
 	// written dies with the process (V0.33), as after a Stop.
 	m.mu.Lock()

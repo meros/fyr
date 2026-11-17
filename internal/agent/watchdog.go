@@ -10,7 +10,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 )
 
-// SPEC 0.5 V0.142: the watchdog. Fyr writes a message or a control request
+// SPEC 0.5 V0.143: the watchdog. Fyr writes a message or a control request
 // and the CLI acknowledges it (command_lifecycle, control_response). When
 // it does not, the process is unresponsive: the thread says since when and
 // why, the owner can restart it, and Fyr restarts it itself after

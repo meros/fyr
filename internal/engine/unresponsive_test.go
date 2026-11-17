@@ -12,7 +12,7 @@ import (
 	"github.com/meros/fyr/internal/store"
 )
 
-// SPEC 0.5 V0.142. The incident (t_165134a0049d9982, 17 Nov): the CLI's
+// SPEC 0.5 V0.143. The incident (t_165134a0049d9982, 17 Nov): the CLI's
 // stdin was closed while a 2-hour background Bash ran. The CLI lived on for
 // it and read nothing more; Fyr wrote the owner's messages and seven Stops
 // into the closed pipe for 40 minutes and showed "Starting · 1 agent".
