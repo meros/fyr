@@ -104,6 +104,14 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
  "effect": {"action": "pr.merge", "args": {"pr": "…", "method": "squash"}, "reason": "…"}}
 ```
 
+## The front's API: the host in the path (decision 0031, V0.171)
+
+A front serves two prefixes; every other `/api/` path is an old route (`Deprecation: true`, counted, removed one release after the client stops using it). The host protocol below does not change: a host never sees the prefix.
+
+- `/api/h/<hostId>/<path after /api/>`: the host protocol on one host, named by its install id (`hosts[].id`). `GET /api/h/F7QK-2M9X-AB34-CD56/threads/t_12/events` is `GET /api/threads/t_12/events` on that host. An unknown id is `404 {"ok": false, "code": "no-host"}`; an unreachable host is `503 {"ok": false, "code": "host-offline", "link": {…}}`, except `state`, `threads/{id}` and the six settings reads, which the front answers from its cache with `X-Fyr-Read-At`. Uploads and previews use the same prefix; a preview's relative URLs resolve under it.
+- `/api/front/…`: what belongs to no host. `GET state` (`{now, user, buildId, front: {id, name}, hosts, projectOrder}`), `GET stream` (each frame of a host carries `host: <id>`), `POST command` (`front.projectOrder`, `front.hostOrder {ids}`, `front.hostId {host}`), `POST presence {host, threadId, device}`, `push/*`, `auth/*`, `peer/*`.
+- `hosts[].link` is `{state: "up"|"down", via: "peer"|"whois"|"pipe", opened, since, error?: {kind, text}}`.
+
 ## `GET /api/stream` (Server-Sent Events)
 
 - `event: hello` `data: {"now": "…", "buildId": "…"}` once at connect. When a later `hello` has a different `buildId` than the first one the client saw, the client reloads itself once (V0.13); a missing `buildId` never reloads. The client then fetches `/api/state` (subscribe first, then snapshot, so nothing is lost).
