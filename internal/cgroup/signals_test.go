@@ -179,6 +179,7 @@ func TestS1AHoldWithoutAMatchedCommandIsNamedByItsKind(t *testing.T) {
 	write(t, filepath.Join(td, "memory.current"), "0\n")
 	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	pool := slots.New(2)
+	pool.Now = func() time.Time { return now }
 	j := &Jobs{KV: kv{}}
 	s := &Sampler{Tree: tr, Proc: t.TempDir(), Cores: 4, Slots: pool, Jobs: j, Now: func() time.Time { return now }}
 	pool.Acquire("t_b", slots.E2E)
