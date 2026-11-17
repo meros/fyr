@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"os"
 	"strconv"
 
 	"github.com/meros/fyr/internal/front"
@@ -55,7 +54,7 @@ func newDiscovery(cfg config, self peers.WellKnown, listen string, fr *front.Fro
 				}
 			}
 		}}
-	if _, err := os.Stat(tailnet.DefaultSocket); err == nil && cfg.OwnerLogin != "" {
+	if tailnet.Available(tailnet.DefaultSocket) && cfg.OwnerLogin != "" {
 		opt.Nodes = func(ctx context.Context) ([]string, error) { return tailnet.Candidates(ctx, tailnet.DefaultSocket) }
 		if _, dns, err := tailnet.Self(tailnet.DefaultSocket); (err == nil || errors.Is(err, tailnet.ErrTagged)) && dns != "" {
 			port := 7443

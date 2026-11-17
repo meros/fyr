@@ -3,12 +3,21 @@ package tailnet
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+// TestMain keeps the tests off this machine's Tailscale app (a Mac's real
+// /Library/Tailscale would answer for a missing socket).
+func TestMain(m *testing.M) {
+	MacDir = filepath.Join(os.TempDir(), "fyr-tailnet-test-none")
+	os.Exit(m.Run())
+}
 
 // SPEC 0.5 V0.14: the owner is the Tailscale user of this machine.
 func TestOwnerLoginFromLocalAPI(t *testing.T) {
@@ -149,5 +158,41 @@ func TestSelfOfATaggedNodeNamesNoOwner(t *testing.T) {
 	}
 	if !errors.Is(err, ErrTagged) {
 		t.Fatalf("want ErrTagged, got %v", err)
+	}
+}
+
+// The macOS app has no Unix socket: its LocalAPI is a port on 127.0.0.1
+// (/Library/Tailscale/ipnport) that takes the token in sameuserproof-<port>.
+func TestMacLocalAPIPortAndToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, pw, ok := r.BasicAuth(); !ok || pw != "tok123" || r.URL.Path != "/localapi/v0/status" {
+			http.Error(w, "no", http.StatusForbidden)
+			return
+		}
+		io.WriteString(w, `{"Self":{"UserID":7,"DNSName":"mac.tail.ts.net."},"User":{"7":{"LoginName":"owner@example.com"}}}`)
+	}))
+	defer srv.Close()
+	_, port, _ := net.SplitHostPort(srv.Listener.Addr().String())
+	dir := t.TempDir()
+	if err := os.Symlink(port, filepath.Join(dir, "ipnport")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sameuserproof-"+port), []byte("tok123\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	old := MacDir
+	MacDir = dir
+	defer func() { MacDir = old }()
+	missing := filepath.Join(dir, "no.sock")
+	if !Available(missing) {
+		t.Fatal("not available")
+	}
+	login, dns, err := Self(missing)
+	if err != nil || login != "owner@example.com" || dns != "mac.tail.ts.net" {
+		t.Fatalf("%q %q %v", login, dns, err)
+	}
+	MacDir = t.TempDir()
+	if Available(missing) {
+		t.Fatal("available without a port")
 	}
 }
