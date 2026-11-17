@@ -519,10 +519,31 @@ func (r *Roster) Statements() []Statement {
 func (r *Roster) Merge(list []Statement) bool {
 	r.mu.Lock()
 	added := false
-	for _, s := range list {
-		if len(r.stmts) > 20000 { // a flood from a stranger fills no disk
-			break
+	// where a signer's key can be found: a member, or an install-add that carries it (the
+	// ones already held and the ones in this batch)
+	keyOf := func(id string) ed25519.PublicKey {
+		if m, ok := r.members[id]; ok {
+			return m.Key
 		}
+		for _, s := range r.stmts {
+			if s.Kind == KindInstallAdd && s.Subject == id && len(s.Key) == ed25519.PublicKeySize {
+				return ed25519.PublicKey(s.Key)
+			}
+		}
+		for _, s := range list {
+			if s.Kind == KindInstallAdd && s.Subject == id && len(s.Key) == ed25519.PublicKeySize && identity.IDOf(s.Key) == id {
+				return ed25519.PublicKey(s.Key)
+			}
+		}
+		return nil
+	}
+	foreign := 0 // statements held whose signer is not a member: a stranger's flood must not fill the roster
+	for _, s := range r.stmts {
+		if _, ok := r.members[s.By]; !ok {
+			foreign++
+		}
+	}
+	for _, s := range list {
 		if s.V != 1 || len(s.Sig) != ed25519.SignatureSize || s.By == "" || len(list) > 100000 {
 			continue
 		}
@@ -546,6 +567,18 @@ func (r *Roster) Merge(list []Statement) bool {
 		default:
 			continue
 		}
+		// the signature must hold under a key this roster can name
+		k := keyOf(s.By)
+		if k == nil || !verifyWith(k, s) {
+			continue
+		}
+		_, byMember := r.members[s.By]
+		if !byMember {
+			if foreign >= maxForeign { // a removal or revoke by a member is never dropped by this
+				continue
+			}
+			foreign++
+		}
 		if r.addLocked(s) {
 			added = true
 		}
@@ -560,6 +593,10 @@ func (r *Roster) Merge(list []Statement) bool {
 	}
 	return added
 }
+
+// maxForeign bounds the statements held from signers that are not members (they
+// may become members through a later statement, so they are kept, within reason).
+const maxForeign = 2000
 
 // OwnerLogin is the owner's tailnet login as the roster carries it, "" when no
 // member has said.

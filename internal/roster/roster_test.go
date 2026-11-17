@@ -409,3 +409,49 @@ func TestAForgedRotationMovesNobody(t *testing.T) {
 		t.Errorf("members %v", got)
 	}
 }
+
+// A stranger cannot fill the roster or stop a removal: a statement whose signature
+// holds under no key this roster can name is dropped; valid ones from strangers are
+// bounded; a member's removal always merges.
+func TestAStrangerCannotFillTheRoster(t *testing.T) {
+	a, b, evil := newInst(t, "a"), newInst(t, "b"), newInst(t, "evil")
+	a.r.Add(b.k.Public, "b", "", 1)
+	before := len(a.r.Statements())
+	junk := make([]Statement, 0, 16)
+	for i := 0; i < 16; i++ {
+		junk = append(junk, Statement{V: 1, Kind: KindDeviceAdd, By: "FAKE-FAKE-FAKE-FAKE", Subject: "dev_" + string(rune('a'+i)), Sig: make([]byte, 64)})
+	}
+	if a.r.Merge(junk) || len(a.r.Statements()) != before {
+		t.Fatalf("junk statements were kept: %d -> %d", before, len(a.r.Statements()))
+	}
+	// valid statements from many strangers, in one batch: kept only up to the bound
+	var flood []Statement
+	for i := 0; i < maxForeign+500; i++ {
+		flood = append(flood, newInstQuiet(t))
+	}
+	a.r.Merge(flood)
+	if n := len(a.r.Statements()); n > before+maxForeign+10 {
+		t.Fatalf("%d statements after a flood (bound %d)", n, maxForeign)
+	}
+	// and a removal by a member still merges
+	b.r.Add(evil.k.Public, "evil", "", 1)
+	a.r.Merge(b.r.Statements())
+	if err := a.r.Remove(evil.k.ID()); err != nil {
+		t.Fatalf("a removal after the flood: %v", err)
+	}
+	if !a.r.Removed(evil.k.ID()) {
+		t.Error("the removal did not take effect")
+	}
+}
+
+// newInstQuiet makes a stranger's one valid statement (its own first add) without
+// a data folder of its own.
+func newInstQuiet(t *testing.T) Statement {
+	k, err := identity.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := Statement{V: 1, Kind: KindInstallAdd, By: k.ID(), Subject: k.ID(), Key: k.Public, At: time.Now().UTC().Truncate(time.Second)}
+	s.Sig = ed25519.Sign(k.Private, s.signBytes())
+	return s
+}

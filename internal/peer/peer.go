@@ -198,6 +198,15 @@ func (e *Env) Caller(r *http.Request) (roster.Member, bool) {
 		return m, true
 	}
 	if chain := peerlink.CallerRotation(r); len(chain) > 0 {
+		// Only a chain that leads from a key the roster holds to the key on this
+		// connection is taken: a stranger's certificate must not write to the roster.
+		old, ok := e.Roster.Member(chain[0].Subject)
+		if !ok {
+			return roster.Member{}, false
+		}
+		if end, ok := roster.ChainFrom(chain, old.Key); !ok || !end.Equal(pub) {
+			return roster.Member{}, false
+		}
 		e.Roster.Merge(chain)
 		return e.Roster.KeyMember(pub)
 	}
