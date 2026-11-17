@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/slots"
@@ -127,5 +128,42 @@ func TestV086SlotsAfterRestart(t *testing.T) {
 	}
 	if !told(e, b, "A test slot is yours now") {
 		t.Fatal("b was not told")
+	}
+}
+
+// SPEC V0.136: the owner reorders the queue with host.slotOrder (owner only,
+// with a receipt), and the next free slot goes to the thread now first; the
+// self-deploy's priority wait stays ahead and an agent cannot reorder.
+func TestV0136SlotOrderDecidesTheNextGrant(t *testing.T) {
+	e, _, _ := bare(t)
+	e.UseSlots(slots.New(1))
+	a, b, c := bareThread(t, e), bareThread(t, e), bareThread(t, e)
+	for _, id := range []string{a, b, c} {
+		running(e, id)
+		callAs(t, e, id, "slot_acquire", map[string]any{"kind": "test"})
+	}
+	r := e.Command(api.Cmd{CommandID: "o1", Action: "host.slotOrder", Args: map[string]any{"owners": []any{c, b}}})
+	if !r.OK {
+		t.Fatalf("reorder: %+v", r)
+	}
+	if s, ok := r.Result.(slots.Snapshot); !ok || len(s.Waiting) != 2 || s.Waiting[0].Owner != c {
+		t.Fatalf("the receipt is not the new queue: %#v", r.Result)
+	}
+	out, _ := callAs(t, e, b, "slot_acquire", map[string]any{"kind": "test"})
+	if !strings.Contains(out, "1 ahead") {
+		t.Fatalf("b's place after the reorder: %q", out)
+	}
+	// An agent's input is refused.
+	if _, err := e.Apply(core.Input{Source: core.FromAgent, Thread: b, Kind: "host.slotOrder", Args: map[string]any{"owners": []any{b, c}}}); err == nil {
+		t.Fatal("an agent reordered the queue")
+	}
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: a, Args: core.RunEndedArgs{}}); err != nil {
+		t.Fatal(err)
+	}
+	if s := e.Slots.Snapshot(); len(s.Held) != 1 || s.Held[0].Owner != c {
+		t.Fatalf("the next slot did not go to c: %+v", s)
+	}
+	if !told(e, c, "A test slot is yours now") || told(e, b, "slot is yours") {
+		t.Fatal("the wrong thread was told")
 	}
 }
