@@ -337,8 +337,15 @@ func TestListSaysInputClosed(t *testing.T) {
 // SPEC 0.5 V0.147: a process that reads nothing fills its stdin pipe; the
 // runner still reads the link, so fyrd's writes and its kill do not hang.
 func TestV147KillReachesAProcessThatReadsNothing(t *testing.T) {
-	// No t.Logf: the writer logs the lost writes after the kill.
-	sock := filepath.Join(t.TempDir(), "runner.sock")
+	// No t.Logf: the writer logs the lost writes after the kill. A short
+	// directory: this test's name in t.TempDir() makes the socket path
+	// longer than a unix socket allows (108 bytes) under CI's temp dir.
+	dir, err := os.MkdirTemp("", "fyr-r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "r.sock")
 	srv := &runner.Server{}
 	if err := srv.Listen(sock); err != nil {
 		t.Fatal(err)
