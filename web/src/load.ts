@@ -56,11 +56,16 @@ export interface SlotHolder {
   kind: string;
   since?: string;
   priority?: boolean;
+  /** decision 0029 S2: the holder's share of the budget (1.0 a job, 0.1 an idle hold) */
+  cost?: number;
 }
 export interface Slots {
   n: number;
   held: SlotHolder[];
   waiting: SlotHolder[];
+  /** decision 0029 S2: the holders' costs summed (absent without admission by a budget), and why the head waits */
+  used?: number;
+  why?: string;
 }
 
 /** A thread at or above this many cores is coloured. */
@@ -158,7 +163,29 @@ export function threadCPU(list: HostLoad[], id: string): LoadPart | null {
 
 function slotDetail(h: HostLoad): string[] {
   const s = h.slots;
-  return s ? [`Slots: ${s.held.length} of ${s.n} in use, ${s.waiting.length} waiting`] : [];
+  if (!s) return [];
+  if (s.used === undefined) return [`Slots: ${s.held.length} of ${s.n} in use, ${s.waiting.length} waiting`];
+  // Decision 0029 S2: the budget in use, each holder's cost, and why the next job waits.
+  const costs = s.held.map((x) => `${x.kind} ${one(x.cost ?? 1)}${(x.cost ?? 1) < 0.2 ? " idle" : ""}`).join(", ");
+  const why = s.waiting.length && s.why ? `; the next waits: ${s.why}` : "";
+  return [`Slots: ${one(s.used)} of ${s.n} in use${costs ? ` (${costs})` : ""}, ${s.waiting.length} waiting${why}`];
+}
+
+export interface RailBudget {
+  text: string;
+  /** used over the budget, 0 to 1 */
+  share: number;
+  hot: boolean;
+  waiting: number;
+}
+
+/** Decision 0029 S2: the rail's slot budget in use as a bar ("1.1/2"), hot while anyone waits; null without
+ *  admission by a budget (then the pips show). */
+export function railBudget(h: HostLoad): RailBudget | null {
+  const s = h.slots;
+  if (!s || s.used === undefined) return null;
+  const share = s.n > 0 ? Math.min(1, Math.max(0, s.used / s.n)) : 1;
+  return { text: `${one(s.used)}/${s.n}`, share: Math.round(share * 100) / 100, hot: s.waiting.length > 0, waiting: s.waiting.length };
 }
 
 /** The rail's slot figure, "1/2 slots"; hot while anyone waits. Null without slots. */
@@ -180,7 +207,7 @@ export interface RailPips {
 /** The rail's slot pips (V0.99): n pips, the first `held` filled; null without slots. */
 export function railPips(h: HostLoad): RailPips | null {
   const s = h.slots;
-  if (!s) return null;
+  if (!s || s.used !== undefined) return null;
   return { n: s.n, held: Math.min(s.held.length, s.n), waiting: s.waiting.length };
 }
 
@@ -209,7 +236,7 @@ export function threadSlot(list: HostLoad[], id: string): string | null {
       return t?.job ? `${t.job} · ${gb(t.memory)} GB` : `${held.kind} slot`;
     }
     const i = s.waiting.findIndex((x) => x.owner === id);
-    if (i >= 0) return `waiting for ${withArticle(s.waiting[i].kind)} slot (${i} ahead)`;
+    if (i >= 0) return `waiting for ${withArticle(s.waiting[i].kind)} slot (${i} ahead)${i === 0 && s.why ? `: ${s.why}` : ""}`;
   }
   return null;
 }
@@ -219,7 +246,9 @@ export function threadSlot(list: HostLoad[], id: string): string | null {
 export function railLabel(h: HostLoad, several: boolean): string {
   const m = railMeter(h);
   const p = railPips(h);
-  const s = `oad ${m.text} on ${h.cores} cores${p ? `, ${p.held} of ${p.n} slots in use${p.waiting ? `, ${p.waiting} waiting` : ""}` : ""}`;
+  const b = railBudget(h);
+  const slots = b ? `, ${one(h.slots!.used!)} of ${h.slots!.n} slot budget in use${b.waiting ? `, ${b.waiting} waiting` : ""}` : p ? `, ${p.held} of ${p.n} slots in use${p.waiting ? `, ${p.waiting} waiting` : ""}` : "";
+  const s = `oad ${m.text} on ${h.cores} cores${slots}`;
   return several ? `${h.host}: l${s}` : `L${s}`;
 }
 

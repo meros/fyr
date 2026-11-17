@@ -1727,7 +1727,8 @@ try {
   const r = await evaluate(`(() => {
     const rail = document.querySelector('.rail').getBoundingClientRect();
     const ld = document.querySelector('.rail .rld'), b = ld.getBoundingClientRect();
-    const fig = ld.querySelector('.rldr .rring b'), row = ld.querySelector('.rldr'), pips = ld.querySelector('.rpips');
+    const fig = ld.querySelector('.rldr .rring b'), row = ld.querySelector('.rldr'), pips = ld.querySelector('.rpips'), bar = ld.querySelector('.rbar');
+    const bb = bar?.getBoundingClientRect(), rb = row.getBoundingClientRect();
     const others = [...document.querySelectorAll('.rail > *')].filter((e) => !e.contains(ld)).map((e) => e.getBoundingClientRect());
     const hit = others.filter((o) => o.width && o.height && o.left < b.right - 0.5 && b.left < o.right - 0.5 && o.top < b.bottom - 0.5 && b.top < o.bottom - 0.5).length;
     const q = document.querySelector('.rail .rq')?.getBoundingClientRect();
@@ -1735,14 +1736,17 @@ try {
     const jr = tc, js = jr?.querySelector('.tslot'), jb = js?.getBoundingClientRect(), jrr = jr?.getBoundingClientRect();
     const c = tc?.querySelector('.tcpu'), cr = c?.getBoundingClientRect(), rr = tc?.getBoundingClientRect();
     return { text: fig.textContent, hot: row.classList.contains('hot'), tip: row.title,
-      pips: pips ? pips.querySelectorAll('i').length : 0, held: pips ? pips.querySelectorAll('i.on').length : 0, wait: pips?.querySelector('em')?.textContent ?? '',
+      pips: pips ? pips.querySelectorAll('i').length : 0, held: pips ? pips.querySelectorAll('i.on').length : 0, wait: (pips ?? bar)?.querySelector('em')?.textContent ?? '',
+      bar: bar?.querySelector('small')?.textContent ?? '', barHot: !!bar?.classList.contains('hot'), barFill: bar ? Math.round(bar.querySelector('.trk i').getBoundingClientRect().width / bar.querySelector('.trk').getBoundingClientRect().width * 100) : -1,
+      barIn: !!bb && bb.left >= rb.left - 0.5 && bb.right <= rb.right + 0.5 && bb.bottom <= rb.bottom + 0.5,
       inside: b.left >= rail.left - 0.5 && b.right <= rail.right + 0.5 && b.top >= rail.top && b.bottom <= rail.bottom, hit,
       aboveQuota: !q || b.bottom <= q.top + 0.5,
       cpu: c?.textContent ?? '', cpuHot: !!c?.classList.contains('hot'), inRow: !!cr && cr.top >= rr.top - 0.5 && cr.bottom <= rr.bottom + 0.5,
       job: js?.textContent ?? '', jobIn: !!jb && jb.top >= jrr.top - 0.5 && jb.bottom <= jrr.bottom + 0.5 && jb.right <= Math.min(jrr.right, js.closest('.ell').getBoundingClientRect().right) + 0.5 };
   })()`);
   check(r.text === "10" && r.hot && /load 10\.4/.test(r.tip) && /CPU pressure 46 %/.test(r.tip), `V0.80 desktop: the rail's load is wrong (${JSON.stringify(r)})`);
-  check(r.pips === 2 && r.held === 2 && r.wait === "+1", `V0.99 desktop: the rail's slot pips are wrong (${JSON.stringify(r)})`);
+  // Decision 0029 S2: a host that admits by a budget shows it as a bar ("2.0/2", full, hot with "+1") in place of the pips.
+  check(r.pips === 0 && r.bar === "2.0/2+1" && r.barHot && r.barFill === 100 && r.wait === "+1" && r.barIn, `S2 desktop: the rail's slot budget bar is wrong (${JSON.stringify(r)})`);
   check(r.inside && r.hit === 0 && r.aboveQuota, `V0.80 desktop: the load line is outside the rail, covers an item or sits below the quota (${JSON.stringify(r)})`);
   check(r.cpu === "2.6 cores" && r.cpuHot && r.inRow, `V0.80 desktop: the hot thread's CPU is missing or outside its row (${JSON.stringify(r)})`);
   // Decision 0029 S1 (V0.142): the ring is hot from the 3.4× slowdown; the tooltip names it; a holder's row names its job, first on its line and not cut.

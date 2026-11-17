@@ -1,10 +1,10 @@
 package engine
 
 import (
-	"log"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"time"
 
@@ -131,10 +131,47 @@ func (e *Engine) sweepSlots() {
 	for _, id := range drop {
 		e.dropSlot(id)
 	}
+	e.memoryGuard(s)
+	// Decision 0029 S2: the conditions change without a release.
+	e.Slots.Fill()
 	for _, n := range nudges {
 		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotIdle, Thread: n.owner, Args: core.SlotIdleArgs{Kind: n.kind, Minutes: n.min}}); err != nil {
 			log.Printf("slot idle %s: %v", n.owner, err)
 		}
+	}
+}
+
+// memoryGuard tells the holder whose job grew most, once per episode, when
+// memory is short (decision 0029 S2); nothing is stopped.
+func (e *Engine) memoryGuard(s slots.Snapshot) {
+	if e.SlotSignals == nil || e.SlotGrowth == nil {
+		return
+	}
+	sig := e.SlotSignals()
+	why := ""
+	if sig.Provider != "" && sig.Headroom != nil && *sig.Headroom < e.SlotPolicy.MemoryReserve {
+		why = fmt.Sprintf("memory: %.0f %% free", *sig.Headroom*100)
+	} else if sig.Stall == slots.StallCritical {
+		why = "memory stalls (critical)"
+	}
+	e.mu.Lock()
+	was := e.memGuard
+	e.memGuard = why != ""
+	e.mu.Unlock()
+	if why == "" || was {
+		return
+	}
+	owner, most := "", uint64(0)
+	for _, h := range s.Held {
+		if g := e.SlotGrowth(h.Owner); !h.Priority && g > most {
+			owner, most = h.Owner, g
+		}
+	}
+	if owner == "" {
+		return
+	}
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotMemory, Thread: owner, Args: core.SlotMemoryArgs{Why: why, Grew: most}}); err != nil {
+		log.Printf("slot memory %s: %v", owner, err)
 	}
 }
 
@@ -188,7 +225,11 @@ func (e *Engine) slotTools(s *mcp.Server) {
 				h, _ := e.Slots.Holding(th)
 				return "You hold " + article(h.Kind) + " slot. Run the job now, then call slot_release. It also goes back when your run ends.", nil
 			}
-			return fmt.Sprintf("Queued for %s slot: %d ahead. Do not start the job; Fyr tells you in a [Fyr] message when the slot is yours. Do other work meanwhile or end your turn.", article(kind), ahead), nil
+			why := ""
+			if s := e.Slots.Snapshot(); ahead == 0 && s.Why != "" {
+				why = " Waiting: " + s.Why + "." // decision 0029 S2
+			}
+			return fmt.Sprintf("Queued for %s slot: %d ahead.%s Do not start the job; Fyr tells you in a [Fyr] message when the slot is yours. Do other work meanwhile or end your turn.", article(kind), ahead, why), nil
 		}})
 	s.Add(mcp.Tool{Name: "slot_release",
 		Description: "Give back your slot for a heavy job when the job ended, or leave the queue for one.",

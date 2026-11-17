@@ -130,6 +130,13 @@ func (s *Sampler) Tick() {
 	s.Jobs.tick(s.Tree, s.Slots.Snapshot(), rates, l.Slowdown, s.now())
 }
 
+// Signals are the measures admission reads (decision 0029 S2), at most
+// MinGap old.
+func (s *Sampler) Signals() slots.Signals {
+	l := s.get()
+	return slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall)}
+}
+
 // Run ticks until ctx ends.
 func (s *Sampler) Run(ctx context.Context) {
 	t := time.NewTicker(ProbeEvery)

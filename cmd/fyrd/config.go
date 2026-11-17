@@ -91,6 +91,11 @@ type config struct {
 	// HeavyGate: "off" lets a heavy command run without a slot; anything
 	// else (the default) refuses it at the gate hook (#174).
 	HeavyGate string `json:"heavyGate"`
+	// Decision 0029 S2: at this slowdown a job costing more than 0.25 waits
+	// (default 1.5), and this share of the agents' memory stays free
+	// (default 0.10); 0 is the default.
+	SlotSlowdownMax   float64 `json:"slotSlowdownMax"`
+	SlotMemoryReserve float64 `json:"slotMemoryReserve"`
 	// Peers: Fyr page origins probed as they are (V0.123, decision 0025),
 	// besides the tailnet's own nodes; for development and non-tailnet hosts.
 	Peers []string `json:"peers"`
