@@ -301,12 +301,20 @@ func TestAbandonedProcessEnds(t *testing.T) {
 // CLI with background work lives on after it, and a fyrd that adopts it
 // must not take it for a process that reads what it writes.
 func TestListSaysInputClosed(t *testing.T) {
-	rc := serve(t)
+	// No t.Logf: the runner logs the exit from its own goroutine.
+	sock := filepath.Join(t.TempDir(), "runner.sock")
+	srv := &runner.Server{}
+	if err := srv.Listen(sock); err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	t.Cleanup(func() { srv.Close(time.Second) })
+	rc := &runner.Client{Path: sock}
 	c, err := claude.Start(claude.Spec{Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}, Runner: rc, ID: "p142"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SendUser([]claude.Msg{{"type": "text", "text": "bgwait 3000"}}, "u1"); err != nil {
+	if err := c.SendUser([]claude.Msg{{"type": "text", "text": "bgwait 600"}}, "u1"); err != nil {
 		t.Fatal(err)
 	}
 	for m := next(t, c); m["type"] != "result"; m = next(t, c) {
@@ -318,5 +326,10 @@ func TestListSaysInputClosed(t *testing.T) {
 	until(t, "the list says the input is closed", func() bool {
 		ps := procs(t, rc)
 		return len(ps) == 1 && ps[0].InputClosed && !ps[0].Exited
+	})
+	// The CLI ends by itself after its background task.
+	until(t, "the process exited", func() bool {
+		ps := procs(t, rc)
+		return len(ps) == 1 && ps[0].Exited
 	})
 }
