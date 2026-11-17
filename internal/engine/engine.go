@@ -75,6 +75,8 @@ type Engine struct {
 	autoDeployOff bool
 	// hostOrder is the owner's host order (V0.132).
 	hostOrder HostOrder
+	// hostMarks are the owner's host icons and colours by install id (V0.171).
+	hostMarks HostMarks
 	// systemAgents is the owner's system agents setting (V0.115).
 	systemAgents core.SystemAgents
 	deploySeen   map[string]string
@@ -279,6 +281,7 @@ func (e *Engine) Load() error {
 	e.loadAutoMerge()
 	e.loadAutoDeploy()   // V0.111
 	e.loadHostOrder()    // V0.132
+	e.loadHostMarks()    // V0.171
 	e.loadSystemAgents() // V0.115
 	old, err := e.st.OldProjectSources()
 	if err != nil {
@@ -579,6 +582,12 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 		}
 		o.At, _ = time.Parse(time.RFC3339Nano, ef.Request.Args["at"].(string))
 		kept, err := e.setHostOrder(o)
+		if err != nil {
+			return fail(500, err.Error())
+		}
+		reply.Result = kept
+	case core.EffectHostMarksSet: // V0.171: the owner's host marks, newest wins
+		kept, err := e.setHostMarks(hostMarksOf(ef.Request.Args))
 		if err != nil {
 			return fail(500, err.Error())
 		}

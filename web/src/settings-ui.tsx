@@ -4,7 +4,10 @@
 // dialog: the nav is its left column, the page its right pane) and the phone (the nav is the Settings screen, a page
 // is the next screen); the reason for the difference is width.
 
-import { HostMark } from "./host-mark-ui.tsx";
+import { HostMark, useHostMarks } from "./host-mark-ui.tsx";
+import { HOST_ICON_NAMES, hostGlyph, ownerIcon } from "./host-mark.ts";
+import { HOST_GLYPHS } from "./lucide.ts";
+import { PALETTE_NAMES } from "./projects.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
 import { Boundary } from "./boundary.tsx";
@@ -1789,6 +1792,86 @@ const sentence = (s: string) => {
 /** A host's page: Identity (the full id, Copy, how Fyr trusts it today) and Connection (state, address and route, how
  *  it got on the list). A changed id: the note, both ids in full and Trust <new> (front.hostId); the foot says what
  *  Fyr does meanwhile. The same page on the desktop and the phone. */
+const GLYPH_WORDS: Record<string, string> = { laptop: "a laptop (it has a battery)", monitor: "a desktop", server: "a server" };
+
+/** V0.171: the host's mark, set by the owner: an icon (Automatic, one of the glyphs, or an emoji) and a colour
+ *  (Automatic or one of the ten hues). Kept by its install id on every host (front.hostMark); the same group on the
+ *  desktop and the phone. */
+function HostMarkGroup({ h, api }: { h: HostInfo; api: SettingsProps["api"] }) {
+  const env = useSet();
+  const marks = useHostMarks();
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!h.id)
+    return (
+      <Group title="Mark">
+        <Row title={<HostMark name={h.name} size={32} />} desc="Automatic. This host runs a Fyr older than V0.124 and has no install id, so its mark cannot be set until its next update." />
+      </Group>
+    );
+  const own = marks[h.id] ?? {};
+  const icon = ownerIcon(own.icon);
+  const auto = hostGlyph(h.machine);
+  const set = async (patch: { icon?: string; color?: string }) => {
+    const next = { icon: own.icon ?? "", color: own.color ?? "", ...patch };
+    setBusy(true);
+    const r = await api.command("front.hostMark", undefined, { id: h.id, ...next });
+    setBusy(false);
+    if (r.ok) {
+      setErr(null);
+      env.saved();
+    } else setErr(r.error || "the mark could not be saved");
+  };
+  const off = env.readOnly || busy;
+  return (
+    <Group title="Mark" foot="Kept on every host by its id, so every device shows it.">
+      <Row
+        class="hmprev"
+        title={<HostMark name={h.name} size={32} />}
+        desc={!own.icon && !own.color ? `Automatic: ${GLYPH_WORDS[auto]}, a colour from its id.` : `Set by you.${!own.icon ? ` The icon is automatic: ${GLYPH_WORDS[auto]}.` : ""}${!own.color ? " The colour is automatic." : ""}`}
+        error={err}
+      />
+      <div class="sr col hmicon">
+        <span class="sr-t">Icon</span>
+        <div class="igrid" role="radiogroup" aria-label="Icon">
+          <button type="button" class={`ig auto${!icon ? " on" : ""}`} role="radio" aria-checked={!icon} title="Automatic" aria-label="Automatic" disabled={off} onClick={() => icon && void set({ icon: "" })}>
+            Auto
+          </button>
+          {HOST_ICON_NAMES.map((nm) => {
+            const on = !!icon && "glyph" in icon && icon.glyph === nm;
+            return (
+              <button type="button" class={`ig${on ? " on" : ""}`} role="radio" aria-checked={on} title={nm} aria-label={nm} disabled={off} onClick={() => !on && void set({ icon: nm })}>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML={{ __html: HOST_GLYPHS[nm] }} />
+              </button>
+            );
+          })}
+        </div>
+        <span class="pemoji">
+          <SaveField value={icon && "emoji" in icon ? icon.emoji : ""} label="Emoji" placeholder="Or an emoji" onError={setErr} check={(v) => (v.trim() && !ownerIcon(v.trim()) ? "One emoji" : null)} onSave={async (v) => {
+              // Empty gives the automatic icon back; otherwise the first emoji typed.
+              const i = ownerIcon(v.trim());
+              await set({ icon: i && "emoji" in i ? i.emoji : "" });
+              return null;
+            }} />
+        </span>
+      </div>
+      <Row
+        title="Colour"
+        stack
+        end={
+          <div class="swatches" role="radiogroup" aria-label="Colour">
+            <button type="button" class={`sw auto${!own.color ? " on" : ""}`} role="radio" aria-checked={!own.color} aria-label="Automatic" title="Automatic" disabled={off} onClick={() => own.color && void set({ color: "" })}>
+              A
+            </button>
+            {PALETTE_NAMES.map((c) => (
+              <button type="button" class={`sw${c === own.color ? " on" : ""}`} role="radio" aria-checked={c === own.color} aria-label={c} title={c} style={{ "--pc": `var(--p-${c})` }} disabled={off} onClick={() => c !== own.color && void set({ color: c })} />
+            ))}
+          </div>
+        }
+      />
+    </Group>
+  );
+}
+
 function HostPage({ h, self, api, now }: { h: HostInfo; self: string; api: SettingsProps["api"]; now: number }) {
   const env = useSet();
   const [busy, setBusy] = useState(false);
@@ -1856,6 +1939,8 @@ function HostPage({ h, self, api, now }: { h: HostInfo; self: string; api: Setti
         </div>
       )}
       {identity}
+      {/* V0.171: after Identity, so a changed id and its Trust stay first. */}
+      <HostMarkGroup h={h} api={api} />
       <Group title="Connection">
         <Row class="hstate" title={state[0].toUpperCase() + state.slice(1)} desc={under} />
         {h.url && (

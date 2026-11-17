@@ -85,6 +85,15 @@ export function createMockApi(scenario: string): Api {
   let order: string[] | null = q.get("order")?.split(",").filter(Boolean) ?? null;
   let onOrder: ((ids: string[]) => void) | undefined;
   let onHosts: ((hs: import("./hosts.ts").HostInfo[]) => void) | undefined;
+  // V0.171: the owner's host marks by install id, as the front keeps them (&hostMarks=<json> sets some at load).
+  let marks: Record<string, { icon?: string; color?: string }> = (() => {
+    try {
+      return JSON.parse(new URLSearchParams(typeof location !== "undefined" ? location.search : "").get("hostMarks") ?? "{}");
+    } catch {
+      return {};
+    }
+  })();
+  let onMarks: ((m: Record<string, { icon?: string; color?: string }>) => void) | undefined;
   return {
     mock: true,
     start(h) {
@@ -93,8 +102,9 @@ export function createMockApi(scenario: string): Api {
       server.subscribe({ thread: h.thread, event: h.event, project: (p) => h.project?.(p) });
       onOrder = h.projectOrder;
       onHosts = h.hosts;
+      onMarks = h.hostMarks;
       setTimeout(() => {
-        h.state({ ...server.state(), ...(order ? { projectOrder: order } : {}) });
+        h.state({ ...server.state(), ...(order ? { projectOrder: order } : {}), ...(Object.keys(marks).length ? { hostMarks: marks } : {}) });
         h.conn(offline ? "offline" : "live");
       }, 0);
       // V0.38 perf guard (mock only): a burst of n thread updates and n messages for one thread,
@@ -137,6 +147,19 @@ export function createMockApi(scenario: string): Api {
         trustMockLab();
         setTimeout(() => onHosts?.(decodeHosts(mockHosts(Date.now()))), 0); // the front's hosts event (V0.124)
         return { ok: true, result: { host: "lab" } };
+      }
+      if (action === "front.hostMark") {
+        // V0.171: as the front: one host's mark by its id; both empty is automatic again.
+        const id = String(args?.id ?? "");
+        const icon = String(args?.icon ?? "").trim();
+        const color = String(args?.color ?? "").trim();
+        if (!id || (color && !/^[a-z]{1,16}$/.test(color))) return { ok: false, error: "a host mark needs the host's id; an icon is a glyph name or an emoji, a colour a palette name" };
+        const next = { ...marks };
+        if (!icon && !color) delete next[id];
+        else next[id] = { ...(icon ? { icon } : {}), ...(color ? { color } : {}) };
+        marks = next;
+        setTimeout(() => onMarks?.(marks), 0); // the front's hostMarks event
+        return { ok: true, result: { id } };
       }
       if (action === "front.hostOrder") {
         const names = Array.isArray(args?.names) ? (args.names as unknown[]).filter((x): x is string => typeof x === "string") : [];
