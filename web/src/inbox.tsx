@@ -1,14 +1,15 @@
 // Rail and inbox list, as design/directions/04-rail.html draws them.
 
 import type { ComponentChildren, Ref } from "preact";
-import type { Profile, Project, Thread } from "./types.ts";
+import type { Profile, Thread } from "./types.ts";
+import type { FilterSel, HostChip, ProjectChip } from "./filters.ts";
 import { QuotaRail } from "./quota-ui.tsx";
 import { LoadRail } from "./load-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { DESKTOP_LOOK, NeedsRowBody, OneRowBody } from "./row-ui.tsx";
 import { colorVar } from "./projects.ts";
-import { SECTIONS, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
+import { SECTIONS, isOpen, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
 import { BrandMark, StateIcon } from "./icons.tsx";
 import { count, untilLabel } from "./format.ts";
 import { quietLocked, quietNote } from "./quiet.ts";
@@ -89,12 +90,8 @@ export function Rail(p: RailProps) {
 }
 
 export const SECTION_LIMIT: Record<SectionKey, number> = { needs: 500, working: 500, seen: 200, snoozed: 200, settled: 60 };
-/** Sections that show only their header line until opened (the design draws Snoozed and Settled this way). */
-export const COLLAPSED_BY_DEFAULT: SectionKey[] = ["snoozed", "settled"];
-
-export function isOpen(k: SectionKey, open: Partial<Record<SectionKey, boolean>>): boolean {
-  return open[k] ?? !COLLAPSED_BY_DEFAULT.includes(k);
-}
+// Moved to store.ts (V0.134: the filters read them too); re-exported for the callers here.
+export { COLLAPSED_BY_DEFAULT, isOpen } from "./store.ts";
 
 interface RowProps {
   t: Thread;
@@ -165,10 +162,8 @@ interface InboxProps {
   onFocusZone(): void;
   /** the bell and Install controls (phone layout, where the rail is hidden) */
   extra?: ComponentChildren;
-  /** the project filter (V0.23) */
-  projects: Project[];
-  projectFilter: string | null;
-  onProjectFilter(id: string | null): void;
+  /** the host and project filters (V0.23, V0.134) */
+  filter: FilterView;
   /** V0.114: the one unlock of quiet projects, and how many search hits it hides */
   unlock: QuietUnlock;
   quietHits: number;
@@ -198,9 +193,10 @@ export function Inbox(p: InboxProps) {
           {PLUS}
         </button>
       </div>
-      <ProjectFilterRow projects={p.projects} selected={p.projectFilter} onPick={p.onProjectFilter} now={p.now} unlock={p.unlock} />
+      <FilterRow f={p.filter} now={p.now} unlock={p.unlock} />
       {p.quietHits > 0 && <QuietGate now={p.now} unlock={p.unlock} what="search" />}
       <div class="list" role="listbox" aria-label="Threads">
+        {!p.query.trim() && <FilterEmpty f={p.filter} cls="fempty" />}
         {p.sec.pinned.length > 0 && (
           // V0.104: the pinned threads, above every section and always open; each keeps its section's row shape.
           <div id="sec-pinned">
@@ -254,34 +250,75 @@ export function Inbox(p: InboxProps) {
   );
 }
 
-/** Desktop and phone (V0.100): a compact row of projects under the search field; one click filters, the × clears.
- *  V0.114: picking a quiet project shows the gate under the row, not its threads, until the 30 s hold. */
-export function ProjectFilterRow({ projects, selected, onPick, now, unlock }: { projects: Project[]; selected: string | null; onPick(id: string | null): void; now: number; unlock: QuietUnlock }) {
-  // V0.121: in the owner's order (the store keeps it), on the desktop and the phone alike.
-  const list = projects.filter((p) => (p.threads ?? 0) > 0 || p.id === selected);
-  if (!list.length) return null;
-  const picked = projects.find((p) => p.id === selected);
+/** The filters as the app computed them (V0.134), shared by the desktop and the phone. */
+export interface FilterView {
+  hosts: HostChip[];
+  projects: ProjectChip[];
+  sel: FilterSel;
+  setHost(name: string | null): void;
+  setProject(id: string | null): void;
+  /** clears both */
+  clear(): void;
+  /** filterEmpty: null, or the second line of the empty state */
+  empty: string | null;
+}
+
+/** Desktop and phone (V0.100, V0.134): one compact row of chips under the search field: the hosts, then the projects,
+ *  each group only with more than one value in view or a value selected. A click filters, a click on the selected chip
+ *  clears it, the × clears both. V0.114: picking a quiet project shows the gate under the row, not its threads, until
+ *  the 30 s hold. */
+export function FilterRow({ f, now, unlock }: { f: FilterView; now: number; unlock: QuietUnlock }) {
+  if (!f.hosts.length && !f.projects.length) return null;
+  const picked = f.projects.find((c) => c.selected)?.project;
+  const n = (x: number) => `${x.toLocaleString()} thread${x === 1 ? "" : "s"} in view`;
   return (
     <>
-    <div class="pfrow" role="toolbar" aria-label="Filter by project">
-      {selected && (
-        <button class="pfx" onClick={() => onPick(null)} title="Show every project" aria-label="Clear the project filter">
+    <div class="pfrow" role="toolbar" aria-label="Filter threads">
+      {(f.sel.host || f.sel.project) && (
+        <button class="pfx" onClick={f.clear} title="Show every thread" aria-label="Clear the filter">
           ×
         </button>
       )}
-      {list.map((p) => {
+      {f.hosts.map((h) => {
+        // The host's mark in Settings → Hosts: its dot, filled when online, a ring when offline, signal when changed.
+        const state = !h.info ? "not listed" : h.info.idWas ? "its id changed" : h.info.online ? "online" : "offline";
+        return (
+          <button class={`pfh${h.selected ? " on" : ""}`} aria-pressed={h.selected} title={`${h.name}: ${n(h.n)} · ${state}`} onClick={() => f.setHost(h.selected ? null : h.name)}>
+            <span class={`hdot${!h.info || h.info.idWas ? " warn" : h.info.online ? "" : " off"}`} aria-hidden="true" />
+            <span class="ell">{h.name}</span>
+          </button>
+        );
+      })}
+      {f.hosts.length > 0 && f.projects.length > 0 && <span class="pfsep" aria-hidden="true" />}
+      {f.projects.map(({ project: p, n: k, selected }) => {
         // V0.46: a project in its quiet hours says so. V0.114: picking it here opens it only after the hold.
         const note = quietNote(p, now);
         return (
-          <button class={`pfc${p.id === selected ? " on" : ""}${note ? " quiet" : ""}`} aria-pressed={p.id === selected} style={{ "--pc": colorVar(p.color, p.name) }} title={`${p.name}: ${p.threads ?? 0} threads${note ? ` · ${note}, hidden from the inbox` : ""}`} onClick={() => onPick(p.id === selected ? null : p.id ?? null)}>
+          <button class={`pfc${selected ? " on" : ""}${note ? " quiet" : ""}`} aria-pressed={selected} style={{ "--pc": colorVar(p.color, p.name) }} title={`${p.name}: ${n(k)}${note ? ` · ${note}, hidden from the inbox` : ""}`} onClick={() => f.setProject(selected ? null : p.id ?? null)}>
             <ProjectIcon project={p} name={p.name} size={16} />
             <span class="ell">{p.name}</span>
-            {note && p.id === selected && <span class="pfq">{note}</span>}
+            {note && selected && <span class="pfq">{note}</span>}
           </button>
         );
       })}
     </div>
     {picked && quietLocked(picked, now, unlock.showUntil) && <QuietGate project={picked} now={now} unlock={unlock} what="threads" />}
     </>
+  );
+}
+
+/** V0.134: the list when a filter is on and none of its threads is in view (its last one left, or is in a folded
+ *  section): what is picked, how many wait in folded sections, and Clear filter. */
+export function FilterEmpty({ f, cls }: { f: FilterView; cls: string }) {
+  if (f.empty === null) return null;
+  const what = [f.hosts.find((h) => h.selected)?.name, f.projects.find((c) => c.selected)?.project.name].filter(Boolean).join(" · ");
+  return (
+    <div class={cls} role="status">
+      <span class="fe1">No threads in view for {what || "this filter"}.</span>
+      {f.empty && <span class="fe2">{f.empty}</span>}
+      <button class="btn fe3" onClick={f.clear}>
+        Clear filter
+      </button>
+    </div>
   );
 }

@@ -3089,6 +3089,85 @@ try {
 }
 });
 
+// SPEC 0.5 V0.134: the host filter, and only active filter values, the same on the desktop and the phone. 1 two hosts
+// with threads in view: a host chip each, in the owner's order, with the host's dot; one host: none. 2 a host chip
+// filters (AND the project chips, which then count only that host's threads) and is remembered. 3 every chip that is
+// not selected has a thread in view; a project with threads only in folded sections has no chip until its section
+// opens. 4 folding the last section the picked host has threads in keeps its chip, selected, and shows the empty state;
+// Clear filter clears it.
+for (const [w, hh, phone] of [[1280, 800, false], [390, 844, true]]) section(`V0.134 ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen, shot } = h;
+  const ctx = `V0.134 ${phone ? "phone" : "desktop"}`;
+try {
+  const root = phone ? ".m-screen " : ".ib ";
+  const go = async (url) => {
+    if (phone) await openScreen({ url, ready: "!!document.querySelector('.m-list')" }, w, hh);
+    else {
+      await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/${url}`, "!!document.querySelector('.ib .list')");
+    }
+    await settle();
+  };
+  const click = async (sel, until) => {
+    await evaluate(`document.querySelector(${JSON.stringify(sel)}).click()`);
+    await waitFor(until, { soft: true });
+    await settle();
+  };
+  const secHead = (k) => (phone ? `#m-sec-${k} .m-sec` : `#sec-${k} .sec`);
+  const STATE = `(() => {
+    const chip = (b) => ({ name: b.querySelector('.ell')?.textContent ?? '', on: b.classList.contains('on'), n: Number((/: (\\d+) thread/.exec(b.title) ?? [])[1] ?? -1), dot: b.querySelector('.hdot')?.className ?? null, h: Math.round(b.getBoundingClientRect().height) });
+    const rows = [...document.querySelectorAll(${JSON.stringify(phone ? ".m-list .m-mv" : ".ib .list [data-id]")})];
+    return {
+      hosts: [...document.querySelectorAll('${root}.pfrow .pfh')].map(chip),
+      projects: [...document.querySelectorAll('${root}.pfrow .pfc')].map(chip),
+      // The phone rows name their host (V0.54); the desktop rows do not, so there the ids say it.
+      rowHosts: [...new Set(rows.map((r) => r.querySelector('.m-hostn')?.textContent ?? r.querySelector('.m-off')?.textContent.replace(/ offline$/, '') ?? r.dataset.id ?? ''))],
+      rows: rows.length,
+      empty: document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})?.innerText ?? null,
+      stored: localStorage.getItem('fyr.hostFilter'),
+    };
+  })()`;
+  // 1. One host: no host chips. Two hosts: one chip each, in the owner's order, with its dot.
+  await go("?mock=rail");
+  const one = await evaluate(STATE);
+  check(one.hosts.length === 0, `${ctx}: one host shows host chips (${JSON.stringify(one.hosts)})`);
+  check(one.projects.length > 1 && one.projects.every((c) => c.n >= 1), `${ctx}: a project chip without a thread in view (${JSON.stringify(one.projects)})`);
+  // 3. Folded sections are not considered: fold Needs, Working and Seen (Snoozed and Settled are folded already) and
+  // only the pinned threads' projects keep a chip. (Not by opening Settled: its auto-close clock keeps the DOM moving.)
+  for (const k of ["needs", "working", "seen"]) await click(secHead(k), "true");
+  const foldedAll = await evaluate(`({ s: ${STATE}, pinned: document.querySelectorAll(${JSON.stringify(phone ? "#m-sec-pinned .m-mv" : "#sec-pinned [data-id]")}).length })`);
+  check(foldedAll.s.projects.length < one.projects.length && foldedAll.s.projects.reduce((a, c) => a + c.n, 0) <= foldedAll.pinned, `${ctx}: folding the sections does not take their projects' chips away (${JSON.stringify({ before: one.projects.map((c) => c.name), after: foldedAll.s.projects, pinned: foldedAll.pinned })})`);
+  await go("?mock=rail&hosts=2&hostOrder=host-b,desk");
+  const two = await evaluate(STATE);
+  check(JSON.stringify(two.hosts.map((c) => c.name)) === JSON.stringify(["host-b", "desk"]) && two.hosts.every((c) => !c.on && c.n >= 1), `${ctx}: the host chips (${JSON.stringify(two.hosts)})`);
+  check(two.hosts[0]?.dot === "hdot off" && two.hosts[1]?.dot === "hdot", `${ctx}: the hosts' dots (${JSON.stringify(two.hosts.map((c) => c.dot))})`);
+  if (phone) check([...two.hosts, ...two.projects].every((c) => c.h >= 32), `${ctx}: a chip under 32 px on the phone`);
+  await shot(`host-filter-${phone ? "phone" : "desktop"}.png`);
+  // 2. Picking host-b: only its threads; the project chips count only its threads; remembered.
+  await click(`${root}.pfrow .pfh`, `localStorage.getItem('fyr.hostFilter') === 'host-b'`);
+  const picked = await evaluate(STATE);
+  check(picked.hosts[0]?.on && picked.stored === "host-b" && picked.rows >= 1 && picked.rows < two.rows, `${ctx}: picking a host (${JSON.stringify({ hosts: picked.hosts, rows: picked.rows, before: two.rows, stored: picked.stored })})`);
+  check(picked.rowHosts.every((x) => (phone ? x === "host-b" : ["t_lasso", "t_triage"].includes(x))), `${ctx}: a row of another host under the host filter (${JSON.stringify(picked.rowHosts)})`);
+  check(picked.projects.every((c) => c.n >= 1) && picked.projects.reduce((a, c) => a + c.n, 0) <= picked.rows, `${ctx}: the project chips do not count only the picked host's threads (${JSON.stringify(picked.projects)})`);
+  await shot(`host-filter-picked-${phone ? "phone" : "desktop"}.png`);
+  await go("?mock=rail&hosts=2&hostOrder=host-b,desk");
+  const again = await evaluate(STATE);
+  check(again.hosts[0]?.on && again.rows === picked.rows, `${ctx}: the host filter is not remembered on this device (${JSON.stringify(again.hosts)})`);
+  // 4. Fold Needs (host-b's threads are there): its chip stays, selected; the empty state names it.
+  await click(secHead("needs"), `!!document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})`);
+  const folded = await evaluate(STATE);
+  check(folded.hosts.some((c) => c.name === "host-b" && c.on && c.n === 0) && folded.stored === "host-b", `${ctx}: the selected host's chip after its threads were folded away (${JSON.stringify(folded.hosts)})`);
+  check(/^No threads in view for host-b\.\s*\d+ more in folded sections?\.\s*Clear filter$/.test(folded.empty ?? ""), `${ctx}: the empty state "${folded.empty}"`);
+  check(folded.projects.length === 0, `${ctx}: project chips with no thread in view (${JSON.stringify(folded.projects)})`);
+  await shot(`host-filter-empty-${phone ? "phone" : "desktop"}.png`);
+  await click(`${phone ? ".m-fempty" : ".fempty"} .fe3`, `!localStorage.getItem('fyr.hostFilter')`);
+  const cleared = await evaluate(STATE);
+  check(cleared.empty === null && cleared.hosts.every((c) => !c.on) && cleared.stored === null, `${ctx}: Clear filter (${JSON.stringify(cleared)})`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // The phone screens after the sections: the sections are the longest jobs, so they start first and the short
 // screens fill the tabs at the end.
 for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.name} ${w}x${hh}`, run: (t) => phonePass(t, w, hh, [s]) });
