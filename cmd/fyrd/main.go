@@ -32,6 +32,7 @@ import (
 	"github.com/meros/fyr/internal/engine"
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/github"
+	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/mcp"
 	"github.com/meros/fyr/internal/peers"
@@ -55,6 +56,11 @@ func main() {
 	args := os.Args[1:]
 	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
 		cmd, args = args[0], args[1:]
+	}
+	if cmd == "loadprobe" {
+		// Decision 0029 S1: the slowdown probe, a child in agents/probe/.
+		cgroup.LoadProbe(os.Stdout)
+		return
 	}
 	if cmd == "version" {
 		// V0.81: the deployer reads a new build's id before a client-only switch.
@@ -230,6 +236,22 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	pool := slots.Open(n, h.st)
 	eng.UseSlots(pool)
+	// Decision 0029 S1 (#185): measure each slot hold and the host's
+	// signals; nothing is admitted by them yet.
+	heavyCmds, err := heavy.New(heavy.Defaults)
+	if cfg.HeavyCommands != nil {
+		if m, e := heavy.New(cfg.HeavyCommands); e != nil {
+			log.Printf("heavyCommands: %v; the defaults hold", e)
+		} else {
+			heavyCmds = m
+		}
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
+	mgr.SetOnBash(func(thread, c string) { jobs.Saw(thread, heavyCmds.Class(c)) })
+	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs} // V0.80, V0.86
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -302,6 +324,10 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	eng.OnPR = poller.Kick
 	go poller.Run(ctx)
 	go checkModels(ctx, h.reg) // V0.120: each provider's models, once a day
+	go sampler.Run(ctx)
+	if self, err := os.Executable(); err == nil {
+		go sampler.Probe.RunProbe(ctx, cgroup.ProbeCommand(tree, self), sampler.CPUPressureNow)
+	}
 	// Decision 0020: the durable effects the last run left run once or land.
 	if err := eng.ResumeEffects(); err != nil {
 		log.Printf("resume effects: %v", err)
@@ -325,7 +351,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	id := installID(data)
 	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
-		Load:  &cgroup.Sampler{Tree: tree, Slots: pool}, // V0.80, V0.86
+		Load:  sampler,
 		// V0.126 (#151): the update record, the pause and the bad release.
 		Updates: func() any {
 			bad, why := dep.Bad()
