@@ -239,6 +239,26 @@ func (d *Discovery) List() []Peer {
 func (d *Discovery) Self() WellKnown { return d.opt.WellKnown }
 
 // Handler answers /.well-known/fyr.
+// OnlyWellKnown answers GET /.well-known/fyr and nothing else, for a
+// loopback port Tailscale Serve proxies to over TCP (the macOS app cannot
+// reach a Unix socket). Any local process may connect there, so it trusts
+// nothing and serves no page or session; a tailnet login other than owner
+// is refused.
+func OnlyWellKnown(owner string, self func() WellKnown) http.Handler {
+	h := Handler(self)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/.well-known/fyr" {
+			http.Error(w, "this port answers only GET /.well-known/fyr", http.StatusNotFound)
+			return
+		}
+		if login := r.Header.Get("Tailscale-User-Login"); login != "" && login != owner {
+			http.Error(w, "this Fyr belongs to another tailnet user", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 func Handler(self func() WellKnown) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

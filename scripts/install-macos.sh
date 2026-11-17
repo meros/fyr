@@ -24,6 +24,7 @@ repo="${FYR_REPO:-meros/fyr}"
 if [ "${1:-}" = --uninstall ]; then
   launchctl bootout "$domain/$ulabel" 2>/dev/null || true
   launchctl bootout "$domain/$label" 2>/dev/null || true
+  command -v tailscale >/dev/null && tailscale serve --https=7443 off >/dev/null 2>&1 || true
   rm -rf "$plist" "$uplist" "$HOME/Applications/Fyr.app"
   echo "stopped and removed $label; data stays in $data"
   exit 0
@@ -143,6 +144,31 @@ touch "$app"
 # Spotlight lists it only once LaunchServices knows it.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app"
 mdimport -i "$app" >/dev/null 2>&1 || true
+
+# The tailnet (decision 0025): other installs find this one at
+# https://<this Mac>.ts.net:7443/.well-known/fyr and follow it at its
+# hostListen. The macOS app's Serve proxies to TCP only, never to Fyr's Unix
+# socket, so it goes to a port that answers the well-known and nothing else.
+# Keys already in the config are kept.
+cfg="$HOME/.config/fyr/config.json"
+if command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
+  mkdir -p "$(dirname "$cfg")"
+  python3 - "$cfg" <<'PY'
+import json, os, sys
+p = sys.argv[1]
+c = json.load(open(p)) if os.path.exists(p) else {}
+c.setdefault("hostListen", "tailnet:7778")
+c.setdefault("wellKnownListen", "127.0.0.1:7779")
+json.dump(c, open(p, "w"), indent=2)
+PY
+  wk="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("wellKnownListen", ""))' "$cfg")"
+  if [ -n "$wk" ]; then
+    tailscale serve --bg --https=7443 "http://$wk" >/dev/null
+    echo "tailnet: https://$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))'):7443 answers /.well-known/fyr"
+  fi
+else
+  echo "tailnet: Tailscale is not running here; other installs will not find this one (run this again once it is)"
+fi
 
 # bootout returns before the agent is gone; bootstrap fails until it is.
 rm -f "$uplist"
