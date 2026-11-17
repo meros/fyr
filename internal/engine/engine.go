@@ -172,6 +172,14 @@ type Engine struct {
 	SlotSignals func() slots.Signals
 	SlotGrowth  func(owner string) uint64
 	SlotPolicy  slots.Policy
+	// Decision 0029 S3: SlotJob hears the command a slot_acquire names;
+	// SlotOver says whether a holder's job is heavier than predicted (its
+	// class, live and predicted cost); JobReset forgets a learned class
+	// (the owner's Reset). All optional.
+	SlotJob     func(thread, command string)
+	SlotOver    func(owner string) (class string, live, predicted float64, over bool)
+	JobReset    func(class string) bool
+	slotOverTold map[string]time.Time // under mu: owner → the hold already told
 	memGuard    bool // under mu: the guard told a thread in this episode
 	// Titler makes a thread title from its conversation (V0.108); nil: this
 	// host makes none. titling is the threads with a call in flight.
@@ -541,6 +549,12 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(500, err.Error())
 		}
 		reply.Result = kept
+	case core.EffectJobReset: // decision 0029 S3: the owner's Reset of a learned class
+		c, _ := ef.Request.Args["class"].(string)
+		if e.JobReset == nil || !e.JobReset(c) {
+			return fail(404, "No learned job class "+c)
+		}
+		reply.Result = map[string]any{"class": c}
 	case core.EffectSlotOrderSet: // V0.137: the owner's order of the slot queue
 		if e.Slots == nil || e.Slots.Off() {
 			return fail(409, "This host has no slots for heavy jobs")

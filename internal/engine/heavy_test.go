@@ -13,7 +13,9 @@ import (
 
 func TestH174HeavyCommandWithoutASlotIsRefused(t *testing.T) {
 	e, _, _ := bare(t)
-	e.UseSlots(slots.New(1))
+	p := slots.New(1)
+	p.Now = e.Now // one clock for the pool and the engine
+	e.UseSlots(p)
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
@@ -37,7 +39,9 @@ func TestH174HeavyCommandWithoutASlotIsRefused(t *testing.T) {
 	}
 	// Slots off: nothing is refused.
 	e2, _, _ := bare(t)
-	e2.UseSlots(slots.New(0))
+	p2 := slots.New(0)
+	p2.Now = e2.Now // one clock for the pool and the engine
+	e2.UseSlots(p2)
 	if r := e2.HeavyGate(bareThread(t, e2), "make test"); r != "" {
 		t.Fatalf("slots off: %q", r)
 	}

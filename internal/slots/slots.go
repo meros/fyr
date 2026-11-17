@@ -75,6 +75,10 @@ type Pool struct {
 	Admit func(head Holder, held []Holder) (bool, string)
 	// Cost is a holder's share of the budget for the snapshot; optional.
 	Cost func(h Holder) float64
+	// Backfill decides whether c, behind a head that does not fit, may
+	// start now without delaying it (decision 0029 S3, EASY); nil never.
+	// Under the pool's lock, like Admit.
+	Backfill func(head, c Holder, held []Holder) bool
 
 	mu   lockwatch.Mutex
 	pub  atomic.Pointer[Snapshot] // the last snapshot, for View
@@ -83,6 +87,10 @@ type Pool struct {
 	held []Holder
 	wait []Holder
 	why  string
+	// passes: the head (owner and since) and how often backfill passed it.
+	passHead  string
+	passSince time.Time
+	passes    int
 }
 
 // New is a pool of n slots kept in memory only: 0 is off, below 0 Default.
@@ -171,7 +179,30 @@ func (p *Pool) Acquire(owner, kind string) (held bool, ahead int) {
 		return true, 0
 	}
 	p.wait = append(p.wait, h)
-	return false, len(p.wait) - 1
+	// Decision 0029 S3: it may start at once behind a head that does not fit
+	// (the head was just asked; only backfill runs here, Admit once per call).
+	granted := p.backfillLocked(nil)
+	mine := false
+	var others []Holder
+	for _, g := range granted {
+		if g.Owner == owner {
+			mine = true
+		} else {
+			others = append(others, g)
+		}
+	}
+	if len(others) > 0 && p.OnGrant != nil {
+		on := p.OnGrant
+		defer func() {
+			for _, g := range others {
+				on(g.Owner, g.Kind)
+			}
+		}()
+	}
+	if mine {
+		return true, 0
+	}
+	return false, index(p.wait, owner)
 }
 
 // Wait takes a slot for owner with priority, blocking until it holds one
@@ -242,19 +273,7 @@ func (p *Pool) Fill() {
 
 // fillLocked promotes waiters, saves, unlocks p.mu and tells the agents.
 func (p *Pool) fillLocked() {
-	var told []Holder
-	for len(p.wait) > 0 && p.admitLocked(p.wait[0]) {
-		h := p.wait[0]
-		p.wait = p.wait[1:]
-		h.Since = p.now()
-		if h.ready != nil {
-			close(h.ready)
-			h.ready = nil
-		} else {
-			told = append(told, h)
-		}
-		p.held = append(p.held, h)
-	}
+	told := p.promoteLocked()
 	p.save()
 	on := p.OnGrant
 	p.mu.Unlock()
@@ -263,6 +282,60 @@ func (p *Pool) fillLocked() {
 			on(h.Owner, h.Kind)
 		}
 	}
+}
+
+// promoteLocked grants the queue's head while it fits, then (decision 0029
+// S3) backfills later jobs that Backfill allows, at most BackfillPasses
+// times per head and not once the head waited BackfillFor. It returns the
+// grants to tell (a priority Wait's grant closes its channel instead). Call
+// it with p.mu held.
+func (p *Pool) promoteLocked() []Holder {
+	var told []Holder
+	for len(p.wait) > 0 && p.admitLocked(p.wait[0]) {
+		told = p.grantLocked(0, told)
+	}
+	return p.backfillLocked(told)
+}
+
+// grantLocked moves wait[i] to held and returns told with it, unless it is a
+// priority Wait (its channel is closed instead). Call it with p.mu held.
+func (p *Pool) grantLocked(i int, told []Holder) []Holder {
+	h := p.wait[i]
+	p.wait = slices.Delete(p.wait, i, i+1)
+	h.Since = p.now()
+	if h.ready != nil {
+		close(h.ready)
+		h.ready = nil
+	} else {
+		told = append(told, h)
+	}
+	p.held = append(p.held, h)
+	return told
+}
+
+// backfillLocked is promoteLocked's second half: later jobs Backfill lets
+// pass a head that does not fit (EASY, capped). Call it with p.mu held.
+func (p *Pool) backfillLocked(told []Holder) []Holder {
+	grant := func(i int) { told = p.grantLocked(i, told) }
+	if len(p.wait) < 2 || p.Backfill == nil {
+		return told
+	}
+	head := p.wait[0]
+	if p.passHead != head.Owner || !p.passSince.Equal(head.Since) {
+		p.passHead, p.passSince, p.passes = head.Owner, head.Since, 0
+	}
+	for i := 1; i < len(p.wait); {
+		if p.passes >= BackfillPasses || p.now().Sub(head.Since) >= BackfillFor {
+			break
+		}
+		if p.Backfill(head, p.wait[i], slices.Clone(p.held)) {
+			grant(i)
+			p.passes++
+			continue
+		}
+		i++
+	}
+	return told
 }
 
 // admitLocked asks Admit (else the count rule) about head and keeps why it

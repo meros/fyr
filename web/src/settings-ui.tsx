@@ -11,7 +11,7 @@ import { hostForProject, hostLine, hostRows, hostState, howIn, profilesOn, route
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, withHost, type SettingsHost } from "./host-settings.ts";
 import { quotaFor } from "./quota.ts";
 import { jobLines } from "./load.ts";
-import { useLoad } from "./load-ui.tsx";
+import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { CARD_WORD, cardState } from "./quota.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -502,7 +502,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi): Pa
       return { title: "Providers", body: <HostParts s={s} now={p.now} part={(d) => <ProvidersPage d={d} go={go} grouped={s.grouped} />} /> };
     }
     case "automation":
-      return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <HostParts s={s} now={p.now} part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} />} /> };
+      return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <HostParts s={s} now={p.now} part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} api={p.api} />} /> };
     case "projects": {
       if (at.sub) {
         const pr = p.projects.find((x) => x.id === at.sub);
@@ -1230,7 +1230,7 @@ function AddProvider(p: { onCancel(): void; onCreate(args: Record<string, unknow
 
 /** V0.111 Auto-deploy and V0.102 Auto-merge: what Fyr does without the owner's press. Only the owner changes them here;
  *  no agent tool can. */
-function AutomationPage({ d, hasDeploy }: { d: Data; hasDeploy: boolean }) {
+function AutomationPage({ d, hasDeploy, api }: { d: Data; hasDeploy: boolean; api: SettingsProps["api"] }) {
   const [deployErr, setDeployErr] = useState<string | null>(null);
   const [repoErr, setRepoErr] = useState<{ repo: string; text: string } | null>(null);
   const [q, setQ] = useState("");
@@ -1255,7 +1255,7 @@ function AutomationPage({ d, hasDeploy }: { d: Data; hasDeploy: boolean }) {
           </Group>
         ))}
       {d.updates && <UpdatesGroup d={d} />}
-      <HeavyJobsGroup host={d.host.name} />
+      <HeavyJobsGroup host={d.host.name} api={api} />
       {d.repos === null && d.reposErr ? (
         <LoadError text={d.reposErr} onRetry={() => void d.loadRepos()} />
       ) : d.repos === null ? (
@@ -1280,16 +1280,37 @@ function AutomationPage({ d, hasDeploy }: { d: Data; hasDeploy: boolean }) {
 
 /** Decision 0029 S1 (#185): the heavy jobs this host measured, per class (project and command), the newest first.
  *  Only shown; nothing is admitted by these numbers yet. Desktop and phone share it. */
-function HeavyJobsGroup({ host }: { host: string }) {
+function HeavyJobsGroup({ host, api }: { host: string; api: SettingsProps["api"] }) {
+  const env = useSet();
   const list = useLoad();
+  const [err, setErr] = useState<{ class: string; text: string } | null>(null);
   const h = list.find((x) => x.host === host) ?? (list.length === 1 ? list[0] : undefined);
   if (!h?.provider) return null;
   const lines = jobLines(h);
+  // Decision 0029 S3: Reset forgets a class's learned cost on this host (owner only); it counts as 1.0 again.
+  const reset = async (c: string) => {
+    const r = await api.command("host.jobReset", undefined, withHost({ class: c }, host));
+    setErr(r.ok ? null : { class: c, text: r.error ?? "Not reset" });
+    if (r.ok) refreshLoad();
+  };
   return (
-    <Group title="Heavy jobs" label="Heavy jobs" foot="What each kind of heavy job used the last time it held a slot, measured from its thread. Fyr will use this to let cheap jobs run side by side.">
+    <Group title="Heavy jobs" label="Heavy jobs" foot="What each kind of heavy job used the last time it held a slot, measured from its thread, and its cost: its share of what this host gives its agents. Cheap jobs run beside expensive ones; a job counts as 1.0 until three runs are learned.">
       {!lines.length && <Empty text="No heavy job measured yet. A job is measured while its thread holds a slot." />}
       {lines.slice(0, 12).map((l) => (
-        <Row key={l.class} title={l.class} mono desc={l.text} />
+        <Row
+          key={l.class}
+          title={l.class}
+          mono
+          desc={l.cost ? `${l.text} · ${l.cost}` : l.text}
+          error={err?.class === l.class ? err.text : null}
+          end={
+            l.learned && (
+              <button type="button" class="btn" disabled={env.readOnly} aria-label={`Reset ${l.class}`} onClick={() => void reset(l.class)}>
+                Reset
+              </button>
+            )
+          }
+        />
       ))}
     </Group>
   );
