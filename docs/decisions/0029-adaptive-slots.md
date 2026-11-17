@@ -255,6 +255,10 @@ Desktop and phone stay in sync: the phone has no rail ring (V0.99 (3)), but the 
 
 The job's cgroup is not made by rewriting the command at the gate (`fyr job run -- …`), as section 2 proposed. A rewrite needs the hook's "allow" decision, which would skip the CLI's own permission check (auto mode) for the whole command, including anything joined to the heavy part. Instead fyrd finds the job's processes in the thread's cgroup by their command line and moves them into `agents/<thread>/job/`. The thread's cgroup enables no controllers for its children, so the job's cgroup can sit beside the CLI without splitting the thread's cgroup into `cli/` and `job-*/`. `cgroup.freeze` works in any cgroup.
 
+## Percent and two resources (V0.163)
+
+The owner, after S1–S5: "Slots don't make sense in this model... It should be percentage", and admission checks CPU and memory as two separate dimensions. A job's cost was one number, the larger of its CPU and memory shares; it is now two needs, CPU (learned demand) and memory (learned peak), each checked against its own free budget, so a CPU-heavy job (make test-go, about 3 cores and 2 GB) runs next to a memory-heavy one. AIMD moves a CPU factor and a memory factor apart: memory pressure cuts the memory budget, a CPU stall the CPU budget. Everything shown is a percentage of what the host gives its agents. The tools keep their names (slot_acquire, slot_release); their answers speak percent.
+
 ## The owner's answers (17 Nov)
 
 1. **CPU overload signal:** PSI some, with the run queue for the size above PSI's ceiling (recommended). Revised for machine independence (section 0): the slowdown probe takes the run queue's role on every host, and PSI is used where it exists.

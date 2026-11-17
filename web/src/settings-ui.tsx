@@ -11,7 +11,7 @@ import type { Api } from "./api.ts";
 import { hostForProject, hostLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, withHost, type SettingsHost } from "./host-settings.ts";
 import { quotaFor } from "./quota.ts";
-import { jobLines } from "./load.ts";
+import { budgetLine, jobLines } from "./load.ts";
 import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { CARD_WORD, cardState } from "./quota.ts";
@@ -1295,6 +1295,7 @@ function HeavyJobsGroup({ host, api }: { host: string; api: SettingsProps["api"]
   const h = list.find((x) => x.host === host) ?? (list.length === 1 ? list[0] : undefined);
   if (!h?.provider) return null;
   const lines = jobLines(h);
+  const budget = budgetLine(h); // V0.163: the budget as percentages of the host
   // Decision 0029 S3: Reset forgets a class's learned cost on this host (owner only); it counts as 1.0 again.
   const reset = async (c: string) => {
     const r = await api.command("host.jobReset", undefined, withHost({ class: c }, host));
@@ -1302,8 +1303,9 @@ function HeavyJobsGroup({ host, api }: { host: string; api: SettingsProps["api"]
     if (r.ok) refreshLoad();
   };
   return (
-    <Group title="Heavy jobs" label="Heavy jobs" foot="What each kind of heavy job used the last time it held a slot, measured from its thread, and its cost: its share of what this host gives its agents. Cheap jobs run beside expensive ones; a job counts as 1.0 until three runs are learned.">
-      {!lines.length && <Empty text="No heavy job measured yet. A job is measured while its thread holds a slot." />}
+    <Group title="Heavy jobs" label="Heavy jobs" foot="What each kind of heavy job used the last time it ran, measured from its thread: its share of the CPU and the memory this host gives its agents. A job starts when both fit; a CPU-heavy job runs beside a memory-heavy one. Until three runs are learned, a job counts as half the host.">
+      {budget && <Row title="Budget" desc={`${budget}${h.slots?.budgetWhy ? ` · ${h.slots.budgetWhy}` : ""}`} />}
+      {!lines.length && <Empty text="No heavy job measured yet. A job is measured while it is admitted." />}
       {lines.slice(0, 12).map((l) => (
         <Row
           key={l.class}
