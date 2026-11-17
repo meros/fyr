@@ -32,6 +32,12 @@ var Defaults = []Pattern{
 	{"nix build", `nix\s+build\b`},
 	{"cargo test", `cargo\s+test\b`},
 	{"pytest", `pytest\b`},
+	// A browser harness over many headless Chrome tabs (the layout and
+	// timing tests), a repo's pre-push gate, and anything that starts
+	// headless Chrome: the two jobs behind the 14:04 thrash matched none.
+	{"node $1", `node\s+(?:--\S+\s+)*(?:\S+/)?([\w.-]*e2e[\w.-]*\.m?js)\b`},
+	{"yarn $1", `yarn\s+(?:run\s+)?(pre-push[\w:-]*)`},
+	{"headless chrome", `(?:google-chrome|chromium|chrome)(?:-\S+)?\s+(?:\S+\s+)*?--headless\b`},
 }
 
 type rule struct {
@@ -140,7 +146,7 @@ func (m *Matcher) Class(cmd string) string {
 func KindOf(class string) string {
 	c := strings.ToLower(class)
 	switch {
-	case strings.Contains(c, "e2e") || strings.Contains(c, "playwright") || strings.Contains(c, "screenshot") || strings.Contains(c, "layout"):
+	case strings.Contains(c, "e2e") || strings.Contains(c, "playwright") || strings.Contains(c, "screenshot") || strings.Contains(c, "layout") || strings.Contains(c, "chrome"):
 		return "e2e"
 	case strings.Contains(c, "build"):
 		return "build"

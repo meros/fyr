@@ -14,6 +14,9 @@ PAT = [
     ("nix build", r"nix\s+build\b"),
     ("cargo test", r"cargo\s+test\b"),
     ("pytest", r"pytest\b"),
+    ("node $1", r"node\s+(?:--\S+\s+)*(?:\S+/)?([\w.-]*e2e[\w.-]*\.m?js)\b"),
+    ("yarn $1", r"yarn\s+(?:run\s+)?(pre-push[\w:-]*)"),
+    ("headless chrome", r"(?:google-chrome|chromium|chrome)(?:-\S+)?\s+(?:\S+\s+)*?--headless\b"),
 ]
 MSG = re.compile(r"""(?:\s-[mt]|\s--(?:message|title|body|subject))(?:=|\s+)(?:'[^'\n]*'|"[^"\n]*")""")
 
