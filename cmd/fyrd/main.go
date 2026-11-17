@@ -556,7 +556,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		mux.Handle("/mcp", hostHandler)
 		mux.Handle("/", fr.Handler())
 		serve(ln, deploy.Health(mux, health...))
-		serveAuthSockets(fr, data, ln.Addr().String(), serve) // V0.130
+		serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), serve) // V0.130
 	}
 	switch {
 	case cfg.HostListen == "":
@@ -620,7 +620,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 		}
 	}()
 	var extra []*http.Server
-	serveAuthSockets(fr, data, ln.Addr().String(), func(l net.Listener, h http.Handler) { // V0.130
+	serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), func(l net.Listener, h http.Handler) { // V0.130
 		s := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		extra = append(extra, s)
 		go s.Serve(l)

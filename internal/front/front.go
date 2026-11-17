@@ -247,6 +247,10 @@ func (f *Front) newLink(h HostConfig) *link {
 			pr.SetURL(l.base)
 			// Previews build their CSP from the browser's Host (V0.47).
 			pr.Out.Host = pr.In.Host
+			// Rewrite drops X-Forwarded-Proto; Serve's socket is HTTPS (V0.130).
+			if server.IsViaServe(pr.In) {
+				pr.Out.Header.Set("X-Forwarded-Proto", "https")
+			}
 			if l.cfg.Remote {
 				pr.Out.Header.Del("Tailscale-User-Login")
 			}

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"mime"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/meros/fyr/internal/agent"
@@ -229,6 +231,31 @@ func ViaServe(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), viaServeKey{}, true)))
 	})
+}
+
+// ServeSocket serves Tailscale Serve's socket (V0.130 (3)): ViaServe, and
+// the request's Host becomes the public name the browser used. tailscaled
+// does not keep the browser's Host on this socket (#225), and a front proxies
+// to its hosts with the Host it got: the host's guard needs a ts.net name for
+// the identity header, and a preview's CSP names its folder by that Host.
+// The name is X-Forwarded-Host when tailscaled sets a ts.net one, else
+// public (<node>.ts.net:<Serve port>); "" keeps the Host. Only this socket
+// trusts it: tailscaled alone reaches it, so no rebinding page sets it.
+func ServeSocket(public string, next http.Handler) http.Handler {
+	var logged atomic.Bool
+	return ViaServe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if logged.CompareAndSwap(false, true) {
+			log.Printf("serve socket: first request: Host %q, X-Forwarded-Host %q, X-Forwarded-Proto %q; public %q",
+				r.Host, r.Header.Get("X-Forwarded-Host"), r.Header.Get("X-Forwarded-Proto"), public)
+		}
+		if fh := r.Header.Get("X-Forwarded-Host"); tailnetHost(fh) && hostRe.MatchString(fh) {
+			r.Host = fh
+		} else if public != "" {
+			r.Host = public
+		}
+		r.Header.Set("X-Forwarded-Proto", "https") // Serve answers on HTTPS only
+		next.ServeHTTP(w, r)
+	}))
 }
 
 // IsViaServe reports whether a request came through Serve's socket.
