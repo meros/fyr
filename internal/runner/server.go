@@ -84,7 +84,7 @@ type rproc struct {
 	// alone: when the last link ended (rule 2 and 3 count from it).
 	alone   time.Time
 	closing time.Time // rule 2: when stdin was closed
-	// inClosed: the CLI's stdin is closed (V0.142); a write after it
+	// inClosed: the CLI's stdin is closed (V0.143); a write after it
 	// reaches nothing, and fyrd learns it from the process's info.
 	inClosed bool
 	exited   bool
@@ -306,7 +306,7 @@ func (p *rproc) info() Proc {
 	return Proc{ID: p.id, Key: p.key, Pid: p.cmd.Process.Pid, Meta: p.meta, Started: p.started, Exited: p.exited, Linked: p.linked, InputClosed: p.inClosed}
 }
 
-// closeInput closes the CLI's stdin and remembers it (V0.142).
+// closeInput closes the CLI's stdin and remembers it (V0.143).
 func (p *rproc) closeInput() {
 	p.in.Close() // not under wmu: a write blocked on a full pipe ends with it
 	p.mu.Lock()
@@ -493,7 +493,7 @@ func (s *Server) ops(p *rproc, r *bufio.Reader, gen int) {
 			_, err := p.in.Write([]byte(f.Text + "\n"))
 			p.wmu.Unlock()
 			if err != nil {
-				s.logf("runner: %s: a write to its input was lost: %v", p.id, err) // V0.142
+				s.logf("runner: %s: a write to its input was lost: %v", p.id, err) // V0.143
 			}
 		case "ack":
 			// Drop every line up to Seq that fyrd does not ask to keep.

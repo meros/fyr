@@ -98,7 +98,7 @@ type Config struct {
 	HostName      string
 	ProfileExists func(id string) bool
 	SystemAgents  func() core.SystemAgents
-	// V0.142, the watchdog. AckTimeout: how long a written message may
+	// V0.143, the watchdog. AckTimeout: how long a written message may
 	// wait for the CLI's command_lifecycle report (default 60 s);
 	// ControlTimeout: the same for a control request, a Stop (default
 	// 20 s); RestartAfter: how long Fyr leaves a process unresponsive
@@ -183,7 +183,7 @@ type session struct {
 	inputClosed bool
 	// tools: tool_use id → tool name, until its result (V0.133).
 	tools map[string]string
-	// V0.142, the watchdog. lastOut: the process's last output;
+	// V0.143, the watchdog. lastOut: the process's last output;
 	// unresponsive: Fyr reported it unresponsive; restartAt restarts it;
 	// sentAt: when each unread message was written; held: messages Fyr
 	// kept back because the input is closed; restarting: why Fyr ends it

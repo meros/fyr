@@ -173,7 +173,7 @@ const (
 	EffectCancelMessage EffectKind = "cancelMessage"
 	EffectHandover      EffectKind = "handover"
 	// EffectRestart ends an unresponsive agent process and resumes its
-	// session in a new one (V0.142).
+	// session in a new one (V0.143).
 	EffectRestart EffectKind = "restart"
 	// EffectCancel withdraws an open question; the agent package sends it
 	// to itself when the CLI cancels a request.

@@ -70,7 +70,7 @@ func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 		return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse",
 			"permissionDecision": "deny", "permissionDecisionReason": r}}
 	}
-	if n := core.GateNudge(name, ti); n != "" { // V0.142
+	if n := core.GateNudge(name, ti); n != "" { // V0.143
 		return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse", "additionalContext": n}}
 	}
 	return nil

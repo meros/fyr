@@ -184,7 +184,7 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 		digest: newDigest(), out: map[string]string{}, cancelling: map[string]bool{}, effort: meta.Effort,
 		viewTools: meta.ViewTools, changeTools: meta.ChangeTools, live: t.Running, lifecycle: true,
 		bg: t.RunningTasks(), // V0.133: until the CLI reports its tasks again
-		// V0.142: a process whose input an earlier fyrd closed reads
+		// V0.143: a process whose input an earlier fyrd closed reads
 		// nothing Fyr writes; the runner knows.
 		inputClosed: p.InputClosed, lastOut: t.ActivityAt, sentAt: map[string]time.Time{}, held: map[string]bool{}, gone: make(chan struct{})}
 	if s.lastOut.IsZero() {

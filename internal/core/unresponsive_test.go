@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// SPEC 0.5 V0.142: an unresponsive agent puts its thread in Needs you with
+// SPEC 0.5 V0.143: an unresponsive agent puts its thread in Needs you with
 // one line that says since when and why, ahead of Working.
 func TestUnresponsiveAttention(t *testing.T) {
 	since := time.Date(2026, 11, 17, 8, 58, 0, 0, time.Local)
@@ -22,7 +22,7 @@ func TestUnresponsiveAttention(t *testing.T) {
 	}
 }
 
-// V0.142: Restart is there only while the agent does not respond; a
+// V0.143: Restart is there only while the agent does not respond; a
 // restart ends the run without a failure, stops the tasks and keeps the
 // unread messages.
 func TestRestartActionAndReduce(t *testing.T) {
@@ -44,7 +44,7 @@ func TestRestartActionAndReduce(t *testing.T) {
 	}
 }
 
-// V0.142 (5): the gate nudges a background Bash of an hour or more, and
+// V0.143 (5): the gate nudges a background Bash of an hour or more, and
 // nothing else.
 func TestGateNudgesLongBackgroundBash(t *testing.T) {
 	long := map[string]any{"command": "cloud-sql-proxy", "run_in_background": true, "timeout": float64(7200000)}

@@ -93,7 +93,7 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 		s.idle.Stop()
 	}
 	s.out[e.MessageID] = "sent"
-	// V0.142: a closed input reads nothing; the message waits for the
+	// V0.143: a closed input reads nothing; the message waits for the
 	// next process.
 	hold := s.inputClosed
 	if hold {

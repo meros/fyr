@@ -19,7 +19,7 @@ func RunStarted(t *Thread, now time.Time) {
 func RunEnded(t *Thread, f *Failure, now time.Time) {
 	t.Running = false
 	if f != nil {
-		t.Unresponsive = nil // V0.142: the process is gone
+		t.Unresponsive = nil // V0.143: the process is gone
 	}
 	t.RunStartedAt = nil
 	t.Activity = ""
@@ -36,7 +36,7 @@ func RunEnded(t *Thread, f *Failure, now time.Time) {
 // while work was live. Open decisions die with the process.
 // Effect Decisions (5.10) do not need the process and stay open.
 func ProcessLost(t *Thread, class, msg string, now time.Time) {
-	t.Unresponsive = nil // V0.142: the process is gone
+	t.Unresponsive = nil // V0.143: the process is gone
 	var keep []Decision
 	live := t.Running
 	for _, d := range t.Decisions {
@@ -59,7 +59,7 @@ func ProcessLost(t *Thread, class, msg string, now time.Time) {
 }
 
 // Restarted: Fyr ended an unresponsive process to start the session again
-// (V0.142). Its background tasks ended with it; the run ends without a
+// (V0.143). Its background tasks ended with it; the run ends without a
 // failure, and the unread messages stay in the outbox for the next process.
 func Restarted(t *Thread, now time.Time) {
 	t.Unresponsive = nil

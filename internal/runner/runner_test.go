@@ -297,7 +297,7 @@ func TestAbandonedProcessEnds(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.142: the runner says when a process's input is closed. A
+// SPEC 0.5 V0.143: the runner says when a process's input is closed. A
 // CLI with background work lives on after it, and a fyrd that adopts it
 // must not take it for a process that reads what it writes.
 func TestListSaysInputClosed(t *testing.T) {

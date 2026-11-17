@@ -1151,7 +1151,7 @@ interface ComposerProps {
   answer: AnswerField | null;
   onSend(args: SendArgs): Promise<boolean>;
   onInterrupt(): void;
-  /** V0.142: Restart an agent that does not respond */
+  /** V0.143: Restart an agent that does not respond */
   onRestart(): void;
 }
 

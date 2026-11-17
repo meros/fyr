@@ -649,7 +649,7 @@ function railFixture(now: number): Fixture {
       unavailable: quiet,
     }),
   );
-  // V0.142: a live agent that takes nothing Fyr writes; Needs you, with Restart above the composer.
+  // V0.143: a live agent that takes nothing Fyr writes; Needs you, with Restart above the composer.
   threads.push(
     base("t_stuck", "Area tree production switch", now, 38, {
       project: "acme/web",
