@@ -270,3 +270,35 @@ func (p *Pool) Snapshot() Snapshot {
 	}
 	return s
 }
+
+// Reorder is the owner's order of the queue (SPEC V0.136): the listed
+// owners that wait without priority go first, in the given order, and the
+// other waiters follow in their own order; priority waiters stay ahead of
+// all of them and cannot be moved. An owner that no longer waits is
+// ignored, so a page that read the queue a moment ago cannot drop anyone.
+// It returns the pool as it is now.
+func (p *Pool) Reorder(owners []string) Snapshot {
+	if p.Off() {
+		return p.Snapshot()
+	}
+	p.mu.Lock()
+	var pri, rest []Holder
+	for _, h := range p.wait {
+		if h.Priority {
+			pri = append(pri, h)
+		} else {
+			rest = append(rest, h)
+		}
+	}
+	next := pri
+	for _, o := range owners {
+		if i := index(rest, o); i >= 0 {
+			next = append(next, rest[i])
+			rest = slices.Delete(rest, i, i+1)
+		}
+	}
+	p.wait = append(next, rest...)
+	p.save()
+	p.mu.Unlock()
+	return p.Snapshot()
+}

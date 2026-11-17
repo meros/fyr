@@ -241,3 +241,33 @@ func waitFor(t *testing.T, ok func() bool) {
 	}
 	t.Fatal("timed out")
 }
+
+// SPEC V0.136: Reorder puts the listed waiters first in the given order and
+// keeps the rest after them; priority waiters stay at the front, an owner
+// that no longer waits is ignored, and the order is stored.
+func TestReorder(t *testing.T) {
+	kv := &memKV{m: map[string]string{}}
+	p := Open(1, kv)
+	p.Acquire("h", Test)
+	for _, o := range []string{"a", "b", "c", "d"} {
+		p.Acquire(o, Test)
+	}
+	go p.Wait(context.Background(), "self-deploy", Test)
+	for len(p.Snapshot().Waiting) < 5 {
+		time.Sleep(time.Millisecond)
+	}
+	s := p.Reorder([]string{"c", "gone", "a", "c", "self-deploy"})
+	got := []string{}
+	for _, h := range s.Waiting {
+		got = append(got, h.Owner)
+	}
+	if want := []string{"self-deploy", "c", "a", "b", "d"}; !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if held, ahead := p.Acquire("a", Test); held || ahead != 2 {
+		t.Fatalf("a: %v %d", held, ahead)
+	}
+	if s := Open(1, kv).Snapshot(); s.Waiting[0].Owner != "c" {
+		t.Fatalf("not stored: %+v", s.Waiting)
+	}
+}

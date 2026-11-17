@@ -4,6 +4,7 @@ import type { ComponentChildren, Ref } from "preact";
 import type { Profile, Project, Thread } from "./types.ts";
 import { QuotaRail } from "./quota-ui.tsx";
 import { LoadRail } from "./load-ui.tsx";
+import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { DESKTOP_LOOK, NeedsRowBody, OneRowBody } from "./row-ui.tsx";
@@ -43,14 +44,16 @@ export function Rail(p: RailProps) {
       <div class="brand" title="Fyr">
         <BrandMark size={32} />
       </div>
-      {SECTIONS.map((s, i) => {
+      {SECTIONS.map((s) => {
         const n = p.sec[s.key].length;
+        if (s.transient && n === 0) return null; // V0.136: Waiting for a slot only while threads wait
+        const g = s.g ? ` (g${s.g})` : "";
         return (
-          <button class={`ri${s.key === "needs" && n > 0 ? " att" : ""}${p.active === s.key && n > 0 ? " on" : ""}`} title={n ? `${s.label}: ${n} (g${i + 1})` : `${s.label}: none`} disabled={n === 0} onClick={() => p.onJump(s.key)}>
+          <button class={`ri${s.key === "needs" && n > 0 ? " att" : ""}${p.active === s.key && n > 0 ? " on" : ""}`} data-sec={s.key} title={n ? `${s.label}: ${n}${g}` : `${s.label}: none`} disabled={n === 0} onClick={() => p.onJump(s.key)}>
             <StateIcon state={s.state} />
             <span class="n">{count(n)}</span>
             <span class="l">{s.short}</span>
-            <span class="k">g{i + 1}</span>
+            {s.g && <span class="k">g{s.g}</span>}
           </button>
         );
       })}
@@ -88,7 +91,7 @@ export function Rail(p: RailProps) {
   );
 }
 
-export const SECTION_LIMIT: Record<SectionKey, number> = { needs: 500, working: 500, seen: 200, snoozed: 200, settled: 60 };
+export const SECTION_LIMIT: Record<SectionKey, number> = { needs: 500, working: 500, slots: 500, seen: 200, snoozed: 200, settled: 60 };
 /** Sections that show only their header line until opened (the design draws Snoozed and Settled this way). */
 export const COLLAPSED_BY_DEFAULT: SectionKey[] = ["snoozed", "settled"];
 
@@ -175,6 +178,7 @@ interface InboxProps {
 }
 
 export function Inbox(p: InboxProps) {
+  const queue = useSlotQueue();
   return (
     <aside class="ib" onMouseDown={p.onFocusZone}>
       <div class="top">
@@ -218,6 +222,17 @@ export function Inbox(p: InboxProps) {
           </div>
         )}
         {SECTIONS.map((s) => {
+          if (s.key === "slots")
+            return (
+              <SlotQueueSection
+                phone={false}
+                queue={queue}
+                threads={p.sec.slots}
+                row={(t, a) => (
+                  <OneRowBody t={t} now={p.now} look={DESKTOP_LOOK} lead={a.lead} extra={`${p.selected === t.id ? " sel" : ""}${p.picked.has(t.id) ? " picked" : ""}${a.attrs.class ? " " + a.attrs.class : ""}`} attrs={{ ...rowAttrs({ t, now: p.now, sel: p.selected === t.id, picked: p.picked.has(t.id), onClick: () => p.onClick(t.id) }), ref: a.attrs.ref }} />
+                )}
+              />
+            );
           const list = unpinned(p.sec[s.key]);
           const open = isOpen(s.key, p.open) && list.length > 0;
           const limit = p.expanded[s.key] ? list.length : SECTION_LIMIT[s.key];
