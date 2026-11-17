@@ -109,7 +109,10 @@ type config struct {
 	// its agents (0 is the default: 0.25 of the cores, 0.08 of the memory,
 	// 45 s, 30–120); what the owner saves in Settings wins over these.
 	// HeavyAdded are patterns read after heavyCommands (or the defaults).
-	Undeclared       string          `json:"undeclared"`
+	Undeclared string `json:"undeclared"`
+	// V0.176: Leftovers "off" turns off the leftover tracker and the temp
+	// sweep on this host (nothing is listed or ended).
+	Leftovers        string          `json:"leftovers"`
 	UndeclaredCPU    float64         `json:"undeclaredCpu"`
 	UndeclaredMemory float64         `json:"undeclaredMemory"`
 	UndeclaredAfter  int             `json:"undeclaredAfter"`

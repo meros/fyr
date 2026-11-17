@@ -325,6 +325,10 @@ func slotNotices(r Reduced) []Notice {
 		if ev.Type != EventSlot {
 			continue
 		}
+		if txt, ok := d["leftovers"].(string); ok { // V0.176
+			out = append(out, Notice{About: "thread", Key: "leftovers", Urgency: Next, What: txt + ". Clean up what you start, prefer a timeout, and for a process that must stay call mcp__fyr__keep_process."})
+			continue
+		}
 		if txt, ok := d["undeclared"].(string); ok {
 			out = append(out, Notice{About: "thread", Key: "heavy.undeclared", Urgency: Next, What: txt}) // V0.164
 			continue

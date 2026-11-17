@@ -637,6 +637,26 @@ func (m *Manager) StopAll() {
 	}
 }
 
+// LeftoverCLIs are the CLIs the leftover tracker must never take for
+// leftovers (V0.176): each live session's pid, and 0 for a session whose pid
+// is unknown or a CLI that is starting (the tracker then leaves that thread's
+// cgroup alone).
+func (m *Manager) LeftoverCLIs() map[string]int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]int{}
+	for th := range m.starting {
+		out[th] = 0
+	}
+	for th, s := range m.sessions {
+		out[th] = 0
+		if p, ok := s.c.(interface{ Pid() int }); ok && p.Pid() > 0 {
+			out[th] = p.Pid()
+		}
+	}
+	return out
+}
+
 // CLIs are the pids of the live agent CLIs by thread, for a host without the
 // cgroup tree to read each thread's process tree (V0.164 section 10); a
 // session that does not know its pid is left out.

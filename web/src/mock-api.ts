@@ -4,7 +4,7 @@
 import { newCommandId, type Api, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab, mockChanges, mockFilePatch, mockLoad, mockQueueLoad, mockQuota } from "./mock.ts";
-import { mockUndeclaredCommand } from "./mock.ts";
+import { mockLeftoverCommand, mockUndeclaredCommand } from "./mock.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { decodeHosts } from "./hosts.ts";
 import type { AuthState } from "./devices.ts";
@@ -195,6 +195,12 @@ export function createMockApi(scenario: string): Api {
         const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
         if (!h) return { ok: false, error: `this front follows no host ${String(args?.host)}` };
         return mockUndeclaredCommand(h, action, args ?? {}, Date.now());
+      }
+      // V0.176: the owner's End, Keep and Remove of leftovers, as the host answers them.
+      if (action === "host.leftoverEnd" || action === "host.leftoverKeep" || action === "host.tempRemove") {
+        const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
+        if (!h) return { ok: false, error: `this front follows no host ${String(args?.host)}` };
+        return mockLeftoverCommand(h, action, args ?? {}, Date.now());
       }
       if (action === "front.projectOrder") {
         order = Array.isArray(args?.ids) ? (args.ids as unknown[]).filter((x): x is string => typeof x === "string") : [];

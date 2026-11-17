@@ -78,7 +78,8 @@ func (e *Engine) Tools(s *mcp.Server) {
 
 	s.Add(e.watchTool())
 	s.Add(e.stateTool())
-	e.slotTools(s) // V0.86
+	e.slotTools(s)     // V0.86
+	e.leftoverTools(s) // V0.176
 }
 
 // pinNote tells the agent that its settle waits: the owner pinned the

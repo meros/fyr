@@ -18,6 +18,7 @@ import { quotaFor } from "./quota.ts";
 import { budgetLine, jobLines, type HostLoad } from "./load.ts";
 import { useUnd } from "./undeclared-ctx.tsx";
 import { UndIcon } from "./undeclared-ctx.tsx";
+import { leftoverRows, tempRows } from "./leftovers.ts";
 import { addedRows, parseThreshold, thresholdError, suggestionRows, thresholdRows, undeclaredRows } from "./undeclared.ts";
 import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
@@ -1319,11 +1320,85 @@ function HeavyJobsGroup({ host, api, focus }: { host: string; api: SettingsProps
   const env = useSet();
   const list = useLoad();
   const h = list.find((x) => x.host === host) ?? (list.length === 1 ? list[0] : undefined);
-  if (!h?.provider) return null;
+  if (!h) return null;
   return (
     <>
-      <UndeclaredGroups h={h} host={host} api={api} focus={focus} />
-      <MeasuredJobs h={h} host={host} api={api} env={env} />
+      <LeftoverGroups h={h} host={host} api={api} focus={focus} />
+      {h.provider && <UndeclaredGroups h={h} host={host} api={api} focus={focus} />}
+      {h.provider && <MeasuredJobs h={h} host={host} api={api} env={env} />}
+    </>
+  );
+}
+
+/** V0.176: the processes threads left running on this host (End now, Keep for a day) and the settled threads'
+ *  worktrees (Remove when pushed and clean). Absent when there is nothing. The rail's count lands here (sub
+ *  "leftovers"). Desktop and phone share it. */
+function LeftoverGroups({ h, host, api, focus }: { h: HostLoad; host: string; api: SettingsProps["api"]; focus?: string }) {
+  const env = useSet();
+  const und = useUnd();
+  const run = useHostCommand(host, api);
+  const [err, setErr] = useState<{ key: string; text: string } | null>(null);
+  const act = async (key: string, action: string, args: Record<string, unknown>) => {
+    const e = await run(action, args);
+    setErr(e ? { key, text: e } : null);
+  };
+  useEffect(() => {
+    if (focus === "leftovers") document.querySelector(".lftg")?.scrollIntoView({ block: "start" });
+  }, [focus]);
+  const rows = leftoverRows(h, und.lookup, und.now());
+  const temps = tempRows(h, und.lookup);
+  return (
+    <>
+      {rows.length > 0 && (
+        <Group class="lftg" label="Leftover processes" title="Leftover processes" foot="What threads left running outside their agent: a browser, a server, a port-forward. Fyr ends a thread's leftovers 30 min after its run ends and all of them when it settles; one the agent kept, or one under timeout, stays until then. End ends one now; Keep holds it for a day, through a settle too. Each end leaves a line on its thread.">
+          {rows.map((r) => (
+            <Row
+              key={r.id}
+              class="lftrow"
+              title={r.title}
+              desc={r.desc}
+              error={err?.key === `l:${r.id}` ? err.text : null}
+              end={
+                <>
+                  {r.thread && (
+                    <button type="button" class="btn" onClick={() => und.openThread(r.thread!)}>
+                      Open
+                    </button>
+                  )}
+                  {r.canKeep && (
+                    <button type="button" class="btn" disabled={env.readOnly} onClick={() => void act(`l:${r.id}`, "host.leftoverKeep", { id: r.id, hours: 24 })}>
+                      Keep
+                    </button>
+                  )}
+                  <button type="button" class="btn" disabled={env.readOnly} onClick={() => void act(`l:${r.id}`, "host.leftoverEnd", { id: r.id })}>
+                    End
+                  </button>
+                </>
+              }
+            />
+          ))}
+        </Group>
+      )}
+      {temps.length > 0 && (
+        <Group label="Worktrees of settled threads" title="Worktrees of settled threads" foot="Fyr removes a settled thread's scratch folder and a layout run's browser profile by itself. A worktree stays (the thread may wake in it): Remove removes one whose work is committed and pushed; one with uncommitted or unpushed work is only shown.">
+          {temps.map((t) => (
+            <Row
+              key={t.path}
+              title={t.title}
+              mono
+              desc={t.desc}
+              error={err?.key === `t:${t.path}` ? err.text : null}
+              end={
+                t.canRemove ? (
+                  <button type="button" class="btn" disabled={env.readOnly} onClick={() => void act(`t:${t.path}`, "host.tempRemove", { path: t.path })}>
+                    Remove
+                  </button>
+                ) : undefined
+              }
+            />
+          ))}
+        </Group>
+      )}
     </>
   );
 }
