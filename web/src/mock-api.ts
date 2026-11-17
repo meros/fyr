@@ -292,7 +292,10 @@ export function createMockApi(scenario: string): Api {
         { profile: "zai", host: "lab", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 83, resetsAt: at(90) }], updatedAt: at(-1) }];
     },
     async load() {
-      return JSON.parse(JSON.stringify(load)) as HostLoad[];
+      // V0.140: with &hosts=2 the rail has a ring per host (desk's, and a calm lab).
+      const l = JSON.parse(JSON.stringify(load)) as HostLoad[];
+      if (!mockHostList().length || !l.length) return l;
+      return [{ ...l[0], host: "desk" }, { ...l[0], host: "lab", cores: 16, load: [1.4, 1.1, 0.9], threads: [], slots: undefined }];
     },
     async boardVisit() {
       // V0.98 (3): the mock's last visit was a day ago, so its done changes show under Finished.

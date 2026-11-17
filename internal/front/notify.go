@@ -41,21 +41,21 @@ func (f *Front) noticeLocked(l *link, prev, next map[string]any) {
 	id, _ := next["id"].(string)
 	switch notify.PlanFor(from, to) {
 	case notify.Now:
-		go f.send(next)
+		go f.send(l.name(), next)
 	case notify.Later:
 		time.AfterFunc(f.opt.NotifyDelay, func() {
 			f.mu.Lock()
 			cur := l.raw[id]
 			f.mu.Unlock()
 			if cur != nil && attentionOf(cur) == to {
-				f.send(cur)
+				f.send(l.name(), cur)
 			}
 		})
 	}
 }
 
 // send pushes one thread's state to this front's devices.
-func (f *Front) send(m map[string]any) {
+func (f *Front) send(host string, m map[string]any) {
 	d, err := dtoOf(m)
 	if err != nil {
 		f.opt.Logf("front: push: %v", err)
@@ -66,6 +66,14 @@ func (f *Front) send(m map[string]any) {
 		return
 	}
 	meta, detail := AttentionDetail(d)
+	// V0.140: with several hosts a push says which one the thread runs on.
+	if host != "" && len(f.all()) > 1 {
+		if meta == "" {
+			meta = host
+		} else {
+			meta = host + " · " + meta
+		}
+	}
 	f.opt.Push.Notify(core.Owner, push.PayloadFor(d.ID, d.Title, string(d.Attention.State), meta, detail))
 }
 
