@@ -85,14 +85,14 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
       )}
       <Group label="Paired installs" title="Paired installs" foot="Installs that know each other by key. A paired install reads every host, and drives it unless that host switched it off (fyr host drive).">
         {s.members.map((m) => (
-          <Row key={m.id} class="peerrow" title={<span class="mono">{m.name}</span>} desc={`${viaWords(m)} · ${m.id.slice(0, 4)}`} />
+          <Row key={m.id} class="peerrow" mono ell title={m.name} desc={`${viaWords(m)} · ${m.id.slice(0, 4)}`} />
         ))}
         {rest.length === 0 && <Row class="peerrow" title="No other install is paired." desc="Installs of one tailnet user pair by themselves; others pair with an invite." />}
       </Group>
       {s.candidates.length > 0 && (
         <Group label="Not paired" title="Not paired" foot="Tailnet nodes that are not in the roster. A tag says who may reach a node, not whose it is, so a tagged one is paired with an invite.">
           {s.candidates.map((c) => (
-            <Row key={c.name} class={`cand${c.online ? "" : " off"}`} title={<span class="mono">{c.name}</span>} desc={candidateWords(c)} end={needsInvite(c) ? <span class="pill">needs an invite</span> : undefined} />
+            <Row key={c.name} class={`cand${c.online ? "" : " off"}`} mono ell title={c.name} desc={candidateWords(c)} end={needsInvite(c) ? <span class="pill">needs an invite</span> : undefined} />
           ))}
         </Group>
       )}
