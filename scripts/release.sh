@@ -15,6 +15,15 @@ repo="${GITHUB_REPOSITORY:-meros/fyr}"
 out="$(mktemp -d)"
 say() { echo "release: $*"; }
 
+# Publish only a commit that main still contains. A re-run of an old run checks out its old SHA, and after a
+# history rewrite (#196) that SHA is no longer on main: a release of it would pin the old history again and take
+# `deployable` off main's line.
+git fetch -q --force origin "refs/heads/main:refs/remotes/origin/main"
+if ! git merge-base --is-ancestor "$sha" origin/main; then
+  say "$short is not on main (a re-run of an old run, or rewritten history); publishing nothing"
+  exit 0
+fi
+
 # The web client is the same for every target; build it once.
 make web
 export CGO_ENABLED=0
