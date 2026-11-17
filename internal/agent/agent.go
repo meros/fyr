@@ -636,3 +636,18 @@ func (m *Manager) StopAll() {
 		m.Stop(id)
 	}
 }
+
+// CLIs are the pids of the live agent CLIs by thread, for a host without the
+// cgroup tree to read each thread's process tree (V0.164 section 10); a
+// session that does not know its pid is left out.
+func (m *Manager) CLIs() map[string]int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]int{}
+	for th, s := range m.sessions {
+		if p, ok := s.c.(interface{ Pid() int }); ok && p.Pid() > 0 {
+			out[th] = p.Pid()
+		}
+	}
+	return out
+}

@@ -18,8 +18,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -285,6 +287,17 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		groups.EndUndeclared(ep.Thread)
 	}
 	pool.Undeclared = sampler.Undeclared
+	if tree == nil {
+		// V0.164 section 10: no cgroup tree, so each thread's use is its
+		// process tree under the CLI (nothing is frozen there).
+		sampler.Trees, sampler.CLIs = &cgroup.TreeReader{}, mgr.CLIs
+		if runtime.GOOS == "darwin" {
+			sampler.Trees.PS = func() (string, error) {
+				out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=,rss=,time=").Output()
+				return string(out), err
+			}
+		}
+	}
 	mgr.SetUndeclaredNote(eng.UndeclaredSubagentNote)
 	eng.Undeclared, eng.UndeclaredTold, eng.UndeclaredDismiss, eng.UndeclaredSettings = sampler.Undeclared, detector.Told, detector.Dismiss, usettings.Set
 	eng.UndeclaredThaw, eng.HeavyRemove, eng.HeavyRefused = groups.ThawUndeclared, book.Remove, heavyCmds.Refused
