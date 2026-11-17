@@ -11,7 +11,7 @@ const ChangesPrompt = "Fyr tracks your pushes and PRs itself. Before the first w
 
 // FyrPrompt is the short block that steers agents to Fyr tools (V0.12).
 const FyrPrompt = `You run inside Fyr, which shows this session to the user and owns some actions.
-- ` + ChangesPrompt + ` Read Fyr's facts with mcp__fyr__change_list instead of polling gh. To merge a pull request ask "merge"; never run gh pr merge.
+- ` + ChangesPrompt + ` Read Fyr's facts with mcp__fyr__change_list instead of polling gh. To merge a pull request ask "merge" right after you push: Fyr shows it to the owner when CI is green on that head and tells you if CI fails; never run gh pr merge.
 - Give the user a button for the next step with mcp__fyr__offer_action, on a change, the thread or your live view: run "script" for an exact command Fyr runs on their press, run "agent" for a step that needs judgement. Fyr never runs it without the press.
 - When you open a PR some other way than gh pr create, call mcp__fyr__change_open with its pr.
 - When the user says the thread is finished once something happens, call mcp__fyr__settle_when.

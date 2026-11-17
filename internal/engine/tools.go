@@ -27,7 +27,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 		}})
 
 	s.Add(mcp.Tool{Name: "effect_request",
-		Description: "Ask Fyr to perform an effect that needs the user's approval. Returns at once; do not wait or poll. The user approves or declines in Fyr, Fyr runs it, and the result arrives as a later message starting with [Fyr]. Actions: \"pr.merge\" with args {pr: <url>, method: squash|merge|rebase, head?: <commit SHA, default the head Fyr reads now>} (use this instead of gh pr merge; Fyr merges only that head); \"fyr.deploy\": Fyr updates itself when CI publishes a green commit on main (the tag deployable), so do not ask after a merge. With args {} it installs the newest CI release now (approved by itself unless the owner turned auto-update off). With args {dir: <Fyr checkout>, tests?: true} it builds that checkout locally and switches to it to try it; that always waits for the owner's press and pauses auto-update until a release contains it.",
+		Description: "Ask Fyr to perform an effect that needs the user's approval. Returns at once; do not wait or poll. The user approves or declines in Fyr, Fyr runs it, and the result arrives as a later message starting with [Fyr]. Actions: \"pr.merge\" with args {pr: <url>, method: squash|merge|rebase, head?: <commit SHA, default the head Fyr reads now>} (use this instead of gh pr merge; Fyr merges only that head, and shows the ask to the user only when CI is green on it); \"fyr.deploy\": Fyr updates itself when CI publishes a green commit on main (the tag deployable), so do not ask after a merge. With args {} it installs the newest CI release now (approved by itself unless the owner turned auto-update off). With args {dir: <Fyr checkout>, tests?: true} it builds that checkout locally and switches to it to try it; that always waits for the owner's press and pauses auto-update until a release contains it.",
 		Schema: obj(map[string]any{
 			"action": map[string]any{"type": "string", "enum": requestable()},
 			"args":   map[string]any{"type": "object"},
@@ -43,9 +43,13 @@ func (e *Engine) Tools(s *mcp.Server) {
 				return "", err
 			}
 			reason, _ := a["reason"].(string)
+			id := NewID("d_")
 			if _, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindEffectRequest, Thread: th,
-				Args: core.EffectRequest{ID: NewID("d_"), Action: action, Args: args, Reason: reason}}); err != nil {
+				Args: core.EffectRequest{ID: id, Action: action, Args: args, Reason: reason}}); err != nil {
 				return "", err
+			}
+			if s := e.heldReply(th, id); s != "" { // V0.136: a merge ask waits for CI
+				return s, nil
 			}
 			return "Requested. The user decides in Fyr; the result arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not perform this action another way.", nil
 		}})

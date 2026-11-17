@@ -35,10 +35,11 @@ func TestAutoMergeWaitsForGreenChecksOnTheAskedHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := AutoMergeAsks(th); len(got) != 0 {
-		t.Fatalf("a head pushed after the ask is offered: %+v", got)
+	// V0.136: a push closes the ask; nothing is left to approve
+	if got := AutoMergeAsks(th); len(got) != 0 || len(th.Decisions) != 0 {
+		t.Fatalf("a head pushed after the ask is offered: %+v %+v", got, th.Decisions)
 	}
-	if _, _, _, err := Reduce(th, &View{}, autoIn("acme/app"), later); err == nil || !strings.Contains(err.Error(), HeadMoved) {
+	if _, _, _, err := Reduce(th, &View{}, autoIn("acme/app"), later); err == nil || !strings.Contains(err.Error(), "no open decision") {
 		t.Fatalf("a moved head: %v", err)
 	}
 }
