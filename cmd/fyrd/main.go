@@ -624,7 +624,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// #148: the launcher trusts a new build once /healthz on this listener
 	// is green: the store reads, the client has its page, and the runner's
 	// processes were adopted when there is a runner.
-	health := []deploy.Check{storeHealthy(h.st), webHealthy(webFS), func() error {
+	health := []deploy.Check{storeHealthy(h.st), webHealthy(webFS), cfg.watch.health, func() error {
 		if launchenv.Current().Runner != "" && rn == nil {
 			return errors.New("the runner did not answer; its agent processes were not adopted")
 		}
@@ -650,7 +650,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen), id)
 		var fr *front.Front
 		ps := newPeerSide(cfg, data, hostName, key)
-		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), OnWhoisFallback: func() { authStore.WouldRefuse(auth.WayPeer) }, Web: webFS,
+		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), ConfigNote: cfg.watch.Note, OnWhoisFallback: func() { authStore.WouldRefuse(auth.WayPeer) }, Web: webFS,
 			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st, Auth: authStore, Tailnet: tailnetNodes(cfg),
 			OwnerRoutes: func(mux *http.ServeMux) {
 				if ps != nil {
@@ -754,7 +754,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	var fr *front.Front
 	ps := newPeerSide(cfg, data, name, key)
 	authStore := openAuth(st, cfg.stepUp())
-	fr = front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), OnWhoisFallback: func() { authStore.WouldRefuse(auth.WayPeer) }, Web: webFS,
+	fr = front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), ConfigNote: cfg.watch.Note, OnWhoisFallback: func() { authStore.WouldRefuse(auth.WayPeer) }, Web: webFS,
 		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, Auth: authStore, Tailnet: tailnetNodes(cfg),
 		OwnerRoutes: func(mux *http.ServeMux) {
 			if ps != nil {
@@ -766,7 +766,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	go func() { fr.Run(ctx); close(done) }()
 	go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every) // V0.123
 	ps.start(ctx, data, nil, fr, authStore, nil)
-	hs := &http.Server{Handler: deploy.Health(fr.Handler(), storeHealthy(st), webHealthy(webFS)), ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Handler: deploy.Health(fr.Handler(), storeHealthy(st), webHealthy(webFS), cfg.watch.health), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)

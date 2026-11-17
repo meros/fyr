@@ -321,7 +321,8 @@ func (p *peerSide) ownerRoutes(fr *front.Front) func(mux *http.ServeMux) {
 		mux.HandleFunc("GET /host/list", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{"members": p.env.Members(), "candidates": p.env.Candidates(r.Context()),
-				"whoisLinkUses": fr.WhoisLinkUses(), "rounds": p.env.Rounds.Load(), "ownerLogin": p.env.Roster.OwnerLogin()})
+				"whoisLinkUses": fr.WhoisLinkUses(), "rounds": p.env.Rounds.Load(), "ownerLogin": p.env.Roster.OwnerLogin(),
+				"configChanged": p.cfg.watch.Note()})
 		})
 		// The owner's invite (decision 0030 3.6 condition 3): open one here, or join
 		// with one from another install. The owner socket is never gated.
@@ -340,7 +341,7 @@ func (p *peerSide) ownerRoutes(fr *front.Front) func(mux *http.ServeMux) {
 			res, err := p.env.Join(r.Context(), b.Code, b.Addr)
 			w.Header().Set("Content-Type", "application/json")
 			if err != nil {
-				w.WriteHeader(http.StatusConflict)
+				w.WriteHeader(joinStatus(err))
 				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 				return
 			}
@@ -393,6 +394,20 @@ func (p *peerSide) ownerRoutes(fr *front.Front) func(mux *http.ServeMux) {
 			json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		})
 	}
+}
+
+// joinStatus is the owner route's status for a failed join (V0.180, #261): the
+// inviter's own when it answered no (a 5xx of its is a bad gateway here), 409 when
+// this install could not get that far.
+func joinStatus(err error) int {
+	var r *peer.JoinRefused
+	switch {
+	case errors.As(err, &r) && r.Status >= 500:
+		return http.StatusBadGateway
+	case errors.As(err, &r) && r.Status >= 400:
+		return r.Status
+	}
+	return http.StatusConflict
 }
 
 func servePort(cfg config) int {

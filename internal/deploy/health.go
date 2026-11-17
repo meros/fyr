@@ -20,6 +20,13 @@ const HealthPath = "/healthz"
 // Check is one health check: nil is healthy.
 type Check func() error
 
+// Warning is a check's answer that is said on /healthz and keeps it green
+// (V0.180: a config that changed since fyrd read it). The launcher trusts a build
+// by the status only.
+type Warning string
+
+func (w Warning) Error() string { return string(w) }
+
 // Health serves HealthPath from checks and passes everything else to next.
 // It sits outside the owner guard: it says only "ok" or why not.
 func Health(next http.Handler, checks ...Check) http.Handler {
@@ -30,14 +37,23 @@ func Health(next http.Handler, checks ...Check) http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
+		var warns []string
 		for _, c := range checks {
-			if err := c(); err != nil {
+			err := c()
+			if wn, ok := err.(Warning); ok {
+				warns = append(warns, string(wn))
+				continue
+			}
+			if err != nil {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				fmt.Fprintln(w, err)
 				return
 			}
 		}
 		fmt.Fprintln(w, "healthy")
+		for _, wn := range warns {
+			fmt.Fprintln(w, "warning:", wn)
+		}
 	})
 }
 

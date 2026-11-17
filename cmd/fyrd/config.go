@@ -53,6 +53,9 @@ func BuildID() string {
 }
 
 type config struct {
+	// watch remembers the file as it was read (V0.180): /healthz and Settings →
+	// Hosts say when it changed since.
+	watch           *configWatch
 	Listen          string `json:"listen"`
 	PermissionMode  string `json:"permissionMode"`
 	IdleStopMinutes int    `json:"idleStopMinutes"`
@@ -197,11 +200,13 @@ func home() string { h, _ := os.UserHomeDir(); return h }
 
 func loadConfig(path, t3Settings string) config {
 	c := config{Listen: "127.0.0.1:7777", IdleStopMinutes: 10}
-	if b, err := os.ReadFile(path); err == nil {
+	b, err := os.ReadFile(path)
+	if err == nil {
 		if err := json.Unmarshal(b, &c); err != nil {
 			log.Fatalf("config %s: %v", path, err)
 		}
 	}
+	c.watch = watchLoaded(path, b, err == nil)
 	if len(c.Profiles) == 0 {
 		if ps, err := t3.Profiles(t3Settings); err == nil {
 			c.Profiles = ps

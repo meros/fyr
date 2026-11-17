@@ -157,8 +157,19 @@ func (e *Env) joinInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req inviteReq
-	if json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req) != nil || req.Port <= 0 || req.Port > 65535 {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req) != nil {
+		http.Error(w, "the join request is not JSON", http.StatusBadRequest)
+		return
+	}
+	// V0.180 (#261): port 0 is a joiner with no peer port. Since V0.174 the link is
+	// two-way and either side opens it, so it is paired as one that dials out only
+	// (decision 0030 Amendment 1, 4).
+	if req.Port < 0 || req.Port > 65535 {
+		http.Error(w, fmt.Sprintf("port: %d is not a port (1 to 65535, or 0 for an install that dials out only)", req.Port), http.StatusBadRequest)
+		return
+	}
+	if req.Secret == "" {
+		http.Error(w, "secret: missing", http.StatusBadRequest)
 		return
 	}
 	if err := e.Invites.Redeem(req.Secret); err != nil {
@@ -234,7 +245,7 @@ func (e *Env) Join(ctx context.Context, code, addrHint string) (*JoinResult, err
 		if err == nil {
 			return res, nil
 		}
-		var wrong *joinRefused
+		var wrong *JoinRefused
 		if errors.As(err, &wrong) {
 			return nil, wrong // the install answered and said no: no use trying more addresses
 		}
@@ -243,9 +254,27 @@ func (e *Env) Join(ctx context.Context, code, addrHint string) (*JoinResult, err
 	return nil, fmt.Errorf("no install with that id answered at %s: is its peer port up, and is the address right?", strings.Join(tried, ", "))
 }
 
-type joinRefused struct{ msg string }
+// JoinRefused is the inviter's answer when it said no: its HTTP status and its words.
+type JoinRefused struct {
+	Status int
+	Msg    string
+}
 
-func (j *joinRefused) Error() string { return j.msg }
+func (j *JoinRefused) Error() string { return j.Msg }
+
+// refused words the inviter's no from the joiner's side. An inviter older than
+// V0.180 answers a join without a peer port (selfPort 0) with a bare "bad request".
+func refused(status int, body string, selfPort int) *JoinRefused {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		body = http.StatusText(status)
+	}
+	msg := fmt.Sprintf("the install that made the invite refused (%d): %s", status, body)
+	if status == http.StatusBadRequest && body == "bad request" && selfPort == 0 {
+		msg += "; this install has no peer port, and that install is older than V0.180 and pairs only with one: set peerListen here and restart fyrd, or update that install"
+	}
+	return &JoinRefused{Status: status, Msg: msg}
+}
 
 func (e *Env) candidateAddrs(ctx context.Context, id string) []string {
 	out := e.LANAddrs(ctx, id) // the id came with the code: what the LAN says for it comes first
@@ -280,7 +309,8 @@ func (e *Env) joinAt(ctx context.Context, id, secret, a string) (*JoinResult, er
 	}
 	host, _, _ := net.SplitHostPort(a)
 	selfName, selfHost := e.selfNameHost()
-	body, _ := json.Marshal(inviteReq{Secret: secret, Name: selfName, Host: selfHost, Port: e.self().Port})
+	selfPort := e.self().Port
+	body, _ := json.Marshal(inviteReq{Secret: secret, Name: selfName, Host: selfHost, Port: selfPort})
 	req, _ := http.NewRequestWithContext(ctx, "POST", "https://"+a+"/pair/invite", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := (&http.Client{Transport: peerlink.Once(conn)}).Do(req)
@@ -290,8 +320,8 @@ func (e *Env) joinAt(ctx context.Context, id, secret, a string) (*JoinResult, er
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
-		return nil, &joinRefused{strings.TrimSpace(string(b))}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, refused(resp.StatusCode, string(b), selfPort)
 	}
 	var out inviteResp
 	if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out) != nil {

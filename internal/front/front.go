@@ -74,6 +74,9 @@ type Options struct {
 	// Peer is this install's peer side: the roster, the invite, the candidates
 	// (Settings → Hosts); nil keeps none.
 	Peer *peer.Env
+	// ConfigNote is "" while the config file is what fyrd read, else what to do
+	// (V0.180): Settings → Hosts shows it.
+	ConfigNote func() string
 	// Auth keeps the browser sessions (V0.130); nil keeps none.
 	Auth *auth.Store
 	Web  fs.FS // the built client

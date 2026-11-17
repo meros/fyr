@@ -68,8 +68,20 @@ func main() {
 		log.Printf("fyr: runner: %v; agents run as fyrd's children", err)
 	}
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	go func() { l.Signal(<-sig) }()
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		for s := range sig {
+			// V0.180 (#264): SIGHUP (systemctl reload) restarts fyrd on its new
+			// config; the runner and the agents stay. The others stop.
+			if s == syscall.SIGHUP {
+				log.Printf("fyr: SIGHUP: restarting fyrd; the agents keep running")
+				l.Reload(s)
+				continue
+			}
+			l.Signal(s)
+			return
+		}
+	}()
 	err = l.Run()
 	if srv != nil {
 		srv.Close(5 * time.Second) // the agents end with the launcher
