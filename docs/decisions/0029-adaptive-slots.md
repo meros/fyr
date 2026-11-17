@@ -251,7 +251,7 @@ Desktop and phone stay in sync: the phone has no rail ring (V0.99 (3)), but the 
 - **The probe's noise and cost.** It is about 0.1 % of a core. A single probe can be hit by a burst, so the median of 3 is used. On Linux it must run in `agents/`, not `server/` (weight 1000), or it would feel less than a job does.
 - **macOS is deferred** (owner, 17 Nov: "Don't worry too much about mac - we can fix that later"). *V0.150 adds the `sysctl` provider: the probe, `kern.memorystatus_level` for the headroom (not the page counts sketched above, which read far too low on macOS) and `kern.memorystatus_vm_pressure_level` for the stall level; the process tree is still to come.* Until a later issue adds its provider, a macOS host keeps the fixed count of V0.86 (the "none of the above" row). The macOS column above is a sketch for that issue, not part of S1–S5. Because the rules are in shares and slowdowns, adding it later is only a provider.
 
-## S5 as built (V0.150)
+## S5 as built (V0.151)
 
 The job's cgroup is not made by rewriting the command at the gate (`fyr job run -- …`), as section 2 proposed. A rewrite needs the hook's "allow" decision, which would skip the CLI's own permission check (auto mode) for the whole command, including anything joined to the heavy part. Instead fyrd finds the job's processes in the thread's cgroup by their command line and moves them into `agents/<thread>/job/`. The thread's cgroup enables no controllers for its children, so the job's cgroup can sit beside the CLI without splitting the thread's cgroup into `cli/` and `job-*/`. `cgroup.freeze` works in any cgroup.
 
