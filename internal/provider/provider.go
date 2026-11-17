@@ -60,8 +60,8 @@ type Provider struct {
 	CheckError string         `json:"checkError,omitempty"`
 	// CheckNote: the last successful check is only Fyr's known list (the
 	// CLI named its aliases only); "" when the provider gave its own list.
-	CheckNote string `json:"checkNote,omitempty"`
-	TriedAt    time.Time      `json:"triedAt,omitzero"`
+	CheckNote string    `json:"checkNote,omitempty"`
+	TriedAt   time.Time `json:"triedAt,omitzero"`
 }
 
 // Kind is the UI's word for the auth.

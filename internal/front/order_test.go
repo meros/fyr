@@ -77,7 +77,7 @@ func TestFrontProjectOrder(t *testing.T) {
 type roStore struct{}
 
 func (roStore) GetKV(string) (string, error) { return "", nil }
-func (roStore) SetKV(string, string) error  { return errors.New("read-only file system") }
+func (roStore) SetKV(string, string) error   { return errors.New("read-only file system") }
 
 // V0.121: a front that cannot store the order refuses with the reason.
 func TestFrontProjectOrderReadOnly(t *testing.T) {

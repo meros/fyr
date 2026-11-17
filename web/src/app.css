@@ -936,18 +936,18 @@ button.ptag{padding:0}
 .rail .rld{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:8px;font:400 10px/14px var(--mono);color:var(--ink-muted)}
 .rail .rld+.rq{margin-top:8px}
 .rail .rld+.railx,.rail .rld+.foot{margin-top:8px}
-.rail .rldr{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:default;max-width:100%;--lv:var(--calm)}
-.rail .rldr.warm{--lv:var(--beam-mark)}
-.rail .rldr.hot{--lv:var(--signal-ink)}
+:is(.rail,.m-load,.m-lsheet) .rldr{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:default;max-width:100%;--lv:var(--calm)}
+:is(.rail,.m-load,.m-lsheet) .rldr.warm{--lv:var(--beam-mark)}
+:is(.rail,.m-load,.m-lsheet) .rldr.hot{--lv:var(--signal-ink)}
 .rail .rldr small{font:400 9px/11px var(--ui);color:var(--ink-faint)}
 /* V0.99: the load as a ring (share of the cores, coloured by level) with the figure inside. */
-.rail .rring{position:relative;display:block;width:30px;height:30px}
-.rail .rring svg{display:block}
-.rail .rring circle{fill:none;stroke-width:3}
-.rail .rring .trk{stroke:var(--line)}
-.rail .rring .arc{stroke:var(--lv);stroke-linecap:round}
-.rail .rring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:500 10px/1 var(--mono);color:var(--ink-muted)}
-.rail .rldr.hot .rring b{color:var(--signal-ink);font-weight:600}
+:is(.rail,.m-load,.m-lsheet) .rring{position:relative;display:block;width:30px;height:30px}
+:is(.rail,.m-load,.m-lsheet) .rring svg{display:block}
+:is(.rail,.m-load,.m-lsheet) .rring circle{fill:none;stroke-width:3}
+:is(.rail,.m-load,.m-lsheet) .rring .trk{stroke:var(--line)}
+:is(.rail,.m-load,.m-lsheet) .rring .arc{stroke:var(--lv);stroke-linecap:round}
+:is(.rail,.m-load,.m-lsheet) .rring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:500 10px/1 var(--mono);color:var(--ink-muted)}
+:is(.rail,.m-load,.m-lsheet) .rldr.hot .rring b{color:var(--signal-ink);font-weight:600}
 /* V0.86, V0.99: the slots for heavy jobs as pips under the ring (filled in use, empty free), "+n" while threads wait. */
 .rail .rpips{display:flex;align-items:center;gap:3px;height:11px}
 .rail .rpips i{width:6px;height:6px;border-radius:50%;box-sizing:border-box;border:1px solid var(--ink-faint);flex:none}
@@ -956,14 +956,14 @@ button.ptag{padding:0}
 .rail .rpips em{font:600 9px/11px var(--mono);font-style:normal;color:var(--signal-ink);margin-left:1px}
 .rail .rldr small.rlds{white-space:nowrap}
 /* Decision 0029 S2: the slot budget in use as a bar under the ring. */
-.rail .rbar{display:flex;flex-direction:column;align-items:center;gap:0;width:30px;height:11px}
-.rail .rbar .trk{display:block;width:100%;height:3px;border-radius:2px;background:var(--line);overflow:hidden}
-.rail .rbar .trk i{display:block;height:100%;background:var(--ink-muted)}
-.rail .rbar.hot .trk i{background:var(--signal-ink)}
+:is(.rail,.m-load,.m-lsheet) .rbar{display:flex;flex-direction:column;align-items:center;gap:0;width:30px;height:11px}
+:is(.rail,.m-load,.m-lsheet) .rbar .trk{display:block;width:100%;height:3px;border-radius:2px;background:var(--line);overflow:hidden}
+:is(.rail,.m-load,.m-lsheet) .rbar .trk i{display:block;height:100%;background:var(--ink-muted)}
+:is(.rail,.m-load,.m-lsheet) .rbar.hot .trk i{background:var(--signal-ink)}
 /* The bar keeps the pips' 11 px (V0.141: the rail's middle fits at 900 px with two hosts). */
-.rail .rbar small{font:600 8px/8px var(--mono);color:var(--ink-muted);white-space:nowrap}
-.rail .rbar.hot small,.rail .rbar em{color:var(--signal-ink)}
-.rail .rbar em{font-style:normal;margin-left:1px}
+:is(.rail,.m-load,.m-lsheet) .rbar small{font:600 8px/8px var(--mono);color:var(--ink-muted);white-space:nowrap}
+:is(.rail,.m-load,.m-lsheet) .rbar.hot small,:is(.rail,.m-load,.m-lsheet) .rbar em{color:var(--signal-ink)}
+:is(.rail,.m-load,.m-lsheet) .rbar em{font-style:normal;margin-left:1px}
 .rail .rld .hot,.tcpu.hot{color:var(--signal-ink);font-weight:600}
 .qlist{display:flex;flex-direction:column;gap:2px;min-width:0}
 /* V0.45: the handover dialog and the divider in the conversation */
@@ -1369,8 +1369,8 @@ label.sr{cursor:pointer}
    to a row; a short line parts them from the quotas, which are one 2-column grid of a provider initial and a value. */
 .rail .rmid .rldr{gap:2px;min-width:34px}
 .rail .rmid .rldh{max-width:34px;margin:0;font:500 9px/10px var(--mono);color:var(--ink)}
-.rail .rring b small{font-size:7px;font-weight:400;margin-left:.5px;opacity:.8}
-.rail .rring b.w3{font-size:8px;letter-spacing:-.4px}
+:is(.rail,.m-load,.m-lsheet) .rring b small{font-size:7px;font-weight:400;margin-left:.5px;opacity:.8}
+:is(.rail,.m-load,.m-lsheet) .rring b.w3{font-size:8px;letter-spacing:-.4px}
 .rail .rmid .rbar{height:auto;gap:2px;width:auto;min-width:30px}
 .rail .rmid .rbar .trk{width:30px}
 .rail .rmid .rbar small{font:600 8.5px/9px var(--mono)}
@@ -1437,6 +1437,57 @@ label.sr{cursor:pointer}
 .runc-res.failed{color:var(--signal-ink)}
 .runc-b{display:flex;flex-wrap:wrap;gap:6px}
 
+/* V0.164 undeclared heavy work (design/rogue-agents/mock/rogue.css). Tokens of this file only. */
+
+/* The warm mark: beam is "look here, nothing failed"; signal stays for failures and a hot host. */
+.und-ic{flex:none;color:var(--beam-icon,var(--beam-ink))}
+
+/* 1. The row (desktop and phone, web/src/row-ui.tsx): the word and the use start the second line. */
+.tund{color:var(--beam-ink);font-weight:500}
+.tund .und-ic{vertical-align:-2px;margin-right:3px}
+
+/* 2. The rail: the use Fyr did not admit is a hatched part of the host's meter. */
+:is(.rail,.m-load,.m-lsheet) .rbar .trk{display:flex}
+:is(.rail,.m-load,.m-lsheet) .rbar .trk i{flex:none}
+:is(.rail,.m-load,.m-lsheet) .rbar .trk i.und,:is(.rail,.m-load,.m-lsheet) .rbar.hot .trk i.und{background:repeating-linear-gradient(135deg,var(--beam) 0 2px,color-mix(in srgb,var(--beam) 30%,transparent) 2px 4px)}
+/* who it is: a button under the meter (desktop only: the phone has no rail, V0.99 (3)) */
+.rail .rund{display:inline-flex;align-items:center;justify-content:center;gap:2px;min-width:30px;height:14px;padding:0 3px;border-radius:7px;background:var(--beam-wash);color:var(--beam-ink);font:600 8.5px/9px var(--mono);cursor:pointer}
+.rail .rund svg{flex:none}
+
+
+/* 3. The thread: a strip under the header, on both fronts; the phone sets its sizes in phone.css */
+.undb{flex:none;display:flex;align-items:flex-start;gap:10px;padding:8px 24px;background:var(--beam-wash);border-bottom:1px solid color-mix(in srgb,var(--beam) 35%,var(--line));font:400 12px/17px var(--ui);color:var(--ink)}
+.undb .und-ic{margin-top:2px}
+.undb-b{flex:1;min-width:0;overflow-wrap:anywhere}
+.undb-b b{color:var(--beam-ink);font-weight:600}
+.undb-b .mono{font-size:11.5px}
+.undb-b .dim{color:var(--ink-muted)}
+.undb-a{display:flex;gap:6px;flex:none;align-items:center}
+.undb .btn{height:26px;padding:0 10px;border-radius:7px;font-size:12px}
+.undb.paused{background:var(--harbour-wash);border-bottom-color:color-mix(in srgb,var(--harbour) 35%,var(--line))}
+.undb.paused .undb-b b,.undb.paused .und-ic{color:var(--harbour)}
+/* the line in the conversation: what Fyr told the agent */
+.ql.und .qlh{color:var(--beam-ink)}
+
+/* 4. Settings -> Automation -> Heavy jobs. */
+.sr-t .und-ic{vertical-align:-2px;margin-right:5px}
+.sr .cmd{font:400 12px/17px var(--mono);color:var(--ink);overflow-wrap:anywhere}
+.sr.col .inl .btn{flex:none}
+.sr .unit{font:400 12px/16px var(--ui);color:var(--ink-muted);white-space:nowrap}
+.sr .num{width:64px;text-align:right;font-variant-numeric:tabular-nums}
+.set.phone .sr .btn{min-height:44px}
+.set.phone .sr .num{height:44px}
+.set.phone .sr.col .inl{flex-wrap:wrap}
+.set.phone .sr.col .inl input{flex:1 1 100%;height:44px}
+.sr .inl input.mono{font:400 12.5px/18px var(--mono)}
+/* the phone: a row with two buttons puts them under its text (no room beside it at 390 px) */
+.set.phone .sr.undrow{flex-direction:column;align-items:stretch;gap:8px}
+.set.phone .sr.undrow .sr-e{max-width:none}
+
+/* the rail's host: the meter and the button under it are one block; the button is outside the ring's role=img */
+.rail .rldw{display:flex;flex-direction:column;align-items:center;gap:3px;max-width:100%}
+/* Settings: the suggestion the strip's "Add as heavy job…" opened */
+.sr.pick{box-shadow:inset 3px 0 0 var(--beam)}
 /* V0.157: Settings → Devices (decision 0030 3.4), desktop and phone from the same rows. */
 .set .qrimg { display: block; margin: 8px auto; max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
 .set .linkout { width: 100%; box-sizing: border-box; }

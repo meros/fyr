@@ -10,7 +10,9 @@ import { useDraft } from "./drafts.ts";
 import type { ComponentChildren, VNode } from "preact";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Decision, FyrEvent, Project, Thread } from "./types.ts";
+import type { Decision, FyrEvent, Profile, Project, Thread } from "./types.ts";
+import { LoadSheetBody, LoadStrip, useLoad } from "./load-ui.tsx";
+import { stripHosts } from "./load.ts";
 import { SECTIONS, isAvailable, isPinned, unpinned, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
@@ -19,6 +21,7 @@ import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { shortModel, untilLabel } from "./format.ts";
 import { effortsFor, offLabel, startEffort } from "./providers.ts";
 import { AgentsStrip, EffectBody, ThreadTabBody, sendFrom } from "./thread.tsx";
+import { UndeclaredStrip } from "./undeclared-ui.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
@@ -374,6 +377,7 @@ function MInbox(p: PhoneProps) {
   };
 
   const all = SECTIONS.flatMap((s) => p.inbox.sec[s.key]);
+  const strip = stripHosts(useLoad(), p.store.hosts);
   // V0.162: the button shows while a merged thread can settle; the bulk settle leaves pinned ones out and counts them.
   const merged = p.inbox.sec.seen.filter((t) => t.pr?.state === "MERGED" && (isPinned(t) || isAvailable(t, "thread.settle")));
   const canSettleMerged = merged.some((t) => !isPinned(t));
@@ -397,11 +401,15 @@ function MInbox(p: PhoneProps) {
           <span class="m-brand">
             <BrandMark size={28} />
           </span>
-          <span class={`m-conn ${p.store.conn}`} title={p.store.conn}>
+          {/* V0.166: with several hosts the load strip names each one, so the connection keeps only its dot (the name on
+              hover and for the screen reader): a 360 px header has no room for both. */}
+          <span class={`m-conn ${p.store.conn}${strip.length > 1 ? " dot" : ""}`} title={`${hostName}: ${p.store.conn}`}>
             <i />
             <span class="ell">{hostName}</span>
           </span>
           <span class="sp" />
+          {/* V0.166: each host's load and heavy jobs, as on the desktop rail; a tap opens the details */}
+          <LoadStrip hosts={strip} onOpen={() => p.nav.go({ ...p.nav.at, sheet: { kind: "load" } })} />
           <PwaControls
             push={p.device.push}
             pushReason={p.device.pushReason}
@@ -794,6 +802,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           </div>
         )}
       </div>
+      {!cardOpen && <UndeclaredStrip id={t.id} now={p.now} />}
       {t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>
@@ -1274,6 +1283,17 @@ function MSettingsItem({ hosts, self, onClick }: { hosts: HostInfo[]; self: stri
   return <Item label="Settings" sub="Providers, automation, projects, hosts, this device" right={need || undefined} onClick={onClick} />;
 }
 
+/** V0.166: the host load sheet: what the desktop rail's tooltips say, as text, and the provider quotas. */
+function MLoadSheet({ hosts, profiles, onClose }: { hosts: HostInfo[]; profiles: Profile[]; onClose(): void }) {
+  const list = stripHosts(useLoad(), hosts);
+  return (
+    <MSheet onClose={onClose} label="Host load">
+      <div class="m-shh">Host load</div>
+      <LoadSheetBody hosts={list} quotas={<QuotaList profiles={profiles} />} />
+    </MSheet>
+  );
+}
+
 function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   const close = p.nav.back;
   const { sheet, t } = p;
@@ -1285,6 +1305,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   if (sheet.kind === "snooze") {
     return <SnoozeSheet ids={ids} title={ids.length === 1 ? p.store.threads[ids[0]]?.title : undefined} onClose={close} onPick={(d) => (close(), void p.commands.run("thread.snooze", ids, { until: d.toISOString() }), p.list.setSelecting(false), p.list.setPicked(new Set()))} />;
   }
+  if (sheet.kind === "load") return <MLoadSheet hosts={p.store.hosts} profiles={p.store.profiles} onClose={close} />;
   if (sheet.kind === "menu") {
     // V0.119: Notifications and Theme live in Settings → This device now (the owner's choice); Settings says what
     // needs the owner, as the Providers badge does.

@@ -18,8 +18,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -81,6 +83,7 @@ func main() {
 	peersFlag := fl.String("peers", "", "other Fyr page origins to probe, comma separated (default from config peers; V0.123)")
 	runnerFlag := fl.String("runner", "", "use this runner socket even when it is not this install's launcher's (#167; development)")
 	hostListen := fl.String("host-listen", "", "host: also serve fronts on this tailnet address, or tailnet:PORT (default from config hostListen)")
+	wellKnownListen := fl.String("well-known-listen", "", "answer only /.well-known/fyr on this loopback address, for Tailscale Serve over TCP (default from config wellKnownListen)")
 	fl.Parse(args)
 
 	// #167: the launcher's variables name the live install. Take them out
@@ -104,6 +107,9 @@ func main() {
 	cfg.override(*listen, *ownerLogin, *role, *hostsFlag, *hostListen)
 	if *peersFlag != "" {
 		cfg.Peers = strings.Split(*peersFlag, ",")
+	}
+	if *wellKnownListen != "" {
+		cfg.WellKnownListen = *wellKnownListen
 	}
 	var webFS fs.FS = web.Dist()
 	if *webDir != "" {
@@ -253,7 +259,17 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
 	// #174: the gate hook refuses a heavy command without a held slot.
 	groups := &cgroup.JobGroups{Tree: tree} // decision 0029 S5: each holder's job in a cgroup of its own
+	// V0.164: the suggestions and the owner's added patterns; the detector of
+	// work that nobody asked for, its settings and the record of its episodes.
+	book := &heavy.Book{KV: h.st, Matcher: heavyCmds, Base: cfg.HeavyAdded}
+	book.Load()
+	usettings := &cgroup.UndeclaredSettings{KV: h.st, Base: cgroup.UndeclaredConfig{
+		Off: cfg.Undeclared == "off", CPU: cfg.UndeclaredCPU, Memory: cfg.UndeclaredMemory, After: time.Duration(cfg.UndeclaredAfter) * time.Second}}
+	usettings.Load()
+	detector := &cgroup.Detector{Matches: func(c string) bool { return heavyCmds.Class(c) != "" }}
+	episodes := &cgroup.Episodes{KV: h.st}
 	mgr.SetOnBash(func(thread, c string) string {
+		groups.Bash(thread, c)
 		class, text := heavyCmds.Match(c)
 		jobs.Saw(thread, class)
 		groups.Seen(thread, text)
@@ -263,7 +279,47 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		return eng.HeavyGate(thread, class)
 	})
 	eng.SlotActive = jobs.Active
-	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups} // V0.80, V0.86
+	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups, // V0.80, V0.86
+		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject} // V0.164
+	// V0.164: an ended episode is kept, teaches a suggestion, and ends its frozen group.
+	detector.OnEnd = func(ep cgroup.Episode) {
+		ep.Project = eng.ThreadProject(ep.Thread)
+		episodes.Add(ep)
+		if ep.Command != "" {
+			book.Saw(heavy.Seen{Thread: ep.Thread, Command: ep.Command, At: ep.End, Memory: ep.PeakMem, CPU: ep.MeanCores, Seconds: int(ep.End.Sub(ep.Start).Seconds())})
+		}
+		groups.EndUndeclared(ep.Thread)
+	}
+	pool.Undeclared = sampler.Undeclared
+	if tree == nil {
+		// V0.164 section 10: no cgroup tree, so each thread's use is its
+		// process tree under the CLI (nothing is frozen there).
+		sampler.Trees, sampler.CLIs = &cgroup.TreeReader{}, mgr.CLIs
+		if runtime.GOOS == "darwin" {
+			sampler.Trees.PS = func() (string, error) {
+				out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=,rss=,time=").Output()
+				return string(out), err
+			}
+		}
+	}
+	mgr.SetUndeclaredNote(eng.UndeclaredSubagentNote)
+	eng.Undeclared, eng.UndeclaredTold, eng.UndeclaredDismiss, eng.UndeclaredSettings = sampler.Undeclared, detector.Told, detector.Dismiss, usettings.Set
+	eng.UndeclaredThaw, eng.HeavyRemove, eng.HeavyRefused = groups.ThawUndeclared, book.Remove, heavyCmds.Refused
+	eng.UndeclaredFreeze = func(thread string) bool {
+		for _, f := range detector.Flags() {
+			if f.Thread == thread && groups.FreezeUndeclared(thread, cgroup.ReadRoots(tree, "", thread, f.FirstOver)) {
+				detector.MarkPaused(thread)
+				return true
+			}
+		}
+		return false
+	}
+	eng.HeavySuggestion = func(id, do, pattern, kind string) error {
+		if do == "ignore" {
+			return book.Ignore(id)
+		}
+		return book.Add(id, pattern, kind, time.Now())
+	}
 	// Decision 0029 S2 (#186): admission by a budget of costs (N), gated by
 	// the slowdown and memory; one job always runs; no provider (macOS)
 	// keeps the fixed count. Costs are 1.0, an idle hold 0.1, until S3
@@ -317,16 +373,26 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}
 		return out
 	}
+	// V0.164: the use of the threads that run heavy work Fyr did not admit
+	// counts beside the admitted jobs, except the head's own (its request
+	// stands in for it).
+	extras := func() []slots.Extra {
+		var out []slots.Extra
+		for _, u := range sampler.Undeclared() {
+			out = append(out, slots.Extra{Owner: u.Thread, Name: u.Name, Need: slots.Need{CPU: u.CPU, Mem: u.Mem}})
+		}
+		return out
+	}
 	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
 		need, _ := predict(head)
-		return slots.Decide(policy, sampler.Signals(), pool.Budget(), n, heldNeeds(held), need)
+		return slots.DecideWith(policy, sampler.Signals(), pool.Budget(), n, heldNeeds(held), extras(), head.Owner, need)
 	}
 	// EASY backfill: c may pass the head when it fits now and is cheap, or
 	// ends (its class's p90) before the earliest running job is expected to.
 	pool.Backfill = func(head, c slots.Holder, held []slots.Holder) bool {
 		need, wall := predict(c)
 		sig := sampler.Signals()
-		if ok, _, _ := slots.Decide(policy, sig, pool.Budget(), n, heldNeeds(held), need); !ok {
+		if ok, _, _ := slots.DecideWith(policy, sig, pool.Budget(), n, heldNeeds(held), extras(), c.Owner, need); !ok {
 			return false
 		}
 		ends := make([]time.Time, len(held))
@@ -525,10 +591,19 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// V0.54: "tailnet:PORT" is this machine's tailnet address.
 	if port, ok := strings.CutPrefix(cfg.HostListen, "tailnet:"); ok {
 		ip, err := tailnet.IPv4(cfg.tsSocket())
-		if err != nil {
-			log.Fatalf("hostListen %s: %v", cfg.HostListen, err)
+		switch {
+		case err == nil:
+			cfg.HostListen = net.JoinHostPort(ip, port)
+		case runtime.GOOS == "darwin":
+			// A Mac is often off the tailnet, and launchd would restart a
+			// fatal fyrd in a loop with no Fyr at all: serve without the
+			// host listener and restart once the tailnet is up.
+			log.Printf("hostListen %s: %v; not serving other installs until the tailnet is up", cfg.HostListen, err)
+			cfg.HostListen = ""
+			go restartWhenTailnet(ctx, cfg.tsSocket())
+		default:
+			log.Fatalf("hostListen %s: %v", cfg.HostListen, err) // systemd restarts until the tailnet is up
 		}
-		cfg.HostListen = net.JoinHostPort(ip, port)
 	}
 	hostHandler := srv.Handler()
 	// #148: the launcher trusts a new build once /healthz on this listener
@@ -577,6 +652,10 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		mux.Handle("/", fr.Handler())
 		serve(ln, deploy.Health(mux, health...))
 		serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), cfg.ServeSocketUsers, serve) // V0.130
+		if cfg.WellKnownListen != "" {
+			serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, func() peers.WellKnown { return wk }))
+			log.Printf("answering /.well-known/fyr for Tailscale Serve at %s", cfg.WellKnownListen)
+		}
 	}
 	switch {
 	case cfg.HostListen == "":

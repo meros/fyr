@@ -58,6 +58,59 @@ export interface HostLoad {
   memoryStall?: "ok" | "elevated" | "critical";
   agentsCpuPressure?: number;
   jobs?: JobClass[];
+  /** V0.164: the thresholds of undeclared heavy work, the commands behind it that no pattern names yet, and the
+   *  patterns the owner added; absent on a host without V0.164 */
+  undeclaredSettings?: UndeclaredSettings;
+  suggestions?: HeavySuggestion[];
+  heavyAdded?: HeavyAdded[];
+}
+/** V0.164: when a thread counts as heavy: shares of what the host gives its agents, and for how many seconds. */
+export interface UndeclaredSettings {
+  on: boolean;
+  cpu: number;
+  memory: number;
+  after: number;
+}
+/** V0.164: a command that ran as undeclared work and matches no heavy pattern. */
+export interface HeavySuggestion {
+  id: string;
+  command: string;
+  pattern: string;
+  kind: "test" | "build" | "e2e";
+  seen: number;
+  threads: number;
+  lastThread: string;
+  lastAt: string;
+  /** bytes and cores above the idle level, the largest seen; seconds the longest */
+  memory: number;
+  cpu: number;
+  seconds: number;
+}
+export interface HeavyAdded {
+  pattern: string;
+  kind: string;
+  at: string;
+  /** how often the gate refused it since */
+  refused: number;
+}
+/** V0.164: a thread that runs heavy work Fyr did not admit (above its idle level). The host sets overCpu and overMem
+ *  true for a measure that is over its threshold or at least a tenth of it; the front names only those. */
+export interface UndeclaredUse {
+  thread: string;
+  cpu: number;
+  mem: number;
+  cpuPct: number;
+  memPct: number;
+  since: string;
+  command: string;
+  told?: string;
+  dismissed: boolean;
+  paused: boolean;
+  queued: boolean;
+  overCpu: boolean;
+  overMem: boolean;
+  /** the command already matches a heavy pattern: no "Add as heavy job…" */
+  matched: boolean;
 }
 /** One owner of a slot or a place in the queue: a thread id, or "self-deploy". */
 export interface SlotHolder {
@@ -96,6 +149,47 @@ export interface Slots {
   tight?: "cpu" | "memory";
   binding?: "cpu" | "memory";
   needPct?: number;
+  /** V0.164: the threads that run heavy work without having asked, and their share of the host (already in cpuPct,
+   *  memPct and usedPct) */
+  undeclared?: UndeclaredUse[];
+  undeclaredCpuPct?: number;
+  undeclaredMemPct?: number;
+}
+
+// ---- V0.164: undeclared heavy work, the words the rail's tooltip and undeclared.ts share ----
+
+/** The title and project of a thread, by id; "" project when it has none. */
+export type Lookup = (id: string) => { title: string; project?: string };
+
+/** "2.8 GB": bytes with one decimal, GB = 1e9. */
+export const gbText = (b: number) => `${(b / 1e9).toFixed(1)} GB`;
+
+/** The measures of a use that the front names: the one that is over (or at least a tenth of its threshold), both when
+ *  the host says neither. Memory first. */
+export function usedMeasures(u: Pick<UndeclaredUse, "overCpu" | "overMem">): { mem: boolean; cpu: boolean } {
+  return u.overCpu || u.overMem ? { mem: u.overMem, cpu: u.overCpu } : { mem: true, cpu: true };
+}
+
+/** "50 s", "3 min", "1 h 5 min": how long a thread has run undeclared. */
+export function spanText(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min`;
+  return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 60)} h`;
+}
+
+/** The rail meter's tooltip line for the undeclared threads: names, projects, use and time. "" when none. */
+export function undeclaredTip(h: HostLoad, lookup: Lookup, now: number): string {
+  const list = h.slots?.undeclared ?? [];
+  if (!list.length) return "";
+  const parts = list.map((u) => {
+    const m = usedMeasures(u);
+    const what = [m.mem && gbText(u.mem), m.cpu && cpuText(u.cpu)].filter(Boolean).join(" and ");
+    const l = lookup(u.thread);
+    return `${l.title}${l.project ? ` (${l.project})` : ""}, ${what} for ${spanText((now - Date.parse(u.since)) / 1000)}`;
+  });
+  return `Undeclared: ${parts.join("; ")}`;
 }
 
 /** V0.163: `heavy` (the API's name) or an older host's `slots`, read as one field. */
@@ -206,7 +300,10 @@ export function heavyDetail(h: HostLoad): string[] {
     const used = s.usedPct ?? Math.round((s.held.length / Math.max(1, s.n)) * 100);
     return [`Heavy jobs: ${used} % of this host's count in use (${s.held.length} of ${s.n} jobs; no load measures)${s.waiting.length ? `, ${s.waiting.length} waiting` : ""}`];
   }
-  const out = [`Heavy jobs: CPU ${s.cpuPct} % · memory ${s.memPct} % of this host in use; the budget is CPU ${s.cpuBudgetPct ?? 100} % · memory ${s.memBudgetPct ?? 100} %${s.budgetWhy ? ` (${s.budgetWhy})` : ""}`];
+  // V0.164: the undeclared share of each resource, inside the used one
+  const ucpu = s.undeclaredCpuPct ? ` (undeclared ${s.undeclaredCpuPct} %)` : "";
+  const umem = s.undeclaredMemPct ? ` (undeclared ${s.undeclaredMemPct} %)` : "";
+  const out = [`Heavy jobs: CPU ${s.cpuPct} %${ucpu} · memory ${s.memPct} %${umem} of this host in use; the budget is CPU ${s.cpuBudgetPct ?? 100} % · memory ${s.memBudgetPct ?? 100} %${s.budgetWhy ? ` (${s.budgetWhy})` : ""}`];
   if (s.held.length) out.push(`Running: ${s.held.map((x) => `${x.kind} ≈ ${x.cpuPct ?? x.pct ?? 0} % CPU · ${x.memPct ?? 0} % memory`).join("; ")}`);
   if (s.waiting.length) out.push(`${s.waiting.length} waiting${s.why ? `; the next ${s.why}` : ""}`);
   return out;
@@ -220,8 +317,10 @@ export interface RailBudget {
   text: string;
   /** V0.152: "full", "1 waits" or "" */
   note: string;
-  /** used over the budget, 0 to 1 */
+  /** used over the budget, 0 to 1; with undeclared work (V0.164) the admitted part of it */
   share: number;
+  /** V0.164: the undeclared part, drawn hatched after `share`; absent without undeclared work */
+  und?: number;
   hot: boolean;
   waiting: number;
 }
@@ -235,13 +334,19 @@ export function railBudget(h: HostLoad): RailBudget | null {
   const used = s.usedPct ?? Math.round((s.held.length / Math.max(1, s.n)) * 100);
   const waiting = s.waiting.length;
   const note = waiting ? `${waiting} ${waiting === 1 ? "waits" : "wait"}` : used >= 99.5 ? "full" : "";
-  return { text: `${Math.round(used)} %`, note, share: Math.round(Math.min(1, Math.max(0, used / 100)) * 100) / 100, hot: waiting > 0, waiting };
+  const whole = Math.round(Math.min(1, Math.max(0, used / 100)) * 100) / 100;
+  // V0.164: the tighter resource's undeclared share is the hatched part of the same bar.
+  const u = s.tight === "memory" ? s.undeclaredMemPct : s.undeclaredCpuPct;
+  const und = u ? Math.min(whole, Math.round(Math.max(0, u)) / 100) : 0;
+  return { text: `${Math.round(used)} %`, note, share: und ? Math.round((whole - und) * 100) / 100 : whole, ...(und ? { und } : {}), hot: waiting > 0, waiting };
 }
 
 /** V0.152, V0.163: the heavy-job meter's own tooltip: what it is, CPU and memory in use, each job's share, who waits
  *  and why. */
-export function slotTip(h: HostLoad): string {
-  return heavyDetail(h).join("\n");
+export function slotTip(h: HostLoad, names?: { lookup: Lookup; now: number }): string {
+  const out = heavyDetail(h);
+  const und = names ? undeclaredTip(h, names.lookup, names.now) : "";
+  return (und ? [...out, und] : out).join("\n");
 }
 
 /** V0.163: Settings → Heavy jobs: the budget as percentages of what the host gives its agents. */
@@ -334,3 +439,31 @@ export function jobLines(h: HostLoad): { class: string; text: string; cost: stri
     return { class: j.class, text: `${j.runs} ${j.runs === 1 ? "run" : "runs"} · ${cores} · peak ${gb(j.peak)} GB · ${duration(j.wall)}`, cost, learned: n > 0 };
   });
 }
+
+/** V0.166: one host of the phone's load strip and sheet: its name, its load when it reports one, and since when it is
+ *  offline. */
+export interface StripHost {
+  name: string;
+  load?: HostLoad;
+  /** offline since (RFC 3339, "" when unknown); absent while online */
+  offline?: string;
+}
+
+/** V0.166: the hosts the phone shows load for, in the owner's host order (the front's `hosts`): each online host that
+ *  reports a load, and each offline host (its load gone). A host that reports no load while online (older than V0.80)
+ *  is left out. Without a host list (a front older than V0.54), the load's own order. */
+export function stripHosts(load: HostLoad[], hosts: { name: string; online: boolean; since?: string }[]): StripHost[] {
+  const by = new Map(load.map((h) => [h.host, h]));
+  if (!hosts.length) return load.map((h) => ({ name: h.host, load: h }));
+  const out: StripHost[] = [];
+  for (const h of hosts) {
+    if (!h.online) out.push({ name: h.name, offline: h.since ?? "" });
+    else if (by.has(h.name)) out.push({ name: h.name, load: by.get(h.name) });
+  }
+  // a load from a host the list does not name (a front that names its own host otherwise) still shows
+  for (const h of load) if (!hosts.some((x) => x.name === h.host)) out.push({ name: h.host, load: h });
+  return out;
+}
+
+/** V0.166: the strip shows this many hosts; the rest are "+n" and in the sheet. */
+export const STRIP_MAX = 2;

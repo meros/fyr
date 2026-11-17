@@ -139,9 +139,13 @@ func TestUpdateOnListAndManual(t *testing.T) {
 	f := newFixture(t)
 	r := newReg(t, f)
 	r.Run(cmd("provider.create", map[string]any{"id": "ds", "name": "DS", "kind": "endpoint", "baseURL": "https://e.example", "key": "k-123456789", "models": []any{"m1"}}))
-	r.ListModels = func(context.Context, Provider, string) (claudecli.Listing, error) { return claudecli.Listing{Models: []cli.Model{{ID: "m1"}}}, nil }
+	r.ListModels = func(context.Context, Provider, string) (claudecli.Listing, error) {
+		return claudecli.Listing{Models: []cli.Model{{ID: "m1"}}}, nil
+	}
 	r.Run(cmd("provider.refreshModels", map[string]any{"id": "ds"}))
-	r.ListModels = func(context.Context, Provider, string) (claudecli.Listing, error) { return claudecli.Listing{Models: []cli.Model{{ID: "m1"}, {ID: "m2"}}}, nil }
+	r.ListModels = func(context.Context, Provider, string) (claudecli.Listing, error) {
+		return claudecli.Listing{Models: []cli.Model{{ID: "m1"}, {ID: "m2"}}}, nil
+	}
 	r.Run(cmd("provider.refreshModels", map[string]any{"id": "ds"}))
 	if p, _ := r.get("ds"); !catOf(p, "m2").New {
 		t.Fatal("m2 not New")

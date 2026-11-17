@@ -1,9 +1,9 @@
 package claudecli
 
 import (
+	"github.com/meros/fyr/internal/hostfs"
 	"regexp"
 	"strings"
-	"github.com/meros/fyr/internal/hostfs"
 )
 
 // SPEC 0.5 V0.53: the CLI's own login, run by Fyr. Two kinds:
@@ -71,7 +71,7 @@ var (
 	// wraps: the hyperlink becomes its link.
 	osc8RE  = regexp.MustCompile("(?s)\x1b\\]8;[^;\x07\x1b]*;(https://[^\x07\x1b]+)(?:\x07|\x1b\\\\).*?\x1b\\]8;;(?:\x07|\x1b\\\\)")
 	oscRE   = regexp.MustCompile("\x1b\\][^\x07\x1b]*(?:\x07|\x1b\\\\)")
-	fwdRE   = regexp.MustCompile("\x1b\\[\\d*[CG]") // cursor forward or to a column: a space on screen
+	fwdRE   = regexp.MustCompile("\x1b\\[\\d*[CG]")   // cursor forward or to a column: a space on screen
 	downRE  = regexp.MustCompile("\x1b\\[\\d*[ABEF]") // cursor up or down: a new line
 	csiRE   = regexp.MustCompile("\x1b(?:\\[[0-?]*[ -/]*[@-~]|[()][0-9A-Za-z]|[78=>NOcM])")
 	urlRE   = regexp.MustCompile(`https://claude\.(?:com|ai)/\S+|https://\S*oauth\S+`)

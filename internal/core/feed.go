@@ -325,6 +325,18 @@ func slotNotices(r Reduced) []Notice {
 		if ev.Type != EventSlot {
 			continue
 		}
+		if txt, ok := d["undeclared"].(string); ok {
+			out = append(out, Notice{About: "thread", Key: "heavy.undeclared", Urgency: Next, What: txt}) // V0.164
+			continue
+		}
+		if why, ok := d["paused"].(string); ok && str(d["work"]) != "" {
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: fmt.Sprintf("Fyr paused your undeclared heavy work (`%s`): memory is short on this host (%s). Its processes are frozen, not killed, and resume when memory has recovered for 30 s, within 10 min at most. A timeout inside the job may fire after it resumes; check its result. Ask with mcp__fyr__slot_acquire before a heavy job.", str(d["work"]), why)})
+			continue
+		}
+		if d["resumed"] == true && d["work"] == true {
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: "Your heavy work runs again: Fyr thawed it."})
+			continue
+		}
 		if why, ok := d["paused"].(string); ok {
 			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: fmt.Sprintf("Fyr paused your heavy job: memory is short on this host (%s). Its processes are frozen, not killed, and resume when memory has recovered for 30 s, within 10 min at most. A timeout inside the job may fire after it resumes; check its result.", why)})
 			continue

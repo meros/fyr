@@ -6,13 +6,13 @@
 package engine
 
 import (
-	"github.com/meros/fyr/internal/lockwatch"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/lockwatch"
 	"log"
 	"maps"
 	"os"
@@ -47,7 +47,7 @@ type EffectRunner interface {
 }
 
 type Engine struct {
-	deploy *deployState // V0.39
+	deploy *deployState     // V0.39
 	stall  *lockwatch.Stall // V0.147, under stallMu
 	// mu is the core lock (V0.147: watched; held past lockwatch.ExitAfter,
 	// fyrd dumps and exits). Under it the engine calls no other package's
@@ -77,9 +77,9 @@ type Engine struct {
 	hostOrder HostOrder
 	// systemAgents is the owner's system agents setting (V0.115).
 	systemAgents core.SystemAgents
-	deploySeen    map[string]string
-	deploys       int
-	deployMu      sync.Mutex
+	deploySeen   map[string]string
+	deploys      int
+	deployMu     sync.Mutex
 	// DeployGate checks a checkout before Fyr approves a deploy ask by
 	// itself (V0.111): its HEAD, or why the ask waits for the owner. nil:
 	// no deploy ask is approved by itself.
@@ -126,8 +126,8 @@ type Engine struct {
 	presses    map[string]*pressRun
 	rootWhy    string
 	rootAt     time.Time
-	Hub     *stream.Hub
-	Now     func() time.Time
+	Hub        *stream.Hub
+	Now        func() time.Time
 	// Adopt runs t3.adopt's effect; set by main.
 	Adopt func(ids []string) (int, error)
 	// DeployNow runs host.deployNow's effect (V0.83): the deployer stops its
@@ -176,33 +176,51 @@ type Engine struct {
 	// SlotOver says whether a holder's job is heavier than predicted (its
 	// class, live and predicted cost); JobReset forgets a learned class
 	// (the owner's Reset). All optional.
-	SlotJob     func(thread, command string)
+	SlotJob func(thread, command string)
 	// HostName names this host in the heavy-job answers (V0.163).
 	HostName string
-	SlotOver    func(owner string) (class string, live, predicted float64, over bool)
-	JobReset    func(class string) bool
+	SlotOver func(owner string) (class string, live, predicted float64, over bool)
+	JobReset func(class string) bool
 	// Decision 0029 S5: freeze and thaw a holder's job (its own cgroup, not
 	// its CLI); optional. frozen is the one frozen now, under mu.
 	// SlotAIMD adapts the pool's budget at each tick (decision 0029 S4);
 	// optional.
-	SlotAIMD   *slots.AIMD
-	SlotFreeze func(owner string) bool
-	SlotThaw   func(owner string)
-	frozen     frozenJob
-	frozeHolds map[string]time.Time // under mu: holds frozen once already (owner → since)
+	SlotAIMD     *slots.AIMD
+	SlotFreeze   func(owner string) bool
+	SlotThaw     func(owner string)
+	frozen       frozenJob
+	frozeHolds   map[string]time.Time // under mu: holds frozen once already (owner → since)
 	slotOverTold map[string]time.Time // under mu: owner → the hold already told
-	memGuard    bool // under mu: the guard told a thread in this episode
+	// V0.164: undeclared heavy work. Undeclared lists the flagged threads
+	// (the detector's published view); UndeclaredTold records when a thread's
+	// agent was told; UndeclaredFreeze and UndeclaredThaw move a thread's
+	// undeclared work in and out of its frozen cgroup; the others are the
+	// owner's commands. All optional.
+	Undeclared         func() []slots.Undeclared
+	UndeclaredTold     func(thread string, since, at time.Time)
+	UndeclaredFreeze   func(thread string) bool
+	UndeclaredThaw     func(thread string)
+	UndeclaredDismiss  func(thread string, on bool) bool
+	UndeclaredSettings func(args map[string]any) error
+	HeavySuggestion    func(id, do, pattern, kind string) error
+	HeavyRemove        func(pattern string) bool
+	HeavyRefused       func(class string)
+	undTold            map[string]time.Time // under mu: thread → the episode (its since) already told
+	undRun             map[string]int       // under mu: thread → the run (RunEnds) already told in
+	undNote            map[string]time.Time // under mu: thread → the episode a subagent's note was given for
+	undFroze           map[string]time.Time // under mu: thread → the episode already frozen once
+	memGuard           bool                 // under mu: the guard told a thread in this episode
 	// Titler makes a thread title from its conversation (V0.108); nil: this
 	// host makes none. titling is the threads with a call in flight.
-	Titler  Titler
+	Titler Titler
 	// SystemAgentResolve names the provider and the model a system job runs
 	// on now, or why it cannot run (V0.115); nil: Settings shows the
 	// setting only.
 	SystemAgentResolve func(job string) (profile, model string, err error)
 	// SystemAgentProviders lists the providers the setting can pick.
 	SystemAgentProviders func() []SystemProvider
-	titleMu sync.Mutex
-	titling map[string]bool
+	titleMu              sync.Mutex
+	titling              map[string]bool
 }
 
 func New(st *store.Store) *Engine {
@@ -259,8 +277,8 @@ func (e *Engine) Load() error {
 		e.projects[p.ID] = p
 	}
 	e.loadAutoMerge()
-	e.loadAutoDeploy() // V0.111
-	e.loadHostOrder()  // V0.132
+	e.loadAutoDeploy()   // V0.111
+	e.loadHostOrder()    // V0.132
 	e.loadSystemAgents() // V0.115
 	old, err := e.st.OldProjectSources()
 	if err != nil {
@@ -571,6 +589,39 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(404, "No learned job class "+c)
 		}
 		reply.Result = map[string]any{"class": c}
+	case core.EffectUndeclaredDismiss: // V0.164
+		th, _ := ef.Request.Args["thread"].(string)
+		on, _ := ef.Request.Args["on"].(bool)
+		if e.UndeclaredDismiss == nil || !e.UndeclaredDismiss(th, on) {
+			return fail(404, "No undeclared heavy work in that thread")
+		}
+		reply.Result = map[string]any{"thread": th, "dismissed": on}
+	case core.EffectHeavySuggestion:
+		a := ef.Request.Args
+		id, do := a["id"].(string), a["do"].(string)
+		p, _ := a["pattern"].(string)
+		k, _ := a["kind"].(string)
+		if e.HeavySuggestion == nil {
+			return fail(409, "This host keeps no suggestions")
+		}
+		if err := e.HeavySuggestion(id, do, p, k); err != nil {
+			return fail(400, err.Error())
+		}
+		reply.Result = map[string]any{"id": id, "do": do}
+	case core.EffectHeavyRemove:
+		p, _ := ef.Request.Args["pattern"].(string)
+		if e.HeavyRemove == nil || !e.HeavyRemove(p) {
+			return fail(404, "No such added heavy command")
+		}
+		reply.Result = map[string]any{"pattern": p}
+	case core.EffectUndeclaredSettings:
+		if e.UndeclaredSettings == nil {
+			return fail(409, "This host cannot change these settings")
+		}
+		if err := e.UndeclaredSettings(ef.Request.Args); err != nil {
+			return fail(400, err.Error())
+		}
+		reply.Result = ef.Request.Args
 	case core.EffectSlotOrderSet: // V0.137: the owner's order of the slot queue
 		if e.Slots == nil || e.Slots.Off() {
 			return fail(409, "This host has no slots for heavy jobs")

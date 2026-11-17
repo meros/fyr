@@ -47,9 +47,9 @@ type Registry struct {
 	// plain client); AutoCheck checks a provider the owner just added.
 	ListModels func(ctx context.Context, p Provider, key string) (claudecli.Listing, error)
 	// Logf writes the checks' log lines (nil: log.Printf).
-	Logf func(format string, args ...any)
-	Client     *http.Client
-	AutoCheck  bool
+	Logf      func(format string, args ...any)
+	Client    *http.Client
+	AutoCheck bool
 
 	mu   sync.Mutex
 	list []Provider

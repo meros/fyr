@@ -124,7 +124,9 @@ func TestAdoptedClosedInputIsNotWrittenTo(t *testing.T) {
 
 	h := startHarnessWith(t, dir, db, time.Minute, rc, nil)
 	id := h.create("bgwait 2500")
-	h.wait(id, "first turn", func(th core.Thread, _ core.Attention) bool { return !th.Running && th.Summary == "waiting for the build" })
+	h.wait(id, "first turn", func(th core.Thread, _ core.Attention) bool {
+		return !th.Running && th.Summary == "waiting for the build"
+	})
 	h.m.StopAll()
 	h.e.st.Close()
 	// An older fyrd closed the input while the task ran (before V0.133).
@@ -161,7 +163,9 @@ func TestAdoptedClosedInputIsNotWrittenTo(t *testing.T) {
 	if stateEvent(h2.events(id), msg, "lost") {
 		t.Fatal("the message was marked lost")
 	}
-	th = h2.wait(id, "answered", func(th core.Thread, _ core.Attention) bool { return !th.Running && strings.Contains(th.Summary, "echo:") })
+	th = h2.wait(id, "answered", func(th core.Thread, _ core.Attention) bool {
+		return !th.Running && strings.Contains(th.Summary, "echo:")
+	})
 	if th.Unresponsive != nil {
 		t.Fatalf("still unresponsive: %+v", th.Unresponsive)
 	}

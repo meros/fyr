@@ -168,6 +168,9 @@ export interface SaveFieldProps {
   onSave(v: string): Promise<string | null>;
   label: string;
   mono?: boolean;
+  /** a class on the input (a number field's width) and the phone's number keyboard */
+  cls?: string;
+  numeric?: boolean;
   placeholder?: string;
   type?: "text" | "password";
   /** after a save the field is empty again (Add a model id, a repo) */
@@ -209,8 +212,9 @@ export function SaveField(p: SaveFieldProps) {
     <span class="inl">
       <input
         ref={ref}
-        class={p.mono ? "mono" : undefined}
+        class={[p.mono && "mono", p.cls].filter(Boolean).join(" ") || undefined}
         type={(p.type ?? "text") as "text"}
+        inputMode={p.numeric ? "numeric" : undefined}
         value={text}
         placeholder={p.placeholder}
         aria-label={p.label}

@@ -12,6 +12,7 @@ package cgroup
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,7 +31,17 @@ type JobGroups struct {
 	frozen  map[string]bool
 	needles map[string]string // thread → its newest heavy command's text
 	held    map[string]bool   // the holders at the last Tick
+	// V0.164: the undeclared work frozen per thread, and the Bash commands
+	// the gate saw per thread (oldest first, at most maxBashes).
+	ufrozen map[string]bool
+	bashes  map[string][]string
 }
+
+// undeclaredDir is the name of a thread's undeclared-work cgroup, beside job/
+// so a declared and an undeclared job never mix.
+const undeclaredDir = "undeclared"
+
+const maxBashes = 10
 
 func (g *JobGroups) proc() string {
 	if g.Proc == "" {
@@ -189,14 +200,158 @@ func (g *JobGroups) Thaw(thread string) {
 	g.mu.Unlock()
 }
 
-// Frozen reports thread's job frozen by Freeze.
+// Frozen reports thread's job frozen by Freeze, or its undeclared work by
+// FreezeUndeclared.
 func (g *JobGroups) Frozen(thread string) bool {
 	if g == nil {
 		return false
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.frozen[thread]
+	return g.frozen[thread] || g.ufrozen[thread]
+}
+
+// Bash keeps a Bash command the gate hook saw from thread (any command: the
+// undeclared work's command is found among them).
+func (g *JobGroups) Bash(thread, command string) {
+	if g == nil || strings.TrimSpace(command) == "" {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.bashes == nil {
+		g.bashes = map[string][]string{}
+	}
+	b := append(g.bashes[thread], command)
+	if len(b) > maxBashes {
+		b = b[len(b)-maxBashes:]
+	}
+	g.bashes[thread] = b
+}
+
+// Bashes are thread's newest Bash commands, oldest first.
+func (g *JobGroups) Bashes(thread string) []string {
+	if g == nil {
+		return nil
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string(nil), g.bashes[thread]...)
+}
+
+func (g *JobGroups) udir(thread string) string {
+	return filepath.Join(g.threadDir(thread), undeclaredDir)
+}
+
+// HasUndeclared reports an undeclared-work cgroup for thread.
+func (g *JobGroups) HasUndeclared(thread string) bool {
+	if g == nil || g.Tree == nil {
+		return false
+	}
+	_, err := os.Stat(g.udir(thread))
+	return err == nil
+}
+
+// FreezeUndeclared moves the roots and all their descendants into
+// agents/<thread>/undeclared/ and freezes it (V0.164 section 7); the CLI, its
+// MCP servers and any resident stay. A process that ends during the move is
+// skipped. False without a tree, without roots, or when nothing could be moved.
+func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
+	if g == nil || g.Tree == nil || len(roots) == 0 {
+		return false
+	}
+	in := pids(filepath.Join(g.threadDir(thread), "cgroup.procs"))
+	children := map[int][]int{}
+	here := map[int]bool{}
+	for _, p := range in {
+		here[p] = true
+		if pp := g.ppid(p); pp > 0 {
+			children[pp] = append(children[pp], p)
+		}
+	}
+	seen := map[int]bool{}
+	var move []int
+	var walk func(p int)
+	walk = func(p int) {
+		if seen[p] {
+			return
+		}
+		seen[p] = true
+		move = append(move, p)
+		kids := children[p]
+		sort.Ints(kids)
+		for _, c := range kids {
+			walk(c)
+		}
+	}
+	rs := make([]int, 0, len(roots))
+	for _, r := range roots {
+		rs = append(rs, r.PID)
+	}
+	sort.Ints(rs)
+	for _, r := range rs {
+		if here[r] {
+			seen[r] = true
+			move = append(move, r)
+		}
+	}
+	for _, r := range rs {
+		for _, c := range children[r] {
+			walk(c)
+		}
+	}
+	if len(move) == 0 {
+		return false
+	}
+	ud := g.udir(thread)
+	if err := os.Mkdir(ud, 0o755); err != nil && !os.IsExist(err) {
+		g.Tree.logf("cgroups: undeclared work of %s: %v", thread, err)
+		return false
+	}
+	for _, p := range move {
+		// A process that ended meanwhile cannot move; the rest does.
+		os.WriteFile(filepath.Join(ud, "cgroup.procs"), []byte(strconv.Itoa(p)), 0o644)
+	}
+	if err := put(ud, "cgroup.freeze", "1"); err != nil {
+		return false
+	}
+	g.mu.Lock()
+	if g.ufrozen == nil {
+		g.ufrozen = map[string]bool{}
+	}
+	g.ufrozen[thread] = true
+	g.mu.Unlock()
+	return true
+}
+
+// ThawUndeclared lets thread's undeclared work run again.
+func (g *JobGroups) ThawUndeclared(thread string) {
+	if g == nil || g.Tree == nil {
+		return
+	}
+	if g.HasUndeclared(thread) {
+		put(g.udir(thread), "cgroup.freeze", "0")
+	}
+	g.mu.Lock()
+	delete(g.ufrozen, thread)
+	g.mu.Unlock()
+}
+
+// EndUndeclared thaws thread's undeclared work and removes its cgroup once
+// empty (the kernel refuses while a process is left; a later call tries again).
+func (g *JobGroups) EndUndeclared(thread string) {
+	if g == nil || g.Tree == nil {
+		return
+	}
+	g.ThawUndeclared(thread)
+	ud := g.udir(thread)
+	if len(pids(filepath.Join(ud, "cgroup.procs"))) > 0 {
+		return
+	}
+	for _, f := range []string{"cgroup.procs", "cgroup.freeze"} {
+		os.Remove(filepath.Join(ud, f))
+	}
+	os.Remove(ud)
 }
 
 // End thaws thread's job and removes its cgroup once empty (the slot went

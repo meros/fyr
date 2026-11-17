@@ -60,6 +60,36 @@ type Holder struct {
 	ready chan struct{} // a Wait's: closed on the grant
 }
 
+// Undeclared is a thread that runs heavy work Fyr did not admit (V0.164): its
+// use above its idle level, counted in the budget beside the admitted jobs.
+// The host's detector makes the list (Pool.Undeclared); the pool adds the
+// shares of the host.
+type Undeclared struct {
+	Thread    string     `json:"thread"`
+	Name      string     `json:"name,omitempty"` // the thread's project, for the wait reason
+	CPU       float64    `json:"cpu"`            // cores
+	Mem       uint64     `json:"mem"`            // bytes
+	CPUPct    float64    `json:"cpuPct"`
+	MemPct    float64    `json:"memPct"`
+	Since     time.Time  `json:"since"`
+	Command   string     `json:"command,omitempty"`
+	Told      *time.Time `json:"told,omitempty"`
+	Dismissed bool       `json:"dismissed"`
+	Paused    bool       `json:"paused"`
+	Queued    bool       `json:"queued,omitempty"`
+	// OverCPU and OverMem: the measure is at least a tenth of its
+	// threshold, so the row and the strip name it. Matched: the command
+	// already matches a heavy pattern (no Add as heavy job).
+	OverCPU bool `json:"overCpu"`
+	OverMem bool `json:"overMem"`
+	// MemOver: the memory itself is over its threshold (the freeze takes these).
+	MemOver bool `json:"-"`
+	Matched bool `json:"matched,omitempty"`
+	// Kind and Window are for the agent's message, not the front.
+	Kind   string        `json:"-"`
+	Window time.Duration `json:"-"`
+}
+
 // Snapshot is the pool as GET /api/load shows it.
 type Snapshot struct {
 	N       int      `json:"n"`
@@ -88,6 +118,11 @@ type Snapshot struct {
 	Tight        string   `json:"tight,omitempty"`
 	Binding      string   `json:"binding,omitempty"`
 	NeedPct      *float64 `json:"needPct,omitempty"`
+	// V0.164: the threads that run heavy work Fyr did not admit, and their
+	// share of the host; the used percentages above include them.
+	Undeclared       []Undeclared `json:"undeclared,omitempty"`
+	UndeclaredCPUPct *float64     `json:"undeclaredCpuPct,omitempty"`
+	UndeclaredMemPct *float64     `json:"undeclaredMemPct,omitempty"`
 }
 
 // Pool is one host's slots.
@@ -106,6 +141,10 @@ type Pool struct {
 	// the percentages); optional. Both run under the pool's lock.
 	Cost func(h Holder) Need
 	Host func() Signals
+	// Undeclared lists the threads that run heavy work without an admission
+	// (V0.164), for the snapshot; optional, under the pool's lock, so it reads
+	// a published view and waits for nothing.
+	Undeclared func() []Undeclared
 	// Backfill decides whether c, behind a head that does not fit, may
 	// start now without delaying it (decision 0029 S3, EASY); nil never.
 	// Under the pool's lock, like Admit.
@@ -526,6 +565,20 @@ func (p *Pool) snapshotLocked() Snapshot {
 	for i := range s.Held {
 		used = used.Plus(fill(&s.Held[i]))
 		old += s.Held[i].Cost
+	}
+	if p.Undeclared != nil {
+		var ux Need
+		for _, u := range p.Undeclared() {
+			c, m := Need{CPU: u.CPU, Mem: u.Mem}.Shares(host)
+			u.CPUPct, u.MemPct = Pct(c), Pct(m)
+			s.Undeclared = append(s.Undeclared, u)
+			ux = ux.Plus(Need{CPU: u.CPU, Mem: u.Mem})
+		}
+		if len(s.Undeclared) > 0 {
+			c, m := ux.Shares(host)
+			s.UndeclaredCPUPct, s.UndeclaredMemPct = pct(Pct(c)), pct(Pct(m))
+			used = used.Plus(ux)
+		}
 	}
 	for i := range s.Waiting {
 		fill(&s.Waiting[i])

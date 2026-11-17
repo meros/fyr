@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
-	"github.com/meros/fyr/internal/api"
 )
 
 func viewEvents(h *harness, id, typ string) []map[string]any {
@@ -241,7 +241,9 @@ func TestViewStopHookBlocksOnce(t *testing.T) {
 
 	// A run that updates the view itself is not blocked.
 	h.cmd("thread.send", id, core.Args{"text": "view Ready"})
-	h.wait(id, "next done", func(t core.Thread, a core.Attention) bool { return !t.Running && len(t.Outbox) == 0 && t.Live.Headline == "Ready" })
+	h.wait(id, "next done", func(t core.Thread, a core.Attention) bool {
+		return !t.Running && len(t.Outbox) == 0 && t.Live.Headline == "Ready"
+	})
 	time.Sleep(100 * time.Millisecond)
 	if n := len(viewEvents(h, id, "view.published")); n != 2 {
 		t.Fatalf("%d publishes, want 2", n)

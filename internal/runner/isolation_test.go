@@ -22,7 +22,14 @@ import (
 // connecting process is the launcher's fyrd.
 func serveAllow(t *testing.T, allow *atomic.Bool, tune func(*runner.Server)) (*runner.Server, *runner.Client) {
 	t.Helper()
-	sock := filepath.Join(t.TempDir(), "runner.sock")
+	// A short directory: a long test name in t.TempDir() makes the socket
+	// path longer than a Unix socket allows (104 bytes on macOS).
+	dir, err := os.MkdirTemp("", "fyr-r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "r.sock")
 	// The runner's goroutines may log after the test (a process that exits once the server closes): a log after
 	// the test ends panics, so the cleanup closes the log first, under the lock every log line takes.
 	var mu sync.Mutex

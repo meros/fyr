@@ -957,6 +957,8 @@ async function resetTab(t) {
   t.attached.length = 0;
 }
 async function runJobs(list, width) {
+  // FYR_LAYOUT_ONLY=<regex>: only the sections whose name matches (to work on one; a full run sets nothing)
+  if (process.env.FYR_LAYOUT_ONLY) list = list.filter((j) => new RegExp(process.env.FYR_LAYOUT_ONLY).test(j.name));
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(width, list.length) }, async () => {
     const t = await newTab();
@@ -1949,6 +1951,195 @@ section('S5 paused', async (h) => {
   }
 });
 
+// SPEC V0.164 (design/rogue-agents/SPEC.md 12.7): undeclared heavy work. At 1280 × 800 and 390 × 844, light and dark: the
+// row keeps its height and starts with the mark and the word in the beam ink; the meter has a hatched part and the rail a
+// button that opens the thread or a menu (it does not scroll at 1000 px); the strip is one block under the header and the
+// conversation keeps its scroll; the phone's strip and Settings buttons are 44 px high; nothing is wider than the screen.
+// Add as heavy job… opens Settings → Automation at the suggestion; Dismiss, Add, Remove and the thresholds send the
+// owner's commands. ?undeclared=1 (Map perf), =paused, =2 (two threads and a dismissed third) feed it.
+const UND_INK = `(() => { const p = document.createElement('i'); p.style.color = 'var(--beam-ink)'; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; })()`;
+const UND_COMMANDS = (action) => `(window.__fyrCommands || []).filter((c) => c.action === '${action}').map((c) => c.args)`;
+for (const dark of [false, true]) section(`V0.164 desktop${dark ? " dark" : ""}`, async ({ send, evaluate, waitFor, settle, navigate, key, shot }) => {
+  const ctx = `V0.164 desktop${dark ? " dark" : ""}`;
+  const tag = dark ? "dark" : "light";
+  try {
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
+    const rowH = `(() => { const r = document.querySelector('.one[data-id="t_mapperf"]'); return r ? Math.round(r.getBoundingClientRect().height * 10) / 10 : 0; })()`;
+    await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.one[data-id=\"t_mapperf\"]')");
+    const base = await evaluate(rowH);
+    // The rows.
+    await navigate(`${origin}/?mock=rail&undeclared=2`, "document.querySelectorAll('.one .tund').length === 2");
+    const r = await evaluate(`(() => {
+      const ink = ${UND_INK};
+      const t = [...document.querySelectorAll('.one .tund')].map((e) => ({ id: e.closest('.one').dataset.id, text: e.textContent, color: getComputedStyle(e).color, iconW: e.querySelector('.und-ic').getBoundingClientRect().width,
+        inside: e.getBoundingClientRect().right <= e.closest('.ell').getBoundingClientRect().right + 0.5 }));
+      return { ink, t, h: ${rowH}, nix: !!document.querySelector('[data-id="t_nix"] .tund'), why: document.body.innerText.includes('(Map perf uses 52 % undeclared +2)') };
+    })()`);
+    check(r.t.map((x) => x.id).sort().join() === "t_babysit,t_mapperf" && r.t.every((x) => x.color === r.ink && x.iconW > 8 && x.inside), `${ctx}: the rows' marks are missing, not in the beam ink or cut (${JSON.stringify(r)})`);
+    check(r.t.find((x) => x.id === "t_mapperf").text === "undeclared · 2.8 GB · 2.1 cores" && r.t.find((x) => x.id === "t_babysit").text === "undeclared · 1.6 GB · 1.2 cores", `${ctx}: the rows' words are wrong (${JSON.stringify(r.t)})`);
+    check(!r.nix, `${ctx}: a dismissed thread's row has a mark`);
+    check(r.h === base, `${ctx}: the flagged row is ${r.h} px, the plain one ${base} px`);
+    check(r.why, `${ctx}: the wait reason does not name the undeclared use`);
+    // The meter and the rail's button.
+    const m = await evaluate(`(() => {
+      const bar = document.querySelector('.rail .rbar'), parts = [...bar.querySelectorAll('.trk i')], und = bar.querySelector('.trk i.und');
+      const trk = bar.querySelector('.trk').getBoundingClientRect();
+      const b = document.querySelector('.rail .rund'), br = b?.getBoundingClientRect(), rail = document.querySelector('.rail').getBoundingClientRect();
+      return { parts: parts.length, hatch: und ? getComputedStyle(und).backgroundImage.startsWith('repeating-linear-gradient') : false, fits: parts.every((p) => p.getBoundingClientRect().right <= trk.right + 0.5),
+        tip: bar.title, btn: b?.textContent ?? '', aria: b?.getAttribute('aria-label') ?? '', bright: br ? br.right <= rail.right + 0.5 && br.left >= rail.left - 0.5 : false,
+        color: b ? getComputedStyle(b).color : '', ink: ${UND_INK}, outside: !!b && !!b.closest('[role=img]') };
+    })()`);
+    check(m.parts === 2 && m.hatch && m.fits, `${ctx}: the meter has no hatched undeclared part (${JSON.stringify(m)})`);
+    check(/undeclared 87 %/.test(m.tip) && /\nUndeclared: Map perf \(acme\/web\), 2\.8 GB and 2\.1 cores for \d+ min; Babysit PR #4170 \(acme\/web\), 1\.6 GB and 1\.2 cores for \d+ s/.test(m.tip), `${ctx}: the meter's tooltip is wrong (${JSON.stringify(m.tip)})`);
+    check(m.btn === "2" && m.aria === "2 threads run undeclared heavy work" && m.bright && m.color === m.ink && !m.outside, `${ctx}: the rail's button is wrong (${JSON.stringify(m)})`);
+    await shot(`undeclared-row-${tag}-desktop.png`);
+    // The button's menu, then the thread.
+    await evaluate(`document.querySelector('.rail .rund').click()`);
+    await waitFor(`document.querySelectorAll('.ctxm [role=menuitem]').length === 2`, { what: "the menu of two threads" });
+    const items = await evaluate(`[...document.querySelectorAll('.ctxm [role=menuitem]')].map((e) => e.textContent.replace(/\\s+/g, ' ').trim())`);
+    check(items.join("|") === "Map perf · 2.8 GB · 2.1 cores|Babysit PR #4170 · 1.6 GB · 1.2 cores", `${ctx}: the rail's menu is ${JSON.stringify(items)}`);
+    await shot(`undeclared-rail-menu-${tag}-desktop.png`);
+    await evaluate(`document.querySelector('.ctxm [role=menuitem]').click()`);
+    await waitFor(`!!document.querySelector('.th .undb')`, { what: "the strip of the opened thread" });
+    await settle();
+    // The strip.
+    const s = await evaluate(`(() => {
+      const strips = document.querySelectorAll('.undb'), e = strips[0], th = document.querySelector('.th'), conv = document.querySelector('.convo');
+      const b = e.getBoundingClientRect(), t = th.getBoundingClientRect(), c = conv.getBoundingClientRect();
+      return { n: strips.length, prev: e.previousElementSibling?.className ?? '', text: e.querySelector('.undb-b').innerText.replace(/\\s+/g, ' '), btns: [...e.querySelectorAll('.btn')].map((x) => x.textContent),
+        full: Math.abs(b.width - t.width) < 1, h: Math.round(b.height), convH: Math.round(c.height), convScroll: getComputedStyle(conv).overflowY, below: b.bottom <= c.top + 0.5,
+        ql: document.querySelector('.ql.und .qlh')?.textContent ?? '', docW: document.documentElement.scrollWidth <= innerWidth };
+    })()`);
+    check(s.n === 1 && s.prev === "thh" && s.full && s.h <= 72 && s.below, `${ctx}: the strip is not one block under the header (${JSON.stringify(s)})`);
+    check(/^Heavy work Fyr did not admit · 2\.8 GB \(20 % of laptop\) · 2\.1 cores \(52 %\) · \d+ min node test\/layout\.e2e\.mjs · counted against laptop's heavy jobs · agent told 14:29$/.test(s.text), `${ctx}: the strip's text is "${s.text}"`);
+    check(s.btns.join("|") === "Add as heavy job…|Dismiss" && s.convH > 150 && /auto|scroll/.test(s.convScroll) && s.docW, `${ctx}: the strip's buttons, the conversation's room or its scroll are wrong (${JSON.stringify(s)})`);
+    check(s.ql === "Fyr told the agent: heavy work it did not ask for (2.8 GB, 2.1 cores); ask before a heavy job", `${ctx}: the conversation's machine line is "${s.ql}"`);
+    await evaluate(`document.querySelector('.ql.und .qlh').click()`);
+    await waitFor(`document.querySelector('.ql.und .qlx')?.textContent.startsWith('This thread runs heavy work Fyr did not admit: about 2.8 GB')`, { what: "the whole notice" });
+    await evaluate(`document.querySelector('.ql.und .qlh').click()`);
+    await shot(`undeclared-thread-strip-${tag}-desktop.png`);
+    await evaluate(`document.querySelector('.ql.und').scrollIntoView({ block: 'center' })`);
+    await shot(`undeclared-machine-line-${tag}-desktop.png`);
+    // Dismiss hides the mark and the button's count; the meter keeps the hatched part.
+    await evaluate(`[...document.querySelectorAll('.undb .btn')].find((b) => b.textContent === 'Dismiss').click()`);
+    await waitFor(`!document.querySelector('.undb') && document.querySelectorAll('.one .tund').length === 1`, { what: "Dismiss to hide the mark" });
+    const dm = await evaluate(`({ btn: document.querySelector('.rail .rund')?.textContent, hatch: !!document.querySelector('.rail .rbar .trk i.und'), sent: ${UND_COMMANDS("host.undeclaredDismiss")} })`);
+    check(dm.btn === "1" && dm.hatch && dm.sent.length === 1 && dm.sent[0].thread === "t_mapperf" && dm.sent[0].on === true, `${ctx}: Dismiss did not hide the mark, keep the meter, or send the command (${JSON.stringify(dm)})`);
+    // The rail does not scroll at 1000 px with two hosts and the button.
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail&hosts=2&undeclared=2`, "!!document.querySelector('.rail .rund') && document.querySelectorAll('.rail .rmid .rldr').length === 2");
+    const rs = await evaluate(`(() => { const rail = document.querySelector('.rail'), mid = rail.querySelector('.rmid'); const b = document.querySelector('.rail .rund').getBoundingClientRect();
+      return { railScroll: rail.scrollHeight - rail.clientHeight, midScroll: mid.scrollHeight - mid.clientHeight, doc: document.documentElement.scrollHeight - document.documentElement.clientHeight, btn: b.height > 0 && b.bottom <= innerHeight }; })()`);
+    check(rs.railScroll <= 0 && rs.midScroll <= 0 && rs.doc <= 0 && rs.btn, `${ctx}: the rail scrolls at 1000 px with the button (${JSON.stringify(rs)})`);
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    // Paused: the harbour strip without buttons, the row's words.
+    await navigate(`${origin}/?mock=rail&undeclared=paused&open=t_mapperf`, "!!document.querySelector('.th .undb.paused')");
+    const p = await evaluate(`(() => { const e = document.querySelector('.undb.paused'); return { text: e.querySelector('.undb-b').innerText.replace(/\\s+/g, ' '), btns: e.querySelectorAll('button').length, head: getComputedStyle(e.querySelector('b')).color,
+      harbour: (() => { const p = document.createElement('i'); p.style.color = 'var(--harbour)'; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; })(), row: document.querySelector('.one[data-id="t_mapperf"] .tund')?.textContent ?? '', h: Math.round(e.getBoundingClientRect().height) }; })()`);
+    check(p.text === "Paused by Fyr: memory is short on laptop (6 % free). Frozen, not killed; it resumes when memory has recovered for 30 s, within 10 min at most. node test/layout.e2e.mjs · 2.8 GB · undeclared" && p.btns === 0 && p.head === p.harbour && p.row === "undeclared · paused: memory" && p.h <= 72, `${ctx}: the paused strip or row is wrong (${JSON.stringify(p)})`);
+    await shot(`undeclared-thread-strip-paused-${tag}-desktop.png`);
+    // Add as heavy job… opens Settings → Automation at the suggestion.
+    await navigate(`${origin}/?mock=rail&undeclared=1&open=t_mapperf`, "!!document.querySelector('.th .undb')");
+    await evaluate(`[...document.querySelectorAll('.undb .btn')].find((b) => b.textContent.startsWith('Add as heavy job')).click()`);
+    await waitFor(`!!document.querySelector('.dlg .sr.pick')`, { what: "Settings at the suggestion" });
+    await settle();
+    const st = await evaluate(`(() => { const d = document.querySelector('.dlg'); const sec = (l) => d.querySelector('section[aria-label="' + l + '"]');
+      const rows = (l) => [...(sec(l)?.querySelectorAll('.sr') ?? [])];
+      const pick = d.querySelector('.sr.pick'); const r = pick.getBoundingClientRect(), dr = d.querySelector('.stp').getBoundingClientRect();
+      return { page: d.querySelector('.stp').dataset.page, groups: [...d.querySelectorAll('section.sg')].map((s) => s.getAttribute('aria-label')).filter(Boolean),
+        pick: pick.querySelector('.cmd').textContent, pattern: pick.querySelector('input').value, kind: pick.querySelector('select').value, visible: r.top >= dr.top - 1 && r.bottom <= dr.bottom + 1,
+        now: rows('When a thread counts as heavy').map((e) => e.querySelector('.sr-d').textContent), vals: rows('When a thread counts as heavy').map((e) => e.querySelector('input').value),
+        und: rows('Undeclared now').map((e) => e.innerText.replace(/\\s+/g, ' ').trim()), added: rows('Heavy jobs you added').map((e) => e.innerText.replace(/\\s+/g, ' ').trim()),
+        sugg: pick.querySelector('.sr-d').innerText, noSlot: !/slot|reservation/i.test([...d.querySelectorAll('section.sg')].filter((s) => /Undeclared|Suggested|you added|counts as heavy/.test(s.getAttribute('aria-label') || '')).map((s) => s.innerText).join(' ')) }; })()`);
+    check(st.page.startsWith("automation") && st.pick === "node test/layout.e2e.mjs" && st.pattern === "node (\\S*/)?layout\\.e2e\\.mjs" && st.kind === "e2e" && st.visible, `${ctx}: Settings did not open at the suggestion (${JSON.stringify(st)})`);
+    check(st.groups.join("|").includes("Undeclared now|Suggested heavy jobs|Heavy jobs you added|When a thread counts as heavy|Heavy jobs"), `${ctx}: the groups are ${st.groups.join("|")}`);
+    check(st.now.join("|") === "Now 1.0 of laptop's 4 cores|Now 1.1 GB of laptop's 14 GB|Shorter bursts (a typecheck, one test file) never count" && st.vals.join() === "25,8,45", `${ctx}: the thresholds are wrong (${JSON.stringify([st.now, st.vals])})`);
+    check(st.und.length === 1 && /^Map perf acme\/web · node test\/layout\.e2e\.mjs · 2\.8 GB \(20 %\) · 2\.1 cores \(52 %\) · \d+ min · agent told 14:29 ?Open ?Dismiss$/.test(st.und[0]), `${ctx}: Undeclared now is ${JSON.stringify(st.und)}`);
+    check(st.added.length === 1 && /refused 4 times since/.test(st.added[0]), `${ctx}: the added patterns are ${JSON.stringify(st.added)}`);
+    check(/^Seen 3 times in 2 threads, last 14:29 in Map perf · up to 2\.8 GB, 2\.1 cores, 4 min$/.test(st.sugg) && st.noSlot, `${ctx}: the suggestion's line or the words are wrong (${JSON.stringify([st.sugg, st.noSlot])})`);
+    await shot(`undeclared-settings-${tag}-desktop.png`);
+    await evaluate(`document.querySelector('.dlg section[aria-label="Undeclared now"]').scrollIntoView({ block: 'start' })`);
+    await shot(`undeclared-settings-now-${tag}-desktop.png`);
+    await evaluate(`document.querySelector('.dlg section[aria-label="When a thread counts as heavy"]').scrollIntoView({ block: 'start' })`);
+    await shot(`undeclared-settings-thresholds-${tag}-desktop.png`);
+    // Add sends the edited pattern; a threshold saves; Remove.
+    await evaluate(`(() => { const i = document.querySelector('.dlg .sr.pick input'); i.value = 'node test/layout\\\\.e2e\\\\.mjs'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await evaluate(`[...document.querySelectorAll('.dlg .sr.pick .btn')].find((b) => b.textContent === 'Add').click()`);
+    await waitFor(`document.querySelectorAll('.dlg section[aria-label="Heavy jobs you added"] .sr').length === 2 && !document.querySelector('.dlg .sr.pick')`, { what: "the suggestion to become an added pattern" });
+    const add = await evaluate(UND_COMMANDS("host.heavySuggestion"));
+    check(add.length === 1 && add[0].do === "add" && add[0].id === "sg1" && add[0].pattern === "node test/layout\\.e2e\\.mjs" && add[0].kind === "e2e", `${ctx}: Add sent ${JSON.stringify(add)}`);
+    await evaluate(`(() => { const i = document.querySelector('.dlg section[aria-label="When a thread counts as heavy"] input'); i.focus(); i.value = '30'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await key("Enter");
+    await waitFor(`${UND_COMMANDS("host.undeclaredSettings")}.length === 1`, { what: "the threshold to be sent" });
+    const set = await evaluate(UND_COMMANDS("host.undeclaredSettings"));
+    check(set[0].cpu === 0.3 && !("memory" in set[0]), `${ctx}: the threshold sent ${JSON.stringify(set)}`);
+    await evaluate(`[...document.querySelectorAll('.dlg section[aria-label="Heavy jobs you added"] .btn')].find((b) => b.textContent === 'Remove').click()`);
+    await waitFor(`document.querySelectorAll('.dlg section[aria-label="Heavy jobs you added"] .sr').length === 1`, { what: "Remove to take a pattern out" });
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
+});
+
+for (const dark of [false, true]) section(`V0.164 phone${dark ? " dark" : ""}`, async ({ send, evaluate, waitFor, settle, openScreen, tapCenter, shot }) => {
+  const ctx = `V0.164 phone${dark ? " dark" : ""}`;
+  const tag = dark ? "dark" : "light";
+  const W = 390;
+  try {
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
+    const working = async (url, ready) => {
+      await openScreen({ url, ready }, W, 844);
+      await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Working')).click()`);
+      await waitFor(`[...document.querySelectorAll('.one')].some((x) => x.querySelector('.t')?.textContent === 'Map perf')`, { what: "the Working rows" });
+      await settle();
+    };
+    const rowH = `(() => { const r = [...document.querySelectorAll('.one')].find((x) => x.querySelector('.t')?.textContent === 'Map perf'); return r ? Math.round(r.getBoundingClientRect().height * 10) / 10 : 0; })()`;
+    await working("?mock=rail", "!!document.querySelector('.m-seg')");
+    const base = await evaluate(rowH);
+    await working("?mock=rail&undeclared=2", "!!document.querySelector('.m-seg')");
+    await waitFor(`document.querySelectorAll('.one .tund').length === 2`, { what: "the marks on the phone's rows" });
+    const r = await evaluate(`(() => ({ t: [...document.querySelectorAll('.one .tund')].map((e) => [e.closest('.one').querySelector('.t').textContent, e.textContent, getComputedStyle(e).color === ${UND_INK}, e.getBoundingClientRect().right <= innerWidth]), h: ${rowH}, wide: document.documentElement.scrollWidth > innerWidth }))()`);
+    check(r.t.length === 2 && r.t.every((x) => x[2] && x[3]) && r.t.find((x) => x[0] === "Map perf")[1] === "undeclared · 2.8 GB · 2.1 cores", `${ctx}: the rows' marks (${JSON.stringify(r)})`);
+    check(r.h === base && !r.wide, `${ctx}: the flagged row is ${r.h} px against ${base} px, or the page is wider than the screen`);
+    await shot(`undeclared-row-${tag}-phone.png`);
+    // The thread: the strip's buttons sit under the text at 44 px.
+    await openScreen({ url: "?mock=rail&undeclared=1&open=t_mapperf", ready: "!!document.querySelector('.m-thread .undb')" }, W, 844);
+    const s = await evaluate(`(() => { const e = document.querySelector('.m-thread .undb'), t = e.querySelector('.undb-b').getBoundingClientRect(), bs = [...e.querySelectorAll('.btn')].map((b) => b.getBoundingClientRect());
+      const conv = document.querySelector('.m-thread .convo'); return { n: document.querySelectorAll('.undb').length, text: e.querySelector('.undb-b').innerText.replace(/\\s+/g, ' '), labels: [...e.querySelectorAll('.btn')].map((b) => b.textContent), minH: Math.min(...bs.map((b) => b.height)),
+        under: bs.every((b) => b.top >= t.bottom - 0.5), inside: [e, ...e.querySelectorAll('*')].every((x) => { const b = x.getBoundingClientRect(); return b.right <= innerWidth + 0.5 && b.left >= -0.5; }),
+        convH: conv ? Math.round(conv.getBoundingClientRect().height) : 0, scroll: conv ? getComputedStyle(conv).overflowY : '', wide: document.documentElement.scrollWidth > innerWidth, ql: document.querySelector('.ql.und .qlh')?.textContent ?? '' }; })()`);
+    check(s.n === 1 && s.labels.join("|") === "Add as heavy job…|Dismiss" && s.minH >= 44 && s.under && s.inside && !s.wide, `${ctx}: the strip's buttons are under 44 px, over the text or off the screen (${JSON.stringify(s)})`);
+    check(s.convH > 150 && /auto|scroll/.test(s.scroll), `${ctx}: the conversation lost its room or scroll (${JSON.stringify(s)})`);
+    check(/^Heavy work Fyr did not admit · 2\.8 GB \(20 % of laptop\) · 2\.1 cores \(52 %\) · \d+ min node test\/layout\.e2e\.mjs · counted against laptop's heavy jobs · agent told 14:29$/.test(s.text) && s.ql.startsWith("Fyr told the agent: heavy work it did not ask for (2.8 GB, 2.1 cores)"), `${ctx}: the strip's or the line's text (${JSON.stringify([s.text, s.ql])})`);
+    await shot(`undeclared-thread-strip-${tag}-phone.png`);
+    await openScreen({ url: "?mock=rail&undeclared=paused&open=t_mapperf", ready: "!!document.querySelector('.m-thread .undb.paused')" }, W, 844);
+    const pp = await evaluate(`({ btns: document.querySelectorAll('.undb button').length, wide: document.documentElement.scrollWidth > innerWidth, head: document.querySelector('.undb b').textContent })`);
+    check(pp.btns === 0 && !pp.wide && pp.head === "Paused by Fyr: memory is short on laptop (6 % free).", `${ctx}: the paused strip (${JSON.stringify(pp)})`);
+    await shot(`undeclared-thread-strip-paused-${tag}-phone.png`);
+    // Add as heavy job… goes to Settings → Automation at the suggestion.
+    await openScreen({ url: "?mock=rail&undeclared=1&open=t_mapperf", ready: "!!document.querySelector('.m-thread .undb')" }, W, 844);
+    await tapCenter(".m-thread .undb .btn", "!!document.querySelector('.set.phone .sr.pick')");
+    // Settings: every button and field of the new groups is 44 px high; nothing is wider than the screen.
+    await openScreen({ url: "?mock=rail&undeclared=2&settings=automation", ready: "!!document.querySelector('.set.phone section[aria-label=\"Undeclared now\"]')" }, W, 844);
+    const g = await evaluate(`(() => { const labels = ['Undeclared now', 'Suggested heavy jobs', 'Heavy jobs you added', 'When a thread counts as heavy'];
+      const secs = labels.map((l) => document.querySelector('.set.phone section[aria-label="' + l + '"]'));
+      const ctl = secs.flatMap((s) => s ? [...s.querySelectorAll('button, input, select')] : []).filter((e) => e.getBoundingClientRect().height > 0);
+      return { have: secs.map((s) => !!s), n: ctl.length, minH: Math.min(...ctl.map((e) => e.getBoundingClientRect().height)), small: ctl.filter((e) => e.getBoundingClientRect().height < 44).map((e) => e.getAttribute('aria-label') || e.textContent),
+        off: secs.filter(Boolean).flatMap((s) => [...s.querySelectorAll('*')]).filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.right > innerWidth + 0.5 || b.left < -0.5); }).map((e) => e.className || e.tagName),
+        wide: document.documentElement.scrollWidth > innerWidth, dim: !!secs[0]?.querySelector('.sr.off'), tail: secs[0]?.querySelector('.sr.off .sr-d')?.textContent.endsWith('dismissed, still counted') }; })()`);
+    check(g.have.every(Boolean) && g.minH >= 44 && g.off.length === 0 && !g.wide && g.dim && g.tail, `${ctx}: Settings' new groups on the phone (${JSON.stringify(g)})`);
+    await evaluate(`document.querySelector('.set.phone section[aria-label="Undeclared now"]').scrollIntoView({ block: 'start' })`);
+    await shot(`undeclared-settings-${tag}-phone.png`);
+    await evaluate(`document.querySelector('.set.phone section[aria-label="Suggested heavy jobs"]').scrollIntoView({ block: 'start' })`);
+    await shot(`undeclared-settings-suggested-${tag}-phone.png`);
+    await evaluate(`document.querySelector('.set.phone section[aria-label="When a thread counts as heavy"]').scrollIntoView({ block: 'start' })`);
+    await shot(`undeclared-settings-thresholds-${tag}-phone.png`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
+});
+
 section('V0.141', async (h) => {
   const { send, evaluate, waitFor, settle, navigate } = h;
   for (const ht of [700, 900]) {
@@ -1987,6 +2178,52 @@ section('V0.141', async (h) => {
     } catch (e) {
       failures.push(`${ctx}: ${e.message}`);
     }
+  }
+});
+
+// SPEC V0.166: the phone shows each host's load. With 2 hosts that report a load, one offline and 4 providers, at
+// 390 × 844 and 360 × 640: the inbox header holds one strip button (44 px, inside the header, nothing past the screen's
+// edge) with a card per host that has a load (two at most, then "+n"; the offline host is named in its label); each
+// card's ring figure and heavy-jobs % equal the desktop rail's for the same mock state; the connection keeps its dot
+// only. A tap opens the Host load sheet: every host (the offline one says Offline), the rail's tooltip lines (Heavy
+// jobs, Running, waiting), and the provider quotas. Back closes it.
+for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.166 phone ${w}x${ht}`, async (h) => {
+  const { evaluate, waitFor, settle, navigate, openScreen } = h;
+  const ctx = `V0.166 phone ${w}x${ht}`;
+  try {
+    // the desktop rail first, for the same mock state
+    await navigate(`${origin}/?mock=rail&hosts=2`, "document.querySelectorAll('.rail .rmid .rldr').length === 2");
+    const desk = await evaluate(`[...document.querySelectorAll('.rail .rmid .rldr')].map((c) => ({ fig: c.querySelector('.rring b').textContent, heavy: (c.querySelector('.rbar small')?.textContent ?? '').replace(/\\s/g, '') }))`);
+    await openScreen({ url: "?mock=rail&hosts=2", ready: "!!document.querySelector('.m-load .mlh')" }, w, ht);
+    await settle();
+    const r = await evaluate(`(() => {
+      const b = document.querySelector('.m-load'), bb = b.getBoundingClientRect(), hd = document.querySelector('.m-ih').getBoundingClientRect();
+      const cards = [...b.querySelectorAll('.mlh')].map((c) => ({ fig: c.querySelector('.rring b').textContent, off: c.classList.contains('off'), names: [...c.querySelectorAll('.mlc small')].map((x) => x.textContent.replace(/\\s/g, '')) }));
+      const conn = document.querySelector('.m-conn .ell').getBoundingClientRect();
+      return { h: Math.round(bb.height), inHeader: bb.top >= hd.top - 0.5 && bb.bottom <= hd.bottom + 0.5 && bb.left >= 0 && bb.right <= innerWidth, over: document.documentElement.scrollWidth - innerWidth,
+        cards, more: b.querySelector('.mlmore')?.textContent ?? '', connHidden: conn.width <= 1, label: b.getAttribute('aria-label') };
+    })()`);
+    check(r.h >= 44 && r.inHeader && r.over <= 0, `${ctx}: the strip is not a 44 px button inside the header (${JSON.stringify(r)})`);
+    check(r.cards.length === 2 && r.cards.every((c) => !c.off) && r.more === "+1" && /host-b: offline/.test(r.label), `${ctx}: the strip does not show the two live hosts and "+1" for the offline one (${JSON.stringify(r)})`);
+    check(r.cards[0].names[0] === "desk" && r.cards[1].names[0] === "lab" && r.connHidden, `${ctx}: the cards do not name their hosts, or the connection still writes its name (${JSON.stringify(r)})`);
+    check(r.cards.every((c, i) => c.fig === desk[i].fig && (c.names[1] ?? "") === desk[i].heavy), `${ctx}: the strip's figures differ from the desktop rail's (phone ${JSON.stringify(r.cards)}, desktop ${JSON.stringify(desk)})`);
+    await evaluate(`document.querySelector('.m-load').click()`);
+    await waitFor(`!!document.querySelector('.m-sheet[aria-label="Host load"] .m-lsheet')`);
+    await settle();
+    const s = await evaluate(`(() => {
+      const sh = document.querySelector('.m-sheet[aria-label="Host load"]'), secs = [...sh.querySelectorAll('.mls[aria-label]')];
+      const b = sh.getBoundingClientRect();
+      return { hosts: secs.map((x) => x.getAttribute('aria-label')), off: secs.filter((x) => x.classList.contains('off')).map((x) => x.querySelector('.mlsn small').textContent),
+        lines: sh.querySelector('.mlsl')?.textContent ?? '', quotas: sh.querySelectorAll('.qlist > *').length, fig: sh.querySelector('.mlsh .rring b')?.textContent ?? '',
+        inside: b.left >= 0 && b.right <= innerWidth + 0.5 && b.bottom <= innerHeight + 0.5 };
+    })()`);
+    check(s.hosts.join() === "desk,host-b,lab,Quota" && s.off.length === 1 && /^Offline/.test(s.off[0]), `${ctx}: the sheet does not list every host with the offline one marked (${JSON.stringify(s)})`);
+    check(/Heavy jobs: CPU \d+ %/.test(s.lines) && /Running: /.test(s.lines) && /waiting/.test(s.lines) && s.fig === desk[0].fig, `${ctx}: the sheet does not say what the rail's tooltip says (${JSON.stringify(s)})`);
+    check(s.quotas >= 4 && s.inside, `${ctx}: the sheet has no provider quotas or leaves the screen (${JSON.stringify(s)})`);
+    await evaluate(`history.back()`);
+    await waitFor(`!document.querySelector('.m-sheet[aria-label="Host load"]')`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
   }
 });
 
@@ -2954,13 +3191,15 @@ section('V0.162', async (h) => {
     await openScreen({ url: "?mock=rail&open=t_poly" }, 390, 844);
     await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
     await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.querySelector('.ell')?.firstChild?.textContent === 'Pin')?.click()`);
-    await waitFor(`!document.querySelector('.m-sheet')`, { soft: true });
-    await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
-    await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => /^Settle/.test(b.querySelector('.ell')?.firstChild?.textContent ?? ''))?.click()`);
-    await waitFor(`(window.__fyrCommands ?? []).some(c => c.action === 'thread.settle' && c.threadId === 't_poly')`, { soft: true });
-    // A settle leaves the open thread by itself (leaveOpenThread); Back is pressed only when the thread is still open.
-    await evaluate(`document.querySelector('button[aria-label="Back to the inbox"]')?.click()`);
-    await waitFor(`!!document.querySelector('.m-list') && !document.querySelector('#m-sec-pinned')`, { soft: true });
+    await waitFor(`!document.querySelector('.m-sheet')`, { what: "the sheet to close after Pin" });
+    // The sheet sends Pin after it closes: the reopened sheet offers Unpin once the pin is in.
+    const sheetItem = (re) => `[...document.querySelectorAll('.m-sheet .m-mi')].find(b => ${re}.test(b.querySelector('.ell')?.firstChild?.textContent ?? ''))`;
+    await tapCenter(".m-tr1 .b44:last-child", `!!${sheetItem("/^Unpin$/")}`);
+    await evaluate(`${sheetItem("/^Settle/")}?.click()`);
+    // The settle leaves the open thread by itself (leaveOpenThread, after the host's answer); the check presses no Back,
+    // because a Back pressed before that answer is a second history step, out of the page. It waits for the inbox
+    // without a Pinned block, still on the page that sent the settle.
+    await waitFor(`(window.__fyrCommands ?? []).some(c => c.action === 'thread.settle' && c.threadId === 't_poly') && !!document.querySelector('.m-list') && !document.querySelector('#m-sec-pinned')`, { what: "the inbox without a Pinned block after the owner's Settle", soft: true });
     const o = await evaluate(`({ sends: (window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle' && c.threadId === 't_poly').map(c => !!c.args?.now), pinned: !!document.querySelector('#m-sec-pinned') })`);
     check(JSON.stringify(o.sends) === "[false]" && !o.pinned, `V0.162 phone: the owner's own Settle of a pinned thread did not settle it (${JSON.stringify(o)})`);
   } catch (e) {

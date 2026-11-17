@@ -57,4 +57,3 @@ func zombie(pid int) bool {
 	i := strings.LastIndexByte(string(st), ')')
 	return err == nil && i >= 0 && strings.HasPrefix(string(st[i+1:]), " Z")
 }
-
