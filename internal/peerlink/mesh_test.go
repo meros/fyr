@@ -1,6 +1,6 @@
 package peerlink
 
-// SPEC V0.173 (decision 0030 Amendment 1): the mesh. Either side opens the link;
+// SPEC V0.174 (decision 0030 Amendment 1): the mesh. Either side opens the link;
 // one link per pair; removal and key replacement close it; the reason a link is down
 // is what fyrd can see.
 

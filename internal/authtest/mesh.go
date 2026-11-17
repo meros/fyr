@@ -66,10 +66,11 @@ type Mesh struct {
 
 // NewMesh starts the installs. Users 1 (the owner) and 2 exist.
 func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
-	m = &Mesh{}
+	started := &Mesh{}
+	m = started
 	defer func() {
 		if err != nil {
-			m.Close()
+			started.Close() // m is nil in a failed return: close what was started
 		}
 	}()
 	if m.CA, err = NewCA(); err != nil {

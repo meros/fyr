@@ -104,7 +104,7 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
  "effect": {"action": "pr.merge", "args": {"pr": "…", "method": "squash"}, "reason": "…"}}
 ```
 
-**Two-way links (V0.173).** `hosts[].link` is `{state: up|connecting|down, via: pipe|peer|whois, opened: here|them, since, error: {kind, text}}`. Two installs that are members of one roster keep one TLS 1.3 connection (ALPN `fyr-peer/2`) that either may open; requests go both ways over it (an outer h2c session whose one tunnel `POST /link/tunnel` carries an inner h2c session with the roles reversed). `kind` is one of timeout, refused, key-mismatch, not-a-member, removed, older-version, no-address, no-route, closed. An older peer (`fyr-peer/1` only) has no link and keeps the per-request route.
+**Two-way links (V0.174).** `hosts[].link` is `{state: up|connecting|down, via: pipe|peer|whois, opened: here|them, since, error: {kind, text}}`. Two installs that are members of one roster keep one TLS 1.3 connection (ALPN `fyr-peer/2`) that either may open; requests go both ways over it (an outer h2c session whose one tunnel `POST /link/tunnel` carries an inner h2c session with the roles reversed). `kind` is one of timeout, refused, key-mismatch, not-a-member, removed, older-version, no-address, no-route, closed. An older peer (`fyr-peer/1` only) has no link and keeps the per-request route.
 
 ## The front's API: the host in the path (decision 0031, V0.172)
 

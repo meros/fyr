@@ -1,6 +1,6 @@
 package authtest_test
 
-// Decision 0030 Amendment 1 (slice 5b, V0.173): one two-way link per pair of
+// Decision 0030 Amendment 1 (slice 5b, V0.174): one two-way link per pair of
 // installs, opened by either side. A fake ACL blocks one direction (or both) of the
 // peer port; trust is by key and does not care who dialed.
 
