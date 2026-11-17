@@ -5,7 +5,7 @@ import type { Change, CommandReply, Decision, FsDir, FsListing, Project, QuietHo
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import type { Quota } from "./quota.ts";
-import type { HostLoad } from "./load.ts";
+import type { HostLoad, Slots, UndeclaredUse } from "./load.ts";
 import { mockPrDetail } from "./mock-pr.ts";
 import { quietList } from "./quiet.ts";
 import type { SlashCommand } from "./slash.ts";
@@ -756,6 +756,11 @@ function railFixture(now: number): Fixture {
   push(131, "decision.opened", { decision: ask });
   events.t_lasso = ev2;
   events.t_mapperf = calmTurn("t_mapperf", now);
+  // V0.164: ?undeclared= has the host tell Map perf's agent about the heavy work it did not ask for (N9).
+  if (MOCK_UNDECLARED) {
+    const last = events.t_mapperf[events.t_mapperf.length - 1];
+    events.t_mapperf.push(ev(last.seq + 1, now - 150_000, "t_mapperf", "slot", UNDECLARED_NOTICE));
+  }
   // V0.22: Search index was started by Map perf's agent, which also wrote to Babysit PR #4170.
   for (const t of threads) if (t.id === "t_search") t.parent = "t_mapperf";
   for (const t of threads) if (t.id === "t_dish") t.cwd = "/home/owner/scratch/2026-11-14-dishwasher";
@@ -1716,6 +1721,15 @@ const MOCK_ROOTPROMPT = typeof location !== "undefined" ? new URLSearchParams(lo
 const MOCK_HOSTS = typeof location !== "undefined" ? new URLSearchParams(location.search).get("hosts") === "2" : false;
 /** Decision 0029 S5: ?paused=1 has the memory guard freeze map perf's job. */
 const MOCK_PAUSED = typeof location !== "undefined" ? new URLSearchParams(location.search).get("paused") === "1" : false;
+/** V0.164: ?undeclared=1 (Map perf runs heavy work it did not ask for), =paused (the memory guard froze it), =2 (Map perf
+ *  and Babysit PR #4170, and Nix flake update dismissed: the rail's menu and Settings' three states). Read once at load. */
+const MOCK_UNDECLARED = typeof location !== "undefined" ? new URLSearchParams(location.search).get("undeclared") ?? "" : "";
+export const UNDECLARED_NOTICE = {
+  undeclared:
+    "This thread runs heavy work Fyr did not admit: about 2.8 GB memory (20 % of laptop) and 2.1 cores (52 %) for 45 s, from `node test/layout.e2e.mjs`. Before a heavy job call mcp__fyr__slot_acquire {\"kind\":\"e2e\",\"command\":\"node test/layout.e2e.mjs\"}, run it once admitted, then call mcp__fyr__slot_release; a subagent's or a background run counts too. Call it now for the job that runs. Fyr counts this use against the host either way, so other jobs wait; nothing is stopped, but if memory runs short Fyr may pause it.",
+  mem: 2.8e9,
+  cpu: 2.1,
+};
 const MOCK_REMOTE = new Set(["t_lasso", "t_triage"]);
 /** V0.124: "lab" answers with another install id than the one the front first saw, until the owner trusts it. */
 let mockLabTrusted = false;
@@ -1768,6 +1782,117 @@ export function mockQuota(now: number): Quota[] {
 /** SPEC 0.5 V0.80: a busy host: load past the cores, the agents at their cap; one thread in each fixture is hot
  * (t_w2, t_mapperf), one calm, one without a second read yet. */
 export function mockLoad(): HostLoad[] {
+  return withUndeclared(mockLoadBase(), MOCK_UNDECLARED);
+}
+
+/** V0.164: the mock host's view of undeclared work (mode "" is none): the threads, the shares in the pool, the wait
+ *  reason that names it, the thresholds, two suggestions and one pattern the owner added. */
+export function withUndeclared(list: HostLoad[], mode: string, now = railNow(Date.now())): HostLoad[] {
+  if (!mode) return list;
+  const [h, ...rest] = list;
+  const s = h.slots!;
+  const at = (h: number, m: number) => {
+    const d = new Date(now);
+    d.setHours(h, m, 0, 0);
+    return d.toISOString();
+  };
+  const use = (thread: string, mem: number, cpu: number, memPct: number, cpuPct: number, secs: number, command: string, told: string, extra: Partial<UndeclaredUse> = {}): UndeclaredUse => ({
+    thread, mem, cpu, memPct, cpuPct, since: new Date(now - secs * 1000).toISOString(), command, told, dismissed: false, paused: false, queued: false, overCpu: true, overMem: true, matched: false, ...extra,
+  });
+  const und: UndeclaredUse[] = [use("t_mapperf", 2.8e9, 2.1, 20, 52, 180, "node test/layout.e2e.mjs", at(14, 29), { paused: mode === "paused" })];
+  if (mode === "2")
+    und.push(use("t_babysit", 1.6e9, 1.2, 11, 30, 50, "yarn pre-push:check", at(14, 31)), use("t_nix", 1.9e9, 0.2, 14, 5, 22 * 60, "nix flake check", at(14, 10), { dismissed: true, overCpu: false }));
+  const admitted = { cpu: 13, mem: 16 };
+  const uCpu = und.reduce((n, u) => n + u.cpuPct, 0);
+  const uMem = und.reduce((n, u) => n + u.memPct, 0);
+  const cpuPct = admitted.cpu + uCpu;
+  const memPct = admitted.mem + uMem;
+  const need = 45;
+  const free = Math.max(0, 100 - cpuPct);
+  // the host names the largest and "+N" for the others
+  const names = `Map perf uses ${und[0].cpuPct} % undeclared${und.length > 1 ? ` +${und.length - 1}` : ""}`;
+  const slots: Slots = {
+    ...s,
+    held: [{ owner: "t_w2", kind: "test", cost: 1, cpuPct: admitted.cpu, memPct: admitted.mem, pct: admitted.cpu }],
+    waiting: [{ owner: "t_search", kind: "test", cpuPct: need, memPct: 10, pct: need }],
+    why: `needs ≈ ${need} % CPU, ${free} % free (${names})`,
+    needPct: need,
+    cpuPct,
+    memPct,
+    cpuFreePct: free,
+    memFreePct: 100 - memPct,
+    usedPct: Math.max(cpuPct, memPct),
+    tight: cpuPct >= memPct ? "cpu" : "memory",
+    binding: "cpu",
+    undeclared: und,
+    undeclaredCpuPct: uCpu,
+    undeclaredMemPct: uMem,
+  };
+  const threads = h.threads.map((t) => (t.id === "t_mapperf" ? { ...t, job: undefined, paused: undefined } : t));
+  return [
+    {
+      ...h,
+      slots,
+      threads,
+      headroom: mode === "paused" ? 0.06 : h.headroom,
+      memoryStall: mode === "paused" ? "critical" : h.memoryStall,
+      undeclaredSettings: { on: true, cpu: 0.25, memory: 0.08, after: 45 },
+      suggestions: [
+        { id: "sg1", command: "node test/layout.e2e.mjs", pattern: "node (\\S*/)?layout\\.e2e\\.mjs", kind: "e2e", seen: 3, threads: 2, lastThread: "t_mapperf", lastAt: at(14, 29), memory: 2.8e9, cpu: 2.1, seconds: 240 },
+        { id: "sg2", command: "yarn pre-push:check", pattern: "yarn pre-push:check", kind: "test", seen: 1, threads: 1, lastThread: "t_babysit", lastAt: at(14, 31), memory: 1.6e9, cpu: 1.2, seconds: 100 },
+      ],
+      heavyAdded: [{ pattern: "python3? build_admin_ny\\.py", kind: "build", at: new Date(now - 24 * 3600_000).toISOString(), refused: 4 }],
+    },
+    ...rest,
+  ];
+}
+/** V0.164: host.undeclaredDismiss, host.heavySuggestion, host.heavyRemove and host.undeclaredSettings on the mock host's
+ *  load, with the host's refusals (an unknown thread or suggestion, a pattern that does not compile, a threshold out of range). */
+export function mockUndeclaredCommand(h: HostLoad, action: string, args: Record<string, unknown>, now: number): { ok: boolean; error?: string; result?: Record<string, unknown> } {
+  const und = h.slots?.undeclared ?? [];
+  if (action === "host.undeclaredDismiss") {
+    const u = und.find((x) => x.thread === args.thread);
+    if (!u) return { ok: false, error: `No undeclared work in thread ${String(args.thread ?? "")}` };
+    u.dismissed = !!args.on;
+    return { ok: true, result: { thread: u.thread, dismissed: u.dismissed } };
+  }
+  if (action === "host.heavySuggestion") {
+    const sg = h.suggestions?.find((x) => x.id === args.id);
+    if (!sg) return { ok: false, error: "That suggestion is gone" };
+    if (args.do === "ignore") {
+      h.suggestions = h.suggestions!.filter((x) => x !== sg);
+      return { ok: true };
+    }
+    if (args.do !== "add") return { ok: false, error: "do is add or ignore" };
+    const pattern = String(args.pattern ?? "").trim();
+    const kind = String(args.kind ?? sg.kind);
+    try {
+      new RegExp(pattern);
+    } catch (e) {
+      return { ok: false, error: `The pattern does not compile: ${(e as Error).message}` };
+    }
+    if (!pattern) return { ok: false, error: "The pattern is empty" };
+    h.heavyAdded = [{ pattern, kind, at: new Date(now).toISOString(), refused: 0 }, ...(h.heavyAdded ?? [])];
+    h.suggestions = h.suggestions!.filter((x) => x !== sg);
+    for (const u of und) if (u.command === sg.command) u.matched = true; // the command matches a pattern now: no Add on its strip
+    return { ok: true, result: { pattern } };
+  }
+  if (action === "host.heavyRemove") {
+    if (!h.heavyAdded?.some((x) => x.pattern === args.pattern)) return { ok: false, error: "That pattern was not added" };
+    h.heavyAdded = h.heavyAdded.filter((x) => x.pattern !== args.pattern);
+    return { ok: true };
+  }
+  const s = h.undeclaredSettings;
+  if (!s) return { ok: false, error: "This host does not detect undeclared work" };
+  const share = (v: unknown) => typeof v === "number" && v >= 0.01 && v <= 1;
+  if (args.cpu !== undefined && !share(args.cpu)) return { ok: false, error: "cpu is a share from 1 % to 100 %" };
+  if (args.memory !== undefined && !share(args.memory)) return { ok: false, error: "memory is a share from 1 % to 100 %" };
+  if (args.after !== undefined && !(typeof args.after === "number" && args.after >= 30 && args.after <= 120)) return { ok: false, error: "after is 30 to 120 seconds" };
+  h.undeclaredSettings = { on: typeof args.on === "boolean" ? args.on : s.on, cpu: (args.cpu as number) ?? s.cpu, memory: (args.memory as number) ?? s.memory, after: (args.after as number) ?? s.after };
+  return { ok: true, result: { ...h.undeclaredSettings } };
+}
+
+function mockLoadBase(): HostLoad[] {
   // V0.141: with ?hosts=2, lab's load follows the laptop's (calm, two free slots), as a front with two hosts shows.
   const lab: HostLoad[] = MOCK_HOSTS ? [{ host: "lab", cores: 16, load: [0.3, 0.5, 0.6], cpuPressure: 0.4, cgroups: true, agents: { cpu: 0.1, cpuMax: 8, memory: 1e9, memoryMax: 28 * 2 ** 30 }, threads: [], slots: { n: 2, held: [], waiting: [] } }] : [];
   return [...laptopLoad(), ...lab];

@@ -4,6 +4,7 @@
 import { newCommandId, type Api, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab, mockChanges, mockFilePatch, mockLoad, mockQueueLoad, mockQuota } from "./mock.ts";
+import { mockUndeclaredCommand } from "./mock.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { decodeHosts } from "./hosts.ts";
 import type { HostLoad } from "./load.ts";
@@ -163,6 +164,12 @@ export function createMockApi(scenario: string): Api {
         if (!h || !j) return { ok: false, error: `No learned job class ${String(args?.class ?? "")}` };
         h.jobs = h.jobs!.map((x) => (x === j ? { ...x, cost: undefined, learned: undefined } : x));
         return { ok: true, result: { class: j.class } };
+      }
+      // V0.164: the owner's commands on undeclared heavy work, as the host answers them (and updates its load).
+      if (action === "host.undeclaredDismiss" || action === "host.heavySuggestion" || action === "host.heavyRemove" || action === "host.undeclaredSettings") {
+        const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
+        if (!h) return { ok: false, error: `this front follows no host ${String(args?.host)}` };
+        return mockUndeclaredCommand(h, action, args ?? {}, Date.now());
       }
       if (action === "front.projectOrder") {
         order = Array.isArray(args?.ids) ? (args.ids as unknown[]).filter((x): x is string => typeof x === "string") : [];

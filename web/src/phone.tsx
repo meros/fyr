@@ -19,6 +19,7 @@ import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { shortModel, untilLabel } from "./format.ts";
 import { effortsFor, offLabel, startEffort } from "./providers.ts";
 import { AgentsStrip, EffectBody, ThreadTabBody, sendFrom } from "./thread.tsx";
+import { UndeclaredStrip } from "./undeclared-ui.tsx";
 import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
@@ -794,6 +795,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           </div>
         )}
       </div>
+      {!cardOpen && <UndeclaredStrip id={t.id} now={p.now} />}
       {t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {cardOpen ? (
         <div class="m-peekc ell">{t.summary ? `Claude: ${t.summary}` : `${stateLabel(st)} · ${t.project}`}</div>

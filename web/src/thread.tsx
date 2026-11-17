@@ -44,6 +44,8 @@ import { splitProse } from "./runcard.ts";
 import { changeChip, headerPr, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
+import { UndeclaredStrip } from "./undeclared-ui.tsx";
+import { UndIcon } from "./undeclared-ctx.tsx";
 
 export interface AnswerField {
   index: number;
@@ -216,6 +218,7 @@ export function ThreadPane(p: ThreadPaneProps) {
           ))}
         </div>
       </div>
+      <UndeclaredStrip id={t.id} now={p.now} />
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
       {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
@@ -650,13 +653,13 @@ function keyActivate(fn: () => void) {
 }
 
 /** A quiet machine line: one line, the exact text one tap away. */
-function QuietLine({ icon, line, full, fail }: { icon: "settled" | "failed" | "seen" | "working"; line: string; full?: string; fail?: boolean }) {
+function QuietLine({ icon, line, full, fail, und }: { icon: "settled" | "failed" | "seen" | "working"; line: string; full?: string; fail?: boolean; und?: boolean }) {
   const [open, setOpen] = useState(false);
   const more = !!full && full.trim() !== line.trim();
   return (
-    <div class={`ql${fail ? " fail" : ""}`}>
+    <div class={`ql${fail ? " fail" : ""}${und ? " und" : ""}`}>
       <div class={`qlh${more ? " click" : ""}`} role={more ? "button" : undefined} tabIndex={more ? 0 : undefined} aria-expanded={more ? open : undefined} onClick={more ? () => setOpen(!open) : undefined} onKeyDown={more ? keyActivate(() => setOpen(!open)) : undefined}>
-        <StateIcon state={icon} size={12} />
+        {und ? <UndIcon /> : <StateIcon state={icon} size={12} />}
         <span class="ell">{line}</span>
       </div>
       {open && full && <CopyPre cls="qlx" text={full} />}
@@ -832,6 +835,8 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
       return <QuietLine icon={it.ok ? "settled" : "failed"} line={it.line} full={`${it.action}\n\n${it.text}`} fail={!it.ok} />;
     case "note":
       return <QuietLine icon="seen" line={`Fyr: ${it.line}`} full={it.text} />;
+    case "undeclared":
+      return <QuietLine icon="seen" line={it.line} full={it.text} und />; // V0.164 (N9)
     case "preview":
       return <PreviewCardView card={it.card} all={previews} />;
     case "task":

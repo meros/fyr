@@ -1436,3 +1436,55 @@ label.sr{cursor:pointer}
 .runc-res.ok{color:var(--calm)}
 .runc-res.failed{color:var(--signal-ink)}
 .runc-b{display:flex;flex-wrap:wrap;gap:6px}
+
+/* V0.164 undeclared heavy work (design/rogue-agents/mock/rogue.css). Tokens of this file only. */
+
+/* The warm mark: beam is "look here, nothing failed"; signal stays for failures and a hot host. */
+.und-ic{flex:none;color:var(--beam-icon,var(--beam-ink))}
+
+/* 1. The row (desktop and phone, web/src/row-ui.tsx): the word and the use start the second line. */
+.tund{color:var(--beam-ink);font-weight:500}
+.tund .und-ic{vertical-align:-2px;margin-right:3px}
+
+/* 2. The rail: the use Fyr did not admit is a hatched part of the host's meter. */
+.rail .rbar .trk{display:flex}
+.rail .rbar .trk i{flex:none}
+.rail .rbar .trk i.und,.rail .rbar.hot .trk i.und{background:repeating-linear-gradient(135deg,var(--beam) 0 2px,color-mix(in srgb,var(--beam) 30%,transparent) 2px 4px)}
+/* who it is: a button under the meter (desktop only: the phone has no rail, V0.99 (3)) */
+.rail .rund{display:inline-flex;align-items:center;justify-content:center;gap:2px;min-width:30px;height:14px;padding:0 3px;border-radius:7px;background:var(--beam-wash);color:var(--beam-ink);font:600 8.5px/9px var(--mono);cursor:pointer}
+.rail .rund svg{flex:none}
+
+
+/* 3. The thread: a strip under the header, on both fronts; the phone sets its sizes in phone.css */
+.undb{flex:none;display:flex;align-items:flex-start;gap:10px;padding:8px 24px;background:var(--beam-wash);border-bottom:1px solid color-mix(in srgb,var(--beam) 35%,var(--line));font:400 12px/17px var(--ui);color:var(--ink)}
+.undb .und-ic{margin-top:2px}
+.undb-b{flex:1;min-width:0;overflow-wrap:anywhere}
+.undb-b b{color:var(--beam-ink);font-weight:600}
+.undb-b .mono{font-size:11.5px}
+.undb-b .dim{color:var(--ink-muted)}
+.undb-a{display:flex;gap:6px;flex:none;align-items:center}
+.undb .btn{height:26px;padding:0 10px;border-radius:7px;font-size:12px}
+.undb.paused{background:var(--harbour-wash);border-bottom-color:color-mix(in srgb,var(--harbour) 35%,var(--line))}
+.undb.paused .undb-b b,.undb.paused .und-ic{color:var(--harbour)}
+/* the line in the conversation: what Fyr told the agent */
+.ql.und .qlh{color:var(--beam-ink)}
+
+/* 4. Settings -> Automation -> Heavy jobs. */
+.sr-t .und-ic{vertical-align:-2px;margin-right:5px}
+.sr .cmd{font:400 12px/17px var(--mono);color:var(--ink);overflow-wrap:anywhere}
+.sr.col .inl .btn{flex:none}
+.sr .unit{font:400 12px/16px var(--ui);color:var(--ink-muted);white-space:nowrap}
+.sr .num{width:64px;text-align:right;font-variant-numeric:tabular-nums}
+.set.phone .sr .btn{min-height:44px}
+.set.phone .sr .num{height:44px}
+.set.phone .sr.col .inl{flex-wrap:wrap}
+.set.phone .sr.col .inl input{flex:1 1 100%;height:44px}
+.sr .inl input.mono{font:400 12.5px/18px var(--mono)}
+/* the phone: a row with two buttons puts them under its text (no room beside it at 390 px) */
+.set.phone .sr.undrow{flex-direction:column;align-items:stretch;gap:8px}
+.set.phone .sr.undrow .sr-e{max-width:none}
+
+/* the rail's host: the meter and the button under it are one block; the button is outside the ring's role=img */
+.rail .rldw{display:flex;flex-direction:column;align-items:center;gap:3px;max-width:100%}
+/* Settings: the suggestion the strip's "Add as heavy job…" opened */
+.sr.pick{box-shadow:inset 3px 0 0 var(--beam)}

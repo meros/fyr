@@ -4,6 +4,9 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
+import { ContextMenu } from "./menu-ui.tsx";
+import { UndIcon, useUnd } from "./undeclared-ctx.tsx";
+import { railUndeclared } from "./undeclared.ts";
 import { loadDetail, normalizeLoad, railBudget, railLabel, railMeter, shortHostNames, slotTip, threadCPU, threadJob, threadSlot, type HostLoad, type RailBudget, type Slots } from "./load.ts";
 
 const POLL_MS = 5_000;
@@ -66,6 +69,7 @@ export function LoadRail() {
   if (!list.length) return null;
   const several = list.length > 1;
   const short = shortHostNames(list.map((h) => h.host));
+  const und = useUnd();
   return (
     <div class="rld">
       {list.map((h) => {
@@ -73,6 +77,7 @@ export function LoadRail() {
         const bud = railBudget(h);
         const label = railLabel(h, several); // V0.140: with several hosts each ring names its host
         return (
+          <div class="rldw">
           <div class={`rldr ${m.level}`} title={loadDetail(h).join("\n")} role="img" aria-label={label}>
             <LoadRing share={m.share} text={m.text} />
             {several && (
@@ -80,7 +85,9 @@ export function LoadRail() {
                 {short.get(h.host)}
               </small>
             )}
-            {bud && <SlotBar b={bud} tip={slotTip(h)} />}
+            {bud && <SlotBar b={bud} tip={slotTip(h, { lookup: und.lookup, now: und.now() })} />}
+          </div>
+          <RailUndeclared h={h} />
           </div>
         );
       })}
@@ -115,6 +122,8 @@ function SlotBar({ b, tip }: { b: RailBudget; tip: string }) {
     <span class={`rbar${b.hot ? " hot" : ""}`} title={tip}>
       <span class="trk">
         <i style={{ width: `${Math.round(b.share * 100)}%` }} />
+        {/* V0.164: the use Fyr did not admit, hatched, after the admitted part */}
+        {!!b.und && <i class="und" style={{ width: `${Math.round(b.und * 100)}%` }} />}
       </span>
       <small class="mono">
         {b.text}
@@ -164,3 +173,33 @@ export function ThreadJob({ text }: { text: string }) {
     </span>
   );
 }
+
+/** The rail's button under a host's meter (SPEC 8.2). Desktop only: the phone shows no host load (V0.99 (3)) and has no
+ *  rail. One thread: a press opens it. Several: a menu of them, each with its use. Null when none is counted. */
+function RailUndeclared({ h }: { h: HostLoad }) {
+  const nav = useUnd();
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const r = railUndeclared(h, nav.lookup);
+  if (!r) return null;
+  return (
+    <>
+      <button
+        type="button"
+        class="rund"
+        title={r.title}
+        aria-label={r.aria}
+        aria-haspopup={r.only ? undefined : "menu"}
+        onClick={(e) => {
+          if (r.only) return nav.openThread(r.only);
+          const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          setAt({ x: b.right + 6, y: b.top });
+        }}
+      >
+        <UndIcon size={9} />
+        {r.count}
+      </button>
+      {at && <ContextMenu x={at.x} y={at.y} items={r.entries.map((x) => ({ id: x.id, label: x.label }))} onPick={(it) => (setAt(null), nav.openThread(it.id))} onClose={() => setAt(null)} />}
+    </>
+  );
+}
+
