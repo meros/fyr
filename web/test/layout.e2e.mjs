@@ -260,7 +260,7 @@ const SCREENS = [
   // SPEC V0.119 (amends V0.50): Settings is the nav and four pages, with a provider, Add provider and a project as
   // sub-pages. On every one: no control under 44 px, nothing past the right edge, the last control above the bottom
   // inset; with the keyboard up a focused field and its button stay in view.
-  { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 5 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
+  { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 6 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
   { name: "settings providers", url: "?mock=rail&settings=providers", ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section[aria-label=\"System agents\"] select').length === 4" },
   { name: "settings provider login (V0.119)", url: "?mock=rail&settings=providers/work", ready: "!!document.querySelector('.m-settings .login a.loginlink')" },
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
@@ -270,6 +270,7 @@ const SCREENS = [
   { name: "settings projects (V0.119)", url: "?mock=rail&settings=projects", ready: "document.querySelectorAll('.m-settings .pli').length > 3" },
   { name: "settings device (V0.119)", url: "?mock=rail&settings=device", ready: "!!document.querySelector('.m-settings [role=switch][aria-label=Notifications]')" },
   // V0.125: the Hosts page and a host's page with a changed id, at every phone size.
+  { name: "settings signed-in devices (V0.157)", url: "?mock=rail&settings=devices", ready: "document.querySelectorAll('.m-settings .dev').length === 4 && !!document.querySelector('.m-settings input[aria-label=\"Approval code\"]')" },
   { name: "settings hosts (V0.125)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .sr.host').length === 4" },
   { name: "settings host changed (V0.125)", url: "?mock=rail&hosts=2&settings=hosts/lab", ready: "!!document.querySelector('.m-settings .note.bad')" },
   { name: "board of changes", url: "?mock=1&changes" },
@@ -542,7 +543,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
   }
   if (ctx.startsWith("settings nav")) {
     const n = m.settings?.nav ?? [];
-    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|This device" && n.every((x) => x.h >= 55.5 && x.s), `${ctx}: the nav is wrong ${JSON.stringify(n)}`);
+    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|Devices|This device" && n.every((x) => x.h >= 55.5 && x.s), `${ctx}: the nav is wrong ${JSON.stringify(n)}`);
   }
   if (ctx.startsWith("settings providers")) {
     const st = m.settings;
@@ -1458,7 +1459,7 @@ try {
   await settle();
   const RECT = `(() => { const r = document.querySelector('.dlg.settings')?.getBoundingClientRect(); return r ? [Math.round(r.width), Math.round(r.height)].join('x') : ''; })()`;
   const d = await evaluate(`({ title: document.querySelector('.dlg .dh b')?.textContent ?? '', nav: [...document.querySelectorAll('.dlg .stn-i .stn-t')].map(e => e.textContent), on: document.querySelector('.dlg .stn-i[aria-current=page]')?.dataset.page ?? '', rows: document.querySelectorAll('.dlg .prow').length, size: ${RECT} })`);
-  check(d.title === "Settings" && d.nav.join("|") === "Providers|Automation|Projects|Hosts|This device" && d.on === "providers" && d.rows === 3, `V0.119 desktop: Settings is wrong (${JSON.stringify(d)})`);
+  check(d.title === "Settings" && d.nav.join("|") === "Providers|Automation|Projects|Hosts|Devices|This device" && d.on === "providers" && d.rows === 3, `V0.119 desktop: Settings is wrong (${JSON.stringify(d)})`);
   // SPEC V0.115: System agents: a provider and a model for all jobs, a choice per job ("Same as default"), and what each job runs on.
   await waitFor(`document.querySelectorAll('.dlg section[aria-label="System agents"] select').length >= 4`, { soft: true });
   const sa = await evaluate(`(() => { const el = document.querySelector('.dlg section[aria-label="System agents"]'); if (!el) return null;
@@ -1469,7 +1470,7 @@ try {
   await shot("settings-providers-desktop.png");
   // The same size on all four pages; each page shows its heading.
   const sizes = {};
-  for (const page of ["automation", "projects", "hosts", "device", "providers"]) {
+  for (const page of ["automation", "projects", "hosts", "devices", "device", "providers"]) {
     await evaluate(`document.querySelector('.dlg .stn-i[data-page=${page}]').click()`);
     await waitFor(`document.querySelector('.dlg .stp')?.dataset.page === '${page}'`, { soft: true });
     await settle();
@@ -1624,7 +1625,7 @@ section('V0.119', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
-  for (const page of ["providers", "providers/claude", "providers/new", "automation", "projects", "projects/p_fyr", "hosts", "device"]) {
+  for (const page of ["providers", "providers/claude", "providers/new", "automation", "projects", "projects/p_fyr", "hosts", "devices", "device"]) {
     await navigate(`${origin}/?mock=rail&dialog=settings&page=${page}`, "!!document.querySelector('.dlg.settings .stp-h h2')");
     await settle();
     await shot(`settings-${page.replace("/", "-")}-dark-desktop.png`);
@@ -2174,11 +2175,11 @@ for (const [label, w, ht] of [
   const NAV = `[...document.querySelectorAll('${root} .stn-i')].map(b => ({ t: b.querySelector('.stn-t')?.textContent, s: b.querySelector('.stn-s')?.textContent, badge: b.querySelector('.pst')?.textContent ?? '' }))`;
   // 1. The nav.
   await step("nav", async () => {
-    const ready = phone ? `document.querySelectorAll('.m-settings .stn-i').length === 5` : `document.querySelectorAll('.dlg .stn-i').length === 5`;
+    const ready = phone ? `document.querySelectorAll('.m-settings .stn-i').length === 6` : `document.querySelectorAll('.dlg .stn-i').length === 6`;
     await open(phone ? "" : "projects", ready);
     const n = await evaluate(NAV);
     const hosts = n.find((x) => x.t === "Hosts"), projects = n.find((x) => x.t === "Projects");
-    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|This device", `${ctx}: the nav ${JSON.stringify(n)}`);
+    check(n.map((x) => x.t).join("|") === "Providers|Automation|Projects|Hosts|Devices|This device", `${ctx}: the nav ${JSON.stringify(n)}`);
     check(hosts?.s === "4 hosts · 1 needs you" && hosts?.badge === "1", `${ctx}: the Hosts nav row ${JSON.stringify(hosts)}`);
     check(/^\d+ projects$/.test(projects?.s ?? ""), `${ctx}: the Projects summary still counts hosts ${JSON.stringify(projects)}`);
     if (!phone) {
@@ -2240,7 +2241,7 @@ for (const [label, w, ht] of [
       const lab = await evaluate(`document.querySelector('.m-settings .sr.host[data-host=lab]')?.classList.contains('bad')`);
       check(lab === false, `${ctx}: lab's row is still red after Trust`);
       await evaluate(`history.back()`);
-      await waitFor(`document.querySelectorAll('.m-settings .stn-i').length === 5`, { soft: true });
+      await waitFor(`document.querySelectorAll('.m-settings .stn-i').length === 6`, { soft: true });
     }
     const n = await evaluate(NAV);
     const hosts = n.find((x) => x.t === "Hosts");

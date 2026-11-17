@@ -7,7 +7,7 @@ const ready = { status: "ready" as const };
 const login = { status: "needs-login" as const };
 const key = { status: "needs-key" as const };
 
-test("the five pages, in order (V0.125: Hosts between Projects and This device)", () => {
+test("the six pages, in order (V0.125: Hosts between Projects and This device; V0.157: Devices after Hosts)", () => {
   assert.deepEqual(
     PAGES.map((p) => [p.id, p.title]),
     [
@@ -15,6 +15,7 @@ test("the five pages, in order (V0.125: Hosts between Projects and This device)"
       ["automation", "Automation"],
       ["projects", "Projects"],
       ["hosts", "Hosts"],
+      ["devices", "Devices"],
       ["device", "This device"],
     ],
   );
