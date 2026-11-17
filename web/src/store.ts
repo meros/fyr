@@ -1,19 +1,23 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
 import { orderProjects } from "./projects.ts";
+import type { QueueEntry } from "./slot-queue.ts";
 import type { HostInfo } from "./hosts.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { decodeProject, decodeState, decodeThread } from "./decode.ts";
 
 import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, Thread, ThreadDTO } from "./types.ts";
 
-export type SectionKey = "needs" | "working" | "seen" | "snoozed" | "settled";
+export type SectionKey = "needs" | "working" | "slots" | "seen" | "snoozed" | "settled";
 
-export const SECTIONS: { key: SectionKey; label: string; short: string; state: AttentionState }[] = [
-  { key: "needs", label: "Needs you", short: "Needs", state: "asking" },
-  { key: "working", label: "Working", short: "Working", state: "working" },
-  { key: "seen", label: "Seen", short: "Seen", state: "seen" },
-  { key: "snoozed", label: "Snoozed", short: "Snoozed", state: "snoozed" },
-  { key: "settled", label: "Settled", short: "Settled", state: "settled" },
+/** `g`: the section's key after g on the desktop (g1–g5). V0.137: Waiting for a slot has none, so the others keep their
+ *  keys; it shows only while a host's queue is not empty (`transient`). */
+export const SECTIONS: { key: SectionKey; label: string; short: string; state: AttentionState; g?: number; transient?: boolean }[] = [
+  { key: "needs", label: "Needs you", short: "Needs", state: "asking", g: 1 },
+  { key: "working", label: "Working", short: "Working", state: "working", g: 2 },
+  { key: "slots", label: "Waiting for a slot", short: "Slots", state: "waiting", transient: true },
+  { key: "seen", label: "Seen", short: "Seen", state: "seen", g: 3 },
+  { key: "snoozed", label: "Snoozed", short: "Snoozed", state: "snoozed", g: 4 },
+  { key: "settled", label: "Settled", short: "Settled", state: "settled", g: 5 },
 ];
 
 export type Conn = "connecting" | "live" | "offline";
@@ -218,7 +222,8 @@ export function isPinned(t: Thread): boolean {
 }
 
 /** A section's rows under the pinned block: the section without its pinned threads. */
-export function unpinned(list: Thread[]): Thread[] {
+export function unpinned(list: Thread[], key?: SectionKey): Thread[] {
+  if (key === "slots") return list; // V0.137: the queue keeps its pinned threads, in its order
   return list.filter((t) => !isPinned(t));
 }
 
@@ -235,18 +240,27 @@ export function sectionOf(t: Thread): SectionKey | null {
   }
 }
 
-export function sections(threads: Record<string, Thread>): Sections {
-  const out: Sections = { needs: [], working: [], seen: [], snoozed: [], settled: [], pinned: [] };
+/** V0.137: `queue` (slotQueue of the load) moves every queued thread to Waiting for a slot, in the queue's order (host by
+ *  host, then its place), except a thread in Needs you, which stays there: the owner acts on it first. A pinned queued
+ *  thread is in the queue's section and not in the pinned block, so the queue reads in its real order. */
+export function sections(threads: Record<string, Thread>, queue: readonly QueueEntry[] = []): Sections {
+  const out: Sections = { needs: [], working: [], slots: [], seen: [], snoozed: [], settled: [], pinned: [] };
+  const queued = new Set(queue.map((e) => e.owner));
   for (const t of Object.values(threads)) {
     const k = sectionOf(t);
+    if (k && k !== "needs" && queued.has(t.id)) continue;
     if (k) out[k].push(t);
+  }
+  for (const e of queue) {
+    const t = threads[e.owner];
+    if (t && !e.priority && sectionOf(t) && sectionOf(t) !== "needs" && !out.slots.includes(t)) out.slots.push(t);
   }
   out.needs.sort(compareNeeds);
   out.working.sort(compareWorking);
   out.seen.sort(compareActivityDesc);
   out.snoozed.sort(compareActivityDesc);
   out.settled.sort(compareActivityDesc);
-  out.pinned = SECTIONS.flatMap((s) => out[s.key].filter(isPinned));
+  out.pinned = SECTIONS.filter((s) => s.key !== "slots").flatMap((s) => out[s.key].filter(isPinned));
   return out;
 }
 
@@ -254,7 +268,7 @@ export function sections(threads: Record<string, Thread>): Sections {
 export function flatOrder(sec: Sections, limits?: Partial<Record<SectionKey, number>>): string[] {
   const ids: string[] = sec.pinned.map((t) => t.id);
   for (const { key } of SECTIONS) {
-    const list = unpinned(sec[key]);
+    const list = unpinned(sec[key], key);
     const n = limits?.[key] ?? list.length;
     for (let i = 0; i < Math.min(n, list.length); i++) ids.push(list[i].id);
   }
