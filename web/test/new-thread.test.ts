@@ -1,7 +1,7 @@
 // #41: one New thread model for desktop and phone, with one remembered-defaults record.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chooseProject, createArgs, initialForm, loadRemembered, NEW_THREAD_KEY, pickProfile, saveRemembered, settleForm, type FormCtx } from "../src/new-thread.ts";
+import { chooseHost, chooseProject, createArgs, initialForm, loadRemembered, NEW_THREAD_KEY, pickProfile, saveRemembered, settleForm, type FormCtx } from "../src/new-thread.ts";
 import type { Profile, Project } from "../src/types.ts";
 
 function memory(init: Record<string, string> = {}) {
@@ -77,6 +77,8 @@ test("#41: choosing a project takes its defaults; a host without the current pro
   assert.deepEqual([f.projectId, f.profile, f.model], ["p_s", "work", "sonnet"]);
   f = chooseProject(f, null, c);
   assert.deepEqual([f.projectId, f.profile], [undefined, "work"], "No project keeps a profile the host has");
+  // V0.139: No project stays on the host picked (srv); the owner picks local to get its providers back.
+  f = chooseHost(f, "local", c);
   f = pickProfile(f, "claude", c);
   assert.deepEqual([f.profile, f.model], ["claude", "opus"]);
 });

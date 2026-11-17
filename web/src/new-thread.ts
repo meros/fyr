@@ -130,13 +130,22 @@ export function initialForm(): NewThreadForm {
   return { projectId: null, made: null, picking: false, creating: null, draft: null, picked: "", profile: "", model: "", effortPick: "", text: "", title: "", liveView: false, host: "" };
 }
 
-/** The projects to pick from: the host's, and one made here that the host has not sent yet. */
+/** V0.139: a host's projects (every project with one host). */
+export function hostProjects(ctx: FormCtx, host: string | undefined): Project[] {
+  if (!multiHost(ctx.hosts)) return ctx.projects;
+  return ctx.projects.filter((p) => hostForProject(p.host, ctx.hosts) === host);
+}
+
+/** The projects to pick from: the thread's host's (V0.139: host first), and one made here that the host has not sent
+ *  yet. */
 export function formProjects(f: NewThreadForm, ctx: FormCtx): Project[] {
-  return f.made && !ctx.projects.some((x) => x.id === f.made!.id) ? [...ctx.projects, f.made] : ctx.projects;
+  const list = hostProjects(ctx, formHost(f, ctx));
+  return f.made && !list.some((x) => x.id === f.made!.id) ? [...list, f.made] : list;
 }
 
 export function currentProject(f: NewThreadForm, ctx: FormCtx): Project | undefined {
-  return f.projectId ? formProjects(f, ctx).find((x) => x.id === f.projectId) : undefined;
+  if (!f.projectId) return undefined;
+  return ctx.projects.find((x) => x.id === f.projectId) ?? (f.made?.id === f.projectId ? f.made : undefined);
 }
 
 /** V0.63: the project being made while the New project step is open. */
@@ -144,28 +153,27 @@ export function makingProject(f: NewThreadForm): { name: string; folder: string 
   return f.creating !== null ? (f.draft ?? { name: f.creating, folder: "" }) : null;
 }
 
-/** V0.54, V0.132: the host the thread starts on: its project's; with no project, or a project made here, the one the
- *  owner picked, else the front's first. */
+/** V0.54, V0.132, V0.139: the host the thread starts on: the one the owner picked (host first), else its project's,
+ *  else the first in the owner's order. */
 export function formHost(f: NewThreadForm, ctx: FormCtx): string | undefined {
+  if (f.host) return f.host;
   const cur = makingProject(f) ? undefined : currentProject(f, ctx);
-  if (cur) return hostForProject(cur.host, ctx.hosts);
-  return f.host || hostForProject(undefined, ctx.hosts);
+  return hostForProject(cur?.host, ctx.hosts);
 }
 
-/** V0.132: the project that holds the host (the Host field is locked to it), or "" when the owner picks it. */
-export function hostLock(f: NewThreadForm, ctx: FormCtx): string {
-  if (makingProject(f)) return "";
-  return currentProject(f, ctx)?.name ?? "";
-}
-
-/** V0.132: pick the host (no project, or a project made here): a folder picked on another host is dropped, and the
- *  provider moves to one that host has. */
+/** V0.132, V0.139: pick the host first: its projects follow (the remembered one when it is there, else its first; No
+ *  project stays No project), a folder picked on another host is dropped, and the provider moves to one it has. */
 export function chooseHost(f: NewThreadForm, host: string, ctx: FormCtx, last: Remembered = {}): NewThreadForm {
-  if (hostLock(f, ctx)) return f;
-  const next: NewThreadForm = { ...f, host, picked: host === formHost(f, ctx) ? f.picked : "" };
+  if (host === formHost(f, ctx)) return f;
+  let next: NewThreadForm = { ...f, host, picked: "", creating: null, draft: null, picking: false };
+  if (f.projectId !== undefined) {
+    const list = hostProjects(ctx, host);
+    const pr = list.find((x) => x.id === startProject(list, null, last.projectId));
+    next = { ...next, projectId: pr?.id };
+  }
   const there = profilesOn(host, ctx.hosts, ctx.profiles);
   if (!there.length) return next;
-  return { ...next, ...profileFor(undefined, there, f, last) };
+  return { ...next, ...profileFor(currentProject(next, ctx), there, f, last) };
 }
 
 /** The profiles of that host. */
@@ -199,9 +207,16 @@ function profileFor(pr: Project | undefined, there: Profile[], current: { profil
 /** Pick the start project once the projects are there, and a profile once the profiles are. */
 export function settleForm(f: NewThreadForm, ctx: FormCtx, filterId: string | null, last: Remembered): NewThreadForm {
   let out = f;
+  // V0.139: host first. The start host is the project filter's project's, else the first in the owner's order (not
+  // the host this browser is connected to); then that host's projects.
+  if (!out.host && multiHost(ctx.hosts)) {
+    const filtered = filterId ? ctx.projects.find((x) => x.id === filterId) : undefined;
+    out = { ...out, host: hostForProject(filtered?.host, ctx.hosts) ?? "" };
+  }
   if (out.projectId === null && ctx.projects.length) {
-    const id = startProject(ctx.projects, filterId, last.projectId);
-    const pr = ctx.projects.find((x) => x.id === id);
+    const list = hostProjects(ctx, formHost(out, ctx));
+    const id = startProject(list, filterId, last.projectId);
+    const pr = list.find((x) => x.id === id);
     out = pr ? chooseProject(out, pr, ctx, last) : { ...out, projectId: undefined };
   }
   if (!out.profile) {
@@ -213,7 +228,9 @@ export function settleForm(f: NewThreadForm, ctx: FormCtx, filterId: string | nu
 
 /** Pick a project (null: No project): its folder follows, and its default profile and model. */
 export function chooseProject(f: NewThreadForm, pr: Project | null, ctx: FormCtx, last: Remembered = {}): NewThreadForm {
-  const next: NewThreadForm = { ...f, picking: false, creating: null, draft: null, projectId: pr?.id, picked: "" };
+  // V0.139: a project of another host (a filter, a deep link) moves the thread's host to it.
+  const host = pr && multiHost(ctx.hosts) ? (hostForProject(pr.host, ctx.hosts) ?? f.host) : f.host;
+  const next: NewThreadForm = { ...f, picking: false, creating: null, draft: null, projectId: pr?.id, picked: "", host };
   const there = profilesOn(hostForProject(pr?.host, ctx.hosts), ctx.hosts, ctx.profiles);
   if (!there.length) return next;
   return { ...next, ...profileFor(pr ?? undefined, there, f, last) };

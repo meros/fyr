@@ -21,7 +21,8 @@ import { effortsFor, offLabel, startEffort } from "./providers.ts";
 import { dividerLine, rungDone } from "./handover.ts";
 import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
-import { offlineLine } from "./hosts.ts";
+import { hostChip, hostOf, offlineLine, profilesOfHost } from "./hosts.ts";
+import { useHosts } from "./host-pick-ui.tsx";
 import { onToolDetails, toolDetails } from "./prefs.ts";
 import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
 import { colorVar, projectName, projectOf } from "./projects.ts";
@@ -95,7 +96,10 @@ export function ThreadPane(p: ThreadPaneProps) {
   const tab = defaultTab(t, pick?.id === t.id ? pick.tab : urlTab(t.id));
   const setTab = (tab: string) => setPick({ id: t.id, tab });
   useEffect(() => setPick(null), [t.id]); // another thread opens on its own default
-  const profile = p.profiles.find((x) => x.id === t.profile);
+  const hs = useHosts();
+  // V0.139: the thread's provider is its host's (the same id on another host is another provider).
+  const profile = profilesOfHost(hostOf(t, hs.hosts), hs.hosts, p.profiles).find((x) => x.id === t.profile);
+  const hc = hostChip(t.host, hs.hosts, hs.now);
   const decision = currentDecision(t);
   const st = t.attention.state;
   const settleReason = unavailableReason(t, "thread.settle");
@@ -155,10 +159,17 @@ export function ThreadPane(p: ThreadPaneProps) {
               <StartedBy parentId={t.parent} />
             </span>
           )}
-          {t.hostOffline && (
+          {t.hostOffline ? (
             <span class="chip m" title="The front shows this thread from its last copy; commands wait until the host is back">
               <span>{offlineLine(t)}</span>
             </span>
+          ) : (
+            // V0.139: the host it runs on, as the phone's header shows it.
+            hc && (
+              <span class="chip m hostc" title={`Runs on ${hc.name}`}>
+                <span>{hc.name}</span>
+              </span>
+            )
           )}
           {t.branch && (
             <span class="chip m brn" title={t.branch}>
