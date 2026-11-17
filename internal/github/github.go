@@ -48,6 +48,12 @@ func fetch(ctx context.Context, gh Runner, url string) (core.PR, int, error) {
 	if err != nil {
 		return core.PR{}, 0, err
 	}
+	return fromView(ctx, gh, url, repo, n, out)
+}
+
+// fromView makes the PR of gh pr view's JSON, or of one PR of a batched
+// read (V0.178), which has the same shape.
+func fromView(ctx context.Context, gh Runner, url, repo string, n int, out []byte) (core.PR, int, error) {
 	var v struct {
 		State          string `json:"state"`
 		Mergeable      string `json:"mergeable"`
@@ -429,8 +435,33 @@ func (p *Poller) Run(ctx context.Context) {
 }
 
 func (p *Poller) pollAll(ctx context.Context) {
+	// V0.178: the PRs of one repo are read in one GraphQL query (up to
+	// BatchMax each); a PR the batch did not answer is read alone.
+	byRepo := map[string][]PRThread{}
+	var order []string
 	for _, t := range p.Src.Snapshot() {
-		p.poll(ctx, t)
+		repo, _, ok := core.ParsePR(t.URL)
+		k := core.RepoKey(repo)
+		if !ok || k == "" {
+			p.poll(ctx, t)
+			continue
+		}
+		if _, seen := byRepo[k]; !seen {
+			order = append(order, k)
+		}
+		byRepo[k] = append(byRepo[k], t)
+	}
+	for _, k := range order {
+		ts := byRepo[k]
+		if len(ts) == 1 {
+			p.poll(ctx, ts[0])
+			continue
+		}
+		for len(ts) > 0 {
+			chunk := ts[:min(BatchMax, len(ts))]
+			ts = ts[len(chunk):]
+			p.pollBatch(ctx, k, chunk)
+		}
 	}
 	if ds, ok := p.Src.(DeploySource); ok {
 		watched := map[string]bool{}
@@ -472,9 +503,45 @@ func (p *Poller) poll(ctx context.Context, t PRThread) {
 		return
 	}
 	if err != nil {
-		log.Printf("pr %s: %v", t.URL, err) // transient: nothing changes
+		if !errors.Is(err, ErrBudget) {
+			log.Printf("pr %s: %v", t.URL, err) // transient: nothing changes
+		}
 		return
 	}
+	p.observe(c, t, pr, failed)
+}
+
+// pollBatch reads the PRs of one repo in one query (V0.178).
+func (p *Poller) pollBatch(ctx context.Context, repo string, ts []PRThread) {
+	c, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	urls := make([]string, len(ts))
+	for i, t := range ts {
+		urls[i] = t.URL
+	}
+	views, err := FetchViews(c, p.Gh, repo, urls)
+	if errors.Is(err, ErrBudget) {
+		return
+	}
+	for _, t := range ts {
+		out, ok := views[t.URL]
+		if err != nil || !ok {
+			p.poll(ctx, t) // read alone: a missing PR is told apart there
+			continue
+		}
+		r, n, _ := core.ParsePR(t.URL)
+		pr, failed, ferr := fromView(c, p.Gh, t.URL, r, n, out)
+		if ferr != nil {
+			if !errors.Is(ferr, ErrBudget) {
+				log.Printf("pr %s: %v", t.URL, ferr)
+			}
+			continue
+		}
+		p.observe(c, t, pr, failed)
+	}
+}
+
+func (p *Poller) observe(c context.Context, t PRThread, pr core.PR, failed int) {
 	delete(p.missing, t.URL)
 	if pr.State == "OPEN" && pr.Checks == core.ChecksFail && pr.Head != "" {
 		pr.Annotations = p.annotations(c, t.URL, pr, failed)
