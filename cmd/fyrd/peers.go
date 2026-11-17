@@ -54,8 +54,8 @@ func newDiscovery(cfg config, self peers.WellKnown, listen string, fr *front.Fro
 				}
 			}
 		}}
-	if tailnet.Available(tailnet.DefaultSocket) && cfg.OwnerLogin != "" {
-		opt.Nodes = func(ctx context.Context) ([]string, error) { return tailnet.Candidates(ctx, tailnet.DefaultSocket) }
+	if tailnet.Available(cfg.tsSocket()) && cfg.OwnerLogin != "" {
+		opt.Nodes = func(ctx context.Context) ([]string, error) { return tailnet.Candidates(ctx, cfg.tsSocket()) }
 		if pub := servePublic(cfg); pub != "" {
 			opt.Self = "https://" + pub
 		}
@@ -67,7 +67,7 @@ func newDiscovery(cfg config, self peers.WellKnown, listen string, fr *front.Fro
 // Serve on: the node's MagicDNS name and the first peer port (default 7443,
 // the NixOS module's); "" without tailscaled.
 func servePublic(cfg config) string {
-	_, dns, err := tailnet.Self(tailnet.DefaultSocket)
+	_, dns, err := tailnet.Self(cfg.tsSocket())
 	if (err != nil && !errors.Is(err, tailnet.ErrTagged)) || dns == "" {
 		return ""
 	}

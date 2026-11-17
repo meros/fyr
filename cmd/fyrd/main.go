@@ -514,7 +514,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	// V0.54: "tailnet:PORT" is this machine's tailnet address.
 	if port, ok := strings.CutPrefix(cfg.HostListen, "tailnet:"); ok {
-		ip, err := tailnet.IPv4(tailnet.DefaultSocket)
+		ip, err := tailnet.IPv4(cfg.tsSocket())
 		if err != nil {
 			log.Fatalf("hostListen %s: %v", cfg.HostListen, err)
 		}
@@ -566,7 +566,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		serve(listenLoopback(cfg.HostListen), hostHandler)
 		log.Printf("serving fronts on loopback at %s", cfg.HostListen)
 	default:
-		serve(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: tailnet.DefaultSocket}))
+		serve(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: cfg.tsSocket()}))
 		log.Printf("serving fronts on the tailnet at %s", cfg.HostListen)
 	}
 	log.Printf("build %s (%s) listening on http://%s (%d threads, %d providers)", BuildID(), cfg.Role, ln.Addr(), len(eng.Snapshot()), len(h.profiles()))

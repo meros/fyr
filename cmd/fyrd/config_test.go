@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/meros/fyr/internal/tailnet"
 )
 
 // SPEC 0.5 V0.80: the module's cgroups block, as nix/module.nix writes it;
@@ -78,5 +80,19 @@ func TestLoopbackHostListen(t *testing.T) {
 		if got := loopbackAddr(addr); got != want {
 			t.Errorf("loopbackAddr(%q) = %v", addr, got)
 		}
+	}
+}
+
+// V0.155 (decision 0030 slice 0): tailscaled's socket is configurable, so a
+// scratch fyrd talks to a fake one; empty is the default.
+func TestTailscaleSocketConfig(t *testing.T) {
+	if got := (config{}).tsSocket(); got != tailnet.DefaultSocket {
+		t.Errorf("default %q", got)
+	}
+	p := filepath.Join(t.TempDir(), "config.json")
+	os.WriteFile(p, []byte(`{"tailscaleSocket": "/tmp/x/ts.sock"}`), 0o600)
+	c := loadConfig(p, filepath.Join(t.TempDir(), "none.json"))
+	if got := c.tsSocket(); got != "/tmp/x/ts.sock" {
+		t.Errorf("configured %q", got)
 	}
 }

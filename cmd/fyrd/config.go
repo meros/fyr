@@ -106,6 +106,18 @@ type config struct {
 	// Name: this install's name in the clients; empty is the machine's
 	// hostname. Two installs on one machine need two names (V0.123).
 	Name string `json:"name"`
+	// TailscaleSocket: tailscaled's LocalAPI socket; empty is
+	// tailnet.DefaultSocket. Decision 0030 slice 0: the test harness points a
+	// scratch fyrd at a fake tailscaled with it.
+	TailscaleSocket string `json:"tailscaleSocket"`
+}
+
+// tsSocket is the LocalAPI socket this install asks about the tailnet.
+func (c config) tsSocket() string {
+	if c.TailscaleSocket != "" {
+		return c.TailscaleSocket
+	}
+	return tailnet.DefaultSocket
 }
 
 func home() string { h, _ := os.UserHomeDir(); return h }
@@ -170,7 +182,7 @@ func (c *config) override(listen, ownerLogin, role, hosts, hostListen string) {
 	}
 	if c.OwnerLogin == "" {
 		// V0.14: the Tailscale user of this machine owns it over the tailnet.
-		if login, dns, err := tailnet.Self(tailnet.DefaultSocket); err == nil {
+		if login, dns, err := tailnet.Self(c.tsSocket()); err == nil {
 			c.OwnerLogin = login
 			log.Printf("tailnet owner %s on %s", login, dns)
 		} else {
