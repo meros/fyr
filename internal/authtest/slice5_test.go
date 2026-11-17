@@ -62,7 +62,7 @@ func TestRemovingACompromisedInstall(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", "https://peer/api/stream", nil)
-	req.Header.Set("Fyr-Actor", actor)
+	req.Header.Set("Fyr-Actor", strings.ReplaceAll(actor, "id=front;", "id="+cKey.ID()+";"))
 	resp, err := d.Client(aKey.ID(), net.JoinHostPort("127.0.0.1", strconv.Itoa(a.PeerPort))).Do(req)
 	if err != nil {
 		t.Fatal(err)

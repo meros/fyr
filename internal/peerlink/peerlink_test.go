@@ -95,3 +95,29 @@ func TestResolveMapsTheAddress(t *testing.T) {
 	conn.Close()
 	var _ net.Conn = conn
 }
+
+// oldListener is an install of an older slice: a TLS 1.3 listener that offers
+// fyr-peer/1 only. It answers nothing.
+func oldListener(t *testing.T, k *identity.Key) string {
+	t.Helper()
+	cfg, err := ServerConfig(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.NextProtos = []string{ALPN}
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() { c.(*tls.Conn).Handshake(); c.Close() }()
+		}
+	}()
+	return ln.Addr().String()
+}

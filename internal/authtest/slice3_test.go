@@ -232,6 +232,7 @@ func peerDo(t *testing.T, from, to *authtest.MeshNode, method, path, actor strin
 	if err != nil {
 		t.Fatal(err)
 	}
+	actor = strings.ReplaceAll(actor, "id=front;", "id="+key.ID()+";") // an install speaks as itself over a link
 	port := peerPortOf(t, to)
 	d := &peerlink.Dialer{Key: key}
 	cl := d.Client(toKey.ID(), net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
@@ -314,10 +315,10 @@ func TestPeerPortRefusesStrangersAndWrongKeys(t *testing.T) {
 		t.Error("plain HTTP answered on the peer port")
 	}
 	// a member: /mcp is 404, the host protocol works
-	if st, _ := peerDo(t, b, a, "GET", "/mcp", "v=1; kind=install; id=x; how=link", nil); st != 404 {
+	if st, _ := peerDo(t, b, a, "GET", "/mcp", "v=1; kind=install; id=front; how=link", nil); st != 404 {
 		t.Errorf("/mcp on the peer port for a member: %d (want 404)", st)
 	}
-	if st, _ := peerDo(t, b, a, "GET", "/api/profiles", "v=1; kind=install; id=x; how=link", nil); st != 200 {
+	if st, _ := peerDo(t, b, a, "GET", "/api/profiles", "v=1; kind=install; id=front; how=link", nil); st != 200 {
 		t.Errorf("the host protocol for a member: %d", st)
 	}
 	if st, _ := peerDo(t, b, a, "GET", "/api/profiles", "", nil); st != 401 {

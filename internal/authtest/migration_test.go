@@ -175,6 +175,59 @@ var steps = []step{
 			t.Fatalf("%v\n%s", err, out)
 		}
 	}},
+	// Slice 5b: two-way links. The owner's tailnet policy lets the laptop reach the Mac
+	// and not the Mac reach the laptop: the Mac's dials to the laptop's peer port go into
+	// a black hole, and the Mac restarts. The laptop's front still follows the Mac, and the
+	// Mac's front now sees the laptop, over the one link the laptop opened. Everything
+	// existing keeps working (checks run after the step).
+	{"slice 5b: the Mac cannot dial the laptop; one link carries both ways", func(t *testing.T, l *authtest.Live) {
+		r, err := l.Laptop.Roster()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var port int
+		for _, m := range r.Members {
+			if m.Self {
+				port = m.Port
+			}
+		}
+		if err := l.BlockDial("mac", l.Self.Name, port); err != nil {
+			t.Fatal(err)
+		}
+		if err := migMac.Fyrd.PinPeerPort(); err != nil { // a real install's peerPort is fixed
+			t.Fatal(err)
+		}
+		if err := migMac.Fyrd.Restart(); err != nil {
+			t.Fatal(err)
+		}
+		link, err := migMac.Fyrd.OwnerOnce()
+		if err != nil {
+			t.Fatal(err)
+		}
+		macCookie, err := authtest.Redeem(migMac.Fyrd.URL(), link)
+		if err != nil {
+			t.Fatal(err)
+		}
+		end := time.Now().Add(30 * time.Second)
+		var ml authtest.LinkOf
+		for {
+			if x, ok := authtest.HostLink(migMac.Fyrd, macCookie, "laptop"); ok && x.State == "up" {
+				ml = x
+				break
+			}
+			if time.Now().After(end) {
+				rr, _ := migMac.Fyrd.Get("/api/state", macCookie)
+				t.Fatalf("the Mac's front does not see the laptop (it cannot dial it): %+v\n%.600s\n%s", ml, rr.Body, migMac.Fyrd.Log())
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if ml.Opened != "them" {
+			t.Errorf("the Mac's link to the laptop was opened %q (the laptop dials: want them)", ml.Opened)
+		}
+		if hosts, err := l.WaitHostsOnline(l.Local, 30*time.Second, "laptop", "server", "mac"); err != nil || !hosts["mac"] {
+			t.Fatalf("the laptop's front lost the Mac: %v %v", hosts, err)
+		}
+	}},
 	// Slice 6 adds: the LAN.
 }
 

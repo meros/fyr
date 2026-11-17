@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/meros/fyr/internal/auth"
@@ -48,6 +49,7 @@ type Live struct {
 	// is the CA they trust for each other's Serve (EnablePeers).
 	resolveFiles map[string]string
 	caFile       string
+	blackhole    net.Listener
 }
 
 // NewLive builds the fixture and starts both fyrds. Close stops them.
@@ -248,7 +250,7 @@ func (l *Live) EnablePeers() (*Mac, error) {
 		return p
 	}
 	peerCfg := func(resolve string) map[string]any {
-		return map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": resolve, "rootCAs": pemFile}
+		return map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": resolve, "rootCAs": pemFile, "linkBackoffMillis": 100, "linkDialMillis": 700}
 	}
 	// The release restarts the laptop with a peer port; its data stays.
 	l.Laptop.Stop()
@@ -305,10 +307,45 @@ func (l *Live) AddTaggedInstall(mac *Mac) (*Mac, error) {
 	rf := filepath.Join(root, "resolve-box.json")
 	b, _ := json.Marshal(map[string]string{l.Self.Name: "127.0.0.1", mac.Node.Name: "127.0.0.1", boxNode.Name: "127.0.0.1"})
 	os.WriteFile(rf, b, 0o600)
-	box, err := Start(Options{Name: "box", Data: data, Tailscale: boxTS, Extra: map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": l.caFile}})
+	box, err := Start(Options{Name: "box", Data: data, Tailscale: boxTS, Extra: map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": l.caFile, "linkBackoffMillis": 100, "linkDialMillis": 700}})
 	if err != nil {
 		return nil, err
 	}
 	l.cleanups = append(l.cleanups, box.Stop)
 	return &Mac{Fyrd: box, TS: boxTS, Node: boxNode}, nil
+}
+
+// BlockDial is a one-way ACL: dials from the install named from to the peer port
+// toPort of the install named toName go into a black hole (the owner's tailnet policy
+// that lets the laptop reach a machine and not the other way).
+func (l *Live) BlockDial(from, toName string, toPort int) error {
+	if l.blackhole == nil {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return err
+		}
+		l.blackhole = ln
+		l.cleanups = append(l.cleanups, func() { ln.Close() })
+		go func() {
+			var held []net.Conn
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				held = append(held, c) // held open and silent, as a dropped flow is
+				_ = held
+			}
+		}()
+	}
+	rf := l.resolveFiles[from]
+	b, err := os.ReadFile(rf)
+	if err != nil {
+		return err
+	}
+	var m map[string]string
+	json.Unmarshal(b, &m)
+	m[net.JoinHostPort(toName, strconv.Itoa(toPort))] = l.blackhole.Addr().String()
+	b, _ = json.Marshal(m)
+	return os.WriteFile(rf, b, 0o600)
 }
