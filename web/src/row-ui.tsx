@@ -7,7 +7,7 @@ import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { press } from "./confirm.ts";
 import { ThreadCPU, ThreadSlot } from "./load-ui.tsx";
-import { StartedBy, ThreadProject } from "./project-ui.tsx";
+import { RowProject, RowProjectName, StartedBy } from "./project-ui.tsx";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState } from "./rows.ts";
 import { relTime, untilLabel, whenLabel } from "./format.ts";
@@ -21,10 +21,12 @@ export interface RowLook {
   keys: boolean;
   /** a tap on the phone opens the row, so "started by" is not a link there */
   link: boolean;
+  /** the project icon before the title: the phone's title is 15 px, so its icon is 16 (V0.135) */
+  icon: number;
 }
 
-export const DESKTOP_LOOK: RowLook = { keys: true, link: true };
-export const PHONE_LOOK: RowLook = { keys: false, link: false };
+export const DESKTOP_LOOK: RowLook = { keys: true, link: true, icon: 14 };
+export const PHONE_LOOK: RowLook = { keys: false, link: false, icon: 16 };
 
 interface BodyProps {
   t: Thread;
@@ -57,9 +59,10 @@ export function PrBadge({ t, short }: { t: Thread; short?: boolean }) {
   );
 }
 
-/** A row has one shape in every section (V0.91): the project tag and the title on the first line, with the age at the
- * end; what the thread does on the second; its chips (PR or change, subagents) on a third line of their own, only when
- * it has one. Nothing shares a line with the title but the project and the age, so nothing is cut to fit a chip. */
+/** A row has one shape in every section (V0.91, V0.135): the project icon and the title, which wraps to two lines before
+ * it is cut and always keeps two lines of room (no jump while a title streams in), with the age at the end; then what
+ * the thread does, after the project's name (only without an image icon or a filter) and a quiet ↳ for a thread
+ * another started; its chips (PR or change, subagents) after that, only when it has one. */
 /** V0.104: the pin mark (Lucide "pin", ISC). */
 export const PIN_ICON = (
   <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -68,19 +71,32 @@ export const PIN_ICON = (
   </svg>
 );
 
-function RowHead({ t }: { t: Thread }) {
+function RowHead({ t, look }: { t: Thread; look: RowLook }) {
   return (
-    <span class="hd">
+    // The icon and the pin sit over the title's first-line indent (app.css): inside the clamped box an element would
+    // become a block of its own (-webkit-box), and Safari clamps only plain text.
+    <span class={`hd${t.pinnedAt ? " pinned" : ""}`} style={{ "--ri": `${look.icon}px` }}>
+      <RowProject t={t} size={look.icon} />
       {t.pinnedAt && (
         <span class="pin" title="Pinned" aria-label="Pinned" role="img">
           {PIN_ICON}
         </span>
       )}
-      <ThreadProject t={t} />
-      <span class="t ell" title={t.title}>
+      <span class="t" title={t.title}>
         {t.title || "Untitled"}
       </span>
     </span>
+  );
+}
+
+/** V0.135: the start of a row's second line: the project's name when the icon does not say it, and ↳ for a thread
+ *  another thread started. */
+function RowFrom({ t, look, more }: { t: Thread; look: RowLook; more: boolean }) {
+  return (
+    <>
+      <RowProjectName t={t} sep={!!t.parent || more} />
+      {t.parent && <StartedBy parentId={t.parent} link={look.link} mark />}
+    </>
   );
 }
 
@@ -98,10 +114,12 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs }: Bod
           <StateIcon state={st} />
         </span>
       )}
-      <RowHead t={t} />
+      <RowHead t={t} look={look} />
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, now)}</span>
       <span class="m ell">
-        <b class={stateClass(st)}>{rowState(t)}</b> · {pre}{t.parent && <><StartedBy parentId={t.parent} link={look.link} /> · </>}{rowMeta(t, { keys: look.keys })}
+        <b class={stateClass(st)}>{rowState(t)}</b> · {pre}
+        <RowFrom t={t} look={look} more />
+        {rowMeta(t, { keys: look.keys })}
       </span>
       {(hasChange(t) || need) && (
         <span class="cl">
@@ -153,17 +171,12 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs }: BodyP
   return (
     <div {...attrs} class={`one${agents.length ? " has-agents" : ""}${extra}`}>
       {lead ?? <StateIcon state={st} />}
-      <RowHead t={t} />
+      <RowHead t={t} look={look} />
       <span class="age">{when}</span>
       <span class="m">
         <i class="ell">
           {pre}
-          {t.parent && (
-            <>
-              <StartedBy parentId={t.parent} link={look.link} />
-              {detail ? " · " : ""}
-            </>
-          )}
+          <RowFrom t={t} look={look} more={!!detail} />
           {detail}
           {working && <ThreadCPU id={t.id} />}
           <ThreadSlot id={t.id} />

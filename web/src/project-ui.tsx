@@ -9,6 +9,7 @@ import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay,
 import { LINE_ICONS } from "./lucide.ts";
 import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, iconFileError, nameError, patchFor, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { Group, Row, SaveField, Seg, Switch, useSet } from "./settings-rows.tsx";
+import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
 import { HostField, useHosts } from "./host-pick-ui.tsx";
 import { hostChoices, hostOfflineNote, multiHost } from "./hosts.ts";
@@ -28,6 +29,8 @@ export interface Directory {
   pickProject(threadId: string): void;
   /** this host's name */
   host: string;
+  /** the project filter on the inbox (V0.135: then a row does not name its project) */
+  projectFilter?: string | null;
 }
 export const DirectoryContext = createContext<Directory>({ threads: {}, projects: [], openThread: () => {}, openProject: () => {}, pickProject: () => {}, host: "" });
 export const useDirectory = () => useContext(DirectoryContext);
@@ -89,28 +92,51 @@ export function ProjectTag({ project, name, onClick, title }: { project?: Projec
   );
 }
 
-/** A thread's project tag from the directory. */
-export function ThreadProject({ t }: { t: Pick<Thread, "project" | "projectId"> }) {
+/** V0.135: a row's project, the icon alone before the title; the name is its tooltip. */
+export function RowProject({ t, size }: { t: Pick<Thread, "project" | "projectId">; size: number }) {
   const dir = useDirectory();
-  return <ProjectTag project={projectOf(t, dir.projects)} name={projectName(t, dir.projects)} />;
+  const p = projectOf(t, dir.projects);
+  const nm = p?.name ?? projectName(t, dir.projects);
+  return (
+    <span class="rpi" title={nm} role="img" aria-label={nm}>
+      <ProjectIcon project={p} name={nm} size={size} />
+    </span>
+  );
 }
 
-/** "from <parent title>" (V0.22), linked to the parent. */
-export function StartedBy({ parentId, link = true }: { parentId?: string | null; link?: boolean }) {
+/** V0.135: the project's name on a row's second line, only when its icon is not an image and no filter is on. */
+export function RowProjectName({ t, sep }: { t: Pick<Thread, "project" | "projectId">; sep: boolean }) {
+  const dir = useDirectory();
+  const nm = rowProjectName(projectOf(t, dir.projects), projectName(t, dir.projects), dir.projectFilter ?? null);
+  if (!nm) return null;
+  return (
+    <>
+      <span class="rpn">{nm}</span>
+      {sep ? " · " : ""}
+    </>
+  );
+}
+
+/** "from <parent title>" (V0.22), linked to the parent. V0.135: in an inbox row (mark) only a quiet "↳"; many rows
+ *  share one parent, so the title is the mark's tooltip and stays in full in the open thread's header. */
+export function StartedBy({ parentId, link = true, mark = false }: { parentId?: string | null; link?: boolean; mark?: boolean }) {
   const dir = useDirectory();
   if (!parentId) return null;
   const title = dir.threads[parentId]?.title || "another thread";
-  if (!link) return <span class="from">from {title}</span>;
+  const text = mark ? "↳" : `from ${title}`;
+  const cls = `from${mark ? " mark" : ""}`;
+  if (!link) return <span class={cls} title={mark ? `from ${title}` : undefined} aria-label={mark ? `from ${title}` : undefined}>{text}</span>;
   return (
     <button
-      class="from link"
-      title={`Started by “${title}”`}
+      class={`${cls} link`}
+      title={mark ? `from ${title}` : `Started by “${title}”`}
+      aria-label={mark ? `from ${title}` : undefined}
       onClick={(e) => {
         e.stopPropagation();
         dir.openThread(parentId);
       }}
     >
-      from {title}
+      {text}
     </button>
   );
 }
