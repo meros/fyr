@@ -71,6 +71,9 @@ export interface Slots {
   /** decision 0029 S2: the holders' costs summed (absent without admission by a budget), and why the head waits */
   used?: number;
   why?: string;
+  /** decision 0029 S4: the adapted budget (absent while it is n) and why */
+  budget?: number;
+  budgetWhy?: string;
 }
 
 /** A thread at or above this many cores is coloured. */
@@ -174,7 +177,10 @@ function slotDetail(h: HostLoad): string[] {
   // Decision 0029 S2: the budget in use, each holder's cost, and why the next job waits.
   const costs = s.held.map((x) => `${x.kind} ${one(x.cost ?? 1)}${(x.cost ?? 1) < 0.2 ? " idle" : ""}`).join(", ");
   const why = s.waiting.length && s.why ? `; the next waits: ${s.why}` : "";
-  return [`Slots: ${one(s.used)} of ${s.n} in use${costs ? ` (${costs})` : ""}, ${s.waiting.length} waiting${why}`];
+  const out = [`Slots: ${one(s.used)} of ${s.budget ?? s.n} in use${costs ? ` (${costs})` : ""}, ${s.waiting.length} waiting${why}`];
+  // Decision 0029 S4: the budget adapts to the host; say to what and why.
+  if (s.budget !== undefined) out.push(`Budget ${s.budget} (N ${s.n})${s.budgetWhy ? `: ${s.budgetWhy}` : ""}`);
+  return out;
 }
 
 export interface RailBudget {
@@ -192,11 +198,12 @@ export interface RailBudget {
 export function railBudget(h: HostLoad): RailBudget | null {
   const s = h.slots;
   if (!s || s.used === undefined) return null;
-  const share = s.n > 0 ? Math.min(1, Math.max(0, s.used / s.n)) : 1;
+  const b = s.budget ?? s.n; // decision 0029 S4: the adapted budget
+  const share = b > 0 ? Math.min(1, Math.max(0, s.used / b)) : 1;
   const waiting = s.waiting.length;
   // V0.152: a word under the bar only when it matters; red (hot) only while a job is held back.
-  const note = waiting ? `${waiting} ${waiting === 1 ? "waits" : "wait"}` : s.used >= s.n - 0.05 ? "full" : "";
-  return { text: `${one(s.used)}/${s.n}`, note, share: Math.round(share * 100) / 100, hot: waiting > 0, waiting };
+  const note = waiting ? `${waiting} ${waiting === 1 ? "waits" : "wait"}` : s.used >= b - 0.05 ? "full" : "";
+  return { text: `${one(s.used)}/${b}`, note, share: Math.round(share * 100) / 100, hot: waiting > 0, waiting };
 }
 
 /** V0.152: the slot meter's own tooltip: what it is, the budget in use, each holder's cost, who waits and why. */

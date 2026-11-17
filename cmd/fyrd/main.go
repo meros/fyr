@@ -342,6 +342,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		groups.Seen(thread, text)
 	}
 	eng.SlotFreeze, eng.SlotThaw = groups.Freeze, groups.Thaw // decision 0029 S5
+	if !pool.Off() {
+		eng.SlotAIMD = &slots.AIMD{N: float64(n)} // decision 0029 S4: the budget adapts
+	}
 	eng.JobReset = jobs.Reset
 	eng.SlotOver = func(owner string) (string, float64, float64, bool) {
 		h, ok := pool.Holding(owner)

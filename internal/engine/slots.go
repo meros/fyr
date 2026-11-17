@@ -146,6 +146,7 @@ func (e *Engine) sweepSlots() {
 	e.memoryGuard(s)
 	e.heavierThanPredicted(s)
 	e.freezeGuard(s)
+	e.adaptBudget(s)
 	// Decision 0029 S2: the conditions change without a release.
 	e.Slots.Fill()
 	for _, n := range nudges {
@@ -181,6 +182,18 @@ func (e *Engine) heavierThanPredicted(s slots.Snapshot) {
 		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotOver, Thread: h.Owner, Args: core.SlotOverArgs{Class: class, Live: live, Predicted: pred}}); err != nil {
 			log.Printf("slot over %s: %v", h.Owner, err)
 		}
+	}
+}
+
+// adaptBudget steps the budget controller and sets the pool's budget
+// (decision 0029 S4), outside e.mu.
+func (e *Engine) adaptBudget(s slots.Snapshot) {
+	if e.SlotAIMD == nil || e.SlotSignals == nil {
+		return
+	}
+	b, why := e.SlotAIMD.Step(e.Now(), e.SlotSignals(), len(s.Waiting) > 0, e.Slots.LastGrant())
+	if b != e.Slots.Budget() || (s.Budget != nil && s.BudgetWhy != why) {
+		e.Slots.SetBudget(b, why)
 	}
 }
 
