@@ -151,7 +151,12 @@ func (r *Roster) recomputeLocked() {
 			adds = append(adds, s)
 		}
 	}
-	sort.Slice(adds, func(i, j int) bool { return adds[i].At.Before(adds[j].At) })
+	sort.Slice(adds, func(i, j int) bool { // by time, then by id: every install orders them alike
+		if !adds[i].At.Equal(adds[j].At) {
+			return adds[i].At.Before(adds[j].At)
+		}
+		return adds[i].ID() < adds[j].ID()
+	})
 	for _, s := range adds {
 		if s.Subject == selfID && s.By == selfID && ed25519.PublicKey(s.Key).Equal(r.self.Public) && verifyWith(r.self.Public, s) {
 			members[selfID] = memberOf(s)
@@ -171,17 +176,25 @@ func (r *Roster) recomputeLocked() {
 			changed = true
 		}
 	}
-	// A later add of a member updates where to reach it (the newest signed by a
-	// member wins), never its key.
+	// Where to reach a member: what the member itself last said wins; a hint from
+	// another member (who paired with it) is used until it has said. Never its key.
+	own := map[string]bool{}
 	for _, s := range adds {
 		m, in := members[s.Subject]
-		if !in || !ed25519.PublicKey(s.Key).Equal(m.Key) {
+		if !in || !ed25519.PublicKey(s.Key).Equal(m.Key) || s.Port == 0 {
 			continue
 		}
-		if signer, ok := members[s.By]; ok && verifyWith(signer.Key, s) && s.Port != 0 {
-			m.Name, m.Host, m.Port = s.Name, s.Host, s.Port
-			members[s.Subject] = m
+		signer, ok := members[s.By]
+		if !ok || !verifyWith(signer.Key, s) {
+			continue
 		}
+		self := s.By == s.Subject
+		if own[s.Subject] && !self {
+			continue
+		}
+		m.Name, m.Host, m.Port = s.Name, s.Host, s.Port
+		members[s.Subject] = m
+		own[s.Subject] = own[s.Subject] || self
 	}
 	revoked := map[string]bool{}
 	devices := map[string]Statement{}
