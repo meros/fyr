@@ -40,6 +40,7 @@ import { LONG_PRESS_MS, idle, longPressCancelled, settleLabel, swipeAvail, swipe
 import type { Nav, Sheet } from "./nav.ts";
 import { hostsNeed, settingsNeed, type PageRef } from "./settings-nav.ts";
 import { useProvidersNeed } from "./settings-ui.tsx";
+import { HostField } from "./host-pick-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
 import { liveLine } from "./tasks.ts";
 import { COLLAPSED_BY_DEFAULT, ProjectFilterRow, SECTION_LIMIT, isOpen } from "./inbox.tsx";
@@ -202,7 +203,8 @@ export interface PhoneProps {
   projectActions: {
     update(id: string, patch: ProjectPatch): Promise<string | null>;
     setFolder(id: string, path: string): Promise<string | null>;
-    create(name: string, folder: string, threadIds?: string[]): Promise<{ error: string | null; id?: string }>;
+    /** V0.131: on `host`, else the threads' host */
+    create(name: string, folder: string, threadIds?: string[], host?: string): Promise<{ error: string | null; id?: string }>;
     /** null: No project */
     move(ids: string[], projectId: string | null): Promise<string | null>;
     /** V0.58 */
@@ -1085,7 +1087,7 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
 /** SPEC 0.5 V0.30: Project first; the folder follows from the project's folder on this host, else it is asked.
  *  #41: the state is useNewThreadForm's, shared with the desktop dialog. */
 function MNew(p: PhoneProps) {
-  const n = useNewThreadForm({ projects: p.store.projects, profiles: p.store.profiles, hosts: p.store.hosts, projectFilter: p.filter.id, clockOffset: p.store.clockOffset, onCreate: p.actions.create, onNewProject: (name, folder) => p.projectActions.create(name, folder) });
+  const n = useNewThreadForm({ projects: p.store.projects, profiles: p.store.profiles, hosts: p.store.hosts, projectFilter: p.filter.id, clockOffset: p.store.clockOffset, onCreate: p.actions.create, onNewProject: (name, folder, host) => p.projectActions.create(name, folder, [], host) });
   const { form: f, cur, chip, folder, profiles, att } = n;
   const ta = useRef<HTMLTextAreaElement>(null);
   const ready = n.plan.ok;
@@ -1137,9 +1139,10 @@ function MNew(p: PhoneProps) {
           )}
           {f.creating !== null && (
             <div class="m-pickpanel">
-              <NewProjectStep initialName={f.creating} initialFolder="" fromThread={false} onDraft={n.setDraft} onCancel={n.cancelCreating} onCreate={n.createProject} />
+              <NewProjectStep initialName={f.creating} initialFolder="" fromThread={false} host={n.host} onDraft={n.setDraft} onCancel={n.cancelCreating} onCreate={n.createProject} />
             </div>
           )}
+          <HostField value={n.host} lock={n.hostLock} onPick={n.chooseHost} what="The thread runs there, in that host's folders, on its providers." />
           <div class="m-dl">Folder</div>
           <div class={`m-dchip m-fline${folder.scratch ? " scratch" : ""}`}>
             <span class="ell">{folder.label}</span>

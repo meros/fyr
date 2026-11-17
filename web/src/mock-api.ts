@@ -46,6 +46,17 @@ export function createMockApi(scenario: string): Api {
     }
     return info.online ? { h } : { h, readAt: new Date(Date.parse(info.since ?? server.state().now) - 60_000).toISOString() };
   };
+  // V0.131: another host's folders (null: desk's, the fixture tree).
+  const otherFs = new Map<string, ReturnType<typeof smallFs>>();
+  const fsOf = (name: string | undefined) => {
+    const r = hostFor(name);
+    if ("error" in r) throw new Error(r.error);
+    if (r.readAt) throw new Error(`${name} is offline; its folders cannot be read until it is back`);
+    if (r.h === desk) return null;
+    let f = otherFs.get(name!);
+    if (!f) otherFs.set(name!, (f = smallFs(name === "lab" ? ["lab-notes", "experiments", "experiments/robot-arm"] : ["src"])));
+    return f;
+  };
   const read = <T,>(name: string | undefined, f: (h: MockHost) => T) => {
     const r = hostFor(name);
     if ("error" in r) throw new Error(r.error);
@@ -256,17 +267,23 @@ export function createMockApi(scenario: string): Api {
     async filePatch(_threadId, path) {
       return mockFilePatch(path);
     },
-    async fsList(path) {
-      return server.fsList(path);
+    // V0.131: each host's own folders; desk's are the fixture tree, another host has a small one of its own, and an
+    // offline host's cannot be read.
+    async fsList(path, host) {
+      const f = fsOf(host);
+      return f ? f.list(path) : server.fsList(path);
     },
-    async fsRecent() {
-      return server.fsRecent();
+    async fsRecent(host) {
+      const f = fsOf(host);
+      return f ? [] : server.fsRecent();
     },
-    async fsRepos() {
-      return server.fsRepos();
+    async fsRepos(host) {
+      const f = fsOf(host);
+      return f ? f.repos() : server.fsRepos();
     },
-    async fsMkdir(parent, name) {
-      return server.fsMkdir(parent, name);
+    async fsMkdir(parent, name, host) {
+      const f = fsOf(host);
+      return f ? f.mkdir(parent, name) : server.fsMkdir(parent, name);
     },
     async prDetail(threadId) {
       await new Promise((r) => setTimeout(r, 120));
@@ -282,6 +299,29 @@ export function createMockApi(scenario: string): Api {
       if (MOCK_SHOTS[id]) return MOCK_SHOTS[id];
       // Fixture attachments have no bytes; images get a drawn placeholder.
       return mockFiles.get(id) ?? (id === "fx_img" ? MOCK_IMAGE : "data:text/plain,mock%20attachment%20" + encodeURIComponent(id));
+    },
+  };
+}
+
+/** V0.131: a small home folder for a mock host other than desk; the first two folders are repos. */
+function smallFs(dirs: string[]) {
+  const home = "/home/owner";
+  const all = new Set([home, ...dirs.map((d) => `${home}/${d}`)]);
+  const repos = new Set(dirs.slice(0, 2).map((d) => `${home}/${d}`));
+  const dirOf = (p: string) => ({ name: p.split("/").pop() ?? p, path: p, ...(repos.has(p) ? { repo: true } : {}) });
+  const norm = (p: string) => (p.trim() === "" || p.trim() === "~" ? home : p.trim().startsWith("~/") ? home + p.trim().slice(1) : p.trim()).replace(/\/+$/, "");
+  return {
+    list(path: string) {
+      const p = norm(path);
+      if (!all.has(p)) throw new Error(`outside the home folder: no folder ${path}`);
+      const dirs = [...all].filter((d) => d !== p && d.slice(0, d.lastIndexOf("/")) === p).sort().map(dirOf);
+      return { path: p, parent: p === home ? "" : p.slice(0, p.lastIndexOf("/")), dirs };
+    },
+    repos: () => [...repos].map(dirOf),
+    mkdir(parent: string, name: string) {
+      const p = `${norm(parent)}/${name.trim()}`;
+      all.add(p);
+      return p;
     },
   };
 }
