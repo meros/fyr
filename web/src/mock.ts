@@ -1832,14 +1832,16 @@ function laptopLoad(): HostLoad[] {
  *  has no queue. */
 export function mockQueueLoad(mode: string): HostLoad[] {
   const [h] = mockLoad();
+  // V0.163: the same pool in percent; Fyr's own tests wait first, the head's reason is theirs.
   h.slots = {
-    n: 2,
-    held: h.slots!.held,
+    ...h.slots!,
+    why: "needs ≈ 50 % CPU, 5 % free",
+    needPct: 50,
     waiting: [
-      { owner: "self-deploy", kind: "test", priority: true },
-      { owner: "t_search", kind: "test" },
-      { owner: "t_pw", kind: "e2e" },
-      { owner: "t_nix", kind: "build" },
+      { owner: "self-deploy", kind: "test", priority: true, cpuPct: 50, memPct: 25, pct: 50 },
+      { owner: "t_search", kind: "test", cpuPct: 30, memPct: 10, pct: 30 },
+      { owner: "t_pw", kind: "e2e", cpuPct: 20, memPct: 35, pct: 35 },
+      { owner: "t_nix", kind: "build", cpuPct: 40, memPct: 20, pct: 40 },
     ],
   };
   if (mode === "none") h.slots.waiting = [];
