@@ -80,6 +80,27 @@ export function railFigure(q: Quota): QuotaPart | null {
   return null;
 }
 
+/** V0.152: each provider's initial on the rail: the first letter of its name, upper case. Where two different names
+ *  share it, the first letter of a later word that no other name starts with ("Claude", "Claude (work account)" → "C",
+ *  "W"), else the shortest start of the name that tells it apart ("Codex", "Claude" → "Co", "Cl"). The same name keeps
+ *  the same initial (one provider on two hosts). */
+export function railInitials(names: string[]): string[] {
+  const words = (n: string) => n.match(/[\p{L}\p{N}]+/gu) ?? ["?"];
+  const up = (w: string) => w[0].toUpperCase() + w.slice(1).toLowerCase();
+  const lead = (n: string) => up(words(n)[0][0]);
+  const distinct = [...new Set(names)];
+  return names.map((n) => {
+    const others = distinct.filter((m) => m !== n && lead(m) === lead(n));
+    if (!others.length) return lead(n);
+    const taken = new Set(distinct.filter((m) => m !== n).map(lead));
+    const later = words(n).slice(1).find((w) => !taken.has(up(w[0])));
+    if (later) return up(later[0]);
+    const w = words(n)[0];
+    for (let k = 2; k <= w.length; k++) if (others.every((m) => !words(m)[0].toLowerCase().startsWith(w.slice(0, k).toLowerCase()))) return up(w.slice(0, k));
+    return lead(n);
+  });
+}
+
 /** The detail lines on hover or tap: windows with reset times in local time, then freshness and notes. */
 export function quotaDetail(q: Quota, name: string, now: number): string[] {
   const lines: string[] = [];

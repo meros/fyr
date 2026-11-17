@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.44: provider quota words: the summary line, colour from 80 %, the rail figure, details.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CARD_WORD, cardState, money, quotaDetail, quotaParts, quotaSummary, railFigure, type Quota } from "../src/quota.ts";
+import { CARD_WORD, cardState, money, quotaDetail, quotaParts, quotaSummary, railFigure, railInitials, type Quota } from "../src/quota.ts";
 
 const now = Date.parse("2026-11-14T10:00:00Z");
 const claude: Quota = {
@@ -91,4 +91,11 @@ test("the badge says Rate limited only for a rate limit", () => {
   assert.equal(CARD_WORD.notoken, "No token");
   assert.equal(cardState({ profile: "x", kind: "deepseek", error: "The provider failed (HTTP 502)" }), "error");
   assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", error: "Rate limited by the provider; trying again later" }), "limited");
+});
+
+test("V0.152: each provider's initial on the rail tells different providers apart", () => {
+  assert.deepEqual(railInitials(["Claude", "Claude (work account)", "DeepSeek", "Z.ai"]), ["C", "W", "D", "Z"]);
+  assert.deepEqual(railInitials(["Claude", "Claude"]), ["C", "C"]); // one provider on two hosts
+  assert.deepEqual(railInitials(["Codex", "Claude"]), ["Co", "Cl"]);
+  assert.deepEqual(railInitials(["åsa", "zai"]), ["Å", "Z"]);
 });
