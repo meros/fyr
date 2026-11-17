@@ -526,6 +526,16 @@ function fullFixture(now: number): Fixture {
         ],
         createdAt: iso(600), updatedAt: iso(180), done: { at: iso(180), by: "observed", reason: "live" }, // V0.98
       },
+      // V0.136: the agent asked to merge while CI runs; the ask is held, the card says so, and nobody is asked yet.
+      {
+        id: "c_nightly", key: "pr:acme/collector#846", kind: "code", title: "fix(nightly): run every source and alarm on a short night", targets: ["repo:github.com/acme/collector"],
+        phase: "review", phaseBy: "observed",
+        need: { cause: "waiting", ask: "d_nightly", action: "pr.merge", head: "7333251aa0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5", text: "Waiting for CI: 3 of 5 checks done", muted: true },
+        pr: { url: "https://github.com/acme/collector/pull/846", repo: "acme/collector", number: 846, state: "OPEN", checks: "pending", head: "7333251aa0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5", mergeState: "BLOCKED" },
+        conditions: [{ type: "checks", status: "pending", source: "observed", at: iso(3) }],
+        evidence: [{ kind: "pr", url: "https://github.com/acme/collector/pull/846", title: "#846" }],
+        createdAt: iso(8), updatedAt: iso(3),
+      },
       // V0.97: a green PR the host reads as ready to merge; its Merge names the head, and Merge all green takes it.
       {
         id: "c_rows", key: "pr:acme/web#4131", kind: "code", title: "Placement rows load in one read", targets: ["repo:github.com/acme/web"],

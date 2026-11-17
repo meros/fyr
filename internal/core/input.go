@@ -229,6 +229,8 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	// reduce finished is void); the 5-minute rule of Stopped on a failure is
 	// read at each reduce (the clock's included).
 	res.Events = append(res.Events, voidAsks(t)...)
+	// V0.136: merge asks open on green CI and close on red.
+	res.Events = append(res.Events, gateMergeAsks(t, now)...)
 	t.Stopped = stoppedNow(t, now)
 	// The agent feed (#47): the notice rules project this reduce.
 	res.Effects = append(res.Effects, project(Reduced{Before: before, After: t, In: in, Events: res.Events}, now)...)

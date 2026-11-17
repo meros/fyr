@@ -163,7 +163,9 @@ export function needLook(n: ChangeNeed): { button: string; line: string; beam: b
     case "ready":
       return { button: `${n.text === "Review and merge" ? "Review and merge" : "Merge"}${head}`, line: n.text === "Review and merge" ? "Green; a required review waits for you." : "Green and waiting for your merge.", beam: true };
     case "ask":
-      return { button: "Answer", line: [n.text || "The agent asks you.", n.wait].filter(Boolean).join(" · "), beam: true };
+      return { button: "Answer", line: n.text || "The agent asks you.", beam: true };
+    case "waiting": // V0.136: a merge ask held until CI is green on its head; no button, no beam
+      return { button: "", line: `${n.text || "Waiting for CI"}${n.head ? ` on ${shortHead(n.head)}` : ""}. Fyr asks you to merge when it is green.`, beam: false };
     case "failure":
       return { button: "Open", line: `Stopped on a failure: ${n.text ?? "failed"}`, beam: true };
     default:
@@ -171,10 +173,10 @@ export function needLook(n: ChangeNeed): { button: string; line: string; beam: b
   }
 }
 
-/** V0.112: an ask's yes: "Merge a1b2c3d" for a merge ask, bound to its head, else Yes; wait is the host's reason it
- *  cannot run yet (a merge on pending checks), which disables it. */
-export function askYes(n: ChangeNeed): { label: string; wait?: string } {
-  return { label: n.action === "pr.merge" ? `Merge ${shortHead(n.head)}`.trim() : "Yes", wait: n.wait || undefined };
+/** An ask's yes: "Merge a1b2c3d" for a merge ask, bound to its head (V0.97), else Yes. Since V0.136 a merge ask is
+ *  shown only when CI is green on its head, so the yes always runs. */
+export function askYes(n: ChangeNeed): { label: string } {
+  return { label: n.action === "pr.merge" ? `Merge ${shortHead(n.head)}`.trim() : "Yes" };
 }
 
 /** V0.101: Refresh now on an open change that Fyr reads: a PR, or a branch (a host record or a thread change on one). */

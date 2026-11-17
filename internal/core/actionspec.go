@@ -711,6 +711,9 @@ func syncBuiltins(c *Change) {
 		add(ActionSpec{ID: "fyr.rebase", Label: "Rebase", Run: RunAgent, In: "this",
 			Prompt: "The PR " + pr + " has a merge conflict with its base. Rebase on the base, resolve the conflicts, run the tests, and push."})
 	}
+	if is(CondChecks, CondPending) {
+		return // V0.136: no Merge on the card while CI runs; the PR tab says why it waits
+	}
 	add(ActionSpec{ID: "fyr.merge", Label: "Merge", Run: RunFyr, Effect: FyrMerge, Primary: !failing && !changesAsked && !conflict})
 }
 

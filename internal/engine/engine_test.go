@@ -426,15 +426,19 @@ func TestGateHookDeniesMerge(t *testing.T) {
 func TestEffectMergeLoop(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("merge https://github.com/acme/app/pull/42")
-	th := h.wait(id, "asking (effect) and run ended", func(t core.Thread, a core.Attention) bool {
-		return a.State == core.Asking && !t.Running
-	})
+	// V0.136: the ask waits for CI on its head; the owner is not asked yet
+	th := h.wait(id, "held and run ended", func(t core.Thread, a core.Attention) bool { return len(t.HeldAsks) == 1 && !t.Running })
+	if a := core.Compute(&th, &core.View{}, time.Now()); a.State == core.Asking || len(th.Decisions) != 0 {
+		t.Fatalf("asked before CI: %+v", a)
+	}
+	if !strings.Contains(th.Summary, "tool said: Recorded. Fyr shows it to the owner when CI is green on abc1234") {
+		t.Fatalf("the tool did not say the ask waits for CI: %q", th.Summary)
+	}
+	greenHead(h, id, "https://github.com/acme/app/pull/42", "abc1234def")
+	th = h.wait(id, "asking (effect)", func(t core.Thread, a core.Attention) bool { return a.State == core.Asking })
 	d := th.Decisions[0]
 	if d.Kind != "effect" || d.Effect.Action != "pr.merge" || d.Effect.Args["pr"] != "https://github.com/acme/app/pull/42" {
 		t.Fatalf("decision %+v", d)
-	}
-	if !strings.Contains(th.Summary, "tool said: Requested") {
-		t.Fatalf("the tool did not return at once: %q", th.Summary)
 	}
 	r1 := h.cmd("thread.answer", id, core.Args{"decisionId": d.ID, "allow": true})
 	r2 := h.cmd("thread.answer", id, core.Args{"decisionId": d.ID, "allow": true})
@@ -459,6 +463,8 @@ func TestEffectMergeLoop(t *testing.T) {
 func TestEffectDeclined(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	id := h.create("merge https://github.com/acme/app/pull/7")
+	h.wait(id, "held", func(t core.Thread, a core.Attention) bool { return len(t.HeldAsks) == 1 && !t.Running })
+	greenHead(h, id, "https://github.com/acme/app/pull/7", "abc1234def")
 	th := h.wait(id, "asking", func(t core.Thread, a core.Attention) bool { return a.State == core.Asking && !t.Running })
 	h.cmd("thread.answer", id, core.Args{"decisionId": th.Decisions[0].ID, "allow": false})
 	th = h.wait(id, "declined delivered", func(t core.Thread, _ core.Attention) bool {
@@ -910,4 +916,14 @@ func TestAdoptLeavesAnotherInstallsProcesses(t *testing.T) {
 	if th := h2.wait(id, "done", state(core.Done)); th.Summary != "Permission: allow" || th.Failure != nil {
 		t.Fatalf("summary %q failure %+v", th.Summary, th.Failure)
 	}
+}
+
+// greenHead is the poller's read of a PR whose checks passed on head
+// (V0.136: a merge ask opens then).
+func greenHead(h *harness, id, url, head string) {
+	repo, n, _ := core.ParsePR(url)
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
+		core.PRObserved(t, core.PR{URL: url, Repo: repo, Number: n, State: "OPEN", Checks: core.ChecksPass, Head: head, MergeState: "CLEAN"}, now)
+		return nil
+	})
 }
