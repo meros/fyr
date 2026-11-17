@@ -3730,9 +3730,19 @@ try {
   const [A, B, C] = ids.filter((x) => x !== first);
   const titleOf = (id) => evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}] .hd .t')?.textContent ?? null`);
   const titles = { [A]: await titleOf(A), [B]: await titleOf(B), [C]: await titleOf(C) };
+  // Real clicks, as the owner's: Chrome marks an entry pushed without user activation (a scripted el.click()) as
+  // skippable, and its own Back (the side buttons, Alt+Left) jumps over such entries; history.back() does not. With
+  // scripted clicks the press's own mousedown usually activated the page just in time, but not under load, and then
+  // Back had nothing to go to (the flake after #205: "the mouse's Back button from C does not show B").
+  const realClick = async (sel) => {
+    const p = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return [r.left + Math.min(r.width / 2, 40), r.top + r.height / 2]; })()`);
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: p[0], y: p[1] });
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x: p[0], y: p[1], button: "left", buttons: 1, clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: p[0], y: p[1], button: "left", buttons: 0, clickCount: 1 });
+  };
   const open = async (id) => {
     await evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}]').scrollIntoView({ block: 'center' })`);
-    await evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}]').click()`);
+    await realClick(`.ib .list [data-id=${JSON.stringify(id)}] .hd .t`);
     await waitFor(`${AT}.marked === ${JSON.stringify(id)}`, { soft: true });
     await settle();
   };
@@ -3740,10 +3750,15 @@ try {
   await open(A);
   await open(B);
   // B on a tab that is not its first, when it has one.
-  const bTab = await evaluate(`(() => { const t = [...document.querySelectorAll('.th [role=tab]')].find((x) => !x.classList.contains('on')); t?.click(); return t?.textContent ?? null; })()`);
+  const bTab = await evaluate(`(() => { const t = [...document.querySelectorAll('.th [role=tab]')].find((x) => !x.classList.contains('on')); if (t) t.dataset.pick = '1'; return t?.textContent ?? null; })()`);
+  if (bTab) {
+    await realClick(`.th [role=tab][data-pick]`);
+    await waitFor(`document.querySelector('.th [role=tab].on')?.textContent === ${JSON.stringify(bTab)}`, { soft: true });
+  }
   await settle();
   await open(C);
   const atC = await evaluate(AT);
+  check(await evaluate(`navigator.userActivation.hasBeenActive`), `V0.145 desktop: the page has no user activation, so Chrome's Back would skip its entries`);
   check(atC.n === n0 + 3 && atC.open === C, `V0.145 desktop: opening three threads does not add three entries (${JSON.stringify({ n0, atC })})`);
   await new Promise((r) => setTimeout(r, 1500));
   await settle();
