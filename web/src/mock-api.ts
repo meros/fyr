@@ -261,7 +261,7 @@ export function createMockApi(scenario: string): Api {
       return [...mockQuota(Date.now()).map((q) => ({ ...q, host: hs[0].name })), { profile: "claude", host: "lab", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 12, resetsAt: at(200) }, { name: "7 d", usedPct: 23, resetsAt: at(4 * 1440) }], updatedAt: at(-3) }];
     },
     async load() {
-      // V0.140: with &hosts=2 the rail has a ring per host (desk's, and a calm lab).
+      // V0.141: with &hosts=2 the rail has a ring per host (desk's, and a calm lab).
       const l = mockLoad();
       if (!mockHostList().length || !l.length) return l;
       return [{ ...l[0], host: "desk" }, { ...l[0], host: "lab", cores: 16, load: [1.4, 1.1, 0.9], threads: [], slots: undefined }];

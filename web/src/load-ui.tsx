@@ -60,7 +60,7 @@ export function LoadRail() {
         const p = railPips(h);
         const sl = railSlots(h);
         const several = list.length > 1;
-        const label = railLabel(h, several); // V0.140: with several hosts each ring names its host
+        const label = railLabel(h, several); // V0.141: with several hosts each ring names its host
         return (
           <div class={`rldr ${m.level}`} title={loadDetail(h).join("\n")} role="img" aria-label={label}>
             <LoadRing share={m.share} text={m.text} />
