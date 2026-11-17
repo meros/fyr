@@ -252,3 +252,160 @@ func TestAddedByIsKept(t *testing.T) {
 		t.Errorf("c was added by %s (want b)", m.AddedBy)
 	}
 }
+
+// V0.160 (decision 0030 3.6, 5): removal. What the removed install signed counts
+// for nothing, so the members only it vouched for drop out, unless the remover
+// signs for them in the same batch, which it does for the ones the owner keeps.
+func TestRemovalVoidsWhatTheRemovedSignedAndTheRemoverKeepsTheRest(t *testing.T) {
+	a, b, c := newInst(t, "a"), newInst(t, "b"), newInst(t, "c")
+	a.r.Add(b.k.Public, "b", "", 1)
+	b.r.Add(a.k.Public, "a", "", 1)
+	b.r.Add(c.k.Public, "c", "", 1) // b vouches for c
+	sync2(a, b)
+	if !ids(a.r)[c.k.ID()] {
+		t.Fatal("a did not learn c")
+	}
+	if err := a.r.Remove(b.k.ID()); err != nil {
+		t.Fatal(err)
+	}
+	got := ids(a.r)
+	if got[b.k.ID()] || !got[c.k.ID()] || !got[a.k.ID()] {
+		t.Fatalf("after removing b: %v (c must stay, signed for again by a)", got)
+	}
+	if m, _ := a.r.Member(c.k.ID()); m.AddedBy != a.k.ID() {
+		t.Errorf("c is now vouched for by %s, want a", m.AddedBy)
+	}
+	// b, still holding its statements, adds d and offers everything again: void
+	d := newInst(t, "d")
+	b.r.Add(d.k.Public, "d", "", 1)
+	a.r.Merge(b.r.Statements())
+	if ids(a.r)[d.k.ID()] || ids(a.r)[b.k.ID()] {
+		t.Errorf("a removed member signed its way back in: %v", ids(a.r))
+	}
+	if !a.r.Removed(b.k.ID()) {
+		t.Error("Removed is false for the removed install")
+	}
+}
+
+// The removal reaches every member with one sync, whatever the order; a removed
+// install learns it was removed.
+func TestRemovalSpreadsInAnyOrder(t *testing.T) {
+	a, b, c := newInst(t, "a"), newInst(t, "b"), newInst(t, "c")
+	a.r.Add(b.k.Public, "b", "", 1)
+	b.r.Add(a.k.Public, "a", "", 1)
+	a.r.Add(c.k.Public, "c", "", 1)
+	c.r.Add(a.k.Public, "a", "", 1)
+	sync2(a, b)
+	sync2(a, c)
+	sync2(b, c)
+	if len(ids(c.r)) != 3 {
+		t.Fatalf("c: %v", ids(c.r))
+	}
+	if err := a.r.Remove(b.k.ID()); err != nil {
+		t.Fatal(err)
+	}
+	sync2(a, c)
+	if ids(c.r)[b.k.ID()] {
+		t.Errorf("c still has the removed b: %v", ids(c.r))
+	}
+	sync2(a, b)
+	if !b.r.SelfRemoved() {
+		t.Error("b does not know it was removed")
+	}
+	if err := a.r.Remove(a.k.ID()); err == nil {
+		t.Error("an install removed itself")
+	}
+}
+
+// A key that may be stolen is removed and paired again, not rotated: the same
+// machine with a new key is a new install, and the old key stays refused.
+func TestRemovedThenPairedAgainWithANewKey(t *testing.T) {
+	a, old := newInst(t, "a"), newInst(t, "b")
+	a.r.Add(old.k.Public, "b", "", 1)
+	if err := a.r.Remove(old.k.ID()); err != nil {
+		t.Fatal(err)
+	}
+	fresh := newInst(t, "b")
+	a.r.Add(fresh.k.Public, "b", "", 1)
+	got := ids(a.r)
+	if got[old.k.ID()] || !got[fresh.k.ID()] {
+		t.Fatalf("members %v", got)
+	}
+}
+
+// V0.160: rotation. The statement is signed by the old key; a peer that was
+// offline follows the new key; the old key is no longer a member.
+func TestRotationIsFollowedByAPeerThatWasOffline(t *testing.T) {
+	a, bOld := newInst(t, "a"), newInst(t, "b")
+	a.r.Add(bOld.k.Public, "b", "b.ts.net", 7779)
+	bOld.r.Add(a.k.Public, "a", "", 1)
+	sync2(a, bOld)
+	bOld.r.DeviceAdd("dev_1", "Chrome", "local") // signed by the old key
+	a.r.Merge(bOld.r.Statements())
+
+	// b rotates its key on disk and restarts on it
+	dir := t.TempDir()
+	newKey, err := identity.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt := bOld.r.Rotate(newKey.Public)
+	if stmt.Kind != KindKeyRotate || stmt.Subject != bOld.k.ID() {
+		t.Fatalf("%+v", stmt)
+	}
+	// the new key opens the same roster file: it keeps what the old key signed
+	data := bOld.r.path[:len(bOld.r.path)-len("/roster.json")]
+	b2, err := Open(data, newKey, "b", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ids(b2)[newKey.ID()] || ids(b2)[bOld.k.ID()] || !ids(b2)[a.k.ID()] {
+		t.Fatalf("b after rotating: %v", ids(b2))
+	}
+	if len(b2.Devices()) != 1 {
+		t.Errorf("what the old key signed was lost: %v", b2.Devices())
+	}
+	// a, offline until now, takes the statement
+	a.r.Merge(b2.Statements())
+	got := ids(a.r)
+	if got[bOld.k.ID()] || !got[newKey.ID()] {
+		t.Fatalf("a after the rotation: %v", got)
+	}
+	if _, ok := a.r.KeyMember(bOld.k.Public); ok {
+		t.Error("the old key is still a member")
+	}
+	if m, ok := a.r.KeyMember(newKey.Public); !ok || m.Name != "b" || m.Host != "b.ts.net" || m.Port != 7779 {
+		t.Errorf("the new key: %+v %v", m, ok)
+	}
+	if a.r.Successor(bOld.k.ID()) != newKey.ID() {
+		t.Error("the successor is not known")
+	}
+	if len(a.r.Devices()) != 1 {
+		t.Errorf("a lost the device the old key signed: %v", a.r.Devices())
+	}
+	// a statement signed by the new key counts at a
+	b2.DeviceAdd("dev_2", "Safari", "link")
+	a.r.Merge(b2.Statements())
+	if len(a.r.Devices()) != 2 {
+		t.Errorf("a does not take what the new key signs: %v", a.r.Devices())
+	}
+	// removing b removes it whatever key it is on
+	if err := a.r.Remove(newKey.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if ids(a.r)[newKey.ID()] || ids(a.r)[bOld.k.ID()] {
+		t.Errorf("a rotated install was not removed: %v", ids(a.r))
+	}
+}
+
+// A rotation that is not signed by the old key, or a forged one, moves nobody.
+func TestAForgedRotationMovesNobody(t *testing.T) {
+	a, b, evil := newInst(t, "a"), newInst(t, "b"), newInst(t, "evil")
+	a.r.Add(b.k.Public, "b", "", 1)
+	forged := evil.r.Rotate(evil.k.Public) // evil rotating itself is not b's rotation
+	forged.Subject = b.k.ID()              // claims to be b's
+	a.r.Merge([]Statement{forged})
+	if got := ids(a.r); !got[b.k.ID()] || got[evil.k.ID()] {
+		t.Errorf("members %v", got)
+	}
+}

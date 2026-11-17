@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/meros/fyr/internal/auth"
 )
@@ -26,6 +27,9 @@ type MeshSpec struct {
 	Hide []string
 	// Role is the fyrd's role; default both.
 	Role string
+	// HostListen gives the install a loopback host port (the old way a front reached a
+	// host, decision 0030 slice 5), at MeshNode.HostPort.
+	HostListen bool
 }
 
 // MeshNode is a started install of a Mesh.
@@ -35,6 +39,9 @@ type MeshNode struct {
 	TS   *Tailscaled
 	Fyrd *Fyrd
 	Name string // the fyrd's -name
+	// PeerPort is the fixed port of its peer listener, so a restart (a rotation, a
+	// release) keeps it; HostPort the loopback host port, 0 with none.
+	PeerPort, HostPort int
 }
 
 // Mesh is several scratch fyrds on one fake tailnet, each with its own
@@ -128,8 +135,13 @@ func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
 		if err := os.WriteFile(rf, b, 0o600); err != nil {
 			return nil, err
 		}
-		caller.Fyrd, err = Start(Options{Name: caller.Name, Role: caller.Spec.Role, Data: datas[i], Tailscale: caller.TS,
-			Extra: map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": caFile}})
+		caller.PeerPort = freePort()
+		extra := map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.PeerPort)), "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": caFile}
+		if caller.Spec.HostListen {
+			caller.HostPort = freePort()
+			extra["hostListen"] = net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.HostPort))
+		}
+		caller.Fyrd, err = Start(Options{Name: caller.Name, Role: caller.Spec.Role, Data: datas[i], Tailscale: caller.TS, Extra: extra})
 		if err != nil {
 			return nil, err
 		}
@@ -154,4 +166,15 @@ func (m *Mesh) Node(name string) *MeshNode {
 		}
 	}
 	return nil
+}
+
+// freePort asks the kernel for a port nobody holds now. A race with another process
+// is possible and harmless: the install then fails to start and the test says so.
+func freePort() int {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port
 }

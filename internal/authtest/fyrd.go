@@ -128,6 +128,7 @@ type Fyrd struct {
 	done chan struct{}
 	root string // the folder that holds Data, removed on Stop when this harness made it
 	own  bool
+	opts Options
 }
 
 type syncBuf struct {
@@ -169,7 +170,7 @@ func Start(o Options) (*Fyrd, error) {
 	if err != nil {
 		return nil, err
 	}
-	f := &Fyrd{Name: o.Name, Data: o.Data, logb: &syncBuf{}, done: make(chan struct{})}
+	f := &Fyrd{Name: o.Name, Data: o.Data, logb: &syncBuf{}, done: make(chan struct{}), opts: o}
 	if f.Data == "" {
 		d, rm, err := NewDataDir()
 		if err != nil {
@@ -181,7 +182,7 @@ func Start(o Options) (*Fyrd, error) {
 		_ = rm // Stop removes the folder
 	}
 	root := filepath.Dir(f.Data)
-	cfg := map[string]any{"listen": "127.0.0.1:0", "role": orDefault(o.Role, "both")}
+	cfg := map[string]any{"listen": "127.0.0.1:0", "role": orDefault(o.Role, "both"), "stepUpMinutes": 0} // a test names the step-up it wants
 	if o.Name != "" {
 		cfg["name"] = o.Name
 	}
@@ -401,4 +402,38 @@ func UnixServer(t testing.TB, h http.Handler) (string, func()) {
 	srv := &http.Server{Handler: h}
 	go srv.Serve(ln)
 	return p, func() { srv.Close(); rm() }
+}
+
+// Restart stops the process and starts it again on the same data folder and
+// configuration, as a release restarts an install. The address changes unless the
+// config fixes the port.
+func (f *Fyrd) Restart() error {
+	f.StopKeep()
+	o := f.opts
+	o.Data = f.Data
+	n, err := Start(o)
+	if err != nil {
+		return err
+	}
+	n.own, n.root = f.own, f.root
+	*f = *n
+	return nil
+}
+
+// StopKeep ends the process and keeps the data folder.
+func (f *Fyrd) StopKeep() {
+	own := f.own
+	f.own = false
+	f.Stop()
+	f.own = own
+}
+
+// WaitExit waits for the process to end by itself (fyr rotate-key restarts it).
+func (f *Fyrd) WaitExit(d time.Duration) bool {
+	select {
+	case <-f.done:
+		return true
+	case <-time.After(d):
+		return false
+	}
 }

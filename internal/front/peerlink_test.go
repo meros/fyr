@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peerlink"
@@ -72,4 +74,53 @@ func mustKey(t *testing.T) *identity.Key {
 		t.Fatal(err)
 	}
 	return k
+}
+
+// V0.160: the peer way in may enforce by itself only when every followed host (the
+// one in this process aside) is on a pinned link; a host removed from the roster
+// is dropped, and one that also has a whois link keeps it.
+func TestAllOnPeerLinkAndDropPeers(t *testing.T) {
+	hostKey, frontKey := mustKey(t), mustKey(t)
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	srv, err := peerlink.Serve(ln, hostKey, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("{}")) }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { srv.Close() })
+	whois := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("{}")) }))
+	t.Cleanup(whois.Close)
+	f := New(Options{Name: "front", MinBackoff: 20 * time.Millisecond}, []HostConfig{{Name: "old", URL: whois.URL, Remote: true}})
+	if ok, why := f.AllOnPeerLink(); ok || !strings.Contains(why, "old") {
+		t.Fatalf("a host on the whois link: %v %q", ok, why)
+	}
+	dial := &peerlink.Dialer{Key: frontKey}
+	f.UsePeerLink(hostKey.ID(), "old", PeerEndpoint{ID: hostKey.ID(), Addr: ln.Addr().String(), Dial: dial})
+	if ok, why := f.AllOnPeerLink(); !ok {
+		t.Fatalf("after the peer link: %q", why)
+	}
+	// a peer-only host
+	other := mustKey(t)
+	f.UsePeerLink(other.ID(), "peeronly", PeerEndpoint{ID: other.ID(), Addr: "127.0.0.1:1", Dial: dial})
+	if n := len(f.all()); n != 2 {
+		t.Fatalf("%d hosts", n)
+	}
+	// both are removed from the roster: the peer-only host goes; the other keeps its whois link
+	f.DropPeers(func(string) bool { return false })
+	if n := len(f.all()); n != 1 || f.all()[0].name() != "old" {
+		t.Fatalf("after the removal: %d hosts", len(f.all()))
+	}
+	if f.all()[0].lt.hasPeer() {
+		t.Error("the removed install's peer link stayed")
+	}
+	// a rotated key: the same host on a new id replaces the endpoint and keeps the pin
+	k2 := mustKey(t)
+	f.UsePeerLink(hostKey.ID(), "old", PeerEndpoint{ID: hostKey.ID(), Addr: ln.Addr().String(), Dial: dial})
+	f.pins["old"] = hostKey.ID()
+	f.UsePeerLink(k2.ID(), "old", PeerEndpoint{ID: k2.ID(), Addr: ln.Addr().String(), Dial: dial})
+	if f.all()[0].lt.peerID() != k2.ID() {
+		t.Errorf("the peer link is pinned to %s after the rotation", f.all()[0].lt.peerID())
+	}
+	if f.pins["old"] != k2.ID() {
+		t.Errorf("the pinned host id is %s, not the rotated key's", f.pins["old"])
+	}
 }

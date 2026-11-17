@@ -121,7 +121,61 @@ var steps = []step{
 			t.Fatalf("the front follows %v (%v)\n%s", hosts, err, l.Laptop.Log())
 		}
 	}},
-	// Slices 5 and 6 add: removal and rotation, the LAN.
+	// Slice 5: removal, rotation, and the old link ends. The owner removes the box
+	// (a lost server): the laptop's front stops following it and the Mac learns it.
+	// The Mac rotates its key and restarts: the laptop follows the new key. The peer
+	// way in is enforced and put back by hand. The cookies, the phone, fyr open and
+	// the static host all keep working (checks run after the step).
+	{"slice 5: remove, rotate, peer enforce and the way back", func(t *testing.T, l *authtest.Live) {
+		r, err := l.Laptop.Roster()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var boxID string
+		for _, m := range r.Members {
+			if m.Name == "box" {
+				boxID = m.ID
+			}
+		}
+		if out, err := l.Laptop.Fyr("host", "remove", boxID); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		end := time.Now().Add(30 * time.Second)
+		for hostsOf(l)["box"] {
+			if time.Now().After(end) {
+				t.Fatalf("the front still follows the removed box: %v", hostsOf(l))
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if _, err := migMac.Fyrd.WaitRoster(30*time.Second, func(r *authtest.Roster) bool { return !strings.Contains(strings.Join(r.Others(), ","), "box") }); err != nil {
+			t.Fatalf("the Mac did not learn the removal: %v", err)
+		}
+		// the Mac rotates its key
+		out, err := migMac.Fyrd.Fyr("rotate-key")
+		if err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		if !migMac.Fyrd.WaitExit(20 * time.Second) {
+			t.Fatal("the Mac did not restart")
+		}
+		if err := migMac.Fyrd.Restart(); err != nil {
+			t.Fatal(err)
+		}
+		if hosts, err := l.WaitHostsOnline(l.Local, 30*time.Second, "laptop", "server", "mac"); err != nil || !hosts["mac"] {
+			t.Fatalf("the front does not follow the Mac on its new key: %v %v\n%s", hosts, err, l.Laptop.Log())
+		}
+		// the peer way in, by hand, and back
+		if out, err := l.Laptop.Fyr("auth", "enforce", "peer"); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		if hosts, err := l.WaitHostsOnline(l.Local, 30*time.Second, "laptop", "server", "mac"); err != nil || !hosts["mac"] {
+			t.Fatalf("in peer enforce the front does not follow the Mac: %v %v", hosts, err)
+		}
+		if out, err := l.Laptop.Fyr("auth", "observe", "peer"); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+	}},
+	// Slice 6 adds: the LAN.
 }
 
 func TestMigrationKeepsTheOwnerSignedIn(t *testing.T) {
@@ -235,4 +289,9 @@ func fyrOpen(t *testing.T, l *authtest.Live) string {
 		t.Fatal(err)
 	}
 	return session
+}
+
+func hostsOf(l *authtest.Live) map[string]bool {
+	h, _ := l.HostsOnline(l.Local)
+	return h
 }
