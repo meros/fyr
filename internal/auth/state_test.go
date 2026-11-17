@@ -3,6 +3,7 @@ package auth
 // SPEC V0.157, decision 0030 slice 2, on a fake clock.
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -27,14 +28,62 @@ func TestModesAreStored(t *testing.T) {
 	}
 }
 
-// Slice 5 builds the peer link; until then peer cannot enforce.
-func TestPeerCannotEnforceYet(t *testing.T) {
+// V0.160: the peer way in can be moved by hand, and an unknown way not.
+func TestPeerCanBeMovedByHand(t *testing.T) {
 	s, _, _ := newTest(t)
-	if err := s.SetMode(WayPeer, ModeEnforce, "owner.sock"); err == nil {
-		t.Fatal("peer enforced")
+	var heard []string
+	s.OnMode(func(way, mode string) { heard = append(heard, way+" "+mode) })
+	if err := s.SetMode(WayPeer, ModeEnforce, "owner.sock"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMode(WayPeer, ModeObserve, "owner.sock"); err != nil {
+		t.Fatal(err)
+	}
+	if len(heard) != 2 || heard[0] != "peer enforce" || heard[1] != "peer observe" {
+		t.Errorf("heard %v", heard)
 	}
 	if err := s.SetMode("nope", ModeEnforce, "owner.sock"); err == nil {
 		t.Fatal("an unknown way in")
+	}
+}
+
+// V0.160, rule 3 for the peer way: three clean days, every followed host on the
+// pinned link, and a request seen over it; the gate says why not. It tells the
+// listeners (OnMode) when it moves.
+func TestPeerEnforcesItselfOnlyWhenEveryHostIsOnThePinnedLink(t *testing.T) {
+	s, _, c := newTest(t)
+	onLink := false
+	s.SetPeerGate(func() (bool, string) {
+		if !onLink {
+			return false, "mac is still followed over the whois link"
+		}
+		return true, ""
+	}, func() int { return 1 })
+	var heard []string
+	s.OnMode(func(way, mode string) { heard = append(heard, way+" "+mode) })
+	c.t = c.t.Add(10 * 24 * time.Hour)
+	if moved := s.Tick(); slices.Contains(moved, WayPeer) {
+		t.Fatalf("enforced with a host on the whois link: %v", moved)
+	}
+	if ok, why := s.Ready(WayPeer); ok || !strings.Contains(why, "whois link") {
+		t.Errorf("ready %v %q", ok, why)
+	}
+	onLink = true
+	if moved := s.Tick(); slices.Contains(moved, WayPeer) {
+		t.Fatalf("enforced before a request came over the link: %v", moved)
+	}
+	s.Success(WayPeer, "link")
+	if moved := s.Tick(); !slices.Contains(moved, WayPeer) || s.Mode(WayPeer) != ModeEnforce {
+		t.Fatalf("not enforced: %v %v", moved, s.Modes())
+	}
+	if !slices.Contains(heard, "peer enforce") {
+		t.Errorf("the listeners heard %v", heard)
+	}
+	// a request on the old link counts against it, in observe
+	s.SetMode(WayPeer, ModeObserve, "owner.sock") // by hand: it stays
+	c.t = c.t.Add(30 * 24 * time.Hour)
+	if slices.Contains(s.Tick(), WayPeer) {
+		t.Error("rule 3 undid a hand-set observe")
 	}
 }
 

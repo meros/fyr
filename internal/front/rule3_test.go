@@ -59,6 +59,7 @@ func TestRule3EnforcesThroughTheFrontAndTellsTheDevices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	a.SetPeerGate(func() (bool, string) { return false, "a host is on the whois link" }, nil) // this test is about the browser way
 	a.Mint(auth.HowLocal, "laptop")
 	a.Success(auth.WayBrowser, auth.HowLocal)
 	pu := &capturePush{}

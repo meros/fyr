@@ -75,13 +75,17 @@ type Store struct {
 	// Decision 0030 slice 2: stored modes and what observe counts, the tailnet
 	// nodes the owner approved or blocked, the audit trail, and the tries
 	// against approval codes. See state.go.
-	modes  map[string]*ModeState
-	nodes  map[string]*NodeRec
-	audit  []Audit
-	wrong  []time.Time // recent wrong approval-code tries
-	asked  []time.Time // recent approval attempts and code requests, for the rate limits
-	onGone []func(ids []string)
-	onAdd  []func(d Device)
+	modes       map[string]*ModeState
+	nodes       map[string]*NodeRec
+	audit       []Audit
+	wrong       []time.Time // recent wrong approval-code tries
+	asked       []time.Time // recent approval attempts and code requests, for the rate limits
+	onGone      []func(ids []string)
+	onMode      []func(way, mode string)
+	stepUp      time.Duration
+	peerGate    func() (bool, string)
+	peerLinksFn func() int
+	onAdd       []func(d Device)
 }
 
 // Open loads the devices from kv. now is time.Now when nil.

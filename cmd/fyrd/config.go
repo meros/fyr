@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/heavy"
@@ -144,6 +145,18 @@ type config struct {
 	// own CA).
 	ResolveFile string `json:"resolveFile"`
 	RootCAs     string `json:"rootCAs"`
+	// StepUpMinutes: how old a browser session must be to widen trust (approve a
+	// device, add one, pair an install); absent is 5, 0 turns the rule off. The owner
+	// socket is never asked (decision 0030 3.4).
+	StepUpMinutes *int `json:"stepUpMinutes"`
+}
+
+// stepUp is the session age that widens trust.
+func (c config) stepUp() time.Duration {
+	if c.StepUpMinutes == nil {
+		return auth.DefaultStepUp
+	}
+	return time.Duration(*c.StepUpMinutes) * time.Minute
 }
 
 // tsSocket is the LocalAPI socket this install asks about the tailnet.

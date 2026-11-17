@@ -13,6 +13,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -21,6 +23,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/identity"
+	"github.com/meros/fyr/internal/roster"
 )
 
 // ALPN is the protocol the peer port speaks.
@@ -28,7 +31,7 @@ const ALPN = "fyr-peer/1"
 
 // Cert is a self-signed certificate over the install key. Nothing about it is
 // trusted but the key.
-func Cert(k *identity.Key) (tls.Certificate, error) {
+func Cert(k *identity.Key, rotation ...roster.Statement) (tls.Certificate, error) {
 	tpl := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject:      pkix.Name{CommonName: k.ID()},
@@ -37,11 +40,31 @@ func Cert(k *identity.Key) (tls.Certificate, error) {
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 	}
+	if len(rotation) > 0 { // the rotations that lead to this key, signed by the old ones
+		b, _ := json.Marshal(rotation)
+		tpl.ExtraExtensions = []pkix.Extension{{Id: rotationOID, Value: b}}
+	}
 	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, k.Public, k.Private)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: k.Private}, nil
+}
+
+// rotationOID marks the certificate extension that carries a key rotation.
+var rotationOID = asn1.ObjectIdentifier{1, 3, 9999, 1}
+
+// Rotation is the chain of rotations a certificate carries, if any.
+func Rotation(c *x509.Certificate) []roster.Statement {
+	for _, e := range c.Extensions {
+		if e.Id.Equal(rotationOID) {
+			var chain []roster.Statement
+			if json.Unmarshal(e.Value, &chain) == nil && len(chain) <= 16 {
+				return chain
+			}
+		}
+	}
+	return nil
 }
 
 // PeerKey is the Ed25519 key a connection's certificate carries.
@@ -59,8 +82,8 @@ func PeerKey(certs []*x509.Certificate) (ed25519.PublicKey, error) {
 // ServerConfig is the peer listener's TLS: 1.3 only, a client certificate asked
 // for and not verified (the HTTP layer checks its key against the roster, and
 // the handshake has proved the client holds it).
-func ServerConfig(k *identity.Key) (*tls.Config, error) {
-	c, err := Cert(k)
+func ServerConfig(k *identity.Key, rotation ...roster.Statement) (*tls.Config, error) {
+	c, err := Cert(k, rotation...)
 	if err != nil {
 		return nil, err
 	}
@@ -76,8 +99,8 @@ var ErrWrongInstall = errors.New("the install that answered is not the one that 
 
 // ClientConfig dials the install with id want: its certificate's key must hash
 // to it.
-func ClientConfig(k *identity.Key, want string) (*tls.Config, error) {
-	c, err := Cert(k)
+func ClientConfig(k *identity.Key, want string, o Options) (*tls.Config, error) {
+	c, err := Cert(k, o.Rotation...)
 	if err != nil {
 		return nil, err
 	}
@@ -98,11 +121,34 @@ func ClientConfig(k *identity.Key, want string) (*tls.Config, error) {
 				return err
 			}
 			if got := identity.IDOf(pub); got != want {
+				// The install may have rotated its key since this one last met it: its
+				// certificate then carries the rotations, signed by the key it had.
+				if old := o.OldKey; old != nil {
+					if k := old(want); k != nil {
+						if end, ok := roster.ChainFrom(Rotation(cert), k); ok && end.Equal(pub) {
+							if o.OnRotation != nil {
+								o.OnRotation(Rotation(cert))
+							}
+							return nil
+						}
+					}
+				}
 				return fmt.Errorf("%w: wanted %s, got %s", ErrWrongInstall, want, got)
 			}
 			return nil
 		},
 	}, nil
+}
+
+// Options are what a dial may know beyond the id it wants.
+type Options struct {
+	// Rotation is shown in this side's certificate: the rotations that lead to its
+	// key (roster.RotationChain), for a peer that knows only an older key.
+	Rotation []roster.Statement
+	// OldKey is the key the roster holds for an install id, so a rotated peer is
+	// accepted by its chain; OnRotation hears the chain that was accepted, to merge.
+	OldKey     func(id string) ed25519.PublicKey
+	OnRotation func([]roster.Statement)
 }
 
 // Dialer dials peers with this install's key. Resolve, when set, maps a
@@ -111,6 +157,8 @@ type Dialer struct {
 	Key     *identity.Key
 	Resolve func(hostport string) string
 	Timeout time.Duration
+	// Opts gives the rotation options at each dial (the roster changes).
+	Opts func() Options
 }
 
 // DialError: the link could not be made (no route, a refused connection, a
@@ -132,7 +180,11 @@ func (d *Dialer) DialTLS(ctx context.Context, want, addr string) (net.Conn, erro
 }
 
 func (d *Dialer) dialTLS(ctx context.Context, want, addr string) (net.Conn, error) {
-	cfg, err := ClientConfig(d.Key, want)
+	var o Options
+	if d.Opts != nil {
+		o = d.Opts()
+	}
+	cfg, err := ClientConfig(d.Key, want, o)
 	if err != nil {
 		return nil, err
 	}
@@ -170,13 +222,15 @@ func (d *Dialer) Transport(want, addr string) *http.Transport {
 }
 
 type callerKey struct{}
+type rotationKey struct{}
 
 // conn is an accepted peer connection. It is not a *tls.Conn on purpose: net/http
 // would then refuse an ALPN protocol it does not know, and the peer port speaks
 // its own, "fyr-peer/1", which is HTTP/1.1 inside TLS 1.3.
 type conn struct {
 	*tls.Conn
-	caller ed25519.PublicKey
+	caller   ed25519.PublicKey
+	rotation []roster.Statement
 }
 
 type listener struct {
@@ -189,8 +243,8 @@ type listener struct {
 // Listen wraps inner (a TCP listener) as the peer port: it accepts TLS 1.3 with
 // ALPN fyr-peer/1, does each handshake apart from the others (a stalled client
 // holds up no one), and drops a connection that has not finished it in 10 s.
-func Listen(inner net.Listener, k *identity.Key) (net.Listener, error) {
-	cfg, err := ServerConfig(k)
+func Listen(inner net.Listener, k *identity.Key, rotation ...roster.Statement) (net.Listener, error) {
+	cfg, err := ServerConfig(k, rotation...)
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +274,7 @@ func (l *listener) loop() {
 				return
 			} else if pub, err := PeerKey(st.PeerCertificates); err == nil {
 				c.caller = pub
+				c.rotation = Rotation(st.PeerCertificates[0])
 			}
 			select {
 			case l.ch <- c:
@@ -243,14 +298,15 @@ func (l *listener) Accept() (net.Conn, error) {
 // connection's proven key where Caller finds it.
 func ConnContext(ctx context.Context, c net.Conn) context.Context {
 	if pc, ok := c.(*conn); ok {
+		ctx = context.WithValue(ctx, rotationKey{}, pc.rotation)
 		return context.WithValue(ctx, callerKey{}, pc.caller)
 	}
 	return ctx
 }
 
 // Serve runs h on the peer port at inner until the server is closed.
-func Serve(inner net.Listener, k *identity.Key, h http.Handler) (*http.Server, error) {
-	l, err := Listen(inner, k)
+func Serve(inner net.Listener, k *identity.Key, h http.Handler, rotation ...roster.Statement) (*http.Server, error) {
+	l, err := Listen(inner, k, rotation...)
 	if err != nil {
 		return nil, err
 	}
@@ -289,4 +345,10 @@ func Once(c net.Conn) *http.Transport {
 		},
 		DisableKeepAlives: true,
 	}
+}
+
+// CallerRotation is the rotations the caller's certificate carried.
+func CallerRotation(r *http.Request) []roster.Statement {
+	c, _ := r.Context().Value(rotationKey{}).([]roster.Statement)
+	return c
 }

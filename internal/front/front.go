@@ -118,7 +118,7 @@ type Front struct {
 	streams streams
 	// authTicks counts rule 3's looks at the modes (a test waits for some).
 	authTicks atomic.Int64
-	subMu   sync.Mutex
+	subMu     sync.Mutex
 	// links: the hosts followed, copy on write (a found host joins while the
 	// front runs, V0.123); read with all().
 	links atomic.Pointer[[]*link]
@@ -160,6 +160,9 @@ type link struct {
 	// lt routes this link's requests: the peer link when there is one, else the
 	// transport the link was made with.
 	lt *linkTransport
+	// cancel ends following the host; gone is set when it was dropped.
+	cancel context.CancelFunc
+	gone   bool
 
 	raw      map[string]map[string]any // the host's thread DTOs, host revs
 	pub      map[string]map[string]any // what the browser gets: stamped, front revs
@@ -246,7 +249,7 @@ func (f *Front) AddHost(h HostConfig) bool {
 	f.opt.Logf("front: following found host %s at %s", l.name(), u)
 	if ctx, wg := f.runCtx, f.runWG; ctx != nil && ctx.Err() == nil {
 		wg.Add(1)
-		go func() { defer wg.Done(); f.follow(ctx, l) }()
+		go func() { defer wg.Done(); f.followOne(ctx, l) }()
 	}
 	return true
 }
@@ -321,7 +324,7 @@ func (f *Front) Run(ctx context.Context) {
 	f.runCtx, f.runWG = ctx, &wg
 	for _, l := range f.all() {
 		wg.Add(1)
-		go func() { defer wg.Done(); f.follow(ctx, l) }()
+		go func() { defer wg.Done(); f.followOne(ctx, l) }()
 	}
 	f.runMu.Unlock()
 	wg.Add(1)
@@ -375,6 +378,21 @@ func (l *link) setEnv(env map[string]any) {
 	l.env = env
 	s, _ := env["host"].(string)
 	l.reported.Store(&s)
+}
+
+// followOne follows a host until ctx ends or the host is dropped (removed from
+// the roster).
+func (f *Front) followOne(ctx context.Context, l *link) {
+	lctx, cancel := context.WithCancel(ctx)
+	f.mu.Lock()
+	l.cancel = cancel
+	gone := l.gone
+	f.mu.Unlock()
+	if gone {
+		cancel()
+		return
+	}
+	f.follow(lctx, l)
 }
 
 func (f *Front) follow(ctx context.Context, l *link) {

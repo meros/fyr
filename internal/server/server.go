@@ -44,6 +44,9 @@ type Server struct {
 	Engine  *engine.Engine
 	MCP     http.Handler // agents' MCP endpoint; optional
 	BuildID string
+	// OnWhois hears each request served on the whois listener (the old link), which
+	// the peer way in's enforce mode removes (decision 0030 slice 5).
+	OnWhois func()
 	// ID is this install's key id (V0.124, decision 0026), in the state.
 	ID   string
 	Host string // host name shown in the rail; default os.Hostname
@@ -114,7 +117,13 @@ func (s *Server) PipeHandler() http.Handler {
 // slice 1). A front of an older build sends no Fyr-Actor and is still served,
 // as a legacy front, and counted (LegacyFronts).
 func (s *Server) PeerHandler(peers PeerAuth) http.Handler {
-	return PeerGuard(s.OwnerLogin, peers, withActor(actorPeer, "", withGzip(withDeadline(s.routes(false)))))
+	inner := withActor(actorPeer, "", withGzip(withDeadline(s.routes(false))))
+	return PeerGuard(s.OwnerLogin, peers, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.OnWhois != nil { // a request over the old link: what the peer way's enforce will refuse
+			s.OnWhois()
+		}
+		inner.ServeHTTP(w, r)
+	}))
 }
 
 // PeerGate is what the host asks of the roster on the peer port (decision 0030
@@ -126,6 +135,16 @@ type PeerGate interface {
 	Member(r *http.Request) (id string, ok bool)
 	DeviceRevoked(id string) bool
 	MayDrive(install string) bool
+	// DeviceKnown: a member signed this device in (a roster device-add).
+	DeviceKnown(id string) bool
+	// Enforcing: the peer way in is in enforce mode (decision 0030 5.1): a device
+	// the roster does not know, and the legacy principal, are refused.
+	Enforcing() bool
+	// Track registers a request so that removing the install closes it (a stream is
+	// one long request); done unregisters it.
+	Track(install string, cancel context.CancelFunc) (done func())
+	// Served counts a request served over the link (a success of the pinned way).
+	Served()
 }
 
 // LinkHandler serves the host protocol on the peer port (V0.158): the channel
@@ -145,7 +164,11 @@ func (s *Server) LinkHandler(g PeerGate) http.Handler {
 			api.WriteJSON(w, http.StatusForbidden, map[string]any{"ok": false, "error": "this host does not take commands from that install"})
 			return
 		}
-		inner.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), linkKey{}, linkInfo{id, g})))
+		ctx, cancel := context.WithCancel(r.Context())
+		defer g.Track(id, cancel)()
+		defer cancel()
+		g.Served()
+		inner.ServeHTTP(w, r.WithContext(context.WithValue(ctx, linkKey{}, linkInfo{id, g})))
 	})
 }
 
@@ -453,9 +476,15 @@ func withActor(mode actorMode, self string, next http.Handler) http.Handler {
 		if mode == actorLink {
 			li, _ := r.Context().Value(linkKey{}).(linkInfo)
 			p.Front = li.install // the key the link proved, whatever the header says
-			if p.Kind == authn.KindDevice && li.gate != nil && li.gate.DeviceRevoked(p.ID) {
-				api.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "that device was revoked"})
-				return
+			if p.Kind == authn.KindDevice && li.gate != nil {
+				switch {
+				case li.gate.DeviceRevoked(p.ID):
+					api.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "that device was revoked"})
+					return
+				case li.gate.Enforcing() && (p.How == authn.HowLegacy || !li.gate.DeviceKnown(p.ID)):
+					api.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "no member signed that device in"})
+					return
+				}
 			}
 		}
 		ctx := authn.With(r.Context(), p)

@@ -37,6 +37,9 @@ func newTest(t *testing.T) (*Store, *memKV, *clock) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// V0.160: the peer way in enforces by itself only when every followed host is on the
+	// pinned link; these tests are about the browser way, so the peer gate is shut.
+	s.SetPeerGate(func() (bool, string) { return false, "a followed host is still on the whois link" }, nil)
 	return s, kv, c
 }
 

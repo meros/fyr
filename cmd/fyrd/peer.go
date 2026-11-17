@@ -4,14 +4,15 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"encoding/json"
+	"errors"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/meros/fyr/internal/auth"
@@ -32,6 +33,7 @@ type peerSide struct {
 	port atomic.Int64
 	cfg  config
 	name string
+	data string
 	key  *identity.Key
 	dial *peerlink.Dialer
 }
@@ -105,10 +107,11 @@ func newPeerSide(cfg config, data, name string, key *identity.Key) *peerSide {
 		log.Printf("peer: roster: %v; peers are off", err)
 		return nil
 	}
-	p := &peerSide{cfg: cfg, name: name, key: key}
+	p := &peerSide{cfg: cfg, name: name, data: data, key: key}
 	p.dial = &peerlink.Dialer{Key: key, Resolve: resolver(cfg.ResolveFile)}
 	p.env = &peer.Env{Key: key, Roster: ros, Name: name, Serve: serveClient(cfg), ServePort: servePort(cfg), Dial: p.dial,
 		Drive: peer.OpenDrive(data), Invites: &peer.Invites{}, Logf: log.Printf, Port: func() int { return int(p.port.Load()) }}
+	p.dial.Opts = p.env.DialOptions // a rotated peer is accepted by its chain; this install shows its own
 	if tailnet.Available(cfg.tsSocket()) && cfg.OwnerLogin != "" {
 		p.env.TS = tsStatus{cfg.tsSocket()}
 	}
@@ -134,7 +137,7 @@ func (p *peerSide) ownerLogin() string {
 
 // start runs the peer port when the config has one, pairing and sync. With no peer
 // port the roster still exists (the install is its own member) and nothing pairs.
-func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, fr *front.Front, st *auth.Store) {
+func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, fr *front.Front, st *auth.Store, old *oldListeners) {
 	if p == nil {
 		return
 	}
@@ -163,7 +166,7 @@ func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, f
 		if srv != nil {
 			members = srv.LinkHandler(env)
 		}
-		hs, err := peerlink.Serve(ln, key, env.Handler(members))
+		hs, err := peerlink.Serve(ln, key, env.Handler(members), ros.RotationChain()...)
 		if err != nil {
 			log.Printf("peer: %v", err)
 			return
@@ -172,6 +175,48 @@ func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, f
 		ros.SetAddress(name, selfHost, int(p.port.Load()))
 		log.Printf("peer: peer port at %s (TLS 1.3, key %s)", ln.Addr(), key.ID())
 	}
+	// The peer way in's mode (decision 0030 5.1): enforce removes the old listeners, and
+	// is reached by itself only when every followed host is on the pinned link.
+	if st != nil {
+		env.Enforce = func() bool { return st.Mode(auth.WayPeer) == auth.ModeEnforce }
+		env.OnServed = func() { st.Success(auth.WayPeer, "link") }
+		st.SetPeerGate(func() (bool, string) {
+			if fr == nil {
+				return true, ""
+			}
+			return fr.AllOnPeerLink()
+		}, func() int {
+			n := 0
+			for _, m := range ros.Members() {
+				if m.ID != key.ID() && m.Port != 0 {
+					n++
+				}
+			}
+			return n
+		})
+		if srv != nil {
+			srv.OnWhois = func() { st.WouldRefuse(auth.WayPeer) }
+		}
+		if old != nil {
+			old.onUse = func() { st.WouldRefuse(auth.WayPeer) }
+			st.OnMode(func(way, mode string) {
+				if way == auth.WayPeer {
+					old.Set(mode != auth.ModeEnforce)
+				}
+			})
+		}
+	}
+	// A removal closes what the removed install had open, and a front stops following a
+	// host that was reached only through it.
+	ros.OnChange(func() {
+		env.CloseRemoved()
+		if fr != nil {
+			fr.DropPeers(func(id string) bool { _, in := ros.Member(id); return in })
+		}
+		if ros.SelfRemoved() {
+			log.Printf("peer: this install was removed from the roster by another member; it serves no peer and pairs with none until the owner pairs it again")
+		}
+	})
 	// Devices: every signed-in device is a statement the other installs hold, and a
 	// revoke anywhere ends the session where it was made.
 	if st != nil {
@@ -252,6 +297,38 @@ func (p *peerSide) ownerRoutes(fr *front.Front) func(mux *http.ServeMux) {
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": res.Name, "id": res.ID, "addr": res.Addr})
+		})
+		mux.HandleFunc("POST /host/remove", func(w http.ResponseWriter, r *http.Request) {
+			var b struct{ ID string }
+			json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+			w.Header().Set("Content-Type", "application/json")
+			if err := p.env.Remove(b.ID); err != nil {
+				w.WriteHeader(http.StatusConflict)
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		})
+		// fyr rotate-key: a new key waits beside the old, the roster says so (signed by the
+		// old key), and fyrd restarts on the new one. A key that may be stolen is removed
+		// and paired again instead.
+		mux.HandleFunc("POST /host/rotate", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			nk, err := identity.New()
+			if err == nil {
+				err = identity.WriteNext(p.data, nk)
+			}
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				return
+			}
+			p.env.Roster.Rotate(nk.Public)
+			json.NewEncoder(w).Encode(map[string]any{"ok": true, "from": p.key.ID(), "to": nk.ID()})
+			go func() { // the launcher restarts fyrd on exit 75, as for a release
+				time.Sleep(300 * time.Millisecond)
+				syscall.Kill(os.Getpid(), syscall.SIGHUP)
+			}()
 		})
 		mux.HandleFunc("POST /host/drive", func(w http.ResponseWriter, r *http.Request) {
 			var b struct {

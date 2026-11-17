@@ -547,8 +547,19 @@ func (f *Front) authAPI(mux muxer) {
 		}
 		api.WriteJSON(w, 200, s)
 	})
-	mux.HandleFunc("POST /api/auth/approve", func(w http.ResponseWriter, r *http.Request) {
+	wide := func(w http.ResponseWriter, r *http.Request) (authn.Principal, bool) { // trust-widening: a session that has lived a while
 		p, ok := need(w, r)
+		if !ok {
+			return p, false
+		}
+		if err := st.StepUp(p.ID); err != nil {
+			api.WriteJSON(w, http.StatusForbidden, map[string]any{"ok": false, "error": err.Error()})
+			return p, false
+		}
+		return p, true
+	}
+	mux.HandleFunc("POST /api/auth/approve", func(w http.ResponseWriter, r *http.Request) {
+		p, ok := wide(w, r)
 		if !ok {
 			return
 		}
@@ -587,7 +598,7 @@ func (f *Front) authAPI(mux muxer) {
 		api.WriteJSON(w, 200, map[string]any{"ok": len(gone) > 0, "revoked": gone})
 	})
 	mux.HandleFunc("POST /api/auth/add", func(w http.ResponseWriter, r *http.Request) {
-		p, ok := need(w, r)
+		p, ok := wide(w, r)
 		if !ok {
 			return
 		}
@@ -661,6 +672,9 @@ func (f *Front) watchAuth(ctx context.Context) {
 		defer f.authTicks.Add(1)
 		for _, way := range st.Tick() {
 			msg := "Fyr now asks every browser to sign in (" + way + " way in). Run `fyr auth observe` to go back."
+			if way == auth.WayPeer {
+				msg = "Fyr now takes other installs only over their pinned links; the old host listeners are removed. Run `fyr auth observe peer` to go back."
+			}
 			log.Printf("auth: %s", msg)
 			if f.opt.Push != nil {
 				f.opt.Push.Notify(core.Owner, push.Payload{Title: "Fyr", Body: msg, State: "auth"})

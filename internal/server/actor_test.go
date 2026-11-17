@@ -123,11 +123,16 @@ type fakeGate struct {
 	member  bool
 	revoked map[string]bool
 	noDrive bool
+	enforce bool
 }
 
-func (g fakeGate) Member(*http.Request) (string, bool) { return "FRNT-0000-0000-0000", g.member }
-func (g fakeGate) DeviceRevoked(id string) bool        { return g.revoked[id] }
-func (g fakeGate) MayDrive(string) bool                { return !g.noDrive }
+func (g fakeGate) Member(*http.Request) (string, bool)     { return "FRNT-0000-0000-0000", g.member }
+func (g fakeGate) DeviceRevoked(id string) bool            { return g.revoked[id] }
+func (g fakeGate) MayDrive(string) bool                    { return !g.noDrive }
+func (g fakeGate) DeviceKnown(id string) bool              { return !g.enforce || id == "dev_x" }
+func (g fakeGate) Enforcing() bool                         { return g.enforce }
+func (g fakeGate) Track(string, context.CancelFunc) func() { return func() {} }
+func (g fakeGate) Served()                                 {}
 
 // SPEC V0.158 (decision 0030 3.3, 3.7): the host's peer-port handler. A key that
 // is not in the roster is 403; the principal comes from Fyr-Actor and is
