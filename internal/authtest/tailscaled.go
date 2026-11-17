@@ -35,6 +35,7 @@ type Node struct {
 	Tags     []string
 	SharedIn bool
 	Online   bool
+	Expired  bool // the node key has expired
 }
 
 // Tailscaled is a fake tailscaled: the LocalAPI (status and whois) on a Unix
@@ -159,13 +160,14 @@ type statusNode struct {
 	TailscaleIPs []string
 	Online       bool
 	ShareeNode   bool `json:",omitempty"`
+	Expired      bool `json:",omitempty"`
 }
 
 func (t *Tailscaled) status(w http.ResponseWriter, r *http.Request) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	mk := func(n Node) statusNode {
-		return statusNode{ID: "n" + n.IP, DNSName: n.Name + ".", UserID: n.UserID, Tags: n.Tags, TailscaleIPs: []string{n.IP}, Online: n.Online, ShareeNode: n.SharedIn}
+		return statusNode{ID: "n" + n.IP, DNSName: n.Name + ".", UserID: n.UserID, Tags: n.Tags, TailscaleIPs: []string{n.IP}, Online: n.Online, ShareeNode: n.SharedIn, Expired: n.Expired}
 	}
 	self := mk(t.self)
 	self.Online = true
@@ -226,14 +228,10 @@ type Serve struct {
 	srv    *http.Server
 }
 
-// ServeFor starts an emulator for a browser on client, reaching sock.
-func (t *Tailscaled) ServeFor(client Node, sock string) (*Serve, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, err
-	}
-	s := &Serve{URL: "http://" + ln.Addr().String(), Client: client}
-	proxy := &httputil.ReverseProxy{
+// serveProxy is the reverse proxy of a Serve for a browser (or an install's
+// probe) on client: what tailscaled does on its way to a Unix socket (#225).
+func (t *Tailscaled) serveProxy(client Node, sock string, selfURL string) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
 		Transport: &http.Transport{DialContext: unixDialer(sock), DisableKeepAlives: true},
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.Out.URL.Scheme = "http"
@@ -255,20 +253,38 @@ func (t *Tailscaled) ServeFor(client Node, sock string) (*Serve, error) {
 			// emulator stands in for it on a loopback port, so what the browser
 			// would have said about itself is said as the public name.
 			public := "https://" + t.Self().Name + ":7443"
-			if o := pr.In.Header.Get("Origin"); o == s.URL {
-				pr.Out.Header.Set("Origin", public)
-			}
-			if ref := pr.In.Header.Get("Referer"); strings.HasPrefix(ref, s.URL) {
-				pr.Out.Header.Set("Referer", public+strings.TrimPrefix(ref, s.URL))
+			if selfURL != "" {
+				if o := pr.In.Header.Get("Origin"); o == selfURL {
+					pr.Out.Header.Set("Origin", public)
+				}
+				if ref := pr.In.Header.Get("Referer"); strings.HasPrefix(ref, selfURL) {
+					pr.Out.Header.Set("Referer", public+strings.TrimPrefix(ref, selfURL))
+				}
 			}
 			pr.Out.Header.Set("X-Forwarded-For", client.IP)
 			pr.Out.Header.Set("X-Forwarded-Proto", "https")
 		},
 		FlushInterval: -1, // a live stream passes at once
 	}
-	s.srv = &http.Server{Handler: proxy}
+}
+
+// ServeFor starts an emulator for a browser on client, reaching sock.
+func (t *Tailscaled) ServeFor(client Node, sock string) (*Serve, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	s := &Serve{URL: "http://" + ln.Addr().String(), Client: client}
+	s.srv = &http.Server{Handler: t.serveProxy(client, sock, s.URL)}
 	go s.srv.Serve(ln)
 	return s, nil
+}
+
+// ServeTLS is a node's Serve endpoint as another node's program sees it: HTTPS
+// with a certificate from ca for the node's MagicDNS name (the WebPKI probe of
+// condition 1), proxying to sock with the caller's identity.
+func (t *Tailscaled) ServeTLS(caller Node, sock string, ca *CA) (*TLSFront, error) {
+	return ca.Serve(t.serveProxy(caller, sock, ""), t.Self().Name)
 }
 
 func (s *Serve) Close() { s.srv.Close() }
