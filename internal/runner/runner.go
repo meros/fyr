@@ -65,6 +65,9 @@ type Proc struct {
 	Exited  bool            `json:"exited,omitempty"`
 	// Linked: a fyrd holds a link to it now.
 	Linked bool `json:"linked,omitempty"`
+	// InputClosed: its stdin is closed (V0.142). The CLI reads nothing
+	// more; it lives on only for its background work.
+	InputClosed bool `json:"inputClosed,omitempty"`
 }
 
 // ExistsError: a spawn for a key that has a live process.

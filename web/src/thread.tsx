@@ -4,7 +4,7 @@
 import { PIN_ICON } from "./row-ui.tsx";
 import { copySource, copyToClipboard } from "./copy.ts";
 import { useDraft } from "./drafts.ts";
-import { liveLine } from "./tasks.ts";
+import { AgentStatus } from "./agent-status.tsx";
 import { describeEffect, type EffectText } from "./effects.ts";
 import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useApi } from "./api-context.ts";
@@ -213,7 +213,7 @@ export function ThreadPane(p: ThreadPaneProps) {
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />
       {showsDecision(tab) && decision && <DecisionCard d={decision} more={t.decisions.length - 1} card={p.card} onCard={p.onCard} onAllow={p.onAllow} onSubmitAsk={p.onSubmitAsk} pr={t.pr} />}
-      <Composer key={t.id} t={t} now={p.now} onSend={(a) => sendFrom(tab, a, p.onSend, setTab)} onInterrupt={() => p.onRun("thread.interrupt")} answer={composerAnswers(tab) ? p.answerField : null} />
+      <Composer key={t.id} t={t} now={p.now} onSend={(a) => sendFrom(tab, a, p.onSend, setTab)} onInterrupt={() => p.onRun("thread.interrupt")} onRestart={() => p.onRun("thread.restart")} answer={composerAnswers(tab) ? p.answerField : null} />
     </section>
   );
 }
@@ -1151,6 +1151,8 @@ interface ComposerProps {
   answer: AnswerField | null;
   onSend(args: SendArgs): Promise<boolean>;
   onInterrupt(): void;
+  /** V0.142: Restart an agent that does not respond */
+  onRestart(): void;
 }
 
 /**
@@ -1158,7 +1160,7 @@ interface ComposerProps {
  * for the active question's "Other" (U15): Enter answers, ⌘Enter queues the text as a message instead.
  * Files: the paperclip, paste and drop, any type; each uploads at once and shows a chip.
  */
-function Composer({ t, now, answer, onSend, onInterrupt }: ComposerProps) {
+function Composer({ t, now, answer, onSend, onInterrupt, onRestart }: ComposerProps) {
   const [draft, setDraft] = useDraft(t.id);
   const att = useAttachments(t.host);
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -1196,14 +1198,7 @@ function Composer({ t, now, answer, onSend, onInterrupt }: ComposerProps) {
 
   return (
     <div class="cmpw" onDrop={att.onDrop} onDragOver={att.onDragOver}>
-      {t.running && (
-        <div class="sys live">
-          <span class="spin icw">
-            <StateIcon state="working" size={14} />
-          </span>
-          <span class="ell">{liveLine(t, now)}</span>
-        </div>
-      )}
+      <AgentStatus t={t} now={now} onRestart={onRestart} />
       <ChipStrip chips={att.chips} onRemove={att.remove} />
       <SlashList s={slash} />
       <div class={`cmp${disabled ? " off" : ""}`}>

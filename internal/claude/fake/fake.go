@@ -21,6 +21,10 @@
 //	         the CLI's reject text and no request (V0.133), as claude
 //	         2.1.322 does. The fake, like the CLI, waits for its background
 //	         tasks before it exits on a closed stdin.
+//	deaf N   starts a background task of N ms, ends its turn, and from
+//	         then on reads nothing more from stdin (no message, no control
+//	         request), as claude 2.1.322 after its input closed; when the
+//	         task ends it starts one turn by itself and exits (V0.142)
 //	refused  makes one Bash call that the CLI refuses with its reject
 //	         text, without asking Fyr (V0.133)
 //	sub      runs one subagent (Task tool) before it answers
@@ -94,8 +98,10 @@ var (
 	// closed: stdin closed; eof is closed with it; bgwg: background tasks
 	// the exit waits for.
 	closed atomic.Bool
-	eof    = make(chan struct{})
-	bgwg   sync.WaitGroup
+	// deaf: the fake reads nothing more (V0.142).
+	deaf atomic.Bool
+	eof  = make(chan struct{})
+	bgwg sync.WaitGroup
 
 	qmu   sync.Mutex
 	queue []queued
@@ -324,7 +330,7 @@ func Main() {
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
 	for sc.Scan() {
 		var m msg
-		if json.Unmarshal(sc.Bytes(), &m) != nil {
+		if deaf.Load() || json.Unmarshal(sc.Bytes(), &m) != nil {
 			continue
 		}
 		switch m["type"] {
@@ -553,6 +559,26 @@ func turn(text string) (took []queued) {
 				"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_bw", "content": "build ok"}}}})
 			assistant(msg{"type": "text", "text": "background read ok"})
 			write(msg{"type": "result", "subtype": "success", "is_error": false, "result": "background read ok", "session_id": session})
+		}()
+	case "deaf":
+		ms := 3000
+		if f := strings.Fields(text); len(f) > 1 {
+			fmt.Sscan(f[1], &ms)
+		}
+		task := msg{"task_id": "bd1", "task_type": "local_bash", "description": "Run the proxy"}
+		write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{task}})
+		write(msg{"type": "system", "subtype": "task_started", "task_id": "bd1", "description": "Run the proxy", "task_type": "local_bash", "is_backgrounded": true})
+		assistant(msg{"type": "text", "text": "proxy started"})
+		result(false, "success", "turn 1")
+		deaf.Store(true)
+		go func() {
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+			write(msg{"type": "system", "subtype": "task_notification", "task_id": "bd1", "status": "stopped", "summary": "Background command \"Run the proxy\" was stopped"})
+			write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{}})
+			write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model})
+			assistant(msg{"type": "text", "text": "the proxy stopped"})
+			write(msg{"type": "result", "subtype": "success", "is_error": false, "result": "the proxy stopped", "session_id": session})
+			os.Exit(0)
 		}()
 	case "refused":
 		assistant(msg{"type": "tool_use", "id": "tu_ref", "name": "Bash", "input": msg{"command": "cat build.output"}})

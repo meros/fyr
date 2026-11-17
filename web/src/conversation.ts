@@ -338,6 +338,20 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         pushItem({ kind: "effect", key, action: "refused", ok: false, text: why, line: `${tool} was refused without asking you` });
         break;
       }
+      case "agent.unresponsive": {
+        // V0.142: the agent process took nothing Fyr wrote; one failed line with the reason.
+        const reason = str(e.data?.reason) || "it took nothing Fyr wrote";
+        pushItem({ kind: "effect", key, action: "unresponsive", ok: false, text: reason, line: `The agent stopped responding: ${reason}` });
+        break;
+      }
+      case "agent.restarted": {
+        // V0.142: Fyr ended the process and resumed the session; it names the background tasks that ended with it.
+        const why = str(e.data?.why);
+        const tasks = Array.isArray(e.data?.tasks) ? (e.data!.tasks as unknown[]).map(String) : [];
+        const text = [why && `Why: ${why}.`, tasks.length ? `Background tasks ended: ${tasks.join(", ")}.` : "", "The unread messages go to the new process."].filter(Boolean).join("\n");
+        pushItem({ kind: "effect", key, action: "restarted", ok: true, text, line: tasks.length ? `Agent restarted; ended ${tasks.join(", ")}` : "Agent restarted" });
+        break;
+      }
       case "change": {
         // V0.59: a change tool call, one line; the Changes tab holds the record.
         const line = changeEventLine(e.data);

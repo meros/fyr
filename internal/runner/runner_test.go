@@ -296,3 +296,27 @@ func TestAbandonedProcessEnds(t *testing.T) {
 		t.Fatalf("the linked process was touched: %+v", ps[0])
 	}
 }
+
+// SPEC 0.5 V0.142: the runner says when a process's input is closed. A
+// CLI with background work lives on after it, and a fyrd that adopts it
+// must not take it for a process that reads what it writes.
+func TestListSaysInputClosed(t *testing.T) {
+	rc := serve(t)
+	c, err := claude.Start(claude.Spec{Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"}, Runner: rc, ID: "p142"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SendUser([]claude.Msg{{"type": "text", "text": "bgwait 3000"}}, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	for m := next(t, c); m["type"] != "result"; m = next(t, c) {
+	}
+	if ps := procs(t, rc); len(ps) != 1 || ps[0].InputClosed {
+		t.Fatalf("before the close: %+v", ps)
+	}
+	c.Close()
+	until(t, "the list says the input is closed", func() bool {
+		ps := procs(t, rc)
+		return len(ps) == 1 && ps[0].InputClosed && !ps[0].Exited
+	})
+}

@@ -649,6 +649,20 @@ function railFixture(now: number): Fixture {
       unavailable: quiet,
     }),
   );
+  // V0.142: a live agent that takes nothing Fyr writes; Needs you, with Restart above the composer.
+  threads.push(
+    base("t_stuck", "Area tree production switch", now, 38, {
+      project: "norban/web",
+      running: true,
+      runStartedAt: min(39),
+      activity: "Starting",
+      tasks: [task("st1", "Run Cloud SQL proxy to the clone", "running", now, 120)],
+      outbox: [{ id: "m_stuck", state: "sent" }],
+      unresponsive: { since: min(51), at: min(38), reason: "it did not take a message within 1 min; a background task holds the process: Run Cloud SQL proxy to the clone" },
+      attention: { state: "blocked", section: "needs", reason: "Agent not responding: it did not take a message within 1 min" },
+      unavailable: { "thread.retry": "The last run did not fail", "thread.markUnseen": "A run is going" },
+    }),
+  );
   const working: [string, string, string, number, number, "working" | "waiting"][] = [
     ["t_babysit", "Babysit PR #4170", "Bash git rebase origin/main", 0, 3, "working"],
     ["t_mapperf", "Map perf", "Bash yarn vitest src/map", 2, 12, "working"],
