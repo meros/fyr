@@ -667,10 +667,19 @@ button.ptag{padding:0}
 .pfc .pfq{flex:none;font-weight:400;color:var(--ink-muted)}
 .pfc.quiet:not(.on) .ell{opacity:.6}
 .pfx{flex:none;width:26px;height:26px;border-radius:13px;background:var(--sunken);color:var(--ink-muted);font-size:15px;line-height:26px;text-align:center}
-/* V0.134: a host chip carries the host's dot from Settings → Hosts and its name in mono; a thin line parts the groups. */
-.pfh{flex:none;display:inline-flex;align-items:center;gap:6px;max-width:150px;height:26px;padding:0 9px;border:1px solid var(--line);border-radius:13px;font:500 12px/16px var(--mono);color:var(--ink-muted);min-width:0}
-.pfh.on{border-color:var(--ink-muted);color:var(--ink);background:var(--sunken)}
-.pfsep{flex:none;width:1px;height:16px;background:var(--line)}
+/* V0.169: the filter rows. Row 1 is a switch with one segment per host (dot, short name, its count); a host turned
+   off is grey, struck through and says "hidden". Row 2 is the project chips. One line under both. */
+.frows{flex:none;border-bottom:1px solid var(--line)}
+.frows .pfrow{border-bottom:0}
+.hfrow{display:flex;margin:6px 12px 0;border:1px solid var(--line);border-radius:8px;overflow-x:auto;scrollbar-width:none;background:var(--raised)}
+.hfrow:last-child{margin-bottom:6px}
+.hft{flex:1 0 auto;min-width:72px;display:flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 10px;border-left:1px solid var(--line);font:500 12px/16px var(--mono);color:var(--ink)}
+.hft:first-child{border-left:0}
+.hft .nm{max-width:140px}
+.hft .hn{flex:none;font:400 11px/16px var(--ui);color:var(--ink-faint)}
+.hft.off{background:var(--sunken);color:var(--ink-faint)}
+.hft.off .nm{text-decoration:line-through}
+.hft[aria-disabled="true"]{cursor:default}
 /* V0.134: the list when the filter leaves nothing in view. */
 .fempty{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:14px 16px;border-bottom:1px solid var(--line)}
 .fempty .fe1,.m-fempty .fe1{font:500 13px/18px var(--ui);color:var(--ink)}
