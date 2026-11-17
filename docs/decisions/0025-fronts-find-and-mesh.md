@@ -1,6 +1,6 @@
 # 0025 Fronts find the hosts on the tailnet and mesh; the client keeps one uplink
 
-Date: 2026-11-16 · Status: accepted (owner, 16 Nov, in the multi-host thread) · Amends 0016 and 0021 (points 3, 5 and 8) · SPEC V0.123
+Date: 2026-11-16 · Status: accepted (owner, 16 Nov, in the multi-host thread) · Amends 0016 and 0021 (points 3, 5 and 8) · SPEC V0.123 · Superseded in part by 0030 ((1) proof and (2)), once 0030 is accepted
 
 **The owner's words, 16 Nov, in order:**
 - "Start building multi host... The fyrd should detect other hosts on the tailnet and hand to client. Client maintains connection to all."

@@ -81,7 +81,7 @@ func noCacheIndex(next http.Handler) http.Handler {
 
 // pushRoutes serves the Web Push endpoints (V0.15) for p: a host's before
 // decision 0016, a front's since V0.54 (the front holds the device data).
-func pushRoutes(mux *http.ServeMux, p Pusher) {
+func pushRoutes(mux muxer, p Pusher) {
 	mux.HandleFunc("GET /api/push/key", func(w http.ResponseWriter, r *http.Request) {
 		api.WriteJSON(w, 200, map[string]string{"publicKey": p.PublicKey()})
 	})
@@ -126,7 +126,7 @@ func pushRoutes(mux *http.ServeMux, p Pusher) {
 
 // presenceRoute records which thread each device shows (V0.20); onBeat,
 // when set, hears each beat with the thread the device showed before (V0.85).
-func presenceRoute(mux *http.ServeMux, p *notify.Presence, onBeat ...func(device, prev, thread string)) {
+func presenceRoute(mux muxer, p *notify.Presence, onBeat ...func(device, prev, thread string)) {
 	mux.HandleFunc("POST /api/presence", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			ThreadID string `json:"threadId"`

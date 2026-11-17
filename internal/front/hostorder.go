@@ -96,7 +96,6 @@ func (f *Front) pushOrder(ctx context.Context, l *link, o hostOrder, commandID s
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "POST", l.base.String()+"/api/command", bytes.NewReader(body))
-	req.Host = "localhost"
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Fyr", "1")
 	resp, err := l.client.Do(req)

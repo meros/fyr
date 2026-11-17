@@ -1,5 +1,5 @@
 # The same gate as a local `make test` (docs/PROCESS.md), split into jobs that run at the same time: Go (vet and
-# tests), web (typecheck, unit tests, the build and the layout e2e in headless Chrome), the Nix package and a secret scan. The
+# tests, which include the auth integration tests of internal/authtest), web (typecheck, unit tests, the build, the layout e2e and the auth e2e in headless Chrome), the Nix package and a secret scan. The
 # toolchain comes from the flake's dev shell; Chrome is the runner's own google-chrome. The Go build cache and
 # web/node_modules are cached between runs.
 name: test
@@ -51,11 +51,11 @@ jobs:
         with:
           path: web/node_modules
           key: node-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'flake.lock') }}
-      - name: typecheck, unit tests, build, layout e2e
+      - name: typecheck, unit tests, build, layout e2e, auth e2e
         env:
           FYR_CHROME: /usr/bin/google-chrome
         run: |
-          nix develop --command bash -c 'make web-deps && (cd web && npm run build) && make -j3 --output-sync=target web-typecheck web-unit web-layout FYR_LAYOUT_TIMING=1'
+          nix develop --command bash -c 'make web-deps && (cd web && npm run build) && make -j4 --output-sync=target web-typecheck web-unit web-layout web-auth FYR_LAYOUT_TIMING=1'
 
   # The package NixOS installs runs the Go tests in the Nix sandbox (found live: a test needed git there).
   nix:

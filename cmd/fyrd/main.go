@@ -514,7 +514,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	// V0.54: "tailnet:PORT" is this machine's tailnet address.
 	if port, ok := strings.CutPrefix(cfg.HostListen, "tailnet:"); ok {
-		ip, err := tailnet.IPv4(tailnet.DefaultSocket)
+		ip, err := tailnet.IPv4(cfg.tsSocket())
 		if err != nil {
 			log.Fatalf("hostListen %s: %v", cfg.HostListen, err)
 		}
@@ -538,7 +538,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// V0.129 (3), decision 0028: in-process, so no loopback port is
 		// open for a local process to drive the host protocol through.
 		link := pipe.New()
-		serve(link, hostHandler)
+		serve(link, srv.PipeHandler()) // decision 0030 3.2: the pipe needs no browser guard; its requests carry Fyr-Actor
 		hosts := append([]front.HostConfig{{Name: hostName, URL: front.LocalURL, Dial: link.Dial}}, cfg.Hosts...)
 		// The front's device data (push keys and subscriptions) stays in
 		// this machine's database, where the host kept it before V0.54.
@@ -556,7 +556,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		mux.Handle("/mcp", hostHandler)
 		mux.Handle("/", fr.Handler())
 		serve(ln, deploy.Health(mux, health...))
-		serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), serve) // V0.130
+		serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), cfg.ServeSocketUsers, serve) // V0.130
 	}
 	switch {
 	case cfg.HostListen == "":
@@ -566,7 +566,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		serve(listenLoopback(cfg.HostListen), hostHandler)
 		log.Printf("serving fronts on loopback at %s", cfg.HostListen)
 	default:
-		serve(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: tailnet.DefaultSocket}))
+		serve(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: cfg.tsSocket()}))
 		log.Printf("serving fronts on the tailnet at %s", cfg.HostListen)
 	}
 	log.Printf("build %s (%s) listening on http://%s (%d threads, %d providers)", BuildID(), cfg.Role, ln.Addr(), len(eng.Snapshot()), len(h.profiles()))
@@ -620,7 +620,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 		}
 	}()
 	var extra []*http.Server
-	serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), func(l net.Listener, h http.Handler) { // V0.130
+	serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), cfg.ServeSocketUsers, func(l net.Listener, h http.Handler) { // V0.130
 		s := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		extra = append(extra, s)
 		go s.Serve(l)
