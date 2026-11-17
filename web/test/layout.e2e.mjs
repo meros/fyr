@@ -3351,6 +3351,66 @@ try {
 }
 });
 
+// V0.145: one history entry per thread the owner opens on the desktop. Open A, B and C from the list (B on another
+// tab), then the mouse's Back button (button 3) and history.back() go to B and A, history.forward() to B on the tab it
+// had. Waiting adds no entry (the stream, the view refreshing).
+section('V0.145 desktop', async (h) => {
+  const { send, evaluate, waitFor, settle, navigate } = h;
+try {
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.ib .list [data-id]') && !!document.querySelector('.th .tt')");
+  const AT = `(() => ({ marked: document.querySelector('.ib .list [aria-selected="true"]')?.dataset.id ?? null, pane: document.querySelector('.th .tt')?.getAttribute('title') ?? null,
+    tab: document.querySelector('.th [role=tab].on')?.textContent ?? null, open: new URLSearchParams(location.search).get('open'), n: history.length }))()`;
+  const ids = await evaluate(`[...document.querySelectorAll('.ib .list [data-id]')].map((r) => r.dataset.id)`);
+  const first = (await evaluate(AT)).marked;
+  const [A, B, C] = ids.filter((x) => x !== first);
+  const titleOf = (id) => evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}] .hd .t')?.textContent ?? null`);
+  const titles = { [A]: await titleOf(A), [B]: await titleOf(B), [C]: await titleOf(C) };
+  const open = async (id) => {
+    await evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}]').scrollIntoView({ block: 'center' })`);
+    await evaluate(`document.querySelector('.ib .list [data-id=${JSON.stringify(id)}]').click()`);
+    await waitFor(`${AT}.marked === ${JSON.stringify(id)}`, { soft: true });
+    await settle();
+  };
+  const n0 = (await evaluate(AT)).n;
+  await open(A);
+  await open(B);
+  // B on a tab that is not its first, when it has one.
+  const bTab = await evaluate(`(() => { const t = [...document.querySelectorAll('.th [role=tab]')].find((x) => !x.classList.contains('on')); t?.click(); return t?.textContent ?? null; })()`);
+  await settle();
+  await open(C);
+  const atC = await evaluate(AT);
+  check(atC.n === n0 + 3 && atC.open === C, `V0.145 desktop: opening three threads does not add three entries (${JSON.stringify({ n0, atC })})`);
+  await new Promise((r) => setTimeout(r, 1500));
+  await settle();
+  check((await evaluate(AT)).n === atC.n, `V0.145 desktop: an entry added while nobody opened a thread`);
+  const want = async (id, what) => {
+    await waitFor(`${AT}.marked === ${JSON.stringify(id)}`, { soft: true });
+    await settle();
+    const s = await evaluate(AT);
+    check(s.marked === id && s.pane === titles[id] && s.open === id, `V0.145 desktop: ${what} does not show ${id} (${JSON.stringify(s)})`);
+    return s;
+  };
+  // The mouse's Back button.
+  const c = await evaluate(`(() => { const r = document.querySelector('.th').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: c[0], y: c[1] });
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: c[0], y: c[1], button: "back", buttons: 8, clickCount: 1 });
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: c[0], y: c[1], button: "back", buttons: 0, clickCount: 1 });
+  await want(B, "the mouse's Back button from C");
+  await evaluate(`history.back()`);
+  await want(A, "Back twice from C");
+  await evaluate(`history.forward()`);
+  const atB = await want(B, "Forward from A");
+  if (bTab) check(atB.tab === bTab, `V0.145 desktop: Forward to B shows the tab ${atB.tab}, not the one it had (${bTab})`);
+  // The mouse's Forward button.
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: c[0], y: c[1], button: "forward", buttons: 16, clickCount: 1 });
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: c[0], y: c[1], button: "forward", buttons: 0, clickCount: 1 });
+  await want(C, "the mouse's Forward button from B");
+} catch (e) {
+  failures.push(`V0.145 desktop: ${e.message}`);
+}
+});
+
 // SPEC 0.5 V0.134: the host filter, and only active filter values, the same on the desktop and the phone. 1 two hosts
 // with threads in view: a host chip each, in the owner's order, with the host's dot; one host: none. 2 a host chip
 // filters (AND the project chips, which then count only that host's threads) and is remembered. 3 every chip that is
