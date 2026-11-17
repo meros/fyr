@@ -14,7 +14,7 @@ import { Boundary } from "./boundary.tsx";
 import type { Api } from "./api.ts";
 import { hostForProject, hostIdByName, hostLine, linkLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
 import { useHosts } from "./host-pick-ui.tsx";
-import { hostPath } from "./urls.ts";
+import { hostUrl } from "./urls.ts";
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, type SettingsHost } from "./host-settings.ts";
 import { quotaFor } from "./quota.ts";
 import { budgetLine, jobLines, type HostLoad } from "./load.ts";
@@ -318,12 +318,13 @@ export function Settings(p: SettingsProps) {
   const auth = useAuthState(p.api, true); // V0.157: Devices, read by the page and by the nav's line
   const env = { readOnly: !!p.offline, phone: !!p.phone, saved: sv.mark };
   // V0.127: the nav's lines count every host; an offline host Fyr has never read is left out.
-  const read = data.all.filter((d) => d.host.online || d.providers !== null);
+  // A host with no install id (older than V0.124) cannot be addressed (decision 0031): nothing is read from it.
+  const read = data.all.filter((d) => (d.host.online || d.providers !== null) && !(d.host.name && !d.host.id));
   const provs = read.some((d) => d.providers === null) ? null : read.flatMap((d) => d.providers!);
   const blocked = data.all.reduce((n, d) => n + (d.sa?.jobs.filter((j) => j.error).length ?? 0), 0);
   const summaries: Record<PageId, string> = {
     providers: providersSummary(provs, blocked),
-    automation: automationSummaryHosts(data.all.map((d) => ({ deploy: p.api.autoDeploy ? d.deploy : false, repos: d.repos, skip: !d.host.online && d.repos === null }))),
+    automation: automationSummaryHosts(data.all.map((d) => ({ deploy: p.api.autoDeploy ? d.deploy : false, repos: d.repos, skip: (!d.host.online && d.repos === null) || !!(d.host.name && !d.host.id) }))),
     projects: projectsSummary(settingsProjects(p.projects).length),
     hosts: hostsSummary(p.hosts),
     devices: devicesSummary(auth.s),
@@ -571,7 +572,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
           body: <HostPage key={h.name} h={h} self={self} api={p.api} now={p.now} />,
         };
       const runOrder = async (names: string[]) => {
-        const r = await p.api.frontCommand("front.hostOrder", { ids: names.map((n) => hostIdByName(p.hosts, n)) }); // V0.132
+        const r = await p.api.frontCommand("front.hostOrder", { ids: names.map((n) => hostIdByName(p.hosts, n)).filter(Boolean) }); // V0.132
         return r.ok ? null : (r.error ?? "That did not work");
       };
       return {
@@ -1564,7 +1565,7 @@ function UpdatesGroup({ d }: { d: Data }) {
                 {(u.logs ?? []).map((n) => (
                   <>
                     {" · "}
-                    <a href={hostPath(d.host.id, `/updates/${encodeURIComponent(u.build)}/${n}`) /* from its host */} target="_blank" rel="noopener noreferrer">
+                    <a href={hostUrl(d.host.id, `/updates/${encodeURIComponent(u.build)}/${n}`) /* from its host */} target="_blank" rel="noopener noreferrer">
                       {n}
                     </a>
                   </>

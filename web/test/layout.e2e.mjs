@@ -54,7 +54,7 @@ const server = createServer((req, res) => {
   }
   // V0.116: project image icons, as the host serves them: a fixture per project id (FYR_PROJECT_ICONS first, so
   // screenshots can use icons that are not committed); none is a 404 and the client draws the glyph.
-  const icon = path.match(/^\/api\/projects\/([A-Za-z0-9_-]+)\/icon$/);
+  const icon = path.match(/^\/api\/h\/[A-Za-z0-9-]+\/projects\/([A-Za-z0-9_-]+)\/icon$/); // decision 0031: under the host's prefix
   if (icon) {
     const f = [process.env.FYR_PROJECT_ICONS, join(fixtures, "project-icons")].filter(Boolean).map((d) => join(d, `${icon[1]}.png`)).find((x) => existsSync(x));
     if (!f) return void res.writeHead(404).end();
@@ -2501,7 +2501,7 @@ for (const [label, w, ht] of [
     await evaluate(`[...document.querySelectorAll('${root} .btn')].find(x => x.textContent.trim() === 'Trust B7LA')?.click()`);
     await waitFor(`!document.querySelector('${root} .note.bad')`, { soft: true });
     const after = await evaluate(`({ note: !!document.querySelector('${root} .note.bad'), id: [...document.querySelectorAll('${root} .idf')].map(e => e.getAttribute('aria-label')), cmds: ${COMMANDS("front.hostId")}.map(c => c.args.host) })`);
-    check(!after.note && after.id.join() === "id B7LA-4QZE-9KDF-3HXW" && after.cmds.join() === "lab", `${ctx}: after Trust ${JSON.stringify(after)}`);
+    check(!after.note && after.id.join() === "id B7LA-4QZE-9KDF-3HXW" && after.cmds.join() === "B7LA-4QZE-9KDF-3HXW" /* the host's id, not its name */, `${ctx}: after Trust ${JSON.stringify(after)}`);
     // The phone goes back up (a reload would forget the mock's trust): the list, then the nav.
     if (phone) {
       await evaluate(`history.back()`);
@@ -2595,7 +2595,7 @@ for (const [label, w, ht] of [
   const PARTS = `[...document.querySelectorAll('${root} .hpart')].map(p => ({ host: p.dataset.host, line: p.querySelector('.hpart-s')?.textContent ?? '', note: p.querySelector('.hnote')?.textContent ?? '', rows: [...p.querySelectorAll('.prow .sr-t')].map(e => e.textContent), add: p.querySelector('.addp')?.disabled ?? null, selects: [...p.querySelectorAll('select')].map(x => x.disabled) }))`;
   // 1. The Providers page: one part per host.
   await step("providers", async () => {
-    await open("providers", `document.querySelectorAll('${root} .hpart').length === 4 && document.querySelectorAll('${root} .hpart .prow').length === 7`);
+    await open("providers", `document.querySelectorAll('${root} .hpart').length === 4 && document.querySelectorAll('${root} .hpart .prow').length === 6`);
     const parts = await evaluate(PARTS);
     const by = Object.fromEntries(parts.map((x) => [x.host, x]));
     check(parts.map((x) => x.host).join("|") === "desk|host-b|lab|old-nuc", `${ctx}: the parts ${JSON.stringify(parts.map((x) => x.host))}`);
@@ -2605,10 +2605,10 @@ for (const [label, w, ht] of [
     check(/^Offline since \d\d:\d\d$/.test(off?.line ?? "") && /^host-b is offline\. These are its settings as Fyr last read them at \d\d:\d\d; nothing here can be changed until it is back\.$/.test(off.note) && off.rows.join() === "Claude" && off.add === true && off.selects.length > 0 && off.selects.every(Boolean), `${ctx}: the offline host ${JSON.stringify(off)}`);
     // The old Host picker is gone: each part has its own System agents.
     const sa = await evaluate(`document.querySelectorAll('${root} section[aria-label="System agents"]').length`);
-    check(sa === 4 && !(await evaluate(`!!document.querySelector('${root} select[aria-label="Host"]')`)), `${ctx}: System agents per host (${sa})`);
+    check(sa === 3 /* old-nuc reports no install id: nothing is read from it */ && !(await evaluate(`!!document.querySelector('${root} select[aria-label="Host"]')`)), `${ctx}: System agents per host (${sa})`);
     if (!phone) {
       const nav = await evaluate(`document.querySelector('.dlg .stn-i[data-page=providers] .stn-s')?.textContent`);
-      check(nav === "7 · 1 needs a login", `${ctx}: the Providers line counts every host "${nav}"`);
+      check(nav === "6 · 1 needs a login", `${ctx}: the Providers line counts every host "${nav}"`);
     }
     if (phone) {
       const small = await evaluate(`[...document.querySelectorAll('.m-settings .hpart button:not(:disabled), .m-settings .hpart select:not(:disabled)')].map(b => b.getBoundingClientRect()).filter(r => r.height > 0 && r.height < 44).length`);
@@ -2645,19 +2645,19 @@ for (const [label, w, ht] of [
   });
   // 3. Every change names its host.
   await step("commands", async () => {
-    await open("providers", `document.querySelectorAll('${root} .hpart .prow').length === 7`);
+    await open("providers", `document.querySelectorAll('${root} .hpart .prow').length === 6`);
     await evaluate(`(() => { const s = document.querySelector('${root} .hpart[data-host="lab"] select[aria-label="Thread titles"]'); s.value = s.options[1].value; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
     await waitFor(`${COMMANDS("host.systemAgents")}.length === 1`, { soft: true });
-    const sa = await evaluate(`${COMMANDS("host.systemAgents")}.map(c => c.args)`);
-    check(sa.length === 1 && sa[0].host === "lab" && sa[0].job === "title", `${ctx}: System agents on lab ${JSON.stringify(sa)}`);
+    const sa = await evaluate(`${COMMANDS("host.systemAgents")}.map(c => ({ ...c.args, host: c.host }))`);
+    check(sa.length === 1 && sa[0].host === "B7LA-4QZE-9KDF-3HXW" && sa[0].job === "title", `${ctx}: System agents on lab ${JSON.stringify(sa)}`);
     await open("automation", `document.querySelectorAll('${root} .hpart').length === 4 && !!document.querySelector('${root} .hpart[data-host="lab"] [role=switch]')`);
     const parts = await evaluate(`[...document.querySelectorAll('${root} .hpart')].map(p => ({ host: p.dataset.host, repos: [...p.querySelectorAll('.sr-t.mono, .mono.sr-t')].map(e => e.textContent), switches: [...p.querySelectorAll('[role=switch]')].map(x => x.disabled) }))`);
     const lab = parts.find((x) => x.host === "lab"), off = parts.find((x) => x.host === "host-b");
     check(!!lab && lab.switches.length >= 2 && lab.switches.every((d) => !d) && !!off && off.switches.every(Boolean), `${ctx}: Automation per host ${JSON.stringify(parts)}`);
     await evaluate(`document.querySelector('${root} .hpart[data-host="lab"] [role=switch]').click()`);
     await waitFor(`${COMMANDS("host.autoDeploy")}.length === 1`, { soft: true });
-    const dep = await evaluate(`${COMMANDS("host.autoDeploy")}.map(c => c.args)`);
-    check(dep.length === 1 && dep[0].host === "lab" && dep[0].on === false, `${ctx}: auto-deploy on lab ${JSON.stringify(dep)}`);
+    const dep = await evaluate(`${COMMANDS("host.autoDeploy")}.map(c => ({ ...c.args, host: c.host }))`);
+    check(dep.length === 1 && dep[0].host === "B7LA-4QZE-9KDF-3HXW" && dep[0].on === false, `${ctx}: auto-deploy on lab ${JSON.stringify(dep)}`);
     await shot(`hostsettings-automation-${label}.png`);
   });
 });
@@ -2716,8 +2716,8 @@ for (const [label, w, ht] of [
     await shot(`hostfolders-newproject-${label}.png`);
     await click(`${root} .pform button`, "Create project");
     await waitFor(`${COMMANDS("project.create")}.length === 1`, { soft: true });
-    const c = await evaluate(`${COMMANDS("project.create")}.map(c => c.args)`);
-    check(c.length === 1 && c[0].host === "lab" && c[0].folder === "/home/owner/lab-notes" && c[0].name === "Lab notes", `${ctx}: project.create ${JSON.stringify(c)}`);
+    const c = await evaluate(`${COMMANDS("project.create")}.map(c => ({ ...c.args, host: c.host }))`);
+    check(c.length === 1 && c[0].host === "B7LA-4QZE-9KDF-3HXW" /* the call names the host by id, not in args */ && c[0].folder === "/home/owner/lab-notes" && c[0].name === "Lab notes", `${ctx}: project.create ${JSON.stringify(c)}`);
   });
   // 2. An offline host: said plainly, nothing sent, no other host's folders.
   await step("offline", async () => {
@@ -2764,8 +2764,8 @@ for (const [label, w, ht] of [
     await shot(`hostfolders-newthread-${label}.png`);
     await evaluate(`[...document.querySelectorAll('${root} button')].find(b => /^Start/.test(b.textContent.trim()))?.click()`);
     await waitFor(`${COMMANDS("thread.create")}.length === 1`, { soft: true });
-    const c = await evaluate(`${COMMANDS("thread.create")}.map(c => c.args)`);
-    check(c.length === 1 && c[0].host === "lab" && c[0].cwd === "/home/owner/experiments" && !c[0].projectId, `${ctx}: thread.create ${JSON.stringify(c)}`);
+    const c = await evaluate(`${COMMANDS("thread.create")}.map(c => ({ ...c.args, host: c.host }))`);
+    check(c.length === 1 && c[0].host === "B7LA-4QZE-9KDF-3HXW" && c[0].cwd === "/home/owner/experiments" && !c[0].projectId, `${ctx}: thread.create ${JSON.stringify(c)}`);
   });
   // 4. The owner's host order: reorder on the Hosts page (grip and Alt+↑ on the desktop, the Reorder mode on the
   // phone); the first host is the default in New project and New thread, and the per-host groups follow it.
@@ -2782,8 +2782,9 @@ for (const [label, w, ht] of [
     }
     await waitFor(`${COMMANDS("front.hostOrder")}.length === 1`, { soft: true });
     await waitFor(`${ROWS} === 'desk|lab|host-b|old-nuc'`, { soft: true });
-    const o = await evaluate(`({ cmds: ${COMMANDS("front.hostOrder")}.map(c => c.args.names.join('|')), rows: ${ROWS} })`);
-    check(o.cmds.join() === "desk|lab|host-b|old-nuc" && o.rows === "desk|lab|host-b|old-nuc", `${ctx}: reorder the hosts ${JSON.stringify(o)}`);
+    const o = await evaluate(`({ cmds: ${COMMANDS("front.hostOrder")}.map(c => c.args.ids.join('|')), rows: ${ROWS} })`);
+    // ids, in the owner's order; old-nuc reports none and is left out (the front keeps it after the named ones)
+    check(o.cmds.join() === "F7QK-2M9X-AB34-CD56|B7LA-4QZE-9KDF-3HXW|M3RS-QX7P-5LKA-2WNE" && o.rows === "desk|lab|host-b|old-nuc", `${ctx}: reorder the hosts ${JSON.stringify(o)}`);
     await shot(`hostorder-${label}.png`);
     // lab first (as set on another front): it is the default.
     const q = "?mock=rail&hosts=2&hostOrder=lab,desk";
@@ -3724,7 +3725,7 @@ try {
   await key("ArrowUp", "ArrowUp", 1);
   await waitFor(`${COMMANDS("host.slotOrder")}.length === 2`, { soft: true });
   const mv = await evaluate(`({ sent: ${COMMANDS("host.slotOrder")}.map(c => c.args), rows: ${rows(".list")} })`);
-  check(JSON.stringify(mv.sent.at(-1)) === JSON.stringify({ host: "laptop", owners: ["t_nix", "t_search", "t_pw"] }) && JSON.stringify(mv.rows) === JSON.stringify(["self-deploy #1", "t_nix #2", "t_search #3", "t_pw #4"]),
+  check(JSON.stringify(mv.sent.at(-1)) === JSON.stringify({ owners: ["t_nix", "t_search", "t_pw"] }) && JSON.stringify(mv.rows) === JSON.stringify(["self-deploy #1", "t_nix #2", "t_search #3", "t_pw #4"]),
     `V0.137 desktop: Alt+↑ twice on t_nix's place (${JSON.stringify(mv)})`);
   await shot("slots-desktop.png");
   // Live: t_nix gets its slot, t_pw's run ends; both leave and t_search is #2.
@@ -3755,7 +3756,7 @@ try {
   await shot("slots-phone.png");
   await tapCenter(`#m-sec-slots .sqmv[data-id=t_search] .mv .xb[aria-label$="down"]`, `${COMMANDS("host.slotOrder")}.length === 1`);
   const ps = await evaluate(`({ sent: ${COMMANDS("host.slotOrder")}.map(c => c.args), rows: ${rows(".m-list")} })`);
-  check(JSON.stringify(ps.sent[0]) === JSON.stringify({ host: "laptop", owners: ["t_pw", "t_search", "t_nix"] }) && JSON.stringify(ps.rows) === JSON.stringify(["self-deploy #1", "t_pw #2", "t_search #3", "t_nix #4"]), `V0.137 phone: ↓ on t_search (${JSON.stringify(ps)})`);
+  check(JSON.stringify(ps.sent[0]) === JSON.stringify({ owners: ["t_pw", "t_search", "t_nix"] }) && JSON.stringify(ps.rows) === JSON.stringify(["self-deploy #1", "t_pw #2", "t_search #3", "t_nix #4"]), `V0.137 phone: ↓ on t_search (${JSON.stringify(ps)})`);
 } catch (e) {
   failures.push(`V0.137: ${e.message}`);
 }

@@ -83,15 +83,17 @@ export function createMockApi(scenario: string): Api {
   };
   // Decision 0031: a call names its host by install id. The fixtures name hosts; these two map between them. A front
   // without a host list is one host (desk), reached by any id; a host with no id (old-nuc) is stamped "".
+  // The ids do not change (the order does), so they are read once: stamping runs for every thread of every frame.
+  const startHosts = mockHostList();
+  const selfId = server.state().hostId ?? "";
   const idOfName = (name: string | undefined): string => {
-    const hs = mockHostList();
-    if (!hs.length) return server.state().hostId ?? "";
-    return hs.find((h) => h.name === (name || hs[0].name))?.id ?? "";
+    if (!startHosts.length) return selfId;
+    return startHosts.find((h) => h.name === (name || startHosts[0].name))?.id ?? "";
   };
   const nameOf = (id: string): string => {
     const hs = mockHostList();
     if (!hs.length) return "";
-    if (!id) return hs[0].name;
+    // A host with no install id (older than V0.124) cannot be addressed (decision 0031): there is no name to fall back to.
     return hs.find((h) => h.id === id)?.name ?? "\u0000" + id;
   };
   const stampT = (t: ThreadDTO): ThreadDTO => ({ ...t, hostId: idOfName(t.host) });
