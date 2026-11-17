@@ -9,6 +9,7 @@ package authtest_test
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,9 @@ type step struct {
 	name  string
 	apply func(t *testing.T, l *authtest.Live)
 }
+
+// migMac is the Mac slice 3 starts, which slice 4 uses.
+var migMac *authtest.Mac
 
 var steps = []step{
 	{"slice 0: today (V0.130, observe)", func(t *testing.T, l *authtest.Live) {}},
@@ -65,6 +69,7 @@ var steps = []step{
 		if err != nil {
 			t.Fatal(err)
 		}
+		migMac = mac
 		if _, err := l.Laptop.WaitRoster(30*time.Second, func(r *authtest.Roster) bool { return strings.Contains(strings.Join(r.Others(), ","), "mac") }); err != nil {
 			t.Fatal(err)
 		}
@@ -75,7 +80,48 @@ var steps = []step{
 			t.Fatalf("the front follows %v (%v): want laptop, server and mac\n%s", hosts, err, l.Laptop.Log())
 		}
 	}},
-	// Slices 4 to 6 add: the invite, removal, the LAN.
+	// Slice 4: the owner's invite. A tagged install (meros-server) cannot pair by
+	// itself; `fyr pair` on the laptop opens an invite, the box joins with it, the
+	// Mac learns the box by vouching. Pairing only adds: the cookies, the phone, fyr
+	// open and the static host all still work (checks run after the step).
+	{"slice 4: a tagged install joins by invite", func(t *testing.T, l *authtest.Live) {
+		box, err := l.AddTaggedInstall(migMac)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := l.Laptop.Fyr("pair")
+		if err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		var code string
+		for _, f := range strings.Fields(out) {
+			if strings.HasPrefix(f, "fyr1-") {
+				code = f
+			}
+		}
+		r, err := l.Laptop.Roster()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var port int
+		for _, m := range r.Members {
+			if m.Self {
+				port = m.Port
+			}
+		}
+		if out, err := box.Fyrd.Fyr("pair", code, "-addr", "127.0.0.1:"+strconv.Itoa(port)); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		for name, f := range map[string]*authtest.Fyrd{"laptop": l.Laptop, "mac": migMac.Fyrd} {
+			if _, err := f.WaitRoster(30*time.Second, func(r *authtest.Roster) bool { return strings.Contains(strings.Join(r.Others(), ","), "box") }); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+		}
+		if hosts, err := l.WaitHostsOnline(l.Local, 30*time.Second, "laptop", "server", "mac", "box"); err != nil || !hosts["box"] {
+			t.Fatalf("the front follows %v (%v)\n%s", hosts, err, l.Laptop.Log())
+		}
+	}},
+	// Slices 5 and 6 add: removal and rotation, the LAN.
 }
 
 func TestMigrationKeepsTheOwnerSignedIn(t *testing.T) {

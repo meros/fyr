@@ -30,6 +30,10 @@ const (
 	KindInstallAdd   = "install-add"
 	KindDeviceAdd    = "device-add"
 	KindDeviceRevoke = "device-revoke"
+	// KindOwnerLogin says whose installs these are: the tailnet login of the
+	// owner, from an install that knows it (an untagged node). A tagged install
+	// has no login of its own and takes this one (decision 0030 3.4).
+	KindOwnerLogin = "owner-login"
 )
 
 // Statement is one signed fact. Sig covers every other field.
@@ -77,6 +81,10 @@ type Member struct {
 	Name string
 	Host string
 	Port int
+	// AddedBy is the install that signed the add that made it a member: the one
+	// that paired with it, or that vouched for it (this install itself for its
+	// own first statement).
+	AddedBy string
 }
 
 // Roster holds the statements of one install.
@@ -90,6 +98,7 @@ type Roster struct {
 	members  map[string]Member
 	revoked  map[string]bool
 	devices  map[string]Statement
+	owner    string
 	onChange []func()
 }
 
@@ -212,11 +221,26 @@ func (r *Roster) recomputeLocked() {
 			devices[s.Subject] = s
 		}
 	}
+	var ownerAt time.Time
+	var ownerID string
+	r.owner = ""
+	for _, s := range r.stmts {
+		if s.Kind != KindOwnerLogin || s.Subject == "" {
+			continue
+		}
+		signer, ok := members[s.By]
+		if !ok || !verifyWith(signer.Key, s) {
+			continue
+		}
+		if r.owner == "" || s.At.After(ownerAt) || (s.At.Equal(ownerAt) && s.ID() > ownerID) {
+			r.owner, ownerAt, ownerID = s.Subject, s.At, s.ID()
+		}
+	}
 	r.members, r.revoked, r.devices = members, revoked, devices
 }
 
 func memberOf(s Statement) Member {
-	return Member{ID: s.Subject, Key: ed25519.PublicKey(s.Key), Name: s.Name, Host: s.Host, Port: s.Port}
+	return Member{ID: s.Subject, Key: ed25519.PublicKey(s.Key), Name: s.Name, Host: s.Host, Port: s.Port, AddedBy: s.By}
 }
 
 func verifyWith(pub ed25519.PublicKey, s Statement) bool {
@@ -410,7 +434,7 @@ func (r *Roster) Merge(list []Statement) bool {
 			if len(s.Key) != ed25519.PublicKeySize || identity.IDOf(s.Key) != s.Subject {
 				continue
 			}
-		case KindDeviceAdd, KindDeviceRevoke:
+		case KindDeviceAdd, KindDeviceRevoke, KindOwnerLogin:
 			if s.Subject == "" {
 				continue
 			}
@@ -430,4 +454,27 @@ func (r *Roster) Merge(list []Statement) bool {
 		r.changed()
 	}
 	return added
+}
+
+// OwnerLogin is the owner's tailnet login as the roster carries it, "" when no
+// member has said.
+func (r *Roster) OwnerLogin() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.owner
+}
+
+// SetOwnerLogin records the owner's login (an install that knows it says so
+// once; the other installs, a tagged one among them, learn it by sync).
+func (r *Roster) SetOwnerLogin(login string) {
+	r.mu.Lock()
+	if login == "" || r.owner == login {
+		r.mu.Unlock()
+		return
+	}
+	r.addLocked(r.sign(Statement{Kind: KindOwnerLogin, Subject: login}))
+	r.recomputeLocked()
+	r.saveLocked()
+	r.mu.Unlock()
+	r.changed()
 }

@@ -44,6 +44,10 @@ type Live struct {
 	Phones *Serve // the phone's path: Serve emulator into the laptop's serve.sock
 
 	cleanups []func()
+	// resolveFiles are the peer installs' name→address files, by install name; caFile
+	// is the CA they trust for each other's Serve (EnablePeers).
+	resolveFiles map[string]string
+	caFile       string
 }
 
 // NewLive builds the fixture and starts both fyrds. Close stops them.
@@ -234,8 +238,11 @@ func (l *Live) EnablePeers() (*Mac, error) {
 		return nil, err
 	}
 	l.cleanups = append(l.cleanups, toLaptop.Close)
+	l.caFile = pemFile
+	l.resolveFiles = map[string]string{}
 	res := func(name, serve string) string {
 		p := filepath.Join(root, "resolve-"+name+".json")
+		l.resolveFiles[name] = p
 		b, _ := json.Marshal(map[string]string{l.Self.Name: "127.0.0.1", macNode.Name: "127.0.0.1", net.JoinHostPort(map[string]string{"laptop": macNode.Name, "mac": l.Self.Name}[name], "7443"): serve})
 		os.WriteFile(p, b, 0o600)
 		return p
@@ -257,4 +264,51 @@ func (l *Live) EnablePeers() (*Mac, error) {
 	}
 	l.cleanups = append(l.cleanups, mac.Stop)
 	return &Mac{Fyrd: mac, TS: macTS, Node: macNode}, nil
+}
+
+// AddTaggedInstall is slice 4's state change of the live install (decision 0030
+// 5.2): a tagged install (the owner's meros-server) beside the others. It cannot
+// pair by itself; the owner pairs it with an invite from `fyr pair`. The caller
+// does that and checks what followed.
+func (l *Live) AddTaggedInstall(mac *Mac) (*Mac, error) {
+	dir, rm, err := NewDataDir()
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, rm)
+	boxNode := Node{Name: "box.tail-test.ts.net", IP: "100.64.0.10", Tags: []string{"tag:server"}, Online: true}
+	l.TS.AddNode(boxNode)
+	mac.TS.AddNode(boxNode)
+	boxTS, err := NewTailscaled(dir, boxNode, User{1, l.OwnerLogin}, User{2, "guest@example.com"})
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, boxTS.Close)
+	boxTS.AddNode(l.Self)
+	boxTS.AddNode(mac.Node)
+	boxTS.AddNode(l.Phone)
+	data, rm2, err := NewDataDir()
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, rm2)
+	root := filepath.Dir(data)
+	// every install resolves every install's name to loopback (any port)
+	for _, rf := range l.resolveFiles {
+		b, _ := os.ReadFile(rf)
+		var m map[string]string
+		json.Unmarshal(b, &m)
+		m[boxNode.Name] = "127.0.0.1"
+		b, _ = json.Marshal(m)
+		os.WriteFile(rf, b, 0o600)
+	}
+	rf := filepath.Join(root, "resolve-box.json")
+	b, _ := json.Marshal(map[string]string{l.Self.Name: "127.0.0.1", mac.Node.Name: "127.0.0.1", boxNode.Name: "127.0.0.1"})
+	os.WriteFile(rf, b, 0o600)
+	box, err := Start(Options{Name: "box", Data: data, Tailscale: boxTS, Extra: map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": l.caFile}})
+	if err != nil {
+		return nil, err
+	}
+	l.cleanups = append(l.cleanups, box.Stop)
+	return &Mac{Fyrd: box, TS: boxTS, Node: boxNode}, nil
 }

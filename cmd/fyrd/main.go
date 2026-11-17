@@ -617,7 +617,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}}
 	if cfg.Role == "host" {
 		serve(ln, deploy.Health(hostHandler, health...))
-		startPeer(ctx, cfg, data, hostName, srv, nil, nil, key) // a host-only install pairs and serves its peer port too
+		newPeerSide(cfg, data, hostName, key).start(ctx, data, srv, nil, nil) // a host-only install pairs and serves its peer port too
 	} else {
 		// both (V0.51): the front reaches this host over a loopback link,
 		// through the host protocol only; agents keep /mcp on the main port.
@@ -632,9 +632,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// well-known answer, which names where its host protocol is.
 		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen), id)
 		var fr *front.Front
-		var ps *peerSide
+		ps := newPeerSide(cfg, data, hostName, key)
 		authStore := openAuth(h.st)
-		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
+		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), Web: webFS,
 			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st, Auth: authStore, Tailnet: tailnetNodes(cfg),
 			OwnerRoutes: func(mux *http.ServeMux) {
 				if ps != nil {
@@ -643,7 +643,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			},
 			WellKnown: func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }}, hosts)
 		go func() { fr.Run(ctx); close(frontDone) }()
-		ps = startPeer(ctx, cfg, data, hostName, srv, fr, authStore, key) // decision 0030 3.6
+		ps.start(ctx, data, srv, fr, authStore) // decision 0030 3.6
 		go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every)
 		// V0.81: a client-only deploy swaps the client this front serves.
 		dep.SwitchClient = func(build, dir string) error { return fr.SetClient(build, os.DirFS(dir)) }
@@ -709,9 +709,9 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	id := key.ID()
 	wk := wellKnown(cfg, name, "", id)
 	var fr *front.Front
-	var ps *peerSide
+	ps := newPeerSide(cfg, data, name, key)
 	authStore := openAuth(st)
-	fr = front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, Web: webFS,
+	fr = front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), Web: webFS,
 		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, Auth: authStore, Tailnet: tailnetNodes(cfg),
 		OwnerRoutes: func(mux *http.ServeMux) {
 			if ps != nil {
@@ -722,7 +722,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	done := make(chan struct{})
 	go func() { fr.Run(ctx); close(done) }()
 	go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every) // V0.123
-	ps = startPeer(ctx, cfg, data, name, nil, fr, authStore, key)
+	ps.start(ctx, data, nil, fr, authStore)
 	hs := &http.Server{Handler: deploy.Health(fr.Handler(), storeHealthy(st), webHealthy(webFS)), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

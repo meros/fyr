@@ -54,6 +54,7 @@ func authCommand(word string, args []string) error {
 	home, _ := os.UserHomeDir()
 	data := fl.String("data", filepath.Join(home, ".local", "share", "fyr"), "data directory")
 	name := fl.String("name", "", "device add: what to call the device")
+	addr := fl.String("addr", "", "pair: host:port of the install that made the invite")
 	// flags may come before or after the verb
 	var rest []string
 	for len(args) > 0 {
@@ -67,8 +68,11 @@ func authCommand(word string, args []string) error {
 		rest = append(rest, args[0])
 		args = args[1:]
 	}
+	if word == "pair" {
+		return pairCommand(*data, *addr, rest)
+	}
 	if len(rest) == 0 {
-		return fmt.Errorf("usage: fyr %s %s", word, map[string]string{"auth": "status | observe [browser|peer] | enforce [browser|peer]", "device": "add [-name N] | approve CODE | revoke ID | list", "host": "list | drive ID on|off"}[word])
+		return fmt.Errorf("usage: fyr %s %s", word, map[string]string{"auth": "status | observe [browser|peer] | enforce [browser|peer]", "device": "add [-name N] | approve CODE | revoke ID | list", "host": "list | drive ID on|off", "pair": "[CODE [-addr host:port]]"}[word])
 	}
 	verb, more := rest[0], rest[1:]
 	switch word + " " + verb {
@@ -127,10 +131,18 @@ func authCommand(word string, args []string) error {
 			note := ""
 			if self, _ := m["self"].(bool); self {
 				note = "  (this install)"
-			} else if d, _ := m["drive"].(bool); !d {
-				note = "  may not drive this host"
+			} else if v, _ := m["via"].(string); v == "vouched" {
+				note = fmt.Sprintf("  vouched for by %v", m["by"])
+			}
+			if d, _ := m["drive"].(bool); !d {
+				note += "  may not drive this host"
 			}
 			fmt.Printf("%-21v %-24v%s\n", m["id"], m["name"], note)
+		}
+		cs, _ := out["candidates"].([]any)
+		for _, x := range cs {
+			c, _ := x.(map[string]any)
+			fmt.Printf("not paired: %-40v %v\n", c["name"], map[string]string{"tagged": "tagged: pair it with an invite (fyr pair)", "other-user": "another tailnet user's", "shared": "shared in from another tailnet", "expired": "its key has expired", "waiting": "the same user's: pairs by itself once its Serve and peer port are up"}[fmt.Sprint(c["kind"])])
 		}
 		if n, ok := out["whoisLinkUses"].(float64); ok && n > 0 {
 			fmt.Printf("%d requests went over a whois link although a peer link exists.\n", int(n))
@@ -178,4 +190,26 @@ func printStatus(out map[string]any) {
 	if n, ok := out["legacyFronts"].(float64); ok && n > 0 {
 		fmt.Printf("%d requests from a front without Fyr-Actor were served (an older install).\n", int(n))
 	}
+}
+
+// pairCommand is `fyr pair` (open an invite here: text, QR, a code to type on the
+// other install) and `fyr pair CODE [-addr host:port]` (join with one).
+func pairCommand(data, addr string, args []string) error {
+	if len(args) == 0 {
+		out, err := ownerCall(data, "POST", "/pair/invite", nil)
+		if err != nil {
+			return err
+		}
+		if q, _ := out["qr"].(string); q != "" {
+			fmt.Print(q)
+		}
+		fmt.Printf("%v\nThe invite works once, for 10 minutes. On the other install run: fyr pair CODE\n(add -addr host:port when it cannot find this install by itself)\n", out["code"])
+		return nil
+	}
+	out, err := ownerCall(data, "POST", "/pair/join", map[string]string{"code": args[0], "addr": addr})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Paired with %v (%v).\n", out["name"], out["addr"])
+	return nil
 }

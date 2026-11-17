@@ -272,6 +272,7 @@ const SCREENS = [
   // V0.125: the Hosts page and a host's page with a changed id, at every phone size.
   { name: "settings signed-in devices (V0.157)", url: "?mock=rail&settings=devices", ready: "document.querySelectorAll('.m-settings .dev').length === 4 && !!document.querySelector('.m-settings input[aria-label=\"Approval code\"]')" },
   { name: "settings hosts (V0.125)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .sr.host').length === 4" },
+  { name: "settings paired installs (V0.159)", url: "?mock=rail&hosts=2&settings=hosts", ready: "document.querySelectorAll('.m-settings .peers .peerrow').length >= 3 && !!document.querySelector('.m-settings .peers input[aria-label=\"Invite from another install\"]')" },
   { name: "settings host changed (V0.125)", url: "?mock=rail&hosts=2&settings=hosts/lab", ready: "!!document.querySelector('.m-settings .note.bad')" },
   { name: "board of changes", url: "?mock=1&changes" },
   // V0.116: a project with an image icon the setup agent set: Set by agent, the image buttons 44 px.
@@ -2470,7 +2471,7 @@ for (const [label, w, ht] of [
     check(/ · LAN · no id$/.test(by["old-nuc"]?.line), `${ctx}: old-nuc ${JSON.stringify(by["old-nuc"])}`);
     check(by.lab?.line === "Another install answers as lab: id B7LA, it was AX2C." && by.lab?.bad && by.lab?.badge === "Needs you" && /warn/.test(by.lab?.dot), `${ctx}: lab ${JSON.stringify(by.lab)}`);
     if (phone) check(rows.every((r) => r.h >= 55.5), `${ctx}: a row under 56 px ${JSON.stringify(rows.map((r) => r.h))}`);
-    const foot = await evaluate(`[...document.querySelectorAll('${root} .sg-f')].map(e => e.textContent).join(' ')`);
+    const foot = await evaluate(`[...document.querySelectorAll('${root} section[aria-label="Hosts"] .sg-f')].map(e => e.textContent).join(' ')`); // V0.159: the installs panel has its own groups
     // V0.132 adds the order's sentence before it.
     check(foot === "The first host is the default for New project, New thread and the folder picker. This order is kept on your hosts, so every device shows it. Fyr finds your other installs on the tailnet by itself. A host it cannot see goes in fyrd's config (hosts).", `${ctx}: the foot "${foot}"`);
     await shot(`hosts-${label}.png`);
