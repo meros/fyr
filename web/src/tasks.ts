@@ -1,7 +1,7 @@
 // Background work (SPEC 0.5 V0.16): subagents and background tasks of a thread. Pure.
 
 import type { TaskDTO, Thread } from "./types.ts";
-import { relTime } from "./format.ts";
+import { clockTime, relTime } from "./format.ts";
 
 function ts(s: string | null | undefined): number {
   const n = s ? Date.parse(s) : NaN;
@@ -94,6 +94,8 @@ export function taskEventText(d: { kind?: string; description?: string; status?:
 
 /** SPEC 0.5 V0.21: the live line under a working thread, desktop and phone. */
 export function liveLine(t: Thread, now: number): string {
+  // V0.143: a process that takes nothing Fyr writes is not "Starting" or "Working".
+  if (t.unresponsive) return `Not responding since ${clockTime(t.unresponsive.since)} · ${t.unresponsive.reason}`;
   const running = groupTasks(t.tasks).running.length;
   return [t.activity || "Working", running ? agentsLabel(running) : "", relTime(t.runStartedAt, now)].filter(Boolean).join(" · ");
 }

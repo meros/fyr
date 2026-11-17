@@ -65,3 +65,19 @@ test("live line while working", () => {
   const withAgents = thread("w", "working", "working", { running: true, runStartedAt: "2026-01-01T12:00:00Z", activity: "", tasks: [{ id: "a", description: "x", status: "running" }] });
   assert.equal(liveLine(withAgents, now), "Working · 1 agent · 12 min");
 });
+
+// SPEC 0.5 V0.143: a live agent that takes nothing Fyr writes is not "Starting · 1 agent · 39 min" (the incident's
+// line): the live line says since when it is silent and why, on desktop and phone.
+test("live line of an agent that does not respond", () => {
+  const now = Date.parse("2026-11-17T09:48:00Z");
+  const t = thread("s", "blocked", "needs", {
+    running: true,
+    runStartedAt: "2026-11-17T09:09:00Z",
+    activity: "Starting",
+    tasks: [{ id: "b", description: "Run Cloud SQL proxy to the clone", status: "running" }],
+    unresponsive: { since: "2026-11-17T07:58:42Z", at: "2026-11-17T09:10:48Z", reason: "it did not take a message within 1 min" },
+  });
+  const line = liveLine(t, now);
+  assert.match(line, /^Not responding since \d\d:\d\d · it did not take a message within 1 min$/);
+  assert.doesNotMatch(line, /Starting/);
+});

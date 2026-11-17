@@ -93,6 +93,13 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 		s.idle.Stop()
 	}
 	s.out[e.MessageID] = "sent"
+	// V0.143: a closed input reads nothing; the message waits for the
+	// next process.
+	hold := s.inputClosed
+	if hold {
+		s.held[e.MessageID] = true
+	}
+	holdFor := hold && s.bg > 0
 	if result != nil {
 		// Under the same lock as out, so no result can see the waiter
 		// before it sees the message as unread.
@@ -133,8 +140,14 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 	if first {
 		evs = append(evs, core.Event{Type: "run.started", Data: map[string]any{}})
 	}
-	m.observe(threadID, core.KindMessageSent, core.MessageSentArgs{ID: e.MessageID, First: first, Log: evs})
-	return s.c.SendUser(content(e), e.MessageID)
+	m.observe(threadID, core.KindMessageSent, core.MessageSentArgs{ID: e.MessageID, First: first, Log: evs, Text: e.Text})
+	if hold {
+		if holdFor {
+			m.markUnresponsive(s, "its input is closed, so it reads no message; it lives on only for its background work")
+		}
+		return nil
+	}
+	return m.write(s, e.MessageID, content(e))
 }
 
 // delivered moves a message to a new state (V0.33) and records it once.

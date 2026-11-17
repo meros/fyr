@@ -74,3 +74,19 @@ test("a CLI refusal shows as a line that names the tool and says it was not the 
   assert.match(line.line, /^Bash was refused without asking you/);
   assert.match(line.text, /not the owner/);
 });
+
+// SPEC V0.143: the agent stopping to respond and Fyr's restart each show as one line in the conversation, the
+// restart naming the background tasks that ended with the process.
+test("an unresponsive agent and its restart show as lines", () => {
+  const items = buildConversation([
+    ev("agent.unresponsive", { since: "2026-11-17T07:58:42Z", reason: "it did not take a message within 1 min" }),
+    ev("agent.restarted", { why: "the owner pressed Restart", tasks: ["Run Cloud SQL proxy to the clone"] }),
+  ]);
+  const lines = items.filter((i) => i.kind === "effect") as Extract<(typeof items)[0], { kind: "effect" }>[];
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].ok, false);
+  assert.match(lines[0].line, /^The agent stopped responding: it did not take a message/);
+  assert.equal(lines[1].ok, true);
+  assert.match(lines[1].line, /^Agent restarted; ended Run Cloud SQL proxy to the clone/);
+  assert.match(lines[1].text, /unread messages go to the new process/);
+});

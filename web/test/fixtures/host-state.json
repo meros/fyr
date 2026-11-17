@@ -91,6 +91,10 @@
       "name": "thread.rename"
     },
     {
+      "label": "Restart agent",
+      "name": "thread.restart"
+    },
+    {
       "key": "r",
       "label": "Retry",
       "name": "thread.retry"
@@ -235,6 +239,7 @@
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
+        "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
         "thread.unarchive": "Not archived",
@@ -300,6 +305,7 @@
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
+        "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
         "thread.unarchive": "Not archived",
@@ -350,6 +356,7 @@
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
+        "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
         "thread.unarchive": "Not archived",
@@ -396,6 +403,7 @@
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
+        "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
         "thread.unarchive": "Not archived",
@@ -446,6 +454,7 @@
         "thread.dismiss": "No failure to dismiss",
         "thread.dismissPR": "No PR",
         "thread.interrupt": "No run is going",
+        "thread.restart": "The agent is responding",
         "thread.retry": "The last run did not fail",
         "thread.settleWhenMerged": "No open PR",
         "thread.unarchive": "Not archived",
