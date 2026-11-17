@@ -74,6 +74,12 @@ type Input struct {
 	// From is the thread whose agent sent an agent-source Input to another
 	// thread (thread_send, thread_new).
 	From string `json:"from,omitempty"`
+	// Actor and Front say who gave an owner command (decision 0030 3.3):
+	// "device:<id>", "local:owner" or "install:<id>", and the install whose
+	// front forwarded it. The command's event records them, which is the
+	// audit trail; empty for an Input that is not a forwarded command.
+	Actor string `json:"actor,omitempty"`
+	Front string `json:"front,omitempty"`
 }
 
 // Event is one line a reduce appends to the thread's log. The agent feed

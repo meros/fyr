@@ -225,3 +225,17 @@ func Candidates(ctx context.Context, socket string) ([]string, error) {
 	sort.Strings(out)
 	return out, nil
 }
+
+// Names are this node's own MagicDNS names (the full name and its first
+// label), which a front may use as the Host of its requests; the host's
+// listener refuses any other name (decision 0030 slice 1: DNS rebinding).
+func (p Peers) Names(ctx context.Context) []string {
+	_, dns, err := Self(p.Socket)
+	if err != nil && !errors.Is(err, ErrTagged) {
+		return nil
+	}
+	if dns == "" {
+		return nil
+	}
+	return []string{dns, strings.SplitN(dns, ".", 2)[0]}
+}

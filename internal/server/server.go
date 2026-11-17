@@ -26,6 +26,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/attach"
+	"github.com/meros/fyr/internal/authn"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/engine"
@@ -89,15 +90,35 @@ type PRDetails interface {
 	Get(ctx context.Context, url string, fresh bool) (github.Detail, error)
 }
 
-func (s *Server) Handler() http.Handler { return guard(s.OwnerLogin, withGzip(withDeadline(s.routes()))) }
-
-// PeerHandler serves the host protocol on a tailnet listener (V0.51): the
-// same routes as Handler, guarded by the peer's Tailscale identity.
-func (s *Server) PeerHandler(peers PeerAuth) http.Handler {
-	return PeerGuard(s.OwnerLogin, peers, withGzip(withDeadline(s.routes())))
+// Handler is the host's loopback listener, behind the browser guard (V0.14).
+// Fyr-Actor and Fyr-Origin mean nothing here: only the pipe and the peer
+// listeners, where the channel proved which install speaks, read them
+// (decision 0030 3.3).
+func (s *Server) Handler() http.Handler {
+	return guard(s.OwnerLogin, withGzip(withDeadline(s.routes(true))))
 }
 
-func (s *Server) routes() http.Handler {
+// PipeHandler serves the in-process pipe between a front and its own host
+// (V0.129 (3), decision 0030 3.2): only this process can dial it, so there is
+// no browser guard, and the request must carry a well-formed Fyr-Actor (a
+// missing or malformed one is 401, never a default). No /mcp: agents use the
+// main port.
+func (s *Server) PipeHandler() http.Handler {
+	return withActor(actorPipe, s.ID, withGzip(withDeadline(s.routes(false))))
+}
+
+// PeerHandler serves the host protocol on a tailnet listener (V0.51): the
+// same routes as Handler without /mcp, guarded by the peer's Tailscale
+// identity and refusing a browser's Origin and a foreign Host (decision 0030
+// slice 1). A front of an older build sends no Fyr-Actor and is still served,
+// as a legacy front, and counted (LegacyFronts).
+func (s *Server) PeerHandler(peers PeerAuth) http.Handler {
+	return PeerGuard(s.OwnerLogin, peers, withActor(actorPeer, "", withGzip(withDeadline(s.routes(false)))))
+}
+
+// routes is the host protocol; mcp adds the agents' endpoint, which only the
+// main port serves.
+func (s *Server) routes(mcp bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/stream", s.stream)
@@ -159,7 +180,7 @@ func (s *Server) routes() http.Handler {
 	if s.FS != nil {
 		s.fsRoutes(mux)
 	}
-	if s.MCP != nil {
+	if s.MCP != nil && mcp {
 		mux.Handle("/mcp", s.MCP)
 	}
 	return mux
@@ -284,9 +305,20 @@ type PeerAuth interface {
 // PeerGuard guards a host's tailnet listener (SPEC 0.5 V0.51): a front on
 // another machine is served only when its connection's Tailscale identity is
 // the owner's login. Headers are not trusted there: no Tailscale Serve sits in
-// front of this listener. POSTs still need X-Fyr.
+// front of this listener. POSTs still need X-Fyr. Decision 0030 slice 1: a
+// request with an Origin header is a browser's (a front sends none), and one
+// whose Host is not an address or a name of this node is a rebinding page's;
+// both get nothing, before the whois is asked.
 func PeerGuard(owner string, peers PeerAuth, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") != "" {
+			http.Error(w, "this Fyr host serves fronts, not browsers", http.StatusForbidden)
+			return
+		}
+		if !peerHostOK(r, peers) {
+			http.Error(w, "this Fyr host answers only to its own address", http.StatusForbidden)
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		login, err := peers.Login(ctx, r.RemoteAddr)
 		cancel()
@@ -300,6 +332,89 @@ func PeerGuard(owner string, peers PeerAuth, next http.Handler) http.Handler {
 		}
 		r.Header.Del("Tailscale-User-Login")
 		next.ServeHTTP(w, r)
+	})
+}
+
+// PeerNames is implemented by a PeerAuth that knows this node's own MagicDNS
+// names (tailnet.Peers does), which a front may use as the host.
+type PeerNames interface {
+	Names(ctx context.Context) []string
+}
+
+// peerHostOK: the Host is an IP literal, a ts.net name, or one of this node's
+// own names. A rebinding page's Host is its own domain.
+func peerHostOK(r *http.Request, peers PeerAuth) bool {
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(strings.ToLower(strings.TrimSuffix(host, ".")), "[]")
+	if net.ParseIP(host) != nil || tailnetHost(host) {
+		return true
+	}
+	if pn, ok := peers.(PeerNames); ok {
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		for _, n := range pn.Names(ctx) {
+			if strings.EqualFold(n, host) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+type actorMode int
+
+const (
+	actorPipe actorMode = iota // required
+	actorPeer                  // optional: an older front sends none
+)
+
+var (
+	legacyFronts atomic.Int64
+	legacyLogged atomic.Int64 // unix seconds of the last log line
+)
+
+// LegacyFronts counts the requests a host served without a Fyr-Actor from a
+// front of an older build (decision 0030 slice 1: still served, and counted;
+// `fyr auth status` shows it from slice 2).
+func LegacyFronts() int64 { return legacyFronts.Load() }
+
+var originRe = regexp.MustCompile(`^https?://[A-Za-z0-9.\-]+(:[0-9]+)?$|^https?://\[[0-9A-Fa-f:.]+\](:[0-9]+)?$`)
+
+// withActor reads Fyr-Actor and Fyr-Origin into the request's context. It is
+// only used on the pipe and the peer listener, where the channel says which
+// install speaks. self is this install's id, which names the front on the
+// pipe.
+func withActor(mode actorMode, self string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var p authn.Principal
+		if h := r.Header.Get(authn.Header); h != "" {
+			var err error
+			if p, err = authn.Parse(h); err != nil {
+				api.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "malformed " + authn.Header})
+				return
+			}
+		} else if mode == actorPipe {
+			api.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "missing " + authn.Header})
+			return
+		} else {
+			p = authn.Principal{Kind: authn.KindInstall, ID: "legacy", How: authn.HowLegacy}
+			legacyFronts.Add(1)
+			if now := time.Now().Unix(); now-legacyLogged.Load() > 600 {
+				legacyLogged.Store(now)
+				log.Printf("auth (observe): a front without %s was served (%s %s); update that install", authn.Header, r.Method, r.URL.Path)
+			}
+		}
+		if mode == actorPipe {
+			p.Front = self
+		}
+		ctx := authn.With(r.Context(), p)
+		if o := r.Header.Get(authn.OriginHeader); o != "" && originRe.MatchString(o) {
+			ctx = authn.WithOrigin(ctx, o)
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -554,7 +669,11 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request) {
 		api.WriteJSON(w, 400, api.Reply{Error: "bad JSON: " + err.Error()})
 		return
 	}
-	rep := s.Engine.Command(c) // #48: provider commands too
+	actor, front := "", ""
+	if p, ok := authn.From(r.Context()); ok { // the pipe and the peer listener (decision 0030 3.3)
+		actor, front = string(p.Kind)+":"+p.ID, p.Front
+	}
+	rep := s.Engine.CommandAs(c, actor, front) // #48: provider commands too
 	if rep.Status == 0 {
 		rep.Status = 200
 	}
@@ -668,7 +787,11 @@ var hostRe = regexp.MustCompile(`^[A-Za-z0-9.\-]+(:[0-9]+)?$|^\[[0-9A-Fa-f:.]+\]
 // The folder is an absolute prefix: a page without an origin has no 'self'.
 func previewCSP(r *http.Request, id string) string {
 	base := ""
-	if hostRe.MatchString(r.Host) {
+	if o, ok := authn.OriginFrom(r.Context()); ok {
+		// Decision 0030 3.3: the origin the browser used, from the front, on a
+		// channel that proved it is one.
+		base = o + "/api/previews/" + id + "/ "
+	} else if hostRe.MatchString(r.Host) {
 		scheme := "http" // CSP3: an http source also matches https
 		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 			scheme = "https"

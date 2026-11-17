@@ -2,13 +2,27 @@
 
 The contract between `fyrd` and the web client. All JSON. Times are RFC 3339 UTC; the client shows them in local time.
 
-## Guard
+## Guard (V0.156, decision 0030)
 
-- Every request must have a loopback `Host` (`127.0.0.1:*`, `localhost:*`, `[::1]:*`), else `403`.
-- `POST` requests must have the header `X-Fyr: 1`, else `403`.
-- `/mcp` uses its bearer token instead, and refuses any request that carries `Origin` with `403` (V0.129).
-- `fyr.localhost` (any `*.localhost`) counts as a loopback `Host` (V0.130).
-- **Sessions (V0.130).** `fyr_session` names the browser's device. `GET`/`POST /auth/once` redeem a one-time link from the owner socket (`<data>/owner.sock`, `POST /session/once`). Through Serve's socket (`<data>/serve.sock`) the owner's `Tailscale-User-Login` mints one. tailscaled does not keep the browser's `Host` on that socket, so a request there takes the public name: `X-Forwarded-Host` when it is a `ts.net` name, else the node's MagicDNS name and Serve port (the first `peerPorts`, default 7443), over https. A host behind the front sees that `Host`, for its guard and a preview's CSP. In this release a request without a session is still served and logged; the next one refuses it.
+Each listener has **one way to name its caller**, and nothing reads identity from the `Host` header. The caller is a principal (`internal/authn`): a `device` (a browser, by its session), `local` (the owner socket), or an `install` (a front acting on its own). A host reads who acts from one header on the hop, `Fyr-Actor`, and only on a channel that already proved which install speaks.
+
+| Listener | Authenticator | Notes |
+|---|---|---|
+| `<data>/owner.sock` | the peer's user is fyrd's own or root | `POST /session/once` gives a one-time link (`fyr open`) |
+| `<data>/serve.sock` | the peer's user is root (tailscaled; config `serveSocketUsers` adds users for a test), then the `fyr_session` cookie, else the owner's `Tailscale-User-Login` mints one | a request there takes the public origin (`X-Forwarded-Host` when it is a `ts.net` name, else the node's MagicDNS name and the first `peerPorts`, default 7443), over https |
+| Loopback TCP (the front, and a host's main port) | a loopback `Host` (`127.0.0.1:*`, `localhost:*`, `[::1]:*`, any `*.localhost`), the `fyr_session` cookie; `POST` needs `X-Fyr: 1` | **a front's listener answers `400` to any request with `Fyr-Actor` or `Fyr-Origin`**. A request with no session is still served in this release as the `legacy` principal and logged |
+| The in-process pipe (role both: front to its own host) | only this process can dial it: no browser guard | **`Fyr-Actor` is required**: missing or malformed is `401`, never a default. No `/mcp` |
+| A host's tailnet listener (`hostListen`, V0.51) | tailscaled whois of the connection is the owner's login; a request with `Origin`, or a `Host` that is neither an address, a `ts.net` name nor one of the node's own names, is `403`; `POST` needs `X-Fyr: 1` | `Fyr-Actor` is read when present. A front of an older build sends none and is still served as `legacy`, and counted. **No `/mcp`** |
+| `/mcp` (the main port only) | the agent session's bearer; refuses any request that carries `Origin` with `403` (V0.129) | an agent principal never crosses a hop |
+
+**The hop.** A front forwards a browser's call only as a principal. It drops `Cookie`, `Authorization`, every `Tailscale-*`, `X-Forwarded-*` and `Forwarded`, `Origin`, `Referer`, `Sec-Fetch-*` and the browser's `Host` (the host's own name is the `Host`), and sets:
+
+- `Fyr-Actor: v=1; kind=device|local|install; id=<device id | owner | install id>; how=local|tailnet|code|link|legacy[; front=<install id>]`;
+- `Fyr-Origin: <scheme>://<host[:port]>`, the public origin the browser used, from which a preview's CSP names its folder (V0.47).
+
+The front's own calls (its stream, its state reads) are `kind=install` with its own id. A host puts the principal in each owner command's `command` event as `actor` (`device:<id>`, `local:owner`, `install:<id>`) and `front`: the audit trail. The header is not signed: the channel's key would be the signer.
+
+**Sessions (V0.130).** `fyr_session` names the browser's device. `GET`/`POST /auth/once` redeem a one-time link from the owner socket (`POST /session/once`). Through Serve's socket the owner's `Tailscale-User-Login` mints one. In this release a request without a session is still served and logged; a later release's stored `enforce` mode refuses it, only when the owner or the install's own rule moves that mode (decision 0030 5.1).
 
 ## `GET /api/state`
 

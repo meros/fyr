@@ -17,6 +17,7 @@ import (
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/auth"
+	"github.com/meros/fyr/internal/authn"
 	"github.com/meros/fyr/internal/server"
 )
 
@@ -56,8 +57,14 @@ func (f *Front) withAuth(next http.Handler) http.Handler {
 		}
 		if ok {
 			r = r.WithContext(context.WithValue(r.Context(), deviceKey{}, d))
-		} else if strings.HasPrefix(r.URL.Path, "/api/") {
-			f.wouldRefuse(r)
+			r = r.WithContext(authn.With(r.Context(), authn.Principal{Kind: authn.KindDevice, ID: d.ID, How: authn.How(d.How)}))
+		} else {
+			// Observe mode (decision 0030 5.1): served the old way, as a
+			// legacy principal, and counted.
+			r = r.WithContext(authn.With(r.Context(), legacy))
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				f.wouldRefuse(r)
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

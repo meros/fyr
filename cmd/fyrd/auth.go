@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"slices"
 
 	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/front"
@@ -26,7 +27,7 @@ func openAuth(st *store.Store) *auth.Store {
 // only place the tailnet login header counts. A socket that cannot be made
 // is logged, and the front keeps serving. public is the host:port the
 // browser reaches Serve on (servePublic).
-func serveAuthSockets(fr *front.Front, data, listen, public string, serve func(net.Listener, http.Handler)) {
+func serveAuthSockets(fr *front.Front, data, listen, public string, serveUsers []int, serve func(net.Listener, http.Handler)) {
 	_, port, _ := net.SplitHostPort(listen)
 	if ln, err := auth.ListenUnix(auth.SocketPath(data, auth.OwnerSocket)); err != nil {
 		log.Printf("auth: owner socket: %v; fyr open will not work", err)
@@ -37,7 +38,11 @@ func serveAuthSockets(fr *front.Front, data, listen, public string, serve func(n
 	if ln, err := auth.ListenUnix(auth.SocketPath(data, auth.ServeSocket)); err != nil {
 		log.Printf("auth: serve socket: %v; Tailscale Serve must proxy to the loopback port", err)
 	} else {
-		serve(ln, server.ServeSocket(public, fr.Handler()))
+		// Decision 0030 3.2: tailscaled reaches this socket as root. Another
+		// user, fyrd's own included, could write the login header, so it is
+		// closed (serveSocketUsers lists the users a test or a setup adds).
+		serve(auth.PeerListener{Listener: ln, Name: "serve socket", Allow: func(uid int) bool { return uid == 0 || slices.Contains(serveUsers, uid) }},
+			server.ServeSocket(public, fr.Handler()))
 		log.Printf("auth: Tailscale Serve socket at %s", ln.Addr())
 	}
 }
