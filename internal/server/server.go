@@ -518,7 +518,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
 	profiles := s.profiles()
 	api.WriteJSON(w, 200, api.State[api.Thread, api.Project, provider.Profile]{
-		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(), Machine: machine.Kind(), OS: machine.OS(),
+		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(), Machine: machine.Kind(), OS: machine.OS(), HostMarks: s.hostMarks(),
 		Threads: threads, Actions: acts, Profiles: profiles, Projects: projects,
 		Partial: since > 0, Deploy: s.Engine.DeployState(time.Now()), Stall: s.Engine.StallState(time.Now()),
 	})
@@ -1051,6 +1051,14 @@ func (s *Server) focus(w http.ResponseWriter, r *http.Request) {
 		s.Focus(b.Device, id, !b.Off)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// hostMarks is the host's copy of the owner's host marks (V0.171), or nil.
+func (s *Server) hostMarks() any {
+	if m := s.Engine.HostMarks(); !m.At.IsZero() {
+		return m
+	}
+	return nil
 }
 
 // hostOrder is the host's copy of the owner's host order (V0.132), or nil.

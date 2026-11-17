@@ -2,6 +2,7 @@
 import { orderProjects } from "./projects.ts";
 import type { QueueEntry } from "./slot-queue.ts";
 import type { HostInfo } from "./hosts.ts";
+import type { OwnerMarks } from "./host-mark.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { decodeStall, stallsOf, upsertStall, type StallInfo } from "./stall.ts";
 import { decodeProject, decodeState, decodeThread } from "./decode.ts";
@@ -34,6 +35,8 @@ export interface Store {
   hostId: string;
   /** V0.170: what this install runs on, for its mark when the front lists no hosts */
   machine: string;
+  /** V0.171: the owner's host marks by install id */
+  hostMarks: OwnerMarks;
   /** V0.51 */
   hosts: HostInfo[];
   threads: Record<string, Thread>;
@@ -63,6 +66,7 @@ export function initialStore(): Store {
     host: "",
     hostId: "",
     machine: "",
+    hostMarks: {},
     hosts: [],
     threads: {},
     actions: [],
@@ -117,6 +121,7 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     host: dto.host ?? "",
     hostId: typeof dto.hostId === "string" ? dto.hostId : "",
     machine: typeof dto.machine === "string" ? dto.machine : "",
+    hostMarks: decodeHostMarks(dto.hostMarks),
     hosts: dto.hosts ?? [],
     threads,
     actions: dto.actions ?? [],
@@ -464,4 +469,19 @@ export function setStall(s: Store, raw: unknown): Store {
 /** V0.39: a deploy progress from the stream. */
 export function setDeploy(s: Store, p: DeployProgress | null): Store {
   return { ...s, deploy: p };
+}
+
+/** V0.171: the owner's host marks as the state or the "hostMarks" event sends them; anything else is left out. */
+export function decodeHostMarks(raw: unknown): OwnerMarks {
+  const out: OwnerMarks = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!v || typeof v !== "object") continue;
+    const { icon, color } = v as { icon?: unknown; color?: unknown };
+    const m: { icon?: string; color?: string } = {};
+    if (typeof icon === "string" && icon) m.icon = icon;
+    if (typeof color === "string" && color) m.color = color;
+    if (m.icon || m.color) out[id] = m;
+  }
+  return out;
 }

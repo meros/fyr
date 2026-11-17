@@ -133,6 +133,10 @@ type State[T, P, F any] struct {
 	// OS is its operating system ("linux", "darwin"). The fronts draw its mark.
 	Machine string `json:"machine,omitempty"`
 	OS      string `json:"os,omitempty"`
+	// HostMarks: on a host, its copy of the owner's host marks ({marks, at},
+	// V0.171), nil when none was set; on a front, the newest marks by host
+	// install id ({id: {icon, color}}).
+	HostMarks any `json:"hostMarks,omitempty"`
 }
 
 // Action is an owner action as clients list it.

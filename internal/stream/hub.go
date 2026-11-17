@@ -18,6 +18,8 @@ const (
 	FrameStall = "stall"
 	// FrameHostOrder is the owner's host order (V0.132), as a host keeps it.
 	FrameHostOrder = "hostOrder"
+	// FrameHostMarks are the owner's host marks (V0.171), as a host keeps them.
+	FrameHostMarks = "hostMarks"
 	FrameEvent     = "event"
 )
 

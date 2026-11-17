@@ -4293,6 +4293,69 @@ try {
 }
 });
 
+// SPEC 0.5 V0.171: the owner sets a host's icon and colour on its Settings page, by its install id, the same on the
+// desktop and the phone. 1 the Mark group shows the automatic mark (a server for host-b). 2 a glyph, a colour, an emoji
+// and Automatic each send front.hostMark with host-b's id, and the mark follows. 3 the owner's mark shows on the rows
+// and in the host switch; no other host takes its colour. 4 a host without an install id cannot be set.
+for (const [w, hh, phone] of [[1280, 800, false], [390, 844, true]]) section(`V0.171 ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen, shot } = h;
+  const ctx = `V0.171 ${phone ? "phone" : "desktop"}`;
+  const ID = "M3RS-QX7P-5LKA-2WNE";
+try {
+  const go = async (url, ready) => {
+    if (phone) await openScreen({ url, ready }, w, hh);
+    else {
+      await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/${url}`, ready);
+    }
+    await settle();
+  };
+  const page = (sub) => (phone ? `?mock=rail&hosts=2&settings=hosts/${sub}` : `?mock=rail&hosts=2&dialog=settings&page=hosts/${sub}`);
+  const PREV = `(() => { const m = document.querySelector('.hmprev .hmark'); return m ? { glyph: m.dataset.glyph, text: m.textContent, color: getComputedStyle(m).color, desc: m.closest('.sr')?.querySelector('.sr-d')?.textContent ?? '' } : null; })()`;
+  const sent = () => evaluate(`${COMMANDS("front.hostMark")}.map((c) => c.args)`);
+  // 1. Automatic.
+  await go(page("host-b"), "!!document.querySelector('.hmprev .hmark')");
+  const a = await evaluate(PREV);
+  check(a?.glyph === "server" && /^Automatic: a server/.test(a.desc) && (await evaluate(`document.querySelector('.hmicon .ig.auto')?.getAttribute('aria-checked')`)) === "true", `${ctx}: the automatic mark (${JSON.stringify(a)})`);
+  if (phone) check(await evaluate(`[...document.querySelectorAll('.hmicon .ig, .swatches .sw')].every((b) => b.getBoundingClientRect().height >= 44)`), `${ctx}: a mark control under 44 px on the phone`);
+  // 2. A glyph, a colour, an emoji, Automatic.
+  await evaluate(`document.querySelector('.hmicon .ig[aria-label="house"]').click()`);
+  await waitFor(`${PREV}?.glyph === 'house'`, { soft: true });
+  await evaluate(`document.querySelector('.swatches .sw[aria-label="teal"]').click()`);
+  await waitFor(`${COMMANDS("front.hostMark")}.length === 2`, { soft: true });
+  await settle();
+  const teal = await evaluate(`getComputedStyle(document.querySelector('.swatches .sw[aria-label="teal"]')).backgroundColor`);
+  const b = await evaluate(PREV);
+  check(b?.glyph === "house" && b.color === teal && b.desc === "Set by you.", `${ctx}: the mark after house and teal (${JSON.stringify({ b, teal })})`);
+  await shot(`host-mark-set-${phone ? "phone" : "desktop"}.png`);
+  await evaluate(`(() => { const i = document.querySelector('.pemoji input'); i.value = '🍓'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await settle();
+  await evaluate(`document.querySelector('.pemoji .btn').click()`);
+  await waitFor(`${PREV}?.glyph === 'emoji'`, { soft: true });
+  const c = await evaluate(PREV);
+  check(c?.glyph === "emoji" && c.text === "🍓", `${ctx}: the emoji (${JSON.stringify(c)})`);
+  await evaluate(`document.querySelector('.hmicon .ig.auto').click()`);
+  await waitFor(`${PREV}?.glyph === 'server'`, { soft: true });
+  const args = await sent();
+  check(JSON.stringify(args) === JSON.stringify([
+    { id: ID, icon: "house", color: "" }, { id: ID, icon: "house", color: "teal" }, { id: ID, icon: "🍓", color: "teal" }, { id: ID, icon: "", color: "teal" },
+  ]), `${ctx}: the commands (${JSON.stringify(args)})`);
+  // 3. The owner's mark on the rows and in the switch; nobody else teal.
+  const seeded = encodeURIComponent(JSON.stringify({ [ID]: { icon: "🍓", color: "teal" } }));
+  await go(`?mock=rail&hosts=2&hostMarks=${seeded}`, phone ? "!!document.querySelector('.m-list .rhm')" : "!!document.querySelector('.ib .list .rhm')");
+  const rows = await evaluate(`[...document.querySelectorAll('.rhm .hmark, .hfrow .hmark')].map((m) => ({ host: m.dataset.host, glyph: m.dataset.glyph, text: m.textContent, color: getComputedStyle(m).color }))`);
+  const hb = rows.filter((r) => r.host === "host-b"), others = rows.filter((r) => r.host !== "host-b");
+  check(hb.length >= 2 && hb.every((r) => r.glyph === "emoji" && r.text === "🍓" && r.color === teal) && others.length && others.every((r) => r.color !== teal), `${ctx}: the owner's mark on rows and in the switch (${JSON.stringify({ hb: hb.slice(0, 2), others: others.slice(0, 2) })})`);
+  await shot(`host-mark-rows-${phone ? "phone" : "desktop"}.png`);
+  // 4. old-nuc has no install id.
+  await go(page("old-nuc"), "!!document.querySelector('.hmprev, .sr .hmark')");
+  const n = await evaluate(`({ grid: !!document.querySelector('.hmicon'), text: [...document.querySelectorAll('.sr-d')].map((e) => e.textContent).find((t) => t.includes('no install id')) ?? '' })`);
+  check(!n.grid && /cannot be set until its next update/.test(n.text), `${ctx}: a host without an id (${JSON.stringify(n)})`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // SPEC 0.5 V0.138: a thread that opens clears the filters it fails, so its row is in the list and marked (V0.109).
 // V0.169: per row. 1 with host-b off and acme/web picked, a link to t_lasso (host-b, acme/web) turns host-b back on,
 // keeps the project and marks its row. 2 with both filters failing, both clear. 3 V0.114: a link to a quiet thread shows the gate and

@@ -275,6 +275,8 @@ export interface StateDTO {
   hostId?: string;
   /** V0.170: what this install runs on (laptop, desktop, server); missing from a Fyr older than V0.170 */
   machine?: string;
+  /** V0.171: the owner's host marks by install id ({id: {icon, color}}); a front's, missing when none is set */
+  hostMarks?: Record<string, { icon?: string; color?: string }>;
   user: string;
   threads: ThreadDTO[];
   actions: ActionInfo[];

@@ -1,6 +1,8 @@
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead,
 // from a chunk loaded only then (#42: the fixtures stay out of the production bundle).
 
+import { decodeHostMarks } from "./store.ts";
+import type { OwnerMarks } from "./host-mark.ts";
 import { isTransient, sendWithRetry } from "./retry.ts";
 import type { DeployProgress } from "./deploy.ts";
 import { cache, mergeStateDelta, sinceRev } from "./cache.ts";
@@ -41,6 +43,8 @@ export interface ApiHandlers {
   projectOrder?(ids: string[]): void;
   /** V0.124: the front's hosts changed (state, id); the front's own event */
   hosts?(hs: HostInfo[]): void;
+  /** V0.171: the owner's host marks changed (by install id) */
+  hostMarks?(m: OwnerMarks): void;
   event(e: FyrEvent): void;
   conn(c: Conn): void;
 }
@@ -242,6 +246,13 @@ function createHttpApi(): Api {
     es.addEventListener("hosts", (m) => {
       try {
         h.hosts?.(decodeHosts((JSON.parse((m as MessageEvent).data) as { hosts?: unknown }).hosts));
+      } catch {
+        /* ignore malformed */
+      }
+    });
+    es.addEventListener("hostMarks", (m) => {
+      try {
+        h.hostMarks?.(decodeHostMarks((JSON.parse((m as MessageEvent).data) as { marks?: unknown }).marks));
       } catch {
         /* ignore malformed */
       }

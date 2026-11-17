@@ -64,8 +64,15 @@ export const LINE_ICONS: Record<string, string> = {
 
 /** V0.170: the host marks' glyphs (Lucide v0.460.0, as above): a laptop, a desktop's monitor, a server. Kept apart from
  *  LINE_ICONS so they are not offered as project icons. */
-export const HOST_GLYPHS: Record<"laptop" | "monitor" | "server", string> = {
+export const HOST_GLYPHS: Record<"laptop" | "monitor" | "server" | "house" | "cloud" | "cpu" | "database" | "terminal" | "box", string> = {
   laptop: "<path d=\"M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16\"/>",
   monitor: "<rect width=\"20\" height=\"14\" x=\"2\" y=\"3\" rx=\"2\"/><line x1=\"8\" x2=\"16\" y1=\"21\" y2=\"21\"/><line x1=\"12\" x2=\"12\" y1=\"17\" y2=\"21\"/>",
   server: LINE_ICONS.server,
+  // V0.171: the others the owner can pick for a host
+  house: LINE_ICONS.house,
+  cloud: LINE_ICONS.cloud,
+  cpu: LINE_ICONS.cpu,
+  database: LINE_ICONS.database,
+  terminal: LINE_ICONS.terminal,
+  box: LINE_ICONS.box,
 };

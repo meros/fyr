@@ -148,6 +148,8 @@ type Front struct {
 	// hosts: the owner's host order as this front last set or kept it
 	// (V0.132); the newest of it and the hosts' copies wins.
 	hosts hostOrder
+	// marks are the owner's host marks as this front last set them (V0.171).
+	marks hostMarks
 }
 
 // link is a front's connection to one host and its cache of that host's
@@ -206,6 +208,7 @@ func New(opt Options, hosts []HostConfig) *Front {
 	f.loadOrder()
 	f.loadPins()
 	f.loadHostOrder()
+	f.loadHostMarks() // V0.171
 	for _, h := range hosts {
 		if l := f.newLink(h); l != nil {
 			f.append(l)
@@ -535,7 +538,7 @@ func (f *Front) load(l *link, st map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	env := map[string]any{}
-	for _, k := range []string{"actions", "profiles", "deploy", "stall", "user", "host", "hostId", "hostOrder", "machine", "os"} {
+	for _, k := range []string{"actions", "profiles", "deploy", "stall", "user", "host", "hostId", "hostOrder", "machine", "os", "hostMarks"} {
 		if v, ok := st[k]; ok {
 			env[k] = v
 		}
@@ -580,6 +583,7 @@ func (f *Front) load(l *link, st map[string]any) {
 		f.publishLocked(l, id)
 	}
 	f.catchUpLocked(l) // V0.132
+	f.catchUpMarksLocked(l) // V0.171
 	f.publishHostsLocked()
 }
 
@@ -652,6 +656,14 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 		f.mu.Unlock()
 		if b, err := json.Marshal(sp); err == nil {
 			f.hub.Publish("project", b)
+		}
+	case "hostMarks": // V0.171: the host keeps newer host marks
+		if d, err := decode(data); err == nil {
+			f.mu.Lock()
+			l.env["hostMarks"] = d
+			l.dirty = true
+			f.publishMarksLocked()
+			f.mu.Unlock()
 		}
 	case "hostOrder": // V0.132: the host keeps a newer host order
 		if d, err := decode(data); err == nil {
@@ -997,6 +1009,9 @@ func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 	}
 	st.Actions = actionsOf(actions)
 	st.ProjectOrder = f.order
+	if ms := f.newestMarksLocked().Marks; len(ms) > 0 { // V0.171: by host install id
+		st.HostMarks = ms
+	}
 	b, err := json.Marshal(st)
 	f.mu.Unlock()
 	if err != nil {
@@ -1055,6 +1070,10 @@ func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.Action == KindProjectOrder { // V0.121: the front's own, no host's
 		f.orderCommand(w, c.CommandID, c.Args)
+		return
+	}
+	if c.Action == KindHostMark { // V0.171: the owner's, written to every host
+		f.hostMarkCommand(w, c.CommandID, c.Args)
 		return
 	}
 	if c.Action == KindHostOrder { // V0.132: the owner's, written to every host

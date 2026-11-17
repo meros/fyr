@@ -69,6 +69,7 @@ import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type 
 import { PHONE_UNDO_MS } from "./mobile.ts";
 import { hostLabel, hostOfflineNote, multiHost } from "./hosts.ts";
 import { HostsContext } from "./host-pick-ui.tsx";
+import { HostMarksContext } from "./host-mark-ui.tsx";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
 import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
@@ -455,6 +456,7 @@ function App() {
       deploy: (p) => batch((s) => setDeploy(s, p)),
       stall: (raw) => batch((s) => setStall(s, raw)),
       hosts: (hs) => batch((s) => ({ ...s, hosts: hs })),
+      hostMarks: (m) => batch((s) => ({ ...s, hostMarks: m })), // V0.171
       conn: (c) => batch((s) => setConn(s, c)),
     });
     const iv = setInterval(() => setTick(Date.now()), 15_000);
@@ -1435,6 +1437,7 @@ function App() {
         <FolderPickContext.Provider value={folderPicker}>
         <UndContext.Provider value={undNav}>
 <HostsContext.Provider value={hostsCtx}>
+<HostMarksContext.Provider value={store.hostMarks}>
         <ConfirmProvider value={confirmHost.ask}>
         <ProfilesContext.Provider value={store.profiles}>
         <Boundary name="Fyr">
@@ -1503,7 +1506,8 @@ function App() {
         </Boundary>
         </ProfilesContext.Provider>
         </ConfirmProvider>
-        </HostsContext.Provider>
+        </HostMarksContext.Provider>
+</HostsContext.Provider>
 </UndContext.Provider>
         </FolderPickContext.Provider>
       </DirectoryContext.Provider>
@@ -1536,6 +1540,7 @@ function App() {
       <FolderPickContext.Provider value={folderPicker}>
         <UndContext.Provider value={undNav}>
 <HostsContext.Provider value={hostsCtx}>
+<HostMarksContext.Provider value={store.hostMarks}>
       <ConfirmProvider value={confirmHost.ask}>
       <ProfilesContext.Provider value={store.profiles}>
       <div class={`${view ? "app open" : "app"}${listOn ? "" : " nolist"}`}>
@@ -1694,7 +1699,8 @@ function App() {
       {folderPickView}
       {confirmHost.view}
       </ConfirmProvider>
-      </HostsContext.Provider>
+      </HostMarksContext.Provider>
+</HostsContext.Provider>
 </UndContext.Provider>
         </FolderPickContext.Provider>
       </DirectoryContext.Provider>

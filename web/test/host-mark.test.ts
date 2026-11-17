@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.170: each host's mark: a glyph from the machine it runs on and a colour from its install id.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hostColors, hostGlyph, hostMarkOf } from "../src/host-mark.ts";
+import { HOST_ICON_NAMES, hostColors, hostGlyph, hostMarkOf } from "../src/host-mark.ts";
 import { decodeHosts, type HostInfo } from "../src/hosts.ts";
 import { PALETTE_NAMES } from "../src/projects.ts";
 
@@ -58,4 +58,34 @@ test("hostMarkOf: glyph, colour, offline, and the words for its tooltip", () => 
 test("one host: this install's own machine, from the state", () => {
   assert.equal(hostMarkOf("solo", [], undefined, { name: "solo", machine: "laptop" }).glyph, "laptop");
   assert.equal(hostMarkOf("other", [], undefined, { name: "solo", machine: "laptop" }).glyph, "server");
+});
+
+// SPEC 0.5 V0.171: the owner's icon and colour, by install id, override the automatic ones.
+test("the owner's mark: a glyph name or an emoji for the icon, a palette name for the colour", () => {
+  const hosts = [H("desk", { id: "A", machine: "laptop" }), H("srv", { id: "B", machine: "server" })];
+  const marks = { A: { icon: "house", color: "teal" }, B: { icon: "🍓" } };
+  const a = hostMarkOf("desk", hosts, hostColors(hosts, marks), undefined, marks);
+  assert.deepEqual([a.glyph, a.emoji, a.color, a.auto], ["house", undefined, "teal", false]);
+  const b = hostMarkOf("srv", hosts, hostColors(hosts, marks), undefined, marks);
+  assert.deepEqual([b.glyph, b.emoji, b.auto], [null, "🍓", false]);
+  // Unknown values are ignored: the automatic glyph and colour.
+  const odd = { A: { icon: "not-an-icon-name", color: "amber" } };
+  const c = hostMarkOf("desk", hosts, hostColors(hosts, odd), undefined, odd);
+  assert.equal(c.glyph, "laptop");
+  assert.notEqual(c.color, "amber");
+  assert.equal(hostMarkOf("desk", hosts).auto, true);
+});
+
+test("an owner's colour is kept free: the automatic colours of the other hosts avoid it", () => {
+  const hosts = [H("a", { id: "A" }), H("b", { id: "B" }), H("c", { id: "C" })];
+  const auto = hostColors(hosts);
+  // Give c the colour a had automatically: a then moves to another hue, and no two hosts share one.
+  const marks = { C: { color: auto.get("a")! } };
+  const c = hostColors(hosts, marks);
+  assert.equal(c.get("c"), auto.get("a"));
+  assert.equal(new Set(c.values()).size, 3);
+});
+
+test("the icons the owner can pick", () => {
+  assert.deepEqual(HOST_ICON_NAMES, ["laptop", "monitor", "server", "house", "cloud", "cpu", "database", "terminal", "box"]);
 });
