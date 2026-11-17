@@ -37,7 +37,9 @@ func TestV129FrontFollowsAHostOverAPipe(t *testing.T) {
 	if _, ok := eng.Thread(id); !ok {
 		t.Fatalf("the host has no thread %s", id)
 	}
-	if got := getState(t, fs.URL); len(got.Threads) != 1 || got.Threads[0]["host"] != "desk" {
-		t.Fatalf("state through the pipe: %+v", got.Threads)
-	}
+	// The front learns the new thread from the host's stream, a moment after the command's reply: wait for it.
+	eventually(t, "the thread in the front's state through the pipe", func() bool {
+		got := getState(t, fs.URL)
+		return len(got.Threads) == 1 && got.Threads[0]["host"] == "desk"
+	})
 }
