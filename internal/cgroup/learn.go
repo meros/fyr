@@ -3,7 +3,7 @@ package cgroup
 // Decision 0029 S3 (#187): each finished record teaches its class. The
 // table keeps raw measures (cores, bytes, seconds), so a changed capacity or
 // another host does not invalidate them; the cost is computed at admission
-// (slots.CostOf).
+// (slots.NeedOf, V0.163: CPU and memory apart).
 
 import (
 	"encoding/json"

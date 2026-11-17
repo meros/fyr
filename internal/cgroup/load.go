@@ -27,8 +27,10 @@ type Load struct {
 	Cgroups     bool         `json:"cgroups"`
 	Agents      *Use         `json:"agents,omitempty"`
 	Threads     []ThreadLoad `json:"threads"`
-	// Slots: the host's slots for heavy jobs (V0.86), read fresh on each
-	// Get; nil without a pool.
+	// Heavy is the host's heavy jobs (V0.86; V0.163 in percent of the
+	// host), read fresh on each Get; nil without a pool. Slots is the same,
+	// under its old name, for older fronts for one release.
+	Heavy *slots.Snapshot `json:"heavy,omitempty"`
 	Slots *slots.Snapshot `json:"slots,omitempty"`
 
 	// Decision 0029 S1 (#185), absent without a provider:
@@ -104,16 +106,21 @@ func (s *Sampler) Get() Load {
 	l := s.base()
 	if s.Slots != nil && !s.Slots.Off() {
 		sn := s.Slots.View()
-		l.Slots = &sn
+		l.Heavy, l.Slots = &sn, &sn
 	}
 	if s.Jobs != nil {
 		v := s.Jobs.View()
 		l.Jobs = v.Classes
-		// Decision 0029 S3: each class's cost on this host now.
+		// Decision 0029 S3, V0.163: each class's need on this host now, as
+		// percentages of it (CPU and memory); Cost is the old one number.
 		if l.Capacity != nil && s.Slots != nil && !s.Slots.Off() {
+			host := slots.Signals{Provider: l.Provider, CPU: l.Capacity.CPU, Memory: l.Capacity.Memory}
 			for i, c := range l.Jobs {
 				if lr, ok := s.Jobs.Learned(c.Class); ok {
-					l.Jobs[i].Cost = slots.CostOf(lr.Demand, lr.Peak, lr.Runs, l.Capacity.CPU, l.Capacity.Memory, s.Slots.Budget())
+					need := slots.NeedOf(lr.Demand, lr.Peak, lr.Runs, host, s.Slots.N())
+					cpu, mem := need.Shares(host)
+					l.Jobs[i].CPUPct, l.Jobs[i].MemPct = slots.Pct(cpu), slots.Pct(mem)
+					l.Jobs[i].Cost = float64(int(max(cpu, mem)*float64(s.Slots.N())*100+0.5)) / 100
 					l.Jobs[i].Learned = lr.Runs
 				}
 			}

@@ -64,10 +64,10 @@ func TestV147LoadAnswersWhileThePoolAndTheTrackerAreBusy(t *testing.T) {
 	}
 	// Admission runs under the pool's lock; one that hangs holds it.
 	block, entered := make(chan struct{}), make(chan struct{})
-	p.Admit = func(slots.Holder, []slots.Holder) (bool, string) {
+	p.Admit = func(slots.Holder, []slots.Holder) (bool, string, string) {
 		close(entered)
 		<-block
-		return false, "x"
+		return false, "x", ""
 	}
 	go p.Acquire("t_b", slots.Test)
 	<-entered
@@ -90,12 +90,12 @@ func TestS3PoolCallbacksNeverReachTheEngine(t *testing.T) {
 	stuck := make(chan struct{})
 	j := &Jobs{KV: kv{}, Project: func(string) string { <-stuck; return "fyr" }} // the engine, stuck
 	p := slots.New(1)
-	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string) {
+	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
 		j.ClassOf(head.Owner, head.Kind)
 		j.Learned("fyr: test")
 		j.LiveUse(head.Owner)
 		j.Active(head.Owner)
-		return len(held) == 0, "busy"
+		return len(held) == 0, "busy", ""
 	}
 	p.Backfill = func(head, c slots.Holder, held []slots.Holder) bool {
 		j.ClassOf(c.Owner, c.Kind)

@@ -15,13 +15,14 @@ func TestS4TheTickRaisesTheBudgetOnACalmHost(t *testing.T) {
 	p.Now = e.Now
 	calm := 1.0
 	free := 0.6
-	sig := slots.Signals{Provider: "cgroups", Slowdown: &calm, Headroom: &free, Stall: slots.StallOK}
-	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string) {
-		c := make([]float64, len(held))
+	// V0.163: a 4-core host; a holder needs 2 cores, b 4: 6 > 4 until the CPU budget grows past 150 %.
+	sig := slots.Signals{Provider: "cgroups", Slowdown: &calm, Headroom: &free, Stall: slots.StallOK, CPU: 4, Memory: 8 << 30}
+	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
+		c := make([]slots.Need, len(held))
 		for i := range c {
-			c[i] = 0.5
+			c[i] = slots.Need{CPU: 2, Mem: 1 << 30}
 		}
-		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), 1, c, 1)
+		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), 1, c, slots.Need{CPU: 4, Mem: 1 << 30})
 	}
 	e.UseSlots(p)
 	e.SlotSignals = func() slots.Signals { return sig }
@@ -32,17 +33,17 @@ func TestS4TheTickRaisesTheBudgetOnACalmHost(t *testing.T) {
 	p.Acquire(a, slots.Test) // 0.5 held; b needs 1.0 more: 1.5 > 1
 	p.Acquire(b, slots.Test)
 	e.Tick()
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 8; i++ {
 		*now = now.Add(30 * time.Second)
 		e.Tick()
 	}
-	if p.Budget() < 1.5 {
+	if p.Budget().CPU < 1.5 || p.Budget().Mem != 1 {
 		t.Fatalf("budget %v", p.Budget())
 	}
 	if _, ok := p.Holding(b); !ok {
 		t.Fatal("b was not admitted once the budget grew")
 	}
-	if s := p.Snapshot(); s.Budget == nil || s.BudgetWhy != "the host is calm and jobs wait" {
+	if s := p.Snapshot(); s.Budget == nil || s.BudgetWhy != "the host is calm and a job waits for CPU: the CPU budget grows" {
 		t.Fatalf("%+v", s)
 	}
 }

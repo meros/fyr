@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
@@ -179,8 +180,8 @@ func (e *Engine) heavierThanPredicted(s slots.Snapshot) {
 		e.mu.Lock()
 		e.slotOverTold[h.Owner] = h.Since
 		e.mu.Unlock()
-		n := float64(s.N) // V0.163: the notice speaks a share of the host
-		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotOver, Thread: h.Owner, Args: core.SlotOverArgs{Class: class, Live: slots.Pct(live, n), Predicted: slots.Pct(pred, n)}}); err != nil {
+		// V0.163: SlotOver answers in percent of the host.
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotOver, Thread: h.Owner, Args: core.SlotOverArgs{Class: class, Live: live, Predicted: pred}}); err != nil {
 			log.Printf("slot over %s: %v", h.Owner, err)
 		}
 	}
@@ -192,9 +193,9 @@ func (e *Engine) adaptBudget(s slots.Snapshot) {
 	if e.SlotAIMD == nil || e.SlotSignals == nil {
 		return
 	}
-	b, why := e.SlotAIMD.Step(e.Now(), e.SlotSignals(), len(s.Waiting) > 0, e.Slots.LastGrant())
-	if b != e.Slots.Budget() || (s.Budget != nil && s.BudgetWhy != why) {
-		e.Slots.SetBudget(b, why)
+	f, why := e.SlotAIMD.Step(e.Now(), e.SlotSignals(), len(s.Waiting) > 0, e.Slots.LastGrant(), s.Binding)
+	if f != e.Slots.Budget() || (s.Budget != nil && s.BudgetWhy != why) {
+		e.Slots.SetBudget(f, why)
 	}
 }
 
@@ -355,7 +356,7 @@ func (e *Engine) HeavyGate(thread, class string) string {
 	s := e.Slots.Snapshot()
 	for i, w := range s.Waiting {
 		if w.Owner == thread {
-			return fmt.Sprintf("Heavy job (%s): it is queued, not admitted yet (%d ahead; it needs ≈ %.0f %% of %s). Do not run it now; Fyr tells you in a [Fyr] message when it is admitted. Do other work meanwhile or end your turn.", class, i, w.Pct, e.hostName())
+			return fmt.Sprintf("Heavy job (%s): it is queued, not admitted yet (%d ahead; it needs %s of %s). Do not run it now; Fyr tells you in a [Fyr] message when it is admitted. Do other work meanwhile or end your turn.", class, i, strings.TrimPrefix(jobShare(s, w.Owner), "≈ "), e.hostName())
 		}
 	}
 	kind := heavy.KindOf(class)
@@ -370,17 +371,29 @@ func (e *Engine) hostName() string {
 	return "this host"
 }
 
-// share is a holder's share of the host and what is left, from a snapshot.
-func share(s slots.Snapshot, owner string) (pct, left float64) {
+// jobShare is a job's share of the host in words (V0.163): CPU and memory
+// apart, or one share on a host that counts jobs.
+func jobShare(s slots.Snapshot, owner string) string {
 	for _, h := range append(s.Held, s.Waiting...) {
 		if h.Owner == owner {
-			pct = h.Pct
+			if h.Need != nil {
+				return fmt.Sprintf("≈ %.0f %% CPU, %.0f %% memory", h.CPUPct, h.MemPct)
+			}
+			return fmt.Sprintf("≈ %.0f %%", h.Pct)
 		}
 	}
-	if s.FreePct != nil {
-		left = *s.FreePct
+	return "its share"
+}
+
+// freeShare is what the heavy-job budget has left, in words.
+func freeShare(s slots.Snapshot) string {
+	if s.CPUFreePct != nil && s.MemFreePct != nil {
+		return fmt.Sprintf("%.0f %% CPU and %.0f %% memory", *s.CPUFreePct, *s.MemFreePct)
 	}
-	return pct, left
+	if s.UsedPct != nil {
+		return fmt.Sprintf("%.0f %%", max(0, 100-*s.UsedPct))
+	}
+	return "room"
 }
 
 func article(kind string) string {
@@ -416,15 +429,14 @@ func (e *Engine) slotTools(s *mcp.Server) {
 			}
 			held, ahead := e.Slots.Acquire(th, kind)
 			s := e.Slots.Snapshot()
-			pct, left := share(s, th)
 			if held {
-				return fmt.Sprintf("Admitted: your %s job ≈ %.0f %% of %s; %.0f %% left. Run the job now, then call slot_release. Admission also ends when your run ends.", kind, pct, e.hostName(), left), nil
+				return fmt.Sprintf("Admitted: your %s job %s of %s; %s left. Run the job now, then call slot_release. Admission also ends when your run ends.", kind, jobShare(s, th), e.hostName(), freeShare(s)), nil
 			}
 			why := ""
 			if ahead == 0 && s.Why != "" {
 				why = " Waiting: " + s.Why + "." // decision 0029 S2
 			}
-			return fmt.Sprintf("Queued: your %s job needs ≈ %.0f %% of %s, %.0f %% free (%d ahead).%s Do not start the job; Fyr tells you in a [Fyr] message when it is admitted. Do other work meanwhile or end your turn.", kind, pct, e.hostName(), left, ahead, why), nil
+			return fmt.Sprintf("Queued: your %s job needs %s of %s; %s free (%d ahead).%s Do not start the job; Fyr tells you in a [Fyr] message when it is admitted. Do other work meanwhile or end your turn.", kind, strings.TrimPrefix(jobShare(s, th), "≈ "), e.hostName(), freeShare(s), ahead, why), nil
 		}})
 	s.Add(mcp.Tool{Name: "slot_release",
 		Description: "End your heavy job's admission when the job ended (its share of the host goes back), or leave the queue.",
@@ -436,10 +448,6 @@ func (e *Engine) slotTools(s *mcp.Server) {
 			if !e.dropSlot(th) {
 				return "", errors.New("you have no admitted or queued heavy job")
 			}
-			left := 0.0
-			if s := e.Slots.Snapshot(); s.FreePct != nil {
-				left = *s.FreePct
-			}
-			return fmt.Sprintf("Released: ≈ %.0f %% of %s is free for heavy jobs.", left, e.hostName()), nil
+			return fmt.Sprintf("Released: %s of %s free for heavy jobs.", freeShare(e.Slots.Snapshot()), e.hostName()), nil
 		}})
 }
