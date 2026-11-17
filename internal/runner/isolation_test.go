@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,7 +23,18 @@ import (
 func serveAllow(t *testing.T, allow *atomic.Bool, tune func(*runner.Server)) (*runner.Server, *runner.Client) {
 	t.Helper()
 	sock := filepath.Join(t.TempDir(), "runner.sock")
-	srv := &runner.Server{Logf: t.Logf, Allow: func(pid int) bool { return allow.Load() }}
+	// The runner's goroutines may log after the test (a process that exits once the server closes): a log after
+	// the test ends panics, so the cleanup closes the log first, under the lock every log line takes.
+	var mu sync.Mutex
+	closed := false
+	logf := func(f string, a ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !closed {
+			t.Logf(f, a...)
+		}
+	}
+	srv := &runner.Server{Logf: logf, Allow: func(pid int) bool { return allow.Load() }}
 	if tune != nil {
 		tune(srv)
 	}
@@ -30,7 +42,12 @@ func serveAllow(t *testing.T, allow *atomic.Bool, tune func(*runner.Server)) (*r
 		t.Fatal(err)
 	}
 	go srv.Serve()
-	t.Cleanup(func() { srv.Close(time.Second) })
+	t.Cleanup(func() {
+		srv.Close(time.Second)
+		mu.Lock()
+		closed = true
+		mu.Unlock()
+	})
 	return srv, &runner.Client{Path: sock}
 }
 
@@ -55,8 +72,11 @@ func TestPeerPidIsTheListener(t *testing.T) {
 func TestQuestionPendingAcrossStrayAndUpdate(t *testing.T) {
 	var allow atomic.Bool
 	allow.Store(true)
+	// Abandon is long enough for the update's gap (Detach, List, Attach: unlinked for that while) under load: at 50 ms
+	// a loaded host (load average 50 on 4 cores) let the janitor end the process in the gap ("output closed").
+	const abandon = 2 * time.Second
 	_, rc := serveAllow(t, &allow, func(s *runner.Server) {
-		s.Tick, s.Abandon, s.Grace = 10*time.Millisecond, 50*time.Millisecond, 10*time.Millisecond
+		s.Tick, s.Abandon, s.Grace = 10*time.Millisecond, abandon, 10*time.Millisecond
 	})
 	c1, err := claude.Start(claude.Spec{Binary: os.Args[0], Env: []string{"FYR_FAKE_CLAUDE=1"},
 		Runner: rc, ID: "p1", Key: "t1", Meta: []byte(`{"thread":"t1"}`)})
@@ -100,7 +120,7 @@ func TestQuestionPendingAcrossStrayAndUpdate(t *testing.T) {
 	select {
 	case <-c1.Done():
 		t.Fatal("the live fyrd lost its process while its question was pending")
-	case <-time.After(300 * time.Millisecond):
+	case <-time.After(abandon + 300*time.Millisecond):
 	}
 
 	// An update: the live fyrd detaches, the next one attaches.

@@ -67,12 +67,18 @@ type JobClass struct {
 	Peak   uint64    `json:"peak"`
 	Wall   float64   `json:"wall"`
 	At     time.Time `json:"at"`
+	// Decision 0029 S3: the class's cost on this host now and how many
+	// runs it is learned from; 0 when not learned.
+	Cost    float64 `json:"cost,omitempty"`
+	Learned int     `json:"learned,omitempty"`
 }
 
 type hold struct {
 	kind              string
 	since, last       time.Time
 	active            time.Time // #174: the newest heavy command or busy reading
+	rate              float64   // decision 0029 S3: cores over the last reading
+	rateAt            time.Time
 	class             string
 	cpu0, stall0      uint64
 	cpu, stall        uint64
@@ -96,9 +102,13 @@ type Jobs struct {
 	saveMu sync.Mutex // orders the KV writes; taken without mu
 	view   atomic.Pointer[JobsView]
 	holds  map[string]*hold
-	seen   map[string]string // thread → class of its newest heavy command in a hold
+	seen   map[string]string    // thread → class of its newest heavy command (in a hold or while waiting)
+	seenAt map[string]time.Time // and when
 	recs   []JobRecord
-	loaded bool
+	table  map[string]Learned // decision 0029 S3: per class
+	// projects: the pool's owners' project names, cached by RefreshProjects
+	projects map[string]string
+	loaded   bool
 }
 
 func (j *Jobs) load() {
@@ -107,8 +117,9 @@ func (j *Jobs) load() {
 	}
 	j.loaded = true
 	if j.holds == nil {
-		j.holds, j.seen = map[string]*hold{}, map[string]string{}
+		j.holds, j.seen, j.seenAt = map[string]*hold{}, map[string]string{}, map[string]time.Time{}
 	}
+	j.loadTable()
 	if j.KV == nil {
 		return
 	}
@@ -134,7 +145,7 @@ func (j *Jobs) Saw(thread, class string) {
 		h.class = class
 		h.active = j.now()
 	}
-	j.seen[thread] = class
+	j.seen[thread], j.seenAt[thread] = class, j.now()
 	j.publishLocked()
 }
 
@@ -344,8 +355,11 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 			if r.hasCPU {
 				u := r.cpu
 				h.cpu = u
-				if dt := now.Sub(prevAt).Seconds(); dt > 0 && u >= prevCPU && float64(u-prevCPU)/1e6/dt > h.base+busyAbove {
-					h.active = now
+				if dt := now.Sub(prevAt).Seconds(); dt > 0 && u >= prevCPU {
+					h.rate, h.rateAt = float64(u-prevCPU)/1e6/dt, now
+					if h.rate > h.base+busyAbove {
+						h.active = now
+					}
 				}
 			}
 			if r.hasStall {
@@ -365,9 +379,10 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 			done = append(done, ended{owner, h})
 		}
 	}
-	for th := range j.seen {
-		if !live[th] {
+	for th, at := range j.seenAt {
+		if !live[th] && now.Sub(at) >= seenFor {
 			delete(j.seen, th)
+			delete(j.seenAt, th)
 		}
 	}
 	j.publishLocked()
@@ -396,6 +411,10 @@ func (j *Jobs) finish(done []ended) {
 		return
 	}
 	j.mu.Lock()
+	for _, r := range recs {
+		j.learn(r) // decision 0029 S3: the class's measures, no I/O under j.mu
+	}
+	table := j.tableRaw()
 	j.recs = append(j.recs, recs...)
 	if len(j.recs) > KeepJobs {
 		j.recs = j.recs[len(j.recs)-KeepJobs:]
@@ -406,6 +425,7 @@ func (j *Jobs) finish(done []ended) {
 	}
 	j.publishLocked()
 	j.mu.Unlock()
+	j.storeTable(table)
 	if raw != nil {
 		j.saveMu.Lock()
 		defer j.saveMu.Unlock()

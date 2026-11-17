@@ -105,6 +105,15 @@ func (s *Sampler) Get() Load {
 	if s.Jobs != nil {
 		v := s.Jobs.View()
 		l.Jobs = v.Classes
+		// Decision 0029 S3: each class's cost on this host now.
+		if l.Capacity != nil && s.Slots != nil && !s.Slots.Off() {
+			for i, c := range l.Jobs {
+				if lr, ok := s.Jobs.Learned(c.Class); ok {
+					l.Jobs[i].Cost = slots.CostOf(lr.Demand, lr.Peak, lr.Runs, l.Capacity.CPU, l.Capacity.Memory, s.Slots.Budget())
+					l.Jobs[i].Learned = lr.Runs
+				}
+			}
+		}
 		th := make([]ThreadLoad, len(l.Threads))
 		for i, t := range l.Threads {
 			t.Job = v.Live[t.ID]
@@ -140,6 +149,14 @@ func (s *Sampler) Tick() {
 	if s.Jobs == nil || s.Slots == nil || s.Slots.Off() {
 		return
 	}
+	// Decision 0029 S3: the project names ClassOf reads under the pool's
+	// lock, asked here outside every lock.
+	snap := s.Slots.Snapshot()
+	owners := make([]string, 0, len(snap.Held)+len(snap.Waiting))
+	for _, h := range append(snap.Held, snap.Waiting...) {
+		owners = append(owners, h.Owner)
+	}
+	s.Jobs.RefreshProjects(owners)
 	rates := map[string]*float64{}
 	for _, t := range l.Threads {
 		rates[t.ID] = t.CPU
@@ -157,7 +174,11 @@ func (s *Sampler) Signals() slots.Signals {
 	} else {
 		l = s.get()
 	}
-	return slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall)}
+	sig := slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall)}
+	if l.Capacity != nil {
+		sig.CPU, sig.Memory = l.Capacity.CPU, l.Capacity.Memory
+	}
+	return sig
 }
 
 // Run ticks until ctx ends.

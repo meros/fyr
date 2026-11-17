@@ -82,3 +82,29 @@ func TestV147LoadAnswersWhileThePoolAndTheTrackerAreBusy(t *testing.T) {
 	j.mu.Unlock()
 	close(block)
 }
+
+// Decision 0029 S3 on V0.147's order: the S3 paths that run under the pool's lock (Admit, Backfill and Cost asking
+// the tracker: ClassOf, Learned, LiveUse, Active) answer while the engine is stuck, since none calls Project, and
+// learning stores without j.mu.
+func TestS3PoolCallbacksNeverReachTheEngine(t *testing.T) {
+	stuck := make(chan struct{})
+	j := &Jobs{KV: kv{}, Project: func(string) string { <-stuck; return "fyr" }} // the engine, stuck
+	p := slots.New(1)
+	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string) {
+		j.ClassOf(head.Owner, head.Kind)
+		j.Learned("fyr: test")
+		j.LiveUse(head.Owner)
+		j.Active(head.Owner)
+		return len(held) == 0, "busy"
+	}
+	p.Backfill = func(head, c slots.Holder, held []slots.Holder) bool {
+		j.ClassOf(c.Owner, c.Kind)
+		return true
+	}
+	within(t, 2*time.Second, "admission with the engine stuck", func() {
+		p.Acquire("t_a", slots.Test)
+		p.Acquire("t_b", slots.Test)
+		p.Acquire("t_c", slots.Test)
+	})
+	close(stuck)
+}

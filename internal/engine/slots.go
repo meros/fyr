@@ -30,6 +30,7 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.Slots = p
 	e.slotIdle = map[string]time.Time{}
 	e.slotNudged = map[string]time.Time{}
+	e.slotOverTold = map[string]time.Time{}
 	e.mu.Unlock()
 	p.OnGrant = e.slotGranted
 	p.Fill() // a pool loaded from the store may have free slots for its queue
@@ -143,11 +144,41 @@ func (e *Engine) sweepSlots() {
 		e.dropSlot(id)
 	}
 	e.memoryGuard(s)
+	e.heavierThanPredicted(s)
 	// Decision 0029 S2: the conditions change without a release.
 	e.Slots.Fill()
 	for _, n := range nudges {
 		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotIdle, Thread: n.owner, Args: core.SlotIdleArgs{Kind: n.kind, Minutes: n.min}}); err != nil {
 			log.Printf("slot idle %s: %v", n.owner, err)
+		}
+	}
+}
+
+// heavierThanPredicted tells a holder once per hold that its job uses more
+// of the budget than predicted (decision 0029 S3); nothing is stopped.
+func (e *Engine) heavierThanPredicted(s slots.Snapshot) {
+	if e.SlotOver == nil {
+		return
+	}
+	for _, h := range s.Held {
+		if h.Priority {
+			continue
+		}
+		e.mu.Lock()
+		since, done := e.slotOverTold[h.Owner]
+		e.mu.Unlock()
+		if done && since.Equal(h.Since) {
+			continue
+		}
+		class, live, pred, over := e.SlotOver(h.Owner)
+		if !over {
+			continue
+		}
+		e.mu.Lock()
+		e.slotOverTold[h.Owner] = h.Since
+		e.mu.Unlock()
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotOver, Thread: h.Owner, Args: core.SlotOverArgs{Class: class, Live: live, Predicted: pred}}); err != nil {
+			log.Printf("slot over %s: %v", h.Owner, err)
 		}
 	}
 }
@@ -219,11 +250,15 @@ func (e *Engine) slotTools(s *mcp.Server) {
 	off := "This host has no slots for heavy jobs; run the job."
 	s.Add(mcp.Tool{Name: "slot_acquire",
 		Description: "Take a slot before a heavy job (a full test suite, a build, an e2e run): at most a few run at once across the user's threads. It answers at once: either you hold the slot (run the job, then call slot_release), or you are queued with your position; then do not start the job, do other work or end your turn, and Fyr tells you in a [Fyr] message when the slot is yours. The slot also goes back when your run ends.",
-		Schema:      obj(map[string]any{"kind": map[string]any{"type": "string", "enum": slots.Kinds()}}, "kind"),
+		Schema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": slots.Kinds()},
+			"command": map[string]any{"type": "string", "description": "The command you will run, e.g. \"make test\"; Fyr then knows what the job costs."}}, "kind"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
 			kind := sArg(a, "kind")
 			if !slices.Contains(slots.Kinds(), kind) {
 				return "", fmt.Errorf("kind must be one of %v", slots.Kinds())
+			}
+			if c := sArg(a, "command"); c != "" && e.SlotJob != nil {
+				e.SlotJob(th, c) // decision 0029 S3: the job's class before it runs
 			}
 			if e.Slots == nil {
 				return off, nil

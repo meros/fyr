@@ -10,7 +10,7 @@ func TestH174ReplayOfRealCommands(t *testing.T) {
 	for cmd, want := range map[string]string{
 		"cd /home/owner/git/personal/fyr-quota && timeout 590 nix develop -c sh -c 'cd web && npm run test:layout 2>&1 | tail -4' 2>&1 | grep -v dirty; uptime":            "npm run test:layout",
 		`nix develop -c sh -c 'go vet ./... && go test -count=1 ./... 2>&1 | grep -v "no test files" | grep -v "^ok" ; echo exit=$?' 2>&1 | grep -v "^warning" | tail -20`: "go test ./...",
-		"cd /home/owner/src/fyr/web && export PATH=$PATH:/etc/profiles/per-user/meros/bin && npm run build 2>&1 | tail -2; ls dist":                                        "",
+		"cd /home/owner/src/fyr/web && export PATH=$PATH:/etc/profiles/per-user/owner/bin && npm run build 2>&1 | tail -2; ls dist":                                        "",
 		"cd /home/owner/git/personal/fyr-projcut && nix develop -c go test ./... 2>&1 | grep -v 'warning: Git' | tail -40":                                                 "go test ./...",
 		"cd /x/sc-33-thread && (cd web && npm ci --no-audit --no-fund --silent) && make test-web 2>&1 | tail -15":                                                          "make test-web",
 		"cd /x/web && npm test 2>&1 | tail -12":                                                              "",
