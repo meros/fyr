@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -144,7 +145,10 @@ func (m *Manager) doInterrupt(threadID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), m.cfg.ControlTimeout)
 	defer cancel()
 	err := s.c.Interrupt(ctx)
-	if err != nil && ctx.Err() != nil {
+	if ok, why := m.pressured(); err != nil && ctx.Err() != nil && ok {
+		// V0.153: slow, not deaf, on a thrashing host.
+		log.Printf("thread %s: Stop not answered within %s under %s", threadID, short(m.cfg.ControlTimeout), why)
+	} else if err != nil && ctx.Err() != nil {
 		// V0.143: the CLI did not answer the Stop.
 		m.markUnresponsive(s, fmt.Sprintf("it did not answer Stop within %s", short(m.cfg.ControlTimeout)))
 	}

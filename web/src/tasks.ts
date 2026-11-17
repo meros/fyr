@@ -96,6 +96,8 @@ export function taskEventText(d: { kind?: string; description?: string; status?:
 export function liveLine(t: Thread, now: number): string {
   // V0.143: a process that takes nothing Fyr writes is not "Starting" or "Working".
   if (t.unresponsive) return `Not responding since ${clockTime(t.unresponsive.since)} · ${t.unresponsive.reason}`;
+  // V0.153: slow because the host thrashes; Fyr waits, nothing failed.
+  if (t.machineWait) return `Waiting for the machine (${t.machineWait.why}) · since ${clockTime(t.machineWait.since)}`;
   const running = groupTasks(t.tasks).running.length;
   return [t.activity || "Working", running ? agentsLabel(running) : "", relTime(t.runStartedAt, now)].filter(Boolean).join(" · ");
 }

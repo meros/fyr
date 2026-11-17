@@ -81,3 +81,10 @@ test("live line of an agent that does not respond", () => {
   assert.match(line, /^Not responding since \d\d:\d\d · it did not take a message within 1 min$/);
   assert.doesNotMatch(line, /Starting/);
 });
+
+// SPEC 0.5 V0.153: while the host thrashes Fyr waits for it; the live line says so, not "Starting" or a failure.
+test("live line while Fyr waits for the machine", () => {
+  const now = Date.parse("2026-11-17T13:09:00Z");
+  const t = thread("m", "waiting", "working", { running: true, activity: "Starting", machineWait: { since: "2026-11-17T13:05:51Z", why: "memory pressure" } });
+  assert.match(liveLine(t, now), /^Waiting for the machine \(memory pressure\) · since \d\d:\d\d$/);
+});

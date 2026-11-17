@@ -110,6 +110,15 @@ type Config struct {
 	AckTimeout     time.Duration
 	ControlTimeout time.Duration
 	RestartAfter   time.Duration
+	// V0.153, the machine. InitTimeout: the initialize deadline on a calm
+	// host (default 60 s). Pressure says whether the host thrashes (memory
+	// stall critical, or new jobs run far slower) and why; while it does,
+	// Fyr stretches InitTimeout and the watchdog's limits by up to
+	// PressureMaxWait (default 15 min), retries a failed start with
+	// backoff, and kills no process for being slow. Nil: never pressured.
+	InitTimeout     time.Duration
+	PressureMaxWait time.Duration
+	Pressure        func() (bool, string)
 }
 
 // Cgroups is what the agent needs from the cgroup tree (*cgroup.Tree):
@@ -238,6 +247,12 @@ func New(host Host, cfg Config) *Manager {
 	}
 	if cfg.RestartAfter == 0 {
 		cfg.RestartAfter = 10 * time.Minute
+	}
+	if cfg.InitTimeout == 0 {
+		cfg.InitTimeout = time.Minute
+	}
+	if cfg.PressureMaxWait == 0 {
+		cfg.PressureMaxWait = 15 * time.Minute
 	}
 	if cfg.Prompt == "" {
 		cfg.Prompt = FyrPrompt
@@ -424,7 +439,7 @@ func (m *Manager) ensureAs(threadID string, o *as) (*session, error) {
 	if old != nil {
 		m.end(threadID, old)
 	}
-	s, err := m.start(threadID, o)
+	s, err := m.startOrWait(threadID, o)
 	m.mu.Lock()
 	delete(m.starting, threadID)
 	if err == nil {
@@ -555,9 +570,7 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		return nil, err
 	}
 	s.c = c
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	answer, err := c.Initialize(ctx, initHooks(s.viewTools || s.changeTools))
+	answer, err := m.initialize(threadID, c, initHooks(s.viewTools || s.changeTools))
 	if err != nil {
 		c.Kill()
 		<-c.Done()

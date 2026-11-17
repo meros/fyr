@@ -78,6 +78,10 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 	case t.Running:
 		return Attention{Working, WorkingSec, ""}
 	}
+	if t.MachineWait != nil {
+		// V0.153: Fyr waits for the host before it starts the agent.
+		return Attention{Waiting, WorkingSec, MachineWaitText(t.MachineWait)}
+	}
 	if n := t.RunningTasks(); n > 0 {
 		reason := "1 agent"
 		if n > 1 {
@@ -106,4 +110,9 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 // the host's local time.
 func UnresponsiveText(u *Unresponsive) string {
 	return "Agent not responding since " + u.Since.Local().Format("15:04") + ": " + u.Reason
+}
+
+// MachineWaitText is the one line of a wait for the machine (V0.153).
+func MachineWaitText(w *MachineWait) string {
+	return "Waiting for the machine (" + w.Why + ")"
 }

@@ -25,14 +25,23 @@ func (m *Manager) write(s *session, id string, content []claude.Msg) error {
 	watch := s.lifecycle // an older CLI reports no delivery
 	m.mu.Unlock()
 	if watch {
-		time.AfterFunc(m.cfg.AckTimeout, func() {
+		sent := time.Now()
+		var check func()
+		check = func() {
 			m.mu.Lock()
 			waiting := s.out[id] == "sent" && s.restarting == ""
 			m.mu.Unlock()
-			if waiting {
-				m.markUnresponsive(s, fmt.Sprintf("it did not take a message within %s", short(m.cfg.AckTimeout)))
+			if !waiting {
+				return
 			}
-		})
+			// V0.153: on a thrashing host a slow CLI is not a deaf one.
+			if ok, _ := m.pressured(); ok && time.Since(sent) < m.cfg.AckTimeout+m.cfg.PressureMaxWait {
+				time.AfterFunc(m.cfg.AckTimeout, check)
+				return
+			}
+			m.markUnresponsive(s, fmt.Sprintf("it did not take a message within %s", short(time.Since(sent).Round(time.Second))))
+		}
+		time.AfterFunc(m.cfg.AckTimeout, check)
 	}
 	return s.c.SendUser(content, id)
 }
@@ -72,16 +81,26 @@ func (m *Manager) markUnresponsive(s *session, why string) {
 	s.unresponsive = true
 	since := s.lastOut
 	after := m.cfg.RestartAfter
-	s.restartAt = time.AfterFunc(after, func() {
+	var auto func()
+	auto = func() {
 		m.mu.Lock()
 		still := s.unresponsive && m.sessions[s.thread] == s
 		m.mu.Unlock()
 		if still {
+			// V0.153: no restart into the same thrash; wait for the host.
+			if ok, why := m.pressured(); ok {
+				log.Printf("thread %s: restart held: the host is under %s", s.thread, why)
+				m.mu.Lock()
+				s.restartAt = time.AfterFunc(after, auto)
+				m.mu.Unlock()
+				return
+			}
 			if err := m.restart(s.thread, "automatically, after "+short(after)+" without a response"); err != nil {
 				log.Printf("thread %s: restart: %v", s.thread, err)
 			}
 		}
-	})
+	}
+	s.restartAt = time.AfterFunc(after, auto)
 	m.mu.Unlock()
 	if t, ok := m.host.Thread(s.thread); ok {
 		if ts := runningTasks(t); len(ts) > 0 {

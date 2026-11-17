@@ -151,6 +151,8 @@ export interface ThreadDTO {
   outbox?: { id: string; state: string }[] | null;
   /** V0.143: the live agent process takes nothing Fyr writes; since its last output, and why */
   unresponsive?: { since: string; at: string; reason: string } | null;
+  /** V0.153: Fyr waits for a thrashing host instead of killing a slow agent */
+  machineWait?: { since: string; why: string } | null;
   attention: Attention;
   view?: { seenAt?: string | null; snoozeUntil?: string | null } | null;
   unavailable?: Record<string, string> | null;

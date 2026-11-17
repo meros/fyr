@@ -51,6 +51,8 @@ const (
 	KindUnresponsive = "agent.unresponsive"
 	KindResponsive   = "agent.responsive"
 	KindRestarted    = "agent.restarted"
+	// V0.153: Fyr waits for a thrashing host ("" Why: it no longer waits).
+	KindMachineWait = "agent.machineWait"
 	KindTask            = "task"
 	KindSession         = "session"
 	KindDigest          = "digest"
@@ -147,6 +149,8 @@ type (
 		Since  time.Time
 		Reason string
 	}
+	// MachineWaitArgs: why Fyr waits for the machine; "" ends the wait.
+	MachineWaitArgs struct{ Why string }
 	// RestartedArgs: why Fyr restarted the process and the background
 	// tasks that ended with it (V0.143).
 	RestartedArgs struct {
@@ -412,6 +416,24 @@ func init() {
 			}
 			r.T.Unresponsive = nil
 			return Result{Events: []Event{{"agent.responsive", map[string]any{}}}}, nil
+		}},
+		{Name: KindMachineWait, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
+			a, err := argsOf[MachineWaitArgs](in)
+			if err != nil {
+				return Result{}, err
+			}
+			if a.Why == "" {
+				if r.T.MachineWait == nil {
+					return Result{}, nil
+				}
+				r.T.MachineWait = nil
+				return Result{Events: []Event{{"agent.machineWait", map[string]any{"done": true}}}}, nil
+			}
+			if r.T.MachineWait != nil && r.T.MachineWait.Why == a.Why {
+				return Result{}, nil
+			}
+			r.T.MachineWait = &MachineWait{Since: now, Why: a.Why}
+			return Result{Events: []Event{{"agent.machineWait", map[string]any{"why": a.Why}}}}, nil
 		}},
 		{Name: KindRestarted, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a, err := argsOf[RestartedArgs](in)

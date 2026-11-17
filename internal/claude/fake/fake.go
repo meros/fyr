@@ -58,6 +58,9 @@
 // transcript there exits at once with "No conversation found" (V0.45).
 // FYR_FAKE_NORESUME=1 makes every --resume fail that way.
 //
+// FYR_FAKE_INIT_DELAY_FILE names a file whose number is how many ms the
+// fake waits before it answers initialize (V0.153).
+//
 // As the real CLI does, a user message with a uuid waits in a queue and is
 // reported as command_lifecycle queued, started (taken in), completed (its
 // turn ended) or cancelled (control request cancel_async_message).
@@ -349,6 +352,15 @@ func Main() {
 				resp = msg{"cancelled": cancelQueued(uuid)}
 			}
 			if req["subtype"] == "initialize" {
+				// V0.153: a start slowed by a thrashing host; the file holds
+				// the delay in ms, read at each start.
+				if f := os.Getenv("FYR_FAKE_INIT_DELAY_FILE"); f != "" {
+					var ms int
+					if b, err := os.ReadFile(f); err == nil {
+						fmt.Sscan(string(b), &ms)
+					}
+					time.Sleep(time.Duration(ms) * time.Millisecond)
+				}
 				hooks, _ := req["hooks"].(msg)
 				_, stopHook = hooks["Stop"]
 				_, postHook = hooks["PostToolUse"]
