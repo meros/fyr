@@ -70,6 +70,23 @@ func TestFetchEmptyChecksByRepoCI(t *testing.T) {
 	ciRepos.Clear()
 }
 
+// SPEC V0.136: the poller counts the head's finished checks and names the
+// failed ones, from the rollup it already reads.
+func TestFetchCountsChecks(t *testing.T) {
+	p, err := Fetch(context.Background(), fakeGh(`{"state":"OPEN","statusCheckRollup":[
+		{"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"FAILURE"},
+		{"__typename":"CheckRun","name":"lint","status":"COMPLETED","conclusion":"SUCCESS"},
+		{"__typename":"CheckRun","name":"e2e","status":"IN_PROGRESS","conclusion":""},
+		{"__typename":"StatusContext","context":"codecov","state":"ERROR"},
+		{"__typename":"CheckRun","name":"docs","status":"COMPLETED","conclusion":"SKIPPED"}]}`), "https://github.com/a/b/pull/1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ChecksDone != 4 || p.ChecksTotal != 5 || !slices.Equal(p.FailedChecks, []string{"test", "codecov"}) {
+		t.Fatalf("counts %d of %d, failed %v", p.ChecksDone, p.ChecksTotal, p.FailedChecks)
+	}
+}
+
 // SPEC 5.10: Fyr merges with the method the agent asked for.
 func TestMergeRunsGh(t *testing.T) {
 	var got []string
@@ -265,5 +282,43 @@ func TestFetchReadsStackedPR(t *testing.T) {
 	pr = `{"state":"MERGED","baseRefName":"main","mergeCommit":{"oid":"m1"},"statusCheckRollup":[]}`
 	if p, _ = Fetch(context.Background(), run("diverged"), "https://github.com/st/ack/pull/2"); p.Stacked {
 		t.Fatalf("a PR into the default branch is stacked: %+v", p)
+	}
+}
+
+// SPEC V0.136: a PR GitHub reads as BLOCKED with green checks gets the
+// base's active rules and the required checks that did not report, read
+// once per repo and base; other PRs never read the rules.
+func TestFetchNamesBlockingRules(t *testing.T) {
+	baseRules.Clear()
+	defer baseRules.Clear()
+	const view = `{"state":"OPEN","headRefOid":"7333251aa","baseRefName":"main","mergeStateStatus":"BLOCKED","reviewDecision":"",
+		"statusCheckRollup":[{"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]}`
+	s := &scripted{out: map[string]string{"pr view": view,
+		"api repos/acme/app/rules/branches/main": `[{"type":"pull_request","parameters":{}},{"type":"required_signatures"},
+			{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"test"},{"context":"build"}]}}]`}}
+	p, err := Fetch(context.Background(), s.run, "https://github.com/acme/app/pull/8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(p.Rules, []string{"pull_request", "required_signatures", "required_status_checks"}) || !slices.Equal(p.MissingChecks, []string{"build"}) || p.Protected {
+		t.Fatalf("rules %v missing %v protected %v", p.Rules, p.MissingChecks, p.Protected)
+	}
+	Fetch(context.Background(), s.run, "https://github.com/acme/app/pull/8")
+	if n := s.count("api repos/acme/app/rules"); n != 1 {
+		t.Errorf("the rules were read %d times", n)
+	}
+	// classic branch protection, when no ruleset applies
+	c := &scripted{out: map[string]string{"pr view": strings.Replace(view, "acme", "solo", 1),
+		"api repos/solo/app/rules/branches/main": `[]`,
+		"api repos/solo/app/branches/main":       `{"protected":true,"protection":{"required_status_checks":{"contexts":["ci/build"]}}}`}}
+	p, _ = Fetch(context.Background(), c.run, "https://github.com/solo/app/pull/8")
+	if !p.Protected || !slices.Equal(p.MissingChecks, []string{"ci/build"}) {
+		t.Fatalf("classic protection: %+v", p)
+	}
+	// CLEAN, or BLOCKED while CI runs: no rules read
+	clean := &scripted{out: map[string]string{"pr view": strings.Replace(view, "BLOCKED", "CLEAN", 1)}}
+	Fetch(context.Background(), clean.run, "https://github.com/other/app/pull/8")
+	if clean.count("api repos/") != 0 {
+		t.Errorf("a CLEAN PR read the rules: %v", clean.calls)
 	}
 }

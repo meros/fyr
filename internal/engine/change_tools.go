@@ -21,7 +21,7 @@ const changeRef = "The change: its id (c_…), its key, its PR URL, owner/repo#N
 const (
 	ChangeOpenDesc    = "Give Fyr a card for work it cannot see: a cluster, cloud, DNS or bucket change, a migration or data fix, a NixOS rebuild, another machine, a document, a design. Call it before the first write. Fyr makes cards for your pushes and PRs itself. The same key, PR or branch returns the same change."
 	ChangeUpdateDesc  = "Tell Fyr what only you know. Send only what changed; send nothing when nothing moved. Fyr reads PR state, checks, reviews, conflicts and the pushed head itself; if you send one of these, Fyr replies with the value it reads. abandoned takes the card off the board."
-	ChangeRequestDesc = "Ask the owner. It returns at once; the answer comes later as a [Fyr] line. merge: Fyr merges the head the owner saw; never run gh pr merge. approve on a document or design finishes it."
+	ChangeRequestDesc = "Ask the owner. It returns at once; the answer comes later as a [Fyr] line. merge: ask right after you push; Fyr shows the ask to the owner when CI is green on that head, closes it and tells you when CI fails or GitHub cannot merge, and merges the head the owner saw; never run gh pr merge. approve on a document or design finishes it."
 	ChangeListDesc    = "Fyr's facts, one line per change, open changes only by default, at most 4,000 characters. id gives one change of this thread in full."
 	// UnchangedText is the reply of change_unchanged, a no-op for one
 	// release (V0.101).
@@ -176,10 +176,14 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			if err := canonicalArgs(args); err != nil {
 				return "", err
 			}
+			id := NewID("d_")
 			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindChangeRequest, Thread: th,
-				Args: core.ChangeRequest{ID: NewID("d_"), Change: sArg(a, "change"), Ask: ask, Args: args, Reason: sArg(a, "reason")}})
+				Args: core.ChangeRequest{ID: id, Change: sArg(a, "change"), Ask: ask, Args: args, Reason: sArg(a, "reason")}})
 			if err != nil {
 				return "", err
+			}
+			if s := e.heldReply(th, id); s != "" {
+				return s, nil
 			}
 			c := out.(core.Change)
 			return fmt.Sprintf("Asked the owner to %s %q. The answer arrives in a later message starting with [Fyr]. Continue with other work or end your turn; do not do it another way meanwhile.", ask, c.Title), nil
@@ -376,4 +380,24 @@ func revisionArg(v any) *core.Revision {
 		return nil
 	}
 	return &core.Revision{ID: sArg(m, "id"), Summary: sArg(m, "summary"), URL: sArg(m, "url"), By: core.ByAgent}
+}
+
+// heldReply is the tool's answer when the merge ask id waits for CI
+// (V0.136), or "".
+func (e *Engine) heldReply(th, id string) string {
+	t, ok := e.Thread(th)
+	if !ok {
+		return ""
+	}
+	for _, d := range t.HeldAsks {
+		if d.ID != id {
+			continue
+		}
+		head, _ := d.Effect.Args["head"].(string)
+		if len(head) > 7 {
+			head = head[:7]
+		}
+		return fmt.Sprintf("Recorded. Fyr shows it to the owner when CI is green on %s, and tells you in a [Fyr] message if CI fails or GitHub cannot merge it. Do not ask again or merge another way; continue with other work or end your turn.", head)
+	}
+	return ""
 }

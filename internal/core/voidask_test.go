@@ -64,18 +64,28 @@ func TestMergeAskIsVoidWhenThePRMergesElsewhere(t *testing.T) {
 	}
 }
 
+// V0.136: a failed check closes a merge ask (the agent hears why); an
+// open PR whose checks pass keeps it.
 func TestMergeAskStaysWhileThePRIsOpen(t *testing.T) {
 	now := time.Date(2026, 11, 16, 13, 0, 0, 0, time.UTC)
 	url := "https://github.com/acme/app/pull/88"
 	th := askMerge(t, url, now)
 	later := now.Add(time.Minute)
 	th, _, _, err := Reduce(th, &View{}, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Thread: "t1",
-		Args: PR{URL: url, Repo: "acme/app", Number: 88, State: "OPEN", Checks: ChecksFail, CheckedAt: &later}}, later)
+		Args: PR{URL: url, Repo: "acme/app", Number: 88, State: "OPEN", Checks: ChecksPass, Head: "abc1234def5678", CheckedAt: &later}}, later)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(th.Decisions) != 1 {
-		t.Fatalf("a failed check voided the ask: %+v", th.Decisions)
+		t.Fatalf("an open green PR closed the ask: %+v", th.Decisions)
+	}
+	th, _, _, err = Reduce(th, &View{}, Input{Source: Observer(ObsGitHub), Kind: KindPRObserved, Thread: "t1",
+		Args: PR{URL: url, Repo: "acme/app", Number: 88, State: "OPEN", Checks: ChecksFail, Head: "abc1234def5678", CheckedAt: &later}}, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Decisions) != 0 {
+		t.Fatalf("a failed check kept the merge ask: %+v", th.Decisions)
 	}
 }
 

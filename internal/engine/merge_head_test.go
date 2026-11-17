@@ -45,7 +45,8 @@ func TestMergeBoundToHead(t *testing.T) {
 	if got != headA {
 		t.Fatalf("the ask ran with head %v, want the ask-time head %s", got, headA)
 	}
-	// An ask made before the head moved is refused when the owner approves it.
+	// V0.136: an ask made before the head moved closes when Fyr reads the
+	// new head; the owner has nothing stale to approve.
 	callAs(t, h.e, id, "change_request", map[string]any{"change": c.ID, "ask": "merge", "reason": "again"})
 	th, _ = h.e.Thread(id)
 	d = th.Decisions[len(th.Decisions)-1]
@@ -53,10 +54,9 @@ func TestMergeBoundToHead(t *testing.T) {
 		t.Fatalf("second ask: %+v", d.Effect)
 	}
 	set(headB)
-	h.cmd("thread.answer", id, core.Args{"decisionId": d.ID, "allow": true})
-	eventually(t, "the stale ask was refused", func() bool { return hasEvent(h.events(id), "effect.result", core.HeadMoved) })
-	if h.r.n() != 1 {
-		t.Fatalf("a stale ask ran: %d", h.r.n())
+	eventually(t, "the stale ask was closed", func() bool { return hasEvent(h.events(id), "decision.closed", "the head moved to b2c3d4e") })
+	if r := h.cmd("thread.answer", id, core.Args{"decisionId": d.ID, "allow": true}); r.OK || h.r.n() != 1 {
+		t.Fatalf("a stale ask ran: %+v %d", r, h.r.n())
 	}
 
 	if r := h.cmd("pr.merge", id, core.Args{"method": "squash", "head": headA}); r.OK || !strings.Contains(r.Error, core.HeadMoved) {
