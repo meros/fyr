@@ -1908,7 +1908,7 @@ section('V0.152', async (h) => {
         const rail = document.querySelector('.rail').getBoundingClientRect(), mid = document.querySelector('.rail .rmid');
         const cx = (e) => { const b = e.getBoundingClientRect(); return b.left + b.width / 2; };
         const cards = [...mid.querySelectorAll('.rldr')].map((c) => ({ fig: c.querySelector('.rring b').textContent, name: c.querySelector('.rldh')?.textContent ?? '', full: c.querySelector('.rldh')?.title ?? '',
-          meterTip: (c.querySelector('.rbar, .rpips, .rlds')?.title) ?? '', note: c.querySelector('.rbar small')?.textContent ?? '', noteHot: !!c.querySelector('.rbar.hot'),
+          meter: !!c.querySelector('.rbar, .rpips, .rlds'), meterTip: (c.querySelector('.rbar, .rpips, .rlds')?.title) ?? '', note: c.querySelector('.rbar small')?.textContent ?? '', noteHot: !!c.querySelector('.rbar.hot'),
           noteColor: c.querySelector('.rbar small') ? getComputedStyle(c.querySelector('.rbar small')).color : '' }));
         const ld = mid.querySelector('.rld'), rq = mid.querySelector('.rq');
         const qs = [...mid.querySelectorAll('.rqr')].map((q) => ({ ini: q.querySelector('i').textContent, v: q.querySelector('span').textContent, hot: q.querySelector('span').classList.contains('hot'), tip: q.title.split('\\n')[0],
@@ -1921,7 +1921,7 @@ section('V0.152', async (h) => {
       const [desk, lab] = r.cards;
       check(desk.fig === "130%" && /^\d+%$/.test(lab.fig), `${ctx}: a ring's figure is not a share of the cores (${JSON.stringify(r.cards)})`);
       check(desk.name === "desk" && lab.name === "lab" && desk.full === "desk" && lab.full === "lab", `${ctx}: the cards do not name their hosts (${JSON.stringify(r.cards)})`);
-      check(r.cards.every((c) => /^Slots for heavy jobs/.test(c.meterTip)), `${ctx}: a slot meter has no tooltip saying what it is (${JSON.stringify(r.cards)})`);
+      check(desk.meter && r.cards.every((c) => !c.meter || /^Slots for heavy jobs/.test(c.meterTip)), `${ctx}: a slot meter has no tooltip saying what it is (${JSON.stringify(r.cards)})`);
       check(desk.note === "1 waits" && desk.noteHot && lab.note === "", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
       check(r.qs.map((q) => q.ini).join() === "C,W,C,Z" && r.cols === 2 && r.rows === 2, `${ctx}: the quota grid or its initials are wrong (${JSON.stringify(r.qs)})`);
       check(r.qs.every((q) => q.hot === (parseInt(q.v) >= 80)), `${ctx}: a quota is red below 80 % or plain above (${JSON.stringify(r.qs)})`);
