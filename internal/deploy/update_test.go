@@ -188,6 +188,26 @@ func TestWatcherWaitsForQuiet(t *testing.T) {
 	}
 }
 
+// Polls are hourly, so a release seen between them wakes the watcher when
+// its quiet period ends instead of waiting for the next poll.
+func TestWatcherWakesWhenTheQuietEnds(t *testing.T) {
+	d, _, _ := newDeployer(t, "")
+	d.Releases = fakeReleases(t, relSHA, false)
+	now := time.Now()
+	w := &Watcher{D: d, Now: func() time.Time { return now }, Start: func(string) {}}
+	if w.every() != time.Hour || w.untilDue() != 0 {
+		t.Fatalf("every %v, due %v before any release", w.every(), w.untilDue())
+	}
+	w.Step(context.Background())
+	if got := w.untilDue(); got != 10*time.Minute+time.Second {
+		t.Fatalf("due in %v, want the quiet period", got)
+	}
+	now = now.Add(11 * time.Minute)
+	if got := w.untilDue(); got != 0 {
+		t.Fatalf("due in %v after the quiet period", got)
+	}
+}
+
 // #159: while a local build runs, a release that does not contain it is
 // not installed.
 func TestWatcherLeavesALocalBuild(t *testing.T) {

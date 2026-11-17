@@ -18,7 +18,8 @@ import (
 // Watcher polls deployable and starts the release install.
 type Watcher struct {
 	D *Deployer
-	// Every is the poll interval; 0 is a minute.
+	// Every is the poll interval; 0 is DefaultEvery. A release seen between
+	// polls is installed when its quiet period ends, not at the next poll.
 	Every time.Duration
 	// Quiet is how long deployable must stay put; nil or 0 is 10 minutes.
 	Quiet func() time.Duration
@@ -56,24 +57,61 @@ func (w *Watcher) Kick() {
 	}
 }
 
+// DefaultEvery is how often a host reads deployable: hourly, which is
+// GitHub's API at a rate no one notices and a release a host or two hours
+// old at most.
+const DefaultEvery = time.Hour
+
+func (w *Watcher) every() time.Duration {
+	if w.Every > 0 {
+		return w.Every
+	}
+	return DefaultEvery
+}
+
 // Run polls until ctx ends.
 func (w *Watcher) Run(ctx context.Context) {
-	every := w.Every
-	if every == 0 {
-		every = time.Minute
-	}
 	w.kick = make(chan struct{}, 1)
-	t := time.NewTicker(every)
-	defer t.Stop()
 	for {
 		w.Step(ctx)
+		next := w.every()
+		if d := w.untilDue(); d > 0 && d < next {
+			next = d
+		}
+		t := time.NewTimer(next)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return
 		case <-t.C:
 		case <-w.kick:
+			t.Stop()
 		}
 	}
+}
+
+// untilDue is how long until the waiting release's quiet period ends (and
+// a second more); 0 when none waits or it has ended.
+func (w *Watcher) untilDue() time.Duration {
+	if w.D == nil || w.D.DB == nil {
+		return 0
+	}
+	raw, _ := w.D.DB.GetKV(wantedKey)
+	var wt wanted
+	if raw == "" || json.Unmarshal([]byte(raw), &wt) != nil || wt.SHA == "" {
+		return 0
+	}
+	if d := wt.Seen.Add(w.quiet()).Sub(w.now()); d > 0 {
+		return d + time.Second
+	}
+	return 0
+}
+
+func (w *Watcher) quiet() time.Duration {
+	if w.Quiet != nil && w.Quiet() > 0 {
+		return w.Quiet()
+	}
+	return 10 * time.Minute
 }
 
 func (w *Watcher) now() time.Time {
@@ -93,7 +131,7 @@ func (w *Watcher) Step(ctx context.Context) {
 	sha, err := d.Releases.Deployable(rctx)
 	cancel()
 	if err != nil {
-		if w.errs++; w.errs == 1 || w.errs%60 == 0 { // once, then hourly
+		if w.errs++; w.errs == 1 || w.errs%max(1, int(time.Hour/w.every())) == 0 { // once, then hourly
 			log.Printf("update: %v", err)
 		}
 		return
@@ -118,11 +156,7 @@ func (w *Watcher) Step(ctx context.Context) {
 	if raw == "" || json.Unmarshal([]byte(raw), &wt) != nil || wt.SHA == "" {
 		return
 	}
-	quiet := 10 * time.Minute
-	if w.Quiet != nil && w.Quiet() > 0 {
-		quiet = w.Quiet()
-	}
-	if w.now().Sub(wt.Seen) < quiet {
+	if w.now().Sub(wt.Seen) < w.quiet() {
 		return
 	}
 	if w.On != nil && !w.On() {
