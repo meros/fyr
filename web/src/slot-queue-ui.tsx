@@ -1,4 +1,4 @@
-// SPEC V0.137: the section "Waiting for a slot", one component for the desktop list and the phone inbox. Each front
+// SPEC V0.137, V0.163: the section "Waiting to run" (was "Waiting for a slot"), one component for the desktop list and the phone inbox. Each front
 // draws its own row (it passes `row`); this draws the header, one part per host with a queue, the priority waits
 // pinned on top, the place of each thread ("#2") and the reorder control of V0.119 (4).
 
@@ -34,7 +34,7 @@ interface Props {
   row(t: Thread, a: SlotRowArgs): ComponentChildren;
 }
 
-const HINT = "Heavy jobs (test suites, builds, e2e runs) take a slot; the first in the queue gets the next free one";
+const HINT = "Heavy jobs (test suites, builds, e2e runs) run when their share of the host fits (CPU and memory); the first in the queue starts next";
 
 export function SlotQueueSection(p: Props) {
   // The section shows only while a queue has anyone in it (V0.137 (1)); it has no collapse: it is short and passing.
@@ -50,7 +50,7 @@ export function SlotQueueSection(p: Props) {
     return (
       <section id="m-sec-slots" class="sq">
         <div class="m-sec hasbtn">
-          Waiting for a slot
+          Waiting to run
           <span class="n">{count(n)}</span>
           {movable && (
             // Phone: touch has no drag handle that fits beside a swipe row and no hover, so the order changes in a
@@ -66,7 +66,7 @@ export function SlotQueueSection(p: Props) {
   return (
     <div id="sec-slots" class="sq">
       <div class="sec" title={HINT}>
-        Waiting for a slot
+        Waiting to run
         <span class="n">{count(n)}</span>
         {movable && <span class="h ell">drag to reorder</span>}
       </div>
@@ -96,7 +96,7 @@ function Part({ part, shown, phone, reordering, row }: { part: QueuePart; shown:
   };
   const ro = useReorder(ids, (f, t) => void send(f, t));
   // Decision 0029 S2: why the next job of this host waits, on both fronts (a row's line is cut at its end).
-  const why = useLoad().find((h) => h.host === part.host)?.slots?.why;
+  const why = useLoad().find((h) => h.host === part.host)?.slots?.why; // V0.163: in percent of the host
   let i = 0;
   return (
     <div class="sqh" data-host={part.host}>

@@ -46,9 +46,16 @@ type Holder struct {
 	Kind     string    `json:"kind"`
 	Since    time.Time `json:"since"`
 	Priority bool      `json:"priority,omitempty"`
-	// Cost is a holder's share of the budget in a snapshot (decision 0029
-	// S2); 0 without Pool.Cost.
-	Cost float64 `json:"cost,omitempty"`
+	// V0.163, in a snapshot: the job's need (learned or live: cores and
+	// bytes) as percentages of the host, CPU and memory, and Pct the larger
+	// of the two; for a waiter, what it will need. Need is nil without
+	// Pool.Cost. Cost is the old one-number form (Pct of N), kept one
+	// release for older fronts.
+	Need   *Need   `json:"need,omitempty"`
+	CPUPct float64 `json:"cpuPct,omitempty"`
+	MemPct float64 `json:"memPct,omitempty"`
+	Pct    float64 `json:"pct,omitempty"`
+	Cost   float64 `json:"cost,omitempty"`
 
 	ready chan struct{} // a Wait's: closed on the grant
 }
@@ -65,6 +72,22 @@ type Snapshot struct {
 	// Decision 0029 S4: the budget now (nil while it is N) and why.
 	Budget    *float64 `json:"budget,omitempty"`
 	BudgetWhy string   `json:"budgetWhy,omitempty"`
+	// V0.163, in percent of what the host gives its agents, per resource:
+	// the jobs in use, the budget (AIMD moves it), and what is free in it.
+	// UsedPct is the tighter resource's use of its budget (the rail's bar)
+	// and Tight names it; Binding names what holds the head back; NeedPct
+	// is the head's larger need. Without measures (no Pool.Host) only
+	// UsedPct, a share of the fixed count, is set.
+	CPUPct       *float64 `json:"cpuPct,omitempty"`
+	MemPct       *float64 `json:"memPct,omitempty"`
+	CPUBudgetPct *float64 `json:"cpuBudgetPct,omitempty"`
+	MemBudgetPct *float64 `json:"memBudgetPct,omitempty"`
+	CPUFreePct   *float64 `json:"cpuFreePct,omitempty"`
+	MemFreePct   *float64 `json:"memFreePct,omitempty"`
+	UsedPct      *float64 `json:"usedPct,omitempty"`
+	Tight        string   `json:"tight,omitempty"`
+	Binding      string   `json:"binding,omitempty"`
+	NeedPct      *float64 `json:"needPct,omitempty"`
 }
 
 // Pool is one host's slots.
@@ -76,9 +99,13 @@ type Pool struct {
 	// Admit decides whether head may start beside held (decision 0029 S2),
 	// and why not; nil is the count rule. It runs under the pool's lock and
 	// must not call the pool.
-	Admit func(head Holder, held []Holder) (bool, string)
-	// Cost is a holder's share of the budget for the snapshot; optional.
-	Cost func(h Holder) float64
+	// It also names the resource that binds (V0.163: ResCPU or ResMem).
+	Admit func(head Holder, held []Holder) (bool, string, string)
+	// Cost is a holder's need (learned, or live while it runs) for the
+	// snapshot; optional. Host is the host's measures and capacity (V0.163:
+	// the percentages); optional. Both run under the pool's lock.
+	Cost func(h Holder) Need
+	Host func() Signals
 	// Backfill decides whether c, behind a head that does not fit, may
 	// start now without delaying it (decision 0029 S3, EASY); nil never.
 	// Under the pool's lock, like Admit.
@@ -91,12 +118,15 @@ type Pool struct {
 	held []Holder
 	wait []Holder
 	why  string
-	// Decision 0029 S4: the budget (0 is N), why, and the last grant.
-	budget    float64
+	// binding is the resource that holds the head back (V0.163).
+	binding string
+	// Decision 0029 S4, V0.163 per resource: the budget factors (zero bits
+	// is Full), why, and the last grant. The bits are atomic, since Admit
+	// reads Budget under p.mu.
 	budgetWhy string
 	lastGrant time.Time
-	// budgetBits mirrors budget for Budget, which Admit calls under p.mu.
-	budgetBits atomic.Uint64
+	cpuBits   atomic.Uint64
+	memBits   atomic.Uint64
 	// passes: the head (owner and since) and how often backfill passed it.
 	passHead  string
 	passSince time.Time
@@ -358,37 +388,50 @@ func (p *Pool) admitLocked(head Holder) bool {
 		p.why = ""
 		return ok
 	}
-	ok, why := p.Admit(head, slices.Clone(p.held))
-	p.why = why
+	ok, why, binding := p.Admit(head, slices.Clone(p.held))
+	p.why, p.binding = why, binding
 	if ok {
-		p.why = ""
+		p.why, p.binding = "", ""
 	}
 	return ok
 }
 
-// Budget is the pool's capacity in cost units: N, or what S4's controller
-// set. Admit calls it under the pool's lock, so it reads a value the
-// controller stores atomically enough: a float set under p.mu.
-func (p *Pool) Budget() float64 {
-	if b := p.budgetLoad(); b > 0 {
-		return b
+// Budget is the budget per resource as a share of the host: Full, or what
+// S4's controller set (V0.163). It takes no lock: Admit calls it under p.mu.
+func (p *Pool) Budget() Factors {
+	f := Full
+	if b := p.cpuBits.Load(); b != 0 {
+		f.CPU = math.Float64frombits(b)
 	}
-	return float64(p.n)
+	if b := p.memBits.Load(); b != 0 {
+		f.Mem = math.Float64frombits(b)
+	}
+	return f
 }
+
+// N is the host's `slots` setting: the fixed count without measures, and
+// what the prior and the AIMD floor are made of.
+func (p *Pool) N() int { return p.n }
 
 // SetBudget sets the budget and why (decision 0029 S4), and grants the
 // queue what now fits.
-func (p *Pool) SetBudget(b float64, why string) {
+func (p *Pool) SetBudget(f Factors, why string) {
 	if p.Off() {
 		return
 	}
 	p.mu.Lock()
-	p.budget, p.budgetWhy = b, why
-	p.budgetBits.Store(math.Float64bits(b))
+	p.budgetWhy = why
+	p.cpuBits.Store(math.Float64bits(f.CPU))
+	p.memBits.Store(math.Float64bits(f.Mem))
 	p.fillLocked()
 }
 
-func (p *Pool) budgetLoad() float64 { return math.Float64frombits(p.budgetBits.Load()) }
+// Binding is the resource that holds the queue's head back, "" when none.
+func (p *Pool) Binding() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.binding
+}
 
 // LastGrant is when the pool last admitted a job.
 func (p *Pool) LastGrant() time.Time {
@@ -438,18 +481,68 @@ func (p *Pool) snapshotLocked() Snapshot {
 	if len(s.Waiting) > 0 {
 		s.Why = p.why
 	}
-	if p.budget > 0 && p.budget != float64(p.n) {
-		b := p.budget
+	if len(s.Waiting) > 0 {
+		s.Binding = p.binding
+	}
+	n := float64(p.n)
+	f := p.Budget()
+	if f != Full {
+		b := max(f.CPU, f.Mem) * n // the old one-number budget, for older fronts
 		s.Budget, s.BudgetWhy = &b, p.budgetWhy
 	}
-	if p.Cost != nil {
-		used := 0.0
+	pct := func(v float64) *float64 { return &v }
+	var host Signals
+	if p.Host != nil {
+		host = p.Host()
+	}
+	measured := p.Cost != nil && host.CPU > 0 && host.Memory > 0
+	if !measured {
+		// Without measures: the fixed count, each job 1/N.
 		for i := range s.Held {
-			s.Held[i].Cost = p.Cost(s.Held[i])
-			used += s.Held[i].Cost
+			s.Held[i].Pct = Pct(1 / n)
 		}
-		used = float64(int(used*100+0.5)) / 100
-		s.Used = &used
+		for i := range s.Waiting {
+			s.Waiting[i].Pct = Pct(1 / n)
+		}
+		s.UsedPct = pct(Pct(float64(len(s.Held)) / n))
+		if len(s.Waiting) > 0 {
+			s.NeedPct = pct(s.Waiting[0].Pct)
+		}
+		pub := s
+		pub.Held, pub.Waiting = slices.Clone(s.Held), slices.Clone(s.Waiting)
+		p.pub.Store(&pub)
+		return s
+	}
+	fill := func(h *Holder) Need {
+		need := p.Cost(*h)
+		c, m := need.Shares(host)
+		h.Need, h.CPUPct, h.MemPct = &need, Pct(c), Pct(m)
+		h.Pct = max(h.CPUPct, h.MemPct)
+		h.Cost = float64(int(max(c, m)*n*100+0.5)) / 100
+		return need
+	}
+	var used Need
+	old := 0.0
+	for i := range s.Held {
+		used = used.Plus(fill(&s.Held[i]))
+		old += s.Held[i].Cost
+	}
+	for i := range s.Waiting {
+		fill(&s.Waiting[i])
+	}
+	s.Used = pct(float64(int(old*100+0.5)) / 100)
+	uc, um := used.Shares(host)
+	s.CPUPct, s.MemPct = pct(Pct(uc)), pct(Pct(um))
+	s.CPUBudgetPct, s.MemBudgetPct = pct(Pct(f.CPU)), pct(Pct(f.Mem))
+	s.CPUFreePct, s.MemFreePct = pct(max(0, Pct(f.CPU-uc))), pct(max(0, Pct(f.Mem-um)))
+	rc, rm := uc/max(f.CPU, 1e-9), um/max(f.Mem, 1e-9)
+	if rm > rc {
+		s.UsedPct, s.Tight = pct(Pct(rm)), ResMem
+	} else {
+		s.UsedPct, s.Tight = pct(Pct(rc)), ResCPU
+	}
+	if len(s.Waiting) > 0 {
+		s.NeedPct = pct(s.Waiting[0].Pct)
 	}
 	pub := s
 	pub.Held, pub.Waiting = slices.Clone(s.Held), slices.Clone(s.Waiting)

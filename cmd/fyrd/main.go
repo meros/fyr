@@ -278,53 +278,55 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// V0.153: on a thrashing host the agents wait; Fyr kills no CLI for
 	// being slow and restarts none into the same thrash.
 	mgr.SetPressure(func() (bool, string) { return slots.Thrashing(sampler.Signals(), policy) })
-	// Decision 0029 S3 (#187): a job's cost is its class's learned cost
-	// (the prior 1.0 until learned), a holder's at least what it uses now.
-	predict := func(h slots.Holder) (cost, wall float64) {
+	// Decision 0029 S3 (#187), V0.163: a job needs CPU and memory, apart:
+	// its class's learned demand (cores) and peak (bytes), the prior (1/N of
+	// the host) until learned; a holder at least what it uses now.
+	predict := func(h slots.Holder) (need slots.Need, wall float64) {
 		sig := sampler.Signals()
 		l, ok := jobs.Learned(jobs.ClassOf(h.Owner, h.Kind))
 		if !ok {
-			return 1, 0
+			return slots.Prior(sig, n), 0
 		}
-		return slots.CostOf(l.Demand, l.Peak, l.Runs, sig.CPU, sig.Memory, pool.Budget()), l.WallP90()
+		return slots.NeedOf(l.Demand, l.Peak, l.Runs, sig, n), l.WallP90()
 	}
-	live := func(h slots.Holder) (float64, bool) {
+	live := func(h slots.Holder) (slots.Need, bool) {
 		cores, grew, ok := jobs.LiveUse(h.Owner)
+		return slots.Need{CPU: cores, Mem: grew}, ok
+	}
+	pool.Host = sampler.Signals
+	pool.Cost = func(h slots.Holder) slots.Need {
 		sig := sampler.Signals()
-		if !ok || sig.CPU == 0 {
-			return 0, false
-		}
-		return slots.CostOf(cores, grew, slots.LearnRuns, sig.CPU, sig.Memory, pool.Budget()), true
-	}
-	pool.Cost = func(h slots.Holder) float64 {
 		if h.Priority {
-			return 1
+			return slots.Prior(sig, n)
 		}
+		l, isLive := live(h)
 		if at, ok := jobs.Active(h.Owner); ok && time.Since(at) >= slots.IdleAfter {
-			return slots.IdleCost
+			// An idle hold: a little CPU, and the memory it really holds.
+			return slots.Need{CPU: slots.IdleShare * sig.CPU, Mem: l.Mem}
 		}
-		c, _ := predict(h)
-		if l, ok := live(h); ok {
-			c = max(c, l)
+		need, _ := predict(h)
+		if isLive {
+			need = need.Max(l)
 		}
-		return c
+		return need
 	}
-	heldCosts := func(held []slots.Holder) []float64 {
-		costs := make([]float64, len(held))
+	heldNeeds := func(held []slots.Holder) []slots.Need {
+		out := make([]slots.Need, len(held))
 		for i, h := range held {
-			costs[i] = pool.Cost(h)
+			out[i] = pool.Cost(h)
 		}
-		return costs
+		return out
 	}
-	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string) {
-		c, _ := predict(head)
-		return slots.Decide(policy, sampler.Signals(), pool.Budget(), heldCosts(held), c)
+	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
+		need, _ := predict(head)
+		return slots.Decide(policy, sampler.Signals(), pool.Budget(), n, heldNeeds(held), need)
 	}
 	// EASY backfill: c may pass the head when it fits now and is cheap, or
 	// ends (its class's p90) before the earliest running job is expected to.
 	pool.Backfill = func(head, c slots.Holder, held []slots.Holder) bool {
-		cc, wall := predict(c)
-		if ok, _ := slots.Decide(policy, sampler.Signals(), pool.Budget(), heldCosts(held), cc); !ok {
+		need, wall := predict(c)
+		sig := sampler.Signals()
+		if ok, _, _ := slots.Decide(policy, sig, pool.Budget(), n, heldNeeds(held), need); !ok {
 			return false
 		}
 		ends := make([]time.Time, len(held))
@@ -333,9 +335,10 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 				ends[i] = h.Since.Add(time.Duration(w * float64(time.Second)))
 			}
 		}
-		return slots.EASY(time.Now(), cc, wall, ends)
+		return slots.EASY(time.Now(), slots.Cheap(need, sig), wall, ends)
 	}
 	eng.SlotSignals, eng.SlotGrowth, eng.SlotPolicy = sampler.Signals, jobs.Growth, policy
+	eng.HostName = hostName // V0.163: the heavy-job answers name this host
 	eng.SlotJob = func(thread, c string) {
 		class, text := heavyCmds.Match(c)
 		jobs.Saw(thread, class)
@@ -346,14 +349,20 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		eng.SlotAIMD = &slots.AIMD{N: float64(n)} // decision 0029 S4: the budget adapts
 	}
 	eng.JobReset = jobs.Reset
+	// V0.163: heavier than predicted, in either resource, by more than an
+	// eighth of the host; told in percent of the host.
 	eng.SlotOver = func(owner string) (string, float64, float64, bool) {
 		h, ok := pool.Holding(owner)
 		if !ok {
 			return "", 0, 0, false
 		}
+		sig := sampler.Signals()
 		p, _ := predict(h)
 		l, ok := live(h)
-		return jobs.ClassOf(owner, h.Kind), l, p, ok && l > p+0.25
+		pc, pm := p.Shares(sig)
+		lc, lm := l.Shares(sig)
+		over := ok && (lc > pc+slots.CheapShare || lm > pm+slots.CheapShare)
+		return jobs.ClassOf(owner, h.Kind), slots.Pct(max(lc, lm)), slots.Pct(max(pc, pm)), over
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

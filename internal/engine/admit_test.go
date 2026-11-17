@@ -14,28 +14,28 @@ func TestS2QueuedWithAReasonAndGrantedAtTheTick(t *testing.T) {
 	p := slots.New(2)
 	p.Now = e.Now
 	slow := 2.4
-	sig := slots.Signals{Provider: "cgroups", Slowdown: &slow}
-	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string) {
-		c := make([]float64, len(held))
+	sig := slots.Signals{Provider: "cgroups", Slowdown: &slow, CPU: 4, Memory: 8 << 30}
+	p.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
+		c := make([]slots.Need, len(held))
 		for i := range c {
-			c[i] = 1
+			c[i] = slots.Need{CPU: 1, Mem: 1 << 30}
 		}
-		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), c, 1)
+		return slots.Decide(slots.DefaultPolicy, sig, p.Budget(), 2, c, slots.Need{CPU: 1, Mem: 1 << 30})
 	}
 	e.UseSlots(p)
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)
 	running(e, b)
-	if out, _ := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"}); !strings.Contains(out, "You hold") {
+	if out, _ := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"}); !strings.Contains(out, "Admitted:") {
 		t.Fatalf("a: one job always runs: %q", out)
 	}
 	out, _ := callAs(t, e, b, "slot_acquire", map[string]any{"kind": "test"})
-	if !strings.Contains(out, "Queued for a test slot: 0 ahead. Waiting: CPU: new jobs run 2.4× slower.") {
+	if !strings.Contains(out, "(0 ahead). Waiting: CPU: new jobs run 2.4× slower.") {
 		t.Fatalf("b: %q", out)
 	}
 	slow = 1.1
 	e.Tick()
-	if _, ok := e.Slots.Holding(b); !ok || !told(e, b, "slot is yours now") {
+	if _, ok := e.Slots.Holding(b); !ok || !told(e, b, "job is admitted now") {
 		t.Fatal("b was not granted at the tick once the host was calm")
 	}
 }

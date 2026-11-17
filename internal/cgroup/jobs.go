@@ -67,8 +67,11 @@ type JobClass struct {
 	Peak   uint64    `json:"peak"`
 	Wall   float64   `json:"wall"`
 	At     time.Time `json:"at"`
-	// Decision 0029 S3: the class's cost on this host now and how many
-	// runs it is learned from; 0 when not learned.
+	// Decision 0029 S3, V0.163: the class's need on this host now as
+	// percentages (CPU, memory) and how many runs it is learned from; 0
+	// when not learned. Cost is the old one-number form for one release.
+	CPUPct  float64 `json:"cpuPct,omitempty"`
+	MemPct  float64 `json:"memPct,omitempty"`
 	Cost    float64 `json:"cost,omitempty"`
 	Learned int     `json:"learned,omitempty"`
 }

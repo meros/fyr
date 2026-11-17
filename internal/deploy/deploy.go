@@ -351,11 +351,11 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 		// V0.86: the tests hold a slot for heavy jobs, ahead of every agent.
 		release := func() {}
 		if d.Slot != nil {
-			d.report(prog, "test", "waiting for a test slot", nil)
+			d.report(prog, "test", "waiting for room to run the tests", nil)
 			r, err := d.Slot(ctx)
 			if err != nil {
 				dropBins()
-				return failed(firstErr(fail(fmt.Errorf("no test slot, nothing was switched: %v", err))))
+				return failed(firstErr(fail(fmt.Errorf("the tests were not admitted, nothing was switched: %v", err))))
 			}
 			release = r
 		}

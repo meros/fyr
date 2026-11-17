@@ -20,7 +20,7 @@ func TestS3SlotAcquireNamesTheJob(t *testing.T) {
 	running(e, a)
 	var got [2]string
 	e.SlotJob = func(th, cmd string) { got = [2]string{th, cmd} }
-	if out, isErr := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test", "command": "make test"}); isErr || !strings.Contains(out, "You hold") {
+	if out, isErr := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test", "command": "make test"}); isErr || !strings.Contains(out, "Admitted:") {
 		t.Fatalf("%v %q", isErr, out)
 	}
 	if got != [2]string{a, "make test"} {
@@ -36,9 +36,9 @@ func TestS3HeavierThanPredictedIsToldOnce(t *testing.T) {
 	a := bareThread(t, e)
 	running(e, a)
 	p.Acquire(a, slots.Test)
-	e.SlotOver = func(owner string) (string, float64, float64, bool) { return "fyr: make test", 1.6, 1.0, owner == a }
+	e.SlotOver = func(owner string) (string, float64, float64, bool) { return "fyr: make test", 80, 50, owner == a }
 	e.Tick()
-	if !told(e, a, "Your job (fyr: make test) uses 1.6 of the slot budget; Fyr expected 1.0") {
+	if !told(e, a, "Your job (fyr: make test) uses ≈ 80 % of this host; Fyr expected ≈ 50 %") {
 		th, _ := e.Thread(a)
 		t.Fatalf("%+v", th.Feed.Queue)
 	}

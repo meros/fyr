@@ -44,15 +44,15 @@ func TestV147LoadSlotsAndTicksDoNotDeadlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	sampler := &cgroup.Sampler{Proc: proc, Cores: 4, Slots: pool, Jobs: jobs}
-	pool.Cost = func(h slots.Holder) float64 {
+	pool.Cost = func(h slots.Holder) slots.Need {
 		if _, ok := jobs.Active(h.Owner); ok {
-			return 1
+			return slots.Need{CPU: 1}
 		}
-		return 1
+		return slots.Need{CPU: 1}
 	}
-	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string) {
+	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
 		_ = sampler.Signals()
-		return len(held) < 1, ""
+		return len(held) < 1, "", ""
 	}
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a) // a running holder: sweepSlots asks SlotActive under e.mu
