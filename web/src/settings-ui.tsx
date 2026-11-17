@@ -75,7 +75,7 @@ export interface ProjectActions {
   update(id: string, patch: ProjectPatch): Promise<string | null>;
   setFolder(id: string, path: string): Promise<string | null>;
   delete(id: string): Promise<string | null>;
-  /** New project without a thread; the error, or null. V0.131: on `host` (several hosts) */
+  /** New project without a thread; the error, or null. V0.132: on `host` (several hosts) */
   create(name: string, folder: string, host?: string): Promise<string | null>;
   /** V0.121: the owner's project order (front.projectOrder); the error, or null */
   order(ids: string[]): Promise<string | null>;
@@ -542,7 +542,11 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi): Pa
           end: <HostPill h={h} />,
           body: <HostPage key={h.name} h={h} self={self} api={p.api} now={p.now} />,
         };
-      return { title: "Hosts", body: <HostsPage rows={rows} self={self} now={p.now} go={go} /> };
+      const runOrder = async (names: string[]) => {
+        const r = await p.api.command("front.hostOrder", undefined, { names }); // V0.132
+        return r.ok ? null : (r.error ?? "That did not work");
+      };
+      return { title: "Hosts", end: <HostsReorderButton ui={ui} n={rows.length} />, body: <HostsPage rows={rows} self={self} now={p.now} go={go} ui={ui} run={runOrder} /> };
     }
     case "device":
       return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} user={p.user ?? ""} /> };
@@ -1371,12 +1375,12 @@ function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
 /** One host in Settings → Hosts, the same row on the desktop and the phone (the phone's 56 px and larger type come from
  *  the one `.set.phone` rule set, for touch): the state mark, the name, one line (state, route, short id); a changed id
  *  replaces the line and is the only red row. The row opens the host's page, where every action is. */
-function HostRow({ h, self, now, go }: { h: HostInfo; self: string; now: number; go(r: PageRef): void }) {
+function HostRow({ h, self, now, go, still }: { h: HostInfo; self: string; now: number; go(r: PageRef): void; /** the phone's Reorder mode: the row does not open */ still?: boolean }) {
   const line = hostLine(h, self, now);
   return (
     <Row
       class="host"
-      onClick={() => go({ page: "hosts", sub: h.name })}
+      onClick={still ? undefined : () => go({ page: "hosts", sub: h.name })}
       lead={<span class={`hdot${h.idWas ? " warn" : h.online ? "" : " off"}`} aria-hidden="true" />}
       title={
         <>
@@ -1404,23 +1408,81 @@ const HOSTS_FOOT = (
   </>
 );
 
-/** The Hosts page: this install first, then the front's hosts in its order. No buttons: today a host gets on the list
+/** The Hosts page: the hosts in the owner's order (V0.132). No buttons: today a host gets on the list
  *  by discovery or by the config, and the foot says so. */
-function HostsPage({ rows, self, now, go }: { rows: HostInfo[]; self: string; now: number; go(r: PageRef): void }) {
+/** V0.132: the owner orders the hosts with the one reorder control (V0.119 (4)): a grip on the desktop, a Reorder mode
+ *  with ↑ and ↓ on the phone. The first is the default host. Each move saves at once (front.hostOrder, kept on every
+ *  host) and shows on this device first. */
+function HostsPage({ rows, self, now, go, ui, run }: { rows: HostInfo[]; self: string; now: number; go(r: PageRef): void; ui: PageUi; run(names: string[]): Promise<string | null> }) {
+  const env = useSet();
+  const [pending, setPending] = useState<string[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const names = rows.map((h) => h.name);
+  useEffect(() => {
+    if (pending && pending.join("\n") === names.join("\n")) setPending(null); // the hosts event caught up
+  }, [names.join("\n")]);
+  const shown = pending ? [...rows].sort((a, b) => pending.indexOf(a.name) - pending.indexOf(b.name)) : rows;
+  const ids = shown.map((h) => h.name);
+  const reorder = async (from: number, to: number) => {
+    const next = move(ids, from, to);
+    setPending(next);
+    const e = await run(next);
+    setErr(e);
+    if (e) setPending(null);
+    else env.saved();
+  };
+  const ro = useReorder(ids, (f, t) => void reorder(f, t));
+  const can = rows.length > 1 && !env.readOnly;
+  const mode = env.phone && ui.reordering && can;
   return (
     <Group
       label="Hosts"
       foot={
         <>
           {rows.length <= 1 && "This is your only Fyr install. "}
+          {rows.length > 1 && "The first host is the default for New project, New thread and the folder picker. This order is kept on your hosts, so every device shows it. "}
           {HOSTS_FOOT}
         </>
       }
     >
-      {rows.map((h) => (
-        <HostRow key={h.name} h={h} self={self} now={now} go={go} />
-      ))}
+      {err && (
+        <div class="seterr" role="alert">
+          {err}
+        </div>
+      )}
+      {shown.map((h, i) => {
+        if (mode)
+          return (
+            <div key={h.name} class="hreo mvrow" data-sub={h.name}>
+              <HostRow h={h} self={self} now={now} go={go} still />
+              <MoveButtons name={h.name} i={i} n={ids.length} onMove={(f, t) => void reorder(f, t)} />
+            </div>
+          );
+        if (!can || env.phone) return <HostRow key={h.name} h={h} self={self} now={now} go={go} />;
+        const r = ro.row(i);
+        return (
+          <div key={h.name} class={`hreo g ${r.class as string}`} ref={r.ref as (el: HTMLElement | null) => void}>
+            <Grip {...ro.grip(i, h.name)} />
+            <HostRow h={h} self={self} now={now} go={go} />
+          </div>
+        );
+      })}
     </Group>
+  );
+}
+
+/** The phone's Reorder and Done for the Hosts page (touch has no hover for a grip, and a drag fights the scroll). */
+function HostsReorderButton({ ui, n }: { ui: PageUi; n: number }) {
+  const env = useSet();
+  if (!env.phone || n < 2 || env.readOnly) return null;
+  return ui.reordering ? (
+    <button type="button" class="btn p" onClick={() => ui.setReordering(false)}>
+      Done
+    </button>
+  ) : (
+    <button type="button" class="btn reo" onClick={() => ui.setReordering(true)}>
+      Reorder
+    </button>
   );
 }
 

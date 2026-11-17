@@ -18,7 +18,7 @@ export interface PickOptions {
   title?: string;
   /** rows above Recent, e.g. the project's other folders */
   first?: { title: string; dirs: FsDir[] };
-  /** V0.131: the host whose folders it browses; missing: the front's first host (one host) */
+  /** V0.132: the host whose folders it browses; missing: the front's first host (one host) */
   host?: string;
 }
 

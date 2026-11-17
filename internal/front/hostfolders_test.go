@@ -24,7 +24,7 @@ func postFS(t *testing.T, url, body string) (int, string) {
 	return r.StatusCode, string(b)
 }
 
-// SPEC V0.131: from host a's front the owner browses host b's folders, makes
+// SPEC V0.132: from host a's front the owner browses host b's folders, makes
 // a folder and a project there, and starts threads on b: in that project, and
 // in a folder of b with no project. Each lands on b; a has none of it.
 func TestFrontCreatesOnTheChosenHost(t *testing.T) {
@@ -89,7 +89,7 @@ func TestFrontCreatesOnTheChosenHost(t *testing.T) {
 	}
 }
 
-// SPEC V0.131: while b is offline its folders say so; nothing falls back to a.
+// SPEC V0.132: while b is offline its folders say so; nothing falls back to a.
 func TestFrontFoldersOfAnOfflineHost(t *testing.T) {
 	a, b := newSettingsHost(t, "a"), newSettingsHost(t, "b")
 	fs := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})

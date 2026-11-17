@@ -41,7 +41,7 @@ export interface NewThreadFormOptions extends FormCtx {
   clockOffset?: number;
   /** thread.create; resolves to the host's error text, or null */
   onCreate(a: NewThreadArgs): Promise<string | null>;
-  /** V0.30, V0.63: project.create; V0.131: on the form's host */
+  /** V0.30, V0.63: project.create; V0.132: on the form's host */
   onNewProject(name: string, folder: string, host?: string): Promise<{ error: string | null; id?: string }>;
 }
 
@@ -89,7 +89,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const submit = async () => {
     if (busy) return;
     if (!plan.ok) return setErr(plan.reason === "Nothing to send" ? "Write a prompt or attach a file." : plan.reason);
-    // V0.131: nothing is made on an offline host, and nothing falls back to another.
+    // V0.132: nothing is made on an offline host, and nothing falls back to another.
     const down = hostOfflineNote(formHost(f, ctx), o.hosts, Date.now() + off);
     if (down) return setErr(down);
     setBusy(true);
@@ -139,7 +139,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     setErr,
     busy,
     choose: (pr: Project | null) => setF((x) => chooseProject(x, pr, ctxRef.current)),
-    /** V0.131: the host the thread starts on, and the project that holds it ("" when the owner picks it) */
+    /** V0.132: the host the thread starts on, and the project that holds it ("" when the owner picks it) */
     host: formHost(f, ctx) ?? "",
     hostLock: hostLock(f, ctx),
     chooseHost: (h: string) => setF((x) => chooseHost(x, h, ctxRef.current, last)),

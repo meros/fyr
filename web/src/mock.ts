@@ -1135,7 +1135,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         profile: String(args.profile ?? "claude"),
         model: String(args.model ?? "claude-opus-5-5"),
         liveView: args.view === true,
-        // V0.131: the thread runs on its project's host, else the one the owner picked.
+        // V0.132: the thread runs on its project's host, else the one the owner picked.
         ...((pr?.host ?? args.host) ? { host: String(pr?.host ?? args.host) } : {}),
       });
       threads.set(id, nt);
@@ -1207,7 +1207,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const folder = args.folder ? expand(String(args.folder)) : undefined;
       const ft = args.threadId ? threads.get(String(args.threadId)) : undefined;
       if (args.threadId && !ft) return { ok: false, error: `no thread ${args.threadId}` };
-      const p = putProject({ id: `p_new${nextId++}`, name, folder, threads: ft ? 1 : 0, lastUsed: new Date(clock()).toISOString(), ...(typeof args.host === "string" && args.host ? { host: args.host } : {}) }); // V0.131
+      const p = putProject({ id: `p_new${nextId++}`, name, folder, threads: ft ? 1 : 0, lastUsed: new Date(clock()).toISOString(), ...(typeof args.host === "string" && args.host ? { host: args.host } : {}) }); // V0.132
       if (ft) put(ft, { projectId: p.id, project: p.name });
       return { ok: true, result: { id: p.id } };
     }
@@ -1663,13 +1663,25 @@ let mockLabTrusted = false;
 export function trustMockLab() {
   mockLabTrusted = true;
 }
+// V0.132: the owner's host order (&hostOrder=lab,desk sets one), as the front sends hosts[] in it.
+let mockHostOrder: string[] | null = typeof location !== "undefined" ? (new URLSearchParams(location.search).get("hostOrder")?.split(",").filter(Boolean) ?? null) : null;
+export function setMockHostOrder(names: string[]) {
+  mockHostOrder = names;
+}
 export function mockHosts(now: number, labTrusted = mockLabTrusted) {
+  const hs = mockHostsRaw(now, labTrusted);
+  const o = mockHostOrder;
+  if (!o) return hs;
+  const rank = (n: string) => (o.includes(n) ? o.indexOf(n) : o.length);
+  return [...hs].sort((a, b) => rank(a.name) - rank(b.name));
+}
+function mockHostsRaw(now: number, labTrusted: boolean) {
   const iso = (ms: number) => new Date(ms).toISOString();
   return [
     { name: "desk", online: true, since: iso(now - 3 * 3600_000), id: "F7QK-2M9X-AB34-CD56", url: "http://127.0.0.1:7777" },
     { name: "host-b", online: false, since: iso(now - 25 * 60_000), error: "unreachable", found: true, id: "M3RS-QX7P-5LKA-2WNE", url: "http://100.64.0.9:7778" },
     { name: "lab", online: true, since: iso(now - 40 * 60_000), id: "B7LA-4QZE-9KDF-3HXW", url: "http://100.64.0.7:7778", ...(labTrusted ? {} : { idWas: "AX2C-7RTM-8PLQ-6VYD" }),
-      // V0.131: lab's own providers, so a thread started there offers them
+      // V0.132: lab's own providers, so a thread started there offers them
       profiles: [
         { id: "claude", name: "Claude", color: "#d97757", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], defaultModel: "claude-sonnet-5-5" },
         { id: "zai", name: "Z.ai", color: "#5b6bd6", models: ["glm-5", "glm-4.6"], defaultModel: "glm-5" },
@@ -1680,7 +1692,7 @@ export function mockHosts(now: number, labTrusted = mockLabTrusted) {
 }
 function mockHostOf(t: ThreadDTO, now: number): ThreadDTO {
   if (!MOCK_HOSTS) return t;
-  if (t.host && t.host !== "desk") return t; // V0.131: made on another host
+  if (t.host && t.host !== "desk") return t; // V0.132: made on another host
   if (!MOCK_REMOTE.has(t.id)) return { ...t, host: "desk" };
   return { ...t, host: "host-b", hostOffline: new Date(now - 25 * 60_000).toISOString() };
 }

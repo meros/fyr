@@ -2081,16 +2081,16 @@ for (const [label, w, ht] of [
   });
 });
 
-// SPEC V0.131: New project, Change folder and New thread browse the chosen host's folders, the same on the desktop
+// SPEC V0.132: New project, Change folder and New thread browse the chosen host's folders, the same on the desktop
 // and the phone. 1 New project in Settings: the Host field (this install first, the offline host named), lab's folders
 // in the picker, project.create with host lab; 2 an offline host says so and nothing is sent; 3 New thread: with no
 // project the owner picks the host and the picker is that host's, thread.create names it; a project locks the host.
 for (const [label, w, ht] of [
   ["desktop", 1280, 800],
   ["phone", 390, 844],
-]) section(`V0.131 ${label}`, async (hn) => {
+]) section(`V0.132 ${label}`, async (hn) => {
   const { evaluate, waitFor, settle, navigate, openScreen, shot } = hn;
-  const ctx = `V0.131 ${label}`;
+  const ctx = `V0.132 ${label}`;
   const phone = label === "phone";
   const root = phone ? ".m-app" : ".dlg";
   const open = async (url, ready) => {
@@ -2184,6 +2184,35 @@ for (const [label, w, ht] of [
     await waitFor(`${COMMANDS("thread.create")}.length === 1`, { soft: true });
     const c = await evaluate(`${COMMANDS("thread.create")}.map(c => c.args)`);
     check(c.length === 1 && c[0].host === "lab" && c[0].cwd === "/home/owner/experiments" && !c[0].projectId, `${ctx}: thread.create ${JSON.stringify(c)}`);
+  });
+  // 4. The owner's host order: reorder on the Hosts page (grip and Alt+↑ on the desktop, the Reorder mode on the
+  // phone); the first host is the default in New project and New thread, and the per-host groups follow it.
+  await step("host order", async () => {
+    await open(phone ? "?mock=rail&hosts=2&settings=hosts" : "?mock=rail&hosts=2&dialog=settings&page=hosts", `document.querySelectorAll('${root} .sr.host').length === 4`);
+    const ROWS = `[...document.querySelectorAll('${root} .sr.host')].map(r => r.dataset.host).join('|')`;
+    if (phone) {
+      await click(`${root} button`, "Reorder");
+      await waitFor(`!!document.querySelector('${root} .hreo.mvrow')`);
+      await evaluate(`document.querySelector('${root} [aria-label="Move lab up"]').click()`);
+    } else {
+      await evaluate(`document.querySelectorAll('.dlg .hreo .grip')[2].focus()`);
+      await hn.key("ArrowUp", "ArrowUp", 1);
+    }
+    await waitFor(`${COMMANDS("front.hostOrder")}.length === 1`, { soft: true });
+    await waitFor(`${ROWS} === 'desk|lab|host-b|old-nuc'`, { soft: true });
+    const o = await evaluate(`({ cmds: ${COMMANDS("front.hostOrder")}.map(c => c.args.names.join('|')), rows: ${ROWS} })`);
+    check(o.cmds.join() === "desk|lab|host-b|old-nuc" && o.rows === "desk|lab|host-b|old-nuc", `${ctx}: reorder the hosts ${JSON.stringify(o)}`);
+    await shot(`hostorder-${label}.png`);
+    // lab first (as set on another front): it is the default.
+    const q = "?mock=rail&hosts=2&hostOrder=lab,desk";
+    await open(phone ? `${q}&settings=projects` : `${q}&dialog=settings&page=projects`, `document.querySelectorAll('${root} .pli').length > 3`);
+    await click(`${root} button`, "New project");
+    await waitFor(`!!document.querySelector('${root} .hostf select')`);
+    const np = await evaluate(`({ v: document.querySelector('${root} .hostf select').value, first: document.querySelector('${root} .hostf option')?.value })`);
+    check(np.v === "lab" && np.first === "lab", `${ctx}: New project's default host ${JSON.stringify(np)}`);
+    await open(phone ? `${q}&settings=providers` : `${q}&dialog=settings&page=providers`, `document.querySelectorAll('${root} .hpart').length === 4`);
+    const parts = await evaluate(`[...document.querySelectorAll('${root} .hpart')].map(p => p.dataset.host).join('|')`);
+    check(parts.startsWith("lab|desk"), `${ctx}: the per-host groups follow the order (${parts})`);
   });
 });
 

@@ -156,12 +156,12 @@ export function hostLine(h: HostInfo, self: string, now: number): string {
   return [hostState(h, now), route, h.id ? `id ${shortID(h.id)}` : "no id"].filter(Boolean).join(" · ");
 }
 
-/** V0.125: the Hosts page's rows: this install first, then the front's hosts in its order. A front that lists no
- *  hosts (one install) still shows this install, with the id from the state. */
+/** V0.125, V0.132: the Hosts page's rows, in the owner's host order (the front sends hosts[] in it). A front that lists
+ *  no hosts (one install) still shows this install, with the id from the state. */
 export function hostRows(hosts: HostInfo[] | undefined, self: string, selfId: string): HostInfo[] {
   const hs = hosts ?? [];
   if (!hs.length) return [{ name: self, online: true, ...(selfId ? { id: selfId } : {}) }];
-  return [...hs.filter((h) => h.name === self), ...hs.filter((h) => h.name !== self)];
+  return hs;
 }
 
 /** V0.125: how this browser reaches this Fyr, from the page's host name and the state's user (This device). */
@@ -172,16 +172,15 @@ export function howIn(hostname: string, user: string): string {
   return `At ${hostname}${user ? `, as ${user}` : ""}. What stands in front of Fyr there decides who gets in.`;
 }
 
-/** V0.131: the hosts New project and New thread offer: this install first, then the front's order; an offline one is
- *  named so. None when the front has one host (nothing to pick). */
+/** V0.132: the hosts New project and New thread offer, in the owner's order (the first is the default); this install
+ *  and an offline one are named so. None when the front has one host (nothing to pick). */
 export function hostChoices(hosts: Pick<HostInfo, "name" | "online">[] | undefined, self: string): { name: string; label: string; online: boolean }[] {
   const hs = hosts ?? [];
   if (hs.length <= 1) return [];
-  const ordered = [...hs.filter((h) => h.name === self), ...hs.filter((h) => h.name !== self)];
-  return ordered.map((h) => ({ name: h.name, label: h.name === self ? `${h.name} (this install)` : h.online ? h.name : `${h.name} (offline)`, online: h.online }));
+  return hs.map((h) => ({ name: h.name, label: h.name === self ? `${h.name} (this install)` : h.online ? h.name : `${h.name} (offline)`, online: h.online }));
 }
 
-/** V0.131: why nothing can be made on a picked host now; "" when it is online (or none is picked). Nothing falls back
+/** V0.132: why nothing can be made on a picked host now; "" when it is online (or none is picked). Nothing falls back
  *  to another host. */
 export function hostOfflineNote(name: string | undefined, hosts: Pick<HostInfo, "name" | "online" | "since">[] | undefined, now: number): string {
   const h = name ? hosts?.find((x) => x.name === name) : undefined;

@@ -24,7 +24,7 @@ export interface NewThreadArgs {
   view?: boolean;
   /** V0.50: effort; "" is the provider's default */
   effort?: string;
-  /** V0.131: the host it starts on, with several hosts */
+  /** V0.132: the host it starts on, with several hosts */
   host?: string;
 }
 
@@ -122,7 +122,7 @@ export interface NewThreadForm {
   text: string;
   title: string;
   liveView: boolean;
-  /** V0.131: the host the owner picked, for a thread with no project or a project made here; "" the front's first */
+  /** V0.132: the host the owner picked, for a thread with no project or a project made here; "" the front's first */
   host: string;
 }
 
@@ -144,7 +144,7 @@ export function makingProject(f: NewThreadForm): { name: string; folder: string 
   return f.creating !== null ? (f.draft ?? { name: f.creating, folder: "" }) : null;
 }
 
-/** V0.54, V0.131: the host the thread starts on: its project's; with no project, or a project made here, the one the
+/** V0.54, V0.132: the host the thread starts on: its project's; with no project, or a project made here, the one the
  *  owner picked, else the front's first. */
 export function formHost(f: NewThreadForm, ctx: FormCtx): string | undefined {
   const cur = makingProject(f) ? undefined : currentProject(f, ctx);
@@ -152,13 +152,13 @@ export function formHost(f: NewThreadForm, ctx: FormCtx): string | undefined {
   return f.host || hostForProject(undefined, ctx.hosts);
 }
 
-/** V0.131: the project that holds the host (the Host field is locked to it), or "" when the owner picks it. */
+/** V0.132: the project that holds the host (the Host field is locked to it), or "" when the owner picks it. */
 export function hostLock(f: NewThreadForm, ctx: FormCtx): string {
   if (makingProject(f)) return "";
   return currentProject(f, ctx)?.name ?? "";
 }
 
-/** V0.131: pick the host (no project, or a project made here): a folder picked on another host is dropped, and the
+/** V0.132: pick the host (no project, or a project made here): a folder picked on another host is dropped, and the
  *  provider moves to one that host has. */
 export function chooseHost(f: NewThreadForm, host: string, ctx: FormCtx, last: Remembered = {}): NewThreadForm {
   if (hostLock(f, ctx)) return f;
@@ -226,7 +226,7 @@ export function pickProfile(f: NewThreadForm, id: string, ctx: FormCtx): NewThre
 
 /** V0.63: a project made in the form is picked at once. */
 export function madeProject(f: NewThreadForm, id: string, name: string, folder: string, ctx: FormCtx): NewThreadForm {
-  const np = { ...localProject(id, name, folder), host: formHost(f, ctx) }; // V0.131: made on the form's host
+  const np = { ...localProject(id, name, folder), host: formHost(f, ctx) }; // V0.132: made on the form's host
   return chooseProject({ ...f, made: np }, np, { ...ctx, projects: [...ctx.projects.filter((x) => x.id !== id), np] });
 }
 
@@ -251,7 +251,7 @@ export function createArgs(f: NewThreadForm, ctx: FormCtx, send: { text: string;
 export function changeOptions(pr: Project | undefined, current: string, host?: string): PickOptions {
   const f = pr?.folder;
   const dirs = f && f !== current ? [{ name: f.split("/").pop() || f, path: f }] : [];
-  return { title: "Folder for this thread", first: dirs.length ? { title: `${pr!.name}'s folder`, dirs } : undefined, ...(host ? { host } : {}) }; // V0.131: the thread's host
+  return { title: "Folder for this thread", first: dirs.length ? { title: `${pr!.name}'s folder`, dirs } : undefined, ...(host ? { host } : {}) }; // V0.132: the thread's host
 }
 
 /** One line under the folder: how the folder and the project relate (V0.42, V0.55). */

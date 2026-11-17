@@ -783,7 +783,7 @@ function App() {
     /** New project (V0.30): with threadIds, the host files one thread in the same write; more are filed after. */
     create: async (name: string, folder: string, threadIds: string[] = [], host?: string): Promise<{ error: string | null; id?: string }> => {
       const args: Record<string, unknown> = { name };
-      // V0.131: on the host picked, else the threads' host (a project made from threads lives where they run).
+      // V0.132: on the host picked, else the threads' host (a project made from threads lives where they run).
       const on = host || (threadIds.length ? store.threads[threadIds[0]]?.host : undefined);
       if (on && multiHost(store.hosts)) args.host = on;
       if (folder) args.folder = folder;
@@ -839,7 +839,7 @@ function App() {
   };
   // V0.68: Fyr's own confirmation, a sheet on the phone and a dialog on the desktop.
   const confirmHost = useConfirmHost(phone);
-  // V0.131: the picker reads the folders of the host it was opened for; an offline host says so, and no other host's
+  // V0.132: the picker reads the folders of the host it was opened for; an offline host says so, and no other host's
   // folders stand in.
   const pickHost = folderPick?.host ?? "";
   const pickFs: FsApi = { fsList: (p) => api.fsList(p, pickHost), fsRecent: () => api.fsRecent(pickHost), fsRepos: () => api.fsRepos(pickHost), fsMkdir: (a, b) => api.fsMkdir(a, b, pickHost) };
@@ -853,7 +853,7 @@ function App() {
     ) : (
       <FolderPicker key={pickHost} fs={pickFs} first={folderPick?.first} onPick={closeFolderPick} autoFocus={autoFocus} />
     );
-  // V0.131: the hosts a new project or thread can live on (HostField, NewProjectStep).
+  // V0.132: the hosts a new project or thread can live on (HostField, NewProjectStep).
   const hostsCtx = useMemo(() => ({ hosts: store.hosts, self: store.host, now }), [store.hosts, store.host, Math.floor(now / 60_000)]);
   const folderPickView = folderPick
     ? phone ? (
@@ -904,7 +904,7 @@ function App() {
     if (a.title) args.title = a.title;
     if (a.view) args.view = true;
     if (a.effort) args.effort = a.effort;
-    if (a.host) args.host = a.host; // V0.131
+    if (a.host) args.host = a.host; // V0.132
     const r = await api.command("thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);

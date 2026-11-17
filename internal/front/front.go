@@ -120,6 +120,9 @@ type Front struct {
 	// pins: the key id the front first saw for each host, by name (V0.124,
 	// decision 0026), stored under front.hostIds.
 	pins map[string]string
+	// hosts: the owner's host order as this front last set or kept it
+	// (V0.132); the newest of it and the hosts' copies wins.
+	hosts hostOrder
 }
 
 // link is a front's connection to one host and its cache of that host's
@@ -171,6 +174,7 @@ func New(opt Options, hosts []HostConfig) *Front {
 	f.links.Store(&[]*link{})
 	f.loadOrder()
 	f.loadPins()
+	f.loadHostOrder()
 	for _, h := range hosts {
 		if l := f.newLink(h); l != nil {
 			f.append(l)
@@ -461,7 +465,7 @@ func (f *Front) load(l *link, st map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	env := map[string]any{}
-	for _, k := range []string{"actions", "profiles", "deploy", "user", "host", "hostId"} {
+	for _, k := range []string{"actions", "profiles", "deploy", "user", "host", "hostId", "hostOrder"} {
 		if v, ok := st[k]; ok {
 			env[k] = v
 		}
@@ -505,6 +509,7 @@ func (f *Front) load(l *link, st map[string]any) {
 	for id := range raw {
 		f.publishLocked(l, id)
 	}
+	f.catchUpLocked(l) // V0.132
 	f.publishHostsLocked()
 }
 
@@ -577,6 +582,14 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 		f.mu.Unlock()
 		if b, err := json.Marshal(sp); err == nil {
 			f.hub.Publish("project", b)
+		}
+	case "hostOrder": // V0.132: the host keeps a newer host order
+		if d, err := decode(data); err == nil {
+			f.mu.Lock()
+			l.env["hostOrder"] = d
+			l.dirty = true
+			f.publishHostsLocked()
+			f.mu.Unlock()
 		}
 	case "deploy":
 		// V0.54: a deploy is per host (V0.24's drain runs on the host). Only
@@ -741,7 +754,8 @@ func (f *Front) Handler() http.Handler {
 	return server.Browser(f.opt.OwnerLogin, f.withAuth(mux))
 }
 
-// byName is the host with that name; "" is the first host. A name the
+// byName is the host with that name; "" is the first host in the owner's
+// order (V0.132). A name the
 // front does not follow is nil (V0.127): a call meant for one host never
 // goes to another.
 func (f *Front) byName(name string) *link {
@@ -755,7 +769,9 @@ func (f *Front) byName(name string) *link {
 		}
 		return nil
 	}
-	ls := f.all()
+	f.mu.Lock()
+	ls := f.orderedLocked()
+	f.mu.Unlock()
 	if len(ls) == 0 {
 		return nil
 	}
@@ -840,7 +856,7 @@ func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 		Threads: []map[string]any{}, Projects: []map[string]any{}, Profiles: []any{}, Hosts: []api.Host{}, Partial: since > 0}
 	seenProfile := map[any]bool{}
 	var actions any
-	for _, l := range f.all() {
+	for _, l := range f.orderedLocked() { // V0.132: hosts[] in the owner's order
 		for _, d := range l.pub {
 			if since <= 0 || revOf(d) > since {
 				st.Threads = append(st.Threads, d)
@@ -926,6 +942,10 @@ func (f *Front) command(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.Action == KindProjectOrder { // V0.121: the front's own, no host's
 		f.orderCommand(w, c.CommandID, c.Args)
+		return
+	}
+	if c.Action == KindHostOrder { // V0.132: the owner's, written to every host
+		f.hostOrderCommand(w, c.CommandID, c.Args)
 		return
 	}
 	if c.Action == KindHostID { // V0.124: the front's own, no host's

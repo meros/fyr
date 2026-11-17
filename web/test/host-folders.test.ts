@@ -1,4 +1,4 @@
-// SPEC V0.131: New project, a project's Change folder and New thread browse the folders of the chosen host, on the
+// SPEC V0.132: New project, a project's Change folder and New thread browse the folders of the chosen host, on the
 // desktop and the phone. A thread follows its project's host; with no project, or a project being made, the owner
 // picks the host. An offline host says so and nothing falls back to another.
 import { test } from "node:test";
@@ -24,30 +24,30 @@ const projects: Project[] = [
 ];
 const ctx: FormCtx = { projects, profiles: [claude, zai], hosts };
 
-test("V0.131: the hosts to pick from: this install first, offline ones named; none with one host", () => {
+test("V0.132: the hosts to pick from, in the owner's order, this install and offline ones named; none with one host", () => {
   assert.deepEqual(hostChoices(hosts, "lab"), [
-    { name: "lab", label: "lab (this install)", online: true },
     { name: "desk", label: "desk", online: true },
+    { name: "lab", label: "lab (this install)", online: true },
     { name: "host-b", label: "host-b (offline)", online: false },
   ]);
   assert.deepEqual(hostChoices([{ name: "desk", online: true }], "desk"), []);
   assert.deepEqual(hostChoices(undefined, "desk"), []);
 });
 
-test("V0.131: an offline host says so plainly; an online or unknown one says nothing", () => {
+test("V0.132: an offline host says so plainly; an online or unknown one says nothing", () => {
   assert.equal(hostOfflineNote("host-b", hosts, now), `host-b is offline since ${dayTime(iso(25), now)}. Its folders cannot be read and nothing can be made on it until it is back; pick another host or wait.`);
   assert.equal(hostOfflineNote("lab", hosts, now), "");
   assert.equal(hostOfflineNote("", hosts, now), "");
 });
 
-test("V0.131: the picker's reads name the host", () => {
+test("V0.132: the picker's reads name the host", () => {
   assert.equal(fsQuery("/api/fs/list?path=%2Fhome", "lab"), "/api/fs/list?path=%2Fhome&host=lab");
   assert.equal(fsQuery("/api/fs/recent", "host b"), "/api/fs/recent?host=host%20b");
   assert.equal(fsQuery("/api/fs/recent", undefined), "/api/fs/recent");
   assert.equal(fsQuery("/api/fs/recent", ""), "/api/fs/recent");
 });
 
-test("V0.131: a thread follows its project's host, and the host is locked while a project is chosen", () => {
+test("V0.132: a thread follows its project's host, and the host is locked while a project is chosen", () => {
   let f = chooseProject(settleForm(initialForm(), ctx, "p_d", {}), projects[1], ctx);
   assert.equal(formHost(f, ctx), "lab");
   assert.deepEqual(formProfiles(f, ctx).map((p) => p.id), ["zai"]);
@@ -57,7 +57,7 @@ test("V0.131: a thread follows its project's host, and the host is locked while 
   assert.equal(formHost(chooseHost(f, "desk", ctx), ctx), "lab");
 });
 
-test("V0.131: with no project the owner picks the host; its providers follow and the picked folder is dropped", () => {
+test("V0.132: with no project the owner picks the host; its providers follow and the picked folder is dropped", () => {
   let f = chooseProject(settleForm(initialForm(), ctx, "p_d", {}), null, ctx);
   assert.equal(hostLock(f, ctx), "");
   assert.equal(formHost(f, ctx), "desk", "the front's first host until one is picked");
@@ -73,7 +73,7 @@ test("V0.131: with no project the owner picks the host; its providers follow and
   assert.equal(formHost(chooseHost(f, "host-b", ctx), ctx), "host-b");
 });
 
-test("V0.131: a project made in the New thread form is made on the form's host", () => {
+test("V0.132: a project made in the New thread form is made on the form's host", () => {
   let f = chooseProject(settleForm(initialForm(), ctx, "p_d", {}), null, ctx);
   f = chooseHost(f, "lab", ctx);
   f = { ...f, creating: "New", draft: { name: "New", folder: "/home/o/new" } };
@@ -83,12 +83,12 @@ test("V0.131: a project made in the New thread form is made on the form's host",
   assert.equal(createArgs(f, ctx, { text: "go" }, "p_new").host, "lab");
 });
 
-test("V0.131: Change folder browses the thread's host", () => {
+test("V0.132: Change folder browses the thread's host", () => {
   assert.equal(changeOptions(projects[1], "/home/o/lab-notes", "lab").host, "lab");
   assert.equal(changeOptions(undefined, "", undefined).host, undefined);
 });
 
-test("V0.131: one host: no host in the args, as before", () => {
+test("V0.132: one host: no host in the args, as before", () => {
   const one: FormCtx = { projects: [{ id: "p_a", name: "a", folder: "/a" }], profiles: [claude] };
   const f = settleForm(initialForm(), one, "p_a", {});
   assert.equal("host" in createArgs(f, one, { text: "go" }, "p_a"), false);

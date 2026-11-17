@@ -14,7 +14,9 @@ const (
 	FrameThread  = "thread"
 	FrameProject = "project"
 	FrameDeploy  = "deploy"
-	FrameEvent   = "event"
+	// FrameHostOrder is the owner's host order (V0.132), as a host keeps it.
+	FrameHostOrder = "hostOrder"
+	FrameEvent     = "event"
 )
 
 // Frame is one Server-Sent Event.

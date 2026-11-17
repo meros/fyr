@@ -76,7 +76,7 @@ export interface Api {
   filePatch(threadId: string, path: string, since?: string): Promise<FilePatchDTO>;
   /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
   prDetail(threadId: string, fresh?: boolean): Promise<PrReply>;
-  /** The host folder picker (V0.42); every path stays inside the owner's home folder. V0.131: `host` names whose
+  /** The host folder picker (V0.42); every path stays inside the owner's home folder. V0.132: `host` names whose
    *  folders ("" or missing: the front's first host). */
   fsList(path: string, host?: string): Promise<FsListing>;
   fsRecent(host?: string): Promise<FsDir[]>;
