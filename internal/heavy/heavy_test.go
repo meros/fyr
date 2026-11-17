@@ -18,6 +18,9 @@ func TestS1ClassOfACommand(t *testing.T) {
 		"go test ./internal/slots -run TestX":         "",
 		"go build ./cmd/fyrd":                         "",
 		"git commit -m 'make test pass'":              "",
+		"nix develop -c sh -c 'go test ./...'":        "go test ./...",
+		`gh pr create --title "make check green"`:     "",
+		`git commit --message="run make test"`:        "",
 		"echo hi":                                     "",
 	} {
 		if got := m.Class(cmd); got != want {
