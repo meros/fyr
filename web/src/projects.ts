@@ -1,5 +1,6 @@
 // Projects (SPEC 0.5 V0.23): palette, icons, ordering, filtering; and started-by labels (V0.22). Pure.
 
+import { hostUrl } from "./urls.ts";
 import type { NewProjectDraft, Profile, Project, ProjectIconSpec, QuietHours, SetupField, Thread } from "./types.ts";
 import { cleanWindow } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
@@ -248,9 +249,9 @@ export function moveToast(n: number, where: string | null, error: string | null)
 
 /** The URL of a project's image icon at a size that is sharp at `px` CSS pixels, or null when it has none. The
  *  version in the URL lets the browser keep it; the front sends the request to the project's host. */
-export function projectIconUrl(p: Pick<Project, "id" | "image"> | undefined, px: number): string | null {
-  if (!p?.id || !p.image) return null;
-  return `/api/projects/${encodeURIComponent(p.id)}/icon?size=${px > 32 ? 128 : 64}&v=${encodeURIComponent(p.image)}`;
+export function projectIconUrl(p: Pick<Project, "id" | "image" | "hostId"> | undefined, px: number): string | null {
+  if (!p?.id || !p.image || !p.hostId) return null;
+  return hostUrl(p.hostId, `/projects/${encodeURIComponent(p.id)}/icon?size=${px > 32 ? 128 : 64}&v=${encodeURIComponent(p.image)}`);
 }
 
 /** Whether the setup agent set this field (the project screen marks it "Set by agent"). */

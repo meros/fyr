@@ -58,14 +58,13 @@ test("profiles and deploy are per host; an older front's state falls back to the
 });
 
 test("attachments, previews and markdown images load from the thread's host", () => {
-  assert.equal(attachmentUrl("att_1", "host-b"), "/api/attachments/att_1?host=host-b");
-  assert.equal(attachmentUrl("att_1"), "/api/attachments/att_1");
-  assert.equal(previewCard(1, "", { kind: "html", attachmentId: "pv_1" }, "b")?.src, "/api/previews/pv_1?host=b");
-  assert.equal(previewUrl("pv_1"), "/api/previews/pv_1");
+  assert.equal(attachmentUrl("HB", "att_1"), "/api/h/HB/attachments/att_1");
+  assert.equal(previewCard(1, "", { kind: "html", attachmentId: "pv_1" }, "HB")?.src, "/api/h/HB/previews/pv_1");
+  assert.equal(previewUrl("HB", "pv_1"), "/api/h/HB/previews/pv_1");
   setMarkdownOrigin("http://fyr.test");
   const md = "![shot](http://fyr.test/api/attachments/att_9)";
-  assert.match(renderMarkdown(md, "b"), /src="\/api\/attachments\/att_9\?host=b"/);
-  assert.match(renderMarkdown(md), /src="\/api\/attachments\/att_9"/);
+  assert.match(renderMarkdown(md, "HB"), /src="\/api\/h\/HB\/attachments\/att_9"/);
+  assert.doesNotMatch(renderMarkdown(md), /<img/, "without a host there is nowhere to read it from: a link");
   setMarkdownOrigin(null);
 });
 

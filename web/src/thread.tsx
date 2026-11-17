@@ -250,7 +250,7 @@ export interface ThreadTabBodyProps {
  *  (V0.19), Changes (V0.25, V0.59) and PR (V0.43). */
 export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier, run, send, phone }: ThreadTabBodyProps) {
   const api = useApi();
-  const previews = useMemo(() => previewsOf(events ?? [], t.host, api), [events, t.host]);
+  const previews = useMemo(() => previewsOf(events ?? [], t.hostId ?? "", api), [events, t.hostId]);
   const viewAction = useViewAction(run, t.cwd);
   return (
     <>
@@ -264,7 +264,7 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
           threadId={t.id}
           onEarlier={onEarlier}
           cwd={t.cwd}
-          host={t.host}
+          host={t.hostId}
           delivery={{ cancel: async (messageId) => run("thread.cancelMessage", { messageId }), resend: send }}
         />
       )}
@@ -274,7 +274,7 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
         <div class="chtab">
           <ChangeList t={t} onRun={run} />
           <CiNotesScope changes={t.changes}>
-            <ChangesView threadId={t.id} changes={t.changes} />
+            <ChangesView host={t.hostId ?? ""} threadId={t.id} changes={t.changes} />
           </CiNotesScope>
         </div>
       )}
@@ -926,12 +926,13 @@ function CallRow({ c }: { c: ToolCall }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
   const threadId = useContext(ThreadIdContext);
+  const hostId = useContext(HostContext) ?? "";
   const [whole, setWhole] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const loadWhole = async () => {
     if (!c.cutSeq) return;
     setLoading(true);
-    const ev = await api.fullEvent(threadId, c.cutSeq).catch(() => null);
+    const ev = await api.fullEvent(hostId, threadId, c.cutSeq).catch(() => null);
     const text = ev ? fullOutputOf(ev, c.id) : null;
     setLoading(false);
     if (text !== null) {
@@ -1181,14 +1182,14 @@ interface ComposerProps {
  */
 function Composer({ t, now, answer, onSend, onInterrupt, onRestart }: ComposerProps) {
   const [draft, setDraft] = useDraft(t.id);
-  const att = useAttachments(t.host);
+  const att = useAttachments(t.hostId);
   const ta = useRef<HTMLTextAreaElement>(null);
   const sendReason = unavailableReason(t, "thread.send");
   const text = answer ? answer.text : draft;
   const setText = answer ? answer.setText : setDraft;
   const disabled = !answer && !!sendReason;
   // V0.79: `/` at the start lists the agent's commands and skills (not in the answer field).
-  const slash = useSlash(answer || disabled ? null : { threadId: t.id }, text, setText, ta);
+  const slash = useSlash(answer || disabled ? null : { host: t.hostId ?? "", threadId: t.id }, text, setText, ta);
 
   useLayoutEffect(() => {
     const el = ta.current;

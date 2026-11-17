@@ -9,8 +9,8 @@ import { hostUrls, previewCard } from "../src/previews.ts";
 import type { FyrEvent } from "../src/types.ts";
 
 const fake: ContentUrls = {
-  attachmentUrl: (id, host) => `fake:att/${id}@${host ?? ""}`,
-  previewUrl: (id, host) => `fake:pv/${id}@${host ?? ""}`,
+  attachmentUrl: (host, id) => `fake:att/${id}@${host}`,
+  previewUrl: (host, id) => `fake:pv/${id}@${host}`,
 };
 
 const preview = (seq: number, kind: string, id: string): FyrEvent => ({ seq, at: "2026-11-15T10:00:00Z", type: "preview", data: { kind, attachmentId: id } }) as FyrEvent;
@@ -21,7 +21,7 @@ test("#41: previews load from the Api's URLs that are passed in", () => {
   assert.deepEqual(previewsOf([preview(3, "html", "p2")], "h", fake).map((c) => c.src), ["fake:pv/p2@h"]);
   const items = buildConversation([preview(4, "image", "a2")], { host: "h", urls: fake });
   assert.deepEqual(items.flatMap((i) => (i.kind === "preview" ? [i.card.src] : [])), ["fake:att/a2@h"]);
-  assert.equal(previewCard(5, "", { kind: "image", attachmentId: "a3" })?.src, hostUrls.attachmentUrl("a3"), "the host's paths by default");
+  assert.equal(previewCard(5, "", { kind: "image", attachmentId: "a3" }, "F7QK-2M9X")?.src, hostUrls.attachmentUrl("F7QK-2M9X", "a3"), "the host's own paths, under its prefix");
 });
 
 test("#41: markdown images use the URL function passed in, and the cache does not mix two Apis", () => {
@@ -29,7 +29,7 @@ test("#41: markdown images use the URL function passed in, and the cache does no
   try {
     const md = "![shot](/api/attachments/a_1)";
     assert.match(renderMarkdown(md, "h", fake.attachmentUrl), /src="fake:att\/a_1@h"/);
-    assert.match(renderMarkdown(md, "h"), /src="\/api\/attachments\/a_1\?host=h"/);
+    assert.match(renderMarkdown(md, "H1"), /src="\/api\/h\/H1\/attachments\/a_1"/);
   } finally {
     setMarkdownOrigin(null);
   }

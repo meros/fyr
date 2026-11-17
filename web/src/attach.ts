@@ -1,5 +1,7 @@
 // Attachments (SPEC 0.5 V0.18): the chip state of files being uploaded, and the send arguments. Pure.
 
+import { hostUrl } from "./urls.ts";
+
 export const MAX_BYTES = 25 * 1024 * 1024;
 
 export type ChipStatus = "uploading" | "done" | "error";
@@ -110,17 +112,13 @@ export function formatSize(bytes: number): string {
 }
 
 /** Where attachments and HTML previews load from (V0.18, V0.19). The Api provides them (#41: through ApiContext);
- *  the mock serves object and data URLs. */
+ *  the mock serves object and data URLs. `host` is the install id of the thread's host (decision 0031). */
 export interface ContentUrls {
-  attachmentUrl(id: string, host?: string): string;
-  previewUrl(id: string, host?: string): string;
+  attachmentUrl(host: string, id: string): string;
+  previewUrl(host: string, id: string): string;
 }
 
-/** The host's URL of an attachment. V0.54: `host` is the host of the thread it belongs to; the front reads it from there. */
-export function attachmentUrl(id: string, host?: string): string {
-  return `/api/attachments/${encodeURIComponent(id)}${hostQuery(host)}`;
-}
-/** "?host=<name>" for a call the front routes by host (V0.54), "" without one. */
-export function hostQuery(host: string | undefined): string {
-  return host ? `?host=${encodeURIComponent(host)}` : "";
+/** The URL of an attachment on its host. */
+export function attachmentUrl(host: string, id: string): string {
+  return hostUrl(host, `/attachments/${encodeURIComponent(id)}`);
 }

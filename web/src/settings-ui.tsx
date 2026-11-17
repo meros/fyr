@@ -12,8 +12,10 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment, type ComponentChildren } from "preact";
 import { Boundary } from "./boundary.tsx";
 import type { Api } from "./api.ts";
-import { hostForProject, hostLine, linkLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
-import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, withHost, type SettingsHost } from "./host-settings.ts";
+import { hostForProject, hostIdByName, hostLine, linkLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
+import { useHosts } from "./host-pick-ui.tsx";
+import { hostPath } from "./urls.ts";
+import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, type SettingsHost } from "./host-settings.ts";
 import { quotaFor } from "./quota.ts";
 import { budgetLine, jobLines, type HostLoad } from "./load.ts";
 import { useUnd } from "./undeclared-ctx.tsx";
@@ -95,7 +97,7 @@ export interface ProjectActions {
 }
 
 export interface SettingsProps {
-  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "systemAgents" | "authState" | "authAct" | "peerState" | "peerAct">>;
+  api: Pick<Api, "providers" | "providersFound" | "command" | "frontCommand"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "systemAgents" | "authState" | "authAct" | "peerState" | "peerAct">>;
   host: string;
   /** V0.51: the front's hosts with their state */
   hosts?: HostInfo[];
@@ -153,13 +155,15 @@ const EMPTY_SLICE: HostSlice = { providers: null, provErr: null, found: [], depl
 function useSettingsData(p: SettingsProps, saved: () => void) {
   const api = p.api;
   const hosts = settingsHosts(p.hosts, p.host);
+  /** The install id a part's host name stands for: every call names its host by id (decision 0031). */
+  const hid = (name: string) => hostIdByName(p.hosts, name);
   const [slices, setSlices] = useState<Record<string, HostSlice>>({});
   const patch = (host: string, part: Partial<HostSlice>) => setSlices((s) => ({ ...s, [host]: { ...(s[host] ?? EMPTY_SLICE), ...part } }));
   const seen = (host: string, r: { readAt?: string }) => patch(host, { readAt: r.readAt ?? null });
 
   const loadProviders = async (host: string) => {
     try {
-      const [l, f] = await Promise.all([api.providers(host), api.providersFound(host).catch(() => ({ data: [] as FoundDTO[] }))]);
+      const [l, f] = await Promise.all([api.providers(hid(host)), api.providersFound(hid(host)).catch(() => ({ data: [] as FoundDTO[] }))]);
       patch(host, { providers: l.data, found: f.data, provErr: null, readAt: l.readAt ?? null });
     } catch (e) {
       patch(host, { provErr: `Could not read the providers: ${(e as Error).message}.` });
@@ -168,7 +172,7 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
   const loadDeploy = async (host: string) => {
     if (!api.autoDeploy) return patch(host, { deploy: null });
     try {
-      const r = await api.autoDeploy(host);
+      const r = await api.autoDeploy(hid(host));
       patch(host, { deploy: r.data.on, deployErr: null });
       seen(host, r);
     } catch (e) {
@@ -180,7 +184,7 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
     if (!api.updates) return patch(host, { updates: null });
     try {
       // A host that never updated itself (a NixOS host) sends "updates": null from an older fyrd: an empty list.
-      const v = (await api.updates(host)).data;
+      const v = (await api.updates(hid(host))).data;
       patch(host, { updates: { ...v, updates: v.updates ?? [] } });
     } catch {
       patch(host, { updates: null });
@@ -189,7 +193,7 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
   const loadRepos = async (host: string) => {
     if (!api.autoMerge) return patch(host, { repos: [] });
     try {
-      const r = await api.autoMerge(host);
+      const r = await api.autoMerge(hid(host));
       patch(host, { repos: r.data, reposErr: null });
       seen(host, r);
     } catch (e) {
@@ -199,7 +203,7 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
   const loadSa = async (host: string) => {
     if (!api.systemAgents) return;
     try {
-      const r = await api.systemAgents(host);
+      const r = await api.systemAgents(hid(host));
       patch(host, { sa: r.data, saErr: null });
       seen(host, r);
     } catch (e) {
@@ -235,7 +239,7 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
 
   /** One owner command to a host; ok shows Saved and reloads what it changed. The error is shown on the row that sent it. */
   const command = async (host: string, action: string, args: Record<string, unknown>, reload: () => Promise<void>): Promise<string | null> => {
-    const r = await api.command(action, undefined, withHost(args, host));
+    const r = await api.command(hid(host), action, undefined, args);
     if (!r.ok) {
       await reload(); // the control goes back to what the host has
       return r.error ?? "That did not work";
@@ -267,7 +271,7 @@ function useSettingsData(p: SettingsProps, saved: () => void) {
       runProvider,
       /** V0.120: ask a provider for its models now. Not a save: no Saved mark. The reply waits for the check. */
       refreshModels: async (id: string): Promise<string | null> => {
-        const r = await api.command("provider.refreshModels", undefined, withHost({ id }, host));
+        const r = await api.command(hid(host), "provider.refreshModels", undefined, { id });
         await loadProviders(host);
         if (r.ok) p.onChanged?.();
         return r.ok ? null : (r.error ?? "That did not work");
@@ -292,11 +296,12 @@ type Data = AllSettings["all"][number];
 export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[], self = ""): string {
   const [v, setV] = useState("");
   const names = settingsHosts(hosts, self).map((h) => h.name);
+  const hid = (name: string) => hostIdByName(hosts, name);
   useEffect(() => {
     let live = true;
     void Promise.all(
       names.map((h) =>
-        Promise.all([api.providers(h).then((r) => r.data), api.systemAgents ? api.systemAgents(h).then((r) => r.data).catch(() => null) : null]).catch(() => [[], null] as const),
+        Promise.all([api.providers(hid(h)).then((r) => r.data), api.systemAgents ? api.systemAgents(hid(h)).then((r) => r.data).catch(() => null) : null]).catch(() => [[], null] as const),
       ),
     ).then((parts) => live && setV(providersNeed(parts.flatMap(([l]) => l), parts.reduce((n, [, sa]) => n + (sa?.jobs.filter((j) => j.error).length ?? 0), 0))));
     return () => void (live = false);
@@ -566,7 +571,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
           body: <HostPage key={h.name} h={h} self={self} api={p.api} now={p.now} />,
         };
       const runOrder = async (names: string[]) => {
-        const r = await p.api.command("front.hostOrder", undefined, { names }); // V0.132
+        const r = await p.api.frontCommand("front.hostOrder", { ids: names.map((n) => hostIdByName(p.hosts, n)) }); // V0.132
         return r.ok ? null : (r.error ?? "That did not work");
       };
       return {
@@ -1331,8 +1336,9 @@ function HeavyJobsGroup({ host, api, focus }: { host: string; api: SettingsProps
 /** A command to the host, with the Saved mark and a fresh read of the load. */
 function useHostCommand(host: string, api: SettingsProps["api"]): (action: string, args: Record<string, unknown>) => Promise<string | null> {
   const env = useSet();
+  const { hosts } = useHosts();
   return async (action, args) => {
-    const r = await api.command(action, undefined, withHost(args, host));
+    const r = await api.command(hostIdByName(hosts, host), action, undefined, args);
     if (r.ok) (env.saved(), refreshLoad());
     return r.ok ? null : (r.error ?? "That did not work");
   };
@@ -1491,11 +1497,12 @@ function Suggestion({ s, picked, error, onDo }: { s: ReturnType<typeof suggestio
 /** Decision 0029 S1 (#185): the heavy jobs this host measured, per class (project and command), the newest first. */
 function MeasuredJobs({ h, host, api, env }: { h: HostLoad; host: string; api: SettingsProps["api"]; env: { readOnly: boolean } }) {
   const [err, setErr] = useState<{ class: string; text: string } | null>(null);
+  const { hosts } = useHosts();
   const lines = jobLines(h);
   const budget = budgetLine(h); // V0.163: the budget as percentages of the host
   // Decision 0029 S3: Reset forgets a class's learned cost on this host (owner only); it counts as 1.0 again.
   const reset = async (c: string) => {
-    const r = await api.command("host.jobReset", undefined, withHost({ class: c }, host));
+    const r = await api.command(hostIdByName(hosts, host), "host.jobReset", undefined, { class: c });
     setErr(r.ok ? null : { class: c, text: r.error ?? "Not reset" });
     if (r.ok) refreshLoad();
   };
@@ -1557,7 +1564,7 @@ function UpdatesGroup({ d }: { d: Data }) {
                 {(u.logs ?? []).map((n) => (
                   <>
                     {" · "}
-                    <a href={`/api/updates/${encodeURIComponent(u.build)}/${n}${d.host.name ? `?host=${encodeURIComponent(d.host.name)}` : ""}` /* V0.127: from its host */} target="_blank" rel="noopener noreferrer">
+                    <a href={hostPath(d.host.id, `/updates/${encodeURIComponent(u.build)}/${n}`) /* from its host */} target="_blank" rel="noopener noreferrer">
                       {n}
                     </a>
                   </>
@@ -1831,7 +1838,7 @@ function HostMarkGroup({ h, api }: { h: HostInfo; api: SettingsProps["api"] }) {
   const set = async (patch: { icon?: string; color?: string }) => {
     const next = { icon: own.icon ?? "", color: own.color ?? "", ...patch };
     setBusy(true);
-    const r = await api.command("front.hostMark", undefined, { id: h.id, ...next });
+    const r = await api.frontCommand("front.hostMark", { id: h.id, ...next });
     setBusy(false);
     if (r.ok) {
       setErr(null);
@@ -1897,7 +1904,7 @@ function HostPage({ h, self, api, now }: { h: HostInfo; self: string; api: Setti
   const route = routeOf(h.url, isSelf, h.found);
   const trust = async () => {
     setBusy(true);
-    const r = await api.command("front.hostId", undefined, { host: h.name });
+    const r = await api.frontCommand("front.hostId", { host: h.id });
     setBusy(false);
     if (r.ok) {
       setErr(null);

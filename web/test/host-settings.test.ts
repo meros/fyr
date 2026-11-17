@@ -2,7 +2,7 @@
 // per-host pages (Providers with System agents, Automation) show one group per host, in the owner's host order.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, settingsPath, withHost } from "../src/host-settings.ts";
+import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts } from "../src/host-settings.ts";
 import { pageUrl, parsePage, escapeTarget } from "../src/settings-nav.ts";
 import { dayTime } from "../src/format.ts";
 import { quotaFor } from "../src/quota.ts";
@@ -11,8 +11,8 @@ const now = Date.parse("2026-11-16T20:00:00Z");
 const iso = (minAgo: number) => new Date(now - minAgo * 60_000).toISOString();
 
 test("V0.126 (4): one install, or a front that lists one host, is one ungrouped part that names no host", () => {
-  assert.deepEqual(settingsHosts(undefined, "desk"), [{ name: "", label: "desk", self: true, online: true }]);
-  assert.deepEqual(settingsHosts([{ name: "desk", online: true }], "desk"), [{ name: "", label: "desk", self: true, online: true }]);
+  assert.deepEqual(settingsHosts(undefined, "desk"), [{ id: "", name: "", label: "desk", self: true, online: true }]);
+  assert.deepEqual(settingsHosts([{ name: "desk", online: true }], "desk"), [{ id: "", name: "", label: "desk", self: true, online: true }]);
 });
 
 test("V0.127, V0.132: several hosts are one group each, in the owner's host order (the front's)", () => {
@@ -57,12 +57,10 @@ test("V0.126 (3): an offline host's settings are what Fyr last read, said with t
   assert.equal(readOnlyNote(self, null, now), "");
 });
 
-test("V0.126 (2): every per-host read and command names its host; the one ungrouped part names none", () => {
-  assert.equal(settingsPath("/api/providers", "lab"), "/api/providers?host=lab");
-  assert.equal(settingsPath("/api/providers/found", "host b"), "/api/providers/found?host=host%20b");
-  assert.equal(settingsPath("/api/autoDeploy", ""), "/api/autoDeploy");
-  assert.deepEqual(withHost({ id: "claude", name: "C" }, "lab"), { id: "claude", name: "C", host: "lab" });
-  assert.deepEqual(withHost({ id: "claude" }, ""), { id: "claude" });
+test("decision 0031: a part carries its host's install id, which every call of it names", () => {
+  const parts = settingsHosts([{ id: "AAAA", name: "desk", online: true }, { id: "BBBB", name: "lab", online: true }], "desk");
+  assert.deepEqual(parts.map((p) => [p.name, p.id]), [["desk", "AAAA"], ["lab", "BBBB"]]);
+  assert.deepEqual(settingsHosts([{ id: "AAAA", name: "desk", online: true }], "desk").map((p) => [p.name, p.id]), [["", "AAAA"]], "one host: one part with no name, with its id");
 });
 
 test("V0.126 (4): a provider's page names its host in the URL, so two hosts' 'claude' are two pages", () => {

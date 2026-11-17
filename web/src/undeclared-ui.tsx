@@ -3,7 +3,8 @@
 
 import { useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
-import { withHost } from "./host-settings.ts";
+import { hostIdByName } from "./hosts.ts";
+import { useHosts } from "./host-pick-ui.tsx";
 import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { UndIcon, useUnd } from "./undeclared-ctx.tsx";
 import { findUndeclared, rowUndeclared, stripView } from "./undeclared.ts";
@@ -11,8 +12,9 @@ import { findUndeclared, rowUndeclared, stripView } from "./undeclared.ts";
 /** The command a thread's strip and Settings ask the host to run: the owner's dismiss of one episode. */
 export function useDismiss(): (host: string, thread: string, on: boolean) => Promise<string | null> {
   const api = useApi();
+  const { hosts } = useHosts();
   return async (host, thread, on) => {
-    const r = await api.command("host.undeclaredDismiss", undefined, withHost({ thread, on }, host));
+    const r = await api.command(hostIdByName(hosts, host), "host.undeclaredDismiss", undefined, { thread, on });
     refreshLoad();
     return r.ok ? null : (r.error ?? "That did not work");
   };

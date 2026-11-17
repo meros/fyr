@@ -103,7 +103,7 @@ func (f *Front) orderCommand(w http.ResponseWriter, commandID string, args map[s
 		f.order = ids
 		f.mu.Unlock()
 		ev, _ := json.Marshal(map[string]any{"ids": ids})
-		f.hub.Publish("projectOrder", ev)
+		f.publishFront("projectOrder", ev)
 		return 200, api.Reply{OK: true, Status: 200, Result: map[string]any{"ids": ids}}
 	})
 }

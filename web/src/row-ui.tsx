@@ -162,7 +162,7 @@ export function NeedButton({ t, change, need }: { t: Thread; change: Change; nee
         onClick={(e) => {
           if (!canMerge) return; // Answer: the row's own click opens the thread
           e.stopPropagation();
-          void press(change.id, merge!, undefined, ask, (action, args) => void api.command(action, t.id, args), need.head);
+          void press(change.id, merge!, undefined, ask, (action, args) => void api.command(t.hostId ?? "", action, t.id, args), need.head);
         }}
       >
         {look.button}

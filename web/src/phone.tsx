@@ -841,14 +841,14 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
 
 function MComposer({ t, p, tab, setTab }: { t: Thread; p: PhoneProps; tab: string; setTab(tab: string): void }) {
   const [text, setText] = useDraft(t.id);
-  const att = useAttachments(t.host);
+  const att = useAttachments(t.hostId);
   const ta = useRef<HTMLTextAreaElement>(null);
   const reason = unavailableReason(t, "thread.send");
   const plan = sendArgs(text, att.chips);
   const empty = !text.trim() && !att.chips.length;
   const stop = t.running && empty;
   // V0.79: `/` at the start lists the agent's commands and skills; a tap picks.
-  const slash = useSlash(reason ? null : { threadId: t.id }, text, setText, ta);
+  const slash = useSlash(reason ? null : { host: t.hostId ?? "", threadId: t.id }, text, setText, ta);
   useLayoutEffect(() => {
     const el = ta.current;
     if (!el) return;

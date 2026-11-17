@@ -43,6 +43,8 @@ export interface CommandOptions {
   undoMs: number;
   /** after an undo; ok is false when the host refused one of the inverse commands */
   onUndone?(entry: UndoEntry, ok: boolean): void;
+  /** The install id of the host that runs a thread (decision 0031: a command names its host). */
+  hostOf(threadId: string): string;
 }
 
 export function useThreadCommands(o: CommandOptions): ThreadCommands {
@@ -66,7 +68,7 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
 
   const run = async (action: string, ids: string[], args?: Record<string, unknown>, ro?: RunOptions): Promise<number> => {
     if (!ids.length) return 0;
-    const replies = await Promise.all(ids.map((id) => api.command(action, id, args).then((r) => ({ id, r }))));
+    const replies = await Promise.all(ids.map((id) => api.command(opts.current.hostOf(id), action, id, args).then((r) => ({ id, r }))));
     const ok = replies.filter((x) => x.r.ok).map((x) => x.id);
     const bad = replies.filter((x) => !x.r.ok);
     const kind = undoKindOf(action);
@@ -80,14 +82,14 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
   };
 
   const send = async (id: string, args: SendArgs): Promise<boolean> => {
-    const r = await api.command("thread.send", id, { ...args });
+    const r = await api.command(opts.current.hostOf(id), "thread.send", id, { ...args });
     if (!r.ok) showError(r.error ?? "Could not send");
     return r.ok;
   };
 
   const handover = async (id: string | null, profile?: string, model?: string): Promise<string | null> => {
     if (!id || !profile) return "Pick a profile";
-    const r = await api.command("thread.handover", id, model ? { profile, model } : { profile });
+    const r = await api.command(opts.current.hostOf(id), "thread.handover", id, model ? { profile, model } : { profile });
     return r.ok ? null : (r.error ?? "The handover could not start");
   };
 
@@ -100,7 +102,7 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     const cmds = undoCommands(entry, Date.now());
     if (!entry || !cmds) return;
     setUndo(null);
-    const res = await Promise.all(cmds.map((c) => api.command(c.action, c.threadId, c.args)));
+    const res = await Promise.all(cmds.map((c) => api.command(opts.current.hostOf(c.threadId ?? ""), c.action, c.threadId, c.args)));
     const bad = res.find((r) => !r.ok);
     if (bad) showError(`Undo failed: ${bad.error ?? ""}`);
     else notify("Undone");

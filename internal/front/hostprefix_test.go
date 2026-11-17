@@ -626,3 +626,42 @@ func TestCacheFileIsNamedByTheInstallID(t *testing.T) {
 		t.Errorf("the host's name still names a cache file")
 	}
 }
+
+// The front's own frames (hosts, projectOrder) are on /api/front/stream too, with no host.
+func TestFrontStreamCarriesTheFrontsOwnFrames(t *testing.T) {
+	one, two := newFakeHost(t, "one", idOne), newFakeHost(t, "two", idTwo)
+	_, fs := startFakes(t, "", one, two)
+	resp, err := http.Get(fs.URL + "/api/front/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	got := make(chan string, 16)
+	go func() {
+		rd := bufio.NewReader(resp.Body)
+		for {
+			line, err := rd.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if strings.HasPrefix(line, "event: ") {
+				got <- strings.TrimSpace(line[7:])
+			}
+		}
+	}()
+	if code, b := probePost(t, fs.URL+"/api/front/command", `{"commandId":"o9","action":"front.hostOrder","args":{"ids":["`+idTwo+`","`+idOne+`"]}}`); code != 200 {
+		t.Fatalf("hostOrder: %d %s", code, b)
+	}
+	if code, b := probePost(t, fs.URL+"/api/front/command", `{"commandId":"o10","action":"front.projectOrder","args":{"ids":[]}}`); code != 200 {
+		t.Logf("projectOrder: %d %s (no store in this front)", code, b)
+	}
+	seen := map[string]bool{}
+	for end := time.After(5 * time.Second); !seen["hosts"]; {
+		select {
+		case ev := <-got:
+			seen[ev] = true
+		case <-end:
+			t.Fatalf("frames %v: no hosts frame on /api/front/stream", seen)
+		}
+	}
+}

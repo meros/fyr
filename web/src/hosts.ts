@@ -101,6 +101,13 @@ export function offlineLine(t: { host?: string; hostOffline?: string }): string 
   return `${t.host || "Its host"} offline${at ? ` since ${at}` : ""} · read-only`;
 }
 
+/** The install id a host's name stands for in a picker (decision 0031: a call names the id). No name is the first host in
+ *  the owner's order: the default *choice* of a picker, which the call then names. "" when the host has no id. */
+export function hostIdByName(hosts: HostInfo[] | undefined, name?: string): string {
+  const hs = hosts ?? [];
+  return (name ? hs.find((h) => h.name === name) : hs[0])?.id ?? "";
+}
+
 /** V0.54: the host shows on rows and headers only when the front has more than one. */
 export function multiHost(hosts: HostInfo[] | undefined): boolean {
   return (hosts?.length ?? 0) > 1;
