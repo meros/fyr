@@ -185,7 +185,8 @@ type Link struct {
 }
 
 // LinkError says why a link is down: kind is one of acl, no-route, key-mismatch,
-// refused, timeout, removed, revoked.
+// refused, timeout, removed, revoked, stalled (V0.181: it answers nothing in
+// time).
 type LinkError struct {
 	Kind string `json:"kind"`
 	Text string `json:"text"`

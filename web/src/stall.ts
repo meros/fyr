@@ -1,5 +1,5 @@
 // SPEC 0.5 V0.147: a stall the host's watchdog saw (a lock held or a request running past 10 s), or the exit after
-// the engine's lock stayed stuck past 2 min. One line, in words, with the dump's file under Details.
+// the engine's lock stayed stuck past 10 min (V0.181; it was 2 min). One line, in words, with the dump's file under Details.
 
 export interface StallInfo {
   /** the host it happened on; a host's own state leaves it out */

@@ -175,6 +175,10 @@ type link struct {
 	// cancel ends following the host; gone is set when it was dropped.
 	cancel context.CancelFunc
 	gone   bool
+	// ctx is the following's context, under f.mu; probing is set while the
+	// front asks a stalled host for its state (V0.181).
+	ctx     context.Context
+	probing atomic.Bool
 
 	raw      map[string]map[string]any // the host's thread DTOs, host revs
 	pub      map[string]map[string]any // what the browser gets: stamped, front revs
@@ -320,6 +324,14 @@ func (f *Front) newLink(h HostConfig) *link {
 		},
 		Transport:     lt,
 		FlushInterval: -1,
+		// V0.181: the host's 503 past a deadline means it is stuck: the
+		// front checks it and, while it does not answer, marks it offline.
+		ModifyResponse: func(resp *http.Response) error {
+			if stalledAnswer(resp) {
+				f.suspect(l, "a call got no answer in time")
+			}
+			return nil
+		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			api.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": l.name() + ": " + err.Error()})
 		},
@@ -398,7 +410,7 @@ func (l *link) setEnv(env map[string]any) {
 func (f *Front) followOne(ctx context.Context, l *link) {
 	lctx, cancel := context.WithCancel(ctx)
 	f.mu.Lock()
-	l.cancel = cancel
+	l.cancel, l.ctx = cancel, lctx
 	gone := l.gone
 	f.mu.Unlock()
 	if gone {
@@ -561,6 +573,11 @@ func (f *Front) load(l *link, st map[string]any) {
 		if d, ok := x.(map[string]any); ok {
 			if id, _ := d["id"].(string); id != "" {
 				raw[id] = d
+				// V0.181: a stalled host's state is loaded beside its live
+				// stream; a newer frame taken meanwhile is kept.
+				if old := l.raw[id]; old != nil && revOf(old) > revOf(d) {
+					raw[id] = old
+				}
 			}
 		}
 	}
@@ -709,6 +726,10 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 			if b, err := json.Marshal(m); err == nil {
 				f.hub.Publish(ev, b)
 			}
+			// V0.181: a host that reports a stall and then does not answer
+			// is offline until it does.
+			what, _ := d["what"].(string)
+			f.suspect(l, "the host reported a stall: "+what)
 		}
 	default: // event and anything newer: the client ignores what it does not know
 		f.hub.Publish(ev, data)

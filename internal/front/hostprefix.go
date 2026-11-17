@@ -112,6 +112,9 @@ func (f *Front) linkOf(l *link) *api.Link {
 		case strings.Contains(e, "refused"):
 			kind = "refused"
 		}
+		if stalledErr(l.err) { // V0.181: the host is up but stuck
+			kind = "stalled"
+		}
 		k.Error = &api.LinkError{Kind: kind, Text: l.err}
 	}
 	return k

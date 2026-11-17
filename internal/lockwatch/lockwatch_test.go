@@ -3,6 +3,7 @@
 package lockwatch
 
 import (
+	"log"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -99,4 +100,40 @@ func TestV147WatchdogDumpsAStallOnceAndQuitsOnTheCoreLock(t *testing.T) {
 		t.Fatalf("an exit dump told the owner through the stuck engine: %d", stalls.Load())
 	}
 	core.Unlock()
+}
+
+// SPEC 0.5 V0.181 (#267): the front shows a stalled host offline, so the exit
+// is a last resort: the engine's lock held 2 minutes no longer ends fyrd; held
+// ExitAfter (10 minutes) it does, and the escalation is logged.
+func TestV181ExitIsALastResort(t *testing.T) {
+	var logs strings.Builder
+	log.SetOutput(&logs)
+	defer log.SetOutput(os.Stderr)
+	now := time.Now()
+	quits := 0
+	w := &Watchdog{Dir: t.TempDir(), Now: func() time.Time { return now }, Quit: func() { quits++ }}
+	core := &Mutex{Critical: true, Name: "engine.mu"}
+	core.Lock()
+	defer core.Unlock()
+	for _, at := range []time.Duration{StallAfter, 2 * time.Minute, 5 * time.Minute, ExitAfter - time.Second} {
+		now = time.Now().Add(at)
+		w.Check()
+		if quits != 0 {
+			t.Fatalf("fyrd quit with the engine's lock held %s, before the last resort %s", at, ExitAfter)
+		}
+	}
+	if ExitAfter < 10*time.Minute {
+		t.Fatalf("ExitAfter %s", ExitAfter)
+	}
+	if !strings.Contains(logs.String(), "the front shows this host offline") {
+		t.Fatalf("the stall of the engine's lock is not logged as such:\n%s", logs.String())
+	}
+	now = time.Now().Add(ExitAfter)
+	w.Check()
+	if quits != 1 {
+		t.Fatalf("held %s, fyrd did not quit: %d", ExitAfter, quits)
+	}
+	if !strings.Contains(logs.String(), "last resort") {
+		t.Fatalf("the escalation is not logged:\n%s", logs.String())
+	}
 }
