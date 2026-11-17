@@ -44,6 +44,7 @@ import { Settings, type SettingsDevice, type SettingsProps } from "./settings-ui
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type FilterView, type Theme } from "./inbox.tsx";
+import { useSlotQueue } from "./slot-queue-ui.tsx";
 import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
 import { HandoverDialog } from "./handover-ui.tsx";
 import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
@@ -317,7 +318,8 @@ function App() {
     }
     return out;
   }, [searchable, filterOn, query, quietClock, store.clockOffset]);
-  const sec = useMemo(() => sections(shown), [shown]);
+  const queue = useSlotQueue(); // V0.137
+  const sec = useMemo(() => sections(shown, queue), [shown, queue]);
   // V0.134: the chips (only values with threads in view; a selected one stays) and the empty state, on both fronts.
   const filterView = useMemo<FilterView>(() => {
     const chips = activeFilters({ threads: store.threads, projects: store.projects, hosts: store.hosts, self: store.host ?? "", sel: filterSel, open: sectionOpen, now: Date.now() + store.clockOffset, showUntil: unlock.showUntil });
@@ -976,8 +978,8 @@ function App() {
     return null;
   };
 
-  const adopt = async (ids: string[]): Promise<string | null> => {
-    const r = await api.command("t3.adopt", undefined, { t3Ids: ids });
+  const adopt = async (ids: string[], host?: string): Promise<string | null> => {
+    const r = await api.command("t3.adopt", undefined, { t3Ids: ids, ...(host && multiHost(store.hosts) ? { host } : {}) }); // V0.139
     if (!r.ok) return r.error ?? "Could not adopt";
     setDialog(null);
     cmds.notify(ids.length === 1 ? "Adopted 1 thread" : `Adopted ${ids.length} threads`);
@@ -1067,7 +1069,8 @@ function App() {
     if (gPending.current && Date.now() - gPending.current < 1500 && /^[1-5]$/.test(k)) {
       gPending.current = 0;
       e.preventDefault();
-      jump(SECTIONS[Number(k) - 1].key);
+      const g = SECTIONS.find((s) => s.g === Number(k)); // V0.137: Waiting for a slot has no g key
+      if (g) jump(g.key);
       return;
     }
     gPending.current = 0;
@@ -1397,11 +1400,11 @@ function App() {
         />
         {nav.sheet?.kind === "adopt" && (
           <AdoptDialog
-            load={() => api.t3Candidates()}
+            load={(h) => api.t3Candidates(h)}
             now={now}
             onClose={navBack}
-            onAdopt={async (ids) => {
-              const e = await adopt(ids);
+            onAdopt={async (ids, h) => {
+              const e = await adopt(ids, h);
               if (!e) navBack();
               return e;
             }}
@@ -1571,7 +1574,7 @@ function App() {
       {dialog === "handover" && handoverId && store.threads[handoverId] && (
         <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m) => cmds.handover(handoverId, pr, m)} />
       )}
-      {dialog === "adopt" && <AdoptDialog load={() => api.t3Candidates()} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
+      {dialog === "adopt" && <AdoptDialog load={(h) => api.t3Candidates(h)} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "changes" && (
         <Modal title="Changes" wide onClose={() => setDialog(null)}>
           <div class="db">

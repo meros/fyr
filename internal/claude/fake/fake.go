@@ -91,8 +91,10 @@ var (
 	postHook bool
 	stops    int
 
-	// closed: stdin closed; bgwg: background tasks the exit waits for.
+	// closed: stdin closed; eof is closed with it; bgwg: background tasks
+	// the exit waits for.
 	closed atomic.Bool
+	eof    = make(chan struct{})
 	bgwg   sync.WaitGroup
 
 	qmu   sync.Mutex
@@ -174,6 +176,10 @@ func request(id string, req msg) msg {
 		return r
 	case <-interrupt:
 		write(msg{"type": "control_cancel_request", "request_id": id})
+		return nil
+	case <-eof:
+		// Nobody can answer once stdin is closed: the CLI cancels the
+		// request and refuses the call (V0.133).
 		return nil
 	}
 }
@@ -385,6 +391,7 @@ func Main() {
 	}
 	// The CLI keeps running for its background tasks after stdin closes.
 	closed.Store(true)
+	close(eof)
 	bgwg.Wait()
 }
 
@@ -535,8 +542,13 @@ func turn(text string) (took []queued) {
 				write(msg{"type": "result", "subtype": "success", "is_error": false, "result": "stopped", "session_id": session})
 				return
 			}
-			request("bw_gate", msg{"subtype": "hook_callback", "callback_id": "gate",
-				"input": msg{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": msg{"command": "cat build.output"}}})
+			if request("bw_gate", msg{"subtype": "hook_callback", "callback_id": "gate",
+				"input": msg{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": msg{"command": "cat build.output"}}}) == nil {
+				refuse("tu_bw") // stdin closed while the hook was asked
+				assistant(msg{"type": "text", "text": "I've stopped as you asked."})
+				write(msg{"type": "result", "subtype": "success", "is_error": false, "result": "stopped", "session_id": session})
+				return
+			}
 			write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
 				"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_bw", "content": "build ok"}}}})
 			assistant(msg{"type": "text", "text": "background read ok"})

@@ -314,14 +314,12 @@ export type ChangePhase = "working" | "review" | "landed" | "live" | "abandoned"
 /** V0.101 (decision 0024 section 5): why a change waits on the owner, as the host computed it. head is the commit the
  *  cause is about (a Merge button is bound to it); ask and action name an open ask. */
 export interface ChangeNeed {
-  cause: "ask" | "ready" | "failure" | "fixing";
+  cause: "ask" | "ready" | "failure" | "fixing" | "waiting";
   head?: string;
   text?: string;
   ask?: string;
   action?: string;
   muted?: boolean;
-  /** V0.112: why the ask's yes cannot run yet (a merge on pending checks); the yes is disabled with it */
-  wait?: string;
 }
 
 export interface Change {
@@ -339,7 +337,7 @@ export interface Change {
   group?: string;
   after?: string[];
   /** V0.101: why it waits on the owner, computed on the host; the client only reads it. cause: ask, ready, failure,
-   *  or fixing (muted: a failure while the agent runs) */
+   *  fixing (muted: a failure while the agent runs) or waiting (V0.136, muted: a merge ask that waits for CI) */
   need?: ChangeNeed;
   /** V0.97: the change's PR as Fyr last read it, and what it waits for from the owner (the host's Ready rule) */
   pr?: PullRequest;

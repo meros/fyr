@@ -516,6 +516,15 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(500, err.Error())
 		}
 		reply.Result = kept
+	case core.EffectSlotOrderSet: // V0.137: the owner's order of the slot queue
+		if e.Slots == nil || e.Slots.Off() {
+			return fail(409, "This host has no slots for heavy jobs")
+		}
+		var owners []string
+		for _, x := range ef.Request.Args["owners"].([]any) {
+			owners = append(owners, x.(string))
+		}
+		reply.Result = e.Slots.Reorder(owners)
 	case core.EffectSystemAgentsSet: // V0.115: the owner's setting
 		a := ef.Request.Args
 		job, _ := a["job"].(string)
