@@ -314,7 +314,10 @@ func TestListSaysInputClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SendUser([]claude.Msg{{"type": "text", "text": "bgwait 600"}}, "u1"); err != nil {
+	// The background task outlives the check: the process must still run
+	// when the list is read. A short one (600 ms) let it exit first under
+	// CI load, and InputClosed && !Exited never held again.
+	if err := c.SendUser([]claude.Msg{{"type": "text", "text": "bgwait 60000"}}, "u1"); err != nil {
 		t.Fatal(err)
 	}
 	for m := next(t, c); m["type"] != "result"; m = next(t, c) {
@@ -323,15 +326,31 @@ func TestListSaysInputClosed(t *testing.T) {
 		t.Fatalf("before the close: %+v", ps)
 	}
 	c.Close()
-	until(t, "the list says the input is closed", func() bool {
+	within(t, 30*time.Second, "the list says the input is closed", func() bool {
 		ps := procs(t, rc)
-		return len(ps) == 1 && ps[0].InputClosed && !ps[0].Exited
+		if len(ps) == 1 && ps[0].Exited {
+			t.Fatalf("the process exited before its background task: %+v", ps)
+		}
+		return len(ps) == 1 && ps[0].InputClosed
 	})
-	// The CLI ends by itself after its background task.
-	until(t, "the process exited", func() bool {
+	// Nothing outlives the test.
+	c.Kill()
+	within(t, 30*time.Second, "the process exited", func() bool {
 		ps := procs(t, rc)
 		return len(ps) == 1 && ps[0].Exited
 	})
+}
+
+// within waits for ok up to d, a deadline generous enough for a loaded CI.
+func within(t *testing.T, d time.Duration, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for !ok() {
+		if time.Now().After(deadline) {
+			t.Fatal("timeout: " + what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // SPEC 0.5 V0.147: a process that reads nothing fills its stdin pipe; the
