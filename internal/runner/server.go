@@ -308,9 +308,7 @@ func (p *rproc) info() Proc {
 
 // closeInput closes the CLI's stdin and remembers it (V0.142).
 func (p *rproc) closeInput() {
-	p.wmu.Lock()
-	p.in.Close()
-	p.wmu.Unlock()
+	p.in.Close() // not under wmu: a write blocked on a full pipe ends with it
 	p.mu.Lock()
 	p.inClosed = true
 	p.mu.Unlock()
