@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/front"
@@ -14,11 +15,12 @@ import (
 )
 
 // openAuth loads a front's browser sessions (V0.130).
-func openAuth(st *store.Store) *auth.Store {
+func openAuth(st *store.Store, stepUp time.Duration) *auth.Store {
 	a, err := auth.Open(st, nil)
 	if err != nil {
 		log.Fatalf("auth: %v", err)
 	}
+	a.SetStepUp(stepUp)
 	return a
 }
 

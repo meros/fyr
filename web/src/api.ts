@@ -116,7 +116,7 @@ export interface Api {
   /** V0.159: Settings → Hosts: the paired installs, the nodes that are not, the open invite. */
   peerState(): Promise<PeerState>;
   /** V0.159: invite (open one here: a code, a QR image, a link) or join (an invite from another install). */
-  peerAct(action: "invite" | "join", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
+  peerAct(action: "invite" | "join" | "remove", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
   /** V0.115: the system agents setting of a host */
   systemAgents(host?: string): Promise<HostRead<SystemAgentsView>>;
   /** V0.50: the current profiles (after a provider changed). */

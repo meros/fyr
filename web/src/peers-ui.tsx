@@ -37,6 +37,7 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [code, setCode] = useState(() => (typeof location === "undefined" ? "" : inviteFromUrl(location.search)));
   const [addr, setAddr] = useState("");
+  const [confirm, setConfirm] = useState<string | null>(null);
   useEffect(() => {
     if (!invite) return;
     const t = setTimeout(() => setInvite(null), Math.max(0, Date.parse(invite.until) - Date.now()));
@@ -70,6 +71,17 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
     reload();
   };
 
+  const remove = async (id: string) => {
+    setConfirm(null);
+    setBusy(true);
+    setMsg(null);
+    setOk(null);
+    const r = await api.peerAct("remove", { id });
+    setBusy(false);
+    if (!r.ok) return setMsg(String(r.error ?? "That did not work"));
+    env.saved();
+    reload();
+  };
   const rest = others(s);
   return (
     <div class="peers" data-testid="peers">
@@ -83,9 +95,32 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
           {ok}
         </div>
       )}
-      <Group label="Paired installs" title="Paired installs" foot="Installs that know each other by key. A paired install reads every host, and drives it unless that host switched it off (fyr host drive).">
+      <Group label="Paired installs" title="Paired installs" foot="Installs that know each other by key. A paired install reads every host, and drives it unless that host switched it off (fyr host drive). Remove ends an install for ever: its link closes, and what it signed counts for nothing.">
         {s.members.map((m) => (
-          <Row key={m.id} class="peerrow" mono ell title={m.name} desc={`${viaWords(m)} · ${m.id.slice(0, 4)}`} />
+          <Row
+            key={m.id}
+            class="peerrow"
+            mono
+            ell
+            title={m.name}
+            desc={`${viaWords(m)} · ${m.id.slice(0, 4)}`}
+            end={
+              m.self ? undefined : confirm === m.id ? (
+                <>
+                  <button type="button" class="btn danger" disabled={ro} onClick={() => void remove(m.id)}>
+                    Remove
+                  </button>
+                  <button type="button" class="btn" onClick={() => setConfirm(null)}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button type="button" class="btn" disabled={ro} onClick={() => setConfirm(m.id)}>
+                  Remove…
+                </button>
+              )
+            }
+          />
         ))}
         {rest.length === 0 && <Row class="peerrow" title="No other install is paired." desc="Installs of one tailnet user pair by themselves; others pair with an invite." />}
       </Group>

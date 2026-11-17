@@ -9,6 +9,8 @@
 //	fyr auth status|observe|enforce [way]   the modes of the ways in (V0.157)
 //	fyr device add|approve CODE|revoke ID|list   the signed-in devices (V0.157)
 //	fyr pair [CODE [-addr host:port]]   open an invite, or join with one (V0.159)
+//	fyr host list|remove ID|drive ID on|off   (V0.158, V0.160)
+//	fyr rotate-key          move this install to a new key (V0.160)
 //	fyr host list|drive ID on|off   the installs this one is paired with (V0.158)
 package main
 
@@ -42,7 +44,7 @@ func main() {
 		}
 		return
 	}
-	if len(args) > 0 && (args[0] == "auth" || args[0] == "device" || args[0] == "host" || args[0] == "pair") { // V0.157: through the owner socket
+	if len(args) > 0 && (args[0] == "auth" || args[0] == "device" || args[0] == "host" || args[0] == "pair" || args[0] == "rotate-key") { // V0.157: through the owner socket
 		if err := authCommand(args[0], args[1:]); err != nil {
 			log.Fatal(err)
 		}

@@ -8,6 +8,7 @@ package peer
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -54,6 +55,14 @@ type Env struct {
 	Logf    func(string, ...any)
 	// Rounds counts the pairing rounds that ran (a test waits for some).
 	Rounds atomic.Int64
+	// Enforce says the peer way in is in enforce mode; Served counts a request over
+	// the link (a success of that way). Both optional.
+	Enforce  func() bool
+	OnServed func()
+
+	trackMu sync.Mutex
+	tracked map[string]map[int]context.CancelFunc
+	trackN  int
 }
 
 func (e *Env) init() {
@@ -177,13 +186,77 @@ func (e *Env) member(f func(http.ResponseWriter, *http.Request, roster.Member)) 
 	}
 }
 
-// Caller is the roster member whose key the connection proved.
+// Caller is the roster member whose key the connection proved. A key that is not
+// a member yet may be a member's new key: its certificate then carries the
+// rotations, signed by the key the roster knows, and they are merged first.
 func (e *Env) Caller(r *http.Request) (roster.Member, bool) {
 	pub, ok := peerlink.Caller(r)
 	if !ok {
 		return roster.Member{}, false
 	}
-	return e.Roster.KeyMember(pub)
+	if m, in := e.Roster.KeyMember(pub); in {
+		return m, true
+	}
+	if chain := peerlink.CallerRotation(r); len(chain) > 0 {
+		// Only a chain that leads from a key the roster holds to the key on this
+		// connection is taken: a stranger's certificate must not write to the roster.
+		old, ok := e.Roster.Member(chain[0].Subject)
+		if !ok {
+			return roster.Member{}, false
+		}
+		if end, ok := roster.ChainFrom(chain, old.Key); !ok || !end.Equal(pub) {
+			return roster.Member{}, false
+		}
+		e.Roster.Merge(chain)
+		return e.Roster.KeyMember(pub)
+	}
+	return roster.Member{}, false
+}
+
+// DialOptions are what a dial shows and accepts about rotated keys: this
+// install's own rotations in its certificate, and a peer's chain accepted when it
+// leads from the key the roster holds for the id that was meant.
+func (e *Env) DialOptions() peerlink.Options {
+	return peerlink.Options{
+		Rotation: e.Roster.RotationChain(),
+		OldKey: func(id string) ed25519.PublicKey {
+			if m, ok := e.Roster.Member(id); ok {
+				return m.Key
+			}
+			return nil
+		},
+		OnRotation: func(chain []roster.Statement) { e.Roster.Merge(chain) },
+	}
+}
+
+// Remove ends an install for ever (decision 0030 3.6): the roster says so, every
+// open request from it is closed, and the next sync tells the other members.
+func (e *Env) Remove(id string) error {
+	if err := e.Roster.Remove(id); err != nil {
+		return err
+	}
+	e.CloseRemoved()
+	e.logf("peer: removed install %s", id)
+	return nil
+}
+
+// CloseRemoved cancels the open requests of installs that are no longer members
+// (a stream is one long request), within one change of the roster.
+func (e *Env) CloseRemoved() {
+	e.trackMu.Lock()
+	var cancel []context.CancelFunc
+	for id, m := range e.tracked {
+		if _, in := e.Roster.Member(id); !in {
+			for _, c := range m {
+				cancel = append(cancel, c)
+			}
+			delete(e.tracked, id)
+		}
+	}
+	e.trackMu.Unlock()
+	for _, c := range cancel {
+		c()
+	}
 }
 
 type pairReq struct {
@@ -200,7 +273,7 @@ type pairResp struct {
 // must name the key the connection just proved.
 func (e *Env) pairTailnet(w http.ResponseWriter, r *http.Request) {
 	pub, ok := peerlink.Caller(r)
-	if !ok || e.TS == nil {
+	if !ok || e.TS == nil || e.Roster.SelfRemoved() {
 		http.Error(w, "no", http.StatusForbidden)
 		return
 	}
@@ -272,6 +345,9 @@ func (e *Env) Client(m roster.Member) *http.Client { return e.Dial.Client(m.ID, 
 // next round (a Serve that is not up yet).
 func (e *Env) PairRound(ctx context.Context) {
 	defer e.Rounds.Add(1)
+	if e.Roster.SelfRemoved() {
+		return // a member removed this install: it pairs with no one until the owner pairs it again
+	}
 	if e.TS == nil || e.Port == nil || e.Port() == 0 {
 		return
 	}
@@ -494,6 +570,46 @@ func (e *Env) Member(r *http.Request) (string, bool) {
 	return m.ID, ok
 }
 func (e *Env) DeviceRevoked(id string) bool { return e.Roster.DeviceRevoked(id) }
+
+// DeviceKnown: a member signed the device in.
+func (e *Env) DeviceKnown(id string) bool {
+	for _, d := range e.Roster.Devices() {
+		if d.Subject == id {
+			return true
+		}
+	}
+	return false
+}
+
+// Enforcing: the peer way in is in enforce mode.
+func (e *Env) Enforcing() bool { return e.Enforce != nil && e.Enforce() }
+
+// Served counts a request over the link.
+func (e *Env) Served() {
+	if e.OnServed != nil {
+		e.OnServed()
+	}
+}
+
+// Track registers an open request of an install so that removing it closes it.
+func (e *Env) Track(install string, cancel context.CancelFunc) func() {
+	e.trackMu.Lock()
+	defer e.trackMu.Unlock()
+	if e.tracked == nil {
+		e.tracked = map[string]map[int]context.CancelFunc{}
+	}
+	if e.tracked[install] == nil {
+		e.tracked[install] = map[int]context.CancelFunc{}
+	}
+	e.trackN++
+	n := e.trackN
+	e.tracked[install][n] = cancel
+	return func() {
+		e.trackMu.Lock()
+		delete(e.tracked[install], n)
+		e.trackMu.Unlock()
+	}
+}
 func (e *Env) MayDrive(install string) bool { return e.Drive.MayDrive(install) }
 
 func nameOr(n, d string) string {

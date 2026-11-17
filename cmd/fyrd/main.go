@@ -29,6 +29,7 @@ import (
 
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
+	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/cgroup"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/deploy"
@@ -616,9 +617,11 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}
 		return nil
 	}}
+	authStore := openAuth(h.st, cfg.stepUp()) // the browser sessions of a front, and the stored mode of each way in (decision 0030 5.1)
+	old := &oldListeners{}
 	if cfg.Role == "host" {
 		serve(ln, deploy.Health(hostHandler, health...))
-		newPeerSide(cfg, data, hostName, key).start(ctx, data, srv, nil, nil) // a host-only install pairs and serves its peer port too
+		newPeerSide(cfg, data, hostName, key).start(ctx, data, srv, nil, authStore, old) // a host-only install pairs and serves its peer port too
 	} else {
 		// both (V0.51): the front reaches this host over a loopback link,
 		// through the host protocol only; agents keep /mcp on the main port.
@@ -634,7 +637,6 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen), id)
 		var fr *front.Front
 		ps := newPeerSide(cfg, data, hostName, key)
-		authStore := openAuth(h.st)
 		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), Web: webFS,
 			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st, Auth: authStore, Tailnet: tailnetNodes(cfg),
 			OwnerRoutes: func(mux *http.ServeMux) {
@@ -644,7 +646,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			},
 			WellKnown: func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }}, hosts)
 		go func() { fr.Run(ctx); close(frontDone) }()
-		ps.start(ctx, data, srv, fr, authStore) // decision 0030 3.6
+		ps.start(ctx, data, srv, fr, authStore, old) // decision 0030 3.6
 		go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every)
 		// V0.81: a client-only deploy swaps the client this front serves.
 		dep.SwitchClient = func(build, dir string) error { return fr.SetClient(build, os.DirFS(dir)) }
@@ -658,16 +660,41 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			log.Printf("answering /.well-known/fyr for Tailscale Serve at %s", cfg.WellKnownListen)
 		}
 	}
-	switch {
-	case cfg.HostListen == "":
-	case loopbackAddr(cfg.HostListen):
-		// V0.123: a second install on this machine (development, tests)
-		// follows this host on loopback, behind the loopback guard (V0.14).
-		serve(listenLoopback(cfg.HostListen), hostHandler)
-		log.Printf("serving fronts on loopback at %s", cfg.HostListen)
-	default:
-		serve(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: cfg.tsSocket()}))
-		log.Printf("serving fronts on the tailnet at %s", cfg.HostListen)
+	// The old ways a front reaches a host: the tailnet listener behind whois, and a loopback
+	// host port. The peer way in's enforce mode removes them; observe brings them back.
+	old.open = func() []*http.Server {
+		var out []*http.Server
+		start := func(ln net.Listener, h http.Handler) {
+			hs := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+			out = append(out, hs)
+			go func() {
+				if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					log.Printf("host listener: %v", err)
+				}
+			}()
+		}
+		switch {
+		case cfg.HostListen == "":
+		case loopbackAddr(cfg.HostListen):
+			// V0.123: a second install on this machine (development, tests)
+			// follows this host on loopback, behind the loopback guard (V0.14).
+			start(listenLoopback(cfg.HostListen), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if old.onUse != nil {
+					old.onUse()
+				}
+				hostHandler.ServeHTTP(w, r)
+			}))
+			log.Printf("serving fronts on loopback at %s", cfg.HostListen)
+		default:
+			start(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: cfg.tsSocket()}))
+			log.Printf("serving fronts on the tailnet at %s", cfg.HostListen)
+		}
+		return out
+	}
+	if authStore.Mode(auth.WayPeer) == auth.ModeEnforce {
+		log.Printf("peer is in enforce: the old host listeners are not started (fyr auth observe brings them back)")
+	} else {
+		old.Set(true)
 	}
 	log.Printf("build %s (%s) listening on http://%s (%d threads, %d providers)", BuildID(), cfg.Role, ln.Addr(), len(eng.Snapshot()), len(h.profiles()))
 	deploy.MarkReady(ln.Addr().String())
@@ -681,6 +708,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	for _, hs := range servers {
 		hs.Shutdown(sctx)
 	}
+	old.Close(sctx)
 	if cfg.Role != "host" {
 		<-frontDone // the front's cache is written
 	}
@@ -711,7 +739,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	wk := wellKnown(cfg, name, "", id)
 	var fr *front.Front
 	ps := newPeerSide(cfg, data, name, key)
-	authStore := openAuth(st)
+	authStore := openAuth(st, cfg.stepUp())
 	fr = front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), Web: webFS,
 		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, Auth: authStore, Tailnet: tailnetNodes(cfg),
 		OwnerRoutes: func(mux *http.ServeMux) {
@@ -723,7 +751,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	done := make(chan struct{})
 	go func() { fr.Run(ctx); close(done) }()
 	go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every) // V0.123
-	ps.start(ctx, data, nil, fr, authStore)
+	ps.start(ctx, data, nil, fr, authStore, nil)
 	hs := &http.Server{Handler: deploy.Health(fr.Handler(), storeHealthy(st), webHealthy(webFS)), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

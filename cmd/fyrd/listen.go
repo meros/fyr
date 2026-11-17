@@ -7,13 +7,18 @@ import (
 	"io/fs"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/deploy"
+	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/push"
+	"github.com/meros/fyr/internal/roster"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/tailnet"
 )
@@ -113,6 +118,26 @@ func selftest(data string, webFS fs.FS) {
 	if _, err := st.Changes(); err != nil {
 		fail("reading the changes: %v", err)
 	}
+	// Decision 0030 3.9: a build that cannot read the install key, the roster or the
+	// device table is not switched to.
+	key, err := identity.Load(data)
+	if err != nil {
+		fail("reading the install key: %v", err)
+	}
+	ros, err := roster.Open(data, key, "selftest", nil)
+	if err != nil {
+		fail("reading the roster: %v", err)
+	}
+	if !ros.SelfRemoved() {
+		if m := ros.Members(); len(m) == 0 || m[0].ID != key.ID() {
+			fail("the roster does not hold this install as a member")
+		}
+	}
+	as, err := auth.Open(st, nil)
+	if err != nil {
+		fail("reading the devices: %v", err)
+	}
+	_ = as.List()
 	if err := webHealthy(webFS)(); err != nil {
 		fail("%v", err)
 	}
@@ -137,5 +162,44 @@ func restartWhenTailnet(ctx context.Context, socket string) {
 				return
 			}
 		}
+	}
+}
+
+// oldListeners are the two ways a front reached a host before the peer link: the
+// tailnet listener behind tailscaled's whois, and a loopback host port. The peer
+// way in's enforce mode removes them (decision 0030 3.6, 5.1); observe restores
+// them, so `fyr auth observe` is always the way back.
+type oldListeners struct {
+	mu    sync.Mutex
+	open  func() []*http.Server // starts them
+	srvs  []*http.Server
+	onUse func()
+}
+
+// Set starts or stops the old listeners.
+func (o *oldListeners) Set(enable bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if enable == (len(o.srvs) > 0) || o.open == nil {
+		return
+	}
+	if enable {
+		o.srvs = o.open()
+		log.Printf("peer: the old host listeners are back (peer is in observe)")
+		return
+	}
+	for _, s := range o.srvs {
+		s.Close()
+	}
+	o.srvs = nil
+	log.Printf("peer: the old host listeners are removed (peer is in enforce)")
+}
+
+// Close stops them at shutdown.
+func (o *oldListeners) Close(ctx context.Context) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for _, s := range o.srvs {
+		s.Shutdown(ctx)
 	}
 }

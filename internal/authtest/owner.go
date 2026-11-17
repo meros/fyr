@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/meros/fyr/internal/store"
 	"io"
+	"path/filepath"
+	"testing"
 	"time"
 
 	"github.com/meros/fyr/internal/auth"
@@ -123,5 +126,18 @@ func (f *Fyrd) WaitRoster(d time.Duration, cond func(*Roster) bool) (*Roster, er
 			return last, fmt.Errorf("roster condition not met (%v): %+v\n%s", lastErr, last, f.Log())
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// BreakDevices writes a device table that cannot be read into a data folder's database.
+func BreakDevices(t testing.TB, dir string) {
+	t.Helper()
+	st, err := store.Open(filepath.Join(dir, "fyr.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.SetKV("auth.devices", "not json"); err != nil {
+		t.Fatal(err)
 	}
 }

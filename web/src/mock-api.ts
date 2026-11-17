@@ -229,6 +229,10 @@ export function createMockApi(scenario: string): Api {
       return JSON.parse(JSON.stringify(mockPeers)) as PeerState;
     },
     async peerAct(action, body) {
+      if (action === "remove") {
+        mockPeers.members = mockPeers.members.filter((m) => m.id !== body.id);
+        return { ok: true };
+      }
       if (action === "join") {
         if (!/^fyr1-/i.test(String(body.code))) return { ok: false, error: "that is not an invite" };
         return { ok: true, name: "box", addr: "box.tail1234.ts.net:7779" };
