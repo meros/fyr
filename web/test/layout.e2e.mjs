@@ -266,7 +266,7 @@ const SCREENS = [
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
   { name: "settings add provider (V0.119)", url: "?mock=rail&settings=providers/new", ready: "!!document.querySelector('.m-settings [role=radiogroup][aria-label=Kind]')" },
-  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] .sr').length === 3 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] button').length === 3", field: ".m-settings .fieldrow .inl input" },
+  { name: "settings automation (V0.119)", url: "?mock=rail&settings=automation", ready: "!!document.querySelector('[aria-label=\"Auto-update Fyr\"]') && document.querySelectorAll('section[aria-label=\"Updates\"] .sr').length >= 3 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] .sr').length === 4 && document.querySelectorAll('section[aria-label=\"Heavy jobs\"] button').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings projects (V0.119)", url: "?mock=rail&settings=projects", ready: "document.querySelectorAll('.m-settings .pli').length > 3" },
   { name: "settings device (V0.119)", url: "?mock=rail&settings=device", ready: "!!document.querySelector('.m-settings [role=switch][aria-label=Notifications]')" },
   // V0.125: the Hosts page and a host's page with a changed id, at every phone size.
@@ -2022,7 +2022,7 @@ section('V0.152', async (h) => {
       check(desk.fig === "130%" && /^\d+%$/.test(lab.fig), `${ctx}: a ring's figure is not a share of the cores (${JSON.stringify(r.cards)})`);
       check(desk.name === "desk" && lab.name === "lab" && desk.full === "desk" && lab.full === "lab", `${ctx}: the cards do not name their hosts (${JSON.stringify(r.cards)})`);
       check(desk.meter && r.cards.every((c) => !c.meter || /^Heavy jobs: /.test(c.meterTip)), `${ctx}: a slot meter has no tooltip saying what it is (${JSON.stringify(r.cards)})`);
-      check(desk.note === "95 %+1" && desk.noteHot && lab.note === "0 %", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
+      check(desk.note === "95 %+1" && desk.noteHot && lab.note === "", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
       check(r.qs.map((q) => q.ini).join() === "C,W,C,Z" && r.cols === 2 && r.rows === 2, `${ctx}: the quota grid or its initials are wrong (${JSON.stringify(r.qs)})`);
       check(r.qs.every((q) => q.hot === (parseInt(q.v) >= 80)), `${ctx}: a quota is red below 80 % or plain above (${JSON.stringify(r.qs)})`);
       check(r.qs[2].tip.startsWith("Claude on lab") && r.qs[0].tip.startsWith("Claude on "), `${ctx}: a quota's tooltip does not name its provider and host (${JSON.stringify(r.qs)})`);
