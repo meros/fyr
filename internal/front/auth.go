@@ -59,18 +59,38 @@ func signedIn(r *http.Request) (authn.Principal, bool) {
 func exempt(r *http.Request) bool {
 	p := r.URL.Path
 	switch {
-	case !strings.HasPrefix(p, "/api/"):
-		return (r.Method == http.MethodGet || r.Method == http.MethodHead) && !isDocument(r)
 	case p == "/.well-known/fyr":
 		return true
+	case !strings.HasPrefix(p, "/api/"):
+		// The client's files, by what they are, not by what the browser says it is
+		// asking for: a service worker that refetches a navigation does not say
+		// "document", and the page itself (/, /index.html, a path the client
+		// routes) must never go out without a session.
+		return (r.Method == http.MethodGet || r.Method == http.MethodHead) && staticFile(p)
 	case strings.HasPrefix(p, "/api/previews/"):
 		return r.Method == http.MethodGet || r.Method == http.MethodHead
 	}
 	return false
 }
 
+// staticFile: the path names an asset of the built client, not a page.
+func staticFile(p string) bool {
+	i := strings.LastIndexByte(p, '.')
+	if i < 0 || i < strings.LastIndexByte(p, '/') {
+		return false
+	}
+	switch strings.ToLower(p[i:]) {
+	case ".js", ".mjs", ".css", ".map", ".woff", ".woff2", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico", ".webmanifest", ".json", ".txt":
+		return true
+	}
+	return false
+}
+
 // isDocument: a browser navigation, which gets the sign-in page in enforce.
 func isDocument(r *http.Request) bool {
+	if r.Header.Get("Sec-Fetch-Mode") == "navigate" {
+		return true
+	}
 	if d := r.Header.Get("Sec-Fetch-Dest"); d != "" {
 		return d == "document" || d == "iframe"
 	}

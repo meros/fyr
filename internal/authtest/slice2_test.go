@@ -49,16 +49,18 @@ func TestBrowserEnforceAndTheWayBack(t *testing.T) {
 		req  authtest.Request
 		want int
 	}{
-		"the local cookie":              {authtest.Request{Path: "/api/state", Cookie: l.Local}, 200},
-		"the tailnet cookie":            {authtest.Request{Path: "/api/state", Cookie: l.Tailnet}, 200},
-		"no cookie":                     {authtest.Request{Path: "/api/state"}, 401},
-		"no cookie, a command":          {authtest.Request{Method: "POST", Path: "/api/command", Header: map[string]string{"Origin": l.Laptop.URL()}, Body: strings.NewReader("{}")}, 401},
-		"a made-up cookie":              {authtest.Request{Path: "/api/state", Cookie: "nope"}, 401},
-		"no cookie, a navigation":       {authtest.Request{Path: "/", Header: doc()}, 401},
-		"no cookie, a script":           {authtest.Request{Path: "/nope.js", Header: map[string]string{"Sec-Fetch-Dest": "script"}}, 404},
-		"no cookie, the well-known":     {authtest.Request{Path: "/.well-known/fyr"}, 200},
-		"no cookie, a preview":          {authtest.Request{Path: "/api/previews/pv_none"}, 404},
-		"a header only tailscaled sets": {authtest.Request{Path: "/api/state", Cookie: l.Local, Header: map[string]string{"Tailscale-User-Login": l.OwnerLogin}}, 400},
+		"the local cookie":        {authtest.Request{Path: "/api/state", Cookie: l.Local}, 200},
+		"the tailnet cookie":      {authtest.Request{Path: "/api/state", Cookie: l.Tailnet}, 200},
+		"no cookie":               {authtest.Request{Path: "/api/state"}, 401},
+		"no cookie, a command":    {authtest.Request{Method: "POST", Path: "/api/command", Header: map[string]string{"Origin": l.Laptop.URL()}, Body: strings.NewReader("{}")}, 401},
+		"a made-up cookie":        {authtest.Request{Path: "/api/state", Cookie: "nope"}, 401},
+		"no cookie, a navigation": {authtest.Request{Path: "/", Header: doc()}, 401},
+		"no cookie, a page the service worker refetches": {authtest.Request{Path: "/", Header: map[string]string{"Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "same-origin", "Accept": "*/*"}}, 401},
+		"no cookie, index.html":                          {authtest.Request{Path: "/index.html"}, 401},
+		"no cookie, a script":                            {authtest.Request{Path: "/nope.js", Header: map[string]string{"Sec-Fetch-Dest": "script"}}, 404},
+		"no cookie, the well-known":                      {authtest.Request{Path: "/.well-known/fyr"}, 200},
+		"no cookie, a preview":                           {authtest.Request{Path: "/api/previews/pv_none"}, 404},
+		"a header only tailscaled sets":                  {authtest.Request{Path: "/api/state", Cookie: l.Local, Header: map[string]string{"Tailscale-User-Login": l.OwnerLogin}}, 400},
 	} {
 		if r := status(t, l.Laptop.URL(), c.req); r.Status != c.want {
 			t.Errorf("enforce, %s: %d (want %d) %.80s", name, r.Status, c.want, r.Body)
