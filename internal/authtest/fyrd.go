@@ -207,7 +207,7 @@ func Start(o Options) (*Fyrd, error) {
 	// Only what a process needs; every FYR_* variable out (#167).
 	cmd.Env = append(cleanEnv(os.Environ()), "HOME="+root)
 	cmd.Stdout, cmd.Stderr = f.logb, f.logb
-	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+	dieWithTest(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}

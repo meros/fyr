@@ -79,6 +79,11 @@ type config struct {
 	// HostListen: a tailnet address where the host also serves the host
 	// protocol to fronts on other machines (V0.51); empty is none.
 	HostListen string `json:"hostListen"`
+	// WellKnownListen: a loopback address where fyrd answers only
+	// /.well-known/fyr, for a Tailscale Serve that cannot reach serve.sock
+	// (the macOS app proxies to TCP only), so other installs find this one;
+	// empty is none.
+	WellKnownListen string `json:"wellKnownListen"`
 	// Cgroups: the server/ and agents/ split and the agents' budget
 	// (V0.80); absent is off.
 	Cgroups *cgroup.Budget `json:"cgroups"`

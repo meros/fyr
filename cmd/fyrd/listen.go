@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -8,10 +9,13 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/meros/fyr/internal/deploy"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/store"
+	"github.com/meros/fyr/internal/tailnet"
 )
 
 // newPusher is a front's Web Push (V0.15). The VAPID subject goes to the push
@@ -113,4 +117,25 @@ func selftest(data string, webFS fs.FS) {
 		fail("%v", err)
 	}
 	fmt.Printf("selftest: build %s passed\n", BuildID())
+}
+
+// restartWhenTailnet restarts fyrd once this machine has a tailnet address,
+// so the hostListen it started without comes up (a Mac off the tailnet at
+// start). SIGHUP ends it as a deploy does (ExitDeploy): the launcher restarts
+// current and the runner keeps the agents.
+func restartWhenTailnet(ctx context.Context, socket string) {
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if _, err := tailnet.IPv4(socket); err == nil {
+				log.Printf("tailnet is up; restarting to serve other installs on it")
+				syscall.Kill(os.Getpid(), syscall.SIGHUP)
+				return
+			}
+		}
+	}
 }
