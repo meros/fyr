@@ -57,3 +57,20 @@ test("a user event's attachments become chips", () => {
   assert.equal(items[0].kind, "user");
   assert.deepEqual((items[0] as any).attachments, [{ id: "a1", name: "x.png", mediaType: "image/png", size: 10 }]);
 });
+
+// SPEC V0.133: a tool call the agent CLI refused without asking Fyr shows as
+// one failed line that says it was not the owner; the same item on desktop
+// and phone (the conversation is one component).
+test("a CLI refusal shows as a line that names the tool and says it was not the owner", () => {
+  const items = buildConversation([
+    msg("assistant", [{ type: "tool_use", id: "r1", name: "Bash", input: { command: "cat build.output" } }]),
+    msg("user", [{ type: "tool_result", tool_use_id: "r1", is_error: true, content: "The user doesn't want to take this action right now." }]),
+    ev("tool.refused", { tool: "Bash", toolUseId: "r1", why: "Fyr had closed the agent's input, so the CLI could not ask for permission and refused this tool call; not the owner." }),
+  ]);
+  const line = items.find((i) => i.kind === "effect") as Extract<(typeof items)[0], { kind: "effect" }>;
+  assert.ok(line, "no line for the refusal");
+  assert.equal(line.ok, false);
+  assert.equal(line.action, "refused");
+  assert.match(line.line, /^Bash was refused without asking you/);
+  assert.match(line.text, /not the owner/);
+});
