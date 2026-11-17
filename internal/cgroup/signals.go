@@ -207,8 +207,19 @@ func (s *Sampler) signals(l *Load, proc string, agentsMem uint64) {
 	l.Capacity = &c
 	if c.Memory > 0 {
 		h := float64(avail) / float64(c.Memory)
-		if s.Tree != nil && agentsMem <= c.Memory {
-			h = min(h, float64(c.Memory-agentsMem)/float64(c.Memory))
+		if s.Tree != nil {
+			// The working set: page cache the kernel drops first
+			// (inactive_file) is not used memory; memory.current fills to
+			// memory.high with it.
+			ws := agentsMem
+			if inactive, ok := readKey(filepath.Join(s.Tree.root, "agents", "memory.stat"), "inactive_file"); ok && inactive <= ws {
+				ws -= inactive
+			}
+			if ws <= c.Memory {
+				h = min(h, float64(c.Memory-ws)/float64(c.Memory))
+			} else {
+				h = 0
+			}
 		}
 		h = round2(clamp01(h)*1000) / 1000
 		l.Headroom = &h

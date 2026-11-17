@@ -232,3 +232,23 @@ func TestH174HoldActivity(t *testing.T) {
 		t.Fatalf("after a heavy command %v", at)
 	}
 }
+
+// Hotfix (V0.146 (2)): page cache is not used memory. agents/memory.current fills to memory.high with cache the
+// kernel drops first (inactive_file); the headroom counts the working set (current − inactive_file), as Kubernetes
+// does. Live on 17 Nov: 9215 of 9216 MiB "used", 5456 MiB of it inactive_file, and every heavy job held.
+func TestHeadroomCountsTheWorkingSetNotTheCache(t *testing.T) {
+	o, _ := fakeFS(t, "0::/"+unit+"\n")
+	tr := Setup(o)
+	agents := filepath.Join(o.FS, unit, "agents")
+	proc := t.TempDir()
+	write(t, filepath.Join(proc, "loadavg"), "1.00 1.00 1.00 1/10 1\n")
+	write(t, filepath.Join(proc, "meminfo"), "MemTotal:       32000000 kB\nMemAvailable:   14000000 kB\n")
+	write(t, filepath.Join(agents, "memory.high"), fmt.Sprint(uint64(9216)<<20))
+	write(t, filepath.Join(agents, "memory.current"), fmt.Sprint(uint64(9215)<<20))
+	write(t, filepath.Join(agents, "memory.stat"), fmt.Sprintf("anon %d\nfile %d\ninactive_file %d\nactive_file %d\n", uint64(940)<<20, uint64(6879)<<20, uint64(5456)<<20, uint64(1422)<<20))
+	l := (&Sampler{Tree: tr, Proc: proc, Cores: 4}).Get()
+	want := float64(9216-(9215-5456)) / 9216
+	if l.Headroom == nil || fmt.Sprintf("%.3f", *l.Headroom) != fmt.Sprintf("%.3f", want) {
+		t.Fatalf("headroom %v, want %.3f", l.Headroom, want)
+	}
+}
