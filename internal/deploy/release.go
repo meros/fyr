@@ -79,11 +79,16 @@ func (r *Releases) lsRemote(ctx context.Context) (string, error) {
 		git = func(ctx context.Context, args ...string) ([]byte, error) {
 			c, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
-			return proc.Command(c, "git", args...).Output()
+			cmd := proc.Command(c, "git", args...)
+			cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+			return cmd.Output()
 		}
 	}
 	ref := "refs/tags/" + release.Deployable
-	out, err := git(ctx, "ls-remote", "--tags", "https://github.com/"+r.repo()+".git", ref)
+	// gh is the credential helper: the repo may be private, and gh holds
+	// the login (it reads its stored token; no API call).
+	out, err := git(ctx, "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential",
+		"ls-remote", "--tags", "https://github.com/"+r.repo()+".git", ref)
 	if err != nil {
 		return "", err
 	}

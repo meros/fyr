@@ -26,7 +26,7 @@ func TestDeployableByGitCostsNoAPICall(t *testing.T) {
 		if err != nil || sha != relSHA || api != 0 {
 			t.Fatalf("sha %q err %v api calls %d", sha, err, api)
 		}
-		if j := strings.Join(gitArgs, " "); j != "ls-remote --tags https://github.com/meros/fyr.git refs/tags/deployable" {
+		if j := strings.Join(gitArgs, " "); j != "-c credential.helper= -c credential.helper=!gh auth git-credential ls-remote --tags https://github.com/meros/fyr.git refs/tags/deployable" {
 			t.Fatalf("git %s", j)
 		}
 	}
