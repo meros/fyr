@@ -50,6 +50,12 @@
 
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--surface)}
+/* SPEC 0.5 V0.165: the app is static: no page zoom by pinch or double tap and no overscroll bounce. Only previews
+   zoom, inside their viewer (.pv-stage) or by the zoom steps of a full-screen page. Ctrl +/- on a desktop still zooms
+   the whole app (the browser's own zoom), and the system's text size still applies where the browser honours it. */
+html,body{touch-action:pan-x pan-y;overscroll-behavior:none}
+/* iOS zooms into a field under 16 px when it gets focus; on a touch screen every field is 16 px or more. */
+@media (pointer:coarse){input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),textarea,select{font-size:16px!important}}
 /* .frame */
 body{color:var(--ink);font-family:var(--ui);-webkit-font-smoothing:antialiased;font-size:13px;overflow:hidden}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit}
@@ -561,9 +567,6 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .att-file .att-th{width:36px;height:36px}
 .att-file .att-n{color:inherit}
 .att-file .att-m{color:inherit;opacity:.75}
-.att-full{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.92);display:grid;place-items:center;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
-.att-full img{max-width:100%;max-height:100%;object-fit:contain}
-.att-close{position:absolute;top:calc(8px + env(safe-area-inset-top));right:8px;width:44px;height:44px;border-radius:22px;background:rgba(255,255,255,.15);color:#fff;font-size:22px;line-height:44px;text-align:center}
 
 /* Previews (SPEC V0.19): cards in the log, the filmstrip and the full-screen viewer. */
 .pv{margin:0;max-width:680px;border:1px solid var(--line);border-radius:12px;background:var(--raised);overflow:hidden;min-width:0;flex:none}
@@ -593,12 +596,11 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .pv-ft{flex:1;min-width:0;font:500 15px/20px var(--ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pv-fn{flex:none;font:400 12px/16px var(--mono);opacity:.8}
 .pv-x{flex:none;width:44px;height:44px;border-radius:22px;font-size:24px;line-height:44px;text-align:center;color:#f6f7f8}
-.pv-stage{position:relative;flex:1;min-height:0;overflow:hidden;touch-action:none}
+.pv-stage{position:relative;flex:1;min-height:0;overflow:hidden;touch-action:none;cursor:zoom-in}
+.pv-stage.zoomed{cursor:grab}
 .pv-stage img{position:absolute;inset:0;margin:auto;max-width:100%;max-height:100%;object-fit:contain;transform-origin:center;user-select:none;-webkit-user-drag:none}
 .pv-nav{position:absolute;top:50%;width:44px;height:64px;margin-top:-32px;border-radius:10px;background:rgba(255,255,255,.12);color:#fff;font-size:28px}
 .pv-nav.l{left:8px}.pv-nav.r{right:8px}
-.pv-fframe{flex:1;min-height:0;width:100%;border:0;background:var(--raised);touch-action:pan-x pan-y}
-.pv-fh .pv-fs{width:44px;height:44px;border:0;border-radius:22px;font-size:20px;line-height:44px;color:#f6f7f8}
 .pv-fc{flex:none;padding:10px 16px 14px;font:400 14px/20px var(--ui);opacity:.9}
 
 /* Calm tool output (SPEC V0.21): folded groups, rows with details on demand, quiet machine lines. */
@@ -827,10 +829,29 @@ button.ptag{padding:0}
 .lv.full{flex:1;min-height:0;display:flex;flex-direction:column}
 .lv.full .lv-h{cursor:default}
 .lv.full .lv-f{flex:1;min-height:0;height:auto}
+.lv.full>.fzw{flex:1;min-height:0;display:flex;flex-direction:column}
+.lv-top{display:flex;align-items:center;min-width:0}
+.lv-top .lv-h{flex:1}
+.lv-top .pv-fs{margin-right:16px}
+
+/* SPEC 0.5 V0.165: an HTML preview or the live view full screen, in place. The browser's full screen puts the element
+   in the top layer; without it (iPhone) the class alone covers the screen. The page zooms by steps inside .fzw. */
+.fzw{min-width:0}
+.isfs{position:fixed;inset:0;z-index:45;margin:0;max-width:none;width:100%;height:100%;border:0;border-radius:0;display:flex;flex-direction:column;background:var(--raised);padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);overscroll-behavior:contain}
+.isfs>.fzw{position:relative;flex:1;min-height:0;overflow:hidden}
+.isfs>.fzw>iframe{position:absolute;left:0;top:0;border:0;max-width:none}
+.fz-bar{flex:none;display:flex;align-items:center;gap:6px;min-height:52px;padding:0 4px 0 16px;border-bottom:1px solid var(--line);min-width:0;color:var(--ink)}
+.fz-bar .pv-ft{flex:1;min-width:0;font:500 15px/20px var(--ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fz-bar .fz-in,.fz-bar .fz-out{flex:none;width:44px;height:44px;border-radius:22px;font-size:22px;line-height:44px;text-align:center}
+.fz-bar .fz-reset{flex:none;min-width:60px;height:32px;padding:0 8px;border:1px solid var(--line);border-radius:8px;font:500 12px/30px var(--mono);text-align:center;font-variant-numeric:tabular-nums}
+.fz-bar .pv-x{color:var(--ink)}
+.fz-bar button:disabled{opacity:.35}
 
 /* SPEC 0.5 V0.38: messages outside the screen skip layout and paint; the browser keeps
    each one's real height once it has been drawn, so scrolling stays exact. */
 .convo-in>*{content-visibility:auto;contain-intrinsic-size:auto 64px}
+/* V0.165: content-visibility contains paint, which would trap a full-screen preview's fixed layer inside its entry */
+.convo-in>*:has(.isfs){content-visibility:visible;contain:none}
 
 /* SPEC 0.5 V0.39, V0.118: the update status, a line in the layout (never over a control). The desktop's .shell is a
    column: the status on top, the app below it takes the rest. On the phone it is the first line of .m-app. */

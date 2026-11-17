@@ -266,6 +266,8 @@ input.m-dchip{font:400 16px/22px var(--mono)}
 .m-app .pv-img img{width:100%;max-height:560px;object-fit:cover;object-position:top}
 .m-app .pv-open,.m-app .pv-more{height:44px;line-height:42px;padding:0 14px}
 .m-app .pv-h .pv-fs{width:44px;height:44px;line-height:42px}
+/* V0.165: the live view's Full screen button, at touch size (desktop: 28 px) */
+.m-app .lv-top .pv-fs{width:44px;height:44px;line-height:42px;margin-right:8px}
 .m-app .fs-item{width:88px}
 .m-app .fs-item img,.m-app .fs-html{width:88px;height:64px}
 /* calm tool output on the phone: 44 px targets */
