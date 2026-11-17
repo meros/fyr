@@ -3,9 +3,10 @@
 
 import { newCommandId, type Api, type UploadResult } from "./api.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
-import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab, mockChanges, mockFilePatch, mockLoad, mockQuota } from "./mock.ts";
+import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab, mockChanges, mockFilePatch, mockLoad, mockQueueLoad, mockQuota } from "./mock.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { decodeHosts } from "./hosts.ts";
+import type { HostLoad } from "./load.ts";
 
 const MOCK_IMAGE =
   "data:image/svg+xml," +
@@ -19,6 +20,17 @@ export function createMockApi(scenario: string): Api {
   const q = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
   const providersMode = q.get("providers") ?? "";
   const offline = q.get("conn") === "offline";
+  // V0.137: the load, kept so that a reorder (host.slotOrder) shows on the next read.
+  const load: HostLoad[] = q.get("slots") ? mockQueueLoad(q.get("slots")!) : mockLoad();
+  // The layout test's hook: a queued thread gets its slot, or its run ends (it leaves the queue); the page sees it on
+  // its next read of the load.
+  (globalThis as { __fyrSlot?: (owner: string, grant: boolean) => void }).__fyrSlot = (owner, grant) => {
+    for (const h of load) {
+      const w = h.slots?.waiting.find((x) => x.owner === owner);
+      if (!w || !h.slots) continue;
+      h.slots = { ...h.slots, waiting: h.slots.waiting.filter((x) => x !== w), held: grant ? [...h.slots.held.slice(1), w] : h.slots.held };
+    }
+  };
   const hostOffset = Date.parse(server.state().now) - Date.now();
   const hostNow = () => Date.now() + hostOffset;
   // V0.127: with &hosts=2 every host has its own settings. desk (this install, the front's first) has the ones above;
@@ -128,6 +140,21 @@ export function createMockApi(scenario: string): Api {
         setMockHostOrder(names);
         setTimeout(() => onHosts?.(decodeHosts(mockHosts(Date.now()))), 0); // the front's hosts event, on every device
         return { ok: true, result: { names } };
+      }
+      if (action === "host.slotOrder") {
+        // V0.137: as the host's pool does it: priority waits first, then the listed ones, then the rest.
+        const h = load.find((x) => x.host === (args?.host ?? load[0]?.host));
+        if (!h?.slots) return { ok: false, error: "This host has no slots for heavy jobs" };
+        const owners = Array.isArray(args?.owners) ? (args.owners as unknown[]).filter((x): x is string => typeof x === "string") : [];
+        const pri = h.slots.waiting.filter((w) => w.priority);
+        let rest = h.slots.waiting.filter((w) => !w.priority);
+        const next = [...pri];
+        for (const o of owners) {
+          const w = rest.find((x) => x.owner === o);
+          if (w) (next.push(w), (rest = rest.filter((x) => x !== w)));
+        }
+        h.slots = { ...h.slots, waiting: [...next, ...rest] };
+        return { ok: true, result: JSON.parse(JSON.stringify(h.slots)) };
       }
       if (action === "front.projectOrder") {
         order = Array.isArray(args?.ids) ? (args.ids as unknown[]).filter((x): x is string => typeof x === "string") : [];
@@ -263,7 +290,7 @@ export function createMockApi(scenario: string): Api {
         { profile: "zai", host: "lab", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 83, resetsAt: at(90) }], updatedAt: at(-1) }];
     },
     async load() {
-      return mockLoad();
+      return JSON.parse(JSON.stringify(load)) as HostLoad[];
     },
     async boardVisit() {
       // V0.98 (3): the mock's last visit was a day ago, so its done changes show under Finished.

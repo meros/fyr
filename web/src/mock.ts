@@ -1743,6 +1743,26 @@ function laptopLoad(): HostLoad[] {
   ];
 }
 
+/** SPEC V0.137, for screenshots and the layout test: &slots=queue puts the deploy's tests and three threads in the
+ *  queue; &slots=two adds a second host (lab) with a queue of its own; &slots=none
+ *  has no queue. */
+export function mockQueueLoad(mode: string): HostLoad[] {
+  const [h] = mockLoad();
+  h.slots = {
+    n: 2,
+    held: h.slots!.held,
+    waiting: [
+      { owner: "self-deploy", kind: "test", priority: true },
+      { owner: "t_search", kind: "test" },
+      { owner: "t_pw", kind: "e2e" },
+      { owner: "t_nix", kind: "build" },
+    ],
+  };
+  if (mode === "none") h.slots.waiting = [];
+  if (mode !== "two") return [h];
+  return [h, { host: "lab", cores: 4, load: [1.2, 1, 0.8], cgroups: false, threads: [], slots: { n: 1, held: [{ owner: "t_snap", kind: "test" }], waiting: [{ owner: "t_poly", kind: "test" }] } }];
+}
+
 /** SPEC 0.5 V0.79: the agent's commands and skills, as a host serves them for any thread or folder. */
 export const MOCK_COMMANDS: SlashCommand[] = [
   { name: "compact", description: "Clear the conversation history but keep a summary in context", argumentHint: "<optional custom summarization instructions>" },

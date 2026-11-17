@@ -345,24 +345,43 @@ func (m *Manager) closeInput(s *session) {
 	s.c.Close()
 }
 
+// RefreshGrace is how long a refresh that waited for background work waits
+// after the last task ends before it closes the input (V0.133). The CLI
+// reports its tasks gone and then at once starts a turn on its own to read
+// their output; closing the input in between refuses that turn's tool
+// calls. A turn that starts in the grace ends with the refresh instead.
+var RefreshGrace = 2 * time.Second
+
 // backgroundChanged takes the CLI's count of running background tasks
-// (V0.133). When the last one ends between turns, the refresh or idle stop
-// that waited for it goes ahead.
+// (V0.133). When the last one ends between turns, the refresh (after
+// RefreshGrace) or the idle stop that waited for it goes ahead.
 func (m *Manager) backgroundChanged(s *session, n int) {
 	m.mu.Lock()
 	s.bg = n
 	settle := n == 0 && !s.live && !s.inputClosed
 	refresh := settle && s.refresh && len(s.out) == 0 && len(s.asks) == 0
-	if refresh && m.sessions[s.thread] == s {
-		delete(m.sessions, s.thread)
-	}
 	m.mu.Unlock()
 	switch {
 	case refresh:
-		m.closeInput(s)
-		go m.feed(s.thread) // the next process takes what waits
+		time.AfterFunc(RefreshGrace, func() { m.refreshAfterBackground(s) })
 	case settle:
 		m.armIdle(s)
+	}
+}
+
+// refreshAfterBackground ends the process for its refresh when it is still
+// quiet after RefreshGrace: no turn, no background task, nothing unread or
+// asked, the input open and the session the thread's.
+func (m *Manager) refreshAfterBackground(s *session) {
+	m.mu.Lock()
+	ok := s.bg == 0 && !s.live && !s.inputClosed && s.refresh && len(s.out) == 0 && len(s.asks) == 0 && m.sessions[s.thread] == s
+	if ok {
+		delete(m.sessions, s.thread)
+	}
+	m.mu.Unlock()
+	if ok {
+		m.closeInput(s)
+		go m.feed(s.thread) // the next process takes what waits
 	}
 }
 
