@@ -164,7 +164,7 @@ func (f *Front) withAuth(next http.Handler) http.Handler {
 			ok = false
 		}
 		enforce := st.Mode(auth.WayBrowser) == auth.ModeEnforce
-		if !ok && server.IsViaServe(r) && f.opt.OwnerLogin != "" && r.Header.Get("Tailscale-User-Login") == f.opt.OwnerLogin {
+		if !ok && server.IsViaServe(r) && f.ownerLogin() != "" && r.Header.Get("Tailscale-User-Login") == f.ownerLogin() {
 			if nd, p, refused := f.enrolTailnet(w, r, enforce); refused {
 				return
 			} else if nd != nil {
@@ -220,7 +220,7 @@ func (f *Front) enrolTailnet(w http.ResponseWriter, r *http.Request, enforce boo
 	if f.opt.Tailnet == nil { // no tailscaled to ask: the V0.130 way
 		session, nd := st.Mint(auth.HowTailnet, agent)
 		setSession(w, session, true)
-		log.Printf("auth: %s signed in through the tailnet as %s", nd.Name, f.opt.OwnerLogin)
+		log.Printf("auth: %s signed in through the tailnet as %s", nd.Name, f.ownerLogin())
 		return nd, false, false
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
@@ -236,7 +236,7 @@ func (f *Front) enrolTailnet(w http.ResponseWriter, r *http.Request, enforce boo
 	case err != nil:
 		http.Error(w, "tailscaled could not say which device this is", http.StatusServiceUnavailable)
 		return nil, false, true
-	case len(node.Tags) > 0 || node.Shared || node.Login != f.opt.OwnerLogin:
+	case len(node.Tags) > 0 || node.Shared || node.Login != f.ownerLogin():
 		// A tagged node, a node shared in from another tailnet, or another
 		// user's: never the owner's device through this door.
 		http.Error(w, "this node is not the owner's", http.StatusForbidden)
@@ -253,7 +253,7 @@ func (f *Front) enrolTailnet(w http.ResponseWriter, r *http.Request, enforce boo
 		return nd, true, false
 	}
 	setSession(w, session, true)
-	log.Printf("auth: %s signed in through the tailnet as %s from %s", nd.Name, f.opt.OwnerLogin, node.Name)
+	log.Printf("auth: %s signed in through the tailnet as %s from %s", nd.Name, f.ownerLogin(), node.Name)
 	return nd, false, false
 }
 
@@ -261,7 +261,7 @@ func (f *Front) bindNode(r *http.Request, d *auth.Device) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 	node, err := f.opt.Tailnet.Node(ctx, forwardedFor(r))
-	if err != nil || len(node.Tags) > 0 || node.Shared || node.Login != f.opt.OwnerLogin {
+	if err != nil || len(node.Tags) > 0 || node.Shared || node.Login != f.ownerLogin() {
 		return
 	}
 	f.opt.Auth.BindNode(d.ID, node.StableID, node.Name)
@@ -788,4 +788,15 @@ func drain(r *http.Request) {
 func refuse(w http.ResponseWriter, r *http.Request, msg string, code int) {
 	drain(r)
 	http.Error(w, msg, code)
+}
+
+// ownerLogin is the owner's tailnet login: the config's, else the roster's.
+func (f *Front) ownerLogin() string {
+	if f.opt.OwnerLogin != "" {
+		return f.opt.OwnerLogin
+	}
+	if f.opt.OwnerFn != nil {
+		return f.opt.OwnerFn()
+	}
+	return ""
 }

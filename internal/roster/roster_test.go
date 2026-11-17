@@ -210,3 +210,45 @@ func TestSetAddressSpreads(t *testing.T) {
 		t.Errorf("b's address in a: %+v", m)
 	}
 }
+
+// V0.159: the owner's login travels in the roster, so a tagged install (which
+// has none of its own) takes it from a member; a stranger's word is not taken.
+func TestOwnerLoginSpreadsToAMember(t *testing.T) {
+	a, tagged := newInst(t, "a"), newInst(t, "tagged")
+	if a.r.OwnerLogin() != "" {
+		t.Fatal("a login from nothing")
+	}
+	a.r.SetOwnerLogin("owner@example.com")
+	a.r.Add(tagged.k.Public, "tagged", "", 1)
+	tagged.r.Add(a.k.Public, "a", "", 1)
+	sync2(a, tagged)
+	if got := tagged.r.OwnerLogin(); got != "owner@example.com" {
+		t.Fatalf("the tagged install learned %q", got)
+	}
+	stranger := newInst(t, "s")
+	stranger.r.SetOwnerLogin("evil@example.com")
+	tagged.r.Merge(stranger.r.Statements())
+	if tagged.r.OwnerLogin() != "owner@example.com" {
+		t.Errorf("a stranger changed the owner: %q", tagged.r.OwnerLogin())
+	}
+	before := len(a.r.Statements())
+	a.r.SetOwnerLogin("owner@example.com") // the same again says nothing new
+	if n := len(a.r.Statements()); n != before {
+		t.Errorf("%d statements, was %d", n, before)
+	}
+}
+
+// Who added a member is kept: Settings → Hosts says "vouched for by b".
+func TestAddedByIsKept(t *testing.T) {
+	a, b, c := newInst(t, "a"), newInst(t, "b"), newInst(t, "c")
+	a.r.Add(b.k.Public, "b", "", 1)
+	b.r.Add(a.k.Public, "a", "", 1)
+	b.r.Add(c.k.Public, "c", "", 1)
+	sync2(a, b)
+	if m, _ := a.r.Member(b.k.ID()); m.AddedBy != a.k.ID() {
+		t.Errorf("b was added by %s (want a)", m.AddedBy)
+	}
+	if m, _ := a.r.Member(c.k.ID()); m.AddedBy != b.k.ID() {
+		t.Errorf("c was added by %s (want b)", m.AddedBy)
+	}
+}

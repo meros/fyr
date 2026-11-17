@@ -49,9 +49,17 @@ type Env struct {
 	Dial *peerlink.Dialer
 	// Drive says which installs may drive this host (3.7).
 	Drive *Drive
-	Logf  func(string, ...any)
+	// Invites is the owner's invite this install has open (condition 3).
+	Invites *Invites
+	Logf    func(string, ...any)
 	// Rounds counts the pairing rounds that ran (a test waits for some).
 	Rounds atomic.Int64
+}
+
+func (e *Env) init() {
+	if e.Invites == nil {
+		e.Invites = &Invites{}
+	}
 }
 
 func (e *Env) logf(f string, a ...any) {
@@ -132,12 +140,14 @@ func (e *Env) Condition1(ctx context.Context, self, node tailnet.StatusNode) (f 
 // key that is a live member of the roster; that is `members`, the host
 // protocol with the principal read from Fyr-Actor.
 func (e *Env) Handler(members http.Handler) http.Handler {
+	e.init()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/fyr", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(Answer{Fyr: 1, ID: e.Key.ID()})
 	})
 	mux.HandleFunc("POST /pair/tailnet", e.pairTailnet)
+	mux.HandleFunc("POST /pair/invite", e.joinInvite)
 	mux.HandleFunc("GET /roster", e.member(func(w http.ResponseWriter, r *http.Request, _ roster.Member) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(e.Roster.Statements())
