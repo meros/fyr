@@ -101,7 +101,9 @@
         assert sys.config.systemd.services.fyr.restartIfChanged == false;
         assert conf.scanRoots == [ "~/git" ];
         assert conf.quota == { claudeDeepseek = { kind = "deepseek"; keyFile = "/run/secrets/deepseek"; }; };
-        assert nixpkgs.lib.hasInfix "--https=7443 http://127.0.0.1:7777" tn.ExecStart;
+        assert nixpkgs.lib.hasInfix "--https=7443 unix:/home/" tn.ExecStart && nixpkgs.lib.hasSuffix "/.local/share/fyr/serve.sock" tn.ExecStart;
+        # A switch that restarts tailscaled must not leave Serve unpublished.
+        assert tn.Restart == "on-failure";
         # V0.51: the default role (both) writes no role, hosts or hostListen.
         assert !(conf ? role) && !(conf ? hosts) && !(conf ? hostListen);
         assert sconf.hostListen == "tailnet:7778" && !(sconf ? role);

@@ -299,9 +299,17 @@ in
       after = [ "tailscaled.service" "fyr.service" ];
       wants = [ "tailscaled.service" ];
       wantedBy = [ "multi-user.target" ];
+      # tailscaled started is not tailscaled Running: when a switch restarts
+      # it, `tailscale serve` can run while the daemon is in NoState, exit 1
+      # ("unexpected state: NoState"), and leave the port unpublished until
+      # the next boot. Retry instead.
+      startLimitIntervalSec = 120;
+      startLimitBurst = 10;
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
+        Restart = "on-failure";
+        RestartSec = 5;
         # V0.130 (decision 0028): Serve proxies to fyrd's own socket, the only
         # place fyrd believes the Tailscale-User-Login header; on the loopback
         # port any local process could send it.
