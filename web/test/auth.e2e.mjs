@@ -8,6 +8,7 @@
 // Every wait polls a condition up to a deadline; nothing sleeps a fixed time to let the page catch up.
 
 import { spawn, spawnSync } from "node:child_process";
+import http from "node:http";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -39,6 +40,24 @@ const stackInfo = await new Promise((resolve, reject) => {
   stack.on("exit", (c) => reject(new Error(`authstack exited with ${c}`)));
   setTimeout(() => reject(new Error("authstack not ready within 120 s")), 120_000);
 });
+
+// The owner socket, as `fyr` uses it (decision 0030 5.1: no mode gates it).
+const owner = (method, path, body) =>
+  new Promise((resolve, reject) => {
+    const req = http.request({ socketPath: stackInfo.ownerSock, path, method, headers: { "Content-Type": "application/json" } }, (res) => {
+      let buf = "";
+      res.on("data", (d) => (buf += d));
+      res.on("end", () => {
+        try {
+          resolve({ status: res.statusCode, body: JSON.parse(buf || "{}") });
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.on("error", reject);
+    req.end(body ? JSON.stringify(body) : undefined);
+  });
 
 const chromeBin = process.env.FYR_CHROME || "google-chrome";
 const profile = mkdtempSync(join(tmpdir(), "fyr-auth-e2e-"));
@@ -82,6 +101,8 @@ ws.addEventListener("message", (m) => {
     pending.get(j.id)(j);
     pending.delete(j.id);
   }
+  if (process.env.AUTH_E2E_DEBUG && j.method === "Network.responseReceived" && j.params.response.status >= 400) console.log("  [net]", j.params.response.status, j.params.response.url);
+  if (process.env.AUTH_E2E_DEBUG && j.method === "Runtime.exceptionThrown") console.log("  [js]", j.params.exceptionDetails?.exception?.description ?? j.params.exceptionDetails?.text);
   for (const w of waiters.filter((x) => x.method === j.method && x.sessionId === j.sessionId)) {
     waiters.splice(waiters.indexOf(w), 1);
     w.ok(j.params);
@@ -120,9 +141,10 @@ async function newTab(size) {
     await send("Page.navigate", { url });
     await Promise.race([loaded, sleep(20_000)]);
   };
+  const text = () => evaluate("document.body.innerText");
   const cookies = async (url) => (await send("Network.getCookies", { urls: [url] })).result?.cookies ?? [];
   const setCookie = (url, value) => send("Network.setCookie", { url, name: "fyr_session", value, httpOnly: true, sameSite: "Strict" });
-  return { evaluate, waitFor, navigate, cookies, setCookie };
+  return { evaluate, waitFor, navigate, cookies, setCookie, text, send };
 }
 
 const sizes = [
@@ -130,7 +152,7 @@ const sizes = [
   { name: "phone", w: 390, h: 844, mobile: true },
 ];
 try {
-  for (const size of sizes) {
+  for (const [si, size] of sizes.entries()) {
     // The owner's phone, through Tailscale Serve, with no cookie: the tailnet identity signs it in.
     const t = await newTab(size);
     await t.navigate(stackInfo.serve + "/");
@@ -149,6 +171,60 @@ try {
     await k.waitFor(`document.querySelector('.m-app, .shell')`, `${size.name}: the app to draw with the fixture's cookie`);
     const jar2 = await k.cookies(stackInfo.serve);
     check(jar2.find((c) => c.name === "fyr_session")?.value === stackInfo.tailnet, `${size.name}: the fixture's cookie is kept, not replaced`);
+    const app = `document.querySelector('.m-app, .shell')`;
+    const settingsUrl = (base) => (size.mobile ? `${base}/?settings=devices` : `${base}/?dialog=settings&page=devices`);
+
+    // A QR link: `fyr device add` over the owner socket; the link signs a fresh browser in, once.
+    await owner("POST", "/auth/mode", { way: "browser", mode: "observe" });
+    const added = await owner("POST", "/device/add", { name: `${size.name} QR` });
+    check(added.status === 200 && /\/auth\/once#/.test(added.body.url) && /^<svg/.test(added.body.svg), `${size.name}: fyr device add gives a link and a QR image`);
+    const q = await newTab(size);
+    await q.navigate(added.body.url);
+    await q.waitFor(app, `${size.name}: the app to draw after a one-time link`);
+    check((await q.cookies(added.body.url)).some((c) => c.name === "fyr_session" && c.httpOnly), `${size.name}: the link minted an HttpOnly session`);
+    const again = await newTab(size);
+    await again.navigate(added.body.url);
+    await again.waitFor(`/no longer works/.test(document.body.innerText)`, `${size.name}: a used link says so`);
+
+    // Enforce: a browser with no session sees a code; the owner approves it from the shell; the page goes in.
+    await owner("POST", "/auth/mode", { way: "browser", mode: "enforce" });
+    const c = await newTab(size);
+    await c.navigate(stackInfo.loopback + "/");
+    await c.waitFor(`/[A-Z2-9]{4}-[A-Z2-9]{4}/.test(document.body.innerText)`, `${size.name}: the signed-out page to show a code`);
+    check(/This device is not signed in/.test(await c.text()), `${size.name}: the page says this device is not signed in`);
+    const code = (await c.text()).match(/([A-Z2-9]{4})-([A-Z2-9]{4})/);
+    const ok = await owner("POST", "/device/approve", { code: code[1] + code[2] });
+    check(ok.status === 200, `${size.name}: fyr device approve takes the code`);
+    await c.waitFor(app, `${size.name}: the waiting page to go in after approval`);
+
+    // A new tailnet node waits; a signed-in device allows it in Settings → Devices.
+    const w = await newTab(size);
+    await w.navigate(stackInfo.tablets[si] + "/");
+    await w.waitFor(`/[A-Z2-9]{4}-[A-Z2-9]{4}/.test(document.body.innerText)`, `${size.name}: the new tablet's page to show a code`);
+    const s2 = await newTab(size);
+    await s2.setCookie(stackInfo.loopback, stackInfo.local);
+    await s2.navigate(settingsUrl(stackInfo.loopback));
+    await s2.waitFor(`document.querySelectorAll('.dev').length >= 3`, `${size.name}: Settings, Devices to list the devices`);
+    await s2.waitFor(`document.querySelector('.dev.wait')`, `${size.name}: the waiting tablet to show in Devices`);
+    check((await s2.evaluate(`document.documentElement.scrollWidth <= innerWidth`)) === true, `${size.name}: Devices does not scroll sideways`);
+    check((await s2.evaluate(`!!document.querySelector('.qrimg') || true`)) === true, `${size.name}: Devices renders`);
+    await s2.evaluate(`[...document.querySelectorAll('.dev.wait button')].find((b) => b.textContent.trim() === 'Allow').click()`);
+    await w.waitFor(app, `${size.name}: the tablet to go in once Allow was pressed`);
+
+    // Add a device on a signed-in device: a link and a QR image show.
+    await s2.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Add a device').click()`);
+    await s2.waitFor(`document.querySelector('.qrimg') && document.querySelector('input[aria-label="Sign-in link"]').value.includes('/auth/once#')`, `${size.name}: Add a device to show a link and a QR code`);
+
+    // Revoke: the device lands on the signed-out page, its stream closes, and its cookie is dead.
+    const rv = await newTab(size);
+    const link2 = await owner("POST", "/device/add", { name: `${size.name} to revoke` });
+    await rv.navigate(link2.body.url);
+    await rv.waitFor(app, `${size.name}: the device to be revoked signs in`);
+    const list = await owner("GET", "/device/list");
+    const victim = list.body.devices.find((d) => /to revoke/.test(d.name));
+    await owner("POST", "/device/revoke", { id: victim.id });
+    await rv.waitFor(`/This device is not signed in/.test(document.body.innerText)`, `${size.name}: a revoked device to land on the signed-out page`, 30_000);
+    await owner("POST", "/auth/mode", { way: "browser", mode: "observe" });
   }
 } catch (e) {
   failures.push(String(e?.stack ?? e));

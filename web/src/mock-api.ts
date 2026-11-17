@@ -7,6 +7,7 @@ import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, 
 import { mockUndeclaredCommand } from "./mock.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { decodeHosts } from "./hosts.ts";
+import type { AuthState } from "./devices.ts";
 import type { HostLoad } from "./load.ts";
 
 const MOCK_IMAGE =
@@ -193,6 +194,24 @@ export function createMockApi(scenario: string): Api {
     },
     async autoDeploy(host) {
       return read(host, (h) => ({ on: h.deployOn }));
+    },
+    // V0.157: Settings → Devices: this device, a phone that got in through Tailscale, a tablet added by a link and one
+    // that waits with a code.
+    async authState() {
+      return JSON.parse(JSON.stringify(mockAuth)) as AuthState;
+    },
+    async authAct(action, body) {
+      if (action === "revoke") mockAuth.devices = mockAuth.devices.filter((d) => d.id !== body.id && d.by !== body.id);
+      else if (action === "approve" || action === "deny") {
+        const d = mockAuth.devices.find((x) => x.pending && (x.id === body.id || x.code === body.code));
+        if (!d) return { ok: false, error: "That code does not work (it may have ended)" };
+        if (action === "deny") mockAuth.devices = mockAuth.devices.filter((x) => x !== d);
+        else (d.pending = false), (d.how = "code"), delete d.code;
+      } else if (action === "mode") {
+        const m = mockAuth.modes.find((x) => x.way === body.way);
+        if (m) (m.mode = body.mode as "observe" | "enforce"), (m.hand = body.mode === "observe");
+      } else if (action === "add") return { ok: true, url: "https://desk.tail1234.ts.net:7443/auth/once#k3Jd8sLq0pXn2VwTzYbHrA", svg: MOCK_QR };
+      return { ok: true };
     },
     // V0.126: a host that updated twice and rolled one release back (desk); another host never updated itself and sends
     // null for the list, as an older fyrd on a NixOS host did (the owner's Settings could not close, 17 Nov).
@@ -384,3 +403,21 @@ function smallFs(dirs: string[]) {
     },
   };
 }
+
+const iso = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+const mockAuth: AuthState = {
+  you: "dev_you",
+  devices: [
+    { id: "dev_you", name: "Chrome on Linux · on desk", how: "local", created: iso(60 * 24 * 9), lastSeen: iso(0) },
+    { id: "dev_phone", name: "Chrome on Android", how: "tailnet", created: iso(60 * 24 * 6), lastSeen: iso(12), node: "n100.64.0.2" },
+    { id: "dev_tab", name: "Safari on iPad", how: "link", created: iso(60 * 5), lastSeen: iso(60 * 3), by: "dev_you" },
+    { id: "dev_wait", name: "Firefox on Windows", how: "code", created: iso(2), lastSeen: iso(0), pending: true, code: "K7QM2XRA", codeUntil: new Date(Date.now() + 3 * 60_000).toISOString() },
+  ],
+  modes: [
+    { way: "browser", mode: "observe", hand: false, since: iso(60 * 24 * 2), refused: 0, success: { local: 4, tailnet: 2 }, ready: false, why: "1 day of clean days to go" },
+    { way: "peer", mode: "observe", hand: false, since: iso(60 * 24 * 2), refused: 0, success: null, ready: false, why: "this way in cannot enforce yet" },
+  ],
+  audit: [],
+};
+// A QR-looking image for the layout test: the real one comes from the host.
+const MOCK_QR = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29"><rect width="29" height="29" fill="#fff"/><path fill="#000" d="M4 4h7v7H4zM18 4h7v7h-7zM4 18h7v7H4zM13 13h3v3h-3zM18 18h3v7h-3z"/></svg>`;

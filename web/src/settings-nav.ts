@@ -1,10 +1,10 @@
-// SPEC V0.119, V0.125: Settings is five pages behind one nav. The pages, their one line of state, the badges and the
+// SPEC V0.119, V0.125, V0.157: Settings is six pages behind one nav. The pages, their one line of state, the badges and the
 // page ids (`providers/<id>`, `hosts/<name>`). Pure.
 import type { AutoMergeRepo } from "./automerge.ts";
 import type { PushStatus } from "./push.ts";
 import type { HostInfo } from "./hosts.ts";
 
-export type PageId = "providers" | "automation" | "projects" | "hosts" | "device";
+export type PageId = "providers" | "automation" | "projects" | "hosts" | "devices" | "device";
 export interface PageRef {
   page: PageId;
   /** a sub-page: a provider's id or "new" (providers), a project's id (projects), a host's name (hosts) */
@@ -18,12 +18,13 @@ export const PAGES: { id: PageId; title: string }[] = [
   { id: "automation", title: "Automation" },
   { id: "projects", title: "Projects" },
   { id: "hosts", title: "Hosts" },
+  { id: "devices", title: "Devices" },
   { id: "device", title: "This device" },
 ];
 
 /** The pages with sub-pages. */
 /** Automation's sub is not a page: it names the suggestion V0.164's "Add as heavy job…" opened it at (scrolled to, marked). */
-const SUBS: Record<PageId, boolean> = { providers: true, automation: true, projects: true, hosts: true, device: false };
+const SUBS: Record<PageId, boolean> = { providers: true, automation: true, projects: true, hosts: true, devices: false, device: false };
 
 export function isPage(s: string | null | undefined): s is PageId {
   return !!s && PAGES.some((p) => p.id === s);

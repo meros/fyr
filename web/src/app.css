@@ -1488,3 +1488,10 @@ label.sr{cursor:pointer}
 .rail .rldw{display:flex;flex-direction:column;align-items:center;gap:3px;max-width:100%}
 /* Settings: the suggestion the strip's "Add as heavy job…" opened */
 .sr.pick{box-shadow:inset 3px 0 0 var(--beam)}
+/* V0.157: Settings → Devices (decision 0030 3.4), desktop and phone from the same rows. */
+.set .qrimg { display: block; margin: 8px auto; max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
+.set .linkout { width: 100%; box-sizing: border-box; }
+.set .codein { display: inline-flex; gap: 8px; align-items: center; }
+.set .codein input { width: 9.5em; letter-spacing: .08em; }
+.set .pill.you { margin-left: .4em; opacity: .7; font-size: .85em; }
+.set .addout { align-items: center; }

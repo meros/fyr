@@ -10,6 +10,7 @@ import (
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
+	"github.com/meros/fyr/internal/tailnet"
 )
 
 // openAuth loads a front's browser sessions (V0.130).
@@ -45,4 +46,14 @@ func serveAuthSockets(fr *front.Front, data, listen, public string, serveUsers [
 			server.ServeSocket(public, fr.Handler()))
 		log.Printf("auth: Tailscale Serve socket at %s", ln.Addr())
 	}
+}
+
+// tailnetNodes is the whois the front asks which node a Serve request came
+// from (decision 0030 3.4); nil without tailscaled, which enrols by login as
+// V0.130 did.
+func tailnetNodes(cfg config) front.NodeAuth {
+	if !tailnet.Available(cfg.tsSocket()) {
+		return nil
+	}
+	return tailnet.Peers{Socket: cfg.tsSocket()}
 }

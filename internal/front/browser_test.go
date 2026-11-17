@@ -48,7 +48,7 @@ func (f *endpointPush) Known(endpoint string) bool              { _, ok := f.sub
 func TestPushEndpoints(t *testing.T) {
 	fp := &endpointPush{subs: map[string]string{}}
 	mux := http.NewServeMux()
-	pushRoutes(mux, fp)
+	pushRoutes(mux, fp, nil)
 	hs := httptest.NewServer(server.Browser("", mux))
 	defer hs.Close()
 	r := do(t, "GET", hs.URL+"/api/push/key", "", nil, "")

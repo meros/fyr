@@ -69,7 +69,8 @@ var routes = map[string]routeClass{
 	"GET /api/previews/{id}": hops, "GET /api/previews/{id}/{path...}": hops, "/api/projects/{id}/{rest...}": hops,
 	"GET /api/quota": hops, "GET /api/load": hops, "GET /api/profiles": local,
 	"GET /api/providers": local, "GET /api/providers/found": local, "GET /api/systemAgents": local, "GET /api/autoDeploy": local,
-	"GET /api/autoMerge": local, "GET /api/updates": local, "/api/": hops, "/mcp": local, "/": local,
+	"GET /api/autoMerge": local, "GET /api/auth/state": local, "POST /api/auth/approve": local, "POST /api/auth/deny": local,
+	"POST /api/auth/revoke": local, "POST /api/auth/add": local, "POST /api/auth/mode": local, "GET /api/updates": local, "/api/": hops, "/mcp": local, "/": local,
 }
 
 func TestHopCarriesThePrincipalOnEveryRoute(t *testing.T) {

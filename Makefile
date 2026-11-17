@@ -30,7 +30,8 @@ SYNC := $(if $(filter 3.%,$(MAKE_VERSION)),,--output-sync=target)
 
 test: web-deps
 	cd web && npm run build
-	$(MAKE) -j6 $(SYNC) go-vet go-test web-typecheck web-unit web-layout web-auth
+	$(MAKE) -j5 $(SYNC) go-vet go-test web-typecheck web-unit web-layout
+	$(MAKE) web-auth # alone: beside the layout test its Chrome and Go build break the long-task budget
 
 test-go: go-vet go-test
 

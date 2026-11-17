@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/authtest"
 )
 
@@ -23,9 +24,24 @@ func main() {
 		os.Exit(1)
 	}
 	defer l.Close()
+	// Two more devices of the owner that the install has not seen: one waits in each size of the e2e.
+	var tablets []string
+	for i, name := range []string{"tablet", "kindle"} {
+		n := authtest.Node{Name: name + ".tail-test.ts.net", IP: fmt.Sprintf("100.64.0.%d", 20+i), UserID: 1, Online: true}
+		l.TS.AddNode(n)
+		sv, err := l.TS.ServeFor(n, l.Laptop.Sock(auth.ServeSocket))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "authstack:", err)
+			os.Exit(1)
+		}
+		defer sv.Close()
+		tablets = append(tablets, sv.URL)
+	}
 	json.NewEncoder(os.Stdout).Encode(map[string]any{
-		"serve":      l.Phones.URL,   // the phone's path: Serve in front of serve.sock
-		"loopback":   l.Laptop.URL(), // the laptop's loopback port
+		"ownerSock":  l.Laptop.Sock(auth.OwnerSocket), // the owner socket: the e2e adds, approves and switches through it
+		"tablets":    tablets,                         // owner nodes the install has not seen
+		"serve":      l.Phones.URL,                    // the phone's path: Serve in front of serve.sock
+		"loopback":   l.Laptop.URL(),                  // the laptop's loopback port
 		"public":     l.Self.Name + ":7443",
 		"ownerLogin": l.OwnerLogin,
 		"local":      l.Local,
