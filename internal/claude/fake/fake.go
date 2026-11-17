@@ -15,6 +15,14 @@
 //	         agent's progress and completion with the CLI's task messages
 //	bg       ends its turn, then starts a second turn on its own (as the CLI
 //	         does when a background task finishes) with no user message
+//	bgwait N starts a background task, ends its turn, and N ms later
+//	         starts a turn on its own whose Bash call asks the PreToolUse
+//	         hook; when stdin is closed by then, the call is refused with
+//	         the CLI's reject text and no request (V0.133), as claude
+//	         2.1.322 does. The fake, like the CLI, waits for its background
+//	         tasks before it exits on a closed stdin.
+//	refused  makes one Bash call that the CLI refuses with its reject
+//	         text, without asking Fyr (V0.133)
 //	sub      runs one subagent (Task tool) before it answers
 //	merge U  calls mcp__fyr__effect_request {action pr.merge, args {pr: U}}
 //	         over HTTP from --mcp-config and reports the tool's text
@@ -62,6 +70,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -81,6 +90,10 @@ var (
 	stopHook bool
 	postHook bool
 	stops    int
+
+	// closed: stdin closed; bgwg: background tasks the exit waits for.
+	closed atomic.Bool
+	bgwg   sync.WaitGroup
 
 	qmu   sync.Mutex
 	queue []queued
@@ -370,6 +383,19 @@ func Main() {
 			enqueue(queued{uuid: uuid, text: text})
 		}
 	}
+	// The CLI keeps running for its background tasks after stdin closes.
+	closed.Store(true)
+	bgwg.Wait()
+}
+
+// rejectText is what claude 2.1.322 writes for a tool call it cancels when
+// its input stream is closed (V0.133).
+const rejectText = "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed."
+
+func refuse(id string) {
+	write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
+		"content": []any{msg{"type": "tool_result", "tool_use_id": id, "content": rejectText, "is_error": true}}},
+		"tool_result_meta": []any{msg{"id": id, "non_execution_kind": "cancelled"}}})
 }
 
 // turn runs one scripted turn; it returns the messages it took in on the way.
@@ -485,6 +511,42 @@ func turn(text string) (took []queued) {
 			time.Sleep(150 * time.Millisecond)
 			result(false, "success", "turn 2")
 		}()
+	case "bgwait":
+		ms := 300
+		if f := strings.Fields(text); len(f) > 1 {
+			fmt.Sscan(f[1], &ms)
+		}
+		task := msg{"task_id": "bw1", "task_type": "local_bash", "description": "Wait for the build"}
+		write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{task}})
+		write(msg{"type": "system", "subtype": "task_started", "task_id": "bw1", "description": "Wait for the build", "task_type": "local_bash", "is_backgrounded": true})
+		assistant(msg{"type": "text", "text": "waiting for the build"})
+		result(false, "success", "turn 1")
+		bgwg.Add(1)
+		go func() {
+			defer bgwg.Done()
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+			write(msg{"type": "system", "subtype": "task_notification", "task_id": "bw1", "status": "completed", "summary": "Background command \"Wait for the build\" completed"})
+			write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{}})
+			write(msg{"type": "system", "subtype": "init", "session_id": session, "model": model})
+			assistant(msg{"type": "tool_use", "id": "tu_bw", "name": "Bash", "input": msg{"command": "cat build.output"}})
+			if closed.Load() {
+				refuse("tu_bw")
+				assistant(msg{"type": "text", "text": "I've stopped as you asked."})
+				write(msg{"type": "result", "subtype": "success", "is_error": false, "result": "stopped", "session_id": session})
+				return
+			}
+			request("bw_gate", msg{"subtype": "hook_callback", "callback_id": "gate",
+				"input": msg{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": msg{"command": "cat build.output"}}})
+			write(msg{"type": "user", "session_id": session, "parent_tool_use_id": nil, "message": msg{"role": "user",
+				"content": []any{msg{"type": "tool_result", "tool_use_id": "tu_bw", "content": "build ok"}}}})
+			assistant(msg{"type": "text", "text": "background read ok"})
+			write(msg{"type": "result", "subtype": "success", "is_error": false, "result": "background read ok", "session_id": session})
+		}()
+	case "refused":
+		assistant(msg{"type": "tool_use", "id": "tu_ref", "name": "Bash", "input": msg{"command": "cat build.output"}})
+		refuse("tu_ref")
+		assistant(msg{"type": "text", "text": "stopped"})
+		result(false, "success", "stopped")
 	case "tool":
 		ms := 500
 		if f := strings.Fields(text); len(f) > 1 {
