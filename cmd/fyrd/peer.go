@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"encoding/json"
 	"log"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peer"
 	"github.com/meros/fyr/internal/peerlink"
+	"github.com/meros/fyr/internal/qr"
 	"github.com/meros/fyr/internal/roster"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/tailnet"
@@ -28,6 +30,10 @@ import (
 type peerSide struct {
 	env  *peer.Env
 	port atomic.Int64
+	cfg  config
+	name string
+	key  *identity.Key
+	dial *peerlink.Dialer
 }
 
 // tsStatus is tailscaled's status for the pairing.
@@ -90,32 +96,67 @@ func serveClient(cfg config) *http.Client {
 		}}}
 }
 
-// startPeer opens the roster, starts the peer port when the config has one, and
-// runs pairing and sync. It returns the peer side; with no peer port the roster
-// still exists (the install is its own member) and nothing pairs.
-func startPeer(ctx context.Context, cfg config, data, name string, srv *server.Server, fr *front.Front, st *auth.Store, key *identity.Key) *peerSide {
+// newPeerSide opens the roster and makes the peer side's environment. It starts
+// nothing: the front needs the environment (Settings → Hosts) before it exists,
+// and the listener needs the front (to follow a member over its peer link).
+func newPeerSide(cfg config, data, name string, key *identity.Key) *peerSide {
 	ros, err := roster.Open(data, key, name, nil)
 	if err != nil {
 		log.Printf("peer: roster: %v; peers are off", err)
 		return nil
 	}
-	p := &peerSide{}
-	dial := &peerlink.Dialer{Key: key, Resolve: resolver(cfg.ResolveFile)}
-	env := &peer.Env{Key: key, Roster: ros, Name: name, Serve: serveClient(cfg), ServePort: servePort(cfg), Dial: dial,
-		Drive: peer.OpenDrive(data), Logf: log.Printf, Port: func() int { return int(p.port.Load()) }}
+	p := &peerSide{cfg: cfg, name: name, key: key}
+	p.dial = &peerlink.Dialer{Key: key, Resolve: resolver(cfg.ResolveFile)}
+	p.env = &peer.Env{Key: key, Roster: ros, Name: name, Serve: serveClient(cfg), ServePort: servePort(cfg), Dial: p.dial,
+		Drive: peer.OpenDrive(data), Invites: &peer.Invites{}, Logf: log.Printf, Port: func() int { return int(p.port.Load()) }}
 	if tailnet.Available(cfg.tsSocket()) && cfg.OwnerLogin != "" {
-		env.TS = tsStatus{cfg.tsSocket()}
+		p.env.TS = tsStatus{cfg.tsSocket()}
 	}
-	p.env = env
+	return p
+}
+
+// envOrNil is the environment, nil-safe.
+func (p *peerSide) envOrNil() *peer.Env {
+	if p == nil {
+		return nil
+	}
+	return p.env
+}
+
+// ownerLogin is the owner's login as the roster carries it, for an install that
+// has none of its own (a tagged one).
+func (p *peerSide) ownerLogin() string {
+	if p == nil {
+		return ""
+	}
+	return p.env.Roster.OwnerLogin()
+}
+
+// start runs the peer port when the config has one, pairing and sync. With no peer
+// port the roster still exists (the install is its own member) and nothing pairs.
+func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, fr *front.Front, st *auth.Store) {
+	if p == nil {
+		return
+	}
+	cfg, env, ros, key, name := p.cfg, p.env, p.env.Roster, p.key, p.name
+	dial := p.dial
 	selfHost := ""
-	if _, dns, err := tailnet.Self(cfg.tsSocket()); (err == nil || err == tailnet.ErrTagged) && dns != "" {
+	tagged := true
+	if login, dns, err := tailnet.Self(cfg.tsSocket()); err == nil || errors.Is(err, tailnet.ErrTagged) {
 		selfHost = dns
+		if err == nil {
+			tagged = false
+			ros.SetOwnerLogin(login) // an untagged install knows whose it is, and says so; a tagged one learns it by sync
+		}
+	}
+	if tagged && cfg.OwnerLogin == "" {
+		log.Printf("peer: this install is tagged and has no owner login yet: pair it with an invite, and it learns the owner's login from the roster")
 	}
 	if cfg.PeerListen != "" {
 		ln, err := net.Listen("tcp", cfg.PeerListen)
 		if err != nil {
 			log.Printf("peer: listen %s: %v; peers are off", cfg.PeerListen, err)
-			return p
+			return
 		}
 		p.port.Store(int64(ln.Addr().(*net.TCPAddr).Port))
 		var members http.Handler = http.NotFoundHandler()
@@ -125,7 +166,7 @@ func startPeer(ctx context.Context, cfg config, data, name string, srv *server.S
 		hs, err := peerlink.Serve(ln, key, env.Handler(members))
 		if err != nil {
 			log.Printf("peer: %v", err)
-			return p
+			return
 		}
 		go func() { <-ctx.Done(); hs.Close() }()
 		ros.SetAddress(name, selfHost, int(p.port.Load()))
@@ -170,7 +211,6 @@ func startPeer(ctx context.Context, cfg config, data, name string, srv *server.S
 	}
 	every := time.Duration(cfg.PeerEverySeconds) * time.Second
 	go env.Run(ctx, every)
-	return p
 }
 
 // peerPort is the port of the peer listener, 0 while there is none.
@@ -186,19 +226,32 @@ func (p *peerSide) peerPort() int {
 func (p *peerSide) ownerRoutes(fr *front.Front) func(mux *http.ServeMux) {
 	return func(mux *http.ServeMux) {
 		mux.HandleFunc("GET /host/list", func(w http.ResponseWriter, r *http.Request) {
-			type row struct {
-				ID    string `json:"id"`
-				Name  string `json:"name"`
-				Self  bool   `json:"self,omitempty"`
-				Port  int    `json:"port,omitempty"`
-				Drive bool   `json:"drive"`
-			}
-			var rows []row
-			for _, m := range p.env.Roster.Members() {
-				rows = append(rows, row{ID: m.ID, Name: m.Name, Self: m.ID == p.env.Key.ID(), Port: m.Port, Drive: p.env.Drive.MayDrive(m.ID)})
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"members": p.env.Members(), "candidates": p.env.Candidates(r.Context()),
+				"whoisLinkUses": fr.WhoisLinkUses(), "rounds": p.env.Rounds.Load(), "ownerLogin": p.env.Roster.OwnerLogin()})
+		})
+		// The owner's invite (decision 0030 3.6 condition 3): open one here, or join
+		// with one from another install. The owner socket is never gated.
+		mux.HandleFunc("POST /pair/invite", func(w http.ResponseWriter, r *http.Request) {
+			code, until := p.env.NewInvite()
+			out := map[string]any{"code": code, "until": until}
+			if m, err := qr.Encode(code); err == nil {
+				out["qr"] = m.Text()
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"members": rows, "whoisLinkUses": fr.WhoisLinkUses(), "rounds": p.env.Rounds.Load()})
+			json.NewEncoder(w).Encode(out)
+		})
+		mux.HandleFunc("POST /pair/join", func(w http.ResponseWriter, r *http.Request) {
+			var b struct{ Code, Addr string }
+			json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
+			res, err := p.env.Join(r.Context(), b.Code, b.Addr)
+			w.Header().Set("Content-Type", "application/json")
+			if err != nil {
+				w.WriteHeader(http.StatusConflict)
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": res.Name, "id": res.ID, "addr": res.Addr})
 		})
 		mux.HandleFunc("POST /host/drive", func(w http.ResponseWriter, r *http.Request) {
 			var b struct {

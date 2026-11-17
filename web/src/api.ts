@@ -18,6 +18,7 @@ import type { FoundDTO, ProviderDTO } from "./providers.ts";
 import type { AutoDeploySetting, AutoMergeRepo } from "./automerge.ts";
 import type { UpdatesView } from "./updates.ts";
 import type { AuthState } from "./devices.ts";
+import type { PeerState } from "./peers.ts";
 import { reloadIfSignedOut } from "./signout.ts";
 import type { SystemAgentsView } from "./system-agents.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
@@ -108,6 +109,10 @@ export interface Api {
   authState(): Promise<AuthState>;
   /** V0.157: approve (code or id), deny, revoke, add (a one-time link and its QR code), mode (browser way in). */
   authAct(action: "approve" | "deny" | "revoke" | "add" | "mode", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
+  /** V0.159: Settings → Hosts: the paired installs, the nodes that are not, the open invite. */
+  peerState(): Promise<PeerState>;
+  /** V0.159: invite (open one here: a code, a QR image, a link) or join (an invite from another install). */
+  peerAct(action: "invite" | "join", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
   /** V0.115: the system agents setting of a host */
   systemAgents(host?: string): Promise<HostRead<SystemAgentsView>>;
   /** V0.50: the current profiles (after a provider changed). */
@@ -486,6 +491,21 @@ function createHttpApi(): Api {
       const j = (await r.json().catch(() => ({}))) as AuthState & { error?: string };
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j;
+    },
+    async peerState() {
+      const r = await fetch("/api/peer/state", { headers: { Accept: "application/json" } });
+      const j = (await r.json().catch(() => ({}))) as PeerState & { error?: string };
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      return j;
+    },
+    async peerAct(action, body) {
+      try {
+        const r = await fetch(`/api/peer/${action}`, { method: "POST", headers: { "X-Fyr": "1", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const j = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string } & Record<string, unknown>;
+        return r.ok && j.ok !== false ? { ...j, ok: true } : { ...j, ok: false, error: j.error ?? `HTTP ${r.status}` };
+      } catch {
+        return { ok: false, error: "Fyr is not reachable" };
+      }
     },
     async authAct(action, body) {
       try {

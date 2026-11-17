@@ -33,6 +33,7 @@ import { pushRow, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { move } from "./reorder.ts";
 import { DevicesPage, useAuthState } from "./devices-ui.tsx";
+import { PeersPanel, usePeerState } from "./peers-ui.tsx";
 import { devicesNeed, devicesSummary } from "./devices.ts";
 import { PAGES, deviceSummary, hostsNeed, hostsSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
 import { Empty, Grip, Group, LoadError, MoveButtons, Row, SaveField, SavedMark, Seg, SetContext, Skeleton, Switch, useReorder, useSaved, useSet } from "./settings-rows.tsx";
@@ -90,7 +91,7 @@ export interface ProjectActions {
 }
 
 export interface SettingsProps {
-  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "systemAgents" | "authState" | "authAct">>;
+  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "systemAgents" | "authState" | "authAct" | "peerState" | "peerAct">>;
   host: string;
   /** V0.51: the front's hosts with their state */
   hosts?: HostInfo[];
@@ -304,6 +305,7 @@ export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[], 
 export function Settings(p: SettingsProps) {
   const sv = useSaved();
   const data = useSettingsData(p, sv.mark);
+  const peers = usePeerState(p.api, p.at?.page === "hosts"); // V0.159: the installs panel of Hosts
   const auth = useAuthState(p.api, true); // V0.157: Devices, read by the page and by the nav's line
   const env = { readOnly: !!p.offline, phone: !!p.phone, saved: sv.mark };
   // V0.127: the nav's lines count every host; an offline host Fyr has never read is left out.
@@ -324,7 +326,7 @@ export function Settings(p: SettingsProps) {
   const [reordering, setReordering] = useState(false);
   useEffect(() => (setAdding(false), setReordering(false), setQ("")), [p.at?.page]);
   const ui: PageUi = { adding, setAdding, empty: settingsProjects(p.projects).length === 0, q, setQ, reordering, setReordering };
-  const view = p.at ? pageView(p.at, p, data, ui, auth) : null;
+  const view = p.at ? pageView(p.at, p, data, ui, auth, peers) : null;
 
   // Opening a page moves focus to its heading; coming back from a sub-page focuses the row it came from.
   const pane = useRef<HTMLDivElement>(null);
@@ -383,7 +385,7 @@ export function Settings(p: SettingsProps) {
       </SetContext.Provider>
     );
   }
-  const v = view ?? pageView({ page: "providers" }, p, data, ui, auth);
+  const v = view ?? pageView({ page: "providers" }, p, data, ui, auth, peers);
   const at = p.at ?? { page: "providers" };
   return (
     <SetContext.Provider value={env}>
@@ -479,7 +481,7 @@ interface PageUi {
   setReordering(b: boolean): void;
 }
 
-function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, auth: ReturnType<typeof useAuthState>): PageView {
+function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, auth: ReturnType<typeof useAuthState>, peers: ReturnType<typeof usePeerState>): PageView {
   const go = p.go;
   switch (at.page) {
     case "providers": {
@@ -563,7 +565,16 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
         const r = await p.api.command("front.hostOrder", undefined, { names }); // V0.132
         return r.ok ? null : (r.error ?? "That did not work");
       };
-      return { title: "Hosts", end: <HostsReorderButton ui={ui} n={rows.length} />, body: <HostsPage rows={rows} self={self} now={p.now} go={go} ui={ui} run={runOrder} /> };
+      return {
+        title: "Hosts",
+        end: <HostsReorderButton ui={ui} n={rows.length} />,
+        body: (
+          <>
+            <HostsPage rows={rows} self={self} now={p.now} go={go} ui={ui} run={runOrder} />
+            {p.api.peerState && p.api.peerAct && <PeersPanel api={{ peerState: p.api.peerState, peerAct: p.api.peerAct }} st={peers} />}
+          </>
+        ),
+      };
     }
     case "devices":
       if (!p.api.authState || !p.api.authAct) return { title: "Devices", body: <Empty text="This host cannot list devices." /> };

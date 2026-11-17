@@ -8,6 +8,7 @@ import { mockUndeclaredCommand } from "./mock.ts";
 import { createMockProviders } from "./mock-providers.ts";
 import { decodeHosts } from "./hosts.ts";
 import type { AuthState } from "./devices.ts";
+import type { PeerState } from "./peers.ts";
 import type { HostLoad } from "./load.ts";
 
 const MOCK_IMAGE =
@@ -199,6 +200,17 @@ export function createMockApi(scenario: string): Api {
     // that waits with a code.
     async authState() {
       return JSON.parse(JSON.stringify(mockAuth)) as AuthState;
+    },
+    // V0.159: Settings → Hosts: a paired Mac, a box vouched for by it, a tagged node that needs an invite.
+    async peerState() {
+      return JSON.parse(JSON.stringify(mockPeers)) as PeerState;
+    },
+    async peerAct(action, body) {
+      if (action === "join") {
+        if (!/^fyr1-/i.test(String(body.code))) return { ok: false, error: "that is not an invite" };
+        return { ok: true, name: "box", addr: "box.tail1234.ts.net:7779" };
+      }
+      return { ok: true, code: "fyr1-F7QK-2M9X-AB34-CD56-K7QM2XRA3B", until: new Date(Date.now() + 10 * 60_000).toISOString(), link: "https://desk.tail1234.ts.net:7443/?settings=hosts&pair=fyr1-F7QK-2M9X-AB34-CD56-K7QM2XRA3B", svg: MOCK_QR };
     },
     async authAct(action, body) {
       if (action === "revoke") mockAuth.devices = mockAuth.devices.filter((d) => d.id !== body.id && d.by !== body.id);
@@ -421,3 +433,16 @@ const mockAuth: AuthState = {
 };
 // A QR-looking image for the layout test: the real one comes from the host.
 const MOCK_QR = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29"><rect width="29" height="29" fill="#fff"/><path fill="#000" d="M4 4h7v7H4zM18 4h7v7h-7zM4 18h7v7H4zM13 13h3v3h-3zM18 18h3v7h-3z"/></svg>`;
+
+const mockPeers: PeerState = {
+  signedIn: true,
+  members: [
+    { id: "F7QK-2M9X-AB34-CD56", name: "desk", self: true, drive: true, via: "paired" },
+    { id: "QX2C-7LD4-9PWE-1ABN", name: "mac", port: 7779, drive: true, via: "paired" },
+    { id: "H3TT-8KQM-2ZRD-4VYC", name: "box", port: 7779, drive: false, via: "vouched", by: "mac" },
+  ],
+  candidates: [
+    { name: "server.tail1234.ts.net", online: true, kind: "tagged" },
+    { name: "guest-phone.tail1234.ts.net", online: false, kind: "other-user" },
+  ],
+};

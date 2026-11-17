@@ -34,6 +34,7 @@ import (
 	"github.com/meros/fyr/internal/authn"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/notify"
+	"github.com/meros/fyr/internal/peer"
 	"github.com/meros/fyr/internal/peers"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/stream"
@@ -66,6 +67,13 @@ type Options struct {
 	Name       string // this machine, shown in the rail
 	BuildID    string // the client's build (V0.13 reload)
 	OwnerLogin string // the browser guard's tailnet owner (V0.14)
+	// OwnerFn is the owner's login when OwnerLogin is empty: a tagged install has
+	// none of its own and takes the one its roster carries (decision 0030 3.4),
+	// which it learns by sync once it is paired.
+	OwnerFn func() string
+	// Peer is this install's peer side: the roster, the invite, the candidates
+	// (Settings → Hosts); nil keeps none.
+	Peer *peer.Env
 	// Auth keeps the browser sessions (V0.130); nil keeps none.
 	Auth *auth.Store
 	Web  fs.FS // the built client
@@ -760,7 +768,11 @@ func (f *Front) setOffline(l *link, err error) {
 
 // Handler serves the browser API (unchanged, plus host stamps) and the client.
 func (f *Front) Handler() http.Handler {
-	return refuseActor(f.refuseTailscale(server.Browser(f.opt.OwnerLogin, f.browserRules(f.withAuth(f.mux())))))
+	inner := f.browserRules(f.withAuth(f.mux()))
+	return refuseActor(f.refuseTailscale(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// the owner's login may arrive after the start (a tagged install's, by sync)
+		server.Browser(f.ownerLogin(), inner).ServeHTTP(w, r)
+	})))
 }
 
 // mux is the browser API's routes.
@@ -793,6 +805,7 @@ func (f *Front) mux() *routeMux {
 		})
 	}
 	f.authAPI(mux) // Settings → Devices (decision 0030 3.4)
+	f.peerAPI(mux) // Settings → Hosts: the roster, the invite (3.6)
 	mux.HandleFunc("POST /api/attachments", f.upload)
 	mux.HandleFunc("GET /api/attachments/{id}", f.lookup)
 	mux.HandleFunc("GET /api/previews/{id}", f.lookup)
