@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/attach"
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
 )
 

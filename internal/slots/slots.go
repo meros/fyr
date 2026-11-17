@@ -66,8 +66,9 @@ type Holder struct {
 // shares of the host.
 type Undeclared struct {
 	Thread    string     `json:"thread"`
-	CPU       float64    `json:"cpu"` // cores
-	Mem       uint64     `json:"mem"` // bytes
+	Name      string     `json:"name,omitempty"` // the thread's project, for the wait reason
+	CPU       float64    `json:"cpu"`            // cores
+	Mem       uint64     `json:"mem"`            // bytes
 	CPUPct    float64    `json:"cpuPct"`
 	MemPct    float64    `json:"memPct"`
 	Since     time.Time  `json:"since"`

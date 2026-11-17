@@ -3,13 +3,14 @@
 package engine
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
-	"github.com/meros/fyr/internal/coretest"
+	"github.com/meros/fyr/internal/core/coretest"
 	"github.com/meros/fyr/internal/slots"
 )
 
@@ -32,7 +33,7 @@ func undEngine(t *testing.T) (*Engine, *und, *time.Time, string) {
 }
 
 func flagFor(thread string, since time.Time) slots.Undeclared {
-	return slots.Undeclared{Thread: thread, Since: since, CPU: 2.1, Mem: 2.8e9, CPUPct: 52, MemPct: 20, OverCPU: true, OverMem: true,
+	return slots.Undeclared{Thread: thread, Since: since, CPU: 2.1, Mem: 2.8e9, CPUPct: 52, MemPct: 20, OverCPU: true, OverMem: true, MemOver: true,
 		Command: "node test/layout.e2e.mjs", Kind: "e2e", Window: 45 * time.Second}
 }
 
@@ -197,17 +198,23 @@ func TestNTheEventCarriesTheUseForTheConversationsLine(t *testing.T) {
 	e, u, now, a := undEngine(t)
 	u.flags = []slots.Undeclared{flagFor(a, *now)}
 	e.Tick()
-	th, _ := e.Thread(a)
+	evs, err := e.Events(a, 0, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
 	found := false
-	for _, ev := range th.Log {
-		if d, ok := ev.Data.(map[string]any); ok && ev.Type == core.EventSlot {
-			if txt, ok := d["undeclared"].(string); ok && strings.Contains(txt, "heavy work Fyr did not admit") && d["mem"] != nil && d["cpu"] != nil {
-				found = true
-			}
+	for _, ev := range evs {
+		if ev.Type != core.EventSlot {
+			continue
+		}
+		var d map[string]any
+		json.Unmarshal(ev.Data, &d)
+		if txt, ok := d["undeclared"].(string); ok && strings.Contains(txt, "heavy work Fyr did not admit") && d["mem"] != nil && d["cpu"] != nil {
+			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("no slot event with the text: %+v", th.Log)
+		t.Fatalf("no slot event with the text: %+v", evs)
 	}
 }
 
@@ -291,7 +298,7 @@ func TestF5CPUOnlyIsNotFrozenTheJobsRuleApplies(t *testing.T) {
 	*now = now.Add(time.Minute)
 	e.Slots.Acquire(c, slots.Test)
 	f := flagFor(a, *now)
-	f.OverMem = false
+	f.OverMem, f.MemOver = false, false
 	u.flags = []slots.Undeclared{f}
 	z.free = 0.04
 	e.Tick()

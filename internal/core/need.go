@@ -7,7 +7,6 @@ package core
 // failure while the agent runs is "Agent is fixing CI", muted.
 
 import (
-
 	"strings"
 	"time"
 )
@@ -165,4 +164,3 @@ func stopCheck(t *Thread) *time.Time {
 	}
 	return &at
 }
-

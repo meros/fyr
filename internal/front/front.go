@@ -8,7 +8,6 @@
 package front
 
 import (
-	"maps"
 	"bufio"
 	"bytes"
 	"context"
@@ -18,6 +17,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -64,7 +64,7 @@ type Options struct {
 	OwnerLogin string // the browser guard's tailnet owner (V0.14)
 	// Auth keeps the browser sessions (V0.130); nil keeps none.
 	Auth *auth.Store
-	Web        fs.FS  // the built client
+	Web  fs.FS // the built client
 	// MinBackoff is the first wait before reconnecting to a host; default 500 ms.
 	MinBackoff time.Duration
 	// Client talks to the hosts; default a client without a timeout (the
@@ -1251,7 +1251,7 @@ func (f *Front) focus(device, prev, thread string) {
 			body, _ := json.Marshal(map[string]any{"device": device, "off": c.off})
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			req, _ := http.NewRequestWithContext(ctx, "POST", l.base.String()+"/api/threads/"+url.PathEscape(c.id)+"/focus", bytes.NewReader(body))
-					req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Fyr", "1")
 			if resp, err := l.client.Do(req); err == nil {
 				io.Copy(io.Discard, resp.Body)

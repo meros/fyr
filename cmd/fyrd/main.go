@@ -253,7 +253,17 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
 	// #174: the gate hook refuses a heavy command without a held slot.
 	groups := &cgroup.JobGroups{Tree: tree} // decision 0029 S5: each holder's job in a cgroup of its own
+	// V0.164: the suggestions and the owner's added patterns; the detector of
+	// work that nobody asked for, its settings and the record of its episodes.
+	book := &heavy.Book{KV: h.st, Matcher: heavyCmds, Base: cfg.HeavyAdded}
+	book.Load()
+	usettings := &cgroup.UndeclaredSettings{KV: h.st, Base: cgroup.UndeclaredConfig{
+		Off: cfg.Undeclared == "off", CPU: cfg.UndeclaredCPU, Memory: cfg.UndeclaredMemory, After: time.Duration(cfg.UndeclaredAfter) * time.Second}}
+	usettings.Load()
+	detector := &cgroup.Detector{Matches: func(c string) bool { return heavyCmds.Class(c) != "" }}
+	episodes := &cgroup.Episodes{KV: h.st}
 	mgr.SetOnBash(func(thread, c string) string {
+		groups.Bash(thread, c)
 		class, text := heavyCmds.Match(c)
 		jobs.Saw(thread, class)
 		groups.Seen(thread, text)
@@ -263,7 +273,36 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		return eng.HeavyGate(thread, class)
 	})
 	eng.SlotActive = jobs.Active
-	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups} // V0.80, V0.86
+	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups, // V0.80, V0.86
+		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject} // V0.164
+	// V0.164: an ended episode is kept, teaches a suggestion, and ends its frozen group.
+	detector.OnEnd = func(ep cgroup.Episode) {
+		ep.Project = eng.ThreadProject(ep.Thread)
+		episodes.Add(ep)
+		if ep.Command != "" {
+			book.Saw(heavy.Seen{Thread: ep.Thread, Command: ep.Command, At: ep.End, Memory: ep.PeakMem, CPU: ep.MeanCores, Seconds: int(ep.End.Sub(ep.Start).Seconds())})
+		}
+		groups.EndUndeclared(ep.Thread)
+	}
+	pool.Undeclared = sampler.Undeclared
+	mgr.SetUndeclaredNote(eng.UndeclaredSubagentNote)
+	eng.Undeclared, eng.UndeclaredTold, eng.UndeclaredDismiss, eng.UndeclaredSettings = sampler.Undeclared, detector.Told, detector.Dismiss, usettings.Set
+	eng.UndeclaredThaw, eng.HeavyRemove, eng.HeavyRefused = groups.ThawUndeclared, book.Remove, heavyCmds.Refused
+	eng.UndeclaredFreeze = func(thread string) bool {
+		for _, f := range detector.Flags() {
+			if f.Thread == thread && groups.FreezeUndeclared(thread, cgroup.ReadRoots(tree, "", thread, f.FirstOver)) {
+				detector.MarkPaused(thread)
+				return true
+			}
+		}
+		return false
+	}
+	eng.HeavySuggestion = func(id, do, pattern, kind string) error {
+		if do == "ignore" {
+			return book.Ignore(id)
+		}
+		return book.Add(id, pattern, kind, time.Now())
+	}
 	// Decision 0029 S2 (#186): admission by a budget of costs (N), gated by
 	// the slowdown and memory; one job always runs; no provider (macOS)
 	// keeps the fixed count. Costs are 1.0, an idle hold 0.1, until S3
@@ -317,16 +356,26 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}
 		return out
 	}
+	// V0.164: the use of the threads that run heavy work Fyr did not admit
+	// counts beside the admitted jobs, except the head's own (its request
+	// stands in for it).
+	extras := func() []slots.Extra {
+		var out []slots.Extra
+		for _, u := range sampler.Undeclared() {
+			out = append(out, slots.Extra{Owner: u.Thread, Name: u.Name, Need: slots.Need{CPU: u.CPU, Mem: u.Mem}})
+		}
+		return out
+	}
 	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
 		need, _ := predict(head)
-		return slots.Decide(policy, sampler.Signals(), pool.Budget(), n, heldNeeds(held), need)
+		return slots.DecideWith(policy, sampler.Signals(), pool.Budget(), n, heldNeeds(held), extras(), head.Owner, need)
 	}
 	// EASY backfill: c may pass the head when it fits now and is cheap, or
 	// ends (its class's p90) before the earliest running job is expected to.
 	pool.Backfill = func(head, c slots.Holder, held []slots.Holder) bool {
 		need, wall := predict(c)
 		sig := sampler.Signals()
-		if ok, _, _ := slots.Decide(policy, sig, pool.Budget(), n, heldNeeds(held), need); !ok {
+		if ok, _, _ := slots.DecideWith(policy, sig, pool.Budget(), n, heldNeeds(held), extras(), c.Owner, need); !ok {
 			return false
 		}
 		ends := make([]time.Time, len(held))

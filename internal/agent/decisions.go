@@ -1,10 +1,10 @@
 package agent
 
 import (
-	"log"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/meros/fyr/internal/claude"

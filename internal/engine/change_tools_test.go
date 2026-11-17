@@ -242,7 +242,6 @@ func TestThreadAndViewActions(t *testing.T) {
 	}
 }
 
-
 // SPEC 0.5 V0.60 (3): two presses at the same time (two devices) run a
 // script once; the second gets "It is running".
 func TestConcurrentPressRunsOnce(t *testing.T) {

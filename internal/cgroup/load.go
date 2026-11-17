@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/lockwatch"
 	"github.com/meros/fyr/internal/slots"
 )
@@ -48,6 +49,11 @@ type Load struct {
 	AgentsPressure *float64  `json:"agentsCpuPressure,omitempty"`
 	// Jobs: the measured slot holds per class, the newest first.
 	Jobs []JobClass `json:"jobs,omitempty"`
+	// V0.164: the suggested heavy jobs, the ones the owner added, and the
+	// thresholds of "undeclared".
+	Suggestions        []heavy.Suggestion `json:"suggestions,omitempty"`
+	HeavyAdded         []heavy.Added      `json:"heavyAdded,omitempty"`
+	UndeclaredSettings *UndeclaredView    `json:"undeclaredSettings,omitempty"`
 }
 
 // Use is agents/ as a whole.
@@ -96,6 +102,10 @@ type Sampler struct {
 	// process tree under each thread's CLI (CLIs says each thread's pid).
 	Detect       *Detector
 	DetectConfig func() UndeclaredConfig
+	Settings     *UndeclaredSettings        // GET /api/load shows it
+	Book         *heavy.Book                // the suggestions and added patterns GET /api/load shows
+	Project      func(thread string) string // a thread's project name, asked outside every lock
+	names        atomic.Pointer[map[string]string]
 	Trees        *TreeReader
 	CLIs         func() map[string]int
 
@@ -117,6 +127,13 @@ func (s *Sampler) Get() Load {
 	if s.Slots != nil && !s.Slots.Off() {
 		sn := s.Slots.View()
 		l.Heavy, l.Slots = &sn, &sn
+	}
+	if s.Book != nil && l.Provider != "" {
+		l.Suggestions, l.HeavyAdded = s.Book.Suggestions(), s.Book.Added()
+	}
+	if s.Settings != nil && l.Provider != "" {
+		v := s.Settings.View()
+		l.UndeclaredSettings = &v
 	}
 	if s.Jobs != nil {
 		v := s.Jobs.View()

@@ -47,11 +47,16 @@ func (s *Sampler) detect(l Load) {
 	if proc == "" {
 		proc = "/proc"
 	}
+	names := map[string]string{}
 	for _, f := range s.Detect.Flags() {
+		if s.Project != nil {
+			names[f.Thread] = s.Project(f.Thread)
+		}
 		if root, ok := Heaviest(ReadRoots(s.Tree, proc, f.Thread, f.FirstOver)); ok {
 			s.Detect.SetCommand(f.Thread, CommandOf(root, s.Groups.Bashes(f.Thread)))
 		}
 	}
+	s.names.Store(&names)
 }
 
 // Undeclared lists the threads that run heavy work Fyr did not admit, for the
@@ -61,9 +66,14 @@ func (s *Sampler) Undeclared() []slots.Undeclared {
 		return nil
 	}
 	var out []slots.Undeclared
+	sig := s.Signals()
 	for _, f := range s.Detect.Flags() {
-		u := slots.Undeclared{Thread: f.Thread, CPU: f.CPU, Mem: f.Mem, Since: f.Since, Command: f.Command, Dismissed: f.Dismissed,
+		u := slots.Undeclared{Thread: f.Thread, Name: s.nameOf(f.Thread), CPU: f.CPU, Mem: f.Mem, Since: f.Since, Command: f.Command, Dismissed: f.Dismissed,
 			Paused: s.Groups.Frozen(f.Thread), Queued: f.Queued, OverCPU: f.OverCPU, OverMem: f.OverMem, Window: f.Window, MemOver: f.MemOver}
+		u.CPUPct, u.MemPct = func() (float64, float64) {
+			c, m := slots.Need{CPU: f.CPU, Mem: f.Mem}.Shares(sig)
+			return slots.Pct(c), slots.Pct(m)
+		}()
 		if !f.Told.IsZero() {
 			t := f.Told
 			u.Told = &t
@@ -74,4 +84,12 @@ func (s *Sampler) Undeclared() []slots.Undeclared {
 		out = append(out, u)
 	}
 	return out
+}
+
+// nameOf is what a thread is called in a wait reason: its project, else its id.
+func (s *Sampler) nameOf(thread string) string {
+	if p := s.names.Load(); p != nil && (*p)[thread] != "" {
+		return (*p)[thread]
+	}
+	return thread
 }

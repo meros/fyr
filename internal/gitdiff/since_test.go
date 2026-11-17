@@ -80,8 +80,8 @@ func TestSinceAncestor(t *testing.T) {
 
 	write(t, dir, "edit.txt", "one\nTWO\nthree\nfour\n")
 	git(t, dir, "commit", "-qam", "second")
-	write(t, dir, "fresh.txt", "x\ny\n")           // untracked, new
-	write(t, dir, "keep.txt", "a\nb\nc\n")         // back to base: no longer in the branch
+	write(t, dir, "fresh.txt", "x\ny\n")   // untracked, new
+	write(t, dir, "keep.txt", "a\nb\nc\n") // back to base: no longer in the branch
 	c, _ = Summary(ctx, dir)
 	s, err = SinceSeen(ctx, dir, c, seen)
 	if err != nil || s.Mode != "ancestor" || s.Commits != 1 || s.Head != seen.Head {

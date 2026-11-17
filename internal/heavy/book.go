@@ -16,8 +16,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+type bookView struct {
+	sugg  []Suggestion
+	added []Added
+}
 
 // KV is the store's key-value table.
 type KV interface {
@@ -73,8 +79,12 @@ type Added struct {
 type Book struct {
 	KV      KV
 	Matcher *Matcher
+	// Base are the patterns of the host's config (`heavyAdded`), read with the
+	// owner's added ones.
+	Base []Pattern
 
 	mu      sync.Mutex
+	pub     atomic.Pointer[bookView] // for readers that must not wait (GET /api/load)
 	loaded  bool
 	sugg    []Suggestion
 	added   []Added
@@ -88,6 +98,7 @@ func (b *Book) Load() {
 	defer b.mu.Unlock()
 	b.loadLocked()
 	b.applyLocked()
+	b.publishLocked()
 }
 
 func (b *Book) loadLocked() {
@@ -108,6 +119,10 @@ func (b *Book) loadLocked() {
 	get(ignoredKey, &b.ignored)
 }
 
+func (b *Book) publishLocked() {
+	b.pub.Store(&bookView{sugg: slices.Clone(b.sugg), added: slices.Clone(b.added)})
+}
+
 func (b *Book) save(k string, v any) {
 	if b.KV == nil {
 		return
@@ -120,9 +135,9 @@ func (b *Book) applyLocked() error {
 	if b.Matcher == nil {
 		return nil
 	}
-	ps := make([]Pattern, len(b.added))
-	for i, a := range b.added {
-		ps[i] = Pattern{Name: a.Name, Re: a.Pattern}
+	ps := slices.Clone(b.Base)
+	for _, a := range b.added {
+		ps = append(ps, Pattern{Name: a.Name, Re: a.Pattern})
 	}
 	return b.Matcher.SetAdded(ps)
 }
@@ -169,23 +184,34 @@ func (b *Book) Saw(s Seen) (matched bool) {
 		b.sugg = b.sugg[:MaxSuggestions]
 	}
 	b.save(suggestionsKey, b.sugg)
+	b.publishLocked()
 	return false
 }
 
 // Suggestions are the suggestions, the newest first.
 func (b *Book) Suggestions() []Suggestion {
+	if v := b.pub.Load(); v != nil {
+		return slices.Clone(v.sugg)
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.loadLocked()
+	b.publishLocked()
 	return slices.Clone(b.sugg)
 }
 
 // Added are the owner's added patterns with how often the gate refused each.
 func (b *Book) Added() []Added {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.loadLocked()
-	out := slices.Clone(b.added)
+	var out []Added
+	if v := b.pub.Load(); v != nil {
+		out = slices.Clone(v.added)
+	} else {
+		b.mu.Lock()
+		b.loadLocked()
+		b.publishLocked()
+		out = slices.Clone(b.added)
+		b.mu.Unlock()
+	}
 	for i := range out {
 		if b.Matcher != nil {
 			out[i].Refused = b.Matcher.RefusedCount(out[i].Name)
@@ -232,6 +258,7 @@ func (b *Book) Add(id, pattern, kind string, now time.Time) error {
 	b.sugg = slices.Delete(b.sugg, i, i+1)
 	b.save(addedKey, b.added)
 	b.save(suggestionsKey, b.sugg)
+	b.publishLocked()
 	return nil
 }
 
@@ -248,6 +275,7 @@ func (b *Book) Ignore(id string) error {
 	b.sugg = slices.Delete(b.sugg, i, i+1)
 	b.save(ignoredKey, b.ignored)
 	b.save(suggestionsKey, b.sugg)
+	b.publishLocked()
 	return nil
 }
 
@@ -263,6 +291,7 @@ func (b *Book) Remove(pattern string) bool {
 	b.added = slices.Delete(b.added, i, i+1)
 	b.applyLocked()
 	b.save(addedKey, b.added)
+	b.publishLocked()
 	return true
 }
 
