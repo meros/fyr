@@ -71,6 +71,9 @@ for t in git gh claude node go; do
 done
 path="$path:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+# ~/.config/fyr/github.env (GH_TOKEN=..., mode 0600) is loaded first, as
+# the NixOS hosts' EnvironmentFile: a fine-grained token that may only read
+# meros/fyr's contents (README, Updates). Without it fyrd uses your gh login.
 cat >"$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -79,9 +82,8 @@ cat >"$plist" <<EOF
   <key>Label</key><string>$label</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$data/launcher/fyr</string>
-    <string>-data</string><string>$data</string>
-    <string>-seed</string><string>$data/seed/fyrd</string>
+    <string>/bin/sh</string><string>-c</string>
+    <string>set -a; [ -r "\$HOME/.config/fyr/github.env" ] &amp;&amp; . "\$HOME/.config/fyr/github.env"; set +a; exec "$data/launcher/fyr" -data "$data" -seed "$data/seed/fyrd"</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
