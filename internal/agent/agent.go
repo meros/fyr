@@ -89,8 +89,9 @@ type Config struct {
 	// Cgroups gives each thread's process a cgroup (V0.80); optional.
 	Cgroups Cgroups
 	// OnBash hears each Bash command a thread's agent (or its subagent)
-	// runs, at the gate hook (decision 0029 S1, #185); optional.
-	OnBash func(thread, command string)
+	// runs, at the gate hook (decision 0029 S1, #185); a reason refuses it
+	// (#174: a heavy job without a slot), "" lets it run. Optional.
+	OnBash func(thread, command string) string
 	// Runner starts the processes in the launcher's runner, so they outlive
 	// fyrd (V0.90); nil starts them as fyrd's children.
 	Runner *runner.Client
@@ -278,7 +279,7 @@ func writeMCPConfig(dir string, cfg []byte) (string, error) {
 // ThreadForToken maps an MCP bearer token to its thread (16.2 MCP binding).
 // SetOnBash sets Config.OnBash after New (the slots come later in the
 // wiring).
-func (m *Manager) SetOnBash(f func(thread, command string)) {
+func (m *Manager) SetOnBash(f func(thread, command string) string) {
 	m.mu.Lock()
 	m.cfg.OnBash = f
 	m.mu.Unlock()
