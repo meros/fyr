@@ -54,9 +54,25 @@ func (m *Manager) read(s *session) {
 	if restarting != "" {
 		return // V0.142: restart observes it and delivers the unread messages
 	}
-	// V0.142: a process whose input was closed never read what waits: the
-	// next process of the session gets it.
-	if closedIn && len(m.unread(s)) > 0 {
+	// V0.142: the messages Fyr held back because the input was closed were
+	// never written: the next process of the session gets them. What was
+	// written dies with the process (V0.33), as after a Stop.
+	m.mu.Lock()
+	var held []string
+	isHeld := map[string]bool{}
+	for id := range s.held {
+		isHeld[id] = true
+		if s.out[id] != "" {
+			held = append(held, id)
+		}
+	}
+	m.mu.Unlock()
+	for _, id := range m.unread(s) {
+		if !isHeld[id] {
+			m.delivered(s, id, "lost")
+		}
+	}
+	if closedIn && len(held) > 0 {
 		var tasks []string
 		if t, ok := m.host.Thread(s.thread); ok {
 			tasks = runningTasks(t)
