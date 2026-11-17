@@ -52,6 +52,7 @@ func TestFetchReadsCommits(t *testing.T) {
 
 // SPEC 0.5 V0.66 (2): a repo without deployments costs one call.
 func TestDeploymentsNoneOneCall(t *testing.T) {
+	resetDeployCaches()
 	b := &byArgs{out: map[string]string{"repos/o/r/deployments?per_page=30": `[]`}}
 	d, err := FetchDeployments(context.Background(), b.run, "o/r", "m1", true)
 	if err != nil || !d.None || len(b.calls) != 1 {
@@ -62,6 +63,7 @@ func TestDeploymentsNoneOneCall(t *testing.T) {
 // SPEC 0.5 V0.66 (2): the newest deployment per environment and its newest
 // status; production by the flag or the name.
 func TestDeploymentsPerEnvironment(t *testing.T) {
+	resetDeployCaches()
 	b := &byArgs{out: map[string]string{
 		"repos/o/r/deployments?sha=m1": `[
 			{"id": 3, "sha": "m1", "environment": "production", "production_environment": false},
@@ -97,6 +99,7 @@ func TestDeploymentsPerEnvironment(t *testing.T) {
 // SPEC 0.5 V0.66 (2): the first call reads the repo's newest deployments and
 // keeps this commit's.
 func TestDeploymentsFirstFiltersBySHA(t *testing.T) {
+	resetDeployCaches()
 	b := &byArgs{out: map[string]string{
 		"repos/o/r/deployments?per_page=30": `[{"id": 9, "sha": "other", "environment": "production"}, {"id": 8, "sha": "m1", "environment": "production"}]`,
 		"deployments/8/statuses":            `[{"state": "queued"}]`,
@@ -176,6 +179,7 @@ func TestPollerAnnotatesFailingPR(t *testing.T) {
 // SPEC 0.5 V0.66 (2): the poller reads deployments of watched merges and
 // passes them on.
 func TestPollerReadsDeployments(t *testing.T) {
+	resetDeployCaches()
 	b := &byArgs{out: map[string]string{
 		"repos/o/r/deployments?per_page=30": `[]`,
 	}}
@@ -185,4 +189,99 @@ func TestPollerReadsDeployments(t *testing.T) {
 	if len(src.deployed) != 1 || !src.deployed[0].None || len(b.calls) != 1 {
 		t.Fatalf("deployed: %+v calls %v", src.deployed, b.calls)
 	}
+}
+
+// deploySrc is one deploy watch and what the poller observed of it.
+type deploySrc struct {
+	d   []DeployThread
+	obs []core.DeployObs
+}
+
+func (s *deploySrc) Snapshot() []PRThread                        { return nil }
+func (s *deploySrc) Observe(string, core.PR)                     {}
+func (s *deploySrc) Deploys() []DeployThread                     { return s.d }
+func (s *deploySrc) ObserveDeploy(_, _ string, o core.DeployObs) { s.obs = append(s.obs, o) }
+
+// V0.173: a merge in a repo that has no GitHub deployments (meros/fyr
+// publishes releases) costs one read per day for the repo, not one per
+// merge.
+func TestNoDeploysRepoReadOncePerRepo(t *testing.T) {
+	repoDeploys.Delete("o/none")
+	b := &byArgs{out: map[string]string{"repos/o/none/deployments?per_page=30": `[]`}}
+	for _, sha := range []string{"m1", "m2", "m3"} {
+		d, err := FetchDeployments(context.Background(), b.run, "o/none", sha, true)
+		if err != nil || !d.None {
+			t.Fatal(d, err)
+		}
+	}
+	if len(b.calls) != 1 {
+		t.Fatalf("calls %v", b.calls)
+	}
+}
+
+// V0.173: a repo known to deploy skips the repo-wide read.
+func TestDeploysRepoKnownReadsTheCommit(t *testing.T) {
+	repoDeploys.Delete("o/dep")
+	markDeploys("o/dep", true)
+	b := &byArgs{out: map[string]string{"repos/o/dep/deployments?sha=m1": `[]`}}
+	d, err := FetchDeployments(context.Background(), b.run, "o/dep", "m1", true)
+	if err != nil || d.None || len(b.calls) != 1 {
+		t.Fatalf("%+v %v %v", d, err, b.calls)
+	}
+}
+
+// V0.173: a deployment whose status is final is not read again; a pending
+// one is.
+func TestFinalStatusNotReadAgain(t *testing.T) {
+	resetETags()
+	b := &byArgs{out: map[string]string{
+		"repos/o/fin/deployments?sha=m1": `[{"id": 71, "sha": "m1", "environment": "production"}, {"id": 72, "sha": "m1", "environment": "staging"}]`,
+		"deployments/71/statuses":        `[{"state": "success", "environment_url": "https://app"}]`,
+		"deployments/72/statuses":        `[{"state": "in_progress"}]`,
+	}}
+	for i := 0; i < 3; i++ {
+		d, err := FetchDeployments(context.Background(), b.run, "o/fin", "m1", false)
+		if err != nil || len(d.Deployments) != 2 || d.Deployments[0].State != "success" || d.Deployments[0].URL != "https://app" {
+			t.Fatalf("%+v %v", d, err)
+		}
+	}
+	if b.count("deployments/71/statuses") != 1 || b.count("deployments/72/statuses") != 3 {
+		t.Fatalf("calls %v", b.calls)
+	}
+}
+
+// V0.173: a watch is read at each poll in its first hour, then every 10
+// minutes, and every 30 after a day.
+func TestDeployWatchBacksOff(t *testing.T) {
+	repoDeploys.Delete("o/bk")
+	markDeploys("o/bk", true)
+	merged := time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)
+	now := merged
+	b := &byArgs{out: map[string]string{"repos/o/bk/deployments?sha=m1": `[]`}}
+	src := &deploySrc{d: []DeployThread{{ID: "t", Change: "c", Repo: "o/bk", SHA: "m1", Since: merged}}}
+	p := &Poller{Gh: b.run, Src: src, Now: func() time.Time { return now }}
+	reads := func(span time.Duration) int {
+		n0 := len(b.calls)
+		for end := now.Add(span); now.Before(end); now = now.Add(2 * time.Minute) {
+			p.pollAll(context.Background())
+		}
+		return len(b.calls) - n0
+	}
+	if n := reads(time.Hour); n != 30 {
+		t.Fatalf("first hour: %d reads", n)
+	}
+	if n := reads(time.Hour); n != 6 {
+		t.Fatalf("second hour: %d reads", n)
+	}
+	now = merged.Add(25 * time.Hour)
+	if n := reads(time.Hour); n != 2 {
+		t.Fatalf("second day: %d reads", n)
+	}
+}
+
+// resetDeployCaches forgets what earlier tests read of repos and statuses.
+func resetDeployCaches() {
+	repoDeploys.Range(func(k, _ any) bool { repoDeploys.Delete(k); return true })
+	finalStatus.Range(func(k, _ any) bool { finalStatus.Delete(k); return true })
+	resetETags()
 }

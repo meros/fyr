@@ -374,12 +374,22 @@ type Poller struct {
 	Now func() time.Time
 	// missing is when GitHub first said a PR does not exist (V0.72), by URL.
 	missing map[string]time.Time
+	// deployAt is when each deploy watch was last read (V0.173), by
+	// repo@sha.
+	deployAt map[string]time.Time
 
 	// kick is made once, by whichever of Kick and Run comes first, so a
 	// kick before Run waits for it and no goroutine writes the field
 	// while another reads it (review 2026-11-15).
 	kickOnce sync.Once
 	kick     chan string
+}
+
+func (p *Poller) now() time.Time {
+	if p.Now != nil {
+		return p.Now()
+	}
+	return time.Now()
 }
 
 func (p *Poller) kicks() chan string {
@@ -423,8 +433,15 @@ func (p *Poller) pollAll(ctx context.Context) {
 		p.poll(ctx, t)
 	}
 	if ds, ok := p.Src.(DeploySource); ok {
+		watched := map[string]bool{}
 		for _, d := range ds.Deploys() {
+			watched[d.Repo+"@"+d.SHA] = true
 			p.pollDeploy(ctx, ds, d)
+		}
+		for k := range p.deployAt {
+			if !watched[k] {
+				delete(p.deployAt, k)
+			}
 		}
 	}
 }

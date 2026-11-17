@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
@@ -30,6 +31,7 @@ type DeploySource interface {
 type DeployThread struct {
 	ID, Change, Repo, SHA string
 	First                 bool
+	Since                 time.Time // the merge (V0.173)
 }
 
 type noteCache struct {
@@ -56,7 +58,29 @@ func (p *Poller) annotations(ctx context.Context, url string, pr core.PR, failed
 	return notes
 }
 
+// DeployEvery is how often the poller reads a deploy watch, by the watch's
+// age (V0.173): each poll in the first hour, every 10 minutes in its first
+// day, then every 30 minutes.
+func DeployEvery(age time.Duration) time.Duration {
+	switch {
+	case age < time.Hour:
+		return 0
+	case age < 24*time.Hour:
+		return 10 * time.Minute
+	}
+	return 30 * time.Minute
+}
+
 func (p *Poller) pollDeploy(ctx context.Context, src DeploySource, d DeployThread) {
+	now := p.now()
+	key := d.Repo + "@" + d.SHA
+	if last, ok := p.deployAt[key]; ok && !d.Since.IsZero() && now.Sub(last) < DeployEvery(now.Sub(d.Since)) {
+		return
+	}
+	if p.deployAt == nil {
+		p.deployAt = map[string]time.Time{}
+	}
+	p.deployAt[key] = now
 	c, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	obs, err := FetchDeployments(c, p.Gh, d.Repo, d.SHA, d.First)
@@ -70,7 +94,7 @@ func (p *Poller) pollDeploy(ctx context.Context, src DeploySource, d DeployThrea
 // FetchAnnotations reads the annotations of the failed check runs of a
 // commit: at most 10 runs and 50 annotations.
 func FetchAnnotations(ctx context.Context, gh Runner, repo, sha string) ([]core.Annotation, error) {
-	out, err := gh(ctx, "api", fmt.Sprintf("repos/%s/commits/%s/check-runs?per_page=100", repo, sha))
+	out, err := RestGet(ctx, gh, fmt.Sprintf("repos/%s/commits/%s/check-runs?per_page=100", repo, sha))
 	if err != nil {
 		return nil, err
 	}
@@ -126,15 +150,67 @@ func FetchAnnotations(ctx context.Context, gh Runner, repo, sha string) ([]core.
 	return notes, nil
 }
 
+// RepoDeploysRecheck is how long Fyr trusts that a repo has no GitHub
+// deployments (V0.173): a merge in it then arms no read at all.
+const RepoDeploysRecheck = 24 * time.Hour
+
+// repoDeploys is what Fyr read of each repo's deployments, by RepoKey.
+var repoDeploys sync.Map
+
+type deploysFact struct {
+	has bool
+	at  time.Time
+}
+
+// RepoHasDeploys reports what Fyr knows of the repo's deployments: known
+// is false when it has not read them, or read that there are none more
+// than RepoDeploysRecheck ago.
+func RepoHasDeploys(repo string) (has, known bool) {
+	v, ok := repoDeploys.Load(core.RepoKey(repo))
+	if !ok {
+		return false, false
+	}
+	f := v.(deploysFact)
+	if !f.has && time.Since(f.at) >= RepoDeploysRecheck {
+		return false, false
+	}
+	return f.has, true
+}
+
+func markDeploys(repo string, has bool) {
+	if k := core.RepoKey(repo); k != "" {
+		repoDeploys.Store(k, deploysFact{has: has, at: time.Now()})
+	}
+}
+
+// finalStates are the deployment states that end a deployment's story for
+// Fyr; their statuses are not read again (V0.173).
+var finalStates = map[string]bool{"success": true, "inactive": true, "failure": true, "error": true}
+
+// finalStatus caches the final status of a deployment, by repo and id.
+var finalStatus sync.Map
+
+type statusRead struct{ State, EnvURL, LogURL string }
+
 // FetchDeployments reads the deployments of a merge commit: the newest per
 // environment and its newest status. First reads the repo's newest
-// deployments instead, so a repo without any ends the watch in one call.
+// deployments instead, so a repo without any ends the watch in one call;
+// V0.173: and in none once Fyr knows it has none. The reads send ETags, and
+// a deployment whose status is final is not read again.
 func FetchDeployments(ctx context.Context, gh Runner, repo, sha string, first bool) (core.DeployObs, error) {
+	if first {
+		if has, known := RepoHasDeploys(repo); known {
+			if !has {
+				return core.DeployObs{None: true}, nil
+			}
+			first = false
+		}
+	}
 	q := fmt.Sprintf("repos/%s/deployments?sha=%s&per_page=30", repo, sha)
 	if first {
 		q = fmt.Sprintf("repos/%s/deployments?per_page=30", repo)
 	}
-	out, err := gh(ctx, "api", q)
+	out, err := RestGet(ctx, gh, q)
 	if err != nil {
 		return core.DeployObs{}, err
 	}
@@ -147,8 +223,11 @@ func FetchDeployments(ctx context.Context, gh Runner, repo, sha string, first bo
 	if err := json.Unmarshal(out, &ds); err != nil {
 		return core.DeployObs{}, fmt.Errorf("deployments: %w", err)
 	}
-	if first && len(ds) == 0 {
-		return core.DeployObs{None: true}, nil
+	if first {
+		markDeploys(repo, len(ds) > 0)
+		if len(ds) == 0 {
+			return core.DeployObs{None: true}, nil
+		}
 	}
 	var obs core.DeployObs
 	seen := map[string]bool{}
@@ -157,7 +236,15 @@ func FetchDeployments(ctx context.Context, gh Runner, repo, sha string, first bo
 			continue
 		}
 		seen[strings.ToLower(d.Env)] = true
-		out, err := gh(ctx, "api", fmt.Sprintf("repos/%s/deployments/%d/statuses?per_page=1", repo, d.ID))
+		x := core.Deployment{Env: d.Env, Production: core.IsProduction(d.Env, d.Production), State: "pending"}
+		key := fmt.Sprintf("%s#%d", core.RepoKey(repo), d.ID)
+		if v, ok := finalStatus.Load(key); ok {
+			st := v.(statusRead)
+			x.State, x.URL, x.LogURL = st.State, st.EnvURL, st.LogURL
+			obs.Deployments = append(obs.Deployments, x)
+			continue
+		}
+		out, err := RestGet(ctx, gh, fmt.Sprintf("repos/%s/deployments/%d/statuses?per_page=1", repo, d.ID))
 		if err != nil {
 			return core.DeployObs{}, err
 		}
@@ -170,11 +257,13 @@ func FetchDeployments(ctx context.Context, gh Runner, repo, sha string, first bo
 		if err := json.Unmarshal(out, &st); err != nil {
 			return core.DeployObs{}, fmt.Errorf("deployment statuses: %w", err)
 		}
-		x := core.Deployment{Env: d.Env, Production: core.IsProduction(d.Env, d.Production), State: "pending"}
 		if len(st) > 0 {
 			x.State, x.URL, x.LogURL = st[0].State, st[0].EnvURL, st[0].LogURL
 			if x.LogURL == "" {
 				x.LogURL = st[0].Target
+			}
+			if finalStates[x.State] {
+				finalStatus.Store(key, statusRead{x.State, x.URL, x.LogURL})
 			}
 		}
 		obs.Deployments = append(obs.Deployments, x)

@@ -28,7 +28,7 @@ import { useAsk } from "./confirm-ui.tsx";
 import type { Profile, Project } from "./types.ts";
 import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
-import { updateRow, updateState, type UpdatesView } from "./updates.ts";
+import { githubRows, githubState, updateRow, updateState, type UpdatesView } from "./updates.ts";
 import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
 import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
@@ -1288,6 +1288,7 @@ function AutomationPage({ d, hasDeploy, api, focus }: { d: Data; hasDeploy: bool
           </Group>
         ))}
       {d.updates && <UpdatesGroup d={d} />}
+      {d.updates?.github && <GitHubGroup d={d} />}
       <HeavyJobsGroup host={d.host.name} api={api} focus={focus} />
       {d.repos === null && d.reposErr ? (
         <LoadError text={d.reposErr} onRetry={() => void d.loadRepos()} />
@@ -1570,6 +1571,21 @@ function UpdatesGroup({ d }: { d: Data }) {
       {v.updates.length > 8 && (
         <Row end={<button type="button" class="btn" onClick={() => setAll(!all)}>{all ? "Fewer" : `All ${v.updates.length}`}</button>} />
       )}
+    </Group>
+  );
+}
+
+/** V0.173: the account's GitHub REST limit (every caller of the login shares it) and what this host's Fyr spent of it
+ *  this hour, by kind. Desktop and phone share it. */
+function GitHubGroup({ d }: { d: Data }) {
+  const v = d.updates!.github!;
+  const s = githubState(v);
+  return (
+    <Group title="GitHub API" label="GitHub API" foot="Every agent, every host's Fyr and your own gh share this limit. Fyr reads it every 10 minutes; a call answered 304 costs nothing.">
+      <Row title={s.title} desc={s.desc} class={s.low ? "bad" : undefined} />
+      {githubRows(v).map((r) => (
+        <Row key={r.title} title={r.title} desc={r.desc} mono />
+      ))}
     </Group>
   );
 }

@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/core"
+	"github.com/meros/fyr/internal/proc"
 	"github.com/meros/fyr/internal/release"
 )
 
@@ -24,6 +26,8 @@ import (
 type Releases struct {
 	Repo string // owner/name, default meros/fyr
 	Gh   func(ctx context.Context, args ...string) ([]byte, error)
+	// Git runs git (tests); nil is the git CLI (V0.173).
+	Git func(ctx context.Context, args ...string) ([]byte, error)
 	// Key verifies a release; empty is release.PublicKey.
 	Key string
 }
@@ -36,15 +40,73 @@ func (r *Releases) repo() string {
 }
 
 // Deployable is the commit the tag `deployable` points at: CI's newest
-// green, published commit.
+// green, published commit. V0.173: read with git ls-remote, which costs no
+// GitHub API call; the API only when git cannot say.
 func (r *Releases) Deployable(ctx context.Context) (string, error) {
+	if sha, err := r.lsRemote(ctx); err == nil {
+		return sha, nil
+	} else {
+		log.Printf("deployable by git: %v; asking the API", err)
+	}
 	b, err := r.Gh(ctx, "api", "repos/"+r.repo()+"/git/ref/tags/"+release.Deployable, "--jq", ".object.sha")
 	sha := strings.TrimSpace(string(b))
 	if err != nil {
 		return "", fmt.Errorf("reading %s: %v %s", release.Deployable, err, sha)
 	}
-	if len(sha) != 40 || strings.ContainsAny(sha, " \n-") {
+	if !isSHA(sha) {
 		return "", fmt.Errorf("%s points at %q", release.Deployable, sha)
+	}
+	return sha, nil
+}
+
+func isSHA(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// lsRemote reads the tag with git ls-remote; an annotated tag's commit is
+// its peeled (^{}) line.
+func (r *Releases) lsRemote(ctx context.Context) (string, error) {
+	git := r.Git
+	if git == nil {
+		git = func(ctx context.Context, args ...string) ([]byte, error) {
+			c, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			cmd := proc.Command(c, "git", args...)
+			cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+			return cmd.Output()
+		}
+	}
+	ref := "refs/tags/" + release.Deployable
+	// gh is the credential helper: the repo may be private, and gh holds
+	// the login (it reads its stored token; no API call).
+	out, err := git(ctx, "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential",
+		"ls-remote", "--tags", "https://github.com/"+r.repo()+".git", ref)
+	if err != nil {
+		return "", err
+	}
+	sha := ""
+	for _, l := range strings.Split(string(out), "\n") {
+		f := strings.Fields(l)
+		if len(f) != 2 || !isSHA(f[0]) {
+			continue
+		}
+		switch f[1] {
+		case ref + "^{}":
+			return f[0], nil
+		case ref:
+			sha = f[0]
+		}
+	}
+	if sha == "" {
+		return "", fmt.Errorf("no %s in git ls-remote", ref)
 	}
 	return sha, nil
 }

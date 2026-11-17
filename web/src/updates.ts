@@ -26,6 +26,7 @@ export interface UpdatesView {
   paused?: { build: string; commit?: string; branch?: string; at: string } | null;
   bad?: { commit: string; why: string };
   live?: string;
+  github?: GitHubView; // V0.173
 }
 
 const RESULT: Record<string, string> = { inProgress: "in progress", installed: "installed", failed: "failed", rolledBack: "rolled back" };
@@ -66,4 +67,41 @@ export function updateState(v: UpdatesView): string {
     return `A local build${v.paused.branch ? ` of ${v.paused.branch}` : ""} runs (${v.paused.build}). Auto-update waits until a release contains it, or until you go back to the release.`;
   }
   return v.live ? `Fyr runs ${v.live}.` : "";
+}
+
+// SPEC V0.173: what this host's fyrd spent of the account's GitHub API limit, and what the account has left (shared by
+// every caller of the login: fyrd and agents on every host, and the owner's own gh).
+export interface GitHubUse {
+  kind: string;
+  repo?: string;
+  calls: number;
+  free?: number;
+}
+
+export interface GitHubView {
+  rate?: { limit: number; remaining: number; reset: string; graphqlRemaining: number; at: string } | null;
+  since: string;
+  uses: GitHubUse[] | null;
+  calls: number;
+}
+
+function hhmm(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** The line over the group: the account's REST calls left and when they reset; low under a tenth. */
+export function githubState(v: GitHubView): { title: string; desc: string; low: boolean } {
+  const desc = `This host's Fyr made ${v.calls} counted REST call${v.calls === 1 ? "" : "s"} since ${hhmm(v.since)}.`;
+  const r = v.rate;
+  if (!r || !r.limit) return { title: "Account limit not read yet", desc, low: false };
+  return { title: `${r.remaining} of ${r.limit} REST calls left · resets ${hhmm(r.reset)}`, desc, low: r.remaining < r.limit / 10 };
+}
+
+/** One row per kind of call, most first, at most n. */
+export function githubRows(v: GitHubView, n = 6): { title: string; desc: string }[] {
+  return (v.uses ?? []).slice(0, n).map((u) => ({
+    title: `${u.kind}${u.repo ? ` · ${u.repo}` : ""}`,
+    desc: `${u.calls} call${u.calls === 1 ? "" : "s"}${u.free ? ` (${u.free} answered 304, free)` : ""}`,
+  }));
 }

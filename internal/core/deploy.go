@@ -43,6 +43,9 @@ type DeployObs struct {
 type DeployRef struct {
 	Change, Repo, SHA string
 	First             bool
+	// Since is the merge; the poller reads less often as the watch ages
+	// (V0.173).
+	Since time.Time
 }
 
 const (
@@ -117,7 +120,7 @@ func DeployWatches(t *Thread, now time.Time) []DeployRef {
 		if r.Status != RuleArmed || r.Observe == nil || r.When.eval(t, r.Armed, now) == yes {
 			continue
 		}
-		out = append(out, DeployRef{Change: r.About, Repo: r.Observe.Repo, SHA: r.Observe.SHA, First: !r.Observe.Read})
+		out = append(out, DeployRef{Change: r.About, Repo: r.Observe.Repo, SHA: r.Observe.SHA, First: !r.Observe.Read, Since: r.Observe.Since})
 	}
 	return out
 }
