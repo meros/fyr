@@ -121,6 +121,11 @@ func NewLive() (l *Live, err error) {
 		return nil, err
 	}
 	l.cleanups = append(l.cleanups, l.Phones.Close)
+	// A ready mesh: the front follows both hosts before any test starts (a
+	// command posted to a host that has not connected yet is a 503).
+	if hosts, err := l.WaitHostsOnline(l.Local, 30*time.Second, "laptop", "server"); err != nil || !hosts["laptop"] || !hosts["server"] {
+		return nil, fmt.Errorf("the front does not follow its hosts: %v %v\n%s", hosts, err, l.Laptop.Log())
+	}
 	return l, nil
 }
 

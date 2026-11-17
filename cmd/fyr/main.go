@@ -6,6 +6,8 @@
 //	fyr [-data DIR] [fyrd flags…]
 //	fyr install BUILD_DIR   make BUILD_DIR/fyrd the current build
 //	fyr open [-app]         sign this machine's browser in and open Fyr (V0.130)
+//	fyr auth status|observe|enforce [way]   the modes of the ways in (V0.157)
+//	fyr device add|approve CODE|revoke ID|list   the signed-in devices (V0.157)
 package main
 
 import (
@@ -34,6 +36,12 @@ func main() {
 			log.Fatal("usage: fyr install BUILD_DIR")
 		}
 		if err := install(*data, fl.Arg(0)); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	if len(args) > 0 && (args[0] == "auth" || args[0] == "device") { // V0.157: through the owner socket
+		if err := authCommand(args[0], args[1:]); err != nil {
 			log.Fatal(err)
 		}
 		return

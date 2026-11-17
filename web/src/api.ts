@@ -17,6 +17,8 @@ import type { HostLoad } from "./load.ts";
 import type { FoundDTO, ProviderDTO } from "./providers.ts";
 import type { AutoDeploySetting, AutoMergeRepo } from "./automerge.ts";
 import type { UpdatesView } from "./updates.ts";
+import type { AuthState } from "./devices.ts";
+import { reloadIfSignedOut } from "./signout.ts";
 import type { SystemAgentsView } from "./system-agents.ts";
 import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
@@ -102,6 +104,10 @@ export interface Api {
   autoDeploy(host?: string): Promise<HostRead<AutoDeploySetting>>;
   /** V0.126 (#151): the update record and whether a local build pauses auto-update. */
   updates(host?: string): Promise<HostRead<UpdatesView>>;
+  /** V0.157: Settings → Devices: the signed-in devices, the ones that wait, the browser way in's mode. */
+  authState(): Promise<AuthState>;
+  /** V0.157: approve (code or id), deny, revoke, add (a one-time link and its QR code), mode (browser way in). */
+  authAct(action: "approve" | "deny" | "revoke" | "add" | "mode", body: Record<string, unknown>): Promise<{ ok: boolean; error?: string } & Record<string, unknown>>;
   /** V0.115: the system agents setting of a host */
   systemAgents(host?: string): Promise<HostRead<SystemAgentsView>>;
   /** V0.50: the current profiles (after a provider changed). */
@@ -197,7 +203,10 @@ function createHttpApi(): Api {
         const stored = await cache.state();
         const since = stored ? sinceRev(stored) : 0;
         const r = await fetch(since ? `/api/state?since=${since}` : "/api/state", { headers: { Accept: "application/json" } });
-        if (!r.ok) throw new Error(`state ${r.status}`);
+        if (!r.ok) {
+          if (r.status === 401) void reloadIfSignedOut(); // V0.157: a revoked device lands on the signed-out page
+          throw new Error(`state ${r.status}`);
+        }
         let dto = (await r.json()) as StateDTO & { buildId?: string; partial?: boolean };
         if (dto.partial && stored) dto = mergeStateDelta(stored, dto) as StateDTO & { buildId?: string };
         fromNetwork = true;
@@ -268,7 +277,10 @@ function createHttpApi(): Api {
       }
     });
     es.onerror = () => {
-      if (gen === generation) retry();
+      if (gen === generation) {
+        void reloadIfSignedOut(); // V0.157: a revoked device lands on the signed-out page
+        retry();
+      }
     };
   };
 
@@ -468,6 +480,21 @@ function createHttpApi(): Api {
     },
     async autoDeploy(host) {
       return hostGet<AutoDeploySetting>("/api/autoDeploy", host);
+    },
+    async authState() {
+      const r = await fetch("/api/auth/state", { headers: { Accept: "application/json" } });
+      const j = (await r.json().catch(() => ({}))) as AuthState & { error?: string };
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      return j;
+    },
+    async authAct(action, body) {
+      try {
+        const r = await fetch(`/api/auth/${action}`, { method: "POST", headers: { "X-Fyr": "1", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const j = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string } & Record<string, unknown>;
+        return r.ok && j.ok !== false ? { ...j, ok: true } : { ...j, ok: false, error: j.error ?? `HTTP ${r.status}` };
+      } catch {
+        return { ok: false, error: "Fyr is not reachable" };
+      }
     },
     async updates(host) {
       return hostGet<UpdatesView>("/api/updates", host);

@@ -55,7 +55,7 @@ jobs:
         env:
           FYR_CHROME: /usr/bin/google-chrome
         run: |
-          nix develop --command bash -c 'make web-deps && (cd web && npm run build) && make -j4 --output-sync=target web-typecheck web-unit web-layout web-auth FYR_LAYOUT_TIMING=1'
+          nix develop --command bash -c 'make web-deps && (cd web && npm run build) && make -j3 --output-sync=target web-typecheck web-unit web-layout FYR_LAYOUT_TIMING=1 && make web-auth'
 
   # The package NixOS installs runs the Go tests in the Nix sandbox (found live: a test needed git there).
   nix:

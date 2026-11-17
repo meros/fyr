@@ -32,8 +32,29 @@ var steps = []step{
 	{"slice 1: Fyr-Actor on every hop", func(t *testing.T, l *authtest.Live) {
 		l.Rec.SetStripActor(false)
 	}},
-	// Slice 2 adds: the stored modes, `fyr auth enforce` on browser, then
-	// `fyr auth observe` back.
+	// Slice 2: sessions decide. The phone signs in once while observing (its
+	// node is approved, 5.2), then the owner enforces the browser way: the
+	// fixture's two cookies, the phone with no cookie and fyr open all still
+	// get in (checks run after the step), and a browser with no session does not.
+	{"slice 2: fyr auth enforce browser", func(t *testing.T, l *authtest.Live) {
+		if r, err := authtest.Do(l.Phones.URL, authtest.Request{Path: "/api/state"}); err != nil || r.Status != 200 {
+			t.Fatalf("the phone in observe: %v %d", err, r.Status)
+		}
+		if out, err := l.Laptop.Fyr("auth", "enforce"); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		if r, err := l.Laptop.Get("/api/state", ""); err != nil || r.Status != 401 {
+			t.Fatalf("enforce, a browser with no session: %v %d (want 401)", err, r.Status)
+		}
+	}},
+	{"slice 2: fyr auth observe restores the old ways", func(t *testing.T, l *authtest.Live) {
+		if out, err := l.Laptop.Fyr("auth", "observe"); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		if r, err := l.Laptop.Get("/api/state", ""); err != nil || r.Status != 200 {
+			t.Fatalf("observe again, a browser with no session: %v %d (want 200)", err, r.Status)
+		}
+	}},
 	// Slices 3 to 6 add: the roster, the peer link beside the whois link, the
 	// invite, removal, the LAN.
 }

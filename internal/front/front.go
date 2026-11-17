@@ -89,13 +89,22 @@ type Options struct {
 	// WellKnown is this install's /.well-known/fyr answer (V0.123, decision
 	// 0025), by which other installs find it; nil serves none.
 	WellKnown func() peers.WellKnown
+	// Tailnet asks tailscaled which node a Serve request came from (decision
+	// 0030 3.4); nil enrols a tailnet browser by its login alone, as V0.130 did.
+	Tailnet NodeAuth
+	// AuthTick is how often rule 3 looks at the modes; default 10 minutes.
+	AuthTick time.Duration
 	// ID is this install's key id (V0.124, decision 0026), in the merged
 	// state's hostId.
 	ID string
 }
 
 type Front struct {
-	opt Options
+	opt     Options
+	streams streams
+	// authTicks counts rule 3's looks at the modes (a test waits for some).
+	authTicks atomic.Int64
+	subMu   sync.Mutex
 	// links: the hosts followed, copy on write (a found host joins while the
 	// front runs, V0.123); read with all().
 	links atomic.Pointer[[]*link]
@@ -291,6 +300,8 @@ func (f *Front) Run(ctx context.Context) {
 		go func() { defer wg.Done(); f.follow(ctx, l) }()
 	}
 	f.runMu.Unlock()
+	wg.Add(1)
+	go func() { defer wg.Done(); f.watchAuth(ctx) }()
 	if f.opt.CacheDir != "" {
 		wg.Add(1)
 		go func() {
@@ -733,7 +744,7 @@ func (f *Front) setOffline(l *link, err error) {
 
 // Handler serves the browser API (unchanged, plus host stamps) and the client.
 func (f *Front) Handler() http.Handler {
-	return refuseActor(server.Browser(f.opt.OwnerLogin, f.withAuth(f.mux())))
+	return refuseActor(f.refuseTailscale(server.Browser(f.opt.OwnerLogin, f.browserRules(f.withAuth(f.mux())))))
 }
 
 // mux is the browser API's routes.
@@ -741,6 +752,12 @@ func (f *Front) mux() *routeMux {
 	mux := &routeMux{ServeMux: http.NewServeMux()}
 	mux.HandleFunc("GET /api/state", f.state)
 	mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
+		if p, ok := signedIn(r); ok { // a revoke closes this stream (decision 0030 3.4)
+			ctx, cancel := context.WithCancel(r.Context())
+			defer cancel()
+			defer f.streams.add(p.ID, cancel)()
+			r = r.WithContext(ctx)
+		}
 		ch := f.hub.Subscribe()
 		defer f.hub.Unsubscribe(ch)
 		stream.Serve(w, r, ch, f.client.Load().build)
@@ -753,8 +770,13 @@ func (f *Front) mux() *routeMux {
 	// V0.54: device data lives on the front: presence and push.
 	presenceRoute(mux, f.presence, f.focus) // V0.85: the shown thread's host raises its weight
 	if f.opt.Push != nil {
-		pushRoutes(mux, f.opt.Push)
+		pushRoutes(mux, f.opt.Push, func(r *http.Request, endpoint string) {
+			if p, ok := signedIn(r); ok { // a revoke drops what this device's session subscribed
+				f.noteSub(p.ID, endpoint)
+			}
+		})
 	}
+	f.authAPI(mux) // Settings → Devices (decision 0030 3.4)
 	mux.HandleFunc("POST /api/attachments", f.upload)
 	mux.HandleFunc("GET /api/attachments/{id}", f.lookup)
 	mux.HandleFunc("GET /api/previews/{id}", f.lookup)

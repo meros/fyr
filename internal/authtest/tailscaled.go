@@ -193,7 +193,10 @@ func (t *Tailscaled) whois(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no match for "+r.URL.Query().Get("addr"), http.StatusNotFound)
 		return
 	}
-	node := map[string]any{"Name": n.Name + ".", "Addresses": []string{n.IP + "/32"}}
+	node := map[string]any{"Name": n.Name + ".", "StableID": "n" + n.IP, "Addresses": []string{n.IP + "/32"}}
+	if n.SharedIn {
+		node["Sharer"] = 99
+	}
 	var prof map[string]any
 	if len(n.Tags) > 0 {
 		// The real LocalAPI names a tagged node's pseudo user.
@@ -247,6 +250,16 @@ func (t *Tailscaled) ServeFor(client Node, sock string) (*Serve, error) {
 					pr.Out.Header.Set("Tailscale-User-Name", strings.SplitN(login, "@", 2)[0])
 					pr.Out.Header.Set("Tailscale-User-Profile-Pic", "https://example.invalid/pic.png")
 				}
+			}
+			// The browser is at the public name (https://<node>.ts.net:7443); this
+			// emulator stands in for it on a loopback port, so what the browser
+			// would have said about itself is said as the public name.
+			public := "https://" + t.Self().Name + ":7443"
+			if o := pr.In.Header.Get("Origin"); o == s.URL {
+				pr.Out.Header.Set("Origin", public)
+			}
+			if ref := pr.In.Header.Get("Referer"); strings.HasPrefix(ref, s.URL) {
+				pr.Out.Header.Set("Referer", public+strings.TrimPrefix(ref, s.URL))
 			}
 			pr.Out.Header.Set("X-Forwarded-For", client.IP)
 			pr.Out.Header.Set("X-Forwarded-Proto", "https")

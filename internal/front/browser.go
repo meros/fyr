@@ -81,7 +81,7 @@ func noCacheIndex(next http.Handler) http.Handler {
 
 // pushRoutes serves the Web Push endpoints (V0.15) for p: a host's before
 // decision 0016, a front's since V0.54 (the front holds the device data).
-func pushRoutes(mux muxer, p Pusher) {
+func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string)) {
 	mux.HandleFunc("GET /api/push/key", func(w http.ResponseWriter, r *http.Request) {
 		api.WriteJSON(w, 200, map[string]string{"publicKey": p.PublicKey()})
 	})
@@ -97,6 +97,9 @@ func pushRoutes(mux muxer, p Pusher) {
 		if err := p.Subscribe(core.Owner, b.Subscription, b.Device); err != nil {
 			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": err.Error()})
 			return
+		}
+		if onSub != nil {
+			onSub(r, b.Subscription.Endpoint)
 		}
 		api.WriteJSON(w, 200, map[string]any{"ok": true})
 	})

@@ -23,6 +23,8 @@ const Cookie = "fyr_session"
 const (
 	HowLocal   = "local"   // a one-time link from the owner socket (fyr open)
 	HowTailnet = "tailnet" // the owner's tailnet login through Serve's socket
+	HowLink    = "link"    // a one-time link from `fyr device add` or Add a device (decision 0030 3.4)
+	HowCode    = "code"    // an approval code, typed on a signed-in device or to `fyr device approve`
 )
 
 const (
@@ -40,6 +42,13 @@ type Device struct {
 	Created  time.Time `json:"created"`
 	LastSeen time.Time `json:"lastSeen"`
 	Hash     string    `json:"hash"` // SHA-256 of the session, hex
+	// Decision 0030 slice 2. All optional, so a V0.130 record is read as it is.
+	Node    string `json:"node,omitempty"`    // the tailnet node it came from (its stable id)
+	By      string `json:"by,omitempty"`      // the device that added or approved it
+	Pending bool   `json:"pending,omitempty"` // has a session and a code, may do nothing until approved
+	Code    string `json:"code,omitempty"`    // the approval code of a pending device
+	// CodeUntil is when the code ends; the pending device goes with it.
+	CodeUntil time.Time `json:"codeUntil,omitempty"`
 }
 
 // KV is where the devices are kept (the store's kv table).
@@ -49,8 +58,8 @@ type KV interface {
 }
 
 type once struct {
-	how, name string
-	until     time.Time
+	how, name, by string
+	until         time.Time
 }
 
 // Store is a front's devices and its one-time links.
@@ -62,6 +71,16 @@ type Store struct {
 	devices map[string]*Device // by hash
 	once    map[string]once    // by the link's token
 	saved   map[string]time.Time
+
+	// Decision 0030 slice 2: stored modes and what observe counts, the tailnet
+	// nodes the owner approved or blocked, the audit trail, and the tries
+	// against approval codes. See state.go.
+	modes  map[string]*ModeState
+	nodes  map[string]*NodeRec
+	audit  []Audit
+	wrong  []time.Time // recent wrong approval-code tries
+	asked  []time.Time // recent approval attempts and code requests, for the rate limits
+	onGone func(ids []string)
 }
 
 // Open loads the devices from kv. now is time.Now when nil.
@@ -84,6 +103,9 @@ func Open(kv KV, now func() time.Time) (*Store, error) {
 			s.saved[d.Hash] = d.LastSeen
 		}
 	}
+	if err := s.openState(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -100,8 +122,13 @@ func hash(session string) string {
 
 // Once makes a one-time link token for a device that will get its session
 // the way how, valid for 60 s.
-func (s *Store) Once(how, name string) string {
-	tok := random(32)
+func (s *Store) Once(how, name string) string { return s.OnceFor(how, name, "", onceTTL) }
+
+// OnceFor is Once for a link that lives ttl and adds a device on behalf of
+// the device by ("" for the owner socket): `fyr device add` makes a 10 minute
+// link, Add a device on a signed-in device the same (decision 0030 3.4).
+func (s *Store) OnceFor(how, name, by string, ttl time.Duration) string {
+	tok := random(16) // 128 bits
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
@@ -110,7 +137,7 @@ func (s *Store) Once(how, name string) string {
 			delete(s.once, k)
 		}
 	}
-	s.once[tok] = once{how: how, name: name, until: now.Add(onceTTL)}
+	s.once[tok] = once{how: how, name: name, by: by, until: now.Add(ttl)}
 	return tok
 }
 
@@ -128,22 +155,26 @@ func (s *Store) Redeem(tok, have, agent string) (cookie string, d *Device, err e
 	if !ok || s.now().After(o.until) {
 		return "", nil, ErrLink
 	}
-	if d, ok := s.Lookup(have); ok {
+	if d, ok := s.Lookup(have); ok && !d.Pending {
 		return "", d, nil
 	}
 	name := o.name
 	if agent != "" {
 		name = agent + " · " + o.name
 	}
-	cookie, d = s.Mint(o.how, name)
+	cookie, d = s.MintFor(o.how, name, "", o.by)
 	return cookie, d, nil
 }
 
 // Mint makes a new device and returns its session.
-func (s *Store) Mint(how, name string) (string, *Device) {
+func (s *Store) Mint(how, name string) (string, *Device) { return s.MintFor(how, name, "", "") }
+
+// MintFor is Mint for a device that came from a tailnet node (stable id, ""
+// for none) or was added by another device (its id, "" for none).
+func (s *Store) MintFor(how, name, node, by string) (string, *Device) {
 	session := random(32)
 	now := s.now()
-	d := &Device{ID: "dev_" + random(6), Name: name, How: how, Created: now, LastSeen: now, Hash: hash(session)}
+	d := &Device{ID: "dev_" + random(6), Name: name, How: how, Created: now, LastSeen: now, Hash: hash(session), Node: node, By: by}
 	s.mu.Lock()
 	s.devices[d.Hash] = d
 	s.saveLocked()
@@ -165,6 +196,11 @@ func (s *Store) Lookup(session string) (*Device, bool) {
 		return nil, false
 	}
 	now := s.now()
+	if d.Pending && now.After(d.CodeUntil) { // an unapproved device ends with its code
+		delete(s.devices, h)
+		s.saveLocked()
+		return nil, false
+	}
 	if now.Sub(d.LastSeen) > idleTTL {
 		delete(s.devices, h)
 		s.saveLocked()

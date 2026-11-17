@@ -77,7 +77,7 @@ func (t actorTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func refuseActor(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(authn.Header) != "" || r.Header.Get(authn.OriginHeader) != "" {
-			http.Error(w, "this listener does not take "+authn.Header, http.StatusBadRequest)
+			refuse(w, r, "this listener does not take "+authn.Header, http.StatusBadRequest)
 			return
 		}
 		next.ServeHTTP(w, r)

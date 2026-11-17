@@ -29,6 +29,8 @@ import { NewProjectStep, ProjectEditor, ProjectIcon, type ProjectPatch } from ".
 import { pushRow, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { move } from "./reorder.ts";
+import { DevicesPage, useAuthState } from "./devices-ui.tsx";
+import { devicesNeed, devicesSummary } from "./devices.ts";
 import { PAGES, deviceSummary, hostsNeed, hostsSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
 import { Empty, Grip, Group, LoadError, MoveButtons, Row, SaveField, SavedMark, Seg, SetContext, Skeleton, Switch, useReorder, useSaved, useSet } from "./settings-rows.tsx";
 import {
@@ -85,7 +87,7 @@ export interface ProjectActions {
 }
 
 export interface SettingsProps {
-  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "systemAgents">>;
+  api: Pick<Api, "providers" | "providersFound" | "command"> & Partial<Pick<Api, "autoMerge" | "autoDeploy" | "updates" | "systemAgents" | "authState" | "authAct">>;
   host: string;
   /** V0.51: the front's hosts with their state */
   hosts?: HostInfo[];
@@ -299,6 +301,7 @@ export function useProvidersNeed(api: SettingsProps["api"], hosts?: HostInfo[], 
 export function Settings(p: SettingsProps) {
   const sv = useSaved();
   const data = useSettingsData(p, sv.mark);
+  const auth = useAuthState(p.api, true); // V0.157: Devices, read by the page and by the nav's line
   const env = { readOnly: !!p.offline, phone: !!p.phone, saved: sv.mark };
   // V0.127: the nav's lines count every host; an offline host Fyr has never read is left out.
   const read = data.all.filter((d) => d.host.online || d.providers !== null);
@@ -309,15 +312,16 @@ export function Settings(p: SettingsProps) {
     automation: automationSummaryHosts(data.all.map((d) => ({ deploy: p.api.autoDeploy ? d.deploy : false, repos: d.repos, skip: !d.host.online && d.repos === null }))),
     projects: projectsSummary(settingsProjects(p.projects).length),
     hosts: hostsSummary(p.hosts),
+    devices: devicesSummary(auth.s),
     device: deviceSummary(p.device.push, p.device.theme),
   };
-  const badges: Partial<Record<PageId, number>> = { providers: navBadge(provs, blocked), hosts: hostsNeed(p.hosts) };
+  const badges: Partial<Record<PageId, number>> = { providers: navBadge(provs, blocked), hosts: hostsNeed(p.hosts), devices: devicesNeed(auth.s) };
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
   const [reordering, setReordering] = useState(false);
   useEffect(() => (setAdding(false), setReordering(false), setQ("")), [p.at?.page]);
   const ui: PageUi = { adding, setAdding, empty: settingsProjects(p.projects).length === 0, q, setQ, reordering, setReordering };
-  const view = p.at ? pageView(p.at, p, data, ui) : null;
+  const view = p.at ? pageView(p.at, p, data, ui, auth) : null;
 
   // Opening a page moves focus to its heading; coming back from a sub-page focuses the row it came from.
   const pane = useRef<HTMLDivElement>(null);
@@ -376,7 +380,7 @@ export function Settings(p: SettingsProps) {
       </SetContext.Provider>
     );
   }
-  const v = view ?? pageView({ page: "providers" }, p, data, ui);
+  const v = view ?? pageView({ page: "providers" }, p, data, ui, auth);
   const at = p.at ?? { page: "providers" };
   return (
     <SetContext.Provider value={env}>
@@ -472,7 +476,7 @@ interface PageUi {
   setReordering(b: boolean): void;
 }
 
-function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi): PageView {
+function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, auth: ReturnType<typeof useAuthState>): PageView {
   const go = p.go;
   switch (at.page) {
     case "providers": {
@@ -558,6 +562,9 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi): Pa
       };
       return { title: "Hosts", end: <HostsReorderButton ui={ui} n={rows.length} />, body: <HostsPage rows={rows} self={self} now={p.now} go={go} ui={ui} run={runOrder} /> };
     }
+    case "devices":
+      if (!p.api.authState || !p.api.authAct) return { title: "Devices", body: <Empty text="This host cannot list devices." /> };
+      return { title: "Devices", lede: "Who is signed in to this install, and how a new device gets in.", body: <DevicesPage api={{ authState: p.api.authState, authAct: p.api.authAct }} now={p.now} st={auth} /> };
     case "device":
       return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} user={p.user ?? ""} /> };
   }
