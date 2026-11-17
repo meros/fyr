@@ -63,12 +63,9 @@ func TestInvitePairsATaggedInstallAndAnotherLearnsItByVouching(t *testing.T) {
 		t.Fatalf("fyr pair CODE: %v\n%s", err, out)
 	}
 	waitOthers(t, a, "b", "c")
-	waitOthers(t, b, "a") // b learns c by vouching in the next sync
-	r, err := b.Fyrd.WaitRoster(30*time.Second, func(r *authtest.Roster) bool { return len(r.Others()) == 2 })
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = r
+	// b has a at once and learns c by vouching in the next sync: wait for both, not
+	// for "exactly a" (under load b can have c before the test looks).
+	waitOthers(t, b, "a", "c")
 	cr, err := c.Fyrd.WaitRoster(30*time.Second, func(r *authtest.Roster) bool { return strings.Contains(strings.Join(r.Others(), ","), "b") })
 	if err != nil {
 		t.Fatal(err)

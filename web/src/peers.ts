@@ -1,6 +1,8 @@
 // SPEC V0.159, decision 0030 3.6: Settings → Hosts, the installs this one is paired with, the tailnet nodes that are
 // not (and why), and the owner's invite. Pure: the words; the panel is peers-ui.tsx.
 
+import { linkLine, type HostLink } from "./hosts.ts";
+
 export interface MemberRow {
   id: string;
   name: string;
@@ -11,6 +13,8 @@ export interface MemberRow {
   /** "paired": this install signed its add; "vouched": a member did */
   via: "paired" | "vouched";
   by?: string;
+  /** the state of the link to it (decision 0030 Amendment 1); missing for this install */
+  link?: HostLink & { opened?: string };
 }
 
 export interface CandidateRow {
@@ -32,6 +36,11 @@ export interface InviteInfo {
   until: string;
   link: string;
   svg?: string;
+}
+
+/** The member's link in a few words, "" for this install. */
+export function memberLink(m: Pick<MemberRow, "self" | "link">, now: number): string {
+  return m.self || !m.link ? "" : linkLine({ ...m.link, via: m.link.via || "peer" }, now);
 }
 
 /** How an install came into the roster, in a few words. */

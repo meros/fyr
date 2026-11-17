@@ -163,6 +163,24 @@ func TestLinkHandler(t *testing.T) {
 			t.Errorf("%s: %d (want %d) %s", name, w.Code, c.want, w.Body)
 		}
 	}
+	// over a link: kind=local is refused, and kind=install must carry the proven id
+	linkReq := func(actor string) int {
+		probe := withActor(actorLink, "", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			probe.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), linkKey{}, linkInfo{"THEM-0000-0000-0000", fakeGate{}})))
+		})
+		return serveReq(h, "GET", "/x", map[string]string{"Fyr-Actor": actor}).Code
+	}
+	for actor, want := range map[string]int{
+		"v=1; kind=local; id=owner; how=local":                               401,
+		"v=1; kind=install; id=LIAR-0000-0000-0000; how=link":                401,
+		"v=1; kind=install; id=THEM-0000-0000-0000; how=link":                200,
+		"v=1; kind=device; id=dev_x; how=tailnet; front=LIAR-0000-0000-0000": 200,
+	} {
+		if got := linkReq(actor); got != want {
+			t.Errorf("%s over a link: %d (want %d)", actor, got, want)
+		}
+	}
 	var got authn.Principal
 	probe := withActor(actorLink, "", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got, _ = authn.From(r.Context()) }))
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

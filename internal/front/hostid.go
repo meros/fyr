@@ -89,6 +89,13 @@ func (f *Front) hostLocked(l *link) api.Host {
 	if !l.since.IsZero() {
 		h.Since = l.since.UTC().Format(time.RFC3339)
 	}
+	switch {
+	case l.cfg.Dial != nil:
+		h.Link = &api.Link{State: "up", Via: "pipe"}
+	case l.lt != nil:
+		ls := l.lt.linkStatus()
+		h.Link = &ls
+	}
 	if !l.online && l.err != "" {
 		h.Error = l.err
 	}

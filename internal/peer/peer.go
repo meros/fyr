@@ -60,6 +60,12 @@ type Env struct {
 	Enforce  func() bool
 	OnServed func()
 
+	// Mesh is the two-way link manager (decision 0030 Amendment 1); nil keeps the
+	// one-way per-request dial of slice 3.
+	Mesh *peerlink.Mesh
+
+	kickc   chan struct{}
+	kickMu  sync.Mutex
 	trackMu sync.Mutex
 	tracked map[string]map[int]context.CancelFunc
 	trackN  int
@@ -68,6 +74,20 @@ type Env struct {
 func (e *Env) init() {
 	if e.Invites == nil {
 		e.Invites = &Invites{}
+	}
+	e.kickMu.Lock()
+	if e.kickc == nil {
+		e.kickc = make(chan struct{}, 1)
+	}
+	e.kickMu.Unlock()
+}
+
+// Kick asks the sync loop to run soon (a link came up, the roster changed).
+func (e *Env) Kick() {
+	e.init()
+	select {
+	case e.kickc <- struct{}{}:
+	default:
 	}
 }
 
@@ -194,23 +214,28 @@ func (e *Env) Caller(r *http.Request) (roster.Member, bool) {
 	if !ok {
 		return roster.Member{}, false
 	}
+	return e.MemberByKey(pub, peerlink.CallerRotation(r))
+}
+
+// MemberByKey is the member whose key this is. A key that is not a member's may be a
+// member's new key: the chain its certificate carried is merged first, but only
+// when it leads from a key the roster holds to this key.
+func (e *Env) MemberByKey(pub ed25519.PublicKey, chain []roster.Statement) (roster.Member, bool) {
 	if m, in := e.Roster.KeyMember(pub); in {
 		return m, true
 	}
-	if chain := peerlink.CallerRotation(r); len(chain) > 0 {
-		// Only a chain that leads from a key the roster holds to the key on this
-		// connection is taken: a stranger's certificate must not write to the roster.
-		old, ok := e.Roster.Member(chain[0].Subject)
-		if !ok {
-			return roster.Member{}, false
-		}
-		if end, ok := roster.ChainFrom(chain, old.Key); !ok || !end.Equal(pub) {
-			return roster.Member{}, false
-		}
-		e.Roster.Merge(chain)
-		return e.Roster.KeyMember(pub)
+	if len(chain) == 0 {
+		return roster.Member{}, false
 	}
-	return roster.Member{}, false
+	old, ok := e.Roster.Member(chain[0].Subject)
+	if !ok {
+		return roster.Member{}, false
+	}
+	if end, ok := roster.ChainFrom(chain, old.Key); !ok || !end.Equal(pub) {
+		return roster.Member{}, false
+	}
+	e.Roster.Merge(chain)
+	return e.Roster.KeyMember(pub)
 }
 
 // DialOptions are what a dial shows and accepts about rotated keys: this
@@ -420,8 +445,8 @@ func (e *Env) pairWith(ctx context.Context, self, node tailnet.StatusNode) error
 func (e *Env) Sync(ctx context.Context) {
 	var wg sync.WaitGroup
 	for _, m := range e.Roster.Members() {
-		if m.ID == e.Key.ID() || m.Port == 0 {
-			continue
+		if m.ID == e.Key.ID() || (m.Port == 0 && (e.Mesh == nil || !e.Mesh.Up(m.ID))) {
+			continue // nothing to dial and no link up: it may open one itself
 		}
 		wg.Add(1)
 		go func() {
@@ -445,11 +470,18 @@ func (e *Env) syncWith(ctx context.Context, m roster.Member) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	body, _ := json.Marshal(e.Roster.Statements())
-	req, _ := http.NewRequestWithContext(ctx, "POST", "https://"+addr(m)+"/roster", bytes.NewReader(body))
+	var rt http.RoundTripper
+	url := "https://" + addr(m) + "/roster"
+	if e.Mesh != nil && e.Mesh.Up(m.ID) { // over the link, whichever side opened it
+		rt, url = e.Mesh.Transport(m.ID, 0), "http://peer.link/roster"
+	} else {
+		tr := e.Dial.Transport(m.ID, addr(m))
+		defer tr.CloseIdleConnections()
+		rt = tr
+	}
+	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	tr := e.Dial.Transport(m.ID, addr(m))
-	defer tr.CloseIdleConnections()
-	resp, err := (&http.Client{Transport: tr}).Do(req)
+	resp, err := (&http.Client{Transport: rt}).Do(req)
 	if err != nil {
 		return err
 	}
@@ -471,13 +503,9 @@ func (e *Env) Run(ctx context.Context, every time.Duration) {
 	if every <= 0 {
 		every = 60 * time.Second
 	}
-	kick := make(chan struct{}, 1)
-	e.Roster.OnChange(func() {
-		select {
-		case kick <- struct{}{}:
-		default:
-		}
-	})
+	e.init()
+	kick := e.kickc
+	e.Roster.OnChange(e.Kick)
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {

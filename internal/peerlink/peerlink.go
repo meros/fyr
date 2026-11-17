@@ -26,8 +26,12 @@ import (
 	"github.com/meros/fyr/internal/roster"
 )
 
-// ALPN is the protocol the peer port speaks.
-const ALPN = "fyr-peer/1"
+// ALPN is the protocol of the first peer link: HTTP/1.1 inside TLS 1.3, one
+// request at a time, front to host. ALPN2 is the two-way link (link.go).
+const (
+	ALPN  = "fyr-peer/1"
+	ALPN2 = "fyr-peer/2"
+)
 
 // Cert is a self-signed certificate over the install key. Nothing about it is
 // trusted but the key.
@@ -89,7 +93,7 @@ func ServerConfig(k *identity.Key, rotation ...roster.Statement) (*tls.Config, e
 	}
 	return &tls.Config{
 		MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13,
-		Certificates: []tls.Certificate{c}, NextProtos: []string{ALPN},
+		Certificates: []tls.Certificate{c}, NextProtos: []string{ALPN2, ALPN},
 		ClientAuth: tls.RequestClientCert,
 	}, nil
 }
@@ -106,7 +110,7 @@ func ClientConfig(k *identity.Key, want string, o Options) (*tls.Config, error) 
 	}
 	return &tls.Config{
 		MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13,
-		Certificates: []tls.Certificate{c}, NextProtos: []string{ALPN},
+		Certificates: []tls.Certificate{c}, NextProtos: o.protos(),
 		InsecureSkipVerify: true, // by key id below, not by name or chain
 		VerifyPeerCertificate: func(raw [][]byte, _ [][]*x509.Certificate) error {
 			if len(raw) == 0 {
@@ -142,6 +146,11 @@ func ClientConfig(k *identity.Key, want string, o Options) (*tls.Config, error) 
 
 // Options are what a dial may know beyond the id it wants.
 type Options struct {
+	// Link offers fyr-peer/2 beside fyr-peer/1 (one ClientHello, never a retry with
+	// /1 alone: the choice is inside the TLS transcript, so no one can force the
+	// older one); without it only /1 is offered, for the callers that speak
+	// HTTP/1.1 (pairing, an older peer).
+	Link bool
 	// Rotation is shown in this side's certificate: the rotations that lead to its
 	// key (roster.RotationChain), for a peer that knows only an older key.
 	Rotation []roster.Statement
@@ -149,6 +158,13 @@ type Options struct {
 	// accepted by its chain; OnRotation hears the chain that was accepted, to merge.
 	OldKey     func(id string) ed25519.PublicKey
 	OnRotation func([]roster.Statement)
+}
+
+func (o Options) protos() []string {
+	if o.Link {
+		return []string{ALPN2, ALPN}
+	}
+	return []string{ALPN}
 }
 
 // Dialer dials peers with this install's key. Resolve, when set, maps a
@@ -169,21 +185,32 @@ type DialError struct{ Err error }
 func (e *DialError) Error() string { return "peer link: " + e.Err.Error() }
 func (e *DialError) Unwrap() error { return e.Err }
 
-// DialTLS connects to addr and requires the install want. It is a
-// DialTLSContext of an http.Transport.
+// DialTLS connects to addr and requires the install want, speaking fyr-peer/1.
+// It is a DialTLSContext of an http.Transport.
 func (d *Dialer) DialTLS(ctx context.Context, want, addr string) (net.Conn, error) {
-	c, err := d.dialTLS(ctx, want, addr)
+	c, err := d.dialTLS(ctx, want, addr, false)
 	if err != nil {
 		return nil, &DialError{err}
 	}
 	return c, nil
 }
 
-func (d *Dialer) dialTLS(ctx context.Context, want, addr string) (net.Conn, error) {
+// DialLink connects for a link: fyr-peer/2 is offered beside /1, and the protocol
+// the peer chose is returned (an older peer answers /1: no link, one way).
+func (d *Dialer) DialLink(ctx context.Context, want, addr string) (net.Conn, string, error) {
+	c, err := d.dialTLS(ctx, want, addr, true)
+	if err != nil {
+		return nil, "", &DialError{err}
+	}
+	return c, c.(*tls.Conn).ConnectionState().NegotiatedProtocol, nil
+}
+
+func (d *Dialer) dialTLS(ctx context.Context, want, addr string, link bool) (net.Conn, error) {
 	var o Options
 	if d.Opts != nil {
 		o = d.Opts()
 	}
+	o.Link = link
 	cfg, err := ClientConfig(d.Key, want, o)
 	if err != nil {
 		return nil, err
@@ -235,9 +262,19 @@ type conn struct {
 
 type listener struct {
 	net.Listener
-	cfg *tls.Config
-	ch  chan net.Conn
-	one chan struct{}
+	cfg   *tls.Config
+	ch    chan net.Conn
+	links chan *LinkConn
+	one   chan struct{}
+	slots chan struct{} // handshakes in progress: a stranger cannot open them without end
+}
+
+// LinkConn is a connection that negotiated fyr-peer/2, after the handshake: the key
+// its certificate proved and the rotations it carried.
+type LinkConn struct {
+	Conn     net.Conn
+	Key      ed25519.PublicKey
+	Rotation []roster.Statement
 }
 
 // Listen wraps inner (a TCP listener) as the peer port: it accepts TLS 1.3 with
@@ -248,9 +285,19 @@ func Listen(inner net.Listener, k *identity.Key, rotation ...roster.Statement) (
 	if err != nil {
 		return nil, err
 	}
-	l := &listener{Listener: inner, cfg: cfg, ch: make(chan net.Conn), one: make(chan struct{})}
+	l := &listener{Listener: inner, cfg: cfg, ch: make(chan net.Conn), links: make(chan *LinkConn, 16), one: make(chan struct{}), slots: make(chan struct{}, 128)}
 	go l.loop()
 	return l, nil
+}
+
+// Links is where the connections that negotiated fyr-peer/2 arrive, when the
+// listener comes from Listen; a caller that takes none of them (Serve) has them
+// closed.
+func Links(l net.Listener) <-chan *LinkConn {
+	if pl, ok := l.(*listener); ok {
+		return pl.links
+	}
+	return nil
 }
 
 func (l *listener) loop() {
@@ -260,7 +307,14 @@ func (l *listener) loop() {
 			close(l.one)
 			return
 		}
+		select {
+		case l.slots <- struct{}{}:
+		default:
+			raw.Close() // too many handshakes at once
+			continue
+		}
 		go func() {
+			defer func() { <-l.slots }()
 			tc := tls.Server(raw, l.cfg)
 			raw.SetDeadline(time.Now().Add(10 * time.Second))
 			if err := tc.Handshake(); err != nil {
@@ -269,8 +323,22 @@ func (l *listener) loop() {
 			}
 			raw.SetDeadline(time.Time{})
 			c := &conn{Conn: tc}
-			if st := tc.ConnectionState(); st.NegotiatedProtocol != ALPN {
-				raw.Close() // a client that did not ask for fyr-peer/1 is not one of ours
+			st := tc.ConnectionState()
+			if st.NegotiatedProtocol == ALPN2 {
+				pub, err := PeerKey(st.PeerCertificates)
+				if err != nil {
+					raw.Close()
+					return
+				}
+				select {
+				case l.links <- &LinkConn{Conn: tc, Key: pub, Rotation: Rotation(st.PeerCertificates[0])}:
+				default:
+					raw.Close()
+				}
+				return
+			}
+			if st.NegotiatedProtocol != ALPN {
+				raw.Close() // a client that asked for neither fyr-peer protocol is not one of ours
 				return
 			} else if pub, err := PeerKey(st.PeerCertificates); err == nil {
 				c.caller = pub
@@ -304,14 +372,33 @@ func ConnContext(ctx context.Context, c net.Conn) context.Context {
 	return ctx
 }
 
-// Serve runs h on the peer port at inner until the server is closed.
+// Serve runs h on the peer port at inner until the server is closed. It speaks
+// fyr-peer/1 only: a connection that negotiated /2 is closed (ServeMesh takes them).
 func Serve(inner net.Listener, k *identity.Key, h http.Handler, rotation ...roster.Statement) (*http.Server, error) {
+	return ServeMesh(inner, k, h, func(lc *LinkConn) { lc.Conn.Close() }, rotation...)
+}
+
+// ServeMesh is Serve with the fyr-peer/2 connections handed to onLink (the mesh's
+// Accept): the peer port speaks both, and offers /2 first.
+func ServeMesh(inner net.Listener, k *identity.Key, h http.Handler, onLink func(*LinkConn), rotation ...roster.Statement) (*http.Server, error) {
 	l, err := Listen(inner, k, rotation...)
 	if err != nil {
 		return nil, err
 	}
-	srv := &http.Server{Handler: h, ConnContext: ConnContext, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: h, ConnContext: ConnContext, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	go srv.Serve(l)
+	if links := Links(l); links != nil {
+		go func() {
+			for {
+				select {
+				case lc := <-links:
+					onLink(lc)
+				case <-l.(*listener).one:
+					return
+				}
+			}
+		}()
+	}
 	return srv, nil
 }
 

@@ -25,6 +25,48 @@ export interface HostInfo {
   /** V0.170: what it runs on (laptop, desktop, server) and its OS ("linux", "darwin"); missing until it is seen */
   machine?: string;
   os?: string;
+  /** decision 0030 Amendment 1: how the front reaches it: over the pipe, a peer link or the old whois link */
+  link?: HostLink;
+}
+
+export interface HostLink {
+  state: "up" | "connecting" | "down" | string;
+  via: "pipe" | "peer" | "whois" | string;
+  /** a peer link that is up: which side opened it */
+  opened?: "here" | "them" | string;
+  since?: string;
+  error?: { kind: string; text: string };
+}
+
+const LINK_WHY: Record<string, string> = {
+  timeout: "no answer in time (a firewall or an ACL drops silently)",
+  refused: "its peer port refused the connection",
+  "key-mismatch": "another install answered than the one in the roster",
+  "not-a-member": "it does not have this install as a member yet",
+  removed: "it was removed from the roster",
+  "older-version": "it runs an older Fyr: followed one way until it is updated",
+  "no-address": "no address for it yet; it may open the link itself",
+  "no-route": "no route to it",
+  closed: "the link closed",
+};
+
+/** The reason a link is down, in words: the front's text, else ours for the kind. */
+export function linkWhy(l: Pick<HostLink, "error"> | undefined): string {
+  if (!l?.error) return "";
+  return l.error.text || LINK_WHY[l.error.kind] || l.error.kind;
+}
+
+/** "Link up, opened by it, since 14:20" / "Link down: no answer in time…" / "" for the pipe and for none. */
+export function linkLine(l: HostLink | undefined, now: number): string {
+  if (!l || l.via === "pipe") return "";
+  if (l.via === "whois") return l.state === "up" ? "Old link (tailscaled's whois)" : `Old link down${l.error ? `: ${linkWhy(l)}` : ""}`;
+  if (l.state === "up") {
+    const who = l.opened === "them" ? "opened by it" : l.opened === "here" ? "opened from here" : "";
+    const at = l.since ? dayTime(l.since, now) : "";
+    return ["Link up", who, at ? `since ${at}` : ""].filter(Boolean).join(", ");
+  }
+  if (l.state === "connecting") return "Link connecting…";
+  return `Link down${l.error ? `: ${linkWhy(l)}` : ""}`;
 }
 
 /** The host's name for the rail and the phone; without one in the state, "mock" or "local". */

@@ -42,3 +42,22 @@ test("an invite as typed and from the address", () => {
   assert.equal(inviteFromUrl("?pair=hello"), "");
   assert.equal(inviteFromUrl(""), "");
 });
+
+import { linkLine, linkWhy } from "../src/hosts.ts";
+import { memberLink } from "../src/peers.ts";
+
+test("a link in words: up from either side, down with the reason", () => {
+  const NOW = Date.parse("2026-11-17T12:00:00Z");
+  const since = new Date(NOW - 5 * 60_000).toISOString();
+  assert.match(linkLine({ state: "up", via: "peer", opened: "them", since }, NOW), /^Link up, opened by it, since /);
+  assert.match(linkLine({ state: "up", via: "peer", opened: "here", since }, NOW), /^Link up, opened from here/);
+  assert.equal(linkLine({ state: "down", via: "peer", error: { kind: "timeout", text: "" } }, NOW), "Link down: no answer in time (a firewall or an ACL drops silently)");
+  assert.equal(linkLine({ state: "down", via: "peer", error: { kind: "not-a-member", text: "its roster has not reached it" } }, NOW), "Link down: its roster has not reached it");
+  assert.equal(linkLine({ state: "connecting", via: "peer" }, NOW), "Link connecting…");
+  assert.equal(linkLine({ state: "up", via: "pipe" }, NOW), "", "this install's own host has no link line");
+  assert.equal(linkLine(undefined, NOW), "");
+  assert.equal(linkLine({ state: "up", via: "whois" }, NOW), "Old link (tailscaled's whois)");
+  assert.equal(linkWhy({ error: { kind: "removed", text: "" } }), "it was removed from the roster");
+  assert.equal(memberLink({ self: true }, NOW), "");
+  assert.match(memberLink({ link: { state: "up", via: "peer", opened: "them" } }, NOW), /opened by it/);
+});

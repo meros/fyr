@@ -475,6 +475,12 @@ func withActor(mode actorMode, self string, next http.Handler) http.Handler {
 		}
 		if mode == actorLink {
 			li, _ := r.Context().Value(linkKey{}).(linkInfo)
+			// 0030 Amendment 1: over a link the owner's own machine is not a caller, and an
+			// install speaks as itself: the id the handshake proved, nothing else.
+			if p.Kind == authn.KindLocal || (p.Kind == authn.KindInstall && p.ID != li.install) {
+				api.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "that principal is not taken over a link"})
+				return
+			}
 			p.Front = li.install // the key the link proved, whatever the header says
 			if p.Kind == authn.KindDevice && li.gate != nil {
 				switch {

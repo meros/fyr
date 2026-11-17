@@ -106,6 +106,9 @@ type Options struct {
 	Tailnet NodeAuth
 	// OwnerRoutes adds calls to the owner socket (the roster's: fyr host …).
 	OwnerRoutes func(mux *http.ServeMux)
+	// OnWhoisFallback hears each request that went over a whois link although the
+	// host has a peer link: it counts against the peer way's enforce.
+	OnWhoisFallback func()
 	// AuthTick is how often rule 3 looks at the modes; default 10 minutes.
 	AuthTick time.Duration
 	// ID is this install's key id (V0.124, decision 0026), in the merged
@@ -287,8 +290,8 @@ func (f *Front) newLink(h HostConfig) *link {
 	if self.ID == "" {
 		self.ID = "front"
 	}
-	lt := &linkTransport{whois: client.Transport}
-	if h.Peer == nil || h.URL != "https://"+h.Peer.Addr {
+	lt := &linkTransport{whois: client.Transport, onFallback: opt.OnWhoisFallback}
+	if h.Peer == nil || h.URL != peerURL(*h.Peer) {
 		lt.whoisBase = u
 	}
 	if h.Peer != nil {
@@ -588,7 +591,7 @@ func (f *Front) load(l *link, st map[string]any) {
 	for id := range raw {
 		f.publishLocked(l, id)
 	}
-	f.catchUpLocked(l) // V0.132
+	f.catchUpLocked(l)      // V0.132
 	f.catchUpMarksLocked(l) // V0.171
 	f.publishHostsLocked()
 }

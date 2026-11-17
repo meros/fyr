@@ -642,7 +642,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen), id)
 		var fr *front.Front
 		ps := newPeerSide(cfg, data, hostName, key)
-		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), Web: webFS,
+		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), OnWhoisFallback: func() { authStore.WouldRefuse(auth.WayPeer) }, Web: webFS,
 			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st, Auth: authStore, Tailnet: tailnetNodes(cfg),
 			OwnerRoutes: func(mux *http.ServeMux) {
 				if ps != nil {
@@ -745,7 +745,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	var fr *front.Front
 	ps := newPeerSide(cfg, data, name, key)
 	authStore := openAuth(st, cfg.stepUp())
-	fr = front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), Web: webFS,
+	fr = front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), OnWhoisFallback: func() { authStore.WouldRefuse(auth.WayPeer) }, Web: webFS,
 		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, Auth: authStore, Tailnet: tailnetNodes(cfg),
 		OwnerRoutes: func(mux *http.ServeMux) {
 			if ps != nil {

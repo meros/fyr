@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/authn"
 	"github.com/meros/fyr/internal/peerlink"
 	"github.com/meros/fyr/internal/server"
@@ -121,34 +122,56 @@ func (f *Front) RoutePatterns() []string { return f.mux().patterns }
 // to the host's install id, on its peer port.
 type PeerEndpoint struct {
 	ID   string
-	Addr string // host:port of its peer port
+	Addr string // host:port of its peer port; "" when only the host can open the link
 	Dial *peerlink.Dialer
+	// Mesh is the link manager: the two-way link to this host, opened by either side.
+	// With it the front sends over the link; Dial stays as the route to a peer of an
+	// older slice (fyr-peer/1, one way).
+	Mesh *peerlink.Mesh
 }
 
 type peerRoute struct {
-	rt   http.RoundTripper
-	base *url.URL
-	id   string
-	addr string
+	rt     http.RoundTripper // the two-way link; nil without a mesh
+	legacy http.RoundTripper // one request per connection (fyr-peer/1), for a peer of an older slice
+	base   *url.URL
+	id     string
+	addr   string
+	mesh   *peerlink.Mesh
 }
 
 // linkTransport is how a front reaches one host. The peer link is preferred
 // once a roster member has one; the V0.51 whois link stays as the fallback (a
 // host with no peer link yet is followed as before), and its use is counted.
 type linkTransport struct {
-	whois     http.RoundTripper
-	whoisBase *url.URL // nil: the host has only a peer link
-	peer      atomic.Pointer[peerRoute]
-	downUntil atomic.Int64 // unix nanos: the peer link failed to connect; use the whois link until then
-	uses      atomic.Int64 // requests sent over the whois link although a peer link is attached
+	whois      http.RoundTripper
+	whoisBase  *url.URL // nil: the host has only a peer link
+	peer       atomic.Pointer[peerRoute]
+	downUntil  atomic.Int64 // unix nanos: the peer link failed to connect; use the whois link until then
+	uses       atomic.Int64 // requests sent over the whois link although a peer link is attached
+	onFallback func()
 }
 
 func (t *linkTransport) attach(ep PeerEndpoint) {
-	base, err := url.Parse("https://" + ep.Addr)
-	if err != nil || ep.Dial == nil {
+	host := ep.Addr
+	if host == "" {
+		host = ep.ID // a member that only dials in: the address means nothing, the link is the route
+	}
+	base, err := url.Parse("https://" + host)
+	if err != nil || (ep.Dial == nil && ep.Mesh == nil) {
 		return
 	}
-	t.peer.Store(&peerRoute{rt: ep.Dial.Transport(ep.ID, ep.Addr), base: base, id: ep.ID, addr: ep.Addr})
+	r := &peerRoute{base: base, id: ep.ID, addr: ep.Addr, mesh: ep.Mesh}
+	if ep.Mesh != nil {
+		wait := time.Duration(0)
+		if t.whoisBase == nil { // no other route: a request waits a moment for a link
+			wait = 5 * time.Second
+		}
+		r.rt = ep.Mesh.Transport(ep.ID, wait)
+	}
+	if ep.Dial != nil && ep.Addr != "" {
+		r.legacy = ep.Dial.Transport(ep.ID, ep.Addr)
+	}
+	t.peer.Store(r)
 	t.downUntil.Store(0)
 }
 
@@ -172,21 +195,47 @@ func (t *linkTransport) peerAddr() string {
 func (t *linkTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	p := t.peer.Load()
 	if p != nil && time.Now().UnixNano() >= t.downUntil.Load() {
-		resp, err := p.rt.RoundTrip(reroute(r, p.base))
-		if err == nil {
-			return resp, nil
+		var lastErr error
+		// 1. the two-way link, when it is up
+		if p.rt != nil {
+			resp, err := p.rt.RoundTrip(reroute(r, p.base))
+			if err == nil {
+				return resp, nil
+			}
+			var nl *peerlink.ErrNoLink
+			if !errors.As(err, &nl) {
+				return nil, err // the link was up: a failure on it is the request's own
+			}
+			lastErr = err
 		}
-		var de *peerlink.DialError
-		if !errors.As(err, &de) || t.whoisBase == nil {
-			return nil, err // a failure after the link was made is the request's own
+		// 2. a peer of an older slice: one request per connection
+		if p.legacy != nil && (p.mesh == nil || p.mesh.Status(p.id).Err == nil || p.mesh.Status(p.id).Err.Kind == peerlink.ErrOlderVersion) {
+			resp, err := p.legacy.RoundTrip(reroute(r, p.base))
+			if err == nil {
+				return resp, nil
+			}
+			var de *peerlink.DialError
+			if !errors.As(err, &de) {
+				return nil, err
+			}
+			lastErr = err
 		}
-		t.downUntil.Store(time.Now().Add(30 * time.Second).UnixNano())
+		if t.whoisBase == nil {
+			if lastErr != nil {
+				return nil, lastErr
+			}
+			return nil, errors.New("no route to the host: its peer link is down and it has no other")
+		}
+		t.downUntil.Store(time.Now().Add(2 * time.Second).UnixNano())
 	}
 	if t.whoisBase == nil {
 		return nil, errors.New("no route to the host: its peer link is down and it has no other")
 	}
 	if p != nil {
 		t.uses.Add(1)
+		if t.onFallback != nil {
+			t.onFallback() // a use of the old link counts against the peer way's enforce
+		}
 	}
 	rt := t.whois
 	if rt == nil {
@@ -229,7 +278,7 @@ func (f *Front) UsePeerLink(id, name string, ep PeerEndpoint) {
 		}
 		return
 	}
-	f.AddHost(HostConfig{Name: name, URL: "https://" + ep.Addr, Remote: true, Found: true, Peer: &ep})
+	f.AddHost(HostConfig{Name: name, URL: peerURL(ep), Remote: true, Found: true, Peer: &ep})
 }
 
 // WhoisLinkUses counts the requests that went over a whois link although the
@@ -311,6 +360,50 @@ func (f *Front) AllOnPeerLink() (bool, string) {
 		if l.lt == nil || !l.lt.hasPeer() {
 			return false, "host " + l.name() + " is still followed over the whois link or a configured address: pair it (it needs a peer port)"
 		}
+		if st := l.lt.linkStatus(); st.State != "up" {
+			return false, "host " + l.name() + " has no link up now (" + linkWhy(st) + ")"
+		}
 	}
 	return true, ""
+}
+
+// linkStatus is the state of the route this front uses to the host.
+func (t *linkTransport) linkStatus() api.Link {
+	p := t.peer.Load()
+	switch {
+	case p == nil && t.whoisBase != nil:
+		return api.Link{State: "up", Via: "whois"}
+	case p == nil:
+		return api.Link{State: "down", Via: "peer"}
+	case p.mesh == nil:
+		return api.Link{State: "up", Via: "peer"} // a one-way link of an older slice
+	}
+	st := p.mesh.Status(p.id)
+	out := api.Link{State: st.State, Via: "peer", Opened: st.Opened}
+	if !st.Since.IsZero() {
+		out.Since = st.Since.UTC().Format(time.RFC3339)
+	}
+	if st.Err != nil {
+		out.Error = &api.LinkError{Kind: st.Err.Kind, Text: st.Err.Text}
+		if st.Err.Kind == peerlink.ErrOlderVersion && p.legacy != nil { // followed one way over fyr-peer/1
+			out.State, out.Opened = "up", "here"
+		}
+	}
+	return out
+}
+
+func linkWhy(st api.Link) string {
+	if st.Error != nil {
+		return st.Error.Kind
+	}
+	return st.State
+}
+
+// peerURL is the URL a host reached only over its peer link carries: its address, or
+// its id when only the host can open the link.
+func peerURL(ep PeerEndpoint) string {
+	if ep.Addr == "" {
+		return "https://" + ep.ID
+	}
+	return "https://" + ep.Addr
 }

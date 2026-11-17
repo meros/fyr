@@ -3,7 +3,7 @@
 // here: text, a QR code, a link; 10 minutes, once) and Add (type one from another install).
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
-import { candidateWords, inviteFromUrl, needsInvite, others, typedInvite, viaWords, type InviteInfo, type PeerState } from "./peers.ts";
+import { candidateWords, inviteFromUrl, memberLink, needsInvite, others, typedInvite, viaWords, type InviteInfo, type PeerState } from "./peers.ts";
 import { Group, Row, useSet } from "./settings-rows.tsx";
 
 export type PeersApi = Pick<Api, "peerState" | "peerAct">;
@@ -103,7 +103,7 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
             mono
             ell
             title={m.name}
-            desc={`${viaWords(m)} · ${m.id.slice(0, 4)}`}
+            desc={[`${viaWords(m)} · ${m.id.slice(0, 4)}`, memberLink(m, Date.now())].filter(Boolean).join(" · ")}
             end={
               m.self ? undefined : confirm === m.id ? (
                 <>

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/auth"
@@ -28,6 +29,9 @@ type MeshSpec struct {
 	Hide []string
 	// Role is the fyrd's role; default both.
 	Role string
+	// Block lists the installs this one cannot dial (a one-way ACL on their peer ports): a
+	// dial goes into a black hole and times out, as a Tailscale ACL drop does.
+	Block []string
 	// HostListen gives the install a loopback host port (the old way a front reached a
 	// host, decision 0030 slice 5), at MeshNode.HostPort.
 	HostListen bool
@@ -35,11 +39,13 @@ type MeshSpec struct {
 
 // MeshNode is a started install of a Mesh.
 type MeshNode struct {
-	Spec MeshSpec
-	Node Node
-	TS   *Tailscaled
-	Fyrd *Fyrd
-	Name string // the fyrd's -name
+	resolveFile string
+	m           *Mesh
+	Spec        MeshSpec
+	Node        Node
+	TS          *Tailscaled
+	Fyrd        *Fyrd
+	Name        string // the fyrd's -name
 	// PeerPort is the fixed port of its peer listener, so a restart (a rotation, a
 	// release) keeps it; HostPort the loopback host port, 0 with none.
 	PeerPort, HostPort int
@@ -53,15 +59,18 @@ type Mesh struct {
 	CA    *CA
 	Nodes []*MeshNode
 
+	blackhole net.Listener
+
 	cleanups []func()
 }
 
 // NewMesh starts the installs. Users 1 (the owner) and 2 exist.
 func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
-	m = &Mesh{}
+	started := &Mesh{}
+	m = started
 	defer func() {
 		if err != nil {
-			m.Close()
+			started.Close() // m is nil in a failed return: close what was started
 		}
 	}()
 	if m.CA, err = NewCA(); err != nil {
@@ -139,7 +148,9 @@ func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
 		// The peer port is chosen by the kernel at the first start (a port found free
 		// beforehand can be taken by another test before fyrd binds it) and then kept for
 		// the restarts a test makes.
-		extra := map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": caFile}
+		extra := map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": caFile,
+			"linkBackoffMillis": 100, "linkDialMillis": 700}
+		caller.resolveFile, caller.m = rf, m
 		if caller.Spec.HostListen {
 			caller.HostPort = freePort()
 			extra["hostListen"] = net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.HostPort))
@@ -166,6 +177,11 @@ func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
 			}
 		}
 		caller.Fyrd.opts.Extra["peerListen"] = net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.PeerPort))
+	}
+	for _, n := range m.Nodes {
+		if len(n.Spec.Block) > 0 {
+			n.SetBlocked(n.Spec.Block...)
+		}
 	}
 	return m, nil
 }
@@ -197,4 +213,49 @@ func freePort() int {
 	}
 	defer ln.Close()
 	return ln.Addr().(*net.TCPAddr).Port
+}
+
+// SetBlocked makes the named installs unreachable from this one: its dials to their
+// peer ports hang (a black hole), as an ACL drop does. Called with none, it
+// unblocks. A link that is already up is not touched; it ends when it ends.
+func (n *MeshNode) SetBlocked(names ...string) {
+	m := n.m
+	if m.blackhole == nil {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return
+		}
+		m.blackhole = ln
+		m.cleanups = append(m.cleanups, func() { ln.Close() })
+		go func() {
+			var held []net.Conn
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				held = append(held, c) // held open and silent, as a dropped flow is
+				_ = held
+			}
+		}()
+	}
+	b, _ := os.ReadFile(n.resolveFile)
+	var res map[string]string
+	json.Unmarshal(b, &res)
+	for k := range res { // drop the old black holes
+		if strings.HasSuffix(k, "#acl") {
+			delete(res, k)
+		}
+	}
+	for _, other := range m.Nodes {
+		key := net.JoinHostPort(other.Node.Name, strconv.Itoa(other.PeerPort))
+		delete(res, key)
+		for _, name := range names {
+			if name == other.Name && other.PeerPort != 0 {
+				res[key] = m.blackhole.Addr().String()
+			}
+		}
+	}
+	b, _ = json.Marshal(res)
+	os.WriteFile(n.resolveFile, b, 0o600)
 }

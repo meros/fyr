@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -155,6 +156,36 @@ func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, f
 	if tagged && cfg.OwnerLogin == "" {
 		log.Printf("peer: this install is tagged and has no owner login yet: pair it with an invite, and it learns the owner's login from the roster")
 	}
+	// The mesh (decision 0030 Amendment 1): one two-way link per member, opened by either
+	// side. The peer handler serves the requests a peer sends over any link.
+	var members http.Handler = http.NotFoundHandler()
+	if srv != nil {
+		members = srv.LinkHandler(env)
+	}
+	handler := env.Handler(members)
+	peerOf := func(m roster.Member) peerlink.Peer {
+		return peerlink.Peer{ID: m.ID, Key: m.Key, Name: m.Name, Host: m.Host, Port: m.Port}
+	}
+	mesh := peerlink.New(peerlink.Config{Key: key, Dialer: dial, Handler: handler, Logf: log.Printf,
+		MinBackoff: time.Duration(cfg.LinkBackoffMillis) * time.Millisecond, DialTimeout: time.Duration(cfg.LinkDialMillis) * time.Millisecond,
+		Members: func() []peerlink.Peer {
+			var out []peerlink.Peer
+			for _, m := range ros.Members() {
+				if m.ID != key.ID() {
+					out = append(out, peerOf(m))
+				}
+			}
+			return out
+		},
+		Member: func(pub ed25519.PublicKey, chain []roster.Statement) (peerlink.Peer, bool) {
+			m, ok := env.MemberByKey(pub, chain)
+			return peerOf(m), ok
+		},
+		SelfRemoved: ros.SelfRemoved,
+		OnUp:        func(string) { env.Kick() }})
+	env.Mesh = mesh
+	ros.OnChange(mesh.Changed)
+	go mesh.Run(ctx)
 	if cfg.PeerListen != "" {
 		ln, err := net.Listen("tcp", cfg.PeerListen)
 		if err != nil {
@@ -162,11 +193,7 @@ func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, f
 			return
 		}
 		p.port.Store(int64(ln.Addr().(*net.TCPAddr).Port))
-		var members http.Handler = http.NotFoundHandler()
-		if srv != nil {
-			members = srv.LinkHandler(env)
-		}
-		hs, err := peerlink.Serve(ln, key, env.Handler(members), ros.RotationChain()...)
+		hs, err := peerlink.ServeMesh(ln, key, handler, mesh.Accept, ros.RotationChain()...)
 		if err != nil {
 			log.Printf("peer: %v", err)
 			return
@@ -188,7 +215,7 @@ func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, f
 		}, func() int {
 			n := 0
 			for _, m := range ros.Members() {
-				if m.ID != key.ID() && m.Port != 0 {
+				if m.ID != key.ID() {
 					n++
 				}
 			}
@@ -241,14 +268,19 @@ func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, f
 	if fr != nil {
 		follow := func() {
 			for _, m := range ros.Members() {
-				if m.ID == key.ID() || m.Port == 0 {
+				if m.ID == key.ID() {
 					continue
 				}
-				host := m.Host
-				if host == "" {
-					host = m.Name
+				// membership decides who is followed; an address only decides who is dialled
+				a := ""
+				if m.Port != 0 {
+					host := m.Host
+					if host == "" {
+						host = m.Name
+					}
+					a = net.JoinHostPort(host, strconv.Itoa(m.Port))
 				}
-				fr.UsePeerLink(m.ID, m.Name, front.PeerEndpoint{ID: m.ID, Addr: net.JoinHostPort(host, strconv.Itoa(m.Port)), Dial: dial})
+				fr.UsePeerLink(m.ID, m.Name, front.PeerEndpoint{ID: m.ID, Addr: a, Dial: dial, Mesh: mesh})
 			}
 		}
 		ros.OnChange(follow)
