@@ -1,16 +1,17 @@
 # 0029 Adaptive slots: admit heavy jobs by measured load and a learned cost, not by a fixed count
 
-Date: 2026-11-17 · Status: **proposed** (research, no code; owner's question relayed by the coordinator thread t_d8b8040dae603057) · Would amend V0.86 (1) and (6), V0.99 (2), and build on V0.137 (the owner's queue order) and issue #174 (heavy jobs without a slot)
+Date: 2026-11-17 · Status: **proposed; the owner answered Q1–Q4 on 17 Nov** (research, no code; the question was relayed by the coordinator thread t_d8b8040dae603057) · Would amend V0.86 (1) and (6), V0.99 (2), and build on V0.137 (the owner's queue order) and issue #174 (heavy jobs without a slot)
 
 **The owner's words, 17 Nov:** "can we make slots adaptive somehow? Let's assume a job is normally 1 in cost, then if a specific job reliably is less taxing but long running than expected - lower the 'cost'. So it doesn't measure time, it measures system load (memory and cpu). What we want to avoid is system overload, but also not just wait wait wait."
 
 ## What would change for the owner, day to day
 
-- The rail's pips become a **budget bar**: "1.4 / 2.0", filled by the cost of each running job, plus a hatched part for heavy work that holds no slot. The ring's colour comes from CPU pressure and memory headroom, not from the load average.
+- The rail's pips become a **budget bar**: "1.4 / 2.0", filled by the cost of each running job. The ring's colour comes from CPU pressure and memory headroom, not from the load average.
 - A cheap job (for example a `go test ./internal/x/...` that uses 0.3 cores) starts beside a full `make test` instead of queueing behind it.
 - When the box is already overloaded by work outside the slots, a new job waits even if a pip is free. Today it would start, and everything would get slower.
 - A slot held by a thread that is not running a job (it is writing the spec) costs almost nothing, so it no longer blocks others.
-- Nothing is ever killed by Fyr. When a job turns out heavier than its learned cost, Fyr stops admitting new jobs and tells the thread.
+- Nothing is ever killed by Fyr. When a job turns out heavier than its learned cost, Fyr stops admitting new jobs and tells the thread. Under memory pressure the newest job is frozen until memory recovers (owner, Q3).
+- Work that holds no slot is not counted in the budget (owner, Q2); #174's nudges handle it. The CPU pressure gate still feels it, because pressure is machine-level.
 
 ## Context
 
@@ -119,7 +120,7 @@ cost     = clamp(max(cpu_cost, mem_cost), 0.1, 2.0)
 
 **Rule.** The pool holds a budget **B** in cost units, starting at **B = N0 = 2.0**: with every cost at its prior 1.0 it behaves exactly like today. The queue's head is admitted when **all** of these hold:
 
-1. **CPU:** `Σ cost(running slotted jobs) + U + cost(head) ≤ B`, where **U** is the unslotted heavy load (section 5) in the same units;
+1. **CPU:** `Σ cost(running slotted jobs) + cost(head) ≤ B`. Work without a slot is not counted (owner, Q2; section 5);
 2. **CPU pressure:** `agents/cpu.pressure` some avg10 < **P_cpu** (60 %), unless the head's cost ≤ 0.25 (cheap jobs backfill anyway; see 4);
 3. **Memory headroom:** `MemAvailable − Σ (predicted peak − current) of running jobs − predicted peak(head) ≥ R_mem` (max(2 GB, 10 % of RAM));
 4. **Memory pressure:** memory PSI full avg10 < 5 %.
@@ -159,15 +160,25 @@ B is shown, never hidden. AIMD is the TCP and Netflix concurrency-limits pattern
 - **Memory guard.** When `MemAvailable` falls under `R_mem` **or** memory full avg10 > 10 % for 10 s:
   - no new admissions, the rail ring turns red, and the thread whose job grew most since its grant gets a notice;
   - `agents/memory.high` (already set) throttles before `memory.max` kills;
-  - freezing the newest job (`cgroup.freeze`, Buck2's `cgroup_freeze` strategy) is an option for the owner (question 3), off by default.
+  - **freeze the newest slotted job** (owner, Q3; Buck2's `cgroup_freeze` strategy):
+    - write `1` to its job cgroup's `cgroup.freeze`; the thread gets a notice ("your `make test` is paused: 1.2 GB free; it resumes when memory recovers");
+    - the **oldest running job is never frozen** (progress guarantee), and at most one job is frozen at a time;
+    - it thaws when `MemAvailable ≥ R_mem + 1 GB` **and** memory full avg10 < 2 % for 30 s, or after 10 min at most;
+    - a freeze does not free memory (the frozen pages may be swapped out); it stops the job's growth and gives the CPU and I/O to the others so they finish and release theirs;
+    - the frozen job's own timeouts (a test's deadline, a Playwright timeout) may fire after the thaw, and the notice says so;
+    - **this needs S5's job cgroups.** Freezing the thread's cgroup would also freeze the agent CLI and its API stream. Until S5, the guard sends notices only.
 
 ## 5. Agents that never call slot_acquire (#174)
 
-Every thread cgroup is measured anyway (V0.80 already reads `cpu.stat` and `memory.current` every few seconds). A thread **without** a slot counts toward **U** when, over the last 30 s, it uses more than 0.5 cores above its baseline, or more than 1.5 GB above it. U is the sum of those threads' costs, by the same formula. So the budget sees the 73 %:
-- in the window, U alone would have been about 1.3–1.6 units most of the time;
+**Owner, Q2: ignore it in the budget.** Work without a slot is left to #174 (the prompt rule and the gate hook's nudge); the budget counts only slotted jobs. Consequences, stated so they are not surprises:
+- The CPU pressure gate (rule 2) and the memory rules (3, 4) read machine-level signals, so they still feel unslotted work. A job can wait because of it, and its wait reason names the pressure, not a thread.
+- V0.80 already shows each thread's CPU in its row; S1 adds nothing more for unslotted threads.
+- In the window, unslotted work was about 1.3–1.6 units most of the time. Without #174 making that work take slots, the pressure gate will often be the binding rule.
+
+The option that was not chosen, kept for the record: count a thread without a slot as load **U** when it uses more than 0.5 cores or 1.5 GB above its baseline over 30 s;
 - with B = 2.0, only cheap jobs would have been admitted, and the rail would have said why: "1.5 of 2.0 used by work without a slot".
 
-Such a thread also gets #174's nudge with the number ("you use 1.8 cores without a slot"), and its command's class is learned the same way, so it has a cost if it later asks. U never blocks the progress guarantee; only memory does.
+and add U to rule 1. It can be revisited from S1's data if #174 does not close the gap.
 
 ## 6. Slices
 
@@ -175,11 +186,11 @@ Each slice ships alone and is useful alone.
 
 | Slice | What | The owner sees | Risk |
 |---|---|---|---|
-| **S1 Measure and show** (no behaviour change) | `GET /api/load` adds `agents/cpu.pressure`, memory PSI full, MemAvailable, the smoothed run queue, each thread's cgroup CPU pressure, `memory.peak` and `slot: true/false`, plus U. Per slot hold, a record: class, cores, demand, peak, wall time. The rail ring's colour moves from load average to PSI and headroom. | The ring is honest. Desktop tooltip and phone thread row: "1.8 cores · no slot" or "make test · 2.1 cores · 3.2 GB". Settings → Automation lists the measured jobs. | Low. Wrong attribution only mislabels. |
-| **S2 Budget admission** | Costs fixed at 1.0 except the idle-hold rule. Rules 1–4, U, the progress guarantee, the memory guard and its notices. B fixed at N. Pips become a bar. | Fewer jobs start while unslotted work fills the box. A queued thread says why it waits. | Too strict: the owner sees more waiting while U is high. That is the point, but the thresholds may need tuning; each is a host setting. |
+| **S1 Measure and show** (no behaviour change) | `GET /api/load` adds `agents/cpu.pressure`, memory PSI full, MemAvailable, the smoothed run queue, each thread's cgroup CPU pressure, `memory.peak`. Per slot hold, a record: class, cores, demand, peak, wall time. The rail ring's colour moves from load average to PSI and headroom. | The ring is honest. Desktop tooltip and phone thread row: "1.8 cores · no slot" or "make test · 2.1 cores · 3.2 GB". Settings → Automation lists the measured jobs. | Low. Wrong attribution only mislabels. |
+| **S2 Budget admission** | Costs fixed at 1.0 except the idle-hold rule. Rules 1–4, the progress guarantee, the memory guard and its notices. B fixed at N. Pips become a bar. | Fewer jobs start while the box is under pressure. A queued thread says why it waits. | Too strict: the owner sees more waiting while pressure is high. That is the point, but the thresholds may need tuning; each is a host setting. |
 | **S3 Learn costs, backfill** | The class table, the EMA and decaying max, the 3-run rule, EASY backfill with aging, and the "heavier than predicted" notice. | Cheap jobs run beside big ones. Settings lists each class's cost and how many runs it is based on, with **Reset**. | A bad learned cost: bounded 0.1–2.0, memory never learned down fast, and the memory guard holds regardless. |
 | **S4 Adaptive B** | AIMD on B from PSI. | The bar's capacity moves (for example "2.5"), with the reason in the tooltip. | Oscillation: slow steps, 60 s holds, bounds 1.0–2·N. |
-| **S5 (optional) Job cgroups** | The gate hook wraps matched commands in `fyr job run`; the thread cgroup splits into `cli/` and `job-*/`. | Exact per-job numbers; optional freeze. | Changes V0.80's tree, and a wrapped command could change behaviour. Only if S1–S3's attribution proves too coarse. |
+| **S5 Job cgroups and the freeze** | The gate hook wraps matched commands in `fyr job run`; the thread cgroup splits into `cli/` and `job-*/`. The memory guard freezes the newest job (Q3). | Exact per-job numbers. A paused job in its thread row ("paused: memory") on desktop and phone. | Changes V0.80's tree, and a wrapped command could change behaviour. Required by Q3's freeze; S2's guard sends notices only until then. |
 
 Desktop and phone stay in sync: the phone has no rail ring (V0.99 (3)), but the thread row shows the same cost and wait reason as the desktop row (`web/src/row-ui.tsx`).
 
@@ -189,14 +200,14 @@ Desktop and phone stay in sync: the phone has no rail ring (V0.99 (3)), but the 
 - **Attribution by thread is coarse** (section 2). The idle-hold rule and S5 are the answers.
 - **An overloaded box was the normal state in this window.** With the proposal, jobs would have waited more, not less, until #174 makes the unslotted work take slots. The win from S3 comes from cheap jobs and idle holds; the win against overload comes from S2.
 - **The probe measured from one thread cgroup** with cpu.weight 100 (300 while the owner watches it, V0.85). Other threads saw similar or worse stretch. The AUC ranking is what matters, not the absolute values.
-- **One 30-minute window on one host.** S1 records continuously, and the thresholds (P_cpu 60 %, R_mem, the 0.5-core and 1.5 GB U floor) should be set from a week of S1's data before S2 is enabled.
+- **One 30-minute window on one host.** S1 records continuously, and the thresholds (P_cpu 60 %, R_mem) should be set from a week of S1's data before S2 is enabled.
 
-## Questions for the owner
+## The owner's answers (17 Nov)
 
-1. CPU overload signal: PSI some (with the run queue for magnitude), PSI alone, or the load average as today?
-2. Unslotted heavy work: counted in the budget (U), shown only, or not measured?
-3. A job heavier than predicted, under memory pressure: notices only, or freeze the newest job until memory recovers?
-4. Backfill: EASY backfill with an aging cap, strict order, or free backfill by cost?
+1. **CPU overload signal:** PSI some, with the run queue for the size above PSI's ceiling (recommended).
+2. **Unslotted heavy work:** ignore it in the budget (the recommendation was to count it as U). Section 5 records the consequences.
+3. **A job heavier than predicted, under memory pressure:** stop admissions, notify, **and freeze the newest job** (the recommendation was notices only). Section 4 gives the rules; S5 is now required for it.
+4. **Backfill:** EASY backfill with an aging cap (recommended).
 
 ## Sources
 
