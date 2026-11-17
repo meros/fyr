@@ -1401,3 +1401,27 @@ label.sr{cursor:pointer}
 /* V0.143: an agent that does not respond; the line takes the room, the button keeps its own */
 .sys.stuck{color:var(--signal-ink)}
 .sys.stuck .btn,.sys.stuck .m-bt{flex:none;margin-left:auto}
+
+/* V0.149: the Run card, desktop and phone. The command wraps at any character and never scrolls sideways. */
+.runcs{flex:none;display:flex;flex-direction:column;gap:8px;padding:8px 24px;max-height:min(55vh,560px);overflow-y:auto;overflow-x:hidden;border-top:1px solid var(--line);background:var(--surface)}
+.runc{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:720px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--raised);border-left:3px solid var(--beam)}
+.runc.ok{border-left-color:var(--calm)}
+.runc.failed{border-left-color:var(--signal-ink)}
+.runc.running{border-left-color:var(--harbour)}
+.runc.prose{border-left-color:var(--line-strong);margin:8px 0;max-width:680px}
+.runc-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;min-width:0}
+.runc-t{font:600 13px/18px var(--ui);color:var(--ink)}
+.runc-why{flex:1 1 14em;min-width:0;font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
+.runc-cmd{margin:0;padding:8px 10px;border-radius:6px;background:var(--sunken);font:400 12.5px/18px var(--mono);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-all;overflow:hidden}
+.runc-cmd.cut{cursor:pointer}
+.runc-cmd.cut:focus-visible{outline:2px solid var(--harbour);outline-offset:1px}
+.runc-dir{font:400 12px/16px var(--mono);color:var(--ink-faint);overflow-wrap:anywhere}
+.runc-root{font:400 12px/16px var(--ui);color:var(--ink-muted)}
+.runc-root.no{color:var(--beam-ink);background:var(--beam-wash);padding:6px 8px;border-radius:6px}
+.runc-o{display:flex;flex-direction:column;gap:2px;min-width:0}
+.runc-more{align-self:flex-start;font:400 11px/16px var(--ui);color:var(--harbour)}
+.runc-out{margin:0;max-height:240px;overflow-y:auto;overflow-x:hidden;padding:6px 8px;border-radius:6px;background:var(--sunken);font:400 11.5px/16px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.runc-res{font:500 12px/16px var(--ui)}
+.runc-res.ok{color:var(--calm)}
+.runc-res.failed{color:var(--signal-ink)}
+.runc-b{display:flex;flex-wrap:wrap;gap:6px}

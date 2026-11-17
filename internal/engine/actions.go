@@ -1,15 +1,12 @@
 package engine
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
-	"github.com/meros/fyr/internal/proc"
 )
 
 // Actions (SPEC 0.5 V0.60, #31; the model is in core/actionspec.go): the agent
@@ -20,26 +17,6 @@ import (
 
 // ScriptRunner runs a script action; tests replace it.
 type ScriptRunner func(ctx context.Context, dir string, argv []string) (out string, exit int, err error)
-
-func runScript(ctx context.Context, dir string, argv []string) (string, int, error) {
-	cmd := proc.Command(ctx, argv[0], argv[1:]...) // #39: the limit stops what the script started too
-	cmd.Dir = dir
-	var b bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &b, &b
-	err := cmd.Run()
-	exit := 0
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		exit = ee.ExitCode()
-	} else if err != nil {
-		exit = -1
-		fmt.Fprintf(&b, "\n%v", err)
-	}
-	if ctx.Err() != nil {
-		fmt.Fprintf(&b, "\nstopped after the time limit")
-	}
-	return b.String(), exit, err
-}
 
 func (e *Engine) offerTool(s *mcp.Server) {
 	s.Add(mcp.Tool{Name: "offer_action",

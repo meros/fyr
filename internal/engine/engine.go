@@ -116,6 +116,16 @@ type Engine struct {
 	// Scripts runs script actions of changes, the thread and its view (V0.60);
 	// nil runs them with exec.
 	Scripts ScriptRunner
+	// LiveScripts runs them streaming their output (V0.149); nil runs them
+	// with exec. Scripts, when set, wins (older tests).
+	LiveScripts LiveScriptRunner
+	// RootPrompt is why a root run request cannot ask for a password here,
+	// or ""; nil reads this host's processes (V0.149 (4)).
+	RootPrompt func() string
+	pressMu    sync.Mutex
+	presses    map[string]*pressRun
+	rootWhy    string
+	rootAt     time.Time
 	Hub     *stream.Hub
 	Now     func() time.Time
 	// Adopt runs t3.adopt's effect; set by main.
@@ -901,7 +911,19 @@ func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 	}
 	return api.Thread{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now),
 		PR: t.MainPR(), Project: e.projectName(t), LiveView: t.ViewOn(),
-		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t), Changes: changes}
+		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t), Changes: changes,
+		RootPrompt: e.threadRootPrompt(t)}
+}
+
+// threadRootPrompt is why the thread's root run requests cannot ask for a
+// password on this host, read only when it has one (V0.149 (4)).
+func (e *Engine) threadRootPrompt(t *core.Thread) string {
+	for _, a := range t.Offers {
+		if a.Request && a.Root {
+			return e.rootPrompt()
+		}
+	}
+	return ""
 }
 
 // Snapshot returns every thread as DTOs, most recently updated first.

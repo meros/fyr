@@ -39,6 +39,8 @@ import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { ChangeList, ThreadOffers, useViewAction } from "./offers-ui.tsx";
+import { ProseCommand, RunRequests } from "./runcard-ui.tsx";
+import { splitProse } from "./runcard.ts";
 import { changeChip, headerPr, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
@@ -260,6 +262,8 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
           delivery={{ cancel: async (messageId) => run("thread.cancelMessage", { messageId }), resend: send }}
         />
       )}
+      {/* V0.149: the commands the agent asked the owner to run, under the newest message, on desktop and phone */}
+      {tab === "conv" && <RunRequests t={t} onRun={run} />}
       {tab === "changes" && (
         <div class="chtab">
           <ChangeList t={t} onRun={run} />
@@ -813,7 +817,10 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
       if (it.quiet) return <QuietLine icon="seen" line={it.text.split("\n").find((x) => x.trim()) ?? ""} full={it.text} />;
       return (
         <div class={`msgw${process ? " proc" : ""}`}>
-          <div class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(it.text, host, api.attachmentUrl) }} />
+          {/* V0.149 (8): a command the message asks the owner to run is a card (Copy only), never a block that scrolls */}
+          {splitProse(it.text).map((part, i) =>
+            part.kind === "cmd" ? <ProseCommand key={i} text={part.text} /> : <div key={i} class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(part.text, host, api.attachmentUrl) }} />,
+          )}
           <CopyButton text={copySource({ kind: "message", text: it.text })} label="Copy message" cls="msgcp" />
         </div>
       );

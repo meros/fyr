@@ -94,7 +94,8 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
 
 /** The thread's own actions (V0.60): in the header, above the tabs. */
 export function ThreadOffers({ t, onRun }: { t: Thread; onRun: Run }) {
-  return <OfferBar on="thread" offers={t.offers} runs={t.runs} cwd={t.cwd} onRun={onRun} />;
+  // V0.149: a run request is a card under the conversation, not a header button
+  return <OfferBar on="thread" offers={t.offers?.filter((o) => !o.request)} runs={t.runs} cwd={t.cwd} onRun={onRun} />;
 }
 
 /** The view's actions run through its page (fyr.run, data-action); the owner confirms a script or a fyr action

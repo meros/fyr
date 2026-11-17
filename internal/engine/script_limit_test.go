@@ -19,7 +19,7 @@ func TestScriptActionLimitKillsBackgroundChild(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	out, exit, err := runScript(ctx, dir, []string{"sh", "-c", "sleep 600 & echo $! > child.pid; wait"})
+	out, exit, err := runScriptLive(ctx, dir, []string{"sh", "-c", "sleep 600 & echo $! > child.pid; wait"}, nil)
 	took := time.Since(start)
 	if err == nil {
 		t.Fatalf("a script past its limit reported success: %q", out)

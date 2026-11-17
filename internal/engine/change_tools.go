@@ -33,7 +33,8 @@ const (
 func alias(of, desc string) string { return "Alias of " + of + " for one release. " + desc }
 
 func (e *Engine) changeTools(s *mcp.Server) {
-	e.offerTool(s) // V0.60
+	e.offerTool(s)      // V0.60
+	e.runRequestTool(s) // V0.149
 	s.Add(mcp.Tool{Name: "change_unchanged", Hidden: true,
 		Description: alias("nothing", "Fyr keeps your changes current itself; this does nothing."),
 		Schema:      obj(map[string]any{"reason": str("Ignored.")}),

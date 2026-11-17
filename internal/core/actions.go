@@ -66,6 +66,8 @@ type Script struct {
 	Argv       []string `json:"argv"`
 	Dir        string   `json:"dir,omitempty"`
 	TimeoutSec int      `json:"timeoutSec,omitempty"`
+	// Root runs argv as root through pkexec (V0.149).
+	Root bool `json:"root,omitempty"`
 }
 
 // Press is an action the owner pressed: where, and what it was.

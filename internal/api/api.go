@@ -63,6 +63,10 @@ type Thread struct {
 	// Changes are the thread's own changes and the host records it shows
 	// (#35), each record once with the threads that show it.
 	Changes []core.Change `json:"changes,omitempty"`
+	// RootPrompt is why a root run request cannot ask for the owner's
+	// password on the thread's host, or "" (V0.149 (4)); set only when the
+	// thread has one.
+	RootPrompt string `json:"rootPrompt,omitempty"`
 }
 
 // View is the owner's view as clients read it: the snooze is derived

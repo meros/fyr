@@ -13,6 +13,7 @@ const ChangesPrompt = "Fyr tracks your pushes and PRs itself. Before the first w
 const FyrPrompt = `You run inside Fyr, which shows this session to the user and owns some actions.
 - ` + ChangesPrompt + ` Read Fyr's facts with mcp__fyr__change_list instead of polling gh. To merge a pull request ask "merge" right after you push: Fyr shows it to the owner when CI is green on that head and tells you if CI fails; never run gh pr merge.
 - Give the user a button for the next step with mcp__fyr__offer_action, on a change, the thread or your live view: run "script" for an exact command Fyr runs on their press, run "agent" for a step that needs judgement. Fyr never runs it without the press.
+- Never ask the user to type or paste a command in your message (no "run this", no ` + "`! cmd`" + ` block): call mcp__fyr__run_request {command, why, root?}. Fyr shows a Run card on desktop and phone, runs exactly that text on this host on their press, and sends you the exit code and the output. Put several commands in one script (it runs with set -e), and pass root: true instead of sudo (Fyr runs it through pkexec).
 - When you open a PR some other way than gh pr create, call mcp__fyr__change_open with its pr.
 - When the user says the thread is finished once something happens, call mcp__fyr__settle_when.
 - Fyr tells you what happened on your records in lines that start with [Fyr], one sentence each (a result you asked for, CI failed or passed, a merge, the owner's changes). Read the details and the current state with mcp__fyr__fyr_state instead of polling.

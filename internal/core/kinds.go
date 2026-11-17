@@ -788,7 +788,7 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 	}
 	h.Started(a, now)
 	res := Result{Reply: map[string]any{"on": on, "action": a.ID},
-		Events: []Event{{"action", map[string]any{"on": on, "title": title, "action": a.ID, "label": a.Label, "run": a.Run, "argv": a.Argv, "by": "owner"}}}}
+		Events: []Event{{"action", pressData(on, title, a, map[string]any{"by": "owner"})}}}
 	press := &Press{On: on, Title: title, Action: a}
 	switch a.Run {
 	case RunFyr:
@@ -807,7 +807,7 @@ func reducePress(r Rec, in Input, now time.Time) (Result, error) {
 		if dir == "" {
 			dir = t.Cwd
 		}
-		res.Effects = []Effect{{Kind: EffectScript, Press: press, Script: &Script{Argv: a.Argv, Dir: dir, TimeoutSec: a.TimeoutSec}}}
+		res.Effects = []Effect{{Kind: EffectScript, Press: press, Script: &Script{Argv: a.Argv, Dir: dir, TimeoutSec: a.TimeoutSec, Root: a.Root}}}
 	}
 	return res, nil
 }

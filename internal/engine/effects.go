@@ -81,18 +81,13 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 		}
 		return res(true, 0, "Started thread "+r.ThreadID+"."), false
 	case core.EffectScript:
-		limit := time.Duration(ef.Script.TimeoutSec) * time.Second
-		if limit == 0 {
-			limit = 10 * time.Minute
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), limit)
-		run := e.Scripts
-		if run == nil {
-			run = runScript
-		}
-		out, exit, err := run(ctx, ef.Script.Dir, ef.Script.Argv)
-		cancel()
+		out, exit, err := e.runPress(threadID, ef) // V0.149: streamed, stoppable, root through pkexec
 		return res(err == nil, exit, out), false
+	case core.EffectScriptStop:
+		if ef.Press != nil {
+			e.stopPress(threadID, ef.Press)
+		}
+		return nil, false
 	case core.EffectGit:
 		e.observeGit(threadID, ef.Git)
 		return nil, false
