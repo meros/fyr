@@ -67,7 +67,10 @@ type ThreadLoad struct {
 	// memory.peak, and the class of the job its slot runs now.
 	CPUPressure *float64 `json:"cpuPressure,omitempty"`
 	Peak        uint64   `json:"peak,omitempty"`
-	Job         string   `json:"job,omitempty"`
+	// Working is the working set, memory.current less inactive_file (V0.164):
+	// what the undeclared-work detector reads; Memory stays the raw reading.
+	Working uint64 `json:"-"`
+	Job     string `json:"job,omitempty"`
 	// Paused: the memory guard froze this thread's job (decision 0029 S5).
 	Paused bool `json:"paused,omitempty"`
 }
@@ -88,6 +91,13 @@ type Sampler struct {
 	Jobs  *Jobs
 	// Groups keeps the holders' jobs in their own cgroups (S5); optional.
 	Groups *JobGroups
+	// V0.164: the detector of undeclared heavy work, its settings (nil is the
+	// defaults) and, on a host without the cgroup tree, the reader of the
+	// process tree under each thread's CLI (CLIs says each thread's pid).
+	Detect       *Detector
+	DetectConfig func() UndeclaredConfig
+	Trees        *TreeReader
+	CLIs         func() map[string]int
 
 	mu     lockwatch.Mutex
 	pub    atomic.Pointer[Load] // the last read, for readers that must not wait
@@ -158,6 +168,7 @@ func (s *Sampler) now() time.Time {
 // host calls it every ProbeEvery, whether or not a client asks.
 func (s *Sampler) Tick() {
 	l := s.get()
+	s.detect(l)
 	if s.Jobs == nil || s.Slots == nil || s.Slots.Off() {
 		return
 	}
@@ -287,6 +298,10 @@ func (s *Sampler) get() Load {
 			}
 			d := filepath.Join(agents, e.Name())
 			t := ThreadLoad{ID: e.Name(), Memory: readBytes(filepath.Join(d, "memory.current")), Peak: readBytes(filepath.Join(d, "memory.peak"))}
+			t.Working = t.Memory
+			if in, ok := readKey(filepath.Join(d, "memory.stat"), "inactive_file"); ok && in <= t.Memory {
+				t.Working -= in
+			}
 			if u, ok := readKey(filepath.Join(d, "cpu.stat"), "usage_usec"); ok {
 				t.CPU = cpu(e.Name(), u)
 			}

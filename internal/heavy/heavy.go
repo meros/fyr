@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // Pattern is one heavy command: Re matches it, Name is its class, where $1
@@ -45,8 +46,54 @@ type rule struct {
 	re   *regexp.Regexp
 }
 
-// Matcher names the class of a command.
-type Matcher struct{ rules []rule }
+// Matcher names the class of a command. V0.164: the owner's added patterns
+// (SetAdded) are read after the others, and may change while it runs.
+type Matcher struct {
+	rules []rule
+
+	mu      sync.RWMutex
+	added   []rule
+	refused map[string]int
+}
+
+// SetAdded replaces the owner's added patterns (V0.164); a pattern that does
+// not compile is an error and changes nothing.
+func (m *Matcher) SetAdded(ps []Pattern) error {
+	var rs []rule
+	for _, p := range ps {
+		re, err := regexp.Compile(`^(?:` + p.Re + `)`)
+		if err != nil {
+			return fmt.Errorf("heavy command %q: %w", p.Name, err)
+		}
+		rs = append(rs, rule{p.Name, re})
+	}
+	m.mu.Lock()
+	m.added = rs
+	m.mu.Unlock()
+	return nil
+}
+
+// Refused counts a refusal of class by the gate (V0.164: shown with an added
+// pattern); a class that is not an added pattern's is ignored.
+func (m *Matcher) Refused(class string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, r := range m.added {
+		if r.name == class {
+			if m.refused == nil {
+				m.refused = map[string]int{}
+			}
+			m.refused[class]++
+		}
+	}
+}
+
+// RefusedCount is how often the gate refused class since this start.
+func (m *Matcher) RefusedCount(class string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.refused[class]
+}
 
 // New compiles ps; a pattern that does not compile is an error.
 func New(ps []Pattern) (*Matcher, error) {
@@ -132,8 +179,11 @@ func (m *Matcher) Match(cmd string) (class, text string) {
 	}
 	cmd = message.ReplaceAllString(cmd, " ''")
 	best, bestLen, bestText := "", 0, ""
+	m.mu.RLock()
+	all := append(append([]rule(nil), m.rules...), m.added...)
+	m.mu.RUnlock()
 	for _, seg := range segments(cmd) {
-		for _, r := range m.rules {
+		for _, r := range all {
 			loc := r.re.FindStringSubmatchIndex(seg)
 			if loc == nil || loc[1]-loc[0] <= bestLen {
 				continue

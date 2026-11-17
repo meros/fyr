@@ -13,9 +13,9 @@ func extra(name string, cpu float64, mem uint64) Extra {
 }
 
 func TestB1AFlaggedThreadsCPUMakesTheHeadWait(t *testing.T) {
-	held := []Need{{CPU: 2.4, Mem: gb}}                    // 40 % of 6 cores
-	flagged := []Extra{extra("Map perf", 3, gb)}           // 50 %
-	head := Need{CPU: 1.8, Mem: gb}                        // 30 %
+	held := []Need{{CPU: 2.4, Mem: gb}}          // 40 % of 6 cores
+	flagged := []Extra{extra("Map perf", 3, gb)} // 50 %
+	head := Need{CPU: 1.8, Mem: gb}              // 30 %
 	ok, why, res := DecideWith(DefaultPolicy, host6, Full, 2, held, flagged, "t_head", head)
 	if ok || res != ResCPU || why != "needs ≈ 30 % CPU, 10 % free (Map perf uses 50 % undeclared)" {
 		t.Fatalf("%v %q %q", ok, why, res)

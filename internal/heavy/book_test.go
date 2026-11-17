@@ -24,10 +24,10 @@ func newBook(t *testing.T) (*Book, *Matcher, mapKV) {
 
 func TestSuggestIsProgramAndFirstArgumentEscaped(t *testing.T) {
 	for cmd, want := range map[string]string{
-		"yarn pre-push:check":                       `yarn pre-push:check`,
-		"node test/layout.run.mjs --shard 2":         `node test/layout\.run\.mjs`,
+		"yarn pre-push:check":                                          `yarn pre-push:check`,
+		"node test/layout.run.mjs --shard 2":                           `node test/layout\.run\.mjs`,
 		"cd web && node --max-old-space-size=4096 scripts/big.mjs --x": `node scripts/big\.mjs`,
-		"FOO=1 timeout 60 ./gradlew assemble":        `\./gradlew assemble`,
+		"FOO=1 timeout 60 ./gradlew assemble":                          `\./gradlew assemble`,
 	} {
 		got, _ := Suggest(cmd)
 		if got != want {

@@ -16,7 +16,7 @@ func fakeProc2(t *testing.T, proc string, pid, ppid int, start int, rssPages int
 	write(t, filepath.Join(proc, fmt.Sprint(pid), "cmdline"), strings.Join(argv, "\x00")+"\x00")
 	// pid (comm) state ppid pgrp session tty tpgid flags minflt cminflt majflt cmajflt utime stime cutime cstime
 	// priority nice threads itrealvalue starttime
-	write(t, filepath.Join(proc, fmt.Sprint(pid), "stat"), fmt.Sprintf("%d (x) S %d 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 %d 0 0\n", pid, ppid, start))
+	write(t, filepath.Join(proc, fmt.Sprint(pid), "stat"), fmt.Sprintf("%d (x) S %d 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 %d 0 0\n", pid, ppid, start))
 	write(t, filepath.Join(proc, fmt.Sprint(pid), "statm"), fmt.Sprintf("100 %d 0 0 0 0 0\n", rssPages))
 }
 
@@ -30,8 +30,8 @@ func TestC1TheRootIsTheNewShellAndItsCommandTheOneTheGateSaw(t *testing.T) {
 	write(t, filepath.Join(proc, "stat"), fmt.Sprintf("cpu 1 2 3\nbtime %d\n", boot.Unix()))
 	over := boot.Add(2 * time.Hour) // the first reading over, 7200 s after boot
 	tick := func(s float64) int { return int(s * 100) }
-	fakeProc2(t, proc, 10, 1, tick(100), 100, "claude", "--output-format", "stream-json")                                  // the CLI
-	fakeProc2(t, proc, 11, 10, tick(110), 300000, "node", "mcp-server.js")                                                    // an old MCP server, big
+	fakeProc2(t, proc, 10, 1, tick(100), 100, "claude", "--output-format", "stream-json")                                 // the CLI
+	fakeProc2(t, proc, 11, 10, tick(110), 300000, "node", "mcp-server.js")                                                // an old MCP server, big
 	fakeProc2(t, proc, 20, 10, tick(7200-5), 10, "/bin/zsh", "-c", "source snap && eval 'cd web && yarn pre-push:check'") // new: 5 s before the first over reading
 	fakeProc2(t, proc, 21, 20, tick(7200+1), 4000, "node", "x.js")
 	fakeProc2(t, proc, 22, 20, tick(7200+2), 2000, "node", "y.js")
