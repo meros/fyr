@@ -41,7 +41,7 @@ Next to the sampler, a probe in this thread's cgroup timed a fixed 20 ms CPU bur
 What the window showed:
 - **Fyr alone filled the machine.** Agents used the whole `agents/cpu.max` (4.0 cores) more than half the time. A new job ran at under half speed 57 % of the time, and at under a quarter 33 % of the time.
 - **Slots were not the limit. 73 % of agent CPU came from threads that held no slot.** At most one thread was ever queued. The heaviest work was:
-  - a Acme e2e/screenshot thread: 1.0 cores on average, 7.9 GB, peak 9.6 GB, 3.7 GB swapped;
+  - an e2e/screenshot thread of another project: 1.0 cores on average, 7.9 GB, peak 9.6 GB, 3.7 GB swapped;
   - a Python data build (`build_admin_ny.py`): 4.7 GB plus 4.8 GB in swap;
   - a Node app at 4.2 GB.
   None of these held a slot most of the time. This is #174, measured.
@@ -139,7 +139,7 @@ This matches prior art:
 
 ## 2. Identifying a job and learning its cost
 
-**Job class** = project + normalised command, for example `fyr: make test`, `fyr: go test ./...`, `Acme: yarn screenshot:diff` or `Acme: playwright`. The thread is only for attribution: threads are short-lived, while a class recurs across them. The command comes from the gate hook (PreToolUse on Bash, `internal/agent/hooks.go`), which already sees every Bash command. The patterns are #174's host setting (one list for "heavy" and for "class"). The longest matching pattern names the class; an unmatched job in a slot falls back to `project: <kind>`.
+**Job class** = project + normalised command, for example `fyr: make test`, `fyr: go test ./...`, `shop: yarn screenshot:diff` or `shop: playwright`. The thread is only for attribution: threads are short-lived, while a class recurs across them. The command comes from the gate hook (PreToolUse on Bash, `internal/agent/hooks.go`), which already sees every Bash command. The patterns are #174's host setting (one list for "heavy" and for "class"). The longest matching pattern names the class; an unmatched job in a slot falls back to `project: <kind>`.
 
 **Cost unit.** Today's default pool is 2 slots, so **1.0 = half of what agents may use** (C ÷ N0, section 0). On this desktop that is 2 cores or 6.5 GB; on a 16-core, 64 GB server with an 80 % share it would be 8 cores or 25.6 GB. A job's cost is its dominant share, as in Dominant Resource Fairness (Ghodsi et al., NSDI 2011): the larger of the CPU and memory shares.
 
