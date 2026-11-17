@@ -70,6 +70,7 @@ type JobClass struct {
 type hold struct {
 	kind              string
 	since, last       time.Time
+	active            time.Time // #174: the newest heavy command or busy reading
 	class             string
 	cpu0, stall0      uint64
 	cpu, stall        uint64
@@ -86,6 +87,8 @@ type hold struct {
 type Jobs struct {
 	KV      slots.KV
 	Project func(thread string) string
+	// Now is the clock of Saw; default time.Now.
+	Now func() time.Time
 
 	mu     sync.Mutex
 	holds  map[string]*hold
@@ -125,8 +128,35 @@ func (j *Jobs) Saw(thread, class string) {
 	j.load()
 	if h := j.holds[thread]; h != nil {
 		h.class = class
+		h.active = j.now()
 	}
 	j.seen[thread] = class
+}
+
+func (j *Jobs) now() time.Time {
+	if j.Now != nil {
+		return j.Now()
+	}
+	return time.Now()
+}
+
+// busyAbove is how many cores above its baseline a holder must use to count
+// as running its job (#174).
+const busyAbove = 0.25
+
+// Active is when thread's hold last ran its job: its newest heavy command
+// or a reading above its baseline; false without a hold (#174).
+func (j *Jobs) Active(thread string) (time.Time, bool) {
+	if j == nil {
+		return time.Time{}, false
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	h := j.holds[thread]
+	if h == nil {
+		return time.Time{}, false
+	}
+	return h.active, true
 }
 
 // Records are the kept records, the oldest first.
@@ -203,7 +233,7 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 			dir = filepath.Join(t.root, "agents", unsafe.ReplaceAllString(sh.Owner, "_"))
 		}
 		if h == nil {
-			h = &hold{kind: sh.Kind, since: sh.Since, last: now, class: j.seen[sh.Owner]}
+			h = &hold{kind: sh.Kind, since: sh.Since, last: now, active: now, class: j.seen[sh.Owner]}
 			if r := rates[sh.Owner]; r != nil {
 				h.base = min(*r, baselineMax)
 			}
@@ -228,10 +258,14 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 			j.holds[sh.Owner] = h
 			continue
 		}
+		prevAt, prevCPU := h.last, h.cpu
 		h.last = now
 		if dir != "" {
 			if u, ok := readKey(filepath.Join(dir, "cpu.stat"), "usage_usec"); ok {
 				h.cpu = u
+				if dt := now.Sub(prevAt).Seconds(); dt > 0 && u >= prevCPU && float64(u-prevCPU)/1e6/dt > h.base+busyAbove {
+					h.active = now
+				}
 			}
 			if p, ok := readPSI(filepath.Join(dir, "cpu.pressure")); ok {
 				h.stall = p.someTotal

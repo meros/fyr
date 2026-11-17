@@ -250,7 +250,16 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		log.Fatal(err)
 	}
 	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
-	mgr.SetOnBash(func(thread, c string) { jobs.Saw(thread, heavyCmds.Class(c)) })
+	// #174: the gate hook refuses a heavy command without a held slot.
+	mgr.SetOnBash(func(thread, c string) string {
+		class := heavyCmds.Class(c)
+		jobs.Saw(thread, class)
+		if cfg.HeavyGate == "off" {
+			return ""
+		}
+		return eng.HeavyGate(thread, class)
+	})
+	eng.SlotActive = jobs.Active
 	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs} // V0.80, V0.86
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

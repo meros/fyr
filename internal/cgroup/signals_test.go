@@ -192,3 +192,42 @@ func TestS1AHoldWithoutAMatchedCommandIsNamedByItsKind(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+// #174: a hold is active at its grant, at each heavy command and at each reading above its baseline; an idle hold
+// keeps its last active time.
+func TestH174HoldActivity(t *testing.T) {
+	o, _ := fakeFS(t, "0::/"+unit+"\n")
+	tr := Setup(o)
+	td := tr.Thread("t_a")
+	usec := 0
+	stat := func() { write(t, filepath.Join(td, "cpu.stat"), fmt.Sprintf("usage_usec %d\n", usec)) }
+	stat()
+	write(t, filepath.Join(td, "memory.current"), "0\n")
+	t0 := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	now := t0
+	pool := slots.New(2)
+	pool.Now = func() time.Time { return now }
+	j := &Jobs{KV: kv{}, Now: func() time.Time { return now }}
+	s := &Sampler{Tree: tr, Proc: t.TempDir(), Cores: 4, Slots: pool, Jobs: j, Now: func() time.Time { return now }}
+	if _, ok := j.Active("t_a"); ok {
+		t.Fatal("active without a hold")
+	}
+	pool.Acquire("t_a", slots.Test)
+	s.Tick()
+	if at, ok := j.Active("t_a"); !ok || !at.Equal(t0) {
+		t.Fatalf("at the grant %v %v", at, ok)
+	}
+	now = t0.Add(10 * time.Second) // 1 core for 10 s: busy
+	usec += 10_000_000
+	stat()
+	s.Tick()
+	now = t0.Add(5 * time.Minute) // idle since
+	s.Tick()
+	if at, _ := j.Active("t_a"); !at.Equal(t0.Add(10 * time.Second)) {
+		t.Fatalf("after a busy then an idle reading %v", at)
+	}
+	j.Saw("t_a", "make test")
+	if at, _ := j.Active("t_a"); !at.Equal(now) {
+		t.Fatalf("after a heavy command %v", at)
+	}
+}
