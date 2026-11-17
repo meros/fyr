@@ -956,11 +956,12 @@ button.ptag{padding:0}
 .rail .rpips em{font:600 9px/11px var(--mono);font-style:normal;color:var(--signal-ink);margin-left:1px}
 .rail .rldr small.rlds{white-space:nowrap}
 /* Decision 0029 S2: the slot budget in use as a bar under the ring. */
-.rail .rbar{display:flex;flex-direction:column;align-items:center;gap:1px;width:30px}
-.rail .rbar .trk{display:block;width:100%;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
+.rail .rbar{display:flex;flex-direction:column;align-items:center;gap:0;width:30px;height:11px}
+.rail .rbar .trk{display:block;width:100%;height:3px;border-radius:2px;background:var(--line);overflow:hidden}
 .rail .rbar .trk i{display:block;height:100%;background:var(--ink-muted)}
 .rail .rbar.hot .trk i{background:var(--signal-ink)}
-.rail .rbar small{font:600 9px/11px var(--mono);color:var(--ink-muted);white-space:nowrap}
+/* The bar keeps the pips' 11 px (V0.141: the rail's middle fits at 900 px with two hosts). */
+.rail .rbar small{font:600 8px/8px var(--mono);color:var(--ink-muted);white-space:nowrap}
 .rail .rbar.hot small,.rail .rbar em{color:var(--signal-ink)}
 .rail .rbar em{font-style:normal;margin-left:1px}
 .rail .rld .hot,.tcpu.hot{color:var(--signal-ink);font-weight:600}
@@ -1387,6 +1388,8 @@ label.sr{cursor:pointer}
 .sqp .sqk{font:400 11px/16px var(--mono);color:var(--ink-faint)}
 .sqhn{padding:6px 8px 2px;font:500 11px/16px var(--mono);color:var(--ink-faint)}
 .sqhn.m{padding:8px 16px 2px}
+.sqwhy{padding:2px 8px 4px;font-size:12px;line-height:16px;color:var(--ink-muted)}
+.sqwhy.m{padding:2px 16px 6px;font-size:13px}
 .sqerr{margin:4px 8px;padding:6px 8px;border-radius:6px;background:var(--sunken);color:var(--signal-ink);font:400 12px/16px var(--ui)}
 .one.lift{background:var(--select);box-shadow:0 6px 18px rgba(0,0,0,.18);position:relative;z-index:1}
 .one.drop{box-shadow:inset 0 2px 0 var(--harbour)}

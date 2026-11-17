@@ -1746,6 +1746,8 @@ try {
   })()`);
   check(r.text === "10" && r.hot && /load 10\.4/.test(r.tip) && /CPU pressure 46 %/.test(r.tip), `V0.80 desktop: the rail's load is wrong (${JSON.stringify(r)})`);
   // Decision 0029 S2: a host that admits by a budget shows it as a bar ("2.0/2", full, hot with "+1") in place of the pips.
+  const why = await evaluate(`(() => { const w = document.querySelector('#sec-slots .sqwhy'), s = document.querySelector('.list')?.getBoundingClientRect(), b = w?.getBoundingClientRect(); return { text: w?.textContent ?? '', inside: !!b && !!s && b.left >= s.left - 0.5 && b.right <= s.right + 0.5 }; })()`);
+  check(why.text === "The next waits: 2.0 of 2.0 in use" && why.inside, `S2 desktop: the queue does not say why the next job waits (${JSON.stringify(why)})`);
   check(r.pips === 0 && r.bar === "2.0/2+1" && r.barHot && r.barFill === 100 && r.wait === "+1" && r.barIn, `S2 desktop: the rail's slot budget bar is wrong (${JSON.stringify(r)})`);
   check(r.inside && r.hit === 0 && r.aboveQuota, `V0.80 desktop: the load line is outside the rail, covers an item or sits below the quota (${JSON.stringify(r)})`);
   check(r.cpu === "2.6 cores" && r.cpuHot && r.inRow, `V0.80 desktop: the hot thread's CPU is missing or outside its row (${JSON.stringify(r)})`);
@@ -1774,6 +1776,9 @@ section('V0.142', async (h) => {
       return { text: s.textContent, inside: b.top >= a.top - 0.5 && b.bottom <= a.bottom + 0.5 && b.right <= Math.min(a.right, s.closest('.ell').getBoundingClientRect().right) + 0.5, vw: innerWidth };
     })()`);
     check(r.text === "yarn build · 3.0 GB" && r.inside, `V0.142 phone: the holder's job is missing or outside its row (${JSON.stringify(r)})`);
+    // Decision 0029 S2: the phone's queue says why the next job waits too, inside the screen.
+    const w = await evaluate(`(() => { const e = document.querySelector('#m-sec-slots .sqwhy'), b = e?.getBoundingClientRect(); return { text: e?.textContent ?? '', inside: !!b && b.left >= 0 && b.right <= innerWidth + 0.5 }; })()`);
+    check(w.text === "The next waits: 2.0 of 2.0 in use" && w.inside, `S2 phone: the queue does not say why the next job waits (${JSON.stringify(w)})`);
   } catch (e) {
     failures.push(`V0.142 phone: ${e.message}`);
   }
