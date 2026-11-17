@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/meros/fyr/internal/auth"
 )
@@ -135,8 +136,10 @@ func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
 		if err := os.WriteFile(rf, b, 0o600); err != nil {
 			return nil, err
 		}
-		caller.PeerPort = freePort()
-		extra := map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.PeerPort)), "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": caFile}
+		// The peer port is chosen by the kernel at the first start (a port found free
+		// beforehand can be taken by another test before fyrd binds it) and then kept for
+		// the restarts a test makes.
+		extra := map[string]any{"serveSocketUsers": []int{os.Getuid()}, "peerListen": "127.0.0.1:0", "peerEverySeconds": 1, "resolveFile": rf, "rootCAs": caFile}
 		if caller.Spec.HostListen {
 			caller.HostPort = freePort()
 			extra["hostListen"] = net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.HostPort))
@@ -146,6 +149,23 @@ func NewMesh(specs ...MeshSpec) (m *Mesh, err error) {
 			return nil, err
 		}
 		m.cleanups = append(m.cleanups, caller.Fyrd.Stop)
+		r, err := caller.Fyrd.WaitRoster(30*time.Second, func(r *Roster) bool {
+			for _, mm := range r.Members {
+				if mm.Self && mm.Port != 0 {
+					return true
+				}
+			}
+			return false
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, mm := range r.Members {
+			if mm.Self {
+				caller.PeerPort = mm.Port
+			}
+		}
+		caller.Fyrd.opts.Extra["peerListen"] = net.JoinHostPort("127.0.0.1", strconv.Itoa(caller.PeerPort))
 	}
 	return m, nil
 }
