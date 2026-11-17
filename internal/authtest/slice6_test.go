@@ -331,6 +331,7 @@ func TestAPhoneWithTheOwnersCertificateSignsInByQR(t *testing.T) {
 	req, _ := http.NewRequest("POST", base+"/auth/once", strings.NewReader(`{"token":"`+tok+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", base)
+	req.Header.Set("X-Fyr", "1") // what the client sends on every change
 	resp, err := hc.Do(req)
 	if err != nil {
 		t.Fatal(err)
