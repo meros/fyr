@@ -126,13 +126,21 @@ func (h *harness) create(text string) string {
 	return r.ThreadID
 }
 
+// viewOf copies the owner's view of a thread under e.mu: view reads and
+// fills e.views, which the engine writes from its effect goroutines.
+func (h *harness) viewOf(id string) core.View {
+	h.e.mu.Lock()
+	defer h.e.mu.Unlock()
+	return *h.e.view(id)
+}
+
 func (h *harness) wait(id string, what string, ok func(t core.Thread, a core.Attention) bool) core.Thread {
 	h.t.Helper()
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		t, _ := h.e.Thread(id)
-		v := h.e.view(id)
-		if ok(t, core.Compute(&t, v, time.Now())) {
+		v := h.viewOf(id)
+		if ok(t, core.Compute(&t, &v, time.Now())) {
 			return t
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -240,7 +248,8 @@ func TestFailureAndRetry(t *testing.T) {
 		t.Fatalf("class %q", th.Failure.Class)
 	}
 	h.cmd("thread.markSeen", id, nil)
-	if a := core.Compute(&th, h.e.view(id), time.Now()); a.State != core.Failed {
+	v := h.viewOf(id)
+	if a := core.Compute(&th, &v, time.Now()); a.State != core.Failed {
 		t.Fatal("a visit hid the failure")
 	}
 	if r := h.cmd("thread.retry", id, nil); !r.OK {
