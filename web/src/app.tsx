@@ -683,7 +683,7 @@ function App() {
   };
 
   // ---- right-click menu (V0.31) ----
-  const [ctx, setCtx] = useState<{ x: number; y: number; items: MenuEntry[]; target: MenuTarget } | null>(null);
+  const [ctx, setCtx] = useState<{ x: number; y: number; items: MenuEntry[]; target: MenuTarget; anchor: Element | null } | null>(null);
   useEffect(() => {
     const on = (e: MouseEvent) => {
       const selection = String(window.getSelection?.() ?? "").trim();
@@ -692,7 +692,7 @@ function App() {
       if (items === null) return; // text fields keep the browser menu (spelling, Paste)
       e.preventDefault();
       if (phone || !items.length) return;
-      setCtx({ x: e.clientX, y: e.clientY, items, target });
+      setCtx({ x: e.clientX, y: e.clientY, items, target, anchor: (e.target as Element | null)?.closest?.("[data-id]") ?? (e.target as Element | null) });
     };
     document.addEventListener("contextmenu", on);
     return () => document.removeEventListener("contextmenu", on);
@@ -726,7 +726,12 @@ function App() {
     else if (it.id === "copyLink" && target.kind === "link") copyText(target.href);
     else if (it.id === "openImage" && target.kind === "image") window.open(target.src, "_blank", "noopener");
   };
-  const ctxMenu = ctx && <ContextMenu x={ctx.x} y={ctx.y} items={ctx.items} onPick={(it) => pickMenu(it, ctx.target)} onClose={() => setCtx(null)} />;
+  // A thread's menu follows the thread while it is open (its state can change under the pointer); the action goes to
+  // the row's own thread id, the same settle() as the thread's button and `e`.
+  const ctxTarget: MenuTarget | null = ctx && (ctx.target.kind === "thread" ? (store.threads[ctx.target.t.id] ? { kind: "thread", t: store.threads[ctx.target.t.id] } : null) : ctx.target);
+  const ctxMenu = ctx && ctxTarget && (
+    <ContextMenu x={ctx.x} y={ctx.y} items={ctx.target.kind === "thread" ? (menuFor(ctxTarget) ?? []) : ctx.items} anchor={ctx.anchor} onPick={(it) => pickMenu(it, ctxTarget)} onClose={() => setCtx(null)} />
+  );
 
   const submitAsk = (d: Decision) => {
     const cs = cards[d.id];

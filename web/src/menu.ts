@@ -59,6 +59,16 @@ export function menuFor(target: MenuTarget): MenuEntry[] | null {
   }
 }
 
+/** Whether a scroll moved what the menu was opened on, so the menu must close (V0.31): its top on screen before and
+ *  after, null when it is unknown (no anchor, or the anchor left the page). A scroll that leaves it in place, such as
+ *  the open thread following a run's output, or the browser's scroll anchoring in the list, keeps the menu open:
+ *  closing the menu there made a Settle picked from a row's menu land on the row instead. */
+export function anchorMoved(before: number | null, after: number | null): boolean {
+  if (before === null) return true;
+  if (after === null) return false; // the row re-rendered elsewhere; the menu acts on the thread id, not the element
+  return Math.abs(after - before) > 2;
+}
+
 /** Where a right-click landed, from the DOM (desktop and phone). */
 export function targetAt(el: Element | null, selection: string, threads: Record<string, Thread>): MenuTarget {
   if (!el) return { kind: "none" };

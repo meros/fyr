@@ -1,9 +1,11 @@
 // SPEC 0.5 V0.31: Fyr's right-click menu. Opens at the pointer, stays inside the
-// window, works from the keyboard, closes on a click outside, a scroll or Escape.
+// window, works from the keyboard, closes on a click outside, a scroll that moves what it was
+// opened on, or Escape.
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { MenuEntry, MenuItem } from "./menu.ts";
+import { anchorMoved, type MenuEntry, type MenuItem } from "./menu.ts";
 
-export function ContextMenu({ x, y, items, onPick, onClose }: { x: number; y: number; items: MenuEntry[]; onPick(it: MenuItem): void; onClose(): void }) {
+/** anchor: the element the menu was opened on; a scroll closes the menu only when it moves that element. */
+export function ContextMenu({ x, y, items, anchor, onPick, onClose }: { x: number; y: number; items: MenuEntry[]; anchor?: Element | null; onPick(it: MenuItem): void; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
   useLayoutEffect(() => {
@@ -20,13 +22,18 @@ export function ContextMenu({ x, y, items, onPick, onClose }: { x: number; y: nu
       if (!ref.current?.contains(e.target as Node)) onClose();
     };
     const close = () => onClose();
+    const top = () => (anchor?.isConnected ? anchor.getBoundingClientRect().top : null);
+    const top0 = anchor ? top() : null;
+    const scrolled = () => {
+      if (anchorMoved(top0, top())) onClose();
+    };
     document.addEventListener("mousedown", away, true);
-    window.addEventListener("scroll", close, true);
+    window.addEventListener("scroll", scrolled, true);
     window.addEventListener("blur", close);
     window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("mousedown", away, true);
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", scrolled, true);
       window.removeEventListener("blur", close);
       window.removeEventListener("resize", close);
     };

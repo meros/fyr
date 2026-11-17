@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.31: Fyr's own right-click menu, chosen by where the click lands.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { menuFor, threadMenu, type MenuEntry } from "../src/menu.ts";
+import { anchorMoved, menuFor, threadMenu, type MenuEntry } from "../src/menu.ts";
 import { thread } from "./helpers.ts";
 
 const labels = (m: MenuEntry[]) => m.map((x) => ("sep" in x ? "—" : x.label));
@@ -49,4 +49,32 @@ test("Dismiss PR for a merged PR only", () => {
   assert.ok(labels(threadMenu(merged)).includes("Dismiss PR"));
   const open = thread("t7", "seen", "seen", { pr: { url: "u", number: 16, state: "OPEN" } });
   assert.ok(!labels(threadMenu(open)).includes("Dismiss PR"));
+});
+
+// V0.31, V0.106: Settle is in a row's menu in every state the host allows it, and a scroll elsewhere (the open thread
+// following its run) does not close the menu under the pointer.
+test("Settle is offered for a row in each state, with the row's own id", () => {
+  const settleOf = (t: ReturnType<typeof thread>) => threadMenu(t).find((x) => !("sep" in x) && x.id === "settle") as { disabled?: string } | undefined;
+  for (const t of [
+    thread("t_idle", "seen", "seen"),
+    thread("t_run", "working", "working", { running: true }),
+    thread("t_done", "done", "needs"),
+    thread("t_fail", "failed", "needs"),
+    thread("t_pin", "seen", "seen", { pinnedAt: "2026-11-16T10:00:00Z" }),
+    thread("t_snz", "snoozed", "snoozed", { view: { snoozeUntil: "2099-01-01T00:00:00Z" } }),
+  ]) {
+    const s = settleOf(t);
+    assert.ok(s, `${t.id}: no Settle`);
+    assert.equal(s.disabled, undefined, `${t.id}: Settle disabled`);
+  }
+  const asking = thread("t_ask", "asking", "needs", { unavailable: { "thread.settle": "A question is open" } });
+  assert.equal(settleOf(asking)?.disabled, "A question is open");
+});
+
+test("a scroll closes the menu only when it moves what the menu was opened on", () => {
+  assert.equal(anchorMoved(120, 120), false, "the open thread scrolled; the row stayed");
+  assert.equal(anchorMoved(120, 121), false, "subpixel jitter");
+  assert.equal(anchorMoved(120, 80), true, "the list scrolled the row away");
+  assert.equal(anchorMoved(null, 80), true, "no anchor: any scroll closes, as before");
+  assert.equal(anchorMoved(120, null), false, "the row re-rendered; the menu still acts on the thread's id");
 });

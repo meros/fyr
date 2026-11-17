@@ -2694,6 +2694,129 @@ try {
 }
 });
 
+// V0.31, V0.106: Settle from a row's menu settles that row's thread, in every state, while the open thread streams. The
+// menu used to close on any scroll in the page, so the open thread following a run's output closed it under the pointer
+// and the click opened the row instead. Desktop: the right-click menu; phone: the long-press sheet.
+const SETTLE_ROWS = [
+  // [id, title, section it starts in, what Settle does]
+  ["t_triage", "Triage sprint issues", "needs", "leaves"], // done
+  ["t_e2e", "Speed up e2e suite", "needs", "leaves"], // failed
+  ["t_nix", "Nix flake update", "seen", "leaves"], // idle
+  ["t_babysit", "Babysit PR #4170", "working", "waits"], // running: settles when the run ends (V0.106)
+];
+for (const [front, w, hh] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.31 settle from a row ${front}`, async ({ send, evaluate, waitFor, settle, navigate, openScreen }) => {
+  const ctx = `V0.31 settle from a row (${front})`;
+  const settles = (id) => `(window.__fyrCommands ?? []).filter((c) => c.action === 'thread.settle' && c.threadId === ${JSON.stringify(id)}).length`;
+  const allSettles = `(window.__fyrCommands ?? []).filter((c) => c.action === 'thread.settle').map((c) => c.threadId)`;
+  const mouse = async (x, y, button = "left") => {
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button, clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button, clickCount: 1 });
+  };
+  // The element's point, after scrolling it into view and letting that scroll end (a scroll that is still moving the
+  // row closes its menu, rightly).
+  const center = async (sel) => {
+    if (!(await evaluate(`(() => { const el = ${sel}; if (!el) return false; el.scrollIntoView({ block: 'center', behavior: 'instant' }); return true; })()`))) return null;
+    await settle();
+    return evaluate(`(() => { const r = (${sel}).getBoundingClientRect(); return { x: r.left + Math.min(60, r.width / 2), y: r.top + r.height / 2 }; })()`);
+  };
+try {
+  if (front === "desktop") {
+    // The open thread runs and follows its output (t_mapperf streams below).
+    await navigate(`${origin}/?mock=rail&open=t_mapperf`, "!!document.querySelector('.convo') && typeof window.__fyrBurst === 'function'");
+    await evaluate(`window.__fyrBurst('t_mapperf', 40)`);
+    await waitFor(`document.querySelector('.convo').scrollHeight > document.querySelector('.convo').clientHeight + 200`, { what: "the open thread to be taller than its pane" });
+    await settle();
+    // The open thread moves while the menu is open, as a streaming run does: its pane scrolls.
+    const stream = async () => {
+      await evaluate(`(() => { const c = document.querySelector('.convo'); c.scrollTop = 0; c.dispatchEvent(new Event('scroll')); c.scrollTop = 1e9; c.dispatchEvent(new Event('scroll')); })()`);
+      await settle();
+    };
+    const ids = await evaluate(`Object.fromEntries([...document.querySelectorAll('.ib [id^=sec-]')].map((s) => [s.id, [...s.querySelectorAll('[data-id]')].map((r) => r.dataset.id)]))`);
+    const pin = await center(`document.querySelector('.ib [data-id="t_copy"]')`);
+    if (!pin) throw new Error(`no row t_copy (${JSON.stringify(ids)})`);
+    await mouse(pin.x, pin.y, "right");
+    await settle();
+    const pinItem = await center(`[...document.querySelectorAll('.ctxm-i')].find((b) => b.textContent.startsWith('Pin'))`);
+    if (!pinItem) throw new Error(`no Pin in the menu of t_copy (${await evaluate(`JSON.stringify([...document.querySelectorAll('.ctxm-i')].map((b) => b.textContent))`)}, at ${JSON.stringify(pin)})`);
+    await mouse(pinItem.x, pinItem.y);
+    await waitFor(`!!document.querySelector('#sec-pinned [data-id="t_copy"]')`, { what: "t_copy to be pinned" });
+    const rows = [...SETTLE_ROWS, ["t_copy", "Rewrite onboarding copy", "pinned", "leaves"]];
+    // A folded section: Snoozed opens on a click on its header; its first row.
+    await evaluate(`document.querySelector('#sec-snoozed .sec')?.click()`);
+    await waitFor(`!!document.querySelector('#sec-snoozed [data-id]')`, { what: "the Snoozed section to open" });
+    rows.push([await evaluate(`document.querySelector('#sec-snoozed [data-id]').dataset.id`), "", "snoozed", "leaves"]);
+    for (const [id, , sec, then] of rows) {
+      const before = await evaluate(settles(id));
+      const r = await center(`document.querySelector('#sec-${sec} [data-id="${id}"]')`);
+      check(!!r, `${ctx}: no row ${id} in ${sec}`);
+      if (!r) continue;
+      await mouse(r.x, r.y, "right");
+      await settle();
+      await stream();
+      const item = await center(`[...document.querySelectorAll('.ctxm .ctxm-i')].find((b) => b.textContent.startsWith('Settle'))`);
+      check(!!item, `${ctx}: the menu of ${id} (${sec}) closed when the open thread scrolled, or has no Settle`);
+      if (!item) continue;
+      await mouse(item.x, item.y);
+      await waitFor(`${settles(id)} > ${before}`, { soft: true });
+      check((await evaluate(settles(id))) === before + 1, `${ctx}: Settle in the menu of ${id} (${sec}) sent no settle for it (sent: ${JSON.stringify(await evaluate(allSettles))})`);
+      check(await evaluate(`!document.querySelector('.ctxm')`), `${ctx}: the menu stays open after Settle on ${id}`);
+      if (then === "leaves") {
+        await waitFor(`!document.querySelector('#sec-${sec} [data-id="${id}"]')`, { soft: true });
+        check(await evaluate(`!document.querySelector('#sec-${sec} [data-id="${id}"]')`), `${ctx}: ${id} stays in ${sec} after Settle`);
+      }
+    }
+    // The open thread itself, and a row whose Settle the host refuses (a question is open): disabled, with the reason.
+    const before = await evaluate(settles("t_mapperf"));
+    const own = await center(`document.querySelector('.ib [data-id="t_mapperf"]')`);
+    await mouse(own.x, own.y, "right");
+    await settle();
+    await stream();
+    const ownItem = await center(`[...document.querySelectorAll('.ctxm .ctxm-i')].find((b) => b.textContent.startsWith('Settle'))`);
+    check(!!ownItem, `${ctx}: the open thread's menu closed when it scrolled`);
+    if (ownItem) {
+      await mouse(ownItem.x, ownItem.y);
+      await waitFor(`${settles("t_mapperf")} > ${before}`, { soft: true });
+      check((await evaluate(settles("t_mapperf"))) === before + 1, `${ctx}: Settle in the open thread's menu sent no settle for it`);
+    }
+    const ask = await center(`document.querySelector('.ib [data-id="t_lasso"]')`);
+    await mouse(ask.x, ask.y, "right");
+    await settle();
+    const dis = await evaluate(`(() => { const b = [...document.querySelectorAll('.ctxm .ctxm-i')].find((b) => b.textContent.startsWith('Settle')); return b ? { disabled: b.getAttribute('aria-disabled'), title: b.title } : null; })()`);
+    check(dis?.disabled === "true" && /question/i.test(dis.title), `${ctx}: an asking thread's Settle is not disabled with its reason (${JSON.stringify(dis)})`);
+  } else {
+    await openScreen({ url: "?mock=rail" }, w, hh);
+    const rows = [...SETTLE_ROWS];
+    await evaluate(`document.querySelector('#m-sec-snoozed .m-sec')?.click()`);
+    await waitFor(`!!document.querySelector('#m-sec-snoozed .m-mv')`, { what: "the Snoozed section to open" });
+    rows.push(["", await evaluate(`document.querySelector('#m-sec-snoozed .m-mv').getAttribute('aria-label').split(',')[0]`), "snoozed", "leaves"]);
+    for (const [id, title, sec, then] of rows) {
+      const row = `[...document.querySelectorAll('#m-sec-${sec} .m-mv')].find((r) => r.getAttribute('aria-label').startsWith(${JSON.stringify(title + ",")}))`;
+      const n0 = (await evaluate(allSettles)).length;
+      const c = await center(row);
+      check(!!c, `${ctx}: no row "${title}" in ${sec} (${await evaluate(`JSON.stringify([...document.querySelectorAll('#m-sec-${sec} .m-mv')].map((r) => r.getAttribute('aria-label')))`)})`);
+      if (!c) continue;
+      // A long press opens the actions sheet (see tapCenter: touchCancel, so no click lands on the sheet).
+      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: c.x, y: c.y }] });
+      await waitFor(`!!document.querySelector('.m-sheet .m-mi')`, { what: `the actions sheet of "${title}"` });
+      await send("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] });
+      await settle();
+      await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find((b) => b.textContent.startsWith('Settle'))?.click()`);
+      await waitFor(`${allSettles}.length > ${n0}`, { soft: true });
+      const sent = (await evaluate(allSettles)).slice(n0);
+      check(sent.length === 1 && (!id || sent[0] === id), `${ctx}: Settle in the sheet of "${title}" sent ${JSON.stringify(sent)}, not ${id || "its thread"}`);
+      if (then === "leaves") {
+        await waitFor(`!(${row})`, { soft: true });
+        check(await evaluate(`!(${row})`), `${ctx}: "${title}" stays in ${sec} after Settle`);
+      }
+      await waitFor(`!document.querySelector('.m-sheet')`, { soft: true });
+      await settle();
+    }
+  }
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // V0.31: a right-click on a thread row opens Fyr's menu; elsewhere nothing opens.
 section('V0.31', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
