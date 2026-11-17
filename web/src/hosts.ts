@@ -156,12 +156,12 @@ export function hostLine(h: HostInfo, self: string, now: number): string {
   return [hostState(h, now), route, h.id ? `id ${shortID(h.id)}` : "no id"].filter(Boolean).join(" · ");
 }
 
-/** V0.125: the Hosts page's rows: this install first, then the front's hosts in its order. A front that lists no
- *  hosts (one install) still shows this install, with the id from the state. */
+/** V0.125, V0.132: the Hosts page's rows, in the owner's host order (the front sends hosts[] in it). A front that lists
+ *  no hosts (one install) still shows this install, with the id from the state. */
 export function hostRows(hosts: HostInfo[] | undefined, self: string, selfId: string): HostInfo[] {
   const hs = hosts ?? [];
   if (!hs.length) return [{ name: self, online: true, ...(selfId ? { id: selfId } : {}) }];
-  return [...hs.filter((h) => h.name === self), ...hs.filter((h) => h.name !== self)];
+  return hs;
 }
 
 /** V0.125: how this browser reaches this Fyr, from the page's host name and the state's user (This device). */
@@ -170,4 +170,21 @@ export function howIn(hostname: string, user: string): string {
   if (h.endsWith(".ts.net")) return `Through Tailscale Serve, as ${user || "your login"}. Any browser signed in to your tailnet with that login can open this Fyr.`;
   if (routeOf(`http://${h.includes(":") && !h.startsWith("[") ? `[${h}]` : h}/`) === "this machine") return "On this machine itself (localhost). A browser on this machine is always allowed.";
   return `At ${hostname}${user ? `, as ${user}` : ""}. What stands in front of Fyr there decides who gets in.`;
+}
+
+/** V0.132: the hosts New project and New thread offer, in the owner's order (the first is the default); this install
+ *  and an offline one are named so. None when the front has one host (nothing to pick). */
+export function hostChoices(hosts: Pick<HostInfo, "name" | "online">[] | undefined, self: string): { name: string; label: string; online: boolean }[] {
+  const hs = hosts ?? [];
+  if (hs.length <= 1) return [];
+  return hs.map((h) => ({ name: h.name, label: h.name === self ? `${h.name} (this install)` : h.online ? h.name : `${h.name} (offline)`, online: h.online }));
+}
+
+/** V0.132: why nothing can be made on a picked host now; "" when it is online (or none is picked). Nothing falls back
+ *  to another host. */
+export function hostOfflineNote(name: string | undefined, hosts: Pick<HostInfo, "name" | "online" | "since">[] | undefined, now: number): string {
+  const h = name ? hosts?.find((x) => x.name === name) : undefined;
+  if (!h || h.online) return "";
+  const at = dayTime(h.since, now);
+  return `${h.name} is offline${at ? ` since ${at}` : ""}. Its folders cannot be read and nothing can be made on it until it is back; pick another host or wait.`;
 }

@@ -1,5 +1,5 @@
 // SPEC V0.126: from any front the owner configures every host it follows, as if connected to it directly. The
-// per-host pages (Providers with System agents, Automation) show one group per host, this install first.
+// per-host pages (Providers with System agents, Automation) show one group per host, in the owner's host order.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, settingsPath, withHost } from "../src/host-settings.ts";
@@ -15,7 +15,7 @@ test("V0.126 (4): one install, or a front that lists one host, is one ungrouped 
   assert.deepEqual(settingsHosts([{ name: "desk", online: true }], "desk"), [{ name: "", label: "desk", self: true, online: true }]);
 });
 
-test("V0.126 (4): several hosts are one group each, this install first, then the front's order", () => {
+test("V0.127, V0.132: several hosts are one group each, in the owner's host order (the front's)", () => {
   const hs = settingsHosts(
     [
       { name: "lab", online: true, since: iso(40) },
@@ -25,11 +25,11 @@ test("V0.126 (4): several hosts are one group each, this install first, then the
     "desk",
   );
   assert.deepEqual(hs.map((h) => [h.name, h.self, h.online]), [
-    ["desk", true, true],
     ["lab", false, true],
+    ["desk", true, true],
     ["meros-server", false, false],
   ]);
-  assert.equal(hs[0].label, "desk");
+  assert.equal(hs[1].label, "desk");
 });
 
 test("V0.126 (4): a group's line: this install, online, or offline since when", () => {

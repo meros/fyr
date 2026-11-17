@@ -19,13 +19,12 @@ export interface SettingsHost {
   since?: string;
 }
 
-/** The parts of a per-host page: one without a host name when the front has one host or none, else one per host,
- *  this install first, then the front's order. */
+/** The parts of a per-host page: one without a host name when the front has one host or none, else one per host, in
+ *  the owner's host order (V0.132; the front sends hosts[] in it). */
 export function settingsHosts(hosts: Pick<HostInfo, "name" | "online" | "since">[] | undefined, self: string): SettingsHost[] {
   const hs = hosts ?? [];
   if (hs.length <= 1) return [{ name: "", label: hs[0]?.name || self, self: true, online: true }];
-  const ordered = [...hs.filter((h) => h.name === self), ...hs.filter((h) => h.name !== self)];
-  return ordered.map((h) => ({ name: h.name, label: h.name, self: h.name === self, online: h.online, ...(h.since ? { since: h.since } : {}) }));
+  return hs.map((h) => ({ name: h.name, label: h.name, self: h.name === self, online: h.online, ...(h.since ? { since: h.since } : {}) }));
 }
 
 /** The line under a group's heading: "This install", "Online since 08:31", "Offline since 19:40". */

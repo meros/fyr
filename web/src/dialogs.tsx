@@ -5,6 +5,7 @@ import type { Profile, Project, T3Candidate } from "./types.ts";
 import { ProfileQuota, quotaSuffix, useQuotas } from "./quota-ui.tsx";
 import { ChipStrip, ClipPicker } from "./attach-ui.tsx";
 import { NewProjectStep, ProjectIcon, ProjectList, QuietHold } from "./project-ui.tsx";
+import { HostField } from "./host-pick-ui.tsx";
 import { colorVar } from "./projects.ts";
 import { relTime, shortModel } from "./format.ts";
 import type { SnoozePreset } from "./store.ts";
@@ -31,7 +32,7 @@ export function Modal({ title, onClose, children, wide, cls }: { title: string; 
 
 /** SPEC 0.5 V0.30, V0.42: Project first; the folder follows from the project's folder, else a fresh scratch
  *  folder; "Change" opens the folder picker. #41: the state is useNewThreadForm's, shared with the phone. */
-export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; projects: Project[]; projectFilter: string | null; clockOffset?: number; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, folder: string): Promise<{ error: string | null; id?: string }> }) {
+export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; projects: Project[]; projectFilter: string | null; clockOffset?: number; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, folder: string, host?: string): Promise<{ error: string | null; id?: string }> }) {
   const n = useNewThreadForm(p);
   const { form: f, cur, chip, folder, profiles, prof, att } = n;
   const quotas = useQuotas();
@@ -72,8 +73,9 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
               extra={<QuietHold {...n.quiet} />}
             />
           )}
-          {f.creating !== null && <NewProjectStep initialName={f.creating} initialFolder="" fromThread={false} onDraft={n.setDraft} onCancel={n.cancelCreating} onCreate={n.createProject} />}
+          {f.creating !== null && <NewProjectStep initialName={f.creating} initialFolder="" fromThread={false} host={n.host} onDraft={n.setDraft} onCancel={n.cancelCreating} onCreate={n.createProject} />}
         </div>
+        <HostField value={n.host} lock={n.hostLock} onPick={n.chooseHost} what="The thread runs there, in that host's folders, on its providers." />
         <div class="fld">
           <span>Folder</span>
           <div class={`fline${folder.scratch ? " scratch" : ""}`}>

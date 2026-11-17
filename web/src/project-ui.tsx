@@ -10,6 +10,8 @@ import { LINE_ICONS } from "./lucide.ts";
 import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, iconFileError, nameError, patchFor, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { Group, Row, SaveField, Seg, Switch, useSet } from "./settings-rows.tsx";
 import { useFolderPick } from "./folder-picker.tsx";
+import { HostField, useHosts } from "./host-pick-ui.tsx";
+import { hostChoices, hostOfflineNote, multiHost } from "./hosts.ts";
 import { deleteProjectAsk } from "./confirm.ts";
 import { useAsk } from "./confirm-ui.tsx";
 import { shortModel } from "./format.ts";
@@ -333,10 +335,10 @@ export function QuietGate({ project, now, unlock, what }: { project?: Project; n
 
 /** A project's one folder (V0.55): the short path and what it does with "Change…" through the host folder picker, or
  *  that threads are filed by hand with "Choose folder…". × leaves the folder out where onClear is given. */
-export function FolderField({ folder, title, onPick, onClear }: { folder: string; title: string; onPick(path: string): void; onClear?(): void }) {
+export function FolderField({ folder, title, host, onPick, onClear }: { folder: string; title: string; /** V0.132: whose folders */ host?: string; onPick(path: string): void; onClear?(): void }) {
   const picker = useFolderPick();
   const pick = async () => {
-    const path = await picker.pick({ title });
+    const path = await picker.pick({ title, ...(host ? { host } : {}) });
     if (path) onPick(path);
   };
   return (
@@ -367,8 +369,14 @@ export function FolderField({ folder, title, onPick, onClear }: { folder: string
 }
 
 /** New project, one step (V0.30, V0.55): a name (required) and the one folder, prefilled from the thread. The rest is
- *  on the project screen. */
-export function NewProjectStep({ initialName, initialFolder, fromThread, onCreate, onCancel, onDraft }: { initialName: string; initialFolder: string; fromThread: boolean; onCreate(name: string, folder: string): Promise<string | null>; onCancel(): void; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void }) {
+ *  on the project screen. V0.132: with several hosts, the host it lives on comes first: picked here (Settings), or set
+ *  by the caller (`host`: the New thread form's host, or the threads' host when it is made from them); the folder is
+ *  that host's, and a new host drops a folder picked on another. */
+export function NewProjectStep({ initialName, initialFolder, fromThread, host: fixed, onCreate, onCancel, onDraft }: { initialName: string; initialFolder: string; fromThread: boolean; host?: string; onCreate(name: string, folder: string, host?: string): Promise<string | null>; onCancel(): void; /** V0.63: the name and folder as they are typed */ onDraft?(name: string, folder: string): void }) {
+  const hs = useHosts();
+  const [own, setOwn] = useState(() => hostChoices(hs.hosts, hs.self)[0]?.name ?? "");
+  const host = fixed ?? own;
+  const down = hostOfflineNote(host, hs.hosts, hs.now);
   const [name, setName] = useState(initialName);
   const [folder, setFolder] = useState(initialFolder);
   useEffect(() => onDraft?.(name, folder), [name, folder]);
@@ -385,9 +393,10 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, onCreat
       nameRef.current?.focus();
       return setErr("A project needs a name.");
     }
+    if (down) return setErr(down); // V0.132: never on another host instead
     setBusy(true);
     setErr(null);
-    const e = await onCreate(name.trim(), folder);
+    const e = await onCreate(name.trim(), folder, host || undefined);
     setBusy(false);
     if (e) setErr(e);
   };
@@ -406,7 +415,19 @@ export function NewProjectStep({ initialName, initialFolder, fromThread, onCreat
           autocapitalize="sentences"
         />
       </label>
-      <FolderField folder={folder} title="Project folder" onPick={setFolder} onClear={() => setFolder("")} />
+      {fixed === undefined ? (
+        <HostField
+          value={own}
+          what="The project lives there: its folder, its threads and its providers are that host's."
+          onPick={(h) => {
+            if (h !== own) setFolder(""); // a folder of another host does not come along
+            setOwn(h);
+          }}
+        />
+      ) : (
+        multiHost(hs.hosts) && fixed && <p class="lede">On {fixed}.</p>
+      )}
+      <FolderField folder={folder} title="Project folder" host={host || undefined} onPick={setFolder} onClear={() => setFolder("")} />
       <p class="lede">Icon, colour and defaults are on the project screen, later.</p>
       {err && <div class="err prose">{err}</div>}
       <div class="pformb">
@@ -427,7 +448,8 @@ export function ProjectPicker({ projects, threads, onPick, onCreate, onEdit }: {
   const base = one ? newProjectDraft(one) : { name: "", folder: "" };
   const [draft, setDraft] = useState<{ name: string; folder: string } | null>(null);
   const cur = one ? projectOf(one, projects) : undefined;
-  if (draft) return <NewProjectStep initialName={draft.name} initialFolder={draft.folder} fromThread={threads.length > 0} onCreate={onCreate} onCancel={() => setDraft(null)} />;
+  // V0.132: a project made from threads lives on their host.
+  if (draft) return <NewProjectStep initialName={draft.name} initialFolder={draft.folder} fromThread={threads.length > 0} host={threads[0]?.host ?? ""} onCreate={onCreate} onCancel={() => setDraft(null)} />;
   const sub = base.folder ? `${base.name} · threads in ${shortPath(base.folder)} land there` : "Just a name; file threads here by hand";
   return (
     <>
@@ -748,7 +770,7 @@ export function ProjectEditor({ project, profiles, now, onSave, onSetFolder, onD
               class="btn pfchg"
               disabled={env.readOnly}
               onClick={async () => {
-                const path = await picker.pick({ title: `Folder for ${project.name}` });
+                const path = await picker.pick({ title: `Folder for ${project.name}`, ...(project.host ? { host: project.host } : {}) }); // V0.132: on its host
                 if (!path) return;
                 const e = await onSetFolder(path);
                 err("folder", e);

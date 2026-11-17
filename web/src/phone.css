@@ -394,3 +394,6 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-app .chend{min-height:44px}
 .m-app .chpark,.m-app .chundo{min-height:44px;min-width:44px}
 .cfm-f{display:flex;gap:8px;padding:8px 16px 0;flex:none}.cfm-f .m-bt{flex:1}
+/* V0.132: the Host field on the phone: touch size, and the 16 px that keeps iOS from zooming */
+.m-app .hostf{display:flex;flex-direction:column;gap:6px;margin:4px 0 8px}
+.m-app .hostf select{min-height:44px;font-size:16px}
