@@ -2295,6 +2295,8 @@ for (const [label, w, ht] of [
       const c = await evaluate(`document.querySelector('.thh .hostc')?.textContent ?? ''`);
       check(c === "desk", `${ctx}: the header's host chip "${c}"`);
     });
+});
+
 // SPEC V0.140: the display surfaces say which host, with several hosts. 1 each ring of the desktop rail's load names
 // its host (under it, and first in its label); one host: no name. 2 a change card on the board names its thread's
 // host, the same on the desktop and the phone.
