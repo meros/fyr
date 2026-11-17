@@ -258,6 +258,13 @@ func (t *Tree) Release(id string) {
 		return
 	}
 	delete(t.refs, name)
+	// Decision 0029 S5: its job's cgroup first (the kernel keeps a parent
+	// with a child); a job still running keeps both until the next Release.
+	job := filepath.Join(t.root, "agents", name, jobDir)
+	for _, f := range []string{"cgroup.procs", "cgroup.freeze"} {
+		os.Remove(filepath.Join(job, f)) // only a plain directory (tests) holds these
+	}
+	os.Remove(job)
 	os.Remove(filepath.Join(t.root, "agents", name))
 }
 

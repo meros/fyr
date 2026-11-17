@@ -3,7 +3,7 @@
 // provider), the pips stay.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadDetail, railBudget, railLabel, railPips, slotTip, threadSlot, type HostLoad } from "../src/load.ts";
+import { loadDetail, railBudget, railLabel, railPips, slotTip, threadJob, threadSlot, type HostLoad } from "../src/load.ts";
 
 const host: HostLoad = {
   host: "desk",
@@ -50,4 +50,10 @@ test("the tooltip lists the holders' costs and why the next job waits", () => {
 test("the first waiting thread's row says why it waits; the others their place", () => {
   assert.equal(threadSlot([host], "t_c"), "waiting for a test slot (0 ahead): CPU: new jobs run 2.1× slower");
   assert.equal(threadSlot([host], "t_d"), "waiting for a build slot (1 ahead)");
+});
+
+test("S5: a frozen job's row says so first, with or without its command", () => {
+  const h: HostLoad = { ...host, threads: [{ id: "t_a", memory: 3e9, job: "make test", paused: true }, { id: "t_b", memory: 1e9, paused: true }] };
+  assert.equal(threadJob([h], "t_a"), "make test · paused: memory");
+  assert.equal(threadJob([h], "t_b"), "e2e slot · paused: memory");
 });

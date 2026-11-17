@@ -179,6 +179,12 @@ type Engine struct {
 	SlotJob     func(thread, command string)
 	SlotOver    func(owner string) (class string, live, predicted float64, over bool)
 	JobReset    func(class string) bool
+	// Decision 0029 S5: freeze and thaw a holder's job (its own cgroup, not
+	// its CLI); optional. frozen is the one frozen now, under mu.
+	SlotFreeze func(owner string) bool
+	SlotThaw   func(owner string)
+	frozen     frozenJob
+	frozeHolds map[string]time.Time // under mu: holds frozen once already (owner → since)
 	slotOverTold map[string]time.Time // under mu: owner → the hold already told
 	memGuard    bool // under mu: the guard told a thread in this episode
 	// Titler makes a thread title from its conversation (V0.108); nil: this

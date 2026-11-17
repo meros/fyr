@@ -325,6 +325,14 @@ func slotNotices(r Reduced) []Notice {
 		if ev.Type != EventSlot {
 			continue
 		}
+		if why, ok := d["paused"].(string); ok {
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: fmt.Sprintf("Fyr paused your heavy job: memory is short on this host (%s). Its processes are frozen, not killed, and resume when memory has recovered for 30 s, within 10 min at most. A timeout inside the job may fire after it resumes; check its result.", why)})
+			continue
+		}
+		if d["resumed"] == true {
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: "Your heavy job runs again: Fyr thawed it."})
+			continue
+		}
 		if class, ok := d["over"].(string); ok {
 			live, _ := d["live"].(float64)
 			pred, _ := d["predicted"].(float64)

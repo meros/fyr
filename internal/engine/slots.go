@@ -145,6 +145,7 @@ func (e *Engine) sweepSlots() {
 	}
 	e.memoryGuard(s)
 	e.heavierThanPredicted(s)
+	e.freezeGuard(s)
 	// Decision 0029 S2: the conditions change without a release.
 	e.Slots.Fill()
 	for _, n := range nudges {
@@ -180,6 +181,116 @@ func (e *Engine) heavierThanPredicted(s slots.Snapshot) {
 		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotOver, Thread: h.Owner, Args: core.SlotOverArgs{Class: class, Live: live, Predicted: pred}}); err != nil {
 			log.Printf("slot over %s: %v", h.Owner, err)
 		}
+	}
+}
+
+// frozenJob is the job the memory guard froze (decision 0029 S5).
+type frozenJob struct {
+	owner, since string // the hold: owner and its grant
+	at, okSince  time.Time
+}
+
+// Decision 0029 S5: how long memory must be fine before a frozen job thaws,
+// and the longest a job stays frozen.
+const (
+	ThawAfterOK = 30 * time.Second
+	FreezeMax   = 10 * time.Minute
+)
+
+// freezeGuard freezes the newest slotted job while memory is short (never
+// the oldest running one, and one at a time, each hold at most once) and
+// thaws it when memory has been fine for ThawAfterOK, after FreezeMax, or
+// when its slot went back. Freeze and Thaw run outside e.mu.
+func (e *Engine) freezeGuard(s slots.Snapshot) {
+	if e.SlotFreeze == nil || e.SlotThaw == nil || e.SlotSignals == nil {
+		return
+	}
+	sig := e.SlotSignals()
+	short := sig.Provider != "" && ((sig.Headroom != nil && *sig.Headroom < e.SlotPolicy.MemoryReserve) || sig.Stall == slots.StallCritical)
+	fine := sig.Stall != slots.StallCritical && sig.Stall != slots.StallElevated && (sig.Headroom == nil || *sig.Headroom >= e.SlotPolicy.MemoryReserve+0.05)
+	now := e.Now()
+	e.mu.Lock()
+	if e.frozeHolds == nil {
+		e.frozeHolds = map[string]time.Time{}
+	}
+	f := e.frozen
+	e.mu.Unlock()
+	if f.owner != "" {
+		holding := false
+		for _, h := range s.Held {
+			if h.Owner == f.owner && h.Since.Format(time.RFC3339Nano) == f.since {
+				holding = true
+			}
+		}
+		if fine && f.okSince.IsZero() {
+			f.okSince = now
+		} else if !fine {
+			f.okSince = time.Time{}
+		}
+		thaw := !holding || now.Sub(f.at) >= FreezeMax || (!f.okSince.IsZero() && now.Sub(f.okSince) >= ThawAfterOK)
+		e.mu.Lock()
+		if thaw {
+			e.frozen = frozenJob{}
+		} else {
+			e.frozen = f
+		}
+		e.mu.Unlock()
+		if thaw {
+			e.SlotThaw(f.owner)
+			if holding {
+				e.slotNotice(f.owner, map[string]any{"resumed": true})
+			}
+		}
+		return
+	}
+	if !short {
+		return
+	}
+	var running []slots.Holder
+	for _, h := range s.Held {
+		if !h.Priority {
+			running = append(running, h)
+		}
+	}
+	if len(s.Held) < 2 || len(running) == 0 {
+		return // one job always runs
+	}
+	newest := running[0]
+	for _, h := range running[1:] {
+		if h.Since.After(newest.Since) {
+			newest = h
+		}
+	}
+	oldest := s.Held[0]
+	for _, h := range s.Held[1:] {
+		if h.Since.Before(oldest.Since) {
+			oldest = h
+		}
+	}
+	e.mu.Lock()
+	done := e.frozeHolds[newest.Owner].Equal(newest.Since)
+	e.mu.Unlock()
+	if newest.Owner == oldest.Owner || done {
+		return
+	}
+	if !e.SlotFreeze(newest.Owner) {
+		return
+	}
+	why := "memory stalls (critical)"
+	if sig.Headroom != nil && *sig.Headroom < e.SlotPolicy.MemoryReserve {
+		why = fmt.Sprintf("memory: %.0f %% free", *sig.Headroom*100)
+	}
+	e.mu.Lock()
+	e.frozen = frozenJob{owner: newest.Owner, since: newest.Since.Format(time.RFC3339Nano), at: now}
+	e.frozeHolds[newest.Owner] = newest.Since
+	e.mu.Unlock()
+	e.slotNotice(newest.Owner, map[string]any{"paused": why})
+}
+
+// slotNotice records a slot event for the thread's agent (decision 0029).
+func (e *Engine) slotNotice(owner string, d map[string]any) {
+	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotPause, Thread: owner, Args: d}); err != nil {
+		log.Printf("slot pause %s: %v", owner, err)
 	}
 }
 

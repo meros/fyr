@@ -62,6 +62,7 @@ const (
 	KindSlotIdle        = "slot.idle"    // #174: a held slot ran no heavy job for a while
 	KindSlotMemory      = "slot.memory"  // decision 0029 S2: memory is short; this job grew most
 	KindSlotOver        = "slot.over"    // decision 0029 S3: a running job is heavier than predicted
+	KindSlotPause       = "slot.pause"   // decision 0029 S5: the memory guard froze or thawed this job
 )
 
 // The typed args of the kinds that are not a map.
@@ -324,6 +325,13 @@ func init() {
 				return Result{}, errors.New("slot.over needs the class")
 			}
 			return Result{Events: []Event{{EventSlot, map[string]any{"over": a.Class, "live": a.Live, "predicted": a.Predicted}}}}, nil
+		}},
+		{Name: KindSlotPause, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
+			d := mapArgs(in)
+			if _, p := d["paused"].(string); !p && d["resumed"] != true {
+				return Result{}, errors.New("slot.pause needs paused or resumed")
+			}
+			return Result{Events: []Event{{EventSlot, map[string]any(d)}}}, nil
 		}},
 		{Name: KindMessageSent, From: observed, Reduce: func(r Rec, in Input, now time.Time) (Result, error) {
 			a, err := argsOf[MessageSentArgs](in)

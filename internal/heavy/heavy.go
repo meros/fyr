@@ -114,11 +114,18 @@ func segments(cmd string) []string {
 // Class is the class of cmd's heavy command, the longest match of all
 // patterns over the commands it runs, or "" when it runs none.
 func (m *Matcher) Class(cmd string) string {
+	c, _ := m.Match(cmd)
+	return c
+}
+
+// Match is Class and the matched text as cmd has it (decision 0029 S5: the
+// job's processes are found by it in their command lines).
+func (m *Matcher) Match(cmd string) (class, text string) {
 	if m == nil {
-		return ""
+		return "", ""
 	}
 	cmd = message.ReplaceAllString(cmd, " ''")
-	best, bestLen := "", 0
+	best, bestLen, bestText := "", 0, ""
 	for _, seg := range segments(cmd) {
 		for _, r := range m.rules {
 			loc := r.re.FindStringSubmatchIndex(seg)
@@ -129,10 +136,10 @@ func (m *Matcher) Class(cmd string) string {
 			if len(loc) >= 4 && loc[2] >= 0 {
 				name = strings.ReplaceAll(name, "$1", seg[loc[2]:loc[3]])
 			}
-			best, bestLen = name, loc[1]-loc[0]
+			best, bestLen, bestText = name, loc[1]-loc[0], seg[loc[0]:loc[1]]
 		}
 	}
-	return best
+	return best, bestText
 }
 
 // KindOf is the slot kind for a class: e2e for browser and screenshot runs,

@@ -21,7 +21,7 @@ func TestH174ReplayOfRealCommands(t *testing.T) {
 		"FOO=1 npx playwright test web/test":                                                                 "playwright test",
 		"make -C web test 2>&1 | tail":                                                                       "make test",
 		"timeout 900 nix develop -c make test-go":                                                            "make test-go",
-		"cd ~/locked/acme/Acme && yarn screenshot:diff --project desktop":                                "yarn screenshot:diff",
+		"cd ~/locked/acme/Acme && yarn screenshot:diff --project desktop":                                    "yarn screenshot:diff",
 	} {
 		if got := m.Class(cmd); got != want {
 			t.Errorf("%q: got %q, want %q", cmd, got, want)
@@ -37,5 +37,13 @@ func TestH174KindOfAClass(t *testing.T) {
 		if got := KindOf(class); got != want {
 			t.Errorf("%q: got %q, want %q", class, got, want)
 		}
+	}
+}
+
+// Decision 0029 S5: the matched text is the command as written, for finding its processes.
+func TestS5MatchGivesTheTextAsWritten(t *testing.T) {
+	c, text := Default().Match("cd web && timeout 900 nix develop -c go test -count=1 ./... 2>&1 | tail")
+	if c != "go test ./..." || text != "go test -count=1 ./..." {
+		t.Fatalf("%q %q", c, text)
 	}
 }
