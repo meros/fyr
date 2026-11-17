@@ -205,6 +205,14 @@ export function compareActivityDesc(a: Thread, b: Thread): number {
  * in the normal order (section order, then the section's own order), which the lists draw above every section (V0.104). */
 export type Sections = Record<SectionKey, Thread[]> & { pinned: Thread[] };
 
+/** Sections that show only their header line until opened (the design draws Snoozed and Settled this way). */
+export const COLLAPSED_BY_DEFAULT: SectionKey[] = ["snoozed", "settled"];
+
+/** Whether a section is unfolded: the owner's choice, else open unless collapsed by default. */
+export function isOpen(k: SectionKey, open: Partial<Record<SectionKey, boolean>>): boolean {
+  return open[k] ?? !COLLAPSED_BY_DEFAULT.includes(k);
+}
+
 export function isPinned(t: Thread): boolean {
   return !!t.pinnedAt;
 }
