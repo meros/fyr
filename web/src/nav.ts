@@ -7,7 +7,7 @@ import { parsePage, pageUrl, type PageId } from "./settings-nav.ts";
 /** V0.119: Settings is the nav screen (no page), a page, or a page's sub-page (a provider, Add provider, a project). */
 export type Screen = { name: "inbox" } | { name: "thread"; id: string; tab?: string } | { name: "new" } | { name: "search" } | { name: "project"; id: string } | { name: "settings"; page?: PageId; sub?: string; host?: string } | { name: "changes" };
 
-export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "adopt" | "project" | "filter" | "handover";
+export type SheetKind = "actions" | "snooze" | "thread-menu" | "details" | "menu" | "adopt" | "project" | "filter" | "handover" | "load";
 
 export interface Sheet {
   kind: SheetKind;

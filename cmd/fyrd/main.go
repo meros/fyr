@@ -83,6 +83,7 @@ func main() {
 	peersFlag := fl.String("peers", "", "other Fyr page origins to probe, comma separated (default from config peers; V0.123)")
 	runnerFlag := fl.String("runner", "", "use this runner socket even when it is not this install's launcher's (#167; development)")
 	hostListen := fl.String("host-listen", "", "host: also serve fronts on this tailnet address, or tailnet:PORT (default from config hostListen)")
+	wellKnownListen := fl.String("well-known-listen", "", "answer only /.well-known/fyr on this loopback address, for Tailscale Serve over TCP (default from config wellKnownListen)")
 	fl.Parse(args)
 
 	// #167: the launcher's variables name the live install. Take them out
@@ -106,6 +107,9 @@ func main() {
 	cfg.override(*listen, *ownerLogin, *role, *hostsFlag, *hostListen)
 	if *peersFlag != "" {
 		cfg.Peers = strings.Split(*peersFlag, ",")
+	}
+	if *wellKnownListen != "" {
+		cfg.WellKnownListen = *wellKnownListen
 	}
 	var webFS fs.FS = web.Dist()
 	if *webDir != "" {
@@ -586,10 +590,19 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// V0.54: "tailnet:PORT" is this machine's tailnet address.
 	if port, ok := strings.CutPrefix(cfg.HostListen, "tailnet:"); ok {
 		ip, err := tailnet.IPv4(cfg.tsSocket())
-		if err != nil {
-			log.Fatalf("hostListen %s: %v", cfg.HostListen, err)
+		switch {
+		case err == nil:
+			cfg.HostListen = net.JoinHostPort(ip, port)
+		case runtime.GOOS == "darwin":
+			// A Mac is often off the tailnet, and launchd would restart a
+			// fatal fyrd in a loop with no Fyr at all: serve without the
+			// host listener and restart once the tailnet is up.
+			log.Printf("hostListen %s: %v; not serving other installs until the tailnet is up", cfg.HostListen, err)
+			cfg.HostListen = ""
+			go restartWhenTailnet(ctx, cfg.tsSocket())
+		default:
+			log.Fatalf("hostListen %s: %v", cfg.HostListen, err) // systemd restarts until the tailnet is up
 		}
-		cfg.HostListen = net.JoinHostPort(ip, port)
 	}
 	hostHandler := srv.Handler()
 	// #148: the launcher trusts a new build once /healthz on this listener
@@ -628,6 +641,10 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		mux.Handle("/", fr.Handler())
 		serve(ln, deploy.Health(mux, health...))
 		serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), cfg.ServeSocketUsers, serve) // V0.130
+		if cfg.WellKnownListen != "" {
+			serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, func() peers.WellKnown { return wk }))
+			log.Printf("answering /.well-known/fyr for Tailscale Serve at %s", cfg.WellKnownListen)
+		}
 	}
 	switch {
 	case cfg.HostListen == "":
