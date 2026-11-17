@@ -88,6 +88,9 @@ type config struct {
 	// HeavyCommands: the patterns of heavy commands and their classes
 	// (decision 0029, #185, #174); absent: heavy.Defaults.
 	HeavyCommands []heavy.Pattern `json:"heavyCommands"`
+	// HeavyGate: "off" lets a heavy command run without a slot; anything
+	// else (the default) refuses it at the gate hook (#174).
+	HeavyGate string `json:"heavyGate"`
 	// Peers: Fyr page origins probed as they are (V0.123, decision 0025),
 	// besides the tailnet's own nodes; for development and non-tailnet hosts.
 	Peers []string `json:"peers"`
