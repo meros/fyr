@@ -394,19 +394,35 @@ func MergeChecked(ctx context.Context, gh Runner, url, method, head string) (str
 	if head == "" {
 		return "", errors.New("not merged: no head commit was given")
 	}
-	d, err := FetchDetail(ctx, gh, url)
-	if err != nil {
-		return "", err
+	for try := 0; ; try++ {
+		d, err := FetchDetail(ctx, gh, url)
+		if err != nil {
+			return "", err
+		}
+		if !core.SameHead(d.HeadSha, head) {
+			return "", errors.New(core.HeadMoved)
+		}
+		if why := MergeBlock(d); why != "" {
+			return "", fmt.Errorf("not merged: %s", why)
+		}
+		out, err := Merge(ctx, gh, url, method, d.HeadSha)
+		if err == nil || try >= len(mergeBackoff) || !strings.Contains(err.Error(), baseModified) {
+			return out, Friendly(err)
+		}
+		select { // V0.205: another merge landed first; the same head may still merge
+		case <-time.After(mergeBackoff[try]):
+		case <-ctx.Done():
+			return out, Friendly(err)
+		}
 	}
-	if !core.SameHead(d.HeadSha, head) {
-		return "", errors.New(core.HeadMoved)
-	}
-	if why := MergeBlock(d); why != "" {
-		return "", fmt.Errorf("not merged: %s", why)
-	}
-	out, err := Merge(ctx, gh, url, method, d.HeadSha)
-	return out, Friendly(err)
 }
+
+// baseModified is GitHub's refusal when the base moved during a merge.
+const baseModified = "Base branch was modified"
+
+// mergeBackoff is the wait before each further try of such a merge (V0.205):
+// 3 tries in all.
+var mergeBackoff = []time.Duration{2 * time.Second, 5 * time.Second}
 
 // Run is a workflow run from gh run list.
 type Run struct {

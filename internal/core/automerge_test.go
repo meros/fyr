@@ -273,9 +273,8 @@ func TestSelfMergingAskBesideAQuestionAndASnooze(t *testing.T) {
 	}
 	th = selfMerging(t, now)
 	th.Decisions[0].CreatedAt = now.Add(time.Minute)
-	until, since := now.Add(time.Hour), now
-	v := &View{SnoozeUntil: &until, SnoozedAt: &since}
-	if a := ComputeWith(th, v, now.Add(2*time.Minute), acmeOn); a.State != Snoozed {
+	v := snoozed(View{}, now.Add(time.Hour), now)
+	if a := ComputeWith(th, &v, now.Add(2*time.Minute), acmeOn); a.State != Snoozed {
 		t.Fatalf("snooze: %+v", a)
 	}
 }

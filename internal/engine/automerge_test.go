@@ -93,3 +93,41 @@ func TestAutoMergeByRepoSetting(t *testing.T) {
 		}
 	}
 }
+
+// SPEC V0.205 (1), (2): while the agent runs, an ask in a repo of the setting
+// is not in Needs you, and it is the owner's again when the repo is turned off.
+func TestSelfMergingAskReadsWorking(t *testing.T) {
+	const head = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	url := "https://github.com/acme/app/pull/9"
+	coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
+		core.PRObserved(t, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Checks: core.ChecksPass, Head: head, MergeState: "CLEAN"}, now)
+		t.Running = true
+		return nil
+	})
+	c := changeOf(h, id, "pr:acme/app#9")
+	if r := h.cmd(core.KindAutoMergeSet, "", core.Args{"repo": "acme/app", "on": true}); !r.OK {
+		t.Fatalf("set: %+v", r)
+	}
+	if out, isErr := callAs(t, h.e, id, "change_request", map[string]any{"change": c.ID, "ask": "merge", "reason": "green"}); isErr {
+		t.Fatalf("change_request: %s", out)
+	}
+	attention := func() core.State {
+		for _, d := range h.e.Snapshot() {
+			if d.ID == id {
+				return d.Attention.State
+			}
+		}
+		return ""
+	}
+	eventually(t, "the ask reads working", func() bool { return attention() == core.Working })
+	if h.r.n() != 0 {
+		t.Fatalf("merged during the run: %d", h.r.n())
+	}
+	if r := h.cmd(core.KindAutoMergeSet, "", core.Args{"repo": "acme/app", "on": false}); !r.OK {
+		t.Fatalf("unset: %+v", r)
+	}
+	eventually(t, "the ask is the owner's again", func() bool { return attention() == core.Asking })
+}

@@ -198,9 +198,15 @@ function activity(t: Thread): number {
   return ts(t.activityAt) || ts(t.updatedAt);
 }
 
+/** V0.205: a thread whose open asks are all merge asks comes after the questions, before the failures. */
+function needsRank(t: Thread): number {
+  const r = NEEDS_RANK[t.attention.state] ?? 9;
+  return t.attention.state === "asking" && t.decisions.length > 0 && t.decisions.every((d) => d.effect?.action === "pr.merge") ? r + 0.5 : r;
+}
+
 export function compareNeeds(a: Thread, b: Thread): number {
-  const ra = NEEDS_RANK[a.attention.state] ?? 9;
-  const rb = NEEDS_RANK[b.attention.state] ?? 9;
+  const ra = needsRank(a);
+  const rb = needsRank(b);
   if (ra !== rb) return ra - rb;
   return activity(b) - activity(a) || a.id.localeCompare(b.id);
 }

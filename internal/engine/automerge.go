@@ -20,6 +20,9 @@ type AutoMergeRepo struct {
 	On   bool   `json:"on"`
 }
 
+// autoMergeOn reports a repo in the setting. Call it with e.mu held.
+func (e *Engine) autoMergeOn(repo string) bool { return e.autoMerge[core.RepoKey(repo)] }
+
 // loadAutoMerge reads the setting. Call it with e.mu held.
 func (e *Engine) loadAutoMerge() {
 	e.autoMerge = map[string]bool{}
