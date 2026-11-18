@@ -45,6 +45,9 @@ type Thread struct {
 	// (V0.136): recorded, not asked. Fyr opens one as a Decision when the
 	// merge can run, and closes it when CI fails or GitHub cannot merge.
 	HeldAsks []Decision `json:"heldAsks,omitempty"`
+	// QuietMerge is the change whose auto-approved merge is the thread's
+	// latest news (V0.200): no push for it. A new ask or message clears it.
+	QuietMerge string `json:"quietMerge,omitempty"`
 	// Changes are the thread's change records (V0.59, decision 0018). A PR
 	// lives on its code change (#32).
 	Changes []Change `json:"changes,omitempty"`

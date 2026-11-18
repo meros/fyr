@@ -84,6 +84,7 @@ func Restarted(t *Thread, now time.Time) {
 func DecisionOpened(t *Thread, d Decision) {
 	t.Decisions = append(t.Decisions, d)
 	t.ActivityAt = d.CreatedAt
+	t.QuietMerge = "" // V0.200: this is news of its own
 }
 
 // DecisionClosed removes a decision that the agent withdrew (for example

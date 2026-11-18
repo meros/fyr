@@ -40,6 +40,9 @@ type Thread struct {
 	// QuietUntil is the end of the quiet hours of the thread's project, while
 	// they hold (V0.46).
 	QuietUntil *time.Time `json:"quietUntil,omitempty"`
+	// PushQuiet: the attention state is only an auto-merge at work, so it
+	// sends no push (V0.200).
+	PushQuiet bool `json:"pushQuiet,omitempty"`
 	// PR is the main change's PR, for the PR chip and tab (#32); the PR
 	// itself lives on its change.
 	PR *core.PR `json:"pr,omitempty"`

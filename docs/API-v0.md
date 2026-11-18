@@ -83,7 +83,8 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
   "attention": {"state": "asking|failed|blocked|done|working|waiting|seen|snoozed|settled|archived", "section": "needs|working|seen|snoozed|settled|archived", "reason": "…"},
   "view": {"seenAt": "…", "snoozeUntil": "…", "snoozeWhenDone": true},
   "unavailable": {"thread.interrupt": "No run is going"},
-  "quietUntil": "2026-11-15T06:00:00+01:00 (absent unless the project is in its quiet hours, V0.46)"
+  "quietUntil": "2026-11-15T06:00:00+01:00 (absent unless the project is in its quiet hours, V0.46)",
+  "pushQuiet": "true while the attention state is only an auto-merge at work: no Web Push (absent otherwise, V0.200)"
 }
 ```
 

@@ -55,6 +55,12 @@ func RepoKey(s string) string {
 // V0.97 (3), which needs green checks and an idle thread) on the head the
 // ask named, and the merge guard passes.
 func autoMergeable(t *Thread, d Decision) (repo, why string) {
+	return mergeableByFyr(t, d, t.Running || t.RunningTasks() > 0)
+}
+
+// mergeableByFyr is autoMergeable with the thread's run given: false asks
+// whether Fyr merges it once the run is over.
+func mergeableByFyr(t *Thread, d Decision, running bool) (repo, why string) {
 	if d.Kind != DecisionEffect || d.Effect == nil || d.Effect.Action != FyrMerge {
 		return "", "not a merge ask"
 	}
@@ -67,7 +73,7 @@ func autoMergeable(t *Thread, d Decision) (repo, why string) {
 		return "", "Fyr has not read the PR"
 	case !SameHead(c.PR.Head, head):
 		return "", HeadMoved
-	case Ready(c.PR, t.Running || t.RunningTasks() > 0) != ReadyMerge:
+	case Ready(c.PR, running) != ReadyMerge:
 		return "", "The PR is not ready to merge"
 	}
 	if why := FyrEffects[FyrMerge].Blocked(t, a); why != "" {
@@ -141,6 +147,7 @@ func reduceAutoMerge(r Rec, in Input, now time.Time) (Result, error) {
 		if c := FindChange(t, id); c != nil {
 			c.AutoApproved = &AutoApproval{Repo: repo, Head: head, At: now}
 			c.UpdatedAt = now
+			t.QuietMerge = c.ID // V0.200
 		}
 	}
 	answer := fmt.Sprintf("Auto-approved: %s merges without a press (head %s).", repo, shortSHA(head))
@@ -150,6 +157,50 @@ func reduceAutoMerge(r Rec, in Input, now time.Time) (Result, error) {
 		}}},
 		Effects: []Effect{{Kind: EffectRun, Allow: true, Request: &req}},
 	}, nil
+}
+
+// PushQuiet reports that the thread's attention state is only an auto-merge
+// at work (V0.200), so it sends no push; on says whether a repo is in the
+// setting. Three states qualify: an ask Fyr approves itself, the PR that
+// reads Ready while its approved merge runs, and done after that merge (the
+// ask closing, or the turn the merge's result woke). A refused merge, a new
+// head, a live deploy, a question and a message from anyone end it.
+func PushQuiet(t *Thread, state State, on func(repo string) bool) bool {
+	switch state {
+	case Asking:
+		for _, d := range t.Decisions {
+			if repo, why := mergeableByFyr(t, d, false); why != "" || !on(repo) {
+				return false
+			}
+		}
+		return len(t.Decisions) > 0
+	case Done:
+		return autoMerged(t) != nil
+	case Blocked:
+		c := autoMerged(t)
+		if c == nil || t.Unresponsive != nil {
+			return false
+		}
+		ready, n := ThreadNeed(t)
+		return n != nil && n.Cause == CauseReady && ready.ID == c.ID
+	}
+	return false
+}
+
+// autoMerged is the change whose auto-approved merge is still the thread's
+// latest news, or nil.
+func autoMerged(t *Thread) *Change {
+	if t.QuietMerge == "" {
+		return nil
+	}
+	c := FindChange(t, t.QuietMerge)
+	if c == nil || c.AutoApproved == nil || c.AutoApproved.Repo == "" || c.PR == nil || c.Phase == PhaseLive || !SameHead(c.PR.Head, c.AutoApproved.Head) {
+		return nil
+	}
+	if k := condition(c, CondMerge); k != nil && k.Status == CondFail {
+		return nil
+	}
+	return c
 }
 
 // autoLine is the first sentence of an auto-approved effect's result.

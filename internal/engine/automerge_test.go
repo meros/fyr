@@ -37,6 +37,11 @@ func TestAutoMergeByRepoSetting(t *testing.T) {
 	if th, _ := h.e.Thread(id); len(th.Decisions) != 1 || h.r.n() != 0 {
 		t.Fatalf("merged without the setting: %d decisions, %d runs", len(th.Decisions), h.r.n())
 	}
+	for _, d := range h.e.Snapshot() {
+		if d.ID == id && d.PushQuiet {
+			t.Fatal("an ask the owner must answer is quiet")
+		}
+	}
 	// The owner opts the repo in: the waiting ask merges at once.
 	if r := h.cmd(core.KindAutoMergeSet, "", core.Args{"repo": "Acme/App", "on": true}); !r.OK {
 		t.Fatalf("set: %+v", r)
@@ -49,6 +54,15 @@ func TestAutoMergeByRepoSetting(t *testing.T) {
 		t.Fatalf("ran %+v", call)
 	}
 	eventually(t, "the thread says it", func() bool { return hasEvent(h.events(id), "effect.result", "Auto-approved") })
+	// V0.200: the merge sends no push, whatever state it leaves.
+	eventually(t, "the merged thread is quiet", func() bool {
+		for _, d := range h.e.Snapshot() {
+			if d.ID == id {
+				return d.PushQuiet
+			}
+		}
+		return false
+	})
 	if !hasEvent(h.events(id), "decision.closed", "Auto-approved") {
 		t.Fatal("no auto-approved answer in the thread")
 	}
