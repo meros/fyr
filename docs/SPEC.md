@@ -306,6 +306,7 @@ v0 is the smallest Fyr the owner can work in every day. It is binding for milest
 | V0.200 | → V0.102, V0.136, V0.54, V0.20. **An auto-merge sends no notification.** (owner, 18 Nov: "When we have auto-merge on a project/repo. Don't send a notification for the merge!") The host marks a thread `pushQuiet` and the front sends no push for it, in three states: (1) **asking**, when every open ask is a merge Fyr approves itself in a repo with the setting on, also while the run still goes; (2) **blocked**, when the only need is Ready on the PR whose approved merge is running; (3) **done**, after that merge: the ask closing and the turn its result wakes. **Still pushed:** a refused merge, a new head, any other question, a thread someone wrote to since (their answer), a live deploy, and a ready PR with no ask. The inbox is unchanged. Tests: `internal/core/automerge_test.go` `TestPushQuiet*`, `internal/engine/automerge_test.go`, `internal/front/pushquiet_test.go`. |
 | V0.201 | → V0.86 (3), V0.144, V0.164 (5), V0.195. **A job Fyr admitted is not called undeclared when its agent ends the turn to wait for it, and the notice about undeclared work tells the agent something it can act on.** *Amends V0.86 (3) and V0.164 (5).* (owner, 18 Nov: agents do not seem to react to the notice. Of the 34 notices so far, 3 were about a job that had been admitted and still ran in the background, most named no command and 5 named only the shell wrapper, and agents answered others with "that has ended".) (1) When a run ends the admission stays while a background command that is not a Monitor and has not gone quiet (V0.195), or a subagent, still runs; it goes back `SlotIdle` after the last one is done. (2) The notice no longer says "call it now" outright: if the work still runs, call it now; if it has ended, ask before running it or anything like it again. (3) Without a known command the notice says so and gives no example to copy. (4) A command is recognised inside the CLI's shell wrapper, compared without quotes, backslashes and white space; a wrapper that matches no command the gate saw names none. |
 | V0.202 | → V0.22, 5.12. **A thread may start 12 threads an hour.** *Amends V0.22.* (owner, 18 Nov, on the limit of 5 new threads an hour per thread: "5 is too little - do one per 5 minutes or something instead".) `thread_new` allows 12 per thread in a sliding hour: the rate of one per 5 minutes, and an agent can still start several at once. The limit of 30 messages an hour on `thread_send` stays. |
+| V0.203 | → 13.1 `e`, V0.31, V0.89, V0.106, V0.162, U8, 7.6. **Settle settles; Settle when done is its own explicit action.** *Amends 13.1 `e`, 5.3 and V0.162.* (owner, 18 Nov: "right click settle doesn't always settle", then "I want settle to always settle... settle when done to settle when done (not running, no pr's open etc). Explicit behaviour!") The cause: a first Settle on an idle thread with an open PR armed "settle when merged", the toast still said Settled, and the second press settled. (1) **Settle** (`e`, button, row menu, swipe, sheet) settles now, also with an open PR. A settled thread does not run: on a running thread it stops the run and withdraws the messages the agent has not read, the label reads "Settle and stop run" and the toast "Settled; run stopped". (2) **Settle when done** (`thread.settleWhenDone`; row menu, thread ⋯ menu, phone sheet) waits until no run or task is live, no work is about to start, nothing waits for the owner and no PR is open (a dismissed or done change does not count). It is off with a reason when the last run failed or there is nothing to wait for; when armed the entry reads "Cancel settle when done". The agent's `settle_when` "done" is the same condition. An owner's message or a failed run still drops it. (3) **Bulk** (`now: true`) never stops a run: running threads are left out and counted in the toast, as pinned ones are. (4) `thread.settleWhenMerged` and the agent's "merged" and "change" conditions are unchanged. |
 
 Not in v0: phone, tailnet, pairing, push, hours, governor, policy file, async effects, handover, away strip, palette.
 
@@ -1024,7 +1025,8 @@ The owner's commands are the Registry (`Ordered()` gives the list clients show).
 | `thread.retry` | | the last run did not fail; archived | Revives the thread and asks the agent to continue from where it stopped (V0.6). |
 | `thread.dismiss` | | no failure | Clears the failure. |
 | `thread.dismissPR` | | no PR; the PR is still open | Marks the main change `dismissed` (V0.36). |
-| `thread.settle` | now? | already settled; it settles when the run ends; archived | 13.1 `e`: while a run is live, arms "settle when done"; idle with an open main PR, arms "settle when merged"; else settles now. `now: true` (bulk) settles now unless a run is live. |
+| `thread.settle` | now? | already settled; archived | Settles now (V0.203). A live run is stopped and unread messages are withdrawn. `now: true` (bulk) refuses a pinned or running thread. |
+| `thread.settleWhenDone` | | already settled; already set; archived; the last run failed; nothing to wait for | Arms the settle Rule on the work being done: no run or task, nothing waiting for the owner, no open PR (V0.203). |
 | `thread.unsettle` | | not settled and no settle Rule | Clears the settle and every settle Rule, the agent's too. |
 | `thread.settleWhenMerged` | | no open PR; already set | Arms the settle Rule on the main change reaching landed (13.1 `m`). |
 | `thread.snooze`, `thread.unsnooze` | until | settled; not snoozed | Arms or drops the View's snooze Rule (7.5). |
@@ -1450,7 +1452,7 @@ When the last reason goes, the Rule resumes:
 | `builtins:<change>` | builtins | `changeMoved(change)` | `change.builtins`: set the built-in actions from what Fyr observed (5.13) | keep |
 | `snooze` | snooze | 7.5 | `rule.wake` | disarm |
 
-- **Settle.** A settle Rule settles only when the thread is idle, so a working thread is never hidden and a failed run keeps the thread in the inbox. The first settle Rule that fires settles the thread; settling clears every settle Rule. "When done" is dropped when a new message starts a new run. `thread.unsettle` clears the settle and every settle Rule.
+- **Settle.** A settle Rule settles only when the thread is idle, so a working thread is never hidden and a failed run keeps the thread in the inbox. The first settle Rule that fires settles the thread; settling clears every settle Rule. "When done" (V0.203: no run or task, nothing waiting for the owner, no open PR) is dropped when the owner's message starts a new run. `thread.unsettle` clears the settle and every settle Rule.
 - **The deploy watch.** While it is armed, the deployments observer reads the merge commit's GitHub Deployments (`observe`), and each read lands as `deploy.observed` (V0.66). A repo without any deployment ends the watch at the first read.
 - **Quiet hours** are computed from the project's windows and the clock when the state is read (3.15), not a Rule: they change no record and start no Input, so a Rule would only store what the clock already says (decision 0020). The engine's clock broadcasts a project and its threads when a window starts or ends.
 
@@ -1863,7 +1865,7 @@ type HoursBody = {
   | `Space` | peek (no visit, 6.4) |
   | `n` / `N` | next / previous row that needs you, with its Decision focused |
   | `x` | select a row |
-  | `e` | settle; on a running thread: settle when done (this wins over an open PR); on a thread without a current run and with an open PR: settle when merged |
+  | `e` | settle now; on a running thread this stops the run (V0.203) |
   | `Shift+E` | settle the selection or the focused group |
   | `s` | snooze (presets) |
   | `#` | archive |
@@ -1891,7 +1893,7 @@ type HoursBody = {
   - No module styles.
   - Text never uses `ink-faint`.
 - **U10. Speed.** An inbox Action shows its result within 100 ms, as an optimistic update. A thread with 10,000 events opens within 300 ms.
-- **U11. Clearing work.** The section `seen` starts with a group "PR merged". `Shift+E` settles a group or the selection with one toast and one undo. `e` arms "settle when done" or "settle when merged" (`thread.settleWhen`).
+- **U11. Clearing work.** The section `seen` starts with a group "PR merged". `Shift+E` settles a group or the selection with one toast and one undo. "Settle when done" is its own action (V0.203).
 - **U12. Explainable order.** Every row's position can be explained from its reason.
 - **U13. Away strip.** When the user returns after 15 min or more, a one-line strip shows what happened since: "Since 14:02: 3 done · 2 PRs merged · 1 failed · 4 settled". Clicking it filters the inbox to those rows. "Dismiss" clears the strip; it does not visit rows.
 - **U14. Switching is instant.** `⌘1`–`⌘9` are stable slots; `⌘[` goes back; the palette finds any thread. The design budget is 1,900 visits a day (0.2).

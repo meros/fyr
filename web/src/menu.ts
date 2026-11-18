@@ -1,5 +1,6 @@
 // SPEC 0.5 V0.31: what Fyr's right-click menu holds. Pure: the target in, the
 // entries out. The menu component and the app wire the ids to actions.
+import { settleLabel } from "./gesture.ts";
 import type { Thread } from "./types.ts";
 
 export type MenuItem = { id: string; label: string; key?: string; disabled?: string };
@@ -28,6 +29,17 @@ export function seenToggle(t: Thread): { id: "markSeen" | "markUnseen"; action: 
     : { id: "markUnseen", action: "thread.markUnseen", label: "Mark unseen", key: "u" };
 }
 
+/** V0.203: what "settle when done" waits for, in the words both fronts show. */
+export const SETTLE_DONE_HINT = "Once no run is live, nothing waits for you and no PR is open";
+export const SETTLE_DONE_TOAST = "Settles when done";
+
+/** V0.203: the one "settle when done" entry of a thread, on both fronts: it arms the wait, or cancels it when armed. */
+export function settleDoneEntry(t: Pick<Thread, "settleWhenDone">): { id: "settleWhenDone"; action: "thread.settleWhenDone" | "thread.unsettle"; label: string } {
+  return t.settleWhenDone
+    ? { id: "settleWhenDone", action: "thread.unsettle", label: "Cancel settle when done" }
+    : { id: "settleWhenDone", action: "thread.settleWhenDone", label: "Settle when done" };
+}
+
 export function threadMenu(t: Thread): MenuEntry[] {
   const settled = !!t.settledAt || t.attention.state === "settled";
   const archived = !!t.archivedAt || t.attention.state === "archived";
@@ -35,7 +47,9 @@ export function threadMenu(t: Thread): MenuEntry[] {
   const mark = seenToggle(t);
   const out: MenuEntry[] = [{ id: "open", label: "Open", key: "↵" }, SEP];
   out.push(t.pinnedAt ? item(t, "unpin", "thread.unpin", "Unpin") : item(t, "pin", "thread.pin", "Pin")); // V0.104
-  out.push(settled ? item(t, "unsettle", "thread.unsettle", "Unsettle") : item(t, "settle", "thread.settle", "Settle", "e"));
+  const done = settleDoneEntry(t);
+  if (settled) out.push(item(t, "unsettle", "thread.unsettle", "Unsettle"));
+  else out.push(item(t, "settle", "thread.settle", settleLabel(t), "e"), item(t, done.id, done.action, done.label));
   out.push(snoozed ? item(t, "unsnooze", "thread.unsnooze", "Unsnooze") : item(t, "snooze", "thread.snooze", "Snooze…", "s"));
   out.push(item(t, mark.id, mark.action, mark.label, mark.key));
   out.push(archived ? item(t, "unarchive", "thread.unarchive", "Unarchive") : item(t, "archive", "thread.archive", "Archive", "#"));

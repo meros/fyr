@@ -68,11 +68,9 @@ export function swipeAvail(t: Thread): SwipeAvail {
   };
 }
 
-/** `e` semantics (13.1): running settles when done; an open PR without a run settles when merged. */
-export function settleLabel(t: Thread): string {
-  if (t.running) return "Settle when done";
-  if (t.pr && (t.pr.state ?? "OPEN") === "OPEN") return "Settle when merged";
-  return "Settle";
+/** V0.203: Settle settles now, on every thread; on a running one that stops the run, and the label says so. */
+export function settleLabel(t: Pick<Thread, "running">): string {
+  return t.running ? "Settle and stop run" : "Settle";
 }
 
 function shortReason(reason: string, t: Thread): string {

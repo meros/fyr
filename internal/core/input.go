@@ -244,6 +244,10 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	woke := wakeWhenDone(Rec{T: t, V: v}, in, now)
 	res.Events = append(res.Events, woke.Events...)
 	res.Effects = append(res.Effects, woke.Effects...)
+	// V0.203: so does "settle when done".
+	done := settleWhenWorkDone(Rec{T: t, V: v}, in, now)
+	res.Events = append(res.Events, done.Events...)
+	res.Effects = append(res.Effects, done.Effects...)
 	return t, v, res, nil
 }
 

@@ -146,6 +146,7 @@ const (
 	WhenMoved       = "changeMoved"   // anchored: {change}: the change's phase, conditions or evidence moved since the last firing
 	WhenEnded       = "changeEnded"   // {change}: the change ended (abandoned or reverted)
 	WhenWorkOver    = "workOver"      // V0.185: no work goes on, or the thread needs the owner
+	WhenWorkDone    = "workDone"      // V0.203: no work goes on, nothing waits for the owner, no PR is open
 )
 
 // AgentWhens are the kinds the agent may use in its own Rules.
@@ -222,6 +223,8 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 		return truth(len(t.Decisions) == 0)
 	case WhenWorkOver:
 		return truth(WorkOver(t))
+	case WhenWorkDone:
+		return truth(WorkDone(t))
 	}
 	c := FindChange(t, w.Change)
 	if c == nil {
@@ -491,6 +494,9 @@ func due(r Rec, now time.Time) (string, bool) {
 				continue // V0.185: wakeWhenDone, at the end of Reduce
 			}
 			suspend(x, r.T, now)
+			if !view && x.When.doneBound() {
+				continue // V0.203: settleWhenWorkDone, at the end of Reduce
+			}
 			if x.Status != RuleArmed || (x.RetryAt != nil && now.Before(*x.RetryAt)) {
 				continue
 			}

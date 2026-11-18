@@ -169,7 +169,8 @@ Actions and their args:
 | `thread.answer` | `decisionId`, then `answers: {question: label}` for `ask` (multi-select: labels joined with ", "; Other: the free text), or `allow: bool` for `approval` and `effect` |
 | `thread.markSeen` | `upTo`: the thread's `activityAt` the client showed (RFC 3339). Without it, now. |
 | `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.dismissPR` (V0.36: merged or closed PR only), `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markUnseen`, `thread.pin` and `thread.unpin` (V0.104, owner only), `thread.restart` (V0.143: only while the agent does not respond) | none |
-| `thread.settle` | `now?: true` for bulk settle |
+| `thread.settle` | settles now and stops a live run; `now?: true` for bulk settle, which refuses a pinned or running thread |
+| `thread.settleWhenDone` | V0.203: settles once no run or task is live, nothing waits for the owner and no PR is open |
 | `thread.snooze` | `until` (RFC 3339, future) |
 | `thread.snoozeWhenDone` (V0.185): until the thread's work is done, at most 24 h; `view.snoozeUntil` is then that maximum and `view.snoozeWhenDone` is true. Unavailable, with the reason, when no work goes on or the thread needs the owner | none |
 | `thread.rename` | `title` |

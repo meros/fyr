@@ -279,10 +279,13 @@ test("a bulk settle leaves pinned threads out and counts them", () => {
     thread("c", "seen", "seen", { unavailable: { "thread.settle": "Already settled" } }),
     thread("d", "done", "needs"),
   ];
-  assert.deepEqual(bulkSettle(ts), { ids: ["a", "d"], kept: 1, unread: 0 });
-  assert.deepEqual(bulkSettle([ts[1]]), { ids: [], kept: 1, unread: 0 });
+  assert.deepEqual(bulkSettle(ts), { ids: ["a", "d"], kept: 1, unread: 0, running: 0 });
+  assert.deepEqual(bulkSettle([ts[1]]), { ids: [], kept: 1, unread: 0, running: 0 });
   assert.equal(bulkSettleText(7, 1), "Settled 7 threads; 1 pinned thread kept");
   assert.equal(bulkSettleText(1, 2), "Settled; 2 pinned threads kept");
   assert.equal(bulkSettleText(0, 1), "Nothing settled; 1 pinned thread kept");
   assert.equal(bulkSettleText(3, 0), "Settled 3 threads");
+  // V0.203: a bulk settle never stops a run
+  assert.deepEqual(bulkSettle([thread("r", "working", "working", { running: true })]), { ids: [], kept: 0, unread: 0, running: 1 });
+  assert.equal(bulkSettleText(2, 0, 0, 1), "Settled 2 threads; 1 still running");
 });

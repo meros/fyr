@@ -78,7 +78,7 @@ import { StallBanner } from "./stall-ui.tsx";
 import { restartNowAsk } from "./deploy.ts";
 import { cache, mergeEventLists } from "./cache.ts";
 import { navTransition } from "./native.ts";
-import { menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
+import { SETTLE_DONE_TOAST, menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
 import { ContextMenu } from "./menu-ui.tsx";
 import { Boundary } from "./boundary.tsx";
 import { isDeskEntry, popStep, recordOpen, type OpenCause } from "./desk-history.ts";
@@ -680,22 +680,30 @@ function App() {
     setZone("list");
   };
 
+  /** V0.203: settles now; on a running thread the host stops the run, and the toast says so. */
   const settle = (id: string) => {
+    const label = store.threads[id]?.running ? "Settled; run stopped" : undefined;
     stepPast([id]);
-    void cmds.run("thread.settle", [id]);
+    void cmds.run("thread.settle", [id], undefined, label ? { label: () => label } : undefined);
+  };
+
+  /** V0.203: the explicit wait, or its cancel when it is armed. The thread stays where it is. */
+  const settleWhenDone = (id: string) => {
+    if (store.threads[id]?.settleWhenDone) void cmds.run("thread.unsettle", [id]);
+    else void cmds.run("thread.settleWhenDone", [id], undefined, { label: () => SETTLE_DONE_TOAST });
   };
 
   /** V0.162: every bulk settle, desktop and phone, goes through here: pinned threads are left out and counted. */
   const settleBulk = (ids: string[], o: { sweep?: boolean; unreadKept?: number } = {}): Promise<string[]> => {
     const r = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t), o.sweep);
-    const { ids: take, kept } = r;
+    const { ids: take, kept, running } = r;
     const unread = r.unread + (o.unreadKept ?? 0); // V0.189: what the phone's Select all left out
     if (!take.length) {
-      if (kept || unread) cmds.notify(bulkSettleText(0, kept, unread));
+      if (kept || unread || running) cmds.notify(bulkSettleText(0, kept, unread, running));
       else cmds.showError("Nothing here can be settled");
       return Promise.resolve([]);
     }
-    return cmds.run("thread.settle", take, { now: true }, { label: (n) => bulkSettleText(n, kept, unread) }).then((n) => (n ? take : []));
+    return cmds.run("thread.settle", take, { now: true }, { label: (n) => bulkSettleText(n, kept, unread, running) }).then((n) => (n ? take : []));
   };
 
   const settleGroup = () => {
@@ -766,6 +774,7 @@ function App() {
       const id = target.t.id;
       if (it.id === "open") openThread(id, "open");
       else if (it.id === "settle") settle(id);
+      else if (it.id === "settleWhenDone") settleWhenDone(id);
       else if (it.id === "archive") archive([id]);
       else if (it.id === "snooze") openSnooze([id]);
       else if (it.id === "markUnseen") markUnseen(id);
@@ -1384,10 +1393,10 @@ function App() {
   const navRef = useRef(nav);
   navRef.current = nav;
   /** U8: after settling or archiving the open thread on a phone, go back to the inbox (pop, not push). */
-  const leaveOpenThread = (action: "settle" | "archive", ids: string[]) => {
+  const leaveOpenThread = (ids: string[]) => {
     const s = navRef.current.screen;
     if (s.name !== "thread" || ids.length !== 1 || ids[0] !== s.id) return;
-    if (!leavesThread(action, threadsRef.current[s.id])) return;
+    if (!leavesThread(threadsRef.current[s.id])) return;
     reopenRef.current = s.id;
     navBack();
   };
@@ -1454,9 +1463,10 @@ function App() {
   const phoneActions: PhoneActions = {
     settle: (ids, bulk, unreadKept) =>
       bulk
-        ? void settleBulk(ids, { unreadKept }).then((done) => done.length && leaveOpenThread("settle", done))
-        : void cmds.run("thread.settle", ids).then((n) => n && leaveOpenThread("settle", ids)),
-    archive: (ids) => void cmds.run("thread.archive", ids).then((n) => n && leaveOpenThread("archive", ids)),
+        ? void settleBulk(ids, { unreadKept }).then((done) => done.length && leaveOpenThread(done))
+        : void cmds.run("thread.settle", ids, undefined, ids.length === 1 && store.threads[ids[0]]?.running ? { label: () => "Settled; run stopped" } : undefined).then((n) => n && leaveOpenThread(ids)),
+    settleWhenDone,
+    archive: (ids) => void cmds.run("thread.archive", ids).then((n) => n && leaveOpenThread(ids)),
     markUnseen: (id) => markUnseen(id),
     create,
   };
@@ -1645,6 +1655,7 @@ function App() {
               void cmds.run(a, [view.id], args);
             }}
             onSnooze={() => openSnooze([view.id])}
+            onSettleWhenDone={() => settleWhenDone(view.id)}
             onMoveProject={() => openPicker([view.id])}
             onHandover={() => (setHandoverId(view.id), setDialog("handover"))}
             onRegenerateTitle={() => void cmds.regenerateTitle(view.id)}

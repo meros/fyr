@@ -76,27 +76,40 @@ type errUnavailable string
 
 func (e errUnavailable) Error() string { return string(e) }
 
-func TestSettleWhileRunningSettlesWhenDone(t *testing.T) {
+// V0.203: Settle settles at once. A settled thread does not run, so a live
+// run gets the Stop and an unread message is withdrawn.
+func TestSettleWhileRunningStopsTheRun(t *testing.T) {
 	th, v := &Thread{}, &View{}
+	th.Outbox = []OutMsg{{ID: "m1", State: "queued"}}
 	RunStarted(th, at(0))
-	if _, err := apply(t, "thread.settle", th, v, nil, at(1)); err != nil {
+	fx, err := Registry["thread.settle"].Apply(th, v, nil, at(1))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if th.Settle.At != nil || !SettlesWhenDone(th) {
-		t.Fatal("settle on a running thread must defer")
+	if Compute(th, v, at(1)).State != Settled || Settling(th) {
+		t.Fatalf("settle on a running thread must settle now: %+v %+v", th.Settle, th.Rules)
 	}
-	rules(th, at(1))
-	RunEnded(th, nil, at(2))
-	rules(th, at(2))
-	if Compute(th, v, at(3)).State != Settled {
-		t.Fatal("thread did not settle when the run ended")
+	if len(fx) != 2 || fx[0].Kind != EffectCancelMessage || fx[0].MessageID != "m1" || fx[1].Kind != EffectInterrupt {
+		t.Fatalf("effects: %+v", fx)
+	}
+}
+
+// V0.203: a bulk settle never stops a run.
+func TestBulkSettleLeavesARunningThread(t *testing.T) {
+	th, v := &Thread{}, &View{}
+	RunStarted(th, at(0))
+	if _, err := Registry["thread.settle"].Apply(th, v, Args{"now": true}, at(1)); err == nil {
+		t.Fatal("a bulk settle took a running thread")
+	}
+	if th.Settle.At != nil || Settling(th) {
+		t.Fatalf("settled %v, rules %+v", th.Settle.At, th.Rules)
 	}
 }
 
 func TestFailedRunDoesNotSettle(t *testing.T) {
 	th, v := &Thread{}, &View{}
 	RunStarted(th, at(0))
-	apply(t, "thread.settle", th, v, nil, at(1))
+	apply(t, "thread.settleWhenDone", th, v, nil, at(1))
 	RunEnded(th, &Failure{Class: "api", Message: "x", At: at(2)}, at(2))
 	rules(th, at(2))
 	if got := Compute(th, v, at(3)).State; got != Failed {
@@ -236,24 +249,15 @@ func stringsRepeat(s string, n int) string {
 	return out
 }
 
-// SPEC 13.1 `e`: on a thread without a current run and with an open PR,
-// settle arms "settle when merged"; bulk settle (Shift+E, U11) settles now.
-func TestSettleWithOpenPRArmsSettleWhenMerged(t *testing.T) {
+// V0.203: an open PR does not hold Settle back.
+func TestSettleWithOpenPRSettlesNow(t *testing.T) {
 	th0 := withPR(Thread{}, PR{State: "OPEN", Checks: "pass"})
 	th, v := &th0, &View{}
 	if _, err := apply(t, "thread.settle", th, v, nil, at(1)); err != nil {
 		t.Fatal(err)
 	}
-	if th.Settle.At != nil || !SettlesWhenMerged(th) {
-		t.Fatalf("e with an open PR must arm settle when merged, got settled=%v armed=%v", th.Settle.At != nil, SettlesWhenMerged(th))
-	}
-	th1 := withPR(Thread{}, PR{State: "OPEN"})
-	th2, v2 := &th1, &View{}
-	if _, err := apply(t, "thread.settle", th2, v2, Args{"now": true}, at(1)); err != nil {
-		t.Fatal(err)
-	}
-	if th2.Settle.At == nil {
-		t.Fatal("bulk settle must settle now")
+	if th.Settle.At == nil || Settling(th) {
+		t.Fatalf("settle with an open PR: settled=%v rules=%+v", th.Settle.At != nil, th.Rules)
 	}
 }
 
