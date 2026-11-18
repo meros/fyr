@@ -2,7 +2,8 @@ package cgroup
 
 // Decision 0029 section 0 (c) (#185): the slowdown s, how much slower a new
 // job runs now (1.0 = idle). A probe times a fixed CPU burst every few
-// seconds (wall ÷ CPU time); s is the median of the last three. Where PSI
+// seconds (wall ÷ CPU time), on macOS raised to what the run queue says
+// (hostQueue); s is the median of the last three. Where PSI
 // exists the host learns its own relation of CPU pressure to the probe, so
 // s is the larger of the probe and the pressure through that fit: PSI is
 // smoother and sees stalls between probes, the probe has no ceiling.
@@ -113,7 +114,11 @@ func (s *Slowdown) RunProbe(ctx context.Context, start func(context.Context) (*e
 			}
 		} else {
 			for ctx.Err() == nil {
-				if v, ok := Burst(); ok {
+				v, ok := Burst()
+				if q, qok := hostQueue(ctx); qok {
+					v, ok = max(v, q), true
+				}
+				if ok {
 					s.Add(time.Now(), v, pressure())
 				}
 				sleep(ctx, ProbeEvery)

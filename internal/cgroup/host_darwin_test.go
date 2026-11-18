@@ -27,6 +27,40 @@ func TestDarwinPressureLevel(t *testing.T) {
 	}
 }
 
+func TestDarwinAvailablePagesCountHalfOfTheProgramsOwn(t *testing.T) {
+	if got := availablePages(10, 1, 2, 5, 22); got != 28 { // 10+1+2+5 + (22-2)/2
+		t.Fatalf("%d", got)
+	}
+	if got := availablePages(0, 0, 9, 0, 4); got != 9 { // purgeable above the count
+		t.Fatalf("%d", got)
+	}
+}
+
+func TestDarwinQueueCountsTheThreadsThatCompute(t *testing.T) {
+	out := `USER  PID TT %CPU STAT PRI STIME UTIME COMMAND
+me    1   ??  99.0 R    31T 0:00.05 0:00.01 /bin/hog 99.0 R
+      1       98.0 R    31T 0:00.05 0:00.01          98.0 R+
+      1        0.4 R    31T 0:00.05 0:00.01           0.4 R
+me    2   ??  50.0 S    31T 0:00.05 0:00.01 /bin/idle 50.0 S
+me    3   ??  40.0 T    31T 0:00.05 0:00.01 /bin/stopped 40.0 T
+`
+	if v, ok := queueSlowdown(out, 2); !ok || v != 1.5 { // two compute: (2+1) ÷ 2
+		t.Fatalf("%v %v", v, ok)
+	}
+	if v, ok := queueSlowdown(out, 8); !ok || v != 1 { // room to spare
+		t.Fatalf("%v %v", v, ok)
+	}
+	if _, ok := queueSlowdown("ps: failed\n", 8); ok {
+		t.Fatal("output without a reading parsed")
+	}
+}
+
+func TestDarwinQueueReadsThisHost(t *testing.T) {
+	if v, ok := hostQueue(t.Context()); !ok || v < 1 {
+		t.Fatalf("%v %v", v, ok)
+	}
+}
+
 // Without /proc the Mac's sampler reads sysctl: a provider, a capacity of
 // a share of the RAM, a headroom and a stall level, and the load average.
 func TestDarwinSamplerReadsSysctl(t *testing.T) {
