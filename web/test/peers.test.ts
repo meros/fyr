@@ -61,3 +61,15 @@ test("a link in words: up from either side, down with the reason", () => {
   assert.equal(memberLink({ self: true }, NOW), "");
   assert.match(memberLink({ link: { state: "up", via: "peer", opened: "them" } }, NOW), /opened by it/);
 });
+
+import { configNote } from "../src/peers.ts";
+
+test("V0.180: a config that changed under fyrd is said, with how to apply it", () => {
+  assert.equal(configNote(state), null);
+  assert.equal(configNote(null), null);
+  const n = configNote({ ...state, configChanged: "config changed; restart fyrd to apply" });
+  assert.ok(n);
+  assert.match(n.title, /config changed; restart fyrd to apply/i);
+  assert.match(n.how, /systemctl reload fyr/);
+  assert.match(n.how, /agents/);
+});

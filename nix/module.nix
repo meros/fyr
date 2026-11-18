@@ -325,9 +325,16 @@ in
       after = [ "network-online.target" ] ++ lib.optional (hostListen != null) "tailscaled.service";
       wants = [ "network-online.target" ] ++ lib.optional (hostListen != null) "tailscaled.service";
       wantedBy = [ "multi-user.target" ];
-      # A switch must not restart Fyr: that ends every running agent turn.
-      # Changes apply at the next manual restart or boot, as with t3code.
+      # A switch must not restart the unit: that ends every running agent turn.
+      # A new package applies at the next manual restart or boot.
       restartIfChanged = false;
+      # V0.180 (#264): a changed config.json reloads instead: ExecReload sends
+      # SIGHUP to the launcher, which restarts fyrd on the new file while its
+      # runner keeps the agents (decision 0023). A config-only change differs in
+      # X-Reload-Triggers alone, which switch-to-configuration reloads even with
+      # restartIfChanged off. (Not reloadIfChanged: with reloadTriggers NixOS
+      # warns, and it would reload on every package change too.)
+      reloadTriggers = [ configJSON ];
       # nix: self-deploys build with `nix develop <checkout>` (decision 0007).
       path = cfg.path ++ (with pkgs; [
         claude-code git gh openssh nix gnumake bash coreutils gnugrep gnused findutils ripgrep
@@ -346,6 +353,7 @@ in
           "-seed ${cfg.package}/bin/fyrd"
           "-- -config /etc/fyr/config.json"
         ];
+        ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";
         Restart = "always";
         RestartSec = 5;
         # Agent turns are child processes; SIGINT to the group ends them cleanly.

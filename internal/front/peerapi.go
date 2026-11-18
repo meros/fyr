@@ -44,6 +44,11 @@ func (f *Front) peerAPI(mux muxer) {
 			return
 		}
 		out := map[string]any{"members": p.Members(), "candidates": p.Candidates(r.Context()), "whoisLinkUses": f.WhoisLinkUses()}
+		if f.opt.ConfigNote != nil {
+			if n := f.opt.ConfigNote(); n != "" {
+				out["configChanged"] = n
+			}
+		}
 		if until, ok := p.Invites.Open(); ok {
 			out["inviteUntil"] = until
 		}

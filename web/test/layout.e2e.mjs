@@ -2577,6 +2577,13 @@ for (const [label, w, ht] of [
       await send("Emulation.setEmulatedMedia", { features: [] });
     }
   });
+  // V0.180 (#264): a config that changed under fyrd is said at the top of the installs panel, on both fronts.
+  await step("config changed", async () => {
+    await open("hosts&config=changed", `!!document.querySelector('${root} .peers .cfgchanged')`);
+    const c = await evaluate(`(() => { const e = document.querySelector('${root} .peers .cfgchanged'); const r = e.getBoundingClientRect(); return { t: e.textContent, l: r.left, r: r.right, vw: innerWidth }; })()`);
+    check(/^Config changed; restart fyrd to apply\. .*systemctl reload fyr/.test(c.t) && c.l >= 0 && c.r <= c.vw, `${ctx}: the config note ${JSON.stringify(c)}`);
+    await shot(`hosts-config-changed-${label}.png`);
+  });
   // 3. lab's page: the changed id and Trust.
   await step("changed", async () => {
     await open("hosts/lab", `!!document.querySelector('${root} .note.bad')`);

@@ -175,7 +175,7 @@ func (p *peerSide) peerPort() int {
 
 // ownerRoutes adds the roster's calls to the owner socket (internal/peerwire).
 func (p *peerSide) ownerRoutes(fr *front.Front) func(mux *http.ServeMux) {
-	return peerwire.OwnerRoutes(peerwire.Owner{Env: p.env, Key: p.key, Data: p.data, WhoisLinkUses: fr.WhoisLinkUses,
+	return peerwire.OwnerRoutes(peerwire.Owner{Env: p.env, Key: p.key, Data: p.data, WhoisLinkUses: fr.WhoisLinkUses, ConfigNote: p.cfg.watch.Note,
 		Restart: func() { syscall.Kill(os.Getpid(), syscall.SIGHUP) }})
 }
 

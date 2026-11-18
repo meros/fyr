@@ -3,7 +3,7 @@
 // here: text, a QR code, a link; 10 minutes, once) and Add (type one from another install).
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "./api.ts";
-import { candidateWords, inviteFromUrl, memberLink, needsInvite, others, typedInvite, viaWords, type InviteInfo, type PeerState } from "./peers.ts";
+import { candidateWords, configNote, inviteFromUrl, memberLink, needsInvite, others, typedInvite, viaWords, type InviteInfo, type PeerState } from "./peers.ts";
 import { Group, Row, useSet } from "./settings-rows.tsx";
 
 export type PeersApi = Pick<Api, "peerState" | "peerAct">;
@@ -83,8 +83,14 @@ export function PeersPanel({ api, st }: { api: PeersApi; st: { s: PeerState | nu
     reload();
   };
   const rest = others(s);
+  const cfg = configNote(s);
   return (
     <div class="peers" data-testid="peers">
+      {cfg && (
+        <div class="note bad cfgchanged" role="status">
+          <b>{cfg.title}.</b> {cfg.how}
+        </div>
+      )}
       {msg && (
         <div class="seterr" role="alert">
           {msg}

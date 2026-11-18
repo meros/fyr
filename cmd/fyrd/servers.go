@@ -106,7 +106,7 @@ func startFront(ctx context.Context, p frontParts, listen string, srv *server.Se
 	var fr *front.Front
 	// The front's device data (push keys and subscriptions) stays in this
 	// machine's database, where the host kept it before V0.54.
-	fr = front.New(front.Options{ID: id, Name: p.name, BuildID: BuildID(), LegacyFronts: legacy, OwnerLogin: p.cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), OnWhoisFallback: func() { p.auth.WouldRefuse(auth.WayPeer) }, Web: p.webFS,
+	fr = front.New(front.Options{ID: id, Name: p.name, BuildID: BuildID(), LegacyFronts: legacy, OwnerLogin: p.cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), ConfigNote: p.cfg.watch.Note, OnWhoisFallback: func() { p.auth.WouldRefuse(auth.WayPeer) }, Web: p.webFS,
 		Push: newPusher(p.st), CacheDir: filepath.Join(p.data, "front"), Local: p.local, Store: p.st, Auth: p.auth, Tailnet: tailnetNodes(p.cfg),
 		OwnerRoutes: func(mux *http.ServeMux) {
 			if ps != nil {

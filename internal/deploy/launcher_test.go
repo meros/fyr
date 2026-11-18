@@ -5,9 +5,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -42,6 +44,25 @@ func fakeDaemon(mode string) {
 		os.Exit(1)
 	case "slow":
 		time.Sleep(time.Hour)
+	case "hup":
+		// as fyrd (V0.180): SIGHUP exits 75, so the launcher restarts it; each start is a line.
+		f, _ := os.OpenFile(os.Getenv("FYR_STARTS_FILE"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		f.WriteString(strconv.Itoa(os.Getpid()) + "\n")
+		f.Close()
+		hup := make(chan os.Signal, 1)
+		signal.Notify(hup, syscall.SIGHUP)
+		MarkReady()
+		for i := 0; i < 1000; i++ {
+			select {
+			case <-hup:
+				os.Exit(ExitDeploy)
+			case <-time.After(10 * time.Millisecond):
+			}
+			if _, err := os.Stat(os.Getenv("FYR_STOP_FILE")); err == nil {
+				os.Exit(0)
+			}
+		}
+		os.Exit(0)
 	case "healthy", "sick", "latecrash":
 		// #148: serve /healthz (200, or 503 when sick) and say where.
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -302,5 +323,48 @@ func TestLauncherWritesProbationOK(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(data, ProbationOK))
 	if err != nil || filepath.Base(string(b)) != "b" || target(data, "current") != "b" {
 		t.Fatalf("probation-ok %q (%v), current=%s", b, err, target(data, "current"))
+	}
+}
+
+// SPEC V0.180 (#264): SIGHUP to the launcher is a reload: fyrd gets it, exits 75, and
+// the launcher starts it again (the runner, and with it the agents, stays) instead
+// of stopping as it does on SIGTERM.
+func TestLauncherReloadsOnSIGHUP(t *testing.T) {
+	data := t.TempDir()
+	build(t, data, "a", "hup")
+	link(t, data, "current", "a")
+	l := launcher(data)
+	starts := filepath.Join(data, "starts")
+	l.Env = append(l.Env, "FYR_STARTS_FILE="+starts)
+	l.maxStarts = 3
+	lines := func() int {
+		b, _ := os.ReadFile(starts)
+		return strings.Count(string(b), "\n")
+	}
+	done := make(chan error, 1)
+	go func() { done <- l.Run() }()
+	wait := func(n int) {
+		for i := 0; i < 1000 && lines() < n; i++ {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if lines() < n {
+			t.Fatalf("%d starts, want %d", lines(), n)
+		}
+	}
+	wait(1)
+	time.Sleep(100 * time.Millisecond) // past signal.Notify in the fake
+	l.Reload(syscall.SIGHUP)
+	wait(2)
+	select {
+	case err := <-done:
+		t.Fatalf("Run returned after a reload: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	os.WriteFile(filepath.Join(data, "stop"), nil, 0o644)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if target(data, "current") != "a" {
+		t.Errorf("current=%s", target(data, "current"))
 	}
 }

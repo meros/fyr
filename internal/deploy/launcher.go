@@ -100,6 +100,18 @@ func (l *Launcher) Signal(sig os.Signal) {
 	}
 }
 
+// Reload forwards a signal to the daemon and keeps running (V0.180, #264): fyrd
+// exits 75 on SIGHUP and is started again, reading its config anew, while the
+// runner keeps the agents (decision 0023). A next build that waits is switched to,
+// as on any exit 75.
+func (l *Launcher) Reload(sig os.Signal) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.child != nil {
+		l.child.Signal(sig)
+	}
+}
+
 type failure struct {
 	Build  string    `json:"build"`
 	Reason string    `json:"reason"`
