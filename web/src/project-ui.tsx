@@ -629,7 +629,7 @@ export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
   );
 }
 
-/** Decision 0033: what the project screen needs to show and change a project's links. */
+/** Decision 0034: what the project screen needs to show and change a project's links. */
 export interface ProjectLinking {
   /** the project as the lists show it */
   group: Project;
@@ -724,7 +724,7 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
   );
 }
 
-function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0033: other hosts have this project too */ linked?: boolean }) {
+function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean }) {
   const env = useSet();
   const api = useApi();
   const ask = useAsk();

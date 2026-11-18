@@ -89,7 +89,7 @@ function projectOk(t: Thread, project: string | null, projects: Project[]): bool
 
 /** The project filter's id when that project still exists, else null (V0.23: a removed project filters nothing). */
 export function liveProject(sel: FilterSel, projects: Project[]): string | null {
-  return findProject(projects, sel.project)?.id ?? null; // decision 0033: any member's id names its project
+  return findProject(projects, sel.project)?.id ?? null; // decision 0034: any member's id names its project
 }
 
 /** The threads both rows let through: on a host that is on, and in the picked project. */

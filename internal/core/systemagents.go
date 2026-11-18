@@ -16,8 +16,9 @@ const (
 	// EffectSystemAgentsSet stores the owner's setting on the host.
 	EffectSystemAgentsSet EffectKind = "systemAgents.set"
 
-	JobTitle = "title" // V0.108: Regenerate title
-	JobSetup = "setup" // the project setup run: icon, colour and name
+	JobTitle    = "title"    // V0.108: Regenerate title
+	JobSetup    = "setup"    // the project setup run: icon, colour and name
+	JobQuestion = "question" // V0.210: does a turn's end wait on the owner
 )
 
 // SystemJob is one kind of call Fyr starts itself.
@@ -27,7 +28,7 @@ type SystemJob struct {
 }
 
 // SystemJobs are the jobs in the order Settings lists them.
-var SystemJobs = []SystemJob{{JobTitle, "Thread titles"}, {JobSetup, "Project setup"}}
+var SystemJobs = []SystemJob{{JobTitle, "Thread titles"}, {JobSetup, "Project setup"}, {JobQuestion, "Questions in text"}}
 
 // IsSystemJob says whether Fyr knows the job.
 func IsSystemJob(id string) bool {

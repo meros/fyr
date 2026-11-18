@@ -31,7 +31,7 @@ type settingsHost struct {
 	reg *provider.Registry
 	// home is the host's home folder, the root of its folder picker (V0.132).
 	home string
-	// noLink: the host answers project.link as one from before decision 0033.
+	// noLink: the host answers project.link as one from before decision 0034.
 	noLink atomic.Bool
 }
 
@@ -83,7 +83,7 @@ func newSettingsHostID(t *testing.T, name, id string) *settingsHost {
 		if h.down.Load() {
 			panic(http.ErrAbortHandler)
 		}
-		if sh.noLink.Load() && r.URL.Path == "/api/command" { // a host from before decision 0033
+		if sh.noLink.Load() && r.URL.Path == "/api/command" { // a host from before decision 0034
 			b, _ := io.ReadAll(r.Body)
 			r.Body = io.NopCloser(bytes.NewReader(b))
 			if bytes.Contains(b, []byte(`"project.link"`)) {

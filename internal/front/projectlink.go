@@ -15,7 +15,7 @@ import (
 	"github.com/meros/fyr/internal/core"
 )
 
-// Decision 0033: linked projects. Every host keeps its own project record; a
+// Decision 0034: linked projects. Every host keeps its own project record; a
 // link id on the records makes them one project to the owner. A link spans
 // hosts, so the front writes it: front.projectLink and front.projectUnlink
 // name records by ref (<hostId>/<id>), and each host stores its own record's

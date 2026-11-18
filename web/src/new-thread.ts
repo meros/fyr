@@ -138,7 +138,7 @@ function hostId(ctx: FormCtx, name: string | undefined): string | undefined {
 /** V0.139: a host's projects (every project with one host). */
 export function hostProjects(ctx: FormCtx, host: string | undefined): Project[] {
   if (!multiHost(ctx.hosts)) return ctx.projects;
-  return projectRecords(ctx.projects).filter((p) => hostForProject(p.host, ctx.hosts) === host); // decision 0033: each host's own record
+  return projectRecords(ctx.projects).filter((p) => hostForProject(p.host, ctx.hosts) === host); // decision 0034: each host's own record
 }
 
 /** The projects to pick from: the thread's host's (V0.139: host first), and one made here that the host has not sent
@@ -173,7 +173,7 @@ export function chooseHost(f: NewThreadForm, host: string, ctx: FormCtx, last: R
   let next: NewThreadForm = { ...f, host, picked: "", creating: null, draft: null, picking: false };
   if (f.projectId !== undefined) {
     const list = hostProjects(ctx, host);
-    // Decision 0033: a linked project stays picked when the new host has it too.
+    // Decision 0034: a linked project stays picked when the new host has it too.
     const same = memberOn(findProject(ctx.projects, f.projectId), hostId(ctx, host));
     const pr = same ?? list.find((x) => x.id === startProject(list, null, last.projectId));
     next = { ...next, projectId: pr?.id };
@@ -222,7 +222,7 @@ export function settleForm(f: NewThreadForm, ctx: FormCtx, filterId: string | nu
   }
   if (out.projectId === null && ctx.projects.length) {
     const list = hostProjects(ctx, formHost(out, ctx));
-    // Decision 0033: the filter's linked project, as this host has it.
+    // Decision 0034: the filter's linked project, as this host has it.
     const here = memberOn(findProject(ctx.projects, filterId), hostId(ctx, formHost(out, ctx)));
     const id = startProject(list, here?.id ?? filterId, last.projectId);
     const pr = list.find((x) => x.id === id);

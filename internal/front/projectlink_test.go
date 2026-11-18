@@ -69,7 +69,7 @@ func linkCmd(t *testing.T, front, id string, refs ...string) (int, map[string]an
 	return post(t, front+"/api/front/command", fmt.Sprintf(`{"commandId":%q,"action":"front.projectLink","args":{"refs":[%s]}}`, id, list))
 }
 
-// Decision 0033: a link is stored on each host's own record, by any front,
+// Decision 0034: a link is stored on each host's own record, by any front,
 // one member per host, and only while the hosts can be written.
 func TestProjectLink(t *testing.T) {
 	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
