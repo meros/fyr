@@ -3103,7 +3103,7 @@ try {
 // and the click opened the row instead. Desktop: the right-click menu; phone: the long-press sheet.
 const SETTLE_ROWS = [
   // [id, title, section it starts in, what Settle does]
-  ["t_triage", "Triage sprint issues", "needs", "leaves"], // done
+  ["t_triage", "Triage sprint issues", "unread", "leaves"], // done, not looked at (V0.188)
   ["t_e2e", "Speed up e2e suite", "needs", "leaves"], // failed
   ["t_nix", "Nix flake update", "seen", "leaves"], // idle
   ["t_babysit", "Babysit PR #4170", "working", "waits"], // running: settles when the run ends (V0.106)
@@ -3349,6 +3349,74 @@ section('V0.185', async (h) => {
     await png("snooze-done-phone.png");
   } catch (e) {
     failures.push(`V0.185 phone: ${e.message}`);
+// V0.188: a finished thread the owner has not looked at is in Unread, directly above Seen; Mark seen and Mark unseen move
+// it, ⇧E leaves it, and both fronts show the same. The row menus are the shared seenToggle.
+section('V0.188', async (h) => {
+  const { send, evaluate, waitFor, navigate, tapCenter, key, openScreen, settle, shot } = h;
+  // The phone's rows carry no data-id: they are found by title.
+  const TITLE = { t_triage: "Triage sprint issues" };
+  const phoneRow = (sec, id) => `[...document.querySelectorAll('#m-sec-${sec} .m-swp')].find(r => r.textContent.includes(${JSON.stringify(TITLE[id])}))`;
+  const inSec = (front, sec, id) => (front ? `!!${phoneRow(sec, id)}` : `!!document.querySelector('#sec-${sec} [data-id=${id}]')`);
+  const pressRow = async (sec, id, until) => {
+    await evaluate(`(() => { document.querySelectorAll('[data-e2e-row]').forEach(e => e.removeAttribute('data-e2e-row')); const r = ${phoneRow(sec, id)}; r.scrollIntoView({ block: 'center' }); r.querySelector('.m-mv').setAttribute('data-e2e-row', ''); })()`);
+    await settle();
+    await tapCenter("[data-e2e-row]", until, { long: true });
+  };
+  const order = (front) => `[...document.querySelectorAll('[id^=${front}sec-]')].map(e => e.id.replace('${front}sec-', '')).filter(k => k !== 'pinned' && k !== 'slots')`;
+  const WANT = '["needs","working","unread","seen","snoozed","settled"]';
+  try {
+    await navigate(`${origin}/?mock=rail`, inSec("", "unread", "t_triage"));
+    const d = await evaluate(`({ order: ${order("")}, inSeen: ${inSec("", "seen", "t_triage")}, inNeeds: ${inSec("", "needs", "t_triage")}, rail: document.querySelector('.rail [data-sec=unread]')?.textContent ?? '', railSeen: document.querySelector('.rail [data-sec=seen] .k')?.textContent })`);
+    check(JSON.stringify(d.order) === WANT, `V0.188 desktop: the section order (${JSON.stringify(d.order)})`);
+    check(!d.inSeen && !d.inNeeds, `V0.188 desktop: an unread thread is only in Unread (${JSON.stringify(d)})`);
+    check(/Unread/.test(d.rail) && /g6/.test(d.rail) && d.railSeen === "g3", `V0.188 desktop: the rail's Unread and its keys (${JSON.stringify(d)})`);
+    await shot("unread-desktop.png");
+    const menu = async (id, label) => {
+      const r = await evaluate(`(() => { const b = document.querySelector('.list [data-id=${id}]').getBoundingClientRect(); return { x: b.left + 40, y: b.top + b.height / 2 }; })()`);
+      await send("Input.dispatchMouseEvent", { type: "mousePressed", x: r.x, y: r.y, button: "right", clickCount: 1 });
+      await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: r.x, y: r.y, button: "right", clickCount: 1 });
+      await waitFor(`[...document.querySelectorAll('.ctxm-i')].some(x => x.querySelector('.ell')?.textContent === ${JSON.stringify(label)})`, { what: `the row menu's ${label}` });
+      await evaluate(`[...document.querySelectorAll('.ctxm-i')].find(x => x.querySelector('.ell')?.textContent === ${JSON.stringify(label)}).click()`);
+    };
+    await menu("t_triage", "Mark seen");
+    await waitFor(inSec("", "seen", "t_triage"), { what: "Mark seen to move the row to Seen" });
+    await menu("t_triage", "Mark unseen");
+    await waitFor(inSec("", "unread", "t_triage"), { what: "Mark unseen to move the row back to Unread" });
+    // Folding is the section's own.
+    await evaluate(`document.querySelector('#sec-unread .sec').click()`);
+    await waitFor(`!${inSec("", "unread", "t_triage")}`, { what: "Unread to fold" });
+    check(await evaluate(`document.querySelectorAll('#sec-seen [data-id]').length > 0`), "V0.188 desktop: folding Unread folded Seen too");
+    await evaluate(`document.querySelector('#sec-unread .sec').click()`);
+    await waitFor(inSec("", "unread", "t_triage"), { what: "Unread to unfold" });
+    // ⇧E from a Seen thread settles Seen and sends nothing for Unread.
+    await navigate(`${origin}/?mock=rail&open=t_nix`, inSec("", "seen", "t_nix"));
+    const before = await evaluate(`[...document.querySelectorAll('#sec-unread [data-id]')].map(e => e.dataset.id)`);
+    check(before.length > 0, "V0.188 desktop: the fixture has an unread thread");
+    await evaluate(`document.activeElement?.blur()`);
+    await key("E", "KeyE", 8);
+    await waitFor(`document.querySelectorAll('#sec-seen [data-id]').length === 0`, { what: "⇧E to settle Seen" });
+    const r = await evaluate(`({ left: [...document.querySelectorAll('#sec-unread [data-id]')].map(e => e.dataset.id), sent: (window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle').map(c => c.threadId) })`);
+    check(JSON.stringify(r.left) === JSON.stringify(before) && !before.some((id) => r.sent.includes(id)), `V0.188 desktop: ⇧E touched Unread (${JSON.stringify(r)})`);
+  } catch (e) {
+    failures.push(`V0.188 desktop: ${e.message}`);
+  }
+  try {
+    await openScreen({ url: "?mock=rail" }, 390, 844);
+    await waitFor(inSec("m-", "unread", "t_triage"), { what: "the phone's Unread" });
+    const m = await evaluate(`({ order: ${order("m-")}, strip: [...document.querySelectorAll('.m-seg .l')].map(e => e.textContent), over: [...document.querySelectorAll('.m-seg .l')].filter(e => e.scrollWidth > e.parentElement.clientWidth + 1).map(e => e.textContent), inSeen: ${inSec("m-", "seen", "t_triage")} })`);
+    check(JSON.stringify(m.order) === WANT, `V0.188 phone: the section order (${JSON.stringify(m.order)})`);
+    check(m.strip.includes("Unread") && !m.over.length && !m.inSeen, `V0.188 phone: the strip and the row (${JSON.stringify(m)})`);
+    await shot("unread-phone.png");
+    const item = (label) => `[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.querySelector('.ell')?.firstChild?.textContent === ${JSON.stringify(label)})`;
+    await pressRow("unread", "t_triage", `!!${item("Mark seen")}`);
+    await evaluate(`${item("Mark seen")}.click()`);
+    await waitFor(inSec("m-", "seen", "t_triage"), { what: "the phone's Mark seen to move the row" });
+    await waitFor(`!document.querySelector('.m-sheet')`, { what: "the sheet to close" });
+    await pressRow("seen", "t_triage", `!!${item("Mark unseen")}`);
+    await evaluate(`${item("Mark unseen")}.click()`);
+    await waitFor(inSec("m-", "unread", "t_triage"), { what: "the phone's Mark unseen to move the row back" });
+  } catch (e) {
+    failures.push(`V0.188 phone: ${e.message}`);
   }
 });
 

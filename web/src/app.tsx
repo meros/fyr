@@ -697,13 +697,13 @@ function App() {
 
   /** V0.162: every bulk settle, desktop and phone, goes through here: pinned threads are left out and counted. */
   const settleBulk = (ids: string[]): Promise<string[]> => {
-    const { ids: take, kept } = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t));
+    const { ids: take, kept, unread } = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t));
     if (!take.length) {
-      if (kept) cmds.notify(bulkSettleText(0, kept));
+      if (kept || unread) cmds.notify(bulkSettleText(0, kept, unread));
       else cmds.showError("Nothing here can be settled");
       return Promise.resolve([]);
     }
-    return cmds.run("thread.settle", take, { now: true }, { label: (n) => bulkSettleText(n, kept) }).then((n) => (n ? take : []));
+    return cmds.run("thread.settle", take, { now: true }, { label: (n) => bulkSettleText(n, kept, unread) }).then((n) => (n ? take : []));
   };
 
   const settleGroup = () => {
@@ -1148,8 +1148,8 @@ function App() {
       return;
     }
 
-    // g1–g5
-    if (gPending.current && Date.now() - gPending.current < 1500 && /^[1-5]$/.test(k)) {
+    // g1–g6
+    if (gPending.current && Date.now() - gPending.current < 1500 && /^[1-6]$/.test(k)) {
       gPending.current = 0;
       e.preventDefault();
       const g = SECTIONS.find((s) => s.g === Number(k)); // V0.137: Waiting for a slot has no g key

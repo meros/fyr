@@ -30,6 +30,7 @@ import { sendArgs } from "./attach.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import { ThreadOffers } from "./offers-ui.tsx";
 import { changeChip, headerPr } from "./offers.ts";
+import { seenToggle } from "./menu.ts";
 import { prChip } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
@@ -1377,6 +1378,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   if (!t) return null;
   const reason = (a: string) => unavailableReason(t, a);
   const avail = swipeAvail(t);
+  const mark = seenToggle(t);
   if (sheet.kind === "actions" || sheet.kind === "thread-menu") {
     const peek = sheet.kind === "actions";
     const d = currentDecision(t);
@@ -1428,7 +1430,8 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
         <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => void p.commands.run("thread.setView", [t.id], { on: !t.liveView }))} />
         <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another provider"} disabled={!!reason("thread.handover")} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "handover", ids: [t.id] } })} />
         <Item label="Regenerate title" sub={reason("thread.regenerateTitle") ?? "Name the thread from its conversation so far"} disabled={!!reason("thread.regenerateTitle")} onClick={after(() => void p.commands.regenerateTitle(t.id))} />
-        <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
+        {/* V0.188: the desktop menu's entry (seenToggle): an unread thread offers Mark seen */}
+        <Item label={mark.label} icon={<StateIcon state={mark.id === "markSeen" ? "seen" : "done"} size={16} />} sub={reason(mark.action)} disabled={!!reason(mark.action)} onClick={after(() => (mark.id === "markSeen" ? void p.commands.run(mark.action, [t.id]) : p.actions.markUnseen(t.id)))} />
         {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.list.setSelecting(true), p.list.setPicked(new Set([t.id]))))} />}
         {!peek && <Item label="Details" icon={I.right} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} />}
         <Item label="Archive" icon={I.close} sub={reason("thread.archive")} disabled={!!reason("thread.archive")} onClick={after(() => p.actions.archive([t.id]))} />

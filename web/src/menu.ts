@@ -20,16 +20,24 @@ function item(t: Thread, id: string, action: string, label: string, key?: string
   return { id, label, key, ...(why ? { disabled: why } : {}) };
 }
 
+/** V0.188: the one seen/unseen entry of a thread, on both fronts: Mark seen while it is unread (or in Needs you, as
+ *  before), else Mark unseen. The host sends an unread thread in section "seen", so the state decides. */
+export function seenToggle(t: Thread): { id: "markSeen" | "markUnseen"; action: "thread.markSeen" | "thread.markUnseen"; label: string; key?: string } {
+  return t.attention.state === "done" || t.attention.section === "needs"
+    ? { id: "markSeen", action: "thread.markSeen", label: "Mark seen" }
+    : { id: "markUnseen", action: "thread.markUnseen", label: "Mark unseen", key: "u" };
+}
+
 export function threadMenu(t: Thread): MenuEntry[] {
   const settled = !!t.settledAt || t.attention.state === "settled";
   const archived = !!t.archivedAt || t.attention.state === "archived";
   const snoozed = t.attention.state === "snoozed";
-  const unseen = t.attention.section === "needs";
+  const mark = seenToggle(t);
   const out: MenuEntry[] = [{ id: "open", label: "Open", key: "↵" }, SEP];
   out.push(t.pinnedAt ? item(t, "unpin", "thread.unpin", "Unpin") : item(t, "pin", "thread.pin", "Pin")); // V0.104
   out.push(settled ? item(t, "unsettle", "thread.unsettle", "Unsettle") : item(t, "settle", "thread.settle", "Settle", "e"));
   out.push(snoozed ? item(t, "unsnooze", "thread.unsnooze", "Unsnooze") : item(t, "snooze", "thread.snooze", "Snooze…", "s"));
-  out.push(unseen ? item(t, "markSeen", "thread.markSeen", "Mark seen") : item(t, "markUnseen", "thread.markUnseen", "Mark unseen", "u"));
+  out.push(item(t, mark.id, mark.action, mark.label, mark.key));
   out.push(archived ? item(t, "unarchive", "thread.unarchive", "Unarchive") : item(t, "archive", "thread.archive", "Archive", "#"));
   out.push(SEP, item(t, "project", "thread.setProject", "Project…", "p"));
   out.push(item(t, "liveView", "thread.setView", t.liveView ? "Turn off live view" : "Turn on live view"));

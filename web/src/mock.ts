@@ -304,7 +304,7 @@ function fullFixture(now: number): Fixture {
       base("t_ended", "Fyr: review, plan and Solid core", now, 3, {
         project: "fyr",
         branch: "main",
-        attention: { state: "done", section: "needs", reason: "Done" },
+        attention: { state: "done", section: "seen", reason: "" },
         summary: "Created a worktree for V0.73.",
         pr: { url: "https://github.com/acme/app/pull/88", repo: "acme/app", number: 88, state: "MISSING", checks: "none", conflict: false },
         tasks: Array.from({ length: 20 }, (_, i) => task(`te${i}`, `Solid core worker ${i + 1}`, "completed", now, 40 - i, { summary: "Done.", toolUses: 12, tokens: 40_000 })),
@@ -340,7 +340,7 @@ function fullFixture(now: number): Fixture {
     );
     add(
       base("t_view", "Lasso fix with a live view", now, 12, {
-        attention: { state: "done", section: "needs", reason: "Done" },
+        attention: { state: "done", section: "seen", reason: "" },
         summary: "The mobile e2e run is green: 48 passed.",
         liveView: true,
         live: { pageId: "pv_view", state: st, updatedAt: at, checkedAt: at, headline: st.headline },
@@ -352,7 +352,7 @@ function fullFixture(now: number): Fixture {
   add(
     base("t_fix", "Fix", now, 75, {
       project: LONG_PROJECT,
-      attention: { state: "done", section: "needs", reason: "Done" },
+      attention: { state: "done", section: "seen", reason: "" },
       summary: "Pushed " + LONG_BRANCH + " and opened " + LONG_URL,
       pr: { url: "https://github.com/acme/infra/pull/9999", repo: "acme/infra", number: 9999, state: "OPEN", checks: "pending", conflict: true },
       unavailable: NOT_RUNNING,
@@ -652,7 +652,7 @@ function railFixture(now: number): Fixture {
       project: "acme/ops",
       // V0.120 (5): its model was turned off since; it shows as "opus 5.4 (off)" until another is picked.
       model: "claude-opus-5-4",
-      attention: { state: "done", section: "needs", reason: "Done" },
+      attention: { state: "done", section: "seen", reason: "" },
       summary: "Filed 6 issues, closed 2 duplicates",
       unavailable: quiet,
     }),
@@ -1181,7 +1181,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         summary: reply,
         activityAt: new Date(clock()).toISOString(),
         decisions: [],
-        attention: { state: "done", section: "needs", reason: "Done" },
+        attention: { state: "done", section: "seen", reason: "" },
         unavailable: quiet,
       });
     }, 1800);
@@ -1373,7 +1373,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         if (t.attention.state === "done") idle("seen", "seen", { view: { seenAt: new Date(clock()).toISOString() } });
         break;
       case "thread.markUnseen":
-        idle("done", "needs");
+        idle("done", "seen"); // V0.101, V0.188: as the host sends it; the client shows it in Unread
         break;
       case "thread.changesSeen":
         break; // V0.65: the mock keeps its fixed look, so every visit shows the same "new since"
