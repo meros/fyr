@@ -1,5 +1,5 @@
-// V0.164 section 4.6 and 12.2 (C3–C8): an undeclared episode whose command matches no heavy pattern becomes a
-// suggestion; the owner adds it (edited), ignores it for good, or removes an added pattern.
+// V0.164 section 4.6, V0.209: an undeclared episode whose command matches no heavy pattern is noted, and the third one
+// makes it a learned heavy command; the owner may remove one for good.
 package heavy
 
 import (
@@ -63,86 +63,69 @@ func TestC4ACommandThatMatchesAPatternMakesNoSuggestion(t *testing.T) {
 	}
 }
 
-func TestC5AddJoinsTheMatcher(t *testing.T) {
-	b, m, kv := newBook(t)
-	b.Saw(Seen{Thread: "t_a", Command: "node test/layout.run.mjs --shard 1", At: t0})
-	id := b.Suggestions()[0].ID
-	if m.Class("node test/layout.run.mjs --shard 3") != "" {
-		t.Fatal("matched before")
-	}
-	if err := b.Add(id, `node test/layout\.run\.mjs`, "e2e", t0); err != nil {
-		t.Fatal(err)
-	}
-	c := m.Class("node test/layout.run.mjs --shard 3")
-	if !strings.HasPrefix(c, "node test/layout.run.mjs") || KindOf(c) != "e2e" {
-		t.Fatalf("class %q", c)
-	}
-	if len(b.Suggestions()) != 0 {
-		t.Fatal("the suggestion stays")
-	}
-	if a := b.Added(); len(a) != 1 || a[0].Pattern != `node test/layout\.run\.mjs` || a[0].Kind != "e2e" || !a[0].At.Equal(t0) {
-		t.Fatalf("%+v", a)
-	}
-	// It survives a restart: a new book over the same KV loads it into a new matcher.
-	m2 := Default()
-	b2 := &Book{KV: kv, Matcher: m2}
-	b2.Load()
-	if m2.Class("node test/layout.run.mjs") == "" {
-		t.Fatal("added pattern lost across a restart")
+func see(b *Book, n int) {
+	for i := 0; i < n; i++ {
+		b.Saw(Seen{Thread: "t_a", Command: "node test/layout.run.mjs --shard 1", At: t0})
 	}
 }
 
-func TestC5AddCountsRefusals(t *testing.T) {
-	b, m, _ := newBook(t)
-	b.Saw(Seen{Thread: "t_a", Command: "node test/layout.run.mjs", At: t0})
-	b.Add(b.Suggestions()[0].ID, `node test/layout\.run\.mjs`, "e2e", t0)
-	m.Refused(m.Class("node test/layout.run.mjs x"))
-	m.Refused(m.Class("node test/layout.run.mjs y"))
+// V0.209: the third episode makes the command a heavy job, soft, without anyone pressing anything.
+func TestV209TheThirdEpisodeTeachesTheCommand(t *testing.T) {
+	b, m, kv := newBook(t)
+	see(b, LearnAfter-1)
+	if m.Class("node test/layout.run.mjs") != "" || len(b.Added()) != 0 {
+		t.Fatal("learned too early")
+	}
+	see(b, 1)
+	c := m.Class("node test/layout.run.mjs --shard 3")
+	if !strings.HasPrefix(c, "node test/layout.run.mjs") || KindOf(c) != "e2e" || !m.Soft(c) {
+		t.Fatalf("class %q soft %v", c, m.Soft(c))
+	}
+	if len(b.Suggestions()) != 0 {
+		t.Fatal("still noted")
+	}
+	if a := b.Added(); len(a) != 1 || a[0].Pattern != `node test/layout\.run\.mjs` || !a[0].Learned || !a[0].At.Equal(t0) {
+		t.Fatalf("%+v", a)
+	}
+	m2 := Default()
+	(&Book{KV: kv, Matcher: m2}).Load()
+	if c := m2.Class("node test/layout.run.mjs"); c == "" || !m2.Soft(c) {
+		t.Fatal("lost across a restart")
+	}
+}
+
+// What waited for the owner's press before V0.209 is learned at the start; a pattern the owner added stays hard.
+func TestV209OldSuggestionsAreLearnedAndAddedPatternsStayHard(t *testing.T) {
+	kv := mapKV{suggestionsKey: `[{"id":"s_1","pattern":"gradle assemble","kind":"build","seen":3,"command":"gradle assemble"},{"id":"s_2","pattern":"tool x","kind":"test","seen":1}]`,
+		addedKey: `[{"pattern":"mine run","kind":"test","name":"mine run"}]`}
+	m := Default()
+	b := &Book{KV: kv, Matcher: m}
+	b.Load()
+	if c := m.Class("gradle assemble"); c == "" || !m.Soft(c) {
+		t.Fatalf("%q", c)
+	}
+	if c := m.Class("mine run"); c == "" || m.Soft(c) {
+		t.Fatalf("%q", c)
+	}
+	if s := b.Suggestions(); len(s) != 1 || s[0].ID != "s_2" {
+		t.Fatalf("%+v", s)
+	}
+}
+
+func TestC5ARefusalIsCounted(t *testing.T) {
+	m := Default()
+	b := &Book{KV: mapKV{addedKey: `[{"pattern":"mine run","kind":"test","name":"mine run"}]`}, Matcher: m}
+	b.Load()
+	m.Refused(m.Class("mine run x"))
+	m.Refused(m.Class("mine run y"))
 	if a := b.Added(); a[0].Refused != 2 {
 		t.Fatalf("%+v", a)
 	}
 }
 
-func TestC6APatternThatDoesNotCompileIsAnError(t *testing.T) {
+func TestC8RemoveIsForever(t *testing.T) {
 	b, m, kv := newBook(t)
-	b.Saw(Seen{Thread: "t_a", Command: "node test/layout.run.mjs", At: t0})
-	id := b.Suggestions()[0].ID
-	if err := b.Add(id, `node (test`, "e2e", t0); err == nil {
-		t.Fatal("no error")
-	}
-	if len(b.Added()) != 0 || m.Class("node test/layout.run.mjs") != "" || kv["heavy-added"] != "" {
-		t.Fatal("something was stored")
-	}
-	if len(b.Suggestions()) != 1 {
-		t.Fatal("the suggestion went")
-	}
-	if err := b.Add("nope", `x`, "test", t0); err == nil {
-		t.Fatal("an unknown suggestion")
-	}
-}
-
-func TestC7IgnoreIsForever(t *testing.T) {
-	b, _, kv := newBook(t)
-	b.Saw(Seen{Thread: "t_a", Command: "node test/layout.run.mjs", At: t0})
-	if err := b.Ignore(b.Suggestions()[0].ID); err != nil {
-		t.Fatal(err)
-	}
-	b.Saw(Seen{Thread: "t_a", Command: "node test/layout.run.mjs --again", At: t0.Add(time.Hour)})
-	if len(b.Suggestions()) != 0 {
-		t.Fatal("suggested again")
-	}
-	b2 := &Book{KV: kv, Matcher: Default()}
-	b2.Load()
-	b2.Saw(Seen{Thread: "t_a", Command: "node test/layout.run.mjs", At: t0})
-	if len(b2.Suggestions()) != 0 {
-		t.Fatal("suggested again after a restart")
-	}
-}
-
-func TestC8RemoveLetsItThrough(t *testing.T) {
-	b, m, _ := newBook(t)
-	b.Saw(Seen{Thread: "t_a", Command: "node test/layout.run.mjs", At: t0})
-	b.Add(b.Suggestions()[0].ID, `node test/layout\.run\.mjs`, "e2e", t0)
+	see(b, LearnAfter)
 	if !b.Remove(`node test/layout\.run\.mjs`) {
 		t.Fatal("not removed")
 	}
@@ -151,6 +134,30 @@ func TestC8RemoveLetsItThrough(t *testing.T) {
 	}
 	if b.Remove("nope") {
 		t.Fatal("removed an unknown pattern")
+	}
+	see(b, LearnAfter+1)
+	b2 := &Book{KV: kv, Matcher: Default()}
+	b2.Load()
+	b2.Saw(Seen{Thread: "t_a", Command: "node test/layout.run.mjs", At: t0})
+	if len(b.Added())+len(b2.Added())+len(b.Suggestions())+len(b2.Suggestions()) != 0 {
+		t.Fatal("learned again")
+	}
+}
+
+func TestV209TheLastThingAThreadRanIsNotLearned(t *testing.T) {
+	for _, c := range []string{"git push origin x", "gh pr view 1", "sleep 30", "cd web && git status"} {
+		if p, _ := Suggest(c); p != "" {
+			t.Errorf("%q: %q", c, p)
+		}
+	}
+}
+
+func TestV209DetachedCommands(t *testing.T) {
+	for c, want := range map[string]bool{"make test": false, "make test && echo ok": false, "make test &": true, "nohup make test > log": true, "setsid make e2e": true,
+		`git commit -m "a & b"`: false} {
+		if Detached(c) != want {
+			t.Errorf("%q: want %v", c, want)
+		}
 	}
 }
 

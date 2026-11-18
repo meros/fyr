@@ -65,21 +65,18 @@ type Holder struct {
 // The host's detector makes the list (Pool.Undeclared); the pool adds the
 // shares of the host.
 type Undeclared struct {
-	Thread    string     `json:"thread"`
-	Name      string     `json:"name,omitempty"` // the thread's project, for the wait reason
-	CPU       float64    `json:"cpu"`            // cores
-	Mem       uint64     `json:"mem"`            // bytes
-	CPUPct    float64    `json:"cpuPct"`
-	MemPct    float64    `json:"memPct"`
-	Since     time.Time  `json:"since"`
-	Command   string     `json:"command,omitempty"`
-	Told      *time.Time `json:"told,omitempty"`
-	Dismissed bool       `json:"dismissed"`
-	Paused    bool       `json:"paused"`
-	Queued    bool       `json:"queued,omitempty"`
+	Thread  string    `json:"thread"`
+	Name    string    `json:"name,omitempty"` // the thread's project, for the wait reason
+	CPU     float64   `json:"cpu"`            // cores
+	Mem     uint64    `json:"mem"`            // bytes
+	CPUPct  float64   `json:"cpuPct"`
+	MemPct  float64   `json:"memPct"`
+	Since   time.Time `json:"since"`
+	Command string    `json:"command,omitempty"`
+	Paused  bool      `json:"paused"`
+	Queued  bool      `json:"queued,omitempty"`
 	// OverCPU and OverMem: the measure is at least a tenth of its
-	// threshold, so the row and the strip name it. Matched: the command
-	// already matches a heavy pattern (no Add as heavy job).
+	// threshold, so the row names it.
 	OverCPU bool `json:"overCpu"`
 	OverMem bool `json:"overMem"`
 	// MemOver: the memory itself is over its threshold (the freeze takes these).
@@ -288,6 +285,44 @@ func (p *Pool) Acquire(owner, kind string) (held bool, ahead int) {
 		return true, 0
 	}
 	return false, index(p.wait, owner)
+}
+
+// TryAcquire takes a slot for owner only if one is free for it now, and never
+// queues it: a learned command (V0.209) must not wait. Whoever waits goes first.
+func (p *Pool) TryAcquire(owner, kind string) bool {
+	if p.Off() {
+		return true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if index(p.held, owner) >= 0 {
+		return true
+	}
+	h := Holder{Owner: owner, Kind: kind, Since: p.now()}
+	if len(p.wait) > 0 || !p.admitLocked(h) {
+		return false
+	}
+	defer p.save()
+	p.held = append(p.held, h)
+	p.lastGrant = h.Since
+	return true
+}
+
+// Take gives owner's held slot back without handing it on and calls nobody,
+// so it is safe under a caller's lock; the caller then calls Fill.
+func (p *Pool) Take(owner string) bool {
+	if p.Off() {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	i := index(p.held, owner)
+	if i < 0 {
+		return false
+	}
+	defer p.save()
+	p.held = slices.Delete(p.held, i, i+1)
+	return true
 }
 
 // Wait takes a slot for owner with priority, blocking until it holds one

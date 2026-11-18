@@ -99,7 +99,7 @@ type config struct {
 	// HeavyCommands: the patterns of heavy commands and their classes
 	// (decision 0029, #185, #174); absent: heavy.Defaults.
 	HeavyCommands []heavy.Pattern `json:"heavyCommands"`
-	// HeavyGate: "off" lets a heavy command run without a slot; anything
+	// HeavyGate: "off" lets a heavy command run without being admitted; anything
 	// else (the default) refuses it at the gate hook (#174).
 	HeavyGate string `json:"heavyGate"`
 	// Decision 0029 S2: at this slowdown a job costing more than 0.25 waits

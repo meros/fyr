@@ -68,19 +68,12 @@ func (s *Sampler) Undeclared() []slots.Undeclared {
 	var out []slots.Undeclared
 	sig := s.Signals()
 	for _, f := range s.Detect.Flags() {
-		u := slots.Undeclared{Thread: f.Thread, Name: s.nameOf(f.Thread), CPU: f.CPU, Mem: f.Mem, Since: f.Since, Command: f.Command, Dismissed: f.Dismissed,
+		u := slots.Undeclared{Thread: f.Thread, Name: s.nameOf(f.Thread), CPU: f.CPU, Mem: f.Mem, Since: f.Since, Command: f.Command,
 			Paused: s.Groups.Frozen(f.Thread), Queued: f.Queued, OverCPU: f.OverCPU, OverMem: f.OverMem, Window: f.Window, MemOver: f.MemOver}
 		u.CPUPct, u.MemPct = func() (float64, float64) {
 			c, m := slots.Need{CPU: f.CPU, Mem: f.Mem}.Shares(sig)
 			return slots.Pct(c), slots.Pct(m)
 		}()
-		if !f.Told.IsZero() {
-			t := f.Told
-			u.Told = &t
-		}
-		if f.Command != "" {
-			u.Matched = s.Detect.Matches != nil && s.Detect.Matches(f.Command)
-		}
 		out = append(out, u)
 	}
 	return out

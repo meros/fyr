@@ -226,7 +226,7 @@ export function ThreadPane(p: ThreadPaneProps) {
           ))}
         </div>
       </div>
-      <UndeclaredStrip id={t.id} now={p.now} />
+      <UndeclaredStrip id={t.id} />
       <LeftoverStrip id={t.id} now={p.now} />
       {t.tasks.length > 0 && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       <ThreadTabBody t={t} tab={tab} setTab={setTab} events={p.events} now={p.now} onAtEnd={p.onAtEnd} onEarlier={p.onEarlier} run={p.onRun} send={p.onSend} />

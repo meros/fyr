@@ -63,7 +63,6 @@ const (
 	KindHandoverDone   = "handover.done"
 	KindSlotGranted    = "slot.granted" // V0.86: a queued slot is the thread's now
 	KindSlotQueued     = "slot.queued"  // V0.185: the thread joined or left the slot queue
-	KindSlotIdle       = "slot.idle"    // #174: a held slot ran no heavy job for a while
 	KindSlotMemory     = "slot.memory"  // decision 0029 S2: memory is short; this job grew most
 	KindSlotOver       = "slot.over"    // decision 0029 S3: a running job is heavier than predicted
 	KindSlotPause      = "slot.pause"   // decision 0029 S5: the memory guard froze or thawed this job
@@ -321,13 +320,6 @@ func init() {
 			}
 			r.T.SlotQueued = false
 			return Result{Events: []Event{{EventSlot, map[string]any{"kind": kind, "granted": true}}}}, nil
-		}},
-		{Name: KindSlotIdle, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
-			a, err := argsOf[SlotIdleArgs](in)
-			if err != nil || a.Kind == "" {
-				return Result{}, errors.New("slot.idle needs the kind")
-			}
-			return Result{Events: []Event{{EventSlot, map[string]any{"kind": a.Kind, "idle": a.Minutes}}}}, nil
 		}},
 		{Name: KindSlotMemory, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
 			a, err := argsOf[SlotMemoryArgs](in)

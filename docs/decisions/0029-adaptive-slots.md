@@ -259,6 +259,10 @@ The job's cgroup is not made by rewriting the command at the gate (`fyr job run 
 
 The owner, after S1–S5: "Slots don't make sense in this model... It should be percentage", and admission checks CPU and memory as two separate dimensions. A job's cost was one number, the larger of its CPU and memory shares; it is now two needs, CPU (learned demand) and memory (learned peak), each checked against its own free budget, so a CPU-heavy job (make test-go, about 3 cores and 2 GB) runs next to a memory-heavy one. AIMD moves a CPU factor and a memory factor apart: memory pressure cuts the memory budget, a CPU stall the CPU budget. Everything shown is a percentage of what the host gives its agents. The tools keep their names (slot_acquire, slot_release); their answers speak percent.
 
+## Admission without asking (V0.209)
+
+The owner, 18 Nov: "I want "heavy jobs" to be automated... Not something I need to manually manage". Asking was the part that failed: agents forgot to ask (24 % of heavy runs, V0.164), forgot to release (the idle reminder), and what they missed became buttons for the owner. The gate hook already saw every command, so it now does the asking. It admits a matched command, and the end of the tool call (the stream's `tool_result`, or PostToolUse) releases it. A job that outlives its call (`run_in_background`, `&`, `nohup`, `setsid`) is released by the idle rule, since only its CPU can say when it ended. Releasing too early is harmless, because the next heavy command is admitted again. Commands learned from undeclared episodes are soft (admitted if there is room, never refused): an episode's command is a best guess, and a wrong hard pattern could stop `git push` on a full host.
+
 ## The owner's answers (17 Nov)
 
 1. **CPU overload signal:** PSI some, with the run queue for the size above PSI's ceiling (recommended). Revised for machine independence (section 0): the slowdown probe takes the run queue's role on every host, and PSI is used where it exists.

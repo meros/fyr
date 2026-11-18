@@ -12,14 +12,12 @@ import {
   railUndeclared,
   rowUndeclared,
   stripView,
-  suggestionRows,
   thresholdRows,
   undeclaredRows,
   undeclaredTip,
 } from "../src/undeclared.ts";
 
 const NOW = Date.parse("2026-11-17T14:32:00");
-const at = (hm: string) => `2026-11-17T${hm}:00`; // no zone: local, so the clock text does not depend on TZ
 const ago = (sec: number) => new Date(NOW - sec * 1000).toISOString();
 
 const map: UndeclaredUse = {
@@ -30,16 +28,13 @@ const map: UndeclaredUse = {
   memPct: 20,
   since: ago(180),
   command: "node test/layout.e2e.mjs",
-  told: at("14:29"),
-  dismissed: false,
   paused: false,
   queued: false,
   overCpu: true,
   overMem: true,
-  matched: false,
 };
-const babysit: UndeclaredUse = { ...map, thread: "t_baby", cpu: 1.2, mem: 1.6e9, cpuPct: 30, memPct: 11, since: ago(50), command: "yarn pre-push:check", told: at("14:31") };
-const nix: UndeclaredUse = { ...map, thread: "t_nix", cpu: 0.2, mem: 1.9e9, cpuPct: 5, memPct: 14, since: ago(22 * 60), command: "nix flake check", told: undefined, dismissed: true, overCpu: false };
+const babysit: UndeclaredUse = { ...map, thread: "t_baby", cpu: 1.2, mem: 1.6e9, cpuPct: 30, memPct: 11, since: ago(50), command: "yarn pre-push:check" };
+const nix: UndeclaredUse = { ...map, thread: "t_nix", cpu: 0.2, mem: 1.9e9, cpuPct: 5, memPct: 14, since: ago(22 * 60), command: "nix flake check", overCpu: false };
 
 function host(und: UndeclaredUse[], extra: Partial<HostLoad> = {}): HostLoad {
   return {
@@ -72,14 +67,13 @@ function host(und: UndeclaredUse[], extra: Partial<HostLoad> = {}): HostLoad {
 }
 const lookup = (id: string) => ({ t_map: { title: "Map perf", project: "acme/web" }, t_baby: { title: "Babysit PR #4170", project: "acme/web" }, t_nix: { title: "Nix flake update", project: "dotfiles" } })[id] ?? { title: id };
 
-test("the row: the word and the use, only the measures that are over; paused says so; a dismissed thread has no mark", () => {
-  const h = host([map, { ...babysit, overCpu: false }, { ...nix, thread: "t_paused", dismissed: false, paused: true }, nix]);
+test("the row: the word and the use, only the measures that are over; paused says so", () => {
+  const h = host([map, { ...babysit, overCpu: false }, { ...nix, thread: "t_paused", paused: true }]);
   assert.equal(rowUndeclared([h], "t_map", NOW)?.text, "undeclared · 2.8 GB · 2.1 cores");
   assert.equal(rowUndeclared([h], "t_baby", NOW)?.text, "undeclared · 1.6 GB");
   const p = rowUndeclared([h], "t_paused", NOW);
   assert.equal(p?.text, "undeclared · paused: memory");
   assert.equal(p?.paused, true);
-  assert.equal(rowUndeclared([h], "t_nix", NOW), null); // dismissed
   assert.equal(rowUndeclared([h], "t_none", NOW), null);
   assert.equal(rowUndeclared([], "t_map", NOW), null);
   assert.match(rowUndeclared([h], "t_map", NOW)!.title, /^Heavy work Fyr did not admit: this thread uses 2\.8 GB and 2\.1 cores above its idle level, for 3 min\. It counts against the host's heavy jobs\.$/);
@@ -105,8 +99,8 @@ test("the meter has two parts, admitted and undeclared, and its tooltip names bo
   assert.match(slotTip(h), /undeclared 52 %/);
 });
 
-test("the rail button counts the threads that are not dismissed; one opens the thread, several a menu", () => {
-  const two = railUndeclared(host([map, babysit, nix]), lookup)!;
+test("the rail button counts the flagged threads; one opens the thread, several a menu", () => {
+  const two = railUndeclared(host([map, babysit]), lookup)!;
   assert.equal(two.count, 2);
   assert.equal(two.only, null);
   assert.deepEqual(two.entries, [
@@ -115,46 +109,24 @@ test("the rail button counts the threads that are not dismissed; one opens the t
   ]);
   assert.equal(two.title, "2 threads run undeclared heavy work: Map perf, Babysit PR #4170. Click for the list");
   assert.equal(two.aria, "2 threads run undeclared heavy work");
-  const one = railUndeclared(host([map, nix]), lookup)!;
+  const one = railUndeclared(host([map]), lookup)!;
   assert.equal(one.count, 1);
   assert.equal(one.only, "t_map");
   assert.equal(one.title, "Map perf runs undeclared heavy work (2.8 GB · 2.1 cores). Click to open it");
   assert.equal(one.aria, "1 thread runs undeclared heavy work");
-  assert.equal(railUndeclared(host([nix]), lookup), null); // the hatched part stays, the button does not
   assert.equal(railUndeclared(host([]), lookup), null);
 });
 
-test("the strip: the use, the command, what it counts against, when the agent was told; Add and Dismiss", () => {
-  const s = stripView(host([map]), map, NOW);
-  assert.equal(s.paused, false);
-  assert.equal(s.head, "Heavy work Fyr did not admit");
-  assert.equal(s.usage, "2.8 GB (20 % of desk) · 2.1 cores (52 %) · 3 min");
-  assert.equal(s.command, "node test/layout.e2e.mjs");
-  assert.equal(s.note, "counted against desk's heavy jobs · agent told 14:29");
-  assert.equal(s.add, true);
-  assert.equal(s.dismiss, true);
-  // the command already matches a pattern: no Add
-  assert.equal(stripView(host([map]), { ...map, matched: true }, NOW).add, false);
-  assert.equal(stripView(host([map]), { ...map, matched: true }, NOW).dismiss, true);
-  // memory only; not told yet
-  const m = stripView(host([map]), { ...map, overCpu: false, told: undefined }, NOW);
-  assert.equal(m.usage, "2.8 GB (20 % of desk) · 3 min");
-  assert.equal(m.note, "counted against desk's heavy jobs");
-  // an hour
-  assert.equal(stripView(host([map]), { ...map, since: ago(65 * 60) }, NOW).usage, "2.8 GB (20 % of desk) · 2.1 cores (52 %) · 1 h 5 min");
-});
-
-test("the paused strip: the harbour words, no buttons", () => {
+test("V0.209: the strip shows only paused work, in the harbour words, with nothing to press", () => {
+  assert.equal(stripView(host([map]), map), null);
   const p = { ...map, paused: true };
-  const s = stripView(host([p]), p, NOW);
-  assert.equal(s.paused, true);
+  const s = stripView(host([p]), p)!;
   assert.equal(s.head, "Paused by Fyr: memory is short on desk (6 % free).");
   assert.equal(s.body, "Frozen, not killed; it resumes when memory has recovered for 30 s, within 10 min at most.");
+  assert.equal(s.command, "node test/layout.e2e.mjs");
   assert.equal(s.note, "2.8 GB · undeclared");
-  assert.equal(s.add, false);
-  assert.equal(s.dismiss, false);
   // without a headroom reading the words do not invent a number
-  assert.equal(stripView(host([p], { headroom: undefined }), p, NOW).head, "Paused by Fyr: memory is short on desk.");
+  assert.equal(stripView(host([p], { headroom: undefined }), p)!.head, "Paused by Fyr: memory is short on desk.");
 });
 
 test("findUndeclared reads a thread's use from any host; the wait reason is the host's text", () => {
@@ -164,31 +136,24 @@ test("findUndeclared reads a thread's use from any host; the wait reason is the 
   assert.equal(threadSlot([h], "t_wait"), "waiting: needs ≈ 45 % CPU, 20 % free (Map perf uses 52 % undeclared)");
 });
 
-test("Settings: Undeclared now lists every flagged thread; a dismissed one stays, dimmed", () => {
+test("Settings: Undeclared now lists every flagged thread", () => {
   const rows = undeclaredRows(host([map, nix]), NOW, lookup);
-  assert.deepEqual(rows[0], { thread: "t_map", title: "Map perf", project: "acme/web", command: "node test/layout.e2e.mjs", usage: "2.8 GB (20 %) · 2.1 cores (52 %) · 3 min", tail: "agent told 14:29", dismissed: false });
-  assert.deepEqual(rows[1], { thread: "t_nix", title: "Nix flake update", project: "dotfiles", command: "nix flake check", usage: "1.9 GB (14 %) · 22 min", tail: "dismissed, still counted", dismissed: true });
+  assert.deepEqual(rows[0], { thread: "t_map", title: "Map perf", project: "acme/web", command: "node test/layout.e2e.mjs", usage: "2.8 GB (20 %) · 2.1 cores (52 %) · 3 min" });
+  assert.deepEqual(rows[1], { thread: "t_nix", title: "Nix flake update", project: "dotfiles", command: "nix flake check", usage: "1.9 GB (14 %) · 22 min" });
   assert.deepEqual(undeclaredRows(host([]), NOW, lookup), []);
 });
 
-test("Settings: suggestions, added patterns and the thresholds", () => {
+test("Settings: learned commands, added patterns and the thresholds", () => {
   const h = host([], {
-    suggestions: [
-      { id: "s1", command: "node test/layout.e2e.mjs", pattern: "node (\\S*/)?layout\\.e2e\\.mjs", kind: "e2e", seen: 3, threads: 2, lastThread: "t_map", lastAt: at("14:29"), memory: 2.8e9, cpu: 2.1, seconds: 240 },
-      { id: "s2", command: "yarn pre-push:check", pattern: "yarn pre-push:check", kind: "test", seen: 1, threads: 1, lastThread: "t_baby", lastAt: at("14:31"), memory: 1.6e9, cpu: 1.2, seconds: 100 },
-    ],
-    heavyAdded: [{ pattern: "python3? build_admin_ny\\.py", kind: "build", at: "2026-11-16T10:00:00", refused: 4 }],
+    heavyAdded: [{ pattern: "gradle assemble", kind: "build", at: "2026-11-16T10:00:00", refused: 0, learned: true }, { pattern: "python3? build_admin_ny\\.py", kind: "build", at: "2026-11-16T10:00:00", refused: 4 }],
     undeclaredSettings: { on: true, cpu: 0.25, memory: 0.08, after: 45 },
   });
-  const s = suggestionRows(h, lookup);
-  assert.equal(s[0].line, "Seen 3 times in 2 threads, last 14:29 in Map perf · up to 2.8 GB, 2.1 cores, 4 min");
-  assert.equal(s[0].pattern, "node (\\S*/)?layout\\.e2e\\.mjs");
-  assert.equal(s[0].kind, "e2e");
-  assert.equal(s[1].line, "Seen once, 14:31 in Babysit PR #4170 · up to 1.6 GB, 1.2 cores, 2 min");
-  const a = addedRows(h);
-  assert.deepEqual(a, [{ pattern: "python3? build_admin_ny\\.py", line: "build · added 16 Nov from a suggestion · refused 4 times since" }]);
-  assert.equal(addedRows(host([], { heavyAdded: [{ pattern: "x", kind: "test", at: "2026-11-16T10:00:00", refused: 0 }] }))[0].line, "test · added 16 Nov from a suggestion · not refused since");
-  assert.equal(addedRows(host([], { heavyAdded: [{ pattern: "x", kind: "test", at: "2026-11-16T10:00:00", refused: 1 }] }))[0].line, "test · added 16 Nov from a suggestion · refused once since");
+  assert.deepEqual(addedRows(h), [
+    { pattern: "gradle assemble", line: "build · learned 16 Nov" },
+    { pattern: "python3? build_admin_ny\\.py", line: "build · added 16 Nov · refused 4 times since" },
+  ]);
+  assert.equal(addedRows(host([], { heavyAdded: [{ pattern: "x", kind: "test", at: "2026-11-16T10:00:00", refused: 0 }] }))[0].line, "test · added 16 Nov · not refused since");
+  assert.equal(addedRows(host([], { heavyAdded: [{ pattern: "x", kind: "test", at: "2026-11-16T10:00:00", refused: 1 }] }))[0].line, "test · added 16 Nov · refused once since");
   const t = thresholdRows(h)!;
   assert.deepEqual(
     t.map((r) => [r.key, r.title, r.now, r.value, r.unit]),
@@ -210,12 +175,12 @@ test("Settings: suggestions, added patterns and the thresholds", () => {
 });
 
 test("Settings words: undeclared, never slot or reservation", () => {
-  const h = host([map, nix], { suggestions: [], heavyAdded: [], undeclaredSettings: { on: true, cpu: 0.25, memory: 0.08, after: 45 } });
-  const text = [JSON.stringify(undeclaredRows(h, NOW, lookup)), JSON.stringify(thresholdRows(h)), slotTip(h, { lookup, now: NOW }), railUndeclared(h, lookup)?.title, stripView(h, map, NOW).note].join(" ");
+  const h = host([map, nix], { heavyAdded: [], undeclaredSettings: { on: true, cpu: 0.25, memory: 0.08, after: 45 } });
+  const text = [JSON.stringify(undeclaredRows(h, NOW, lookup)), JSON.stringify(thresholdRows(h)), slotTip(h, { lookup, now: NOW }), railUndeclared(h, lookup)?.title, stripView(h, { ...map, paused: true })?.note].join(" ");
   assert.ok(!/slot|reservation/i.test(text), text);
 });
 
-test("N9: the event the host writes for the agent's notice is one machine line that unfolds to the whole text", () => {
+test("N9: the event an older host wrote for the agent's notice is still one machine line that unfolds to the whole text", () => {
   const full = "This thread runs heavy work Fyr did not admit: about 2.8 GB memory (20 % of desk) and 2.1 cores (52 %) for 45 s, from `node test/layout.e2e.mjs`. Before a heavy job call mcp__fyr__slot_acquire ...";
   const items = buildConversation([
     { seq: 1, at: "2026-11-17T14:29:00Z", subject: "t", type: "slot", data: { undeclared: full, mem: 2.8e9, cpu: 2.1 } },
@@ -232,32 +197,24 @@ test("N9: the event the host writes for the agent's notice is one machine line t
 });
 
 // The mock state ?mock=rail&undeclared=1 (=paused, =2) feeds all of the above, and answers the owner's commands.
-test("the mock load: one thread, paused, and two flagged with a third dismissed; the commands update it", () => {
+test("the mock load: one thread, paused, and two flagged; the commands update it", () => {
   const same = (id: string) => ({ title: id });
   assert.equal(mockLoad()[0].slots?.undeclared, undefined, "without ?undeclared the mock host sends none");
   const one = withUndeclared(mockLoad(), "1", NOW)[0];
-  assert.deepEqual(one.slots!.undeclared!.map((u) => [u.thread, u.paused, u.dismissed]), [["t_mapperf", false, false]]);
+  assert.deepEqual(one.slots!.undeclared!.map((u) => [u.thread, u.paused]), [["t_mapperf", false]]);
   assert.equal(one.slots!.undeclaredCpuPct, 52);
   assert.match(one.slots!.why!, /\(Map perf uses 52 % undeclared\)$/);
   assert.equal(rowUndeclared([one], "t_mapperf", NOW)?.text, "undeclared · 2.8 GB · 2.1 cores");
   const paused = withUndeclared(mockLoad(), "paused", NOW)[0];
   assert.equal(rowUndeclared([paused], "t_mapperf", NOW)?.text, "undeclared · paused: memory");
-  assert.equal(stripView(paused, paused.slots!.undeclared![0], NOW).paused, true);
+  assert.ok(stripView(paused, paused.slots!.undeclared![0]));
   const two = withUndeclared(mockLoad(), "2", NOW)[0];
-  assert.deepEqual(two.slots!.undeclared!.map((u) => u.dismissed), [false, false, true]);
   assert.equal(railUndeclared(two, same)!.count, 2);
-  assert.equal(mockUndeclaredCommand(two, "host.undeclaredDismiss", { thread: "t_map" }, NOW).ok, false);
-  assert.equal(mockUndeclaredCommand(two, "host.undeclaredDismiss", { thread: "t_mapperf", on: true }, NOW).ok, true);
-  assert.equal(railUndeclared(two, same)!.count, 1);
-  assert.equal(mockUndeclaredCommand(two, "host.heavySuggestion", { id: "sg1", do: "add", pattern: "(", kind: "e2e" }, NOW).ok, false);
-  assert.equal(mockUndeclaredCommand(two, "host.heavySuggestion", { id: "sg1", do: "add", pattern: "node test/layout\\.e2e\\.mjs", kind: "e2e" }, NOW).ok, true);
-  assert.equal(two.suggestions!.length, 1);
-  assert.equal(two.heavyAdded![0].pattern, "node test/layout\\.e2e\\.mjs");
-  assert.equal(two.slots!.undeclared![0].matched, true, "its strip has no Add now");
-  assert.equal(mockUndeclaredCommand(two, "host.heavySuggestion", { id: "sg2", do: "ignore" }, NOW).ok, true);
-  assert.equal(two.suggestions!.length, 0);
-  assert.equal(mockUndeclaredCommand(two, "host.heavyRemove", { pattern: "x" }, NOW).ok, false);
-  assert.equal(mockUndeclaredCommand(two, "host.undeclaredSettings", { cpu: 0.5 }, NOW).ok, true);
+  assert.equal(two.heavyAdded![0].learned, true);
+  assert.equal(mockUndeclaredCommand(two, "host.heavyRemove", { pattern: "x" }).ok, false);
+  assert.equal(mockUndeclaredCommand(two, "host.heavyRemove", { pattern: two.heavyAdded![0].pattern }).ok, true);
+  assert.equal(two.heavyAdded!.length, 0);
+  assert.equal(mockUndeclaredCommand(two, "host.undeclaredSettings", { cpu: 0.5 }).ok, true);
   assert.equal(two.undeclaredSettings!.cpu, 0.5);
-  assert.equal(mockUndeclaredCommand(two, "host.undeclaredSettings", { after: 5 }, NOW).ok, false);
+  assert.equal(mockUndeclaredCommand(two, "host.undeclaredSettings", { after: 5 }).ok, false);
 });

@@ -342,18 +342,3 @@ func TestEpisodeOverWhenTheThreadIsAdmitted(t *testing.T) {
 		t.Fatalf("an admitted thread's episode goes on: %+v", s.ends)
 	}
 }
-
-func TestDismissHoldsForTheEpisode(t *testing.T) {
-	s := newSim(t)
-	s.seed("t_a", 0.9*gb)
-	s.run("t_a", 60, 2, 0.9*gb)
-	s.d.Dismiss("t_a", true)
-	if f := s.flag("t_a"); f == nil || !f.Dismissed {
-		t.Fatalf("%+v", f)
-	}
-	s.run("t_a", 120, 0.03, 0.9*gb) // ends
-	s.run("t_a", 60, 2, 0.9*gb)     // a later episode
-	if f := s.flag("t_a"); f == nil || f.Dismissed {
-		t.Fatalf("a later episode stays dismissed: %+v", f)
-	}
-}

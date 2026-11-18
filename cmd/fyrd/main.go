@@ -264,30 +264,30 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		log.Fatal(err)
 	}
 	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
-	// #174: the gate hook refuses a heavy command without a held slot.
+	// V0.209: the gate hook admits a heavy command by itself.
 	groups := &cgroup.JobGroups{Tree: tree} // decision 0029 S5: each holder's job in a cgroup of its own
-	// V0.164: the suggestions and the owner's added patterns; the detector of
+	// V0.164, V0.209: the learned and added patterns; the detector of
 	// work that nobody asked for, its settings and the record of its episodes.
 	book := &heavy.Book{KV: h.st, Matcher: heavyCmds, Base: cfg.HeavyAdded}
 	book.Load()
 	usettings := &cgroup.UndeclaredSettings{KV: h.st, Base: cgroup.UndeclaredConfig{
 		Off: cfg.Undeclared == "off", CPU: cfg.UndeclaredCPU, Memory: cfg.UndeclaredMemory, After: time.Duration(cfg.UndeclaredAfter) * time.Second}}
 	usettings.Load()
-	detector := &cgroup.Detector{Matches: func(c string) bool { return heavyCmds.Class(c) != "" }}
+	detector := &cgroup.Detector{}
 	episodes := &cgroup.Episodes{KV: h.st}
-	mgr.SetOnBash(func(thread, c string) string {
-		groups.Bash(thread, c)
-		class, text := heavyCmds.Match(c)
-		jobs.Saw(thread, class)
-		groups.Seen(thread, text)
+	mgr.SetOnBash(func(c agent.BashCall) string {
+		groups.Bash(c.Thread, c.Command)
+		class, text := heavyCmds.Match(c.Command)
+		jobs.Saw(c.Thread, class)
+		groups.Seen(c.Thread, text)
 		if cfg.HeavyGate == "off" {
 			return ""
 		}
-		return eng.HeavyGate(thread, class)
-	})
+		return eng.HeavyGate(engine.HeavyCall{Thread: c.Thread, Class: class, ToolUse: c.ToolUse, Background: c.Background || heavy.Detached(c.Command)})
+	}, func(thread, toolUse string) { go eng.HeavyDone(thread, toolUse) }) // never on the stream's goroutine: it may grant
 	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups, // V0.80, V0.86
 		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject} // V0.164
-	// V0.164: an ended episode is kept, teaches a suggestion, and ends its frozen group.
+	// V0.164: an ended episode is kept, teaches its command, and ends its frozen group.
 	detector.OnEnd = func(ep cgroup.Episode) {
 		ep.Project = eng.ThreadProject(ep.Thread)
 		episodes.Add(ep)
@@ -309,13 +309,12 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			}
 		}
 	}
-	mgr.SetUndeclaredNote(eng.UndeclaredSubagentNote)
 	if tree != nil { // V0.195: without cgroups no quiet wait is detected
 		eng.QuietDeps = engine.QuietDeps{ThreadCPUTime: tree.CPUTime, ThreadFrozen: groups.Frozen}
 	}
 	eng.UndeclaredDeps = engine.UndeclaredDeps{
-		Undeclared: sampler.Undeclared, UndeclaredTold: detector.Told, UndeclaredDismiss: detector.Dismiss, UndeclaredSettings: usettings.Set,
-		UndeclaredThaw: groups.ThawUndeclared, UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused,
+		Undeclared: sampler.Undeclared, UndeclaredSettings: usettings.Set,
+		UndeclaredThaw: groups.ThawUndeclared, UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
 		UndeclaredFreeze: func(thread string) bool {
 			for _, f := range detector.Flags() {
 				if f.Thread == thread && groups.FreezeUndeclared(thread, cgroup.ReadRoots(tree, "", thread, f.FirstOver)) {
@@ -351,12 +350,6 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			return true
 		},
 		UndeclaredFaults: groups.MajorFaultBytes,
-		HeavySuggestion: func(id, do, pattern, kind string) error {
-			if do == "ignore" {
-				return book.Ignore(id)
-			}
-			return book.Add(id, pattern, kind, time.Now())
-		},
 	}
 	// Decision 0029 S2–S4, V0.163, V0.164: admission by a budget of costs,
 	// gated by the slowdown and memory; the policy is internal/admission.

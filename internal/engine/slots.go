@@ -2,10 +2,9 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -16,13 +15,22 @@ import (
 	"github.com/meros/fyr/internal/slots"
 )
 
-// SlotIdle is how long a thread may hold a slot without a live run (its
-// grant's wake did not start one) before the slot goes back (V0.86 (3)).
+// SlotIdle is how long an admission may carry no work before it goes back
+// (V0.86 (3), V0.209): no live run, or a live run with no heavy command going
+// and the thread's CPU at its idle level. Going back costs nothing: the next
+// heavy command is admitted again at the gate.
 const SlotIdle = 2 * time.Minute
 
-// SlotIdleNudge is how long a held slot may run no heavy job before its
-// agent is reminded once to release it (#174).
-const SlotIdleNudge = 5 * time.Minute
+// HeavyCallStale is how long a heavy command may look dead (no result, no CPU)
+// before its admission stops counting on it: a result can get lost.
+const HeavyCallStale = 15 * time.Minute
+
+// HeavyCall is a heavy command at the gate hook (V0.209). ToolUse is its call;
+// Background: the job outlives the call.
+type HeavyCall struct {
+	Thread, Class, ToolUse string
+	Background             bool
+}
 
 // UseSlots gives the engine the host's pool of slots for heavy jobs
 // (V0.86): the agent's slot tools, the notice when a queued slot is the
@@ -31,12 +39,13 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.mu.Lock()
 	e.Slots = p
 	e.slotIdle = map[string]time.Time{}
-	e.slotNudged = map[string]time.Time{}
 	e.slotOverTold = map[string]time.Time{}
-	e.undTold, e.undRun = map[string]time.Time{}, map[string]int{}
-	e.undNote, e.undFroze = map[string]time.Time{}, map[string]undFreeze{}
+	e.undFroze = map[string]undFreeze{}
 	e.guardLast = map[string]guardLine{}
 	e.mu.Unlock()
+	e.heavyMu.Lock()
+	e.heavyCalls, e.heavyBg = map[string]map[string]bool{}, map[string]bool{}
+	e.heavyMu.Unlock()
 	p.OnGrant = e.slotGranted
 	p.Fill() // a pool loaded from the store may have free slots for its queue
 }
@@ -66,6 +75,9 @@ func (e *Engine) slotRunEnded(id string) {
 	if e.Slots == nil {
 		return
 	}
+	e.heavyMu.Lock()
+	delete(e.heavyCalls, id) // a run that ended leaves no call to wait for
+	e.heavyMu.Unlock()
 	e.mu.Lock()
 	t := e.threads[id]
 	keep := t != nil && t.RunsAdmittedWork()
@@ -79,6 +91,10 @@ func (e *Engine) slotRunEnded(id string) {
 }
 
 func (e *Engine) dropSlot(id string) bool {
+	e.heavyMu.Lock()
+	delete(e.heavyCalls, id)
+	delete(e.heavyBg, id)
+	e.heavyMu.Unlock()
 	e.mu.Lock()
 	delete(e.slotIdle, id)
 	e.mu.Unlock()
@@ -119,18 +135,11 @@ func (e *Engine) sweepSlots() {
 	}
 	s := e.Slots.Snapshot()
 	var drop []string
-	type nudge struct {
-		owner, kind string
-		min         int
-	}
-	var nudges []nudge
 	// V0.147: the tracker is asked before e.mu is taken. Asking it under
 	// e.mu deadlocked fyrd on 17 Nov: the tracker's tick held its own lock
 	// and asked the engine for a thread's project.
-	held := map[string]time.Time{}
 	active := map[string]time.Time{}
 	for _, h := range s.Held {
-		held[h.Owner] = h.Since
 		if e.SlotActive != nil && !h.Priority {
 			at, ok := e.SlotActive(h.Owner)
 			if !ok || at.Before(h.Since) {
@@ -139,13 +148,9 @@ func (e *Engine) sweepSlots() {
 			active[h.Owner] = at
 		}
 	}
+	calls, background := e.heavyWork()
 	e.mu.Lock()
 	now := e.Now()
-	for owner, since := range e.slotNudged {
-		if h, ok := held[owner]; !ok || !h.Equal(since) {
-			delete(e.slotNudged, owner)
-		}
-	}
 	for _, h := range s.Held {
 		if h.Priority {
 			continue // the self-deploy releases its own
@@ -156,14 +161,14 @@ func (e *Engine) sweepSlots() {
 			drop = append(drop, h.Owner)
 		case t.Running:
 			delete(e.slotIdle, h.Owner)
-			// #174: a held slot that ran no heavy job for SlotIdleNudge: one
-			// reminder per hold to release it.
+			// V0.209: an admission nothing uses goes back by itself.
 			if at, ok := active[h.Owner]; ok {
-				if since, done := e.slotNudged[h.Owner]; !done || !since.Equal(h.Since) {
-					if idle := now.Sub(at); idle >= SlotIdleNudge {
-						e.slotNudged[h.Owner] = h.Since
-						nudges = append(nudges, nudge{h.Owner, h.Kind, int(idle / time.Minute)})
-					}
+				idle := now.Sub(at)
+				switch {
+				case calls[h.Owner] > 0 && idle < HeavyCallStale:
+				case background[h.Owner] && t.RunsAdmittedWork():
+				case idle >= SlotIdle:
+					drop = append(drop, h.Owner)
 				}
 			}
 		case t.RunsAdmittedWork(): // V0.201: the idle time starts when it is done
@@ -189,17 +194,23 @@ func (e *Engine) sweepSlots() {
 	e.syncSlotQueue()
 	e.memoryGuard(s)
 	e.heavierThanPredicted(s)
-	e.tellUndeclared()
 	e.freezeGuard(s)
 	e.publishGuard(e.Now())
 	e.adaptBudget(s)
 	// Decision 0029 S2: the conditions change without a release.
 	e.Slots.Fill()
-	for _, n := range nudges {
-		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotIdle, Thread: n.owner, Args: core.SlotIdleArgs{Kind: n.kind, Minutes: n.min}}); err != nil {
-			log.Printf("slot idle %s: %v", n.owner, err)
-		}
+}
+
+// heavyWork is what carries each admission now: the running foreground calls
+// per thread, and the threads with a job that outlives its call.
+func (e *Engine) heavyWork() (map[string]int, map[string]bool) {
+	e.heavyMu.Lock()
+	defer e.heavyMu.Unlock()
+	calls := make(map[string]int, len(e.heavyCalls))
+	for th, c := range e.heavyCalls {
+		calls[th] = len(c)
 	}
+	return calls, maps.Clone(e.heavyBg)
 }
 
 // heavierThanPredicted tells a holder once per hold that its job uses more
@@ -634,120 +645,6 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 	return true
 }
 
-// undeclaredText is what the agent hears of a flag (V0.164 section 5), with
-// the host's numbers.
-func (e *Engine) undeclaredText(f slots.Undeclared) string {
-	cpuPct, memPct := f.CPUPct, f.MemPct // the shares of the host, filled by the sampler
-	both := !f.OverCPU && !f.OverMem
-	var parts []string
-	if f.OverMem || both {
-		p := slots.GB(float64(f.Mem)) + " memory"
-		if memPct > 0 {
-			p += fmt.Sprintf(" (%.0f %% of %s)", memPct, e.hostName())
-		}
-		parts = append(parts, p)
-	}
-	if f.OverCPU || both {
-		p := fmt.Sprintf("%.1f cores", f.CPU)
-		if cpuPct > 0 {
-			p += fmt.Sprintf(" (%.0f %%)", cpuPct)
-		}
-		parts = append(parts, p)
-	}
-	// V0.201: most flags find no command (the processes are gone, or started
-	// long before), and an example with "…" in it gave the agent nothing to do.
-	from, ask := "", "mcp__fyr__slot_acquire {kind, command}"
-	unknown := " Fyr could not tell which command it is: look at what you and your subagents have running."
-	if f.Command != "" {
-		cmdJSON, _ := json.Marshal(f.Command)
-		from = ", from `" + f.Command + "`"
-		ask = fmt.Sprintf("mcp__fyr__slot_acquire {\"kind\":%q,\"command\":%s}", heavy.KindOf(f.Command), cmdJSON)
-		unknown = ""
-	}
-	win := int(f.Window / time.Second)
-	if win <= 0 {
-		win = int(cgroupWindow / time.Second)
-	}
-	// V0.201: the agent often reads this with the result of the very command,
-	// so the job may be over by then.
-	call := "If it still runs, call it now. If it has ended, there is nothing to do for it, but ask before you run it or anything like it again."
-	if f.Queued {
-		call = "You are queued and not admitted yet: do not run the job until Fyr tells you."
-	}
-	return fmt.Sprintf("This thread runs heavy work Fyr did not admit: about %s for %d s%s.%s Before a heavy job call %s, run it once admitted, then call mcp__fyr__slot_release; a subagent's or a background run counts too. %s Fyr counts this use against the host either way, so other jobs wait; nothing is stopped, but if memory runs short Fyr may pause it.",
-		strings.Join(parts, " and "), win, from, unknown, ask, call)
-}
-
-// cgroupWindow is the default window of a flag when it does not say.
-const cgroupWindow = 45 * time.Second
-
-// tellUndeclared tells a flagged thread's agent once per episode and at most
-// once per run, as a Next notice (V0.164 section 5): the next tool call or the
-// next message that starts a run, never a wake.
-func (e *Engine) tellUndeclared() {
-	fl := e.flags()
-	type tell struct {
-		f   slots.Undeclared
-		run int
-	}
-	var tells []tell
-	e.mu.Lock()
-	live := map[string]bool{}
-	for _, f := range fl {
-		live[f.Thread] = true
-		t := e.threads[f.Thread]
-		if t == nil || e.undTold[f.Thread].Equal(f.Since) {
-			continue
-		}
-		e.undTold[f.Thread] = f.Since
-		if r, ok := e.undRun[f.Thread]; ok && r == t.RunEnds {
-			continue // a second episode in the same run
-		}
-		e.undRun[f.Thread] = t.RunEnds
-		tells = append(tells, tell{f, t.RunEnds})
-	}
-	for th := range e.undNote {
-		if !live[th] {
-			delete(e.undNote, th)
-		}
-	}
-	e.mu.Unlock()
-	now := e.Now()
-	for _, x := range tells {
-		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotUndeclared, Thread: x.f.Thread,
-			Args: core.SlotUndeclaredArgs{Text: e.undeclaredText(x.f), Mem: x.f.Mem, CPU: x.f.CPU}}); err != nil {
-			log.Printf("slot undeclared %s: %v", x.f.Thread, err)
-			continue
-		}
-		if e.UndeclaredTold != nil {
-			e.UndeclaredTold(x.f.Thread, x.f.Since, now)
-		}
-	}
-}
-
-// UndeclaredSubagentNote is the text a subagent's first Bash call of a
-// flagged thread carries, once per episode (V0.164 section 5): the main agent
-// may make no tool call while it waits for the subagent. "" when the thread is
-// not flagged or the episode already had its note.
-func (e *Engine) UndeclaredSubagentNote(thread string) string {
-	for _, f := range e.flags() {
-		if f.Thread != thread {
-			continue
-		}
-		e.mu.Lock()
-		given := e.undNote[thread].Equal(f.Since)
-		if !given {
-			e.undNote[thread] = f.Since
-		}
-		e.mu.Unlock()
-		if given {
-			return ""
-		}
-		return e.undeclaredText(f)
-	}
-	return ""
-}
-
 // slotNotice records a slot event for the thread's agent (decision 0029).
 func (e *Engine) slotNotice(owner string, d map[string]any) {
 	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotPause, Thread: owner, Args: d}); err != nil {
@@ -789,27 +686,105 @@ func (e *Engine) memoryGuard(s slots.Snapshot) {
 	}
 }
 
-// HeavyGate answers the gate hook for a heavy command of class (#174): ""
-// lets it run (no class, slots off, or the thread holds a slot); else the
-// reason it is refused, with the call that fixes it.
-func (e *Engine) HeavyGate(thread, class string) string {
-	if class == "" || e.Slots == nil || e.Slots.Off() {
+// HeavyGate answers the gate hook for a Bash command (V0.209): it admits a
+// heavy command by itself, so neither the agent nor the owner manages anything.
+// "" lets the command run; else the host has no room, the thread now waits in
+// the queue, and the reason says so. A learned command never waits: its pattern
+// is a best guess, so it takes a free share or simply runs.
+func (e *Engine) HeavyGate(c HeavyCall) string {
+	if c.Class == "" || e.Slots == nil || e.Slots.Off() {
 		return ""
 	}
-	if _, ok := e.Slots.Holding(thread); ok {
+	soft := e.HeavySoft != nil && e.HeavySoft(c.Class)
+	kind := heavy.KindOf(c.Class)
+	// The admission is taken outside heavyMu (a grant calls into the engine)
+	// and then checked under it: the thread's last call may just have ended.
+	for range 3 {
+		held := false
+		if _, ok := e.Slots.Holding(c.Thread); ok {
+			held = true
+		} else if soft {
+			held = e.Slots.TryAcquire(c.Thread, kind)
+		} else {
+			held, _ = e.Slots.Acquire(c.Thread, kind)
+			e.syncSlotQueue()
+		}
+		if !held {
+			break
+		}
+		if e.trackHeavy(c) {
+			return ""
+		}
+	}
+	if soft {
 		return ""
 	}
 	s := e.Slots.Snapshot()
 	for i, w := range s.Waiting {
-		if w.Owner == thread {
-			return fmt.Sprintf("Heavy job (%s): it is queued, not admitted yet (%d ahead; it needs %s of %s). Do not run it now; Fyr tells you in a [Fyr] message when it is admitted. Do other work meanwhile or end your turn.", class, i, strings.TrimPrefix(jobShare(s, w.Owner), "≈ "), e.hostName())
+		if w.Owner == c.Thread {
+			if e.HeavyRefused != nil {
+				e.HeavyRefused(c.Class) // an added pattern counts its refusals
+			}
+			why := ""
+			if i == 0 && s.Why != "" {
+				why = " Waiting: " + s.Why + "."
+			}
+			return fmt.Sprintf("Heavy job (%s): %s has no room for it yet, so it is queued (%d ahead; it needs %s).%s Do not work around this. Fyr tells you in a [Fyr] message when it is admitted; run the command again then. Do other work meanwhile or end your turn.", c.Class, e.hostName(), i, strings.TrimPrefix(jobShare(s, w.Owner), "≈ "), why)
 		}
 	}
-	if e.HeavyRefused != nil {
-		e.HeavyRefused(class) // V0.164: an added pattern counts its refusals
+	return "" // neither held nor queued: the pool changed under us, let it run
+}
+
+// trackHeavy notes what carries the thread's admission; false when the
+// admission is gone by now.
+func (e *Engine) trackHeavy(c HeavyCall) bool {
+	e.heavyMu.Lock()
+	defer e.heavyMu.Unlock()
+	if _, ok := e.Slots.Holding(c.Thread); !ok {
+		return false
 	}
-	kind := heavy.KindOf(class)
-	return fmt.Sprintf("Heavy job (%s) not admitted: call mcp__fyr__slot_acquire {\"kind\":%q, \"command\":\"…\"} first; Fyr admits it when its share of %s fits. Run it once admitted, then call mcp__fyr__slot_release. A subagent's run counts too; a single test file or `go test ./pkg -run X` needs no admission.", class, kind, e.hostName())
+	if c.Background || c.ToolUse == "" {
+		e.heavyBg[c.Thread] = true // only its CPU can say when it ends
+		return true
+	}
+	if e.heavyCalls[c.Thread] == nil {
+		e.heavyCalls[c.Thread] = map[string]bool{}
+	}
+	e.heavyCalls[c.Thread][c.ToolUse] = true
+	return true
+}
+
+// HeavyDone hears that a tool call ended (V0.209). When it was the last heavy
+// command carrying the thread's admission, the share goes back at once.
+func (e *Engine) HeavyDone(thread, toolUse string) {
+	if e.Slots == nil {
+		return
+	}
+	e.heavyMu.Lock()
+	calls := e.heavyCalls[thread]
+	if !calls[toolUse] {
+		e.heavyMu.Unlock()
+		return
+	}
+	delete(calls, toolUse)
+	gave := false
+	if len(calls) == 0 {
+		delete(e.heavyCalls, thread)
+		if !e.heavyBg[thread] {
+			if h, ok := e.Slots.Holding(thread); ok && !h.Priority {
+				gave = e.Slots.Take(thread) // under heavyMu, so no new call slips in
+			}
+		}
+	}
+	e.heavyMu.Unlock()
+	if !gave {
+		return
+	}
+	e.mu.Lock()
+	delete(e.slotIdle, thread)
+	e.mu.Unlock()
+	e.Slots.Fill()
+	e.syncSlotQueue()
 }
 
 // hostName is how the heavy-job answers name this host (V0.163).
@@ -855,11 +830,11 @@ func article(kind string) string {
 // slotTools are slot_acquire and slot_release (V0.86 (2)): both answer at
 // once; a queued thread hears later, in a [Fyr] notice.
 func (e *Engine) slotTools(s *mcp.Server) {
-	// V0.163: the names stay (prompts, hooks and habits use them); the
-	// answers speak a share of the host, not slots.
+	// V0.209: Fyr admits and releases by itself at the gate; these two remain
+	// for running agents that were told about them, and to name a job early.
 	off := "This host does not limit heavy jobs; run the job."
 	s.Add(mcp.Tool{Name: "slot_acquire",
-		Description: "Ask to run a heavy job (a full test suite, a build, an e2e run). Fyr admits it when its share of this host (its learned cost, as a % of the CPU or memory the host gives its agents, whichever is tighter) fits the heavy-job budget across the user's threads. It answers at once: admitted (run the job, then call slot_release), or queued with the reason; then do not start the job, do other work or end your turn, and Fyr tells you in a [Fyr] message when it is admitted. Admission also ends when your run ends and no background command or subagent of yours still runs.",
+		Description: "Not needed: Fyr admits a heavy command by itself when you run it. Only for work Fyr cannot recognise as heavy: asks for a share of this host now, and answers admitted or queued.",
 		Schema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": slots.Kinds()},
 			"command": map[string]any{"type": "string", "description": "The command you will run, e.g. \"make test\"; Fyr then knows what the job costs."}}, "kind"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
@@ -880,7 +855,7 @@ func (e *Engine) slotTools(s *mcp.Server) {
 			e.syncSlotQueue()
 			s := e.Slots.Snapshot()
 			if held {
-				return fmt.Sprintf("Admitted: your %s job %s of %s; %s left. Run the job now, then call slot_release. Admission ends when your run ends, unless a background command or subagent of yours still runs.", kind, jobShare(s, th), e.hostName(), freeShare(s)), nil
+				return fmt.Sprintf("Admitted: your %s job %s of %s; %s left. Run the job now; the admission ends by itself when the work stops.", kind, jobShare(s, th), e.hostName(), freeShare(s)), nil
 			}
 			why := ""
 			if ahead == 0 && s.Why != "" {
@@ -889,14 +864,14 @@ func (e *Engine) slotTools(s *mcp.Server) {
 			return fmt.Sprintf("Queued: your %s job needs %s of %s; %s free (%d ahead).%s Do not start the job; Fyr tells you in a [Fyr] message when it is admitted. Do other work meanwhile or end your turn.", kind, strings.TrimPrefix(jobShare(s, th), "≈ "), e.hostName(), freeShare(s), ahead, why), nil
 		}})
 	s.Add(mcp.Tool{Name: "slot_release",
-		Description: "End your heavy job's admission when the job ended (its share of the host goes back), or leave the queue.",
+		Description: "Not needed: an admission ends by itself. Gives it back early, or leaves the queue.",
 		Schema:      obj(map[string]any{}),
 		Call: func(_ context.Context, th string, _ map[string]any) (string, error) {
 			if e.Slots == nil {
 				return off, nil
 			}
-			if !e.dropSlot(th) {
-				return "", errors.New("you have no admitted or queued heavy job")
+			if !e.dropSlot(th) { // V0.209: it usually ended by itself already
+				return "Nothing to release: Fyr already ended this admission.", nil
 			}
 			e.syncSlotQueue()
 			return fmt.Sprintf("Released: %s of %s free for heavy jobs.", freeShare(e.Slots.Snapshot()), e.hostName()), nil

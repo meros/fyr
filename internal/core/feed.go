@@ -309,16 +309,8 @@ type SlotOverArgs struct {
 	Predicted float64 `json:"predicted"`
 }
 
-// SlotIdleArgs is slot.idle's (#174): the held slot's kind and how many
-// minutes it ran no heavy job.
-type SlotIdleArgs struct {
-	Kind    string `json:"kind"`
-	Minutes int    `json:"minutes"`
-}
-
-// slot: a slot the agent queued for is its own now; it ended its turn to
-// wait, so wake it. #174: a held slot that ran no heavy job for a while is
-// a reminder at the next tool call, never a wake.
+// slot: a job the agent was refused for a full host is admitted now; it ended
+// its turn to wait, so wake it.
 func slotNotices(r Reduced) []Notice {
 	var out []Notice
 	for _, ev := range r.Events {
@@ -328,10 +320,6 @@ func slotNotices(r Reduced) []Notice {
 		}
 		if txt, ok := d["leftovers"].(string); ok { // V0.176
 			out = append(out, Notice{About: "thread", Key: "leftovers", Urgency: Next, What: txt + ". Clean up what you start, prefer a timeout, and for a process that must stay call mcp__fyr__keep_process."})
-			continue
-		}
-		if txt, ok := d["undeclared"].(string); ok {
-			out = append(out, Notice{About: "thread", Key: "heavy.undeclared", Urgency: Next, What: txt}) // V0.164
 			continue
 		}
 		if why, ok := d["paused"].(string); ok && str(d["work"]) != "" {
@@ -361,15 +349,11 @@ func slotNotices(r Reduced) []Notice {
 			out = append(out, Notice{About: "thread", Key: "slot.memory", Urgency: Next, What: fmt.Sprintf("Memory is short on this host (%s); your job grew %.1f GB since its slot was granted, the most of the running jobs. New heavy jobs wait until memory recovers; nothing is stopped. If you can, finish or shrink the job.", why, float64(grew)/1e9)})
 			continue
 		}
-		if m, ok := d["idle"].(int); ok {
-			out = append(out, Notice{About: "thread", Key: "slot.idle", Urgency: Next, What: fmt.Sprintf("Your admitted %s job ran nothing heavy for %d min. If it ended, call mcp__fyr__slot_release so its share of the host goes back to the others.", str(d["kind"]), m)})
-			continue
-		}
 		if d["granted"] != true {
 			continue
 		}
 		kind := str(d["kind"])
-		out = append(out, Notice{About: "thread", Key: "slot", What: "Your " + kind + " job is admitted now: run it, then call slot_release."})
+		out = append(out, Notice{About: "thread", Key: "slot", What: "Your " + kind + " job is admitted now: run the command again."})
 	}
 	return out
 }

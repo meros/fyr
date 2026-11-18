@@ -153,14 +153,14 @@ type Engine struct {
 	Kept       map[string]bool
 	slotIdle   map[string]time.Time  // under mu: held slots without a live run, since
 	quietWaits map[string]*quietWait // under mu: V0.195, thread → its CPU watch
-	slotNudged map[string]time.Time  // under mu: owner → the hold (its since) already reminded
+	// V0.209: the heavy commands that carry each thread's admission.
+	heavyMu    sync.Mutex
+	heavyCalls map[string]map[string]bool // under heavyMu: thread → its running foreground calls
+	heavyBg    map[string]bool            // under heavyMu: thread → a job outlives its call
 	// frozen is the job frozen now (decision 0029 S5), under mu.
 	frozen       frozenJob
 	frozeHolds   map[string]time.Time // under mu: holds frozen once already (owner → since)
 	slotOverTold map[string]time.Time // under mu: owner → the hold already told
-	undTold      map[string]time.Time // under mu: thread → the episode (its since) already told
-	undRun       map[string]int       // under mu: thread → the run (RunEnds) already told in
-	undNote      map[string]time.Time // under mu: thread → the episode a subagent's note was given for
 	undFroze     map[string]undFreeze // under mu: thread → what the guard froze of its episode
 	guardLast    map[string]guardLine // under mu: the guard's log lines, to say a repeat once a minute
 	guardShort   bool                 // under mu: memory was short at the last tick
@@ -550,25 +550,6 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(404, "No learned job class "+c)
 		}
 		reply.Result = map[string]any{"class": c}
-	case core.EffectUndeclaredDismiss: // V0.164
-		th, _ := ef.Request.Args["thread"].(string)
-		on, _ := ef.Request.Args["on"].(bool)
-		if e.UndeclaredDismiss == nil || !e.UndeclaredDismiss(th, on) {
-			return fail(404, "No undeclared heavy work in that thread")
-		}
-		reply.Result = map[string]any{"thread": th, "dismissed": on}
-	case core.EffectHeavySuggestion:
-		a := ef.Request.Args
-		id, do := a["id"].(string), a["do"].(string)
-		p, _ := a["pattern"].(string)
-		k, _ := a["kind"].(string)
-		if e.HeavySuggestion == nil {
-			return fail(409, "This host keeps no suggestions")
-		}
-		if err := e.HeavySuggestion(id, do, p, k); err != nil {
-			return fail(400, err.Error())
-		}
-		reply.Result = map[string]any{"id": id, "do": do}
 	case core.EffectLeftoverEnd: // V0.176
 		id, _ := ef.Request.Args["id"].(string)
 		if e.LeftoverEnd == nil {
@@ -600,7 +581,7 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 	case core.EffectHeavyRemove:
 		p, _ := ef.Request.Args["pattern"].(string)
 		if e.HeavyRemove == nil || !e.HeavyRemove(p) {
-			return fail(404, "No such added heavy command")
+			return fail(404, "No such heavy command")
 		}
 		reply.Result = map[string]any{"pattern": p}
 	case core.EffectUndeclaredSettings:

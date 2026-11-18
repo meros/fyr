@@ -6,7 +6,7 @@ package cgroup
 // of its quiet readings of the last 10 min, and flags a thread that is not
 // admitted and stays over a threshold above that level for a window. One flag
 // is one episode, from the flag to the moment the use is back down. The
-// detector decides nothing about the work: the engine tells the agent, the
+// detector decides nothing about the work: the
 // pool counts the use, and the memory guard may freeze it.
 
 import (
@@ -86,13 +86,11 @@ type Flag struct {
 	// OverCPU and OverMem: the measure is at least a tenth of its threshold.
 	OverCPU, OverMem bool
 	// MemOver: the memory itself is over its threshold (the freeze picks these).
-	MemOver   bool
-	Queued    bool
-	Dismissed bool
-	Told      time.Time
-	Command   string
-	Window    time.Duration
-	Idle      Level
+	MemOver bool
+	Queued  bool
+	Command string
+	Window  time.Duration
+	Idle    Level
 }
 
 // Episode is a flag's record, kept when it ends.
@@ -106,7 +104,6 @@ type Episode struct {
 	// cores above it over the episode.
 	PeakMem   uint64  `json:"peakMem"`
 	MeanCores float64 `json:"meanCores"`
-	Told      bool    `json:"told"`
 	Paused    bool    `json:"paused"`
 }
 
@@ -124,17 +121,17 @@ type qread struct {
 }
 
 type episode struct {
-	since, firstOver, calmSince, told time.Time
-	dismissed, paused                 bool
-	peak                              uint64
-	cpuSum                            float64
-	cpuN                              int
-	command                           string
-	queued                            bool
-	window                            time.Duration
-	cpu                               float64
-	mem                               uint64
-	overCPU, overMem, memOver         bool
+	since, firstOver, calmSince time.Time
+	paused                      bool
+	peak                        uint64
+	cpuSum                      float64
+	cpuN                        int
+	command                     string
+	queued                      bool
+	window                      time.Duration
+	cpu                         float64
+	mem                         uint64
+	overCPU, overMem, memOver   bool
 }
 
 type dthread struct {
@@ -147,13 +144,10 @@ type dthread struct {
 }
 
 // Detector keeps the idle levels and the flags. Observe is called by one
-// goroutine (the sampler's tick); Dismiss, Told and the readers by others.
+// goroutine (the sampler's tick); the readers by others.
 type Detector struct {
 	// OnEnd hears an episode that ended, outside the detector's lock.
 	OnEnd func(Episode)
-	// Matches says whether a command already matches a heavy pattern; the
-	// flag's `matched` and the suggestions read it. Optional.
-	Matches func(command string) bool
 
 	mu      sync.Mutex
 	threads map[string]*dthread
@@ -176,30 +170,6 @@ func (d *Detector) Idle(thread string) Level {
 		return (*p)[thread]
 	}
 	return Level{}
-}
-
-// Dismiss hides (or shows) the flag of thread's episode; it holds for the
-// episode only. False without an episode.
-func (d *Detector) Dismiss(thread string, on bool) bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	th := d.threads[thread]
-	if th == nil || th.ep == nil {
-		return false
-	}
-	th.ep.dismissed = on
-	d.publishLocked()
-	return true
-}
-
-// Told records when thread's agent was told of the episode that began at since.
-func (d *Detector) Told(thread string, since, at time.Time) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if th := d.threads[thread]; th != nil && th.ep != nil && th.ep.since.Equal(since) {
-		th.ep.told = at
-		d.publishLocked()
-	}
 }
 
 // SetCommand records the command behind thread's episode (the newest wins).
@@ -361,7 +331,7 @@ func (d *Detector) emit(ended []Episode) {
 }
 
 func (e *episode) record(thread string, now time.Time, idle Level) Episode {
-	ep := Episode{Thread: thread, Command: e.command, Start: e.since, End: now, PeakMem: e.peak, Told: !e.told.IsZero(), Paused: e.paused}
+	ep := Episode{Thread: thread, Command: e.command, Start: e.since, End: now, PeakMem: e.peak, Paused: e.paused}
 	if e.cpuN > 0 {
 		ep.MeanCores = e.cpuSum / float64(e.cpuN)
 	}
@@ -446,7 +416,7 @@ func (d *Detector) publishLocked() {
 		lv[name] = th.idle
 		if ep := th.ep; ep != nil {
 			f := Flag{Thread: name, Since: ep.since, FirstOver: ep.firstOver, CPU: ep.cpu, Mem: ep.mem, OverCPU: ep.overCPU, OverMem: ep.overMem, MemOver: ep.memOver,
-				Queued: ep.queued, Dismissed: ep.dismissed, Told: ep.told, Command: ep.command, Idle: th.idle, Window: ep.window}
+				Queued: ep.queued, Command: ep.command, Idle: th.idle, Window: ep.window}
 			fl = append(fl, f)
 		}
 	}

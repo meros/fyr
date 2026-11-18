@@ -846,7 +846,7 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           </div>
         )}
       </div>
-      {!cardOpen && <UndeclaredStrip id={t.id} now={p.now} />}
+      {!cardOpen && <UndeclaredStrip id={t.id} />}
       {!cardOpen && <LeftoverStrip id={t.id} now={p.now} />}
       {t.tasks.length > 0 && !cardOpen && <AgentsStrip key={t.id} tasks={t.tasks} now={p.now} />}
       {cardOpen ? (

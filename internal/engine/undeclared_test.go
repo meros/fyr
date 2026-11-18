@@ -1,5 +1,5 @@
-// V0.164 sections 5, 7 and 12.3 (N), 12.5 (F), 12.2 (C9): the agent is told once, the freeze takes undeclared work
-// before a job that asked and only under memory pressure, and the owner's commands.
+// V0.164 sections 7 and 12.5 (F), 12.2 (C9): the freeze takes undeclared work before a job that was admitted and only
+// under memory pressure, and the owner's commands.
 package engine
 
 import (
@@ -54,172 +54,6 @@ func notices(e *Engine, id, key string) []core.Notice {
 
 func endRun(e *Engine, id string, now time.Time) {
 	coretest.Patch(e, id, func(th *core.Thread, _ time.Time) []core.Event { core.RunEnded(th, nil, now); return nil })
-}
-
-func TestN1AFlagIsOneNoticeNotAWake(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	e.Tick()
-	ns := notices(e, a, "heavy.undeclared")
-	if len(ns) != 1 || ns[0].Urgency != core.Next {
-		t.Fatalf("%+v", ns)
-	}
-	for _, want := range []string{
-		"This thread runs heavy work Fyr did not admit: about 2.8 GB memory (20 % of desk) and 2.1 cores (52 %) for 45 s, from `node test/layout.e2e.mjs`.",
-		`Before a heavy job call mcp__fyr__slot_acquire {"kind":"e2e","command":"node test/layout.e2e.mjs"}`,
-		"If it still runs, call it now. If it has ended, there is nothing to do for it, but ask before you run it or anything like it again.",
-		"Fyr counts this use against the host either way, so other jobs wait; nothing is stopped, but if memory runs short Fyr may pause it.",
-	} {
-		if !strings.Contains(ns[0].What, want) {
-			t.Errorf("missing %q in %q", want, ns[0].What)
-		}
-	}
-}
-
-func TestN1OnlyTheOverDimensionIsNamed(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	f := flagFor(a, *now)
-	f.OverCPU = false
-	u.flags = []slots.Undeclared{f}
-	e.Tick()
-	w := notices(e, a, "heavy.undeclared")[0].What
-	if !strings.Contains(w, "about 2.8 GB memory (20 % of desk) for 45 s") || strings.Contains(w, "cores") {
-		t.Fatal(w)
-	}
-}
-
-func TestN2AnEpisodeThatGoesOnIsToldOnce(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	for i := 0; i < 120; i++ { // 10 min
-		*now = now.Add(5 * time.Second)
-		e.Tick()
-	}
-	if n := len(notices(e, a, "heavy.undeclared")); n != 1 {
-		t.Fatalf("%d", n)
-	}
-}
-
-func TestN3ASecondEpisodeInTheSameRunIsNotToldAgain(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	e.Tick()
-	// Take the notice (the agent read it), then the episode ends and another starts, in the same run.
-	coretest.Patch(e, a, func(th *core.Thread, _ time.Time) []core.Event { th.Feed.Queue = nil; return nil })
-	u.flags = nil
-	*now = now.Add(5 * time.Minute)
-	e.Tick()
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	e.Tick()
-	if n := len(notices(e, a, "heavy.undeclared")); n != 0 {
-		t.Fatalf("%d notices for a second episode in one run", n)
-	}
-}
-
-func TestN4ANewRunANewEpisodeOneMore(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	e.Tick()
-	u.flags = nil
-	e.Tick()
-	coretest.Patch(e, a, func(th *core.Thread, _ time.Time) []core.Event { th.Feed.Queue = nil; return nil })
-	endRun(e, a, *now)
-	running(e, a)
-	*now = now.Add(time.Hour)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	e.Tick()
-	if n := len(notices(e, a, "heavy.undeclared")); n != 1 {
-		t.Fatalf("%d", n)
-	}
-}
-
-func TestN5OneEpisodeAcrossTwoRunsIsToldOnce(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	f := flagFor(a, *now)
-	u.flags = []slots.Undeclared{f}
-	e.Tick()
-	coretest.Patch(e, a, func(th *core.Thread, _ time.Time) []core.Event { th.Feed.Queue = nil; return nil })
-	endRun(e, a, *now)
-	running(e, a)
-	*now = now.Add(time.Minute)
-	e.Tick()
-	if n := len(notices(e, a, "heavy.undeclared")); n != 0 {
-		t.Fatalf("%d", n)
-	}
-}
-
-func TestN6AnIdleAgentIsNotWokenItTakesTheNoticeAtTheNextRun(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	endRun(e, a, *now)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	e.Tick()
-	th, _ := e.Thread(a)
-	if th.Running {
-		t.Fatal("running")
-	}
-	ns := notices(e, a, "heavy.undeclared")
-	if len(ns) != 1 || ns[0].Urgency != core.Next {
-		t.Fatalf("%+v", ns)
-	}
-	if n := core.NoticeText(nil); n != "" && false {
-		t.Fatal(n)
-	}
-}
-
-func TestN7ASubagentsFirstBashCallCarriesItOncePerEpisode(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	e.Tick()
-	got := e.UndeclaredSubagentNote(a)
-	if !strings.Contains(got, "This thread runs heavy work Fyr did not admit") {
-		t.Fatalf("%q", got)
-	}
-	if again := e.UndeclaredSubagentNote(a); again != "" {
-		t.Fatalf("twice: %q", again)
-	}
-	if len(notices(e, a, "heavy.undeclared")) != 1 {
-		t.Fatal("the main agent's notice was used up")
-	}
-	// A thread that is not flagged gets nothing.
-	if e.UndeclaredSubagentNote("t_nobody") != "" {
-		t.Fatal("note for an unflagged thread")
-	}
-}
-
-func TestN8AQueuedThreadIsToldNotToRunIt(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	f := flagFor(a, *now)
-	f.Queued = true
-	u.flags = []slots.Undeclared{f}
-	e.Tick()
-	w := notices(e, a, "heavy.undeclared")[0].What
-	if !strings.Contains(w, "You are queued and not admitted yet: do not run the job until Fyr tells you.") || strings.Contains(w, "call it now") {
-		t.Fatal(w)
-	}
-}
-
-func TestNTheEventCarriesTheUseForTheConversationsLine(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	u.flags = []slots.Undeclared{flagFor(a, *now)}
-	e.Tick()
-	evs, err := e.Events(a, 0, 200)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, ev := range evs {
-		if ev.Type != core.EventSlot {
-			continue
-		}
-		var d map[string]any
-		json.Unmarshal(ev.Data, &d)
-		if txt, ok := d["undeclared"].(string); ok && strings.Contains(txt, "heavy work Fyr did not admit") && d["mem"] != nil && d["cpu"] != nil {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("no slot event with the text: %+v", evs)
-	}
 }
 
 // ---- the freeze (section 7) ----
@@ -499,20 +333,6 @@ func TestF9ThawedWhenTheEpisodeEndsOrTheThreadIsAdmitted(t *testing.T) {
 	}
 }
 
-func TestF10ADismissedThreadIsFrozenLikeAnyOther(t *testing.T) {
-	e, u, now, z, th := fzEngine(t)
-	a, b := th[0], th[1]
-	e.Slots.Acquire(b, slots.Test)
-	f := flagFor(a, *now)
-	f.Dismissed = true
-	u.flags = []slots.Undeclared{f}
-	z.free = 0.04
-	e.Tick()
-	if !z.frozen[a] {
-		t.Fatal("dismiss exempted it")
-	}
-}
-
 func TestF12WhereNothingCanBeFrozenNothingIsToldItWasPaused(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
 	a, b := th[0], th[1]
@@ -532,27 +352,24 @@ func TestF12WhereNothingCanBeFrozenNothingIsToldItWasPaused(t *testing.T) {
 func TestC9TheCommandsAreTheOwnersOnly(t *testing.T) {
 	e, _, _, _ := undEngine(t)
 	var got []string
-	e.UndeclaredDismiss = func(th string, on bool) bool { got = append(got, th); return true }
-	guardDeps(t, e)
-	for _, k := range []string{core.KindUndeclaredDismiss, core.KindHeavySuggestion, core.KindHeavyRemove, core.KindUndeclaredSettings} {
-		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: k, Args: map[string]any{"thread": "t_a", "on": true}}); err == nil {
+	e.HeavyRemove = func(p string) bool { got = append(got, p); return true }
+	for _, k := range []string{core.KindHeavyRemove, core.KindUndeclaredSettings} {
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: k, Args: map[string]any{"pattern": "x"}}); err == nil {
 			t.Errorf("%s accepted from an observer", k)
 		}
 	}
-	r := e.Command(api.Cmd{CommandID: "c1", Action: core.KindUndeclaredDismiss, Args: map[string]any{"thread": "t_a", "on": true}})
-	if !r.OK || len(got) != 1 || got[0] != "t_a" {
+	if r := e.Command(api.Cmd{CommandID: "c1", Action: core.KindHeavyRemove, Args: map[string]any{"pattern": "x"}}); !r.OK || len(got) != 1 {
 		t.Fatalf("%+v %v", r, got)
-	}
-	if r := e.Command(api.Cmd{CommandID: "c2", Action: core.KindUndeclaredDismiss, Args: map[string]any{"on": true}}); r.OK {
-		t.Fatal("no thread")
 	}
 }
 
-func TestTheGateRefusesAnAddedPatternAndCountsIt(t *testing.T) {
-	e, _, _, a := undEngine(t)
-	_ = a
-	if g := e.HeavyGate(a, "node test/layout.run.mjs (e2e)"); !strings.Contains(g, "not admitted") || !strings.Contains(g, `"kind":"e2e"`) {
-		t.Fatalf("%q", g)
+// V0.209: flagged work asks nothing of the agent: no notice, however long it runs.
+func TestV209AFlagTellsTheAgentNothing(t *testing.T) {
+	e, u, now, a := undEngine(t)
+	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	e.Tick()
+	if th, _ := e.Thread(a); len(th.Feed.Queue) != 0 {
+		t.Fatalf("%+v", th.Feed.Queue)
 	}
 }
 
@@ -624,18 +441,5 @@ func TestF17TheGuardHistoryIsBounded(t *testing.T) {
 	e.publishGuard(*now)
 	if n := len(e.GuardView().Events); n != guardKeep {
 		t.Fatalf("%d events", n)
-	}
-}
-
-// V0.201: a flag without a command says so and gives no example to copy.
-func TestV201ANoticeWithoutACommandSaysSo(t *testing.T) {
-	e, u, now, a := undEngine(t)
-	f := flagFor(a, *now)
-	f.Command = ""
-	u.flags = []slots.Undeclared{f}
-	e.Tick()
-	w := notices(e, a, "heavy.undeclared")[0].What
-	if !strings.Contains(w, "Fyr could not tell which command it is") || !strings.Contains(w, "mcp__fyr__slot_acquire {kind, command}") || strings.Contains(w, "…") {
-		t.Fatal(w)
 	}
 }
