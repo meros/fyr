@@ -67,7 +67,7 @@ func TestN1AFlagIsOneNoticeNotAWake(t *testing.T) {
 	for _, want := range []string{
 		"This thread runs heavy work Fyr did not admit: about 2.8 GB memory (20 % of desk) and 2.1 cores (52 %) for 45 s, from `node test/layout.e2e.mjs`.",
 		`Before a heavy job call mcp__fyr__slot_acquire {"kind":"e2e","command":"node test/layout.e2e.mjs"}`,
-		"Call it now for the job that runs.",
+		"If it still runs, call it now. If it has ended, there is nothing to do for it, but ask before you run it or anything like it again.",
 		"Fyr counts this use against the host either way, so other jobs wait; nothing is stopped, but if memory runs short Fyr may pause it.",
 	} {
 		if !strings.Contains(ns[0].What, want) {
@@ -193,7 +193,7 @@ func TestN8AQueuedThreadIsToldNotToRunIt(t *testing.T) {
 	u.flags = []slots.Undeclared{f}
 	e.Tick()
 	w := notices(e, a, "heavy.undeclared")[0].What
-	if !strings.Contains(w, "You are queued and not admitted yet: do not run the job until Fyr tells you.") || strings.Contains(w, "Call it now") {
+	if !strings.Contains(w, "You are queued and not admitted yet: do not run the job until Fyr tells you.") || strings.Contains(w, "call it now") {
 		t.Fatal(w)
 	}
 }
@@ -624,5 +624,18 @@ func TestF17TheGuardHistoryIsBounded(t *testing.T) {
 	e.publishGuard(*now)
 	if n := len(e.GuardView().Events); n != guardKeep {
 		t.Fatalf("%d events", n)
+	}
+}
+
+// V0.201: a flag without a command says so and gives no example to copy.
+func TestV201ANoticeWithoutACommandSaysSo(t *testing.T) {
+	e, u, now, a := undEngine(t)
+	f := flagFor(a, *now)
+	f.Command = ""
+	u.flags = []slots.Undeclared{f}
+	e.Tick()
+	w := notices(e, a, "heavy.undeclared")[0].What
+	if !strings.Contains(w, "Fyr could not tell which command it is") || !strings.Contains(w, "mcp__fyr__slot_acquire {kind, command}") || strings.Contains(w, "…") {
+		t.Fatal(w)
 	}
 }
