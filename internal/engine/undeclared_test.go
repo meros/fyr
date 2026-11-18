@@ -3,7 +3,10 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -228,11 +231,12 @@ type fz struct {
 	frozen  map[string]bool // undeclared
 	slotted map[string]bool // admitted jobs
 	moved   int
+	empty   map[string]bool // frozen cgroups that hold no process
 }
 
 func fzEngine(t *testing.T) (*Engine, *und, *time.Time, *fz, []string) {
 	e, u, now, a := undEngine(t)
-	z := &fz{free: 0.30, stall: slots.StallOK, frozen: map[string]bool{}, slotted: map[string]bool{}}
+	z := &fz{free: 0.30, stall: slots.StallOK, frozen: map[string]bool{}, slotted: map[string]bool{}, empty: map[string]bool{}}
 	e.SlotPolicy = slots.DefaultPolicy
 	e.SlotSignals = func() slots.Signals {
 		return slots.Signals{Provider: "cgroups", Headroom: &z.free, Stall: z.stall, Slowdown: z.slow}
@@ -242,6 +246,7 @@ func fzEngine(t *testing.T) (*Engine, *und, *time.Time, *fz, []string) {
 	e.SlotThaw = func(o string) { delete(z.slotted, o) }
 	e.UndeclaredFreeze = func(o string) bool { z.frozen[o] = true; return true }
 	e.UndeclaredThaw = func(o string) { delete(z.frozen, o) }
+	e.UndeclaredEmpty = func(o string) bool { return z.empty[o] }
 	guardDeps(t, e)
 	b := bareThread(t, e)
 	running(e, b)
@@ -309,18 +314,21 @@ func TestF5CPUOnlyIsNotFrozenTheJobsRuleApplies(t *testing.T) {
 	}
 }
 
-func TestF6TheOnlyHeavyWorkIsNotFrozen(t *testing.T) {
+// Decision 0032 slice 1 (amends V0.164 7): the only heavy work is frozen when
+// another thread runs, since a thrashing cgroup starves that thread's agent;
+// it is left alone only when nobody would gain.
+func TestF6TheOnlyHeavyWorkIsFrozenWhenSomebodyElseRunsAndNotOtherwise(t *testing.T) {
 	e, u, now, z, th := fzEngine(t)
+	endRun(e, th[1], *now) // nobody else runs
 	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
 	if len(z.frozen) != 0 {
 		t.Fatal("a freeze that helps nobody")
 	}
-	// Another flagged thread running is somebody to help.
-	u.flags = append(u.flags, flagFor(th[1], now.Add(time.Minute)))
+	running(e, th[1]) // another thread runs: somebody to help
 	e.Tick()
-	if len(z.frozen) != 1 {
+	if !z.frozen[th[0]] || len(z.frozen) != 1 {
 		t.Fatalf("%v", z.frozen)
 	}
 }
@@ -343,11 +351,119 @@ func TestF7F8ThawByTheRuleAndNotFrozenAgainInTheEpisode(t *testing.T) {
 	if z.frozen[a] || !told(e, a, "Your heavy work runs again: Fyr thawed it.") {
 		t.Fatalf("not thawed %v", z.frozen)
 	}
-	// Short again in the same episode: not frozen a second time.
+	// Decision 0032 slice 1 (amends V0.164 7): short again in the same
+	// episode it is frozen again, but only once the work has run RefreezeAfter.
 	z.free = 0.03
 	e.Tick()
 	if len(z.frozen) != 0 {
-		t.Fatal("frozen twice in one episode")
+		t.Fatal("frozen again before the slice ran")
+	}
+	*now = now.Add(RefreezeAfter + time.Second)
+	e.Tick()
+	if !z.frozen[a] {
+		t.Fatal("not frozen again in the long episode")
+	}
+}
+
+// Decision 0032 slice 1: at most MaxFreezes freezes of one episode; then the
+// work runs and the guard says so once.
+func TestF14AnEpisodeIsFrozenAtMostMaxFreezesTimes(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	e, u, now, z, th := fzEngine(t)
+	a := th[0]
+	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	froze := 0
+	for range MaxFreezes + 2 {
+		z.free = 0.03
+		e.Tick()
+		if z.frozen[a] {
+			froze++
+		}
+		z.free = 0.5
+		*now = now.Add(time.Second)
+		e.Tick() // memory is fine: the 30 s start
+		*now = now.Add(31 * time.Second)
+		e.Tick() // fine for 30 s: thawed
+		*now = now.Add(RefreezeAfter + time.Second)
+	}
+	if froze != MaxFreezes {
+		t.Fatalf("froze %d times, want %d", froze, MaxFreezes)
+	}
+	if !strings.Contains(buf.String(), "letting it run") {
+		t.Fatalf("the cap was not logged:\n%s", buf.String())
+	}
+}
+
+// Decision 0032 slice 1: a freeze whose cgroup is empty is released at once
+// and does not block the next one.
+func TestF13AFreezeThatHoldsNothingIsReleased(t *testing.T) {
+	e, u, now, z, th := fzEngine(t)
+	a := th[0]
+	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	z.free = 0.04
+	e.Tick()
+	if !z.frozen[a] {
+		t.Fatal("not frozen")
+	}
+	z.empty[a] = true // what was frozen ended
+	*now = now.Add(5 * time.Second)
+	e.Tick()
+	if z.frozen[a] {
+		t.Fatal("an empty freeze was kept")
+	}
+	e.mu.Lock()
+	held := e.frozen.owner
+	e.mu.Unlock()
+	if held != "" {
+		t.Fatalf("still blocks other freezes: %q", held)
+	}
+	z.empty[a] = false
+	*now = now.Add(RefreezeAfter + time.Second)
+	e.Tick() // memory is still short and new work runs: frozen again
+	if !z.frozen[a] {
+		t.Fatal("not frozen again")
+	}
+}
+
+// Decision 0032 slice 1: each decision of the guard leaves one line with the
+// signals it acted on, so the thresholds can be tuned from the log.
+func TestF15TheGuardLogsWhatItDidAndWhy(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	e, u, now, z, th := fzEngine(t)
+	a := th[0]
+	endRun(e, th[1], *now)
+	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	z.free, z.stall = 0.04, slots.StallCritical
+	e.Tick()
+	e.Tick() // the same skip on the next tick is not logged twice
+	running(e, th[1])
+	e.Tick()
+	z.free, z.stall = 0.5, slots.StallOK
+	*now = now.Add(time.Second)
+	e.Tick() // recovered: the 30 s start
+	*now = now.Add(31 * time.Second)
+	e.Tick() // thawed
+	out := buf.String()
+	for _, want := range []string{
+		"guard: memory short: headroom=4% stall=critical",
+		"guard: not freezing thread=" + a + ": nobody else would gain",
+		"guard: froze undeclared work thread=" + a + " freeze=1/8",
+		"cmd=\"node test/layout.e2e.mjs\"",
+		"others_running=1",
+		"guard: thawed undeclared work thread=" + a,
+		`reason="memory fine for 30 s"`,
+		"guard: memory recovered:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if n := strings.Count(out, "not freezing thread="); n != 1 {
+		t.Errorf("the repeated skip was logged %d times", n)
 	}
 }
 

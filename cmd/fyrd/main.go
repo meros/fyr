@@ -310,7 +310,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	mgr.SetUndeclaredNote(eng.UndeclaredSubagentNote)
 	eng.UndeclaredDeps = engine.UndeclaredDeps{
 		Undeclared: sampler.Undeclared, UndeclaredTold: detector.Told, UndeclaredDismiss: detector.Dismiss, UndeclaredSettings: usettings.Set,
-		UndeclaredThaw: groups.ThawUndeclared, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused,
+		UndeclaredThaw: groups.ThawUndeclared, UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused,
 		UndeclaredFreeze: func(thread string) bool {
 			for _, f := range detector.Flags() {
 				if f.Thread == thread && groups.FreezeUndeclared(thread, cgroup.ReadRoots(tree, "", thread, f.FirstOver)) {

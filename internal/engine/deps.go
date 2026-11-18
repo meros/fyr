@@ -107,10 +107,13 @@ type SlotDeps struct {
 // UndeclaredThaw move a thread's undeclared work in and out of its frozen
 // cgroup; the others are the owner's commands. All optional.
 type UndeclaredDeps struct {
-	Undeclared         func() []slots.Undeclared
-	UndeclaredTold     func(thread string, since, at time.Time)
-	UndeclaredFreeze   func(thread string) bool
-	UndeclaredThaw     func(thread string)
+	Undeclared       func() []slots.Undeclared
+	UndeclaredTold   func(thread string, since, at time.Time)
+	UndeclaredFreeze func(thread string) bool
+	UndeclaredThaw   func(thread string)
+	// UndeclaredEmpty says the frozen cgroup of thread holds no process any
+	// more (its work ended): the freeze holds nothing and is released.
+	UndeclaredEmpty    func(thread string) bool
 	UndeclaredDismiss  func(thread string, on bool) bool
 	UndeclaredSettings func(args map[string]any) error
 	HeavySuggestion    func(id, do, pattern, kind string) error

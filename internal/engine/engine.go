@@ -154,7 +154,9 @@ type Engine struct {
 	undTold      map[string]time.Time // under mu: thread → the episode (its since) already told
 	undRun       map[string]int       // under mu: thread → the run (RunEnds) already told in
 	undNote      map[string]time.Time // under mu: thread → the episode a subagent's note was given for
-	undFroze     map[string]time.Time // under mu: thread → the episode already frozen once
+	undFroze     map[string]undFreeze // under mu: thread → what the guard froze of its episode
+	guardLast    map[string]guardLine // under mu: the guard's log lines, to say a repeat once a minute
+	guardShort   bool                 // under mu: memory was short at the last tick
 	memGuard     bool                 // under mu: the guard told a thread in this episode
 	titleMu      sync.Mutex
 	titling      map[string]bool

@@ -78,3 +78,26 @@ func TestBashCommandsAreKeptPerThreadNewestLast(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+// Decision 0032 slice 1: a freeze whose cgroup holds no process, or is gone, holds nothing.
+func TestUndeclaredEmptyReadsPopulated(t *testing.T) {
+	o, _ := fakeFS(t, "0::/"+unit+"\n")
+	tr := Setup(o)
+	td := tr.Thread("t_a")
+	g := &JobGroups{Tree: tr, Proc: t.TempDir()}
+	if !g.UndeclaredEmpty("t_a") {
+		t.Fatal("no cgroup is empty")
+	}
+	dir := filepath.Join(td, "undeclared")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "cgroup.events"), "populated 1\nfrozen 1\n")
+	if g.UndeclaredEmpty("t_a") {
+		t.Fatal("a cgroup with a process is not empty")
+	}
+	write(t, filepath.Join(dir, "cgroup.events"), "populated 0\nfrozen 1\n")
+	if !g.UndeclaredEmpty("t_a") {
+		t.Fatal("populated 0 is empty")
+	}
+}
