@@ -765,18 +765,7 @@ func psTable(out string, now time.Time) map[int]pinfo {
 		if e1 != nil || e2 != nil || e3 != nil {
 			continue
 		}
-		et := f[3]
-		var days int
-		if d, rest, ok := strings.Cut(et, "-"); ok {
-			days, _ = strconv.Atoi(d)
-			et = rest
-		}
-		sec := 0
-		for _, part := range strings.Split(et, ":") {
-			v, _ := strconv.Atoi(part)
-			sec = sec*60 + v
-		}
-		at := now.Add(-time.Duration(days*86400+sec) * time.Second)
+		at := now.Add(-time.Duration(etimeSeconds(f[3])) * time.Second)
 		h := fnv.New64a()
 		h.Write([]byte(strings.Join(f[4:], " ")))
 		t[pid] = pinfo{pid: pid, ppid: ppid, rss: rss * 1024, at: at, start: h.Sum64() >> 1, argv: f[4:]}

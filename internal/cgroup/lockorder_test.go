@@ -36,11 +36,11 @@ func TestV147RecordAsksProjectWithoutTheLock(t *testing.T) {
 	p := slots.New(1)
 	p.Acquire("t_a", slots.Test)
 	t0 := time.Now()
-	j.tick(nil, p.Snapshot(), nil, nil, t0)
-	j.tick(nil, p.Snapshot(), nil, nil, t0.Add(5*time.Second))
+	j.tick(nil, nil, p.Snapshot(), nil, nil, t0)
+	j.tick(nil, nil, p.Snapshot(), nil, nil, t0.Add(5*time.Second))
 	p.Release("t_a")
 	within(t, 5*time.Second, "an ended hold's record", func() {
-		j.tick(nil, p.Snapshot(), nil, nil, t0.Add(10*time.Second))
+		j.tick(nil, nil, p.Snapshot(), nil, nil, t0.Add(10*time.Second))
 	})
 	if rs := j.Records(); len(rs) != 1 || rs[0].Class != "fyr: test" {
 		t.Fatalf("%+v", rs)
@@ -58,7 +58,7 @@ func TestV147LoadAnswersWhileThePoolAndTheTrackerAreBusy(t *testing.T) {
 	s := &Sampler{Proc: proc, Cores: 4, Slots: p, Jobs: j}
 	p.Acquire("t_a", slots.Test)
 	j.Saw("t_a", "make test")
-	j.tick(nil, p.Snapshot(), nil, nil, time.Now())
+	j.tick(nil, nil, p.Snapshot(), nil, nil, time.Now())
 	if l := s.Get(); len(l.Slots.Held) != 1 {
 		t.Fatalf("%+v", l.Slots)
 	}

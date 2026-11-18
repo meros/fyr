@@ -16,16 +16,28 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+
+	"github.com/meros/fyr/internal/slots"
 )
 
 // jobDir is the name of a thread's job cgroup.
 const jobDir = "job"
 
-// JobGroups keeps the slot holders' jobs in their own cgroups. A nil Tree
-// (no cgroups) does nothing.
+// JobGroups keeps the slot holders' jobs in their own cgroups. With a nil Tree
+// nothing is moved; given Trees and CLIs it pauses a job with SIGSTOP instead
+// of a freeze (V0.process-tree-hosts, procstop.go).
 type JobGroups struct {
 	Tree *Tree
 	Proc string // default /proc
+
+	Trees *TreeReader
+	CLIs  func() map[string]int
+	KV    slots.KV                                // keeps the stopped pids across a restart
+	Kill  func(pid int, sig syscall.Signal) error // default syscall.Kill
+
+	stopMu  sync.Mutex // orders the stops and their KV writes; taken without mu
+	stopped map[string][]int
 
 	mu      sync.Mutex
 	frozen  map[string]bool
@@ -172,10 +184,13 @@ func (g *JobGroups) Has(thread string) bool {
 
 // Freeze freezes thread's job (not its CLI); false without a job cgroup.
 func (g *JobGroups) Freeze(thread string) bool {
-	if !g.Has(thread) {
+	if g.canStop() {
+		if !g.stopJobOf(thread) {
+			return false
+		}
+	} else if !g.Has(thread) {
 		return false
-	}
-	if err := put(g.dir(thread), "cgroup.freeze", "1"); err != nil {
+	} else if err := put(g.dir(thread), "cgroup.freeze", "1"); err != nil {
 		return false
 	}
 	g.mu.Lock()
@@ -189,10 +204,11 @@ func (g *JobGroups) Freeze(thread string) bool {
 
 // Thaw lets thread's job run again.
 func (g *JobGroups) Thaw(thread string) {
-	if g == nil || g.Tree == nil {
+	if g.canStop() {
+		g.cont(stopJob + thread)
+	} else if g == nil || g.Tree == nil {
 		return
-	}
-	if g.Has(thread) {
+	} else if g.Has(thread) {
 		put(g.dir(thread), "cgroup.freeze", "0")
 	}
 	g.mu.Lock()
@@ -256,6 +272,9 @@ func (g *JobGroups) HasUndeclared(thread string) bool {
 // process any more, or is gone: what was frozen in it ended, so the freeze
 // holds nothing (decision 0032 slice 1). False while a process is in it.
 func (g *JobGroups) UndeclaredEmpty(thread string) bool {
+	if g.canStop() {
+		return g.stopGone(stopUndeclared + thread)
+	}
 	if g == nil || g.Tree == nil {
 		return false
 	}
@@ -271,6 +290,15 @@ func (g *JobGroups) UndeclaredEmpty(thread string) bool {
 // MCP servers and any resident stay. A process that ends during the move is
 // skipped. False without a tree, without roots, or when nothing could be moved.
 func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
+	if g.canStop() && g.stopRoots(thread, roots) {
+		g.mu.Lock()
+		if g.ufrozen == nil {
+			g.ufrozen = map[string]bool{}
+		}
+		g.ufrozen[thread] = true
+		g.mu.Unlock()
+		return true
+	}
 	if g == nil || g.Tree == nil || len(roots) == 0 {
 		return false
 	}
@@ -342,10 +370,11 @@ func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
 
 // ThawUndeclared lets thread's undeclared work run again.
 func (g *JobGroups) ThawUndeclared(thread string) {
-	if g == nil || g.Tree == nil {
+	if g.canStop() {
+		g.cont(stopUndeclared + thread)
+	} else if g == nil || g.Tree == nil {
 		return
-	}
-	if g.HasUndeclared(thread) {
+	} else if g.HasUndeclared(thread) {
 		put(g.udir(thread), "cgroup.freeze", "0")
 		for _, d := range unitDirs(g.udir(thread)) { // decision 0032 slice 2
 			put(d, "cgroup.freeze", "0")
@@ -359,10 +388,10 @@ func (g *JobGroups) ThawUndeclared(thread string) {
 // EndUndeclared thaws thread's undeclared work and removes its cgroup once
 // empty (the kernel refuses while a process is left; a later call tries again).
 func (g *JobGroups) EndUndeclared(thread string) {
+	g.ThawUndeclared(thread)
 	if g == nil || g.Tree == nil {
 		return
 	}
-	g.ThawUndeclared(thread)
 	ud := g.udir(thread)
 	for _, d := range unitDirs(ud) {
 		removeEmptyGroup(d)
@@ -386,10 +415,10 @@ func removeEmptyGroup(dir string) {
 // back); the kernel refuses while a process is left, and a later End or the
 // thread's Release tries again.
 func (g *JobGroups) End(thread string) {
+	g.Thaw(thread)
 	if g == nil || g.Tree == nil {
 		return
 	}
-	g.Thaw(thread)
 	jd := g.dir(thread)
 	if len(pids(filepath.Join(jd, "cgroup.procs"))) > 0 {
 		return
@@ -420,7 +449,7 @@ func (g *JobGroups) Seen(thread, text string) {
 // jobs of the threads that no longer hold a slot. The sampler's Tick calls
 // it, outside every lock.
 func (g *JobGroups) Tick(held []string) {
-	if g == nil || g.Tree == nil {
+	if g == nil || (g.Tree == nil && !g.canStop()) {
 		return
 	}
 	now := map[string]bool{}

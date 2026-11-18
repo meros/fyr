@@ -48,7 +48,7 @@ export interface HostLoad {
    *  normalizeLoad puts either here, so the client reads one field. */
   slots?: Slots;
   heavy?: Slots;
-  /** Decision 0029 S1 (#185), absent without a provider (no /proc: macOS for now). */
+  /** Decision 0029 S1 (#185), absent without a provider. */
   provider?: string;
   capacity?: { cpu: number; memory: number };
   /** s: how much slower a new job runs now, 1.0 on an idle host */
@@ -252,13 +252,14 @@ export function loadDetail(h: HostLoad): string[] {
   }
   if (h.provider) out.push(`Signals: ${h.provider}`);
   const a = h.agents;
-  if (!h.cgroups || !a) {
+  if (!a) {
     out.push("Agents share the daemon's cgroup (no per-thread figures)");
     return out.concat(slotDetail(h));
   }
   const cpu = a.cpu === undefined ? "" : a.cpuMax ? `${one(a.cpu)} of ${a.cpuMax} cores` : `${one(a.cpu)} cores, no cap`;
   const mem = a.memoryMax ? `${gb(a.memory)} of ${gb(a.memoryMax)} GB` : `${gb(a.memory)} GB`;
-  out.push(`Agents ${[cpu, mem].filter(Boolean).join(" · ")}`);
+  // V0.process-tree-hosts: without cgroups the figures are each thread's process tree.
+  out.push(`Agents ${[cpu, mem].filter(Boolean).join(" · ")}${h.cgroups ? "" : " (process trees)"}`);
   return out.concat(slotDetail(h));
 }
 

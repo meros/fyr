@@ -47,8 +47,12 @@ func (l Learned) WallP90() float64 {
 }
 
 // learn adds r to its class; holds j.mu (and j.load ran). It does no I/O
-// (V0.147): the caller stores tableRaw after unlocking.
+// (V0.147): the caller stores tableRaw after unlocking. A record that measured
+// nothing teaches nothing: it would make the class cost almost nothing.
 func (j *Jobs) learn(r JobRecord) {
+	if r.Demand == 0 && r.Peak == 0 {
+		return
+	}
 	if j.table == nil {
 		j.table = map[string]Learned{}
 	}
@@ -101,6 +105,12 @@ func (j *Jobs) loadTable() {
 		if err := json.Unmarshal([]byte(raw), &j.table); err != nil {
 			log.Printf("jobs: stored costs unreadable, starting empty: %v", err)
 			j.table = map[string]Learned{}
+		}
+	}
+	// V0.process-tree-hosts: a Mac learned classes from holds it could not measure.
+	for c, l := range j.table {
+		if l.Demand == 0 && l.Peak == 0 {
+			delete(j.table, c)
 		}
 	}
 }

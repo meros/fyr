@@ -86,6 +86,7 @@ type hold struct {
 	cpu0, stall0      uint64
 	cpu, stall        uint64
 	mem0, maxMem, mem uint64
+	read              bool // cpu0 and mem0 are set
 	base              float64
 	peak              *os.File
 	sSum              float64
@@ -288,8 +289,9 @@ type ended struct {
 // threads' cores over the last read (the baseline); s is the host's
 // slowdown now. V0.147: the cgroup files are read, the project asked and
 // the records stored without j.mu, so j.mu is never held across I/O or a
-// call out of the tracker (the engine's tick asks Active under e.mu).
-func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *float64, now time.Time) {
+// call out of the tracker (the engine's tick asks Active under e.mu). Without
+// a tree, trees are the threads' readings from their process trees (V0.process-tree-hosts).
+func (j *Jobs) tick(t *Tree, trees map[string]reading, snap slots.Snapshot, rates map[string]*float64, s *float64, now time.Time) {
 	now = now.UTC()
 	dirOf := func(owner string) string {
 		if t == nil {
@@ -313,6 +315,9 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 	for _, sh := range snap.Held {
 		dir := dirOf(sh.Owner)
 		if dir == "" {
+			if r, ok := trees[sh.Owner]; ok {
+				reads[sh.Owner] = r
+			}
 			continue
 		}
 		reads[sh.Owner] = readCgroup(dir)
@@ -338,27 +343,25 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 			if r := rates[sh.Owner]; r != nil {
 				h.base = min(*r, baselineMax)
 			}
-			if hasDir {
-				h.cpu0, h.cpu = r.cpu, r.cpu
-				if r.hasStall {
-					h.stall0, h.stall, h.hasStall = r.stall, r.stall, true
-				}
-				h.mem0, h.maxMem, h.mem = r.mem, r.mem, r.mem
-			}
 			if f := peaks[sh.Owner]; f != nil {
 				h.peak, h.hasPeak = f, true
 				delete(peaks, sh.Owner)
 			}
 			j.holds[sh.Owner] = h
+			if hasDir {
+				h.baseline(r)
+			}
 			continue
 		}
 		prevAt, prevCPU := h.last, h.cpu
 		h.last = now
-		if hasDir {
-			if r.hasCPU {
+		if hasDir && !h.read { // the CLI had no reading at the grant
+			h.baseline(r)
+		} else if hasDir {
+			if r.hasCPU && r.cpu >= prevCPU {
 				u := r.cpu
 				h.cpu = u
-				if dt := now.Sub(prevAt).Seconds(); dt > 0 && u >= prevCPU {
+				if dt := now.Sub(prevAt).Seconds(); dt > 0 {
 					h.rate, h.rateAt = float64(u-prevCPU)/1e6/dt, now
 					if h.rate > h.base+busyAbove {
 						h.active = now
@@ -396,6 +399,16 @@ func (j *Jobs) tick(t *Tree, snap slots.Snapshot, rates map[string]*float64, s *
 		}
 	}
 	j.finish(done)
+}
+
+// baseline takes r as what the thread used before its job.
+func (h *hold) baseline(r reading) {
+	h.read = true
+	h.cpu0, h.cpu = r.cpu, r.cpu
+	if r.hasStall {
+		h.stall0, h.stall, h.hasStall = r.stall, r.stall, true
+	}
+	h.mem0, h.maxMem, h.mem = r.mem, r.mem, r.mem
 }
 
 // finish makes the ended holds' records: the peak and the project are read
