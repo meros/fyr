@@ -261,7 +261,7 @@ const SCREENS = [
   // sub-pages. On every one: no control under 44 px, nothing past the right edge, the last control above the bottom
   // inset; with the keyboard up a focused field and its button stay in view.
   { name: "settings nav (V0.119)", url: "?mock=rail&settings", ready: "document.querySelectorAll('.m-settings .stn-s').length === 6 && [...document.querySelectorAll('.m-settings .stn-s')].every((e) => e.textContent)" },
-  { name: "settings providers", url: "?mock=rail&settings=providers", ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section[aria-label=\"System agents\"] select').length === 4" },
+  { name: "settings providers", url: "?mock=rail&settings=providers", ready: "document.querySelectorAll('.m-settings .prow').length === 3 && document.querySelectorAll('section[aria-label=\"System agents\"] select').length === 5" },
   { name: "settings provider login (V0.119)", url: "?mock=rail&settings=providers/work", ready: "!!document.querySelector('.m-settings .login a.loginlink')" },
   { name: "settings provider (V0.119)", url: "?mock=rail&settings=providers/claude", ready: "document.querySelectorAll('.m-settings .model').length === 3", field: ".m-settings .fieldrow .inl input" },
   { name: "settings provider without a key (V0.119)", url: "?mock=rail&providers=nokey&settings=providers/claudeDeepseek", ready: "!!document.querySelector('.m-settings .keyrow input')", field: ".m-settings .keyrow .inl input" },
@@ -550,7 +550,7 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
     const st = m.settings;
     check(!!st && st.rows === 3 && st.found >= 1 && st.imports === st.found && st.needs.includes("Needs a login") && !st.login, `${ctx}: the Providers page is wrong ${JSON.stringify(st)}`);
     // SPEC V0.115: the phone has System agents too; the labels are unchanged and a job reads "Same as default".
-    check(!!st?.systemAgents && st.systemAgents.selects.join("|") === "Provider|Model|Thread titles|Project setup" && st.systemAgents.lines.length === 2 && st.systemAgents.same === "Same as default", `${ctx}: System agents are wrong ${JSON.stringify(st?.systemAgents)}`);
+    check(!!st?.systemAgents && st.systemAgents.selects.join("|") === "Provider|Model|Thread titles|Project setup|Questions in text" && st.systemAgents.lines.length === 3 && st.systemAgents.same === "Same as default", `${ctx}: System agents are wrong ${JSON.stringify(st?.systemAgents)}`);
   }
   // SPEC 0.5 V0.53, V0.119: a running login shows on the provider's page: the sign-in link, the code field and Cancel, all 44 px.
   if (ctx.startsWith("settings provider login")) check(!!m.settings?.login && /^https:\/\/claude\.com\//.test(m.settings.login.link) && m.settings.login.code && m.settings.login.cancel, `${ctx}: the login panel is wrong ${JSON.stringify(m.settings?.login)}`);
@@ -1501,7 +1501,7 @@ try {
   const sa = await evaluate(`(() => { const el = document.querySelector('.dlg section[aria-label="System agents"]'); if (!el) return null;
     return { selects: [...el.querySelectorAll('select')].map(s => s.getAttribute('aria-label')), lines: [...el.querySelectorAll('.sajob .sr-d')].map(e => e.textContent),
       model: el.querySelector('select[aria-label="Model"]')?.selectedOptions[0]?.textContent ?? '', same: el.querySelector('select[aria-label="Thread titles"]')?.selectedOptions[0]?.textContent ?? '' }; })()`);
-  check(!!sa && sa.selects.join("|") === "Provider|Model|Thread titles|Project setup" && sa.model === "Haiku (claude-haiku-5-5)" && sa.same === "Same as default" && sa.lines.length === 2 && sa.lines.every((l) => l === "Runs on Claude · claude-haiku-5-5"),
+  check(!!sa && sa.selects.join("|") === "Provider|Model|Thread titles|Project setup|Questions in text" && sa.model === "Haiku (claude-haiku-5-5)" && sa.same === "Same as default" && sa.lines.length === 3 && sa.lines.every((l) => l === "Runs on Claude · claude-haiku-5-5"),
     `V0.115 desktop: the System agents section is wrong (${JSON.stringify(sa)})`);
   await shot("settings-providers-desktop.png");
   // The same size on all four pages; each page shows its heading.
@@ -2165,6 +2165,13 @@ for (const dark of [false, true]) section(`V0.164 desktop${dark ? " dark" : ""}`
       harbour: (() => { const p = document.createElement('i'); p.style.color = 'var(--harbour)'; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; })(), row: document.querySelector('.one[data-id="t_mapperf"] .tund')?.textContent ?? '', h: Math.round(e.getBoundingClientRect().height) }; })()`);
     check(p.text === "Paused by Fyr: memory is short on laptop (6 % free). Frozen, not killed; it resumes when memory has recovered for 30 s, within 10 min at most. node test/layout.e2e.mjs · 2.8 GB · undeclared" && p.btns === 0 && p.head === p.harbour && p.row === "undeclared · paused: memory" && p.h <= 72, `${ctx}: the paused strip or row is wrong (${JSON.stringify(p)})`);
     await shot(`undeclared-thread-strip-paused-${tag}-desktop.png`);
+    // SPEC V0.210 (5): a question Fyr read in text: the row's marker and line, the thread's line, Not a question.
+    await navigate(`${origin}/?mock=rail&textask=1&open=t_textask`, "!!document.querySelector('.th .chneed.textask')");
+    const q = await evaluate(`({ row: document.querySelector('.list [data-id$="t_textask"]')?.textContent ?? '', line: document.querySelector('.chneed.textask .chnq').textContent, btn: document.querySelector('.chneed.textask .btn').textContent })`);
+    check(q.row.includes("Question in text") && q.row.includes("Which logo do you want?") && q.line === "Fyr read this as a question: Which logo do you want?" && q.btn === "Not a question", `V0.210 desktop: the question in text (${JSON.stringify(q)})`);
+    await shot(`text-question-${tag}-desktop.png`);
+    await evaluate(`document.querySelector('.chneed.textask .btn').click()`);
+    await waitFor(`!document.querySelector('.chneed.textask')`, { what: "Not a question clears the line" });
     // Add as heavy job… opens Settings → Automation at the suggestion.
     await navigate(`${origin}/?mock=rail&undeclared=1&open=t_mapperf`, "!!document.querySelector('.th .undb')");
     await evaluate(`[...document.querySelectorAll('.undb .btn')].find((b) => b.textContent.startsWith('Add as heavy job')).click()`);
@@ -2243,6 +2250,13 @@ for (const dark of [false, true]) section(`V0.164 phone${dark ? " dark" : ""}`, 
     const pp = await evaluate(`({ btns: document.querySelectorAll('.undb button').length, wide: document.documentElement.scrollWidth > innerWidth, head: document.querySelector('.undb b').textContent })`);
     check(pp.btns === 0 && !pp.wide && pp.head === "Paused by Fyr: memory is short on laptop (6 % free).", `${ctx}: the paused strip (${JSON.stringify(pp)})`);
     await shot(`undeclared-thread-strip-paused-${tag}-phone.png`);
+    // SPEC V0.210 (5): the same words on the phone; the button is a 44 px target.
+    await openScreen({ url: "?mock=rail&textask=1", ready: "[...document.querySelectorAll('.m-list .rw')].some((e) => e.textContent.includes('Question in text') && e.textContent.includes('Which logo do you want?'))" }, W, 844);
+    await openScreen({ url: "?mock=rail&textask=1&open=t_textask", ready: "!!document.querySelector('.m-thread .chneed.textask')" }, W, 844);
+    const tq = await evaluate(`(() => { const e = document.querySelector('.m-thread .chneed.textask'), b = e.querySelector('.btn').getBoundingClientRect(); return { line: e.querySelector('.chnq').textContent, h: b.height, inside: b.right <= innerWidth + 0.5, wide: document.documentElement.scrollWidth > innerWidth }; })()`);
+    check(tq.line === "Fyr read this as a question: Which logo do you want?" && tq.h >= 44 && tq.inside && !tq.wide, `V0.210 phone: the question in text (${JSON.stringify(tq)})`);
+    await shot(`text-question-${tag}-phone.png`);
+    await tapCenter(".m-thread .chneed.textask .btn", "!document.querySelector('.m-thread .chneed.textask')");
     // Add as heavy job… goes to Settings → Automation at the suggestion.
     await openScreen({ url: "?mock=rail&undeclared=1&open=t_mapperf", ready: "!!document.querySelector('.m-thread .undb')" }, W, 844);
     await tapCenter(".m-thread .undb .btn", "!!document.querySelector('.set.phone .sr.pick')");

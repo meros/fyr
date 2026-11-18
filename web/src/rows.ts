@@ -31,9 +31,15 @@ export function stateLabel(s: AttentionState): string {
   return LABEL[s] ?? s;
 }
 
+/** V0.210: the thread is in Needs you only because Fyr read a question in the agent's text. */
+export function textAskShown(t: Pick<Thread, "attention" | "textAsk">): boolean {
+  return t.attention.state === "blocked" && !!t.textAsk && t.attention.reason === t.textAsk.question;
+}
+
 /** The bold word: the open decision's kind while asking, else the attention reason or the state. */
 export function rowState(t: Thread): string {
   const st = t.attention.state;
+  if (textAskShown(t)) return "Question in text"; // V0.210: says that this is Fyr's reading; the line says what
   if (st === "asking") {
     const d = currentDecision(t);
     if (d?.kind === "ask") {
@@ -49,6 +55,7 @@ export function rowState(t: Thread): string {
 /** The line after it. `keys`: a failed row names the retry key (the desktop has a keyboard). */
 export function rowMeta(t: Thread, o: { keys?: boolean } = {}): string {
   const st = t.attention.state;
+  if (textAskShown(t)) return t.textAsk!.question;
   const d = currentDecision(t);
   if (st === "asking" && d) {
     // The asker is named on the card (U25); the row keeps the question, as the design draws it.
