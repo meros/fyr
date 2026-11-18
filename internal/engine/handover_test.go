@@ -58,6 +58,7 @@ func newHandoverHarness(t *testing.T) *handoverHarness {
 	})
 	e.Agents, e.Effects, hh.m = m, hh.r, m
 	e.ProfileExists = func(id string) bool { _, ok := profiles[id]; return ok }
+	guardDeps(t, e)
 	t.Cleanup(func() { m.StopAll(); hs.Close(); st.Close() })
 	return hh
 }

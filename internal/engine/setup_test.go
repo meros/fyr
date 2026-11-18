@@ -38,6 +38,7 @@ func setupHarness(t *testing.T) *harness {
 	h.e.Icons = &projicon.Store{Dir: filepath.Join(h.dir, "project-icons")}
 	h.e.FetchIcon = projicon.Fetcher{AllowLoopback: true}.Fetch
 	h.e.SystemAgentResolve = func(job string) (string, string, error) { return "", "claude-haiku-5-5", nil }
+	guardDeps(t, h.e)
 	return h
 }
 
@@ -178,6 +179,7 @@ func TestProjectSetupRun(t *testing.T) {
 	pid := newProject(t, h, core.Args{"folder": dir})
 	var asked string
 	h.e.SystemAgentResolve = func(job string) (string, string, error) { asked = job; return "", "claude-haiku-5-5", nil }
+	guardDeps(t, h.e)
 	r := h.cmd("project.setupRun", "", core.Args{"id": pid})
 	if !r.OK {
 		t.Fatalf("%+v", r)
@@ -215,6 +217,7 @@ func TestProjectSetupRun(t *testing.T) {
 	h.e.SystemAgentResolve = func(string) (string, string, error) {
 		return "", "", errors.New("no Haiku on this provider; Settings → System agents")
 	}
+	guardDeps(t, h.e)
 	r = h.cmd("project.setupRun", "", core.Args{"id": pid})
 	if r.OK || !strings.Contains(r.Error, "Haiku") {
 		t.Fatalf("%+v", r)
@@ -290,6 +293,7 @@ func TestSetupThatCouldNotStartRunsAgain(t *testing.T) {
 	h.e.SystemAgentResolve = func(string) (string, string, error) {
 		return "", "", errors.New("Claude has no Haiku model: pick a model in Settings → System agents")
 	}
+	guardDeps(t, h.e)
 	pid := newProject(t, h, core.Args{"folder": dir})
 	if n := h.e.SetupExisting(0); n != 0 {
 		t.Fatalf("started %d with a failing system agent", n)
@@ -298,6 +302,7 @@ func TestSetupThatCouldNotStartRunsAgain(t *testing.T) {
 		t.Fatalf("the failure is not shown: %+v", s)
 	}
 	h.e.SystemAgentResolve = func(string) (string, string, error) { return "", "claude-haiku-5-5", nil }
+	guardDeps(t, h.e)
 	if n := h.e.SetupExisting(0); n != 1 {
 		t.Fatalf("after the fix a pass started %d", n)
 	}

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -29,7 +30,12 @@ func TestMain(m *testing.M) {
 		fake.Main()
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	if missing := unguardedDeps(); code == 0 && len(missing) > 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: V0.182: no guarded test calls %v; call guardDeps in a test that reaches them\n", missing)
+		code = 1
+	}
+	os.Exit(code)
 }
 
 type runner struct {
@@ -107,6 +113,7 @@ func startHarnessWith(t *testing.T, dir, db string, idle time.Duration, rc *rnr.
 	m = agent.New(e, cfg)
 	e.Agents, e.Effects, h.m = m, h.r, m
 	e.AttachmentExists = func(id string) bool { _, err := h.att.Get(id); return err == nil }
+	guardDeps(t, e)
 	t.Cleanup(func() { m.StopAll(); hs.Close(); st.Close() })
 	return h
 }
@@ -562,6 +569,7 @@ func TestAttentionTransitionsNotify(t *testing.T) {
 		got = append(got, string(prev)+"→"+string(d.Attention.State))
 		mu.Unlock()
 	}
+	guardDeps(t, h.e)
 	count := func(to string) int {
 		mu.Lock()
 		defer mu.Unlock()
@@ -606,6 +614,7 @@ func TestRestartDoesNotRenotify(t *testing.T) {
 	e2.Load()
 	n := 0
 	e2.OnAttention = func(api.Thread, core.State) { n++ }
+	guardDeps(t, e2)
 	e2.Tick()
 	if n != 0 {
 		t.Fatalf("restart re-notified %d threads", n)

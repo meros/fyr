@@ -39,6 +39,7 @@ func TestV176TheOwnersCommandsReachTheHostAndAreTheOwnersOnly(t *testing.T) {
 	e.LeftoverEnd = func(id string) error { ended = append(ended, id); return nil }
 	e.LeftoverKeep = func(id string, d time.Duration) error { kept, keptFor = append(kept, id), d; return nil }
 	e.TempRemove = func(p string) error { removed = append(removed, p); return nil }
+	guardDeps(t, e)
 	for _, k := range []string{core.KindLeftoverEnd, core.KindLeftoverKeep, core.KindTempRemove} {
 		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: k, Args: map[string]any{"id": "1@2", "path": "/x"}}); err == nil {
 			t.Errorf("%s accepted from an observer", k)
@@ -67,6 +68,7 @@ func TestV176ARunsEndAndASettleLookAtOnce(t *testing.T) {
 	a := bareThread(t, e)
 	looked := make(chan struct{}, 4)
 	e.LeftoverSweep = func() { looked <- struct{}{} }
+	guardDeps(t, e)
 	running(e, a)
 	endRun(e, a, *now)
 	wait := func(what string) {
@@ -98,6 +100,7 @@ func TestV176KeepProcessDeclaresForTheCallingThread(t *testing.T) {
 		got.th, got.pid, got.match, got.d, got.why = th, pid, match, d, why
 		return nil
 	}
+	guardDeps(t, e)
 	out, isErr := callAs(t, e, "t_a", "keep_process", map[string]any{"pid": 4242, "hours": 99, "why": "dev server"})
 	if isErr || !strings.Contains(out, "Kept for 24 h") {
 		t.Fatalf("%q %v", out, isErr)

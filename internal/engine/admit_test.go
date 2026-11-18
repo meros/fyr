@@ -54,6 +54,7 @@ func TestS2MemoryGuardTellsTheBiggestJobOnce(t *testing.T) {
 	e.SlotPolicy = slots.DefaultPolicy
 	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free} }
 	e.SlotGrowth = func(o string) uint64 { return map[string]uint64{a: 1e9, b: 4.1e9}[o] }
+	guardDeps(t, e)
 	e.Tick()
 	if !told(e, b, "Memory is short on this host (memory: 6 % free); your job grew 4.1 GB") || told(e, a, "Memory is short") {
 		t.Fatal("the biggest job was not the one told")
