@@ -457,3 +457,6 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-lsheet .mlsh .hm{width:150px;gap:3px}
 .m-lsheet .mlsh .hmr{grid-template-columns:24px minmax(20px,1fr) auto;font-size:12px;line-height:16px;column-gap:6px}
 .m-lsheet .mlsh .hmb{height:6px;border-radius:3px}
+
+/* V0.210: a touch target; the desktop keeps the small button, which a pointer can hit. */
+.m-thread .chneed.textask .btn{min-height:44px}

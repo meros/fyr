@@ -303,3 +303,11 @@ test("a bulk settle leaves pinned threads out and counts them", () => {
   assert.deepEqual(bulkSettle([thread("r", "working", "working", { running: true })]), { ids: [], kept: 0, unread: 0, running: 1 });
   assert.equal(bulkSettleText(2, 0, 0, 1), "Settled 2 threads; 1 still running");
 });
+
+// SPEC V0.210 (4): a question Fyr read in text comes after the causes that are facts, whatever its age.
+test("needs you puts a question read in text last", () => {
+  const q = thread("q", "blocked", "needs", { activityAt: at(50), attention: { state: "blocked", section: "needs", reason: "Which?" }, textAsk: { question: "Which?", at: at(50), run: 1 } });
+  const hard = thread("b", "blocked", "needs", { activityAt: at(1), attention: { state: "blocked", section: "needs", reason: "CI failed" } });
+  const ask = thread("a", "asking", "needs", { activityAt: at(2) });
+  assert.deepEqual(sections({ q, b: hard, a: ask }).needs.map((t) => t.id), ["a", "b", "q"]);
+});

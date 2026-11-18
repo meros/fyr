@@ -216,7 +216,7 @@ export function createMockApi(scenario: string): Api {
         setTimeout(() => onOrder?.(ids), 0); // the front's event, as on every device
         return { ok: true, result: { ids } };
       }
-      // Decision 0033: the front writes each host's own record.
+      // Decision 0034: the front writes each host's own record.
       if (action === "front.projectLink" || action === "front.projectUnlink") {
         const refs = (action === "front.projectLink" ? (args?.refs as string[]) : [args?.ref as string]) ?? [];
         const link = action === "front.projectLink" ? `l_${"0123456789abcdef"}` : "";
@@ -366,6 +366,7 @@ export function createMockApi(scenario: string): Api {
             jobs: [
               { id: "title", name: "Thread titles", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
               { id: "setup", name: "Project setup", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
+              { id: "question", name: "Questions in text", choice: {}, profile: "claude", model: "claude-haiku-5-5" },
             ],
           };
         const first = ps[0];
@@ -377,6 +378,7 @@ export function createMockApi(scenario: string): Api {
           jobs: [
             { id: "title", name: "Thread titles", choice: {}, ...runs },
             { id: "setup", name: "Project setup", choice: {}, ...runs },
+            { id: "question", name: "Questions in text", choice: {}, ...runs },
           ],
         };
       });

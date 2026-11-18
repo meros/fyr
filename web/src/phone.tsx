@@ -233,7 +233,7 @@ export interface PhoneProps {
     move(ids: string[], projectId: string | null): Promise<string | null>;
     /** V0.58 */
     delete(id: string): Promise<string | null>;
-    /** Decision 0033 */
+    /** Decision 0034 */
     link(id: string, other: string): Promise<string | null>;
     unlink(id: string): Promise<string | null>;
   };

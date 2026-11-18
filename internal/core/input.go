@@ -248,6 +248,10 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	done := settleWhenWorkDone(Rec{T: t, V: v}, in, now)
 	res.Events = append(res.Events, done.Events...)
 	res.Effects = append(res.Effects, done.Effects...)
+	// V0.210: a question in text reads the end state too.
+	asked := textAskAfter(before, t, in, now)
+	res.Events = append(res.Events, asked.Events...)
+	res.Effects = append(res.Effects, asked.Effects...)
 	return t, v, res, nil
 }
 

@@ -71,7 +71,7 @@ function hiddenHostKeys(hosts: readonly HostRef[], hidden: Hidden): Set<string> 
   return keys;
 }
 
-/** Decision 0033: hiding any member's id hides the linked project; the id the lists show can change with the hosts. */
+/** Decision 0034: hiding any member's id hides the linked project; the id the lists show can change with the hosts. */
 export function projectIsHidden(p: Project, hidden: Hidden): boolean {
   return (p.members ?? [p]).some((m) => !!m.id && hidden.projects.includes(m.id));
 }
@@ -86,7 +86,7 @@ export function applyHidden(s: Store, hidden: Hidden): Store {
   })();
   const threads: Record<string, Thread> = {};
   for (const t of Object.values(s.threads)) if (!threadGone(t)) threads[t.id] = t;
-  // Decision 0033: a hidden host takes only its own record of a linked project; the others still show it.
+  // Decision 0034: a hidden host takes only its own record of a linked project; the others still show it.
   const hosts = s.hosts.filter((h) => !keys.has(h.name));
   const shown = projectRecords(s.projects.filter((p) => !projectIsHidden(p, hidden))).filter((m) => !(m.host && keys.has(m.host)) && !(m.hostId && keys.has(m.hostId)));
   return {

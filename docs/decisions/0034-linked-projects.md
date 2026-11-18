@@ -1,6 +1,6 @@
-# 0033 Linked projects: a project can span hosts, and each host keeps its own record
+# 0034 Linked projects: a project can span hosts, and each host keeps its own record
 
-Date: 2026-11-18 · Status: **accepted** (the owner answered the four questions of #295 on 18 Nov, each as recommended) · Builds on 0016 (one owner per record), 0017 (a project is one folder; its "later" note on tags), 0031 (refs) · Spec rows: one per slice, from V0.209
+Date: 2026-11-18 · Status: **accepted** (the owner answered the four questions of #295 on 18 Nov, each as recommended) · Builds on 0016 (one owner per record), 0017 (a project is one folder; its "later" note on tags), 0031 (refs) · Spec rows: one per slice, from V0.211
 
 **Context.** 0016 kept projects on one host and left "a project across hosts" as a later decision. The live data has the same work on two hosts as two unrelated projects, with different names and colours. The folder differs per machine and providers exist per host, so one shared record does not fit.
 

@@ -95,7 +95,27 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
 /** The thread's own actions (V0.60): in the header, above the tabs. */
 export function ThreadOffers({ t, onRun }: { t: Thread; onRun: Run }) {
   // V0.149: a run request is a card under the conversation, not a header button
-  return <OfferBar on="thread" offers={t.offers?.filter((o) => !o.request)} runs={t.runs} cwd={t.cwd} onRun={onRun} />;
+  return (
+    <>
+      <TextAskLine t={t} onRun={onRun} />
+      <OfferBar on="thread" offers={t.offers?.filter((o) => !o.request)} runs={t.runs} cwd={t.cwd} onRun={onRun} />
+    </>
+  );
+}
+
+/** V0.210: a question Fyr read in the agent's text, on both fronts: what Fyr read, and the press that says it is not one. */
+function TextAskLine({ t, onRun }: { t: Thread; onRun: Run }) {
+  if (!t.textAsk) return null;
+  return (
+    <div class="chneed textask" role="status">
+      <span class="chnq">
+        <span class="txq">Fyr read this as a question:</span> {t.textAsk.question}
+      </span>
+      <button class="btn sm" title="Take it out of Needs you" onClick={() => onRun("thread.notQuestion")}>
+        Not a question
+      </button>
+    </div>
+  );
 }
 
 /** The view's actions run through its page (fyr.run, data-action); the owner confirms a script or a fyr action
