@@ -171,7 +171,7 @@ type Engine struct {
 func New(st *store.Store) *Engine {
 	return &Engine{mu: lockwatch.Mutex{Critical: true, Name: "engine.mu"}, st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
 		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, deploySeen: map[string]string{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
-		shotLimit: window{max: 10, span: time.Minute}, newLimit: window{max: 5, span: time.Hour}, sendLimit: window{max: 30, span: time.Hour}}
+		shotLimit: window{max: 10, span: time.Minute}, newLimit: window{max: 12, span: time.Hour}, sendLimit: window{max: 30, span: time.Hour}}
 }
 
 func NewID(prefix string) string {

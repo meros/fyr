@@ -87,7 +87,7 @@ func TestThreadSend(t *testing.T) {
 	}
 }
 
-// SPEC 0.5 V0.22: new threads record their parent; at most 5 an hour.
+// SPEC 0.5 V0.22: new threads record their parent. V0.202: at most 12 an hour.
 func TestThreadNewAndLimit(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	a := h.create("parent")
@@ -105,7 +105,7 @@ func TestThreadNewAndLimit(t *testing.T) {
 		}
 	}
 	h.wait(child, "child done", state(core.Done))
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 11; i++ {
 		if _, isErr := callAs(t, h.e, a, "thread_new", map[string]any{"cwd": h.dir, "text": "more"}); isErr {
 			t.Fatalf("new %d refused early", i+2)
 		}

@@ -212,12 +212,12 @@ func (e *Engine) threadTools(s *mcp.Server) {
 		}})
 
 	s.Add(mcp.Tool{Name: "thread_new",
-		Description: "Start a new Fyr thread (a separate agent session) in a folder with a first message, for work that should run on its own. The user sees it in the inbox, marked as started by this thread. At most 5 an hour.",
+		Description: "Start a new Fyr thread (a separate agent session) in a folder with a first message, for work that should run on its own. The user sees it in the inbox, marked as started by this thread. At most 12 an hour.",
 		Schema: obj(map[string]any{"cwd": str("The folder to work in (absolute path)."), "text": str("The first message: a full brief."),
 			"title": str("A short title."), "model": str("Optional model id.")}, "cwd", "text"),
 		Call: func(_ context.Context, self string, a map[string]any) (string, error) {
 			if !e.newLimit.allow(self, time.Now()) {
-				return "", errors.New("limit: 5 new threads an hour per thread")
+				return "", errors.New("limit: 12 new threads an hour per thread")
 			}
 			args := core.Args{}
 			for _, k := range []string{"cwd", "text", "title", "model"} {

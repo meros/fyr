@@ -125,7 +125,7 @@ A one-owner system does not need roles. It does need to tell "use Fyr" from "cha
 
 ### 6. Agents → /mcp, and agents as untrusted input
 
-**What a thread's token can do** (`internal/engine/threads_tools.go`): read and list other threads, `thread_send` to one with no open Decision (30 an hour), `thread_new` (5 an hour), rename its own and its children, open changes, request effects, offer actions. It **cannot** answer a Decision, approve an effect or press an offered action. The owner's source (`FromOwner`) is reached only through the browser API. As an MCP surface this is sound: a prompt-injected agent can at worst send loud messages to other threads (each marked with the sender), which their agents treat as input from a peer, not from the owner.
+**What a thread's token can do** (`internal/engine/threads_tools.go`): read and list other threads, `thread_send` to one with no open Decision (30 an hour), `thread_new` (12 an hour), rename its own and its children, open changes, request effects, offer actions. It **cannot** answer a Decision, approve an effect or press an offered action. The owner's source (`FromOwner`) is reached only through the browser API. As an MCP surface this is sound: a prompt-injected agent can at worst send loud messages to other threads (each marked with the sender), which their agents treat as input from a peer, not from the owner.
 
 **But the MCP surface is not the boundary today.** An agent with `Bash` (permission mode `auto`) runs as the owner's user. It can:
 1. `curl -H 'X-Fyr: 1' 127.0.0.1:7777/api/command`: the owner, approving its own effects (closed by points 1–2);
