@@ -1,6 +1,6 @@
 # SectionHeader
 
-The fixed inbox sections: Needs you, Unread, Seen, Working, Waiting to run, Snoozed, Settled, in that order.
+The fixed inbox sections: Your move, Finished unread, Finished seen, Moving without you, Waiting to run, Snoozed, Settled, in that order.
 
-- Only the Needs you count uses a `beam` fill. Every other count is plain text.
-- Working is collapsed by default and says what is happening in its hint.
+- Only the Your move count uses a `beam` fill. Every other count is plain text.
+- Moving without you is collapsed by default and says what is happening in its hint.

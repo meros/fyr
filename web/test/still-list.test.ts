@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sections, flatOrder } from "../src/store.ts";
-import { NO_HAND, anchorRow, holding, placeOf, stillRows, trackUnread } from "../src/still-list.ts";
+import { NO_HAND, anchorRow, holding, placeOf, stillRows, trackUnread, waitingMoves } from "../src/still-list.ts";
 import type { Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -39,11 +39,22 @@ test("V0.207: during a hold rows keep section and order, content stays live, oth
   assert.deepEqual(ids(r.seen), ["s"]);
 });
 
-test("V0.207: a new Needs-you row comes in at once, also from another section", () => {
+test("V0.your-move: the hold counts each waiting move once, and not the open row", () => {
+  const held = sections(all([unread("a", 3), unread("b", 2), unread("c", 1)]));
+  const moved = sections(all([unread("a", 3), unread("c", 1), thread("b", "working", "working", { running: true })]));
+  assert.equal(waitingMoves(stillRows(moved, held, null), moved, null), 1, "b goes to Moving; a and c only close up");
+  assert.equal(waitingMoves(stillRows(moved, held, null), moved, "b"), 0);
+  const same = sections(all([unread("a", 3), unread("b", 2), unread("c", 1)]));
+  assert.equal(waitingMoves(stillRows(same, held, null), same, null), 0);
+  const fresh = sections(all([unread("a", 3), unread("b", 2), unread("c", 1), unread("new", 9)]));
+  assert.equal(waitingMoves(stillRows(fresh, held, null), fresh, null), 1);
+});
+
+test("V0.207, V0.your-move: a new Your-move row comes in at once at the top of its group, also from another section", () => {
   const held = sections(all([thread("n", "asking", "needs"), unread("u", 1)]));
   const live = sections(all([thread("n", "asking", "needs"), thread("u", "asking", "needs", { activityAt: at(5) }), thread("x", "failed", "needs", { activityAt: at(4) })]));
   const r = stillRows(live, held, null);
-  assert.deepEqual(ids(r.needs), ["u", "x", "n"]);
+  assert.deepEqual(ids(r.needs), ["u", "n", "x"]);
   assert.deepEqual(ids(r.unread), []);
 });
 

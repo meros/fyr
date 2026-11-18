@@ -38,7 +38,7 @@ import {
   applyThreadPatch,
   resolveRef,
 } from "./store.ts";
-import { placeOf, stillRows, trackUnread, type RowPlace } from "./still-list.ts";
+import { placeOf, stillRows, trackUnread, waitingMoves, type RowPlace } from "./still-list.ts";
 import { useHand, useListAnchor } from "./still-list-ui.ts";
 import { SECTION_OPEN_KEY, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
@@ -437,6 +437,7 @@ function App() {
   const liveRows = useMemo(() => (listed === shown ? sec : sections(listed, queue, unreadAt)), [listed, shown, sec, queue, unreadAt]);
   // V0.207: the hold starts from what the screen shows. A new search or filter is the owner's own act: it starts afresh.
   const hand = useHand();
+  const [, redraw] = useState(0);
   const drawnRef = useRef<Sections | null>(null);
   const heldRef = useRef<Sections | null>(null);
   const placeRef = useRef<RowPlace | null>(null);
@@ -452,6 +453,12 @@ function App() {
   const place = placeRef.current?.id === freed ? null : placeRef.current;
   const rows = useMemo(() => stillRows(liveRows, held, place, freed), [liveRows, held, place, freed]);
   drawnRef.current = rows;
+  // V0.your-move: what the hold keeps back. Show starts the hold again from the live rows, so the list then stays still.
+  const updates = useMemo(() => (held ? waitingMoves(rows, liveRows, place?.id ?? null) : 0), [held, rows, liveRows, place]);
+  const showUpdates = () => {
+    drawnRef.current = heldRef.current = null;
+    redraw((n) => n + 1);
+  };
   const drawn = useMemo(() => stillRows(sec, held, place, freed), [sec, held, place, freed]);
   const guest = useMemo(() => guestOf(rows, sel, hidden, sectionOpen), [rows, sel, hidden, sectionOpen]);
   const order = useMemo(() => flatOrder(drawn, limits), [drawn, limits]);
@@ -1618,7 +1625,7 @@ function App() {
           nav={{ at: nav, go: navGo, replace: navReplace, back: navBack }}
           store={store}
           allProjects={fullStore.projects}
-          inbox={{ sec, rows, guest, searchable, all: filtered, unlock }}
+          inbox={{ sec, rows, guest, updates, showUpdates, searchable, all: filtered, unlock }}
           now={now}
           commands={cmds}
           open={{
@@ -1723,6 +1730,8 @@ function App() {
           sec={sec}
           rows={rows}
           guest={guest}
+          updates={updates}
+          onShowUpdates={showUpdates}
           now={now}
           selected={sel}
           picked={picked}

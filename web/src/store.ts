@@ -1,5 +1,5 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
-import { textAskShown } from "./rows.ts";
+import { needsGroupRank } from "./rows.ts";
 import { linkProjects, orderProjects, projectRecords } from "./projects.ts";
 import type { QueueEntry } from "./slot-queue.ts";
 import type { HostInfo } from "./hosts.ts";
@@ -12,15 +12,16 @@ import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, 
 
 export type SectionKey = "needs" | "working" | "slots" | "unread" | "seen" | "snoozed" | "settled";
 
-/** `g`: the section's key after g on the desktop (g1–g6). V0.137: Waiting for a slot has none, so the others keep their
+/** V0.your-move: the labels say whose move it is; the keys, the g keys and V0.199's order stay.
+ *  `g`: the section's key after g on the desktop (g1–g6). V0.137: Waiting for a slot has none, so the others keep their
  *  keys; it shows only while a host's queue is not empty (`transient`). V0.189: Unread is new and takes g6, so g3 stays
  *  Seen, g4 Snoozed and g5 Settled although it sits above them. V0.199: what is for the owner to read comes before what
  *  is still running; the g keys follow the section, not its place. */
 export const SECTIONS: { key: SectionKey; label: string; short: string; state: AttentionState; g?: number; transient?: boolean }[] = [
-  { key: "needs", label: "Needs you", short: "Needs", state: "asking", g: 1 },
-  { key: "unread", label: "Unread", short: "Unread", state: "done", g: 6 },
-  { key: "seen", label: "Seen", short: "Seen", state: "seen", g: 3 },
-  { key: "working", label: "Working", short: "Working", state: "working", g: 2 },
+  { key: "needs", label: "Your move", short: "Yours", state: "asking", g: 1 },
+  { key: "unread", label: "Finished, unread", short: "Unread", state: "done", g: 6 },
+  { key: "seen", label: "Finished, seen", short: "Seen", state: "seen", g: 3 },
+  { key: "working", label: "Moving without you", short: "Moving", state: "working", g: 2 },
   { key: "slots", label: "Waiting to run", short: "Waiting", state: "waiting", transient: true },
   { key: "snoozed", label: "Snoozed", short: "Snoozed", state: "snoozed", g: 4 },
   { key: "settled", label: "Settled", short: "Settled", state: "settled", g: 5 },
@@ -199,12 +200,10 @@ function activity(t: Thread): number {
   return ts(t.activityAt) || ts(t.updatedAt);
 }
 
-/** V0.205: a thread whose open asks are all merge asks comes after the questions, before the failures. V0.210: a question
- *  Fyr only read in the agent's text comes after every cause that is a fact. */
+/** V0.your-move: by group (Answer, Approve, Unblock, Questions in text), then by state. Keeps V0.205 (merge asks after the
+ *  questions, before the failures) and V0.210 (a question Fyr only read comes last). */
 function needsRank(t: Thread): number {
-  if (textAskShown(t)) return 2.5;
-  const r = NEEDS_RANK[t.attention.state] ?? 9;
-  return t.attention.state === "asking" && t.decisions.length > 0 && t.decisions.every((d) => d.effect?.action === "pr.merge") ? r + 0.5 : r;
+  return needsGroupRank(t) * 10 + (NEEDS_RANK[t.attention.state] ?? 9);
 }
 
 export function compareNeeds(a: Thread, b: Thread): number {

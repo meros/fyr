@@ -36,6 +36,50 @@ export function textAskShown(t: Pick<Thread, "attention" | "textAsk">): boolean 
   return t.attention.state === "blocked" && !!t.textAsk && t.attention.reason === t.textAsk.question;
 }
 
+/** V0.your-move: what the owner has to do, the groups of Your move in their order. Questions Fyr only read in the text come
+ *  last, as decision 0033 asks: they are an inference, the others are facts. */
+export const NEEDS_GROUPS = [
+  { key: "answer", label: "Answer" },
+  { key: "approve", label: "Approve" },
+  { key: "unblock", label: "Unblock" },
+  { key: "text", label: "Questions in text" },
+] as const;
+export type NeedsGroup = (typeof NEEDS_GROUPS)[number]["key"];
+
+/** V0.your-move: a question to answer, something to say yes to (an approval, a merge, a ready PR, a command to run), or
+ *  something broken. Reads only what the host computed. */
+export function needsGroup(t: Thread): NeedsGroup {
+  if (textAskShown(t)) return "text";
+  const st = t.attention.state;
+  if (st === "asking") return t.decisions.length === 0 || t.decisions.some((d) => d.kind === "ask") ? "answer" : "approve";
+  if (st === "blocked") {
+    if (t.attention.reason?.startsWith("Run: ")) return "approve"; // V0.149 (5): the host's words for a run request
+    const needs = t.changes.flatMap((c) => (c.need && !c.need.muted ? [c.need] : []));
+    if (needs.length > 0 && needs.every((n) => n.cause === "ready")) return "approve";
+  }
+  return "unblock";
+}
+
+export function needsGroupRank(t: Thread): number {
+  return NEEDS_GROUPS.findIndex((g) => g.key === needsGroup(t));
+}
+
+/** V0.your-move: the group label each drawn row carries above it, by thread id: on the first row of each group. A row that
+ *  left Your move and keeps its place (the open row, a hold) starts no group, and a row whose group changed during a hold
+ *  stays where it is, so no label shows twice. */
+export function needsHeads(rows: Thread[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const seen = new Set<NeedsGroup>();
+  for (const t of rows) {
+    if (t.attention.section !== "needs") continue;
+    const g = needsGroup(t);
+    if (seen.has(g)) continue;
+    seen.add(g);
+    out[t.id] = NEEDS_GROUPS.find((x) => x.key === g)!.label;
+  }
+  return out;
+}
+
 /** The bold word: the open decision's kind while asking, else the attention reason or the state. */
 export function rowState(t: Thread): string {
   const st = t.attention.state;

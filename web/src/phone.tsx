@@ -7,7 +7,7 @@
 import { haptic } from "./native.ts";
 import { useApi } from "./api-context.ts";
 import { useDraft } from "./drafts.ts";
-import type { ComponentChildren, VNode } from "preact";
+import { Fragment, type ComponentChildren, type VNode } from "preact";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Decision, FyrEvent, Profile, Project, Thread } from "./types.ts";
@@ -51,7 +51,8 @@ import { HostField } from "./host-pick-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
 import { AgentStatus } from "./agent-status.tsx";
 import { COLLAPSED_BY_DEFAULT, FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
-import { HideClock, NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, hideUse, sectionHead } from "./row-ui.tsx";
+import { HeldUpdates, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, hideUse, sectionHead } from "./row-ui.tsx";
+import { needsHeads } from "./rows.ts";
 import { AUTO_HIDE_SECTIONS, type HideAt } from "./inbox-autohide.ts";
 import { GUEST_TEXT, drawnRows, type Guest } from "./selection.ts";
 import { PwaControls } from "./pwa-ui.tsx";
@@ -211,7 +212,7 @@ export interface PhoneProps {
   /** the inbox's sections; what search finds: the project filter's threads, quiet ones only while the unlock runs
    *  (V0.114); all: the same with quiet ones, to count the hits the lock hides; the one unlock of quiet projects;
    *  V0.192: rows is what the list draws (sec, with the current thread when the filters hide it), guest that row */
-  inbox: { sec: Sections; rows: Sections; guest: Guest | null; searchable: Record<string, Thread>; all: Record<string, Thread>; unlock: QuietUnlock };
+  inbox: { sec: Sections; rows: Sections; guest: Guest | null; /** V0.your-move */ updates: number; showUpdates(): void; searchable: Record<string, Thread>; all: Record<string, Thread>; unlock: QuietUnlock };
   now: number;
   /** #41: the same thread commands, undo and toasts as the desktop */
   commands: ThreadCommands;
@@ -493,6 +494,7 @@ function MInbox(p: PhoneProps) {
         </div>
       )}
       <div class="m-list" ref={listRef} onScroll={onScroll}>
+        <HeldUpdates n={p.inbox.updates} show={p.inbox.showUpdates} />
         {!p.list.selecting && <FilterEmpty f={p.filters} cls="m-fempty" />}
         {p.inbox.rows.pinned.length > 0 && (
           // V0.104: the desktop's pinned block, above every section and always open.
@@ -527,6 +529,7 @@ function MInbox(p: PhoneProps) {
           const limit = p.list.expanded[s.key] ? rows.length : SECTION_LIMIT[s.key];
           const shown = drawnRows(rows, open, limit, p.inbox.guest);
           const hint = s.key === "working" ? workingHint(list) : s.key === "snoozed" ? snoozedHint(list, p.now) : s.key === "settled" ? "last 24 h" : "";
+          const heads = s.key === "needs" ? needsHeads(shown) : {};
           const collapsible = list.length > 0 && (COLLAPSED_BY_DEFAULT.includes(s.key) || !open);
           const hideAt = open ? p.list.hideAt[s.key] : undefined;
           return (
@@ -556,7 +559,10 @@ function MInbox(p: PhoneProps) {
                 )}
               </div>
               {shown.map((t) => (
-                <MRow key={t.id} t={t} p={p} needs={s.key === "needs"} />
+                <Fragment key={t.id}>
+                  {heads[t.id] && <NeedsGroupHead label={heads[t.id]} />}
+                  <MRow t={t} p={p} needs={s.key === "needs"} />
+                </Fragment>
               ))}
               {open && rows.length > shown.length && (
                 <button class="m-more" onClick={() => p.list.onExpand(s.key)}>
