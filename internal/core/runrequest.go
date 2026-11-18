@@ -21,6 +21,9 @@ const (
 	KindActionDismiss = "action.dismiss"
 	KindActionOutput  = "action.output"
 
+	// EventRunRequested marks where in the log the agent asked.
+	EventRunRequested = "run.requested"
+
 	// EffectScriptStop stops the running script of a press.
 	EffectScriptStop EffectKind = "script.stop"
 
@@ -118,7 +121,10 @@ func reduceRunRequest(r Rec, in Input, now time.Time) (Result, error) {
 		return Result{}, err
 	}
 	t.ActivityAt = now
-	return Result{Reply: OfferReply{Label: label, Where: OnThread}}, nil
+	// V0.run-cards-in-conversation: the log says when it was asked, so its
+	// card stands at that place in the conversation.
+	return Result{Reply: OfferReply{Label: label, Where: OnThread},
+		Events: []Event{{EventRunRequested, map[string]any{"on": OnThread, "action": id}}}}, nil
 }
 
 // PendingRequest is the thread's oldest run request that never ran, or

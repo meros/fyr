@@ -5,6 +5,7 @@
 import type { Offer, OfferRun, Thread } from "./types.ts";
 import { lastRun, quote } from "./offers.ts";
 import { shortFolder } from "./confirm.ts";
+import type { Item } from "./conversation.ts";
 
 /** A Nix store path shortened in the middle: /nix/store/<32-char hash>-name as /nix/store/<4>…-name. */
 export function shortStore(s: string): string {
@@ -14,6 +15,29 @@ export function shortStore(s: string): string {
 /** The thread's run requests, in the order the agent asked. */
 export function requests(t: Pick<Thread, "offers"> | { offers?: Offer[] }): Offer[] {
   return (t.offers ?? []).filter((o) => o.request);
+}
+
+/**
+ * V0.run-cards-in-conversation: where the cards stand. A request's card takes the place of the newest time it was asked
+ * (the same id again replaces the request); a closed request has no card. `loose` are the requests whose place is not
+ * in the loaded log (asked before this version, or further back than what is loaded): they stand at the end, so a card
+ * that waits for the owner is never out of reach.
+ */
+export function placeCards(items: Item[], ids: string[]): { items: Item[]; loose: string[] } {
+  const open = new Set(ids);
+  const place = new Map<string, string>();
+  for (const it of items) if (it.kind === "runcard" && open.has(it.action)) place.set(it.action, it.key);
+  return { items: items.filter((it) => it.kind !== "runcard" || place.get(it.action) === it.key), loose: ids.filter((id) => !place.has(id)) };
+}
+
+/** What changes a card's height: at the bottom of the conversation, the view follows it. */
+export function cardsKey(t: Pick<Thread, "runs"> & { offers?: Offer[] }): string {
+  return requests(t)
+    .map((o) => {
+      const r = lastRun(t.runs, o.id);
+      return `${o.id}:${r ? `${r.running ? "r" : r.ok ? "k" : "f"}${r.output?.length ?? 0}` : ""}`;
+    })
+    .join(",");
 }
 
 export type CardState = "fresh" | "running" | "ok" | "failed";

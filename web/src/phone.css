@@ -416,7 +416,6 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
 .m-status.stuck .m-bt{height:44px;padding:0 14px;font-size:15px}
 
 /* V0.149: the Run card on the phone: the same card, 44 px targets (touch size), the gutter of the conversation */
-.m-app .runcs{padding:8px 12px;max-height:60dvh}
 .m-app .runc-b .btn{min-height:44px;padding:0 14px;font-size:15px}
 .m-app .runc-cmd{font-size:13px;line-height:19px}
 .m-app .runc-why{font-size:14px;line-height:20px}

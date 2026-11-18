@@ -1211,14 +1211,12 @@ section("V0.187 message copy", async ({ send, evaluate, navigate }) => {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await navigate(`${origin}/?mock=rail&runs=1&open=t_run`, "!!document.querySelector('.msgw>.msgcp')");
-  // Headless Chrome reports (hover: none), so the desktop's rules are in force only once the touch ones are gone; the Run
-  // cards of this mock would lie over the message.
+  // Headless Chrome reports (hover: none), so the desktop's rules are in force only once the touch ones are gone.
   const at = await evaluate(`(() => {
     for (const sheet of document.styleSheets) for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
       const rule = sheet.cssRules[i];
       if (rule instanceof CSSMediaRule && /hover:\\s*none/.test(rule.conditionText)) sheet.deleteRule(i);
     }
-    document.head.appendChild(document.createElement('style')).textContent = '.runcs{display:none}';
     const w = [...document.querySelectorAll('.msgw')].filter((m) => m.querySelector(':scope>.msgcp')).pop();
     w.scrollIntoView({ block: "center" });
     const b = w.getBoundingClientRect();
@@ -1237,13 +1235,13 @@ section("V0.187 message copy", async ({ send, evaluate, navigate }) => {
   check(r.under, `V0.187: Copy covers the message ${JSON.stringify(r)}`);
 });
 
-// V0.149: a command the agent wants the owner to run is a Run card under the conversation, the same component on the
-// desktop and the phone: the full command wraps (no sideways scroll), a Nix store path is shortened until pressed, the
+// V0.149, V0.run-cards-in-conversation: a command the agent wants the owner to run is a Run card in the conversation,
+// where the agent asked, and it scrolls with the messages; the same component on the desktop and the phone: the full command wraps (no sideways scroll), a Nix store path is shortened until pressed, the
 // buttons are inside the screen and 44 px tall on the phone; a `! cmd` block in a message is a Copy-only card.
 for (const [front, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.149 ${front}`, async ({ send, evaluate, navigate, openScreen, tapCenter, shot }) => {
 try {
   const url = "?mock=rail&runs=1&open=t_run";
-  const ready = "document.querySelectorAll('.runcs .runc').length === 2 && !!document.querySelector('.runc.prose')";
+  const ready = "document.querySelectorAll('.convo-in .runc:not(.prose)').length === 2 && !!document.querySelector('.runc.prose')";
   if (front === "desktop") {
     await send("Emulation.setTouchEmulationEnabled", { enabled: false });
     await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
@@ -1253,7 +1251,7 @@ try {
     const cards = [...document.querySelectorAll('.runc')];
     const cmds = [...document.querySelectorAll('.runc-cmd')];
     const btns = [...document.querySelectorAll('.runc-b button')].filter((b) => b.getBoundingClientRect().height > 0);
-    const first = document.querySelector('.runcs .runc');
+    const first = document.querySelector('.convo-in .runc:not(.prose)');
     return {
       vw: innerWidth, wide: document.documentElement.scrollWidth > innerWidth,
       sideways: cmds.filter((c) => c.scrollWidth > c.clientWidth + 1).length,
@@ -1261,11 +1259,17 @@ try {
       minH: Math.min(...btns.map((b) => b.getBoundingClientRect().height)),
       title: first?.querySelector('.runc-t')?.textContent ?? '', why: first?.querySelector('.runc-why')?.textContent ?? '',
       cmd: first?.querySelector('.runc-cmd')?.textContent ?? '', labels: [...first.querySelectorAll('.runc-b button')].map((b) => b.textContent),
-      second: [...document.querySelectorAll('.runcs .runc')][1]?.querySelector('.runc-res')?.textContent ?? '',
+      second: [...document.querySelectorAll('.convo-in .runc:not(.prose)')][1]?.querySelector('.runc-res')?.textContent ?? '',
       prose: document.querySelector('.runc.prose .runc-cmd')?.textContent ?? '', proseBtns: [...document.querySelectorAll('.runc.prose button')].map((b) => b.textContent),
       header: [...document.querySelectorAll('.offb button')].map((b) => b.textContent),
+      beforeMsg: !!(first.compareDocumentPosition(document.querySelector('.runc.prose')) & Node.DOCUMENT_POSITION_FOLLOWING),
+      afterUser: !!(first.compareDocumentPosition(document.querySelector('.you')) & Node.DOCUMENT_POSITION_PRECEDING),
+      innerScroll: [...document.querySelectorAll('.runc-out')].filter((o) => o.scrollHeight > o.clientHeight + 1 && getComputedStyle(o).overflowY !== 'visible').length,
+      moves: (() => { const c = document.querySelector('.convo'), a = first.getBoundingClientRect().top, t = c.scrollTop; c.scrollTop = t > 40 ? t - 40 : t + 40; const m = first.getBoundingClientRect().top !== a; c.scrollTop = t; return m; })(),
     };
   })()`);
+  check(r.afterUser && r.beforeMsg, `V0.run-cards-in-conversation ${front}: the card is not where the agent asked ${JSON.stringify(r)}`);
+  check(r.moves && r.innerScroll === 0, `V0.run-cards-in-conversation ${front}: the card does not scroll with the messages, or its output scrolls by itself ${JSON.stringify(r)}`);
   check(!r.wide && r.sideways === 0 && r.outside === 0, `V0.149 ${front}: a command scrolls sideways or a card leaves the screen ${JSON.stringify(r)}`);
   check(r.title === "Run on desk" && r.why === "Mount the SD card and mint the badge onto it", `V0.149 ${front}: the card's title or why ${JSON.stringify(r)}`);
   check(r.cmd.includes("/nix/store/prc4…-nfc-mint") && r.cmd.startsWith("udisksctl mount -b /dev/sdc1"), `V0.149 ${front}: the command is not shortened in the middle: ${r.cmd}`);
@@ -1276,18 +1280,19 @@ try {
   if (front === "phone") check(r.minH >= 44, `V0.149 phone: a button is ${r.minH} px tall, under 44`);
   await shot(`runcard-${front}.png`);
   // A press on the command shows the full store path.
-  if (front === "phone") await tapCenter(".runcs .runc .runc-cmd", "document.querySelector('.runcs .runc .runc-cmd').textContent.includes('prc4lv5v5kppd7rgz3h2fh9wq3n4zj9y')");
-  else await evaluate("document.querySelector('.runcs .runc .runc-cmd').click()");
-  const full = await evaluate("({ t: document.querySelector('.runcs .runc .runc-cmd').textContent, side: document.querySelector('.runcs .runc .runc-cmd').scrollWidth > document.querySelector('.runcs .runc .runc-cmd').clientWidth + 1 })");
+  await evaluate("document.querySelector('.runc:not(.prose) .runc-cmd').scrollIntoView({ block: 'center' })");
+  if (front === "phone") await tapCenter(".runc:not(.prose) .runc-cmd", "document.querySelector('.runc:not(.prose) .runc-cmd').textContent.includes('prc4lv5v5kppd7rgz3h2fh9wq3n4zj9y')");
+  else await evaluate("document.querySelector('.runc:not(.prose) .runc-cmd').click()");
+  const full = await evaluate("({ t: document.querySelector('.runc:not(.prose) .runc-cmd').textContent, side: document.querySelector('.runc:not(.prose) .runc-cmd').scrollWidth > document.querySelector('.runc:not(.prose) .runc-cmd').clientWidth + 1 })");
   check(full.t.includes("prc4lv5v5kppd7rgz3h2fh9wq3n4zj9y") && !full.side, `V0.149 ${front}: the press does not show the full command, or it scrolls ${JSON.stringify(full)}`);
   // Run sends the press with the digest the card showed.
-  await evaluate("document.querySelector('.runcs .runc .runc-b .btn.p').click()");
+  await evaluate("document.querySelector('.runc:not(.prose) .runc-b .btn.p').click()");
   const sent = await evaluate("(window.__fyrCommands || []).filter((c) => c.action === 'action.run').map((c) => c.args)");
   check(sent.length === 1 && sent[0].on === "thread" && sent[0].action === "run-1" && sent[0].digest === "d-run-1", `V0.149 ${front}: Run sent ${JSON.stringify(sent)}`);
   // No polkit agent: Run as root is off and the card says why.
   if (front === "desktop") await navigate(`${origin}/${url}&rootprompt=no`, ready);
   else await openScreen({ url: `${url}&rootprompt=no`, ready }, w, h);
-  const no = await evaluate("({ off: document.querySelector('.runcs .runc .runc-b button').disabled, line: document.querySelector('.runcs .runc .runc-root')?.textContent ?? '' })");
+  const no = await evaluate("({ off: document.querySelector('.runc:not(.prose) .runc-b button').disabled, line: document.querySelector('.runc:not(.prose) .runc-root')?.textContent ?? '' })");
   check(no.off && /^No password prompt can show on desk: no polkit authentication agent/.test(no.line), `V0.149 ${front}: without a polkit agent ${JSON.stringify(no)}`);
   await shot(`runcard-${front}-nopolkit.png`);
 } catch (e) {

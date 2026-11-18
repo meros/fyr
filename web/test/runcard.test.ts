@@ -1,9 +1,10 @@
 // SPEC V0.149: the Run card: a command the agent wants the owner to run, wrapped, with the host, the folder and why.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardLook, copyText, dismissArgs, foldOutput, requests, shortStore, splitProse, stopArgs } from "../src/runcard.ts";
+import { cardLook, cardsKey, copyText, dismissArgs, foldOutput, placeCards, requests, shortStore, splitProse, stopArgs } from "../src/runcard.ts";
 import { actionEventLine } from "../src/offers.ts";
-import type { Offer, OfferRun } from "../src/types.ts";
+import { buildConversation, roles, type Item } from "../src/conversation.ts";
+import type { FyrEvent, Offer, OfferRun } from "../src/types.ts";
 
 const at = "2026-11-17T09:00:00Z";
 const req = (p: Partial<Offer>): Offer => ({
@@ -105,4 +106,34 @@ test("V0.149 (6): the conversation lines of a request: the press, its result, No
   assert.equal(actionEventLine({ request: true, why: "Mount the SD card", ended: true, ok: false, exit: 2 }).line, "“Mount the SD card” failed (exit 2)");
   assert.equal(actionEventLine({ request: true, why: "Mount the SD card", dismissed: true }).line, "You chose Not now for “Mount the SD card”");
   assert.equal(actionEventLine({ request: true, why: "Mount the SD card", dismissed: true, ran: true }).line, "You closed “Mount the SD card”");
+});
+
+const asked = (key: string, action: string): Item => ({ kind: "runcard", key, action });
+const said = (key: string): Item => ({ kind: "assistant", key, text: key });
+
+test("V0.run-cards-in-conversation: a card stands where it was asked; asked again, at the newest place", () => {
+  const p = placeCards([asked("a", "run-1"), said("m"), asked("b", "run-2"), asked("c", "run-1")], ["run-1", "run-2"]);
+  assert.deepEqual(p.items.map((i) => i.key), ["m", "b", "c"]);
+  assert.deepEqual(p.loose, []);
+});
+
+test("V0.run-cards-in-conversation: a closed request has no place; one the log does not show stands at the end", () => {
+  const p = placeCards([asked("a", "closed"), said("m")], ["old"]);
+  assert.deepEqual(p.items.map((i) => i.key), ["m"]);
+  assert.deepEqual(p.loose, ["old"]);
+});
+
+test("V0.run-cards-in-conversation: the conversation asks a run.requested for a card, and never folds it", () => {
+  const ev = (seq: number, type: string, data: unknown) => ({ seq, at: "2026-11-18T10:00:00Z", thread: "t", type, data }) as unknown as FyrEvent;
+  const items = buildConversation([ev(1, "run.started", {}), ev(2, "run.requested", { on: "thread", action: "run-1" })]);
+  const card = items.find((i) => i.kind === "runcard");
+  assert.equal(card?.kind === "runcard" && card.action, "run-1");
+  assert.equal(roles(items)[items.indexOf(card!)], "outcome");
+});
+
+test("V0.run-cards-in-conversation: the view follows a card whose output grows", () => {
+  const o = { offers: [{ id: "run-1", request: true } as Offer] };
+  const a = cardsKey({ ...o, runs: [{ action: "run-1", label: "Run", by: "owner", at: "", running: true, ok: false, output: "a" }] });
+  const b = cardsKey({ ...o, runs: [{ action: "run-1", label: "Run", by: "owner", at: "", running: true, ok: false, output: "ab" }] });
+  assert.notEqual(a, b);
 });

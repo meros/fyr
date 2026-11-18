@@ -806,8 +806,10 @@ function railFixture(now: number): Fixture {
     events.t_run = [
       ev(1, now - 6 * 60_000, "t_run", "user", { text: "Mint the lab badges onto the SD card.", images: 0 }),
       ev(2, now - 6 * 60_000 + 1000, "t_run", "run.started", {}),
-      ev(3, now - 5 * 60_000, "t_run", "msg", assistantText("The minting needs a device:\n\n```\n! sudo " + mint + "\n! udisksctl mount -b /dev/sdc1\n```\n\nThe minting runs in a bwrap sandbox, so it cannot open the device itself.")),
-      ev(4, now - 5 * 60_000 + 1000, "t_run", "run.ended", { failure: null, interrupted: false, costUsd: 0.12, durationMs: 60_000 }),
+      ev(3, now - 5 * 60_000 - 2000, "t_run", "run.requested", { on: "thread", action: "run-1" }),
+      ev(4, now - 5 * 60_000 - 1000, "t_run", "run.requested", { on: "thread", action: "run-2" }),
+      ev(5, now - 5 * 60_000, "t_run", "msg", assistantText("The minting needs a device:\n\n```\n! sudo " + mint + "\n! udisksctl mount -b /dev/sdc1\n```\n\nThe minting runs in a bwrap sandbox, so it cannot open the device itself.")),
+      ev(6, now - 5 * 60_000 + 1000, "t_run", "run.ended", { failure: null, interrupted: false, costUsd: 0.12, durationMs: 60_000 }),
     ];
   }
   events.t_babysit = [
