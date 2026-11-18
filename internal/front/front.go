@@ -333,6 +333,11 @@ func (f *Front) newLink(h HostConfig) *link {
 			if o := originOf(pr.In); o != "" {
 				pr.Out.Header.Set(authn.OriginHeader, o)
 			}
+			// V0.preview-host-prefix: the prefix hostRoute took off, so the
+			// host names a preview's folder where the browser reads it.
+			if p := authn.PrefixFrom(pr.In.Context()); p != "" {
+				pr.Out.Header.Set(authn.PrefixHeader, p)
+			}
 		},
 		Transport:     lt,
 		FlushInterval: -1,

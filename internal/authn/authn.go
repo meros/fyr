@@ -44,6 +44,10 @@ const (
 const (
 	Header       = "Fyr-Actor"
 	OriginHeader = "Fyr-Origin"
+	// PrefixHeader is the path prefix the browser's call had before the front
+	// took it off ("/api/h/<hostId>"), so a preview's redirect and CSP name
+	// the folder where the browser reads it (V0.preview-host-prefix).
+	PrefixHeader = "Fyr-Prefix"
 )
 
 // Principal is who acts.
@@ -119,6 +123,7 @@ type ctxKey int
 const (
 	principalKey ctxKey = iota
 	originKey
+	prefixKey
 )
 
 // With puts the principal in the request's context.
@@ -144,6 +149,18 @@ func OriginFrom(ctx context.Context) (string, bool) {
 	return o, ok && o != ""
 }
 
+// WithPrefix puts the host prefix of the browser's call ("/api/h/<hostId>")
+// in the context: the front for its hop, the host from Fyr-Prefix.
+func WithPrefix(ctx context.Context, prefix string) context.Context {
+	return context.WithValue(ctx, prefixKey, prefix)
+}
+
+// PrefixFrom is that prefix, "" when the call had none.
+func PrefixFrom(ctx context.Context) string {
+	p, _ := ctx.Value(prefixKey).(string)
+	return p
+}
+
 // Strip removes from an outgoing hop's headers everything a browser, Tailscale
 // or a proxy put on the incoming request: the credentials and the identity
 // headers a host must never see from a front (decision 0030 3.3).
@@ -152,7 +169,7 @@ func Strip(h http.Header) {
 		l := strings.ToLower(k)
 		switch {
 		case l == "cookie", l == "authorization", l == "proxy-authorization", l == "forwarded",
-			l == "origin", l == "referer", l == "fyr-actor", l == "fyr-origin",
+			l == "origin", l == "referer", l == "fyr-actor", l == "fyr-origin", l == "fyr-prefix",
 			strings.HasPrefix(l, "tailscale-"), strings.HasPrefix(l, "x-forwarded-"), strings.HasPrefix(l, "sec-fetch-"):
 			delete(h, k)
 		}

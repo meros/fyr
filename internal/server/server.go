@@ -337,7 +337,10 @@ func (s *Server) LegacyFronts() int64 { return s.legacyFronts.Load() }
 
 var originRe = regexp.MustCompile(`^https?://[A-Za-z0-9.\-]+(:[0-9]+)?$|^https?://\[[0-9A-Fa-f:.]+\](:[0-9]+)?$`)
 
-// withActor reads Fyr-Actor and Fyr-Origin into the request's context. It is
+// prefixRe is a front's host prefix (decision 0031): /api/h/<install id>.
+var prefixRe = regexp.MustCompile(`^/api/h/[A-Za-z0-9_.~-]+$`)
+
+// withActor reads Fyr-Actor, Fyr-Origin and Fyr-Prefix into the request's context. It is
 // only used on the pipe and the peer listener, where the channel says which
 // install speaks. self is this install's id, which names the front on the
 // pipe; legacy counts the fronts served without one (actorPeer; nil: none).
@@ -389,6 +392,9 @@ func withActor(mode actorMode, self string, legacy *atomic.Int64, next http.Hand
 		ctx := authn.With(r.Context(), p)
 		if o := r.Header.Get(authn.OriginHeader); o != "" && originRe.MatchString(o) {
 			ctx = authn.WithOrigin(ctx, o)
+		}
+		if p := r.Header.Get(authn.PrefixHeader); p != "" && prefixRe.MatchString(p) {
+			ctx = authn.WithPrefix(ctx, p)
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -750,6 +756,15 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, m.Name, time.Time{}, f)
 }
 
+// previewRoot is where the browser reads previews: /api/h/<hostId>/previews/
+// when its call named the host (decision 0031), else /api/previews/.
+func previewRoot(r *http.Request) string {
+	if p := authn.PrefixFrom(r.Context()); p != "" {
+		return p + "/previews/"
+	}
+	return "/api/previews/"
+}
+
 // previewCDNs may serve scripts, models, decoders and fonts to a preview
 // (V0.47); ajax.googleapis.com hosts model-viewer, www.gstatic.com the Draco
 // and Basis decoders three.js and model-viewer load by default.
@@ -759,18 +774,21 @@ var previewCDNs = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https:/
 // sandbox without allow-same-origin, so the page never has Fyr's origin and
 // cannot call the API; it may load from its own folder and the CDN list.
 // The folder is an absolute prefix: a page without an origin has no 'self'.
+// It is the folder as the browser reads it: under the front's host prefix
+// when the call came by one (V0.preview-host-prefix).
 func previewCSP(r *http.Request, id string) string {
 	base := ""
+	folder := previewRoot(r) + id + "/ "
 	if o, ok := authn.OriginFrom(r.Context()); ok {
 		// Decision 0030 3.3: the origin the browser used, from the front, on a
 		// channel that proved it is one.
-		base = o + "/api/previews/" + id + "/ "
+		base = o + folder
 	} else if httpguard.ValidHost(r.Host) {
 		scheme := "http" // CSP3: an http source also matches https
 		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 			scheme = "https"
 		}
-		base = scheme + "://" + r.Host + "/api/previews/" + id + "/ "
+		base = scheme + "://" + r.Host + folder
 	}
 	src := base + previewCDNs
 	return "sandbox allow-scripts; default-src 'none'; " +
@@ -817,7 +835,10 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if m.Entry != "" {
-		http.Redirect(w, r, "/api/previews/"+id+"/"+(&url.URL{Path: m.Entry}).EscapedPath(), http.StatusFound)
+		// V0.preview-host-prefix: relative to the page's own URL, so the
+		// files are read from the host the page came from, by any front.
+		w.Header().Set("Location", url.PathEscape(id)+"/"+(&url.URL{Path: m.Entry}).EscapedPath())
+		w.WriteHeader(http.StatusFound)
 		return
 	}
 	b, err := os.ReadFile(m.Path)

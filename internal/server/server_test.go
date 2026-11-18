@@ -299,7 +299,7 @@ func TestPreviewFolder(t *testing.T) {
 	}
 	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	r, _ := noFollow.Get(hs.URL + "/api/previews/" + m.ID)
-	if r.StatusCode != 302 || r.Header.Get("Location") != "/api/previews/"+m.ID+"/index.html" {
+	if r.StatusCode != 302 || r.Header.Get("Location") != m.ID+"/index.html" {
 		t.Fatalf("redirect %d %q", r.StatusCode, r.Header.Get("Location"))
 	}
 	types := map[string]string{"index.html": "text/html; charset=utf-8", "app.mjs": "text/javascript; charset=utf-8", "lib/three.js": "text/javascript; charset=utf-8",
