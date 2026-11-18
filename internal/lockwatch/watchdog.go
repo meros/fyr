@@ -16,8 +16,10 @@ const (
 	StallAfter = 10 * time.Second
 	// ExitAfter: a critical lock (the engine's) held this long ends fyrd
 	// after its dump; the launcher starts it again and the runner keeps
-	// the agents (V0.90).
-	ExitAfter = 2 * time.Minute
+	// the agents (V0.90). V0.181: a last resort. Until then the front
+	// shows the stuck host offline and keeps serving the other hosts, the
+	// browsers' streams and the peer links (it was 2 minutes).
+	ExitAfter = 10 * time.Minute
 	// Every is how often the watchdog looks.
 	Every = time.Second
 	// KeepDumps is how many dump files are kept.
@@ -88,6 +90,9 @@ func (w *Watchdog) Check() {
 		if d >= lim && !w.told[k] {
 			w.told[k] = true
 			late = append(late, h)
+			if h.Critical {
+				log.Printf("stall: %s held %s: the front shows this host offline; fyrd exits for a restart if it is still held after %s", h.Lock, d.Round(time.Second), exit)
+			}
 		}
 	}
 	for k := range w.told {
@@ -108,6 +113,7 @@ func (w *Watchdog) Check() {
 		go w.OnStall(s)
 	}
 	if exiting {
+		log.Printf("stall: escalation, the last resort: a critical lock held over %s; fyrd exits (70) for the launcher to restart it, the runner keeps the agents", exit)
 		if w.Quit != nil {
 			w.Quit()
 		} else {

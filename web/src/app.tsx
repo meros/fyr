@@ -36,7 +36,7 @@ import {
   applyThreadPatch,
   resolveRef,
 } from "./store.ts";
-import { markedRow, revealRow, rowAfter } from "./selection.ts";
+import { SECTION_OPEN_KEY, cutSection, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
@@ -222,7 +222,21 @@ function App() {
   const [handoverId, setHandoverId] = useState<string | null>(null);
   const [tracker, setTracker] = useState<SeenTracker>(initialTracker);
   const [cards, setCards] = useState<Record<string, CardState>>({});
-  const [sectionOpen, setSectionOpen] = useState<Partial<Record<SectionKey, boolean>>>({});
+  // V0.186: the owner's folds, kept per device; a reload (a new build does one by itself) must not undo them.
+  const [sectionOpen, setSectionOpen] = useState<Partial<Record<SectionKey, boolean>>>(() => {
+    try {
+      return parseSectionOpen(localStorage.getItem(SECTION_OPEN_KEY));
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(SECTION_OPEN_KEY, JSON.stringify(sectionOpen));
+    } catch {
+      /* private mode: the folds last until the reload */
+    }
+  }, [sectionOpen]);
   const [query, setQuery] = useState("");
   const [help, setHelp] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -365,6 +379,7 @@ function App() {
     return l;
   }, [expanded, sectionOpen]);
   const order = useMemo(() => flatOrder(sec, limits), [sec, limits]);
+  const allRows = useMemo(() => flatOrder(sec), [sec]); // V0.186: with the rows of folded sections, for their place
   // V0.114: a quiet thread opens only through the hold, whatever path opened it (a link, back and forward, a notice,
   // a board card, ?open=, a push tap). The thread already open when its window starts stays open (V0.46 (6)).
   const admittedRef = useRef<string | null>(null);
@@ -668,7 +683,7 @@ function App() {
    * thread pane the thread stays open. */
   const stepPast = (ids: string[]) => {
     if (zone !== "list") return;
-    const next = rowAfter(order, sel, ids);
+    const next = rowAfter(order, sel, ids, allRows);
     if (!next) return;
     if (view) openThread(next, view.mode);
     else setLastOpen(next);
@@ -858,7 +873,7 @@ function App() {
       setListPrefState(true); // jumping to a section shows the list (V0.40)
       setListPref(true);
     }
-    setSectionOpen((o) => ({ ...o, [k]: true }));
+    setSectionOpen((o) => ({ ...o, [k]: true })); // V0.186: the owner named this section
     const first = sec[k][0];
     document.getElementById(`sec-${k}`)?.scrollIntoView({ block: "start" });
     if (first) {
@@ -869,23 +884,22 @@ function App() {
     }
   };
 
-  // V0.109: the open thread's row is drawn: a closed section opens, a cut one shows all, also when the row moves
-  // to another section while it is open. A row that search hides stays hidden, and no row is marked; one the filters
-  // hide clears them first (V0.138).
+  // V0.109, V0.186: the open thread's row is drawn when its section is open: a cut section shows all, also when the row
+  // moves there. A folded section stays folded, whatever opened the thread; its header carries the mark (foldedRow). A
+  // row that search hides stays hidden, and no row is marked; one the filters hide clears them first (V0.138).
   const openSection = view && store.threads[view.id] ? sectionOf(store.threads[view.id]) : null;
   useEffect(() => {
-    const r = revealRow(sec, view?.id ?? null, limits, SECTION_LIMIT);
-    if (!r) return;
-    if (r.section === "settled" && !isOpen("settled", sectionOpen)) setSettledDeadline(Date.now() + AUTO_HIDE_MS); // closes 30 s after the owner leaves it (V0.48)
-    setSectionOpen((o) => ({ ...o, [r.section]: true }));
-    if (r.expand) setExpanded((x) => ({ ...x, [r.section]: true }));
-  }, [view?.id, openSection, !!(view && shown[view.id])]); // V0.138: again once a cleared filter lets the row in
+    const k = cutSection(sec, view?.id ?? null, limits);
+    if (k) setExpanded((x) => ({ ...x, [k]: true }));
+  }, [view?.id, openSection, !!(view && shown[view.id]), limits]); // V0.138: again once a cleared filter lets the row in
 
-  // Keep the marked row visible: when it changes, moves to another section or the pinned block, or is drawn again.
+  // Keep the mark visible: when it changes, moves to another section or the pinned block, or is drawn again. V0.186: the
+  // row, or the header of the folded section that holds it.
   const selPlace = sel && shown[sel] ? `${sectionOf(shown[sel])}:${isPinned(shown[sel])}:${order.includes(sel)}` : "";
   useEffect(() => {
     if (!sel) return;
-    document.querySelector(`.list [data-id="${CSS.escape(sel)}"]`)?.scrollIntoView({ block: "nearest" });
+    const id = CSS.escape(sel);
+    document.querySelector(`.list [data-id="${id}"], .list [data-holds="${id}"]`)?.scrollIntoView({ block: "nearest" });
   }, [sel, selPlace, listOn]);
 
   const send = async (args: SendArgs): Promise<boolean> => (view ? cmds.send(view.id, args) : false);
@@ -1170,12 +1184,12 @@ function App() {
       case "ArrowUp": {
         e.preventDefault();
         const dir = k === "j" || k === "ArrowDown" ? 1 : -1;
-        const i = sel ? order.indexOf(sel) : -1;
-        const j = Math.max(0, Math.min(order.length - 1, i + dir));
+        // V0.186: over the drawn rows only; a folded section is passed and stays folded.
+        const to = stepRow(allRows, order, sel, dir);
         // V0.109: j/k opens the row it marks when a thread is open; with nothing open it only marks it.
-        if (order[j]) {
-          if (view) openThread(order[j], view.mode);
-          else setLastOpen(order[j]);
+        if (to) {
+          if (view) openThread(to, view.mode);
+          else setLastOpen(to);
         }
         setZone("list");
         return;
@@ -1484,7 +1498,7 @@ function App() {
             },
             allow: async (d, ok) => (view ? (await cmds.run("thread.answer", [view.id], { decisionId: d.id, allow: ok })) > 0 : false),
           }}
-          list={{ sectionOpen, setSectionOpen, expanded, onExpand: (k) => setExpanded((x) => ({ ...x, [k]: true })), picked, setPicked, selecting, setSelecting }}
+          list={{ current: sel, sectionOpen, setSectionOpen, expanded, onExpand: (k) => setExpanded((x) => ({ ...x, [k]: true })), picked, setPicked, selecting, setSelecting }}
           device={{
             push: pushSt,
             pushReason,

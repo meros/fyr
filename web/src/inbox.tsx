@@ -9,7 +9,8 @@ import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
-import { DESKTOP_LOOK, NeedsRowBody, OneRowBody } from "./row-ui.tsx";
+import { DESKTOP_LOOK, HeldTitle, NeedsRowBody, OneRowBody, sectionHead } from "./row-ui.tsx";
+import { foldedRow } from "./selection.ts";
 import { colorVar } from "./projects.ts";
 import { SECTIONS, isOpen, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
 import { BrandMark, StateIcon } from "./icons.tsx";
@@ -178,6 +179,7 @@ interface InboxProps {
 
 export function Inbox(p: InboxProps) {
   const queue = useSlotQueue();
+  const holder = foldedRow(p.sec, p.selected, p.open); // V0.186
   return (
     <aside class="ib" onMouseDown={p.onFocusZone}>
       {p.resizer}
@@ -239,16 +241,17 @@ export function Inbox(p: InboxProps) {
           const limit = p.expanded[s.key] ? list.length : SECTION_LIMIT[s.key];
           const shown = open ? list.slice(0, limit) : [];
           const hint = sectionHint(s.key, list, p.now);
+          const held = holder?.section === s.key ? holder.thread : null;
           return (
             <div id={`sec-${s.key}`} onPointerMove={open && p.autoHideAt?.[s.key] ? () => p.onSectionActivity?.(s.key) : undefined} onKeyDown={open && p.autoHideAt?.[s.key] ? () => p.onSectionActivity?.(s.key) : undefined}>
-              <div class={`sec${list.length ? " tog" : ""}`} onClick={() => list.length && p.onToggle(s.key)} title={list.length ? (open ? "Collapse" : "Expand") : undefined}>
+              <div class={`sec${list.length ? " tog" : ""}${held ? " held" : ""}`} {...sectionHead({ label: s.label, n: list.length, open, held, toggle: () => p.onToggle(s.key) })} title={list.length ? (open ? "Collapse" : "Expand") : undefined}>
                 {s.label}
                 <span class="n">{count(list.length)}</span>
                 {open && p.autoHideAt?.[s.key] ? (
                   // V0.48: a small clock runs down to the auto-close; it restarts on use.
                   <span key={p.autoHideAt[s.key]} class="ahc" style={{ "--ah": `${Math.max(0, (p.autoHideAt[s.key]! - Date.now()) / 1000)}s` }} title="Closes by itself; select it in the rail to keep it open" aria-hidden="true" />
                 ) : null}
-                {hint && <span class="h ell">{hint}</span>}
+                {held ? <HeldTitle t={held} /> : hint && <span class="h ell">{hint}</span>}
               </div>
               {shown.map((t) =>
                 s.key === "needs" ? (

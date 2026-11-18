@@ -1,10 +1,12 @@
 package server
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/lockwatch"
 )
 
@@ -28,12 +30,24 @@ func longLived(r *http.Request) bool {
 		strings.HasPrefix(p, "/api/updates/")
 }
 
+// DeadlineBody is the 503's body past a deadline. Its code, host-stalled,
+// tells a front that the host is stuck, not gone (V0.181): the front marks it
+// offline and serves its cached state until it answers again.
+const DeadlineBody = `{"ok":false,"error":"Fyr did not answer in time: it is busy or stuck; the stall is logged","code":"` + api.StalledCode + `"}`
+
+// WriteDeadline503 answers as a request past its deadline does.
+func WriteDeadline503(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	io.WriteString(w, DeadlineBody)
+}
+
 // readDeadline and writeDeadline are the deadlines in use; a test shortens them.
 var readDeadline, writeDeadline = ReadDeadline, WriteDeadline
 
 // withDeadline wraps next as V0.147 says.
 func withDeadline(next http.Handler) http.Handler {
-	msg := `{"error":"Fyr did not answer in time: it is busy or stuck; the stall is logged"}`
+	msg := DeadlineBody
 	// The watch ends when the handler returns, not at the 503: a handler
 	// still stuck past its deadline is what the dump must show.
 	watched := func(limit time.Duration) http.Handler {

@@ -19,6 +19,7 @@ import { snoozeLine } from "./snooze.ts";
 import { prChip } from "./pr.ts";
 import { changeChip, needLook, rowNeed } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
+import { heldLabel } from "./selection.ts";
 
 /** What differs between the fronts, each for a reason. */
 export interface RowLook {
@@ -45,6 +46,39 @@ interface BodyProps {
   pre?: ComponentChildren;
   /** the desktop list's handlers and listbox attributes */
   attrs?: Record<string, unknown>;
+}
+
+/** V0.186: a section header's toggle on both fronts, the only thing that folds a section from its header. With `held`
+ *  (the current thread is inside the folded section) the header is the mark: aria-current, a name that says so, and
+ *  `data-holds`, where scrolling to the current thread lands. */
+export function sectionHead(o: { label: string; n: number; open: boolean; held: Thread | null; toggle(): void }): Record<string, unknown> {
+  if (!o.n) return {};
+  return {
+    role: "button",
+    tabIndex: 0,
+    "aria-expanded": o.open,
+    onClick: (e: MouseEvent) => {
+      o.toggle();
+      // A click leaves the keys with the list, as it did when a header took no focus; Tab and Enter still reach it.
+      if (e.detail) (e.currentTarget as HTMLElement).blur();
+    },
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      e.stopPropagation(); // Enter on a focused header is the header's, not "open the marked row"
+      o.toggle();
+    },
+    ...(o.held ? { "aria-current": "true", "aria-label": heldLabel(o.label, o.n, o.held.title), "data-holds": o.held.id } : {}),
+  };
+}
+
+/** V0.186: the current thread's title on the header of the folded section that holds it. */
+export function HeldTitle({ t }: { t: Thread }) {
+  return (
+    <span class="held-t ell" title={t.title}>
+      {t.title}
+    </span>
+  );
 }
 
 export function PrBadge({ t, short }: { t: Thread; short?: boolean }) {

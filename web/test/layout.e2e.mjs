@@ -1161,6 +1161,38 @@ try {
 }
 });
 
+// V0.187: an entry of the conversation clips what leaves its box (content-visibility, V0.41's list work), so a message's
+// Copy has to lie inside its entry to be seen. On the desktop it shows on hover, under the message.
+section("V0.187 message copy", async ({ send, evaluate, navigate }) => {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail&runs=1&open=t_run`, "!!document.querySelector('.msgw>.msgcp')");
+  // Headless Chrome reports (hover: none), so the desktop's rules are in force only once the touch ones are gone; the Run
+  // cards of this mock would lie over the message.
+  const at = await evaluate(`(() => {
+    for (const sheet of document.styleSheets) for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
+      const rule = sheet.cssRules[i];
+      if (rule instanceof CSSMediaRule && /hover:\\s*none/.test(rule.conditionText)) sheet.deleteRule(i);
+    }
+    document.head.appendChild(document.createElement('style')).textContent = '.runcs{display:none}';
+    const w = [...document.querySelectorAll('.msgw')].filter((m) => m.querySelector(':scope>.msgcp')).pop();
+    w.scrollIntoView({ block: "center" });
+    const b = w.getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+  await new Promise((r) => setTimeout(r, 250));
+  const r = await evaluate(`(() => {
+    const w = [...document.querySelectorAll('.msgw')].filter((m) => m.querySelector(':scope>.msgcp')).pop();
+    const c = w.querySelector(':scope>.msgcp'), b = c.getBoundingClientRect(), e = c.closest('.convo-in>*').getBoundingClientRect(), m = w.getBoundingClientRect();
+    return { opacity: getComputedStyle(c).opacity, inEntry: b.top >= e.top - 0.5 && b.bottom <= e.bottom + 0.5, under: b.top >= m.bottom - 0.5,
+      hit: document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2) === c, gap: e.bottom - m.bottom };
+  })()`);
+  check(r.opacity === "1", `V0.187: Copy does not show on hover ${JSON.stringify(r)}`);
+  check(r.inEntry && r.hit, `V0.187: the entry clips the message's Copy ${JSON.stringify(r)}`);
+  check(r.under, `V0.187: Copy covers the message ${JSON.stringify(r)}`);
+});
+
 // V0.149: a command the agent wants the owner to run is a Run card under the conversation, the same component on the
 // desktop and the phone: the full command wraps (no sideways scroll), a Nix store path is shortened until pressed, the
 // buttons are inside the screen and 44 px tall on the phone; a `! cmd` block in a message is a Copy-only card.
@@ -3289,7 +3321,8 @@ section('V0.185', async (h) => {
     await png("snooze-done-desktop.png");
     await evaluate(`[...document.querySelectorAll('.menu .mi')].pop().click()`);
     await waitFor(`(window.__fyrCommands ?? []).some(c => c.action === 'thread.snoozeWhenDone' && c.threadId === 't_mapperf')`, { what: "the snooze command" });
-    await evaluate(`document.querySelector('#sec-snoozed .sec')?.click()`);
+    // The header toggles, and the fold is remembered: open the section only when it is folded.
+    await evaluate(`(() => { const s = document.querySelector('#sec-snoozed'); if (!s.querySelector('[data-id]')) s.querySelector('.sec').click(); })()`);
     await waitFor(`!!document.querySelector('#sec-snoozed [data-id=t_mapperf]')`, { what: "the snoozed row" });
     check((await evaluate(`document.querySelector('#sec-snoozed [data-id=t_mapperf]').textContent`)).includes("until work is done"), "V0.185 desktop: the row does not say until work is done");
     await navigate(`${origin}/?mock=rail&open=t_nix`, "!!document.querySelector('.ib [data-id=t_nix]')");
@@ -4171,7 +4204,7 @@ try {
 });
 
 // V0.109: the marked row in the thread list is the open thread, whatever path opened it, and the row is in view:
-// a link from another thread, ?open= of a thread in a closed section (Settled), and j in the list.
+// a link from another thread, ?open= of a thread in a folded section (Settled, V0.186: its header), and k in the list.
 section('V0.109', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
@@ -4191,10 +4224,10 @@ try {
   const a = await evaluate(MARK);
   check(ok(a) && a.ids[0] === "t_mapperf", `V0.109 desktop: after a "From thread" link the marked row is not the open thread in view (${JSON.stringify(a)})`);
   await navigate(`${origin}/?mock=rail&open=t_set7`, "!!document.querySelector('.th .tt')");
-  await waitFor(`${MARK}.ids.length === 1`, { soft: true });
   await settle();
-  const b = await evaluate(MARK);
-  check(ok(b) && b.ids[0] === "t_set7", `V0.109 desktop: a thread opened in the closed Settled section has no marked row in view (${JSON.stringify(b)})`);
+  // V0.186: Settled stays folded; its header is the mark (the section V0.186 below checks it).
+  await waitFor(`!!document.querySelector('#sec-settled .sec.held')`, { soft: true });
+  check(await evaluate(`!!document.querySelector('#sec-settled .sec.held') && !document.querySelector('#sec-settled [data-id]')`), `V0.109 desktop: a thread opened in the folded Settled section did not mark its header`);
   await evaluate(`document.querySelector('.list').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
   await key("k", "KeyK");
   const c = await evaluate(MARK);
@@ -4338,6 +4371,7 @@ try {
   for (const k of ["needs", "working", "seen"]) await click(secHead(k), "true");
   const foldedAll = await evaluate(`({ s: ${STATE}, pinned: document.querySelectorAll(${JSON.stringify(phone ? "#m-sec-pinned .m-mv" : "#sec-pinned [data-id]")}).length })`);
   check(foldedAll.s.projects.length < one.projects.length && foldedAll.s.projects.reduce((a, c) => a + c.n, 0) <= foldedAll.pinned, `${ctx}: folding the sections does not take their projects' chips away (${JSON.stringify({ before: one.projects.map((c) => c.name), after: foldedAll.s.projects, pinned: foldedAll.pinned })})`);
+  await evaluate(`localStorage.removeItem('fyr.sectionOpen')`); // V0.186: the folds outlive a reload; the rest starts unfolded
   // 2. Two hosts: the switch, all on, in the owner's order, above the projects. 5: the old key is dropped.
   await go("?mock=rail&hosts=2&hostOrder=host-b,desk", { "fyr.hostFilter": "desk" });
   const two = await evaluate(STATE);
@@ -4507,6 +4541,98 @@ try {
 }
 });
 
+// V0.186: a section folds and unfolds only by the owner's hand. Opening a thread in a folded section, a thread moving
+// into one, j/k and a reload leave the folds alone; the folded header carries the mark, on both fronts.
+for (const phone of [false, true]) section(`V0.186 ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen, key, shot } = h;
+  const ctx = `V0.186 ${phone ? "phone" : "desktop"}`;
+try {
+  const head = (k) => (phone ? `#m-sec-${k} .m-sec` : `#sec-${k} .sec`);
+  const rowsOf = (k) => (phone ? `#m-sec-${k} .m-mv` : `#sec-${k} [data-id]`);
+  const list = phone ? ".m-list" : ".ib .list";
+  const HELD = (k) => `(() => {
+    const h = document.querySelector(${JSON.stringify(head(k))}), t = h?.querySelector('.held-t'), n = h?.querySelector('.n'), l = document.querySelector(${JSON.stringify(list)}).getBoundingClientRect();
+    const r = h?.getBoundingClientRect(), c = n?.getBoundingClientRect(), b = t?.getBoundingClientRect();
+    return { held: !!h?.classList.contains('held'), id: h?.dataset.holds ?? null, current: h?.getAttribute('aria-current') ?? null, label: h?.getAttribute('aria-label') ?? '', expanded: h?.getAttribute('aria-expanded') ?? null,
+      title: t?.textContent ?? null, rows: document.querySelectorAll(${JSON.stringify(rowsOf(k))}).length, bg: h ? getComputedStyle(h).backgroundColor : '',
+      inView: !!r && r.top >= l.top - 0.5 && r.bottom <= l.bottom + 0.5, fits: !!r && !!b && !!c && b.right <= r.right + 0.5 && c.right <= b.left + 0.5 && b.width >= 40 && h.scrollWidth <= h.clientWidth + 1 };
+  })()`;
+  const fine = (m, id) => m.held && m.id === id && m.current === "true" && m.expanded === "false" && m.rows === 0 && m.inView && m.fits && !!m.title && m.label.includes("holds the current thread") && m.label.includes(m.title);
+  if (!phone) {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 400, deviceScaleFactor: 1, mobile: false });
+    // 1. A deep link into folded Settled: it stays folded, its header is marked and scrolled to, no row is.
+    await navigate(`${origin}/?mock=rail&open=t_set7`, "!!document.querySelector('.th .tt')");
+    await waitFor(`${HELD("settled")}.held`, { soft: true });
+    await settle();
+    const a = await evaluate(HELD("settled"));
+    const pane = await evaluate(`document.querySelector('.th .tt').getAttribute('title')`);
+    const select = await evaluate(`(() => { const e = document.createElement('div'); e.className = 'one sel'; document.querySelector('.ib .list').append(e); const c = getComputedStyle(e).backgroundColor; e.remove(); return c; })()`);
+    check(fine(a, "t_set7") && a.title === pane && a.bg === select, `${ctx}: the folded header is not the mark (${JSON.stringify({ a, pane, select })})`);
+    check(await evaluate(`document.querySelectorAll('.list [aria-selected="true"]').length === 0`), `${ctx}: a row is marked as well as the header`);
+    // V0.184's narrowest list: the name, the count and some of the title still fit.
+    await evaluate(`document.querySelector('.app').style.setProperty('--list-w', '280px')`);
+    await settle();
+    const narrow = await evaluate(HELD("settled"));
+    check(fine(narrow, "t_set7"), `${ctx}: the marked header at the list's minimum width (${JSON.stringify(narrow)})`);
+    await evaluate(`document.querySelector('.app').style.removeProperty('--list-w')`);
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await settle();
+    await shot("folded-group-desktop.png");
+    // 2. Clicking the marked header only toggles: the row takes the mark; again, the header has it back.
+    await evaluate(`document.querySelector(${JSON.stringify(head("settled"))}).click()`);
+    await waitFor(`${HELD("settled")}.rows > 0`, { soft: true });
+    const b = await evaluate(`({ h: ${HELD("settled")}, row: document.querySelector('#sec-settled [aria-selected="true"]')?.dataset.id ?? null })`);
+    check(!b.h.held && b.h.current === null && b.row === "t_set7", `${ctx}: unfolded, the row alone is the mark (${JSON.stringify(b)})`);
+    await evaluate(`document.querySelector(${JSON.stringify(head("settled"))}).click()`);
+    await waitFor(`${HELD("settled")}.held`, { soft: true });
+    check(fine(await evaluate(HELD("settled")), "t_set7"), `${ctx}: folding it again did not mark the header`);
+    // 3. k leaves for a drawn row, and unfolds nothing.
+    await evaluate(`document.querySelector('.list').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
+    await key("k", "KeyK");
+    await waitFor(`!${HELD("settled")}.held`, { soft: true });
+    const c = await evaluate(`({ h: ${HELD("settled")}, snoozed: ${HELD("snoozed")}, marked: document.querySelectorAll('.list [aria-selected="true"]').length })`);
+    check(!c.h.held && c.h.rows === 0 && c.snoozed.rows === 0 && c.marked === 1, `${ctx}: k from a folded section (${JSON.stringify(c)})`);
+    // 4. The open thread moves into a folded section: the mark follows, the section stays folded.
+    await navigate(`${origin}/?mock=rail`, "!!document.querySelector('#sec-seen [data-id]')");
+    const seen = await evaluate(`(() => { const r = document.querySelector('#sec-seen [data-id]'); r.click(); return r.dataset.id; })()`);
+    await waitFor(`!!document.querySelector('.th .tt')`, { soft: true });
+    await settle();
+    await key("e", "KeyE");
+    await waitFor(`${HELD("settled")}.id === ${JSON.stringify(seen)}`, { soft: true });
+    await settle();
+    const d = await evaluate(HELD("settled"));
+    check(d.id === seen && d.rows === 0 && d.held, `${ctx}: a thread moving into folded Settled (${JSON.stringify({ seen, d })})`);
+  } else {
+    // 1. Back from a thread in folded Settled: it stayed folded and its header is marked. The phone's 390 px is its minimum.
+    await openScreen({ url: "?mock=rail&open=t_set7", ready: "!!document.querySelector('.m-thread')" }, 390, 844);
+    await evaluate(`history.back()`);
+    await waitFor(`!!document.querySelector('.m-list') && ${HELD("settled")}.held`, { soft: true });
+    await evaluate(`document.querySelector(${JSON.stringify(head("settled"))})?.scrollIntoView({ block: 'center' })`);
+    await settle();
+    check(fine(await evaluate(HELD("settled")), "t_set7"), `${ctx}: the folded header is not the mark (${JSON.stringify(await evaluate(HELD("settled")))})`);
+    await shot("folded-group-phone.png");
+    // 2. A tap only toggles.
+    await evaluate(`document.querySelector(${JSON.stringify(head("settled"))}).click()`);
+    await waitFor(`${HELD("settled")}.rows > 0`, { soft: true });
+    const b = await evaluate(HELD("settled"));
+    check(!b.held && b.current === null && b.rows > 0, `${ctx}: unfolded, the header is still marked (${JSON.stringify(b)})`);
+  }
+  // Last on both: the owner's fold survives a reload (a new build reloads by itself), and so does an unfold.
+  const url = `${origin}/?mock=rail`;
+  if (phone) await navigate(url, "!!document.querySelector('#m-sec-working .m-mv')");
+  await evaluate(`document.querySelector(${JSON.stringify(head("working"))}).click()`);
+  await waitFor(`${HELD("working")}.rows === 0`, { soft: true });
+  await settle();
+  await navigate(url, `!!document.querySelector(${JSON.stringify(head("working"))})`);
+  await settle();
+  const e = await evaluate(`({ rows: ${HELD("working")}.rows, stored: localStorage.getItem('fyr.sectionOpen') })`);
+  check(e.rows === 0 && JSON.parse(e.stored ?? "{}").working === false, `${ctx}: a folded section came back open after a reload (${JSON.stringify(e)})`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // SPEC 0.5 V0.138: a thread that opens clears the filters it fails, so its row is in the list and marked (V0.109).
 // V0.169: per row. 1 with host-b off and acme/web picked, a link to t_lasso (host-b, acme/web) turns host-b back on,
 // keeps the project and marks its row. 2 with both filters failing, both clear. 3 V0.114: a link to a quiet thread shows the gate and
@@ -4554,11 +4680,12 @@ try {
   const b = await evaluate(F);
   check(b.off === null && b.project === null, `${ctx}: both filters failing (${JSON.stringify(b)})`);
   if (!phone) {
-    // 2b. A thread in the folded Settled section: the filter clears, then its section opens and its row is marked.
+    // 2b. A thread in the folded Settled section: the filter clears; V0.186: the section stays folded, its header is marked.
     await open("?mock=rail&hosts=2&open=t_set7", { "fyr.hostsOff": '["desk"]', "fyr.projectFilter": null }, "!!document.querySelector('.th .tt')");
-    await waitFor(`${MARK}.ids[0] === 'F7QK-2M9X-AB34-CD56/t_set7'`, { soft: true });
-    const m = await evaluate(MARK);
-    check(m.ids.length === 1 && m.ids[0] === "F7QK-2M9X-AB34-CD56/t_set7" && (await evaluate(F)).off === null, `${ctx}: a Settled thread opened with its host off (${JSON.stringify(m)})`);
+    const HOLDS = `({ id: document.querySelector('#sec-settled .sec.held')?.dataset.holds ?? null, rows: document.querySelectorAll('#sec-settled [data-id]').length })`;
+    await waitFor(`${HOLDS}.id === 'F7QK-2M9X-AB34-CD56/t_set7'`, { soft: true });
+    const m = await evaluate(HOLDS);
+    check(m.id === "F7QK-2M9X-AB34-CD56/t_set7" && m.rows === 0 && (await evaluate(F)).off === null, `${ctx}: a Settled thread opened with its host off (${JSON.stringify(m)})`);
   }
   // 3. A quiet thread: the gate, and the filter stays.
   await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostsOff": '["desk"]', "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");
