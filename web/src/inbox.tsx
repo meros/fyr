@@ -9,7 +9,7 @@ import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
-import { DESKTOP_LOOK, HeldUpdates, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, hideUse, sectionHead } from "./row-ui.tsx";
+import { DESKTOP_LOOK, HeldUpdates, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
 import { needsHeads } from "./rows.ts";
 import { drawnRows, type Guest, type GuestWhy } from "./selection.ts";
 import { colorVar } from "./projects.ts";
@@ -223,8 +223,7 @@ export function Inbox(p: InboxProps) {
           // V0.104: the pinned threads, above every section and always open; each keeps its section's row shape.
           <div id="sec-pinned">
             <div class="sec">
-              Pinned
-              <span class="n">{count(p.sec.pinned.length)}</span>
+              <SectionTitle label="Pinned" icon={PIN_ICON} n={p.sec.pinned.length} shown={count(p.sec.pinned.length)} />
             </div>
             {p.rows.pinned.map((t) =>
               t.attention.section === "needs" ? (
@@ -259,8 +258,7 @@ export function Inbox(p: InboxProps) {
           return (
             <div id={`sec-${s.key}`} {...hideUse(hideAt !== undefined, () => p.onSectionActivity?.(s.key))}>
               <div class={`sec${list.length ? " tog" : ""}`} {...sectionHead({ n: list.length, open, toggle: () => p.onToggle(s.key) })} title={list.length ? (open ? "Collapse" : "Expand") : undefined}>
-                {s.label}
-                <span class="n">{count(list.length)}</span>
+                <SectionTitle label={s.label} icon={<StateIcon state={s.state} size={14} />} n={list.length} shown={count(list.length)} open={open} attention={s.key === "needs"} />
                 {hideAt !== undefined && <HideClock at={hideAt} />}
                 {hint && <span class="h ell">{hint}</span>}
               </div>

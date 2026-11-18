@@ -50,8 +50,8 @@ import { useProvidersNeed } from "./settings-ui.tsx";
 import { HostField } from "./host-pick-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
 import { AgentStatus } from "./agent-status.tsx";
-import { COLLAPSED_BY_DEFAULT, FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
-import { HeldUpdates, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, hideUse, sectionHead } from "./row-ui.tsx";
+import { FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
+import { HeldUpdates, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
 import { needsHeads } from "./rows.ts";
 import { AUTO_HIDE_SECTIONS, type HideAt } from "./inbox-autohide.ts";
 import { GUEST_TEXT, drawnRows, type Guest } from "./selection.ts";
@@ -500,8 +500,7 @@ function MInbox(p: PhoneProps) {
           // V0.104: the desktop's pinned block, above every section and always open.
           <section id="m-sec-pinned">
             <div class="m-sec">
-              Pinned
-              <span class="n">{stripCount(p.inbox.sec.pinned.length)}</span>
+              <SectionTitle label="Pinned" icon={PIN_ICON} n={p.inbox.sec.pinned.length} shown={stripCount(p.inbox.sec.pinned.length)} />
             </div>
             {p.inbox.rows.pinned.map((t) => (
               <MRow key={t.id} t={t} p={p} needs={t.attention.section === "needs"} />
@@ -530,16 +529,14 @@ function MInbox(p: PhoneProps) {
           const shown = drawnRows(rows, open, limit, p.inbox.guest);
           const hint = s.key === "working" ? workingHint(list) : s.key === "snoozed" ? snoozedHint(list, p.now) : s.key === "settled" ? "last 24 h" : "";
           const heads = s.key === "needs" ? needsHeads(shown) : {};
-          const collapsible = list.length > 0 && (COLLAPSED_BY_DEFAULT.includes(s.key) || !open);
           const hideAt = open ? p.list.hideAt[s.key] : undefined;
           return (
             <section id={`m-sec-${s.key}`} {...hideUse(hideAt !== undefined, () => p.list.sectionUsed(s.key))}>
               <div
-                class={`m-sec${collapsible ? (open ? " exp" : " col") : ""}${s.key === "seen" && canSettleMerged && !p.list.selecting ? " hasbtn" : ""}`}
+                class={`m-sec${s.key === "seen" && canSettleMerged && !p.list.selecting ? " hasbtn" : ""}`}
                 {...sectionHead({ n: list.length, open, toggle: () => p.list.toggleSection(s.key) })}
               >
-                {s.label}
-                <span class="n">{stripCount(list.length)}</span>
+                <SectionTitle label={s.label} icon={<StateIcon state={s.state} size={16} />} n={list.length} shown={stripCount(list.length)} open={open} attention={s.key === "needs"} />
                 {hideAt !== undefined && <HideClock at={hideAt} />}
                 {s.key === "seen" && canSettleMerged && !p.list.selecting ? (
                   <button

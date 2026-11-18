@@ -47,9 +47,6 @@
 .m-sec .h{margin-left:auto;font-size:12px;max-width:62%}
 .m-sec.hasbtn{height:56px}
 .m-sbtn{margin-left:auto;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;display:grid;place-items:center;font:500 13px/16px var(--ui);color:var(--ink)}
-.m-sec.col::after{content:"▸";margin-left:8px;font-size:11px}
-.m-sec.exp::after{content:"▾";margin-left:8px;font-size:11px}
-.m-sec.col:not(:has(.h))::after,.m-sec.exp:not(:has(.h))::after{margin-left:auto}
 /* V0.your-move: the phone's type is a step larger, and the press is a finger's size. */
 .m-list .ngh{padding:8px 8px 2px;font-size:12px;line-height:16px}
 .m-list .heldup button{height:44px;padding:0 16px;border-radius:22px;font-size:13px;line-height:42px}

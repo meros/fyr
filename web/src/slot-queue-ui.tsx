@@ -12,6 +12,8 @@ import { patchSlots, refreshLoad, useLoad } from "./load-ui.tsx";
 import { MoveButtons, useReorder } from "./settings-rows.tsx";
 import { priorityLabel, queueParts, reorderOwners, slotQueue, withQueue, type QueueEntry, type QueuePart } from "./slot-queue.ts";
 import { count } from "./format.ts";
+import { StateIcon } from "./icons.tsx";
+import { SectionTitle } from "./row-ui.tsx";
 import type { Thread } from "./types.ts";
 
 /** Every host's queue, from the one load poll (5 s; at once after a reorder). */
@@ -54,8 +56,7 @@ export function SlotQueueSection(p: Props) {
     return (
       <section id="m-sec-slots" class="sq">
         <div class="m-sec hasbtn">
-          Waiting to run
-          <span class="n">{count(n)}</span>
+          <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={16} />} n={n} shown={count(n)} />
           {movable && (
             // Phone: touch has no drag handle that fits beside a swipe row and no hover, so the order changes in a
             // Reorder mode with ↑ and ↓ of 44 px (V0.121's control).
@@ -70,8 +71,7 @@ export function SlotQueueSection(p: Props) {
   return (
     <div id="sec-slots" class="sq">
       <div class="sec" title={HINT}>
-        Waiting to run
-        <span class="n">{count(n)}</span>
+        <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={14} />} n={n} shown={count(n)} />
         {movable && <span class="h ell">drag to reorder</span>}
       </div>
       {body}

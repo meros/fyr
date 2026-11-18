@@ -4005,6 +4005,38 @@ try {
 }
 });
 
+// V0.section-heads: a header shows its icon and, when it has rows, a chevron that follows the fold, on both fronts.
+for (const phone of [false, true]) section(`V0.section-heads ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, navigate, openScreen, shot } = h;
+  const ctx = `V0.section-heads ${phone ? "phone" : "desktop"}`;
+  const head = phone ? ".m-sec" : ".sec";
+  const settled = `#${phone ? "m-sec" : "sec"}-settled ${head}`;
+  const load = async (url) => {
+    if (phone) return openScreen({ url }, 390, 844);
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/${url}`, `!!document.querySelector(${JSON.stringify(settled)})`);
+  };
+try {
+  await load("?mock=rail");
+  const fold = `(() => { const c = document.querySelector(${JSON.stringify(`${settled} .stc`)}); return { chevron: !!c?.querySelector('svg'), open: !!c?.classList.contains('open'), expanded: document.querySelector(${JSON.stringify(settled)}).getAttribute('aria-expanded') }; })()`;
+  const a = await evaluate(fold);
+  check(a.chevron && !a.open && a.expanded === "false", `${ctx}: a folded section's chevron points right (${JSON.stringify(a)})`);
+  await evaluate(`document.querySelector(${JSON.stringify(settled)}).click()`);
+  await waitFor(`${fold}.open`, { soft: true });
+  const b = await evaluate(fold);
+  check(b.chevron && b.open && b.expanded === "true", `${ctx}: an open section's chevron points down (${JSON.stringify(b)})`);
+  const lefts = await evaluate(`[...new Set([...document.querySelectorAll('${head} .sticon')].map((e) => Math.round(e.getBoundingClientRect().left)))]`);
+  check(lefts.length === 1, `${ctx}: the headers' icons line up (${JSON.stringify(lefts)})`);
+  await shot(`section-heads-${phone ? "phone" : "desktop"}.png`);
+  await load("?mock=2");
+  const none = await evaluate(`(() => { const e = [...document.querySelectorAll('${head} .sti.none')]; return { n: e.length, chevrons: e.filter((x) => x.querySelector('.stc svg')).length, icons: e.filter((x) => x.querySelector('.sticon svg')).length }; })()`);
+  check(none.n > 0 && none.chevrons === 0 && none.icons === none.n, `${ctx}: an empty section has its icon and no chevron (${JSON.stringify(none)})`);
+} catch (e) {
+  check(false, `${ctx}: ${e.message}`);
+}
+});
+
 // V0.196: Snoozed and Settled opened from their header show the clock and fold again after 10 s, on both fronts.
 for (const phone of [false, true]) section(`V0.196 auto-close ${phone ? "phone" : "desktop"}`, async (h) => {
   const { send, evaluate, waitFor, navigate, openScreen } = h;
