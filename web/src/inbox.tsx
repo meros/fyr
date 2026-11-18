@@ -152,6 +152,8 @@ const ADOPT = (
 );
 
 interface InboxProps {
+  /** V0.184: the handle on the list's edge (the desktop's; see app.tsx) */
+  resizer?: ComponentChildren;
   /** V0.48: sections that close by themselves, with their deadline (ms) */
   autoHideAt?: Partial<Record<SectionKey, number>>;
   onSectionActivity?(k: SectionKey): void;
@@ -183,6 +185,7 @@ export function Inbox(p: InboxProps) {
   const queue = useSlotQueue();
   return (
     <aside class="ib" onMouseDown={p.onFocusZone}>
+      {p.resizer}
       <div class="top">
         <label class="search">
           <input

@@ -53,6 +53,7 @@ import { UndContext, type UndNav } from "./undeclared-ctx.tsx";
 import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
 import { HandoverDialog } from "./handover-ui.tsx";
 import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
+import { ListResizer } from "./list-resize-ui.tsx";
 import { PreviewViewer } from "./preview-ui.tsx";
 import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu } from "./dialogs.tsx";
 import type { NewThreadArgs } from "./new-thread.ts";
@@ -1594,6 +1595,8 @@ function App() {
           quietHits={quietHits}
           extra={pwaControls}
           onFocusZone={() => setZone("list")}
+          // V0.184: desktop only. The phone shows the list full screen with no pane beside it, so it has no edge to drag.
+          resizer={<ListResizer win={winW} />}
         />
         </Boundary>
         {viewThread && view ? (
