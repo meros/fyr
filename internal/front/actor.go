@@ -8,6 +8,7 @@ package front
 import (
 	"context"
 	"errors"
+	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 	"net/url"
 	"sync/atomic"
@@ -16,7 +17,6 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/authn"
 	"github.com/meros/fyr/internal/peerlink"
-	"github.com/meros/fyr/internal/server"
 )
 
 // principalOf is the principal withAuth made for a request. A request that
@@ -41,7 +41,7 @@ func originOf(r *http.Request) string {
 		return ""
 	}
 	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" || server.IsViaServe(r) {
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" || httpguard.IsViaServe(r) {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host

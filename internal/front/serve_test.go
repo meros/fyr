@@ -3,6 +3,7 @@ package front
 import (
 	"context"
 	"encoding/json"
+	"github.com/meros/fyr/internal/httpguard"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -39,7 +40,7 @@ func TestV130ServeSocketProxiesWithThePublicHost(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go f.Run(ctx)
 	lo := httptest.NewServer(f.Handler())
-	sv := httptest.NewServer(server.ServeSocket("desk.tail.ts.net:7443", f.Handler()))
+	sv := httptest.NewServer(httpguard.ServeSocket("desk.tail.ts.net:7443", f.Handler()))
 	t.Cleanup(func() { cancel(); lo.Close(); sv.Close() })
 	online(t, lo.URL, 1)
 
