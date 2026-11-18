@@ -4785,6 +4785,185 @@ try {
 }
 });
 
+// SPEC V0.184: the thread list's width. The handle on its edge drags (mouse and touch), takes the keyboard, resets on
+// a double press; the width is this browser's, and the window limits what is applied.
+const LRZ = ".ib .lrz";
+const lrzState = `(() => { const h = document.querySelector(${JSON.stringify(LRZ)}), ib = document.querySelector('.ib').getBoundingClientRect(), th = document.querySelector('.th').getBoundingClientRect();
+  return { w: Math.round(ib.width), th: Math.round(th.width), now: Number(h?.getAttribute('aria-valuenow')), min: Number(h?.getAttribute('aria-valuemin')), max: Number(h?.getAttribute('aria-valuemax')), stored: localStorage.getItem('fyr.listWidth') }; })()`;
+const lrzCenter = (evaluate, y) => evaluate(`(() => { const r = document.querySelector(${JSON.stringify(LRZ)}).getBoundingClientRect(); return [r.left + r.width / 2, ${y ?? "r.top + r.height / 2"}]; })()`);
+section("V0.184 desktop", async ({ send, evaluate, waitFor, settle, navigate, key, shot }) => {
+  const ctx = "V0.184 desktop";
+  const size = async (width, height = 800) => {
+    await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+    await waitFor(`innerWidth === ${width} && innerHeight === ${height}`, { what: `a ${width} x ${height} window` });
+    await settle();
+  };
+  const mouse = (type, x, y, extra = {}) => send("Input.dispatchMouseEvent", { type, x, y, ...extra });
+  const press = (x, y, clickCount = 1) => mouse("mousePressed", x, y, { button: "left", buttons: 1, clickCount });
+  const release = (x, y, clickCount = 1) => mouse("mouseReleased", x, y, { button: "left", buttons: 0, clickCount });
+  const drag = (x, y) => mouse("mouseMoved", x, y, { button: "left", buttons: 1 });
+  const click = async (clickCount = 1) => {
+    const [x, y] = await lrzCenter(evaluate);
+    await mouse("mouseMoved", x, y);
+    await press(x, y, clickCount);
+    await release(x, y, clickCount);
+  };
+  const dblclick = async () => {
+    await click(1);
+    await click(2);
+  };
+  const widthIs = (w) => waitFor(`Math.round(document.querySelector('.ib').getBoundingClientRect().width) === ${w}`, { soft: true, timeout: 2000 });
+  const focusHandle = () => evaluate(`document.querySelector(${JSON.stringify(LRZ)}).focus()`);
+  try {
+    // 1. The default, and what the handle says it is.
+    await navigate(`${origin}/?mock=1&open=t_w3`, "!!document.querySelector('.th .pv.html iframe') && !!document.querySelector('.ib')");
+    const a = await evaluate(`(() => { const h = document.querySelector(${JSON.stringify(LRZ)}); return h && { role: h.getAttribute('role'), o: h.getAttribute('aria-orientation'), tab: h.tabIndex, label: h.getAttribute('aria-label') }; })()`);
+    check(a?.role === "separator" && a.o === "vertical" && a.tab === 0 && !!a.label, `${ctx}: the handle is not a focusable vertical separator (${JSON.stringify(a)})`);
+    const s0 = await evaluate(lrzState);
+    check(s0.w === 372 && s0.now === 372 && s0.min === 280 && s0.max === 640 && s0.stored === null, `${ctx}: the default is wrong (${JSON.stringify(s0)})`);
+
+    // 2. A drag is live, past the iframe that previews are, with nothing selected; the width is kept at the release.
+    await evaluate(`document.querySelector('.th .pv.html iframe').scrollIntoView({ block: 'center' })`);
+    await settle();
+    const fy = await evaluate(`(() => { const r = document.querySelector('.th .pv.html iframe').getBoundingClientRect(); return Math.round(r.top + r.height / 2); })()`);
+    const [hx, hy] = await lrzCenter(evaluate, fy);
+    await mouse("mouseMoved", hx, hy);
+    await press(hx, hy);
+    await drag(hx + 100, hy);
+    check(await widthIs(472), `${ctx}: the list does not follow the drag (${JSON.stringify(await evaluate(lrzState))})`);
+    check((await evaluate(lrzState)).now === 472, `${ctx}: aria-valuenow does not follow the drag`);
+    await drag(1100, hy); // past the maximum: the pointer is now over the preview
+    check(await widthIs(640), `${ctx}: a drag past the maximum is not stopped there (${JSON.stringify(await evaluate(lrzState))})`);
+    const over = await evaluate(`(() => { const f = document.querySelector('.th .pv.html iframe'), r = f.getBoundingClientRect(), cs = getComputedStyle(document.body);
+      return { inside: r.left <= 1100 && r.right >= 1100 && r.top <= ${hy} && r.bottom >= ${hy}, hit: document.elementFromPoint(1100, ${hy})?.tagName, pe: getComputedStyle(f).pointerEvents, select: cs.userSelect, cursor: cs.cursor, text: String(getSelection()) }; })()`);
+    check(over.inside && over.hit !== "IFRAME" && over.pe === "none", `${ctx}: an iframe can take the pointer during a drag (${JSON.stringify(over)})`);
+    check(over.select === "none" && over.text === "" && over.cursor === "col-resize", `${ctx}: a drag can select text or loses its cursor (${JSON.stringify(over)})`);
+    await drag(hx + 100, hy);
+    check(await widthIs(472), `${ctx}: the drag was lost over the iframe (${JSON.stringify(await evaluate(lrzState))})`);
+    await release(hx + 100, hy);
+    await settle();
+    const s1 = await evaluate(lrzState);
+    check(s1.w === 472 && s1.stored === "472" && s1.th === 1280 - 76 - 472, `${ctx}: the released width is not kept (${JSON.stringify(s1)})`);
+    const after = await evaluate(`({ pe: getComputedStyle(document.querySelector('.th .pv.html iframe')).pointerEvents, select: getComputedStyle(document.body).userSelect, cls: document.documentElement.classList.contains('list-resizing') })`);
+    check(after.pe !== "none" && after.select !== "none" && !after.cls, `${ctx}: the page stays in drag mode after the release (${JSON.stringify(after)})`);
+
+    // 3. A reload keeps it.
+    await navigate(`${origin}/?mock=1&open=t_w3`, "!!document.querySelector('.ib .lrz')");
+    check((await evaluate(lrzState)).w === 472, `${ctx}: a reload loses the width (${JSON.stringify(await evaluate(lrzState))})`);
+
+    // 4. The window limits what is applied; the stored width is not changed by it. The list is asked for (fyr.list):
+    // a window under 1100 px starts without it (V0.40).
+    await evaluate(`localStorage.setItem('fyr.listWidth', '600'); localStorage.setItem('fyr.list', '1')`);
+    await navigate(`${origin}/?mock=1`, "!!document.querySelector('.ib .lrz') && !!document.querySelector('.th')");
+    check((await evaluate(lrzState)).w === 600, `${ctx}: the stored 600 is not applied`);
+    await size(1000);
+    const s2 = await evaluate(lrzState);
+    check(s2.w === 444 && s2.now === 444 && s2.max === 444 && s2.th === 480 && s2.stored === "600", `${ctx}: a 1000 px window does not clamp the width (${JSON.stringify(s2)})`);
+    await click(); // a press that does not move stores nothing
+    await settle();
+    check((await evaluate(lrzState)).stored === "600", `${ctx}: a press without a drag changed the stored width`);
+    await size(800);
+    const s3 = await evaluate(lrzState);
+    check(s3.w === 280 && s3.max === 280 && s3.th === 800 - 76 - 280, `${ctx}: at 800 px the list is not at its minimum (${JSON.stringify(s3)})`);
+    await size(1280);
+    check(await widthIs(600), `${ctx}: a wider window does not bring the stored width back`);
+    await evaluate(`localStorage.setItem('fyr.listWidth', 'wide')`);
+    await navigate(`${origin}/?mock=1`, "!!document.querySelector('.ib .lrz')");
+    check((await evaluate(lrzState)).w === 372, `${ctx}: a broken stored width is applied`);
+
+    // 5. Keys. They stay the handle's: the app's own shortcuts do not see them.
+    await focusHandle();
+    await key("ArrowRight", "ArrowRight");
+    check((await evaluate(lrzState)).w === 388, `${ctx}: ArrowRight does not widen by 16`);
+    await key("ArrowLeft", "ArrowLeft", 8);
+    check((await evaluate(lrzState)).w === 324, `${ctx}: Shift+ArrowLeft does not narrow by 64`);
+    await key("End", "End");
+    check((await evaluate(lrzState)).w === 640, `${ctx}: End does not go to the maximum`);
+    await key("Home", "Home");
+    const s4 = await evaluate(lrzState);
+    check(s4.w === 280 && s4.now === 280 && s4.stored === "280", `${ctx}: Home does not go to the minimum and stay (${JSON.stringify(s4)})`);
+    check(await evaluate(`document.activeElement === document.querySelector(${JSON.stringify(LRZ)})`), `${ctx}: the handle lost the focus`);
+    await key("Enter", "Enter");
+    const s5 = await evaluate(lrzState);
+    check(s5.w === 372 && s5.stored === null, `${ctx}: Enter does not reset (${JSON.stringify(s5)})`);
+
+    // 6. A double click resets, and leaves nothing stored.
+    await evaluate(`localStorage.setItem('fyr.listWidth', '520')`);
+    await navigate(`${origin}/?mock=1`, "!!document.querySelector('.ib .lrz')");
+    await dblclick();
+    check(await widthIs(372), `${ctx}: a double click does not reset (${JSON.stringify(await evaluate(lrzState))})`);
+    check((await evaluate(lrzState)).stored === null, `${ctx}: a reset leaves a stored width`);
+
+    // 7. The list and the rail hold at both limits, in a tall and a short window, with two hosts (the most they carry).
+    await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.ib .lrz') && !!document.querySelector('.ib .hfrow') && !!document.querySelector('.ib .list .hd')");
+    await shot("list-resize-default.png");
+    for (const [k, want] of [["Home", 280], ["End", 640]]) for (const h of [800, 600]) {
+      const at = `${ctx} at ${want} px, ${h} px high`;
+      await size(1280, h);
+      await focusHandle();
+      await key(k, k);
+      const m = await evaluate(`(() => { const box = (e) => e.getBoundingClientRect(), ib = box(document.querySelector('.ib')), de = document.documentElement, app = document.querySelector('.app'), rail = document.querySelector('.rail'), r = box(rail);
+        const inside = (e) => { const b = box(e); return b.left >= ib.left - 0.5 && b.right <= ib.right + 0.5; };
+        const list = document.querySelector('.ib .list'), hf = document.querySelector('.ib .hfrow'), pf = document.querySelector('.ib .pfrow');
+        const rows = [...document.querySelectorAll('.ib .list [data-id]')];
+        return { w: Math.round(ib.width), list: list.scrollWidth - list.clientWidth, hf: hf.scrollWidth - hf.clientWidth, pf: pf.scrollWidth - pf.clientWidth,
+          top: [...document.querySelectorAll('.ib .top > *')].filter((e) => e.getClientRects().length && !inside(e)).length, chips: [...document.querySelectorAll('.ib .pfc, .ib .hft')].filter((e) => !inside(e)).length,
+          rows: rows.length, wideRows: rows.filter((e) => !inside(e)).length, titles: [...document.querySelectorAll('.ib .list .hd .t')].filter((e) => box(e).right > box(e.closest('[data-id]')).right + 0.5 || getComputedStyle(e).overflow !== 'hidden').length,
+          ages: rows.filter((e) => { const a = e.querySelector('.age'); return a && box(a).right > box(e).right + 0.5; }).length,
+          pageX: de.scrollWidth - innerWidth, pageY: de.scrollHeight - innerHeight, sx: scrollX, sy: scrollY, appX: app.scrollWidth - app.clientWidth, appY: app.scrollHeight - app.clientHeight,
+          railW: Math.round(r.width), railTop: Math.round(r.top), railBottom: Math.round(r.bottom), railX: rail.scrollWidth - rail.clientWidth, th: Math.round(box(document.querySelector('.th')).width) }; })()`);
+      check(m.w === want, `${at}: the list is ${m.w} px`);
+      check(m.list <= 0 && m.top === 0 && m.rows > 0 && m.wideRows === 0 && m.titles === 0 && m.ages === 0, `${at}: the list's rows do not fit (${JSON.stringify(m)})`);
+      check(m.hf <= 0 && m.pf <= 0 && m.chips === 0, `${at}: a filter is cut or must be scrolled sideways (${JSON.stringify(m)})`);
+      // The left-menu glitch of V0.141: the rail ran past the window and the whole page scrolled.
+      check(m.pageX <= 0 && m.pageY <= 0 && m.sx === 0 && m.sy === 0 && m.appX <= 0 && m.appY <= 0, `${at}: the page overflows (${JSON.stringify(m)})`);
+      check(m.railW === 76 && m.railTop === 0 && m.railBottom === h && m.railX <= 0, `${at}: the rail does not fit (${JSON.stringify(m)})`);
+      check(m.th === 1280 - 76 - want, `${at}: the conversation is ${m.th} px`);
+      const out = await evaluate(OUTSIDE);
+      check(out.length === 0, `${at}: text outside its box ${JSON.stringify(out)}`);
+      if (want === 280 && h === 800) await shot("list-resize-min.png");
+    }
+
+    // 8. A hidden list has no handle to reach.
+    await size(1280);
+    await evaluate(`localStorage.setItem('fyr.list', '0')`);
+    await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.app.nolist')");
+    check(await evaluate(`(() => { const h = document.querySelector(${JSON.stringify(LRZ)}); return !h || !h.getClientRects().length; })()`), `${ctx}: a hidden list leaves its handle on screen`);
+    await evaluate(`localStorage.removeItem('fyr.list'); localStorage.removeItem('fyr.listWidth')`);
+
+    // 9. A touch screen at desktop width: the same handle, by finger, with a larger target.
+    await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    await navigate(`${origin}/?mock=1`, "!!document.querySelector('.ib .lrz')");
+    const [tx, ty] = await lrzCenter(evaluate);
+    await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: tx, y: ty }] });
+    await send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: tx + 40, y: ty }] });
+    await send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: tx + 60, y: ty }] });
+    check(await widthIs(432), `${ctx}: a finger does not drag the handle (${JSON.stringify(await evaluate(lrzState))})`);
+    await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await waitFor(`localStorage.getItem('fyr.listWidth') === '432'`, { soft: true, timeout: 2000 });
+    check((await evaluate(lrzState)).stored === "432", `${ctx}: a finger's drag is not kept`);
+    const [t2x, t2y] = await lrzCenter(evaluate);
+    for (let i = 0; i < 2; i++) {
+      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: t2x, y: t2y }] });
+      await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    }
+    check(await widthIs(372), `${ctx}: a double tap does not reset (${JSON.stringify(await evaluate(lrzState))})`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+// The phone shows the list full screen, beside nothing: no handle, and a stored width changes nothing there.
+section("V0.184 phone", async ({ evaluate, openScreen }) => {
+  const ctx = "V0.184 phone";
+  try {
+    await openScreen({ url: "?mock=rail", ready: "!!document.querySelector('.m-list .hd')", storage: { "fyr.listWidth": "600" } }, 390, 844);
+    const r = await evaluate(`({ handle: document.querySelectorAll('.lrz, [role=separator]').length, wide: document.documentElement.scrollWidth - innerWidth, list: Math.round(document.querySelector('.m-list').getBoundingClientRect().width) })`);
+    check(r.handle === 0 && r.wide <= 0 && r.list === 390, `${ctx}: the phone's list changed (${JSON.stringify(r)})`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+
 // The phone screens after the sections: the sections are the longest jobs, so they start first and the short
 // screens fill the tabs at the end.
 for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.name} ${w}x${hh}`, run: (t) => phonePass(t, w, hh, [s]) });
