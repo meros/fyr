@@ -466,7 +466,7 @@ export function createMockApi(scenario: string): Api {
       if (!hs.length) return mockQuota(Date.now());
       const at = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
       return [...mockQuota(Date.now()).map((q) => ({ ...q, host: hs[0].name })), { profile: "claude", host: "lab", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 12, resetsAt: at(200) }, { name: "7 d", usedPct: 23, resetsAt: at(4 * 1440) }], updatedAt: at(-3) },
-        // V0.141: a fourth provider, so the rail holds two hosts' load and four quota lines (the layout test)
+        // V0.141: a fourth provider, for the layout tests with two hosts and four quotas (the phone's load sheet lists them)
         { profile: "zai", host: "lab", kind: "anthropic-oauth", windows: [{ name: "5 h", usedPct: 83, resetsAt: at(90) }], updatedAt: at(-1) }];
     },
     async load() {

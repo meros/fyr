@@ -24,6 +24,7 @@ import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "
 import { isAvailable, unavailableReason } from "./store.ts";
 import { SETTLE_DONE_HINT, settleDoneEntry } from "./menu.ts";
 import { hostChip, hostOf, offlineLine, profilesOfHost, threadProvider } from "./hosts.ts";
+import { ThreadQuotaChip } from "./quota-ui.tsx";
 import { ProfilesContext, useHosts } from "./host-pick-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
 import { onToolDetails, toolDetails } from "./prefs.ts";
@@ -199,6 +200,8 @@ export function ThreadPane(p: ThreadPaneProps) {
           </span>
           <ModelChip t={t} profile={profile} onRun={p.onRun} />
           <EffortChip t={t} profile={profile} onRun={p.onRun} />
+          {/* V0.quota-in-thread: what is left on the account this thread uses, where the owner works */}
+          <ThreadQuotaChip profile={t.profile} host={hostOf(t, hs.hosts)} name={provider.name} />
           {/* V0.98 (6): the newest open change's PR; Dismiss acts on the thread's main PR, so only when it is that one. */}
           {headerPr(t) && <PrChip pr={headerPr(t)!} onDismiss={isAvailable(t, "thread.dismissPR") && headerPr(t)!.url === t.pr?.url ? () => p.onRun("thread.dismissPR") : undefined} />}
           {(() => {
@@ -696,10 +699,10 @@ function QuietLine({ icon, line, full, fail, und }: { icon: "settled" | "failed"
   );
 }
 
-/** The end of a turn: a small mark; a tap shows time, cost and the failure. A failure keeps its text in one line. */
+/** The end of a turn: a small mark; a tap shows how long a failed turn ran. A failure keeps its text in one line. */
 function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
   const [open, setOpen] = useState(false);
-  const facts = [it.durationMs !== undefined ? duration(it.durationMs) : "", it.costUsd !== undefined ? `$${it.costUsd.toFixed(2)}` : ""].filter(Boolean).join(" · ");
+  const facts = it.durationMs !== undefined ? duration(it.durationMs) : "";
   const icon = it.failure ? "failed" : it.interrupted ? "seen" : "settled";
   const word = it.failure ? `Failed (${it.failure.class}): ${it.failure.message}` : it.interrupted ? "Interrupted" : "Finished";
   if (!it.compact) {
@@ -711,7 +714,7 @@ function RunMark({ it }: { it: Extract<Item, { kind: "run" }> }) {
       </div>
     );
   }
-  // V0.21: words, never a bare symbol; the cost is one tap away.
+  // V0.21: words, never a bare symbol.
   const lbl = runLabel(it);
   return (
     <div class={`runmark${it.failure ? " fail" : ""}`}>

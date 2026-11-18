@@ -1,11 +1,11 @@
-// SPEC 0.5 V0.44: provider quota where a profile is chosen and in the rail. One poll for the whole client
+// SPEC 0.5 V0.44: provider quota where a profile is chosen and, V0.quota-in-thread, in the header of the open thread. One poll for the whole client
 // (every minute while the page is visible; the host reads providers at most every five minutes).
 
 import { useEffect, useState } from "preact/hooks";
 import type { Profile } from "./types.ts";
 import type { Api } from "./api.ts";
 import { useApi } from "./api-context.ts";
-import { hasData, quotaDetail, quotaFor, quotaParts, quotaSummary, railFigure, railInitials, type Quota } from "./quota.ts";
+import { hasData, quotaDetail, quotaFor, quotaParts, quotaSummary, busiestFigure, type Quota } from "./quota.ts";
 
 const POLL_MS = 60_000;
 
@@ -125,32 +125,56 @@ export function QuotaList(p: { profiles: Profile[] }) {
   );
 }
 
-/** The rail footer (desktop): each profile's initial in its colour and its busiest window or balance; details on
- *  hover. */
-export function QuotaRail(p: { profiles: Profile[] }) {
-  const list = useQuotas();
-  const now = Date.now();
-  const rows = list.map((q) => ({ q, f: railFigure(q) })).filter((r) => r.f || r.q.error);
-  if (!rows.length) return null;
-  const initials = railInitials(rows.map(({ q }) => nameOf(p.profiles, q.profile)));
-  // V0.152: with several hosts the tooltip says whose quota it is ("Claude on lab").
-  const hosts = new Set(rows.map(({ q }) => q.host).filter(Boolean));
+/** Every line about one quota: the windows with their reset times, the freshness and the notes; an error without data
+ *  comes first (quotaDetail names an error only beside data). */
+function quotaLines(q: Quota, name: string): string[] {
+  const d = quotaDetail(q, name, Date.now());
+  return hasData(q) || !q.error ? d : [`${name}: ${q.error}`, ...d];
+}
+
+/** V0.quota-in-thread: the quota of the provider a thread runs on, as a chip in the desktop thread's header, after the
+ *  model and the effort: every window, the reset times on hover. Nothing without a reading or an error. */
+export function ThreadQuotaChip(p: { profile: string; host?: string; name: string }) {
+  const q = quotaFor(useQuotas(), p.profile, p.host);
+  if (!q || !(hasData(q) || q.error)) return null;
+  const parts = quotaParts(q);
+  const tip = quotaLines(q, p.name).join("\n");
   return (
-    <div class="rq" aria-label="Quota">
-      {rows.map(({ q, f }, i) => {
-        const name = nameOf(p.profiles, q.profile);
-        const who = hosts.size > 1 && q.host ? `${name} on ${q.host}` : name;
-        const tip = [quotaSummary(q, who), ...quotaDetail(q, name, now).filter((l) => !l.startsWith(`${name} `))].join("\n");
-        return (
-          <div class={`rqr${q.stale ? " stale" : ""}`} title={tip}>
-            {/* V0.152: the provider's initial in its colour, so a value says whose it is */}
-            <i style={{ "--qc": p.profiles.find((x) => x.id === q.profile)?.color ?? "var(--ink-faint)" }} aria-hidden="true">
-              {initials[i]}
-            </i>
-            <span class={f?.hot ? "hot" : undefined}>{f ? f.text : "!"}</span>
-          </div>
-        );
-      })}
-    </div>
+    <span class={`chip m qchip${q.stale ? " stale" : ""}`} title={tip} aria-label={`Quota: ${quotaSummary(q, p.name)}`}>
+      {parts.length ? (
+        parts.map((x, i) => (
+          <>
+            {i > 0 && <span class="qsep"> · </span>}
+            <span class={x.hot ? "hot" : undefined}>{x.text}</span>
+          </>
+        ))
+      ) : (
+        <span>No quota reading</span>
+      )}
+    </span>
   );
+}
+
+/** V0.quota-in-thread: the same quota on the phone, in the thread's title bar before the ⋯ button: one figure, the
+ *  busiest window's share ("61 %"), 44 px high for the finger; a tap opens the thread's Details, which lists every
+ *  window (`useThreadQuotaLines`). Not a chip with every window as on the desktop: the phone's chip row is one line of
+ *  at most 360 px that the project, the state, the host, the branch, the provider and the PR already fill, and a phone
+ *  has no hover. Nothing without data. */
+export function ThreadQuotaFigure(p: { profile: string; host?: string; name: string; onOpen(): void }) {
+  const q = quotaFor(useQuotas(), p.profile, p.host);
+  const f = q && busiestFigure(q);
+  if (!q || !f) return null;
+  return (
+    <button type="button" class={`qfig${f.hot ? " hot" : ""}${q.stale ? " stale" : ""}`} aria-label={`Quota: ${quotaSummary(q, p.name)}. Details`} onClick={p.onOpen}>
+      {f.text}
+    </button>
+  );
+}
+
+/** V0.quota-in-thread: the same quota as lines (the phone's thread Details, where there is no hover): each window with
+ *  its reset time, then the freshness and the notes. null without a reading or an error. */
+export function useThreadQuotaLines(profile: string, host: string | undefined, name: string): string[] | null {
+  const q = quotaFor(useQuotas(), profile, host);
+  if (!q || !(hasData(q) || q.error)) return null;
+  return quotaLines(q, name).map((l) => (l.startsWith(`${name} `) ? l.slice(name.length + 1) : l.startsWith(`${name}: `) ? l.slice(name.length + 2) : l));
 }

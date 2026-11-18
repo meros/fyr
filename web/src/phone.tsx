@@ -60,7 +60,7 @@ import { AUTO_HIDE_SECTIONS, type HideAt } from "./inbox-autohide.ts";
 import { GUEST_TEXT, drawnRows, type Guest } from "./selection.ts";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
-import { QuotaList } from "./quota-ui.tsx";
+import { QuotaList, ThreadQuotaFigure, useThreadQuotaLines } from "./quota-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
 import { hostLabel, hostOf, hostTag, offlineLine, profilesOfHost, threadProvider, type HostInfo } from "./hosts.ts";
 
@@ -897,6 +897,8 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
               </div>
             )}
           </div>
+          {/* V0.quota-in-thread: what is left on this thread's provider; one figure here, every window in Details */}
+          <ThreadQuotaFigure profile={t.profile} host={hostOf(t, p.store.hosts)} name={threadProvider(t, p.store.hosts, p.store.profiles).name} onOpen={() => p.nav.go({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} />
           <button class="b44" onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "thread-menu", ids: [t.id] } })} aria-label="Thread actions">
             {I.more}
           </button>
@@ -1633,6 +1635,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
               );
             })(),
           )}
+          <ThreadQuotaRow profile={t.profile} host={hostOf(t, p.store.hosts)} name={threadProvider(t, p.store.hosts, p.store.profiles).name} />
           {row("Folder", t.cwd)}
           {t.branch && row("Branch", t.branch)}
           {row(
@@ -1759,5 +1762,21 @@ function MProject(p: PhoneProps & { id: string }) {
       </div>
     </div>
     </SetContext.Provider>
+  );
+}
+
+/** V0.quota-in-thread: the thread's provider quota in its Details sheet: what the desktop chip's hover says, as text. */
+function ThreadQuotaRow(p: { profile: string; host?: string; name: string }) {
+  const lines = useThreadQuotaLines(p.profile, p.host, p.name);
+  if (!lines) return null;
+  return (
+    <div class="m-kvrow m-qrow">
+      <span class="k">Quota</span>
+      <span class="v prose">
+        {lines.map((l) => (
+          <span class="m-ql">{l}</span>
+        ))}
+      </span>
+    </div>
   );
 }
