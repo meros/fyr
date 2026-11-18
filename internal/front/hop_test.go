@@ -8,6 +8,7 @@ package front
 
 import (
 	"context"
+	"github.com/meros/fyr/internal/httpguard"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -128,7 +129,7 @@ func TestHopCarriesThePrincipalOnEveryRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(ts.Close)
-	sock, stop := authtest.UnixServer(t, server.ServeSocket("desk.tail.ts.net:7443", f.Handler()))
+	sock, stop := authtest.UnixServer(t, httpguard.ServeSocket("desk.tail.ts.net:7443", f.Handler()))
 	t.Cleanup(stop)
 	sv, err := ts.ServeFor(phone, sock)
 	if err != nil {

@@ -543,7 +543,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	old := &oldListeners{}
 	if cfg.Role == "host" {
 		srvs.serve(ln, deploy.Health(hostHandler, health...))
-		newPeerSide(cfg, data, hostName, key).start(ctx, data, srv, nil, authStore, old) // a host-only install pairs and serves its peer port too
+		newPeerSide(cfg, data, hostName, key).start(ctx, srv, nil, authStore, old) // a host-only install pairs and serves its peer port too
 	} else {
 		// both (V0.51): the front reaches this host over a loopback link,
 		// through the host protocol only; agents keep /mcp on the main port.
