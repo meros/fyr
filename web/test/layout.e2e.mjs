@@ -1985,7 +1985,7 @@ section('V0.142', async (h) => {
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await navigate(`${origin}/?mock=rail`, "!!document.querySelector('.m-seg')");
-    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Working')).click()`);
+    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Moving')).click()`);
     await waitFor("[...document.querySelectorAll('.tslot')].some((x) => x.textContent.startsWith('yarn build'))", { what: "the Working section's holder with a job" });
     await settle();
     const r = await evaluate(`(() => {
@@ -2023,7 +2023,7 @@ section('S5 paused', async (h) => {
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await navigate(`${origin}/?mock=rail&paused=1`, "!!document.querySelector('.m-seg')");
-    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Working')).click()`);
+    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Moving')).click()`);
     await waitFor("[...document.querySelectorAll('.tslot')].some((x) => x.textContent.includes('paused'))", { what: "the paused row on the phone" });
     await settle();
     const r = await evaluate(read);
@@ -2059,7 +2059,7 @@ section('V0.195 background wait', async (h) => {
     await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await navigate(url, "!!document.querySelector('.m-seg')");
-    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Working')).click()`);
+    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Moving')).click()`);
     await waitFor(`!!${row}`, { what: "the waiting thread's row" });
     const text = await evaluate(`${row}.textContent`);
     await evaluate(`${row}.click()`);
@@ -2110,7 +2110,7 @@ section('V0.188 guard', async (h) => {
     await settle();
     ok(await evaluate(read), "phone");
     await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused`, "!!document.querySelector('.m-seg')");
-    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Working')).click()`);
+    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Moving')).click()`);
     await waitFor("document.body.innerText.includes('undeclared · paused 3/8')", { what: "the guard's words on the frozen thread's row" });
   } catch (e) {
     failures.push(`V0.188 phone: ${e.message}`);
@@ -2242,7 +2242,7 @@ for (const dark of [false, true]) section(`V0.164 phone${dark ? " dark" : ""}`, 
     await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
     const working = async (url, ready) => {
       await openScreen({ url, ready }, W, 844);
-      await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Working')).click()`);
+      await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Moving')).click()`);
       await waitFor(`[...document.querySelectorAll('.one')].some((x) => x.querySelector('.t')?.textContent === 'Map perf')`, { what: "the Working rows" });
       await settle();
     };
@@ -5030,8 +5030,17 @@ try {
   await waitFor(`${IN("needs")}.includes(${JSON.stringify(flag)})`, { soft: true });
   await settle();
   check((await evaluate(IN("needs"))).includes(flag), `${ctx}: the new Needs-you row waited`);
+  check(await evaluate(`[...document.querySelectorAll('.ngh')].some((x) => x.textContent === 'Answer')`), `${ctx}: Your move has no Answer group`);
   const moved = Math.abs((await evaluate(TOP)) - top);
   check(moved <= 1, `${ctx}: the row under the hand moved ${moved} px`);
+  // V0.your-move: the hold says what it keeps back, and Show brings it now while the hand stays.
+  const pill = await evaluate(`document.querySelector('.heldup button')?.textContent ?? ''`);
+  check(/^[1-9]\d* updates? · Show$/.test(pill), `${ctx}: the waiting moves are not offered (${JSON.stringify(pill)})`);
+  check(Math.abs((await evaluate(TOP)) - top) <= 1, `${ctx}: the updates line moved the rows`);
+  await evaluate(`document.querySelector('.heldup button').click()`);
+  await waitFor(`${IN("working")}.includes(${JSON.stringify(mover)})`, { soft: true, timeout: 5000 });
+  check((await evaluate(IN("working"))).includes(mover), `${ctx}: Show did not bring the waiting move`);
+  check(!(await evaluate(`!!document.querySelector('.heldup button')`)), `${ctx}: the updates line stayed after Show`);
   // 3. The hand leaves: the waiting move happens.
   if (phone) await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   else await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 200 });

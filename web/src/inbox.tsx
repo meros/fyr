@@ -1,6 +1,6 @@
 // Rail and inbox list, as design/directions/04-rail.html draws them.
 
-import type { ComponentChildren, Ref } from "preact";
+import { Fragment, type ComponentChildren, type Ref } from "preact";
 import type { Profile, Thread } from "./types.ts";
 import type { FilterSel, HostChip, ProjectChip } from "./filters.ts";
 import { QuotaRail } from "./quota-ui.tsx";
@@ -9,7 +9,8 @@ import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
-import { DESKTOP_LOOK, HideClock, NeedsRowBody, OneRowBody, hideUse, sectionHead } from "./row-ui.tsx";
+import { DESKTOP_LOOK, HeldUpdates, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, hideUse, sectionHead } from "./row-ui.tsx";
+import { needsHeads } from "./rows.ts";
 import { drawnRows, type Guest, type GuestWhy } from "./selection.ts";
 import { colorVar } from "./projects.ts";
 import { SECTIONS, isOpen, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
@@ -160,6 +161,9 @@ interface InboxProps {
   rows: Sections;
   /** V0.192: the row that is drawn only because it is the current thread */
   guest: Guest | null;
+  /** V0.your-move: the moves the hold keeps back, and the press that shows them */
+  updates: number;
+  onShowUpdates(): void;
   now: number;
   selected: string | null;
   picked: Set<string>;
@@ -213,6 +217,7 @@ export function Inbox(p: InboxProps) {
       <FilterRow f={p.filter} now={p.now} unlock={p.unlock} />
       {p.quietHits > 0 && <QuietGate now={p.now} unlock={p.unlock} what="search" />}
       <div class="list" role="listbox" aria-label="Threads">
+        <HeldUpdates n={p.updates} show={p.onShowUpdates} />
         {!p.query.trim() && <FilterEmpty f={p.filter} cls="fempty" />}
         {p.rows.pinned.length > 0 && (
           // V0.104: the pinned threads, above every section and always open; each keeps its section's row shape.
@@ -249,6 +254,7 @@ export function Inbox(p: InboxProps) {
           const limit = p.expanded[s.key] ? rows.length : SECTION_LIMIT[s.key];
           const shown = drawnRows(rows, open, limit, p.guest);
           const hint = sectionHint(s.key, list, p.now);
+          const heads = s.key === "needs" ? needsHeads(shown) : {};
           const hideAt = open ? p.autoHideAt?.[s.key] : undefined;
           return (
             <div id={`sec-${s.key}`} {...hideUse(hideAt !== undefined, () => p.onSectionActivity?.(s.key))}>
@@ -260,7 +266,10 @@ export function Inbox(p: InboxProps) {
               </div>
               {shown.map((t) =>
                 s.key === "needs" ? (
-                  <NeedsRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} guest={why(t)} onClick={() => p.onClick(t.id)} />
+                  <Fragment key={t.id}>
+                    {heads[t.id] && <NeedsGroupHead label={heads[t.id]} />}
+                    <NeedsRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} guest={why(t)} onClick={() => p.onClick(t.id)} />
+                  </Fragment>
                 ) : (
                   <OneRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} guest={why(t)} onClick={() => p.onClick(t.id)} />
                 ),

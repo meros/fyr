@@ -2,6 +2,7 @@
 // and the order in store.ts), the open row staying where it was until the owner leaves it, and a hold while the owner's
 // hand is on the list. Row content and every count stay live; only places wait. One implementation for both fronts.
 import { SECTIONS, isPinned, sectionOf, type SectionKey, type Sections } from "./store.ts";
+import { needsGroupRank } from "./rows.ts";
 import type { Thread } from "./types.ts";
 
 /** After the last j/k: reading the next row takes a moment, and no pointer says the owner is still there. */
@@ -62,7 +63,7 @@ function withPinned(out: Sections): Sections {
 
 /**
  * What the list draws. `live` is the truth. With `held` (the rows as they stood when the hold began) rows keep their
- * section and order. A new Needs-you row comes in at once, above the held ones; any other new row waits. Snoozed,
+ * section and order. A new Your-move row comes in at once, at the top of its group (V0.your-move); any other new row waits. Snoozed,
  * Settled and the queue are always live, so the owner's settle, snooze and drag act at once. `open` then puts the open
  * row back in its place, hold or no hold, unless it left for Snoozed, Settled or the queue, or is gone. `freed` is the
  * row the owner just marked seen or unseen: their own act, so it goes to its live place at once.
@@ -77,7 +78,11 @@ export function stillRows(live: Sections, held: Sections | null, open: RowPlace 
     // A row that turned into Needs you goes there at once, wherever the hold had it.
     const arrived = live.needs.filter((t) => !held.needs.some((x) => x.id === t.id));
     for (const k of HELD) if (k !== "needs") out[k] = out[k].filter((t) => !arrived.some((x) => x.id === t.id));
-    out.needs = [...arrived, ...out.needs];
+    for (const t of [...arrived].reverse()) {
+      const rank = needsGroupRank(t);
+      const at = out.needs.findIndex((x) => x.attention.section === "needs" && needsGroupRank(x) >= rank);
+      out.needs.splice(at < 0 ? out.needs.length : at, 0, t);
+    }
     // Rows that come back from the live sections have no held place, and must not vanish until the hold ends.
     const back = [held.slots, held.snoozed, held.settled].flat().map((t) => t.id);
     const places = [...back, ...(freed ? [freed] : [])].flatMap((id) => placeOf(live, id) ?? []);
@@ -92,6 +97,36 @@ export function stillRows(live: Sections, held: Sections | null, open: RowPlace 
     out[open.section] = [...out[open.section].slice(0, open.index), row, ...out[open.section].slice(open.index)];
   }
   return withPinned(out);
+}
+
+/** The length of the longest rising run in `xs`: the rows of a section that can stay put while the others move. */
+function longestRising(xs: number[]): number {
+  const tails: number[] = [];
+  for (const x of xs) {
+    let lo = 0;
+    let hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (tails[mid] < x) lo = mid + 1;
+      else hi = mid;
+    }
+    tails[lo] = x;
+  }
+  return tails.length;
+}
+
+/** V0.your-move: how many rows the hold keeps from moving: those the live list has in another section or not yet drawn,
+ *  and those that change place inside their section. One row moving counts once, not every row it shifts. The open row
+ *  stays where it is after the hold too, so it does not count. */
+export function waitingMoves(drawn: Sections, live: Sections, open: string | null): number {
+  let n = 0;
+  for (const k of HELD) {
+    const at = new Map(drawn[k].map((t, i) => [t.id, i]));
+    const rows = live[k].filter((t) => t.id !== open);
+    const kept = rows.flatMap((t) => at.get(t.id) ?? []);
+    n += rows.length - longestRising(kept);
+  }
+  return n;
 }
 
 /** The row to hold still on the screen: the one under the pointer, else the open row if it is in view, else the first
