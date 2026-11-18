@@ -243,6 +243,9 @@ func (s *Sampler) signals(l *Load, proc string, agentsMem uint64) {
 			v := p.some
 			l.AgentsPressure = &v
 		}
+		if p, ok := readPSI(filepath.Join(s.Tree.root, "agents", "memory.pressure")); ok && p.hasFull {
+			l.AgentsMemoryStall = stallLevel(p.full)
+		}
 	}
 	psiNow := l.AgentsPressure
 	if psiNow == nil {

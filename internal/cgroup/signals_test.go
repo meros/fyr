@@ -47,8 +47,12 @@ func TestS1SignalsByProvider(t *testing.T) {
 	write(t, filepath.Join(proc, "pressure", "memory"), memPSI(6))
 	write(t, filepath.Join(agents, "memory.current"), fmt.Sprint(uint64(10)<<30))
 	write(t, filepath.Join(agents, "cpu.pressure"), "some avg10=55.00 avg60=0.00 avg300=0.00 total=1\nfull avg10=1.00 avg60=0.00 avg300=0.00 total=1\n")
+	write(t, filepath.Join(agents, "memory.pressure"), memPSI(11))
 	s := &Sampler{Tree: tr, Proc: proc, Cores: 4}
 	l := s.Get()
+	if l.AgentsMemoryStall != "critical" {
+		t.Fatalf("the agents' own stall %q", l.AgentsMemoryStall)
+	}
 	if l.Provider != "cgroups" || l.Capacity == nil || l.Capacity.Memory != 13<<30 {
 		t.Fatalf("provider and capacity %+v %+v", l.Provider, l.Capacity)
 	}
@@ -275,15 +279,19 @@ func TestS3JobsLearnPerClass(t *testing.T) {
 	rec("fyr: make test", 3, 3, 2<<30, 120)
 	l, ok := j.Learned("fyr: make test")
 	four := float64(4 << 30)
-	if !ok || l.Runs != 2 || l.Demand != 2.3 || l.Peak != uint64(0.9*four) {
+	if !ok || l.Runs != 2 || l.Demand != 3 || l.Peak != uint64(0.9*four) {
 		t.Fatalf("after two runs %+v", l)
 	}
-	rec("fyr: make test", 4.3, 1, 1<<30, 300) // starved (4.3×): half weight, 0.85·2.3 + 0.15·4.3
-	if l, _ := j.Learned("fyr: make test"); l.Demand != 2.6 || l.WallP90() != 300 {
+	rec("fyr: make test", 4.3, 1, 1<<30, 300) // starved (4.3×): half weight, 0.85·3 + 0.15·4.3
+	if l, _ := j.Learned("fyr: make test"); l.Demand != 3.2 || l.WallP90() != 300 {
 		t.Fatalf("a starved run %+v p90 %v", l, l.WallP90())
 	}
+	rec("fyr: make test", 1, 1, 1<<30, 100) // a light run: the high decays, 0.9·3.2
+	if l, _ := j.Learned("fyr: make test"); l.Demand != 2.88 {
+		t.Fatalf("a light run %+v", l)
+	}
 	j2 := &Jobs{KV: store}
-	if l, ok := j2.Learned("fyr: make test"); !ok || l.Runs != 3 {
+	if l, ok := j2.Learned("fyr: make test"); !ok || l.Runs != 4 {
 		t.Fatalf("not kept %+v", l)
 	}
 	if !j2.Reset("fyr: make test") {

@@ -1,9 +1,13 @@
-// Decision 0029 slice S5 (#189): under the memory guard the newest slotted job is frozen (never the oldest: one job
-// always runs), one at a time; it thaws when memory has recovered for 30 s, after 10 min at most, or when its slot
+// Decision 0029 slice S5 (#189), V0.load-tuning: under the memory guard the slotted job that grew most is frozen (the
+// newest without a reading, and then never the oldest: one job always runs), one at a time; it thaws when memory has recovered for 30 s, after 10 min at most, or when its slot
 // goes back; its thread is told both times.
 package engine
 
 import (
+	"bytes"
+	"log"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,5 +92,58 @@ func TestS5AFreezeEndsAfterTenMinutesAndNeverTakesTheLastJob(t *testing.T) {
 	e.Tick()
 	if frozen[b] {
 		t.Fatal("still frozen after 10 min")
+	}
+}
+
+// V0.load-tuning: the job whose memory grew is frozen, also when it is the oldest;
+// a second episode takes the next one, as a hold is frozen once.
+func TestGuardFreezesTheJobThatGrewMost(t *testing.T) {
+	e, _, now := bare(t)
+	p := slots.New(3)
+	p.Now = e.Now
+	e.UseSlots(p)
+	big, idle := bareThread(t, e), bareThread(t, e)
+	running(e, big)
+	running(e, idle)
+	p.Acquire(big, slots.Test)
+	*now = now.Add(time.Minute)
+	p.Acquire(idle, slots.Test)
+	free := 0.05
+	e.SlotPolicy = slots.DefaultPolicy
+	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK} }
+	e.SlotGrowth = func(o string) uint64 {
+		if o == big {
+			return 3 << 30
+		}
+		return 0
+	}
+	frozen := map[string]bool{}
+	e.SlotFreeze = func(o string) bool { frozen[o] = true; return true }
+	e.SlotThaw = func(o string) { delete(frozen, o) }
+	guardDeps(t, e)
+	e.Tick()
+	if !frozen[big] || frozen[idle] {
+		t.Fatalf("frozen %v, want the job that grew (%s)", frozen, big)
+	}
+}
+
+// V0.load-tuning: an admission after a wait says how long the job waited.
+func TestAdmissionAfterAQueueLogsTheWait(t *testing.T) {
+	e, _, now := bare(t)
+	p := slots.New(1)
+	p.Now = e.Now
+	e.UseSlots(p)
+	a, b := bareThread(t, e), bareThread(t, e)
+	p.Acquire(a, slots.Test)
+	p.Acquire(b, slots.E2E)
+	e.syncSlotQueue()
+	var out bytes.Buffer
+	log.SetOutput(&out)
+	defer log.SetOutput(os.Stderr)
+	*now = now.Add(90 * time.Second)
+	p.Release(a)
+	e.syncSlotQueue()
+	if want := "slots: admitted thread=" + b + " kind=e2e waited=1m30s"; !strings.Contains(out.String(), want) {
+		t.Fatalf("log %q, want %q", out.String(), want)
 	}
 }

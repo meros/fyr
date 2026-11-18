@@ -162,6 +162,7 @@ type Engine struct {
 	// frozen is the job frozen now (decision 0029 S5), under mu.
 	frozen       frozenJob
 	frozeHolds   map[string]time.Time // under mu: holds frozen once already (owner → since)
+	queuedAt     map[string]time.Time // under mu: when each waiting thread joined the queue (V0.load-tuning)
 	slotOverTold map[string]time.Time // under mu: owner → the hold already told
 	undFroze     map[string]undFreeze // under mu: thread → what the guard froze of its episode
 	guardLast    map[string]guardLine // under mu: the guard's log lines, to say a repeat once a minute

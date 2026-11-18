@@ -22,6 +22,9 @@ type Signals struct {
 	Headroom *float64
 	// Stall is the memory stall level; "" when unknown.
 	Stall Stall
+	// AgentsStall is the level of the agents' own memory stall; "" where it
+	// cannot be read apart from the host's (V0.load-tuning).
+	AgentsStall Stall
 	// CPU and Memory are the agents' capacity (V0.142); 0 when unknown.
 	CPU    float64
 	Memory uint64

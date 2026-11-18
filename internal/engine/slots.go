@@ -108,18 +108,46 @@ func (e *Engine) syncSlotQueue() {
 	if e.Slots == nil {
 		return
 	}
+	snap := e.Slots.Snapshot()
 	queued := map[string]bool{}
-	for _, h := range e.Slots.Snapshot().Waiting {
+	for _, h := range snap.Waiting {
 		queued[h.Owner] = true
 	}
 	var moved []string
+	var waits []string
 	e.mu.Lock()
+	// V0.load-tuning: how long a job waited, for tuning; the grant resets the
+	// holder's Since, so the queue's start is kept here.
+	if e.queuedAt == nil {
+		e.queuedAt = map[string]time.Time{}
+	}
+	for _, h := range snap.Waiting {
+		if _, ok := e.queuedAt[h.Owner]; !ok {
+			e.queuedAt[h.Owner] = h.Since
+		}
+	}
+	for id, at := range e.queuedAt {
+		if queued[id] {
+			continue
+		}
+		delete(e.queuedAt, id)
+		line := fmt.Sprintf("slots: left the queue thread=%s waited=%s", id, e.Now().Sub(at).Round(time.Second))
+		for _, h := range snap.Held {
+			if h.Owner == id {
+				line = fmt.Sprintf("slots: admitted thread=%s kind=%s waited=%s", id, h.Kind, h.Since.Sub(at).Round(time.Second))
+			}
+		}
+		waits = append(waits, line)
+	}
 	for id, t := range e.threads {
 		if t.SlotQueued != queued[id] {
 			moved = append(moved, id)
 		}
 	}
 	e.mu.Unlock()
+	for _, w := range waits {
+		log.Print(w)
+	}
 	for _, id := range moved {
 		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotQueued, Thread: id, Args: queued[id]}); err != nil {
 			log.Printf("slot queue %s: %v", id, err)
@@ -249,8 +277,13 @@ func (e *Engine) adaptBudget(s slots.Snapshot) {
 	if e.SlotAIMD == nil || e.SlotSignals == nil {
 		return
 	}
-	f, why := e.SlotAIMD.Step(e.Now(), e.SlotSignals(), len(s.Waiting) > 0, e.Slots.LastGrant(), s.Binding)
-	if f != e.Slots.Budget() || (s.Budget != nil && s.BudgetWhy != why) {
+	sig := e.SlotSignals()
+	f, why := e.SlotAIMD.Step(e.Now(), sig, len(s.Waiting) > 0, e.Slots.LastGrant(), s.Binding)
+	old := e.Slots.Budget()
+	if f != old || (s.Budget != nil && s.BudgetWhy != why) {
+		if f != old { // V0.load-tuning: the budget's moves can be read back
+			log.Printf("slots: budget cpu=%.3f->%.3f mem=%.3f->%.3f why=%q waiting=%d held=%d %s", old.CPU, f.CPU, old.Mem, f.Mem, why, len(s.Waiting), len(s.Held), guardSignals(sig))
+		}
 		e.Slots.SetBudget(f, why)
 	}
 }
@@ -328,7 +361,11 @@ func guardSignals(sig slots.Signals) string {
 	if sig.Slowdown != nil {
 		s = fmt.Sprintf("%.1fx", *sig.Slowdown)
 	}
-	return fmt.Sprintf("headroom=%s stall=%s slowdown=%s", h, sig.Stall, s)
+	out := fmt.Sprintf("headroom=%s stall=%s slowdown=%s", h, sig.Stall, s)
+	if sig.AgentsStall != "" {
+		out += " agents_stall=" + string(sig.AgentsStall)
+	}
+	return out
 }
 
 // guardKeep is how many decisions the front's history holds.
@@ -380,8 +417,43 @@ func (e *Engine) publishGuard(now time.Time) {
 	e.guardPub.Store(g)
 }
 
-// freezeGuard freezes the newest slotted job while memory is short (never
-// the oldest running one, and one at a time, each hold at most once) and
+// freezeVictim is the job to freeze: of the holds not frozen yet, the one whose
+// memory grew most (V0.load-tuning; freezing a job that uses none frees nothing
+// and stops nothing), the newest of equals. Without a reading of growth it is
+// the newest, and then never the oldest hold: one job always runs.
+func (e *Engine) freezeVictim(held []slots.Holder) (slots.Holder, bool) {
+	var best slots.Holder
+	var bestGrew uint64
+	found := false
+	oldest := held[0]
+	for _, h := range held[1:] {
+		if h.Since.Before(oldest.Since) {
+			oldest = h
+		}
+	}
+	for _, h := range held {
+		e.mu.Lock()
+		done := e.frozeHolds[h.Owner].Equal(h.Since)
+		e.mu.Unlock()
+		if h.Priority || done {
+			continue
+		}
+		var grew uint64
+		if e.SlotGrowth != nil {
+			grew = e.SlotGrowth(h.Owner)
+		}
+		if !found || grew > bestGrew || (grew == bestGrew && h.Since.After(best.Since)) {
+			best, bestGrew, found = h, grew, true
+		}
+	}
+	if !found || (bestGrew == 0 && best.Owner == oldest.Owner) {
+		return slots.Holder{}, false
+	}
+	return best, true
+}
+
+// freezeGuard freezes the slotted job that grew most while memory is short
+// (freezeVictim; one at a time, each hold at most once, never the last) and
 // thaws it when memory has been fine for ThawAfterOK, after FreezeMax, or
 // when its slot went back. Freeze and Thaw run outside e.mu.
 func (e *Engine) freezeGuard(s slots.Snapshot) {
@@ -498,34 +570,11 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	if e.freezeUndeclared(sig, now, len(s.Held) > 0) {
 		return
 	}
-	var running []slots.Holder
-	for _, h := range s.Held {
-		if !h.Priority {
-			running = append(running, h)
-		}
-	}
-	if len(s.Held) < 2 || len(running) == 0 {
+	if len(s.Held) < 2 {
 		return // one job always runs
 	}
-	newest := running[0]
-	for _, h := range running[1:] {
-		if h.Since.After(newest.Since) {
-			newest = h
-		}
-	}
-	oldest := s.Held[0]
-	for _, h := range s.Held[1:] {
-		if h.Since.Before(oldest.Since) {
-			oldest = h
-		}
-	}
-	e.mu.Lock()
-	done := e.frozeHolds[newest.Owner].Equal(newest.Since)
-	e.mu.Unlock()
-	if newest.Owner == oldest.Owner || done {
-		return
-	}
-	if !e.SlotFreeze(newest.Owner) {
+	victim, ok := e.freezeVictim(s.Held)
+	if !ok || !e.SlotFreeze(victim.Owner) {
 		return
 	}
 	why := "memory stalls (critical)"
@@ -533,12 +582,12 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		why = fmt.Sprintf("memory: %.0f %% free", *sig.Headroom*100)
 	}
 	e.mu.Lock()
-	e.frozen = frozenJob{owner: newest.Owner, since: newest.Since.Format(time.RFC3339Nano), at: now}
-	e.frozeHolds[newest.Owner] = newest.Since
+	e.frozen = frozenJob{owner: victim.Owner, since: victim.Since.Format(time.RFC3339Nano), at: now}
+	e.frozeHolds[victim.Owner] = victim.Since
 	e.mu.Unlock()
-	log.Printf("guard: froze job thread=%s why=%q held=%d %s", newest.Owner, why, len(s.Held), guardSignals(sig))
-	e.guardRecord(slots.GuardEvent{At: now, Kind: "freeze", Work: "job", Thread: newest.Owner}, sig)
-	e.slotNotice(newest.Owner, map[string]any{"paused": why})
+	log.Printf("guard: froze job thread=%s why=%q held=%d %s", victim.Owner, why, len(s.Held), guardSignals(sig))
+	e.guardRecord(slots.GuardEvent{At: now, Kind: "freeze", Work: "job", Thread: victim.Owner}, sig)
+	e.slotNotice(victim.Owner, map[string]any{"paused": why})
 }
 
 // flags are the threads that run undeclared heavy work now.

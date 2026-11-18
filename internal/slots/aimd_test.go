@@ -79,3 +79,29 @@ func TestS4PoolBudgetIsSettableAndShown(t *testing.T) {
 		t.Fatalf("last grant %v", p.LastGrant())
 	}
 }
+
+// V0.load-tuning: the host stalling while the agents do not holds the budget
+// where it is; the agents' own stall cuts it; without that reading the host's counts.
+func TestMemoryBudgetFollowsTheAgentsOwnStall(t *testing.T) {
+	t0 := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	step := func(s Signals) Factors {
+		a := &AIMD{N: 2}
+		a.Step(t0, s, true, time.Time{}, ResMem)
+		b, _ := a.Step(t0.Add(30*time.Second), s, true, time.Time{}, ResMem)
+		return b
+	}
+	base := Signals{Provider: "cgroups", Slowdown: f(1), Headroom: f(0.8), Stall: StallCritical}
+	host := base
+	host.AgentsStall = StallOK
+	if b := step(host); b != Full {
+		t.Fatalf("the host's stall moved the budget: %+v", b)
+	}
+	own := base
+	own.AgentsStall = StallCritical
+	if b := step(own); b.Mem != 0.75 {
+		t.Fatalf("the agents' stall did not cut: %+v", b)
+	}
+	if b := step(base); b.Mem != 0.75 {
+		t.Fatalf("without the agents' reading the host's stall counts: %+v", b)
+	}
+}
