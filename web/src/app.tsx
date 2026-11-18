@@ -62,7 +62,7 @@ import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, moveToast, orderProjects } from "./projects.ts";
-import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, filterEmpty, parseHostsOff, toggleHost, type FilterSel } from "./filters.ts";
+import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clickHost, filterEmpty, parseHostsOff, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
@@ -366,7 +366,7 @@ function App() {
     return {
       ...chips,
       sel: filterSel,
-      toggleHost: (name) => setHostsOff(toggleHost(filterSel.hostsOff, name)),
+      toggleHost: (name) => setHostsOff(clickHost(filterSel.hostsOff, chips.hosts, name)),
       setProject: setProjectFilter,
       clear: () => (setHostsOff([]), setProjectFilter(null)),
       // V0.114: a locked quiet project shows its gate instead.

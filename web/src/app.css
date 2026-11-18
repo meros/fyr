@@ -684,15 +684,13 @@ button.ptag{padding:0}
    off is grey, struck through and says "hidden". Row 2 is the project chips. One line under both. */
 .frows{flex:none;border-bottom:1px solid var(--line)}
 .frows .pfrow{border-bottom:0}
-.hfrow{display:flex;margin:6px 12px 0;border:1px solid var(--line);border-radius:8px;overflow-x:auto;scrollbar-width:none;background:var(--raised)}
+.hfrow{display:flex;flex-wrap:wrap;gap:6px;margin:6px 12px 0}
 .hfrow:last-child{margin-bottom:6px}
-.hft{flex:1 0 auto;min-width:72px;display:flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 10px;border-left:1px solid var(--line);font:500 12px/16px var(--mono);color:var(--ink)}
-.hft:first-child{border-left:0}
-.hft .nm{max-width:140px}
-.hft .hn{flex:none;font:400 11px/16px var(--ui);color:var(--ink-faint)}
-.hft.off{background:var(--sunken);color:var(--ink-faint)}
-.hft.off .nm{text-decoration:line-through}
-.hft[aria-disabled="true"]{cursor:default}
+.hft{flex:none;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px 0 5px;border:1px solid var(--line);border-radius:13px;background:var(--raised);font:500 12px/16px var(--ui);font-variant-numeric:tabular-nums;color:var(--ink)}
+.hft .hmark{pointer-events:none} /* the button's tooltip says what a click does; the mark's would cover it */
+.hft.off{background:none;color:var(--ink-faint)}
+.hft.off .hmark{filter:grayscale(1);opacity:.55}
+.hft.off .hn{text-decoration:line-through}
 /* V0.134: the list when the filter leaves nothing in view. */
 .fempty{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:14px 16px;border-bottom:1px solid var(--line)}
 .fempty .fe1,.m-fempty .fe1{font:500 13px/18px var(--ui);color:var(--ink)}
@@ -928,7 +926,6 @@ html.list-resizing iframe{pointer-events:none}
 .ib .pfrow{flex-wrap:wrap;overflow-x:hidden;overflow-y:auto;max-height:102px}
 .ib .pfc{max-width:min(150px,100%)}
 .ib .pfc.on.quiet{max-width:min(260px,100%)}
-.ib .hft{flex:1 1 auto;min-width:0;padding:0 8px}
 .ri.lt{margin-top:6px}
 .ri.lt svg{display:block;margin:0 auto 2px}
 

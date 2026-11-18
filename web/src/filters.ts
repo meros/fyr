@@ -1,7 +1,7 @@
 // SPEC 0.5 V0.134, V0.169, V0.192: the inbox filters on the desktop and the phone. Pure.
 //
-// Row 1, hosts (V0.169): a toggle per host; all on is the default and means no host filter; a host turned off hides
-// its threads. Row 2, projects: one project picked at a time (V0.134), counted only over the hosts that are on, so
+// Row 1, hosts (V0.169, V0.204): a toggle per host; all on is the default and means no host filter; a host turned off
+// hides its threads, and a click on the only host still on ends the host filter. Row 2, projects: one project picked at a time (V0.134), counted only over the hosts that are on, so
 // the projects of a host turned off fall out of it. A value is active when it matches at least one thread in view: in
 // the pinned block or in an unfolded section (a folded section, by default Snoozed and Settled, is not considered).
 // A row shows only with more than one value to choose from, or while one of its values is selected (a project
@@ -36,7 +36,7 @@ export interface HostChip {
   /** its threads in view, whether it is on or off */
   n: number;
   on: boolean;
-  /** the only host on in the row: it cannot be turned off (that would hide every thread) */
+  /** V0.204: the only host on in the row: a click on it ends the host filter instead of hiding every thread */
   last: boolean;
 }
 
@@ -60,6 +60,11 @@ export function parseHostsOff(raw: string | null): string[] {
 /** V0.169: a host's toggle: off when it is on, on when it is off. */
 export function toggleHost(off: readonly string[], name: string): string[] {
   return off.includes(name) ? off.filter((x) => x !== name) : [...off, name];
+}
+
+/** V0.204: what a click on a host's toggle leaves off. On the only host still on, nothing: every host comes back. */
+export function clickHost(off: readonly string[], hosts: readonly Pick<HostChip, "name" | "last">[], name: string): string[] {
+  return hosts.some((h) => h.name === name && h.last) ? [] : toggleHost(off, name);
 }
 
 /** The host a thread runs on: its own, else the front's own host (a host older than V0.51 names none). */

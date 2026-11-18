@@ -283,7 +283,7 @@ export interface FilterView {
   hosts: HostChip[];
   projects: ProjectChip[];
   sel: FilterSel;
-  /** V0.169: turn a host off, or back on */
+  /** V0.169: turn a host off, or back on; V0.204: on the only host on, turn every host back on */
   toggleHost(name: string): void;
   setProject(id: string | null): void;
   /** every host on and no project picked */
@@ -292,9 +292,9 @@ export interface FilterView {
   empty: string | null;
 }
 
-/** Desktop and phone (V0.100, V0.134, V0.169): two rows under the search field. Row 1 is a switch with one segment
- *  per host (its dot from Settings → Hosts, its short name, its threads in view); a click turns the host off (grey,
- *  struck through, "hidden") or back on; the last host on cannot be turned off. Row 2 is the project chips, counted
+/** Desktop and phone (V0.100, V0.134, V0.169, V0.204): two rows under the search field. Row 1 is a small pill per host
+ *  (its mark, as on every thread row, and its threads in view; the name is in the tooltip and the label); a click turns
+ *  the host off (mark grey, count struck through) or back on, and a click on the only host on shows every host again. Row 2 is the project chips, counted
  *  over the hosts that are on: a click picks a project, a click on the picked one or the × clears it. Each row shows
  *  only when it has a choice. V0.114: picking a quiet project shows the gate under the rows, not its threads, until the
  *  30 s hold. */
@@ -310,12 +310,11 @@ export function FilterRow({ f, now, unlock }: { f: FilterView; now: number; unlo
         {f.hosts.map((h) => {
           // V0.170: the host's mark, as everywhere (an offline host's has a ring at its corner).
           const state = !h.info ? "not listed" : h.info.idWas ? "its id changed" : h.info.online ? "online" : "offline";
-          const tip = `${h.name}: ${n(h.n)} · ${state} · ${h.on ? (h.last ? "the last host shown; turn another one on first" : "shown; click to hide its threads") : "hidden; click to show its threads"}`;
+          const tip = `${h.name}: ${n(h.n)} · ${state} · ${h.on ? (h.last ? "the only host shown; click to show every host" : "shown; click to hide its threads") : "hidden; click to show its threads"}`;
           return (
-            <button class={`hft${h.on ? "" : " off"}`} aria-pressed={h.on} aria-disabled={h.last || undefined} title={tip} aria-label={`${h.name}, ${h.on ? "shown" : "hidden"}`} onClick={() => !h.last && f.toggleHost(h.name)}>
+            <button class={`hft${h.on ? "" : " off"}`} aria-pressed={h.on} title={tip} aria-label={`${h.name}, ${h.on ? "shown" : "hidden"}, ${n(h.n)}`} onClick={() => f.toggleHost(h.name)}>
               <HostMark name={h.name} size={16} />
-              <span class="ell nm">{h.short}</span>
-              <span class="hn">{h.on ? h.n.toLocaleString() : "hidden"}</span>
+              <span class="hn">{h.n.toLocaleString()}</span>
             </button>
           );
         })}

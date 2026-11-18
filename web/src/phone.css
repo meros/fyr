@@ -87,9 +87,9 @@
 .m-screen .pfc{height:32px;border-radius:16px;font-size:13px;max-width:180px}
 .m-screen .pfx{width:32px;height:32px;border-radius:16px;line-height:32px}
 /* V0.169: the host switch at the phone's touch size (36 px segments, 13 px names). */
-.m-screen .hfrow{margin:8px 12px 0;border-radius:10px}
+.m-screen .hfrow{gap:8px;margin:8px 12px 0}
 .m-screen .hfrow:last-child{margin-bottom:8px}
-.m-screen .hft{height:36px;font-size:13px}
+.m-screen .hft{height:36px;padding:0 12px 0 8px;border-radius:18px;font-size:13px} /* taller than the desktop's: touch size */
 .m-fempty{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:16px}
 .m-fempty .fe1{font-size:15px;line-height:20px}
 .m-fempty .fe2{font-size:13px}
