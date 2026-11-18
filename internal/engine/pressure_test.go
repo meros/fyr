@@ -11,6 +11,7 @@ import (
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/provider"
+	"github.com/meros/fyr/internal/store"
 )
 
 // SPEC 0.5 V0.153. The evidence (17 Nov, 14:04–14:11): systemd-oomd killed
@@ -114,4 +115,44 @@ func TestNoAutoRestartUnderPressure(t *testing.T) {
 	h.wait(id, "restarted once calm", func(core.Thread, core.Attention) bool {
 		return hasEvent(h.events(id), "agent.restarted", "automatically")
 	})
+}
+
+// V0.machine-wait-restart: the host dies while a start waits for the machine
+// (18 Nov, 15:30: systemd-oomd killed it). The next host shows no wait, and
+// the thread is not left in Working with nothing going on.
+func TestMachineWaitDoesNotOutliveTheHost(t *testing.T) {
+	p := &pressure{}
+	p.on.Store(true)
+	opt, _ := slowStart(t, "60000", 100*time.Millisecond, time.Minute, p)
+	dir := t.TempDir()
+	db := filepath.Join(dir, "fyr.db")
+	h := startHarnessWith(t, dir, db, time.Minute, nil, nil, opt)
+	id := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "hello"}).ThreadID
+	h.wait(id, "waiting for the machine", func(th core.Thread, _ core.Attention) bool { return th.MachineWait != nil })
+	h.e.st.Close() // nothing the old host does from here on reaches the database
+	st, err := store.Open(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	e2 := New(st)
+	if err := e2.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if th, _ := e2.Thread(id); th.MachineWait != nil {
+		t.Fatalf("the wait outlived the host: %+v", th.MachineWait)
+	}
+	st.Close()
+	st2, err := store.Open(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st2.Close()
+	e3 := New(st2)
+	if err := e3.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if th, _ := e3.Thread(id); th.MachineWait != nil {
+		t.Fatal("the end of the wait was not saved")
+	}
 }
