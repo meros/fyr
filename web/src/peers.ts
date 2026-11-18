@@ -29,6 +29,8 @@ export interface PeerState {
   whoisLinkUses?: number;
   inviteUntil?: string;
   signedIn?: boolean;
+  /** V0.180: set while /etc/fyr/config.json differs from what fyrd read at start */
+  configChanged?: string;
 }
 
 export interface InviteInfo {
@@ -36,6 +38,16 @@ export interface InviteInfo {
   until: string;
   link: string;
   svg?: string;
+}
+
+/** V0.180 (#264): the config file changed since fyrd read it; null while it has not. */
+export function configNote(s: Pick<PeerState, "configChanged"> | null): { title: string; how: string } | null {
+  if (!s?.configChanged) return null;
+  const t = s.configChanged;
+  return {
+    title: t.charAt(0).toUpperCase() + t.slice(1),
+    how: "Fyr reads its config file at start. On NixOS, systemctl reload fyr restarts fyrd on the new file and the agents keep running.",
+  };
 }
 
 /** The member's link in a few words, "" for this install. */

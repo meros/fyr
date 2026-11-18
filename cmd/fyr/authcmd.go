@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -40,10 +41,15 @@ func ownerCall(data, method, path string, body any) (map[string]any, error) {
 		return nil, fmt.Errorf("Fyr does not answer on %s (is it running, as this user?): %w", sock, err)
 	}
 	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var out map[string]any
-	json.NewDecoder(resp.Body).Decode(&out)
+	json.Unmarshal(b, &out)
 	if resp.StatusCode != 200 {
-		return out, fmt.Errorf("Fyr refused: %s %v", resp.Status, out["error"])
+		// V0.180 (#261): the error field says why; the status line adds nothing.
+		if e, _ := out["error"].(string); e != "" {
+			return out, errors.New(e)
+		}
+		return out, fmt.Errorf("Fyr refused: %s %s", resp.Status, strings.TrimSpace(string(b)))
 	}
 	return out, nil
 }
@@ -161,6 +167,9 @@ func authCommand(word string, args []string) error {
 		}
 		if n, ok := out["whoisLinkUses"].(float64); ok && n > 0 {
 			fmt.Printf("%d requests went over a whois link although a peer link exists.\n", int(n))
+		}
+		if c, _ := out["configChanged"].(string); c != "" { // V0.180
+			fmt.Printf("%s (systemctl reload fyr keeps the agents).\n", c)
 		}
 	case "host remove":
 		if len(more) != 1 {

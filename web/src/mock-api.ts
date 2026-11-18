@@ -274,7 +274,9 @@ export function createMockApi(scenario: string): Api {
     },
     // V0.159: Settings → Hosts: a paired Mac, a box vouched for by it, a tagged node that needs an invite.
     async peerState() {
-      return JSON.parse(JSON.stringify(mockPeers)) as PeerState;
+      const s = JSON.parse(JSON.stringify(mockPeers)) as PeerState;
+      if (q.get("config") === "changed") s.configChanged = "config changed; restart fyrd to apply"; // V0.180
+      return s;
     },
     async peerAct(action, body) {
       if (action === "remove") {

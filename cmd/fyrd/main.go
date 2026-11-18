@@ -354,6 +354,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go cfg.watch.run(ctx, cfg.configEvery()) // V0.180: say when the config changed under fyrd
 	// SIGHUP stops with exit 75: the launcher switches to a next build that
 	// scripts/update.sh linked (with its probation and rollback), or restarts
 	// the current one.
@@ -533,7 +534,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// #148: the launcher trusts a new build once /healthz on this listener
 	// is green: the store reads, the client has its page, and the runner's
 	// processes were adopted when there is a runner.
-	health := []deploy.Check{storeHealthy(h.st), webHealthy(webFS), func() error {
+	health := []deploy.Check{storeHealthy(h.st), webHealthy(webFS), cfg.watch.health, func() error {
 		if launchenv.Current().Runner != "" && rn == nil {
 			return errors.New("the runner did not answer; its agent processes were not adopted")
 		}
@@ -563,8 +564,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		srvs.serve(ln, deploy.Health(mux, health...))
 		serveFrontSockets(cfg, fr, data, ln.Addr().String(), srvs)
 		if cfg.WellKnownListen != "" {
-			wk := fe.wk
-			srvs.serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, func() peers.WellKnown { return wk }))
+			// The macOS Serve's way to this answer: it names the peer port too, or condition 1 cannot pair this install.
+			srvs.serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, fe.wellKnown))
 			log.Printf("answering /.well-known/fyr for Tailscale Serve at %s", cfg.WellKnownListen)
 		}
 	}
@@ -631,10 +632,11 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	ln := listenLoopback(cfg.Listen)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go cfg.watch.run(ctx, cfg.configEvery()) // V0.180: say when the config changed under fyrd
 	fe := startFront(ctx, frontParts{cfg: cfg, webFS: webFS, name: name, data: data, key: installKey(data), st: st, auth: openAuth(st, cfg.stepUp()),
 		hosts: cfg.Hosts}, ln.Addr().String(), nil, nil) // V0.123
 	primary := &servers{}
-	primary.serve(ln, deploy.Health(fe.fr.Handler(), storeHealthy(st), webHealthy(webFS)))
+	primary.serve(ln, deploy.Health(fe.fr.Handler(), storeHealthy(st), webHealthy(webFS), cfg.watch.health))
 	extra := &servers{onErr: func(error) {}}
 	serveFrontSockets(cfg, fe.fr, data, ln.Addr().String(), extra) // V0.130
 	defer extra.close()

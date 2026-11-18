@@ -99,6 +99,9 @@
         assert nixpkgs.lib.hasInfix "-seed " fyr.ExecStart;
         assert nixpkgs.lib.hasInfix "-- -config /etc/fyr/config.json" fyr.ExecStart;
         assert sys.config.systemd.services.fyr.restartIfChanged == false;
+        # V0.180: a changed config reloads (SIGHUP to the launcher, the agents stay).
+        assert sys.config.systemd.services.fyr.reloadTriggers == [ sys.config.environment.etc."fyr/config.json".text ];
+        assert nixpkgs.lib.hasSuffix "/bin/kill -HUP $MAINPID" fyr.ExecReload;
         assert conf.scanRoots == [ "~/git" ];
         assert conf.quota == { claudeDeepseek = { kind = "deepseek"; keyFile = "/run/secrets/deepseek"; }; };
         assert nixpkgs.lib.hasInfix "--https=7443 unix:/home/" tn.ExecStart && nixpkgs.lib.hasSuffix "/.local/share/fyr/serve.sock" tn.ExecStart;

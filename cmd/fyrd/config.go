@@ -53,6 +53,9 @@ func BuildID() string {
 }
 
 type config struct {
+	// watch remembers the file as it was read (V0.180): /healthz and Settings →
+	// Hosts say when it changed since.
+	watch           *configWatch
 	Listen          string `json:"listen"`
 	PermissionMode  string `json:"permissionMode"`
 	IdleStopMinutes int    `json:"idleStopMinutes"`
@@ -169,6 +172,9 @@ type config struct {
 	// LinkBackoffMillis and LinkDialMillis tune the mesh's connectors (the wait between
 	// dials to one install, doubling to five minutes, and the time one dial may take;
 	// 1000 and 8000 when absent): the test harness makes them short.
+	// ConfigCheckMillis is how often the config file is looked at (V0.180); absent
+	// is 30 s. The test harness makes it short.
+	ConfigCheckMillis int `json:"configCheckMillis"`
 	LinkBackoffMillis int `json:"linkBackoffMillis"`
 	LinkDialMillis    int `json:"linkDialMillis"`
 	// StepUpMinutes: how old a browser session must be to widen trust (approve a
@@ -185,6 +191,14 @@ func (c config) stepUp() time.Duration {
 	return time.Duration(*c.StepUpMinutes) * time.Minute
 }
 
+// configEvery is how often the config file is looked at.
+func (c config) configEvery() time.Duration {
+	if c.ConfigCheckMillis > 0 {
+		return time.Duration(c.ConfigCheckMillis) * time.Millisecond
+	}
+	return configEvery
+}
+
 // tsSocket is the LocalAPI socket this install asks about the tailnet.
 func (c config) tsSocket() string {
 	if c.TailscaleSocket != "" {
@@ -197,11 +211,13 @@ func home() string { h, _ := os.UserHomeDir(); return h }
 
 func loadConfig(path, t3Settings string) config {
 	c := config{Listen: "127.0.0.1:7777", IdleStopMinutes: 10}
-	if b, err := os.ReadFile(path); err == nil {
+	b, err := os.ReadFile(path)
+	if err == nil {
 		if err := json.Unmarshal(b, &c); err != nil {
 			log.Fatalf("config %s: %v", path, err)
 		}
 	}
+	c.watch = watchLoaded(path, b, err == nil)
 	if len(c.Profiles) == 0 {
 		if ps, err := t3.Profiles(t3Settings); err == nil {
 			c.Profiles = ps
