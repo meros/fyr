@@ -34,6 +34,7 @@ func TestMergeAskReadsThePRFirst(t *testing.T) {
 					set(false, newHead)
 				}
 			}
+			guardDeps(t, h.e) // V0.182: the read runs outside the engine's lock
 			args := map[string]any{"change": c.ID, "ask": "merge", "reason": "pushed the fix"}
 			if tool == "effect_request" {
 				args = map[string]any{"action": core.FyrMerge, "args": map[string]any{"pr": url}}
