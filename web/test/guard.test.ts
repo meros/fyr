@@ -40,7 +40,7 @@ test("G3 everything is a share of the window and inside it", () => {
 });
 
 test("G4 events older than the window are clipped, not drawn outside", () => {
-  const old = { ...g(), events: g().events.map((e) => ({ ...e, at: new Date(Date.parse(e.at) - 10 * 60 * 1000).toISOString() })) };
+  const old = { ...g(), events: g().events!.map((e) => ({ ...e, at: new Date(Date.parse(e.at) - 10 * 60 * 1000).toISOString() })) };
   const c = guardChart(old, NOW, title);
   for (const s of [...c.short, ...c.lanes.flatMap((l) => l.frozen)]) assert.ok(s.a >= 0 && s.b <= 1);
   for (const l of c.lanes) for (const m of l.marks) assert.ok(m.x >= 0);
@@ -86,4 +86,11 @@ test("G10 the log is newest first, names the thread and says why it resumed", ()
   assert.match(rows[0].text, /^Paused undeclared work of Map perf \(3\/8\) \(4 % free\)$/);
   assert.match(rows[1].text, /^Resumed Map perf: memory was fine for 30 s$/);
   assert.match(rows[2].text, /^Resumed Babysit PR #4170: its processes ended$/);
+});
+
+test("G11 a host whose guard has done nothing may send events: null; Automation still shows", () => {
+  const calm = { short: false, max: 8, refreezeSec: 60, events: null };
+  assert.deepEqual(guardChart(calm, NOW, title).lanes, []);
+  assert.deepEqual(guardLog(calm, title, (iso) => iso), []);
+  assert.equal(guardSummary(calm, NOW), "Memory is fine");
 });

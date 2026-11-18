@@ -327,7 +327,7 @@ func (e *Engine) GuardView() *slots.Guard { return e.guardPub.Load() }
 func (e *Engine) publishGuard(now time.Time) {
 	e.mu.Lock()
 	g := &slots.Guard{Short: e.guardShort, Max: MaxFreezes, RefreezeSec: int(RefreezeAfter / time.Second),
-		Events: append([]slots.GuardEvent(nil), e.guardEvents...)}
+		Events: append([]slots.GuardEvent{}, e.guardEvents...)} // never nil: the front gets [], not null
 	if e.guardShort && !e.guardSince.IsZero() {
 		t := e.guardSince
 		g.ShortSince = &t

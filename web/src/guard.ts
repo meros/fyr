@@ -32,7 +32,8 @@ export interface Guard {
   shortSince?: string;
   max: number;
   refreezeSec: number;
-  events: GuardEvent[];
+  /** null from a host before V0.190 whose guard has done nothing yet */
+  events: GuardEvent[] | null;
   threads?: GuardThread[];
 }
 
@@ -77,7 +78,7 @@ export function guardChart(g: Guard | undefined, now: number, titleOf: (thread: 
   const from = now - GUARD_WINDOW;
   const empty: GuardChart = { short: [], lanes: [], alt: "The memory guard did nothing in the last 15 minutes." };
   if (!g) return empty;
-  const ev = [...g.events].sort((x, y) => Date.parse(x.at) - Date.parse(y.at));
+  const ev = [...(g.events ?? [])].sort((x, y) => Date.parse(x.at) - Date.parse(y.at));
   const short: Span[] = [];
   let shortFrom: number | null = null;
   const lanes = new Map<string, Lane>();
@@ -160,7 +161,7 @@ const WHY: Record<string, string> = { memory: "memory was fine for 30 s", gone: 
 /** The guard's decisions newest first, one line each, for the list under the chart. */
 export function guardLog(g: Guard | undefined, titleOf: (thread: string) => string, clock: (iso: string) => string, limit = 8): { at: string; text: string }[] {
   if (!g) return [];
-  const rows = [...g.events].reverse().map((e) => {
+  const rows = [...(g.events ?? [])].reverse().map((e) => {
     const who = e.thread ? titleOf(e.thread) : "";
     const room = e.headroom !== undefined ? ` (${Math.round(e.headroom * 100)} % free)` : "";
     let text = "";
