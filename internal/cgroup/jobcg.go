@@ -252,6 +252,20 @@ func (g *JobGroups) HasUndeclared(thread string) bool {
 	return err == nil
 }
 
+// UndeclaredEmpty reports that thread's undeclared-work cgroup holds no
+// process any more, or is gone: what was frozen in it ended, so the freeze
+// holds nothing (decision 0032 slice 1). False while a process is in it.
+func (g *JobGroups) UndeclaredEmpty(thread string) bool {
+	if g == nil || g.Tree == nil {
+		return false
+	}
+	raw, err := os.ReadFile(filepath.Join(g.udir(thread), "cgroup.events"))
+	if err != nil {
+		return os.IsNotExist(err)
+	}
+	return strings.Contains(string(raw), "populated 0")
+}
+
 // FreezeUndeclared moves the roots and all their descendants into
 // agents/<thread>/undeclared/ and freezes it (V0.164 section 7); the CLI, its
 // MCP servers and any resident stay. A process that ends during the move is

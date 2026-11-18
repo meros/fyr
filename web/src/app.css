@@ -1403,7 +1403,7 @@ label.sr{cursor:pointer}
    never scrolls; each column scrolls on its own. In the rail only the middle (the load rings and slot pips per host,
    the quota lines) gives way: it is its own scroll area, so the sections, List, the bell, Changes, Settings and the
    host line keep their size and stay in view. The rings and the quota lines sit two to a row where they fit. A
-   short rail (under 1010 px, V0.188 for the Unread item; 940 px in V0.167, 860 px before) is compact: the key hints (g1…g6, \) go, as the tooltips name them, and a section's icon and
+   short rail (under 1010 px, V0.189 for the Unread item; 940 px in V0.167, 860 px before) is compact: the key hints (g1…g6, \) go, as the tooltips name them, and a section's icon and
    count share one row (V0.137's Slots can make seven sections), so two hosts and four
    providers fit at 700 px. If even the fixed items do not fit, the rail itself scrolls. */
 .shell{overflow:hidden}
@@ -1488,6 +1488,23 @@ label.sr{cursor:pointer}
 /* 1. The row (desktop and phone, web/src/row-ui.tsx): the word and the use start the second line. */
 .tund{color:var(--beam-ink);font-weight:500}
 .tund .und-ic{vertical-align:-2px;margin-right:3px}
+
+/* Decision 0032: the memory guard's chart (Settings → Automation). Short memory is a wash, a freeze is hatched in the beam
+   colour, the lane's line is the work running. Tokens only, so it follows the theme. */
+.gwrap{padding:4px 14px 10px}
+.gchart{margin:0;min-width:0}
+.gchart svg{display:block;width:100%;height:auto;max-width:100%}
+.g-short{fill:color-mix(in srgb,var(--signal-ink) 16%,transparent)}
+.g-run{stroke:var(--harbour);stroke-width:1.5;opacity:.7}
+.g-hatch-bg{fill:color-mix(in srgb,var(--beam) 22%,transparent)}
+.g-hatch{fill:var(--beam)}
+.g-frozen{stroke:var(--beam-mark);stroke-width:.75}
+.g-n{font:700 12px var(--mono);fill:var(--on-beam);paint-order:stroke;stroke:var(--beam);stroke-width:2px}
+.g-tick{font:10px var(--ui);fill:var(--ink-faint)}
+.g-names{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:2px 14px;font-size:12px;color:var(--ink-muted)}
+.g-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--harbour);margin-right:2px}
+.g-dot.live{background:var(--beam)}
+.g-alt{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 
 /* 2. The rail: the use Fyr did not admit is a hatched part of the host's meter. */
 /* who it is: a button under the meter (desktop only: the phone has no rail, V0.99 (3)) */

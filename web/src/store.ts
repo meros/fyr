@@ -12,7 +12,7 @@ import type { ActionInfo, AttentionState, FyrEvent, Profile, Project, StateDTO, 
 export type SectionKey = "needs" | "working" | "slots" | "unread" | "seen" | "snoozed" | "settled";
 
 /** `g`: the section's key after g on the desktop (g1–g6). V0.137: Waiting for a slot has none, so the others keep their
- *  keys; it shows only while a host's queue is not empty (`transient`). V0.188: Unread is new and takes g6, so g3 stays
+ *  keys; it shows only while a host's queue is not empty (`transient`). V0.189: Unread is new and takes g6, so g3 stays
  *  Seen, g4 Snoozed and g5 Settled although it sits above them. */
 export const SECTIONS: { key: SectionKey; label: string; short: string; state: AttentionState; g?: number; transient?: boolean }[] = [
   { key: "needs", label: "Needs you", short: "Needs", state: "asking", g: 1 },
@@ -243,7 +243,7 @@ export function unpinned(list: Thread[], key?: SectionKey): Thread[] {
   return list.filter((t) => !isPinned(t));
 }
 
-/** V0.188: the host sends a finished thread the owner has not looked at as state "done" in section "seen" (V0.101).
+/** V0.189: the host sends a finished thread the owner has not looked at as state "done" in section "seen" (V0.101).
  *  The client splits that off as Unread, so a host of any version since V0.101 lands right. */
 export function sectionOf(t: Thread): SectionKey | null {
   switch (t.attention?.section) {
@@ -347,7 +347,7 @@ export function recordUndo(kind: UndoKind, threadIds: string[], now: number, lab
 }
 
 /** V0.162: a bulk settle (⇧E, Settle merged, the phone's Settle N) takes the threads that can settle and leaves the
- * pinned ones out: no settle, no unpin. `kept` counts the pinned threads it left. V0.188: a `sweep` (⇧E on a section) also
+ * pinned ones out: no settle, no unpin. `kept` counts the pinned threads it left. V0.189: a `sweep` (⇧E on a section) also
  * leaves Unread out, what the owner has not read is not swept away (`unread` counts them); threads the owner picked one
  * by one are their explicit choice and settle even when unread. */
 export function bulkSettle(threads: Thread[], sweep = false): { ids: string[]; kept: number; unread: number } {
@@ -362,13 +362,13 @@ export function bulkSettle(threads: Thread[], sweep = false): { ids: string[]; k
   return { ids, kept, unread };
 }
 
-/** V0.188: the phone's Select all is a sweep: it picks every row but the unread ones (a pinned one stays picked, the
+/** V0.189: the phone's Select all is a sweep: it picks every row but the unread ones (a pinned one stays picked, the
  *  settle counts it as pinned), so "Settle N" counts what it will settle and a row tapped afterwards is the owner's pick. */
 export function selectAllIds(threads: Thread[]): string[] {
   return threads.filter((t) => isPinned(t) || sectionOf(t) !== "unread").map((t) => t.id);
 }
 
-/** V0.188: the unread threads a Select all left out and the owner has not picked since, for the toast. */
+/** V0.189: the unread threads a Select all left out and the owner has not picked since, for the toast. */
 export function sweptUnread(threads: Thread[], picked: ReadonlySet<string>): number {
   return threads.filter((t) => !isPinned(t) && sectionOf(t) === "unread" && !picked.has(t.id)).length;
 }

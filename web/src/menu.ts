@@ -20,7 +20,7 @@ function item(t: Thread, id: string, action: string, label: string, key?: string
   return { id, label, key, ...(why ? { disabled: why } : {}) };
 }
 
-/** V0.188: the one seen/unseen entry of a thread, on both fronts: Mark seen while it is unread (or in Needs you, as
+/** V0.189: the one seen/unseen entry of a thread, on both fronts: Mark seen while it is unread (or in Needs you, as
  *  before), else Mark unseen. The host sends an unread thread in section "seen", so the state decides. */
 export function seenToggle(t: Thread): { id: "markSeen" | "markUnseen"; action: "thread.markSeen" | "thread.markUnseen"; label: string; key?: string } {
   return t.attention.state === "done" || t.attention.section === "needs"

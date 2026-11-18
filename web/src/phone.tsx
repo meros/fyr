@@ -190,7 +190,7 @@ export interface PhoneDevice {
 /** What the phone does differently from a plain thread command: U8 leaves the open thread after a settle or
  *  archive, Mark unseen restarts the seen timer, and New starts a thread. Every other command is `commands.run`. */
 export interface PhoneActions {
-  /** `unreadKept`: the unread threads a Select all left out, for the toast (V0.188) */
+  /** `unreadKept`: the unread threads a Select all left out, for the toast (V0.189) */
   settle(ids: string[], bulk?: boolean, unreadKept?: number): void;
   archive(ids: string[]): void;
   markUnseen(id: string): void;
@@ -385,7 +385,7 @@ function MInbox(p: PhoneProps) {
   };
 
   const all = SECTIONS.flatMap((s) => p.inbox.sec[s.key]);
-  // V0.188: Select all is a sweep, so it leaves unread rows out and the settle says how many.
+  // V0.189: Select all is a sweep, so it leaves unread rows out and the settle says how many.
   const [swept, setSwept] = useState(false);
   useEffect(() => {
     if (!p.list.selecting) setSwept(false);
@@ -1437,7 +1437,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
         <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => void p.commands.run("thread.setView", [t.id], { on: !t.liveView }))} />
         <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another provider"} disabled={!!reason("thread.handover")} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "handover", ids: [t.id] } })} />
         <Item label="Regenerate title" sub={reason("thread.regenerateTitle") ?? "Name the thread from its conversation so far"} disabled={!!reason("thread.regenerateTitle")} onClick={after(() => void p.commands.regenerateTitle(t.id))} />
-        {/* V0.188: the desktop menu's entry (seenToggle): an unread thread offers Mark seen */}
+        {/* V0.189: the desktop menu's entry (seenToggle): an unread thread offers Mark seen */}
         <Item label={mark.label} icon={<StateIcon state={mark.id === "markSeen" ? "seen" : "done"} size={16} />} sub={reason(mark.action)} disabled={!!reason(mark.action)} onClick={after(() => (mark.id === "markSeen" ? void p.commands.run(mark.action, [t.id]) : p.actions.markUnseen(t.id)))} />
         {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.list.setSelecting(true), p.list.setPicked(new Set([t.id]))))} />}
         {!peek && <Item label="Details" icon={I.right} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} />}

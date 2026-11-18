@@ -34,7 +34,8 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.slotNudged = map[string]time.Time{}
 	e.slotOverTold = map[string]time.Time{}
 	e.undTold, e.undRun = map[string]time.Time{}, map[string]int{}
-	e.undNote, e.undFroze = map[string]time.Time{}, map[string]time.Time{}
+	e.undNote, e.undFroze = map[string]time.Time{}, map[string]undFreeze{}
+	e.guardLast = map[string]guardLine{}
 	e.mu.Unlock()
 	p.OnGrant = e.slotGranted
 	p.Fill() // a pool loaded from the store may have free slots for its queue
@@ -178,6 +179,7 @@ func (e *Engine) sweepSlots() {
 	e.heavierThanPredicted(s)
 	e.tellUndeclared()
 	e.freezeGuard(s)
+	e.publishGuard(e.Now())
 	e.adaptBudget(s)
 	// Decision 0029 S2: the conditions change without a release.
 	e.Slots.Fill()
@@ -247,6 +249,107 @@ const (
 	FreezeMax   = 10 * time.Minute
 )
 
+// Decision 0032 slice 1: one long episode of undeclared work can be frozen
+// again after a thaw (the freeze is a time slice, not a once-only verdict),
+// once the work has run RefreezeAfter, and at most MaxFreezes times, so a
+// job that never settles is let run in the end instead of flapping.
+const (
+	RefreezeAfter = 60 * time.Second
+	MaxFreezes    = 8
+)
+
+// undFreeze is what the guard froze of one thread's episode of undeclared
+// work: the episode (the flag's since), how many freezes so far, and when the
+// last one thawed.
+type undFreeze struct {
+	episode  time.Time
+	n        int
+	thawedAt time.Time
+}
+
+// guardLine is the guard's last log line for a key and when it was written.
+type guardLine struct {
+	msg string
+	at  time.Time
+}
+
+// guardOnce logs a guard decision that repeats every tick (a skip, and why)
+// once, and again when its text changes or a minute has passed, so the log
+// shows each decision without a line per tick.
+func (e *Engine) guardOnce(now time.Time, key, msg string) {
+	e.mu.Lock()
+	last, ok := e.guardLast[key]
+	repeat := ok && last.msg == msg && now.Sub(last.at) < time.Minute
+	if !repeat {
+		e.guardLast[key] = guardLine{msg, now}
+	}
+	e.mu.Unlock()
+	if !repeat {
+		log.Printf("guard: %s", msg)
+	}
+}
+
+// guardSignals is the signals the guard acted on, for its log lines.
+func guardSignals(sig slots.Signals) string {
+	h, s := "n/a", "n/a"
+	if sig.Headroom != nil {
+		h = fmt.Sprintf("%.0f%%", *sig.Headroom*100)
+	}
+	if sig.Slowdown != nil {
+		s = fmt.Sprintf("%.1fx", *sig.Slowdown)
+	}
+	return fmt.Sprintf("headroom=%s stall=%s slowdown=%s", h, sig.Stall, s)
+}
+
+// guardKeep is how many decisions the front's history holds.
+const guardKeep = 60
+
+// guardRecord adds a decision to the history the front shows (decision 0032).
+func (e *Engine) guardRecord(ev slots.GuardEvent, sig slots.Signals) {
+	if sig.Headroom != nil {
+		h := *sig.Headroom
+		ev.Headroom = &h
+	}
+	ev.Stall = string(sig.Stall)
+	e.mu.Lock()
+	e.guardEvents = append(e.guardEvents, ev)
+	if n := len(e.guardEvents); n > guardKeep {
+		e.guardEvents = append([]slots.GuardEvent(nil), e.guardEvents[n-guardKeep:]...)
+	}
+	e.mu.Unlock()
+}
+
+// GuardView is the guard's last published view (nil before the first tick).
+// It waits for nothing: the pool reads it under its own lock.
+func (e *Engine) GuardView() *slots.Guard { return e.guardPub.Load() }
+
+// publishGuard builds the view at the end of a tick.
+func (e *Engine) publishGuard(now time.Time) {
+	e.mu.Lock()
+	g := &slots.Guard{Short: e.guardShort, Max: MaxFreezes, RefreezeSec: int(RefreezeAfter / time.Second),
+		Events: append([]slots.GuardEvent(nil), e.guardEvents...)}
+	if e.guardShort && !e.guardSince.IsZero() {
+		t := e.guardSince
+		g.ShortSince = &t
+	}
+	for thread, u := range e.undFroze {
+		t := slots.GuardThread{Thread: thread, N: u.n, Capped: u.n >= MaxFreezes}
+		if e.frozen.undeclared && e.frozen.owner == thread {
+			t.Frozen = true
+			at := e.frozen.at
+			t.FrozenAt = &at
+		} else if !u.thawedAt.IsZero() && !t.Capped {
+			if next := u.thawedAt.Add(RefreezeAfter); next.After(now) {
+				t.NextAt = &next
+			}
+		}
+		g.Threads = append(g.Threads, t)
+	}
+	e.mu.Unlock()
+	slices.SortFunc(g.Threads, func(a, b slots.GuardThread) int { return strings.Compare(a.Thread, b.Thread) })
+	e.guardPub.Store(g)
+}
+
 // freezeGuard freezes the newest slotted job while memory is short (never
 // the oldest running one, and one at a time, each hold at most once) and
 // thaws it when memory has been fine for ThawAfterOK, after FreezeMax, or
@@ -264,7 +367,20 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		e.frozeHolds = map[string]time.Time{}
 	}
 	f := e.frozen
+	wasShort := e.guardShort
+	e.guardShort = short
+	if short && !wasShort {
+		e.guardSince = now
+	}
 	e.mu.Unlock()
+	if short != wasShort {
+		state := "recovered"
+		if short {
+			state = "short"
+		}
+		e.guardRecord(slots.GuardEvent{At: now, Kind: state}, sig)
+		log.Printf("guard: memory %s: %s flagged=%d held=%d running=%d frozen=%q", state, guardSignals(sig), len(e.flags()), len(s.Held), len(e.Running()), f.owner)
+	}
 	if f.owner != "" {
 		holding := false
 		if f.undeclared {
@@ -286,15 +402,48 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		} else if !fine {
 			f.okSince = time.Time{}
 		}
-		thaw := !holding || now.Sub(f.at) >= FreezeMax || (!f.okSince.IsZero() && now.Sub(f.okSince) >= ThawAfterOK)
+		// A freeze whose cgroup holds no process any more (the work ended or
+		// was killed) holds nothing; release it at once instead of letting it
+		// block every other freeze for ten minutes.
+		emptied := f.undeclared && holding && e.UndeclaredEmpty != nil && e.UndeclaredEmpty(f.owner)
+		thaw := !holding || emptied || now.Sub(f.at) >= FreezeMax || (!f.okSince.IsZero() && now.Sub(f.okSince) >= ThawAfterOK)
 		e.mu.Lock()
 		if thaw {
 			e.frozen = frozenJob{}
+			if f.undeclared {
+				u := e.undFroze[f.owner]
+				u.thawedAt = now
+				e.undFroze[f.owner] = u
+			}
 		} else {
 			e.frozen = f
 		}
 		e.mu.Unlock()
 		if thaw {
+			reason := "memory fine for 30 s"
+			switch {
+			case emptied:
+				reason = "its processes are gone"
+			case !holding:
+				reason = "episode or hold ended"
+			case now.Sub(f.at) >= FreezeMax:
+				reason = "10 min limit"
+			}
+			kind := "job"
+			work, why := "job", "memory"
+			if f.undeclared {
+				kind, work = "undeclared work", "undeclared"
+			}
+			switch {
+			case emptied:
+				why = "gone"
+			case !holding:
+				why = "ended"
+			case now.Sub(f.at) >= FreezeMax:
+				why = "limit"
+			}
+			e.guardRecord(slots.GuardEvent{At: now, Kind: "thaw", Work: work, Thread: f.owner, Reason: why}, sig)
+			log.Printf("guard: thawed %s thread=%s after=%s reason=%q %s", kind, f.owner, now.Sub(f.at).Round(time.Second), reason, guardSignals(sig))
 			if f.undeclared {
 				e.UndeclaredThaw(f.owner)
 			} else {
@@ -354,6 +503,8 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	e.frozen = frozenJob{owner: newest.Owner, since: newest.Since.Format(time.RFC3339Nano), at: now}
 	e.frozeHolds[newest.Owner] = newest.Since
 	e.mu.Unlock()
+	log.Printf("guard: froze job thread=%s why=%q held=%d %s", newest.Owner, why, len(s.Held), guardSignals(sig))
+	e.guardRecord(slots.GuardEvent{At: now, Kind: "freeze", Work: "job", Thread: newest.Owner}, sig)
 	e.slotNotice(newest.Owner, map[string]any{"paused": why})
 }
 
@@ -366,44 +517,89 @@ func (e *Engine) flags() []slots.Undeclared {
 }
 
 // freezeUndeclared freezes the newest flagged thread whose memory is over
-// (V0.164 section 7), before any job that asked: one at a time on the host,
-// each episode once, and never when it would help nobody (no admitted job and
-// no other flagged thread). It reports whether it froze one.
+// (V0.164 section 7), before any job that asked: one at a time on the host.
+// Decision 0032 slice 1 changes two once-only rules of V0.164 that left a long
+// episode unprotected: the work is frozen when anyone else would gain from it
+// (an admitted job, another flagged thread, or any other thread that runs:
+// its agent starts slowly or not at all in a thrashing cgroup), not only when
+// a job or a second flag exists; and an episode is frozen again after a thaw,
+// RefreezeAfter later and at most MaxFreezes times, so the freezes work as time
+// slices of the long episode. It reports whether it froze one.
 func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted bool) bool {
 	if e.UndeclaredFreeze == nil || e.UndeclaredThaw == nil {
 		return false
 	}
 	fl := e.flags()
-	if !admitted && len(fl) < 2 {
+	if len(fl) == 0 {
 		return false
 	}
+	run := e.Running()
+	others := func(thread string) int {
+		n := 0
+		for _, id := range run {
+			if id != thread {
+				n++
+			}
+		}
+		return n
+	}
 	var pick *slots.Undeclared
+	var picked undFreeze
+	var skips [][2]string // key, line: logged after the lock
 	e.mu.Lock()
 	for i := range fl {
 		f := &fl[i]
-		if !f.MemOver || e.undFroze[f.Thread].Equal(f.Since) || e.threads[f.Thread] == nil {
+		if !f.MemOver || e.threads[f.Thread] == nil {
+			continue
+		}
+		prev := e.undFroze[f.Thread]
+		if prev.episode.Equal(f.Since) {
+			if prev.n >= MaxFreezes {
+				skips = append(skips, [2]string{f.Thread, fmt.Sprintf("not freezing thread=%s: frozen %d times in this episode, letting it run", f.Thread, prev.n)})
+				continue
+			}
+			if !prev.thawedAt.IsZero() && now.Sub(prev.thawedAt) < RefreezeAfter {
+				continue // the slice has not run long enough yet; says nothing
+			}
+		}
+		if !admitted && len(fl) < 2 && others(f.Thread) == 0 {
+			skips = append(skips, [2]string{f.Thread, fmt.Sprintf("not freezing thread=%s: nobody else would gain (no job, no other flag, no other thread running)", f.Thread)})
 			continue
 		}
 		if pick == nil || f.Since.After(pick.Since) {
-			pick = f
+			pick, picked = f, prev
 		}
 	}
 	e.mu.Unlock()
-	if pick == nil || !e.UndeclaredFreeze(pick.Thread) {
+	for _, k := range skips {
+		e.guardOnce(now, "skip:"+k[0], k[1])
+	}
+	if pick == nil {
+		return false
+	}
+	if !e.UndeclaredFreeze(pick.Thread) {
+		e.guardOnce(now, "skip:"+pick.Thread, fmt.Sprintf("could not freeze thread=%s: no process to move or the cgroup refused", pick.Thread))
 		return false
 	}
 	why := "memory stalls (critical)"
 	if sig.Headroom != nil && *sig.Headroom < e.SlotPolicy.MemoryReserve {
 		why = fmt.Sprintf("memory: %.0f %% free", *sig.Headroom*100)
 	}
+	n := 1
+	if picked.episode.Equal(pick.Since) {
+		n = picked.n + 1
+	}
 	e.mu.Lock()
 	e.frozen = frozenJob{owner: pick.Thread, at: now, undeclared: true, episode: pick.Since}
-	e.undFroze[pick.Thread] = pick.Since
+	e.undFroze[pick.Thread] = undFreeze{episode: pick.Since, n: n}
 	e.mu.Unlock()
 	cmd := pick.Command
 	if cmd == "" {
 		cmd = "unknown command"
 	}
+	log.Printf("guard: froze undeclared work thread=%s freeze=%d/%d episode_age=%s cmd=%q mem=%s cores=%.1f %s flagged=%d admitted=%t others_running=%d",
+		pick.Thread, n, MaxFreezes, now.Sub(pick.Since).Round(time.Second), cmd, slots.GB(float64(pick.Mem)), pick.CPU, guardSignals(sig), len(fl), admitted, others(pick.Thread))
+	e.guardRecord(slots.GuardEvent{At: now, Kind: "freeze", Work: "undeclared", Thread: pick.Thread, N: n}, sig)
 	e.slotNotice(pick.Thread, map[string]any{"paused": why, "work": cmd})
 	return true
 }

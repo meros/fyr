@@ -1,4 +1,5 @@
 // SPEC 0.5 V0.80: the machine load (rail) and each working thread's CPU (rows), as words. Pure.
+import type { Guard } from "./guard.ts";
 import type { Leftover, Temp } from "./leftovers.ts";
 
 export interface ThreadLoad {
@@ -156,6 +157,8 @@ export interface Slots {
   /** V0.164: the threads that run heavy work without having asked, and their share of the host (already in cpuPct,
    *  memPct and usedPct) */
   undeclared?: UndeclaredUse[];
+  /** decision 0032: what the memory guard did lately */
+  guard?: Guard;
   undeclaredCpuPct?: number;
   undeclaredMemPct?: number;
 }

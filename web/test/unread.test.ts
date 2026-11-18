@@ -1,4 +1,4 @@
-// V0.188: a finished thread the owner has not looked at is Unread, not Seen. The client derives it from the attention
+// V0.189: a finished thread the owner has not looked at is Unread, not Seen. The client derives it from the attention
 // the host already sends, so a host of any version since V0.101 lands in the right section.
 import { test } from "node:test";
 import assert from "node:assert/strict";

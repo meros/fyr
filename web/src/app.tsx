@@ -699,7 +699,7 @@ function App() {
   const settleBulk = (ids: string[], o: { sweep?: boolean; unreadKept?: number } = {}): Promise<string[]> => {
     const r = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t), o.sweep);
     const { ids: take, kept } = r;
-    const unread = r.unread + (o.unreadKept ?? 0); // V0.188: what the phone's Select all left out
+    const unread = r.unread + (o.unreadKept ?? 0); // V0.189: what the phone's Select all left out
     if (!take.length) {
       if (kept || unread) cmds.notify(bulkSettleText(0, kept, unread));
       else cmds.showError("Nothing here can be settled");
@@ -710,7 +710,7 @@ function App() {
 
   const settleGroup = () => {
     let ids = [...picked];
-    const sweep = !ids.length; // V0.188: the marked row's whole section; picked rows are the owner's explicit choice
+    const sweep = !ids.length; // V0.189: the marked row's whole section; picked rows are the owner's explicit choice
     if (sweep && sel) {
       const k = sectionOf(store.threads[sel]);
       if (k) ids = sec[k].map((t) => t.id);

@@ -123,6 +123,8 @@ type Snapshot struct {
 	Undeclared       []Undeclared `json:"undeclared,omitempty"`
 	UndeclaredCPUPct *float64     `json:"undeclaredCpuPct,omitempty"`
 	UndeclaredMemPct *float64     `json:"undeclaredMemPct,omitempty"`
+	// Decision 0032: what the memory guard did lately.
+	Guard *Guard `json:"guard,omitempty"`
 }
 
 // Pool is one host's slots.
@@ -145,6 +147,9 @@ type Pool struct {
 	// (V0.164), for the snapshot; optional, under the pool's lock, so it reads
 	// a published view and waits for nothing.
 	Undeclared func() []Undeclared
+	// Guard is the memory guard's published view (decision 0032), for the
+	// snapshot; optional, under the pool's lock, so it reads a published copy.
+	Guard func() *Guard
 	// Backfill decides whether c, behind a head that does not fit, may
 	// start now without delaying it (decision 0029 S3, EASY); nil never.
 	// Under the pool's lock, like Admit.
@@ -516,6 +521,9 @@ func (p *Pool) snapshotLocked() Snapshot {
 	copy(s.Waiting, p.wait)
 	for i := range s.Waiting {
 		s.Waiting[i].ready = nil
+	}
+	if p.Guard != nil {
+		s.Guard = p.Guard()
 	}
 	if len(s.Waiting) > 0 {
 		s.Why = p.why

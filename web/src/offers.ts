@@ -212,7 +212,7 @@ export function changeChip(t: Pick<Thread, "changes" | "pr">, short = false): { 
   const rank = (c: Change) => (c.parked ? 3 : needsOwner(c) ? 0 : c.conditions?.some((k) => k.status === "fail") ? 1 : 2);
   const c = [...live].sort((a, b) => rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt))[0];
   const fail = c.parked ? undefined : c.conditions?.find((k) => k.status === "fail");
-  // V0.188: the phase "working" means the change is not finished, not that an agent is at it: this chip shows on threads
+  // V0.189: the phase "working" means the change is not finished, not that an agent is at it: this chip shows on threads
   // whose agent has stopped, so it says what is true of the change.
   const phase = c.phase === "working" ? "change open" : c.phase;
   const word = fail ? `${fail.type} failed` : c.parked ? "not now" : needsOwner(c) ? "needs you" : c.label || phase;
