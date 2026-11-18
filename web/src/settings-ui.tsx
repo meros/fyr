@@ -21,6 +21,9 @@ import { quotaFor } from "./quota.ts";
 import { budgetLine, jobLines, type HostLoad } from "./load.ts";
 import { useUnd } from "./undeclared-ctx.tsx";
 import { UndIcon } from "./undeclared-ctx.tsx";
+import { GuardChart } from "./guard-ui.tsx";
+import { guardLog, guardSummary } from "./guard.ts";
+import { clockTime } from "./format.ts";
 import { leftoverRows, tempRows } from "./leftovers.ts";
 import { addedRows, parseThreshold, thresholdError, suggestionRows, thresholdRows, undeclaredRows } from "./undeclared.ts";
 import { refreshLoad, useLoad } from "./load-ui.tsx";
@@ -1472,6 +1475,21 @@ function UndeclaredGroups({ h, host, api, focus }: { h: HostLoad; host: string; 
                 </>
               }
             />
+          ))}
+        </Group>
+      )}
+      {h.slots?.guard && (
+        <Group
+          label="Memory guard"
+          title="Memory guard"
+          foot="What Fyr did when this host's memory ran short: the shaded band is the time memory was short, a hatched stretch is work Fyr held frozen (never killed), and the number is how many times in a row it froze that thread. Frozen work runs again once memory has been fine for 30 s; one long episode is paused at most 8 times, 60 s apart."
+        >
+          <Row title="Now" desc={guardSummary(h.slots.guard, now)} />
+          <div class="gwrap">
+            <GuardChart guard={h.slots.guard} now={now} titleOf={(t) => und.lookup(t).title} />
+          </div>
+          {guardLog(h.slots.guard, (t) => und.lookup(t).title, clockTime).map((l, i) => (
+            <Row key={i} title={l.text} desc={l.at} />
           ))}
         </Group>
       )}

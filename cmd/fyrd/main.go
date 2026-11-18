@@ -296,6 +296,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		groups.EndUndeclared(ep.Thread)
 	}
 	pool.Undeclared = sampler.Undeclared
+	pool.Guard = eng.GuardView // decision 0032
 	if tree == nil {
 		// V0.164 section 10: no cgroup tree, so each thread's use is its
 		// process tree under the CLI (nothing is frozen there).
@@ -310,7 +311,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	mgr.SetUndeclaredNote(eng.UndeclaredSubagentNote)
 	eng.UndeclaredDeps = engine.UndeclaredDeps{
 		Undeclared: sampler.Undeclared, UndeclaredTold: detector.Told, UndeclaredDismiss: detector.Dismiss, UndeclaredSettings: usettings.Set,
-		UndeclaredThaw: groups.ThawUndeclared, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused,
+		UndeclaredThaw: groups.ThawUndeclared, UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused,
 		UndeclaredFreeze: func(thread string) bool {
 			for _, f := range detector.Flags() {
 				if f.Thread == thread && groups.FreezeUndeclared(thread, cgroup.ReadRoots(tree, "", thread, f.FirstOver)) {

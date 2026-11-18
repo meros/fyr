@@ -3,6 +3,7 @@
 // The owner's word is "undeclared"; "slot" and "reservation" never reach the owner (V0.163).
 
 import { clockTime } from "./format.ts";
+import { guardLine } from "./guard.ts";
 import { cpuText, gbText, spanText, undeclaredTip, usedMeasures, type HeavySuggestion, type HostLoad, type Lookup, type UndeclaredUse } from "./load.ts";
 
 export { undeclaredTip, type Lookup };
@@ -41,7 +42,9 @@ export function rowUndeclared(list: HostLoad[], id: string, now: number): RowUnd
   if (!f || f.u.dismissed) return null;
   const u = f.u;
   const m = measures(u, "none", f.h.host);
-  const text = u.paused ? "undeclared · paused: memory" : ["undeclared", ...m].join(" · ");
+  // Decision 0032: a thread the guard froze says how often and for how long; the guard's own words replace "memory".
+  const g = guardLine(f.h.slots?.guard, id, now);
+  const text = u.paused ? (g ? `undeclared · ${g}` : "undeclared · paused: memory") : ["undeclared", ...m, ...(g ? [g] : [])].join(" · ");
   const what = m.join(" and ");
   return { text, paused: u.paused, title: `Heavy work Fyr did not admit: this thread uses ${what} above its idle level, for ${since(u, now)}. It counts against the host's heavy jobs.` };
 }

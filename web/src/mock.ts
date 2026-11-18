@@ -6,6 +6,7 @@ import type { ChangesDTO, FilePatchDTO } from "./changes.ts";
 import type { PrReply } from "./pr.ts";
 import type { Quota } from "./quota.ts";
 import type { HostLoad, Slots, UndeclaredUse } from "./load.ts";
+import type { Guard, GuardEvent } from "./guard.ts";
 import type { Leftover, Temp } from "./leftovers.ts";
 import { mockPrDetail } from "./mock-pr.ts";
 import { quietList } from "./quiet.ts";
@@ -1796,7 +1797,38 @@ export function mockQuota(now: number): Quota[] {
 /** SPEC 0.5 V0.80: a busy host: load past the cores, the agents at their cap; one thread in each fixture is hot
  * (t_w2, t_mapperf), one calm, one without a second read yet. */
 export function mockLoad(): HostLoad[] {
-  return withLeftovers(withUndeclared(mockLoadBase(), MOCK_UNDECLARED), MOCK_LEFTOVERS);
+  return withGuard(withLeftovers(withUndeclared(mockLoadBase(), MOCK_UNDECLARED), MOCK_LEFTOVERS), MOCK_GUARD);
+}
+
+/** Decision 0032: ?guard=1 has the memory guard's history: memory short twice in 15 minutes, Map perf's undeclared work
+ *  frozen three times (the third still on), Babysit frozen once. ?guard=capped shows a thread let run after 8 pauses. */
+const MOCK_GUARD = typeof location !== "undefined" ? new URLSearchParams(location.search).get("guard") ?? "" : "";
+export function withGuard(list: HostLoad[], mode: string, now = railNow(Date.now())): HostLoad[] {
+  if (!mode) return list;
+  const [h, ...rest] = list;
+  const ago = (sec: number) => new Date(now - sec * 1000).toISOString();
+  const ev = (secAgo: number, kind: GuardEvent["kind"], extra: Partial<GuardEvent> = {}): GuardEvent => ({ at: ago(secAgo), kind, ...extra });
+  const events: GuardEvent[] = [
+    ev(14 * 60, "short", { headroom: 0.04, stall: "critical" }),
+    ev(13.5 * 60, "freeze", { work: "undeclared", thread: "t_mapperf", n: 1, headroom: 0.04 }),
+    ev(12 * 60, "recovered", { headroom: 0.31 }),
+    ev(11.9 * 60, "thaw", { work: "undeclared", thread: "t_mapperf", reason: "memory" }),
+    ev(8 * 60, "short", { headroom: 0.05, stall: "critical" }),
+    ev(7.5 * 60, "freeze", { work: "undeclared", thread: "t_mapperf", n: 2, headroom: 0.05 }),
+    ev(7 * 60, "freeze", { work: "undeclared", thread: "t_babysit", n: 1, headroom: 0.05 }),
+    ev(5 * 60, "thaw", { work: "undeclared", thread: "t_babysit", reason: "gone" }),
+    ev(4 * 60, "thaw", { work: "undeclared", thread: "t_mapperf", reason: "memory" }),
+    ev(150, "freeze", { work: "undeclared", thread: "t_mapperf", n: mode === "capped" ? 8 : 3, headroom: 0.04 }),
+  ];
+  const guard: Guard = {
+    short: true,
+    shortSince: ago(8 * 60),
+    max: 8,
+    refreezeSec: 60,
+    events,
+    threads: [{ thread: "t_mapperf", n: mode === "capped" ? 8 : 3, frozen: true, frozenAt: ago(150), capped: mode === "capped" }, { thread: "t_babysit", n: 1, frozen: false, nextAt: new Date(now + 24_000).toISOString() }],
+  };
+  return [{ ...h, slots: { ...h.slots!, guard } }, ...rest];
 }
 
 /** V0.176: ?leftovers=1: Map perf left a Chrome and a mockup server, Nix flake update a port-forward under timeout, a
