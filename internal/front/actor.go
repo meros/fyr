@@ -83,7 +83,7 @@ func (t actorTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // process could write it.
 func refuseActor(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get(authn.Header) != "" || r.Header.Get(authn.OriginHeader) != "" {
+		if r.Header.Get(authn.Header) != "" || r.Header.Get(authn.OriginHeader) != "" || r.Header.Get(authn.PrefixHeader) != "" {
 			refuse(w, r, "this listener does not take "+authn.Header, http.StatusBadRequest)
 			return
 		}

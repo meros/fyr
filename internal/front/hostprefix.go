@@ -164,7 +164,9 @@ func stripHostPrefix(r *http.Request) *http.Request {
 	} else {
 		u.Path = u.RawPath
 	}
-	r2 := r.Clone(r.Context())
+	// V0.preview-host-prefix: the hop tells the host what was taken off.
+	id, _, _ := strings.Cut(after, "/")
+	r2 := r.Clone(authn.WithPrefix(r.Context(), hostPrefix+id))
 	r2.URL = &u
 	return r2
 }
