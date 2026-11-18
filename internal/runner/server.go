@@ -35,6 +35,10 @@ const (
 	DefaultGrace = 10 * time.Second
 )
 
+// ErrListening says another live runner holds the socket: a launcher already
+// runs on this data folder (V0.193).
+var ErrListening = errors.New("a runner already listens")
+
 // Server holds the processes. The launcher runs one for its whole life.
 type Server struct {
 	Logf    func(format string, args ...any)
@@ -121,7 +125,7 @@ func orDefault(d, def time.Duration) time.Duration {
 func (s *Server) Listen(path string) error {
 	if c, err := net.Dial("unix", path); err == nil {
 		c.Close()
-		return fmt.Errorf("a runner already listens on %s", path)
+		return fmt.Errorf("%w on %s", ErrListening, path)
 	}
 	os.Remove(path)
 	old := syscall.Umask(0o077)

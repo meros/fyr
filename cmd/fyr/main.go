@@ -15,6 +15,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/deploy"
+	"github.com/meros/fyr/internal/runner"
 )
 
 func main() {
@@ -64,6 +66,11 @@ func main() {
 	// launcher lives, so a new fyrd (a deploy, a crash) takes them over.
 	// #167: only the fyrd this launcher starts may use it.
 	srv, err := l.ServeRunner(log.Printf)
+	if errors.Is(err, runner.ErrListening) {
+		// V0.193: a second launcher's fyrd can only fail on the port, six times
+		// into the live install's log.
+		log.Fatalf("fyr: Fyr already runs on %s (%v); not starting a second one. `fyr open` opens it.", *data, err)
+	}
 	if err != nil {
 		log.Printf("fyr: runner: %v; agents run as fyrd's children", err)
 	}

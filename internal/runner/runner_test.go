@@ -401,3 +401,17 @@ func TestV147KillReachesAProcessThatReadsNothing(t *testing.T) {
 		return len(ps) == 1 && ps[0].Exited
 	})
 }
+
+// V0.193: a second launcher on the same data folder learns that one runs.
+func TestListenRefusesALiveRunner(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "runner.sock")
+	first := &runner.Server{Logf: t.Logf}
+	if err := first.Listen(sock); err != nil {
+		t.Fatal(err)
+	}
+	go first.Serve()
+	t.Cleanup(func() { first.Close(time.Second) })
+	if err := (&runner.Server{Logf: t.Logf}).Listen(sock); !errors.Is(err, runner.ErrListening) {
+		t.Fatalf("second Listen = %v, want ErrListening", err)
+	}
+}
