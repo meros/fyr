@@ -1161,6 +1161,31 @@ try {
 }
 });
 
+// V0.187: an entry of the conversation clips what leaves its box (content-visibility, V0.41's list work), so a message's
+// Copy has to lie inside its entry to be seen. On the desktop it shows on hover, under the message.
+section("V0.187 message copy", async ({ send, evaluate, navigate }) => {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/?mock=rail&runs=1&open=t_run`, "!!document.querySelector('.msgw>.msgcp')");
+  const at = await evaluate(`(() => {
+    const w = [...document.querySelectorAll('.msgw')].filter((m) => m.querySelector(':scope>.msgcp')).pop();
+    w.scrollIntoView({ block: "center" });
+    const b = w.getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+  await new Promise((r) => setTimeout(r, 250));
+  const r = await evaluate(`(() => {
+    const w = [...document.querySelectorAll('.msgw')].filter((m) => m.querySelector(':scope>.msgcp')).pop();
+    const c = w.querySelector(':scope>.msgcp'), b = c.getBoundingClientRect(), e = c.closest('.convo-in>*').getBoundingClientRect(), m = w.getBoundingClientRect();
+    return { opacity: getComputedStyle(c).opacity, inEntry: b.top >= e.top - 0.5 && b.bottom <= e.bottom + 0.5, under: b.top >= m.bottom - 0.5,
+      hit: document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2) === c, gap: e.bottom - m.bottom };
+  })()`);
+  check(r.opacity === "1", `V0.187: Copy does not show on hover ${JSON.stringify(r)}`);
+  check(r.inEntry && r.hit, `V0.187: the entry clips the message's Copy ${JSON.stringify(r)}`);
+  check(r.under, `V0.187: Copy covers the message ${JSON.stringify(r)}`);
+});
+
 // V0.149: a command the agent wants the owner to run is a Run card under the conversation, the same component on the
 // desktop and the phone: the full command wraps (no sideways scroll), a Nix store path is shortened until pressed, the
 // buttons are inside the screen and 44 px tall on the phone; a `! cmd` block in a message is a Copy-only card.
