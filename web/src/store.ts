@@ -509,11 +509,17 @@ export function decodeHostMarks(raw: unknown): OwnerMarks {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
   for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
     if (!v || typeof v !== "object") continue;
-    const { icon, color } = v as { icon?: unknown; color?: unknown };
-    const m: { icon?: string; color?: string } = {};
+    const { icon, color, by, setup } = v as { icon?: unknown; color?: unknown; by?: { icon?: unknown; color?: unknown } | null; setup?: { thread?: unknown; at?: unknown; error?: unknown } | null };
+    const m: OwnerMarks[string] = {};
     if (typeof icon === "string" && icon) m.icon = icon;
     if (typeof color === "string" && color) m.color = color;
-    if (m.icon || m.color) out[id] = m;
+    // V0.208: who set each field, and the host's last setup run.
+    const who = (x: unknown) => (x === "owner" || x === "agent" ? x : undefined);
+    const byIcon = who(by?.icon);
+    const byColor = who(by?.color);
+    if (byIcon || byColor) m.by = { ...(byIcon ? { icon: byIcon } : {}), ...(byColor ? { color: byColor } : {}) };
+    if (setup && typeof setup.at === "string") m.setup = { at: setup.at, ...(typeof setup.thread === "string" ? { thread: setup.thread } : {}), ...(typeof setup.error === "string" && setup.error ? { error: setup.error } : {}) };
+    if (m.icon || m.color || m.by || m.setup) out[id] = m;
   }
   return out;
 }

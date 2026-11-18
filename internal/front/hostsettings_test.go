@@ -24,6 +24,7 @@ import (
 // provider registry on its own store and secrets, its system agents and its
 // update setting.
 type settingsHost struct {
+	srv *server.Server
 	*host
 	reg *provider.Registry
 	// home is the host's home folder, the root of its folder picker (V0.132).
@@ -75,7 +76,7 @@ func newSettingsHost(t *testing.T, name string) *settingsHost {
 		inner.ServeHTTP(w, r)
 	}))
 	t.Cleanup(func() { h.hs.CloseClientConnections(); h.hs.Close(); st.Close() })
-	return &settingsHost{host: h, reg: reg, home: home}
+	return &settingsHost{host: h, reg: reg, home: home, srv: s}
 }
 
 // registryAPI is fyrd's providerAPI: the registry as the server reads it.

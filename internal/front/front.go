@@ -567,7 +567,7 @@ func (f *Front) load(l *link, st map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	env := map[string]any{}
-	for _, k := range []string{"actions", "profiles", "deploy", "stall", "user", "host", "hostId", "hostOrder", "machine", "os", "hostMarks"} {
+	for _, k := range []string{"actions", "profiles", "deploy", "stall", "user", "host", "hostId", "hostOrder", "machine", "os", "hostMarks", "agentMark"} {
 		if v, ok := st[k]; ok {
 			env[k] = v
 		}
@@ -695,6 +695,14 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 		if d, err := decode(data); err == nil {
 			f.mu.Lock()
 			l.env["hostMarks"] = d
+			l.dirty = true
+			f.publishMarksLocked()
+			f.mu.Unlock()
+		}
+	case "agentMark": // V0.208: the host's agent set its mark, or a setup run started
+		if d, err := decode(data); err == nil {
+			f.mu.Lock()
+			l.env["agentMark"] = d
 			l.dirty = true
 			f.publishMarksLocked()
 			f.mu.Unlock()
@@ -1062,7 +1070,7 @@ func (f *Front) state(w http.ResponseWriter, r *http.Request) {
 	}
 	st.Actions = actionsOf(actions)
 	st.ProjectOrder = f.order
-	if ms := f.newestMarksLocked().Marks; len(ms) > 0 { // V0.171: by host install id
+	if ms := f.shownMarksLocked(); len(ms) > 0 { // V0.171: by host install id
 		st.HostMarks = ms
 	}
 	b, err := json.Marshal(st)

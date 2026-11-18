@@ -111,7 +111,7 @@ export function createMockApi(scenario: string): Api {
   let onOrder: ((ids: string[]) => void) | undefined;
   let onHosts: ((hs: import("./hosts.ts").HostInfo[]) => void) | undefined;
   // V0.171: the owner's host marks by install id, as the front keeps them (&hostMarks=<json> sets some at load).
-  let marks: Record<string, { icon?: string; color?: string }> = (() => {
+  let marks: import("./host-mark.ts").OwnerMarks = (() => {
     try {
       return JSON.parse(new URLSearchParams(typeof location !== "undefined" ? location.search : "").get("hostMarks") ?? "{}");
     } catch {
@@ -147,15 +147,24 @@ export function createMockApi(scenario: string): Api {
         setTimeout(() => onHosts?.(decodeHosts(mockHosts(Date.now()))), 0); // the front's hosts event (V0.124)
         return { ok: true, result: { host: "lab" } };
       }
+      if (action === "host.setupRun") {
+        // V0.208: Set up automatically on a host: a thread there; the mock agent sets nothing.
+        const id = mockHosts(Date.now()).find((x) => x.name === hn)?.id;
+        if (id) marks = { ...marks, [id]: { ...marks[id], setup: { at: new Date().toISOString(), thread: "t_setup" } } };
+        setTimeout(() => onMarks?.(marks), 0);
+        return { ok: true, result: { thread: "t_setup" } };
+      }
       if (action === "front.hostMark") {
-        // V0.171: as the front: one host's mark by its id; both empty is automatic again.
+        // V0.171: as the front: one host's mark by its id; V0.208: a changed field is the owner's, an emptied one too.
         const id = String(args?.id ?? "");
         const icon = String(args?.icon ?? "").trim();
         const color = String(args?.color ?? "").trim();
         if (!id || (color && !/^[a-z]{1,16}$/.test(color))) return { ok: false, error: "a host mark needs the host's id; an icon is a glyph name or an emoji, a colour a palette name" };
+        const cur = marks[id] ?? {};
+        const by = { ...cur.by, ...(icon !== (cur.icon ?? "") ? { icon: "owner" } : {}), ...(color !== (cur.color ?? "") ? { color: "owner" } : {}) };
         const next = { ...marks };
-        if (!icon && !color) delete next[id];
-        else next[id] = { ...(icon ? { icon } : {}), ...(color ? { color } : {}) };
+        if (!icon && !color && !by.icon && !by.color && !cur.setup) delete next[id];
+        else next[id] = { ...(icon ? { icon } : {}), ...(color ? { color } : {}), ...(by.icon || by.color ? { by } : {}), ...(cur.setup ? { setup: cur.setup } : {}) };
         marks = next;
         setTimeout(() => onMarks?.(marks), 0); // the front's hostMarks event
         return { ok: true, result: { id } };

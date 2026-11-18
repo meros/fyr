@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { HOST_ICON_NAMES, hostColors, hostGlyph, hostMarkOf } from "../src/host-mark.ts";
 import { decodeHosts, type HostInfo } from "../src/hosts.ts";
 import { PALETTE_NAMES } from "../src/projects.ts";
+import { decodeHostMarks } from "../src/store.ts";
 
 const H = (name: string, extra: Partial<HostInfo> = {}): HostInfo => ({ name, online: true, ...extra });
 
@@ -88,4 +89,17 @@ test("an owner's colour is kept free: the automatic colours of the other hosts a
 
 test("the icons the owner can pick", () => {
   assert.deepEqual(HOST_ICON_NAMES, ["laptop", "monitor", "server", "house", "cloud", "cpu", "database", "terminal", "box"]);
+});
+
+// SPEC 0.5 V0.208: who set each field and the last setup run come through; a chosen automatic mark is kept.
+test("the marks decode who set them", () => {
+  const m = decodeHostMarks({
+    A: { icon: "cloud", color: "rose", by: { icon: "agent", color: "owner" }, setup: { at: "2026-11-18T10:00:00Z", error: "no agent" } },
+    B: { by: { icon: "owner", color: "someone" } },
+    C: {},
+  });
+  assert.deepEqual(m, {
+    A: { icon: "cloud", color: "rose", by: { icon: "agent", color: "owner" }, setup: { at: "2026-11-18T10:00:00Z", error: "no agent" } },
+    B: { by: { icon: "owner" } },
+  });
 });

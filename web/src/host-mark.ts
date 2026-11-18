@@ -9,8 +9,10 @@ export type HostGlyph = "laptop" | "monitor" | "server";
 export const HOST_ICON_NAMES = ["laptop", "monitor", "server", "house", "cloud", "cpu", "database", "terminal", "box"] as const;
 export type HostIcon = (typeof HOST_ICON_NAMES)[number];
 
-/** V0.171: the owner's icon and colour of a host, by its install id (the state's hostMarks); empty is automatic. */
-export type OwnerMarks = Record<string, { icon?: string; color?: string }>;
+/** V0.171: the icon and colour of a host, by its install id (the state's hostMarks); empty is automatic. V0.208: `by`
+ *  says who set each ("owner" or "agent"; the owner may have chosen automatic), `setup` is the host's last setup run. */
+export type OwnerMark = { icon?: string; color?: string; by?: { icon?: string; color?: string }; setup?: { thread?: string; at: string; error?: string } };
+export type OwnerMarks = Record<string, OwnerMark>;
 
 const isIcon = (x: string | undefined): x is HostIcon => !!x && (HOST_ICON_NAMES as readonly string[]).includes(x);
 const isColor = (x: string | undefined): x is string => !!x && PALETTE_NAMES.includes(x);

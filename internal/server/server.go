@@ -416,7 +416,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
 	profiles := s.profiles()
 	api.WriteJSON(w, 200, api.State[api.Thread, api.Project, provider.Profile]{
-		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(), Machine: machine.Kind(), OS: machine.OS(), HostMarks: s.hostMarks(),
+		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(), Machine: machine.Kind(), OS: machine.OS(), HostMarks: s.hostMarks(), AgentMark: s.agentMark(),
 		Threads: threads, Actions: acts, Profiles: profiles, Projects: projects,
 		Partial: since > 0, Deploy: s.Engine.DeployState(time.Now()), Stall: s.Engine.StallState(time.Now()),
 	})
@@ -952,6 +952,14 @@ func (s *Server) focus(w http.ResponseWriter, r *http.Request) {
 // hostMarks is the host's copy of the owner's host marks (V0.171), or nil.
 func (s *Server) hostMarks() any {
 	if m := s.Engine.HostMarks(); !m.At.IsZero() {
+		return m
+	}
+	return nil
+}
+
+// agentMark is what this host's agent set for its mark (V0.208), or nil.
+func (s *Server) agentMark() any {
+	if m := s.Engine.AgentMark(); m != (engine.AgentMark{}) {
 		return m
 	}
 	return nil

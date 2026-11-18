@@ -6,6 +6,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/stream"
 )
 
@@ -17,6 +18,8 @@ const hostMarksKey = "hostMarks"
 type HostMark struct {
 	Icon  string `json:"icon,omitempty"`
 	Color string `json:"color,omitempty"`
+	// By: the fields the owner set, a cleared one too (V0.208).
+	By core.HostMarkBy `json:"by,omitzero"`
 }
 
 // HostMarks are the owner's marks by host install id and when they were set;
@@ -83,7 +86,7 @@ func hostMarksOf(args map[string]any) HostMarks {
 		e, _ := v.(map[string]any)
 		icon, _ := e["icon"].(string)
 		color, _ := e["color"].(string)
-		m.Marks[id] = HostMark{Icon: icon, Color: color}
+		m.Marks[id] = HostMark{Icon: icon, Color: color, By: core.HostMarkByOf(e["by"])}
 	}
 	m.At, _ = time.Parse(time.RFC3339Nano, args["at"].(string))
 	return m

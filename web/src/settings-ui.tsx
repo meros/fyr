@@ -37,9 +37,9 @@ import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
 import { githubPause, githubRows, githubState, updateRow, updateState, type UpdatesView } from "./updates.ts";
 import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
-import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects } from "./projects.ts";
+import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects, setupLine } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
-import { NewProjectStep, ProjectEditor, ProjectIcon, type ProjectPatch } from "./project-ui.tsx";
+import { NewProjectStep, ProjectEditor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
 import { pushRow, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { move } from "./reorder.ts";
@@ -1917,11 +1917,13 @@ const GLYPH_WORDS: Record<string, string> = { laptop: "a laptop (it has a batter
 
 /** V0.171: the host's mark, set by the owner: an icon (Automatic, one of the glyphs, or an emoji) and a colour
  *  (Automatic or one of the ten hues). Kept by its install id on every host (front.hostMark); the same group on the
- *  desktop and the phone. */
+ *  desktop and the phone. V0.208: as a project's fields, an agent fills what the owner has not set ("Set by agent"
+ *  until the owner changes it), and Set up automatically runs it on that host. */
 function HostMarkGroup({ h, api }: { h: HostInfo; api: SettingsProps["api"] }) {
   const env = useSet();
   const marks = useHostMarks();
   const [err, setErr] = useState<string | null>(null);
+  const [setupErr, setSetupErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   if (!h.id)
     return (
@@ -1943,16 +1945,26 @@ function HostMarkGroup({ h, api }: { h: HostInfo; api: SettingsProps["api"] }) {
     } else setErr(r.error || "the mark could not be saved");
   };
   const off = env.readOnly || busy;
+  const iconBy = !!own.icon && own.by?.icon === "agent";
+  const colorBy = !!own.color && own.by?.color === "agent";
+  const setter = (own.icon && !iconBy) || (own.color && !colorBy) ? "you" : "an agent";
+  const setup0 = setupLine({ setup: own.setup });
+  const setup = async () => {
+    setBusy(true);
+    const r = await api.command(h.id!, "host.setupRun");
+    setBusy(false);
+    setSetupErr(r.ok ? null : (r.error ?? "That did not work"));
+  };
   return (
     <Group title="Mark" foot="Kept on every host by its id, so every device shows it.">
       <Row
         class="hmprev"
         title={<HostMark name={h.name} size={32} />}
-        desc={!own.icon && !own.color ? `Automatic: ${GLYPH_WORDS[auto]}, a colour from its id.` : `Set by you.${!own.icon ? ` The icon is automatic: ${GLYPH_WORDS[auto]}.` : ""}${!own.color ? " The colour is automatic." : ""}`}
+        desc={!own.icon && !own.color ? `Automatic: ${GLYPH_WORDS[auto]}, a colour from its id.` : `Set by ${setter}.${!own.icon ? ` The icon is automatic: ${GLYPH_WORDS[auto]}.` : ""}${!own.color ? " The colour is automatic." : ""}`}
         error={err}
       />
       <div class="sr col hmicon">
-        <span class="sr-t">Icon</span>
+        <span class="sr-t">Icon{iconBy && <SetBy of="host" />}</span>
         <div class="igrid" role="radiogroup" aria-label="Icon">
           <button type="button" class={`ig auto${!icon ? " on" : ""}`} role="radio" aria-checked={!icon} title="Automatic" aria-label="Automatic" disabled={off} onClick={() => icon && void set({ icon: "" })}>
             Auto
@@ -1976,7 +1988,7 @@ function HostMarkGroup({ h, api }: { h: HostInfo; api: SettingsProps["api"] }) {
         </span>
       </div>
       <Row
-        title="Colour"
+        title={<>Colour{colorBy && <SetBy of="host" />}</>}
         stack
         end={
           <div class="swatches" role="radiogroup" aria-label="Colour">
@@ -1987,6 +1999,17 @@ function HostMarkGroup({ h, api }: { h: HostInfo; api: SettingsProps["api"] }) {
               <button type="button" class={`sw${c === own.color ? " on" : ""}`} role="radio" aria-checked={c === own.color} aria-label={c} title={c} style={{ "--pc": `var(--p-${c})` }} disabled={off} onClick={() => c !== own.color && void set({ color: c })} />
             ))}
           </div>
+        }
+      />
+      <Row
+        title="Set up automatically"
+        class="psetup"
+        desc={!setupErr && !setup0?.error ? <>An agent on this host looks at the machine and fills in what you have not set.{!h.online ? " Needs the host online." : setup0 ? ` ${setup0.text}` : ""}</> : undefined}
+        error={setupErr ?? (setup0?.error ? setup0.text : null)}
+        end={
+          <button type="button" class="btn" disabled={off || !h.online} onClick={() => void setup()}>
+            {own.setup ? "Run again" : "Run setup"}
+          </button>
         }
       />
     </Group>

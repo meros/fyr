@@ -20,6 +20,8 @@ const (
 	FrameHostOrder = "hostOrder"
 	// FrameHostMarks are the owner's host marks (V0.171), as a host keeps them.
 	FrameHostMarks = "hostMarks"
+	// FrameAgentMark is this host's own agent's mark (V0.208).
+	FrameAgentMark = "agentMark"
 	FrameEvent     = "event"
 )
 
