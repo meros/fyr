@@ -510,6 +510,14 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	// V0.51: the host never serves the client; a front does.
 	key := installKey(data)
 	id := key.ID()
+	// V0.208: this host's mark gets one setup run, as a project does.
+	eng.InstallID = id
+	go func() {
+		time.Sleep(time.Minute)
+		if eng.SetupHostOnce() {
+			log.Printf("host setup: started a run for this host's mark")
+		}
+	}()
 	srv := &server.Server{ID: id, Engine: eng, MCP: mcpSrv, BuildID: BuildID(), ProfileList: h.profiles, Providers: providerAPI{reg}, HandoverPlan: mgr.HandoverPlan, OwnerLogin: cfg.OwnerLogin, Attach: att, FS: h.folders, PR: prDetails,
 		Quota: func(ctx context.Context) any { return quotas.Get(ctx) },
 		Load:  sampler,

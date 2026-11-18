@@ -32,6 +32,12 @@ const (
 	FieldProjectImage Field = "project.image"
 )
 
+// V0.208: a host's icon and colour; the owner's is kept.
+const (
+	FieldHostIcon  Field = "host.icon"
+	FieldHostColor Field = "host.color"
+)
+
 // Right is one row of the table.
 type Right struct {
 	Field Field
@@ -50,6 +56,8 @@ var Rights = []Right{
 	{Field: FieldProjectName, By: []string{ByOwner, ByAgent}, Kept: ownerOnly, Over: agentOnly, Refuse: "the owner named %s"},
 	{Field: FieldProjectColor, By: []string{ByOwner, ByAgent}, Kept: ownerOnly, Over: agentOnly, Refuse: "the owner chose %s"},
 	{Field: FieldProjectImage, By: []string{ByOwner, ByAgent}, Kept: ownerOnly, Over: agentOnly, Refuse: "the owner set %s"},
+	{Field: FieldHostIcon, By: []string{ByOwner, ByAgent}, Kept: ownerOnly, Over: agentOnly, Refuse: "the owner set %s"},
+	{Field: FieldHostColor, By: []string{ByOwner, ByAgent}, Kept: ownerOnly, Over: agentOnly, Refuse: "the owner chose %s"},
 	{Field: FieldThreadProject, By: ownerOnly, Refuse: "only the owner files %s in a project"},
 	{Field: FieldThreadView, By: ownerOnly, Refuse: "only the owner turns the live view of %s on or off"},
 	{Field: FieldViewSeen, By: ownerOnly, Refuse: "only the owner sees %s"},

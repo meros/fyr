@@ -4786,6 +4786,25 @@ try {
   const hb = rows.filter((r) => r.host === "host-b"), others = rows.filter((r) => r.host !== "host-b");
   check(hb.length >= 2 && hb.every((r) => r.glyph === "emoji" && r.text === "🍓" && r.color === teal) && others.length && others.every((r) => r.color !== teal), `${ctx}: the owner's mark on rows and in the switch (${JSON.stringify({ hb: hb.slice(0, 2), others: others.slice(0, 2) })})`);
   await shot(`host-mark-rows-${phone ? "phone" : "desktop"}.png`);
+  // V0.208: what an agent set shows "Set by agent" on that field until the owner changes it; a run starts from the page.
+  const byAgent = encodeURIComponent(JSON.stringify({ [ID]: { icon: "cloud", color: "rose", by: { icon: "agent", color: "agent" } } }));
+  await go(`${page("host-b")}&hostMarks=${byAgent}`, "!!document.querySelector('.hmprev .hmark')");
+  const TAGS = `[...document.querySelectorAll('.setby')].map((e) => e.parentElement.textContent)`;
+  const d = await evaluate(PREV);
+  check(d?.glyph === "cloud" && d.desc === "Set by an agent." && JSON.stringify(await evaluate(TAGS)) === JSON.stringify(["IconSet by agent", "ColourSet by agent"]), `${ctx}: the agent's mark (${JSON.stringify({ d, tags: await evaluate(TAGS) })})`);
+  await evaluate(`document.querySelector('.swatches .sw[aria-label="teal"]').click()`);
+  await waitFor(`${TAGS}.length === 1`, { soft: true });
+  check(JSON.stringify(await evaluate(TAGS)) === JSON.stringify(["IconSet by agent"]) && (await evaluate(PREV))?.desc === "Set by you.", `${ctx}: the owner's colour is the owner's, the agent's icon stays the agent's (${JSON.stringify(await evaluate(TAGS))})`);
+  // host-b is offline: its run cannot start. lab is online.
+  const offRow = await evaluate(`({ off: document.querySelector('.psetup .btn')?.disabled, row: document.querySelector('.psetup')?.textContent })`);
+  check(offRow.off === true && offRow.row.includes("Needs the host online."), `${ctx}: no run on an offline host (${JSON.stringify(offRow)})`);
+  await shot(`host-mark-agent-${phone ? "phone" : "desktop"}.png`);
+  await go(page("lab"), "!!document.querySelector('.psetup .btn')");
+  await evaluate(`document.querySelector('.psetup .btn').click()`);
+  await waitFor(`document.querySelector('.psetup .btn')?.textContent === 'Run again'`, { soft: true });
+  const run = await evaluate(`({ sent: ${COMMANDS("host.setupRun")}.length, button: document.querySelector('.psetup .btn')?.textContent, row: document.querySelector('.psetup')?.textContent })`);
+  check(run.sent === 1 && run.button === "Run again" && run.row.includes("an agent filled in what you had not set"), `${ctx}: Set up automatically (${JSON.stringify(run)})`);
+  if (phone) check(await evaluate(`document.querySelector('.psetup .btn').getBoundingClientRect().height >= 44`), `${ctx}: the setup button under 44 px on the phone`);
   // 4. old-nuc has no install id.
   await go(page("old-nuc"), "!!document.querySelector('.hmprev, .sr .hmark')");
   const n = await evaluate(`({ grid: !!document.querySelector('.hmicon'), text: [...document.querySelectorAll('.sr-d')].map((e) => e.textContent).find((t) => t.includes('no install id')) ?? '' })`);

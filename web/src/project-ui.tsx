@@ -62,10 +62,10 @@ export function ProjectIcon({ project, name, size = 16 }: { project?: Project; n
   );
 }
 
-/** V0.116: the mark beside a field the setup agent filled; the owner's change makes it theirs. */
-function SetBy() {
+/** V0.116: the mark beside a field the setup agent filled; the owner's change makes it theirs. V0.208: a host's too. */
+export function SetBy({ of = "project" }: { of?: "project" | "host" }) {
   return (
-    <em class="setby" title="Set by the project setup agent. Change it and it is yours.">
+    <em class="setby" title={`Set by the ${of} setup agent. Change it and it is yours.`}>
       Set by agent
     </em>
   );

@@ -309,7 +309,7 @@ func (f *Front) frontState(w http.ResponseWriter, r *http.Request) {
 	}
 	out := map[string]any{"now": time.Now().UTC(), "user": core.Owner, "buildId": f.client.Load().build,
 		"front": map[string]any{"id": f.opt.ID, "name": f.opt.Name}, "hosts": hosts, "projectOrder": order}
-	if ms := f.newestMarksLocked().Marks; len(ms) > 0 { // V0.171: by host install id
+	if ms := f.shownMarksLocked(); len(ms) > 0 { // V0.171: by host install id
 		out["hostMarks"] = ms
 	}
 	b, err := json.Marshal(out)

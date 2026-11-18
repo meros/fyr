@@ -143,6 +143,9 @@ type State[T, P, F any] struct {
 	// V0.171), nil when none was set; on a front, the newest marks by host
 	// install id ({id: {icon, color}}).
 	HostMarks any `json:"hostMarks,omitempty"`
+	// AgentMark: on a host, what its own agent set for its mark and its last
+	// setup run (V0.208), nil when neither; a front lays it under the owner's.
+	AgentMark any `json:"agentMark,omitempty"`
 }
 
 // Action is an owner action as clients list it.

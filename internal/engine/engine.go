@@ -78,6 +78,8 @@ type Engine struct {
 	hostOrder HostOrder
 	// hostMarks are the owner's host icons and colours by install id (V0.171).
 	hostMarks HostMarks
+	// agentMark is this host's own agent's mark and last setup run (V0.208).
+	agentMark AgentMark
 	// systemAgents is the owner's system agents setting (V0.115).
 	systemAgents core.SystemAgents
 	deploySeen   map[string]string
@@ -104,6 +106,8 @@ type Engine struct {
 	AutoSetup bool
 	// HostID names this host in folder sources (V0.23); default the hostname.
 	HostID string
+	// InstallID is this install's key id (V0.124), the key of its host mark.
+	InstallID string
 	// HostName names this host in the heavy-job answers (V0.163).
 	HostName string
 	lastRev  int64
@@ -225,6 +229,7 @@ func (e *Engine) Load() error {
 	e.loadAutoDeploy()   // V0.111
 	e.loadHostOrder()    // V0.132
 	e.loadHostMarks()    // V0.171
+	e.loadAgentMark()    // V0.208
 	e.loadSystemAgents() // V0.115
 	old, err := e.st.OldProjectSources()
 	if err != nil {
@@ -351,6 +356,9 @@ func (e *Engine) submit(in core.Input) api.Reply {
 	}
 	if k.Await {
 		return e.await(in, k)
+	}
+	if in.Kind == core.KindHostSetupRun { // V0.208: the thread first
+		return e.startHostSetup(in.CmdID)
 	}
 	if in.Kind == core.KindProjectSetupRun { // V0.116: the thread first
 		return e.startSetup(a.Str("id"), in.Source, in.CmdID)
