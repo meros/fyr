@@ -388,7 +388,13 @@ type Poller struct {
 	// kick before Run waits for it and no goroutine writes the field
 	// while another reads it (review 2026-11-15).
 	kickOnce sync.Once
-	kick     chan string
+	kick     chan kickReq
+}
+
+// kickReq is one thread to read now; done, when set, closes after the read.
+type kickReq struct {
+	id   string
+	done chan struct{}
 }
 
 func (p *Poller) now() time.Time {
@@ -398,15 +404,31 @@ func (p *Poller) now() time.Time {
 	return time.Now()
 }
 
-func (p *Poller) kicks() chan string {
-	p.kickOnce.Do(func() { p.kick = make(chan string, 16) })
+func (p *Poller) kicks() chan kickReq {
+	p.kickOnce.Do(func() { p.kick = make(chan kickReq, 16) })
 	return p.kick
 }
 
 func (p *Poller) Kick(threadID string) {
 	select {
-	case p.kicks() <- threadID:
+	case p.kicks() <- kickReq{id: threadID}:
 	default:
+	}
+}
+
+// Refresh reads the thread's PRs now and returns once they are observed, or
+// when ctx ends first (V0.199). The read runs in Run, which owns the poller's
+// maps.
+func (p *Poller) Refresh(ctx context.Context, threadID string) {
+	done := make(chan struct{})
+	select {
+	case p.kicks() <- kickReq{id: threadID, done: done}:
+	case <-ctx.Done():
+		return
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
 	}
 }
 
@@ -424,11 +446,14 @@ func (p *Poller) Run(ctx context.Context) {
 			return
 		case <-tick.C:
 			p.pollAll(ctx)
-		case id := <-kick:
+		case k := <-kick:
 			for _, t := range p.Src.Snapshot() {
-				if t.ID == id {
+				if t.ID == k.id {
 					p.poll(ctx, t)
 				}
+			}
+			if k.done != nil {
+				close(k.done)
 			}
 		}
 	}

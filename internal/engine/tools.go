@@ -33,7 +33,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 			"args":   map[string]any{"type": "object"},
 			"reason": str("One sentence for the user: why now."),
 		}, "action", "args"),
-		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+		Call: func(ctx context.Context, th string, a map[string]any) (string, error) {
 			action, _ := a["action"].(string)
 			args, _ := a["args"].(map[string]any)
 			if args == nil {
@@ -41,6 +41,9 @@ func (e *Engine) Tools(s *mcp.Server) {
 			}
 			if err := canonicalArgs(args); err != nil {
 				return "", err
+			}
+			if action == core.FyrMerge {
+				e.readPRForMergeAsk(ctx, th)
 			}
 			reason, _ := a["reason"].(string)
 			id := NewID("d_")

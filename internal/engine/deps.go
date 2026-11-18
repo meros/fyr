@@ -53,6 +53,9 @@ type OutsideDeps struct {
 	Effects EffectRunner
 	// OnPR is called when a thread gets a new PR, so the poller looks now.
 	OnPR func(threadID string)
+	// RefreshPR reads the thread's PRs now and returns when Fyr has them, or
+	// when ctx ends (V0.199). nil: Fyr goes by its last read.
+	RefreshPR func(ctx context.Context, threadID string)
 	// OnAttention is called when a thread's attention state changes (push,
 	// SPEC 0.5 V0.15). prev is "" for a new thread.
 	OnAttention func(d api.Thread, prev core.State)
