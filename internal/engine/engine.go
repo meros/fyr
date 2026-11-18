@@ -91,6 +91,8 @@ type Engine struct {
 
 	// quietSent is the quiet hours the clients last got, per project (V0.46).
 	quietSent map[string]string
+	// repos caches each project folder's git origin (decision 0033).
+	repos map[string]folderRepo
 	// ScratchRoots are the scratch folders' roots (V0.28): their threads get
 	// no "New project from this thread"; nil: the defaults.
 	ScratchRoots []string

@@ -234,6 +234,8 @@ export interface Project {
   folder?: string;
   /** Decision 0033: records on several hosts with one link are one project */
   link?: string;
+  /** Decision 0033: the folder's git origin, as the host read it */
+  repo?: string;
   /** Decision 0033: when the values the members share were set; the newest wins */
   sharedAt?: string;
   /** Decision 0033: the client's: the member whose image a linked project shows */

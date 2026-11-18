@@ -1072,6 +1072,12 @@ function App() {
       const failed = (r.result as { failed?: { error?: string }[] } | undefined)?.failed;
       return failed?.[0]?.error ?? null;
     },
+    /** Decision 0033: the project gets a member on another host, in a folder there. */
+    add: async (id: string, host: string, folder: string): Promise<{ error: string | null; id?: string }> => {
+      const r = await api.frontCommand("front.projectAdd", { ref: id, host, folder });
+      if (!r.ok) return { error: r.error ?? "That did not work" };
+      return { error: null, id: (r.result as { id?: string } | undefined)?.id };
+    },
     /** Decision 0033: this host's record leaves the link, with its values and threads. */
     unlink: async (id: string): Promise<string | null> => {
       const r = await api.frontCommand("front.projectUnlink", { ref: id });
@@ -1481,6 +1487,7 @@ function App() {
         order: projectActions.order,
         link: projectActions.link,
         unlink: projectActions.unlink,
+        add: async (id, host, folder) => (await projectActions.add(id, host, folder)).error,
       }}
     />
     </HostsContext.Provider>
@@ -1811,7 +1818,7 @@ function App() {
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={filterId} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
+      {dialog === "new" && <NewThreadDialog onAddProject={projectActions.add} profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={filterId} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
       {dialog === "picker" && (
         <Modal title={pickIds.length > 1 ? `Project for ${pickIds.length} threads` : "Project"} onClose={() => setDialog(null)} wide>
           <div class="db">

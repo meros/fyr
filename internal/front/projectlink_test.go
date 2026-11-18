@@ -199,3 +199,40 @@ func TestProjectSharedValues(t *testing.T) {
 	b.setDown(false)
 	eventually(t, "b catches up", func() bool { n, c := projectNamed(b, onB); return n == "While away" && c == "teal" })
 }
+
+// Decision 0033, slice 3: a project gets a member on another host, in a folder
+// of that host, with the link's values and no setup run.
+func TestProjectAdd(t *testing.T) {
+	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
+	f := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
+	online(t, f.URL, 2)
+	onA := projectOn(t, f.URL, a, "TEST-A", "Fyr")
+	add := func(id, host, folder string) (int, map[string]any) {
+		return post(t, f.URL+"/api/front/command", fmt.Sprintf(`{"commandId":%q,"action":"front.projectAdd","args":{"ref":%q,"host":%q,"folder":%q}}`, id, onA, host, folder))
+	}
+	if code, rep := add("same", "TEST-A", b.home); code != 400 {
+		t.Fatalf("its own host: %d %v", code, rep)
+	}
+	if code, rep := add("nofolder", "TEST-B", b.home+"/missing"); code == 200 {
+		t.Fatalf("a folder that does not exist: %v", rep)
+	}
+	code, rep := add("ok", "TEST-B", b.home)
+	if code != 200 || rep["ok"] != true {
+		t.Fatalf("add: %d %v", code, rep)
+	}
+	res := rep["result"].(map[string]any)
+	ref, link := res["id"].(string), res["link"].(string)
+	if linkOf(a, onA) != link || linkOf(b, ref) != link {
+		t.Fatalf("links: a %q b %q want %q", linkOf(a, onA), linkOf(b, ref), link)
+	}
+	if n, _ := projectNamed(b, ref); n != "Fyr" {
+		t.Fatalf("name on b: %q", n)
+	}
+	if ts := b.eng.Snapshot(); len(ts) != 0 {
+		t.Fatalf("a setup thread started: %d", len(ts))
+	}
+	eventually(t, "the front sees it", func() bool { return frontSees(t, f.URL, ref, link) })
+	if code, rep := add(probe(), "TEST-B", b.home); code != 409 {
+		t.Fatalf("a second member: %d %v", code, rep)
+	}
+}

@@ -27,6 +27,7 @@ const (
 	KindProjectLink   = "front.projectLink"
 	KindProjectUnlink = "front.projectUnlink"
 	KindProjectShared = "front.projectShared"
+	KindProjectAdd    = "front.projectAdd"
 	maxLinkRefs       = 16
 )
 
@@ -73,40 +74,42 @@ func (f *Front) projectAtLocked(ref string) (linkTarget, int, error) {
 }
 
 // hostCommand runs one project command on a host.
-func (f *Front) hostCommand(ctx context.Context, l *link, action, commandID string, args map[string]any) error {
+func (f *Front) hostCommand(ctx context.Context, l *link, action, commandID string, args map[string]any) (map[string]any, error) {
 	body, _ := json.Marshal(map[string]any{"commandId": commandID, "action": action, "args": args})
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", l.base.String()+"/api/command", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Fyr", "1")
 	resp, err := l.client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == 200 {
-		return nil
-	}
 	var r struct {
-		Error string `json:"error"`
+		Error  string         `json:"error"`
+		Result map[string]any `json:"result"`
 	}
 	json.NewDecoder(resp.Body).Decode(&r)
+	if resp.StatusCode == 200 {
+		return r.Result, nil
+	}
 	if strings.HasPrefix(r.Error, "unknown action") {
-		return fmt.Errorf("%s needs an update of Fyr to link projects", l.name())
+		return nil, fmt.Errorf("%s needs an update of Fyr to link projects", l.name())
 	}
 	if r.Error == "" {
 		r.Error = resp.Status
 	}
-	return fmt.Errorf("%s: %s", l.name(), r.Error)
+	return nil, fmt.Errorf("%s: %s", l.name(), r.Error)
 }
 
 // writeLink stores link on one record.
 func (f *Front) writeLink(ctx context.Context, t linkTarget, link, commandID string) error {
-	return f.hostCommand(ctx, t.l, core.KindProjectLink, commandID, map[string]any{"id": t.id, "link": link})
+	_, err := f.hostCommand(ctx, t.l, core.KindProjectLink, commandID, map[string]any{"id": t.id, "link": link})
+	return err
 }
 
 func newLinkID() string {
@@ -288,7 +291,8 @@ func (f *Front) writeShared(ctx context.Context, l *link, id, link string, vals 
 	for k, v := range vals {
 		args[k] = v
 	}
-	return f.hostCommand(ctx, l, core.KindProjectShared, commandID, args)
+	_, err := f.hostCommand(ctx, l, core.KindProjectShared, commandID, args)
+	return err
 }
 
 // syncLinksLocked sends a link's newest shared values to each online member
@@ -403,5 +407,89 @@ func (f *Front) projectSharedCommand(w http.ResponseWriter, commandID string, ar
 			return refusal(502, last)
 		}
 		return 200, api.Reply{OK: true, Status: 200, Result: map[string]any{"link": link, "stored": stored, "failed": failed}}
+	})
+}
+
+// projectAddCommand runs front.projectAdd {ref, host, folder}: the project
+// the ref names gets a member on that host, made there with its folder. A
+// project not yet linked gets a link now.
+func (f *Front) projectAddCommand(w http.ResponseWriter, commandID string, args map[string]any) {
+	f.frontCommand(w, commandID, func() (int, api.Reply) {
+		ref, _ := args["ref"].(string)
+		host, _ := args["host"].(string)
+		folder, _ := args["folder"].(string)
+		ctx := context.Background()
+		f.mu.Lock()
+		from, code, err := f.projectAtLocked(ref)
+		if err != nil {
+			f.mu.Unlock()
+			return refusal(code, err)
+		}
+		var to *link
+		for _, l := range f.all() {
+			if f.idOfLocked(l) == host {
+				to = l
+			}
+		}
+		switch {
+		case to == nil:
+			f.mu.Unlock()
+			return 404, api.Reply{Error: "this front follows no host " + host, Status: 404}
+		case !to.online:
+			name := to.name()
+			f.mu.Unlock()
+			return 409, api.Reply{Error: name + " is offline", Status: 409}
+		case to == from.l:
+			f.mu.Unlock()
+			return 400, api.Reply{Error: "the project is already on " + to.name(), Status: 400}
+		}
+		var first map[string]any
+		for _, p := range from.l.projects {
+			if p["id"] == from.id {
+				first = p
+			}
+		}
+		link, vals, at := from.linked, sharedOf(first), time.Now().UTC()
+		if ms := f.linksLocked()[link]; link != "" {
+			for _, m := range ms {
+				if m.l == to {
+					name := to.name()
+					f.mu.Unlock()
+					return 409, api.Reply{Error: name + " already has this project", Status: 409}
+				}
+			}
+			if best := newestMember(ms); !best.at.IsZero() {
+				vals, at = sharedOf(best.p), best.at
+			}
+		}
+		f.mu.Unlock()
+		fresh := link == ""
+		if fresh {
+			link = newLinkID()
+			if err := f.writeLink(ctx, from, link, commandID+":from"); err != nil {
+				return refusal(502, err)
+			}
+			if err := f.writeShared(ctx, from.l, from.id, link, vals, at, commandID+":from-shared"); err != nil {
+				return refusal(502, err)
+			}
+		}
+		create := map[string]any{"name": vals["name"], "link": link}
+		if folder != "" {
+			create["folder"] = folder
+		}
+		made, err := f.hostCommand(ctx, to, core.KindProjectCreate, commandID+":create", create)
+		if err != nil {
+			return refusal(502, err)
+		}
+		id, _ := made["id"].(string)
+		t := linkTarget{l: to, host: host, id: id}
+		// A host too old for links ignores link in project.create; this refuses there.
+		if err := f.writeLink(ctx, t, link, commandID+":link"); err != nil {
+			return refusal(502, err)
+		}
+		if err := f.writeShared(ctx, to, id, link, vals, at, commandID+":shared"); err != nil {
+			return refusal(502, err)
+		}
+		return 200, api.Reply{OK: true, Status: 200, Result: map[string]any{"link": link, "id": host + "/" + id}}
 	})
 }

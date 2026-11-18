@@ -100,6 +100,9 @@ type Project struct {
 	LastUsed time.Time `json:"lastUsed"`
 	// QuietUntil is the end of the quiet hours the project is in (V0.46).
 	QuietUntil *time.Time `json:"quietUntil,omitempty"`
+	// Repo is the folder's normalised git origin, read from its .git/config;
+	// the client suggests linking projects that have the same (decision 0033).
+	Repo string `json:"repo,omitempty"`
 }
 
 // State is GET /api/state (docs/API-v0.md). A host fills it with its own

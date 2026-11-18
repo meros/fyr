@@ -352,6 +352,8 @@ func (f *Front) frontCommandRoute(w http.ResponseWriter, r *http.Request) {
 		f.projectUnlinkCommand(w, c.CommandID, c.Args)
 	case KindProjectShared:
 		f.projectSharedCommand(w, c.CommandID, c.Args)
+	case KindProjectAdd:
+		f.projectAddCommand(w, c.CommandID, c.Args)
 	case KindHostOrder:
 		ids, ok := c.Args["ids"].([]any)
 		if !ok {

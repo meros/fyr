@@ -194,7 +194,19 @@ export function expandOrder(ids: readonly string[], projects: readonly Project[]
 /** What can join this project: a project on a host it is not on, and not in another link. */
 export function linkCandidates(p: Project, projects: readonly Project[]): Project[] {
   const taken = new Set((p.members ?? [p]).map((m) => m.hostId));
-  return projects.filter((x) => x.id && !x.members && x.hostId && !taken.has(x.hostId) && (!x.link || x.link === p.link));
+  const list = projects.filter((x) => x.id && !x.members && x.hostId && !taken.has(x.hostId) && (!x.link || x.link === p.link));
+  return [...list.filter((x) => sameRepo(p, x)), ...list.filter((x) => !sameRepo(p, x))];
+}
+
+/** Both folders have this git origin: the two are probably one project. A suggestion only; nothing links by itself. */
+export function sameRepo(a: Pick<Project, "repo">, b: Pick<Project, "repo">): boolean {
+  return !!a.repo && a.repo === b.repo;
+}
+
+/** The hosts this project can be added on: online, with an install id, and without a member. */
+export function addHosts(p: Project, hosts: readonly HostInfo[]): HostInfo[] {
+  const taken = new Set((p.members ?? [p]).map((m) => m.hostId));
+  return hosts.filter((h) => h.online && h.id && !taken.has(h.id));
 }
 
 /** The inbox filter: only this project's threads; null shows all. */
