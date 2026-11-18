@@ -3265,16 +3265,16 @@ try {
     await mouse(pinItem.x, pinItem.y);
     await waitFor(`!!document.querySelector('#sec-pinned [data-id="t_copy"]')`, { what: "t_copy to be pinned" });
     const rows = [...SETTLE_ROWS, ["t_copy", "Rewrite onboarding copy", "pinned", "leaves"]];
-    // A folded section: Snoozed opens on a click on its header; its first row.
+    // A folded section: Snoozed opens on a click on its header; its first row. It goes first and is folded again after:
+    // V0.196 closes it by itself 10 s after the click, which the other rows take on a loaded machine.
     await evaluate(`document.querySelector('#sec-snoozed .sec')?.click()`);
     await waitFor(`!!document.querySelector('#sec-snoozed [data-id]')`, { what: "the Snoozed section to open" });
-    rows.push([await evaluate(`document.querySelector('#sec-snoozed [data-id]').dataset.id`), "", "snoozed", "leaves"]);
+    rows.unshift([await evaluate(`document.querySelector('#sec-snoozed [data-id]').dataset.id`), "", "snoozed", "leaves"]);
+    const foldSnoozed = async () => {
+      await evaluate(`(() => { const h = document.querySelector('#sec-snoozed .sec'); if (h.getAttribute('aria-expanded') === 'true') h.click(); })()`);
+      await waitFor(`document.querySelector('#sec-snoozed .sec').getAttribute('aria-expanded') !== 'true'`, { what: "the Snoozed section to fold" });
+    };
     for (const [id, , sec, then] of rows) {
-      if (sec === "snoozed") {
-        // V0.196: it may have closed by itself during the rows before.
-        await evaluate(`(() => { const h = document.querySelector('#sec-snoozed .sec'); if (h.getAttribute('aria-expanded') === 'false') h.click(); })()`);
-        await waitFor(`!!document.querySelector('#sec-snoozed [data-id="${id}"]')`, { what: "the Snoozed section to open again" });
-      }
       const before = await evaluate(settles(id));
       const r = await center(`document.querySelector('#sec-${sec} [data-id="${id}"]')`);
       check(!!r, `${ctx}: no row ${id} in ${sec}`);
@@ -3293,6 +3293,7 @@ try {
         await waitFor(`!document.querySelector('#sec-${sec} [data-id="${id}"]')`, { soft: true });
         check(await evaluate(`!document.querySelector('#sec-${sec} [data-id="${id}"]')`), `${ctx}: ${id} stays in ${sec} after Settle`);
       }
+      if (sec === "snoozed") await foldSnoozed();
     }
     // The open thread itself, and a row whose Settle the host refuses (a question is open): disabled, with the reason.
     const before = await evaluate(settles("t_mapperf"));
@@ -3317,13 +3318,13 @@ try {
     const rows = [...SETTLE_ROWS];
     await evaluate(`document.querySelector('#m-sec-snoozed .m-sec')?.click()`);
     await waitFor(`!!document.querySelector('#m-sec-snoozed .m-mv')`, { what: "the Snoozed section to open" });
-    rows.push(["", await evaluate(`document.querySelector('#m-sec-snoozed .m-mv').getAttribute('aria-label').split(',')[0]`), "snoozed", "leaves"]);
+    // First, and folded again after, as on the desktop (V0.196 closes it by itself after 10 s).
+    rows.unshift(["", await evaluate(`document.querySelector('#m-sec-snoozed .m-mv').getAttribute('aria-label').split(',')[0]`), "snoozed", "leaves"]);
+    const foldSnoozed = async () => {
+      await evaluate(`(() => { const h = document.querySelector('#m-sec-snoozed .m-sec'); if (h.getAttribute('aria-expanded') === 'true') h.click(); })()`);
+      await waitFor(`document.querySelector('#m-sec-snoozed .m-sec').getAttribute('aria-expanded') !== 'true'`, { what: "the Snoozed section to fold" });
+    };
     for (const [id, title, sec, then] of rows) {
-      if (sec === "snoozed") {
-        // V0.196: it may have closed by itself during the rows before.
-        await evaluate(`(() => { const h = document.querySelector('#m-sec-snoozed .m-sec'); if (h.getAttribute('aria-expanded') === 'false') h.click(); })()`);
-        await waitFor(`!!document.querySelector('#m-sec-snoozed .m-mv')`, { what: "the Snoozed section to open again" });
-      }
       const row = `[...document.querySelectorAll('#m-sec-${sec} .m-mv')].find((r) => r.getAttribute('aria-label').startsWith(${JSON.stringify(title + ",")}))`;
       const n0 = (await evaluate(allSettles)).length;
       const c = await center(row);
@@ -3342,6 +3343,7 @@ try {
         await waitFor(`!(${row})`, { soft: true });
         check(await evaluate(`!(${row})`), `${ctx}: "${title}" stays in ${sec} after Settle`);
       }
+      if (sec === "snoozed") await foldSnoozed();
       await waitFor(`!document.querySelector('.m-sheet')`, { soft: true });
       await settle();
     }
