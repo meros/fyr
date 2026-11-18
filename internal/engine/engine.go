@@ -91,7 +91,7 @@ type Engine struct {
 
 	// quietSent is the quiet hours the clients last got, per project (V0.46).
 	quietSent map[string]string
-	// repos caches each project folder's git origin (decision 0033).
+	// repos caches each project folder's git origin (decision 0034).
 	repos map[string]folderRepo
 	// ScratchRoots are the scratch folders' roots (V0.28): their threads get
 	// no "New project from this thread"; nil: the defaults.
@@ -172,10 +172,11 @@ type Engine struct {
 	memGuard     bool // under mu: the guard told a thread in this episode
 	titleMu      sync.Mutex
 	titling      map[string]bool
+	textAskSlots chan struct{} // V0.210: the question job's calls at once
 }
 
 func New(st *store.Store) *Engine {
-	return &Engine{mu: lockwatch.Mutex{Critical: true, Name: "engine.mu"}, st: st, threads: map[string]*core.Thread{}, views: map[string]*core.View{},
+	return &Engine{mu: lockwatch.Mutex{Critical: true, Name: "engine.mu"}, st: st, textAskSlots: make(chan struct{}, textAskCalls), threads: map[string]*core.Thread{}, views: map[string]*core.View{},
 		last: map[string]core.State{}, revs: map[string]int64{}, projects: map[string]*core.Project{}, records: map[string]*core.Change{}, deploySeen: map[string]string{}, cmds: map[string][]core.Command{}, quietSent: map[string]string{}, HostID: hostname(), Hub: stream.NewHub(), Now: time.Now,
 		shotLimit: window{max: 10, span: time.Minute}, newLimit: window{max: 12, span: time.Hour}, sendLimit: window{max: 30, span: time.Hour}}
 }

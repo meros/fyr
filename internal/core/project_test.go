@@ -164,7 +164,7 @@ func TestProjectSetupRunRecorded(t *testing.T) {
 	}
 }
 
-// Decision 0033: only the owner links, a link has one shape, and linking
+// Decision 0034: only the owner links, a link has one shape, and linking
 // makes the shown fields the owner's, so a setup agent cannot change them.
 func TestProjectLink(t *testing.T) {
 	now := time.Unix(100, 0)
@@ -192,7 +192,7 @@ func TestProjectLink(t *testing.T) {
 	}
 }
 
-// Decision 0033: the newest shared values win, and only they change.
+// Decision 0034: the newest shared values win, and only they change.
 func TestProjectShared(t *testing.T) {
 	t0 := time.Unix(100, 0).UTC()
 	const link = "l_0123456789abcdef"

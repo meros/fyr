@@ -564,7 +564,7 @@ func TestProjectInputOnPath(t *testing.T) {
 	}
 }
 
-// Decision 0033: a project says its folder's origin, read without running git.
+// Decision 0034: a project says its folder's origin, read without running git.
 func TestProjectRepo(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, ".git"), 0o755)

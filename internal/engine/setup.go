@@ -54,7 +54,7 @@ func (e *Engine) afterProject(in core.Input, r api.Reply) {
 		}
 	case core.KindProjectCreate:
 		id, _ := r.Result.(map[string]any)["id"].(string)
-		// Decision 0033: a member of a link has the link's name and look.
+		// Decision 0034: a member of a link has the link's name and look.
 		if e.AutoSetup && id != "" && a.Str("folder") != "" && a.Str("link") == "" {
 			if r := e.startSetup(id, core.Observer(core.ObsHost), NewID("setup_")); !r.OK {
 				log.Printf("project setup %s: %s", id, r.Error)

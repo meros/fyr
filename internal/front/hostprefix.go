@@ -346,7 +346,7 @@ func (f *Front) frontCommandRoute(w http.ResponseWriter, r *http.Request) {
 		f.orderCommand(w, c.CommandID, c.Args)
 	case KindHostMark: // V0.171: keyed by install id already
 		f.hostMarkCommand(w, c.CommandID, c.Args)
-	case KindProjectLink: // decision 0033: by ref
+	case KindProjectLink: // decision 0034: by ref
 		f.projectLinkCommand(w, c.CommandID, c.Args)
 	case KindProjectUnlink:
 		f.projectUnlinkCommand(w, c.CommandID, c.Args)

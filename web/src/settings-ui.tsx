@@ -103,7 +103,7 @@ export interface ProjectActions {
   create(name: string, folder: string, host?: string): Promise<string | null>;
   /** V0.121: the owner's project order (front.projectOrder); the error, or null */
   order(ids: string[]): Promise<string | null>;
-  /** Decision 0033: linked projects; the error, or null */
+  /** Decision 0034: linked projects; the error, or null */
   link(id: string, other: string): Promise<string | null>;
   unlink(id: string): Promise<string | null>;
   add(id: string, host: string, folder: string): Promise<string | null>;
@@ -546,7 +546,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
     case "projects": {
       if (at.sub) {
         const rid = resolveRef(projectRecords(p.projects), at.sub!); // a link names the host's own id (C12)
-        const pr = recordOf(p.projects, rid); // decision 0033: a member of a linked project has its own page
+        const pr = recordOf(p.projects, rid); // decision 0034: a member of a linked project has its own page
         const group = findProject(p.projects, rid);
         return {
           title: pr?.name ?? "Project",

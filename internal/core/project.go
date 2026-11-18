@@ -35,11 +35,11 @@ type Project struct {
 	// Setup is the last project setup run (V0.116).
 	Setup *ProjectSetup `json:"setup,omitempty"`
 	// Link joins this record to its counterparts on other hosts (decision
-	// 0033): records with one link are one project to the owner. "" is an
+	// 0034): records with one link are one project to the owner. "" is an
 	// ordinary project. Each record stays its own host's.
 	Link string `json:"link,omitempty"`
 	// SharedAt stamps the values the members share: name, colour, glyph icon
-	// and quiet hours. The newest stamp in a link wins (decision 0033).
+	// and quiet hours. The newest stamp in a link wins (decision 0034).
 	SharedAt time.Time `json:"sharedAt,omitzero"`
 }
 
@@ -191,7 +191,7 @@ const (
 	// KindProjectSetupRun records a setup run (V0.116): args {id, thread?,
 	// error?}. The engine starts the thread first.
 	KindProjectSetupRun = "project.setupRun"
-	// KindProjectLink sets or clears the record's link (decision 0033): args
+	// KindProjectLink sets or clears the record's link (decision 0034): args
 	// {id, link}; "" unlinks. It is a kind of its own so that a host too old
 	// to keep a link refuses it, where project.update would ignore the field.
 	KindProjectLink = "project.link"
@@ -257,7 +257,7 @@ func reduceProjectCreate(r Rec, in Input, now time.Time) (Result, error) {
 	p.Color, p.Icon, p.CreatedAt, p.Edited = DefaultColor(p.Name), Icon{Kind: "monogram"}, now, true
 	p.By = map[string]string{SetupColor: "", SetupImage: ""}
 	p.By[SetupName] = p.SetBy(SetupName)   // V0.116: a folder's name is a placeholder
-	if link := a.Str("link"); link != "" { // decision 0033: made as a member of a link
+	if link := a.Str("link"); link != "" { // decision 0034: made as a member of a link
 		if !ValidLink(link) {
 			return Result{}, reject(RejectBadArgs, "link must be l_ and 16 to 32 hex digits")
 		}
@@ -338,7 +338,7 @@ func reduceProjectUpdate(r Rec, in Input, _ time.Time) (Result, error) {
 
 // reduceProjectLink sets the record's link. Linking makes the fields the
 // members show together the owner's, so that an agent on one host cannot
-// change what the owner sees for the others (decision 0033).
+// change what the owner sees for the others (decision 0034).
 func reduceProjectLink(r Rec, in Input, _ time.Time) (Result, error) {
 	a := mapArgs(in)
 	p, link := r.P, a.Str("link")

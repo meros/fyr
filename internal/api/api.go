@@ -101,7 +101,7 @@ type Project struct {
 	// QuietUntil is the end of the quiet hours the project is in (V0.46).
 	QuietUntil *time.Time `json:"quietUntil,omitempty"`
 	// Repo is the folder's normalised git origin, read from its .git/config;
-	// the client suggests linking projects that have the same (decision 0033).
+	// the client suggests linking projects that have the same (decision 0034).
 	Repo string `json:"repo,omitempty"`
 }
 

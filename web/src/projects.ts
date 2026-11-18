@@ -113,7 +113,7 @@ export function projectOf(t: Pick<Thread, "projectId" | "project">, projects: Pr
   return (t.projectId ? findProject(projects, t.projectId) : undefined) ?? projects.find((p) => p.name === t.project);
 }
 
-// ---- Decision 0033: linked projects ----
+// ---- Decision 0034: linked projects ----
 // Each host keeps its own record. The store's `projects` has one entry per project as the owner sees it: an ordinary
 // record, or for a link with several members the member shown first, with all of them in `members`. Without links the
 // list is the records themselves.
@@ -178,7 +178,7 @@ export function memberOn(p: Project | undefined, hostId: string | undefined): Pr
   return p && hostId ? (p.members ?? [p]).find((m) => m.hostId === hostId) : undefined;
 }
 
-/** Decision 0033: what the members of a linked project share, and what stays this host's. */
+/** Decision 0034: what the members of a linked project share, and what stays this host's. */
 export function splitSharedPatch<T extends Record<string, unknown>>(patch: T): { shared: Partial<T>; own: Partial<T> } {
   const shared: Partial<T> = {};
   const own: Partial<T> = {};
@@ -220,7 +220,7 @@ export function filterByProject(threads: Record<string, Thread>, projectId: stri
 
 /** Where a project lives, for a subtitle: its folder, else that threads are filed by hand (V0.55). */
 export function projectSubtitle(p: Project): string {
-  if (p.members) return `On ${p.members.length} hosts`; // decision 0033: each has its own folder
+  if (p.members) return `On ${p.members.length} hosts`; // decision 0034: each has its own folder
   return p.folder ? shortPath(p.folder) : "No folder: filed by hand";
 }
 

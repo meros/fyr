@@ -161,6 +161,8 @@ export interface ThreadDTO {
   unresponsive?: { since: string; at: string; reason: string } | null;
   /** V0.153: Fyr waits for a thrashing host instead of killing a slow agent */
   machineWait?: { since: string; why: string } | null;
+  /** V0.210: a question Fyr read in the agent's text; the owner's message, Not a question or a settle clears it */
+  textAsk?: { question: string; at: string; run: number } | null;
   attention: Attention;
   /** V0.185: snoozeWhenDone: the snooze lasts until work is done; snoozeUntil is then its maximum time */
   view?: { seenAt?: string | null; snoozeUntil?: string | null; snoozeWhenDone?: boolean } | null;
@@ -232,15 +234,15 @@ export interface Project {
   icon?: ProjectIconSpec;
   /** the one folder on the project's host; threads there or below land in it (V0.55) */
   folder?: string;
-  /** Decision 0033: records on several hosts with one link are one project */
+  /** Decision 0034: records on several hosts with one link are one project */
   link?: string;
-  /** Decision 0033: the folder's git origin, as the host read it */
+  /** Decision 0034: the folder's git origin, as the host read it */
   repo?: string;
-  /** Decision 0033: when the values the members share were set; the newest wins */
+  /** Decision 0034: when the values the members share were set; the newest wins */
   sharedAt?: string;
-  /** Decision 0033: the client's: the member whose image a linked project shows */
+  /** Decision 0034: the client's: the member whose image a linked project shows */
   imageFrom?: { id: string; hostId: string };
-  /** Decision 0033: the client's: every record of a linked project, the one shown first; absent on any other project */
+  /** Decision 0034: the client's: every record of a linked project, the one shown first; absent on any other project */
   members?: Project[];
   profile?: string;
   model?: string;

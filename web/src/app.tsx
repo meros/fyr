@@ -360,7 +360,7 @@ function App() {
     const t = setTimeout(() => setQuietClock((n) => n + 1), Math.min(next - (Date.now() + store.clockOffset) + 250, 2 ** 31 - 1));
     return () => clearTimeout(t);
   }, [store.threads, store.projects, store.clockOffset, quietClock]);
-  // Decision 0033: the filter may name any member of a linked project; the list knows the project by one id.
+  // Decision 0034: the filter may name any member of a linked project; the list knows the project by one id.
   const filterProject = findProject(store.projects, projectFilter);
   const filterId = filterProject?.id ?? projectFilter;
   const filterOn = !!filterProject;
@@ -1007,7 +1007,7 @@ function App() {
     return r.ok ? null : (r.error ?? "That did not work");
   };
   const projectActions = {
-    /** Decision 0033: on a linked project the shared values go to every host through the front; the rest is this host's. */
+    /** Decision 0034: on a linked project the shared values go to every host through the front; the rest is this host's. */
     update: async (id: string, patch: ProjectPatch): Promise<string | null> => {
       const link = findProject(fullStore.projects, id)?.members ? recordOf(fullStore.projects, id)?.link : undefined; // V0.207: Settings edits hidden ones too
       if (!link) return projectCommand("project.update", { id, ...patch });
@@ -1046,7 +1046,7 @@ function App() {
     /** V0.121: the owner's one project order. It shows at once on this device; a refusal puts the last order back. */
     order: async (ids: string[]): Promise<string | null> => {
       const before = store.projectOrder;
-      const all = expandOrder(ids, store.projects); // decision 0033: a linked project's members move together
+      const all = expandOrder(ids, store.projects); // decision 0034: a linked project's members move together
       setStore((s) => setProjectOrder(s, all));
       const r = await api.frontCommand("front.projectOrder", { ids: all });
       if (r.ok) return null;
@@ -1055,7 +1055,7 @@ function App() {
     },
     /** File threads into a project; null: No project. Shows the result or the error as a toast. */
     move: async (ids: string[], projectId: string | null): Promise<string | null> => {
-      // Decision 0033: a thread is filed in its own host's record of a linked project.
+      // Decision 0034: a thread is filed in its own host's record of a linked project.
       const pr = findProject(store.projects, projectId);
       const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId: memberOn(pr, store.threads[id]?.hostId)?.id ?? projectId ?? "" }, id)))).filter(Boolean);
       const where = projectId ? (pr?.name ?? "the project") : null;
@@ -1065,20 +1065,20 @@ function App() {
       cmds.notify(m.text, m.error);
       return e;
     },
-    /** Decision 0033: make two projects on different hosts one. A host that could not store it is the error. */
+    /** Decision 0034: make two projects on different hosts one. A host that could not store it is the error. */
     link: async (id: string, other: string): Promise<string | null> => {
       const r = await api.frontCommand("front.projectLink", { refs: [id, other] });
       if (!r.ok) return r.error ?? "That did not work";
       const failed = (r.result as { failed?: { error?: string }[] } | undefined)?.failed;
       return failed?.[0]?.error ?? null;
     },
-    /** Decision 0033: the project gets a member on another host, in a folder there. */
+    /** Decision 0034: the project gets a member on another host, in a folder there. */
     add: async (id: string, host: string, folder: string): Promise<{ error: string | null; id?: string }> => {
       const r = await api.frontCommand("front.projectAdd", { ref: id, host, folder });
       if (!r.ok) return { error: r.error ?? "That did not work" };
       return { error: null, id: (r.result as { id?: string } | undefined)?.id };
     },
-    /** Decision 0033: this host's record leaves the link, with its values and threads. */
+    /** Decision 0034: this host's record leaves the link, with its values and threads. */
     unlink: async (id: string): Promise<string | null> => {
       const r = await api.frontCommand("front.projectUnlink", { ref: id });
       return r.ok ? null : (r.error ?? "That did not work");

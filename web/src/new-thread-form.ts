@@ -42,7 +42,7 @@ export interface NewThreadFormOptions extends FormCtx {
   onCreate(a: NewThreadArgs): Promise<string | null>;
   /** V0.30, V0.63: project.create; V0.132: on the form's host */
   onNewProject(name: string, folder: string, host?: string): Promise<{ error: string | null; id?: string }>;
-  /** Decision 0033: the project gets a member on that host (by install id), in that folder */
+  /** Decision 0034: the project gets a member on that host (by install id), in that folder */
   onAddProject?(id: string, host: string, folder: string): Promise<{ error: string | null; id?: string }>;
 }
 
@@ -86,7 +86,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
   const effort = startEffort(prof, f.model, f.effortPick);
   const plan = sendArgs(f.text, att.chips);
   const set = (patch: Partial<NewThreadForm>) => setF((x) => ({ ...x, ...patch }));
-  // Decision 0033: the filter's project, when the host picked does not have it yet.
+  // Decision 0034: the filter's project, when the host picked does not have it yet.
   const hereId = hostIdByName(o.hosts, formHost(f, ctx));
   const wanted = findProject(ctx.projects, o.projectFilter);
   const missing = o.onAddProject && wanted && hereId && (o.hosts?.length ?? 0) > 1 && !making && !memberOn(wanted, hereId) ? wanted : null;
@@ -161,7 +161,7 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
       return null;
     },
     missing,
-    /** Decision 0033: choose a folder on this host and add the project there */
+    /** Decision 0034: choose a folder on this host and add the project there */
     addHere: async () => {
       if (!missing) return;
       const name = formHost(f, ctxRef.current);

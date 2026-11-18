@@ -1,4 +1,5 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
+import { textAskShown } from "./rows.ts";
 import { linkProjects, orderProjects, projectRecords } from "./projects.ts";
 import type { QueueEntry } from "./slot-queue.ts";
 import type { HostInfo } from "./hosts.ts";
@@ -45,7 +46,7 @@ export interface Store {
   threads: Record<string, Thread>;
   actions: ActionInfo[];
   profiles: Profile[];
-  /** in the owner's order (V0.121: orderProjects); one entry per project, a linked one with its `members` (decision 0033) */
+  /** in the owner's order (V0.121: orderProjects); one entry per project, a linked one with its `members` (decision 0034) */
   projects: Project[];
   /** V0.121: the owner's project order; null until set (by name then) */
   projectOrder: string[] | null;
@@ -198,8 +199,10 @@ function activity(t: Thread): number {
   return ts(t.activityAt) || ts(t.updatedAt);
 }
 
-/** V0.205: a thread whose open asks are all merge asks comes after the questions, before the failures. */
+/** V0.205: a thread whose open asks are all merge asks comes after the questions, before the failures. V0.210: a question
+ *  Fyr only read in the agent's text comes after every cause that is a fact. */
 function needsRank(t: Thread): number {
+  if (textAskShown(t)) return 2.5;
   const r = NEEDS_RANK[t.attention.state] ?? 9;
   return t.attention.state === "asking" && t.decisions.length > 0 && t.decisions.every((d) => d.effect?.action === "pr.merge") ? r + 0.5 : r;
 }
@@ -468,7 +471,7 @@ export function upsertProject(s: Store, raw: Project): Store {
   return withRecords(s, i >= 0 ? records.map((x, j) => (j === i ? p : x)) : [...records, p]);
 }
 
-/** The project list from its records: in the owner's order, a linked project once (decision 0033). */
+/** The project list from its records: in the owner's order, a linked project once (decision 0034). */
 function withRecords(s: Store, records: Project[]): Store {
   return { ...s, projects: linkProjects(orderProjects(records, s.projectOrder), s.hosts) };
 }
@@ -478,7 +481,7 @@ export function setProjectOrder(s: Store, ids: string[]): Store {
   return withRecords({ ...s, projectOrder: ids }, projectRecords(s.projects));
 }
 
-/** The front's list of hosts changed: a linked project shows its first online member (decision 0033). */
+/** The front's list of hosts changed: a linked project shows its first online member (decision 0034). */
 export function setHosts(s: Store, hosts: HostInfo[]): Store {
   return { ...s, hosts, projects: linkProjects(projectRecords(s.projects), hosts) };
 }

@@ -101,6 +101,9 @@ func (e *Engine) do(threadID string, ef core.Effect) (*core.EffectResult, bool) 
 	case core.EffectTitle:
 		e.regenerateTitle(threadID) // V0.108: its result lands as a made title
 		return nil, false
+	case core.EffectTextAsk:
+		go e.judgeText(threadID, ef.Run) // V0.210: the effects after it do not wait
+		return nil, false
 	case core.EffectRun:
 		if ef.Request == nil {
 			return nil, false

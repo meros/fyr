@@ -631,7 +631,7 @@ export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
   );
 }
 
-/** Decision 0033: what the project screen needs to show and change a project's links. */
+/** Decision 0034: what the project screen needs to show and change a project's links. */
 export interface ProjectLinking {
   /** the project as the lists show it */
   group: Project;
@@ -760,8 +760,8 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
   );
 }
 
-function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked, shown, imageTargets }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0033: other hosts have this project too */ linked?: boolean; /** decision 0033: the linked project, whose shared values this page shows */ shown?: Project; /** decision 0033: the records an image goes to: every online member */ imageTargets: Project[] }) {
-  // Decision 0033: name, colour, icon and quiet hours are the link's; the rest of the page is this host's record.
+function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked, shown, imageTargets }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** decision 0034: the records an image goes to: every online member */ imageTargets: Project[] }) {
+  // Decision 0034: name, colour, icon and quiet hours are the link's; the rest of the page is this host's record.
   if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, image: shown.image, imageFrom: shown.imageFrom };
   const env = useSet();
   const api = useApi();
