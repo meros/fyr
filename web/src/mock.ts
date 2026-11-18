@@ -1901,22 +1901,16 @@ export function mockLeftoverCommand(h: HostLoad, action: string, args: Record<st
 }
 
 /** V0.164: the mock host's view of undeclared work (mode "" is none): the threads, the shares in the pool, the wait
- *  reason that names it, the thresholds, two suggestions and one pattern the owner added. */
+ *  reason that names it, the thresholds and one command Fyr learned. */
 export function withUndeclared(list: HostLoad[], mode: string, now = railNow(Date.now())): HostLoad[] {
   if (!mode) return list;
   const [h, ...rest] = list;
   const s = h.slots!;
-  const at = (h: number, m: number) => {
-    const d = new Date(now);
-    d.setHours(h, m, 0, 0);
-    return d.toISOString();
-  };
-  const use = (thread: string, mem: number, cpu: number, memPct: number, cpuPct: number, secs: number, command: string, told: string, extra: Partial<UndeclaredUse> = {}): UndeclaredUse => ({
-    thread, mem, cpu, memPct, cpuPct, since: new Date(now - secs * 1000).toISOString(), command, told, dismissed: false, paused: false, queued: false, overCpu: true, overMem: true, matched: false, ...extra,
+  const use = (thread: string, mem: number, cpu: number, memPct: number, cpuPct: number, secs: number, command: string, extra: Partial<UndeclaredUse> = {}): UndeclaredUse => ({
+    thread, mem, cpu, memPct, cpuPct, since: new Date(now - secs * 1000).toISOString(), command, paused: false, queued: false, overCpu: true, overMem: true, ...extra,
   });
-  const und: UndeclaredUse[] = [use("t_mapperf", 2.8e9, 2.1, 20, 52, 180, "node test/layout.e2e.mjs", at(14, 29), { paused: mode === "paused" })];
-  if (mode === "2")
-    und.push(use("t_babysit", 1.6e9, 1.2, 11, 30, 50, "yarn pre-push:check", at(14, 31)), use("t_nix", 1.9e9, 0.2, 14, 5, 22 * 60, "nix flake check", at(14, 10), { dismissed: true, overCpu: false }));
+  const und: UndeclaredUse[] = [use("t_mapperf", 2.8e9, 2.1, 20, 52, 180, "node test/layout.e2e.mjs", { paused: mode === "paused" })];
+  if (mode === "2") und.push(use("t_babysit", 1.6e9, 1.2, 11, 30, 50, "yarn pre-push:check"));
   const admitted = { cpu: 13, mem: 16 };
   const uCpu = und.reduce((n, u) => n + u.cpuPct, 0);
   const uMem = und.reduce((n, u) => n + u.memPct, 0);
@@ -1952,46 +1946,14 @@ export function withUndeclared(list: HostLoad[], mode: string, now = railNow(Dat
       headroom: mode === "paused" ? 0.06 : h.headroom,
       memoryStall: mode === "paused" ? "critical" : h.memoryStall,
       undeclaredSettings: { on: true, cpu: 0.25, memory: 0.08, after: 45 },
-      suggestions: [
-        { id: "sg1", command: "node test/layout.e2e.mjs", pattern: "node (\\S*/)?layout\\.e2e\\.mjs", kind: "e2e", seen: 3, threads: 2, lastThread: "t_mapperf", lastAt: at(14, 29), memory: 2.8e9, cpu: 2.1, seconds: 240 },
-        { id: "sg2", command: "yarn pre-push:check", pattern: "yarn pre-push:check", kind: "test", seen: 1, threads: 1, lastThread: "t_babysit", lastAt: at(14, 31), memory: 1.6e9, cpu: 1.2, seconds: 100 },
-      ],
-      heavyAdded: [{ pattern: "python3? build_admin_ny\\.py", kind: "build", at: new Date(now - 24 * 3600_000).toISOString(), refused: 4 }],
+      heavyAdded: [{ pattern: "python3? build_admin_ny\\.py", kind: "build", at: new Date(now - 24 * 3600_000).toISOString(), refused: 0, learned: true }],
     },
     ...rest,
   ];
 }
-/** V0.164: host.undeclaredDismiss, host.heavySuggestion, host.heavyRemove and host.undeclaredSettings on the mock host's
- *  load, with the host's refusals (an unknown thread or suggestion, a pattern that does not compile, a threshold out of range). */
-export function mockUndeclaredCommand(h: HostLoad, action: string, args: Record<string, unknown>, now: number): { ok: boolean; error?: string; result?: Record<string, unknown> } {
-  const und = h.slots?.undeclared ?? [];
-  if (action === "host.undeclaredDismiss") {
-    const u = und.find((x) => x.thread === args.thread);
-    if (!u) return { ok: false, error: `No undeclared work in thread ${String(args.thread ?? "")}` };
-    u.dismissed = !!args.on;
-    return { ok: true, result: { thread: u.thread, dismissed: u.dismissed } };
-  }
-  if (action === "host.heavySuggestion") {
-    const sg = h.suggestions?.find((x) => x.id === args.id);
-    if (!sg) return { ok: false, error: "That suggestion is gone" };
-    if (args.do === "ignore") {
-      h.suggestions = h.suggestions!.filter((x) => x !== sg);
-      return { ok: true };
-    }
-    if (args.do !== "add") return { ok: false, error: "do is add or ignore" };
-    const pattern = String(args.pattern ?? "").trim();
-    const kind = String(args.kind ?? sg.kind);
-    try {
-      new RegExp(pattern);
-    } catch (e) {
-      return { ok: false, error: `The pattern does not compile: ${(e as Error).message}` };
-    }
-    if (!pattern) return { ok: false, error: "The pattern is empty" };
-    h.heavyAdded = [{ pattern, kind, at: new Date(now).toISOString(), refused: 0 }, ...(h.heavyAdded ?? [])];
-    h.suggestions = h.suggestions!.filter((x) => x !== sg);
-    for (const u of und) if (u.command === sg.command) u.matched = true; // the command matches a pattern now: no Add on its strip
-    return { ok: true, result: { pattern } };
-  }
+/** V0.164: host.heavyRemove and host.undeclaredSettings on the mock host's load, with the host's refusals (an unknown
+ *  pattern, a threshold out of range). */
+export function mockUndeclaredCommand(h: HostLoad, action: string, args: Record<string, unknown>): { ok: boolean; error?: string; result?: Record<string, unknown> } {
   if (action === "host.heavyRemove") {
     if (!h.heavyAdded?.some((x) => x.pattern === args.pattern)) return { ok: false, error: "That pattern was not added" };
     h.heavyAdded = h.heavyAdded.filter((x) => x.pattern !== args.pattern);

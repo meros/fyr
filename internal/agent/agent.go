@@ -90,12 +90,10 @@ type Config struct {
 	Cgroups Cgroups
 	// OnBash hears each Bash command a thread's agent (or its subagent)
 	// runs, at the gate hook (decision 0029 S1, #185); a reason refuses it
-	// (#174: a heavy job without a slot), "" lets it run. Optional.
-	OnBash func(thread, command string) string
-	// UndeclaredNote gives the text a subagent's Bash call carries while its
-	// thread runs undeclared heavy work (V0.164); "" for none. It gives it
-	// once per episode, so the hook asks on every subagent Bash call.
-	UndeclaredNote func(thread string) string
+	// (V0.209: a heavy job the host has no room for), "" lets it run. Optional.
+	OnBash func(BashCall) string
+	// OnToolDone hears that a thread's tool call ended (V0.209). Optional.
+	OnToolDone func(thread, toolUse string)
 	// Runner starts the processes in the launcher's runner, so they outlive
 	// fyrd (V0.90); nil starts them as fyrd's children.
 	Runner *runner.Client
@@ -296,19 +294,29 @@ func writeMCPConfig(dir string, cfg []byte) (string, error) {
 }
 
 // ThreadForToken maps an MCP bearer token to its thread (16.2 MCP binding).
-// SetOnBash sets Config.OnBash after New (the slots come later in the
-// wiring).
-func (m *Manager) SetOnBash(f func(thread, command string) string) {
+// BashCall is a Bash command at the gate hook. ToolUse is its call's id ("" if
+// the CLI gave none); Background: it was started with run_in_background.
+type BashCall struct {
+	Thread, Command, ToolUse string
+	Background               bool
+}
+
+// SetOnBash sets Config.OnBash and Config.OnToolDone after New (the slots come
+// later in the wiring).
+func (m *Manager) SetOnBash(f func(BashCall) string, done func(thread, toolUse string)) {
 	m.mu.Lock()
-	m.cfg.OnBash = f
+	m.cfg.OnBash, m.cfg.OnToolDone = f, done
 	m.mu.Unlock()
 }
 
-// SetUndeclaredNote sets Config.UndeclaredNote after New (V0.164).
-func (m *Manager) SetUndeclaredNote(f func(thread string) string) {
+// toolDone reports the end of a tool call, once the CLI shows it.
+func (m *Manager) toolDone(s *session, id string) {
 	m.mu.Lock()
-	m.cfg.UndeclaredNote = f
+	f := m.cfg.OnToolDone
 	m.mu.Unlock()
+	if f != nil && s != nil && id != "" {
+		f(s.thread, id)
+	}
 }
 
 func (m *Manager) ThreadForToken(tok string) (string, bool) {

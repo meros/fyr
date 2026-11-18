@@ -60,10 +60,9 @@ export interface HostLoad {
   memoryStall?: "ok" | "elevated" | "critical";
   agentsCpuPressure?: number;
   jobs?: JobClass[];
-  /** V0.164: the thresholds of undeclared heavy work, the commands behind it that no pattern names yet, and the
-   *  patterns the owner added; absent on a host without V0.164 */
+  /** V0.164, V0.209: the thresholds of undeclared heavy work and the heavy commands Fyr learned (or the owner added
+   *  before V0.209); absent on a host without V0.164 */
   undeclaredSettings?: UndeclaredSettings;
-  suggestions?: HeavySuggestion[];
   heavyAdded?: HeavyAdded[];
   /** V0.176: the processes threads left running, past their grace, and the settled threads' worktrees */
   leftovers?: Leftover[];
@@ -76,27 +75,14 @@ export interface UndeclaredSettings {
   memory: number;
   after: number;
 }
-/** V0.164: a command that ran as undeclared work and matches no heavy pattern. */
-export interface HeavySuggestion {
-  id: string;
-  command: string;
-  pattern: string;
-  kind: "test" | "build" | "e2e";
-  seen: number;
-  threads: number;
-  lastThread: string;
-  lastAt: string;
-  /** bytes and cores above the idle level, the largest seen; seconds the longest */
-  memory: number;
-  cpu: number;
-  seconds: number;
-}
 export interface HeavyAdded {
   pattern: string;
   kind: string;
   at: string;
-  /** how often the gate refused it since */
+  /** how often the gate refused it since; a learned command is never refused */
   refused: number;
+  /** V0.209: Fyr learned it from the work it saw */
+  learned?: boolean;
 }
 /** V0.164: a thread that runs heavy work Fyr did not admit (above its idle level). The host sets overCpu and overMem
  *  true for a measure that is over its threshold or at least a tenth of it; the front names only those. */
@@ -108,14 +94,10 @@ export interface UndeclaredUse {
   memPct: number;
   since: string;
   command: string;
-  told?: string;
-  dismissed: boolean;
   paused: boolean;
   queued: boolean;
   overCpu: boolean;
   overMem: boolean;
-  /** the command already matches a heavy pattern: no "Add as heavy job…" */
-  matched: boolean;
 }
 /** One owner of a slot or a place in the queue: a thread id, or "self-deploy". */
 export interface SlotHolder {

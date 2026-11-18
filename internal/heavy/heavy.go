@@ -44,6 +44,7 @@ var Defaults = []Pattern{
 type rule struct {
 	name string
 	re   *regexp.Regexp
+	soft bool
 }
 
 // Matcher names the class of a command. V0.164: the owner's added patterns
@@ -56,21 +57,44 @@ type Matcher struct {
 	refused map[string]int
 }
 
-// SetAdded replaces the owner's added patterns (V0.164); a pattern that does
-// not compile is an error and changes nothing.
-func (m *Matcher) SetAdded(ps []Pattern) error {
+// SetAdded replaces the added patterns (V0.164) and the ones Fyr learned
+// (V0.209: soft, a full host never refuses them); a pattern that does not
+// compile is an error and changes nothing.
+func (m *Matcher) SetAdded(ps []Pattern, learned ...Pattern) error {
 	var rs []rule
-	for _, p := range ps {
-		re, err := regexp.Compile(`^(?:` + p.Re + `)`)
-		if err != nil {
-			return fmt.Errorf("heavy command %q: %w", p.Name, err)
+	add := func(ps []Pattern, soft bool) error {
+		for _, p := range ps {
+			re, err := regexp.Compile(`^(?:` + p.Re + `)`)
+			if err != nil {
+				return fmt.Errorf("heavy command %q: %w", p.Name, err)
+			}
+			rs = append(rs, rule{p.Name, re, soft})
 		}
-		rs = append(rs, rule{p.Name, re})
+		return nil
+	}
+	if err := add(ps, false); err != nil {
+		return err
+	}
+	if err := add(learned, true); err != nil {
+		return err
 	}
 	m.mu.Lock()
 	m.added = rs
 	m.mu.Unlock()
 	return nil
+}
+
+// Soft says class comes from a pattern Fyr learned (V0.209): it is admitted
+// when there is room and otherwise runs anyway.
+func (m *Matcher) Soft(class string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, r := range m.added {
+		if r.soft && r.name == class {
+			return true
+		}
+	}
+	return false
 }
 
 // Refused counts a refusal of class by the gate (V0.164: shown with an added
@@ -103,7 +127,7 @@ func New(ps []Pattern) (*Matcher, error) {
 		if err != nil {
 			return nil, fmt.Errorf("heavy command %q: %w", p.Name, err)
 		}
-		m.rules = append(m.rules, rule{p.Name, re})
+		m.rules = append(m.rules, rule{p.Name, re, false})
 	}
 	return m, nil
 }
@@ -196,6 +220,14 @@ func (m *Matcher) Match(cmd string) (class, text string) {
 		}
 	}
 	return best, bestText
+}
+
+var detached = regexp.MustCompile(`(?:^|[\s;&|(])(?:nohup|setsid|disown)\b|[^&]&\s*(?:$|[\n;)])`)
+
+// Detached says cmd leaves work running after the shell returns (V0.209), so
+// the end of the tool call is not the end of the job.
+func Detached(cmd string) bool {
+	return detached.MatchString(message.ReplaceAllString(cmd, " ''"))
 }
 
 // KindOf is the slot kind for a class: e2e for browser and screenshot runs,

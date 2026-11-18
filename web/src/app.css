@@ -1520,8 +1520,6 @@ label.sr{cursor:pointer}
 .undb-b b{color:var(--beam-ink);font-weight:600}
 .undb-b .mono{font-size:11.5px}
 .undb-b .dim{color:var(--ink-muted)}
-.undb-a{display:flex;gap:6px;flex:none;align-items:center}
-.undb .btn{height:26px;padding:0 10px;border-radius:7px;font-size:12px}
 .undb.paused{background:var(--harbour-wash);border-bottom-color:color-mix(in srgb,var(--harbour) 35%,var(--line))}
 .undb.paused .undb-b b,.undb.paused .und-ic{color:var(--harbour)}
 /* V0.176: what a thread left running (leftovers-ui.tsx), and its count under a host's meters in the rail */
@@ -1545,14 +1543,9 @@ label.sr{cursor:pointer}
 .set.phone .sr.col .inl{flex-wrap:wrap}
 .set.phone .sr.col .inl input{flex:1 1 100%;height:44px}
 .sr .inl input.mono{font:400 12.5px/18px var(--mono)}
-/* the phone: a row with two buttons puts them under its text (no room beside it at 390 px) */
-.set.phone .sr.undrow{flex-direction:column;align-items:stretch;gap:8px}
-.set.phone .sr.undrow .sr-e{max-width:none}
 
 /* the rail's host: the meter and the button under it are one block; the button is outside the ring's role=img */
 .rail .rldw{display:flex;flex-direction:column;align-items:center;gap:3px;max-width:100%}
-/* Settings: the suggestion the strip's "Add as heavy job…" opened */
-.sr.pick{box-shadow:inset 3px 0 0 var(--beam)}
 /* V0.157: Settings → Devices (decision 0030 3.4), desktop and phone from the same rows. */
 .set .qrimg { display: block; margin: 8px auto; max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
 .set .linkout { width: 100%; box-sizing: border-box; }

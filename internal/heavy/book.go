@@ -1,17 +1,16 @@
 package heavy
 
-// V0.164 section 4.6: what undeclared episodes teach. A command that ran
-// heavy without asking and matches no pattern becomes a suggestion; the owner
-// adds it (as a pattern, which the gate then refuses without an admission),
-// ignores it for good, or removes an added pattern. All of it is kept in the
-// store's KV table on the host.
+// V0.164 section 4.6, V0.209: what undeclared episodes teach. A command that
+// ran heavy without being admitted and matches no pattern is noted; after
+// LearnAfter episodes Fyr treats it as a heavy job by itself. A learned pattern
+// is soft: it is admitted when there is room and is never refused, because the
+// command behind an episode is a best guess. The owner may remove one, and it
+// is not learned again. All of it is kept in the store's KV table on the host.
 
 import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -37,6 +36,8 @@ const (
 	ignoredKey     = "heavy-ignored"
 	// MaxSuggestions is how many suggestions are kept, the newest first.
 	MaxSuggestions = 30
+	// LearnAfter is how many undeclared episodes make a command a heavy job.
+	LearnAfter = 3
 )
 
 // Seen is one undeclared episode's command and size.
@@ -49,7 +50,7 @@ type Seen struct {
 	Seconds int     // how long it ran
 }
 
-// Suggestion is a command to add as a heavy job.
+// Suggestion is a command seen behind undeclared work, not yet learned.
 type Suggestion struct {
 	ID         string    `json:"id"`
 	Command    string    `json:"command"`
@@ -65,13 +66,15 @@ type Suggestion struct {
 	ThreadIDs  []string  `json:"threadIds,omitempty"`
 }
 
-// Added is a pattern the owner added from a suggestion.
+// Added is a heavy command beyond the built-in ones: learned by Fyr, or added
+// by the owner before V0.209.
 type Added struct {
 	Pattern string    `json:"pattern"`
 	Kind    string    `json:"kind"`
 	Name    string    `json:"name"`
 	At      time.Time `json:"at"`
 	Refused int       `json:"refused"`
+	Learned bool      `json:"learned,omitempty"`
 }
 
 // Book keeps the suggestions and the added patterns, and gives the added ones
@@ -97,6 +100,17 @@ func (b *Book) Load() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.loadLocked()
+	// Commands seen often enough before V0.209 waited for the owner's press.
+	var keep []Suggestion
+	for _, x := range b.sugg {
+		if x.Seen < LearnAfter || !b.learnLocked(x) {
+			keep = append(keep, x)
+		}
+	}
+	if len(keep) != len(b.sugg) {
+		b.sugg = keep
+		b.save(suggestionsKey, b.sugg)
+	}
 	b.applyLocked()
 	b.publishLocked()
 }
@@ -136,10 +150,15 @@ func (b *Book) applyLocked() error {
 		return nil
 	}
 	ps := slices.Clone(b.Base)
+	var learned []Pattern
 	for _, a := range b.added {
-		ps = append(ps, Pattern{Name: a.Name, Re: a.Pattern})
+		if a.Learned {
+			learned = append(learned, Pattern{Name: a.Name, Re: a.Pattern})
+		} else {
+			ps = append(ps, Pattern{Name: a.Name, Re: a.Pattern})
+		}
 	}
-	return b.Matcher.SetAdded(ps)
+	return b.Matcher.SetAdded(ps, learned...)
 }
 
 func sid(pattern string) string {
@@ -179,6 +198,11 @@ func (b *Book) Saw(s Seen) (matched bool) {
 	x.Threads = len(x.ThreadIDs)
 	x.LastThread, x.LastAt = s.Thread, s.At
 	x.Memory, x.CPU, x.Seconds = max(x.Memory, s.Memory), max(x.CPU, s.CPU), max(x.Seconds, s.Seconds)
+	if x.Seen >= LearnAfter && b.learnLocked(x) {
+		b.save(suggestionsKey, b.sugg)
+		b.publishLocked()
+		return false
+	}
 	b.sugg = slices.Insert(b.sugg, 0, x)
 	if len(b.sugg) > MaxSuggestions {
 		b.sugg = b.sugg[:MaxSuggestions]
@@ -188,7 +212,28 @@ func (b *Book) Saw(s Seen) (matched bool) {
 	return false
 }
 
-// Suggestions are the suggestions, the newest first.
+// learnLocked makes x's pattern a learned heavy command; false when it was
+// not taken (removed by the owner before, known already, or it does not
+// compile). The caller drops x from the suggestions.
+func (b *Book) learnLocked(x Suggestion) bool {
+	if slices.Contains(b.ignored, x.Pattern) || slices.ContainsFunc(b.added, func(a Added) bool { return a.Pattern == x.Pattern }) {
+		return false
+	}
+	name := strings.TrimSpace(strings.ReplaceAll(x.Pattern, `\`, ""))
+	if KindOf(name) != x.Kind {
+		name += " (" + x.Kind + ")"
+	}
+	b.added = append(b.added, Added{Pattern: x.Pattern, Kind: x.Kind, Name: name, At: x.LastAt, Learned: true})
+	if err := b.applyLocked(); err != nil {
+		b.added = b.added[:len(b.added)-1]
+		b.applyLocked()
+		return false
+	}
+	b.save(addedKey, b.added)
+	return true
+}
+
+// Suggestions are the commands seen and not learned yet, the newest first.
 func (b *Book) Suggestions() []Suggestion {
 	if v := b.pub.Load(); v != nil {
 		return slices.Clone(v.sugg)
@@ -200,7 +245,7 @@ func (b *Book) Suggestions() []Suggestion {
 	return slices.Clone(b.sugg)
 }
 
-// Added are the owner's added patterns with how often the gate refused each.
+// Added are the learned and added patterns with how often the gate refused each.
 func (b *Book) Added() []Added {
 	var out []Added
 	if v := b.pub.Load(); v != nil {
@@ -220,66 +265,8 @@ func (b *Book) Added() []Added {
 	return out
 }
 
-// ErrNoSuggestion is Add's and Ignore's answer for an id that is not (or no
-// longer) a suggestion.
-var ErrNoSuggestion = errors.New("No such suggestion")
-
-// Add makes the suggestion's pattern, as the owner edited it, a heavy command
-// of kind; the suggestion goes. A pattern that does not compile is an error
-// and nothing is stored.
-func (b *Book) Add(id, pattern, kind string, now time.Time) error {
-	pattern = strings.TrimSpace(pattern)
-	if pattern == "" || len(pattern) > 300 {
-		return errors.New("The pattern is empty or too long")
-	}
-	if _, err := regexp.Compile(pattern); err != nil {
-		return fmt.Errorf("The pattern does not compile: %v", err)
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.loadLocked()
-	i := slices.IndexFunc(b.sugg, func(x Suggestion) bool { return x.ID == id })
-	if i < 0 {
-		return ErrNoSuggestion
-	}
-	if kind != "test" && kind != "build" && kind != "e2e" {
-		kind = b.sugg[i].Kind
-	}
-	name := strings.TrimSpace(strings.ReplaceAll(pattern, `\`, ""))
-	if KindOf(name) != kind {
-		name += " (" + kind + ")"
-	}
-	b.added = append(b.added, Added{Pattern: pattern, Kind: kind, Name: name, At: now})
-	if err := b.applyLocked(); err != nil {
-		b.added = b.added[:len(b.added)-1]
-		b.applyLocked()
-		return err
-	}
-	b.sugg = slices.Delete(b.sugg, i, i+1)
-	b.save(addedKey, b.added)
-	b.save(suggestionsKey, b.sugg)
-	b.publishLocked()
-	return nil
-}
-
-// Ignore drops a suggestion and never suggests its pattern again.
-func (b *Book) Ignore(id string) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.loadLocked()
-	i := slices.IndexFunc(b.sugg, func(x Suggestion) bool { return x.ID == id })
-	if i < 0 {
-		return ErrNoSuggestion
-	}
-	b.ignored = append(b.ignored, b.sugg[i].Pattern)
-	b.sugg = slices.Delete(b.sugg, i, i+1)
-	b.save(ignoredKey, b.ignored)
-	b.save(suggestionsKey, b.sugg)
-	b.publishLocked()
-	return nil
-}
-
-// Remove takes an added pattern out again; false when it is not one.
+// Remove takes a pattern out for good (it is not learned again); false when
+// it is not one.
 func (b *Book) Remove(pattern string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -291,13 +278,19 @@ func (b *Book) Remove(pattern string) bool {
 	b.added = slices.Delete(b.added, i, i+1)
 	b.applyLocked()
 	b.save(addedKey, b.added)
+	if !slices.Contains(b.ignored, pattern) {
+		b.ignored = append(b.ignored, pattern)
+		b.save(ignoredKey, b.ignored)
+	}
 	b.publishLocked()
 	return true
 }
 
-var trivial = regexp.MustCompile(`^(?:cd|source|\.|export|set|echo|true|:|unset|pushd|popd|mkdir|rm|cat|ls)(?:\s|$)`)
+// trivial commands are never what made an episode heavy; git, gh and the like
+// are usually just the last thing the thread ran.
+var trivial = regexp.MustCompile(`^(?:cd|source|\.|export|set|echo|true|:|unset|pushd|popd|mkdir|rm|cat|ls|git|gh|sleep|wait|tail|head|grep|rg|curl|ssh)(?:\s|$)`)
 
-// Suggest is the pattern and the kind to propose for a command: the program
+// Suggest is the pattern and the kind to learn for a command: the program
 // and the first argument that is not a flag, of the last segment that is not
 // a cd or a source, escaped (V0.164 4.6).
 func Suggest(cmd string) (pattern, kind string) {

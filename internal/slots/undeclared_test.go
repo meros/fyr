@@ -107,9 +107,8 @@ func TestB9TheSnapshotListsThemAndTheUsedPercentagesIncludeThem(t *testing.T) {
 	p.Host = func() Signals { return host6 }
 	p.Cost = func(h Holder) Need { return Need{CPU: 1.2, Mem: gb} } // 20 % CPU, 7.7 % memory
 	since := time.Date(2026, 11, 17, 14, 0, 0, 0, time.UTC)
-	told := since.Add(time.Minute)
 	p.Undeclared = func() []Undeclared {
-		return []Undeclared{{Thread: "t_a", CPU: 3, Mem: 5 * gb, Since: since, Command: "yarn pre-push:check", Told: &told, Dismissed: true, OverCPU: true, OverMem: true}}
+		return []Undeclared{{Thread: "t_a", CPU: 3, Mem: 5 * gb, Since: since, Command: "yarn pre-push:check", OverCPU: true, OverMem: true}}
 	}
 	p.Acquire("t_job", Test)
 	s := p.Snapshot()
@@ -117,7 +116,7 @@ func TestB9TheSnapshotListsThemAndTheUsedPercentagesIncludeThem(t *testing.T) {
 		t.Fatalf("%+v", s.Undeclared)
 	}
 	u := s.Undeclared[0]
-	if u.Thread != "t_a" || u.CPUPct != 50 || u.MemPct != 38 || u.Command != "yarn pre-push:check" || u.Told == nil || !u.Dismissed {
+	if u.Thread != "t_a" || u.CPUPct != 50 || u.MemPct != 38 || u.Command != "yarn pre-push:check" {
 		t.Fatalf("%+v", u)
 	}
 	if s.UndeclaredCPUPct == nil || *s.UndeclaredCPUPct != 50 || *s.UndeclaredMemPct != 38 {

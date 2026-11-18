@@ -51,9 +51,8 @@ type Load struct {
 	Jobs []JobClass `json:"jobs,omitempty"`
 	// V0.164: the suggested heavy jobs, the ones the owner added, and the
 	// thresholds of "undeclared".
-	Suggestions        []heavy.Suggestion `json:"suggestions,omitempty"`
-	HeavyAdded         []heavy.Added      `json:"heavyAdded,omitempty"`
-	UndeclaredSettings *UndeclaredView    `json:"undeclaredSettings,omitempty"`
+	HeavyAdded         []heavy.Added   `json:"heavyAdded,omitempty"`
+	UndeclaredSettings *UndeclaredView `json:"undeclaredSettings,omitempty"`
 	// V0.176: the leftover processes past their grace, and the temporary
 	// folders listed for the owner (settled threads' worktrees).
 	Leftovers []Leftover `json:"leftovers,omitempty"`
@@ -138,7 +137,7 @@ func (s *Sampler) Get() Load {
 		l.Heavy, l.Slots = &sn, &sn
 	}
 	if s.Book != nil && l.Provider != "" {
-		l.Suggestions, l.HeavyAdded = s.Book.Suggestions(), s.Book.Added()
+		l.HeavyAdded = s.Book.Added()
 	}
 	if s.Settings != nil && l.Provider != "" {
 		v := s.Settings.View()

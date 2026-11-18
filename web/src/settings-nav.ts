@@ -23,7 +23,7 @@ export const PAGES: { id: PageId; title: string }[] = [
 ];
 
 /** The pages with sub-pages. */
-/** Automation's sub is not a page: it names the suggestion V0.164's "Add as heavy job…" opened it at (scrolled to, marked). */
+/** Automation's sub is not a page: it names the group to scroll to ("leftovers"). */
 const SUBS: Record<PageId, boolean> = { providers: true, automation: true, projects: true, hosts: true, devices: false, device: false };
 
 export function isPage(s: string | null | undefined): s is PageId {

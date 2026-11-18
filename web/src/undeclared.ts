@@ -2,9 +2,8 @@
 // the row's mark, the rail's button and menu, the thread's strip, Settings' lines. Pure; the components print them.
 // The owner's word is "undeclared"; "slot" and "reservation" never reach the owner (V0.163).
 
-import { clockTime } from "./format.ts";
 import { guardLine } from "./guard.ts";
-import { cpuText, gbText, spanText, undeclaredTip, usedMeasures, type HeavySuggestion, type HostLoad, type Lookup, type UndeclaredUse } from "./load.ts";
+import { cpuText, gbText, spanText, undeclaredTip, usedMeasures, type HostLoad, type Lookup, type UndeclaredUse } from "./load.ts";
 
 export { undeclaredTip, type Lookup };
 
@@ -36,10 +35,10 @@ export interface RowUndeclared {
   title: string;
 }
 
-/** The row's mark (desktop and phone): it starts the second line of a flagged thread. A dismissed thread has none. */
+/** The row's mark (desktop and phone): it starts the second line of a flagged thread. */
 export function rowUndeclared(list: HostLoad[], id: string, now: number): RowUndeclared | null {
   const f = findUndeclared(list, id);
-  if (!f || f.u.dismissed) return null;
+  if (!f) return null;
   const u = f.u;
   const m = measures(u, "none", f.h.host);
   // Decision 0032: a thread the guard froze says how often and for how long; the guard's own words replace "memory".
@@ -58,10 +57,9 @@ export interface RailUndeclared {
   aria: string;
 }
 
-/** The rail's button (desktop only): the flagged threads that are not dismissed. Null when none (the hatched part of
- *  the meter stays for a dismissed thread, the button does not count it). */
+/** The rail's button (desktop only): the flagged threads. Null when none. */
 export function railUndeclared(h: HostLoad, lookup: Lookup): RailUndeclared | null {
-  const list = (h.slots?.undeclared ?? []).filter((u) => !u.dismissed);
+  const list = h.slots?.undeclared ?? [];
   if (!list.length) return null;
   const entries = list.map((u) => ({ id: u.thread, label: `${lookup(u.thread).title} · ${measures(u, "none", h.host).join(" · ")}` }));
   const names = list.map((u) => lookup(u.thread).title);
@@ -76,40 +74,23 @@ export function railUndeclared(h: HostLoad, lookup: Lookup): RailUndeclared | nu
 }
 
 export interface StripView {
-  paused: boolean;
   head: string;
-  /** the rest of the first line */
-  usage?: string;
-  /** paused: what the host does about it */
-  body?: string;
+  /** what the host does about it */
+  body: string;
   command: string;
   note: string;
-  add: boolean;
-  dismiss: boolean;
 }
 
-/** The strip under an open thread's header (desktop and phone). */
-export function stripView(h: HostLoad, u: UndeclaredUse, now: number): StripView {
-  if (u.paused) {
-    const free = h.headroom !== undefined ? ` (${Math.round(h.headroom * 100)} % free)` : "";
-    return {
-      paused: true,
-      head: `Paused by Fyr: memory is short on ${h.host}${free}.`,
-      body: "Frozen, not killed; it resumes when memory has recovered for 30 s, within 10 min at most.",
-      command: u.command,
-      note: [...measures(u, "none", h.host).slice(0, 1), "undeclared"].join(" · "),
-      add: false,
-      dismiss: false,
-    };
-  }
+/** The strip under an open thread's header (desktop and phone), V0.209: only while Fyr holds the work paused. Work
+ *  that merely runs asks nothing of the owner; the row and the rail show it. Null otherwise. */
+export function stripView(h: HostLoad, u: UndeclaredUse): StripView | null {
+  if (!u.paused) return null;
+  const free = h.headroom !== undefined ? ` (${Math.round(h.headroom * 100)} % free)` : "";
   return {
-    paused: false,
-    head: "Heavy work Fyr did not admit",
-    usage: [...measures(u, "first", h.host), since(u, now)].join(" · "),
+    head: `Paused by Fyr: memory is short on ${h.host}${free}.`,
+    body: "Frozen, not killed; it resumes when memory has recovered for 30 s, within 10 min at most.",
     command: u.command,
-    note: [`counted against ${h.host}'s heavy jobs`, u.told ? `agent told ${clockTime(u.told)}` : ""].filter(Boolean).join(" · "),
-    add: !u.matched,
-    dismiss: true,
+    note: [...measures(u, "none", h.host).slice(0, 1), "undeclared"].join(" · "),
   };
 }
 
@@ -121,11 +102,9 @@ export interface UndeclaredRow {
   project: string;
   command: string;
   usage: string;
-  tail: string;
-  dismissed: boolean;
 }
 
-/** "Undeclared now": a row per flagged thread, a dismissed one included (dimmed, "still counted"). */
+/** "Undeclared now": a row per flagged thread. */
 export function undeclaredRows(h: HostLoad, now: number, lookup: Lookup): UndeclaredRow[] {
   return (h.slots?.undeclared ?? []).map((u) => {
     const l = lookup(u.thread);
@@ -135,8 +114,6 @@ export function undeclaredRows(h: HostLoad, now: number, lookup: Lookup): Undecl
       project: l.project ?? "",
       command: u.command,
       usage: [...measures(u, "all", h.host), since(u, now)].join(" · "),
-      tail: u.dismissed ? "dismissed, still counted" : u.told ? `agent told ${clockTime(u.told)}` : "",
-      dismissed: u.dismissed,
     };
   });
 }
@@ -147,29 +124,11 @@ const dayText = (iso: string) => {
   return Number.isNaN(d.getTime()) ? "" : `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 };
 
-export interface SuggestionRow {
-  id: string;
-  command: string;
-  pattern: string;
-  kind: string;
-  line: string;
-}
-
-/** "Suggested heavy jobs": the command, how often it was seen and how large it got. */
-export function suggestionRows(h: HostLoad, lookup: Lookup): SuggestionRow[] {
-  return (h.suggestions ?? []).map((s: HeavySuggestion) => {
-    const where = `${clockTime(s.lastAt)} in ${lookup(s.lastThread).title}`;
-    const seen = s.seen === 1 ? `Seen once, ${where}` : `Seen ${s.seen} times in ${plural(s.threads, "thread", "threads")}, last ${where}`;
-    const mins = s.seconds < 60 ? `${s.seconds} s` : `${Math.round(s.seconds / 60)} min`;
-    return { id: s.id, command: s.command, pattern: s.pattern, kind: s.kind, line: `${seen} · up to ${gbText(s.memory)}, ${cpuText(s.cpu)}, ${mins}` };
-  });
-}
-
-/** "Heavy jobs you added": the pattern, its kind, when it was added and how often the gate has refused it since. */
+/** "Learned heavy jobs": the pattern, its kind and when Fyr learned it (or, before V0.209, the owner added it). */
 export function addedRows(h: HostLoad): { pattern: string; line: string }[] {
   return (h.heavyAdded ?? []).map((a) => ({
     pattern: a.pattern,
-    line: `${a.kind} · added ${dayText(a.at)} from a suggestion · ${a.refused === 0 ? "not refused since" : a.refused === 1 ? "refused once since" : `refused ${a.refused} times since`}`,
+    line: a.learned ? `${a.kind} · learned ${dayText(a.at)}` : `${a.kind} · added ${dayText(a.at)} · ${a.refused === 0 ? "not refused since" : a.refused === 1 ? "refused once since" : `refused ${a.refused} times since`}`,
   }));
 }
 

@@ -54,6 +54,10 @@ func (m *Manager) feed(threadID string) error {
 func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 	switch id {
 	case "view", "viewnudge":
+		if id == "viewnudge" {
+			u, _ := in["tool_use_id"].(string)
+			m.toolDone(s, u)
+		}
 		if sub, _ := in["agent_id"].(string); sub != "" {
 			return nil
 		}
@@ -74,26 +78,14 @@ func (m *Manager) hook(s *session, id string, in claude.Msg) claude.Msg {
 	onBash := m.cfg.OnBash
 	m.mu.Unlock()
 	if c, _ := ti["command"].(string); name == "Bash" && c != "" && onBash != nil && s != nil {
-		if r := onBash(s.thread, c); r != "" {
+		u, _ := in["tool_use_id"].(string)
+		bg, _ := ti["run_in_background"].(bool)
+		if r := onBash(BashCall{Thread: s.thread, Command: c, ToolUse: u, Background: bg}); r != "" {
 			return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse",
 				"permissionDecision": "deny", "permissionDecisionReason": r}}
 		}
 	}
-	n := core.GateNudge(name, ti) // V0.143
-	// V0.164: the first Bash call of a subagent of a thread that runs
-	// undeclared heavy work carries the text too, once per episode; the main
-	// agent's own notice is not used up.
-	if sub, _ := in["agent_id"].(string); sub != "" && name == "Bash" && s != nil {
-		m.mu.Lock()
-		note := m.cfg.UndeclaredNote
-		m.mu.Unlock()
-		if note != nil {
-			if u := note(s.thread); u != "" {
-				n = strings.TrimSpace(n + "\n" + u)
-			}
-		}
-	}
-	if n != "" {
+	if n := core.GateNudge(name, ti); n != "" { // V0.143
 		return claude.Msg{"hookSpecificOutput": claude.Msg{"hookEventName": "PreToolUse", "additionalContext": n}}
 	}
 	return nil
