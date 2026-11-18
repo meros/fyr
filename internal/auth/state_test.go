@@ -3,6 +3,7 @@ package auth
 // SPEC V0.157, decision 0030 slice 2, on a fake clock.
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -326,5 +327,15 @@ func TestV130RecordsAreUsedAsTheyAre(t *testing.T) {
 	s.BindNode("dev_old", "nPHONE", "phone.ts.net")
 	if s.NodeState("nPHONE") != "approved" {
 		t.Error("the phone's node is not approved after it signed in during observe")
+	}
+}
+
+// V0.devices-empty-audit: an install whose trail is empty sends [], not null;
+// Settings -> Devices failed with "e is not iterable" on null.
+func TestAnEmptyAuditIsAnEmptyList(t *testing.T) {
+	s, _, _ := newTest(t)
+	b, err := json.Marshal(s.Audit())
+	if err != nil || string(b) != "[]" {
+		t.Fatalf("audit of a fresh install = %s, %v; want []", b, err)
 	}
 }
