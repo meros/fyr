@@ -77,6 +77,8 @@ type ThreadLoad struct {
 	// memory.peak, and the class of the job its slot runs now.
 	CPUPressure *float64 `json:"cpuPressure,omitempty"`
 	Peak        uint64   `json:"peak,omitempty"`
+	// MemoryHigh is the thread's own limit, 0 for none (decision 0032 slice 3).
+	MemoryHigh uint64 `json:"memoryHigh,omitempty"`
 	// Working is the working set, memory.current less inactive_file (V0.164):
 	// what the undeclared-work detector reads; Memory stays the raw reading.
 	Working uint64 `json:"-"`
@@ -199,6 +201,7 @@ func (s *Sampler) now() time.Time {
 func (s *Sampler) Tick() {
 	l := s.get()
 	s.detect(l)
+	s.Tree.ApplyThreadBudget(s.threadHolds()) // decision 0032 slice 3
 	if s.Jobs == nil || s.Slots == nil || s.Slots.Off() {
 		return
 	}
@@ -225,6 +228,24 @@ func (s *Sampler) Tick() {
 		rates[t.ID] = t.CPU
 	}
 	s.Jobs.tick(s.Tree, s.Slots.Snapshot(), rates, l.Slowdown, s.now())
+}
+
+// threadHolds are the slots held now, with what each job is known to need.
+func (s *Sampler) threadHolds() map[string]ThreadHold {
+	if s.Slots == nil || s.Slots.Off() {
+		return nil
+	}
+	out := map[string]ThreadHold{}
+	for _, h := range s.Slots.Snapshot().Held {
+		var hold ThreadHold
+		if s.Jobs != nil {
+			if lr, ok := s.Jobs.Learned(s.Jobs.ClassOf(h.Owner, h.Kind)); ok {
+				hold = ThreadHold{Peak: lr.Peak, Known: true}
+			}
+		}
+		out[h.Owner] = hold
+	}
+	return out
 }
 
 // Signals are the measures admission reads (decision 0029 S2): the last
@@ -328,6 +349,7 @@ func (s *Sampler) get() Load {
 			}
 			d := filepath.Join(agents, e.Name())
 			t := ThreadLoad{ID: e.Name(), Memory: readBytes(filepath.Join(d, "memory.current")), Peak: readBytes(filepath.Join(d, "memory.peak"))}
+			t.MemoryHigh = readBytes(filepath.Join(d, "memory.high"))
 			t.Working = t.Memory
 			if in, ok := readKey(filepath.Join(d, "memory.stat"), "inactive_file"); ok && in <= t.Memory {
 				t.Working -= in
