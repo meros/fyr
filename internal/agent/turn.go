@@ -227,7 +227,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		for _, ch := range due {
 			ch <- msg
 		}
-		data := map[string]any{"interrupted": interrupted, "costUsd": msg["total_cost_usd"], "durationMs": msg["duration_ms"], "failure": f}
+		data := map[string]any{"interrupted": interrupted, "durationMs": msg["duration_ms"], "failure": f}
 		end := core.RunEndedArgs{Failure: f, Git: gitFacts(s.cwd), Data: data} // V0.59 (3): the git facts
 		if restore {
 			// V0.37: a forced turn that only updated the view keeps the

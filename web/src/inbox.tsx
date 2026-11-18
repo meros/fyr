@@ -3,7 +3,6 @@
 import { Fragment, type ComponentChildren, type Ref } from "preact";
 import type { Profile, Thread } from "./types.ts";
 import type { FilterSel, HostChip, ProjectChip } from "./filters.ts";
-import { QuotaRail } from "./quota-ui.tsx";
 import { LoadRail } from "./load-ui.tsx";
 import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
@@ -73,12 +72,11 @@ export function Rail(p: RailProps) {
           <span class="k">\</span>
         </button>
       )}
-      {/* V0.141: the load and the quota are the rail's middle, its own scroll area; the sections above and the bell,
+      {/* V0.141: the load is the rail's middle, its own scroll area (V0.quota-in-thread: the quota moved to the thread's header); the sections above and the bell,
           Changes and Settings below keep their size, so the rail never runs past the window. */}
       {p.profiles && (
         <div class="rmid">
           <LoadRail />
-          <QuotaRail profiles={p.profiles} />
         </div>
       )}
       {p.extra && <div class="railx">{p.extra}</div>}

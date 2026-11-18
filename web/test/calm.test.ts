@@ -104,7 +104,7 @@ test("machine lines are quiet by default and full with tool details", () => {
     ev("decision.closed", { id: "d", answer: "Approve" }),
     ev("effect.result", { action: "deploy.staging", ok: true, text: "Deploy succeeded · build 20261114-112026\n\nlong log" }),
     ev("user", { text: "[Fyr] Your effect_request deploy.staging succeeded" }),
-    ev("run.ended", { failure: null, interrupted: false, costUsd: 0.42, durationMs: 840000 }),
+    ev("run.ended", { failure: null, interrupted: false, durationMs: 840000 }),
   ];
   const calm = buildConversation(evs);
   assert.deepEqual(calm.map((i) => i.kind), ["user", "assistant", "task", "answer", "effect", "run"], "no thinking, no ok task lines, no [Fyr] note");
@@ -124,7 +124,7 @@ test("machine lines are quiet by default and full with tool details", () => {
 // found a lone check mark under the last message odd).
 test("run end label", () => {
   const run = (o: Partial<Extract<Item, { kind: "run" }>>) => ({ kind: "run", key: "k", failure: null, interrupted: false, compact: true, ...o }) as Extract<Item, { kind: "run" }>;
-  assert.deepEqual(runLabel(run({ durationMs: 840000, costUsd: 0.42 })), { text: "Finished in 14 min", more: "$0.42" });
+  assert.deepEqual(runLabel(run({ durationMs: 840000 })), { text: "Finished in 14 min", more: "" });
   assert.deepEqual(runLabel(run({ interrupted: true, durationMs: 120000 })), { text: "Stopped after 2 min", more: "" });
   assert.deepEqual(runLabel(run({})), { text: "Finished", more: "" });
   assert.equal(runLabel(run({ failure: { class: "api", message: "overloaded" } as never })).text, "Failed (api): overloaded");

@@ -68,37 +68,13 @@ export function quotaSummary(q: Quota, name: string): string {
   return q.source === "session" ? `${name}: usage shows after the next run` : `${name}: not read yet`;
 }
 
-/** The rail's one short figure: the busiest window ("61%") or the balance ("¥12"). */
-export function railFigure(q: Quota): QuotaPart | null {
+/** V0.quota-in-thread: one short figure, for a place with room for one (the phone's header): the busiest window's
+ *  share ("61 %"), else the balance ("¥12.40 left"). null without data. */
+export function busiestFigure(q: Quota): QuotaPart | null {
   const ws = q.windows ?? [];
-  if (ws.length) {
-    const top = Math.max(...ws.map((w) => w.usedPct));
-    return { text: `${Math.round(top)}%`, hot: top >= HOT };
-  }
-  const b = q.balance;
-  if (b?.amount !== undefined) return { text: money(Math.floor(b.amount), b.currency).replace(/\.00( |$)/, "$1"), hot: false };
-  return null;
-}
-
-/** V0.152: each provider's initial on the rail: the first letter of its name, upper case. Where two different names
- *  share it, the first letter of a later word that no other name starts with ("Claude", "Claude (work account)" → "C",
- *  "W"), else the shortest start of the name that tells it apart ("Codex", "Claude" → "Co", "Cl"). The same name keeps
- *  the same initial (one provider on two hosts). */
-export function railInitials(names: string[]): string[] {
-  const words = (n: string) => n.match(/[\p{L}\p{N}]+/gu) ?? ["?"];
-  const up = (w: string) => w[0].toUpperCase() + w.slice(1).toLowerCase();
-  const lead = (n: string) => up(words(n)[0][0]);
-  const distinct = [...new Set(names)];
-  return names.map((n) => {
-    const others = distinct.filter((m) => m !== n && lead(m) === lead(n));
-    if (!others.length) return lead(n);
-    const taken = new Set(distinct.filter((m) => m !== n).map(lead));
-    const later = words(n).slice(1).find((w) => !taken.has(up(w[0])));
-    if (later) return up(later[0]);
-    const w = words(n)[0];
-    for (let k = 2; k <= w.length; k++) if (others.every((m) => !words(m)[0].toLowerCase().startsWith(w.slice(0, k).toLowerCase()))) return up(w.slice(0, k));
-    return lead(n);
-  });
+  if (!ws.length) return quotaParts(q)[0] ?? null;
+  const top = Math.max(...ws.map((w) => w.usedPct));
+  return { text: pctText(top), hot: top >= HOT };
 }
 
 /** The detail lines on hover or tap: windows with reset times in local time, then freshness and notes. */

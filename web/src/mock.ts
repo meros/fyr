@@ -191,7 +191,7 @@ function simpleEvents(id: string, now: number, prompt: string, reply: string, fa
     e("msg", toolUse(`${id}-b1`, "Bash", { command: "gh pr view --json state" })),
     e("msg", toolResult(`${id}-b1`)),
     e("msg", assistantText(reply)),
-    e("run.ended", { failure, interrupted: false, costUsd: 0.42, durationMs: 840_000 }),
+    e("run.ended", { failure, interrupted: false, durationMs: 840_000 }),
   ];
 }
 
@@ -809,7 +809,7 @@ function railFixture(now: number): Fixture {
       ev(3, now - 5 * 60_000 - 2000, "t_run", "run.requested", { on: "thread", action: "run-1" }),
       ev(4, now - 5 * 60_000 - 1000, "t_run", "run.requested", { on: "thread", action: "run-2" }),
       ev(5, now - 5 * 60_000, "t_run", "msg", assistantText("The minting needs a device:\n\n```\n! sudo " + mint + "\n! udisksctl mount -b /dev/sdc1\n```\n\nThe minting runs in a bwrap sandbox, so it cannot open the device itself.")),
-      ev(6, now - 5 * 60_000 + 1000, "t_run", "run.ended", { failure: null, interrupted: false, costUsd: 0.12, durationMs: 60_000 }),
+      ev(6, now - 5 * 60_000 + 1000, "t_run", "run.ended", { failure: null, interrupted: false, durationMs: 60_000 }),
     ];
   }
   events.t_babysit = [
@@ -988,7 +988,7 @@ function calmTurn(subject: string, now: number): FyrEvent[] {
   e((t += 2), "msg", toolUse("pl1", "mcp__fyr__pr_link", { url: "https://github.com/acme/web/pull/4182" }));
   e((t += 0.2), "msg", toolResult("pl1"));
   e((t += 1), "msg", assistantText("Snapshot test still fails on the sheet; the other two files now take 9 s instead of 24 s."));
-  e((t += 1), "run.ended", { failure: null, interrupted: false, costUsd: 0.42, durationMs: 840_000 });
+  e((t += 1), "run.ended", { failure: null, interrupted: false, durationMs: 840_000 });
   // V0.33: a second run reads one message; the next one waits in the agent's queue.
   e((t += 60), "user", { id: "m_map2", text: "Fix the snapshot test too.", images: 0 });
   e(t, "message.state", { id: "m_map2", state: "read" });
@@ -1185,7 +1185,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       const cur = threads.get(id)!;
       if (!cur.running) return;
       emit(id, "msg", assistantText(reply));
-      emit(id, "run.ended", { failure: null, interrupted: false, costUsd: 0.01, durationMs: 1800 });
+      emit(id, "run.ended", { failure: null, interrupted: false, durationMs: 1800 });
       // V0.37: a view thread's run updates its view at the end.
       const live = cur.liveView && cur.live ? { ...cur.live, state: { ...cur.live.state, headline: reply }, headline: reply, updatedAt: new Date(clock()).toISOString(), checkedAt: new Date(clock()).toISOString() } : cur.live;
       put(cur, {
@@ -1349,7 +1349,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         break;
       }
       case "thread.interrupt":
-        emit(t.id, "run.ended", { failure: null, interrupted: true, costUsd: 0, durationMs: 100 });
+        emit(t.id, "run.ended", { failure: null, interrupted: true, durationMs: 100 });
         idle("seen", "seen", { running: false, activity: "", unavailable: quiet });
         break;
       case "thread.retry":

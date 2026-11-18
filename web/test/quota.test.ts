@@ -1,7 +1,7 @@
-// SPEC 0.5 V0.44: provider quota words: the summary line, colour from 80 %, the rail figure, details.
+// SPEC 0.5 V0.44: provider quota words: the summary line, colour from 80 %, the busiest part, details.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CARD_WORD, cardState, money, quotaDetail, quotaParts, quotaSummary, railFigure, railInitials, type Quota } from "../src/quota.ts";
+import { CARD_WORD, cardState, money, quotaDetail, quotaParts, quotaSummary, busiestFigure, type Quota } from "../src/quota.ts";
 
 const now = Date.parse("2026-11-14T10:00:00Z");
 const claude: Quota = {
@@ -27,15 +27,17 @@ test("the summary line reads like the spec", () => {
 test("only a window at 80 % or more is hot", () => {
   const q: Quota = { ...claude, windows: [{ name: "5 h", usedPct: 79.4 }, { name: "7 d", usedPct: 80 }] };
   assert.deepEqual(quotaParts(q).map((p) => p.hot), [false, true]);
-  assert.deepEqual(railFigure(q), { text: "80%", hot: true });
-  assert.deepEqual(railFigure(claude), { text: "61%", hot: false });
+  // V0.quota-in-thread: the phone's header has room for one figure: the busiest window's share
+  assert.deepEqual(busiestFigure(q), { text: "80 %", hot: true });
+  assert.deepEqual(busiestFigure(claude), { text: "61 %", hot: false });
+  assert.deepEqual(busiestFigure({ ...claude, windows: [{ name: "5 h", usedPct: 86 }, { name: "7 d", usedPct: 40 }] }), { text: "86 %", hot: true });
 });
 
-test("money and the rail balance", () => {
+test("money and the balance", () => {
   assert.equal(money(12.4, "USD"), "$12.40");
   assert.equal(money(5, "SEK"), "5.00 SEK");
-  assert.deepEqual(railFigure({ profile: "d", kind: "deepseek", balance: { amount: 12.9, currency: "CNY" } }), { text: "¥12", hot: false });
-  assert.equal(railFigure({ profile: "d", kind: "openrouter", balance: { spent: 1, currency: "USD" } }), null);
+  assert.deepEqual(busiestFigure({ profile: "d", kind: "deepseek", balance: { amount: 12.9, currency: "CNY" } }), { text: "¥12.90 left", hot: false });
+  assert.equal(busiestFigure({ profile: "d", kind: "anthropic-oauth", error: "Login expired; run this provider once" }), null);
 });
 
 test("details: resets in local time, freshness, the stale note and the next try", () => {
@@ -91,11 +93,4 @@ test("the badge says Rate limited only for a rate limit", () => {
   assert.equal(CARD_WORD.notoken, "No token");
   assert.equal(cardState({ profile: "x", kind: "deepseek", error: "The provider failed (HTTP 502)" }), "error");
   assert.equal(cardState({ profile: "x", kind: "anthropic-oauth", error: "Rate limited by the provider; trying again later" }), "limited");
-});
-
-test("V0.152: each provider's initial on the rail tells different providers apart", () => {
-  assert.deepEqual(railInitials(["Claude", "Claude (work account)", "DeepSeek", "Z.ai"]), ["C", "W", "D", "Z"]);
-  assert.deepEqual(railInitials(["Claude", "Claude"]), ["C", "C"]); // one provider on two hosts
-  assert.deepEqual(railInitials(["Codex", "Claude"]), ["Co", "Cl"]);
-  assert.deepEqual(railInitials(["åsa", "zai"]), ["Å", "Z"]);
 });

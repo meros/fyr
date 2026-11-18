@@ -2334,7 +2334,7 @@ section('V0.141', async (h) => {
     const ctx = `V0.141 desktop 1280x${ht}`;
     try {
       await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: ht, deviceScaleFactor: 1, mobile: false });
-      await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.rail .bell') && document.querySelectorAll('.rail .rmid .rldr').length === 2 && document.querySelectorAll('.rail .rmid .rqr').length === 4");
+      await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.rail .bell') && document.querySelectorAll('.rail .rmid .rldr').length === 2");
       await settle();
       const r = await evaluate(`(() => {
         const vh = innerHeight, de = document.documentElement;
@@ -2521,20 +2521,20 @@ for (const dark of [false, true]) section(`V0.167 desktop 1280x900${dark ? " dar
   try {
     await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
-    await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.rail .bell') && document.querySelectorAll('.rail .rmid .rldr').length === 2 && document.querySelectorAll('.rail .rmid .rqr').length === 4");
+    await navigate(`${origin}/?mock=rail&hosts=2`, "!!document.querySelector('.rail .bell') && document.querySelectorAll('.rail .rmid .rldr').length === 2");
     await settle();
     const r = await evaluate(`(() => {
       const rail = document.querySelector('.rail').getBoundingClientRect(), mid = document.querySelector('.rail .rmid'), cs = getComputedStyle(mid);
       const out = [...mid.querySelectorAll('*')].filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.left < rail.left - 0.5 || b.right > rail.right + 0.5 || e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow === 'visible'); }).map((e) => e.className);
       const hosts = [...mid.querySelectorAll('.rldr')].map((c) => ({ keys: [...c.querySelectorAll('.hmk')].map((k) => k.textContent).join(), tip: c.title.split('\\n')[0] }));
-      const ld = mid.querySelector('.rld').getBoundingClientRect(), rq = mid.querySelector('.rq').getBoundingClientRect();
-      return { out, hosts, bar: mid.offsetWidth - mid.clientWidth, sw: cs.scrollbarWidth, scroll: mid.scrollHeight - mid.clientHeight, gap: Math.round(rq.top - ld.bottom),
-        rule: getComputedStyle(mid.querySelector('.rq')).backgroundImage, borders: [mid.querySelector('.rq'), mid.querySelector('.rld')].map((e) => getComputedStyle(e).borderTopWidth) };
+            return { out, hosts, bar: mid.offsetWidth - mid.clientWidth, sw: cs.scrollbarWidth, scroll: mid.scrollHeight - mid.clientHeight, quota: !!document.querySelector('.rail .rq, .rail .rqr'),
+        borders: [mid.querySelector('.rld')].map((e) => getComputedStyle(e).borderTopWidth) };
     })()`);
     check(r.out.length === 0, `${ctx}: part of the rail's middle sticks out of the rail (${JSON.stringify(r.out)})`);
     check(r.bar === 0 && r.sw === "none" && r.scroll <= 0, `${ctx}: the rail's middle shows a scrollbar or scrolls (${JSON.stringify(r)})`);
     check(r.hosts.length === 2 && r.hosts[0].keys === "ld,job" && r.hosts.every((x) => x.keys.startsWith("ld") && x.tip.startsWith("ld: the load")), `${ctx}: a host is not its two labelled meters with the legend (${JSON.stringify(r.hosts)})`);
-    check(r.gap >= 8 && r.rule === "none" && r.borders.every((b) => b === "0px"), `${ctx}: the parts are uneven or a rule is drawn (${JSON.stringify(r)})`);
+    // V0.quota-in-thread: the quota left the rail for the thread's header
+    check(!r.quota && r.borders.every((b) => b === "0px"), `${ctx}: the rail still shows a quota, or a rule is drawn (${JSON.stringify(r)})`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }
@@ -2554,19 +2554,19 @@ section('V0.152', async (h) => {
     try {
       await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: ht, deviceScaleFactor: 1, mobile: false });
       await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
-      await navigate(`${origin}/?mock=rail&hosts=2`, "document.querySelectorAll('.rail .rmid .rldr').length === 2 && document.querySelectorAll('.rail .rmid .rqr').length === 4");
+      await navigate(`${origin}/?mock=rail&hosts=2`, "document.querySelectorAll('.rail .rmid .rldr').length === 2");
       await settle();
       const r = await evaluate(`(() => {
         const rail = document.querySelector('.rail').getBoundingClientRect(), mid = document.querySelector('.rail .rmid');
         const cx = (e) => { const b = e.getBoundingClientRect(); return b.left + b.width / 2; };
         const cards = [...mid.querySelectorAll('.rldr')].map((c) => ({ fig: c.querySelector('.hmr.ld .hmv').textContent, name: c.querySelector('.hmn')?.textContent ?? '', full: c.querySelector('.hmn')?.title ?? '',
           meter: !!c.querySelector('.hmr.job'), meterTip: c.querySelector('.hmr.job')?.title ?? '', note: c.querySelector('.hmr.job .hmv')?.textContent ?? '', noteHot: !!c.querySelector('.hmr.job.hot') }));
-        const ld = mid.querySelector('.rld'), rq = mid.querySelector('.rq');
+        const ld = mid.querySelector('.rld');
         const qs = [...mid.querySelectorAll('.rqr')].map((q) => ({ ini: q.querySelector('i').textContent, v: q.querySelector('span').textContent, hot: q.querySelector('span').classList.contains('hot'), tip: q.title.split('\\n')[0],
           left: Math.round(q.getBoundingClientRect().left), top: Math.round(q.getBoundingClientRect().top), right: q.getBoundingClientRect().right }));
         const wide = [...mid.querySelectorAll('*')].filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.left < rail.left - 0.5 || b.right > rail.right + 0.5); }).map((e) => e.className);
         return { cards, qs, wide, cols: new Set(qs.map((q) => q.left)).size, rows: new Set(qs.map((q) => q.top)).size,
-          centred: Math.abs(cx(ld) - (rail.left + rail.width / 2)) < 2 && Math.abs(cx(rq) - (rail.left + rail.width / 2)) < 2,
+          centred: Math.abs(cx(ld) - (rail.left + rail.width / 2)) < 2 ,
           signal: getComputedStyle(document.documentElement).getPropertyValue('--signal-ink').trim(), midScroll: mid.scrollHeight - mid.clientHeight };
       })()`);
       const [desk, lab] = r.cards;
@@ -2574,9 +2574,7 @@ section('V0.152', async (h) => {
       check(desk.name === "desk" && lab.name === "lab" && desk.full === "desk" && lab.full === "lab", `${ctx}: the cards do not name their hosts (${JSON.stringify(r.cards)})`);
       check(desk.meter && r.cards.every((c) => !c.meter || /^Heavy jobs: /.test(c.meterTip)), `${ctx}: a slot meter has no tooltip saying what it is (${JSON.stringify(r.cards)})`);
       check(desk.note === "95%+1" && desk.noteHot && lab.note === "", `${ctx}: the meter's word is wrong or shows when nothing waits (${JSON.stringify(r.cards)})`);
-      check(r.qs.map((q) => q.ini).join() === "C,W,C,Z" && r.cols === 2 && r.rows === 2, `${ctx}: the quota grid or its initials are wrong (${JSON.stringify(r.qs)})`);
-      check(r.qs.every((q) => q.hot === (parseInt(q.v) >= 80)), `${ctx}: a quota is red below 80 % or plain above (${JSON.stringify(r.qs)})`);
-      check(r.qs[2].tip.startsWith("Claude on lab") && r.qs[0].tip.startsWith("Claude on "), `${ctx}: a quota's tooltip does not name its provider and host (${JSON.stringify(r.qs)})`);
+      check(r.qs.length === 0, `${ctx}: the rail still holds a quota grid (V0.quota-in-thread moved it to the thread's header) (${JSON.stringify(r.qs)})`);
       check(r.centred && r.wide.length === 0, `${ctx}: the rail's middle is off-centre or wider than the rail (${JSON.stringify({ centred: r.centred, wide: r.wide })})`);
       if (ht === 1000) check(r.midScroll <= 0, `${ctx}: the rail's middle scrolls with room for all (${r.midScroll} px)`);
     } catch (e) {
@@ -5664,6 +5662,48 @@ for (const url of LONG_DESK) {
   jobs.push({ name: `long word: desktop ${url}`, run: (t) => longDesk(t, url, "word", 1024, 700) });
   jobs.push({ name: `long words: desktop ${url}`, run: (t) => longDesk(t, url, "words", 1280, 800) });
 }
+// V0.quota-in-thread: the quota of the provider a thread runs on is a chip in the thread's header on both fronts, and
+// the rail holds none. Desktop: every window ("5 h 34 % · 7 d 61 %"), the reset times on hover, red only from 80 %,
+// whole inside the header. Phone: one figure, the busiest window's share, in the title bar before the ⋯ button; a tap opens Details with every line. The
+// end of a turn names no cost.
+section("V0.quota-in-thread desktop", async ({ evaluate, navigate, shot }) => {
+  const ctx = "V0.quota-in-thread desktop";
+  try {
+    await navigate(`${origin}/?mock=rail&hosts=2&open=t_mapperf`, "!!document.querySelector('.thh .chips .qchip')");
+    const r = await evaluate(`(() => {
+      const c = document.querySelector('.thh .chips .qchip'), b = c.getBoundingClientRect(), h = document.querySelector('.thh').getBoundingClientRect();
+      return { text: c.textContent, tip: c.title, hot: [...c.querySelectorAll('.hot')].map((x) => x.textContent), cut: c.scrollWidth > c.clientWidth + 1,
+        inside: b.left >= h.left && b.right <= h.right + 0.5 && b.width > 0, rail: !!document.querySelector('.rail .rq, .rail .rqr'),
+        money: [...document.querySelectorAll('.convo .runmark, .convo .sys')].map((x) => x.textContent + ' ' + (x.querySelector('button')?.title ?? '')).filter((x) => x.includes('$')) };
+    })()`);
+    check(/^5 h \d+ % · 7 d \d+ %$/.test(r.text), `${ctx}: the chip does not read as its windows ("${r.text}")`);
+    check(/5 h: \d+ % used, resets /.test(r.tip) && /Updated .* ago/.test(r.tip), `${ctx}: the hover has no reset time or age (${JSON.stringify(r.tip)})`);
+    check(r.hot.every((x) => parseInt(x.replace(/^\d \w /, "")) >= 80) && r.inside && !r.cut, `${ctx}: the chip is cut, outside the header, or red below 80 % (${JSON.stringify(r)})`);
+    check(!r.rail, `${ctx}: the rail still shows a quota`);
+    check(r.money.length === 0, `${ctx}: the end of a turn names a cost (${JSON.stringify(r.money)})`);
+    await shot("quota-in-thread-desktop.png");
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
+for (const [w, ht] of [[390, 844], [360, 640]]) section(`V0.quota-in-thread phone ${w}`, async ({ evaluate, openScreen, tapCenter, shot }) => {
+  const ctx = `V0.quota-in-thread phone ${w}x${ht}`;
+  try {
+    await openScreen({ url: "?mock=rail&hosts=2&open=t_mapperf", ready: "!!document.querySelector('.m-tr1 .qfig')" }, w, ht);
+    const r = await evaluate(`(() => {
+      const row = document.querySelector('.m-tr1').getBoundingClientRect(), c = document.querySelector('.m-tr1 .qfig'), b = c.getBoundingClientRect(), more = c.nextElementSibling.getBoundingClientRect();
+      return { text: c.textContent, inside: b.left >= row.left && b.right <= row.right + 0.5 && b.width > 0 && b.top >= row.top && b.bottom <= row.bottom, cut: c.scrollWidth > c.clientWidth + 1 || b.right > more.left + 0.5, h: Math.round(b.height), chips: Math.round(document.querySelector('.m-chips').getBoundingClientRect().height), wide: document.documentElement.scrollWidth > innerWidth };
+    })()`);
+    check(/^\d+ %$/.test(r.text), `${ctx}: the title bar's figure is not the busiest window's share ("${r.text}")`);
+    check(r.inside && !r.cut && r.h >= 44 && r.chips === 44 && !r.wide, `${ctx}: the figure is cut, under 44 px or outside the title bar (${JSON.stringify(r)})`);
+    await tapCenter(".m-tr1 .qfig", "!!document.querySelector('.m-sheet .m-qrow')");
+    const d = await evaluate(`[...document.querySelectorAll('.m-sheet .m-qrow .m-ql')].map((x) => x.textContent)`);
+    check(d.length >= 3 && /^5 h: \d+ % used, resets /.test(d[0]) && /^7 d: /.test(d[1]) && d.some((x) => /^Updated .* ago$/.test(x)), `${ctx}: Details does not list the windows, their resets and the age (${JSON.stringify(d)})`);
+    await shot(`quota-in-thread-phone-${w}.png`);
+  } catch (e) {
+    failures.push(`${ctx}: ${e.message}`);
+  }
+});
 // FYR_SECTIONS=<regex> runs only the jobs whose name matches (a quick local run of one section; CI runs them all).
 if (process.env.FYR_SECTIONS) { const re = new RegExp(process.env.FYR_SECTIONS); for (const l of [jobs, timedJobs]) l.splice(0, l.length, ...l.filter((j) => re.test(j.name))); }
 const started = Date.now();

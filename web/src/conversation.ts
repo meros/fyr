@@ -57,7 +57,7 @@ export type Item = (
     }
   | { kind: "assistant"; key: string; text: string; quiet?: boolean }
   | { kind: "tools"; key: string; calls: ToolCall[] }
-  | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number; compact: boolean }
+  | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; durationMs?: number; compact: boolean }
   | { kind: "effect"; key: string; action: string; ok: boolean; text: string; line: string }
   /** V0.run-cards-in-conversation: the agent asked the owner to run this request here; its Run card stands at this place */
   | { kind: "runcard"; key: string; action: string }
@@ -311,7 +311,6 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
           key,
           failure: d.failure ?? null,
           interrupted: !!d.interrupted,
-          costUsd: typeof d.costUsd === "number" ? d.costUsd : undefined,
           durationMs: typeof d.durationMs === "number" ? d.durationMs : undefined,
           compact: !details,
         });
@@ -746,13 +745,13 @@ function spoken(ms: number): string {
   return `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
 }
 
-/** SPEC 0.5 V0.21: the words for the end of a run, and what one tap adds. */
+/** SPEC 0.5 V0.21: the words for the end of a run, and what one tap adds (a failure's duration).
+ *  V0.quota-in-thread: no cost. The providers are subscriptions; the CLI's dollar figure is what the API would charge. */
 export function runLabel(it: Extract<Item, { kind: "run" }>): { text: string; more: string } {
-  const cost = it.costUsd !== undefined ? `$${it.costUsd.toFixed(2)}` : "";
   const d = it.durationMs !== undefined ? spoken(it.durationMs) : "";
-  if (it.failure) return { text: `Failed (${it.failure.class}): ${it.failure.message}`, more: [d, cost].filter(Boolean).join(" · ") };
+  if (it.failure) return { text: `Failed (${it.failure.class}): ${it.failure.message}`, more: d };
   const text = it.interrupted ? (d ? `Stopped after ${d}` : "Stopped") : d ? `Finished in ${d}` : "Finished";
-  return { text, more: cost };
+  return { text, more: "" };
 }
 
 /** V0.38: the whole output of one call, from the full event the host returns. */
