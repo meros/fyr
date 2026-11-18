@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/meros/fyr/internal/httpguard"
 	"log"
 	"net"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/meros/fyr/internal/auth"
 	"github.com/meros/fyr/internal/front"
-	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/store"
 	"github.com/meros/fyr/internal/tailnet"
 )
@@ -45,7 +45,7 @@ func serveAuthSockets(fr *front.Front, data, listen, public string, serveUsers [
 		// user, fyrd's own included, could write the login header, so it is
 		// closed (serveSocketUsers lists the users a test or a setup adds).
 		serve(auth.PeerListener{Listener: ln, Name: "serve socket", Allow: func(uid int) bool { return uid == 0 || slices.Contains(serveUsers, uid) }},
-			server.ServeSocket(public, fr.Handler()))
+			httpguard.ServeSocket(public, fr.Handler()))
 		log.Printf("auth: Tailscale Serve socket at %s", ln.Addr())
 	}
 }

@@ -184,6 +184,10 @@ type Link struct {
 	Error  *LinkError `json:"error,omitempty"`
 }
 
+// StalledCode is the code of a host's 503 past a request's deadline (V0.181):
+// the host is stuck, not gone.
+const StalledCode = "host-stalled"
+
 // LinkError says why a link is down: kind is one of acl, no-route, key-mismatch,
 // refused, timeout, removed, revoked, stalled (V0.181: it answers nothing in
 // time).

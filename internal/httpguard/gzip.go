@@ -1,4 +1,4 @@
-package server
+package httpguard
 
 import (
 	"compress/gzip"
@@ -84,8 +84,8 @@ func (g *gzWriter) close() {
 	}
 }
 
-// withGzip wraps next; /mcp and range requests (media) pass untouched.
-func withGzip(next http.Handler) http.Handler {
+// Gzip wraps next; /mcp and range requests (media) pass untouched.
+func Gzip(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") || r.URL.Path == "/mcp" || r.Header.Get("Range") != "" {
 			next.ServeHTTP(w, r)

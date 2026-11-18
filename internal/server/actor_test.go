@@ -66,14 +66,14 @@ func TestPeerHandlerRefusesABrowserAndAForeignHost(t *testing.T) {
 func TestPeerHandlerServesALegacyFront(t *testing.T) {
 	s := &Server{OwnerLogin: "me@example.com"}
 	h := s.PeerHandler(fakePeers{"192.0.2.1:1234": "me@example.com"})
-	before := LegacyFronts()
+	before := s.LegacyFronts()
 	if w := serveReq(h, "GET", "/api/profiles", nil); w.Code != 200 {
 		t.Fatalf("a front without Fyr-Actor: %d %s", w.Code, w.Body)
 	}
-	if LegacyFronts() != before+1 {
-		t.Errorf("not counted: %d -> %d", before, LegacyFronts())
+	if s.LegacyFronts() != before+1 {
+		t.Errorf("not counted: %d -> %d", before, s.LegacyFronts())
 	}
-	if serveReq(h, "GET", "/api/profiles", map[string]string{"Fyr-Actor": goodActor}); LegacyFronts() != before+1 {
+	if serveReq(h, "GET", "/api/profiles", map[string]string{"Fyr-Actor": goodActor}); s.LegacyFronts() != before+1 {
 		t.Error("a front with Fyr-Actor was counted as legacy")
 	}
 }
@@ -97,7 +97,7 @@ func TestPipeHandlerNeedsFyrActor(t *testing.T) {
 		t.Errorf("a good one: %d %s", w.Code, w.Body)
 	}
 	var got authn.Principal
-	probe := withActor(actorPipe, "SELF-0000-0000-0000", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got, _ = authn.From(r.Context()) }))
+	probe := withActor(actorPipe, "SELF-0000-0000-0000", nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got, _ = authn.From(r.Context()) }))
 	serveReq(probe, "GET", "/x", map[string]string{"Fyr-Actor": goodActor, "Fyr-Origin": "https://desk.tail.ts.net:7443"})
 	if got.Kind != authn.KindDevice || got.ID != "dev_x" || got.Front != "SELF-0000-0000-0000" {
 		t.Errorf("principal %+v", got)
@@ -108,7 +108,7 @@ func TestPipeHandlerNeedsFyrActor(t *testing.T) {
 // preview's CSP; a malformed one is ignored.
 func TestPipeHandlerOrigin(t *testing.T) {
 	var origin string
-	probe := withActor(actorPipe, "", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { origin, _ = authn.OriginFrom(r.Context()) }))
+	probe := withActor(actorPipe, "", nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { origin, _ = authn.OriginFrom(r.Context()) }))
 	for in, want := range map[string]string{"https://desk.tail.ts.net:7443": "https://desk.tail.ts.net:7443", "http://127.0.0.1:7777": "http://127.0.0.1:7777",
 		"https://x.example/ evil": "", "javascript:alert(1)": "", "https://a b": ""} {
 		origin = ""
@@ -165,7 +165,7 @@ func TestLinkHandler(t *testing.T) {
 	}
 	// over a link: kind=local is refused, and kind=install must carry the proven id
 	linkReq := func(actor string) int {
-		probe := withActor(actorLink, "", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		probe := withActor(actorLink, "", nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			probe.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), linkKey{}, linkInfo{"THEM-0000-0000-0000", fakeGate{}})))
 		})
@@ -182,7 +182,7 @@ func TestLinkHandler(t *testing.T) {
 		}
 	}
 	var got authn.Principal
-	probe := withActor(actorLink, "", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got, _ = authn.From(r.Context()) }))
+	probe := withActor(actorLink, "", nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got, _ = authn.From(r.Context()) }))
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		probe.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), linkKey{}, linkInfo{"THEM-0000-0000-0000", fakeGate{}})))
 	})

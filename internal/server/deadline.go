@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/lockwatch"
 )
 
@@ -32,10 +33,7 @@ func longLived(r *http.Request) bool {
 // DeadlineBody is the 503's body past a deadline. Its code, host-stalled,
 // tells a front that the host is stuck, not gone (V0.181): the front marks it
 // offline and serves its cached state until it answers again.
-const DeadlineBody = `{"ok":false,"error":"Fyr did not answer in time: it is busy or stuck; the stall is logged","code":"host-stalled"}`
-
-// StalledCode is DeadlineBody's code.
-const StalledCode = "host-stalled"
+const DeadlineBody = `{"ok":false,"error":"Fyr did not answer in time: it is busy or stuck; the stall is logged","code":"` + api.StalledCode + `"}`
 
 // WriteDeadline503 answers as a request past its deadline does.
 func WriteDeadline503(w http.ResponseWriter) {

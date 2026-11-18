@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meros/fyr/internal/httpguard"
 	"io"
 	"io/fs"
 	"log"
@@ -36,7 +37,6 @@ import (
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/peer"
 	"github.com/meros/fyr/internal/peers"
-	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/stream"
 )
 
@@ -64,9 +64,13 @@ type HostConfig struct {
 const LocalURL = "http://localhost"
 
 type Options struct {
-	Name       string // this machine, shown in the rail
-	BuildID    string // the client's build (V0.13 reload)
-	OwnerLogin string // the browser guard's tailnet owner (V0.14)
+	// LegacyFronts is this install's host's count of fronts served without a
+	// Fyr-Actor (decision 0030 slice 1), for `fyr auth status`; nil: 0 (a
+	// front only).
+	LegacyFronts func() int64
+	Name         string // this machine, shown in the rail
+	BuildID      string // the client's build (V0.13 reload)
+	OwnerLogin   string // the browser guard's tailnet owner (V0.14)
 	// OwnerFn is the owner's login when OwnerLogin is empty: a tagged install has
 	// none of its own and takes the one its roster carries (decision 0030 3.4),
 	// which it learns by sync once it is paired.
@@ -836,7 +840,7 @@ func (f *Front) Handler() http.Handler {
 	inner := f.browserRules(f.withAuth(f.withDeprecation(f.mux())))
 	return refuseActor(f.refuseTailscale(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// the owner's login may arrive after the start (a tagged install's, by sync)
-		server.Browser(f.ownerLogin(), inner).ServeHTTP(w, r)
+		httpguard.Browser(f.ownerLogin(), inner).ServeHTTP(w, r)
 	})))
 }
 

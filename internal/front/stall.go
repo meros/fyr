@@ -17,18 +17,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meros/fyr/internal/server"
+	"github.com/meros/fyr/internal/api"
 )
 
 // stallProbeEvery is how often the front asks a stalled host for its state
 // until it answers; stallProbeTimeout bounds one ask (the host's own deadline
-// answers 503 at server.ReadDeadline).
+// answers 503 after 10 s, V0.147).
 var (
 	stallProbeEvery   = 5 * time.Second
-	stallProbeTimeout = server.ReadDeadline + 5*time.Second
+	stallProbeTimeout = 15 * time.Second
 )
 
-// stalledAnswer: resp is the host's 503 past a deadline (server.DeadlineBody).
+// stalledAnswer: resp is the host's 503 past a deadline (api.StalledCode).
 // The body is read and put back.
 func stalledAnswer(resp *http.Response) bool {
 	if resp.StatusCode != http.StatusServiceUnavailable || resp.Body == nil {
@@ -39,7 +39,7 @@ func stalledAnswer(resp *http.Response) bool {
 		io.Reader
 		io.Closer
 	}{io.MultiReader(bytes.NewReader(head), resp.Body), resp.Body}
-	return err == nil && bytes.Contains(head, []byte(`"code":"`+server.StalledCode+`"`))
+	return err == nil && bytes.Contains(head, []byte(`"code":"`+api.StalledCode+`"`))
 }
 
 // suspect: the host answered a call with the deadline's 503, or sent a stall
