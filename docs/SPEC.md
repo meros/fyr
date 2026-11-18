@@ -102,7 +102,7 @@ v0 is the smallest Fyr the owner can work in every day. It is binding for milest
 
 **This table is the change log of v0.** Each row is a change as the owner asked for it, in the order it was built, and tests cite rows by ID, so no row is removed. A later row amends an earlier one. The numbered sections state the current rules: a row that starts with → names the section that now states it, and where the row and that section differ, the section is the rule.
 
-**The table is closed at V0.211.** A new change is its own file in `docs/changes/`, and the file's name is its ID (`docs/changes/README.md`): rows added at the end made every two open PRs conflict.
+**The table is closed at V0.213.** A new change is its own file in `docs/changes/`, and the file's name is its ID (`docs/changes/README.md`): rows added at the end made every two open PRs conflict.
 
 | ID | v0 requirement |
 |---|---|

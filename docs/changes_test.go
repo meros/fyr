@@ -10,7 +10,7 @@ import (
 )
 
 // closedRows is how many rows the table in SPEC 0.5 has for good.
-const closedRows = 210
+const closedRows = 213
 
 var changeName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
