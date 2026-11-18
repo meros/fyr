@@ -866,11 +866,17 @@ type RestartArgs struct {
 // reduceRestarted repairs what the last run of the host left behind (SPEC
 // 0.5 V0.6): the agent's queue (V0.33), a handover (V0.45) and live work,
 // which becomes failed with class restart. A thread whose process the
-// runner kept loses only its handover (V0.90).
+// runner kept loses only its handover (V0.90). A wait for the machine ends
+// either way: the start that waited lived in the last host
+// (V0.machine-wait-restart).
 func reduceRestarted(r Rec, in Input, now time.Time) (Result, error) {
 	t := r.T
 	var res Result
 	a, _ := in.Args.(RestartArgs)
+	if t.MachineWait != nil {
+		t.MachineWait = nil
+		res.Events = append(res.Events, Event{"agent.machineWait", map[string]any{"done": true}})
+	}
 	if a.Kept {
 		if t.Handover != nil {
 			t.Handover = nil
