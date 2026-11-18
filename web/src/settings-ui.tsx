@@ -14,6 +14,7 @@ import { Boundary } from "./boundary.tsx";
 import type { Api } from "./api.ts";
 import { hostForProject, hostIdByName, hostLine, linkLine, hostRows, hostState, howIn, profilesOn, routeOf, shortID, updateWords, type HostInfo } from "./hosts.ts";
 import { useHosts } from "./host-pick-ui.tsx";
+import { resolveRef } from "./store.ts";
 import { hostUrl } from "./urls.ts";
 import { automationSummaryHosts, groupLine, readOnlyNote, settingsHosts, type SettingsHost } from "./host-settings.ts";
 import { quotaFor } from "./quota.ts";
@@ -533,7 +534,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
       return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <HostParts s={s} now={p.now} part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} api={p.api} focus={at.sub} />} /> };
     case "projects": {
       if (at.sub) {
-        const pr = p.projects.find((x) => x.id === at.sub);
+        const pr = p.projects.find((x) => x.id === resolveRef(p.projects, at.sub!)); // a link names the host's own id (C12)
         return {
           title: pr?.name ?? "Project",
           parent: "Projects",

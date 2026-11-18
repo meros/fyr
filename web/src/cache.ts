@@ -90,8 +90,8 @@ async function put(key: string, value: unknown): Promise<void> {
 }
 
 export const cache = {
-  state: () => get<StateDTO>("state"),
-  saveState: (s: StateDTO) => put("state", s),
+  state: () => get<StateDTO>("state2"),
+  saveState: (s: StateDTO) => put("state2", s),
   events: (threadId: string) => get<FyrEvent[]>(`events:${threadId}`),
   saveEvents: (threadId: string, evs: FyrEvent[]) => put(`events:${threadId}`, evs),
 };

@@ -10,7 +10,9 @@ import { decodeHosts } from "./hosts.ts";
 import type { AuthState } from "./devices.ts";
 import type { PeerState } from "./peers.ts";
 import type { HostLoad } from "./load.ts";
-import type { ThreadDTO, Project } from "./types.ts";
+import type { ThreadDTO, Project, CommandReply } from "./types.ts";
+import type { HostInfo } from "./hosts.ts";
+import { bare, ref, stampEvent, stampLoad, stampProject, stampSlots, stampThread, unrefDeep } from "./hostfeed.ts";
 
 const MOCK_IMAGE =
   "data:image/svg+xml," +
@@ -85,9 +87,8 @@ export function createMockApi(scenario: string): Api {
   // without a host list is one host (desk), reached by any id; a host with no id (old-nuc) is stamped "".
   // The ids do not change (the order does), so they are read once: stamping runs for every thread of every frame.
   const startHosts = mockHostList();
-  const selfId = server.state().hostId ?? "";
   const idOfName = (name: string | undefined): string => {
-    if (!startHosts.length) return selfId;
+    if (!startHosts.length) return ""; // one host and no list: its ids are not prefixed, as a record of a host that reports no id
     return startHosts.find((h) => h.name === (name || startHosts[0].name))?.id ?? "";
   };
   const nameOf = (id: string): string => {
@@ -96,8 +97,13 @@ export function createMockApi(scenario: string): Api {
     // A host with no install id (older than V0.124) cannot be addressed (decision 0031): there is no name to fall back to.
     return hs.find((h) => h.id === id)?.name ?? "\u0000" + id;
   };
-  const stampT = (t: ThreadDTO): ThreadDTO => ({ ...t, hostId: idOfName(t.host) });
-  const stampP = (p: Project): Project => ({ ...p, hostId: idOfName(p.host) });
+  // The host's row for a fixture's host name; a front without a host list is one host, desk, always online.
+  const infoOf = (name: string | undefined): HostInfo => startHosts.find((h) => h.name === (name || startHosts[0]?.name)) ?? { id: "", name: name ?? "", online: true }; // read once: stamping runs per thread
+  const oneHostId = server.state().hostId ?? ""; // read once: stamping runs per thread
+  // A front with one host and no list keeps the fixtures' ids as they are (the layout test names them in its selectors);
+  // with several hosts the records are refs, as the real front's are.
+  const stampT = (t: ThreadDTO): ThreadDTO => (startHosts.length ? stampThread(t, infoOf(t.host)) : { ...t, hostId: oneHostId });
+  const stampP = (p: Project): Project => (startHosts.length ? stampProject(p, infoOf(p.host)) : { ...p, hostId: oneHostId });
   const stampState = (st: ReturnType<typeof server.state>) => ({ ...st, threads: st.threads.map(stampT), projects: st.projects.map(stampP) });
   let watch = initialBuildWatch();
   // V0.121: the owner's project order, the front's own (&order=p_fyr,p_web sets one; none: by name).
@@ -113,36 +119,7 @@ export function createMockApi(scenario: string): Api {
     }
   })();
   let onMarks: ((m: Record<string, { icon?: string; color?: string }>) => void) | undefined;
-  return {
-    mock: true,
-    start(h) {
-      h.conn("connecting");
-      watch = observeBuildId(watch, server.buildId).watch;
-      server.subscribe({ thread: (t) => h.thread(stampT(t)), event: h.event, project: (p) => h.project?.(stampP(p)) });
-      onOrder = h.projectOrder;
-      onHosts = h.hosts;
-      onMarks = h.hostMarks;
-      setTimeout(() => {
-        h.state({ ...stampState(server.state()), ...(order ? { projectOrder: order } : {}), ...(Object.keys(marks).length ? { hostMarks: marks } : {}) });
-        h.conn(offline ? "offline" : "live");
-      }, 0);
-      // V0.38 perf guard (mock only): a burst of n thread updates and n messages for one thread,
-      // one pair every 10 ms, the way a busy agent streams.
-      (globalThis as { __fyrBurst?: (id: string, n: number) => void }).__fyrBurst = (id, n) => {
-        const base = server.state().threads.find((t) => t.id === id);
-        if (!base) return;
-        for (let i = 1; i <= n; i++) {
-          setTimeout(() => {
-            h.thread({ ...base, rev: (base.rev ?? 0) + i, activity: `Step ${i} of ${n}`, updatedAt: new Date().toISOString() });
-            h.event({ seq: 1_000_000 + i, at: new Date().toISOString(), subject: id, type: "msg", data: { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: `Burst message ${i}: **bold**, \`code\`, and a list:\n\n- one\n- two` }] } } });
-          }, i * 10);
-        }
-      };
-    },
-    frontCommand(action, args) {
-      return this.command("", action, undefined, args);
-    },
-    async command(host, action, threadId, args) {
+  const mockCommand = async (host: string, action: string, threadId: string | undefined, args: Record<string, unknown> | undefined): Promise<CommandReply> => {
       log.push({ host, action, threadId, args: JSON.parse(JSON.stringify(args ?? {})) });
       if (offline) return { ok: false, error: "no connection to the host" };
       const hn = nameOf(host);
@@ -233,6 +210,47 @@ export function createMockApi(scenario: string): Api {
       if (hn.startsWith("\u0000")) return { ok: false, error: `this front follows no host ${host}` };
       // The fixture server places a new thread or project by name (a front without hosts: desk).
       return server.command(newCommandId(), action, threadId, mockHostList().length && hn && !threadId ? { ...(args ?? {}), host: hn } : (args ?? {}));
+    };
+
+  return {
+    mock: true,
+    start(h) {
+      h.conn("connecting");
+      watch = observeBuildId(watch, server.buildId).watch;
+      server.subscribe({ thread: (t) => h.thread(stampT(t)), event: (e) => h.event(stampEvent(e, idOfName(server.state().threads.find((t) => t.id === e.subject)?.host))), project: (p) => h.project?.(stampP(p)) });
+      onOrder = h.projectOrder;
+      onHosts = h.hosts;
+      onMarks = h.hostMarks;
+      setTimeout(() => {
+        h.state({ ...stampState(server.state()), ...(order ? { projectOrder: order } : {}), ...(Object.keys(marks).length ? { hostMarks: marks } : {}) });
+        h.conn(offline ? "offline" : "live");
+      }, 0);
+      // V0.38 perf guard (mock only): a burst of n thread updates and n messages for one thread,
+      // one pair every 10 ms, the way a busy agent streams.
+      (globalThis as { __fyrBurst?: (id: string, n: number) => void }).__fyrBurst = (id, n) => {
+        const base = server.state().threads.find((t) => t.id === id);
+        if (!base) return;
+        for (let i = 1; i <= n; i++) {
+          setTimeout(() => {
+            h.thread({ ...base, rev: (base.rev ?? 0) + i, activity: `Step ${i} of ${n}`, updatedAt: new Date().toISOString() });
+            h.event({ seq: 1_000_000 + i, at: new Date().toISOString(), subject: id, type: "msg", data: { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: `Burst message ${i}: **bold**, \`code\`, and a list:\n\n- one\n- two` }] } } });
+          }, i * 10);
+        }
+      };
+    },
+    frontCommand(action, args) {
+      return this.command("", action, undefined, args);
+    },
+    async command(host, action, tid, a) {
+      // The host knows its own ids: a ref goes in bare and the ids in the reply come back as refs, as api.ts does.
+      const r = await mockCommand(host, action, tid ? bare(host, tid) : tid, unrefDeep(host, a));
+      if (!r.ok) return r;
+      return {
+        ...r,
+        ...(r.threadId ? { threadId: ref(host, r.threadId) } : {}),
+        ...(r.result && typeof r.result.id === "string" && action.startsWith("project.") ? { result: { ...r.result, id: ref(host, r.result.id) } } : {}),
+        ...(r.result && action === "host.slotOrder" && Array.isArray((r.result as { waiting?: unknown }).waiting) ? { result: stampSlots(r.result as never, host) as never } : {}),
+      };
     },
     async providers(host) {
       return read(nameOf(host), (h) => {
@@ -332,8 +350,8 @@ export function createMockApi(scenario: string): Api {
     async profiles() {
       return server.state().profiles;
     },
-    async events(_host, threadId, after = 0, limit = 400) {
-      return server.events(threadId, after, limit);
+    async events(host, threadId, after = 0, limit = 400) {
+      return server.events(bare(host, threadId), after, limit).map((e) => stampEvent(e, host));
     },
     async thread() {
       return null; // the mock sends whole threads
@@ -341,9 +359,9 @@ export function createMockApi(scenario: string): Api {
     async fullEvent() {
       return null; // the mock never cuts
     },
-    async eventsBefore(_host, threadId, before, limit = 400) {
-      const all = server.events(threadId, 0, 1_000_000).filter((e) => e.seq < before);
-      return all.slice(Math.max(0, all.length - limit));
+    async eventsBefore(host, threadId, before, limit = 400) {
+      const all = server.events(bare(host, threadId), 0, 1_000_000).filter((e) => e.seq < before);
+      return all.slice(Math.max(0, all.length - limit)).map((e) => stampEvent(e, host));
     },
     async t3Candidates(host) {
       const r = hostFor(nameOf(host)); // V0.139: only desk has T3 in the mock
@@ -400,8 +418,8 @@ export function createMockApi(scenario: string): Api {
     async load() {
       // V0.140: with &hosts=2 the rail has a ring per host (desk's, and a calm lab).
       const l = JSON.parse(JSON.stringify(load)) as HostLoad[];
-      if (!mockHostList().length || !l.length) return l;
-      return [{ ...l[0], host: "desk" }, { ...l[0], host: "lab", cores: 16, load: [1.4, 1.1, 0.9], threads: [], slots: undefined }];
+      if (!mockHostList().length || !l.length) return l.map((x) => stampLoad(x, idOfName(x.host)));
+      return [{ ...l[0], host: "desk" }, { ...l[0], host: "lab", cores: 16, load: [1.4, 1.1, 0.9], threads: [], slots: undefined }].map((x) => stampLoad(x as HostLoad, idOfName(x.host)));
     },
     async boardVisit() {
       // V0.98 (3): the mock's last visit was a day ago, so its done changes show under Finished.
@@ -410,8 +428,8 @@ export function createMockApi(scenario: string): Api {
     async commands() {
       return MOCK_COMMANDS;
     },
-    async changes(_host, threadId) {
-      return mockChanges(threadId);
+    async changes(host, threadId) {
+      return mockChanges(bare(host, threadId));
     },
     async filePatch(_host, _threadId, path) {
       return mockFilePatch(path);
@@ -434,11 +452,12 @@ export function createMockApi(scenario: string): Api {
       const f = fsOf(nameOf(host));
       return f ? f.mkdir(parent, name) : server.fsMkdir(parent, name);
     },
-    async prDetail(_host, threadId) {
+    async prDetail(host, threadId) {
       await new Promise((r) => setTimeout(r, 120));
-      return server.prDetail(threadId);
+      return server.prDetail(bare(host, threadId));
     },
-    async uploadProjectIcon(_host, projectId, file) {
+    async uploadProjectIcon(host, projectId0, file) {
+      const projectId = bare(host, projectId0);
       // V0.116: the mock keeps no bytes; the project gets a new version (the layout test serves fixture icons).
       if (file.size > 2 * 1024 * 1024) return { ok: false, error: "the picture is over 2 MB" };
       const r = server.command(`icon-${Date.now()}`, "project.update", undefined, { id: projectId, image: `m${Date.now().toString(36)}` });

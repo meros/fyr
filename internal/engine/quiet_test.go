@@ -55,6 +55,7 @@ func TestQuietHours(t *testing.T) {
 	var mu sync.Mutex
 	pushes := 0
 	h.e.OnAttention = func(api.Thread, core.State) { mu.Lock(); pushes++; mu.Unlock() }
+	guardDeps(t, h.e)
 	ch := h.e.Hub.Subscribe()
 	defer h.e.Hub.Unsubscribe(ch)
 

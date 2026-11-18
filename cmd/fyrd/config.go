@@ -172,6 +172,9 @@ type config struct {
 	// LinkBackoffMillis and LinkDialMillis tune the mesh's connectors (the wait between
 	// dials to one install, doubling to five minutes, and the time one dial may take;
 	// 1000 and 8000 when absent): the test harness makes them short.
+	// ConfigCheckMillis is how often the config file is looked at (V0.180); absent
+	// is 30 s. The test harness makes it short.
+	ConfigCheckMillis int `json:"configCheckMillis"`
 	LinkBackoffMillis int `json:"linkBackoffMillis"`
 	LinkDialMillis    int `json:"linkDialMillis"`
 	// StepUpMinutes: how old a browser session must be to widen trust (approve a
@@ -186,6 +189,14 @@ func (c config) stepUp() time.Duration {
 		return auth.DefaultStepUp
 	}
 	return time.Duration(*c.StepUpMinutes) * time.Minute
+}
+
+// configEvery is how often the config file is looked at.
+func (c config) configEvery() time.Duration {
+	if c.ConfigCheckMillis > 0 {
+		return time.Duration(c.ConfigCheckMillis) * time.Millisecond
+	}
+	return configEvery
 }
 
 // tsSocket is the LocalAPI socket this install asks about the tailnet.

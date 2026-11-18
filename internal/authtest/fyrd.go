@@ -122,6 +122,8 @@ type Fyrd struct {
 	Data string // the data folder
 	Addr string // 127.0.0.1:PORT, once ready
 	Name string
+	// Config is the config file it was started with.
+	Config string
 
 	cmd  *exec.Cmd
 	logb *syncBuf
@@ -198,6 +200,7 @@ func Start(o Options) (*Fyrd, error) {
 		cfg[k] = v
 	}
 	cfgPath := filepath.Join(root, fmt.Sprintf("config-%s.json", orDefault(o.Name, "fyrd")))
+	f.Config = cfgPath
 	b, _ := json.Marshal(cfg)
 	if err := os.WriteFile(cfgPath, b, 0o600); err != nil {
 		return nil, err

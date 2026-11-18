@@ -42,6 +42,7 @@ func TestSystemAgentsSetting(t *testing.T) {
 	h.e.SystemAgentProviders = func() []SystemProvider {
 		return []SystemProvider{{ID: "claude", Name: "Claude", Models: []string{"claude-haiku-5-5"}, Haiku: "claude-haiku-5-5"}}
 	}
+	guardDeps(t, h.e)
 	v := h.e.SystemAgentsView()
 	if len(v.Providers) != 1 || v.Providers[0].Haiku != "claude-haiku-5-5" {
 		t.Fatalf("providers %+v", v.Providers)
