@@ -2,8 +2,9 @@ package slots
 
 // Decision 0029 slice S4 (#188), V0.163 per resource: the budget adapts
 // slowly to the host (AIMD, as TCP and Netflix's concurrency limits do).
-// Memory pressure (headroom under the reserve, or a critical stall) cuts the
-// memory budget; new jobs running slow for a minute cut the CPU budget;
+// Memory pressure (headroom under the reserve, or a critical stall of the
+// agents themselves; V0.load-tuning: a stall of the rest of the host holds new
+// jobs in Decide but says nothing about what they may use) cuts the memory budget; new jobs running slow for a minute cut the CPU budget;
 // while a job waits on a calm host and nothing was admitted for a while, the
 // resource that held it back grows. Slow steps and holds, because the probe,
 // PSI and the jobs take time to show a change. Without a provider the
@@ -63,8 +64,13 @@ func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time,
 	if a.N > 0 {
 		floor = 1 / a.N
 	}
-	short := (s.Headroom != nil && *s.Headroom < DefaultPolicy.MemoryReserve) || s.Stall == StallCritical
-	calm := s.Slowdown != nil && *s.Slowdown < AIMDCalm && !short && s.Stall != StallElevated
+	own := s.AgentsStall
+	if own == "" {
+		own = s.Stall
+	}
+	short := (s.Headroom != nil && *s.Headroom < DefaultPolicy.MemoryReserve) || own == StallCritical
+	calm := s.Slowdown != nil && *s.Slowdown < AIMDCalm && !short && own != StallElevated &&
+		s.Stall != StallElevated && s.Stall != StallCritical
 	switch {
 	case short:
 		a.f.Mem = max(floor, round(a.f.Mem*AIMDDown))

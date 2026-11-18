@@ -15,8 +15,10 @@ import (
 // costsKey is where the table is kept in the store's KV table.
 const costsKey = "slot-costs"
 
-// Learning rates: α for a run, half for a starved one (its demand factor
-// above starvedAt); the memory peak decays by peakDecay a run.
+// Learning rates: demand and the memory peak follow a run's high and decay by
+// peakDecay a run (V0.load-tuning: the average under-predicted the runs that
+// matter). A starved run (its demand factor above starvedAt) says little about
+// the demand, so it only moves it by α/2.
 const (
 	alpha     = 0.3
 	starvedAt = 3.0
@@ -57,14 +59,15 @@ func (j *Jobs) learn(r JobRecord) {
 		j.table = map[string]Learned{}
 	}
 	l := j.table[r.Class]
-	a := alpha
-	if r.Cores > 0 && r.Demand/r.Cores > starvedAt {
-		a = alpha / 2
-	}
+	starved := r.Cores > 0 && r.Demand/r.Cores > starvedAt
 	if l.Runs == 0 {
 		l.Demand, l.Peak = r.Demand, r.Peak
 	} else {
-		l.Demand = round2((1-a)*l.Demand + a*r.Demand)
+		if starved {
+			l.Demand = round2((1-alpha/2)*l.Demand + alpha/2*r.Demand)
+		} else {
+			l.Demand = round2(max(r.Demand, peakDecay*l.Demand))
+		}
 		l.Peak = max(r.Peak, uint64(peakDecay*float64(l.Peak)))
 	}
 	l.Walls = append(l.Walls, r.Wall)

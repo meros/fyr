@@ -39,14 +39,17 @@ type Load struct {
 	// agents may use; Slowdown is s (1.0 idle), nil without a fresh probe;
 	// Headroom is the share of Capacity.Memory left; MemoryPressure is PSI
 	// memory full avg10 and MemoryStall its level (ok, elevated,
-	// critical); AgentsPressure is agents/cpu.pressure some avg10.
-	Provider       string    `json:"provider,omitempty"`
-	Capacity       *Capacity `json:"capacity,omitempty"`
-	Slowdown       *float64  `json:"slowdown,omitempty"`
-	Headroom       *float64  `json:"headroom,omitempty"`
-	MemoryPressure *float64  `json:"memoryPressure,omitempty"`
-	MemoryStall    Stall     `json:"memoryStall,omitempty"`
-	AgentsPressure *float64  `json:"agentsCpuPressure,omitempty"`
+	// critical); AgentsPressure is agents/cpu.pressure some avg10;
+	// AgentsMemoryStall is the level of agents/memory.pressure full avg10
+	// (V0.load-tuning), absent without the tree.
+	Provider          string    `json:"provider,omitempty"`
+	Capacity          *Capacity `json:"capacity,omitempty"`
+	Slowdown          *float64  `json:"slowdown,omitempty"`
+	Headroom          *float64  `json:"headroom,omitempty"`
+	MemoryPressure    *float64  `json:"memoryPressure,omitempty"`
+	MemoryStall       Stall     `json:"memoryStall,omitempty"`
+	AgentsPressure    *float64  `json:"agentsCpuPressure,omitempty"`
+	AgentsMemoryStall Stall     `json:"agentsMemoryStall,omitempty"`
 	// Jobs: the measured slot holds per class, the newest first.
 	Jobs []JobClass `json:"jobs,omitempty"`
 	// V0.164: the suggested heavy jobs, the ones the owner added, and the
@@ -313,7 +316,7 @@ func (s *Sampler) Signals() slots.Signals {
 	} else {
 		l = s.get()
 	}
-	sig := slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall)}
+	sig := slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall), AgentsStall: slots.Stall(l.AgentsMemoryStall)}
 	if l.Capacity != nil {
 		sig.CPU, sig.Memory = l.Capacity.CPU, l.Capacity.Memory
 	}
