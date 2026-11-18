@@ -120,6 +120,8 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .hd .rhm{position:absolute;left:0;top:calc((var(--tlh) - var(--ri)) / 2);display:flex;z-index:1}
 .rw .hd .pin,.one .hd .pin{position:absolute;left:calc(var(--rh,0px) + var(--ri) + 5px);top:calc((var(--tlh) - 12px) / 2);display:grid;place-items:center;color:var(--harbour)}
 .rpn{color:var(--ink-muted)}
+/* A long project or provider name ends in … and leaves the row's line room for what follows it. */
+.m .rpn,.m .rpv{display:inline-block;max-width:32%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
 .rpv .pdot{display:inline-block;width:7px;height:7px;margin-right:4px;vertical-align:1px}
 .from.mark{margin-right:5px;color:var(--ink-faint);font:inherit;text-decoration:none}
 .from.mark.link:hover{color:var(--ink);text-decoration:none}
@@ -265,6 +267,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .prv{flex:1;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;padding:16px 24px 24px;display:flex;flex-direction:column;gap:12px;scrollbar-width:thin;font:400 14px/21px var(--ui);color:var(--ink)}
 .prv-h{display:flex;flex-direction:column;gap:6px;min-width:0}
 .prv-t{margin:0;font:600 16px/22px var(--ui);overflow-wrap:anywhere}
+.prv-by{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .prv-t a{color:var(--ink);text-decoration:none}
 .prv-t a:hover{text-decoration:underline}
 .prv-num{font:400 14px/22px var(--mono);color:var(--ink-muted)}
@@ -317,6 +320,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .prv-rv{flex:1;min-width:0}
 .prv-rv b{color:var(--ink);font-weight:500}
 .prv-rv.changes_requested{color:var(--signal-ink)}.prv-rv.approved{color:var(--calm)}
+.prv-revs b,.prv-files b{min-width:0;overflow-wrap:anywhere}
 .prv-age{flex:none;font:400 12px/16px var(--ui);color:var(--ink-faint);white-space:nowrap}
 .prv-askall{align-self:flex-start;max-width:100%;white-space:normal;text-align:left}
 .prv-files{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:var(--raised);overflow:hidden;min-width:0}
@@ -337,7 +341,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .prv-cma{display:flex;gap:8px;align-items:baseline;font:400 12.5px/18px var(--ui)}
 .prv-cm .md{font:400 14px/21px var(--ui);overflow-wrap:anywhere}
 .prv-labels{display:flex;flex-wrap:wrap;gap:6px}
-.prv-label{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:11px;border:1px solid var(--line);font:500 12px/16px var(--ui);color:var(--ink-muted)}
+.prv-label{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%;min-height:22px;overflow-wrap:anywhere;padding:0 9px;border-radius:11px;border:1px solid var(--line);font:500 12px/16px var(--ui);color:var(--ink-muted)}
 .prv-label i{width:8px;height:8px;border-radius:50%;background:var(--ink-faint)}
 .prv-desc{font:400 14px/21px var(--ui);overflow-wrap:anywhere;min-width:0}
 .prv-desc.cut{max-height:calc(21px * 12);overflow:hidden;-webkit-mask-image:linear-gradient(#000 75%,transparent);mask-image:linear-gradient(#000 75%,transparent)}
@@ -1021,7 +1025,7 @@ html.list-resizing iframe{pointer-events:none}
 .rail .rld .hot,.tcpu.hot{color:var(--signal-ink);font-weight:600}
 .qlist{display:flex;flex-direction:column;gap:2px;min-width:0}
 /* V0.45: the handover dialog and the divider in the conversation */
-.ho-from{font:400 13px/18px var(--ui);color:var(--ink-muted)}
+.ho-from{font:400 13px/18px var(--ui);color:var(--ink-muted);overflow-wrap:anywhere}
 .ho-from b{color:var(--ink);font-weight:600}
 .ho-rung{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:500 13px/18px var(--ui);color:var(--ink)}
 .ho-rung small{font-weight:400;color:var(--ink-muted)}
@@ -1240,7 +1244,8 @@ label.sr{cursor:pointer}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .pimg{display:flex;align-items:center;gap:10px;flex-wrap:wrap} /* the Image tab: the thumbnail, Upload or Replace, Remove (not .thumb: that is an attachment) */
 .pemoji .inl input{max-width:120px;font-size:20px;text-align:center}
-.pfolder .ell{display:inline}
+.pfolder{min-width:0}
+.pfolder .ell{display:inline;white-space:normal;overflow-wrap:anywhere}
 .rail .rgear{margin-top:auto}
 .rail .railx~.rgear{margin-top:4px}
 .rail .rgear+.foot{margin-top:6px}
@@ -1312,12 +1317,15 @@ label.sr{cursor:pointer}
 .chneed.textask{margin:6px 0 2px}
 .chneed.textask .txq{color:var(--ink-muted);font-weight:400}
 .chneed.muted{background:none;padding:0;color:var(--ink-muted);font-weight:400}
-.chneed .chnq{flex:1 1 12em;min-width:0}
+.chneed .chnq{flex:1 1 12em;min-width:0;overflow-wrap:anywhere}
+/* A label an agent wrote can be any length: the button wraps inside its card and keeps every word. */
+.chneed .btn,.offb .btn{flex:0 1 auto;min-width:0;max-width:100%;height:auto;padding-block:5px;white-space:normal;overflow-wrap:anywhere;text-align:left}
 .beamdot{width:8px;height:8px;border-radius:50%;background:var(--beam);flex:none;display:inline-block}
 .rneed{display:inline-flex;align-items:center;gap:6px;margin-left:auto}
 .rneed .btn{min-height:24px;padding:2px 10px}
 .chchk{font:400 11px/16px var(--mono);align-self:center}
 .chev{display:flex;flex-wrap:wrap;gap:8px;font:400 12px/16px var(--ui)}
+.chc a{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .offers{display:flex;flex-direction:column;gap:6px;min-width:0;margin-top:12px}
 .thead .offers,.m-thead .offers{padding:4px 0}
 .offb{display:flex;flex-wrap:wrap;gap:6px}
