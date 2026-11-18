@@ -81,7 +81,7 @@ The front's own calls (its stream, its state reads) are `kind=install` with its 
   "live": {"pageId": "…", "state": {"headline": "Tests pass; PR open", "steps": ["…"]}, "updatedAt": "…", "checkedAt": "…", "headline": "Tests pass; PR open"},
 
   "attention": {"state": "asking|failed|blocked|done|working|waiting|seen|snoozed|settled|archived", "section": "needs|working|seen|snoozed|settled|archived", "reason": "…"},
-  "view": {"seenAt": "…", "snoozeUntil": "…"},
+  "view": {"seenAt": "…", "snoozeUntil": "…", "snoozeWhenDone": true},
   "unavailable": {"thread.interrupt": "No run is going"},
   "quietUntil": "2026-11-15T06:00:00+01:00 (absent unless the project is in its quiet hours, V0.46)"
 }
@@ -170,6 +170,7 @@ Actions and their args:
 | `thread.interrupt`, `thread.retry`, `thread.dismiss`, `thread.dismissPR` (V0.36: merged or closed PR only), `thread.unsettle`, `thread.unsnooze`, `thread.archive`, `thread.unarchive`, `thread.markUnseen`, `thread.pin` and `thread.unpin` (V0.104, owner only), `thread.restart` (V0.143: only while the agent does not respond) | none |
 | `thread.settle` | `now?: true` for bulk settle |
 | `thread.snooze` | `until` (RFC 3339, future) |
+| `thread.snoozeWhenDone` (V0.185): until the thread's work is done, at most 24 h; `view.snoozeUntil` is then that maximum and `view.snoozeWhenDone` is true. Unavailable, with the reason, when no work goes on or the thread needs the owner | none |
 | `thread.rename` | `title` |
 | `thread.regenerateTitle` (V0.108, owner only): Fyr writes the title from the conversation; the result lands later as `thread.renamed`, or a failed line | none |
 | `thread.setProject` | `projectId`: file the thread into a project by hand; folder matching keeps it (V0.23). `""` unfiles it: no project, still filed by hand, so matching leaves it unfiled (V0.30) |

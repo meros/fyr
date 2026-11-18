@@ -9,7 +9,7 @@ import { HostField, useHosts } from "./host-pick-ui.tsx";
 import { hostChoices, hostOfflineNote } from "./hosts.ts";
 import { colorVar } from "./projects.ts";
 import { relTime, shortModel } from "./format.ts";
-import type { SnoozePreset } from "./store.ts";
+import type { SnoozeChoice } from "./snooze.ts";
 import type { HostInfo } from "./hosts.ts";
 import { folderHint, type NewThreadArgs } from "./new-thread.ts";
 import { useNewThreadForm } from "./new-thread-form.ts";
@@ -252,15 +252,15 @@ export function AdoptDialog(p: { load(host?: string): Promise<T3Candidate[]>; no
   );
 }
 
-export function SnoozeMenu(p: { presets: SnoozePreset[]; count: number; onPick(p: SnoozePreset): void; onClose(): void }) {
+export function SnoozeMenu(p: { presets: SnoozeChoice[]; count: number; onPick(p: SnoozeChoice): void; onClose(): void }) {
   return (
     <Modal title={p.count > 1 ? `Snooze ${p.count} threads` : "Snooze"} onClose={p.onClose}>
       <div class="menu">
         {p.presets.map((s, i) => (
-          <button class="mi" onClick={() => p.onPick(s)}>
+          <button class="mi" disabled={!!s.off} onClick={() => p.onPick(s)}>
             <kbd>{i + 1}</kbd>
             <span class="ell">{s.label}</span>
-            <span class="when tnum">{s.when}</span>
+            <span class="when tnum">{s.off ?? s.when}</span>
           </button>
         ))}
       </div>

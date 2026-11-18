@@ -24,8 +24,6 @@ import {
   isPinned,
   sections,
   setConn,
-  presetForKey,
-  snoozePresets,
   stateForCache,
   upsertThread,
   upsertProject,
@@ -34,7 +32,6 @@ import {
   setStall,
   UNDO_MS,
   type SectionKey,
-  type SnoozePreset,
   type Store,
   applyThreadPatch,
   resolveRef,
@@ -56,6 +53,7 @@ import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
 import { ListResizer } from "./list-resize-ui.tsx";
 import { PreviewViewer } from "./preview-ui.tsx";
 import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu } from "./dialogs.tsx";
+import { snoozeChoiceForKey, snoozeChoices, snoozeCommand, snoozeKeyCount, type SnoozeChoice } from "./snooze.ts";
 import type { NewThreadArgs } from "./new-thread.ts";
 import { clearThreadNotification, disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
 import { rememberOpen, shouldClearNotification, takeOpen, unsupportedReason, type PushStatus } from "./push.ts";
@@ -717,12 +715,14 @@ function App() {
     setDialog("snooze");
   };
 
-  const snooze = (p: SnoozePreset) => {
-    const ids = snoozeTargets;
+  const snoozeList = () => snoozeChoices(new Date(), snoozeTargets.flatMap((id) => store.threads[id] ?? []));
+
+  const snooze = (p: SnoozeChoice) => {
+    const c = snoozeCommand(p, snoozeTargets);
     setDialog(null);
-    stepPast(ids);
+    stepPast(c.ids);
     setPicked(new Set());
-    void cmds.run("thread.snooze", ids, { until: p.until.toISOString() });
+    void cmds.run(c.action, c.ids, c.args);
   };
 
   const markUnseen = (id: string) => {
@@ -1091,8 +1091,8 @@ function App() {
         return;
       }
       if (dialog === "snooze") {
-        // SPEC 0.5 V0.67: 1–5 in the order shown; without This evening 4 is the last.
-        const p = presetForKey(snoozePresets(new Date()), k);
+        // SPEC 0.5 V0.67: the keys in the order shown; V0.185: a choice that is off has no key.
+        const p = snoozeChoiceForKey(snoozeList(), k);
         if (p) {
           e.preventDefault();
           snooze(p);
@@ -1537,7 +1537,7 @@ function App() {
   const activeSection: SectionKey | null = sel && store.threads[sel] ? sectionOf(store.threads[sel]) : null;
   const hints = keyHints({
     dialog,
-    snoozeCount: dialog === "snooze" ? snoozePresets(new Date()).length : undefined,
+    snoozeCount: dialog === "snooze" ? snoozeKeyCount(snoozeList()) : undefined,
     zone,
     hasSelection: !!sel,
     picked: picked.size,
@@ -1716,7 +1716,7 @@ function App() {
           {settingsFor(settingsAt, (r) => setSettingsAt(r ?? { page: "providers" }))}
         </Modal>
       )}
-      {dialog === "snooze" && <SnoozeMenu presets={snoozePresets(new Date())} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
+      {dialog === "snooze" && <SnoozeMenu presets={snoozeList()} count={snoozeTargets.length} onPick={snooze} onClose={() => setDialog(null)} />}
       </ProfilesContext.Provider>
       {folderPickView}
       {confirmHost.view}

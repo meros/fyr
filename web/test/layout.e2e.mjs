@@ -3271,6 +3271,54 @@ try {
 }
 });
 
+// V0.185: until work is done is the last choice of the snooze list on both fronts: on for a working thread, off with
+// the reason for an idle one. A snoozed row says so instead of a time.
+section('V0.185', async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, tapCenter, key, openScreen } = h;
+  const png = async (name) => process.env.FYR_SHOTS && writeFileSync(join(process.env.FYR_SHOTS, name), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
+  const last = (sel) => `(() => { const b = [...document.querySelectorAll('${sel}')].pop(); return b ? { text: b.textContent, off: b.disabled } : null; })()`;
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail&open=t_mapperf`, "!!document.querySelector('.ib [data-id=t_mapperf]')");
+    await key("s");
+    await waitFor(`!!document.querySelector('.menu .mi')`, { what: "the snooze menu" });
+    const on = await evaluate(last(".menu .mi"));
+    check(on?.text.includes("Until work is done") && on.text.includes("at most 24 h") && !on.off, `V0.185 desktop: the choice for a working thread: ${JSON.stringify(on)}`);
+    await settle();
+    await png("snooze-done-desktop.png");
+    await evaluate(`[...document.querySelectorAll('.menu .mi')].pop().click()`);
+    await waitFor(`(window.__fyrCommands ?? []).some(c => c.action === 'thread.snoozeWhenDone' && c.threadId === 't_mapperf')`, { what: "the snooze command" });
+    await evaluate(`document.querySelector('#sec-snoozed .sec')?.click()`);
+    await waitFor(`!!document.querySelector('#sec-snoozed [data-id=t_mapperf]')`, { what: "the snoozed row" });
+    check((await evaluate(`document.querySelector('#sec-snoozed [data-id=t_mapperf]').textContent`)).includes("until work is done"), "V0.185 desktop: the row does not say until work is done");
+    await navigate(`${origin}/?mock=rail&open=t_nix`, "!!document.querySelector('.ib [data-id=t_nix]')");
+    await key("s");
+    await waitFor(`!!document.querySelector('.menu .mi')`, { what: "the snooze menu" });
+    const off = await evaluate(last(".menu .mi"));
+    check(off?.off && off.text.includes("Nothing is working"), `V0.185 desktop: the choice for an idle thread: ${JSON.stringify(off)}`);
+  } catch (e) {
+    failures.push(`V0.185 desktop: ${e.message}`);
+  }
+  try {
+    const sheet = async (id) => {
+      await openScreen({ url: `?mock=rail&open=${id}` }, 390, 844);
+      await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet .m-mi')");
+      await evaluate(`[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('Snooze'))?.click()`);
+      await waitFor(`[...document.querySelectorAll('.m-sheet .m-mi')].some(b => b.textContent.startsWith('Until work is done'))`, { what: "the snooze sheet" });
+      return evaluate(`(() => { const b = [...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.textContent.startsWith('Until work is done')); return { text: b.textContent, off: b.disabled }; })()`);
+    };
+    const off = await sheet("t_nix");
+    check(off.off && off.text.includes("Nothing is working"), `V0.185 phone: the choice for an idle thread: ${JSON.stringify(off)}`);
+    const on = await sheet("t_mapperf");
+    check(!on.off && on.text.includes("at most 24 h"), `V0.185 phone: the choice for a working thread: ${JSON.stringify(on)}`);
+    await settle();
+    await png("snooze-done-phone.png");
+  } catch (e) {
+    failures.push(`V0.185 phone: ${e.message}`);
+  }
+});
+
 // V0.162: a bulk settle skips a pinned thread: no settle command for it, the pin stays, and the toast names it. Desktop:
 // ⇧E on the Seen section; phone: Select all, then Settle N. Both go through the same settleBulk.
 section('V0.162', async (h) => {

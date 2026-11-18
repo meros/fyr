@@ -74,6 +74,32 @@ func (e *Engine) dropSlot(id string) bool {
 	return e.Slots.Release(id)
 }
 
+// syncSlotQueue brings the threads' records in line with the pool's queue
+// (V0.185): a Condition reads the record, and a thread leaves the queue by
+// several paths. The tick calls it; so do the slot tools, for at once.
+func (e *Engine) syncSlotQueue() {
+	if e.Slots == nil {
+		return
+	}
+	queued := map[string]bool{}
+	for _, h := range e.Slots.Snapshot().Waiting {
+		queued[h.Owner] = true
+	}
+	var moved []string
+	e.mu.Lock()
+	for id, t := range e.threads {
+		if t.SlotQueued != queued[id] {
+			moved = append(moved, id)
+		}
+	}
+	e.mu.Unlock()
+	for _, id := range moved {
+		if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotQueued, Thread: id, Args: queued[id]}); err != nil {
+			log.Printf("slot queue %s: %v", id, err)
+		}
+	}
+}
+
 // sweepSlots gives back the slots of threads that are gone or held one for
 // SlotIdle without a live run; the tick calls it.
 func (e *Engine) sweepSlots() {
@@ -147,6 +173,7 @@ func (e *Engine) sweepSlots() {
 	for _, id := range drop {
 		e.dropSlot(id)
 	}
+	e.syncSlotQueue()
 	e.memoryGuard(s)
 	e.heavierThanPredicted(s)
 	e.tellUndeclared()
@@ -620,6 +647,7 @@ func (e *Engine) slotTools(s *mcp.Server) {
 				return off, nil
 			}
 			held, ahead := e.Slots.Acquire(th, kind)
+			e.syncSlotQueue()
 			s := e.Slots.Snapshot()
 			if held {
 				return fmt.Sprintf("Admitted: your %s job %s of %s; %s left. Run the job now, then call slot_release. Admission also ends when your run ends.", kind, jobShare(s, th), e.hostName(), freeShare(s)), nil
@@ -640,6 +668,7 @@ func (e *Engine) slotTools(s *mcp.Server) {
 			if !e.dropSlot(th) {
 				return "", errors.New("you have no admitted or queued heavy job")
 			}
+			e.syncSlotQueue()
 			return fmt.Sprintf("Released: %s of %s free for heavy jobs.", freeShare(e.Slots.Snapshot()), e.hostName()), nil
 		}})
 }

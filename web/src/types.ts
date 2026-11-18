@@ -158,7 +158,8 @@ export interface ThreadDTO {
   /** V0.153: Fyr waits for a thrashing host instead of killing a slow agent */
   machineWait?: { since: string; why: string } | null;
   attention: Attention;
-  view?: { seenAt?: string | null; snoozeUntil?: string | null } | null;
+  /** V0.185: snoozeWhenDone: the snooze lasts until work is done; snoozeUntil is then its maximum time */
+  view?: { seenAt?: string | null; snoozeUntil?: string | null; snoozeWhenDone?: boolean } | null;
   unavailable?: Record<string, string> | null;
 }
 

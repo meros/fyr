@@ -61,6 +61,7 @@ const (
 	KindHandoverFailed = "handover.failed"
 	KindHandoverDone   = "handover.done"
 	KindSlotGranted    = "slot.granted" // V0.86: a queued slot is the thread's now
+	KindSlotQueued     = "slot.queued"  // V0.185: the thread joined or left the slot queue
 	KindSlotIdle       = "slot.idle"    // #174: a held slot ran no heavy job for a while
 	KindSlotMemory     = "slot.memory"  // decision 0029 S2: memory is short; this job grew most
 	KindSlotOver       = "slot.over"    // decision 0029 S3: a running job is heavier than predicted
@@ -302,11 +303,16 @@ func init() {
 			return Result{}, err
 		}},
 		{Name: KindHostRestarted, From: observed, Untouched: true, Reduce: reduceRestarted},
-		{Name: KindSlotGranted, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
+		{Name: KindSlotQueued, From: observed, Untouched: true, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
+			r.T.SlotQueued, _ = in.Args.(bool)
+			return Result{}, nil
+		}},
+		{Name: KindSlotGranted, From: observed, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
 			kind, _ := in.Args.(string)
 			if kind == "" {
 				return Result{}, errors.New("slot.granted needs the kind")
 			}
+			r.T.SlotQueued = false
 			return Result{Events: []Event{{EventSlot, map[string]any{"kind": kind, "granted": true}}}}, nil
 		}},
 		{Name: KindSlotIdle, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {

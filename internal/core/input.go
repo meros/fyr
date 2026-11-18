@@ -240,6 +240,10 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	t.Stopped = stoppedNow(t, now)
 	// The agent feed (#47): the notice rules project this reduce.
 	res.Effects = append(res.Effects, project(Reduced{Before: before, After: t, In: in, Events: res.Events}, now)...)
+	// V0.185: the snooze until work is done reads all of the above.
+	woke := wakeWhenDone(Rec{T: t, V: v}, in, now)
+	res.Events = append(res.Events, woke.Events...)
+	res.Effects = append(res.Effects, woke.Effects...)
 	return t, v, res, nil
 }
 
