@@ -11,7 +11,7 @@ import (
 func TestS1GateHookHearsBashCommands(t *testing.T) {
 	var got [][2]string
 	m := New(&stubHost{}, Config{})
-	m.SetOnBash(func(th, c string) string { got = append(got, [2]string{th, c}); return "" })
+	m.SetOnBash(func(c BashCall) string { got = append(got, [2]string{c.Thread, c.Command}); return "" }, nil)
 	s := &session{thread: "t_a"}
 	m.hook(s, "gate", claude.Msg{"tool_name": "Bash", "tool_input": map[string]any{"command": "make test"}})
 	m.hook(s, "gate", claude.Msg{"tool_name": "Bash", "agent_id": "sub1", "tool_input": map[string]any{"command": "yarn screenshot:diff"}})
@@ -21,19 +21,19 @@ func TestS1GateHookHearsBashCommands(t *testing.T) {
 	}
 }
 
-// #174: a reason from OnBash refuses the command with that reason, for the agent to read.
+// V0.209: a reason from OnBash (a full host) refuses the command with that reason, for the agent to read.
 func TestH174GateHookRefusesWithTheReason(t *testing.T) {
 	m := New(&stubHost{}, Config{})
-	m.SetOnBash(func(th, c string) string {
-		if c == "make test" {
-			return "Heavy job (make test) without a slot: call mcp__fyr__slot_acquire first"
+	m.SetOnBash(func(c BashCall) string {
+		if c.Command == "make test" {
+			return "Heavy job (make test): no room yet"
 		}
 		return ""
-	})
+	}, nil)
 	s := &session{thread: "t_a"}
 	out := m.hook(s, "gate", claude.Msg{"tool_name": "Bash", "tool_input": map[string]any{"command": "make test"}})
 	h, _ := out["hookSpecificOutput"].(claude.Msg)
-	if h["permissionDecision"] != "deny" || h["permissionDecisionReason"] != "Heavy job (make test) without a slot: call mcp__fyr__slot_acquire first" {
+	if h["permissionDecision"] != "deny" || h["permissionDecisionReason"] != "Heavy job (make test): no room yet" {
 		t.Fatalf("%v", out)
 	}
 	if out := m.hook(s, "gate", claude.Msg{"tool_name": "Bash", "tool_input": map[string]any{"command": "ls"}}); out != nil {
@@ -41,28 +41,20 @@ func TestH174GateHookRefusesWithTheReason(t *testing.T) {
 	}
 }
 
-// V0.164 (N7): a subagent's Bash call carries the undeclared-work note as additionalContext, from the host's func,
-// which gives it once per episode; the main agent's own calls do not ask for it.
-func TestN7SubagentBashCarriesTheUndeclaredNote(t *testing.T) {
+// V0.209: the gate passes the call's id and whether it runs in the background, and the end of the call is heard from
+// the PostToolUse hook and from the stream's tool_result, a failed one's too.
+func TestV209TheCallsStartAndEndAreHeard(t *testing.T) {
+	var got BashCall
+	var done []string
 	m := New(&stubHost{}, Config{})
-	asked := 0
-	m.SetUndeclaredNote(func(th string) string {
-		asked++
-		if asked == 1 {
-			return "This thread runs heavy work Fyr did not admit"
-		}
-		return ""
-	})
+	m.SetOnBash(func(c BashCall) string { got = c; return "" }, func(th, id string) { done = append(done, th+" "+id) })
 	s := &session{thread: "t_a"}
-	if out := m.hook(s, "gate", claude.Msg{"tool_name": "Bash", "tool_input": map[string]any{"command": "ls"}}); out != nil || asked != 0 {
-		t.Fatalf("the main agent asked: %v %d", out, asked)
+	m.hook(s, "gate", claude.Msg{"tool_name": "Bash", "tool_use_id": "tu1", "tool_input": map[string]any{"command": "make test", "run_in_background": true}})
+	if got != (BashCall{Thread: "t_a", Command: "make test", ToolUse: "tu1", Background: true}) {
+		t.Fatalf("%+v", got)
 	}
-	out := m.hook(s, "gate", claude.Msg{"tool_name": "Bash", "agent_id": "sub1", "tool_input": map[string]any{"command": "ls"}})
-	h, _ := out["hookSpecificOutput"].(claude.Msg)
-	if h["additionalContext"] != "This thread runs heavy work Fyr did not admit" || h["permissionDecision"] != nil {
-		t.Fatalf("%v", out)
-	}
-	if out := m.hook(s, "gate", claude.Msg{"tool_name": "Bash", "agent_id": "sub1", "tool_input": map[string]any{"command": "ls"}}); out != nil {
-		t.Fatalf("twice: %v", out)
+	m.toolResults(s, claude.Msg{"message": map[string]any{"content": []any{map[string]any{"type": "tool_result", "tool_use_id": "tu2", "is_error": true}, map[string]any{"type": "text"}}}})
+	if len(done) != 1 || done[0] != "t_a tu2" {
+		t.Fatalf("%v", done)
 	}
 }

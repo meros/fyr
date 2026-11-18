@@ -25,7 +25,7 @@ import { GuardChart } from "./guard-ui.tsx";
 import { guardLog, guardSummary } from "./guard.ts";
 import { clockTime } from "./format.ts";
 import { leftoverRows, tempRows } from "./leftovers.ts";
-import { addedRows, parseThreshold, thresholdError, suggestionRows, thresholdRows, undeclaredRows } from "./undeclared.ts";
+import { addedRows, parseThreshold, thresholdError, thresholdRows, undeclaredRows } from "./undeclared.ts";
 import { refreshLoad, useLoad } from "./load-ui.tsx";
 import { QuotaLine, useQuotas } from "./quota-ui.tsx";
 import { CARD_WORD, cardState } from "./quota.ts";
@@ -1333,8 +1333,8 @@ function AutomationPage({ d, hasDeploy, api, focus }: { d: Data; hasDeploy: bool
   );
 }
 
-/** Decision 0029 S1 (#185), V0.164: heavy jobs on this host: what runs undeclared now, the commands behind it that no
- *  pattern names yet, the patterns the owner added, when a thread counts as heavy, and the classes the host measured.
+/** Decision 0029 S1 (#185), V0.164, V0.209: heavy jobs on this host, which run by themselves: what runs undeclared now,
+ *  the commands Fyr learned, when a thread counts as heavy, and the classes the host measured.
  *  Desktop and phone share it; a read-only front shows it all with its buttons disabled. */
 function HeavyJobsGroup({ host, api, focus }: { host: string; api: SettingsProps["api"]; focus?: string }) {
   const env = useSet();
@@ -1344,7 +1344,7 @@ function HeavyJobsGroup({ host, api, focus }: { host: string; api: SettingsProps
   return (
     <>
       <LeftoverGroups h={h} host={host} api={api} focus={focus} />
-      {h.provider && <UndeclaredGroups h={h} host={host} api={api} focus={focus} />}
+      {h.provider && <UndeclaredGroups h={h} host={host} api={api} />}
       {h.provider && <MeasuredJobs h={h} host={host} api={api} env={env} />}
     </>
   );
@@ -1436,33 +1436,28 @@ function useHostCommand(host: string, api: SettingsProps["api"]): (action: strin
 
 /** V0.164 (SPEC 8.5). A group is absent when it has nothing to show; the thresholds are absent on a host that does not
  *  send them. */
-function UndeclaredGroups({ h, host, api, focus }: { h: HostLoad; host: string; api: SettingsProps["api"]; focus?: string }) {
+function UndeclaredGroups({ h, host, api }: { h: HostLoad; host: string; api: SettingsProps["api"] }) {
   const env = useSet();
   const und = useUnd();
   const run = useHostCommand(host, api);
   const [err, setErr] = useState<{ key: string; text: string } | null>(null);
   const fail = (key: string) => (text: string | null) => setErr(text ? { key, text } : null);
   const act = async (key: string, action: string, args: Record<string, unknown>) => fail(key)(await run(action, args));
-  // "Add as heavy job…" lands here: the suggestion of the strip's command is scrolled to and marked.
-  useEffect(() => {
-    if (focus) document.querySelector(`[data-sug="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "center" });
-  }, [focus, h.suggestions?.length]);
   const now = und.now();
   const rows = undeclaredRows(h, now, und.lookup);
-  const sugg = suggestionRows(h, und.lookup);
   const added = addedRows(h);
   const th = thresholdRows(h);
   return (
     <>
       {rows.length > 0 && (
-        <Group label="Undeclared now" title="Undeclared now" foot="Threads that use clearly more than their idle level without having asked for a heavy job. Fyr tells the agent once and counts the use against this host's heavy jobs, so jobs that asked wait instead of overloading it. Only when memory is short does Fyr pause the newest one; nothing is killed.">
+        <Group label="Undeclared now" title="Undeclared now" foot="Threads that use clearly more than their idle level in work Fyr did not recognise as a heavy job. There is nothing to do: Fyr counts the use against this host's heavy jobs, so admitted jobs wait instead of overloading it, and learns a command it sees again. Only when memory is short does Fyr pause the newest one; nothing is killed.">
           {rows.map((r) => (
             <Row
               key={r.thread}
-              class={`undrow${r.dismissed ? " off" : ""}`}
+              class="undrow"
               title={
                 <>
-                  {!r.dismissed && <UndIcon size={13} />}
+                  <UndIcon size={13} />
                   {r.title}
                 </>
               }
@@ -1470,19 +1465,12 @@ function UndeclaredGroups({ h, host, api, focus }: { h: HostLoad; host: string; 
                 <>
                   {r.project && `${r.project} · `}
                   <span class="mono">{r.command}</span> · {r.usage}
-                  {r.tail && ` · ${r.tail}`}
                 </>
               }
-              error={err?.key === `u:${r.thread}` ? err.text : null}
               end={
-                <>
-                  <button type="button" class="btn" onClick={() => und.openThread(r.thread)}>
-                    Open
-                  </button>
-                  <button type="button" class="btn" disabled={env.readOnly} onClick={() => void act(`u:${r.thread}`, "host.undeclaredDismiss", { thread: r.thread, on: !r.dismissed })}>
-                    {r.dismissed ? "Show again" : "Dismiss"}
-                  </button>
-                </>
+                <button type="button" class="btn" onClick={() => und.openThread(r.thread)}>
+                  Open
+                </button>
               }
             />
           ))}
@@ -1503,15 +1491,8 @@ function UndeclaredGroups({ h, host, api, focus }: { h: HostLoad; host: string; 
           ))}
         </Group>
       )}
-      {sugg.length > 0 && (
-        <Group label="Suggested heavy jobs" title="Suggested heavy jobs" foot="The commands behind undeclared work. Once added, Fyr refuses the command until its thread has asked for a heavy job, as it does for make test. Ignore hides a suggestion for good.">
-          {sugg.map((s) => (
-            <Suggestion key={s.id} s={s} picked={s.id === focus} error={err?.key === `s:${s.id}` ? err.text : null} onDo={(args) => act(`s:${s.id}`, "host.heavySuggestion", { id: s.id, ...args })} />
-          ))}
-        </Group>
-      )}
       {added.length > 0 && (
-        <Group label="Heavy jobs you added" title="Heavy jobs you added" foot="Besides the built-in ones (make test, go test ./..., playwright, nix build and the like).">
+        <Group label="Learned heavy jobs" title="Learned heavy jobs" foot="Besides the built-in ones (make test, go test ./..., playwright, nix build and the like). Fyr adds a command here after seeing it run heavy three times, and admits it when there is room. Remove one and Fyr does not learn it again.">
           {added.map((a) => (
             <Row
               key={a.pattern}
@@ -1559,43 +1540,6 @@ function UndeclaredGroups({ h, host, api, focus }: { h: HostLoad; host: string; 
         </Group>
       )}
     </>
-  );
-}
-
-/** One suggestion: the command, how often it was seen, the pattern the owner may edit, its kind, Add and Ignore. */
-function Suggestion({ s, picked, error, onDo }: { s: ReturnType<typeof suggestionRows>[number]; picked: boolean; error: string | null; onDo(args: Record<string, unknown>): Promise<void> }) {
-  const env = useSet();
-  const [pattern, setPattern] = useState(s.pattern);
-  const [kind, setKind] = useState(s.kind);
-  const [busy, setBusy] = useState(false);
-  const go = async (args: Record<string, unknown>) => {
-    setBusy(true);
-    await onDo(args);
-    setBusy(false);
-  };
-  return (
-    <Row col class={picked ? "pick" : undefined} data={{ sug: s.id }} error={error}>
-      <span class="sr-b">
-        <span class="cmd">{s.command}</span>
-        <span class="sr-d">{s.line}</span>
-      </span>
-      <span class="inl">
-        <input class="mono" type="text" value={pattern} aria-label={`Pattern for ${s.command}`} spellcheck={false} disabled={env.readOnly} onInput={(e) => setPattern((e.target as HTMLInputElement).value)} />
-        <select value={kind} aria-label="Kind" disabled={env.readOnly} onChange={(e) => setKind((e.target as HTMLSelectElement).value)}>
-          {["test", "build", "e2e"].map((k) => (
-            <option key={k} value={k}>
-              {k}
-            </option>
-          ))}
-        </select>
-        <button type="button" class="btn" disabled={env.readOnly || busy || !pattern.trim()} onClick={() => void go({ do: "add", pattern: pattern.trim(), kind })}>
-          Add
-        </button>
-        <button type="button" class="btn" disabled={env.readOnly || busy} onClick={() => void go({ do: "ignore" })}>
-          Ignore
-        </button>
-      </span>
-    </Row>
   );
 }
 

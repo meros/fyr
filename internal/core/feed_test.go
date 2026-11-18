@@ -113,7 +113,7 @@ func TestNoticeRules(t *testing.T) {
 		"slot": func(t *testing.T) {
 			th, res := fstep(t, feedThread(), Input{Source: Observer(ObsHost), Kind: KindSlotGranted, Args: "test"}, ct0)
 			n := queued(t, th, "slot")
-			if n.Urgency != Wake || n.What != "Your test job is admitted now: run it, then call slot_release." || !wakes(res) {
+			if n.Urgency != Wake || n.What != "Your test job is admitted now: run the command again." || !wakes(res) {
 				t.Fatalf("slot: %+v wakes=%v", n, wakes(res))
 			}
 		},

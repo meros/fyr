@@ -39,7 +39,9 @@ func TestV163ToolsSpeakPercent(t *testing.T) {
 	if !strings.Contains(out, "Released:") || !strings.Contains(out, "% memory of meros-laptop free") {
 		t.Fatalf("release %q", out)
 	}
-	if r := e.HeavyGate(bareThread(t, e), "make test"); strings.Contains(r, "slot.") || strings.Contains(r, "without a slot") || !strings.Contains(r, "not admitted") {
+	e.Slots.Acquire(a, slots.Test)
+	e.Slots.Acquire(b, slots.Test)
+	if r := e.HeavyGate(HeavyCall{Thread: bareThread(t, e), Class: "make test", ToolUse: "tu"}); strings.Contains(r, "slot") || !strings.Contains(r, "no room") {
 		t.Fatalf("gate %q", r)
 	}
 }

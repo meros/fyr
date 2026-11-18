@@ -6,40 +6,19 @@ import (
 	"time"
 )
 
-// V0.164: undeclared heavy work. The host's detector flags a thread that runs
-// heavy work it was not admitted for; the agent is told once (slot.undeclared,
-// a Next notice, never a wake), and the owner's four commands (all owner
-// only) dismiss a mark, add or ignore a suggested heavy command, remove an
-// added one, and set the thresholds.
+// V0.164, V0.209: undeclared heavy work. The host's detector flags a thread
+// that runs heavy work it was not admitted for; Fyr counts it and learns the
+// command by itself. The owner's two commands remove a learned heavy command
+// and set the thresholds.
 const (
-	KindSlotUndeclared     = "slot.undeclared"
-	KindUndeclaredDismiss  = "host.undeclaredDismiss"
-	KindHeavySuggestion    = "host.heavySuggestion"
 	KindHeavyRemove        = "host.heavyRemove"
 	KindUndeclaredSettings = "host.undeclaredSettings"
 
-	EffectUndeclaredDismiss  EffectKind = "undeclared.dismiss"
-	EffectHeavySuggestion    EffectKind = "heavy.suggestion"
 	EffectHeavyRemove        EffectKind = "heavy.remove"
 	EffectUndeclaredSettings EffectKind = "undeclared.settings"
 )
 
-// SlotUndeclaredArgs is slot.undeclared's: the text the agent gets, and the
-// use it names (bytes and cores) for the conversation's line.
-type SlotUndeclaredArgs struct {
-	Text string  `json:"text"`
-	Mem  uint64  `json:"mem"`
-	CPU  float64 `json:"cpu"`
-}
-
 func init() {
-	RegisterKind(&InputKind{Name: KindSlotUndeclared, From: observed, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
-		a, err := argsOf[SlotUndeclaredArgs](in)
-		if err != nil || a.Text == "" {
-			return Result{}, errors.New("slot.undeclared needs the text")
-		}
-		return Result{Events: []Event{{EventSlot, map[string]any{"undeclared": a.Text, "mem": a.Mem, "cpu": a.CPU}}}}, nil
-	}})
 	effect := func(name string, k EffectKind, check func(map[string]any) (map[string]any, error)) {
 		RegisterKind(&InputKind{Name: name, On: RecHost, From: ownerOnly, Await: true, Reduce: func(_ Rec, in Input, _ time.Time) (Result, error) {
 			args, err := check(mapArgs(in))
@@ -56,32 +35,6 @@ func init() {
 		}
 		return s
 	}
-	effect(KindUndeclaredDismiss, EffectUndeclaredDismiss, func(m map[string]any) (map[string]any, error) {
-		th := str(m, "thread", 100)
-		if th == "" {
-			return nil, errors.New("thread must name a thread")
-		}
-		on, ok := m["on"].(bool)
-		if !ok {
-			on = true
-		}
-		return map[string]any{"thread": th, "on": on}, nil
-	})
-	effect(KindHeavySuggestion, EffectHeavySuggestion, func(m map[string]any) (map[string]any, error) {
-		id, do := str(m, "id", 100), str(m, "do", 10)
-		if id == "" || (do != "add" && do != "ignore") {
-			return nil, errors.New("id and do (add or ignore) are needed")
-		}
-		out := map[string]any{"id": id, "do": do}
-		if do == "add" {
-			p := str(m, "pattern", 300)
-			if p == "" {
-				return nil, errors.New("pattern is needed (at most 300 characters)")
-			}
-			out["pattern"], out["kind"] = p, str(m, "kind", 10)
-		}
-		return out, nil
-	})
 	effect(KindHeavyRemove, EffectHeavyRemove, func(m map[string]any) (map[string]any, error) {
 		p := str(m, "pattern", 300)
 		if p == "" {

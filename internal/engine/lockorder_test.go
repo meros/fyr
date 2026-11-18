@@ -118,21 +118,17 @@ func TestV147StallIsToldWhileTheEngineIsStuck(t *testing.T) {
 }
 
 // SPEC 0.5 V0.182: the hooks no other test reaches are called without e.mu
-// too: the owner's heavy-job and update commands, the gate's refusal count
-// and the record of a told episode.
+// too: the owner's heavy-job and update commands and the gate's refusal count.
 func TestV182DepsAreCalledWithoutTheEngineLock(t *testing.T) {
 	e, _, now, a := undEngine(t)
 	var calls []string
-	e.HeavySuggestion = func(id, do, pattern, kind string) error { calls = append(calls, "suggestion "+id+" "+do); return nil }
 	e.HeavyRemove = func(p string) bool { calls = append(calls, "remove "+p); return true }
 	e.UndeclaredSettings = func(map[string]any) error { calls = append(calls, "settings"); return nil }
 	e.UpdateNow = func() error { calls = append(calls, "update"); return nil }
 	e.HeavyRefused = func(class string) { calls = append(calls, "refused "+class) }
-	e.UndeclaredTold = func(thread string, _, _ time.Time) { calls = append(calls, "told "+thread) }
 	e.Undeclared = func() []slots.Undeclared { return []slots.Undeclared{flagFor(a, *now)} }
 	guardDeps(t, e)
 	for i, c := range []api.Cmd{
-		{Action: core.KindHeavySuggestion, Args: map[string]any{"id": "s1", "do": "add", "pattern": "make check", "kind": "test"}},
 		{Action: core.KindHeavyRemove, Args: map[string]any{"pattern": "make check"}},
 		{Action: core.KindUndeclaredSettings, Args: map[string]any{"on": false}},
 		{Action: core.KindUpdateNow},
@@ -142,9 +138,11 @@ func TestV182DepsAreCalledWithoutTheEngineLock(t *testing.T) {
 			t.Fatalf("%s: %+v", c.Action, r)
 		}
 	}
-	e.HeavyGate(a, "make check")
+	e.Slots.Acquire("t_other1", slots.Test)
+	e.Slots.Acquire("t_other2", slots.Test)
+	e.HeavyGate(HeavyCall{Thread: a, Class: "make check", ToolUse: "tu"})
 	e.Tick()
-	want := []string{"suggestion s1 add", "remove make check", "settings", "update", "refused make check", "told " + a}
+	want := []string{"remove make check", "settings", "update", "refused make check"}
 	if !slices.Equal(calls, want) {
 		t.Fatalf("calls %v, want %v", calls, want)
 	}

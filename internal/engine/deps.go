@@ -108,13 +108,11 @@ type SlotDeps struct {
 }
 
 // UndeclaredDeps are V0.164's: heavy work nobody declared. Undeclared lists
-// the flagged threads (the detector's published view); UndeclaredTold
-// records when a thread's agent was told; UndeclaredFreeze and
+// the flagged threads (the detector's published view); UndeclaredFreeze and
 // UndeclaredThaw move a thread's undeclared work in and out of its frozen
 // cgroup; the others are the owner's commands. All optional.
 type UndeclaredDeps struct {
 	Undeclared       func() []slots.Undeclared
-	UndeclaredTold   func(thread string, since, at time.Time)
 	UndeclaredFreeze func(thread string) bool
 	UndeclaredThaw   func(thread string)
 	// UndeclaredEmpty says the frozen cgroup of thread holds no process any
@@ -126,11 +124,11 @@ type UndeclaredDeps struct {
 	UndeclaredUnits    func(thread string) []slots.WorkUnit
 	UndeclaredRotate   func(thread string, units []slots.WorkUnit, active int) bool
 	UndeclaredFaults   func(thread string) uint64
-	UndeclaredDismiss  func(thread string, on bool) bool
 	UndeclaredSettings func(args map[string]any) error
-	HeavySuggestion    func(id, do, pattern, kind string) error
 	HeavyRemove        func(pattern string) bool
 	HeavyRefused       func(class string)
+	// HeavySoft says a class is learned (V0.209): it never waits.
+	HeavySoft func(class string) bool
 }
 
 // QuietDeps are V0.195's: the CPU time a thread and everything it started

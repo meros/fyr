@@ -169,6 +169,8 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 		}
 		if typ == "assistant" {
 			m.noteForced(s, msg)
+		} else {
+			m.toolResults(s, msg)
 		}
 		o := s.digest.feed(msg)
 		d := core.DigestArgs{Activity: o.Activity, Summary: o.Summary, Subagents: o.Subagents, Log: []core.Event{{Type: "msg", Data: trimMsg(msg)}}}
@@ -344,6 +346,19 @@ func classify(text string) string {
 		return "api"
 	}
 	return "error"
+}
+
+// toolResults reports the tool calls msg ends (V0.209). The stream carries
+// every result, a failed or cancelled call's and a subagent's too.
+func (m *Manager) toolResults(s *session, msg claude.Msg) {
+	inner, _ := msg["message"].(map[string]any)
+	blocks, _ := inner["content"].([]any)
+	for _, x := range blocks {
+		if b, _ := x.(map[string]any); b["type"] == "tool_result" {
+			id, _ := b["tool_use_id"].(string)
+			m.toolDone(s, id)
+		}
+	}
 }
 
 // trimMsg keeps a stream message small enough for the log: long tool

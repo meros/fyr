@@ -291,6 +291,9 @@ func (c *Client) handle(m Msg) {
 		payload = Msg{}
 		if c.OnHook != nil {
 			in, _ := req["input"].(Msg)
+			if u, ok := req["tool_use_id"].(string); ok && u != "" && in != nil && in["tool_use_id"] == nil {
+				in["tool_use_id"] = u
+			}
 			id, _ := req["callback_id"].(string)
 			if r := c.OnHook(id, in); r != nil {
 				payload = r
