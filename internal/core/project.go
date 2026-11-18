@@ -35,7 +35,7 @@ type Project struct {
 	// Setup is the last project setup run (V0.116).
 	Setup *ProjectSetup `json:"setup,omitempty"`
 	// Link joins this record to its counterparts on other hosts (decision
-	// 0033): records with one link are one project to the owner. "" is an
+	// 0034): records with one link are one project to the owner. "" is an
 	// ordinary project. Each record stays its own host's.
 	Link string `json:"link,omitempty"`
 }
