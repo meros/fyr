@@ -314,10 +314,12 @@ func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
 			walk(c)
 		}
 	}
-	if len(move) == 0 {
+	ud := g.udir(thread)
+	// A thaw leaves the work in ud: a later freeze of the episode has nothing
+	// to move and still has work to hold (V0.191).
+	if len(move) == 0 && len(pids(filepath.Join(ud, "cgroup.procs"))) == 0 {
 		return false
 	}
-	ud := g.udir(thread)
 	if err := os.Mkdir(ud, 0o755); err != nil && !os.IsExist(err) {
 		g.Tree.logf("cgroups: undeclared work of %s: %v", thread, err)
 		return false
