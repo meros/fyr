@@ -251,6 +251,23 @@ export function hostOf(r: { host?: string }, hosts: HostInfo[] | undefined): str
 /** V0.139: the providers of a host (a project's, a thread's): that host's, else the merged list (one host). */
 export const profilesOfHost = profilesOn;
 
+/** V0.206: the provider a thread runs on, as its header and its inbox row show it. The id is looked up on the thread's
+ *  host (the same id on another host is another provider); one no longer configured shows its id. */
+export function threadProvider(t: { host?: string; profile: string }, hosts: HostInfo[] | undefined, all: Profile[]): { name: string; color?: string; title: string } {
+  const p = profilesOfHost(hostOf(t, hosts), hosts, all).find((x) => x.id === t.profile);
+  const name = p?.name ?? t.profile;
+  return { name, color: p?.color || undefined, title: p?.unavailable ? `Provider ${name} · ${p.unavailable}` : `Provider ${name}` };
+}
+
+/** V0.206: the provider for an inbox row: null while every provider has the one name, as a row shows no host with one
+ *  host. Names count, not ids: "Claude" on two hosts tells the rows nothing. */
+export function rowProvider(t: { host?: string; profile: string }, hosts: HostInfo[] | undefined, all: Profile[]): ReturnType<typeof threadProvider> | null {
+  const me = threadProvider(t, hosts, all);
+  if (!me.name) return null;
+  const names = new Set([me.name, ...all.map((x) => x.name), ...(hosts ?? []).flatMap((h) => (h.profiles ?? []).map((x) => x.name))]);
+  return names.size > 1 ? me : null;
+}
+
 /** V0.139: the read-only host chip of an existing project or thread, in the same place on every screen: its name, and
  *  "offline since 19:40 · read-only" when it is. null with one host (nothing to say). */
 export function hostChip(name: string | undefined, hosts: Pick<HostInfo, "name" | "online" | "since">[] | undefined, now: number): { name: string; line: string; offline: boolean } | null {

@@ -5,10 +5,14 @@ import { HostMark } from "./host-mark-ui.tsx";
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import { hostChoices, hostOfflineNote, type HostInfo } from "./hosts.ts";
+import type { Profile } from "./types.ts";
 
 /** V0.170: machine is what this install runs on, for its own mark when hosts[] does not name it (one host). */
 export const HostsContext = createContext<{ hosts: HostInfo[]; self: string; now: number; machine?: string }>({ hosts: [], self: "", now: 0 });
 export const useHosts = () => useContext(HostsContext);
+
+/** The providers of every host, merged: the handover divider's names (V0.45), the inbox rows' provider (V0.206). */
+export const ProfilesContext = createContext<Profile[]>([]);
 
 /** The Host field, where the host is a choice (New project, New thread: host first, V0.139): nothing with one host;
  *  an offline host's note says why nothing can be made there. */

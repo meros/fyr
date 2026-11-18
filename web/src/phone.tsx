@@ -58,7 +58,7 @@ import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import { QuotaList } from "./quota-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
-import { hostLabel, hostOf, hostTag, offlineLine, profilesOfHost, type HostInfo } from "./hosts.ts";
+import { hostLabel, hostOf, hostTag, offlineLine, profilesOfHost, threadProvider, type HostInfo } from "./hosts.ts";
 
 // ---- icons ----
 const I = {
@@ -803,6 +803,15 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
               <span>{t.branch}</span>
             </span>
           )}
+          {(() => {
+            const pv = threadProvider(t, p.store.hosts, p.store.profiles); // V0.206: as the desktop header shows it
+            return pv.name ? (
+              <span class="m-chip pvc" title={pv.title}>
+                <span class="pdot" style={pv.color ? { background: pv.color } : undefined} />
+                <span>{pv.name}</span>
+              </span>
+            ) : null;
+          })()}
           {(() => {
             const pr = headerPr(t); // V0.98 (6): the newest open change's PR, never a done one
             if (!pr) return null;

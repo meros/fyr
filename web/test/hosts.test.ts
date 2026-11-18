@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decodeHosts, hostLabel, hostForProject, hostLine, hostState, hostRows, howIn, idChangedLine, routeOf, shortID, hostTag, multiHost, offlineLine, profilesOn } from "../src/hosts.ts";
+import { rowProvider, threadProvider } from "../src/hosts.ts";
 import { attachmentUrl } from "../src/attach.ts";
 import { previewCard, previewUrl } from "../src/previews.ts";
 import { renderMarkdown, setMarkdownOrigin } from "../src/markdown.ts";
@@ -169,4 +170,21 @@ test("V0.125: how this browser gets in, from the page's host and the state's use
   assert.equal(howIn("[::1]", "owner"), "On this machine itself (localhost). A browser on this machine is always allowed.");
   assert.equal(howIn("fyr.example.net", "owner@github"), "At fyr.example.net, as owner@github. What stands in front of Fyr there decides who gets in.");
   assert.equal(howIn("fyr.example.net", ""), "At fyr.example.net. What stands in front of Fyr there decides who gets in.");
+});
+
+test("V0.206: a thread's provider is its host's, and a row names it only when there is more than one name", () => {
+  const prof = (id: string, name: string, extra = {}) => ({ id, name, color: "#123456", models: [], ...extra });
+  const hosts = [
+    { name: "a", online: true, profiles: [prof("p", "Claude")] },
+    { name: "b", online: true, profiles: [prof("p", "DeepSeek", { unavailable: "No key" })] },
+  ] as never[];
+  assert.deepEqual(threadProvider({ host: "b", profile: "p" }, hosts, []), { name: "DeepSeek", color: "#123456", title: "Provider DeepSeek · No key" });
+  assert.equal(rowProvider({ host: "a", profile: "p" }, hosts, [])?.name, "Claude");
+  // One name, on one host or on two: the row says nothing.
+  assert.equal(rowProvider({ profile: "p" }, [], [prof("p", "Claude")]), null);
+  const same = [{ name: "a", online: true, profiles: [prof("p", "Claude")] }, { name: "b", online: true, profiles: [prof("q", "Claude")] }] as never[];
+  assert.equal(rowProvider({ host: "b", profile: "q" }, same, []), null);
+  // A provider since removed shows its id, which is a second name.
+  assert.equal(rowProvider({ profile: "gone" }, [], [prof("p", "Claude")])?.name, "gone");
+  assert.equal(rowProvider({ profile: "" }, [], [prof("p", "Claude")]), null);
 });
