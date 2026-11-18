@@ -14,7 +14,7 @@ Status is never written by hand in a markdown file. A milestone's progress bar a
 
 Every change in behaviour follows the same order:
 
-1. **Spec.** Change the spec section, or add one. The PR says which section changed and why. A change that needs a choice between options first gets a decision record.
+1. **Spec.** Change the spec section, or add one, and add the change as its own file in `docs/changes/` (never a row in the table of SPEC 0.5, which is closed). The PR says which section changed and why. A change that needs a choice between options first gets a decision record.
 2. **Red.** Write a test that names the spec ID and fails against the current code. Commit it (CI may show it red on the branch).
 3. **Green.** Change the code until the test passes. Do not change the test to make it pass, unless the spec changed again.
 4. **Close.** The PR closes the issue (`Closes #N`) and lists the spec IDs it covers.
