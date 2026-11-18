@@ -205,3 +205,76 @@ func TestPushQuietFollowsTheAutoMerge(t *testing.T) {
 		t.Fatal("done after a new question is quiet")
 	}
 }
+
+// selfMerging is a thread whose merge ask Fyr will merge when its run ends.
+func selfMerging(t *testing.T, now time.Time) *Thread {
+	t.Helper()
+	th := askMerge(t, "https://github.com/acme/app/pull/88", now)
+	th.Changes[0].PR.MergeState = "CLEAN"
+	th.Running = true
+	return th
+}
+
+func acmeOn(repo string) bool { return RepoKey(repo) == "acme/app" }
+
+// SPEC V0.205 (1): a merge ask Fyr merges by itself once the turn ends is not
+// an ask of the owner: the thread reads Working, its change a muted line.
+func TestSelfMergingAskIsNotInNeedsYou(t *testing.T) {
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	th := selfMerging(t, now)
+	if a := ComputeWith(th, &View{}, now, acmeOn); a.State != Working || a.Section != WorkingSec {
+		t.Fatalf("attention %+v, want working", a)
+	}
+	n := ChangeNeedWith(th, &th.Changes[0], acmeOn)
+	if n == nil || n.Cause != CauseAutoMerge || !n.Muted || n.Text != SelfMergeText {
+		t.Fatalf("need %+v", n)
+	}
+	if len(th.Decisions) != 1 {
+		t.Fatal("the ask must stay open so the owner can still press Merge")
+	}
+	th.Running = false
+	if a := ComputeWith(th, &View{SeenAt: now.Add(time.Hour)}, now, acmeOn); a.Section == NeedsYou {
+		t.Fatalf("idle, about to merge: %+v", a)
+	}
+}
+
+// SPEC V0.205 (2): the ask counts again when Fyr would no longer merge it.
+func TestSelfMergingAskComesBack(t *testing.T) {
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	off := func(string) bool { return false }
+	for name, tc := range map[string]struct {
+		on  func(string) bool
+		mut func(*Thread)
+	}{
+		"repo off":   {off, func(*Thread) {}},
+		"no setting": {nil, func(*Thread) {}},
+		"head moved": {acmeOn, func(th *Thread) { th.Changes[0].PR.Head = "fff0000aaaa1111" }},
+		"not ready":  {acmeOn, func(th *Thread) { th.Changes[0].PR.MergeState = "BLOCKED" }},
+	} {
+		th := selfMerging(t, now)
+		tc.mut(th)
+		if a := ComputeWith(th, &View{}, now, tc.on); a.State != Asking || a.Section != NeedsYou {
+			t.Errorf("%s: attention %+v, want asking", name, a)
+		}
+		if n := ChangeNeedWith(th, &th.Changes[0], tc.on); n == nil || n.Cause != CauseAsk || n.Muted {
+			t.Errorf("%s: need %+v", name, n)
+		}
+	}
+}
+
+// SPEC V0.205 (2): a question beside it keeps the thread asking, and a merge
+// that happens by itself does not break a snooze.
+func TestSelfMergingAskBesideAQuestionAndASnooze(t *testing.T) {
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	th := selfMerging(t, now)
+	th.Decisions = append(th.Decisions, Decision{ID: "d_q", Kind: DecisionAsk, CreatedAt: now})
+	if a := ComputeWith(th, &View{}, now, acmeOn); a.State != Asking || a.Reason != string(DecisionAsk) {
+		t.Fatalf("with a question: %+v", a)
+	}
+	th = selfMerging(t, now)
+	th.Decisions[0].CreatedAt = now.Add(time.Minute)
+	v := snoozed(View{}, now.Add(time.Hour), now)
+	if a := ComputeWith(th, &v, now.Add(2*time.Minute), acmeOn); a.State != Snoozed {
+		t.Fatalf("snooze: %+v", a)
+	}
+}

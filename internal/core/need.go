@@ -23,7 +23,13 @@ const (
 	// CauseFixing is a failure while the agent runs: shown muted, never in
 	// Needs you.
 	CauseFixing = "fixing"
+	// CauseAutoMerge is a merge ask Fyr will do by itself (V0.205): shown
+	// muted, never in Needs you.
+	CauseAutoMerge = "automerge"
 )
+
+// SelfMergeText is the muted line of a merge Fyr will do by itself (V0.205).
+const SelfMergeText = "Merges by itself when this turn ends"
 
 // FixingCI is the muted line of a CI failure while the agent runs.
 const FixingCI = "Agent is fixing CI"
@@ -48,13 +54,20 @@ type Need struct {
 // done or ended change, and any change of an archived thread, needs
 // nobody. The owner's Not now holds Ready and a failure until the head or
 // the failing types change; an ask is declined instead.
-func ChangeNeed(t *Thread, c *Change) *Need {
+func ChangeNeed(t *Thread, c *Change) *Need { return ChangeNeedWith(t, c, nil) }
+
+// ChangeNeedWith is ChangeNeed with the auto-merge setting (V0.205, see
+// ComputeWith).
+func ChangeNeedWith(t *Thread, c *Change, on func(repo string) bool) *Need {
 	if c == nil || c.IsDone() || c.Phase.Ended() || t.ArchivedAt != nil {
 		return nil
 	}
 	for _, d := range t.Decisions {
 		if askFor(t, d) == c.ID {
 			head, _ := d.Effect.Args["head"].(string)
+			if selfMerges(t, d, on) {
+				return &Need{Cause: CauseAutoMerge, Ask: d.ID, Action: d.Effect.Action, Head: head, Text: SelfMergeText, Muted: true}
+			}
 			text := strings.TrimSpace(d.Effect.Reason)
 			if text == "" {
 				text = askWord(d.Effect.Action)
@@ -91,9 +104,11 @@ func ChangeNeed(t *Thread, c *Change) *Need {
 
 // ThreadNeed is the first change of the thread, newest first, with a need
 // that is not muted, and that need.
-func ThreadNeed(t *Thread) (*Change, *Need) {
+func ThreadNeed(t *Thread) (*Change, *Need) { return threadNeed(t, nil) }
+
+func threadNeed(t *Thread, on func(repo string) bool) (*Change, *Need) {
 	for i := len(t.Changes) - 1; i >= 0; i-- {
-		if n := ChangeNeed(t, &t.Changes[i]); n != nil && !n.Muted {
+		if n := ChangeNeedWith(t, &t.Changes[i], on); n != nil && !n.Muted {
 			return &t.Changes[i], n
 		}
 	}

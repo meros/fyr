@@ -82,6 +82,28 @@ func mergeableByFyr(t *Thread, d Decision, running bool) (repo, why string) {
 	return c.PR.Repo, ""
 }
 
+// selfMerges reports a merge ask Fyr will merge by itself once the thread's
+// run and tasks are over, in a repo of the setting (V0.205).
+func selfMerges(t *Thread, d Decision, on func(repo string) bool) bool {
+	if on == nil {
+		return false
+	}
+	repo, why := mergeableByFyr(t, d, false)
+	return why == "" && on(repo)
+}
+
+// ownerAsks are the open decisions that wait on the owner: all but the merges
+// Fyr will do by itself (V0.205).
+func ownerAsks(t *Thread, on func(repo string) bool) []Decision {
+	var out []Decision
+	for _, d := range t.Decisions {
+		if !selfMerges(t, d, on) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 // AutoMergeAsks are the thread's open merge asks that Fyr may merge now, with
 // their repo; the engine sends KindAutoMerge for the repos in the setting.
 func AutoMergeAsks(t *Thread) []AutoMergeArgs {

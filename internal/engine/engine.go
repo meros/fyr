@@ -264,7 +264,7 @@ func (e *Engine) Load() error {
 	// Clients and push already know these states; only changes notify.
 	now := e.Now()
 	for id, t := range e.threads {
-		e.last[id] = core.Compute(t, e.view(id), now).State
+		e.last[id] = core.ComputeWith(t, e.view(id), now, e.autoMergeOn).State
 	}
 	return nil
 }
@@ -961,7 +961,7 @@ func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 			un[name] = r
 		}
 	}
-	att := core.Compute(t, v, now)
+	att := core.ComputeWith(t, v, now, e.autoMergeOn)
 	vc := *v
 	vc.ChangesLook = nil // V0.65: served with the Changes tab, not on every push
 	vd := &api.View{View: &vc}
@@ -974,9 +974,9 @@ func (e *Engine) build(t *core.Thread, now time.Time) api.Thread {
 		if c.Phase.InFlight() && !c.Dismissed {
 			c.Ready = core.Ready(c.PR, running)
 		}
-		c.Need = core.ChangeNeed(t, c) // V0.101: the client only reads it
+		c.Need = core.ChangeNeedWith(t, c, e.autoMergeOn) // V0.101: the client only reads it
 	}
-	quiet := core.PushQuiet(t, att.State, func(repo string) bool { return e.autoMerge[core.RepoKey(repo)] })
+	quiet := core.PushQuiet(t, att.State, e.autoMergeOn)
 	return api.Thread{Thread: t, Rev: e.revs[t.ID], Attention: att, View: vd, Unavailable: un, NewProject: e.draft(t), QuietUntil: e.quietUntil(t.ProjectID, now), PushQuiet: quiet,
 		PR: t.MainPR(), Project: e.projectName(t), LiveView: t.ViewOn(),
 		SettledAt: t.Settle.At, SettleWhenDone: core.SettlesWhenDone(t), SettleWhenMerged: core.SettlesWhenMerged(t), SettleWhen: core.SettleWhenChange(t), Changes: changes,
@@ -1069,7 +1069,7 @@ func (e *Engine) Tick() {
 		if at := core.NextCheck(t, e.view(id), now); at != nil && !at.After(now) {
 			due = append(due, id)
 		}
-		if core.Compute(t, e.view(id), now).State != e.last[id] || quiet[t.ProjectID] {
+		if core.ComputeWith(t, e.view(id), now, e.autoMergeOn).State != e.last[id] || quiet[t.ProjectID] {
 			e.bump(id)
 			d, prev := e.seen(core.CloneThread(t), now)
 			changed = append(changed, change{d, prev})

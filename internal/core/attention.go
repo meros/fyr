@@ -42,18 +42,26 @@ type Attention struct {
 // Order: archived, settled, then the snooze (which a new question or failure
 // breaks), then asking, failed, working, blocked, done, seen.
 func Compute(t *Thread, v *View, now time.Time) Attention {
+	return ComputeWith(t, v, now, nil)
+}
+
+// ComputeWith is Compute with the auto-merge setting (V0.205): on says whether
+// a repo merges with no press, so a merge ask Fyr will do by itself does not
+// count as an ask of the owner. nil: no repo does.
+func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) Attention {
 	if t.ArchivedAt != nil {
 		return Attention{Archived, ArchivedSec, ""}
 	}
 	if t.Settle.At != nil {
 		return Attention{Settled, SettledSec, ""}
 	}
-	asking := len(t.Decisions) > 0
+	asks := ownerAsks(t, on)
+	asking := len(asks) > 0
 	if until, since := SnoozeOf(v); until != nil && until.After(now) {
 		// V0.185: until work is done never hides a request, whatever its age.
 		bound := SnoozedWhenDone(v)
 		woke := bound && WorkOver(t)
-		for _, d := range t.Decisions {
+		for _, d := range asks {
 			if d.CreatedAt.After(*since) {
 				woke = true
 			}
@@ -70,7 +78,7 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 	}
 	switch {
 	case asking:
-		return Attention{Asking, NeedsYou, string(t.Decisions[0].Kind)}
+		return Attention{Asking, NeedsYou, string(asks[0].Kind)}
 	case t.Failure != nil:
 		return Attention{Failed, NeedsYou, t.Failure.Message}
 	case t.Unresponsive != nil:
@@ -90,7 +98,7 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 	// V0.101: Needs you is computed: Ready or Stopped on a failure (asks
 	// are decisions, above). A finished run whose result the owner has not
 	// seen is unread in Seen, not in Needs you.
-	if c, n := ThreadNeed(t); n != nil {
+	if c, n := threadNeed(t, on); n != nil {
 		return Attention{Blocked, NeedsYou, c.Title + ": " + n.Text}
 	}
 	// V0.149 (5): a command the agent asked the owner to run.

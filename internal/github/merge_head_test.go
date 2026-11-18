@@ -2,8 +2,11 @@ package github
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/meros/fyr/internal/core"
 )
@@ -61,5 +64,45 @@ func TestFetchReadsReadyFields(t *testing.T) {
 	p, _ = Fetch(context.Background(), fakeGh(`{"state":"OPEN","autoMergeRequest":null}`), "https://github.com/a/b/pull/1")
 	if p.AutoMerge || p.Draft {
 		t.Fatalf("no auto-merge: %+v", p)
+	}
+}
+
+// baseMoved answers gh: the first `fails` merges are refused with err.
+func baseMoved(fails int, msg string) (*int, Runner) {
+	merges := 0
+	view := `{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","headRefOid":"` + headA + `",` + greenRollup + `}`
+	return &merges, func(_ context.Context, args ...string) ([]byte, error) {
+		if args[1] != "merge" {
+			return []byte(view), nil
+		}
+		if !slices.Contains(args, headA) {
+			return nil, errors.New("merge not bound to the head")
+		}
+		merges++
+		if merges <= fails {
+			return nil, errors.New(msg)
+		}
+		return []byte("merged"), nil
+	}
+}
+
+// SPEC V0.205 (3): "Base branch was modified" is tried again, at most 3 tries
+// in all, on the same head; any other refusal is not.
+func TestMergeCheckedRetriesAMovedBase(t *testing.T) {
+	old := mergeBackoff
+	mergeBackoff = []time.Duration{0, 0}
+	defer func() { mergeBackoff = old }()
+	const url, moved = "https://github.com/acme/app/pull/88", "gh pr merge: exit status 1: GraphQL: Base branch was modified. Review and try the merge again. (mergePullRequest)"
+	n, gh := baseMoved(2, moved)
+	if out, err := MergeChecked(context.Background(), gh, url, "squash", headA); err != nil || out != "merged" || *n != 3 {
+		t.Fatalf("recovers: %q %v after %d merges", out, err, *n)
+	}
+	n, gh = baseMoved(9, moved)
+	if _, err := MergeChecked(context.Background(), gh, url, "squash", headA); err == nil || !strings.Contains(err.Error(), "Base branch was modified") || *n != 3 {
+		t.Fatalf("gives up: %v after %d merges", err, *n)
+	}
+	n, gh = baseMoved(9, "gh pr merge: exit status 1: Pull Request has merge conflicts")
+	if _, err := MergeChecked(context.Background(), gh, url, "squash", headA); err == nil || *n != 1 {
+		t.Fatalf("another refusal: %v after %d merges", err, *n)
 	}
 }

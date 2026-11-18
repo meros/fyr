@@ -67,6 +67,20 @@ test("needs you sorts by state precedence asking, failed, blocked, done, then ne
   assert.deepEqual(sec.needs.map((t) => t.id), ["ask-new", "ask-old", "failed", "blocked", "done-new", "done-old"]);
 });
 
+// SPEC V0.205 (4): a thread whose asks are all merge asks sorts below questions, above failures.
+test("needs you puts merge asks after questions and before failures", () => {
+  const merge = { id: "m", kind: "effect", effect: { action: "pr.merge", args: {} } } as const;
+  const ask = { id: "q", kind: "ask" } as const;
+  const ts = [
+    thread("merge-new", "asking", "needs", { activityAt: at(50), decisions: [merge] }),
+    thread("failed", "failed", "needs", { activityAt: at(40) }),
+    thread("question-old", "asking", "needs", { activityAt: at(1), decisions: [ask] }),
+    thread("both", "asking", "needs", { activityAt: at(2), decisions: [merge, ask] }),
+  ];
+  const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
+  assert.deepEqual(sec.needs.map((t) => t.id), ["both", "question-old", "merge-new", "failed"]);
+});
+
 // SPEC 0.5 V0.26: Working sorts by run start, newest first; seen, snoozed, settled by newest activity
 test("working sorts by runStartedAt (newest started first); seen, snoozed, settled by newest activity", () => {
   const ts = [
