@@ -61,6 +61,9 @@ func (f *Front) send(host string, m map[string]any) {
 		f.opt.Logf("front: push: %v", err)
 		return
 	}
+	if d.PushQuiet { // V0.200: an auto-merge at work is not news
+		return
+	}
 	now := time.Now()
 	if !notify.Allowed(f.presence.Watched(d.ID, now), d.QuietUntil, now) {
 		return

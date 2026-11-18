@@ -130,3 +130,78 @@ func TestAutoMergeWaitsWhileTheThreadRuns(t *testing.T) {
 		t.Fatalf("offered while the run goes on: %+v", got)
 	}
 }
+
+// V0.200: an auto-merge at work sends no push; what the owner must act on,
+// or asked to hear, still does.
+func TestPushQuietFollowsTheAutoMerge(t *testing.T) {
+	now := time.Date(2026, 11, 18, 13, 0, 0, 0, time.UTC)
+	const head = "abc1234def5678"
+	url := "https://github.com/acme/app/pull/88"
+	on := func(repo string) bool { return RepoKey(repo) == "acme/app" }
+	off := func(string) bool { return false }
+	th := askMerge(t, url, now)
+	later := now.Add(time.Minute)
+	th, _, _, err := Reduce(th, &View{}, greenPR(url, head, later), later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !PushQuiet(th, Asking, on) {
+		t.Fatal("an ask Fyr approves itself pushes")
+	}
+	if PushQuiet(th, Asking, off) {
+		t.Fatal("an ask in a repo without the setting is quiet")
+	}
+	th.Running = true
+	if !PushQuiet(th, Asking, on) {
+		t.Fatal("an ask Fyr approves when the run ends pushes")
+	}
+	th.Running = false
+	other := Decision{ID: "d_q", Kind: DecisionAsk, CreatedAt: later, Questions: []Question{{Question: "Which?"}}}
+	th.Decisions = append(th.Decisions, other)
+	if PushQuiet(th, Asking, on) {
+		t.Fatal("a question beside the ask is quiet")
+	}
+	th.Decisions = th.Decisions[:1]
+
+	if PushQuiet(th, Done, on) {
+		t.Fatal("done is quiet before any auto-merge")
+	}
+	th, _, _, err = Reduce(th, &View{}, autoIn("acme/app"), later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Compute(th, &View{}, later).State; got != Blocked || !PushQuiet(th, got, on) {
+		t.Fatalf("the ready PR of the running merge: %s, quiet %v", got, PushQuiet(th, got, on))
+	}
+	if !PushQuiet(th, Done, on) {
+		t.Fatal("done after the auto-merge pushes")
+	}
+	if PushQuiet(th, Failed, on) {
+		t.Fatal("a failure is quiet")
+	}
+
+	c := FindChange(th, th.QuietMerge)
+	setCondition(c, CondMerge, CondFail, "Merge refused", ByObserved, later)
+	if PushQuiet(th, Done, on) || PushQuiet(th, Blocked, on) {
+		t.Fatal("a refused merge is quiet")
+	}
+	dropConditions(c, CondMerge)
+	c.PR.Head = "fff0000fff0000"
+	if PushQuiet(th, Done, on) {
+		t.Fatal("a new head is quiet")
+	}
+	c.PR.Head = head
+	c.Phase = PhaseLive
+	if PushQuiet(th, Done, on) {
+		t.Fatal("a live deploy is quiet")
+	}
+	c.Phase = PhaseLanded
+	if !PushQuiet(th, Done, on) {
+		t.Fatal("the landed merge pushes")
+	}
+	DecisionOpened(th, other)
+	th.Decisions = nil
+	if PushQuiet(th, Done, on) {
+		t.Fatal("done after a new question is quiet")
+	}
+}
