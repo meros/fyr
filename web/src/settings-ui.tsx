@@ -40,7 +40,7 @@ import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentCh
 import { colorVar, findProject, projectRecords, projectSearchLine, projectSubtitle, recordOf, searchProjects, settingsProjects, setupLine } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
 import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
-import { pushRow, type PushStatus } from "./push.ts";
+import { FINISHED_DESC, pushRow, type PushPrefs, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { move } from "./reorder.ts";
 import { DevicesPage, useAuthState } from "./devices-ui.tsx";
@@ -86,6 +86,9 @@ export interface SettingsDevice {
   /** turn notifications on or off; the error, or null */
   setPush(on: boolean): Promise<string | null>;
   testPush(): Promise<string | null>;
+  /** V0.notification-polish: what this device is told about */
+  pushPrefs: PushPrefs;
+  setPushPrefs(p: PushPrefs): void;
   theme: Theme;
   setTheme(t: Theme): void;
   canInstall: boolean;
@@ -2244,6 +2247,8 @@ function DevicePage({ d, user, hosts, projects }: { d: SettingsDevice; user: str
             </>
           }
         />
+        {/* V0.notification-polish: only while they are on; a device without them has nothing to choose */}
+        {row.on && <Row label class="push-finished" title="Finished threads" desc={FINISHED_DESC} end={<Switch on={d.pushPrefs.finished} label="Notify for finished threads" onChange={(on) => d.setPushPrefs({ ...d.pushPrefs, finished: on })} />} />}
         <Row
           title="Theme"
           stack

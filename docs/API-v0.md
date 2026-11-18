@@ -207,10 +207,11 @@ The client sends a command as an ordinary message (`/review 12`); the CLI runs i
 | `POST /api/push/subscribe` | `{"subscription": PushSubscription.toJSON(), "device": "Pixel 9 · Chrome"}` | `{"ok": true}` |
 | `POST /api/push/unsubscribe` | `{"endpoint": "…"}` | `{"ok": true}` |
 | `POST /api/push/hidden` | `{"endpoint": "…", "hosts": ["lab"], "projects": [{"host": "desk", "id": "p_12"}]}` | `{"ok": true}`: false when the subscription is unknown. V0.207: this device gets no push about these hosts and projects |
-| `POST /api/push/test` | – | `{"delivered": 1}` |
+| `POST /api/push/prefs` | `{"endpoint": "…", "finished": false}` | `{"ok": true}`: false when the subscription is unknown. V0.notification-polish: this device gets no push for a thread that finished (`state: "done"`); `finished` absent means true |
+| `POST /api/push/test` | `{"endpoint": "…"}` or – | `{"delivered": 1}`. V0.notification-polish: to the device behind `endpoint` only; without one, to every device |
 | `POST /api/push/status` | `{"endpoint": "…"}` | `{"known": true}`: false when the host deleted it after a 404 or 410 |
 
-All POSTs need `X-Fyr: 1`. The host pushes `{"title", "body", "threadId", "state"}` when a thread enters `asking` or `failed`; the service worker shows it with `tag = threadId` and opens `/?open=<threadId>` on a tap.
+All POSTs need `X-Fyr: 1`. The front pushes `{"title", "body", "threadId", "state"}` when a thread enters `asking` or `failed` (at once) or `blocked` or `done` (after 20 s, if still true; V0.20); the service worker shows it with `tag = threadId` and `data.state`, opens `/?open=<threadId>` on a tap, and a client closes it when the thread leaves that state (V0.notification-polish).
 
 The PWA files: `/manifest.webmanifest` (`application/manifest+json`) and `/sw.js` are served with `Cache-Control: no-cache`.
 

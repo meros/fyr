@@ -28,6 +28,8 @@ type Pusher interface {
 	Notify(user string, pl push.Payload) int
 	Known(endpoint string) bool
 	SetHidden(endpoint string, h push.Hidden) (bool, error)
+	SetPrefs(endpoint string, pr push.Prefs) (bool, error)
+	NotifyOne(user, endpoint string, pl push.Payload) int
 }
 
 // webClient serves the built web client with fresh pages (V0.13, V0.15).
@@ -140,8 +142,37 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		}
 		api.WriteJSON(w, 200, map[string]any{"ok": known})
 	})
+	// V0.notification-polish: what this device wants to be told about.
+	both(mux, "POST", "/push/prefs", func(w http.ResponseWriter, r *http.Request) {
+		b := struct {
+			Endpoint string `json:"endpoint"`
+			push.Prefs
+		}{Prefs: push.Prefs{Finished: true}}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b); err != nil || b.Endpoint == "" {
+			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "endpoint is required"})
+			return
+		}
+		known, err := p.SetPrefs(b.Endpoint, b.Prefs)
+		if err != nil {
+			api.WriteJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		api.WriteJSON(w, 200, map[string]any{"ok": known})
+	})
+	// The test goes to the device that asked (V0.notification-polish); a
+	// client from before that names none and reaches every device.
 	both(mux, "POST", "/push/test", func(w http.ResponseWriter, r *http.Request) {
-		n := p.Notify(core.Owner, push.Payload{Title: "Fyr", Body: "Notifications work on this device.", State: "test"})
+		var b struct {
+			Endpoint string `json:"endpoint"`
+		}
+		json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b)
+		pl := push.Payload{Title: "Fyr", Body: "Notifications work on this device.", State: "test"}
+		n := 0
+		if b.Endpoint != "" {
+			n = p.NotifyOne(core.Owner, b.Endpoint, pl)
+		} else {
+			n = p.Notify(core.Owner, pl)
+		}
 		api.WriteJSON(w, 200, map[string]int{"delivered": n})
 	})
 }

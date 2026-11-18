@@ -103,6 +103,7 @@ Each save sends `project.update` with only the changed field, so an untouched fi
 **This device** (A9, C13). Lede: "These are kept in this browser. Each device has its own." One group:
 
 - **Notifications**: a `Switch`. Description by state — off and on: "When a thread asks you something or fails."; on also shows "Send test" before the switch, and after a test the description reads "Sent. It should arrive in a few seconds." for 5 s; denied: "Blocked for this site. Allow them in the browser's site settings, then reload Fyr." in red, switch off and disabled; unsupported: `pushReason` (on an iPhone that has not installed Fyr: "On an iPhone, add Fyr to the Home Screen first: Share, then Add to Home Screen."), disabled.
+  - *V0.notification-polish:* off and on now read "When a thread needs you: a question, an approval, a failure."; after a test, "Sent to this device. It should arrive in a few seconds." (the test goes to this device only). While they are on, a second row **Finished threads** (a `Switch`, on by default, kept in this browser as `fyr.push.prefs` and sent to the front): "Also when a thread finishes. Nothing arrives for the thread on screen or in a project's quiet hours."
 - **Theme**: `Seg` Auto, Light, Dark.
 - **Show tool details**: a `Switch`, "Every tool group open, every machine line in full." (new on the desktop Settings; the `?` bar keeps its own.)
 - **Install Fyr** (only when `canInstall`): "As an app with its own window." and Install.

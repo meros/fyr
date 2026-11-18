@@ -2,6 +2,7 @@
 // from a chunk loaded only then (#42: the fixtures stay out of the production bundle).
 
 import type { PushHidden } from "./hidden.ts";
+import type { PushPrefs } from "./push.ts";
 import { decodeHostMarks } from "./store.ts";
 import type { OwnerMarks } from "./host-mark.ts";
 import { isTransient, sendWithRetry } from "./retry.ts";
@@ -73,7 +74,10 @@ export interface Api {
   pushUnsubscribe(endpoint: string): Promise<PushReply>;
   /** V0.207: what this device hides, so the front leaves it out of those pushes */
   pushHidden(endpoint: string, hidden: PushHidden): Promise<PushReply>;
-  pushTest(): Promise<PushReply>;
+  /** V0.notification-polish: what this device wants to be told about */
+  pushPrefs(endpoint: string, prefs: PushPrefs): Promise<PushReply>;
+  /** to the device behind `endpoint`; to every device without one */
+  pushTest(endpoint?: string): Promise<PushReply>;
   /** Whether the front still has this subscription; null when it could not be asked. */
   pushStatus(endpoint: string): Promise<boolean | null>;
   /** Tell the front which thread of which host this device shows (V0.20); "" for none. */
@@ -160,6 +164,8 @@ export type UploadResult = { ok: true; reply: UploadReply } | { ok: false; statu
 
 export interface PushReply {
   ok: boolean;
+  /** the test: how many devices the push service took it for */
+  delivered?: number;
   error?: string;
 }
 
@@ -348,7 +354,7 @@ function createHttpApi(): Api {
       } catch {
         /* empty body */
       }
-      return r.ok ? { ok: j.ok !== false, error: j.error } : { ok: false, error: j.error ?? `HTTP ${r.status}` };
+      return r.ok ? { ok: j.ok !== false, error: j.error, delivered: j.delivered } : { ok: false, error: j.error ?? `HTTP ${r.status}` };
     } catch {
       return { ok: false, error: "Fyr is not reachable" };
     }
@@ -502,8 +508,11 @@ function createHttpApi(): Api {
     pushHidden(endpoint, hidden) {
       return postJson(frontPath("/push/hidden"), { endpoint, ...hidden });
     },
-    pushTest() {
-      return postJson(frontPath("/push/test"), {});
+    pushPrefs(endpoint, prefs) {
+      return postJson(frontPath("/push/prefs"), { endpoint, ...prefs });
+    },
+    pushTest(endpoint) {
+      return postJson(frontPath("/push/test"), endpoint ? { endpoint } : {});
     },
     uploadAttachment(host, file, onProgress, signal) {
       return new Promise<UploadResult>((resolve) => {

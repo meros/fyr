@@ -59,8 +59,8 @@ import { PreviewViewer } from "./preview-ui.tsx";
 import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu } from "./dialogs.tsx";
 import { snoozeChoiceForKey, snoozeChoices, snoozeCommand, snoozeKeyCount, type SnoozeChoice } from "./snooze.ts";
 import type { NewThreadArgs } from "./new-thread.ts";
-import { clearThreadNotification, disablePush, syncPushHidden, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
-import { rememberOpen, shouldClearNotification, takeOpen, unsupportedReason, type PushStatus } from "./push.ts";
+import { clearThreadNotification, disablePush, syncPushHidden, syncPushPrefs, syncPushStatus, testPush, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
+import { PUSH_PREFS_KEY, parsePushPrefs, rememberOpen, takeOpen, unsupportedReason, type PushPrefs, type PushStatus } from "./push.ts";
 import { PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
@@ -511,13 +511,13 @@ function App() {
         setStore((s) => applySnapshot(s, dto, Date.now()));
       },
       thread: (t) => {
-        if (shouldClearNotification(t.attention.state)) clearThreadNotification(t.id);
+        clearThreadNotification(t.id, t.attention.state);
         batch((s) => upsertThread(s, t));
       },
       // V0.38: a patch against our copy; when it does not fit, ask for the whole thread.
       threadPatch: (p) => {
         const st = (p.patch as { attention?: { state?: string } }).attention?.state;
-        if (st && shouldClearNotification(st)) clearThreadNotification(p.id);
+        if (st) clearThreadNotification(p.id, st);
         batch((s) => {
           const r = applyThreadPatch(s, p);
           if (r.needFull) queueMicrotask(() => void api.thread(s.threads[p.id]?.hostId ?? "", p.id).then((t) => t && setStore((x) => upsertThread(x, t))));
@@ -668,6 +668,28 @@ function App() {
     if (pushSt !== "on" || !fullStore.loaded || fullStore.conn === "offline" || api.mock) return;
     void syncPushHidden(api, JSON.parse(pushHidden) as PushHidden);
   }, [pushHidden, pushSt, fullStore.loaded, fullStore.conn]);
+
+  // V0.notification-polish: what this device is told about, kept in this browser and sent to the front like the hidden
+  // list: again when push turns on and on a reconnect.
+  const [pushPrefs, setPushPrefsState] = useState<PushPrefs>(() => {
+    try {
+      return parsePushPrefs(localStorage.getItem(PUSH_PREFS_KEY));
+    } catch {
+      return parsePushPrefs(null);
+    }
+  });
+  const setPushPrefs = (p: PushPrefs) => {
+    setPushPrefsState(p);
+    try {
+      localStorage.setItem(PUSH_PREFS_KEY, JSON.stringify(p));
+    } catch {
+      /* storage denied: the choice holds until a reload */
+    }
+  };
+  useEffect(() => {
+    if (pushSt !== "on" || !fullStore.loaded || fullStore.conn === "offline" || api.mock) return;
+    void syncPushPrefs(api, pushPrefs);
+  }, [pushPrefs.finished, pushSt, fullStore.loaded, fullStore.conn]);
 
   // Decision card state follows the open decision.
   const decision: Decision | null = viewThread ? currentDecision(viewThread) : null;
@@ -1457,9 +1479,11 @@ function App() {
       return r.error ?? null;
     },
     testPush: async () => {
-      const r = await api.pushTest();
+      const r = await testPush(api);
       return r.ok ? null : (r.error ?? "The test was not sent");
     },
+    pushPrefs,
+    setPushPrefs,
     theme,
     setTheme,
     hidden: deviceHidden,

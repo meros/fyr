@@ -3,6 +3,8 @@ package front
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/meros/fyr/internal/api"
@@ -33,12 +35,25 @@ func attentionOf(m map[string]any) string {
 // to next (both DTOs as the host sent them). prev nil is a thread the front
 // has not seen before: no push for old states, as on a host (V0.20).
 // Called with f.mu held; the send runs outside it.
+//
+// V0.notification-polish: every change of state takes a new number for the
+// thread, and a waiting push goes out only while its number is the newest.
+// So done, working, done inside the wait is one push, not two.
 func (f *Front) noticeLocked(l *link, prev, next map[string]any) {
 	if f.opt.Push == nil || prev == nil {
 		return
 	}
 	from, to := attentionOf(prev), attentionOf(next)
+	if from == to {
+		return
+	}
 	id, _ := next["id"].(string)
+	key := l.name() + "\x00" + id
+	if f.noticed == nil {
+		f.noticed = map[string]uint64{}
+	}
+	f.noticed[key]++
+	seq := f.noticed[key]
 	switch notify.PlanFor(from, to) {
 	case notify.Now:
 		go f.send(l.name(), next)
@@ -46,8 +61,9 @@ func (f *Front) noticeLocked(l *link, prev, next map[string]any) {
 		time.AfterFunc(f.opt.NotifyDelay, func() {
 			f.mu.Lock()
 			cur := l.raw[id]
+			newest := f.noticed[key] == seq
 			f.mu.Unlock()
-			if cur != nil && attentionOf(cur) == to {
+			if newest && cur != nil && attentionOf(cur) == to {
 				f.send(l.name(), cur)
 			}
 		})
@@ -97,21 +113,30 @@ func dtoOf(m map[string]any) (api.Thread, error) {
 	return d, nil
 }
 
-// AttentionDetail is the meta word and the text of a push, matching the
-// inbox row (design/mobile rule 12, SPEC 0.5 V0.20).
+// AttentionDetail is the meta word and the text of a push. They are the
+// inbox row's bold word and line (web/src/rows.ts rowState and rowMeta,
+// design/mobile rule 12, SPEC 0.5 V0.20), so the owner reads the same words
+// on the lock screen and in the list (V0.notification-polish).
 func AttentionDetail(d api.Thread) (meta, detail string) {
 	switch d.Attention.State {
 	case core.Failed:
 		if d.Failure != nil {
 			return "Failed", d.Failure.Message
 		}
+		return "Failed", d.Attention.Reason
 	case core.Done:
 		return "Done", d.Summary
 	case core.Blocked:
-		return "Blocked", d.Attention.Reason
+		// A question Fyr read in the agent's text (V0.210) says that it is
+		// Fyr's reading. Every other cause is its own sentence ("Add login:
+		// Merge", "Run: …", "Agent not responding since 08:58: …"), and the
+		// row shows it without the word Blocked.
+		if d.TextAsk != nil && d.Attention.Reason == d.TextAsk.Question {
+			return "Question in text", d.TextAsk.Question
+		}
+		return "", d.Attention.Reason
 	}
-	if len(d.Decisions) > 0 {
-		x := d.Decisions[0]
+	if x := firstAsk(d.Decisions); x != nil {
 		switch {
 		case x.Kind == core.DecisionAsk && len(x.Questions) > 0:
 			meta = "1 question"
@@ -120,10 +145,63 @@ func AttentionDetail(d api.Thread) (meta, detail string) {
 			}
 			return meta, x.Questions[0].Question
 		case x.Kind == core.DecisionEffect && x.Effect != nil:
-			return "Fyr action", "approve " + x.Effect.Action
+			return effectText(x.Effect)
 		case x.Kind == core.DecisionApproval:
-			return "Approval", "allow " + x.Tool
+			tool := x.Tool
+			if tool == "" {
+				tool = "tool"
+			}
+			in, _ := x.Input.(map[string]any)
+			if cmd, _ := in["command"].(string); cmd != "" {
+				tool += " " + cmd
+			}
+			return "Approval", "Allow " + tool
 		}
 	}
 	return "", d.Attention.Reason
+}
+
+// firstAsk is the decision a push is about: a question when there is one,
+// since a thread with a question and a merge ask is in Answer
+// (V0.your-move), else the oldest.
+func firstAsk(ds []core.Decision) *core.Decision {
+	for i := range ds {
+		if ds[i].Kind == core.DecisionAsk {
+			return &ds[i]
+		}
+	}
+	if len(ds) > 0 {
+		return &ds[0]
+	}
+	return nil
+}
+
+var prNumber = regexp.MustCompile(`/pull/(\d+)`)
+
+// effectText is an effect ask in words, as web/src/effects.ts describeEffect
+// has it: the short name, then the agent's reason, or what is asked when it
+// gave none. Never the action's id ("pr.merge").
+func effectText(e *core.EffectReq) (meta, detail string) {
+	why := strings.TrimSpace(e.Reason)
+	or := func(s string) string {
+		if why != "" {
+			return why
+		}
+		return s
+	}
+	switch e.Action {
+	case "fyr.deploy":
+		return "Update Fyr", or("Update Fyr to a new version")
+	case "pr.merge":
+		url, _ := e.Args["pr"].(string)
+		if m := prNumber.FindStringSubmatch(url); m != nil {
+			return "Merge #" + m[1], or("Merge pull request #" + m[1])
+		}
+		return "Merge the pull request", or("Waits for your approval")
+	}
+	w := strings.TrimSpace(strings.NewReplacer(".", " ", "_", " ", "-", " ").Replace(e.Action))
+	if w == "" {
+		return "An action", or("Waits for your approval")
+	}
+	return strings.ToUpper(w[:1]) + w[1:], or("Waits for your approval")
 }

@@ -96,6 +96,75 @@ func TestPayloadFor(t *testing.T) {
 	}
 }
 
+// V0.notification-polish: the body is one plain line, and a part that is
+// empty leaves no separator.
+func TestPayloadForIsOnePlainLine(t *testing.T) {
+	for _, c := range []struct{ meta, detail, want string }{
+		{"Done", "", "Done"},
+		{"", "Add login: Merge", "Add login: Merge"},
+		{"Done", "Fixed **both** tests in `rows.ts`.\n\nNext:  the phone.", "Done · Fixed both tests in rows.ts. Next: the phone."},
+		{"Done", "kept __init__.py and a*b", "Done · kept __init__.py and a*b"},
+		{"", "", ""},
+	} {
+		if got := PayloadFor("t1", "x", "done", c.meta, c.detail).Body; got != c.want {
+			t.Errorf("%q + %q: body %q, want %q", c.meta, c.detail, got, c.want)
+		}
+	}
+}
+
+// V0.notification-polish: a device that turned finished threads off gets
+// everything else; the test reaches only the device that asked; a finished
+// thread is not urgent and a thread's pushes share one topic.
+func TestFinishedIsAChoicePerDevice(t *testing.T) {
+	p, out := newPusher(t, nil)
+	p.Subscribe("owner", sub("https://push/phone"), "phone")
+	p.Subscribe("owner", sub("https://push/desk"), "desk")
+	if ok, err := p.SetPrefs("https://push/phone", Prefs{Finished: false}); !ok || err != nil {
+		t.Fatalf("SetPrefs: %v %v", ok, err)
+	}
+	for _, c := range []struct {
+		state string
+		want  int
+	}{{"done", 1}, {"asking", 2}, {"failed", 2}, {"blocked", 2}, {"test", 2}} {
+		if n := p.Notify("owner", Payload{Title: "x", ThreadID: "t1", State: c.state}); n != c.want {
+			t.Errorf("%s: delivered %d, want %d", c.state, n, c.want)
+		}
+	}
+	p.SetPrefs("https://push/phone", Prefs{Finished: true})
+	if n := p.Notify("owner", Payload{Title: "x", State: "done"}); n != 2 {
+		t.Fatalf("after turning it on again: delivered %d", n)
+	}
+	// SetPrefs keeps what the device hides, and SetHidden keeps the choice.
+	p.SetHidden("https://push/phone", Hidden{Hosts: []string{"lab"}})
+	p.SetPrefs("https://push/phone", Prefs{Finished: false})
+	p.SetHidden("https://push/phone", Hidden{Hosts: []string{"lab", "attic"}})
+	subs, _ := p.Subscriptions("owner")
+	for _, s := range subs {
+		if s.Endpoint == "https://push/phone" && (!s.NoFinished || s.Hidden == nil || len(s.Hidden.Hosts) != 2) {
+			t.Fatalf("one setting lost the other: %+v", s)
+		}
+	}
+	if ok, _ := p.SetPrefs("https://push/gone", Prefs{}); ok {
+		t.Fatal("SetPrefs on an unknown endpoint reported ok")
+	}
+
+	*out = nil
+	if n := p.NotifyOne("owner", "https://push/desk", Payload{Title: "Fyr", State: "test"}); n != 1 || len(*out) != 1 || (*out)[0].endpoint != "https://push/desk" {
+		t.Fatalf("NotifyOne: delivered %d to %+v", n, *out)
+	}
+	if n := p.NotifyOne("owner", "https://push/nobody", Payload{Title: "Fyr"}); n != 0 {
+		t.Fatalf("NotifyOne to an unknown endpoint: %d", n)
+	}
+
+	if Urgency(Payload{State: "done"}) != "normal" || Urgency(Payload{State: "asking"}) != "high" || Urgency(Payload{State: "blocked"}) != "high" {
+		t.Fatal("urgency: only a finished thread may wait")
+	}
+	a, b := Topic(Payload{ThreadID: "t_1"}), Topic(Payload{ThreadID: "t_2"})
+	if a == b || len(a) != 32 || a != Topic(Payload{ThreadID: "t_1", State: "done"}) || Topic(Payload{}) != "" {
+		t.Fatalf("topic: %q %q", a, b)
+	}
+}
+
 // V0.207: a device that hides a host or project gets no push about it; a push
 // about no thread still reaches it, and showing it again restores the pushes.
 func TestHiddenLeavesTheDeviceOut(t *testing.T) {

@@ -128,7 +128,8 @@ export function notificationOptions(p: PushPayload, now: number): Record<string,
     body: p.body ?? "",
     icon: iconUrl("any192"),
     badge: iconUrl("badge96"),
-    data: { threadId: p.threadId },
+    // V0.notification-polish: the state it was shown for, so it closes when the thread leaves that state.
+    data: { threadId: p.threadId, state: p.state },
     timestamp: now,
     vibrate: [60, 40, 60],
     requireInteraction: p.state === "asking",
@@ -143,9 +144,15 @@ export function notificationOptions(p: PushPayload, now: number): Record<string,
   return opts;
 }
 
-/** A thread's notification closes once the thread no longer needs the user (answered elsewhere, retried, settled). */
-export function shouldClearNotification(state: string): boolean {
-  return state !== "asking" && state !== "failed";
+/**
+ * V0.notification-polish: a thread's notification closes when the thread leaves the state it was shown for: a question
+ * answered elsewhere, a failure retried, a finished thread read or started again. While the thread stays in that state
+ * the notification stays, so "Done" is not closed by the next message about a thread that is still done.
+ * `shown` is undefined for a notification from a build before this one: only a question or a failure keeps it.
+ */
+export function notificationIsStale(shown: string | undefined, state: string): boolean {
+  if (!shown) return state !== "asking" && state !== "failed";
+  return shown !== state;
 }
 
 // ---- opening the thread of a tapped notification (V0.15) ----
@@ -186,10 +193,11 @@ export function openTargets<W extends { url: string }>(wins: W[], origin: string
 
 /** V0.119: Settings → This device → Notifications: the row's line under its label, and its switch. */
 export function pushRow(status: PushStatus, reason: string | null, tested: boolean): { desc: string; error: boolean; disabled: boolean; on: boolean; test: boolean } {
-  const plain = "When a thread asks you something or fails.";
+  // V0.notification-polish: the line says what arrives; FINISHED_DESC, shown while they are on, says what never does.
+  const plain = "When a thread needs you: a question, an approval, a failure.";
   switch (status) {
     case "on":
-      return { desc: tested ? "Sent. It should arrive in a few seconds." : plain, error: false, disabled: false, on: true, test: true };
+      return { desc: tested ? "Sent to this device. It should arrive in a few seconds." : plain, error: false, disabled: false, on: true, test: true };
     case "off":
       return { desc: plain, error: false, disabled: false, on: false, test: false };
     case "denied":
@@ -197,4 +205,26 @@ export function pushRow(status: PushStatus, reason: string | null, tested: boole
     case "unsupported":
       return { desc: reason ?? "Notifications are not available in this browser.", error: false, disabled: true, on: false, test: false };
   }
+}
+
+// ---- V0.notification-polish: what this device is told about ----
+
+export interface PushPrefs {
+  /** also a thread that finished and is unread */
+  finished: boolean;
+}
+
+export const PUSH_PREFS_KEY = "fyr.push.prefs";
+export const DEFAULT_PUSH_PREFS: PushPrefs = { finished: true };
+export const FINISHED_DESC = "Also when a thread finishes. Nothing arrives for the thread on screen or in a project's quiet hours.";
+
+/** The stored choice; anything unreadable is the default (everything arrives, as before the choice existed). */
+export function parsePushPrefs(raw: string | null | undefined): PushPrefs {
+  try {
+    const j = JSON.parse(raw ?? "");
+    if (j && typeof j === "object") return { finished: j.finished !== false };
+  } catch {
+    /* default */
+  }
+  return { ...DEFAULT_PUSH_PREFS };
 }

@@ -26,6 +26,8 @@ func (p *capturePush) Subscribe(string, push.Subscription, string) error { retur
 func (p *capturePush) Unsubscribe(string) error                          { return nil }
 func (p *capturePush) Known(string) bool                                 { return false }
 func (p *capturePush) SetHidden(string, push.Hidden) (bool, error)       { return false, nil }
+func (p *capturePush) SetPrefs(string, push.Prefs) (bool, error)         { return false, nil }
+func (p *capturePush) NotifyOne(string, string, push.Payload) int        { return 0 }
 func (p *capturePush) Notify(_ string, pl push.Payload) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -58,13 +58,14 @@ test("push status reconciliation with the host", async () => {
 });
 
 // SPEC 0.5 V0.15, design/mobile rule 12: notification presentation per state.
-import { notificationOptions, shouldClearNotification } from "../src/push.ts";
+import { notificationOptions, notificationIsStale } from "../src/push.ts";
 test("notification options per state", () => {
   const ask = notificationOptions({ title: "Fix lasso", body: "2 questions · Which gesture?", threadId: "t1", state: "asking" }, 1000);
   assert.equal(ask.tag, "t1");
   assert.equal(ask.renotify, true);
   assert.equal(ask.requireInteraction, true);
   assert.equal(ask.timestamp, 1000);
+  assert.deepEqual(ask.data, { threadId: "t1", state: "asking" }); // V0.notification-polish: the state it was shown for
   assert.deepEqual(ask.actions, [{ action: "open", title: "Answer" }]);
   const failed = notificationOptions({ title: "x", body: "Failed · API", threadId: "t2", state: "failed" }, 1);
   assert.equal(failed.requireInteraction, false);
@@ -75,9 +76,18 @@ test("notification options per state", () => {
 });
 
 test("a thread's notification closes when it no longer needs the user", () => {
-  assert.equal(shouldClearNotification("asking"), false);
-  assert.equal(shouldClearNotification("failed"), false);
-  for (const s of ["working", "waiting", "done", "seen", "settled", "snoozed", "archived"]) assert.equal(shouldClearNotification(s), true, s);
+  // V0.notification-polish: a notification closes when the thread leaves the state it was shown for, and stays while
+  // the thread is still in it (a Done notification was closed by the next message about the done thread).
+  for (const s of ["asking", "failed", "blocked", "done"]) assert.equal(notificationIsStale(s, s), false, s);
+  assert.equal(notificationIsStale("asking", "working"), true);
+  assert.equal(notificationIsStale("done", "seen"), true);
+  assert.equal(notificationIsStale("done", "working"), true);
+  assert.equal(notificationIsStale("blocked", "done"), true);
+  assert.equal(notificationIsStale("failed", "asking"), true);
+  // one shown by a build before this change carries no state: the old rule
+  assert.equal(notificationIsStale(undefined, "asking"), false);
+  assert.equal(notificationIsStale(undefined, "failed"), false);
+  for (const s of ["working", "waiting", "done", "seen", "settled", "snoozed", "archived"]) assert.equal(notificationIsStale(undefined, s), true, s);
 });
 
 // SPEC 0.5 V0.15: a tapped notification opens its thread even when the app reloads for a
@@ -97,14 +107,24 @@ test("the open message goes to every window of the origin", () => {
 });
 
 // V0.119: Settings → This device → Notifications: the row's words and whether its switch works.
-import { pushRow } from "../src/push.ts";
+import { pushRow, parsePushPrefs, FINISHED_DESC } from "../src/push.ts";
+const PLAIN = "When a thread needs you: a question, an approval, a failure.";
 
 test("the Notifications row per state", () => {
-  assert.deepEqual(pushRow("off", null, false), { desc: "When a thread asks you something or fails.", error: false, disabled: false, on: false, test: false });
-  assert.deepEqual(pushRow("on", null, false), { desc: "When a thread asks you something or fails.", error: false, disabled: false, on: true, test: true });
-  assert.equal(pushRow("on", null, true).desc, "Sent. It should arrive in a few seconds.");
+  assert.deepEqual(pushRow("off", null, false), { desc: PLAIN, error: false, disabled: false, on: false, test: false });
+  assert.deepEqual(pushRow("on", null, false), { desc: PLAIN, error: false, disabled: false, on: true, test: true });
+  assert.equal(pushRow("on", null, true).desc, "Sent to this device. It should arrive in a few seconds.");
   assert.deepEqual(pushRow("denied", null, false), { desc: "Blocked for this site. Allow them in the browser's site settings, then reload Fyr.", error: true, disabled: true, on: false, test: false });
   const ios = pushRow("unsupported", unsupportedReason({ secure: true, serviceWorker: true, pushManager: true, notification: true, ios: true, standalone: false }), false);
   assert.deepEqual(ios, { desc: "On an iPhone, add Fyr to the Home Screen first: Share, then Add to Home Screen.", error: false, disabled: true, on: false, test: false });
   assert.equal(pushRow("unsupported", null, false).desc, "Notifications are not available in this browser.");
+});
+
+test("V0.notification-polish: finished threads are a choice of the device, on until it says no", () => {
+  assert.deepEqual(parsePushPrefs(null), { finished: true });
+  assert.deepEqual(parsePushPrefs("not json"), { finished: true });
+  assert.deepEqual(parsePushPrefs("{}"), { finished: true });
+  assert.deepEqual(parsePushPrefs('{"finished":false}'), { finished: false });
+  assert.deepEqual(parsePushPrefs('{"finished":true}'), { finished: true });
+  assert.match(FINISHED_DESC, /finishes/);
 });
