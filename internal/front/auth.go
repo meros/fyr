@@ -11,6 +11,7 @@ package front
 import (
 	"context"
 	"encoding/json"
+	"github.com/meros/fyr/internal/httpguard"
 	"io"
 	"log"
 	"net"
@@ -25,7 +26,6 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/push"
 	"github.com/meros/fyr/internal/qr"
-	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/tailnet"
 )
 
@@ -102,7 +102,7 @@ func isDocument(r *http.Request) bool {
 // anything else is looked at. Only tailscaled, through Serve's socket, sets one.
 func (f *Front) refuseTailscale(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if server.IsViaLAN(r) || (f.opt.Auth != nil && !server.IsViaServe(r) && f.opt.Auth.Mode(auth.WayBrowser) == auth.ModeEnforce) {
+		if httpguard.IsViaLAN(r) || (f.opt.Auth != nil && !httpguard.IsViaServe(r) && f.opt.Auth.Mode(auth.WayBrowser) == auth.ModeEnforce) {
 			for k := range r.Header {
 				if strings.HasPrefix(strings.ToLower(k), "tailscale-") {
 					refuse(w, r, "this listener does not take Tailscale headers", http.StatusBadRequest)
@@ -132,7 +132,7 @@ func (f *Front) browserRules(next http.Handler) http.Handler {
 				return
 			}
 			if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Header.Get("Origin") == "" &&
-				(server.IsViaLAN(r) || f.opt.Auth != nil && f.opt.Auth.Mode(auth.WayBrowser) == auth.ModeEnforce) {
+				(httpguard.IsViaLAN(r) || f.opt.Auth != nil && f.opt.Auth.Mode(auth.WayBrowser) == auth.ModeEnforce) {
 				refuse(w, r, "missing Origin", http.StatusForbidden)
 				return
 			}
@@ -163,14 +163,14 @@ func (f *Front) withAuth(next http.Handler) http.Handler {
 		if pending {
 			ok = false
 		}
-		enforce := st.Mode(auth.WayBrowser) == auth.ModeEnforce || server.IsViaLAN(r) // the LAN is never observed
-		if !ok && server.IsViaServe(r) && f.ownerLogin() != "" && r.Header.Get("Tailscale-User-Login") == f.ownerLogin() {
+		enforce := st.Mode(auth.WayBrowser) == auth.ModeEnforce || httpguard.IsViaLAN(r) // the LAN is never observed
+		if !ok && httpguard.IsViaServe(r) && f.ownerLogin() != "" && r.Header.Get("Tailscale-User-Login") == f.ownerLogin() {
 			if nd, p, refused := f.enrolTailnet(w, r, enforce); refused {
 				return
 			} else if nd != nil {
 				d, ok, pending = nd, !p, p
 			}
-		} else if ok && server.IsViaServe(r) && d.How == auth.HowTailnet && d.Node == "" && f.opt.Tailnet != nil && !enforce {
+		} else if ok && httpguard.IsViaServe(r) && d.How == auth.HowTailnet && d.Node == "" && f.opt.Tailnet != nil && !enforce {
 			f.bindNode(r, d) // a V0.130 session signed in during observe: its node is approved (5.2)
 		}
 		if ok {
@@ -323,7 +323,7 @@ func (f *Front) authOnce(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if session != "" {
-			setSession(w, session, r.TLS != nil || server.IsViaServe(r))
+			setSession(w, session, r.TLS != nil || httpguard.IsViaServe(r))
 			log.Printf("auth: %s signed in by a link", d.Name)
 		}
 		api.WriteJSON(w, 200, map[string]any{"ok": true, "device": d.Name})
@@ -356,7 +356,7 @@ func (f *Front) authCode(w http.ResponseWriter, r *http.Request) {
 		api.WriteJSON(w, http.StatusTooManyRequests, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	setSession(w, session, r.TLS != nil || server.IsViaServe(r))
+	setSession(w, session, r.TLS != nil || httpguard.IsViaServe(r))
 	log.Printf("auth: %s asks to be let in, code %s", d.Name, d.Code)
 	api.WriteJSON(w, 200, codeBody(d))
 }
@@ -519,6 +519,13 @@ func (f *Front) oneTimeLink(link func(string) string, how, name, by string, ttl 
 	return out
 }
 
+func (f *Front) legacyFronts() int64 {
+	if f.opt.LegacyFronts == nil {
+		return 0
+	}
+	return f.opt.LegacyFronts()
+}
+
 // authState is the view of Settings → Devices and `fyr auth status`.
 func (f *Front) authState() map[string]any {
 	st := f.opt.Auth
@@ -526,7 +533,7 @@ func (f *Front) authState() map[string]any {
 	if len(audit) > 20 {
 		audit = audit[len(audit)-20:]
 	}
-	return map[string]any{"devices": st.List(), "modes": st.Modes(), "audit": audit, "legacyFronts": server.LegacyFronts()}
+	return map[string]any{"devices": st.List(), "modes": st.Modes(), "audit": audit, "legacyFronts": f.legacyFronts()}
 }
 
 // authAPI is Settings → Devices (desktop and phone): the browser's calls
@@ -763,7 +770,7 @@ var refused struct {
 func (f *Front) wouldRefuse(r *http.Request) {
 	way := "loopback"
 	switch {
-	case server.IsViaServe(r):
+	case httpguard.IsViaServe(r):
 		way = "Serve's socket"
 	case r.Header.Get("Tailscale-User-Login") != "":
 		way = "a tailnet header over TCP"

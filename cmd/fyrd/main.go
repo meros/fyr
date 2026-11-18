@@ -634,7 +634,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	old := &oldListeners{}
 	if cfg.Role == "host" {
 		serve(ln, deploy.Health(hostHandler, health...))
-		newPeerSide(cfg, data, hostName, key).start(ctx, data, srv, nil, authStore, old) // a host-only install pairs and serves its peer port too
+		newPeerSide(cfg, data, hostName, key).start(ctx, srv, nil, authStore, old) // a host-only install pairs and serves its peer port too
 	} else {
 		// both (V0.51): the front reaches this host over a loopback link,
 		// through the host protocol only; agents keep /mcp on the main port.
@@ -650,7 +650,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen), id)
 		var fr *front.Front
 		ps := newPeerSide(cfg, data, hostName, key)
-		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), ConfigNote: cfg.watch.Note, OnWhoisFallback: func() { authStore.WouldRefuse(auth.WayPeer) }, Web: webFS,
+		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), LegacyFronts: srv.LegacyFronts, OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), ConfigNote: cfg.watch.Note, OnWhoisFallback: func() { authStore.WouldRefuse(auth.WayPeer) }, Web: webFS,
 			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st, Auth: authStore, Tailnet: tailnetNodes(cfg),
 			OwnerRoutes: func(mux *http.ServeMux) {
 				if ps != nil {
@@ -659,7 +659,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			},
 			WellKnown: func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }}, hosts)
 		go func() { fr.Run(ctx); close(frontDone) }()
-		ps.start(ctx, data, srv, fr, authStore, old) // decision 0030 3.6
+		ps.start(ctx, srv, fr, authStore, old) // decision 0030 3.6
 		go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every)
 		// V0.81: a client-only deploy swaps the client this front serves.
 		dep.SwitchClient = func(build, dir string) error { return fr.SetClient(build, os.DirFS(dir)) }
@@ -765,7 +765,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	done := make(chan struct{})
 	go func() { fr.Run(ctx); close(done) }()
 	go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every) // V0.123
-	ps.start(ctx, data, nil, fr, authStore, nil)
+	ps.start(ctx, nil, fr, authStore, nil)
 	hs := &http.Server{Handler: deploy.Health(fr.Handler(), storeHealthy(st), webHealthy(webFS), cfg.watch.health), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

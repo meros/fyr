@@ -2,27 +2,23 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"errors"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/meros/fyr/internal/auth"
-	"github.com/meros/fyr/internal/discovery"
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peer"
 	"github.com/meros/fyr/internal/peerlink"
-	"github.com/meros/fyr/internal/qr"
+	"github.com/meros/fyr/internal/peerwire"
 	"github.com/meros/fyr/internal/roster"
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/tailnet"
@@ -137,174 +133,37 @@ func (p *peerSide) ownerLogin() string {
 	return p.env.Roster.OwnerLogin()
 }
 
-// start runs the peer port when the config has one, pairing and sync. With no peer
-// port the roster still exists (the install is its own member) and nothing pairs.
-func (p *peerSide) start(ctx context.Context, data string, srv *server.Server, fr *front.Front, st *auth.Store, old *oldListeners) {
+// start runs the peer side (internal/peerwire). srv, fr and old are nil when
+// this install has none.
+func (p *peerSide) start(ctx context.Context, srv *server.Server, fr *front.Front, st *auth.Store, old *oldListeners) {
 	if p == nil {
 		return
 	}
-	cfg, env, ros, key, name := p.cfg, p.env, p.env.Roster, p.key, p.name
-	dial := p.dial
-	selfHost := ""
-	tagged := true
-	if login, dns, err := tailnet.Self(cfg.tsSocket()); err == nil || errors.Is(err, tailnet.ErrTagged) {
-		selfHost = dns
-		if err == nil {
-			tagged = false
-			ros.SetOwnerLogin(login) // an untagged install knows whose it is, and says so; a tagged one learns it by sync
-		}
-	}
-	if tagged && cfg.OwnerLogin == "" {
-		log.Printf("peer: this install is tagged and has no owner login yet: pair it with an invite, and it learns the owner's login from the roster")
-	}
-	// The mesh (decision 0030 Amendment 1): one two-way link per member, opened by either
-	// side. The peer handler serves the requests a peer sends over any link.
-	var members http.Handler = http.NotFoundHandler()
-	if srv != nil {
-		members = srv.LinkHandler(env)
-	}
-	handler := env.Handler(members)
-	peerOf := func(m roster.Member) peerlink.Peer {
-		return peerlink.Peer{ID: m.ID, Key: m.Key, Name: m.Name, Host: m.Host, Port: m.Port}
-	}
-	mesh := peerlink.New(peerlink.Config{Key: key, Dialer: dial, Handler: handler, Logf: log.Printf,
-		MinBackoff: time.Duration(cfg.LinkBackoffMillis) * time.Millisecond, DialTimeout: time.Duration(cfg.LinkDialMillis) * time.Millisecond,
-		Members: func() []peerlink.Peer {
-			var out []peerlink.Peer
-			for _, m := range ros.Members() {
-				if m.ID != key.ID() {
-					out = append(out, peerOf(m))
-				}
-			}
-			return out
-		},
-		Member: func(pub ed25519.PublicKey, chain []roster.Statement) (peerlink.Peer, bool) {
-			m, ok := env.MemberByKey(pub, chain)
-			return peerOf(m), ok
-		},
-		SelfRemoved: ros.SelfRemoved,
-		Candidates:  func(id string) []string { return env.LANAddrs(ctx, id) },
-		OnUp:        func(string) { env.Kick() }})
-	env.Mesh = mesh
-	var mdns *discovery.MDNS
-	switch {
-	case cfg.LANBusFile != "":
-		env.LAN = discovery.File(cfg.LANBusFile)
-	case cfg.PeerListen != "" && (cfg.Discovery.MDNS == nil || *cfg.Discovery.MDNS):
-		mdns = &discovery.MDNS{ID: key.ID(), Logf: log.Printf}
-		env.LAN = mdns
-	}
-	ros.OnChange(mesh.Changed)
-	go mesh.Run(ctx)
-	if cfg.PeerListen != "" {
-		ln, err := net.Listen("tcp", cfg.PeerListen)
-		if err != nil {
-			log.Printf("peer: listen %s: %v; peers are off", cfg.PeerListen, err)
-			return
-		}
-		p.port.Store(int64(ln.Addr().(*net.TCPAddr).Port))
-		hs, err := peerlink.ServeMesh(ln, key, handler, mesh.Accept, ros.RotationChain()...)
-		if err != nil {
-			log.Printf("peer: %v", err)
-			return
-		}
-		go func() { <-ctx.Done(); hs.Close() }()
-		ros.SetAddress(name, selfHost, int(p.port.Load()))
-		log.Printf("peer: peer port at %s (TLS 1.3, key %s)", ln.Addr(), key.ID())
-		if mdns != nil {
-			mdns.Port = int(p.port.Load())
-			if err := mdns.Start(ctx); err != nil {
-				log.Printf("peer: mDNS: %v; this install is not found on the LAN, and finds no one there", err)
-			}
-		}
-	}
-	// The peer way in's mode (decision 0030 5.1): enforce removes the old listeners, and
-	// is reached by itself only when every followed host is on the pinned link.
-	if st != nil {
-		env.Enforce = func() bool { return st.Mode(auth.WayPeer) == auth.ModeEnforce }
-		env.OnServed = func() { st.Success(auth.WayPeer, "link") }
-		st.SetPeerGate(func() (bool, string) {
-			if fr == nil {
-				return true, ""
-			}
-			return fr.AllOnPeerLink()
-		}, func() int {
-			n := 0
-			for _, m := range ros.Members() {
-				if m.ID != key.ID() {
-					n++
-				}
-			}
-			return n
-		})
-		if srv != nil {
-			srv.OnWhois = func() { st.WouldRefuse(auth.WayPeer) }
-		}
-		if old != nil {
-			old.onUse = func() { st.WouldRefuse(auth.WayPeer) }
-			st.OnMode(func(way, mode string) {
-				if way == auth.WayPeer {
-					old.Set(mode != auth.ModeEnforce)
-				}
-			})
-		}
-	}
-	// A removal closes what the removed install had open, and a front stops following a
-	// host that was reached only through it.
-	ros.OnChange(func() {
-		env.CloseRemoved()
-		if fr != nil {
-			fr.DropPeers(func(id string) bool { _, in := ros.Member(id); return in })
-		}
-		if ros.SelfRemoved() {
-			log.Printf("peer: this install was removed from the roster by another member; it serves no peer and pairs with none until the owner pairs it again")
-		}
-	})
-	// Devices: every signed-in device is a statement the other installs hold, and a
-	// revoke anywhere ends the session where it was made.
-	if st != nil {
-		for _, d := range st.Signed() {
-			ros.DeviceAdd(d.ID, d.Name, d.How)
-		}
-		st.OnDevice(func(d auth.Device) { ros.DeviceAdd(d.ID, d.Name, d.How) })
-		st.OnRevoke(func(ids []string) {
-			for _, id := range ids {
-				ros.DeviceRevoke(id)
-			}
-		})
-		ros.OnChange(func() {
-			for _, d := range st.Signed() {
-				if ros.DeviceRevoked(d.ID) {
-					st.Revoke(d.ID, "roster")
-				}
-			}
-		})
-	}
-	// A front prefers the peer link to every member that has a peer port.
+	d := peerwire.Deps{Config: peerwire.Config{PeerListen: p.cfg.PeerListen, LANBusFile: p.cfg.LANBusFile, MDNS: p.cfg.Discovery.MDNS == nil || *p.cfg.Discovery.MDNS,
+		LinkBackoff: time.Duration(p.cfg.LinkBackoffMillis) * time.Millisecond, LinkDial: time.Duration(p.cfg.LinkDialMillis) * time.Millisecond,
+		Every: time.Duration(p.cfg.PeerEverySeconds) * time.Second, OwnerLogin: p.cfg.OwnerLogin, TSSocket: p.cfg.tsSocket()},
+		Name: p.name, Key: p.key, Env: p.env, Dial: p.dial, Port: &p.port}
+	// A nil pointer in an interface is not nil: set each only when there is one.
 	if fr != nil {
-		follow := func() {
-			for _, m := range ros.Members() {
-				if m.ID == key.ID() {
-					continue
-				}
-				// membership decides who is followed; an address only decides who is dialled
-				a := ""
-				if m.Port != 0 {
-					host := m.Host
-					if host == "" {
-						host = m.Name
-					}
-					a = net.JoinHostPort(host, strconv.Itoa(m.Port))
-				}
-				fr.UsePeerLink(m.ID, m.Name, front.PeerEndpoint{ID: m.ID, Addr: a, Dial: dial, Mesh: mesh})
-			}
-		}
-		ros.OnChange(follow)
-		follow()
+		d.Front = fr
 	}
-	every := time.Duration(cfg.PeerEverySeconds) * time.Second
-	go env.Run(ctx, every)
+	if srv != nil {
+		d.Host = peerHost{srv}
+	}
+	if st != nil {
+		d.Auth = st
+	}
+	if old != nil {
+		d.Old = old
+	}
+	peerwire.Start(ctx, d)
 }
+
+// peerHost is the host's side of the peer wiring.
+type peerHost struct{ s *server.Server }
+
+func (h peerHost) Members(env *peer.Env) http.Handler { return h.s.LinkHandler(env) }
+func (h peerHost) SetOnWhois(f func())                { h.s.OnWhois = f }
 
 // peerPort is the port of the peer listener, 0 while there is none.
 func (p *peerSide) peerPort() int {
@@ -314,100 +173,10 @@ func (p *peerSide) peerPort() int {
 	return int(p.port.Load())
 }
 
-// ownerRoutes adds the roster's calls to the owner socket: fyr host list and
-// fyr host drive.
+// ownerRoutes adds the roster's calls to the owner socket (internal/peerwire).
 func (p *peerSide) ownerRoutes(fr *front.Front) func(mux *http.ServeMux) {
-	return func(mux *http.ServeMux) {
-		mux.HandleFunc("GET /host/list", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"members": p.env.Members(), "candidates": p.env.Candidates(r.Context()),
-				"whoisLinkUses": fr.WhoisLinkUses(), "rounds": p.env.Rounds.Load(), "ownerLogin": p.env.Roster.OwnerLogin(),
-				"configChanged": p.cfg.watch.Note()})
-		})
-		// The owner's invite (decision 0030 3.6 condition 3): open one here, or join
-		// with one from another install. The owner socket is never gated.
-		mux.HandleFunc("POST /pair/invite", func(w http.ResponseWriter, r *http.Request) {
-			code, until := p.env.NewInvite()
-			out := map[string]any{"code": code, "until": until}
-			if m, err := qr.Encode(code); err == nil {
-				out["qr"] = m.Text()
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(out)
-		})
-		mux.HandleFunc("POST /pair/join", func(w http.ResponseWriter, r *http.Request) {
-			var b struct{ Code, Addr string }
-			json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
-			res, err := p.env.Join(r.Context(), b.Code, b.Addr)
-			w.Header().Set("Content-Type", "application/json")
-			if err != nil {
-				w.WriteHeader(joinStatus(err))
-				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
-				return
-			}
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": res.Name, "id": res.ID, "addr": res.Addr})
-		})
-		mux.HandleFunc("POST /host/remove", func(w http.ResponseWriter, r *http.Request) {
-			var b struct{ ID string }
-			json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
-			w.Header().Set("Content-Type", "application/json")
-			if err := p.env.Remove(b.ID); err != nil {
-				w.WriteHeader(http.StatusConflict)
-				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
-				return
-			}
-			json.NewEncoder(w).Encode(map[string]any{"ok": true})
-		})
-		// fyr rotate-key: a new key waits beside the old, the roster says so (signed by the
-		// old key), and fyrd restarts on the new one. A key that may be stolen is removed
-		// and paired again instead.
-		mux.HandleFunc("POST /host/rotate", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			nk, err := identity.New()
-			if err == nil {
-				err = identity.WriteNext(p.data, nk)
-			}
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
-				return
-			}
-			p.env.Roster.Rotate(nk.Public)
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "from": p.key.ID(), "to": nk.ID()})
-			go func() { // the launcher restarts fyrd on exit 75, as for a release
-				time.Sleep(300 * time.Millisecond)
-				syscall.Kill(os.Getpid(), syscall.SIGHUP)
-			}()
-		})
-		mux.HandleFunc("POST /host/drive", func(w http.ResponseWriter, r *http.Request) {
-			var b struct {
-				ID string
-				On bool
-			}
-			json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b)
-			if _, ok := p.env.Roster.Member(b.ID); !ok || b.ID == p.env.Key.ID() {
-				http.Error(w, `{"error":"no such install in the roster"}`, http.StatusNotFound)
-				return
-			}
-			p.env.Drive.Set(b.ID, b.On)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"ok": true})
-		})
-	}
-}
-
-// joinStatus is the owner route's status for a failed join (V0.180, #261): the
-// inviter's own when it answered no (a 5xx of its is a bad gateway here), 409 when
-// this install could not get that far.
-func joinStatus(err error) int {
-	var r *peer.JoinRefused
-	switch {
-	case errors.As(err, &r) && r.Status >= 500:
-		return http.StatusBadGateway
-	case errors.As(err, &r) && r.Status >= 400:
-		return r.Status
-	}
-	return http.StatusConflict
+	return peerwire.OwnerRoutes(peerwire.Owner{Env: p.env, Key: p.key, Data: p.data, WhoisLinkUses: fr.WhoisLinkUses, ConfigNote: p.cfg.watch.Note,
+		Restart: func() { syscall.Kill(os.Getpid(), syscall.SIGHUP) }})
 }
 
 func servePort(cfg config) int {

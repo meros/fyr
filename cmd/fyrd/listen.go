@@ -195,6 +195,9 @@ func (o *oldListeners) Set(enable bool) {
 	log.Printf("peer: the old host listeners are removed (peer is in enforce)")
 }
 
+// SetOnUse hears each request the old listeners serve.
+func (o *oldListeners) SetOnUse(f func()) { o.onUse = f }
+
 // Close stops them at shutdown.
 func (o *oldListeners) Close(ctx context.Context) {
 	o.mu.Lock()
