@@ -1167,7 +1167,14 @@ section("V0.187 message copy", async ({ send, evaluate, navigate }) => {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await navigate(`${origin}/?mock=rail&runs=1&open=t_run`, "!!document.querySelector('.msgw>.msgcp')");
+  // Headless Chrome reports (hover: none), so the desktop's rules are in force only once the touch ones are gone; the Run
+  // cards of this mock would lie over the message.
   const at = await evaluate(`(() => {
+    for (const sheet of document.styleSheets) for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
+      const rule = sheet.cssRules[i];
+      if (rule instanceof CSSMediaRule && /hover:\\s*none/.test(rule.conditionText)) sheet.deleteRule(i);
+    }
+    document.head.appendChild(document.createElement('style')).textContent = '.runcs{display:none}';
     const w = [...document.querySelectorAll('.msgw')].filter((m) => m.querySelector(':scope>.msgcp')).pop();
     w.scrollIntoView({ block: "center" });
     const b = w.getBoundingClientRect();
