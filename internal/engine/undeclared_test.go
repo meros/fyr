@@ -556,6 +556,21 @@ func TestTheGateRefusesAnAddedPatternAndCountsIt(t *testing.T) {
 	}
 }
 
+// V0.190: a host whose guard has done nothing sends an empty list, not null; the
+// front spreads it.
+func TestF16ACalmGuardSendsAnEmptyEventList(t *testing.T) {
+	e, _, _, z, _ := fzEngine(t)
+	z.free = 0.9
+	e.Tick()
+	b, err := json.Marshal(e.GuardView())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"events":[]`) {
+		t.Fatalf("%s", b)
+	}
+}
+
 // Decision 0032: the front gets the guard's history and where each thread's
 // freezes stand, from a published view that waits for nothing.
 func TestF16TheGuardViewShowsTheHistoryAndEachThreadsFreezes(t *testing.T) {
