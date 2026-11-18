@@ -4,6 +4,7 @@ import { projectIconUrl, splitSharedPatch, expandOrder, findProject, linkCandida
 import { applySnapshot, initialStore, setHosts, setProjectOrder, stateForCache, upsertProject } from "../src/store.ts";
 import { activeFilters, applyFilters, liveProject } from "../src/filters.ts";
 import { chooseHost, initialForm, settleForm } from "../src/new-thread.ts";
+import { applyHidden, projectIsHidden, pushHiddenOf, setProjectShown } from "../src/hidden.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
@@ -111,4 +112,15 @@ test("the shared values are the newest member's; the image is the first online m
 
 test("an edit splits into what the link shares and what stays this host's", () => {
   assert.deepEqual(splitSharedPatch({ name: "x", quiet: null, profile: "p", model: "m" }), { shared: { name: "x", quiet: null }, own: { profile: "p", model: "m" } });
+
+test("hiding: any member's id hides the linked project, and a hidden host takes only its own record", () => {
+  const projects = linkProjects([fyrA, fyrB, other], [A, B]);
+  const s = { ...initialStore(), hosts: [A, B], projects };
+  const hidden = { hosts: [], projects: [fyrB.id!] };
+  assert.ok(projectIsHidden(projects[0], hidden));
+  assert.deepEqual(applyHidden(s, hidden).projects.map((p) => p.name), ["Stacks"]);
+  assert.deepEqual(pushHiddenOf([A, B], projects, hidden).projects.map((p) => p.id).sort(), ["p1", "p9"]);
+  assert.deepEqual(setProjectShown(hidden, projects[0], true).projects, [], "showing it clears whichever member was stored");
+  const noB = applyHidden(s, { hosts: ["B"], projects: [] }).projects;
+  assert.deepEqual(noB.map((p) => [p.id, !!p.members]), [[fyrA.id, false]]);
 });

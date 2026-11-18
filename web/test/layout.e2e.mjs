@@ -4666,6 +4666,69 @@ try {
 }
 });
 
+// SPEC V0.207: Settings → This device hides a host or a project on this device, on the desktop and the phone: it leaves
+// the inbox and the filters, Settings keeps it, and the last host shown cannot be turned off.
+for (const [w, hh, phone] of [[1280, 800, false], [390, 844, true]]) section(`V0.207 ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen, shot } = h;
+  const ctx = `V0.207 ${phone ? "phone" : "desktop"}`;
+try {
+  const root = phone ? ".m-screen " : ".ib ";
+  const go = async (url, ready, storage) => {
+    if (phone) await openScreen({ url, storage, ready }, w, hh);
+    else {
+      await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/${url}`, ready);
+      if (storage) {
+        await evaluate(`(() => { const s = ${JSON.stringify(storage)}; for (const k in s) s[k] === null ? localStorage.removeItem(k) : localStorage.setItem(k, s[k]); return true; })()`);
+        await navigate(`${origin}/${url}`, ready);
+      }
+    }
+    await settle();
+  };
+  const LIST = phone ? "!!document.querySelector('.m-list')" : "!!document.querySelector('.ib .list')";
+  const SETTINGS = phone ? "?mock=rail&hosts=2&settings=device" : "?mock=rail&hosts=2&dialog=settings&page=device";
+  const sw = (label) => `button[aria-label=${JSON.stringify(label)}]`;
+  const INBOX = `({
+    hostRow: !!document.querySelector('${root}.hfrow'),
+    projects: [...document.querySelectorAll('${root}.pfrow .pfc .ell')].map((e) => e.textContent),
+    stored: localStorage.getItem('fyr.hidden'),
+  })`;
+  await go("?mock=rail&hosts=2", LIST, { "fyr.hidden": null, "fyr.hostsOff": null, "fyr.projectFilter": null });
+  const before = await evaluate(INBOX);
+  check(before.hostRow && before.projects.includes("acme/ops"), `${ctx}: the start (${JSON.stringify(before)})`);
+  // 1. The host's switch in Settings.
+  await go(SETTINGS, `!!document.querySelector(${JSON.stringify(sw("Show host host-b"))})`);
+  await evaluate(`document.querySelector(${JSON.stringify(sw("Show host host-b"))}).click()`);
+  await waitFor(`!!localStorage.getItem('fyr.hidden')`, { soft: true });
+  await settle();
+  // The mock has more hosts: hide them too, so desk is the last one shown.
+  const others = await evaluate(`[...document.querySelectorAll('button[aria-label^="Show host "][aria-checked="true"]')].map((b) => b.getAttribute('aria-label')).filter((l) => l !== "Show host desk")`);
+  for (const l of others) {
+    await evaluate(`document.querySelector(${JSON.stringify(sw(l))}).click()`);
+    await waitFor(`document.querySelector(${JSON.stringify(sw(l))}).getAttribute('aria-checked') === 'false'`, { soft: true });
+  }
+  await settle();
+  const page = await evaluate(`({ last: document.querySelector(${JSON.stringify(sw("Show host desk"))})?.disabled, kept: !!document.querySelector(${JSON.stringify(sw("Show host host-b"))}), fits: document.documentElement.scrollWidth <= innerWidth })`);
+  check(page.last === true && page.kept && page.fits, `${ctx}: Settings after hiding a host (${JSON.stringify(page)})`);
+  await shot(`hidden-settings-${phone ? "phone" : "desktop"}.png`);
+  // 2. The host is gone from the inbox, with its projects, and stays gone.
+  await go("?mock=rail&hosts=2", LIST);
+  const gone = await evaluate(INBOX);
+  check(!gone.hostRow && !gone.projects.includes("acme/ops") && !!gone.stored, `${ctx}: a hidden host still shows (${JSON.stringify(gone)})`);
+  // 3. A hidden project: gone from the row, the others stay.
+  const pick = before.projects.find((n) => n !== "acme/ops");
+  await go(SETTINGS, `!!document.querySelector(${JSON.stringify(sw("Show host host-b"))})`, { "fyr.hidden": null });
+  await evaluate(`document.querySelector(${JSON.stringify(sw(`Show project ${pick}`))}).click()`);
+  await waitFor(`!!localStorage.getItem('fyr.hidden')`, { soft: true });
+  await go("?mock=rail&hosts=2", LIST);
+  const noProject = await evaluate(INBOX);
+  check(noProject.hostRow && !noProject.projects.includes(pick) && noProject.projects.includes("acme/ops"), `${ctx}: a hidden project still shows (${JSON.stringify({ pick, noProject })})`);
+  await evaluate(`localStorage.removeItem('fyr.hidden')`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // SPEC 0.5 V0.170: each host's mark (a circle with its machine's glyph in its colour), the same everywhere, on the
 // desktop and the phone. 1 one host: no mark on rows. 2 two hosts: every row has its host's mark before the project's
 // icon, named by its tooltip, without overlap, and the title keeps its two lines; the phone rows no longer say the host
@@ -4903,6 +4966,65 @@ try {
 
 // SPEC 0.5 V0.192: the current thread punches through the filters: they stay as they are, its one row is in the list,
 // tagged, in its section, and it leaves with the next thread. A locked quiet thread stays out, behind its gate.
+// V0.207: the list keeps its place while the owner's hand is on it, a new Needs-you row still comes in at once, the row
+// under the hand stays at its height, and the open row stays where it was until the owner leaves it.
+for (const phone of [false, true]) section(`V0.207 still list ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen } = h;
+  const ctx = `V0.207 still list ${phone ? "phone" : "desktop"}`;
+try {
+  const L = phone ? ".m-list" : ".ib .list", S = (k) => `#${phone ? "m-" : ""}sec-${k}`;
+  const ROWS = `[...new Set([...document.querySelectorAll('${L} [data-id]')].map((r) => r.dataset.id))]`;
+  const IN = (k) => `[...document.querySelectorAll('${S(k)} [data-id]')].map((r) => r.dataset.id)`;
+  const patch = (id, state, section) => evaluate(`window.__fyrThread(${JSON.stringify(id)}, { running: false, activityAt: new Date().toISOString(), attention: { state: ${JSON.stringify(state)}, section: ${JSON.stringify(section)}, reason: "" } })`);
+  const ready = `!!document.querySelector('${S("seen")} [data-id]') && typeof window.__fyrThread === 'function'`;
+  if (phone) await openScreen({ url: "?mock=rail", storage: {}, ready }, 390, 500);
+  else {
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 500, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail`, ready);
+  }
+  await settle();
+  // The hand goes on a row in Seen, with the list scrolled so that rows above it can matter.
+  const seen = await evaluate(IN("seen"));
+  check(seen.length >= 3, `${ctx}: the scenario has too few seen rows (${seen.length})`);
+  const [hand, mover, flag, open] = ["t_poly", "t_copy", "t_pw", "t_snap"];
+  await evaluate(`document.querySelector('${L} [data-id="${hand}"]').scrollIntoView({ block: "center" })`);
+  await settle();
+  const TOP = `document.querySelector('${L} [data-id="${hand}"]').getBoundingClientRect().top`;
+  const box = await evaluate(`(() => { const r = document.querySelector('${L} [data-id="${hand}"]').getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; })()`);
+  if (phone) await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [box] });
+  else await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+  await settle();
+  const before = await evaluate(ROWS), top = await evaluate(TOP);
+  // 1. A row that starts working keeps its place.
+  await evaluate(`window.__fyrThread(${JSON.stringify(mover)}, { running: true, runStartedAt: new Date().toISOString(), attention: { state: "working", section: "working", reason: "" } })`);
+  await settle();
+  check(JSON.stringify(await evaluate(ROWS)) === JSON.stringify(before), `${ctx}: a row moved during the hold`);
+  // 2. A new Needs-you row comes in at once, and the row under the hand stays at its height.
+  await patch(flag, "asking", "needs");
+  await waitFor(`${IN("needs")}.includes(${JSON.stringify(flag)})`, { soft: true });
+  await settle();
+  check((await evaluate(IN("needs"))).includes(flag), `${ctx}: the new Needs-you row waited`);
+  const moved = Math.abs((await evaluate(TOP)) - top);
+  check(moved <= 1, `${ctx}: the row under the hand moved ${moved} px`);
+  // 3. The hand leaves: the waiting move happens.
+  if (phone) await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  else await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 200 });
+  await waitFor(`${IN("working")}.includes(${JSON.stringify(mover)})`, { soft: true, timeout: 5000 });
+  check((await evaluate(IN("working"))).includes(mover), `${ctx}: the row did not move after the hold`);
+  // 4. The open row stays in Unread after it is read, until another thread opens.
+  await patch(open, "done", "seen");
+  await waitFor(`${IN("unread")}.includes(${JSON.stringify(open)})`, { soft: true });
+  await evaluate(`document.querySelector('${L} [data-id="${open}"]').click()`);
+  await waitFor(phone ? "!!document.querySelector('.m-thread')" : "!!document.querySelector('.th .tt')", { soft: true });
+  await patch(open, "seen", "seen");
+  await settle();
+  if (phone) { await evaluate("history.back()"); await waitFor(`!!document.querySelector('${S("unread")}')`, { soft: true }); await settle(); }
+  check((await evaluate(IN("unread"))).includes(open), `${ctx}: the open row left Unread (${JSON.stringify({ open, unread: await evaluate(IN("unread")), seen: await evaluate(IN("seen")), sel: await evaluate(`document.querySelector('${L} [aria-selected="true"]')?.dataset.id ?? null`) })})`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 for (const phone of [false, true]) section(`V0.192 filter ${phone ? "phone" : "desktop"}`, async (h) => {
   const { send, evaluate, waitFor, settle, navigate, openScreen, key, shot } = h;
   const ctx = `V0.192 filter ${phone ? "phone" : "desktop"}`;
