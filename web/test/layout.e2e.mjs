@@ -3349,6 +3349,9 @@ section('V0.185', async (h) => {
     await png("snooze-done-phone.png");
   } catch (e) {
     failures.push(`V0.185 phone: ${e.message}`);
+  }
+});
+
 // V0.188: a finished thread the owner has not looked at is in Unread, directly above Seen; Mark seen and Mark unseen move
 // it, ⇧E leaves it, and both fronts show the same. The row menus are the shared seenToggle.
 section('V0.188', async (h) => {
@@ -5067,9 +5070,11 @@ section("V0.184 desktop", async ({ send, evaluate, waitFor, settle, navigate, ke
     await press(x, y, clickCount);
     await release(x, y, clickCount);
   };
+  // The handle counts two presses within 400 ms: the events go out together, so a busy machine cannot stretch the gap.
   const dblclick = async () => {
-    await click(1);
-    await click(2);
+    const [x, y] = await lrzCenter(evaluate);
+    await mouse("mouseMoved", x, y);
+    await Promise.all([press(x, y, 1), release(x, y, 1), press(x, y, 2), release(x, y, 2)]);
   };
   const widthIs = (w) => waitFor(`Math.round(document.querySelector('.ib').getBoundingClientRect().width) === ${w}`, { soft: true, timeout: 2000 });
   const focusHandle = () => evaluate(`document.querySelector(${JSON.stringify(LRZ)}).focus()`);
@@ -5202,10 +5207,8 @@ section("V0.184 desktop", async ({ send, evaluate, waitFor, settle, navigate, ke
     await waitFor(`localStorage.getItem('fyr.listWidth') === '432'`, { soft: true, timeout: 2000 });
     check((await evaluate(lrzState)).stored === "432", `${ctx}: a finger's drag is not kept`);
     const [t2x, t2y] = await lrzCenter(evaluate);
-    for (let i = 0; i < 2; i++) {
-      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: t2x, y: t2y }] });
-      await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    }
+    const tap = [{ type: "touchStart", touchPoints: [{ x: t2x, y: t2y }] }, { type: "touchEnd", touchPoints: [] }];
+    await Promise.all([...tap, ...tap].map((ev) => send("Input.dispatchTouchEvent", ev))); // together, as the double click
     check(await widthIs(372), `${ctx}: a double tap does not reset (${JSON.stringify(await evaluate(lrzState))})`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
