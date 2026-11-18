@@ -490,6 +490,48 @@ const OUTSIDE = `(() => {
   }
   return out.slice(0, 6);
 })()`;
+// What a long value does beside its own box (&long=): it pushes a control out of reach, squeezes one to nothing, or is
+// cut with no sign that there is more. A scroller keeps what it holds reachable, so the walk stops there.
+const LONG_FIT = `(() => {
+  const out = [], W = innerWidth;
+  const name = (x) => x.tagName.toLowerCase() + (x.className && typeof x.className === 'string' ? '.' + x.className.trim().split(/\\s+/).join('.') : '');
+  const seen = (e, r) => r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).opacity !== '0';
+  for (const e of document.querySelectorAll('button, a[href], input, select, textarea, [role=button], [role=switch], [role=tab], [role=menuitem]')) {
+    const r = e.getBoundingClientRect();
+    if (!seen(e, r) || (e.tagName === 'INPUT' && e.type === 'file')) continue;
+    const t = (e.textContent || e.getAttribute('aria-label') || '').trim().slice(0, 30);
+    if (r.width < 16 && e.scrollWidth > r.width + 1) out.push(name(e) + ' squeezed to ' + Math.round(r.width) + ' px: ' + t);
+    let scrolled = false;
+    for (let a = e.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.overflowX === 'auto' || cs.overflowX === 'scroll') { scrolled = true; break; }
+      if (cs.overflowX === 'visible') continue;
+      const b = a.getBoundingClientRect();
+      if (r.right > b.right + 1 || r.left < b.left - 1) { out.push(name(e) + ' cut off by ' + name(a) + ': ' + t); scrolled = true; break; }
+    }
+    if (!scrolled && (r.right > W + 1 || r.left < -1)) out.push(name(e) + ' outside the window: ' + t);
+  }
+  // Text past the first ancestor that clips or scrolls it. An ellipsis says there is more; code scrolls on purpose.
+  for (const e of document.querySelectorAll('body *')) {
+    if (e.matches('input, select, textarea, svg, svg *, pre, pre *, code, code *, .chg-diff *')) continue;
+    if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+    const r = e.getBoundingClientRect(), own = getComputedStyle(e);
+    if (r.width <= 1 || r.height <= 1 || own.visibility === 'hidden') continue;
+    const t = e.textContent.trim().slice(0, 30);
+    if (own.overflowX !== 'visible' && own.textOverflow !== 'ellipsis' && e.scrollWidth > e.clientWidth + 1 && e.clientWidth) out.push(name(e) + ' cut with no ellipsis: ' + t);
+    for (let a = e.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.overflowX === 'visible') continue;
+      const b = a.getBoundingClientRect();
+      // The project chips and a message's table are sideways scrollers by design.
+      if (cs.textOverflow !== 'ellipsis' && !a.matches('.pfrow, table') && (r.right > b.right + 1 || r.left < b.left - 1)) out.push(name(e) + ' runs past ' + name(a) + ': ' + t);
+      break;
+    }
+  }
+  const de = document.documentElement;
+  if (de.scrollWidth > W + 1) out.push('the page scrolls sideways by ' + (de.scrollWidth - W) + ' px');
+  return [...new Set(out)].slice(0, 8);
+})()`;
 // SPEC 0.5 V0.50, decision 0015 (#28): the UI says provider, never profile. Reads Fyr's own chrome (labels, options,
 // buttons, menu items, dialog text, aria-labels and placeholders); the conversation's text is the agent's, not Fyr's.
 const PROFILE_WORDS = `(() => { const out = []; const see = (s) => { if (s && /\\bprofiles?\\b/i.test(s)) out.push(s.trim().slice(0, 80)); };
@@ -813,7 +855,7 @@ function harness(t) {
     }
     if (s.openDiff) {
       // The file with the longest path: its row must ellipsize, its long lines scroll inside the diff.
-      if (typeof s.openDiff === "string") await evaluate(`document.querySelector('.chg-file[title="${s.openDiff}"]')?.click()`);
+      if (typeof s.openDiff === "string") await evaluate(`document.querySelector('.chg-file[title$="${s.openDiff}"], .chg-file[title$="${s.openDiff.split("/").pop()}"]')?.click()`);
       else await evaluate(`[...document.querySelectorAll('.chg-file')].sort((a, b) => b.title.length - a.title.length)[0]?.click()`);
       await waitFor(`document.querySelectorAll('.chg-diff .dl').length >= 5`, { soft: true });
       await settle();
@@ -832,6 +874,7 @@ function harness(t) {
     } else if (s.sheet === "folder") {
       await tapCenter(".m-new .m-fchg", "!!document.querySelector('.fsheet .fsec.browse .fpr')");
     } else if (s.sheet === "merge") {
+      await evaluate(`document.querySelector('.prv-merge')?.scrollIntoView({ block: 'center' })`); // a long title pushes it down
       await tapCenter(".prv-merge", "!!document.querySelector('.dlg .df .btn.p')");
     } else if (s.sheet === "confirm") {
       await evaluate(`[...document.querySelectorAll('.offb .btn')].find((b) => b.textContent.includes('Set the Acme token'))?.click()`);
@@ -5498,6 +5541,46 @@ section("V0.184 phone", async ({ evaluate, openScreen }) => {
 // The phone screens after the sections: the sections are the longest jobs, so they start first and the short
 // screens fill the tabs at the end.
 for (const s of SCREENS) for (const [w, hh] of SIZES) jobs.push({ name: `${s.name} ${w}x${hh}`, run: (t) => phonePass(t, w, hh, [s]) });
+// Long values (&long=, src/mock-long.ts): every screen with very long names, paths and messages, on both fronts. word
+// is one unbroken run, at the narrowest width where it hurts most; words is a long sentence, which wraps and grows.
+const LONG_DESK = [
+  "?mock=rail", "?mock=1", "?mock=rail&hosts=2", "?mock=rail&open=t_mapperf", "?mock=rail&open=t_lasso", "?mock=rail&open=t_triage",
+  "?mock=1&open=t_approval", "?mock=1&open=t_update", "?mock=1&open=t_effect", "?mock=1&open=t_view", "?mock=1&open=t_w3",
+  "?mock=1&open=t_block&tab=pr", "?mock=1&open=t_s2&tab=pr", "?mock=1&open=t_done&tab=changes", "?mock=rail&open=t_mapperf&tab=changes", "?mock=1&open=t_ended&tab=changes",
+  "?mock=rail&project=p_web", "?mock=rail&project=p_fyr", "?mock=rail&project=p_home&quiet=p_home", "?mock=rail&new", "?mock=rail&dialog=new", "?mock=1&changes",
+  "?mock=rail&deploy=drain", "?mock=rail&leftovers=1", "?mock=rail&slots=queue", "?mock=rail&guard=1&undeclared=paused",
+  ...["providers", "automation", "projects", "device", "devices", "hosts"].map((p) => `?mock=rail&hosts=2&dialog=settings&page=${p}`),
+];
+async function longPhone(t, s, mode, w, h) {
+  const { evaluate, openScreen } = harness(t);
+  const ctx = `long ${mode}: ${s.name} ${w}x${h}`;
+  // A screen's ready test may count or name fixture rows; the same rows are there, so only the app must have drawn.
+  await openScreen({ ...s, url: `${s.url}&long=${mode}`, ready: s.prTab || s.sheet === "merge" ? s.ready : undefined }, w, h);
+  assertLayout(await evaluate(MEASURE), `${ctx} at rest`);
+  for (const [what, expr] of [["text outside its parent", OUTSIDE], ["does not fit", LONG_FIT]]) {
+    const bad = await evaluate(expr);
+    check(bad.length === 0, `${ctx}: ${what} (${JSON.stringify(bad)})`);
+  }
+}
+async function longDesk(t, url, mode, w, h) {
+  const { send, evaluate, navigate } = harness(t);
+  const ctx = `long ${mode}: desktop ${url} ${w}x${h}`;
+  await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${origin}/${url}&long=${mode}`);
+  for (const [what, expr] of [["text outside its parent", OUTSIDE], ["does not fit", LONG_FIT]]) {
+    const bad = await evaluate(expr);
+    check(bad.length === 0, `${ctx}: ${what} (${JSON.stringify(bad)})`);
+  }
+}
+for (const s of SCREENS) {
+  jobs.push({ name: `long word: ${s.name}`, run: (t) => longPhone(t, s, "word", 360, 640) });
+  jobs.push({ name: `long words: ${s.name}`, run: (t) => longPhone(t, s, "words", 390, 844) });
+}
+for (const url of LONG_DESK) {
+  jobs.push({ name: `long word: desktop ${url}`, run: (t) => longDesk(t, url, "word", 1024, 700) });
+  jobs.push({ name: `long words: desktop ${url}`, run: (t) => longDesk(t, url, "words", 1280, 800) });
+}
 // FYR_SECTIONS=<regex> runs only the jobs whose name matches (a quick local run of one section; CI runs them all).
 if (process.env.FYR_SECTIONS) { const re = new RegExp(process.env.FYR_SECTIONS); for (const l of [jobs, timedJobs]) l.splice(0, l.length, ...l.filter((j) => re.test(j.name))); }
 const started = Date.now();
