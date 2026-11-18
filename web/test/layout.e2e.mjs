@@ -3364,7 +3364,7 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await navigate(`${origin}/?mock=rail`, "!!document.querySelector('#sec-working [data-id]')");
   check(!(await evaluate(`!!document.querySelector('#sec-pinned')`)), "V0.104 pin: a Pinned block shows with nothing pinned");
-  const row = await evaluate(`(() => { const el = [...document.querySelectorAll('#sec-working [data-id]')].pop(); const r = el.getBoundingClientRect(); return { id: el.dataset.id, x: r.left + 40, y: r.top + r.height / 2 }; })()`);
+  const row = await evaluate(`(() => { const el = [...document.querySelectorAll('#sec-working [data-id]')].pop(); el.scrollIntoView({ block: 'center', behavior: 'instant' }); const r = el.getBoundingClientRect(); return { id: el.dataset.id, x: r.left + 40, y: r.top + r.height / 2 }; })()`);
   pinId = row.id;
   const menuPick = async (label) => {
     await send("Input.dispatchMouseEvent", { type: "mousePressed", x: row.x, y: row.y, button: "right", clickCount: 1 });
@@ -3384,7 +3384,7 @@ try {
   check(r.once === 1, `V0.104 pin: the pinned row shows ${r.once} times`);
   if (process.env.FYR_SHOTS) writeFileSync(join(process.env.FYR_SHOTS, "pin-desktop.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).result.data, "base64"));
   // The row now sits in the Pinned block: right-click it there.
-  Object.assign(row, await evaluate(`(() => { const r = document.querySelector('#sec-pinned [data-id="${pinId}"]').getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; })()`));
+  Object.assign(row, await evaluate(`(() => { const el = document.querySelector('#sec-pinned [data-id="${pinId}"]'); el.scrollIntoView({ block: 'center', behavior: 'instant' }); const r = el.getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; })()`));
   check(await menuPick("Unpin"), "V0.104 pin: the pinned row's menu has no Unpin");
   await waitFor(`!document.querySelector('#sec-pinned')`, { soft: true });
   check(await evaluate(`!document.querySelector('#sec-pinned') && !!document.querySelector('#sec-working [data-id="${pinId}"]')`), "V0.104 pin: Unpin does not put the row back");
@@ -3470,7 +3470,7 @@ section('V0.189', async (h) => {
     await tapCenter("[data-e2e-row]", until, { long: true });
   };
   const order = (front) => `[...document.querySelectorAll('[id^=${front}sec-]')].map(e => e.id.replace('${front}sec-', '')).filter(k => k !== 'pinned' && k !== 'slots')`;
-  const WANT = '["needs","working","unread","seen","snoozed","settled"]';
+  const WANT = '["needs","unread","seen","working","snoozed","settled"]';
   try {
     await navigate(`${origin}/?mock=rail`, inSec("", "unread", "t_triage"));
     const d = await evaluate(`({ order: ${order("")}, inSeen: ${inSec("", "seen", "t_triage")}, inNeeds: ${inSec("", "needs", "t_triage")}, rail: document.querySelector('.rail [data-sec=unread]')?.textContent ?? '', railSeen: document.querySelector('.rail [data-sec=seen] .k')?.textContent })`);
@@ -4145,7 +4145,7 @@ try {
     rail: document.querySelector('.rail [data-sec=slots] .n')?.textContent ?? null,
     head: document.querySelector('#sec-slots .sec')?.textContent ?? '' })`);
   const wo = d.order.indexOf("sec-working"), so = d.order.indexOf("sec-slots"), un = d.order.indexOf("sec-unread"), se = d.order.indexOf("sec-seen");
-  check(wo >= 0 && so === wo + 1 && un === so + 1 && se === un + 1, `V0.137 desktop: the section sits after Working (${JSON.stringify(d.order)})`);
+  check(un >= 0 && se === un + 1 && wo === se + 1 && so === wo + 1, `V0.137 desktop: the section sits after Working (${JSON.stringify(d.order)})`);
   check(JSON.stringify(d.rows) === JSON.stringify(["self-deploy #1", "t_search #2", "t_pw #3", "t_nix #4"]) && !d.inWorking && d.rail === "3" && d.head.startsWith("Waiting to run3"),
     `V0.137 desktop: the rows, their places and the rail (${JSON.stringify(d)})`);
   check(!(await evaluate(`!!document.querySelector('#sec-slots .sqp .grip')`)), "V0.137 desktop: the deploy's place is movable");

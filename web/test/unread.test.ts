@@ -37,7 +37,7 @@ test("opening (Mark seen) moves it to Seen, Mark unseen moves it back", () => {
 });
 
 test("the order puts Unread directly above Seen, and the g keys keep their meaning", () => {
-  assert.deepEqual(SECTIONS.map((s) => s.key), ["needs", "working", "slots", "unread", "seen", "snoozed", "settled"]);
+  assert.deepEqual(SECTIONS.map((s) => s.key), ["needs", "unread", "seen", "working", "slots", "snoozed", "settled"]);
   const g = Object.fromEntries(SECTIONS.filter((s) => s.g).map((s) => [s.key, s.g]));
   assert.deepEqual(g, { needs: 1, working: 2, seen: 3, snoozed: 4, settled: 5, unread: 6 });
   const help = keyHints({ zone: "list", view: null, card: null, hasSelection: false, picked: 0, failed: false, undo: false, running: false, inText: false } as never);

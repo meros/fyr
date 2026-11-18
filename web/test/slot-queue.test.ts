@@ -65,9 +65,9 @@ test("V0.137: a queued thread moves to Waiting for a slot from its section; Need
   // the section sits right after Working, and j/k walk it there
   assert.deepEqual(
     SECTIONS.map((s) => s.key),
-    ["needs", "working", "slots", "unread", "seen", "snoozed", "settled"],
+    ["needs", "unread", "seen", "working", "slots", "snoozed", "settled"],
   );
-  assert.deepEqual(flatOrder(sec), ["t_n", "t_b", "t_a", "t_x"]);
+  assert.deepEqual(flatOrder(sec), ["t_n", "t_x", "t_b", "t_a"]);
   // without a queue nothing moves
   assert.deepEqual(sections(threads).slots, []);
 });

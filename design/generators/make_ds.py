@@ -400,7 +400,7 @@ comps = {
    ["Hide the chip when the user has only one host."]),
  "SectionHeader": ("Inbox", 140,
    "h('div', null, h(F.SectionHeader,{title:'Needs you',count:4,kind:'attention'}), h(F.SectionHeader,{title:'Working',count:7,open:false,hint:'7 runs \\u00b7 2 waiting for a build slot'}), h(F.SectionHeader,{title:'Snoozed',count:3,open:false}))",
-   "The fixed inbox sections: Needs you, Working, Seen, Snoozed, Settled, in that order.",
+   "The fixed inbox sections: Needs you, Unread, Seen, Working, Waiting to run, Snoozed, Settled, in that order.",
    ["Only the Needs you count uses a `beam` fill. Every other count is plain text.",
     "Working is collapsed by default and says what is happening in its hint."]),
  "ThreadRow": ("Inbox", 300,
