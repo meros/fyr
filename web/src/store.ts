@@ -13,13 +13,14 @@ export type SectionKey = "needs" | "working" | "slots" | "unread" | "seen" | "sn
 
 /** `g`: the section's key after g on the desktop (g1–g6). V0.137: Waiting for a slot has none, so the others keep their
  *  keys; it shows only while a host's queue is not empty (`transient`). V0.189: Unread is new and takes g6, so g3 stays
- *  Seen, g4 Snoozed and g5 Settled although it sits above them. */
+ *  Seen, g4 Snoozed and g5 Settled although it sits above them. V0.199: what is for the owner to read comes before what
+ *  is still running; the g keys follow the section, not its place. */
 export const SECTIONS: { key: SectionKey; label: string; short: string; state: AttentionState; g?: number; transient?: boolean }[] = [
   { key: "needs", label: "Needs you", short: "Needs", state: "asking", g: 1 },
-  { key: "working", label: "Working", short: "Working", state: "working", g: 2 },
-  { key: "slots", label: "Waiting to run", short: "Waiting", state: "waiting", transient: true },
   { key: "unread", label: "Unread", short: "Unread", state: "done", g: 6 },
   { key: "seen", label: "Seen", short: "Seen", state: "seen", g: 3 },
+  { key: "working", label: "Working", short: "Working", state: "working", g: 2 },
+  { key: "slots", label: "Waiting to run", short: "Waiting", state: "waiting", transient: true },
   { key: "snoozed", label: "Snoozed", short: "Snoozed", state: "snoozed", g: 4 },
   { key: "settled", label: "Settled", short: "Settled", state: "settled", g: 5 },
 ];

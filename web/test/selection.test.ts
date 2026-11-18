@@ -121,7 +121,7 @@ test("V0.186: settling a thread in a folded section steps to a drawn row near it
   const s = sec();
   const all = flatOrder(s);
   const shown = all.filter((id) => id !== "z");
-  assert.equal(rowAfter(shown, "z", ["z"], all), "s3", "nothing drawn after Settled: the row before its header");
+  assert.equal(rowAfter(shown, "z", ["z"], all), "w", "nothing drawn after Settled: the row before its header");
 });
 
 test("V0.186: the folds survive a reload; an open Snoozed or Settled does not, its 10 s are gone (V0.196)", () => {

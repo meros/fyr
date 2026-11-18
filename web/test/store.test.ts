@@ -81,8 +81,8 @@ test("working sorts by runStartedAt (newest started first); seen, snoozed, settl
   assert.deepEqual(sec.working.map((t) => t.id), ["w-late", "w-early"]);
   assert.deepEqual(sec.seen.map((t) => t.id), ["s-new", "s-old"]);
   assert.deepEqual(sec.settled.map((t) => t.id), ["x-new", "x-old"]);
-  assert.deepEqual(flatOrder(sec), ["w-late", "w-early", "s-new", "s-old", "x-new", "x-old"]);
-  assert.deepEqual(flatOrder(sec, { seen: 1 }), ["w-late", "w-early", "s-new", "x-new", "x-old"]);
+  assert.deepEqual(flatOrder(sec), ["s-new", "s-old", "w-late", "w-early", "x-new", "x-old"]);
+  assert.deepEqual(flatOrder(sec, { seen: 1 }), ["s-new", "w-late", "w-early", "x-new", "x-old"]);
 });
 
 // V0.104: pinned threads sort above every other thread, in the normal order among themselves (section order, then the
@@ -99,11 +99,11 @@ test("pinned threads come first in the flat order and show once", () => {
     thread("s", "seen", "seen", { activityAt: at(30) }),
   ];
   const sec = sections(applySnapshot(initialStore(), snap(ts), 0).threads);
-  assert.deepEqual(sec.pinned.map((t) => t.id), ["ask-pin", "w-pin", "s-pin-new", "s-pin-old"]);
+  assert.deepEqual(sec.pinned.map((t) => t.id), ["ask-pin", "s-pin-new", "s-pin-old", "w-pin"]);
   assert.deepEqual(sec.needs.map((t) => t.id), ["ask", "ask-pin"], "a pinned thread still counts in its section");
   assert.deepEqual(unpinned(sec.needs).map((t) => t.id), ["ask"]);
-  assert.deepEqual(flatOrder(sec), ["ask-pin", "w-pin", "s-pin-new", "s-pin-old", "ask", "w", "s"]);
-  assert.deepEqual(flatOrder(sec, { seen: 0 }), ["ask-pin", "w-pin", "s-pin-new", "s-pin-old", "ask", "w"], "a closed section keeps its pinned rows on top");
+  assert.deepEqual(flatOrder(sec), ["ask-pin", "s-pin-new", "s-pin-old", "w-pin", "ask", "s", "w"]);
+  assert.deepEqual(flatOrder(sec, { seen: 0 }), ["ask-pin", "s-pin-new", "s-pin-old", "w-pin", "ask", "w"], "a closed section keeps its pinned rows on top");
 });
 
 // SPEC 0.5 V0.26: the Working order is stable; activity never moves a row, a waiting thread sorts by its agents' start
