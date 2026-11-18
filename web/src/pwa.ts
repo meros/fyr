@@ -1,6 +1,7 @@
 // Browser glue for the PWA: service worker registration and updates, the install prompt, and
 // turning Web Push on and off. HTTP goes through api.ts.
 
+import type { PushHidden } from "./hidden.ts";
 import type { Api } from "./api.ts";
 import { base64UrlToBytes, deviceLabel, pushStatus, reconcilePush, type PushEnv, type PushStatus } from "./push.ts";
 
@@ -100,6 +101,17 @@ export async function syncPushStatus(api: Api): Promise<PushStatus> {
     /* keep the browser's state */
   }
   return currentPushStatus();
+}
+
+/** V0.207: tell the front what this device hides. A failure waits for the next change or reconnect. */
+export async function syncPushHidden(api: Api, hidden: PushHidden): Promise<void> {
+  try {
+    const reg = await registration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (sub) await api.pushHidden(sub.endpoint, hidden);
+  } catch {
+    /* the next change or reconnect sends it again */
+  }
 }
 
 export type PushResult = { status: PushStatus; error?: string };

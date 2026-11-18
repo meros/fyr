@@ -386,6 +386,9 @@ export function createMockApi(scenario: string): Api {
     async pushUnsubscribe(endpoint) {
       return server.pushUnsubscribe(endpoint);
     },
+    async pushHidden() {
+      return { ok: true };
+    },
     async pushTest() {
       return server.pushTest();
     },

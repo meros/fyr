@@ -4666,6 +4666,69 @@ try {
 }
 });
 
+// SPEC V0.207: Settings → This device hides a host or a project on this device, on the desktop and the phone: it leaves
+// the inbox and the filters, Settings keeps it, and the last host shown cannot be turned off.
+for (const [w, hh, phone] of [[1280, 800, false], [390, 844, true]]) section(`V0.207 ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen, shot } = h;
+  const ctx = `V0.207 ${phone ? "phone" : "desktop"}`;
+try {
+  const root = phone ? ".m-screen " : ".ib ";
+  const go = async (url, ready, storage) => {
+    if (phone) await openScreen({ url, storage, ready }, w, hh);
+    else {
+      await send("Emulation.setDeviceMetricsOverride", { width: w, height: hh, deviceScaleFactor: 1, mobile: false });
+      await navigate(`${origin}/${url}`, ready);
+      if (storage) {
+        await evaluate(`(() => { const s = ${JSON.stringify(storage)}; for (const k in s) s[k] === null ? localStorage.removeItem(k) : localStorage.setItem(k, s[k]); return true; })()`);
+        await navigate(`${origin}/${url}`, ready);
+      }
+    }
+    await settle();
+  };
+  const LIST = phone ? "!!document.querySelector('.m-list')" : "!!document.querySelector('.ib .list')";
+  const SETTINGS = phone ? "?mock=rail&hosts=2&settings=device" : "?mock=rail&hosts=2&dialog=settings&page=device";
+  const sw = (label) => `button[aria-label=${JSON.stringify(label)}]`;
+  const INBOX = `({
+    hostRow: !!document.querySelector('${root}.hfrow'),
+    projects: [...document.querySelectorAll('${root}.pfrow .pfc .ell')].map((e) => e.textContent),
+    stored: localStorage.getItem('fyr.hidden'),
+  })`;
+  await go("?mock=rail&hosts=2", LIST, { "fyr.hidden": null, "fyr.hostsOff": null, "fyr.projectFilter": null });
+  const before = await evaluate(INBOX);
+  check(before.hostRow && before.projects.includes("acme/ops"), `${ctx}: the start (${JSON.stringify(before)})`);
+  // 1. The host's switch in Settings.
+  await go(SETTINGS, `!!document.querySelector(${JSON.stringify(sw("Show host host-b"))})`);
+  await evaluate(`document.querySelector(${JSON.stringify(sw("Show host host-b"))}).click()`);
+  await waitFor(`!!localStorage.getItem('fyr.hidden')`, { soft: true });
+  await settle();
+  // The mock has more hosts: hide them too, so desk is the last one shown.
+  const others = await evaluate(`[...document.querySelectorAll('button[aria-label^="Show host "][aria-checked="true"]')].map((b) => b.getAttribute('aria-label')).filter((l) => l !== "Show host desk")`);
+  for (const l of others) {
+    await evaluate(`document.querySelector(${JSON.stringify(sw(l))}).click()`);
+    await waitFor(`document.querySelector(${JSON.stringify(sw(l))}).getAttribute('aria-checked') === 'false'`, { soft: true });
+  }
+  await settle();
+  const page = await evaluate(`({ last: document.querySelector(${JSON.stringify(sw("Show host desk"))})?.disabled, kept: !!document.querySelector(${JSON.stringify(sw("Show host host-b"))}), fits: document.documentElement.scrollWidth <= innerWidth })`);
+  check(page.last === true && page.kept && page.fits, `${ctx}: Settings after hiding a host (${JSON.stringify(page)})`);
+  await shot(`hidden-settings-${phone ? "phone" : "desktop"}.png`);
+  // 2. The host is gone from the inbox, with its projects, and stays gone.
+  await go("?mock=rail&hosts=2", LIST);
+  const gone = await evaluate(INBOX);
+  check(!gone.hostRow && !gone.projects.includes("acme/ops") && !!gone.stored, `${ctx}: a hidden host still shows (${JSON.stringify(gone)})`);
+  // 3. A hidden project: gone from the row, the others stay.
+  const pick = before.projects.find((n) => n !== "acme/ops");
+  await go(SETTINGS, `!!document.querySelector(${JSON.stringify(sw("Show host host-b"))})`, { "fyr.hidden": null });
+  await evaluate(`document.querySelector(${JSON.stringify(sw(`Show project ${pick}`))}).click()`);
+  await waitFor(`!!localStorage.getItem('fyr.hidden')`, { soft: true });
+  await go("?mock=rail&hosts=2", LIST);
+  const noProject = await evaluate(INBOX);
+  check(noProject.hostRow && !noProject.projects.includes(pick) && noProject.projects.includes("acme/ops"), `${ctx}: a hidden project still shows (${JSON.stringify({ pick, noProject })})`);
+  await evaluate(`localStorage.removeItem('fyr.hidden')`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
+}
+});
+
 // SPEC 0.5 V0.170: each host's mark (a circle with its machine's glyph in its colour), the same everywhere, on the
 // desktop and the phone. 1 one host: no mark on rows. 2 two hosts: every row has its host's mark before the project's
 // icon, named by its tooltip, without overlap, and the title keeps its two lines; the phone rows no longer say the host

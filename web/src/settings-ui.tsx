@@ -44,6 +44,7 @@ import { pushRow, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { move } from "./reorder.ts";
 import { DevicesPage, useAuthState } from "./devices-ui.tsx";
+import { hiddenCount, hostIsHidden, lastShownHost, setHostShown, setProjectShown, type Hidden } from "./hidden.ts";
 import { PeersPanel, usePeerState } from "./peers-ui.tsx";
 import { devicesNeed, devicesSummary } from "./devices.ts";
 import { PAGES, deviceSummary, hostsNeed, hostsSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
@@ -89,6 +90,9 @@ export interface SettingsDevice {
   setTheme(t: Theme): void;
   canInstall: boolean;
   onInstall(): void;
+  /** V0.207: the hosts and projects this device never shows */
+  hidden: Hidden;
+  setHidden(h: Hidden): void;
 }
 
 export interface ProjectActions {
@@ -333,7 +337,7 @@ export function Settings(p: SettingsProps) {
     projects: projectsSummary(settingsProjects(p.projects).length),
     hosts: hostsSummary(p.hosts),
     devices: devicesSummary(auth.s),
-    device: deviceSummary(p.device.push, p.device.theme),
+    device: deviceSummary(p.device.push, p.device.theme, hiddenCount(p.device.hidden)),
   };
   const badges: Partial<Record<PageId, number>> = { providers: navBadge(provs, blocked), hosts: hostsNeed(p.hosts), devices: devicesNeed(auth.s) };
   const [adding, setAdding] = useState(false);
@@ -595,7 +599,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
       if (!p.api.authState || !p.api.authAct) return { title: "Devices", body: <Empty text="This host cannot list devices." /> };
       return { title: "Devices", lede: "Who is signed in to this install, and how a new device gets in.", body: <DevicesPage api={{ authState: p.api.authState, authAct: p.api.authAct }} now={p.now} st={auth} /> };
     case "device":
-      return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} user={p.user ?? ""} /> };
+      return { title: "This device", lede: "These are kept in this browser. Each device has its own.", body: <DevicePage d={p.device} user={p.user ?? ""} hosts={p.hosts ?? []} projects={p.projects} /> };
   }
 }
 
@@ -2226,9 +2230,27 @@ function useToolDetailsPref(): boolean {
   return on;
 }
 
+/** V0.207: which hosts and projects this device shows. One list on the desktop and the phone. */
+function ShownHere({ d, hosts, projects }: { d: SettingsDevice; hosts: HostInfo[]; projects: Project[] }) {
+  const list = settingsProjects(projects).filter((x) => x.id);
+  if (hosts.length < 2 && !list.length) return null;
+  return (
+    <Group title="Shown on this device" foot="What you turn off leaves this device's inbox, filters, Changes, pickers and notifications. It keeps running, and your other devices still show it.">
+      {hosts.length > 1 &&
+        hosts.map((h) => {
+          const label = `Show host ${h.name}`;
+          return <Row key={h.name} label title={h.name} desc="Host" ell end={<Switch on={!hostIsHidden(h, d.hidden)} label={label} disabled={lastShownHost(h, hosts, d.hidden)} onChange={(on) => d.setHidden(setHostShown(d.hidden, h, on))} />} />;
+        })}
+      {list.map((x) => (
+        <Row key={x.id} label title={x.name} desc={hosts.length > 1 && x.host ? `Project on ${x.host}` : "Project"} ell end={<Switch on={!d.hidden.projects.includes(x.id!)} label={`Show project ${x.name}`} onChange={(on) => d.setHidden(setProjectShown(d.hidden, x.id!, on))} />} />
+      ))}
+    </Group>
+  );
+}
+
 /** Notifications (V0.15), Theme, Show tool details, Install: kept in this browser. Never read-only: none of it goes to
  *  the host except the push subscription, which says so when it fails. */
-function DevicePage({ d, user }: { d: SettingsDevice; user: string }) {
+function DevicePage({ d, user, hosts, projects }: { d: SettingsDevice; user: string; hosts: HostInfo[]; projects: Project[] }) {
   const [tested, setTested] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2302,6 +2324,7 @@ function DevicePage({ d, user }: { d: SettingsDevice; user: string }) {
           />
         )}
       </Group>
+      <ShownHere d={d} hosts={hosts} projects={projects} />
     </SetContext.Provider>
   );
 }
