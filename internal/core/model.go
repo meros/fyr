@@ -192,6 +192,15 @@ type Task struct {
 	Tokens      int        `json:"tokens,omitempty"`
 	StartedAt   *time.Time `json:"startedAt,omitempty"`
 	UpdatedAt   time.Time  `json:"updatedAt"`
+	// V0.195: Background is the CLI's is_backgrounded (it reports every
+	// foreground Bash as a task too); Tool is the tool that started it
+	// (a Monitor is a local_bash as well). QuietSince: the thread has used
+	// almost no CPU since then while this task ran; QuietTold: the agent
+	// was woken about it, which happens once per task.
+	Background bool       `json:"background,omitempty"`
+	Tool       string     `json:"tool,omitempty"`
+	QuietSince *time.Time `json:"quietSince,omitempty"`
+	QuietTold  bool       `json:"quietTold,omitempty"`
 }
 
 // RunningTasks counts the conversation's running tasks.

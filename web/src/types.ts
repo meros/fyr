@@ -85,6 +85,10 @@ export interface TaskDTO {
   tokens?: number;
   startedAt?: string;
   updatedAt?: string;
+  /** V0.195: a command the agent left running, and since when the thread has used almost no CPU beside it. */
+  background?: boolean;
+  tool?: string;
+  quietSince?: string;
 }
 
 export interface ThreadDTO {

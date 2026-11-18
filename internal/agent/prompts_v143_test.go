@@ -14,3 +14,12 @@ func TestFyrPromptSaysNoHoursLongBackgroundBash(t *testing.T) {
 		}
 	}
 }
+
+// V0.195: how to wait for background work.
+func TestFyrPromptSaysHowToWait(t *testing.T) {
+	for _, want := range []string{"run the job itself with Bash run_in_background", "Never detach a job and then poll", "loop under timeout", "exits when it cannot tell"} {
+		if !strings.Contains(FyrPrompt, want) {
+			t.Errorf("the Fyr prompt lacks %q", want)
+		}
+	}
+}

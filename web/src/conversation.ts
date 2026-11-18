@@ -322,9 +322,9 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         break;
       }
       case "task": {
-        // The Agents strip carries starts and finishes; only a failed agent gets a line by default.
+        // The Agents strip carries starts and finishes; only a failed agent gets a line by default, and V0.195's quiet wait.
         const failed = e.data?.kind === "ended" && e.data?.status === "failed";
-        if (details || failed) pushItem({ kind: "task", key, text: taskEventText(e.data ?? {}), status: str(e.data?.status), started: e.data?.kind === "started" });
+        if (details || failed || e.data?.kind === "quiet") pushItem({ kind: "task", key, text: taskEventText(e.data ?? {}), status: str(e.data?.status), started: e.data?.kind === "started" });
         break;
       }
       case "effect.result": {

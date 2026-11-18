@@ -138,6 +138,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			return
 		}
 		if k, ev, ok := taskFromSystem(msg); ok {
+			k.Tool = s.digest.taskTool(msg)
 			var evs []core.Event
 			if ev != "" {
 				evs = append(evs, core.Event{Type: "task", Data: map[string]any{"kind": ev, "id": k.ID, "description": k.Description, "status": k.Status, "summary": k.Summary}})

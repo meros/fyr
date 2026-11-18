@@ -286,6 +286,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "upkeep.reminder", Urgency: Next, OnTake: upkeepReminder},
 	{Name: "owner", Urgency: Next, OnReduce: ownerNotices},
 	{Name: "slot", Urgency: Wake, OnReduce: slotNotices},
+	{Name: "task.quiet", Urgency: Wake, Budget: true, OnReduce: taskQuietNotices}, // V0.195
 	{Name: "runrequest", Urgency: Next, OnReduce: runRequestNotices},
 }
 

@@ -118,6 +118,7 @@ func taskFromSystem(m map[string]any) (k core.Task, event string, ok bool) {
 	switch str(m, "subtype") {
 	case "task_started":
 		k.Description, k.Type, k.Status = str(m, "description"), str(m, "task_type"), core.TaskRunning
+		k.Background, _ = m["is_backgrounded"].(bool) // V0.195
 		return k, "started", true
 	case "task_progress":
 		k.Activity = core.TruncHead(firstLine(str(m, "description")), 120)
@@ -150,6 +151,13 @@ func taskFromSystem(m map[string]any) (k core.Task, event string, ok bool) {
 	return k, "", false
 }
 
+// taskTool names the tool that started a task (V0.195): the CLI reports a
+// Monitor as a local_bash, and only its tool_use tells them apart.
+func (d *digest) taskTool(m map[string]any) string {
+	id, _ := m["tool_use_id"].(string)
+	return d.tools[id].name
+}
+
 // taskList reads background_tasks_changed: the tasks that run now.
 func taskList(m map[string]any) []core.Task {
 	raw, _ := m["tasks"].([]any)
@@ -162,7 +170,7 @@ func taskList(m map[string]any) []core.Task {
 		}
 		d, _ := t["description"].(string)
 		ty, _ := t["task_type"].(string)
-		out = append(out, core.Task{ID: id, Description: d, Type: ty, Status: core.TaskRunning})
+		out = append(out, core.Task{ID: id, Description: d, Type: ty, Status: core.TaskRunning, Background: true})
 	}
 	return out
 }

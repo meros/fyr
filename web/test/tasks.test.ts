@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentsSummary, compactCount, groupTasks, liveLine, orderTasks, taskEventText, taskLine, taskStats, visibleTasks, workingLine } from "../src/tasks.ts";
-import type { TaskDTO } from "../src/types.ts";
+import { agentsSummary, compactCount, groupTasks, liveLine, orderTasks, taskEventText, taskLine, taskStats, visibleTasks, waitLine, workingLine } from "../src/tasks.ts";
+import { clockTime } from "../src/format.ts";
+import type { TaskDTO, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
 const at = (m: number) => new Date(Date.UTC(2026, 10, 14, 9, m)).toISOString();
@@ -87,4 +88,23 @@ test("live line while Fyr waits for the machine", () => {
   const now = Date.parse("2026-11-17T13:09:00Z");
   const t = thread("m", "waiting", "working", { running: true, activity: "Starting", machineWait: { since: "2026-11-17T13:05:51Z", why: "memory pressure" } });
   assert.match(liveLine(t, now), /^Waiting for the machine \(memory pressure\) · since \d\d:\d\d$/);
+});
+
+test("V0.195: a thread waiting for a background command says which, for how long, and that it went quiet", () => {
+  const now = Date.parse("2026-11-18T09:36:00Z");
+  const cmd: TaskDTO = { id: "b", description: "Wait for it", type: "local_bash", background: true, status: "running", startedAt: "2026-11-18T09:01:00Z" };
+  const base = { running: false, tasks: [cmd], attention: { state: "waiting", section: "working", reason: "Background: Wait for it" } } as unknown as Thread;
+  assert.equal(waitLine(base, now), "Background: Wait for it · 35 min");
+  assert.equal(workingLine(base), "Background: Wait for it");
+  assert.equal(taskLine(cmd), "Running");
+  assert.equal(agentsSummary([cmd]), "1 background command");
+  const quiet = { ...cmd, quietSince: "2026-11-18T09:19:00Z" };
+  const q = { ...base, tasks: [quiet] } as Thread;
+  const at = clockTime(quiet.quietSince);
+  assert.equal(waitLine(q, now), `Background: Wait for it · 35 min · no CPU use since ${at}`);
+  assert.equal(workingLine(q), `Background: Wait for it · no CPU use since ${at}`);
+  assert.equal(taskLine(quiet), `No CPU use since ${at}`);
+  assert.equal(waitLine({ ...q, running: true } as Thread, now), "", "a live turn has its own line");
+  assert.equal(waitLine({ ...q, tasks: [{ ...cmd, type: "local_agent", background: true }] } as Thread, now), "", "an agent is not a command");
+  assert.match(taskEventText({ kind: "quiet", description: "Wait for it", minutes: 5 }), /No CPU use for 5 min while waiting for Wait for it/);
 });

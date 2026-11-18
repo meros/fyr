@@ -149,6 +149,10 @@ func TaskObserved(t *Thread, k Task, now time.Time) {
 		if k.Tokens > 0 {
 			cur.Tokens = k.Tokens
 		}
+		cur.Background = cur.Background || k.Background
+		if k.Tool != "" {
+			cur.Tool = k.Tool
+		}
 		cur.UpdatedAt = now
 		if ended {
 			t.ActivityAt = now
