@@ -240,6 +240,13 @@ type frozenJob struct {
 	// flag's since.
 	undeclared bool
 	episode    time.Time
+	// Decision 0032 slice 2: the part of the work whose turn it is (0: the
+	// work is frozen whole), since when, for how long, and the thread's
+	// read-back counter when the turn began.
+	active int
+	turnAt time.Time
+	turn   time.Duration
+	faults uint64
 }
 
 // Decision 0029 S5: how long memory must be fine before a frozen job thaws,
@@ -407,6 +414,9 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		// block every other freeze for ten minutes.
 		emptied := f.undeclared && holding && e.UndeclaredEmpty != nil && e.UndeclaredEmpty(f.owner)
 		thaw := !holding || emptied || now.Sub(f.at) >= FreezeMax || (!f.okSince.IsZero() && now.Sub(f.okSince) >= ThawAfterOK)
+		if !thaw {
+			f = e.nextTurn(f, now)
+		}
 		e.mu.Lock()
 		if thaw {
 			e.frozen = frozenJob{}
@@ -577,7 +587,8 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 	if pick == nil {
 		return false
 	}
-	if !e.UndeclaredFreeze(pick.Thread) {
+	first, units, turns := e.startTurns(pick.Thread)
+	if !turns && !e.UndeclaredFreeze(pick.Thread) {
 		e.guardOnce(now, "skip:"+pick.Thread, fmt.Sprintf("could not freeze thread=%s: no process to move or the cgroup refused", pick.Thread))
 		return false
 	}
@@ -589,10 +600,17 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 	if picked.episode.Equal(pick.Since) {
 		n = picked.n + 1
 	}
+	faults := e.majorFaults(pick.Thread)
 	e.mu.Lock()
 	e.frozen = frozenJob{owner: pick.Thread, at: now, undeclared: true, episode: pick.Since}
+	if turns {
+		e.frozen.active, e.frozen.turnAt, e.frozen.turn, e.frozen.faults = first.PID, now, TurnMin, faults
+	}
 	e.undFroze[pick.Thread] = undFreeze{episode: pick.Since, n: n}
 	e.mu.Unlock()
+	if turns {
+		log.Printf("guard: taking turns thread=%s units=%d first=%d cmd=%q mem=%s", pick.Thread, units, first.PID, first.Command, slots.GB(float64(first.RSS)))
+	}
 	cmd := pick.Command
 	if cmd == "" {
 		cmd = "unknown command"

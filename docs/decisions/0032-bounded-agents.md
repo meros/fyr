@@ -1,6 +1,6 @@
 # 0032 Bounded agents: one thread's heavy work cannot starve the host, and the guard says what it did
 
-Date: 2026-11-18 · Status: **proposed; slice 1 is built** (owner, 18 Nov: "Can we protect the daemons from the workloads?", "Be creative - this is such a common problem for me", "Do a real plan and start implementing", "Add relevant logging as well so we can tune this going forward") · Amends V0.164 (7) · Builds on decision 0029 and V0.151
+Date: 2026-11-18 · Status: **slices 1 and 2 are built; the owner accepted the two relaxed V0.164 rules on 18 Nov** (owner, 18 Nov: "Can we protect the daemons from the workloads?", "Be creative - this is such a common problem for me", "Do a real plan and start implementing", "Add relevant logging as well so we can tune this going forward") · Amends V0.164 (7) · Builds on decision 0029 and V0.151
 
 ## The incident
 
@@ -29,14 +29,34 @@ On 18 Nov 06:30–07:30 on `meros-laptop` one thread (a `/norban:fix` agent) ran
 - With swap, one job under a limit it cannot fit slows smoothly: 8× at 75 % of its working set, 20× at 50 %.
 - Raising `memory.high` of a running job takes effect at once (1.5 M touches/s within a second of the raise).
 - `memory.reclaim` written into a frozen job's cgroup, to push its pages to swap before the next slice starts: one run each, 4 jobs in their own cgroups under a shared slice at 450 MB. 3 s slices: 34.6 s without, 27.1 s with; 1 s slices: 28.7 s without, 28.5 s with. No consistent gain. The same setup also did not repeat the 1 s collapse of the table above (97.5 s there), so the slice length rule rests on one setup (SIGSTOP of processes in one cgroup) and needs repeat runs with per-job cgroups before slice 2 fixes the floor.
-- Not measured, to do: lowering a limit below the current use (the one run was inconclusive).
+
+### Repeated with one cgroup per job (18 Nov, for slice 2)
+
+4 jobs of 300 MB under a shared `memory.high` of 450 MB, each in its own scope, taking turns by `cgroup.freeze`; 40 M touches, about 13 s per job alone. Two runs each, total seconds. The first run overlapped with compiling on the same host and is slower for every rotation; it was not repeated in isolation, so read the second as the cleaner one.
+
+| turn | run 1 | run 2 | first job done (run 2) |
+|---|---|---|---|
+| 1 s | not done in 150 s | not done in 150 s | none |
+| 3 s | 107.4 | 65.4 | 57.4 |
+| 10 s | 84.4 | 56.3 | 44.2 |
+| 30 s | 82.0 | 53.7 | 14.3 |
+| one at a time | 55.3 | 50.9 | 13.5 |
+
+With 4 M touches, all at once took 40.8 and 45.4 s against 5.3 s one at a time (one run). This settles the open point above: **1 s collapses with per-job cgroups too**, and a longer turn was never worse. Slice 2's floor is 30 s, not 10 s: the parts belong to one thread, so no one else waits for a turn.
+
+- `memory.reclaim` on the job just frozen, 10 s turns: 56.4 and 58.5 s without, 61.7 and 56.0 s with. No gain; slice 2 does not use it.
+- Lowering `memory.high` under a running 300 MB job (10 M touches, swap available, two runs): unchanged 5.1 and 4.9 s; to 75 % 24.5 and 29.0 s (about 5×); to 50 % 42.1 and 40.8 s (about 8×). Its memory was at the new limit 2 s later and the job finished. Lowering works and is a slowdown, not a hang, as long as swap has room.
+
+### Slice 2 under real pressure (18 Nov, `TestRealGuardTakesTurns`)
+
+The guard's engine at its 10 s tick and the real cgroup code in a delegated service, `agents/` limited to 450 MB, one runner with four 300 MB children. Without the guard the jobs had not finished after 4 minutes and had read back 163.9 GB. With it they finished in 77 s, read back 3.9 GB, all four had a turn, and at no tick did two run at once. One run. The test sets "memory is short" itself and the jobs are synthetic, so it proves what the guard does once it acts, not when a real stall makes it act.
 
 ## Decision
 
 Bound the work, not only the daemon. In four layers, built in slices, each testable alone.
 
 1. **The guard keeps acting (slice 1, built).** The freeze is a time slice of a long episode, not a once-only verdict. Rules in V0.188 below. Every decision leaves a log line with the signals it acted on.
-2. **Freeze by job, rotate by measured slice (slice 2).** A thread's heavy roots get one cgroup each. When a thread's `agents/<thread>` cgroup thrashes (its own memory PSI `full` over a share, its swap near its cap) all jobs but one are frozen and the rest rotate; a slice is 3 × (the job's resident size ÷ the measured swap-in rate), never under 10 s. The test above is the evidence for the 10 s floor.
+2. **Freeze by part, rotate by measured turn (slice 2, built).** When the guard freezes undeclared work with two or more heavy parts, one part runs and the others are frozen, each in `undeclared/u<pid>/`. A part is found by walking down from each root to where the memory fans out (at least 10 % of the subtree per child), because a runner such as `turbo` is one root with several heavy children; a root-level split would not have helped in the incident. The runner itself keeps running. A turn lasts 3 × (the next part's resident size ÷ the read-back rate measured in the last turn), at least 30 s and at most 2 min, and ends early when its part ended. The trigger is the guard's existing one, not a new per-thread signal.
 3. **A small default budget per thread, a reservation raises it (slice 3).** Each thread's cgroup gets `memory.high` of about 12 % of the agents' budget (a share, never a number: decision 0029 section 0). A slot reservation (`slot_acquire`) raises it live to the class's learned peak and the release lowers it again. Past the reservation a job is throttled, and `memory.max` at the old ceiling is the fast failure. The livelock case (high with no swap) is avoided by the rule that the thread's swap share is never below its high.
 4. **The machine backstop (slice 0, in the NixOS repo).** `agentBudget.pressureLimit` 80 → 70 so systemd-oomd kills the heaviest agent cgroup within about 20 s of a stall like this one (50 % was too eager on 17 Nov, 80 % never fired at 75 %).
 
@@ -49,8 +69,9 @@ Not chosen: a fixed small `memory.max` per thread (kills the agent CLI when the 
 | 0 | `agent-budget.nix` pressure limit, an option for the thread share | in the nixos repo |
 | 1 | V0.188: re-freeze, release an empty freeze, somebody-else-gains rule, guard log | built (this PR) |
 | 1b | V0.188: `slots.guard` in `/api/load`; the row's words and Settings → Automation → Memory guard (chart, summary, last decisions) on the desktop and the phone | built (this PR) |
-| 2 | per-root job cgroups, rotation with the measured slice | next |
-| 3 | per-thread `memory.high` share, reservation raises it, `/api/load` shows it | after 2 |
+| 1c | V0.191: the second freeze of an episode works (slice 1 could not re-freeze on a real cgroup) | built |
+| 2 | V0.194: parts of the work in their own cgroups, turns of a measured length | built |
+| 3 | per-thread `memory.high` share, reservation raises it, `/api/load` shows it | not started: wait for the guard's first real stall, the share would limit every thread |
 | 4 | tune from the log (below) | ongoing |
 
 ## What the log gives for tuning
@@ -60,5 +81,6 @@ Every line starts with `guard:` in `fyrd`'s log (`journalctl -u fyr | grep guard
 - `froze undeclared work` / `froze job`: thread, the freeze's number in its episode, the episode's age, the command, memory and cores, the signals, and how many threads were running: the data to choose `RefreezeAfter`, `MaxFreezes` and the thresholds.
 - `thawed …`: how long it was frozen and why (memory fine for 30 s, its processes are gone, the 10 min limit, the episode ended).
 - `not freezing …` and `could not freeze …`: the reason, once a minute at most.
+- `taking turns …` and `turn …`: the parts, whose turn it is, its memory, the turn's length and the read-back rate it was measured from.
 
 Questions the log should answer: how long does a slice need (time from freeze to thaw to refreeze against the swap-in rate); how often does the cap of 8 hit; does a freeze ever release memory (compare headroom at the freeze and at the thaw).

@@ -113,7 +113,13 @@ type UndeclaredDeps struct {
 	UndeclaredThaw   func(thread string)
 	// UndeclaredEmpty says the frozen cgroup of thread holds no process any
 	// more (its work ended): the freeze holds nothing and is released.
-	UndeclaredEmpty    func(thread string) bool
+	UndeclaredEmpty func(thread string) bool
+	// Decision 0032 slice 2: UndeclaredUnits lists the parts of a thread's
+	// undeclared work, UndeclaredRotate lets one run and freezes the others,
+	// and UndeclaredFaults is what the thread has read back so far, in bytes.
+	UndeclaredUnits    func(thread string) []slots.WorkUnit
+	UndeclaredRotate   func(thread string, units []slots.WorkUnit, active int) bool
+	UndeclaredFaults   func(thread string) uint64
 	UndeclaredDismiss  func(thread string, on bool) bool
 	UndeclaredSettings func(args map[string]any) error
 	HeavySuggestion    func(id, do, pattern, kind string) error

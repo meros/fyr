@@ -6,6 +6,14 @@ import "time"
 // `slots.guard`): a short history of its decisions and, per thread, where the
 // freezes of its episode stand. The engine publishes it; the pool only copies.
 
+// WorkUnit is one part of a thread's undeclared work that can be frozen alone
+// (decision 0032 slice 2): its first process, its memory and its command.
+type WorkUnit struct {
+	PID     int
+	RSS     uint64
+	Command string
+}
+
 // GuardEvent is one decision: "short" or "recovered" (the host's memory),
 // "freeze" or "thaw" of a thread's undeclared work or of a job it asked for.
 type GuardEvent struct {
