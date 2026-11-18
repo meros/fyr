@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { addChips, chipDone, chipError, chipProgress, fileLabel, formatSize, isImage, removeChip, type Chip } from "./attach.ts";
 import { useApi } from "./api-context.ts";
-import { openImages, type ViewerImage } from "./preview-ui.tsx";
+import { DownloadLink, openImages, type ViewerImage } from "./preview-ui.tsx";
 
 let keySeq = 0;
 
@@ -171,11 +171,12 @@ export interface SentAttachment {
 }
 
 /** A user message's attachments: image thumbnails (tap: the zooming viewer, V0.165, swiping between this message's
- *  images) and file chips (open in a new tab: the phone hands a PDF to its own viewer). */
+ *  images) and file chips (open in a new tab: the phone hands a PDF to its own viewer), each chip with Download
+ *  beside it (V0.download-assets; an image has it in the viewer). */
 export function SentAttachments({ items, host }: { items: SentAttachment[]; host?: string }) {
   const { attachmentUrl } = useApi();
   if (!items.length) return null;
-  const images: ViewerImage[] = items.filter((a) => isImage(a.mediaType)).map((a) => ({ key: a.id, src: attachmentUrl(host ?? "", a.id), title: a.name }));
+  const images: ViewerImage[] = items.filter((a) => isImage(a.mediaType)).map((a) => ({ key: a.id, src: attachmentUrl(host ?? "", a.id), title: a.name, name: a.name }));
   return (
     <div class="att-sent">
       {items.map((a) =>
@@ -184,13 +185,16 @@ export function SentAttachments({ items, host }: { items: SentAttachment[]; host
             <img src={attachmentUrl(host ?? "", a.id)} alt={a.name} loading="lazy" decoding="async" />
           </button>
         ) : (
-          <a class="att-file" href={attachmentUrl(host ?? "", a.id)} target="_blank" rel="noopener noreferrer" title={a.name}>
-            <span class="att-th lab">{fileLabel(a.mediaType, a.name)}</span>
-            <span class="att-tx">
-              <span class="att-n">{a.name}</span>
-              <span class="att-m">{formatSize(a.size)}</span>
-            </span>
-          </a>
+          <span class="att-fw">
+            <a class="att-file" href={attachmentUrl(host ?? "", a.id)} target="_blank" rel="noopener noreferrer" title={a.name}>
+              <span class="att-th lab">{fileLabel(a.mediaType, a.name)}</span>
+              <span class="att-tx">
+                <span class="att-n">{a.name}</span>
+                <span class="att-m">{formatSize(a.size)}</span>
+              </span>
+            </a>
+            <DownloadLink cls="att-dl" src={attachmentUrl(host ?? "", a.id)} name={a.name} />
+          </span>
         ),
       )}
     </div>

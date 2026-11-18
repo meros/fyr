@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_BYTES, addChips, chipDone, chipError, chipProgress, fileLabel, formatSize, removeChip, sendArgs, uploadError } from "../src/attach.ts";
+import { MAX_BYTES, addChips, chipDone, chipError, chipProgress, downloadUrl, fileLabel, formatSize, removeChip, sendArgs, uploadError } from "../src/attach.ts";
 
 const png = { key: "a", name: "shot.png", size: 2048, type: "image/png", preview: "blob:x" };
 const log = { key: "b", name: "build.log", size: 30_000, type: "text/plain" };
@@ -57,4 +57,11 @@ test("type labels and sizes", () => {
   assert.equal(formatSize(30_000), "29 KB");
   assert.equal(formatSize(23_100_000), "22 MB");
   assert.equal(formatSize(1_258_291), "1.2 MB");
+});
+
+test("V0.download-assets: a host's attachment is saved with ?download=1; a data or object URL stays as it is", () => {
+  assert.equal(downloadUrl("/api/h/H1/attachments/a_1"), "/api/h/H1/attachments/a_1?download=1");
+  assert.equal(downloadUrl("/api/h/H1/attachments/a_1?v=2"), "/api/h/H1/attachments/a_1?v=2&download=1");
+  assert.equal(downloadUrl("data:image/png;base64,AAAA"), "data:image/png;base64,AAAA");
+  assert.equal(downloadUrl("blob:http://x/1"), "blob:http://x/1");
 });

@@ -118,6 +118,14 @@ export interface ContentUrls {
   previewUrl(host: string, id: string): string;
 }
 
+/** V0.download-assets: the URL that saves an attachment instead of showing it. The host answers `?download=1` with
+ *  `Content-Disposition: attachment` and the file's name; a data or object URL (the mock, a local thumbnail) has no
+ *  server behind it and stays as it is, saved by the link's `download` attribute. */
+export function downloadUrl(src: string): string {
+  if (!src.startsWith("/")) return src;
+  return src + (src.includes("?") ? "&" : "?") + "download=1";
+}
+
 /** The URL of an attachment on its host. */
 export function attachmentUrl(host: string, id: string): string {
   return hostUrl(host, `/attachments/${encodeURIComponent(id)}`);

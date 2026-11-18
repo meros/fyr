@@ -214,6 +214,15 @@ func TestAttachmentEndpoints(t *testing.T) {
 	if r.StatusCode != 200 || string(b) != "PNGDATA" || r.Header.Get("Content-Type") != "image/png" {
 		t.Fatalf("get %d %q %v", r.StatusCode, b, r.Header)
 	}
+	if cd := r.Header.Get("Content-Disposition"); cd != "inline; filename*=UTF-8''sk%C3%A4rm.png" {
+		t.Fatalf("shown inline: %q", cd)
+	}
+	// V0.download-assets: ?download=1 saves the same bytes under the file's name.
+	r = do(t, "GET", hs.URL+"/api/attachments/"+m.ID+"?download=1", "", nil, "")
+	b, _ = io.ReadAll(r.Body)
+	if cd := r.Header.Get("Content-Disposition"); r.StatusCode != 200 || string(b) != "PNGDATA" || cd != "attachment; filename*=UTF-8''sk%C3%A4rm.png" {
+		t.Fatalf("download %d %q %q", r.StatusCode, b, cd)
+	}
 	if r := do(t, "POST", hs.URL+"/api/attachments", "", h, strings.Repeat("x", 17)); r.StatusCode != 413 {
 		t.Fatalf("over the limit: %d", r.StatusCode)
 	}
