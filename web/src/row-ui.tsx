@@ -2,6 +2,7 @@
 // Each front adds only its wrapper (selection, swipes); the phone sets its own sizes in phone.css.
 
 import type { ComponentChildren } from "preact";
+import { useContext } from "preact/hooks";
 import type { Change, ChangeNeed, Thread } from "./types.ts";
 import { useApi } from "./api-context.ts";
 import { useAsk } from "./confirm-ui.tsx";
@@ -9,9 +10,9 @@ import { press } from "./confirm.ts";
 import { ThreadCPU, ThreadJob, ThreadSlot, useThreadJob } from "./load-ui.tsx";
 import { RowUndeclared, useRowUndeclared } from "./undeclared-ui.tsx";
 import { RowProject, RowProjectName, StartedBy } from "./project-ui.tsx";
-import { useHosts } from "./host-pick-ui.tsx";
+import { ProfilesContext, useHosts } from "./host-pick-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
-import { hostOf, multiHost } from "./hosts.ts";
+import { hostOf, multiHost, rowProvider } from "./hosts.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState } from "./rows.ts";
 import { relTime, whenLabel } from "./format.ts";
@@ -153,12 +154,22 @@ function RowHead({ t, look }: { t: Thread; look: RowLook }) {
   );
 }
 
-/** V0.135: the start of a row's second line: the project's name when the icon does not say it, and ↳ for a thread
- *  another thread started. */
+/** V0.135: the start of a row's second line: the project's name when the icon does not say it, the provider when there
+ *  is more than one (V0.206), and ↳ for a thread another thread started. */
 function RowFrom({ t, look, more }: { t: Thread; look: RowLook; more: boolean }) {
+  const provider = rowProvider(t, useHosts().hosts, useContext(ProfilesContext));
   return (
     <>
-      <RowProjectName t={t} sep={!!t.parent || more} />
+      <RowProjectName t={t} sep={!!provider || !!t.parent || more} />
+      {provider && (
+        <>
+          <span class="rpv" title={provider.title}>
+            <span class="pdot" style={provider.color ? { background: provider.color } : undefined} aria-hidden="true" />
+            {provider.name}
+          </span>
+          {t.parent || more ? " · " : ""}
+        </>
+      )}
       {t.parent && <StartedBy parentId={t.parent} link={look.link} mark />}
     </>
   );

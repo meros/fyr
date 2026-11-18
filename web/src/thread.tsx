@@ -22,8 +22,8 @@ import { dividerLine, rungDone } from "./handover.ts";
 import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import { SETTLE_DONE_HINT, settleDoneEntry } from "./menu.ts";
-import { hostChip, hostOf, offlineLine, profilesOfHost } from "./hosts.ts";
-import { useHosts } from "./host-pick-ui.tsx";
+import { hostChip, hostOf, offlineLine, profilesOfHost, threadProvider } from "./hosts.ts";
+import { ProfilesContext, useHosts } from "./host-pick-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
 import { onToolDetails, toolDetails } from "./prefs.ts";
 import { FromThreadMessage, ProjectIcon, StartedBy, useDirectory } from "./project-ui.tsx";
@@ -112,6 +112,7 @@ export function ThreadPane(p: ThreadPaneProps) {
   const hs = useHosts();
   // V0.139: the thread's provider is its host's (the same id on another host is another provider).
   const profile = profilesOfHost(hostOf(t, hs.hosts), hs.hosts, p.profiles).find((x) => x.id === t.profile);
+  const provider = threadProvider(t, hs.hosts, p.profiles);
   const hc = hostChip(t.host, hs.hosts, hs.now);
   const decision = currentDecision(t);
   const st = t.attention.state;
@@ -191,9 +192,9 @@ export function ThreadPane(p: ThreadPaneProps) {
               <span>{t.branch}</span>
             </span>
           )}
-          <span class="chip pvc" title={profile?.unavailable ? `Provider ${profile.name} · ${profile.unavailable}` : `Provider ${profile?.name ?? t.profile}`}>
-            <span class="pdot" style={profile?.color ? { background: profile.color } : undefined} />
-            <span>{profile?.name ?? t.profile}</span>
+          <span class="chip pvc" title={provider.title}>
+            <span class="pdot" style={provider.color ? { background: provider.color } : undefined} />
+            <span>{provider.name}</span>
           </span>
           <ModelChip t={t} profile={profile} onRun={p.onRun} />
           <EffortChip t={t} profile={profile} onRun={p.onRun} />
@@ -513,9 +514,6 @@ const DeliveryCtx = createContext<DeliveryActions | null>(null);
 
 /** V0.54: the thread's host: its attachments and previews load from there. */
 const HostContext = createContext<string | undefined>(undefined);
-
-/** The host's profiles, for the handover divider's names (V0.45). */
-export const ProfilesContext = createContext<Profile[]>([]);
 
 export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host, strip }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: string; strip?: ComponentChildren }) {
   const details = useToolDetails();

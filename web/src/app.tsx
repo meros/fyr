@@ -47,7 +47,7 @@ import { needsCount } from "./board.ts";
 import { Inbox, Rail, SECTION_LIMIT, isOpen, type FilterView, type Theme } from "./inbox.tsx";
 import { useSlotQueue } from "./slot-queue-ui.tsx";
 import { UndContext, type UndNav } from "./undeclared-ctx.tsx";
-import { ProfilesContext, ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
+import { ThreadPane, useToolDetails, type SendArgs } from "./thread.tsx";
 import { HandoverDialog } from "./handover-ui.tsx";
 import { listPref, listShown, setListPref, setToolDetails } from "./prefs.ts";
 import { ListResizer } from "./list-resize-ui.tsx";
@@ -68,7 +68,7 @@ import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type Pick
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
 import { PHONE_UNDO_MS } from "./mobile.ts";
 import { hostIdByName, hostLabel, hostOfflineNote, multiHost } from "./hosts.ts";
-import { HostsContext } from "./host-pick-ui.tsx";
+import { HostsContext, ProfilesContext } from "./host-pick-ui.tsx";
 import { HostMarksContext } from "./host-mark-ui.tsx";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
