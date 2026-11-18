@@ -73,7 +73,7 @@ code{font-family:var(--mono);font-size:.92em}
 b{font-weight:600}
 kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:center;border-radius:5px;border:1px solid var(--line);background:var(--raised);color:var(--ink-muted);display:inline-block;flex:none}
 
-.app{display:grid;grid-template-columns:76px 372px minmax(0,1fr);height:100vh;height:100dvh}
+.app{display:grid;grid-template-columns:76px var(--list-w,372px) minmax(0,1fr);height:100vh;height:100dvh}
 
 /* rail */
 .rail{display:flex;flex-direction:column;align-items:stretch;background:var(--sunken);border-right:1px solid var(--line);padding:10px 6px;gap:4px;min-height:0;--knock:var(--sunken)}
@@ -92,7 +92,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .rail .foot.offline i{background:var(--signal-ink)}
 
 /* inbox */
-.ib{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--raised);border-right:1px solid var(--line)}
+.ib{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--raised);border-right:1px solid var(--line)}
 .top{display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;border-bottom:1px solid var(--line);flex:none}
 .search{flex:1;min-width:0;display:flex;align-items:center;height:30px;padding:0 10px;border-radius:8px;background:var(--sunken);color:var(--ink-muted);font:400 13px/18px var(--ui);cursor:text}
 .search input{flex:1;min-width:0;border:0;outline:0;background:transparent;padding:0;font:400 13px/18px var(--ui);color:var(--ink)}
@@ -907,6 +907,22 @@ button.ptag{padding:0}
 /* SPEC 0.5 V0.40: the thread list can be hidden; the open thread then takes its room. */
 .app.nolist{grid-template-columns:76px minmax(0,1fr)}
 .app.nolist>.ib{display:none}
+/* V0.184: the handle on the list's edge. It sits mostly over the conversation's margin, so the list's scrollbar stays
+   reachable. During a drag nothing is selected and no iframe (a live view, a preview) takes the pointer. */
+.lrz{position:absolute;top:0;bottom:0;right:-6px;width:8px;z-index:3;cursor:col-resize;touch-action:none;outline:0}
+.lrz::after{content:"";position:absolute;top:0;bottom:0;left:1px;width:2px}
+.lrz:focus-visible::after,html.list-resizing .lrz::after{background:var(--harbour)}
+@media (hover:hover){.lrz:hover::after{background:var(--harbour)}}
+/* A finger needs a larger target than a mouse; the line it shows stays on the edge. */
+@media (pointer:coarse){.lrz{right:-14px;width:24px}.lrz::after{left:9px}}
+html.list-resizing,html.list-resizing *{cursor:col-resize!important;user-select:none!important;-webkit-user-select:none!important}
+html.list-resizing iframe{pointer-events:none}
+/* The filters at any list width. A mouse has no sideways swipe, so on the desktop the project chips wrap (three lines,
+   then they scroll) and the host segments give way; the phone keeps its one row, which a finger swipes. */
+.ib .pfrow{flex-wrap:wrap;overflow-x:hidden;overflow-y:auto;max-height:102px}
+.ib .pfc{max-width:min(150px,100%)}
+.ib .pfc.on.quiet{max-width:min(260px,100%)}
+.ib .hft{flex:1 1 auto;min-width:0;padding:0 8px}
 .ri.lt{margin-top:6px}
 .ri.lt svg{display:block;margin:0 auto 2px}
 
