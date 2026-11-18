@@ -138,7 +138,21 @@ export function linkProjects(records: readonly Project[], hosts: readonly HostIn
       done.add(r.link!);
       const members = [...ms].sort((a, b) => down(a) - down(b) || place(a) - place(b));
       const lastUsed = members.map((m) => m.lastUsed ?? "").sort().at(-1);
-      out.push({ ...members[0], members, threads: members.reduce((n, m) => n + (m.threads ?? 0), 0), ...(lastUsed ? { lastUsed } : {}) });
+      // The shared values are the newest member's, whichever host is shown; the image is not copied between hosts.
+      const newest = members.reduce((a, b) => (Date.parse(b.sharedAt ?? "") > Date.parse(a.sharedAt ?? "") || (!a.sharedAt && b.sharedAt) ? b : a));
+      const pic = members.find((m) => m.image && m.id && m.hostId && !down(m)) ?? members.find((m) => m.image && m.id && m.hostId);
+      out.push({
+        ...members[0],
+        name: newest.name,
+        color: newest.color,
+        icon: newest.icon,
+        quiet: newest.quiet,
+        image: pic?.image,
+        ...(pic ? { imageFrom: { id: pic.id!, hostId: pic.hostId! } } : {}),
+        members,
+        threads: members.reduce((n, m) => n + (m.threads ?? 0), 0),
+        ...(lastUsed ? { lastUsed } : {}),
+      });
     }
   }
   return out;
@@ -162,6 +176,14 @@ export function recordOf(projects: readonly Project[], id: string | null | undef
 /** The project's record on that host. */
 export function memberOn(p: Project | undefined, hostId: string | undefined): Project | undefined {
   return p && hostId ? (p.members ?? [p]).find((m) => m.hostId === hostId) : undefined;
+}
+
+/** Decision 0033: what the members of a linked project share, and what stays this host's. */
+export function splitSharedPatch<T extends Record<string, unknown>>(patch: T): { shared: Partial<T>; own: Partial<T> } {
+  const shared: Partial<T> = {};
+  const own: Partial<T> = {};
+  for (const k of Object.keys(patch) as (keyof T)[]) (["name", "color", "icon", "quiet"].includes(String(k)) ? shared : own)[k] = patch[k];
+  return { shared, own };
 }
 
 /** The owner's order as stored: a linked project's members stay next to each other. */
@@ -315,9 +337,11 @@ export function moveToast(n: number, where: string | null, error: string | null)
 
 /** The URL of a project's image icon at a size that is sharp at `px` CSS pixels, or null when it has none. The
  *  version in the URL lets the browser keep it; the front sends the request to the project's host. */
-export function projectIconUrl(p: Pick<Project, "id" | "image" | "hostId"> | undefined, px: number): string | null {
-  if (!p?.id || !p.image || !p.hostId) return null;
-  return hostUrl(p.hostId, `/projects/${encodeURIComponent(p.id)}/icon?size=${px > 32 ? 128 : 64}&v=${encodeURIComponent(p.image)}`);
+export function projectIconUrl(p: Pick<Project, "id" | "image" | "hostId" | "imageFrom"> | undefined, px: number): string | null {
+  const id = p?.imageFrom?.id ?? p?.id;
+  const hostId = p?.imageFrom?.hostId ?? p?.hostId;
+  if (!id || !p?.image || !hostId) return null;
+  return hostUrl(hostId, `/projects/${encodeURIComponent(id)}/icon?size=${px > 32 ? 128 : 64}&v=${encodeURIComponent(p.image)}`);
 }
 
 /** Whether the setup agent set this field (the project screen marks it "Set by agent"). */

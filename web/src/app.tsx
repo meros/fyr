@@ -62,7 +62,7 @@ import { PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, expandOrder, findProject, memberOn, moveToast, orderProjects, projectRecords, recordOf } from "./projects.ts";
+import { FILTER_KEY, expandOrder, findProject, memberOn, moveToast, orderProjects, projectRecords, recordOf, splitSharedPatch } from "./projects.ts";
 import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clickHost, filterEmpty, parseHostsOff, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
@@ -942,7 +942,19 @@ function App() {
     return r.ok ? null : (r.error ?? "That did not work");
   };
   const projectActions = {
-    update: (id: string, patch: ProjectPatch) => projectCommand("project.update", { id, ...patch }),
+    /** Decision 0033: on a linked project the shared values go to every host through the front; the rest is this host's. */
+    update: async (id: string, patch: ProjectPatch): Promise<string | null> => {
+      const link = findProject(store.projects, id)?.members ? recordOf(store.projects, id)?.link : undefined;
+      if (!link) return projectCommand("project.update", { id, ...patch });
+      const { shared, own } = splitSharedPatch(patch as Record<string, unknown>);
+      if (Object.keys(shared).length) {
+        const r = await api.frontCommand("front.projectShared", { link, ...shared });
+        if (!r.ok) return r.error ?? "That did not work";
+        const failed = (r.result as { failed?: { error?: string }[] } | undefined)?.failed;
+        if (failed?.[0]?.error) return failed[0].error;
+      }
+      return Object.keys(own).length ? projectCommand("project.update", { id, ...own }) : null;
+    },
     /** V0.55: the project's one folder, from the picker. */
     setFolder: (id: string, path: string) => projectCommand("project.update", { id, folder: path }),
     /** New project (V0.30): with threadIds, the host files one thread in the same write; more are filed after. */

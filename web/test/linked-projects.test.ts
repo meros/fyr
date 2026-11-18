@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { expandOrder, findProject, linkCandidates, linkProjects, memberOn, projectOf, projectRecords, projectSubtitle, recordOf } from "../src/projects.ts";
+import { projectIconUrl, splitSharedPatch, expandOrder, findProject, linkCandidates, linkProjects, memberOn, projectOf, projectRecords, projectSubtitle, recordOf } from "../src/projects.ts";
 import { applySnapshot, initialStore, setHosts, setProjectOrder, stateForCache, upsertProject } from "../src/store.ts";
 import { activeFilters, applyFilters, liveProject } from "../src/filters.ts";
 import { chooseHost, initialForm, settleForm } from "../src/new-thread.ts";
@@ -96,4 +96,19 @@ test("New thread stays host first: the filter picks the host's own member, and a
   assert.equal(f.projectId, fyrA.id);
   const moved = chooseHost(f, "mac", ctx);
   assert.equal(moved.projectId, fyrB.id);
+});
+
+test("the shared values are the newest member's; the image is the first online member's that has one", () => {
+  const a = { ...fyrA, sharedAt: "2026-11-18T10:00:00Z", image: "v1" };
+  const b = { ...fyrB, name: "Newer", color: "teal", sharedAt: "2026-11-18T11:00:00Z" };
+  const [p] = linkProjects([a, b], [A, B]);
+  assert.equal(p.id, a.id, "the first host is still the one shown");
+  assert.deepEqual([p.name, p.color], ["Newer", "teal"]);
+  assert.match(projectIconUrl(p, 16)!, /\/h\/A\/projects\/A%2Fp1\/icon/);
+  const [q] = linkProjects([{ ...a, image: undefined }, { ...b, image: "v2" }], [A, B]);
+  assert.match(projectIconUrl(q, 16)!, /\/h\/B\//);
+});
+
+test("an edit splits into what the link shares and what stays this host's", () => {
+  assert.deepEqual(splitSharedPatch({ name: "x", quiet: null, profile: "p", model: "m" }), { shared: { name: "x", quiet: null }, own: { profile: "p", model: "m" } });
 });

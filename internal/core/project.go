@@ -38,6 +38,9 @@ type Project struct {
 	// 0033): records with one link are one project to the owner. "" is an
 	// ordinary project. Each record stays its own host's.
 	Link string `json:"link,omitempty"`
+	// SharedAt stamps the values the members share: name, colour, glyph icon
+	// and quiet hours. The newest stamp in a link wins (decision 0033).
+	SharedAt time.Time `json:"sharedAt,omitzero"`
 }
 
 // ProjectSetup is a project setup run (V0.116): the thread it runs in, when
@@ -192,6 +195,9 @@ const (
 	// {id, link}; "" unlinks. It is a kind of its own so that a host too old
 	// to keep a link refuses it, where project.update would ignore the field.
 	KindProjectLink = "project.link"
+	// KindProjectShared stores the values a link's members share: args {id,
+	// link, at, name, color, icon, quiet}. An older stamp changes nothing.
+	KindProjectShared = "project.shared"
 )
 
 // ValidLink reports whether s is a link id: l_ and 16 to 32 hex digits.
@@ -222,6 +228,7 @@ func init() {
 			return Result{Events: []Event{{"project.setupRun", map[string]any{"thread": a.Str("thread"), "error": a.Str("error")}}}, Reply: map[string]any{"id": r.P.ID, "thread": a.Str("thread")}}, nil
 		}},
 		{Name: KindProjectLink, On: RecProject, From: ownerOnly, Reduce: reduceProjectLink},
+		{Name: KindProjectShared, On: RecProject, From: ownerOnly, Reduce: reduceProjectShared},
 		{Name: KindProjectMatched, From: observed, Untouched: true, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
 			a, err := argsOf[ProjectMatch](in)
 			if err == nil {
@@ -337,6 +344,36 @@ func reduceProjectLink(r Rec, in Input, _ time.Time) (Result, error) {
 	}
 	p.Link = link
 	return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID, "link": link}}, nil
+}
+
+// reduceProjectShared takes a link's shared values when they are newer than
+// the record's. Only those four fields can change here.
+func reduceProjectShared(r Rec, in Input, now time.Time) (Result, error) {
+	a := mapArgs(in)
+	p := r.P
+	if l := a.Str("link"); l == "" || l != p.Link {
+		return Result{}, reject(RejectBadArgs, "project %s is not in link %s", p.ID, l)
+	}
+	at, err := time.Parse(time.RFC3339Nano, a.Str("at"))
+	if err != nil {
+		return Result{}, reject(RejectBadArgs, "at must be a time")
+	}
+	if !at.After(p.SharedAt) {
+		return Result{Reply: map[string]any{"id": p.ID, "kept": true}}, nil
+	}
+	shared := Args{}
+	for _, k := range []string{"name", "color", "icon", "quiet"} {
+		if v, ok := a[k]; ok {
+			shared[k] = v
+		}
+	}
+	in.Args = shared
+	res, err := reduceProjectUpdate(r, in, now)
+	if err != nil {
+		return Result{}, err
+	}
+	p.SharedAt = at
+	return res, nil
 }
 
 // reduceProjectSetup is the setup agent's fields (V0.116): each one the

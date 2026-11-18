@@ -612,6 +612,8 @@ export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
         {...p}
         profiles={profiles}
         linked={!!p.linking?.group.members}
+        shown={p.linking?.group.members ? p.linking.group : undefined}
+        imageTargets={(p.linking?.group.members ?? [p.project]).filter((m) => hs.hosts?.find((h) => h.id === m.hostId)?.online !== false)}
         host={
           chip && (
             <Group title="Host" label="Host">
@@ -724,7 +726,9 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
   );
 }
 
-function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0033: other hosts have this project too */ linked?: boolean }) {
+function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked, shown, imageTargets }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0033: other hosts have this project too */ linked?: boolean; /** decision 0033: the linked project, whose shared values this page shows */ shown?: Project; /** decision 0033: the records an image goes to: every online member */ imageTargets: Project[] }) {
+  // Decision 0033: name, colour, icon and quiet hours are the link's; the rest of the page is this host's record.
+  if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, image: shown.image, imageFrom: shown.imageFrom };
   const env = useSet();
   const api = useApi();
   const ask = useAsk();
@@ -756,15 +760,17 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
     const bad = iconFileError(f);
     if (bad) return err("icon", bad);
     setBusy(true);
-    const r = await api.uploadProjectIcon(project.hostId ?? "", project.id, f);
+    const rs = await Promise.all(imageTargets.map((m) => api.uploadProjectIcon(m.hostId ?? "", m.id!, f)));
     setBusy(false);
-    err("icon", r.ok ? null : (r.error ?? "The upload did not work"));
-    if (r.ok) env.saved();
+    const bad2 = rs.find((r) => !r.ok);
+    err("icon", bad2 ? (bad2.error ?? "The upload did not work") : null);
+    if (!bad2) env.saved();
   };
   const removeImage = async () => {
-    const r = await api.command(project.hostId ?? "", "project.update", undefined, { id: project.id, image: "" });
-    err("icon", r.ok ? null : (r.error ?? "That did not work"));
-    if (r.ok) env.saved();
+    const rs = await Promise.all(imageTargets.map((m) => api.command(m.hostId ?? "", "project.update", undefined, { id: m.id, image: "" })));
+    const bad2 = rs.find((r) => !r.ok);
+    err("icon", bad2 ? (bad2.error ?? "That did not work") : null);
+    if (!bad2) env.saved();
   };
   const setup = async () => {
     setBusy(true);

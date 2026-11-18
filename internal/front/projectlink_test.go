@@ -140,3 +140,62 @@ func TestProjectLinkOldHost(t *testing.T) {
 		t.Fatalf("words: %q", msg)
 	}
 }
+
+func projectNamed(h *settingsHost, ref string) (name, color string) {
+	for _, p := range h.eng.Projects() {
+		if strings.HasSuffix(ref, "/"+p.ID) {
+			return p.Name, p.Color
+		}
+	}
+	return "", ""
+}
+
+// Decision 0033, slice 2: a new link takes the first project's values, an edit
+// reaches every member, and a member that was offline catches up.
+func TestProjectSharedValues(t *testing.T) {
+	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
+	hosts := []HostConfig{{Name: "a", URL: a.hs.URL}, {Name: "b", URL: b.hs.URL}}
+	f, g := newFront(t, hosts...), newFront(t, hosts...)
+	online(t, f.URL, 2)
+	online(t, g.URL, 2)
+	onA, onB := projectOn(t, f.URL, a, "TEST-A", "Fyr"), projectOn(t, f.URL, b, "TEST-B", "fyr-mac")
+	code, rep := linkCmd(t, f.URL, "l", onA, onB)
+	if code != 200 {
+		t.Fatalf("link: %d %v", code, rep)
+	}
+	link, _ := rep["result"].(map[string]any)["link"].(string)
+	if n, _ := projectNamed(b, onB); n != "Fyr" {
+		t.Fatalf("b's name after linking: %q", n)
+	}
+	eventually(t, "front sees both", func() bool { return frontSees(t, f.URL, onA, link) && frontSees(t, f.URL, onB, link) })
+	shared := func(front, id, args string) (int, map[string]any) {
+		return post(t, front+"/api/front/command", fmt.Sprintf(`{"commandId":%q,"action":"front.projectShared","args":{"link":%q,%s}}`, id, link, args))
+	}
+	if code, rep := shared(f.URL, "bad", `"color":"amber"`); code != 400 {
+		t.Fatalf("a bad colour: %d %v", code, rep)
+	}
+	if code, rep := shared(f.URL, "s1", `"name":"Fyr 2","color":"teal"`); code != 200 || rep["ok"] != true {
+		t.Fatalf("shared: %d %v", code, rep)
+	}
+	for _, h := range []*settingsHost{a, b} {
+		ref := onA
+		if h == b {
+			ref = onB
+		}
+		if n, c := projectNamed(h, ref); n != "Fyr 2" || c != "teal" {
+			t.Fatalf("after the edit: %q %q", n, c)
+		}
+	}
+	// B is away for an edit made through the other front.
+	b.setDown(true)
+	eventually(t, "b offline", func() bool { return getState(t, g.URL).Hosts[1]["online"] == false })
+	eventually(t, "g has the stamp", func() bool {
+		code, _ := shared(g.URL, probe(), `"name":"While away"`)
+		return code == 200
+	})
+	if n, _ := projectNamed(b, onB); n != "Fyr 2" {
+		t.Fatalf("an offline host changed: %q", n)
+	}
+	b.setDown(false)
+	eventually(t, "b catches up", func() bool { n, c := projectNamed(b, onB); return n == "While away" && c == "teal" })
+}

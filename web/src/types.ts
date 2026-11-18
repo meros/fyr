@@ -234,6 +234,10 @@ export interface Project {
   folder?: string;
   /** Decision 0033: records on several hosts with one link are one project */
   link?: string;
+  /** Decision 0033: when the values the members share were set; the newest wins */
+  sharedAt?: string;
+  /** Decision 0033: the client's: the member whose image a linked project shows */
+  imageFrom?: { id: string; hostId: string };
   /** Decision 0033: the client's: every record of a linked project, the one shown first; absent on any other project */
   members?: Project[];
   profile?: string;

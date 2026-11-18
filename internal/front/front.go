@@ -167,6 +167,8 @@ type Front struct {
 	hosts hostOrder
 	// marks are the owner's host marks as this front last set them (V0.171).
 	marks hostMarks
+	// linkSync: shared values of linked projects already sent (decision 0033).
+	linkSync map[string]bool
 }
 
 // link is a front's connection to one host and its cache of that host's
@@ -618,6 +620,7 @@ func (f *Front) load(l *link, st map[string]any) {
 	}
 	f.catchUpLocked(l)      // V0.132
 	f.catchUpMarksLocked(l) // V0.171
+	f.syncLinksLocked()     // decision 0033
 	f.publishHostsLocked()
 }
 
@@ -687,6 +690,7 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 			l.projects = append([]map[string]any{sp}, l.projects...)
 		}
 		l.dirty = true
+		f.syncLinksLocked() // decision 0033
 		f.mu.Unlock()
 		if b, err := json.Marshal(sp); err == nil {
 			f.hub.Publish("project", b)

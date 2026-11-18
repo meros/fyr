@@ -223,6 +223,12 @@ export function createMockApi(scenario: string): Api {
         for (const r of refs) server.command(newCommandId(), "project.link", undefined, { id: r.slice(r.indexOf("/") + 1), link });
         return { ok: true, result: { link, stored: refs, failed: [] } };
       }
+      if (action === "front.projectShared") {
+        const { link, ...vals } = args ?? {};
+        const ids = server.state().projects.filter((p) => p.link === link).map((p) => p.id!);
+        for (const id of ids) server.command(newCommandId(), "project.update", undefined, { id, ...vals });
+        return { ok: true, result: { link, stored: ids, failed: [] } };
+      }
       if (hn.startsWith("\u0000")) return { ok: false, error: `this front follows no host ${host}` };
       // The fixture server places a new thread or project by name (a front without hosts: desk).
       return server.command(newCommandId(), action, threadId, mockHostList().length && hn && !threadId ? { ...(args ?? {}), host: hn } : (args ?? {}));
