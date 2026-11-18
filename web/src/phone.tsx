@@ -49,7 +49,8 @@ import { HostField } from "./host-pick-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
 import { AgentStatus } from "./agent-status.tsx";
 import { COLLAPSED_BY_DEFAULT, FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
-import { NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON } from "./row-ui.tsx";
+import { HeldTitle, NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, sectionHead } from "./row-ui.tsx";
+import { foldedRow } from "./selection.ts";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import { QuotaList } from "./quota-ui.tsx";
@@ -162,6 +163,8 @@ export interface PhoneOpen {
 
 /** The inbox list's own state: open and expanded sections, selection mode and the picked rows. */
 export interface PhoneList {
+  /** V0.186: the current thread (the open one, else the last one open); its folded section's header is marked */
+  current: string | null;
   sectionOpen: Partial<Record<SectionKey, boolean>>;
   setSectionOpen(fn: (o: Partial<Record<SectionKey, boolean>>) => Partial<Record<SectionKey, boolean>>): void;
   expanded: Partial<Record<SectionKey, boolean>>;
@@ -369,7 +372,7 @@ function MInbox(p: PhoneProps) {
   };
 
   const jump = (k: SectionKey) => {
-    p.list.setSectionOpen((o) => ({ ...o, [k]: true }));
+    p.list.setSectionOpen((o) => ({ ...o, [k]: true })); // V0.186: the owner named this section
     requestAnimationFrame(() => {
       const el = listRef.current;
       const h = document.getElementById(`m-sec-${k}`);
@@ -383,6 +386,7 @@ function MInbox(p: PhoneProps) {
   // V0.162: the button shows while a merged thread can settle; the bulk settle leaves pinned ones out and counts them.
   const merged = p.inbox.sec.seen.filter((t) => t.pr?.state === "MERGED" && (isPinned(t) || isAvailable(t, "thread.settle")));
   const canSettleMerged = merged.some((t) => !isPinned(t));
+  const holder = foldedRow(p.inbox.sec, p.list.current, p.list.sectionOpen); // V0.186: the thread last open, after Back
 
   return (
     <div class="m-screen">
@@ -492,14 +496,16 @@ function MInbox(p: PhoneProps) {
           const limit = p.list.expanded[s.key] ? list.length : SECTION_LIMIT[s.key];
           const hint = s.key === "working" ? workingHint(list) : s.key === "snoozed" ? snoozedHint(list, p.now) : s.key === "settled" ? "last 24 h" : "";
           const collapsible = list.length > 0 && (COLLAPSED_BY_DEFAULT.includes(s.key) || !open);
+          const held = holder?.section === s.key ? holder.thread : null;
           return (
             <section id={`m-sec-${s.key}`}>
               <div
-                class={`m-sec${collapsible ? (open ? " exp" : " col") : ""}${s.key === "seen" && canSettleMerged && !p.list.selecting ? " hasbtn" : ""}`}
-                onClick={() => list.length && p.list.setSectionOpen((o) => ({ ...o, [s.key]: !isOpen(s.key, o) }))}
+                class={`m-sec${collapsible ? (open ? " exp" : " col") : ""}${s.key === "seen" && canSettleMerged && !p.list.selecting ? " hasbtn" : ""}${held ? " held" : ""}`}
+                {...sectionHead({ label: s.label, n: list.length, open, held, toggle: () => p.list.setSectionOpen((o) => ({ ...o, [s.key]: !isOpen(s.key, o) })) })}
               >
                 {s.label}
                 <span class="n">{stripCount(list.length)}</span>
+                {held && <HeldTitle t={held} />}
                 {s.key === "seen" && canSettleMerged && !p.list.selecting ? (
                   <button
                     class="m-sbtn"
@@ -514,7 +520,7 @@ function MInbox(p: PhoneProps) {
                     Settle merged
                   </button>
                 ) : (
-                  hint && <span class="h ell">{hint}</span>
+                  !held && hint && <span class="h ell">{hint}</span>
                 )}
               </div>
               {open &&
