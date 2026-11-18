@@ -174,6 +174,35 @@ func TestKickBeforeRunIsKept(t *testing.T) {
 	}
 }
 
+// V0.199: Refresh returns after the read is observed, so a merge ask is judged
+// on it; without a running poller it gives up when its context ends.
+func TestRefreshWaitsForTheRead(t *testing.T) {
+	src := &laterSrc{observed: make(chan string, 4)}
+	p := &Poller{Gh: fakeGh(`{"state":"OPEN"}`), Src: src, Interval: time.Hour}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go p.Run(ctx)
+	p.Refresh(ctx, "t1")
+	if ctx.Err() != nil {
+		t.Fatal("Refresh did not return before its context ended")
+	}
+	select {
+	case id := <-src.observed:
+		if id != "t1" {
+			t.Fatal(id)
+		}
+	default:
+		t.Fatal("Refresh returned before the read was observed")
+	}
+}
+
+func TestRefreshGivesUpWithItsContext(t *testing.T) {
+	p := &Poller{Gh: fakeGh(`{"state":"OPEN"}`), Src: &laterSrc{observed: make(chan string, 4)}}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	p.Refresh(ctx, "t1") // nothing runs the poller: this must still return
+}
+
 // V0.72 (1): GitHub's "does not exist" answer is an observation, reported
 // once a second answer a poll later confirms it; a transient error (network,
 // rate limit, 5xx, auth) reports nothing.

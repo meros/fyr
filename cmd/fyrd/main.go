@@ -460,7 +460,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	ghView := func() github.MeterView { v := ghMeter.View(); v.Paused = ghBudget.Paused(); return v }
 	prDetails := &github.Details{Gh: gh} // V0.43: the PR tab's details, cached 30 s
 	poller := &github.Poller{Gh: pollGh, Src: engine.PRWatch{E: eng}}
-	eng.OutsideDeps = engine.OutsideDeps{Effects: engine.Outside{Gh: gh, PR: prDetails, Deploy: dep.Deploy}, OnPR: poller.Kick}
+	eng.OutsideDeps = engine.OutsideDeps{Effects: engine.Outside{Gh: gh, PR: prDetails, Deploy: dep.Deploy}, OnPR: poller.Kick, RefreshPR: poller.Refresh}
 	go poller.Run(ctx)
 	go checkModels(ctx, h.reg) // V0.120: each provider's models, once a day
 	go sampler.Run(ctx)

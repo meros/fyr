@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/mcp"
@@ -14,6 +15,23 @@ import (
 // The change tools of SPEC 0.5 V0.59 (5), decision 0018: one family for every
 // change an agent makes or asks for. Git and GitHub are observed without
 // them; the tools add intent, grouping and asks.
+
+// mergeAskReadWait is how long a merge ask waits for its fresh read of the PR
+// (V0.199); after it, the ask goes by the last read.
+const mergeAskReadWait = 10 * time.Second
+
+// readPRForMergeAsk reads the thread's PRs before an agent's merge ask is
+// judged (V0.199). An agent asks right after it pushes, and the poller's last
+// read can be from before the push: a conflict the push resolved, and the old
+// head the ask would be bound to.
+func (e *Engine) readPRForMergeAsk(ctx context.Context, th string) {
+	if e.RefreshPR == nil {
+		return
+	}
+	c, cancel := context.WithTimeout(ctx, mergeAskReadWait)
+	defer cancel()
+	e.RefreshPR(c, th)
+}
 
 const changeRef = "The change: its id (c_…), its key, its PR URL, owner/repo#N, or #N when one change of this thread has that PR."
 
@@ -168,7 +186,7 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			"args":   map[string]any{"type": "object"},
 			"reason": str("One sentence for the owner: why now."),
 		}, "change", "ask"),
-		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+		Call: func(ctx context.Context, th string, a map[string]any) (string, error) {
 			ask := core.ChangeAsk(sArg(a, "ask"))
 			args, _ := a["args"].(map[string]any)
 			if args == nil {
@@ -176,6 +194,9 @@ func (e *Engine) changeTools(s *mcp.Server) {
 			}
 			if err := canonicalArgs(args); err != nil {
 				return "", err
+			}
+			if ask == core.AskMerge {
+				e.readPRForMergeAsk(ctx, th)
 			}
 			id := NewID("d_")
 			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindChangeRequest, Thread: th,

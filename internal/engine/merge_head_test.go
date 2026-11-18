@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -8,6 +9,46 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
 )
+
+// SPEC V0.199: a merge ask right after a push is judged on a fresh read of the
+// PR. The last read still has the conflict and the old head; the push resolved
+// the one and moved the other.
+func TestMergeAskReadsThePRFirst(t *testing.T) {
+	const oldHead, newHead = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "b2c3d4e5f60718293a4b5c6d7e8f901234567890"
+	for _, tool := range []string{"change_request", "effect_request"} {
+		t.Run(tool, func(t *testing.T) {
+			h := newHarness(t, time.Minute)
+			id := h.create("x")
+			h.wait(id, "done", state(core.Done))
+			url := "https://github.com/acme/app/pull/9"
+			set := func(conflict bool, head string) {
+				coretest.Patch(h.e, id, func(t *core.Thread, now time.Time) []core.Event {
+					core.PRObserved(t, core.PR{URL: url, Repo: "acme/app", Number: 9, State: "OPEN", Checks: "pass", Conflict: conflict, Head: head, MergeState: "CLEAN"}, now)
+					return nil
+				})
+			}
+			set(true, oldHead)
+			c := changeOf(h, id, "pr:acme/app#9")
+			h.e.RefreshPR = func(_ context.Context, th string) {
+				if th == id {
+					set(false, newHead)
+				}
+			}
+			guardDeps(t, h.e) // V0.182: the read runs outside the engine's lock
+			args := map[string]any{"change": c.ID, "ask": "merge", "reason": "pushed the fix"}
+			if tool == "effect_request" {
+				args = map[string]any{"action": core.FyrMerge, "args": map[string]any{"pr": url}}
+			}
+			if out, isErr := callAs(t, h.e, id, tool, args); isErr {
+				t.Fatalf("the ask was refused on the old read: %s", out)
+			}
+			th, _ := h.e.Thread(id)
+			if len(th.Decisions) != 1 || th.Decisions[0].Effect.Args["head"] != newHead {
+				t.Fatalf("the ask is not on the new head: %+v", th.Decisions)
+			}
+		})
+	}
+}
 
 // SPEC V0.97: every merge path carries the head the owner saw. The agent's
 // merge ask fixes the head when it is made and runs with it after the head
