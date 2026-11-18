@@ -1,6 +1,6 @@
 # 0032 Bounded agents: one thread's heavy work cannot starve the host, and the guard says what it did
 
-Date: 2026-11-18 · Status: **slices 1 and 2 are built; the owner accepted the two relaxed V0.164 rules on 18 Nov** (owner, 18 Nov: "Can we protect the daemons from the workloads?", "Be creative - this is such a common problem for me", "Do a real plan and start implementing", "Add relevant logging as well so we can tune this going forward") · Amends V0.164 (7) · Builds on decision 0029 and V0.151
+Date: 2026-11-18 · Status: **slices 1, 2 and 3 are built (3 is off until a share is set); the owner accepted the two relaxed V0.164 rules on 18 Nov** (owner, 18 Nov: "Can we protect the daemons from the workloads?", "Be creative - this is such a common problem for me", "Do a real plan and start implementing", "Add relevant logging as well so we can tune this going forward") · Amends V0.164 (7) · Builds on decision 0029 and V0.151
 
 ## The incident
 
@@ -47,6 +47,17 @@ With 4 M touches, all at once took 40.8 and 45.4 s against 5.3 s one at a time (
 - `memory.reclaim` on the job just frozen, 10 s turns: 56.4 and 58.5 s without, 61.7 and 56.0 s with. No gain; slice 2 does not use it.
 - Lowering `memory.high` under a running 300 MB job (10 M touches, swap available, two runs): unchanged 5.1 and 4.9 s; to 75 % 24.5 and 29.0 s (about 5×); to 50 % 42.1 and 40.8 s (about 8×). Its memory was at the new limit 2 s later and the job finished. Lowering works and is a slowdown, not a hang, as long as swap has room.
 
+### Slice 3 under real cgroups (18 Nov, `TestRealThreadBudget`, not proof of benefit)
+
+`agents/` limited to 1200 MB, a share of 25 % (300 MB), a second thread's small job beside the big work; one run of each load.
+
+| load | small job, no share | small job, share | big work held in memory |
+|---|---|---|---|
+| one 1500 MB job, small job 200 MB | 2.7 s | 1.9 s | 1006 → 299 MB |
+| four 500 MB jobs, small job 250 MB | 18.3 s | 17.1 s | 1000 → 300 MB |
+
+A repeat of the second load gave 17.7 s without and 16.5 s with the share. The share slowed the big work 1.7 times in the first run of that load and 1.1 times in the repeat, so that cost is not settled either. The limit is enforced, but these runs did not show that it protects another thread: the small job was never timed alone, so how much the neighbour hurt it is unknown. The owner chose to build it anyway and tune it from the log (18 Nov: "make sure we can tune and tweak from logs later"). Measure first: the share is off by default, and the log reports what it would meet.
+
 ### Slice 2 under real pressure (18 Nov, `TestRealGuardTakesTurns`)
 
 The guard's engine at its 10 s tick and the real cgroup code in a delegated service, `agents/` limited to 450 MB, one runner with four 300 MB children. Without the guard the jobs had not finished after 4 minutes and had read back 163.9 GB. With it they finished in 77 s, read back 3.9 GB, all four had a turn, and at no tick did two run at once. One run. The test sets "memory is short" itself and the jobs are synthetic, so it proves what the guard does once it acts, not when a real stall makes it act.
@@ -57,7 +68,7 @@ Bound the work, not only the daemon. In four layers, built in slices, each testa
 
 1. **The guard keeps acting (slice 1, built).** The freeze is a time slice of a long episode, not a once-only verdict. Rules in V0.188 below. Every decision leaves a log line with the signals it acted on.
 2. **Freeze by part, rotate by measured turn (slice 2, built).** When the guard freezes undeclared work with two or more heavy parts, one part runs and the others are frozen, each in `undeclared/u<pid>/`. A part is found by walking down from each root to where the memory fans out (at least 10 % of the subtree per child), because a runner such as `turbo` is one root with several heavy children; a root-level split would not have helped in the incident. The runner itself keeps running. A turn lasts 3 × (the next part's resident size ÷ the read-back rate measured in the last turn), at least 30 s and at most 2 min, and ends early when its part ended. The trigger is the guard's existing one, not a new per-thread signal.
-3. **A small default budget per thread, a reservation raises it (slice 3).** Each thread's cgroup gets `memory.high` of about 12 % of the agents' budget (a share, never a number: decision 0029 section 0). A slot reservation (`slot_acquire`) raises it live to the class's learned peak and the release lowers it again. Past the reservation a job is throttled, and `memory.max` at the old ceiling is the fast failure. The livelock case (high with no swap) is avoided by the rule that the thread's swap share is never below its high.
+3. **A default budget per thread, a slot raises it (slice 3, built, off until the owner sets a share).** With `threadMemoryHighPercent` set, each thread's `memory.high` is that share of the agents' budget (a share, never a number: decision 0029 section 0). A slot raises it live by 1.25 × the job class's learned peak, and the release lowers it; a job of unknown size runs without a limit of the thread's own. The livelock case (high with no swap) is avoided by lifting every thread's limit while the agents' swap is at 90 % of its cap. No thread `memory.max`: a job is slowed, never killed by this.
 4. **The machine backstop (slice 0, in the NixOS repo).** `agentBudget.pressureLimit` 80 → 70 so systemd-oomd kills the heaviest agent cgroup within about 20 s of a stall like this one (50 % was too eager on 17 Nov, 80 % never fired at 75 %).
 
 Not chosen: a fixed small `memory.max` per thread (kills the agent CLI when the OOM killer picks it); SIGSTOP of single processes (misses children born later, and a stopped process keeps its pages until reclaim takes them); more slots (the incident had no slot).
@@ -71,7 +82,7 @@ Not chosen: a fixed small `memory.max` per thread (kills the agent CLI when the 
 | 1b | V0.188: `slots.guard` in `/api/load`; the row's words and Settings → Automation → Memory guard (chart, summary, last decisions) on the desktop and the phone | built (this PR) |
 | 1c | V0.191: the second freeze of an episode works (slice 1 could not re-freeze on a real cgroup) | built |
 | 2 | V0.194: parts of the work in their own cgroups, turns of a measured length | built |
-| 3 | per-thread `memory.high` share, reservation raises it, `/api/load` shows it | not started: wait for the guard's first real stall, the share would limit every thread |
+| 3 | V0.198: per-thread `memory.high` share, a slot raises it, `/api/load` shows it, the log measures it even while off | built, off by default |
 | 4 | tune from the log (below) | ongoing |
 
 ## What the log gives for tuning
@@ -82,5 +93,11 @@ Every line starts with `guard:` in `fyrd`'s log (`journalctl -u fyr | grep guard
 - `thawed …`: how long it was frozen and why (memory fine for 30 s, its processes are gone, the 10 min limit, the episode ended).
 - `not freezing …` and `could not freeze …`: the reason, once a minute at most.
 - `taking turns …` and `turn …`: the parts, whose turn it is, its memory, the turn's length and the read-back rate it was measured from.
+
+- `budget limit`: a thread's `memory.high` changed: the new and old value, why (`share`, `slot`, `slot-unknown-size`, `slot-fills-budget`, `swap-full`, `off`), the job's learned peak and the thread's memory.
+- `budget over` (once a minute per thread): working memory (without inactive file cache) over the limit, or with `mode=shadow` over the 12 % a share would give while the share is off: working, memory, limit, swap, read-back rate, `memory.events` high count since the last line, the thread's memory PSI, and its slot.
+- `budget summary` (once a minute while someone is over): the mode, share, budget, how many threads are limited and over, and the agents' memory and swap. `budget limits lifted/back`: the swap valve.
+
+Questions for the share: in `mode=shadow`, which threads would be over, how often, and are they the ones that hurt others (compare with `memory short` lines)? Once on: does `psi_full` of an over thread stay tolerable, do `memory short` episodes get rarer, how often do the limits lift, and does a known job still hit its raised limit (then `holdMargin` is too small)?
 
 Questions the log should answer: how long does a slice need (time from freeze to thaw to refreeze against the swap-in rate); how often does the cap of 8 hit; does a freeze ever release memory (compare headroom at the freeze and at the thaw).

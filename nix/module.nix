@@ -23,7 +23,7 @@ let
     # V0.80: fyrd splits the unit's cgroup and writes this budget itself.
     cgroups = {
       enable = true;
-      inherit (cfg.cgroups) serverMemoryLow agentsMemoryHigh agentsMemoryMax agentsMemorySwapMax;
+      inherit (cfg.cgroups) serverMemoryLow agentsMemoryHigh agentsMemoryMax agentsMemorySwapMax threadMemoryHighPercent;
       agentsCpuMax = "${toString (cfg.cgroups.agentsCpuCores * 100000)} 100000";
     };
   } // lib.optionalAttrs (cfg.role != "both") { role = cfg.role; }
@@ -269,6 +269,14 @@ in
         type = lib.types.str;
         default = "14G";
         description = "memory.max of agents/: the kernel OOM-kills an agent process past it. Keep the gap to memoryHigh narrow.";
+      };
+      threadMemoryHighPercent = lib.mkOption {
+        type = lib.types.ints.between 0 100;
+        default = 0;
+        description = ''
+          memory.high of each thread as a share of agentsMemoryHigh, 0 for none.
+          A slot raises it by what the job is known to need (decision 0032).
+        '';
       };
       agentsMemorySwapMax = lib.mkOption {
         type = lib.types.str;

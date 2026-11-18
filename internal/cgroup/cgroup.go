@@ -38,6 +38,9 @@ type Budget struct {
 	AgentsMemoryHigh    string `json:"agentsMemoryHigh"`
 	AgentsMemoryMax     string `json:"agentsMemoryMax"`
 	AgentsMemorySwapMax string `json:"agentsMemorySwapMax"`
+	// ThreadMemoryHighPercent: each thread's memory.high as a share of the
+	// agents' budget, 0 for none (decision 0032 slice 3).
+	ThreadMemoryHighPercent int `json:"threadMemoryHighPercent"`
 }
 
 // Options are the Budget and where to find things; tests point FS and Self
@@ -73,6 +76,13 @@ type Tree struct {
 	// beat (V0.85); raised: the cgroups written at focusWeight.
 	focus  map[string]focusBeat
 	raised map[string]bool
+	// Decision 0032 slice 3: the thread share, and whether a nearly full swap
+	// has lifted it (budgetLifted under mu).
+	threadPercent int
+	budgetLifted  bool
+	budgetSeen    map[string]budgetSeen // under mu: what the guard's log remembers
+	budgetSummary time.Time             // under mu: the last summary line
+	budgetNow     func() time.Time      // tests; nil is time.Now
 }
 
 type focusBeat struct {
@@ -163,7 +173,7 @@ func setup(o Options) (*Tree, error) {
 	if err := put(root, "cgroup.subtree_control", controllers); err != nil {
 		return nil, fmt.Errorf("enable controllers: %w", err)
 	}
-	t := &Tree{root: root, logf: o.Logf, refs: map[string]int{}, focus: map[string]focusBeat{}, raised: map[string]bool{}}
+	t := &Tree{root: root, logf: o.Logf, refs: map[string]int{}, focus: map[string]focusBeat{}, raised: map[string]bool{}, threadPercent: min(max(o.ThreadMemoryHighPercent, 0), 100)}
 	var bad []string
 	set := func(dir, file, v string) {
 		if v == "" {
