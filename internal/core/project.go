@@ -256,7 +256,16 @@ func reduceProjectCreate(r Rec, in Input, now time.Time) (Result, error) {
 	}
 	p.Color, p.Icon, p.CreatedAt, p.Edited = DefaultColor(p.Name), Icon{Kind: "monogram"}, now, true
 	p.By = map[string]string{SetupColor: "", SetupImage: ""}
-	p.By[SetupName] = p.SetBy(SetupName) // V0.116: a folder's name is a placeholder
+	p.By[SetupName] = p.SetBy(SetupName)   // V0.116: a folder's name is a placeholder
+	if link := a.Str("link"); link != "" { // decision 0034: made as a member of a link
+		if !ValidLink(link) {
+			return Result{}, reject(RejectBadArgs, "link must be l_ and 16 to 32 hex digits")
+		}
+		p.Link = link
+		for _, f := range SetupFields {
+			p.By[f] = ByOwner
+		}
+	}
 	res := Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID}}
 	if tid := a.Str("threadId"); tid != "" {
 		res.Follow = []Input{{Source: in.Source, Kind: "thread.setProject", Thread: tid, Args: Args{"projectId": p.ID}}}

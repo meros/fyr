@@ -236,6 +236,7 @@ export interface PhoneProps {
     /** Decision 0034 */
     link(id: string, other: string): Promise<string | null>;
     unlink(id: string): Promise<string | null>;
+    add(id: string, host: string, folder: string): Promise<{ error: string | null; id?: string }>;
   };
   actions: PhoneActions;
   /** V0.119: a Settings screen (the app builds it with its Api): the nav (null) or a page, under this header */
@@ -1155,7 +1156,7 @@ function MAllow({ d, t, host, collapsed, onCollapse, commit }: { d: Decision; t:
 /** SPEC 0.5 V0.30: Project first; the folder follows from the project's folder on this host, else it is asked.
  *  #41: the state is useNewThreadForm's, shared with the desktop dialog. */
 function MNew(p: PhoneProps) {
-  const n = useNewThreadForm({ projects: p.store.projects, profiles: p.store.profiles, hosts: p.store.hosts, projectFilter: p.filter.id, clockOffset: p.store.clockOffset, onCreate: p.actions.create, onNewProject: (name, folder, host) => p.projectActions.create(name, folder, [], host) });
+  const n = useNewThreadForm({ onAddProject: p.projectActions.add, projects: p.store.projects, profiles: p.store.profiles, hosts: p.store.hosts, projectFilter: p.filter.id, clockOffset: p.store.clockOffset, onCreate: p.actions.create, onNewProject: (name, folder, host) => p.projectActions.create(name, folder, [], host) });
   const { form: f, cur, chip, folder, profiles, att } = n;
   const ta = useRef<HTMLTextAreaElement>(null);
   const ready = n.plan.ok;
@@ -1206,6 +1207,11 @@ function MNew(p: PhoneProps) {
                 extra={<QuietHold {...n.quiet} />}
               />
             </div>
+          )}
+          {n.missing && (
+            <button class="btn" onClick={() => void n.addHere()}>
+              Add {n.missing.name} on {n.host}…
+            </button>
           )}
           {f.creating !== null && (
             <div class="m-pickpanel">
@@ -1628,7 +1634,7 @@ function MProject(p: PhoneProps & { id: string }) {
         {pr ? (
           <ProjectEditor
             project={pr}
-            linking={group && linkingFor(group, p.allProjects, p.projectActions, (id) => p.nav.replace({ screen: { name: "project", id }, sheet: null }))}
+            linking={group && linkingFor(group, p.allProjects, { ...p.projectActions, add: async (id, host, folder) => (await p.projectActions.add(id, host, folder)).error }, (id) => p.nav.replace({ screen: { name: "project", id }, sheet: null }))}
             profiles={p.store.profiles}
             now={p.now}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}

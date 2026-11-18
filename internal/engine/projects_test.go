@@ -563,3 +563,16 @@ func TestProjectInputOnPath(t *testing.T) {
 		t.Fatalf("an unknown thread: %+v, %d projects", r, len(h.e.Projects()))
 	}
 }
+
+// Decision 0034: a project says its folder's origin, read without running git.
+func TestProjectRepo(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[core]\n\turl = no\n[remote \"upstream\"]\n\turl = git@github.com:x/other.git\n[remote \"origin\"]\n\turl = git@github.com:x/fyr.git\n"), 0o644)
+	if got, want := originOf(filepath.Join(dir, ".git", "config")), "github.com/x/fyr"; got != want {
+		t.Fatalf("origin %q, want %q", got, want)
+	}
+	if got := originOf(filepath.Join(dir, "missing")); got != "" {
+		t.Fatalf("no config: %q", got)
+	}
+}

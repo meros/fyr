@@ -106,6 +106,7 @@ export interface ProjectActions {
   /** Decision 0034: linked projects; the error, or null */
   link(id: string, other: string): Promise<string | null>;
   unlink(id: string): Promise<string | null>;
+  add(id: string, host: string, folder: string): Promise<string | null>;
 }
 
 export interface SettingsProps {

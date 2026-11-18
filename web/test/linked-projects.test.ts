@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectIconUrl, splitSharedPatch, expandOrder, findProject, linkCandidates, linkProjects, memberOn, projectOf, projectRecords, projectSubtitle, recordOf } from "../src/projects.ts";
+import { addHosts, sameRepo, projectIconUrl, splitSharedPatch, expandOrder, findProject, linkCandidates, linkProjects, memberOn, projectOf, projectRecords, projectSubtitle, recordOf } from "../src/projects.ts";
 import { applySnapshot, initialStore, setHosts, setProjectOrder, stateForCache, upsertProject } from "../src/store.ts";
 import { activeFilters, applyFilters, liveProject } from "../src/filters.ts";
 import { chooseHost, initialForm, settleForm } from "../src/new-thread.ts";
@@ -124,4 +124,15 @@ test("hiding: any member's id hides the linked project, and a hidden host takes 
   assert.deepEqual(setProjectShown(hidden, projects[0], true).projects, [], "showing it clears whichever member was stored");
   const noB = applyHidden(s, { hosts: ["B"], projects: [] }).projects;
   assert.deepEqual(noB.map((p) => [p.id, !!p.members]), [[fyrA.id, false]]);
+});
+
+test("the same repository comes first among what can join, and only a host without the project can get it", () => {
+  const mine = rec("A", "p1", "Fyr", { repo: "github.com/x/fyr" });
+  const twin = rec("B", "p7", "Other name", { repo: "github.com/x/fyr" });
+  const ps = linkProjects([mine, other, twin], [A, B]);
+  assert.deepEqual(linkCandidates(mine, ps).map((p) => p.id), [twin.id, other.id]);
+  assert.ok(sameRepo(mine, twin));
+  assert.ok(!sameRepo(rec("A", "x", "x"), rec("B", "y", "y")), "no repository is no match");
+  assert.deepEqual(addHosts(mine, [A, B, host("C", "off", false)]).map((h) => h.id), ["B"]);
+  assert.deepEqual(addHosts(linkProjects([fyrA, fyrB], [A, B])[0], [A, B]), []);
 });

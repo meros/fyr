@@ -223,6 +223,16 @@ export function createMockApi(scenario: string): Api {
         for (const r of refs) server.command(newCommandId(), "project.link", undefined, { id: r.slice(r.indexOf("/") + 1), link });
         return { ok: true, result: { link, stored: refs, failed: [] } };
       }
+      if (action === "front.projectAdd") {
+        const from = String(args?.ref ?? "");
+        const source = server.state().projects.find((p) => p.id === from.slice(from.indexOf("/") + 1));
+        const link = source?.link ?? "l_0123456789abcdef";
+        server.command(newCommandId(), "project.link", undefined, { id: source?.id, link });
+        const made = server.command(newCommandId(), "project.create", undefined, { name: source?.name, folder: args?.folder, host: nameOf(String(args?.host ?? "")) });
+        const id = (made as { result?: { id?: string } }).result?.id ?? "";
+        server.command(newCommandId(), "project.link", undefined, { id, link });
+        return { ok: true, result: { link, id: `${args?.host}/${id}` } };
+      }
       if (action === "front.projectShared") {
         const { link, ...vals } = args ?? {};
         const ids = server.state().projects.filter((p) => p.link === link).map((p) => p.id!);
