@@ -365,7 +365,8 @@ Both reply at once; the result arrives as an `effect.result` event with `"by": "
 
 - Stream `event: stall` `data: {"at", "what", "file", "exiting"}`: the host's watchdog saw a watched lock held, or a request running, past its limit (`what` names the longest holder; `file` is the goroutine dump on that host). A front adds `"host"`.
 - `GET /api/state` has `stall` (a host's newest stall of the last 24 h, absent without one); a front's state has `stalls: [{…, "host"}]`, one per host.
-- A request other than the stream, `/mcp`, attachments, previews and update files answers `503` with `{"error": "Fyr did not answer in time: …"}` after 10 s (GET, HEAD) or 60 s (other methods).
+- A request other than the stream, `/mcp`, attachments, previews and update files answers `503` with `{"ok": false, "error": "Fyr did not answer in time: …", "code": "host-stalled"}` after 10 s (GET, HEAD) or 60 s (other methods).
+- V0.181: a front that gets that 503 from a host, or a `stall` frame, asks the host for its state; while it gets no answer the host is offline (`hosts[].online: false`, `hosts[].error: "stalled: …"`, a link error of kind `stalled`) and is served from the front's cache, as a host that went away. It is online again when it answers.
 
 ## Providers (SPEC 0.5 V0.50)
 
