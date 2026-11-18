@@ -205,38 +205,51 @@ var setupWords = map[string]string{core.SetupName: "name", core.SetupColor: "col
 
 func (e *Engine) setupTools(s *mcp.Server) {
 	s.Add(mcp.Tool{Name: "project_setup",
-		Description: "Fill in a Fyr project's identity: its icon image, colour and name. Fyr fills only the fields the owner has not set and says which it kept. " +
-			"icon is a full path to an image file or an https URL of the project's own branding (PNG, JPEG or GIF, at most 2 MB; Fyr makes it square, scales it and strips its metadata; local network addresses are refused). " +
-			"Without color Fyr takes the colour from the icon. project is the project's id or name; default this thread's project.",
+		Description: "Set a Fyr project's identity from any thread: its icon image, colour and name. Use it when the owner asks (\"change the icon to this one\") and pass ownerAsked. Without ownerAsked Fyr fills only the fields the owner has not set and says which it kept. " +
+			"icon is a full path to an image file (an attachment's path works) or an https URL (PNG, JPEG or GIF, at most 2 MB; Fyr makes it square, scales it and strips its metadata; local network addresses are refused). " +
+			"Without color Fyr takes the colour from the icon, unless the owner chose one. project is the id or name of a project on this host; default this thread's project.",
 		Schema: obj(map[string]any{
-			"project": str("The project's id or name; default this thread's project."),
-			"icon":    str("A full path to an image file, or an https URL."),
-			"name":    str("The project's real name, when it has only its folder's name."),
-			"color":   map[string]any{"type": "string", "enum": core.Palette, "description": "A palette colour; default the icon's main colour."},
+			"project":    str("The project's id or name; default this thread's project."),
+			"icon":       str("A full path to an image file, or an https URL."),
+			"name":       str("The project's real name, when it has only its folder's name, or the name the owner asked for."),
+			"color":      map[string]any{"type": "string", "enum": core.Palette, "description": "A palette colour; default the icon's main colour."},
+			"ownerAsked": map[string]any{"type": "boolean", "description": "The owner's newest message in this thread asks for exactly this change. The values then replace the owner's and become theirs. Refused when the newest message is not the owner's own."},
 		}),
 		Call: func(ctx context.Context, self string, a map[string]any) (string, error) {
+			th, inThread := e.Thread(self)
+			asked, _ := a["ownerAsked"].(bool)
+			if asked && (!inThread || th.LastAsker == "") {
+				return "", errors.New("ownerAsked needs the newest message in this thread to be the owner's own; it is not, so ask the owner")
+			}
 			key := sArg(a, "project")
-			if key == "" {
-				if t, ok := e.Thread(self); ok {
-					key = t.ProjectID
-				}
+			if key == "" && inThread {
+				key = th.ProjectID
 			}
 			if key == "" {
 				return "", errors.New("this thread has no project; name one with project")
 			}
 			p, ok := e.findProject(key)
 			if !ok {
-				return "", fmt.Errorf("no project %q", key)
+				return "", fmt.Errorf("no project %q on this host", key)
 			}
-			args := core.Args{"id": p.ID}
+			// args go in as the agent's and keep the owner's values; owner are what the owner asked for
+			// here; shared are those of a linked project, which the front passes to its other hosts.
+			args, owner, shared := core.Args{"id": p.ID}, core.Args{"id": p.ID}, core.Args{"id": p.ID, "link": p.Link}
+			var kept []string
 			for _, k := range []string{"name", "color"} {
-				if v := sArg(a, k); v != "" {
+				v := sArg(a, k)
+				switch {
+				case v == "":
+				case !asked:
 					args[k] = v
+				case p.Link != "":
+					shared[k] = v
+				default:
+					owner[k] = v
 				}
 			}
-			var kept []string
 			if src := sArg(a, "icon"); src != "" {
-				if err := core.CanWrite(core.FieldProjectImage, core.ByAgent, p.SetBy(core.SetupImage), "its icon"); err != nil {
+				if err := core.CanWrite(core.FieldProjectImage, core.ByAgent, p.SetBy(core.SetupImage), "its icon"); err != nil && !asked {
 					kept = append(kept, core.SetupImage)
 				} else {
 					if e.Icons == nil {
@@ -254,36 +267,70 @@ func (e *Engine) setupTools(s *mcp.Server) {
 					if err != nil {
 						return "", err
 					}
-					args["image"] = v
-					if _, given := args["color"]; !given && p.SetBy(core.SetupColor) != core.ByOwner {
+					if asked {
+						owner["image"] = v
+					} else {
+						args["image"] = v
+					}
+					if sArg(a, "color") == "" && p.SetBy(core.SetupColor) != core.ByOwner {
 						args["color"] = projicon.MainColor(img)
 					}
 				}
 			}
-			if len(args) == 1 && len(kept) == 0 {
+			if len(args) == 1 && len(owner) == 1 && len(shared) == 2 && len(kept) == 0 {
 				return "", errors.New("give icon, name or color")
 			}
-			var set []string
+			var parts []string
+			say := func(f string, vals core.Args) {
+				w := setupWords[f]
+				switch f {
+				case core.SetupColor:
+					w += " (" + vals.Str("color") + ")"
+				case core.SetupName:
+					w += fmt.Sprintf(" (%q)", vals.Str("name"))
+				}
+				parts = append(parts, w)
+			}
+			if len(owner) > 1 {
+				r := e.applyProject(core.Input{Source: core.FromOwner, Kind: core.KindProjectUpdate, Args: owner, CmdID: NewID("agent_"), Actor: th.LastAsker})
+				if !r.OK {
+					return "", errors.New(r.Error)
+				}
+				for _, f := range core.SetupFields {
+					if _, ok := owner[f]; ok {
+						say(f, owner)
+					}
+				}
+			}
+			if len(shared) > 2 {
+				// Decision 0034: the newest stamp in a link wins, and the front sends it to the other members.
+				at := e.Now().UTC()
+				if !at.After(p.SharedAt) {
+					at = p.SharedAt.Add(time.Millisecond)
+				}
+				shared["at"] = at.Format(time.RFC3339Nano)
+				r := e.applyProject(core.Input{Source: core.FromOwner, Kind: core.KindProjectShared, Args: shared, CmdID: NewID("agent_"), Actor: th.LastAsker})
+				if !r.OK {
+					return "", errors.New(r.Error)
+				}
+				for _, f := range core.SetupFields {
+					if _, ok := shared[f]; ok {
+						say(f, shared)
+					}
+				}
+			}
 			if len(args) > 1 {
 				r := e.applyProject(core.Input{Source: core.FromAgent, Kind: core.KindProjectSetup, Args: args, CmdID: NewID("agent_")})
 				if !r.OK {
 					return "", errors.New(r.Error)
 				}
 				res, _ := r.Result.(map[string]any)
-				set, _ = res["set"].([]string)
+				set, _ := res["set"].([]string)
+				for _, f := range set {
+					say(f, args)
+				}
 				k, _ := res["kept"].([]string)
 				kept = append(kept, k...)
-			}
-			var parts []string
-			for _, f := range set {
-				w := setupWords[f]
-				switch f {
-				case core.SetupColor:
-					w += " (" + args.Str("color") + ")"
-				case core.SetupName:
-					w += fmt.Sprintf(" (%q)", args.Str("name"))
-				}
-				parts = append(parts, w)
 			}
 			out := ""
 			if len(parts) > 0 {
@@ -295,6 +342,9 @@ func (e *Engine) setupTools(s *mcp.Server) {
 					ks = append(ks, setupWords[f])
 				}
 				out = strings.TrimSpace(out + " Kept the " + strings.Join(ks, ", ") + ": the owner set it.")
+			}
+			if _, image := owner["image"]; p.Link != "" && (image || len(shared) > 2) {
+				out += " This project is linked across hosts: its other hosts follow when Fyr's front next hears from them. The image stays on this host and shows while this host is online."
 			}
 			return out, nil
 		}})

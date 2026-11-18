@@ -28,6 +28,9 @@ type Project struct {
 	// Image is the version of the project's image icon (V0.116), served at
 	// /api/projects/<id>/icon; "" draws Icon, the glyph, in Color.
 	Image string `json:"image,omitempty"`
+	// ImageAt is when Image was set: a linked project shows its newest
+	// member's image (V0.project-icons-on-demand).
+	ImageAt time.Time `json:"imageAt,omitzero"`
 	// By says who set name, color and image: ByOwner or ByAgent; "" is a
 	// placeholder that the setup agent may fill (V0.116). SetBy derives a
 	// missing key for projects from before.
@@ -276,7 +279,7 @@ func reduceProjectCreate(r Rec, in Input, now time.Time) (Result, error) {
 // reduceProjectUpdate changes the fields args name; quiet hours are a list
 // of windows (decision 0014 addendum), and null or an empty list clears
 // them (V0.46).
-func reduceProjectUpdate(r Rec, in Input, _ time.Time) (Result, error) {
+func reduceProjectUpdate(r Rec, in Input, now time.Time) (Result, error) {
 	a := mapArgs(in)
 	p := r.P
 	p.fillBy() // V0.116: before the name changes
@@ -299,7 +302,7 @@ func reduceProjectUpdate(r Rec, in Input, _ time.Time) (Result, error) {
 	// The owner's upload sets image to its version; "" removes it, and the
 	// agent does not put one back (V0.116).
 	if v, ok := a["image"].(string); ok {
-		p.Image, p.By[SetupImage] = v, ByOwner
+		p.Image, p.ImageAt, p.By[SetupImage] = v, now, ByOwner
 	}
 	if raw, ok := a["icon"]; ok {
 		var ic Icon
@@ -388,7 +391,7 @@ func reduceProjectShared(r Rec, in Input, now time.Time) (Result, error) {
 // reduceProjectSetup is the setup agent's fields (V0.116): each one the
 // owner has not set is filled and marked the agent's; the owner's are kept
 // and named in the reply.
-func reduceProjectSetup(r Rec, in Input, _ time.Time) (Result, error) {
+func reduceProjectSetup(r Rec, in Input, now time.Time) (Result, error) {
 	a := mapArgs(in)
 	p := r.P
 	p.fillBy()
@@ -414,7 +417,7 @@ func reduceProjectSetup(r Rec, in Input, _ time.Time) (Result, error) {
 		case SetupColor:
 			p.Color = v
 		case SetupImage:
-			p.Image = v
+			p.Image, p.ImageAt = v, now
 		}
 		p.By[f] = ByAgent
 		set = append(set, f)

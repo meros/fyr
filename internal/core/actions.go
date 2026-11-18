@@ -263,6 +263,13 @@ func register(a *Action) {
 			if CanWrite(FieldViewSeen, by, "", "") != nil {
 				r.V.SeenAt = seen
 			}
+			if a.Name == "thread.send" || a.Name == "thread.create" {
+				r.T.LastAsker = ""
+				// Fyr's own messages go in as the owner's too, without a person's actor.
+				if by == ByOwner && (strings.HasPrefix(in.Actor, "device:") || strings.HasPrefix(in.Actor, "local:")) {
+					r.T.LastAsker = in.Actor
+				}
+			}
 			if r.T.Profile == "" {
 				r.T.Profile = "claude"
 			}

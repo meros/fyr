@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 var probes atomic.Int64
@@ -198,6 +199,28 @@ func TestProjectSharedValues(t *testing.T) {
 	}
 	b.setDown(false)
 	eventually(t, "b catches up", func() bool { n, c := projectNamed(b, onB); return n == "While away" && c == "teal" })
+}
+
+// V0.project-icons-on-demand: values a host stamps by itself (an agent asked by
+// the owner) reach the link's other members through the front.
+func TestProjectSharedFromAHost(t *testing.T) {
+	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
+	f := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
+	online(t, f.URL, 2)
+	onA, onB := projectOn(t, f.URL, a, "TEST-A", "Fyr"), projectOn(t, f.URL, b, "TEST-B", "fyr-mac")
+	code, rep := linkCmd(t, f.URL, "l", onA, onB)
+	if code != 200 {
+		t.Fatalf("link: %d %v", code, rep)
+	}
+	link, _ := rep["result"].(map[string]any)["link"].(string)
+	eventually(t, "front sees both", func() bool { return frontSees(t, f.URL, onA, link) && frontSees(t, f.URL, onB, link) })
+	_, id, _ := strings.Cut(onA, "/")
+	at := time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
+	code, rep = post(t, f.URL+"/api/h/TEST-A/command", fmt.Sprintf(`{"commandId":"h1","action":"project.shared","args":{"id":%q,"link":%q,"at":%q,"name":"From a thread","color":"teal"}}`, id, link, at))
+	if code != 200 {
+		t.Fatalf("shared on a: %d %v", code, rep)
+	}
+	eventually(t, "b follows", func() bool { n, c := projectNamed(b, onB); return n == "From a thread" && c == "teal" })
 }
 
 // Decision 0034, slice 3: a project gets a member on another host, in a folder

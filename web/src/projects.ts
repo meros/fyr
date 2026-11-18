@@ -1,6 +1,7 @@
 // Projects (SPEC 0.5 V0.23): palette, icons, ordering, filtering; and started-by labels (V0.22). Pure.
 
 import { hostUrl } from "./urls.ts";
+import { bare } from "./hostfeed.ts";
 import type { NewProjectDraft, Profile, Project, ProjectIconSpec, QuietHours, SetupField, Thread } from "./types.ts";
 import { cleanWindow } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
@@ -140,7 +141,9 @@ export function linkProjects(records: readonly Project[], hosts: readonly HostIn
       const lastUsed = members.map((m) => m.lastUsed ?? "").sort().at(-1);
       // The shared values are the newest member's, whichever host is shown; the image is not copied between hosts.
       const newest = members.reduce((a, b) => (Date.parse(b.sharedAt ?? "") > Date.parse(a.sharedAt ?? "") || (!a.sharedAt && b.sharedAt) ? b : a));
-      const pic = members.find((m) => m.image && m.id && m.hostId && !down(m)) ?? members.find((m) => m.image && m.id && m.hostId);
+      // V0.project-icons-on-demand: the newest image of the online members, of equals the first in host order.
+      const withImage = members.filter((m) => m.image && m.id && m.hostId);
+      const pic = withImage.reduce<Project | undefined>((a, b) => (!a || down(b) < down(a) || (down(b) === down(a) && Date.parse(b.imageAt ?? "") > (Date.parse(a.imageAt ?? "") || 0)) ? b : a), undefined);
       out.push({
         ...members[0],
         name: newest.name,
@@ -348,12 +351,13 @@ export function moveToast(n: number, where: string | null, error: string | null)
 // ---- V0.116: image icons and project setup ----
 
 /** The URL of a project's image icon at a size that is sharp at `px` CSS pixels, or null when it has none. The
- *  version in the URL lets the browser keep it; the front sends the request to the project's host. */
+ *  version in the URL lets the browser keep it; the front sends the request to the project's host, which knows the
+ *  project by its own id and not by the client's ref (V0.project-icons-on-demand). */
 export function projectIconUrl(p: Pick<Project, "id" | "image" | "hostId" | "imageFrom"> | undefined, px: number): string | null {
   const id = p?.imageFrom?.id ?? p?.id;
   const hostId = p?.imageFrom?.hostId ?? p?.hostId;
   if (!id || !p?.image || !hostId) return null;
-  return hostUrl(hostId, `/projects/${encodeURIComponent(id)}/icon?size=${px > 32 ? 128 : 64}&v=${encodeURIComponent(p.image)}`);
+  return hostUrl(hostId, `/projects/${encodeURIComponent(bare(hostId, id))}/icon?size=${px > 32 ? 128 : 64}&v=${encodeURIComponent(p.image)}`);
 }
 
 /** Whether the setup agent set this field (the project screen marks it "Set by agent"). */

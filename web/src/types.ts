@@ -259,6 +259,8 @@ export interface Project {
   deleted?: boolean;
   /** V0.116: the version of the project's image icon (served at /api/projects/<id>/icon); absent draws the glyph */
   image?: string;
+  /** V0.project-icons-on-demand: when the image was set; a linked project shows its newest member's */
+  imageAt?: string;
   /** V0.116: who set name, color and image: "owner", "agent", or "" for a placeholder; a key may be missing */
   by?: Partial<Record<SetupField, string>>;
   /** V0.116: the last project setup run: its thread, when, or why it could not start */

@@ -18,7 +18,11 @@ type Thread struct {
 	Title string `json:"title"`
 	// TitleBy is who named the thread last: the owner's name is kept
 	// against the agent's (V0.69); "" for a title from the first message.
-	TitleBy   string `json:"titleBy,omitempty"`
+	TitleBy string `json:"titleBy,omitempty"`
+	// LastAsker is the person's actor behind the newest message to the
+	// agent ("device:<id>", "local:owner"); "" when Fyr or another agent
+	// wrote it (V0.project-icons-on-demand).
+	LastAsker string `json:"lastAsker,omitempty"`
 	Cwd       string `json:"cwd"`
 	ProjectID string `json:"projectId,omitempty"` // V0.23
 	// ProjectManual: the thread was filed by hand; folder matching never

@@ -313,3 +313,83 @@ func TestSetupThatCouldNotStartRunsAgain(t *testing.T) {
 		t.Fatalf("a run that started ran again: %d", n)
 	}
 }
+
+// V0.project-icons-on-demand: from any thread, the owner's own request replaces
+// the owner's icon and name; the claim alone does not, and neither does a
+// message Fyr or another agent wrote.
+func TestProjectSetupOwnerAsked(t *testing.T) {
+	h := setupHarness(t)
+	dir := filepath.Join(h.dir, "fyr")
+	os.MkdirAll(dir, 0o755)
+	pid := newProject(t, h, core.Args{"folder": dir, "name": "Mine"})
+	if r := h.cmd("project.update", "", core.Args{"id": pid, "color": "blue"}); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	if r := h.e.UploadProjectImage(pid, logoPNG(t, color.NRGBA{40, 100, 190, 255})); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	before := projectByID(h, pid)
+	logo := filepath.Join(dir, "logo.png")
+	os.WriteFile(logo, logoPNG(t, color.NRGBA{200, 30, 60, 255}), 0o644)
+	call := map[string]any{"project": "Mine", "icon": logo, "name": "Renamed", "ownerAsked": true}
+
+	// Elsewhere: a thread outside the project, started by Fyr (no person's actor).
+	th := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "x"}).ThreadID
+	if out, isErr := callAs(t, h.e, th, "project_setup", call); !isErr || !strings.Contains(out, "owner's own") {
+		t.Fatalf("a message with no person behind it passed: %q", out)
+	}
+	if q := projectByID(h, pid); q.Image != before.Image || q.Name != "Mine" {
+		t.Fatalf("%+v", q)
+	}
+
+	send := func(src core.Source, from, actor string) {
+		t.Helper()
+		if r := h.e.submit(core.Input{Source: src, From: from, Actor: actor, Kind: "thread.send", Thread: th, Args: core.Args{"text": "change the icon"}, CmdID: NewID("c_")}); !r.OK {
+			t.Fatalf("%+v", r)
+		}
+	}
+	send(core.FromOwner, "", "device:d1")
+	out, isErr := callAs(t, h.e, th, "project_setup", call)
+	if isErr {
+		t.Fatal(out)
+	}
+	q := projectByID(h, pid)
+	if q.Image == before.Image || q.Name != "Renamed" || q.SetBy("image") != core.ByOwner || q.SetBy("name") != core.ByOwner || q.Color != "blue" {
+		t.Fatalf("%s\n%+v", out, q)
+	}
+	if !strings.Contains(out, "icon") || !strings.Contains(out, "Renamed") {
+		t.Fatalf("the reply does not say what it set: %q", out)
+	}
+
+	send(core.FromAgent, "t_other", "")
+	if out, isErr := callAs(t, h.e, th, "project_setup", call); !isErr {
+		t.Fatalf("another agent's message passed: %q", out)
+	}
+}
+
+// V0.project-icons-on-demand, decision 0034: a linked project's new name is
+// stamped as the link's newest, which the front passes on; its image is the
+// host's, stamped so that the client shows the newest.
+func TestProjectSetupOwnerAskedLinked(t *testing.T) {
+	h := setupHarness(t)
+	dir := filepath.Join(h.dir, "fyr")
+	os.MkdirAll(dir, 0o755)
+	pid := newProject(t, h, core.Args{"folder": dir, "name": "Mine"})
+	if r := h.cmd(core.KindProjectLink, "", core.Args{"id": pid, "link": "l_0123456789abcdef"}); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	logo := filepath.Join(dir, "logo.png")
+	os.WriteFile(logo, logoPNG(t, color.NRGBA{200, 30, 60, 255}), 0o644)
+	th := h.cmd("thread.create", "", core.Args{"cwd": dir, "text": "x"}).ThreadID
+	if r := h.e.submit(core.Input{Source: core.FromOwner, Actor: "local:owner", Kind: "thread.send", Thread: th, Args: core.Args{"text": "y"}, CmdID: NewID("c_")}); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	out, isErr := callAs(t, h.e, th, "project_setup", map[string]any{"icon": logo, "name": "Other", "ownerAsked": true})
+	if isErr {
+		t.Fatal(out)
+	}
+	q := projectByID(h, pid)
+	if q.Image == "" || q.ImageAt.IsZero() || q.Name != "Other" || q.SharedAt.IsZero() || !strings.Contains(out, "linked") {
+		t.Fatalf("%s\n%+v", out, q)
+	}
+}
