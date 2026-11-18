@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import type { Decision, FyrEvent, Profile, Project, Thread } from "./types.ts";
 import { LoadSheetBody, LoadStrip, useLoad } from "./load-ui.tsx";
 import { stripHosts } from "./load.ts";
-import { SECTIONS, isAvailable, isPinned, unpinned, matchesQuery, sections, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
+import { SECTIONS, isAvailable, isPinned, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
@@ -30,6 +30,7 @@ import { sendArgs } from "./attach.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import { ThreadOffers } from "./offers-ui.tsx";
 import { changeChip, headerPr } from "./offers.ts";
+import { seenToggle } from "./menu.ts";
 import { prChip } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
@@ -189,7 +190,8 @@ export interface PhoneDevice {
 /** What the phone does differently from a plain thread command: U8 leaves the open thread after a settle or
  *  archive, Mark unseen restarts the seen timer, and New starts a thread. Every other command is `commands.run`. */
 export interface PhoneActions {
-  settle(ids: string[], bulk?: boolean): void;
+  /** `unreadKept`: the unread threads a Select all left out, for the toast (V0.189) */
+  settle(ids: string[], bulk?: boolean, unreadKept?: number): void;
   archive(ids: string[]): void;
   markUnseen(id: string): void;
   create(a: NewThreadArgs): Promise<string | null>;
@@ -383,6 +385,12 @@ function MInbox(p: PhoneProps) {
   };
 
   const all = SECTIONS.flatMap((s) => p.inbox.sec[s.key]);
+  // V0.189: Select all is a sweep, so it leaves unread rows out and the settle says how many.
+  const [swept, setSwept] = useState(false);
+  useEffect(() => {
+    if (!p.list.selecting) setSwept(false);
+  }, [p.list.selecting]);
+  const unreadLeft = swept ? sweptUnread(all, p.list.picked) : 0;
   const strip = stripHosts(useLoad(), p.store.hosts);
   // V0.162: the button shows while a merged thread can settle; the bulk settle leaves pinned ones out and counts them.
   const merged = p.inbox.sec.seen.filter((t) => t.pr?.state === "MERGED" && (isPinned(t) || isAvailable(t, "thread.settle")));
@@ -398,7 +406,7 @@ function MInbox(p: PhoneProps) {
           </button>
           <span class="m-nt">{p.list.picked.size} selected</span>
           <span class="sp" />
-          <button class="m-tbtn" onClick={() => p.list.setPicked(new Set(all.map((t) => t.id)))}>
+          <button class="m-tbtn" onClick={() => (p.list.setPicked(new Set(selectAllIds(all))), setSwept(true))}>
             Select all
           </button>
         </div>
@@ -537,7 +545,7 @@ function MInbox(p: PhoneProps) {
       </div>
       {p.list.selecting && (
         <div class="m-selbar">
-          <button class="m-bt p" disabled={!p.list.picked.size} onClick={() => (p.actions.settle([...p.list.picked], true), p.list.setSelecting(false), p.list.setPicked(new Set()))}>
+          <button class="m-bt p" disabled={!p.list.picked.size && !unreadLeft} onClick={() => (p.actions.settle([...p.list.picked], true, unreadLeft), p.list.setSelecting(false), p.list.setPicked(new Set()))}>
             Settle {p.list.picked.size || ""}
           </button>
           <button class="m-bt" disabled={!p.list.picked.size} onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "snooze", ids: [...p.list.picked] } })}>
@@ -1377,6 +1385,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   if (!t) return null;
   const reason = (a: string) => unavailableReason(t, a);
   const avail = swipeAvail(t);
+  const mark = seenToggle(t);
   if (sheet.kind === "actions" || sheet.kind === "thread-menu") {
     const peek = sheet.kind === "actions";
     const d = currentDecision(t);
@@ -1428,7 +1437,8 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
         <Item label="Live view" sub="The agent keeps its state pinned on top" right={t.liveView ? "on" : "off"} disabled={!!reason("thread.setView")} onClick={after(() => void p.commands.run("thread.setView", [t.id], { on: !t.liveView }))} />
         <Item label="Hand over…" sub={reason("thread.handover") ?? "Continue this thread with another provider"} disabled={!!reason("thread.handover")} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "handover", ids: [t.id] } })} />
         <Item label="Regenerate title" sub={reason("thread.regenerateTitle") ?? "Name the thread from its conversation so far"} disabled={!!reason("thread.regenerateTitle")} onClick={after(() => void p.commands.regenerateTitle(t.id))} />
-        <Item label="Mark unseen" icon={<StateIcon state="seen" size={16} />} sub={reason("thread.markUnseen")} disabled={!!reason("thread.markUnseen")} onClick={after(() => p.actions.markUnseen(t.id))} />
+        {/* V0.189: the desktop menu's entry (seenToggle): an unread thread offers Mark seen */}
+        <Item label={mark.label} icon={<StateIcon state={mark.id === "markSeen" ? "seen" : "done"} size={16} />} sub={reason(mark.action)} disabled={!!reason(mark.action)} onClick={after(() => (mark.id === "markSeen" ? void p.commands.run(mark.action, [t.id]) : p.actions.markUnseen(t.id)))} />
         {peek && <Item label="Select" icon={<i class="m-ck" />} onClick={after(() => (p.list.setSelecting(true), p.list.setPicked(new Set([t.id]))))} />}
         {!peek && <Item label="Details" icon={I.right} onClick={() => p.nav.replace({ ...p.nav.at, sheet: { kind: "details", ids: [t.id] } })} />}
         <Item label="Archive" icon={I.close} sub={reason("thread.archive")} disabled={!!reason("thread.archive")} onClick={after(() => p.actions.archive([t.id]))} />

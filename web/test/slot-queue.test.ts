@@ -54,7 +54,7 @@ test("V0.137: a queued thread moves to Waiting for a slot from its section; Need
     "in the queue's order",
   );
   assert.deepEqual(
-    sec.seen.map((t) => t.id),
+    sec.unread.map((t) => t.id),
     ["t_x"],
   );
   assert.deepEqual(sec.working, []);
@@ -65,7 +65,7 @@ test("V0.137: a queued thread moves to Waiting for a slot from its section; Need
   // the section sits right after Working, and j/k walk it there
   assert.deepEqual(
     SECTIONS.map((s) => s.key),
-    ["needs", "working", "slots", "seen", "snoozed", "settled"],
+    ["needs", "working", "slots", "unread", "seen", "snoozed", "settled"],
   );
   assert.deepEqual(flatOrder(sec), ["t_n", "t_b", "t_a", "t_x"]);
   // without a queue nothing moves

@@ -2249,7 +2249,7 @@ section('V0.141', async (h) => {
       check(r.docScroll <= 0 && r.bodyScroll <= 0 && r.scrollY === 0, `${ctx}: the document scrolls (${JSON.stringify(r)})`);
       check(r.railTop >= 0 && r.railBottom <= r.vh && r.railScroll <= 0, `${ctx}: the rail is not the window's height or scrolls as a whole (${JSON.stringify(r)})`);
       // V0.167: the hosts' meters stack (two rows each), no longer side by side.
-      // V0.167: the rail is compact under 940 px, so at 900 the key hints go and the middle shows everything.
+      // V0.167, V0.189: the rail is compact under 1010 px, so at 900 the key hints go and the middle shows everything.
       if (ht === 900) check(r.midScroll <= 0 && r.hints === 0, `${ctx}: the rail's middle does not show everything, or the rail is not compact (${JSON.stringify(r)})`);
       else check(r.hints === 0 && r.midH >= 40, `${ctx}: the rail is not compact or its middle has no room (${JSON.stringify(r)})`);
       // The middle scrolls on its own: a wheel over it moves it, not the document.
@@ -3150,7 +3150,7 @@ try {
 // and the click opened the row instead. Desktop: the right-click menu; phone: the long-press sheet.
 const SETTLE_ROWS = [
   // [id, title, section it starts in, what Settle does]
-  ["t_triage", "Triage sprint issues", "needs", "leaves"], // done
+  ["t_triage", "Triage sprint issues", "unread", "leaves"], // done, not looked at (V0.189)
   ["t_e2e", "Speed up e2e suite", "needs", "leaves"], // failed
   ["t_nix", "Nix flake update", "seen", "leaves"], // idle
   ["t_babysit", "Babysit PR #4170", "working", "waits"], // running: settles when the run ends (V0.106)
@@ -3399,6 +3399,120 @@ section('V0.185', async (h) => {
   }
 });
 
+// V0.189: a finished thread the owner has not looked at is in Unread, directly above Seen; Mark seen and Mark unseen move
+// it, ⇧E leaves it, and both fronts show the same. The row menus are the shared seenToggle.
+section('V0.189', async (h) => {
+  const { send, evaluate, waitFor, navigate, tapCenter, key, openScreen, settle, shot } = h;
+  // The phone's rows carry no data-id: they are found by title.
+  const TITLE = { t_triage: "Triage sprint issues" };
+  const phoneRow = (sec, id) => `[...document.querySelectorAll('#m-sec-${sec} .m-swp')].find(r => r.textContent.includes(${JSON.stringify(TITLE[id])}))`;
+  const inSec = (front, sec, id) => (front ? `!!${phoneRow(sec, id)}` : `!!document.querySelector('#sec-${sec} [data-id=${id}]')`);
+  const pressRow = async (sec, id, until) => {
+    await evaluate(`(() => { document.querySelectorAll('[data-e2e-row]').forEach(e => e.removeAttribute('data-e2e-row')); const r = ${phoneRow(sec, id)}; r.scrollIntoView({ block: 'center' }); r.querySelector('.m-mv').setAttribute('data-e2e-row', ''); })()`);
+    await settle();
+    await tapCenter("[data-e2e-row]", until, { long: true });
+  };
+  const order = (front) => `[...document.querySelectorAll('[id^=${front}sec-]')].map(e => e.id.replace('${front}sec-', '')).filter(k => k !== 'pinned' && k !== 'slots')`;
+  const WANT = '["needs","working","unread","seen","snoozed","settled"]';
+  try {
+    await navigate(`${origin}/?mock=rail`, inSec("", "unread", "t_triage"));
+    const d = await evaluate(`({ order: ${order("")}, inSeen: ${inSec("", "seen", "t_triage")}, inNeeds: ${inSec("", "needs", "t_triage")}, rail: document.querySelector('.rail [data-sec=unread]')?.textContent ?? '', railSeen: document.querySelector('.rail [data-sec=seen] .k')?.textContent })`);
+    check(JSON.stringify(d.order) === WANT, `V0.189 desktop: the section order (${JSON.stringify(d.order)})`);
+    check(!d.inSeen && !d.inNeeds, `V0.189 desktop: an unread thread is only in Unread (${JSON.stringify(d)})`);
+    check(/Unread/.test(d.rail) && /g6/.test(d.rail) && d.railSeen === "g3", `V0.189 desktop: the rail's Unread and its keys (${JSON.stringify(d)})`);
+    // The chip of an open change on a stopped thread says so, not "working".
+    await navigate(`${origin}/?mock=1`, inSec("", "unread", "t_ended"));
+    await evaluate(`document.querySelector('#sec-unread').scrollIntoView({ block: 'start' })`);
+    await settle();
+    const chip = await evaluate(`document.querySelector('#sec-unread [data-id=t_ended] .chgchip')?.textContent ?? ''`);
+    check(chip === "change open", `V0.189 desktop: the chip of a stopped thread's open change ("${chip}")`);
+    await shot("unread-desktop.png");
+    await navigate(`${origin}/?mock=rail`, inSec("", "unread", "t_triage"));
+    const menu = async (id, label) => {
+      const r = await evaluate(`(() => { const e = document.querySelector('.list [data-id=${id}]'); e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + 40, y: b.top + b.height / 2 }; })()`);
+      await send("Input.dispatchMouseEvent", { type: "mousePressed", x: r.x, y: r.y, button: "right", clickCount: 1 });
+      await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: r.x, y: r.y, button: "right", clickCount: 1 });
+      await waitFor(`[...document.querySelectorAll('.ctxm-i')].some(x => x.querySelector('.ell')?.textContent === ${JSON.stringify(label)})`, { what: `the row menu's ${label}` });
+      await evaluate(`[...document.querySelectorAll('.ctxm-i')].find(x => x.querySelector('.ell')?.textContent === ${JSON.stringify(label)}).click()`);
+    };
+    await menu("t_triage", "Mark seen");
+    await waitFor(inSec("", "seen", "t_triage"), { what: "Mark seen to move the row to Seen" });
+    await menu("t_triage", "Mark unseen");
+    await waitFor(inSec("", "unread", "t_triage"), { what: "Mark unseen to move the row back to Unread" });
+    // Folding is the section's own.
+    await evaluate(`document.querySelector('#sec-unread .sec').click()`);
+    await waitFor(`!${inSec("", "unread", "t_triage")}`, { what: "Unread to fold" });
+    check(await evaluate(`document.querySelectorAll('#sec-seen [data-id]').length > 0`), "V0.189 desktop: folding Unread folded Seen too");
+    await evaluate(`document.querySelector('#sec-unread .sec').click()`);
+    await waitFor(inSec("", "unread", "t_triage"), { what: "Unread to unfold" });
+    // ⇧E from a Seen thread settles Seen and sends nothing for Unread.
+    await navigate(`${origin}/?mock=rail&open=t_nix`, inSec("", "seen", "t_nix"));
+    const before = await evaluate(`[...document.querySelectorAll('#sec-unread [data-id]')].map(e => e.dataset.id)`);
+    check(before.length > 0, "V0.189 desktop: the fixture has an unread thread");
+    await evaluate(`document.activeElement?.blur()`);
+    await key("E", "KeyE", 8);
+    await waitFor(`document.querySelectorAll('#sec-seen [data-id]').length === 0`, { what: "⇧E to settle Seen" });
+    const r = await evaluate(`({ left: [...document.querySelectorAll('#sec-unread [data-id]')].map(e => e.dataset.id), sent: (window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle').map(c => c.threadId) })`);
+    check(JSON.stringify(r.left) === JSON.stringify(before) && !before.some((id) => r.sent.includes(id)), `V0.189 desktop: ⇧E touched Unread (${JSON.stringify(r)})`);
+    // From a row in Unread, ⇧E sweeps nothing and says so; the same row picked with x is the owner's choice and settles.
+    // Mark unseen first: it keeps the open thread unread while the checks run.
+    await navigate(`${origin}/?mock=rail&open=t_triage`, inSec("", "unread", "t_triage"));
+    const sentFor = `(window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle' && c.threadId === 't_triage').length`;
+    await evaluate(`document.activeElement?.blur()`);
+    await key("u", "KeyU");
+    await key("E", "KeyE", 8);
+    await waitFor(`/^Nothing settled; 1 unread thread kept/.test(document.querySelector('.toast')?.textContent ?? '')`, { what: "the toast of a sweep that kept an unread thread" });
+    check((await evaluate(sentFor)) === 0 && (await evaluate(inSec("", "unread", "t_triage"))), "V0.189 desktop: ⇧E from Unread settled the unread thread");
+    await key("x", "KeyX");
+    await key("E", "KeyE", 8);
+    await waitFor(`${sentFor} === 1`, { what: "the picked unread thread to settle" });
+  } catch (e) {
+    failures.push(`V0.189 desktop: ${e.message}`);
+  }
+  try {
+    await openScreen({ url: "?mock=rail" }, 390, 844);
+    await waitFor(inSec("m-", "unread", "t_triage"), { what: "the phone's Unread" });
+    const m = await evaluate(`({ order: ${order("m-")}, strip: [...document.querySelectorAll('.m-seg .l')].map(e => e.textContent), over: [...document.querySelectorAll('.m-seg .l')].filter(e => e.scrollWidth > e.parentElement.clientWidth + 1).map(e => e.textContent), inSeen: ${inSec("m-", "seen", "t_triage")} })`);
+    check(JSON.stringify(m.order) === WANT, `V0.189 phone: the section order (${JSON.stringify(m.order)})`);
+    check(m.strip.includes("Unread") && !m.over.length && !m.inSeen, `V0.189 phone: the strip and the row (${JSON.stringify(m)})`);
+    await openScreen({ url: "?mock=1" }, 390, 844);
+    await waitFor(`[...document.querySelectorAll('#m-sec-unread .m-swp')].some(r => r.textContent.includes('Fyr: review'))`, { what: "the phone's unread row with a change" });
+    await evaluate(`document.querySelector('#m-sec-unread').scrollIntoView({ block: 'start' })`);
+    await settle();
+    const mchip = await evaluate(`[...document.querySelectorAll('#m-sec-unread .m-swp')].find(r => r.textContent.includes('Fyr: review')).querySelector('.chgchip')?.textContent ?? ''`);
+    check(mchip === "change open", `V0.189 phone: the chip of a stopped thread's open change ("${mchip}")`);
+    await shot("unread-phone.png");
+    await openScreen({ url: "?mock=rail" }, 390, 844);
+    await waitFor(inSec("m-", "unread", "t_triage"), { what: "the phone's Unread again" });
+    const item = (label) => `[...document.querySelectorAll('.m-sheet .m-mi')].find(b => b.querySelector('.ell')?.firstChild?.textContent === ${JSON.stringify(label)})`;
+    await pressRow("unread", "t_triage", `!!${item("Mark seen")}`);
+    await evaluate(`${item("Mark seen")}.click()`);
+    await waitFor(inSec("m-", "seen", "t_triage"), { what: "the phone's Mark seen to move the row" });
+    await waitFor(`!document.querySelector('.m-sheet')`, { what: "the sheet to close" });
+    await pressRow("seen", "t_triage", `!!${item("Mark unseen")}`);
+    await evaluate(`${item("Mark unseen")}.click()`);
+    await waitFor(inSec("m-", "unread", "t_triage"), { what: "the phone's Mark unseen to move the row back" });
+    // Select all leaves the unread row out and the toast says so; the row picked by hand settles.
+    const menuItem = (label) => `${item(label)}.click()`;
+    const sentFor = `(window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle' && c.threadId === 't_triage').length`;
+    await pressRow("unread", "t_triage", `!!${item("Select")}`);
+    await evaluate(menuItem("Select"));
+    await waitFor(`!!document.querySelector('.m-selbar') && !document.querySelector('.m-sheet')`, { what: "the selection" });
+    await evaluate(`[...document.querySelectorAll('.m-tbtn')].find(b => b.textContent === 'Select all').click()`);
+    await waitFor(`!${phoneRow("unread", "t_triage")}.classList.contains('picked') && document.querySelectorAll('.m-swp.picked').length > 0`, { what: "Select all to leave the unread row out" });
+    await evaluate(`document.querySelector('.m-selbar .m-bt.p').click()`);
+    await waitFor(`/1 unread thread kept/.test(document.querySelector('.m-toast')?.textContent ?? '')`, { what: "the toast of Select all" });
+    check((await evaluate(sentFor)) === 0 && (await evaluate(inSec("m-", "unread", "t_triage"))), "V0.189 phone: Select all settled the unread thread");
+    await pressRow("unread", "t_triage", `!!${item("Select")}`);
+    await evaluate(menuItem("Select"));
+    await waitFor(`!!document.querySelector('.m-selbar') && !document.querySelector('.m-sheet')`, { what: "the selection of one row" });
+    await evaluate(`document.querySelector('.m-selbar .m-bt.p').click()`);
+    await waitFor(`${sentFor} === 1`, { what: "the picked unread thread to settle" });
+  } catch (e) {
+    failures.push(`V0.189 phone: ${e.message}`);
+  }
+});
+
 // V0.162: a bulk settle skips a pinned thread: no settle command for it, the pin stays, and the toast names it. Desktop:
 // ⇧E on the Seen section; phone: Select all, then Settle N. Both go through the same settleBulk.
 section('V0.162', async (h) => {
@@ -3444,9 +3558,9 @@ section('V0.162', async (h) => {
     await evaluate(`[...document.querySelectorAll('.m-tbtn')].find(b => b.textContent === 'Select all')?.click()`);
     await settle();
     await evaluate(`document.querySelector('.m-selbar .m-bt.p')?.click()`);
-    await waitFor(`/pinned thread kept/.test(document.querySelector('.m-toast')?.textContent ?? '')`, { soft: true });
+    await waitFor(`/1 pinned/.test(document.querySelector('.m-toast')?.textContent ?? '')`, { soft: true }); // V0.189: Select all also holds unread threads, which it keeps
     const r = await evaluate(`({ toast: document.querySelector('.m-toast')?.textContent ?? '', pinned: document.querySelectorAll('#m-sec-pinned .pin').length, sent: ${settledPinned} })`);
-    check(/^Settled \d+ threads; 1 pinned thread kept/.test(r.toast), `V0.162 phone: the toast does not name the kept pinned thread ("${r.toast}")`);
+    check(/^Settled \d+ threads; 1 pinned (thread|and \d+ unread threads?) kept/.test(r.toast), `V0.162 phone: the toast does not name the kept pinned thread ("${r.toast}")`);
     check(r.pinned === 1 && !r.sent, `V0.162 phone: Settle N settled or unpinned the pinned thread (${JSON.stringify(r)})`);
     // The owner's own Settle in the thread's sheet still settles the pinned thread and removes the pin.
     await evaluate(`document.querySelector('.m-selbar') && document.querySelector('button[aria-label="Cancel selection"]')?.click()`);
@@ -3943,8 +4057,8 @@ try {
     inWorking: !!document.querySelector('#sec-working [data-id=t_search]'),
     rail: document.querySelector('.rail [data-sec=slots] .n')?.textContent ?? null,
     head: document.querySelector('#sec-slots .sec')?.textContent ?? '' })`);
-  const wo = d.order.indexOf("sec-working"), so = d.order.indexOf("sec-slots"), se = d.order.indexOf("sec-seen");
-  check(wo >= 0 && so === wo + 1 && se === so + 1, `V0.137 desktop: the section sits after Working (${JSON.stringify(d.order)})`);
+  const wo = d.order.indexOf("sec-working"), so = d.order.indexOf("sec-slots"), un = d.order.indexOf("sec-unread"), se = d.order.indexOf("sec-seen");
+  check(wo >= 0 && so === wo + 1 && un === so + 1 && se === un + 1, `V0.137 desktop: the section sits after Working (${JSON.stringify(d.order)})`);
   check(JSON.stringify(d.rows) === JSON.stringify(["self-deploy #1", "t_search #2", "t_pw #3", "t_nix #4"]) && !d.inWorking && d.rail === "3" && d.head.startsWith("Waiting to run3"),
     `V0.137 desktop: the rows, their places and the rail (${JSON.stringify(d)})`);
   check(!(await evaluate(`!!document.querySelector('#sec-slots .sqp .grip')`)), "V0.137 desktop: the deploy's place is movable");
@@ -3978,7 +4092,7 @@ try {
     segs: document.querySelectorAll('.m-strip .m-seg').length,
     rows: ${rows(".m-list")},
     wide: document.documentElement.scrollWidth > innerWidth })`);
-  check(p.tops === 1 && p.segs === 6 && JSON.stringify(p.rows) === JSON.stringify(["self-deploy #1", "t_search #2", "t_pw #3", "t_nix #4"]) && !p.wide, `V0.137 phone: the strip and the rows (${JSON.stringify(p)})`);
+  check(p.tops === 1 && p.segs === 7 && JSON.stringify(p.rows) === JSON.stringify(["self-deploy #1", "t_search #2", "t_pw #3", "t_nix #4"]) && !p.wide, `V0.137 phone: the strip and the rows (${JSON.stringify(p)})`);
   await evaluate(`document.getElementById('m-sec-slots').scrollIntoView()`);
   await tapCenter("#m-sec-slots .m-sbtn", "!!document.querySelector('#m-sec-slots .sqmv .mv')");
   const r = await evaluate(`({ mv: [...document.querySelectorAll('#m-sec-slots .sqmv .mv .xb')].map(b => Math.round(Math.min(b.getBoundingClientRect().width, b.getBoundingClientRect().height))), wide: [...document.querySelectorAll('#m-sec-slots .sqmv, #m-sec-slots .sqmv .xb, #m-sec-slots .m-sec, #m-sec-slots .m-sbtn')].some(e => e.getBoundingClientRect().right > innerWidth + 0.5) })`);
@@ -4444,9 +4558,10 @@ try {
   check(again.hosts[0]?.on === false && again.rows === off.rows, `${ctx}: the hosts turned off are not remembered on this device (${JSON.stringify(again.hosts)})`);
   await click(seg("host-b"), `!localStorage.getItem('fyr.hostsOff')`);
   check((await evaluate(STATE)).hosts.every((c) => c.on), `${ctx}: host-b back on`);
-  // 4. desk off, then fold Needs (host-b's threads are there): desk stays off; the empty state; Clear filter.
+  // 4. desk off, then fold Needs and Unread (host-b's threads are there, V0.189): desk stays off; the empty state; Clear filter.
   await click(seg("desk"), `localStorage.getItem('fyr.hostsOff') === '["desk"]'`);
-  await click(secHead("needs"), `!!document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})`);
+  await click(secHead("needs"), "true");
+  await click(secHead("unread"), `!!document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})`);
   const folded = await evaluate(STATE);
   check(folded.hosts.some((c) => c.name === "desk" && !c.on), `${ctx}: the host turned off after the other host's threads were folded away (${JSON.stringify(folded.hosts)})`);
   check(/^No threads in view with desk hidden\.\s*\d+ more in folded sections?\.\s*Clear filter$/.test(folded.empty ?? ""), `${ctx}: the empty state "${folded.empty}"`);
@@ -5030,9 +5145,11 @@ section("V0.184 desktop", async ({ send, evaluate, waitFor, settle, navigate, ke
     await press(x, y, clickCount);
     await release(x, y, clickCount);
   };
+  // The handle counts two presses within 400 ms: the events go out together, so a busy machine cannot stretch the gap.
   const dblclick = async () => {
-    await click(1);
-    await click(2);
+    const [x, y] = await lrzCenter(evaluate);
+    await mouse("mouseMoved", x, y);
+    await Promise.all([press(x, y, 1), release(x, y, 1), press(x, y, 2), release(x, y, 2)]);
   };
   const widthIs = (w) => waitFor(`Math.round(document.querySelector('.ib').getBoundingClientRect().width) === ${w}`, { soft: true, timeout: 2000 });
   const focusHandle = () => evaluate(`document.querySelector(${JSON.stringify(LRZ)}).focus()`);
@@ -5165,10 +5282,8 @@ section("V0.184 desktop", async ({ send, evaluate, waitFor, settle, navigate, ke
     await waitFor(`localStorage.getItem('fyr.listWidth') === '432'`, { soft: true, timeout: 2000 });
     check((await evaluate(lrzState)).stored === "432", `${ctx}: a finger's drag is not kept`);
     const [t2x, t2y] = await lrzCenter(evaluate);
-    for (let i = 0; i < 2; i++) {
-      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: t2x, y: t2y }] });
-      await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    }
+    const tap = [{ type: "touchStart", touchPoints: [{ x: t2x, y: t2y }] }, { type: "touchEnd", touchPoints: [] }];
+    await Promise.all([...tap, ...tap].map((ev) => send("Input.dispatchTouchEvent", ev))); // together, as the double click
     check(await widthIs(372), `${ctx}: a double tap does not reset (${JSON.stringify(await evaluate(lrzState))})`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);

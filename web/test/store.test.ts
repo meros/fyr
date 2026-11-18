@@ -279,8 +279,8 @@ test("a bulk settle leaves pinned threads out and counts them", () => {
     thread("c", "seen", "seen", { unavailable: { "thread.settle": "Already settled" } }),
     thread("d", "done", "needs"),
   ];
-  assert.deepEqual(bulkSettle(ts), { ids: ["a", "d"], kept: 1 });
-  assert.deepEqual(bulkSettle([ts[1]]), { ids: [], kept: 1 });
+  assert.deepEqual(bulkSettle(ts), { ids: ["a", "d"], kept: 1, unread: 0 });
+  assert.deepEqual(bulkSettle([ts[1]]), { ids: [], kept: 1, unread: 0 });
   assert.equal(bulkSettleText(7, 1), "Settled 7 threads; 1 pinned thread kept");
   assert.equal(bulkSettleText(1, 2), "Settled; 2 pinned threads kept");
   assert.equal(bulkSettleText(0, 1), "Nothing settled; 1 pinned thread kept");

@@ -5,7 +5,7 @@ import { flatOrder, sections, type SectionKey } from "../src/store.ts";
 import { cutSection, foldedRow, heldLabel, parseSectionOpen, rowAfter, markedRow, stepRow } from "../src/selection.ts";
 import { thread } from "./helpers.ts";
 
-const OPEN: Record<SectionKey, number> = { needs: 500, working: 500, slots: 500, seen: 2, snoozed: 0, settled: 0 };
+const OPEN: Record<SectionKey, number> = { needs: 500, working: 500, slots: 500, unread: 2, seen: 2, snoozed: 0, settled: 0 };
 
 function sec() {
   const at = (m: number) => new Date(Date.UTC(2026, 10, 16, 9, m)).toISOString();

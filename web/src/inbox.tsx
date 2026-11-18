@@ -101,7 +101,7 @@ export function Rail(p: RailProps) {
   );
 }
 
-export const SECTION_LIMIT: Record<SectionKey, number> = { needs: 500, working: 500, slots: 500, seen: 200, snoozed: 200, settled: 60 };
+export const SECTION_LIMIT: Record<SectionKey, number> = { needs: 500, working: 500, slots: 500, unread: 200, seen: 200, snoozed: 200, settled: 60 };
 // Moved to store.ts (V0.134: the filters read them too); re-exported for the callers here.
 export { COLLAPSED_BY_DEFAULT, isOpen } from "./store.ts";
 

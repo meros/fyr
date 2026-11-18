@@ -696,26 +696,29 @@ function App() {
   };
 
   /** V0.162: every bulk settle, desktop and phone, goes through here: pinned threads are left out and counted. */
-  const settleBulk = (ids: string[]): Promise<string[]> => {
-    const { ids: take, kept } = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t));
+  const settleBulk = (ids: string[], o: { sweep?: boolean; unreadKept?: number } = {}): Promise<string[]> => {
+    const r = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t), o.sweep);
+    const { ids: take, kept } = r;
+    const unread = r.unread + (o.unreadKept ?? 0); // V0.189: what the phone's Select all left out
     if (!take.length) {
-      if (kept) cmds.notify(bulkSettleText(0, kept));
+      if (kept || unread) cmds.notify(bulkSettleText(0, kept, unread));
       else cmds.showError("Nothing here can be settled");
       return Promise.resolve([]);
     }
-    return cmds.run("thread.settle", take, { now: true }, { label: (n) => bulkSettleText(n, kept) }).then((n) => (n ? take : []));
+    return cmds.run("thread.settle", take, { now: true }, { label: (n) => bulkSettleText(n, kept, unread) }).then((n) => (n ? take : []));
   };
 
   const settleGroup = () => {
     let ids = [...picked];
-    if (!ids.length && sel) {
+    const sweep = !ids.length; // V0.189: the marked row's whole section; picked rows are the owner's explicit choice
+    if (sweep && sel) {
       const k = sectionOf(store.threads[sel]);
       if (k) ids = sec[k].map((t) => t.id);
     }
-    const { ids: take } = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t));
+    const { ids: take } = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t), sweep);
     stepPast(take);
     setPicked(new Set());
-    void settleBulk(ids);
+    void settleBulk(ids, { sweep });
   };
 
   const archive = (ids: string[]) => {
@@ -1148,8 +1151,8 @@ function App() {
       return;
     }
 
-    // g1–g5
-    if (gPending.current && Date.now() - gPending.current < 1500 && /^[1-5]$/.test(k)) {
+    // g1–g6
+    if (gPending.current && Date.now() - gPending.current < 1500 && /^[1-6]$/.test(k)) {
       gPending.current = 0;
       e.preventDefault();
       const g = SECTIONS.find((s) => s.g === Number(k)); // V0.137: Waiting for a slot has no g key
@@ -1436,9 +1439,9 @@ function App() {
   }, [phone, nav.screen.name === "thread" ? nav.screen.id : nav.screen.name]);
 
   const phoneActions: PhoneActions = {
-    settle: (ids, bulk) =>
+    settle: (ids, bulk, unreadKept) =>
       bulk
-        ? void settleBulk(ids).then((done) => done.length && leaveOpenThread("settle", done))
+        ? void settleBulk(ids, { unreadKept }).then((done) => done.length && leaveOpenThread("settle", done))
         : void cmds.run("thread.settle", ids).then((n) => n && leaveOpenThread("settle", ids)),
     archive: (ids) => void cmds.run("thread.archive", ids).then((n) => n && leaveOpenThread("archive", ids)),
     markUnseen: (id) => markUnseen(id),

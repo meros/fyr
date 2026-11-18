@@ -1403,8 +1403,8 @@ label.sr{cursor:pointer}
    never scrolls; each column scrolls on its own. In the rail only the middle (the load rings and slot pips per host,
    the quota lines) gives way: it is its own scroll area, so the sections, List, the bell, Changes, Settings and the
    host line keep their size and stay in view. The rings and the quota lines sit two to a row where they fit. A
-   short rail (under 940 px, V0.167; 860 px before) is compact: the key hints (g1…g5, \) go, as the tooltips name them, and a section's icon and
-   count share one row (V0.137's Slots can make six sections), so two hosts and four
+   short rail (under 1010 px, V0.189 for the Unread item; 940 px in V0.167, 860 px before) is compact: the key hints (g1…g6, \) go, as the tooltips name them, and a section's icon and
+   count share one row (V0.137's Slots can make seven sections), so two hosts and four
    providers fit at 700 px. If even the fixed items do not fit, the rail itself scrolls. */
 .shell{overflow:hidden}
 .app{grid-template-rows:minmax(0,1fr);overflow:hidden}
@@ -1423,7 +1423,7 @@ label.sr{cursor:pointer}
 .rail .rmid .rqr{gap:2px;line-height:12px}
 .rail .rmid .rqr i{min-width:12px;height:12px;padding:0 2px;border-radius:3px;display:grid;place-items:center;font:700 8px/1 var(--ui);font-style:normal;color:var(--qc);background:color-mix(in srgb,var(--qc) 20%,transparent)}
 .rail .rmid .rqr span{min-width:20px;text-align:right;font-variant-numeric:tabular-nums}
-@container rail (max-height: 940px){
+@container rail (max-height: 1010px){
   .rail .ri .k{display:none}
   .rail .ri{padding:5px 0 4px}
   .rail .brand{margin-bottom:4px}

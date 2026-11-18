@@ -41,7 +41,7 @@ export function keyHints(c: HintContext): Hint[] {
   if (c.picked > 0) h.push(["⇧E", `settle ${c.picked}`]);
   else if (c.hasSelection) h.push(["⇧E", "settle group"]);
   if (c.failed) h.push(["r", "retry"]);
-  h.push(["c", "new"], ["g1–5", "section"]);
+  h.push(["c", "new"], ["g1–6", "section"]);
   if (c.undo) h.push(["⌘Z", "undo"]);
   if (c.view === "peek") h.push(["Esc", "close peek"]);
   else if (c.running && c.zone === "thread") h.push(["Esc", "interrupt"]);
