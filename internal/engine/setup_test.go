@@ -367,8 +367,9 @@ func TestProjectSetupOwnerAsked(t *testing.T) {
 	}
 }
 
-// V0.project-icons-on-demand, decision 0034: a linked project's name and colour
-// stay the link's; its image is the host's and the reply says what shows.
+// V0.project-icons-on-demand, decision 0034: a linked project's new name is
+// stamped as the link's newest, which the front passes on; its image is the
+// host's, stamped so that the client shows the newest.
 func TestProjectSetupOwnerAskedLinked(t *testing.T) {
 	h := setupHarness(t)
 	dir := filepath.Join(h.dir, "fyr")
@@ -388,7 +389,7 @@ func TestProjectSetupOwnerAskedLinked(t *testing.T) {
 		t.Fatal(out)
 	}
 	q := projectByID(h, pid)
-	if q.Image == "" || q.Name != "Mine" || !strings.Contains(out, "linked") {
+	if q.Image == "" || q.ImageAt.IsZero() || q.Name != "Other" || q.SharedAt.IsZero() || !strings.Contains(out, "linked") {
 		t.Fatalf("%s\n%+v", out, q)
 	}
 }

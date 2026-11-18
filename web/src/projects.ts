@@ -141,7 +141,9 @@ export function linkProjects(records: readonly Project[], hosts: readonly HostIn
       const lastUsed = members.map((m) => m.lastUsed ?? "").sort().at(-1);
       // The shared values are the newest member's, whichever host is shown; the image is not copied between hosts.
       const newest = members.reduce((a, b) => (Date.parse(b.sharedAt ?? "") > Date.parse(a.sharedAt ?? "") || (!a.sharedAt && b.sharedAt) ? b : a));
-      const pic = members.find((m) => m.image && m.id && m.hostId && !down(m)) ?? members.find((m) => m.image && m.id && m.hostId);
+      // V0.project-icons-on-demand: the newest image of the online members, of equals the first in host order.
+      const withImage = members.filter((m) => m.image && m.id && m.hostId);
+      const pic = withImage.reduce<Project | undefined>((a, b) => (!a || down(b) < down(a) || (down(b) === down(a) && Date.parse(b.imageAt ?? "") > (Date.parse(a.imageAt ?? "") || 0)) ? b : a), undefined);
       out.push({
         ...members[0],
         name: newest.name,

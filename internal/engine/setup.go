@@ -232,17 +232,18 @@ func (e *Engine) setupTools(s *mcp.Server) {
 			if !ok {
 				return "", fmt.Errorf("no project %q on this host", key)
 			}
-			// args go in as the agent's and keep the owner's values; owner are what the owner asked for here.
-			args, owner := core.Args{"id": p.ID}, core.Args{"id": p.ID}
-			var kept, linked []string
+			// args go in as the agent's and keep the owner's values; owner are what the owner asked for
+			// here; shared are those of a linked project, which the front passes to its other hosts.
+			args, owner, shared := core.Args{"id": p.ID}, core.Args{"id": p.ID}, core.Args{"id": p.ID, "link": p.Link}
+			var kept []string
 			for _, k := range []string{"name", "color"} {
 				v := sArg(a, k)
 				switch {
 				case v == "":
 				case !asked:
 					args[k] = v
-				case p.Link != "": // decision 0034: the link's values, written by the front
-					linked = append(linked, setupWords[k])
+				case p.Link != "":
+					shared[k] = v
 				default:
 					owner[k] = v
 				}
@@ -276,7 +277,7 @@ func (e *Engine) setupTools(s *mcp.Server) {
 					}
 				}
 			}
-			if len(args) == 1 && len(owner) == 1 && len(kept) == 0 && len(linked) == 0 {
+			if len(args) == 1 && len(owner) == 1 && len(shared) == 2 && len(kept) == 0 {
 				return "", errors.New("give icon, name or color")
 			}
 			var parts []string
@@ -298,6 +299,23 @@ func (e *Engine) setupTools(s *mcp.Server) {
 				for _, f := range core.SetupFields {
 					if _, ok := owner[f]; ok {
 						say(f, owner)
+					}
+				}
+			}
+			if len(shared) > 2 {
+				// Decision 0034: the newest stamp in a link wins, and the front sends it to the other members.
+				at := e.Now().UTC()
+				if !at.After(p.SharedAt) {
+					at = p.SharedAt.Add(time.Millisecond)
+				}
+				shared["at"] = at.Format(time.RFC3339Nano)
+				r := e.applyProject(core.Input{Source: core.FromOwner, Kind: core.KindProjectShared, Args: shared, CmdID: NewID("agent_"), Actor: th.LastAsker})
+				if !r.OK {
+					return "", errors.New(r.Error)
+				}
+				for _, f := range core.SetupFields {
+					if _, ok := shared[f]; ok {
+						say(f, shared)
 					}
 				}
 			}
@@ -325,11 +343,8 @@ func (e *Engine) setupTools(s *mcp.Server) {
 				}
 				out = strings.TrimSpace(out + " Kept the " + strings.Join(ks, ", ") + ": the owner set it.")
 			}
-			if len(linked) > 0 {
-				out = strings.TrimSpace(out + " Did not change the " + strings.Join(linked, ", ") + ": this project is linked across hosts, so that is changed on its project screen.")
-			}
-			if _, set := owner["image"]; set && p.Link != "" {
-				out += " This project is linked across hosts: Fyr shows the image of the first online host that has one, which may be another host's."
+			if _, image := owner["image"]; p.Link != "" && (image || len(shared) > 2) {
+				out += " This project is linked across hosts: its other hosts follow when Fyr's front next hears from them. The image stays on this host and shows while this host is online."
 			}
 			return out, nil
 		}})

@@ -108,6 +108,11 @@ test("the shared values are the newest member's; the image is the first online m
   assert.match(projectIconUrl(p, 16)!, /\/h\/A\/projects\/p1\/icon/);
   const [q] = linkProjects([{ ...a, image: undefined }, { ...b, image: "v2" }], [A, B]);
   assert.match(projectIconUrl(q, 16)!, /\/h\/B\//);
+  const older = { ...a, imageAt: "2026-11-18T10:00:00Z" };
+  const newer = { ...b, image: "v2", imageAt: "2026-11-18T11:00:00Z" };
+  assert.match(projectIconUrl(linkProjects([older, newer], [A, B])[0], 16)!, /\/h\/B\/.*v=v2/, "the newest image of the online members");
+  assert.match(projectIconUrl(linkProjects([older, newer], [A, { ...B, online: false }])[0], 16)!, /\/h\/A\/.*v=v1/, "an offline host's image cannot be read");
+  assert.match(projectIconUrl(linkProjects([{ ...a }, { ...b, image: "v2" }], [A, B])[0], 16)!, /\/h\/A\//, "without stamps, the first in host order");
 });
 
 test("an edit splits into what the link shares and what stays this host's", () => {
