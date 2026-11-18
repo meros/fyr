@@ -115,6 +115,9 @@ type Options struct {
 	Extra map[string]any
 	// Data is an existing data folder (a fixture); default a new one.
 	Data string
+	// Web is a folder to serve as the client (fyrd -web); default the embedded one,
+	// which has no index.html where the client was not built, so /healthz is 503.
+	Web string
 }
 
 // Fyrd is a real fyrd process in a temp folder.
@@ -207,7 +210,11 @@ func Start(o Options) (*Fyrd, error) {
 	}
 	t3 := filepath.Join(root, "t3")
 	os.MkdirAll(t3, 0o700)
-	cmd := exec.Command(bin, "serve", "-data", f.Data, "-config", cfgPath, "-t3", t3)
+	args := []string{"serve", "-data", f.Data, "-config", cfgPath, "-t3", t3}
+	if o.Web != "" {
+		args = append(args, "-web", o.Web)
+	}
+	cmd := exec.Command(bin, args...)
 	// Only what a process needs; every FYR_* variable out (#167).
 	cmd.Env = append(cleanEnv(os.Environ()), "HOME="+root)
 	cmd.Stdout, cmd.Stderr = f.logb, f.logb

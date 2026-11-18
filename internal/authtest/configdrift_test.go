@@ -6,6 +6,7 @@ package authtest_test
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,11 @@ import (
 
 func TestARunningFyrdSaysItsConfigChanged(t *testing.T) {
 	t.Parallel()
-	f, err := authtest.Start(authtest.Options{Name: "drift", Extra: map[string]any{"configCheckMillis": 50}})
+	web := t.TempDir() // CI's Go job has no built client, and /healthz needs one to be green
+	if err := os.WriteFile(filepath.Join(web, "index.html"), []byte("<!doctype html>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := authtest.Start(authtest.Options{Name: "drift", Web: web, Extra: map[string]any{"configCheckMillis": 50}})
 	if err != nil {
 		t.Fatal(err)
 	}
