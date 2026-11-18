@@ -191,3 +191,24 @@ func TestProjectLink(t *testing.T) {
 		t.Fatalf("unlink: %v %+v", err, off)
 	}
 }
+
+// Decision 0034: the newest shared values win, and only they change.
+func TestProjectShared(t *testing.T) {
+	t0 := time.Unix(100, 0).UTC()
+	const link = "l_0123456789abcdef"
+	ps := map[string]*Project{"p1": {ID: "p1", Name: "a", Link: link, Folder: "/w", Model: "m", SharedAt: t0}}
+	send := func(at time.Time, l string) (*Project, error) {
+		_, p, _, err := ReduceProject(ps, nil, Input{Source: FromOwner, Kind: KindProjectShared, Args: Args{"id": "p1", "link": l, "at": at.Format(time.RFC3339Nano), "name": "new", "folder": "/x", "model": "z"}}, t0)
+		return p, err
+	}
+	if p, err := send(t0, link); err != nil || p.Name != "a" {
+		t.Fatalf("the same stamp: %v %+v", err, p)
+	}
+	if _, err := send(t0.Add(time.Second), "l_ffffffffffffffff"); err == nil {
+		t.Fatal("another link's values were taken")
+	}
+	p, err := send(t0.Add(time.Second), link)
+	if err != nil || p.Name != "new" || p.Folder != "/w" || p.Model != "m" || !p.SharedAt.Equal(t0.Add(time.Second)) {
+		t.Fatalf("newer: %v %+v", err, p)
+	}
+}

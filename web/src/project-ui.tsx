@@ -7,7 +7,7 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, quietSaver, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, linkCandidates, PALETTE_NAMES, iconFileError, nameError, patchFor, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settings-rows.tsx";
 import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -612,6 +612,8 @@ export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
         {...p}
         profiles={profiles}
         linked={!!p.linking?.group.members}
+        shown={p.linking?.group.members ? p.linking.group : undefined}
+        imageTargets={(p.linking?.group.members ?? [p.project]).filter((m) => hs.hosts?.find((h) => h.id === m.hostId)?.online !== false)}
         host={
           chip && (
             <Group title="Host" label="Host">
@@ -636,12 +638,13 @@ export interface ProjectLinking {
   candidates: Project[];
   link(other: string): Promise<string | null>;
   unlink(id: string): Promise<string | null>;
+  add(host: string, folder: string): Promise<string | null>;
   /** open a member's page: its folder and defaults are its own */
   open(id: string): void;
 }
 
-export function linkingFor(group: Project, projects: Project[], actions: { link(id: string, other: string): Promise<string | null>; unlink(id: string): Promise<string | null> }, open: (id: string) => void): ProjectLinking {
-  return { group, candidates: linkCandidates(group, projects), link: (other) => actions.link(group.id!, other), unlink: actions.unlink, open };
+export function linkingFor(group: Project, projects: Project[], actions: { link(id: string, other: string): Promise<string | null>; unlink(id: string): Promise<string | null>; add(id: string, host: string, folder: string): Promise<string | null> }, open: (id: string) => void): ProjectLinking {
+  return { group, candidates: linkCandidates(group, projects), link: (other) => actions.link(group.id!, other), unlink: actions.unlink, add: (host, folder) => actions.add(group.id!, host, folder), open };
 }
 
 /** The Host group's rows for a linked project: each host's record, and what can join. The same on the desktop and the
@@ -660,6 +663,10 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
     if (!e) env.saved();
     return e;
   };
+  const picker = useFolderPick();
+  const [hostPick, setHostPick] = useState("");
+  const addable = addHosts(linking.group, hs.hosts ?? []);
+  const addTo = addable.find((h) => h.id === hostPick) ?? addable[0];
   const members = linking.group.members ?? [];
   const chosen = linking.candidates.some((c) => c.id === pick) ? pick : (linking.candidates[0]?.id ?? "");
   return (
@@ -696,7 +703,7 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
       {linking.candidates.length > 0 && (
         <Row
           title="Same project on another host"
-          desc="Show them as one project. Each host keeps its own folder and threads."
+          desc={sameRepo(linking.group, linking.candidates[0]) ? `${linking.candidates[0].name} on ${linking.candidates[0].host} looks like the same repository. Link it to show them as one project.` : "Show them as one project. Each host keeps its own folder and threads."}
           stack
           class="two"
           end={
@@ -705,11 +712,40 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
                 {linking.candidates.map((c) => (
                   <option value={c.id}>
                     {c.name} · {c.host}
+                    {sameRepo(linking.group, c) ? " · same repository" : ""}
                   </option>
                 ))}
               </select>
               <button type="button" class="btn" disabled={busy || env.readOnly || !chosen} onClick={() => void run(() => linking.link(chosen))}>
                 Link
+              </button>
+            </>
+          }
+        />
+      )}
+      {addTo && (
+        <Row
+          title="Add on another host"
+          desc="Choose a folder there. The project keeps its name, colour and quiet hours."
+          stack
+          class="two"
+          end={
+            <>
+              <select aria-label="Host to add the project on" value={addTo.id} disabled={busy || env.readOnly} onChange={(e) => setHostPick((e.target as HTMLSelectElement).value)}>
+                {addable.map((h) => (
+                  <option value={h.id}>{h.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                class="btn"
+                disabled={busy || env.readOnly}
+                onClick={async () => {
+                  const path = await picker.pick({ title: `Folder for ${linking.group.name} on ${addTo.name}`, host: addTo.name });
+                  if (path) await run(() => linking.add(addTo.id!, path));
+                }}
+              >
+                Choose folder…
               </button>
             </>
           }
@@ -724,7 +760,9 @@ function LinkRows({ project, linking }: { project: Project; linking: ProjectLink
   );
 }
 
-function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean }) {
+function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked, shown, imageTargets }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0034: other hosts have this project too */ linked?: boolean; /** decision 0034: the linked project, whose shared values this page shows */ shown?: Project; /** decision 0034: the records an image goes to: every online member */ imageTargets: Project[] }) {
+  // Decision 0034: name, colour, icon and quiet hours are the link's; the rest of the page is this host's record.
+  if (shown) project = { ...project, name: shown.name, color: shown.color, icon: shown.icon, quiet: shown.quiet, image: shown.image, imageFrom: shown.imageFrom };
   const env = useSet();
   const api = useApi();
   const ask = useAsk();
@@ -756,15 +794,17 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
     const bad = iconFileError(f);
     if (bad) return err("icon", bad);
     setBusy(true);
-    const r = await api.uploadProjectIcon(project.hostId ?? "", project.id, f);
+    const rs = await Promise.all(imageTargets.map((m) => api.uploadProjectIcon(m.hostId ?? "", m.id!, f)));
     setBusy(false);
-    err("icon", r.ok ? null : (r.error ?? "The upload did not work"));
-    if (r.ok) env.saved();
+    const bad2 = rs.find((r) => !r.ok);
+    err("icon", bad2 ? (bad2.error ?? "The upload did not work") : null);
+    if (!bad2) env.saved();
   };
   const removeImage = async () => {
-    const r = await api.command(project.hostId ?? "", "project.update", undefined, { id: project.id, image: "" });
-    err("icon", r.ok ? null : (r.error ?? "That did not work"));
-    if (r.ok) env.saved();
+    const rs = await Promise.all(imageTargets.map((m) => api.command(m.hostId ?? "", "project.update", undefined, { id: m.id, image: "" })));
+    const bad2 = rs.find((r) => !r.ok);
+    err("icon", bad2 ? (bad2.error ?? "That did not work") : null);
+    if (!bad2) env.saved();
   };
   const setup = async () => {
     setBusy(true);

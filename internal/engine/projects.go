@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/hostfs"
@@ -311,9 +312,53 @@ func (e *Engine) Projects() []api.Project {
 	now := e.Now()
 	rev := e.nextRev()
 	for _, p := range e.projects {
-		out = append(out, api.Project{Project: *p, Rev: rev, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now)})
+		out = append(out, api.Project{Project: *p, Rev: rev, Threads: counts[p.ID], LastUsed: last[p.ID], QuietUntil: e.quietUntil(p.ID, now), Repo: e.projectRepo(p.Folder, now)})
 	}
 	return out
+}
+
+// folderRepo is a folder's git origin as last read.
+type folderRepo struct {
+	repo string
+	at   time.Time
+}
+
+// projectRepo is the normalised origin of a project's folder, read at most
+// every five minutes. Call with e.mu held: it reads one small file and runs
+// no git.
+func (e *Engine) projectRepo(dir string, now time.Time) string {
+	if dir == "" {
+		return ""
+	}
+	if c, ok := e.repos[dir]; ok && now.Sub(c.at) < 5*time.Minute {
+		return c.repo
+	}
+	if e.repos == nil {
+		e.repos = map[string]folderRepo{}
+	}
+	c := folderRepo{repo: originOf(filepath.Join(dir, ".git", "config")), at: now}
+	e.repos[dir] = c
+	return c.repo
+}
+
+// originOf reads the origin URL from a git config file; "" without one.
+func originOf(config string) string {
+	b, err := os.ReadFile(config)
+	if err != nil {
+		return ""
+	}
+	in := false
+	for _, l := range strings.Split(string(b), "\n") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "[") {
+			in = l == `[remote "origin"]`
+			continue
+		}
+		if k, v, ok := strings.Cut(l, "="); in && ok && strings.TrimSpace(k) == "url" {
+			return agent.NormalizeRemote(strings.TrimSpace(v))
+		}
+	}
+	return ""
 }
 
 // checkFolder cleans a project folder and refuses one that cannot match: it

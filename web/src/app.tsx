@@ -65,7 +65,7 @@ import { PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, expandOrder, findProject, memberOn, moveToast, orderProjects, projectRecords, recordOf } from "./projects.ts";
+import { FILTER_KEY, expandOrder, findProject, memberOn, moveToast, orderProjects, projectRecords, recordOf, splitSharedPatch } from "./projects.ts";
 import { HIDDEN_KEY, NOTHING_HIDDEN, applyHidden, hiddenCount, parseHidden, pushHiddenOf, type Hidden, type PushHidden } from "./hidden.ts";
 import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clickHost, filterEmpty, parseHostsOff, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
@@ -1008,7 +1008,19 @@ function App() {
     return r.ok ? null : (r.error ?? "That did not work");
   };
   const projectActions = {
-    update: (id: string, patch: ProjectPatch) => projectCommand("project.update", { id, ...patch }),
+    /** Decision 0034: on a linked project the shared values go to every host through the front; the rest is this host's. */
+    update: async (id: string, patch: ProjectPatch): Promise<string | null> => {
+      const link = findProject(fullStore.projects, id)?.members ? recordOf(fullStore.projects, id)?.link : undefined; // V0.207: Settings edits hidden ones too
+      if (!link) return projectCommand("project.update", { id, ...patch });
+      const { shared, own } = splitSharedPatch(patch as Record<string, unknown>);
+      if (Object.keys(shared).length) {
+        const r = await api.frontCommand("front.projectShared", { link, ...shared });
+        if (!r.ok) return r.error ?? "That did not work";
+        const failed = (r.result as { failed?: { error?: string }[] } | undefined)?.failed;
+        if (failed?.[0]?.error) return failed[0].error;
+      }
+      return Object.keys(own).length ? projectCommand("project.update", { id, ...own }) : null;
+    },
     /** V0.55: the project's one folder, from the picker. */
     setFolder: (id: string, path: string) => projectCommand("project.update", { id, folder: path }),
     /** New project (V0.30): with threadIds, the host files one thread in the same write; more are filed after. */
@@ -1060,6 +1072,12 @@ function App() {
       if (!r.ok) return r.error ?? "That did not work";
       const failed = (r.result as { failed?: { error?: string }[] } | undefined)?.failed;
       return failed?.[0]?.error ?? null;
+    },
+    /** Decision 0034: the project gets a member on another host, in a folder there. */
+    add: async (id: string, host: string, folder: string): Promise<{ error: string | null; id?: string }> => {
+      const r = await api.frontCommand("front.projectAdd", { ref: id, host, folder });
+      if (!r.ok) return { error: r.error ?? "That did not work" };
+      return { error: null, id: (r.result as { id?: string } | undefined)?.id };
     },
     /** Decision 0034: this host's record leaves the link, with its values and threads. */
     unlink: async (id: string): Promise<string | null> => {
@@ -1470,6 +1488,7 @@ function App() {
         order: projectActions.order,
         link: projectActions.link,
         unlink: projectActions.unlink,
+        add: async (id, host, folder) => (await projectActions.add(id, host, folder)).error,
       }}
     />
     </HostsContext.Provider>
@@ -1800,7 +1819,7 @@ function App() {
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={filterId} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
+      {dialog === "new" && <NewThreadDialog onAddProject={projectActions.add} profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={filterId} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
       {dialog === "picker" && (
         <Modal title={pickIds.length > 1 ? `Project for ${pickIds.length} threads` : "Project"} onClose={() => setDialog(null)} wide>
           <div class="db">

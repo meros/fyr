@@ -140,3 +140,99 @@ func TestProjectLinkOldHost(t *testing.T) {
 		t.Fatalf("words: %q", msg)
 	}
 }
+
+func projectNamed(h *settingsHost, ref string) (name, color string) {
+	for _, p := range h.eng.Projects() {
+		if strings.HasSuffix(ref, "/"+p.ID) {
+			return p.Name, p.Color
+		}
+	}
+	return "", ""
+}
+
+// Decision 0034, slice 2: a new link takes the first project's values, an edit
+// reaches every member, and a member that was offline catches up.
+func TestProjectSharedValues(t *testing.T) {
+	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
+	hosts := []HostConfig{{Name: "a", URL: a.hs.URL}, {Name: "b", URL: b.hs.URL}}
+	f, g := newFront(t, hosts...), newFront(t, hosts...)
+	online(t, f.URL, 2)
+	online(t, g.URL, 2)
+	onA, onB := projectOn(t, f.URL, a, "TEST-A", "Fyr"), projectOn(t, f.URL, b, "TEST-B", "fyr-mac")
+	code, rep := linkCmd(t, f.URL, "l", onA, onB)
+	if code != 200 {
+		t.Fatalf("link: %d %v", code, rep)
+	}
+	link, _ := rep["result"].(map[string]any)["link"].(string)
+	if n, _ := projectNamed(b, onB); n != "Fyr" {
+		t.Fatalf("b's name after linking: %q", n)
+	}
+	eventually(t, "front sees both", func() bool { return frontSees(t, f.URL, onA, link) && frontSees(t, f.URL, onB, link) })
+	shared := func(front, id, args string) (int, map[string]any) {
+		return post(t, front+"/api/front/command", fmt.Sprintf(`{"commandId":%q,"action":"front.projectShared","args":{"link":%q,%s}}`, id, link, args))
+	}
+	if code, rep := shared(f.URL, "bad", `"color":"amber"`); code != 400 {
+		t.Fatalf("a bad colour: %d %v", code, rep)
+	}
+	if code, rep := shared(f.URL, "s1", `"name":"Fyr 2","color":"teal"`); code != 200 || rep["ok"] != true {
+		t.Fatalf("shared: %d %v", code, rep)
+	}
+	for _, h := range []*settingsHost{a, b} {
+		ref := onA
+		if h == b {
+			ref = onB
+		}
+		if n, c := projectNamed(h, ref); n != "Fyr 2" || c != "teal" {
+			t.Fatalf("after the edit: %q %q", n, c)
+		}
+	}
+	// B is away for an edit made through the other front.
+	b.setDown(true)
+	eventually(t, "b offline", func() bool { return getState(t, g.URL).Hosts[1]["online"] == false })
+	eventually(t, "g has the stamp", func() bool {
+		code, _ := shared(g.URL, probe(), `"name":"While away"`)
+		return code == 200
+	})
+	if n, _ := projectNamed(b, onB); n != "Fyr 2" {
+		t.Fatalf("an offline host changed: %q", n)
+	}
+	b.setDown(false)
+	eventually(t, "b catches up", func() bool { n, c := projectNamed(b, onB); return n == "While away" && c == "teal" })
+}
+
+// Decision 0034, slice 3: a project gets a member on another host, in a folder
+// of that host, with the link's values and no setup run.
+func TestProjectAdd(t *testing.T) {
+	a, b := newSettingsHostID(t, "a", "TEST-A"), newSettingsHostID(t, "b", "TEST-B")
+	f := newFront(t, HostConfig{Name: "a", URL: a.hs.URL}, HostConfig{Name: "b", URL: b.hs.URL})
+	online(t, f.URL, 2)
+	onA := projectOn(t, f.URL, a, "TEST-A", "Fyr")
+	add := func(id, host, folder string) (int, map[string]any) {
+		return post(t, f.URL+"/api/front/command", fmt.Sprintf(`{"commandId":%q,"action":"front.projectAdd","args":{"ref":%q,"host":%q,"folder":%q}}`, id, onA, host, folder))
+	}
+	if code, rep := add("same", "TEST-A", b.home); code != 400 {
+		t.Fatalf("its own host: %d %v", code, rep)
+	}
+	if code, rep := add("nofolder", "TEST-B", b.home+"/missing"); code == 200 {
+		t.Fatalf("a folder that does not exist: %v", rep)
+	}
+	code, rep := add("ok", "TEST-B", b.home)
+	if code != 200 || rep["ok"] != true {
+		t.Fatalf("add: %d %v", code, rep)
+	}
+	res := rep["result"].(map[string]any)
+	ref, link := res["id"].(string), res["link"].(string)
+	if linkOf(a, onA) != link || linkOf(b, ref) != link {
+		t.Fatalf("links: a %q b %q want %q", linkOf(a, onA), linkOf(b, ref), link)
+	}
+	if n, _ := projectNamed(b, ref); n != "Fyr" {
+		t.Fatalf("name on b: %q", n)
+	}
+	if ts := b.eng.Snapshot(); len(ts) != 0 {
+		t.Fatalf("a setup thread started: %d", len(ts))
+	}
+	eventually(t, "the front sees it", func() bool { return frontSees(t, f.URL, ref, link) })
+	if code, rep := add(probe(), "TEST-B", b.home); code != 409 {
+		t.Fatalf("a second member: %d %v", code, rep)
+	}
+}

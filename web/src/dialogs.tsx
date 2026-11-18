@@ -12,7 +12,7 @@ import { relTime, shortModel } from "./format.ts";
 import type { SnoozeChoice } from "./snooze.ts";
 import type { HostInfo } from "./hosts.ts";
 import { folderHint, type NewThreadArgs } from "./new-thread.ts";
-import { useNewThreadForm } from "./new-thread-form.ts";
+import { useNewThreadForm, type NewThreadFormOptions } from "./new-thread-form.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 
 export function Modal({ title, onClose, children, wide, cls }: { title: string; onClose(): void; children: any; wide?: boolean; /** V0.119: "settings" keeps one size on every page */ cls?: string }) {
@@ -33,7 +33,7 @@ export function Modal({ title, onClose, children, wide, cls }: { title: string; 
 
 /** SPEC 0.5 V0.30, V0.42: Project first; the folder follows from the project's folder, else a fresh scratch
  *  folder; "Change" opens the folder picker. #41: the state is useNewThreadForm's, shared with the phone. */
-export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; projects: Project[]; projectFilter: string | null; clockOffset?: number; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, folder: string, host?: string): Promise<{ error: string | null; id?: string }> }) {
+export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddProject"]; profiles: Profile[]; hosts?: HostInfo[]; projects: Project[]; projectFilter: string | null; clockOffset?: number; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, folder: string, host?: string): Promise<{ error: string | null; id?: string }> }) {
   const n = useNewThreadForm(p);
   const { form: f, cur, chip, folder, profiles, prof, att } = n;
   const quotas = useQuotas();
@@ -75,6 +75,11 @@ export function NewThreadDialog(p: { profiles: Profile[]; hosts?: HostInfo[]; pr
               onPick={n.choose}
               extra={<QuietHold {...n.quiet} />}
             />
+          )}
+          {n.missing && (
+            <button class="btn sm" onClick={() => void n.addHere()}>
+              Add {n.missing.name} on {n.host}…
+            </button>
           )}
           {f.creating !== null && <NewProjectStep initialName={f.creating} initialFolder="" fromThread={false} host={n.host} onDraft={n.setDraft} onCancel={n.cancelCreating} onCreate={n.createProject} />}
         </div>
