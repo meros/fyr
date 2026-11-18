@@ -36,8 +36,8 @@ import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
 import { TAB_LABEL, defaultTab, threadTabs } from "./view.ts";
 import { HandoverForm } from "./handover-ui.tsx";
-import { NewProjectStep, ProjectEditor, ProjectIcon, ProjectList, QuietGate, QuietHold, ProjectPicker, ProjectTag, StartedBy, type ProjectPatch, type QuietUnlock } from "./project-ui.tsx";
-import { colorVar, projectName, projectOf } from "./projects.ts";
+import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, ProjectList, QuietGate, QuietHold, ProjectPicker, ProjectTag, StartedBy, type ProjectPatch, type QuietUnlock } from "./project-ui.tsx";
+import { colorVar, findProject, projectName, projectOf, recordOf } from "./projects.ts";
 import { folderHint, type NewThreadArgs } from "./new-thread.ts";
 import { useNewThreadForm } from "./new-thread-form.ts";
 import { setToolDetails, toolDetails } from "./prefs.ts";
@@ -231,6 +231,9 @@ export interface PhoneProps {
     move(ids: string[], projectId: string | null): Promise<string | null>;
     /** V0.58 */
     delete(id: string): Promise<string | null>;
+    /** Decision 0033 */
+    link(id: string, other: string): Promise<string | null>;
+    unlink(id: string): Promise<string | null>;
   };
   actions: PhoneActions;
   /** V0.119: a Settings screen (the app builds it with its Api): the nav (null) or a page, under this header */
@@ -280,7 +283,7 @@ export function PhoneApp(p: PhoneProps) {
       {s.name === "thread" && !p.open.thread && p.open.gated && (
         <div class="m-screen">
           <MHeader onBack={p.nav.back} title="Quiet hours" />
-          <QuietGate project={p.store.projects.find((x) => x.id === p.open.gated!.projectId)} now={p.now} unlock={p.inbox.unlock} what="thread" />
+          <QuietGate project={recordOf(p.store.projects, p.open.gated!.projectId)} now={p.now} unlock={p.inbox.unlock} what="thread" />
         </div>
       )}
       {s.name === "thread" && !p.open.thread && !p.open.gated && (
@@ -1607,7 +1610,8 @@ function MProjectChip({ t, projects, onClick }: { t: Thread; projects: Project[]
 /** The project screen (V0.55; V0.119: the same page as Settings → Projects → a project, titled with its name; Saved at
  *  the right of the header, because the phone's header carries the title). */
 function MProject(p: PhoneProps & { id: string }) {
-  const pr = p.store.projects.find((x) => x.id === p.id);
+  const pr = recordOf(p.store.projects, p.id);
+  const group = findProject(p.store.projects, p.id);
   const sv = useSaved();
   const offline = p.store.conn === "offline";
   return (
@@ -1620,6 +1624,7 @@ function MProject(p: PhoneProps & { id: string }) {
         {pr ? (
           <ProjectEditor
             project={pr}
+            linking={group && linkingFor(group, p.store.projects, p.projectActions, (id) => p.nav.replace({ screen: { name: "project", id }, sheet: null }))}
             profiles={p.store.profiles}
             now={p.now}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}

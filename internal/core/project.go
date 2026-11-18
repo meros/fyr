@@ -34,6 +34,10 @@ type Project struct {
 	By map[string]string `json:"by,omitempty"`
 	// Setup is the last project setup run (V0.116).
 	Setup *ProjectSetup `json:"setup,omitempty"`
+	// Link joins this record to its counterparts on other hosts (decision
+	// 0033): records with one link are one project to the owner. "" is an
+	// ordinary project. Each record stays its own host's.
+	Link string `json:"link,omitempty"`
 }
 
 // ProjectSetup is a project setup run (V0.116): the thread it runs in, when
@@ -184,7 +188,20 @@ const (
 	// KindProjectSetupRun records a setup run (V0.116): args {id, thread?,
 	// error?}. The engine starts the thread first.
 	KindProjectSetupRun = "project.setupRun"
+	// KindProjectLink sets or clears the record's link (decision 0033): args
+	// {id, link}; "" unlinks. It is a kind of its own so that a host too old
+	// to keep a link refuses it, where project.update would ignore the field.
+	KindProjectLink = "project.link"
 )
+
+// ValidLink reports whether s is a link id: l_ and 16 to 32 hex digits.
+func ValidLink(s string) bool {
+	h, ok := strings.CutPrefix(s, "l_")
+	if !ok || len(h) < 16 || len(h) > 32 {
+		return false
+	}
+	return strings.Trim(h, "0123456789abcdef") == ""
+}
 
 // ProjectMatch is the project a thread's folder lands it in, "" for none.
 type ProjectMatch struct{ ID string }
@@ -204,6 +221,7 @@ func init() {
 			r.P.Setup = &ProjectSetup{Thread: a.Str("thread"), At: now, Error: a.Str("error")}
 			return Result{Events: []Event{{"project.setupRun", map[string]any{"thread": a.Str("thread"), "error": a.Str("error")}}}, Reply: map[string]any{"id": r.P.ID, "thread": a.Str("thread")}}, nil
 		}},
+		{Name: KindProjectLink, On: RecProject, From: ownerOnly, Reduce: reduceProjectLink},
 		{Name: KindProjectMatched, From: observed, Untouched: true, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
 			a, err := argsOf[ProjectMatch](in)
 			if err == nil {
@@ -300,6 +318,25 @@ func reduceProjectUpdate(r Rec, in Input, _ time.Time) (Result, error) {
 	}
 	p.Edited = true
 	return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID}}, nil
+}
+
+// reduceProjectLink sets the record's link. Linking makes the fields the
+// members show together the owner's, so that an agent on one host cannot
+// change what the owner sees for the others (decision 0033).
+func reduceProjectLink(r Rec, in Input, _ time.Time) (Result, error) {
+	a := mapArgs(in)
+	p, link := r.P, a.Str("link")
+	if link != "" && !ValidLink(link) {
+		return Result{}, reject(RejectBadArgs, "link must be l_ and 16 to 32 hex digits")
+	}
+	p.fillBy()
+	if link != "" {
+		for _, f := range SetupFields {
+			p.By[f] = ByOwner
+		}
+	}
+	p.Link = link
+	return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID, "link": link}}, nil
 }
 
 // reduceProjectSetup is the setup agent's fields (V0.116): each one the

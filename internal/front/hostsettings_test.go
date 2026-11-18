@@ -1,6 +1,7 @@
 package front
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,9 +31,16 @@ type settingsHost struct {
 	reg *provider.Registry
 	// home is the host's home folder, the root of its folder picker (V0.132).
 	home string
+	// noLink: the host answers project.link as one from before decision 0033.
+	noLink atomic.Bool
 }
 
 func newSettingsHost(t *testing.T, name string) *settingsHost {
+	return newSettingsHostID(t, name, "")
+}
+
+// newSettingsHostID is a settings host that reports an install id.
+func newSettingsHostID(t *testing.T, name, id string) *settingsHost {
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "db"))
 	if err != nil {
@@ -62,21 +71,35 @@ func newSettingsHost(t *testing.T, name string) *settingsHost {
 	if err := os.MkdirAll(filepath.Join(home, "only-on-"+name), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name, Providers: registryAPI{reg}, ProfileList: reg.Profiles,
+	s := &server.Server{Engine: h.eng, BuildID: "host-build", Host: name, ID: id, Providers: registryAPI{reg}, ProfileList: reg.Profiles,
 		FS: &hostfs.FS{Home: home, Folders: h.eng.ProjectFolders, Recent: h.eng.RecentFolders},
 		// Every host has a provider "claude"; its quota says whose it is.
 		Quota: func(context.Context) any {
 			return []map[string]any{{"profile": "claude", "kind": "anthropic-oauth", "error": "on " + name}}
 		}}
 	inner := s.Handler()
+	sh := &settingsHost{host: h, reg: reg, home: home}
 	h.hs = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h.down.Load() {
 			panic(http.ErrAbortHandler)
 		}
+		if sh.noLink.Load() && r.URL.Path == "/api/command" { // a host from before decision 0033
+			b, _ := io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewReader(b))
+			if bytes.Contains(b, []byte(`"project.link"`)) {
+				w.WriteHeader(400)
+				io.WriteString(w, `{"error":"unknown action project.link"}`)
+				return
+			}
+		}
 		inner.ServeHTTP(w, r)
 	}))
 	t.Cleanup(func() { h.hs.CloseClientConnections(); h.hs.Close(); st.Close() })
+<<<<<<< HEAD
 	return &settingsHost{host: h, reg: reg, home: home, srv: s}
+=======
+	return sh
+>>>>>>> d18063e (V0.207: projects on several hosts can be linked and show as one (decision 0033, slice 1))
 }
 
 // registryAPI is fyrd's providerAPI: the registry as the server reads it.

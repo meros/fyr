@@ -216,6 +216,13 @@ export function createMockApi(scenario: string): Api {
         setTimeout(() => onOrder?.(ids), 0); // the front's event, as on every device
         return { ok: true, result: { ids } };
       }
+      // Decision 0033: the front writes each host's own record.
+      if (action === "front.projectLink" || action === "front.projectUnlink") {
+        const refs = (action === "front.projectLink" ? (args?.refs as string[]) : [args?.ref as string]) ?? [];
+        const link = action === "front.projectLink" ? `l_${"0123456789abcdef"}` : "";
+        for (const r of refs) server.command(newCommandId(), "project.link", undefined, { id: r.slice(r.indexOf("/") + 1), link });
+        return { ok: true, result: { link, stored: refs, failed: [] } };
+      }
       if (hn.startsWith("\u0000")) return { ok: false, error: `this front follows no host ${host}` };
       // The fixture server places a new thread or project by name (a front without hosts: desk).
       return server.command(newCommandId(), action, threadId, mockHostList().length && hn && !threadId ? { ...(args ?? {}), host: hn } : (args ?? {}));

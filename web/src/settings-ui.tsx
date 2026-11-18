@@ -37,9 +37,15 @@ import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
 import { githubPause, githubRows, githubState, updateRow, updateState, type UpdatesView } from "./updates.ts";
 import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
+<<<<<<< HEAD
 import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects, setupLine } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
 import { NewProjectStep, ProjectEditor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
+=======
+import { colorVar, findProject, projectRecords, projectSearchLine, projectSubtitle, recordOf, searchProjects, settingsProjects } from "./projects.ts";
+import { quietNote } from "./quiet.ts";
+import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, type ProjectPatch } from "./project-ui.tsx";
+>>>>>>> d18063e (V0.207: projects on several hosts can be linked and show as one (decision 0033, slice 1))
 import { pushRow, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { move } from "./reorder.ts";
@@ -99,6 +105,9 @@ export interface ProjectActions {
   create(name: string, folder: string, host?: string): Promise<string | null>;
   /** V0.121: the owner's project order (front.projectOrder); the error, or null */
   order(ids: string[]): Promise<string | null>;
+  /** Decision 0033: linked projects; the error, or null */
+  link(id: string, other: string): Promise<string | null>;
+  unlink(id: string): Promise<string | null>;
 }
 
 export interface SettingsProps {
@@ -537,7 +546,9 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
       return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <HostParts s={s} now={p.now} part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} api={p.api} focus={at.sub} />} /> };
     case "projects": {
       if (at.sub) {
-        const pr = p.projects.find((x) => x.id === resolveRef(p.projects, at.sub!)); // a link names the host's own id (C12)
+        const rid = resolveRef(projectRecords(p.projects), at.sub!); // a link names the host's own id (C12)
+        const pr = recordOf(p.projects, rid); // decision 0033: a member of a linked project has its own page
+        const group = findProject(p.projects, rid);
         return {
           title: pr?.name ?? "Project",
           parent: "Projects",
@@ -545,6 +556,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
             <ProjectEditor
               key={pr.id}
               project={pr}
+              linking={group && linkingFor(group, p.projects, p.projectActions, (id) => go({ page: "projects", sub: id }))}
               profiles={profilesOn(hostForProject(pr.host, p.hosts), p.hosts, p.profiles) /* V0.127: its host's providers */}
               now={p.now}
               onSave={(patch) => p.projectActions.update(pr.id!, patch)}

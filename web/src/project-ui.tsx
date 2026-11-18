@@ -7,7 +7,7 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, quietSaver, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, PALETTE_NAMES, iconFileError, nameError, patchFor, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, linkCandidates, PALETTE_NAMES, iconFileError, nameError, patchFor, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settings-rows.tsx";
 import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -601,7 +601,7 @@ type EditorProps = { project: Project; profiles: Profile[]; /** the host's clock
 /** V0.139: a project lives on one host. With several hosts its screen says which, first, read-only (a project does not
  *  move); its providers and folders are that host's; while that host is offline the screen is read-only and says so.
  *  The same on the desktop (Settings → Projects → a project) and the phone (the project screen). */
-export function ProjectEditor(p: EditorProps) {
+export function ProjectEditor(p: EditorProps & { linking?: ProjectLinking }) {
   const hs = useHosts();
   const env = useSet();
   const chip = hostChip(p.project.host, hs.hosts, hs.now);
@@ -611,6 +611,7 @@ export function ProjectEditor(p: EditorProps) {
       <ProjectEditorBody
         {...p}
         profiles={profiles}
+        linked={!!p.linking?.group.members}
         host={
           chip && (
             <Group title="Host" label="Host">
@@ -619,6 +620,7 @@ export function ProjectEditor(p: EditorProps) {
                 title={<HostChip chip={chip} />}
                 desc={chip.offline ? `${chip.name} is ${chip.line.replace(" · read-only", "")}. This project shows as last read and cannot be changed until it is back.` : "The project lives here: its folder, its threads and the providers below are this host's. A project does not move to another host."}
               />
+              {p.linking && <LinkRows project={p.project} linking={p.linking} />}
             </Group>
           )
         }
@@ -627,7 +629,102 @@ export function ProjectEditor(p: EditorProps) {
   );
 }
 
-function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren }) {
+/** Decision 0033: what the project screen needs to show and change a project's links. */
+export interface ProjectLinking {
+  /** the project as the lists show it */
+  group: Project;
+  candidates: Project[];
+  link(other: string): Promise<string | null>;
+  unlink(id: string): Promise<string | null>;
+  /** open a member's page: its folder and defaults are its own */
+  open(id: string): void;
+}
+
+export function linkingFor(group: Project, projects: Project[], actions: { link(id: string, other: string): Promise<string | null>; unlink(id: string): Promise<string | null> }, open: (id: string) => void): ProjectLinking {
+  return { group, candidates: linkCandidates(group, projects), link: (other) => actions.link(group.id!, other), unlink: actions.unlink, open };
+}
+
+/** The Host group's rows for a linked project: each host's record, and what can join. The same on the desktop and the
+ *  phone. */
+function LinkRows({ project, linking }: { project: Project; linking: ProjectLinking }) {
+  const hs = useHosts();
+  const env = useSet();
+  const [pick, setPick] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async (f: () => Promise<string | null>) => {
+    setBusy(true);
+    const e = await f();
+    setBusy(false);
+    setErr(e);
+    if (!e) env.saved();
+    return e;
+  };
+  const members = linking.group.members ?? [];
+  const chosen = linking.candidates.some((c) => c.id === pick) ? pick : (linking.candidates[0]?.id ?? "");
+  return (
+    <>
+      {members
+        .filter((m) => m.id !== project.id)
+        .map((m) => {
+          const chip = hostChip(m.host, hs.hosts, hs.now);
+          return (
+            <Row
+              key={m.id}
+              class="hostrow"
+              title={chip ? <HostChip chip={chip} /> : m.host}
+              desc={`Also here: ${m.folder ? shortPath(m.folder) : "no folder"}`}
+              end={
+                <button type="button" class="btn" onClick={() => linking.open(m.id!)}>
+                  Open
+                </button>
+              }
+            />
+          );
+        })}
+      {members.length > 1 && (
+        <Row
+          title="Unlink this host"
+          desc="This host's project stands alone again, with its folder and threads."
+          end={
+            <button type="button" class="btn" disabled={busy || env.readOnly} onClick={() => void run(() => linking.unlink(project.id!))}>
+              Unlink
+            </button>
+          }
+        />
+      )}
+      {linking.candidates.length > 0 && (
+        <Row
+          title="Same project on another host"
+          desc="Show them as one project. Each host keeps its own folder and threads."
+          stack
+          class="two"
+          end={
+            <>
+              <select aria-label="Project on another host" value={chosen} disabled={busy || env.readOnly} onChange={(e) => setPick((e.target as HTMLSelectElement).value)}>
+                {linking.candidates.map((c) => (
+                  <option value={c.id}>
+                    {c.name} · {c.host}
+                  </option>
+                ))}
+              </select>
+              <button type="button" class="btn" disabled={busy || env.readOnly || !chosen} onClick={() => void run(() => linking.link(chosen))}>
+                Link
+              </button>
+            </>
+          }
+        />
+      )}
+      {err && (
+        <span class="sr-d err" role="alert">
+          {err}
+        </span>
+      )}
+    </>
+  );
+}
+
+function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDelete, host, linked }: EditorProps & { /** V0.139: the Host group, under the header */ host?: ComponentChildren; /** decision 0033: other hosts have this project too */ linked?: boolean }) {
   const env = useSet();
   const api = useApi();
   const ask = useAsk();
@@ -880,8 +977,8 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
       {onDelete && (
         <Group danger class="pdel">
           <Row
-            title="Delete project"
-            desc={n ? `Its ${n === 1 ? "thread stays" : `${n} threads stay`}, without a project.` : "It has no threads."}
+            title={linked ? `Delete from ${project.host}` : "Delete project"}
+            desc={`${n ? `Its ${n === 1 ? "thread stays" : `${n} threads stay`}, without a project.` : "It has no threads."}${linked ? " The other hosts keep theirs." : ""}`}
             error={errs.delete}
             end={
               <button

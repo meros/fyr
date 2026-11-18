@@ -4,6 +4,7 @@ import { hostUrl } from "./urls.ts";
 import type { NewProjectDraft, Profile, Project, ProjectIconSpec, QuietHours, SetupField, Thread } from "./types.ts";
 import { cleanWindow } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
+import type { HostInfo } from "./hosts.ts";
 
 /** Ten hues tuned to the Rail tokens, light and dark. Never amber: the beam marks only what needs the user. */
 export const PALETTE: Record<string, { light: string; dark: string }> = {
@@ -109,19 +110,83 @@ export function projectName(t: Pick<Thread, "projectId" | "project">, projects: 
 
 /** The project of a thread: by id, else by its display name. */
 export function projectOf(t: Pick<Thread, "projectId" | "project">, projects: Project[]): Project | undefined {
-  return (t.projectId ? projects.find((p) => p.id === t.projectId) : undefined) ?? projects.find((p) => p.name === t.project);
+  return (t.projectId ? findProject(projects, t.projectId) : undefined) ?? projects.find((p) => p.name === t.project);
+}
+
+// ---- Decision 0033: linked projects ----
+// Each host keeps its own record. The store's `projects` has one entry per project as the owner sees it: an ordinary
+// record, or for a link with several members the member shown first, with all of them in `members`. Without links the
+// list is the records themselves.
+
+/** One entry per project, in the order of `records`: a linked project takes the place of its earliest member. It shows
+ *  its first online member in the owner's host order, and counts the threads of them all. */
+export function linkProjects(records: readonly Project[], hosts: readonly HostInfo[]): Project[] {
+  const byLink = new Map<string, Project[]>();
+  for (const r of records) if (r.link) byLink.set(r.link, [...(byLink.get(r.link) ?? []), r]);
+  const place = (p: Project) => {
+    const i = hosts.findIndex((h) => h.id === p.hostId);
+    return i < 0 ? hosts.length : i;
+  };
+  const down = (p: Project) => (hosts.find((h) => h.id === p.hostId)?.online === false ? 1 : 0);
+  const out: Project[] = [];
+  const done = new Set<string>();
+  for (const r of records) {
+    const ms = r.link ? byLink.get(r.link)! : [];
+    if (ms.length < 2) {
+      out.push(r);
+    } else if (!done.has(r.link!)) {
+      done.add(r.link!);
+      const members = [...ms].sort((a, b) => down(a) - down(b) || place(a) - place(b));
+      const lastUsed = members.map((m) => m.lastUsed ?? "").sort().at(-1);
+      out.push({ ...members[0], members, threads: members.reduce((n, m) => n + (m.threads ?? 0), 0), ...(lastUsed ? { lastUsed } : {}) });
+    }
+  }
+  return out;
+}
+
+/** The records behind the list: every member of every project. */
+export function projectRecords(projects: readonly Project[]): Project[] {
+  return projects.flatMap((p) => p.members ?? [p]);
+}
+
+/** The project (one list entry) that has this record's id. */
+export function findProject(projects: readonly Project[], id: string | null | undefined): Project | undefined {
+  return id ? projects.find((p) => p.id === id || p.members?.some((m) => m.id === id)) : undefined;
+}
+
+/** The record with this id, a member or not. */
+export function recordOf(projects: readonly Project[], id: string | null | undefined): Project | undefined {
+  return id ? projectRecords(projects).find((p) => p.id === id) : undefined;
+}
+
+/** The project's record on that host. */
+export function memberOn(p: Project | undefined, hostId: string | undefined): Project | undefined {
+  return p && hostId ? (p.members ?? [p]).find((m) => m.hostId === hostId) : undefined;
+}
+
+/** The owner's order as stored: a linked project's members stay next to each other. */
+export function expandOrder(ids: readonly string[], projects: readonly Project[]): string[] {
+  return ids.flatMap((id) => findProject(projects, id)?.members?.flatMap((m) => (m.id ? [m.id] : [])) ?? [id]);
+}
+
+/** What can join this project: a project on a host it is not on, and not in another link. */
+export function linkCandidates(p: Project, projects: readonly Project[]): Project[] {
+  const taken = new Set((p.members ?? [p]).map((m) => m.hostId));
+  return projects.filter((x) => x.id && !x.members && x.hostId && !taken.has(x.hostId) && (!x.link || x.link === p.link));
 }
 
 /** The inbox filter: only this project's threads; null shows all. */
 export function filterByProject(threads: Record<string, Thread>, projectId: string | null, projects: Project[]): Record<string, Thread> {
   if (!projectId) return threads;
+  const want = findProject(projects, projectId)?.id ?? projectId;
   const out: Record<string, Thread> = {};
-  for (const t of Object.values(threads)) if (projectOf(t, projects)?.id === projectId) out[t.id] = t;
+  for (const t of Object.values(threads)) if (projectOf(t, projects)?.id === want) out[t.id] = t;
   return out;
 }
 
 /** Where a project lives, for a subtitle: its folder, else that threads are filed by hand (V0.55). */
 export function projectSubtitle(p: Project): string {
+  if (p.members) return `On ${p.members.length} hosts`; // decision 0033: each has its own folder
   return p.folder ? shortPath(p.folder) : "No folder: filed by hand";
 }
 

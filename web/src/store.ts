@@ -1,5 +1,5 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
-import { orderProjects } from "./projects.ts";
+import { linkProjects, orderProjects, projectRecords } from "./projects.ts";
 import type { QueueEntry } from "./slot-queue.ts";
 import type { HostInfo } from "./hosts.ts";
 import type { OwnerMarks } from "./host-mark.ts";
@@ -45,7 +45,7 @@ export interface Store {
   threads: Record<string, Thread>;
   actions: ActionInfo[];
   profiles: Profile[];
-  /** in the owner's order (V0.121: orderProjects) */
+  /** in the owner's order (V0.121: orderProjects); one entry per project, a linked one with its `members` (decision 0033) */
   projects: Project[];
   /** V0.121: the owner's project order; null until set (by name then) */
   projectOrder: string[] | null;
@@ -129,7 +129,7 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
     threads,
     actions: dto.actions ?? [],
     profiles: dto.profiles ?? [],
-    projects: orderProjects(projects, dto.projectOrder ?? null),
+    projects: linkProjects(orderProjects(projects, dto.projectOrder ?? null), dto.hosts ?? []),
     projectOrder: dto.projectOrder ?? null,
     deploy: dto.deploy ?? null,
     stalls: stallsOf(dto),
@@ -138,7 +138,7 @@ export function applySnapshot(s: Store, raw: StateDTO, clientNow: number): Store
 
 /** The state as the device stores it (V0.38); applySnapshot reads it back on an offline start. */
 export function stateForCache(s: Store, now: string): StateDTO {
-  return { now, user: s.user, host: s.host, ...(s.hostId ? { hostId: s.hostId } : {}), hosts: s.hosts, deploy: s.deploy, ...(s.stalls.length ? { stalls: s.stalls } : {}), threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: s.projects, ...(s.projectOrder ? { projectOrder: s.projectOrder } : {}) };
+  return { now, user: s.user, host: s.host, ...(s.hostId ? { hostId: s.hostId } : {}), hosts: s.hosts, deploy: s.deploy, ...(s.stalls.length ? { stalls: s.stalls } : {}), threads: Object.values(s.threads), actions: s.actions, profiles: s.profiles, projects: projectRecords(s.projects), ...(s.projectOrder ? { projectOrder: s.projectOrder } : {}) };
 }
 
 export function upsertThread(s: Store, raw: ThreadDTO): Store {
@@ -453,17 +453,27 @@ export function presetForKey<T extends SnoozePreset>(presets: T[], key: string):
 /** A project from the stream (`event: project`, V0.23): replace by id unless older (#42), or add; `{id, deleted: true}`
  *  removes it (V0.58). */
 export function upsertProject(s: Store, raw: Project): Store {
-  if (raw.deleted) return raw.id && s.projects.some((x) => x.id === raw.id) ? { ...s, projects: s.projects.filter((x) => x.id !== raw.id) } : s;
+  const records = projectRecords(s.projects);
+  if (raw.deleted) return raw.id && records.some((x) => x.id === raw.id) ? withRecords(s, records.filter((x) => x.id !== raw.id)) : s;
   const p = decodeProject(raw);
-  const i = s.projects.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
-  if (i >= 0 && !newerProject(s.projects[i], p)) return s;
-  const projects = i >= 0 ? s.projects.map((x, j) => (j === i ? p : x)) : [...s.projects, p];
-  return { ...s, projects: orderProjects(projects, s.projectOrder) };
+  const i = records.findIndex((x) => (p.id ? x.id === p.id : x.name === p.name));
+  if (i >= 0 && !newerProject(records[i], p)) return s;
+  return withRecords(s, i >= 0 ? records.map((x, j) => (j === i ? p : x)) : [...records, p]);
+}
+
+/** The project list from its records: in the owner's order, a linked project once (decision 0033). */
+function withRecords(s: Store, records: Project[]): Store {
+  return { ...s, projects: linkProjects(orderProjects(records, s.projectOrder), s.hosts) };
 }
 
 /** V0.121: the owner's project order changed (the front's `projectOrder` event, or this device's own move). */
 export function setProjectOrder(s: Store, ids: string[]): Store {
-  return { ...s, projectOrder: ids, projects: orderProjects(s.projects, ids) };
+  return withRecords({ ...s, projectOrder: ids }, projectRecords(s.projects));
+}
+
+/** The front's list of hosts changed: a linked project shows its first online member (decision 0033). */
+export function setHosts(s: Store, hosts: HostInfo[]): Store {
+  return { ...s, hosts, projects: linkProjects(projectRecords(s.projects), hosts) };
 }
 
 /** RFC 7396 JSON Merge Patch: objects merge key by key, null deletes, anything else replaces. */
