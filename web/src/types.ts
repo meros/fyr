@@ -234,6 +234,10 @@ export interface Project {
   icon?: ProjectIconSpec;
   /** the one folder on the project's host; threads there or below land in it (V0.55) */
   folder?: string;
+  /** Decision 0034: records on several hosts with one link are one project */
+  link?: string;
+  /** Decision 0034: the client's: every record of a linked project, the one shown first; absent on any other project */
+  members?: Project[];
   profile?: string;
   model?: string;
   threads?: number;

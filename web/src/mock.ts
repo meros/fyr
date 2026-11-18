@@ -1272,6 +1272,12 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       putProject({ ...p, setup: { at: new Date(clock()).toISOString(), thread: "t_setup" } });
       return { ok: true, result: { id: p.id, thread: "t_setup" } };
     }
+    if (action === "project.link") {
+      const p = projects.find((x) => x.id === args.id);
+      if (!p) return { ok: false, error: `no project ${args.id}` };
+      putProject({ ...p, link: args.link ? String(args.link) : undefined });
+      return { ok: true, result: { id: p.id } };
+    }
     if (action === "project.delete") {
       const p = projects.find((x) => x.id === args.id);
       if (!p) return { ok: false, error: `no project ${args.id}` };

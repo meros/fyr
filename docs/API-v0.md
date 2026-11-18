@@ -258,6 +258,7 @@ Commands (through `POST /api/command`, no `threadId`):
 | `project.create` | `name`, `folder?`, `threadId?`: file that thread into the new project by hand in the same write (V0.30). Reply `result: {id}` |
 | `project.setupRun` | `id` (V0.116): starts the project setup run, a thread in the project's folder; the result is `{id, thread}`. No folder: `400`; a system agent that cannot run: `409` with the reason, also recorded as `setup.error` |
 | `host.setupRun` | (V0.208): starts this host's mark setup run, a thread in its home folder; the result is `{thread}`. A system agent that cannot run: `409`, recorded in the state's `agentMark.setup`. |
+| `project.link` | `id`, `link` (decision 0034, V0.211): owner only; `l_` and 16 to 32 hex digits, `""` clears it. A front sends it for `front.projectLink` and `front.projectUnlink` (refs of `<hostId>/<id>`, on `POST /api/front/command`) |
 | `project.delete` | `id` (V0.58). Unknown id: `404`. Every thread in it loses the project and the filed-by-hand mark, then the host matches again |
 
 A folder needs a full path (`~/…` is expanded) and must exist on the host, else `400` with the reason. After `project.create` or a change of `folder` the host matches again every thread not filed by hand and sends the changed ones on the stream: a thread lands in the project whose folder is its folder or contains it, the longest folder first; matching never takes a project away. An icon's `value` is left out when empty. A thread with no `cwd` and a `projectId` starts in the project's folder.

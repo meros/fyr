@@ -27,6 +27,7 @@ import {
   stateForCache,
   upsertThread,
   upsertProject,
+  setHosts,
   setProjectOrder,
   setDeploy,
   setStall,
@@ -64,7 +65,7 @@ import { PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
-import { FILTER_KEY, moveToast, orderProjects } from "./projects.ts";
+import { FILTER_KEY, expandOrder, findProject, memberOn, moveToast, orderProjects, projectRecords, recordOf } from "./projects.ts";
 import { HIDDEN_KEY, NOTHING_HIDDEN, applyHidden, hiddenCount, parseHidden, pushHiddenOf, type Hidden, type PushHidden } from "./hidden.ts";
 import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clickHost, filterEmpty, parseHostsOff, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
@@ -359,13 +360,16 @@ function App() {
     const t = setTimeout(() => setQuietClock((n) => n + 1), Math.min(next - (Date.now() + store.clockOffset) + 250, 2 ** 31 - 1));
     return () => clearTimeout(t);
   }, [store.threads, store.projects, store.clockOffset, quietClock]);
-  const filterOn = !!projectFilter && store.projects.some((p) => p.id === projectFilter);
+  // Decision 0034: the filter may name any member of a linked project; the list knows the project by one id.
+  const filterProject = findProject(store.projects, projectFilter);
+  const filterId = filterProject?.id ?? projectFilter;
+  const filterOn = !!filterProject;
   // V0.114: one unlock of quiet projects on this device for every path (New thread, the filter, search, the gate).
   const unlock = useQuietUnlock(store.clockOffset);
   // V0.207: a hidden host or project is no filter value: it would leave a chip behind.
   const filterSel = useMemo<FilterSel>(() => {
     const gone = (name: string) => fullStore.hosts.some((h) => h.name === name) && !store.hosts.some((h) => h.name === name);
-    const projectGone = !!projectFilter && fullStore.projects.some((p) => p.id === projectFilter) && !filterOn;
+    const projectGone = !!findProject(fullStore.projects, projectFilter) && !filterOn;
     return { hostsOff: hostsOff.filter((n) => !gone(n)), project: projectGone ? null : projectFilter || null };
   }, [hostsOff, projectFilter, fullStore.hosts, fullStore.projects, store.hosts, filterOn]);
   // V0.134: host AND project.
@@ -517,7 +521,7 @@ function App() {
       projectOrder: (ids) => batch((s) => setProjectOrder(s, ids)),
       deploy: (p) => batch((s) => setDeploy(s, p)),
       stall: (raw) => batch((s) => setStall(s, raw)),
-      hosts: (hs) => batch((s) => ({ ...s, hosts: hs })),
+      hosts: (hs) => batch((s) => setHosts(s, hs)),
       hostMarks: (m) => batch((s) => ({ ...s, hostMarks: m })), // V0.171
       conn: (c) => batch((s) => setConn(s, c)),
     });
@@ -533,7 +537,7 @@ function App() {
       const r = resolveRef(Object.values(store.threads), s.id);
       if (r !== s.id) navReplace({ ...nav, screen: { ...s, id: r } });
     } else if (s.name === "project") {
-      const r = resolveRef(store.projects, s.id);
+      const r = resolveRef(projectRecords(store.projects), s.id);
       if (r !== s.id) navReplace({ ...nav, screen: { ...s, id: r } });
     }
   }, [store.loaded, nav.screen.name, "id" in nav.screen ? nav.screen.id : ""]);
@@ -998,7 +1002,7 @@ function App() {
     // A project command goes to the project's host, a thread's to the thread's (decision 0031).
     const pid = typeof args.id === "string" ? args.id : typeof args.projectId === "string" ? args.projectId : "";
     // V0.207: from the full store, because Settings also edits what this device hides.
-    const host = (threadId ? fullStore.threads[threadId]?.hostId : fullStore.projects.find((p) => p.id === pid)?.hostId) ?? "";
+    const host = (threadId ? fullStore.threads[threadId]?.hostId : recordOf(fullStore.projects, pid)?.hostId) ?? "";
     const r = await api.command(host, action, threadId, args);
     return r.ok ? null : (r.error ?? "That did not work");
   };
@@ -1022,7 +1026,7 @@ function App() {
     },
     /** V0.58: delete a project; its threads match again on the host. */
     delete: async (id: string): Promise<string | null> => {
-      const name = fullStore.projects.find((p) => p.id === id)?.name ?? "the project";
+      const name = recordOf(fullStore.projects, id)?.name ?? "the project";
       const e = await projectCommand("project.delete", { id });
       if (!e) cmds.notify(`Deleted ${name}`);
       return e;
@@ -1030,21 +1034,36 @@ function App() {
     /** V0.121: the owner's one project order. It shows at once on this device; a refusal puts the last order back. */
     order: async (ids: string[]): Promise<string | null> => {
       const before = store.projectOrder;
-      setStore((s) => setProjectOrder(s, ids));
-      const r = await api.frontCommand("front.projectOrder", { ids });
+      const all = expandOrder(ids, store.projects); // decision 0034: a linked project's members move together
+      setStore((s) => setProjectOrder(s, all));
+      const r = await api.frontCommand("front.projectOrder", { ids: all });
       if (r.ok) return null;
       setStore((s) => (before ? setProjectOrder(s, before) : { ...s, projectOrder: null, projects: orderProjects(s.projects, null) }));
       return r.error ?? "That did not work";
     },
     /** File threads into a project; null: No project. Shows the result or the error as a toast. */
     move: async (ids: string[], projectId: string | null): Promise<string | null> => {
-      const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId: projectId ?? "" }, id)))).filter(Boolean);
-      const where = projectId ? (store.projects.find((p) => p.id === projectId)?.name ?? "the project") : null;
+      // Decision 0034: a thread is filed in its own host's record of a linked project.
+      const pr = findProject(store.projects, projectId);
+      const errs = (await Promise.all(ids.map((id) => projectCommand("thread.setProject", { projectId: memberOn(pr, store.threads[id]?.hostId)?.id ?? projectId ?? "" }, id)))).filter(Boolean);
+      const where = projectId ? (pr?.name ?? "the project") : null;
       // Both shells show the result here, the error too (review 2026-11-15).
       const e = errs[0] ?? null;
       const m = moveToast(ids.length, where, e);
       cmds.notify(m.text, m.error);
       return e;
+    },
+    /** Decision 0034: make two projects on different hosts one. A host that could not store it is the error. */
+    link: async (id: string, other: string): Promise<string | null> => {
+      const r = await api.frontCommand("front.projectLink", { refs: [id, other] });
+      if (!r.ok) return r.error ?? "That did not work";
+      const failed = (r.result as { failed?: { error?: string }[] } | undefined)?.failed;
+      return failed?.[0]?.error ?? null;
+    },
+    /** Decision 0034: this host's record leaves the link, with its values and threads. */
+    unlink: async (id: string): Promise<string | null> => {
+      const r = await api.frontCommand("front.projectUnlink", { ref: id });
+      return r.ok ? null : (r.error ?? "That did not work");
     },
   };
   // V0.42: the host folder picker, a dialog on the desktop and a sheet on the phone, over whatever asked for it.
@@ -1120,7 +1139,7 @@ function App() {
     openProject: openProjectScreen,
     pickProject: (id) => (phoneRef.current ? navGo({ ...navRef.current, sheet: { kind: "project", ids: [id] } }) : openPicker([id])),
     host: store.host,
-    projectFilter: filterOn ? projectFilter : null,
+    projectFilter: filterOn ? filterId : null,
   };
 
   const create = async (a: NewThreadArgs): Promise<string | null> => {
@@ -1133,7 +1152,7 @@ function App() {
     if (a.view) args.view = true;
     if (a.effort) args.effort = a.effort;
     // V0.132: the host picked; else the project's; else the first, as the picker's default (the call names it).
-    const on = a.host ? hostIdByName(store.hosts, a.host) : a.projectId ? (store.projects.find((p) => p.id === a.projectId)?.hostId ?? "") : hostIdByName(store.hosts);
+    const on = a.host ? hostIdByName(store.hosts, a.host) : a.projectId ? (recordOf(store.projects, a.projectId)?.hostId ?? "") : hostIdByName(store.hosts);
     const r = await api.command(on, "thread.create", undefined, args);
     if (!r.ok) return r.error ?? "Could not start the thread";
     setDialog(null);
@@ -1448,6 +1467,8 @@ function App() {
         delete: projectActions.delete,
         create: async (name, folder, host) => (await projectActions.create(name, folder, [], host)).error,
         order: projectActions.order,
+        link: projectActions.link,
+        unlink: projectActions.unlink,
       }}
     />
     </HostsContext.Provider>
@@ -1607,7 +1628,7 @@ function App() {
           }}
           settings={(at, header) => settingsFor(at, phoneSettingsGo, header)}
           actions={phoneActions}
-          filter={{ id: projectFilter, set: setProjectFilter }}
+          filter={{ id: filterId, set: setProjectFilter }}
           filters={filterView}
           projectActions={projectActions}
           status={
@@ -1741,7 +1762,7 @@ function App() {
           </Boundary>
         ) : gatedThread ? (
           <section class="th empty-th">
-            <QuietGate project={store.projects.find((x) => x.id === gatedThread.projectId)} now={Date.now() + store.clockOffset} unlock={unlock} what="thread" />
+            <QuietGate project={recordOf(store.projects, gatedThread.projectId)} now={Date.now() + store.clockOffset} unlock={unlock} what="thread" />
           </section>
         ) : (
           <section class="th empty-th">
@@ -1778,7 +1799,7 @@ function App() {
           )}
         </div>
       )}
-      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={projectFilter} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
+      {dialog === "new" && <NewThreadDialog profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={filterId} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
       {dialog === "picker" && (
         <Modal title={pickIds.length > 1 ? `Project for ${pickIds.length} threads` : "Project"} onClose={() => setDialog(null)} wide>
           <div class="db">

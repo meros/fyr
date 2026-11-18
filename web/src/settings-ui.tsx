@@ -37,14 +37,14 @@ import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
 import { githubPause, githubRows, githubState, updateRow, updateState, type UpdatesView } from "./updates.ts";
 import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
-import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects, setupLine } from "./projects.ts";
+import { colorVar, findProject, projectRecords, projectSearchLine, projectSubtitle, recordOf, searchProjects, settingsProjects, setupLine } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
-import { NewProjectStep, ProjectEditor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
+import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
 import { pushRow, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { move } from "./reorder.ts";
 import { DevicesPage, useAuthState } from "./devices-ui.tsx";
-import { hiddenCount, hostIsHidden, lastShownHost, setHostShown, setProjectShown, type Hidden } from "./hidden.ts";
+import { hiddenCount, hostIsHidden, lastShownHost, projectIsHidden, setHostShown, setProjectShown, type Hidden } from "./hidden.ts";
 import { PeersPanel, usePeerState } from "./peers-ui.tsx";
 import { devicesNeed, devicesSummary } from "./devices.ts";
 import { PAGES, deviceSummary, hostsNeed, hostsSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
@@ -103,6 +103,9 @@ export interface ProjectActions {
   create(name: string, folder: string, host?: string): Promise<string | null>;
   /** V0.121: the owner's project order (front.projectOrder); the error, or null */
   order(ids: string[]): Promise<string | null>;
+  /** Decision 0034: linked projects; the error, or null */
+  link(id: string, other: string): Promise<string | null>;
+  unlink(id: string): Promise<string | null>;
 }
 
 export interface SettingsProps {
@@ -541,7 +544,9 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
       return { title: "Automation", lede: "What Fyr does without your press. Only you change these; an agent cannot.", body: <HostParts s={s} now={p.now} part={(d) => <AutomationPage d={d} hasDeploy={!!p.api.autoDeploy} api={p.api} focus={at.sub} />} /> };
     case "projects": {
       if (at.sub) {
-        const pr = p.projects.find((x) => x.id === resolveRef(p.projects, at.sub!)); // a link names the host's own id (C12)
+        const rid = resolveRef(projectRecords(p.projects), at.sub!); // a link names the host's own id (C12)
+        const pr = recordOf(p.projects, rid); // decision 0034: a member of a linked project has its own page
+        const group = findProject(p.projects, rid);
         return {
           title: pr?.name ?? "Project",
           parent: "Projects",
@@ -549,6 +554,7 @@ function pageView(at: PageRef, p: SettingsProps, s: AllSettings, ui: PageUi, aut
             <ProjectEditor
               key={pr.id}
               project={pr}
+              linking={group && linkingFor(group, p.projects, p.projectActions, (id) => go({ page: "projects", sub: id }))}
               profiles={profilesOn(hostForProject(pr.host, p.hosts), p.hosts, p.profiles) /* V0.127: its host's providers */}
               now={p.now}
               onSave={(patch) => p.projectActions.update(pr.id!, patch)}
@@ -2242,7 +2248,7 @@ function ShownHere({ d, hosts, projects }: { d: SettingsDevice; hosts: HostInfo[
           return <Row key={h.name} label title={h.name} desc="Host" ell end={<Switch on={!hostIsHidden(h, d.hidden)} label={label} disabled={lastShownHost(h, hosts, d.hidden)} onChange={(on) => d.setHidden(setHostShown(d.hidden, h, on))} />} />;
         })}
       {list.map((x) => (
-        <Row key={x.id} label title={x.name} desc={hosts.length > 1 && x.host ? `Project on ${x.host}` : "Project"} ell end={<Switch on={!d.hidden.projects.includes(x.id!)} label={`Show project ${x.name}`} onChange={(on) => d.setHidden(setProjectShown(d.hidden, x.id!, on))} />} />
+        <Row key={x.id} label title={x.name} desc={x.members ? `Project on ${x.members.length} hosts` : hosts.length > 1 && x.host ? `Project on ${x.host}` : "Project"} ell end={<Switch on={!projectIsHidden(x, d.hidden)} label={`Show project ${x.name}`} onChange={(on) => d.setHidden(setProjectShown(d.hidden, x, on))} />} />
       ))}
     </Group>
   );

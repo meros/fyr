@@ -163,3 +163,31 @@ func TestProjectSetupRunRecorded(t *testing.T) {
 		t.Fatal("an agent recorded a setup run")
 	}
 }
+
+// Decision 0034: only the owner links, a link has one shape, and linking
+// makes the shown fields the owner's, so a setup agent cannot change them.
+func TestProjectLink(t *testing.T) {
+	now := time.Unix(100, 0)
+	ps := map[string]*Project{"p1": {ID: "p1", Name: "fyr", Folder: "/w/fyr"}}
+	const link = "l_0123456789abcdef"
+	in := func(src Source, kind string, a Args) Input { return Input{Source: src, Kind: kind, Args: a} }
+	if _, _, _, err := ReduceProject(ps, nil, in(FromAgent, KindProjectLink, Args{"id": "p1", "link": link}), now); err == nil {
+		t.Fatal("an agent linked a project")
+	}
+	if _, _, _, err := ReduceProject(ps, nil, in(FromOwner, KindProjectLink, Args{"id": "p1", "link": "nope"}), now); err == nil {
+		t.Fatal("a bad link was taken")
+	}
+	_, after, _, err := ReduceProject(ps, nil, in(FromOwner, KindProjectLink, Args{"id": "p1", "link": link}), now)
+	if err != nil || after.Link != link {
+		t.Fatalf("link: %v %+v", err, after)
+	}
+	ps["p1"] = after
+	_, set, res, err := ReduceProject(ps, nil, in(FromAgent, KindProjectSetup, Args{"id": "p1", "name": "Agent's", "color": "teal"}), now)
+	if err != nil || set.Name != "fyr" || set.Color != "" {
+		t.Fatalf("setup changed a linked project: %v %+v %v", err, set, res.Reply)
+	}
+	_, off, _, err := ReduceProject(ps, nil, in(FromOwner, KindProjectLink, Args{"id": "p1", "link": ""}), now)
+	if err != nil || off.Link != "" {
+		t.Fatalf("unlink: %v %+v", err, off)
+	}
+}

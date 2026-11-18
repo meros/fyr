@@ -2,7 +2,7 @@
 
 import type { Change, Project, Thread } from "./types.ts";
 import { changeList, ended, isDone, needsOwner } from "./offers.ts";
-import { projectOf } from "./projects.ts";
+import { findProject, projectOf } from "./projects.ts";
 
 export type Column = "needs" | "working" | "review" | "landed" | "live" | "ended";
 
@@ -57,7 +57,7 @@ function collect(threads: Record<string, Thread>, projects: Project[], f: BoardF
   for (const t of Object.values(threads)) {
     if (t.archivedAt) continue;
     const project = projectOf(t, projects);
-    if (f.projectId && project?.id !== f.projectId) continue;
+    if (f.projectId && project?.id !== (findProject(projects, f.projectId)?.id ?? f.projectId)) continue;
     const away = !f.settled && putAway(t);
     for (const c of changeList(t)) {
       if (!keep(c)) continue;

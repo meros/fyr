@@ -4,7 +4,7 @@
 // because that is where it comes back. Pure.
 import { threadHost } from "./filters.ts";
 import type { HostInfo } from "./hosts.ts";
-import { projectOf } from "./projects.ts";
+import { linkProjects, projectOf, projectRecords } from "./projects.ts";
 import type { Store } from "./store.ts";
 import type { Project, Thread } from "./types.ts";
 
@@ -52,9 +52,11 @@ export function setHostShown(hidden: Hidden, h: HostRef, shown: boolean): Hidden
   return { ...hidden, hosts: shown ? rest : [...rest, h.id || h.name] };
 }
 
-export function setProjectShown(hidden: Hidden, id: string, shown: boolean): Hidden {
-  const rest = hidden.projects.filter((x) => x !== id);
-  return { ...hidden, projects: shown ? rest : [...rest, id] };
+export function setProjectShown(hidden: Hidden, project: string | Pick<Project, "id" | "members">, shown: boolean): Hidden {
+  const p = typeof project === "string" ? { id: project } : project;
+  const ids = (("members" in p && p.members) || [p]).map((m) => m.id);
+  const rest = hidden.projects.filter((x) => !ids.includes(x));
+  return { ...hidden, projects: shown || !p.id ? rest : [...rest, p.id] };
 }
 
 /** The ids and names that hide a host. With every listed host hidden (the list changed since) none is: the front stays usable. */
@@ -69,7 +71,10 @@ function hiddenHostKeys(hosts: readonly HostRef[], hidden: Hidden): Set<string> 
   return keys;
 }
 
-const projectGone = (p: Project, keys: Set<string>, hidden: Hidden) => (!!p.id && hidden.projects.includes(p.id)) || (!!p.host && keys.has(p.host)) || (!!p.hostId && keys.has(p.hostId));
+/** Decision 0034: hiding any member's id hides the linked project; the id the lists show can change with the hosts. */
+export function projectIsHidden(p: Project, hidden: Hidden): boolean {
+  return (p.members ?? [p]).some((m) => !!m.id && hidden.projects.includes(m.id));
+}
 
 /** The store as this device shows it. Nothing hidden gives the same object back. */
 export function applyHidden(s: Store, hidden: Hidden): Store {
@@ -77,15 +82,18 @@ export function applyHidden(s: Store, hidden: Hidden): Store {
   const keys = hiddenHostKeys(s.hosts, hidden);
   const threadGone = (t: Thread) => keys.has(threadHost(t, s.host ?? "")) || (!!t.hostId && keys.has(t.hostId)) || (() => {
     const p = projectOf(t, s.projects);
-    return !!p && projectGone(p, keys, hidden);
+    return !!p && projectIsHidden(p, hidden);
   })();
   const threads: Record<string, Thread> = {};
   for (const t of Object.values(s.threads)) if (!threadGone(t)) threads[t.id] = t;
+  // Decision 0034: a hidden host takes only its own record of a linked project; the others still show it.
+  const hosts = s.hosts.filter((h) => !keys.has(h.name));
+  const shown = projectRecords(s.projects.filter((p) => !projectIsHidden(p, hidden))).filter((m) => !(m.host && keys.has(m.host)) && !(m.hostId && keys.has(m.hostId)));
   return {
     ...s,
     threads,
-    projects: s.projects.filter((p) => !projectGone(p, keys, hidden)),
-    hosts: s.hosts.filter((h) => !keys.has(h.name)),
+    projects: linkProjects(shown, hosts),
+    hosts,
     stalls: s.stalls.filter((x) => !x.host || !keys.has(x.host)),
   };
 }
@@ -100,6 +108,6 @@ export function pushHiddenOf(hosts: readonly HostRef[], projects: readonly Proje
   const keys = hiddenHostKeys(hosts, hidden);
   return {
     hosts: hosts.filter((h) => keys.has(h.name)).map((h) => h.name),
-    projects: projects.filter((p) => p.id && hidden.projects.includes(p.id)).map((p) => ({ host: p.host ?? "", id: p.rid ?? p.id! })),
+    projects: projects.filter((p) => projectIsHidden(p, hidden)).flatMap((p) => p.members ?? [p]).map((p) => ({ host: p.host ?? "", id: p.rid ?? p.id! })),
   };
 }
