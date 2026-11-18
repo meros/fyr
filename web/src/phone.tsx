@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import type { Decision, FyrEvent, Profile, Project, Thread } from "./types.ts";
 import { LoadSheetBody, LoadStrip, useLoad } from "./load-ui.tsx";
 import { stripHosts } from "./load.ts";
-import { SECTIONS, isAvailable, isPinned, unpinned, matchesQuery, sections, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
+import { SECTIONS, isAvailable, isPinned, unpinned, matchesQuery, sections, selectAllIds, sweptUnread, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
@@ -190,7 +190,8 @@ export interface PhoneDevice {
 /** What the phone does differently from a plain thread command: U8 leaves the open thread after a settle or
  *  archive, Mark unseen restarts the seen timer, and New starts a thread. Every other command is `commands.run`. */
 export interface PhoneActions {
-  settle(ids: string[], bulk?: boolean): void;
+  /** `unreadKept`: the unread threads a Select all left out, for the toast (V0.188) */
+  settle(ids: string[], bulk?: boolean, unreadKept?: number): void;
   archive(ids: string[]): void;
   markUnseen(id: string): void;
   create(a: NewThreadArgs): Promise<string | null>;
@@ -384,6 +385,12 @@ function MInbox(p: PhoneProps) {
   };
 
   const all = SECTIONS.flatMap((s) => p.inbox.sec[s.key]);
+  // V0.188: Select all is a sweep, so it leaves unread rows out and the settle says how many.
+  const [swept, setSwept] = useState(false);
+  useEffect(() => {
+    if (!p.list.selecting) setSwept(false);
+  }, [p.list.selecting]);
+  const unreadLeft = swept ? sweptUnread(all, p.list.picked) : 0;
   const strip = stripHosts(useLoad(), p.store.hosts);
   // V0.162: the button shows while a merged thread can settle; the bulk settle leaves pinned ones out and counts them.
   const merged = p.inbox.sec.seen.filter((t) => t.pr?.state === "MERGED" && (isPinned(t) || isAvailable(t, "thread.settle")));
@@ -399,7 +406,7 @@ function MInbox(p: PhoneProps) {
           </button>
           <span class="m-nt">{p.list.picked.size} selected</span>
           <span class="sp" />
-          <button class="m-tbtn" onClick={() => p.list.setPicked(new Set(all.map((t) => t.id)))}>
+          <button class="m-tbtn" onClick={() => (p.list.setPicked(new Set(selectAllIds(all))), setSwept(true))}>
             Select all
           </button>
         </div>
@@ -538,7 +545,7 @@ function MInbox(p: PhoneProps) {
       </div>
       {p.list.selecting && (
         <div class="m-selbar">
-          <button class="m-bt p" disabled={!p.list.picked.size} onClick={() => (p.actions.settle([...p.list.picked], true), p.list.setSelecting(false), p.list.setPicked(new Set()))}>
+          <button class="m-bt p" disabled={!p.list.picked.size && !unreadLeft} onClick={() => (p.actions.settle([...p.list.picked], true, unreadLeft), p.list.setSelecting(false), p.list.setPicked(new Set()))}>
             Settle {p.list.picked.size || ""}
           </button>
           <button class="m-bt" disabled={!p.list.picked.size} onClick={() => p.nav.go({ ...p.nav.at, sheet: { kind: "snooze", ids: [...p.list.picked] } })}>

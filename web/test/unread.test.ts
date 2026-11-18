@@ -2,7 +2,7 @@
 // the host already sends, so a host of any version since V0.101 lands in the right section.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SECTIONS, bulkSettle, bulkSettleText, flatOrder, isOpen, sectionOf, sections } from "../src/store.ts";
+import { SECTIONS, bulkSettle, bulkSettleText, flatOrder, isOpen, sectionOf, sections, selectAllIds, sweptUnread } from "../src/store.ts";
 import { keyHints } from "../src/keys.ts";
 import { seenToggle, threadMenu } from "../src/menu.ts";
 import { changeChip } from "../src/offers.ts";
@@ -74,12 +74,23 @@ test("a pinned unread thread is in the pinned block, and Unread still holds it",
   assert.deepEqual(ids(sec.unread), ["p"]);
 });
 
-test("a bulk settle leaves Unread alone and says so", () => {
-  const r = bulkSettle([seen("s"), unread("u"), seen("p", { pinnedAt: "2026-11-17T09:00:00Z" }), unread("up", { pinnedAt: "2026-11-17T09:00:00Z" })]);
-  assert.deepEqual(r, { ids: ["s"], kept: 2, unread: 1 });
+test("a sweep leaves Unread alone and says so; threads picked one by one settle even when unread", () => {
+  const pin = { pinnedAt: "2026-11-17T09:00:00Z" };
+  const ts = [seen("s"), unread("u"), seen("p", pin), unread("up", pin)];
+  assert.deepEqual(bulkSettle(ts, true), { ids: ["s"], kept: 2, unread: 1 }, "⇧E on a section");
+  assert.deepEqual(bulkSettle(ts), { ids: ["s", "u"], kept: 2, unread: 0 }, "the owner's own picks");
   assert.equal(bulkSettleText(0, 0, 2), "Nothing settled; 2 unread threads kept");
   assert.equal(bulkSettleText(3, 0, 1), "Settled 3 threads; 1 unread thread kept");
   assert.equal(bulkSettleText(3, 1, 1), "Settled 3 threads; 1 pinned and 1 unread threads kept");
+});
+
+test("the phone's Select all leaves unread rows unpicked and counts them; a row tapped after it is the owner's pick", () => {
+  const pin = { pinnedAt: "2026-11-17T09:00:00Z" };
+  const ts = [seen("s"), unread("u"), unread("v"), unread("up", pin)];
+  const picked = selectAllIds(ts);
+  assert.deepEqual(picked, ["s", "up"], "a pinned thread stays picked: the settle counts it as pinned (V0.162)");
+  assert.equal(sweptUnread(ts, new Set(picked)), 2);
+  assert.equal(sweptUnread(ts, new Set([...picked, "u"])), 1);
 });
 
 test("the menus offer Mark seen on an unread thread and Mark unseen on a seen one", () => {

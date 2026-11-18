@@ -3407,6 +3407,18 @@ section('V0.188', async (h) => {
     await waitFor(`document.querySelectorAll('#sec-seen [data-id]').length === 0`, { what: "⇧E to settle Seen" });
     const r = await evaluate(`({ left: [...document.querySelectorAll('#sec-unread [data-id]')].map(e => e.dataset.id), sent: (window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle').map(c => c.threadId) })`);
     check(JSON.stringify(r.left) === JSON.stringify(before) && !before.some((id) => r.sent.includes(id)), `V0.188 desktop: ⇧E touched Unread (${JSON.stringify(r)})`);
+    // From a row in Unread, ⇧E sweeps nothing and says so; the same row picked with x is the owner's choice and settles.
+    // Mark unseen first: it keeps the open thread unread while the checks run.
+    await navigate(`${origin}/?mock=rail&open=t_triage`, inSec("", "unread", "t_triage"));
+    const sentFor = `(window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle' && c.threadId === 't_triage').length`;
+    await evaluate(`document.activeElement?.blur()`);
+    await key("u", "KeyU");
+    await key("E", "KeyE", 8);
+    await waitFor(`/^Nothing settled; 1 unread thread kept/.test(document.querySelector('.toast')?.textContent ?? '')`, { what: "the toast of a sweep that kept an unread thread" });
+    check((await evaluate(sentFor)) === 0 && (await evaluate(inSec("", "unread", "t_triage"))), "V0.188 desktop: ⇧E from Unread settled the unread thread");
+    await key("x", "KeyX");
+    await key("E", "KeyE", 8);
+    await waitFor(`${sentFor} === 1`, { what: "the picked unread thread to settle" });
   } catch (e) {
     failures.push(`V0.188 desktop: ${e.message}`);
   }
@@ -3433,6 +3445,22 @@ section('V0.188', async (h) => {
     await pressRow("seen", "t_triage", `!!${item("Mark unseen")}`);
     await evaluate(`${item("Mark unseen")}.click()`);
     await waitFor(inSec("m-", "unread", "t_triage"), { what: "the phone's Mark unseen to move the row back" });
+    // Select all leaves the unread row out and the toast says so; the row picked by hand settles.
+    const menuItem = (label) => `${item(label)}.click()`;
+    const sentFor = `(window.__fyrCommands ?? []).filter(c => c.action === 'thread.settle' && c.threadId === 't_triage').length`;
+    await pressRow("unread", "t_triage", `!!${item("Select")}`);
+    await evaluate(menuItem("Select"));
+    await waitFor(`!!document.querySelector('.m-selbar') && !document.querySelector('.m-sheet')`, { what: "the selection" });
+    await evaluate(`[...document.querySelectorAll('.m-tbtn')].find(b => b.textContent === 'Select all').click()`);
+    await waitFor(`!${phoneRow("unread", "t_triage")}.classList.contains('picked') && document.querySelectorAll('.m-swp.picked').length > 0`, { what: "Select all to leave the unread row out" });
+    await evaluate(`document.querySelector('.m-selbar .m-bt.p').click()`);
+    await waitFor(`/1 unread thread kept/.test(document.querySelector('.m-toast')?.textContent ?? '')`, { what: "the toast of Select all" });
+    check((await evaluate(sentFor)) === 0 && (await evaluate(inSec("m-", "unread", "t_triage"))), "V0.188 phone: Select all settled the unread thread");
+    await pressRow("unread", "t_triage", `!!${item("Select")}`);
+    await evaluate(menuItem("Select"));
+    await waitFor(`!!document.querySelector('.m-selbar') && !document.querySelector('.m-sheet')`, { what: "the selection of one row" });
+    await evaluate(`document.querySelector('.m-selbar .m-bt.p').click()`);
+    await waitFor(`${sentFor} === 1`, { what: "the picked unread thread to settle" });
   } catch (e) {
     failures.push(`V0.188 phone: ${e.message}`);
   }

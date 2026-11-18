@@ -347,18 +347,30 @@ export function recordUndo(kind: UndoKind, threadIds: string[], now: number, lab
 }
 
 /** V0.162: a bulk settle (⇧E, Settle merged, the phone's Settle N) takes the threads that can settle and leaves the
- * pinned ones out: no settle, no unpin. `kept` counts the pinned threads it left. V0.188: it leaves Unread out too, what
- * the owner has not read is not settled in bulk (`unread` counts them); `e` on the one thread still settles it. */
-export function bulkSettle(threads: Thread[]): { ids: string[]; kept: number; unread: number } {
+ * pinned ones out: no settle, no unpin. `kept` counts the pinned threads it left. V0.188: a `sweep` (⇧E on a section) also
+ * leaves Unread out, what the owner has not read is not swept away (`unread` counts them); threads the owner picked one
+ * by one are their explicit choice and settle even when unread. */
+export function bulkSettle(threads: Thread[], sweep = false): { ids: string[]; kept: number; unread: number } {
   const ids: string[] = [];
   let kept = 0;
   let unread = 0;
   for (const t of threads) {
     if (isPinned(t)) kept++;
-    else if (sectionOf(t) === "unread") unread++;
+    else if (sweep && sectionOf(t) === "unread") unread++;
     else if (isAvailable(t, "thread.settle")) ids.push(t.id);
   }
   return { ids, kept, unread };
+}
+
+/** V0.188: the phone's Select all is a sweep: it picks every row but the unread ones (a pinned one stays picked, the
+ *  settle counts it as pinned), so "Settle N" counts what it will settle and a row tapped afterwards is the owner's pick. */
+export function selectAllIds(threads: Thread[]): string[] {
+  return threads.filter((t) => isPinned(t) || sectionOf(t) !== "unread").map((t) => t.id);
+}
+
+/** V0.188: the unread threads a Select all left out and the owner has not picked since, for the toast. */
+export function sweptUnread(threads: Thread[], picked: ReadonlySet<string>): number {
+  return threads.filter((t) => !isPinned(t) && sectionOf(t) === "unread" && !picked.has(t.id)).length;
 }
 
 /** The toast after a bulk settle: "Settled 7 threads; 1 pinned thread kept". */
