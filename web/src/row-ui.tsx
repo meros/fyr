@@ -61,6 +61,29 @@ export function HideClock({ at }: { at: number }) {
   return <span key={at} class="ahc" style={{ "--ah": `${Math.max(0, (at - Date.now()) / 1000)}s` }} title="Closes by itself" aria-hidden="true" />;
 }
 
+/** V0.section-heads: what a section header shows, on both fronts: the fold chevron, the section's icon, its name and its
+ *  count. `open` is left out for a header that cannot fold (Pinned, Waiting to run), and a section with no rows has nothing
+ *  to fold; the chevron's place stays, so the icons line up. The icon is decoration here: the name says the same. */
+export function SectionTitle(p: { label: string; icon: ComponentChildren; n: number; shown: string; open?: boolean; attention?: boolean }) {
+  const fold = p.open !== undefined && p.n > 0;
+  return (
+    <span class={`sti${p.n ? "" : " none"}${p.attention && p.n ? " att" : ""}`}>
+      <span class={`stc${fold && p.open ? " open" : ""}`} aria-hidden="true">
+        {fold && (
+          <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4.5 2.5 8 6l-3.5 3.5" />
+          </svg>
+        )}
+      </span>
+      <span class="sticon" aria-hidden="true">
+        {p.icon}
+      </span>
+      <span class="stl ell">{p.label}</span>
+      <span class="n">{p.shown}</span>
+    </span>
+  );
+}
+
 /** V0.186: a section header's toggle on both fronts, the only thing that folds a section from its header. */
 /** V0.your-move: the label over a group of Your move, on both fronts. */
 export function NeedsGroupHead({ label }: { label: string }) {

@@ -103,6 +103,20 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 6px 8px;scrollbar-width:thin;scrollbar-gutter:stable}
 .sec{display:flex;align-items:center;gap:8px;height:30px;padding:8px 8px 0;font:500 12px/16px var(--ui);color:var(--ink-muted);min-width:0}
 .sec.tog{cursor:pointer}
+/* V0.section-heads: the header's title, on both fronts; a section with rows reads in full ink, an empty one steps back */
+.sti{display:inline-flex;align-items:center;gap:6px;min-width:0;color:var(--ink);font-weight:600}
+.stc{flex:none;display:grid;place-items:center;width:12px;height:12px;color:var(--ink-muted);transition:transform .12s ease}
+.stc.open{transform:rotate(90deg)}
+.sec.tog:hover .stc{color:var(--ink)}
+.sticon{flex:none;display:grid;place-items:center}
+.stl{min-width:0}
+.sti .n{flex:none;min-width:18px;padding:0 5px;border-radius:8px;background:var(--line);color:var(--ink);font-weight:500;text-align:center}
+.sti.att,.sti.att .stc{color:var(--beam-icon)}
+.sti.att .n{background:var(--beam);color:var(--on-beam)}
+.sti.none{color:var(--ink-faint);font-weight:500}
+.sti.none .ic{color:var(--ink-faint)}
+.sti.none .n{min-width:0;padding:0;background:none;color:var(--ink-faint)}
+@media (prefers-reduced-motion: reduce){.stc{transition:none}}
 .ngh{padding:6px 8px 2px;font:500 11px/14px var(--ui);color:var(--ink-faint)}
 .heldup{position:sticky;top:6px;z-index:3;height:0;display:flex;justify-content:center}
 .heldup button{height:26px;padding:0 12px;border:1px solid var(--line-strong);border-radius:13px;background:var(--raised);color:var(--ink);font:500 12px/24px var(--ui);cursor:pointer;white-space:nowrap}
