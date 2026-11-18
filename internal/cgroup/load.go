@@ -81,7 +81,9 @@ type ThreadLoad struct {
 	// Working is the working set, memory.current less inactive_file (V0.164):
 	// what the undeclared-work detector reads; Memory stays the raw reading.
 	Working uint64 `json:"-"`
-	Job     string `json:"job,omitempty"`
+	// Used is the process tree's CPU time so far, on a host without cgroups.
+	Used time.Duration `json:"-"`
+	Job  string        `json:"job,omitempty"`
 	// Paused: the memory guard froze this thread's job (decision 0029 S5).
 	Paused bool `json:"paused,omitempty"`
 }
@@ -104,7 +106,8 @@ type Sampler struct {
 	Groups *JobGroups
 	// V0.164: the detector of undeclared heavy work, its settings (nil is the
 	// defaults) and, on a host without the cgroup tree, the reader of the
-	// process tree under each thread's CLI (CLIs says each thread's pid).
+	// process tree under each thread's CLI (CLIs says each thread's pid; each
+	// Tick asks it, so a read of the load calls nothing out).
 	Detect       *Detector
 	DetectConfig func() UndeclaredConfig
 	Settings     *UndeclaredSettings        // GET /api/load shows it
@@ -113,6 +116,7 @@ type Sampler struct {
 	names        atomic.Pointer[map[string]string]
 	Trees        *TreeReader
 	CLIs         func() map[string]int
+	clis         atomic.Pointer[map[string]int]
 	// V0.176: the leftover tracker and the temp sweep; optional.
 	Leftovers *Leftovers
 	Temps     *Temps
@@ -198,6 +202,10 @@ func (s *Sampler) now() time.Time {
 // Tick reads the load and follows the slot holds (decision 0029 S1); the
 // host calls it every ProbeEvery, whether or not a client asks.
 func (s *Sampler) Tick() {
+	if s.Trees != nil && s.CLIs != nil {
+		c := s.CLIs()
+		s.clis.Store(&c)
+	}
 	l := s.get()
 	s.detect(l)
 	s.Tree.ApplyThreadBudget(s.threadHolds()) // decision 0032 slice 3
@@ -223,10 +231,58 @@ func (s *Sampler) Tick() {
 	}
 	s.Jobs.RefreshProjects(owners)
 	rates := map[string]*float64{}
+	var trees map[string]reading
+	at := s.now()
+	if s.Tree == nil {
+		trees, at = map[string]reading{}, l.At // the readings are of that read
+	}
 	for _, t := range l.Threads {
 		rates[t.ID] = t.CPU
+		if trees != nil {
+			trees[t.ID] = reading{cpu: uint64(t.Used.Microseconds()), hasCPU: true, mem: t.Working}
+		}
 	}
-	s.Jobs.tick(s.Tree, s.Slots.Snapshot(), rates, l.Slowdown, s.now())
+	s.Jobs.tick(s.Tree, trees, s.Slots.Snapshot(), rates, l.Slowdown, at)
+}
+
+// readTrees fills the threads and the agents' sum from the process trees.
+func (s *Sampler) readTrees(l *Load, now time.Time) {
+	clis := s.clis.Load()
+	if s.Trees == nil || clis == nil {
+		return
+	}
+	a := &Use{}
+	sum, some := 0.0, false
+	for _, rd := range s.Trees.Read(now, *clis) {
+		t := ThreadLoad{ID: rd.Thread, Memory: rd.Work, Working: rd.Work, Used: rd.Used}
+		if rd.CPU != nil {
+			c := round2(*rd.CPU)
+			t.CPU = &c
+			sum, some = sum+c, true
+		}
+		a.Memory += rd.Work
+		l.Threads = append(l.Threads, t)
+	}
+	if some {
+		c := round2(sum)
+		a.CPU = &c
+	}
+	l.Agents = a
+}
+
+// TreeCPUTime is thread's process tree's CPU time at the last read; false
+// without one (V0.process-tree-hosts: the quiet wait of a host without cgroups).
+func (s *Sampler) TreeCPUTime(thread string) (time.Duration, bool) {
+	p := s.pub.Load()
+	if p == nil {
+		return 0, false
+	}
+	for _, t := range p.Threads {
+		if t.ID == thread {
+			return t.Used, true
+		}
+	}
+	return 0, false
 }
 
 // threadHolds are the slots held now, with what each job is known to need.
@@ -363,6 +419,8 @@ func (s *Sampler) get() Load {
 			l.Threads = append(l.Threads, t)
 		}
 		sort.Slice(l.Threads, func(i, j int) bool { return l.Threads[i].ID < l.Threads[j].ID })
+	} else {
+		s.readTrees(&l, now)
 	}
 	var agentsMem uint64
 	if l.Agents != nil {

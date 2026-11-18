@@ -78,7 +78,10 @@ func TestV176CScratchOfAnAsleepThreadWithoutCLIGoesAndAnAwakeOneStays(t *testing
 }
 
 func TestV176CWorktreesOfSettledThreadsAreListedOnlyAPushedCleanOneCanGo(t *testing.T) {
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir()) // macOS: git names /var/folders as /private/var/folders
+	if err != nil {
+		t.Fatal(err)
+	}
 	origin, repo := filepath.Join(root, "origin.git"), filepath.Join(root, "repo")
 	git(t, root, "init", "-q", "--bare", "-b", "main", origin)
 	git(t, root, "init", "-q", "-b", "main", repo)

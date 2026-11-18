@@ -299,17 +299,20 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	pool.Undeclared = sampler.Undeclared
 	pool.Guard = eng.GuardView // decision 0032
 	if tree == nil {
-		// V0.164 section 10: no cgroup tree, so each thread's use is its
-		// process tree under the CLI (nothing is frozen there).
-		sampler.Trees, sampler.CLIs = &cgroup.TreeReader{}, mgr.CLIs
+		// V0.164 section 10, V0.process-tree-hosts: no cgroup tree, so each thread is its
+		// process tree under the CLI, and a pause is SIGSTOP.
+		trees := &cgroup.TreeReader{}
 		if runtime.GOOS == "darwin" {
-			sampler.Trees.PS = func() (string, error) {
-				out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=,rss=,time=").Output()
+			trees.PS = func() (string, error) {
+				out, err := exec.Command("ps", "-A", "-o", cgroup.TreePS).Output()
 				return string(out), err
 			}
 		}
-	}
-	if tree != nil { // V0.195: without cgroups no quiet wait is detected
+		sampler.Trees, sampler.CLIs = trees, mgr.CLIs
+		groups.Trees, groups.CLIs, groups.KV = trees, mgr.CLIs, h.st
+		groups.ResumeStopped() // what the last fyrd left stopped
+		eng.QuietDeps = engine.QuietDeps{ThreadCPUTime: sampler.TreeCPUTime, ThreadFrozen: groups.Frozen}
+	} else {
 		eng.QuietDeps = engine.QuietDeps{ThreadCPUTime: tree.CPUTime, ThreadFrozen: groups.Frozen}
 	}
 	eng.UndeclaredDeps = engine.UndeclaredDeps{
@@ -317,7 +320,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		UndeclaredThaw: groups.ThawUndeclared, UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
 		UndeclaredFreeze: func(thread string) bool {
 			for _, f := range detector.Flags() {
-				if f.Thread == thread && groups.FreezeUndeclared(thread, cgroup.ReadRoots(tree, "", thread, f.FirstOver)) {
+				if f.Thread == thread && groups.FreezeUndeclared(thread, sampler.Roots(thread, f.FirstOver)) {
 					detector.MarkPaused(thread)
 					return true
 				}
@@ -331,7 +334,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 					continue
 				}
 				var out []slots.WorkUnit
-				for _, u := range groups.Units(thread, cgroup.ReadRoots(tree, "", thread, f.FirstOver)) {
+				for _, u := range groups.Units(thread, sampler.Roots(thread, f.FirstOver)) {
 					out = append(out, slots.WorkUnit{PID: u.PID, RSS: u.RSS, Command: cgroup.CommandOf(cgroup.Root{PID: u.PID, Cmdline: u.Cmdline}, groups.Bashes(thread))})
 				}
 				return out
@@ -635,6 +638,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 
 	<-ctx.Done()
 	log.Printf("shutting down")
+	groups.ResumeStopped()
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	srvs.shutdown(sctx)

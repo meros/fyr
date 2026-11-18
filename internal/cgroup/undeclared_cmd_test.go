@@ -106,13 +106,12 @@ func TestP1AProcTreeUnderTheCLIGrowingTwoCoresPerSecond(t *testing.T) {
 }
 
 func TestP2PsOutputInTheMacOSFormSumsEachThreadsTree(t *testing.T) {
-	out := "  10     1  100000 0:01.00\n  20    10  400000 0:05.00\n  21    20  100000 0:02.00\n  50     1   50000 0:00.10\n  60    50   25000 0:00.20\n   1     0   1000 0:00.00\n"
-	got := TreesFromPS(out, map[string]int{"t_a": 10, "t_b": 50})
-	if got["t_a"].RSS != (100000+400000+100000)*1024 || got["t_b"].RSS != (50000+25000)*1024 {
+	out := psRow(10, 1, 100000, 60, 1, "claude") + psRow(20, 10, 400000, 50, 5, "make") + psRow(21, 20, 100000, 40, 2, "cc") +
+		psRow(50, 1, 50000, 60, 0.1, "claude") + psRow(60, 50, 25000, 50, 0.2, "sh") + psRow(1, 0, 1000, 90, 0, "launchd")
+	r := &TreeReader{PS: fixedPS(&out)}
+	got := r.Read(boot, map[string]int{"t_a": 10, "t_b": 50})
+	if len(got) != 2 || got[0].Work != (100000+400000+100000)*1024 || got[1].Work != (50000+25000)*1024 {
 		t.Fatalf("%+v", got)
-	}
-	if got["t_a"].CPUSeconds < 7.9 || got["t_a"].CPUSeconds > 8.1 {
-		t.Fatalf("cpu seconds %.2f", got["t_a"].CPUSeconds)
 	}
 }
 

@@ -33,6 +33,9 @@ test("the detail names the averages, the pressure and the agents' budget", () =>
   ]);
   const plain: HostLoad = { host: "dev", cores: 4, load: [1, 2, 3], cgroups: false, threads: [] };
   assert.deepEqual(loadDetail(plain), ["dev: load 1.0 · 2.0 · 3.0 (1, 5, 15 min) on 4 cores", "Agents share the daemon's cgroup (no per-thread figures)"]);
+  // V0.process-tree-hosts: a host without cgroups reads its agents from the process trees.
+  const mac: HostLoad = { ...plain, agents: { cpu: 1.5, cpuMax: 0, memory: 2e9, memoryMax: 0 } };
+  assert.equal(loadDetail(mac)[1], "Agents 1.5 cores, no cap · 2.0 GB (process trees)");
 });
 
 test("a thread's CPU is in cores, hot from 2, and absent without a second read", () => {

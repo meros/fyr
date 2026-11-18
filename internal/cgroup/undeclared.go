@@ -51,11 +51,13 @@ const idleSpan = 10 * time.Minute
 
 // Reading is one thread's use at a tick: the cores since the last reading
 // (nil on the first) and the working set in bytes (memory.current less
-// inactive_file; on a host without cgroups, the process tree's RSS).
+// inactive_file; on a host without cgroups, the process tree's RSS). Used is
+// the process tree's CPU time so far (TreeReader only).
 type Reading struct {
 	Thread string
 	CPU    *float64
 	Work   uint64
+	Used   time.Duration
 }
 
 // DetectInput is what one tick gives the detector.
