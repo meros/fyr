@@ -1466,8 +1466,7 @@ label.sr{cursor:pointer}
 .sys.stuck .btn,.sys.stuck .m-bt{flex:none;margin-left:auto}
 
 /* V0.149: the Run card, desktop and phone. The command wraps at any character and never scrolls sideways. */
-.runcs{flex:none;display:flex;flex-direction:column;gap:8px;padding:8px 24px;max-height:min(55vh,560px);overflow-y:auto;overflow-x:hidden;border-top:1px solid var(--line);background:var(--surface)}
-.runc{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:720px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--raised);border-left:3px solid var(--beam)}
+.runc{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:680px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--raised);border-left:3px solid var(--beam)}
 .runc.ok{border-left-color:var(--calm)}
 .runc.failed{border-left-color:var(--signal-ink)}
 .runc.running{border-left-color:var(--harbour)}
@@ -1483,7 +1482,7 @@ label.sr{cursor:pointer}
 .runc-root.no{color:var(--beam-ink);background:var(--beam-wash);padding:6px 8px;border-radius:6px}
 .runc-o{display:flex;flex-direction:column;gap:2px;min-width:0}
 .runc-more{align-self:flex-start;font:400 11px/16px var(--ui);color:var(--harbour)}
-.runc-out{margin:0;max-height:240px;overflow-y:auto;overflow-x:hidden;padding:6px 8px;border-radius:6px;background:var(--sunken);font:400 11.5px/16px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.runc-out{margin:0;overflow-x:hidden;padding:6px 8px;border-radius:6px;background:var(--sunken);font:400 11.5px/16px var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
 .runc-res{font:500 12px/16px var(--ui)}
 .runc-res.ok{color:var(--calm)}
 .runc-res.failed{color:var(--signal-ink)}

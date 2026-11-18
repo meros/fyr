@@ -48,6 +48,21 @@ func TestRunRequestDeclares(t *testing.T) {
 	}
 }
 
+// V0.run-cards-in-conversation: the log says where the agent asked, so the
+// card can stand there.
+func TestRunRequestLogsWhereItWasAsked(t *testing.T) {
+	_, res, err := runReq(t, requestThread(), RunRequestArgs{Command: "true", Why: "w"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Events) != 1 || res.Events[0].Type != EventRunRequested {
+		t.Fatalf("events: %+v", res.Events)
+	}
+	if d := res.Events[0].Data.(map[string]any); d["action"] != "run-1" || d["on"] != OnThread {
+		t.Fatalf("data: %+v", d)
+	}
+}
+
 func TestRunRequestRefusesSudoAndEmpty(t *testing.T) {
 	for _, c := range []struct {
 		a    RunRequestArgs

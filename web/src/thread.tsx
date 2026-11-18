@@ -41,8 +41,8 @@ import { agentsSummary, groupTasks, taskLine, taskStats } from "./tasks.ts";
 import { ChangesView } from "./changes-ui.tsx";
 import { CiNotesScope } from "./ci-notes-ui.tsx";
 import { ChangeList, ThreadOffers, useViewAction } from "./offers-ui.tsx";
-import { ProseCommand, RunRequests } from "./runcard-ui.tsx";
-import { splitProse } from "./runcard.ts";
+import { ProseCommand, RunCardAt, RunCards } from "./runcard-ui.tsx";
+import { cardsKey, placeCards, requests, splitProse } from "./runcard.ts";
 import { changeChip, headerPr, settleLine } from "./offers.ts";
 import { prChip } from "./pr.ts";
 import { PrView } from "./pr-ui.tsx";
@@ -272,10 +272,9 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
           cwd={t.cwd}
           host={t.hostId}
           delivery={{ cancel: async (messageId) => run("thread.cancelMessage", { messageId }), resend: send }}
+          cards={{ t, onRun: run }}
         />
       )}
-      {/* V0.149: the commands the agent asked the owner to run, under the newest message, on desktop and phone */}
-      {tab === "conv" && <RunRequests t={t} onRun={run} />}
       {tab === "changes" && (
         <div class="chtab">
           <ChangeList t={t} onRun={run} />
@@ -515,13 +514,19 @@ const DeliveryCtx = createContext<DeliveryActions | null>(null);
 /** V0.54: the thread's host: its attachments and previews load from there. */
 const HostContext = createContext<string | undefined>(undefined);
 
-export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host, strip }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: string; strip?: ComponentChildren }) {
+export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delivery, outbox, host, strip, cards }: { events: FyrEvent[] | undefined; outbox?: string[]; onAtEnd(b: boolean): void; threadId: string; onEarlier?: () => void; cwd?: string; delivery?: DeliveryActions; host?: string; strip?: ComponentChildren; cards?: { t: Thread; onRun(action: string, args?: Record<string, unknown>): unknown } }) {
   const details = useToolDetails();
   const api = useApi();
   const outKey = outbox ? outbox.join(",") : null;
   const all = useMemo(() => buildConversation(events ?? [], { details, cwd, host, urls: api, outbox: outKey === null ? undefined : outKey ? outKey.split(",") : [] }), [events, details, cwd, host, outKey]);
   // V0.33: messages the agent has not read stand after "Agent is here".
-  const [items, pending] = useMemo(() => [all.filter((i) => !(i.kind === "user" && i.pending)), all.filter((i) => i.kind === "user" && i.pending)], [all]);
+  // V0.run-cards-in-conversation: a Run card stands where the agent asked, on desktop and phone.
+  const openCards = cards ? requests(cards.t).map((o) => o.id).join("\n") : "";
+  const [items, pending, looseCards] = useMemo(() => {
+    const placed = placeCards(all.filter((i) => !(i.kind === "user" && i.pending)), openCards ? openCards.split("\n") : []);
+    return [placed.items, all.filter((i) => i.kind === "user" && i.pending), placed.loose] as const;
+  }, [all, openCards]);
+  const followCards = cards ? cardsKey(cards.t) : "";
   const previews = useMemo(() => items.flatMap((it) => (it.kind === "preview" ? [it.card] : [])), [items]);
   // V0.41: outcome at full weight, the work quiet and folded.
   const entries = useMemo(() => pace(items, { details }), [items, details]);
@@ -549,7 +554,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
       el.scrollTop = 1e9;
       onAtEnd(true);
     }
-  }, [all, threadId]);
+  }, [all, threadId, followCards]);
 
   useEffect(() => {
     const el = ref.current;
@@ -576,6 +581,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
   return (
     <ThreadIdContext.Provider value={threadId}>
     <HostContext.Provider value={host}>
+    <RunCards.Provider value={cards ?? null}>
     <div class="convo" ref={ref} onScroll={check} onClick={onCodeCopy}>
       <div class="convo-in">
         {/* V0.75 (2), #64: the filmstrip scrolls with the conversation, so a thread without previews has no empty band */}
@@ -598,6 +604,13 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
               <EntryView en={en} previews={previews} />
             </Boundary>
           ))}
+          {looseCards.map((id) => (
+            <Boundary key={`card-${id}`} name="This command">
+              <div class="cv out">
+                <RunCardAt id={id} />
+              </div>
+            </Boundary>
+          ))}
           {pending.length > 0 && (
             <div class="here" role="separator" aria-label="The agent has read everything above this line">
               <span>Agent is here</span>
@@ -613,6 +626,7 @@ export function Conversation({ events, onAtEnd, threadId, onEarlier, cwd, delive
         </DeliveryCtx.Provider>
       </div>
     </div>
+    </RunCards.Provider>
     </HostContext.Provider>
     </ThreadIdContext.Provider>
   );
@@ -791,6 +805,8 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
   const host = useContext(HostContext);
   const api = useApi();
   switch (it.kind) {
+    case "runcard":
+      return <RunCardAt id={it.action} />;
     case "user": {
       // V0.33: unread messages are dimmed; a cancelled or lost one is struck through.
       const cls = it.pending ? " pend" : it.delivery === "cancelled" || it.delivery === "lost" ? " gone" : "";

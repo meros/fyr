@@ -59,6 +59,8 @@ export type Item = (
   | { kind: "tools"; key: string; calls: ToolCall[] }
   | { kind: "run"; key: string; failure: Failure | null; interrupted: boolean; costUsd?: number; durationMs?: number; compact: boolean }
   | { kind: "effect"; key: string; action: string; ok: boolean; text: string; line: string }
+  /** V0.run-cards-in-conversation: the agent asked the owner to run this request here; its Run card stands at this place */
+  | { kind: "runcard"; key: string; action: string }
   | { kind: "note"; key: string; text: string; line: string }
   /** V0.164 (N9): what Fyr told the agent about heavy work it did not ask for; `text` is the whole notice */
   | { kind: "undeclared"; key: string; text: string; line: string }
@@ -361,6 +363,9 @@ export function buildConversation(events: FyrEvent[], opts: BuildOptions = {}): 
         pushItem({ kind: "effect", key, action: "change", ok: true, text: line, line });
         break;
       }
+      case "run.requested":
+        pushItem({ kind: "runcard", key, action: str(e.data?.action) });
+        break;
       case "action": {
         // V0.60: a press and its result; the output is the text.
         const a = actionEventLine(e.data);
@@ -791,6 +796,7 @@ export function roles(items: Item[]): Role[] {
       case "user":
       case "preview":
       case "handover":
+      case "runcard": // never folded away: it holds buttons and a result
         return "outcome";
       case "assistant":
         return !it.quiet && lastText.get(turns[i]) === i ? "outcome" : "process";
