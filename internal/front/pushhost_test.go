@@ -18,6 +18,10 @@ func TestFrontPushNamesTheHost(t *testing.T) {
 	if got := p.payloads()[0].Body; got != "b · 1 question · Which colour?" {
 		t.Fatalf("body %q", got)
 	}
+	// V0.207: the push names its host, so a device that hides it is left out.
+	if o := p.payloads()[0].Origin; o == nil || o.Host != "b" {
+		t.Fatalf("origin %+v", o)
+	}
 
 	c := fullHost(t, "c", "pc")
 	p1 := &fakePush{}

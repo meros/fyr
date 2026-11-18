@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"slices"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -29,6 +30,40 @@ type SubKeys struct {
 type Subscription struct {
 	Endpoint string  `json:"endpoint"`
 	Keys     SubKeys `json:"keys"`
+	// Hidden is what this device never shows (V0.207).
+	Hidden *Hidden `json:"hidden,omitempty"`
+}
+
+// HiddenProject is a project by its host's name and that host's own id. An
+// empty Host matches any host.
+type HiddenProject struct {
+	Host string `json:"host"`
+	ID   string `json:"id"`
+}
+
+// Hidden is the hosts and projects one device has hidden (V0.207).
+type Hidden struct {
+	Hosts    []string        `json:"hosts"`
+	Projects []HiddenProject `json:"projects"`
+}
+
+// Origin says which host and project a push is about.
+type Origin struct {
+	Host      string
+	ProjectID string
+}
+
+// Hides reports whether a device with this list leaves out a push from o.
+func (h *Hidden) Hides(o Origin) bool {
+	if h == nil {
+		return false
+	}
+	if slices.Contains(h.Hosts, o.Host) {
+		return true
+	}
+	return o.ProjectID != "" && slices.ContainsFunc(h.Projects, func(p HiddenProject) bool {
+		return p.ID == o.ProjectID && (p.Host == "" || p.Host == o.Host)
+	})
 }
 
 // Payload is what the service worker shows.
@@ -37,6 +72,9 @@ type Payload struct {
 	Body     string `json:"body"`
 	ThreadID string `json:"threadId"`
 	State    string `json:"state"`
+	// Origin is the thread's host and project; nil for a push about no
+	// thread, which every device gets. It is not sent.
+	Origin *Origin `json:"-"`
 }
 
 // Sender delivers one encrypted message and returns the HTTP status.
@@ -79,6 +117,28 @@ func (p *Pusher) Subscribe(user string, sub Subscription, device string) error {
 
 func (p *Pusher) Unsubscribe(endpoint string) error { return p.DB.DeletePushSub(endpoint) }
 
+// SetHidden stores what the device behind endpoint hides (V0.207). It reports
+// false when no such subscription is stored.
+func (p *Pusher) SetHidden(endpoint string, h Hidden) (bool, error) {
+	raw, ok, err := p.DB.PushSubData(endpoint)
+	if err != nil || !ok {
+		return false, err
+	}
+	var s Subscription
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return false, err
+	}
+	s.Hidden = nil
+	if len(h.Hosts) > 0 || len(h.Projects) > 0 {
+		s.Hidden = &h
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return false, err
+	}
+	return true, p.DB.SetPushSubData(endpoint, b)
+}
+
 // Known reports whether a subscription is still stored for any user.
 func (p *Pusher) Known(endpoint string) bool {
 	ok, err := p.DB.HasPushSub(endpoint)
@@ -100,8 +160,9 @@ func (p *Pusher) Subscriptions(user string) ([]Subscription, error) {
 	return out, nil
 }
 
-// Notify sends to every subscription of a user and returns how many
-// accepted it. A 404 or 410 answer deletes the subscription.
+// Notify sends to every subscription of a user that does not hide the
+// payload's origin and returns how many accepted it. A 404 or 410 answer
+// deletes the subscription.
 func (p *Pusher) Notify(user string, pl Payload) int {
 	subs, err := p.Subscriptions(user)
 	if err != nil {
@@ -115,6 +176,9 @@ func (p *Pusher) Notify(user string, pl Payload) int {
 	}
 	ok := 0
 	for _, s := range subs {
+		if pl.Origin != nil && s.Hidden.Hides(*pl.Origin) {
+			continue
+		}
 		code, err := send(s, body, p.keys)
 		switch {
 		case err != nil:

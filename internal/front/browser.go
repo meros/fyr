@@ -27,6 +27,7 @@ type Pusher interface {
 	Unsubscribe(endpoint string) error
 	Notify(user string, pl push.Payload) int
 	Known(endpoint string) bool
+	SetHidden(endpoint string, h push.Hidden) (bool, error)
 }
 
 // webClient serves the built web client with fresh pages (V0.13, V0.15).
@@ -121,6 +122,23 @@ func pushRoutes(mux muxer, p Pusher, onSub func(r *http.Request, endpoint string
 		}
 		json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b)
 		api.WriteJSON(w, 200, map[string]bool{"known": b.Endpoint != "" && p.Known(b.Endpoint)})
+	})
+	// V0.207: what this device hides, so its pushes leave those out.
+	both(mux, "POST", "/push/hidden", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Endpoint string `json:"endpoint"`
+			push.Hidden
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&b); err != nil || b.Endpoint == "" {
+			api.WriteJSON(w, 400, map[string]any{"ok": false, "error": "endpoint is required"})
+			return
+		}
+		known, err := p.SetHidden(b.Endpoint, b.Hidden)
+		if err != nil {
+			api.WriteJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		api.WriteJSON(w, 200, map[string]any{"ok": known})
 	})
 	both(mux, "POST", "/push/test", func(w http.ResponseWriter, r *http.Request) {
 		n := p.Notify(core.Owner, push.Payload{Title: "Fyr", Body: "Notifications work on this device.", State: "test"})

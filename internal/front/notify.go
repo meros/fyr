@@ -77,7 +77,9 @@ func (f *Front) send(host string, m map[string]any) {
 			meta = host + " · " + meta
 		}
 	}
-	f.opt.Push.Notify(core.Owner, push.PayloadFor(d.ID, d.Title, string(d.Attention.State), meta, detail))
+	pl := push.PayloadFor(d.ID, d.Title, string(d.Attention.State), meta, detail)
+	pl.Origin = &push.Origin{Host: host, ProjectID: d.ProjectID} // V0.207: a device may hide either
+	f.opt.Push.Notify(core.Owner, pl)
 }
 
 func dtoOf(m map[string]any) (api.Thread, error) {

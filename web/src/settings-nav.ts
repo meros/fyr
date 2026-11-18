@@ -124,8 +124,8 @@ export function settingsNeed(providers: string, hosts: number): string {
 const PUSH_WORD: Record<PushStatus, string> = { on: "Notifications on", off: "Notifications off", denied: "Notifications blocked", unsupported: "No notifications here" };
 
 /** "Notifications off · theme auto" */
-export function deviceSummary(push: PushStatus, theme: "system" | "light" | "dark"): string {
-  return `${PUSH_WORD[push]} · theme ${theme === "system" ? "auto" : theme}`;
+export function deviceSummary(push: PushStatus, theme: "system" | "light" | "dark", hidden = 0): string {
+  return `${PUSH_WORD[push]} · theme ${theme === "system" ? "auto" : theme}${hidden ? ` · ${hidden} hidden` : ""}`;
 }
 
 /** Esc in the desktop dialog (outside a changed text field): a sub-page goes to its list; a page closes Settings (null). */

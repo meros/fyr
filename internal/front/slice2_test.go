@@ -37,8 +37,9 @@ func (p *fakePush) Subscribe(user string, sub push.Subscription, device string) 
 	p.subs = append(p.subs, sub.Endpoint)
 	return nil
 }
-func (p *fakePush) Unsubscribe(string) error { return nil }
-func (p *fakePush) Known(string) bool        { return false }
+func (p *fakePush) Unsubscribe(string) error                    { return nil }
+func (p *fakePush) Known(string) bool                           { return false }
+func (p *fakePush) SetHidden(string, push.Hidden) (bool, error) { return false, nil }
 func (p *fakePush) Notify(user string, pl push.Payload) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -1,6 +1,7 @@
 // The only module that talks HTTP and SSE to fyrd (docs/API-v0.md). With ?mock=1 it serves fixtures instead,
 // from a chunk loaded only then (#42: the fixtures stay out of the production bundle).
 
+import type { PushHidden } from "./hidden.ts";
 import { decodeHostMarks } from "./store.ts";
 import type { OwnerMarks } from "./host-mark.ts";
 import { isTransient, sendWithRetry } from "./retry.ts";
@@ -70,6 +71,8 @@ export interface Api {
   pushKey(): Promise<string>;
   pushSubscribe(subscription: PushSubscriptionJSON, device: string): Promise<PushReply>;
   pushUnsubscribe(endpoint: string): Promise<PushReply>;
+  /** V0.207: what this device hides, so the front leaves it out of those pushes */
+  pushHidden(endpoint: string, hidden: PushHidden): Promise<PushReply>;
   pushTest(): Promise<PushReply>;
   /** Whether the front still has this subscription; null when it could not be asked. */
   pushStatus(endpoint: string): Promise<boolean | null>;
@@ -495,6 +498,9 @@ function createHttpApi(): Api {
     },
     pushUnsubscribe(endpoint) {
       return postJson(frontPath("/push/unsubscribe"), { endpoint });
+    },
+    pushHidden(endpoint, hidden) {
+      return postJson(frontPath("/push/hidden"), { endpoint, ...hidden });
     },
     pushTest() {
       return postJson(frontPath("/push/test"), {});

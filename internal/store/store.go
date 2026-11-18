@@ -371,6 +371,22 @@ func (s *Store) PushSubs(user string) ([]PushSub, error) {
 	return out, rows.Err()
 }
 
+// PushSubData is the stored subscription JSON of endpoint.
+func (s *Store) PushSubData(endpoint string) ([]byte, bool, error) {
+	var sub string
+	err := s.db.QueryRow(`SELECT sub FROM push_subs WHERE endpoint=?`, endpoint).Scan(&sub)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	return []byte(sub), err == nil, err
+}
+
+// SetPushSubData replaces the stored subscription JSON of endpoint.
+func (s *Store) SetPushSubData(endpoint string, sub []byte) error {
+	_, err := s.db.Exec(`UPDATE push_subs SET sub=? WHERE endpoint=?`, string(sub), endpoint)
+	return err
+}
+
 func (s *Store) HasPushSub(endpoint string) (bool, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM push_subs WHERE endpoint=?`, endpoint).Scan(&n)

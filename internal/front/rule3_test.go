@@ -25,6 +25,7 @@ func (p *capturePush) PublicKey() string                                 { retur
 func (p *capturePush) Subscribe(string, push.Subscription, string) error { return nil }
 func (p *capturePush) Unsubscribe(string) error                          { return nil }
 func (p *capturePush) Known(string) bool                                 { return false }
+func (p *capturePush) SetHidden(string, push.Hidden) (bool, error)       { return false, nil }
 func (p *capturePush) Notify(_ string, pl push.Payload) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
