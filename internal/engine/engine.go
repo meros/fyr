@@ -116,6 +116,7 @@ type Engine struct {
 	SlotDeps
 	UndeclaredDeps
 	LeftoverDeps
+	QuietDeps
 	// Git reads checkouts for the git observer (#35); nil reads with git.
 	Git GitReader
 	// Scripts runs script actions of changes, the thread and its view (V0.60);
@@ -146,8 +147,9 @@ type Engine struct {
 	// Kept: the threads whose processes the launcher's runner kept across
 	// the restart (V0.90); set before Load.
 	Kept       map[string]bool
-	slotIdle   map[string]time.Time // under mu: held slots without a live run, since
-	slotNudged map[string]time.Time // under mu: owner → the hold (its since) already reminded
+	slotIdle   map[string]time.Time  // under mu: held slots without a live run, since
+	quietWaits map[string]*quietWait // under mu: V0.195, thread → its CPU watch
+	slotNudged map[string]time.Time  // under mu: owner → the hold (its since) already reminded
 	// frozen is the job frozen now (decision 0029 S5), under mu.
 	frozen       frozenJob
 	frozeHolds   map[string]time.Time // under mu: holds frozen once already (owner → since)
@@ -1091,7 +1093,8 @@ func (e *Engine) Tick() {
 		e.Hub.Send(stream.FrameThread, c.d)
 		e.notify(c.d, c.prev)
 	}
-	e.sweepSlots() // V0.86
+	e.sweepSlots()      // V0.86
+	e.sweepQuietWaits() // V0.195
 }
 
 // EventsBefore pages back: the newest limit events older than before.

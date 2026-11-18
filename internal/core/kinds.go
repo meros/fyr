@@ -54,6 +54,7 @@ const (
 	// V0.153: Fyr waits for a thrashing host ("" Why: it no longer waits).
 	KindMachineWait    = "agent.machineWait"
 	KindTask           = "task"
+	KindTaskQuiet      = "task.quiet" // V0.195: a background command waits while the thread uses no CPU
 	KindSession        = "session"
 	KindDigest         = "digest"
 	KindDecisionOpened = "decision.opened"
@@ -173,6 +174,12 @@ type (
 	TaskArgs struct {
 		Task Task
 		Log  []Event
+	}
+	// TaskQuietArgs is task.quiet's (V0.195): the tasks that sit quiet and
+	// since when. No Since: the thread uses CPU again.
+	TaskQuietArgs struct {
+		IDs   []string
+		Since *time.Time
 	}
 	SessionArgs struct{ SessionID, Model string }
 	// DigestArgs is one stream message's digest (agent/digest.go).
@@ -461,6 +468,7 @@ func init() {
 			TaskObserved(r.T, a.Task, now)
 			return Result{Events: a.Log}, nil
 		}},
+		{Name: KindTaskQuiet, From: observed, Untouched: true, Reduce: reduceTaskQuiet},
 		{Name: KindSession, From: observed, Reduce: func(r Rec, in Input, _ time.Time) (Result, error) {
 			a, err := argsOf[SessionArgs](in)
 			if err != nil {

@@ -145,3 +145,19 @@ func TestInitHooksStopOnlyWithView(t *testing.T) {
 		t.Fatal("a live view thread has no reminder hook")
 	}
 }
+
+// V0.195: the CLI reports foreground Bash as tasks too, and a Monitor as a
+// local_bash: is_backgrounded and the tool_use tell them apart.
+func TestTaskBackgroundAndTool(t *testing.T) {
+	d := newDigest()
+	d.feed(M{"type": "assistant", "message": M{"content": []any{M{"type": "tool_use", "id": "tu1", "name": "Monitor", "input": M{}}}}})
+	m := M{"type": "system", "subtype": "task_started", "task_id": "b1", "tool_use_id": "tu1", "task_type": "local_bash", "is_backgrounded": true}
+	k, _, _ := taskFromSystem(m)
+	if !k.Background || d.taskTool(m) != "Monitor" {
+		t.Fatalf("%+v tool %q", k, d.taskTool(m))
+	}
+	m["is_backgrounded"] = false
+	if k, _, _ = taskFromSystem(m); k.Background {
+		t.Fatal("a foreground Bash read as background")
+	}
+}

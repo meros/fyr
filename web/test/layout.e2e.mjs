@@ -1984,6 +1984,52 @@ section('S5 paused', async (h) => {
   }
 });
 
+// V0.195: a thread whose turn ended on a background command that went quiet. On the desktop and at 390 × 844 the row and
+// the line above the composer (one component) name the command, and the line says how long it runs and since when it is quiet.
+section('V0.195 background wait', async (h) => {
+  const { send, evaluate, navigate, waitFor, settle } = h;
+  const url = `${origin}/?mock=rail&bgwait=1`;
+  const row = "[...document.querySelectorAll('.one')].find((r) => r.textContent.includes('Deploy check'))";
+  const read = `(() => { const e = document.querySelector('[data-bg-wait]'); if (!e) return null; const r = e.getBoundingClientRect(); return { text: e.textContent, stuck: e.classList.contains('stuck'), inside: r.left >= 0 && r.right <= innerWidth, seen: r.height > 0 && r.bottom <= innerHeight }; })()`;
+  const ok = (r, rowText, who) => {
+    check(rowText && rowText.includes("Background: Wait for both experiments to finish") && rowText.includes("no CPU use since"), `V0.195 ${who}: the row reads ${JSON.stringify(rowText)}`);
+    check(r && /^Background: Wait for both experiments to finish · 35 min · no CPU use since \d\d:\d\d$/.test(r.text) && r.stuck, `V0.195 ${who}: the line is ${JSON.stringify(r)}`);
+    check(r && r.inside && r.seen, `V0.195 ${who}: the line is outside the screen (${JSON.stringify(r)})`);
+  };
+  try {
+    await navigate(url, `!!${row}`);
+    const text = await evaluate(`${row}.textContent`);
+    await evaluate(`${row}.click()`);
+    await waitFor("!!document.querySelector('[data-bg-wait]')", { what: "the wait line" });
+    await settle();
+    ok(await evaluate(read), text, "desktop");
+  } catch (e) {
+    failures.push(`V0.195 desktop: ${e.message}`);
+  }
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await navigate(url, "!!document.querySelector('.m-seg')");
+    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Working')).click()`);
+    await waitFor(`!!${row}`, { what: "the waiting thread's row" });
+    const text = await evaluate(`${row}.textContent`);
+    await evaluate(`${row}.click()`);
+    await waitFor("!!document.querySelector('[data-bg-wait]')", { what: "the wait line" });
+    await settle();
+    ok(await evaluate(read), text, "phone");
+  } catch (e) {
+    failures.push(`V0.195 phone: ${e.message}`);
+  }
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`localStorage.clear(); sessionStorage.clear()`);
+    await navigate(`${origin}/?mock=1`, "!!document.querySelector('.ib .lrz')");
+  } catch (e) {
+    failures.push(`V0.195 cleanup: ${e.message}`);
+  }
+});
+
 // Decision 0032, V0.188: the memory guard's chart in Settings → Automation (?guard=1 feeds it, ?settings=automation opens
 // it). On the desktop and at 390 × 844: the chart is a figure with a lane per frozen thread (Map perf, Babysit), hatched
 // frozen stretches, a band for each time memory was short, nothing wider than the screen, and the row of the frozen

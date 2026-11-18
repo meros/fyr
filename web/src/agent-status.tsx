@@ -1,14 +1,29 @@
 // SPEC 0.5 V0.143: the status line above the composer, one component on desktop and phone. While a run goes it
 // spins with the live line (V0.153: "Waiting for the machine (memory pressure)" while Fyr waits for the host); while the agent does not respond it says since when and why, and offers Restart.
+// V0.195: after the turn, it names the background command the thread waits for, how long it has run, and that the thread went quiet.
 import { StateIcon } from "./icons.tsx";
-import { liveLine } from "./tasks.ts";
+import { liveLine, waitLine } from "./tasks.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
 import type { Thread } from "./types.ts";
 
 export function AgentStatus({ t, now, phone, onRestart }: { t: Thread; now: number; phone?: boolean; onRestart(): void }) {
   const stuck = t.unresponsive;
-  if (!t.running && !stuck && !t.machineWait) return null;
   const cls = phone ? "sys m-status" : "sys live";
+  if (!t.running && !stuck && !t.machineWait) {
+    const wait = waitLine(t, now);
+    if (!wait) return null;
+    const quiet = t.tasks.some((x) => x.status === "running" && x.quietSince);
+    return (
+      <div class={`${cls}${quiet ? " stuck" : ""}`} role="status" data-bg-wait>
+        <span class="icw">
+          <StateIcon state="waiting" size={14} />
+        </span>
+        <span class="ell" title={wait}>
+          {wait}
+        </span>
+      </div>
+    );
+  }
   if (!stuck) {
     return (
       <div class={cls}>

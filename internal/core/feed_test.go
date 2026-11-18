@@ -68,6 +68,23 @@ func queued(t *testing.T, th *Thread, key string) Notice {
 // has its test here.
 func TestNoticeRules(t *testing.T) {
 	rows := map[string]func(t *testing.T){
+		// V0.195: a background command sits quiet: an observer's wake, once.
+		"task.quiet": func(t *testing.T) {
+			th := feedThread()
+			at := ct0.Add(-6 * time.Minute)
+			th.Tasks = []Task{{ID: "b1", Description: "Wait for it", Type: "local_bash", Status: TaskRunning, Background: true, StartedAt: &at}}
+			in := Input{Source: Observer(ObsHost), Kind: KindTaskQuiet, Args: TaskQuietArgs{IDs: []string{"b1"}, Since: &at}}
+			th, res := fstep(t, th, in, ct0)
+			n := queued(t, th, "task.quiet")
+			if n.Urgency != Wake || !n.Budget || !wakes(res) || !strings.Contains(n.What, "`Wait for it`") || !strings.Contains(n.What, "6 min") {
+				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
+			}
+			th.Feed.Queue = nil
+			th, res = fstep(t, th, in, ct0)
+			if len(th.Feed.Queue) != 0 || wakes(res) {
+				t.Fatalf("told twice: %+v", th.Feed.Queue)
+			}
+		},
 		// The result of an effect the agent asked for, or of an action
 		// anyone pressed on its records: wake.
 		"result": func(t *testing.T) {

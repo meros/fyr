@@ -245,6 +245,16 @@ func (t *Tree) Thread(id string) string {
 	return d
 }
 
+// CPUTime is the CPU a thread's cgroup and its children (job/, undeclared/)
+// used so far (V0.195); false when there is no such cgroup.
+func (t *Tree) CPUTime(id string) (time.Duration, bool) {
+	if t == nil {
+		return 0, false
+	}
+	u, ok := readKey(filepath.Join(t.root, "agents", unsafe.ReplaceAllString(id, "_"), "cpu.stat"), "usage_usec")
+	return time.Duration(u) * time.Microsecond, ok
+}
+
 // Release ends one Thread's hold; the last removes the directory when no
 // process is left in it (the kernel refuses otherwise).
 func (t *Tree) Release(id string) {

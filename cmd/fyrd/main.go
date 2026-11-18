@@ -309,6 +309,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}
 	}
 	mgr.SetUndeclaredNote(eng.UndeclaredSubagentNote)
+	if tree != nil { // V0.195: without cgroups no quiet wait is detected
+		eng.QuietDeps = engine.QuietDeps{ThreadCPUTime: tree.CPUTime, ThreadFrozen: groups.Frozen}
+	}
 	eng.UndeclaredDeps = engine.UndeclaredDeps{
 		Undeclared: sampler.Undeclared, UndeclaredTold: detector.Told, UndeclaredDismiss: detector.Dismiss, UndeclaredSettings: usettings.Set,
 		UndeclaredThaw: groups.ThawUndeclared, UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused,

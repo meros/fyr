@@ -121,6 +121,14 @@ type UndeclaredDeps struct {
 	HeavyRefused       func(class string)
 }
 
+// QuietDeps are V0.195's: the CPU time a thread and everything it started
+// used so far (false without cgroups: no detection then), and whether its
+// work is frozen. Optional.
+type QuietDeps struct {
+	ThreadCPUTime func(thread string) (time.Duration, bool)
+	ThreadFrozen  func(thread string) bool
+}
+
 // LeftoverDeps are V0.176's: leftover processes and temporary files.
 // LeftoverSweep looks now (a run ended, a thread settled); the others are
 // the owner's commands and the agent's keep_process. All optional.

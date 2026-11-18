@@ -39,6 +39,24 @@ export function agentsLabel(n: number): string {
   return n === 1 ? "1 agent" : `${n} agents`;
 }
 
+/** V0.195: a Bash the agent left running; the CLI reports foreground ones as tasks too. */
+function isCommand(t: TaskDTO): boolean {
+  return t.status === "running" && !!t.background && t.type === "local_bash";
+}
+
+/** What the running tasks are called: agents, or background commands when any is one. */
+export function runningLabel(running: TaskDTO[]): string {
+  const commands = running.filter(isCommand).length;
+  if (!commands) return agentsLabel(running.length);
+  return running.length === 1 ? "1 background command" : `${running.length} background tasks`;
+}
+
+/** V0.195: "no CPU use since 09:19" while a background command sits quiet, else "". */
+function quietNote(running: TaskDTO[]): string {
+  const since = running.map((t) => t.quietSince).filter(Boolean).sort()[0];
+  return since ? `no CPU use since ${clockTime(since)}` : "";
+}
+
 /** "143k", "1.2M", "980". */
 export function compactCount(n: number | null | undefined): string {
   const v = Math.max(0, Math.round(n ?? 0));
@@ -57,7 +75,10 @@ export function taskStats(t: TaskDTO): string {
 
 /** What the task is doing now, or how it ended. */
 export function taskLine(t: TaskDTO): string {
-  if (t.status === "running") return t.activity || "Starting";
+  if (t.status === "running") {
+    if (t.quietSince) return `No CPU use since ${clockTime(t.quietSince)}`;
+    return t.activity || (t.background ? "Running" : "Starting");
+  }
   return t.summary || t.activity || (t.status === "completed" ? "Finished" : t.status === "failed" ? "Failed" : "Stopped");
 }
 
@@ -69,7 +90,8 @@ export function agentsSummary(tasks: TaskDTO[] | null | undefined): string {
     return n ? `${agentsLabel(n)} finished` : "";
   }
   const newest = [...running].sort((a, b) => ts(b.updatedAt) - ts(a.updatedAt))[0];
-  return newest.activity ? `${agentsLabel(running.length)} · ${newest.activity}` : agentsLabel(running.length);
+  const label = runningLabel(running);
+  return newest.activity ? `${label} · ${newest.activity}` : label;
 }
 
 /** The second part of a Working-section row: waiting reads the reason and the newest activity; working adds "· N agents". */
@@ -77,17 +99,19 @@ export function workingLine(t: Thread): string {
   const running = groupTasks(t.tasks).running;
   if (t.attention.state === "waiting") {
     const newest = [...running].sort((a, b) => ts(b.updatedAt) - ts(a.updatedAt))[0];
-    const reason = t.attention.reason || agentsLabel(running.length);
-    return newest?.activity ? `${reason} · ${newest.activity}` : reason;
+    const reason = t.attention.reason || runningLabel(running);
+    const more = quietNote(running) || newest?.activity;
+    return more ? `${reason} · ${more}` : reason;
   }
   const base = t.activity || t.project;
-  return running.length ? `${base} · ${agentsLabel(running.length)}` : base;
+  return running.length ? `${base} · ${runningLabel(running)}` : base;
 }
 
 /** The log line for a `task` event. */
-export function taskEventText(d: { kind?: string; description?: string; status?: string; summary?: string }): string {
+export function taskEventText(d: { kind?: string; description?: string; status?: string; summary?: string; minutes?: number }): string {
   const what = d.description || "agent";
   if (d.kind === "started") return `Agent started: ${what}`;
+  if (d.kind === "quiet") return `No CPU use for ${d.minutes ?? 0} min while waiting for ${what}. The agent was asked to check.`;
   const verb = d.status === "failed" ? "failed" : d.status === "stopped" ? "stopped" : "finished";
   return `Agent ${verb}: ${d.summary || what}`;
 }
@@ -98,6 +122,15 @@ export function liveLine(t: Thread, now: number): string {
   if (t.unresponsive) return `Not responding since ${clockTime(t.unresponsive.since)} · ${t.unresponsive.reason}`;
   // V0.153: slow because the host thrashes; Fyr waits, nothing failed.
   if (t.machineWait) return `Waiting for the machine (${t.machineWait.why}) · since ${clockTime(t.machineWait.since)}`;
-  const running = groupTasks(t.tasks).running.length;
-  return [t.activity || "Working", running ? agentsLabel(running) : "", relTime(t.runStartedAt, now)].filter(Boolean).join(" · ");
+  const running = groupTasks(t.tasks).running;
+  return [t.activity || "Working", running.length ? runningLabel(running) : "", relTime(t.runStartedAt, now)].filter(Boolean).join(" · ");
+}
+
+/** V0.195: the line above the composer while the turn is over and a background command is what the thread waits for; "" otherwise. */
+export function waitLine(t: Thread, now: number): string {
+  const running = groupTasks(t.tasks).running;
+  const commands = running.filter(isCommand);
+  if (t.running || !commands.length) return "";
+  const started = commands.map((c) => c.startedAt).filter(Boolean).sort()[0];
+  return [t.attention.reason || runningLabel(running), relTime(started, now), quietNote(running)].filter(Boolean).join(" · ");
 }

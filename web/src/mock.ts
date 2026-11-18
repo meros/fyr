@@ -686,7 +686,9 @@ function railFixture(now: number): Fixture {
         runStartedAt: waiting ? null : min(m),
         activity: waiting ? "" : act,
         subagents: subs,
-        tasks: waiting
+        tasks: waiting && MOCK_BGWAIT
+          ? [task("dq1", "Wait for both experiments to finish", "running", now, 35, { type: "local_bash", background: true, tool: "Bash", quietSince: min(12) })]
+          : waiting
           ? [
               task("dt1", "Design mobile translation", "running", now, m, { activity: "Running build", toolUses: 14, tokens: 143_218 }),
               task("dt2", "Watch the deploy", "running", now, m - 2, { activity: act, toolUses: 3, tokens: 12_000 }),
@@ -694,7 +696,7 @@ function railFixture(now: number): Fixture {
           : id === "t_mapperf"
             ? [task("mt1", "Profile the map render", "running", now, 6, { activity: "Bash yarn vitest src/map --reporter=verbose", toolUses: 21, tokens: 310_000 })]
             : [],
-        attention: { state, section: "working", reason: waiting ? "2 agents" : "" },
+        attention: { state, section: "working", reason: waiting ? (MOCK_BGWAIT ? "Background: Wait for both experiments to finish" : "2 agents") : "" },
         unavailable: { "thread.retry": "Nothing failed", "thread.markUnseen": "A run is going" },
       }),
     );
@@ -1679,6 +1681,8 @@ export function mockFilePatch(path: string): FilePatchDTO {
 }
 
 // V0.46: ?quiet=<projectId> (read once at load, like ?deploy).
+// V0.195: ?bgwait=1: the waiting thread of ?mock=rail waits for a background command that went quiet.
+const MOCK_BGWAIT = typeof location !== "undefined" ? new URLSearchParams(location.search).get("bgwait") === "1" : false;
 const MOCK_QUIET = typeof location !== "undefined" ? new URLSearchParams(location.search).get("quiet") : null;
 
 /** The host's QuietUntil (internal/core/quiet.go) on the device's clock, for the mock only: any window holds, and

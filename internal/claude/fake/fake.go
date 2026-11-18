@@ -574,6 +574,18 @@ func turn(text string) (took []queued) {
 			assistant(msg{"type": "text", "text": "background read ok"})
 			write(msg{"type": "result", "subtype": "success", "is_error": false, "result": "background read ok", "session_id": session})
 		}()
+	case "bgstuck", "bgmonitor":
+		// V0.195: a background command that never ends, as a wait whose
+		// condition can no longer turn true does.
+		tool, desc := "Bash", "Wait for both experiments to finish"
+		if word == "bgmonitor" {
+			tool, desc = "Monitor", "CI on the PR"
+		}
+		assistant(msg{"type": "tool_use", "id": "tu_stuck", "name": tool, "input": msg{"command": "until false; do sleep 15; done", "run_in_background": true}})
+		write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{msg{"task_id": "bs1", "task_type": "local_bash", "description": desc}}})
+		write(msg{"type": "system", "subtype": "task_started", "task_id": "bs1", "tool_use_id": "tu_stuck", "description": desc, "task_type": "local_bash", "is_backgrounded": true})
+		assistant(msg{"type": "text", "text": "I continue when it ends"})
+		result(false, "success", "turn 1")
 	case "deaf":
 		ms := 3000
 		if f := strings.Fields(text); len(f) > 1 {

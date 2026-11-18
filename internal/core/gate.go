@@ -36,8 +36,20 @@ func Gate(tool string, input map[string]any) string {
 // word (V0.143). The CLI ends a background Bash at its timeout (at most 2 h).
 const LongBackground = time.Hour
 
+// V0.195: a background Bash that is a hand-written wait. If its condition is
+// wrong it never ends, and nobody is told.
+var (
+	pollLoop   = regexp.MustCompile(`\b(until|while)\b[\s\S]*\bdo\b[\s\S]*\bsleep\b`)
+	boundedCmd = regexp.MustCompile(`(^|[;&|(\s])timeout\s+(-\S+\s+)*\d`)
+)
+
+// PollNudge is the note on such a wait.
+const PollNudge = "[Fyr] This background Bash is a polling loop with no time limit. If its condition is wrong it never ends and you are never woken. " +
+	"Run the job itself with run_in_background, so its exit is the notification. If you must wait for something you did not start, put the loop under `timeout <seconds>` and make it exit when it cannot tell."
+
 // GateNudge returns a note for the model on an allowed tool call, or "":
-// a background Bash meant to run an hour or more (V0.143).
+// a background Bash meant to run an hour or more (V0.143), or an unbounded
+// polling loop in the background (V0.195).
 func GateNudge(tool string, input map[string]any) string {
 	if tool != "Bash" {
 		return ""
@@ -47,6 +59,10 @@ func GateNudge(tool string, input map[string]any) string {
 	}
 	ms, _ := input["timeout"].(float64)
 	if time.Duration(ms)*time.Millisecond < LongBackground {
+		cmd, _ := input["command"].(string)
+		if pollLoop.MatchString(cmd) && !boundedCmd.MatchString(cmd) {
+			return PollNudge
+		}
 		return ""
 	}
 	return "[Fyr] This background Bash may run for hours. The CLI ends a background Bash at its timeout (at most 2 h), and a long one keeps this session's process busy. " +

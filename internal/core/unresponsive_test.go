@@ -63,3 +63,22 @@ func TestGateNudgesLongBackgroundBash(t *testing.T) {
 		t.Fatal("a long background Bash is denied, not nudged")
 	}
 }
+
+// V0.195: an unbounded polling loop in the background gets the note; the job
+// itself, a loop under timeout and a foreground loop do not.
+func TestGateNudgesUnboundedBackgroundPoll(t *testing.T) {
+	bg := func(cmd string) map[string]any { return map[string]any{"command": cmd, "run_in_background": true} }
+	stall := `until ! pgrep -f 'exp' | grep -qv "^$$\$"; do sleep 15; done`
+	if n := GateNudge("Bash", bg(stall)); n != PollNudge {
+		t.Fatalf("the 18 Nov wait got %q", n)
+	}
+	for _, in := range []map[string]any{
+		bg("go test ./..."),
+		bg("timeout 300 bash -c '" + stall + "'"),
+		{"command": stall},
+	} {
+		if n := GateNudge("Bash", in); n != "" {
+			t.Errorf("%v got %q", in, n)
+		}
+	}
+}

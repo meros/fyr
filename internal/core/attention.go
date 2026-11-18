@@ -1,9 +1,6 @@
 package core
 
-import (
-	"fmt"
-	"time"
-)
+import "time"
 
 // State is the one status vocabulary. Only Attention computes it; clients
 // never derive status themselves.
@@ -88,11 +85,7 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 		return Attention{Waiting, WorkingSec, MachineWaitText(t.MachineWait)}
 	}
 	if n := t.RunningTasks(); n > 0 {
-		reason := "1 agent"
-		if n > 1 {
-			reason = fmt.Sprintf("%d agents", n)
-		}
-		return Attention{Waiting, WorkingSec, reason}
+		return Attention{Waiting, WorkingSec, waitReason(t, n)}
 	}
 	// V0.101: Needs you is computed: Ready or Stopped on a failure (asks
 	// are decisions, above). A finished run whose result the owner has not
