@@ -2,8 +2,8 @@
 // turning Web Push on and off. HTTP goes through api.ts.
 
 import type { PushHidden } from "./hidden.ts";
-import type { Api } from "./api.ts";
-import { base64UrlToBytes, deviceLabel, pushStatus, reconcilePush, type PushEnv, type PushStatus } from "./push.ts";
+import type { Api, PushReply } from "./api.ts";
+import { base64UrlToBytes, deviceLabel, notificationIsStale, pushStatus, reconcilePush, type PushEnv, type PushPrefs, type PushStatus } from "./push.ts";
 
 let waiting: ServiceWorker | null = null;
 
@@ -103,6 +103,31 @@ export async function syncPushStatus(api: Api): Promise<PushStatus> {
   return currentPushStatus();
 }
 
+/** V0.notification-polish: tell the front what this device wants to be told about. A failure waits like syncPushHidden. */
+export async function syncPushPrefs(api: Api, prefs: PushPrefs): Promise<void> {
+  try {
+    const reg = await registration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (sub) await api.pushPrefs(sub.endpoint, prefs);
+  } catch {
+    /* the next change or reconnect sends it again */
+  }
+}
+
+/** V0.notification-polish: the test goes to this device only. */
+export async function testPush(api: Api): Promise<PushReply> {
+  let endpoint: string | undefined;
+  try {
+    const reg = await registration();
+    endpoint = (reg ? await reg.pushManager.getSubscription() : null)?.endpoint;
+  } catch {
+    /* the front then sends to every device */
+  }
+  const r = await api.pushTest(endpoint);
+  if (r.ok && r.delivered === 0) return { ok: false, error: "The push service did not take the test. Turn Notifications off and on again." };
+  return r;
+}
+
 /** V0.207: tell the front what this device hides. A failure waits for the next change or reconnect. */
 export async function syncPushHidden(api: Api, hidden: PushHidden): Promise<void> {
   try {
@@ -180,11 +205,12 @@ export async function promptInstall(): Promise<boolean> {
   return (await d.userChoice).outcome === "accepted";
 }
 
-/** Closes a thread's notification once it no longer needs the user (design/mobile rule 12). */
-export function clearThreadNotification(threadId: string): void {
+/** Closes a thread's notification once the thread left the state it was shown for (design/mobile rule 12,
+ *  V0.notification-polish). */
+export function clearThreadNotification(threadId: string, state: string): void {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
   void navigator.serviceWorker.ready
     .then((r) => r.getNotifications({ tag: threadId }))
-    .then((ns) => ns.forEach((n) => n.close()))
+    .then((ns) => ns.forEach((n) => notificationIsStale((n.data as { state?: string } | null)?.state, state) && n.close()))
     .catch(() => undefined);
 }

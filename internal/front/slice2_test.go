@@ -40,6 +40,10 @@ func (p *fakePush) Subscribe(user string, sub push.Subscription, device string) 
 func (p *fakePush) Unsubscribe(string) error                    { return nil }
 func (p *fakePush) Known(string) bool                           { return false }
 func (p *fakePush) SetHidden(string, push.Hidden) (bool, error) { return false, nil }
+func (p *fakePush) SetPrefs(string, push.Prefs) (bool, error)   { return false, nil }
+func (p *fakePush) NotifyOne(user, endpoint string, pl push.Payload) int {
+	return p.Notify(user, pl)
+}
 func (p *fakePush) Notify(user string, pl push.Payload) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -5,11 +5,14 @@
 package push
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"slices"
+	"strings"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -32,6 +35,15 @@ type Subscription struct {
 	Keys     SubKeys `json:"keys"`
 	// Hidden is what this device never shows (V0.207).
 	Hidden *Hidden `json:"hidden,omitempty"`
+	// NoFinished: this device gets no push for a thread that finished
+	// (V0.notification-polish); what needs the owner still arrives.
+	NoFinished bool `json:"noFinished,omitempty"`
+}
+
+// Prefs is what one device chose to be told about (V0.notification-polish).
+type Prefs struct {
+	// Finished: also a thread that finished and is unread.
+	Finished bool `json:"finished"`
 }
 
 // HiddenProject is a project by its host's name and that host's own id. An
@@ -120,6 +132,23 @@ func (p *Pusher) Unsubscribe(endpoint string) error { return p.DB.DeletePushSub(
 // SetHidden stores what the device behind endpoint hides (V0.207). It reports
 // false when no such subscription is stored.
 func (p *Pusher) SetHidden(endpoint string, h Hidden) (bool, error) {
+	return p.edit(endpoint, func(s *Subscription) {
+		s.Hidden = nil
+		if len(h.Hosts) > 0 || len(h.Projects) > 0 {
+			s.Hidden = &h
+		}
+	})
+}
+
+// SetPrefs stores what the device behind endpoint wants to be told about
+// (V0.notification-polish). It reports false when no such subscription is
+// stored.
+func (p *Pusher) SetPrefs(endpoint string, pr Prefs) (bool, error) {
+	return p.edit(endpoint, func(s *Subscription) { s.NoFinished = !pr.Finished })
+}
+
+// edit changes one stored subscription.
+func (p *Pusher) edit(endpoint string, change func(*Subscription)) (bool, error) {
 	raw, ok, err := p.DB.PushSubData(endpoint)
 	if err != nil || !ok {
 		return false, err
@@ -128,10 +157,7 @@ func (p *Pusher) SetHidden(endpoint string, h Hidden) (bool, error) {
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return false, err
 	}
-	s.Hidden = nil
-	if len(h.Hosts) > 0 || len(h.Projects) > 0 {
-		s.Hidden = &h
-	}
+	change(&s)
 	b, err := json.Marshal(s)
 	if err != nil {
 		return false, err
@@ -160,46 +186,97 @@ func (p *Pusher) Subscriptions(user string) ([]Subscription, error) {
 	return out, nil
 }
 
-// Notify sends to every subscription of a user that does not hide the
-// payload's origin and returns how many accepted it. A 404 or 410 answer
-// deletes the subscription.
+// Notify sends to every subscription of a user that wants the payload and
+// returns how many accepted it: not one that hides the payload's origin
+// (V0.207), and not a finished thread to a device that turned those off
+// (V0.notification-polish). A 404 or 410 answer deletes the subscription.
 func (p *Pusher) Notify(user string, pl Payload) int {
 	subs, err := p.Subscriptions(user)
 	if err != nil {
 		log.Printf("push: %v", err)
 		return 0
 	}
-	body, _ := json.Marshal(pl)
-	send := p.Send
-	if send == nil {
-		send = p.webpushSend
-	}
 	ok := 0
 	for _, s := range subs {
 		if pl.Origin != nil && s.Hidden.Hides(*pl.Origin) {
 			continue
 		}
-		code, err := send(s, body, p.keys)
-		switch {
-		case err != nil:
-			log.Printf("push %s: %v", short(s.Endpoint), err)
-		case code == 404 || code == 410:
-			p.Unsubscribe(s.Endpoint)
-			log.Printf("push %s: gone (%d), removed", short(s.Endpoint), code)
-		case code >= 200 && code < 300:
-			ok++
-		default:
-			log.Printf("push %s: status %d", short(s.Endpoint), code)
+		if pl.State == "done" && s.NoFinished {
+			continue
 		}
+		ok += p.deliver(s, pl)
 	}
 	return ok
 }
 
-func (p *Pusher) webpushSend(s Subscription, body []byte, k Keys) (int, error) {
+// NotifyOne sends to the one subscription of a user with this endpoint
+// (V0.notification-polish: the test goes to the device that asked) and
+// returns how many accepted it.
+func (p *Pusher) NotifyOne(user, endpoint string, pl Payload) int {
+	subs, err := p.Subscriptions(user)
+	if err != nil {
+		log.Printf("push: %v", err)
+		return 0
+	}
+	for _, s := range subs {
+		if s.Endpoint == endpoint {
+			return p.deliver(s, pl)
+		}
+	}
+	return 0
+}
+
+// deliver sends pl to one subscription: 1 when the push service took it.
+func (p *Pusher) deliver(s Subscription, pl Payload) int {
+	body, _ := json.Marshal(pl)
+	var code int
+	var err error
+	if p.Send != nil {
+		code, err = p.Send(s, body, p.keys)
+	} else {
+		code, err = p.webpushSend(s, body, p.keys, pl)
+	}
+	switch {
+	case err != nil:
+		log.Printf("push %s: %v", short(s.Endpoint), err)
+	case code == 404 || code == 410:
+		p.Unsubscribe(s.Endpoint)
+		log.Printf("push %s: gone (%d), removed", short(s.Endpoint), code)
+	case code >= 200 && code < 300:
+		return 1
+	default:
+		log.Printf("push %s: status %d", short(s.Endpoint), code)
+	}
+	return 0
+}
+
+// Urgency is how hard the push service tries to reach a sleeping device
+// (RFC 8030 5.3, V0.notification-polish): a finished thread waits for a
+// device in low-battery mode; everything else wakes it.
+func Urgency(pl Payload) webpush.Urgency {
+	if pl.State == "done" {
+		return webpush.UrgencyNormal
+	}
+	return webpush.UrgencyHigh
+}
+
+// Topic names a thread to the push service (RFC 8030 5.4), so a device that
+// was offline gets the thread's newest push only, not every one sent while
+// it was away. "" for a push about no thread. A topic is at most 32
+// characters of the base64url alphabet, so it is a hash of the id.
+func Topic(pl Payload) string {
+	if pl.ThreadID == "" {
+		return ""
+	}
+	h := sha256.Sum256([]byte(pl.ThreadID))
+	return base64.RawURLEncoding.EncodeToString(h[:])[:32]
+}
+
+func (p *Pusher) webpushSend(s Subscription, body []byte, k Keys, pl Payload) (int, error) {
 	resp, err := webpush.SendNotification(body, &webpush.Subscription{Endpoint: s.Endpoint,
 		Keys: webpush.Keys{P256dh: s.Keys.P256dh, Auth: s.Keys.Auth}},
 		&webpush.Options{Subscriber: p.Subject, VAPIDPublicKey: k.Public, VAPIDPrivateKey: k.Private,
-			TTL: int((12 * time.Hour).Seconds()), Urgency: webpush.UrgencyHigh})
+			TTL: int((12 * time.Hour).Seconds()), Urgency: Urgency(pl), Topic: Topic(pl)})
 	if err != nil {
 		return 0, err
 	}
@@ -217,15 +294,28 @@ func short(s string) string {
 
 // PayloadFor builds the notification for a thread entering a state. The
 // body starts with the inbox meta word, so the state reads first even when
-// the title is long (design/mobile rule 12).
+// the title is long (design/mobile rule 12). V0.notification-polish: the
+// text is one plain line (Plain), and a part that is empty leaves no
+// separator behind.
 func PayloadFor(threadID, title, state, meta, detail string) Payload {
-	body := detail
-	if meta != "" {
-		body = meta + " · " + detail
+	var parts []string
+	for _, x := range []string{meta, Plain(detail)} {
+		if x != "" {
+			parts = append(parts, x)
+		}
 	}
+	body := strings.Join(parts, " · ")
 	r := []rune(body)
 	if len(r) > 180 {
 		body = string(r[:179]) + "…"
 	}
 	return Payload{Title: title, Body: body, ThreadID: threadID, State: state}
+}
+
+var plainMarks = strings.NewReplacer("**", "", "`", "")
+
+// Plain is s as a notification shows it: one line, single spaces, without
+// the marks of bold and code, which a notification would print as they are.
+func Plain(s string) string {
+	return strings.Join(strings.Fields(plainMarks.Replace(s)), " ")
 }

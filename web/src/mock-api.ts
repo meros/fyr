@@ -428,6 +428,9 @@ export function createMockApi(scenario: string): Api {
     async pushHidden() {
       return { ok: true };
     },
+    async pushPrefs() {
+      return { ok: true };
+    },
     async pushTest() {
       return server.pushTest();
     },

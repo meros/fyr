@@ -151,6 +151,9 @@ type Front struct {
 
 	mu       sync.Mutex // guards the caches of every link and objs
 	presence *notify.Presence
+	// noticed: per host and thread, the number of its last change of
+	// attention state, so a waiting push knows it is still the newest.
+	noticed map[string]uint64
 	// objs: the host of an attachment or preview the front has routed by
 	// ?host= or ?thread=, or uploaded (V0.54), so a preview's own files
 	// reach the same host.

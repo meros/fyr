@@ -36,6 +36,8 @@ func do(t *testing.T, method, url, host string, hdr map[string]string, body stri
 type endpointPush struct {
 	subs   map[string]string
 	hidden push.Hidden
+	prefs  *push.Prefs
+	one    []string // the endpoints NotifyOne was asked for
 }
 
 func (f *endpointPush) PublicKey() string { return "BPUB" }
@@ -49,6 +51,18 @@ func (f *endpointPush) Known(endpoint string) bool              { _, ok := f.sub
 func (f *endpointPush) SetHidden(endpoint string, h push.Hidden) (bool, error) {
 	f.hidden = h
 	return f.Known(endpoint), nil
+}
+
+func (f *endpointPush) SetPrefs(endpoint string, pr push.Prefs) (bool, error) {
+	f.prefs = &pr
+	return f.Known(endpoint), nil
+}
+func (f *endpointPush) NotifyOne(user, endpoint string, pl push.Payload) int {
+	f.one = append(f.one, endpoint)
+	if f.Known(endpoint) {
+		return 1
+	}
+	return 0
 }
 
 // SPEC 0.5 V0.15: key, subscribe, test and unsubscribe.
@@ -85,6 +99,23 @@ func TestPushEndpoints(t *testing.T) {
 	json.NewDecoder(r.Body).Decode(&res)
 	if res["delivered"] != 1 {
 		t.Fatalf("test: %v", res)
+	}
+	// V0.notification-polish: the test goes to the device that asked, and a
+	// device says whether it wants finished threads (on when it says nothing).
+	r = do(t, "POST", hs.URL+"/api/push/test", "", h, `{"endpoint":"https://push/e1"}`)
+	res = nil
+	json.NewDecoder(r.Body).Decode(&res)
+	if res["delivered"] != 1 || len(fp.one) != 1 || fp.one[0] != "https://push/e1" {
+		t.Fatalf("test to one device: %v %v", res, fp.one)
+	}
+	if r := do(t, "POST", hs.URL+"/api/push/prefs", "", h, `{"endpoint":"https://push/e1","finished":false}`); r.StatusCode != 200 || fp.prefs == nil || fp.prefs.Finished {
+		t.Fatalf("prefs off: %d %+v", r.StatusCode, fp.prefs)
+	}
+	if r := do(t, "POST", hs.URL+"/api/push/prefs", "", h, `{"endpoint":"https://push/e1"}`); r.StatusCode != 200 || !fp.prefs.Finished {
+		t.Fatalf("prefs without a choice: %d %+v", r.StatusCode, fp.prefs)
+	}
+	if r := do(t, "POST", hs.URL+"/api/push/prefs", "", h, `{"finished":false}`); r.StatusCode != 400 {
+		t.Fatalf("prefs without an endpoint: %d", r.StatusCode)
 	}
 	known := func() bool {
 		r := do(t, "POST", hs.URL+"/api/push/status", "", h, `{"endpoint":"https://push/e1"}`)
