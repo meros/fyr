@@ -206,6 +206,7 @@ The client sends a command as an ordinary message (`/review 12`); the CLI runs i
 | `GET /api/push/key` | – | `{"publicKey": "<base64url VAPID public key>"}` |
 | `POST /api/push/subscribe` | `{"subscription": PushSubscription.toJSON(), "device": "Pixel 9 · Chrome"}` | `{"ok": true}` |
 | `POST /api/push/unsubscribe` | `{"endpoint": "…"}` | `{"ok": true}` |
+| `POST /api/push/hidden` | `{"endpoint": "…", "hosts": ["lab"], "projects": [{"host": "desk", "id": "p_12"}]}` | `{"ok": true}`: false when the subscription is unknown. V0.207: this device gets no push about these hosts and projects |
 | `POST /api/push/test` | – | `{"delivered": 1}` |
 | `POST /api/push/status` | `{"endpoint": "…"}` | `{"known": true}`: false when the host deleted it after a 404 or 410 |
 

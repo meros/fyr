@@ -95,3 +95,41 @@ func TestPayloadFor(t *testing.T) {
 		t.Fatalf("not clipped by runes: %d", len(r))
 	}
 }
+
+// V0.207: a device that hides a host or project gets no push about it; a push
+// about no thread still reaches it, and showing it again restores the pushes.
+func TestHiddenLeavesTheDeviceOut(t *testing.T) {
+	p, out := newPusher(t, nil)
+	p.Subscribe("owner", sub("https://push/phone"), "phone")
+	p.Subscribe("owner", sub("https://push/desk"), "desk")
+	if ok, err := p.SetHidden("https://push/phone", Hidden{Hosts: []string{"lab"}, Projects: []HiddenProject{{Host: "desk", ID: "p_wayout"}}}); !ok || err != nil {
+		t.Fatalf("SetHidden: %v %v", ok, err)
+	}
+	for _, c := range []struct {
+		name string
+		o    *Origin
+		want int
+	}{
+		{"hidden project", &Origin{Host: "desk", ProjectID: "p_wayout"}, 1},
+		{"same id on another host", &Origin{Host: "other", ProjectID: "p_wayout"}, 2},
+		{"hidden host", &Origin{Host: "lab", ProjectID: "p_x"}, 1},
+		{"shown", &Origin{Host: "desk", ProjectID: "p_fyr"}, 2},
+		{"about no thread", nil, 2},
+	} {
+		if n := p.Notify("owner", Payload{Title: "x", Origin: c.o}); n != c.want {
+			t.Errorf("%s: delivered %d, want %d", c.name, n, c.want)
+		}
+	}
+	*out = nil
+	p.SetHidden("https://push/phone", Hidden{})
+	if n := p.Notify("owner", Payload{Title: "x", Origin: &Origin{Host: "lab"}}); n != 2 {
+		t.Fatalf("after showing again: delivered %d", n)
+	}
+	if ok, _ := p.SetHidden("https://push/gone", Hidden{}); ok {
+		t.Fatal("SetHidden on an unknown endpoint reported ok")
+	}
+	subs, _ := p.Subscriptions("owner")
+	if len(subs) != 2 || subs[0].Keys.Auth == "" {
+		t.Fatalf("SetHidden damaged the subscriptions: %+v", subs)
+	}
+}

@@ -33,10 +33,13 @@ import {
   setStall,
   UNDO_MS,
   type SectionKey,
+  type Sections,
   type Store,
   applyThreadPatch,
   resolveRef,
 } from "./store.ts";
+import { placeOf, stillRows, trackUnread, type RowPlace } from "./still-list.ts";
+import { useHand, useListAnchor } from "./still-list-ui.ts";
 import { SECTION_OPEN_KEY, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
@@ -56,13 +59,14 @@ import { PreviewViewer } from "./preview-ui.tsx";
 import { AdoptDialog, Modal, NewThreadDialog, SnoozeMenu } from "./dialogs.tsx";
 import { snoozeChoiceForKey, snoozeChoices, snoozeCommand, snoozeKeyCount, type SnoozeChoice } from "./snooze.ts";
 import type { NewThreadArgs } from "./new-thread.ts";
-import { clearThreadNotification, disablePush, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
+import { clearThreadNotification, disablePush, syncPushHidden, syncPushStatus, enablePush, isStandalone, promptInstall, pushEnv, registerServiceWorker, watchInstall } from "./pwa.ts";
 import { rememberOpen, shouldClearNotification, takeOpen, unsupportedReason, type PushStatus } from "./push.ts";
 import { PwaControls } from "./pwa-ui.tsx";
 import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, expandOrder, findProject, memberOn, moveToast, orderProjects, projectRecords, recordOf } from "./projects.ts";
+import { HIDDEN_KEY, NOTHING_HIDDEN, applyHidden, hiddenCount, parseHidden, pushHiddenOf, type Hidden, type PushHidden } from "./hidden.ts";
 import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clickHost, filterEmpty, parseHostsOff, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
@@ -210,7 +214,26 @@ function isTextTarget(t: EventTarget | null): boolean {
 function App() {
   // #41: every component reaches the host through ApiContext; a test can provide a fake Api.
   const api = useApi();
-  const [store, setStore] = useState<Store>(initialStore);
+  const [fullStore, setStore] = useState<Store>(initialStore);
+  // V0.207: what this device hides is gone from `store`, so every list on both fronts follows. Settings and the cache
+  // read `fullStore`.
+  const [deviceHidden, setHiddenState] = useState<Hidden>(() => {
+    try {
+      return parseHidden(localStorage.getItem(HIDDEN_KEY));
+    } catch {
+      return NOTHING_HIDDEN;
+    }
+  });
+  const setHidden = (h: Hidden) => {
+    setHiddenState(h);
+    try {
+      if (hiddenCount(h)) localStorage.setItem(HIDDEN_KEY, JSON.stringify(h));
+      else localStorage.removeItem(HIDDEN_KEY);
+    } catch {
+      /* storage blocked */
+    }
+  };
+  const store = useMemo(() => applyHidden(fullStore, deviceHidden), [fullStore, deviceHidden]);
   // V0.109: the list keeps no cursor of its own. The marked row is the open thread; with nothing open, the last one.
   const [lastOpen, setLastOpen] = useState<string | null>(null);
   const [view, setView] = useState<{ id: string; mode: "open" | "peek" } | null>(null);
@@ -255,7 +278,13 @@ function App() {
   // U8: Undo of a settle or archive that left the open thread on a phone reopens it.
   const reopenRef = useRef<string | null>(null);
   const navGoRef = useRef<(n: Nav) => void>(() => {});
+  // V0.207: the row the owner just marked seen or unseen goes where that puts it, hold or no hold.
+  const [freed, setFreed] = useState<string | null>(null);
+  useEffect(() => setFreed(null), [sel]);
   const cmds = useThreadCommands({
+    onRun: (action, ids) => {
+      if ((action === "thread.markSeen" || action === "thread.markUnseen") && ids.length === 1) setFreed(ids[0]);
+    },
     undoMs: phone ? PHONE_UNDO_MS : UNDO_MS,
     hostOf: (id) => threadsRef.current[id]?.hostId ?? "",
     onUndone: (entry, ok) => {
@@ -337,7 +366,12 @@ function App() {
   const filterOn = !!filterProject;
   // V0.114: one unlock of quiet projects on this device for every path (New thread, the filter, search, the gate).
   const unlock = useQuietUnlock(store.clockOffset);
-  const filterSel = useMemo<FilterSel>(() => ({ hostsOff, project: projectFilter || null }), [hostsOff, projectFilter]);
+  // V0.207: a hidden host or project is no filter value: it would leave a chip behind.
+  const filterSel = useMemo<FilterSel>(() => {
+    const gone = (name: string) => fullStore.hosts.some((h) => h.name === name) && !store.hosts.some((h) => h.name === name);
+    const projectGone = !!findProject(fullStore.projects, projectFilter) && !filterOn;
+    return { hostsOff: hostsOff.filter((n) => !gone(n)), project: projectGone ? null : projectFilter || null };
+  }, [hostsOff, projectFilter, fullStore.hosts, fullStore.projects, store.hosts, filterOn]);
   // V0.134: host AND project.
   const filtered = useMemo(() => applyFilters(store.threads, filterSel, store.projects, store.host ?? ""), [store.threads, store.projects, filterSel, store.host]);
   // What search and the filter may reach: quiet threads only while the unlock runs (V0.114; V0.46 (4) showed them).
@@ -361,7 +395,10 @@ function App() {
     return out;
   }, [searchable, filterOn, query, quietClock, store.clockOffset]);
   const queue = useSlotQueue(); // V0.137
-  const sec = useMemo(() => sections(shown, queue), [shown, queue]);
+  // V0.207: `sec` is the truth, for every count; the list draws `rows` and j/k walks `drawn`, which keep their place.
+  const unreadRef = useRef<Record<string, number>>({});
+  const unreadAt = useMemo(() => (unreadRef.current = trackUnread(unreadRef.current, store.threads)), [store.threads]);
+  const sec = useMemo(() => sections(shown, queue, unreadAt), [shown, queue, unreadAt]);
   // V0.134, V0.169: the two rows (only values with threads in view; a selected one stays) and the empty state, on both
   // fronts.
   const filterView = useMemo<FilterView>(() => {
@@ -396,9 +433,28 @@ function App() {
   const current = sel ? store.threads[sel] : undefined;
   const hidden = hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset, unlock.showUntil)[current.id]) });
   const listed = useMemo(() => (hidden && current ? { ...shown, [current.id]: current } : shown), [shown, hidden, current]);
-  const rows = useMemo(() => (listed === shown ? sec : sections(listed, queue)), [listed, shown, sec, queue]);
+  const liveRows = useMemo(() => (listed === shown ? sec : sections(listed, queue, unreadAt)), [listed, shown, sec, queue, unreadAt]);
+  // V0.207: the hold starts from what the screen shows. A new search or filter is the owner's own act: it starts afresh.
+  const hand = useHand();
+  const drawnRef = useRef<Sections | null>(null);
+  const heldRef = useRef<Sections | null>(null);
+  const placeRef = useRef<RowPlace | null>(null);
+  const askedRef = useRef("");
+  const asked = `${query}\n${JSON.stringify(filterSel)}`;
+  if (askedRef.current !== asked) {
+    askedRef.current = asked;
+    drawnRef.current = heldRef.current = null;
+  }
+  heldRef.current = hand.hold ? (heldRef.current ?? drawnRef.current ?? liveRows) : null;
+  if (placeRef.current?.id !== sel) placeRef.current = (drawnRef.current && placeOf(drawnRef.current, sel)) ?? placeOf(liveRows, sel);
+  const held = heldRef.current;
+  const place = placeRef.current?.id === freed ? null : placeRef.current;
+  const rows = useMemo(() => stillRows(liveRows, held, place, freed), [liveRows, held, place, freed]);
+  drawnRef.current = rows;
+  const drawn = useMemo(() => stillRows(sec, held, place, freed), [sec, held, place, freed]);
   const guest = useMemo(() => guestOf(rows, sel, hidden, sectionOpen), [rows, sel, hidden, sectionOpen]);
-  const order = useMemo(() => flatOrder(sec, limits), [sec, limits]);
+  const order = useMemo(() => flatOrder(drawn, limits), [drawn, limits]);
+  useListAnchor(useMemo(() => flatOrder(rows, limits).join(" "), [rows, limits]), sel, hand.inside);
   const allRows = useMemo(() => flatOrder(rows), [rows]); // V0.186: with the rows not drawn, for the guest's place
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;
 
@@ -590,12 +646,20 @@ function App() {
     const t = setTimeout(
       () =>
         idle(() =>
-          void cache.saveState(stateForCache(store, new Date().toISOString())),
+          void cache.saveState(stateForCache(fullStore, new Date().toISOString())),
         ),
       2000,
     );
     return () => clearTimeout(t);
-  }, [store.threads, store.projects, store.hosts, store.deploy, store.loaded]);
+  }, [fullStore.threads, fullStore.projects, fullStore.hosts, fullStore.deploy, fullStore.loaded]);
+
+  // V0.207: the front leaves this device out of the pushes of what it hides. Sent again when push turns on and on a
+  // reconnect, so a change made offline arrives.
+  const pushHidden = useMemo(() => JSON.stringify(pushHiddenOf(fullStore.hosts, fullStore.projects, deviceHidden)), [fullStore.hosts, fullStore.projects, deviceHidden]);
+  useEffect(() => {
+    if (pushSt !== "on" || !fullStore.loaded || fullStore.conn === "offline" || api.mock) return;
+    void syncPushHidden(api, JSON.parse(pushHidden) as PushHidden);
+  }, [pushHidden, pushSt, fullStore.loaded, fullStore.conn]);
 
   // Decision card state follows the open decision.
   const decision: Decision | null = viewThread ? currentDecision(viewThread) : null;
@@ -898,13 +962,13 @@ function App() {
   const hideShown = hideClocks(hideAt, activeForHide);
 
   const jump = (k: SectionKey) => {
-    if (!sec[k].length) return; // an empty section is not a place to go
+    if (!drawn[k].length) return; // an empty section is not a place to go
     if (!listOn) {
       setListPrefState(true); // jumping to a section shows the list (V0.40)
       setListPref(true);
     }
     nameSection(k);
-    const first = sec[k][0];
+    const first = drawn[k][0];
     document.getElementById(`sec-${k}`)?.scrollIntoView({ block: "start" });
     if (first) {
       // V0.109: the row g1–g5 marks is the open thread.
@@ -924,7 +988,7 @@ function App() {
   }, [view?.id, openSection, !!(view && listed[view.id]), limits]);
 
   // Keep the mark visible: when it changes, moves to another section or the pinned block, or is drawn again.
-  const selPlace = sel && listed[sel] ? `${sectionOf(listed[sel])}:${isPinned(listed[sel])}:${order.includes(sel)}:${guest?.why ?? ""}` : "";
+  const selPlace = sel && listed[sel] ? `${placeOf(rows, sel)?.section ?? sectionOf(listed[sel])}:${isPinned(listed[sel])}:${order.includes(sel)}:${guest?.why ?? ""}` : "";
   useEffect(() => {
     if (!sel) return;
     const id = CSS.escape(sel);
@@ -937,7 +1001,8 @@ function App() {
   const projectCommand = async (action: string, args: Record<string, unknown>, threadId?: string): Promise<string | null> => {
     // A project command goes to the project's host, a thread's to the thread's (decision 0031).
     const pid = typeof args.id === "string" ? args.id : typeof args.projectId === "string" ? args.projectId : "";
-    const host = (threadId ? store.threads[threadId]?.hostId : recordOf(store.projects, pid)?.hostId) ?? "";
+    // V0.207: from the full store, because Settings also edits what this device hides.
+    const host = (threadId ? fullStore.threads[threadId]?.hostId : recordOf(fullStore.projects, pid)?.hostId) ?? "";
     const r = await api.command(host, action, threadId, args);
     return r.ok ? null : (r.error ?? "That did not work");
   };
@@ -949,7 +1014,7 @@ function App() {
     create: async (name: string, folder: string, threadIds: string[] = [], host?: string): Promise<{ error: string | null; id?: string }> => {
       const args: Record<string, unknown> = { name };
       // V0.132: on the host picked, else the threads' host (a project made from threads lives where they run).
-      const on = host ? hostIdByName(store.hosts, host) : threadIds.length ? (store.threads[threadIds[0]]?.hostId ?? "") : hostIdByName(store.hosts);
+      const on = host ? hostIdByName(fullStore.hosts, host) : threadIds.length ? (store.threads[threadIds[0]]?.hostId ?? "") : hostIdByName(store.hosts);
       if (folder) args.folder = folder;
       if (threadIds.length === 1) args.threadId = threadIds[0];
       const r = await api.command(on, "project.create", undefined, args);
@@ -961,7 +1026,7 @@ function App() {
     },
     /** V0.58: delete a project; its threads match again on the host. */
     delete: async (id: string): Promise<string | null> => {
-      const name = recordOf(store.projects, id)?.name ?? "the project";
+      const name = recordOf(fullStore.projects, id)?.name ?? "the project";
       const e = await projectCommand("project.delete", { id });
       if (!e) cmds.notify(`Deleted ${name}`);
       return e;
@@ -1021,10 +1086,10 @@ function App() {
   // V0.132: the picker reads the folders of the host it was opened for; an offline host says so, and no other host's
   // folders stand in.
   const pickHost = folderPick?.host ?? "";
-  const pickId = hostIdByName(store.hosts, pickHost);
+  const pickId = hostIdByName(pickHost ? fullStore.hosts : store.hosts, pickHost); // V0.207: Settings may name a hidden host
   const pickFs: FsApi = { fsList: (p) => api.fsList(pickId, p), fsRecent: () => api.fsRecent(pickId), fsRepos: () => api.fsRepos(pickId), fsMkdir: (a, b) => api.fsMkdir(pickId, a, b) };
-  const pickTitle = `${folderPick?.title ?? "Pick a folder"}${pickHost && multiHost(store.hosts) ? ` on ${pickHost}` : ""}`;
-  const pickNote = hostOfflineNote(pickHost, store.hosts, now);
+  const pickTitle = `${folderPick?.title ?? "Pick a folder"}${pickHost && multiHost(fullStore.hosts) ? ` on ${pickHost}` : ""}`;
+  const pickNote = hostOfflineNote(pickHost, fullStore.hosts, now);
   const pickBody = (autoFocus: boolean) =>
     pickNote ? (
       <div class="note fnote" role="alert">
@@ -1035,6 +1100,7 @@ function App() {
     );
   // V0.132: the hosts a new project or thread can live on (HostField, NewProjectStep).
   const hostsCtx = useMemo(() => ({ hosts: store.hosts, self: store.host, now, machine: store.machine }), [store.hosts, store.host, store.machine, Math.floor(now / 60_000)]);
+  const allHostsCtx = useMemo(() => ({ ...hostsCtx, hosts: fullStore.hosts }), [hostsCtx, fullStore.hosts]); // V0.207: Settings
   const folderPickView = folderPick
     ? phone ? (
         <div class="m-scrim fscrim" onClick={(e) => e.target === e.currentTarget && Date.now() - folderPick.at > 500 && closeFolderPick(null)}>
@@ -1229,6 +1295,7 @@ function App() {
         e.preventDefault();
         const dir = k === "j" || k === "ArrowDown" ? 1 : -1;
         // V0.186: over the drawn rows only; a folded section is passed and stays folded.
+        hand.keyed(); // V0.207
         const to = stepRow(allRows, order, sel, dir);
         // V0.109: j/k opens the row it marks when a thread is open; with nothing open it only marks it.
         if (to) {
@@ -1369,15 +1436,18 @@ function App() {
     },
     theme,
     setTheme,
+    hidden: deviceHidden,
+    setHidden,
     canInstall: canInstall && !isStandalone(),
     onInstall: () => void promptInstall().then((ok) => ok && setCanInstall(false)),
   };
   /** The Settings pages, the same on the desktop (a dialog) and the phone (screens). */
   const settingsFor = (at: PageRef | null, go: (r: PageRef | null) => void, phoneHeader?: SettingsProps["header"]) => (
+    <HostsContext.Provider value={allHostsCtx}>
     <Settings
       api={api}
       host={store.host}
-      hosts={store.hosts}
+      hosts={fullStore.hosts}
       hostId={store.hostId}
       user={store.user}
       phone={!!phoneHeader}
@@ -1388,7 +1458,7 @@ function App() {
       onChanged={reloadProfiles}
       clockKnown={store.loaded}
       device={settingsDevice}
-      projects={store.projects}
+      projects={fullStore.projects}
       profiles={store.profiles}
       now={now}
       projectActions={{
@@ -1401,6 +1471,7 @@ function App() {
         unlink: projectActions.unlink,
       }}
     />
+    </HostsContext.Provider>
   );
 
   // ---- phone navigation ----
@@ -1526,6 +1597,7 @@ function App() {
         <PhoneApp
           nav={{ at: nav, go: navGo, replace: navReplace, back: navBack }}
           store={store}
+          allProjects={fullStore.projects}
           inbox={{ sec, rows, guest, searchable, all: filtered, unlock }}
           now={now}
           commands={cmds}

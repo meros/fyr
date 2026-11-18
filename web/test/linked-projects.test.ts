@@ -4,6 +4,7 @@ import { expandOrder, findProject, linkCandidates, linkProjects, memberOn, proje
 import { applySnapshot, initialStore, setHosts, setProjectOrder, stateForCache, upsertProject } from "../src/store.ts";
 import { activeFilters, applyFilters, liveProject } from "../src/filters.ts";
 import { chooseHost, initialForm, settleForm } from "../src/new-thread.ts";
+import { applyHidden, projectIsHidden, pushHiddenOf, setProjectShown } from "../src/hidden.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Project } from "../src/types.ts";
 import { thread } from "./helpers.ts";
@@ -96,4 +97,16 @@ test("New thread stays host first: the filter picks the host's own member, and a
   assert.equal(f.projectId, fyrA.id);
   const moved = chooseHost(f, "mac", ctx);
   assert.equal(moved.projectId, fyrB.id);
+});
+
+test("hiding: any member's id hides the linked project, and a hidden host takes only its own record", () => {
+  const projects = linkProjects([fyrA, fyrB, other], [A, B]);
+  const s = { ...initialStore(), hosts: [A, B], projects };
+  const hidden = { hosts: [], projects: [fyrB.id!] };
+  assert.ok(projectIsHidden(projects[0], hidden));
+  assert.deepEqual(applyHidden(s, hidden).projects.map((p) => p.name), ["Stacks"]);
+  assert.deepEqual(pushHiddenOf([A, B], projects, hidden).projects.map((p) => p.id).sort(), ["p1", "p9"]);
+  assert.deepEqual(setProjectShown(hidden, projects[0], true).projects, [], "showing it clears whichever member was stored");
+  const noB = applyHidden(s, { hosts: ["B"], projects: [] }).projects;
+  assert.deepEqual(noB.map((p) => [p.id, !!p.members]), [[fyrA.id, false]]);
 });

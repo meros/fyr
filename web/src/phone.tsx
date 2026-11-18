@@ -218,6 +218,8 @@ export interface PhoneProps {
   open: PhoneOpen;
   list: PhoneList;
   device: PhoneDevice;
+  /** V0.207: every project, also those this device hides (`store` leaves them out) */
+  allProjects: Project[];
   /** the project filter (V0.23), for the menu's Filter by project sheet */
   filter: { id: string | null; set(id: string | null): void };
   /** V0.134: the host and project chips and the empty state, as the desktop shows them */
@@ -692,6 +694,7 @@ function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; needs: boo
       {hint && <div class="m-under l no show">{hint}</div>}
       <div
         ref={rowRef}
+        data-id={t.id}
         class="m-mv"
         style={off ? { transform: `translateX(${off}px)` } : undefined}
         onPointerDown={onDown}
@@ -1610,8 +1613,9 @@ function MProjectChip({ t, projects, onClick }: { t: Thread; projects: Project[]
 /** The project screen (V0.55; V0.119: the same page as Settings → Projects → a project, titled with its name; Saved at
  *  the right of the header, because the phone's header carries the title). */
 function MProject(p: PhoneProps & { id: string }) {
-  const pr = recordOf(p.store.projects, p.id);
-  const group = findProject(p.store.projects, p.id);
+  // V0.207: Settings lists a project this device hides, so its page opens too.
+  const pr = recordOf(p.allProjects, p.id);
+  const group = findProject(p.allProjects, p.id);
   const sv = useSaved();
   const offline = p.store.conn === "offline";
   return (
@@ -1624,7 +1628,7 @@ function MProject(p: PhoneProps & { id: string }) {
         {pr ? (
           <ProjectEditor
             project={pr}
-            linking={group && linkingFor(group, p.store.projects, p.projectActions, (id) => p.nav.replace({ screen: { name: "project", id }, sheet: null }))}
+            linking={group && linkingFor(group, p.allProjects, p.projectActions, (id) => p.nav.replace({ screen: { name: "project", id }, sheet: null }))}
             profiles={p.store.profiles}
             now={p.now}
             onSave={(patch) => p.projectActions.update(pr.id!, patch)}
@@ -1636,7 +1640,7 @@ function MProject(p: PhoneProps & { id: string }) {
             }}
           />
         ) : (
-          <div class="m-empty">{p.store.projects.length ? "This project is not here anymore." : "Loading…"}</div>
+          <div class="m-empty">{p.allProjects.length ? "This project is not here anymore." : "Loading…"}</div>
         )}
         </div>
       </div>

@@ -33,7 +33,10 @@ func do(t *testing.T, method, url, host string, hdr map[string]string, body stri
 	return resp
 }
 
-type endpointPush struct{ subs map[string]string }
+type endpointPush struct {
+	subs   map[string]string
+	hidden push.Hidden
+}
 
 func (f *endpointPush) PublicKey() string { return "BPUB" }
 func (f *endpointPush) Subscribe(user string, sub push.Subscription, device string) error {
@@ -43,6 +46,10 @@ func (f *endpointPush) Subscribe(user string, sub push.Subscription, device stri
 func (f *endpointPush) Unsubscribe(endpoint string) error       { delete(f.subs, endpoint); return nil }
 func (f *endpointPush) Notify(user string, pl push.Payload) int { return len(f.subs) }
 func (f *endpointPush) Known(endpoint string) bool              { _, ok := f.subs[endpoint]; return ok }
+func (f *endpointPush) SetHidden(endpoint string, h push.Hidden) (bool, error) {
+	f.hidden = h
+	return f.Known(endpoint), nil
+}
 
 // SPEC 0.5 V0.15: key, subscribe, test and unsubscribe.
 func TestPushEndpoints(t *testing.T) {
@@ -64,6 +71,14 @@ func TestPushEndpoints(t *testing.T) {
 	}
 	if r := do(t, "POST", hs.URL+"/api/push/subscribe", "", h, body); r.StatusCode != 200 || fp.subs["https://push/e1"] != "owner/phone" {
 		t.Fatalf("subscribe: %d %v", r.StatusCode, fp.subs)
+	}
+	// V0.207: what the device hides reaches the pusher.
+	hide := `{"endpoint":"https://push/e1","hosts":["lab"],"projects":[{"host":"desk","id":"p1"}]}`
+	if r := do(t, "POST", hs.URL+"/api/push/hidden", "", h, hide); r.StatusCode != 200 {
+		t.Fatalf("hidden: %d", r.StatusCode)
+	}
+	if len(fp.hidden.Hosts) != 1 || fp.hidden.Hosts[0] != "lab" || len(fp.hidden.Projects) != 1 || fp.hidden.Projects[0].ID != "p1" {
+		t.Fatalf("hidden: %+v", fp.hidden)
 	}
 	r = do(t, "POST", hs.URL+"/api/push/test", "", h, "")
 	var res map[string]int

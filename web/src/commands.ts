@@ -43,6 +43,8 @@ export interface CommandOptions {
   undoMs: number;
   /** after an undo; ok is false when the host refused one of the inverse commands */
   onUndone?(entry: UndoEntry, ok: boolean): void;
+  /** V0.207: told of each action the owner runs, before it goes out */
+  onRun?(action: string, ids: string[]): void;
   /** The install id of the host that runs a thread (decision 0031: a command names its host). */
   hostOf(threadId: string): string;
 }
@@ -68,6 +70,7 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
 
   const run = async (action: string, ids: string[], args?: Record<string, unknown>, ro?: RunOptions): Promise<number> => {
     if (!ids.length) return 0;
+    opts.current.onRun?.(action, ids);
     const replies = await Promise.all(ids.map((id) => api.command(opts.current.hostOf(id), action, id, args).then((r) => ({ id, r }))));
     const ok = replies.filter((x) => x.r.ok).map((x) => x.id);
     const bad = replies.filter((x) => !x.r.ok);
