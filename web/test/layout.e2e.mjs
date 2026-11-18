@@ -5022,12 +5022,16 @@ try {
   const threadReady = phone ? "!!document.querySelector('.m-thread, .qgate')" : "!!document.querySelector('.th .tt, .qgate')";
   const project = "F7QK-2M9X-AB34-CD56/p_web";
   await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": project }, threadReady);
-  if (phone) await evaluate(`history.back()`);
-  await waitFor(`${G}.n === 1`, { soft: true });
+  if (phone) {
+    await evaluate(`history.back()`);
+    await waitFor("!!document.querySelector('.m-list')", { soft: true });
+  } else await waitFor(`${G}.n === 1`, { soft: true });
   await settle();
   const a = await evaluate(`({ g: ${G}, f: ${F} })`);
   check(a.f.off === '["host-b"]' && a.f.project === project, `${ctx}: opening the thread changed the filters (${JSON.stringify(a.f)})`);
-  check(a.g.n === 1 && a.g.tag === "Outside filter" && a.g.text.includes("Fix map lasso") && !!a.g.section, `${ctx}: the row does not punch through (${JSON.stringify(a.g)})`);
+  // V0.212: the phone never shows the list beside the thread, so the filter holds there.
+  if (phone) check(a.g.n === 0 && !(await evaluate(`[...document.querySelectorAll('.m-list [data-id]')].some((r) => r.textContent.includes('Fix map lasso'))`)), `${ctx}: the filtered thread is in the list (${JSON.stringify(a.g)})`);
+  else check(a.g.n === 1 && a.g.tag === "Outside filter" && a.g.text.includes("Fix map lasso") && !!a.g.section, `${ctx}: the row does not punch through (${JSON.stringify(a.g)})`);
   await shot(`filter-guest-${phone ? "phone" : "desktop"}.png`);
   if (!phone) {
     check(a.g.sel === "true", `${ctx}: the row is not marked (${JSON.stringify(a.g)})`);

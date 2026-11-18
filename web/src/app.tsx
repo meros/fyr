@@ -431,7 +431,8 @@ function App() {
   // V0.192: the current thread punches through what hides it: the filters and quiet hours add its row in its own place
   // (`rows`), a folded section draws it alone (`guest`). `sec` stays what the filters let through, for every count.
   const current = sel ? store.threads[sel] : undefined;
-  const hidden = hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset, unlock.showUntil)[current.id]) });
+  // V0.212: not on the phone. The list and the thread are never on screen together there, so the row marks nothing.
+  const hidden = phone ? null : hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset, unlock.showUntil)[current.id]) });
   const listed = useMemo(() => (hidden && current ? { ...shown, [current.id]: current } : shown), [shown, hidden, current]);
   const liveRows = useMemo(() => (listed === shown ? sec : sections(listed, queue, unreadAt)), [listed, shown, sec, queue, unreadAt]);
   // V0.207: the hold starts from what the screen shows. A new search or filter is the owner's own act: it starts afresh.
