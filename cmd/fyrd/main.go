@@ -563,8 +563,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		srvs.serve(ln, deploy.Health(mux, health...))
 		serveFrontSockets(cfg, fr, data, ln.Addr().String(), srvs)
 		if cfg.WellKnownListen != "" {
-			wk := fe.wk
-			srvs.serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, func() peers.WellKnown { return wk }))
+			// The macOS Serve's way to this answer: it names the peer port too, or condition 1 cannot pair this install.
+			srvs.serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, fe.wellKnown))
 			log.Printf("answering /.well-known/fyr for Tailscale Serve at %s", cfg.WellKnownListen)
 		}
 	}

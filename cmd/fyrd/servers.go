@@ -80,12 +80,12 @@ type frontParts struct {
 	hostURL string
 }
 
-// runningFront is a front that runs: wk is its well-known answer, done
-// closes once its cache is written at the end.
+// runningFront is a front that runs: wellKnown is its well-known answer, with
+// the peer port as it is now; done closes once its cache is written at the end.
 type runningFront struct {
-	fr   *front.Front
-	wk   peers.WellKnown
-	done chan struct{}
+	fr        *front.Front
+	wellKnown func() peers.WellKnown
+	done      chan struct{}
 }
 
 // startFront makes the front with its peer side (decision 0030 3.6) and runs
@@ -98,6 +98,7 @@ func startFront(ctx context.Context, p frontParts, listen string, srv *server.Se
 	// well-known answer, which names where its host protocol is.
 	wk := wellKnown(p.cfg, p.name, p.hostURL, id)
 	ps := newPeerSide(p.cfg, p.data, p.name, p.key)
+	wellKnownNow := func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }
 	var legacy func() int64 // a front only has no host, so it counts none
 	if srv != nil {
 		legacy = srv.LegacyFronts
@@ -112,8 +113,8 @@ func startFront(ctx context.Context, p frontParts, listen string, srv *server.Se
 				ps.ownerRoutes(fr)(mux)
 			}
 		},
-		WellKnown: func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }}, p.hosts)
-	rf := &runningFront{fr: fr, wk: wk, done: make(chan struct{})}
+		WellKnown: wellKnownNow}, p.hosts)
+	rf := &runningFront{fr: fr, wellKnown: wellKnownNow, done: make(chan struct{})}
 	go func() { fr.Run(ctx); close(rf.done) }()
 	ps.start(ctx, srv, fr, p.auth, old)
 	go newDiscovery(p.cfg, wk, listen, fr).Run(ctx, peers.Every)
