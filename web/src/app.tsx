@@ -36,7 +36,7 @@ import {
   applyThreadPatch,
   resolveRef,
 } from "./store.ts";
-import { SECTION_OPEN_KEY, cutSection, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
+import { SECTION_OPEN_KEY, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
@@ -62,7 +62,7 @@ import { PhoneApp, type PhoneActions } from "./phone.tsx";
 import { ConfirmProvider, useConfirmHost } from "./confirm-ui.tsx";
 import { DirectoryContext, ProjectPicker, QuietGate, useQuietUnlock, type Directory, type ProjectPatch } from "./project-ui.tsx";
 import { FILTER_KEY, moveToast, orderProjects } from "./projects.ts";
-import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, clearFor, filterEmpty, parseHostsOff, toggleHost, type FilterSel } from "./filters.ts";
+import { HOSTS_OFF_KEY, OLD_HOST_FILTER_KEY, activeFilters, applyFilters, filterEmpty, parseHostsOff, toggleHost, type FilterSel } from "./filters.ts";
 import { admitThread, hideQuiet, nextQuietEnd, quietLocked, reachable } from "./quiet.ts";
 import { FolderPickContext, FolderPicker, type FolderPick, type FsApi, type PickOptions } from "./folder-picker.tsx";
 import { backTarget, initialEntries, leavesThread, navFromHistory, urlFor, type Nav } from "./nav.ts";
@@ -378,8 +378,6 @@ function App() {
     for (const s of SECTIONS) l[s.key] = !isOpen(s.key, sectionOpen) ? 0 : expanded[s.key] ? Infinity : SECTION_LIMIT[s.key];
     return l;
   }, [expanded, sectionOpen]);
-  const order = useMemo(() => flatOrder(sec, limits), [sec, limits]);
-  const allRows = useMemo(() => flatOrder(sec), [sec]); // V0.186: with the rows of folded sections, for their place
   // V0.114: a quiet thread opens only through the hold, whatever path opened it (a link, back and forward, a notice,
   // a board card, ?open=, a push tap). The thread already open when its window starts stays open (V0.46 (6)).
   const admittedRef = useRef<string | null>(null);
@@ -389,23 +387,15 @@ function App() {
   gatedRef.current = gate.gated;
   admittedRef.current = gate.admitted;
   const gatedThread = gate.gated && wantId ? store.threads[wantId] : undefined;
-  // V0.138: a thread that opens (any path: a link, a notice, ?open=, back and forward, a board card, a new thread)
-  // clears the filters it fails, so its row is in the list and marked (V0.109). Once per opening, after the V0.114
-  // gate admits it: picking a filter while a thread is open does not clear it again. No hint; the chips change.
-  const clearedForRef = useRef<string | null>(null);
-  const admittedThread = gate.admitted ? store.threads[gate.admitted] : undefined;
-  useEffect(() => {
-    if (!admittedThread) {
-      if (!gate.admitted) clearedForRef.current = null;
-      return;
-    }
-    if (clearedForRef.current === admittedThread.id) return;
-    clearedForRef.current = admittedThread.id;
-    const next = clearFor(admittedThread, filterSel, store.projects, store.host ?? "");
-    if (!next) return;
-    if (next.hostsOff.length !== filterSel.hostsOff.length) setHostsOff(next.hostsOff); // V0.169: its host back on
-    if (next.project !== filterSel.project) setProjectFilter(next.project);
-  }, [gate.admitted, !!admittedThread]);
+  // V0.192: the current thread punches through what hides it: the filters and quiet hours add its row in its own place
+  // (`rows`), a folded section draws it alone (`guest`). `sec` stays what the filters let through, for every count.
+  const current = sel ? store.threads[sel] : undefined;
+  const hidden = hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset, unlock.showUntil)[current.id]) });
+  const listed = useMemo(() => (hidden && current ? { ...shown, [current.id]: current } : shown), [shown, hidden, current]);
+  const rows = useMemo(() => (listed === shown ? sec : sections(listed, queue)), [listed, shown, sec, queue]);
+  const guest = useMemo(() => guestOf(rows, sel, hidden, sectionOpen), [rows, sel, hidden, sectionOpen]);
+  const order = useMemo(() => flatOrder(sec, limits), [sec, limits]);
+  const allRows = useMemo(() => flatOrder(rows), [rows]); // V0.186: with the rows not drawn, for the guest's place
   const viewThread = view && !gate.gated ? store.threads[view.id] : undefined;
 
   // ---- connection ----
@@ -888,21 +878,20 @@ function App() {
   };
 
   // V0.109, V0.186: the open thread's row is drawn when its section is open: a cut section shows all, also when the row
-  // moves there. A folded section stays folded, whatever opened the thread; its header carries the mark (foldedRow). A
-  // row that search hides stays hidden, and no row is marked; one the filters hide clears them first (V0.138).
+  // moves there. A folded section stays folded, whatever opened the thread, and draws that row alone (V0.192). A row
+  // that search hides stays hidden, and no row is marked; one the filters hide is added to `rows` (V0.192).
   const openSection = view && store.threads[view.id] ? sectionOf(store.threads[view.id]) : null;
   useEffect(() => {
-    const k = cutSection(sec, view?.id ?? null, limits);
+    const k = cutSection(rows, view?.id ?? null, limits);
     if (k) setExpanded((x) => ({ ...x, [k]: true }));
-  }, [view?.id, openSection, !!(view && shown[view.id]), limits]); // V0.138: again once a cleared filter lets the row in
+  }, [view?.id, openSection, !!(view && listed[view.id]), limits]);
 
-  // Keep the mark visible: when it changes, moves to another section or the pinned block, or is drawn again. V0.186: the
-  // row, or the header of the folded section that holds it.
-  const selPlace = sel && shown[sel] ? `${sectionOf(shown[sel])}:${isPinned(shown[sel])}:${order.includes(sel)}` : "";
+  // Keep the mark visible: when it changes, moves to another section or the pinned block, or is drawn again.
+  const selPlace = sel && listed[sel] ? `${sectionOf(listed[sel])}:${isPinned(listed[sel])}:${order.includes(sel)}:${guest?.why ?? ""}` : "";
   useEffect(() => {
     if (!sel) return;
     const id = CSS.escape(sel);
-    document.querySelector(`.list [data-id="${id}"], .list [data-holds="${id}"]`)?.scrollIntoView({ block: "nearest" });
+    document.querySelector(`.list [data-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
   }, [sel, selPlace, listOn]);
 
   const send = async (args: SendArgs): Promise<boolean> => (view ? cmds.send(view.id, args) : false);
@@ -1482,7 +1471,7 @@ function App() {
         <PhoneApp
           nav={{ at: nav, go: navGo, replace: navReplace, back: navBack }}
           store={store}
-          inbox={{ sec, searchable, all: filtered, unlock }}
+          inbox={{ sec, rows, guest, searchable, all: filtered, unlock }}
           now={now}
           commands={cmds}
           open={{
@@ -1501,7 +1490,7 @@ function App() {
             },
             allow: async (d, ok) => (view ? (await cmds.run("thread.answer", [view.id], { decisionId: d.id, allow: ok })) > 0 : false),
           }}
-          list={{ current: sel, sectionOpen, setSectionOpen, expanded, onExpand: (k) => setExpanded((x) => ({ ...x, [k]: true })), picked, setPicked, selecting, setSelecting }}
+          list={{ sectionOpen, setSectionOpen, expanded, onExpand: (k) => setExpanded((x) => ({ ...x, [k]: true })), picked, setPicked, selecting, setSelecting }}
           device={{
             push: pushSt,
             pushReason,
@@ -1585,6 +1574,8 @@ function App() {
         <Boundary name="The inbox">
         <Inbox
           sec={sec}
+          rows={rows}
+          guest={guest}
           now={now}
           selected={sel}
           picked={picked}

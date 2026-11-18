@@ -19,7 +19,7 @@ import { snoozeLine } from "./snooze.ts";
 import { prChip } from "./pr.ts";
 import { changeChip, needLook, rowNeed } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
-import { heldLabel } from "./selection.ts";
+import { GUEST_TEXT, type GuestWhy } from "./selection.ts";
 
 /** What differs between the fronts, each for a reason. */
 export interface RowLook {
@@ -46,12 +46,12 @@ interface BodyProps {
   pre?: ComponentChildren;
   /** the desktop list's handlers and listbox attributes */
   attrs?: Record<string, unknown>;
+  /** V0.192: the row is here only because it is the current thread */
+  guest?: GuestWhy;
 }
 
-/** V0.186: a section header's toggle on both fronts, the only thing that folds a section from its header. With `held`
- *  (the current thread is inside the folded section) the header is the mark: aria-current, a name that says so, and
- *  `data-holds`, where scrolling to the current thread lands. */
-export function sectionHead(o: { label: string; n: number; open: boolean; held: Thread | null; toggle(): void }): Record<string, unknown> {
+/** V0.186: a section header's toggle on both fronts, the only thing that folds a section from its header. */
+export function sectionHead(o: { n: number; open: boolean; toggle(): void }): Record<string, unknown> {
   if (!o.n) return {};
   return {
     role: "button",
@@ -68,15 +68,21 @@ export function sectionHead(o: { label: string; n: number; open: boolean; held: 
       e.stopPropagation(); // Enter on a focused header is the header's, not "open the marked row"
       o.toggle();
     },
-    ...(o.held ? { "aria-current": "true", "aria-label": heldLabel(o.label, o.n, o.held.title), "data-holds": o.held.id } : {}),
   };
 }
 
-/** V0.186: the current thread's title on the header of the folded section that holds it. */
-export function HeldTitle({ t }: { t: Thread }) {
+/** V0.192: says why a row is in the list although the filters or a fold would hide it (Lucide "eye-off", ISC). */
+function GuestTag({ why }: { why: GuestWhy }) {
+  const x = GUEST_TEXT[why];
   return (
-    <span class="held-t ell" title={t.title}>
-      {t.title}
+    <span class="gst" title={x.hint}>
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+        <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+        <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+        <path d="m2 2 20 20" />
+      </svg>
+      {x.tag}
     </span>
   );
 }
@@ -152,11 +158,11 @@ function hasChange(t: Thread): boolean {
   return !!(t.pr || changeChip(t));
 }
 
-export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs }: BodyProps) {
+export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }: BodyProps) {
   const st = t.attention.state;
   const need = rowNeed(t); // V0.101: the host's cause, read only
   return (
-    <div {...attrs} class={`rw${st === "done" ? " dn" : ""}${extra}`}>
+    <div {...attrs} class={`rw${st === "done" ? " dn" : ""}${guest ? " guest" : ""}${extra}`}>
       {lead ?? (
         <span class="tile">
           <StateIcon state={st} />
@@ -165,6 +171,7 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs }: Bod
       <RowHead t={t} look={look} />
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, now)}</span>
       <span class="m ell">
+        {guest && <GuestTag why={guest} />}
         <b class={stateClass(st)}>{rowState(t)}</b> · {pre}
         <RowFrom t={t} look={look} more />
         {rowMeta(t, { keys: look.keys })}
@@ -206,7 +213,7 @@ export function NeedButton({ t, change, need }: { t: Thread; change: Change; nee
   );
 }
 
-export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs }: BodyProps) {
+export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs, guest }: BodyProps) {
   const st = t.attention.state;
   const working = t.attention.section === "working";
   const agents = groupTasks(t.tasks).running;
@@ -220,12 +227,13 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs }: BodyP
   // V0.164: heavy work Fyr did not admit starts the line, in the beam ink, and says the use itself (same on both fronts).
   const und = useRowUndeclared(t.id, now);
   return (
-    <div {...attrs} class={`one${agents.length ? " has-agents" : ""}${extra}`}>
+    <div {...attrs} class={`one${agents.length ? " has-agents" : ""}${guest ? " guest" : ""}${extra}`}>
       {lead ?? <StateIcon state={st} />}
       <RowHead t={t} look={look} />
       <span class="age">{when}</span>
       <span class="m">
         <i class="ell">
+          {guest && <GuestTag why={guest} />}
           {pre}
           <RowFrom t={t} look={look} more={!!detail || !!job || und} />
           {und ? <RowUndeclared id={t.id} now={now} /> : job && <ThreadJob text={job} />}

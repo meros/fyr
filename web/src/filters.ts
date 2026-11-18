@@ -1,4 +1,4 @@
-// SPEC 0.5 V0.134, V0.138, V0.169: the inbox filters on the desktop and the phone. Pure.
+// SPEC 0.5 V0.134, V0.169, V0.192: the inbox filters on the desktop and the phone. Pure.
 //
 // Row 1, hosts (V0.169): a toggle per host; all on is the default and means no host filter; a host turned off hides
 // its threads. Row 2, projects: one project picked at a time (V0.134), counted only over the hosts that are on, so
@@ -94,16 +94,6 @@ export function applyFilters(threads: Record<string, Thread>, sel: FilterSel, pr
   const out: Record<string, Thread> = {};
   for (const t of Object.values(threads)) if (hostOk(t, sel.hostsOff, self) && projectOk(t, project, projects)) out[t.id] = t;
   return out;
-}
-
-/** V0.138, V0.169: the filters once the open thread's are cleared, row by row: its host comes back on, and a project
- *  it is not in is no longer picked; the rest stays. null when it passes every filter (nothing to change). A project
- *  filter whose project no longer exists filters nothing, so it is not cleared. */
-export function clearFor(t: Thread, sel: FilterSel, projects: Project[], self: string): FilterSel | null {
-  const host = !hostOk(t, sel.hostsOff, self);
-  const project = !projectOk(t, liveProject(sel, projects), projects);
-  if (!host && !project) return null;
-  return { hostsOff: host ? sel.hostsOff.filter((h) => h !== threadHost(t, self)) : sel.hostsOff, project: project ? null : sel.project };
 }
 
 export interface FilterInput {

@@ -1,7 +1,7 @@
 // V0.109: the marked row in the thread list is the open thread, whatever path opened it (a row click, a link from
 // another thread, a notification, ?open=, the keyboard, a new thread). The list keeps no cursor of its own.
-// V0.186: a folded section stays folded; its header carries the mark instead (foldedRow).
-import { SECTIONS, isOpen, unpinned, type SectionKey, type Sections } from "./store.ts";
+// V0.186: a folded section stays folded. V0.192: the current thread's row still shows, alone, in its place (Guest).
+import { SECTIONS, isOpen, matchesQuery, sectionOf, unpinned, type SectionKey, type Sections } from "./store.ts";
 import type { Thread } from "./types.ts";
 
 type Open = Partial<Record<SectionKey, boolean>>;
@@ -35,7 +35,7 @@ export function markedRow(openId: string | null, lastOpen: string | null): strin
 /**
  * V0.186: the open section that must show all of itself to draw the row of `id`, because the row is past its limit.
  * `limits` is what each section draws now (0 when folded). null: the row is drawn, it is in a folded section (which
- * stays folded, see foldedRow), or no section holds it (search hides it, or a quiet project).
+ * stays folded and draws it as the guest), or no section holds it (search hides it, or a locked quiet project).
  */
 export function cutSection(sec: Sections, id: string | null, limits: Partial<Record<SectionKey, number>>): SectionKey | null {
   if (!id || sec.pinned.some((t) => t.id === id)) return null;
@@ -48,8 +48,8 @@ export function cutSection(sec: Sections, id: string | null, limits: Partial<Rec
   return null;
 }
 
-/** V0.186: the folded section that holds the current thread, whose header then carries the mark. null when the row
- *  itself can be marked: its section is open, it is pinned or queued (neither folds), or no section holds it. */
+/** V0.186: the folded section that holds the current thread. null when its section is open, it is pinned or queued
+ *  (neither folds), or no section holds it. */
 export function foldedRow(sec: Sections, id: string | null, open: Open): { section: SectionKey; thread: Thread } | null {
   if (!id || sec.pinned.some((t) => t.id === id)) return null;
   for (const { key } of SECTIONS) {
@@ -60,9 +60,41 @@ export function foldedRow(sec: Sections, id: string | null, open: Open): { secti
   return null;
 }
 
-/** V0.186: what a screen reader says for a folded header that holds the current thread. */
-export function heldLabel(label: string, n: number, title: string): string {
-  return `${label}, ${n.toLocaleString()} thread${n === 1 ? "" : "s"}, folded, holds the current thread: ${title}`;
+/** V0.192: why the current thread's row is in the list although the list would not draw it. */
+export type GuestWhy = "filter" | "quiet" | "folded";
+
+/** V0.192: the one row that punches through: the current thread, hidden by a filter, a quiet project or a fold. */
+export interface Guest {
+  id: string;
+  why: GuestWhy;
+}
+
+/** V0.192: the row's tag, and the longer line on hover. */
+export const GUEST_TEXT: Record<GuestWhy, { tag: string; hint: string }> = {
+  filter: { tag: "Outside filter", hint: "The filters hide this thread. It stays here while it is the current thread." },
+  quiet: { tag: "Quiet project", hint: "Its project is in quiet hours. It stays here while it is the current thread." },
+  folded: { tag: "In folded section", hint: "This section is folded. The row stays here while it is the current thread." },
+};
+
+/** V0.192: why the current thread must be added to the list's threads; null when it is there already or stays out.
+ *  `allowed`: a quiet project's thread only once admitted (V0.114). Search still decides: a typed query that the
+ *  thread does not match hides it. */
+export function hiddenWhy(t: Thread | undefined, o: { shown: Record<string, Thread>; filtered: Record<string, Thread>; query: string; allowed: boolean }): "filter" | "quiet" | null {
+  if (!t || o.shown[t.id] || !sectionOf(t) || !o.allowed) return null;
+  if (o.query.trim() && !matchesQuery(t, o.query)) return null;
+  return o.filtered[t.id] ? "quiet" : "filter";
+}
+
+/** V0.192: the guest row, given the sections that hold it (`rows`) and `hidden` from hiddenWhy. */
+export function guestOf(rows: Sections, id: string | null, hidden: "filter" | "quiet" | null, open: Open): Guest | null {
+  if (!id) return null;
+  if (hidden) return { id, why: hidden };
+  return foldedRow(rows, id, open) ? { id, why: "folded" } : null;
+}
+
+/** V0.192: what a section draws: its rows up to the limit when open, and the guest in its own place, folded or cut. */
+export function drawnRows(list: Thread[], open: boolean, limit: number, guest: Guest | null): Thread[] {
+  return list.filter((t, i) => (open && i < limit) || t.id === guest?.id);
 }
 
 /** V0.186: j/k. The next drawn row in `dir`; folded sections are skipped and stay folded. From a thread inside one the

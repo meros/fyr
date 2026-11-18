@@ -4386,9 +4386,9 @@ try {
   check(ok(a) && a.ids[0] === "t_mapperf", `V0.109 desktop: after a "From thread" link the marked row is not the open thread in view (${JSON.stringify(a)})`);
   await navigate(`${origin}/?mock=rail&open=t_set7`, "!!document.querySelector('.th .tt')");
   await settle();
-  // V0.186: Settled stays folded; its header is the mark (the section V0.186 below checks it).
-  await waitFor(`!!document.querySelector('#sec-settled .sec.held')`, { soft: true });
-  check(await evaluate(`!!document.querySelector('#sec-settled .sec.held') && !document.querySelector('#sec-settled [data-id]')`), `V0.109 desktop: a thread opened in the folded Settled section did not mark its header`);
+  // V0.192: Settled stays folded and draws that one row, marked (the section V0.192 below checks it).
+  await waitFor(`!!document.querySelector('#sec-settled [data-id="t_set7"][aria-selected="true"]')`, { soft: true });
+  check(await evaluate(`document.querySelectorAll('#sec-settled [data-id]').length === 1 && document.querySelector('#sec-settled .sec').getAttribute('aria-expanded') === 'false'`), `V0.109 desktop: a thread opened in the folded Settled section did not show alone`);
   await evaluate(`document.querySelector('.list').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
   await key("k", "KeyK");
   const c = await evaluate(MARK);
@@ -4516,7 +4516,7 @@ try {
       fits: [...document.querySelectorAll('${root}.hfrow, ${root}.pfrow')].every((e) => box(e).right <= innerWidth + 0.5),
       // The phone rows carry their host's mark (V0.170); the desktop rows too, but there the ids say it.
       rowHosts: [...new Set(rows.map((r) => (${JSON.stringify(phone)} ? r.querySelector('.rhm .hmark')?.dataset.host : r.dataset.id) ?? ''))],
-      rows: rows.length,
+      rows: rows.filter((r) => !r.matches('.guest') && !r.querySelector('.guest')).length, // V0.192: the open thread's row is not the filter's
       empty: document.querySelector(${JSON.stringify(phone ? ".m-fempty" : ".fempty")})?.innerText ?? null,
       stored: localStorage.getItem('fyr.hostsOff'),
       old: localStorage.getItem('fyr.hostFilter'),
@@ -4703,105 +4703,98 @@ try {
 }
 });
 
-// V0.186: a section folds and unfolds only by the owner's hand. Opening a thread in a folded section, a thread moving
-// into one, j/k and a reload leave the folds alone; the folded header carries the mark, on both fronts.
-for (const phone of [false, true]) section(`V0.186 ${phone ? "phone" : "desktop"}`, async (h) => {
+// V0.186, V0.192: a section folds and unfolds only by the owner's hand. Opening a thread in a folded section, a thread
+// moving into one, j/k and a reload leave the folds alone; the folded section draws the current thread's row alone.
+for (const phone of [false, true]) section(`V0.192 folded ${phone ? "phone" : "desktop"}`, async (h) => {
   const { send, evaluate, waitFor, settle, navigate, openScreen, key, shot } = h;
-  const ctx = `V0.186 ${phone ? "phone" : "desktop"}`;
+  const ctx = `V0.192 folded ${phone ? "phone" : "desktop"}`;
 try {
   const head = (k) => (phone ? `#m-sec-${k} .m-sec` : `#sec-${k} .sec`);
   const rowsOf = (k) => (phone ? `#m-sec-${k} .m-mv` : `#sec-${k} [data-id]`);
-  const list = phone ? ".m-list" : ".ib .list";
-  const HELD = (k) => `(() => {
-    const h = document.querySelector(${JSON.stringify(head(k))}), t = h?.querySelector('.held-t'), n = h?.querySelector('.n'), l = document.querySelector(${JSON.stringify(list)}).getBoundingClientRect();
-    const r = h?.getBoundingClientRect(), c = n?.getBoundingClientRect(), b = t?.getBoundingClientRect();
-    return { held: !!h?.classList.contains('held'), id: h?.dataset.holds ?? null, current: h?.getAttribute('aria-current') ?? null, label: h?.getAttribute('aria-label') ?? '', expanded: h?.getAttribute('aria-expanded') ?? null,
-      title: t?.textContent ?? null, rows: document.querySelectorAll(${JSON.stringify(rowsOf(k))}).length, bg: h ? getComputedStyle(h).backgroundColor : '',
-      inView: !!r && r.top >= l.top - 0.5 && r.bottom <= l.bottom + 0.5, fits: !!r && !!b && !!c && b.right <= r.right + 0.5 && c.right <= b.left + 0.5 && b.width >= 40 && h.scrollWidth <= h.clientWidth + 1 };
+  const FOLD = (k) => `(() => {
+    const rows = [...document.querySelectorAll(${JSON.stringify(rowsOf(k))})], g = document.querySelector(${JSON.stringify(`#${phone ? "m-" : ""}sec-${k} .guest`)});
+    return { expanded: document.querySelector(${JSON.stringify(head(k))})?.getAttribute('aria-expanded') ?? null, rows: rows.length, id: g?.dataset.id ?? null, tag: g?.querySelector('.gst')?.textContent ?? null, dashed: g ? getComputedStyle(g).outlineStyle : '', fits: !g || g.scrollWidth <= g.clientWidth + 1 };
   })()`;
-  const fine = (m, id) => m.held && m.id === id && m.current === "true" && m.expanded === "false" && m.rows === 0 && m.inView && m.fits && !!m.title && m.label.includes("holds the current thread") && m.label.includes(m.title);
+  const fine = (m) => m.expanded === "false" && m.rows === 1 && m.tag === "In folded section" && m.dashed === "dashed" && m.fits;
   if (!phone) {
     await send("Emulation.setTouchEmulationEnabled", { enabled: false });
     await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 400, deviceScaleFactor: 1, mobile: false });
-    // 1. A deep link into folded Settled: it stays folded, its header is marked and scrolled to, no row is.
+    // 1. A deep link into folded Settled: it stays folded, and the one row is drawn, marked and scrolled to.
     await navigate(`${origin}/?mock=rail&open=t_set7`, "!!document.querySelector('.th .tt')");
-    await waitFor(`${HELD("settled")}.held`, { soft: true });
+    await waitFor(`${FOLD("settled")}.rows === 1`, { soft: true });
     await settle();
-    const a = await evaluate(HELD("settled"));
-    const pane = await evaluate(`document.querySelector('.th .tt').getAttribute('title')`);
-    const select = await evaluate(`(() => { const e = document.createElement('div'); e.className = 'one sel'; document.querySelector('.ib .list').append(e); const c = getComputedStyle(e).backgroundColor; e.remove(); return c; })()`);
-    check(fine(a, "t_set7") && a.title === pane && a.bg === select, `${ctx}: the folded header is not the mark (${JSON.stringify({ a, pane, select })})`);
-    check(await evaluate(`document.querySelectorAll('.list [aria-selected="true"]').length === 0`), `${ctx}: a row is marked as well as the header`);
-    // V0.184's narrowest list: the name, the count and some of the title still fit.
+    const a = await evaluate(FOLD("settled"));
+    check(fine(a) && a.id === "t_set7", `${ctx}: the folded section does not show the row (${JSON.stringify(a)})`);
+    const seen = await evaluate(`(() => { const r = document.querySelector('.list [aria-selected="true"]').getBoundingClientRect(), l = document.querySelector('.ib .list').getBoundingClientRect(); return { n: document.querySelectorAll('.list [aria-selected="true"]').length, inView: r.top >= l.top - 0.5 && r.bottom <= l.bottom + 0.5 }; })()`);
+    check(seen.n === 1 && seen.inView, `${ctx}: the row is not the one mark, in view (${JSON.stringify(seen)})`);
+    // V0.184's narrowest list: the row keeps inside it.
     await evaluate(`document.querySelector('.app').style.setProperty('--list-w', '280px')`);
     await settle();
-    const narrow = await evaluate(HELD("settled"));
-    check(fine(narrow, "t_set7"), `${ctx}: the marked header at the list's minimum width (${JSON.stringify(narrow)})`);
+    check(fine(await evaluate(FOLD("settled"))), `${ctx}: the row at the list's minimum width`);
     await evaluate(`document.querySelector('.app').style.removeProperty('--list-w')`);
     await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     await settle();
     await shot("folded-group-desktop.png");
-    // 2. Clicking the marked header only toggles: the row takes the mark; again, the header has it back.
+    // 2. The header only toggles: unfolded, the row is a plain row; folded again, the guest.
     await evaluate(`document.querySelector(${JSON.stringify(head("settled"))}).click()`);
-    await waitFor(`${HELD("settled")}.rows > 0`, { soft: true });
-    const b = await evaluate(`({ h: ${HELD("settled")}, row: document.querySelector('#sec-settled [aria-selected="true"]')?.dataset.id ?? null })`);
-    check(!b.h.held && b.h.current === null && b.row === "t_set7", `${ctx}: unfolded, the row alone is the mark (${JSON.stringify(b)})`);
+    await waitFor(`${FOLD("settled")}.rows > 1`, { soft: true });
+    const b = await evaluate(FOLD("settled"));
+    check(b.expanded === "true" && b.id === null && b.tag === null, `${ctx}: unfolded, the row is still tagged (${JSON.stringify(b)})`);
     await evaluate(`document.querySelector(${JSON.stringify(head("settled"))}).click()`);
-    await waitFor(`${HELD("settled")}.held`, { soft: true });
-    check(fine(await evaluate(HELD("settled")), "t_set7"), `${ctx}: folding it again did not mark the header`);
-    // 3. k leaves for a drawn row, and unfolds nothing.
+    await waitFor(`${FOLD("settled")}.rows === 1`, { soft: true });
+    check(fine(await evaluate(FOLD("settled"))), `${ctx}: folding it again lost the row`);
+    // 3. k leaves for a drawn row: the guest goes, and nothing unfolds.
     await evaluate(`document.querySelector('.list').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
     await key("k", "KeyK");
-    await waitFor(`!${HELD("settled")}.held`, { soft: true });
-    const c = await evaluate(`({ h: ${HELD("settled")}, snoozed: ${HELD("snoozed")}, marked: document.querySelectorAll('.list [aria-selected="true"]').length })`);
-    check(!c.h.held && c.h.rows === 0 && c.snoozed.rows === 0 && c.marked === 1, `${ctx}: k from a folded section (${JSON.stringify(c)})`);
-    // 4. The open thread moves into a folded section: the mark follows, the section stays folded.
+    await waitFor(`${FOLD("settled")}.rows === 0`, { soft: true });
+    const c = await evaluate(`({ h: ${FOLD("settled")}, snoozed: ${FOLD("snoozed")}, marked: document.querySelectorAll('.list [aria-selected="true"]').length })`);
+    check(c.h.rows === 0 && c.snoozed.rows === 0 && c.marked === 1, `${ctx}: k from a folded section (${JSON.stringify(c)})`);
+    // 4. The open thread moves into a folded section: the row follows, the section stays folded.
     await navigate(`${origin}/?mock=rail`, "!!document.querySelector('#sec-seen [data-id]')");
-    const seen = await evaluate(`(() => { const r = document.querySelector('#sec-seen [data-id]'); r.click(); return r.dataset.id; })()`);
+    const moved = await evaluate(`(() => { const r = document.querySelector('#sec-seen [data-id]'); r.click(); return r.dataset.id; })()`);
     await waitFor(`!!document.querySelector('.th .tt')`, { soft: true });
     await settle();
     await key("e", "KeyE");
-    await waitFor(`${HELD("settled")}.id === ${JSON.stringify(seen)}`, { soft: true });
+    await waitFor(`${FOLD("settled")}.id === ${JSON.stringify(moved)}`, { soft: true });
     await settle();
-    const d = await evaluate(HELD("settled"));
-    check(d.id === seen && d.rows === 0 && d.held, `${ctx}: a thread moving into folded Settled (${JSON.stringify({ seen, d })})`);
+    const d = await evaluate(FOLD("settled"));
+    check(d.id === moved && fine(d), `${ctx}: a thread moving into folded Settled (${JSON.stringify({ moved, d })})`);
   } else {
-    // 1. Back from a thread in folded Settled: it stayed folded and its header is marked. The phone's 390 px is its minimum.
+    // 1. Back from a thread in folded Settled: it stayed folded and shows that row. 390 px is the phone's minimum.
     await openScreen({ url: "?mock=rail&open=t_set7", ready: "!!document.querySelector('.m-thread')" }, 390, 844);
     await evaluate(`history.back()`);
-    await waitFor(`!!document.querySelector('.m-list') && ${HELD("settled")}.held`, { soft: true });
+    await waitFor(`!!document.querySelector('.m-list') && ${FOLD("settled")}.rows === 1`, { soft: true });
     await evaluate(`document.querySelector(${JSON.stringify(head("settled"))})?.scrollIntoView({ block: 'center' })`);
     await settle();
-    check(fine(await evaluate(HELD("settled")), "t_set7"), `${ctx}: the folded header is not the mark (${JSON.stringify(await evaluate(HELD("settled")))})`);
+    const a = await evaluate(FOLD("settled"));
+    check(fine(a), `${ctx}: the folded section does not show the row (${JSON.stringify(a)})`);
     await shot("folded-group-phone.png");
     // 2. A tap only toggles.
     await evaluate(`document.querySelector(${JSON.stringify(head("settled"))}).click()`);
-    await waitFor(`${HELD("settled")}.rows > 0`, { soft: true });
-    const b = await evaluate(HELD("settled"));
-    check(!b.held && b.current === null && b.rows > 0, `${ctx}: unfolded, the header is still marked (${JSON.stringify(b)})`);
+    await waitFor(`${FOLD("settled")}.rows > 1`, { soft: true });
+    const b = await evaluate(FOLD("settled"));
+    check(b.expanded === "true" && b.tag === null, `${ctx}: unfolded, the row is still tagged (${JSON.stringify(b)})`);
   }
   // Last on both: the owner's fold survives a reload (a new build reloads by itself), and so does an unfold.
   const url = `${origin}/?mock=rail`;
   if (phone) await navigate(url, "!!document.querySelector('#m-sec-working .m-mv')");
   await evaluate(`document.querySelector(${JSON.stringify(head("working"))}).click()`);
-  await waitFor(`${HELD("working")}.rows === 0`, { soft: true });
+  await waitFor(`${FOLD("working")}.rows === 0`, { soft: true });
   await settle();
   await navigate(url, `!!document.querySelector(${JSON.stringify(head("working"))})`);
   await settle();
-  const e = await evaluate(`({ rows: ${HELD("working")}.rows, stored: localStorage.getItem('fyr.sectionOpen') })`);
+  const e = await evaluate(`({ rows: ${FOLD("working")}.rows, stored: localStorage.getItem('fyr.sectionOpen') })`);
   check(e.rows === 0 && JSON.parse(e.stored ?? "{}").working === false, `${ctx}: a folded section came back open after a reload (${JSON.stringify(e)})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }
 });
 
-// SPEC 0.5 V0.138: a thread that opens clears the filters it fails, so its row is in the list and marked (V0.109).
-// V0.169: per row. 1 with host-b off and acme/web picked, a link to t_lasso (host-b, acme/web) turns host-b back on,
-// keeps the project and marks its row. 2 with both filters failing, both clear. 3 V0.114: a link to a quiet thread shows the gate and
-// clears nothing.
-for (const phone of [false, true]) section(`V0.138 ${phone ? "phone" : "desktop"}`, async (h) => {
-  const { send, evaluate, waitFor, settle, navigate, openScreen } = h;
-  const ctx = `V0.138 ${phone ? "phone" : "desktop"}`;
+// SPEC 0.5 V0.192: the current thread punches through the filters: they stay as they are, its one row is in the list,
+// tagged, in its section, and it leaves with the next thread. A locked quiet thread stays out, behind its gate.
+for (const phone of [false, true]) section(`V0.192 filter ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, settle, navigate, openScreen, key, shot } = h;
+  const ctx = `V0.192 filter ${phone ? "phone" : "desktop"}`;
 try {
   const open = async (url, storage, ready) => {
     if (phone) await openScreen({ url, storage: Object.fromEntries(Object.entries(storage).filter(([, v]) => v !== null)), ready }, 390, 844);
@@ -4814,46 +4807,32 @@ try {
     await settle();
   };
   const F = `({ off: localStorage.getItem('fyr.hostsOff'), project: localStorage.getItem('fyr.projectFilter') })`;
-  const MARK = `({ ids: [...document.querySelectorAll('.list [aria-selected="true"]')].map((x) => x.dataset.id), pane: document.querySelector('.th .tt')?.getAttribute('title') ?? null })`;
+  const G = `(() => { const g = [...document.querySelectorAll('${phone ? ".m-list" : ".ib .list"} .guest')]; return { n: g.length, text: g[0]?.textContent ?? '', tag: g[0]?.querySelector('.gst')?.textContent ?? null, sel: g[0]?.getAttribute('aria-selected') ?? null, section: g[0]?.closest('[id^="sec-"],[id^="m-sec-"]')?.id ?? null, id: g[0]?.dataset.id ?? null }; })()`;
   const threadReady = phone ? "!!document.querySelector('.m-thread, .qgate')" : "!!document.querySelector('.th .tt, .qgate')";
-  // 1. Only the host filter fails.
-  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": "F7QK-2M9X-AB34-CD56/p_web" }, threadReady);
-  await waitFor(`${F}.off === null`, { soft: true });
-  const a = await evaluate(F);
-  check(a.off === null && a.project === "F7QK-2M9X-AB34-CD56/p_web", `${ctx}: a link to a host-b thread with host-b off (${JSON.stringify(a)})`);
+  const project = "F7QK-2M9X-AB34-CD56/p_web";
+  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": project }, threadReady);
+  if (phone) await evaluate(`history.back()`);
+  await waitFor(`${G}.n === 1`, { soft: true });
+  await settle();
+  const a = await evaluate(`({ g: ${G}, f: ${F} })`);
+  check(a.f.off === '["host-b"]' && a.f.project === project, `${ctx}: opening the thread changed the filters (${JSON.stringify(a.f)})`);
+  check(a.g.n === 1 && a.g.tag === "Outside filter" && a.g.text.includes("Fix map lasso") && !!a.g.section, `${ctx}: the row does not punch through (${JSON.stringify(a.g)})`);
+  await shot(`filter-guest-${phone ? "phone" : "desktop"}.png`);
   if (!phone) {
-    await waitFor(`${MARK}.ids[0] === 'M3RS-QX7P-5LKA-2WNE/t_lasso'`, { soft: true });
-    const m = await evaluate(MARK);
-    check(m.ids.length === 1 && m.ids[0] === "M3RS-QX7P-5LKA-2WNE/t_lasso" && m.pane === "Fix map lasso on mobile", `${ctx}: the opened thread's row is not marked (${JSON.stringify(m)})`);
-    // Turning a host off while the thread is open is not undone.
-    await evaluate(`document.querySelector('.ib .hfrow .hft[aria-label^="host-b,"]')?.click()`);
-    await waitFor(`${F}.off === '["host-b"]'`, { soft: true });
-    await settle();
-    check((await evaluate(F)).off === '["host-b"]', `${ctx}: a host turned off while the thread is open is turned back on`);
-  } else {
-    // Back to the list: the thread's row is there.
-    await evaluate(`history.back()`);
-    await waitFor(`[...document.querySelectorAll('.m-list .m-mv')].some((r) => r.textContent.includes('Fix map lasso'))`, { soft: true });
-    check(await evaluate(`[...document.querySelectorAll('.m-list .m-mv')].some((r) => r.textContent.includes('Fix map lasso'))`), `${ctx}: the opened thread's row is not in the list after Back`);
+    check(a.g.sel === "true", `${ctx}: the row is not marked (${JSON.stringify(a.g)})`);
+    // The host's own threads stay hidden, and the chip's count does not take this one in.
+    check(await evaluate(`[...document.querySelectorAll('.list [data-id]')].filter((r) => r.dataset.id.startsWith('M3RS-')).length === 1`), `${ctx}: more than the one thread of the hidden host shows`);
+    // Leaving for a row in the filter: the guest goes.
+    await evaluate(`document.querySelector('.list').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
+    await key("j", "KeyJ");
+    await waitFor(`${G}.n === 0`, { soft: true });
+    check((await evaluate(G)).n === 0, `${ctx}: the row stayed after the next thread opened`);
   }
-  // 2. Both fail.
-  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": "F7QK-2M9X-AB34-CD56/p_home" }, threadReady);
-  await waitFor(`${F}.off === null && ${F}.project === null`, { soft: true });
-  const b = await evaluate(F);
-  check(b.off === null && b.project === null, `${ctx}: both filters failing (${JSON.stringify(b)})`);
-  if (!phone) {
-    // 2b. A thread in the folded Settled section: the filter clears; V0.186: the section stays folded, its header is marked.
-    await open("?mock=rail&hosts=2&open=t_set7", { "fyr.hostsOff": '["desk"]', "fyr.projectFilter": null }, "!!document.querySelector('.th .tt')");
-    const HOLDS = `({ id: document.querySelector('#sec-settled .sec.held')?.dataset.holds ?? null, rows: document.querySelectorAll('#sec-settled [data-id]').length })`;
-    await waitFor(`${HOLDS}.id === 'F7QK-2M9X-AB34-CD56/t_set7'`, { soft: true });
-    const m = await evaluate(HOLDS);
-    check(m.id === "F7QK-2M9X-AB34-CD56/t_set7" && m.rows === 0 && (await evaluate(F)).off === null, `${ctx}: a Settled thread opened with its host off (${JSON.stringify(m)})`);
-  }
-  // 3. A quiet thread: the gate, and the filter stays.
+  // A quiet thread: the gate, no row, and the filter stays.
   await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostsOff": '["desk"]', "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");
   await settle();
-  const c = await evaluate(F);
-  check(c.off === '["desk"]', `${ctx}: a link to a quiet thread turned its host on before the hold (${JSON.stringify(c)})`);
+  const c = await evaluate(`({ f: ${F}, g: ${G} })`);
+  check(c.f.off === '["desk"]' && c.g.n === 0, `${ctx}: a link to a quiet thread before the hold (${JSON.stringify(c)})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }

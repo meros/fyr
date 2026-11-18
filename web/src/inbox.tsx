@@ -9,8 +9,8 @@ import { SlotQueueSection, useSlotQueue } from "./slot-queue-ui.tsx";
 import { LINE_ICONS } from "./lucide.ts";
 import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
-import { DESKTOP_LOOK, HeldTitle, NeedsRowBody, OneRowBody, sectionHead } from "./row-ui.tsx";
-import { foldedRow } from "./selection.ts";
+import { DESKTOP_LOOK, NeedsRowBody, OneRowBody, sectionHead } from "./row-ui.tsx";
+import { drawnRows, type Guest, type GuestWhy } from "./selection.ts";
 import { colorVar } from "./projects.ts";
 import { SECTIONS, isOpen, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
 import { BrandMark, StateIcon } from "./icons.tsx";
@@ -110,6 +110,7 @@ interface RowProps {
   now: number;
   sel: boolean;
   picked: boolean;
+  guest?: GuestWhy;
   onClick(): void;
 }
 
@@ -118,11 +119,11 @@ function rowAttrs({ t, sel, onClick }: RowProps) {
 }
 
 function NeedsRow(p: RowProps) {
-  return <NeedsRowBody t={p.t} now={p.now} look={DESKTOP_LOOK} extra={`${p.sel ? " sel" : ""}${p.picked ? " picked" : ""}`} attrs={rowAttrs(p)} />;
+  return <NeedsRowBody t={p.t} now={p.now} look={DESKTOP_LOOK} guest={p.guest} extra={`${p.sel ? " sel" : ""}${p.picked ? " picked" : ""}`} attrs={rowAttrs(p)} />;
 }
 
 function OneRow(p: RowProps) {
-  return <OneRowBody t={p.t} now={p.now} look={DESKTOP_LOOK} extra={`${p.sel ? " sel" : ""}${p.picked ? " picked" : ""}`} attrs={rowAttrs(p)} />;
+  return <OneRowBody t={p.t} now={p.now} look={DESKTOP_LOOK} guest={p.guest} extra={`${p.sel ? " sel" : ""}${p.picked ? " picked" : ""}`} attrs={rowAttrs(p)} />;
 }
 
 function sectionHint(k: SectionKey, list: Thread[], now: number): string {
@@ -153,7 +154,12 @@ interface InboxProps {
   /** V0.48: sections that close by themselves, with their deadline (ms) */
   autoHideAt?: Partial<Record<SectionKey, number>>;
   onSectionActivity?(k: SectionKey): void;
+  /** what the filters let through: the counts */
   sec: Sections;
+  /** V0.192: the rows: `sec`, with the current thread in its place when the filters hide it */
+  rows: Sections;
+  /** V0.192: the row that is drawn only because it is the current thread */
+  guest: Guest | null;
   now: number;
   selected: string | null;
   picked: Set<string>;
@@ -179,7 +185,7 @@ interface InboxProps {
 
 export function Inbox(p: InboxProps) {
   const queue = useSlotQueue();
-  const holder = foldedRow(p.sec, p.selected, p.open); // V0.186
+  const why = (t: Thread) => (p.guest?.id === t.id ? p.guest.why : undefined);
   return (
     <aside class="ib" onMouseDown={p.onFocusZone}>
       {p.resizer}
@@ -208,18 +214,18 @@ export function Inbox(p: InboxProps) {
       {p.quietHits > 0 && <QuietGate now={p.now} unlock={p.unlock} what="search" />}
       <div class="list" role="listbox" aria-label="Threads">
         {!p.query.trim() && <FilterEmpty f={p.filter} cls="fempty" />}
-        {p.sec.pinned.length > 0 && (
+        {p.rows.pinned.length > 0 && (
           // V0.104: the pinned threads, above every section and always open; each keeps its section's row shape.
           <div id="sec-pinned">
             <div class="sec">
               Pinned
               <span class="n">{count(p.sec.pinned.length)}</span>
             </div>
-            {p.sec.pinned.map((t) =>
+            {p.rows.pinned.map((t) =>
               t.attention.section === "needs" ? (
-                <NeedsRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} onClick={() => p.onClick(t.id)} />
+                <NeedsRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} guest={why(t)} onClick={() => p.onClick(t.id)} />
               ) : (
-                <OneRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} onClick={() => p.onClick(t.id)} />
+                <OneRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} guest={why(t)} onClick={() => p.onClick(t.id)} />
               ),
             )}
           </div>
@@ -230,39 +236,40 @@ export function Inbox(p: InboxProps) {
               <SlotQueueSection
                 phone={false}
                 queue={queue}
-                threads={p.sec.slots}
+                threads={p.rows.slots}
+                n={p.sec.slots.length}
                 row={(t, a) => (
-                  <OneRowBody key={t.id} t={t} now={p.now} look={DESKTOP_LOOK} lead={a.lead} extra={`${p.selected === t.id ? " sel" : ""}${p.picked.has(t.id) ? " picked" : ""}${a.attrs.class ? " " + a.attrs.class : ""}`} attrs={{ ...rowAttrs({ t, now: p.now, sel: p.selected === t.id, picked: p.picked.has(t.id), onClick: () => p.onClick(t.id) }), ref: a.attrs.ref }} />
+                  <OneRowBody key={t.id} t={t} now={p.now} look={DESKTOP_LOOK} lead={a.lead} guest={why(t)} extra={`${p.selected === t.id ? " sel" : ""}${p.picked.has(t.id) ? " picked" : ""}${a.attrs.class ? " " + a.attrs.class : ""}`} attrs={{ ...rowAttrs({ t, now: p.now, sel: p.selected === t.id, picked: p.picked.has(t.id), onClick: () => p.onClick(t.id) }), ref: a.attrs.ref }} />
                 )}
               />
             );
           const list = unpinned(p.sec[s.key]);
-          const open = isOpen(s.key, p.open) && list.length > 0;
-          const limit = p.expanded[s.key] ? list.length : SECTION_LIMIT[s.key];
-          const shown = open ? list.slice(0, limit) : [];
+          const rows = unpinned(p.rows[s.key]); // V0.192: `list` counts, `rows` draws
+          const open = isOpen(s.key, p.open) && rows.length > 0;
+          const limit = p.expanded[s.key] ? rows.length : SECTION_LIMIT[s.key];
+          const shown = drawnRows(rows, open, limit, p.guest);
           const hint = sectionHint(s.key, list, p.now);
-          const held = holder?.section === s.key ? holder.thread : null;
           return (
             <div id={`sec-${s.key}`} onPointerMove={open && p.autoHideAt?.[s.key] ? () => p.onSectionActivity?.(s.key) : undefined} onKeyDown={open && p.autoHideAt?.[s.key] ? () => p.onSectionActivity?.(s.key) : undefined}>
-              <div class={`sec${list.length ? " tog" : ""}${held ? " held" : ""}`} {...sectionHead({ label: s.label, n: list.length, open, held, toggle: () => p.onToggle(s.key) })} title={list.length ? (open ? "Collapse" : "Expand") : undefined}>
+              <div class={`sec${list.length ? " tog" : ""}`} {...sectionHead({ n: list.length, open, toggle: () => p.onToggle(s.key) })} title={list.length ? (open ? "Collapse" : "Expand") : undefined}>
                 {s.label}
                 <span class="n">{count(list.length)}</span>
                 {open && p.autoHideAt?.[s.key] ? (
                   // V0.48: a small clock runs down to the auto-close; it restarts on use.
                   <span key={p.autoHideAt[s.key]} class="ahc" style={{ "--ah": `${Math.max(0, (p.autoHideAt[s.key]! - Date.now()) / 1000)}s` }} title="Closes by itself; select it in the rail to keep it open" aria-hidden="true" />
                 ) : null}
-                {held ? <HeldTitle t={held} /> : hint && <span class="h ell">{hint}</span>}
+                {hint && <span class="h ell">{hint}</span>}
               </div>
               {shown.map((t) =>
                 s.key === "needs" ? (
-                  <NeedsRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} onClick={() => p.onClick(t.id)} />
+                  <NeedsRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} guest={why(t)} onClick={() => p.onClick(t.id)} />
                 ) : (
-                  <OneRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} onClick={() => p.onClick(t.id)} />
+                  <OneRow t={t} now={p.now} sel={p.selected === t.id} picked={p.picked.has(t.id)} guest={why(t)} onClick={() => p.onClick(t.id)} />
                 ),
               )}
-              {open && list.length > shown.length && (
+              {open && rows.length > shown.length && (
                 <button class="more" onClick={() => p.onExpand(s.key)}>
-                  Show all {list.length.toLocaleString()}
+                  Show all {rows.length.toLocaleString()}
                 </button>
               )}
             </div>

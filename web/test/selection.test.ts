@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { flatOrder, sections, type SectionKey } from "../src/store.ts";
-import { cutSection, foldedRow, heldLabel, parseSectionOpen, rowAfter, markedRow, stepRow } from "../src/selection.ts";
+import { cutSection, drawnRows, foldedRow, guestOf, hiddenWhy, parseSectionOpen, rowAfter, markedRow, stepRow } from "../src/selection.ts";
 import { thread } from "./helpers.ts";
 
 const OPEN: Record<SectionKey, number> = { needs: 500, working: 500, slots: 500, unread: 2, seen: 2, snoozed: 0, settled: 0 };
@@ -41,21 +41,21 @@ test("a drawn row, a pinned row and a row no section holds need nothing", () => 
   assert.equal(cutSection(sec(), null, OPEN), null);
 });
 
-test("V0.186: the folded section that holds the current thread carries the mark", () => {
+test("V0.186: the folded section that holds the current thread is found", () => {
   const held = foldedRow(sec(), "z", {});
   assert.equal(held?.section, "settled");
   assert.equal(held?.thread.id, "z");
 });
 
-test("V0.186: an unfolded section, a pinned row and an unknown row carry no mark on a header", () => {
-  assert.equal(foldedRow(sec(), "z", { settled: true }), null, "unfolded: the row is the mark");
+test("V0.186: an unfolded section, a pinned row and an unknown row are not held by a fold", () => {
+  assert.equal(foldedRow(sec(), "z", { settled: true }), null, "unfolded");
   assert.equal(foldedRow(sec(), "w", {}), null, "open by default");
   assert.equal(foldedRow(sec(), "p", {}), null, "pinned rows are always drawn");
   assert.equal(foldedRow(sec(), "gone", {}), null);
   assert.equal(foldedRow(sec(), null, {}), null);
 });
 
-test("V0.186: the mark moves with the thread and the folds stay as they are", () => {
+test("V0.186: the holding section moves with the thread and the folds stay as they are", () => {
   const open = { working: false, seen: false };
   const before = JSON.stringify(open);
   const inWorking = sections({ m: thread("m", "working", "working") });
@@ -65,9 +65,43 @@ test("V0.186: the mark moves with the thread and the folds stay as they are", ()
   assert.equal(JSON.stringify(open), before);
 });
 
-test("V0.186: the header names the group and the thread it holds", () => {
-  assert.equal(heldLabel("Settled", 1, "Fix the map"), "Settled, 1 thread, folded, holds the current thread: Fix the map");
-  assert.equal(heldLabel("Seen", 12, "x"), "Seen, 12 threads, folded, holds the current thread: x");
+test("V0.192: the filters hide the current thread: it goes back in, in its own sorted place", () => {
+  const at = (m: number) => new Date(Date.UTC(2026, 10, 16, 9, m)).toISOString();
+  const s1 = thread("s1", "seen", "seen", { activityAt: at(3) });
+  const s2 = thread("s2", "seen", "seen", { activityAt: at(2) });
+  const s3 = thread("s3", "seen", "seen", { activityAt: at(1) });
+  const shown = { s1, s3 };
+  const why = hiddenWhy(s2, { shown, filtered: shown, query: "", allowed: true });
+  assert.equal(why, "filter");
+  const rows = sections({ ...shown, s2 });
+  assert.deepEqual(rows.seen.map((t) => t.id), ["s1", "s2", "s3"], "between its neighbours, not at an end");
+  assert.deepEqual(guestOf(rows, "s2", why, {}), { id: "s2", why: "filter" });
+  assert.deepEqual(stepRow(flatOrder(rows), ["s1", "s3"], "s2", 1), "s3", "j goes on from its place");
+});
+
+test("V0.192: what keeps the current thread out", () => {
+  const t = thread("t", "seen", "seen", { title: "Fix the map" });
+  const none = { shown: {}, filtered: {}, query: "", allowed: true };
+  assert.equal(hiddenWhy(undefined, none), null);
+  assert.equal(hiddenWhy(t, { ...none, shown: { t } }), null, "already listed");
+  assert.equal(hiddenWhy(t, { ...none, allowed: false }), null, "a quiet thread not admitted");
+  assert.equal(hiddenWhy(t, { ...none, query: "other" }), null, "search still hides it");
+  assert.equal(hiddenWhy(t, { ...none, query: "map" }), "filter", "a hit of the search punches through the filter");
+  assert.equal(hiddenWhy(t, { ...none, filtered: { t } }), "quiet", "the filters pass it, quiet hours hide it");
+  assert.equal(hiddenWhy(thread("x", "seen", "archived" as never), none), null, "archived: in no section");
+});
+
+test("V0.192: a folded section draws the guest alone; an open one its rows, and the guest past the limit", () => {
+  const list = sec().seen;
+  const guest = { id: "s3", why: "folded" as const };
+  const ids = (open: boolean, limit: number, g: typeof guest | null) => drawnRows(list, open, limit, g).map((t) => t.id);
+  assert.deepEqual(ids(false, 2, guest), ["s3"]);
+  assert.deepEqual(ids(false, 2, null), []);
+  assert.deepEqual(ids(true, 2, null), ["s1", "s2"]);
+  assert.deepEqual(ids(true, 2, guest), ["s1", "s2", "s3"]);
+  assert.deepEqual(guestOf(sec(), "z", null, {}), { id: "z", why: "folded" });
+  assert.equal(guestOf(sec(), "z", null, { settled: true }), null, "unfolded: a plain row");
+  assert.equal(guestOf(sec(), "p", null, {}), null, "pinned rows never fold");
 });
 
 test("V0.186: next and previous skip folded sections and leave from the header's place", () => {
