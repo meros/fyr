@@ -101,3 +101,37 @@ func TestUndeclaredEmptyReadsPopulated(t *testing.T) {
 		t.Fatal("populated 0 is empty")
 	}
 }
+
+// Decision 0032 slice 1: a thaw leaves the work in undeclared/, so the next
+// freeze of the episode has nothing to move and must still freeze it.
+func TestF18WorkThawedInItsCgroupIsFrozenAgain(t *testing.T) {
+	o, _ := fakeFS(t, "0::/"+unit+"\n")
+	tr := Setup(o)
+	td := tr.Thread("t_a")
+	proc := t.TempDir()
+	fakeProc2(t, proc, 10, 1, 100, 10, "claude")
+	fakeProc2(t, proc, 20, 10, 9000, 10, "/bin/zsh", "-c", "turbo run lint")
+	fakeProc2(t, proc, 21, 20, 9001, 10, "tsc")
+	write(t, filepath.Join(td, "cgroup.procs"), "10\n20\n21\n")
+	g := &JobGroups{Tree: tr, Proc: proc}
+	if !g.FreezeUndeclared("t_a", []Root{{PID: 20}}) {
+		t.Fatal("first freeze")
+	}
+	g.ThawUndeclared("t_a")
+	// What the kernel shows after the move: only the CLI is left in the thread's cgroup.
+	dir := filepath.Join(td, "undeclared")
+	write(t, filepath.Join(td, "cgroup.procs"), "10\n")
+	write(t, filepath.Join(dir, "cgroup.procs"), "20\n21\n")
+	if !g.FreezeUndeclared("t_a", []Root{{PID: 20}}) {
+		t.Fatal("the second freeze of the episode found nothing to do")
+	}
+	if read(t, filepath.Join(dir, "cgroup.freeze")) != "1" || !g.Frozen("t_a") {
+		t.Fatal("not frozen again")
+	}
+	// With nothing in undeclared/ and nothing to move there is nothing to freeze.
+	write(t, filepath.Join(dir, "cgroup.procs"), "")
+	g.ThawUndeclared("t_a")
+	if g.FreezeUndeclared("t_a", []Root{{PID: 20}}) {
+		t.Fatal("froze an empty cgroup")
+	}
+}
