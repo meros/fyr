@@ -228,6 +228,11 @@ export function compareActivityDesc(a: Thread, b: Thread): number {
   return activity(b) - activity(a) || a.id.localeCompare(b.id);
 }
 
+/** V0.207: Seen, the thread read last first. Reading is the owner's act, so nothing else moves a row here. */
+export function compareSeen(a: Thread, b: Thread): number {
+  return (ts(b.view?.seenAt) || activity(b)) - (ts(a.view?.seenAt) || activity(a)) || a.id.localeCompare(b.id);
+}
+
 /** Each section's threads, pinned ones included (counts and badges follow attention), and `pinned`: the pinned threads
  * in the normal order (section order, then the section's own order), which the lists draw above every section (V0.104). */
 export type Sections = Record<SectionKey, Thread[]> & { pinned: Thread[] };
@@ -268,8 +273,10 @@ export function sectionOf(t: Thread): SectionKey | null {
 
 /** V0.137: `queue` (slotQueue of the load) moves every queued thread to Waiting for a slot, in the queue's order (host by
  *  host, then its place), except a thread in Needs you, which stays there: the owner acts on it first. A pinned queued
- *  thread is in the queue's section and not in the pinned block, so the queue reads in its real order. */
-export function sections(threads: Record<string, Thread>, queue: readonly QueueEntry[] = []): Sections {
+ *  thread is in the queue's section and not in the pinned block, so the queue reads in its real order.
+ *  V0.207: `unreadAt` (still-list.ts) is when each thread became unread: Unread is newest first by that time, so later
+ *  activity does not move a row. */
+export function sections(threads: Record<string, Thread>, queue: readonly QueueEntry[] = [], unreadAt: Readonly<Record<string, number>> = {}): Sections {
   const out: Sections = { needs: [], working: [], slots: [], unread: [], seen: [], snoozed: [], settled: [], pinned: [] };
   const queued = new Set(queue.map((e) => e.owner));
   for (const t of Object.values(threads)) {
@@ -283,8 +290,8 @@ export function sections(threads: Record<string, Thread>, queue: readonly QueueE
   }
   out.needs.sort(compareNeeds);
   out.working.sort(compareWorking);
-  out.unread.sort(compareActivityDesc);
-  out.seen.sort(compareActivityDesc);
+  out.unread.sort((a, b) => (unreadAt[b.id] ?? activity(b)) - (unreadAt[a.id] ?? activity(a)) || a.id.localeCompare(b.id));
+  out.seen.sort(compareSeen);
   out.snoozed.sort(compareActivityDesc);
   out.settled.sort(compareActivityDesc);
   out.pinned = SECTIONS.filter((s) => s.key !== "slots").flatMap((s) => out[s.key].filter(isPinned));

@@ -234,6 +234,18 @@ export function createMockApi(scenario: string): Api {
         h.state({ ...stampState(server.state()), ...(order ? { projectOrder: order } : {}), ...(Object.keys(marks).length ? { hostMarks: marks } : {}) });
         h.conn(offline ? "offline" : "live");
       }, 0);
+      // V0.207, the layout test's hook: a host update of one thread, as the stream brings it.
+      const patched = new Map<string, ThreadDTO>();
+      let patchRev = 1_000_000;
+      (globalThis as { __fyrThread?: (id: string, patch: Partial<ThreadDTO>) => void }).__fyrThread = (id, patch) => {
+        const base = patched.get(id) ?? server.state().threads.find((t) => t.id === id);
+        if (!base) return;
+        // The scenario's threads carry fixed clock times, so "now" can be older than them, and an older update is dropped.
+        const updatedAt = new Date(Math.max(Date.now(), Date.parse(base.updatedAt) + 1000)).toISOString();
+        const next = { ...base, ...patch, rev: ++patchRev, updatedAt };
+        patched.set(id, next);
+        h.thread(next);
+      };
       // V0.38 perf guard (mock only): a burst of n thread updates and n messages for one thread,
       // one pair every 10 ms, the way a busy agent streams.
       (globalThis as { __fyrBurst?: (id: string, n: number) => void }).__fyrBurst = (id, n) => {

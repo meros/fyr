@@ -689,6 +689,7 @@ function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; needs: boo
       {hint && <div class="m-under l no show">{hint}</div>}
       <div
         ref={rowRef}
+        data-id={t.id}
         class="m-mv"
         style={off ? { transform: `translateX(${off}px)` } : undefined}
         onPointerDown={onDown}
