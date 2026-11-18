@@ -14,7 +14,8 @@ import { HostMark } from "./host-mark-ui.tsx";
 import { hostOf, multiHost } from "./hosts.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState } from "./rows.ts";
-import { relTime, untilLabel, whenLabel } from "./format.ts";
+import { relTime, whenLabel } from "./format.ts";
+import { snoozeLine } from "./snooze.ts";
 import { prChip } from "./pr.ts";
 import { changeChip, needLook, rowNeed } from "./offers.ts";
 import { groupTasks, workingLine } from "./tasks.ts";
@@ -210,7 +211,7 @@ export function OneRowBody({ t, now, look, extra = "", lead, pre, attrs }: BodyP
   const working = t.attention.section === "working";
   const agents = groupTasks(t.tasks).running;
   // The project is on the first line now, so the second never falls back to it.
-  const detail = working ? (t.activity || agents.length ? workingLine(t) : "") : st === "snoozed" ? `until ${untilLabel(t.view?.snoozeUntil, now)}` : "";
+  const detail = working ? (t.activity || agents.length ? workingLine(t) : "") : st === "snoozed" ? snoozeLine(t, now) : "";
   const firstTask = agents.map((x) => x.startedAt).filter(Boolean).sort()[0];
   const when = working ? relTime(t.runStartedAt ?? firstTask, now) : whenLabel(t.activityAt ?? t.updatedAt, now);
   const sub = working && !agents.length && !!t.subagents; // "0 sub" says nothing

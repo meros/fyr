@@ -14,7 +14,8 @@ import { foldedRow } from "./selection.ts";
 import { colorVar } from "./projects.ts";
 import { SECTIONS, isOpen, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
 import { BrandMark, StateIcon } from "./icons.tsx";
-import { count, untilLabel } from "./format.ts";
+import { count } from "./format.ts";
+import { snoozedHint } from "./snooze.ts";
 import { quietLocked, quietNote } from "./quiet.ts";
 
 export type Theme = "system" | "light" | "dark";
@@ -130,13 +131,7 @@ function sectionHint(k: SectionKey, list: Thread[], now: number): string {
     return waiting ? `${waiting} waiting` : "";
   }
   if (k === "seen") return list.length ? "⇧E settle" : "";
-  if (k === "snoozed") {
-    const next = list
-      .map((t) => t.view?.snoozeUntil)
-      .filter((x): x is string => !!x)
-      .sort()[0];
-    return next ? `next: ${untilLabel(next, now)}` : "none";
-  }
+  if (k === "snoozed") return snoozedHint(list, now);
   if (k === "settled") return "last 24 h";
   return "";
 }

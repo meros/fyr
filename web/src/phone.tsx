@@ -13,12 +13,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import type { Decision, FyrEvent, Profile, Project, Thread } from "./types.ts";
 import { LoadSheetBody, LoadStrip, useLoad } from "./load-ui.tsx";
 import { stripHosts } from "./load.ts";
-import { SECTIONS, isAvailable, isPinned, unpinned, matchesQuery, sections, snoozePresets, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
+import { SECTIONS, isAvailable, isPinned, unpinned, matchesQuery, sections, unavailableReason, undoVerb, type SectionKey, type Sections, type Store } from "./store.ts";
 import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
-import { shortModel, untilLabel } from "./format.ts";
+import { shortModel } from "./format.ts";
+import { snoozeChoices, snoozeCommand, snoozedHint, type SnoozeChoice } from "./snooze.ts";
 import { effortsFor, offLabel, startEffort } from "./providers.ts";
 import { AgentsStrip, EffectBody, ThreadTabBody, sendFrom } from "./thread.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
@@ -554,13 +555,6 @@ function MInbox(p: PhoneProps) {
 function workingHint(list: Thread[]): string {
   const waiting = list.filter((t) => t.attention.state === "waiting").length;
   return waiting ? `${waiting} waiting` : "";
-}
-function snoozedHint(list: Thread[], now: number): string {
-  const next = list
-    .map((t) => t.view?.snoozeUntil)
-    .filter((x): x is string => !!x)
-    .sort()[0];
-  return next ? `next: ${untilLabel(next, now)}` : "none";
 }
 
 /** V0.54, V0.170: an offline host says so on a row, in words (it is state). Which host a row is on is its mark at the
@@ -1312,7 +1306,13 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
     setTimeout(fn, 0);
   };
   if (sheet.kind === "snooze") {
-    return <SnoozeSheet ids={ids} title={ids.length === 1 ? p.store.threads[ids[0]]?.title : undefined} onClose={close} onPick={(d) => (close(), void p.commands.run("thread.snooze", ids, { until: d.toISOString() }), p.list.setSelecting(false), p.list.setPicked(new Set()))} />;
+    return <SnoozeSheet ids={ids} title={ids.length === 1 ? p.store.threads[ids[0]]?.title : undefined} onClose={close} threads={ids.flatMap((id) => p.store.threads[id] ?? [])} onPick={(pick) => {
+      const c = snoozeCommand(pick, ids);
+      close();
+      void p.commands.run(c.action, c.ids, c.args);
+      p.list.setSelecting(false);
+      p.list.setPicked(new Set());
+    }} />;
   }
   if (sheet.kind === "load") return <MLoadSheet hosts={p.store.hosts} profiles={p.store.profiles} onClose={close} />;
   if (sheet.kind === "menu") {
@@ -1519,20 +1519,20 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   return null;
 }
 
-function SnoozeSheet({ ids, title, onClose, onPick }: { ids: string[]; title?: string; onClose(): void; onPick(d: Date): void }) {
-  const presets = snoozePresets(new Date());
+function SnoozeSheet({ ids, title, threads, onClose, onPick }: { ids: string[]; title?: string; threads: Thread[]; onClose(): void; onPick(c: Pick<SnoozeChoice, "until" | "done" | "ids">): void }) {
+  const presets = snoozeChoices(new Date(), threads);
   const [custom, setCustom] = useState(false);
   const [val, setVal] = useState("");
   return (
     <MSheet onClose={onClose} label="Snooze">
       <div class="m-shh ell">{ids.length > 1 ? `Snooze ${ids.length} threads` : `Snooze “${title ?? ""}”`}</div>
       {presets.map((s) => (
-        <Item label={s.label} icon={<StateIcon state="snoozed" size={16} />} right={s.when} onClick={() => onPick(s.until)} />
+        <Item label={s.label} sub={s.off} disabled={!!s.off} icon={<StateIcon state="snoozed" size={16} />} right={s.off ? undefined : s.when} onClick={() => onPick(s)} />
       ))}
       {custom ? (
         <div class="m-custom">
           <input type="datetime-local" value={val} onInput={(e) => setVal((e.target as HTMLInputElement).value)} aria-label="Snooze until" />
-          <button class="m-bt p" disabled={!val || new Date(val).getTime() <= Date.now()} onClick={() => onPick(new Date(val))}>
+          <button class="m-bt p" disabled={!val || new Date(val).getTime() <= Date.now()} onClick={() => onPick({ until: new Date(val) })}>
             Snooze
           </button>
         </div>

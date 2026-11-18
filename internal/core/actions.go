@@ -506,6 +506,25 @@ func init() {
 			return nil, nil
 		}})
 
+	// V0.185: until work is done. Off with a reason when no work goes on or
+	// the thread needs the owner, so nothing is hidden silently.
+	register(&Action{Name: "thread.snoozeWhenDone", Label: "Snooze until work is done", Bulk: true,
+		Available: func(t *Thread, v *View, now time.Time) string {
+			if t.Settle.At != nil {
+				return "Settled threads do not snooze"
+			}
+			if r := notArchived(t, v, now); r != "" {
+				return r
+			}
+			return snoozeDoneReason(t)
+		},
+		Apply: func(t *Thread, v *View, _ Args, now time.Time) ([]Effect, error) {
+			SnoozeWhenDone(v, now)
+			t.PinnedAt = nil // V0.104
+			v.SeenAt = now
+			return nil, nil
+		}})
+
 	register(&Action{Name: "thread.unsnooze", Label: "Unsnooze", Bulk: true,
 		Available: func(_ *Thread, v *View, now time.Time) string {
 			if until, _ := SnoozeOf(v); until == nil || !until.After(now) {

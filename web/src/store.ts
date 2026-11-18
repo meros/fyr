@@ -325,7 +325,7 @@ const INVERSE: Record<UndoKind, string> = {
 export function undoKindOf(action: string): UndoKind | null {
   if (action === "thread.settle") return "settle";
   if (action === "thread.archive") return "archive";
-  if (action === "thread.snooze") return "snooze";
+  if (action === "thread.snooze" || action === "thread.snoozeWhenDone") return "snooze";
   return null;
 }
 
@@ -414,7 +414,7 @@ export function snoozePresets(now: Date): SnoozePreset[] {
 }
 
 /** The desktop keys 1–5: the preset at that place in the list shown, or null. */
-export function presetForKey(presets: SnoozePreset[], key: string): SnoozePreset | null {
+export function presetForKey<T extends SnoozePreset>(presets: T[], key: string): T | null {
   return /^[1-9]$/.test(key) ? (presets[Number(key) - 1] ?? null) : null;
 }
 

@@ -1,0 +1,106 @@
+package core
+
+import (
+	"slices"
+	"time"
+)
+
+// The snooze "until work is done" (V0.185): the thread leaves the inbox while
+// its agent works and comes back when the work is over. It is the View's
+// snooze Rule with the Condition any(workOver, at(armed + SnoozeDoneMax)).
+
+// SnoozeDoneMax is the safety net: however long the work seems to go on (a
+// watch that never fires), the thread comes back after this time.
+const SnoozeDoneMax = 24 * time.Hour
+
+// Why the option is off: nothing is hidden silently.
+const (
+	SnoozeDoneIdle   = "Nothing is working"
+	SnoozeDoneNeeded = "It needs you now"
+)
+
+// NeedsOwner reports a thread that waits on the owner: a question, an
+// approval or a merge ask, a failure, an agent that does not respond, a
+// change that is ready or stopped on a failure, a Run card.
+func NeedsOwner(t *Thread) bool {
+	if len(t.Decisions) > 0 || t.Failure != nil || t.Unresponsive != nil || PendingRequest(t) != nil {
+		return true
+	}
+	_, n := ThreadNeed(t)
+	return n != nil
+}
+
+// WorkGoing reports that the thread's work goes on by itself: a run or a
+// background task is live, the agent is about to get a turn (an unread
+// message, a notice that wakes it, a handover, a wait for the machine), or it
+// waits on something it set up: a watch or settle condition of its own, a
+// place in the slot queue, a merge ask held for CI, CI on an open PR.
+func WorkGoing(t *Thread) bool {
+	if t.Running || t.RunningTasks() > 0 || t.MachineWait != nil || t.Handover != nil || len(t.Outbox) > 0 {
+		return true
+	}
+	if t.SlotQueued || len(t.HeldAsks) > 0 {
+		return true
+	}
+	if slices.ContainsFunc(t.Rules, func(r Rule) bool { return r.CreatedBy == ByAgent && r.Status == RuleArmed }) {
+		return true
+	}
+	if t.wakeable() && slices.ContainsFunc(t.Feed.Queue, func(n Notice) bool { return n.Urgency == Wake && !n.Self }) {
+		return true
+	}
+	return slices.ContainsFunc(t.Changes, func(c Change) bool {
+		return c.PR != nil && c.PR.State == "OPEN" && c.PR.Checks == ChecksPending && !c.Dismissed && !c.IsDone() && !c.Phase.Ended()
+	})
+}
+
+// WorkOver is the Condition's value: the snooze has nothing left to wait for.
+func WorkOver(t *Thread) bool { return t.Asleep() || NeedsOwner(t) || !WorkGoing(t) }
+
+// snoozeDoneReason is why the thread cannot take this snooze now, or "".
+func snoozeDoneReason(t *Thread) string {
+	switch {
+	case NeedsOwner(t):
+		return SnoozeDoneNeeded
+	case !WorkGoing(t):
+		return SnoozeDoneIdle
+	}
+	return ""
+}
+
+// SnoozeWhenDone hides the thread until its work is over, at most
+// SnoozeDoneMax.
+func SnoozeWhenDone(v *View, now time.Time) {
+	end := now.Add(SnoozeDoneMax)
+	v.Rules = armIn(v.Rules, &Thread{}, Rule{ID: snoozeRule, Purpose: PurposeSnooze, When: Any(When{Kind: WhenWorkOver}, When{Kind: WhenAt, At: &end}),
+		Then: Then{Kind: KindRuleWake}, After: AfterDisarm, CreatedBy: ByOwner}, now)
+}
+
+// workBound reports a Condition that reads workOver.
+func (w When) workBound() bool {
+	return w.Kind == WhenWorkOver || slices.ContainsFunc(w.Any, When.workBound)
+}
+
+// SnoozedWhenDone reports that the armed snooze is the one until work is done.
+func SnoozedWhenDone(v *View) bool {
+	if v == nil {
+		return false
+	}
+	r := findIn(v.Rules, snoozeRule)
+	return r != nil && r.When.workBound()
+}
+
+// wakeWhenDone ends the snooze when its Condition holds. It runs last in
+// Reduce, not with the other Rules: what ends the work is read only after the
+// merge asks are gated and the agent's notices are queued, so a firing watch,
+// which wakes the agent, does not count as the end. A feed.take is skipped:
+// the notice has left the queue and the turn it starts has not begun.
+func wakeWhenDone(r Rec, in Input, now time.Time) Result {
+	var res Result
+	if in.Kind == KindFeedTake || !SnoozedWhenDone(r.V) {
+		return res
+	}
+	if x := findIn(r.V.Rules, snoozeRule); x.When.eval(r.T, x.Armed, now) == yes {
+		fire(r, x.ID, true, now, &res)
+	}
+	return res
+}

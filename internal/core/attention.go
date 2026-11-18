@@ -53,7 +53,9 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 	}
 	asking := len(t.Decisions) > 0
 	if until, since := SnoozeOf(v); until != nil && until.After(now) {
-		woke := false
+		// V0.185: until work is done never hides a request, whatever its age.
+		bound := SnoozedWhenDone(v)
+		woke := bound && WorkOver(t)
 		for _, d := range t.Decisions {
 			if d.CreatedAt.After(*since) {
 				woke = true
@@ -63,6 +65,9 @@ func Compute(t *Thread, v *View, now time.Time) Attention {
 			woke = true
 		}
 		if !woke {
+			if bound {
+				return Attention{Snoozed, SnoozedSec, "until work is done"}
+			}
 			return Attention{Snoozed, SnoozedSec, "until " + until.Format(time.RFC3339)}
 		}
 	}

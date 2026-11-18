@@ -72,7 +72,7 @@ function base(id: string, title: string, now: number, ageMin: number, extra: Par
     source: "fyr",
     attention: { state: "seen", section: "seen", reason: "" },
     view: { seenAt: null, snoozeUntil: null },
-    unavailable: {},
+    unavailable: extra.running ? {} : { "thread.snoozeWhenDone": "Nothing is working" },
     ...extra,
   };
 }
@@ -81,7 +81,7 @@ function task(id: string, description: string, status: TaskDTO["status"], now: n
   return { id, description, type: "local_agent", status, activity: "", summary: "", toolUses: 0, tokens: 0, startedAt: iso(now - startedMin * 60_000), updatedAt: iso(now - Math.max(0, startedMin - 1) * 60_000), ...extra };
 }
 
-const NOT_RUNNING = { "thread.interrupt": "No run is going", "thread.retry": "Nothing failed" };
+const NOT_RUNNING = { "thread.interrupt": "No run is going", "thread.retry": "Nothing failed", "thread.snoozeWhenDone": "Nothing is working" };
 /** V0.101: the needs the mock host left out while the owner parked them (Undo brings them back). */
 const parkedNeeds = new Map<string, NonNullable<Change["need"]>>();
 
@@ -424,6 +424,13 @@ function fullFixture(now: number): Fixture {
       attention: { state: "snoozed", section: "snoozed", reason: "until tomorrow 06:00" },
       view: { seenAt: null, snoozeUntil: iso(now + 20 * 3600_000) },
       unavailable: NOT_RUNNING,
+    }),
+  );
+  add(
+    base("t_z3", "Refactor the billing importer", now, 120, {
+      attention: { state: "snoozed", section: "snoozed", reason: "until work is done" },
+      running: true,
+      view: { seenAt: null, snoozeUntil: iso(now + 22 * 3600_000), snoozeWhenDone: true },
     }),
   );
   add(
@@ -1349,6 +1356,10 @@ export function createMockServer(scenario: string, real0: number): MockServer {
       case "thread.snooze":
         idle("snoozed", "snoozed", { view: { snoozeUntil: String(args.until) }, pinnedAt: null });
         break;
+      case "thread.snoozeWhenDone": // V0.185
+        if (!t.running) return { ok: false, error: "Nothing is working" };
+        put(t, { attention: { state: "snoozed", section: "snoozed", reason: "until work is done" }, view: { seenAt: null, snoozeUntil: new Date(clock() + 24 * 3600_000).toISOString(), snoozeWhenDone: true }, pinnedAt: null });
+        break;
       case "thread.unsnooze":
         idle("seen", "seen", { view: { snoozeUntil: null } });
         break;
@@ -1484,6 +1495,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         actions: [
           { name: "thread.settle", label: "Settle", key: "e", bulk: true },
           { name: "thread.snooze", label: "Snooze", key: "s" },
+          { name: "thread.snoozeWhenDone", label: "Snooze until work is done" },
           { name: "thread.archive", label: "Archive", key: "#" },
         ],
         profiles: [

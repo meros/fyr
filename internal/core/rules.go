@@ -145,6 +145,7 @@ const (
 	WhenNoDecisions = "noDecisions"   // no question or approval waits
 	WhenMoved       = "changeMoved"   // anchored: {change}: the change's phase, conditions or evidence moved since the last firing
 	WhenEnded       = "changeEnded"   // {change}: the change ended (abandoned or reverted)
+	WhenWorkOver    = "workOver"      // V0.185: no work goes on, or the thread needs the owner
 )
 
 // AgentWhens are the kinds the agent may use in its own Rules.
@@ -219,6 +220,8 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 		return truth(!t.Running && t.Failure == nil)
 	case WhenNoDecisions:
 		return truth(len(t.Decisions) == 0)
+	case WhenWorkOver:
+		return truth(WorkOver(t))
 	}
 	c := FindChange(t, w.Change)
 	if c == nil {
@@ -484,6 +487,9 @@ func due(r Rec, now time.Time) (string, bool) {
 		}
 		for i := range rules {
 			x := &rules[i]
+			if view && x.When.workBound() {
+				continue // V0.185: wakeWhenDone, at the end of Reduce
+			}
 			suspend(x, r.T, now)
 			if x.Status != RuleArmed || (x.RetryAt != nil && now.Before(*x.RetryAt)) {
 				continue
@@ -593,9 +599,16 @@ func SnoozeOf(v *View) (until, at *time.Time) {
 	if v == nil {
 		return nil, nil
 	}
-	if r := findIn(v.Rules, snoozeRule); r != nil && r.When.At != nil {
-		u, a := *r.When.At, r.ArmedAt
-		return &u, &a
+	r := findIn(v.Rules, snoozeRule)
+	if r == nil {
+		return nil, nil
+	}
+	// V0.185: until work is done, the end is the Condition's maximum time.
+	for _, w := range append([]When{r.When}, r.When.Any...) {
+		if w.At != nil {
+			u, a := *w.At, r.ArmedAt
+			return &u, &a
+		}
 	}
 	return nil, nil
 }

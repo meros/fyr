@@ -75,6 +75,9 @@ type View struct {
 	*core.View
 	SnoozeUntil *time.Time `json:"snoozeUntil,omitempty"`
 	SnoozedAt   *time.Time `json:"snoozedAt,omitempty"`
+	// SnoozeWhenDone: the snooze lasts until work is done (V0.185);
+	// SnoozeUntil is then its maximum time.
+	SnoozeWhenDone bool `json:"snoozeWhenDone,omitempty"`
 }
 
 // NewProject is what "New project from this thread" starts with (SPEC 0.5

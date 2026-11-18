@@ -107,6 +107,9 @@ type Conversation struct {
 	MachineWait *MachineWait `json:"machineWait,omitempty"`
 	// Handover is set while the thread moves to another profile (V0.45).
 	Handover *Handover `json:"handover,omitempty"`
+	// SlotQueued: the thread has a place in the host's queue for heavy jobs
+	// (V0.185). The pool owns the queue; this copy is what Conditions read.
+	SlotQueued bool `json:"slotQueued,omitempty"`
 }
 
 // ViewOn reports that the agent keeps a live view (V0.37).
