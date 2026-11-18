@@ -311,9 +311,10 @@ export function flatOrder(sec: Sections, limits?: Partial<Record<SectionKey, num
   return ids;
 }
 
-/** Search: the query (any case, padded or not) in the title, the project or `#<PR number>`. */
+/** Search: every word of the query (any case, any order; V0.ai-search) in the title, the project or `#<PR number>`. */
 export function matchesQuery(t: Thread, q: string): boolean {
-  return `${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase().includes(q.trim().toLowerCase());
+  const text = `${t.title} ${t.project} ${t.pr ? "#" + t.pr.number : ""}`.toLowerCase();
+  return q.toLowerCase().split(/\s+/).every((w) => text.includes(w));
 }
 
 export function isAvailable(t: Thread | undefined, action: string): boolean {

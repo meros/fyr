@@ -28,6 +28,7 @@ import { describeEffect } from "./effects.ts";
 import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
+import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
 import { ThreadOffers } from "./offers-ui.tsx";
 import { changeChip, headerPr } from "./offers.ts";
 import { SETTLE_DONE_HINT, seenToggle, settleDoneEntry } from "./menu.ts";
@@ -730,18 +731,41 @@ function MSearch(p: PhoneProps) {
   const needle = q.trim().toLowerCase();
   const hits = needle ? all.filter((t) => matchesQuery(t, needle)).slice(0, 200) : [];
   const quietHits = needle ? Object.values(p.inbox.all).filter((t) => !p.inbox.searchable[t.id] && matchesQuery(t, needle)).length : 0;
+  const ai = useAiSearch(q, all);
   return (
     <div class="m-screen">
-      <div class="m-ih">
-        <label class="m-sfield">
+      <div class="m-ih m-sh">
+        <form
+          class="m-sfield"
+          role="search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            ref.current?.blur(); // the keyboard's Search key: the answer needs the room the keyboard takes
+            ai.run();
+          }}
+        >
           {I.search}
-          <input ref={ref} type="search" value={q} placeholder="Search threads" aria-label="Search threads" onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
-        </label>
+          <input ref={ref} type="search" enterKeyHint="search" value={q} placeholder="Search threads" aria-label="Search threads" onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+          {q && (
+            <button
+              type="button"
+              class="m-sclear"
+              aria-label="Clear the search"
+              onClick={() => {
+                setQ("");
+                ref.current?.focus();
+              }}
+            >
+              {I.close}
+            </button>
+          )}
+        </form>
       </div>
       <div class="m-list">
         {quietHits > 0 && <QuietGate now={p.now} unlock={p.inbox.unlock} what="search" />}
-        {needle && hits.length === 0 && !quietHits && <div class="m-empty">No thread matches “{q}”.</div>}
-        {!needle && <div class="m-empty">Titles, projects and PR numbers.</div>}
+        <AiSearchPanel ai={ai} onOpen={(id) => p.nav.go({ screen: { name: "thread", id }, sheet: null })} />
+        {needle && hits.length === 0 && !quietHits && <div class="m-empty">No title or project has “{q.trim()}”.</div>}
+        {!needle && <div class="m-empty">Find a thread by its title, project or PR number, or describe it and ask AI.</div>}
         {hits.map((t) => (
           <MRow key={t.id} t={t} p={p} needs={false} />
         ))}

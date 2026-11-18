@@ -92,6 +92,8 @@ export interface Api {
   filePatch(host: string, threadId: string, path: string, since?: string): Promise<FilePatchDTO>;
   /** The PR tab (V0.43): the thread's PR as the host reads it; fresh skips the host's 30 s cache. */
   prDetail(host: string, threadId: string, fresh?: boolean): Promise<PrReply>;
+  /** V0.ai-search: the host's threads among `ids` (its own ids) that fit the owner's words, best first. Throws with the reason. */
+  searchThreads(host: string, query: string, ids: string[], signal?: AbortSignal): Promise<SearchHit[]>;
   /** The host folder picker (V0.42); every path stays inside the owner's home folder. */
   fsList(host: string, path: string): Promise<FsListing>;
   fsRecent(host: string): Promise<FsDir[]>;
@@ -154,6 +156,12 @@ async function getJson<T>(path: string): Promise<T> {
   const j = (await r.json().catch(() => ({}))) as T & { error?: string };
   if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
   return j;
+}
+
+/** V0.ai-search: a thread the model picked (the host's own id) and what in it fits. */
+export interface SearchHit {
+  id: string;
+  why?: string;
 }
 
 export type UploadResult = { ok: true; reply: UploadReply } | { ok: false; status: number | null; error?: string };
@@ -606,6 +614,12 @@ function createHttpApi(): Api {
           }),
       );
       return seen.find((x) => x !== null) ?? null;
+    },
+    async searchThreads(host, query, ids, signal) {
+      const r = await fetch(hostPath(host, "/search"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ query, ids }), signal });
+      const j = (await r.json().catch(() => ({}))) as { hits?: SearchHit[]; error?: string };
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      return j.hits ?? [];
     },
     async prDetail(host, threadId, fresh) {
       try {

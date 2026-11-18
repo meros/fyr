@@ -17,6 +17,22 @@
 /* inbox header */
 .m-ih{flex:none;display:flex;align-items:center;height:52px;padding:0 4px 0 16px;background:var(--raised);min-width:0}
 .m-ih.sel{padding-left:4px;border-bottom:1px solid var(--line)}
+/* V0.ai-search: the search field. 16px text: a smaller field makes iOS zoom the page on focus. */
+.m-ih.m-sh{height:60px;padding:0 12px}
+.m-sfield{flex:1;min-width:0;display:flex;align-items:center;gap:8px;height:44px;padding:0 4px 0 12px;border-radius:12px;background:var(--sunken);color:var(--ink-muted)}
+.m-sfield:focus-within{box-shadow:0 0 0 2px var(--harbour)}
+.m-sfield>svg{flex:none;width:20px;height:20px}
+.m-sfield input{flex:1;min-width:0;height:100%;border:0;outline:0;padding:0;background:transparent;color:var(--ink);font:400 16px/22px var(--ui);appearance:none;-webkit-appearance:none}
+.m-sfield input::placeholder{color:var(--ink-muted);opacity:1}
+.m-sfield input::-webkit-search-cancel-button{display:none}
+.m-sclear{flex:none;width:36px;height:36px;display:grid;place-items:center;color:var(--ink-muted)}
+.m-sclear svg{width:18px;height:18px}
+.m-list .ais{margin:0 0 8px}
+.m-list .ais-ask{min-height:52px;border-radius:12px;font-size:15px;line-height:20px}
+.m-list .ais-hit{padding:10px 12px;border-radius:12px}
+.m-list .ais-t{font-size:15px;line-height:20px}
+.m-list .ais-w,.m-list .ais-note{font-size:13px;line-height:18px}
+.m-list .ais-x{min-height:44px;font-size:14px}
 .m-brand{display:flex;align-items:center;flex:none}
 .m-brand img{display:block;width:28px;height:28px}
 .m-conn{display:flex;min-width:0;align-items:center;gap:6px;margin-left:10px;font:400 13px/16px var(--mono);color:var(--ink-muted);flex:0 1 auto}

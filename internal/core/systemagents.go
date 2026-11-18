@@ -19,6 +19,7 @@ const (
 	JobTitle    = "title"    // V0.108: Regenerate title
 	JobSetup    = "setup"    // the project setup run: icon, colour and name
 	JobQuestion = "question" // V0.210: does a turn's end wait on the owner
+	JobSearch   = "search"   // V0.ai-search: which threads fit the owner's words
 )
 
 // SystemJob is one kind of call Fyr starts itself.
@@ -28,7 +29,7 @@ type SystemJob struct {
 }
 
 // SystemJobs are the jobs in the order Settings lists them.
-var SystemJobs = []SystemJob{{JobTitle, "Thread titles"}, {JobSetup, "Project setup"}, {JobQuestion, "Questions in text"}}
+var SystemJobs = []SystemJob{{JobTitle, "Thread titles"}, {JobSetup, "Project setup"}, {JobQuestion, "Questions in text"}, {JobSearch, "Thread search"}}
 
 // IsSystemJob says whether Fyr knows the job.
 func IsSystemJob(id string) bool {

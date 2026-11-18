@@ -200,6 +200,7 @@ func (s *Server) routes(mcp bool) http.Handler {
 	mux.HandleFunc("GET /api/quota", s.quota)
 	mux.HandleFunc("GET /api/load", s.load)
 	mux.HandleFunc("POST /api/board/visit", s.boardVisit)
+	mux.HandleFunc("POST /api/search", s.search)
 	// V0.102: the repos and the owner's auto-merge setting of each.
 	mux.HandleFunc("GET /api/autoMerge", func(w http.ResponseWriter, r *http.Request) { api.WriteJSON(w, 200, s.Engine.AutoMergeRepos()) })
 	// V0.111: the owner's auto-deploy setting.
@@ -894,6 +895,29 @@ func (s *Server) fsRoutes(mux *http.ServeMux) {
 }
 
 // quota answers GET /api/quota (V0.44): due providers are read, at most 8 s.
+// search answers POST /api/search (V0.ai-search): the threads of this host
+// that fit the owner's words. The request's context ends the model call when
+// the client gives up.
+func (s *Server) search(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		Query string   `json:"query"`
+		IDs   []string `json:"ids"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&q); err != nil {
+		api.WriteJSON(w, 400, map[string]any{"error": "bad JSON: " + err.Error()})
+		return
+	}
+	hits, err := s.Engine.SearchThreads(r.Context(), q.Query, q.IDs)
+	switch {
+	case errors.Is(err, engine.ErrSearchBusy):
+		api.WriteJSON(w, 429, map[string]any{"error": err.Error()})
+	case err != nil:
+		api.WriteJSON(w, 502, map[string]any{"error": err.Error()})
+	default:
+		api.WriteJSON(w, 200, map[string]any{"hits": hits})
+	}
+}
+
 func (s *Server) quota(w http.ResponseWriter, r *http.Request) {
 	if s.Quota == nil {
 		api.WriteJSON(w, 200, []any{})

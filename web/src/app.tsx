@@ -376,6 +376,11 @@ function App() {
   const filtered = useMemo(() => applyFilters(store.threads, filterSel, store.projects, store.host ?? ""), [store.threads, store.projects, filterSel, store.host]);
   // What search and the filter may reach: quiet threads only while the unlock runs (V0.114; V0.46 (4) showed them).
   const searchable = useMemo(() => reachable(filtered, Date.now() + store.clockOffset, unlock.showUntil), [filtered, unlock.showUntil, quietClock, store.clockOffset]);
+  // V0.ai-search: what AI search reads, in the list's order.
+  const searchList = useMemo(() => {
+    const sec = sections(searchable);
+    return SECTIONS.flatMap((s) => sec[s.key]);
+  }, [searchable]);
   // V0.114: search hits the lock leaves out, so the search says why and offers the hold (desktop).
   const quietHits = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1739,6 +1744,7 @@ function App() {
           expanded={expanded}
           query={query}
           searchRef={searchRef}
+          searchable={searchList}
           onQuery={setQuery}
           onToggle={toggleSection}
           autoHideAt={hideShown}
