@@ -3467,7 +3467,7 @@ section('V0.189', async (h) => {
     await key("E", "KeyE", 8);
     await waitFor(`${sentFor} === 1`, { what: "the picked unread thread to settle" });
   } catch (e) {
-    failures.push(`V0.188 desktop: ${e.message}`);
+    failures.push(`V0.189 desktop: ${e.message}`);
   }
   try {
     await openScreen({ url: "?mock=rail" }, 390, 844);
@@ -3509,7 +3509,7 @@ section('V0.189', async (h) => {
     await evaluate(`document.querySelector('.m-selbar .m-bt.p').click()`);
     await waitFor(`${sentFor} === 1`, { what: "the picked unread thread to settle" });
   } catch (e) {
-    failures.push(`V0.188 phone: ${e.message}`);
+    failures.push(`V0.189 phone: ${e.message}`);
   }
 });
 
