@@ -425,37 +425,63 @@ func init() {
 			return nil, nil
 		}})
 
+	// V0.203: Settle settles, now, whatever the thread is doing. A settled
+	// thread does not run: a live run is stopped and the messages the agent
+	// has not read are withdrawn. Args{"now": true} is the bulk form, which
+	// leaves pinned and running threads alone.
 	register(&Action{Name: "thread.settle", Label: "Settle", Key: "e", Bulk: true,
 		Available: func(t *Thread, v *View, now time.Time) string {
 			if t.Settle.At != nil {
 				return "Already settled"
 			}
-			if settlesWhenDoneByOwner(t) { // V0.106: the agent's rule on a pinned thread does not count
-				return "Settles when the run ends"
-			}
 			return notArchived(t, v, now)
 		},
-		// SPEC 13.1 `e`: running → settle when done; idle with an open PR →
-		// settle when merged; else now. Args{"now": true} (bulk, U11) settles now.
 		Apply: func(t *Thread, v *View, a Args, now time.Time) ([]Effect, error) {
-			force, _ := a["now"].(bool)
-			if force && t.PinnedAt != nil {
+			bulk, _ := a["now"].(bool)
+			if bulk && t.PinnedAt != nil {
 				// V0.162: a bulk settle skips a pinned thread; only the
 				// thread's own Settle (or unpin) lets it go.
 				return nil, reject(RejectConflict, "A pinned thread settles only by its own Settle")
 			}
-			if t.Running { // also for bulk: a live run is never hidden as settled
-				SettleWhenDone(t, ByOwner, now)
-				return nil, nil
+			if bulk && t.Running {
+				return nil, reject(RejectConflict, "A running thread settles only by its own Settle")
 			}
-			if !force && !SettlesWhenMerged(t) && SettleWhenMerged(t, ByOwner, now) {
-				v.SeenAt = now
-				return nil, nil
+			var fx []Effect
+			for _, m := range t.Outbox {
+				fx = append(fx, Effect{Kind: EffectCancelMessage, MessageID: m.ID})
+			}
+			if t.Running {
+				fx = append(fx, Effect{Kind: EffectInterrupt})
 			}
 			settleNow(t, now)
 			t.Failure = nil
 			v.SeenAt = now
 			Unsnooze(v)
+			return fx, nil
+		}})
+
+	// V0.203: the explicit wait. The thread settles when its work is done
+	// (WorkDone). Off with a reason when there is nothing it could wait for.
+	register(&Action{Name: "thread.settleWhenDone", Label: "Settle when done",
+		Available: func(t *Thread, v *View, now time.Time) string {
+			if t.Settle.At != nil {
+				return "Already settled"
+			}
+			if r := notArchived(t, v, now); r != "" {
+				return r
+			}
+			switch {
+			case settlesWhenDoneByOwner(t):
+				return "Already set"
+			case t.Failure != nil:
+				return "The last run failed"
+			case WorkDone(t):
+				return SettleDoneIdle
+			}
+			return ""
+		},
+		Apply: func(t *Thread, _ *View, _ Args, now time.Time) ([]Effect, error) {
+			SettleWhenDone(t, ByOwner, now)
 			return nil, nil
 		}})
 

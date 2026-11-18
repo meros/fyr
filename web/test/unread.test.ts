@@ -77,8 +77,8 @@ test("a pinned unread thread is in the pinned block, and Unread still holds it",
 test("a sweep leaves Unread alone and says so; threads picked one by one settle even when unread", () => {
   const pin = { pinnedAt: "2026-11-17T09:00:00Z" };
   const ts = [seen("s"), unread("u"), seen("p", pin), unread("up", pin)];
-  assert.deepEqual(bulkSettle(ts, true), { ids: ["s"], kept: 2, unread: 1 }, "⇧E on a section");
-  assert.deepEqual(bulkSettle(ts), { ids: ["s", "u"], kept: 2, unread: 0 }, "the owner's own picks");
+  assert.deepEqual(bulkSettle(ts, true), { ids: ["s"], kept: 2, unread: 1, running: 0 }, "⇧E on a section");
+  assert.deepEqual(bulkSettle(ts), { ids: ["s", "u"], kept: 2, unread: 0, running: 0 }, "the owner's own picks");
   assert.equal(bulkSettleText(0, 0, 2), "Nothing settled; 2 unread threads kept");
   assert.equal(bulkSettleText(3, 0, 1), "Settled 3 threads; 1 unread thread kept");
   assert.equal(bulkSettleText(3, 1, 1), "Settled 3 threads; 1 pinned and 1 unread threads kept");

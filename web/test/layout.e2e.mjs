@@ -3200,7 +3200,7 @@ const SETTLE_ROWS = [
   ["t_triage", "Triage sprint issues", "unread", "leaves"], // done, not looked at (V0.189)
   ["t_e2e", "Speed up e2e suite", "needs", "leaves"], // failed
   ["t_nix", "Nix flake update", "seen", "leaves"], // idle
-  ["t_babysit", "Babysit PR #4170", "working", "waits"], // running: settles when the run ends (V0.106)
+  ["t_babysit", "Babysit PR #4170", "working", "leaves"], // running: Settle stops the run and settles (V0.203)
 ];
 for (const [front, w, hh] of [["desktop", 1280, 800], ["phone", 390, 844]]) section(`V0.31 settle from a row ${front}`, async ({ send, evaluate, waitFor, settle, navigate, openScreen }) => {
   const ctx = `V0.31 settle from a row (${front})`;

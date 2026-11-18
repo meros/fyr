@@ -42,12 +42,9 @@ test("bottom bar on Inbox and Search only, never while selecting", () => {
 
 test("U8: settle or archive of the open thread returns to the inbox, unless it stays open", async () => {
   const { leavesThread } = await import("../src/nav.ts");
-  assert.equal(leavesThread("settle", { running: false, pr: null }), true);
-  assert.equal(leavesThread("settle", { running: true }), false, "settle when done keeps it open");
-  assert.equal(leavesThread("settle", { running: false, pr: { state: "OPEN" } }), false, "settle when merged keeps it open");
-  assert.equal(leavesThread("settle", { running: false, pr: { state: "MERGED" } }), true);
-  assert.equal(leavesThread("archive", { running: true }), true);
-  assert.equal(leavesThread("settle", undefined), false);
+  assert.equal(leavesThread({ running: true }), true, "V0.203: Settle always settles");
+  assert.equal(leavesThread({ pr: { state: "OPEN" } }), true);
+  assert.equal(leavesThread(undefined), false);
 });
 
 // SPEC 0.5 V0.50: Settings has its own URL; Back leaves it for the inbox.

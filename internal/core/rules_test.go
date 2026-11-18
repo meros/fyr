@@ -72,6 +72,7 @@ func TestAgentRuleRemoveAndCheck(t *testing.T) {
 	if _, _, _, err := Reduce(th, v, Input{Source: FromAgent, Kind: KindRuleArm, Args: RuleArmArgs{ID: "w_2", Then: "notify", When: When{Kind: WhenReached, Change: "nope", Phase: PhaseLanded}}}, ct0); err == nil {
 		t.Fatal("a watch on an unknown change was armed")
 	}
+	RunStarted(th, ct0)
 	SettleWhenDone(th, ByOwner, ct0)
 	if _, _, _, err := Reduce(th, v, Input{Source: FromAgent, Kind: KindRuleRemove, Args: settleDoneRule}, ct0); err == nil {
 		t.Fatal("the agent removed the owner's Rule")

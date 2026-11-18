@@ -131,3 +131,44 @@ func TestDecodeThreadBefore33(t *testing.T) {
 		t.Fatalf("the new shape does not round-trip: %v %+v", err, again)
 	}
 }
+
+// V0.203: "settle when done" waits for the work itself: the run, an open
+// question and every open PR. It fires in the Reduce that ends the last one.
+func TestSettleWhenDoneWaitsForTheWork(t *testing.T) {
+	th, v := &Thread{ID: "t_1", ActivityAt: ct0}, &View{SeenAt: ct0}
+	clock := func() { step(t, th, v, Input{Source: Observer(ObsClock), Kind: KindClock}, ct0) }
+	PRObserved(th, PR{URL: "https://github.com/o/r/pull/1", State: "OPEN", Checks: ChecksPass}, ct0)
+	RunStarted(th, ct0)
+	step(t, th, v, Input{Source: FromOwner, Kind: "thread.settleWhenDone"}, ct0)
+	if !SettlesWhenDone(th) || th.Settle.At != nil {
+		t.Fatalf("armed %v, settled %v", SettlesWhenDone(th), th.Settle.At)
+	}
+	if r := Registry["thread.settleWhenDone"].Available(th, v, ct0); r != "Already set" {
+		t.Fatalf("a second press: %q", r)
+	}
+	if r := Registry["thread.settle"].Available(th, v, ct0); r != "" {
+		t.Fatalf("Settle must stay available: %q", r)
+	}
+	RunEnded(th, nil, ct0)
+	clock()
+	if th.Settle.At != nil {
+		t.Fatal("settled with its PR open")
+	}
+	th.Changes[0].PR.State = "MERGED"
+	clock()
+	if th.Settle.At == nil || Settling(th) {
+		t.Fatalf("the merge did not settle: %+v %+v", th.Settle, th.Rules)
+	}
+}
+
+// V0.203: with nothing to wait for the action is off, with the reason.
+func TestSettleWhenDoneNeedsSomethingToWaitFor(t *testing.T) {
+	th, v := &Thread{ID: "t_1"}, &View{}
+	if r := Registry["thread.settleWhenDone"].Available(th, v, ct0); r != SettleDoneIdle {
+		t.Fatalf("idle thread: %q", r)
+	}
+	th.Failure = &Failure{Class: "api", Message: "x", At: ct0}
+	if r := Registry["thread.settleWhenDone"].Available(th, v, ct0); r != "The last run failed" {
+		t.Fatalf("failed thread: %q", r)
+	}
+}

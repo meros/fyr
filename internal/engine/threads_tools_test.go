@@ -206,7 +206,9 @@ func TestSettleWhenOnAPinnedThreadSaysItWaits(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	a := h.create("coordinator")
 	h.wait(a, "done", state(core.Done))
-	if out, _ := callAs(t, h.e, a, "settle_when", map[string]any{"condition": "done"}); strings.Contains(out, "pinned") {
+	b := h.create("other")
+	h.wait(b, "done", state(core.Done))
+	if out, _ := callAs(t, h.e, b, "settle_when", map[string]any{"condition": "done"}); strings.Contains(out, "pinned") {
 		t.Fatalf("an unpinned thread got the pin note: %q", out)
 	}
 	if r := h.cmd("thread.pin", a, nil); !r.OK {

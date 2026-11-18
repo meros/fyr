@@ -86,14 +86,10 @@ export function backTarget(n: Nav): Nav | null {
 
 /**
  * U8 (phone): settling or archiving the open thread returns to the inbox, through Back so the thread entry
- * is popped. "Settle when done" (a run is going) and "settle when merged" (an open PR) keep the thread open.
+ * is popped. V0.203: Settle always settles, so both always leave.
  */
-export function leavesThread(action: "settle" | "archive", t: { running?: boolean; pr?: { state?: string } | null } | undefined): boolean {
-  if (!t) return false;
-  if (action === "archive") return true;
-  if (t.running) return false;
-  if (t.pr && (t.pr.state ?? "OPEN") === "OPEN") return false;
-  return true;
+export function leavesThread(t: unknown): boolean {
+  return !!t;
 }
 
 /** The bottom bar shows on Inbox and Search only. */

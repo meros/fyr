@@ -23,11 +23,17 @@ const (
 // approval or a merge ask, a failure, an agent that does not respond, a
 // change that is ready or stopped on a failure, a Run card.
 func NeedsOwner(t *Thread) bool {
-	if len(t.Decisions) > 0 || t.Failure != nil || t.Unresponsive != nil || PendingRequest(t) != nil {
+	if NeedsOwnerNow(t) {
 		return true
 	}
 	_, n := ThreadNeed(t)
 	return n != nil
+}
+
+// NeedsOwnerNow is NeedsOwner without the changes: a question, an approval or
+// a merge ask, a failure, an agent that does not respond, a Run card.
+func NeedsOwnerNow(t *Thread) bool {
+	return len(t.Decisions) > 0 || t.Failure != nil || t.Unresponsive != nil || PendingRequest(t) != nil
 }
 
 // WorkGoing reports that the thread's work goes on by itself: a run or a
@@ -36,13 +42,18 @@ func NeedsOwner(t *Thread) bool {
 // waits on something it set up: a watch or settle condition of its own, a
 // place in the slot queue, a merge ask held for CI, CI on an open PR.
 func WorkGoing(t *Thread) bool {
+	return workGoing(t, func(Rule) bool { return true })
+}
+
+// workGoing is WorkGoing, counting the agent's armed Rules that counts takes.
+func workGoing(t *Thread, counts func(Rule) bool) bool {
 	if t.Running || t.RunningTasks() > 0 || t.MachineWait != nil || t.Handover != nil || len(t.Outbox) > 0 {
 		return true
 	}
 	if t.SlotQueued || len(t.HeldAsks) > 0 {
 		return true
 	}
-	if slices.ContainsFunc(t.Rules, func(r Rule) bool { return r.CreatedBy == ByAgent && r.Status == RuleArmed }) {
+	if slices.ContainsFunc(t.Rules, func(r Rule) bool { return r.CreatedBy == ByAgent && r.Status == RuleArmed && counts(r) }) {
 		return true
 	}
 	if t.wakeable() && slices.ContainsFunc(t.Feed.Queue, func(n Notice) bool { return n.Urgency == Wake && !n.Self }) {
@@ -78,6 +89,11 @@ func SnoozeWhenDone(v *View, now time.Time) {
 // workBound reports a Condition that reads workOver.
 func (w When) workBound() bool {
 	return w.Kind == WhenWorkOver || slices.ContainsFunc(w.Any, When.workBound)
+}
+
+// doneBound reports a Condition that reads workDone.
+func (w When) doneBound() bool {
+	return w.Kind == WhenWorkDone || slices.ContainsFunc(w.All, When.doneBound)
 }
 
 // SnoozedWhenDone reports that the armed snooze is the one until work is done.

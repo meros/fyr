@@ -21,6 +21,7 @@ import { effortsFor, offLabel, startEffort } from "./providers.ts";
 import { dividerLine, rungDone } from "./handover.ts";
 import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
+import { SETTLE_DONE_HINT, settleDoneEntry } from "./menu.ts";
 import { hostChip, hostOf, offlineLine, profilesOfHost } from "./hosts.ts";
 import { useHosts } from "./host-pick-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
@@ -70,6 +71,8 @@ export interface ThreadPaneProps {
   onAllow(d: Decision, allow: boolean): void;
   onRun(action: string, args?: Record<string, unknown>): void;
   onSnooze(): void;
+  /** V0.203: arms "settle when done", or cancels it when armed */
+  onSettleWhenDone?(): void;
   onSend(args: SendArgs): Promise<boolean>;
   onAtEnd(atEnd: boolean): void;
   onFocusZone(): void;
@@ -145,10 +148,10 @@ export function ThreadPane(p: ThreadPaneProps) {
             <button class="btn" disabled={!!snoozeReason} title={snoozeReason ?? "Snooze (s)"} onClick={p.onSnooze}>
               Snooze <kbd>s</kbd>
             </button>
-            <button class="btn" disabled={!!settleReason} title={settleReason ?? (t.running ? "Settle when done (e)" : "Settle (e)")} onClick={() => p.onRun("thread.settle")}>
+            <button class="btn" disabled={!!settleReason} title={settleReason ?? (t.running ? "Settle now and stop the run (e)" : "Settle now (e)")} onClick={() => p.onRun("thread.settle")}>
               Settle <kbd>e</kbd>
             </button>
-            {p.onMoveProject && <ThreadMenu onMove={p.onMoveProject} liveView={!!t.liveView} onLiveView={() => p.onRun("thread.setView", { on: !t.liveView })} onHandover={p.onHandover} handoverReason={unavailableReason(t, "thread.handover")} onRegenerateTitle={p.onRegenerateTitle} regenerateReason={unavailableReason(t, "thread.regenerateTitle")} />}
+            {p.onMoveProject && <ThreadMenu settleDone={settleDoneEntry(t).label} settleDoneReason={unavailableReason(t, settleDoneEntry(t).action)} onSettleDone={p.onSettleWhenDone} onMove={p.onMoveProject} liveView={!!t.liveView} onLiveView={() => p.onRun("thread.setView", { on: !t.liveView })} onHandover={p.onHandover} handoverReason={unavailableReason(t, "thread.handover")} onRegenerateTitle={p.onRegenerateTitle} regenerateReason={unavailableReason(t, "thread.regenerateTitle")} />}
           </div>
         </div>
         <div class="chips">
@@ -286,7 +289,7 @@ export function ThreadTabBody({ t, tab, setTab, events, now, onAtEnd, onEarlier,
 }
 
 /** The thread ⋯ menu (V0.26): opens on click or Enter, arrows move, Esc closes and returns focus. */
-function ThreadMenu({ onMove, liveView, onLiveView, onHandover, handoverReason, onRegenerateTitle, regenerateReason }: { onMove(): void; liveView: boolean; onLiveView(): void; onHandover?: () => void; handoverReason?: string; onRegenerateTitle?: () => void; regenerateReason?: string }) {
+function ThreadMenu({ settleDone, settleDoneReason, onSettleDone, onMove, liveView, onLiveView, onHandover, handoverReason, onRegenerateTitle, regenerateReason }: { settleDone: string; settleDoneReason?: string; onSettleDone?: () => void; onMove(): void; liveView: boolean; onLiveView(): void; onHandover?: () => void; handoverReason?: string; onRegenerateTitle?: () => void; regenerateReason?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
@@ -331,6 +334,13 @@ function ThreadMenu({ onMove, liveView, onLiveView, onHandover, handoverReason, 
             <span class="ell">Project…</span>
             <span />
           </button>
+          {onSettleDone && (
+            <button class="mi" role="menuitem" disabled={!!settleDoneReason} title={settleDoneReason ?? SETTLE_DONE_HINT} onClick={run(onSettleDone)}>
+              <span />
+              <span class="ell">{settleDone}</span>
+              <span />
+            </button>
+          )}
           <button class="mi" role="menuitem" onClick={run(onLiveView)}>
             <span />
             <span class="ell">{liveView ? "Turn off live view" : "Turn on live view"}</span>

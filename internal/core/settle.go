@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-// Settling (SPEC 13.1 `e` and `m`, V0.59 (7), #33, #46). A thread settles
-// now, or when a settle Rule fires: its run is done, or a change reached a
-// phase ("when merged" is the main change reaching landed). The owner and
+// Settling (SPEC 13.1 `e` and `m`, V0.59 (7), #33, #46, V0.203). Settle
+// settles now. A thread settles later only when a settle Rule was armed for
+// it: its work is done, or a change reached a phase ("when merged" is the main change reaching landed). The owner and
 // the agent may arm several; the first that fires settles the thread, and
 // settling clears them all. Each settle Rule also waits for idle: a
 // condition that holds while a run is live waits for the run to end, so a
@@ -28,10 +28,42 @@ func settleRule(id, about string, w When, by string) Rule {
 		Then: Then{Kind: KindRuleSettle}, After: AfterDisarm, CreatedBy: by}
 }
 
-// SettleWhenDone arms "settle when the current run ends without an open
-// question".
+// SettleDoneIdle is why "settle when done" is off on a thread with nothing
+// left to wait for: Settle does it now.
+const SettleDoneIdle = "Nothing to wait for"
+
+// SettleWhenDone arms "settle when the work is done" (V0.203, WorkDone).
 func SettleWhenDone(t *Thread, by string, now time.Time) {
-	ArmRule(t, settleRule(settleDoneRule, "", All(When{Kind: WhenRunEnded}, When{Kind: WhenNoDecisions}), by), now)
+	ArmRule(t, settleRule(settleDoneRule, "", When{Kind: WhenWorkDone}, by), now)
+}
+
+// WorkDone reports that nothing is left on the thread (V0.203): no work goes
+// on, nothing waits for the owner, and no PR is open. The thread's own settle
+// Rules do not count as work: they are what waits for this.
+func WorkDone(t *Thread) bool {
+	if NeedsOwnerNow(t) || workGoing(t, func(r Rule) bool { return r.Purpose != PurposeSettle }) {
+		return false
+	}
+	return !slices.ContainsFunc(t.Changes, func(c Change) bool {
+		return c.PR != nil && c.PR.State == "OPEN" && !c.Dismissed && !c.IsDone() && !c.Phase.Ended()
+	})
+}
+
+// settleWhenWorkDone fires "settle when done" when it holds. It runs last in
+// Reduce, as wakeWhenDone does: what ends the work is read only after the
+// merge asks are gated and the agent's notices are queued. A feed.take is
+// skipped: the notice has left the queue and its turn has not begun.
+func settleWhenWorkDone(r Rec, in Input, now time.Time) Result {
+	var res Result
+	x := FindRule(r.T, settleDoneRule)
+	if in.Kind == KindFeedTake || x == nil || !x.When.doneBound() {
+		return res
+	}
+	suspend(x, r.T, now)
+	if x.Status == RuleArmed && x.When.eval(r.T, x.Armed, now) == yes {
+		fire(r, x.ID, false, now, &res)
+	}
+	return res
 }
 
 // SettleWhenReached arms "settle when the change reaches phase", replacing

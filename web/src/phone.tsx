@@ -30,7 +30,7 @@ import { sendArgs } from "./attach.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import { ThreadOffers } from "./offers-ui.tsx";
 import { changeChip, headerPr } from "./offers.ts";
-import { seenToggle } from "./menu.ts";
+import { SETTLE_DONE_HINT, seenToggle, settleDoneEntry } from "./menu.ts";
 import { prChip } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
@@ -197,6 +197,8 @@ export interface PhoneDevice {
 export interface PhoneActions {
   /** `unreadKept`: the unread threads a Select all left out, for the toast (V0.189) */
   settle(ids: string[], bulk?: boolean, unreadKept?: number): void;
+  /** V0.203: arms "settle when done", or cancels it when armed */
+  settleWhenDone(id: string): void;
   archive(ids: string[]): void;
   markUnseen(id: string): void;
   create(a: NewThreadArgs): Promise<string | null>;
@@ -1403,6 +1405,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   const reason = (a: string) => unavailableReason(t, a);
   const avail = swipeAvail(t);
   const mark = seenToggle(t);
+  const done = settleDoneEntry(t);
   if (sheet.kind === "actions" || sheet.kind === "thread-menu") {
     const peek = sheet.kind === "actions";
     const d = currentDecision(t);
@@ -1437,6 +1440,8 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
           right={peek ? "swipe →" : undefined}
           onClick={after(() => p.actions.settle([t.id]))}
         />
+        {/* V0.203: the same entry as the desktop menus (settleDoneEntry) */}
+        <Item label={done.label} icon={<StateIcon state="settled" size={16} />} sub={reason(done.action) ?? (t.settleWhenDone ? undefined : SETTLE_DONE_HINT)} disabled={!!reason(done.action)} onClick={after(() => p.actions.settleWhenDone(t.id))} />
         <Item
           label="Snooze…"
           icon={<StateIcon state="snoozed" size={16} />}

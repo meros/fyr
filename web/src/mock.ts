@@ -73,7 +73,7 @@ function base(id: string, title: string, now: number, ageMin: number, extra: Par
     source: "fyr",
     attention: { state: "seen", section: "seen", reason: "" },
     view: { seenAt: null, snoozeUntil: null },
-    unavailable: extra.running ? {} : { "thread.snoozeWhenDone": "Nothing is working" },
+    unavailable: extra.running ? {} : { "thread.snoozeWhenDone": "Nothing is working", "thread.settleWhenDone": "Nothing to wait for" },
     ...extra,
   };
 }
@@ -82,7 +82,7 @@ function task(id: string, description: string, status: TaskDTO["status"], now: n
   return { id, description, type: "local_agent", status, activity: "", summary: "", toolUses: 0, tokens: 0, startedAt: iso(now - startedMin * 60_000), updatedAt: iso(now - Math.max(0, startedMin - 1) * 60_000), ...extra };
 }
 
-const NOT_RUNNING = { "thread.interrupt": "No run is going", "thread.retry": "Nothing failed", "thread.snoozeWhenDone": "Nothing is working" };
+const NOT_RUNNING = { "thread.interrupt": "No run is going", "thread.retry": "Nothing failed", "thread.snoozeWhenDone": "Nothing is working", "thread.settleWhenDone": "Nothing to wait for" };
 /** V0.101: the needs the mock host left out while the owner parked them (Undo brings them back). */
 const parkedNeeds = new Map<string, NonNullable<Change["need"]>>();
 
@@ -1350,8 +1350,11 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         break;
       case "thread.settle":
         if (args.now && t.pinnedAt) return { ok: false, error: "A pinned thread settles only by its own Settle" }; // V0.162
-        if (t.running) put(t, { settleWhenDone: true });
-        else idle("settled", "settled", { settledAt: new Date(clock()).toISOString(), pinnedAt: null });
+        if (args.now && t.running) return { ok: false, error: "A running thread settles only by its own Settle" }; // V0.203
+        idle("settled", "settled", { settledAt: new Date(clock()).toISOString(), pinnedAt: null, settleWhenDone: false });
+        break;
+      case "thread.settleWhenDone": // V0.203
+        put(t, { settleWhenDone: true });
         break;
       case "thread.unsettle":
         idle("seen", "seen", { settledAt: null, settleWhenDone: false });
@@ -1497,6 +1500,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         ...(MOCK_HOSTS ? { hosts: mockHosts(clock(), mockLabTrusted) } : {}),
         actions: [
           { name: "thread.settle", label: "Settle", key: "e", bulk: true },
+          { name: "thread.settleWhenDone", label: "Settle when done" },
           { name: "thread.snooze", label: "Snooze", key: "s" },
           { name: "thread.snoozeWhenDone", label: "Snooze until work is done" },
           { name: "thread.archive", label: "Archive", key: "#" },

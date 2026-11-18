@@ -275,7 +275,7 @@ func TestNoticeRules(t *testing.T) {
 			// merged", which leaves the thread awake; its notice never wakes it.
 			th = feedThread()
 			th.MainChange = th.Changes[0].ID
-			th, res = fstep(t, th, Input{Source: FromOwner, Kind: "thread.settle"}, ct0)
+			th, res = fstep(t, th, Input{Source: FromOwner, Kind: "thread.settleWhenMerged"}, ct0)
 			if n := queued(t, th, "owner:settle"); n.What != "The owner set this thread: settles when its PR merges." || !n.Self || wakes(res) {
 				t.Fatalf("settle when merged: %+v wakes=%v", n, wakes(res))
 			}

@@ -1,14 +1,14 @@
 // SPEC 0.5 V0.31: Fyr's own right-click menu, chosen by where the click lands.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { anchorMoved, menuFor, threadMenu, type MenuEntry } from "../src/menu.ts";
+import { anchorMoved, menuFor, settleDoneEntry, threadMenu, type MenuEntry } from "../src/menu.ts";
 import { thread } from "./helpers.ts";
 
 const labels = (m: MenuEntry[]) => m.map((x) => ("sep" in x ? "—" : x.label));
 
 test("a thread row gets the thread's actions in a fixed order", () => {
   const t = thread("t1", "seen", "seen");
-  assert.deepEqual(labels(threadMenu(t)), ["Open", "—", "Pin", "Settle", "Snooze…", "Mark unseen", "Archive", "—", "Project…", "Turn on live view", "Hand over…", "Regenerate title", "—", "Copy link"]); // V0.37 adds the live view, V0.45 the handover, V0.108 the title
+  assert.deepEqual(labels(threadMenu(t)), ["Open", "—", "Pin", "Settle", "Settle when done", "Snooze…", "Mark unseen", "Archive", "—", "Project…", "Turn on live view", "Hand over…", "Regenerate title", "—", "Copy link"]); // V0.37 adds the live view, V0.45 the handover, V0.108 the title
 });
 
 test("the menu follows the thread's state", () => {
@@ -77,4 +77,17 @@ test("a scroll closes the menu only when it moves what the menu was opened on", 
   assert.equal(anchorMoved(120, 80), true, "the list scrolled the row away");
   assert.equal(anchorMoved(null, 80), true, "no anchor: any scroll closes, as before");
   assert.equal(anchorMoved(120, null), false, "the row re-rendered; the menu still acts on the thread's id");
+});
+
+// V0.203: Settle says what it does, and the wait is its own entry that can be taken back.
+test("Settle and Settle when done are separate, explicit entries", () => {
+  const running = thread("r", "working", "working", { running: true });
+  assert.ok(labels(threadMenu(running)).includes("Settle and stop run"));
+  assert.ok(labels(threadMenu(running)).includes("Settle when done"));
+  const pr = thread("p", "seen", "seen", { pr: { url: "u", number: 1, state: "OPEN" } });
+  assert.ok(labels(threadMenu(pr)).includes("Settle"));
+  const armed = thread("a", "working", "working", { running: true, settleWhenDone: true });
+  assert.equal(settleDoneEntry(armed).action, "thread.unsettle");
+  assert.ok(labels(threadMenu(armed)).includes("Cancel settle when done"));
+  assert.ok(!labels(threadMenu(thread("s", "settled", "settled", { settledAt: "2026-01-01T00:00:00Z" }))).includes("Settle when done"));
 });

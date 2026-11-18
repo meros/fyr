@@ -330,7 +330,7 @@ const INVERSE: Record<UndoKind, string> = {
 };
 
 export function undoKindOf(action: string): UndoKind | null {
-  if (action === "thread.settle") return "settle";
+  if (action === "thread.settle" || action === "thread.settleWhenDone") return "settle";
   if (action === "thread.archive") return "archive";
   if (action === "thread.snooze" || action === "thread.snoozeWhenDone") return "snooze";
   return null;
@@ -351,22 +351,25 @@ export function recordUndo(kind: UndoKind, threadIds: string[], now: number, lab
  * pinned ones out: no settle, no unpin. `kept` counts the pinned threads it left. V0.189: a `sweep` (⇧E on a section) also
  * leaves Unread out, what the owner has not read is not swept away (`unread` counts them); threads the owner picked one
  * by one are their explicit choice and settle even when unread. */
-export function bulkSettle(threads: Thread[], sweep = false): { ids: string[]; kept: number; unread: number } {
+export function bulkSettle(threads: Thread[], sweep = false): { ids: string[]; kept: number; unread: number; running: number } {
   const ids: string[] = [];
   let kept = 0;
   let unread = 0;
+  let running = 0; // V0.203: only a thread's own Settle stops its run
   for (const t of threads) {
     if (isPinned(t)) kept++;
+    else if (t.running) running++;
     else if (sweep && sectionOf(t) === "unread") unread++;
     else if (isAvailable(t, "thread.settle")) ids.push(t.id);
   }
-  return { ids, kept, unread };
+  return { ids, kept, unread, running };
 }
 
 /** V0.189: the phone's Select all is a sweep: it picks every row but the unread ones (a pinned one stays picked, the
- *  settle counts it as pinned), so "Settle N" counts what it will settle and a row tapped afterwards is the owner's pick. */
+ *  settle counts it as pinned), so "Settle N" counts what it will settle and a row tapped afterwards is the owner's pick.
+ *  V0.203: a running row is left out too, a bulk settle does not take it. */
 export function selectAllIds(threads: Thread[]): string[] {
-  return threads.filter((t) => isPinned(t) || sectionOf(t) !== "unread").map((t) => t.id);
+  return threads.filter((t) => isPinned(t) || (!t.running && sectionOf(t) !== "unread")).map((t) => t.id);
 }
 
 /** V0.189: the unread threads a Select all left out and the owner has not picked since, for the toast. */
@@ -375,11 +378,11 @@ export function sweptUnread(threads: Thread[], picked: ReadonlySet<string>): num
 }
 
 /** The toast after a bulk settle: "Settled 7 threads; 1 pinned thread kept". */
-export function bulkSettleText(settled: number, kept: number, unread = 0): string {
+export function bulkSettleText(settled: number, kept: number, unread = 0, running = 0): string {
   const head = settled === 0 ? "Nothing settled" : settled === 1 ? "Settled" : `Settled ${settled} threads`;
   const left = [kept && `${kept} pinned`, unread && `${unread} unread`].filter(Boolean).join(" and ");
-  if (!left) return head;
-  return `${head}; ${left} ${kept + unread === 1 ? "thread" : "threads"} kept`;
+  const parts = [head, left && `${left} ${kept + unread === 1 ? "thread" : "threads"} kept`, running && `${running} still running`];
+  return parts.filter(Boolean).join("; ");
 }
 
 export function undoLive(u: UndoEntry | null, now: number): boolean {

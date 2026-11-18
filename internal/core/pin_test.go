@@ -56,12 +56,12 @@ func TestHidingDropsThePin(t *testing.T) {
 	// the thread settles.
 	th, v = pinned()
 	RunStarted(th, ct0)
-	step(t, th, v, Input{Source: FromOwner, Kind: "thread.settle"}, ct0)
+	step(t, th, v, Input{Source: FromOwner, Kind: "thread.settleWhenDone"}, ct0)
 	if th.PinnedAt == nil {
 		t.Fatal("a deferred settle dropped the pin before it settled")
 	}
 	RunEnded(th, nil, ct0.Add(time.Minute))
-	rules(th, ct0.Add(time.Minute))
+	step(t, th, v, Input{Source: Observer(ObsClock), Kind: KindClock}, ct0.Add(time.Minute))
 	if th.Settle.At == nil || th.PinnedAt != nil {
 		t.Fatalf("settled %v, pinned %v", th.Settle.At, th.PinnedAt)
 	}

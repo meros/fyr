@@ -51,8 +51,8 @@ test("an unavailable direction shows the reason, resists and snaps back", () => 
 
 test("the reveal names the exact Action", () => {
   assert.equal(settleLabel(thread("a", "done", "needs")), "Settle");
-  assert.equal(settleLabel(thread("a", "working", "working", { running: true })), "Settle when done");
-  assert.equal(settleLabel(thread("a", "seen", "seen", { pr: { url: "u", number: 1, state: "OPEN" } })), "Settle when merged");
+  assert.equal(settleLabel(thread("a", "working", "working", { running: true })), "Settle and stop run");
+  assert.equal(settleLabel(thread("a", "seen", "seen", { pr: { url: "u", number: 1, state: "OPEN" } })), "Settle", "V0.203: an open PR does not change Settle");
   assert.equal(settleLabel(thread("a", "seen", "seen", { pr: { url: "u", number: 1, state: "MERGED" } })), "Settle");
   assert.equal(swipeAvail(thread("a", "done", "needs")).right.label, "Settle");
 });
