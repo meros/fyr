@@ -105,7 +105,7 @@ test("the shared values are the newest member's; the image is the first online m
   const [p] = linkProjects([a, b], [A, B]);
   assert.equal(p.id, a.id, "the first host is still the one shown");
   assert.deepEqual([p.name, p.color], ["Newer", "teal"]);
-  assert.match(projectIconUrl(p, 16)!, /\/h\/A\/projects\/A%2Fp1\/icon/);
+  assert.match(projectIconUrl(p, 16)!, /\/h\/A\/projects\/p1\/icon/);
   const [q] = linkProjects([{ ...a, image: undefined }, { ...b, image: "v2" }], [A, B]);
   assert.match(projectIconUrl(q, 16)!, /\/h\/B\//);
 });

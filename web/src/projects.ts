@@ -1,6 +1,7 @@
 // Projects (SPEC 0.5 V0.23): palette, icons, ordering, filtering; and started-by labels (V0.22). Pure.
 
 import { hostUrl } from "./urls.ts";
+import { bare } from "./hostfeed.ts";
 import type { NewProjectDraft, Profile, Project, ProjectIconSpec, QuietHours, SetupField, Thread } from "./types.ts";
 import { cleanWindow } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
@@ -348,12 +349,13 @@ export function moveToast(n: number, where: string | null, error: string | null)
 // ---- V0.116: image icons and project setup ----
 
 /** The URL of a project's image icon at a size that is sharp at `px` CSS pixels, or null when it has none. The
- *  version in the URL lets the browser keep it; the front sends the request to the project's host. */
+ *  version in the URL lets the browser keep it; the front sends the request to the project's host, which knows the
+ *  project by its own id and not by the client's ref (V0.project-icons-on-demand). */
 export function projectIconUrl(p: Pick<Project, "id" | "image" | "hostId" | "imageFrom"> | undefined, px: number): string | null {
   const id = p?.imageFrom?.id ?? p?.id;
   const hostId = p?.imageFrom?.hostId ?? p?.hostId;
   if (!id || !p?.image || !hostId) return null;
-  return hostUrl(hostId, `/projects/${encodeURIComponent(id)}/icon?size=${px > 32 ? 128 : 64}&v=${encodeURIComponent(p.image)}`);
+  return hostUrl(hostId, `/projects/${encodeURIComponent(bare(hostId, id))}/icon?size=${px > 32 ? 128 : 64}&v=${encodeURIComponent(p.image)}`);
 }
 
 /** Whether the setup agent set this field (the project screen marks it "Set by agent"). */
