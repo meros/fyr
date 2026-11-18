@@ -11,6 +11,7 @@ import { ProjectIcon, QuietGate, type QuietUnlock } from "./project-ui.tsx";
 import { HostMark } from "./host-mark-ui.tsx";
 import { DESKTOP_LOOK, HeldUpdates, HideClock, NeedsGroupHead, NeedsRowBody, OneRowBody, PIN_ICON, SectionTitle, hideUse, sectionHead } from "./row-ui.tsx";
 import { needsHeads } from "./rows.ts";
+import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
 import { drawnRows, type Guest, type GuestWhy } from "./selection.ts";
 import { colorVar } from "./projects.ts";
 import { SECTIONS, isOpen, unpinned, type Conn, type SectionKey, type Sections } from "./store.ts";
@@ -185,10 +186,13 @@ interface InboxProps {
   /** V0.114: the one unlock of quiet projects, and how many search hits it hides */
   unlock: QuietUnlock;
   quietHits: number;
+  /** V0.ai-search: what AI search may read, in list order (the same reach as the typed search) */
+  searchable: Thread[];
 }
 
 export function Inbox(p: InboxProps) {
   const queue = useSlotQueue();
+  const ai = useAiSearch(p.query, p.searchable);
   const why = (t: Thread) => (p.guest?.id === t.id ? p.guest.why : undefined);
   return (
     <aside class="ib" onMouseDown={p.onFocusZone}>
@@ -203,6 +207,9 @@ export function Inbox(p: InboxProps) {
             aria-label="Search threads"
             spellcheck={false}
             onInput={(e) => p.onQuery((e.target as HTMLInputElement).value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") ai.run(); // V0.ai-search
+            }}
           />
           <kbd>⌘K</kbd>
         </label>
@@ -218,6 +225,7 @@ export function Inbox(p: InboxProps) {
       {p.quietHits > 0 && <QuietGate now={p.now} unlock={p.unlock} what="search" />}
       <div class="list" role="listbox" aria-label="Threads">
         <HeldUpdates n={p.updates} show={p.onShowUpdates} />
+        <AiSearchPanel ai={ai} onOpen={p.onClick} />
         {!p.query.trim() && <FilterEmpty f={p.filter} cls="fempty" />}
         {p.rows.pinned.length > 0 && (
           // V0.104: the pinned threads, above every section and always open; each keeps its section's row shape.

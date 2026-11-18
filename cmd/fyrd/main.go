@@ -208,9 +208,10 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	})
 	eng.AgentDeps = engine.AgentDeps{
 		Agents:           mgr,
-		Titler:           mgr.Title,     // V0.108
-		TextJudge:        mgr.JudgeText, // V0.210
-		Providers:        h.reg,         // #48: provider commands go down the engine's path
+		Titler:           mgr.Title,         // V0.108
+		TextJudge:        mgr.JudgeText,     // V0.210
+		Searcher:         mgr.SearchThreads, // V0.ai-search
+		Providers:        h.reg,             // #48: provider commands go down the engine's path
 		Adopt:            h.t3.Adopt,
 		AttachmentExists: func(id string) bool { _, err := att.Get(id); return err == nil },
 		ProfileExists:    func(id string) bool { _, ok := h.profile(id); return ok },

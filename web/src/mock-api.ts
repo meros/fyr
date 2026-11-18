@@ -503,6 +503,13 @@ export function createMockApi(scenario: string): Api {
       const f = fsOf(nameOf(host));
       return f ? f.mkdir(parent, name) : server.fsMkdir(parent, name);
     },
+    async searchThreads(host, query, ids) {
+      // V0.ai-search: the mock's "model" takes the first threads, or none for a query with "nothing" in it.
+      await new Promise((r) => setTimeout(r, 300));
+      if (/nothing/i.test(query)) return [];
+      if (/fail/i.test(query)) throw new Error("the model gave no usable answer");
+      return ids.slice(0, 2).map((id) => ({ id: bare(host, id), why: `Talks about ${query.trim()}` }));
+    },
     async prDetail(host, threadId) {
       await new Promise((r) => setTimeout(r, 120));
       return server.prDetail(bare(host, threadId));

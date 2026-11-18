@@ -32,6 +32,9 @@ type AgentDeps struct {
 	// TextJudge reads the end of a turn for a question to the owner (V0.210);
 	// nil: this host does not look.
 	TextJudge TextJudge
+	// Searcher picks threads for the owner's words (V0.ai-search); nil: this
+	// host has no AI search.
+	Searcher Searcher
 	// Providers runs the provider commands' effect (3.16); nil: this host
 	// has no providers.
 	Providers Providers
