@@ -182,7 +182,7 @@ func reduceAutoMerge(r Rec, in Input, now time.Time) (Result, error) {
 }
 
 // PushQuiet reports that the thread's attention state is only an auto-merge
-// at work (V0.200), so it sends no push; on says whether a repo is in the
+// at work (V0.200) or a question Fyr read in text (V0.210), so it sends no push; on says whether a repo is in the
 // setting. Three states qualify: an ask Fyr approves itself, the PR that
 // reads Ready while its approved merge runs, and done after that merge (the
 // ask closing, or the turn the merge's result woke). A refused merge, a new
@@ -199,6 +199,9 @@ func PushQuiet(t *Thread, state State, on func(repo string) bool) bool {
 	case Done:
 		return autoMerged(t) != nil
 	case Blocked:
+		if textAskOnly(t, on) { // V0.210: Fyr's own reading never pushes
+			return true
+		}
 		c := autoMerged(t)
 		if c == nil || t.Unresponsive != nil {
 			return false

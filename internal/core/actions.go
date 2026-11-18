@@ -59,6 +59,8 @@ type Effect struct {
 	// Git is the folder's facts of an EffectGit, read by the agent manager
 	// at the run's end.
 	Git *GitFacts `json:"git,omitempty"`
+	// Run is the run count an EffectTextAsk judges (V0.210).
+	Run int `json:"run,omitempty"`
 }
 
 // Script is an exact command: argv in dir, within a time limit.
@@ -173,6 +175,9 @@ func sendAction(name, label string) *Action {
 				return nil, fmt.Errorf("%w: empty message", ErrBadArgs)
 			}
 			t.QuietMerge = "" // V0.200: whoever wrote wants to hear the answer
+			if a.Str("from") == "" {
+				clearTextAsk(t) // V0.210: the owner answered; another agent's message is no answer
+			}
 			if name == "thread.create" {
 				t.Cwd = a.Str("cwd")
 				if t.Cwd == "" {

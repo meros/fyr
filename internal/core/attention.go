@@ -105,6 +105,10 @@ func ComputeWith(t *Thread, v *View, now time.Time, on func(repo string) bool) A
 	if a := PendingRequest(t); a != nil {
 		return Attention{Blocked, NeedsYou, "Run: " + a.Why}
 	}
+	// V0.210: a question Fyr read in the agent's text, the last cause.
+	if t.TextAsk != nil {
+		return Attention{Blocked, NeedsYou, t.TextAsk.Question}
+	}
 	if v == nil || t.ActivityAt.After(v.SeenAt) {
 		return Attention{Done, SeenSec, ""}
 	}

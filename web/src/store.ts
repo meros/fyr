@@ -1,4 +1,5 @@
 // Pure state store: reducer functions over the API DTOs. No I/O, no clock reads (time is passed in).
+import { textAskShown } from "./rows.ts";
 import { orderProjects } from "./projects.ts";
 import type { QueueEntry } from "./slot-queue.ts";
 import type { HostInfo } from "./hosts.ts";
@@ -198,8 +199,10 @@ function activity(t: Thread): number {
   return ts(t.activityAt) || ts(t.updatedAt);
 }
 
-/** V0.205: a thread whose open asks are all merge asks comes after the questions, before the failures. */
+/** V0.205: a thread whose open asks are all merge asks comes after the questions, before the failures. V0.210: a question
+ *  Fyr only read in the agent's text comes after every cause that is a fact. */
 function needsRank(t: Thread): number {
+  if (textAskShown(t)) return 2.5;
   const r = NEEDS_RANK[t.attention.state] ?? 9;
   return t.attention.state === "asking" && t.decisions.length > 0 && t.decisions.every((d) => d.effect?.action === "pr.merge") ? r + 0.5 : r;
 }

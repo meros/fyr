@@ -29,6 +29,9 @@ type AgentDeps struct {
 	// Titler makes a thread title from its conversation (V0.108); nil: this
 	// host makes none.
 	Titler Titler
+	// TextJudge reads the end of a turn for a question to the owner (V0.210);
+	// nil: this host does not look.
+	TextJudge TextJudge
 	// Providers runs the provider commands' effect (3.16); nil: this host
 	// has no providers.
 	Providers Providers
