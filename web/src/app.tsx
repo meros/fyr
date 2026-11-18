@@ -37,6 +37,7 @@ import {
   type SnoozePreset,
   type Store,
   applyThreadPatch,
+  resolveRef,
 } from "./store.ts";
 import { markedRow, revealRow, rowAfter } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
@@ -464,12 +465,25 @@ function App() {
     return () => clearInterval(iv);
   }, []);
 
+  // A link names a record by the host's own id; once the records are here it names the ref (decision 0031 C12).
+  useEffect(() => {
+    if (!store.loaded) return;
+    const s = nav.screen;
+    if (s.name === "thread") {
+      const r = resolveRef(Object.values(store.threads), s.id);
+      if (r !== s.id) navReplace({ ...nav, screen: { ...s, id: r } });
+    } else if (s.name === "project") {
+      const r = resolveRef(store.projects, s.id);
+      if (r !== s.id) navReplace({ ...nav, screen: { ...s, id: r } });
+    }
+  }, [store.loaded, nav.screen.name, "id" in nav.screen ? nav.screen.id : ""]);
+
   // Initial selection and ?open= for screenshots.
   const didInit = useRef(false);
   useEffect(() => {
     if (!store.loaded || didInit.current) return;
     didInit.current = true;
-    const want = params.get("open");
+    const want = params.get("open") ? resolveRef(Object.values(store.threads), params.get("open")!) : null;
     const first = want && store.threads[want] ? want : order[0];
     // On a phone the inbox comes first; open a thread only when asked (?open=).
     const phone = typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches;

@@ -2,6 +2,7 @@ package front
 
 import (
 	"encoding/json"
+	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/push"
-	"github.com/meros/fyr/internal/server"
 )
 
 // The browser-only routes moved here from the host's server (#38); the
@@ -49,7 +49,7 @@ func TestPushEndpoints(t *testing.T) {
 	fp := &endpointPush{subs: map[string]string{}}
 	mux := http.NewServeMux()
 	pushRoutes(mux, fp, nil)
-	hs := httptest.NewServer(server.Browser("", mux))
+	hs := httptest.NewServer(httpguard.Browser("", mux))
 	defer hs.Close()
 	r := do(t, "GET", hs.URL+"/api/push/key", "", nil, "")
 	var k map[string]string
@@ -89,7 +89,7 @@ func TestPushEndpoints(t *testing.T) {
 // SPEC 0.5 V0.15: the manifest has its media type; the service worker is
 // never cached, so a new build's worker is picked up.
 func TestPWAFiles(t *testing.T) {
-	hs := httptest.NewServer(server.Browser("", webClient(fstest.MapFS{
+	hs := httptest.NewServer(httpguard.Browser("", webClient(fstest.MapFS{
 		"index.html": {Data: []byte("x")}, "manifest.webmanifest": {Data: []byte("{}")}, "sw.js": {Data: []byte("//")}})))
 	defer hs.Close()
 	r := do(t, "GET", hs.URL+"/manifest.webmanifest", "", nil, "")
@@ -107,7 +107,7 @@ func TestPresenceEndpoint(t *testing.T) {
 	p := &notify.Presence{}
 	mux := http.NewServeMux()
 	presenceRoute(mux, p)
-	hs := httptest.NewServer(server.Browser("", mux))
+	hs := httptest.NewServer(httpguard.Browser("", mux))
 	defer hs.Close()
 	if r := do(t, "POST", hs.URL+"/api/presence", "", map[string]string{"X-Fyr": "1"}, `{"threadId":"t1","device":"d1"}`); r.StatusCode != 204 {
 		t.Fatalf("status %d", r.StatusCode)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/meros/fyr/internal/httpguard"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -643,7 +644,7 @@ func TestServeSocketNeedsNoTailnetHost(t *testing.T) {
 	st, _ := store.Open(filepath.Join(t.TempDir(), "db"))
 	defer st.Close()
 	s := &Server{Engine: engine.New(st), BuildID: "b1", OwnerLogin: "owner@example.com"}
-	hs := httptest.NewServer(ViaServe(s.Handler()))
+	hs := httptest.NewServer(httpguard.ViaServe(s.Handler()))
 	defer hs.Close()
 	if r := do(t, "GET", hs.URL+"/api/state", "localhost", map[string]string{"Tailscale-User-Login": "owner@example.com"}, ""); r.StatusCode != 200 {
 		t.Fatalf("owner on the Serve socket: %d", r.StatusCode)

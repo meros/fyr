@@ -112,6 +112,7 @@ func TestOwnerCorrectionsOnBothStorages(t *testing.T) {
 	var mu sync.Mutex
 	kicks := 0
 	e.OnPR = func(string) { mu.Lock(); kicks++; mu.Unlock() }
+	guardDeps(t, e)
 	var rec, own string
 	for _, c := range shownIn(e, a) {
 		if c.Threads != nil {

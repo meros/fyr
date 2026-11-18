@@ -2,13 +2,13 @@ package main
 
 import (
 	"crypto/tls"
+	"github.com/meros/fyr/internal/httpguard"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 
 	"github.com/meros/fyr/internal/front"
-	"github.com/meros/fyr/internal/server"
 )
 
 // serveLAN serves the front over HTTPS with the owner's certificate (decision 0030 3.5):
@@ -45,6 +45,6 @@ func serveLAN(cfg config, fr *front.Front, serve func(net.Listener, http.Handler
 		name = "[" + name + "]"
 	}
 	fr.SetLANOrigin("https://" + name + ":" + port)
-	serve(ln, server.ViaLAN(fr.Handler()))
+	serve(ln, httpguard.ViaLAN(fr.Handler()))
 	log.Printf("tls: serving the front at https://%s (sessions only; a phone signs in by QR or code)", ln.Addr())
 }

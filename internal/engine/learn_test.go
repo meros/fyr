@@ -20,6 +20,7 @@ func TestS3SlotAcquireNamesTheJob(t *testing.T) {
 	running(e, a)
 	var got [2]string
 	e.SlotJob = func(th, cmd string) { got = [2]string{th, cmd} }
+	guardDeps(t, e)
 	if out, isErr := callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test", "command": "make test"}); isErr || !strings.Contains(out, "Admitted:") {
 		t.Fatalf("%v %q", isErr, out)
 	}
@@ -37,6 +38,7 @@ func TestS3HeavierThanPredictedIsToldOnce(t *testing.T) {
 	running(e, a)
 	p.Acquire(a, slots.Test)
 	e.SlotOver = func(owner string) (string, float64, float64, bool) { return "fyr: make test", 80, 50, owner == a }
+	guardDeps(t, e)
 	e.Tick()
 	if !told(e, a, "Your job (fyr: make test) uses ≈ 80 % of this host; Fyr expected ≈ 50 %") {
 		th, _ := e.Thread(a)
@@ -57,6 +59,7 @@ func TestS3OwnerResetsAClass(t *testing.T) {
 	e.UseSlots(p)
 	var reset string
 	e.JobReset = func(class string) bool { reset = class; return class == "fyr: make test" }
+	guardDeps(t, e)
 	r := e.Command(api.Cmd{CommandID: "c1", Action: core.KindJobReset, Args: map[string]any{"class": "fyr: make test"}})
 	if !r.OK || reset != "fyr: make test" {
 		t.Fatalf("%+v %q", r, reset)

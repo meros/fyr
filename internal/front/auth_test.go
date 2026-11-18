@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/meros/fyr/internal/httpguard"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/meros/fyr/internal/auth"
-	"github.com/meros/fyr/internal/server"
 )
 
 type kv map[string]string
@@ -93,7 +93,7 @@ func TestV130OnceLinkSetsTheSession(t *testing.T) {
 // session (Secure: the browser is on HTTPS); with it, no second one.
 func TestV130ServeSocketMintsATailnetSession(t *testing.T) {
 	f, st := authFront(t)
-	h := server.ViaServe(f.Handler())
+	h := httpguard.ViaServe(f.Handler())
 	req := func(c *http.Cookie) *http.Request {
 		r := httptest.NewRequest("GET", "http://desk.tail.ts.net/api/state", nil)
 		r.Host = "desk.tail.ts.net"

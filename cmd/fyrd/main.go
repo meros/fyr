@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/meros/fyr/internal/admission"
 	"github.com/meros/fyr/internal/agent"
 	"github.com/meros/fyr/internal/attach"
 	"github.com/meros/fyr/internal/auth"
@@ -166,7 +167,6 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	eng, reg := h.eng, h.reg
 	ln := listenLoopback(cfg.Listen)
 	att := &attach.Store{Dir: filepath.Join(data, "attachments")}
-	eng.AttachmentExists = func(id string) bool { _, err := att.Get(id); return err == nil }
 	eng.Attach = att
 	// V0.19: screenshots for the show tool, with one Chrome started on demand.
 	if bin := preview.FindChrome(); bin != "" {
@@ -206,18 +206,24 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		// V0.115: the system agents run on this host, on the owner's setting.
 		HostName: hostName, ProfileExists: func(id string) bool { _, ok := h.profile(id); return ok }, SystemAgents: eng.SystemAgents,
 	})
-	eng.Agents = mgr
-	eng.Titler = mgr.Title                                              // V0.108
-	eng.SystemAgentResolve = func(job string) (string, string, error) { // V0.115: Settings shows what each job runs
-		a, err := mgr.SystemAgent(job)
-		return a.Profile.ID, a.Model, err
-	}
-	eng.SystemAgentProviders = func() []engine.SystemProvider {
-		var out []engine.SystemProvider
-		for _, p := range h.profiles() {
-			out = append(out, engine.SystemProvider{ID: p.ID, Name: p.Name, Models: p.Models, Haiku: agent.HaikuModel(p), Unavailable: p.Unavailable})
-		}
-		return out
+	eng.AgentDeps = engine.AgentDeps{
+		Agents:           mgr,
+		Titler:           mgr.Title, // V0.108
+		Providers:        h.reg,     // #48: provider commands go down the engine's path
+		Adopt:            h.t3.Adopt,
+		AttachmentExists: func(id string) bool { _, err := att.Get(id); return err == nil },
+		ProfileExists:    func(id string) bool { _, ok := h.profile(id); return ok },
+		SystemAgentResolve: func(job string) (string, string, error) { // V0.115: Settings shows what each job runs
+			a, err := mgr.SystemAgent(job)
+			return a.Profile.ID, a.Model, err
+		},
+		SystemAgentProviders: func() []engine.SystemProvider {
+			var out []engine.SystemProvider
+			for _, p := range h.profiles() {
+				out = append(out, engine.SystemProvider{ID: p.ID, Name: p.Name, Models: p.Models, Haiku: agent.HaikuModel(p), Unavailable: p.Unavailable})
+			}
+			return out
+		},
 	}
 	// V0.116: project setup. The icons live with the host's data; a new
 	// project with a folder gets a setup run, and each project from before
@@ -234,7 +240,6 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	if rn != nil {
 		mgr.Adopt(rn.procs) // V0.90: before anything sends to a thread
 	}
-	eng.ProfileExists = func(id string) bool { _, ok := h.profile(id); return ok }
 	// V0.86: at most cfg.Slots heavy jobs at once; the deploy's tests first.
 	// slots: 0 is off, absent or negative is the default; the pool survives a
 	// restart in the store.
@@ -279,7 +284,6 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}
 		return eng.HeavyGate(thread, class)
 	})
-	eng.SlotActive = jobs.Active
 	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups, // V0.80, V0.86
 		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject} // V0.164
 	// V0.164: an ended episode is kept, teaches a suggestion, and ends its frozen group.
@@ -304,133 +308,49 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}
 	}
 	mgr.SetUndeclaredNote(eng.UndeclaredSubagentNote)
-	eng.Undeclared, eng.UndeclaredTold, eng.UndeclaredDismiss, eng.UndeclaredSettings = sampler.Undeclared, detector.Told, detector.Dismiss, usettings.Set
-	eng.UndeclaredThaw, eng.HeavyRemove, eng.HeavyRefused = groups.ThawUndeclared, book.Remove, heavyCmds.Refused
-	eng.UndeclaredFreeze = func(thread string) bool {
-		for _, f := range detector.Flags() {
-			if f.Thread == thread && groups.FreezeUndeclared(thread, cgroup.ReadRoots(tree, "", thread, f.FirstOver)) {
-				detector.MarkPaused(thread)
-				return true
+	eng.UndeclaredDeps = engine.UndeclaredDeps{
+		Undeclared: sampler.Undeclared, UndeclaredTold: detector.Told, UndeclaredDismiss: detector.Dismiss, UndeclaredSettings: usettings.Set,
+		UndeclaredThaw: groups.ThawUndeclared, HeavyRemove: book.Remove, HeavyRefused: heavyCmds.Refused,
+		UndeclaredFreeze: func(thread string) bool {
+			for _, f := range detector.Flags() {
+				if f.Thread == thread && groups.FreezeUndeclared(thread, cgroup.ReadRoots(tree, "", thread, f.FirstOver)) {
+					detector.MarkPaused(thread)
+					return true
+				}
 			}
-		}
-		return false
+			return false
+		},
+		HeavySuggestion: func(id, do, pattern, kind string) error {
+			if do == "ignore" {
+				return book.Ignore(id)
+			}
+			return book.Add(id, pattern, kind, time.Now())
+		},
 	}
-	eng.HeavySuggestion = func(id, do, pattern, kind string) error {
-		if do == "ignore" {
-			return book.Ignore(id)
-		}
-		return book.Add(id, pattern, kind, time.Now())
-	}
-	// Decision 0029 S2 (#186): admission by a budget of costs (N), gated by
-	// the slowdown and memory; one job always runs; no provider (macOS)
-	// keeps the fixed count. Costs are 1.0, an idle hold 0.1, until S3
-	// learns them.
-	policy := slots.DefaultPolicy
-	if cfg.SlotSlowdownMax > 0 {
-		policy.SlowdownMax = cfg.SlotSlowdownMax
-	}
-	if cfg.SlotMemoryReserve > 0 {
-		policy.MemoryReserve = cfg.SlotMemoryReserve
-	}
+	// Decision 0029 S2–S4, V0.163, V0.164: admission by a budget of costs,
+	// gated by the slowdown and memory; the policy is internal/admission.
+	adm := admission.New(pool, n, sampler, jobs, cfg.SlotSlowdownMax, cfg.SlotMemoryReserve)
+	adm.Install()
 	// V0.153: on a thrashing host the agents wait; Fyr kills no CLI for
 	// being slow and restarts none into the same thrash.
-	mgr.SetPressure(func() (bool, string) { return slots.Thrashing(sampler.Signals(), policy) })
-	// Decision 0029 S3 (#187), V0.163: a job needs CPU and memory, apart:
-	// its class's learned demand (cores) and peak (bytes), the prior (1/N of
-	// the host) until learned; a holder at least what it uses now.
-	predict := func(h slots.Holder) (need slots.Need, wall float64) {
-		sig := sampler.Signals()
-		l, ok := jobs.Learned(jobs.ClassOf(h.Owner, h.Kind))
-		if !ok {
-			return slots.Prior(sig, n), 0
-		}
-		return slots.NeedOf(l.Demand, l.Peak, l.Runs, sig, n), l.WallP90()
-	}
-	live := func(h slots.Holder) (slots.Need, bool) {
-		cores, grew, ok := jobs.LiveUse(h.Owner)
-		return slots.Need{CPU: cores, Mem: grew}, ok
-	}
-	pool.Host = sampler.Signals
-	pool.Cost = func(h slots.Holder) slots.Need {
-		sig := sampler.Signals()
-		if h.Priority {
-			return slots.Prior(sig, n)
-		}
-		l, isLive := live(h)
-		if at, ok := jobs.Active(h.Owner); ok && time.Since(at) >= slots.IdleAfter {
-			// An idle hold: a little CPU, and the memory it really holds.
-			return slots.Need{CPU: slots.IdleShare * sig.CPU, Mem: l.Mem}
-		}
-		need, _ := predict(h)
-		if isLive {
-			need = need.Max(l)
-		}
-		return need
-	}
-	heldNeeds := func(held []slots.Holder) []slots.Need {
-		out := make([]slots.Need, len(held))
-		for i, h := range held {
-			out[i] = pool.Cost(h)
-		}
-		return out
-	}
-	// V0.164: the use of the threads that run heavy work Fyr did not admit
-	// counts beside the admitted jobs, except the head's own (its request
-	// stands in for it).
-	extras := func() []slots.Extra {
-		var out []slots.Extra
-		for _, u := range sampler.Undeclared() {
-			out = append(out, slots.Extra{Owner: u.Thread, Name: u.Name, Need: slots.Need{CPU: u.CPU, Mem: u.Mem}})
-		}
-		return out
-	}
-	pool.Admit = func(head slots.Holder, held []slots.Holder) (bool, string, string) {
-		need, _ := predict(head)
-		return slots.DecideWith(policy, sampler.Signals(), pool.Budget(), n, heldNeeds(held), extras(), head.Owner, need)
-	}
-	// EASY backfill: c may pass the head when it fits now and is cheap, or
-	// ends (its class's p90) before the earliest running job is expected to.
-	pool.Backfill = func(head, c slots.Holder, held []slots.Holder) bool {
-		need, wall := predict(c)
-		sig := sampler.Signals()
-		if ok, _, _ := slots.DecideWith(policy, sig, pool.Budget(), n, heldNeeds(held), extras(), c.Owner, need); !ok {
-			return false
-		}
-		ends := make([]time.Time, len(held))
-		for i, h := range held {
-			if _, w := predict(h); w > 0 {
-				ends[i] = h.Since.Add(time.Duration(w * float64(time.Second)))
-			}
-		}
-		return slots.EASY(time.Now(), slots.Cheap(need, sig), wall, ends)
-	}
-	eng.SlotSignals, eng.SlotGrowth, eng.SlotPolicy = sampler.Signals, jobs.Growth, policy
+	mgr.SetPressure(adm.Thrashing)
 	eng.HostName = hostName // V0.163: the heavy-job answers name this host
-	eng.SlotJob = func(thread, c string) {
-		class, text := heavyCmds.Match(c)
-		jobs.Saw(thread, class)
-		groups.Seen(thread, text)
+	sd := engine.SlotDeps{
+		SlotActive:  jobs.Active, // #174
+		SlotSignals: sampler.Signals, SlotGrowth: jobs.Growth, SlotPolicy: adm.Policy,
+		SlotJob: func(thread, c string) {
+			class, text := heavyCmds.Match(c)
+			jobs.Saw(thread, class)
+			groups.Seen(thread, text)
+		},
+		SlotOver:   adm.Over, // V0.163
+		JobReset:   jobs.Reset,
+		SlotFreeze: groups.Freeze, SlotThaw: groups.Thaw, // decision 0029 S5
 	}
-	eng.SlotFreeze, eng.SlotThaw = groups.Freeze, groups.Thaw // decision 0029 S5
 	if !pool.Off() {
-		eng.SlotAIMD = &slots.AIMD{N: float64(n)} // decision 0029 S4: the budget adapts
+		sd.SlotAIMD = &slots.AIMD{N: float64(n)} // decision 0029 S4: the budget adapts
 	}
-	eng.JobReset = jobs.Reset
-	// V0.163: heavier than predicted, in either resource, by more than an
-	// eighth of the host; told in percent of the host.
-	eng.SlotOver = func(owner string) (string, float64, float64, bool) {
-		h, ok := pool.Holding(owner)
-		if !ok {
-			return "", 0, 0, false
-		}
-		sig := sampler.Signals()
-		p, _ := predict(h)
-		l, ok := live(h)
-		pc, pm := p.Shares(sig)
-		lc, lm := l.Shares(sig)
-		over := ok && (lc > pc+slots.CheapShare || lm > pm+slots.CheapShare)
-		return jobs.ClassOf(owner, h.Kind), slots.Pct(max(lc, lm)), slots.Pct(max(pc, pm)), over
-	}
+	eng.SlotDeps = sd
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -452,7 +372,6 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		n := eng.SelfDeployed(agent.NormalizeRemote(s.Remote), s.Build, s.Contains)
 		log.Printf("deploy %s (%s): %d changes live", s.Build, s.Commit, n)
 	}
-	eng.DeployNow = dep.DeployNow // V0.83: the owner's Restart now
 	// Decision 0027: auto-update installs CI's signed releases only.
 	// V0.173: every gh call of fyrd is counted, and the account's limit
 	// read every 10 minutes (free), for daemon.log and Settings.
@@ -466,7 +385,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	dep.Releases = &deploy.Releases{Repo: cfg.UpdateRepo, Gh: gh}
 	// V0.111, #159: an ask without a checkout installs the newest release by
 	// itself; a local build of a checkout always waits for the owner's press.
-	eng.DeployGate = func(ctx context.Context, dir string) (string, string) {
+	deployGate := func(ctx context.Context, dir string) (string, string) {
 		if dir != "" {
 			return "", "a local build of " + dir + " needs your press (it is not a CI release)"
 		}
@@ -476,7 +395,6 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}
 		return sha, ""
 	}
-	eng.DeployBusy = dep.Busy
 	dep.OnIdle = eng.AutoDeploySweep
 	// #153: follow `deployable`, batched by a quiet period.
 	watcher := &deploy.Watcher{D: dep, On: func() bool { return eng.AutoDeploy().On }, Start: func(sha string) {
@@ -491,10 +409,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		watcher.Quiet = func() time.Duration { return time.Duration(cfg.UpdateQuietMinutes) * time.Minute }
 	}
 	watcher.Every = time.Duration(cfg.UpdateEveryMinutes) * time.Minute
-	go watcher.Run(ctx)
 	// V0.126: Update now / Back to release (owner only): the newest release,
 	// at once, ending a local build's pause.
-	eng.UpdateNow = func() error {
+	updateNow := func() error {
 		if dep.Busy() {
 			return errors.New("An update runs already")
 		}
@@ -507,11 +424,12 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}()
 		return nil
 	}
+	eng.DeployDeps = engine.DeployDeps{DeployGate: deployGate, DeployBusy: dep.Busy, DeployNow: dep.DeployNow /* V0.83: the owner's Restart now */, UpdateNow: updateNow}
+	go watcher.Run(ctx)
 	ghView := func() github.MeterView { v := ghMeter.View(); v.Paused = ghBudget.Paused(); return v }
 	prDetails := &github.Details{Gh: gh} // V0.43: the PR tab's details, cached 30 s
-	eng.Effects = engine.Outside{Gh: gh, PR: prDetails, Deploy: dep.Deploy}
 	poller := &github.Poller{Gh: pollGh, Src: engine.PRWatch{E: eng}}
-	eng.OnPR = poller.Kick
+	eng.OutsideDeps = engine.OutsideDeps{Effects: engine.Outside{Gh: gh, PR: prDetails, Deploy: dep.Deploy}, OnPR: poller.Kick}
 	go poller.Run(ctx)
 	go checkModels(ctx, h.reg) // V0.120: each provider's models, once a day
 	go sampler.Run(ctx)
@@ -592,17 +510,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			}
 		}()
 	}
-	var servers []*http.Server
-	frontDone := make(chan struct{})
-	serve := func(l net.Listener, hd http.Handler) {
-		hs := &http.Server{Handler: hd, ReadHeaderTimeout: 10 * time.Second}
-		servers = append(servers, hs)
-		go func() {
-			if err := hs.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				log.Fatal(err)
-			}
-		}()
-	}
+	srvs := &servers{}
+	var fe *runningFront
 	// V0.54: "tailnet:PORT" is this machine's tailnet address.
 	if port, ok := strings.CutPrefix(cfg.HostListen, "tailnet:"); ok {
 		ip, err := tailnet.IPv4(cfg.tsSocket())
@@ -633,66 +542,42 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	authStore := openAuth(h.st, cfg.stepUp()) // the browser sessions of a front, and the stored mode of each way in (decision 0030 5.1)
 	old := &oldListeners{}
 	if cfg.Role == "host" {
-		serve(ln, deploy.Health(hostHandler, health...))
-		newPeerSide(cfg, data, hostName, key).start(ctx, data, srv, nil, authStore, old) // a host-only install pairs and serves its peer port too
+		srvs.serve(ln, deploy.Health(hostHandler, health...))
+		newPeerSide(cfg, data, hostName, key).start(ctx, srv, nil, authStore, old) // a host-only install pairs and serves its peer port too
 	} else {
 		// both (V0.51): the front reaches this host over a loopback link,
 		// through the host protocol only; agents keep /mcp on the main port.
 		// V0.129 (3), decision 0028: in-process, so no loopback port is
 		// open for a local process to drive the host protocol through.
 		link := pipe.New()
-		serve(link, srv.PipeHandler()) // decision 0030 3.2: the pipe needs no browser guard; its requests carry Fyr-Actor
+		srvs.serve(link, srv.PipeHandler()) // decision 0030 3.2: the pipe needs no browser guard; its requests carry Fyr-Actor
 		hosts := append([]front.HostConfig{{Name: hostName, URL: front.LocalURL, Dial: link.Dial}}, cfg.Hosts...)
-		// The front's device data (push keys and subscriptions) stays in
-		// this machine's database, where the host kept it before V0.54.
-		// V0.123 (decision 0025): other installs find this one by its
-		// well-known answer, which names where its host protocol is.
-		wk := wellKnown(cfg, hostName, hostURL(cfg.HostListen), id)
-		var fr *front.Front
-		ps := newPeerSide(cfg, data, hostName, key)
-		fr = front.New(front.Options{ID: id, Name: hostName, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), OnWhoisFallback: func() { authStore.WouldRefuse(auth.WayPeer) }, Web: webFS,
-			Push: newPusher(h.st), CacheDir: filepath.Join(data, "front"), Local: hostName, Store: h.st, Auth: authStore, Tailnet: tailnetNodes(cfg),
-			OwnerRoutes: func(mux *http.ServeMux) {
-				if ps != nil {
-					ps.ownerRoutes(fr)(mux)
-				}
-			},
-			WellKnown: func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }}, hosts)
-		go func() { fr.Run(ctx); close(frontDone) }()
-		ps.start(ctx, data, srv, fr, authStore, old) // decision 0030 3.6
-		go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every)
+		fe = startFront(ctx, frontParts{cfg: cfg, webFS: webFS, name: hostName, data: data, key: key, st: h.st, auth: authStore,
+			hosts: hosts, local: hostName, hostURL: hostURL(cfg.HostListen)}, ln.Addr().String(), srv, old)
+		fr := fe.fr
 		// V0.81: a client-only deploy swaps the client this front serves.
 		dep.SwitchClient = func(build, dir string) error { return fr.SetClient(build, os.DirFS(dir)) }
 		mux := http.NewServeMux()
 		mux.Handle("/mcp", hostHandler)
 		mux.Handle("/", fr.Handler())
-		serve(ln, deploy.Health(mux, health...))
-		serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), cfg.ServeSocketUsers, serve) // V0.130
-		serveLAN(cfg, fr, serve)
+		srvs.serve(ln, deploy.Health(mux, health...))
+		serveFrontSockets(cfg, fr, data, ln.Addr().String(), srvs)
 		if cfg.WellKnownListen != "" {
-			serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w })) // the macOS Serve's way to this answer: it names the peer port too, or no install pairs with this one
+			// The macOS Serve's way to this answer: it names the peer port too, or condition 1 cannot pair this install.
+			srvs.serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, fe.wellKnown))
 			log.Printf("answering /.well-known/fyr for Tailscale Serve at %s", cfg.WellKnownListen)
 		}
 	}
 	// The old ways a front reaches a host: the tailnet listener behind whois, and a loopback
 	// host port. The peer way in's enforce mode removes them; observe brings them back.
-	old.open = func() []*http.Server {
-		var out []*http.Server
-		start := func(ln net.Listener, h http.Handler) {
-			hs := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
-			out = append(out, hs)
-			go func() {
-				if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					log.Printf("host listener: %v", err)
-				}
-			}()
-		}
+	old.open = func() *servers {
+		out := &servers{onErr: func(err error) { log.Printf("host listener: %v", err) }}
 		switch {
 		case cfg.HostListen == "":
 		case loopbackAddr(cfg.HostListen):
 			// V0.123: a second install on this machine (development, tests)
 			// follows this host on loopback, behind the loopback guard (V0.14).
-			start(listenLoopback(cfg.HostListen), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			out.serve(listenLoopback(cfg.HostListen), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if old.onUse != nil {
 					old.onUse()
 				}
@@ -700,7 +585,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			}))
 			log.Printf("serving fronts on loopback at %s", cfg.HostListen)
 		default:
-			start(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: cfg.tsSocket()}))
+			out.serve(listenTailnet(cfg.HostListen), srv.PeerHandler(tailnet.Peers{Socket: cfg.tsSocket()}))
 			log.Printf("serving fronts on the tailnet at %s", cfg.HostListen)
 		}
 		return out
@@ -719,12 +604,10 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	log.Printf("shutting down")
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for _, hs := range servers {
-		hs.Shutdown(sctx)
-	}
+	srvs.shutdown(sctx)
 	old.Close(sctx)
-	if cfg.Role != "host" {
-		<-frontDone // the front's cache is written
+	if fe != nil {
+		<-fe.done // the front's cache is written
 	}
 	mgr.StopAll()
 	if hup.Load() {
@@ -748,53 +631,20 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	ln := listenLoopback(cfg.Listen)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	key := installKey(data)
-	id := key.ID()
-	wk := wellKnown(cfg, name, "", id)
-	var fr *front.Front
-	ps := newPeerSide(cfg, data, name, key)
-	authStore := openAuth(st, cfg.stepUp())
-	fr = front.New(front.Options{ID: id, Name: name, BuildID: BuildID(), OwnerLogin: cfg.OwnerLogin, OwnerFn: ps.ownerLogin, Peer: ps.envOrNil(), OnWhoisFallback: func() { authStore.WouldRefuse(auth.WayPeer) }, Web: webFS,
-		Push: newPusher(st), CacheDir: filepath.Join(data, "front"), Store: st, Auth: authStore, Tailnet: tailnetNodes(cfg),
-		OwnerRoutes: func(mux *http.ServeMux) {
-			if ps != nil {
-				ps.ownerRoutes(fr)(mux)
-			}
-		},
-		WellKnown: func() peers.WellKnown { w := wk; w.Peer = ps.peerPort(); return w }}, cfg.Hosts)
-	done := make(chan struct{})
-	go func() { fr.Run(ctx); close(done) }()
-	go newDiscovery(cfg, wk, ln.Addr().String(), fr).Run(ctx, peers.Every) // V0.123
-	ps.start(ctx, data, nil, fr, authStore, nil)
-	hs := &http.Server{Handler: deploy.Health(fr.Handler(), storeHealthy(st), webHealthy(webFS)), ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal(err)
-		}
-	}()
-	var extra []*http.Server
-	serveAuthSockets(fr, data, ln.Addr().String(), servePublic(cfg), cfg.ServeSocketUsers, func(l net.Listener, h http.Handler) { // V0.130
-		s := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
-		extra = append(extra, s)
-		go s.Serve(l)
-	})
-	serveLAN(cfg, fr, func(l net.Listener, h http.Handler) {
-		s := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
-		extra = append(extra, s)
-		go s.Serve(l)
-	})
-	defer func() {
-		for _, s := range extra {
-			s.Close()
-		}
-	}()
+	fe := startFront(ctx, frontParts{cfg: cfg, webFS: webFS, name: name, data: data, key: installKey(data), st: st, auth: openAuth(st, cfg.stepUp()),
+		hosts: cfg.Hosts}, ln.Addr().String(), nil, nil) // V0.123
+	primary := &servers{}
+	primary.serve(ln, deploy.Health(fe.fr.Handler(), storeHealthy(st), webHealthy(webFS)))
+	extra := &servers{onErr: func(error) {}}
+	serveFrontSockets(cfg, fe.fr, data, ln.Addr().String(), extra) // V0.130
+	defer extra.close()
 	log.Printf("build %s (front) listening on http://%s for %d hosts", BuildID(), ln.Addr(), len(cfg.Hosts))
 	deploy.MarkReady(ln.Addr().String())
 	<-ctx.Done()
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	hs.Shutdown(sctx)
-	<-done // the cache is written
+	primary.shutdown(sctx)
+	<-fe.done // the cache is written
 }
 
 // kept is the launcher's runner and the processes it held at the start
