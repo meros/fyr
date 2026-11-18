@@ -37,15 +37,9 @@ import type { Theme } from "./inbox.tsx";
 import { repoKey, sortRepos, type AutoMergeRepo } from "./automerge.ts";
 import { githubPause, githubRows, githubState, updateRow, updateState, type UpdatesView } from "./updates.ts";
 import { jobLine, modelOptions, providerOptions, type Option, type SystemAgentChoice, type SystemAgentsView } from "./system-agents.ts";
-<<<<<<< HEAD
-import { colorVar, projectSearchLine, projectSubtitle, searchProjects, settingsProjects, setupLine } from "./projects.ts";
+import { colorVar, findProject, projectRecords, projectSearchLine, projectSubtitle, recordOf, searchProjects, settingsProjects, setupLine } from "./projects.ts";
 import { quietNote } from "./quiet.ts";
-import { NewProjectStep, ProjectEditor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
-=======
-import { colorVar, findProject, projectRecords, projectSearchLine, projectSubtitle, recordOf, searchProjects, settingsProjects } from "./projects.ts";
-import { quietNote } from "./quiet.ts";
-import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, type ProjectPatch } from "./project-ui.tsx";
->>>>>>> d18063e (V0.207: projects on several hosts can be linked and show as one (decision 0033, slice 1))
+import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
 import { pushRow, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
 import { move } from "./reorder.ts";

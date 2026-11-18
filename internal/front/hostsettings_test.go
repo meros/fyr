@@ -78,7 +78,7 @@ func newSettingsHostID(t *testing.T, name, id string) *settingsHost {
 			return []map[string]any{{"profile": "claude", "kind": "anthropic-oauth", "error": "on " + name}}
 		}}
 	inner := s.Handler()
-	sh := &settingsHost{host: h, reg: reg, home: home}
+	sh := &settingsHost{host: h, reg: reg, home: home, srv: s}
 	h.hs = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h.down.Load() {
 			panic(http.ErrAbortHandler)
@@ -95,11 +95,7 @@ func newSettingsHostID(t *testing.T, name, id string) *settingsHost {
 		inner.ServeHTTP(w, r)
 	}))
 	t.Cleanup(func() { h.hs.CloseClientConnections(); h.hs.Close(); st.Close() })
-<<<<<<< HEAD
-	return &settingsHost{host: h, reg: reg, home: home, srv: s}
-=======
 	return sh
->>>>>>> d18063e (V0.207: projects on several hosts can be linked and show as one (decision 0033, slice 1))
 }
 
 // registryAPI is fyrd's providerAPI: the registry as the server reads it.
