@@ -112,6 +112,7 @@ test("the shared values are the newest member's; the image is the first online m
 
 test("an edit splits into what the link shares and what stays this host's", () => {
   assert.deepEqual(splitSharedPatch({ name: "x", quiet: null, profile: "p", model: "m" }), { shared: { name: "x", quiet: null }, own: { profile: "p", model: "m" } });
+});
 
 test("hiding: any member's id hides the linked project, and a hidden host takes only its own record", () => {
   const projects = linkProjects([fyrA, fyrB, other], [A, B]);
