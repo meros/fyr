@@ -61,6 +61,67 @@ install -m 0755 "$build/fyr" "$data/launcher/fyr"
 ln -sfn "builds/$short" "$data/current.tmp" && mv -fh "$data/current.tmp" "$data/current"
 rm -rf "$dl" "$data/update.sh" "$data/src" "$data/src-built"
 
+# The first process of the launchd job answers to macOS for everything under
+# it, and a permission (App Management, Full Disk Access) is granted to that
+# binary's exact hash. The launcher changes with each install, so the job
+# starts this small host instead: it runs the launcher as its child, passes
+# signals on and exits as the launcher did. It holds no paths and is rebuilt
+# only when this source changes, so a permission once given stays given.
+host_dir="$(mktemp -d)" # the file name is the binary's name in the macOS prompt
+cat >"$host_dir/fyr.c" <<'EOF'
+#include <errno.h>
+#include <signal.h>
+#include <spawn.h>
+#include <stdio.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
+static volatile pid_t child;
+static void forward(int sig) {
+	if (child > 0)
+		kill(child, sig);
+}
+int main(int argc, char **argv) {
+	int sigs[] = {SIGTERM, SIGINT, SIGHUP};
+	sigset_t block, none;
+	struct sigaction sa = {0};
+	posix_spawnattr_t attr;
+	pid_t pid;
+	int err, st;
+	if (argc < 2)
+		return 64;
+	sigemptyset(&block);
+	sigemptyset(&none);
+	sa.sa_handler = forward;
+	for (int i = 0; i < 3; i++)
+		sigaddset(&block, sigs[i]);
+	sigprocmask(SIG_BLOCK, &block, 0); /* a signal waits until child is set */
+	for (int i = 0; i < 3; i++)
+		sigaction(sigs[i], &sa, 0);
+	posix_spawnattr_init(&attr);
+	posix_spawnattr_setsigmask(&attr, &none);
+	posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK);
+	err = posix_spawn(&pid, argv[1], 0, &attr, argv + 1, environ);
+	if (err) {
+		fprintf(stderr, "fyr: cannot start %s: error %d\n", argv[1], err);
+		return 127;
+	}
+	child = pid;
+	sigprocmask(SIG_UNBLOCK, &block, 0);
+	while (waitpid(pid, &st, 0) < 0)
+		if (errno != EINTR)
+			return 1;
+	return WIFEXITED(st) ? WEXITSTATUS(st) : 128 + WTERMSIG(st);
+}
+EOF
+if [ ! -x "$data/host/fyr" ] || ! cmp -s "$host_dir/fyr.c" "$data/host/fyr.c"; then
+  mkdir -p "$data/host"
+  cc -O2 -arch arm64 -arch x86_64 -o "$host_dir/fyr" "$host_dir/fyr.c"
+  mv -f "$host_dir/fyr" "$data/host/fyr"
+  cp "$host_dir/fyr.c" "$data/host/fyr.c"
+fi
+rm -rf "$host_dir"
+
 # What the agents need on their PATH: git, gh, claude, and node/go when you
 # have them (the projects you work on may).
 path=""
@@ -83,7 +144,7 @@ cat >"$plist" <<EOF
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string><string>-c</string>
-    <string>set -a; [ -r "\$HOME/.config/fyr/github.env" ] &amp;&amp; . "\$HOME/.config/fyr/github.env"; set +a; exec "$data/launcher/fyr" -data "$data" -seed "$data/seed/fyrd"</string>
+    <string>set -a; [ -r "\$HOME/.config/fyr/github.env" ] &amp;&amp; . "\$HOME/.config/fyr/github.env"; set +a; exec "$data/host/fyr" "$data/launcher/fyr" -data "$data" -seed "$data/seed/fyrd"</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
