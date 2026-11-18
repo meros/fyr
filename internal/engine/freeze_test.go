@@ -32,6 +32,7 @@ func TestS5MemoryGuardFreezesTheNewestJob(t *testing.T) {
 	frozen := map[string]bool{}
 	e.SlotFreeze = func(o string) bool { frozen[o] = true; return true }
 	e.SlotThaw = func(o string) { delete(frozen, o) }
+	guardDeps(t, e)
 
 	e.Tick()
 	if !frozen[c] || len(frozen) != 1 || !told(e, c, "Fyr paused your heavy job") {
@@ -72,6 +73,7 @@ func TestS5AFreezeEndsAfterTenMinutesAndNeverTakesTheLastJob(t *testing.T) {
 	frozen := map[string]bool{}
 	e.SlotFreeze = func(o string) bool { frozen[o] = true; return true }
 	e.SlotThaw = func(o string) { delete(frozen, o) }
+	guardDeps(t, e)
 	e.Tick()
 	if len(frozen) != 0 {
 		t.Fatal("the only running job was frozen")

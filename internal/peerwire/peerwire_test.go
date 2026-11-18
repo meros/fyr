@@ -20,6 +20,7 @@ import (
 	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peer"
+	"github.com/meros/fyr/internal/peerlink"
 	"github.com/meros/fyr/internal/roster"
 )
 
@@ -68,7 +69,7 @@ type fakeAuth struct {
 	links    func() int
 }
 
-func (a *fakeAuth) Mode(string) string { a.mu.Lock(); defer a.mu.Unlock(); return a.mode }
+func (a *fakeAuth) Mode(string) string     { a.mu.Lock(); defer a.mu.Unlock(); return a.mode }
 func (a *fakeAuth) Success(string, string) {}
 func (a *fakeAuth) WouldRefuse(way string) {
 	a.mu.Lock()
@@ -99,7 +100,7 @@ func (o *fakeOld) SetOnUse(f func()) { o.onUse = f }
 type fakeHost struct{ onWhois func() }
 
 func (h *fakeHost) Members(*peer.Env) http.Handler { return http.NotFoundHandler() }
-func (h *fakeHost) SetOnWhois(f func())             { h.onWhois = f }
+func (h *fakeHost) SetOnWhois(f func())            { h.onWhois = f }
 
 type rig struct {
 	env  *peer.Env
@@ -150,6 +151,10 @@ func (r *rig) start(t *testing.T, d Deps) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	d.Name, d.Key, d.Env, d.Port = "desk", r.key, r.env, &r.port
+	// The mesh dials the members as soon as it runs: a real dialer, to a closed
+	// port, so no test reaches the network.
+	d.Dial = &peerlink.Dialer{Key: r.key, Resolve: func(string) string { return "127.0.0.1:1" }}
+	r.env.Dial = d.Dial
 	d.Config.Every = time.Hour
 	d.Self = func() (string, string, error) { return "", "", context.Canceled } // no tailnet
 	Start(ctx, d)

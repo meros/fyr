@@ -4474,14 +4474,14 @@ try {
   const MARK = `({ ids: [...document.querySelectorAll('.list [aria-selected="true"]')].map((x) => x.dataset.id), pane: document.querySelector('.th .tt')?.getAttribute('title') ?? null })`;
   const threadReady = phone ? "!!document.querySelector('.m-thread, .qgate')" : "!!document.querySelector('.th .tt, .qgate')";
   // 1. Only the host filter fails.
-  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": "p_web" }, threadReady);
+  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": "F7QK-2M9X-AB34-CD56/p_web" }, threadReady);
   await waitFor(`${F}.off === null`, { soft: true });
   const a = await evaluate(F);
-  check(a.off === null && a.project === "p_web", `${ctx}: a link to a host-b thread with host-b off (${JSON.stringify(a)})`);
+  check(a.off === null && a.project === "F7QK-2M9X-AB34-CD56/p_web", `${ctx}: a link to a host-b thread with host-b off (${JSON.stringify(a)})`);
   if (!phone) {
-    await waitFor(`${MARK}.ids[0] === 't_lasso'`, { soft: true });
+    await waitFor(`${MARK}.ids[0] === 'M3RS-QX7P-5LKA-2WNE/t_lasso'`, { soft: true });
     const m = await evaluate(MARK);
-    check(m.ids.length === 1 && m.ids[0] === "t_lasso" && m.pane === "Fix map lasso on mobile", `${ctx}: the opened thread's row is not marked (${JSON.stringify(m)})`);
+    check(m.ids.length === 1 && m.ids[0] === "M3RS-QX7P-5LKA-2WNE/t_lasso" && m.pane === "Fix map lasso on mobile", `${ctx}: the opened thread's row is not marked (${JSON.stringify(m)})`);
     // Turning a host off while the thread is open is not undone.
     await evaluate(`document.querySelector('.ib .hfrow .hft[aria-label^="host-b,"]')?.click()`);
     await waitFor(`${F}.off === '["host-b"]'`, { soft: true });
@@ -4494,16 +4494,16 @@ try {
     check(await evaluate(`[...document.querySelectorAll('.m-list .m-mv')].some((r) => r.textContent.includes('Fix map lasso'))`), `${ctx}: the opened thread's row is not in the list after Back`);
   }
   // 2. Both fail.
-  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": "p_home" }, threadReady);
+  await open("?mock=rail&hosts=2&open=t_lasso", { "fyr.hostsOff": '["host-b"]', "fyr.projectFilter": "F7QK-2M9X-AB34-CD56/p_home" }, threadReady);
   await waitFor(`${F}.off === null && ${F}.project === null`, { soft: true });
   const b = await evaluate(F);
   check(b.off === null && b.project === null, `${ctx}: both filters failing (${JSON.stringify(b)})`);
   if (!phone) {
     // 2b. A thread in the folded Settled section: the filter clears, then its section opens and its row is marked.
     await open("?mock=rail&hosts=2&open=t_set7", { "fyr.hostsOff": '["desk"]', "fyr.projectFilter": null }, "!!document.querySelector('.th .tt')");
-    await waitFor(`${MARK}.ids[0] === 't_set7'`, { soft: true });
+    await waitFor(`${MARK}.ids[0] === 'F7QK-2M9X-AB34-CD56/t_set7'`, { soft: true });
     const m = await evaluate(MARK);
-    check(m.ids.length === 1 && m.ids[0] === "t_set7" && (await evaluate(F)).off === null, `${ctx}: a Settled thread opened with its host off (${JSON.stringify(m)})`);
+    check(m.ids.length === 1 && m.ids[0] === "F7QK-2M9X-AB34-CD56/t_set7" && (await evaluate(F)).off === null, `${ctx}: a Settled thread opened with its host off (${JSON.stringify(m)})`);
   }
   // 3. A quiet thread: the gate, and the filter stays.
   await open("?mock=rail&hosts=2&quiet=p_home&open=t_dish", { "fyr.hostsOff": '["desk"]', "fyr.projectFilter": null, "fyr.quietShowUntil": null }, "true");

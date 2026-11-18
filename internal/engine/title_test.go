@@ -51,6 +51,7 @@ func TestOwnerRegeneratesTheTitle(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	ft := &fakeTitler{title: "\"Move the login to OAuth.\""}
 	h.e.Titler = ft.make
+	guardDeps(t, h.e)
 	id := created(h, "fix the login page")
 	if r := h.cmd("thread.rename", id, core.Args{"title": "My name"}); !r.OK {
 		t.Fatalf("rename: %+v", r)
@@ -75,6 +76,7 @@ func TestFailedRegenerateKeepsTheTitle(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	ft := &fakeTitler{err: errors.New("the provider needs a login")}
 	h.e.Titler = ft.make
+	guardDeps(t, h.e)
 	id := created(h, "fix the login page")
 	if r := h.cmd("thread.regenerateTitle", id, nil); !r.OK {
 		t.Fatalf("regenerate: %+v", r)
@@ -97,6 +99,7 @@ func TestAgentRegeneratesTheTitle(t *testing.T) {
 	h := newHarness(t, time.Minute)
 	ft := &fakeTitler{title: "Move the login to OAuth"}
 	h.e.Titler = ft.make
+	guardDeps(t, h.e)
 	id := created(h, "fix the login page")
 	text, isErr := callAs(t, h.e, id, "thread_rename", map[string]any{"regenerate": true})
 	if isErr || !strings.Contains(text, "Move the login to OAuth") {

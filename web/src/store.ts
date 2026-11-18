@@ -485,3 +485,12 @@ export function decodeHostMarks(raw: unknown): OwnerMarks {
   }
   return out;
 }
+
+/** A link names a record by the host's own id (`?open=t_12`, an old push tap, a stored selection): the ref of the one
+ *  record that has it. An id that is already a ref, or that two hosts have, or that none has, comes back as it is
+ *  (decision 0031 C12: a link without a host opens the one thread that has the id, and is refused when two have it). */
+export function resolveRef<T extends { id?: string; rid?: string }>(records: readonly T[], id: string): string {
+  if (!id || records.some((r) => r.id === id)) return id;
+  const hit = records.filter((r) => r.rid === id);
+  return hit.length === 1 ? (hit[0].id ?? id) : id;
+}

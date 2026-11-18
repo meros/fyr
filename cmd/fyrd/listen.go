@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -171,8 +170,8 @@ func restartWhenTailnet(ctx context.Context, socket string) {
 // them, so `fyr auth observe` is always the way back.
 type oldListeners struct {
 	mu    sync.Mutex
-	open  func() []*http.Server // starts them
-	srvs  []*http.Server
+	open  func() *servers // starts them
+	srvs  *servers
 	onUse func()
 }
 
@@ -180,7 +179,7 @@ type oldListeners struct {
 func (o *oldListeners) Set(enable bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if enable == (len(o.srvs) > 0) || o.open == nil {
+	if enable == (o.srvs != nil && len(o.srvs.list) > 0) || o.open == nil {
 		return
 	}
 	if enable {
@@ -188,9 +187,7 @@ func (o *oldListeners) Set(enable bool) {
 		log.Printf("peer: the old host listeners are back (peer is in observe)")
 		return
 	}
-	for _, s := range o.srvs {
-		s.Close()
-	}
+	o.srvs.close()
 	o.srvs = nil
 	log.Printf("peer: the old host listeners are removed (peer is in enforce)")
 }
@@ -202,7 +199,7 @@ func (o *oldListeners) SetOnUse(f func()) { o.onUse = f }
 func (o *oldListeners) Close(ctx context.Context) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	for _, s := range o.srvs {
-		s.Shutdown(ctx)
+	if o.srvs != nil {
+		o.srvs.shutdown(ctx)
 	}
 }

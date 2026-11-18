@@ -26,6 +26,7 @@ func TestS4TheTickRaisesTheBudgetOnACalmHost(t *testing.T) {
 	}
 	e.UseSlots(p)
 	e.SlotSignals = func() slots.Signals { return sig }
+	guardDeps(t, e)
 	e.SlotAIMD = &slots.AIMD{N: 1}
 	a, b := bareThread(t, e), bareThread(t, e)
 	running(e, a)

@@ -143,6 +143,7 @@ func TestT3AdoptCommand(t *testing.T) {
 	}
 	calls := 0
 	e.Adopt = func(ids []string) (int, error) { calls++; return len(ids), nil }
+	guardDeps(t, e)
 	for range 2 {
 		r := e.Command(api.Cmd{CommandID: "a1", Action: "t3.adopt", Args: core.Args{"t3Ids": []any{"x", "y"}}})
 		if n, _ := r.Result.(map[string]any)["adopted"]; !r.OK || fmt.Sprint(n) != "2" {
