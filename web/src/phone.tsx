@@ -51,8 +51,8 @@ import { HostField } from "./host-pick-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
 import { AgentStatus } from "./agent-status.tsx";
 import { COLLAPSED_BY_DEFAULT, FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
-import { HeldTitle, NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, sectionHead } from "./row-ui.tsx";
-import { foldedRow } from "./selection.ts";
+import { NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, sectionHead } from "./row-ui.tsx";
+import { GUEST_TEXT, drawnRows, type Guest } from "./selection.ts";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
 import { QuotaList } from "./quota-ui.tsx";
@@ -165,8 +165,6 @@ export interface PhoneOpen {
 
 /** The inbox list's own state: open and expanded sections, selection mode and the picked rows. */
 export interface PhoneList {
-  /** V0.186: the current thread (the open one, else the last one open); its folded section's header is marked */
-  current: string | null;
   sectionOpen: Partial<Record<SectionKey, boolean>>;
   setSectionOpen(fn: (o: Partial<Record<SectionKey, boolean>>) => Partial<Record<SectionKey, boolean>>): void;
   expanded: Partial<Record<SectionKey, boolean>>;
@@ -202,8 +200,9 @@ export interface PhoneProps {
   /** threads, projects, profiles, hosts and the connection */
   store: Store;
   /** the inbox's sections; what search finds: the project filter's threads, quiet ones only while the unlock runs
-   *  (V0.114); all: the same with quiet ones, to count the hits the lock hides; the one unlock of quiet projects */
-  inbox: { sec: Sections; searchable: Record<string, Thread>; all: Record<string, Thread>; unlock: QuietUnlock };
+   *  (V0.114); all: the same with quiet ones, to count the hits the lock hides; the one unlock of quiet projects;
+   *  V0.192: rows is what the list draws (sec, with the current thread when the filters hide it), guest that row */
+  inbox: { sec: Sections; rows: Sections; guest: Guest | null; searchable: Record<string, Thread>; all: Record<string, Thread>; unlock: QuietUnlock };
   now: number;
   /** #41: the same thread commands, undo and toasts as the desktop */
   commands: ThreadCommands;
@@ -395,7 +394,6 @@ function MInbox(p: PhoneProps) {
   // V0.162: the button shows while a merged thread can settle; the bulk settle leaves pinned ones out and counts them.
   const merged = p.inbox.sec.seen.filter((t) => t.pr?.state === "MERGED" && (isPinned(t) || isAvailable(t, "thread.settle")));
   const canSettleMerged = merged.some((t) => !isPinned(t));
-  const holder = foldedRow(p.inbox.sec, p.list.current, p.list.sectionOpen); // V0.186: the thread last open, after Back
 
   return (
     <div class="m-screen">
@@ -474,14 +472,14 @@ function MInbox(p: PhoneProps) {
       )}
       <div class="m-list" ref={listRef} onScroll={onScroll}>
         {!p.list.selecting && <FilterEmpty f={p.filters} cls="m-fempty" />}
-        {p.inbox.sec.pinned.length > 0 && (
+        {p.inbox.rows.pinned.length > 0 && (
           // V0.104: the desktop's pinned block, above every section and always open.
           <section id="m-sec-pinned">
             <div class="m-sec">
               Pinned
               <span class="n">{stripCount(p.inbox.sec.pinned.length)}</span>
             </div>
-            {p.inbox.sec.pinned.map((t) => (
+            {p.inbox.rows.pinned.map((t) => (
               <MRow key={t.id} t={t} p={p} needs={t.attention.section === "needs"} />
             ))}
           </section>
@@ -492,7 +490,8 @@ function MInbox(p: PhoneProps) {
               <SlotQueueSection
                 phone
                 queue={queue}
-                threads={p.inbox.sec.slots}
+                threads={p.inbox.rows.slots}
+                n={p.inbox.sec.slots.length}
                 row={(t, a) => (
                   <div key={t.id} ref={a.attrs.ref} class={a.attrs.class || undefined} data-id={t.id}>
                     <MRow t={t} p={p} needs={false} lead={a.lead} />
@@ -501,20 +500,20 @@ function MInbox(p: PhoneProps) {
               />
             );
           const list = unpinned(p.inbox.sec[s.key]);
-          const open = isOpen(s.key, p.list.sectionOpen) && list.length > 0;
-          const limit = p.list.expanded[s.key] ? list.length : SECTION_LIMIT[s.key];
+          const rows = unpinned(p.inbox.rows[s.key]); // V0.192: `list` counts, `rows` draws
+          const open = isOpen(s.key, p.list.sectionOpen) && rows.length > 0;
+          const limit = p.list.expanded[s.key] ? rows.length : SECTION_LIMIT[s.key];
+          const shown = drawnRows(rows, open, limit, p.inbox.guest);
           const hint = s.key === "working" ? workingHint(list) : s.key === "snoozed" ? snoozedHint(list, p.now) : s.key === "settled" ? "last 24 h" : "";
           const collapsible = list.length > 0 && (COLLAPSED_BY_DEFAULT.includes(s.key) || !open);
-          const held = holder?.section === s.key ? holder.thread : null;
           return (
             <section id={`m-sec-${s.key}`}>
               <div
-                class={`m-sec${collapsible ? (open ? " exp" : " col") : ""}${s.key === "seen" && canSettleMerged && !p.list.selecting ? " hasbtn" : ""}${held ? " held" : ""}`}
-                {...sectionHead({ label: s.label, n: list.length, open, held, toggle: () => p.list.setSectionOpen((o) => ({ ...o, [s.key]: !isOpen(s.key, o) })) })}
+                class={`m-sec${collapsible ? (open ? " exp" : " col") : ""}${s.key === "seen" && canSettleMerged && !p.list.selecting ? " hasbtn" : ""}`}
+                {...sectionHead({ n: list.length, open, toggle: () => p.list.setSectionOpen((o) => ({ ...o, [s.key]: !isOpen(s.key, o) })) })}
               >
                 {s.label}
                 <span class="n">{stripCount(list.length)}</span>
-                {held && <HeldTitle t={held} />}
                 {s.key === "seen" && canSettleMerged && !p.list.selecting ? (
                   <button
                     class="m-sbtn"
@@ -529,14 +528,15 @@ function MInbox(p: PhoneProps) {
                     Settle merged
                   </button>
                 ) : (
-                  !held && hint && <span class="h ell">{hint}</span>
+                  hint && <span class="h ell">{hint}</span>
                 )}
               </div>
-              {open &&
-                list.slice(0, limit).map((t) => <MRow key={t.id} t={t} p={p} needs={s.key === "needs"} />)}
-              {open && list.length > limit && (
+              {shown.map((t) => (
+                <MRow key={t.id} t={t} p={p} needs={s.key === "needs"} />
+              ))}
+              {open && rows.length > shown.length && (
                 <button class="m-more" onClick={() => p.list.onExpand(s.key)}>
-                  Show all {list.length.toLocaleString()}
+                  Show all {rows.length.toLocaleString()}
                 </button>
               )}
             </section>
@@ -657,7 +657,8 @@ function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; needs: boo
   const pre = <MHost t={t} />;
   // V0.109: no row is marked here. The phone shows the inbox or one thread, never both, so there is no open thread
   // beside the list for a mark to follow; the desktop marks the open thread's row (app.tsx, selection.ts).
-  const body = needs ? <NeedsRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} /> : <OneRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} />;
+  const guest = p.inbox.guest?.id === t.id ? p.inbox.guest.why : undefined; // V0.192: as on the desktop
+  const body = needs ? <NeedsRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} guest={guest} /> : <OneRowBody t={t} now={p.now} look={PHONE_LOOK} lead={lead} pre={pre} guest={guest} />;
   return (
     <div class={`m-swp${picked ? " picked" : ""}${sw.phase === "swipe" ? " moving" : ""}`}>
       {side && (
@@ -679,7 +680,7 @@ function MRow({ t, p, needs, lead: own }: { t: Thread; p: PhoneProps; needs: boo
         onClick={onClick}
         onContextMenu={(e) => e.preventDefault()}
         role="button"
-        aria-label={`${t.title}, ${stateLabel(st)}`}
+        aria-label={`${t.title}, ${stateLabel(st)}${guest ? `, ${GUEST_TEXT[guest].tag}` : ""}`}
       >
         {body}
       </div>

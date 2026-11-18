@@ -54,7 +54,7 @@ test("j/k walks Unread before Seen; Unread folds on its own and is open by defau
   assert.equal(filterEmpty(byId(unread("u")), { hostsOff: ["x"], project: null }, { unread: false }), "1 more in folded section.");
 });
 
-test("Unread's fold is remembered on its own, and its folded header marks the current thread (V0.186)", () => {
+test("Unread's fold is remembered on its own, and a folded Unread holds the current thread (V0.186)", () => {
   assert.deepEqual(parseSectionOpen(JSON.stringify({ unread: false, seen: true })), { unread: false, seen: true });
   const sec = sections(byId(unread("u"), seen("s")));
   assert.equal(foldedRow(sec, "u", { unread: false })?.section, "unread");

@@ -33,6 +33,8 @@ interface Props {
   queue: QueueEntry[];
   /** the queued threads the list shows (sections().slots); the queue's other threads are hidden by a filter or search */
   threads: Thread[];
+  /** the header's count: V0.192 leaves out a current thread the filters hide, which `threads` draws */
+  n: number;
   row(t: Thread, a: SlotRowArgs): ComponentChildren;
 }
 
@@ -46,7 +48,7 @@ export function SlotQueueSection(p: Props) {
   if (!withQueue(p.queue, shown).length) return null;
   const parts = queueParts(p.queue);
   const movable = p.threads.length > 1;
-  const n = p.threads.length;
+  const n = p.n;
   const body = parts.map((part) => <Part key={part.host} part={part} shown={shown} phone={p.phone} reordering={reordering && movable} row={p.row} />);
   if (p.phone)
     return (
