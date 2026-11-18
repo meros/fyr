@@ -6,6 +6,7 @@ import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import { MOCK_COMMANDS, MOCK_PREVIEWS, MOCK_SHOTS, createMockServer, mockHosts, setMockHostOrder, trustMockLab, mockChanges, mockFilePatch, mockLoad, mockQueueLoad, mockQuota } from "./mock.ts";
 import { mockLeftoverCommand, mockUndeclaredCommand } from "./mock.ts";
 import { createMockProviders } from "./mock-providers.ts";
+import { withLongValues } from "./mock-long.ts";
 import { decodeHosts } from "./hosts.ts";
 import type { AuthState } from "./devices.ts";
 import type { PeerState } from "./peers.ts";
@@ -228,7 +229,8 @@ export function createMockApi(scenario: string): Api {
       return server.command(newCommandId(), action, threadId, mockHostList().length && hn && !threadId ? { ...(args ?? {}), host: hn } : (args ?? {}));
     };
 
-  return {
+  const long = q.get("long");
+  const api: Api = {
     mock: true,
     start(h) {
       h.conn("connecting");
@@ -502,6 +504,7 @@ export function createMockApi(scenario: string): Api {
       return mockFiles.get(id) ?? (id === "fx_img" ? MOCK_IMAGE : "data:text/plain,mock%20attachment%20" + encodeURIComponent(id));
     },
   };
+  return long === "word" || long === "words" ? withLongValues(api, long) : api;
 }
 
 /** V0.132: a small home folder for a mock host other than desk; the first two folders are repos. */

@@ -122,9 +122,9 @@
 .m-sheet{width:100%;max-height:88%;scroll-padding-bottom:calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;background:var(--raised);border-radius:20px 20px 0 0;padding:8px 0 calc(16px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.25);--knock:var(--raised);overflow-y:auto}
 .m-grab{width:36px;height:5px;border-radius:3px;background:var(--line-strong);margin:0 auto 10px;flex:none}
 .m-shh{padding:2px 20px 4px;font:600 17px/24px var(--ui);flex:none}
-.m-mi{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:14px;align-items:center;min-height:52px;padding:4px 20px;font:500 16px/22px var(--ui);color:var(--ink);flex:none;width:100%}
+.m-mi{display:grid;grid-template-columns:24px minmax(0,1fr) minmax(0,max-content);gap:14px;align-items:center;min-height:52px;padding:4px 20px;font:500 16px/22px var(--ui);color:var(--ink);flex:none;width:100%}
 .m-mi>span:first-child{display:grid;place-items:center;color:var(--ink-muted)}
-.m-mi .w{font:400 13px/16px var(--mono);color:var(--ink-muted);white-space:nowrap}
+.m-mi .w{font:400 13px/16px var(--mono);color:var(--ink-muted);white-space:nowrap;max-width:40vw;overflow:hidden;text-overflow:ellipsis}
 .m-mi.dis{color:var(--ink-muted)}
 .m-mi small{display:block;font:400 13px/18px var(--ui);color:var(--ink-muted)}
 .m-shf{display:flex;padding:8px 16px 0}.m-shf .m-bt{flex:1}
@@ -154,13 +154,13 @@
 .m-chip.st span{color:var(--ink)}
 .m-chip .icw{display:inline-flex;flex:none;overflow:visible}
 .m-chip.m{font-family:var(--mono);font-weight:400;font-size:12px}
-.m-pjb{flex:0 1 auto;max-width:40%;min-width:0;height:44px;display:flex;align-items:center;padding:0}
+.m-pjb{flex:0 1 auto;max-width:36%;min-width:0;height:44px;display:flex;align-items:center;padding:0}
 .m-pjb .m-chip{max-width:100%}
 .m-chip.nopj{background:transparent;border:1px dashed var(--line-strong);color:var(--ink-muted)}
-.m-chipsd{flex:1;display:flex;gap:6px;align-items:center;height:44px;min-width:0;padding:0}
-.m-chip.brn{flex:1 1 0;max-width:max-content;min-width:48px}
-.m-chip.pvc{min-width:48px}
-.m-chip.prc{flex:0 1 auto;min-width:48px;overflow:hidden;text-overflow:ellipsis;font:500 12px/16px var(--mono)} /* #84: a long change chip ends in … inside the row */
+.m-chipsd{flex:1;display:flex;gap:6px;align-items:center;height:44px;min-width:0;padding:0;overflow:hidden}
+.m-chip.brn{flex:1 1 0;max-width:max-content;min-width:36px}
+.m-chip.pvc{min-width:36px}
+.m-chip.prc{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font:500 12px/16px var(--mono)} /* #84: a long change chip ends in … inside the row */
 .m-chip.prc.ok{color:var(--calm)}.m-chip.prc.fail{color:var(--signal-ink)}
 .m-tabs{display:flex;padding:0 8px;min-width:0}
 .m-tabs button{height:44px;padding:0 12px;display:flex;align-items:center;font:500 15px/20px var(--ui);color:var(--ink-muted);border-bottom:2px solid transparent;white-space:nowrap;flex:none}
