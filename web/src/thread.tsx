@@ -10,6 +10,7 @@ import { Boundary, CrashProbe, crashProbe } from "./boundary.tsx";
 import { useApi } from "./api-context.ts";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createContext } from "preact";
+import { SlideMark } from "./motion-ui.tsx";
 import type { Decision, FyrEvent, Profile, PullRequest, TaskDTO, Thread } from "./types.ts";
 import { buildConversation, pace, type Entry, deliveryLabel, capCalls, cutOutput, friendlyName, fullInput, groupStats, groupSummary, groupTone, previewsOf, segments, type Item, type ToolCall, runLabel, fullOutputOf } from "./conversation.ts";
 import { renderMarkdown } from "./markdown.ts";
@@ -219,6 +220,7 @@ export function ThreadPane(p: ThreadPaneProps) {
         </div>
         <ThreadOffers t={t} onRun={p.onRun} />
         <div class="tabs" role="tablist">
+          <SlideMark under at={tab} />
           {threadTabs(t).map((k) => (
             <span class={tab === k ? "on" : ""} role="tab" onClick={() => setTab(k)}>
               {TAB_LABEL[k]}

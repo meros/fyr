@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EDGE_PX, idle, longPressCancelled, settleLabel, swipeAvail, swipeEnd, swipeMove, swipeOffset, swipeStart } from "../src/gesture.ts";
+import { EDGE_PX, idle, longPressCancelled, settleLabel, swipeAvail, swipeArmed, swipeEnd, swipeMove, swipeOffset, swipeStart } from "../src/gesture.ts";
 import { thread } from "./helpers.ts";
 
 const W = 390;
@@ -60,4 +60,14 @@ test("the reveal names the exact Action", () => {
 test("long press is cancelled by more than 8 px of movement", () => {
   assert.equal(longPressCancelled(0, 0, 5, 5), false);
   assert.equal(longPressCancelled(0, 0, 9, 0), true);
+});
+
+test("V0.native-feel: a flick commits short of the distance, a flick back cancels past it", () => {
+  const right = (dx: number) => swipeMove(swipeStart(100, 0), 100 + dx, 0);
+  assert.deepEqual(swipeEnd(right(60), W, ok, 900), { kind: "settle" });
+  assert.deepEqual(swipeEnd(right(20), W, ok, 900), { kind: "none" }, "too short to be meant");
+  assert.deepEqual(swipeEnd(right(W * 0.7), W, ok, -900), { kind: "none" });
+  assert.deepEqual(swipeEnd(swipeMove(swipeStart(300, 0), 240, 0), W, ok, -900), { kind: "snooze" });
+  assert.equal(swipeArmed(right(W * 0.49), W, ok), false);
+  assert.equal(swipeArmed(right(W * 0.5), W, ok), true);
 });

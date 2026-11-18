@@ -148,7 +148,10 @@ async function newTab() {
     browserContextId: ctx.result.browserContextId,
     sessionId,
     attached: [], // child targets (the sandboxed live view runs out of process)
-    send: (method, params = {}, sid = sessionId) => sendRaw(method, params, sid),
+    // V0.native-feel: these checks measure where things rest, so the page runs with reduced motion: nothing is on its
+    // way anywhere. A section that sets other media features keeps it; the motion section asks for motion by name.
+    send: (method, params = {}, sid = sessionId) =>
+      sendRaw(method, method === "Emulation.setEmulatedMedia" && !(params.features ?? []).some((f) => f.name === "prefers-reduced-motion") ? { ...params, features: [...(params.features ?? []), { name: "prefers-reduced-motion", value: "reduce" }] } : params, sid),
     // The next event of this name on this tab.
     next(method, timeout) {
       return new Promise((ok, fail) => {
@@ -168,6 +171,7 @@ async function newTab() {
   };
   tabsBySession.set(sessionId, tab);
   await tab.send("Page.enable");
+  await tab.send("Emulation.setEmulatedMedia", { features: [] });
   await tab.send("Runtime.enable");
   // The tab behaves as the focused window although several windows are open.
   await tab.send("Emulation.setFocusEmulationEnabled", { enabled: true });
@@ -1102,6 +1106,37 @@ try {
 });
 
 // V0.29: a draft survives a reload (a deploy reloads the page); clearing it removes it.
+// V0.native-feel: a sheet follows the finger, goes back from a short drag, closes from a long one, and plays its way out.
+section("V0.native-feel sheet drag", async ({ send, evaluate, openScreen, tapCenter, waitFor }) => {
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+  await openScreen({ url: "?mock=rail&open=t_triage" }, 390, 844);
+  await tapCenter(".m-tr1 .b44:last-child", "!!document.querySelector('.m-sheet')");
+  await waitFor(`document.querySelector('.m-sheet').getAnimations().length === 0`, { what: "the sheet to land" });
+  const y = () => evaluate(`new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.m-sheet:not([data-ghost] *)')).transform).m42`);
+  const box = await evaluate(`(() => { const r = document.querySelector('.m-grab').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 2, h: document.querySelector('.m-sheet').offsetHeight }; })()`);
+  const drag = async (dy, steps = 6) => {
+    await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x, y: box.y }] });
+    for (let i = 1; i <= steps; i++) await send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: box.x, y: box.y + (dy * i) / steps }] });
+  };
+  const lift = () => send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await drag(120);
+  const held = await y();
+  check(held > 90 && held <= 120, `V0.native-feel: the sheet does not follow the finger (${held})`);
+  const dim = await evaluate(`+getComputedStyle(document.querySelector('.sheet-back')).opacity`);
+  check(dim < 1 && dim > 0, `V0.native-feel: the scrim does not fade with the drag (${dim})`);
+  await new Promise((r) => setTimeout(r, 160)); // the finger stops: no flick
+  await lift();
+  await waitFor(`document.querySelector('.m-sheet').getAnimations().length === 0`, { what: "the sheet to return" });
+  check(Math.abs(await y()) < 0.5, "V0.native-feel: a short drag does not return the sheet");
+  await drag(box.h * 0.7);
+  await new Promise((r) => setTimeout(r, 160));
+  await lift();
+  await waitFor(`!document.querySelector('.m-scrim:not([data-ghost])')`, { what: "a long drag to close the sheet" });
+  check(await evaluate(`!!document.querySelector('.m-scrim[data-ghost]')`), "V0.native-feel: the sheet vanished without leaving");
+  await waitFor(`!document.querySelector('.m-scrim')`, { what: "the leaving sheet to go" });
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+});
+
 section('V0.29', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
@@ -1656,7 +1691,7 @@ try {
   await gone("Esc");
   // The backdrop: a press beside the dialog, in the scrim.
   await open("the backdrop");
-  const bd = await evaluate(`(() => { const r = document.querySelector('.dlg.settings').getBoundingClientRect(); const p = [Math.max(8, r.left / 2), innerHeight - 8]; return { p, scrim: document.elementFromPoint(p[0], p[1])?.classList.contains('scrim') ?? false }; })()`);
+  const bd = await evaluate(`(() => { const r = document.querySelector('.dlg.settings').getBoundingClientRect(); const p = [Math.max(8, r.left / 2), innerHeight - 8]; return { p, scrim: !!document.elementFromPoint(p[0], p[1])?.closest('.scrim') }; })()`);
   check(bd.scrim, `${ctx}: the point beside the dialog is not the backdrop (${JSON.stringify(bd)})`);
   await mouse(bd.p[0], bd.p[1]);
   await gone("a press on the backdrop");

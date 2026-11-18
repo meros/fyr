@@ -83,6 +83,7 @@ import { StallBanner } from "./stall-ui.tsx";
 import { restartNowAsk } from "./deploy.ts";
 import { cache, mergeEventLists } from "./cache.ts";
 import { navTransition } from "./native.ts";
+import { BottomSheet, installPress, PHONE_QUERY, Pop } from "./motion-ui.tsx";
 import { SETTLE_DONE_TOAST, menuFor, targetAt, type MenuEntry, type MenuItem, type MenuTarget } from "./menu.ts";
 import { ContextMenu } from "./menu-ui.tsx";
 import { Boundary } from "./boundary.tsx";
@@ -98,7 +99,6 @@ const sessionStore = () => {
   }
 };
 
-const PHONE_QUERY = "(max-width: 760px)";
 
 /** True at phone width (design/mobile, V0.14 breakpoint). */
 function usePhone(): boolean {
@@ -1156,18 +1156,15 @@ function App() {
   const allHostsCtx = useMemo(() => ({ ...hostsCtx, hosts: fullStore.hosts }), [hostsCtx, fullStore.hosts]); // V0.207: Settings
   const folderPickView = folderPick
     ? phone ? (
-        <div class="m-scrim fscrim" onClick={(e) => e.target === e.currentTarget && Date.now() - folderPick.at > 500 && closeFolderPick(null)}>
-          <div class="m-sheet fsheet" role="dialog" aria-modal="true" aria-label={pickTitle}>
-            <div class="m-grab" />
-            <div class="fsh">
-              <span class="m-shh">{pickTitle}</span>
-              <button class="m-fchg" onClick={() => closeFolderPick(null)}>
-                Cancel
-              </button>
-            </div>
-            {pickBody(false)}
+        <BottomSheet onClose={() => closeFolderPick(null)} label={pickTitle} cls="fsheet" scrimCls="fscrim">
+          <div class="fsh">
+            <span class="m-shh">{pickTitle}</span>
+            <button class="m-fchg" onClick={() => closeFolderPick(null)}>
+              Cancel
+            </button>
           </div>
-        </div>
+          {pickBody(false)}
+        </BottomSheet>
       ) : (
         <div class="fmodal">
           <Modal title={pickTitle} onClose={() => closeFolderPick(null)} wide>
@@ -1570,7 +1567,9 @@ function App() {
     setNav(entries[entries.length - 1]);
     const onPop = (e: PopStateEvent) => {
       const n = navFromHistory(e.state, location.search);
-      if (JSON.stringify(n.screen) !== JSON.stringify(navRef.current.screen)) navTransition("back", () => setNav(n));
+      // V0.native-feel: after the system's own swipe back the screen has already slid; a second slide would replay it.
+      const slid = (e as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition;
+      if (!slid && JSON.stringify(n.screen) !== JSON.stringify(navRef.current.screen)) navTransition("back", () => setNav(n));
       else setNav(n);
     };
     window.addEventListener("popstate", onPop);
@@ -1849,14 +1848,14 @@ function App() {
         </footer>
       )}
       {toast && (
-        <div class={`toast${toast.error ? " err" : ""}`} role="status">
+        <Pop kind="toast" class={`toast${toast.error ? " err" : ""}`} role="status">
           <span class="ell">{toast.text}</span>
           {toast.undo && cmds.canUndo() && (
             <button class="btn sm" onClick={() => void cmds.doUndo()}>
               Undo <kbd>⌘Z</kbd>
             </button>
           )}
-        </div>
+        </Pop>
       )}
       {dialog === "new" && <NewThreadDialog onAddProject={projectActions.add} profiles={store.profiles} hosts={store.hosts} projects={store.projects} projectFilter={filterId} clockOffset={store.clockOffset} onClose={() => setDialog(null)} onCreate={create} onNewProject={(name, folder, host) => projectActions.create(name, folder, [], host)} />}
       {dialog === "picker" && (
@@ -1923,6 +1922,7 @@ function tgtThread(s: Store, zone: Zone, view: { id: string } | null, sel: strin
   return id ? s.threads[id] : undefined;
 }
 
+installPress();
 render(
   <ApiContext.Provider value={hostApi}>
     <App />

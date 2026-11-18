@@ -5,6 +5,7 @@ import { createContext, type VNode } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Ask } from "./confirm.ts";
 import { copyToClipboard } from "./copy.ts";
+import { BottomSheet, DialogScrim } from "./motion-ui.tsx";
 
 export type AskFn = (a: Ask) => Promise<boolean>;
 
@@ -32,7 +33,6 @@ export function useConfirmHost(phone: boolean): { ask: AskFn; view: VNode | null
 function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: boolean): void }) {
   const box = useRef<HTMLDivElement>(null);
   const ok = useRef<HTMLButtonElement>(null);
-  const opened = useRef(Date.now());
   const [full, setFull] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pick, setPick] = useState(a.choice?.value ?? "");
@@ -127,39 +127,34 @@ function ConfirmView({ a, phone, onDone }: { a: Ask; phone: boolean; onDone(ok: 
 
   if (phone) {
     return (
-      <div class="m-scrim cfm-scrim" onClick={(e) => e.target === e.currentTarget && Date.now() - opened.current > 500 && onDone(false)}>
-        <div class="m-sheet cfm" ref={box} role="alertdialog" aria-modal="true" aria-label={a.title}>
-          <div class="m-grab" />
-          <div class="m-shh cfm-t">{a.title}</div>
-          {body}
-          <div class="cfm-f">
-            <button class="m-bt" onClick={() => onDone(false)}>
-              Cancel
-            </button>
-            <button class={`m-bt p${primary}`} ref={ok} onClick={() => onDone(true)}>
-              {a.confirm}
-            </button>
-          </div>
+      <BottomSheet onClose={() => onDone(false)} label={a.title} cls="cfm" scrimCls="cfm-scrim" role="alertdialog" panelRef={box}>
+        <div class="m-shh cfm-t">{a.title}</div>
+        {body}
+        <div class="cfm-f">
+          <button class="m-bt" onClick={() => onDone(false)}>
+            Cancel
+          </button>
+          <button class={`m-bt p${primary}`} ref={ok} onClick={() => onDone(true)}>
+            {a.confirm}
+          </button>
         </div>
-      </div>
+      </BottomSheet>
     );
   }
   return (
-    <div class="scrim cfm-scrim">
-      <div class="dlg cfm" ref={box} role="alertdialog" aria-modal="true" aria-label={a.title}>
-        <div class="dh">
-          <b class="cfm-t">{a.title}</b>
-        </div>
-        {body}
-        <div class="df">
-          <button class="btn" onClick={() => onDone(false)}>
-            Cancel <kbd>Esc</kbd>
-          </button>
-          <button class={`btn p${primary}`} ref={ok} onClick={() => onDone(true)}>
-            {a.confirm} <kbd>⏎</kbd>
-          </button>
-        </div>
+    <DialogScrim label={a.title} cls="cfm" scrimCls="cfm-scrim" role="alertdialog" panelRef={box}>
+      <div class="dh">
+        <b class="cfm-t">{a.title}</b>
       </div>
-    </div>
+      {body}
+      <div class="df">
+        <button class="btn" onClick={() => onDone(false)}>
+          Cancel <kbd>Esc</kbd>
+        </button>
+        <button class={`btn p${primary}`} ref={ok} onClick={() => onDone(true)}>
+          {a.confirm} <kbd>⏎</kbd>
+        </button>
+      </div>
+    </DialogScrim>
   );
 }

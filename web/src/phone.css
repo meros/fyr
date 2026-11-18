@@ -2,7 +2,7 @@
    prefixed so nothing here reaches the desktop, and nothing of the desktop reaches the phone. */
 
 .m-app{position:fixed;left:0;right:0;top:var(--app-top,0px);height:var(--app-h,100dvh);display:flex;flex-direction:column;background:var(--surface);color:var(--ink);font-family:var(--ui);font-size:15px;-webkit-font-smoothing:antialiased;
- padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);overflow:hidden;-webkit-tap-highlight-color:transparent}
+ padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);overflow:hidden;overflow:clip;-webkit-tap-highlight-color:transparent}
 :where(.m-app) button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit}
 :where(.m-app) button:disabled{cursor:default}
 .m-app .sp{flex:1}
@@ -44,14 +44,14 @@
 .m-nh .m-nt{margin-left:4px}
 
 /* count strip */
-.m-strip{flex:none;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;padding:6px 8px;background:var(--sunken);border-block:1px solid var(--line);--knock:var(--sunken)}
+.m-strip{position:relative;flex:none;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;padding:6px 8px;background:var(--sunken);border-block:1px solid var(--line);--knock:var(--sunken)}
 /* V0.137: Waiting for a slot adds a sixth segment while threads wait; every segment stays one column of the strip. */
 .m-seg{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:56px;border-radius:12px;color:var(--ink-muted);min-width:0}
 .m-seg .c{display:flex;align-items:center;gap:4px;max-width:100%}
 .m-seg .n{font:500 15px/20px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
 .m-seg.att .n{background:var(--beam);color:var(--on-beam);border-radius:10px;padding:0 5px}
 .m-seg .l{font:500 12px/14px var(--ui)}
-.m-seg.on{background:var(--raised);color:var(--ink);box-shadow:0 0 0 1px var(--line);--knock:var(--raised)}
+.m-seg.on{color:var(--ink);--knock:var(--raised)}
 .m-cstrip,.m-iosrow{flex:none;display:flex;align-items:center;min-height:44px;padding:0 4px 0 16px;font:400 14px/20px var(--ui);background:var(--harbour-wash);min-width:0}
 .m-cstrip{background:var(--sunken)}
 .m-cstrip>.ell,.m-iosrow>.ell{flex:1}
@@ -72,7 +72,6 @@
 .m-swp.picked{background:var(--select)}
 .m-mv{position:relative;background:var(--raised);border-radius:12px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer;--knock:var(--raised)}
 .m-swp.moving .m-mv{box-shadow:0 0 0 1px var(--line),0 4px 14px rgba(0,0,0,.12)}
-.m-swp:not(.moving) .m-mv{transition:transform .18s ease-out}
 .m-swp.picked .m-mv{background:var(--select);--knock:var(--select)}
 .m-under{position:absolute;inset:0;display:flex;align-items:center;gap:8px;padding:0 18px;font:600 15px/20px var(--ui);border-radius:12px;min-width:0}
 .m-under.l{justify-content:flex-start}.m-under.r{justify-content:flex-end}
@@ -134,7 +133,7 @@
 .m-toast .tb{margin-left:auto;display:flex;align-items:center;gap:6px;height:44px;padding:0 14px;border-radius:10px;border:1px solid rgba(255,255,255,.3);font:600 14px/20px var(--ui);flex:none}
 
 /* sheets */
-.m-scrim{position:absolute;inset:0;background:var(--scrim);z-index:6;display:flex;align-items:flex-end}
+.m-scrim{position:absolute;inset:0;z-index:6;display:flex;align-items:flex-end}
 .m-sheet{width:100%;max-height:88%;scroll-padding-bottom:calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;background:var(--raised);border-radius:20px 20px 0 0;padding:8px 0 calc(16px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.25);--knock:var(--raised);overflow-y:auto}
 .m-grab{width:36px;height:5px;border-radius:3px;background:var(--line-strong);margin:0 auto 10px;flex:none}
 .m-shh{padding:2px 20px 4px;font:600 17px/24px var(--ui);flex:none}
@@ -178,9 +177,9 @@
 .m-chip.pvc{min-width:36px}
 .m-chip.prc{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font:500 12px/16px var(--mono)} /* #84: a long change chip ends in … inside the row */
 .m-chip.prc.ok{color:var(--calm)}.m-chip.prc.fail{color:var(--signal-ink)}
-.m-tabs{display:flex;padding:0 8px;min-width:0}
+.m-tabs{position:relative;display:flex;padding:0 8px;min-width:0}
 .m-tabs button{height:44px;padding:0 12px;display:flex;align-items:center;font:500 15px/20px var(--ui);color:var(--ink-muted);border-bottom:2px solid transparent;white-space:nowrap;flex:none}
-.m-tabs button.on{color:var(--ink);border-color:var(--ink)}
+.m-tabs button.on{color:var(--ink)}
 .kb-open .m-tt{-webkit-line-clamp:1}
 .kb-open .m-tabs,.kb-open .m-chips{display:none}
 .m-peekc{flex:none;padding:10px 16px;font:400 14px/20px var(--ui);color:var(--ink-muted);background:var(--surface)}
@@ -375,21 +374,22 @@ html:has(.m-app),html:has(.m-app) body{overscroll-behavior:none}
 .m-app{touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .m-app :is(.msg,.prose,pre,code,.m-kvrow,.m-q,.eff p,.dl,input,textarea,[contenteditable]){user-select:text;-webkit-user-select:text;-webkit-touch-callout:default}
 .m-app img{-webkit-user-drag:none}
-.m-app button:not(:disabled):active,.m-app .m-mv:active{background-color:var(--select);transition:none}
-.m-app .m-bt.p:not(:disabled):active{filter:brightness(.92);transform:scale(.985)}
 .m-app *{scrollbar-width:none}
 .m-app *::-webkit-scrollbar{display:none}
 .m-app :focus:not(:focus-visible){outline:none}
-/* Screen changes slide: forward from the right, back to the right. */
-::view-transition-old(root),::view-transition-new(root){animation-duration:.24s;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
-html[data-nav=fwd]::view-transition-new(root){animation-name:m-in-r}
+/* Screen changes slide: forward from the right, back to the right. V0.native-feel: the screen on top is the one moving,
+   the one under it recedes and dims, and a tap during the slide reaches the new screen. */
+::view-transition{pointer-events:none}
+::view-transition-image-pair(root){isolation:auto}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.36s;animation-timing-function:cubic-bezier(.32,.72,0,1);animation-fill-mode:both;mix-blend-mode:normal}
+html[data-nav=fwd]::view-transition-new(root){animation-name:m-in-r;box-shadow:-12px 0 32px rgba(0,0,0,.14)}
 html[data-nav=fwd]::view-transition-old(root){animation-name:m-out-l}
+html[data-nav=back]::view-transition-old(root){animation-name:m-out-r;z-index:1;box-shadow:-12px 0 32px rgba(0,0,0,.14)}
 html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
-html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
-@keyframes m-in-r{from{transform:translateX(100%)}}
-@keyframes m-out-l{to{transform:translateX(-25%);opacity:.6}}
-@keyframes m-in-l{from{transform:translateX(-25%);opacity:.6}}
-@keyframes m-out-r{to{transform:translateX(100%)}}
+@keyframes m-in-r{from{transform:translate3d(100%,0,0)}to{transform:none}}
+@keyframes m-out-l{from{transform:none;filter:none}to{transform:translate3d(-28%,0,0);filter:brightness(.86)}}
+@keyframes m-in-l{from{transform:translate3d(-28%,0,0);filter:brightness(.86)}to{transform:none;filter:none}}
+@keyframes m-out-r{from{transform:none}to{transform:translate3d(100%,0,0)}}
 @media (prefers-reduced-motion: reduce){::view-transition-old(root),::view-transition-new(root){animation:none}}
 /* V0.42: the folder picker as a sheet */
 .fsheet{height:88%}
@@ -443,7 +443,6 @@ html[data-nav=back]::view-transition-old(root){animation-name:m-out-r}
    and the bar's rules with .m-load and .m-lsheet). One button, 44 px high (touch); it never wraps or grows the header:
    two hosts show, the rest are "+n". */
 .m-load{flex:none;display:flex;align-items:center;gap:6px;height:44px;padding:0 6px;margin-right:2px;border-radius:10px;min-width:0}
-.m-load:active{background:var(--select)}
 .m-conn.dot .ell{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .m-load .mlh,.m-load .mlh.rldr{display:flex;flex-direction:row;align-items:center;gap:3px;max-width:none}
 .m-load .mlmore{font:500 11px/1 var(--mono);color:var(--ink-muted)}
