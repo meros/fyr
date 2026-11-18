@@ -821,11 +821,16 @@ button.ptag{padding:0}
 .codeb{position:relative;min-width:0}
 .codeb>.cpy{position:absolute;top:6px;right:6px;z-index:1}
 .cpy{font:500 11px/16px var(--ui);padding:2px 8px;border-radius:6px;border:1px solid var(--line);background:var(--raised);color:var(--ink-muted);cursor:pointer;opacity:0;transition:opacity .12s}
-.codeb:hover>.cpy,.msgw:hover>.cpy,.cpy:focus-visible{opacity:1}
+.codeb:hover>.cpy,.msgw:hover>.cpy,.cv:hover>.msgw>.cpy,.cpy:focus-visible{opacity:1}
 .msgw{position:relative;min-width:0}
 .msgw>.msgcp{position:absolute;right:0;bottom:-22px}
+/* V0.187: an entry clips what leaves its box (content-visibility below), so the strip Copy hangs in is the entry's own
+   padding, given back as a negative margin: the space between entries stays. Above the next entry while hovered. */
+.cv:has(>.msgw>.msgcp){padding-bottom:22px;margin-bottom:-22px}
+.cv:has(>.msgw>.msgcp):hover{position:relative;z-index:1}
 .cpy:hover{color:var(--ink);border-color:var(--line-strong)}
-@media (hover:none){.cpy{opacity:.7}.msgw>.msgcp{position:static;display:block;margin:4px 0 0 auto}}
+/* No hover on a touch screen: Copy stays visible, in the flow under the message. */
+@media (hover:none){.cpy{opacity:.7}.msgw>.msgcp{position:static;display:block;margin:4px 0 0 auto}.cv:has(>.msgw>.msgcp){padding-bottom:0;margin-bottom:0}}
 .md .codeb pre{padding-right:56px}
 
 /* SPEC 0.5 V0.36: dismiss a merged PR from its chip */
