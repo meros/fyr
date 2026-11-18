@@ -6,6 +6,8 @@
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import { moveLabel } from "./reorder.ts";
+import { SlideMark } from "./motion-ui.tsx";
+import { haptic } from "./native.ts";
 
 /** What every control on a page reads: the page is read-only (no connection), it is the phone, and how to show Saved. */
 export interface SetEnv {
@@ -142,6 +144,7 @@ export function Switch({ on, label, disabled, onChange }: { on: boolean; label: 
       disabled={disabled || env.readOnly}
       onClick={(e) => {
         e.preventDefault(); // inside a label: one toggle, not two
+        haptic();
         onChange(!on);
       }}
     />
@@ -153,6 +156,7 @@ export function Seg<T extends string>({ value, options, label, onChange, disable
   const env = useSet();
   return (
     <span class="seg" role="radiogroup" aria-label={label}>
+      <SlideMark at={value} />
       {options.map((o) => (
         <button type="button" role="radio" aria-checked={o.value === value} class={o.value === value ? "on" : ""} disabled={disabled || env.readOnly} onClick={() => onChange(o.value)}>
           {o.label}

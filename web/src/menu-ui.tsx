@@ -3,11 +3,13 @@
 // opened on, or Escape.
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { anchorMoved, type MenuEntry, type MenuItem } from "./menu.ts";
+import { useEnterExit } from "./motion-ui.tsx";
 
 /** anchor: the element the menu was opened on; a scroll closes the menu only when it moves that element. */
 export function ContextMenu({ x, y, items, anchor, onPick, onClose }: { x: number; y: number; items: MenuEntry[]; anchor?: Element | null; onPick(it: MenuItem): void; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
+  useEnterExit(ref, "menu");
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;

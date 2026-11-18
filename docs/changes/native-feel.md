@@ -1,0 +1,25 @@
+# V0.native-feel: every control and sheet moves and answers like a native one
+
+→ V0.32 (native feel on the phone), V0.68 (the confirmation), V0.207 (the list keeps its place), design/mobile/README.md section 2. *Amends V0.32: its 0.24 s screen slide and its `:active` press are replaced; its rules on zoom, bounce, selection and haptics stand.* (owner, 18 Nov: "I want the UI elements (basic (buttons etc)/more advanced (bottom sheets etc)) to be much more like real non-html. I like the style, but they should handle very smooth overall and native-like!", then "include some polish as well".)
+
+The look does not change: colours, type, sizes and shapes are as they were. What changes is how things move and answer. One implementation for both fronts: `web/src/motion.ts` (the numbers, pure), `web/src/motion-ui.tsx` (gestures and animations), and the last block of `web/src/app.css`.
+
+(1) **Presses.** A control shows the press on pointer down and lets go softly; `:active` is gone, because it misses a quick tap and lights up under a scrolling finger. Inside a scroller a touch waits 70 ms to see whether it is a scroll, as native lists do; a move of 10 px or a scroll cancels the press. Each kind answers as its native kind does: solid buttons sink (scale 0.965), icon buttons get a well, rows and menu items light up in place, text buttons dim. A thread row on the phone sinks slowly while held: that is the long press beginning.
+
+(2) **Sheets.** Every sheet is `BottomSheet` (the phone's sheets, the confirmation, the folder picker) or `DialogScrim` (the desktop dialogs, which are sheets at phone width). A sheet rises on a spring. It follows the finger from its handle, and from its body when the body is scrolled to the top; the scrim fades with it. Released, it closes when it would coast past half its height, and returns otherwise, on a spring that starts at the finger's speed. Pulled up it resists and gives at most 120 px. A drag never starts in a field. The mouse can take hold of the handle and the title only, so text in a sheet can still be selected.
+
+(3) **Leaving.** What closes plays its way out by every route (the scrim, a button, Esc, the system Back), because the leaving copy is made as the element unmounts; the copy cannot be used and is hidden from readers. A sheet that opens as another closes replaces it: the scrim stays and the top edge moves from the old height to the new one. Desktop dialogs settle in (0.2 s) and fade out (0.12 s); toasts rise and the right-click menu grows from the pointer.
+
+(4) **Row swipes.** The row follows the finger with a style write, not a render. The colour under it deepens, with a haptic tick, when letting go will commit. A flick of 700 px/s commits after 40 px; a flick back cancels past the distance. A settled row flies off in its direction, the gap closes, and then the thread settles; the row returns if its thread did not leave (a refused command), and is shown again when its thread changes section while the row stays mounted (V0.207's hold, an undo). An unavailable direction still resists and says why.
+
+(5) **Screens.** The slide is 0.36 s on the curve iOS uses for a push. The screen on top is the one that moves, with a shadow at its edge; the one under it shifts 28 % and dims. After the system's own swipe back (`hasUAVisualTransition`) Fyr does not slide a second time.
+
+(6) **Marks that slide.** The count strip, the thread's tabs, the Changes modes and every segmented control in Settings have one mark that slides to the choice (`SlideMark`). It is measured when the choice or a size changes, never on an ordinary render. Switches stretch while pressed and land on a spring, with a tick. Checkmarks and radio marks draw in.
+
+(7) **Polish.** Sheets, dialogs, toasts and menus share three layered shadows and a light top edge. Fields show focus with a ring in the link colour. The Send button grows when there is something to send. On a desktop the pointer is the arrow on controls, not the web's hand, and the app's chrome is not selectable text; fields and prose are.
+
+(8) **Reduced motion.** Nothing slides, springs or changes size: sheets and dialogs appear and vanish, presses change colour only. No rule sets a transition on `*`: an element's default is "transition all", so a duration there makes every layout change a frame late (found here: it put the focused field under the keyboard).
+
+(9) **Tests.** `motion.test.ts` (springs end exactly at their target, a sheet does not overshoot, the release speed, the rubber band, when a sheet closes), `gesture.test.ts` (flicks). `layout.e2e.mjs` runs with reduced motion, because it measures where things rest, and has one section with motion on: a sheet follows the finger, returns from a short drag, closes from a long one and plays its way out.
+
+(10) **Not in this change.** A screen that follows the finger on an edge swipe back: the browser owns that gesture in an installed app, and a second one beside it would fight it. Haptics on iOS: Safari has no vibrate.

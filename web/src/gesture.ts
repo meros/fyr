@@ -15,6 +15,9 @@ export const SETTLE_AT = 0.5;
 export const SNOOZE_AT = 0.3;
 export const LONG_PRESS_MS = 400;
 export const LONG_PRESS_SLOP = 8;
+/** V0.native-feel: a quick flick commits short of the distance, once the row has moved this far. */
+export const FLICK_PX_S = 700;
+export const FLICK_MIN_PX = 40;
 
 export type Phase = "idle" | "pending" | "swipe" | "scroll" | "edge";
 
@@ -80,15 +83,24 @@ function shortReason(reason: string, t: Thread): string {
 
 export type SwipeResult = { kind: "settle" } | { kind: "snooze" } | { kind: "none"; reason?: string };
 
-export function swipeEnd(s: Swipe, width: number, avail: SwipeAvail): SwipeResult {
-  if (s.phase !== "swipe" || width <= 0) return { kind: "none" };
+/** Past the distance that commits on release; the row says so while the finger is still down. */
+export function swipeArmed(s: Swipe, width: number, avail: SwipeAvail): boolean {
+  if (s.phase !== "swipe" || width <= 0) return false;
   const f = s.dx / width;
-  if (f > 0) {
-    if (!avail.right.ok) return { kind: "none", reason: avail.right.label };
-    return f >= SETTLE_AT ? { kind: "settle" } : { kind: "none" };
-  }
-  if (!avail.left.ok) return { kind: "none", reason: avail.left.label };
-  return -f >= SNOOZE_AT ? { kind: "snooze" } : { kind: "none" };
+  return f > 0 ? avail.right.ok && f >= SETTLE_AT : avail.left.ok && -f >= SNOOZE_AT;
+}
+
+/** `vx`: the finger's speed at release (px/s). A flick along the swipe commits; a flick back cancels. */
+export function swipeEnd(s: Swipe, width: number, avail: SwipeAvail, vx = 0): SwipeResult {
+  if (s.phase !== "swipe" || width <= 0) return { kind: "none" };
+  const right = s.dx > 0;
+  const side = right ? avail.right : avail.left;
+  if (!side.ok) return { kind: "none", reason: side.label };
+  const along = right ? vx : -vx;
+  if (along <= -FLICK_PX_S) return { kind: "none" };
+  const flick = along >= FLICK_PX_S && Math.abs(s.dx) >= FLICK_MIN_PX;
+  if (!flick && !swipeArmed(s, width, avail)) return { kind: "none" };
+  return { kind: right ? "settle" : "snooze" };
 }
 
 /** How far the row moves: unavailable directions resist (a short rubber band). */

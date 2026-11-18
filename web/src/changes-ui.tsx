@@ -31,6 +31,7 @@ import {
 } from "./changes.ts";
 import { relTime } from "./format.ts";
 import type { Change } from "./types.ts";
+import { SlideMark } from "./motion-ui.tsx";
 
 
 type PatchState = { kind: "loading" } | { kind: "error"; error: string } | { kind: "ok"; p: FilePatchDTO };
@@ -185,6 +186,7 @@ export function ChangesView({ host, threadId, changes }: { host: string; threadI
       {since && since.files.length > 0 ? (
         <div class="chg-modes">
           <div class="chg-seg" role="group" aria-label="Which changes">
+            <SlideMark at={m} />
             <button class={`chg-mode${m === "since" ? " on" : ""}`} aria-pressed={m === "since"} onClick={() => setMode("since")}>
               {sinceLabel(since)}
             </button>

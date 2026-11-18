@@ -219,9 +219,9 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .spin{animation:spin 1.2s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.spin{animation:none}}
-.tabs{display:flex;gap:4px;margin-top:12px} /* #64: the header's blocks sit 12 px apart: title, chips, offers, tabs */
+.tabs{position:relative;display:flex;gap:4px;margin-top:12px} /* #64: the header's blocks sit 12 px apart: title, chips, offers, tabs */
 .tabs span{padding:6px 10px 8px;font:500 13px/18px var(--ui);color:var(--ink-muted);border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer}
-.tabs span.on{color:var(--ink);border-color:var(--ink)}
+.tabs span.on{color:var(--ink)}
 .tabs em{font:400 11px/16px var(--mono);font-style:normal;margin-left:6px}
 .pane-note{flex:1;min-height:0;overflow:auto;padding:16px 24px;font:400 14px/21px var(--ui);color:var(--ink-muted)}
 .pane-note p{margin:0 0 8px}
@@ -263,10 +263,10 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .chg-more{margin:8px 12px}
 /* V0.65: since you looked, Viewed, the agent's notes */
 .chg-modes{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;min-width:0;margin-bottom:8px}
-.chg-seg{display:flex;min-width:0;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--raised)}
+.chg-seg{position:relative;display:flex;min-width:0;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--raised)}
 .chg-mode{height:28px;padding:0 10px;font:500 12.5px/18px var(--ui);color:var(--ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .chg-mode+.chg-mode{border-left:1px solid var(--line)}
-.chg-mode.on{background:var(--select);color:var(--ink)}
+.chg-mode.on{color:var(--ink)}
 .chg-vcount{margin-left:auto;font:400 12.5px/18px var(--ui);color:var(--ink-muted);white-space:nowrap}
 .chg-since{display:block;min-width:0;margin-bottom:8px;font:400 12.5px/18px var(--ui);color:var(--ink-muted)}
 .chg-modes .chg-since{margin:0;flex:1}
@@ -494,7 +494,7 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .toast .btn kbd{background:transparent;color:var(--on-night);border-color:rgba(255,255,255,.3)}
 
 /* dialogs */
-.scrim{position:fixed;inset:0;background:var(--scrim);display:grid;place-items:start center;padding:12vh 16px 16px;z-index:20}
+.scrim{position:fixed;inset:0;display:grid;place-items:start center;padding:12vh 16px 16px;z-index:20}
 .dlg{width:min(360px,100%);max-height:76vh;display:flex;flex-direction:column;background:var(--raised);border:1px solid var(--line-strong);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);min-width:0;overflow:hidden}
 .dlg.wide{width:min(620px,100%)}
 .dh{display:flex;align-items:center;height:44px;padding:0 8px 0 16px;border-bottom:1px solid var(--line);font:600 14px/20px var(--ui);flex:none}
@@ -1161,17 +1161,17 @@ label.sr{cursor:pointer}
 .sbar .end{margin-left:auto}
 .mono{font-family:var(--mono)}
 /* the switch: every on/off in Settings; ink when on, in both themes (not a link and not "passing") */
-.swt{position:relative;flex:none;width:38px;height:22px;border-radius:11px;background:var(--line-strong);transition:background .12s;border:0;padding:0;cursor:pointer}
-.swt::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--raised);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .12s}
+.swt{position:relative;flex:none;width:38px;height:22px;border-radius:11px;background:var(--line-strong);transition:background .2s ease-out;border:0;padding:0;cursor:pointer}
+.swt::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--raised);box-shadow:0 1px 2px rgba(0,0,0,.25),0 0 0 .5px rgba(0,0,0,.05);transition:transform var(--spring-ms) var(--spring),width .18s ease-out}
 .swt[aria-checked="true"]{background:var(--ink)}
 .swt[aria-checked="true"]::after{transform:translateX(16px)}
 .swt[disabled]{opacity:.45;cursor:default}
 .swt:focus-visible{outline:2px solid var(--harbour);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.swt,.swt::after{transition:none}}
 /* the one segmented control */
-.seg{display:inline-flex;gap:0;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;align-self:flex-start;max-width:100%}
+.seg{position:relative;display:inline-flex;gap:0;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;align-self:flex-start;max-width:100%}
 .seg button{border:0;background:none;color:var(--ink-muted);padding:0 12px;height:30px;font:500 13px/18px var(--ui);cursor:pointer;white-space:nowrap}
-.seg button.on{background:var(--night);color:var(--on-night)}
+.seg button.on{color:var(--on-night)}
 .seg button[disabled]{opacity:.5;cursor:default}
 /* Saved, for 2 s after a change landed */
 .savedm{display:inline-flex}
@@ -1627,3 +1627,108 @@ label.sr{cursor:pointer}
 
 /* Amendment 1 of decision 0030: a host's link line under its state line. */
 .set .hlink { display: block; opacity: .75; }
+
+/* ---- V0.native-feel: how everything moves and answers. motion-ui.tsx does the gestures; the style stays as it is. ---- */
+:root{
+  --spring:linear(0,.058,.173,.312,.453,.584,.696,.788,.86,.915,.954,.981,.999,1.009,1.014,1.016,1.016,1.014,1.012,1.01,1.008,1.006,1.004,1.003,1.002,1.001,1);--spring-ms:.48s;
+  --spring-pop:linear(0,.08,.242,.436,.627,.793,.923,1.015,1.071,1.098,1.103,1.094,1.076,1.056,1.037,1.02,1.007,.998,.992,.99,.989,.99,.992,.994,.996,.998,.999,1);--spring-pop-ms:.6s;
+  --ease-sheet:cubic-bezier(.32,.72,0,1);
+  --lift-1:0 1px 2px rgba(16,24,32,.06),0 2px 6px rgba(16,24,32,.05);
+  --lift-2:0 2px 6px rgba(16,24,32,.08),0 12px 28px rgba(16,24,32,.14);
+  --lift-3:0 4px 12px rgba(16,24,32,.1),0 24px 64px rgba(16,24,32,.24);
+  --edge-light:inset 0 1px 0 rgba(255,255,255,.08);
+}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;text-rendering:optimizeLegibility}
+::selection{background:color-mix(in srgb,var(--harbour) 28%,transparent)}
+input,textarea{caret-color:var(--harbour)}
+img{-webkit-user-drag:none}
+[data-ghost]{pointer-events:none}
+
+/* Sheets and dialogs. The scrim is its own layer so a drag can fade it on the compositor. The shadow below the sheet is
+   its own colour: a sheet that springs past its rest never shows a gap under it. */
+.sheet-back{position:absolute;inset:0;background:var(--scrim);-webkit-tap-highlight-color:transparent}
+.m-sheet,.dlg{position:relative}
+.m-sheet{overscroll-behavior:contain;box-shadow:0 140px 0 var(--raised),var(--edge-light),0 -1px 0 color-mix(in srgb,var(--ink) 6%,transparent),0 -12px 40px rgba(0,0,0,.2);cursor:default}
+.m-grab{width:36px;height:5px;border-radius:3px;background:color-mix(in srgb,var(--ink) 22%,transparent);margin:0 auto 10px}
+.dlg{box-shadow:var(--edge-light),var(--lift-3)}
+@media (max-width:760px){
+  .dlg{border:0;overscroll-behavior:contain;box-shadow:0 140px 0 var(--raised),var(--edge-light),0 -12px 40px rgba(0,0,0,.2)}
+  .dlg::before{content:"";flex:none;width:36px;height:5px;border-radius:3px;margin:8px auto 2px;background:color-mix(in srgb,var(--ink) 22%,transparent)}
+}
+.toast,.m-toast{box-shadow:var(--edge-light),var(--lift-2)}
+.ctxm{transform-origin:top left;box-shadow:var(--edge-light),var(--lift-2)}
+.tmenu-l{transform-origin:top right;box-shadow:var(--edge-light),var(--lift-2);animation:pop-menu .14s cubic-bezier(.22,1,.36,1)}
+@keyframes pop-menu{from{opacity:0;scale:.96}}
+.m-toast .tb{transition:background-color .18s ease-out,scale .3s var(--spring)}
+.m-toast .tb[data-pressed]{background:rgba(255,255,255,.14)}
+
+/* The sliding mark of tabs and segments: the chosen child's text sits above it. */
+.slide{position:absolute;left:0;top:0;display:block;pointer-events:none;z-index:0}
+.slide.ready{transition:translate var(--spring-ms) var(--spring),width var(--spring-ms) var(--spring),height .2s ease-out,opacity .15s}
+.slide.under{background:var(--ink);border-radius:2px 2px 0 0}
+.m-strip>.slide{background:var(--raised);border-radius:12px;box-shadow:0 0 0 1px var(--line),var(--lift-1)}
+.seg>.slide{background:var(--night)}
+.chg-seg>.slide{background:var(--select)}
+:is(.m-strip,.seg,.chg-seg,.tabs,.m-tabs)>:not(.slide){position:relative;z-index:1;transition:color .18s ease-out,opacity .18s ease-out,scale .3s var(--spring)}
+.tabs span,.m-tabs button{border-bottom-color:transparent}
+
+/* Presses: on at once, off softly. Each kind of control answers as its native kind does. `scale` leaves `transform` to
+   the gestures. */
+:where(button,[role=tab],[role=button],summary,a.btn){transition:opacity .2s ease-out,background-color .2s ease-out,border-color .2s ease-out,color .2s ease-out,filter .2s ease-out,scale .32s var(--spring)}
+:where(button,[role=tab],summary)[data-pressed]{opacity:.55;transition-duration:.05s}
+/* solid buttons sink */
+:is(.btn,.m-bt,.m-send,.m-bnew,.m-sbtn,.heldup button,.m-capb,.m-dchip,.pfc,.hft,.m-seg,.seg button,.chg-mode,.m-chip,.m-pjb,.m-chipsd)[data-pressed]{opacity:1;scale:.965;transition-duration:.06s}
+:is(.btn,.m-bt,.m-sbtn,.heldup button,.m-capb,.m-dchip)[data-pressed]:not(.p){background-color:var(--sunken)}
+:is(.btn.p,.m-bt.p,.m-send,.m-bnew)[data-pressed]{filter:brightness(.86)}
+/* icon buttons get a soft well */
+:is(.b44,.ibtn,.dh .x,.att-b,.att-x,.src-x,.m-load,.m-bi)[data-pressed]{opacity:1;background-color:var(--select);scale:.92;transition-duration:.05s}
+.m-bi{border-radius:14px}
+/* rows and menu items light up in place */
+:is(.m-mi,.mi,.ctxm-i,.m-more,.more,.fpr,.pli,.cand,.slash-i,.tl,.al.click,.rw,.one,.m-mv){transition:background-color .24s ease-out,scale .34s var(--spring)}
+:is(.m-mi,.mi,.ctxm-i,.m-more,.more,.fpr,.pli,.cand,.slash-i,.tl,.al.click,.rw,.one)[data-pressed]{opacity:1;background-color:var(--select);transition-duration:.04s}
+/* a thread row sinks slowly: that is the long press beginning */
+.m-mv[data-pressed]{background-color:var(--select);--knock:var(--select);scale:.982;transition:background-color .04s,scale .4s ease-out}
+.m-op{transition:background-color .18s ease-out,border-color .18s ease-out,box-shadow .18s ease-out,scale .32s var(--spring)}
+.m-op[data-pressed]{opacity:1;scale:.98;transition-duration:.06s}
+.m-tbtn[data-pressed],.m-fchg[data-pressed],.m-tabs button[data-pressed],.m-rd[data-pressed]{opacity:.5}
+.m-swp.moving .m-mv{will-change:transform}
+button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
+
+/* Selection marks draw in rather than swap. */
+.m-ck,.m-op .mk{transition:background-color .16s ease-out,border-color .16s ease-out,box-shadow .24s var(--spring),scale .3s var(--spring-pop)}
+.swt[data-pressed]{opacity:1}
+.swt[data-pressed]::after{width:22px}
+.swt[aria-checked="true"][data-pressed]::after{transform:translateX(12px)}
+.set.phone .swt[data-pressed]::after{width:29px}
+.set.phone .swt[aria-checked="true"][data-pressed]::after{transform:translateX(13px)}
+
+/* A swipe says when letting go will commit. */
+.m-under{transition:background-color .16s ease-out}
+.m-under.set:not(.armed){background:color-mix(in srgb,var(--calm) 55%,var(--sunken))}
+.m-under.snz:not(.armed){background:color-mix(in srgb,var(--night) 62%,var(--sunken))}
+.m-under>*{transition:scale .4s var(--spring-pop)}
+.m-under.armed>:not(.ell){scale:1.28}
+
+/* Fields wake up. */
+.m-cmp,.m-ta,.m-custom input,.m-otherf,.fld :is(input,select,textarea),.cmp{transition:border-color .16s ease-out,box-shadow .16s ease-out}
+.m-cmp:focus-within,.m-ta:focus,.m-custom input:focus,.fld :is(input,select,textarea):focus{border-color:var(--harbour);box-shadow:0 0 0 3px color-mix(in srgb,var(--harbour) 16%,transparent);outline:0}
+.m-send{transition:opacity .2s ease-out,filter .2s ease-out,scale .34s var(--spring-pop)}
+.m-send:disabled{scale:.9}
+.m-bt.p,.btn.p,.m-bnew,.m-send{box-shadow:var(--edge-light)}
+.m-bnew{box-shadow:var(--edge-light),var(--lift-1)}
+.m-abody,.m-nbody,.chtab,.convo,.db,.m-lsheet{overscroll-behavior-y:contain}
+
+/* A desktop app: the arrow on controls (links keep the hand), and its chrome is not text to select. */
+@media (hover:hover) and (pointer:fine){
+  :where(button,summary,[role=button],[role=tab],.rw,.one,.tl,.al.click,.sec.tog,.cand,.m-ah,.chip.msel,.chip.msel select,.chip.pj,.chip.proj){cursor:default!important}
+  :where(button,[role=tab],.rw,.one,.sec,.dh,.tabs,.rail,.top,.kh,.ctxm){user-select:none;-webkit-user-select:none}
+  :where(input,textarea){user-select:text;-webkit-user-select:text}
+  :is(.ibtn,.btn,.mi,.more,.rw,.one,.dh .x):hover{transition-duration:.08s}
+}
+@media (prefers-reduced-motion:reduce){
+  /* Colour still answers a press; nothing changes size or slides. (Never a rule on `*`: every element's default is
+     "transition all", so a duration there makes each layout change a frame late.) */
+  [data-pressed]{scale:none!important}
+  .slide.ready,.m-send,.m-ck,.m-op .mk,.m-under>*{transition:none}
+  .tmenu-l{animation:none}
+}

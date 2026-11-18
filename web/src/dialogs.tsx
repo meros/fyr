@@ -14,20 +14,19 @@ import type { HostInfo } from "./hosts.ts";
 import { folderHint, type NewThreadArgs } from "./new-thread.ts";
 import { useNewThreadForm, type NewThreadFormOptions } from "./new-thread-form.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
+import { DialogScrim } from "./motion-ui.tsx";
 
 export function Modal({ title, onClose, children, wide, cls }: { title: string; onClose(): void; children: any; wide?: boolean; /** V0.119: "settings" keeps one size on every page */ cls?: string }) {
   return (
-    <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div class={`dlg${wide ? " wide" : ""}${cls ? ` ${cls}` : ""}`} role="dialog" aria-modal="true" aria-label={title}>
-        <div class="dh">
-          <b>{title}</b>
-          <button class="x" onClick={onClose} aria-label="Close" title="Close (Esc)">
-            ×
-          </button>
-        </div>
-        {children}
+    <DialogScrim onClose={onClose} onBack={onClose} label={title} cls={`${wide ? "wide" : ""}${cls ? ` ${cls}` : ""}`.trim()}>
+      <div class="dh">
+        <b>{title}</b>
+        <button class="x" onClick={onClose} aria-label="Close" title="Close (Esc)">
+          ×
+        </button>
       </div>
-    </div>
+      {children}
+    </DialogScrim>
   );
 }
 
