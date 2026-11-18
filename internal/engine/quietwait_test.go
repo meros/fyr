@@ -106,7 +106,9 @@ func TestQuietMarkClearsWhenTheJobWorksAgain(t *testing.T) {
 	r := newQuietRig(t, "bgstuck")
 	r.pass(7, 0)
 	r.h.wait(r.id, "told", func(th core.Thread, _ core.Attention) bool { return r.told() == 1 && !th.Running })
-	r.pass(1, 2)
+	// Two sweeps: a sweep during the agent's turn drops the watch, and the
+	// first one after it then only takes a new reading.
+	r.pass(2, 2)
 	if k := r.task(); k.QuietSince != nil {
 		t.Fatalf("still marked quiet: %+v", k)
 	}
