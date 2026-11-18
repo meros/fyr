@@ -50,6 +50,16 @@ interface BodyProps {
   guest?: GuestWhy;
 }
 
+/** V0.196: on a section running down to its auto-close, on both fronts: using it restarts the time. */
+export function hideUse(running: boolean, use: () => void): Record<string, unknown> {
+  return running ? { onPointerDown: use, onPointerMove: use, onKeyDown: use } : {};
+}
+
+/** V0.48, V0.196: the small clock in the header of a section that closes by itself; it restarts on use. */
+export function HideClock({ at }: { at: number }) {
+  return <span key={at} class="ahc" style={{ "--ah": `${Math.max(0, (at - Date.now()) / 1000)}s` }} title="Closes by itself" aria-hidden="true" />;
+}
+
 /** V0.186: a section header's toggle on both fronts, the only thing that folds a section from its header. */
 export function sectionHead(o: { n: number; open: boolean; toggle(): void }): Record<string, unknown> {
   if (!o.n) return {};

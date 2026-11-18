@@ -51,7 +51,8 @@ import { HostField } from "./host-pick-ui.tsx";
 import { SavedMark, SetContext, useSaved } from "./settings-rows.tsx";
 import { AgentStatus } from "./agent-status.tsx";
 import { COLLAPSED_BY_DEFAULT, FilterEmpty, FilterRow, SECTION_LIMIT, isOpen, type FilterView } from "./inbox.tsx";
-import { NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, sectionHead } from "./row-ui.tsx";
+import { HideClock, NeedsRowBody, OneRowBody, PHONE_LOOK, PIN_ICON, hideUse, sectionHead } from "./row-ui.tsx";
+import { AUTO_HIDE_SECTIONS, type HideAt } from "./inbox-autohide.ts";
 import { GUEST_TEXT, drawnRows, type Guest } from "./selection.ts";
 import { PwaControls } from "./pwa-ui.tsx";
 import type { PushStatus } from "./push.ts";
@@ -166,7 +167,13 @@ export interface PhoneOpen {
 /** The inbox list's own state: open and expanded sections, selection mode and the picked rows. */
 export interface PhoneList {
   sectionOpen: Partial<Record<SectionKey, boolean>>;
-  setSectionOpen(fn: (o: Partial<Record<SectionKey, boolean>>) => Partial<Record<SectionKey, boolean>>): void;
+  /** A header's tap. */
+  toggleSection(k: SectionKey): void;
+  /** V0.186: the section named in the strip: it opens and stays open. */
+  nameSection(k: SectionKey): void;
+  /** V0.196: the sections that close by themselves, with their deadline (ms) */
+  hideAt: HideAt;
+  sectionUsed(k: SectionKey): void;
   expanded: Partial<Record<SectionKey, boolean>>;
   onExpand(k: SectionKey): void;
   picked: Set<string>;
@@ -371,10 +378,17 @@ function MInbox(p: PhoneProps) {
     if (!el) return;
     const tops = SECTIONS.filter((s) => document.getElementById(`m-sec-${s.key}`)).map((s) => ({ key: s.key, top: document.getElementById(`m-sec-${s.key}`)!.offsetTop - el.offsetTop }));
     setActive(activeSection(tops, el.scrollTop));
+    // V0.196: a touch screen has no pointing, and a drag turns into a scroll: scrolling a closing section is using it.
+    const box = el.getBoundingClientRect();
+    for (const k of AUTO_HIDE_SECTIONS) {
+      if (p.list.hideAt[k] === undefined) continue;
+      const r = document.getElementById(`m-sec-${k}`)?.getBoundingClientRect();
+      if (r && r.top < box.bottom && r.bottom > box.top) p.list.sectionUsed(k);
+    }
   };
 
   const jump = (k: SectionKey) => {
-    p.list.setSectionOpen((o) => ({ ...o, [k]: true })); // V0.186: the owner named this section
+    p.list.nameSection(k);
     requestAnimationFrame(() => {
       const el = listRef.current;
       const h = document.getElementById(`m-sec-${k}`);
@@ -506,14 +520,16 @@ function MInbox(p: PhoneProps) {
           const shown = drawnRows(rows, open, limit, p.inbox.guest);
           const hint = s.key === "working" ? workingHint(list) : s.key === "snoozed" ? snoozedHint(list, p.now) : s.key === "settled" ? "last 24 h" : "";
           const collapsible = list.length > 0 && (COLLAPSED_BY_DEFAULT.includes(s.key) || !open);
+          const hideAt = open ? p.list.hideAt[s.key] : undefined;
           return (
-            <section id={`m-sec-${s.key}`}>
+            <section id={`m-sec-${s.key}`} {...hideUse(hideAt !== undefined, () => p.list.sectionUsed(s.key))}>
               <div
                 class={`m-sec${collapsible ? (open ? " exp" : " col") : ""}${s.key === "seen" && canSettleMerged && !p.list.selecting ? " hasbtn" : ""}`}
-                {...sectionHead({ n: list.length, open, toggle: () => p.list.setSectionOpen((o) => ({ ...o, [s.key]: !isOpen(s.key, o) })) })}
+                {...sectionHead({ n: list.length, open, toggle: () => p.list.toggleSection(s.key) })}
               >
                 {s.label}
                 <span class="n">{stripCount(list.length)}</span>
+                {hideAt !== undefined && <HideClock at={hideAt} />}
                 {s.key === "seen" && canSettleMerged && !p.list.selecting ? (
                   <button
                     class="m-sbtn"

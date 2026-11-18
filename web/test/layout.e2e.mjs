@@ -696,7 +696,8 @@ const SETTLE = `new Promise((ok) => {
   mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
   const moving = () => {
     try { if (document.documentElement.matches(':active-view-transition')) return true; } catch {}
-    return document.getAnimations().some((a) => a.playState === 'running' && a.effect?.getComputedTiming().endTime !== Infinity);
+    // V0.196: the auto-close clock runs for 10 s and moves nothing else.
+    return document.getAnimations().some((a) => a.playState === 'running' && a.animationName !== 'ahc' && a.effect?.getComputedTiming().endTime !== Infinity);
   };
   const t0 = performance.now();
   const tick = () => {
@@ -3243,6 +3244,11 @@ try {
     await waitFor(`!!document.querySelector('#sec-snoozed [data-id]')`, { what: "the Snoozed section to open" });
     rows.push([await evaluate(`document.querySelector('#sec-snoozed [data-id]').dataset.id`), "", "snoozed", "leaves"]);
     for (const [id, , sec, then] of rows) {
+      if (sec === "snoozed") {
+        // V0.196: it may have closed by itself during the rows before.
+        await evaluate(`(() => { const h = document.querySelector('#sec-snoozed .sec'); if (h.getAttribute('aria-expanded') === 'false') h.click(); })()`);
+        await waitFor(`!!document.querySelector('#sec-snoozed [data-id="${id}"]')`, { what: "the Snoozed section to open again" });
+      }
       const before = await evaluate(settles(id));
       const r = await center(`document.querySelector('#sec-${sec} [data-id="${id}"]')`);
       check(!!r, `${ctx}: no row ${id} in ${sec}`);
@@ -3287,6 +3293,11 @@ try {
     await waitFor(`!!document.querySelector('#m-sec-snoozed .m-mv')`, { what: "the Snoozed section to open" });
     rows.push(["", await evaluate(`document.querySelector('#m-sec-snoozed .m-mv').getAttribute('aria-label').split(',')[0]`), "snoozed", "leaves"]);
     for (const [id, title, sec, then] of rows) {
+      if (sec === "snoozed") {
+        // V0.196: it may have closed by itself during the rows before.
+        await evaluate(`(() => { const h = document.querySelector('#m-sec-snoozed .m-sec'); if (h.getAttribute('aria-expanded') === 'false') h.click(); })()`);
+        await waitFor(`!!document.querySelector('#m-sec-snoozed .m-mv')`, { what: "the Snoozed section to open again" });
+      }
       const row = `[...document.querySelectorAll('#m-sec-${sec} .m-mv')].find((r) => r.getAttribute('aria-label').startsWith(${JSON.stringify(title + ",")}))`;
       const n0 = (await evaluate(allSettles)).length;
       const c = await center(row);
@@ -3946,9 +3957,8 @@ try {
 }
 });
 
-// V0.48: Settled opened from its header shows a clock and closes by itself (30 s; the test
-// fast-forwards with a short wait on a patched clock is not possible, so it checks the clock and
-// that the rail's g5 keeps it open without one).
+// V0.48: Settled opened from its header shows a clock; the rail's g5 keeps it open without one. The section
+// "V0.196 auto-close" below waits out the 10 s.
 section('V0.48', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
@@ -3966,6 +3976,37 @@ try {
   check(!b.clock && b.rows > 0, `V0.48 settled: chosen in the rail it still runs down (${JSON.stringify(b)})`);
 } catch (e) {
   failures.push(`V0.48 settled: ${e.message}`);
+}
+});
+
+// V0.196: Snoozed and Settled opened from their header show the clock and fold again after 10 s, on both fronts.
+for (const phone of [false, true]) section(`V0.196 auto-close ${phone ? "phone" : "desktop"}`, async (h) => {
+  const { send, evaluate, waitFor, navigate, openScreen } = h;
+  const ctx = `V0.196 auto-close ${phone ? "phone" : "desktop"}`;
+try {
+  const head = (k) => (phone ? `#m-sec-${k} .m-sec` : `#sec-${k} .sec`);
+  if (phone) await openScreen({ url: "?mock=rail" }, 390, 844);
+  else {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail`, `!!document.querySelector(${JSON.stringify(head("settled"))})`);
+  }
+  const STATE = (k) => `({ expanded: document.querySelector(${JSON.stringify(head(k))})?.getAttribute('aria-expanded'), clock: !!document.querySelector(${JSON.stringify(`${head(k)} .ahc`)}) })`;
+  const t0 = Date.now();
+  await evaluate(`for (const s of ${JSON.stringify([head("snoozed"), head("settled")])}) document.querySelector(s).click()`);
+  for (const k of ["snoozed", "settled"]) {
+    await waitFor(`${STATE(k)}.clock`, { soft: true });
+    const a = await evaluate(STATE(k));
+    check(a.expanded === "true" && a.clock, `${ctx}: ${k} opened without its clock (${JSON.stringify(a)})`);
+  }
+  for (const k of ["snoozed", "settled"]) {
+    await waitFor(`${STATE(k)}.expanded === 'false'`, { timeout: 14_000, what: `${k} to close by itself` });
+    check(!(await evaluate(STATE(k))).clock, `${ctx}: ${k} folded with its clock`);
+  }
+  const took = Date.now() - t0;
+  check(took >= 9_500, `${ctx}: closed after ${took} ms, not 10 s`);
+} catch (e) {
+  failures.push(`${ctx}: ${e.message}`);
 }
 });
 
