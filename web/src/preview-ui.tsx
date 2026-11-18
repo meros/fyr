@@ -1,6 +1,7 @@
 // Preview cards in the log, the full-screen viewer and the filmstrip (SPEC 0.5 V0.19, V0.47, V0.165).
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { downloadUrl } from "./attach.ts";
 import { FRAME_ALLOW, filmstrip, frameHeight, type PreviewCard } from "./previews.ts";
 import { bridgeMessage } from "./view.ts";
 import { requestFullscreen, useLayer } from "./fullscreen.ts";
@@ -12,6 +13,8 @@ export interface ViewerImage {
   src: string;
   title: string;
   caption?: string;
+  /** the file's name, for a source that carries none (V0.download-assets) */
+  name?: string;
 }
 /** One open viewer at a time: the images it can swipe between and the one on screen. */
 type Open = { items: ViewerImage[]; at: number } | null;
@@ -38,6 +41,30 @@ function openCard(card: PreviewCard, all: PreviewCard[]) {
 
 export function previewDomId(seq: number): string {
   return `pv-${seq}`;
+}
+
+/** V0.download-assets: Download, on an image's card, in the viewer and on a sent file. A link, so the browser saves
+ *  it the way it saves any file (the phone's share sheet or Downloads, the desktop's Downloads). */
+export function DownloadLink({ src, name, cls }: { src: string; name?: string; cls: string }) {
+  if (!src) return null;
+  return (
+    <a class={cls} href={downloadUrl(src)} download={name ?? ""} aria-label="Download" title="Download" onPointerDown={(e) => e.stopPropagation()}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 4v11" />
+        <path d="m7 10.5 5 5 5-5" />
+        <path d="M5 20h14" />
+      </svg>
+    </a>
+  );
+}
+
+/** A markdown image in a message (`.md-img`) opens in the viewer on a press (V0.download-assets), where it zooms
+ *  and has Download. Put on the element that holds the rendered markdown. */
+export function openMarkdownImage(e: MouseEvent) {
+  const t = e.target as HTMLElement | null;
+  if (!(t instanceof HTMLImageElement) || !t.classList.contains("md-img")) return;
+  const src = t.getAttribute("src") ?? "";
+  if (src) openImages([{ key: src, src, title: t.alt }], 0);
 }
 
 /** The Full screen button of every preview card and the live view (V0.165). */
@@ -134,6 +161,7 @@ export function PreviewCardView({ card, all }: { card: PreviewCard; all: Preview
               {card.width} × {card.height}
             </span>
           )}
+          {!html && <DownloadLink cls="pv-dl pv-cdl" src={card.src} name={card.title} />}
           <FsButton onPress={() => (html ? fs.enter() : openCard(card, all))} />
         </figcaption>
       )}
@@ -319,6 +347,7 @@ export function PreviewViewer() {
             {open.at + 1} / {open.items.length}
           </span>
         )}
+        <DownloadLink cls="pv-dl pv-x" src={c.src} name={c.name ?? c.title} />
         <button class="pv-x" aria-label="Close" onClick={close}>
           ×
         </button>

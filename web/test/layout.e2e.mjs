@@ -5223,6 +5223,9 @@ try {
   await shot(`v0165-thread-${front}.png`);
   const cards = await evaluate(`[...document.querySelectorAll('.pv')].map((c) => ({ kind: c.classList.contains('html') ? 'html' : 'image', fs: !!c.querySelector('.pv-fs') }))`);
   check(cards.length > 0 && cards.every((c) => c.fs), `${ctx}: a preview card has no Full screen button (${JSON.stringify(cards)})`);
+  // V0.download-assets: an image's card has Download beside Full screen, the same size; an HTML page has none.
+  const dls = await evaluate(`[...document.querySelectorAll('.pv')].map((c) => { const a = c.querySelector('.pv-h a.pv-dl'); const r = a?.getBoundingClientRect(); const f = c.querySelector('.pv-h button.pv-fs')?.getBoundingClientRect(); return { kind: c.classList.contains('html') ? 'html' : 'image', dl: !!a, href: a?.getAttribute('href') ?? '', attr: a?.hasAttribute('download') ?? false, w: Math.round(r?.width ?? 0), h: Math.round(r?.height ?? 0), fw: Math.round(f?.width ?? 0), fh: Math.round(f?.height ?? 0) }; })`);
+  check(dls.every((c) => (c.kind === "html" ? !c.dl : c.dl && c.href && c.attr && c.w === c.fw && c.h === c.fh && c.w >= (phone ? 44 : 28))), `${ctx}: an image card's Download is missing or not the size of Full screen (${JSON.stringify(dls.map((c) => ({ ...c, href: c.href.slice(0, 24) })))})`);
   // 1. An image: the viewer covers the screen; each way out leaves the thread where it was.
   for (const how of ["Escape", "Close", "Back"]) {
     await press(".pv.image .pv-fs");
@@ -5230,8 +5233,12 @@ try {
     const inn = await evaluate(`({ covers: ${COVERS(".pv-full")}, ...${STATE} })`);
     check(inn.covers, `${ctx}: the image viewer does not cover the screen (${JSON.stringify(inn)})`);
     if (!phone) check(inn.fs, `${ctx}: the image viewer did not use the Fullscreen API on the desktop (${JSON.stringify(inn)})`);
-    if (how === "Escape") await shot(`v0165-image-full-${front}.png`);
-    await leave(how, ".pv-full .pv-x");
+    if (how === "Escape") {
+      await shot(`v0165-image-full-${front}.png`);
+      const vd = await evaluate(`(() => { const a = document.querySelector('.pv-full .pv-fh a.pv-dl'); const r = a?.getBoundingClientRect(); return { dl: !!a, href: (a?.getAttribute('href') ?? '').slice(0, 24), attr: a?.hasAttribute('download') ?? false, w: Math.round(r?.width ?? 0), h: Math.round(r?.height ?? 0) }; })()`);
+      check(vd.dl && vd.href && vd.attr && vd.w >= 44 && vd.h >= 44, `${ctx}: the image viewer has no Download (${JSON.stringify(vd)})`);
+    }
+    await leave(how, ".pv-full button.pv-x");
     await waitFor(`!document.querySelector('.pv-full') && !document.fullscreenElement`, { soft: true });
     await settle();
     const out = await evaluate(STATE);
@@ -5369,6 +5376,8 @@ try {
   check(await evaluate(`!!document.querySelector('.pv-full .pv-stage img')`), `${ctx}: a sent image does not open in the zooming viewer`);
   const pdf = await evaluate(`[...document.querySelectorAll('.att-file')].map((a) => ({ n: a.textContent, href: a.getAttribute('href') ?? '', t: a.getAttribute('target') }))`);
   check(pdf.some((p) => /spec\.pdf/.test(p.n) && p.href && p.t === "_blank"), `${ctx}: a sent PDF has no Open link (${JSON.stringify(pdf)})`);
+  const fdl = await evaluate(`[...document.querySelectorAll('.att-fw')].map((f) => { const a = f.querySelector('a.att-dl'); const r = a?.getBoundingClientRect(); return { dl: !!a, attr: a?.getAttribute('download') ?? '', w: Math.round(r?.width ?? 0), h: Math.round(r?.height ?? 0) }; })`);
+  check(fdl.length > 0 && fdl.every((f) => f.dl && f.w >= 44 && f.h >= 44) && fdl.some((f) => f.attr === "spec.pdf"), `${ctx}: a sent file has no Download beside it (${JSON.stringify(fdl)})`);
 } catch (e) {
   failures.push(`${ctx}: ${e.message}`);
 }

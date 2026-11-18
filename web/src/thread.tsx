@@ -34,7 +34,7 @@ import { ChipStrip, ClipPicker, SentAttachments, useAttachments } from "./attach
 import { sendArgs } from "./attach.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import type { ComponentChildren } from "preact";
-import { Filmstrip, PreviewCardView } from "./preview-ui.tsx";
+import { Filmstrip, PreviewCardView, openMarkdownImage } from "./preview-ui.tsx";
 import { LiveViewPanel } from "./view-ui.tsx";
 import { rememberTab } from "./desk-history.ts";
 import { TAB_LABEL, composerAnswers, defaultTab, showsDecision, threadTabs } from "./view.ts";
@@ -856,7 +856,7 @@ function ItemView({ it, previews, process }: { it: Item; previews: PreviewCard[]
         <div class={`msgw${process ? " proc" : ""}`}>
           {/* V0.149 (8): a command the message asks the owner to run is a card (Copy only), never a block that scrolls */}
           {splitProse(it.text).map((part, i) =>
-            part.kind === "cmd" ? <ProseCommand key={i} text={part.text} /> : <div key={i} class="cl prose md" dangerouslySetInnerHTML={{ __html: renderMarkdown(part.text, host, api.attachmentUrl) }} />,
+            part.kind === "cmd" ? <ProseCommand key={i} text={part.text} /> : <div key={i} class="cl prose md" onClick={openMarkdownImage} dangerouslySetInnerHTML={{ __html: renderMarkdown(part.text, host, api.attachmentUrl) }} />,
           )}
           <CopyButton text={copySource({ kind: "message", text: it.text })} label="Copy message" cls="msgcp" />
         </div>

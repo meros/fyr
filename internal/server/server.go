@@ -750,7 +750,12 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 	w.Header().Set("Content-Type", m.MediaType)
-	w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.PathEscape(m.Name))
+	// V0.download-assets: ?download=1 saves the file under its name instead of showing it.
+	disposition := "inline"
+	if r.URL.Query().Get("download") != "" {
+		disposition = "attachment"
+	}
+	w.Header().Set("Content-Disposition", disposition+"; filename*=UTF-8''"+url.PathEscape(m.Name))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox")
 	http.ServeContent(w, r, m.Name, time.Time{}, f)
