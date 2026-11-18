@@ -2,7 +2,7 @@
 // the projects, follows from it. Only active values show; a selected value (a project picked, a host off) stays.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activeFilters, applyFilters, filterEmpty, inView, parseHostsOff, threadHost, toggleHost, type FilterSel } from "../src/filters.ts";
+import { activeFilters, applyFilters, clickHost, filterEmpty, inView, parseHostsOff, threadHost, toggleHost, type FilterSel } from "../src/filters.ts";
 import type { HostInfo } from "../src/hosts.ts";
 import type { Project, Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
@@ -104,6 +104,13 @@ test("toggleHost: off and on again; the list stays in no order but without repea
   assert.deepEqual(toggleHost([], "lab"), ["lab"]);
   assert.deepEqual(toggleHost(["lab"], "lab"), []);
   assert.deepEqual(toggleHost(["lab"], "desk"), ["lab", "desk"]);
+});
+
+test("V0.204: a click on the only host on ends the host filter; any other click toggles", () => {
+  const hosts = [{ name: "desk", last: true }, { name: "lab", last: false }, { name: "old", last: false }];
+  assert.deepEqual(clickHost(["lab", "old"], hosts, "desk"), []);
+  assert.deepEqual(clickHost(["lab", "old"], hosts, "lab"), ["old"]);
+  assert.deepEqual(clickHost([], [{ name: "desk", last: false }, { name: "lab", last: false }], "lab"), ["lab"]);
 });
 
 test("parseHostsOff: what the device stored, else none off", () => {

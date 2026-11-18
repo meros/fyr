@@ -4597,7 +4597,7 @@ try {
     const box = (e) => e?.getBoundingClientRect();
     const rows = [...document.querySelectorAll(${JSON.stringify(phone ? ".m-list .m-mv" : ".ib .list [data-id]")})];
     return {
-      hosts: [...document.querySelectorAll('${root}.hfrow .hft')].map((b) => ({ name: b.querySelector('.nm')?.textContent ?? '', on: b.getAttribute('aria-pressed') === 'true', last: b.getAttribute('aria-disabled') === 'true', n: b.querySelector('.hn')?.textContent ?? '', struck: getComputedStyle(b.querySelector('.nm')).textDecorationLine, dot: (() => { const m = b.querySelector('.hmark'); return m ? m.className + ':' + m.dataset.glyph : null; })(), h: Math.round(box(b).height) })),
+      hosts: [...document.querySelectorAll('${root}.hfrow .hft')].map((b) => ({ name: b.getAttribute('aria-label').split(',')[0], on: b.getAttribute('aria-pressed') === 'true', words: !!b.querySelector('.nm'), w: Math.round(box(b).width), n: b.querySelector('.hn')?.textContent ?? '', struck: getComputedStyle(b.querySelector('.hn')).textDecorationLine, dot: (() => { const m = b.querySelector('.hmark'); return m ? m.className + ':' + m.dataset.glyph : null; })(), h: Math.round(box(b).height) })),
       projects: [...document.querySelectorAll('${root}.pfrow .pfc')].map((b) => ({ name: b.querySelector('.ell')?.textContent ?? '', n: Number((/: (\\d+) thread/.exec(b.title) ?? [])[1] ?? -1), h: Math.round(box(b).height) })),
       order: (() => { const a = box(document.querySelector('${root}.hfrow')), b = box(document.querySelector('${root}.pfrow')); return a && b ? b.top >= a.bottom : null; })(),
       fits: [...document.querySelectorAll('${root}.hfrow, ${root}.pfrow')].every((e) => box(e).right <= innerWidth + 0.5),
@@ -4623,7 +4623,9 @@ try {
   // 2. Two hosts: the switch, all on, in the owner's order, above the projects. 5: the old key is dropped.
   await go("?mock=rail&hosts=2&hostOrder=host-b,desk", { "fyr.hostFilter": "desk" });
   const two = await evaluate(STATE);
-  check(JSON.stringify(two.hosts.map((c) => c.name)) === JSON.stringify(["host-b", "desk"]) && two.hosts.every((c) => c.on && !c.last && Number(c.n) >= 1), `${ctx}: the host switch (${JSON.stringify(two.hosts)})`);
+  check(JSON.stringify(two.hosts.map((c) => c.name)) === JSON.stringify(["host-b", "desk"]) && two.hosts.every((c) => c.on && Number(c.n) >= 1), `${ctx}: the host switch (${JSON.stringify(two.hosts)})`);
+  // V0.204: a pill is its mark and its count, whatever the host is called.
+  check(two.hosts.every((c) => !c.words && c.w <= 72), `${ctx}: a host pill is too wide or carries the name (${JSON.stringify(two.hosts)})`);
   // V0.170: the segments carry the host's mark (an offline host's with its ring).
   check(two.hosts[0]?.dot === "hmark off:server" && two.hosts[1]?.dot === "hmark:laptop", `${ctx}: the hosts' marks (${JSON.stringify(two.hosts.map((c) => c.dot))})`);
   check(two.order === true && two.fits, `${ctx}: the host row is not above the project row, or a row runs past the edge (${JSON.stringify({ order: two.order, fits: two.fits })})`);
@@ -4633,18 +4635,21 @@ try {
   // 3. host-b off: its threads go, its projects fall out of row 2, remembered; desk is the last one on.
   await click(seg("host-b"), `localStorage.getItem('fyr.hostsOff') === '["host-b"]'`);
   const off = await evaluate(STATE);
-  check(off.hosts[0]?.on === false && off.hosts[0]?.n === "hidden" && off.hosts[0]?.struck === "line-through" && off.hosts[1]?.on && off.hosts[1]?.last, `${ctx}: host-b off (${JSON.stringify(off.hosts)})`);
+  check(off.hosts[0]?.on === false && off.hosts[0]?.n === two.hosts[0]?.n && off.hosts[0]?.struck === "line-through" && off.hosts[1]?.on && off.hosts[1]?.struck === "none", `${ctx}: host-b off (${JSON.stringify(off.hosts)})`);
   check(off.rows >= 1 && off.rows < two.rows && off.rowHosts.every((x) => (phone ? x === "desk" : !["t_lasso", "t_triage"].includes(x))), `${ctx}: a host-b thread with host-b off (${JSON.stringify({ rowHosts: off.rowHosts, rows: off.rows, before: two.rows })})`);
   const gone = two.projects.map((c) => c.name).filter((n) => !off.projects.some((c) => c.name === n));
   check(gone.includes("acme/ops") && off.projects.every((c) => c.n >= 1 && two.projects.some((d) => d.name === c.name)), `${ctx}: host-b's projects do not fall out of row 2 (${JSON.stringify({ before: two.projects.map((c) => c.name), after: off.projects })})`);
   await shot(`host-rows-off-${phone ? "phone" : "desktop"}.png`);
-  await click(seg("desk"), "true");
-  check((await evaluate(STATE)).stored === '["host-b"]', `${ctx}: the last host on was turned off`);
   await go("?mock=rail&hosts=2&hostOrder=host-b,desk");
   const again = await evaluate(STATE);
   check(again.hosts[0]?.on === false && again.rows === off.rows, `${ctx}: the hosts turned off are not remembered on this device (${JSON.stringify(again.hosts)})`);
   await click(seg("host-b"), `!localStorage.getItem('fyr.hostsOff')`);
   check((await evaluate(STATE)).hosts.every((c) => c.on), `${ctx}: host-b back on`);
+  // V0.204: a click on the only host on ends the host filter.
+  await click(seg("host-b"), `localStorage.getItem('fyr.hostsOff') === '["host-b"]'`);
+  await click(seg("desk"), `!localStorage.getItem('fyr.hostsOff')`);
+  const ended = await evaluate(STATE);
+  check(ended.stored === null && ended.hosts.every((c) => c.on) && ended.rows === two.rows, `${ctx}: the only host on did not end the host filter (${JSON.stringify({ stored: ended.stored, hosts: ended.hosts, rows: ended.rows })})`);
   // 4. desk off, then fold Needs and Unread (host-b's threads are there, V0.189): desk stays off; the empty state; Clear filter.
   await click(seg("desk"), `localStorage.getItem('fyr.hostsOff') === '["desk"]'`);
   await click(secHead("needs"), "true");
