@@ -12,7 +12,8 @@ import { attachmentUrl, type UploadReply } from "./attach.ts";
 import { previewUrl } from "./previews.ts";
 import { decodeHosts, type HostInfo } from "./hosts.ts";
 import { frontPath, hostPath } from "./urls.ts";
-import { addressable, decodeFront, flatten, hostOfFrame, reachabilityChanged, stampProject, stampThread, type FrontState, type HostResult } from "./hostfeed.ts";
+import { addressable, bare, decodeFront, flatten, hostOfFrame, reachabilityChanged, ref, stampDeploy, stampEvent, stampLoad, stampPatch, stampProject, stampSlots, stampThread, unrefDeep, type FrontState, type HostResult } from "./hostfeed.ts";
+import { sinceRev } from "./cache.ts";
 import { initialBuildWatch, observeBuildId } from "./buildid.ts";
 import type { Quota } from "./quota.ts";
 import type { HostLoad } from "./load.ts";
@@ -206,16 +207,30 @@ function createHttpApi(): Api {
     }
     const f = decodeFront(await r.json());
     front = f;
+    // V0.38: with a stored copy, ask each host only for the threads changed since it. A rev is its host's own clock, so
+    // "since" is each host's own newest (decision 0031 2.5): one number for all of them would skip a slower clock's threads.
+    const stored = await cache.state();
+    const partial = new Set<string>();
     const results = await Promise.all(
       addressable(f.hosts).map(async (host): Promise<HostResult> => {
+        const mine = (stored?.threads ?? []).filter((t) => t.hostId === host.id);
+        const since = mine.length ? sinceRev({ ...stored!, threads: mine }) : 0;
         try {
-          return { host, state: await getJson<StateDTO>(hostPath(host.id!, "/state")) };
+          const state = await getJson<StateDTO & { partial?: boolean }>(hostPath(host.id!, since ? `/state?since=${since}` : "/state"));
+          if (state.partial) partial.add(host.id!);
+          return { host, state };
         } catch {
           return { host, state: { now: f.now, user: f.user, threads: [], actions: [], profiles: [], projects: [] } };
         }
       }),
     );
-    return flatten(f, results);
+    const dto = flatten(f, results);
+    if (partial.size && stored) {
+      // A partial answer is the threads that changed: the others are the stored ones.
+      const fresh = new Set(dto.threads.map((t) => t.id));
+      dto.threads = [...stored.threads.filter((t) => partial.has(t.hostId ?? "") && !fresh.has(t.id)), ...dto.threads];
+    }
+    return dto;
   };
 
   const reload = async (gen: number) => {
@@ -283,11 +298,12 @@ function createHttpApi(): Api {
     es.addEventListener("deploy", (m) => {
       // Until slice 4 the banner is the update of the host the front runs in.
       const d = frame<DeployProgress & { host?: string }>(m);
-      if (d && d.host && d.host === front?.front.id) h.deploy?.(d);
+      if (d && d.host && d.host === front?.front.id) h.deploy?.(stampDeploy(d, d.host));
     });
     es.addEventListener("thread.patch", (m) => {
       const p = frame<ThreadPatch & { host?: string }>(m);
-      if (p) h.threadPatch?.(p);
+      const host = p && hostOfFrame(hostsNow(), p);
+      if (p && host) h.threadPatch?.(stampPatch(p, host.id!));
     });
     es.addEventListener("thread", (m) => {
       const t = frame<ThreadDTO>(m);
@@ -295,8 +311,9 @@ function createHttpApi(): Api {
       if (t && host) h.thread(stampThread(t, host));
     });
     es.addEventListener("event", (m) => {
-      const e = frame<FyrEvent>(m);
-      if (e) h.event(e);
+      const e = frame<FyrEvent & { host?: string }>(m);
+      const host = e && hostOfFrame(hostsNow(), e);
+      if (e && host) h.event(stampEvent(e, host.id!));
     });
     es.onerror = () => {
       if (gen === generation) {
@@ -361,6 +378,16 @@ function createHttpApi(): Api {
     return gaveUp ? { ok: false, error: "Fyr is restarting or not reachable; try again in a moment" } : reply;
   };
 
+  const eachOne = async <T,>(host: string, path: string): Promise<T[]> => {
+    try {
+      const r = await fetch(hostPath(host, path));
+      const j = (await r.json().catch(() => [])) as unknown;
+      return r.ok && Array.isArray(j) ? (j as T[]) : [];
+    } catch {
+      return [];
+    }
+  };
+
   /** A read over every host that is online, one call each, joined in the owner's host order. */
   const eachHost = async <T,>(path: string): Promise<T[]> => {
     const lists = await Promise.all(
@@ -415,30 +442,40 @@ function createHttpApi(): Api {
       });
       connect();
     },
-    command: (host, action, threadId, args) => post(hostPath(host, "/command"), action, threadId, args),
+    async command(host, action, threadId, args) {
+      // The host knows its own ids: the refs of its records go out bare, and the ids in the reply come back as refs.
+      const r = await post(hostPath(host, "/command"), action, threadId ? bare(host, threadId) : threadId, unrefDeep(host, args));
+      if (!r.ok) return r;
+      return {
+        ...r,
+        ...(r.threadId ? { threadId: ref(host, r.threadId) } : {}),
+        ...(r.result && typeof r.result.id === "string" && action.startsWith("project.") ? { result: { ...r.result, id: ref(host, r.result.id) } } : {}),
+        ...(r.result && action === "host.slotOrder" && Array.isArray((r.result as { waiting?: unknown }).waiting) ? { result: stampSlots(r.result as never, host) as never } : {}),
+      };
+    },
     frontCommand: (action, args) => post(frontPath("/command"), action, undefined, args),
     async events(host, threadId, after = 0, limit = 400) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(threadId)}/events?after=${after}&limit=${limit}`));
+      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/events?after=${after}&limit=${limit}`));
       if (!r.ok) throw new Error(`events ${r.status}`);
       const j = (await r.json()) as { events?: FyrEvent[] };
-      return j.events ?? [];
+      return (j.events ?? []).map((e) => stampEvent(e, host));
     },
     async thread(host, threadId) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(threadId)}`));
+      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}`));
       if (!r.ok) return null;
       const t = (await r.json()) as ThreadDTO;
       const info = hostsNow().find((x) => x.id === host);
       return info ? stampThread(t, info) : t;
     },
     async fullEvent(host, threadId, seq) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(threadId)}/events/${seq}`));
-      return r.ok ? ((await r.json()) as FyrEvent) : null;
+      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/events/${seq}`));
+      return r.ok ? stampEvent((await r.json()) as FyrEvent, host) : null;
     },
     async eventsBefore(host, threadId, before, limit = 400) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(threadId)}/events?before=${before}&limit=${limit}`));
+      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/events?before=${before}&limit=${limit}`));
       if (!r.ok) throw new Error(`events ${r.status}`);
       const j = (await r.json()) as { events?: FyrEvent[] };
-      return j.events ?? [];
+      return (j.events ?? []).map((e) => stampEvent(e, host));
     },
     async t3Candidates(host) {
       const r = await fetch(hostPath(host, "/t3/candidates")); // V0.139: that host's T3
@@ -489,7 +526,7 @@ function createHttpApi(): Api {
     attachmentUrl,
     async uploadProjectIcon(host, projectId, file) {
       try {
-        const r = await fetch(hostPath(host, `/projects/${encodeURIComponent(projectId)}/icon`), { method: "POST", headers: { "X-Fyr": "1", "Content-Type": file.type || "application/octet-stream" }, body: file });
+        const r = await fetch(hostPath(host, `/projects/${encodeURIComponent(bare(host, projectId))}/icon`), { method: "POST", headers: { "X-Fyr": "1", "Content-Type": file.type || "application/octet-stream" }, body: file });
         let j: { ok?: boolean; error?: string } = {};
         try {
           j = await r.json();
@@ -505,7 +542,7 @@ function createHttpApi(): Api {
     async commands(source) {
       const path =
         "threadId" in source
-          ? `/threads/${encodeURIComponent(source.threadId)}/commands`
+          ? `/threads/${encodeURIComponent(bare(source.host, source.threadId))}/commands`
           : `/commands?cwd=${encodeURIComponent(source.cwd)}&profile=${encodeURIComponent(source.profile)}`;
       const r = await fetch(hostPath(source.host, path), { headers: { Accept: "application/json" } });
       const j = (await r.json().catch(() => ({}))) as { commands?: SlashCommand[]; error?: string };
@@ -513,13 +550,13 @@ function createHttpApi(): Api {
       return Array.isArray(j.commands) ? j.commands : [];
     },
     async changes(host, threadId) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(threadId)}/changes`));
+      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/changes`));
       const j = (await r.json().catch(() => ({}))) as ChangesDTO & { error?: string };
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j;
     },
     async filePatch(host, threadId, path, since) {
-      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(threadId)}/changes?path=${encodeURIComponent(path)}${since ? `&since=${encodeURIComponent(since)}` : ""}`));
+      const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/changes?path=${encodeURIComponent(path)}${since ? `&since=${encodeURIComponent(since)}` : ""}`));
       const j = (await r.json().catch(() => ({}))) as FilePatchDTO & { error?: string };
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       return j;
@@ -539,7 +576,14 @@ function createHttpApi(): Api {
       return (await eachHost<Profile>("/profiles")).filter((p) => !seen.has(p.id) && !!seen.add(p.id));
     },
     quota: () => eachHost<Quota>("/quota"),
-    load: () => eachHost<HostLoad>("/load"),
+    async load() {
+      const lists = await Promise.all(
+        addressable(hostsNow())
+          .filter((h) => h.online)
+          .map(async (h) => (await eachOne<HostLoad>(h.id!, "/load")).map((l) => stampLoad(l, h.id!))),
+      );
+      return lists.flat();
+    },
     async boardVisit() {
       // Each host keeps the owner's boardSeenAt (F13); until the store is per host the first host's is the one returned.
       const seen = await Promise.all(
@@ -559,7 +603,7 @@ function createHttpApi(): Api {
     },
     async prDetail(host, threadId, fresh) {
       try {
-        const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(threadId)}/pr${fresh ? "?fresh=1" : ""}`));
+        const r = await fetch(hostPath(host, `/threads/${encodeURIComponent(bare(host, threadId))}/pr${fresh ? "?fresh=1" : ""}`));
         const j = (await r.json().catch(() => ({}))) as PrReply;
         if (!r.ok && !("error" in j)) return { error: `HTTP ${r.status}` };
         return j;
@@ -569,7 +613,7 @@ function createHttpApi(): Api {
     },
     async presence(host, threadId, device) {
       try {
-        await fetch(frontPath("/presence"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ host, threadId, device }), keepalive: true });
+        await fetch(frontPath("/presence"), { method: "POST", headers: { "Content-Type": "application/json", "X-Fyr": "1" }, body: JSON.stringify({ host, threadId: bare(host, threadId), device }), keepalive: true });
       } catch {
         /* best effort */
       }
