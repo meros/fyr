@@ -62,6 +62,12 @@ test("Unread's fold is remembered on its own, and its folded header marks the cu
   assert.equal(foldedRow(sec, "s", { unread: false }), null);
 });
 
+test("a snooze that wakes on a finished, unread thread lands in Unread; one already seen in Seen (V0.185)", () => {
+  assert.equal(sectionOf(thread("w", "snoozed", "snoozed")), "snoozed");
+  assert.equal(sectionOf({ ...thread("w", "snoozed", "snoozed"), attention: unread("w").attention }), "unread");
+  assert.equal(sectionOf({ ...thread("w", "snoozed", "snoozed"), attention: seen("w").attention }), "seen");
+});
+
 test("a pinned unread thread is in the pinned block, and Unread still holds it", () => {
   const sec = sections(byId(unread("p", { pinnedAt: "2026-11-17T09:00:00Z" })));
   assert.deepEqual(ids(sec.pinned), ["p"]);
