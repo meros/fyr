@@ -102,7 +102,7 @@ func ReadRoots(tr *Tree, proc, thread string, after time.Time) []Root {
 		proc = "/proc"
 	}
 	td := filepath.Join(tr.root, "agents", unsafe.ReplaceAllString(thread, "_"))
-	in := append(pids(filepath.Join(td, "cgroup.procs")), pids(filepath.Join(td, undeclaredDir, "cgroup.procs"))...)
+	in := undeclaredPids(td)
 	boot, ok := bootTime(proc)
 	if !ok || len(in) == 0 {
 		return nil

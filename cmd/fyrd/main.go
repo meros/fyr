@@ -321,6 +321,32 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			}
 			return false
 		},
+		// Decision 0032 slice 2: the parts of the work take turns.
+		UndeclaredUnits: func(thread string) []slots.WorkUnit {
+			for _, f := range detector.Flags() {
+				if f.Thread != thread {
+					continue
+				}
+				var out []slots.WorkUnit
+				for _, u := range groups.Units(thread, cgroup.ReadRoots(tree, "", thread, f.FirstOver)) {
+					out = append(out, slots.WorkUnit{PID: u.PID, RSS: u.RSS, Command: cgroup.CommandOf(cgroup.Root{PID: u.PID, Cmdline: u.Cmdline}, groups.Bashes(thread))})
+				}
+				return out
+			}
+			return nil
+		},
+		UndeclaredRotate: func(thread string, units []slots.WorkUnit, active int) bool {
+			us := make([]cgroup.Unit, 0, len(units))
+			for _, u := range units {
+				us = append(us, cgroup.Unit{PID: u.PID, RSS: u.RSS})
+			}
+			if !groups.RotateUndeclared(thread, us, active) {
+				return false
+			}
+			detector.MarkPaused(thread)
+			return true
+		},
+		UndeclaredFaults: groups.MajorFaultBytes,
 		HeavySuggestion: func(id, do, pattern, kind string) error {
 			if do == "ignore" {
 				return book.Ignore(id)

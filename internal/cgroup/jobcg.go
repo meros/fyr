@@ -317,7 +317,7 @@ func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
 	ud := g.udir(thread)
 	// A thaw leaves the work in ud: a later freeze of the episode has nothing
 	// to move and still has work to hold (V0.191).
-	if len(move) == 0 && len(pids(filepath.Join(ud, "cgroup.procs"))) == 0 {
+	if len(move) == 0 && !holdsWork(ud) {
 		return false
 	}
 	if err := os.Mkdir(ud, 0o755); err != nil && !os.IsExist(err) {
@@ -347,6 +347,9 @@ func (g *JobGroups) ThawUndeclared(thread string) {
 	}
 	if g.HasUndeclared(thread) {
 		put(g.udir(thread), "cgroup.freeze", "0")
+		for _, d := range unitDirs(g.udir(thread)) { // decision 0032 slice 2
+			put(d, "cgroup.freeze", "0")
+		}
 	}
 	g.mu.Lock()
 	delete(g.ufrozen, thread)
@@ -361,13 +364,22 @@ func (g *JobGroups) EndUndeclared(thread string) {
 	}
 	g.ThawUndeclared(thread)
 	ud := g.udir(thread)
-	if len(pids(filepath.Join(ud, "cgroup.procs"))) > 0 {
+	for _, d := range unitDirs(ud) {
+		removeEmptyGroup(d)
+	}
+	removeEmptyGroup(ud)
+}
+
+// removeEmptyGroup removes a cgroup that holds no process. A plain directory
+// (tests) holds the files fyrd wrote; the kernel's rmdir needs none of this.
+func removeEmptyGroup(dir string) {
+	if len(pids(filepath.Join(dir, "cgroup.procs"))) > 0 {
 		return
 	}
 	for _, f := range []string{"cgroup.procs", "cgroup.freeze"} {
-		os.Remove(filepath.Join(ud, f))
+		os.Remove(filepath.Join(dir, f))
 	}
-	os.Remove(ud)
+	os.Remove(dir)
 }
 
 // End thaws thread's job and removes its cgroup once empty (the slot went
