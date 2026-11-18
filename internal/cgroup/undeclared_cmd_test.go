@@ -132,3 +132,16 @@ func TestP3TheSameTracesGiveTheSameFlags(t *testing.T) {
 		}
 	}
 }
+
+// V0.201: the CLI's wrapper quotes the command; a wrapper that matches nothing names none.
+func TestV201CommandInsideTheShellWrapper(t *testing.T) {
+	w := `/bin/zsh -c source /home/u/.claude/shell-snapshots/snapshot-zsh-1.sh 2>/dev/null || true && export A=$'b'; eval 'cd x && grep '\''a b'\'' f
+make check' < /dev/null`
+	cmd := "cd x && grep 'a b' f\nmake check"
+	if got := CommandOf(Root{Cmdline: w}, []string{"ls -la", cmd}); got != cmd {
+		t.Fatalf("%q", got)
+	}
+	if got := CommandOf(Root{Cmdline: w}, []string{"ls -la"}); got != "" {
+		t.Fatalf("%q", got)
+	}
+}

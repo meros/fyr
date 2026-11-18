@@ -21,6 +21,21 @@ func (k Task) backgroundCommand() bool {
 // Monitor is quiet by design and has its own timeout.
 func (k Task) mayStall() bool { return k.backgroundCommand() && k.Tool != "Monitor" }
 
+// RunsAdmittedWork says a task may be carrying the thread's admitted heavy job
+// after its run ended (V0.201): a background command that is not a Monitor and
+// has not gone quiet, or a subagent.
+func (t *Conversation) RunsAdmittedWork() bool {
+	for _, k := range t.Tasks {
+		if k.Status != TaskRunning {
+			continue
+		}
+		if k.Type == "local_agent" || (k.mayStall() && k.QuietSince == nil) {
+			return true
+		}
+	}
+	return false
+}
+
 // waitReason is the Waiting line of a thread with n running tasks: what it
 // waits for when that is one command, else how many.
 func waitReason(t *Thread, n int) string {

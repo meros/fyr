@@ -58,9 +58,19 @@ func (e *Engine) slotGranted(owner, kind string) {
 }
 
 // slotRunEnded gives back the slot a thread held when its run ended; a
-// place in the queue stays.
+// place in the queue stays. V0.201: not while a background task may carry the
+// job. An agent that starts `make check` in the background and ends its turn
+// to wait lost its admission here, and the job it had asked for was then
+// flagged as undeclared; sweepSlots gives the slot back when the task is done.
 func (e *Engine) slotRunEnded(id string) {
 	if e.Slots == nil {
+		return
+	}
+	e.mu.Lock()
+	t := e.threads[id]
+	keep := t != nil && t.RunsAdmittedWork()
+	e.mu.Unlock()
+	if keep {
 		return
 	}
 	if _, ok := e.Slots.Holding(id); ok {
@@ -156,6 +166,8 @@ func (e *Engine) sweepSlots() {
 					}
 				}
 			}
+		case t.RunsAdmittedWork(): // V0.201: the idle time starts when it is done
+			delete(e.slotIdle, h.Owner)
 		default:
 			since, ok := e.slotIdle[h.Owner]
 			if !ok {
@@ -642,24 +654,28 @@ func (e *Engine) undeclaredText(f slots.Undeclared) string {
 		}
 		parts = append(parts, p)
 	}
-	from, ex := "", "…"
-	kind := "test"
+	// V0.201: most flags find no command (the processes are gone, or started
+	// long before), and an example with "…" in it gave the agent nothing to do.
+	from, ask := "", "mcp__fyr__slot_acquire {kind, command}"
+	unknown := " Fyr could not tell which command it is: look at what you and your subagents have running."
 	if f.Command != "" {
+		cmdJSON, _ := json.Marshal(f.Command)
 		from = ", from `" + f.Command + "`"
-		ex = f.Command
-		kind = heavy.KindOf(f.Command)
+		ask = fmt.Sprintf("mcp__fyr__slot_acquire {\"kind\":%q,\"command\":%s}", heavy.KindOf(f.Command), cmdJSON)
+		unknown = ""
 	}
 	win := int(f.Window / time.Second)
 	if win <= 0 {
 		win = int(cgroupWindow / time.Second)
 	}
-	call := "Call it now for the job that runs."
+	// V0.201: the agent often reads this with the result of the very command,
+	// so the job may be over by then.
+	call := "If it still runs, call it now. If it has ended, there is nothing to do for it, but ask before you run it or anything like it again."
 	if f.Queued {
 		call = "You are queued and not admitted yet: do not run the job until Fyr tells you."
 	}
-	cmdJSON, _ := json.Marshal(ex)
-	return fmt.Sprintf("This thread runs heavy work Fyr did not admit: about %s for %d s%s. Before a heavy job call mcp__fyr__slot_acquire {\"kind\":%q,\"command\":%s}, run it once admitted, then call mcp__fyr__slot_release; a subagent's or a background run counts too. %s Fyr counts this use against the host either way, so other jobs wait; nothing is stopped, but if memory runs short Fyr may pause it.",
-		strings.Join(parts, " and "), win, from, kind, cmdJSON, call)
+	return fmt.Sprintf("This thread runs heavy work Fyr did not admit: about %s for %d s%s.%s Before a heavy job call %s, run it once admitted, then call mcp__fyr__slot_release; a subagent's or a background run counts too. %s Fyr counts this use against the host either way, so other jobs wait; nothing is stopped, but if memory runs short Fyr may pause it.",
+		strings.Join(parts, " and "), win, from, unknown, ask, call)
 }
 
 // cgroupWindow is the default window of a flag when it does not say.
@@ -843,7 +859,7 @@ func (e *Engine) slotTools(s *mcp.Server) {
 	// answers speak a share of the host, not slots.
 	off := "This host does not limit heavy jobs; run the job."
 	s.Add(mcp.Tool{Name: "slot_acquire",
-		Description: "Ask to run a heavy job (a full test suite, a build, an e2e run). Fyr admits it when its share of this host (its learned cost, as a % of the CPU or memory the host gives its agents, whichever is tighter) fits the heavy-job budget across the user's threads. It answers at once: admitted (run the job, then call slot_release), or queued with the reason; then do not start the job, do other work or end your turn, and Fyr tells you in a [Fyr] message when it is admitted. Admission also ends when your run ends.",
+		Description: "Ask to run a heavy job (a full test suite, a build, an e2e run). Fyr admits it when its share of this host (its learned cost, as a % of the CPU or memory the host gives its agents, whichever is tighter) fits the heavy-job budget across the user's threads. It answers at once: admitted (run the job, then call slot_release), or queued with the reason; then do not start the job, do other work or end your turn, and Fyr tells you in a [Fyr] message when it is admitted. Admission also ends when your run ends and no background command or subagent of yours still runs.",
 		Schema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": slots.Kinds()},
 			"command": map[string]any{"type": "string", "description": "The command you will run, e.g. \"make test\"; Fyr then knows what the job costs."}}, "kind"),
 		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
@@ -864,7 +880,7 @@ func (e *Engine) slotTools(s *mcp.Server) {
 			e.syncSlotQueue()
 			s := e.Slots.Snapshot()
 			if held {
-				return fmt.Sprintf("Admitted: your %s job %s of %s; %s left. Run the job now, then call slot_release. Admission also ends when your run ends.", kind, jobShare(s, th), e.hostName(), freeShare(s)), nil
+				return fmt.Sprintf("Admitted: your %s job %s of %s; %s left. Run the job now, then call slot_release. Admission ends when your run ends, unless a background command or subagent of yours still runs.", kind, jobShare(s, th), e.hostName(), freeShare(s)), nil
 			}
 			why := ""
 			if ahead == 0 && s.Why != "" {

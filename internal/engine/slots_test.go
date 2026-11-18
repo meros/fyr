@@ -167,3 +167,59 @@ func TestV0137SlotOrderDecidesTheNextGrant(t *testing.T) {
 		t.Fatal("the wrong thread was told")
 	}
 }
+
+// V0.201: a slot outlives the run while a background task may carry the job,
+// and goes back SlotIdle after the task is done. A Monitor or a command gone
+// quiet holds nothing.
+func TestV201AdmissionOutlivesTheRunWhileTheJobRuns(t *testing.T) {
+	quiet := time.Unix(1, 0)
+	for _, c := range []struct {
+		name string
+		task core.Task
+		keep bool
+	}{
+		{"background command", core.Task{ID: "b", Type: "local_bash", Background: true, Status: core.TaskRunning}, true},
+		{"subagent", core.Task{ID: "a", Type: "local_agent", Status: core.TaskRunning}, true},
+		{"monitor", core.Task{ID: "m", Type: "local_bash", Tool: "Monitor", Background: true, Status: core.TaskRunning}, false},
+		{"quiet command", core.Task{ID: "q", Type: "local_bash", Background: true, Status: core.TaskRunning, QuietSince: &quiet}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e, _, now := bare(t)
+			e.UseSlots(slots.New(1))
+			a := bareThread(t, e)
+			running(e, a)
+			callAs(t, e, a, "slot_acquire", map[string]any{"kind": "test"})
+			coretest.Patch(e, a, func(th *core.Thread, _ time.Time) []core.Event {
+				th.Tasks = []core.Task{c.task}
+				return nil
+			})
+			if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsProcess), Kind: core.KindRunEnded, Thread: a, Args: core.RunEndedArgs{}}); err != nil {
+				t.Fatal(err)
+			}
+			held := func() bool { return len(e.Slots.Snapshot().Held) == 1 }
+			if held() != c.keep {
+				t.Fatalf("held after the run: %v, want %v", held(), c.keep)
+			}
+			if !c.keep {
+				return
+			}
+			*now = now.Add(10 * time.Minute)
+			e.Tick()
+			*now = now.Add(10 * time.Minute)
+			e.Tick()
+			if !held() {
+				t.Fatal("the slot went back while the task ran")
+			}
+			coretest.Patch(e, a, func(th *core.Thread, _ time.Time) []core.Event {
+				th.Tasks[0].Status = core.TaskCompleted
+				return nil
+			})
+			e.Tick()
+			*now = now.Add(SlotIdle + time.Second)
+			e.Tick()
+			if held() {
+				t.Fatal("the slot stayed after the task ended")
+			}
+		})
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 func pageSize() int { return os.Getpagesize() }
@@ -165,14 +166,33 @@ const MaxCommand = 300
 // saw (seen is oldest first) whose text is found in the root's command line,
 // else the command line itself; cut to MaxCommand characters. A command under
 // four characters matches anything and is not used.
+//
+// V0.201: the CLI runs a command quoted inside its shell wrapper, so the two
+// are compared without quotes, backslashes and white space. A wrapper that
+// matches nothing gives "": its first 300 characters are only the shell's
+// environment and name no command.
 func CommandOf(r Root, seen []string) string {
+	line := bareCommand(r.Cmdline)
 	for i := len(seen) - 1; i >= 0; i-- {
 		c := strings.TrimSpace(seen[i])
-		if len(c) >= 4 && strings.Contains(r.Cmdline, c) {
+		if len(c) >= 4 && strings.Contains(line, bareCommand(c)) {
 			return cut(c)
 		}
 	}
+	if strings.Contains(r.Cmdline, "/shell-snapshots/snapshot-") {
+		return ""
+	}
 	return cut(r.Cmdline)
+}
+
+// bareCommand is s without quotes, backslashes and white space.
+func bareCommand(s string) string {
+	return strings.Map(func(c rune) rune {
+		if c == '\'' || c == '"' || c == '\\' || unicode.IsSpace(c) {
+			return -1
+		}
+		return c
+	}, s)
 }
 
 func cut(s string) string {

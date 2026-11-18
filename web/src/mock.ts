@@ -1745,7 +1745,7 @@ const MOCK_PAUSED = typeof location !== "undefined" ? new URLSearchParams(locati
 const MOCK_UNDECLARED = typeof location !== "undefined" ? new URLSearchParams(location.search).get("undeclared") ?? "" : "";
 export const UNDECLARED_NOTICE = {
   undeclared:
-    "This thread runs heavy work Fyr did not admit: about 2.8 GB memory (20 % of laptop) and 2.1 cores (52 %) for 45 s, from `node test/layout.e2e.mjs`. Before a heavy job call mcp__fyr__slot_acquire {\"kind\":\"e2e\",\"command\":\"node test/layout.e2e.mjs\"}, run it once admitted, then call mcp__fyr__slot_release; a subagent's or a background run counts too. Call it now for the job that runs. Fyr counts this use against the host either way, so other jobs wait; nothing is stopped, but if memory runs short Fyr may pause it.",
+    "This thread runs heavy work Fyr did not admit: about 2.8 GB memory (20 % of laptop) and 2.1 cores (52 %) for 45 s, from `node test/layout.e2e.mjs`. Before a heavy job call mcp__fyr__slot_acquire {\"kind\":\"e2e\",\"command\":\"node test/layout.e2e.mjs\"}, run it once admitted, then call mcp__fyr__slot_release; a subagent's or a background run counts too. If it still runs, call it now. If it has ended, there is nothing to do for it, but ask before you run it or anything like it again. Fyr counts this use against the host either way, so other jobs wait; nothing is stopped, but if memory runs short Fyr may pause it.",
   mem: 2.8e9,
   cpu: 2.1,
 };
