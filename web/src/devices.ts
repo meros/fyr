@@ -40,7 +40,8 @@ export interface AuditRow {
 export interface AuthState {
   devices: DeviceRow[];
   modes: ModeRow[];
-  audit: AuditRow[];
+  /** null from a host before V0.devices-empty-audit whose trail is empty */
+  audit: AuditRow[] | null;
   /** requests a host served from a front of an older build (decision 0030 slice 1) */
   legacyFronts?: number;
   /** the device that asks, when it is signed in */
@@ -100,8 +101,8 @@ export function modeLine(m: ModeRow | undefined, now: number): string {
 }
 
 /** The notice for the owner when the install enforced a way in by itself in the last 7 days; null otherwise. */
-export function autoNotice(audit: AuditRow[], now: number): string | null {
-  for (const a of [...audit].reverse()) {
+export function autoNotice(audit: AuditRow[] | null, now: number): string | null {
+  for (const a of [...(audit ?? [])].reverse()) {
     if (a.event === "mode" && a.by === "auto" && now - Date.parse(a.at) < 7 * 86_400_000) return `Fyr now asks every browser to sign in. ${a.detail?.includes("fyr auth observe") ? "Run fyr auth observe on the machine that runs Fyr to go back." : ""}`.trim();
   }
   return null;

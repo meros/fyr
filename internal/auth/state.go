@@ -304,7 +304,7 @@ func (s *Store) Modes() []ModeView {
 func (s *Store) Audit() []Audit {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]Audit(nil), s.audit...)
+	return append([]Audit{}, s.audit...) // never nil: the front gets [], not null
 }
 
 // NodeState is "approved", "blocked" or "" for a node the owner never decided.

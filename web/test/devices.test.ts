@@ -52,4 +52,5 @@ test("the notice after the install enforced by itself", () => {
   assert.equal(autoNotice([{ at: ago(60 * 24 * 8), event: "mode", by: "auto", detail }], NOW), null, "a week later it is gone");
   assert.equal(autoNotice([{ at: ago(60), event: "mode", by: "owner.sock", detail }], NOW), null, "set by hand is not a notice");
   assert.equal(autoNotice([], NOW), null);
+  assert.equal(autoNotice(null, NOW), null, "V0.devices-empty-audit: a host with an empty trail may send null");
 });
