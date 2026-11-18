@@ -1040,11 +1040,11 @@ html.list-resizing iframe{pointer-events:none}
 .ask .askf{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:10px}
 .ask .askf .askp{margin-right:auto;font:400 12px/16px var(--ui);color:var(--ink-muted)}
 
-/* SPEC 0.5 V0.48: the clock that runs down to Settled closing by itself */
-.sec .ahc{flex:none;width:12px;height:12px;border-radius:50%;margin-left:6px;background:conic-gradient(var(--ink-faint) var(--p, 100%), transparent 0);animation:ahc var(--ah, 30s) linear forwards;opacity:.8}
+/* SPEC 0.5 V0.48, V0.196: the clock that runs down to Snoozed or Settled closing by itself, on both fronts */
+.ahc{flex:none;width:12px;height:12px;border-radius:50%;margin-left:6px;background:conic-gradient(var(--ink-faint) var(--p, 100%), transparent 0);animation:ahc var(--ah, 10s) linear forwards;opacity:.8}
 @property --p{syntax:"<percentage>";inherits:false;initial-value:100%}
 @keyframes ahc{from{--p:100%}to{--p:0%}}
-@media (prefers-reduced-motion: reduce){.sec .ahc{animation:none}}
+@media (prefers-reduced-motion: reduce){.ahc{animation:none}}
 
 /* SPEC V0.119 (amends V0.50): Settings. One nav, four pages, and one set of rows and controls for the desktop and the
    phone (design/settings/mock.css, part 3). Desktop: the dialog's nav column and a pane. Phone: the nav is the

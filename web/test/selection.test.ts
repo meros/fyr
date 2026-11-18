@@ -124,9 +124,9 @@ test("V0.186: settling a thread in a folded section steps to a drawn row near it
   assert.equal(rowAfter(shown, "z", ["z"], all), "s3", "nothing drawn after Settled: the row before its header");
 });
 
-test("V0.186: the folds survive a reload; an open Settled does not, its 30 s are gone (V0.48)", () => {
-  assert.deepEqual(parseSectionOpen('{"working":false,"snoozed":true,"settled":true,"seen":false}'), { working: false, snoozed: true, seen: false });
-  assert.deepEqual(parseSectionOpen('{"settled":false}'), { settled: false });
+test("V0.186: the folds survive a reload; an open Snoozed or Settled does not, its 10 s are gone (V0.196)", () => {
+  assert.deepEqual(parseSectionOpen('{"working":false,"snoozed":true,"settled":true,"seen":false}'), { working: false, seen: false });
+  assert.deepEqual(parseSectionOpen('{"snoozed":false,"settled":false}'), { snoozed: false, settled: false });
   assert.deepEqual(parseSectionOpen('{"nope":true,"needs":"x"}'), {}, "only known sections, only booleans");
   assert.deepEqual(parseSectionOpen("not json"), {});
   assert.deepEqual(parseSectionOpen("[1]"), {});

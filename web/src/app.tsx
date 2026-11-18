@@ -72,7 +72,7 @@ import { HostsContext } from "./host-pick-ui.tsx";
 import { HostMarksContext } from "./host-mark-ui.tsx";
 import { VIEWPORT_VV_EVENTS, VIEWPORT_WINDOW_EVENTS, rereadLater, viewportVars } from "./viewport.ts";
 import { deviceId, presenceTarget, shouldBeat, type BeatState } from "./presence.ts";
-import { AUTO_HIDE_MS, autoHide } from "./inbox-autohide.ts";
+import { AUTO_HIDE_MS, AUTO_HIDE_SECTIONS, hideClocks, hideStep, type HideAt } from "./inbox-autohide.ts";
 import { DeployBanner } from "./deploy-ui.tsx";
 import { StallBanner } from "./stall-ui.tsx";
 import { restartNowAsk } from "./deploy.ts";
@@ -843,30 +843,54 @@ function App() {
     setListPref(!listOn);
   };
 
-  // V0.48: Settled opened from its header closes again after 30 s unless it is selected in the rail.
-  const [settledDeadline, setSettledDeadline] = useState<number | null>(null);
+  // V0.48, V0.196: Snoozed and Settled opened from their header close again after 10 s, on both fronts, unless the
+  // current thread is in them.
+  const [hideAt, setHideAt] = useState<HideAt>({});
   const [ahTick, setAhTick] = useState(0);
   const activeForHide: SectionKey | null = sel && store.threads[sel] ? sectionOf(store.threads[sel]) : null;
+  const setHide = (k: SectionKey, at: number | null) =>
+    setHideAt((h) => {
+      const next = { ...h };
+      if (at === null) delete next[k];
+      else next[k] = at;
+      return next;
+    });
   useEffect(() => {
-    const r = autoHide({ open: isOpen("settled", sectionOpen), deadline: settledDeadline, active: activeForHide }, Date.now());
-    if (r.close) {
-      setSectionOpen((o) => ({ ...o, settled: false }));
-      setSettledDeadline(null);
+    const r = hideStep({ at: hideAt, open: (k) => isOpen(k, sectionOpen), active: activeForHide }, Date.now());
+    if (r.close.length) {
+      setSectionOpen((o) => ({ ...o, ...Object.fromEntries(r.close.map((k) => [k, false])) }));
+      for (const k of r.close) setHide(k, null);
       return;
     }
     if (r.wait === null) return;
     const t = setTimeout(() => setAhTick((x) => x + 1), r.wait + 20);
     return () => clearTimeout(t);
-  }, [settledDeadline, sectionOpen, activeForHide, ahTick]);
+  }, [hideAt, sectionOpen, activeForHide, ahTick]);
+  /** A header's click or tap. */
+  const toggleSection = (k: SectionKey) => {
+    const opening = !isOpen(k, sectionOpen);
+    if (AUTO_HIDE_SECTIONS.includes(k)) setHide(k, opening ? Date.now() + AUTO_HIDE_MS : null);
+    setSectionOpen((o) => ({ ...o, [k]: !isOpen(k, o) }));
+  };
+  /** V0.186: the owner named this section in the rail or the strip: it opens and stays open (V0.48). */
+  const nameSection = (k: SectionKey) => {
+    setHide(k, null);
+    setSectionOpen((o) => ({ ...o, [k]: true }));
+  };
+  /** Using a section restarts its time (at most a few times a second). */
+  const sectionUsed = (k: SectionKey) => {
+    const at = hideAt[k];
+    if (at !== undefined && at - Date.now() < AUTO_HIDE_MS - 500) setHide(k, Date.now() + AUTO_HIDE_MS);
+  };
+  const hideShown = hideClocks(hideAt, activeForHide);
 
   const jump = (k: SectionKey) => {
     if (!sec[k].length) return; // an empty section is not a place to go
-    if (k === "settled") setSettledDeadline(null); // chosen in the rail: stays open (V0.48)
     if (!listOn) {
       setListPrefState(true); // jumping to a section shows the list (V0.40)
       setListPref(true);
     }
-    setSectionOpen((o) => ({ ...o, [k]: true })); // V0.186: the owner named this section
+    nameSection(k);
     const first = sec[k][0];
     document.getElementById(`sec-${k}`)?.scrollIntoView({ block: "start" });
     if (first) {
@@ -1490,7 +1514,7 @@ function App() {
             },
             allow: async (d, ok) => (view ? (await cmds.run("thread.answer", [view.id], { decisionId: d.id, allow: ok })) > 0 : false),
           }}
-          list={{ sectionOpen, setSectionOpen, expanded, onExpand: (k) => setExpanded((x) => ({ ...x, [k]: true })), picked, setPicked, selecting, setSelecting }}
+          list={{ sectionOpen, toggleSection, nameSection, hideAt: hideShown, sectionUsed, expanded, onExpand: (k) => setExpanded((x) => ({ ...x, [k]: true })), picked, setPicked, selecting, setSelecting }}
           device={{
             push: pushSt,
             pushReason,
@@ -1584,16 +1608,9 @@ function App() {
           query={query}
           searchRef={searchRef}
           onQuery={setQuery}
-          onToggle={(k) => {
-            const opening = !isOpen(k, sectionOpen);
-            if (k === "settled") setSettledDeadline(opening ? Date.now() + AUTO_HIDE_MS : null);
-            setSectionOpen((o) => ({ ...o, [k]: !isOpen(k, o) }));
-          }}
-          autoHideAt={settledDeadline !== null && activeSection !== "settled" ? { settled: settledDeadline } : undefined}
-          onSectionActivity={(k) => {
-            // Using the section restarts its time (at most a few times a second).
-            if (k === "settled" && settledDeadline !== null && settledDeadline - Date.now() < AUTO_HIDE_MS - 500) setSettledDeadline(Date.now() + AUTO_HIDE_MS);
-          }}
+          onToggle={toggleSection}
+          autoHideAt={hideShown}
+          onSectionActivity={sectionUsed}
           onClick={(id) => openThread(id, "open")}
           onExpand={(k) => setExpanded((x) => ({ ...x, [k]: true }))}
           onNew={() => setDialog("new")}
