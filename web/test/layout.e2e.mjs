@@ -1984,6 +1984,53 @@ section('S5 paused', async (h) => {
   }
 });
 
+// Decision 0032, V0.188: the memory guard's chart in Settings → Automation (?guard=1 feeds it, ?settings=automation opens
+// it). On the desktop and at 390 × 844: the chart is a figure with a lane per frozen thread (Map perf, Babysit), hatched
+// frozen stretches, a band for each time memory was short, nothing wider than the screen, and the row of the frozen
+// thread starts "undeclared · paused 3/8".
+section('V0.188 guard', async (h) => {
+  const { send, evaluate, navigate, waitFor, settle } = h;
+  const read = `(() => { const f = document.querySelector('[data-guard-chart]'); if (!f) return null; f.scrollIntoView({ block: 'center' }); const r = f.getBoundingClientRect(), s = f.querySelector('svg').getBoundingClientRect(); return { lanes: f.querySelectorAll('[data-lane]').length, frozen: f.querySelectorAll('.g-frozen').length, short: f.querySelectorAll('.g-short').length, inside: r.left >= 0 && r.right <= innerWidth + 0.5 && s.right <= innerWidth + 0.5, wide: document.documentElement.scrollWidth > innerWidth, alt: f.querySelector('svg').getAttribute('aria-label'), h: s.height }; })()`;
+  const ok = (r, who) => {
+    check(r && r.lanes === 2 && r.frozen === 4 && r.short === 2, `V0.188 ${who}: the chart has ${JSON.stringify(r)}, want 2 lanes, 4 frozen stretches and 2 short bands`);
+    check(r && r.inside && !r.wide, `V0.188 ${who}: the chart is wider than the screen (${JSON.stringify(r)})`);
+    check(r && r.alt.startsWith("Memory was short 2 times") && r.h > 40, `V0.188 ${who}: the chart's text alternative or height is wrong (${JSON.stringify(r)})`);
+  };
+  try {
+    // The desktop opens Settings as a dialog: the rail's button, then the Automation page.
+    await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused`, "[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Settings')");
+    await evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Settings').click()`);
+    await waitFor("[...document.querySelectorAll('button')].some((b) => b.textContent.startsWith('Automation'))", { what: "Settings' pages" });
+    await evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('Automation')).click()`);
+    await waitFor("!!document.querySelector('[data-guard-chart]')", { what: "the guard chart" });
+    await settle();
+    ok(await evaluate(read), "desktop");
+  } catch (e) {
+    failures.push(`V0.188 desktop: ${e.message}`);
+  }
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused&settings=automation`, "!!document.querySelector('[data-guard-chart]')");
+    await settle();
+    ok(await evaluate(read), "phone");
+    await navigate(`${origin}/?mock=rail&guard=1&undeclared=paused`, "!!document.querySelector('.m-seg')");
+    await evaluate(`[...document.querySelectorAll('.m-seg')].find((b) => b.title.startsWith('Working')).click()`);
+    await waitFor("document.body.innerText.includes('undeclared · paused 3/8')", { what: "the guard's words on the frozen thread's row" });
+  } catch (e) {
+    failures.push(`V0.188 phone: ${e.message}`);
+  }
+  // The tab goes on with another section: leave it as a fresh one (the page's storage, a mobile emulation, the URL).
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`localStorage.clear(); sessionStorage.clear()`);
+    await navigate(`${origin}/?mock=1`, "!!document.querySelector('.ib .lrz')");
+  } catch (e) {
+    failures.push(`V0.188 cleanup: ${e.message}`);
+  }
+});
+
 // SPEC V0.164 (design/rogue-agents/SPEC.md 12.7): undeclared heavy work. At 1280 × 800 and 390 × 844, light and dark: the
 // row keeps its height and starts with the mark and the word in the beam ink; the meter has a hatched part and the rail a
 // button that opens the thread or a menu (it does not scroll at 1000 px); the strip is one block under the header and the

@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/meros/fyr/internal/api"
@@ -157,7 +158,10 @@ type Engine struct {
 	undFroze     map[string]undFreeze // under mu: thread → what the guard froze of its episode
 	guardLast    map[string]guardLine // under mu: the guard's log lines, to say a repeat once a minute
 	guardShort   bool                 // under mu: memory was short at the last tick
-	memGuard     bool                 // under mu: the guard told a thread in this episode
+	guardSince   time.Time            // under mu: since when it is short
+	guardEvents  []slots.GuardEvent   // under mu: the guard's last decisions, for the front
+	guardPub     atomic.Pointer[slots.Guard]
+	memGuard     bool // under mu: the guard told a thread in this episode
 	titleMu      sync.Mutex
 	titling      map[string]bool
 }

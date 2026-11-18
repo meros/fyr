@@ -555,3 +555,59 @@ func TestTheGateRefusesAnAddedPatternAndCountsIt(t *testing.T) {
 		t.Fatalf("%q", g)
 	}
 }
+
+// Decision 0032: the front gets the guard's history and where each thread's
+// freezes stand, from a published view that waits for nothing.
+func TestF16TheGuardViewShowsTheHistoryAndEachThreadsFreezes(t *testing.T) {
+	e, u, now, z, th := fzEngine(t)
+	a := th[0]
+	if e.GuardView() != nil && len(e.GuardView().Events) != 0 {
+		t.Fatal("events before any tick")
+	}
+	u.flags = []slots.Undeclared{flagFor(a, *now)}
+	z.free = 0.04
+	e.Tick()
+	g := e.GuardView()
+	if g == nil || !g.Short || g.ShortSince == nil || g.Max != MaxFreezes || g.RefreezeSec != 60 {
+		t.Fatalf("%+v", g)
+	}
+	if len(g.Threads) != 1 || g.Threads[0].Thread != a || !g.Threads[0].Frozen || g.Threads[0].N != 1 || g.Threads[0].FrozenAt == nil {
+		t.Fatalf("%+v", g.Threads)
+	}
+	kinds := []string{}
+	for _, ev := range g.Events {
+		kinds = append(kinds, ev.Kind+"/"+ev.Work)
+	}
+	if strings.Join(kinds, " ") != "short/ freeze/undeclared" {
+		t.Fatalf("%v", kinds)
+	}
+	if g.Events[1].N != 1 || g.Events[1].Headroom == nil || *g.Events[1].Headroom != 0.04 {
+		t.Fatalf("%+v", g.Events[1])
+	}
+	// Memory is fine for 30 s: thawed, and the next freeze waits for the slice.
+	z.free = 0.5
+	*now = now.Add(time.Second)
+	e.Tick()
+	*now = now.Add(31 * time.Second)
+	e.Tick()
+	g = e.GuardView()
+	last := g.Events[len(g.Events)-1]
+	if last.Kind != "thaw" || last.Reason != "memory" || g.Short {
+		t.Fatalf("%+v short=%v", last, g.Short)
+	}
+	if th := g.Threads[0]; th.Frozen || th.NextAt == nil || th.Capped {
+		t.Fatalf("%+v", th)
+	}
+}
+
+// The history is bounded.
+func TestF17TheGuardHistoryIsBounded(t *testing.T) {
+	e, _, now, _, _ := fzEngine(t)
+	for range guardKeep + 25 {
+		e.guardRecord(slots.GuardEvent{At: *now, Kind: "short"}, slots.Signals{})
+	}
+	e.publishGuard(*now)
+	if n := len(e.GuardView().Events); n != guardKeep {
+		t.Fatalf("%d events", n)
+	}
+}

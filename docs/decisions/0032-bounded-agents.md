@@ -28,7 +28,8 @@ On 18 Nov 06:30–07:30 on `meros-laptop` one thread (a `/norban:fix` agent) ran
 - `memory.max` with no swap kills in 0.4 s (rc 137). `memory.high` with no swap, or with a full swap cap, never made progress in 25 s: it is a livelock, not a slowdown.
 - With swap, one job under a limit it cannot fit slows smoothly: 8× at 75 % of its working set, 20× at 50 %.
 - Raising `memory.high` of a running job takes effect at once (1.5 M touches/s within a second of the raise).
-- Not measured, to do: lowering a limit below the current use (the one run was inconclusive), and `memory.reclaim` written into a frozen cgroup to push its pages to swap before the next slice starts.
+- `memory.reclaim` written into a frozen job's cgroup, to push its pages to swap before the next slice starts: one run each, 4 jobs in their own cgroups under a shared slice at 450 MB. 3 s slices: 34.6 s without, 27.1 s with; 1 s slices: 28.7 s without, 28.5 s with. No consistent gain. The same setup also did not repeat the 1 s collapse of the table above (97.5 s there), so the slice length rule rests on one setup (SIGSTOP of processes in one cgroup) and needs repeat runs with per-job cgroups before slice 2 fixes the floor.
+- Not measured, to do: lowering a limit below the current use (the one run was inconclusive).
 
 ## Decision
 
@@ -47,6 +48,7 @@ Not chosen: a fixed small `memory.max` per thread (kills the agent CLI when the 
 |---|---|---|
 | 0 | `agent-budget.nix` pressure limit, an option for the thread share | in the nixos repo |
 | 1 | V0.188: re-freeze, release an empty freeze, somebody-else-gains rule, guard log | built (this PR) |
+| 1b | V0.188: `slots.guard` in `/api/load`; the row's words and Settings → Automation → Memory guard (chart, summary, last decisions) on the desktop and the phone | built (this PR) |
 | 2 | per-root job cgroups, rotation with the measured slice | next |
 | 3 | per-thread `memory.high` share, reservation raises it, `/api/load` shows it | after 2 |
 | 4 | tune from the log (below) | ongoing |
