@@ -46,6 +46,21 @@ let
   # is fyr.slice (systemd's dash rule), so it is outside system.slice.
   agentsSlice = "fyr-agents.slice";
   agentsUnit = cfg.cgroups.enable && cfg.cgroups.agentsUnit;
+  # V0.psi-trigger-slice: fyrd (the service user) writes its PSI trigger
+  # (V0.guard-wake) to the slice's memory.pressure, which systemd makes
+  # root:root 0644. This hands that one file to the user, as root, before
+  # fyrd starts. The path is the one systemd reports for the slice. Writing
+  # a trigger is the only thing the file takes, and the kernel lets an
+  # unprivileged writer set only a window that is a multiple of 2 s; the
+  # slice's limits (memory.high, cpu.max, ...) stay root's. A failure is
+  # logged and does not stop the unit: fyrd then keeps the 10 s tick.
+  agentsPressureChown = pkgs.writeShellScript "fyr-agents-pressure-chown" ''
+    cg=$(${config.systemd.package}/bin/systemctl show -P ControlGroup ${agentsSlice})
+    f=/sys/fs/cgroup$cg/memory.pressure
+    if [ -z "$cg" ] || ! ${pkgs.coreutils}/bin/chown ${lib.escapeShellArg cfg.user} "$f"; then
+      echo "fyr: could not give ${cfg.user} the PSI trigger on ${agentsSlice} ($f); the guard reads every 10 s" >&2
+    fi
+  '';
   optStr = description: lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; inherit description; };
 in
 {
@@ -381,8 +396,11 @@ in
       description = "Fyr host daemon";
       # A host on the tailnet listens on its tailnet address: tailscaled first.
       # Until the address is up fyrd exits and the unit restarts it.
-      after = [ "network-online.target" ] ++ lib.optional (hostListen != null) "tailscaled.service";
-      wants = [ "network-online.target" ] ++ lib.optional (hostListen != null) "tailscaled.service";
+      # V0.psi-trigger-slice: with agentsUnit, the agents' slice too, so that
+      # its cgroup exists before ExecStartPre hands over its memory.pressure
+      # (a slice nothing has asked for is not started and has no cgroup).
+      after = [ "network-online.target" ] ++ lib.optional (hostListen != null) "tailscaled.service" ++ lib.optional agentsUnit agentsSlice;
+      wants = [ "network-online.target" ] ++ lib.optional (hostListen != null) "tailscaled.service" ++ lib.optional agentsUnit agentsSlice;
       wantedBy = [ "multi-user.target" ];
       # A switch must not restart the unit: that ends every running agent turn.
       # A new package applies at the next manual restart or boot.
@@ -429,6 +447,11 @@ in
         MemoryLow = cfg.cgroups.serverMemoryLow;
         ManagedOOMPreference = "omit";
         OOMScoreAdjust = -500;
+        # V0.psi-trigger-slice: "+" runs it as root. wants/after below start
+        # the slice first, so its cgroup exists. Each start of the unit runs
+        # it again, so a slice that was stopped and made anew (its file root's
+        # again) is handed over at fyrd's next start.
+        ExecStartPre = "+${agentsPressureChown}";
       } else if cfg.cgroups.enable then {
         # V0.80: systemd hands the subtree to the user; fyrd splits it and
         # sets the budget on agents/ (see the cgroups options).

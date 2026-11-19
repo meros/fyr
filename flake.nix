@@ -99,6 +99,7 @@
           fyr = sys.config.systemd.services.fyr.serviceConfig;
           tn = sys.config.systemd.services.fyr-tailnet.serviceConfig;
           conf = builtins.fromJSON (builtins.unsafeDiscardStringContext sys.config.environment.etc."fyr/config.json".text);
+          psiChown = builtins.readFile (nixpkgs.lib.removePrefix "+" fyr.ExecStartPre);
         in
         assert nixpkgs.lib.hasInfix "-seed " fyr.ExecStart;
         assert nixpkgs.lib.hasInfix "-- -config /etc/fyr/config.json" fyr.ExecStart;
@@ -130,6 +131,14 @@
         assert conf.cgroups.agentsSlice == "fyr-agents.slice" && nixpkgs.lib.hasSuffix "/bin/systemd-run" conf.cgroups.systemdRun;
         assert removeAttrs conf.cgroups [ "agentsSlice" "systemdRun" "systemctl" ] == { enable = true; serverMemoryLow = "1G"; agentsCpuMax = "400000 100000";
           agentsMemoryHigh = "13G"; agentsMemoryMax = "14G"; agentsMemorySwapMax = "16G"; threadMemoryHighPercent = 0; };
+        # V0.psi-trigger-slice: before fyrd starts, root hands the slice's
+        # memory.pressure to the user (fyrd's PSI trigger, V0.guard-wake); the
+        # slice is started first so its cgroup exists.
+        assert nixpkgs.lib.hasPrefix "+/nix/store/" fyr.ExecStartPre;
+        assert nixpkgs.lib.hasInfix "show -P ControlGroup fyr-agents.slice" psiChown && nixpkgs.lib.hasInfix "/bin/chown u " psiChown;
+        assert nixpkgs.lib.hasInfix "/memory.pressure" psiChown;
+        assert builtins.elem "fyr-agents.slice" sys.config.systemd.services.fyr.wants && builtins.elem "fyr-agents.slice" sys.config.systemd.services.fyr.after;
+        assert !(unitFyr ? ExecStartPre) && !(builtins.elem "fyr-agents.slice" unit.config.systemd.services.fyr.after);
         # V0.80 with agentsUnit off: the unit delegates cpu and memory; the budget is fyrd's to write on agents/.
         assert unitFyr.Delegate == "cpu memory" && unitFyr.MemoryLow == "1G" && !(unitFyr ? ManagedOOMPreference);
         assert !(unitConf.cgroups ? agentsSlice) && !(unit.config.systemd.slices ? fyr-agents);

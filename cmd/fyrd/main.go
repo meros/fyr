@@ -568,14 +568,22 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	// V0.guard-wake (decision 0036 E5): a PSI trigger on the agents' memory
 	// stall runs the guard at once; the 10 s tick stays as the fallback.
+	// V0.psi-trigger-slice: a refused open (the file not yet the user's, or
+	// the slice not there yet) is tried again each minute.
 	guardWake := make(chan struct{}, 1)
 	if err := cgroup.WatchAgentsPressure(ctx, tree, func() {
 		select {
 		case guardWake <- struct{}{}:
 		default:
 		}
+	}, func() {
+		log.Printf("guard: PSI trigger %q on the agents' memory.pressure, set on a later try", cgroup.PressureTrigger)
 	}); err != nil {
-		log.Printf("guard: no PSI trigger on the agents' memory.pressure (%v); the guard reads every 10 s", err)
+		if cgroup.PressureRetrying(err) {
+			log.Printf("guard: no PSI trigger yet (%v); the guard reads every 10 s and tries the trigger again every %v", err, cgroup.PressureRetry)
+		} else {
+			log.Printf("guard: no PSI trigger (%v); the guard reads every 10 s", err)
+		}
 	} else {
 		log.Printf("guard: PSI trigger %q on the agents' memory.pressure", cgroup.PressureTrigger)
 	}
