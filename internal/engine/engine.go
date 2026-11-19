@@ -162,8 +162,10 @@ type Engine struct {
 	heavyMu    sync.Mutex
 	heavyCalls map[string]map[string]bool // under heavyMu: thread → its running foreground calls
 	heavyBg    map[string]bool            // under heavyMu: thread → a job outlives its call
-	// frozen is the job frozen now (decision 0029 S5), under mu.
-	frozen       frozenJob
+	// frozen is what the guard holds frozen now, the newest last (decision
+	// 0029 S5; V0.multi-freeze: more than one), under mu.
+	frozen       []frozenJob
+	guardOK      time.Time            // under mu: since when memory is fine (zero: it is not)
 	frozeHolds   map[string]time.Time // under mu: holds frozen once already (owner → since)
 	queuedAt     map[string]time.Time // under mu: when each waiting thread joined the queue (V0.load-tuning)
 	slotOverTold map[string]time.Time // under mu: owner → the hold already told
