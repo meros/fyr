@@ -5,7 +5,9 @@
 //	fyr.service/          Delegate=cpu memory; holds no process once split
 //	  server/             the launcher and fyrd: cpu.weight 1000, memory.low
 //	  agents/             the budget: cpu.max, memory.high/max/swap.max
-//	    <thread id>/      one agent CLI and everything it starts
+//	    <thread id>/      a thread: no process of its own (V0.job-limits)
+//	      cli/            its agent CLI and everything it starts
+//	      job/, undeclared/  its heavy work, moved out of cli/ by fyrd
 //	    deploy/           a self-deploy's build and tests
 //
 // A child starts directly in its cgroup (clone3 CLONE_INTO_CGROUP, see
@@ -132,6 +134,8 @@ type Tree struct {
 	oomdLimit float64
 	oomdDir   string
 	oomdNoted time.Time
+	// V0.job-limits: the thread cgroups whose split was refused and logged, under mu.
+	splitFailed map[string]bool
 }
 
 type focusBeat struct {
@@ -296,15 +300,30 @@ func setup(o Options, path string, err error) (*Tree, error) {
 	if err != nil {
 		return nil, fmt.Errorf("a child cannot start in agents/: %w", err)
 	}
-	// The cgroups of the last run's threads, when empty.
-	if es, err := os.ReadDir(agents); err == nil {
-		for _, e := range es {
-			if e.IsDir() {
-				os.Remove(filepath.Join(agents, e.Name()))
-			}
+	// The cgroups of the last run's threads, when empty, with their empty
+	// children (cli/, job/, undeclared/ and its parts); the kernel refuses
+	// one that holds a process.
+	removeEmptyTree(agents, 3)
+	return t, nil
+}
+
+// removeEmptyTree removes the cgroups under dir, depth levels down, deepest
+// first; dir itself stays.
+func removeEmptyTree(dir string, depth int) {
+	if depth == 0 {
+		return
+	}
+	es, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range es {
+		if e.IsDir() {
+			d := filepath.Join(dir, e.Name())
+			removeEmptyTree(d, depth-1)
+			os.Remove(d)
 		}
 	}
-	return t, nil
 }
 
 func put(dir, file, v string) error { return os.WriteFile(filepath.Join(dir, file), []byte(v), 0o644) }
@@ -328,19 +347,27 @@ func (t *Tree) Root() string {
 
 var unsafe = regexp.MustCompile(`[^A-Za-z0-9_-]`)
 
-// Thread returns the directory a thread's process starts in, made when
-// missing, or "" when off and in the scope layout (Launch). Each Thread is
-// matched by one Release: the directory goes when the last process that took
-// it is gone.
+// CLIDir is the leaf of a thread's cgroup its agent CLI runs in
+// (V0.job-limits). The thread's cgroup enables cpu and memory for its
+// children, so job/ and undeclared/ can carry limits of their own; the
+// kernel then lets no process sit in the thread's cgroup itself.
+const CLIDir = "cli"
+
+// Thread returns the directory a thread's process starts in (its cli/ leaf in
+// the unit layout), made when missing, or "" when off and in the scope layout
+// (Launch). Each Thread is matched by one Release: the directories go when
+// the last process that took them is gone.
 func (t *Tree) Thread(id string) string {
 	d, _ := t.Launch(id)
 	return d
 }
 
 // Launch returns where a thread's process starts: the directory it starts in
-// (made when missing), or in the scope layout the command line that starts it
-// in a new scope (V0.agents-unit); both empty when off. Each Launch is
-// matched by one Release, as Thread.
+// (made when missing; its cli/ leaf, V0.job-limits), or in the scope layout
+// the command line that starts it in a new scope (V0.agents-unit); both empty
+// when off. A scope starts with the CLI in its own cgroup: SplitThreads moves
+// it into cli/ on the next tick. Each Launch is matched by one Release, as
+// Thread.
 func (t *Tree) Launch(id string) (dir string, wrap []string) {
 	if t == nil {
 		return "", nil
@@ -364,13 +391,17 @@ func (t *Tree) Launch(id string) (dir string, wrap []string) {
 		t.logf("cgroups: thread %s: %v", id, err)
 		return "", nil
 	}
+	cli, ok := t.split(name, d)
+	if !ok {
+		return "", nil
+	}
 	t.refs[name]++
-	return d, nil
+	return cli, nil
 }
 
 // Hold takes the hold of a thread's process that a previous fyrd started and
 // the runner kept (decision 0023): Release then counts it, and nothing is
-// made.
+// made but, in the unit layout, the cli/ leaf the process moves into.
 func (t *Tree) Hold(id string) {
 	if t == nil {
 		return
@@ -379,13 +410,76 @@ func (t *Tree) Hold(id string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.layout != LayoutScope {
-		if _, err := t.make(name); err != nil {
+		if d, err := t.make(name); err != nil {
 			t.logf("cgroups: thread %s: %v", id, err)
+		} else {
+			t.split(name, d)
 		}
 	} else if _, ok := t.weights[name]; !ok {
 		t.weights[name] = ""
 	}
 	t.refs[name]++
+}
+
+// split makes thread name's cli/ leaf in its cgroup d, moves the processes
+// left in d itself (a CLI a scope or an older fyrd started there) into it,
+// and enables cpu and memory for d's children (V0.job-limits). A refusal (a
+// process forked during the move) is tried again at the next call and logged
+// once: until then the thread's jobs run without limits of their own. false
+// when cli/ cannot be made. Holds t.mu.
+func (t *Tree) split(name, d string) (string, bool) {
+	cli := filepath.Join(d, CLIDir)
+	if err := os.Mkdir(cli, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+		t.logf("cgroups: thread %s: %v", name, err)
+		return "", false
+	}
+	if b, _ := os.ReadFile(filepath.Join(d, "cgroup.subtree_control")); strings.Contains(string(b), "memory") {
+		return cli, true
+	}
+	for _, p := range pids(filepath.Join(d, "cgroup.procs")) {
+		os.WriteFile(filepath.Join(cli, "cgroup.procs"), []byte(strconv.Itoa(p)), 0o644) // one that ended is gone
+	}
+	if err := put(d, "cgroup.subtree_control", controllers); err != nil {
+		if t.splitFailed == nil {
+			t.splitFailed = map[string]bool{}
+		}
+		if !t.splitFailed[d] {
+			t.splitFailed[d] = true
+			t.logf("guard: job limit off thread=%s: controllers for its children: %v", name, err)
+		}
+	} else {
+		delete(t.splitFailed, d)
+	}
+	return cli, true
+}
+
+// SplitThreads gives every thread's cgroup its cli/ leaf (split): in the scope
+// layout a scope starts with the CLI in its own cgroup, and a thread an older
+// fyrd started in agents/<thread> has it there too. The sampler's Tick calls
+// it.
+func (t *Tree) SplitThreads() {
+	if t == nil {
+		return
+	}
+	for _, c := range t.threadCgroups() {
+		if c.Name == DeployDir || c.Name == "probe" {
+			continue
+		}
+		t.splitDir(c.Name, c.Dir)
+	}
+}
+
+// splitDir is split under t.mu.
+func (t *Tree) splitDir(name, d string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.split(name, d)
+}
+
+// threadPids are the processes of a thread's own cgroup td and of its cli/
+// leaf: where a job starts before fyrd moves it.
+func threadPids(td string) []int {
+	return append(pids(filepath.Join(td, "cgroup.procs")), pids(filepath.Join(td, CLIDir, "cgroup.procs"))...)
 }
 
 // CPUTime is the CPU a thread's cgroup and its children (job/, undeclared/)
@@ -431,13 +525,18 @@ func (t *Tree) Release(id string) {
 		dirs = append(dirs, filepath.Join(t.agentsDir(), name))
 	}
 	for _, d := range dirs {
+		delete(t.splitFailed, d)
 		// Decision 0029 S5: its job's cgroup first (the kernel keeps a parent
 		// with a child); a job still running keeps both until the next Release.
-		job := filepath.Join(d, jobDir)
-		for _, f := range []string{"cgroup.procs", "cgroup.freeze"} {
-			os.Remove(filepath.Join(job, f)) // only a plain directory (tests) holds these
+		// V0.job-limits: and its cli/ leaf.
+		for _, sub := range []string{jobDir, CLIDir} {
+			c := filepath.Join(d, sub)
+			for _, f := range []string{"cgroup.procs", "cgroup.freeze", "memory.high", "cpu.max"} {
+				os.Remove(filepath.Join(c, f)) // only a plain directory (tests) holds these
+			}
+			os.Remove(c)
 		}
-		os.Remove(job)
+		os.Remove(filepath.Join(d, "cgroup.subtree_control")) // a plain directory
 		os.Remove(d)
 	}
 }

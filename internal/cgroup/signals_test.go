@@ -120,7 +120,7 @@ func (m kv) SetKV(k, v string) error        { m[k] = v; return nil }
 func TestS1ASlotHoldLeavesAJobRecord(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	proc := t.TempDir()
 	write(t, filepath.Join(proc, "loadavg"), "1.00 1.00 1.00 1/10 1\n")
 	write(t, filepath.Join(proc, "meminfo"), "MemTotal:       32000000 kB\nMemAvailable:   20000000 kB\n")
@@ -182,7 +182,7 @@ func TestS1ASlotHoldLeavesAJobRecord(t *testing.T) {
 func TestS1AHoldWithoutAMatchedCommandIsNamedByItsKind(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_b")
+	td := threadOf(tr, "t_b")
 	write(t, filepath.Join(td, "cpu.stat"), "usage_usec 0\n")
 	write(t, filepath.Join(td, "memory.current"), "0\n")
 	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
@@ -207,7 +207,7 @@ func TestS1AHoldWithoutAMatchedCommandIsNamedByItsKind(t *testing.T) {
 func TestH174HoldActivity(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	usec := 0
 	stat := func() { write(t, filepath.Join(td, "cpu.stat"), fmt.Sprintf("usage_usec %d\n", usec)) }
 	stat()

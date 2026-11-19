@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -199,4 +200,44 @@ func (j *Jobs) LiveUse(thread string) (cores float64, grew uint64, ok bool) {
 		grew = h.mem - h.mem0
 	}
 	return max(0, h.rate-h.base), grew, true
+}
+
+// overrunRaise is how much a class's learned peak rises when its job hit the
+// memory.high its peak set (V0.job-limits; VPA raises by ×1.2 after an overrun).
+const overrunRaise = 1.2
+
+// RaisePeak raises class's learned peak by overrunRaise: its job hit the limit
+// the peak set, so the peak was too low (V0.job-limits). Nothing for a class
+// not learned yet.
+func (j *Jobs) RaisePeak(class string) {
+	if j == nil || class == "" {
+		return
+	}
+	j.mu.Lock()
+	j.load()
+	l, ok := j.table[class]
+	if !ok {
+		j.mu.Unlock()
+		return
+	}
+	l.Peak = uint64(overrunRaise * float64(l.Peak))
+	j.table[class] = l
+	raw := j.tableRaw()
+	j.mu.Unlock()
+	j.storeTable(raw)
+}
+
+// SizeOf is what the class of thread's job learned (V0.job-limits): its hold's
+// class, or the heavy command it ran last (ClassOf). No class, or one not
+// learned yet, is not Known. It does no I/O and calls nothing out.
+func (j *Jobs) SizeOf(thread string, _ bool) JobSize {
+	if j == nil {
+		return JobSize{}
+	}
+	class := j.ClassOf(thread, "")
+	if class == "" || strings.HasSuffix(class, ": ") {
+		return JobSize{}
+	}
+	l, ok := j.Learned(class)
+	return JobSize{Class: class, Peak: l.Peak, Demand: l.Demand, Known: ok}
 }

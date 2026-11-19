@@ -253,7 +253,7 @@ Desktop and phone stay in sync: the phone has no rail ring (V0.99 (3)), but the 
 
 ## S5 as built (V0.151)
 
-The job's cgroup is not made by rewriting the command at the gate (`fyr job run -- …`), as section 2 proposed. A rewrite needs the hook's "allow" decision, which would skip the CLI's own permission check (auto mode) for the whole command, including anything joined to the heavy part. Instead fyrd finds the job's processes in the thread's cgroup by their command line and moves them into `agents/<thread>/job/`. The thread's cgroup enables no controllers for its children, so the job's cgroup can sit beside the CLI without splitting the thread's cgroup into `cli/` and `job-*/`. `cgroup.freeze` works in any cgroup.
+The job's cgroup is not made by rewriting the command at the gate (`fyr job run -- …`), as section 2 proposed. A rewrite needs the hook's "allow" decision, which would skip the CLI's own permission check (auto mode) for the whole command, including anything joined to the heavy part. Instead fyrd finds the job's processes in the thread's cgroup by their command line and moves them into `agents/<thread>/job/`. The thread's cgroup enables no controllers for its children, so the job's cgroup can sit beside the CLI without splitting the thread's cgroup into `cli/` and `job-*/`. `cgroup.freeze` works in any cgroup. *Amended by V0.job-limits: the CLI now runs in `cli/` and the thread's cgroup enables cpu and memory, so the job's cgroup carries its own `memory.high` and `cpu.max`.*
 
 ## Percent and two resources (V0.163)
 

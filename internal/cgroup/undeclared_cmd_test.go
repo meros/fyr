@@ -25,7 +25,7 @@ var boot = time.Date(2026, 11, 17, 8, 0, 0, 0, time.UTC)
 func TestC1TheRootIsTheNewShellAndItsCommandTheOneTheGateSaw(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	proc := t.TempDir()
 	write(t, filepath.Join(proc, "stat"), fmt.Sprintf("cpu 1 2 3\nbtime %d\n", boot.Unix()))
 	over := boot.Add(2 * time.Hour) // the first reading over, 7200 s after boot

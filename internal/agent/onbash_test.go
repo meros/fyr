@@ -58,3 +58,24 @@ func TestV209TheCallsStartAndEndAreHeard(t *testing.T) {
 		t.Fatalf("%v", done)
 	}
 }
+
+// V0.job-limits: a runner that ignores its cgroup gets the gate hook's notice as context; the command still runs.
+func TestJobLimitsGateHookNamesTheWorkerFlag(t *testing.T) {
+	m := New(&stubHost{}, Config{})
+	m.SetOnBash(func(BashCall) string { return "" }, nil)
+	m.SetJobHints(nil, func(c string) string {
+		if c == "npx playwright test" {
+			return "add --workers=3"
+		}
+		return ""
+	})
+	s := &session{thread: "t_a"}
+	out := m.hook(s, "gate", claude.Msg{"tool_name": "Bash", "tool_input": map[string]any{"command": "npx playwright test"}})
+	h, _ := out["hookSpecificOutput"].(claude.Msg)
+	if h["additionalContext"] != "add --workers=3" || h["permissionDecision"] != nil {
+		t.Fatalf("%v", out)
+	}
+	if out := m.hook(s, "gate", claude.Msg{"tool_name": "Bash", "tool_input": map[string]any{"command": "ls"}}); out != nil {
+		t.Fatalf("a plain command: %v", out)
+	}
+}

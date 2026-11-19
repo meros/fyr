@@ -12,7 +12,7 @@ import (
 func TestF3TheRootsAndTheirDescendantsAreFrozenInTheirOwnCgroup(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	proc := t.TempDir()
 	fakeProc2(t, proc, 10, 1, 100, 10, "claude")
 	fakeProc2(t, proc, 11, 10, 110, 10, "node", "mcp.js")
@@ -50,7 +50,7 @@ func TestF3TheRootsAndTheirDescendantsAreFrozenInTheirOwnCgroup(t *testing.T) {
 func TestF11ARootThatExitsDuringTheMoveIsSkipped(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	proc := t.TempDir()
 	fakeProc2(t, proc, 20, 10, 9000, 10, "/bin/zsh", "-c", "x")
 	fakeProc2(t, proc, 21, 20, 9001, 10, "node")
@@ -83,7 +83,7 @@ func TestBashCommandsAreKeptPerThreadNewestLast(t *testing.T) {
 func TestUndeclaredEmptyReadsPopulated(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	g := &JobGroups{Tree: tr, Proc: t.TempDir()}
 	if !g.UndeclaredEmpty("t_a") {
 		t.Fatal("no cgroup is empty")
@@ -107,7 +107,7 @@ func TestUndeclaredEmptyReadsPopulated(t *testing.T) {
 func TestF18WorkThawedInItsCgroupIsFrozenAgain(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	td := threadOf(tr, "t_a")
 	proc := t.TempDir()
 	fakeProc2(t, proc, 10, 1, 100, 10, "claude")
 	fakeProc2(t, proc, 20, 10, 9000, 10, "/bin/zsh", "-c", "turbo run lint")

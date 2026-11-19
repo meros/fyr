@@ -106,7 +106,7 @@ func TestAgentsUnitFallsBackToTheUnitLayout(t *testing.T) {
 			if tr == nil || tr.Layout() != LayoutUnit {
 				t.Fatalf("layout %v: %v", tr, l.lines)
 			}
-			if d, wrap := tr.Launch("t_a"); d != filepath.Join(o.FS, unit, "agents", "t_a") || wrap != nil {
+			if d, wrap := tr.Launch("t_a"); d != filepath.Join(o.FS, unit, "agents", "t_a", CLIDir) || wrap != nil {
 				t.Fatalf("launch %q %q", d, wrap)
 			}
 			if o.AgentsSlice != "" && !strings.Contains(strings.Join(l.lines, "\n"), "keeping the unit layout") {
@@ -197,8 +197,9 @@ func TestAgentsUnitSwitchKeepsRunningThreads(t *testing.T) {
 		return "/" + slice + "/" + scopePrefix + "probe-" + strconv.Itoa(o.PID) + scopeSuffix, "1", nil
 	}
 	old := Setup(Options{Budget: o.Budget, FS: o.FS, Self: o.Self, PID: o.PID, Probe: o.Probe, Logf: l.logf}) // the fyrd before
-	legacyDir := old.Thread("t_old")
-	write(t, filepath.Join(legacyDir, "cgroup.procs"), "100\n")
+	// V0.job-limits: the CLI starts in its cli/ leaf.
+	legacyDir := filepath.Dir(old.Thread("t_old"))
+	write(t, filepath.Join(legacyDir, CLIDir, "cgroup.procs"), "100\n")
 	o.Self = filepath.Join(t.TempDir(), "self")
 	write(t, o.Self, "0::/"+unit+"/server\n") // the new fyrd starts where the old one was
 	tr := Setup(o)

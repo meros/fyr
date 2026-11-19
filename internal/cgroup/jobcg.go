@@ -5,9 +5,9 @@ package cgroup
 // freezing the agent's CLI. The command is never rewritten (a rewrite at the
 // gate would need an "allow" decision, which would skip auto mode's own
 // check of the whole command): fyrd finds the job's processes in the thread's
-// cgroup by their command line and moves them. A thread's cgroup enables no
-// controllers for its children, so a child may hold processes beside the
-// CLI; cgroup.freeze and cpu.stat work in any cgroup.
+// cli/ leaf by their command line and moves them. V0.job-limits: the thread's
+// cgroup enables cpu and memory for its children, so job/ and undeclared/
+// carry the job's own memory.high and cpu.max (joblimit.go).
 
 import (
 	"os"
@@ -51,6 +51,15 @@ type JobGroups struct {
 	// V0.guard-swap: when each thread's frozen work was last moved to swap
 	// (zero while a reclaim runs).
 	reclaimed map[string]time.Time
+
+	// V0.job-limits: Size says the class of thread's job (declared, or its
+	// undeclared work) and what the class learned; Raise raises a class's
+	// learned peak after its job hit its limit. Both optional: without Size
+	// a job gets no limit. sized: the limits written, per job cgroup.
+	Size  func(thread string, undeclared bool) JobSize
+	Raise func(class string)
+	Cores int // the host's CPUs for the agents' capacity; default runtime.NumCPU()
+	sized map[string]sizedJob
 }
 
 // undeclaredDir is the name of a thread's undeclared-work cgroup, beside job/
@@ -118,7 +127,8 @@ func (g *JobGroups) Sync(thread, needle string) {
 		return
 	}
 	td := g.threadDir(thread)
-	in := pids(filepath.Join(td, "cgroup.procs"))
+	g.Tree.splitDir(unsafe.ReplaceAllString(thread, "_"), td) // V0.job-limits: a scope's CLI moves to cli/ first
+	in := threadPids(td)
 	if len(in) == 0 {
 		return
 	}
@@ -171,6 +181,7 @@ func (g *JobGroups) Sync(thread, needle string) {
 		g.Tree.logf("cgroups: job of %s: %v", thread, err)
 		return
 	}
+	g.sizeJob(thread, jd, false) // V0.job-limits: before the job grows in it
 	for _, p := range move {
 		// A process that ended meanwhile cannot move; the next tick tries the rest.
 		os.WriteFile(filepath.Join(jd, "cgroup.procs"), []byte(strconv.Itoa(p)), 0o644)
@@ -307,7 +318,9 @@ func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
 	if g == nil || g.Tree == nil || len(roots) == 0 {
 		return false
 	}
-	in := pids(filepath.Join(g.threadDir(thread), "cgroup.procs"))
+	td := g.threadDir(thread)
+	g.Tree.splitDir(unsafe.ReplaceAllString(thread, "_"), td) // V0.job-limits
+	in := threadPids(td)
 	children := map[int][]int{}
 	here := map[int]bool{}
 	for _, p := range in {
@@ -357,6 +370,7 @@ func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
 		g.Tree.logf("cgroups: undeclared work of %s: %v", thread, err)
 		return false
 	}
+	g.sizeJob(thread, ud, true) // V0.job-limits
 	for _, p := range move {
 		// A process that ended meanwhile cannot move; the rest does.
 		os.WriteFile(filepath.Join(ud, "cgroup.procs"), []byte(strconv.Itoa(p)), 0o644)
@@ -403,6 +417,7 @@ func (g *JobGroups) EndUndeclared(thread string) {
 		removeEmptyGroup(d)
 	}
 	removeEmptyGroup(ud)
+	g.forgetSize(ud)
 }
 
 // removeEmptyGroup removes a cgroup that holds no process. A plain directory
@@ -411,7 +426,7 @@ func removeEmptyGroup(dir string) {
 	if len(pids(filepath.Join(dir, "cgroup.procs"))) > 0 {
 		return
 	}
-	for _, f := range []string{"cgroup.procs", "cgroup.freeze"} {
+	for _, f := range []string{"cgroup.procs", "cgroup.freeze", "memory.high", "cpu.max"} {
 		os.Remove(filepath.Join(dir, f))
 	}
 	os.Remove(dir)
@@ -429,9 +444,10 @@ func (g *JobGroups) End(thread string) {
 	if len(pids(filepath.Join(jd, "cgroup.procs"))) > 0 {
 		return
 	}
+	g.forgetSize(jd) // V0.job-limits
 	// A plain directory (tests) holds the files fyrd wrote; the kernel's
 	// rmdir needs none of this.
-	for _, f := range []string{"cgroup.procs", "cgroup.freeze"} {
+	for _, f := range []string{"cgroup.procs", "cgroup.freeze", "memory.high", "cpu.max"} {
 		os.Remove(filepath.Join(jd, f))
 	}
 	os.Remove(jd)
@@ -476,6 +492,7 @@ func (g *JobGroups) Tick(held []string) {
 			g.Sync(h, n)
 		}
 	}
+	g.resize() // V0.job-limits: the swap valve, and the limits jobs hit
 	for h := range was {
 		if !now[h] {
 			g.End(h)

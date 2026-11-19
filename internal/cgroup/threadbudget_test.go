@@ -23,7 +23,7 @@ func budgetTree(t *testing.T, percent int) (*Tree, string, string) {
 	if tr == nil {
 		t.Fatal("no tree")
 	}
-	return tr, tr.Thread("t_a"), filepath.Join(tr.root, "agents")
+	return tr, threadOf(tr, "t_a"), filepath.Join(tr.root, "agents")
 }
 
 func pages(n uint64) string {
