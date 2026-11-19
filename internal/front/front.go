@@ -583,7 +583,7 @@ func (f *Front) load(l *link, st map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	env := map[string]any{}
-	for _, k := range []string{"actions", "profiles", "deploy", "stall", "user", "host", "hostId", "hostOrder", "machine", "os", "hostMarks", "agentMark"} {
+	for _, k := range []string{"actions", "profiles", "deploy", "stall", "user", "host", "hostId", "hostOrder", "machine", "os", "hostMarks", "agentMark", "update"} {
 		if v, ok := st[k]; ok {
 			env[k] = v
 		}
@@ -723,6 +723,14 @@ func (f *Front) apply(ctx context.Context, l *link, conn map[string]map[string]a
 			l.env["agentMark"] = d
 			l.dirty = true
 			f.publishMarksLocked()
+			f.mu.Unlock()
+		}
+	case "update": // V0.host-updates: the host's update state, on its row in Settings → Hosts
+		if d, err := decode(data); err == nil {
+			f.mu.Lock()
+			l.env["update"] = d
+			l.dirty = true
+			f.publishHostsLocked()
 			f.mu.Unlock()
 		}
 	case "hostOrder": // V0.132: the host keeps a newer host order

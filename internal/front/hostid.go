@@ -105,6 +105,9 @@ func (f *Front) hostLocked(l *link) api.Host {
 	if d := l.env["deploy"]; d != nil {
 		h.Deploy = d
 	}
+	if u := l.env["update"]; u != nil { // V0.host-updates
+		h.Update = u
+	}
 	// V0.170: what it runs on, for its mark.
 	h.Machine, _ = l.env["machine"].(string)
 	h.OS, _ = l.env["os"].(string)

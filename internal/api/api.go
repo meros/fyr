@@ -149,6 +149,10 @@ type State[T, P, F any] struct {
 	// AgentMark: on a host, what its own agent set for its mark and its last
 	// setup run (V0.208), nil when neither; a front lays it under the owner's.
 	AgentMark any `json:"agentMark,omitempty"`
+	// Update: on a host, its update state (V0.host-updates): the commit it
+	// runs, the release it wants, how far behind, the last update and a
+	// release held back; nil on a host without a release source.
+	Update any `json:"update,omitempty"`
 }
 
 // Action is an owner action as clients list it.
@@ -169,6 +173,8 @@ type Host struct {
 	// Profiles are the host's own (decision 0015); null when the host sent none.
 	Profiles []any `json:"profiles"`
 	Deploy   any   `json:"deploy,omitempty"`
+	// Update is the host's update state (V0.host-updates), as it sent it.
+	Update any `json:"update,omitempty"`
 	// Found: not in the config; the roster brought it (a paired install,
 	// V0.retire-discovery; V0.123's tailnet discovery did until then).
 	Found bool `json:"found,omitempty"`

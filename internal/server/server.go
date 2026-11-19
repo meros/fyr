@@ -82,6 +82,9 @@ type Server struct {
 	// build's log. Optional.
 	Updates   func() any
 	UpdateLog func(build, name string) ([]byte, error)
+	// UpdateState is this host's update state for its fronts
+	// (V0.host-updates); nil sends none.
+	UpdateState func() any
 }
 
 // Providers is what the provider endpoints need (*provider.Registry
@@ -423,7 +426,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(projects, func(i, j int) bool { return projects[i].LastUsed.After(projects[j].LastUsed) })
 	profiles := s.profiles()
 	api.WriteJSON(w, 200, api.State[api.Thread, api.Project, provider.Profile]{
-		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(), Machine: machine.Kind(), OS: machine.OS(), HostMarks: s.hostMarks(), AgentMark: s.agentMark(),
+		Now: time.Now().UTC(), User: core.Owner, BuildID: s.BuildID, Host: s.hostName(), HostID: s.ID, HostOrder: s.hostOrder(), Machine: machine.Kind(), OS: machine.OS(), HostMarks: s.hostMarks(), AgentMark: s.agentMark(), Update: s.updateState(),
 		Threads: threads, Actions: acts, Profiles: profiles, Projects: projects,
 		Partial: since > 0, Deploy: s.Engine.DeployState(time.Now()), Stall: s.Engine.StallState(time.Now()),
 	})
@@ -1005,6 +1008,14 @@ func (s *Server) hostMarks() any {
 		return m
 	}
 	return nil
+}
+
+// updateState is this host's update state (V0.host-updates), or nil.
+func (s *Server) updateState() any {
+	if s.UpdateState == nil {
+		return nil
+	}
+	return s.UpdateState()
 }
 
 // agentMark is what this host's agent set for its mark (V0.208), or nil.

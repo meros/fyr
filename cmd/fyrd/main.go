@@ -50,6 +50,7 @@ import (
 	"github.com/meros/fyr/internal/server"
 	"github.com/meros/fyr/internal/slots"
 	"github.com/meros/fyr/internal/store"
+	"github.com/meros/fyr/internal/stream"
 	"github.com/meros/fyr/internal/tailnet"
 	"github.com/meros/fyr/web"
 )
@@ -434,6 +435,12 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		return sha, ""
 	}
 	dep.OnIdle = eng.AutoDeploySweep
+	// V0.host-updates: the fronts follow this host's update state live.
+	dep.OnChange = func() {
+		if eng.Hub != nil {
+			eng.Hub.Send(stream.FrameUpdate, dep.Summary())
+		}
+	}
 	// #153: follow `deployable`, batched by a quiet period.
 	watcher := &deploy.Watcher{D: dep, On: func() bool { return eng.AutoDeploy().On }, Start: func(sha string) {
 		go func() {
@@ -449,11 +456,14 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	watcher.Every = time.Duration(cfg.UpdateEveryMinutes) * time.Minute
 	// V0.126: Update now / Back to release (owner only): the newest release,
 	// at once, ending a local build's pause.
+	// V0.host-updates: the press is also the retry of a release held back
+	// as bad here; if it fails again it is marked again.
 	updateNow := func() error {
 		if dep.Busy() {
 			return errors.New("An update runs already")
 		}
 		dep.Unpause()
+		dep.ClearBad()
 		go func() {
 			req := core.EffectReq{ID: engine.NewID("fx_"), Action: core.FyrDeploy, Args: map[string]any{"trigger": "owner"}}
 			if _, err := dep.Deploy(context.Background(), "", req, ""); err != nil && !errors.Is(err, core.ErrReportLater) {
@@ -533,7 +543,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 			bad, why := dep.Bad()
 			return map[string]any{"updates": dep.Updates(), "paused": dep.PausedBy(), "bad": map[string]string{"commit": bad, "why": why}, "live": BuildID(), "github": ghView()}
 		},
-		UpdateLog: dep.UpdateLog,
+		UpdateLog:   dep.UpdateLog,
+		UpdateState: func() any { return dep.Summary() }, // V0.host-updates
 		Focus: func(device, thread string, on bool) { // V0.85
 			if on {
 				tree.Focus(device, thread, time.Now())
