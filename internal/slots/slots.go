@@ -123,7 +123,14 @@ type Snapshot struct {
 	UndeclaredMemPct *float64     `json:"undeclaredMemPct,omitempty"`
 	// Decision 0032: what the memory guard did lately.
 	Guard *Guard `json:"guard,omitempty"`
+	// bound is Binding with ResHeadroom told apart (V0.admission-memory).
+	bound string
 }
+
+// Bound is the resource that holds the head back as the AIMD controller
+// reads it: Binding, with ResHeadroom where the host's real headroom binds
+// and not the memory budget (V0.admission-memory).
+func (s Snapshot) Bound() string { return s.bound }
 
 // Pool is one host's slots.
 type Pool struct {
@@ -134,7 +141,8 @@ type Pool struct {
 	// Admit decides whether head may start beside held (decision 0029 S2),
 	// and why not; nil is the count rule. It runs under the pool's lock and
 	// must not call the pool.
-	// It also names the resource that binds (V0.163: ResCPU or ResMem).
+	// It also names the resource that binds (V0.163: ResCPU or ResMem;
+	// V0.admission-memory: ResHeadroom).
 	Admit func(head Holder, held []Holder) (bool, string, string)
 	// Cost is a holder's need (learned, or live while it runs) for the
 	// snapshot; optional. Host is the host's measures and capacity (V0.163:
@@ -535,11 +543,12 @@ func (p *Pool) SetBudget(f Factors, why string) {
 	p.fillLocked()
 }
 
-// Binding is the resource that holds the queue's head back, "" when none.
+// Binding is the resource that holds the queue's head back, "" when none,
+// as the snapshot sends it.
 func (p *Pool) Binding() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.binding
+	return Wire(p.binding)
 }
 
 // LastGrant is when the pool last admitted a job.
@@ -594,7 +603,7 @@ func (p *Pool) snapshotLocked() Snapshot {
 		s.Why = p.why
 	}
 	if len(s.Waiting) > 0 {
-		s.Binding = p.binding
+		s.Binding, s.bound = Wire(p.binding), p.binding
 	}
 	n := float64(p.n)
 	f := p.Budget()

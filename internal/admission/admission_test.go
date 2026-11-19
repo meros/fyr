@@ -108,12 +108,13 @@ func TestV182CostOfPriorityIdleAndLiveHolds(t *testing.T) {
 }
 
 func TestV182AdmitCountsHoldersAndUndeclaredWork(t *testing.T) {
-	a, h, _ := setup(2)
+	a, h, j := setup(2)
 	head := slots.Holder{Owner: "head", Kind: slots.Test}
 	if ok, why, _ := a.Admit(head, nil); !ok {
 		t.Fatalf("an empty host refuses: %s", why)
 	}
 	held := []slots.Holder{{Owner: "a", Kind: slots.Test}}
+	j.live["a"] = use{cores: 4, grew: 8 * gb} // a has grown to its prior: nothing more to come (V0.admission-memory)
 	if ok, why, _ := a.Admit(head, held); !ok {
 		t.Fatalf("half and half refuses: %s", why)
 	}
@@ -146,6 +147,7 @@ func TestV182BackfillPassesAJobThatEndsFirst(t *testing.T) {
 	// One job holds three quarters of the host and ends in an hour.
 	j.learned["a/build"] = cgroup.Learned{Demand: 6, Peak: 12 * gb, Runs: slots.LearnRuns, Walls: []float64{3600}}
 	held := []slots.Holder{{Owner: "a", Kind: slots.Build, Since: now}}
+	j.live["a"] = use{cores: 6, grew: 12 * gb} // at its peak: nothing more to come (V0.admission-memory)
 	head := slots.Holder{Owner: "head", Kind: slots.Build}
 	j.learned["head/build"] = cgroup.Learned{Demand: 6, Peak: 12 * gb, Runs: slots.LearnRuns, Walls: []float64{3600}}
 	// c fits beside a, is not cheap, and ends in ten minutes: it passes.
@@ -205,3 +207,31 @@ func TestServicesAreReservedInAdmission(t *testing.T) {
 		t.Fatalf("admitted beside a 10 GB service: %v %q", ok, why)
 	}
 }
+
+// V0.admission-memory (decision 0029 section 3 rule 3): what the running jobs may still grow comes off the
+// headroom. A job admitted at the start of its run uses little yet; the next admission must not take its room.
+func TestAdmissionMemoryRunningJobsGrowthComesOffTheHeadroom(t *testing.T) {
+	a, _, j := setup(2)
+	// 16 GB, 90 % free: 12.8 GB above the reserve. Each job peaks at 7 GB; t1 has grown 0.5 GB of it so far.
+	j.learned["t1/test"] = cgroup.Learned{Demand: 1, Peak: 7 * gb, Runs: slots.LearnRuns}
+	j.learned["t2/test"] = cgroup.Learned{Demand: 1, Peak: 7 * gb, Runs: slots.LearnRuns}
+	j.live["t1"] = use{cores: 1, grew: gb / 2}
+	held := []slots.Holder{{Owner: "t1", Kind: slots.Test, Since: now}}
+	head := slots.Holder{Owner: "t2", Kind: slots.Test}
+	// Each fits the headroom now (7 GB ≤ 12.8 GB) and the budget (7 + 7 ≤ 16), but t1's 6.5 GB still to come
+	// leaves 6.3 GB: t2 waits on the host's memory.
+	ok, why, binding := a.Admit(head, held)
+	if ok || binding != slots.ResHeadroom || slots.Wire(binding) != slots.ResMem {
+		t.Fatalf("admitted beside a job that will grow 6.5 GB: %v %q %q", ok, why, binding)
+	}
+	if a.Backfill(holderOf("t0"), head, held) {
+		t.Fatal("backfilled past the running job's growth")
+	}
+	// Once t1 has grown to its peak, its growth is in the headroom reading, and nothing more is taken off.
+	j.live["t1"] = use{cores: 1, grew: 7 * gb}
+	if ok, why, _ := a.Admit(head, held); !ok {
+		t.Fatalf("held back after the growth came: %q", why)
+	}
+}
+
+func holderOf(owner string) slots.Holder { return slots.Holder{Owner: owner, Kind: slots.Test} }

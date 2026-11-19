@@ -60,6 +60,10 @@ func (j *Jobs) learn(r JobRecord) {
 		j.table = map[string]Learned{}
 	}
 	l := j.table[r.Class]
+	if f, ok := j.raise[r.Class]; ok && r.Peak > 0 {
+		r.Peak = uint64(float64(r.Peak) * f) // V0.admission-memory: a raise that waited for this peak
+		delete(j.raise, r.Class)
+	}
 	starved := r.Cores > 0 && r.Demand/r.Cores > starvedAt
 	if l.Runs == 0 {
 		l.Demand, l.Peak = r.Demand, r.Peak
@@ -134,7 +138,9 @@ func (j *Jobs) Learned(class string) (Learned, bool) {
 // RaisePeak multiplies class's learned memory peak by f (V0.rerun-classes,
 // decision 0036 (F): ×1.2 after Fyr killed a job of it to free memory, as
 // VPA raises an estimate after an overrun), so its rerun is admitted only
-// where the larger peak fits. False when the class has no peak yet.
+// where the larger peak fits. False when the class has no peak yet: then the
+// raise waits for the peak its running job teaches (V0.admission-memory: a
+// first run that hit its limit was lost, and taught the limit as its peak).
 func (j *Jobs) RaisePeak(class string, f float64) bool {
 	if j == nil {
 		return false
@@ -143,6 +149,10 @@ func (j *Jobs) RaisePeak(class string, f float64) bool {
 	j.load()
 	l, ok := j.table[class]
 	if !ok || l.Peak == 0 {
+		if j.raise == nil {
+			j.raise = map[string]float64{}
+		}
+		j.raise[class] = max(1, j.raise[class]) * f
 		j.mu.Unlock()
 		return false
 	}
@@ -250,5 +260,5 @@ func (j *Jobs) SizeOf(thread string, _ bool) JobSize {
 		return JobSize{}
 	}
 	l, ok := j.Learned(class)
-	return JobSize{Class: class, Peak: l.Peak, Demand: l.Demand, Known: ok}
+	return JobSize{Class: class, Peak: l.Peak, Demand: l.Demand, Known: ok, Runs: l.Runs}
 }

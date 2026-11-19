@@ -35,6 +35,12 @@ type Signals struct {
 	// sum of the process trees); 0 when unknown. V0.guard-wake: the guard
 	// wakes a frozen job when it fits under the cap learned from it.
 	AgentsMem uint64
+	// Growth is what the admitted jobs may still grow: the sum over the
+	// holders of max(0, predicted peak − what they grew since their grant).
+	// Admission fills it, not the host (V0.admission-memory): decision 0029
+	// section 3 rule 3 takes it off the headroom, so a job admitted at 3 % of
+	// its 45 % peak does not leave the other 42 % to the next one.
+	Growth uint64
 }
 
 // Reserve is the share of the agents' memory that must stay free: twice
@@ -149,7 +155,22 @@ func GB(b float64) string { return fmt.Sprintf("%.1f GB", b/1e9) }
 const (
 	ResCPU = "cpu"
 	ResMem = "memory"
+	// ResHeadroom: memory, held back by the host's real headroom (memory
+	// outside the budget: the owner's browser, the running jobs' growth),
+	// not by the memory budget. V0.admission-memory: the AIMD controller
+	// grows the memory budget only for ResMem, since a larger budget does
+	// not make the host's free memory any larger; the snapshot sends it as
+	// ResMem, so the front reads the same two values.
+	ResHeadroom = "headroom"
 )
+
+// Wire is binding as the snapshot sends it: ResHeadroom is memory.
+func Wire(binding string) string {
+	if binding == ResHeadroom {
+		return ResMem
+	}
+	return binding
+}
 
 // Decide says whether head may start beside held, why not, and which
 // resource binds (V0.163). In order: without a provider (or capacity) the
@@ -187,7 +208,7 @@ func DecideWith(p Policy, s Signals, f Factors, n int, held []Need, extra []Extr
 		return false, fmt.Sprintf("%d of %d heavy jobs run (this host counts jobs: no load measures)", len(held), n), ""
 	}
 	if s.Headroom != nil && *s.Headroom < s.Reserve(p) {
-		return false, s.MemoryWhy(), ResMem
+		return false, s.MemoryWhy(), ResHeadroom
 	}
 	if s.Stall == StallCritical {
 		return false, "memory stalls (critical)", ResMem
@@ -210,12 +231,20 @@ func DecideWith(p Policy, s Signals, f Factors, n int, held []Need, extra []Extr
 	if head.CPU > cpuFree+1e-9 {
 		return false, fmt.Sprintf("needs ≈ %.0f %% CPU, %.0f %% free", Pct(head.CPU/s.CPU), max(0, Pct(cpuFree/s.CPU))) + undeclaredWhy(others, s, ResCPU), ResCPU
 	}
-	memFree := f.Mem*float64(s.Memory) - float64(used.Mem)
+	// V0.admission-memory: the budget binds (ResMem) or the real headroom
+	// does (ResHeadroom), less what the running jobs may still grow.
+	memFree, memBind := f.Mem*float64(s.Memory)-float64(used.Mem), ResMem
 	if s.Headroom != nil {
-		memFree = min(memFree, (*s.Headroom-s.Reserve(p))*float64(s.Memory))
+		if room := (*s.Headroom-s.Reserve(p))*float64(s.Memory) - float64(s.Growth); room < memFree {
+			memFree, memBind = room, ResHeadroom
+		}
 	}
 	if float64(head.Mem) > memFree+1 {
-		return false, fmt.Sprintf("needs ≈ %s memory, %s free", GB(float64(head.Mem)), GB(max(0, memFree))) + undeclaredWhy(others, s, ResMem), ResMem
+		grow := ""
+		if memBind == ResHeadroom && s.Growth > 0 {
+			grow = fmt.Sprintf(" (the running jobs may still grow %s)", GB(float64(s.Growth)))
+		}
+		return false, fmt.Sprintf("needs ≈ %s memory, %s free", GB(float64(head.Mem)), GB(max(0, memFree))) + grow + undeclaredWhy(others, s, ResMem), memBind
 	}
 	c, m := head.Shares(s)
 	if (c > CheapShare || m > CheapShare) && s.Slowdown != nil && *s.Slowdown >= p.SlowdownMax {

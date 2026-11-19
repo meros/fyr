@@ -110,6 +110,9 @@ type Jobs struct {
 	seenAt map[string]time.Time // and when
 	recs   []JobRecord
 	table  map[string]Learned // decision 0029 S3: per class
+	// raise: per class, a peak raise (RaisePeak) that waits for its first
+	// peak (V0.admission-memory); in memory only.
+	raise map[string]float64
 	// projects: the pool's owners' project names, cached by RefreshProjects
 	projects map[string]string
 	loaded   bool

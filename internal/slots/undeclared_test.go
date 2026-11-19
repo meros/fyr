@@ -57,7 +57,7 @@ func TestB5OneJobThatAskedAlwaysRuns(t *testing.T) {
 	// The memory rules can still hold it.
 	low := host6
 	low.Headroom = f(0.05)
-	if ok, _, res := DecideWith(DefaultPolicy, low, Full, 2, nil, flagged, "t_head", Need{CPU: 3, Mem: gb}); ok || res != ResMem {
+	if ok, _, res := DecideWith(DefaultPolicy, low, Full, 2, nil, flagged, "t_head", Need{CPU: 3, Mem: gb}); ok || res != ResHeadroom {
 		t.Fatal("the memory reserve did not hold")
 	}
 }
