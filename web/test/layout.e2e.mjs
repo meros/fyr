@@ -738,23 +738,40 @@ function assertLayout(m, ctx, { keyboard = false } = {}) {
 // change, and no view transition or finite animation runs. The mock answers within 30 ms, so 80 ms without a
 // change is past any chain of its answers; a longer mock delay (an upload, the PR detail) is waited for by what
 // it shows.
+// It fails when the DOM keeps changing for SETTLE_MS of the page's own frames: each frame counts for at most 50 ms,
+// so a tab that waits for a CPU (8 tabs share CI's few cores) is not failed for a first render that took that long
+// to draw; a page that changes on every frame still is. SETTLE_CEIL_MS of wall time bounds a page that gets no frames.
 const QUIET_MS = 80;
+const SETTLE_MS = 5000;
+const SETTLE_CEIL_MS = 60_000;
 const SETTLE = `new Promise((ok) => {
-  let last = performance.now(), frames = 0;
-  const mo = new MutationObserver(() => { last = performance.now(); frames = 0; });
+  let last = performance.now(), frames = 0, prev = last, spent = 0;
+  // The last changes, named, so a page that does not settle says what kept changing.
+  const seen = [];
+  const name = (n) => !n ? '?' : n.nodeType === 1 ? n.tagName.toLowerCase() + (n.className && typeof n.className === 'string' ? '.' + n.className.trim().split(/\\s+/).join('.') : '') : name(n.parentNode);
+  const mo = new MutationObserver((ms) => {
+    last = performance.now(); frames = 0;
+    for (const m of ms) seen.push(Math.round(last) + ' ' + m.type + (m.attributeName ? '[' + m.attributeName + ']' : '') + ' ' + name(m.target));
+    seen.splice(0, seen.length - 8);
+  });
   mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+  const running = () => document.getAnimations().filter((a) => a.playState === 'running' && a.animationName !== 'ahc' && a.effect?.getComputedTiming().endTime !== Infinity);
   const moving = () => {
     try { if (document.documentElement.matches(':active-view-transition')) return true; } catch {}
     // V0.196: the auto-close clock runs for 10 s and moves nothing else.
-    return document.getAnimations().some((a) => a.playState === 'running' && a.animationName !== 'ahc' && a.effect?.getComputedTiming().endTime !== Infinity);
+    return running().length > 0;
   };
   const t0 = performance.now();
   const tick = () => {
     frames++;
     const now = performance.now();
+    spent += Math.min(now - prev, 50);
+    prev = now;
     const quiet = now - last >= ${QUIET_MS} && frames >= 2 && !moving();
-    if (quiet || now - t0 > 5000) { mo.disconnect(); ok(quiet); }
-    else requestAnimationFrame(tick);
+    if (quiet || spent > ${SETTLE_MS} || now - t0 > ${SETTLE_CEIL_MS}) {
+      mo.disconnect();
+      ok(quiet || { ms: Math.round(now - t0), frames: Math.round(spent), moving: running().slice(0, 4).map((a) => (a.animationName || a.transitionProperty) + ' ' + name(a.effect?.target)), seen });
+    } else requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
 })`;
@@ -791,7 +808,8 @@ function harness(t) {
   const waitFor = (expr, opts) => waitIn(undefined, expr, opts);
   const frames = () => evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => r(true), 0))))");
   const settle = async () => {
-    if (!(await evaluate(SETTLE))) throw new Error("the page did not settle: its DOM kept changing for 5 s");
+    const r = await evaluate(SETTLE);
+    if (r !== true) throw new Error(`the page did not settle: its DOM kept changing for ${SETTLE_MS / 1000} s of frames (${JSON.stringify(r)})`);
   };
   // Navigates and waits for the load event, then for ready (the app has drawn its screen) and a settled DOM.
   const navigate = async (url, ready = "!!document.querySelector('.m-app, .shell')") => {
