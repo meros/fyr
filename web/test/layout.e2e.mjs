@@ -1245,6 +1245,40 @@ try {
 }
 });
 
+// V0.header-one-block (#60): the thread header is the title (two lines at most), one row of chips and the tabs, on
+// desktop and phone; a question Fyr read in text stands in the conversation under the newest message, not in the header.
+// The desktop runs at the owner's window from #60 (1259 × 676), with a long title.
+for (const [front, w, h] of [["desktop", 1259, 676], ["phone", 390, 844]]) section(`V0.header-one-block ${front}`, async ({ send, evaluate, navigate, openScreen, shot }) => {
+try {
+  const head = front === "phone" ? ".m-tth" : ".th .thh";
+  const ready = "!!document.querySelector('.chneed.textask')";
+  if (front === "desktop") {
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+    await navigate(`${origin}/?mock=rail&textask=1&open=t_textask`, ready);
+  } else await openScreen({ url: "?mock=rail&textask=1&open=t_textask", ready }, w, h);
+  const r = await evaluate(`(() => {
+    const hd = document.querySelector('${head}'), q = document.querySelector('.chneed.textask'), box = (e) => e?.getBoundingClientRect();
+    const tt = document.querySelector('${front === "phone" ? ".m-tt" : ".th .tt"}'), lh = parseFloat(getComputedStyle(tt).lineHeight);
+    const cv = [...document.querySelectorAll('.convo-in .cv')].filter((e) => !e.closest('.nsteps'));
+    return { h: box(hd).height, inHead: hd.contains(q), inConvo: !!q.closest('.convo-in'), afterLast: !cv.length || !!(cv[cv.length - 1].compareDocumentPosition(q) & Node.DOCUMENT_POSITION_FOLLOWING),
+      lines: Math.round((tt.clientHeight - parseFloat(getComputedStyle(tt).paddingTop) - parseFloat(getComputedStyle(tt).paddingBottom)) / lh), full: tt.scrollHeight > tt.clientHeight,
+      lefts: ${front === "phone" ? "[]" : "['.th .tt', '.th .chips', '.th .tabs'].map((s) => Math.round(box(document.querySelector(s)).left))"},
+      btnH: box(q.querySelector('.btn')).height, qRight: box(q).right, vw: innerWidth };
+  })()`);
+  check(!r.inHead && r.inConvo && r.afterLast, `V0.header-one-block ${front}: the question in text is not under the newest message (${JSON.stringify(r)})`);
+  check(r.lines <= 2 && r.full, `V0.header-one-block ${front}: the long title shows ${r.lines} lines (clamped: ${r.full})`);
+  // desktop: 14 padding + 2 × 26 title + 12 + 24 chips + 12 + 34 tabs + 1 border; phone: the header as V0.17 measures it, without a line under the chips
+  const most = front === "phone" ? 200 : 149;
+  check(r.h <= most + 0.5, `V0.header-one-block ${front}: the header is ${r.h.toFixed(1)} px tall, over ${most}`);
+  if (front === "desktop") check(new Set(r.lefts).size === 1, `V0.header-one-block desktop: the title, chips and tabs do not share a left edge ${JSON.stringify(r.lefts)}`);
+  check(r.qRight <= r.vw + 0.5, `V0.header-one-block ${front}: the question line leaves the screen (${r.qRight} > ${r.vw})`);
+  if (front === "phone") check(r.btnH >= 44, `V0.header-one-block phone: Not a question is ${r.btnH} px tall, under 44`);
+  await shot(`header-one-block-${front}.png`);
+} catch (e) {
+  failures.push(`V0.header-one-block ${front}: ${e.message}`);
+}
+});
+
 // V0.187: an entry of the conversation clips what leaves its box (content-visibility, V0.41's list work), so a message's
 // Copy has to lie inside its entry to be seen. On the desktop it shows on hover, under the message.
 section("V0.187 message copy", async ({ send, evaluate, navigate }) => {

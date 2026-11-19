@@ -32,7 +32,6 @@ import { ChipStrip, PhonePickers, useAttachments } from "./attach-ui.tsx";
 import { sendArgs } from "./attach.ts";
 import { SlashList, useSlash } from "./slash-ui.tsx";
 import { AiSearchPanel, useAiSearch } from "./ai-search-ui.tsx";
-import { ThreadOffers } from "./offers-ui.tsx";
 import { changeChip, headerPr } from "./offers.ts";
 import { SETTLE_DONE_HINT, seenToggle, settleDoneEntry } from "./menu.ts";
 import { prChip } from "./pr.ts";
@@ -955,7 +954,6 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           })()}
           </button>
         </div>
-        <ThreadOffers t={t} onRun={(a, args) => void p.commands.run(a, [t.id], args)} />
         {t.hostOffline && (
           <div class="m-offl" role="status" title="The host is offline. This is the last copy Fyr saw; what you send waits until it is back.">
             {offlineLine(t)}

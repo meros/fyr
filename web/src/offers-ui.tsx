@@ -92,14 +92,9 @@ export function OfferBar({ on, offers, runs, change, cwd, onRun }: { on: string;
   );
 }
 
-/** The thread's own actions (V0.60): in the header, above the tabs. */
-export function ThreadOffers({ t, onRun }: { t: Thread; onRun: Run }) {
-  // V0.next-step-chips (2): the thread's actions are chips under the newest message (NextSteps), not header buttons
-  return <TextAskLine t={t} onRun={onRun} />;
-}
-
-/** V0.210: a question Fyr read in the agent's text, on both fronts: what Fyr read, and the press that says it is not one. */
-function TextAskLine({ t, onRun }: { t: Thread; onRun: Run }) {
+/** V0.210: a question Fyr read in the agent's text, on both fronts: what Fyr read, and the press that says it is not one.
+ *  V0.header-one-block: under the agent's newest message, beside the next-step chips, not in the header. */
+export function TextAskLine({ t, onRun }: { t: Thread; onRun: Run }) {
   if (!t.textAsk) return null;
   return (
     <div class="chneed textask" role="status">
