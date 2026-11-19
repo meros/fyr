@@ -7,6 +7,7 @@ import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import { SlideMark } from "./motion-ui.tsx";
 import { haptic } from "./native.ts";
+import { readFold, writeFold } from "./settings-fold.ts";
 
 /** What every control on a page reads: the page is read-only (no connection), it is the phone, and how to show Saved. */
 export interface SetEnv {
@@ -43,18 +44,44 @@ export function SavedMark({ shown }: { shown: boolean }) {
   );
 }
 
-/** A label, a card of rows, a foot line. Nothing sits above a group; the foot says what the whole group does. */
-export function Group(p: { title?: ComponentChildren; end?: ComponentChildren; foot?: ComponentChildren; footErr?: boolean; danger?: boolean; label?: string; class?: string; children: ComponentChildren }) {
+/** How a group folds (V0.automation-folds): its id on this device, open or not by default, and the line its header
+ *  shows while it is folded. */
+export interface Fold {
+  id: string;
+  open: boolean;
+  summary?: ComponentChildren;
+  /** open now whatever the device remembers (a link landed on it) */
+  force?: boolean;
+}
+
+/** A label, a card of rows, a foot line. Nothing sits above a group; the foot says what the whole group does.
+ *  With `fold` the header is a button that folds the card and the foot away (V0.automation-folds). */
+export function Group(p: { title?: ComponentChildren; end?: ComponentChildren; foot?: ComponentChildren; footErr?: boolean; danger?: boolean; label?: string; class?: string; fold?: Fold; children: ComponentChildren }) {
+  const [stored, setStored] = useState(() => (p.fold ? readFold(p.fold.id, p.fold.open) : true));
+  const open = !p.fold || p.fold.force || stored;
+  const toggle = () => {
+    if (!p.fold) return;
+    writeFold(p.fold.id, !open);
+    setStored(!open);
+  };
   return (
-    <section class={`sg${p.danger ? " danger-z" : ""}${p.class ? ` ${p.class}` : ""}`} aria-label={p.label}>
+    <section class={`sg${p.danger ? " danger-z" : ""}${p.fold ? " fold" : ""}${open ? "" : " shut"}${p.class ? ` ${p.class}` : ""}`} aria-label={p.label}>
       {(p.title || p.end) && (
         <div class="sg-h">
-          {p.title && <span class="sg-t">{p.title}</span>}
-          {p.end && <span class="end">{p.end}</span>}
+          {p.fold ? (
+            <button type="button" class="sg-fb" aria-expanded={open} onClick={toggle}>
+              <span class="sg-chev" aria-hidden="true">{open ? "▾" : "▸"}</span>
+              {p.title && <span class="sg-t">{p.title}</span>}
+              {!open && p.fold.summary && <span class="sg-sum">{p.fold.summary}</span>}
+            </button>
+          ) : (
+            p.title && <span class="sg-t">{p.title}</span>
+          )}
+          {open && p.end && <span class="end">{p.end}</span>}
         </div>
       )}
-      <div class="sg-c">{p.children}</div>
-      {p.foot && <div class={`sg-f${p.footErr ? " err" : ""}`}>{p.foot}</div>}
+      {open && <div class="sg-c">{p.children}</div>}
+      {open && p.foot && <div class={`sg-f${p.footErr ? " err" : ""}`}>{p.foot}</div>}
     </section>
   );
 }

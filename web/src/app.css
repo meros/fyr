@@ -1141,6 +1141,13 @@ html.list-resizing iframe{pointer-events:none}
 .sg-c{display:flex;flex-direction:column;background:var(--raised);border:1px solid var(--line);border-radius:10px;min-width:0;overflow:hidden}
 .sg-f{font:400 12px/17px var(--ui);color:var(--ink-muted);padding:0 2px;max-width:64ch}
 .sg-f.err{color:var(--signal-ink)}
+/* V0.automation-folds: a group whose header folds it. Folded, the header keeps its title and one summary line. */
+.sg-fb{display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 auto;padding:0;margin:0;background:none;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.sg-chev{font-size:12px;line-height:16px;width:10px;flex:none;color:var(--ink-faint)}
+.sg-fb .sg-t{white-space:nowrap;flex:none}
+.sg-fb:hover .sg-t{color:var(--ink)}
+.sg-sum{font-weight:400;color:var(--ink-faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sg.shut{gap:0}
 .danger-z .sg-c{border-color:color-mix(in srgb,var(--signal-ink) 30%,var(--line))}
 /* a row: title and help text, the control at the end */
 .sr{display:flex;align-items:center;gap:12px;min-height:48px;padding:8px 12px;border-bottom:1px solid var(--line);min-width:0;text-align:left;width:100%;background:none}
@@ -1306,6 +1313,7 @@ label.sr{cursor:pointer}
 .set.phone .stp{display:flex;flex-direction:column;gap:16px;min-width:0}
 .set.phone .stp-lede{margin:0}
 .set.phone .sr{min-height:56px}
+.set.phone .sg-fb{min-height:44px;font-size:13px;line-height:18px} /* touch: the fold header is a 44 px target */
 .set.phone .sr-t{font-size:15px;line-height:20px}
 .set.phone .sr-d{font-size:13px;line-height:18px}
 .set.phone .btn{height:auto;min-height:44px;padding:0 14px;font-size:14px}
