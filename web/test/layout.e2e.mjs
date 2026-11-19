@@ -4812,6 +4812,13 @@ section('V0.status-home desktop', async (h) => {
     // A click on a row still opens it, and the URL names it again.
     await openRow(id);
     check((await evaluate(HOME)).open === id, `${ctx}: the thread opened again is not in the URL`);
+    // V0.settle-leaves: the thread pane's Settle lets go of the thread: the next row opens, not the settled one.
+    const seen = await evaluate(`document.querySelector('#sec-seen [data-id]').dataset.id`);
+    await openRow(seen);
+    await evaluate(`[...document.querySelectorAll('.th button')].find((b) => b.textContent.trim().startsWith('Settle') && !b.disabled).click()`);
+    await waitFor(`${HOME}.open !== ${JSON.stringify(seen)}`, { soft: true });
+    const s3 = await evaluate(HOME);
+    check(s3.open && s3.open !== seen && s3.marked === s3.open && !s3.home, `${ctx}: Settle in the thread pane does not move on to the next row (${JSON.stringify({ seen, s3 })})`);
   } catch (e) {
     failures.push(`${ctx}: ${e.message}`);
   }
@@ -5177,12 +5184,13 @@ try {
     await waitFor(`${FOLD("settled")}.rows === 0`, { soft: true });
     const c = await evaluate(`({ h: ${FOLD("settled")}, snoozed: ${FOLD("snoozed")}, marked: document.querySelectorAll('.list [aria-selected="true"]').length })`);
     check(c.h.rows === 0 && c.snoozed.rows === 0 && c.marked === 1, `${ctx}: k from a folded section (${JSON.stringify(c)})`);
-    // 4. The open thread moves into a folded section: the row follows, the section stays folded.
-    await navigate(`${origin}/?mock=rail`, "!!document.querySelector('#sec-seen [data-id]')");
+    // 4. The open thread moves into a folded section: the row follows, the section stays folded. The host settles it
+    // (an agent's settle_when, say): the owner's own settle lets go of the thread (V0.settle-leaves).
+    await navigate(`${origin}/?mock=rail`, "!!document.querySelector('#sec-seen [data-id]') && typeof window.__fyrThread === 'function'");
     const moved = await evaluate(`(() => { const r = document.querySelector('#sec-seen [data-id]'); r.click(); return r.dataset.id; })()`);
     await waitFor(`!!document.querySelector('.th .tt')`, { soft: true });
     await settle();
-    await key("e", "KeyE");
+    await evaluate(`window.__fyrThread(${JSON.stringify(moved)}, { running: false, attention: { state: "settled", section: "settled", reason: "" } })`);
     await waitFor(`${FOLD("settled")}.id === ${JSON.stringify(moved)}`, { soft: true });
     await settle();
     const d = await evaluate(FOLD("settled"));

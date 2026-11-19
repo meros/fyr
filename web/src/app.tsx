@@ -42,7 +42,7 @@ import {
 import { migrateStorage, moveHostKeys, moveRef, rotations } from "./storage-migrate.ts";
 import { placeOf, steadyThreads, stillRows, trackUnread, type FinishHold, type RowPlace } from "./still-list.ts";
 import { useListAnchor } from "./still-list-ui.ts";
-import { SECTION_OPEN_KEY, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
+import { SECTION_OPEN_KEY, afterSettle, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
 import { answerThenNext, answersOf, cardKey, goTo, initCard, setOther, type CardState } from "./question.ts";
 import { keyHints } from "./keys.ts";
@@ -848,10 +848,24 @@ function App() {
     setZone("list");
   };
 
+  /** V0.settle-leaves: a settle lets go of the marked thread, from the list and from the thread pane: the next row
+   *  opens (a peek stays a peek, the focus stays where it was), else the status screen. The phone leaves through Back
+   *  (U8, leaveOpenThread), so this is the desktop's. */
+  const leaveSettled = (ids: string[]) => {
+    if (phoneRef.current) return;
+    const to = afterSettle(order, sel, ids, allRows);
+    if (to === "stay") return;
+    if (to === "home") return view ? closeThread() : setLastOpen(null);
+    const z = zone;
+    if (view) openThread(to, view.mode);
+    else setLastOpen(to);
+    setZone(z);
+  };
+
   /** V0.203: settles now; on a running thread the host stops the run, and the toast says so. */
   const settle = (id: string) => {
     const label = store.threads[id]?.running ? "Settled; run stopped" : undefined;
-    stepPast([id]);
+    leaveSettled([id]);
     void cmds.run("thread.settle", [id], undefined, label ? { label: () => label } : undefined);
   };
 
@@ -882,7 +896,7 @@ function App() {
       if (k) ids = sec[k].map((t) => t.id);
     }
     const { ids: take } = bulkSettle(ids.map((id) => store.threads[id]).filter((t): t is Thread => !!t), sweep);
-    stepPast(take);
+    leaveSettled(take);
     setPicked(new Set());
     void settleBulk(ids, { sweep });
   };
