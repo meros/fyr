@@ -31,6 +31,10 @@ type TempThread struct {
 	ID, SessionID, Cwd string
 	Asleep             bool
 	Branches           []string
+	// Done are the worktrees Fyr made for its changes that landed or ended,
+	// and when (V0.change-worktree-cleanup): their branches no longer keep
+	// them in use.
+	Done map[string]time.Time
 }
 
 // TempThreads are the threads whose scratch and worktrees the sweep looks
@@ -48,6 +52,17 @@ func (e *Engine) TempThreads() []TempThread {
 		}
 		x := TempThread{ID: t.ID, SessionID: t.SessionID, Cwd: t.Cwd, Asleep: asleep}
 		for _, c := range t.Changes {
+			if w := c.Workspace; w != nil && w.MadeByFyr && w.Path != "" && (!c.Phase.InFlight() || c.IsDone()) {
+				at := c.UpdatedAt
+				if c.LandedAt != nil {
+					at = *c.LandedAt
+				}
+				if x.Done == nil {
+					x.Done = map[string]time.Time{}
+				}
+				x.Done[w.Path] = at
+				continue
+			}
 			if c.Branch != "" {
 				x.Branches = append(x.Branches, c.Branch)
 			}

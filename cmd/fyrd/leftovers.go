@@ -55,7 +55,7 @@ func runLeftovers(ctx context.Context, tree *cgroup.Tree, sampler *cgroup.Sample
 		var out []cgroup.TempThread
 		for _, t := range eng.TempThreads() {
 			_, live := clis[t.ID]
-			out = append(out, cgroup.TempThread{ID: t.ID, SessionID: t.SessionID, Cwd: t.Cwd, Asleep: t.Asleep, LiveCLI: live, Branches: t.Branches})
+			out = append(out, cgroup.TempThread{ID: t.ID, SessionID: t.SessionID, Cwd: t.Cwd, Asleep: t.Asleep, LiveCLI: live, Branches: t.Branches, Done: t.Done})
 		}
 		return out
 	},

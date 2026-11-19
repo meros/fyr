@@ -42,6 +42,11 @@ type TempThread struct {
 	Asleep             bool
 	LiveCLI            bool
 	Branches           []string // its changes' branches
+	// Done: worktrees Fyr made for its changes that landed or ended, and
+	// when (V0.change-worktree-cleanup). Such a worktree may go DoneGrace
+	// after that, and after its HEAD last moved, also while the thread is
+	// awake.
+	Done map[string]time.Time
 }
 
 // Temps sweeps and lists. Sweep runs on one goroutine; View never waits.
@@ -230,6 +235,15 @@ func (tp *Temps) SweepWorktrees() {
 			if owner != nil {
 				x.Thread = owner.ID
 			}
+			var doneAt time.Time // V0.change-worktree-cleanup
+			for _, th := range threads {
+				if at, ok := th.Done[w.path]; ok {
+					doneAt = at
+					if x.Thread == "" {
+						x.Thread = th.ID
+					}
+				}
+			}
 			if auto && !fetched {
 				tp.fetchPulls(common, f, now)
 				fetched = true
@@ -241,6 +255,12 @@ func (tp *Temps) SweepWorktrees() {
 			if x.Safe && auto {
 				busy := slices.ContainsFunc(cwds, func(c string) bool { return inside(c, w.path) })
 				at := lastMove(w.path).Add(idle)
+				if !doneAt.IsZero() {
+					at = lastMove(w.path).Add(DoneGrace)
+					if d := doneAt.Add(DoneGrace); d.After(at) {
+						at = d
+					}
+				}
 				switch {
 				case busy || (owner != nil && owner.LiveCLI):
 					x.Why = "in use"
