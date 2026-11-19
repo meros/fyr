@@ -177,7 +177,7 @@ func (e *Engine) threadTools(s *mcp.Server) {
 		}})
 
 	s.Add(mcp.Tool{Name: "thread_rename",
-		Description: "Rename this Fyr thread, or a thread this thread started (id), so the owner's list says what the work is. Give a short, specific title (at most 80 characters) when the topic becomes clear or changes. Or pass regenerate: true instead of a title, and Fyr writes one from the thread's conversation so far with a small model. A name the owner gave is kept.",
+		Description: "Rename this Fyr thread, or a thread this thread started (id), so the owner's list says what the work is. Give a short, specific title (at most 80 characters) when the goal becomes clear or changes: the goal of the work, like an issue title (\"Fix the header that overlaps the menu on phones\"), not the step you are at now. Or pass regenerate: true instead of a title, and Fyr writes one from the thread's conversation so far with a small model. A name the owner gave is kept.",
 		Schema: obj(map[string]any{"title": str("The new title."), "id": str("Optional: a thread this thread started; default this thread."),
 			"regenerate": map[string]any{"type": "boolean", "description": "Fyr writes the title from the conversation so far; give no title."}}),
 		Call: func(_ context.Context, self string, a map[string]any) (string, error) {
