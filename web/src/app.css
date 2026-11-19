@@ -1213,15 +1213,23 @@ label.sr{cursor:pointer}
 .set.phone .note{flex-wrap:wrap;font-size:14px;line-height:20px}
 .set.phone .note>span{flex:1 1 100%}
 .set.phone .note .btn{margin:0}
-/* the one reorder control: a grip to drag on the desktop; the phone's Reorder mode has ↑ and ↓ (MoveButtons) */
-.grip{flex:none;width:20px;height:30px;display:grid;place-items:center;color:var(--ink-faint);cursor:grab;border-radius:6px;font:400 14px/1 var(--ui);letter-spacing:-2px;touch-action:none;user-select:none}
+/* V0.reorder-one: the one reorder control (reorder-ui.tsx), the same rules for every list. A grip to drag on the
+   desktop; the phone's Reorder mode has ↑, ↓ and a handle of 44 px (MoveControls). While a row is held it lifts and
+   follows the pointer, the others slide out of its way, and on letting go it glides into its place. */
+.grip{flex:none;width:20px;height:30px;display:grid;place-items:center;color:var(--ink-faint);cursor:grab;border-radius:6px;font:400 14px/1 var(--ui);letter-spacing:-2px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.grip:hover{color:var(--ink);background:var(--sunken)}
 .grip:focus-visible{outline:2px solid var(--harbour);outline-offset:0}
+.ro-lift{position:relative;z-index:3;background:var(--raised);box-shadow:0 8px 24px rgba(0,0,0,.2),0 0 0 1px var(--line);border-radius:8px;border-bottom-color:transparent}
+.ro-lift,.ro-lift *{cursor:grabbing}
+.ro-shift{transition:transform .16s cubic-bezier(.2,0,0,1)}
+.ro-settle{transition:transform .16s cubic-bezier(.2,0,0,1),box-shadow .16s}
+.ro-dragging,.ro-dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}
+.mv{display:flex;align-items:center;gap:2px;flex:none;margin-left:auto}
+.mv .xb,.mv .mvh{width:44px;height:44px}
+.mv .mvh{font-size:18px;color:var(--ink-muted);border-radius:8px}
+@media (prefers-reduced-motion: reduce){.ro-shift,.ro-settle{transition:none}}
 .star{flex:none;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;color:var(--ink-faint);font-size:16px}
 .star[aria-pressed="true"]{color:var(--ink)}
-.sr.lift{background:var(--select);box-shadow:0 6px 18px rgba(0,0,0,.18);position:relative;z-index:1;border-radius:8px;border-bottom-color:transparent}
-.sr.drop{box-shadow:inset 0 2px 0 var(--harbour)}
-.sr.dropb{box-shadow:inset 0 -2px 0 var(--harbour)}
-.sr-e.mv{gap:4px}
 /* V0.120: the model chooser. On and Off are parts of one card; an off model reads fainter; New, Gone and Added by hand are marks */
 .sg-sub{padding:6px 12px;background:var(--surface);border-bottom:1px solid var(--line);font:500 11px/16px var(--ui);letter-spacing:.03em;text-transform:uppercase;color:var(--ink-faint)}
 .sr.off .sr-t,.sr.off .sr-d{color:var(--ink-faint)}
@@ -1239,16 +1247,12 @@ label.sr{cursor:pointer}
 .pli.g .plb{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:48px;padding:6px 0;text-align:left;min-width:0}
 .pli.g:hover{background:var(--sunken)}
 .pli.g .plb:focus-visible{outline:2px solid var(--harbour);outline-offset:-2px}
-.pli.lift{background:var(--select);box-shadow:0 6px 18px rgba(0,0,0,.18);position:relative;z-index:1;border-radius:8px}
-.pli.drop{box-shadow:inset 0 2px 0 var(--harbour)}
-.pli.dropb{box-shadow:inset 0 -2px 0 var(--harbour)}
-/* V0.132: a host row with its grip (desktop) or ↑ ↓ (the phone's Reorder mode) */
+/* V0.132: a host row with its grip (desktop) or the phone's Reorder mode */
 .hreo{display:flex;align-items:center;gap:4px;padding-left:4px;border-bottom:1px solid var(--line);min-width:0}
 .hreo:last-child{border-bottom:0}
 .hreo .sr{border-bottom:0;flex:1;min-width:0;padding-left:4px}
 .hreo.mvrow{padding-right:8px}
 .pli.mvrow:hover{background:none}
-.pli .mv{display:flex;gap:4px}
 /* the Providers page */
 .pdot{width:8px;height:8px;border-radius:50%;background:var(--ink-faint);flex:none}
 .pst{font:500 11px/16px var(--ui);padding:2px 8px;border-radius:10px;background:var(--sunken);color:var(--ink-muted);white-space:nowrap;flex:none}
@@ -1322,8 +1326,6 @@ label.sr{cursor:pointer}
 .set.phone .setkey input{flex:1 1 180px}
 .set.phone .login .loginlink{align-self:stretch}
 .set.phone .qline .qsum{min-height:44px;width:100%;text-align:left}
-/* touch has no hover to reveal a grip, and a drag on a list fights the scroll: the phone reorders in a mode with ↑ and ↓ */
-.set.phone .grip{display:none}
 /* V0.59, V0.60: changes and their actions */
 .pr.chgchip{max-width:180px} /* not .chg: that is the Changes tab pane (#56) */
 .chtab{display:flex;flex-direction:column;min-height:0;overflow-y:auto}
@@ -1470,8 +1472,8 @@ label.sr{cursor:pointer}
   .rail .ri[data-sec] .l{flex-basis:100%}
 }
 /* V0.137: Waiting for a slot. The place in the queue ("#2") stands where the state icon stands; on the desktop it is
-   the grip (drag, or Alt+↑/↓). The deploy's own tests sit pinned on top. On the phone a Reorder mode adds ↑ and ↓ of
-   44 px beside each row (touch: no drag handle beside a swipe row, no hover). */
+   the grip (drag, or Alt+↑/↓). The deploy's own tests sit pinned on top. On the phone the one Reorder mode adds ↑, ↓
+   and a handle beside each row (touch: no drag handle beside a swipe row, no hover). */
 .sqn{justify-self:center;grid-row:1;min-width:22px;height:18px;padding:0 3px;display:inline-grid;place-items:center;border-radius:5px;background:var(--sunken);color:var(--ink-muted);font:500 11px/1 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sqn.grip{width:auto;cursor:grab;letter-spacing:0;font:500 11px/1 var(--mono)}
 .sqn.grip:hover{background:var(--select);color:var(--ink)}
@@ -1484,13 +1486,9 @@ label.sr{cursor:pointer}
 .sqwhy{padding:2px 8px 4px;font-size:12px;line-height:16px;color:var(--ink-muted)}
 .sqwhy.m{padding:2px 16px 6px;font-size:13px}
 .sqerr{margin:4px 8px;padding:6px 8px;border-radius:6px;background:var(--sunken);color:var(--signal-ink);font:400 12px/16px var(--ui)}
-.one.lift{background:var(--select);box-shadow:0 6px 18px rgba(0,0,0,.18);position:relative;z-index:1}
-.one.drop{box-shadow:inset 0 2px 0 var(--harbour)}
-.one.dropb{box-shadow:inset 0 -2px 0 var(--harbour)}
 .sqmv{display:flex;align-items:center;min-width:0}
 .sqmv .sqrow{flex:1;min-width:0}
-.sqmv .mv{display:flex;gap:4px;flex:none;padding-right:8px}
-.sqmv .xb{width:44px;height:44px}
+.sqmv .mv{padding-right:8px}
 /* V0.143: an agent that does not respond; the line takes the room, the button keeps its own */
 .sys.stuck{color:var(--signal-ink)}
 .sys.stuck .btn,.sys.stuck .m-bt{flex:none;margin-left:auto}

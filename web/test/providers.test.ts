@@ -108,6 +108,8 @@ test("modelsAfter: add, remove, move, star", () => {
   assert.deepEqual(modelsAfter(ms, "a", { remove: "b" }), { models: ["a", "c"] });
   assert.deepEqual(modelsAfter(ms, "a", { remove: "a" }), { error: "Star another model first." }, "the default is not removed");
   assert.deepEqual(modelsAfter(ms, "a", { move: [2, 0] }), { models: ["c", "a", "b"] });
+  assert.deepEqual(modelsAfter(ms, "a", { order: ["b", "c", "a"] }), { models: ["b", "c", "a"] });
+  assert.deepEqual(modelsAfter(ms, "a", { order: ["b", "a"] }), { error: "The list changed. Try again." }, "an order only reorders");
   assert.deepEqual(modelsAfter(ms, "a", { star: "c" }), { models: ms, defaultModel: "c" });
   assert.deepEqual(modelsAfter(ms, "a", { star: "zz" }), { error: "zz is not in the list." });
 });
