@@ -382,7 +382,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		SlotFreeze: groups.Freeze, SlotThaw: groups.Thaw, // decision 0029 S5
 	}
 	if !pool.Off() {
-		sd.SlotAIMD = &slots.AIMD{N: float64(n)} // decision 0029 S4: the budget adapts
+		// decision 0029 S4: the budget adapts; V0.budget-restart: and outlives a deploy
+		sd.SlotAIMD = &slots.AIMD{N: float64(n), Path: filepath.Join(data, "slot-budget.json")}
 	}
 	eng.SlotDeps = sd
 
