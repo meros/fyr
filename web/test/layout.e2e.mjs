@@ -4267,7 +4267,10 @@ try {
       if (!t || !icon) { bad.push(id + ': no title or project icon'); continue; }
       const tb = t.getBoundingClientRect(), ib = icon.getBoundingClientRect(), cs = getComputedStyle(t), lh = parseFloat(cs.lineHeight);
       if (tb.width < box.width * 0.6) bad.push(id + ': title ' + Math.round(tb.width) + ' of ' + Math.round(box.width) + ' px');
-      if (Math.abs(tb.height - 2 * lh) > 1) bad.push(id + ': title box ' + tb.height + ' px, not 2 lines of ' + lh);
+      // V0.row-calm: the title takes the lines it needs, one or two; only an untitled row keeps two.
+      const tl = Math.round(tb.height / lh);
+      if ((tl !== 1 && tl !== 2) || Math.abs(tb.height - tl * lh) > 1) bad.push(id + ': title box ' + tb.height + ' px, not 1 or 2 lines of ' + lh);
+      if (t.closest('.hd.untitled') && tl !== 2) bad.push(id + ': an untitled row without two lines of room');
       if (cs.webkitLineClamp !== '2') bad.push(id + ': title not clamped at 2 lines (' + cs.webkitLineClamp + ')');
       if (ib.left > tb.left + 2 || Math.abs(ib.top - tb.top) > 6) bad.push(id + ': project icon not at the title start');
       if (row.querySelector('.hd .ptn')) bad.push(id + ': project name on the title line');
@@ -5050,7 +5053,7 @@ try {
   // 2. Two hosts.
   await go("?mock=rail&hosts=2", listReady);
   const rows = await evaluate(ROWS);
-  check(rows.length > 3 && rows.every((r) => r.host && r.title?.startsWith(r.host) && r.label?.startsWith("Host ") && r.apart && r.lines === 2), `${ctx}: a row without its host's mark, or with the mark over the project icon, or a title not two lines (${JSON.stringify(rows.filter((r) => !(r.host && r.apart && r.lines === 2)).slice(0, 3))})`);
+  check(rows.length > 3 && rows.every((r) => r.host && r.title?.startsWith(r.host) && r.label?.startsWith("Host ") && r.apart && (r.lines === 1 || r.lines === 2)), `${ctx}: a row without its host's mark, or with the mark over the project icon, or a title not one or two lines (${JSON.stringify(rows.filter((r) => !(r.host && r.apart && (r.lines === 1 || r.lines === 2))).slice(0, 3))})`);
   check(rows.some((r) => r.host === "host-b" && r.title === "host-b · offline") && rows.some((r) => r.host === "desk"), `${ctx}: the rows' hosts (${JSON.stringify([...new Set(rows.map((r) => r.title))])})`);
   if (phone) {
     check(rows.every((r) => !r.words), `${ctx}: a phone row still names its host in words`);

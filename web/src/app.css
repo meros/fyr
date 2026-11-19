@@ -144,7 +144,9 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 /* V0.135: the title wraps to two lines before it is cut, and its box is always two lines high, so a row does not jump
    while a title streams in; the project is its icon at the title's start, inline, so the second line starts under it. */
 .rw .hd,.one .hd{position:relative;grid-column:2;grid-row:1;min-width:0}
-.rw .hd .t,.one .hd .t{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;height:2lh;overflow:hidden;overflow-wrap:anywhere;color:var(--ink);text-indent:calc(var(--rh,0px) + var(--ri) + 6px)}
+.rw .hd .t,.one .hd .t{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere;color:var(--ink);text-indent:calc(var(--rh,0px) + var(--ri) + 6px)}
+/* V0.row-calm: a title takes the lines it needs; only a row whose title has not come yet keeps two lines of room */
+.rw .hd.untitled .t,.one .hd.untitled .t{height:2lh}
 .hd.pinned .t{text-indent:calc(var(--rh,0px) + var(--ri) + 22px)}
 .hd .rpi{position:absolute;left:var(--rh,0px);top:calc((var(--tlh) - var(--ri)) / 2);display:flex;z-index:1}
 /* V0.170: the host's mark before the project's icon, with more than one host. */
@@ -152,11 +154,12 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .rw .hd .pin,.one .hd .pin{position:absolute;left:calc(var(--rh,0px) + var(--ri) + 5px);top:calc((var(--tlh) - 12px) / 2);display:grid;place-items:center;color:var(--harbour)}
 .rpn{color:var(--ink-muted)}
 /* A long project or provider name ends in … and leaves the row's line room for what follows it. */
-.m .rpn,.m .rpv{display:inline-block;max-width:32%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+.m .rpn{white-space:nowrap} /* V0.row-calm: cut in the text (clipName), so no gap before the "·" */
+.m .rpv{display:inline-block;max-width:32%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
 .rpv .pdot{display:inline-block;width:7px;height:7px;margin-right:4px;vertical-align:1px}
 .from.mark{margin-right:5px;color:var(--ink-faint);font:inherit;text-decoration:none}
 .from.mark.link:hover{color:var(--ink);text-decoration:none}
-.rw .cl{grid-column:2/4;display:flex;flex-wrap:wrap;gap:4px;min-width:0;margin-top:3px}
+.rw .cl{grid-column:2/4;grid-row:3;display:flex;flex-wrap:wrap;gap:4px;min-width:0;margin-top:3px}
 .rw .cl .pr{max-width:100%}
 .rw:hover:not(.sel),.one:hover:not(.sel){background:var(--surface)}
 /* V0.192: the current thread's row where the filters or a fold would hide it: dashed, since it is only visiting */
@@ -170,8 +173,8 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .rw .hd{--tlh:20px}
 .rw.dn .t{font-weight:600}
 .rw .age{grid-column:3;grid-row:1;justify-self:end;align-self:start;min-width:0;font:400 12px/20px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-muted);text-align:right;white-space:nowrap}
-.rw .m{grid-column:2/4;font:400 12px/18px var(--ui);color:var(--ink-muted)}
-.pr{display:inline-block;height:18px;padding:0 7px;border-radius:9px;border:1px solid var(--line);font:500 11px/16px var(--mono);color:var(--ink-muted);white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis}
+.rw .m{grid-column:2/4;grid-row:2;font:400 12px/18px var(--ui);color:var(--ink-muted)}
+.pr{display:inline-block;height:18px;padding:0 7px;border-radius:9px;border:1px solid var(--line);font:500 11px/16px var(--mono);color:var(--ink-muted);white-space:nowrap;max-width:132px;overflow:hidden;text-overflow:ellipsis} /* V0.row-calm: "#9999 conflicts" whole */
 .pr.ok{color:var(--calm)}.pr.fail{color:var(--signal-ink);border-color:var(--signal-ink)}.pr.merged{background:var(--sunken)}
 .pr.none{display:none}
 .one{display:grid;grid-template-columns:28px minmax(0,1fr) 64px;column-gap:10px;align-items:start;min-height:30px;padding:4px 8px;border-radius:8px;font:400 12px/16px var(--ui);color:var(--ink-muted);cursor:pointer}
@@ -183,7 +186,8 @@ kbd{font:500 11px/14px var(--mono);padding:1px 5px;min-width:18px;text-align:cen
 .one .m:not(:has(.cl)):has(> i:empty){display:none}
 .one .m i{flex:1 1 0;min-width:0;font:400 12px/16px var(--ui);font-style:normal}
 .one .m i:empty{display:none}
-.one .cl{display:flex;gap:4px;flex:none;margin-left:auto}
+.one .cl{display:flex;gap:4px;flex:none;margin-left:auto;align-items:center;font:400 12px/16px var(--ui)}
+.one .cl{gap:4px 8px}.one .cl .tcpu{font:400 12px/16px var(--mono);font-variant-numeric:tabular-nums}.one .cl .tcpu.hot{font-weight:600} /* V0.row-calm: the CPU reading sits with the chips, mono like the age, muted unless hot */
 .one .m i:empty+.cl{margin-left:0}
 .one .age{grid-column:3;grid-row:1;font:400 12px/18px var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden}
 .sb{font:400 11px/16px var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -1357,6 +1361,9 @@ label.sr{cursor:pointer}
 .chneed .btn,.offb .btn{flex:0 1 auto;min-width:0;max-width:100%;height:auto;padding-block:5px;white-space:normal;overflow-wrap:anywhere;text-align:left}
 .beamdot{width:8px;height:8px;border-radius:50%;background:var(--beam);flex:none;display:inline-block}
 .rneed{display:inline-flex;align-items:center;gap:6px;margin-left:auto}
+/* V0.row-calm: a Your move row's button (or its beam dot) stands right of the state line and the chip, under the age */
+.rw.hasneed .m,.rw.hasneed .cl{grid-column:2}
+.rw>.rneed,.rw>.beamdot{grid-column:3;grid-row:2/span 2;align-self:center;justify-self:end;margin-left:0}
 .rneed .btn{min-height:24px;padding:2px 10px}
 .chchk{font:400 11px/16px var(--mono);align-self:center}
 .chev{display:flex;flex-wrap:wrap;gap:8px;font:400 12px/16px var(--ui)}

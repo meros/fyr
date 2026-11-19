@@ -66,6 +66,9 @@
 .m-sec:has(>.sti:not(.none)){position:relative;isolation:isolate;padding:10px 10px 0}
 .m-sec:has(>.sti:not(.none))::before{content:"";position:absolute;z-index:-1;inset:10px 0 0;border-radius:10px;background:var(--sunken)}
 .m-sbtn{margin-left:auto;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;display:grid;place-items:center;font:500 13px/16px var(--ui);color:var(--ink)}
+/* V0.row-calm: in a section header the button keeps its 44 px touch height but draws 30 px, so it fits inside the header's band */
+.m-sec .m-sbtn{position:relative;isolation:isolate;border:0;background:none;padding:0 14px;margin-right:4px}
+.m-sec .m-sbtn::before{content:"";position:absolute;z-index:-1;inset:7px 0;border:1px solid var(--line-strong);border-radius:8px;background:var(--raised)}
 .m-sbtn.on{background:var(--night);border-color:var(--night);color:var(--on-night)} /* Done, as Settings' Reorder mode shows it */
 /* V0.your-move: the phone's type is a step larger, and the press is a finger's size. */
 .m-list .ngh{padding:8px 8px 2px;font-size:12px;line-height:16px}
@@ -97,6 +100,7 @@
 .m-list .one .age{line-height:20px}
 .m-list .one .ic{margin-top:2px}
 .m-list .one .m i{font-size:13px;line-height:18px}
+.m-list .one .cl,.m-list .one .cl .tcpu{font-size:13px;line-height:18px} /* the line's size, as on the desktop; .m-app .cl is the message text */
 .m-list .pr{height:20px;font-size:12px;line-height:18px;border-radius:10px}
 .m-list .rw>.m-ck{grid-row:1/span 2;align-self:start;justify-self:center}
 .m-list .one>.m-ck{justify-self:center}
