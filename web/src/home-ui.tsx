@@ -208,7 +208,7 @@ function Today({ day, phone, onOpen }: { day: HomeDay; phone?: boolean; onOpen(i
                   </text>
                 </g>
               ))}
-              {hourTicks(day.from, day.to, phone ? 4 : 6).map((t) => (
+              {hourTicks(day.from, day.to, phone ? 4 : 6).filter((t) => x(t) < w - pad.r - 16).map((t) => (
                 <text key={t} class="st-ax" x={x(t)} y={H - 5} text-anchor="middle">
                   {hhmm(t)}
                 </text>
