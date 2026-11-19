@@ -37,6 +37,9 @@ func (s *Sampler) detect(l Load) {
 		work := t.Working - min(t.Working, s.Services.InCgroup(t.ID))
 		in.Reads = append(in.Reads, Reading{Thread: t.ID, CPU: t.CPU, Work: work})
 	}
+	if s.Groups != nil {
+		in.Gone = s.Groups.UndeclaredEmpty // V0.episode-frozen
+	}
 	s.Detect.Observe(s.now(), in)
 	names := map[string]string{}
 	for _, f := range s.Detect.Flags() {

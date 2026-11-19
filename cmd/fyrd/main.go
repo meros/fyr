@@ -361,7 +361,11 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	eng.UndeclaredDeps = engine.UndeclaredDeps{
 		Undeclared: sampler.Undeclared, UndeclaredSettings: usettings.Set,
-		UndeclaredThaw: groups.ThawUndeclared, UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, ServicePatterns: svcBook.Edit, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
+		UndeclaredThaw: func(thread string) {
+			groups.ThawUndeclared(thread)
+			detector.MarkThawed(thread) // V0.episode-frozen: its calm counts again
+		},
+		UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, ServicePatterns: svcBook.Edit, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
 		UndeclaredFreeze: func(thread string) bool {
 			for _, f := range detector.Flags() {
 				if f.Thread == thread && groups.FreezeUndeclared(thread, sampler.Roots(f)) {

@@ -70,6 +70,9 @@ type DetectInput struct {
 	// Admitted: the threads that hold an admission now; Queued: those that
 	// asked and wait.
 	Admitted, Queued map[string]bool
+	// Gone says a thread's frozen work holds no process any more
+	// (V0.episode-frozen); nil: never gone.
+	Gone func(thread string) bool
 }
 
 // Level is a thread's idle level.
@@ -125,6 +128,7 @@ type qread struct {
 type episode struct {
 	since, firstOver, calmSince time.Time
 	paused                      bool
+	frozen                      bool // V0.episode-frozen: frozen now (paused is "ever")
 	peak                        uint64
 	cpuSum                      float64
 	cpuN                        int
@@ -184,12 +188,25 @@ func (d *Detector) SetCommand(thread, command string) {
 	}
 }
 
-// MarkPaused notes that the episode was frozen (for its record).
+// MarkPaused notes that the episode was frozen (for its record). While it
+// stays frozen, its calm does not end it (V0.episode-frozen): frozen work
+// uses no CPU and its memory goes to swap, so it looks calm.
 func (d *Detector) MarkPaused(thread string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if th := d.threads[thread]; th != nil && th.ep != nil {
-		th.ep.paused = true
+		th.ep.paused, th.ep.frozen = true, true
+	}
+}
+
+// MarkThawed notes that the guard let the episode's work run again: from now
+// on, calm for the window ends it (V0.episode-frozen).
+func (d *Detector) MarkThawed(thread string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if th := d.threads[thread]; th != nil && th.ep != nil && th.ep.frozen {
+		th.ep.frozen = false
+		th.ep.calmSince = time.Time{} // the calm while frozen was not the work's
 	}
 }
 
@@ -302,7 +319,9 @@ func (d *Detector) Observe(now time.Time, in DetectInput) {
 			case ep.calmSince.IsZero():
 				ep.calmSince = now
 			}
-			if !ep.calmSince.IsZero() && now.Sub(ep.calmSince) >= cfg.After {
+			// V0.episode-frozen: frozen work ends its episode only once its
+			// processes are gone; else the end would thaw it.
+			if !ep.calmSince.IsZero() && now.Sub(ep.calmSince) >= cfg.After && (!ep.frozen || (in.Gone != nil && in.Gone(r.Thread))) {
 				ended = append(ended, ep.record(r.Thread, now, th.idle))
 				th.ep = nil
 			}

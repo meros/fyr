@@ -22,11 +22,12 @@ type sim struct {
 	cap  Capacity
 	cfg  UndeclaredConfig
 	adm  map[string]bool
+	gone map[string]bool // V0.episode-frozen: frozen work whose processes ended
 	ends []Episode
 }
 
 func newSim(t *testing.T) *sim {
-	s := &sim{t: t, d: &Detector{}, now: time.Date(2026, 11, 17, 14, 0, 0, 0, time.UTC), cap: desk, cfg: DefaultUndeclared, adm: map[string]bool{}}
+	s := &sim{t: t, d: &Detector{}, now: time.Date(2026, 11, 17, 14, 0, 0, 0, time.UTC), cap: desk, cfg: DefaultUndeclared, adm: map[string]bool{}, gone: map[string]bool{}}
 	s.d.OnEnd = func(e Episode) { s.ends = append(s.ends, e) }
 	return s
 }
@@ -37,7 +38,8 @@ func (s *sim) run(thread string, secs int, cpu float64, work float64) {
 	for i := 0; i < secs/5; i++ {
 		s.now = s.now.Add(5 * time.Second)
 		c := cpu
-		s.d.Observe(s.now, DetectInput{Capacity: &s.cap, Config: s.cfg, Reads: []Reading{{Thread: thread, CPU: &c, Work: uint64(work)}}, Admitted: s.adm})
+		s.d.Observe(s.now, DetectInput{Capacity: &s.cap, Config: s.cfg, Reads: []Reading{{Thread: thread, CPU: &c, Work: uint64(work)}}, Admitted: s.adm,
+			Gone: func(th string) bool { return s.gone[th] }})
 	}
 }
 
@@ -340,5 +342,56 @@ func TestEpisodeOverWhenTheThreadIsAdmitted(t *testing.T) {
 	s.run("t_a", 5, 2, 0.9*gb)
 	if s.flag("t_a") != nil || len(s.ends) != 1 {
 		t.Fatalf("an admitted thread's episode goes on: %+v", s.ends)
+	}
+}
+
+// V0.episode-frozen: frozen work uses no CPU and the guard pushes its memory
+// to swap, so a frozen thread looks calm; that calm never ends its episode
+// (it would thaw the work and restart the guard's count of freezes).
+func TestEpisodeFrozenCalmDoesNotEnd(t *testing.T) {
+	s := newSim(t)
+	s.seed("t_a", 0.9*gb)
+	s.run("t_a", 60, 2, 2.5*gb)
+	since := s.flag("t_a").Since
+	s.d.MarkPaused("t_a")
+	s.run("t_a", 10*60, 0, 0.9*gb) // frozen, swapped out
+	if f := s.flag("t_a"); f == nil || !f.Since.Equal(since) || len(s.ends) != 0 {
+		t.Fatalf("a frozen episode ended by calm: flag %+v ends %+v", f, s.ends)
+	}
+}
+
+// V0.episode-frozen: once the guard thaws the work, calm for W ends the
+// episode, counted from the thaw.
+func TestEpisodeFrozenEndsAWindowAfterTheThaw(t *testing.T) {
+	s := newSim(t)
+	s.seed("t_a", 0.9*gb)
+	s.run("t_a", 60, 2, 2.5*gb)
+	s.d.MarkPaused("t_a")
+	s.run("t_a", 5*60, 0, 0.9*gb)
+	s.d.MarkThawed("t_a")
+	s.run("t_a", 40, 0.1, 0.9*gb)
+	if s.flag("t_a") == nil {
+		t.Fatal("ended before W of calm after the thaw")
+	}
+	s.run("t_a", 10, 0.1, 0.9*gb)
+	if s.flag("t_a") != nil || len(s.ends) != 1 || !s.ends[0].Paused {
+		t.Fatalf("not ended W after the thaw: ends %+v", s.ends)
+	}
+}
+
+// V0.episode-frozen: frozen work whose processes are gone ends its episode.
+func TestEpisodeFrozenEndsWhenTheWorkIsGone(t *testing.T) {
+	s := newSim(t)
+	s.seed("t_a", 0.9*gb)
+	s.run("t_a", 60, 2, 2.5*gb)
+	s.d.MarkPaused("t_a")
+	s.run("t_a", 60, 0, 0.9*gb)
+	if s.flag("t_a") == nil {
+		t.Fatal("ended while frozen")
+	}
+	s.gone["t_a"] = true
+	s.run("t_a", 5, 0, 0.9*gb)
+	if s.flag("t_a") != nil || len(s.ends) != 1 || !s.ends[0].Paused {
+		t.Fatalf("a frozen episode whose work is gone goes on: ends %+v", s.ends)
 	}
 }
