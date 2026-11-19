@@ -69,7 +69,7 @@ func ValidPriority(s string) bool {
 
 // What an agent's settle_request does (V0.settle-request); "" is ask.
 const (
-	AgentSettleAsk  = "ask"
+	AgentSettleAsk  = string(DecisionAsk) // the same word as a question
 	AgentSettleAuto = "auto"
 )
 
