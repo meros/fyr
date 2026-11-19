@@ -2,6 +2,7 @@ package front
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"net/url"
 	"os"
@@ -11,10 +12,17 @@ import (
 
 // The front's cache on disk (SPEC 0.5 V0.54, decision 0016): the last state
 // of each host, so a host that is offline when the front starts still shows
-// its threads, marked offline and read-only. One file per host, written at
-// most every saveEvery and when the front stops.
+// its threads, marked offline and read-only. One file per host, written
+// when its state changed (#22): checked every saveEvery, a host's file at
+// most every saveGap, and every host's when the front stops. An online host
+// whose state did not change is written again after saveIdle, so savedAt
+// (the "offline since" after a restart) stays near the truth.
 
-const saveEvery = 2 * time.Second
+const (
+	saveEvery = 2 * time.Second
+	saveGap   = 30 * time.Second
+	saveIdle  = 10 * time.Minute
+)
 
 type cacheFile struct {
 	Name     string                    `json:"name"`
@@ -97,51 +105,77 @@ func (f *Front) restore(l *link) {
 	f.opt.Logf("front: host %s from the cache (%d threads, offline since %s)", l.name(), len(l.raw), l.since.Local().Format("15:04"))
 }
 
-// saveDirty writes the cache of every host that changed.
-func (f *Front) saveDirty() {
+// saveDirty writes the cache of every host that changed, at most every
+// saveGap per host.
+func (f *Front) saveDirty() { f.save(time.Now(), false) }
+
+// save writes the cache of each host whose state changed since its last
+// write. Unless force, a host written less than saveGap ago waits for a
+// later call (it stays dirty).
+func (f *Front) save(now time.Time, force bool) {
 	if f.opt.CacheDir == "" {
 		return
 	}
 	type job struct {
+		l            *link
 		path, legacy string
 		b            []byte
 	}
 	var jobs []job
 	f.mu.Lock()
 	for _, l := range f.all() {
-		if !l.dirty {
+		if !l.dirty || (!force && now.Sub(l.savedAt) < saveGap) {
+			continue
+		}
+		c := cacheFile{Name: l.name(), Online: l.online, Since: l.since,
+			Raw: l.raw, Pub: l.pub, Projects: l.projects, Env: l.env, Settings: l.settings}
+		b, err := json.Marshal(c)
+		if err != nil {
+			f.opt.Logf("front: cache %s: %v", l.key(), err)
+			l.dirty = false
 			continue
 		}
 		l.dirty = false
-		b, err := json.Marshal(cacheFile{Name: l.name(), SavedAt: time.Now(), Online: l.online, Since: l.since,
-			Raw: l.raw, Pub: l.pub, Projects: l.projects, Env: l.env, Settings: l.settings})
-		if err != nil {
-			f.opt.Logf("front: cache %s: %v", l.key(), err)
+		sum := sha256.Sum256(b)
+		if sum == l.savedSum && !(l.online && now.Sub(l.savedAt) >= saveIdle) {
+			continue // nothing the file holds changed
+		}
+		c.SavedAt = now
+		if b, err = json.Marshal(c); err != nil {
 			continue
 		}
+		l.savedSum, l.savedAt = sum, now
 		id := f.idOfLocked(l)
 		legacy := ""
 		if id != "" {
 			legacy = f.legacyCachePath(l) // moved to the id's file
 		}
-		jobs = append(jobs, job{f.cachePathFor(l, id), legacy, b})
+		jobs = append(jobs, job{l, f.cachePathFor(l, id), legacy, b})
 	}
 	f.mu.Unlock()
 	if len(jobs) == 0 {
 		return
 	}
-	if err := os.MkdirAll(f.opt.CacheDir, 0o700); err != nil {
+	failed := func(j job, err error) {
 		f.opt.Logf("front: cache: %v", err)
+		f.mu.Lock()
+		j.l.dirty, j.l.savedSum = true, [sha256.Size]byte{} // written again on a later call
+		f.mu.Unlock()
+	}
+	if err := os.MkdirAll(f.opt.CacheDir, 0o700); err != nil {
+		for _, j := range jobs {
+			failed(j, err)
+		}
 		return
 	}
 	for _, j := range jobs {
 		tmp := j.path + ".tmp"
 		if err := os.WriteFile(tmp, j.b, 0o600); err != nil {
-			f.opt.Logf("front: cache: %v", err)
+			failed(j, err)
 			continue
 		}
 		if err := os.Rename(tmp, j.path); err != nil {
-			f.opt.Logf("front: cache: %v", err)
+			failed(j, err)
 		} else if j.legacy != "" && j.legacy != j.path {
 			os.Remove(j.legacy)
 		}
