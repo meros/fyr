@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -204,6 +205,11 @@ type link struct {
 	since    time.Time
 	err      string
 	dirty    bool // changed since the cache was written
+	// savedSum and savedAt are the last cache write: its content without
+	// savedAt, and when (#22: a host's file is written only on a change, at
+	// most every saveGap).
+	savedSum [sha256.Size]byte
+	savedAt  time.Time
 	// idWas: the pinned id, when the host now reports another (V0.124).
 	idWas string
 	// settings: the last answer of each settings read (V0.127), served
@@ -392,7 +398,7 @@ func (f *Front) Run(ctx context.Context) {
 	f.runCtx = nil // a host found now is not followed
 	f.runMu.Unlock()
 	wg.Wait()
-	f.saveDirty()
+	f.save(time.Now(), true) // the last state, whatever the gap
 }
 
 // isLocal: this link's deploy is the front's own update.
