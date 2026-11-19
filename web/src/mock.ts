@@ -668,7 +668,7 @@ function railFixture(now: number): Fixture {
   // V0.210: a question Fyr read in the agent's text.
   if (MOCK_TEXTASK)
     threads.push(
-      base("t_textask", "Project logo", now, 12, {
+      base("t_textask", LONG_TITLE, now, 12, {
         project: "acme/web",
         textAsk: { question: "Which logo do you want?", at: min(12), run: 1 },
         attention: { state: "blocked", section: "needs", reason: "Which logo do you want?" },
