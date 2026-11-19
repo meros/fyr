@@ -126,28 +126,8 @@ func TestJL3AMovedJobGetsItsLimitsTheValveLiftsThemAndAHitRaisesItsClass(t *test
 	}
 }
 
-func TestJL4FrozenUndeclaredWorkOfUnknownSizeGetsTheFreeBudget(t *testing.T) {
-	o, _ := fakeFS(t, "0::/"+unit+"\n")
-	tr := Setup(o)
-	td := threadOf(tr, "t_a")
-	agents := filepath.Join(o.FS, unit, "agents")
-	write(t, filepath.Join(agents, "memory.current"), "12G") // 1 GB of 13 GB left
-	proc := t.TempDir()
-	fakeProc(t, proc, 10, 1, "claude")
-	fakeProc(t, proc, 20, 10, "node", "e2e")
-	write(t, filepath.Join(td, CLIDir, "cgroup.procs"), "10\n20\n")
-	g := &JobGroups{Tree: tr, Proc: proc, Size: func(string, bool) JobSize { return JobSize{} }}
-	if !g.FreezeUndeclared("t_a", []Root{{PID: 20}}) {
-		t.Fatal("not frozen")
-	}
-	ud := filepath.Join(td, undeclaredDir)
-	if got := read(t, filepath.Join(ud, "memory.high")); got != "1073741824" {
-		t.Fatalf("memory.high %q", got)
-	}
-	if _, err := os.Stat(filepath.Join(ud, "cpu.max")); !os.IsNotExist(err) {
-		t.Fatal("cpu.max for a class that learned no demand")
-	}
-}
+// TestJL4 (undeclared work of an unknown class gets the free budget) went with
+// V0.freeze-charge: see TestFreezeChargeUndeclaredWorkOfAnUnknownClassGetsNoLimit.
 
 func TestJL5RaisePeakAndSizeOf(t *testing.T) {
 	j := &Jobs{}
