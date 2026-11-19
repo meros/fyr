@@ -468,7 +468,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	go checkModels(ctx, h.reg) // V0.120: each provider's models, once a day
 	go sampler.Run(ctx)
 	if cfg.Leftovers != "off" {
-		runLeftovers(ctx, tree, sampler, eng, mgr, h)
+		runLeftovers(ctx, tree, sampler, eng, mgr, h, cfg.Worktrees)
 	}
 	// V0.147: the stall watchdog. A watched lock held or a request running
 	// past lockwatch.StallAfter writes every goroutine's stack to

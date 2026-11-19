@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/meros/fyr/internal/attach"
@@ -150,7 +151,12 @@ type Manager struct {
 	sessions map[string]*session
 	starting map[string]*starting // thread id → its start in flight (#40)
 	tokens   map[string]string    // MCP token → thread id
+	// restoreDir makes again a worktree Fyr removed (V0.worktree-sweep).
+	restoreDir atomic.Pointer[func(dir string) (bool, error)]
 }
+
+// SetRestoreDir sets what makes again a thread's folder that Fyr removed.
+func (m *Manager) SetRestoreDir(f func(dir string) (bool, error)) { m.restoreDir.Store(&f) }
 
 type session struct {
 	thread string
@@ -564,7 +570,17 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 		}
 	}
 	if _, err := os.Stat(t.Cwd); err != nil {
-		return nil, fmt.Errorf("working directory: %w", err)
+		// V0.worktree-sweep: a worktree Fyr removed comes back first.
+		if f := m.restoreDir.Load(); f != nil {
+			if ok, rerr := (*f)(t.Cwd); rerr != nil {
+				err = fmt.Errorf("%w (%v)", err, rerr)
+			} else if ok {
+				_, err = os.Stat(t.Cwd)
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("working directory: %w", err)
+		}
 	}
 	// The CLI connects its MCP servers while it starts, before initialize,
 	// so the token must be valid before the process exists (SPEC 16.2).

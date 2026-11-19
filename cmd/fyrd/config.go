@@ -115,7 +115,10 @@ type config struct {
 	Undeclared string `json:"undeclared"`
 	// V0.176: Leftovers "off" turns off the leftover tracker and the temp
 	// sweep on this host (nothing is listed or ended).
-	Leftovers        string          `json:"leftovers"`
+	Leftovers string `json:"leftovers"`
+	// V0.worktree-sweep: Worktrees "list" only lists the worktrees nobody
+	// works in; by default Fyr also removes the ones whose work is kept.
+	Worktrees        string          `json:"worktrees"`
 	UndeclaredCPU    float64         `json:"undeclaredCpu"`
 	UndeclaredMemory float64         `json:"undeclaredMemory"`
 	UndeclaredAfter  int             `json:"undeclaredAfter"`

@@ -1875,7 +1875,7 @@ export function withLeftovers(list: HostLoad[], mode: string, now = railNow(Date
     { id: "37777@104", thread: "t_0ld", orphan: true, pid: 37777, name: "engine.test", command: "/tmp/go-build1/b001/engine.test -test.run=TestX", procs: 1, rss: 8e6, started: ago(360), seen: ago(1), endsAt: ago(-1) },
   ];
   const temps: Temp[] = [
-    { path: "/home/me/fyr/.claude/worktrees/map-perf", kind: "worktree", thread: "t_mapperf", bytes: 412e6, safe: true },
+    { path: "/home/me/fyr/.claude/worktrees/map-perf", kind: "worktree", thread: "t_mapperf", bytes: 412e6, safe: true, removeAt: new Date(Date.now() + 5 * 3600_000).toISOString() },
     { path: "/home/me/fyr/.claude/worktrees/nix-bump", kind: "worktree", thread: "t_nix", bytes: 3e6, safe: false, why: "2 commits not pushed" },
   ];
   return [{ ...h, leftovers, temps }, ...rest];

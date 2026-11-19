@@ -2470,16 +2470,16 @@ for (const dark of [false, true]) section(`V0.176 desktop${dark ? " dark" : ""}`
     await evaluate(`document.querySelector('.rail .rlft').click()`);
     await waitFor(`!!document.querySelector('.dlg section[aria-label="Leftover processes"]')`, { what: "Settings at the leftovers" });
     await settle();
-    const st = await evaluate(`(() => { const d = document.querySelector('.dlg'), sec = d.querySelector('section[aria-label="Leftover processes"]'), wt = d.querySelector('section[aria-label="Worktrees of settled threads"]');
+    const st = await evaluate(`(() => { const d = document.querySelector('.dlg'), sec = d.querySelector('section[aria-label="Leftover processes"]'), wt = d.querySelector('section[aria-label="Worktrees nobody works in"]');
       const r = sec.getBoundingClientRect(), dr = d.querySelector('.stp').getBoundingClientRect();
       return { rows: [...sec.querySelectorAll('.sr')].map((e) => e.innerText.replace(/\\s+/g, ' ').trim()), visible: r.top >= dr.top - 1 && r.top <= dr.bottom,
         wt: [...wt.querySelectorAll('.sr')].map((e) => [e.querySelector('.sr-d').textContent, e.querySelectorAll('button').length]) }; })()`);
     check(st.rows.length === 5 && /^chromium · 9 processes · 1\.9 GB Map perf · acme\/web · ends in \d+ min ?Open ?Keep ?End$/.test(st.rows[0]) && st.visible, `${ctx}: Settings' leftovers are wrong (${JSON.stringify(st)})`);
     check(st.rows.some((x) => /^vite · 3 processes · 180 MB .* kept for \d+ h by the agent: the dev server the owner asked for ?Open ?End$/.test(x)) && st.rows.some((x) => /^engine\.test · 8 MB in no thread's cgroup · ends in 1 min ?Keep ?End$/.test(x)), `${ctx}: a kept or an orphan row is wrong (${JSON.stringify(st.rows)})`);
-    check(st.wt.length === 2 && st.wt[0][1] === 1 && st.wt[1][1] === 0 && /kept: 2 commits not pushed$/.test(st.wt[1][0]), `${ctx}: the worktrees are wrong (${JSON.stringify(st.wt)})`);
+    check(st.wt.length === 2 && st.wt[0][1] === 1 && st.wt[1][1] === 0 && /pushed and clean · Fyr removes it in \d+ h$/.test(st.wt[0][0]) && /kept: 2 commits not pushed$/.test(st.wt[1][0]), `${ctx}: the worktrees are wrong (${JSON.stringify(st.wt)})`);
     await shot(`leftovers-settings-${tag}-desktop.png`);
-    await evaluate(`[...document.querySelectorAll('.dlg section[aria-label="Worktrees of settled threads"] .btn')].find((b) => b.textContent === 'Remove').click()`);
-    await waitFor(`document.querySelectorAll('.dlg section[aria-label="Worktrees of settled threads"] .sr').length === 1`, { what: "Remove to take the worktree out" });
+    await evaluate(`[...document.querySelectorAll('.dlg section[aria-label="Worktrees nobody works in"] .btn')].find((b) => b.textContent === 'Remove').click()`);
+    await waitFor(`document.querySelectorAll('.dlg section[aria-label="Worktrees nobody works in"] .sr').length === 1`, { what: "Remove to take the worktree out" });
     // The thread's strip.
     await navigate(`${origin}/?mock=rail&leftovers=1&open=t_mapperf`, "!!document.querySelector('.th .lftb')");
     await settle();
@@ -2531,7 +2531,7 @@ for (const dark of [false, true]) section(`V0.176 phone${dark ? " dark" : ""}`, 
     await waitFor(`!document.querySelector('.m-sheet[aria-label="Host load"]')`);
     // Settings: 44 px controls, nothing past the screen's edge.
     await openScreen({ url: "?mock=rail&leftovers=1&settings=automation", ready: "!!document.querySelector('.set.phone section[aria-label=\"Leftover processes\"]')" }, W, 844);
-    const g = await evaluate(`(() => { const secs = ['Leftover processes', 'Worktrees of settled threads'].map((l) => document.querySelector('.set.phone section[aria-label="' + l + '"]'));
+    const g = await evaluate(`(() => { const secs = ['Leftover processes', 'Worktrees nobody works in'].map((l) => document.querySelector('.set.phone section[aria-label="' + l + '"]'));
       const ctl = secs.flatMap((s) => s ? [...s.querySelectorAll('button')] : []).filter((e) => e.getBoundingClientRect().height > 0);
       return { have: secs.map((s) => !!s), n: ctl.length, minH: Math.min(...ctl.map((e) => e.getBoundingClientRect().height)),
         off: secs.filter(Boolean).flatMap((s) => [...s.querySelectorAll('*')]).filter((e) => { const b = e.getBoundingClientRect(); return b.width && (b.right > innerWidth + 0.5 || b.left < -0.5); }).map((e) => e.className || e.tagName),
