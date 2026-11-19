@@ -212,6 +212,9 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest
   const need = rowNeed(t); // V0.101: the host's cause, read only
   // V0.row-calm: the chip is left out when the state word already names that PR ("Merge #4170" over "#4170 ready").
   const chip = hasChange(t) && !stateNamesPr(t);
+  // V0.row-calm: when the button says the state word ("Merge" by "Merge"), the line starts with what it acts on.
+  const word = rowState(t);
+  const said = !!need && needButton(need.change, need.need) === word;
   return (
     <div {...attrs} class={`rw${st === "done" ? " dn" : ""}${need ? " hasneed" : ""}${guest ? " guest" : ""}${extra}`}>
       {lead ?? (
@@ -223,7 +226,12 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest
       <span class="age">{relTime(t.activityAt ?? t.updatedAt, now)}</span>
       <span class="m ell">
         {guest && <GuestTag why={guest} />}
-        <b class={stateClass(st)}>{rowState(t)}</b> · {pre}
+        {!said && (
+          <>
+            <b class={stateClass(st)}>{word}</b> ·{" "}
+          </>
+        )}
+        {pre}
         <RowFrom t={t} look={look} more />
         {rowDetail(t, { keys: look.keys })}
       </span>
@@ -241,13 +249,20 @@ export function NeedsRowBody({ t, now, look, extra = "", lead, pre, attrs, guest
 /** V0.101 (decision 0024 section 9): a Needs you cause adds the beam dot and its button to the row: "Merge" for a
  *  Ready change, bound to the head the row shows (V0.97; V0.merge-label: the head is in its title, not on the button),
  *  and "Answer" for an ask, which opens the thread. */
+/** The button a Needs you cause shows on its row ("Merge", "Answer"), or "" when it shows only the beam dot. */
+export function needButton(change: Change, need: ChangeNeed): string {
+  const merge = (change.offers ?? []).some((o) => o.run === "fyr" && o.effect === "pr.merge");
+  const canMerge = need.cause === "ready" && merge && !!need.head;
+  return need.cause === "ask" || canMerge ? needLook(need).button : "";
+}
+
 export function NeedButton({ t, change, need }: { t: Thread; change: Change; need: ChangeNeed }) {
   const api = useApi();
   const ask = useAsk();
   const look = needLook(need);
   const merge = (change.offers ?? []).find((o) => o.run === "fyr" && o.effect === "pr.merge");
   const canMerge = need.cause === "ready" && !!merge && !!need.head;
-  if (need.cause !== "ask" && !canMerge) return <span class="beamdot" aria-hidden="true" />;
+  if (!needButton(change, need)) return <span class="beamdot" aria-hidden="true" />;
   return (
     <span class="rneed">
       <span class="beamdot" aria-hidden="true" />

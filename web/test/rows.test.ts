@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rowMeta, rowProjectName, rowState, stateNamesPr, trimEcho } from "../src/rows.ts";
+import { rowMeta, rowProjectName, rowState, stateNamesPr, trimEcho, clipName } from "../src/rows.ts";
 import type { Decision } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -89,4 +89,10 @@ test("a Needs you reason puts its short word first and the change on the line", 
   assert.equal(rowState(run), "Run");
   const other = thread("o", "blocked", "needs", { attention: { state: "blocked", section: "needs", reason: "Waiting: for CI" } });
   assert.equal(rowState(other), "Waiting: for CI");
+});
+
+test("a long project name is cut in the text, short ones stay whole", () => {
+  assert.equal(clipName("acme-platform-infrastructure"), "acme-platform…");
+  assert.equal(clipName("dotfiles"), "dotfiles");
+  assert.equal(clipName("exactly-14-ch!"), "exactly-14-ch!");
 });

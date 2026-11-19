@@ -109,7 +109,9 @@ export function RowProjectName({ t, sep }: { t: Pick<Thread, "project" | "projec
   if (!nm) return null;
   return (
     <>
-      <span class="rpn">{nm}</span>
+      <span class="rpn" title={nm.endsWith("…") ? projectName(t, dir.projects) : undefined}>
+        {nm}
+      </span>
       {sep ? " · " : ""}
     </>
   );

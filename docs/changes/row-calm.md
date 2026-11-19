@@ -9,3 +9,7 @@
 5. **CPU.** A working row's CPU reading sits with the chips, at the end of the second line, so cutting the line never takes it. It is monospace like the age, and muted unless it is hot. A PR chip has room for "#9999 conflicts".
 
 The provider stays on every row (V0.206).
+
+6. **One word, not two.** When the row's button says its state word ("Merge" beside a "Merge" state), the line leaves the word out and starts with what the button acts on.
+7. **Project name.** A long project name is cut in the text at 14 characters (the full name is its tooltip), not by its box, so no gap is left before the "·" after it.
+8. **Phone section button.** "Settle merged" in the Finished, seen header keeps its 44 px touch height but draws 30 px, inside the header's band.
