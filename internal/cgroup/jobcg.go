@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/meros/fyr/internal/slots"
 )
@@ -47,6 +48,9 @@ type JobGroups struct {
 	// the gate saw per thread (oldest first, at most maxBashes).
 	ufrozen map[string]bool
 	bashes  map[string][]string
+	// V0.guard-swap: when each thread's frozen work was last moved to swap
+	// (zero while a reclaim runs).
+	reclaimed map[string]time.Time
 }
 
 // undeclaredDir is the name of a thread's undeclared-work cgroup, beside job/
@@ -199,6 +203,7 @@ func (g *JobGroups) Freeze(thread string) bool {
 	}
 	g.frozen[thread] = true
 	g.mu.Unlock()
+	g.ReclaimFrozen(thread) // V0.guard-swap; nothing without the tree
 	return true
 }
 
@@ -365,6 +370,7 @@ func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
 	}
 	g.ufrozen[thread] = true
 	g.mu.Unlock()
+	g.ReclaimFrozen(thread) // V0.guard-swap
 	return true
 }
 

@@ -28,6 +28,33 @@ type Signals struct {
 	// CPU and Memory are the agents' capacity (V0.142); 0 when unknown.
 	CPU    float64
 	Memory uint64
+	// SwapFull: the agents' swap is at its cap (V0.guard-swap), so the
+	// kernel can reclaim only their page cache.
+	SwapFull bool
+}
+
+// Reserve is the share of the agents' memory that must stay free: twice
+// p's while their swap is full (V0.guard-swap). Then nothing they hold can
+// move to swap and what reads as free is the code they run; on 19 Nov the
+// agents re-read it at 2.4 GB/s with 12 % "free".
+func (s Signals) Reserve(p Policy) float64 {
+	if s.SwapFull {
+		return 2 * p.MemoryReserve
+	}
+	return p.MemoryReserve
+}
+
+// MemoryWhy says why memory is short by its headroom: "memory: 12 % free",
+// with "(swap full)" when the full swap raised the reserve.
+func (s Signals) MemoryWhy() string {
+	if s.Headroom == nil {
+		return ""
+	}
+	why := fmt.Sprintf("memory: %.0f %% free", *s.Headroom*100)
+	if s.SwapFull {
+		why += " (swap full)"
+	}
+	return why
 }
 
 // Stall is a memory stall level (V0.142).
@@ -152,8 +179,8 @@ func DecideWith(p Policy, s Signals, f Factors, n int, held []Need, extra []Extr
 		}
 		return false, fmt.Sprintf("%d of %d heavy jobs run (this host counts jobs: no load measures)", len(held), n), ""
 	}
-	if s.Headroom != nil && *s.Headroom < p.MemoryReserve {
-		return false, fmt.Sprintf("memory: %.0f %% free", *s.Headroom*100), ResMem
+	if s.Headroom != nil && *s.Headroom < s.Reserve(p) {
+		return false, s.MemoryWhy(), ResMem
 	}
 	if s.Stall == StallCritical {
 		return false, "memory stalls (critical)", ResMem
@@ -178,7 +205,7 @@ func DecideWith(p Policy, s Signals, f Factors, n int, held []Need, extra []Extr
 	}
 	memFree := f.Mem*float64(s.Memory) - float64(used.Mem)
 	if s.Headroom != nil {
-		memFree = min(memFree, (*s.Headroom-p.MemoryReserve)*float64(s.Memory))
+		memFree = min(memFree, (*s.Headroom-s.Reserve(p))*float64(s.Memory))
 	}
 	if float64(head.Mem) > memFree+1 {
 		return false, fmt.Sprintf("needs ≈ %s memory, %s free", GB(float64(head.Mem)), GB(max(0, memFree))) + undeclaredWhy(others, s, ResMem), ResMem

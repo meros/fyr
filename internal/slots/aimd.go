@@ -91,7 +91,7 @@ func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time,
 	if own == "" {
 		own = s.Stall
 	}
-	short := (s.Headroom != nil && *s.Headroom < DefaultPolicy.MemoryReserve) || own == StallCritical
+	short := (s.Headroom != nil && *s.Headroom < s.Reserve(DefaultPolicy)) || own == StallCritical
 	calm := s.Slowdown != nil && *s.Slowdown < AIMDCalm && !short && own != StallElevated &&
 		s.Stall != StallElevated && s.Stall != StallCritical
 	switch {

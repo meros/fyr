@@ -369,6 +369,9 @@ func guardSignals(sig slots.Signals) string {
 	if sig.AgentsStall != "" {
 		out += " agents_stall=" + string(sig.AgentsStall)
 	}
+	if sig.SwapFull {
+		out += " swap_full=true"
+	}
 	return out
 }
 
@@ -465,8 +468,8 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		return
 	}
 	sig := e.SlotSignals()
-	short := sig.Provider != "" && ((sig.Headroom != nil && *sig.Headroom < e.SlotPolicy.MemoryReserve) || sig.Stall == slots.StallCritical)
-	fine := sig.Stall != slots.StallCritical && sig.Stall != slots.StallElevated && (sig.Headroom == nil || *sig.Headroom >= e.SlotPolicy.MemoryReserve+0.05)
+	short := sig.Provider != "" && ((sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy)) || sig.Stall == slots.StallCritical)
+	fine := sig.Stall != slots.StallCritical && sig.Stall != slots.StallElevated && (sig.Headroom == nil || *sig.Headroom >= sig.Reserve(e.SlotPolicy)+0.05)
 	now := e.Now()
 	e.mu.Lock()
 	if e.frozeHolds == nil {
@@ -582,8 +585,8 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		return
 	}
 	why := "memory stalls (critical)"
-	if sig.Headroom != nil && *sig.Headroom < e.SlotPolicy.MemoryReserve {
-		why = fmt.Sprintf("memory: %.0f %% free", *sig.Headroom*100)
+	if sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy) {
+		why = sig.MemoryWhy()
 	}
 	e.mu.Lock()
 	e.frozen = frozenJob{owner: victim.Owner, since: victim.Since.Format(time.RFC3339Nano), at: now}
@@ -669,8 +672,8 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 		return false
 	}
 	why := "memory stalls (critical)"
-	if sig.Headroom != nil && *sig.Headroom < e.SlotPolicy.MemoryReserve {
-		why = fmt.Sprintf("memory: %.0f %% free", *sig.Headroom*100)
+	if sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy) {
+		why = sig.MemoryWhy()
 	}
 	n := 1
 	if picked.episode.Equal(pick.Since) {
@@ -713,8 +716,8 @@ func (e *Engine) memoryGuard(s slots.Snapshot) {
 	}
 	sig := e.SlotSignals()
 	why := ""
-	if sig.Provider != "" && sig.Headroom != nil && *sig.Headroom < e.SlotPolicy.MemoryReserve {
-		why = fmt.Sprintf("memory: %.0f %% free", *sig.Headroom*100)
+	if sig.Provider != "" && sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy) {
+		why = sig.MemoryWhy()
 	} else if sig.Stall == slots.StallCritical {
 		why = "memory stalls (critical)"
 	}

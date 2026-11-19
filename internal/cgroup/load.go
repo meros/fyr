@@ -50,6 +50,9 @@ type Load struct {
 	MemoryStall       Stall     `json:"memoryStall,omitempty"`
 	AgentsPressure    *float64  `json:"agentsCpuPressure,omitempty"`
 	AgentsMemoryStall Stall     `json:"agentsMemoryStall,omitempty"`
+	// AgentsSwapFull: agents/memory.swap.current is at SwapFullShare of a
+	// set memory.swap.max (V0.guard-swap).
+	AgentsSwapFull bool `json:"agentsSwapFull,omitempty"`
 	// Jobs: the measured slot holds per class, the newest first.
 	Jobs []JobClass `json:"jobs,omitempty"`
 	// V0.164: the suggested heavy jobs, the ones the owner added, and the
@@ -316,7 +319,7 @@ func (s *Sampler) Signals() slots.Signals {
 	} else {
 		l = s.get()
 	}
-	sig := slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall), AgentsStall: slots.Stall(l.AgentsMemoryStall)}
+	sig := slots.Signals{Provider: l.Provider, Slowdown: l.Slowdown, Headroom: l.Headroom, Stall: slots.Stall(l.MemoryStall), AgentsStall: slots.Stall(l.AgentsMemoryStall), SwapFull: l.AgentsSwapFull}
 	if l.Capacity != nil {
 		sig.CPU, sig.Memory = l.Capacity.CPU, l.Capacity.Memory
 	}
