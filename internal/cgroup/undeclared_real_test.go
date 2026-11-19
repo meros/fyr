@@ -23,7 +23,7 @@ func TestRealRefreeze(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := filepath.Join("/sys/fs/cgroup", strings.TrimPrefix(strings.TrimSpace(string(raw)), "0::"))
-	g := &JobGroups{Tree: &Tree{root: root}}
+	g := &JobGroups{Tree: &Tree{root: root, logf: t.Logf}} // V0.job-limits: split logs a refusal
 	td := g.threadDir("t_a")
 	if err := os.MkdirAll(td, 0o755); err != nil {
 		t.Fatal(err)
