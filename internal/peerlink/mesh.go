@@ -109,6 +109,7 @@ type Mesh struct {
 	mu      sync.Mutex
 	good    map[string]string  // the address a peer was last reached at, by peer id
 	links   map[string]*Link   // the link in use, by peer id
+	losers  map[*Link]struct{} // links that lost to another and drain (register)
 	status  map[string]*Status // by peer id
 	conns   map[string]context.CancelFunc
 	waiters map[string][]chan struct{}
@@ -124,7 +125,7 @@ func New(cfg Config) *Mesh {
 	if cfg.MaxBackoff <= 0 {
 		cfg.MaxBackoff = 5 * time.Minute
 	}
-	return &Mesh{cfg: cfg, links: map[string]*Link{}, status: map[string]*Status{}, conns: map[string]context.CancelFunc{},
+	return &Mesh{cfg: cfg, links: map[string]*Link{}, losers: map[*Link]struct{}{}, status: map[string]*Status{}, conns: map[string]context.CancelFunc{},
 		waiters: map[string][]chan struct{}{}, kick: make(chan struct{}, 1)}
 }
 
@@ -187,6 +188,14 @@ func (m *Mesh) Reconcile() {
 				kind, text = ErrKeyMismatch, "the install's key was replaced"
 			}
 			m.status[id] = &Status{State: "down", Since: time.Now(), Err: &LinkErr{Kind: kind, Text: text}}
+		}
+	}
+	// A link that lost and still drains its requests goes too: a removal closes every
+	// stream with the peer at once, not after the drain.
+	for l := range m.losers {
+		if p, ok := members[l.PeerID]; !ok || !p.Key.Equal(l.PeerKey) {
+			closing = append(closing, l)
+			delete(m.losers, l)
 		}
 	}
 	for id, cancel := range m.conns {
@@ -260,20 +269,20 @@ func (m *Mesh) connector(ctx context.Context, id string, key ed25519.PublicKey) 
 		}
 		addrs := m.addrs(p)
 		if len(addrs) == 0 {
-			m.setIfNotUp(id, Status{State: "down", Since: time.Now(), Err: &LinkErr{Kind: ErrNoAddress, Text: "no address for it yet; it may open the link itself"}})
+			m.setIfNotUp(ctx, id, Status{State: "down", Since: time.Now(), Err: &LinkErr{Kind: ErrNoAddress, Text: "no address for it yet; it may open the link itself"}})
 			if !m.sleep(ctx, 5*time.Second) {
 				return
 			}
 			continue
 		}
-		m.setIfNotUp(id, Status{State: "connecting", Since: time.Now()})
+		m.setIfNotUp(ctx, id, Status{State: "connecting", Since: time.Now()})
 		l, err := m.dialAny(ctx, p, addrs)
 		if err != nil {
 			var le *LinkErr
 			if !errors.As(err, &le) {
 				le = classify(err)
 			}
-			m.setIfNotUp(id, Status{State: "down", Since: time.Now(), Err: le})
+			m.setIfNotUp(ctx, id, Status{State: "down", Since: time.Now(), Err: le})
 			wait := jitter(backoff)
 			if le.Kind == ErrOlderVersion {
 				wait = time.Minute
@@ -338,9 +347,15 @@ func (m *Mesh) dialAny(ctx context.Context, p Peer, addrs []string) (*Link, erro
 	return nil, first
 }
 
-func (m *Mesh) setIfNotUp(id string, s Status) {
+// setIfNotUp is a connector's status. A connector that was cancelled writes none:
+// Reconcile cancels it under m.mu and writes why (removed), and a dial that ends
+// in that cancel must not put "context canceled" over it.
+func (m *Mesh) setIfNotUp(ctx context.Context, id string, s Status) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
 	if l := m.links[id]; l != nil && !l.Draining() {
 		return // a link from the other side came up meanwhile
 	}
@@ -501,6 +516,7 @@ func (m *Mesh) register(l *Link) {
 		loser.mu.Lock()
 		loser.drain = true
 		loser.mu.Unlock()
+		m.losers[loser] = struct{}{}
 	}
 	m.links[l.PeerID] = keep
 	if keep == l {
@@ -513,7 +529,12 @@ func (m *Mesh) register(l *Link) {
 		close(w)
 	}
 	if loser != nil {
-		go drainAndClose(loser)
+		go func() {
+			drainAndClose(loser)
+			m.mu.Lock()
+			delete(m.losers, loser)
+			m.mu.Unlock()
+		}()
 	}
 	if keep == l && m.cfg.OnUp != nil {
 		go m.cfg.OnUp(l.PeerID)

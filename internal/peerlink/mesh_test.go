@@ -159,27 +159,56 @@ func TestEitherSideOpensTheLink(t *testing.T) {
 	}
 }
 
-// Both can dial and both do, at once: one link stays, the one opened by the install
-// with the smaller id, and a request still works.
+// Both can dial and both do, at once: one link stays, both sides use the same one,
+// and a request still works. Which one stays depends on timing: a dial that is
+// refused or slow leaves the other side's link alone, and a connector does not
+// dial while a link is up. When both come up, the smaller id's wins
+// (TestTheSmallerDialerWins).
 func TestSimultaneousDialsLeaveOneLink(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		a, b := newNode(t), newNode(t)
 		a.setMembers(a.peerOf(b, true))
 		b.setMembers(b.peerOf(a, true))
-		small := a.key.ID()
-		if b.key.ID() < small {
-			small = b.key.ID()
-		}
-		waitFor(t, "the smaller id's link to win on both sides", func() bool {
-			sa, sb := a.mesh.Status(b.key.ID()), b.mesh.Status(a.key.ID())
+		waitFor(t, "one link that both sides use", func() bool {
 			la, lb := a.mesh.linkFor(b.key.ID()), b.mesh.linkFor(a.key.ID())
-			return sa.State == "up" && sb.State == "up" && la != nil && lb != nil && la.Dialer == small && lb.Dialer == small && !la.Draining() && !lb.Draining()
+			return a.mesh.Status(b.key.ID()).State == "up" && b.mesh.Status(a.key.ID()).State == "up" &&
+				la != nil && lb != nil && la.Dialer == lb.Dialer && !la.Draining() && !lb.Draining()
 		})
 		if got := call(t, a, b, "/x"); !strings.Contains(got, "served") {
 			t.Errorf("a -> b: %q", got)
 		}
 		if got := call(t, b, a, "/x"); !strings.Contains(got, "served") {
 			t.Errorf("b -> a: %q", got)
+		}
+	}
+}
+
+// Two links up for one peer: the one opened by the install with the smaller id
+// stays, in either order, and the other drains and closes.
+func TestTheSmallerDialerWins(t *testing.T) {
+	self, peer := key(t), key(t)
+	fake := func(dialer string) *Link {
+		c, _ := net.Pipe()
+		return &Link{PeerID: peer.ID(), PeerKey: peer.Public, Dialer: dialer, Since: time.Now(), conn: c,
+			done: make(chan struct{}), ready: make(chan struct{}), cancel: func() {}}
+	}
+	for _, smallFirst := range []bool{true, false} {
+		m := New(Config{Key: self, Members: func() []Peer { return []Peer{{ID: peer.ID(), Key: peer.Public}} }})
+		small, big := fake("a"), fake("b")
+		if smallFirst {
+			m.register(small)
+			m.register(big)
+		} else {
+			m.register(big)
+			m.register(small)
+		}
+		if m.linkFor(peer.ID()) != small || small.Draining() || !big.Draining() {
+			t.Fatalf("small first %v: the smaller dialer's link does not win", smallFirst)
+		}
+		select {
+		case <-big.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatalf("small first %v: the losing link was not closed", smallFirst)
 		}
 	}
 }
