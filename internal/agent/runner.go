@@ -32,6 +32,9 @@ type procMeta struct {
 	ViewTools   bool   `json:"viewTools,omitempty"`
 	ChangeTools bool   `json:"changeTools,omitempty"`
 	Cgroup      bool   `json:"cgroup,omitempty"`
+	// Tools: the hash of the MCP tool list it started with
+	// (V0.tool-reload); "" for a process from before.
+	Tools string `json:"tools,omitempty"`
 }
 
 // threadOf is the thread a runner process belongs to: its key, else the
@@ -114,11 +117,13 @@ func (m *Manager) Adopt(procs []runner.Proc) {
 			m.drop(s, "the thread has a process")
 			continue
 		}
+		live := s.live // read before the reader can change it
 		go m.read(s)
-		if !s.live {
+		if !live {
 			m.armIdle(s)
 		}
-		log.Printf("runner: adopted %s for thread %s (pid %d, running %v)", p.ID, t, p.Pid, s.live)
+		m.watchTools(s)
+		log.Printf("runner: adopted %s for thread %s (pid %d, running %v)", p.ID, t, p.Pid, live)
 	}
 }
 
@@ -143,6 +148,7 @@ func (m *Manager) adoptExisting(threadID, procID string) (*session, error) {
 			s, err := m.attach(threadID, p)
 			if err == nil {
 				log.Printf("runner: thread %s already had %s; linked to it", threadID, p.ID)
+				m.watchTools(s)
 			}
 			return s, err
 		}
@@ -181,7 +187,7 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 		return drop("no adapter can reattach " + id)
 	}
 	s := &session{thread: t.ID, proc: p.ID, cwd: t.Cwd, token: meta.Token, asks: map[string]chan core.Effect{}, reqs: map[string]string{},
-		digest: newDigest(), out: map[string]string{}, cancelling: map[string]bool{}, effort: meta.Effort,
+		digest: newDigest(), out: map[string]string{}, cancelling: map[string]bool{}, effort: meta.Effort, toolsHash: meta.Tools,
 		viewTools: meta.ViewTools, changeTools: meta.ChangeTools, live: t.Running, lifecycle: true,
 		bg: t.RunningTasks(), // V0.133: until the CLI reports its tasks again
 		// V0.143: a process whose input an earlier fyrd closed reads
@@ -296,5 +302,63 @@ func (m *Manager) dropAdopted(s *session) {
 	m.mu.Unlock()
 	for _, id := range gone {
 		m.observe(s.thread, core.KindDecisionGone, id)
+	}
+}
+
+// watchTools checks an adopted process for an older build's MCP tools
+// once ToolsGrace has passed (V0.tool-reload).
+func (m *Manager) watchTools(s *session) {
+	if m.cfg.Tools != nil && s.token != "" && s.toolsHash != m.cfg.Tools() {
+		time.AfterFunc(m.cfg.ToolsGrace, func() { m.reloadTools(s) })
+	}
+}
+
+// reloadTools ends an adopted process that still has an older build's MCP
+// tools (V0.tool-reload): at once when it is idle, else when its turn ends;
+// never in a turn. The next message resumes the session with the new
+// tools. A process that read this build's tools, or holds the server
+// stream open, is left alone: its CLI took the new list itself.
+func (m *Manager) reloadTools(s *session) {
+	if m.cfg.Tools == nil || m.cfg.ToolsCurrent == nil || s.token == "" {
+		return
+	}
+	if s.toolsHash == m.cfg.Tools() || m.cfg.ToolsCurrent(s.token) {
+		return
+	}
+	why := "Fyr restarted this agent's process to load the new tools"
+	if m.cfg.Build != "" {
+		why += " (build " + m.cfg.Build + ")"
+	}
+	// As refreshView, on this session only: the thread may have another
+	// process by now.
+	m.mu.Lock()
+	if m.sessions[s.thread] != s || s.inputClosed {
+		m.mu.Unlock()
+		return
+	}
+	s.reloadWhy = why
+	idle := !s.live && len(s.asks) == 0 && len(s.out) == 0 && s.bg == 0 // V0.133
+	if idle {
+		delete(m.sessions, s.thread) // the next send starts a new process
+	} else {
+		s.refresh = true
+	}
+	m.mu.Unlock()
+	log.Printf("thread %s: %s", s.thread, why)
+	if idle {
+		m.closeInput(s)
+		m.refreshed(s)
+	}
+}
+
+// refreshed reports a refresh that loaded the new tools, once its process
+// ended (V0.tool-reload).
+func (m *Manager) refreshed(s *session) {
+	m.mu.Lock()
+	why := s.reloadWhy
+	s.reloadWhy = ""
+	m.mu.Unlock()
+	if why != "" {
+		m.observe(s.thread, core.KindRestarted, core.RestartedArgs{Why: why})
 	}
 }

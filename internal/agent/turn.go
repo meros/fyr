@@ -242,6 +242,7 @@ func (m *Manager) handle(s *session, msg claude.Msg) {
 			}
 			m.mu.Unlock()
 			m.closeInput(s)
+			m.refreshed(s)
 			go m.feed(s.thread) // the next process takes what waits
 			return
 		}
@@ -298,6 +299,7 @@ func (m *Manager) refreshView(threadID string) {
 	m.mu.Unlock()
 	if idle {
 		m.closeInput(s)
+		m.refreshed(s)
 	}
 }
 
@@ -438,6 +440,7 @@ func (m *Manager) refreshAfterBackground(s *session) {
 	m.mu.Unlock()
 	if ok {
 		m.closeInput(s)
+		m.refreshed(s)
 		go m.feed(s.thread) // the next process takes what waits
 	}
 }
