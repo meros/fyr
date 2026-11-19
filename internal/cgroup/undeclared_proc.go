@@ -123,7 +123,7 @@ func ReadRootsWith(tr *Tree, proc, thread string, after time.Time, el Elders) []
 	if proc == "" {
 		proc = "/proc"
 	}
-	td := filepath.Join(tr.root, "agents", unsafe.ReplaceAllString(thread, "_"))
+	td := tr.threadDir(unsafe.ReplaceAllString(thread, "_"))
 	in := undeclaredPids(td)
 	boot, ok := bootTime(proc)
 	if !ok || len(in) == 0 {

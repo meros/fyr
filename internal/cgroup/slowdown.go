@@ -188,7 +188,7 @@ func (s *Sampler) CPUPressureNow() *float64 {
 	}
 	path := filepath.Join(proc, "pressure", "cpu")
 	if s.Tree != nil {
-		path = filepath.Join(s.Tree.root, "agents", "cpu.pressure")
+		path = filepath.Join(s.Tree.agentsDir(), "cpu.pressure")
 	}
 	if p, ok := readPSI(path); ok {
 		v := p.some

@@ -67,11 +67,11 @@ func (g *JobGroups) proc() string {
 }
 
 func (g *JobGroups) dir(thread string) string {
-	return filepath.Join(g.Tree.root, "agents", unsafe.ReplaceAllString(thread, "_"), jobDir)
+	return filepath.Join(g.threadDir(thread), jobDir)
 }
 
 func (g *JobGroups) threadDir(thread string) string {
-	return filepath.Join(g.Tree.root, "agents", unsafe.ReplaceAllString(thread, "_"))
+	return g.Tree.threadDir(unsafe.ReplaceAllString(thread, "_"))
 }
 
 // ppid reads a process's parent from /proc/<pid>/stat; 0 when gone.

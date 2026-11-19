@@ -24,10 +24,14 @@ type Load struct {
 	Load  [3]float64 `json:"load"` // 1, 5 and 15 minutes
 	// CPUPressure: /proc/pressure/cpu "some avg10", in percent; nil
 	// without PSI.
-	CPUPressure *float64     `json:"cpuPressure,omitempty"`
-	Cgroups     bool         `json:"cgroups"`
-	Agents      *Use         `json:"agents,omitempty"`
-	Threads     []ThreadLoad `json:"threads"`
+	CPUPressure *float64 `json:"cpuPressure,omitempty"`
+	Cgroups     bool     `json:"cgroups"`
+	// CgroupLayout is where the agents run (V0.agents-unit): "unit" is
+	// fyr.service/agents/<thread>, "scope" a scope per thread in the
+	// agents' slice; "" without cgroups.
+	CgroupLayout Layout       `json:"cgroupLayout,omitempty"`
+	Agents       *Use         `json:"agents,omitempty"`
+	Threads      []ThreadLoad `json:"threads"`
 	// Heavy is the host's heavy jobs (V0.86; V0.163 in percent of the
 	// host), read fresh on each Get; nil without a pool. Slots is the same,
 	// under its old name, for older fronts for one release.
@@ -387,7 +391,8 @@ func (s *Sampler) get() Load {
 	}
 	if s.Tree != nil {
 		l.Cgroups = true
-		agents := filepath.Join(s.Tree.root, "agents")
+		l.CgroupLayout = s.Tree.layout
+		agents := s.Tree.agentsDir()
 		a := &Use{Memory: readBytes(filepath.Join(agents, "memory.current")), MemoryMax: readBytes(filepath.Join(agents, "memory.max"))}
 		if u, ok := readKey(filepath.Join(agents, "cpu.stat"), "usage_usec"); ok {
 			a.CPU = cpu("", u)
@@ -403,25 +408,29 @@ func (s *Sampler) get() Load {
 			}
 		}
 		l.Agents = a
-		es, _ := os.ReadDir(agents)
-		for _, e := range es {
-			if !e.IsDir() || e.Name() == "probe" {
-				continue
-			}
-			d := filepath.Join(agents, e.Name())
-			t := ThreadLoad{ID: e.Name(), Memory: readBytes(filepath.Join(d, "memory.current")), Peak: readBytes(filepath.Join(d, "memory.peak"))}
+		seen := map[string]int{}
+		for _, c := range s.Tree.threadCgroups() {
+			d := c.Dir
+			t := ThreadLoad{ID: c.Name, Memory: readBytes(filepath.Join(d, "memory.current")), Peak: readBytes(filepath.Join(d, "memory.peak"))}
 			t.MemoryHigh = readBytes(filepath.Join(d, "memory.high"))
 			t.Working = t.Memory
 			if in, ok := readKey(filepath.Join(d, "memory.stat"), "inactive_file"); ok && in <= t.Memory {
 				t.Working -= in
 			}
 			if u, ok := readKey(filepath.Join(d, "cpu.stat"), "usage_usec"); ok {
-				t.CPU = cpu(e.Name(), u)
+				t.CPU = cpu(filepath.Base(d), u)
 			}
 			if p, ok := readPSI(filepath.Join(d, "cpu.pressure")); ok {
 				v := p.some
 				t.CPUPressure = &v
 			}
+			// A thread with two cgroups (a handover, deploy commands, one
+			// from before the switch to scopes) is one row: their sum.
+			if i, ok := seen[c.Name]; ok {
+				l.Threads[i] = addThreadLoad(l.Threads[i], t)
+				continue
+			}
+			seen[c.Name] = len(l.Threads)
 			l.Threads = append(l.Threads, t)
 		}
 		sort.Slice(l.Threads, func(i, j int) bool { return l.Threads[i].ID < l.Threads[j].ID })

@@ -136,10 +136,13 @@ type Config struct {
 }
 
 // Cgroups is what the agent needs from the cgroup tree (*cgroup.Tree):
-// Thread returns the directory a thread's process starts in ("" for the
-// daemon's), and each Thread is matched by one Release.
+// Launch returns the directory a thread's process starts in ("" for the
+// daemon's), or the command line that starts it in a scope of its own
+// (V0.agents-unit); Hold takes the hold of a process a previous fyrd started.
+// Each Launch or Hold is matched by one Release.
 type Cgroups interface {
-	Thread(id string) string
+	Launch(id string) (dir string, wrap []string)
+	Hold(id string)
 	Release(id string)
 }
 
@@ -598,8 +601,8 @@ func (m *Manager) start(threadID string, o *as) (*session, error) {
 	}
 	// V0.80: the CLI and everything it starts run in the thread's cgroup.
 	if m.cfg.Cgroups != nil {
-		l.Cgroup = m.cfg.Cgroups.Thread(threadID)
-		s.cgroup = l.Cgroup != ""
+		l.Cgroup, l.Wrap = m.cfg.Cgroups.Launch(threadID)
+		s.cgroup = l.Cgroup != "" || len(l.Wrap) > 0
 	}
 	if m.cfg.Runner != nil {
 		// V0.90: the runner holds the process; the note lets the next fyrd

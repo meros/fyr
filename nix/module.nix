@@ -21,10 +21,17 @@ let
     quota = lib.mapAttrs (_: q: lib.filterAttrs (_: v: v != null) q) cfg.quota;
   } // lib.optionalAttrs cfg.cgroups.enable {
     # V0.80: fyrd splits the unit's cgroup and writes this budget itself.
+    # V0.agents-unit: with agentsUnit the budget sits on fyr-agents.slice
+    # instead and each thread starts in a scope there; the values stay for a
+    # host where the scopes do not work and fyrd falls back to the split.
     cgroups = {
       enable = true;
       inherit (cfg.cgroups) serverMemoryLow agentsMemoryHigh agentsMemoryMax agentsMemorySwapMax threadMemoryHighPercent;
       agentsCpuMax = "${toString (cfg.cgroups.agentsCpuCores * 100000)} 100000";
+    } // lib.optionalAttrs cfg.cgroups.agentsUnit {
+      agentsSlice = agentsSlice;
+      systemdRun = "${config.systemd.package}/bin/systemd-run";
+      systemctl = "${config.systemd.package}/bin/systemctl";
     };
   } // lib.optionalAttrs (cfg.role != "both") { role = cfg.role; }
     // lib.optionalAttrs (cfg.hosts != [ ]) { hosts = cfg.hosts; }
@@ -35,6 +42,10 @@ let
   # reads from tailscaled at start; hostListen names an address by hand.
   hostListen = if cfg.hostListen != null then cfg.hostListen
     else if cfg.hostPort != null then "tailnet:${toString cfg.hostPort}" else null;
+  # V0.agents-unit (decision 0036 (B), #221): the agents' slice. Its parent
+  # is fyr.slice (systemd's dash rule), so it is outside system.slice.
+  agentsSlice = "fyr-agents.slice";
+  agentsUnit = cfg.cgroups.enable && cfg.cgroups.agentsUnit;
   optStr = description: lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; inherit description; };
 in
 {
@@ -233,42 +244,82 @@ in
       default = "14G";
       description = "MemoryMax of the whole unit when `cgroups.enable` is off.";
     };
-    # SPEC 0.5 V0.80, after T3's launcher (t3code.nix in the machine's
-    # config): the unit delegates cpu and memory, fyrd moves itself into
-    # server/ and starts every agent CLI in agents/<thread id>/, the
-    # deploy's build and tests in agents/self-deploy/. The budget sits on
-    # agents/. A machine-wide QoS script may rewrite the CPU cap at
-    #   /sys/fs/cgroup/system.slice/fyr.service/agents/cpu.max
-    # (T3's agents-lock-cap lifts it while the screen is locked).
+    # V0.agents-unit (decision 0036 (B), #221), the default: fyrd runs alone
+    # in fyr.service, which is root-owned, not delegated, and omitted by
+    # systemd-oomd. Each thread's CLI starts in a scope of its own,
+    #   /sys/fs/cgroup/fyr.slice/fyr-agents.slice/fyr-agent-<thread>.scope
+    # (Delegate=yes, so fyrd makes job/ and undeclared/ in it, and
+    # memory.oom.group=1, so oomd ends a whole thread), a self-deploy's
+    # commands in fyr-deploy-<n>.scope. The budget and the oomd rule sit on
+    # fyr-agents.slice. A machine-wide QoS script may rewrite the CPU cap at
+    #   /sys/fs/cgroup/fyr.slice/fyr-agents.slice/cpu.max
+    #
+    # With agentsUnit off, SPEC 0.5 V0.80, after T3's launcher (t3code.nix in
+    # the machine's config): the unit delegates cpu and memory, fyrd moves
+    # itself into server/ and starts every agent CLI in agents/<thread id>/,
+    # the deploy's build and tests in agents/self-deploy/, and the budget sits
+    # on agents/ (the QoS script's path is then
+    # /sys/fs/cgroup/system.slice/fyr.service/agents/cpu.max).
     cgroups = {
       enable = lib.mkOption {
         type = lib.types.bool;
         default = true;
-        description = "Split the unit into server/ and agents/<thread>/ (Delegate=cpu memory) with the budget below.";
+        description = "Give each thread a cgroup of its own, under the budget below.";
+      };
+      agentsUnit = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Run the agents outside fyrd's unit, each thread in a scope of
+          fyr-agents.slice, which carries the budget below and the oomd rule
+          (V0.agents-unit). fyrd's own unit is then not delegated and is
+          omitted by systemd-oomd, so an out-of-memory kill never takes fyrd.
+          A polkit rule lets the service user start and adjust these scopes,
+          and nothing else. Off: the V0.80 split of fyr.service.
+          Turning it on takes effect for new threads at the next reload; the
+          unit's own settings apply at its next restart.
+        '';
+      };
+      agentsOomPressureLimit = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = "80%";
+        description = ''
+          systemd-oomd kills a whole thread of the agents' slice once the
+          slice's memory stall stays above this (ManagedOOMMemoryPressureLimit);
+          null for no rule. Keep it above what Fyr's own throttling produces:
+          the guard acts first (decision 0036 (B)). With agentsUnit only.
+        '';
+      };
+      agentsOomPressureDuration = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "20s";
+        description = "ManagedOOMMemoryPressureDurationSec of the agents' slice; null is systemd-oomd's default (30 s).";
       };
       serverMemoryLow = lib.mkOption {
         type = lib.types.str;
         default = "1G";
         description = ''
-          memory.low of server/ (the launcher and fyrd), kept out of reclaim.
-          The unit gets the same MemoryLow, since a cgroup keeps no more
-          protection than its parent has; system.slice needs one too.
+          memory.low of fyrd and the launcher, kept out of reclaim: the
+          unit's MemoryLow (with agentsUnit off, also server/'s, since a
+          cgroup keeps no more protection than its parent has);
+          system.slice needs one too.
         '';
       };
       agentsCpuCores = lib.mkOption {
         type = lib.types.ints.positive;
         default = 4;
-        description = "cpu.max of agents/, in cores: every thread together, the deploy included.";
+        description = "CPU cap of the agents (the slice, or agents/), in cores: every thread together, the deploy included.";
       };
       agentsMemoryHigh = lib.mkOption {
         type = lib.types.str;
         default = "13G";
-        description = "memory.high of agents/: the kernel throttles the agents past it.";
+        description = "memory.high of the agents (the slice, or agents/): the kernel throttles the agents past it.";
       };
       agentsMemoryMax = lib.mkOption {
         type = lib.types.str;
         default = "14G";
-        description = "memory.max of agents/: the kernel OOM-kills an agent process past it. Keep the gap to memoryHigh narrow.";
+        description = "memory.max of the agents (the slice, or agents/): the kernel OOM-kills past it (a whole thread with agentsUnit). Keep the gap to memoryHigh narrow.";
       };
       threadMemoryHighPercent = lib.mkOption {
         type = lib.types.ints.between 0 100;
@@ -282,7 +333,7 @@ in
         type = lib.types.str;
         default = "16G";
         description = ''
-          memory.swap.max of agents/. T3's notes (2026-11-13): an 8 GiB cap left
+          memory.swap.max of the agents (the slice, or agents/). T3's notes (2026-11-13): an 8 GiB cap left
           the agents stalling between high and max; 24G spilled swap onto disk.
         '';
       };
@@ -369,7 +420,16 @@ in
         TimeoutStopSec = 30;
         Nice = 10;
         IOWeight = 50;
-      } // (if cfg.cgroups.enable then {
+      } // (if agentsUnit then {
+        # V0.agents-unit: the unit holds fyrd and the launcher only. It is
+        # not delegated, so its cgroup stays root's and systemd-oomd honours
+        # the omit on every rule (/, system.slice, ...), not only one on this
+        # unit; the kernel's OOM killer passes it over too. The agents reset
+        # their oom_score_adj to 0 as they start.
+        MemoryLow = cfg.cgroups.serverMemoryLow;
+        ManagedOOMPreference = "omit";
+        OOMScoreAdjust = -500;
+      } else if cfg.cgroups.enable then {
         # V0.80: systemd hands the subtree to the user; fyrd splits it and
         # sets the budget on agents/ (see the cgroups options).
         Delegate = "cpu memory";
@@ -379,5 +439,42 @@ in
         MemoryMax = cfg.memoryMax;
       });
     };
+
+    # V0.agents-unit: the agents' budget and the oomd rule. fyrd starts each
+    # thread in a scope here with systemd-run (Delegate=yes, OOMPolicy=kill,
+    # PartOf=fyr.service, so stopping the unit stops its agents as before).
+    systemd.slices.fyr-agents = lib.mkIf agentsUnit {
+      description = "Fyr's agents (V0.agents-unit)";
+      sliceConfig = {
+        CPUQuota = "${toString (cfg.cgroups.agentsCpuCores * 100)}%";
+        MemoryHigh = cfg.cgroups.agentsMemoryHigh;
+        MemoryMax = cfg.cgroups.agentsMemoryMax;
+        MemorySwapMax = cfg.cgroups.agentsMemorySwapMax;
+      } // lib.optionalAttrs (cfg.cgroups.agentsOomPressureLimit != null) {
+        ManagedOOMMemoryPressure = "kill";
+        ManagedOOMMemoryPressureLimit = cfg.cgroups.agentsOomPressureLimit;
+      } // lib.optionalAttrs (cfg.cgroups.agentsOomPressureDuration != null) {
+        ManagedOOMMemoryPressureDurationSec = cfg.cgroups.agentsOomPressureDuration;
+      };
+    };
+
+    # V0.agents-unit: the service user may start Fyr's scopes and set their
+    # properties (cpu.weight, memory.high), nothing else: no other unit, no
+    # stop, no kill. systemd passes the unit name and the verb to polkit on
+    # StartTransientUnit and SetUnitProperties (src/core/dbus-util.c,
+    # bus_verify_manage_units_async_impl). A scope runs no command of its
+    # own; it only takes processes in.
+    security.polkit.enable = lib.mkIf agentsUnit (lib.mkDefault true);
+    security.polkit.extraConfig = lib.mkIf agentsUnit ''
+      // Fyr (services.fyr.cgroups.agentsUnit): the agents' scopes.
+      polkit.addRule(function (action, subject) {
+        if (action.id == "org.freedesktop.systemd1.manage-units" && subject.user == ${builtins.toJSON cfg.user}) {
+          var unit = action.lookup("unit"), verb = action.lookup("verb");
+          if (unit && /^fyr-(agent|deploy)-[A-Za-z0-9_.-]+\.scope$/.test(unit) && (verb == "start" || verb == "set-property")) {
+            return polkit.Result.YES;
+          }
+        }
+      });
+    '';
   };
 }

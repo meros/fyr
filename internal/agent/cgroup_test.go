@@ -16,11 +16,17 @@ type fakeCgroups struct {
 	refs map[string]int
 }
 
-func (f *fakeCgroups) Thread(id string) string {
+func (f *fakeCgroups) Launch(id string) (string, []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.refs[id]++
-	return "/cg/agents/" + id
+	return "/cg/agents/" + id, nil
+}
+
+func (f *fakeCgroups) Hold(id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refs[id]++
 }
 
 func (f *fakeCgroups) Release(id string) {

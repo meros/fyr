@@ -149,11 +149,10 @@ func ScanLeftovers(tr *Tree, proc string, clis map[string]int) []Leftover {
 	if !ok {
 		return nil
 	}
-	es, _ := os.ReadDir(filepath.Join(tr.root, "agents"))
 	var out []Leftover
-	for _, e := range es {
-		name := e.Name()
-		if !e.IsDir() || name == DeployDir || name == "probe" {
+	for _, c := range tr.threadCgroups() {
+		name := c.Name
+		if name == DeployDir {
 			continue
 		}
 		cli, live := clis[name]
@@ -161,7 +160,7 @@ func ScanLeftovers(tr *Tree, proc string, clis map[string]int) []Leftover {
 			continue
 		}
 		var in []int
-		filepath.WalkDir(filepath.Join(tr.root, "agents", name), func(p string, d os.DirEntry, err error) error {
+		filepath.WalkDir(c.Dir, func(p string, d os.DirEntry, err error) error {
 			if err == nil && !d.IsDir() && d.Name() == "cgroup.procs" {
 				in = append(in, pids(p)...)
 			}

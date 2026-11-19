@@ -91,10 +91,14 @@
             tailnet.enable = true; hostPort = 7778;
             hosts = [ { name = "host-a"; url = "http://host-a:7778"; } ];
           };
-          sconf = builtins.fromJSON server.config.environment.etc."fyr/config.json".text;
+          unit = mkSys { cgroups.agentsUnit = false; };
+          unitFyr = unit.config.systemd.services.fyr.serviceConfig;
+          unitConf = builtins.fromJSON (builtins.unsafeDiscardStringContext unit.config.environment.etc."fyr/config.json".text);
+          slice = sys.config.systemd.slices.fyr-agents.sliceConfig;
+          sconf = builtins.fromJSON (builtins.unsafeDiscardStringContext server.config.environment.etc."fyr/config.json".text);
           fyr = sys.config.systemd.services.fyr.serviceConfig;
           tn = sys.config.systemd.services.fyr-tailnet.serviceConfig;
-          conf = builtins.fromJSON sys.config.environment.etc."fyr/config.json".text;
+          conf = builtins.fromJSON (builtins.unsafeDiscardStringContext sys.config.environment.etc."fyr/config.json".text);
         in
         assert nixpkgs.lib.hasInfix "-seed " fyr.ExecStart;
         assert nixpkgs.lib.hasInfix "-- -config /etc/fyr/config.json" fyr.ExecStart;
@@ -114,10 +118,21 @@
         assert server.config.networking.firewall.interfaces.tailscale0.allowedTCPPorts == [ 7778 ];
         assert builtins.elem "tailscaled.service" server.config.systemd.services.fyr.after;
         assert !(builtins.elem "tailscaled.service" sys.config.systemd.services.fyr.after);
-        # V0.80: the unit delegates cpu and memory; the budget is fyrd's to write on agents/.
-        assert fyr.Delegate == "cpu memory" && fyr.MemoryLow == "1G" && !(fyr ? MemoryMax) && !(fyr ? MemoryHigh);
-        assert conf.cgroups == { enable = true; serverMemoryLow = "1G"; agentsCpuMax = "400000 100000";
-          agentsMemoryHigh = "13G"; agentsMemoryMax = "14G"; agentsMemorySwapMax = "16G"; };
+        # V0.agents-unit: fyrd's unit is not delegated and oomd omits it; the
+        # budget and the oomd rule sit on fyr-agents.slice; polkit lets the
+        # user start Fyr's scopes only.
+        assert !(fyr ? Delegate) && fyr.MemoryLow == "1G" && fyr.ManagedOOMPreference == "omit" && fyr.OOMScoreAdjust < 0;
+        assert !(fyr ? MemoryMax) && !(fyr ? MemoryHigh);
+        assert slice.CPUQuota == "400%" && slice.MemoryHigh == "13G" && slice.MemoryMax == "14G" && slice.MemorySwapMax == "16G";
+        assert slice.ManagedOOMMemoryPressure == "kill" && slice.ManagedOOMMemoryPressureLimit == "80%";
+        assert nixpkgs.lib.hasInfix "fyr-(agent|deploy)-" sys.config.security.polkit.extraConfig;
+        assert nixpkgs.lib.hasInfix ''subject.user == "u"'' sys.config.security.polkit.extraConfig;
+        assert conf.cgroups.agentsSlice == "fyr-agents.slice" && nixpkgs.lib.hasSuffix "/bin/systemd-run" conf.cgroups.systemdRun;
+        assert removeAttrs conf.cgroups [ "agentsSlice" "systemdRun" "systemctl" ] == { enable = true; serverMemoryLow = "1G"; agentsCpuMax = "400000 100000";
+          agentsMemoryHigh = "13G"; agentsMemoryMax = "14G"; agentsMemorySwapMax = "16G"; threadMemoryHighPercent = 0; };
+        # V0.80 with agentsUnit off: the unit delegates cpu and memory; the budget is fyrd's to write on agents/.
+        assert unitFyr.Delegate == "cpu memory" && unitFyr.MemoryLow == "1G" && !(unitFyr ? ManagedOOMPreference);
+        assert !(unitConf.cgroups ? agentsSlice) && !(unit.config.systemd.slices ? fyr-agents);
         nixpkgs.legacyPackages.x86_64-linux.runCommand "fyr-module-check" { } "touch $out";
 
       nixosModules.fyr = import ./nix/module.nix self;

@@ -89,6 +89,9 @@ type Launch struct {
 	Log            io.Writer
 	// Cgroup: the thread's cgroup directory (V0.80); "" is the daemon's.
 	Cgroup string
+	// Wrap: the command line that starts the CLI in the thread's scope
+	// (V0.agents-unit); nil for none.
+	Wrap []string
 	// Runner, when set, starts the process in the launcher's runner, so it
 	// outlives fyrd (V0.90); ProcID names it there and Meta is fyrd's
 	// note about it, given back after a restart.

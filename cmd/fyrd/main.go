@@ -401,7 +401,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	signal.Notify(hupc, syscall.SIGHUP)
 	go func() { <-hupc; hup.Store(true); stop() }()
 	// V0.90: with the runner the agents outlive the switch: no drain.
-	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy(), Survive: rn != nil}
+	dep := &deploy.Deployer{Data: data, DB: h.st, Host: eng, Quit: stop, Live: BuildID(), Cgroup: tree.Deploy(), Wrap: tree.DeployWrap(), Survive: rn != nil}
 	dep.OnProgress = func(p deploy.Progress) { eng.SetDeploy(p, p.Phase) } // V0.39
 	if !pool.Off() {
 		dep.Slot = func(ctx context.Context) (func(), error) { return pool.Wait(ctx, cgroup.DeployDir, slots.Test) }

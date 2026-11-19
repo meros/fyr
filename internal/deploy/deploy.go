@@ -73,6 +73,9 @@ type Deployer struct {
 	SwitchClient func(build, dir string) error
 	// Cgroup: where the build and the tests run (V0.80); "" is the daemon's.
 	Cgroup string
+	// Wrap gives the command line each build and test command starts under:
+	// a scope of the agents' slice (V0.agents-unit); nil for none.
+	Wrap func() []string
 	// Slot waits, with priority, for a slot for `make test` (V0.86) and
 	// returns its release; nil runs the tests without one.
 	Slot func(ctx context.Context) (release func(), err error)
@@ -342,6 +345,7 @@ func (d *Deployer) Deploy(ctx context.Context, threadID string, req core.EffectR
 	// V0.80: the build and the tests run in agents/deploy/, under the agents' budget.
 	inCg, closeCg := proc.WithCgroup(ctx, d.Cgroup)
 	defer closeCg()
+	inCg = proc.WithWrap(inCg, d.Wrap)
 	d.report(prog, "build", "", nil)
 	b, err := run(inCg, dir, build...)
 	buildLog := filepath.Join(out, "build.log")
