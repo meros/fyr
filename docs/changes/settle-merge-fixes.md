@@ -1,0 +1,19 @@
+# V0.settle-merge-fixes: a merge is asked with the call, "settle when merged" waits for every PR, a one-shot watch fires on resume, and another agent's message does not keep a settled thread open
+
+→ V0.203, V0.settle-request, V0.changes-code-only, V0.22, 7.4, SPEC 13.1 `m`. *Amends 7.4 (resume of a state Condition) and what "settle when merged" waits for.* (owner, 19 Nov: "We've had lots of weird behavior with threads claiming they would auto settle but didn't. And merges that didn't go through automatically".)
+
+The day's log showed four causes:
+- About 35 agent messages began with the bare word "merge" instead of calling `change_request {ask: "merge"}`. The prompt said 'ask "merge"' without naming the tool. No merge ask opened, so auto-merge had nothing to approve, and the owner pressed Merge on #374, #379, #381, #382 and #383.
+- The memory thread's "settle when merged" fired when #377 (its main PR) landed, while #384–#389 were still open. The CI-flake thread's fired on #390 while #391 was open.
+- That early settle suspended the memory thread's watch on #387, and #387 landed in the same second. When the thread was opened again the watch took its current value (true) and never fired. An armed agent watch counts as work, so the thread's "settle when done" could not fire.
+- The coordinator threads' `thread_send` to threads that had just settled opened them again. Their settle Rules had already fired, so they stayed open until the owner settled them by hand (#379's, #381's, #383's and the "Unread section" thread).
+
+(1) **Merge with the call.** The Fyr prompt reads: to merge a pull request call `mcp__fyr__change_request {change, ask: "merge"}` right after you push. It adds that writing "merge" in a message asks for nothing. When a run ends cleanly on a thread that is awake, has an open PR and has no merge ask (open or held for CI), the engine reads the run's texts. When one starts with the lower-case word "merge" (alone, or glued to the next sentence; "Merged." and "merges" are prose), it reports `mergeText.seen`. The agent gets a wake notice: "Your message starts with "merge", but a word in text asks Fyr for nothing: no merge ask is open on this thread's PR. To ask, call mcp__fyr__change_request {change, ask: "merge"}."
+
+(2) **Settle when merged waits for every PR.** "Settle when merged" (the agent's `settle_when merged` and the owner's Settle when merged) holds when the main change has landed and no PR of the thread is open (not dismissed, not done, not ended: the PR part of V0.203's WorkDone, the Condition `noOpenPR`). `settle_when change` keeps its one change.
+
+(3) **A one-shot watch fires on resume.** A `watch` that fires once (`after: disarm`, which every agent watch is) that resumes when the thread is opened again fires once when its Condition holds, also a state that became true during the pause. A watch stored by the old resume (armed, value true, never fired) fires at the thread's next Input. Other Rules keep 7.4 as it was.
+
+(4) **Another agent's message.** A message from another thread (`thread_send`) to a settled thread still opens it and starts the run, and it arms "settle when done" as the agent's. The thread settles again once that run is over and nothing is left (V0.203), and any PR the run opens has to merge first. The owner's message does not arm it. A message that starts the agent counts as work from its send (`Starting`), so "when done" does not fire before the run begins.
+
+(5) **Tests.** `internal/core/settle_merge_fixes_test.go` (every PR, resume, a stuck watch, no reading with an ask), `internal/core/rules_test.go` `TestWatchSuspendedWhileSettled`, `internal/core/feed_test.go` row `mergetext`, `internal/engine/settle_merge_fixes_test.go` (another agent's message settles again and the owner's does not, merge in text is nudged), `internal/agent/prompts_settle_merge_fixes_test.go`.

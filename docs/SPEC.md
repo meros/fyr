@@ -1445,7 +1445,8 @@ Each evaluation first sets a Rule's `suspendedBy` from the thread's state. A sus
 
 When the last reason goes, the Rule resumes:
 - an anchored Condition keeps its last value, so an event during the pause still fires once (K5);
-- a state Condition first takes its current value, so a state that became true during the pause does not fire.
+- a state Condition first takes its current value, so a state that became true during the pause does not fire;
+- except a `watch` that fires once (`after: disarm`, every agent watch): it fires once on resume when its state holds (V0.settle-merge-fixes (3)).
 
 ### 7.5 Snooze, wait, deferred, schedule
 

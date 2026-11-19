@@ -252,6 +252,8 @@ func Reduce(t *Thread, v *View, in Input, now time.Time) (*Thread, *View, Result
 	asked := textAskAfter(before, t, in, now)
 	res.Events = append(res.Events, asked.Events...)
 	res.Effects = append(res.Effects, asked.Effects...)
+	// V0.settle-merge-fixes (1): so does a merge asked in text.
+	res.Effects = append(res.Effects, mergeTextAfter(before, t, in).Effects...)
 	return t, v, res, nil
 }
 

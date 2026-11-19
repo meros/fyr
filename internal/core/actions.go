@@ -202,7 +202,14 @@ func sendAction(name, label string) *Action {
 					t.ProjectID, t.ProjectManual = pid, true
 				}
 			}
+			settled := t.Settle.At != nil
 			revive(t, v, now)
+			if settled && a.Str("from") != "" {
+				// V0.settle-merge-fixes (4): another agent's message to a
+				// settled thread is answered, and the thread settles again
+				// once its work is done; its own settle Rule fired already.
+				SettleWhenDone(t, ByAgent, now)
+			}
 			if !t.Running && t.Starting == nil {
 				// V0.starting-moves: the agent starts for this message;
 				// the thread moves from the press, not from its first turn.

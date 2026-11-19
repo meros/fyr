@@ -40,14 +40,16 @@ func NeedsOwnerNow(t *Thread) bool {
 // background task is live, the agent is about to get a turn (an unread
 // message, a notice that wakes it, a handover, a wait for the machine), or it
 // waits on something it set up: a watch or settle condition of its own, a
-// place in the slot queue, a merge ask held for CI, CI on an open PR.
+// place in the slot queue, a merge ask held for CI, CI on an open PR. A
+// message that starts the agent counts from its send (V0.settle-merge-fixes
+// (4)): the run it starts has not begun yet.
 func WorkGoing(t *Thread) bool {
 	return workGoing(t, func(Rule) bool { return true })
 }
 
 // workGoing is WorkGoing, counting the agent's armed Rules that counts takes.
 func workGoing(t *Thread, counts func(Rule) bool) bool {
-	if t.Running || t.RunningTasks() > 0 || t.MachineWait != nil || t.Handover != nil || len(t.Outbox) > 0 {
+	if t.Running || t.Starting != nil || t.RunningTasks() > 0 || t.MachineWait != nil || t.Handover != nil || len(t.Outbox) > 0 {
 		return true
 	}
 	if t.SlotQueued || len(t.HeldAsks) > 0 {
