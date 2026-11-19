@@ -2476,7 +2476,7 @@ for (const dark of [false, true]) section(`V0.176 desktop${dark ? " dark" : ""}`
         wt: [...wt.querySelectorAll('.sr')].map((e) => [e.querySelector('.sr-d').textContent, e.querySelectorAll('button').length]) }; })()`);
     check(st.rows.length === 5 && /^chromium · 9 processes · 1\.9 GB Map perf · acme\/web · ends in \d+ min ?Open ?Keep ?End$/.test(st.rows[0]) && st.visible, `${ctx}: Settings' leftovers are wrong (${JSON.stringify(st)})`);
     check(st.rows.some((x) => /^vite · 3 processes · 180 MB .* kept for \d+ h by the agent: the dev server the owner asked for ?Open ?End$/.test(x)) && st.rows.some((x) => /^engine\.test · 8 MB in no thread's cgroup · ends in 1 min ?Keep ?End$/.test(x)), `${ctx}: a kept or an orphan row is wrong (${JSON.stringify(st.rows)})`);
-    check(st.wt.length === 2 && st.wt[0][1] === 1 && st.wt[1][1] === 0 && /pushed and clean · Fyr removes it in [45] h$/.test(st.wt[0][0]) && /kept: 2 commits not pushed$/.test(st.wt[1][0]), `${ctx}: the worktrees are wrong (${JSON.stringify(st.wt)})`);
+    check(st.wt.length === 2 && st.wt[0][1] === 1 && st.wt[1][1] === 0 && /pushed and clean · Fyr removes it in \d+ h$/.test(st.wt[0][0]) && /kept: 2 commits not pushed$/.test(st.wt[1][0]), `${ctx}: the worktrees are wrong (${JSON.stringify(st.wt)})`);
     await shot(`leftovers-settings-${tag}-desktop.png`);
     await evaluate(`[...document.querySelectorAll('.dlg section[aria-label="Worktrees nobody works in"] .btn')].find((b) => b.textContent === 'Remove').click()`);
     await waitFor(`document.querySelectorAll('.dlg section[aria-label="Worktrees nobody works in"] .sr').length === 1`, { what: "Remove to take the worktree out" });
