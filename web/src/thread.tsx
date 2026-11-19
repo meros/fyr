@@ -17,8 +17,8 @@ import { renderMarkdown } from "./markdown.ts";
 import { currentDecision } from "./decode.ts";
 import { StateIcon, stateClass } from "./icons.tsx";
 import { stateLabel } from "./rows.ts";
-import { clockTime, duration, relTime, shortModel } from "./format.ts";
-import { effortsFor, offLabel, startEffort } from "./providers.ts";
+import { clockTime, duration, relTime } from "./format.ts";
+import { AgentPill, threadAgent } from "./agent-ui.tsx";
 import { dividerLine, rungDone } from "./handover.ts";
 import { pick, questionsOf, goTo, type CardState, nextOpen, submitState } from "./question.ts";
 import { isAvailable, unavailableReason } from "./store.ts";
@@ -195,12 +195,8 @@ export function ThreadPane(p: ThreadPaneProps) {
               <span>{t.branch}</span>
             </span>
           )}
-          <span class="chip pvc" title={provider.title}>
-            <span class="pdot" style={provider.color ? { background: provider.color } : undefined} />
-            <span>{provider.name}</span>
-          </span>
-          <ModelChip t={t} profile={profile} onRun={p.onRun} />
-          <EffortChip t={t} profile={profile} onRun={p.onRun} />
+          {/* V0.agent-pill: provider, model and effort in one pill; the model and the effort pick in place */}
+          <AgentPill size="chip" segs={threadAgent(t, profile, provider, unavailableReason(t, "thread.setModel"), (a) => p.onRun("thread.setModel", a))} />
           {/* V0.quota-in-thread: what is left on the account this thread uses, where the owner works */}
           <ThreadQuotaChip profile={t.profile} host={hostOf(t, hs.hosts)} name={provider.name} />
           {/* V0.98 (6): the newest open change's PR; Dismiss acts on the thread's main PR, so only when it is that one. */}
@@ -390,48 +386,6 @@ function HeaderProjectChip({ t, profileName }: { t: Thread; profileName?: string
 function PrTab({ t, now, onSend, onDismiss, onChanges, phone }: { t: Thread; now: number; onSend(text: string): Promise<boolean>; onDismiss(): void; onChanges(): void; phone?: boolean }) {
   if (!t.pr) return <div class="pane-note">No pull request is linked to this thread.</div>;
   return <PrView key={t.id} t={t} now={now} onSend={onSend} onDismiss={onDismiss} onChanges={onChanges} phone={phone} />;
-}
-
-function ModelChip({ t, profile, onRun }: { t: Thread; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
-  const models = profile?.models ?? [];
-  const reason = unavailableReason(t, "thread.setModel");
-  // V0.120 (5): a thread whose model the owner turned off keeps running on it; the chip says so until another is picked.
-  const off = !!profile && !!t.model && !models.includes(t.model);
-  const can = (models.length > 1 || (off && models.length > 0)) && !reason;
-  return (
-    <span class={`chip m${can ? " msel" : ""}`} title={can ? `${t.model} · change model` : reason ? `${t.model} · ${reason}` : t.model}>
-      <span>{off ? offLabel(t.model) : shortModel(t.model)}</span>
-      {can && (
-        <select value={t.model} aria-label="Model" onChange={(e) => onRun("thread.setModel", { model: (e.target as HTMLSelectElement).value })}>
-          {!models.includes(t.model) && <option value={t.model}>{offLabel(t.model)}</option>}
-          {models.map((m) => (
-            <option value={m}>{shortModel(m)}</option>
-          ))}
-        </select>
-      )}
-    </span>
-  );
-}
-
-/** V0.50: the thread's effort, when its model takes one. */
-function EffortChip({ t, profile, onRun }: { t: Thread; profile: Profile | undefined; onRun(a: string, args?: Record<string, unknown>): void }) {
-  const efforts = effortsFor(profile, t.model);
-  if (!efforts.length) return null;
-  const cur = startEffort(profile, t.model, t.effort);
-  const reason = unavailableReason(t, "thread.setModel");
-  return (
-    <span class={`chip m${reason ? "" : " msel"}`} title={reason ? `Effort ${cur || "default"} · ${reason}` : `Effort ${cur || "default"} · change effort`}>
-      <span>{cur || "effort"}</span>
-      {!reason && (
-        <select value={cur} aria-label="Effort" onChange={(e) => onRun("thread.setModel", { effort: (e.target as HTMLSelectElement).value })}>
-          {!cur && <option value="">CLI default</option>}
-          {efforts.map((x) => (
-            <option value={x}>{x}</option>
-          ))}
-        </select>
-      )}
-    </span>
-  );
 }
 
 function PrChip({ pr, onDismiss }: { pr: PullRequest; onDismiss?: () => void }) {

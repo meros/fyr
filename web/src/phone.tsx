@@ -21,11 +21,8 @@ import type { ThreadCommands } from "./commands.ts";
 import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
-import { shortModel } from "./format.ts";
-import { choiceLabel } from "./model-choice.ts";
-import { EffortSelect, ModelSelect } from "./model-choice-ui.tsx";
 import { snoozeChoices, snoozeCommand, snoozedHint, type SnoozeChoice } from "./snooze.ts";
-import { effortsFor, offLabel, startEffort } from "./providers.ts";
+import { AgentPill, newThreadAgent, showOnly, threadAgent } from "./agent-ui.tsx";
 import { AgentsStrip, EffectBody, ThreadTabBody, sendFrom } from "./thread.tsx";
 import { UndeclaredStrip } from "./undeclared-ui.tsx";
 import { LeftoverStrip } from "./leftovers-ui.tsx";
@@ -937,12 +934,11 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           )}
           {(() => {
             const pv = threadProvider(t, p.store.hosts, p.store.profiles); // V0.206: as the desktop header shows it
-            return pv.name ? (
-              <span class="m-chip pvc" title={pv.title}>
-                <span class="pdot" style={pv.color ? { background: pv.color } : undefined} />
-                <span>{pv.name}</span>
-              </span>
-            ) : null;
+            // V0.agent-pill: the desktop header's pill. It only shows here: the chip row is one button that opens Details,
+            // where the same pill picks (a select inside a button would take the tap from it).
+            if (!pv.name) return null;
+            const pf = profilesOfHost(hostOf(t, p.store.hosts), p.store.hosts, p.store.profiles).find((x) => x.id === t.profile);
+            return <AgentPill size="chip" phone segs={threadAgent(t, pf, pv, "", () => {}).map(showOnly)} />;
           })()}
           {(() => {
             const pr = headerPr(t); // V0.98 (6): the newest open change's PR, never a done one
@@ -1375,22 +1371,8 @@ function MNew(p: PhoneProps) {
           onPaste={att.onPaste}
         />
         <div class="m-defs">
-          {/* V0.model-choice: the same choices as the desktop's Model, behind the chip */}
-          <label class="m-dchip">
-            <span class="ell">{(() => {
-              const pr = profiles.find((x) => x.id === f.profile);
-              return pr ? choiceLabel(pr, f.model) : f.profile;
-            })()}</span>
-            {I.down}
-            <ModelSelect profiles={profiles} profile={f.profile} model={f.model} onPick={n.pickModel} label="Provider and model" />
-          </label>
-          {n.efforts.length > 0 && (
-            <label class="m-dchip">
-              <span class="ell">Effort · {n.effort || "default"}</span>
-              {I.down}
-              <EffortSelect efforts={n.efforts} effort={n.effort} onPick={(x) => n.set({ effortPick: x })} />
-            </label>
-          )}
+          {/* V0.agent-pill on V0.model-choice: the desktop dialog's pill, at a finger's size */}
+          <AgentPill size="field" phone segs={newThreadAgent({ ...f, effort: n.effort, efforts: n.efforts }, profiles, n.pickModel, (x) => n.set({ effortPick: x }))} />
           <label class="m-dchip m-lvc">
             <input type="checkbox" checked={f.liveView} onChange={(e) => n.set({ liveView: (e.target as HTMLInputElement).checked })} />
             <span class="ell">Live view</span>
@@ -1605,9 +1587,6 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
   }
   if (sheet.kind === "details") {
     const prof = profilesOfHost(hostOf(t, p.store.hosts), p.store.hosts, p.store.profiles).find((x) => x.id === t.profile); // V0.139: its host's
-    // V0.120 (5): a model the owner turned off shows as "(off)" until another is picked; the desktop's chip does the same.
-    const modelOff = !!prof && !!t.model && !prof.models.includes(t.model);
-    const canModel = ((prof?.models.length ?? 0) > 1 || (modelOff && (prof?.models.length ?? 0) > 0)) && !reason("thread.setModel");
     const row = (k: string, v: ComponentChildren) => (
       <div class="m-kvrow">
         <span class="k">{k}</span>
@@ -1636,36 +1615,11 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
           <ThreadQuotaRow profile={t.profile} host={hostOf(t, p.store.hosts)} name={threadProvider(t, p.store.hosts, p.store.profiles).name} />
           {row("Folder", t.cwd)}
           {t.branch && row("Branch", t.branch)}
+          {/* V0.agent-pill: the desktop header's pill, at a finger's size; the model and the effort pick in place */}
           {row(
-            "Model",
-            canModel ? (
-              <select class="m-msel" value={t.model} onChange={(e) => void p.commands.run("thread.setModel", [t.id], { model: (e.target as HTMLSelectElement).value })}>
-                {modelOff && <option value={t.model}>{offLabel(t.model)}</option>}
-                {prof!.models.map((m) => (
-                  <option value={m}>{shortModel(m)}</option>
-                ))}
-              </select>
-            ) : modelOff ? (
-              offLabel(t.model)
-            ) : (
-              shortModel(t.model)
-            ),
+            "Agent",
+            <AgentPill size="field" phone segs={threadAgent(t, prof, threadProvider(t, p.store.hosts, p.store.profiles), reason("thread.setModel"), (a) => void p.commands.run("thread.setModel", [t.id], a))} />,
           )}
-          {effortsFor(prof, t.model).length > 0 &&
-            row(
-              "Effort",
-              reason("thread.setModel") ? (
-                startEffort(prof, t.model, t.effort) || "default"
-              ) : (
-                <select class="m-msel" value={startEffort(prof, t.model, t.effort)} onChange={(e) => void p.commands.run("thread.setModel", [t.id], { effort: (e.target as HTMLSelectElement).value })}>
-                  {!startEffort(prof, t.model, t.effort) && <option value="">CLI default</option>}
-                  {effortsFor(prof, t.model).map((x) => (
-                    <option value={x}>{x}</option>
-                  ))}
-                </select>
-              ),
-            )}
-          {row("Provider", prof?.name ?? t.profile)}
           {t.pr &&
             row(
               "PR",

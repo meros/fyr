@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, T3Candidate } from "./types.ts";
 import { ProfileQuota } from "./quota-ui.tsx";
-import { EffortSelect, ModelSelect } from "./model-choice-ui.tsx";
+import { AgentPill, newThreadAgent } from "./agent-ui.tsx";
 import { ChipStrip, ClipPicker } from "./attach-ui.tsx";
 import { NewProjectStep, ProjectIcon, ProjectList, QuietHold } from "./project-ui.tsx";
 import { HostField, useHosts } from "./host-pick-ui.tsx";
@@ -94,18 +94,10 @@ export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddP
           </div>
           <span class="srcl">{folderHint(cur, folder)}</span>
         </div>
-        <div class="row2">
-          {/* V0.model-choice: provider and model as one readable choice, effort only for a model that takes it */}
-          <label class="fld">
-            <span>Model</span>
-            <ModelSelect profiles={profiles} profile={f.profile} model={f.model} onPick={n.pickModel} />
-          </label>
-          {n.efforts.length > 0 && (
-            <label class="fld">
-              <span>Effort</span>
-              <EffortSelect efforts={n.efforts} effort={n.effort} onPick={(x) => n.set({ effortPick: x })} />
-            </label>
-          )}
+        {/* V0.agent-pill on V0.model-choice: provider · model (one choice) and effort, in one pill */}
+        <div class="fld">
+          <span>Agent</span>
+          <AgentPill size="field" segs={newThreadAgent({ ...f, effort: n.effort, efforts: n.efforts }, profiles, n.pickModel, (x) => n.set({ effortPick: x }))} />
         </div>
         {n.note && <span class="srcl mnote" role="status">{n.note}</span>}
         <ProfileQuota profile={f.profile} profiles={profiles} />
