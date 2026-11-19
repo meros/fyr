@@ -255,6 +255,7 @@ func (s *Store) readyLocked(way string) (bool, string) {
 // observe, moves to enforce by itself. It returns the ways it moved; the
 // caller tells the devices.
 func (s *Store) Tick() []string {
+	s.DropUnused()
 	s.mu.Lock()
 	var moved []string
 	for _, way := range []string{WayBrowser, WayPeer} {
@@ -372,11 +373,11 @@ func (s *Store) EnrolTailnet(node, nodeName, agent string, enforce bool) (string
 	case "blocked":
 		return "", nil, EnrolRefused
 	case "approved":
-		session, d := s.MintFor(HowTailnet, agent, node, "")
+		session, d := s.mintNode(agent, node)
 		return session, d, EnrolSession
 	}
 	if !enforce || s.Empty() {
-		session, d := s.MintFor(HowTailnet, agent, node, "")
+		session, d := s.mintNode(agent, node)
 		s.ApproveNode(node, nodeName, d.ID)
 		return session, d, EnrolSession
 	}
