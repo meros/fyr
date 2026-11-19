@@ -40,6 +40,9 @@ type AIMD struct {
 	// Path keeps the budget across a restart of fyrd (V0.budget-restart);
 	// empty keeps it in memory only.
 	Path string
+	// Policy is the host's thresholds, as admission reads them (V0.admission-tidy);
+	// zero is DefaultPolicy.
+	Policy Policy
 
 	f         Factors
 	started   bool
@@ -91,7 +94,11 @@ func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time,
 	if own == "" {
 		own = s.Stall
 	}
-	short := (s.Headroom != nil && *s.Headroom < s.Reserve(DefaultPolicy)) || own == StallCritical
+	pol := a.Policy
+	if pol == (Policy{}) {
+		pol = DefaultPolicy
+	}
+	short := (s.Headroom != nil && *s.Headroom < s.Reserve(pol)) || own == StallCritical
 	calm := s.Slowdown != nil && *s.Slowdown < AIMDCalm && !short && own != StallElevated &&
 		s.Stall != StallElevated && s.Stall != StallCritical
 	switch {

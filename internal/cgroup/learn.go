@@ -201,6 +201,21 @@ func (j *Jobs) ClassOf(thread, kind string) string {
 	return c
 }
 
+// Qualify is class as ClassOf names it for thread: its project and class
+// (V0.admission-tidy: the gate asks the need of a command it has not run yet).
+func (j *Jobs) Qualify(thread, class string) string {
+	if j == nil {
+		return class
+	}
+	j.mu.Lock()
+	p := j.projects[thread]
+	j.mu.Unlock()
+	if p != "" {
+		return p + ": " + class
+	}
+	return class
+}
+
 // RefreshProjects caches the project names of threads, asking Project
 // outside every lock (#206's order: nothing under Jobs.mu or the pool's lock
 // calls the engine). The sampler's Tick calls it for the pool's owners.

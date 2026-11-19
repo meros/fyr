@@ -12,6 +12,7 @@
 package admission
 
 import (
+	"slices"
 	"time"
 
 	"github.com/meros/fyr/internal/cgroup"
@@ -30,6 +31,8 @@ type Host interface {
 type Jobs interface {
 	Learned(class string) (cgroup.Learned, bool)
 	ClassOf(thread, kind string) string
+	// Qualify is class as thread's project names it (V0.admission-tidy).
+	Qualify(thread, class string) string
 	LiveUse(thread string) (cores float64, grew uint64, ok bool)
 	Active(thread string) (time.Time, bool)
 }
@@ -43,6 +46,10 @@ type Admission struct {
 	N      int
 	Pool   *slots.Pool
 	Now    func() time.Time
+	// Open says a thread has a heavy call open (the engine's published view,
+	// V0.admission-tidy); nil is none. Under the pool's lock, so it must take
+	// no lock the engine holds while it calls the pool.
+	Open func(thread string) bool
 }
 
 // New is the policy for pool, with n the host's `slots` setting as
@@ -127,7 +134,24 @@ func (a *Admission) cost(h slots.Holder) (need slots.Need, grow uint64) {
 	return need, grow
 }
 
+// ClassNeed is the need of thread's heavy command of class (the gate's
+// match, before its project), as Predict counts it (V0.admission-tidy).
+func (a *Admission) ClassNeed(thread, class string) slots.Need {
+	sig := a.Host.Signals()
+	l, ok := a.Jobs.Learned(a.Jobs.Qualify(thread, class))
+	if !ok {
+		return slots.Prior(sig, a.N)
+	}
+	return slots.NeedOf(l.Demand, l.Peak, l.Runs, sig, a.N)
+}
+
+// idle: no heavy command or busy reading for slots.IdleAfter, and no heavy
+// call open. V0.admission-tidy: a quiet call (a test waiting on a server) kept
+// its hold for up to HeavyCallStale but counted as idle after 3 min.
 func (a *Admission) idle(h slots.Holder) bool {
+	if a.Open != nil && a.Open(h.Owner) {
+		return false
+	}
 	at, ok := a.Jobs.Active(h.Owner)
 	return ok && a.now().Sub(at) >= slots.IdleAfter
 }
@@ -149,10 +173,15 @@ func (a *Admission) heldNeeds(held []slots.Holder) ([]slots.Need, slots.Signals)
 
 // extras is the use of the threads that run heavy work Fyr did not admit
 // (V0.164); it counts beside the admitted jobs, except the head's own (its
-// request stands in for it, which DecideWith handles).
-func (a *Admission) extras() []slots.Extra {
+// request stands in for it, which DecideWith handles), and a holder's own
+// (V0.admission-tidy: a thread just admitted keeps its flag until the
+// detector's next reading, and its held need already stands for that use).
+func (a *Admission) extras(held []slots.Holder) []slots.Extra {
 	var out []slots.Extra
 	for _, u := range a.Host.Undeclared() {
+		if slices.ContainsFunc(held, func(h slots.Holder) bool { return h.Owner == u.Thread }) {
+			continue
+		}
 		out = append(out, slots.Extra{Owner: u.Thread, Name: u.Name, Need: slots.Need{CPU: u.CPU, Mem: u.Mem}})
 	}
 	// V0.services-not-jobs: a running service's memory is reserved from its
@@ -169,7 +198,7 @@ func (a *Admission) extras() []slots.Extra {
 func (a *Admission) Admit(head slots.Holder, held []slots.Holder) (bool, string, string) {
 	need, _ := a.Predict(head)
 	needs, sig := a.heldNeeds(held)
-	return slots.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(), head.Owner, need)
+	return slots.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), head.Owner, need)
 }
 
 // Backfill is EASY backfill: c may pass the head when it fits now and is
@@ -178,7 +207,7 @@ func (a *Admission) Admit(head slots.Holder, held []slots.Holder) (bool, string,
 func (a *Admission) Backfill(head, c slots.Holder, held []slots.Holder) bool {
 	need, wall := a.Predict(c)
 	needs, sig := a.heldNeeds(held)
-	if ok, _, _ := slots.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(), c.Owner, need); !ok {
+	if ok, _, _ := slots.DecideWith(a.Policy, sig, a.Pool.Budget(), a.N, needs, a.extras(held), c.Owner, need); !ok {
 		return false
 	}
 	ends := make([]time.Time, len(held))

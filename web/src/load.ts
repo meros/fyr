@@ -331,6 +331,15 @@ export function shortHostNames(names: string[]): Map<string, string> {
 }
 
 
+/** V0.admission-tidy: a holder that also waits, to grow its slot for a heavier command, is in both of the host's lists;
+ *  its one row says so after its job: " · waiting to grow: needs ≈ 8.6 GB memory, 2.0 GB free" at the queue's head,
+ *  " · waiting to grow (1 ahead)" behind it; "" when it does not wait. */
+export function growNote(s: Slots, id: string): string {
+  const i = s.waiting.findIndex((x) => x.owner === id);
+  if (i < 0) return "";
+  return i === 0 && s.why ? ` · waiting to grow: ${s.why}` : ` · waiting to grow (${i} ahead)`;
+}
+
 /** Decision 0029 S1: the job a thread's slot runs, "make test · 3.2 GB", once the gate hook saw its command; null
  *  otherwise. The row shows it first on its line, since the line is cut at its end. */
 export function threadJob(list: HostLoad[], id: string): string | null {
@@ -341,7 +350,7 @@ export function threadJob(list: HostLoad[], id: string): string | null {
     const share = held.pct !== undefined ? ` ≈ ${held.pct} %` : "";
     // Decision 0029 S5: a frozen job says so first, whether or not its command is known.
     if (t?.paused) return `${t.job ?? `${held.kind} job`} · paused: memory`;
-    return t?.job ? `${t.job}${share}` : null;
+    return t?.job ? `${t.job}${share}${growNote(h.slots!, id)}` : null;
   }
   return null;
 }
@@ -359,18 +368,19 @@ export function threadService(list: HostLoad[], id: string): string | null {
 }
 
 /** A thread's heavy job (V0.163, in percent of the host): "build job ≈ 46 %" while admitted; the queue's head says why it
- *  waits ("waiting: needs ≈ 45 % CPU, 40 % free"), the others their place and need; null when it has none. */
+ *  waits ("waiting: needs ≈ 45 % CPU, 40 % free"), the others their place and need; a holder that also waits says
+ *  "waiting to grow" after its job (V0.admission-tidy); null when it has none. */
 export function threadSlot(list: HostLoad[], id: string): string | null {
   for (const h of list) {
     const s = h.slots;
     if (!s) continue;
     const held = s.held.find((x) => x.owner === id);
+    const i = s.waiting.findIndex((x) => x.owner === id);
     if (held) {
       const t = h.threads?.find((x) => x.id === id);
       const share = held.pct !== undefined ? ` ≈ ${held.pct} %` : "";
-      return t?.job ? `${t.job}${share}` : `${held.kind} job${share}`;
+      return (t?.job ? `${t.job}${share}` : `${held.kind} job${share}`) + growNote(s, id);
     }
-    const i = s.waiting.findIndex((x) => x.owner === id);
     if (i === 0 && s.why) return `waiting: ${s.why}`;
     if (i >= 0) return `waiting (${i} ahead)${s.waiting[i].pct !== undefined ? ` · needs ≈ ${s.waiting[i].pct} %` : ""}`;
   }

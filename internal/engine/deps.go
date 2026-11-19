@@ -104,6 +104,12 @@ type SlotDeps struct {
 	JobReset func(class string) bool
 	// SlotAIMD adapts the pool's budget at each tick (decision 0029 S4).
 	SlotAIMD *slots.AIMD
+	// V0.admission-tidy: SlotClassNeed is the need of thread's heavy command
+	// of class, as admission predicts it (the gate admits a heavier second
+	// command for the difference); SlotBaseline takes thread's job baseline at
+	// the gate's grant (its memory and CPU so far, and memory.peak reset).
+	SlotClassNeed func(thread, class string) slots.Need
+	SlotBaseline  func(thread string)
 	// Decision 0029 S5: freeze and thaw a holder's job (its own cgroup, not
 	// its CLI).
 	SlotFreeze func(owner string) bool

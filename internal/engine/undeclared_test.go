@@ -117,7 +117,7 @@ func TestF3UnderPressureTheUndeclaredWorkIsFrozenNotTheJobThatAsked(t *testing.T
 		t.Fatalf("frozen %v %v", z.frozen, z.slotted)
 	}
 	ns := notices(e, a, "slot.pause")
-	if len(ns) != 1 || !strings.Contains(ns[0].What, "Fyr paused your undeclared heavy work (`node test/layout.e2e.mjs`): memory is short on this host (memory: 6 % free). Its processes are frozen, not killed, and resume when memory has recovered for 30 s, or after 10 min unless memory still stalls critically then. A timeout inside the job may fire after it resumes; check its result. Ask with mcp__fyr__slot_acquire before a heavy job.") {
+	if len(ns) != 1 || !strings.Contains(ns[0].What, "Fyr paused your undeclared heavy work (`node test/layout.e2e.mjs`): memory is short on this host (memory: 6 % free). Its processes are frozen, not killed, and resume when memory has recovered for 30 s, or after 10 min unless memory still stalls critically then. A timeout inside the job may fire after it resumes; check its result.") || strings.Contains(ns[0].What, "slot_acquire") { // V0.admission-tidy: V0.209 admits by itself
 		t.Fatalf("%+v", ns)
 	}
 }

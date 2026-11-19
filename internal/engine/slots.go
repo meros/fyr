@@ -49,6 +49,8 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.mu.Unlock()
 	e.heavyMu.Lock()
 	e.heavyCalls, e.heavyBg, e.heavyClass = map[string]map[string]bool{}, map[string]bool{}, map[string]string{}
+	e.heavyGranted = map[string]grantedClass{}
+	e.publishOpenLocked()
 	e.heavyMu.Unlock()
 	p.OnGrant = e.slotGranted
 	p.Rank = e.ProjectRank // V0.project-priority
@@ -82,6 +84,7 @@ func (e *Engine) slotRunEnded(id string) {
 	}
 	e.heavyMu.Lock()
 	delete(e.heavyCalls, id) // a run that ended leaves no call to wait for
+	e.publishOpenLocked()
 	e.heavyMu.Unlock()
 	e.mu.Lock()
 	t := e.threads[id]
@@ -99,6 +102,8 @@ func (e *Engine) dropSlot(id string) bool {
 	e.heavyMu.Lock()
 	delete(e.heavyCalls, id)
 	delete(e.heavyBg, id)
+	delete(e.heavyGranted, id)
+	e.publishOpenLocked()
 	e.heavyMu.Unlock()
 	e.mu.Lock()
 	delete(e.slotIdle, id)
@@ -1120,17 +1125,34 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 	// The admission is taken outside heavyMu (a grant calls into the engine)
 	// and then checked under it: the thread's last call may just have ended.
 	for range 3 {
-		held := false
-		if _, ok := e.Slots.Holding(c.Thread); ok {
+		held, fresh := false, false
+		if h, ok := e.Slots.Holding(c.Thread); ok {
 			held = true
+			// V0.admission-tidy: a heavier command than the hold was admitted
+			// for is admitted again for the difference (a learned one never
+			// waits); a cheaper one runs.
+			if !soft && !h.Priority && e.heavier(c, h) {
+				held, _ = e.Slots.Grow(c.Thread, kind)
+				e.syncSlotQueue()
+				if held {
+					e.heavyMu.Lock()
+					e.heavyGranted[c.Thread] = grantedClass{c.Class, h.Since}
+					e.heavyMu.Unlock()
+				}
+			}
 		} else if soft {
 			held = e.Slots.TryAcquire(c.Thread, kind)
+			fresh = held
 		} else {
 			held, _ = e.Slots.Acquire(c.Thread, kind)
+			fresh = held
 			e.syncSlotQueue()
 		}
 		if !held {
 			break
+		}
+		if fresh {
+			e.noteGrant(c)
 		}
 		if e.trackHeavy(c) {
 			if rerun {
@@ -1166,6 +1188,50 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 		}
 	}
 	return "" // neither held nor queued: the pool changed under us, let it run
+}
+
+// grantedClass is the class a hold (its Since) was admitted for at the gate.
+type grantedClass struct {
+	class string
+	since time.Time
+}
+
+// heavier says c's class needs more of the host, in either resource, than the
+// class h was admitted for (V0.admission-tidy). A hold the gate did not grant
+// (a queued grant, slot_acquire) is taken as granted for c's class.
+func (e *Engine) heavier(c HeavyCall, h slots.Holder) bool {
+	e.heavyMu.Lock()
+	if e.heavyGranted == nil {
+		e.heavyGranted = map[string]grantedClass{}
+	}
+	g, ok := e.heavyGranted[c.Thread]
+	if !ok || !g.since.Equal(h.Since) || e.SlotClassNeed == nil {
+		e.heavyGranted[c.Thread] = grantedClass{c.Class, h.Since}
+		e.heavyMu.Unlock()
+		return false
+	}
+	e.heavyMu.Unlock()
+	if g.class == c.Class {
+		return false
+	}
+	was, now := e.SlotClassNeed(c.Thread, g.class), e.SlotClassNeed(c.Thread, c.Class)
+	return now.CPU > was.CPU+1e-9 || now.Mem > was.Mem
+}
+
+// noteGrant notes the class a new hold was admitted for and takes the job's
+// baseline before the command runs (V0.admission-tidy).
+func (e *Engine) noteGrant(c HeavyCall) {
+	if h, ok := e.Slots.Holding(c.Thread); ok {
+		e.heavyMu.Lock()
+		if e.heavyGranted == nil {
+			e.heavyGranted = map[string]grantedClass{}
+		}
+		e.heavyGranted[c.Thread] = grantedClass{c.Class, h.Since}
+		e.heavyMu.Unlock()
+	}
+	if e.SlotBaseline != nil {
+		e.SlotBaseline(c.Thread)
+	}
 }
 
 // gateHold holds a newly matched heavy command at the gate while the memory
@@ -1216,7 +1282,27 @@ func (e *Engine) trackHeavy(c HeavyCall) bool {
 		e.heavyCalls[c.Thread] = map[string]bool{}
 	}
 	e.heavyCalls[c.Thread][c.ToolUse] = true
+	e.publishOpenLocked()
 	return true
+}
+
+// publishOpenLocked publishes the threads with a heavy call open; call it
+// with heavyMu held after heavyCalls changed.
+func (e *Engine) publishOpenLocked() {
+	open := make(map[string]bool, len(e.heavyCalls))
+	for th, c := range e.heavyCalls {
+		if len(c) > 0 {
+			open[th] = true
+		}
+	}
+	e.heavyOpen.Store(&open)
+}
+
+// HeavyOpen says thread has a heavy foreground call open. It takes no lock:
+// admission asks it under the pool's lock (V0.admission-tidy).
+func (e *Engine) HeavyOpen(thread string) bool {
+	m := e.heavyOpen.Load()
+	return m != nil && (*m)[thread]
 }
 
 // HeavyDone hears that a tool call ended (V0.209). When it was the last heavy
@@ -1235,6 +1321,7 @@ func (e *Engine) HeavyDone(thread, toolUse string) {
 	gave := false
 	if len(calls) == 0 {
 		delete(e.heavyCalls, thread)
+		e.publishOpenLocked()
 		if !e.heavyBg[thread] {
 			if h, ok := e.Slots.Holding(thread); ok && !h.Priority {
 				gave = e.Slots.Take(thread) // under heavyMu, so no new call slips in

@@ -164,6 +164,12 @@ type Engine struct {
 	heavyCalls map[string]map[string]bool // under heavyMu: thread → its running foreground calls
 	heavyBg    map[string]bool            // under heavyMu: thread → a job outlives its call
 	heavyClass map[string]string          // under heavyMu: thread → its newest heavy class at the gate (V0.rerun-classes)
+	// heavyGranted: under heavyMu, thread → the class its hold (since) was
+	// admitted for at the gate (V0.admission-tidy: a heavier one is admitted again).
+	heavyGranted map[string]grantedClass
+	// heavyOpen: the threads with a heavy foreground call open, published for
+	// admission, which reads it under the pool's lock (V0.admission-tidy).
+	heavyOpen atomic.Pointer[map[string]bool]
 	// frozen is what the guard holds frozen now, the newest last (decision
 	// 0029 S5; V0.multi-freeze: more than one), under mu.
 	frozen       []frozenJob

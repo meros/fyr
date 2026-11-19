@@ -295,6 +295,7 @@ export function sectionOf(t: Thread): SectionKey | null {
  *  Working and Unread are oldest first by that time, so a new row goes last and later activity does not move a row. */
 export function sections(threads: Record<string, Thread>, queue: readonly QueueEntry[] = [], arrivals: Readonly<Record<string, Arrival>> = {}): Sections {
   const out: Sections = { needs: [], working: [], slots: [], unread: [], seen: [], snoozed: [], settled: [], pinned: [] };
+  queue = queue.filter((e) => !e.grow); // V0.admission-tidy: a thread waiting to grow its slot runs; it stays in its group
   const queued = new Set(queue.map((e) => e.owner));
   for (const t of Object.values(threads)) {
     const k = sectionOf(t);
