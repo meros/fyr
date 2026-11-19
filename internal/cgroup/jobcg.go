@@ -232,6 +232,20 @@ func (g *JobGroups) Thaw(thread string) {
 	g.mu.Unlock()
 }
 
+// FrozenUsec is the time thread's job cgroup (or its undeclared-work cgroup)
+// has spent frozen, from cgroup.stat.local frozen_usec where the kernel has it; false
+// without it. V0.guard-wake: the thread is told how long it was frozen.
+func (g *JobGroups) FrozenUsec(thread string, undeclared bool) (uint64, bool) {
+	if g == nil || g.Tree == nil {
+		return 0, false
+	}
+	d := g.dir(thread)
+	if undeclared {
+		d = g.udir(thread)
+	}
+	return readKey(filepath.Join(d, "cgroup.stat.local"), "frozen_usec")
+}
+
 // Frozen reports thread's job frozen by Freeze, or its undeclared work by
 // FreezeUndeclared.
 func (g *JobGroups) Frozen(thread string) bool {

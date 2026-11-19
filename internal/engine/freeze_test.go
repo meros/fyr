@@ -103,35 +103,73 @@ func TestS5AFreezeEndsAfterTenMinutesAndNeverTakesTheLastJob(t *testing.T) {
 	}
 }
 
-// V0.load-tuning: the job whose memory grew is frozen, also when it is the oldest;
-// a second episode takes the next one, as a hold is frozen once.
-func TestGuardFreezesTheJobThatGrewMost(t *testing.T) {
+// V0.load-tuning: the job whose memory grew most is frozen. V0.guard-wake (decision 0036 E4): never the oldest, which
+// always runs, even when it grew most.
+func TestGuardFreezesTheJobThatGrewMostButNeverTheOldest(t *testing.T) {
 	e, _, now := bare(t)
 	p := slots.New(3)
 	p.Now = e.Now
 	e.UseSlots(p)
-	big, idle := bareThread(t, e), bareThread(t, e)
-	running(e, big)
-	running(e, idle)
+	big, mid, idle := bareThread(t, e), bareThread(t, e), bareThread(t, e)
+	for _, id := range []string{big, mid, idle} {
+		running(e, id)
+	}
 	p.Acquire(big, slots.Test)
+	*now = now.Add(time.Minute)
+	p.Acquire(mid, slots.Test)
 	*now = now.Add(time.Minute)
 	p.Acquire(idle, slots.Test)
 	free := 0.05
 	e.SlotPolicy = slots.DefaultPolicy
 	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK} }
 	e.SlotGrowth = func(o string) uint64 {
-		if o == big {
+		switch o {
+		case big:
 			return 3 << 30
+		case mid:
+			return 1 << 30
 		}
 		return 0
 	}
 	frozen := map[string]bool{}
 	e.SlotFreeze = func(o string) bool { frozen[o] = true; return true }
 	e.SlotThaw = func(o string) { delete(frozen, o) }
+	e.SlotMem = func(string) uint64 { return 2 << 30 }
+	e.FrozenUsec = func(string, bool) (uint64, bool) { return 0, true }
 	guardDeps(t, e)
 	e.Tick()
-	if !frozen[big] || frozen[idle] {
-		t.Fatalf("frozen %v, want the job that grew (%s)", frozen, big)
+	if !frozen[mid] || frozen[big] || frozen[idle] {
+		t.Fatalf("frozen %v, want the job that grew most of the younger ones (%s), not the oldest (%s)", frozen, mid, big)
+	}
+}
+
+// V0.guard-wake (decision 0036 (D), E4): a service is never frozen.
+func TestGuardNeverFreezesAService(t *testing.T) {
+	e, _, now := bare(t)
+	p := slots.New(3)
+	p.Now = e.Now
+	e.UseSlots(p)
+	a, svc, c := bareThread(t, e), bareThread(t, e), bareThread(t, e)
+	for _, id := range []string{a, svc, c} {
+		running(e, id)
+	}
+	p.Acquire(a, slots.Test)
+	*now = now.Add(time.Minute)
+	p.Acquire(c, slots.Test)
+	*now = now.Add(time.Minute)
+	p.Acquire(svc, slots.E2E) // the newest: it would be frozen first
+	free := 0.05
+	e.SlotPolicy = slots.DefaultPolicy
+	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK} }
+	e.SlotGrowth = func(string) uint64 { return 0 }
+	e.GuardService = func(th string) bool { return th == svc }
+	frozen := map[string]bool{}
+	e.SlotFreeze = func(o string) bool { frozen[o] = true; return true }
+	e.SlotThaw = func(o string) { delete(frozen, o) }
+	guardDeps(t, e)
+	e.Tick()
+	if frozen[svc] || !frozen[c] {
+		t.Fatalf("frozen %v: the service %s must run, %s is next", frozen, svc, c)
 	}
 }
 

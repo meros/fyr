@@ -400,6 +400,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		SlotOver:   adm.Over, // V0.163
 		JobReset:   jobs.Reset,
 		SlotFreeze: groups.Freeze, SlotThaw: groups.Thaw, // decision 0029 S5
+		// V0.guard-wake: the wake rule's memory and the time frozen.
+		SlotMem: sampler.ThreadMemory, FrozenUsec: groups.FrozenUsec,
 	}
 	if !pool.Off() {
 		// decision 0029 S4: the budget adapts; V0.budget-restart: and outlives a deploy
@@ -526,6 +528,19 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	if err := eng.ResumeEffects(); err != nil {
 		log.Printf("resume effects: %v", err)
 	}
+	// V0.guard-wake (decision 0036 E5): a PSI trigger on the agents' memory
+	// stall runs the guard at once; the 10 s tick stays as the fallback.
+	guardWake := make(chan struct{}, 1)
+	if err := cgroup.WatchAgentsPressure(ctx, tree, func() {
+		select {
+		case guardWake <- struct{}{}:
+		default:
+		}
+	}); err != nil {
+		log.Printf("guard: no PSI trigger on the agents' memory.pressure (%v); the guard reads every 10 s", err)
+	} else {
+		log.Printf("guard: PSI trigger %q on the agents' memory.pressure", cgroup.PressureTrigger)
+	}
 	go func() {
 		t := time.NewTicker(10 * time.Second)
 		defer t.Stop()
@@ -535,6 +550,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 				return
 			case <-t.C:
 				eng.Tick()
+			case <-guardWake:
+				sampler.Tick() // fresh signals for the guard
+				eng.GuardNow()
 			}
 		}
 	}()

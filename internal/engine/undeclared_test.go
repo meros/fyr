@@ -62,6 +62,7 @@ type fz struct {
 	free    float64
 	stall   slots.Stall
 	agents  slots.Stall // the agents' own stall (V0.oomd-guard)
+	mem     uint64      // the agents' memory (V0.guard-wake)
 	slow    *float64
 	frozen  map[string]bool // undeclared
 	slotted map[string]bool // admitted jobs
@@ -74,7 +75,7 @@ func fzEngine(t *testing.T) (*Engine, *und, *time.Time, *fz, []string) {
 	z := &fz{free: 0.30, stall: slots.StallOK, frozen: map[string]bool{}, slotted: map[string]bool{}, empty: map[string]bool{}}
 	e.SlotPolicy = slots.DefaultPolicy
 	e.SlotSignals = func() slots.Signals {
-		return slots.Signals{Provider: "cgroups", Headroom: &z.free, Stall: z.stall, AgentsStall: z.agents, Slowdown: z.slow}
+		return slots.Signals{Provider: "cgroups", Headroom: &z.free, Stall: z.stall, AgentsStall: z.agents, AgentsMem: z.mem, Slowdown: z.slow}
 	}
 	e.SlotGrowth = func(string) uint64 { return 0 }
 	e.SlotFreeze = func(o string) bool { z.slotted[o] = true; return true }

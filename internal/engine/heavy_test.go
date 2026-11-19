@@ -153,3 +153,46 @@ func TestV209SlotsOffAdmitsNothing(t *testing.T) {
 	}
 	e.HeavyDone(a, "tu")
 }
+
+// V0.guard-wake (decision 0036 E1): while the memory guard says memory is short, a new heavy command is held at the
+// gate before anything that runs is frozen: also one from a thread that already holds an admission, and a learned
+// one, which never queues. When memory recovers the thread is told to run it again.
+func TestGuardWakeTheGateHoldsANewCommandWhileMemoryIsShort(t *testing.T) {
+	e, now, a, b := heavyEngine(t, 2)
+	e.HeavySoft = func(class string) bool { return class == "gradle assemble" }
+	free := 0.5
+	e.SlotPolicy = slots.DefaultPolicy
+	e.SlotSignals = func() slots.Signals {
+		return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: slots.StallOK, CPU: 8, Memory: 16 << 30}
+	}
+	e.SlotFreeze = func(string) bool { return true }
+	e.SlotThaw = func(string) {}
+	guardDeps(t, e)
+	if r := e.HeavyGate(HeavyCall{Thread: a, Class: "make test", ToolUse: "tu1"}); r != "" || !holds(e, a) {
+		t.Fatalf("not admitted while memory is fine: %q", r)
+	}
+	free = 0.04
+	e.Tick() // the guard: memory short
+	r := e.HeavyGate(HeavyCall{Thread: a, Class: "make e2e", ToolUse: "tu2"})
+	if !strings.Contains(r, "memory is short on this host, so Fyr holds new heavy commands until it recovers") || !strings.Contains(r, "It did not run") {
+		t.Fatalf("an admitted thread's new command ran: %q", r)
+	}
+	if r := e.HeavyGate(HeavyCall{Thread: b, Class: "gradle assemble", ToolUse: "tu3"}); !strings.Contains(r, "holds new heavy commands") {
+		t.Fatalf("a learned command ran: %q", r)
+	}
+	if r := e.HeavyGate(HeavyCall{Thread: b, Class: "gradle assemble", ToolUse: "tu4", Subagent: true}); !strings.Contains(r, "You are a subagent") {
+		t.Fatalf("subagent: %q", r)
+	}
+	free = 0.5
+	*now = now.Add(10 * time.Second)
+	e.Tick() // recovered
+	for _, id := range []string{a, b} {
+		if !told(e, id, "Memory has recovered on this host: run the heavy command Fyr held again.") {
+			th, _ := e.Thread(id)
+			t.Fatalf("%s not told: %+v", id, th.Feed.Queue)
+		}
+	}
+	if r := e.HeavyGate(HeavyCall{Thread: a, Class: "make e2e", ToolUse: "tu5"}); r != "" {
+		t.Fatalf("held after memory recovered: %q", r)
+	}
+}
