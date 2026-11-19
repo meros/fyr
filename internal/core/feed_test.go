@@ -287,6 +287,16 @@ func TestNoticeRules(t *testing.T) {
 				t.Fatalf("unsettle after settle when merged: %+v wakes=%v", n, wakes(res))
 			}
 		},
+		// V0.ask-tool: a question Fyr read in the agent's text: told with
+		// the next message, never a wake.
+		"textquestion": func(t *testing.T) {
+			th := feedThread()
+			th.RunEnds = 1
+			th, res := fstep(t, th, Input{Source: Observer(ObsTextAsk), Kind: KindTextAskJudged, Args: TextAskJudged{Run: 1, Needs: true, Question: "Which database?"}}, ct0)
+			if n := queued(t, th, "text-question"); n.Urgency != Next || !strings.Contains(n.What, "mcp__fyr__ask") || wakes(res) {
+				t.Fatalf("notice %+v wakes=%v", n, wakes(res))
+			}
+		},
 	}
 	for _, r := range NoticeRules {
 		f := rows[r.Name]

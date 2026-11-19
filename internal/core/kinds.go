@@ -895,8 +895,8 @@ func reduceRestarted(r Rec, in Input, now time.Time) (Result, error) {
 	var keep []Decision
 	live := t.Running
 	for _, d := range t.Decisions {
-		if d.Kind == DecisionEffect {
-			keep = append(keep, d) // effect Decisions do not need the process (5.10)
+		if !d.NeedsProcess() {
+			keep = append(keep, d) // effect Decisions and Fyr's own questions do not need the process (5.10, V0.ask-tool)
 		} else {
 			live = true
 		}

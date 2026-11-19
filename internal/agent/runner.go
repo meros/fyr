@@ -197,7 +197,7 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 	// that comes first waits in its channel (V0.90 (4)).
 	s.adopted = map[string]bool{}
 	for _, d := range t.Decisions {
-		if d.Kind != core.DecisionEffect {
+		if d.NeedsProcess() {
 			s.asks[d.ID] = make(chan core.Effect, 1)
 			s.adopted[d.ID] = true
 		}

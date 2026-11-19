@@ -243,7 +243,11 @@ type Decision struct {
 	Input     any          `json:"input,omitempty"`
 	Agent     string       `json:"agent,omitempty"` // which subagent asked, when known
 	Effect    *EffectReq   `json:"effect,omitempty"`
-	CreatedAt time.Time    `json:"createdAt"`
+	// Async: the agent asked with Fyr's ask tool (V0.ask-tool) and is not
+	// waiting in a tool call: the question does not need the process, and
+	// the answer reaches the agent as a notice.
+	Async     bool      `json:"async,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // EffectReq is an effect the agent asked Fyr to run (SPEC 5.10, V0.12).

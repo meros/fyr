@@ -61,6 +61,8 @@ type Effect struct {
 	Git *GitFacts `json:"git,omitempty"`
 	// Run is the run count an EffectTextAsk judges (V0.210).
 	Run int `json:"run,omitempty"`
+	// Asked is the question an EffectAnswered answers (V0.ask-tool).
+	Asked *Decision `json:"asked,omitempty"`
 }
 
 // Script is an exact command: argv in dir, within a time limit.
@@ -291,6 +293,10 @@ func register(a *Action) {
 					answerEffect(r.T, &res, *ef.Request, ef.Allow, now)
 					continue
 				}
+				if ef.Kind == EffectAnswered && ef.Asked != nil { // V0.ask-tool
+					answered(&res, *ef.Asked, ef.Answers)
+					continue
+				}
 				res.Effects = append(res.Effects, ef)
 			}
 			return res, nil
@@ -332,6 +338,9 @@ func init() {
 					e.Answers[q.Question] = s
 				}
 				e.Allow = true
+				if d.Async { // V0.ask-tool: nobody waits in a tool call
+					e.Kind, e.Asked = EffectAnswered, &d
+				}
 			} else {
 				e.Allow, _ = a["allow"].(bool)
 			}
@@ -615,7 +624,7 @@ func init() {
 			}
 			// L3: archived threads have no live work. V0.101: an agent's ask
 			// does not hold it; archiving voids the ask.
-			if t.Running || slices.ContainsFunc(t.Decisions, func(d Decision) bool { return d.Kind != DecisionEffect }) {
+			if t.Running || slices.ContainsFunc(t.Decisions, Decision.NeedsProcess) {
 				return "Stop the run first"
 			}
 			return ""
