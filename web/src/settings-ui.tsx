@@ -42,13 +42,13 @@ import { quietNote } from "./quiet.ts";
 import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, SetBy, type ProjectPatch } from "./project-ui.tsx";
 import { FINISHED_DESC, pushRow, type PushPrefs, type PushStatus } from "./push.ts";
 import { onToolDetails, setToolDetails, toolDetails } from "./prefs.ts";
-import { move } from "./reorder.ts";
 import { DevicesPage, useAuthState } from "./devices-ui.tsx";
 import { hiddenCount, hostIsHidden, lastShownHost, projectIsHidden, setHostShown, setProjectShown, type Hidden } from "./hidden.ts";
 import { PeersPanel, usePeerState } from "./peers-ui.tsx";
 import { devicesNeed, devicesSummary } from "./devices.ts";
 import { PAGES, deviceSummary, hostsNeed, hostsSummary, navBadge, projectsSummary, providersNeed, providersSummary, type PageId, type PageRef } from "./settings-nav.ts";
-import { Empty, Grip, Group, LoadError, MoveButtons, Row, SaveField, SavedMark, Seg, SetContext, Skeleton, Switch, useReorder, useSaved, useSet } from "./settings-rows.tsx";
+import { Empty, Group, LoadError, Row, SaveField, SavedMark, Seg, SetContext, Skeleton, Switch, useSaved, useSet } from "./settings-rows.tsx";
+import { Grip, MoveControls, ReorderButton, useReorder } from "./reorder-ui.tsx";
 import {
   createArgs,
   EMPTY_FORM,
@@ -990,8 +990,10 @@ function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run
     asked.current = true;
     if (needsCheck(p, now) && !env.readOnly) void doRefresh();
   }, [p.id, clockKnown]);
-  const ro = useReorder(ids, (from, to) => void apply(ids[from], { move: [from, to] }));
+  const ro = useReorder(ids, (next, _from, to) => apply(next[to], { order: next }));
   const canReorder = !searching && ids.length > 1 && !env.readOnly; // while the search has text, reorder is off
+  const [mode, setMode] = useState(false); // the phone's Reorder mode
+  const reo = env.phone && mode && canReorder;
   const rowErr = (row: string) => (err?.row === row ? err.text : null);
   const tags = (m: ModelRow) => (
     <>
@@ -1021,25 +1023,14 @@ function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run
           <span class="mchk" aria-live="polite">
             {line}
           </span>
-          {!ro.mode && p.status === "ready" && (
+          {!reo && p.status === "ready" && (
             <button type="button" class="lnk" disabled={checking || p.checking || env.readOnly} onClick={() => void doRefresh()}>
               Refresh
             </button>
           )}
           {
-            // The phone reorders in a mode: touch has no hover to reveal a grip, and a drag on a list fights the
-            // page's scroll. The desktop drags the grip instead, so it has no Reorder button.
-            env.phone &&
-              canReorder &&
-              (ro.mode ? (
-                <button type="button" class="btn p" onClick={() => ro.setMode(false)}>
-                  Done
-                </button>
-              ) : (
-                <button type="button" class="lnk reo" onClick={() => ro.setMode(true)}>
-                  Reorder
-                </button>
-              ))
+            // The phone reorders in a mode (reorder-ui.tsx says why). The desktop drags the grip, so it has no button.
+            env.phone && canReorder && <ReorderButton on={mode} set={setMode} />
           }
         </>
       }
@@ -1047,24 +1038,24 @@ function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run
       footErr={foot.error}
     >
       {rowErr("check") && <Row error={rowErr("check")} />}
-      {!ro.mode && parts.total >= 9 && (
+      {!reo && parts.total >= 9 && (
         <Row class="srch">
           <input class="pq" type="search" placeholder={`Search ${parts.total} models`} aria-label="Search models" value={q} onInput={(e) => (setQ((e.target as HTMLInputElement).value), setMore(false))} />
         </Row>
       )}
       {parts.on.length > 0 && <div class="sg-sub">On · offered in every model picker, in this order</div>}
-      {parts.on.map((m) => {
-        const i = ids.indexOf(m.id);
+      {(searching ? parts.on : ro.sort(parts.on, (m) => m.id)).map((m) => {
+        const i = ro.ids.indexOf(m.id);
         const r = ro.row(i);
         return (
           <Row
             key={m.id}
-            class={`model ${searching ? "" : (r.class as string)}`}
-            rowRef={r.ref as (el: HTMLElement | null) => void}
+            class={`model ${r.class}`}
+            rowRef={r.ref}
             data={{ model: m.id }}
             error={rowErr(m.id)}
             lead={
-              !ro.mode && (
+              !reo && (
                 <>
                   {canReorder && <Grip {...ro.grip(i, m.name)} />}
                   <button type="button" class="star" aria-pressed={m.star} aria-label={m.star ? "The default model" : `Make ${m.id} the default`} disabled={env.readOnly} onClick={() => !m.star && void apply(m.id, { star: m.id })}>
@@ -1080,14 +1071,14 @@ function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run
               </>
             }
             desc={desc(m)}
-            end={ro.mode ? undefined : <Switch on label={`Offer ${m.id}`} onChange={() => void apply(m.id, { off: m.id })} />}
+            end={reo ? undefined : <Switch on label={`Offer ${m.id}`} onChange={() => void apply(m.id, { off: m.id })} />}
           >
-            {ro.mode && <MoveButtons name={m.name} i={i} n={ids.length} onMove={(f, t) => void apply(ids[f], { move: [f, t] })} />}
+            {reo && <MoveControls ro={ro} i={i} name={m.name} />}
           </Row>
         );
       })}
-      {!ro.mode && parts.off.length > 0 && <div class="sg-sub">Off · {parts.off.length}</div>}
-      {!ro.mode &&
+      {!reo && parts.off.length > 0 && <div class="sg-sub">Off · {parts.off.length}</div>}
+      {!reo &&
         offShown.map((m) => (
           <Row
             key={m.id}
@@ -1113,18 +1104,18 @@ function ModelsGroup({ p, run, refresh, now, clockKnown }: { p: ProviderDTO; run
             }
           />
         ))}
-      {!ro.mode && !more && parts.off.length > limit && (
+      {!reo && !more && parts.off.length > limit && (
         <button type="button" class="more" onClick={() => setMore(true)}>
           Show {parts.off.length - limit} more
         </button>
       )}
-      {!ro.mode && searching && parts.matched === 0 && <Row desc={`No model matches “${q.trim()}”.`} />}
-      {!ro.mode && (
+      {!reo && searching && parts.matched === 0 && <Row desc={`No model matches “${q.trim()}”.`} />}
+      {!reo && (
         <Row error={rowErr("+")} class="fieldrow">
           <SaveField value="" label="Model id to add" placeholder="Add a model id by hand" mono clears alwaysButton button="Add" onError={(e) => setErr(e ? { row: "+", text: e } : null)} onSave={async (v) => (await apply("+", { add: v })) ?? null} check={(v) => { const r = modelsAfter(ids, p.defaultModel, { add: v }); return "error" in r ? r.error : null; }} />
         </Row>
       )}
-      {!ro.mode && hasEfforts && (
+      {!reo && hasEfforts && (
         <Row
           title="Default effort"
           error={rowErr("effort")}
@@ -1673,21 +1664,11 @@ function projectsPage(p: SettingsProps, ui: PageUi): Omit<PageView, "title"> {
 function NewProjectButton({ ui, n }: { ui: PageUi; n: number }) {
   const env = useSet();
   if (ui.adding) return null;
-  // The phone reorders in a mode: touch has no hover to reveal a grip, and a drag on a list fights the page's
-  // scroll. The desktop drags the grip on each row instead, so it has no Reorder button.
-  if (env.phone && ui.reordering)
-    return (
-      <button type="button" class="btn p" onClick={() => ui.setReordering(false)}>
-        Done
-      </button>
-    );
+  // The phone reorders in a mode (reorder-ui.tsx says why). The desktop drags the grip, so it has no button.
+  if (env.phone && ui.reordering) return <ReorderButton on set={ui.setReordering} />;
   return (
     <>
-      {env.phone && n > 1 && !ui.q.trim() && !env.readOnly && (
-        <button type="button" class="btn reo" onClick={() => ui.setReordering(true)}>
-          Reorder
-        </button>
-      )}
+      {env.phone && n > 1 && !ui.q.trim() && !env.readOnly && <ReorderButton on={false} set={ui.setReordering} />}
       <button type="button" class={`btn addp${ui.empty ? " p" : ""}`} disabled={env.readOnly} onClick={() => ui.setAdding(true)}>
         New project
       </button>
@@ -1741,23 +1722,15 @@ const HOSTS_FOOT = (
  *  host) and shows on this device first. */
 function HostsPage({ rows, self, now, go, ui, run }: { rows: HostInfo[]; self: string; now: number; go(r: PageRef): void; ui: PageUi; run(names: string[]): Promise<string | null> }) {
   const env = useSet();
-  const [pending, setPending] = useState<string[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const names = rows.map((h) => h.name);
-  useEffect(() => {
-    if (pending && pending.join("\n") === names.join("\n")) setPending(null); // the hosts event caught up
-  }, [names.join("\n")]);
-  const shown = pending ? [...rows].sort((a, b) => pending.indexOf(a.name) - pending.indexOf(b.name)) : rows;
-  const ids = shown.map((h) => h.name);
-  const reorder = async (from: number, to: number) => {
-    const next = move(ids, from, to);
-    setPending(next);
-    const e = await run(next);
-    setErr(e);
-    if (e) setPending(null);
-    else env.saved();
-  };
-  const ro = useReorder(ids, (f, t) => void reorder(f, t));
+  const ro = useReorder(
+    rows.map((h) => h.name),
+    async (next) => {
+      const e = await run(next);
+      if (!e) env.saved();
+      return e;
+    },
+  );
+  const shown = ro.sort(rows, (h) => h.name); // a move shows here first, until the hosts event catches up
   const can = rows.length > 1 && !env.readOnly;
   const mode = env.phone && ui.reordering && can;
   return (
@@ -1771,23 +1744,23 @@ function HostsPage({ rows, self, now, go, ui, run }: { rows: HostInfo[]; self: s
         </>
       }
     >
-      {err && (
+      {ro.err && (
         <div class="seterr" role="alert">
-          {err}
+          {ro.err}
         </div>
       )}
       {shown.map((h, i) => {
+        const r = ro.row(i);
         if (mode)
           return (
-            <div key={h.name} class="hreo mvrow" data-sub={h.name}>
+            <div key={h.name} class={`hreo mvrow ${r.class}`} ref={r.ref} data-sub={h.name}>
               <HostRow h={h} self={self} now={now} go={go} still />
-              <MoveButtons name={h.name} i={i} n={ids.length} onMove={(f, t) => void reorder(f, t)} />
+              <MoveControls ro={ro} i={i} name={h.name} />
             </div>
           );
         if (!can || env.phone) return <HostRow key={h.name} h={h} self={self} now={now} go={go} />;
-        const r = ro.row(i);
         return (
-          <div key={h.name} class={`hreo g ${r.class as string}`} ref={r.ref as (el: HTMLElement | null) => void}>
+          <div key={h.name} class={`hreo g ${r.class}`} ref={r.ref}>
             <Grip {...ro.grip(i, h.name)} />
             <HostRow h={h} self={self} now={now} go={go} />
           </div>
@@ -1801,15 +1774,7 @@ function HostsPage({ rows, self, now, go, ui, run }: { rows: HostInfo[]; self: s
 function HostsReorderButton({ ui, n }: { ui: PageUi; n: number }) {
   const env = useSet();
   if (!env.phone || n < 2 || env.readOnly) return null;
-  return ui.reordering ? (
-    <button type="button" class="btn p" onClick={() => ui.setReordering(false)}>
-      Done
-    </button>
-  ) : (
-    <button type="button" class="btn reo" onClick={() => ui.setReordering(true)}>
-      Reorder
-    </button>
-  );
+  return <ReorderButton on={ui.reordering} set={ui.setReordering} />;
 }
 
 /** The status pill at the end of a host's title (desktop) or first on its page (phone: its header has only the title
@@ -2082,15 +2047,16 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
   const env = useSet();
   const all = settingsProjects(p.projects);
   const list = searchProjects(all, q);
-  const ids = all.map((x) => x.id!);
-  const [err, setErr] = useState<string | null>(null);
-  const reorder = async (from: number, to: number) => {
-    const e = await p.projectActions.order(move(ids, from, to));
-    setErr(e);
-    if (!e) env.saved();
-  };
-  const ro = useReorder(ids, (f, t) => void reorder(f, t));
-  const mode = env.phone && ui.reordering;
+  const ro = useReorder(
+    all.map((x) => x.id!),
+    async (next) => {
+      const e = await p.projectActions.order(next);
+      if (!e) env.saved();
+      return e;
+    },
+  );
+  const ids = ro.ids;
+  const mode = env.phone && ui.reordering && ids.length > 1;
   const grips = !env.phone && !q.trim() && ids.length > 1 && !env.readOnly; // while the search has text, reorder is off
   return (
     <>
@@ -2113,9 +2079,9 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
       ) : (
         <section class="sg" aria-label="Projects">
           {all.length >= 9 && !mode && <input class="pq" type="search" placeholder={`Search ${all.length} projects`} aria-label="Search projects" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
-          {err && (
+          {ro.err && (
             <div class="seterr" role="alert">
-              {err}
+              {ro.err}
             </div>
           )}
           {all.length === 0 ? (
@@ -2124,7 +2090,7 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
             </div>
           ) : (
             <div class="pls setpl">
-              {list.map((x) => {
+              {ro.sort(list, (x) => x.id!).map((x) => {
                 const quiet = quietNote(x, p.now);
                 const i = ids.indexOf(x.id!);
                 const body = (
@@ -2140,11 +2106,12 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
                   </>
                 );
                 const style = { "--pc": colorVar(x.color, x.name) };
+                const r = ro.row(i);
                 if (mode)
                   return (
-                    <div key={x.id} class="pli mvrow" data-sub={x.id} style={style}>
+                    <div key={x.id} class={`pli mvrow ${r.class}`} ref={r.ref} data-sub={x.id} style={style}>
                       {body}
-                      <MoveButtons name={x.name} i={i} n={ids.length} onMove={(f, t) => void reorder(f, t)} />
+                      <MoveControls ro={ro} i={i} name={x.name} />
                     </div>
                   );
                 const go = () => p.go({ page: "projects", sub: x.id! });
@@ -2157,10 +2124,9 @@ function ProjectsPage({ p, ui }: { p: SettingsProps; ui: PageUi }) {
                   </button>
                 );
                 if (!grips) return <Fragment key={x.id}>{open}</Fragment>;
-                const r = ro.row(i);
                 return (
                   // The whole row opens the project, as without a grip; the grip only moves it.
-                  <div key={x.id} class={`pli g ${r.class as string}`} ref={r.ref as (el: HTMLElement | null) => void} style={style} onClick={(e) => !(e.target as Element).closest(".grip") && go()}>
+                  <div key={x.id} class={`pli g ${r.class}`} ref={r.ref} style={style} onClick={(e) => !(e.target as Element).closest(".grip") && go()}>
                     <Grip {...ro.grip(i, x.name)} />
                     {open}
                   </div>

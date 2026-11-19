@@ -249,7 +249,7 @@ export function removeLine(threads: number): string {
   return threads === 1 ? "1 thread uses it. Hand it over first." : `${threads} threads use it. Hand them over first.`;
 }
 
-export type ModelsOp = { add: string } | { remove: string } | { move: [number, number] } | { star: string } | { on: string } | { off: string } | { forget: string };
+export type ModelsOp = { add: string } | { remove: string } | { move: [number, number] } | { order: string[] } | { star: string } | { on: string } | { off: string } | { forget: string };
 
 /** A provider's model ids after one edit of the Models rows, or why not. Each edit sends the whole list (and, for ★,
  *  the default). The default is not removed: star another first. */
@@ -269,6 +269,8 @@ export function modelsAfter(ids: string[], def: string | undefined, op: ModelsOp
     return { models: ids.filter((x) => x !== op.remove) };
   }
   if ("move" in op) return { models: move(ids, op.move[0], op.move[1]) };
+  // V0.reorder-one: the whole order the reorder control made; it may only reorder, never add or drop a model
+  if ("order" in op) return op.order.length === ids.length && op.order.every((x) => ids.includes(x)) ? { models: [...op.order] } : { error: "The list changed. Try again." };
   if (!ids.includes(op.star)) return { error: `${op.star} is not in the list.` };
   return { models: ids, defaultModel: op.star };
 }

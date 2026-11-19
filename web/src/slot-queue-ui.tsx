@@ -9,7 +9,7 @@ import { useMemo, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
 import type { Slots } from "./load.ts";
 import { patchSlots, refreshLoad, useLoad } from "./load-ui.tsx";
-import { MoveButtons, useReorder } from "./settings-rows.tsx";
+import { MoveControls, ReorderButton, useReorder } from "./reorder-ui.tsx";
 import { priorityLabel, queueParts, reorderOwners, slotQueue, withQueue, type QueueEntry, type QueuePart } from "./slot-queue.ts";
 import { count } from "./format.ts";
 import { StateIcon } from "./icons.tsx";
@@ -67,18 +67,9 @@ export function SlotQueueSection(p: Props) {
         <div class={`m-sec${movable ? " hasbtn" : ""}`} {...head}>
           <SectionTitle label="Waiting to run" icon={<StateIcon state="waiting" size={16} />} n={n} shown={count(n)} open={open} />
           {movable && (
-            // Phone: touch has no drag handle that fits beside a swipe row and no hover, so the order changes in a
-            // Reorder mode with ↑ and ↓ of 44 px (V0.121's control).
-            <button
-              class="m-sbtn"
-              aria-pressed={reordering}
-              onClick={(e) => {
-                e.stopPropagation(); // the header folds; this button does not
-                setReordering(!reordering);
-              }}
-            >
-              {reordering ? "Done" : "Reorder"}
-            </button>
+            // Phone: a row here swipes, so the order changes in the one Reorder mode (reorder-ui.tsx), as in Settings.
+            // The class is the inbox header's small button, not Settings' 44 px .btn: this header is 44 px itself.
+            <ReorderButton on={reordering} set={setReordering} class={`m-sbtn${reordering ? " on" : ""}`} />
           )}
         </div>
         {body}
@@ -97,25 +88,23 @@ export function SlotQueueSection(p: Props) {
 
 function Part({ part, shown, phone, reordering, folded, row }: { part: QueuePart; shown: Record<string, Thread>; phone: boolean; reordering: boolean; folded: boolean; row: Props["row"] }) {
   const api = useApi();
-  const [err, setErr] = useState<string | null>(null);
   const rows = withQueue(part.entries, shown).filter((r) => !folded || r.thread);
   const threads = rows.filter((r) => r.thread);
   const ids = threads.map((r) => r.entry.owner);
   const all = part.entries.filter((e) => !e.priority).map((e) => e.owner);
   const { hosts } = useHosts();
-  const send = async (from: number, to: number) => {
+  const send = async (_next: string[], from: number, to: number): Promise<string | null> => {
     const owners = reorderOwners(all, ids, from, to);
     const pri = part.entries.filter((e) => e.priority).map((e) => ({ owner: e.owner, kind: e.kind, priority: true }));
     const kinds = new Map(part.entries.map((e) => [e.owner, e.kind]));
     // Shown on this device first; the receipt (the host's queue as it is now) or the next poll corrects it.
     patchSlots(part.host, (s) => ({ ...s, waiting: [...pri, ...owners.map((o) => ({ owner: o, kind: kinds.get(o) ?? "" }))] }));
-    setErr(null);
     const r = await api.command(hostIdByName(hosts, part.host), "host.slotOrder", undefined, { owners });
     if (r.ok && r.result && typeof r.result === "object" && "waiting" in (r.result as object)) patchSlots(part.host, r.result as unknown as Slots);
-    else if (!r.ok) setErr(r.error ?? "The order did not change");
     refreshLoad();
+    return r.ok ? null : (r.error ?? "The order did not change");
   };
-  const ro = useReorder(ids, (f, t) => void send(f, t));
+  const ro = useReorder(ids, send);
   // Decision 0029 S2: why the next job of this host waits, on both fronts (a row's line is cut at its end).
   const why = useLoad().find((h) => h.host === part.host)?.slots?.why; // V0.163: in percent of the host
   let i = 0;
@@ -124,9 +113,9 @@ function Part({ part, shown, phone, reordering, folded, row }: { part: QueuePart
     <div class="sqh" data-host={part.host}>
       {part.label && <div class={phone ? "sqhn m" : "sqhn"}>{part.label}</div>}
       {why && !folded && <div class={phone ? "sqwhy m" : "sqwhy"}>The next waits: {why}</div>}
-      {err && (
+      {ro.err && (
         <div class="sqerr" role="alert">
-          {err}
+          {ro.err}
         </div>
       )}
       {rows.map((r) => {
@@ -155,16 +144,16 @@ function Part({ part, shown, phone, reordering, folded, row }: { part: QueuePart
               {label}
             </span>
           );
-        const ra = ro.row(k) as SlotRowArgs["attrs"];
-        const el = row(t, { lead, attrs: ra });
-        return phone && reordering ? (
-          <div key={t.id} class="sqmv" data-id={t.id}>
-            <div class="sqrow">{el}</div>
-            <MoveButtons name={name} i={k} n={ids.length} onMove={(f, to) => void send(f, to)} />
-          </div>
-        ) : (
-          el
-        );
+        const ra = ro.row(k);
+        // In the phone's mode the row and its controls move as one, so the wrapper is what the drag measures.
+        if (phone && reordering)
+          return (
+            <div key={t.id} class={`sqmv ${ra.class}`} ref={ra.ref} data-id={t.id}>
+              <div class="sqrow">{row(t, { lead, attrs: { ref: () => {}, class: "" } })}</div>
+              <MoveControls ro={ro} i={k} name={name} />
+            </div>
+          );
+        return row(t, { lead, attrs: ra });
       })}
     </div>
   );

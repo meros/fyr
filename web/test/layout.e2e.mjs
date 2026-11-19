@@ -1769,7 +1769,7 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${origin}/?mock=rail&settings=providers/claude`, "document.querySelectorAll('.m-settings .model').length === 3");
   await settle();
-  await tapCenter(".m-settings .lnk.reo", "!!document.querySelector('.m-settings .model .mv')");
+  await tapCenter(".m-settings .btn.reo", "!!document.querySelector('.m-settings .model .mv')");
   const r = await evaluate(`({ mv: [...document.querySelectorAll('.m-settings .model .mv .xb')].map(b => Math.round(b.getBoundingClientRect().height)), others: document.querySelectorAll('.m-settings .model [aria-label^="Remove"], .m-settings .model .star, .m-settings .model [role=switch]').length })`);
   check(r.mv.length === 6 && r.mv.every((h) => h >= 44) && r.others === 0, `V0.119 phone: the Reorder mode (${JSON.stringify(r)})`);
   await shot("settings-reorder-phone.png");
@@ -1960,7 +1960,7 @@ try {
   await shot("chips-after-phone.png");
   // The provider page on the phone: both parts, the switch 44 px wide at least as a row target.
   await navigate(`${origin}/?mock=rail&settings=providers/claude`, "document.querySelectorAll('.m-settings .model').length === 3 && document.querySelectorAll('.m-settings .omodel').length === 3");
-  const pm = await evaluate(`({ subs: document.querySelectorAll('.m-settings .models .sg-sub').length, reo: !!document.querySelector('.m-settings .models .lnk.reo'), refresh: [...document.querySelectorAll('.m-settings .models .lnk')].some(b => b.textContent === 'Refresh') })`);
+  const pm = await evaluate(`({ subs: document.querySelectorAll('.m-settings .models .sg-sub').length, reo: !!document.querySelector('.m-settings .models .btn.reo'), refresh: [...document.querySelectorAll('.m-settings .models .lnk')].some(b => b.textContent === 'Refresh') })`);
   check(pm.subs === 2 && pm.reo && pm.refresh, `V0.120 phone: the Models group (${JSON.stringify(pm)})`);
   await shot("models-phone.png");
   await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.m-app')");
@@ -4330,6 +4330,80 @@ try {
 } catch (e) {
   failures.push(`V0.137: ${e.message}`);
 }
+});
+
+// SPEC V0.reorder-one: every list the owner orders moves the same way. Desktop: a real mouse drag on a row's grip
+// lifts the row (it follows the pointer, the next rows slide out of its way), and letting go below the third row sends
+// the new order once and draws it; Esc during a drag puts the row back and sends nothing; the press that ended a drag
+// opens nothing. Lists: Settings → Projects, Hosts, a provider's Models. Phone: Reorder on Projects shows ↑, ↓ and a
+// handle of 44 px on each row; a touch drag on the first row's handle moves it two places down.
+section('V0.reorder-one', async (h) => {
+  const { send, evaluate, waitFor, navigate, settle, key } = h;
+  const mouse = (type, x, y, extra = {}) => send("Input.dispatchMouseEvent", { type, x, y, button: "left", ...extra });
+  const LISTS = [
+    { name: "projects", url: "?mock=rail&dialog=settings&page=projects", row: ".dlg .pli.g", id: "b => b.querySelector('.plb').dataset.sub", cmd: "front.projectOrder", sent: "c => c.args.ids", page: "projects" },
+    { name: "hosts", url: "?mock=rail&hosts=2&dialog=settings&page=hosts", row: ".dlg .hreo.g", id: "b => b.querySelector('.sr.host').dataset.host", cmd: "front.hostOrder", sent: null, page: "hosts" },
+    { name: "models", url: "?mock=rail&dialog=settings&page=providers/claude", row: ".dlg .model", id: "b => b.dataset.model", cmd: "provider.update", sent: "c => c.args.models", page: "providers/claude" },
+  ];
+  for (const L of LISTS) {
+  try {
+    await navigate(`${origin}/${L.url}`, `document.querySelectorAll('${L.row} .grip').length >= 3`);
+    await settle();
+    const ids = await evaluate(`[...document.querySelectorAll('${L.row}')].map(${L.id})`);
+    const at = await evaluate(`(() => { const rs = [...document.querySelectorAll('${L.row}')]; const g = rs[0].querySelector('.grip').getBoundingClientRect(); const t = rs[2].getBoundingClientRect(); return { x: g.x + g.width / 2, y: g.y + g.height / 2, to: t.bottom - 4, h: rs[0].getBoundingClientRect().height }; })()`);
+    // Esc first: lift, move, Esc, let go. Nothing is sent and the rows stand where they were.
+    await mouse("mouseMoved", at.x, at.y);
+    await mouse("mousePressed", at.x, at.y, { buttons: 1, clickCount: 1 });
+    for (let n = 1; n <= 6; n++) await mouse("mouseMoved", at.x, at.y + ((at.to - at.y) * n) / 6, { buttons: 1 });
+    const mid = await evaluate(`(() => { const rs = [...document.querySelectorAll('${L.row}')]; return { lift: rs[0].classList.contains('ro-lift'), held: rs[0].style.transform, slid: rs[1].style.transform }; })()`);
+    check(mid.lift && /translateY\(\d/.test(mid.held) && /translateY\(-\d/.test(mid.slid), `V0.reorder-one ${L.name}: the held row does not follow the pointer, or the next row does not slide (${JSON.stringify(mid)})`);
+    await key("Escape");
+    await mouse("mouseReleased", at.x, at.to, { buttons: 0, clickCount: 1 });
+    await settle();
+    const esc = await evaluate(`({ n: ${COMMANDS(L.cmd)}.length, ids: [...document.querySelectorAll('${L.row}')].map(${L.id}), page: document.querySelector('.dlg .stp')?.dataset.page ?? '', dlg: !!document.querySelector('.dlg.settings'), left: document.querySelectorAll('.ro-lift, .ro-shift').length })`);
+    check(esc.n === 0 && JSON.stringify(esc.ids) === JSON.stringify(ids) && esc.dlg && esc.left === 0, `V0.reorder-one ${L.name}: Esc during a drag (${JSON.stringify({ ...esc, ids })})`);
+    // The drag: below the third row's middle, let go. One command with the new order, drawn; still on the list.
+    await mouse("mouseMoved", at.x, at.y);
+    await mouse("mousePressed", at.x, at.y, { buttons: 1, clickCount: 1 });
+    for (let n = 1; n <= 8; n++) await mouse("mouseMoved", at.x, at.y + ((at.to - at.y) * n) / 8, { buttons: 1 });
+    await mouse("mouseReleased", at.x, at.to, { buttons: 0, clickCount: 1 });
+    const want = [ids[1], ids[2], ids[0], ...ids.slice(3)];
+    await waitFor(`${COMMANDS(L.cmd)}.length === 1 && JSON.stringify([...document.querySelectorAll('${L.row}')].map(${L.id})) === ${JSON.stringify(JSON.stringify(want))}`, { soft: true });
+    await settle();
+    const d = await evaluate(`({ n: ${COMMANDS(L.cmd)}.length, sent: ${L.sent ? `${COMMANDS(L.cmd)}.map(${L.sent})[0]` : "null"}, ids: [...document.querySelectorAll('${L.row}')].map(${L.id}), page: document.querySelector('.dlg .stp')?.dataset.page ?? '', sub: !!document.querySelector('.dlg .crumb'), left: document.querySelectorAll('.ro-lift, .ro-shift, .ro-settle').length, moved: [...document.querySelectorAll('${L.row}')].filter(r => r.style.transform).length })`);
+    check(d.n === 1 && JSON.stringify(d.ids) === JSON.stringify(want) && (!L.sent || JSON.stringify(d.sent) === JSON.stringify(want)) && d.page === L.page && d.left === 0 && d.moved === 0,
+      `V0.reorder-one ${L.name}: a mouse drag of the first row below the third (${JSON.stringify({ ...d, want })})`);
+    if (L.name !== "models") check(!d.sub, `V0.reorder-one ${L.name}: the press that ended the drag opened a row`);
+  } catch (e) {
+    failures.push(`V0.reorder-one ${L.name}: ${e.message}`);
+  }
+  }
+  // Phone: the handle drags in the Reorder mode.
+  try {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await navigate(`${origin}/?mock=rail&settings=projects`, "document.querySelectorAll('.m-settings .pli').length > 3");
+    const ids = await evaluate(`[...document.querySelectorAll('.m-settings .pli')].map(b => b.dataset.sub)`);
+    await evaluate(`document.querySelector('.m-settings .btn.reo').click()`);
+    await waitFor(`!!document.querySelector('.m-settings .pli.mvrow .mv .mvh')`, { soft: true });
+    await settle();
+    const m = await evaluate(`(() => { const rs = [...document.querySelectorAll('.m-settings .pli.mvrow')]; const hs = rs.map(r => r.querySelector('.mvh').getBoundingClientRect()); const t = rs[2].getBoundingClientRect(); return { x: hs[0].x + hs[0].width / 2, y: hs[0].y + hs[0].height / 2, to: t.bottom - 4, sizes: hs.map(b => Math.round(Math.min(b.width, b.height))), wide: document.documentElement.scrollWidth > innerWidth, done: document.querySelector('.m-settings .btn.p.reo')?.textContent ?? '' }; })()`);
+    check(m.sizes.length === ids.length && m.sizes.every((x) => x >= 44) && !m.wide && m.done === "Done", `V0.reorder-one phone: the Reorder mode's handles (${JSON.stringify(m)})`);
+    await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: m.x, y: m.y }] });
+    for (let n = 1; n <= 8; n++) await send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: m.x, y: m.y + ((m.to - m.y) * n) / 8 }] });
+    const held = await evaluate(`document.querySelector('.m-settings .pli.mvrow').classList.contains('ro-lift')`);
+    await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    const want = [ids[1], ids[2], ids[0], ...ids.slice(3)];
+    await waitFor(`${COMMANDS("front.projectOrder")}.length === 1`, { soft: true });
+    await settle();
+    const p = await evaluate(`({ sent: ${COMMANDS("front.projectOrder")}.map(c => c.args.ids), ids: [...document.querySelectorAll('.m-settings .pli')].map(b => b.dataset.sub) })`);
+    check(held && p.sent.length === 1 && JSON.stringify(p.sent[0]) === JSON.stringify(want) && JSON.stringify(p.ids) === JSON.stringify(want), `V0.reorder-one phone: a touch drag on the first handle (${JSON.stringify({ held, ...p, want })})`);
+  } catch (e) {
+    failures.push(`V0.reorder-one phone: ${e.message}`);
+  } finally {
+    await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  }
 });
 
 // SPEC 0.5 V0.92, V0.93: the rail's top is the rendered logo (loaded, 32 px, inside the rail), not the text "Fyr".

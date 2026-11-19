@@ -1,11 +1,10 @@
 // SPEC V0.119 (2): the one set of controls every Settings page and the project page are built from, on the desktop
 // and the phone alike: a group of rows, a row, a switch, one segmented control, a text field that saves, the Saved
-// mark, the one reorder control, and the loading, error and empty states. The phone's sizes (56 px rows, 44 px
+// mark, and the loading, error and empty states (the one reorder control is reorder-ui.tsx). The phone's sizes (56 px rows, 44 px
 // controls, 16 px inputs) come from one rule set under `.set.phone` in app.css, never from a patch per control.
 
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
-import { moveLabel } from "./reorder.ts";
 import { SlideMark } from "./motion-ui.tsx";
 import { haptic } from "./native.ts";
 
@@ -262,128 +261,6 @@ export function SaveRow(p: Omit<SaveFieldProps, "onError"> & { title?: Component
       </Row>
     );
   return <Row title={title} desc={desc} error={err} stack={stack ?? true} wide class={p.class} end={<SaveField {...f} onError={setErr} />} />;
-}
-
-// ---- the one reorder control (SPEC V0.119 (4)) ----
-
-export interface Reorder {
-  /** the phone's Reorder mode is on */
-  mode: boolean;
-  setMode(on: boolean): void;
-  /** the row being dragged (desktop), and where it would land */
-  lift: number | null;
-  drop: number | null;
-  /** props for each row's grip and the row itself */
-  grip(i: number, name: string): Record<string, unknown>;
-  row(i: number): Record<string, unknown>;
-}
-
-/** The one reorder control. Desktop: a grip to drag with the pointer, or Alt+↑/↓ on the focused grip. Phone: a Reorder
- *  mode with ↑ and ↓ (MoveButtons). Every move calls onMove at once. */
-export function useReorder(ids: string[], onMove: (from: number, to: number) => void): Reorder {
-  const [mode, setMode] = useState(false);
-  const [lift, setLift] = useState<number | null>(null);
-  const [drop, setDrop] = useState<number | null>(null);
-  const rows = useRef<(HTMLElement | null)[]>([]);
-  const focusId = useRef<string | null>(null);
-  const grips = useRef<Map<string, HTMLElement>>(new Map());
-  // Keyboard: the moved row's grip keeps the focus.
-  useEffect(() => {
-    const id = focusId.current;
-    if (!id) return;
-    focusId.current = null;
-    grips.current.get(id)?.focus();
-  }, [ids.join("\n")]);
-  // The insertion point under the pointer: before the first row whose middle is below it, else after the last row.
-  const target = (y: number): number => {
-    const rs = rows.current.slice(0, ids.length);
-    for (let i = 0; i < rs.length; i++) {
-      const r = rs[i]?.getBoundingClientRect();
-      if (r && y < r.top + r.height / 2) return i;
-    }
-    return ids.length;
-  };
-  const startDrag = (i: number, e: PointerEvent) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    setLift(i);
-    setDrop(i);
-    let to = i;
-    const onMoveP = (ev: PointerEvent) => {
-      const t = target(ev.clientY);
-      setDrop(t); // the 2 px line shows at the insertion point
-      to = t > i ? t - 1 : t; // the row leaves its place first
-    };
-    const end = () => {
-      window.removeEventListener("pointermove", onMoveP);
-      window.removeEventListener("pointerup", end);
-      window.removeEventListener("pointercancel", end);
-      setLift(null);
-      setDrop(null);
-      if (to !== i) onMove(i, to);
-    };
-    window.addEventListener("pointermove", onMoveP);
-    window.addEventListener("pointerup", end);
-    window.addEventListener("pointercancel", end);
-  };
-  return {
-    mode,
-    setMode,
-    lift,
-    drop,
-    grip: (i, name) => ({
-      class: "grip",
-      role: "button",
-      tabIndex: 0,
-      "aria-label": moveLabel(name, i, ids.length),
-      title: "Drag, or Alt and the arrow keys",
-      ref: (el: HTMLElement | null) => {
-        if (el) grips.current.set(ids[i], el);
-        else grips.current.delete(ids[i]);
-      },
-      onPointerDown: (e: PointerEvent) => startDrag(i, e),
-      onKeyDown: (e: KeyboardEvent) => {
-        if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
-        e.preventDefault();
-        const to = i + (e.key === "ArrowUp" ? -1 : 1);
-        if (to < 0 || to >= ids.length) return;
-        focusId.current = ids[i];
-        onMove(i, to);
-      },
-    }),
-    row: (i) => {
-      const moves = lift !== null && drop !== null && drop !== lift && drop !== lift + 1;
-      return {
-        ref: (el: HTMLElement | null) => (rows.current[i] = el),
-        class: lift === i ? "lift" : moves && drop === i ? "drop" : moves && drop === ids.length && i === ids.length - 1 ? "dropb" : "",
-      };
-    },
-  };
-}
-
-/** The grip (desktop only; the phone reorders in a mode, see MoveButtons). */
-export function Grip(props: Record<string, unknown>) {
-  const env = useSet();
-  if (env.phone || env.readOnly) return null;
-  return (
-    <span {...props} aria-hidden={undefined}>
-      ⠿
-    </span>
-  );
-}
-
-/** ↑ and ↓, 44 px each, in the phone's Reorder mode. */
-export function MoveButtons({ name, i, n, onMove }: { name: string; i: number; n: number; onMove(from: number, to: number): void }) {
-  return (
-    <span class="sr-e mv">
-      <button type="button" class="xb" aria-label={`Move ${name} up`} disabled={i === 0} onClick={() => onMove(i, i - 1)}>
-        ↑
-      </button>
-      <button type="button" class="xb" aria-label={`Move ${name} down`} disabled={i === n - 1} onClick={() => onMove(i, i + 1)}>
-        ↓
-      </button>
-    </span>
-  );
 }
 
 // ---- states (SPEC V0.119 (6)) ----
