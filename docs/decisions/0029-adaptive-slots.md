@@ -207,7 +207,7 @@ B is shown, never hidden. AIMD is the TCP and Netflix concurrency-limits pattern
 - **Aging cap.** A head passed by backfill for 10 min, or 3 times, stops backfill until it starts. An expensive job (cost 2.0) can't starve behind a stream of cheap ones.
 - **Idle holds.** A held slot with no matched command alive and a live cost under 0.05 units for 3 min counts as 0.1, and its thread is nudged to release. This is the 18-minute hold above.
 - **Heavier than predicted.** Nothing is killed. The running job's cost is its live measurement once that is higher than the prediction, so new admissions stop by themselves. The thread gets one notice ("your `make test` uses 3.1 cores, predicted 2.0; others wait") and the learned cost rises.
-- **Memory guard.** When the headroom falls under `R_mem` **or** the memory stall level is *critical* for 10 s:
+- **Memory guard.** When the headroom falls under `R_mem` **or** the memory stall level is *critical* for 10 s: *Amended by V0.guard-agents-stall: the agents' own stall level counts as well as the host's, and so does the stall of oomd's unit within 10 points of its limit.*
   - no new admissions, the rail ring turns red, and the thread whose job grew most since its grant gets a notice;
   - `agents/memory.high` (already set) throttles before `memory.max` kills;
   - **freeze the newest slotted job** (owner, Q3; Buck2's `cgroup_freeze` strategy):

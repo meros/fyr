@@ -41,6 +41,12 @@ type Signals struct {
 	// section 3 rule 3 takes it off the headroom, so a job admitted at 3 % of
 	// its 45 % peak does not leave the other 42 % to the next one.
 	Growth uint64
+	// UnitStall is the full memory stall (avg10, percent) on the unit
+	// systemd-oomd watches, nil when unread; OomdLimit is oomd's limit on it
+	// in percent, 0 for none or unknown (V0.oomd-guard). V0.guard-agents-stall:
+	// near the limit the guard does not wait to freeze more.
+	UnitStall *float64
+	OomdLimit float64
 }
 
 // Reserve is the share of the agents' memory that must stay free: twice
@@ -52,6 +58,40 @@ func (s Signals) Reserve(p Policy) float64 {
 		return 2 * p.MemoryReserve
 	}
 	return p.MemoryReserve
+}
+
+// Critical says the host's memory stall or the agents' own is critical, and
+// why. V0.guard-agents-stall: the agents' stall is what systemd-oomd compares
+// against its limit (decision 0032: the agents at 53 % while the desktop read
+// 0.1 %), so it counts on its own; the host's stays a trigger too
+// (V0.load-tuning).
+func (s Signals) Critical() (bool, string) {
+	switch {
+	case s.Stall == StallCritical:
+		return true, "memory stalls (critical)"
+	case s.AgentsStall == StallCritical:
+		return true, "the agents' memory stalls (critical)"
+	}
+	return false, ""
+}
+
+// OomdNearMargin is how close (percentage points) the unit's stall may come
+// to oomd's limit before the guard stops waiting between freezes
+// (V0.guard-agents-stall); the same as cgroup.OomdNearMargin, at which it logs.
+const OomdNearMargin = 10.0
+
+// NearOomd says the unit's stall is within OomdNearMargin of oomd's limit;
+// false while either is unknown.
+func (s Signals) NearOomd() bool {
+	return s.OomdLimit > 0 && s.UnitStall != nil && *s.UnitStall >= s.OomdLimit-OomdNearMargin
+}
+
+// OomdWhy says the unit's stall is near oomd's limit, "" when it is not.
+func (s Signals) OomdWhy() string {
+	if !s.NearOomd() {
+		return ""
+	}
+	return fmt.Sprintf("memory stalls near oomd's limit (%.0f %% of %.0f %%)", *s.UnitStall, s.OomdLimit)
 }
 
 // MemoryWhy says why memory is short by its headroom: "memory: 12 % free",
@@ -210,8 +250,11 @@ func DecideWith(p Policy, s Signals, f Factors, n int, held []Need, extra []Extr
 	if s.Headroom != nil && *s.Headroom < s.Reserve(p) {
 		return false, s.MemoryWhy(), ResHeadroom
 	}
-	if s.Stall == StallCritical {
-		return false, "memory stalls (critical)", ResMem
+	if crit, why := s.Critical(); crit {
+		return false, why, ResMem
+	}
+	if why := s.OomdWhy(); why != "" { // V0.guard-agents-stall: as the guard
+		return false, why, ResMem
 	}
 	if len(held) == 0 {
 		return true, "", ""
