@@ -1,14 +1,12 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"log"
 	"strconv"
 
-	"github.com/meros/fyr/internal/front"
 	"github.com/meros/fyr/internal/identity"
-	"github.com/meros/fyr/internal/peers"
+	"github.com/meros/fyr/internal/peer"
 	"github.com/meros/fyr/internal/roster"
 	"github.com/meros/fyr/internal/tailnet"
 )
@@ -23,9 +21,9 @@ func hostURL(hostListen string) string {
 }
 
 // wellKnown is this install's /.well-known/fyr answer (V0.123), with its
-// key id (V0.124).
-func wellKnown(cfg config, name, host, id string) peers.WellKnown {
-	return peers.WellKnown{Fyr: 1, Name: name, Role: cfg.Role, Build: BuildID(), Owner: cfg.OwnerLogin, Host: host, ID: id}
+// key id (V0.124); the pairing reads it.
+func wellKnown(cfg config, name, host, id string) peer.WellKnown {
+	return peer.WellKnown{Fyr: 1, Name: name, Role: cfg.Role, Build: BuildID(), Owner: cfg.OwnerLogin, Host: host, ID: id}
 }
 
 // installID is this install's key id (V0.124, decision 0026): the key is
@@ -68,30 +66,6 @@ func installID(data string) string {
 	}
 	log.Printf("install key id %s", k.ID())
 	return k.ID()
-}
-
-// newDiscovery finds the owner's other Fyr hosts (V0.123, decision 0025):
-// the static peers of the config, and, when tailscaled runs here, the nodes
-// of the owner's own Tailscale user that answer /.well-known/fyr. The front
-// follows each found host that serves the host protocol, as it follows a
-// configured one: the hosts keep the connections, the client its one uplink.
-func newDiscovery(cfg config, self peers.WellKnown, listen string, fr *front.Front) *peers.Discovery {
-	opt := peers.Options{Owner: cfg.OwnerLogin, Self: "http://" + listen, Static: cfg.Peers, Ports: cfg.PeerPorts,
-		Logf: log.Printf, WellKnown: self,
-		OnChange: func(ps []peers.Peer) {
-			for _, p := range ps {
-				if p.Online && p.Host != "" && p.Name != self.Name {
-					fr.AddHost(front.HostConfig{Name: p.Name, URL: p.Host, Remote: true, Found: true})
-				}
-			}
-		}}
-	if tailnet.Available(cfg.tsSocket()) && cfg.OwnerLogin != "" {
-		opt.Nodes = func(ctx context.Context) ([]string, error) { return tailnet.Candidates(ctx, cfg.tsSocket()) }
-		if pub := servePublic(cfg); pub != "" {
-			opt.Self = "https://" + pub
-		}
-	}
-	return peers.New(opt)
 }
 
 // servePublic is the host:port the browser reaches this install's Tailscale

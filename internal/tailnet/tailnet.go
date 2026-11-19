@@ -189,43 +189,6 @@ func IPv4(socket string) (string, error) {
 	return "", fmt.Errorf("tailscaled reports no IPv4 address for this node (is it logged in?)")
 }
 
-// Candidates are the MagicDNS names of the tailnet peers that may be Fyr
-// hosts (SPEC 0.5 V0.123, decision 0025): online, untagged, and owned by this
-// node's own Tailscale user. Discovery then probes each for /.well-known/fyr.
-func Candidates(ctx context.Context, socket string) ([]string, error) {
-	req, _ := http.NewRequestWithContext(ctx, "GET", "http://local-tailscaled.sock/localapi/v0/status", nil)
-	req.Header.Set("Sec-Tailscale", "localapi")
-	resp, err := localClient(socket).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("tailscaled status: %s", resp.Status)
-	}
-	var s struct {
-		Self struct{ UserID int64 }
-		Peer map[string]struct {
-			DNSName string
-			UserID  int64
-			Online  bool
-			Tags    []string
-		}
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, p := range s.Peer {
-		name := strings.TrimSuffix(p.DNSName, ".")
-		if p.Online && len(p.Tags) == 0 && p.UserID == s.Self.UserID && s.Self.UserID != 0 && name != "" {
-			out = append(out, name)
-		}
-	}
-	sort.Strings(out)
-	return out, nil
-}
-
 // Names are this node's own MagicDNS names (the full name and its first
 // label), which a front may use as the Host of its requests; the host's
 // listener refuses any other name (decision 0030 slice 1: DNS rebinding).

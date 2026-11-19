@@ -169,7 +169,8 @@ type Host struct {
 	// Profiles are the host's own (decision 0015); null when the host sent none.
 	Profiles []any `json:"profiles"`
 	Deploy   any   `json:"deploy,omitempty"`
-	// Found: discovery found it on the tailnet (V0.123); else it is configured.
+	// Found: not in the config; the roster brought it (a paired install,
+	// V0.retire-discovery; V0.123's tailnet discovery did until then).
 	Found bool `json:"found,omitempty"`
 	// ID is the host's key id (V0.124, decision 0026): the one it reports,
 	// else the one the front pinned when it first saw it.

@@ -40,7 +40,7 @@ import (
 	"github.com/meros/fyr/internal/heavy"
 	"github.com/meros/fyr/internal/launchenv"
 	"github.com/meros/fyr/internal/mcp"
-	"github.com/meros/fyr/internal/peers"
+	"github.com/meros/fyr/internal/peer"
 	"github.com/meros/fyr/internal/pipe"
 	"github.com/meros/fyr/internal/preview"
 	"github.com/meros/fyr/internal/projicon"
@@ -82,7 +82,9 @@ func main() {
 	list := fl.Bool("list", false, "import-t3: only list the candidates")
 	role := fl.String("role", "", "host, front or both (default from config role, else both)")
 	hostsFlag := fl.String("hosts", "", "front: other hosts as name=url,… (default from config hosts)")
-	peersFlag := fl.String("peers", "", "other Fyr page origins to probe, comma separated (default from config peers; V0.123)")
+	// V0.retire-discovery: the tailnet discovery that probed these is gone; the flag is
+	// still accepted, so a unit that passes it starts.
+	peersFlag := fl.String("peers", "", "ignored (V0.123's discovery was removed; installs pair instead)")
 	runnerFlag := fl.String("runner", "", "use this runner socket even when it is not this install's launcher's (#167; development)")
 	hostListen := fl.String("host-listen", "", "host: also serve fronts on this tailnet address, or tailnet:PORT (default from config hostListen)")
 	wellKnownListen := fl.String("well-known-listen", "", "answer only /.well-known/fyr on this loopback address, for Tailscale Serve over TCP (default from config wellKnownListen)")
@@ -107,8 +109,8 @@ func main() {
 	}
 	cfg := loadConfig(*cfgPath, filepath.Join(*t3Dir, "settings.json"))
 	cfg.override(*listen, *ownerLogin, *role, *hostsFlag, *hostListen)
-	if *peersFlag != "" {
-		cfg.Peers = strings.Split(*peersFlag, ",")
+	if *peersFlag != "" || len(cfg.Peers) > 0 {
+		log.Printf("peers: ignored; the old discovery is gone, installs pair instead (fyr pair; V0.retire-discovery)")
 	}
 	if *wellKnownListen != "" {
 		cfg.WellKnownListen = *wellKnownListen
@@ -596,7 +598,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		srvs.serve(link, srv.PipeHandler()) // decision 0030 3.2: the pipe needs no browser guard; its requests carry Fyr-Actor
 		hosts := append([]front.HostConfig{{Name: hostName, URL: front.LocalURL, Dial: link.Dial}}, cfg.Hosts...)
 		fe = startFront(ctx, frontParts{cfg: cfg, webFS: webFS, name: hostName, data: data, key: key, st: h.st, auth: authStore,
-			hosts: hosts, local: hostName, hostURL: hostURL(cfg.HostListen)}, ln.Addr().String(), srv, old)
+			hosts: hosts, local: hostName, hostURL: hostURL(cfg.HostListen)}, srv, old)
 		fr := fe.fr
 		// V0.81: a client-only deploy swaps the client this front serves.
 		dep.SwitchClient = func(build, dir string) error { return fr.SetClient(build, os.DirFS(dir)) }
@@ -607,7 +609,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		serveFrontSockets(cfg, fr, data, ln.Addr().String(), srvs)
 		if cfg.WellKnownListen != "" {
 			// The macOS Serve's way to this answer: it names the peer port too, or condition 1 cannot pair this install.
-			srvs.serve(listenLoopback(cfg.WellKnownListen), peers.OnlyWellKnown(cfg.OwnerLogin, fe.wellKnown))
+			srvs.serve(listenLoopback(cfg.WellKnownListen), peer.OnlyWellKnown(cfg.OwnerLogin, fe.wellKnown))
 			log.Printf("answering /.well-known/fyr for Tailscale Serve at %s", cfg.WellKnownListen)
 		}
 	}
@@ -678,7 +680,7 @@ func serveFront(cfg config, webFS fs.FS, name, data string) {
 	defer stop()
 	go cfg.watch.run(ctx, cfg.configEvery()) // V0.180: say when the config changed under fyrd
 	fe := startFront(ctx, frontParts{cfg: cfg, webFS: webFS, name: name, data: data, key: installKey(data), st: st, auth: openAuth(st, cfg.stepUp()),
-		hosts: cfg.Hosts}, ln.Addr().String(), nil, nil) // V0.123
+		hosts: cfg.Hosts}, nil, nil)
 	primary := &servers{}
 	primary.serve(ln, deploy.Health(fe.fr.Handler(), storeHealthy(st), webHealthy(webFS), cfg.watch.health))
 	extra := &servers{onErr: func(error) {}}

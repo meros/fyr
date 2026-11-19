@@ -123,12 +123,12 @@ type config struct {
 	UndeclaredMemory float64         `json:"undeclaredMemory"`
 	UndeclaredAfter  int             `json:"undeclaredAfter"`
 	HeavyAdded       []heavy.Pattern `json:"heavyAdded"`
-	// Peers: Fyr page origins probed as they are (V0.123, decision 0025),
-	// besides the tailnet's own nodes; for development and non-tailnet hosts.
+	// Peers: V0.123's static discovery origins; read only to say they are
+	// ignored (V0.retire-discovery).
 	Peers []string `json:"peers"`
-	// PeerPorts: the HTTPS ports a tailnet node is probed on for
-	// /.well-known/fyr (V0.123); empty is 7443, Tailscale Serve's port in the
-	// NixOS module.
+	// PeerPorts: the HTTPS port of a node's Tailscale Serve, where the pairing
+	// reads /.well-known/fyr (the first one); empty is 7443, the NixOS
+	// module's.
 	PeerPorts []int `json:"peerPorts"`
 	// Name: this install's name in the clients; empty is the machine's
 	// hostname. Two installs on one machine need two names (V0.123).

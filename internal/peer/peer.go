@@ -26,7 +26,6 @@ import (
 	"github.com/meros/fyr/internal/discovery"
 	"github.com/meros/fyr/internal/identity"
 	"github.com/meros/fyr/internal/peerlink"
-	"github.com/meros/fyr/internal/peers"
 	"github.com/meros/fyr/internal/roster"
 	"github.com/meros/fyr/internal/tailnet"
 )
@@ -156,10 +155,7 @@ func (e *Env) Condition1(ctx context.Context, self, node tailnet.StatusNode) (f 
 		return Found{}, fmt.Errorf("%w: %v", ErrNoServe, err)
 	}
 	defer resp.Body.Close()
-	var w struct {
-		peers.WellKnown
-		Peer int `json:"peer"`
-	}
+	var w WellKnown
 	if resp.StatusCode != 200 || json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&w) != nil || w.Fyr != 1 || w.ID == "" {
 		return Found{}, ErrNoServe
 	}

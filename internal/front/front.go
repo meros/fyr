@@ -37,7 +37,6 @@ import (
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/notify"
 	"github.com/meros/fyr/internal/peer"
-	"github.com/meros/fyr/internal/peers"
 	"github.com/meros/fyr/internal/stream"
 )
 
@@ -48,7 +47,8 @@ type HostConfig struct {
 	// Remote: the host runs on another machine. The browser's identity
 	// headers are not passed on; the host checks the front's tailnet identity.
 	Remote bool `json:"-"`
-	// Found: discovery found it (V0.123), it is not in the config.
+	// Found: it is not in the config; the roster brought it (UsePeerLink).
+	// V0.123's tailnet discovery set it too, until V0.retire-discovery.
 	Found bool `json:"-"`
 	// Dial, when set, connects to the host in-process (V0.129 (3)): the
 	// both role's own host, reached at LocalURL with no port open.
@@ -107,8 +107,8 @@ type Options struct {
 	// project order); nil keeps none.
 	Store KV
 	// WellKnown is this install's /.well-known/fyr answer (V0.123, decision
-	// 0025), by which other installs find it; nil serves none.
-	WellKnown func() peers.WellKnown
+	// 0025), which the pairing reads (condition 1); nil serves none.
+	WellKnown func() peer.WellKnown
 	// Tailnet asks tailscaled which node a Serve request came from (decision
 	// 0030 3.4); nil enrols a tailnet browser by its login alone, as V0.130 did.
 	Tailnet NodeAuth
@@ -258,8 +258,8 @@ func (f *Front) append(l *link) {
 	f.links.Store(&n)
 }
 
-// AddHost follows one more host, found by discovery (V0.123, decision
-// 0025): it behaves as a configured one. A host whose name or URL is
+// AddHost follows one more host, one the roster brought over its peer link
+// (UsePeerLink): it behaves as a configured one. A host whose name or URL is
 // already followed is not added again; false then.
 func (f *Front) AddHost(h HostConfig) bool {
 	f.runMu.Lock()
@@ -941,8 +941,8 @@ func (f *Front) mux() *routeMux {
 		f.forward(principalOf(r), w, r, f.byName(r.URL.Query().Get("host")))
 	})
 	mux.HandleFunc("/mcp", http.NotFound) // agents talk to their host
-	if f.opt.WellKnown != nil {           // V0.123: how other installs find this one
-		mux.Handle("GET /.well-known/fyr", peers.Handler(f.opt.WellKnown))
+	if f.opt.WellKnown != nil {           // V0.123: who this install is, for the pairing
+		mux.Handle("GET /.well-known/fyr", peer.WellKnownHandler(f.opt.WellKnown))
 	}
 	if f.opt.Web != nil {
 		mux.Handle("/", f.webClient())

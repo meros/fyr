@@ -60,10 +60,6 @@ func TestFakeTailscaledAnswersLikeTheLocalAPI(t *testing.T) {
 	if err != nil || login != l.OwnerLogin || dns != l.Self.Name {
 		t.Fatalf("Self: %q %q %v", login, dns, err)
 	}
-	cands, err := tailnet.Candidates(context.Background(), l.TS.Socket)
-	if err != nil || len(cands) != 1 || cands[0] != l.Phone.Name {
-		t.Errorf("Candidates (online, untagged, the owner's user): %v %v", cands, err)
-	}
 	if ip, err := tailnet.IPv4(l.TS.Socket); err != nil || ip != l.Self.IP {
 		t.Errorf("IPv4: %q %v", ip, err)
 	}
