@@ -236,6 +236,10 @@ func (w When) eval(t *Thread, armed map[string]string, now time.Time) tri {
 	case WhenEnded:
 		return truth(c.Phase.Ended())
 	case WhenCondition:
+		if at, ok := armed["pr:"+c.ID]; ok && prFact(w.Type) && c.PR != nil && c.PR.State == "OPEN" && !readAfter(c.PR, at) {
+			// V0.checks-follow-head: not known until GitHub is read again.
+			return unknown
+		}
 		k := condition(c, w.Type)
 		return truth(k != nil && k.Status == w.Status)
 	case WhenMoved:
@@ -296,6 +300,41 @@ func (w When) anchor(t *Thread, armed map[string]string) {
 			armed["change:"+c.ID] = changeDigest(c)
 		}
 	}
+}
+
+// prFact: a condition the PR poller reads from GitHub, about the PR's head.
+func prFact(typ CondType) bool {
+	return typ == CondChecks || typ == CondReview || typ == CondConflict
+}
+
+// anchorPR anchors each PR fact the agent's watch reads to the PR read the
+// change holds now (V0.checks-follow-head, #120): the watch holds only on a
+// later read. A watch armed right after a push would otherwise fire on the
+// previous head's checks before the poller has read the new head. It
+// reports whether the watch reads one, so Fyr reads the PR at once.
+func (w When) anchorPR(t *Thread, armed map[string]string) bool {
+	read := false
+	for _, x := range slices.Concat(w.All, w.Any) {
+		read = x.anchorPR(t, armed) || read
+	}
+	if w.Not != nil {
+		read = w.Not.anchorPR(t, armed) || read
+	}
+	if w.Kind != WhenCondition || !prFact(w.Type) {
+		return read
+	}
+	c := FindChange(t, w.Change)
+	if c == nil || c.PR == nil || c.PR.State != "OPEN" || c.PR.CheckedAt == nil {
+		return read
+	}
+	armed["pr:"+c.ID] = c.PR.CheckedAt.UTC().Format(time.RFC3339Nano)
+	return true
+}
+
+// readAfter: the PR was read from GitHub after the anchored read at.
+func readAfter(p *PR, at string) bool {
+	t0, err := time.Parse(time.RFC3339Nano, at)
+	return err != nil || (p.CheckedAt != nil && p.CheckedAt.After(t0))
 }
 
 // changeDigest is what changeMoved compares: the change's phase, PR,
@@ -741,7 +780,12 @@ func reduceRuleArm(r Rec, in Input, now time.Time) (Result, error) {
 		return Result{}, fmt.Errorf("%w: then must be notify or settle", ErrBadArgs)
 	}
 	ArmRule(r.T, rule, now)
-	return Result{Events: []Event{{"rule.armed", map[string]any{"rule": rule}}}, Reply: rule}, nil
+	var effects []Effect
+	if x := FindRule(r.T, rule.ID); x != nil && x.When.anchorPR(r.T, x.Armed) {
+		rule = *x
+		effects = []Effect{{Kind: EffectChangeRefresh}} // read the new head now
+	}
+	return Result{Events: []Event{{"rule.armed", map[string]any{"rule": rule}}}, Effects: effects, Reply: rule}, nil
 }
 
 func reduceRuleRemove(r Rec, in Input, _ time.Time) (Result, error) {
