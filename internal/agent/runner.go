@@ -209,7 +209,7 @@ func (m *Manager) attach(threadID string, p runner.Proc) (*session, error) {
 		}
 	}
 	if meta.Cgroup && m.cfg.Cgroups != nil {
-		m.cfg.Cgroups.Thread(t.ID) // the hold this process had in the last fyrd
+		m.cfg.Cgroups.Hold(t.ID) // the hold this process had in the last fyrd
 		s.cgroup = true
 	}
 	var w io.Writer

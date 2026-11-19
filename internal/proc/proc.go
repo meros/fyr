@@ -22,6 +22,12 @@ const WaitDelay = 5 * time.Second
 // when ctx ends, the whole group is killed, and Wait returns at most
 // WaitDelay later. A ctx from WithCgroup starts it in that cgroup.
 func Command(ctx context.Context, name string, args ...string) *exec.Cmd {
+	if wrap, ok := ctx.Value(wrapKey{}).(func() []string); ok {
+		if w := wrap(); len(w) > 0 {
+			args = append(append(append([]string{}, w[1:]...), name), args...)
+			name = w[0]
+		}
+	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	Group(cmd)
 	if f, ok := ctx.Value(cgroupKey{}).(*os.File); ok {
@@ -48,6 +54,18 @@ func IntoCgroup(cmd *exec.Cmd, dir string) (func(), error) {
 }
 
 type cgroupKey struct{}
+
+type wrapKey struct{}
+
+// WithWrap returns a context whose Commands start under the command line
+// wrap gives for each (V0.agents-unit: a scope of the agents' slice). A nil
+// wrap changes nothing.
+func WithWrap(ctx context.Context, wrap func() []string) context.Context {
+	if wrap == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, wrapKey{}, wrap)
+}
 
 // WithCgroup returns a context whose Commands start in the cgroup
 // directory dir (V0.80), and a func that closes it once those commands

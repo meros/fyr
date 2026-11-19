@@ -297,7 +297,7 @@ func (j *Jobs) tick(t *Tree, trees map[string]reading, snap slots.Snapshot, rate
 		if t == nil {
 			return ""
 		}
-		return filepath.Join(t.root, "agents", unsafe.ReplaceAllString(owner, "_"))
+		return t.threadDir(unsafe.ReplaceAllString(owner, "_"))
 	}
 	// 1. Which holds are new (under j.mu, no I/O).
 	j.mu.Lock()

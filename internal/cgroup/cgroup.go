@@ -12,6 +12,9 @@
 // proc.IntoCgroup), so nothing sweeps PIDs. Without a writable delegated
 // cgroup v2 Setup returns nil, a nil *Tree hands out no directories, and
 // every process runs in the daemon's cgroup as before.
+//
+// With the module's agents slice the threads run in scopes of their own
+// outside fyrd's unit instead (V0.agents-unit, layout.go).
 package cgroup
 
 import (
@@ -24,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -41,6 +45,14 @@ type Budget struct {
 	// ThreadMemoryHighPercent: each thread's memory.high as a share of the
 	// agents' budget, 0 for none (decision 0032 slice 3).
 	ThreadMemoryHighPercent int `json:"threadMemoryHighPercent"`
+	// AgentsSlice: the slice the module made for the agents, with their
+	// budget and oomd rule (V0.agents-unit); each thread runs in a scope
+	// under it. Empty keeps the V0.80 layout.
+	AgentsSlice string `json:"agentsSlice,omitempty"`
+	// SystemdRun and Systemctl: the binaries; default systemd-run on PATH
+	// and the systemctl beside it.
+	SystemdRun string `json:"systemdRun,omitempty"`
+	Systemctl  string `json:"systemctl,omitempty"`
 }
 
 // Options are the Budget and where to find things; tests point FS and Self
@@ -54,7 +66,13 @@ type Options struct {
 	// Probe starts a process in dir to prove the kernel accepts
 	// CLONE_INTO_CGROUP there; default runs `true`.
 	Probe func(dir string) error
-	move  func(file, pid string) error // tests watch the moves
+	// ScopeProbe starts one process in a scope of the agents' slice; default
+	// runs systemd-run (V0.agents-unit).
+	ScopeProbe ScopeProbe
+	move       func(file, pid string) error // tests watch the moves
+	userBus    bool                         // tests: scopes of the user manager
+	scopeExec  func(name string, args ...string) error
+	oomAdj     string // default /proc/self/oom_score_adj
 }
 
 const (
@@ -73,9 +91,21 @@ const (
 // Tree is the unit's split cgroup. A nil Tree is the off state.
 type Tree struct {
 	root string
-	logf func(string, ...any)
-	mu   sync.Mutex
-	refs map[string]int
+	// layout: where the threads' cgroups are; agents: the cgroup above
+	// them (agents/, or the agents' slice); legacy: agents/ of a split unit
+	// in the scope layout, whose threads from before the switch run on.
+	layout Layout
+	agents string
+	legacy string
+	sc     *scopes
+	// curMu guards cur: each thread's newest scope (V0.agents-unit).
+	curMu     sync.Mutex
+	cur       map[string]string
+	pending   map[string]time.Time // under mu: scope names handed out
+	deploySeq atomic.Int64
+	logf      func(string, ...any)
+	mu        sync.Mutex
+	refs      map[string]int
 	// focus: per device, the thread (cgroup name) it shows and the last
 	// beat (V0.85); raised: the cgroups written at focusWeight.
 	focus  map[string]focusBeat
@@ -119,22 +149,38 @@ func Setup(o Options) *Tree {
 	if o.move == nil {
 		o.move = func(file, pid string) error { return os.WriteFile(file, []byte(pid), 0o644) }
 	}
-	t, err := setup(o)
+	if o.ScopeProbe == nil {
+		o.ScopeProbe = probeScope
+	}
+	if o.oomAdj == "" {
+		o.oomAdj = "/proc/self/oom_score_adj"
+	}
+	self, selfErr := selfPath(o)
+	t, err := setup(o, self, selfErr)
+	if o.AgentsSlice != "" && selfErr == nil {
+		st, serr := setupScopes(o, t, self)
+		if serr == nil {
+			o.Logf("cgroups: on, layout scope: fyrd in %s, each thread in %s/%s<thread>.scope (memory.oom.group=1), deploys in %s<n>.scope", self, st.agentsDir(), scopePrefix, deployPrefix)
+			if st.legacy != "" {
+				o.Logf("cgroups: threads started before the switch run on in %s/<thread>", st.legacy)
+			}
+			return st
+		}
+		o.Logf("cgroups: the agents' slice %s is not usable (%v); keeping the unit layout", o.AgentsSlice, serr)
+	}
 	if err != nil {
 		o.Logf("cgroups: off (%v); every process runs in the daemon's cgroup", err)
 		return nil
 	}
-	o.Logf("cgroups: on in %s (server/, agents/<thread>/, agents/self-deploy/)", t.root)
+	o.Logf("cgroups: on, layout unit, in %s (server/, agents/<thread>/, agents/self-deploy/)", t.root)
 	return t
 }
 
-func setup(o Options) (*Tree, error) {
-	if !o.Enable {
-		return nil, errors.New("not configured")
-	}
+// selfPath is fyrd's cgroup v2 path, from /proc/self/cgroup.
+func selfPath(o Options) (string, error) {
 	b, err := os.ReadFile(o.Self)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	path, ok := "", false
 	for _, line := range strings.Split(string(b), "\n") {
@@ -143,7 +189,22 @@ func setup(o Options) (*Tree, error) {
 		}
 	}
 	if !ok {
-		return nil, errors.New("no cgroup v2")
+		return "", errors.New("no cgroup v2")
+	}
+	return path, nil
+}
+
+func newTree(root string, o Options) *Tree {
+	return &Tree{root: root, layout: LayoutUnit, agents: filepath.Join(root, "agents"), logf: o.Logf, refs: map[string]int{}, focus: map[string]focusBeat{}, raised: map[string]bool{}, weights: map[string]string{},
+		cur: map[string]string{}, pending: map[string]time.Time{}, threadPercent: min(max(o.ThreadMemoryHighPercent, 0), 100)}
+}
+
+func setup(o Options, path string, err error) (*Tree, error) {
+	if !o.Enable {
+		return nil, errors.New("not configured")
+	}
+	if err != nil {
+		return nil, err
 	}
 	// A restarted fyrd (a self-deploy) starts where the launcher is: server/.
 	path = strings.TrimSuffix(path, "/server")
@@ -181,7 +242,7 @@ func setup(o Options) (*Tree, error) {
 	if err := put(root, "cgroup.subtree_control", controllers); err != nil {
 		return nil, fmt.Errorf("enable controllers: %w", err)
 	}
-	t := &Tree{root: root, logf: o.Logf, refs: map[string]int{}, focus: map[string]focusBeat{}, raised: map[string]bool{}, weights: map[string]string{}, threadPercent: min(max(o.ThreadMemoryHighPercent, 0), 100)}
+	t := newTree(root, o)
 	var bad []string
 	set := func(dir, file, v string) {
 		if v == "" {
@@ -245,22 +306,63 @@ func (t *Tree) Root() string {
 var unsafe = regexp.MustCompile(`[^A-Za-z0-9_-]`)
 
 // Thread returns the directory a thread's process starts in, made when
-// missing, or "" when off. Each Thread is matched by one Release: the
-// directory goes when the last process that took it is gone.
+// missing, or "" when off and in the scope layout (Launch). Each Thread is
+// matched by one Release: the directory goes when the last process that took
+// it is gone.
 func (t *Tree) Thread(id string) string {
+	d, _ := t.Launch(id)
+	return d
+}
+
+// Launch returns where a thread's process starts: the directory it starts in
+// (made when missing), or in the scope layout the command line that starts it
+// in a new scope (V0.agents-unit); both empty when off. Each Launch is
+// matched by one Release, as Thread.
+func (t *Tree) Launch(id string) (dir string, wrap []string) {
 	if t == nil {
-		return ""
+		return "", nil
 	}
 	name := unsafe.ReplaceAllString(id, "_")
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.layout == LayoutScope {
+		unit := t.freeUnit(name)
+		t.pending[unit] = time.Now()
+		w := t.weightOf(name, t.raised[name])
+		t.weights[name] = w
+		t.refs[name]++
+		t.curMu.Lock()
+		t.cur[name] = filepath.Join(t.agentsDir(), unit)
+		t.curMu.Unlock()
+		return "", t.sc.prefix(unit, w)
+	}
 	d, err := t.make(name)
 	if err != nil {
 		t.logf("cgroups: thread %s: %v", id, err)
-		return ""
+		return "", nil
 	}
 	t.refs[name]++
-	return d
+	return d, nil
+}
+
+// Hold takes the hold of a thread's process that a previous fyrd started and
+// the runner kept (decision 0023): Release then counts it, and nothing is
+// made.
+func (t *Tree) Hold(id string) {
+	if t == nil {
+		return
+	}
+	name := unsafe.ReplaceAllString(id, "_")
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.layout != LayoutScope {
+		if _, err := t.make(name); err != nil {
+			t.logf("cgroups: thread %s: %v", id, err)
+		}
+	} else if _, ok := t.weights[name]; !ok {
+		t.weights[name] = ""
+	}
+	t.refs[name]++
 }
 
 // CPUTime is the CPU a thread's cgroup and its children (job/, undeclared/)
@@ -269,7 +371,7 @@ func (t *Tree) CPUTime(id string) (time.Duration, bool) {
 	if t == nil {
 		return 0, false
 	}
-	u, ok := readKey(filepath.Join(t.root, "agents", unsafe.ReplaceAllString(id, "_"), "cpu.stat"), "usage_usec")
+	u, ok := readKey(filepath.Join(t.threadDir(unsafe.ReplaceAllString(id, "_")), "cpu.stat"), "usage_usec")
 	return time.Duration(u) * time.Microsecond, ok
 }
 
@@ -287,23 +389,44 @@ func (t *Tree) Release(id string) {
 	}
 	delete(t.refs, name)
 	delete(t.weights, name)
-	// Decision 0029 S5: its job's cgroup first (the kernel keeps a parent
-	// with a child); a job still running keeps both until the next Release.
-	job := filepath.Join(t.root, "agents", name, jobDir)
-	for _, f := range []string{"cgroup.procs", "cgroup.freeze"} {
-		os.Remove(filepath.Join(job, f)) // only a plain directory (tests) holds these
+	dirs := []string{}
+	if t.layout == LayoutScope {
+		// A scope goes by itself once empty (--collect); a legacy directory
+		// from before the switch is removed as before.
+		t.curMu.Lock()
+		delete(t.cur, name)
+		t.curMu.Unlock()
+		for u := range t.pending {
+			if n, _, _ := scopeThread(u); n == name {
+				delete(t.pending, u)
+			}
+		}
+		if t.legacy != "" {
+			dirs = append(dirs, filepath.Join(t.legacy, name))
+		}
+	} else {
+		dirs = append(dirs, filepath.Join(t.agentsDir(), name))
 	}
-	os.Remove(job)
-	os.Remove(filepath.Join(t.root, "agents", name))
+	for _, d := range dirs {
+		// Decision 0029 S5: its job's cgroup first (the kernel keeps a parent
+		// with a child); a job still running keeps both until the next Release.
+		job := filepath.Join(d, jobDir)
+		for _, f := range []string{"cgroup.procs", "cgroup.freeze"} {
+			os.Remove(filepath.Join(job, f)) // only a plain directory (tests) holds these
+		}
+		os.Remove(job)
+		os.Remove(d)
+	}
 }
 
 // DeployDir is the cgroup of a self-deploy's build and tests under agents/. Thread
 // cgroups are named after thread ids (t_...), so the two never meet.
 const DeployDir = "self-deploy"
 
-// Deploy is where a self-deploy's build and tests run, or "" when off.
+// Deploy is where a self-deploy's build and tests run, or "" when off and
+// in the scope layout (DeployWrap starts them there).
 func (t *Tree) Deploy() string {
-	if t == nil {
+	if t == nil || t.layout == LayoutScope {
 		return ""
 	}
 	t.mu.Lock()
@@ -317,7 +440,7 @@ func (t *Tree) Deploy() string {
 }
 
 func (t *Tree) make(name string) (string, error) {
-	d := filepath.Join(t.root, "agents", name)
+	d := filepath.Join(t.agentsDir(), name)
 	if err := os.Mkdir(d, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
 		return "", err
 	}
@@ -417,13 +540,20 @@ func (t *Tree) reweight(now time.Time) {
 		}
 		want[b.name] = true
 	}
+	var later [][2]string
 	for name, was := range t.weights {
 		w := t.weightOf(name, want[name])
 		if w == was {
 			continue
 		}
-		d := filepath.Join(t.root, "agents", name)
+		d := t.threadDir(name)
 		if _, err := os.Stat(d); err != nil {
+			continue
+		}
+		if t.layout == LayoutScope && filepath.Dir(d) == t.agentsDir() {
+			// Through the system manager: not under t.mu.
+			later = append(later, [2]string{d, w})
+			t.weights[name] = w
 			continue
 		}
 		if err := put(d, "cpu.weight", w); err != nil {
@@ -433,6 +563,15 @@ func (t *Tree) reweight(now time.Time) {
 		t.weights[name] = w
 	}
 	t.raised = want
+	if len(later) > 0 {
+		go func() {
+			for _, x := range later {
+				if err := t.setAttr(x[0], "cpu.weight", x[1]); err != nil {
+					t.logf("cgroups: weight of %s: %v", filepath.Base(x[0]), err)
+				}
+			}
+		}()
+	}
 }
 
 // readKey reads "key value" lines (cpu.stat) and returns key's value.

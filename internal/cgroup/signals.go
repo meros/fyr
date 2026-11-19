@@ -119,7 +119,7 @@ func cpuCount(list string) int {
 func capacity(t *Tree, proc string, cores int, share float64) Capacity {
 	c := Capacity{CPU: float64(cores)}
 	if t != nil {
-		agents := filepath.Join(t.root, "agents")
+		agents := t.agentsDir()
 		if q := cpuMax(filepath.Join(agents, "cpu.max")); q > 0 && q < c.CPU {
 			c.CPU = q
 		}
@@ -235,7 +235,7 @@ func (s *Sampler) signals(l *Load, proc string, agentsMem uint64) {
 			// (inactive_file) is not used memory; memory.current fills to
 			// memory.high with it.
 			ws := agentsMem
-			if inactive, ok := readKey(filepath.Join(s.Tree.root, "agents", "memory.stat"), "inactive_file"); ok && inactive <= ws {
+			if inactive, ok := readKey(filepath.Join(s.Tree.agentsDir(), "memory.stat"), "inactive_file"); ok && inactive <= ws {
 				ws -= inactive
 			}
 			if ws <= c.Memory {
@@ -248,7 +248,7 @@ func (s *Sampler) signals(l *Load, proc string, agentsMem uint64) {
 		l.Headroom = &h
 	}
 	if s.Tree != nil {
-		l.AgentsSwapFull = swapFull(filepath.Join(s.Tree.root, "agents"))
+		l.AgentsSwapFull = swapFull(s.Tree.agentsDir())
 	}
 	if p, ok := readPSI(filepath.Join(proc, "pressure", "memory")); ok && p.hasFull {
 		f := p.full
@@ -256,11 +256,11 @@ func (s *Sampler) signals(l *Load, proc string, agentsMem uint64) {
 		l.MemoryStall = stallLevel(f)
 	}
 	if s.Tree != nil {
-		if p, ok := readPSI(filepath.Join(s.Tree.root, "agents", "cpu.pressure")); ok {
+		if p, ok := readPSI(filepath.Join(s.Tree.agentsDir(), "cpu.pressure")); ok {
 			v := p.some
 			l.AgentsPressure = &v
 		}
-		if p, ok := readPSI(filepath.Join(s.Tree.root, "agents", "memory.pressure")); ok && p.hasFull {
+		if p, ok := readPSI(filepath.Join(s.Tree.agentsDir(), "memory.pressure")); ok && p.hasFull {
 			l.AgentsMemoryStall = stallLevel(p.full)
 		}
 	}

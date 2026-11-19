@@ -129,7 +129,7 @@ func (a Adapter) Start(l cli.Launch, h cli.Handlers) (cli.Session, error) {
 	if bin == "" {
 		bin = "claude"
 	}
-	c, err := claude.Start(claude.Spec{Binary: bin, Args: Args(l), Dir: l.Dir, Env: env, Log: l.Log, Cgroup: l.Cgroup,
+	c, err := claude.Start(claude.Spec{Binary: bin, Args: Args(l), Dir: l.Dir, Env: env, Log: l.Log, Cgroup: l.Cgroup, Wrap: l.Wrap,
 		Runner: l.Runner, ID: l.ProcID, Key: l.RunnerKey, Meta: l.Meta})
 	if err != nil {
 		return nil, err

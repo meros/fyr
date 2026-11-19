@@ -32,6 +32,9 @@ type Spec struct {
 	// Cgroup: the cgroup directory the process starts in (V0.80); "" is
 	// the daemon's.
 	Cgroup string
+	// Wrap: a command line the process starts under, which puts it in a
+	// scope of its own (V0.agents-unit); nil for none.
+	Wrap []string
 	// Runner, when set, starts the process in the runner that outlives
 	// fyrd (V0.90); ID names it there and Meta comes back from List.
 	Runner *runner.Client
@@ -87,6 +90,10 @@ func Start(s Spec) (*Client, error) {
 	// name the live install (its runner and ready file).
 	env := append(launchenv.Scrub(os.Environ()), "CLAUDE_CODE_ENTRYPOINT=sdk-go")
 	env = append(env, launchenv.Scrub(s.Env)...)
+	if len(s.Wrap) > 0 {
+		args = append(append(append([]string{}, s.Wrap[1:]...), s.Binary), args...)
+		s.Binary = s.Wrap[0]
+	}
 	if s.Runner != nil {
 		p, err := s.Runner.Spawn(runner.Spawn{ID: s.ID, Key: s.Key, Binary: s.Binary, Args: args, Dir: s.Dir, Env: env, Cgroup: s.Cgroup, Meta: s.Meta})
 		if err != nil {

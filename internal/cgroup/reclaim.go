@@ -53,7 +53,7 @@ func (g *JobGroups) frozenDirs(thread string) []string {
 // swapRoom is how much more the agents may put in swap: their cap less the
 // margin, or the host's free swap less the margin when they have no cap.
 func (g *JobGroups) swapRoom() uint64 {
-	agents := filepath.Join(g.Tree.root, "agents")
+	agents := g.Tree.agentsDir()
 	limit := readBytes(filepath.Join(agents, "memory.swap.max"))
 	used := readBytes(filepath.Join(agents, "memory.swap.current"))
 	if limit == 0 {

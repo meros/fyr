@@ -64,7 +64,7 @@ func (t *Tree) ApplyThreadBudget(holds map[string]ThreadHold) {
 		return
 	}
 	now := t.budgetClock()
-	agents := filepath.Join(t.root, "agents")
+	agents := t.agentsDir()
 	budget := readBytes(filepath.Join(agents, "memory.high"))
 	if budget == 0 {
 		budget = readBytes(filepath.Join(agents, "memory.max"))
@@ -97,14 +97,15 @@ func (t *Tree) ApplyThreadBudget(holds map[string]ThreadHold) {
 	for id, h := range holds {
 		byName[unsafe.ReplaceAllString(id, "_")] = h
 	}
-	es, _ := os.ReadDir(agents)
 	live := map[string]bool{}
 	threads, limited, over := 0, 0, 0
-	for _, e := range es {
-		if !e.IsDir() || e.Name() == "probe" || e.Name() == DeployDir {
+	for _, c := range t.threadCgroups() {
+		name := c.Name
+		// A thread with two cgroups (a handover, or one from before the
+		// switch to scopes) is limited where its newest process runs.
+		if name == DeployDir || live[name] || c.Dir != t.threadDir(name) {
 			continue
 		}
-		name := e.Name()
 		live[name] = true
 		threads++
 		h, held := byName[name]
@@ -112,10 +113,10 @@ func (t *Tree) ApplyThreadBudget(holds map[string]ThreadHold) {
 		if want != "max" {
 			limited++
 		}
-		d := filepath.Join(agents, name)
+		d := c.Dir
 		b, err := os.ReadFile(filepath.Join(d, "memory.high"))
 		if strings.TrimSpace(string(b)) != want && (err == nil || want != "max") {
-			if err := put(d, "memory.high", want); err != nil {
+			if err := t.setAttr(d, "memory.high", want); err != nil {
 				t.logf("guard: budget could not limit thread=%s: %v", name, err)
 			}
 		}
