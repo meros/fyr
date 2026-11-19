@@ -156,3 +156,43 @@ func TestMachineWaitDoesNotOutliveTheHost(t *testing.T) {
 		t.Fatal("the end of the wait was not saved")
 	}
 }
+
+// V0.message-before-start: the owner's message is in the conversation while
+// the start waits for the machine, not only once the process answers.
+func TestMessageShowsWhileStartWaits(t *testing.T) {
+	p := &pressure{}
+	p.on.Store(true)
+	opt, _ := slowStart(t, "1500", 300*time.Millisecond, 10*time.Second, p)
+	dir := t.TempDir()
+	h := startHarnessWith(t, dir, filepath.Join(dir, "fyr.db"), time.Minute, nil, nil, opt)
+	r := h.cmd("thread.create", "", core.Args{"cwd": h.dir, "text": "hello"})
+	id := r.ThreadID
+	th := h.wait(id, "waiting for the machine", func(th core.Thread, _ core.Attention) bool { return th.MachineWait != nil })
+	if len(th.Outbox) != 1 {
+		t.Fatalf("outbox while waiting: %+v", th.Outbox)
+	}
+	users := 0
+	for _, e := range h.events(id) {
+		if e.Type == "user" {
+			users++
+			if d := string(e.Data); !strings.Contains(d, `"text":"hello"`) || !strings.Contains(d, th.Outbox[0].ID) {
+				t.Fatalf("user event %s", d)
+			}
+		}
+	}
+	if users != 1 {
+		t.Fatalf("%d user events while waiting, want 1", users)
+	}
+	h.wait(id, "answered", func(th core.Thread, _ core.Attention) bool {
+		return !th.Running && strings.HasPrefix(th.Summary, "echo:")
+	})
+	users = 0
+	for _, e := range h.events(id) {
+		if e.Type == "user" {
+			users++
+		}
+	}
+	if users != 1 {
+		t.Fatalf("%d user events after the start, want 1", users)
+	}
+}

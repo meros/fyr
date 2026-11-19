@@ -75,15 +75,24 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 	if e.MessageID == "" {
 		e.MessageID = newUUID()
 	}
+	userText := e.Text
+	e, metas := m.withAttachments(e)
+	// V0.message-before-start: the owner's message is in the conversation
+	// (Sent) before the process starts, so a start that waits for the
+	// machine (V0.153, up to PressureMaxWait) shows it with the wait line.
+	ud := map[string]any{"id": e.MessageID, "text": userText, "images": len(e.Images)}
+	if metas != nil {
+		ud["attachments"] = metas
+	}
+	if e.From != "" {
+		ud["from"] = e.From
+	}
+	m.observe(threadID, core.KindMessageSent, core.MessageSentArgs{ID: e.MessageID, Log: []core.Event{{Type: "user", Data: ud}}})
 	s, err := m.ensure(threadID)
 	if err != nil {
 		// V0.33: the message stays in the log, marked lost.
-		ud := map[string]any{"id": e.MessageID, "text": e.Text, "images": len(e.Images)}
-		if e.From != "" {
-			ud["from"] = e.From
-		}
 		m.observe(threadID, core.KindSendFailed, core.SendFailedArgs{Message: "Could not start the agent: " + err.Error(),
-			Log: []core.Event{{Type: "user", Data: ud}, {Type: "message.state", Data: map[string]any{"id": e.MessageID, "state": "lost"}}, {Type: "run.ended", Data: map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}}}})
+			Log: []core.Event{{Type: "message.state", Data: map[string]any{"id": e.MessageID, "state": "lost"}}, {Type: "run.ended", Data: map[string]any{"failure": map[string]any{"class": "process", "message": err.Error()}}}}})
 		return err
 	}
 	m.mu.Lock()
@@ -106,7 +115,6 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 		s.results = append(s.results, waiter{e.MessageID, result})
 	}
 	m.mu.Unlock()
-	userText := e.Text
 	if e.From == FromHandover {
 		// V0.45: Fyr's own words, no prefix.
 	} else if e.From == FromView {
@@ -133,15 +141,7 @@ func (m *Manager) send(threadID string, e core.Effect, result chan claude.Msg) e
 			e.Text = strings.TrimSuffix(core.NoticeText(ns)+"\n\n"+e.Text, "\n\n")
 		}
 	}
-	e, metas := m.withAttachments(e)
-	ud := map[string]any{"id": e.MessageID, "text": userText, "images": len(e.Images)}
-	if metas != nil {
-		ud["attachments"] = metas
-	}
-	if e.From != "" {
-		ud["from"] = e.From
-	}
-	evs := []core.Event{{Type: "user", Data: ud}}
+	var evs []core.Event
 	if first {
 		evs = append(evs, core.Event{Type: "run.started", Data: map[string]any{}})
 	}
