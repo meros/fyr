@@ -245,10 +245,16 @@ export function ThreadSlot({ id }: { id: string }) {
   );
 }
 
+/** A row's load in one subscription: whether the thread has a CPU reading, its job and its services (a hook, so one
+ *  per row: each useLoad re-renders its row on every poll). */
+export function useRowLoad(id: string): { hasCPU: boolean; job: string | null; service: string | null } {
+  const l = useLoad();
+  return { hasCPU: !!threadCPU(l, id), job: threadJob(l, id), service: threadService(l, id) };
+}
+
 /** V0.services-not-jobs: the thread's running services ("service · 3.2 GB") after the rest of its line; nothing when it
  *  runs none. Desktop and phone share the row, so both show it. */
-export function ThreadService({ id }: { id: string }) {
-  const s = threadService(useLoad(), id);
+export function ThreadService({ text: s }: { text: string | null }) {
   if (!s) return null;
   return (
     <>
