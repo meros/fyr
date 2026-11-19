@@ -9,13 +9,21 @@ import (
 	"time"
 )
 
+// V0.oomd-limit-parse: systemd 262 prints the limit as its raw fixed-point value (2^32 = 100 %). The first input is
+// verbatim `systemctl show --value -p ManagedOOMMemoryPressure -p ManagedOOMMemoryPressureLimit fyr-agents.slice` on
+// the host (85 %), the second that of fyr.service there.
 func TestOomdLimitParsesSystemctl(t *testing.T) {
 	for in, want := range map[string]float64{
-		"kill\n70%\n":    70,
-		"kill\n70.00%\n": 70,
-		"auto\n70%\n":    0, // no pressure rule
-		"kill\n0\n":      0,
-		"":               0,
+		"kill\n3650722201\n": 85,
+		"auto\n0\n":          0,
+		"kill\n4294967296\n": 100,
+		"kill\n2147483648\n": 50,
+		"kill\n70%\n":        70, // older systemd: a percentage
+		"kill\n70.00%\n":     70,
+		"auto\n70%\n":        0, // no pressure rule
+		"kill\n0\n":          0, // oomd's DefaultMemoryPressureLimit: unknown here
+		"kill\nfoo\n":        0,
+		"":                   0,
 	} {
 		if got := parseOomdLimit(in); got != want {
 			t.Errorf("parseOomdLimit(%q) = %v, want %v", in, got, want)

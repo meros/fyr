@@ -2,6 +2,7 @@ package cgroup
 
 import (
 	"context"
+	"math"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -35,15 +36,33 @@ func UnitOomdLimit(unit string) float64 {
 	return parseOomdLimit(string(out))
 }
 
-// parseOomdLimit reads systemctl's two lines: the mode, then the limit
-// ("70%", "70.00%" or "0").
+// parseOomdLimit reads systemctl's two lines: the mode, then the limit.
+// V0.oomd-limit-parse: systemd 262 prints the limit as its raw fixed-point
+// value, 2^32 for 100 % ("3650722201" is 85 %); a percentage ("70%",
+// "70.00%") is still read. 0 is no limit of the unit's own: oomd then applies
+// its DefaultMemoryPressureLimit from oomd.conf, which this leaves unknown
+// (0, no warning) rather than parse oomd.conf and its drop-ins or oomctl's
+// dump; fyr's NixOS module and HOST-SETUP always set the limit on the unit.
 func parseOomdLimit(out string) float64 {
 	lines := strings.Fields(out)
 	if len(lines) < 2 || lines[0] != "kill" {
 		return 0
 	}
-	v, err := strconv.ParseFloat(strings.TrimSuffix(lines[1], "%"), 64)
-	if err != nil || v <= 0 || v > 100 {
+	var v float64
+	if pct, ok := strings.CutSuffix(lines[1], "%"); ok {
+		f, err := strconv.ParseFloat(pct, 64)
+		if err != nil {
+			return 0
+		}
+		v = f
+	} else {
+		n, err := strconv.ParseUint(lines[1], 10, 64)
+		if err != nil {
+			return 0
+		}
+		v = math.Round(float64(n)/(1<<32)*100*100) / 100
+	}
+	if v <= 0 || v > 100 {
 		return 0
 	}
 	return v
