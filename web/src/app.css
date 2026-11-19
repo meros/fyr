@@ -1050,12 +1050,6 @@ html.list-resizing iframe{pointer-events:none}
 :is(.rail,.m-load,.m-lsheet) .rldr.hot{--lv:var(--signal-ink)}
 .rail .rldr small{font:400 9px/11px var(--ui);color:var(--ink-faint)}
 /* V0.99: the load as a ring (share of the cores, coloured by level) with the figure inside. */
-/* V0.86, V0.99: the slots for heavy jobs as pips under the ring (filled in use, empty free), "+n" while threads wait. */
-.rail .rpips{display:flex;align-items:center;gap:3px;height:11px}
-.rail .rpips i{width:6px;height:6px;border-radius:50%;box-sizing:border-box;border:1px solid var(--ink-faint);flex:none}
-.rail .rpips i.on{background:var(--ink-muted);border-color:var(--ink-muted)}
-.rail .rpips.hot i.on{background:var(--signal-ink);border-color:var(--signal-ink)}
-.rail .rpips em{font:600 9px/11px var(--mono);font-style:normal;color:var(--signal-ink);margin-left:1px}
 .rail .rldr small.rlds{white-space:nowrap}
 /* Decision 0029 S2: the slot budget in use as a bar under the ring. */
 /* The bar keeps the pips' 11 px (V0.141: the rail's middle fits at 900 px with two hosts). */

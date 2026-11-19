@@ -1924,7 +1924,7 @@ export function withUndeclared(list: HostLoad[], mode: string, now = railNow(Dat
   const names = `Map perf uses ${und[0].cpuPct} % undeclared${und.length > 1 ? ` +${und.length - 1}` : ""}`;
   const slots: Slots = {
     ...s,
-    held: [{ owner: "t_w2", kind: "test", cost: 1, cpuPct: admitted.cpu, memPct: admitted.mem, pct: admitted.cpu }],
+    held: [{ owner: "t_w2", kind: "test", cpuPct: admitted.cpu, memPct: admitted.mem, pct: admitted.cpu }],
     waiting: [{ owner: "t_search", kind: "test", cpuPct: need, memPct: 10, pct: need }],
     why: `needs ≈ ${need} % CPU, ${free} % free (${names})`,
     needPct: need,
@@ -2033,15 +2033,14 @@ function laptopLoad(): HostLoad[] {
         { id: "t_mapperf", cpu: 2.6, memory: 3e9, job: "yarn build", paused: MOCK_PAUSED || undefined },
         { id: "t_search", cpu: 1.0, memory: 9e8 },
       ],
-      // V0.86: both slots taken, one thread waits. Decision 0029 S2: the budget is full (2.0 of 2), so the head waits.
-      // V0.163: heavy jobs in percent of the host, CPU and memory apart; the head waits for CPU.
+      // V0.86: two jobs run, one thread waits. V0.163: heavy jobs in percent of the host, CPU and memory apart; the
+      // head waits for CPU.
       slots: {
         n: 2,
-        used: 1.9,
         why: "needs ≈ 30 % CPU, 5 % free",
         held: [
-          { owner: "t_w2", kind: "test", cost: 1, cpuPct: 50, memPct: 16, pct: 50 },
-          { owner: "t_mapperf", kind: "build", cost: 0.9, cpuPct: 45, memPct: 25, pct: 45 },
+          { owner: "t_w2", kind: "test", cpuPct: 50, memPct: 16, pct: 50 },
+          { owner: "t_mapperf", kind: "build", cpuPct: 45, memPct: 25, pct: 45 },
         ],
         waiting: [{ owner: "t_search", kind: "test", cpuPct: 30, memPct: 10, pct: 30 }],
         cpuPct: 95,
@@ -2063,10 +2062,13 @@ function laptopLoad(): HostLoad[] {
       memoryPressure: 1.2,
       memoryStall: "ok",
       agentsCpuPressure: 88,
+      // V0.load-cleanup: oomd's rule on the agents' slice, and the stall it compares (the card's "oomd" row).
+      oomdLimit: 85,
+      unitMemoryStall: 3.2,
       jobs: [
-        { class: "fyr: make test", runs: 14, cores: 2.3, demand: 3.4, peak: 2.1e9, wall: 95, at: "2026-11-17T09:12:00Z", cost: 1.7, learned: 14, cpuPct: 58, memPct: 15 },
-        { class: "Acme: yarn screenshot:diff", runs: 6, cores: 1.1, demand: 1.9, peak: 6.4e9, wall: 437, at: "2026-11-17T08:40:00Z", cost: 1, learned: 6, cpuPct: 28, memPct: 46 },
-        { class: "fyr: e2e", runs: 3, cores: 0.9, demand: 1.2, peak: 1.8e9, wall: 254, at: "2026-11-17T08:02:00Z", cost: 0.6, learned: 2, cpuPct: 50, memPct: 50 },
+        { class: "fyr: make test", runs: 14, cores: 2.3, demand: 3.4, peak: 2.1e9, wall: 95, at: "2026-11-17T09:12:00Z", learned: 14, cpuPct: 58, memPct: 15 },
+        { class: "Acme: yarn screenshot:diff", runs: 6, cores: 1.1, demand: 1.9, peak: 6.4e9, wall: 437, at: "2026-11-17T08:40:00Z", learned: 6, cpuPct: 28, memPct: 46 },
+        { class: "fyr: e2e", runs: 3, cores: 0.9, demand: 1.2, peak: 1.8e9, wall: 254, at: "2026-11-17T08:02:00Z", learned: 2, cpuPct: 50, memPct: 50 },
       ],
     },
   ];
