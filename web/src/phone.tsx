@@ -22,6 +22,8 @@ import { currentDecision } from "./decode.ts";
 import { BrandMark, StateIcon, stateClass } from "./icons.tsx";
 import { rowMeta, rowState, stateLabel } from "./rows.ts";
 import { shortModel } from "./format.ts";
+import { choiceLabel } from "./model-choice.ts";
+import { EffortSelect, ModelSelect } from "./model-choice-ui.tsx";
 import { snoozeChoices, snoozeCommand, snoozedHint, type SnoozeChoice } from "./snooze.ts";
 import { effortsFor, offLabel, startEffort } from "./providers.ts";
 import { AgentsStrip, EffectBody, ThreadTabBody, sendFrom } from "./thread.tsx";
@@ -1373,44 +1375,27 @@ function MNew(p: PhoneProps) {
           onPaste={att.onPaste}
         />
         <div class="m-defs">
+          {/* V0.model-choice: the same choices as the desktop's Model, behind the chip */}
           <label class="m-dchip">
-            <span class="ell">
-              {profiles.find((x) => x.id === f.profile)?.name ?? f.profile} · {shortModel(f.model)}
-            </span>
+            <span class="ell">{(() => {
+              const pr = profiles.find((x) => x.id === f.profile);
+              return pr ? choiceLabel(pr, f.model) : f.profile;
+            })()}</span>
             {I.down}
-            <select
-              value={`${f.profile}\u0000${f.model}`}
-              aria-label="Provider and model"
-              onChange={(e) => {
-                const [profile, model] = (e.target as HTMLSelectElement).value.split("\u0000");
-                n.set({ profile, model });
-              }}
-            >
-              {profiles.flatMap((pr) =>
-                pr.models.map((m) => (
-                  <option value={`${pr.id}\u0000${m}`}>
-                    {pr.name} · {shortModel(m)}
-                  </option>
-                )),
-              )}
-            </select>
+            <ModelSelect profiles={profiles} profile={f.profile} model={f.model} onPick={n.pickModel} label="Provider and model" />
           </label>
           {n.efforts.length > 0 && (
             <label class="m-dchip">
               <span class="ell">Effort · {n.effort || "default"}</span>
               {I.down}
-              <select value={n.effort} aria-label="Effort" onChange={(e) => n.set({ effortPick: (e.target as HTMLSelectElement).value })}>
-                {!n.effort && <option value="">CLI default</option>}
-                {n.efforts.map((x) => (
-                  <option value={x}>{x}</option>
-                ))}
-              </select>
+              <EffortSelect efforts={n.efforts} effort={n.effort} onPick={(x) => n.set({ effortPick: x })} />
             </label>
           )}
           <label class="m-dchip m-lvc">
             <input type="checkbox" checked={f.liveView} onChange={(e) => n.set({ liveView: (e.target as HTMLInputElement).checked })} />
             <span class="ell">Live view</span>
           </label>
+          {n.note && <div class="m-mnote" role="status">{n.note}</div>}
           <QuotaList profiles={profiles} />
         </div>
         {n.err && <div class="err prose">{n.err}</div>}
@@ -1614,7 +1599,7 @@ function MSheets(p: PhoneProps & { sheet: Sheet; t: Thread | undefined }) {
     return (
       <MSheet onClose={close} label="Hand over">
         <div class="m-shh">Hand over</div>
-        <HandoverForm phone t={t} profiles={p.store.profiles} onClose={close} onConfirm={(pr, m) => p.commands.handover(t.id, pr, m)} />
+        <HandoverForm phone t={t} profiles={p.store.profiles} onClose={close} onConfirm={(pr, m, e) => p.commands.handover(t.id, pr, m, e)} />
       </MSheet>
     );
   }

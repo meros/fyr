@@ -25,7 +25,7 @@ export interface ThreadCommands {
   /** thread.send; false (and the error shown) when the host did not take it */
   send(id: string, args: SendArgs): Promise<boolean>;
   /** V0.45: thread.handover; resolves to the host's error text, or null */
-  handover(id: string | null, profile?: string, model?: string): Promise<string | null>;
+  handover(id: string | null, profile?: string, model?: string, effort?: string): Promise<string | null>;
   doUndo(): Promise<void>;
   /** V0.108: asks Fyr for a new title from the conversation; the title changes when the model answers. */
   regenerateTitle(id: string): Promise<void>;
@@ -90,9 +90,9 @@ export function useThreadCommands(o: CommandOptions): ThreadCommands {
     return r.ok;
   };
 
-  const handover = async (id: string | null, profile?: string, model?: string): Promise<string | null> => {
+  const handover = async (id: string | null, profile?: string, model?: string, effort?: string): Promise<string | null> => {
     if (!id || !profile) return "Pick a profile";
-    const r = await api.command(opts.current.hostOf(id), "thread.handover", id, model ? { profile, model } : { profile });
+    const r = await api.command(opts.current.hostOf(id), "thread.handover", id, { profile, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }); // V0.model-choice: with its effort
     return r.ok ? null : (r.error ?? "The handover could not start");
   };
 

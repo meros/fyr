@@ -137,9 +137,11 @@ func (t *Thread) ViewOn() bool { return t.Live != nil && t.Live.Enabled }
 
 // Handover is a move to another profile that is going on (SPEC 0.5 V0.45).
 type Handover struct {
-	To    string    `json:"to"`
-	Model string    `json:"model,omitempty"`
-	At    time.Time `json:"at"`
+	To    string `json:"to"`
+	Model string `json:"model,omitempty"`
+	// Effort is the effort picked for the target (V0.model-choice); nil keeps the thread's.
+	Effort *string   `json:"effort,omitempty"`
+	At     time.Time `json:"at"`
 }
 
 // OutMsg is a message sent to the agent and not read yet (SPEC 0.5 V0.33).

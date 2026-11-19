@@ -1604,6 +1604,47 @@ try {
 }
 });
 
+// V0.model-choice (#18): New thread and Hand over show provider and model as one readable choice ("Claude · Opus
+// 5.5"), effort beside it only for a model that takes it, and Hand over names the mapping; desktop and phone.
+for (const front of ["desktop", "phone"]) section(`V0.model-choice ${front}`, async ({ send, evaluate, navigate, openScreen, waitFor, tapCenter, settle, shot }) => {
+try {
+  const phone = front === "phone";
+  const root = phone ? ".m-new" : ".dlg";
+  const sel = phone ? `${root} select[aria-label="Provider and model"]` : `${root} select[aria-label="Model"]`;
+  if (phone) await openScreen({ url: "?mock=rail&new", ready: `!!document.querySelector('${sel}')` }, 390, 844);
+  else await navigate(`${origin}/?mock=rail&dialog=new`, `!!document.querySelector('${sel}')`);
+  const n = await evaluate(`(() => { const s = document.querySelector('${sel}');
+    return { picked: s.selectedOptions[0]?.textContent ?? '', groups: [...s.querySelectorAll('optgroup')].length, opts: [...s.options].map((o) => o.textContent),
+      chip: s.closest('.m-dchip')?.querySelector('.ell')?.textContent ?? '', provider: !!document.querySelector('${root} select[aria-label="Provider"]'),
+      effort: !!document.querySelector('${root} select[aria-label="Effort"]') }; })()`);
+  check(/^[^·]+ · [A-Z]/.test(n.picked) && n.groups >= 1 && n.opts.every((o) => / · /.test(o)) && !n.provider, `V0.model-choice ${front}: New thread's choice ${JSON.stringify(n)}`);
+  if (phone) check(n.chip === n.picked, `V0.model-choice phone: the chip says "${n.chip}", the choice "${n.picked}"`);
+  await shot(`model-choice-new-${front}.png`);
+  // Hand over: the target as one choice, the mapping line, effort only when the model takes it.
+  if (phone) {
+    await openScreen({ url: "?mock=rail&open=t_triage", ready: "!!document.querySelector('.m-tth')" }, 390, 844);
+    await evaluate(`document.querySelector('.m-tth button[aria-label="Thread actions"]').click()`);
+    await waitFor(`[...document.querySelectorAll('.m-sheet button')].some((b) => /Hand over/.test(b.textContent))`, { what: "the thread sheet" });
+    await evaluate(`[...document.querySelectorAll('.m-sheet button')].find((b) => /Hand over/.test(b.textContent)).click()`);
+  } else {
+    await navigate(`${origin}/?mock=rail&open=t_triage`, "!!document.querySelector('.thh .tmenu-b')");
+    await evaluate(`document.querySelector('.thh .tmenu-b').click()`);
+    await waitFor(`!!document.querySelector('.thh [role=menuitem]')`, { what: "the ⋯ menu" });
+    await evaluate(`[...document.querySelectorAll('.thh [role=menuitem]')].find((b) => /Hand over/.test(b.textContent)).click()`);
+  }
+  await waitFor(`!!document.querySelector('.ho-map') && !!document.querySelector('select[aria-label="To"]')`, { what: "Hand over's choice" });
+  await settle();
+  const h = await evaluate(`(() => { const s = document.querySelector('select[aria-label="To"]');
+    return { to: s.selectedOptions[0]?.textContent ?? '', map: document.querySelector('.ho-map').textContent, effort: !!document.querySelector('.ho-b select[aria-label="Effort"]'),
+      h: Math.round(s.getBoundingClientRect().height) }; })()`);
+  check(/^[^·]+ · /.test(h.to) && /(→|^Keeps )/.test(h.map), `V0.model-choice ${front}: Hand over ${JSON.stringify(h)}`);
+  if (phone) check(h.h >= 44, `V0.model-choice phone: Hand over's choice is ${h.h} px tall, under 44`);
+  await shot(`model-choice-handover-${front}.png`);
+} catch (e) {
+  failures.push(`V0.model-choice ${front}: ${e.message}`);
+}
+});
+
 // SPEC 0.5 V0.45: the thread ⋯ menu offers Hand over…; the dialog says how the context goes over, and a
 // confirmed handover leaves a divider that names both profiles.
 section('V0.45', async (h) => {
@@ -1623,7 +1664,7 @@ try {
   await evaluate(`[...document.querySelectorAll('.dlg .df .btn')].find(b => b.textContent.trim() === 'Hand over')?.click()`);
   await waitFor(`!document.querySelector('.dlg') && !!document.querySelector('.th .hodiv')`, { soft: true });
   const r = await evaluate(`({ dlg: !!document.querySelector('.dlg'), div: document.querySelector('.th .hodiv')?.textContent ?? '' })`);
-  check(!r.dlg && r.div.startsWith("Handed over from ") && r.div.includes(` to ${d.to}`), `V0.45 desktop: no divider after the handover (${JSON.stringify(r)})`);
+  check(!r.dlg && r.div.startsWith("Handed over from ") && r.div.includes(` to ${d.to.replace(/ · [^·]*$/, "")}`), `V0.45 desktop: no divider after the handover (${JSON.stringify(r)})`);
 } catch (e) {
   failures.push(`V0.45 desktop: ${e.message}`);
 }
@@ -1908,7 +1949,7 @@ try {
   await evaluate(`[...document.querySelectorAll('.thh [role=menuitem]')].find(b => /Hand over/.test(b.textContent))?.click()`);
   await waitFor(`!!document.querySelector('.dlg .ho-from')`, { soft: true });
   const ho = await evaluate(`document.querySelector('.dlg .ho-from')?.textContent ?? ''`);
-  check(/opus 5\.4 \(off\)/.test(chip) && /From Claude · opus 5\.4 \(off\)\./.test(ho), `V0.120 desktop: a model that is off ("${chip}", "${ho}")`);
+  check(/opus 5\.4 \(off\)/.test(chip) && /From Claude · Opus 5\.4 \(off\)\./.test(ho), `V0.120 desktop: a model that is off ("${chip}", "${ho}")`);
   await shot("handover-off-desktop.png");
 } catch (e) {
   failures.push(`V0.120 desktop: ${e.message}`);

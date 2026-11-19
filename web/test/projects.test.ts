@@ -220,7 +220,7 @@ test("each save sends only its own field", () => {
   assert.deepEqual(patchFor("color", "teal"), { color: "teal" });
   assert.deepEqual(patchFor("name", "  Fyr "), { name: "Fyr" });
   assert.deepEqual(patchFor("icon", { kind: "emoji", value: "🏡" }), { icon: { kind: "emoji", value: "🏡" } });
-  assert.deepEqual(patchFor("profile", "claude"), { profile: "claude", model: "" }, "a provider change clears the model");
+  assert.deepEqual(patchFor("profile", "claude"), { profile: "claude", model: "", effort: "" }, "a provider change clears the model and its effort");
   assert.deepEqual(patchFor("model", "claude-opus-5-5"), { model: "claude-opus-5-5" });
   assert.deepEqual(patchFor("quiet", []), { quiet: null }, "no windows turns quiet hours off");
   assert.deepEqual(patchFor("quiet", [{ from: "17:00", to: "06:00", days: ["mon"] }]), { quiet: [{ from: "17:00", to: "06:00", days: ["mon"] }] });

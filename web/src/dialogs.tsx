@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, T3Candidate } from "./types.ts";
-import { ProfileQuota, quotaSuffix, useQuotas } from "./quota-ui.tsx";
+import { ProfileQuota } from "./quota-ui.tsx";
+import { EffortSelect, ModelSelect } from "./model-choice-ui.tsx";
 import { ChipStrip, ClipPicker } from "./attach-ui.tsx";
 import { NewProjectStep, ProjectIcon, ProjectList, QuietHold } from "./project-ui.tsx";
 import { HostField, useHosts } from "./host-pick-ui.tsx";
@@ -34,8 +35,7 @@ export function Modal({ title, onClose, children, wide, cls }: { title: string; 
  *  folder; "Change" opens the folder picker. #41: the state is useNewThreadForm's, shared with the phone. */
 export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddProject"]; profiles: Profile[]; hosts?: HostInfo[]; projects: Project[]; projectFilter: string | null; clockOffset?: number; onClose(): void; onCreate(a: NewThreadArgs): Promise<string | null>; onNewProject(name: string, folder: string, host?: string): Promise<{ error: string | null; id?: string }> }) {
   const n = useNewThreadForm(p);
-  const { form: f, cur, chip, folder, profiles, prof, att } = n;
-  const quotas = useQuotas();
+  const { form: f, cur, chip, folder, profiles, att } = n;
   const promptRef = useRef<HTMLTextAreaElement>(null);
   // V0.79: `/` at the start lists the commands seen for this provider and folder.
   const slash = useSlash(n.commandSource, f.text, (text) => n.set({ text }), promptRef);
@@ -95,36 +95,19 @@ export function NewThreadDialog(p: { onAddProject?: NewThreadFormOptions["onAddP
           <span class="srcl">{folderHint(cur, folder)}</span>
         </div>
         <div class="row2">
-          <label class="fld">
-            <span>Provider</span>
-            <select value={f.profile} onChange={(e) => n.pickProfile((e.target as HTMLSelectElement).value)}>
-              {profiles.map((pr) => {
-                const q = quotaSuffix(quotas, pr.id); // V0.44
-                if (pr.unavailable) return <option value={pr.id} disabled title={pr.unavailable}>{`${pr.name} · needs setup`}</option>;
-                return <option value={pr.id}>{q ? `${pr.name} · ${q}` : pr.name}</option>;
-              })}
-            </select>
-          </label>
+          {/* V0.model-choice: provider and model as one readable choice, effort only for a model that takes it */}
           <label class="fld">
             <span>Model</span>
-            <select value={f.model} onChange={(e) => n.set({ model: (e.target as HTMLSelectElement).value })}>
-              {(prof?.models ?? []).map((m) => (
-                <option value={m}>{shortModel(m)}</option>
-              ))}
-            </select>
+            <ModelSelect profiles={profiles} profile={f.profile} model={f.model} onPick={n.pickModel} />
           </label>
           {n.efforts.length > 0 && (
             <label class="fld">
               <span>Effort</span>
-              <select value={n.effort} onChange={(e) => n.set({ effortPick: (e.target as HTMLSelectElement).value })}>
-                {!n.effort && <option value="">CLI default</option>}
-                {n.efforts.map((x) => (
-                  <option value={x}>{x}</option>
-                ))}
-              </select>
+              <EffortSelect efforts={n.efforts} effort={n.effort} onPick={(x) => n.set({ effortPick: x })} />
             </label>
           )}
         </div>
+        {n.note && <span class="srcl mnote" role="status">{n.note}</span>}
         <ProfileQuota profile={f.profile} profiles={profiles} />
         <label class="fld">
           <span>Title (optional)</span>

@@ -4,9 +4,10 @@ import { useHosts } from "./host-pick-ui.tsx";
 import { hostOf, profilesOfHost } from "./hosts.ts";
 import { useEffect, useState } from "preact/hooks";
 import type { Profile, Thread } from "./types.ts";
-import { handoverTargets, parsePlan, planGuess, rungText, targetModel, type HandoverPlan } from "./handover.ts";
-import { shortModel } from "./format.ts";
-import { offLabel } from "./providers.ts";
+import { handoverTargets, parsePlan, planGuess, rungText, type HandoverPlan } from "./handover.ts";
+import { handoverPick, mappingLine, modelName } from "./model-choice.ts";
+import { EffortSelect, ModelSelect } from "./model-choice-ui.tsx";
+import { effortsFor } from "./providers.ts";
 import { Modal } from "./dialogs.tsx";
 import { hostPath } from "./urls.ts";
 
@@ -15,7 +16,7 @@ export interface HandoverProps {
   profiles: Profile[];
   onClose(): void;
   /** runs thread.handover; resolves to an error text, or null */
-  onConfirm(profile: string, model: string): Promise<string | null>;
+  onConfirm(profile: string, model: string, effort: string): Promise<string | null>;
 }
 
 async function fetchPlan(t: Thread, profile: string): Promise<HandoverPlan> {
@@ -32,9 +33,12 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
   // V0.139: a thread is handed over on its host, to that host's providers.
   const hs = useHosts();
   const targets = handoverTargets(p.t, profilesOfHost(hostOf(p.t, hs.hosts), hs.hosts, p.profiles));
-  const [profile, setProfile] = useState(targets[0]?.id ?? "");
+  const fromProf = p.profiles.find((x) => x.id === p.t.profile);
+  const [profile, setProfile] = useState(targets.find((x) => !x.unavailable)?.id ?? "");
   const prof = targets.find((x) => x.id === profile);
-  const [model, setModel] = useState(targetModel(prof));
+  // V0.model-choice (#23): the target starts on the nearest model and effort to the thread's, and the dialog names the mapping
+  const [pick, setPick] = useState(() => handoverPick(p.t, fromProf, prof));
+  const { model, effort } = pick;
   const [plan, setPlan] = useState<HandoverPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -47,19 +51,24 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
     };
   }, [p.t.id, profile]);
   const blocked = p.t.unavailable["thread.handover"];
-  const fromProf = p.profiles.find((x) => x.id === p.t.profile);
   const from = fromProf?.name ?? p.t.profile;
   // V0.120 (5): the thread's model, marked off when the owner turned it off (it keeps running until handed over).
-  const fromModel = p.t.model ? (fromProf && !fromProf.models.includes(p.t.model) ? offLabel(p.t.model) : shortModel(p.t.model)) : "";
-  const pick = (id: string) => {
-    setProfile(id);
-    setModel(targetModel(targets.find((x) => x.id === id)));
+  const fromModel = p.t.model ? (fromProf && !fromProf.models.includes(p.t.model) ? `${modelName(fromProf, p.t.model)} (off)` : modelName(fromProf, p.t.model)) : "";
+  const choose = (id: string, m: string) => {
+    const to = targets.find((x) => x.id === id);
+    if (id !== profile) {
+      setProfile(id);
+      const near = handoverPick(p.t, fromProf, to);
+      // a model the owner picked keeps the nearest effort it takes
+      return setPick(m === near.model ? near : handoverPick({ ...p.t, model: m }, fromProf, to));
+    }
+    setPick(handoverPick({ model: m, effort: effort || p.t.effort }, to, to));
   };
   const confirm = async () => {
     if (busy || blocked || !profile) return;
     setBusy(true);
     setErr(null);
-    const e = await p.onConfirm(profile, model);
+    const e = await p.onConfirm(profile, model, effort);
     setBusy(false);
     if (e) setErr(e);
     else p.onClose();
@@ -72,25 +81,19 @@ export function HandoverForm(p: HandoverProps & { phone?: boolean }) {
         From <b>{from}</b>
         {fromModel && <span class="ho-model"> · {fromModel}</span>}. The thread keeps its conversation, project and folder; later runs use the new provider.
       </div>
-      <div class="row2">
+      <div class={effortsFor(prof, model).length > 0 ? "row2" : "row1"}>
         <label class="fld">
           <span>To</span>
-          <select value={profile} onChange={(e) => pick((e.target as HTMLSelectElement).value)}>
-            {targets.map((x) => (
-              <option value={x.id}>{x.name}</option>
-            ))}
-          </select>
+          <ModelSelect profiles={targets} profile={profile} model={model} onPick={choose} label="To" />
         </label>
-        <label class="fld">
-          <span>Model</span>
-          <select value={model} onChange={(e) => setModel((e.target as HTMLSelectElement).value)} disabled={!prof?.models.length}>
-            {!prof?.models.length && <option value="">The provider's default</option>}
-            {(prof?.models ?? []).map((m) => (
-              <option value={m}>{shortModel(m)}</option>
-            ))}
-          </select>
-        </label>
+        {effortsFor(prof, model).length > 0 && (
+          <label class="fld">
+            <span>Effort</span>
+            <EffortSelect efforts={effortsFor(prof, model)} effort={effort} onPick={(x) => setPick({ model, effort: x })} />
+          </label>
+        )}
       </div>
+      <div class="ho-map srcl">{mappingLine(p.t, fromProf, prof, pick)}</div>
       <div class="ho-rung" aria-live="polite">
         {plan ? (
           <>

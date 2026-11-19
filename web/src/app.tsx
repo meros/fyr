@@ -1967,7 +1967,7 @@ function App() {
         </Modal>
       )}
       {dialog === "handover" && handoverId && store.threads[handoverId] && (
-        <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m) => cmds.handover(handoverId, pr, m)} />
+        <HandoverDialog t={store.threads[handoverId]} profiles={store.profiles} onClose={() => setDialog(null)} onConfirm={(pr, m, e) => cmds.handover(handoverId, pr, m, e)} />
       )}
       {dialog === "adopt" && <AdoptDialog load={(h) => api.t3Candidates(hostIdByName(store.hosts, h))} now={now} onClose={() => setDialog(null)} onAdopt={adopt} />}
       {dialog === "changes" && (

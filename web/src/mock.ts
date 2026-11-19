@@ -1491,7 +1491,7 @@ export function createMockServer(scenario: string, real0: number): MockServer {
         const to = String(args.profile ?? "");
         if (!to || to === t.profile) return { ok: false, error: "Pick another profile" };
         const from = t.profile;
-        put(t, { profile: to, model: String(args.model ?? "") });
+        put(t, { profile: to, model: String(args.model ?? ""), ...(args.effort !== undefined ? { effort: String(args.effort) } : {}) });
         emit(t.id, "handover", { from, to, model: args.model ?? "", rung: "resume" });
         break;
       }

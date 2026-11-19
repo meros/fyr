@@ -47,3 +47,32 @@ func TestHandoverApply(t *testing.T) {
 		t.Fatalf("send: %q", r)
 	}
 }
+
+// V0.model-choice: Hand over carries the effort picked for the target; without one the thread keeps its own.
+func TestHandoverEffort(t *testing.T) {
+	a := Registry["thread.handover"]
+	th := Thread{Profile: "a", Effort: "max"}
+	effs, err := a.Apply(&th, &View{}, Args{"profile": "b", "model": "m", "effort": "high"}, at(1))
+	if err != nil || effs[0].Effort == nil || *effs[0].Effort != "high" || th.Handover.Effort == nil {
+		t.Fatalf("effects %+v %v", effs, err)
+	}
+	th2 := Thread{Profile: "a", Effort: "max"}
+	effs, _ = a.Apply(&th2, &View{}, Args{"profile": "b"}, at(1))
+	if effs[0].Effort != nil {
+		t.Fatalf("no effort asked, effect has %q", *effs[0].Effort)
+	}
+}
+
+// V0.model-choice: a finished handover sets the thread's effort when one was picked, and keeps it otherwise.
+func TestHandoverDoneEffort(t *testing.T) {
+	k := Kinds[KindHandoverDone]
+	high := "high"
+	th := Thread{Profile: "a", Effort: "max"}
+	if _, err := k.Reduce(Rec{T: &th, V: &View{}}, Input{Kind: KindHandoverDone, Args: HandoverDoneArgs{Profile: "b", Model: "m", Effort: &high}}, at(1)); err != nil || th.Effort != "high" || th.Profile != "b" {
+		t.Fatalf("%v %+v", err, th)
+	}
+	th2 := Thread{Profile: "a", Effort: "max"}
+	if _, err := k.Reduce(Rec{T: &th2, V: &View{}}, Input{Kind: KindHandoverDone, Args: HandoverDoneArgs{Profile: "b", Model: "m"}}, at(1)); err != nil || th2.Effort != "max" {
+		t.Fatalf("%v %+v", err, th2)
+	}
+}

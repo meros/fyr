@@ -20,6 +20,7 @@ import {
   loadRemembered,
   madeProject,
   makingProject,
+  pickModel,
   pickProfile,
   saveRemembered,
   settleForm,
@@ -148,6 +149,10 @@ export function useNewThreadForm(o: NewThreadFormOptions) {
     host: formHost(f, ctx) ?? "",
     chooseHost: (h: string) => setF((x) => chooseHost(x, h, ctxRef.current, last)),
     pickProfile: (id: string) => setF((x) => pickProfile(x, id, ctxRef.current)),
+    /** V0.model-choice: provider and model, picked as one */
+    pickModel: (profile: string, model: string) => setF((x) => pickModel(x, profile, model)),
+    /** V0.model-choice (#23): why the project's default provider is not the one picked */
+    note: f.note,
     togglePicking: () => set({ picking: !f.picking, creating: null, draft: null }),
     startCreating: (q: string) => set({ creating: q.trim() }),
     cancelCreating: () => set({ creating: null, draft: null }),

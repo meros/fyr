@@ -15,15 +15,18 @@ type Project struct {
 	ID string `json:"id"`
 	// Folder is a full path on this host; threads that run in it or below
 	// land in the project. "" means threads are only filed by hand.
-	Folder  string     `json:"folder,omitempty"`
-	Edited  bool       `json:"edited,omitempty"` // the user changed it
-	Auto    bool       `json:"auto,omitempty"`   // made by matching before V0.28; migration only
-	Name    string     `json:"name"`
-	Color   string     `json:"color"` // a name from Palette
-	Icon    Icon       `json:"icon"`
-	Profile string     `json:"profile,omitempty"`
-	Model   string     `json:"model,omitempty"`
-	Quiet   QuietHours `json:"quiet,omitempty"` // quiet hours (V0.46): a list of windows
+	Folder  string `json:"folder,omitempty"`
+	Edited  bool   `json:"edited,omitempty"` // the user changed it
+	Auto    bool   `json:"auto,omitempty"`   // made by matching before V0.28; migration only
+	Name    string `json:"name"`
+	Color   string `json:"color"` // a name from Palette
+	Icon    Icon   `json:"icon"`
+	Profile string `json:"profile,omitempty"`
+	Model   string `json:"model,omitempty"`
+	// Effort is the default effort of a new thread here, when its model takes
+	// one (V0.model-choice); "" leaves it to the provider.
+	Effort string     `json:"effort,omitempty"`
+	Quiet  QuietHours `json:"quiet,omitempty"` // quiet hours (V0.46): a list of windows
 	// Priority is the owner's say in how much the project's threads get of
 	// the host (V0.project-priority): PriorityHigh, PriorityLow, or "" for
 	// normal. It orders new waiters in the slot queue and sets the threads'
@@ -363,6 +366,9 @@ func reduceProjectUpdate(r Rec, in Input, now time.Time) (Result, error) {
 	}
 	if v, ok := a["model"].(string); ok {
 		p.Model = v
+	}
+	if v, ok := a["effort"].(string); ok {
+		p.Effort = v
 	}
 	if raw, ok := a["quiet"]; ok {
 		var qs QuietHours

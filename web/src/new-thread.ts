@@ -119,6 +119,8 @@ export interface NewThreadForm {
   model: string;
   /** V0.50: "" leaves the effort to the model's default */
   effortPick: string;
+  /** V0.model-choice: why the provider is not the project's default (it cannot run); "" otherwise */
+  note: string;
   text: string;
   title: string;
   liveView: boolean;
@@ -127,7 +129,7 @@ export interface NewThreadForm {
 }
 
 export function initialForm(): NewThreadForm {
-  return { projectId: null, made: null, picking: false, creating: null, draft: null, picked: "", profile: "", model: "", effortPick: "", text: "", title: "", liveView: false, host: "" };
+  return { projectId: null, made: null, picking: false, creating: null, draft: null, picked: "", profile: "", model: "", effortPick: "", note: "", text: "", title: "", liveView: false, host: "" };
 }
 
 /** The install id of the host with that name. */
@@ -196,19 +198,33 @@ export function formFolder(f: NewThreadForm, ctx: FormCtx): { cwd?: string; labe
 
 const defaultModel = (p: Profile | undefined) => p?.defaultModel ?? p?.models[0] ?? "";
 
+type ProfilePick = { profile: string; model: string; effortPick: string; note: string };
+
 /**
- * The profile and model on `there` (the profiles of the thread's host): the project's defaults (V0.23); else the
- * current pick when that host has it; else the device's last (V0.30); else the first that can run (V0.50).
+ * The profile, model and effort on `there` (the profiles of the thread's host): the project's defaults (V0.23,
+ * V0.model-choice: with its effort); else the current pick when that host has it; else the device's last (V0.30); else
+ * the first that can run (V0.50). A project default that cannot run says so in `note` (V0.model-choice).
  */
-function profileFor(pr: Project | undefined, there: Profile[], current: { profile: string; model: string }, last: Remembered): { profile: string; model: string } {
+function profileFor(pr: Project | undefined, there: Profile[], current: { profile: string; model: string; effortPick?: string }, last: Remembered): ProfilePick {
   const runs = (id: string | undefined) => !!id && there.some((x) => x.id === id && !x.unavailable);
   const d = pr ? projectDefaults(pr, there) : {};
-  if (d.profile && runs(d.profile)) return { profile: d.profile, model: d.model ?? defaultModel(there.find((x) => x.id === d.profile)) };
-  if (current.profile && there.some((x) => x.id === current.profile)) return { profile: current.profile, model: current.model };
+  if (d.profile && runs(d.profile)) return { profile: d.profile, model: d.model ?? defaultModel(there.find((x) => x.id === d.profile)), effortPick: d.effort ?? "", note: "" };
+  const note = pr ? defaultNote(pr, there) : "";
+  const fell = (p: { profile: string; model: string; effortPick?: string }): ProfilePick => ({ effortPick: current.effortPick ?? "", ...p, note: note && p.profile ? `${note}; it starts on ${there.find((x) => x.id === p.profile)?.name ?? p.profile}.` : "" });
+  if (current.profile && there.some((x) => x.id === current.profile)) return fell({ profile: current.profile, model: current.model });
   const lp = runs(last.profile) ? there.find((x) => x.id === last.profile) : undefined;
-  if (lp) return { profile: lp.id, model: last.model && lp.models.includes(last.model) ? last.model : defaultModel(lp) };
+  if (lp) return fell({ profile: lp.id, model: last.model && lp.models.includes(last.model) ? last.model : defaultModel(lp) });
   const first = there.find((x) => !x.unavailable);
-  return { profile: first?.id ?? "", model: defaultModel(first) };
+  return fell({ profile: first?.id ?? "", model: defaultModel(first) });
+}
+
+/** V0.model-choice (#23): why a project's default provider is not used: it cannot run, or this host has no such
+ *  provider; "" when the project has no default. */
+export function defaultNote(pr: Project, there: Profile[]): string {
+  if (!pr.profile) return "";
+  const p = there.find((x) => x.id === pr.profile);
+  if (!p) return `${pr.name}'s default provider is not on this host`;
+  return p.unavailable ? `${pr.name}'s default, ${p.name}, cannot run (${p.unavailable.replace(/\.$/, "")})` : "";
 }
 
 /** Pick the start project once the projects are there, and a profile once the profiles are. */
@@ -247,7 +263,12 @@ export function chooseProject(f: NewThreadForm, pr: Project | null, ctx: FormCtx
 
 /** A new profile starts on its default model. */
 export function pickProfile(f: NewThreadForm, id: string, ctx: FormCtx): NewThreadForm {
-  return { ...f, profile: id, model: defaultModel(formProfiles(f, ctx).find((x) => x.id === id)) };
+  return { ...f, profile: id, model: defaultModel(formProfiles(f, ctx).find((x) => x.id === id)), note: "" };
+}
+
+/** V0.model-choice: the owner picked a provider and model in one choice; the effort asked stays when the model takes it. */
+export function pickModel(f: NewThreadForm, profile: string, model: string): NewThreadForm {
+  return { ...f, profile, model, note: "" };
 }
 
 /** V0.63: a project made in the form is picked at once. */

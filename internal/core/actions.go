@@ -748,7 +748,13 @@ func init() {
 			}
 			t.Handover = &Handover{To: p, Model: a.Str("model"), At: now}
 			v.SeenAt = now
-			return []Effect{{Kind: EffectHandover, Profile: p, Model: a.Str("model")}}, nil
+			e := Effect{Kind: EffectHandover, Profile: p, Model: a.Str("model")}
+			// V0.model-choice: the effort the owner picked for the target; absent keeps the thread's
+			if _, ok := a["effort"]; ok {
+				eff := a.Str("effort")
+				t.Handover.Effort, e.Effort = &eff, &eff
+			}
+			return []Effect{e}, nil
 		}})
 
 	register(&Action{Name: "thread.setModel", Label: "Change model",

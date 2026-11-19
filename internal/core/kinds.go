@@ -176,7 +176,9 @@ type (
 	}
 	HandoverDoneArgs struct {
 		Profile, Model, SessionID string
-		Data                      map[string]any
+		// Effort is the thread's effort from now on (V0.model-choice); nil keeps it.
+		Effort *string
+		Data   map[string]any
 	}
 )
 
@@ -481,6 +483,9 @@ func init() {
 			}
 			t := r.T
 			t.Profile, t.Model, t.SessionID, t.Handover = a.Profile, a.Model, a.SessionID, nil
+			if a.Effort != nil {
+				t.Effort = *a.Effort
+			}
 			t.Failure = nil
 			return Result{Events: []Event{{"handover", a.Data}}}, nil
 		}},
