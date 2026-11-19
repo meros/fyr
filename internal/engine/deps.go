@@ -108,6 +108,16 @@ type SlotDeps struct {
 	// its CLI).
 	SlotFreeze func(owner string) bool
 	SlotThaw   func(owner string)
+	// V0.guard-wake (decision 0036 E3, E6): SlotMem is a thread's memory now,
+	// kept at a freeze for the wake rule; FrozenUsec is how long a thread's
+	// job (or undeclared work) cgroup has been frozen in all (frozen_usec),
+	// false where the kernel does not say.
+	SlotMem    func(thread string) uint64
+	FrozenUsec func(thread string, undeclared bool) (uint64, bool)
+	// GuardService says thread's heavy job or flagged work is a service (a dev
+	// stack, `docker compose up`): the guard never freezes it (decision 0036
+	// (D), E4). Nil until the service class lands; then nothing is a service.
+	GuardService func(thread string) bool
 }
 
 // UndeclaredDeps are V0.164's: heavy work nobody declared. Undeclared lists
@@ -131,7 +141,7 @@ type UndeclaredDeps struct {
 	HeavyRemove        func(pattern string) bool
 	// ServicePatterns adds or removes a service pattern (V0.services-not-jobs).
 	ServicePatterns func(add, remove string) error
-	HeavyRefused       func(class string)
+	HeavyRefused    func(class string)
 	// HeavySoft says a class is learned (V0.209): it never waits.
 	HeavySoft func(class string) bool
 }

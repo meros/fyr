@@ -81,6 +81,11 @@ export interface HostLoad {
    *  before V0.209); absent on a host without V0.164 */
   undeclaredSettings?: UndeclaredSettings;
   heavyAdded?: HeavyAdded[];
+  /** V0.rerun-classes: the classes the owner marked rerunnable; absent on an older host */
+  rerun?: { classes: string[] };
+  /** V0.oomd-guard: the unit's own memory stall (full avg10, %) and oomd's pressure limit on it (%) */
+  unitMemoryStall?: number;
+  oomdLimit?: number;
   /** V0.176: the processes threads left running, past their grace, and the settled threads' worktrees */
   leftovers?: Leftover[];
   temps?: Temp[];

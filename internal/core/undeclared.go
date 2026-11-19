@@ -13,6 +13,8 @@ import (
 const (
 	KindHeavyRemove        = "host.heavyRemove"
 	KindUndeclaredSettings = "host.undeclaredSettings"
+	// V0.rerun-classes: add or remove a class the guard may kill and rerun.
+	KindRerunClasses = "host.rerunClasses"
 
 	EffectHeavyRemove        EffectKind = "heavy.remove"
 	EffectUndeclaredSettings EffectKind = "undeclared.settings"
@@ -20,6 +22,7 @@ const (
 	// V0.services-not-jobs: the owner adds or removes a service pattern.
 	KindServicePatterns              = "host.servicePatterns"
 	EffectServicePatterns EffectKind = "service.patterns"
+	EffectRerunClasses    EffectKind = "rerun.classes"
 )
 
 func init() {
@@ -52,6 +55,16 @@ func init() {
 			return nil, errors.New("add or remove a pattern")
 		}
 		return map[string]any{"add": add, "remove": remove}, nil
+	})
+	effect(KindRerunClasses, EffectRerunClasses, func(m map[string]any) (map[string]any, error) {
+		add, remove := str(m, "add", 200), str(m, "remove", 200)
+		switch {
+		case add != "" && remove == "":
+			return map[string]any{"add": add}, nil
+		case remove != "" && add == "":
+			return map[string]any{"remove": remove}, nil
+		}
+		return nil, errors.New("give add or remove: one class of 1 to 200 characters")
 	})
 	effect(KindUndeclaredSettings, EffectUndeclaredSettings, func(m map[string]any) (map[string]any, error) {
 		out := map[string]any{}

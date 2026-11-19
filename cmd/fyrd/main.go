@@ -273,8 +273,8 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	jobs := &cgroup.Jobs{KV: h.st, Project: eng.ThreadProject}
 	// V0.209: the gate hook admits a heavy command by itself.
-	groups := &cgroup.JobGroups{Tree: tree}                 // decision 0029 S5: each holder's job in a cgroup of its own
-	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaisePeak // V0.job-limits: a job sizes itself
+	groups := &cgroup.JobGroups{Tree: tree}                    // decision 0029 S5: each holder's job in a cgroup of its own
+	groups.Size, groups.Raise = jobs.SizeOf, jobs.RaiseOverrun // V0.job-limits: a job sizes itself
 	// V0.164, V0.209: the learned and added patterns; the detector of
 	// work that nobody asked for, its settings and the record of its episodes.
 	book := &heavy.Book{KV: h.st, Matcher: heavyCmds, Base: cfg.HeavyAdded}
@@ -289,10 +289,16 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	svcBook.Load()
 	services := &cgroup.Services{Match: svcBook.Match, Docker: &cgroup.Docker{}, KV: h.st,
 		Cwd: func(th string) string { t, _ := eng.Thread(th); return t.Cwd }}
+	// V0.rerun-classes: the classes the owner marked rerunnable on this host.
+	rerun := &cgroup.RerunClasses{KV: h.st}
+	rerun.Load()
 	mgr.SetOnBash(func(c agent.BashCall) string {
 		groups.Bash(c.Thread, c.Command)
 		services.Bash(c.Thread, c.Command)
 		class, text := heavyCmds.Match(c.Command)
+		if class == "" && eng.RerunWaiting(c.Thread) {
+			class = rerun.Match("", c.Command) // a killed undeclared job's rerun is admitted too
+		}
 		jobs.Saw(c.Thread, class)
 		groups.Seen(c.Thread, text)
 		if cfg.HeavyGate == "off" {
@@ -302,7 +308,18 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}, func(thread, toolUse string) { go eng.HeavyDone(thread, toolUse) }) // never on the stream's goroutine: it may grant
 	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups, // V0.80, V0.86
 		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject, // V0.164
-		Services: services, ServiceBook: svcBook} // V0.services-not-jobs
+		Services: services, ServiceBook: svcBook, // V0.services-not-jobs
+		Rerun: rerun} // V0.rerun-classes
+	// Decision 0036 (D), E4: the guard never freezes or kills work that holds
+	// one of its thread's services (a dev stack, `docker compose up`).
+	guardService := func(th string) bool {
+		for _, sv := range services.Of(th) {
+			if groups.Holds(th, sv.PID) {
+				return true
+			}
+		}
+		return false
+	}
 	// V0.164: an ended episode is kept, teaches its command, and ends its frozen group.
 	detector.OnEnd = func(ep cgroup.Episode) {
 		ep.Project = eng.ThreadProject(ep.Thread)
@@ -400,12 +417,34 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		SlotOver:   adm.Over, // V0.163
 		JobReset:   jobs.Reset,
 		SlotFreeze: groups.Freeze, SlotThaw: groups.Thaw, // decision 0029 S5
+		// V0.guard-wake: the wake rule's memory and the time frozen.
+		SlotMem: sampler.ThreadMemory, FrozenUsec: groups.FrozenUsec,
+		GuardService: guardService, // decision 0036 (D)
 	}
 	if !pool.Off() {
 		// decision 0029 S4: the budget adapts; V0.budget-restart: and outlives a deploy
 		sd.SlotAIMD = &slots.AIMD{N: float64(n), Path: filepath.Join(data, "slot-budget.json")}
 	}
 	eng.SlotDeps = sd
+	// V0.rerun-classes: kill and rerun, for the classes the owner marked.
+	eng.RerunDeps = engine.RerunDeps{RerunMatch: rerun.Match, RerunSet: rerun.Set, JobKill: groups.KillJob,
+		RerunWall: func(thread string) (time.Duration, bool) {
+			hd, ok := pool.Holding(thread)
+			if !ok {
+				return 0, false
+			}
+			l, ok := jobs.Learned(jobs.ClassOf(thread, hd.Kind))
+			if !ok || len(l.Walls) == 0 {
+				return 0, false
+			}
+			return time.Duration(l.WallP90() * float64(time.Second)), true
+		},
+		RerunRaise: func(thread string) {
+			if hd, ok := pool.Holding(thread); ok {
+				jobs.RaisePeak(jobs.ClassOf(thread, hd.Kind), 1.2)
+			}
+		},
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -526,6 +565,19 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	if err := eng.ResumeEffects(); err != nil {
 		log.Printf("resume effects: %v", err)
 	}
+	// V0.guard-wake (decision 0036 E5): a PSI trigger on the agents' memory
+	// stall runs the guard at once; the 10 s tick stays as the fallback.
+	guardWake := make(chan struct{}, 1)
+	if err := cgroup.WatchAgentsPressure(ctx, tree, func() {
+		select {
+		case guardWake <- struct{}{}:
+		default:
+		}
+	}); err != nil {
+		log.Printf("guard: no PSI trigger on the agents' memory.pressure (%v); the guard reads every 10 s", err)
+	} else {
+		log.Printf("guard: PSI trigger %q on the agents' memory.pressure", cgroup.PressureTrigger)
+	}
 	go func() {
 		t := time.NewTicker(10 * time.Second)
 		defer t.Stop()
@@ -535,6 +587,9 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 				return
 			case <-t.C:
 				eng.Tick()
+			case <-guardWake:
+				sampler.Tick() // fresh signals for the guard
+				eng.GuardNow()
 			}
 		}
 	}()

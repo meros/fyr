@@ -68,6 +68,8 @@ type Load struct {
 	// thresholds of "undeclared".
 	HeavyAdded         []heavy.Added   `json:"heavyAdded,omitempty"`
 	UndeclaredSettings *UndeclaredView `json:"undeclaredSettings,omitempty"`
+	// V0.rerun-classes: the classes the owner marked rerunnable.
+	Rerun *RerunView `json:"rerun,omitempty"`
 	// V0.176: the leftover processes past their grace, and the temporary
 	// folders listed for the owner (settled threads' worktrees).
 	Leftovers []Leftover `json:"leftovers,omitempty"`
@@ -130,6 +132,7 @@ type Sampler struct {
 	Detect       *Detector
 	DetectConfig func() UndeclaredConfig
 	Settings     *UndeclaredSettings        // GET /api/load shows it
+	Rerun        *RerunClasses              // V0.rerun-classes; GET /api/load shows it
 	Book         *heavy.Book                // the suggestions and added patterns GET /api/load shows
 	Project      func(thread string) string // a thread's project name, asked outside every lock
 	names        atomic.Pointer[map[string]string]
@@ -168,6 +171,10 @@ func (s *Sampler) Get() Load {
 	if s.Settings != nil && l.Provider != "" {
 		v := s.Settings.View()
 		l.UndeclaredSettings = &v
+	}
+	if s.Rerun != nil && l.Provider != "" {
+		v := s.Rerun.View()
+		l.Rerun = &v
 	}
 	if s.Leftovers != nil {
 		l.Leftovers = s.Leftovers.View()
@@ -358,7 +365,26 @@ func (s *Sampler) Signals() slots.Signals {
 	if l.Capacity != nil {
 		sig.CPU, sig.Memory = l.Capacity.CPU, l.Capacity.Memory
 	}
+	if l.Agents != nil {
+		sig.AgentsMem = l.Agents.Memory
+	}
 	return sig
+}
+
+// ThreadMemory is thread's memory at the last read (its cgroup, or its
+// process tree); 0 when unknown. V0.guard-wake: the guard keeps what a job
+// held when it froze it.
+func (s *Sampler) ThreadMemory(thread string) uint64 {
+	p := s.pub.Load()
+	if p == nil {
+		return 0
+	}
+	for _, t := range p.Threads {
+		if t.ID == thread {
+			return t.Memory
+		}
+	}
+	return 0
 }
 
 // Run ticks until ctx ends.

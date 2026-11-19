@@ -31,6 +31,10 @@ type Signals struct {
 	// SwapFull: the agents' swap is at its cap (V0.guard-swap), so the
 	// kernel can reclaim only their page cache.
 	SwapFull bool
+	// AgentsMem is what the agents hold now (agents/memory.current, or the
+	// sum of the process trees); 0 when unknown. V0.guard-wake: the guard
+	// wakes a frozen job when it fits under the cap learned from it.
+	AgentsMem uint64
 }
 
 // Reserve is the share of the agents' memory that must stay free: twice

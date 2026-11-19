@@ -6,8 +6,9 @@ import { spanText, type HostLoad } from "./load.ts";
 
 export interface GuardEvent {
   at: string;
-  /** "short" and "recovered" are the host's memory; "freeze" and "thaw" a thread's work */
-  kind: "short" | "recovered" | "freeze" | "thaw";
+  /** "short" and "recovered" are the host's memory; "freeze" and "thaw" a thread's work; V0.rerun-classes: "kill" of a
+   *  rerunnable job, "capped" when its class was killed 3 times in an hour and is frozen instead */
+  kind: "short" | "recovered" | "freeze" | "thaw" | "kill" | "capped";
   work?: "undeclared" | "job";
   thread?: string;
   /** the freeze's number in its episode */
@@ -16,6 +17,15 @@ export interface GuardEvent {
   reason?: "memory" | "gone" | "limit" | "ended";
   headroom?: number;
   stall?: string;
+  /** the rerunnable class of a kill or a cap */
+  class?: string;
+}
+
+/** V0.rerun-classes: a rerunnable class the guard killed in the last hour. */
+export interface GuardRerun {
+  class: string;
+  kills: number;
+  cappedUntil?: string;
 }
 
 export interface GuardThread {
@@ -35,6 +45,7 @@ export interface Guard {
   /** null from a host before V0.190 whose guard has done nothing yet */
   events: GuardEvent[] | null;
   threads?: GuardThread[];
+  rerun?: GuardRerun[];
 }
 
 /** How far back the chart looks. */
@@ -99,7 +110,7 @@ export function guardChart(g: Guard | undefined, now: number, titleOf: (thread: 
       open.set(e.thread, t);
       const l = lane(e.thread);
       if (t >= from) l.marks.push({ x: (t - from) / GUARD_WINDOW, n: e.n ?? 0 });
-    } else if (e.kind === "thaw" && e.thread) {
+    } else if ((e.kind === "thaw" || e.kind === "kill") && e.thread) {
       const a = open.get(e.thread);
       if (a !== undefined) {
         const s = clip(a, t, from, now);
@@ -167,9 +178,23 @@ export function guardLog(g: Guard | undefined, titleOf: (thread: string) => stri
     let text = "";
     if (e.kind === "short") text = `Memory became short${room}`;
     else if (e.kind === "recovered") text = `Memory recovered${room}`;
+    else if (e.kind === "kill") text = `Killed ${e.work === "job" ? "the job" : "undeclared work"} of ${who} (${e.class ?? "rerunnable"}) to free memory; it runs again when admitted${room}`;
+    else if (e.kind === "capped") text = `Stopped killing ${e.class ?? "a class"} for an hour: killed 3 times; it is frozen instead`;
     else if (e.kind === "freeze") text = `${e.work === "job" ? "Paused the job of" : "Paused undeclared work of"} ${who}${e.n ? ` (${e.n}/${g.max})` : ""}${room}`;
     else text = `Resumed ${who}: ${WHY[e.reason ?? "memory"] ?? "memory was fine"}`;
     return { at: clock(e.at), text };
   });
   return rows.slice(0, limit);
+}
+
+/** V0.rerun-classes (Settings → Automation, desktop and phone): one row per class the owner marked rerunnable, with what
+ *  the guard did to it in the last hour. */
+export function rerunRows(h: HostLoad, clock: (iso: string) => string): { class: string; line: string }[] {
+  const kills = (h.slots as { guard?: Guard } | undefined)?.guard?.rerun ?? [];
+  return (h.rerun?.classes ?? []).map((c) => {
+    const k = kills.find((x) => x.class === c);
+    if (!k) return { class: c, line: "Not killed in the last hour" };
+    const times = k.kills === 1 ? "once" : `${k.kills} times`;
+    return { class: c, line: k.cappedUntil ? `Killed ${times} in the last hour; frozen instead until ${clock(k.cappedUntil)}` : `Killed ${times} in the last hour` };
+  });
 }

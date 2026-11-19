@@ -155,8 +155,8 @@ func TestJL5RaisePeakAndSizeOf(t *testing.T) {
 	j.load()
 	j.table["fyr: make test-go"] = Learned{Demand: 2.9, Peak: 1000, Runs: 3}
 	j.mu.Unlock()
-	j.RaisePeak("fyr: make test-go")
-	j.RaisePeak("unknown")
+	j.RaiseOverrun("fyr: make test-go")
+	j.RaiseOverrun("unknown")
 	if l, _ := j.Learned("fyr: make test-go"); l.Peak != 1200 {
 		t.Fatalf("peak %d", l.Peak)
 	}

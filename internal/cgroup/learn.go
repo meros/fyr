@@ -131,6 +131,29 @@ func (j *Jobs) Learned(class string) (Learned, bool) {
 	return l, ok
 }
 
+// RaisePeak multiplies class's learned memory peak by f (V0.rerun-classes,
+// decision 0036 (F): ×1.2 after Fyr killed a job of it to free memory, as
+// VPA raises an estimate after an overrun), so its rerun is admitted only
+// where the larger peak fits. False when the class has no peak yet.
+func (j *Jobs) RaisePeak(class string, f float64) bool {
+	if j == nil {
+		return false
+	}
+	j.mu.Lock()
+	j.load()
+	l, ok := j.table[class]
+	if !ok || l.Peak == 0 {
+		j.mu.Unlock()
+		return false
+	}
+	l.Peak = uint64(float64(l.Peak) * f)
+	j.table[class] = l
+	raw := j.tableRaw()
+	j.mu.Unlock()
+	j.storeTable(raw)
+	return true
+}
+
 // Reset forgets class (the owner's Reset); false when it was not learned.
 func (j *Jobs) Reset(class string) bool {
 	j.mu.Lock()
@@ -206,25 +229,13 @@ func (j *Jobs) LiveUse(thread string) (cores float64, grew uint64, ok bool) {
 // memory.high its peak set (V0.job-limits; VPA raises by ×1.2 after an overrun).
 const overrunRaise = 1.2
 
-// RaisePeak raises class's learned peak by overrunRaise: its job hit the limit
-// the peak set, so the peak was too low (V0.job-limits). Nothing for a class
-// not learned yet.
-func (j *Jobs) RaisePeak(class string) {
-	if j == nil || class == "" {
-		return
+// RaiseOverrun raises class's learned peak by overrunRaise: its job hit the
+// limit the peak set, so the peak was too low (V0.job-limits). Nothing for a
+// class not learned yet.
+func (j *Jobs) RaiseOverrun(class string) {
+	if class != "" {
+		j.RaisePeak(class, overrunRaise)
 	}
-	j.mu.Lock()
-	j.load()
-	l, ok := j.table[class]
-	if !ok {
-		j.mu.Unlock()
-		return
-	}
-	l.Peak = uint64(overrunRaise * float64(l.Peak))
-	j.table[class] = l
-	raw := j.tableRaw()
-	j.mu.Unlock()
-	j.storeTable(raw)
 }
 
 // SizeOf is what the class of thread's job learned (V0.job-limits): its hold's
