@@ -85,7 +85,7 @@ func TestFrontPushesOnceForATurnThatEndsTwice(t *testing.T) {
 	}
 	set := func(running bool) {
 		coretest.Patch(a.eng, id, func(th *core.Thread, now time.Time) []core.Event {
-			th.Decisions, th.Running, th.ActivityAt = nil, running, now
+			th.Decisions, th.Running, th.Starting, th.ActivityAt = nil, running, nil, now
 			return nil
 		})
 	}
