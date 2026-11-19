@@ -490,3 +490,7 @@ html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
 .m-qrow .lcsec dt,.m-qrow .lcsec dd,.m-new .qdet .lcsec dt,.m-new .qdet .lcsec dd,.m-lsheet .lclist li{font-size:13px;line-height:19px}
 .m-qrow .lcard{width:100%}
 .m-lsheet .mlsl li.lft{margin-top:6px;padding-top:12px;border-top:1px solid var(--line-strong);color:var(--ink)}
+/* V0.next-step-dock: the dock's Run card on the phone: full width, 44 px buttons (touch size) */
+.m-app .dockrun{margin:0;border-radius:18px 18px 0 0;border-bottom:0}
+.m-app .dockrun .btn{min-height:44px;padding:0 14px;font-size:15px}
+.m-app .dockrun-show{margin-left:0}
