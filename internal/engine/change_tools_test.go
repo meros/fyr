@@ -12,6 +12,7 @@ import (
 	"github.com/meros/fyr/internal/api"
 	"github.com/meros/fyr/internal/core"
 	"github.com/meros/fyr/internal/core/coretest"
+	"github.com/meros/fyr/internal/store"
 )
 
 func changeOf(h *harness, id, ref string) *core.Change {
@@ -129,16 +130,17 @@ func TestChangeActions(t *testing.T) {
 	if r := h.cmdID("r3", "action.run", id, core.Args{"on": c.ID, "action": "rollback", "digest": rb.Digest}); !r.OK {
 		t.Fatalf("rollback: %+v", r)
 	}
-	eventually(t, "the rollback ended", func() bool {
+	// V0.101: the failure wakes the agent; it is the owner's 5 minutes
+	// after that run, when the clock re-reduces the thread. The clock moves
+	// only once the woken run has ended: a run that ends after the move is
+	// stamped on the new clock, and its 5 minutes never pass in the test
+	// (V0.fix-flakes).
+	eventually(t, "the rollback and the run it woke ended", func() bool {
 		th, _ := h.e.Thread(id)
 		c := core.FindChange(&th, c.ID)
-		return !th.Running && c != nil && c.Blocking() != ""
+		return !th.Running && c != nil && c.Blocking() != "" && ranAfter(h.events(id), "Roll back")
 	})
-	// V0.101: the failure wakes the agent; it is the owner's 5 minutes
-	// after that run, when the clock re-reduces the thread.
 	h.e.Now = func() time.Time { return time.Now().Add(30 * time.Minute) }
-	// Judge one snapshot: a second read can land after the woken agent
-	// has moved the thread on (Working, empty reason).
 	var d api.Thread
 	eventually(t, "stopped on the failure", func() bool {
 		h.e.Tick()
@@ -174,6 +176,22 @@ func TestBuiltinActions(t *testing.T) {
 	if len(th.Changes[0].Offers) != 0 {
 		t.Fatalf("a merged PR kept actions: %+v", th.Changes[0].Offers)
 	}
+}
+
+// ranAfter: a run of the agent got Fyr's line about the owner's action
+// label (the fake echoes what it reads, in a message of its own or fed into
+// another), and that run ended.
+func ranAfter(evs []store.Event, label string) bool {
+	got := false
+	for _, e := range evs {
+		switch {
+		case e.Type == "msg" && strings.Contains(string(e.Data), `[Fyr] The owner ran \"`+label+`\"`):
+			got = true
+		case e.Type == "run.ended" && got:
+			return true
+		}
+	}
+	return false
 }
 
 func eventually(t *testing.T, what string, ok func() bool) {

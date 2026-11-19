@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -89,6 +90,31 @@ func (h *handoverHarness) handover(id, profile string) handoverEv {
 	b, _ := json.Marshal(h.events(id))
 	h.t.Fatalf("no handover event: %s", b)
 	return handoverEv{}
+}
+
+// handoverTexts waits for n messages Fyr sent as the handover (the request
+// to the source, the target's first message) and returns every user
+// message as from|text. The handover ends (Handover nil) before the
+// target's first message is in the log (V0.fix-flakes).
+func (h *handoverHarness) handoverTexts(id string, n int) []string {
+	h.t.Helper()
+	var users []string
+	eventually(h.t, fmt.Sprintf("%d handover messages", n), func() bool {
+		users = users[:0]
+		got := 0
+		for _, e := range h.events(id) {
+			if e.Type == "user" {
+				var d struct{ Text, From string }
+				json.Unmarshal(e.Data, &d)
+				users = append(users, d.From+"|"+d.Text)
+				if d.From == "handover" {
+					got++
+				}
+			}
+		}
+		return got >= n
+	})
+	return users
 }
 
 type handoverEv struct {
@@ -198,15 +224,7 @@ func TestHandoverBriefWhenExportFails(t *testing.T) {
 	if ev.Rung != "brief" || !strings.Contains(ev.Note, "transcript") {
 		t.Fatalf("event %+v", ev)
 	}
-	evs := h.events(th.ID)
-	var users []string
-	for _, e := range evs {
-		if e.Type == "user" {
-			var d struct{ Text, From string }
-			json.Unmarshal(e.Data, &d)
-			users = append(users, d.From+"|"+d.Text)
-		}
-	}
+	users := h.handoverTexts(th.ID, 2)
 	// hello, the request to the source, the start of the target
 	if len(users) != 3 || !strings.HasPrefix(users[1], "handover|") || !strings.HasPrefix(users[2], "handover|") {
 		t.Fatalf("users %q", users)

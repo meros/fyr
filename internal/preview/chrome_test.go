@@ -41,13 +41,16 @@ func TestShootRealChrome(t *testing.T) {
 	if r>>8 < 200 || g>>8 < 120 {
 		t.Fatalf("not the page's amber background: %d %d", r>>8, g>>8)
 	}
-	start := time.Now()
+	// The second shot reuses the browser: the same process, still running.
+	// The proof is the process, not a wall-time budget, which a busy host
+	// broke (V0.fix-flakes).
+	first := c.cmd
 	full, err := c.Shoot(ctx, page.URL, 1280, 800, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := time.Since(start); d > 5*time.Second {
-		t.Fatalf("second shot took %s; the browser was not reused", d)
+	if c.cmd != first || isClosed(c.dead) {
+		t.Fatal("the second shot started another browser; the first was not reused")
 	}
 	fi, _ := png.Decode(bytes.NewReader(full))
 	if fi.Bounds().Dy() < 2000 {
@@ -55,8 +58,11 @@ func TestShootRealChrome(t *testing.T) {
 	}
 	pid := c.cmd.Process.Pid
 	c.Close()
-	time.Sleep(300 * time.Millisecond)
-	if err := syscall.Kill(-pid, 0); err == nil {
-		t.Fatal("Chrome processes survived Close")
+	// The group's processes are killed; they are gone once reaped, which
+	// takes a moment on a busy host.
+	for end := time.Now().Add(10 * time.Second); syscall.Kill(-pid, 0) == nil; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("Chrome processes survived Close")
+		}
 	}
 }

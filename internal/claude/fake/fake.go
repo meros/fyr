@@ -552,8 +552,10 @@ func turn(text string) (took []queued) {
 		write(msg{"type": "system", "subtype": "background_tasks_changed", "tasks": []any{task}})
 		write(msg{"type": "system", "subtype": "task_started", "task_id": "bw1", "description": "Wait for the build", "task_type": "local_bash", "is_backgrounded": true})
 		assistant(msg{"type": "text", "text": "waiting for the build"})
-		result(false, "success", "turn 1")
+		// The task counts before the result: a reader that closes stdin on
+		// the result must find the exit waiting for it (V0.fix-flakes).
 		bgwg.Add(1)
+		result(false, "success", "turn 1")
 		go func() {
 			defer bgwg.Done()
 			time.Sleep(time.Duration(ms) * time.Millisecond)
