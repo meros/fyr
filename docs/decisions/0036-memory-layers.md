@@ -108,6 +108,8 @@ The swap valve of decision 0032 slice 3 applies: every job limit lifts while the
 | 5 | (E1, E3–E6) delayed start, Buck2 wake rule, several freezes, PSI trigger, frozen time in hook output | fyr | More frozen work at once; the oldest job and services still run |
 | 6 | (F) rerunnable classes, kill, `process_mrelease`, rerun gate, the owner's switch on desktop and phone | fyr | A class wrongly marked rerunnable loses work; nothing is marked by default |
 
+The host settings these slices assume (zswap, oomd limits, the cgroup budget) are written down for the owner in `docs/HOST-SETUP.md`.
+
 Each slice adds its `guard:` log lines first, as decision 0032 did, so it can be tuned from the log.
 
 ## The owner's answers (19 Nov)
