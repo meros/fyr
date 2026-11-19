@@ -32,6 +32,7 @@ import {
   setDeploy,
   setStall,
   UNDO_MS,
+  type Arrival,
   type SectionKey,
   type Sections,
   type Store,
@@ -40,7 +41,7 @@ import {
   resolveRef,
 } from "./store.ts";
 import { migrateStorage, moveHostKeys, moveRef, rotations } from "./storage-migrate.ts";
-import { placeOf, steadyThreads, stillRows, trackUnread, type FinishHold, type RowPlace } from "./still-list.ts";
+import { placeOf, steadyThreads, stillRows, trackArrivals, type FinishHold, type RowPlace } from "./still-list.ts";
 import { useListAnchor } from "./still-list-ui.ts";
 import { SECTION_OPEN_KEY, afterSettle, cutSection, guestOf, hiddenWhy, markedRow, parseSectionOpen, rowAfter, stepRow } from "./selection.ts";
 import { closeView, initialTracker, markSent, markedUnseen, openView, setAtEnd, setWindowFocus, shouldMarkSeen, type SeenTracker } from "./seen.ts";
@@ -428,9 +429,10 @@ function App() {
   }, [searchable, filterOn, query, quietClock, store.clockOffset]);
   const queue = useSlotQueue(); // V0.137
   // V0.207: `sec` is the truth, for every count; the list draws `rows` and j/k walks `drawn`, which keep their place.
-  const unreadRef = useRef<Record<string, number>>({});
-  const unreadAt = useMemo(() => (unreadRef.current = trackUnread(unreadRef.current, listThreads)), [listThreads]);
-  const sec = useMemo(() => sections(shown, queue, unreadAt), [shown, queue, unreadAt]);
+  // V0.stable-groups: when each thread came into its group; a new row goes last and nothing else moves one.
+  const arrivalsRef = useRef<Record<string, Arrival>>({});
+  const arrivals = useMemo(() => (arrivalsRef.current = trackArrivals(arrivalsRef.current, listThreads, Date.now() + store.clockOffset)), [listThreads]);
+  const sec = useMemo(() => sections(shown, queue, arrivals), [shown, queue, arrivals]);
   // V0.134, V0.169: the two rows (only values with threads in view; a selected one stays) and the empty state, on both
   // fronts.
   const filterView = useMemo<FilterView>(() => {
@@ -466,7 +468,7 @@ function App() {
   // V0.212: not on the phone. The list and the thread are never on screen together there, so the row marks nothing.
   const hidden = phone ? null : hiddenWhy(current, { shown, filtered, query, allowed: !!current && (gate.admitted === current.id || !!reachable({ [current.id]: current }, Date.now() + store.clockOffset, unlock.showUntil)[current.id]) });
   const listed = useMemo(() => (hidden && current ? { ...shown, [current.id]: current } : shown), [shown, hidden, current]);
-  const liveRows = useMemo(() => (listed === shown ? sec : sections(listed, queue, unreadAt)), [listed, shown, sec, queue, unreadAt]);
+  const liveRows = useMemo(() => (listed === shown ? sec : sections(listed, queue, arrivals)), [listed, shown, sec, queue, arrivals]);
   // V0.open-row-only: the open row keeps the place it had on the screen when it was opened, until another thread is
   // current. Every other row is where the live list has it. V0.phone-row-moves: not on the phone, where the list and the
   // thread are never on screen together, so back on the list the row is where the live list has it.

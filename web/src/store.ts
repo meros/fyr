@@ -203,23 +203,8 @@ export function lastSeq(s: Store, threadId: string): number {
 
 // ---- sections and order ----
 
-const NEEDS_RANK: Partial<Record<AttentionState, number>> = { asking: 0, failed: 1, blocked: 2, done: 3 };
-
 function activity(t: Thread): number {
   return ts(t.activityAt) || ts(t.updatedAt);
-}
-
-/** V0.your-move: by group (Answer, Approve, Unblock, Questions in text), then by state. Keeps V0.205 (merge asks after the
- *  questions, before the failures) and V0.210 (a question Fyr only read comes last). */
-function needsRank(t: Thread): number {
-  return needsGroupRank(t) * 10 + (NEEDS_RANK[t.attention.state] ?? 9);
-}
-
-export function compareNeeds(a: Thread, b: Thread): number {
-  const ra = needsRank(a);
-  const rb = needsRank(b);
-  if (ra !== rb) return ra - rb;
-  return activity(b) - activity(a) || a.id.localeCompare(b.id);
 }
 
 /** When the thread's work started: the run, else (waiting) the earliest running agent; 0 when unknown. */
@@ -230,9 +215,30 @@ export function workStartedAt(t: Thread): number {
   return starts.length ? Math.min(...starts) : 0;
 }
 
-/** V0.26: a stable order, newest started first, then id; activity never moves a row. */
-export function compareWorking(a: Thread, b: Thread): number {
-  return workStartedAt(b) - workStartedAt(a) || a.id.localeCompare(b.id);
+/** V0.stable-groups: where a thread stands in its group's order (still-list.ts `trackArrivals`). `key` is the group
+ *  (Your move's group, Working or Unread); `at` is when the thread came there. */
+export interface Arrival {
+  key: string;
+  at: number;
+}
+
+/** The thread's own time in its group: the run's start in Working, else the last activity. Used on a first sight (a
+ *  reload) and where no arrival is kept (search). */
+export function naturalAt(t: Thread): number {
+  return (sectionOf(t) === "working" && workStartedAt(t)) || activity(t);
+}
+
+/** V0.stable-groups: oldest arrival first, so a new row goes to the bottom and nothing a thread does moves it within its
+ *  group. Your move keeps its groups (V0.your-move) and orders by arrival inside each. Amends V0.26 (Working newest
+ *  started first), V0.207 (Unread newest first) and the state order inside a Your move group. */
+export function compareArrival(arrivals: Readonly<Record<string, Arrival>>): (a: Thread, b: Thread) => number {
+  const at = (t: Thread) => arrivals[t.id]?.at ?? naturalAt(t);
+  return (a, b) => at(a) - at(b) || a.id.localeCompare(b.id);
+}
+
+export function compareNeeds(arrivals: Readonly<Record<string, Arrival>> = {}): (a: Thread, b: Thread) => number {
+  const byArrival = compareArrival(arrivals);
+  return (a, b) => needsGroupRank(a) - needsGroupRank(b) || byArrival(a, b);
 }
 
 export function compareActivityDesc(a: Thread, b: Thread): number {
@@ -285,9 +291,9 @@ export function sectionOf(t: Thread): SectionKey | null {
 /** V0.137: `queue` (slotQueue of the load) moves every queued thread to Waiting for a slot, in the queue's order (host by
  *  host, then its place), except a thread in Needs you, which stays there: the owner acts on it first. A pinned queued
  *  thread is in the queue's section and not in the pinned block, so the queue reads in its real order.
- *  V0.207: `unreadAt` (still-list.ts) is when each thread became unread: Unread is newest first by that time, so later
- *  activity does not move a row. */
-export function sections(threads: Record<string, Thread>, queue: readonly QueueEntry[] = [], unreadAt: Readonly<Record<string, number>> = {}): Sections {
+ *  V0.stable-groups: `arrivals` (still-list.ts) is when each thread came into its group: Your move (inside each group),
+ *  Working and Unread are oldest first by that time, so a new row goes last and later activity does not move a row. */
+export function sections(threads: Record<string, Thread>, queue: readonly QueueEntry[] = [], arrivals: Readonly<Record<string, Arrival>> = {}): Sections {
   const out: Sections = { needs: [], working: [], slots: [], unread: [], seen: [], snoozed: [], settled: [], pinned: [] };
   const queued = new Set(queue.map((e) => e.owner));
   for (const t of Object.values(threads)) {
@@ -299,9 +305,10 @@ export function sections(threads: Record<string, Thread>, queue: readonly QueueE
     const t = threads[e.owner];
     if (t && !e.priority && sectionOf(t) && sectionOf(t) !== "needs" && !out.slots.includes(t)) out.slots.push(t);
   }
-  out.needs.sort(compareNeeds);
-  out.working.sort(compareWorking);
-  out.unread.sort((a, b) => (unreadAt[b.id] ?? activity(b)) - (unreadAt[a.id] ?? activity(a)) || a.id.localeCompare(b.id));
+  const byArrival = compareArrival(arrivals);
+  out.needs.sort(compareNeeds(arrivals));
+  out.working.sort(byArrival);
+  out.unread.sort(byArrival);
   out.seen.sort(compareSeen);
   out.snoozed.sort(compareActivityDesc);
   out.settled.sort(compareActivityDesc);

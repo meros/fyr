@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sections, flatOrder } from "../src/store.ts";
-import { anchorRow, placeOf, stillRows, trackUnread } from "../src/still-list.ts";
+import { anchorRow, placeOf, stillRows, trackArrivals } from "../src/still-list.ts";
 import type { Thread } from "../src/types.ts";
 import { thread } from "./helpers.ts";
 
@@ -12,15 +12,34 @@ const unread = (id: string, m: number) => thread(id, "done", "seen", { activityA
 const seen = (id: string, read: number, m = 0) => thread(id, "seen", "seen", { activityAt: at(m), view: { seenAt: at(read) } });
 const ids = (l: Thread[]) => l.map((t) => t.id);
 
-test("V0.207: Unread is newest first by when it became unread; later activity does not move a row", () => {
-  let m = trackUnread({}, all([unread("a", 1), unread("b", 2)]));
+test("V0.stable-groups: Unread is oldest first by when it became unread; later activity does not move a row", () => {
+  let m = trackArrivals({}, all([unread("a", 1), unread("b", 2)]), Date.parse(at(3)));
   const later = all([unread("a", 9), unread("b", 2)]);
-  m = trackUnread(m, later);
-  assert.deepEqual(ids(sections(later, [], m).unread), ["b", "a"]);
-  // Read, then unread again: a new time.
-  m = trackUnread(m, all([seen("a", 10, 9), unread("b", 2)]));
-  m = trackUnread(m, all([unread("a", 12), unread("b", 2)]));
-  assert.deepEqual(ids(sections(all([unread("a", 12), unread("b", 2)]), [], m).unread), ["a", "b"]);
+  m = trackArrivals(m, later, Date.parse(at(9)));
+  assert.deepEqual(ids(sections(later, [], m).unread), ["a", "b"]);
+  // Read, then unread again: a new time, so it goes last.
+  m = trackArrivals(m, all([seen("a", 10, 9), unread("b", 2)]), Date.parse(at(10)));
+  m = trackArrivals(m, all([unread("a", 12), unread("b", 2)]), Date.parse(at(12)));
+  assert.deepEqual(ids(sections(all([unread("a", 12), unread("b", 2)]), [], m).unread), ["b", "a"]);
+});
+
+test("V0.stable-groups: Working keeps its order when a thread starts a new run; a new thread goes last", () => {
+  const w = (id: string, run: number) => thread(id, "working", "working", { runStartedAt: at(run), activityAt: at(run) });
+  let m = trackArrivals({}, all([w("a", 1), w("b", 2)]), Date.parse(at(3)));
+  assert.deepEqual(ids(sections(all([w("a", 1), w("b", 2)]), [], m).working), ["a", "b"], "first sight: by run start, oldest first");
+  // a starts a new run, c arrives with an older run start (an agent started long ago): neither jumps.
+  const next = all([w("a", 20), w("b", 2), w("c", 0)]);
+  m = trackArrivals(m, next, Date.parse(at(21)));
+  assert.deepEqual(ids(sections(next, [], m).working), ["a", "b", "c"]);
+});
+
+test("V0.stable-groups: inside a Your move group the order is arrival, not state; a new row goes last", () => {
+  const failed = (id: string, t: number) => thread(id, "failed", "needs", { activityAt: at(t) });
+  const blocked = (id: string, t: number) => thread(id, "blocked", "needs", { activityAt: at(t), attention: { state: "blocked", section: "needs", reason: "x" } });
+  let m = trackArrivals({}, all([failed("f", 1), blocked("b", 2)]), Date.parse(at(3)));
+  const next = all([failed("f", 30), blocked("b", 2), failed("n", 4)]);
+  m = trackArrivals(m, next, Date.parse(at(31)));
+  assert.deepEqual(ids(sections(next, [], m).needs), ["f", "b", "n"]);
 });
 
 test("V0.207: Seen is by when it was read, whatever ran since", () => {
@@ -33,10 +52,10 @@ test("V0.207: the open row keeps its place after it is read", () => {
   assert.deepEqual(place, { id: "open", section: "unread", index: 1 });
   const live = sections(all([unread("a", 3), seen("open", 9, 2), unread("c", 1)]));
   const r = stillRows(live, place);
-  assert.deepEqual(flatOrder(r), ["a", "open", "c"]);
+  assert.deepEqual(flatOrder(r), ["c", "open", "a"]);
   // Settled, it goes.
   const gone = stillRows(sections(all([unread("a", 3), thread("open", "settled", "settled"), unread("c", 1)])), place);
-  assert.deepEqual(ids(gone.unread), ["a", "c"]);
+  assert.deepEqual(ids(gone.unread), ["c", "a"]);
 });
 
 test("V0.open-row-only: every other row moves at once, around the open row", () => {
