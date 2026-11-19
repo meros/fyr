@@ -38,7 +38,9 @@ import { SETTLE_DONE_HINT, seenToggle, settleDoneEntry } from "./menu.ts";
 import { prChip } from "./pr.ts";
 import { ChangesBoard } from "./board-ui.tsx";
 import { needsCount } from "./board.ts";
-import { TAB_LABEL, defaultTab, threadTabs } from "./view.ts";
+import { TAB_LABEL, defaultTab, showsDecision, threadTabs } from "./view.ts";
+import { DockRun, showCard } from "./runcard-ui.tsx";
+import { dockRun } from "./runcard.ts";
 import { HandoverForm } from "./handover-ui.tsx";
 import { NewProjectStep, ProjectEditor, linkingFor, ProjectIcon, ProjectList, QuietGate, QuietHold, ProjectPicker, ProjectTag, StartedBy, type ProjectPatch, type QuietUnlock } from "./project-ui.tsx";
 import { colorVar, findProject, projectName, projectOf, recordOf } from "./projects.ts";
@@ -872,6 +874,7 @@ function MSearch(p: PhoneProps) {
 function MThread(p: PhoneProps & { t: Thread; tab: string }) {
   const t = p.t;
   const decision = currentDecision(t);
+  const dock = dockRun(t);
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => setCollapsed(false), [decision?.id]);
   const cardOpen = !!decision && !collapsed;
@@ -1001,6 +1004,8 @@ function MThread(p: PhoneProps & { t: Thread; tab: string }) {
           </button>
         </div>
       )}
+      {/* V0.next-step-dock: a run request waits in the dock above the composer, as on the desktop (DockRun) */}
+      {!decision && dock && showsDecision(p.tab) && <DockRun o={dock.o} t={t} host={t.host || undefined} more={dock.waiting - 1} onRun={(a, args) => void p.commands.run(a, [t.id], args)} onShow={(id) => showCard(id, p.tab, setTab)} />}
       {!decision && !nextOffer && <MComposer key={t.id} t={t} p={p} tab={p.tab} setTab={setTab} />}
     </div>
   );
