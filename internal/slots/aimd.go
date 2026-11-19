@@ -11,7 +11,10 @@ package slots
 // budget stays full (the fixed count holds).
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"time"
 )
 
@@ -24,18 +27,34 @@ const (
 	AIMDCalm  = 1.2              // a slowdown under this is calm
 	AIMDSlow  = 3.0              // a slowdown over this, held AIMDHold, cuts CPU
 	AIMDMax   = 2.0              // a factor's ceiling
+	// V0.budget-restart: a kept budget younger than this is taken back on
+	// start; it is written on each move and at least this often.
+	AIMDKeep  = 30 * time.Minute
+	AIMDWrite = 5 * time.Minute
 )
 
 // AIMD is one host's budget controller; N is the host's `slots` setting:
 // a factor never falls under 1/N (one prior job's share).
 type AIMD struct {
 	N float64
+	// Path keeps the budget across a restart of fyrd (V0.budget-restart);
+	// empty keeps it in memory only.
+	Path string
 
 	f         Factors
 	started   bool
 	last      time.Time
 	slowSince time.Time
 	why       string
+	written   time.Time
+	wrote     Factors // the budget Path holds
+}
+
+// kept is the budget as Path holds it.
+type kept struct {
+	Factors
+	Why string    `json:"why"`
+	At  time.Time `json:"at"`
 }
 
 // Step moves the budget at now: waiting is whether a job waits, lastGrant
@@ -44,8 +63,12 @@ type AIMD struct {
 func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time, binding string) (Factors, string) {
 	if !a.started {
 		a.started, a.f, a.last, a.why = true, Full, now, "the full budget"
+		if k, ok := a.load(now); ok {
+			a.f, a.why, a.written, a.wrote = k.Factors, "kept across a restart: "+k.Why, k.At, k.Factors
+		}
 		return a.f, a.why
 	}
+	defer a.save(now)
 	if s.Provider == "" {
 		a.f, a.why = Full, "no measures on this host: the fixed count"
 		return a.f, a.why
@@ -91,3 +114,58 @@ func (a *AIMD) Step(now time.Time, s Signals, waiting bool, lastGrant time.Time,
 }
 
 func round(v float64) float64 { return float64(int(v*1000+0.5)) / 1000 }
+
+// V0.budget-restart: before, every start of fyrd (each deploy) began at the
+// full budget, admitted two jobs into a host the budget had learned was full,
+// and the memory guard froze one within a minute (19 Nov: 09:53, 11:04,
+// 12:34). The budget is now kept in Path and taken back when it is younger
+// than AIMDKeep, bounded to 1/N–AIMDMax.
+func (a *AIMD) load(now time.Time) (kept, bool) {
+	if a.Path == "" {
+		return kept{}, false
+	}
+	b, err := os.ReadFile(a.Path)
+	if err != nil {
+		return kept{}, false
+	}
+	var k kept
+	if json.Unmarshal(b, &k) != nil || k.CPU <= 0 || k.Mem <= 0 {
+		log.Printf("slots: ignoring an unreadable %s", a.Path)
+		return kept{}, false
+	}
+	if age := now.Sub(k.At); age < 0 || age > AIMDKeep {
+		return kept{}, false
+	}
+	floor := 1.0
+	if a.N > 0 {
+		floor = 1 / a.N
+	}
+	k.CPU = min(AIMDMax, max(floor, k.CPU))
+	k.Mem = min(AIMDMax, max(floor, k.Mem))
+	return k, true
+}
+
+// save writes the budget to Path when it moved or the last write is
+// AIMDWrite old, so a kept budget's age says when it was last true.
+func (a *AIMD) save(now time.Time) {
+	if a.Path == "" {
+		return
+	}
+	if a.wrote == a.f && now.Sub(a.written) < AIMDWrite {
+		return
+	}
+	b, err := json.Marshal(kept{Factors: a.f, Why: a.why, At: now})
+	if err != nil {
+		return
+	}
+	tmp := a.Path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		log.Printf("slots: cannot keep the budget: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, a.Path); err != nil {
+		log.Printf("slots: cannot keep the budget: %v", err)
+		return
+	}
+	a.written, a.wrote = now, a.f
+}
