@@ -184,10 +184,13 @@ func ReadRootsWith(tr *Tree, proc, thread string, after time.Time, el Elders) []
 		return false
 	}
 	for p := range here {
-		if start[p].Before(cut) {
+		// V0.guard-tidy: a CLI restarted during the episode (a handover) is
+		// new too, but it is never a root: frozen, it would take its MCP
+		// servers with it. Of its children only a Bash shell is work.
+		if start[p].Before(cut) || (el.CLI > 0 && p == el.CLI) {
 			continue
 		}
-		if pp := parent[p]; here[pp] && !start[pp].Before(cut) {
+		if pp := parent[p]; here[pp] && !start[pp].Before(cut) && (pp != el.CLI || !agentShell(readCmdline(proc, p))) {
 			continue
 		}
 		if inElder(p) {

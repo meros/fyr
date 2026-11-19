@@ -225,9 +225,9 @@ func (e *Engine) sweepSlots() {
 		e.dropSlot(id)
 	}
 	e.syncSlotQueue()
-	e.memoryGuard(s)
 	e.heavierThanPredicted(s)
 	e.freezeGuard(s)
+	e.memoryGuard(s) // V0.guard-tidy: after the freeze, which told its thread already
 	e.publishGuard(e.Now())
 	e.adaptBudget(s)
 	// Decision 0029 S2: the conditions change without a release.
@@ -340,6 +340,10 @@ type frozenJob struct {
 const (
 	ThawAfterOK = 30 * time.Second
 	FreezeMax   = 10 * time.Minute
+	// FreezeCeiling ends a hold past FreezeMax (V0.guard-tidy): work frozen
+	// this long thaws even while the agents' memory stalls critically, unless
+	// its class is rerunnable (V0.rerun-classes kills it instead).
+	FreezeCeiling = 30 * time.Minute
 )
 
 // Decision 0032 slice 1: one long episode of undeclared work can be frozen
@@ -350,6 +354,12 @@ const (
 	RefreezeAfter = 60 * time.Second
 	MaxFreezes    = 8
 )
+
+// WorkMemShare is the least share of a flagged thread's memory its work's
+// processes must hold to be frozen or take turns (V0.guard-tidy). On 19 Nov
+// at 16:02 the guard took turns among 3 parts that each read 0.0 GB while the
+// thread's 3.3 GB stayed charged to its cli/.
+const WorkMemShare = 0.25
 
 // V0.multi-freeze: while memory stays short AddFreezeAfter after the newest
 // freeze, the guard freezes one more thread; when it is fine again it thaws
@@ -551,6 +561,7 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	// before oomd): either makes memory short, and so does the unit's stall
 	// near oomd's limit; the host's alone used to.
 	critical, _ := sig.Critical()
+	agentsCritical := sig.AgentsStall == slots.StallCritical
 	nearOomd := sig.NearOomd()
 	short := sig.Provider != "" && ((sig.Headroom != nil && *sig.Headroom < sig.Reserve(e.SlotPolicy)) || critical || nearOomd)
 	calm := !critical && !nearOomd && sig.Stall != slots.StallElevated && sig.AgentsStall != slots.StallElevated
@@ -610,9 +621,9 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		e.slotNotice(th, map[string]any{"retry": true})
 	}
 	type thawing struct {
-		f                frozenJob
-		holding, emptied bool
-		woke             string // the wake rule's reason, "" for the others
+		f                         frozenJob
+		holding, emptied, ceiling bool
+		woke                      string // the wake rule's reason, "" for the others
 	}
 	var keep []frozenJob
 	var thaws []thawing
@@ -635,15 +646,25 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		}
 		// A freeze whose cgroup holds no process any more (the work ended or
 		// was killed) holds nothing; release it at once instead of letting it
-		// block every other freeze for ten minutes.
-		emptied := f.undeclared && holding && e.UndeclaredEmpty != nil && e.UndeclaredEmpty(f.owner)
+		// block every other freeze for ten minutes. V0.guard-tidy: a job's too.
+		emptied := false
+		if holding && f.undeclared {
+			emptied = e.UndeclaredEmpty != nil && e.UndeclaredEmpty(f.owner)
+		} else if holding {
+			emptied = e.SlotEmpty != nil && e.SlotEmpty(f.owner)
+		}
+		// V0.guard-tidy: past FreezeMax only the agents' own critical stall
+		// holds the work (the host's can come from the desktop, which the
+		// frozen work does not feed), and not past FreezeCeiling unless the
+		// work is rerunnable: then V0.rerun-classes's kill ends it.
 		overMax := now.Sub(f.at) >= FreezeMax
-		if !holding || emptied || (overMax && !critical) {
-			thaws = append(thaws, thawing{f: f, holding: holding, emptied: emptied})
+		ceiling := now.Sub(f.at) >= FreezeCeiling && e.rerunEntry(f, now) == ""
+		if !holding || emptied || (overMax && !agentsCritical) || ceiling {
+			thaws = append(thaws, thawing{f: f, holding: holding, emptied: emptied, ceiling: ceiling && agentsCritical})
 			continue
 		}
 		if overMax {
-			e.guardOnce(now, "pastmax:"+f.owner, fmt.Sprintf("keeping thread=%s frozen past the %s limit: memory stalls critically (%s); it thaws when the stall is below critical", f.owner, FreezeMax, guardSignals(sig)))
+			e.guardOnce(now, "pastmax:"+f.owner, fmt.Sprintf("keeping thread=%s frozen past the %s limit: the agents' memory stalls critically (%s); it thaws when the stall is below critical, or at %s", f.owner, FreezeMax, guardSignals(sig), FreezeCeiling))
 			if !f.pastMax {
 				f.pastMax = true
 				pastMax = append(pastMax, f)
@@ -705,6 +726,8 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 			reason, why = "episode or hold ended", "ended"
 		case t.woke != "":
 			reason = t.woke
+		case t.ceiling:
+			reason, why = fmt.Sprintf("%s ceiling, the agents' memory still stalls critically", frozenWords(FreezeCeiling)), "ceiling"
 		case now.Sub(f.at) >= FreezeMax:
 			reason, why = "10 min limit", "limit"
 			if f.pastMax {
@@ -732,6 +755,13 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		}
 	}
 	for _, f := range pastMax {
+		// V0.guard-tidy (decision 0032 "What the log gives"): the owner's
+		// history shows the hold too.
+		work := "job"
+		if f.undeclared {
+			work = "undeclared"
+		}
+		e.guardRecord(slots.GuardEvent{At: now, Kind: "kept", Work: work, Thread: f.owner}, sig)
 		e.slotNotice(f.owner, map[string]any{"waits": true, "work": f.undeclared})
 	}
 	if !short || len(thaws) > 0 || killed > 0 {
@@ -794,7 +824,18 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	e.frozen = append(e.frozen, fj)
 	n := len(e.frozen)
 	e.mu.Unlock()
-	log.Printf("guard: froze job thread=%s why=%q held=%d frozen_now=%d mem=%s %s", victim.Owner, why, len(s.Held), n, slots.GB(float64(fj.mem)), guardSignals(sig))
+	// V0.guard-tidy: the fields of `froze undeclared work` (decision 0032
+	// "What the log gives for tuning"). A hold is frozen once (frozeHolds), so
+	// its freeze is 1/1; its episode is the hold, its command its class.
+	cmd, cores := fj.class, 0.0
+	if cmd == "" {
+		cmd = "unknown command"
+	}
+	if victim.Need != nil {
+		cores = victim.Need.CPU
+	}
+	log.Printf("guard: froze job thread=%s freeze=1/1 episode_age=%s cmd=%q why=%q mem=%s cores=%.1f %s held=%d running=%d frozen_now=%d",
+		victim.Owner, now.Sub(victim.Since).Round(time.Second), cmd, why, slots.GB(float64(fj.mem)), cores, guardSignals(sig), len(s.Held), len(e.Running()), n)
 	e.guardRecord(slots.GuardEvent{At: now, Kind: "freeze", Work: "job", Thread: victim.Owner}, sig)
 	e.slotNotice(victim.Owner, map[string]any{"paused": why})
 }
@@ -915,8 +956,18 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 	var picked undFreeze
 	var skips [][2]string    // key, line: logged after the lock
 	svc := map[string]bool{} // decision 0036 (D), E4: asked outside e.mu
+	held := map[string]uint64{}
 	for _, f := range fl {
 		svc[f.Thread] = e.service(f.Thread)
+		// V0.guard-tidy: what the episode's processes hold now. The kernel does
+		// not move memory with a process, so a thread's flagged memory can be
+		// charged where its work no longer is (cli/), and freezing the work
+		// frees none of it.
+		if f.MemOver && e.UndeclaredRootsMem != nil {
+			if m, ok := e.UndeclaredRootsMem(f.Thread); ok {
+				held[f.Thread] = m + 1 // 0: not read
+			}
+		}
 	}
 	e.mu.Lock()
 	for i := range fl {
@@ -926,6 +977,10 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 		}
 		if svc[f.Thread] {
 			skips = append(skips, [2]string{f.Thread, fmt.Sprintf("not freezing thread=%s: its work is a service", f.Thread)})
+			continue
+		}
+		if m := held[f.Thread]; m > 0 && float64(m-1) < WorkMemShare*float64(f.Mem) {
+			skips = append(skips, [2]string{f.Thread, fmt.Sprintf("not freezing thread=%s: the work holds little of the thread's memory (its processes %s of %s)", f.Thread, slots.GB(float64(m-1)), slots.GB(float64(f.Mem)))})
 			continue
 		}
 		prev := e.undFroze[f.Thread]
@@ -1022,6 +1077,14 @@ func (e *Engine) memoryGuard(s slots.Snapshot) {
 		}
 	}
 	if owner == "" {
+		return
+	}
+	// V0.guard-tidy: a thread the guard froze heard why in the pause notice;
+	// this one says "nothing is stopped", so it would contradict it.
+	e.mu.Lock()
+	frozen := e.isFrozen(owner)
+	e.mu.Unlock()
+	if frozen {
 		return
 	}
 	if _, err := e.Apply(core.Input{Source: core.Observer(core.ObsHost), Kind: core.KindSlotMemory, Thread: owner, Args: core.SlotMemoryArgs{Why: why, Grew: most}}); err != nil {

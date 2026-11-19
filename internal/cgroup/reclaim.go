@@ -124,6 +124,9 @@ func (g *JobGroups) ReclaimFrozen(thread string) {
 // reclaimFrozen asks for each frozen cgroup's anonymous memory within the
 // swap room, and reports what the cgroups gave up.
 func (g *JobGroups) reclaimFrozen(thread string) uint64 {
+	if g.nearOomd(thread) {
+		return 0
+	}
 	var moved uint64
 	for _, d := range g.frozenDirs(thread) {
 		room := g.swapRoom()
@@ -145,6 +148,34 @@ func (g *JobGroups) reclaimFrozen(thread string) uint64 {
 		}
 	}
 	return moved
+}
+
+// nearOomd says the unit oomd watches for the agents stalls within
+// OomdNearMargin of oomd's limit, and logs it once a minute; false while the
+// limit or the stall is unknown. V0.guard-tidy (decision 0036 "Not chosen"):
+// a reclaim raises the cgroup's pgscan, so oomd would pick the work fyrd just
+// reclaimed, and with memory.oom.group=1 on the thread's scope kill the
+// paused thread whole. Away from the limit the reclaim stays (V0.guard-swap).
+func (g *JobGroups) nearOomd(thread string) bool {
+	limit := g.Tree.OomdLimit()
+	if limit <= 0 {
+		return false
+	}
+	stall, ok := g.Tree.unitStall()
+	if !ok || stall < limit-OomdNearMargin {
+		return false
+	}
+	now := time.Now()
+	g.mu.Lock()
+	quiet := now.Sub(g.reclaimSkipped) < time.Minute
+	if !quiet {
+		g.reclaimSkipped = now
+	}
+	g.mu.Unlock()
+	if !quiet && g.Tree.logf != nil {
+		g.Tree.logf("guard: no reclaim of %s's frozen work near oomd's limit: unit_full=%.0f%% limit=%.0f%%; a reclaim would make it oomd's first pick", thread, stall, limit)
+	}
+	return true
 }
 
 // reclaim writes memory.reclaim of d; it never creates the file, so a fake

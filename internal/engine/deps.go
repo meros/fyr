@@ -108,6 +108,9 @@ type SlotDeps struct {
 	// its CLI).
 	SlotFreeze func(owner string) bool
 	SlotThaw   func(owner string)
+	// SlotEmpty says the frozen job cgroup of owner holds no process any more
+	// (its job ended): the freeze holds nothing and is released (V0.guard-tidy).
+	SlotEmpty func(owner string) bool
 	// V0.guard-wake (decision 0036 E3, E6): SlotMem is a thread's memory now,
 	// kept at a freeze for the wake rule; FrozenUsec is how long a thread's
 	// job (or undeclared work) cgroup has been frozen in all (frozen_usec),
@@ -131,6 +134,10 @@ type UndeclaredDeps struct {
 	// UndeclaredEmpty says the frozen cgroup of thread holds no process any
 	// more (its work ended): the freeze holds nothing and is released.
 	UndeclaredEmpty func(thread string) bool
+	// UndeclaredRootsMem is the resident memory of the roots of thread's
+	// episode and their descendants; false when thread is not flagged
+	// (V0.guard-tidy: the work holds little of the thread's memory).
+	UndeclaredRootsMem func(thread string) (uint64, bool)
 	// Decision 0032 slice 2: UndeclaredUnits lists the parts of a thread's
 	// undeclared work, UndeclaredRotate lets one run and freezes the others,
 	// and UndeclaredFaults is what the thread has read back so far, in bytes.

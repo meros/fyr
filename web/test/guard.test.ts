@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mockLoad, withGuard } from "../src/mock.ts";
-import { GUARD_WINDOW, findGuard, guardChart, guardLine, guardLog, guardSummary } from "../src/guard.ts";
+import { GUARD_WINDOW, findGuard, guardChart, guardLine, guardLog, guardSummary, type GuardEvent } from "../src/guard.ts";
 import { rowUndeclared } from "../src/undeclared.ts";
 import { withUndeclared } from "../src/mock.ts";
 
@@ -86,6 +86,13 @@ test("G10 the log is newest first, names the thread and says why it resumed", ()
   assert.match(rows[0].text, /^Paused undeclared work of Map perf \(3\/8\) \(4 % free\)$/);
   assert.match(rows[1].text, /^Resumed Map perf: memory was fine for 30 s$/);
   assert.match(rows[2].text, /^Resumed Babysit PR #4170: its processes ended$/);
+});
+
+test("G10b V0.guard-tidy: a hold past the limit and a thaw at the ceiling have their own words", () => {
+  const ev = (e: Partial<GuardEvent>): GuardEvent => ({ at: "2026-11-19T16:00:00Z", kind: "thaw", thread: "t_mapperf", ...e });
+  const rows = guardLog({ short: true, max: 8, refreezeSec: 60, events: [ev({ kind: "kept", work: "undeclared" }), ev({ kind: "thaw", reason: "ceiling" })] }, title, (iso) => iso);
+  assert.equal(rows[0].text, "Resumed Map perf: frozen 30 minutes, the most the guard holds work");
+  assert.equal(rows[1].text, "Kept undeclared work of Map perf frozen past 10 minutes: the agents' memory stalls critically");
 });
 
 test("G11 a host whose guard has done nothing may send events: null; Automation still shows", () => {

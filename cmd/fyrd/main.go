@@ -320,6 +320,15 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		}
 		return false
 	}
+	// V0.guard-tidy: a rotation of a thread no longer flagged does nothing.
+	groups.Live = func(thread string) bool {
+		for _, f := range detector.Flags() {
+			if f.Thread == thread {
+				return true
+			}
+		}
+		return false
+	}
 	// V0.164: an ended episode is kept, teaches its command, and ends its frozen group.
 	detector.OnEnd = func(ep cgroup.Episode) {
 		ep.Project = eng.ThreadProject(ep.Thread)
@@ -364,6 +373,19 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		UndeclaredThaw: func(thread string) {
 			groups.ThawUndeclared(thread)
 			detector.MarkThawed(thread) // V0.episode-frozen: its calm counts again
+		},
+		// V0.guard-tidy: what the episode's processes hold, against its flagged memory.
+		UndeclaredRootsMem: func(thread string) (uint64, bool) {
+			for _, f := range detector.Flags() {
+				if f.Thread == thread {
+					var m uint64
+					for _, r := range sampler.Roots(f) {
+						m += r.RSS
+					}
+					return m, true
+				}
+			}
+			return 0, false
 		},
 		UndeclaredEmpty: groups.UndeclaredEmpty, HeavyRemove: book.Remove, ServicePatterns: svcBook.Edit, HeavyRefused: heavyCmds.Refused, HeavySoft: heavyCmds.Soft,
 		UndeclaredFreeze: func(thread string) bool {
@@ -422,6 +444,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		SlotOver:   adm.Over, // V0.163
 		JobReset:   jobs.Reset,
 		SlotFreeze: groups.Freeze, SlotThaw: groups.Thaw, // decision 0029 S5
+		SlotEmpty: groups.JobEmpty, // V0.guard-tidy
 		// V0.guard-wake: the wake rule's memory and the time frozen.
 		SlotMem: sampler.ThreadMemory, FrozenUsec: groups.FrozenUsec,
 		GuardService: guardService, // decision 0036 (D)
