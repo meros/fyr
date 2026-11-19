@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { flatOrder, sections, type SectionKey } from "../src/store.ts";
-import { cutSection, drawnRows, foldedRow, guestOf, hiddenWhy, parseSectionOpen, rowAfter, markedRow, stepRow } from "../src/selection.ts";
+import { afterSettle, cutSection, drawnRows, foldedRow, guestOf, hiddenWhy, parseSectionOpen, rowAfter, markedRow, stepRow } from "../src/selection.ts";
 import { thread } from "./helpers.ts";
 
 const OPEN: Record<SectionKey, number> = { needs: 500, working: 500, slots: 500, unread: 2, seen: 2, snoozed: 0, settled: 0 };
@@ -147,4 +147,14 @@ test("V0.waiting-folds: a folded Waiting to run holds its thread like any folded
   assert.equal(foldedRow(q, "q", {}), null, "open by default");
   assert.equal(foldedRow(q, "q", { slots: false })?.section, "slots");
   assert.deepEqual(guestOf(q, "q", null, { slots: false }), { id: "q", why: "folded" });
+});
+
+test("V0.settle-leaves: settling the marked thread opens the next row, else the status screen", () => {
+  const order = ["a", "b", "c"];
+  assert.equal(afterSettle(order, "b", ["b"]), "c", "the next row");
+  assert.equal(afterSettle(order, "c", ["c"]), "b", "the last row: the one before");
+  assert.equal(afterSettle(["a"], "a", ["a"]), "home", "no row left: the status screen");
+  assert.equal(afterSettle(order, "a", ["a", "b", "c"]), "home", "a group settle that takes every row");
+  assert.equal(afterSettle(order, "a", ["b"]), "stay", "another row settled: the open thread stays");
+  assert.equal(afterSettle(order, null, ["b"]), "stay", "nothing marked");
 });

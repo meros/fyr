@@ -117,3 +117,11 @@ export function rowAfter(order: string[], cur: string | null, ids: string[], all
   const ok = (x: string) => drawn.has(x) && !ids.includes(x);
   return all.slice(i + 1).find(ok) ?? all.slice(0, Math.max(0, i)).reverse().find(ok) ?? null;
 }
+
+/** V0.settle-leaves: where the desktop goes when the owner settles `ids` while `cur` is the marked (open) thread. From
+ *  the list and from the thread pane alike the settled thread is let go: the next drawn row (else the one before), or
+ *  "home" (the status screen, V0.status-home) when no row is left. "stay": the marked thread is not among `ids`. */
+export function afterSettle(order: string[], cur: string | null, ids: string[], all: string[] = order): string | "home" | "stay" {
+  if (!cur || !ids.includes(cur)) return "stay";
+  return rowAfter(order, cur, ids, all) ?? "home";
+}
