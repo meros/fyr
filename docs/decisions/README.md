@@ -40,3 +40,4 @@ The owner decisions D1–D5 from the design phase stay in `../SPEC.md` 0.3. Reco
 | [0032](0032-bounded-agents.md) | Bounded agents: one thread's heavy work cannot starve the host; the guard freezes a long episode in time slices, releases a freeze that holds nothing, and logs each decision; later a small memory budget per thread that a reservation raises | proposed |
 | [0033](0033-questions-in-text.md) | A question written only in text reaches Needs you through a cheap classifier over the end of the turn, marked as inferred, with no push; no Stop hook and no outcome tool | accepted |
 | [0034](0034-linked-projects.md) | Linked projects: a project can span hosts; each host keeps its own record and folder, and a link shows them as one | accepted |
+| [0035](0035-claude-code-and-github.md) | Fyr runs Claude Code and works with GitHub for now; the CLI and the forge each stay behind one package boundary so a second one can be added (#201, #202) | accepted |
