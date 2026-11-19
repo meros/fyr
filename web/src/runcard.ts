@@ -36,14 +36,32 @@ export function placeCards(items: Item[], ids: string[]): { items: Item[]; loose
  * many requests wait in all, so the dock can say "+N more".
  */
 export function dockRun(t: Pick<Thread, "runs" | "decisions"> & { offers?: Offer[] }): { o: Offer; waiting: number } | null {
-  const open = requests(t).filter((o) => !lastRun(t.runs, o.id));
+  const open = requests(t).filter((o) => !o.optional && !lastRun(t.runs, o.id));
   if (!open.length || (t.decisions?.length ?? 0) > 0) return null;
   return { o: open[open.length - 1], waiting: open.length };
 }
 
 /** How many run requests wait behind what the dock shows: counted in a question's or approval's "+N more". */
 export function waitingRuns(t: Pick<Thread, "runs"> & { offers?: Offer[] }): number {
-  return requests(t).filter((o) => !lastRun(t.runs, o.id)).length;
+  return requests(t).filter((o) => !o.optional && !lastRun(t.runs, o.id)).length;
+}
+
+/**
+ * V0.next-step-chips (2), (4): the chips under the newest message: the thread's actions the agent offered (a prompt, or a
+ * script from before this version), then the optional run requests not yet run. A request that ran is a card at its
+ * place instead. Fyr drops the chips when the next run starts, so what is here belongs to the newest message.
+ */
+export function chips(t: Pick<Thread, "runs"> & { offers?: Offer[] }): { prompts: Offer[]; runs: Offer[] } {
+  const all = t.offers ?? [];
+  return {
+    prompts: all.filter((o) => !o.request && o.by === "agent"),
+    runs: all.filter((o) => o.request && o.optional && !lastRun(t.runs, o.id)),
+  };
+}
+
+/** V0.next-step-chips (4): an optional request's card stands in the conversation only once it ran; before, it is a chip. */
+export function cardShows(o: Offer, runs: OfferRun[] | undefined): boolean {
+  return !o.optional || !!lastRun(runs, o.id);
 }
 
 /** The first line of a command, with … when there are more. */

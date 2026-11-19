@@ -882,7 +882,8 @@ function harness(t) {
       await evaluate(`document.querySelector('.prv-merge')?.scrollIntoView({ block: 'center' })`); // a long title pushes it down
       await tapCenter(".prv-merge", "!!document.querySelector('.dlg .df .btn.p')");
     } else if (s.sheet === "confirm") {
-      await evaluate(`[...document.querySelectorAll('.offb .btn')].find((b) => b.textContent.includes('Set the Acme token'))?.click()`);
+      // V0.next-step-chips: the thread's actions are chips under the newest message
+      await evaluate(`(() => { const b = [...document.querySelectorAll('.nstep')].find((b) => b.textContent.includes('Set the Acme token')); b?.scrollIntoView({ block: 'center' }); b?.click(); })()`);
       await waitFor(`!!document.querySelector('.m-sheet.cfm')`, { what: "the confirmation sheet" });
     } else if (s.sheet === "confirm-delete") {
       await evaluate(`document.querySelector('.pdel .btn')?.scrollIntoView({ block: 'center' })`);
@@ -1327,6 +1328,23 @@ try {
   check(r.prose.startsWith("sudo /nix/store/prc4…-") && r.proseBtns.join("|") === "Copy", `V0.149 ${front}: the prose card ${JSON.stringify(r)}`);
   check(!r.header.some((x) => /Run/.test(x)), `V0.149 ${front}: a run request shows as a header button ${JSON.stringify(r.header)}`);
   if (front === "phone") check(r.minH >= 44, `V0.149 phone: a button is ${r.minH} px tall, under 44`);
+  // V0.next-step-chips: the optional next steps are chips under the newest message, after the conversation's cards; an
+  // optional command has no card until it runs, and its chip opens a short card with the whole command.
+  const ch = await evaluate(`(() => {
+    const c = [...document.querySelectorAll('.convo-in .nstep')];
+    const last = document.querySelector('.convo-in .nsteps');
+    return { labels: c.map((b) => b.textContent), minH: Math.min(...c.map((b) => b.getBoundingClientRect().height)), cards: document.querySelectorAll('.convo-in .runc:not(.prose)').length,
+      afterMsg: !!last && !!(document.querySelector('.runc.prose').compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING),
+      outside: c.filter((b) => { const x = b.getBoundingClientRect(); return x.left < -0.5 || x.right > innerWidth + 0.5; }).length };
+  })()`);
+  check(ch.labels.join("|") === "Fix the badge build|▸ Dry-run the minting" && ch.afterMsg && ch.cards === 2 && ch.outside === 0, `V0.next-step-chips ${front}: the chips ${JSON.stringify(ch)}`);
+  if (front === "phone") check(ch.minH >= 44, `V0.next-step-chips phone: a chip is ${ch.minH} px tall, under 44`);
+  await evaluate("(() => { const b = [...document.querySelectorAll('.nstep.run')][0]; b.scrollIntoView({ block: 'center' }); b.click(); })()");
+  await new Promise((r) => setTimeout(r, 300));
+  const op = await evaluate(`(() => { const d = document.querySelector('.nsteps .chiprun'); return d ? { cmd: d.querySelector('.runc-cmd')?.textContent ?? '', labels: [...d.querySelectorAll('.runc-b button')].map((x) => x.textContent) } : null; })()`);
+  check(op && op.cmd.startsWith("nix flake check\nnix run .#badges") && op.labels.join("|") === "Run|Copy|Not now", `V0.next-step-chips ${front}: the opened chip ${JSON.stringify(op)}`);
+  await shot(`chips-${front}.png`);
+  await evaluate("document.querySelector('.nstep.run').click()");
   await shot(`runcard-${front}.png`);
   // A press on the command shows the full store path.
   await evaluate("document.querySelector('.runc:not(.prose) .runc-cmd').scrollIntoView({ block: 'center' })");
@@ -4505,22 +4523,23 @@ try {
 }
 });
 
-// #64: the thread header's blocks (title, chips, offers, tabs) sit 12 px apart, and the conversation starts where
-// the header ends: a thread without previews has no band between the tabs and the conversation.
+// #64: the thread header's blocks (title, chips, tabs) sit 12 px apart, and the conversation starts where the header
+// ends: a thread without previews has no band between the tabs and the conversation. V0.next-step-chips: the thread's
+// actions are no longer in the header.
 section('line 2218', async (h) => {
   const { send, evaluate, poll, waitIn, waitFor, frames, settle, navigate, tapCenter, key, viewportApplied, openScreen, attached, shot, calibrate } = h;
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1400, height: 575, deviceScaleFactor: 1, mobile: false });
-  await navigate(`${origin}/?mock=1&open=t_done`, "!!document.querySelector('.th .thh .offers') && !!document.querySelector('.th .convo')");
+  await navigate(`${origin}/?mock=1&open=t_done`, "!!document.querySelector('.th .nstep') && !!document.querySelector('.th .convo')");
   await settle();
   const g = await evaluate(`(() => {
     const r = (s) => document.querySelector('.th ' + s)?.getBoundingClientRect();
-    const tr = r('.thh .tr'), chips = r('.thh .chips'), offers = r('.thh .offers'), tabs = r('.thh .tabs'), thh = r('.thh'), convo = r('.convo');
-    return { trChips: chips.top - tr.bottom, chipsOffers: offers.top - chips.bottom, offersTabs: tabs.top - offers.bottom, headConvo: convo.top - thh.bottom, strip: !!document.querySelector('.th .cv-strip:not(:empty)') };
+    const tr = r('.thh .tr'), chips = r('.thh .chips'), tabs = r('.thh .tabs'), thh = r('.thh'), convo = r('.convo');
+    return { trChips: chips.top - tr.bottom, chipsTabs: tabs.top - chips.bottom, headerButtons: document.querySelectorAll('.th .thh .offb .btn').length, headConvo: convo.top - thh.bottom, strip: !!document.querySelector('.th .cv-strip:not(:empty)') };
   })()`);
   const near = (v) => Math.abs(v - 12) <= 0.5;
-  check(near(g.trChips) && near(g.chipsOffers) && near(g.offersTabs), `#64 desktop: the header's gaps are not 12 px (${JSON.stringify(g)})`);
+  check(near(g.trChips) && near(g.chipsTabs) && g.headerButtons === 0, `#64 desktop: the header's gaps are not 12 px, or it still has action buttons (${JSON.stringify(g)})`);
   check(Math.abs(g.headConvo) <= 0.5, `#64 desktop: a band between the header and the conversation (${JSON.stringify(g)})`);
 } catch (e) {
   failures.push(`#64 desktop: ${e.message}`);
@@ -4637,11 +4656,12 @@ section('V0.68', async (h) => {
 try {
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await navigate(`${origin}/?mock=1&open=t_done`, "[...document.querySelectorAll('.th .offb .btn')].some((b) => b.textContent.includes('Set the Acme token'))");
-  const press = () => evaluate(`[...document.querySelectorAll('.th .offb .btn')].find((b) => b.textContent.includes('Set the Acme token'))?.click()`);
+  // V0.next-step-chips: the action is a chip under the newest message; a script from before asks first, as its button did.
+  await navigate(`${origin}/?mock=1&open=t_done`, "[...document.querySelectorAll('.th .nstep')].some((b) => b.textContent.includes('Set the Acme token'))");
+  const press = () => evaluate(`[...document.querySelectorAll('.th .nstep')].find((b) => b.textContent.includes('Set the Acme token'))?.click()`);
   const dlg = () => evaluate(`(() => { const d = document.querySelector('.dlg.cfm'); if (!d) return null; const r = d.getBoundingClientRect(); const p = d.querySelector('.df .btn.p'); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, title: d.querySelector('.cfm-t')?.textContent ?? '', primary: p?.textContent.replace('⏎', '').trim(), focused: document.activeElement === p, hover: d.querySelector('.cfm-code')?.title ?? '', runs: document.querySelectorAll('.th .offrun').length }; })()`);
-  // V0.75 (1), #62: an action's result shows on its own button, so the buttons are what this check reads.
-  const runs = () => evaluate(`[...document.querySelectorAll('.th .offb .btn')].map((r) => r.textContent).filter((t) => !/^✦|^Set the Acme token$/.test(t) || /✓|failed|running/.test(t)).join('|')`);
+  // The presses the page sent: a chip has no result of its own; the agent hears it.
+  const runs = () => evaluate(`(window.__fyrCommands || []).filter((c) => c.action === 'action.run').map((c) => c.args.action).join('|')`);
   const opened = `document.activeElement === document.querySelector('.dlg.cfm .df .btn.p')`;
   await press();
   await waitFor(opened, { soft: true });
@@ -4660,9 +4680,9 @@ try {
   await press();
   await waitFor(opened, { soft: true });
   await key("Enter");
-  await waitFor(`!document.querySelector('.dlg.cfm') && [...document.querySelectorAll('.th .offers .btn')].some((r) => /Set the Acme token.*(✓|failed|running)/.test(r.textContent))`, { soft: true }); // V0.75 (1): the result is on the button
+  await waitFor(`!document.querySelector('.dlg.cfm') && (window.__fyrCommands || []).some((c) => c.action === 'action.run' && c.args.action === 'token')`, { soft: true });
   const after = await runs();
-  check(!(await dlg()) && /Set the Acme token/.test(after), `V0.68 desktop: Enter does not run the action (runs "${after}")`);
+  check(!(await dlg()) && /token/.test(after), `V0.68 desktop: Enter does not run the action (runs "${after}")`);
   if (process.env.FYR_SHOTS) {
     // V0.101: the desktop inbox next to the thread's Changes tab, with the causes inline.
     await navigate(`${origin}/?mock=1&open=t_done&tab=changes`, "!!document.querySelector('.chtab')");

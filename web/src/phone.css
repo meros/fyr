@@ -494,3 +494,6 @@ html[data-nav=back]::view-transition-new(root){animation-name:m-in-l}
 .m-app .dockrun{margin:0;border-radius:18px 18px 0 0;border-bottom:0}
 .m-app .dockrun .btn{min-height:44px;padding:0 14px;font-size:15px}
 .m-app .dockrun-show{margin-left:0}
+/* V0.next-step-chips: chips are 44 px on the phone (touch size) */
+.m-app .nstep{min-height:44px;padding:8px 14px;font-size:15px;line-height:20px}
+.m-app .dockrun.chiprun{border-radius:14px;border-bottom:1px solid var(--line-strong)}

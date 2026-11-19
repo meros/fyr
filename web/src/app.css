@@ -1834,3 +1834,11 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .dockrun .runc-cmd{max-height:2.5em}
 .dockrun-show{margin-left:auto}
 .runc-dock{font:500 12px/16px var(--ui);color:var(--beam-ink)}
+/* V0.next-step-chips: the optional next steps, chips under the agent's newest message */
+.nsteps{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px;max-width:680px}
+.nsteps-b{display:flex;flex-wrap:wrap;gap:6px}
+.nstep{display:inline-flex;align-items:center;max-width:100%;min-height:30px;padding:4px 12px;border-radius:999px;border:1px solid var(--line-strong);background:var(--raised);font:500 13px/18px var(--ui);color:var(--ink);text-align:left;overflow-wrap:anywhere;cursor:pointer}
+.nstep:hover{border-color:var(--harbour);color:var(--harbour)}
+.nstep.run{font-family:var(--ui)}
+.nstep.on{border-color:var(--harbour);background:var(--sunken)}
+.dockrun.chiprun{margin:0;max-height:none}

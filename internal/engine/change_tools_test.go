@@ -85,10 +85,14 @@ func TestChangeActions(t *testing.T) {
 		return "applied 3 resources", 0, nil
 	}
 	call("change_open", map[string]any{"key": "tf:prod", "kind": "code", "branch": "feat/net", "title": "Prod network", "revision": map[string]any{"id": "sha256:p1"}})
-	if out, isErr := call("offer_action", map[string]any{"on": "tf:prod", "id": "apply", "label": "Apply plan", "run": "script", "argv": []any{"terraform", "apply", "plan.out"}, "bind": true, "onOk": "review", "primary": true}); isErr {
-		t.Fatalf("declare: %s", out)
+	// V0.next-step-chips (5): the agent no longer declares an action on a change; the model under it stays.
+	if _, isErr := call("offer_action", map[string]any{"on": "tf:prod", "id": "apply", "label": "Apply plan", "run": "script", "argv": []any{"terraform", "apply", "plan.out"}}); !isErr {
+		t.Fatal("offer_action accepted an action on a change")
 	}
-	if _, isErr := call("offer_action", map[string]any{"on": "tf:prod", "id": "fyr.x", "label": "x", "run": "script", "argv": []any{"x"}}); !isErr {
+	if err := declareOffer(h.e, id, "tf:prod", core.ActionSpec{ID: "apply", Label: "Apply plan", Run: core.RunScript, Argv: []string{"terraform", "apply", "plan.out"}, Revision: "newest", OnOK: core.PhaseReview, Primary: true}); err != nil {
+		t.Fatalf("declare: %v", err)
+	}
+	if err := declareOffer(h.e, id, "tf:prod", core.ActionSpec{ID: "fyr.x", Label: "x", Run: core.RunScript, Argv: []string{"x"}}); err == nil {
 		t.Fatal("a fyr. id was accepted")
 	}
 	c := changeOf(h, id, "tf:prod")
@@ -119,7 +123,7 @@ func TestChangeActions(t *testing.T) {
 		t.Fatalf("ran on a newer revision: %+v", r)
 	}
 	// A failed script blocks the thread.
-	call("offer_action", map[string]any{"on": c.ID, "id": "rollback", "label": "Roll back", "run": "script", "argv": []any{"bash", "-c", "exit 3"}})
+	_ = declareOffer(h.e, id, c.ID, core.ActionSpec{ID: "rollback", Label: "Roll back", Run: core.RunScript, Argv: []string{"bash", "-c", "exit 3"}})
 	exit = 3
 	rb := findOffer(changeOf(h, id, c.ID).Offers, "rollback")
 	if r := h.cmdID("r3", "action.run", id, core.Args{"on": c.ID, "action": "rollback", "digest": rb.Digest}); !r.OK {
@@ -200,8 +204,12 @@ func TestThreadAndViewActions(t *testing.T) {
 	h.wait(id, "done", state(core.Done))
 	call := func(tool string, a map[string]any) (string, bool) { return callAs(t, h.e, id, tool, a) }
 	h.e.Scripts = func(_ context.Context, dir string, argv []string) (string, int, error) { return "42 passed", 0, nil }
-	if out, isErr := call("offer_action", map[string]any{"on": "thread", "id": "e2e", "label": "Run e2e", "run": "script", "argv": []any{"make", "e2e"}}); isErr {
-		t.Fatalf("thread action: %s", out)
+	// V0.next-step-chips (5): a command on the thread is a Run card; a script from before this version still runs.
+	if out, isErr := call("offer_action", map[string]any{"on": "thread", "id": "e2e", "label": "Run e2e", "run": "script", "argv": []any{"make", "e2e"}}); !isErr || !strings.Contains(out, "run_request") {
+		t.Fatalf("a thread script was accepted, or the refusal does not name run_request: %s", out)
+	}
+	if err := declareOffer(h.e, id, "thread", core.ActionSpec{ID: "e2e", Label: "Run e2e", Run: core.RunScript, Argv: []string{"make", "e2e"}}); err != nil {
+		t.Fatalf("thread action: %v", err)
 	}
 	if _, isErr := call("offer_action", map[string]any{"on": "thread", "id": "x", "label": "X", "run": "script", "argv": []any{"x"}, "onOk": "landed"}); !isErr {
 		t.Fatal("onOk was accepted on the thread")
@@ -231,8 +239,10 @@ func TestThreadAndViewActions(t *testing.T) {
 	if th.Live != nil {
 		view = th.Live.Offers
 	}
-	if findOffer(view, "approve") != nil || findOffer(th.Offers, "e2e") == nil {
-		t.Fatalf("after the view closed: %+v %+v", view, th.Offers)
+	// The thread's own actions do not depend on the view; V0.next-step-chips (3) drops them when a run starts,
+	// which the script's result may already have done, so only the view's are checked here.
+	if findOffer(view, "approve") != nil {
+		t.Fatalf("after the view closed: %+v", view)
 	}
 }
 
@@ -252,8 +262,8 @@ func TestConcurrentPressRunsOnce(t *testing.T) {
 		<-release
 		return "", 0, nil
 	}
-	if out, isErr := callAs(t, h.e, id, "offer_action", map[string]any{"on": "thread", "id": "e2e", "label": "E2E", "run": "script", "argv": []any{"make", "e2e"}}); isErr {
-		t.Fatal(out)
+	if err := declareOffer(h.e, id, "thread", core.ActionSpec{ID: "e2e", Label: "E2E", Run: core.RunScript, Argv: []string{"make", "e2e"}}); err != nil {
+		t.Fatal(err)
 	}
 	th, _ := h.e.Thread(id)
 	a := findOffer(th.Offers, "e2e")
@@ -416,5 +426,42 @@ func TestNewThreadActionFollowsParent(t *testing.T) {
 	c := children[0]
 	if c.Profile != "claudeAcme" || c.Model != "claude-opus-5-5" || c.Effort != "high" {
 		t.Fatalf("child provider %q model %q effort %q", c.Profile, c.Model, c.Effort)
+	}
+}
+
+// declareOffer declares an action as the agent did before V0.next-step-chips
+// took scripts and change actions out of offer_action: the model under it
+// still runs them (a stored script, Fyr's own actions on a change).
+func declareOffer(e *Engine, th, on string, a core.ActionSpec) error {
+	_, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindActionOffer, Thread: th, Args: core.OfferArgs{On: on, Spec: a}})
+	return err
+}
+
+// SPEC V0.next-step-chips (5): offer_action is a prompt chip on the thread;
+// each field that went is refused with the way now, and run_request takes
+// optional for a command nothing waits on.
+func TestOfferActionIsAChip(t *testing.T) {
+	h := newHarness(t, time.Minute)
+	id := h.create("x")
+	h.wait(id, "done", state(core.Done))
+	call := func(tool string, a map[string]any) (string, bool) { return callAs(t, h.e, id, tool, a) }
+	out, isErr := call("offer_action", map[string]any{"on": "thread", "id": "fix", "label": "Fix the failing test", "prompt": "Fix the failing test"})
+	if isErr || !strings.Contains(out, "chip") {
+		t.Fatalf("a prompt chip: %s", out)
+	}
+	if th, _ := h.e.Thread(id); findOffer(th.Offers, "fix") == nil || findOffer(th.Offers, "fix").Run != core.RunAgent {
+		t.Fatalf("run defaults to agent: %+v", th.Offers)
+	}
+	for _, k := range []string{"bind", "onOk", "when", "primary"} {
+		if out, isErr := call("offer_action", map[string]any{"on": "thread", "id": "x", "label": "X", "prompt": "p", k: true}); !isErr || !strings.Contains(out, k) {
+			t.Fatalf("%s was accepted: %s", k, out)
+		}
+	}
+	out, isErr = call("run_request", map[string]any{"command": "make e2e", "why": "Run the e2e suite", "optional": true})
+	if isErr || !strings.Contains(out, "chip") {
+		t.Fatalf("an optional request: %s", out)
+	}
+	if th, _ := h.e.Thread(id); core.PendingRequest(&th) != nil {
+		t.Fatal("an optional request waits on the owner")
 	}
 }
