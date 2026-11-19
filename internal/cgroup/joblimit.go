@@ -147,6 +147,12 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 	} else {
 		high, cpu, why = jobLimits(z, budget, used, cores, lifted)
 	}
+	g.mu.Lock()
+	turns := g.turns[dir]
+	g.mu.Unlock()
+	if turns && high != "max" {
+		high, why = "max", "turns" // V0.guard-tidy (liftForTurns)
+	}
 	if known && high == s.high && cpu == s.cpu {
 		return
 	}
@@ -249,6 +255,38 @@ func (g *JobGroups) resize() {
 	}
 }
 
+// liftForTurns lifts the memory.high of thread's undeclared/ (dir) while its
+// parts take turns (V0.guard-tidy). undeclared/ holds the frozen parts too, so
+// its limit counted their memory against the one part that runs, and the
+// work FreezeUndeclared sized was throttled by memory not its own. A rotation
+// never sized undeclared/, so a cgroup it made first has no limit to lift.
+// The limit comes back when the turns end (endTurns).
+func (g *JobGroups) liftForTurns(thread, dir string) {
+	g.mu.Lock()
+	if g.turns == nil {
+		g.turns = map[string]bool{}
+	}
+	was := g.turns[dir]
+	g.turns[dir] = true
+	_, sized := g.sized[dir]
+	g.mu.Unlock()
+	if !was && sized {
+		g.sizeJob(thread, dir, true)
+	}
+}
+
+// endTurns puts undeclared/'s own limit back once its parts no longer take turns.
+func (g *JobGroups) endTurns(thread, dir string) {
+	g.mu.Lock()
+	was := g.turns[dir]
+	delete(g.turns, dir)
+	_, sized := g.sized[dir]
+	g.mu.Unlock()
+	if was && sized {
+		g.sizeJob(thread, dir, true)
+	}
+}
+
 // forgetSize drops what was written to dir (its job ended).
 func (g *JobGroups) forgetSize(dir string) {
 	if g == nil {
@@ -256,6 +294,7 @@ func (g *JobGroups) forgetSize(dir string) {
 	}
 	g.mu.Lock()
 	delete(g.sized, dir)
+	delete(g.turns, dir)
 	g.mu.Unlock()
 }
 

@@ -178,8 +178,18 @@ func (g *JobGroups) unitDir(thread string, pid int) string {
 // the processes it starts later are born there. The others are frozen before
 // active is thawed, so two units never run together. False when no cgroup
 // could be made or nothing is frozen.
+//
+// V0.guard-tidy: a rotation of a thread whose episode ended (Live false) does
+// nothing: the end (EndUndeclared) may have thawed and removed the units
+// between the engine's read of the flags and this call. While the parts take
+// turns, undeclared/'s memory.high is lifted (liftForTurns).
 func (g *JobGroups) RotateUndeclared(thread string, units []Unit, active int) bool {
 	if g == nil || g.Tree == nil || len(units) == 0 {
+		return false
+	}
+	g.umu.Lock()
+	defer g.umu.Unlock()
+	if g.Live != nil && !g.Live(thread) {
 		return false
 	}
 	ud := g.udir(thread)
@@ -187,6 +197,7 @@ func (g *JobGroups) RotateUndeclared(thread string, units []Unit, active int) bo
 		g.Tree.logf("cgroups: undeclared work of %s: %v", thread, err)
 		return false
 	}
+	g.liftForTurns(thread, ud)
 	f := g.family(thread)
 	froze := false
 	for _, u := range units {

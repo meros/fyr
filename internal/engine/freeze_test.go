@@ -88,9 +88,10 @@ func TestS5AFreezeEndsAfterTenMinutesAndNeverTakesTheLastJob(t *testing.T) {
 	if !frozen[b] {
 		t.Fatal("the newest of two was not frozen")
 	}
-	// V0.oomd-guard (decision 0036 E2): not while memory stalls critically.
+	// V0.oomd-guard (decision 0036 E2): not while memory stalls critically;
+	// V0.guard-tidy: the agents' memory.
 	stall := slots.StallCritical
-	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, Stall: stall} }
+	e.SlotSignals = func() slots.Signals { return slots.Signals{Provider: "cgroups", Headroom: &free, AgentsStall: stall} }
 	*now = now.Add(10*time.Minute + time.Second)
 	e.Tick()
 	if !frozen[b] || !told(e, b, "Your heavy job stays frozen past 10 min") {

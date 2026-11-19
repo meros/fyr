@@ -321,10 +321,11 @@ func TestF8TenMinutesAtMost(t *testing.T) {
 	}
 }
 
-// V0.oomd-guard (decision 0036 E2): the 10 min limit does not thaw into a critical stall, the host's or the agents';
-// the thread is told once that its work waits, and it thaws at the limit once the stall is below critical.
+// V0.oomd-guard (decision 0036 E2): the 10 min limit does not thaw into a critical stall (V0.guard-tidy: the agents';
+// the host's alone no longer holds it, TestGuardTidyPastTheLimitTheAgentsStallHoldsUntilTheCeiling); the thread is
+// told once that its work waits, and it thaws at the limit once the stall is below critical.
 func TestF8NoTimedThawIntoACriticalStall(t *testing.T) {
-	for _, which := range []string{"host", "agents"} {
+	for _, which := range []string{"agents"} {
 		t.Run(which, func(t *testing.T) {
 			e, u, now, z, th := fzEngine(t)
 			a, b := th[0], th[1]
@@ -362,7 +363,7 @@ func TestF8NoTimedThawIntoACriticalStall(t *testing.T) {
 			if waits != 1 {
 				t.Fatalf("told %d times that it waits", waits)
 			}
-			if !strings.Contains(out.String(), "guard: keeping thread="+a+" frozen past the 10m0s limit: memory stalls critically") {
+			if !strings.Contains(out.String(), "guard: keeping thread="+a+" frozen past the 10m0s limit: the agents' memory stalls critically") {
 				t.Fatalf("no log line for the kept freeze:\n%s", out.String())
 			}
 			z.stall, z.agents = slots.StallElevated, slots.StallOK

@@ -76,7 +76,7 @@ The swap valve of decision 0032 slice 3 applies: every job limit lifts while the
 
 **(E) Pause better.**
 1. *Delay a start before freezing a run.* Under the memory guard, a newly matched command is held at the gate (it has not started, so no timer is running) before any running job is frozen.
-2. *No timed thaw into a critical stall.* The 10 min limit thaws only if the stall is not critical. Otherwise the frozen job stays frozen and the thread is told it waits for memory. (F) is the way out for a class that may be rerun.
+2. *No timed thaw into a critical stall.* The 10 min limit thaws only if the stall is not critical. Otherwise the frozen job stays frozen and the thread is told it waits for memory. (F) is the way out for a class that may be rerun. *Amended by V0.guard-tidy: the stall is the agents' own (the host's can come from the desktop), and the hold ends at 30 min unless the class is rerunnable.*
 3. *Wake by Buck2's rule.* The cap is the agents' memory at the moment the stall first went critical in this episode. A frozen job wakes, oldest first and at most one every 10 s, when the agents' 5 s memory plus the job's memory at the freeze is under the cap, and the stall has been below *elevated* for 30 s.
 4. *More than one freeze.* Up to N frozen jobs per host (N = number of running threads − 1). The oldest running job and services are never frozen.
 5. *Triggers, not a tick.* fyrd keeps a PSI trigger on `agents/memory.pressure` (full, 150 ms in a 2 s window, unprivileged). A notification makes the guard tick at once; the 10 s tick stays as a fallback and on hosts without PSI. *Amended by V0.psi-trigger-slice: in the scope layout (V0.agents-unit) the file is the slice's `memory.pressure`, root's, so the module hands it to the service user before fyrd starts, and fyrd tries again each minute while the open is refused.*
@@ -92,7 +92,7 @@ The swap valve of decision 0032 slice 3 applies: every job limit lifts while the
 ## Not chosen
 
 - **MGLRU `min_ttl_ms`.** It calls the global OOM killer from kswapd, with no per-cgroup setting, and races fyrd and oomd (A).
-- **Proactive reclaim (Senpai, `memory.reclaim`) while oomd watches an ancestor.** It raises pgscan, so oomd would pick the cgroup fyrd just reclaimed. Revisit after (A) and (B), and only on a frozen job or an idle service.
+- **Proactive reclaim (Senpai, `memory.reclaim`) while oomd watches an ancestor.** It raises pgscan, so oomd would pick the cgroup fyrd just reclaimed. Revisit after (A) and (B), and only on a frozen job or an idle service. *V0.guard-swap reclaims frozen work after all; V0.guard-tidy skips that reclaim while the unit's stall is within 10 points of oomd's limit.*
 - **A host-wide jobserver.** It covers make, ninja, cargo and rustc, not Go or JS, which is most of the load here. Revisit if Rust or C++ projects become common.
 - **CRIU checkpoint to disk.** Fragile with browsers and network sockets (Playwright, dev stacks).
 

@@ -51,6 +51,18 @@ type JobGroups struct {
 	// V0.guard-swap: when each thread's frozen work was last moved to swap
 	// (zero while a reclaim runs).
 	reclaimed map[string]time.Time
+	// V0.guard-tidy: when a reclaim near oomd's limit was last skipped and
+	// logged, and the undeclared cgroups whose limit is lifted while their
+	// parts take turns.
+	reclaimSkipped time.Time
+	turns          map[string]bool
+	// Live says thread's episode of undeclared work goes on (the detector
+	// still flags it); nil is always. V0.guard-tidy: umu orders a rotation
+	// (the engine's tick) and an episode's end (EndUndeclared, on the
+	// sampler's goroutine), so a rotation after the end does not make and
+	// freeze u*/ again. Taken before mu.
+	Live func(thread string) bool
+	umu  sync.Mutex
 
 	// V0.job-limits: Size says the class of thread's job (declared, or its
 	// undeclared work) and what the class learned; Raise raises a class's
@@ -319,11 +331,41 @@ func (g *JobGroups) UndeclaredEmpty(thread string) bool {
 	return strings.Contains(string(raw), "populated 0")
 }
 
+// JobEmpty reports that thread's job cgroup holds no process any more, or is
+// gone: the job ended while frozen, so its freeze holds nothing (V0.guard-tidy,
+// as UndeclaredEmpty for undeclared work). False while a process is in it, and
+// for a cgroup that does not say (no cgroup.events).
+func (g *JobGroups) JobEmpty(thread string) bool {
+	if g.canStop() {
+		return g.stopGone(stopJob + thread)
+	}
+	if g == nil || g.Tree == nil {
+		return false
+	}
+	raw, err := os.ReadFile(filepath.Join(g.dir(thread), "cgroup.events"))
+	if err != nil {
+		return os.IsNotExist(err) && !g.Has(thread)
+	}
+	return strings.Contains(string(raw), "populated 0")
+}
+
 // FreezeUndeclared moves the roots and all their descendants into
 // agents/<thread>/undeclared/ and freezes it (V0.164 section 7); the CLI, its
 // MCP servers and any resident stay. A process that ends during the move is
 // skipped. False without a tree, without roots, or when nothing could be moved.
+//
+// V0.guard-tidy: like a rotation, a freeze of a thread whose episode ended
+// (Live false) does nothing, under umu, which EndUndeclared also takes: the
+// caller read the flags before the end may have thawed and removed the work.
 func (g *JobGroups) FreezeUndeclared(thread string, roots []Root) bool {
+	if g == nil {
+		return false
+	}
+	g.umu.Lock()
+	defer g.umu.Unlock()
+	if g.Live != nil && !g.Live(thread) {
+		return false
+	}
 	if g.canStop() && g.stopRoots(thread, roots) {
 		g.mu.Lock()
 		if g.ufrozen == nil {
@@ -421,11 +463,20 @@ func (g *JobGroups) ThawUndeclared(thread string) {
 	g.mu.Lock()
 	delete(g.ufrozen, thread)
 	g.mu.Unlock()
+	if g.Tree != nil {
+		g.endTurns(thread, g.udir(thread)) // V0.guard-tidy: its limit comes back
+	}
 }
 
 // EndUndeclared thaws thread's undeclared work and removes its cgroup once
 // empty (the kernel refuses while a process is left; a later call tries again).
+// V0.guard-tidy: under umu, so a rotation the engine runs meanwhile either
+// came before it or sees the episode ended.
 func (g *JobGroups) EndUndeclared(thread string) {
+	if g != nil {
+		g.umu.Lock()
+		defer g.umu.Unlock()
+	}
 	g.ThawUndeclared(thread)
 	if g == nil || g.Tree == nil {
 		return
