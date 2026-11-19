@@ -1769,6 +1769,23 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .st-k.merged,.st-k.done,.st-k.settled{color:var(--calm)}
 .st-k.failed{color:var(--signal-ink)}
 .st-lmore{padding:5px 0 0 54px;color:var(--ink-faint);font-size:12px}
+.st-nums{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.st-num{display:flex;flex-direction:column;min-width:0;padding:8px 12px;background:var(--raised);border:1px solid var(--line);border-radius:8px}
+.st-num b{font:600 22px/28px var(--ui);color:var(--ink)}
+.st-num span{color:var(--ink-muted);font-size:12px}
+.st-num small{color:var(--ink-faint);font-size:11px}
+.st-chart{position:relative;padding:0;background:var(--raised);border:1px solid var(--line);border-radius:8px;overflow:hidden;touch-action:pan-y}
+.st-chart svg{display:block}
+.st-grid{stroke:var(--line);stroke-width:1}
+.st-ax{font:400 10px var(--mono);fill:var(--ink-faint)}
+.st-area{fill:var(--harbour);opacity:.14}
+.st-ln{fill:none;stroke:var(--harbour);stroke-width:2;stroke-linejoin:round}
+.st-now{fill:var(--harbour);stroke:var(--raised);stroke-width:2}
+.st-mg{fill:var(--calm);stroke:var(--raised);stroke-width:2}
+.st-cross{stroke:var(--line-strong);stroke-width:1;stroke-dasharray:2 2}
+.st-tip{position:absolute;top:6px;transform:translateX(-50%);max-width:240px;padding:4px 8px;background:var(--raised);border:1px solid var(--line-strong);border-radius:6px;font-size:12px;color:var(--ink-muted);pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.st-tip b{color:var(--ink)}
+.st-tip .ell{max-width:224px}
 .st-sys{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:8px 36px;border-top:1px solid var(--line);background:var(--surface);color:var(--ink-muted);font-size:12px}
 .st-host .hm{width:120px}
 .st-q{min-width:0}
@@ -1779,6 +1796,7 @@ button:disabled,.btn[disabled]{transition:opacity .2s ease-out}
 .home.phone .st-mvt small,.home.phone .st-line{font-size:13px}
 .home.phone .st-act{height:44px;min-width:88px}
 .home.phone .st-tiles{grid-template-columns:1fr}
+.home.phone .st-nums{grid-template-columns:repeat(2,minmax(0,1fr))}
 .home.phone .st-ev{min-height:44px;align-items:center}
 .home.phone .st-sys{padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
 .m-status .m-nbody{padding:0;gap:0}

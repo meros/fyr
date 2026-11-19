@@ -2,9 +2,9 @@
 // pane while no thread is open, the phone as its own Status screen. The phone passes `phone` for its 44 px targets and
 // one-column tiles (touch, a 360 px screen); the desktop adds its key hints (it has a keyboard).
 
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useApi } from "./api-context.ts";
-import { HOME_LOG, HOME_MOVES, homeLog, homeMoves, homeNeeds, homeRunning, homeSummary, lookWindow, runningLine, startOfDay, type HomeMove } from "./home.ts";
+import { HOME_LOG, HOME_MOVES, homeDay, homeLog, hourTicks, openAt, type HomeDay, homeMoves, homeNeeds, homeRunning, homeSummary, lookWindow, runningLine, startOfDay, type HomeMove } from "./home.ts";
 import type { HostInfo } from "./hosts.ts";
 import { HostMeters, ThreadCPU, useLoad } from "./load-ui.tsx";
 import { stripHosts } from "./load.ts";
@@ -70,6 +70,7 @@ export function HomeScreen(p: HomeProps) {
   }, []);
   const log = useMemo(() => homeLog(byId, p.projects, since), [byId, p.projects, since]);
   const mergedToday = useMemo(() => homeLog(byId, p.projects, startOfDay(p.now)).filter((e) => e.kind === "merged").length, [byId, p.projects, Math.floor(p.now / 60_000)]);
+  const today = useMemo(() => homeDay(byId, p.projects, p.now), [byId, p.projects, Math.floor(p.now / 60_000)]);
   const day = new Date(p.now).toLocaleDateString(undefined, { weekday: "long" });
 
   if (!p.loaded) return null;
@@ -114,6 +115,8 @@ export function HomeScreen(p: HomeProps) {
 
         {!moves.length && !running.length && <div class="st-calm">All quiet. Start a thread{p.phone ? " with +" : " with c"}.</div>}
 
+        <Today day={today} phone={p.phone} onOpen={p.onOpen} />
+
         {log.length > 0 && (
           <section class="st-blk" aria-label="Since you looked">
             <div class="st-bh">
@@ -136,6 +139,111 @@ export function HomeScreen(p: HomeProps) {
         )}
       </div>
       <SystemStrip hosts={p.hosts} profiles={p.profiles} keys={p.keys} />
+    </div>
+  );
+}
+
+const hhmm = (at: number) => clockTime(new Date(at).toISOString());
+
+/** V0.day-chart: the day so far: four numbers, then the open changes from midnight to now as a step area, with a dot
+ *  on the axis for each merge. Hover (or a touch) shows the time and the open count; a dot near the pointer names the
+ *  merge, and a click on it opens its thread. The phone's chart is shorter and its numbers sit two by two (a 360 px
+ *  screen). */
+function Today({ day, phone, onOpen }: { day: HomeDay; phone?: boolean; onOpen(id: string): void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  const [hx, setHx] = useState<number | null>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  const quiet = day.steps.length === 1 && day.steps[0].open === 0 && !day.started;
+  const H = phone ? 96 : 120;
+  const pad = { l: 26, r: 8, t: 10, b: 20 };
+  const top = Math.max(2, day.peak);
+  const span = Math.max(1, day.to - day.from);
+  const x = (at: number) => pad.l + ((at - day.from) / span) * Math.max(0, w - pad.l - pad.r);
+  const y = (n: number) => pad.t + (1 - n / top) * (H - pad.t - pad.b);
+  const base = y(0);
+  let line = "";
+  day.steps.forEach((s, i) => {
+    const sx = x(s.at);
+    line += i === 0 ? `M${sx},${y(s.open)}` : `H${sx}V${y(s.open)}`;
+  });
+  line += `H${x(day.to)}`;
+  const area = `${line}V${base}H${x(day.from)}Z`;
+  const at = hx === null ? null : day.from + ((hx - pad.l) / Math.max(1, w - pad.l - pad.r)) * span;
+  const near = hx === null ? undefined : day.merges.find((m) => Math.abs(x(m.at) - hx) <= 8);
+  const point = (e: PointerEvent) => {
+    const r = (e.currentTarget as SVGElement).getBoundingClientRect();
+    const px = e.clientX - r.left;
+    setHx(px < pad.l || px > w - pad.r ? null : px);
+  };
+  const tipAt = near ? near.at : at;
+  const tipLeft = hx === null ? 0 : Math.min(Math.max(hx, 70), w - 70);
+  return (
+    <section class="st-blk st-today" aria-label="Today">
+      <div class="st-bh">
+        <span>Today · open changes</span>
+      </div>
+      <div class="st-nums">
+        <Num n={day.finished} label="finished" sub={day.merges.length ? `${day.merges.length} merged` : ""} />
+        <Num n={day.opened} label="opened" />
+        <Num n={day.open} label="open now" sub={day.peak > day.open ? `peak ${day.peak}` : ""} />
+        <Num n={day.started} label={day.started === 1 ? "thread started" : "threads started"} />
+      </div>
+      {!quiet && (
+        <div class="st-chart" ref={box} style={{ height: `${H}px` }}>
+          {w > 0 && (
+            <svg width={w} height={H} role="img" aria-label={`Open changes today: ${day.steps[0].open} at midnight, ${day.open} now, peak ${day.peak}; ${day.merges.length} merged`} onPointerMove={point} onPointerDown={point} onPointerLeave={() => setHx(null)} onClick={() => near && onOpen(near.thread)} style={{ cursor: near ? "pointer" : "default" }}>
+              {[0, top].map((n) => (
+                <g key={n}>
+                  <line class="st-grid" x1={pad.l} x2={w - pad.r} y1={y(n)} y2={y(n)} />
+                  <text class="st-ax" x={pad.l - 6} y={y(n) + 3} text-anchor="end">
+                    {n}
+                  </text>
+                </g>
+              ))}
+              {hourTicks(day.from, day.to, phone ? 4 : 6).filter((t) => x(t) < w - pad.r - 16).map((t) => (
+                <text key={t} class="st-ax" x={x(t)} y={H - 5} text-anchor="middle">
+                  {hhmm(t)}
+                </text>
+              ))}
+              <path class="st-area" d={area} />
+              <path class="st-ln" d={line} />
+              <circle class="st-now" cx={x(day.to)} cy={y(day.open)} r={3.5} />
+              {day.merges.map((m) => (
+                <circle key={`${m.thread}${m.at}`} class={`st-mg${near === m ? " hot" : ""}`} cx={x(m.at)} cy={base} r={near === m ? 5 : 4} />
+              ))}
+              {hx !== null && <line class="st-cross" x1={near ? x(near.at) : hx} x2={near ? x(near.at) : hx} y1={pad.t} y2={base} />}
+            </svg>
+          )}
+          {hx !== null && tipAt !== null && (
+            <div class="st-tip" style={{ left: `${tipLeft}px` }}>
+              <span class="tnum">{hhmm(tipAt)}</span> · <b class="tnum">{openAt(day, tipAt)}</b> open
+              {near && (
+                <div class="ell">
+                  <b class="st-k merged">Merged</b> {near.text}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Num({ n, label, sub }: { n: number; label: string; sub?: string }) {
+  return (
+    <div class="st-num">
+      <b class="tnum">{n}</b>
+      <span>{label}</span>
+      {sub && <small>{sub}</small>}
     </div>
   );
 }
