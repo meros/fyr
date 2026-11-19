@@ -8,8 +8,8 @@ Fyr runs Claude Code sessions on your own machines and shows one list: what need
 
 ## Requirements
 
-- **Claude Code.** Fyr runs every agent through the Claude Code CLI, with a Claude login or an Anthropic-compatible endpoint. Other agent CLIs are not supported ([decision 0035](docs/decisions/0035-claude-code-and-github.md)).
-- **GitHub, through `gh`.** Change cards, CI state, merges and updates need a GitHub remote and a `gh` login. A project on another forge still runs threads, without change tracking.
+- **Claude Code.** Fyr runs every agent through the Claude Code CLI, with a Claude login or an Anthropic-compatible endpoint. Other agent CLIs are not supported yet; the code keeps the CLI behind one boundary so one can be added ([decision 0035](docs/decisions/0035-claude-code-and-github.md)).
+- **GitHub, through `gh`.** Change cards, CI state, merges and updates need a GitHub remote and a `gh` login. A project on another forge still runs threads, without change tracking. Other forges are not supported yet.
 
 ## Start here
 
