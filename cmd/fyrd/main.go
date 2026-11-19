@@ -290,7 +290,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 		if cfg.HeavyGate == "off" {
 			return ""
 		}
-		return eng.HeavyGate(engine.HeavyCall{Thread: c.Thread, Class: class, ToolUse: c.ToolUse, Background: c.Background || heavy.Detached(c.Command)})
+		return eng.HeavyGate(engine.HeavyCall{Thread: c.Thread, Class: class, ToolUse: c.ToolUse, Background: c.Background || heavy.Detached(c.Command), Subagent: c.Subagent})
 	}, func(thread, toolUse string) { go eng.HeavyDone(thread, toolUse) }) // never on the stream's goroutine: it may grant
 	sampler := &cgroup.Sampler{Tree: tree, Slots: pool, Probe: &cgroup.Slowdown{}, Jobs: jobs, Groups: groups, // V0.80, V0.86
 		Detect: detector, DetectConfig: usettings.Get, Settings: usettings, Book: book, Project: eng.ThreadProject} // V0.164

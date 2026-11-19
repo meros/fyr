@@ -58,6 +58,18 @@ func TestV209AFullHostQueuesThenTheThreadIsToldToRunItAgain(t *testing.T) {
 	}
 }
 
+// A subagent never gets the [Fyr] admission, so its refusal says not to run
+// the command again and to report it as queued (on 2026-11-19 one sent the
+// same queued check four times).
+func TestASubagentIsToldNotToRetryAQueuedJob(t *testing.T) {
+	e, _, a, b := heavyEngine(t, 1)
+	e.HeavyGate(HeavyCall{Thread: a, Class: "make test", ToolUse: "tu1"})
+	r := e.HeavyGate(HeavyCall{Thread: b, Class: "make check", ToolUse: "tu2", Subagent: true})
+	if !strings.Contains(r, "queued") || !strings.Contains(r, "Do not run this command again") || strings.Contains(r, "run the command again then") {
+		t.Fatalf("refusal %q", r)
+	}
+}
+
 func TestV209TheLastOfSeveralCallsReleases(t *testing.T) {
 	e, _, a, _ := heavyEngine(t, 2)
 	e.HeavyGate(HeavyCall{Thread: a, Class: "make test", ToolUse: "tu1"})
