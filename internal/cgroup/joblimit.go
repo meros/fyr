@@ -55,6 +55,10 @@ type sizedJob struct {
 	high, cpu     string
 	events        uint64 // memory.events high when the limit was set
 	hit           bool
+	// V0.joblimit-slice: the limits of a class not learned yet, sized once
+	// when the job was moved; only the swap valve changes them after.
+	kept                       bool
+	keptHigh, keptCPU, keptWhy string
 }
 
 // unknownShare caps an unknown class's memory.high at this share of the
@@ -104,7 +108,7 @@ func jobLimits(z JobSize, budget, used uint64, cores float64, lifted bool) (high
 // agentsNow is the agents' memory budget, its use, its cores and whether the
 // swap valve is open.
 func (g *JobGroups) agentsNow() (budget, used uint64, cores float64, lifted bool) {
-	agents := filepath.Join(g.Tree.root, "agents")
+	agents := g.Tree.agentsDir() // fyr-agents.slice in the scope layout (V0.joblimit-slice)
 	n := g.Cores
 	if n <= 0 {
 		n = runtime.NumCPU()
@@ -128,7 +132,21 @@ func (g *JobGroups) sizeJob(thread, dir string, undeclared bool) {
 		s.events, _ = readKey(filepath.Join(dir, "memory.events"), "high")
 	}
 	budget, used, cores, lifted := g.agentsNow()
-	high, cpu, why := jobLimits(g.sizeFor(s.size, budget, cores), budget, used, cores, lifted)
+	z := g.sizeFor(s.size, budget, cores) // V0.admission-memory: the 3-run prior
+	if !known {
+		// V0.joblimit-slice: a class not learned yet is sized from the agents'
+		// free memory once, here. used counts the job itself, so sizing it again
+		// each tick would shrink its limit as it grows.
+		if h, c, w := jobLimits(z, budget, used, cores, false); w != "learned" {
+			s.kept, s.keptHigh, s.keptCPU, s.keptWhy = true, h, c, w
+		}
+	}
+	var high, cpu, why string
+	if s.kept && !lifted {
+		high, cpu, why = s.keptHigh, s.keptCPU, s.keptWhy
+	} else {
+		high, cpu, why = jobLimits(z, budget, used, cores, lifted)
+	}
 	if known && high == s.high && cpu == s.cpu {
 		return
 	}
