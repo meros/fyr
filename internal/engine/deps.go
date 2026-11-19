@@ -141,7 +141,7 @@ type UndeclaredDeps struct {
 	HeavyRemove        func(pattern string) bool
 	// ServicePatterns adds or removes a service pattern (V0.services-not-jobs).
 	ServicePatterns func(add, remove string) error
-	HeavyRefused       func(class string)
+	HeavyRefused    func(class string)
 	// HeavySoft says a class is learned (V0.209): it never waits.
 	HeavySoft func(class string) bool
 }

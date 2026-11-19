@@ -15,7 +15,9 @@ type WorkUnit struct {
 }
 
 // GuardEvent is one decision: "short" or "recovered" (the host's memory),
-// "freeze" or "thaw" of a thread's undeclared work or of a job it asked for.
+// "freeze" or "thaw" of a thread's undeclared work or of a job it asked for;
+// V0.rerun-classes: "kill" of a rerunnable job, and "capped" when its class
+// was killed too often and is frozen instead for an hour (Class names it).
 type GuardEvent struct {
 	At   time.Time `json:"at"`
 	Kind string    `json:"kind"`
@@ -26,6 +28,8 @@ type GuardEvent struct {
 	N int `json:"n,omitempty"`
 	// Reason says why a thaw happened: "memory", "gone", "limit", "ended".
 	Reason string `json:"reason,omitempty"`
+	// Class is the rerunnable class of a kill or a cap.
+	Class string `json:"class,omitempty"`
 	// Headroom is the memory free of the agents' capacity, 0 to 1.
 	Headroom *float64 `json:"headroom,omitempty"`
 	Stall    string   `json:"stall,omitempty"`
@@ -54,4 +58,14 @@ type Guard struct {
 	RefreezeSec int           `json:"refreezeSec"`
 	Events      []GuardEvent  `json:"events"`
 	Threads     []GuardThread `json:"threads,omitempty"`
+	// Rerun is each rerunnable class the guard killed in the last hour
+	// (V0.rerun-classes): how often, and until when it is frozen instead.
+	Rerun []GuardRerun `json:"rerun,omitempty"`
+}
+
+// GuardRerun is one rerunnable class's kills in the last hour.
+type GuardRerun struct {
+	Class       string     `json:"class"`
+	Kills       int        `json:"kills"`
+	CappedUntil *time.Time `json:"cappedUntil,omitempty"`
 }

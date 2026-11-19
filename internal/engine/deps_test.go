@@ -36,6 +36,7 @@ func depGroups(e *Engine) map[string]reflect.Value {
 		"SlotDeps":       reflect.ValueOf(&e.SlotDeps).Elem(),
 		"UndeclaredDeps": reflect.ValueOf(&e.UndeclaredDeps).Elem(),
 		"LeftoverDeps":   reflect.ValueOf(&e.LeftoverDeps).Elem(),
+		"RerunDeps":      reflect.ValueOf(&e.RerunDeps).Elem(),
 	}
 }
 

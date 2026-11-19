@@ -73,8 +73,9 @@ func TestS5ReleaseRemovesTheJobCgroupFirst(t *testing.T) {
 func TestFrozenUsecReadsCgroupStatLocal(t *testing.T) {
 	o, _ := fakeFS(t, "0::/"+unit+"\n")
 	tr := Setup(o)
-	td := tr.Thread("t_a")
+	tr.Thread("t_a") // the CLI's cli/ leaf (V0.job-limits); the job sits beside it
 	g := &JobGroups{Tree: tr}
+	td := g.threadDir("t_a")
 	if _, ok := g.FrozenUsec("t_a", false); ok {
 		t.Fatal("a value without the file")
 	}

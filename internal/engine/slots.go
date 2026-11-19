@@ -45,9 +45,10 @@ func (e *Engine) UseSlots(p *slots.Pool) {
 	e.slotOverTold = map[string]time.Time{}
 	e.undFroze = map[string]undFreeze{}
 	e.guardLast = map[string]guardLine{}
+	e.rerunKills, e.rerunWait = map[string][]time.Time{}, map[string]string{}
 	e.mu.Unlock()
 	e.heavyMu.Lock()
-	e.heavyCalls, e.heavyBg = map[string]map[string]bool{}, map[string]bool{}
+	e.heavyCalls, e.heavyBg, e.heavyClass = map[string]map[string]bool{}, map[string]bool{}, map[string]string{}
 	e.heavyMu.Unlock()
 	p.OnGrant = e.slotGranted
 	p.Rank = e.ProjectRank // V0.project-priority
@@ -327,6 +328,9 @@ type frozenJob struct {
 	mem     uint64
 	usec    uint64
 	hasUsec bool
+	// V0.rerun-classes: the work's heavy class (a job's, from the gate) and
+	// command (undeclared work's), which the owner's rerunnable entries match.
+	class, cmd string
 }
 
 // Decision 0029 S5: how long memory must be fine before a frozen job thaws,
@@ -454,7 +458,8 @@ func (e *Engine) GuardView() *slots.Guard { return e.guardPub.Load() }
 func (e *Engine) publishGuard(now time.Time) {
 	e.mu.Lock()
 	g := &slots.Guard{Short: e.guardShort, Max: MaxFreezes, RefreezeSec: int(RefreezeAfter / time.Second),
-		Events: append([]slots.GuardEvent{}, e.guardEvents...)} // never nil: the front gets [], not null
+		Events: append([]slots.GuardEvent{}, e.guardEvents...), // never nil: the front gets [], not null
+		Rerun:  e.rerunView(now)}
 	if e.guardShort && !e.guardSince.IsZero() {
 		t := e.guardSince
 		g.ShortSince = &t
@@ -624,6 +629,22 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 		}
 		keep = append(keep, f)
 	}
+	// V0.rerun-classes: a rerunnable freeze that could not wake within
+	// RerunAfter is killed and run again.
+	var killed int
+	if e.RerunMatch != nil && len(keep) > 0 {
+		var still []frozenJob
+		for _, f := range keep {
+			if now.Sub(f.at) >= RerunAfter {
+				if entry := e.rerunEntry(f, now); entry != "" && e.rerunKill(f, entry, fmt.Sprintf("frozen %s and could not wake", RerunAfter), sig, now) {
+					killed++
+					continue
+				}
+			}
+			still = append(still, f)
+		}
+		keep = still
+	}
 	// V0.guard-wake (decision 0036 E3, Buck2's rule): the oldest freeze wakes
 	// first, at most one each WakeEvery, once the stall has been below
 	// elevated for ThawAfterOK and it fits under the cap.
@@ -691,8 +712,8 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	for _, f := range pastMax {
 		e.slotNotice(f.owner, map[string]any{"waits": true, "work": f.undeclared})
 	}
-	if !short || len(thaws) > 0 {
-		return // a thaw this tick: the next tick sees what it did
+	if !short || len(thaws) > 0 || killed > 0 {
+		return // a thaw or a kill this tick: the next tick sees what it did
 	}
 	// With one thread running (n is 0) the freezes below say themselves why
 	// they skip it.
@@ -734,9 +755,21 @@ func (e *Engine) freezeGuard(s slots.Snapshot) {
 	if e.SlotMem != nil {
 		fj.mem = e.SlotMem(victim.Owner)
 	}
+	e.heavyMu.Lock()
+	fj.class = e.heavyClass[victim.Owner]
+	e.heavyMu.Unlock()
+	e.mu.Lock()
+	e.frozeHolds[victim.Owner] = victim.Since
+	e.mu.Unlock()
+	// V0.rerun-classes: a short rerunnable job is killed instead: running it
+	// again later costs less than holding its memory frozen.
+	if entry := e.rerunEntry(fj, now); entry != "" {
+		if wall, short := e.shortJob(victim.Owner); short && e.rerunKill(fj, entry, fmt.Sprintf("would be frozen; it runs %s", wall.Round(time.Second)), sig, now) {
+			return
+		}
+	}
 	e.mu.Lock()
 	e.frozen = append(e.frozen, fj)
-	e.frozeHolds[victim.Owner] = victim.Since
 	n := len(e.frozen)
 	e.mu.Unlock()
 	log.Printf("guard: froze job thread=%s why=%q held=%d frozen_now=%d mem=%s %s", victim.Owner, why, len(s.Held), n, slots.GB(float64(fj.mem)), guardSignals(sig))
@@ -913,7 +946,7 @@ func (e *Engine) freezeUndeclared(sig slots.Signals, now time.Time, admitted boo
 		n = picked.n + 1
 	}
 	faults := e.majorFaults(pick.Thread)
-	fj := frozenJob{owner: pick.Thread, at: now, undeclared: true, episode: pick.Since, mem: pick.Mem, usec: usec, hasUsec: hasUsec}
+	fj := frozenJob{owner: pick.Thread, at: now, undeclared: true, episode: pick.Since, mem: pick.Mem, usec: usec, hasUsec: hasUsec, cmd: pick.Command}
 	if turns {
 		fj.active, fj.turnAt, fj.turn, fj.faults = first.PID, now, TurnMin, faults
 	}
@@ -987,6 +1020,17 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 		return ""
 	}
 	soft := e.HeavySoft != nil && e.HeavySoft(c.Class)
+	e.heavyMu.Lock()
+	e.heavyClass[c.Thread] = c.Class
+	e.heavyMu.Unlock()
+	// V0.rerun-classes: a job Fyr killed to free memory is admitted again,
+	// never just run, so its rerun waits until memory is fine and it fits.
+	e.mu.Lock()
+	entry, rerun := e.rerunWait[c.Thread]
+	e.mu.Unlock()
+	if rerun {
+		soft = false
+	}
 	if r := e.gateHold(c, soft); r != "" {
 		return r
 	}
@@ -1007,6 +1051,12 @@ func (e *Engine) HeavyGate(c HeavyCall) string {
 			break
 		}
 		if e.trackHeavy(c) {
+			if rerun {
+				e.mu.Lock()
+				delete(e.rerunWait, c.Thread)
+				e.mu.Unlock()
+				log.Printf("guard: rerun admitted thread=%s class=%q", c.Thread, entry)
+			}
 			return ""
 		}
 	}

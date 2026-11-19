@@ -122,6 +122,7 @@ type Engine struct {
 	SlotDeps
 	UndeclaredDeps
 	LeftoverDeps
+	RerunDeps
 	QuietDeps
 	// Git reads checkouts for the git observer (#35); nil reads with git.
 	Git GitReader
@@ -162,6 +163,7 @@ type Engine struct {
 	heavyMu    sync.Mutex
 	heavyCalls map[string]map[string]bool // under heavyMu: thread → its running foreground calls
 	heavyBg    map[string]bool            // under heavyMu: thread → a job outlives its call
+	heavyClass map[string]string          // under heavyMu: thread → its newest heavy class at the gate (V0.rerun-classes)
 	// frozen is what the guard holds frozen now, the newest last (decision
 	// 0029 S5; V0.multi-freeze: more than one), under mu.
 	frozen       []frozenJob
@@ -180,9 +182,13 @@ type Engine struct {
 	// V0.guard-wake (decision 0036 E1, E3): the agents' memory when the stall
 	// first went critical in this episode (0: not yet), the last wake, and the
 	// threads whose new heavy command the gate held while memory was short.
-	guardCap     uint64
-	guardWake    time.Time
-	gateHeld     map[string]bool
+	guardCap  uint64
+	guardWake time.Time
+	gateHeld  map[string]bool
+	// V0.rerun-classes: each rerunnable class's kills (the last hour), and
+	// the threads whose killed job waits for its rerun (thread → entry).
+	rerunKills   map[string][]time.Time // under mu
+	rerunWait    map[string]string      // under mu
 	titleMu      sync.Mutex
 	titling      map[string]bool
 	textAskSlots chan struct{} // V0.210: the question job's calls at once
@@ -644,6 +650,14 @@ func (e *Engine) awaited(in core.Input, ef core.Effect, reply api.Reply) api.Rep
 			return fail(409, "This host cannot change these settings")
 		}
 		if err := e.UndeclaredSettings(ef.Request.Args); err != nil {
+			return fail(400, err.Error())
+		}
+		reply.Result = ef.Request.Args
+	case core.EffectRerunClasses: // V0.rerun-classes
+		if e.RerunSet == nil {
+			return fail(409, "This host cannot kill and rerun jobs")
+		}
+		if err := e.RerunSet(ef.Request.Args); err != nil {
 			return fail(400, err.Error())
 		}
 		reply.Result = ef.Request.Args

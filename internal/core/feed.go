@@ -345,6 +345,14 @@ func slotNotices(r Reduced) []Notice {
 			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: what + " stays frozen past 10 min: memory still stalls critically on this host, and thawing it now would make that worse. It resumes when the stall eases; Fyr tells you then."})
 			continue
 		}
+		if class, ok := d["killed"].(string); ok { // V0.rerun-classes (decision 0036 (F))
+			what := "heavy job"
+			if d["work"] == true {
+				what = "heavy work"
+			}
+			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: fmt.Sprintf("Fyr killed your %s (`%s`) to free memory on this host: the owner marked it rerunnable. Its failure or exit 137 came from that, not from your change. Run the command again: Fyr admits it once memory has recovered and the job fits.", what, class)})
+			continue
+		}
 		if d["retry"] == true { // V0.guard-wake (decision 0036 E1)
 			out = append(out, Notice{About: "thread", Key: "slot.pause", Urgency: Next, What: "Memory has recovered on this host: run the heavy command Fyr held again."})
 			continue
