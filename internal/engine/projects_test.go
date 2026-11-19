@@ -310,7 +310,10 @@ func TestFolderMigration(t *testing.T) {
 	th := h.cmd("thread.create", "", core.Args{"cwd": b, "text": "x"})
 	h.m.StopAll()
 	h.e.st.Close()
-	db, err := sql.Open("sqlite", h.db)
+	// Close does not wait for a write the engine's goroutines have under way
+	// (the agent the thread started): without a busy timeout the INSERT
+	// below meets its lock and fails at once with SQLITE_BUSY.
+	db, err := sql.Open("sqlite", "file:"+h.db+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		t.Fatal(err)
 	}
