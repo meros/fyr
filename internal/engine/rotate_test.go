@@ -43,7 +43,7 @@ func TestT1SeveralPartsTakeTurnsInsteadOfAllStopping(t *testing.T) {
 	if len(z.frozen) != 0 || len(r.active) != 1 || r.last() != 30 {
 		t.Fatalf("whole freeze %v, turns %v", z.frozen, r.active)
 	}
-	if v := e.frozen; v.owner != th[0] || !v.undeclared || v.active != 30 {
+	if v := e.first(); v.owner != th[0] || !v.undeclared || v.active != 30 {
 		t.Fatalf("%+v", v)
 	}
 }
@@ -100,8 +100,8 @@ func TestT4ATurnPaysForTheSwapIn(t *testing.T) {
 	*now = now.Add(TurnMin)
 	r.faults = 1 << 30 // 1 GB read back in one turn of 30 s: the next 1 GB part gets three times that
 	e.Tick()
-	if d := e.frozen.turn - 90*time.Second; d < -time.Millisecond || d > time.Millisecond {
-		t.Fatalf("turn %s", e.frozen.turn)
+	if d := e.first().turn - 90*time.Second; d < -time.Millisecond || d > time.Millisecond {
+		t.Fatalf("turn %s", e.first().turn)
 	}
 }
 
@@ -110,7 +110,7 @@ func TestT5OnePartIsFrozenWhole(t *testing.T) {
 	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
-	if !z.frozen[th[0]] || len(r.active) != 0 || e.frozen.active != 0 {
+	if !z.frozen[th[0]] || len(r.active) != 0 || e.first().active != 0 {
 		t.Fatalf("frozen %v turns %v", z.frozen, r.active)
 	}
 }
@@ -121,7 +121,7 @@ func TestT6RefusedTurnsFallBackToTheWholeFreeze(t *testing.T) {
 	u.flags = []slots.Undeclared{flagFor(th[0], *now)}
 	z.free = 0.04
 	e.Tick()
-	if !z.frozen[th[0]] || e.frozen.active != 0 {
+	if !z.frozen[th[0]] || e.first().active != 0 {
 		t.Fatalf("frozen %v, %+v", z.frozen, e.frozen)
 	}
 }
@@ -138,7 +138,17 @@ func TestT7TheThawEndsTheTurns(t *testing.T) {
 	*now = now.Add(ThawAfterOK)
 	calls := len(r.active)
 	e.Tick()
-	if thawed != 1 || e.frozen.owner != "" || len(r.active) != calls {
+	if thawed != 1 || e.first().owner != "" || len(r.active) != calls {
 		t.Fatalf("thawed %d, frozen %+v, turns %v", thawed, e.frozen, r.active)
 	}
+}
+
+// first is the guard's oldest freeze, or none.
+func (e *Engine) first() frozenJob {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.frozen) == 0 {
+		return frozenJob{}
+	}
+	return e.frozen[0]
 }

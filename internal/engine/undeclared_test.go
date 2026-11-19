@@ -247,9 +247,7 @@ func TestF13AFreezeThatHoldsNothingIsReleased(t *testing.T) {
 	if z.frozen[a] {
 		t.Fatal("an empty freeze was kept")
 	}
-	e.mu.Lock()
-	held := e.frozen.owner
-	e.mu.Unlock()
+	held := e.first().owner
 	if held != "" {
 		t.Fatalf("still blocks other freezes: %q", held)
 	}

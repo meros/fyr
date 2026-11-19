@@ -19,7 +19,26 @@ const (
 	TurnMax = 2 * time.Minute
 	// turnFactor is how many times the swap-in time a turn lasts.
 	turnFactor = 3
+	// TurnMinRSS: a part that holds less gets no turn while a heavier part
+	// waits (V0.multi-freeze). On 19 Nov the turns of a frozen dev stack
+	// went to a crash handler, a curl and a tail, 30 s each, among 44 parts.
+	TurnMinRSS = 128 << 20
 )
+
+// turnTakers are the parts that get turns: those of TurnMinRSS or more, or
+// all of them when none is.
+func turnTakers(units []slots.WorkUnit) []slots.WorkUnit {
+	var out []slots.WorkUnit
+	for _, u := range units {
+		if u.RSS >= TurnMinRSS {
+			out = append(out, u)
+		}
+	}
+	if len(out) == 0 {
+		return units
+	}
+	return out
+}
 
 // turnLength is a turn for work of rss bytes when the thread reads back rate
 // bytes a second: turnFactor times the time to read it, within the limits. No
@@ -48,14 +67,18 @@ func (e *Engine) majorFaults(thread string) uint64 {
 	return e.UndeclaredFaults(thread)
 }
 
-// startTurns freezes all of thread's units but the first; false when the work
+// startTurns freezes all of thread's units but the first that takes turns; false when the work
 // has fewer than two, or the cgroups refused, and is frozen whole instead.
 func (e *Engine) startTurns(thread string) (slots.WorkUnit, int, bool) {
 	units := e.workUnits(thread)
-	if len(units) < 2 || !e.UndeclaredRotate(thread, units, units[0].PID) {
+	if len(units) < 2 {
 		return slots.WorkUnit{}, 0, false
 	}
-	return units[0], len(units), true
+	first := turnTakers(units)[0]
+	if !e.UndeclaredRotate(thread, units, first.PID) {
+		return slots.WorkUnit{}, 0, false
+	}
+	return first, len(units), true
 }
 
 // nextTurn runs at each tick of a freeze that takes turns. Every tick it
@@ -81,8 +104,9 @@ func (e *Engine) nextTurn(f frozenJob, now time.Time) frozenJob {
 		e.UndeclaredRotate(f.owner, units, f.active)
 		return f
 	}
-	next := units[0]
-	for _, u := range units {
+	takers := turnTakers(units)
+	next := takers[0]
+	for _, u := range takers {
 		if u.PID > f.active {
 			next = u
 			break
