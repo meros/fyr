@@ -14,7 +14,7 @@ test("SPEC V0.136: a merge ask that waits for CI is a muted line with no button,
   assert.deepEqual(needLook(c.need), { button: "", line: "Waiting for CI: 2 of 5 checks done on 029f9c7. Fyr asks you to merge when it is green.", beam: false });
   assert.equal(needsOwner(c), false);
   assert.equal(columnOf(c), "review");
-  assert.deepEqual(askYes({ cause: "ask", ask: "d_merge", action: "pr.merge", head }), { label: "Merge 029f9c7" }, "shown only when green: the yes runs");
+  assert.deepEqual(askYes({ cause: "ask", ask: "d_merge", action: "pr.merge", head }), { label: "Merge", title: "Merges 029f9c7" }, "shown only when green: the yes runs; V0.merge-label: the head in its title");
   assert.deepEqual(askYes({ cause: "ask", ask: "d2", text: "Approve" }), { label: "Yes" });
 });
 
