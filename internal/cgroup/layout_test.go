@@ -131,7 +131,7 @@ func TestAgentsUnitScopeNames(t *testing.T) {
 		"fyr-agent-t_a.x.scope":   "",
 		"other.scope":             "",
 		"fyr-agent-t_a.service":   "",
-		"fyr-agent-probe-1.scope": "probe-1 0",
+		"fyr-agent-probe-1.scope": "", // V0.probe-scope: the probe is no thread
 	} {
 		n, g, ok := scopeThread(base)
 		got := ""

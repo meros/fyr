@@ -109,6 +109,7 @@ type Tree struct {
 	cur       map[string]string
 	pending   map[string]time.Time // under mu: scope names handed out
 	deploySeq atomic.Int64
+	probeSeq  atomic.Int64 // V0.probe-scope: the slowdown probe's scopes
 	logf      func(string, ...any)
 	mu        sync.Mutex
 	refs      map[string]int
