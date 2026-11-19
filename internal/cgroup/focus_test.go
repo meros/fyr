@@ -5,6 +5,7 @@ package cgroup
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -67,4 +68,51 @@ func TestV085FocusWithoutCgroups(t *testing.T) {
 	tr.Focus("phone", "t_a", time.Now())
 	tr.Unfocus("phone", "t_a", time.Now())
 	tr.Expire(time.Now())
+}
+
+// V0.project-priority: a thread's weight follows its project's priority (200
+// high, 100 normal, 50 low); a focused thread has 300 whatever its project.
+func TestVProjectPriorityWeight(t *testing.T) {
+	o, l := fakeFS(t, "0::/"+unit+"\n")
+	tr := Setup(o)
+	if tr == nil {
+		t.Fatalf("Setup is off: %v", l.lines)
+	}
+	weight := func(id string) string { return read(t, filepath.Join(o.FS, unit, "agents", id, "cpu.weight")) }
+	ranks := map[string]int{"t_hi": 1, "t_lo": -1}
+	var mu sync.Mutex
+	rank := func(id string) int { mu.Lock(); defer mu.Unlock(); return ranks[id] }
+	tr.Thread("t_hi")
+	tr.Thread("t_lo")
+	tr.Thread("t_n")
+	if weight("t_hi") != "100" {
+		t.Fatalf("before SetRank: %s", weight("t_hi"))
+	}
+	tr.SetRank(rank)
+	if weight("t_hi") != "200" || weight("t_lo") != "50" || weight("t_n") != "100" {
+		t.Fatalf("ranked: hi=%s lo=%s n=%s", weight("t_hi"), weight("t_lo"), weight("t_n"))
+	}
+	now := time.Now()
+	tr.Focus("phone", "t_lo", now)
+	if weight("t_lo") != "300" {
+		t.Fatalf("focused low: %s", weight("t_lo"))
+	}
+	tr.Unfocus("phone", "t_lo", now)
+	if weight("t_lo") != "50" {
+		t.Fatalf("unfocused low: %s", weight("t_lo"))
+	}
+	// A priority change shows at the next Expire; a new cgroup starts at its own.
+	mu.Lock()
+	ranks["t_n"], ranks["t_new"] = 1, -1
+	mu.Unlock()
+	tr.Expire(now)
+	tr.Thread("t_new")
+	if weight("t_n") != "200" || weight("t_new") != "50" {
+		t.Fatalf("changed: n=%s new=%s", weight("t_n"), weight("t_new"))
+	}
+	if d := tr.Deploy(); read(t, filepath.Join(d, "cpu.weight")) != "100" {
+		t.Fatal("the self-deploy's weight changed")
+	}
+	var off *Tree
+	off.SetRank(rank)
 }

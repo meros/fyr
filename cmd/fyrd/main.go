@@ -254,6 +254,7 @@ func (h *host) serve(cfg config, webFS fs.FS, hostName, data string, tree *cgrou
 	}
 	pool := slots.Open(n, h.st)
 	eng.UseSlots(pool)
+	tree.SetRank(eng.ProjectRank) // V0.project-priority: a high project's threads get more CPU
 	// Decision 0029 S1 (#185): measure each slot hold and the host's
 	// signals; nothing is admitted by them yet.
 	heavyCmds, err := heavy.New(heavy.Defaults)

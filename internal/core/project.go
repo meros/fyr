@@ -15,16 +15,21 @@ type Project struct {
 	ID string `json:"id"`
 	// Folder is a full path on this host; threads that run in it or below
 	// land in the project. "" means threads are only filed by hand.
-	Folder    string     `json:"folder,omitempty"`
-	Edited    bool       `json:"edited,omitempty"` // the user changed it
-	Auto      bool       `json:"auto,omitempty"`   // made by matching before V0.28; migration only
-	Name      string     `json:"name"`
-	Color     string     `json:"color"` // a name from Palette
-	Icon      Icon       `json:"icon"`
-	Profile   string     `json:"profile,omitempty"`
-	Model     string     `json:"model,omitempty"`
-	Quiet     QuietHours `json:"quiet,omitempty"` // quiet hours (V0.46): a list of windows
-	CreatedAt time.Time  `json:"createdAt"`
+	Folder  string     `json:"folder,omitempty"`
+	Edited  bool       `json:"edited,omitempty"` // the user changed it
+	Auto    bool       `json:"auto,omitempty"`   // made by matching before V0.28; migration only
+	Name    string     `json:"name"`
+	Color   string     `json:"color"` // a name from Palette
+	Icon    Icon       `json:"icon"`
+	Profile string     `json:"profile,omitempty"`
+	Model   string     `json:"model,omitempty"`
+	Quiet   QuietHours `json:"quiet,omitempty"` // quiet hours (V0.46): a list of windows
+	// Priority is the owner's say in how much the project's threads get of
+	// the host (V0.project-priority): PriorityHigh, PriorityLow, or "" for
+	// normal. It orders new waiters in the slot queue and sets the threads'
+	// CPU weight; it changes no list and no notification.
+	Priority  string    `json:"priority,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 	// Image is the version of the project's image icon (V0.116), served at
 	// /api/projects/<id>/icon; "" draws Icon, the glyph, in Color.
 	Image string `json:"image,omitempty"`
@@ -44,6 +49,32 @@ type Project struct {
 	// SharedAt stamps the values the members share: name, colour, glyph icon
 	// and quiet hours. The newest stamp in a link wins (decision 0034).
 	SharedAt time.Time `json:"sharedAt,omitzero"`
+}
+
+// A project's priority (V0.project-priority); "" is normal.
+const (
+	PriorityHigh = "high"
+	PriorityLow  = "low"
+)
+
+// ValidPriority reports whether s is a project priority: high, low, or ""
+// (normal; "normal" is accepted and stored as "").
+func ValidPriority(s string) bool {
+	return s == "" || s == "normal" || s == PriorityHigh || s == PriorityLow
+}
+
+// Rank is the priority as a number: 1 high, 0 normal, -1 low.
+func (p *Project) Rank() int {
+	if p == nil {
+		return 0
+	}
+	switch p.Priority {
+	case PriorityHigh:
+		return 1
+	case PriorityLow:
+		return -1
+	}
+	return 0
 }
 
 // ProjectSetup is a project setup run (V0.116): the thread it runs in, when
@@ -199,7 +230,7 @@ const (
 	// to keep a link refuses it, where project.update would ignore the field.
 	KindProjectLink = "project.link"
 	// KindProjectShared stores the values a link's members share: args {id,
-	// link, at, name, color, icon, quiet}. An older stamp changes nothing.
+	// link, at, name, color, icon, quiet, priority}. An older stamp changes nothing.
 	KindProjectShared = "project.shared"
 )
 
@@ -335,6 +366,16 @@ func reduceProjectUpdate(r Rec, in Input, now time.Time) (Result, error) {
 		}
 		p.Quiet = qs
 	}
+	if raw, ok := a["priority"]; ok { // V0.project-priority; null is normal
+		v, _ := raw.(string)
+		if raw != nil && !ValidPriority(v) {
+			return Result{}, reject(RejectBadArgs, "priority must be high, normal or low")
+		}
+		if v == "normal" {
+			v = ""
+		}
+		p.Priority = v
+	}
 	p.Edited = true
 	return Result{Events: []Event{{"command", map[string]any{"action": in.Kind, "commandId": in.CmdID}}}, Reply: map[string]any{"id": p.ID}}, nil
 }
@@ -374,7 +415,7 @@ func reduceProjectShared(r Rec, in Input, now time.Time) (Result, error) {
 		return Result{Reply: map[string]any{"id": p.ID, "kept": true}}, nil
 	}
 	shared := Args{}
-	for _, k := range []string{"name", "color", "icon", "quiet"} {
+	for _, k := range []string{"name", "color", "icon", "quiet", "priority"} {
 		if v, ok := a[k]; ok {
 			shared[k] = v
 		}

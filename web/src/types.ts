@@ -255,6 +255,8 @@ export interface Project {
   /** V0.46: quiet hours, in the host's time zone: a list of windows (decision 0014 addendum); absent is off.
    *  A host from before the addendum sends one window as an object; quietList reads both. */
   quiet?: QuietHours[] | QuietHours;
+  /** V0.project-priority: how much of the host its threads get (the slot queue, CPU); absent is normal */
+  priority?: "high" | "low";
   /** V0.46: the end of the quiet hours the project is in now (RFC 3339); absent when not quiet */
   quietUntil?: string;
   /** V0.58: only on the stream, `{id, deleted: true}` after project.delete */

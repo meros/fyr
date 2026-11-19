@@ -170,7 +170,8 @@ type Engine struct {
 	guardSince   time.Time            // under mu: since when it is short
 	guardEvents  []slots.GuardEvent   // under mu: the guard's last decisions, for the front
 	guardPub     atomic.Pointer[slots.Guard]
-	memGuard     bool // under mu: the guard told a thread in this episode
+	ranks        atomic.Pointer[map[string]int] // V0.project-priority: thread id → its project's rank, the non-zero ones
+	memGuard     bool                           // under mu: the guard told a thread in this episode
 	titleMu      sync.Mutex
 	titling      map[string]bool
 	textAskSlots chan struct{} // V0.210: the question job's calls at once
@@ -276,7 +277,31 @@ func (e *Engine) Load() error {
 	for id, t := range e.threads {
 		e.last[id] = core.ComputeWith(t, e.view(id), now, e.autoMergeOn).State
 	}
+	e.publishRanksLocked()
 	return nil
+}
+
+// ProjectRank is thread's project priority as a number (V0.project-priority):
+// 1 high, 0 normal, -1 low. It takes no lock: the slot pool and the cgroup
+// tree call it under their own.
+func (e *Engine) ProjectRank(thread string) int {
+	if m := e.ranks.Load(); m != nil {
+		return (*m)[thread]
+	}
+	return 0
+}
+
+// publishRanksLocked publishes every thread's project rank for ProjectRank.
+// Call it with e.mu held, after a thread changes project or a project its
+// priority.
+func (e *Engine) publishRanksLocked() {
+	m := map[string]int{}
+	for id, t := range e.threads {
+		if r := e.projects[t.ProjectID].Rank(); r != 0 {
+			m[id] = r
+		}
+	}
+	e.ranks.Store(&m)
 }
 
 // bump gives a thread a new rev. Call with e.mu held.
@@ -830,6 +855,10 @@ func (e *Engine) commit(s *staged, show bool) {
 	if s.feedOnly && !s.viewChanged && !show {
 		e.threads[t.ID] = t
 		return
+	}
+	if s.cur.ProjectID != t.ProjectID || e.projects[t.ProjectID].Rank() != e.ProjectRank(t.ID) {
+		e.threads[t.ID] = t
+		e.publishRanksLocked() // V0.project-priority: a new thread, or one filed elsewhere
 	}
 	if s.changed || s.viewChanged || show {
 		s.newPR = s.cur.MainPR() == nil && t.MainPR() != nil
