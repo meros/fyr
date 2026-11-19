@@ -468,11 +468,12 @@ function App() {
   const listed = useMemo(() => (hidden && current ? { ...shown, [current.id]: current } : shown), [shown, hidden, current]);
   const liveRows = useMemo(() => (listed === shown ? sec : sections(listed, queue, unreadAt)), [listed, shown, sec, queue, unreadAt]);
   // V0.open-row-only: the open row keeps the place it had on the screen when it was opened, until another thread is
-  // current. Every other row is where the live list has it.
+  // current. Every other row is where the live list has it. V0.phone-row-moves: not on the phone, where the list and the
+  // thread are never on screen together, so back on the list the row is where the live list has it.
   const drawnRef = useRef<Sections | null>(null);
   const placeRef = useRef<RowPlace | null>(null);
   if (placeRef.current?.id !== sel) placeRef.current = (drawnRef.current && placeOf(drawnRef.current, sel)) ?? placeOf(liveRows, sel);
-  const place = placeRef.current?.id === freed ? null : placeRef.current;
+  const place = phone || placeRef.current?.id === freed ? null : placeRef.current;
   const rows = useMemo(() => stillRows(liveRows, place), [liveRows, place]);
   drawnRef.current = rows;
   const drawn = useMemo(() => stillRows(sec, place), [sec, place]);
