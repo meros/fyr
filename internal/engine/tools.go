@@ -80,6 +80,8 @@ func (e *Engine) Tools(s *mcp.Server) {
 			return "The thread settles when " + cond + "." + e.pinNote(th), nil
 		}})
 
+	s.Add(e.settleRequestTool()) // V0.settle-request
+
 	s.Add(e.watchTool())
 	s.Add(e.stateTool())
 	s.Add(e.askTool()) // V0.ask-tool
@@ -172,4 +174,35 @@ func requestable() []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// SettleRequestDesc is settle_request's description (V0.settle-request).
+const SettleRequestDesc = "Tell Fyr this thread's work is done, so it can leave the owner's inbox. Call it at the end of a turn when the task is clearly finished and nothing is left behind: every ask answered, no run_request or merge waiting, no PR open that still needs you, nothing the owner said they want next. Do not call it while you wait on CI, a review, the owner, or a job of your own, and not when you just asked the owner something. The project decides what happens: either Fyr settles the thread itself once the run ends and nothing waits, or the owner sees a Settle chip with your why. A new message or run clears it, so call it again when a later turn finishes the work."
+
+// settleRequestTool is settle_request (V0.settle-request): the project's
+// AgentSettle decides whether Fyr settles or the owner does.
+func (e *Engine) settleRequestTool() mcp.Tool {
+	return mcp.Tool{Name: "settle_request",
+		Description: SettleRequestDesc,
+		Schema:      obj(map[string]any{"why": str("One short line for the owner: what was done, for example \"PR #12 merged, the fix is live\".")}, "why"),
+		Call: func(_ context.Context, th string, a map[string]any) (string, error) {
+			out, err := e.Apply(core.Input{Source: core.FromAgent, Kind: core.KindSettleRequest, Thread: th,
+				Args: core.Args{"why": sArg(a, "why"), "auto": e.settlesOnRequest(th)}})
+			if err != nil {
+				return "", err
+			}
+			if out == core.SettleAskAuto {
+				return "The thread settles once this run ends, nothing waits for the owner and no PR is open." + e.pinNote(th), nil
+			}
+			return "The owner sees a Settle chip with your why; they settle the thread. Do not call it again in this turn.", nil
+		}}
+}
+
+// settlesOnRequest reports that the thread's project settles on the agent's
+// request (V0.settle-request).
+func (e *Engine) settlesOnRequest(th string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	t := e.threads[th]
+	return t != nil && e.projects[t.ProjectID].SettlesOnRequest()
 }

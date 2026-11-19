@@ -74,6 +74,10 @@ type Thread struct {
 	Live *LiveView `json:"live,omitempty"`
 	// Settle is when the thread settled (#33); what settles it are Rules.
 	Settle Settle `json:"settle,omitzero"`
+	// SettleAsk is the agent's word that its work is done
+	// (V0.settle-request), on a project that asks the owner: the thread shows
+	// a Settle chip. A new run, a message and a settle clear it.
+	SettleAsk *SettleAsk `json:"settleAsk,omitempty"`
 	// PinnedAt is when the owner pinned the thread (V0.104): it sorts above
 	// every other thread. Snooze, settle and archive drop it; only the
 	// owner pins.

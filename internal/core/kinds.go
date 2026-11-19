@@ -23,6 +23,7 @@ const (
 	KindEffectRequest  = "effect.request"
 	KindChangeRequest  = "change.request"
 	KindSettleWhen     = "settle.when"
+	KindSettleRequest  = "settle.request" // V0.settle-request
 	KindChangeOpen     = "change.open"
 	KindChangeUpdate   = "change.update" // V0.101: status, revision and proof in one
 	KindChangeEnd      = "change.end"    // the owner's command (V0.72)
@@ -189,6 +190,7 @@ func init() {
 		{Name: KindEffectRequest, From: agentOnly, Reduce: reduceEffectRequest},
 		{Name: KindChangeRequest, From: agentOnly, Reduce: reduceChangeRequest},
 		{Name: KindSettleWhen, From: agentOnly, Reduce: reduceSettleWhen},
+		{Name: KindSettleRequest, From: agentOnly, Reduce: reduceSettleRequest},
 		{Name: KindChangeOpen, From: agentOnly, Reduce: changeKind("open", func(t *Thread, in Input, now time.Time) (*Change, bool, error) {
 			a, err := argsOf[ChangeOpenArgs](in)
 			if err != nil {

@@ -7,7 +7,7 @@ import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { Profile, Project, QuietHours, Thread } from "./types.ts";
 import { DEFAULT_QUIET, QUIET_HOLD_MS, QUIET_PRESETS, WEEK, hasWindow, isAllDay, loadQuietShow, quietLine, quietList, quietNote, quietSaver, setAllDay, setQuietShow, subscribeQuietShow, toggleDay } from "./quiet.ts";
 import { LINE_ICONS } from "./lucide.ts";
-import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
+import { FOLDER_LINE, NO_FOLDER_LINE, addHosts, linkCandidates, sameRepo, PALETTE_NAMES, iconFileError, nameError, patchFor, priorityLine, priorityOf, type ProjectPriority, agentSettleLine, agentSettleOf, type AgentSettle, projectIconUrl, setByAgent, setupLine, colorName, enterAction, exactProject, colorVar, matchProjects, monogram, newProjectDraft, newRowLabel, projectName, projectOf, projectSubtitle, resolveIcon, shortPath } from "./projects.ts";
 import { Group, Row, SaveField, Seg, SetContext, Switch, useSet } from "./settings-rows.tsx";
 import { rowProjectName } from "./rows.ts";
 import { useFolderPick } from "./folder-picker.tsx";
@@ -508,6 +508,8 @@ export interface ProjectPatch {
   quiet?: QuietHours[] | null;
   /** V0.project-priority: null is normal */
   priority?: "high" | "low" | null;
+  /** V0.settle-request: null is ask */
+  agentSettle?: "auto" | null;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
@@ -788,6 +790,10 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
   const [prio, setPrio] = useState<ProjectPriority | null>(null);
   useEffect(() => setPrio(null), [project.priority]);
   const shownPrio = prio ?? priorityOf(project);
+  // V0.settle-request: the same, for what an agent's settle_request does.
+  const [ags, setAgs] = useState<AgentSettle | null>(null);
+  useEffect(() => setAgs(null), [project.agentSettle]);
+  const shownAgs = ags ?? agentSettleOf(project);
   const saver = useRef(quietSaver<QuietHours[]>((q) => void save("quiet", patchFor("quiet", q))));
   useEffect(() => () => saver.current.flush(), []);
   const [busy, setBusy] = useState(false);
@@ -1024,6 +1030,27 @@ function ProjectEditorBody({ project, profiles, now, onSave, onSetFolder, onDele
               onChange={async (v) => {
                 setPrio(v);
                 if (await save("priority", patchFor("priority", v))) setPrio(null);
+              }}
+            />
+          }
+        />
+        <Row
+          title="Agent says done"
+          desc={agentSettleLine(shownAgs)}
+          error={errs.agentSettle}
+          stack
+          end={
+            <Seg
+              label="Agent says done"
+              value={shownAgs}
+              disabled={env.readOnly}
+              options={[
+                { value: "ask", label: "Ask me" },
+                { value: "auto", label: "Settle" },
+              ]}
+              onChange={async (v) => {
+                setAgs(v);
+                if (await save("agentSettle", patchFor("agentSettle", v))) setAgs(null);
               }}
             />
           }

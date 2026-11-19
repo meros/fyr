@@ -14,6 +14,7 @@ func RunStarted(t *Thread, now time.Time) {
 	t.Failure = nil
 	t.Stopped = false
 	DropStaleSteps(t) // V0.next-step-chips (3)
+	t.SettleAsk = nil // V0.settle-request: it was for the last run
 }
 
 // RunEnded closes the run. A nil failure means it finished normally or was
