@@ -82,6 +82,7 @@ func (e *Engine) Tools(s *mcp.Server) {
 
 	s.Add(e.watchTool())
 	s.Add(e.stateTool())
+	s.Add(e.askTool()) // V0.ask-tool
 	e.slotTools(s)     // V0.86
 	e.leftoverTools(s) // V0.176
 }

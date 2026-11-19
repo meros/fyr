@@ -24,6 +24,7 @@ test("card tools and plumbing are hidden, results matched by tool_use_id", () =>
     use("e", "mcp__fyr__effect_request", { action: "deploy" }),
     res("e"),
     use("f", "AskUserQuestion", {}),
+    use("f2", "mcp__fyr__ask", { questions: [] }),
     use("g", "mcp__fyr__pr_link", { url: "u" }),
   ]);
   assert.deepEqual(items.map((i) => i.kind), ["preview"], "only the card remains");

@@ -12,6 +12,10 @@ func voidAsks(t *Thread) []Event {
 	var evs []Event
 	keep := t.Decisions[:0:0]
 	for _, d := range t.Decisions {
+		if d.Kind == DecisionAsk && d.Async && t.ArchivedAt != nil { // V0.ask-tool
+			evs = append(evs, Event{"decision.closed", map[string]any{"id": d.ID, "answer": "void: the thread is archived"}})
+			continue
+		}
 		if why := askVoid(t, d); why != "" {
 			evs = append(evs, Event{"decision.closed", map[string]any{
 				"id": d.ID, "answer": "void: " + why, "void": true, "reason": why,

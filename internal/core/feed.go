@@ -288,6 +288,7 @@ var NoticeRules = []NoticeRule{
 	{Name: "slot", Urgency: Wake, OnReduce: slotNotices},
 	{Name: "task.quiet", Urgency: Wake, Budget: true, OnReduce: taskQuietNotices}, // V0.195
 	{Name: "runrequest", Urgency: Next, OnReduce: runRequestNotices},
+	{Name: "textquestion", Urgency: Next, OnReduce: textQuestionNotices}, // V0.ask-tool
 }
 
 // EventSlot is the event of a slot for a heavy job that became the
@@ -435,6 +436,8 @@ func resultNotices(r Reduced) []Notice {
 			exit, _ := d["exit"].(int)
 			out = append(out, Notice{About: aboutOn(d["on"]), Key: fmt.Sprintf("result:%v:%v", d["on"], d["action"]),
 				What: ranText(fmt.Sprint(d["label"]), fmt.Sprint(d["title"]), ok, exit, str(d["output"]))})
+		case ev.Type == "decision.closed" && d["asked"] == true: // V0.ask-tool
+			out = append(out, Notice{About: "thread", Key: "result:ask:" + str(d["id"]), What: askAnswerText(str(d["answer"]))})
 		case ev.Type == "decision.closed" && d["gate"] == true: // V0.136
 			args, _ := d["args"].(map[string]any)
 			n := Notice{About: "thread", Key: "result:" + str(d["action"]) + ":" + target(args),
